@@ -24,6 +24,8 @@ pub mod posts_trash;
 pub mod preview;
 /// 代码试运行沙箱页面模块。
 pub mod runner;
+/// 站点配置页面模块（页脚 GitHub 链接等公开配置）。
+pub mod settings;
 /// 系统管理页面模块（数据库 + 服务器状态 + SQL 控制台 + 导出 + 备份）。
 pub mod system;
 /// 文章编辑器页面模块（基于 Tiptap 富文本编辑器）。
@@ -47,6 +49,8 @@ pub use posts_trash::PostsTrash;
 pub use preview::PostPreview;
 /// 代码试运行沙箱组件。
 pub use runner::Runner;
+/// 站点配置页面组件。
+pub use settings::SiteSettingsPage;
 /// 系统管理入口组件。
 pub use system::System;
 /// 文章编辑器组件（新建与编辑模式）。

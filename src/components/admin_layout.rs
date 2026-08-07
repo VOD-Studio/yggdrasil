@@ -17,6 +17,7 @@ use crate::components::skeletons::post_preview_skeleton::PostPreviewSkeleton;
 use crate::components::skeletons::posts_skeleton::PostsSkeleton;
 use crate::components::skeletons::posts_trash_skeleton::PostsTrashSkeleton;
 use crate::components::skeletons::runner_skeleton::RunnerSkeleton;
+use crate::components::skeletons::settings_admin_skeleton::SettingsAdminSkeleton;
 use crate::components::skeletons::system_skeleton::SystemSkeleton;
 use crate::components::write_skeleton::WriteSkeleton;
 use crate::context::UserContext;
@@ -218,6 +219,9 @@ fn admin_route_skeleton(route: &Route) -> Element {
         Route::Mcp {} => rsx! {
             McpSkeleton {}
         },
+        Route::SiteSettingsPage {} => rsx! {
+            SettingsAdminSkeleton {}
+        },
         Route::PostPreview { .. } => rsx! {
             PostPreviewSkeleton {}
         },
@@ -328,7 +332,10 @@ fn ToolsNavGroup() -> Element {
     let route = use_route::<Route>();
     // 判断路由是否属于本组。
     fn in_group(route: &Route) -> bool {
-        matches!(route, Route::Runner {} | Route::Mcp {} | Route::System {})
+        matches!(
+            route,
+            Route::Runner {} | Route::Mcp {} | Route::System {} | Route::SiteSettingsPage {}
+        )
     }
     let group_active = in_group(&route);
     let mut expanded = use_signal(|| group_active);
@@ -378,6 +385,7 @@ fn ToolsNavGroup() -> Element {
                     // 左侧竖线引导 + 缩进表示层级。
                     div { class: "ml-4 pl-3 border-l border-[var(--color-paper-border)] flex flex-col gap-1",
                         for (dest, label, active) in [
+                            (Route::SiteSettingsPage {}, "设置", matches!(route, Route::SiteSettingsPage {})),
                             (Route::Runner {}, "试运行", matches!(route, Route::Runner {})),
                             (Route::Mcp {}, "MCP", matches!(route, Route::Mcp {})),
                             (Route::System {}, "系统", matches!(route, Route::System {})),

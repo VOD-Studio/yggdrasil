@@ -18,6 +18,8 @@ use crate::models::friend_link::FriendLink;
 #[cfg(feature = "server")]
 use crate::models::post::{FeedItem, Post, PostListItem, PostStats, Tag};
 #[cfg(feature = "server")]
+use crate::models::settings::SiteSettings;
+#[cfg(feature = "server")]
 use crate::models::user::SessionUser;
 
 // ============================================================================
@@ -60,6 +62,10 @@ const TTL_SESSION: Duration = Duration::from_secs(300);
 #[cfg(feature = "server")]
 const TTL_SEARCH: Duration = Duration::from_secs(10);
 
+/// 站点配置缓存 TTL：600 秒。配置极少变更，但前台页脚每页读取，缓存兜底 DB。
+#[cfg(feature = "server")]
+const TTL_SITE_SETTINGS: Duration = Duration::from_secs(600);
+
 // ============================================================================
 // 缓存 Key 类型
 // ============================================================================
@@ -88,6 +94,8 @@ pub enum CacheKey {
     Feed,
     /// 全部友链（前台可见集）。
     FriendLinks,
+    /// 站点公开配置（页脚 GitHub 链接等，单键）。
+    SiteSettings,
 }
 
 // ============================================================================
@@ -203,6 +211,15 @@ static PENDING_COUNT_CACHE: LazyLock<Cache<CacheKey, i64>> = LazyLock::new(|| {
         .build()
 });
 
+/// 全局站点配置缓存实例（单键 `SiteSettings`），最大容量 2。
+#[cfg(feature = "server")]
+static SITE_SETTINGS_CACHE: LazyLock<Cache<CacheKey, SiteSettings>> = LazyLock::new(|| {
+    Cache::builder()
+        .max_capacity(2)
+        .time_to_live(TTL_SITE_SETTINGS)
+        .build()
+});
+
 /// 会话用户缓存类型。
 #[cfg(feature = "server")]
 pub type SessionCache = Cache<String, SessionUser>;
@@ -282,6 +299,8 @@ static SEARCH_STATS: CacheStats = CacheStats::new("搜索");
 static FEED_STATS: CacheStats = CacheStats::new("Feed");
 #[cfg(feature = "server")]
 static FRIEND_STATS: CacheStats = CacheStats::new("友链");
+#[cfg(feature = "server")]
+static SITE_SETTINGS_STATS: CacheStats = CacheStats::new("站点配置");
 
 /// 缓存统计快照项（序列化给前端展示）。
 #[cfg(feature = "server")]
@@ -326,6 +345,7 @@ pub fn cache_stats() -> Vec<CacheStatSnapshot> {
         snap(&SEARCH_STATS, SEARCH_CACHE.entry_count()),
         snap(&FEED_STATS, FEED_CACHE.entry_count()),
         snap(&FRIEND_STATS, FRIEND_LINKS_CACHE.entry_count()),
+        snap(&SITE_SETTINGS_STATS, SITE_SETTINGS_CACHE.entry_count()),
     ]
 }
 
@@ -405,6 +425,31 @@ pub async fn set_friend_links(links: Vec<FriendLink>) {
     let _ = FRIEND_LINKS_CACHE
         .insert(CacheKey::FriendLinks, links)
         .await;
+}
+
+/// 读取站点配置缓存。
+#[cfg(feature = "server")]
+pub async fn get_site_settings() -> Option<SiteSettings> {
+    record_hit_miss!(
+        SITE_SETTINGS_CACHE.get(&CacheKey::SiteSettings).await,
+        SITE_SETTINGS_STATS
+    )
+}
+
+/// 写入站点配置缓存。
+#[cfg(feature = "server")]
+pub async fn set_site_settings(settings: SiteSettings) {
+    let _ = SITE_SETTINGS_CACHE
+        .insert(CacheKey::SiteSettings, settings)
+        .await;
+}
+
+/// 失效站点配置缓存。
+///
+/// 使用同步签名是因为 `moka::Cache::invalidate_all` 为同步操作。
+#[cfg(feature = "server")]
+pub fn invalidate_site_settings() {
+    SITE_SETTINGS_CACHE.invalidate_all();
 }
 
 /// 按 slug 读取单篇文章缓存。

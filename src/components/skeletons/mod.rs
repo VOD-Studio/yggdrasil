@@ -36,6 +36,8 @@ pub mod posts_trash_skeleton;
 pub mod runner_skeleton;
 /// 搜索页骨架屏组件。
 pub mod search_skeleton;
+/// 后台站点配置骨架屏组件。
+pub mod settings_admin_skeleton;
 /// 后台系统管理骨架屏组件。
 pub mod system_skeleton;
 /// 标签页骨架屏组件。

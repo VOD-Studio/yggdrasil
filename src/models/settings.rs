@@ -37,6 +37,49 @@ impl TrashSettings {
     }
 }
 
+/// 默认 GitHub 链接：空字符串表示不展示页脚图标。
+pub const DEFAULT_SITE_GITHUB_URL: &str = "";
+/// GitHub 链接最大长度（字符），防止滥用。
+pub const MAX_SITE_GITHUB_URL_LEN: usize = 500;
+
+/// 站点公开配置（前台展示用，所有访客可见）。
+///
+/// 目前仅包含页脚 GitHub 链接；后续可在此结构上扩展更多公开站点配置。
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct SiteSettings {
+    /// GitHub 仓库链接，空字符串表示不展示页脚图标。
+    pub github_url: String,
+}
+
+impl Default for SiteSettings {
+    fn default() -> Self {
+        Self {
+            github_url: DEFAULT_SITE_GITHUB_URL.to_string(),
+        }
+    }
+}
+
+impl SiteSettings {
+    /// 规范化 GitHub 链接：trim、截断、补全 scheme。
+    ///
+    /// - 空串（trim 后）→ 返回空串，表示未配置。
+    /// - 已带 `http://` / `https://` → 原样保留（截断到上限）。
+    /// - 否则在前面补 `https://`；这同时把 `javascript:` / `data:` 等危险 scheme
+    ///   变成无效 URL（`https://javascript:...`），杜绝通过页脚 `href` 注入脚本。
+    pub fn normalize_github_url(url: &str) -> String {
+        let trimmed = url.trim();
+        if trimmed.is_empty() {
+            return String::new();
+        }
+        let limited: String = trimmed.chars().take(MAX_SITE_GITHUB_URL_LEN).collect();
+        if limited.starts_with("http://") || limited.starts_with("https://") {
+            limited
+        } else {
+            format!("https://{limited}")
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -80,5 +123,58 @@ mod tests {
             TrashSettings::clamp_retention(MAX_RETENTION_DAYS),
             MAX_RETENTION_DAYS
         );
+    }
+
+    #[test]
+    fn site_settings_default_empty() {
+        let s = SiteSettings::default();
+        assert_eq!(s.github_url, "");
+    }
+
+    #[test]
+    fn normalize_github_url_empty() {
+        assert_eq!(SiteSettings::normalize_github_url(""), "");
+        assert_eq!(SiteSettings::normalize_github_url("   "), "");
+    }
+
+    #[test]
+    fn normalize_github_url_prepends_https() {
+        assert_eq!(
+            SiteSettings::normalize_github_url("github.com/DefectingCat/yggdrasil"),
+            "https://github.com/DefectingCat/yggdrasil"
+        );
+    }
+
+    #[test]
+    fn normalize_github_url_keeps_scheme() {
+        assert_eq!(
+            SiteSettings::normalize_github_url("https://github.com/foo"),
+            "https://github.com/foo"
+        );
+        assert_eq!(
+            SiteSettings::normalize_github_url("http://example.com"),
+            "http://example.com"
+        );
+    }
+
+    #[test]
+    fn normalize_github_url_neutralizes_dangerous_scheme() {
+        // javascript:/data: 不以 http(s) 开头 → 补 https:// 变成无效 URL，无法注入脚本。
+        assert_eq!(
+            SiteSettings::normalize_github_url("javascript:alert(1)"),
+            "https://javascript:alert(1)"
+        );
+    }
+
+    #[test]
+    fn normalize_github_url_trims_and_truncates() {
+        assert_eq!(
+            SiteSettings::normalize_github_url("  github.com/x  "),
+            "https://github.com/x"
+        );
+        let long = "a".repeat(MAX_SITE_GITHUB_URL_LEN + 50);
+        let normalized = SiteSettings::normalize_github_url(&long);
+        // 补的 https:// 前缀不计入截断后的主体长度。
+        assert_eq!(normalized.len(), "https://".len() + MAX_SITE_GITHUB_URL_LEN);
     }
 }

@@ -75,6 +75,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         include_str!("../../migrations/019_restore_search_trgm_index.sql"),
     ),
     ("020", include_str!("../../migrations/020_friend_links.sql")),
+    (
+        "021",
+        include_str!("../../migrations/021_site_settings.sql"),
+    ),
     // 新增迁移在此追加，同时在 migrations/ 下创建对应 .sql 文件。
 ];
 
