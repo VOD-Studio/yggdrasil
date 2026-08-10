@@ -51,7 +51,7 @@ const FILENAME_RE: &str = r"^[a-zA-Z0-9_.\-]+$";
 const BACKUP_SIGNATURE: &str = "-- YGGDRASIL BACKUP v1";
 
 /// 备份文件元信息（列表展示用）。
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct BackupInfo {
     pub filename: String,
     pub size_bytes: u64,
