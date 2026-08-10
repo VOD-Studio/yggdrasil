@@ -5,7 +5,7 @@
 //! 纯 Dioxus 组件，不触碰 Tiptap；数据加载仅在 WASM 前端发生。
 
 use crate::components::forms::{FormInput, INPUT_INLINE_CLASS};
-use crate::components::ui::{BTN_ICON, BTN_PRIMARY, SPINNER_SVG};
+use crate::components::ui::{Pagination, BTN_ICON, BTN_PRIMARY, SPINNER_SVG};
 use dioxus::prelude::*;
 
 #[cfg(target_arch = "wasm32")]
@@ -14,6 +14,11 @@ use crate::models::asset::AssetDto;
 #[cfg(target_arch = "wasm32")]
 use crate::models::asset::{AssetFilter, AssetSort};
 
+/// 每页素材数，与素材管理页及服务端列表接口保持一致。
+const ASSETS_PER_PAGE: i32 = 60;
+/// 搜索输入防抖窗口，复用素材管理页的请求节流约定。
+#[cfg(target_arch = "wasm32")]
+const SEARCH_DEBOUNCE_MS: u32 = 300;
 /// 关闭过渡时长，与 input.css 的 modal-overlay / modal-panel 过渡保持一致。
 const EXIT_ANIM_MS: u32 = 200;
 
@@ -37,7 +42,12 @@ pub fn AssetPickerModal(
     let mut loading = use_signal(|| false);
     let mut query = use_signal(String::new);
     #[allow(unused_mut)]
+    let mut debounced_query = use_signal(String::new);
+    #[allow(unused_mut)]
     let mut error = use_signal(|| None::<String>);
+    let mut page = use_signal(|| 1_i32);
+    #[allow(unused_mut)]
+    let mut total = use_signal(|| 0_i64);
     // 上传中的本地对象 URL 只用于当前 modal 预览，上传结束立即释放。
     let mut uploading_preview = use_signal(|| None::<String>);
     // 关闭时保留 DOM 播放淡出；动画结束后再卸载，避免弹窗瞬间消失。
@@ -46,12 +56,20 @@ pub fn AssetPickerModal(
     // 上传完成后先把新图留在弹窗网格中，用户点击后才真正应用头像。
     let mut uploaded_url = use_signal(|| None::<String>);
 
+    #[cfg(target_arch = "wasm32")]
+    let request_generation = use_hook(|| std::rc::Rc::new(std::cell::Cell::new(0_u64)));
+
+    #[cfg(target_arch = "wasm32")]
+    let request_generation_for_close = request_generation.clone();
     use_effect(move || {
         if visible() {
             opened.set(true);
             closing.set(false);
             uploaded_url.set(None);
         } else if *opened.peek() {
+            #[cfg(target_arch = "wasm32")]
+            request_generation_for_close.set(request_generation_for_close.get().wrapping_add(1));
+            page.set(1);
             if !*closing.peek() {
                 closing.set(true);
             }
@@ -62,23 +80,73 @@ pub fn AssetPickerModal(
         }
     });
 
-    // 打开时与搜索词变化时加载第一页（最新 60 张，封面/头像复用场景足够）。
+    // 搜索防抖：保留输入框原值，停顿 300ms 后才提交查询并回到第 1 页。
+    // 每次新输入都会递增请求代际，立即丢弃尚未返回的旧查询结果。
+    #[cfg(target_arch = "wasm32")]
+    let request_generation_for_debounce = request_generation.clone();
+    use_effect(move || {
+        let q = query();
+        #[cfg(target_arch = "wasm32")]
+        {
+            request_generation_for_debounce
+                .set(request_generation_for_debounce.get().wrapping_add(1));
+            spawn(async move {
+                crate::utils::time::sleep_ms(SEARCH_DEBOUNCE_MS).await;
+                if *query.peek() == q {
+                    if *debounced_query.peek() != q {
+                        debounced_query.set(q);
+                    }
+                    page.set(1);
+                }
+            });
+        }
+    });
+
+    // 打开、搜索词或页码变化时加载当前页；请求代际保证只有最后一次响应能落地。
+    #[cfg(target_arch = "wasm32")]
+    let request_generation_for_load = request_generation.clone();
     use_effect(move || {
         let open = visible();
-        let q = query();
+        let q = debounced_query();
+        let requested_page = page();
         if open {
             #[cfg(target_arch = "wasm32")]
-            spawn(async move {
-                loading.set(true);
-                match list_assets(AssetFilter::All, q, AssetSort::CreatedDesc, 1).await {
-                    Ok(resp) => {
-                        assets.set(resp.assets);
-                        error.set(None);
+            {
+                let request_generation = request_generation_for_load.clone();
+                let request_id = request_generation.get().wrapping_add(1);
+                request_generation.set(request_id);
+                spawn(async move {
+                    if request_generation.get() != request_id {
+                        return;
                     }
-                    Err(e) => error.set(Some(e.to_string())),
-                }
-                loading.set(false);
-            });
+                    loading.set(true);
+                    error.set(None);
+                    let result =
+                        list_assets(AssetFilter::All, q, AssetSort::CreatedDesc, requested_page)
+                            .await;
+                    if request_generation.get() != request_id {
+                        return;
+                    }
+                    match result {
+                        Ok(resp) => {
+                            let last_page = ((resp.total + ASSETS_PER_PAGE as i64 - 1)
+                                / ASSETS_PER_PAGE as i64)
+                                .max(1) as i32;
+                            if resp.assets.is_empty() && requested_page > last_page {
+                                page.set(last_page);
+                                return;
+                            }
+                            assets.set(resp.assets);
+                            total.set(resp.total);
+                            error.set(None);
+                        }
+                        Err(e) => error.set(Some(e.to_string())),
+                    }
+                    if request_generation.get() == request_id {
+                        loading.set(false);
+                    }
+                });
+            }
         }
     });
 
@@ -86,6 +154,10 @@ pub fn AssetPickerModal(
     if !visible() && !is_closing {
         return rsx! {};
     }
+    let current_page = page();
+    let total_assets = total();
+    let loading_now = loading();
+    let show_pagination = total_assets > ASSETS_PER_PAGE as i64;
 
     rsx! {
         // 遮罩：点击关闭
@@ -177,12 +249,27 @@ pub fn AssetPickerModal(
                 }
 
                 // 网格内容区：与头部统一使用 p-6，min-h-0 保证面板内部滚动。
-                div { class: "min-h-0 flex-1 overflow-y-auto p-6",
+                div { class: "relative min-h-0 flex-1 overflow-y-auto p-6",
+                    // 翻页时保留旧网格，仅叠加半透明加载态，避免内容闪空。
+                    if loading_now && !assets.read().is_empty() {
+                        div {
+                            class: "pointer-events-none absolute inset-0 z-10 flex items-start justify-center bg-[var(--color-paper-theme)]/35 pt-6 backdrop-blur-[1px]",
+                            aria_live: "polite",
+                            aria_label: "正在加载素材",
+                            div { class: "inline-flex items-center gap-2 rounded-full bg-[var(--color-paper-entry)] px-3 py-1.5 text-xs text-[var(--color-paper-secondary)] shadow-sm",
+                                span {
+                                    class: "inline-flex h-4 w-4",
+                                    dangerous_inner_html: SPINNER_SVG,
+                                }
+                                "加载中…"
+                            }
+                        }
+                    }
                     if let Some(err) = error() {
                         div { class: "rounded-2xl bg-red-500/10 px-4 py-3 text-center text-sm text-red-600 dark:text-red-400",
                             "加载失败：{err}"
                         }
-                    } else if loading() && assets.read().is_empty() && !cover_uploading() {
+                    } else if loading_now && assets.read().is_empty() && !cover_uploading() {
                         div { class: "px-4 py-16 text-center text-sm text-[var(--color-paper-secondary)]",
                             "加载中..."
                         }
@@ -262,6 +349,45 @@ pub fn AssetPickerModal(
                                                 loading: "lazy",
                                             }
                                         }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if show_pagination {
+                    {
+                        let mut page_for_prev = page;
+                        let loading_for_prev = loading;
+                        let mut page_for_next = page;
+                        let loading_for_next = loading;
+                        let mut page_for_jump = page;
+                        let loading_for_jump = loading;
+                        rsx! {
+                            div { class: "shrink-0 px-6 py-3 shadow-[inset_0_1px_0_var(--color-paper-border)]",
+                                div { class: if loading_now { "pointer-events-none opacity-60" } else { "" },
+                                    Pagination {
+                                        variant: "admin",
+                                        compact: true,
+                                        current_page,
+                                        total: total_assets,
+                                        per_page: ASSETS_PER_PAGE,
+                                        unit: "张",
+                                        on_prev: move |_| {
+                                            if !loading_for_prev() {
+                                                page_for_prev.with_mut(|p| *p = (*p - 1).max(1));
+                                            }
+                                        },
+                                        on_next: move |_| {
+                                            if !loading_for_next() {
+                                                page_for_next.with_mut(|p| *p += 1);
+                                            }
+                                        },
+                                        on_jump: move |next_page: i32| {
+                                            if !loading_for_jump() {
+                                                page_for_jump.set(next_page.max(1));
+                                            }
+                                        },
                                     }
                                 }
                             }

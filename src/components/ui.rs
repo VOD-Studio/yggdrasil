@@ -131,6 +131,7 @@ pub const BTN_ICON: &str =
 ///   可编辑输入框——聚焦编辑、回车跳转（自动夹取到 `[1, total_pages]`，非法输入
 ///   还原为当前页）、失焦回显。仅回调式翻页可用——路由式翻页无法由任意页码反推
 ///   `Route`，故路由式调用方不传此 prop，页码保持纯文本。
+/// - `compact`：admin 变体是否去掉默认外边距，供弹窗等固定底栏嵌入使用。
 #[component]
 pub fn Pagination(
     variant: &'static str,
@@ -143,6 +144,7 @@ pub fn Pagination(
     #[props(default)] on_prev: Option<EventHandler<()>>,
     #[props(default)] on_next: Option<EventHandler<()>>,
     #[props(default)] on_jump: Option<EventHandler<i32>>,
+    #[props(default)] compact: bool,
 ) -> Element {
     let has_prev = current_page > 1;
     let total_pages = ((total + per_page as i64 - 1) / per_page as i64).max(1) as i32;
@@ -151,6 +153,15 @@ pub fn Pagination(
     // admin 与 frontend 的配色差异。admin 上一页/下一页用描边胶囊，与本页其它
     // 操作按钮（BTN_OUTLINE）同族，避免出现方角实心按钮破坏整体圆角语言。
     let is_admin = variant == "admin";
+    let nav_class = if is_admin {
+        if compact {
+            "flex justify-between"
+        } else {
+            "flex mt-6 justify-between"
+        }
+    } else {
+        "flex mt-10 mb-6 justify-between"
+    };
     let (link_class, link_extra_next) = if is_admin {
         (
             "inline-flex items-center px-4 py-2 text-sm font-medium text-paper-primary border border-paper-border rounded-full hover:border-paper-accent hover:text-paper-accent active:scale-[0.98] transition-all duration-200 cursor-pointer",
@@ -183,7 +194,7 @@ pub fn Pagination(
     let mut jump_editing: Signal<bool> = use_signal(|| false);
     let mut jump_draft: Signal<String> = use_signal(String::new);
     rsx! {
-        nav { class: if is_admin { "flex mt-6 justify-between" } else { "flex mt-10 mb-6 justify-between" },
+        nav { class: nav_class,
             if has_prev {
                 if let Some(on_prev) = on_prev {
                     button {
