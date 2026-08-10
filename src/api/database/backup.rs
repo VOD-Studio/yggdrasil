@@ -181,7 +181,11 @@ async fn run_backup(task_id: &str, origin: BackupOrigin) -> Result<BackupRunOutc
         );
         let tar_name = uploads_archive_name(&sql_filename);
         let tar_path = backup_path(&tar_name);
-        match tokio::task::spawn_blocking(move || create_uploads_tarball(Path::new("uploads"), &tar_path)).await {
+        match tokio::task::spawn_blocking(move || {
+            create_uploads_tarball(Path::new("uploads"), &tar_path)
+        })
+        .await
+        {
             Ok(Ok(())) => uploads_filename = Some(tar_name),
             Ok(Err(e)) => warning = Some(format!("uploads 打包失败: {e}")),
             Err(e) => warning = Some(format!("uploads 打包任务panic: {e}")),
@@ -205,7 +209,11 @@ async fn run_backup(task_id: &str, origin: BackupOrigin) -> Result<BackupRunOutc
         None,
         Some(sql_filename.clone()),
     );
-    Ok(BackupRunOutcome { sql_filename, uploads_filename, warning })
+    Ok(BackupRunOutcome {
+        sql_filename,
+        uploads_filename,
+        warning,
+    })
 }
 
 /// SQL 文件名 → 配对 uploads 打包文件名（`X.sql` → `X_uploads.tar.gz`）。
@@ -277,7 +285,9 @@ fn rotate_auto_backups(keep: i32) {
             match std::fs::remove_file(&path) {
                 Ok(()) => tracing::info!("backup rotation: deleted {}", path.display()),
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                Err(e) => tracing::warn!("backup rotation: failed to delete {}: {e}", path.display()),
+                Err(e) => {
+                    tracing::warn!("backup rotation: failed to delete {}: {e}", path.display())
+                }
             }
         }
     }
@@ -291,7 +301,11 @@ fn rotate_auto_backups(keep: i32) {
 ///
 /// 成功返回 SQL 文件名（最终「完成」进度由调用方统一上报）。
 #[cfg(feature = "server")]
-async fn run_pg_dump_backup(task_id: &str, prefix: &str, timestamp: &str) -> Result<String, String> {
+async fn run_pg_dump_backup(
+    task_id: &str,
+    prefix: &str,
+    timestamp: &str,
+) -> Result<String, String> {
     tasks::update(
         task_id,
         "正在用 pg_dump 导出",
@@ -750,7 +764,12 @@ pub async fn list_backups() -> Result<Vec<BackupInfo>, ServerFnError> {
                     .map(|(k, v)| (Some(k.clone()), Some(*v)))
                     .unwrap_or((None, None));
                 infos.push(BackupInfo {
-                    origin: if name.starts_with("auto_") { "auto" } else { "manual" }.to_string(),
+                    origin: if name.starts_with("auto_") {
+                        "auto"
+                    } else {
+                        "manual"
+                    }
+                    .to_string(),
                     filename: name,
                     size_bytes: meta.len(),
                     mode,
@@ -1106,8 +1125,14 @@ mod tests {
 
     #[test]
     fn rotation_keeps_newest_and_deletes_oldest() {
-        let names: Vec<String> = ["auto_20260808_040000.sql", "auto_20260810_040000.sql", "auto_20260809_040000.sql"]
-            .iter().map(|s| s.to_string()).collect();
+        let names: Vec<String> = [
+            "auto_20260808_040000.sql",
+            "auto_20260810_040000.sql",
+            "auto_20260809_040000.sql",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
         // 文件名时间戳定宽，乱序输入也应按时间排序。
         assert_eq!(
             select_expired_auto_backups(&names, 2),
@@ -1118,12 +1143,14 @@ mod tests {
     #[test]
     fn rotation_ignores_manual_backups_and_tarballs() {
         let names: Vec<String> = [
-            "backup_20260101_000000.sql",           // 手动：永不轮转
-            "auto_20260808_040000_uploads.tar.gz",  // tar.gz：随配对 sql 删除，不单独计数
+            "backup_20260101_000000.sql",          // 手动：永不轮转
+            "auto_20260808_040000_uploads.tar.gz", // tar.gz：随配对 sql 删除，不单独计数
             "auto_20260808_040000.sql",
             "auto_20260809_040000.sql",
         ]
-        .iter().map(|s| s.to_string()).collect();
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
         assert!(select_expired_auto_backups(&names, 2).is_empty());
         assert_eq!(
             select_expired_auto_backups(&names, 1),
@@ -1134,7 +1161,10 @@ mod tests {
     #[test]
     fn rotation_empty_and_exact_keep() {
         assert!(select_expired_auto_backups(&[], 5).is_empty());
-        let names: Vec<String> = ["auto_20260808_040000.sql"].iter().map(|s| s.to_string()).collect();
+        let names: Vec<String> = ["auto_20260808_040000.sql"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
         assert!(select_expired_auto_backups(&names, 1).is_empty());
         // keep=0 全删
         assert_eq!(select_expired_auto_backups(&names, 0).len(), 1);
@@ -1182,7 +1212,9 @@ mod tests {
             "应包含素材文件: {entries:?}"
         );
         assert!(
-            !entries.iter().any(|p| p.contains(".cache") || p.contains(".gitkeep")),
+            !entries
+                .iter()
+                .any(|p| p.contains(".cache") || p.contains(".gitkeep")),
             "应排除 .cache 与 .gitkeep: {entries:?}"
         );
         std::fs::remove_dir_all(&dir).expect("清理测试目录");

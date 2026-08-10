@@ -105,14 +105,22 @@ impl BackupSettings {
 
     /// 计算启用时下一次执行时刻（UTC）。time_utc 非法时返回 None。
     #[cfg(feature = "server")]
-    pub fn next_run_after(&self, now: chrono::DateTime<chrono::Utc>) -> Option<chrono::DateTime<chrono::Utc>> {
+    pub fn next_run_after(
+        &self,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Option<chrono::DateTime<chrono::Utc>> {
         let (h, m) = parse_hhmm(&self.time_utc)?;
         let today = now.date_naive();
         let today_at = today.and_hms_opt(h as u32, m as u32, 0)?.and_utc();
         if today_at > now {
             Some(today_at)
         } else {
-            Some(today.succ_opt()?.and_hms_opt(h as u32, m as u32, 0)?.and_utc())
+            Some(
+                today
+                    .succ_opt()?
+                    .and_hms_opt(h as u32, m as u32, 0)?
+                    .and_utc(),
+            )
         }
     }
 }
@@ -362,8 +370,14 @@ mod tests {
     #[test]
     #[cfg(feature = "server")]
     fn backup_clamp_retention() {
-        assert_eq!(BackupSettings::clamp_retention(0), MIN_BACKUP_RETENTION_COUNT);
-        assert_eq!(BackupSettings::clamp_retention(366), MAX_BACKUP_RETENTION_COUNT);
+        assert_eq!(
+            BackupSettings::clamp_retention(0),
+            MIN_BACKUP_RETENTION_COUNT
+        );
+        assert_eq!(
+            BackupSettings::clamp_retention(366),
+            MAX_BACKUP_RETENTION_COUNT
+        );
         assert_eq!(BackupSettings::clamp_retention(30), 30);
     }
 
@@ -371,7 +385,10 @@ mod tests {
     #[cfg(feature = "server")]
     fn next_run_same_day_when_future() {
         use chrono::{TimeZone, Utc};
-        let s = BackupSettings { time_utc: "04:00".into(), ..Default::default() };
+        let s = BackupSettings {
+            time_utc: "04:00".into(),
+            ..Default::default()
+        };
         let now = Utc.with_ymd_and_hms(2026, 8, 10, 1, 30, 0).unwrap();
         let next = s.next_run_after(now).expect("合法时间必有下次执行");
         assert_eq!(next, Utc.with_ymd_and_hms(2026, 8, 10, 4, 0, 0).unwrap());
@@ -381,7 +398,10 @@ mod tests {
     #[cfg(feature = "server")]
     fn next_run_rolls_to_tomorrow_when_past() {
         use chrono::{TimeZone, Utc};
-        let s = BackupSettings { time_utc: "04:00".into(), ..Default::default() };
+        let s = BackupSettings {
+            time_utc: "04:00".into(),
+            ..Default::default()
+        };
         // 恰等于触发时刻也算「已过」——避免刚错过即触发两次。
         for now in [
             Utc.with_ymd_and_hms(2026, 8, 10, 4, 0, 0).unwrap(),
@@ -396,7 +416,10 @@ mod tests {
     #[cfg(feature = "server")]
     fn next_run_none_on_invalid_time() {
         use chrono::{TimeZone, Utc};
-        let s = BackupSettings { time_utc: "garbage".into(), ..Default::default() };
+        let s = BackupSettings {
+            time_utc: "garbage".into(),
+            ..Default::default()
+        };
         let now = Utc.with_ymd_and_hms(2026, 8, 10, 0, 0, 0).unwrap();
         assert!(s.next_run_after(now).is_none());
     }

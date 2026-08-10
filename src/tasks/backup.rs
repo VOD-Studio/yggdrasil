@@ -66,7 +66,10 @@ pub async fn run_scheduler() {
         let now = Utc::now();
         let Some(next) = settings.next_run_after(now) else {
             // time_utc 非法（面板/API 已规范化，此处仅是纵深防御）。
-            tracing::error!("Auto-backup: invalid backup_time_utc {:?}", settings.time_utc);
+            tracing::error!(
+                "Auto-backup: invalid backup_time_utc {:?}",
+                settings.time_utc
+            );
             tokio::select! {
                 _ = SETTINGS_CHANGED.notified() => {}
                 _ = tokio::time::sleep(IDLE_RETRY) => {}

@@ -130,7 +130,10 @@ pub async fn update_trash_settings(
 pub(crate) async fn load_backup_settings(
     client: &tokio_postgres::Client,
 ) -> Result<BackupSettings, AppError> {
-    async fn read_key(client: &tokio_postgres::Client, key: &str) -> Result<Option<String>, AppError> {
+    async fn read_key(
+        client: &tokio_postgres::Client,
+        key: &str,
+    ) -> Result<Option<String>, AppError> {
         let row = client
             .query_opt("SELECT value FROM settings WHERE key = $1", &[&key])
             .await
@@ -156,7 +159,12 @@ pub(crate) async fn load_backup_settings(
         .and_then(|v| v.parse().ok())
         .unwrap_or(crate::models::settings::DEFAULT_BACKUP_INCLUDE_UPLOADS);
 
-    Ok(BackupSettings { auto_enabled, time_utc, retention_count, include_uploads })
+    Ok(BackupSettings {
+        auto_enabled,
+        time_utc,
+        retention_count,
+        include_uploads,
+    })
 }
 
 /// 读取最近一次自动备份结果（未执行过 → None）。
@@ -200,7 +208,10 @@ pub(crate) async fn save_last_backup_run(
         ("backup_last_run_at", run.at.clone()),
         ("backup_last_run_ok", run.ok.to_string()),
         ("backup_last_run_file", run.file.clone().unwrap_or_default()),
-        ("backup_last_run_error", run.error.clone().unwrap_or_default()),
+        (
+            "backup_last_run_error",
+            run.error.clone().unwrap_or_default(),
+        ),
     ];
     for (key, value) in pairs {
         client
@@ -282,7 +293,11 @@ async fn load_backup_settings_view(
     } else {
         None
     };
-    Ok(BackupSettingsView { settings, last_run, next_run_at })
+    Ok(BackupSettingsView {
+        settings,
+        last_run,
+        next_run_at,
+    })
 }
 
 /// 读取自动备份配置（面板用）。
