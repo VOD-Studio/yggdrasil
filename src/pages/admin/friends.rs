@@ -416,6 +416,8 @@ fn LinkRow(link: FriendLink, state: FriendsPageState) -> Element {
         .next()
         .map(|c| c.to_uppercase().collect())
         .unwrap_or_else(|| "?".to_string());
+    // 图片加载失败时回退到名称首字符。
+    let mut img_failed = use_signal(|| false);
     let status_label = if link.is_active { "启用" } else { "停用" };
     let status_class = if link.is_active {
         "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300"
@@ -434,6 +436,16 @@ fn LinkRow(link: FriendLink, state: FriendsPageState) -> Element {
             div { class: "relative h-8 w-8 shrink-0 rounded-2xl bg-[var(--color-paper-code-bg)] flex items-center justify-center overflow-hidden",
                 span { class: "text-sm font-semibold text-[var(--color-paper-primary)] select-none",
                     "{initial}"
+                }
+                if let Some(avatar_url) = &link.avatar_url {
+                    if !img_failed() {
+                        img {
+                            class: "absolute inset-0 w-full h-full object-cover rounded-2xl",
+                            src: "{avatar_url}",
+                            alt: "{link.name} 的头像",
+                            onerror: move |_| img_failed.set(true),
+                        }
+                    }
                 }
             }
             div { class: "flex-1 min-w-0",
