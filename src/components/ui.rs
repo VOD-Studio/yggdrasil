@@ -332,8 +332,13 @@ pub fn Tooltip(
 /// Popover 遮罩与面板的层级(z-40 遮罩 < z-50 面板),与 Tooltip/lightbox 同 z-50。
 const POPOVER_OVERLAY_CLASS: &str = "fixed inset-0 z-40";
 /// Popover 面板:卡片化大圆角 + 阴影 + 淡入缩放动画。
+/// 居中变体:animate-popover-enter 的关键帧烘了 translateX(-50%),与居中的
+/// 静态 transform 一致;端点对齐(start/end)变体静态 transform 为空,必须换用
+/// 无位移的 animate-popover-enter-edge,否则 both fill 期面板水平错位半宽。
 const POPOVER_PANEL_CLASS: &str =
     "fixed z-50 bg-[var(--color-paper-entry)] rounded-2xl shadow-lg border border-[var(--color-paper-border)] p-4 animate-popover-enter";
+const POPOVER_PANEL_EDGE_CLASS: &str =
+    "fixed z-50 bg-[var(--color-paper-entry)] rounded-2xl shadow-lg border border-[var(--color-paper-border)] p-4 animate-popover-enter-edge";
 
 /// 受控式通用 Popover(浮层)组件。
 ///
@@ -349,7 +354,13 @@ const POPOVER_PANEL_CLASS: &str =
 ///
 /// - `placement: "top"`(默认):面板底边贴点击点上方(`bottom: 100vh - y + gap`)。
 /// - `placement: "bottom"`:面板顶边贴点击点下方(`top: y + gap`)。
-/// - 水平:面板中心对齐点击点(`left: x` + `-translate-x-1/2`)。
+/// - 水平由 `align` 决定:`"center"`(默认)面板中心对齐点击点(`left: x` +
+///   `-translate-x-1/2`);`"start"` 面板左缘贴点向右延伸(`left: x`);
+///   `"end"` 面板右缘贴点向左延伸(`right: 100vw - x`)。
+///
+/// 触发器贴近视口边缘时(如表格最右列的按钮),居中的宽面板会越出视口——
+/// 此时用 `align` 让面板朝视口内侧延伸(与 Tooltip 的 align 同款约定,
+/// 见 issue #14)。`end` 用 `right` 锚定右缘,与面板内容宽度无关,天然不越右缘。
 ///
 /// ## 关闭路径(三条)
 ///
@@ -362,6 +373,7 @@ const POPOVER_PANEL_CLASS: &str =
 /// - `open`:受控开关;`false` 时组件不渲染任何内容(SSR 安全)。
 /// - `anchor_x` / `anchor_y`:触发点击的视口坐标。
 /// - `placement`:`"top"`(默认)/ `"bottom"`。
+/// - `align`:`"center"`(默认)/ `"start"` / `"end"`(水平对齐,见上)。
 /// - `children`:面板内容(确认框等)。
 /// - `on_close`:任一关闭路径触发。
 #[component]
@@ -373,6 +385,7 @@ pub fn Popover(
     children: Element,
     on_close: EventHandler<()>,
     #[props(default = "top")] placement: &'static str,
+    #[props(default = "center")] align: &'static str,
 ) -> Element {
     // Escape 关闭:组件 open 时注册全局 keydown 监听,关闭/卸载时移除。
     // 手写最小 listener 而非复用 use_event_listener——后者 handler 无参,拿不到
@@ -427,21 +440,25 @@ pub fn Popover(
         return rsx! {};
     }
 
-    // 面板定位:top/bottom 决定垂直方向;水平统一居中于点击点。
+    // 面板定位:placement 决定垂直方向;align 决定水平。end 用 right 锚定
+    // (右缘 = 点击点),无需 translate,故与面板宽度解耦;start/end 的入场动画
+    // 必须是无位移变体(关键帧 fill 值须等于静态 transform,见常量注释)。
+    let horizontal = match align {
+        "start" => format!("left: {x}px;", x = anchor_x),
+        "end" => format!("right: calc(100vw - {x}px);", x = anchor_x),
+        _ => format!("left: {x}px; transform: translateX(-50%);", x = anchor_x),
+    };
     let style = if placement == "bottom" {
-        format!(
-            "top: {y}px; left: {x}px; transform: translateX(-50%);",
-            x = anchor_x,
-            y = anchor_y + 8
-        )
+        format!("top: {y}px; {horizontal}", y = anchor_y + 8)
     } else {
         // top:面板在点击点上方——用 bottom 锚定 viewport 底,差值即视口高度 - y + 间隙。
         // 视口高度用 100vh,纯 CSS 无需 JS 读取 scrollHeight。
-        format!(
-            "bottom: calc(100vh - {y}px + 8px); left: {x}px; transform: translateX(-50%);",
-            x = anchor_x,
-            y = anchor_y,
-        )
+        format!("bottom: calc(100vh - {y}px + 8px); {horizontal}", y = anchor_y)
+    };
+    let panel_class = if align == "center" {
+        POPOVER_PANEL_CLASS
+    } else {
+        POPOVER_PANEL_EDGE_CLASS
     };
 
     rsx! {
@@ -451,7 +468,7 @@ pub fn Popover(
             onclick: move |_| on_close.call(()),
         }
         // 面板:fixed 定位逃出 overflow-hidden 容器。
-        div { class: "{POPOVER_PANEL_CLASS}", style: "{style}", {children} }
+        div { class: "{panel_class}", style: "{style}", {children} }
     }
 }
 

@@ -392,12 +392,14 @@ fn BackupRow(props: BackupRowProps) -> Element {
                 }
             }
 
-            // 恢复确认 popover
+            // 恢复确认 popover。操作列贴视口右缘,居中面板会越界——
+            // align="end" 让面板右缘贴点击点、向左延伸进视口。
             Popover {
                 open: open_action().as_deref() == Some("restore"),
                 anchor_x: anchor_x(),
                 anchor_y: anchor_y(),
                 placement: "bottom",
+                align: "end",
                 on_close: move |_| open_action.set(None),
                 div { class: "w-64 space-y-3",
                     p { class: "text-sm text-paper-primary leading-relaxed",
@@ -426,12 +428,13 @@ fn BackupRow(props: BackupRowProps) -> Element {
                 }
             }
 
-            // 删除确认 popover
+            // 删除确认 popover(同 align="end",防右缘越界)
             Popover {
                 open: open_action().as_deref() == Some("delete"),
                 anchor_x: anchor_x(),
                 anchor_y: anchor_y(),
                 placement: "bottom",
+                align: "end",
                 on_close: move |_| open_action.set(None),
                 div { class: "w-64 space-y-3",
                     p { class: "text-sm text-paper-primary",

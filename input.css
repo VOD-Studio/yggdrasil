@@ -86,6 +86,24 @@
     animation: popover-enter 150ms cubic-bezier(0.22, 1, 0.36, 1) both;
   }
 
+  /* Popover 端点对齐变体（align="start"/"end"）：面板不居中于锚点，静态
+     transform 为空，关键帧不得烘 translateX(-50%)——否则 both fill 会让面板
+     水平错位半个宽度（参照 select-enter 注释的同款约束）。 */
+  @keyframes popover-enter-edge {
+    0% {
+      opacity: 0;
+      transform: scale(0.95);
+    }
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  .animate-popover-enter-edge {
+    animation: popover-enter-edge 150ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
   /* 下拉选择面板入场。面板的水平居中用 [transform:translateX(-50%)]（不用
      -translate-x-1/2 utility：Tailwind v4 的 translate utility 走独立 translate
      属性，会与此处 transform 关键帧叠加成双倍位移），关键帧 fill 值须与面板
@@ -1748,6 +1766,7 @@
   .page-enter,
   .animate-page-enter,
   .animate-popover-enter,
+  .animate-popover-enter-edge,
   .animate-select-enter,
   .animate-row-enter,
   .animate-modal-overlay-enter,
