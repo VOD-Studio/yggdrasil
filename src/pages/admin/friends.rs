@@ -22,8 +22,8 @@ use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::skeletons::friends_admin_skeleton::FriendsAdminSkeleton;
 #[cfg(target_arch = "wasm32")]
 use crate::components::ui::{
-    ADMIN_CARD_CLASS, BADGE_BASE, BTN_DANGER_OUTLINE, BTN_OUTLINE, BTN_PRIMARY, BTN_TEXT_ACCENT,
-    BTN_TEXT_RED, Popover, Tooltip,
+    Popover, Tooltip, ADMIN_CARD_CLASS, BADGE_BASE, BTN_DANGER_OUTLINE, BTN_OUTLINE, BTN_PRIMARY,
+    BTN_TEXT_ACCENT, BTN_TEXT_RED,
 };
 #[cfg(target_arch = "wasm32")]
 use crate::models::friend_link::FriendLink;
@@ -202,7 +202,13 @@ fn EditorCard() -> Element {
                         div { class: "relative h-10 w-10 shrink-0 rounded-full bg-[var(--color-paper-code-bg)] flex items-center justify-center overflow-hidden",
                             if avatar().trim().is_empty() || avatar_failed() {
                                 span { class: "text-sm font-semibold text-[var(--color-paper-primary)] select-none",
-                                    { name().chars().next().map(|c| c.to_uppercase().collect::<String>()).unwrap_or_else(|| "?".to_string()) }
+                                    {
+                                        name()
+                                            .chars()
+                                            .next()
+                                            .map(|c| c.to_uppercase().collect::<String>())
+                                            .unwrap_or_else(|| "?".to_string())
+                                    }
                                 }
                             } else {
                                 img {
@@ -481,9 +487,7 @@ fn LinkRow(link: FriendLink, state: FriendsPageState) -> Element {
                     onclick: move |_| editing.set(Some(link_for_edit.clone())),
                     "编辑"
                 }
-                Tooltip {
-                    tip: "删除友链".to_string(),
-                    align: "end",
+                Tooltip { tip: "删除友链".to_string(), align: "end",
                     button {
                         class: "{BTN_TEXT_RED}",
                         onclick: move |e| {

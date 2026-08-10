@@ -500,14 +500,15 @@ fn parse_admin_env() -> Option<AdminEnvConfig> {
 ///
 /// 失败只告警不阻断启动（与 BACKUP_* 播种一致）。
 #[cfg(feature = "server")]
-pub(crate) async fn sync_admin_from_env(
-    client: &tokio_postgres::Client,
-) -> Result<(), AppError> {
+pub(crate) async fn sync_admin_from_env(client: &tokio_postgres::Client) -> Result<(), AppError> {
     let Some(cfg) = parse_admin_env() else {
         return Ok(());
     };
     if let Err(e) = validate_username(&cfg.username) {
-        tracing::warn!("ADMIN_USERNAME={:?} 非法，跳过初始管理员同步: {e}", cfg.username);
+        tracing::warn!(
+            "ADMIN_USERNAME={:?} 非法，跳过初始管理员同步: {e}",
+            cfg.username
+        );
         return Ok(());
     }
     if let Err(e) = validate_email(&cfg.email) {
@@ -591,10 +592,7 @@ pub(crate) async fn sync_admin_from_env(
     if role != "admin" {
         // 018 迁移的角色变更触发器会在此 bump session_generation（降级期间的会话本已失效）。
         client
-            .execute(
-                "UPDATE users SET role = 'admin' WHERE id = $1",
-                &[&user_id],
-            )
+            .execute("UPDATE users SET role = 'admin' WHERE id = $1", &[&user_id])
             .await
             .map_err(AppError::query)?;
         tracing::info!("初始管理员角色已恢复为 admin: username={}", cfg.username);

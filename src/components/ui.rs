@@ -532,7 +532,10 @@ pub fn Popover(
     } else {
         // top:面板在点击点上方——用 bottom 锚定 viewport 底,差值即视口高度 - y + 间隙。
         // 视口高度用 100vh,纯 CSS 无需 JS 读取 scrollHeight。
-        format!("bottom: calc(100vh - {y}px + 8px); {horizontal}", y = anchor_y)
+        format!(
+            "bottom: calc(100vh - {y}px + 8px); {horizontal}",
+            y = anchor_y
+        )
     };
     let panel_class = if align == "center" {
         POPOVER_PANEL_CLASS

@@ -208,10 +208,7 @@ fn is_local_asset_url(value: &str) -> bool {
     let Some(path) = value.strip_prefix("/uploads/") else {
         return false;
     };
-    !path.is_empty()
-        && !path.starts_with('/')
-        && !path.contains("..")
-        && !path.contains('\0')
+    !path.is_empty() && !path.starts_with('/') && !path.contains("..") && !path.contains('\0')
 }
 
 #[cfg(feature = "server")]

@@ -385,7 +385,11 @@ fn ToolsNavGroup() -> Element {
                     // 左侧竖线引导 + 缩进表示层级。
                     div { class: "ml-4 pl-3 border-l border-[var(--color-paper-border)] flex flex-col gap-1",
                         for (dest, label, active) in [
-                            (Route::SiteSettingsPage {}, "设置", matches!(route, Route::SiteSettingsPage {})),
+                            (
+                                Route::SiteSettingsPage {},
+                                "设置",
+                                matches!(route, Route::SiteSettingsPage {}),
+                            ),
                             (Route::Runner {}, "试运行", matches!(route, Route::Runner {})),
                             (Route::Mcp {}, "MCP", matches!(route, Route::Mcp {})),
                             (Route::System {}, "系统", matches!(route, Route::System {})),

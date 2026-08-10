@@ -210,7 +210,7 @@ pub fn FormSelect<T: Clone + PartialEq + 'static>(
                 aria_haspopup: "listbox",
                 aria_expanded: "{open()}",
                 aria_activedescendant: active_descendant,
-                aria_label: aria_label,
+                aria_label,
                 onclick: move |_| {
                     // 打开态下触发器被透明遮罩盖住，点击落在遮罩上即关闭；
                     // 这里只需处理「未开 → 开」。
@@ -369,11 +369,7 @@ fn parse_hhmm(value: &str) -> (u8, u8) {
 /// - `value`：当前值 "HH:MM"（受控；非法值回退显示 00:00，不 panic）
 /// - `onchange`：选中变化回调，回传组合后的 "HH:MM"
 #[component]
-pub fn TimePicker(
-    id: Option<String>,
-    value: String,
-    onchange: EventHandler<String>,
-) -> Element {
+pub fn TimePicker(id: Option<String>, value: String, onchange: EventHandler<String>) -> Element {
     // 无边框紧凑触发器：外框由容器统一绘制（镜像「保留份数」步进器）。
     // 定义在函数体内：模块级私有常量若仅被 wasm 门控调用点引用，会在 server
     // 构建下触发 dead_code（同 FormSelect 的 TRIGGER_CLASS 先例）。
