@@ -187,3 +187,12 @@ The blog is also a **Model Context Protocol server** (single `/mcp` endpoint, St
 ## CI
 
 GitHub Actions (`.github/workflows/ci.yml`), seven jobs following the 2026 native multi-runner pattern (zero QEMU): `test` (cargo fmt/clippy + wasm32 target check + Biome lint on `libs/` + `cargo test --all-features`) runs on **every push, PR, and manual trigger**. `build-amd64` (native x86_64 runner, **plain `Dockerfile`** with cargo-chef + GHA layer cache; calls `docker buildx` directly — NOT `make docker-amd64` — to inject `--cache-from/to type=gha`; includes a container-boot smoke test that runs the image without Postgres and greps the startup banner) runs on **`main`/`master` push, tag push, or manual** (PRs and non-trunk branches rely on `test` only — saving CI minutes and GHA cache quota). `build-arm64` (native `ubuntu-24.04-arm` runner, plain Dockerfile builds `aarch64-unknown-linux-musl` natively — 4-8× faster than QEMU), `publish-ghcr` (merges amd64+arm64 into a multi-arch manifest → GHCR archive; deployment still uses `deploy`'s scp, GHCR is read-only), `publish-runners` (builds the 6 Code Runner sandbox images → GHCR, **skipped automatically when `docker/` is unchanged since the previous tag**), `release` (three GitHub Release assets: `yggdrasil-amd64.tar.gz`, `yggdrasil-arm64.tar.gz`, `yggdrasil-x86_64-musl.tar.gz`; body extracted from `CHANGELOG.md`), and `deploy` (scp amd64 image to xun → `docker load` + `docker compose up -d app` rolling restart, postgres/data volumes untouched → polls `/readyz` via `nginx-proxy`, mirrors `scripts/xun.fish`) all run **only on tag push (`v*`) or `workflow_dispatch`**. **Note**: CI builds with the plain `Dockerfile` natively on each arch's runner; `Dockerfile.cross` (two-builder glibc+zig cross-compile) is the **local-only** path used by `make docker-amd64` / `scripts/xun.fish` on Apple Silicon — CI never invokes it. Required `deploy` secrets: `XUN_SSH_KEY`, `XUN_HOST`, `XUN_USER`; optional `XUN_PORT`, `XUN_DEPLOY_DIR` (default `/root/docker/yggdrasil`), `XUN_KNOWN_HOSTS` (server fingerprint — recommended over the `ssh-keyscan` TOFU fallback). The deploy key's public half goes in xun's `~/.ssh/authorized_keys`.
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues at `VOD-Studio/yggdrasil` via the `origin` remote. See `docs/agents/issue-tracker.md`.
+
+### Domain docs
+
+Multi-context layout: `CONTEXT-MAP.md` points to the Rust/Dioxus and JavaScript workspace contexts. See `docs/agents/domain.md`.
