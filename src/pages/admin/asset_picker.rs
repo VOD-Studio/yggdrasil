@@ -91,6 +91,7 @@ pub fn AssetPickerModal(
         // 遮罩：点击关闭
         div {
             class: "fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm sm:p-6 modal-overlay animate-modal-overlay-enter",
+            class: if is_closing { "is-closing" } else { "" },
             onclick: move |_| {
                 closing.set(true);
                 visible.set(false);
