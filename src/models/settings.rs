@@ -152,6 +152,43 @@ pub struct BackupSettingsView {
     pub next_run_at: Option<String>,
 }
 
+// ============================================================================
+// 素材上传配置
+// ============================================================================
+
+/// 默认并发上传数：worker 池并发 3，张间停顿随之放大（见 asset_upload.rs），
+/// 聚合速率与默认上传限流桶（2/s）对齐。
+pub const DEFAULT_UPLOAD_CONCURRENCY: i32 = 3;
+/// 并发数下限（1 = 退化为顺序上传）。
+#[cfg(feature = "server")]
+pub const MIN_UPLOAD_CONCURRENCY: i32 = 1;
+/// 并发数上限。防止误填超大值瞬间打满浏览器连接与上传限流突发桶。
+#[cfg(feature = "server")]
+pub const MAX_UPLOAD_CONCURRENCY: i32 = 8;
+
+/// 素材上传配置（/admin/assets 上传弹窗行为，仅 admin 可见/可改）。
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct UploadSettings {
+    /// 同时发起的上传任务数（worker 池大小）。
+    pub concurrency: i32,
+}
+
+impl Default for UploadSettings {
+    fn default() -> Self {
+        Self {
+            concurrency: DEFAULT_UPLOAD_CONCURRENCY,
+        }
+    }
+}
+
+impl UploadSettings {
+    /// 将并发数钳制到合法范围 [MIN, MAX]。
+    #[cfg(feature = "server")]
+    pub fn clamp_concurrency(n: i32) -> i32 {
+        n.clamp(MIN_UPLOAD_CONCURRENCY, MAX_UPLOAD_CONCURRENCY)
+    }
+}
+
 /// 默认 GitHub 链接：空字符串表示不展示页脚图标。
 pub const DEFAULT_SITE_GITHUB_URL: &str = "";
 /// GitHub 链接最大长度（字符），防止滥用。
@@ -362,5 +399,28 @@ mod tests {
         let s = BackupSettings { time_utc: "garbage".into(), ..Default::default() };
         let now = Utc.with_ymd_and_hms(2026, 8, 10, 0, 0, 0).unwrap();
         assert!(s.next_run_after(now).is_none());
+    }
+
+    // ── UploadSettings ───────────────────────────────────────────
+
+    #[test]
+    fn upload_settings_default() {
+        assert_eq!(UploadSettings::default().concurrency, 3);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn upload_clamp_concurrency() {
+        assert_eq!(UploadSettings::clamp_concurrency(0), MIN_UPLOAD_CONCURRENCY);
+        assert_eq!(
+            UploadSettings::clamp_concurrency(-1),
+            MIN_UPLOAD_CONCURRENCY
+        );
+        assert_eq!(UploadSettings::clamp_concurrency(9), MAX_UPLOAD_CONCURRENCY);
+        assert_eq!(
+            UploadSettings::clamp_concurrency(i32::MAX),
+            MAX_UPLOAD_CONCURRENCY
+        );
+        assert_eq!(UploadSettings::clamp_concurrency(5), 5);
     }
 }

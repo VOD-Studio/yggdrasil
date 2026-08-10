@@ -1,10 +1,12 @@
-//! 回收站、自动备份与站点配置接口。
+//! 回收站、自动备份、素材上传与站点配置接口。
 //!
 //! - 回收站配置：读取与更新自动清理设置，需要 admin 权限。
 //! - 自动备份配置：读取与更新定时备份设置（含上次结果/下次执行时间），需要 admin。
 //!   `load_backup_settings` / `save_last_backup_run` 同时供备份核心与调度任务复用。
 //!   同名 `BACKUP_*` 环境变量仅在对应 settings 键缺失时播种初始值（首次部署），
 //!   之后以面板写入的 DB 值为准。
+//! - 素材上传配置：读取与更新上传弹窗并发数，需要 admin。`UPLOAD_CONCURRENCY`
+//!   环境变量播种语义与 `BACKUP_*` 一致（仅键缺失时生效）。
 //! - 站点公开配置：页脚 GitHub 链接等，`get_site_settings` 公开读取（前台页脚 SSR），
 //!   `update_site_settings` 仅 admin。配置持久化到 settings 键值表。
 //! Dioxus server function，注册在 `/api` 路径下。
@@ -20,7 +22,7 @@ use crate::api::auth::get_current_admin_user;
 use crate::api::error::AppError;
 #[cfg(feature = "server")]
 use crate::db::pool::get_conn;
-use crate::models::settings::{BackupSettingsView, SiteSettings, TrashSettings};
+use crate::models::settings::{BackupSettingsView, SiteSettings, TrashSettings, UploadSettings};
 // 仅 server 构建的函数体引用（WASM 端 server fn 体被宏剥离）。
 #[cfg(feature = "server")]
 use crate::models::settings::{BackupSettings, LastBackupRun};
@@ -364,6 +366,99 @@ pub async fn update_backup_settings(
             next_run_at: None,
         })
     }
+}
+
+// ============================================================================
+// 素材上传配置
+// ============================================================================
+
+/// 启动时用 `UPLOAD_CONCURRENCY` 环境变量播种素材上传并发数。
+///
+/// 语义与 [`seed_backup_settings_from_env`] 一致：仅当 settings 键**不存在**时
+/// 插入（首次部署），之后以「站点配置」面板写入的 DB 值为准，重启不被 env 覆盖。
+/// 非法值只告警跳过，不影响启动。
+#[cfg(feature = "server")]
+pub(crate) async fn seed_upload_settings_from_env(
+    client: &tokio_postgres::Client,
+) -> Result<(), AppError> {
+    let Ok(v) = std::env::var("UPLOAD_CONCURRENCY") else {
+        return Ok(());
+    };
+    let value = match v.trim().parse::<i32>() {
+        Ok(n) => UploadSettings::clamp_concurrency(n),
+        Err(_) => {
+            tracing::warn!("UPLOAD_CONCURRENCY={v:?} 非法（期望整数），跳过");
+            return Ok(());
+        }
+    };
+    client
+        .execute(
+            "INSERT INTO settings (key, value) VALUES ('upload_concurrency', $1) ON CONFLICT (key) DO NOTHING",
+            &[&value.to_string()],
+        )
+        .await
+        .map_err(AppError::query)?;
+    tracing::info!("素材上传配置已从环境变量播种: upload_concurrency={value}（仅键缺失时生效）");
+    Ok(())
+}
+
+/// 读取素材上传配置（上传弹窗并发数）。
+///
+/// settings 表缺失键时回退到默认值，保证向后兼容。
+#[server(GetUploadSettings, "/api")]
+pub async fn get_upload_settings() -> Result<UploadSettings, ServerFnError> {
+    let _user = get_current_admin_user().await?;
+
+    #[cfg(feature = "server")]
+    {
+        let client = get_conn().await.map_err(AppError::db_conn)?;
+
+        let concurrency: i32 = client
+            .query_opt(
+                "SELECT value FROM settings WHERE key = 'upload_concurrency'",
+                &[],
+            )
+            .await
+            .map_err(AppError::query)?
+            .and_then(|r| r.get::<_, String>("value").parse().ok())
+            .map(UploadSettings::clamp_concurrency)
+            .unwrap_or(crate::models::settings::DEFAULT_UPLOAD_CONCURRENCY);
+
+        Ok(UploadSettings { concurrency })
+    }
+
+    #[cfg(not(feature = "server"))]
+    {
+        Ok(UploadSettings::default())
+    }
+}
+
+/// 更新素材上传配置。
+///
+/// concurrency 会被 clamp 到合法范围后写入。
+#[server(UpdateUploadSettings, "/api")]
+pub async fn update_upload_settings(concurrency: i32) -> Result<UploadSettings, ServerFnError> {
+    let _user = get_current_admin_user().await?;
+
+    let concurrency = UploadSettings::clamp_concurrency(concurrency);
+
+    #[cfg(feature = "server")]
+    {
+        let client = get_conn().await.map_err(AppError::db_conn)?;
+
+        client
+            .execute(
+                "INSERT INTO settings (key, value, updated_at) VALUES ('upload_concurrency', $1, NOW())
+                 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()",
+                &[&concurrency.to_string()],
+            )
+            .await
+            .map_err(AppError::query)?;
+
+        tracing::info!("Upload settings updated: concurrency={}", concurrency);
+    }
+
+    Ok(UploadSettings { concurrency })
 }
 
 // ============================================================================

@@ -2,9 +2,13 @@
 //!
 //! 三条入口（点击选择 / 拖拽 / 粘贴）收敛到同一个 [`enqueue_files`]：拿到的
 //! `web_sys::File` 先过 [`validate_file`]（镜像服务端 5MiB / 四种 MIME 的硬限制，
-//! 不合格立即记失败行、不发请求），合格项入队后由**每批一个**的顺序任务逐个上传
-//! （张间 500ms 把稳态速率压到 `RATE_LIMIT_UPLOAD_PER_SEC=2` 以下，防批量拖入触发
-//! 429）。上传管线与文章编辑器完全同源（`upload_image_file` → `POST /api/upload`）。
+//! 不合格立即记失败行、不发请求），合格项入共享队列后由 **worker 池**并发上传：
+//! 在跑 worker 数上限 = 并发配置（「站点配置」面板 / `UPLOAD_CONCURRENCY` env 播种，
+//! 挂载时经 `get_upload_settings` 拉取，失败回退默认 3）。每个 worker 张间停顿
+//! `500ms × 当前并发数`——N 路并行时聚合速率恒 ≤ 2/s，与默认上传限流桶
+//! （`RATE_LIMIT_UPLOAD_PER_SEC=2` / `BURST=15`）对齐：N=1 时与旧顺序版逐张 500ms
+//! 完全一致，N 调大也不触发 429。上传管线与文章编辑器完全同源
+//! （`upload_image_file` → `POST /api/upload`）。
 //!
 //! Esc / 粘贴监听挂在 window 上，只在 mount 注册一次、`use_drop` 移除；handler 内用
 //! `visible.peek()` 守卫——modal 关闭后粘贴绝不触发上传。无文件的文本粘贴不拦截
@@ -13,12 +17,13 @@
 //! 组件 scope id 在粘贴 handler 里经 `Runtime::in_scope` 显式进栈后再入队，使粘贴路径
 //! 与 Dioxus 事件入口（拖拽/选择）的 spawn 语义完全一致。
 //!
-//! 组件始终挂载（`visible` 只控制渲染早退），上传中途允许关闭弹窗：spawn 的任务与
-//! signals 随组件实例存活，后台续传，批末有 ≥1 个成功仍照常回调 `on_uploaded`。
+//! 组件始终挂载（`visible` 只控制渲染早退），上传中途允许关闭弹窗：spawn 的 worker 与
+//! signals 随组件实例存活，后台续传，每批（一次拖拽/选择/粘贴）收尾时 ≥1 个成功仍照常
+//! 回调 `on_uploaded`。
 //!
-//! 注：`next_id` 用 `Rc<Cell<u64>>` 而非裸 `Cell`——`use_hook` 每次渲染都会 clone
-//! 存储值（dioxus-core `use_hook_inner` 走 `.cloned()`），裸 Cell 会被按值拷贝，
-//! 各入口闭包拿到互不同步的副本导致 id 冲突；Rc 克隆共享同一个 Cell。
+//! 注：worker 池共享状态用 `Rc<UploadPool>` 而非裸 Cell/RefCell——`use_hook` 每次渲染
+//! 都会 clone 存储值（dioxus-core `use_hook_inner` 走 `.cloned()`），裸结构会被按值
+//! 拷贝，各入口闭包拿到互不同步的副本导致 id 冲突与队列分裂；Rc 克隆共享同一实例。
 
 use dioxus::prelude::*;
 
@@ -72,6 +77,24 @@ struct UploadItem {
     removing: bool,
 }
 
+/// 一批入队（一次拖拽/选择/粘贴）的完成追踪：remaining 归零且 ≥1 成功时回调一次。
+#[cfg(target_arch = "wasm32")]
+struct BatchCtx {
+    remaining: std::cell::Cell<usize>,
+    any_done: std::cell::Cell<bool>,
+}
+
+/// Worker 池共享状态：id 分配、重试句柄表、待传队列、在跑 worker 数。
+/// `use_hook` 持 `Rc<UploadPool>`：渲染期 clone 的是 Rc（共享同一实例），各入口闭包
+/// 与 worker 看到的永远是同一份队列/句柄表。
+#[cfg(target_arch = "wasm32")]
+struct UploadPool {
+    next_id: std::cell::Cell<u64>,
+    files: std::cell::RefCell<Vec<(u64, web_sys::File)>>,
+    queue: std::cell::RefCell<std::collections::VecDeque<(u64, std::rc::Rc<BatchCtx>)>>,
+    active_workers: std::cell::Cell<u32>,
+}
+
 /// 预校验：MIME 白名单 + 5MiB 上限。失败返回可读原因（直接展示在行内，不发请求）。
 #[cfg(any(test, target_arch = "wasm32"))]
 fn validate_file(mime: &str, size: u64) -> Result<(), String> {
@@ -93,21 +116,72 @@ fn set_status(items: &mut Signal<Vec<UploadItem>>, id: u64, status: UploadStatus
     }
 }
 
-/// 三入口收敛点：校验入队 + 起批任务。仅 WASM 端存在（`web_sys::File` / `spawn` /
-/// `upload_image_file` 都是 WASM-only 符号）。
+/// 单个 worker 的消费循环：队列空即退出并归还名额。
+///
+/// 张间停顿 `500ms × 当前并发数`：N 个 worker 并行时聚合速率恒 ≤ 2/s（停顿随 N
+/// 线性放大），与默认上传限流桶（`RATE_LIMIT_UPLOAD_PER_SEC=2` / `BURST=15`）对齐——
+/// N=1 时与旧顺序版逐张 500ms 完全一致，N 调大也不会触发 429。
+#[cfg(target_arch = "wasm32")]
+async fn worker_loop(
+    mut items: Signal<Vec<UploadItem>>,
+    pool: std::rc::Rc<UploadPool>,
+    concurrency: Signal<i32>,
+    on_uploaded: EventHandler<()>,
+) {
+    loop {
+        // borrow 不出块，guard 不跨 await。
+        let next = pool.queue.borrow_mut().pop_front();
+        let Some((id, batch)) = next else { break };
+        // 句柄可能已被「×」移除：跳过上传但仍计入批次完成度（否则该批永不合拢，
+        // 其他成功项的 on_uploaded 无法触发）。
+        let file = pool
+            .files
+            .borrow()
+            .iter()
+            .find(|(fid, _)| *fid == id)
+            .map(|(_, f)| f.clone());
+        if let Some(file) = file {
+            set_status(&mut items, id, UploadStatus::Uploading);
+            match upload_image_file(file).await {
+                Ok(_) => {
+                    set_status(&mut items, id, UploadStatus::Done);
+                    batch.any_done.set(true);
+                }
+                Err(msg) => set_status(&mut items, id, UploadStatus::Failed(msg)),
+            }
+        }
+        // 本批最后一条收尾且 ≥1 成功 → 回调一次（父组件刷新网格）。
+        let remaining = batch.remaining.get() - 1;
+        batch.remaining.set(remaining);
+        if remaining == 0 && batch.any_done.get() {
+            on_uploaded.call(());
+        }
+        // 队列未空则停顿压速率；停顿随并发数线性放大（见 fn doc），live 读取
+        // 让面板改动即时生效。clamp(1, 32) 纯防御：服务端已钳到 1–8，
+        // 此处只防异常值导致 500*n 溢出或路径级长停。
+        if !pool.queue.borrow().is_empty() {
+            let n = (*concurrency.peek()).clamp(1, 32) as u32;
+            crate::utils::time::sleep_ms(500 * n).await;
+        }
+    }
+    pool.active_workers.set(pool.active_workers.get() - 1);
+}
+
+/// 三入口收敛点：校验入队 + 按需补足 worker。仅 WASM 端存在（`web_sys::File` /
+/// `spawn` / `upload_image_file` 都是 WASM-only 符号）。
 #[cfg(target_arch = "wasm32")]
 fn enqueue_files(
     mut items: Signal<Vec<UploadItem>>,
-    next_id: std::rc::Rc<std::cell::Cell<u64>>,
-    files: std::rc::Rc<std::cell::RefCell<Vec<(u64, web_sys::File)>>>,
+    pool: std::rc::Rc<UploadPool>,
+    concurrency: Signal<i32>,
     on_uploaded: EventHandler<()>,
     new_files: Vec<web_sys::File>,
 ) {
     // 1) 校验入队：不合格直接记 Failed（不发请求）；合格记 Queued 并留存句柄供重试。
     let mut valid_ids = Vec::new();
     for file in new_files {
-        let id = next_id.get() + 1;
-        next_id.set(id);
+        let id = pool.next_id.get() + 1;
+        pool.next_id.set(id);
         let item = UploadItem {
             id,
             name: file.name(),
@@ -115,7 +189,7 @@ fn enqueue_files(
             removing: false,
             status: match validate_file(&file.type_(), file.size() as u64) {
                 Ok(()) => {
-                    files.borrow_mut().push((id, file));
+                    pool.files.borrow_mut().push((id, file));
                     valid_ids.push(id);
                     UploadStatus::Queued
                 }
@@ -128,36 +202,24 @@ fn enqueue_files(
         return;
     }
 
-    // 2) 一批一个顺序任务逐个上传：与服务端上传限流对齐
-    //    （RATE_LIMIT_UPLOAD_PER_SEC=2 / BURST=15），张间 500ms 把稳态速率压到
-    //    2/s 以下防 429。批末有 ≥1 个成功才回调 on_uploaded（一批一次）。
-    spawn(async move {
-        let mut any_done = false;
-        for (idx, id) in valid_ids.iter().enumerate() {
-            // 句柄可能已被「×」移除：跳过该条。borrow 不出块，guard 不跨 await。
-            let file = files
-                .borrow()
-                .iter()
-                .find(|(fid, _)| fid == id)
-                .map(|(_, f)| f.clone());
-            let Some(file) = file else { continue };
-            set_status(&mut items, *id, UploadStatus::Uploading);
-            match upload_image_file(file).await {
-                Ok(_) => {
-                    set_status(&mut items, *id, UploadStatus::Done);
-                    any_done = true;
-                }
-                Err(msg) => set_status(&mut items, *id, UploadStatus::Failed(msg)),
-            }
-            // 本批非最后一张时停顿压速率（后续项已被移除也只是多等一拍，无害）。
-            if idx + 1 < valid_ids.len() {
-                crate::utils::time::sleep_ms(500).await;
-            }
-        }
-        if any_done {
-            on_uploaded.call(());
-        }
+    // 2) 一批一个 BatchCtx 追踪完成度；id 入共享队列后补足 worker：在跑数低于
+    //    并发上限且队列非空时逐个 spawn（worker 队列空自退，不会超额驻留）。
+    let batch = std::rc::Rc::new(BatchCtx {
+        remaining: std::cell::Cell::new(valid_ids.len()),
+        any_done: std::cell::Cell::new(false),
     });
+    {
+        let mut q = pool.queue.borrow_mut();
+        for id in valid_ids {
+            q.push_back((id, batch.clone()));
+        }
+    }
+    // clamp 上界与 worker_loop 的停顿同款防御（正常值 1–8）。
+    let target = (*concurrency.peek()).clamp(1, 32) as u32;
+    while pool.active_workers.get() < target && !pool.queue.borrow().is_empty() {
+        pool.active_workers.set(pool.active_workers.get() + 1);
+        spawn(worker_loop(items, pool.clone(), concurrency, on_uploaded));
+    }
 }
 
 /// 素材上传 modal。
@@ -174,12 +236,32 @@ pub fn AssetUploadModal(mut visible: Signal<bool>, on_uploaded: EventHandler<()>
     // 是否曾开过弹窗：mount 时 visible=false 也会跑一次 use_effect，不加此守卫会
     // 在页面加载后 200ms 内渲染一层透明遮罩（opacity:0 仍拦截点击）吞掉首次点击。
     let mut opened = use_signal(|| false);
-    // 自增 id 分配器 + 重试用文件句柄表（WASM-only）：use_hook 持 Rc，跨渲染共享。
+    // worker 池共享状态（WASM-only）：use_hook 持 Rc，跨渲染共享同一实例。
     #[cfg(target_arch = "wasm32")]
-    let next_id = use_hook(|| std::rc::Rc::new(std::cell::Cell::new(0_u64)));
+    let pool = use_hook(|| {
+        std::rc::Rc::new(UploadPool {
+            next_id: std::cell::Cell::new(0_u64),
+            files: std::cell::RefCell::new(Vec::new()),
+            queue: std::cell::RefCell::new(std::collections::VecDeque::new()),
+            active_workers: std::cell::Cell::new(0),
+        })
+    });
+    // 并发配置：默认值先行，挂载后经 admin server fn 拉服务端值覆盖（面板改了
+    // 无需刷新页面——下次打开本站页面即生效；进行中的 worker live 读取停顿）。
+    let mut concurrency: Signal<i32> =
+        use_signal(|| crate::models::settings::DEFAULT_UPLOAD_CONCURRENCY);
+
+    // 挂载即读服务端并发配置；失败静默回退默认值，不阻塞上传。
     #[cfg(target_arch = "wasm32")]
-    let files =
-        use_hook(|| std::rc::Rc::new(std::cell::RefCell::new(Vec::<(u64, web_sys::File)>::new())));
+    {
+        use_effect(move || {
+            spawn(async move {
+                if let Ok(s) = crate::api::settings::get_upload_settings().await {
+                    concurrency.set(s.concurrency);
+                }
+            });
+        });
+    }
 
     // window 全局监听（Esc 关闭 + 粘贴上传）：组件始终挂载，故只在 mount 注册一次，
     // use_drop 移除；handler 内 peek 守卫——modal 关闭后 Esc/粘贴都不响应。
@@ -199,9 +281,8 @@ pub fn AssetUploadModal(mut visible: Signal<bool>, on_uploaded: EventHandler<()>
         let scope_id = dioxus::core::Runtime::current()
             .try_current_scope_id()
             .unwrap_or(dioxus::core::ScopeId::ROOT);
-        // effect 闭包 move 捕获的是这两份克隆，原值留给下方 drop/change 事件闭包。
-        let next_id_for_paste = next_id.clone();
-        let files_for_paste = files.clone();
+        // effect 闭包 move 捕获的是这份克隆，原值留给下方 drop/change 事件闭包。
+        let pool_for_paste = pool.clone();
         use_effect(move || {
             let Some(window) = web_sys::window() else {
                 return;
@@ -217,9 +298,8 @@ pub fn AssetUploadModal(mut visible: Signal<bool>, on_uploaded: EventHandler<()>
                     }
                 })
                     as Box<dyn FnMut(web_sys::KeyboardEvent)>);
-            // 内层 paste 闭包再各持一份克隆（FnMut effect 的捕获不可被 move 出）。
-            let next_id_in_paste = next_id_for_paste.clone();
-            let files_in_paste = files_for_paste.clone();
+            // 内层 paste 闭包再持一份克隆（FnMut effect 的捕获不可被 move 出）。
+            let pool_in_paste = pool_for_paste.clone();
             let on_paste =
                 wasm_bindgen::prelude::Closure::wrap(Box::new(move |ev: web_sys::ClipboardEvent| {
                     if !*visible.peek() {
@@ -243,10 +323,9 @@ pub fn AssetUploadModal(mut visible: Signal<bool>, on_uploaded: EventHandler<()>
                         // spawn 与 Dioxus 事件入口（拖拽/选择）行为完全一致。
                         // Rc 句柄逐事件克隆进内层闭包（外层 FnMut 的捕获不可 move 出，
                         // 同 sql_console 的 on_run_shortcut 闭包包装考虑）。
-                        let next_id_call = next_id_in_paste.clone();
-                        let files_call = files_in_paste.clone();
+                        let pool_call = pool_in_paste.clone();
                         dioxus::core::Runtime::current().in_scope(scope_id, move || {
-                            enqueue_files(items, next_id_call, files_call, on_uploaded, collected);
+                            enqueue_files(items, pool_call, concurrency, on_uploaded, collected);
                         });
                     }
                 })
@@ -277,13 +356,11 @@ pub fn AssetUploadModal(mut visible: Signal<bool>, on_uploaded: EventHandler<()>
 
     // 每个 move 事件闭包独占一份 Rc 克隆（move 闭包按整个变量捕获）。
     #[cfg(target_arch = "wasm32")]
-    let (next_id_for_drop, next_id_for_change) = (next_id.clone(), next_id.clone());
-    #[cfg(target_arch = "wasm32")]
-    let (files_for_drop, files_for_change) = (files.clone(), files.clone());
+    let (pool_for_drop, pool_for_change) = (pool.clone(), pool.clone());
     // 行列表内层 for 闭包用：状态区 keyed 包装引入的嵌套闭包无法 move 外层闭包捕获的
     // Rc（FnMut 链，E0507），故在组件体预克隆一份，供内层闭包从组件体直接捕获。
     #[cfg(target_arch = "wasm32")]
-    let files_for_rows = files.clone();
+    let pool_for_rows = pool.clone();
 
     // visible 翻转驱动关闭动画：关闭入口（× / 遮罩 / Esc）会同步先置 closing 再翻
     // visible（同帧渲染在存活元素上换 .is-closing 类 → transition 从可见态出发）；
@@ -376,8 +453,8 @@ pub fn AssetUploadModal(mut visible: Signal<bool>, on_uploaded: EventHandler<()>
                                 if !collected.is_empty() {
                                     enqueue_files(
                                         items,
-                                        next_id_for_drop.clone(),
-                                        files_for_drop.clone(),
+                                        pool_for_drop.clone(),
+                                        concurrency,
                                         on_uploaded,
                                         collected,
                                     );
@@ -427,8 +504,8 @@ pub fn AssetUploadModal(mut visible: Signal<bool>, on_uploaded: EventHandler<()>
                                     if !collected.is_empty() {
                                         enqueue_files(
                                             items,
-                                            next_id_for_change.clone(),
-                                            files_for_change.clone(),
+                                            pool_for_change.clone(),
+                                            concurrency,
                                             on_uploaded,
                                             collected,
                                         );
@@ -473,8 +550,8 @@ pub fn AssetUploadModal(mut visible: Signal<bool>, on_uploaded: EventHandler<()>
                                                     // for 闭包体内声明 Rc 局部：下层 onclick 的 move 捕获落在本层
                                                     // 局部（可自由 move），而非跨层 move 外层闭包捕获（FnMut 链 E0507）。
                                                     #[cfg(target_arch = "wasm32")]
-                                                    let (files_for_retry, files_for_remove) =
-                                                        (files_for_rows.clone(), files_for_rows.clone());
+                                                    let (pool_for_retry, pool_for_remove) =
+                                                        (pool_for_rows.clone(), pool_for_rows.clone());
                                                     rsx! {
                                                         div {
                                                             key: "{status_key}",
@@ -504,7 +581,8 @@ pub fn AssetUploadModal(mut visible: Signal<bool>, on_uploaded: EventHandler<()>
                                                                             #[cfg(target_arch = "wasm32")]
                                                                             {
                                                                                 // 从 files 表取回句柄重发本条。
-                                                                                let file = files_for_retry
+                                                                                let file = pool_for_retry
+                                                                                    .files
                                                                                     .borrow()
                                                                                     .iter()
                                                                                     .find(|(fid, _)| *fid == item_id)
@@ -540,7 +618,8 @@ pub fn AssetUploadModal(mut visible: Signal<bool>, on_uploaded: EventHandler<()>
                                                                                 }
                                                                             }
                                                                             #[cfg(target_arch = "wasm32")]
-                                                                            files_for_remove
+                                                                            pool_for_remove
+                                                                                .files
                                                                                 .borrow_mut()
                                                                                 .retain(|(fid, _)| *fid != item_id);
                                                                             spawn(async move {

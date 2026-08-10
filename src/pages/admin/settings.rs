@@ -1,8 +1,9 @@
 //! 后台「站点配置」页面。
 //!
-//! 管理员在此维护前台公开配置（当前为页脚 GitHub 链接）。数据经 Dioxus server
-//! functions（`src/api/settings.rs`）读写；写入成功后服务端失效 moka 缓存与全部
-//! 公开页 SSR 缓存，前台下次访问立即生效。
+//! 管理员在此维护站点级配置：前台公开配置（页脚 GitHub 链接）与后台行为参数
+//! （素材上传并发数）。数据经 Dioxus server functions（`src/api/settings.rs`）
+//! 读写；GitHub 链接写入成功后服务端失效 moka 缓存与全部公开页 SSR 缓存，前台
+//! 下次访问立即生效；上传并发数由上传弹窗在打开页面时拉取生效。
 //!
 //! 仅 WASM 前端交互（照 mcp.rs / friends.rs 的 `#[cfg(target_arch = "wasm32")]`
 //! 门控模式）。
@@ -10,13 +11,15 @@
 use dioxus::prelude::*;
 
 #[cfg(target_arch = "wasm32")]
-use crate::api::settings::{get_site_settings, update_site_settings};
+use crate::api::settings::{
+    get_site_settings, get_upload_settings, update_site_settings, update_upload_settings,
+};
 #[cfg(target_arch = "wasm32")]
-use crate::components::forms::{FormInput, FormLabel, INPUT_CLASS};
+use crate::components::forms::{FormInput, FormLabel, FormSelect};
 #[cfg(target_arch = "wasm32")]
 use crate::components::ui::{LoadingButton, ADMIN_CARD_CLASS};
 #[cfg(target_arch = "wasm32")]
-use crate::models::settings::SiteSettings;
+use crate::models::settings::{SiteSettings, UploadSettings};
 
 /// 管理后台站点配置页面。
 ///
@@ -35,6 +38,14 @@ pub fn SiteSettingsPage() -> Element {
         let mut just_saved: Signal<bool> = use_signal(|| false);
         let mut toast: Signal<Option<(String, bool)>> = use_signal(|| None);
 
+        // 素材上传并发配置（独立加载/保存循环，与 GitHub 链接互不影响）。
+        let mut upload_saved: Signal<UploadSettings> = use_signal(UploadSettings::default);
+        let mut upload_draft: Signal<i32> =
+            use_signal(|| crate::models::settings::DEFAULT_UPLOAD_CONCURRENCY);
+        let mut upload_loading: Signal<bool> = use_signal(|| true);
+        let mut upload_saving: Signal<bool> = use_signal(|| false);
+        let mut upload_just_saved: Signal<bool> = use_signal(|| false);
+
         // 首次挂载加载服务端配置。
         use_effect(move || {
             #[cfg(target_arch = "wasm32")]
@@ -47,11 +58,20 @@ pub fn SiteSettingsPage() -> Element {
                     Err(e) => toast.set(Some((format!("加载失败：{e}"), true))),
                 }
                 loading.set(false);
+                match get_upload_settings().await {
+                    Ok(s) => {
+                        upload_draft.set(s.concurrency);
+                        upload_saved.set(s);
+                    }
+                    Err(e) => toast.set(Some((format!("加载失败：{e}"), true))),
+                }
+                upload_loading.set(false);
             });
         });
 
         // 草稿相对已保存配置是否存在差异：控制保存按钮可用性与「未保存」提示。
         let dirty = use_memo(move || github_draft().trim() != saved().github_url);
+        let upload_dirty = use_memo(move || upload_draft() != upload_saved().concurrency);
 
         rsx! {
             div { class: "w-full max-w-7xl mx-auto space-y-8",
@@ -62,7 +82,7 @@ pub fn SiteSettingsPage() -> Element {
                             "站点配置"
                         }
                         p { class: "text-base text-[var(--color-paper-secondary)] mt-2",
-                            "管理前台展示的公开配置。"
+                            "管理站点公开配置与后台行为参数。"
                         }
                     }
                 }
@@ -181,6 +201,123 @@ pub fn SiteSettingsPage() -> Element {
                                         }
                                     }
                                     saving.set(false);
+                                });
+                            },
+                        }
+                    }
+                }
+
+                // 素材上传并发卡片
+                div { class: "{ADMIN_CARD_CLASS} p-8 flex flex-col gap-6",
+                    div { class: "flex items-center gap-3",
+                        // 上传图标（与素材上传弹窗一致的 Feather 线框风格）
+                        span { class: "inline-flex items-center justify-center w-10 h-10 rounded-full bg-[var(--color-paper-theme)] text-[var(--color-paper-primary)] border border-[var(--color-paper-border)]",
+                            svg {
+                                xmlns: "http://www.w3.org/2000/svg",
+                                width: "22",
+                                height: "22",
+                                view_box: "0 0 24 24",
+                                fill: "none",
+                                stroke: "currentColor",
+                                stroke_width: "1.8",
+                                stroke_linecap: "round",
+                                stroke_linejoin: "round",
+                                path { d: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" }
+                                polyline { points: "17 8 12 3 7 8" }
+                                line {
+                                    x1: "12",
+                                    y1: "3",
+                                    x2: "12",
+                                    y2: "15",
+                                }
+                            }
+                        }
+                        div {
+                            h2 { class: "text-xl font-bold text-[var(--color-paper-primary)]",
+                                "素材上传并发数"
+                            }
+                            p { class: "text-sm text-[var(--color-paper-secondary)] mt-0.5",
+                                "素材管理页上传弹窗同时发起的上传任务数，调高可加速批量上传。"
+                            }
+                        }
+                    }
+
+                    div { class: "flex flex-col gap-2 max-w-xl",
+                        FormLabel { label: "并发数", html_for: Some("upload-concurrency".to_string()) }
+                        FormSelect {
+                            id: Some("upload-concurrency".to_string()),
+                            value: upload_draft(),
+                            options: vec![
+                                (1, "1（顺序上传）"),
+                                (2, "2"),
+                                (3, "3（默认）"),
+                                (4, "4"),
+                                (5, "5"),
+                                (6, "6"),
+                                (7, "7"),
+                                (8, "8"),
+                            ],
+                            onchange: move |v: i32| {
+                                upload_draft.set(v);
+                                upload_just_saved.set(false);
+                            },
+                        }
+                        p { class: "text-xs text-[var(--color-paper-secondary)]",
+                            "弹窗按并发数自动放大张间间隔，聚合速率始终与上传限流对齐，不会触发 429。首次部署可用 UPLOAD_CONCURRENCY 环境变量播种初始值。"
+                        }
+                    }
+
+                    // 当前值预览
+                    if !upload_loading() {
+                        div { class: "text-sm text-[var(--color-paper-secondary)] flex items-center gap-1.5 flex-wrap",
+                            "当前："
+                            span { class: "font-mono", "{upload_saved().concurrency} 路并发" }
+                        }
+                    }
+
+                    // 底部操作行
+                    div { class: "flex items-center justify-between gap-4 pt-1",
+                        if upload_just_saved() {
+                            span { class: "inline-flex items-center gap-1.5 text-xs text-[var(--color-paper-accent)]",
+                                svg {
+                                    class: "w-3.5 h-3.5",
+                                    view_box: "0 0 24 24",
+                                    fill: "none",
+                                    stroke: "currentColor",
+                                    stroke_width: "2.5",
+                                    path {
+                                        stroke_linecap: "round",
+                                        stroke_linejoin: "round",
+                                        d: "M5 13l4 4L19 7",
+                                    }
+                                }
+                                "已保存"
+                            }
+                        } else if upload_dirty() {
+                            span { class: "text-xs text-[var(--color-paper-secondary)]", "有未保存的更改" }
+                        } else {
+                            span { class: "text-xs text-transparent select-none", "·" }
+                        }
+                        LoadingButton {
+                            label: "保存设置".to_string(),
+                            loading: upload_saving(),
+                            disabled: upload_loading() || upload_just_saved() || !upload_dirty(),
+                            onclick: move |_| {
+                                let n = upload_draft();
+                                upload_saving.set(true);
+                                spawn(async move {
+                                    match update_upload_settings(n).await {
+                                        Ok(s) => {
+                                            upload_saved.set(s.clone());
+                                            upload_draft.set(s.concurrency);
+                                            upload_just_saved.set(true);
+                                            toast.set(Some(("保存成功".to_string(), false)));
+                                        }
+                                        Err(e) => {
+                                            toast.set(Some((format!("保存失败：{e}"), true)));
+                                        }
+                                    }
+                                    upload_saving.set(false);
                                 });
                             },
                         }

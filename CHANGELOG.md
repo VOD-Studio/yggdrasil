@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_暂无未发布改动。_
+### Added
+
+- **素材多线程上传**：`/admin/assets` 上传弹窗改为 worker 池并发上传，并发数（1–8，默认 3）可在「站点配置」面板调整，或经 `UPLOAD_CONCURRENCY` 环境变量在首次部署时播种；张间间隔随并发数自适应放大，聚合速率始终与上传限流对齐，不触发 429。
 
 ## [0.10.1] - 2026-08-06
 

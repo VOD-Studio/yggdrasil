@@ -165,6 +165,11 @@ fn main() {
                 tracing::warn!("backup settings env seeding failed: {e:?}");
             }
 
+            // UPLOAD_CONCURRENCY 环境变量播种素材上传并发数（语义同上）。
+            if let Err(e) = crate::api::settings::seed_upload_settings_from_env(&conn).await {
+                tracing::warn!("upload settings env seeding failed: {e:?}");
+            }
+
             // ADMIN_* 环境变量同步初始管理员（env 为凭据源：每次启动覆盖密码、
             // 确保 admin 角色，可免去首次注册）。失败只告警，不阻断启动。
             if let Err(e) = crate::api::auth::sync_admin_from_env(&conn).await {
