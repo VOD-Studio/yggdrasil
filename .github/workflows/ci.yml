@@ -28,7 +28,9 @@ jobs:
   #   lint-js    — Biome（仅 Node，不装 Rust；test job 也不再装 Node）
   #   check-wasm — wasm32 check（独立 feature 集 web-only + 独立 triple，与 server 产物不相交）
   # 两个 cargo job 用独立 cache key 后缀（-rust- / -wasm-），避免并行写同一 GHA cache key
-  # 互踩（同 key 只允许首个写入者成功）。build/release/deploy 依赖三者全部通过。
+  # 失败策略：非 tag 推送时，所有 lint/check（fmt/clippy/Biome/wasm）允许失败
+  # （continue-on-error，仍执行并显示结果，但不阻断下游 build）；只有 cargo test
+  # 始终阻断。tag 推送（v*）时全部严格，任一失败即阻断 build/release/deploy。
   test:
     runs-on: ubuntu-latest
     steps:
@@ -55,10 +57,13 @@ jobs:
           key: cargo-${{ runner.os }}-rust-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: cargo-${{ runner.os }}-rust-
 
+      # 非 tag 时允许失败（仅显示结果，不阻断 build）；tag 时严格。
       - name: Check formatting
+        continue-on-error: ${{ !startsWith(github.ref, 'refs/tags/') }}
         run: cargo fmt -- --check
 
       - name: Clippy (all targets, all features)
+        continue-on-error: ${{ !startsWith(github.ref, 'refs/tags/') }}
         run: cargo clippy --all-targets --all-features -- -D warnings
 
       # clippy --all-targets 已编译全部 test targets，cargo test 复用其产物，串行最省编译。
@@ -67,6 +72,8 @@ jobs:
 
   lint-js:
     runs-on: ubuntu-latest
+    # 非 tag 时整个 lint job 允许失败（不阻断下游 build）；tag 时严格。
+    continue-on-error: ${{ !startsWith(github.ref, 'refs/tags/') }}
     steps:
       - uses: actions/checkout@v7
 
@@ -86,6 +93,8 @@ jobs:
 
   check-wasm:
     runs-on: ubuntu-latest
+    # 非 tag 时整个检查 job 允许失败（不阻断下游 build）；tag 时严格。
+    continue-on-error: ${{ !startsWith(github.ref, 'refs/tags/') }}
     steps:
       - uses: actions/checkout@v7
 
