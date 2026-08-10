@@ -22,7 +22,8 @@ use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::skeletons::friends_admin_skeleton::FriendsAdminSkeleton;
 #[cfg(target_arch = "wasm32")]
 use crate::components::ui::{
-    ADMIN_CARD_CLASS, BADGE_BASE, BTN_OUTLINE, BTN_PRIMARY, BTN_TEXT_ACCENT, BTN_TEXT_RED,
+    ADMIN_CARD_CLASS, BADGE_BASE, BTN_DANGER_OUTLINE, BTN_OUTLINE, BTN_PRIMARY, BTN_TEXT_ACCENT,
+    BTN_TEXT_RED, Popover, Tooltip,
 };
 #[cfg(target_arch = "wasm32")]
 use crate::models::friend_link::FriendLink;
@@ -430,6 +431,9 @@ fn LinkRow(link: FriendLink, state: FriendsPageState) -> Element {
     let mut editing = state.editing;
     let mut toast = state.toast;
     let reload_gen = state.reload_gen;
+    let mut delete_open = use_signal(|| false);
+    let mut anchor_x = use_signal(|| 0i32);
+    let mut anchor_y = use_signal(|| 0i32);
 
     rsx! {
         div { class: "flex items-center gap-4 py-4",
@@ -477,32 +481,59 @@ fn LinkRow(link: FriendLink, state: FriendsPageState) -> Element {
                     onclick: move |_| editing.set(Some(link_for_edit.clone())),
                     "编辑"
                 }
-                button {
-                    class: "{BTN_TEXT_RED}",
-                    onclick: move |_| {
-                        let confirmed = web_sys::window()
-                            .and_then(|w| {
-                                w.confirm_with_message("确定要删除这条友链吗？").ok()
-                            })
-                            .unwrap_or(false);
-                        if !confirmed {
-                            return;
+                Tooltip {
+                    tip: "删除友链".to_string(),
+                    align: "end",
+                    button {
+                        class: "{BTN_TEXT_RED}",
+                        onclick: move |e| {
+                            let coordinates = e.client_coordinates();
+                            anchor_x.set(coordinates.x as i32);
+                            anchor_y.set(coordinates.y as i32);
+                            delete_open.set(true);
+                        },
+                        "删除"
+                    }
+                }
+            }
+            Popover {
+                open: delete_open(),
+                anchor_x: anchor_x(),
+                anchor_y: anchor_y(),
+                placement: "top",
+                align: "end",
+                on_close: move |_| delete_open.set(false),
+                div { class: "w-56 space-y-3",
+                    p { class: "text-sm text-paper-primary leading-relaxed",
+                        "确定要删除这条友链吗？"
+                    }
+                    div { class: "flex justify-end gap-2 pt-1",
+                        button {
+                            class: "px-3 py-1.5 text-xs text-paper-secondary hover:text-paper-primary transition-colors cursor-pointer",
+                            onclick: move |_| delete_open.set(false),
+                            "取消"
                         }
-                        let id = id_delete;
-                        spawn(async move {
-                            match delete_friend_link(id).await {
-                                Ok(()) => {
-                                    toast.set(Some(("已删除".to_string(), false)));
-                                    let g = reload_gen();
-                                    state.reload_gen.set(g + 1);
-                                }
-                                Err(e) => {
-                                    toast.set(Some((format!("删除失败：{e}"), true)));
-                                }
-                            }
-                        });
-                    },
-                    "删除"
+                        button {
+                            class: "{BTN_DANGER_OUTLINE}",
+                            onclick: move |_| {
+                                delete_open.set(false);
+                                let id = id_delete;
+                                spawn(async move {
+                                    match delete_friend_link(id).await {
+                                        Ok(()) => {
+                                            toast.set(Some(("已删除".to_string(), false)));
+                                            let g = reload_gen();
+                                            state.reload_gen.set(g + 1);
+                                        }
+                                        Err(e) => {
+                                            toast.set(Some((format!("删除失败：{e}"), true)));
+                                        }
+                                    }
+                                });
+                            },
+                            "确认删除"
+                        }
+                    }
                 }
             }
         }
