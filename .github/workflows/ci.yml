@@ -35,6 +35,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # dtolnay/rust-toolchain：走 GitHub CDN，比 curl|sh 快 ~10-15s，含 clippy+rustfmt 组件。
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
