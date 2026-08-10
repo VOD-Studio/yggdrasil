@@ -32,7 +32,7 @@ Yggdrasil is a fullstack blog/CMS built with **Dioxus 0.7**. A single Rust crate
 - `themes/` — Catppuccin Latte (light) / Mocha (dark) `.tmTheme` for syntect.
 - `docker/` — `Dockerfile` (app), `build-runners.sh` + `runner-base/` + `runner-{python,node,go,rust,bun}/` (sandbox images).
 - `docs/` — `DEPLOYMENT.md`, `test-markdown.md` (rendering test fixture). `DEVELOPMENT.md` (perf benchmarking + highlighting guide). Repo-root `CHANGELOG.md` (Keep a Changelog v1.1.0, SemVer) is `include_str!`-embedded and served at `/changelog` (`src/api/changelog.rs`).
-- `scripts/` — `migrate.sh` (manual DB migration runner; companion to the built-in startup migrator), `xun.fish` (full-deploy pipeline to the `xun` server — build all images, scp, rolling-restart `app` only, verify).
+- `scripts/` — `xun.fish` (full-deploy pipeline to the `xun` server — build all images, scp, rolling-restart `app` only, verify).
 - `static/` — Dioxus IncrementalRenderer persists SSR HTML here at runtime (gitignored output, not source).
 
 ## Development Commands
@@ -78,9 +78,6 @@ cargo run --features server --bin generate_highlight_css
 cargo build --no-default-features --features web
 # Server-only build (as the Dockerfile does)
 cargo build --no-default-features --features server
-
-# Database
-DATABASE_URL=postgres://postgres:postgres@localhost:5432/yggdrasil ./scripts/migrate.sh   # manual; also auto-runs on server startup
 
 # Docker
 make docker              # native arch, load into local daemon

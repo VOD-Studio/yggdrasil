@@ -193,7 +193,7 @@ pub async fn get_conn_for_startup(
 ///
 /// 解决"全新部署没有目标库"的缺口——`get_conn_for_startup` 连的是 `DATABASE_URL`
 /// 里指定的目标库，库不存在时只会反复重试到超时退出。本函数在连接池首次被触碰
-/// **之前**运行，把 `scripts/migrate.sh` 里那段 `CREATE DATABASE` 逻辑内置进二进制，
+/// **之前**运行，把 `CREATE DATABASE` 自举逻辑内置进二进制，
 /// 让首次启动真正零手动。
 ///
 /// 与 `get_conn_for_startup` 共享同一套语义：
