@@ -34,28 +34,17 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-
-      - name: Configure Cargo mirror (rsproxy)
-        run: |
-          mkdir -p ~/.cargo
-          printf '[source.crates-io]\nreplace-with = "rsproxy-sparse"\n\n[source.rsproxy-sparse]\nregistry = "sparse+https://rsproxy.cn/index/"\n' > ~/.cargo/config.toml
-
-      - name: Install Rust (stable, minimal)
-        run: |
-          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
-          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-
-      # 独立 cache key（-rust- 后缀）与 check-wasm 隔离，避免并行写同 key 互踩。
-      - name: Cache cargo registry & target
-        uses: actions/cache@v5
+      # dtolnay/rust-toolchain：走 GitHub CDN，比 curl|sh 快 ~10-15s，含 clippy+rustfmt 组件。
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: cargo-${{ runner.os }}-rust-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: cargo-${{ runner.os }}-rust-
+          components: clippy, rustfmt
+
+      # Swatinem/rust-cache：cache key 自动含 rustc 版本 + Cargo.lock hash，
+      # 防止 toolchain 升级后命中过期缓存（旧手动方案会命中 → 全量重编）。
+      # prefix 区分 test（host target）与 check-wasm（wasm32 target），避免缓存互踩。
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: rust
 
       # 非 tag 时允许失败（仅显示结果，不阻断 build）；tag 时严格。
       - name: Check formatting
@@ -64,11 +53,11 @@ jobs:
 
       - name: Clippy (all targets, all features)
         continue-on-error: ${{ !startsWith(github.ref, 'refs/tags/') }}
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --locked --all-targets --all-features -- -D warnings
 
       # clippy --all-targets 已编译全部 test targets，cargo test 复用其产物，串行最省编译。
       - name: Run tests
-        run: cargo test --all-features
+        run: cargo test --locked --all-features
 
   lint-js:
     runs-on: ubuntu-latest
@@ -98,33 +87,20 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Configure Cargo mirror (rsproxy)
-        run: |
-          mkdir -p ~/.cargo
-          printf '[source.crates-io]\nreplace-with = "rsproxy-sparse"\n\n[source.rsproxy-sparse]\nregistry = "sparse+https://rsproxy.cn/index/"\n' > ~/.cargo/config.toml
-
-      - name: Install Rust (stable, minimal)
-        run: |
-          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
-          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-
-      - name: Add wasm32 target
-        run: rustup target add wasm32-unknown-unknown
-
-      # 独立 cache key（-wasm- 后缀）与 test 隔离。
-      - name: Cache cargo registry & target
-        uses: actions/cache@v5
+      # dtolnay/rust-toolchain：走 GitHub CDN，比 curl|sh 快 ~10-15s。
+      # CI runner 在美国/欧洲，不配 rsproxy（国内镜像从国外访问反而更慢）。
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: cargo-${{ runner.os }}-wasm-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: cargo-${{ runner.os }}-wasm-
+          targets: wasm32-unknown-unknown
+
+      # Swatinem/rust-cache：prefix 与 test job（host target）隔离。
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: wasm
 
       # wasm32 目标单独 check，覆盖 web 特性的编译（无需 dx，由 build 阶段容器内 dx 全量构建兜底）。
       - name: WASM target check
-        run: cargo check --target wasm32-unknown-unknown --no-default-features --features web
+        run: cargo check --locked --target wasm32-unknown-unknown --no-default-features --features web
 
   # ── build-amd64：Docker in-container 全量构建（libs/WASM/rustdoc/静态 musl server）──
   # GitHub x86_64 runner，原生 Dockerfile（非 Dockerfile.cross），宿主仅需 Docker。
