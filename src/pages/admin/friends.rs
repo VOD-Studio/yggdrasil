@@ -15,7 +15,7 @@ use crate::api::friends::{
     create_friend_link, delete_friend_link, list_all_friend_links, update_friend_link,
 };
 #[cfg(target_arch = "wasm32")]
-use crate::components::forms::{FormInput, FormLabel, FormSelect, INPUT_CLASS};
+use crate::components::forms::{FormInput, FormLabel, FormSelect, INPUT_CLASS, INPUT_INLINE_CLASS};
 #[cfg(target_arch = "wasm32")]
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 #[cfg(target_arch = "wasm32")]
@@ -26,6 +26,8 @@ use crate::components::ui::{
 };
 #[cfg(target_arch = "wasm32")]
 use crate::models::friend_link::FriendLink;
+#[cfg(target_arch = "wasm32")]
+use crate::pages::admin::asset_picker::AssetPickerModal;
 
 /// 跨子组件共享的页面状态：刷新代际、操作提示、编辑目标。
 ///
@@ -123,6 +125,9 @@ fn EditorCard() -> Element {
     let mut sort_str = use_signal(String::new);
     let mut is_active = use_signal(|| true);
     let mut busy = use_signal(|| false);
+    let mut picker_visible = use_signal(|| false);
+    let avatar_uploading = use_signal(|| false);
+    let mut avatar_failed = use_signal(|| false);
 
     let mut editing = state.editing;
     let reload_gen = state.reload_gen;
@@ -135,6 +140,7 @@ fn EditorCard() -> Element {
             name.set(link.name.clone());
             url.set(link.url.clone());
             avatar.set(link.avatar_url.clone().unwrap_or_default());
+            avatar_failed.set(false);
             desc.set(link.description.clone());
             sort_str.set(link.sort_order.to_string());
             is_active.set(link.is_active);
@@ -145,6 +151,7 @@ fn EditorCard() -> Element {
         name.set(String::new());
         url.set(String::new());
         avatar.set(String::new());
+        avatar_failed.set(false);
         desc.set(String::new());
         sort_str.set(String::new());
         is_active.set(true);
@@ -184,14 +191,43 @@ fn EditorCard() -> Element {
                         oninput: move |v: String| url.set(v),
                     }
                 }
-                // 头像 URL（可空）
+                // 头像（可留空）：圆形预览磁贴 + 外链输入框 + 素材库按钮。
+                // 保留外链手输（既有用法），新增「素材库」一键选择本站上传的图片。
                 div { class: "flex flex-col gap-2",
-                    FormLabel { label: "头像 URL（可留空）" }
-                    FormInput {
-                        r#type: "url",
-                        placeholder: "https://example.com/avatar.png（可留空）",
-                        value: avatar(),
-                        oninput: move |v: String| avatar.set(v),
+                    FormLabel { label: "头像（可留空）" }
+                    div { class: "flex items-center gap-3",
+                        // 圆形预览磁贴：有 URL 且未加载失败时渲染 img，
+                        // 否则显示名称首字符兜底（与 LinkRow / 前台 FriendCard 磁贴一致）。
+                        div { class: "relative h-10 w-10 shrink-0 rounded-full bg-[var(--color-paper-code-bg)] flex items-center justify-center overflow-hidden",
+                            if avatar().trim().is_empty() || avatar_failed() {
+                                span { class: "text-sm font-semibold text-[var(--color-paper-primary)] select-none",
+                                    { name().chars().next().map(|c| c.to_uppercase().collect::<String>()).unwrap_or_else(|| "?".to_string()) }
+                                }
+                            } else {
+                                img {
+                                    class: "w-full h-full object-cover",
+                                    src: "{avatar()}",
+                                    alt: "头像预览",
+                                    // 外链可能失效：失败后切回首字符磁贴，不阻塞保存。
+                                    onerror: move |_| avatar_failed.set(true),
+                                }
+                            }
+                        }
+                        FormInput {
+                            r#type: "url",
+                            placeholder: "粘贴外链或从素材库选择",
+                            value: avatar(),
+                            class: INPUT_INLINE_CLASS,
+                            oninput: move |v: String| {
+                                avatar.set(v);
+                                avatar_failed.set(false);
+                            },
+                        }
+                        button {
+                            class: "shrink-0 {BTN_OUTLINE}",
+                            onclick: move |_| picker_visible.set(true),
+                            "素材库"
+                        }
                     }
                 }
                 // 排序
@@ -231,7 +267,7 @@ fn EditorCard() -> Element {
             div { class: "flex items-center gap-3",
                 button {
                     class: "{BTN_PRIMARY}",
-                    disabled: "{busy() || name().trim().is_empty() || url().trim().is_empty()}",
+                    disabled: "{busy() || avatar_uploading() || name().trim().is_empty() || url().trim().is_empty()}",
                     onclick: move |_| {
                         if busy() {
                             return;
@@ -307,6 +343,15 @@ fn EditorCard() -> Element {
                         "取消"
                     }
                 }
+            }
+            // 素材选择 modal：选中回填头像 URL（复用 write.rs 封面选择的同一组件）。
+            AssetPickerModal {
+                visible: picker_visible,
+                cover_uploading: avatar_uploading,
+                on_select: move |url: String| {
+                    avatar.set(url);
+                    avatar_failed.set(false);
+                },
             }
         }
     }
