@@ -475,7 +475,7 @@ fn BackupSettingsCard() -> Element {
     #[cfg(target_arch = "wasm32")]
     use crate::api::settings::{get_backup_settings, update_backup_settings};
     use crate::components::forms::TimePicker;
-    use crate::components::ui::{ADMIN_CARD_CLASS, BTN_ICON};
+    use crate::components::ui::{CollapsibleSettingsCard, BTN_ICON};
     use crate::models::settings::BackupSettingsView;
 
     // 服务端视图（设置 + 上次结果 + 下次执行）。SSR/首帧为 None（占位态）。
@@ -546,14 +546,18 @@ fn BackupSettingsCard() -> Element {
     let loaded = view.read().is_some();
 
     rsx! {
-        div { class: "{ADMIN_CARD_CLASS} p-5 space-y-5",
-            // 标题行
-            div {
-                div { class: "text-sm font-medium text-paper-primary", "自动备份" }
-                div { class: "text-xs text-paper-secondary mt-1",
-                    "每天定点备份数据库与 uploads 素材，超出保留份数的最旧自动备份将被删除（手动备份永不自动删除）"
-                }
-            }
+        CollapsibleSettingsCard {
+            title: "自动备份".to_string(),
+            summary: if !loaded {
+                "正在加载设置…".to_string()
+            } else if draft_enabled() {
+                format!("已开启 · 每天 {} 执行", draft_time())
+            } else {
+                "已关闭".to_string()
+            },
+            enabled: draft_enabled(),
+            on_toggle: move |_| just_saved.set(false),
+            div { class: "border-t border-paper-border p-5 space-y-5",
 
             if !loaded {
                 // SSR/首帧占位：与客户端初始渲染一致，fetch 落地后替换。
@@ -752,6 +756,7 @@ fn BackupSettingsCard() -> Element {
                 }
             }
         }
+    }
     }
 }
 

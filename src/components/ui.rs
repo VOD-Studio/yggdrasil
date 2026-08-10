@@ -328,6 +328,74 @@ pub fn Tooltip(
         }
     }
 }
+/// 可折叠的后台设置卡片外壳。
+///
+/// 复用回收站与系统设置的同一套交互：状态指示灯、摘要标题、旋转箭头，以及
+/// `grid-template-rows` 的 0fr↔1fr 平滑展开。调用方通过 `children` 提供面板内容，
+/// 通过 `on_toggle` 在展开状态变化时清理本地反馈等附加状态。
+///
+/// Props：
+/// - `title`：卡片标题
+/// - `summary`：标题下的当前状态摘要
+/// - `enabled`：状态指示灯是否使用主题色
+/// - `children`：折叠面板内容（调用方负责内容内边距与分隔线）
+/// - `on_toggle`：可选的展开/收起回调
+#[component]
+pub fn CollapsibleSettingsCard(
+    title: String,
+    summary: String,
+    enabled: bool,
+    children: Element,
+    #[props(default)] on_toggle: Option<EventHandler<()>>,
+) -> Element {
+    let mut open = use_signal(|| false);
+    let chevron_rotate = if open() { "rotate-180" } else { "" };
+    let dot_class = if enabled {
+        "w-2 h-2 rounded-full bg-paper-accent shadow-[0_0_0_3px_rgba(64,160,43,0.15)]"
+    } else {
+        "w-2 h-2 rounded-full bg-paper-tertiary"
+    };
+
+    rsx! {
+        div { class: "rounded-2xl border border-paper-border overflow-hidden bg-paper-entry",
+            button {
+                r#type: "button",
+                class: "w-full flex items-center gap-3 px-5 py-4 text-left cursor-pointer hover:bg-paper-theme focus:outline-none focus-visible:ring-2 focus-visible:ring-paper-accent/40",
+                aria_expanded: "{open()}",
+                onclick: move |_| {
+                    open.set(!open());
+                    if let Some(on_toggle) = on_toggle {
+                        on_toggle.call(());
+                    }
+                },
+                div { class: "w-2 flex-shrink-0 flex items-center justify-center",
+                    div { class: "{dot_class}" }
+                }
+                div { class: "flex-1 min-w-0",
+                    div { class: "text-sm font-medium text-paper-primary", "{title}" }
+                    div { class: "text-xs text-paper-secondary mt-0.5 truncate", "{summary}" }
+                }
+                svg {
+                    class: "w-4 h-4 text-paper-secondary transition-transform duration-200 flex-shrink-0 {chevron_rotate}",
+                    view_box: "0 0 24 24",
+                    fill: "none",
+                    stroke: "currentColor",
+                    stroke_width: "2",
+                    path {
+                        stroke_linecap: "round",
+                        stroke_linejoin: "round",
+                        d: "M19 9l-7 7-7-7",
+                    }
+                }
+            }
+            div {
+                class: "grid transition-all duration-300 ease-in-out",
+                style: if open() { "grid-template-rows: 1fr; opacity: 1; pointer-events: auto;" } else { "grid-template-rows: 0fr; opacity: 0; pointer-events: none;" },
+                div { class: "overflow-hidden min-h-0", {children} }
+            }
+        }
+    }
+}
 
 /// Popover 遮罩与面板的层级(z-40 遮罩 < z-50 面板),与 Tooltip/lightbox 同 z-50。
 const POPOVER_OVERLAY_CLASS: &str = "fixed inset-0 z-40";

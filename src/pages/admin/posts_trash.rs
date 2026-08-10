@@ -25,9 +25,9 @@ use crate::components::empty_state::EmptyState;
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::skeletons::posts_trash_skeleton::PostsTrashSkeleton;
 use crate::components::ui::{
-    LoadingButton, Pagination, Popover, StatusBadge, ADMIN_ROW_HOVER, ADMIN_TABLE_CLASS,
-    BTN_DANGER_OUTLINE, BTN_ICON, BTN_SOLID_GREEN, BTN_SOLID_RED, BTN_TEXT_ACCENT, BTN_TEXT_RED,
-    CHECKBOX_CLASS,
+    CollapsibleSettingsCard, LoadingButton, Pagination, Popover, StatusBadge, ADMIN_ROW_HOVER,
+    ADMIN_TABLE_CLASS, BTN_DANGER_OUTLINE, BTN_ICON, BTN_SOLID_GREEN, BTN_SOLID_RED,
+    BTN_TEXT_ACCENT, BTN_TEXT_RED, CHECKBOX_CLASS,
 };
 use crate::hooks::query::use_paginated;
 use crate::models::post::PostListItem;
@@ -321,12 +321,13 @@ pub fn PostsTrash() -> Element {
     }
 }
 
-/// 自动清理配置子组件：可折叠的设置面板。
+/// 自动清理配置子组件：使用共享可折叠设置卡片。
 ///
-/// 封装自动清理的全部状态：表单草稿（`settings_draft_*`）、面板折叠态、保存态、
-/// 已保存反馈、以及派生的 `dirty` / `chevron_rotate`。配置加载与保存均在组件
-/// 内部完成。`settings`（已保存的服务端配置）由父组件传入双向绑定 signal：
-/// 本组件加载/保存时写入，父组件读取 `retention_days` 供 TrashRow 的「剩余天数」。
+/// 封装自动清理的全部状态：表单草稿（`settings_draft_*`）、保存态、已保存反馈，
+/// 以及派生的 `dirty`。面板折叠态与摘要外壳由 `CollapsibleSettingsCard` 统一管理。
+/// 配置加载与保存均在组件内部完成。`settings`（已保存的服务端配置）由父组件传入
+/// 双向绑定 signal：本组件加载/保存时写入，父组件读取 `retention_days` 供 TrashRow
+/// 的「剩余天数」。
 ///
 /// 从 `PostsTrashPage` 抽取以降低 god component 复杂度（见 dioxus-render-purity skill）。
 #[component]
@@ -334,7 +335,6 @@ pub fn PostsTrash() -> Element {
 fn AutoPurgeSettings(settings: Signal<TrashSettings>) -> Element {
     let mut settings_draft_days: Signal<String> = use_signal(|| "30".to_string());
     let mut settings_draft_enabled: Signal<bool> = use_signal(|| false);
-    let mut settings_panel_open: Signal<bool> = use_signal(|| false);
     let mut saving_settings: Signal<bool> = use_signal(|| false);
     // 保存成功后的短暂反馈标记（用户再次编辑时清除）。
     let mut just_saved: Signal<bool> = use_signal(|| false);
@@ -363,66 +363,17 @@ fn AutoPurgeSettings(settings: Signal<TrashSettings>) -> Element {
                 .map(|d| d != settings().retention_days)
                 .unwrap_or(true)
     });
-    // 折叠箭头旋转类（展开时翻转 180°）。
-    let chevron_rotate = if settings_panel_open() {
-        "rotate-180"
-    } else {
-        ""
-    };
 
     rsx! {
-        div { class: "rounded-2xl border border-paper-border overflow-hidden bg-paper-entry",
-            // 顶部可点击摘要条：状态指示灯 + 标题 + 展开箭头
-            button {
-                class: "w-full flex items-center gap-3 px-5 py-4 text-left cursor-pointer hover:bg-paper-theme focus:outline-none focus-visible:ring-2 focus-visible:ring-paper-accent/40",
-                onclick: move |_| {
-                    settings_panel_open.set(!settings_panel_open());
-                    just_saved.set(false);
-                },
-                // 状态指示灯
-                {
-                    let dot_class = if settings().auto_purge_enabled {
-                        "w-2 h-2 rounded-full bg-paper-accent shadow-[0_0_0_3px_rgba(64,160,43,0.15)]"
-                    } else {
-                        "w-2 h-2 rounded-full bg-paper-tertiary"
-                    };
-                    rsx! {
-                        div { class: "w-2 flex-shrink-0 flex items-center justify-center",
-                            div { class: "{dot_class}" }
-                        }
-                    }
-                }
-                // 标题 + 当前状态描述
-                div { class: "flex-1 min-w-0",
-                    div { class: "text-sm font-medium text-paper-primary", "自动清理" }
-                    div { class: "text-xs text-paper-secondary mt-0.5 truncate",
-                        if settings().auto_purge_enabled {
-                            "已开启 · 超过 {settings().retention_days} 天的文章将被自动删除"
-                        } else {
-                            "已关闭"
-                        }
-                    }
-                }
-                // 展开箭头（旋转动画）
-                svg {
-                    class: "w-4 h-4 text-paper-secondary transition-transform duration-200 flex-shrink-0 {chevron_rotate}",
-                    view_box: "0 0 24 24",
-                    fill: "none",
-                    stroke: "currentColor",
-                    stroke_width: "2",
-                    path {
-                        stroke_linecap: "round",
-                        stroke_linejoin: "round",
-                        d: "M19 9l-7 7-7-7",
-                    }
-                }
-            }
-
-            // 设置面板（可折叠带平滑动画）
-            div {
-                class: "grid transition-all duration-300 ease-in-out",
-                style: if settings_panel_open() { "grid-template-rows: 1fr; opacity: 1; pointer-events: auto;" } else { "grid-template-rows: 0fr; opacity: 0; pointer-events: none;" },
-                div { class: "overflow-hidden min-h-0",
+        CollapsibleSettingsCard {
+            title: "自动清理".to_string(),
+            summary: if settings().auto_purge_enabled {
+                format!("已开启 · 超过 {} 天的文章将被自动删除", settings().retention_days)
+            } else {
+                "已关闭".to_string()
+            },
+            enabled: settings().auto_purge_enabled,
+            on_toggle: move |_| just_saved.set(false),
                     div { class: "border-t border-paper-border p-5 space-y-6",
                         // 开关行：启用自动清理
                         div { class: "flex items-center justify-between gap-4",
@@ -551,8 +502,6 @@ fn AutoPurgeSettings(settings: Signal<TrashSettings>) -> Element {
                             }
                         }
                     }
-                }
-            }
         }
     }
 }
@@ -694,11 +643,15 @@ fn TrashRow(
 #[cfg(test)]
 mod tests {
     #[test]
-    fn test_auto_purge_settings_has_transition_class() {
-        let full_code = include_str!("posts_trash.rs");
-        let code = full_code.split("#[cfg(test)]").next().unwrap_or(full_code);
-        assert!(code.contains("grid transition-all duration-300 ease-in-out"));
-        assert!(code.contains("grid-template-rows: 1fr; opacity: 1;"));
-        assert!(code.contains("grid-template-rows: 0fr; opacity: 0;"));
+    fn settings_pages_use_shared_collapsible_card() {
+        let common_code = include_str!("../../components/ui.rs");
+        assert!(common_code.contains("grid transition-all duration-300 ease-in-out"));
+        assert!(common_code.contains("grid-template-rows: 1fr; opacity: 1;"));
+        assert!(common_code.contains("grid-template-rows: 0fr; opacity: 0;"));
+
+        let trash_code = include_str!("posts_trash.rs");
+        assert!(trash_code.contains("CollapsibleSettingsCard"));
+        let backup_code = include_str!("system/backup.rs");
+        assert!(backup_code.contains("CollapsibleSettingsCard"));
     }
 }
