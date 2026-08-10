@@ -25,8 +25,9 @@ use crate::components::empty_state::EmptyState;
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::skeletons::posts_trash_skeleton::PostsTrashSkeleton;
 use crate::components::ui::{
-    LoadingButton, Pagination, StatusBadge, ADMIN_ROW_HOVER, ADMIN_TABLE_CLASS, BTN_DANGER_OUTLINE,
-    BTN_ICON, BTN_SOLID_GREEN, BTN_SOLID_RED, BTN_TEXT_ACCENT, BTN_TEXT_RED, CHECKBOX_CLASS,
+    LoadingButton, Pagination, Popover, StatusBadge, ADMIN_ROW_HOVER, ADMIN_TABLE_CLASS,
+    BTN_DANGER_OUTLINE, BTN_ICON, BTN_SOLID_GREEN, BTN_SOLID_RED, BTN_TEXT_ACCENT, BTN_TEXT_RED,
+    CHECKBOX_CLASS,
 };
 use crate::hooks::query::use_paginated;
 use crate::models::post::PostListItem;
@@ -247,23 +248,10 @@ pub fn PostsTrash() -> Element {
                                                         let id = post.id;
                                                         move |_| {
                                                             #[cfg(target_arch = "wasm32")]
-                                                            {
-                                                                if web_sys::window()
-                                                                    .and_then(|w| {
-                                                                        w
-                                                                            .confirm_with_message(
-                                                                                "确定要彻底删除这篇文章吗？此操作不可恢复。",
-                                                                            )
-                                                                            .ok()
-                                                                    })
-                                                                    .unwrap_or(false)
-                                                                {
-                                                                    spawn(async move {
-                                                                        let _ = purge_post(id).await;
-                                                                    });
-                                                                    remove_post(id);
-                                                                }
-                                                            }
+                                                            spawn(async move {
+                                                                let _ = purge_post(id).await;
+                                                            });
+                                                            remove_post(id);
                                                         }
                                                     },
                                                 }
@@ -603,6 +591,10 @@ fn TrashRow(
     on_purge: EventHandler,
 ) -> Element {
     let (remaining, expired) = remaining_days(&post, retention_days);
+    // 彻底删除确认浮层：用触发按钮的视口坐标锚定，避免被表格 overflow 裁剪。
+    let mut purge_open = use_signal(|| false);
+    let mut anchor_x = use_signal(|| 0i32);
+    let mut anchor_y = use_signal(|| 0i32);
     // 剩余天数徽章配色：>7 天中性，≤7 天鼠尾草绿(主题色)，≤0/过期琥珀色。
     let badge_class = if expired {
         "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
@@ -657,8 +649,41 @@ fn TrashRow(
                     }
                     button {
                         class: "{BTN_TEXT_RED}",
-                        onclick: move |_| on_purge.call(()),
+                        onclick: move |e| {
+                            let coordinates = e.client_coordinates();
+                            anchor_x.set(coordinates.x as i32);
+                            anchor_y.set(coordinates.y as i32);
+                            purge_open.set(true);
+                        },
                         "彻底删除"
+                    }
+                }
+            }
+            Popover {
+                open: purge_open(),
+                anchor_x: anchor_x(),
+                anchor_y: anchor_y(),
+                placement: "bottom",
+                align: "end",
+                on_close: move |_| purge_open.set(false),
+                div { class: "w-64 space-y-3",
+                    p { class: "text-sm text-paper-primary leading-relaxed",
+                        "彻底删除这篇文章？此操作不可恢复。"
+                    }
+                    div { class: "flex justify-end gap-2 pt-1",
+                        button {
+                            class: "px-3 py-1.5 text-xs text-paper-secondary hover:text-paper-primary transition-colors cursor-pointer",
+                            onclick: move |_| purge_open.set(false),
+                            "取消"
+                        }
+                        button {
+                            class: "{BTN_DANGER_OUTLINE}",
+                            onclick: move |_| {
+                                purge_open.set(false);
+                                on_purge.call(());
+                            },
+                            "确认删除"
+                        }
                     }
                 }
             }
