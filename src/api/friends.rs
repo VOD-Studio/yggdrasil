@@ -200,8 +200,20 @@ pub async fn delete_friend_link(id: i32) -> Result<(), ServerFnError> {
 /// - `name` trim 后非空且 ≤ 64 字符；
 /// - `url` trim 后必须 `http://` / `https://` 前缀且 ≤ 512 字符（仅前缀检查，
 ///   不引入完整 URL 解析）；
-/// - `avatar_url`：`None` 或 trim 后为空 → 归一化为 `None`；否则同 url 规则；
+/// - `avatar_url`：`None` 或 trim 后为空 → 归一化为 `None`；否则必须为 http(s) 链接或
+///   安全的 `/uploads/` 素材路径；
 /// - `description` trim 后 ≤ 200 字符。
+#[cfg(feature = "server")]
+fn is_local_asset_url(value: &str) -> bool {
+    let Some(path) = value.strip_prefix("/uploads/") else {
+        return false;
+    };
+    !path.is_empty()
+        && !path.starts_with('/')
+        && !path.contains("..")
+        && !path.contains('\0')
+}
+
 #[cfg(feature = "server")]
 fn validate_link(
     name: &str,
@@ -231,9 +243,10 @@ fn validate_link(
     let avatar_url = match avatar_url.map(str::trim) {
         None | Some("") => None,
         Some(a) => {
-            if !(a.starts_with("http://") || a.starts_with("https://")) {
+            let is_http_url = a.starts_with("http://") || a.starts_with("https://");
+            if !is_http_url && !is_local_asset_url(a) {
                 return Err(AppError::BadRequest(
-                    "头像 URL 必须为 http(s) 链接".to_string(),
+                    "头像 URL 必须为 http(s) 链接或 /uploads/ 素材路径".to_string(),
                 ));
             }
             if a.chars().count() > 512 {
@@ -312,6 +325,18 @@ mod tests {
     }
 
     #[test]
+    fn validate_accepts_local_asset_avatar() {
+        let avatar = validate_link(
+            "示例站",
+            "https://example.com",
+            Some("/uploads/2026/08/10/avatar.webp"),
+            "",
+        )
+        .expect("本地素材头像应通过友链字段校验");
+        assert_eq!(avatar, Some("/uploads/2026/08/10/avatar.webp".to_string()));
+    }
+
+    #[test]
     fn validate_rejects_empty_name() {
         assert_bad_request(
             validate_link("  ", "https://example.com", None, "").unwrap_err(),
@@ -354,7 +379,21 @@ mod tests {
                 "",
             )
             .unwrap_err(),
-            "头像 URL 必须为 http(s) 链接",
+            "头像 URL 必须为 http(s) 链接或 /uploads/ 素材路径",
+        );
+    }
+
+    #[test]
+    fn validate_rejects_unsafe_local_avatar() {
+        assert_bad_request(
+            validate_link(
+                "示例站",
+                "https://example.com",
+                Some("/uploads/../secret.png"),
+                "",
+            )
+            .unwrap_err(),
+            "头像 URL 必须为 http(s) 链接或 /uploads/ 素材路径",
         );
     }
 
