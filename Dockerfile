@@ -8,30 +8,33 @@
 # ships 2.36, so `dx --version` fails with "version `GLIBC_2.39' not found".
 FROM rust:1.96-trixie AS builder
 
-# Point every network download at a Chinese mirror so the build is fast/reliable
-# from inside the container (the host proxy at 127.0.0.1:10808 is unreachable
-# from Docker Desktop's NAT, and the official sources are slow or intercepted):
-#   - Debian apt          -> TUNA (Tsinghua)
-#   - Rust + crates.io    -> rsproxy (ByteDance)
-#   - Node.js + npm/pnpm  -> npmmirror (Alibaba)
+# Master switch for Chinese mirrors.
+#   CN_MIRROR=false (default): use all upstream/official sources (fast on CI
+#     runners outside China — GitHub runners are in the US/EU).
+#   CN_MIRROR=true: route all downloads through Chinese mirrors (TUNA for
+#     Debian/Alpine apt, rsproxy for Rust/crates.io, npmmirror for Node/npm,
+#     gh-proxy for GitHub Releases). Pass via: --build-arg CN_MIRROR=true
+# Individual mirror URLs are still ARG-overridable for custom mirrors.
+ARG CN_MIRROR=false
+# Exported as ENV so `make esbuild-cache` / `make wasm-bindgen-cache` (called
+# from RUN below) can read it via $$CN_MIRROR in their shell recipes.
+ENV CN_MIRROR=${CN_MIRROR}
+
 ARG DEBIAN_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/debian
 ARG DEBIAN_SECURITY_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/debian-security
 ARG NODE_MIRROR=https://registry.npmmirror.com/-/binary/node
 ARG NPM_REGISTRY=https://registry.npmmirror.com
 ARG RS_PROXY=https://rsproxy.cn
-# GitHub Releases proxy — the dx tarball and tailwindcss binary live on
-# github.com releases and download at ~300 KB/s with frequent connection
-# resets from China. Prefixing the raw github.com URL routes the download
-# through the proxy. Set to "" (empty) to bypass the proxy (e.g. building
-# outside China where github.com is fast/reliable).
 ARG GH_PROXY=https://gh-proxy.com
 
-# --- Debian apt: rewrite the DEB822 sources to the TUNA mirror. ---
-RUN sed -i \
-    -e "s|http://deb.debian.org/debian|${DEBIAN_MIRROR}|g" \
-    -e "s|http://deb.debian.org/debian-security|${DEBIAN_SECURITY_MIRROR}|g" \
-    -e "s|http://security.debian.org/debian-security|${DEBIAN_SECURITY_MIRROR}|g" \
-    /etc/apt/sources.list.d/debian.sources
+# --- Debian apt: rewrite sources to the TUNA mirror (CN_MIRROR only). ---
+RUN if [ "$CN_MIRROR" = "true" ]; then \
+        sed -i \
+          -e "s|http://deb.debian.org/debian|${DEBIAN_MIRROR}|g" \
+          -e "s|http://deb.debian.org/debian-security|${DEBIAN_SECURITY_MIRROR}|g" \
+          -e "s|http://security.debian.org/debian-security|${DEBIAN_SECURITY_MIRROR}|g" \
+          /etc/apt/sources.list.d/debian.sources; \
+    fi
 
 # Install system build tooling. Native dependencies are needed for:
 #   - musl-tools: linker for x86_64-unknown-linux-musl
@@ -59,9 +62,8 @@ RUN apt-get update \
         xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
-# --- Node.js 22 + pnpm: install from the npmmirror binary mirror instead of
-# the NodeSource apt repo (both TUNA and USTC have dropped their NodeSource
-# mirrors; the upstream repo is slow/unreliable from inside the container). ---
+# --- Node.js 22 + pnpm ---
+# CN_MIRROR=true: download from npmmirror; CN_MIRROR=false: from nodejs.org.
 ARG NODE_VERSION=22.20.0
 RUN ARCH="$(dpkg --print-architecture)" \
     && case "$ARCH" in \
@@ -69,27 +71,38 @@ RUN ARCH="$(dpkg --print-architecture)" \
         arm64)  NODE_ARCH=arm64 ;; \
         *) echo "unsupported arch: $ARCH" >&2; exit 1 ;; \
     esac \
-    && curl -fsSL "${NODE_MIRROR}/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.gz" \
+    && if [ "$CN_MIRROR" = "true" ]; then NODE_SRC="${NODE_MIRROR}"; else NODE_SRC="https://nodejs.org/dist"; fi \
+    && curl -fsSL "${NODE_SRC}/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.gz" \
         | tar -xz -C /usr/local --strip-components=1 \
     && corepack enable \
     && corepack prepare pnpm@11.8.0 --activate
 
-# Configure npm/pnpm to use the npmmirror registry for all subsequent installs.
-RUN npm config set registry "${NPM_REGISTRY}" \
-    && pnpm config set registry "${NPM_REGISTRY}"
+# Configure npm/pnpm registry (CN_MIRROR only — default is registry.npmjs.org).
+RUN if [ "$CN_MIRROR" = "true" ]; then \
+        npm config set registry "${NPM_REGISTRY}" \
+        && pnpm config set registry "${NPM_REGISTRY}"; \
+    fi
 
-# --- Rust: point rustup and cargo at the rsproxy mirror. ---
-ENV RUSTUP_DIST_SERVER=${RS_PROXY}
-ENV RUSTUP_UPDATE_ROOT=${RS_PROXY}/rustup
-RUN mkdir -p /usr/local/cargo \
-    && printf \
-        '[source.crates-io]\nreplace-with = "rsproxy-sparse"\n\n[source.rsproxy-sparse]\nregistry = "sparse+%s/index/"\n' \
-        "${RS_PROXY}" \
-        > /usr/local/cargo/config.toml
+# --- Rust: rsproxy mirror for rustup + cargo (CN_MIRROR only). ---
+# RUSTUP_DIST_SERVER is not set as ENV because ENV cannot be conditional.
+# It is exported inline in the sole rustup-download RUN below; all subsequent
+# cargo commands read config.toml (or use the default crates.io).
+RUN if [ "$CN_MIRROR" = "true" ]; then \
+        mkdir -p /usr/local/cargo \
+        && printf \
+            '[source.crates-io]\nreplace-with = "rsproxy-sparse"\n\n[source.rsproxy-sparse]\nregistry = "sparse+%s/index/"\n' \
+            "${RS_PROXY}" \
+            > /usr/local/cargo/config.toml; \
+    fi
 
 # Add the targets used by Dioxus fullstack builds. Both musl targets are
 # installed; each buildx platform leg builds only its native one (see below).
-RUN rustup target add wasm32-unknown-unknown \
+# RUSTUP_DIST_SERVER is exported inline (only rustup-download that needs it).
+RUN if [ "$CN_MIRROR" = "true" ]; then \
+        export RUSTUP_DIST_SERVER="${RS_PROXY}" \
+        && export RUSTUP_UPDATE_ROOT="${RS_PROXY}/rustup"; \
+    fi \
+    && rustup target add wasm32-unknown-unknown \
         x86_64-unknown-linux-musl aarch64-unknown-linux-musl
 
 # Install the Dioxus CLI from the official prebuilt binary (GitHub Releases),
@@ -116,7 +129,8 @@ RUN ARCH="$(dpkg --print-architecture)" \
         arm64) DX_TRIPLET=aarch64-unknown-linux-gnu DX_SHA256=8f1a17d3218700ffbe15e6540d936a178b2556fc801121a31082e3ba4ab9ef55 ;; \
         *) echo "unsupported arch: $ARCH" >&2; exit 1 ;; \
     esac \
-    && DX_URL="${GH_PROXY:+${GH_PROXY}/}https://github.com/DioxusLabs/dioxus/releases/download/v${DX_VERSION}/dx-${DX_TRIPLET}.tar.gz" \
+    && if [ "$CN_MIRROR" = "true" ]; then GH_PX="${GH_PROXY}"; else GH_PX=""; fi \
+    && DX_URL="${GH_PX:+${GH_PX}/}https://github.com/DioxusLabs/dioxus/releases/download/v${DX_VERSION}/dx-${DX_TRIPLET}.tar.gz" \
     && curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors --retry-connrefused --continue-at - "${DX_URL}" -o /tmp/dx.tar.gz \
     && echo "${DX_SHA256}  /tmp/dx.tar.gz" | sha256sum -c - \
     && tar -xzf /tmp/dx.tar.gz -C /usr/local/bin \
@@ -132,7 +146,8 @@ RUN ARCH="$(dpkg --print-architecture)" \
         arm64)  TW_ARCH=arm64 ;; \
         *) echo "unsupported arch: $ARCH" >&2; exit 1 ;; \
     esac \
-    && GH_URL="${GH_PROXY:+${GH_PROXY}/}https://github.com/tailwindlabs/tailwindcss/releases/download/v${TAILWIND_VERSION}/tailwindcss-linux-${TW_ARCH}" \
+    && if [ "$CN_MIRROR" = "true" ]; then GH_PX="${GH_PROXY}"; else GH_PX=""; fi \
+    && GH_URL="${GH_PX:+${GH_PX}/}https://github.com/tailwindlabs/tailwindcss/releases/download/v${TAILWIND_VERSION}/tailwindcss-linux-${TW_ARCH}" \
     && curl -fsSL -o /usr/local/bin/tailwindcss "${GH_URL}" \
     && chmod +x /usr/local/bin/tailwindcss
 
@@ -147,8 +162,8 @@ RUN ARCH="$(dpkg --print-architecture)" \
         amd64) CHEF_TRIPLET=x86_64-unknown-linux-musl   ;; \
         arm64) CHEF_TRIPLET=aarch64-unknown-linux-musl ;; \
         *) echo "unsupported arch: $ARCH" >&2; exit 1; \
-    esac \
-    && CHEF_URL="${GH_PROXY:+${GH_PROXY}/}https://github.com/LukeMathWalker/cargo-chef/releases/download/v${CHEF_VERSION}/cargo-chef-${CHEF_TRIPLET}.tar.xz" \
+    && if [ "$CN_MIRROR" = "true" ]; then GH_PX="${GH_PROXY}"; else GH_PX=""; fi \
+    && CHEF_URL="${GH_PX:+${GH_PX}/}https://github.com/LukeMathWalker/cargo-chef/releases/download/v${CHEF_VERSION}/cargo-chef-${CHEF_TRIPLET}.tar.xz" \
     && curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors "${CHEF_URL}" -o /tmp/chef.tar.xz \
     && tar -xJf /tmp/chef.tar.xz -C /usr/local/bin --strip-components=1 \
     && rm /tmp/chef.tar.xz \

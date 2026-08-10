@@ -15,6 +15,18 @@
 
 FROM rust:1.97-trixie
 
+# Master switch for Chinese mirrors.
+#   CN_MIRROR=false (default): use all upstream/official sources (fast on CI
+#     runners outside China).
+#   CN_MIRROR=true: route all downloads through Chinese mirrors (TUNA for
+#     Debian apt, rsproxy for Rust/crates.io, npmmirror for Node/npm,
+#     gh-proxy for GitHub Releases). Pass via: --build-arg CN_MIRROR=true
+# Individual mirror URLs are still ARG-overridable for custom mirrors.
+ARG CN_MIRROR=false
+# Exported as ENV so `make dev` / `make esbuild-cache` / `make wasm-bindgen-cache`
+# (called from RUN below) can read it via $$CN_MIRROR in their shell recipes.
+ENV CN_MIRROR=${CN_MIRROR}
+
 # ── 镜像源（与生产 Dockerfile 一致）─────────────────────────────
 ARG DEBIAN_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/debian
 ARG DEBIAN_SECURITY_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/debian-security
@@ -23,12 +35,14 @@ ARG NPM_REGISTRY=https://registry.npmmirror.com
 ARG RS_PROXY=https://rsproxy.cn
 ARG GH_PROXY=https://gh-proxy.com
 
-# --- Debian apt: 改写 DEB822 源到 TUNA 镜像 ---
-RUN sed -i \
-    -e "s|http://deb.debian.org/debian|${DEBIAN_MIRROR}|g" \
-    -e "s|http://deb.debian.org/debian-security|${DEBIAN_SECURITY_MIRROR}|g" \
-    -e "s|http://security.debian.org/debian-security|${DEBIAN_SECURITY_MIRROR}|g" \
-    /etc/apt/sources.list.d/debian.sources
+# --- Debian apt: rewrite sources to the TUNA mirror (CN_MIRROR only). ---
+RUN if [ "$CN_MIRROR" = "true" ]; then \
+        sed -i \
+          -e "s|http://deb.debian.org/debian|${DEBIAN_MIRROR}|g" \
+          -e "s|http://deb.debian.org/debian-security|${DEBIAN_SECURITY_MIRROR}|g" \
+          -e "s|http://security.debian.org/debian-security|${DEBIAN_SECURITY_MIRROR}|g" \
+          /etc/apt/sources.list.d/debian.sources; \
+    fi
 
 # ── 系统构建依赖 ─────────────────────────────────────────────────
 # 与生产 Dockerfile 相同，但去掉 musl-tools（dev 构建是原生 glibc 目标，
@@ -58,7 +72,8 @@ RUN ARCH="$(dpkg --print-architecture)" \
         arm64)  NODE_ARCH=arm64 ;; \
         *) echo "unsupported arch: $ARCH" >&2; exit 1; \
     esac \
-    && curl -fsSL "${NODE_MIRROR}/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.gz" \
+    && if [ "$CN_MIRROR" = "true" ]; then NODE_SRC="${NODE_MIRROR}"; else NODE_SRC="https://nodejs.org/dist"; fi \
+    && curl -fsSL "${NODE_SRC}/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.gz" \
         | tar -xz -C /usr/local --strip-components=1 \
     && corepack enable \
     && corepack prepare pnpm@11.8.0 --activate
@@ -71,28 +86,38 @@ RUN ARCH="$(dpkg --print-architecture)" \
 # package.json 不一致时失败——正是期望信号（该由 watch rebuild 处理）。
 ENV CI=true
 
-RUN npm config set registry "${NPM_REGISTRY}" \
-    && pnpm config set registry "${NPM_REGISTRY}"
+# Configure npm/pnpm registry (CN_MIRROR only — default is registry.npmjs.org).
+RUN if [ "$CN_MIRROR" = "true" ]; then \
+        npm config set registry "${NPM_REGISTRY}" \
+        && pnpm config set registry "${NPM_REGISTRY}"; \
+    fi
 
-# ── Rust: rsproxy 镜像（字节跳动，2026 年仍为社区主流方案）──────────
-# https://rsproxy.cn/  官方配置指南
-ENV RUSTUP_DIST_SERVER=${RS_PROXY}
-ENV RUSTUP_UPDATE_ROOT=${RS_PROXY}/rustup
-RUN mkdir -p /usr/local/cargo \
-    && printf \
-        '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
-        '[source.crates-io]' \
-        'replace-with = "rsproxy-sparse"' \
-        '[source.rsproxy]' \
-        "registry = \"${RS_PROXY}/crates.io-index\"" \
-        '[source.rsproxy-sparse]' \
-        "registry = \"sparse+${RS_PROXY}/index/\"" \
-        '[net]' \
-        'git-fetch-with-cli = true' \
-        > /usr/local/cargo/config.toml
+# --- Rust: rsproxy mirror for rustup + cargo (CN_MIRROR only). ---
+# RUSTUP_DIST_SERVER is not set as ENV because ENV cannot be conditional.
+# It is exported inline in the rustup-download RUN below; all subsequent
+# cargo commands read config.toml (or use the default crates.io).
+RUN if [ "$CN_MIRROR" = "true" ]; then \
+        mkdir -p /usr/local/cargo \
+        && printf \
+            '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
+            '[source.crates-io]' \
+            'replace-with = "rsproxy-sparse"' \
+            '[source.rsproxy]' \
+            "registry = \"${RS_PROXY}/crates.io-index\"" \
+            '[source.rsproxy-sparse]' \
+            "registry = \"sparse+${RS_PROXY}/index/\"" \
+            '[net]' \
+            'git-fetch-with-cli = true' \
+            > /usr/local/cargo/config.toml; \
+    fi
 
 # 开发只需 wasm32 target（dx serve 原生编译 server + 交叉编译 wasm 前端）
-RUN rustup target add wasm32-unknown-unknown && rustup component add clippy rustfmt
+RUN if [ "$CN_MIRROR" = "true" ]; then \
+        export RUSTUP_DIST_SERVER="${RS_PROXY}" \
+        && export RUSTUP_UPDATE_ROOT="${RS_PROXY}/rustup"; \
+    fi \
+    && rustup target add wasm32-unknown-unknown \
+    && rustup component add clippy rustfmt
 
 # ── dx CLI（与生产 Dockerfile 一致，从 GitHub Releases 安装预编译二进制）──
 ARG DX_VERSION=0.7.10
@@ -102,7 +127,8 @@ RUN ARCH="$(dpkg --print-architecture)" \
         arm64) DX_TRIPLET=aarch64-unknown-linux-gnu DX_SHA256=8f1a17d3218700ffbe15e6540d936a178b2556fc801121a31082e3ba4ab9ef55 ;; \
         *) echo "unsupported arch: $ARCH" >&2; exit 1; \
     esac \
-    && DX_URL="${GH_PROXY:+${GH_PROXY}/}https://github.com/DioxusLabs/dioxus/releases/download/v${DX_VERSION}/dx-${DX_TRIPLET}.tar.gz" \
+    && if [ "$CN_MIRROR" = "true" ]; then GH_PX="${GH_PROXY}"; else GH_PX=""; fi \
+    && DX_URL="${GH_PX:+${GH_PX}/}https://github.com/DioxusLabs/dioxus/releases/download/v${DX_VERSION}/dx-${DX_TRIPLET}.tar.gz" \
     && curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors --retry-connrefused --continue-at - "${DX_URL}" -o /tmp/dx.tar.gz \
     && echo "${DX_SHA256}  /tmp/dx.tar.gz" | sha256sum -c - \
     && tar -xzf /tmp/dx.tar.gz -C /usr/local/bin \
@@ -117,7 +143,8 @@ RUN ARCH="$(dpkg --print-architecture)" \
         arm64)  TW_ARCH=arm64 ;; \
         *) echo "unsupported arch: $ARCH" >&2; exit 1; \
     esac \
-    && GH_URL="${GH_PROXY:+${GH_PROXY}/}https://github.com/tailwindlabs/tailwindcss/releases/download/v${TAILWIND_VERSION}/tailwindcss-linux-${TW_ARCH}" \
+    && if [ "$CN_MIRROR" = "true" ]; then GH_PX="${GH_PROXY}"; else GH_PX=""; fi \
+    && GH_URL="${GH_PX:+${GH_PX}/}https://github.com/tailwindlabs/tailwindcss/releases/download/v${TAILWIND_VERSION}/tailwindcss-linux-${TW_ARCH}" \
     && curl -fsSL -o /usr/local/bin/tailwindcss "${GH_URL}" \
     && chmod +x /usr/local/bin/tailwindcss
 

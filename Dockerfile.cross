@@ -37,30 +37,39 @@
 # ships 2.36, so `dx --version` fails with "version `GLIBC_2.39' not found".
 FROM --platform=$BUILDPLATFORM rust:1.96-trixie AS frontend
 
-# Point every network download at a Chinese mirror so the build is fast/reliable
-# from inside the container (the host proxy at 127.0.0.1:10808 is unreachable
-# from Docker Desktop's NAT, and the official sources are slow or intercepted):
+# Master switch for Chinese mirrors.
+#   CN_MIRROR=false (default): use all upstream/official sources (fast on CI
+#     runners outside China — GitHub runners are in the US/EU).
+#   CN_MIRROR=true: route all downloads through Chinese mirrors (TUNA for
+#     Debian/Alpine apt, rsproxy for Rust/crates.io, npmmirror for Node/npm,
+#     gh-proxy for GitHub Releases). Pass via: --build-arg CN_MIRROR=true
+# Individual mirror URLs are still ARG-overridable for custom mirrors.
+ARG CN_MIRROR=false
+# Exported as ENV so `make esbuild-cache` / `make wasm-bindgen-cache` (called
+# from RUN below) can read it via $$CN_MIRROR in their shell recipes.
+ENV CN_MIRROR=${CN_MIRROR}
+
+# Mirror URLs used WHEN CN_MIRROR=true (Chinese mirrors; left unused when
+# CN_MIRROR=false, where all downloads hit upstream sources instead):
 #   - Debian apt          -> TUNA (Tsinghua)
 #   - Rust + crates.io    -> rsproxy (ByteDance)
 #   - Node.js + npm/pnpm  -> npmmirror (Alibaba)
+#   - GitHub Releases     -> gh-proxy (dx, tailwindcss)
 ARG DEBIAN_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/debian
 ARG DEBIAN_SECURITY_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/debian-security
 ARG NODE_MIRROR=https://registry.npmmirror.com/-/binary/node
 ARG NPM_REGISTRY=https://registry.npmmirror.com
 ARG RS_PROXY=https://rsproxy.cn
-# GitHub Releases proxy — the dx tarball and tailwindcss binary live on
-# github.com releases and download at ~300 KB/s with frequent connection
-# resets from China. Prefixing the raw github.com URL routes the download
-# through the proxy. Set to "" (empty) to bypass the proxy (e.g. building
-# outside China where github.com is fast/reliable).
 ARG GH_PROXY=https://gh-proxy.com
 
-# --- Debian apt: rewrite the DEB822 sources to the TUNA mirror. ---
-RUN sed -i \
-    -e "s|http://deb.debian.org/debian|${DEBIAN_MIRROR}|g" \
-    -e "s|http://deb.debian.org/debian-security|${DEBIAN_SECURITY_MIRROR}|g" \
-    -e "s|http://security.debian.org/debian-security|${DEBIAN_SECURITY_MIRROR}|g" \
-    /etc/apt/sources.list.d/debian.sources
+# --- Debian apt: rewrite sources to the TUNA mirror (CN_MIRROR only). ---
+RUN if [ "$CN_MIRROR" = "true" ]; then \
+        sed -i \
+          -e "s|http://deb.debian.org/debian|${DEBIAN_MIRROR}|g" \
+          -e "s|http://deb.debian.org/debian-security|${DEBIAN_SECURITY_MIRROR}|g" \
+          -e "s|http://security.debian.org/debian-security|${DEBIAN_SECURITY_MIRROR}|g" \
+          /etc/apt/sources.list.d/debian.sources; \
+    fi
 
 # Install system build tooling. Native dependencies are needed for:
 #   - cmake/clang/nasm/libssl-dev: libwebp (zenwebp), ring, syntect
@@ -88,9 +97,8 @@ RUN apt-get update \
         git \
     && rm -rf /var/lib/apt/lists/*
 
-# --- Node.js 22 + pnpm: install from the npmmirror binary mirror instead of
-# the NodeSource apt repo (both TUNA and USTC have dropped their NodeSource
-# mirrors; the upstream repo is slow/unreliable from inside the container). ---
+# --- Node.js 22 + pnpm ---
+# CN_MIRROR=true: download from npmmirror; CN_MIRROR=false: from nodejs.org.
 ARG NODE_VERSION=22.20.0
 RUN ARCH="$(dpkg --print-architecture)" \
     && case "$ARCH" in \
@@ -98,33 +106,45 @@ RUN ARCH="$(dpkg --print-architecture)" \
         arm64)  NODE_ARCH=arm64 ;; \
         *) echo "unsupported arch: $ARCH" >&2; exit 1 ;; \
     esac \
-    && curl -fsSL "${NODE_MIRROR}/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.gz" \
+    && if [ "$CN_MIRROR" = "true" ]; then NODE_SRC="${NODE_MIRROR}"; else NODE_SRC="https://nodejs.org/dist"; fi \
+    && curl -fsSL "${NODE_SRC}/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.gz" \
         | tar -xz -C /usr/local --strip-components=1 \
     && corepack enable \
     && corepack prepare pnpm@11.8.0 --activate
 
-# Configure npm/pnpm to use the npmmirror registry for all subsequent installs.
+# Configure npm/pnpm registry (CN_MIRROR only — default is registry.npmjs.org).
 # pnpm 11 enables verify-deps-before-run by default: before every `pnpm run` it
 # re-checks node_modules against the lockfile, spawning a subprocess that can
 # flake (and reach the registry) right after a --frozen-lockfile install. Since
 # we always install --frozen-lockfile immediately before, the check is redundant
-# — disable it for a deterministic Docker build.
-RUN npm config set registry "${NPM_REGISTRY}" \
-    && pnpm config set registry "${NPM_REGISTRY}" \
-    && pnpm config set verify-deps-before-run false
+# — disable it for a deterministic Docker build. Both the registry rewrite and
+# the verify-deps guard live inside the CN_MIRROR conditional.
+RUN if [ "$CN_MIRROR" = "true" ]; then \
+        npm config set registry "${NPM_REGISTRY}" \
+        && pnpm config set registry "${NPM_REGISTRY}" \
+        && pnpm config set verify-deps-before-run false; \
+    fi
 
-# --- Rust: point rustup and cargo at the rsproxy mirror. ---
-ENV RUSTUP_DIST_SERVER=${RS_PROXY}
-ENV RUSTUP_UPDATE_ROOT=${RS_PROXY}/rustup
-RUN mkdir -p /usr/local/cargo \
-    && printf \
-        '[source.crates-io]\nreplace-with = "rsproxy-sparse"\n\n[source.rsproxy-sparse]\nregistry = "sparse+%s/index/"\n' \
-        "${RS_PROXY}" \
-        > /usr/local/cargo/config.toml
+# --- Rust: rsproxy mirror for rustup + cargo (CN_MIRROR only). ---
+# RUSTUP_DIST_SERVER is not set as ENV because ENV cannot be conditional.
+# It is exported inline in the sole rustup-download RUN below; all subsequent
+# cargo commands read config.toml (or use the default crates.io).
+RUN if [ "$CN_MIRROR" = "true" ]; then \
+        mkdir -p /usr/local/cargo \
+        && printf \
+            '[source.crates-io]\nreplace-with = "rsproxy-sparse"\n\n[source.rsproxy-sparse]\nregistry = "sparse+%s/index/"\n' \
+            "${RS_PROXY}" \
+            > /usr/local/cargo/config.toml; \
+    fi
 
 # The frontend stage only builds the WASM client bundle — it needs just the
 # wasm32 target. (Server musl targets moved to Stage B.)
-RUN rustup target add wasm32-unknown-unknown
+# RUSTUP_DIST_SERVER is exported inline (only rustup-download that needs it).
+RUN if [ "$CN_MIRROR" = "true" ]; then \
+        export RUSTUP_DIST_SERVER="${RS_PROXY}" \
+        && export RUSTUP_UPDATE_ROOT="${RS_PROXY}/rustup"; \
+    fi \
+    && rustup target add wasm32-unknown-unknown
 
 # Install the Dioxus CLI from the official prebuilt binary (GitHub Releases),
 # NOT `cargo install` (which compiles dx-cli's huge dep tree from source — the
@@ -150,7 +170,8 @@ RUN ARCH="$(dpkg --print-architecture)" \
         arm64) DX_TRIPLET=aarch64-unknown-linux-gnu DX_SHA256=8f1a17d3218700ffbe15e6540d936a178b2556fc801121a31082e3ba4ab9ef55 ;; \
         *) echo "unsupported arch: $ARCH" >&2; exit 1 ;; \
     esac \
-    && DX_URL="${GH_PROXY:+${GH_PROXY}/}https://github.com/DioxusLabs/dioxus/releases/download/v${DX_VERSION}/dx-${DX_TRIPLET}.tar.gz" \
+    && if [ "$CN_MIRROR" = "true" ]; then GH_PX="${GH_PROXY}"; else GH_PX=""; fi \
+    && DX_URL="${GH_PX:+${GH_PX}/}https://github.com/DioxusLabs/dioxus/releases/download/v${DX_VERSION}/dx-${DX_TRIPLET}.tar.gz" \
     && curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors --retry-connrefused --continue-at - "${DX_URL}" -o /tmp/dx.tar.gz \
     && echo "${DX_SHA256}  /tmp/dx.tar.gz" | sha256sum -c - \
     && tar -xzf /tmp/dx.tar.gz -C /usr/local/bin \
@@ -166,7 +187,8 @@ RUN ARCH="$(dpkg --print-architecture)" \
         arm64)  TW_ARCH=arm64 ;; \
         *) echo "unsupported arch: $ARCH" >&2; exit 1 ;; \
     esac \
-    && GH_URL="${GH_PROXY:+${GH_PROXY}/}https://github.com/tailwindlabs/tailwindcss/releases/download/v${TAILWIND_VERSION}/tailwindcss-linux-${TW_ARCH}" \
+    && if [ "$CN_MIRROR" = "true" ]; then GH_PX="${GH_PROXY}"; else GH_PX=""; fi \
+    && GH_URL="${GH_PX:+${GH_PX}/}https://github.com/tailwindlabs/tailwindcss/releases/download/v${TAILWIND_VERSION}/tailwindcss-linux-${TW_ARCH}" \
     && curl -fsSL -o /usr/local/bin/tailwindcss "${GH_URL}" \
     && chmod +x /usr/local/bin/tailwindcss
 
@@ -277,27 +299,40 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
 # -----------------------------------------------------------------------------
 FROM --platform=$BUILDPLATFORM rust:1.96-alpine3.22 AS server
 
+# ARGs don't carry across stages, so CN_MIRROR must be re-declared here.
+ARG CN_MIRROR=false
+ENV CN_MIRROR=${CN_MIRROR}
 ARG RS_PROXY=https://rsproxy.cn
 
-# TUNA mirror for apk; install zig (the cross-linker) plus the build tooling
-# Alpine's C build scripts may invoke on the host (make/cc for proc-macros and
-# build-script host binaries). zig itself provides the x86_64 target compiler.
-RUN sed -i 's|dl-cdn.alpinelinux.org|mirrors.tuna.tsinghua.edu.cn|g' /etc/apk/repositories \
+# TUNA mirror for apk (CN_MIRROR only); install zig (the cross-linker) plus the
+# build tooling Alpine's C build scripts may invoke on the host (make/cc for
+# proc-macros and build-script host binaries). zig itself provides the x86_64
+# target compiler.
+RUN if [ "$CN_MIRROR" = "true" ]; then \
+        sed -i 's|dl-cdn.alpinelinux.org|mirrors.tuna.tsinghua.edu.cn|g' /etc/apk/repositories; \
+    fi \
     && apk add --no-cache zig build-base musl-dev pkgconfig
 
-# rsproxy for rustup + crates.
-ENV RUSTUP_DIST_SERVER=${RS_PROXY}
-ENV RUSTUP_UPDATE_ROOT=${RS_PROXY}/rustup
-RUN mkdir -p /usr/local/cargo \
-    && printf \
-        '[source.crates-io]\nreplace-with = "rsproxy-sparse"\n\n[source.rsproxy-sparse]\nregistry = "sparse+%s/index/"\n' \
-        "${RS_PROXY}" \
-        > /usr/local/cargo/config.toml
+# rsproxy mirror for rustup + cargo (CN_MIRROR only).
+# RUSTUP_DIST_SERVER is not set as ENV because ENV cannot be conditional; it is
+# exported inline in the rustup-download RUN below.
+RUN if [ "$CN_MIRROR" = "true" ]; then \
+        mkdir -p /usr/local/cargo \
+        && printf \
+            '[source.crates-io]\nreplace-with = "rsproxy-sparse"\n\n[source.rsproxy-sparse]\nregistry = "sparse+%s/index/"\n' \
+            "${RS_PROXY}" \
+            > /usr/local/cargo/config.toml; \
+    fi
 
 # The cross-compile target (the host target, aarch64-unknown-linux-musl, is
 # already installed by the rust:1.96-alpine3.22 base image for build-scripts
 # and proc-macros that run on the builder).
-RUN rustup target add x86_64-unknown-linux-musl
+# RUSTUP_DIST_SERVER is exported inline (only rustup-download that needs it).
+RUN if [ "$CN_MIRROR" = "true" ]; then \
+        export RUSTUP_DIST_SERVER="${RS_PROXY}" \
+        && export RUSTUP_UPDATE_ROOT="${RS_PROXY}/rustup"; \
+    fi \
+    && rustup target add x86_64-unknown-linux-musl
 
 # cargo-zigbuild generates zig-cc wrapper scripts and points cargo's linker
 # env at them, overriding the project .cargo/config.toml's `x86_64-linux-musl-gcc`

@@ -42,6 +42,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.dev
+      args:
+        CN_MIRROR: "true"  # 本地开发在国内，启用镜像加速
     # PID 1 信号/僵尸处理（make dev 作为入口, 否则 Ctrl+C 会残留 dx serve 子进程）
     init: true
     # host.docker.internal 在 Docker Desktop 上自动解析到宿主 IP，

@@ -101,9 +101,10 @@ esbuild-cache:
 			Darwin-arm64)   ESBUILD_PLATFORM=darwin-arm64 ;; \
 			*) echo "unsupported platform: $$(uname -s)-$$(uname -m)" >&2; exit 1 ;; \
 		esac; \
-		echo "Downloading esbuild $(ESBUILD_VERSION) ($$ESBUILD_PLATFORM) from npmmirror..."; \
+		echo "Downloading esbuild $(ESBUILD_VERSION) ($$ESBUILD_PLATFORM) from npm registry..."; \
 		TMP="$$(mktemp -d)"; \
-		curl -fsSL "https://registry.npmmirror.com/@esbuild/$$ESBUILD_PLATFORM/-/$$ESBUILD_PLATFORM-$(ESBUILD_VERSION).tgz" \
+		if [ "$$CN_MIRROR" = "true" ]; then ESBUILD_REGISTRY="https://registry.npmmirror.com"; else ESBUILD_REGISTRY="https://registry.npmjs.org"; fi; \
+		curl -fsSL "$$ESBUILD_REGISTRY/@esbuild/$$ESBUILD_PLATFORM/-/$$ESBUILD_PLATFORM-$(ESBUILD_VERSION).tgz" \
 			| tar -xz -C "$$TMP"; \
 		mv "$$TMP/package/bin/esbuild" "$$ESBUILD_DIR/esbuild"; \
 		rm -rf "$$TMP"; \
@@ -135,9 +136,10 @@ wasm-bindgen-cache:
 			Darwin-arm64)   WB_TRIPLET=aarch64-apple-darwin ;; \
 			*) echo "unsupported platform: $$(uname -s)-$$(uname -m)" >&2; exit 1; \
 		esac; \
-		echo "Downloading wasm-bindgen $(WASM_BINDGEN_VERSION) ($$WB_TRIPLET) from gh-proxy..."; \
+		echo "Downloading wasm-bindgen $(WASM_BINDGEN_VERSION) ($$WB_TRIPLET) from GitHub..."; \
 		TMP="$$(mktemp -d)"; \
-		curl -fsSL "https://gh-proxy.com/https://github.com/rustwasm/wasm-bindgen/releases/download/$(WASM_BINDGEN_VERSION)/wasm-bindgen-$(WASM_BINDGEN_VERSION)-$$WB_TRIPLET.tar.gz" \
+		if [ "$$CN_MIRROR" = "true" ]; then WB_GH_PROXY="https://gh-proxy.com"; else WB_GH_PROXY=""; fi; \
+		curl -fsSL "$${WB_GH_PROXY:+$$WB_GH_PROXY/}https://github.com/rustwasm/wasm-bindgen/releases/download/$(WASM_BINDGEN_VERSION)/wasm-bindgen-$(WASM_BINDGEN_VERSION)-$$WB_TRIPLET.tar.gz" \
 			| tar -xz -C "$$TMP"; \
 		mv "$$TMP/wasm-bindgen-$(WASM_BINDGEN_VERSION)-$$WB_TRIPLET/wasm-bindgen" "$$WB_DIR/wasm-bindgen"; \
 		rm -rf "$$TMP"; \
@@ -276,8 +278,11 @@ VERSION ?= $(shell git describe --tags --abbrev=0 2>/dev/null)
 GIT_BUILD_ARGS = --build-arg YGG_BUILD_GIT_DESCRIBE="$(GIT_DESCRIBE)" \
                  --build-arg YGG_BUILD_GIT_HASH="$(GIT_HASH)" \
                  --build-arg YGG_BUILD_GIT_COMMIT_DATE="$(GIT_DATE)"
+# CN_MIRROR build-arg：传 CN_MIRROR=true 时透传 --build-arg CN_MIRROR=true，
+# 否则不传（Dockerfile 内 ARG CN_MIRROR=false 默认关闭国内镜像）。
+CN_BUILD_ARGS = $(if $(filter true,$(CN_MIRROR)),--build-arg CN_MIRROR=true)
 docker:
-	@docker buildx build --load $(GIT_BUILD_ARGS) \
+	@docker buildx build --load $(GIT_BUILD_ARGS) $(CN_BUILD_ARGS) \
 		-t yggdrasil:latest -t yggdrasil:$(VERSION) .
 
 # Build an amd64 image. On an x86_64 host the server compiles in-container via
@@ -290,15 +295,15 @@ docker:
 # itself. Product is directly docker run / docker save exportable.
 docker-amd64:
 ifeq ($(HOST_ARCH),x86_64)
-	@docker buildx build --platform linux/amd64 --load $(GIT_BUILD_ARGS) \
+	@docker buildx build --platform linux/amd64 --load $(GIT_BUILD_ARGS) $(CN_BUILD_ARGS) \
 		-t yggdrasil:amd64 -t yggdrasil:$(VERSION)-amd64 .
 else
-	@docker buildx build --platform linux/amd64 --load -f Dockerfile.cross $(GIT_BUILD_ARGS) \
+	@docker buildx build --platform linux/amd64 --load -f Dockerfile.cross $(GIT_BUILD_ARGS) $(CN_BUILD_ARGS) \
 		-t yggdrasil:amd64 -t yggdrasil:$(VERSION)-amd64 .
 endif
 
 docker-multiarch:
-	@docker buildx build --platform $(PLATFORMS) $(GIT_BUILD_ARGS) -t $(IMAGE) --push .
+	@docker buildx build --platform $(PLATFORMS) $(GIT_BUILD_ARGS) $(CN_BUILD_ARGS) -t $(IMAGE) --push .
 
 # ── Docker 开发环境 ────────────────────────────────────────────
 # 使用 Dockerfile.dev + docker-compose.dev.yml 在容器内运行 dx serve。
