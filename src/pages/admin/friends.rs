@@ -348,6 +348,7 @@ fn EditorCard() -> Element {
             AssetPickerModal {
                 visible: picker_visible,
                 cover_uploading: avatar_uploading,
+                title: "选择头像",
                 on_select: move |url: String| {
                     avatar.set(url);
                     avatar_failed.set(false);
