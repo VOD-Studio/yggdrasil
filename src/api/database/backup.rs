@@ -4,8 +4,14 @@
 //!
 //! 备份：探测 pg_dump 可用性——可用则子进程生成完整 .sql（`--clean --if-exists`，
 //! 脚本自带 `DROP ... IF EXISTS`，使恢复幂等），不可用则回退纯 SQL（仅数据）。
-//! 备份文件含签名头。
+//! 备份文件含签名头。每次备份按设置附带 uploads 素材打包（`_uploads.tar.gz`，
+//! 排除可重建的 `.cache/`），与 .sql 成对展示/下载/删除。
+//!
+//! 来源标记：手动备份文件名前缀 `backup_`，定时任务自动备份前缀 `auto_`；
+//! 自动备份按 `backup_retention_count` 轮转（只删自动，手动永不自动删）。
+//!
 //! 恢复：仅接受本系统生成的备份（签名校验）+ 二次确认 + 路径穿越防护；
+//! 仅恢复数据库——uploads 需从配对 tar.gz 手动还原（tar 覆盖文件风险高，不自动）。
 //! `psql -v ON_ERROR_STOP=1` 确保任何 SQL 错误立即中止并报失败（不再假成功）；
 //! 成功后全量失效文章缓存与 SSR 世代号。
 //! 长耗时操作走后台任务 + 进度轮询（见 [`crate::api::database::tasks`]）。
@@ -52,6 +58,43 @@ pub struct BackupInfo {
     /// 备份模式：pg_dump / sql-fallback（从签名头解析）。
     pub mode: String,
     pub created_at: Option<String>,
+    /// 来源：manual / auto（从文件名前缀解析）。
+    pub origin: String,
+    /// 配对的 uploads 打包文件名与大小（无则 None——老备份或禁用了素材打包）。
+    pub uploads_filename: Option<String>,
+    pub uploads_size_bytes: Option<u64>,
+}
+
+/// 备份来源：决定文件名前缀与是否参与自动轮转。
+#[cfg(feature = "server")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BackupOrigin {
+    /// admin 面板手动触发（`backup_` 前缀，永不自动删除）。
+    Manual,
+    /// 定时任务触发（`auto_` 前缀，按 retention_count 轮转）。
+    Auto,
+}
+
+#[cfg(feature = "server")]
+impl BackupOrigin {
+    fn file_prefix(self) -> &'static str {
+        match self {
+            Self::Manual => "backup",
+            Self::Auto => "auto",
+        }
+    }
+}
+
+/// 一次备份运行的结果（调度任务据此落库 last_run）。
+#[cfg(feature = "server")]
+#[derive(Debug)]
+pub(crate) struct BackupRunOutcome {
+    /// 数据库 SQL 文件名。
+    pub sql_filename: String,
+    /// uploads 打包文件名（禁用了素材打包时为 None）。
+    pub uploads_filename: Option<String>,
+    /// 非致命告警（如 DB 成功但 uploads 打包失败）。
+    pub warning: Option<String>,
 }
 
 /// 发起备份，立即返回 task_id，后台任务执行。
@@ -65,7 +108,8 @@ pub async fn create_backup() -> Result<String, ServerFnError> {
         tasks::insert(task_id.clone(), TaskKind::Backup);
         let tid = task_id.clone();
         tokio::spawn(async move {
-            run_backup(&tid).await;
+            // 手动触发：进度经任务表轮询展示，返回值无人消费。
+            let _ = run_backup(&tid, BackupOrigin::Manual).await;
         });
         Ok(task_id)
     }
@@ -75,11 +119,31 @@ pub async fn create_backup() -> Result<String, ServerFnError> {
     }
 }
 
-/// 后台执行备份：pg_dump 优先，不可用回退纯 SQL。
+/// 定时任务入口：注册任务后执行自动备份，返回结果供调度器落库 last_run。
 #[cfg(feature = "server")]
-async fn run_backup(task_id: &str) {
+pub(crate) async fn run_auto_backup() -> Result<BackupRunOutcome, String> {
+    let task_id = uuid::Uuid::new_v4().to_string();
+    tasks::insert(task_id.clone(), TaskKind::Backup);
+    run_backup(&task_id, BackupOrigin::Auto).await
+}
+
+/// 后台执行备份：pg_dump 优先，不可用回退纯 SQL；成功后按设置打包 uploads，
+/// 自动备份再做轮转。Ok/Err 均已同步进任务进度表（供前端轮询），返回值供
+/// 调度器落库 last_run。
+#[cfg(feature = "server")]
+async fn run_backup(task_id: &str, origin: BackupOrigin) -> Result<BackupRunOutcome, String> {
     let _ = std::fs::create_dir_all(BACKUP_DIR);
     let timestamp = Utc::now().format("%Y%m%d_%H%M%S").to_string();
+    let prefix = origin.file_prefix();
+
+    // 读取备份设置（include_uploads / retention_count）；读取失败用默认值——
+    // DB 不可达时 pg_dump 自身也会失败并按原路径上报。
+    let settings = match crate::db::pool::get_conn().await {
+        Ok(conn) => crate::api::settings::load_backup_settings(&conn)
+            .await
+            .unwrap_or_default(),
+        Err(_) => crate::models::settings::BackupSettings::default(),
+    };
 
     // 探测 pg_dump（fork+exec+wait 仍是阻塞系统调用，移出 tokio worker 线程）
     let pg_dump_ok = tokio::task::spawn_blocking(|| {
@@ -91,10 +155,131 @@ async fn run_backup(task_id: &str) {
     .await
     .unwrap_or(false);
 
-    if pg_dump_ok {
-        run_pg_dump_backup(task_id, &timestamp).await;
+    let sql_result = if pg_dump_ok {
+        run_pg_dump_backup(task_id, prefix, &timestamp).await
     } else {
-        run_sql_fallback_backup(task_id, &timestamp).await;
+        run_sql_fallback_backup(task_id, prefix, &timestamp).await
+    };
+    let sql_filename = match sql_result {
+        Ok(f) => f,
+        // 子流程已把具体错误写进任务进度表，这里仅透传给调度器。
+        Err(e) => return Err(e),
+    };
+
+    // uploads 素材打包：失败不拖垮已成功的 DB 备份，降级为告警。
+    let mut uploads_filename = None;
+    let mut warning = None;
+    if settings.include_uploads {
+        tasks::update(
+            task_id,
+            "正在打包 uploads 素材",
+            92,
+            TaskStatus::Running,
+            None,
+            None,
+            None,
+        );
+        let tar_name = uploads_archive_name(&sql_filename);
+        let tar_path = backup_path(&tar_name);
+        match tokio::task::spawn_blocking(move || create_uploads_tarball(Path::new("uploads"), &tar_path)).await {
+            Ok(Ok(())) => uploads_filename = Some(tar_name),
+            Ok(Err(e)) => warning = Some(format!("uploads 打包失败: {e}")),
+            Err(e) => warning = Some(format!("uploads 打包任务panic: {e}")),
+        }
+        if warning.is_some() {
+            tracing::warn!("backup uploads tarball failed: {:?}", warning);
+        }
+    }
+
+    // 自动备份轮转：只删 auto_ 前缀的最旧者，手动备份永不触碰。
+    if origin == BackupOrigin::Auto {
+        rotate_auto_backups(settings.retention_count);
+    }
+
+    tasks::update(
+        task_id,
+        "完成",
+        100,
+        TaskStatus::Done,
+        warning.clone(),
+        None,
+        Some(sql_filename.clone()),
+    );
+    Ok(BackupRunOutcome { sql_filename, uploads_filename, warning })
+}
+
+/// SQL 文件名 → 配对 uploads 打包文件名（`X.sql` → `X_uploads.tar.gz`）。
+#[cfg(feature = "server")]
+fn uploads_archive_name(sql_filename: &str) -> String {
+    format!("{}_uploads.tar.gz", sql_filename.trim_end_matches(".sql"))
+}
+
+/// 把 uploads 目录打成 tar.gz（排除可重建的 .cache/ 与 VCS 占位 .gitkeep）。
+/// 阻塞 IO + CPU（gzip），调用方须放 spawn_blocking。
+/// uploads_dir 显式传入（而非写死相对路径）便于测试注入临时目录。
+#[cfg(feature = "server")]
+fn create_uploads_tarball(uploads_dir: &Path, out_path: &Path) -> std::io::Result<()> {
+    let file = std::fs::File::create(out_path)?;
+    let gz = flate2::write::GzEncoder::new(file, flate2::Compression::default());
+    let mut builder = tar::Builder::new(gz);
+    if uploads_dir.is_dir() {
+        for entry in std::fs::read_dir(uploads_dir)? {
+            let entry = entry?;
+            let name = entry.file_name();
+            if name == ".cache" || name == ".gitkeep" {
+                continue;
+            }
+            let path = entry.path();
+            if path.is_dir() {
+                builder.append_dir_all(&name, &path)?;
+            } else if path.is_file() {
+                builder.append_path_with_name(&path, &name)?;
+            }
+        }
+    }
+    let gz = builder.into_inner()?;
+    gz.finish()?;
+    Ok(())
+}
+
+/// 从自动备份 SQL 文件名列表挑出超出保留份数、应删除的最旧者。
+/// 文件名内嵌定宽时间戳，字典序即时间序。纯函数便于单测。
+#[cfg(feature = "server")]
+fn select_expired_auto_backups(names: &[String], keep: usize) -> Vec<String> {
+    let mut autos: Vec<&String> = names
+        .iter()
+        .filter(|n| n.starts_with("auto_") && n.ends_with(".sql"))
+        .collect();
+    autos.sort();
+    let excess = autos.len().saturating_sub(keep);
+    autos.into_iter().take(excess).cloned().collect()
+}
+
+/// 执行自动备份轮转：删除超龄自动备份的 .sql 与配对 tar.gz。
+/// 单个删除失败只记日志，不中断其余。
+#[cfg(feature = "server")]
+fn rotate_auto_backups(keep: i32) {
+    let names: Vec<String> = match std::fs::read_dir(BACKUP_DIR) {
+        Ok(entries) => entries
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .collect(),
+        Err(e) => {
+            tracing::warn!("backup rotation: cannot read {BACKUP_DIR}: {e}");
+            return;
+        }
+    };
+    for sql_name in select_expired_auto_backups(&names, keep.max(0) as usize) {
+        for path in [
+            backup_path(&sql_name),
+            backup_path(&uploads_archive_name(&sql_name)),
+        ] {
+            match std::fs::remove_file(&path) {
+                Ok(()) => tracing::info!("backup rotation: deleted {}", path.display()),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => tracing::warn!("backup rotation: failed to delete {}: {e}", path.display()),
+            }
+        }
     }
 }
 
@@ -103,8 +288,10 @@ async fn run_backup(task_id: &str) {
 /// `--clean --if-exists`：生成的脚本含 `DROP ... IF EXISTS`，使恢复幂等
 /// （恢复前自动删除现有对象，避免「relation already exists」/主键冲突导致
 /// 数据零写入）。详见 `run_restore`。
+///
+/// 成功返回 SQL 文件名（最终「完成」进度由调用方统一上报）。
 #[cfg(feature = "server")]
-async fn run_pg_dump_backup(task_id: &str, timestamp: &str) {
+async fn run_pg_dump_backup(task_id: &str, prefix: &str, timestamp: &str) -> Result<String, String> {
     tasks::update(
         task_id,
         "正在用 pg_dump 导出",
@@ -114,21 +301,22 @@ async fn run_pg_dump_backup(task_id: &str, timestamp: &str) {
         None,
         None,
     );
-    let filename = format!("backup_{}.sql", timestamp);
+    let filename = format!("{prefix}_{timestamp}.sql");
     let path = backup_path(&filename);
     let db_url = match std::env::var("DATABASE_URL") {
         Ok(u) if !u.is_empty() => u,
         _ => {
+            let msg = "pg_dump 备份需要 DATABASE_URL".to_string();
             tasks::update(
                 task_id,
                 "DATABASE_URL 未配置",
                 100,
                 TaskStatus::Failed,
                 None,
-                Some("pg_dump 备份需要 DATABASE_URL".to_string()),
+                Some(msg.clone()),
                 None,
             );
-            return;
+            return Err(msg);
         }
     };
 
@@ -139,31 +327,33 @@ async fn run_pg_dump_backup(task_id: &str, timestamp: &str) {
 
     // 先写签名头，再追加 pg_dump 输出。
     if let Err(e) = std::fs::write(&path, &header) {
+        let msg = format!("无法写入备份目录: {e}");
         tasks::update(
             task_id,
             "写入备份文件失败",
             100,
             TaskStatus::Failed,
             None,
-            Some(format!("无法写入备份目录: {e}")),
+            Some(msg.clone()),
             None,
         );
-        return;
+        return Err(msg);
     }
 
     let stdout_file = match std::fs::OpenOptions::new().append(true).open(&path) {
         Ok(f) => f,
         Err(e) => {
+            let msg = e.to_string();
             tasks::update(
                 task_id,
                 "pg_dump 启动失败",
                 100,
                 TaskStatus::Failed,
                 None,
-                Some(e.to_string()),
+                Some(msg.clone()),
                 None,
             );
-            return;
+            return Err(msg);
         }
     };
     // pg_dump 导出可持续数十秒到数分钟，整个子进程生命周期（spawn + wait_with_output）
@@ -191,82 +381,88 @@ async fn run_pg_dump_backup(task_id: &str, timestamp: &str) {
     .await
     .unwrap_or_else(|join_e| Err((false, std::io::Error::other(join_e.to_string()))));
     match dump_result {
-        Ok(o) if o.status.success() => {
-            tasks::update(
-                task_id,
-                "完成",
-                100,
-                TaskStatus::Done,
-                None,
-                None,
-                Some(filename),
-            );
-        }
+        Ok(o) if o.status.success() => Ok(filename),
         Ok(o) => {
-            let stderr = String::from_utf8_lossy(&o.stderr).to_string();
+            let msg = String::from_utf8_lossy(&o.stderr).to_string();
             tasks::update(
                 task_id,
                 "pg_dump 失败",
                 100,
                 TaskStatus::Failed,
                 None,
-                Some(stderr),
+                Some(msg.clone()),
                 None,
             );
+            Err(msg)
         }
         Err((true, e)) => {
+            let msg = e.to_string();
             tasks::update(
                 task_id,
                 "pg_dump 启动失败",
                 100,
                 TaskStatus::Failed,
                 None,
-                Some(e.to_string()),
+                Some(msg.clone()),
                 None,
             );
+            Err(msg)
         }
         Err((false, e)) => {
+            let msg = e.to_string();
             tasks::update(
                 task_id,
                 "pg_dump 执行失败",
                 100,
                 TaskStatus::Failed,
                 None,
-                Some(e.to_string()),
+                Some(msg.clone()),
                 None,
             );
+            Err(msg)
         }
     }
 }
 
 /// 纯 SQL 回退：仅备份数据（不含 schema），按表计数精确进度。
+///
+/// 注意：该产物不是合法 SQL 脚本（COPY TO STDOUT 的 CSV 原文拼接），
+/// 不能经 psql 恢复——仅供极端环境下抢救数据。生产镜像自带 pg_dump，
+/// 正常不会走到这里。
+///
+/// 成功返回 SQL 文件名（最终「完成」进度由调用方统一上报）。
 #[cfg(feature = "server")]
-async fn run_sql_fallback_backup(task_id: &str, timestamp: &str) {
+async fn run_sql_fallback_backup(
+    task_id: &str,
+    prefix: &str,
+    timestamp: &str,
+) -> Result<String, String> {
     tasks::update(
         task_id,
         "pg_dump 不可用，使用纯 SQL 回退（仅数据）",
         10,
         TaskStatus::Running,
-        Some("仅备份数据，不含 schema/索引/触发器".to_string()),
+        Some("仅备份数据，不含 schema/索引/触发器，且不可经 psql 恢复".to_string()),
         None,
         None,
     );
-    let filename = format!("backup_{}_sqlfallback.sql", timestamp);
+    let filename = format!("{prefix}_{timestamp}_sqlfallback.sql");
     let path = backup_path(&filename);
 
     let client = match crate::db::pool::get_conn().await {
         Ok(c) => c,
         Err(e) => {
+            let msg = e.to_string();
             tasks::update(
                 task_id,
                 "数据库连接失败",
                 100,
                 TaskStatus::Failed,
                 None,
-                Some(e.to_string()),
+                Some(msg.clone()),
                 None,
             );
-            return;
+            return Err(msg);
         }
     };
 
@@ -280,16 +476,17 @@ async fn run_sql_fallback_backup(task_id: &str, timestamp: &str) {
     {
         Ok(rows) => rows.into_iter().map(|r| r.get(0)).collect(),
         Err(e) => {
+            let msg = e.to_string();
             tasks::update(
                 task_id,
                 "读取表清单失败",
                 100,
                 TaskStatus::Failed,
                 None,
-                Some(e.to_string()),
+                Some(msg.clone()),
                 None,
             );
-            return;
+            return Err(msg);
         }
     };
     let total = tables.len().max(1);
@@ -330,26 +527,19 @@ async fn run_sql_fallback_backup(task_id: &str, timestamp: &str) {
     }
 
     if let Err(e) = std::fs::write(&path, out) {
+        let msg = format!("无法写入备份目录: {e}");
         tasks::update(
             task_id,
             "写入备份文件失败",
             100,
             TaskStatus::Failed,
             None,
-            Some(format!("无法写入备份目录: {e}")),
+            Some(msg.clone()),
             None,
         );
-        return;
+        return Err(msg);
     }
-    tasks::update(
-        task_id,
-        "完成",
-        100,
-        TaskStatus::Done,
-        None,
-        None,
-        Some(filename),
-    );
+    Ok(filename)
 }
 
 /// 发起恢复：校验签名 + 路径穿越防护 + 二次确认，立即返回 task_id。
@@ -510,12 +700,26 @@ async fn run_restore(task_id: &str, filename: &str) {
 }
 
 /// 列出 backups/ 目录下的备份文件元信息。
+///
+/// uploads 打包（`*_uploads.tar.gz`）不单独成行，按文件名配对挂到对应 .sql 上。
 #[server(ListBackups, "/api")]
 pub async fn list_backups() -> Result<Vec<BackupInfo>, ServerFnError> {
     let _user = get_current_admin_user().await?;
     #[cfg(feature = "server")]
     {
         let mut infos: Vec<BackupInfo> = Vec::new();
+        // 先收集 uploads 包：文件名 → 大小，供配对查询。
+        let mut tarballs: std::collections::HashMap<String, u64> = std::collections::HashMap::new();
+        if let Ok(entries) = std::fs::read_dir(BACKUP_DIR) {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.ends_with("_uploads.tar.gz") {
+                    if let Ok(meta) = entry.metadata() {
+                        tarballs.insert(name, meta.len());
+                    }
+                }
+            }
+        }
         if let Ok(entries) = std::fs::read_dir(BACKUP_DIR) {
             for entry in entries.flatten() {
                 let name = entry.file_name().to_string_lossy().to_string();
@@ -540,11 +744,19 @@ pub async fn list_backups() -> Result<Vec<BackupInfo>, ServerFnError> {
                             .map(|dt| dt.to_rfc3339())
                             .unwrap_or_default()
                     });
+                let tar_name = uploads_archive_name(&name);
+                let (uploads_filename, uploads_size_bytes) = tarballs
+                    .get_key_value(&tar_name)
+                    .map(|(k, v)| (Some(k.clone()), Some(*v)))
+                    .unwrap_or((None, None));
                 infos.push(BackupInfo {
+                    origin: if name.starts_with("auto_") { "auto" } else { "manual" }.to_string(),
                     filename: name,
                     size_bytes: meta.len(),
                     mode,
                     created_at,
+                    uploads_filename,
+                    uploads_size_bytes,
                 });
             }
         }
@@ -558,7 +770,7 @@ pub async fn list_backups() -> Result<Vec<BackupInfo>, ServerFnError> {
     }
 }
 
-/// 删除备份文件。
+/// 删除备份文件（连同配对的 uploads 打包；配对缺失不视为错误）。
 #[server(DeleteBackup, "/api")]
 pub async fn delete_backup(filename: String) -> Result<(), ServerFnError> {
     let _user = get_current_admin_user().await?;
@@ -572,6 +784,19 @@ pub async fn delete_backup(filename: String) -> Result<(), ServerFnError> {
             return Err(AppError::NotFound("备份文件不存在").into());
         }
         std::fs::remove_file(&path).map_err(|_| AppError::Internal("删除失败"))?;
+        // 成对清理：传 .sql 删配对 tar.gz，传 tar.gz 删配对 .sql。
+        let pair = if filename.ends_with(".sql") {
+            Some(uploads_archive_name(&filename))
+        } else {
+            filename
+                .strip_suffix("_uploads.tar.gz")
+                .map(|stem| format!("{stem}.sql"))
+        };
+        if let Some(pair_name) = pair {
+            match std::fs::remove_file(backup_path(&pair_name)) {
+                Ok(()) | Err(_) => {} // 配对缺失/删除失败不影响主文件删除结果
+            }
+        }
         Ok(())
     }
     #[cfg(not(feature = "server"))]
@@ -696,12 +921,17 @@ pub async fn download_backup(
         .await
         .map_err(|_| (StatusCode::NOT_FOUND, "文件不存在".to_string()))?;
     let disposition = format!("attachment; filename=\"{}\"", filename);
+    let content_type = if filename.ends_with(".tar.gz") {
+        "application/gzip"
+    } else {
+        "application/sql; charset=utf-8"
+    };
     Ok((
         StatusCode::OK,
         [
             (
                 header::CONTENT_TYPE,
-                axum::http::HeaderValue::from_static("application/sql; charset=utf-8"),
+                axum::http::HeaderValue::from_static(content_type),
             ),
             (
                 header::CONTENT_DISPOSITION,
@@ -856,5 +1086,105 @@ mod tests {
         // 多个 -- mode: 行取第一个。
         let content = "-- mode: pg_dump\n-- mode: sql-fallback\n";
         assert_eq!(parse_backup_mode(content), "pg_dump");
+    }
+
+    // ── uploads_archive_name:SQL ↔ uploads 包配对规则 ─────────────
+
+    #[test]
+    fn uploads_archive_name_pairs_with_sql() {
+        assert_eq!(
+            uploads_archive_name("backup_20260810_040000.sql"),
+            "backup_20260810_040000_uploads.tar.gz"
+        );
+        assert_eq!(
+            uploads_archive_name("auto_20260810_040000_sqlfallback.sql"),
+            "auto_20260810_040000_sqlfallback_uploads.tar.gz"
+        );
+    }
+
+    // ── select_expired_auto_backups:轮转选择（只动 auto，保最新 N 份） ──
+
+    #[test]
+    fn rotation_keeps_newest_and_deletes_oldest() {
+        let names: Vec<String> = ["auto_20260808_040000.sql", "auto_20260810_040000.sql", "auto_20260809_040000.sql"]
+            .iter().map(|s| s.to_string()).collect();
+        // 文件名时间戳定宽，乱序输入也应按时间排序。
+        assert_eq!(
+            select_expired_auto_backups(&names, 2),
+            vec!["auto_20260808_040000.sql".to_string()]
+        );
+    }
+
+    #[test]
+    fn rotation_ignores_manual_backups_and_tarballs() {
+        let names: Vec<String> = [
+            "backup_20260101_000000.sql",           // 手动：永不轮转
+            "auto_20260808_040000_uploads.tar.gz",  // tar.gz：随配对 sql 删除，不单独计数
+            "auto_20260808_040000.sql",
+            "auto_20260809_040000.sql",
+        ]
+        .iter().map(|s| s.to_string()).collect();
+        assert!(select_expired_auto_backups(&names, 2).is_empty());
+        assert_eq!(
+            select_expired_auto_backups(&names, 1),
+            vec!["auto_20260808_040000.sql".to_string()]
+        );
+    }
+
+    #[test]
+    fn rotation_empty_and_exact_keep() {
+        assert!(select_expired_auto_backups(&[], 5).is_empty());
+        let names: Vec<String> = ["auto_20260808_040000.sql"].iter().map(|s| s.to_string()).collect();
+        assert!(select_expired_auto_backups(&names, 1).is_empty());
+        // keep=0 全删
+        assert_eq!(select_expired_auto_backups(&names, 0).len(), 1);
+    }
+
+    // ── create_uploads_tarball:打包排除 .cache/.gitkeep ───────────
+
+    #[test]
+    fn tarball_excludes_cache_and_gitkeep() {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("系统时间必然晚于 UNIX_EPOCH")
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "yggdrasil_backup_tar_test_{}_{}",
+            nanos,
+            std::process::id()
+        ));
+        let uploads = dir.join("uploads");
+        std::fs::create_dir_all(uploads.join("2026")).expect("创建测试目录");
+        std::fs::create_dir_all(uploads.join(".cache")).expect("创建测试目录");
+        std::fs::write(uploads.join("2026/pic.webp"), b"img").expect("写测试文件");
+        std::fs::write(uploads.join(".cache/x.webp"), b"cache").expect("写测试文件");
+        std::fs::write(uploads.join(".gitkeep"), b"").expect("写测试文件");
+
+        let out = dir.join("out.tar.gz");
+        create_uploads_tarball(&uploads, &out).expect("打包应成功");
+
+        let file = std::fs::File::open(&out).expect("打开打包产物");
+        let gz = flate2::read::GzDecoder::new(file);
+        let mut archive = tar::Archive::new(gz);
+        let entries: Vec<String> = archive
+            .entries()
+            .expect("读取 tar 条目")
+            .map(|e| {
+                e.expect("tar 条目有效")
+                    .path()
+                    .expect("路径有效")
+                    .to_string_lossy()
+                    .to_string()
+            })
+            .collect();
+        assert!(
+            entries.iter().any(|p| p.contains("2026/pic.webp")),
+            "应包含素材文件: {entries:?}"
+        );
+        assert!(
+            !entries.iter().any(|p| p.contains(".cache") || p.contains(".gitkeep")),
+            "应排除 .cache 与 .gitkeep: {entries:?}"
+        );
+        std::fs::remove_dir_all(&dir).expect("清理测试目录");
     }
 }

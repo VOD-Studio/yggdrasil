@@ -2,6 +2,9 @@
 //!
 //! 所有任务仅在 `server` feature 启用时编译，运行在服务端独立的 tokio 任务中。
 
+/// 每天定时自动备份数据库与 uploads 素材，含自动轮转。
+#[cfg(feature = "server")]
+pub mod backup;
 /// 定时清理图片磁盘缓存，避免缓存目录无限增长。
 #[cfg(feature = "server")]
 pub mod image_cache_cleanup;

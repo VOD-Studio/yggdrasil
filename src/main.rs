@@ -159,6 +159,12 @@ fn main() {
                 std::process::exit(1);
             }
 
+            // BACKUP_* 环境变量播种自动备份初始配置（仅键缺失时生效，之后以面板为准）。
+            // 播种失败不阻断启动——面板默认值仍可用。
+            if let Err(e) = crate::api::settings::seed_backup_settings_from_env(&conn).await {
+                tracing::warn!("backup settings env seeding failed: {e:?}");
+            }
+
             // 端口预探测：dioxus::server::serve() 内部对
             // `TcpListener::bind(addr).await...unwrap()`（dioxus-server 0.7.10 launch.rs:143）
             // 失败会直接 panic（SIGABRT）。这里在交接给 serve() 之前先探测同一地址，
@@ -201,6 +207,11 @@ fn main() {
             // 启动后台定时任务：回收站自动清理
             tokio::spawn(async {
                 tasks::post_purge::run_purge().await;
+            });
+
+            // 启动后台定时任务：每天定点自动备份（设置存 DB，面板可改）
+            tokio::spawn(async {
+                tasks::backup::run_scheduler().await;
             });
 
             // 启动后台定时任务：图片磁盘缓存清理

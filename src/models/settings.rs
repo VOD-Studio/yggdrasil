@@ -37,6 +37,121 @@ impl TrashSettings {
     }
 }
 
+// ============================================================================
+// 自动备份配置
+// ============================================================================
+
+/// 默认不启用自动备份。
+pub const DEFAULT_BACKUP_AUTO_ENABLED: bool = false;
+/// 默认每天 04:00 (UTC) 执行（服务器低峰）。
+pub const DEFAULT_BACKUP_TIME_UTC: &str = "04:00";
+/// 默认保留最近 30 份自动备份。
+pub const DEFAULT_BACKUP_RETENTION_COUNT: i32 = 30;
+/// 默认备份产物包含 uploads 素材包。
+pub const DEFAULT_BACKUP_INCLUDE_UPLOADS: bool = true;
+/// 保留份数下限。
+#[cfg(feature = "server")]
+pub const MIN_BACKUP_RETENTION_COUNT: i32 = 1;
+/// 保留份数上限。防止误填超大值导致磁盘无限增长。
+#[cfg(feature = "server")]
+pub const MAX_BACKUP_RETENTION_COUNT: i32 = 365;
+
+/// 自动备份配置。
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct BackupSettings {
+    /// 是否启用每天定时备份。
+    pub auto_enabled: bool,
+    /// 每天执行时间（UTC，"HH:MM"）。面板负责浏览器本地时区转换。
+    pub time_utc: String,
+    /// 自动备份保留份数，超出后最旧的连配对 uploads 包一起删除。
+    pub retention_count: i32,
+    /// 备份产物是否包含 uploads 打包（tar.gz，排除可重建的 .cache）。
+    pub include_uploads: bool,
+}
+
+impl Default for BackupSettings {
+    fn default() -> Self {
+        Self {
+            auto_enabled: DEFAULT_BACKUP_AUTO_ENABLED,
+            time_utc: DEFAULT_BACKUP_TIME_UTC.to_string(),
+            retention_count: DEFAULT_BACKUP_RETENTION_COUNT,
+            include_uploads: DEFAULT_BACKUP_INCLUDE_UPLOADS,
+        }
+    }
+}
+
+impl BackupSettings {
+    /// 将保留份数钳制到合法范围 [MIN, MAX]。
+    #[cfg(feature = "server")]
+    pub fn clamp_retention(count: i32) -> i32 {
+        count.clamp(MIN_BACKUP_RETENTION_COUNT, MAX_BACKUP_RETENTION_COUNT)
+    }
+
+    /// 校验 "HH:MM" 是否合法（env 播种等需要严格拒绝脏输入的场景用）。
+    #[cfg(feature = "server")]
+    pub fn is_valid_time_utc(s: &str) -> bool {
+        parse_hhmm(s).is_some()
+    }
+
+    /// 规范化 "HH:MM"：容忍单数字小时/分钟与前后空白，输出零填充；
+    /// 非法输入回退默认时间（面板/调度永不因脏数据停摆）。
+    #[cfg(feature = "server")]
+    pub fn normalize_time_utc(s: &str) -> String {
+        match parse_hhmm(s) {
+            Some((h, m)) => format!("{h:02}:{m:02}"),
+            None => DEFAULT_BACKUP_TIME_UTC.to_string(),
+        }
+    }
+
+    /// 计算启用时下一次执行时刻（UTC）。time_utc 非法时返回 None。
+    #[cfg(feature = "server")]
+    pub fn next_run_after(&self, now: chrono::DateTime<chrono::Utc>) -> Option<chrono::DateTime<chrono::Utc>> {
+        let (h, m) = parse_hhmm(&self.time_utc)?;
+        let today = now.date_naive();
+        let today_at = today.and_hms_opt(h as u32, m as u32, 0)?.and_utc();
+        if today_at > now {
+            Some(today_at)
+        } else {
+            Some(today.succ_opt()?.and_hms_opt(h as u32, m as u32, 0)?.and_utc())
+        }
+    }
+}
+
+/// 解析 "HH:MM"（容忍单数字与空白）为 (hour, minute)；非法返回 None。
+#[cfg(feature = "server")]
+fn parse_hhmm(s: &str) -> Option<(u8, u8)> {
+    let mut parts = s.trim().split(':');
+    let h: u8 = parts.next()?.trim().parse().ok()?;
+    let m: u8 = parts.next()?.trim().parse().ok()?;
+    if parts.next().is_some() || h > 23 || m > 59 {
+        return None;
+    }
+    Some((h, m))
+}
+
+/// 最近一次自动备份结果（落库 settings 键，重启后可查；内存任务表 1 小时即清）。
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct LastBackupRun {
+    /// 执行时间（RFC3339）。
+    pub at: String,
+    /// 成败。
+    pub ok: bool,
+    /// 成功时的 SQL 文件名。
+    pub file: Option<String>,
+    /// 失败时的错误摘要。
+    pub error: Option<String>,
+}
+
+/// `get_backup_settings` 的响应：设置 + 上次结果 + 下次执行时间。
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct BackupSettingsView {
+    pub settings: BackupSettings,
+    /// 尚无自动备份记录时为空。
+    pub last_run: Option<LastBackupRun>,
+    /// 下次计划执行（RFC3339；未启用或时间非法时为空）。
+    pub next_run_at: Option<String>,
+}
+
 /// 默认 GitHub 链接：空字符串表示不展示页脚图标。
 pub const DEFAULT_SITE_GITHUB_URL: &str = "";
 /// GitHub 链接最大长度（字符），防止滥用。
@@ -176,5 +291,76 @@ mod tests {
         let normalized = SiteSettings::normalize_github_url(&long);
         // 补的 https:// 前缀不计入截断后的主体长度。
         assert_eq!(normalized.len(), "https://".len() + MAX_SITE_GITHUB_URL_LEN);
+    }
+
+    // ── BackupSettings ───────────────────────────────────────────
+
+    #[test]
+    fn backup_settings_default() {
+        let s = BackupSettings::default();
+        assert!(!s.auto_enabled);
+        assert_eq!(s.time_utc, "04:00");
+        assert_eq!(s.retention_count, 30);
+        assert!(s.include_uploads);
+    }
+
+    #[test]
+    fn normalize_time_pads_single_digits() {
+        assert_eq!(BackupSettings::normalize_time_utc("4:5"), "04:05");
+        assert_eq!(BackupSettings::normalize_time_utc(" 23:59 "), "23:59");
+        assert_eq!(BackupSettings::normalize_time_utc("0:00"), "00:00");
+    }
+
+    #[test]
+    fn normalize_time_rejects_garbage() {
+        for bad in ["", "abc", "24:00", "12:60", "1:2:3", "-1:30", "12:", ":30"] {
+            assert_eq!(
+                BackupSettings::normalize_time_utc(bad),
+                DEFAULT_BACKUP_TIME_UTC,
+                "非法时间应回退默认: {bad:?}"
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn backup_clamp_retention() {
+        assert_eq!(BackupSettings::clamp_retention(0), MIN_BACKUP_RETENTION_COUNT);
+        assert_eq!(BackupSettings::clamp_retention(366), MAX_BACKUP_RETENTION_COUNT);
+        assert_eq!(BackupSettings::clamp_retention(30), 30);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn next_run_same_day_when_future() {
+        use chrono::{TimeZone, Utc};
+        let s = BackupSettings { time_utc: "04:00".into(), ..Default::default() };
+        let now = Utc.with_ymd_and_hms(2026, 8, 10, 1, 30, 0).unwrap();
+        let next = s.next_run_after(now).expect("合法时间必有下次执行");
+        assert_eq!(next, Utc.with_ymd_and_hms(2026, 8, 10, 4, 0, 0).unwrap());
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn next_run_rolls_to_tomorrow_when_past() {
+        use chrono::{TimeZone, Utc};
+        let s = BackupSettings { time_utc: "04:00".into(), ..Default::default() };
+        // 恰等于触发时刻也算「已过」——避免刚错过即触发两次。
+        for now in [
+            Utc.with_ymd_and_hms(2026, 8, 10, 4, 0, 0).unwrap(),
+            Utc.with_ymd_and_hms(2026, 8, 10, 23, 59, 59).unwrap(),
+        ] {
+            let next = s.next_run_after(now).expect("合法时间必有下次执行");
+            assert_eq!(next, Utc.with_ymd_and_hms(2026, 8, 11, 4, 0, 0).unwrap());
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn next_run_none_on_invalid_time() {
+        use chrono::{TimeZone, Utc};
+        let s = BackupSettings { time_utc: "garbage".into(), ..Default::default() };
+        let now = Utc.with_ymd_and_hms(2026, 8, 10, 0, 0, 0).unwrap();
+        assert!(s.next_run_after(now).is_none());
     }
 }

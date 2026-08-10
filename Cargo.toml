@@ -78,6 +78,10 @@ aes-gcm = { version = "0.10", optional = true }
 # 对静态 musl 链接友好；stream 用于按大小上限流式读取，避免无界响应撑爆内存。
 # 重定向在代码里禁用（避免被 302 到内网 IP，绕过 SSRF 白名单）。
 reqwest = { version = "0.12", optional = true, default-features = false, features = ["rustls-tls", "stream"] }
+# 备份的 uploads 素材打包（tar.gz）。纯 Rust 实现，不依赖运行时镜像里的
+# busybox/GNU tar 行为；仅 server 构建使用（spawn_blocking 内跑）。
+tar = { version = "0.4", optional = true }
+flate2 = { version = "1", optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 web-sys = { version = "0.3", features = ["Document", "Window", "Storage", "Element", "HtmlElement", "DomTokenList", "MediaQueryList", "HtmlImageElement", "MouseEvent", "KeyboardEvent", "Node", "NodeList", "DomRect", "EventTarget", "Navigator", "Clipboard", "File", "FileList", "FormData", "Request", "RequestInit", "Response", "Headers", "ClipboardEvent", "DataTransfer", "HtmlInputElement", "EventSource", "MessageEvent"] }
@@ -143,5 +147,7 @@ server = [
     "dep:katex-rs",
     "dep:rmcp",
     "dep:reqwest",
+    "dep:tar",
+    "dep:flate2",
     "dep:aes-gcm",
 ]

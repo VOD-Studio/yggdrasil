@@ -50,8 +50,11 @@ pub struct TaskProgress {
 static TASKS: LazyLock<DashMap<String, TaskProgress>> = LazyLock::new(DashMap::new);
 
 /// 注册新任务（初始 Running，0%）。
+///
+/// pub(crate)：定时备份调度任务（[`crate::tasks::backup`]）也需要注册，
+/// 让 admin 打开面板时能看到进行中的自动备份。
 #[cfg(feature = "server")]
-pub(super) fn insert(id: String, kind: TaskKind) {
+pub(crate) fn insert(id: String, kind: TaskKind) {
     TASKS.insert(
         id.clone(),
         TaskProgress {
