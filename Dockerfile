@@ -161,7 +161,8 @@ RUN ARCH="$(dpkg --print-architecture)" \
     && case "$ARCH" in \
         amd64) CHEF_TRIPLET=x86_64-unknown-linux-musl   ;; \
         arm64) CHEF_TRIPLET=aarch64-unknown-linux-musl ;; \
-        *) echo "unsupported arch: $ARCH" >&2; exit 1; \
+        *) echo "unsupported arch: $ARCH" >&2; exit 1 ;; \
+    esac \
     && if [ "$CN_MIRROR" = "true" ]; then GH_PX="${GH_PROXY}"; else GH_PX=""; fi \
     && CHEF_URL="${GH_PX:+${GH_PX}/}https://github.com/LukeMathWalker/cargo-chef/releases/download/v${CHEF_VERSION}/cargo-chef-${CHEF_TRIPLET}.tar.xz" \
     && curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors "${CHEF_URL}" -o /tmp/chef.tar.xz \
