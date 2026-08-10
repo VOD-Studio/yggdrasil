@@ -106,6 +106,8 @@ fn scroll_option_into_view(element_id: &str) {
 /// - `value`：当前选中项（受控）
 /// - `options`：可选项 `(值, 标签)` 列表
 /// - `onchange`：选中变化回调，回传新选中项的值
+/// - `aria_label`：触发器无障碍标签（可选）；可见文本不足以表意时传入，
+///   如 TimePicker 的「小时」/「分钟」
 #[component]
 pub fn FormSelect<T: Clone + PartialEq + 'static>(
     id: Option<String>,
@@ -116,6 +118,9 @@ pub fn FormSelect<T: Clone + PartialEq + 'static>(
     /// [`FORM_SELECT_COMPACT_CLASS`]，或自定义类串（如编辑器底部胶囊）。
     #[props(default)]
     trigger_class: Option<&'static str>,
+    /// 触发器无障碍标签：缺省不加 aria-label（触发器可见文本即标签）。
+    #[props(default)]
+    aria_label: Option<&'static str>,
 ) -> Element {
     // 面板与 POPOVER_PANEL_CLASS 同源（卡片化圆角 + 阴影）。宽度取 max(触发器,
     // 最长选项)：紧凑触发器（如“手动”）下面板仍能完整展示长选项；上限防出屏。
@@ -205,6 +210,7 @@ pub fn FormSelect<T: Clone + PartialEq + 'static>(
                 aria_haspopup: "listbox",
                 aria_expanded: "{open()}",
                 aria_activedescendant: active_descendant,
+                aria_label: aria_label,
                 onclick: move |_| {
                     // 打开态下触发器被透明遮罩盖住，点击落在遮罩上即关闭；
                     // 这里只需处理「未开 → 开」。
@@ -317,6 +323,96 @@ pub fn FormSelect<T: Clone + PartialEq + 'static>(
     }
 }
 
+/// 小时/分钟选项标签表（"00"–"23" / "00"–"59"）。
+/// 静态表避免每次渲染堆分配；FormSelect 选项标签要求 `&'static str`。
+const HOUR_LABELS: [&str; 24] = [
+    "00", "01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12", "13", "14", "15",
+    "16", "17", "18", "19", "20", "21", "22", "23",
+];
+const MINUTE_LABELS: [&str; 60] = [
+    "00", "01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12", "13", "14", "15",
+    "16", "17", "18", "19", "20", "21", "22", "23", "24", "25", "26", "27", "28", "29", "30", "31",
+    "32", "33", "34", "35", "36", "37", "38", "39", "40", "41", "42", "43", "44", "45", "46", "47",
+    "48", "49", "50", "51", "52", "53", "54", "55", "56", "57", "58", "59",
+];
+
+/// 解析 "HH:MM" 为 (时, 分)；任一段缺失或越界整体回退 (0, 0)。
+/// 纯防御性兜底：正常路径下 value 只来自服务端 normalize 或本组件输出，必然合法。
+fn parse_hhmm(value: &str) -> (u8, u8) {
+    let mut parts = value.split(':');
+    let hour = parts
+        .next()
+        .and_then(|s| s.parse::<u8>().ok())
+        .filter(|h| *h < 24);
+    let minute = parts
+        .next()
+        .and_then(|s| s.parse::<u8>().ok())
+        .filter(|m| *m < 60);
+    match (hour, minute) {
+        (Some(h), Some(m)) => (h, m),
+        _ => (0, 0),
+    }
+}
+
+/// 时间选择器（24 小时制 "HH:MM"）。
+///
+/// 原生 `<input type="time">` 的弹出层由浏览器/OS 绘制，暗色主题下是白底
+/// 系统菜单（与原生 `<select>` 同款问题），故用两个 [`FormSelect`]（时/分）
+/// 组合重写，弹层配色、`select-enter` 动画、键盘导航、视口翻转与遮罩关闭
+/// 逻辑全部继承：
+/// - 外框容器镜像步进器控件（rounded-lg 边框 + `bg-paper-entry`），触发器无边框；
+/// - 打开任一段下拉自动滚动到当前值，点击即回调组合后的 "HH:MM"；
+/// - 键盘：Tab 进入时/分列，↑↓ 或 Enter 展开，Enter 选定，Esc 关闭。
+///
+/// Props：
+/// - `id`：小时触发器 id，用于与 label 关联（缺省用内部计数器生成）
+/// - `value`：当前值 "HH:MM"（受控；非法值回退显示 00:00，不 panic）
+/// - `onchange`：选中变化回调，回传组合后的 "HH:MM"
+#[component]
+pub fn TimePicker(
+    id: Option<String>,
+    value: String,
+    onchange: EventHandler<String>,
+) -> Element {
+    // 无边框紧凑触发器：外框由容器统一绘制（镜像「保留份数」步进器）。
+    // 定义在函数体内：模块级私有常量若仅被 wasm 门控调用点引用，会在 server
+    // 构建下触发 dead_code（同 FormSelect 的 TRIGGER_CLASS 先例）。
+    const TIME_TRIGGER_CLASS: &str = "inline-flex w-auto cursor-pointer select-none text-sm tabular-nums pl-2.5 pr-8 py-2 rounded-md bg-transparent text-paper-primary focus:outline-none focus:ring-1 focus:ring-paper-accent/30 transition-colors duration-200";
+
+    let (hour, minute) = parse_hhmm(&value);
+    let hour_options: Vec<(u8, &'static str)> = HOUR_LABELS
+        .iter()
+        .enumerate()
+        .map(|(i, l)| (i as u8, *l))
+        .collect();
+    let minute_options: Vec<(u8, &'static str)> = MINUTE_LABELS
+        .iter()
+        .enumerate()
+        .map(|(i, l)| (i as u8, *l))
+        .collect();
+
+    rsx! {
+        div { class: "inline-flex items-center gap-0.5 rounded-lg border border-paper-border bg-paper-entry",
+            FormSelect {
+                id,
+                aria_label: "小时",
+                value: hour,
+                options: hour_options,
+                trigger_class: TIME_TRIGGER_CLASS,
+                onchange: move |h: u8| onchange.call(format!("{h:02}:{minute:02}")),
+            }
+            span { class: "text-sm text-paper-tertiary select-none", ":" }
+            FormSelect {
+                aria_label: "分钟",
+                value: minute,
+                options: minute_options,
+                trigger_class: TIME_TRIGGER_CLASS,
+                onchange: move |m: u8| onchange.call(format!("{hour:02}:{m:02}")),
+            }
+        }
+    }
+}
+
 /// 表单输入框组件。
 ///
 /// Props：
@@ -408,7 +504,23 @@ pub fn AlertBox(message: String, variant: &'static str) -> Element {
 
 #[cfg(test)]
 mod tests {
-    use super::{should_flip, wrap_index};
+    use super::{parse_hhmm, should_flip, wrap_index};
+
+    #[test]
+    fn parse_hhmm_valid_values() {
+        assert_eq!(parse_hhmm("00:00"), (0, 0));
+        assert_eq!(parse_hhmm("04:30"), (4, 30));
+        assert_eq!(parse_hhmm("23:59"), (23, 59));
+    }
+
+    #[test]
+    fn parse_hhmm_invalid_falls_back_to_zero() {
+        assert_eq!(parse_hhmm(""), (0, 0)); // 空串
+        assert_eq!(parse_hhmm("12"), (0, 0)); // 缺分钟段
+        assert_eq!(parse_hhmm("24:00"), (0, 0)); // 小时越界
+        assert_eq!(parse_hhmm("12:60"), (0, 0)); // 分钟越界
+        assert_eq!(parse_hhmm("ab:cd"), (0, 0)); // 非数字
+    }
 
     #[test]
     fn wrap_index_cycles_both_directions() {

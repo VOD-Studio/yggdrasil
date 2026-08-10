@@ -474,6 +474,7 @@ fn BackupRow(props: BackupRowProps) -> Element {
 fn BackupSettingsCard() -> Element {
     #[cfg(target_arch = "wasm32")]
     use crate::api::settings::{get_backup_settings, update_backup_settings};
+    use crate::components::forms::TimePicker;
     use crate::components::ui::{ADMIN_CARD_CLASS, BTN_ICON};
     use crate::models::settings::BackupSettingsView;
 
@@ -587,16 +588,12 @@ fn BackupSettingsCard() -> Element {
                         }
                     }
                     div { class: "flex items-center gap-3",
-                        div { class: "flex items-center rounded-lg border border-paper-border bg-paper-entry overflow-hidden",
-                            input {
-                                r#type: "time",
-                                class: "h-9 px-3 text-sm tabular-nums text-paper-primary bg-transparent border-0 focus:outline-none",
-                                value: "{draft_time()}",
-                                oninput: move |e| {
-                                    draft_time.set(e.value());
-                                    just_saved.set(false);
-                                },
-                            }
+                        TimePicker {
+                            value: draft_time(),
+                            onchange: move |v: String| {
+                                draft_time.set(v);
+                                just_saved.set(false);
+                            },
                         }
                         span { class: "text-xs text-paper-secondary", "本地时间" }
                     }
