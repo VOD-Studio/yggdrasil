@@ -323,10 +323,10 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
 
 # Ensure the uploads/backups directories exist for runtime. backups/ holds DB
 # dump files written by the backup feature; without a nobody-owned dir here the
-# scratch runtime (USER 65534) cannot create it under root-owned /app.
+# runtime (USER 65534) cannot create it under root-owned /app.
 RUN mkdir -p uploads backups
 
-# Stage the built binary + assets at arch-independent paths so the scratch
+# Stage the built binary + assets at arch-independent paths so the alpine
 # runtime stage can COPY them without knowing which musl target was built.
 RUN ARCH="$(dpkg --print-architecture)" \
     && case "$ARCH" in \
@@ -337,9 +337,17 @@ RUN ARCH="$(dpkg --print-architecture)" \
     && cp "/build/target/${MUSL_TARGET}/release/yggdrasil" /build/server
 
 # -----------------------------------------------------------------------------
-# Runtime stage: minimal scratch image with the static musl binary
+# Runtime stage: alpine + PostgreSQL client tools
+#
+# pg_dump/psql 是应用内备份/恢复功能的运行时依赖：scratch 镜像里没有它们，
+# 生产曾因此回退到「仅数据、不可恢复」的纯 SQL 导出。服务器 PG 为 16，
+# 客户端包与其对齐（pg_dump 官方保证向下 dump 旧版 server）。
+# 静态 musl server 二进制在 alpine 上原生运行；rustls 内嵌 webpki-roots，
+# 无需 ca-certificates。
 # -----------------------------------------------------------------------------
-FROM scratch
+FROM alpine:3.22
+
+RUN apk add --no-cache postgresql16-client
 
 WORKDIR /app
 

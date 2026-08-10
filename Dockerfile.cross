@@ -5,7 +5,7 @@
 #
 # The whole point of this file: a native arm64 builder (Docker Desktop pinned to
 # $BUILDPLATFORM) compiles an x86_64 server binary, then hands it to a
-# linux/amd64 scratch image. No Rosetta, no QEMU TCG, no `cross` — those crash
+# linux/amd64 alpine image. No Rosetta, no QEMU TCG, no `cross` — those crash
 # (rustc SIGSEGV under QEMU) and Rosetta is unavailable with Docker VMM.
 #
 # The build is split into TWO native-arm64 builder stages because the two
@@ -25,7 +25,7 @@
 #     fully static ELF (ring / libmimalloc-sys / zenwebp all cross-compile via
 #     zig's bundled musl sysroot).
 #
-# Stage C is a linux/amd64 scratch that just COPYs the two artifacts.
+# Stage C is a linux/amd64 alpine stage that just COPYs the two artifacts.
 # =============================================================================
 
 
@@ -295,7 +295,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
 # the x86_64-unknown-linux-musl C+Rust cross-linker; zig bundles its own musl
 # sysroot, so ring / libmimalloc-sys / zenwebp compile without any system
 # cross-toolchain. The output is a fully static ELF dropped into a linux/amd64
-# scratch image by Stage C.
+# alpine image by Stage C.
 # -----------------------------------------------------------------------------
 FROM --platform=$BUILDPLATFORM rust:1.96-alpine3.22 AS server
 
@@ -368,9 +368,15 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
 
 
 # -----------------------------------------------------------------------------
-# Stage C: runtime — minimal linux/amd64 scratch image
+# Stage C: runtime — alpine + PostgreSQL client tools (linux/amd64)
+#
+# pg_dump/psql 是应用内备份/恢复功能的运行时依赖（scratch 没有它们，备份曾
+# 回退到不可恢复的纯 SQL 导出）。服务器 PG 为 16，客户端包与其对齐。
+# 该 stage 是 $TARGETPLATFORM(amd64)，apk add 在 Rosetta 下执行，仅解包无编译。
 # -----------------------------------------------------------------------------
-FROM scratch
+FROM alpine:3.22
+
+RUN apk add --no-cache postgresql16-client
 
 WORKDIR /app
 
