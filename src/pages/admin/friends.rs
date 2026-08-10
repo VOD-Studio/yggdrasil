@@ -122,7 +122,7 @@ fn EditorCard() -> Element {
     let mut url = use_signal(String::new);
     let mut avatar = use_signal(String::new);
     let mut desc = use_signal(String::new);
-    let mut sort_str = use_signal(String::new);
+    let mut sort_str = use_signal(|| "0".to_string());
     let mut is_active = use_signal(|| true);
     let mut busy = use_signal(|| false);
     let mut picker_visible = use_signal(|| false);
@@ -153,7 +153,7 @@ fn EditorCard() -> Element {
         avatar.set(String::new());
         avatar_failed.set(false);
         desc.set(String::new());
-        sort_str.set(String::new());
+        sort_str.set("0".to_string());
         is_active.set(true);
     };
 
