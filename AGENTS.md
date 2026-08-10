@@ -117,7 +117,7 @@ make docker-multiarch IMAGE=ghcr.io/owner/yggdrasil:latest   # amd64+arm64, push
 | Security | `APP_BASE_URL` | CSRF trusted origin (prod strongly recommended; else Host-header fallback) |
 | Security | `COOKIE_SECURE` | add `Secure` to session cookie (false) |
 | Security | `TRUSTED_PROXY_COUNT` | reverse-proxy hop count for real-IP from XFF (0) |
-| Security | `EXPOSE_VERSION_HEADERS` | attach Server/X-Yggdrasil-Version/Git headers (true) |
+| Security | `EXPOSE_VERSION_HEADERS` | attach Server/X-Yggdrasil-Version/Git/Hash headers (true) |
 | Security | `MAX_SESSIONS_PER_USER` | concurrent-session cap w/ LRU evict (5) |
 | Images | `WEBP_QUALITY` / `WEBP_METHOD` | WebP encode quality (85) / method (2) |
 | Images | `MAX_IMAGE_DIMENSION` / `MAX_IMAGE_PIXELS` | max edge px (8192) / total pixels (50M) |

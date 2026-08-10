@@ -249,9 +249,12 @@ pub(crate) async fn ssr_generation_middleware(
     response
 }
 
-/// Axum 中间件：为所有响应附加 Server / X-Yggdrasil-Version / X-Yggdrasil-Git 头。
+/// Axum 中间件：为所有响应附加 Server / X-Yggdrasil-Version / X-Yggdrasil-Git / X-Yggdrasil-Hash 头。
 /// 数据源与启动日志 `log_build_info()` 同源（`crate::build_info::BUILD_INFO`）。
 /// 受 `EXPOSE_VERSION_HEADERS` 控制——该开关在 `main.rs` 决定是否挂载本层。
+///
+/// 暴露 hash 头的原因：tag 精确 checkout 时 `git describe` 只返回纯 tag 名（如 `v0.10.1`），
+/// 不含 commit hash；单独暴露 `git_hash`（完整 40 位）以精确定位线上二进制对应的提交。
 pub(crate) async fn version_headers_middleware(
     req: axum::extract::Request,
     next: axum::middleware::Next,
@@ -273,6 +276,11 @@ pub(crate) async fn version_headers_middleware(
     h.insert(
         axum::http::header::HeaderName::from_static("x-yggdrasil-git"),
         axum::http::HeaderValue::from_str(crate::build_info::BUILD_INFO.git_describe)
+            .unwrap_or_else(|_| axum::http::HeaderValue::from_static("unknown")),
+    );
+    h.insert(
+        axum::http::header::HeaderName::from_static("x-yggdrasil-hash"),
+        axum::http::HeaderValue::from_str(crate::build_info::BUILD_INFO.git_hash)
             .unwrap_or_else(|_| axum::http::HeaderValue::from_static("unknown")),
     );
     response

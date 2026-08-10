@@ -245,7 +245,7 @@ fn main() {
                 .unwrap_or(true);
             tracing::info!(
                 expose_version_headers,
-                "版本响应头开关(Server / X-Yggdrasil-Version / X-Yggdrasil-Git)"
+                "版本响应头开关(Server / X-Yggdrasil-Version / X-Yggdrasil-Git / X-Yggdrasil-Hash)"
             );
 
             // 自定义 API 路由：图片上传（大文件，需要更长超时）
