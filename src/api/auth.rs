@@ -2,6 +2,8 @@
 //!
 //! 提供注册、登录、登出、获取当前用户等接口，
 //! 通过 HttpOnly Cookie 维护会话，首个注册用户自动成为 admin。
+//! 也可通过 `ADMIN_*` 环境变量在启动时创建/同步初始管理员（env 为凭据源，
+//! 每次启动覆盖密码并确保 admin 角色），免去首次注册步骤——见 `sync_admin_from_env`。
 //! 所有 server function 均在 `#[server(Name, "/api")]` 下注册，供客户端与服务端调用。
 //! 仅在 `feature = "server"` 启用的服务端构建中执行数据库操作与 Cookie 写入。
 
@@ -446,6 +448,186 @@ pub async fn get_current_admin_user() -> Result<SessionUser, AppError> {
     Ok(session_user)
 }
 
+/// 初始管理员配置（来自 `ADMIN_*` 环境变量）。
+///
+/// 不实现 `Debug`，避免日志意外泄露密码。
+#[cfg(feature = "server")]
+struct AdminEnvConfig {
+    username: String,
+    email: String,
+    password: String,
+}
+
+/// 从环境变量读取初始管理员配置（`ADMIN_USERNAME` / `ADMIN_EMAIL` / `ADMIN_PASSWORD`）。
+///
+/// 三个变量任一缺失或为空 → 返回 `None`（特性关闭）。
+/// 用户名/邮箱会 trim；密码原样保留（允许含空格）。
+#[cfg(feature = "server")]
+fn parse_admin_env() -> Option<AdminEnvConfig> {
+    let username = std::env::var("ADMIN_USERNAME").ok()?;
+    let username = username.trim().to_string();
+    if username.is_empty() {
+        return None;
+    }
+    let email = std::env::var("ADMIN_EMAIL").ok()?;
+    let email = email.trim().to_string();
+    if email.is_empty() {
+        return None;
+    }
+    let password = std::env::var("ADMIN_PASSWORD").ok()?;
+    if password.is_empty() {
+        return None;
+    }
+    Some(AdminEnvConfig {
+        username,
+        email,
+        password,
+    })
+}
+
+/// 启动时按 `ADMIN_*` 环境变量同步初始管理员（env 是超级管理员的凭据源）。
+///
+/// 语义（与 `BACKUP_*` 播种「仅首次生效」不同：这里**每次启动**都生效）：
+/// 1. 三个变量任一缺失/为空 → 跳过（特性关闭，向后兼容）。
+/// 2. 变量值非法（不过 `validate_*` 校验）→ warn + 跳过，不阻断启动。
+/// 3. `ADMIN_USERNAME` 已存在 → 用 `ADMIN_PASSWORD` 覆盖其密码哈希
+///    （密码一致时跳过重哈希，避免每次启动改写行；覆盖时 bump
+///    `session_generation`，旧会话全部失效需重新登录）；
+///    确保 role='admin'（恢复被降级/封禁的用户，触发 018 迁移的角色触发器）；
+///    邮箱同步为 `ADMIN_EMAIL`（被其他用户占用时仅告警跳过邮箱）。
+/// 4. `ADMIN_USERNAME` 不存在 → 尝试创建为 admin。库中已存在其他 admin 时
+///    创建失败（`idx_one_admin` 部分唯一索引保证全库仅一个 admin），warn 提示。
+///
+/// 失败只告警不阻断启动（与 BACKUP_* 播种一致）。
+#[cfg(feature = "server")]
+pub(crate) async fn sync_admin_from_env(
+    client: &tokio_postgres::Client,
+) -> Result<(), AppError> {
+    let Some(cfg) = parse_admin_env() else {
+        return Ok(());
+    };
+    if let Err(e) = validate_username(&cfg.username) {
+        tracing::warn!("ADMIN_USERNAME={:?} 非法，跳过初始管理员同步: {e}", cfg.username);
+        return Ok(());
+    }
+    if let Err(e) = validate_email(&cfg.email) {
+        tracing::warn!("ADMIN_EMAIL={:?} 非法，跳过初始管理员同步: {e}", cfg.email);
+        return Ok(());
+    }
+    if let Err(e) = validate_password(&cfg.password) {
+        tracing::warn!("ADMIN_PASSWORD 不合法（{e}），跳过初始管理员同步");
+        return Ok(());
+    }
+
+    // Argon2 是 memory-hard 计算，必须在 spawn_blocking 中执行（与注册路径一致）。
+    let pw = cfg.password.clone();
+    let password_hash = tokio::task::spawn_blocking(move || password::hash_password(&pw))
+        .await
+        .map_err(|_| AppError::Internal("初始管理员密码哈希任务失败"))?
+        .map_err(|_| AppError::Internal("初始管理员密码哈希失败"))?;
+
+    let row = client
+        .query_opt(
+            "SELECT id, email, role, password_hash FROM users WHERE username = $1",
+            &[&cfg.username],
+        )
+        .await
+        .map_err(AppError::query)?;
+
+    let Some(row) = row else {
+        // 用户名不存在：尝试创建为 admin（仅当库中尚无 admin 时成功）。
+        let created = client
+            .query_opt(
+                "INSERT INTO users (username, email, password_hash, role)
+                 VALUES ($1, $2, $3, 'admin')
+                 ON CONFLICT DO NOTHING
+                 RETURNING id",
+                &[&cfg.username, &cfg.email, &password_hash],
+            )
+            .await
+            .map_err(AppError::query)?;
+        if created.is_some() {
+            tracing::info!(
+                "初始管理员已从环境变量创建: username={}（登录成功后可从 .env 移除 ADMIN_* 变量）",
+                cfg.username
+            );
+        } else {
+            tracing::warn!(
+                "无法创建初始管理员 username={}（用户名/邮箱已被占用，或库中已存在其他 admin——全库仅允许一个 admin）。\
+                 可将 ADMIN_USERNAME 改为现有 admin 的用户名以同步其凭据",
+                cfg.username
+            );
+        }
+        return Ok(());
+    };
+
+    // 用户名已存在：env 覆盖密码、确保 admin 角色、同步邮箱。
+    let user_id: i32 = row.get("id");
+    let stored_hash: String = row.get("password_hash");
+    let stored_email: String = row.get("email");
+    let role: String = row.get("role");
+
+    // 密码与 env 一致时跳过重哈希（一次 Argon2 verify，代价可接受）。
+    let pw_for_verify = cfg.password.clone();
+    let same_password = tokio::task::spawn_blocking(move || {
+        password::verify_password(&pw_for_verify, &stored_hash)
+    })
+    .await
+    .map_err(|_| AppError::Internal("初始管理员密码校验任务失败"))?
+    .unwrap_or(false);
+    if !same_password {
+        // 凭据变更 → bump session_generation，旧会话全部失效，需用新密码重新登录。
+        client
+            .execute(
+                "UPDATE users SET password_hash = $1, session_generation = session_generation + 1
+                 WHERE id = $2",
+                &[&password_hash, &user_id],
+            )
+            .await
+            .map_err(AppError::query)?;
+        tracing::info!("初始管理员密码已从环境变量覆盖: username={}", cfg.username);
+    }
+
+    if role != "admin" {
+        // 018 迁移的角色变更触发器会在此 bump session_generation（降级期间的会话本已失效）。
+        client
+            .execute(
+                "UPDATE users SET role = 'admin' WHERE id = $1",
+                &[&user_id],
+            )
+            .await
+            .map_err(AppError::query)?;
+        tracing::info!("初始管理员角色已恢复为 admin: username={}", cfg.username);
+    }
+
+    if stored_email != cfg.email {
+        let email_taken: bool = client
+            .query_one(
+                "SELECT EXISTS (SELECT 1 FROM users WHERE email = $1 AND id <> $2)",
+                &[&cfg.email, &user_id],
+            )
+            .await
+            .map_err(AppError::query)?
+            .get(0);
+        if email_taken {
+            tracing::warn!(
+                "ADMIN_EMAIL={:?} 已被其他用户占用，跳过邮箱同步（密码/角色不受影响）",
+                cfg.email
+            );
+        } else {
+            client
+                .execute(
+                    "UPDATE users SET email = $1 WHERE id = $2",
+                    &[&cfg.email, &user_id],
+                )
+                .await
+                .map_err(AppError::query)?;
+        }
+    }
+
+    Ok(())
+}
+
 #[cfg(all(test, feature = "server"))]
 mod tests {
     use super::*;
@@ -518,5 +700,111 @@ mod tests {
     #[test]
     fn validate_password_empty() {
         assert!(validate_password("").is_err());
+    }
+
+    /// 在给定环境变量集下运行闭包，结束后恢复原值（env 是进程全局状态，需 serial 隔离）。
+    fn with_env(vars: &[(&str, Option<&str>)], f: impl FnOnce()) {
+        let saved: Vec<(String, Option<String>)> = vars
+            .iter()
+            .map(|(k, _)| (k.to_string(), std::env::var(k).ok()))
+            .collect();
+        for (k, v) in vars {
+            match v {
+                Some(v) => std::env::set_var(k, v),
+                None => std::env::remove_var(k),
+            }
+        }
+        f();
+        for (k, v) in saved {
+            match v {
+                Some(v) => std::env::set_var(k, v),
+                None => std::env::remove_var(k),
+            }
+        }
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn parse_admin_env_none_when_all_unset() {
+        with_env(
+            &[
+                ("ADMIN_USERNAME", None),
+                ("ADMIN_EMAIL", None),
+                ("ADMIN_PASSWORD", None),
+            ],
+            || assert!(parse_admin_env().is_none()),
+        );
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn parse_admin_env_none_when_any_missing() {
+        // 只缺 ADMIN_PASSWORD。
+        with_env(
+            &[
+                ("ADMIN_USERNAME", Some("admin")),
+                ("ADMIN_EMAIL", Some("admin@example.com")),
+                ("ADMIN_PASSWORD", None),
+            ],
+            || assert!(parse_admin_env().is_none()),
+        );
+        // 只缺 ADMIN_EMAIL。
+        with_env(
+            &[
+                ("ADMIN_USERNAME", Some("admin")),
+                ("ADMIN_EMAIL", None),
+                ("ADMIN_PASSWORD", Some("strongpass123")),
+            ],
+            || assert!(parse_admin_env().is_none()),
+        );
+        // 只缺 ADMIN_USERNAME。
+        with_env(
+            &[
+                ("ADMIN_USERNAME", None),
+                ("ADMIN_EMAIL", Some("admin@example.com")),
+                ("ADMIN_PASSWORD", Some("strongpass123")),
+            ],
+            || assert!(parse_admin_env().is_none()),
+        );
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn parse_admin_env_none_on_empty_values() {
+        with_env(
+            &[
+                ("ADMIN_USERNAME", Some("admin")),
+                ("ADMIN_EMAIL", Some("admin@example.com")),
+                ("ADMIN_PASSWORD", Some("")),
+            ],
+            || assert!(parse_admin_env().is_none()),
+        );
+        with_env(
+            &[
+                ("ADMIN_USERNAME", Some("   ")),
+                ("ADMIN_EMAIL", Some("admin@example.com")),
+                ("ADMIN_PASSWORD", Some("strongpass123")),
+            ],
+            || assert!(parse_admin_env().is_none()),
+        );
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn parse_admin_env_some_when_all_set() {
+        with_env(
+            &[
+                ("ADMIN_USERNAME", Some("  admin  ")),
+                ("ADMIN_EMAIL", Some(" admin@example.com ")),
+                ("ADMIN_PASSWORD", Some("  strong pass 123  ")),
+            ],
+            || {
+                let cfg = parse_admin_env().expect("三个变量齐全应返回 Some");
+                // 用户名/邮箱 trim，密码原样保留。
+                assert_eq!(cfg.username, "admin");
+                assert_eq!(cfg.email, "admin@example.com");
+                assert_eq!(cfg.password, "  strong pass 123  ");
+            },
+        );
     }
 }

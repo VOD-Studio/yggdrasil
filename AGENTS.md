@@ -7,10 +7,10 @@ Yggdrasil is a fullstack blog/CMS built with **Dioxus 0.7**. A single Rust crate
 **The `server` feature gate is the central organizing principle.** Nearly every module gates real DB/IO/Axum logic under `#[cfg(feature = "server")]` and provides a compiling stub under `#[cfg(not(feature = "server"))]` for the WASM build. `default = ["web", "server"]` (fullstack); override to build one target only (see Development Commands).
 
 - **Two endpoint kinds**: (1) Dioxus server functions `#[server(Name, "/api")]` (auth, posts, comments, settings, database, code_runner); (2) manual Axum routers merged into the app router in `src/main.rs` (upload, image serving, health, SSE stream).
-- **Boot** (`src/main.rs`, server branch): dotenvy → tracing → build_info → hard-check `DATABASE_URL` → `validate_database_url()` → CSRF warn → a *throwaway* multi-thread tokio runtime runs `ensure_database()` + migrations + port pre-probe, then is dropped → `dioxus::server::serve` returns the Axum router with background tasks (session cleanup, post purge, image-cache cleanup, IP purge, sysinfo sampler). mimalloc is the global allocator under `cfg(all(feature="server", not(wasm32)))`.
+- **Boot** (`src/main.rs`, server branch): dotenvy → tracing → build_info → hard-check `DATABASE_URL` → `validate_database_url()` → CSRF warn → a *throwaway* multi-thread tokio runtime runs `ensure_database()` + migrations + env seeders (`BACKUP_*` backup settings, `ADMIN_*` initial admin) + port pre-probe, then is dropped → `dioxus::server::serve` returns the Axum router with background tasks (session cleanup, post purge, image-cache cleanup, IP purge, sysinfo sampler). mimalloc is the global allocator under `cfg(all(feature="server", not(wasm32)))`.
 - **Read flow** (e.g. `GET /post/:slug`): middleware stack `[ssr_generation → add_cache_control → csrf → optional compression → 30s Timeout → admin_guard]` → Dioxus IncrementalRenderer checks persisted `static/<route>/index/<hash>.html` (TTL `SSR_CACHE_SECS`, default 3600s). HIT → serve cached HTML. MISS → SSR renders `PostDetail` → `use_server_future(get_post_by_slug(slug))` → Dioxus deserializes to a server fn call → `cache::get_post_by_slug` (moka, 600s TTL) → miss → `get_conn()` from deadpool pool → query → cache set → return.
 - **Write flow** (e.g. create post): admin client → POST `/api/CreatePost` → CSRF validates Origin → `get_current_admin_user()` → validate → `spawn_blocking(render_markdown_enhanced)` → BEGIN TXN → INSERT post + `sync_tags` → COMMIT → invalidate matching moka caches **and** `ssr_cache::invalidate_ssr_*` (physical dir deletion) → return.
-- **Auth**: cookie-session (HttpOnly, SameSite=Lax, optional Secure), Argon2 hashing in `spawn_blocking`, moka-cached sessions re-checked against `users.session_generation` on every hit. First registered user becomes admin (atomic `INSERT ... ON CONFLICT`).
+- **Auth**: cookie-session (HttpOnly, SameSite=Lax, optional Secure), Argon2 hashing in `spawn_blocking`, moka-cached sessions re-checked against `users.session_generation` on every hit. First registered user becomes admin (atomic `INSERT ... ON CONFLICT`); alternatively `ADMIN_*` env vars sync an initial admin at boot (`sync_admin_from_env` in `src/api/auth.rs`, env wins over DB on every boot).
 - **Code execution**: ` ```lang runnable ``` ` blocks and `/admin/runner` run code in Docker containers (bollard, `src/infra/docker.rs`) — read-only rootfs + tmpfs `/code`, UID 1000, resource/cap-limited, `ContainerGuard` cleanup. SSE streams output at `GET /api/exec/stream`.
 
 ## Key Directories
@@ -96,7 +96,7 @@ make docker-multiarch IMAGE=ghcr.io/owner/yggdrasil:latest   # amd64+arm64, push
 
 **Self-contained binary**: migrations (`src/db/migrate.rs` `include_str!`), custom syntaxes (`src/highlight.rs` `include_str!`), and `public/highlight.css` (pre-generated at build time) are embedded — the runtime `scratch` image needs only the binary + `public/` + `uploads/`.
 
-**Key env vars** (see `.env.example` for the full ~45-var reference; no mailer, no `LISTEN_ADDR` — uses `IP`/`PORT`, no `UPLOAD` dir env, no session-lifetime/ADMIN env):
+**Key env vars** (see `.env.example` for the full reference; no mailer, no `LISTEN_ADDR` — uses `IP`/`PORT`, no `UPLOAD` dir env, no session-lifetime env; `ADMIN_*` is the startup initial-admin sync, see Bootstrap below):
 
 | Category | Var | Purpose (defaults) |
 |---|---|---|
@@ -107,6 +107,7 @@ make docker-multiarch IMAGE=ghcr.io/owner/yggdrasil:latest   # amd64+arm64, push
 | Server | `RUST_LOG` | tracing filter (`info`) |
 | Server | `IP` / `PORT` | bind address (set in Dockerfile `0.0.0.0:3000`) |
 | Server | `DIOXUS_PUBLIC_PATH` | public assets path (Dockerfile `/app/public`) |
+| Bootstrap | `ADMIN_USERNAME` / `ADMIN_EMAIL` / `ADMIN_PASSWORD` | startup initial-admin sync (create or overwrite-password + ensure admin role on every boot; unset/empty = disabled) |
 | Perf | `SSR_CACHE_SECS` | SSR page cache TTL (3600) |
 | Perf | `COMPRESSION_ALGORITHMS` | response compression — gzip/brotli/deflate/zstd/`all`/`off` (**off**) |
 | Perf | `TOKIO_WORKER_THREADS` | tokio workers (read by runtime, not app code) |
