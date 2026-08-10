@@ -51,6 +51,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trg_comments_updated_at ON comments;
 CREATE TRIGGER trg_comments_updated_at
     BEFORE UPDATE ON comments
     FOR EACH ROW
