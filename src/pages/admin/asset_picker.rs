@@ -189,7 +189,8 @@ pub fn AssetPickerModal(
                         oninput: move |v: String| query.set(v),
                     }
                     // 上传新图：成功后保留在当前网格，用户点击后才选中
-                    label { class: "inline-flex shrink-0 cursor-pointer items-center justify-center {BTN_PRIMARY}",
+                    label {
+                        class: "inline-flex shrink-0 cursor-pointer items-center justify-center {BTN_PRIMARY}",
                         class: if cover_uploading() { "pointer-events-none cursor-wait opacity-60" } else { "" },
                         "上传新图"
                         input {
@@ -213,7 +214,8 @@ pub fn AssetPickerModal(
                                             cover_uploading.set(true);
                                             error.set(None);
                                             spawn(async move {
-                                                let result = crate::tiptap_bridge::upload_image_file(web_file).await;
+                                                let result = crate::tiptap_bridge::upload_image_file(web_file) // 失败留在 modal 内提示，不关闭。
+                                                    .await;
                                                 if let Some(preview_url) = preview_url.as_deref() {
                                                     let _ = web_sys::Url::revoke_object_url(preview_url);
                                                 }
@@ -223,7 +225,6 @@ pub fn AssetPickerModal(
                                                         uploading_preview.set(None);
                                                         cover_uploading.set(false);
                                                     }
-                                                    // 失败留在 modal 内提示，不关闭。
                                                     Err(msg) => {
                                                         error.set(Some(msg));
                                                         uploading_preview.set(None);
@@ -298,7 +299,9 @@ pub fn AssetPickerModal(
                                             class: "inline-flex h-5 w-5 text-white",
                                             dangerous_inner_html: SPINNER_SVG,
                                         }
-                                        span { class: "text-xs font-medium text-white drop-shadow", "上传中" }
+                                        span { class: "text-xs font-medium text-white drop-shadow",
+                                            "上传中"
+                                        }
                                     }
                                 }
                             }
@@ -320,7 +323,9 @@ pub fn AssetPickerModal(
                                                 src: "{uploaded_url}",
                                                 alt: "新上传图片",
                                             }
-                                            span { class: "absolute inset-x-2 bottom-2 rounded-full bg-black/55 px-2 py-1 text-center text-xs font-medium text-white backdrop-blur-sm", "刚上传" }
+                                            span { class: "absolute inset-x-2 bottom-2 rounded-full bg-black/55 px-2 py-1 text-center text-xs font-medium text-white backdrop-blur-sm",
+                                                "刚上传"
+                                            }
                                         }
                                     }
                                 }
