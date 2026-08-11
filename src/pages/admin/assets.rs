@@ -222,14 +222,16 @@ pub fn Assets() -> Element {
         // min-h-full：AdminLayout 卡片是 flex 列滚动容器，main（flex-1）的高度为 definite，
         // 故本根节点可解析百分比最小高度——内容不足一页时撑满 main 内容盒，
         // 配合下方分页的 mt-auto wrapper 把分页条吸附到卡片底部。
-        div { class: "min-h-full flex flex-col",
-            h1 { class: "text-3xl font-extrabold tracking-tight mb-2", "素材管理" }
-            p { class: "text-sm text-[var(--color-paper-secondary)] mb-8",
+        div { class: "animate-page-enter min-h-full flex flex-col",
+            h1 { class: "animate-row-enter text-3xl font-extrabold tracking-tight mb-2", "素材管理" }
+            p { class: "animate-row-enter text-sm text-[var(--color-paper-secondary)] mb-8",
+                style: "animation-delay: 60ms",
                 "管理文章编辑器上传的图片。共 {all_count} 张，引用中 {used_count} 张，未引用 {orphan_count} 张。"
             }
 
             // 顶栏：筛选 tabs + 搜索 + 排序
-            div { class: "flex flex-wrap items-end justify-between gap-4",
+            div { class: "animate-row-enter flex flex-wrap items-end justify-between gap-4",
+                style: "animation-delay: 120ms",
                 FilterTabs {
                     items: vec![("all", "全部"), ("used", "引用中"), ("orphan", "未引用")],
                     active_value: filter(),
