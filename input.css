@@ -1286,31 +1286,6 @@
     font-weight: 500;
   }
 
-  .back-to-home {
-    margin-top: calc(var(--content-gap-paper) * 1.5);
-    padding-top: var(--content-gap-paper);
-    border-top: 1px solid var(--color-paper-border);
-  }
-
-  .back-to-home a,
-  .back-to-home button {
-    color: var(--color-paper-secondary);
-    font-size: 14px;
-    text-decoration: none;
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 0;
-    font-family: inherit;
-  }
-
-  .back-to-home a:hover,
-  .back-to-home button:hover {
-    color: var(--color-paper-primary);
-    text-decoration: underline;
-    text-underline-offset: 0.3rem;
-  }
-
   /* 卡片封面：blur-img 结构，固定 21:9 比例，hover 缩放。
      双类选择器提升特异性，可靠覆盖 .blur-img 的 aspect-ratio: var(--ar)
      （卡片不写 --ar，var(--ar) 解析为空会导致高度塌陷）。

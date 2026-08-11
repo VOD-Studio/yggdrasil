@@ -1,6 +1,5 @@
-//! 文章页脚组件
-//!
-//! 展示文章标签、上一篇/下一篇导航与返回首页链接。
+//! 文章页脚组件。
+//! 展示文章标签与上一篇/下一篇导航。
 
 use dioxus::prelude::*;
 use dioxus::router::components::Link;
@@ -17,7 +16,6 @@ use crate::router::Route;
 /// 展示内容包括：
 /// - 文章标签云，链接到对应标签详情页
 /// - 相邻文章导航（如有）
-/// - 返回首页链接
 #[component]
 pub fn PostFooter(post: Post) -> Element {
     rsx! {
@@ -39,10 +37,6 @@ pub fn PostFooter(post: Post) -> Element {
 
             if post.prev_post.is_some() || post.next_post.is_some() {
                 PostNavLinks { prev: post.prev_post, next: post.next_post }
-            }
-
-            div { class: "back-to-home",
-                Link { to: Route::Home {}, "← 返回首页" }
             }
         }
     }
