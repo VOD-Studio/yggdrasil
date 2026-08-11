@@ -25,7 +25,7 @@ metadata:
 
 ## 关键约定（务必先读）
 
-本仓库图标有**两种用法，且都把 SVG 内联进 rsx!，从不走 `<img src="/icons/...">`**：
+本仓库图标有**三种用法，都把 SVG 内联，从不走 `<img src="/icons/...">`**：
 
 1. **内联进组件**（绝大多数情况）—— 把图标 path 直接写进 `rsx!` 的 `svg { path { d: "..." } }`，
    `fill: "currentColor"`，由外层 Tailwind 文字色 / `color` CSS 控制明暗主题适配。
@@ -34,6 +34,14 @@ metadata:
    `src/components/post/post_header.rs`。
 2. **内联成 `&'static str` 常量** —— 复杂 SVG（带渐变/keyframes，如 `SPINNER_SVG`），
    通过 `dangerous_inner_html` 注入。源文件仍存一份在 `public/icons/`。
+3. **JS 库 `innerHTML` 字符串注入** —— `libs/` 工作区（如 `libs/tiptap-editor/src/index.ts` 的
+   源码/富文本切换按钮）用 `document.createElement` 动态建 DOM，图标通过
+   `element.innerHTML = '<svg fill="currentColor" viewBox="0 -960 960 960" ...><path d="..."/></svg>'`
+   注入。`fill: currentColor` + 标准 960 视口 + `public/icons/` 留档约定**与 rsx! 完全一致**，
+   只是经 DOM API。建议把 SVG 串抽成模块级 `const FOO_ICON_SVG = '...';` 常量复用。
+
+> **例外**：`libs/tiptap-editor/src/slash-command.ts` 的 `/命令` 临时菜单**刻意**用文本字形/emoji
+> （`▶`/`<>`/`📤`/`🔗`）做轻量图标——那是瞬态命令面板的有意选择，不是约定违例，**不要**去"修"成 SVG。
 
 `public/icons/` 里的 `.svg` 文件是**源档案（source of record）**，保留 Google 默认下载文件名，
 仅用于：追溯图标出处、后续复用 path、替换图标时比对。运行时**不被任何 `<img>` 引用**。
@@ -67,6 +75,20 @@ svg {
 - 选定图标，**记下它的官方名**（如 `search`、`bedtime`、`wb_sunny`、`computer`）。
 - 这是一个 JS 单页应用，用 `browser` 工具（`xd://browser`）打开并交互，或让用户在浏览器里搜好
   告诉你图标名。不要尝试 `read` 该 URL —— 返回的是空壳 HTML。
+
+### 1b. 程序化获取（browser 工具不可用时的回退）
+
+- 若 `xd://browser` 打不开 Google Fonts（如报 `open_split did not return a surface_id`），
+  可用 `read` 工具直读 jsDelivr 上的 raw SVG：
+  `https://cdn.jsdelivr.net/npm/@material-symbols/svg-400@latest/outlined/<name>.svg`
+  （把 `<name>` 换成图标名，如 `close.svg`、`code.svg`、`article.svg`）。
+- 返回 `<svg viewBox="0 -960 960 960"><path d="..."/></svg>`：标准 960 网格、单 path，提取 `d` 值即可，
+  跳过 browser 下载那步。
+- ⚠️ **provenance**：`@material-symbols/svg-400` 是**社区包**（marella 维护），**不是 Google 官方 npm**，
+  但从 Google 主仓库自动同步，path 忠实。**黄金标准仍是 Google Fonts 网站下载**（保留 Google 原文件名留档）；
+  CDN 仅作 headless / 无 browser 环境的回退，且 commit/文档里要标明来源。
+- 重量变体：`svg-300`(light) / `svg-400`(regular，= Google 默认 wght400 GRAD0) / `svg-500`(medium) /
+  `svg-700`(bold)；`/outlined/` 子目录 = 默认样式。
 
 ### 2. 下载 SVG
 - 在图标的右侧面板点 **"SVG" 下载按钮**（默认 24px、Weight 400、Grade 0、Optical size 24、
