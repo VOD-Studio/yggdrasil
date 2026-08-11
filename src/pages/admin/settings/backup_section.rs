@@ -10,7 +10,7 @@ use crate::api::settings::{get_backup_settings, update_backup_settings};
 #[cfg(target_arch = "wasm32")]
 use crate::components::forms::{FormInput, FormLabel};
 #[cfg(target_arch = "wasm32")]
-use crate::components::ui::{LoadingButton, ADMIN_CARD_CLASS};
+use crate::components::ui::{LoadingButton, ADMIN_CARD_CLASS, CHECKBOX_CLASS};
 #[cfg(target_arch = "wasm32")]
 use crate::models::settings::{BackupSettings, BackupSettingsView};
 
@@ -86,7 +86,7 @@ pub fn BackupSection(toast: Callback<(String, bool)>) -> Element {
                     label { class: "flex items-center gap-3 cursor-pointer max-w-xl",
                         input {
                             r#type: "checkbox",
-                            class: "w-4 h-4 rounded border-[var(--color-paper-border)] text-[var(--color-paper-accent)] focus:ring-[var(--color-paper-accent)]",
+                            class: "{CHECKBOX_CLASS}",
                             checked: auto_draft(),
                             onchange: move |e: Event<FormData>| {
                                 auto_draft.set(e.value() == "true");
@@ -137,7 +137,7 @@ pub fn BackupSection(toast: Callback<(String, bool)>) -> Element {
                     label { class: "flex items-center gap-3 cursor-pointer max-w-xl",
                         input {
                             r#type: "checkbox",
-                            class: "w-4 h-4 rounded border-[var(--color-paper-border)] text-[var(--color-paper-accent)] focus:ring-[var(--color-paper-accent)]",
+                            class: "{CHECKBOX_CLASS}",
                             checked: include_draft(),
                             onchange: move |e: Event<FormData>| {
                                 include_draft.set(e.value() == "true");

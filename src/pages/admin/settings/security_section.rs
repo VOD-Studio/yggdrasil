@@ -10,7 +10,7 @@ use crate::api::settings::{get_security_settings, update_security_settings};
 #[cfg(target_arch = "wasm32")]
 use crate::components::forms::{FormInput, FormLabel, FormSelect};
 #[cfg(target_arch = "wasm32")]
-use crate::components::ui::{LoadingButton, ADMIN_CARD_CLASS};
+use crate::components::ui::{LoadingButton, ADMIN_CARD_CLASS, CHECKBOX_CLASS};
 #[cfg(target_arch = "wasm32")]
 use crate::models::settings::SecuritySettings;
 
@@ -88,7 +88,7 @@ pub fn SecuritySection(toast: Callback<(String, bool)>) -> Element {
                     label { class: "flex items-center gap-3 cursor-pointer max-w-xl",
                         input {
                             r#type: "checkbox",
-                            class: "w-4 h-4 rounded border-[var(--color-paper-border)] text-[var(--color-paper-accent)] focus:ring-[var(--color-paper-accent)]",
+                            class: "{CHECKBOX_CLASS}",
                             checked: draft().cookie_secure,
                             onchange: move |e: Event<FormData>| {
                                 let mut d = draft();

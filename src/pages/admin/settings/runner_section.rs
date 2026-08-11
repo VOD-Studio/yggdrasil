@@ -9,7 +9,7 @@ use crate::api::settings::{get_runner_settings, update_runner_settings};
 #[cfg(target_arch = "wasm32")]
 use crate::components::forms::FormLabel;
 #[cfg(target_arch = "wasm32")]
-use crate::components::ui::{LoadingButton, ADMIN_CARD_CLASS};
+use crate::components::ui::{LoadingButton, ADMIN_CARD_CLASS, CHECKBOX_CLASS};
 #[cfg(target_arch = "wasm32")]
 use crate::models::settings::RunnerSettings;
 
@@ -63,7 +63,7 @@ pub fn RunnerSection(toast: Callback<(String, bool)>) -> Element {
                     label { class: "flex items-center gap-3 cursor-pointer max-w-xl",
                         input {
                             r#type: "checkbox",
-                            class: "w-4 h-4 rounded border-[var(--color-paper-border)] text-[var(--color-paper-accent)] focus:ring-[var(--color-paper-accent)]",
+                            class: "{CHECKBOX_CLASS}",
                             checked: draft().allow_network,
                             onchange: move |e: Event<FormData>| {
                                 let mut d = draft(); d.allow_network = e.value() == "true"; draft.set(d); just_saved.set(false);
