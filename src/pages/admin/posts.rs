@@ -39,7 +39,7 @@ const POSTS_PER_PAGE: i32 = 20;
 #[component]
 pub fn Posts() -> Element {
     rsx! {
-        div { class: "w-full max-w-7xl mx-auto space-y-6",
+        div { class: "animate-page-enter w-full max-w-7xl mx-auto space-y-6",
             div { class: "flex flex-col md:flex-row md:items-end justify-between gap-6 pb-6 border-b border-paper-border mb-6",
                 div {
                     h1 { class: "text-4xl font-extrabold tracking-tight text-[var(--color-paper-primary)]",
@@ -183,12 +183,13 @@ fn AllPostsList() -> Element {
                         }
                     }
                     tbody {
-                        for post in get_posts().iter() {
+                        for (idx, post) in get_posts().iter().enumerate() {
                             PostRow {
                                 key: "{post.id}",
                                 post: post.clone(),
                                 deleting: deleting().contains(&post.id),
                                 rebuilding: rebuilding().contains(&post.id),
+                                stagger_index: idx as u32,
                                 on_delete: move |id| {
                                     deleting.write().insert(id);
                                     spawn(async move {
@@ -348,6 +349,7 @@ fn PostRow(
     post: PostListItem,
     deleting: bool,
     rebuilding: bool,
+    stagger_index: u32,
     on_delete: EventHandler<i32>,
     on_rebuild: EventHandler<i32>,
 ) -> Element {
@@ -365,7 +367,8 @@ fn PostRow(
     };
 
     rsx! {
-        tr { class: "{ADMIN_ROW_HOVER}",
+        tr { class: "animate-row-enter {ADMIN_ROW_HOVER}",
+            style: "animation-delay: {stagger_index * 35}ms",
             td { class: "px-4 py-3",
                 Link {
                     class: "text-paper-primary hover:text-paper-accent transition-colors cursor-pointer",
