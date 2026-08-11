@@ -3,7 +3,7 @@
 //! 对应路由 `/admin/preview/:slug`。
 //!
 //! 与公开详情页 [`crate::pages::post_detail::PostDetail`] 的关键差异：
-//! - 取数走 admin-only [`get_post_preview`]，不做 `status = 'published'` 过滤，
+//! - 取数走 admin-only [`crate::api::posts::get_post_preview`]，不做 `status = 'published'` 过滤，
 //!   故草稿可预览；草稿绝不进公开缓存（`cache::get/set_post_by_slug`）。
 //! - 顶部渲染预览横幅（状态徽章 + 继续编辑 / 返回列表），便于从预览直达编辑。
 //! - 错误/未命中**就地渲染**（admin nest 内无 ErrorBoundary），不向错误边界上抛。

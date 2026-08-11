@@ -1,7 +1,7 @@
 //! 草稿/文章预览页骨架屏
 //!
 //! 镜像 `/admin/preview/:slug`（[`crate::pages::admin::preview::PostPreview`]）的真实结构。
-//! 与公开文章详情页骨架屏（[`PostDetailSkeleton`]）的唯一差异：顶部多一组预览横幅占位
+//! 与公开文章详情页骨架屏（[`crate::components::skeletons::post_detail_skeleton::PostDetailSkeleton`]）的唯一差异：顶部多一组预览横幅占位
 //! （状态徽章 + 继续编辑 / 返回列表按钮），其余标题/摘要/元信息/封面/正文/页脚占位一致。
 //!
 //! 同时服务于两处加载态，保证视觉连续：

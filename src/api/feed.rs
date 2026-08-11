@@ -4,7 +4,7 @@
 //! - `GET /feed.xml` — RSS 2.0（`application/rss+xml`）
 //! - `GET /feed.json` — JSON Feed 1.1（`application/feed+json`）
 //!
-//! 输出最近 [`FEED_ITEM_LIMIT`] 篇已发布文章（含保存时已渲染的全文 `content_html`），
+//! 输出最近 `FEED_ITEM_LIMIT` 篇已发布文章（含保存时已渲染的全文 `content_html`），
 //! 数据经 moka 单键缓存（`CacheKey::Feed`，TTL 600s），文章写路径统一失效。
 //! 渲染函数均为纯函数并接受 `now`/`base` 参数注入，便于单元测试固定输出。
 //!

@@ -7,7 +7,7 @@
 //!
 //! 调度语义：
 //! - 每次循环重读 DB 配置；关闭时挂起等待，不跑空转 tick。
-//! - 面板保存设置后经 [`notify_settings_changed`] 立即唤醒重排，
+//! - 面板保存设置后经 [`crate::tasks::backup::notify_settings_changed`] 立即唤醒重排，
 //!   无需等原定的下次触发。
 //! - 任何错误只记录日志，不中断循环（与 post_purge 等任务一致）。
 
