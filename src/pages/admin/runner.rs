@@ -58,7 +58,7 @@ pub fn Runner() -> Element {
     let (overrides, override_error) = (parsed.read().0.clone(), parsed.read().1.clone());
 
     rsx! {
-        div { class: "w-full max-w-7xl mx-auto space-y-8",
+        div { class: "animate-page-enter w-full max-w-7xl mx-auto space-y-8",
             // 页头：与 dashboard / posts / system 对齐（h1 text-4xl + 底部分割线）
             div { class: "flex flex-col md:flex-row md:items-end justify-between gap-6 pb-8 border-b border-[var(--color-paper-border)]/50",
                 div {
@@ -79,15 +79,18 @@ pub fn Runner() -> Element {
                         "语言"
                     }
                     div { class: "flex gap-2",
-                        for l in SUPPORTED_LANGS {
+                        for (idx, l) in SUPPORTED_LANGS.iter().enumerate() {
                             button {
                                 key: "{l}",
-                                class: (if lang() == *l {
-                                    BTN_PRIMARY_SM
-                                } else {
-                                    "px-4 py-1.5 text-sm font-medium rounded-full text-[var(--color-paper-secondary)] bg-[var(--color-paper-theme)] hover:bg-[var(--color-paper-border)] hover:text-[var(--color-paper-primary)] transition cursor-pointer"
-                                })
-                                    .to_string(),
+                                class: format!(
+                                    "animate-row-enter {}",
+                                    if lang() == *l {
+                                        BTN_PRIMARY_SM
+                                    } else {
+                                        "px-4 py-1.5 text-sm font-medium rounded-full text-[var(--color-paper-secondary)] bg-[var(--color-paper-theme)] hover:bg-[var(--color-paper-border)] hover:text-[var(--color-paper-primary)] transition cursor-pointer"
+                                    }
+                                ),
+                                style: "animation-delay: {idx * 50}ms",
                                 onclick: {
                                     let ll = (*l).to_string();
                                     move |_| {
@@ -131,13 +134,19 @@ pub fn Runner() -> Element {
             // remount 同根因，见 src/pages/post_detail.rs:110-115 注释）。key 绑定语言 →
             // keyed diff 卸载旧实例（use_drop 销毁 CodeMirror/xterm）→ 挂载新实例，mount effect
             // 以新 language + 新 source 初始化编辑器。输出区随 remount 重置（切语言本应清空旧输出）。
+            // 切语言时 CodeRunner 经 std::iter::once keyed remount 卸载/重建（详见上注释），
+            // 包一层 animate-section-enter div：随 remount 重挂载，每次切语言重播
+            // 300ms 淡入位移（与设置页分区切换同款动画）。
             for lang_key in std::iter::once(lang().clone()) {
-                CodeRunner {
+                div {
                     key: "{lang_key}",
-                    source: source(),
-                    language: lang(),
-                    overrides: overrides.clone(),
-                    instance_id: 0,
+                    class: "animate-section-enter",
+                    CodeRunner {
+                        source: source(),
+                        language: lang(),
+                        overrides: overrides.clone(),
+                        instance_id: 0,
+                    }
                 }
             }
         }
