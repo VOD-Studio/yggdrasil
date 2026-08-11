@@ -92,7 +92,8 @@ pub fn TrashSection(toast: Callback<(String, bool)>) -> Element {
                             min: "1", max: "365",
                             class: "w-full px-4 py-2 border border-[var(--color-paper-border)] rounded-2xl bg-[var(--color-paper-entry)] text-[var(--color-paper-primary)] focus:outline-none focus:border-[var(--color-paper-accent)] focus:ring-1 focus:ring-[var(--color-paper-accent)]/30 transition-colors",
                             value: "{days_draft()}",
-                            oninput: move |v: String| {
+                            oninput: move |e: Event<FormData>| {
+                                let v = e.value();
                                 if let Ok(n) = v.parse::<i32>() { days_draft.set(n); }
                                 just_saved.set(false);
                             },

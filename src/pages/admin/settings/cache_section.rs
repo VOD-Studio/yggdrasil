@@ -76,7 +76,8 @@ pub fn CacheSection(toast: Callback<(String, bool)>) -> Element {
                             min: "1",
                             class: "w-full px-4 py-2 border border-[var(--color-paper-border)] rounded-2xl bg-[var(--color-paper-entry)] text-[var(--color-paper-primary)] focus:outline-none focus:border-[var(--color-paper-accent)] focus:ring-1 focus:ring-[var(--color-paper-accent)]/30 transition-colors",
                             value: "{mb_draft()}",
-                            oninput: move |v: String| {
+                            oninput: move |e: Event<FormData>| {
+                                let v = e.value();
                                 if let Ok(n) = v.parse::<u32>() { mb_draft.set(n); }
                                 just_saved.set(false);
                             },
@@ -94,7 +95,8 @@ pub fn CacheSection(toast: Callback<(String, bool)>) -> Element {
                             min: "1",
                             class: "w-full px-4 py-2 border border-[var(--color-paper-border)] rounded-2xl bg-[var(--color-paper-entry)] text-[var(--color-paper-primary)] focus:outline-none focus:border-[var(--color-paper-accent)] focus:ring-1 focus:ring-[var(--color-paper-accent)]/30 transition-colors",
                             value: "{hours_draft()}",
-                            oninput: move |v: String| {
+                            oninput: move |e: Event<FormData>| {
+                                let v = e.value();
                                 if let Ok(n) = v.parse::<u32>() { hours_draft.set(n); }
                                 just_saved.set(false);
                             },

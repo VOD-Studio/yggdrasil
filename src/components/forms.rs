@@ -465,7 +465,7 @@ pub fn FormInput(
 /// - `label`：标签文本
 /// - `html_for`：关联的 input id
 #[component]
-pub fn FormLabel(label: &'static str, html_for: Option<String>) -> Element {
+pub fn FormLabel(label: String, html_for: Option<String>) -> Element {
     rsx! {
         label {
             class: "block text-sm font-medium text-paper-secondary mb-1",

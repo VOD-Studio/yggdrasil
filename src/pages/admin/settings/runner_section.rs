@@ -75,31 +75,31 @@ pub fn RunnerSection(toast: Callback<(String, bool)>) -> Element {
                         }
                     }
 
-                    {NumberField { id: "runner-concurrent".to_string(), label: "最大并发任务数".to_string(), value: draft().max_concurrent as i64,
-                        oninput: move |v| { if let Ok(n) = v.parse::<u32>() { let mut d = draft(); d.max_concurrent = n; draft.set(d); just_saved.set(false); } }
-                    }}
-                    {NumberField { id: "runner-cpu".to_string(), label: "每任务最大 CPU 核数".to_string(), value: format!("{:.1}", draft().max_cpu_cores),
-                        oninput: move |v| { if let Ok(n) = v.parse::<f64>() { let mut d = draft(); d.max_cpu_cores = n; draft.set(d); just_saved.set(false); } },
+                    NumberField { id: "runner-concurrent".to_string(), label: "最大并发任务数".to_string(), value: draft().max_concurrent.to_string(),
+                        oninput: move |v: String| { if let Ok(n) = v.parse::<u32>() { let mut d = draft(); d.max_concurrent = n; draft.set(d); just_saved.set(false); } }
+                    }
+                    NumberField { id: "runner-cpu".to_string(), label: "每任务最大 CPU 核数".to_string(), value: format!("{:.1}", draft().max_cpu_cores),
+                        oninput: move |v: String| { if let Ok(n) = v.parse::<f64>() { let mut d = draft(); d.max_cpu_cores = n; draft.set(d); just_saved.set(false); } },
                         is_float: true,
-                    }}
-                    {NumberField { id: "runner-mem".to_string(), label: "每任务最大内存（MB）".to_string(), value: draft().max_memory_mb as i64,
-                        oninput: move |v| { if let Ok(n) = v.parse::<u32>() { let mut d = draft(); d.max_memory_mb = n; draft.set(d); just_saved.set(false); } }
-                    }}
-                    {NumberField { id: "runner-timeout".to_string(), label: "每任务最大执行超时（秒）".to_string(), value: draft().max_timeout_secs as i64,
-                        oninput: move |v| { if let Ok(n) = v.parse::<u32>() { let mut d = draft(); d.max_timeout_secs = n; draft.set(d); just_saved.set(false); } }
-                    }}
-                    {NumberField { id: "runner-output".to_string(), label: "每任务最大输出字节数".to_string(), value: draft().max_output_bytes as i64,
-                        oninput: move |v| { if let Ok(n) = v.parse::<u64>() { let mut d = draft(); d.max_output_bytes = n; draft.set(d); just_saved.set(false); } }
-                    }}
-                    {NumberField { id: "runner-source".to_string(), label: "每任务最大源码字节数".to_string(), value: draft().max_source_bytes as i64,
-                        oninput: move |v| { if let Ok(n) = v.parse::<u64>() { let mut d = draft(); d.max_source_bytes = n; draft.set(d); just_saved.set(false); } }
-                    }}
-                    {NumberField { id: "runner-queue".to_string(), label: "排队等待超时（秒）".to_string(), value: draft().queue_timeout_secs as i64,
-                        oninput: move |v| { if let Ok(n) = v.parse::<u32>() { let mut d = draft(); d.queue_timeout_secs = n; draft.set(d); just_saved.set(false); } }
-                    }}
-                    {NumberField { id: "runner-ttl".to_string(), label: "历史 task 保留时长（秒）".to_string(), value: draft().task_ttl_secs as i64,
-                        oninput: move |v| { if let Ok(n) = v.parse::<u32>() { let mut d = draft(); d.task_ttl_secs = n; draft.set(d); just_saved.set(false); } }
-                    }}
+                    }
+                    NumberField { id: "runner-mem".to_string(), label: "每任务最大内存（MB）".to_string(), value: draft().max_memory_mb.to_string(),
+                        oninput: move |v: String| { if let Ok(n) = v.parse::<u32>() { let mut d = draft(); d.max_memory_mb = n; draft.set(d); just_saved.set(false); } }
+                    }
+                    NumberField { id: "runner-timeout".to_string(), label: "每任务最大执行超时（秒）".to_string(), value: draft().max_timeout_secs.to_string(),
+                        oninput: move |v: String| { if let Ok(n) = v.parse::<u32>() { let mut d = draft(); d.max_timeout_secs = n; draft.set(d); just_saved.set(false); } }
+                    }
+                    NumberField { id: "runner-output".to_string(), label: "每任务最大输出字节数".to_string(), value: draft().max_output_bytes.to_string(),
+                        oninput: move |v: String| { if let Ok(n) = v.parse::<u64>() { let mut d = draft(); d.max_output_bytes = n; draft.set(d); just_saved.set(false); } }
+                    }
+                    NumberField { id: "runner-source".to_string(), label: "每任务最大源码字节数".to_string(), value: draft().max_source_bytes.to_string(),
+                        oninput: move |v: String| { if let Ok(n) = v.parse::<u64>() { let mut d = draft(); d.max_source_bytes = n; draft.set(d); just_saved.set(false); } }
+                    }
+                    NumberField { id: "runner-queue".to_string(), label: "排队等待超时（秒）".to_string(), value: draft().queue_timeout_secs.to_string(),
+                        oninput: move |v: String| { if let Ok(n) = v.parse::<u32>() { let mut d = draft(); d.queue_timeout_secs = n; draft.set(d); just_saved.set(false); } }
+                    }
+                    NumberField { id: "runner-ttl".to_string(), label: "历史 task 保留时长（秒）".to_string(), value: draft().task_ttl_secs.to_string(),
+                        oninput: move |v: String| { if let Ok(n) = v.parse::<u32>() { let mut d = draft(); d.task_ttl_secs = n; draft.set(d); just_saved.set(false); } }
+                    }
 
                     div { class: "flex flex-col gap-2 max-w-xl",
                         FormLabel { label: "语言白名单（逗号分隔，留空=全部）", html_for: Some("runner-langs".to_string()) }
@@ -108,7 +108,8 @@ pub fn RunnerSection(toast: Callback<(String, bool)>) -> Element {
                             class: "w-full px-4 py-2 border border-[var(--color-paper-border)] rounded-2xl bg-[var(--color-paper-entry)] text-[var(--color-paper-primary)] focus:outline-none focus:border-[var(--color-paper-accent)] focus:ring-1 focus:ring-[var(--color-paper-accent)]/30 transition-colors",
                             value: draft().languages.as_deref().unwrap_or(""),
                             placeholder: "python,node,rust（留空=全部）",
-                            oninput: move |v: String| {
+                            oninput: move |e: Event<FormData>| {
+                                let v = e.value();
                                 let mut d = draft();
                                 d.languages = if v.trim().is_empty() { None } else { Some(v) };
                                 draft.set(d); just_saved.set(false);
@@ -176,7 +177,7 @@ fn NumberField(
                 step: if is_float { "0.1" } else { "1" },
                 class: "w-full px-4 py-2 border border-[var(--color-paper-border)] rounded-2xl bg-[var(--color-paper-entry)] text-[var(--color-paper-primary)] focus:outline-none focus:border-[var(--color-paper-accent)] focus:ring-1 focus:ring-[var(--color-paper-accent)]/30 transition-colors",
                 value: "{value}",
-                oninput: move |v: String| oninput.call(v),
+                oninput: move |e: Event<FormData>| oninput.call(e.value()),
             }
         }
     }

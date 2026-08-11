@@ -85,7 +85,8 @@ pub fn ImageSection(toast: Callback<(String, bool)>) -> Element {
                             id: "webp-quality", r#type: "number", min: "0", max: "100", step: "1",
                             class: "w-full px-4 py-2 border border-[var(--color-paper-border)] rounded-2xl bg-[var(--color-paper-entry)] text-[var(--color-paper-primary)] focus:outline-none focus:border-[var(--color-paper-accent)] focus:ring-1 focus:ring-[var(--color-paper-accent)]/30 transition-colors",
                             value: "{webp_draft().quality}",
-                            oninput: move |v: String| {
+                            oninput: move |e: Event<FormData>| {
+                                let v = e.value();
                                 if let Ok(n) = v.parse::<f32>() { let mut d = webp_draft(); d.quality = n; webp_draft.set(d); webp_just_saved.set(false); }
                             },
                         }
@@ -98,7 +99,8 @@ pub fn ImageSection(toast: Callback<(String, bool)>) -> Element {
                             id: "webp-method", r#type: "number", min: "0", max: "6",
                             class: "w-full px-4 py-2 border border-[var(--color-paper-border)] rounded-2xl bg-[var(--color-paper-entry)] text-[var(--color-paper-primary)] focus:outline-none focus:border-[var(--color-paper-accent)] focus:ring-1 focus:ring-[var(--color-paper-accent)]/30 transition-colors",
                             value: "{webp_draft().method}",
-                            oninput: move |v: String| {
+                            oninput: move |e: Event<FormData>| {
+                                let v = e.value();
                                 if let Ok(n) = v.parse::<u32>() { let mut d = webp_draft(); d.method = n; webp_draft.set(d); webp_just_saved.set(false); }
                             },
                         }
@@ -152,7 +154,8 @@ pub fn ImageSection(toast: Callback<(String, bool)>) -> Element {
                             id: "img-dim", r#type: "number", min: "512",
                             class: "w-full px-4 py-2 border border-[var(--color-paper-border)] rounded-2xl bg-[var(--color-paper-entry)] text-[var(--color-paper-primary)] focus:outline-none focus:border-[var(--color-paper-accent)] focus:ring-1 focus:ring-[var(--color-paper-accent)]/30 transition-colors",
                             value: "{img_draft().max_dimension}",
-                            oninput: move |v: String| {
+                            oninput: move |e: Event<FormData>| {
+                                let v = e.value();
                                 if let Ok(n) = v.parse::<u32>() { let mut d = img_draft(); d.max_dimension = n; img_draft.set(d); img_just_saved.set(false); }
                             },
                         }
@@ -165,7 +168,8 @@ pub fn ImageSection(toast: Callback<(String, bool)>) -> Element {
                             id: "img-px", r#type: "number", min: "1000000",
                             class: "w-full px-4 py-2 border border-[var(--color-paper-border)] rounded-2xl bg-[var(--color-paper-entry)] text-[var(--color-paper-primary)] focus:outline-none focus:border-[var(--color-paper-accent)] focus:ring-1 focus:ring-[var(--color-paper-accent)]/30 transition-colors",
                             value: "{img_draft().max_pixels}",
-                            oninput: move |v: String| {
+                            oninput: move |e: Event<FormData>| {
+                                let v = e.value();
                                 if let Ok(n) = v.parse::<u64>() { let mut d = img_draft(); d.max_pixels = n; img_draft.set(d); img_just_saved.set(false); }
                             },
                         }
@@ -178,7 +182,8 @@ pub fn ImageSection(toast: Callback<(String, bool)>) -> Element {
                             id: "img-ttl", r#type: "number", min: "1",
                             class: "w-full px-4 py-2 border border-[var(--color-paper-border)] rounded-2xl bg-[var(--color-paper-entry)] text-[var(--color-paper-primary)] focus:outline-none focus:border-[var(--color-paper-accent)] focus:ring-1 focus:ring-[var(--color-paper-accent)]/30 transition-colors",
                             value: "{img_draft().dimensions_cache_ttl_secs}",
-                            oninput: move |v: String| {
+                            oninput: move |e: Event<FormData>| {
+                                let v = e.value();
                                 if let Ok(n) = v.parse::<u64>() { let mut d = img_draft(); d.dimensions_cache_ttl_secs = n; img_draft.set(d); img_just_saved.set(false); }
                             },
                         }

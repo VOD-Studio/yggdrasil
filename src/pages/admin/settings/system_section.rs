@@ -9,7 +9,7 @@ use dioxus::prelude::*;
 #[cfg(target_arch = "wasm32")]
 use crate::api::settings::get_system_info;
 #[cfg(target_arch = "wasm32")]
-use crate::api::settings::SystemInfo;
+use crate::models::settings::SystemInfo;
 #[cfg(target_arch = "wasm32")]
 use crate::components::ui::ADMIN_CARD_CLASS;
 
@@ -59,17 +59,17 @@ pub fn SystemSection() -> Element {
                         }
 
                         div { class: "divide-y divide-[var(--color-paper-border)]",
-                            {SystemInfoRow { label: "数据库连接 (DATABASE_URL)", value: i.database_url_masked, hint: "启动时必需，不可运行时修改" }}
-                            {SystemInfoRow { label: "日志级别 (RUST_LOG)", value: i.rust_log.clone(), hint: "tracing 过滤器，修改需重启" }}
-                            {SystemInfoRow { label: "连接池大小 (DB_POOL_SIZE)", value: i.db_pool_size.to_string(), hint: "deadpool 连接池，修改需重启" }}
-                            {SystemInfoRow { label: "查询超时 (STATEMENT_TIMEOUT_SECS)", value: format!("{} 秒", i.statement_timeout_secs), hint: "烤进连接池 options，修改需重启" }}
-                            {SystemInfoRow { label: "SSR 缓存时长 (SSR_CACHE_SECS)", value: format!("{} 秒", i.ssr_cache_secs), hint: "Dioxus 增量渲染配置，修改需重启" }}
-                            {SystemInfoRow { label: "响应压缩 (COMPRESSION_ALGORITHMS)", value: if i.compression_algorithms.is_empty() { "off".to_string() } else { i.compression_algorithms.clone() }, hint: "CompressionLayer 启动时构建" }}
-                            {SystemInfoRow { label: "版本响应头 (EXPOSE_VERSION_HEADERS)", value: if i.expose_version_headers { "开启".to_string() } else { "关闭".to_string() }, hint: "中间件层启动时挂载" }}
-                            {SystemInfoRow { label: "Docker Socket", value: i.docker_socket_path.clone(), hint: "代码运行器 Docker 连接" }}
-                            {SystemInfoRow { label: "MCP 加密主密钥", value: if i.mcp_token_enc_key_set { "已设置".to_string() } else { "未设置".to_string() }, hint: "AES-GCM-256 令牌加密，轮换会使旧令牌无法解密" }}
-                            {SystemInfoRow { label: "启动迁移超时 (MIGRATE_STARTUP_TIMEOUT_SECS)", value: format!("{} 秒", i.migrate_startup_timeout_secs), hint: "仅启动期间生效" }}
-                            {SystemInfoRow { label: "系统采样间隔 (SYSINFO_SAMPLE_SECS)", value: format!("{} 秒", i.sysinfo_sample_secs), hint: "采样器循环启动时捕获" }}
+                            SystemInfoRow { label: "数据库连接 (DATABASE_URL)", value: i.database_url_masked, hint: "启动时必需，不可运行时修改" }
+                            SystemInfoRow { label: "日志级别 (RUST_LOG)", value: i.rust_log.clone(), hint: "tracing 过滤器，修改需重启" }
+                            SystemInfoRow { label: "连接池大小 (DB_POOL_SIZE)", value: i.db_pool_size.to_string(), hint: "deadpool 连接池，修改需重启" }
+                            SystemInfoRow { label: "查询超时 (STATEMENT_TIMEOUT_SECS)", value: format!("{} 秒", i.statement_timeout_secs), hint: "烤进连接池 options，修改需重启" }
+                            SystemInfoRow { label: "SSR 缓存时长 (SSR_CACHE_SECS)", value: format!("{} 秒", i.ssr_cache_secs), hint: "Dioxus 增量渲染配置，修改需重启" }
+                            SystemInfoRow { label: "响应压缩 (COMPRESSION_ALGORITHMS)", value: if i.compression_algorithms.is_empty() { "off".to_string() } else { i.compression_algorithms.clone() }, hint: "CompressionLayer 启动时构建" }
+                            SystemInfoRow { label: "版本响应头 (EXPOSE_VERSION_HEADERS)", value: if i.expose_version_headers { "开启".to_string() } else { "关闭".to_string() }, hint: "中间件层启动时挂载" }
+                            SystemInfoRow { label: "Docker Socket", value: i.docker_socket_path.clone(), hint: "代码运行器 Docker 连接" }
+                            SystemInfoRow { label: "MCP 加密主密钥", value: if i.mcp_token_enc_key_set { "已设置".to_string() } else { "未设置".to_string() }, hint: "AES-GCM-256 令牌加密，轮换会使旧令牌无法解密" }
+                            SystemInfoRow { label: "启动迁移超时 (MIGRATE_STARTUP_TIMEOUT_SECS)", value: format!("{} 秒", i.migrate_startup_timeout_secs), hint: "仅启动期间生效" }
+                            SystemInfoRow { label: "系统采样间隔 (SYSINFO_SAMPLE_SECS)", value: format!("{} 秒", i.sysinfo_sample_secs), hint: "采样器循环启动时捕获" }
                         }
                     }
                 } else {

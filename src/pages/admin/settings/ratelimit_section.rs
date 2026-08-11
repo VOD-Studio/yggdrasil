@@ -65,30 +65,30 @@ pub fn RateLimitSection(toast: Callback<(String, bool)>) -> Element {
                     }
 
                     // 各限流桶的 per_sec / burst 输入
-                    {LimiterField { label: "严格限流（登录/注册）", per_sec: draft().strict_per_sec, burst: draft().strict_burst,
+                    LimiterField { label: "严格限流（登录/注册）", per_sec: draft().strict_per_sec, burst: draft().strict_burst,
                         on_per_sec: move |v| { let mut d = draft(); d.strict_per_sec = v; draft.set(d); just_saved.set(false); },
                         on_burst: move |v| { let mut d = draft(); d.strict_burst = v; draft.set(d); just_saved.set(false); },
-                    }}
-                    {LimiterField { label: "上传限流（图片上传）", per_sec: draft().upload_per_sec, burst: draft().upload_burst,
+                    }
+                    LimiterField { label: "上传限流（图片上传）", per_sec: draft().upload_per_sec, burst: draft().upload_burst,
                         on_per_sec: move |v| { let mut d = draft(); d.upload_per_sec = v; draft.set(d); just_saved.set(false); },
                         on_burst: move |v| { let mut d = draft(); d.upload_burst = v; draft.set(d); just_saved.set(false); },
-                    }}
-                    {LimiterField { label: "图片访问限流（GET /uploads/*）", per_sec: draft().image_per_sec, burst: draft().image_burst,
+                    }
+                    LimiterField { label: "图片访问限流（GET /uploads/*）", per_sec: draft().image_per_sec, burst: draft().image_burst,
                         on_per_sec: move |v| { let mut d = draft(); d.image_per_sec = v; draft.set(d); just_saved.set(false); },
                         on_burst: move |v| { let mut d = draft(); d.image_burst = v; draft.set(d); just_saved.set(false); },
-                    }}
-                    {LimiterField { label: "评论限流（创建评论）", per_sec: draft().comment_per_sec, burst: draft().comment_burst,
+                    }
+                    LimiterField { label: "评论限流（创建评论）", per_sec: draft().comment_per_sec, burst: draft().comment_burst,
                         on_per_sec: move |v| { let mut d = draft(); d.comment_per_sec = v; draft.set(d); just_saved.set(false); },
                         on_burst: move |v| { let mut d = draft(); d.comment_burst = v; draft.set(d); just_saved.set(false); },
-                    }}
-                    {LimiterField { label: "代码执行限流", per_sec: draft().code_exec_per_sec, burst: draft().code_exec_burst,
+                    }
+                    LimiterField { label: "代码执行限流", per_sec: draft().code_exec_per_sec, burst: draft().code_exec_burst,
                         on_per_sec: move |v| { let mut d = draft(); d.code_exec_per_sec = v; draft.set(d); just_saved.set(false); },
                         on_burst: move |v| { let mut d = draft(); d.code_exec_burst = v; draft.set(d); just_saved.set(false); },
-                    }}
-                    {LimiterField { label: "unknown 桶（无法识别 IP）", per_sec: draft().unknown_per_sec, burst: draft().unknown_burst,
+                    }
+                    LimiterField { label: "unknown 桶（无法识别 IP）", per_sec: draft().unknown_per_sec, burst: draft().unknown_burst,
                         on_per_sec: move |v| { let mut d = draft(); d.unknown_per_sec = v; draft.set(d); just_saved.set(false); },
                         on_burst: move |v| { let mut d = draft(); d.unknown_burst = v; draft.set(d); just_saved.set(false); },
-                    }}
+                    }
 
                     // 代码执行日限额 + GC 间隔
                     div { class: "flex flex-col gap-2 max-w-xl",
@@ -97,7 +97,8 @@ pub fn RateLimitSection(toast: Callback<(String, bool)>) -> Element {
                             id: "rl-code-daily", r#type: "number", min: "1",
                             class: "w-full px-4 py-2 border border-[var(--color-paper-border)] rounded-2xl bg-[var(--color-paper-entry)] text-[var(--color-paper-primary)] focus:outline-none focus:border-[var(--color-paper-accent)] focus:ring-1 focus:ring-[var(--color-paper-accent)]/30 transition-colors",
                             value: "{draft().code_exec_daily}",
-                            oninput: move |v: String| {
+                            oninput: move |e: Event<FormData>| {
+                                let v = e.value();
                                 if let Ok(n) = v.parse::<u32>() { let mut d = draft(); d.code_exec_daily = n; draft.set(d); just_saved.set(false); }
                             },
                         }
@@ -108,7 +109,8 @@ pub fn RateLimitSection(toast: Callback<(String, bool)>) -> Element {
                             id: "rl-gc", r#type: "number", min: "1",
                             class: "w-full px-4 py-2 border border-[var(--color-paper-border)] rounded-2xl bg-[var(--color-paper-entry)] text-[var(--color-paper-primary)] focus:outline-none focus:border-[var(--color-paper-accent)] focus:ring-1 focus:ring-[var(--color-paper-accent)]/30 transition-colors",
                             value: "{draft().gc_interval_secs}",
-                            oninput: move |v: String| {
+                            oninput: move |e: Event<FormData>| {
+                                let v = e.value();
                                 if let Ok(n) = v.parse::<u32>() { let mut d = draft(); d.gc_interval_secs = n; draft.set(d); just_saved.set(false); }
                             },
                         }
@@ -179,7 +181,8 @@ fn LimiterField(
                         r#type: "number", min: "1",
                         class: "w-full px-4 py-2 border border-[var(--color-paper-border)] rounded-2xl bg-[var(--color-paper-entry)] text-[var(--color-paper-primary)] focus:outline-none focus:border-[var(--color-paper-accent)] focus:ring-1 focus:ring-[var(--color-paper-accent)]/30 transition-colors",
                         value: "{per_sec}",
-                        oninput: move |v: String| {
+                        oninput: move |e: Event<FormData>| {
+                            let v = e.value();
                             if let Ok(n) = v.parse::<u32>() { on_per_sec.call(n); }
                         },
                     }
@@ -190,7 +193,8 @@ fn LimiterField(
                         r#type: "number", min: "1",
                         class: "w-full px-4 py-2 border border-[var(--color-paper-border)] rounded-2xl bg-[var(--color-paper-entry)] text-[var(--color-paper-primary)] focus:outline-none focus:border-[var(--color-paper-accent)] focus:ring-1 focus:ring-[var(--color-paper-accent)]/30 transition-colors",
                         value: "{burst}",
-                        oninput: move |v: String| {
+                        oninput: move |e: Event<FormData>| {
+                            let v = e.value();
                             if let Ok(n) = v.parse::<u32>() { on_burst.call(n); }
                         },
                     }
