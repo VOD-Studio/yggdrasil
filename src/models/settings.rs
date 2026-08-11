@@ -368,6 +368,424 @@ impl ImageCacheSettings {
     }
 }
 
+// ============================================================================
+// 限流配置（重启生效）
+// ============================================================================
+//
+// 原本经环境变量在首次请求时经 LazyLock 读取（src/api/rate_limit.rs 的六个
+// IP 键控限流器与 GC 间隔）。迁移到 settings 表后语义为 Tier B：env 首启播种
+// DB（ON CONFLICT DO NOTHING），之后面板写入的 DB 值优先。由于限流器是
+// LazyLock 静态量（首次请求构造即固化），修改 DB 值需**重启进程**生效，
+// 面板会标注「需重启生效」。启动时由 main.rs 将 DB 值加载进 config::RATE_LIMIT_CFG，
+// rate_limit.rs 的 LazyLock 改为从 config::rate_limit() 读取。
+
+/// 默认严格限流（注册/登录）：1 req/s，突发 5。
+pub const DEFAULT_RATE_LIMIT_STRICT_PER_SEC: u32 = 1;
+pub const DEFAULT_RATE_LIMIT_STRICT_BURST: u32 = 5;
+/// 默认上传限流：2 req/s，突发 15。
+pub const DEFAULT_RATE_LIMIT_UPLOAD_PER_SEC: u32 = 2;
+pub const DEFAULT_RATE_LIMIT_UPLOAD_BURST: u32 = 15;
+/// 默认图片访问限流：10 req/s，突发 50。
+pub const DEFAULT_RATE_LIMIT_IMAGE_PER_SEC: u32 = 10;
+pub const DEFAULT_RATE_LIMIT_IMAGE_BURST: u32 = 50;
+/// 默认评论限流：1 req/s，突发 5。
+pub const DEFAULT_RATE_LIMIT_COMMENT_PER_SEC: u32 = 1;
+pub const DEFAULT_RATE_LIMIT_COMMENT_BURST: u32 = 5;
+/// 默认代码执行限流：1 req/s，突发 3。
+pub const DEFAULT_RATE_LIMIT_CODE_EXEC_PER_SEC: u32 = 1;
+pub const DEFAULT_RATE_LIMIT_CODE_EXEC_BURST: u32 = 3;
+/// 默认代码执行日限额：50 次/天。
+pub const DEFAULT_RATE_LIMIT_CODE_EXEC_DAILY: u32 = 50;
+/// 默认 unknown 桶限流：30 req/s，突发 100。
+pub const DEFAULT_RATE_LIMIT_UNKNOWN_PER_SEC: u32 = 30;
+pub const DEFAULT_RATE_LIMIT_UNKNOWN_BURST: u32 = 100;
+/// 默认限流桶 GC 间隔：300 秒。
+pub const DEFAULT_RATE_LIMIT_GC_INTERVAL_SECS: u32 = 300;
+
+/// 所有 per_sec 字段下限：至少 1 req/s（NonZeroU32 不允许 0）。
+#[cfg(feature = "server")]
+pub const MIN_RATE_LIMIT_PER_SEC: u32 = 1;
+/// 所有 burst 字段下限：至少允许 1 次突发。
+#[cfg(feature = "server")]
+pub const MIN_RATE_LIMIT_BURST: u32 = 1;
+/// 日限额下限：至少允许 1 次/天。
+#[cfg(feature = "server")]
+pub const MIN_RATE_LIMIT_DAILY: u32 = 1;
+/// GC 间隔下限（秒）：至少 1 秒。
+#[cfg(feature = "server")]
+pub const MIN_RATE_LIMIT_GC_INTERVAL_SECS: u32 = 1;
+
+/// 限流配置（多级 IP 键控限流器的速率/突发/日限额与 GC 间隔）。
+///
+/// **重启生效层**：限流器是 LazyLock 静态量，首次请求时构造即固化；
+/// 修改 DB 值需重启进程才能生效。
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct RateLimitSettings {
+    /// 严格限流（注册/登录）每秒请求数。
+    pub strict_per_sec: u32,
+    /// 严格限流突发上限。
+    pub strict_burst: u32,
+    /// 上传限流每秒请求数。
+    pub upload_per_sec: u32,
+    /// 上传限流突发上限。
+    pub upload_burst: u32,
+    /// 图片访问限流每秒请求数。
+    pub image_per_sec: u32,
+    /// 图片访问限流突发上限。
+    pub image_burst: u32,
+    /// 评论限流每秒请求数。
+    pub comment_per_sec: u32,
+    /// 评论限流突发上限。
+    pub comment_burst: u32,
+    /// 代码执行限流每秒请求数。
+    pub code_exec_per_sec: u32,
+    /// 代码执行限流突发上限。
+    pub code_exec_burst: u32,
+    /// 代码执行日限额（次/天）。
+    pub code_exec_daily: u32,
+    /// unknown 桶（无法识别 IP）每秒请求数。
+    pub unknown_per_sec: u32,
+    /// unknown 桶突发上限。
+    pub unknown_burst: u32,
+    /// 限流桶 GC 间隔（秒）。
+    pub gc_interval_secs: u32,
+}
+
+impl Default for RateLimitSettings {
+    fn default() -> Self {
+        Self {
+            strict_per_sec: DEFAULT_RATE_LIMIT_STRICT_PER_SEC,
+            strict_burst: DEFAULT_RATE_LIMIT_STRICT_BURST,
+            upload_per_sec: DEFAULT_RATE_LIMIT_UPLOAD_PER_SEC,
+            upload_burst: DEFAULT_RATE_LIMIT_UPLOAD_BURST,
+            image_per_sec: DEFAULT_RATE_LIMIT_IMAGE_PER_SEC,
+            image_burst: DEFAULT_RATE_LIMIT_IMAGE_BURST,
+            comment_per_sec: DEFAULT_RATE_LIMIT_COMMENT_PER_SEC,
+            comment_burst: DEFAULT_RATE_LIMIT_COMMENT_BURST,
+            code_exec_per_sec: DEFAULT_RATE_LIMIT_CODE_EXEC_PER_SEC,
+            code_exec_burst: DEFAULT_RATE_LIMIT_CODE_EXEC_BURST,
+            code_exec_daily: DEFAULT_RATE_LIMIT_CODE_EXEC_DAILY,
+            unknown_per_sec: DEFAULT_RATE_LIMIT_UNKNOWN_PER_SEC,
+            unknown_burst: DEFAULT_RATE_LIMIT_UNKNOWN_BURST,
+            gc_interval_secs: DEFAULT_RATE_LIMIT_GC_INTERVAL_SECS,
+        }
+    }
+}
+
+impl RateLimitSettings {
+    /// 将 per_sec 字段钳制到 [MIN_RATE_LIMIT_PER_SEC, ∞)。
+    #[cfg(feature = "server")]
+    pub fn clamp_per_sec(n: u32) -> u32 {
+        n.max(MIN_RATE_LIMIT_PER_SEC)
+    }
+
+    /// 将 burst 字段钳制到 [MIN_RATE_LIMIT_BURST, ∞)。
+    #[cfg(feature = "server")]
+    pub fn clamp_burst(n: u32) -> u32 {
+        n.max(MIN_RATE_LIMIT_BURST)
+    }
+
+    /// 将日限额字段钳制到 [MIN_RATE_LIMIT_DAILY, ∞)。
+    #[cfg(feature = "server")]
+    pub fn clamp_daily(n: u32) -> u32 {
+        n.max(MIN_RATE_LIMIT_DAILY)
+    }
+
+    /// 将 GC 间隔钳制到 [MIN_RATE_LIMIT_GC_INTERVAL_SECS, ∞)。
+    #[cfg(feature = "server")]
+    pub fn clamp_gc_interval(n: u32) -> u32 {
+        n.max(MIN_RATE_LIMIT_GC_INTERVAL_SECS)
+    }
+}
+
+// ============================================================================
+// WebP 编码配置（需重启生效）
+// ============================================================================
+//
+// 原本经环境变量在首启读取（src/webp.rs 的 WEBP_QUALITY / WEBP_METHOD）。
+// 迁移到 settings 表后：env 首启播种 DB（ON CONFLICT DO NOTHING），之后面板值
+// 优先。这些值在进程启动时烘焙进 LazyLock 静态量，改 DB 值后需重启才生效。
+
+/// 默认 WebP 质量 85.0。
+pub const DEFAULT_WEBP_QUALITY: f32 = 85.0;
+/// 默认 WebP 编码方法 2。
+pub const DEFAULT_WEBP_METHOD: u32 = 2;
+
+/// `WEBP_QUALITY` 下限。
+#[cfg(feature = "server")]
+pub const MIN_WEBP_QUALITY: f32 = 0.0;
+/// `WEBP_QUALITY` 上限。
+#[cfg(feature = "server")]
+pub const MAX_WEBP_QUALITY: f32 = 100.0;
+/// `WEBP_METHOD` 上限。
+#[cfg(feature = "server")]
+pub const MAX_WEBP_METHOD: u32 = 6;
+
+/// WebP 有损编码配置（质量与方法）。
+///
+/// 需重启生效层：值在进程启动时烘焙进 LazyLock，改 DB 值后需重启才生效。
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WebpSettings {
+    /// 质量系数，范围 0.0–100.0。
+    pub quality: f32,
+    /// 编码方法，范围 0–6，数值越大压缩率越高但越慢。
+    pub method: u32,
+}
+
+impl Default for WebpSettings {
+    fn default() -> Self {
+        Self {
+            quality: DEFAULT_WEBP_QUALITY,
+            method: DEFAULT_WEBP_METHOD,
+        }
+    }
+}
+
+impl WebpSettings {
+    /// 将质量钳制到合法范围 [0.0, 100.0]。
+    #[cfg(feature = "server")]
+    pub fn clamp_quality(q: f32) -> f32 {
+        q.clamp(MIN_WEBP_QUALITY, MAX_WEBP_QUALITY)
+    }
+
+    /// 将编码方法钳制到合法范围 [0, 6]。
+    #[cfg(feature = "server")]
+    pub fn clamp_method(m: u32) -> u32 {
+        m.min(MAX_WEBP_METHOD)
+    }
+}
+
+// ============================================================================
+// 图片尺寸限制配置（需重启生效）
+// ============================================================================
+//
+// 原本经环境变量在首启读取（src/api/image.rs 的 MAX_IMAGE_DIMENSION /
+// MAX_IMAGE_PIXELS / IMAGE_DIMENSIONS_CACHE_TTL_SECS）。迁移到 settings 表后：
+// env 首启播种 DB，之后面板值优先。值烘焙进 LazyLock，需重启生效。
+
+/// 默认图片单边尺寸上限 8192 像素。
+pub const DEFAULT_IMAGE_MAX_DIMENSION: u32 = 8192;
+/// 默认图片像素总数上限 50_000_000（约 7k×7k）。
+pub const DEFAULT_IMAGE_MAX_PIXELS: u64 = 50_000_000;
+/// 默认图片尺寸缓存 TTL 86400 秒（24 小时）。
+pub const DEFAULT_IMAGE_DIMENSIONS_CACHE_TTL_SECS: u64 = 86400;
+
+/// 图片单边尺寸下限（防误调到危险小值导致正常图都传不上）。
+#[cfg(feature = "server")]
+pub const MIN_IMAGE_MAX_DIMENSION: u32 = 512;
+/// 图片像素总数下限（防误调）。
+#[cfg(feature = "server")]
+pub const MIN_IMAGE_MAX_PIXELS: u64 = 1_000_000;
+/// 尺寸缓存 TTL 下限（秒）。
+#[cfg(feature = "server")]
+pub const MIN_IMAGE_DIMENSIONS_CACHE_TTL_SECS: u64 = 1;
+
+/// 图片处理尺寸限制与尺寸缓存配置。
+///
+/// 需重启生效层：值在进程启动时烘焙进 LazyLock，改 DB 值后需重启才生效。
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ImageLimitSettings {
+    /// 图片单边（宽或高）尺寸上限（像素）。
+    pub max_dimension: u32,
+    /// 允许处理的最大图片像素数。⚠️ 此值同时决定单图解码内存缓冲
+    /// （max_alloc = pixels × 4 + 1MB），默认 50M 像素对应约 200MB/图。
+    pub max_pixels: u64,
+    /// 图片尺寸缓存 TTL（秒）。
+    pub dimensions_cache_ttl_secs: u64,
+}
+
+impl Default for ImageLimitSettings {
+    fn default() -> Self {
+        Self {
+            max_dimension: DEFAULT_IMAGE_MAX_DIMENSION,
+            max_pixels: DEFAULT_IMAGE_MAX_PIXELS,
+            dimensions_cache_ttl_secs: DEFAULT_IMAGE_DIMENSIONS_CACHE_TTL_SECS,
+        }
+    }
+}
+
+impl ImageLimitSettings {
+    /// 将单边尺寸钳制到合法范围 [MIN, ∞)。
+    #[cfg(feature = "server")]
+    pub fn clamp_max_dimension(n: u32) -> u32 {
+        n.max(MIN_IMAGE_MAX_DIMENSION)
+    }
+
+    /// 将像素总数钳制到合法范围 [MIN, ∞)。
+    #[cfg(feature = "server")]
+    pub fn clamp_max_pixels(n: u64) -> u64 {
+        n.max(MIN_IMAGE_MAX_PIXELS)
+    }
+
+    /// 将尺寸缓存 TTL 钳制到合法范围 [MIN, ∞)。
+    #[cfg(feature = "server")]
+    pub fn clamp_dimensions_cache_ttl_secs(n: u64) -> u64 {
+        n.max(MIN_IMAGE_DIMENSIONS_CACHE_TTL_SECS)
+    }
+}
+
+// ============================================================================
+// 代码运行器配置（需重启生效）
+// ============================================================================
+//
+// 原本经环境变量在首启读取（src/infra/runner_config.rs 的 CODE_RUNNER_*）。
+// 迁移到 settings 表后：env 首启播种 DB，之后面板值优先。值烘焙进 LazyLock，
+// 需重启生效。注意 `docker_socket_path` 仍是 env-only（DOCKER_SOCKET_PATH），
+// 不在此结构。
+
+/// 默认不允许容器联网。
+pub const DEFAULT_RUNNER_ALLOW_NETWORK: bool = false;
+/// 默认最大并发 4。
+pub const DEFAULT_RUNNER_MAX_CONCURRENT: u32 = 4;
+/// 默认每任务最大 CPU 核数 2.0。
+pub const DEFAULT_RUNNER_MAX_CPU_CORES: f64 = 2.0;
+/// 默认每任务最大内存 1024 MB。
+pub const DEFAULT_RUNNER_MAX_MEMORY_MB: u32 = 1024;
+/// 默认每任务最大执行超时 30 秒。
+pub const DEFAULT_RUNNER_MAX_TIMEOUT_SECS: u32 = 30;
+/// 默认每任务最大输出 1048576 字节（1 MB）。
+pub const DEFAULT_RUNNER_MAX_OUTPUT_BYTES: u64 = 1_048_576;
+/// 默认每任务最大源码 65536 字节（64 KB）。
+pub const DEFAULT_RUNNER_MAX_SOURCE_BYTES: u64 = 65_536;
+/// 默认排队等待超时 30 秒。
+pub const DEFAULT_RUNNER_QUEUE_TIMEOUT_SECS: u32 = 30;
+/// 默认历史 task 保留 300 秒。
+pub const DEFAULT_RUNNER_TASK_TTL_SECS: u32 = 300;
+
+/// 最大并发下限（至少允许 1 个）。
+#[cfg(feature = "server")]
+pub const MIN_RUNNER_MAX_CONCURRENT: u32 = 1;
+/// CPU 核数下限。
+#[cfg(feature = "server")]
+pub const MIN_RUNNER_MAX_CPU_CORES: f64 = 0.1;
+/// 内存下限（MB）。
+#[cfg(feature = "server")]
+pub const MIN_RUNNER_MAX_MEMORY_MB: u32 = 16;
+/// 超时下限（秒）。
+#[cfg(feature = "server")]
+pub const MIN_RUNNER_MAX_TIMEOUT_SECS: u32 = 1;
+/// 最大并发上限，防误填危险大值。
+#[cfg(feature = "server")]
+pub const MAX_RUNNER_MAX_CONCURRENT: u32 = 64;
+/// CPU 核数上限。
+#[cfg(feature = "server")]
+pub const MAX_RUNNER_MAX_CPU_CORES: f64 = 64.0;
+/// 内存上限（MB）。
+#[cfg(feature = "server")]
+pub const MAX_RUNNER_MAX_MEMORY_MB: u32 = 65_536;
+
+/// 代码运行器配置（资源限制与并发）。
+///
+/// 需重启生效层：值在进程启动时烘焙进 LazyLock，改 DB 值后需重启才生效。
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct RunnerSettings {
+    /// 是否允许容器联网。
+    pub allow_network: bool,
+    /// 最大并发任务数。
+    pub max_concurrent: u32,
+    /// 每任务最大 CPU 核数。
+    pub max_cpu_cores: f64,
+    /// 每任务最大内存（MB）。
+    pub max_memory_mb: u32,
+    /// 每任务最大执行超时（秒）。
+    pub max_timeout_secs: u32,
+    /// 每任务最大输出字节数。
+    pub max_output_bytes: u64,
+    /// 每任务最大源码字节数。
+    pub max_source_bytes: u64,
+    /// 排队等待超时（秒）。
+    pub queue_timeout_secs: u32,
+    /// 历史 task 保留时长（秒）。
+    pub task_ttl_secs: u32,
+    /// 语言白名单（逗号分隔，如 "python,node,rust"）；`None` 表示不限制（全开）。
+    pub languages: Option<String>,
+}
+
+impl Default for RunnerSettings {
+    fn default() -> Self {
+        Self {
+            allow_network: DEFAULT_RUNNER_ALLOW_NETWORK,
+            max_concurrent: DEFAULT_RUNNER_MAX_CONCURRENT,
+            max_cpu_cores: DEFAULT_RUNNER_MAX_CPU_CORES,
+            max_memory_mb: DEFAULT_RUNNER_MAX_MEMORY_MB,
+            max_timeout_secs: DEFAULT_RUNNER_MAX_TIMEOUT_SECS,
+            max_output_bytes: DEFAULT_RUNNER_MAX_OUTPUT_BYTES,
+            max_source_bytes: DEFAULT_RUNNER_MAX_SOURCE_BYTES,
+            queue_timeout_secs: DEFAULT_RUNNER_QUEUE_TIMEOUT_SECS,
+            task_ttl_secs: DEFAULT_RUNNER_TASK_TTL_SECS,
+            languages: None,
+        }
+    }
+}
+
+impl RunnerSettings {
+    /// 将最大并发钳制到合法范围 [1, 64]。
+    #[cfg(feature = "server")]
+    pub fn clamp_max_concurrent(n: u32) -> u32 {
+        n.clamp(MIN_RUNNER_MAX_CONCURRENT, MAX_RUNNER_MAX_CONCURRENT)
+    }
+
+    /// 将 CPU 核数钳制到合法范围 [0.1, 64.0]；NaN 回退默认值。
+    #[cfg(feature = "server")]
+    pub fn clamp_max_cpu_cores(n: f64) -> f64 {
+        if n.is_nan() {
+            return DEFAULT_RUNNER_MAX_CPU_CORES;
+        }
+        n.clamp(MIN_RUNNER_MAX_CPU_CORES, MAX_RUNNER_MAX_CPU_CORES)
+    }
+
+    /// 将内存钳制到合法范围 [16, 65536]。
+    #[cfg(feature = "server")]
+    pub fn clamp_max_memory_mb(n: u32) -> u32 {
+        n.clamp(MIN_RUNNER_MAX_MEMORY_MB, MAX_RUNNER_MAX_MEMORY_MB)
+    }
+
+    /// 将超时钳制到合法范围 [1, ∞)。
+    #[cfg(feature = "server")]
+    pub fn clamp_max_timeout_secs(n: u32) -> u32 {
+        n.max(MIN_RUNNER_MAX_TIMEOUT_SECS)
+    }
+
+    /// 将输出上限钳制到合法范围 [1, ∞)。
+    #[cfg(feature = "server")]
+    pub fn clamp_max_output_bytes(n: u64) -> u64 {
+        n.max(1)
+    }
+
+    /// 将源码上限钳制到合法范围 [1, ∞)。
+    #[cfg(feature = "server")]
+    pub fn clamp_max_source_bytes(n: u64) -> u64 {
+        n.max(1)
+    }
+
+    /// 将排队超时钳制到合法范围 [1, ∞)。
+    #[cfg(feature = "server")]
+    pub fn clamp_queue_timeout_secs(n: u32) -> u32 {
+        n.max(MIN_RUNNER_MAX_TIMEOUT_SECS)
+    }
+
+    /// 将 task 保留时长钳制到合法范围 [1, ∞)。
+    #[cfg(feature = "server")]
+    pub fn clamp_task_ttl_secs(n: u32) -> u32 {
+        n.max(1)
+    }
+
+    /// 规范化语言白名单字符串：拆分、trim、转小写、去空；结果为空则返回 None。
+    #[cfg(feature = "server")]
+    pub fn normalize_languages(s: &str) -> Option<String> {
+        let parts: Vec<String> = s
+            .split(',')
+            .map(|t| t.trim().to_lowercase())
+            .filter(|t| !t.is_empty())
+            .collect();
+        if parts.is_empty() {
+            None
+        } else {
+            Some(parts.join(","))
+        }
+    }
+}
+
 /// 系统启动配置的只读快照（面板展示用）。
 ///
 /// 这些值在进程启动时读取，无法运行时修改。密钥类仅展示是否已设置，
@@ -676,4 +1094,214 @@ mod tests {
         );
         assert_eq!(ImageCacheSettings::clamp_max_age_hours(720), 720);
     }
+
+    #[test]
+    fn rate_limit_default_values() {
+        let s = RateLimitSettings::default();
+        assert_eq!(s.strict_per_sec, 1);
+        assert_eq!(s.strict_burst, 5);
+        assert_eq!(s.upload_per_sec, 2);
+        assert_eq!(s.upload_burst, 15);
+        assert_eq!(s.image_per_sec, 10);
+        assert_eq!(s.image_burst, 50);
+        assert_eq!(s.comment_per_sec, 1);
+        assert_eq!(s.comment_burst, 5);
+        assert_eq!(s.code_exec_per_sec, 1);
+        assert_eq!(s.code_exec_burst, 3);
+        assert_eq!(s.code_exec_daily, 50);
+        assert_eq!(s.unknown_per_sec, 30);
+        assert_eq!(s.unknown_burst, 100);
+        assert_eq!(s.gc_interval_secs, 300);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn rate_limit_clamp_per_sec() {
+        assert_eq!(RateLimitSettings::clamp_per_sec(0), MIN_RATE_LIMIT_PER_SEC);
+        assert_eq!(RateLimitSettings::clamp_per_sec(5), 5);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn rate_limit_clamp_burst() {
+        assert_eq!(RateLimitSettings::clamp_burst(0), MIN_RATE_LIMIT_BURST);
+        assert_eq!(RateLimitSettings::clamp_burst(15), 15);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn rate_limit_clamp_daily() {
+        assert_eq!(RateLimitSettings::clamp_daily(0), MIN_RATE_LIMIT_DAILY);
+        assert_eq!(RateLimitSettings::clamp_daily(50), 50);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn rate_limit_clamp_gc_interval() {
+        assert_eq!(
+            RateLimitSettings::clamp_gc_interval(0),
+            MIN_RATE_LIMIT_GC_INTERVAL_SECS
+        );
+        assert_eq!(RateLimitSettings::clamp_gc_interval(300), 300);
+    }
+    // ── WebpSettings ─────────────────────────────────────────────
+
+    #[test]
+    fn webp_settings_default() {
+        let s = WebpSettings::default();
+        assert_eq!(s.quality, 85.0);
+        assert_eq!(s.method, 2);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn webp_clamp_quality() {
+        assert_eq!(WebpSettings::clamp_quality(-1.0), 0.0);
+        assert_eq!(WebpSettings::clamp_quality(50.0), 50.0);
+        assert_eq!(WebpSettings::clamp_quality(150.0), 100.0);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn webp_clamp_method() {
+        assert_eq!(WebpSettings::clamp_method(0), 0);
+        assert_eq!(WebpSettings::clamp_method(3), 3);
+        assert_eq!(WebpSettings::clamp_method(9), MAX_WEBP_METHOD);
+    }
+
+    // ── ImageLimitSettings ───────────────────────────────────────
+
+    #[test]
+    fn image_limit_settings_default() {
+        let s = ImageLimitSettings::default();
+        assert_eq!(s.max_dimension, 8192);
+        assert_eq!(s.max_pixels, 50_000_000);
+        assert_eq!(s.dimensions_cache_ttl_secs, 86400);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn image_limit_clamp_max_dimension() {
+        assert_eq!(
+            ImageLimitSettings::clamp_max_dimension(0),
+            MIN_IMAGE_MAX_DIMENSION
+        );
+        assert_eq!(ImageLimitSettings::clamp_max_dimension(2048), 2048);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn image_limit_clamp_max_pixels() {
+        assert_eq!(
+            ImageLimitSettings::clamp_max_pixels(0),
+            MIN_IMAGE_MAX_PIXELS
+        );
+        assert_eq!(ImageLimitSettings::clamp_max_pixels(99_999_999), 99_999_999);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn image_limit_clamp_ttl() {
+        assert_eq!(
+            ImageLimitSettings::clamp_dimensions_cache_ttl_secs(0),
+            MIN_IMAGE_DIMENSIONS_CACHE_TTL_SECS
+        );
+        assert_eq!(
+            ImageLimitSettings::clamp_dimensions_cache_ttl_secs(7200),
+            7200
+        );
+    }
+
+    // ── RunnerSettings ───────────────────────────────────────────
+
+    #[test]
+    fn runner_settings_default() {
+        let s = RunnerSettings::default();
+        assert!(!s.allow_network);
+        assert_eq!(s.max_concurrent, 4);
+        assert_eq!(s.max_cpu_cores, 2.0);
+        assert_eq!(s.max_memory_mb, 1024);
+        assert_eq!(s.max_timeout_secs, 30);
+        assert_eq!(s.max_output_bytes, 1_048_576);
+        assert_eq!(s.max_source_bytes, 65_536);
+        assert_eq!(s.queue_timeout_secs, 30);
+        assert_eq!(s.task_ttl_secs, 300);
+        assert!(s.languages.is_none());
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn runner_clamp_max_concurrent() {
+        assert_eq!(RunnerSettings::clamp_max_concurrent(0), MIN_RUNNER_MAX_CONCURRENT);
+        assert_eq!(RunnerSettings::clamp_max_concurrent(8), 8);
+        assert_eq!(
+            RunnerSettings::clamp_max_concurrent(999),
+            MAX_RUNNER_MAX_CONCURRENT
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn runner_clamp_max_cpu_cores() {
+        assert_eq!(
+            RunnerSettings::clamp_max_cpu_cores(0.0),
+            MIN_RUNNER_MAX_CPU_CORES
+        );
+        assert_eq!(RunnerSettings::clamp_max_cpu_cores(4.0), 4.0);
+        assert_eq!(
+            RunnerSettings::clamp_max_cpu_cores(999.0),
+            MAX_RUNNER_MAX_CPU_CORES
+        );
+        // NaN 回退默认值 2.0
+        assert_eq!(RunnerSettings::clamp_max_cpu_cores(f64::NAN), 2.0);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn runner_clamp_max_memory_mb() {
+        assert_eq!(
+            RunnerSettings::clamp_max_memory_mb(0),
+            MIN_RUNNER_MAX_MEMORY_MB
+        );
+        assert_eq!(RunnerSettings::clamp_max_memory_mb(2048), 2048);
+        assert_eq!(
+            RunnerSettings::clamp_max_memory_mb(u32::MAX),
+            MAX_RUNNER_MAX_MEMORY_MB
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn runner_clamp_max_timeout_secs() {
+        assert_eq!(
+            RunnerSettings::clamp_max_timeout_secs(0),
+            MIN_RUNNER_MAX_TIMEOUT_SECS
+        );
+        assert_eq!(RunnerSettings::clamp_max_timeout_secs(120), 120);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn runner_clamp_byte_limits() {
+        assert_eq!(RunnerSettings::clamp_max_output_bytes(0), 1);
+        assert_eq!(RunnerSettings::clamp_max_source_bytes(0), 1);
+        assert_eq!(RunnerSettings::clamp_queue_timeout_secs(0), MIN_RUNNER_MAX_TIMEOUT_SECS);
+        assert_eq!(RunnerSettings::clamp_task_ttl_secs(0), 1);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn runner_normalize_languages() {
+        assert!(RunnerSettings::normalize_languages("").is_none());
+        assert!(RunnerSettings::normalize_languages("  ,,  ").is_none());
+        assert_eq!(
+            RunnerSettings::normalize_languages("Python, Node, RUST").as_deref(),
+            Some("python,node,rust")
+        );
+        assert_eq!(
+            RunnerSettings::normalize_languages("  go  ").as_deref(),
+            Some("go")
+        );
+    }
+
 }

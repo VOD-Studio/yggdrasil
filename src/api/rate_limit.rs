@@ -23,44 +23,40 @@ use std::sync::LazyLock;
 use std::time::Duration;
 
 #[cfg(feature = "server")]
-fn env_or(key: &str, default: u32) -> NonZeroU32 {
-    let val = std::env::var(key)
-        .ok()
-        .and_then(|s| s.parse::<u32>().ok())
-        .unwrap_or(default);
+fn nz(val: u32) -> NonZeroU32 {
     // val.max(1) 保证 ≥ 1，NonZeroU32::new 必然 Some；expect 说明该不变量。
     NonZeroU32::new(val.max(1)).expect("val.max(1) 保证非零，NonZeroU32::new 不可能失败")
 }
 
 #[cfg(feature = "server")]
 static STRICT_LIMITER: LazyLock<DefaultKeyedRateLimiter<String>> = LazyLock::new(|| {
+    let c = crate::config::rate_limit();
     RateLimiter::keyed(
-        Quota::per_second(env_or("RATE_LIMIT_STRICT_PER_SEC", 1))
-            .allow_burst(env_or("RATE_LIMIT_STRICT_BURST", 5)),
+        Quota::per_second(nz(c.strict_per_sec)).allow_burst(nz(c.strict_burst)),
     )
 });
 
 #[cfg(feature = "server")]
 static UPLOAD_LIMITER: LazyLock<DefaultKeyedRateLimiter<String>> = LazyLock::new(|| {
+    let c = crate::config::rate_limit();
     RateLimiter::keyed(
-        Quota::per_second(env_or("RATE_LIMIT_UPLOAD_PER_SEC", 2))
-            .allow_burst(env_or("RATE_LIMIT_UPLOAD_BURST", 15)),
+        Quota::per_second(nz(c.upload_per_sec)).allow_burst(nz(c.upload_burst)),
     )
 });
 
 #[cfg(feature = "server")]
 static IMAGE_LIMITER: LazyLock<DefaultKeyedRateLimiter<String>> = LazyLock::new(|| {
+    let c = crate::config::rate_limit();
     RateLimiter::keyed(
-        Quota::per_second(env_or("RATE_LIMIT_IMAGE_PER_SEC", 10))
-            .allow_burst(env_or("RATE_LIMIT_IMAGE_BURST", 50)),
+        Quota::per_second(nz(c.image_per_sec)).allow_burst(nz(c.image_burst)),
     )
 });
 
 #[cfg(feature = "server")]
 static COMMENT_LIMITER: LazyLock<DefaultKeyedRateLimiter<String>> = LazyLock::new(|| {
+    let c = crate::config::rate_limit();
     RateLimiter::keyed(
-        Quota::per_second(env_or("RATE_LIMIT_COMMENT_PER_SEC", 1))
-            .allow_burst(env_or("RATE_LIMIT_COMMENT_BURST", 5)),
+        Quota::per_second(nz(c.comment_per_sec)).allow_burst(nz(c.comment_burst)),
     )
 });
 
@@ -68,9 +64,9 @@ static COMMENT_LIMITER: LazyLock<DefaultKeyedRateLimiter<String>> = LazyLock::ne
 /// 代码执行单 IP 每秒限流（默认 1 req/s，突发 3）。
 /// 防止单个客户端高频提交容器任务，与下方日限额共同构成双层速率限制。
 static CODE_EXEC_LIMITER: LazyLock<DefaultKeyedRateLimiter<String>> = LazyLock::new(|| {
+    let c = crate::config::rate_limit();
     RateLimiter::keyed(
-        Quota::per_second(env_or("RATE_LIMIT_CODE_EXEC_PER_SEC", 1))
-            .allow_burst(env_or("RATE_LIMIT_CODE_EXEC_BURST", 3)),
+        Quota::per_second(nz(c.code_exec_per_sec)).allow_burst(nz(c.code_exec_burst)),
     )
 });
 
@@ -81,10 +77,11 @@ static CODE_EXEC_LIMITER: LazyLock<DefaultKeyedRateLimiter<String>> = LazyLock::
 /// governor 0.8 无 `Quota::per_day`，用 `with_period(24h)` + `allow_burst(daily)`
 /// 模拟：每 24h 补充 1 token、突发上限即日额度，等效于「每日最多 daily 次」。
 static CODE_EXEC_DAILY_LIMITER: LazyLock<DefaultKeyedRateLimiter<String>> = LazyLock::new(|| {
+    let c = crate::config::rate_limit();
     RateLimiter::keyed(
         Quota::with_period(Duration::from_secs(86_400))
             .expect("with_period 仅在 Duration 为 0 时返回 None；86_400s 必然 Some")
-            .allow_burst(env_or("RATE_LIMIT_CODE_EXEC_DAILY", 50)),
+            .allow_burst(nz(c.code_exec_daily)),
     )
 });
 
@@ -94,11 +91,11 @@ static CODE_EXEC_DAILY_LIMITER: LazyLock<DefaultKeyedRateLimiter<String>> = Lazy
 /// TRUSTED_PROXY_COUNT=0（默认）时，Dioxus server function 拿不到 TCP 对端地址，
 /// get_client_ip 会返回 "unknown"，导致所有匿名请求共享同一个严格桶
 /// （1 req/s, burst 5），正常用户的高频请求被误杀。此桶阈值更高，
-/// 通过 env RATE_LIMIT_UNKNOWN_PER_SEC / RATE_LIMIT_UNKNOWN_BURST 可调。
+/// 可通过 settings 表的 ratelimit_unknown_* 配置项调整（重启生效）。
 static UNKNOWN_BUCKET_LIMITER: LazyLock<DefaultKeyedRateLimiter<String>> = LazyLock::new(|| {
+    let c = crate::config::rate_limit();
     RateLimiter::keyed(
-        Quota::per_second(env_or("RATE_LIMIT_UNKNOWN_PER_SEC", 30))
-            .allow_burst(env_or("RATE_LIMIT_UNKNOWN_BURST", 100)),
+        Quota::per_second(nz(c.unknown_per_sec)).allow_burst(nz(c.unknown_burst)),
     )
 });
 
@@ -107,15 +104,12 @@ static UNKNOWN_BUCKET_LIMITER: LazyLock<DefaultKeyedRateLimiter<String>> = LazyL
 ///
 /// 默认 300 秒。governor 的 `retain_recent` 只丢弃与「新桶」不可区分的键（即限流
 /// 窗口早已冷却、保留与否都不影响后续请求），因此即便间隔较长，内存占用也只反映
-/// 「最近活跃过且仍在限流窗口内」的 IP 集合，而非历史全集。可用
-/// `RATE_LIMIT_GC_INTERVAL_SECS` 覆盖（值越小越激进，回收越勤）。
+/// 「最近活跃过且仍在限流窗口内」的 IP 集合，而非历史全集。由 settings 表的
+/// ratelimit_gc_interval_secs 配置项控制（重启生效），值越小越激进，回收越勤。
 #[cfg(feature = "server")]
 fn limiter_gc_interval() -> Duration {
-    let secs = std::env::var("RATE_LIMIT_GC_INTERVAL_SECS")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(300);
-    Duration::from_secs(secs.max(1))
+    let secs = crate::config::rate_limit().gc_interval_secs;
+    Duration::from_secs(u64::from(secs.max(1)))
 }
 
 /// 启动后台限流桶 GC 任务（全进程仅生效一次）。

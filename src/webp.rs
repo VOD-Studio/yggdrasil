@@ -48,48 +48,23 @@ pub struct WebpConfig {
     pub method: u8,
 }
 
-/// 从环境变量读取的 WebP 全局配置，未设置时使用默认值。
+/// 从启动期加载的配置（[`crate::config::webp`]）读取的 WebP 全局配置。
 ///
-/// - `WEBP_QUALITY`：默认 85.0，越界时 clamp 到 0.0–100.0。
-/// - `WEBP_METHOD`：默认 2，越界时 clamp 到 0–6。
+/// 值由 main.rs 在启动时从 settings 表加载并写入 `config::WEBP_CFG`；
+/// 未设置时（如单元测试）回退默认值 quality=85.0、method=2。
+/// 修改面板值后需重启进程生效。
 #[cfg(feature = "server")]
 pub static WEBP_CONFIG: LazyLock<WebpConfig> = LazyLock::new(|| {
-    let (quality, quality_clamped) = std::env::var("WEBP_QUALITY")
-        .ok()
-        .and_then(|s| s.parse::<f32>().ok())
-        .map(|q| {
-            let clamped = q.clamp(0.0, 100.0);
-            (clamped, clamped != q)
-        })
-        .unwrap_or((85.0, false));
-
-    if quality_clamped {
-        tracing::warn!(
-            "WEBP_QUALITY was clamped from {} to {} (valid range: 0.0-100.0)",
-            std::env::var("WEBP_QUALITY").unwrap_or_default(),
-            quality
-        );
+    let cfg = crate::config::webp();
+    tracing::info!(
+        "WebP config loaded from DB: quality={}, method={}",
+        cfg.quality,
+        cfg.method
+    );
+    WebpConfig {
+        quality: cfg.quality,
+        method: cfg.method as u8,
     }
-
-    let (method, method_clamped) = std::env::var("WEBP_METHOD")
-        .ok()
-        .and_then(|s| s.parse::<u8>().ok())
-        .map(|m| {
-            let clamped = m.clamp(0, 6);
-            (clamped, clamped != m)
-        })
-        .unwrap_or((2, false));
-
-    if method_clamped {
-        tracing::warn!(
-            "WEBP_METHOD was clamped from {} to {} (valid range: 0-6)",
-            std::env::var("WEBP_METHOD").unwrap_or_default(),
-            method
-        );
-    }
-
-    tracing::info!("WebP config loaded: quality={}, method={}", quality, method);
-    WebpConfig { quality, method }
 });
 
 /// 将 `image::DynamicImage` 编码为 WebP 字节流。

@@ -27,6 +27,7 @@ mod auth;
 mod build_info;
 mod cache;
 mod components;
+mod config;
 mod context;
 mod db;
 pub mod infra;
@@ -184,6 +185,61 @@ fn main() {
             {
                 tracing::warn!("image cache settings env seeding failed: {e:?}");
             }
+
+            // 限流配置（RATE_LIMIT_*）env 播种，语义同上（仅键缺失时生效）。
+            // Tier B：播种后立即从 DB 加载到 config::RATE_LIMIT_CFG，rate_limit.rs
+            // 的 LazyLock 在首次请求时从 config 读取——修改 DB 值需重启生效。
+            if let Err(e) =
+                crate::api::settings::seed_rate_limit_from_env(&conn).await
+            {
+                tracing::warn!("rate limit settings env seeding failed: {e:?}");
+            }
+            let rate_limit_cfg = crate::api::settings::load_rate_limit_settings(&conn)
+                .await
+                .unwrap_or_default();
+            crate::config::set_rate_limit(rate_limit_cfg);
+
+            // WebP 配置（WEBP_QUALITY / WEBP_METHOD）env 播种，语义同上。
+            // Tier B：播种后从 DB 加载到 config::WEBP_CFG，webp.rs 的 LazyLock
+            // 首次编码时从 config 读取——修改 DB 值需重启生效。
+            if let Err(e) =
+                crate::api::settings::seed_webp_settings_from_env(&conn).await
+            {
+                tracing::warn!("webp settings env seeding failed: {e:?}");
+            }
+            let webp_cfg = crate::api::settings::load_webp_settings(&conn)
+                .await
+                .unwrap_or_default();
+            crate::config::set_webp(webp_cfg);
+
+            // 图片尺寸限制配置（MAX_IMAGE_DIMENSION / MAX_IMAGE_PIXELS /
+            // IMAGE_DIMENSIONS_CACHE_TTL_SECS）env 播种，语义同上。
+            // Tier B：播种后从 DB 加载到 config::IMAGE_LIMIT_CFG，image.rs 的
+            // LazyLock 首次请求时从 config 读取——修改 DB 值需重启生效。
+            if let Err(e) =
+                crate::api::settings::seed_image_limit_settings_from_env(&conn).await
+            {
+                tracing::warn!("image limit settings env seeding failed: {e:?}");
+            }
+            let image_limit_cfg =
+                crate::api::settings::load_image_limit_settings(&conn)
+                    .await
+                    .unwrap_or_default();
+            crate::config::set_image_limit(image_limit_cfg);
+
+            // 代码运行器配置（CODE_RUNNER_*）env 播种，语义同上。
+            // Tier B：播种后从 DB 加载到 config::RUNNER_CFG，runner_config.rs 的
+            // LazyLock 首次请求时从 config 读取——修改 DB 值需重启生效。
+            // 注意 DOCKER_SOCKET_PATH 仍是 env-only，不经 settings 表。
+            if let Err(e) =
+                crate::api::settings::seed_runner_settings_from_env(&conn).await
+            {
+                tracing::warn!("runner settings env seeding failed: {e:?}");
+            }
+            let runner_cfg = crate::api::settings::load_runner_settings(&conn)
+                .await
+                .unwrap_or_default();
+            crate::config::set_runner(runner_cfg);
 
             // ADMIN_* 环境变量同步初始管理员（env 为凭据源：每次启动覆盖密码、
             // 确保 admin 角色，可免去首次注册）。失败只告警，不阻断启动。

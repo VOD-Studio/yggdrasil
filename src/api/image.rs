@@ -46,26 +46,11 @@ fn etag_matches(if_none_match: &str, etag: &str) -> bool {
 #[cfg(feature = "server")]
 /// 图片单边（宽或高）尺寸上限，单位像素。
 ///
-/// 启动时从 `MAX_IMAGE_DIMENSION` 环境变量读取，默认 8192。
-/// 只设下限 512（防误调到危险小值导致正常图都传不上），无上限（完全信任运维）。
-/// 低于下限时 clamp 回 512 并打 WARN。
+/// 启动时从 settings 表（经 [`crate::config::image_limit`]）读取，默认 8192。
+/// 下限 512（防误调到危险小值）。值烘焙进 LazyLock，修改面板值后需重启生效。
 pub static MAX_IMAGE_DIMENSION: LazyLock<u32> = LazyLock::new(|| {
-    const DEFAULT: u32 = 8192;
-    const MIN: u32 = 512;
-    let (val, clamped) = std::env::var("MAX_IMAGE_DIMENSION")
-        .ok()
-        .and_then(|s| s.parse::<u32>().ok())
-        .map(|v| if v < MIN { (MIN, true) } else { (v, false) })
-        .unwrap_or((DEFAULT, false));
-    if clamped {
-        tracing::warn!(
-            "MAX_IMAGE_DIMENSION was clamped from {} to {} (minimum {})",
-            std::env::var("MAX_IMAGE_DIMENSION").unwrap_or_default(),
-            val,
-            MIN
-        );
-    }
-    tracing::info!("Image dimension limit loaded: {}", val);
+    let val = crate::config::image_limit().max_dimension;
+    tracing::info!("Image dimension limit loaded from DB: {}", val);
     val
 });
 #[cfg(feature = "server")]
@@ -73,27 +58,14 @@ const DEFAULT_JPEG_QUALITY: u8 = 85;
 #[cfg(feature = "server")]
 /// 允许处理的最大图片像素数（默认约 7k x 7k）。
 ///
-/// 启动时从 `MAX_IMAGE_PIXELS` 环境变量读取，默认 50_000_000。
-/// 只设下限 1_000_000（防误调），无上限。
-/// ⚠️ 此值同时决定单图解码内存缓冲（max_alloc = pixels × 4 + 1MB），
-///    默认 50M 像素对应约 200MB/图，上调前确认部署环境内存。
+/// 启动时从 settings 表（经 [`crate::config::image_limit`]）读取，默认 50_000_000。
+/// 下限 1_000_000（防误调）。⚠️ 此值同时决定单图解码内存缓冲
+/// （max_alloc = pixels × 4 + 1MB），默认 50M 像素对应约 200MB/图。
+/// 值烘焙进 LazyLock，修改面板值后需重启生效。
 pub static MAX_IMAGE_PIXELS: LazyLock<u32> = LazyLock::new(|| {
-    const DEFAULT: u32 = 50_000_000;
-    const MIN: u32 = 1_000_000;
-    let (val, clamped) = std::env::var("MAX_IMAGE_PIXELS")
-        .ok()
-        .and_then(|s| s.parse::<u32>().ok())
-        .map(|v| if v < MIN { (MIN, true) } else { (v, false) })
-        .unwrap_or((DEFAULT, false));
-    if clamped {
-        tracing::warn!(
-            "MAX_IMAGE_PIXELS was clamped from {} to {} (minimum {})",
-            std::env::var("MAX_IMAGE_PIXELS").unwrap_or_default(),
-            val,
-            MIN
-        );
-    }
-    tracing::info!("Image pixel limit loaded: {}", val);
+    // config 中以 u64 存储；此处回退到 u32（原 env 版本亦是 u32）。
+    let val = crate::config::image_limit().max_pixels.min(u32::MAX as u64) as u32;
+    tracing::info!("Image pixel limit loaded from DB: {}", val);
     val
 });
 
@@ -720,11 +692,9 @@ pub async fn serve_image(
 /// 用 sync cache 而非 future cache：render_markdown_enhanced 是同步函数，不能 .await。
 #[cfg(feature = "server")]
 static IMAGE_DIMENSIONS_CACHE: LazyLock<SyncCache<String, (u32, u32)>> = LazyLock::new(|| {
-    let ttl = std::env::var("IMAGE_DIMENSIONS_CACHE_TTL_SECS")
-        .ok()
-        .and_then(|s| s.parse::<u64>().ok())
-        .map(std::time::Duration::from_secs)
-        .unwrap_or(std::time::Duration::from_secs(86400)); // 默认 24h
+    let ttl = std::time::Duration::from_secs(
+        crate::config::image_limit().dimensions_cache_ttl_secs,
+    );
     SyncCache::builder().time_to_live(ttl).build()
 });
 
