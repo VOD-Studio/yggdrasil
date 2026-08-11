@@ -101,12 +101,19 @@ pub fn Mcp() -> Element {
         use_context_provider(|| state);
 
         rsx! {
-            div { class: "w-full max-w-7xl mx-auto space-y-8",
-                PageHeader {}
-                Toast {}
-                TokenList {}
-                CreateTokenCard {}
-                ConfigCard {}
+            div { class: "animate-page-enter w-full max-w-7xl mx-auto space-y-8",
+                div { class: "animate-row-enter", style: "animation-delay: 0ms",
+                    PageHeader {}
+                }
+                div { class: "animate-row-enter", style: "animation-delay: 60ms",
+                    TokenList {}
+                }
+                div { class: "animate-row-enter", style: "animation-delay: 120ms",
+                    CreateTokenCard {}
+                }
+                div { class: "animate-row-enter", style: "animation-delay: 180ms",
+                    ConfigCard {}
+                }
             }
         }
     }
@@ -328,11 +335,12 @@ fn TokenList() -> Element {
                             }
                         }
                         tbody {
-                            for t in tokens().iter() {
+                            for (i, t) in tokens().iter().enumerate() {
                                 TokenRow {
                                     key: "{t.id}",
                                     token: t.clone(),
                                     state,
+                                    stagger_index: i as u32,
                                 }
                             }
                         }
@@ -346,7 +354,7 @@ fn TokenList() -> Element {
 /// 单行令牌：展示元数据 + 重查/用于配置/撤销按钮。
 #[cfg(target_arch = "wasm32")]
 #[component]
-fn TokenRow(token: McpTokenSummary, state: McpPageState) -> Element {
+fn TokenRow(token: McpTokenSummary, state: McpPageState, stagger_index: u32) -> Element {
     let is_revoked = token.revoked_at.is_some();
     let is_expired = token
         .expires_at
@@ -386,7 +394,8 @@ fn TokenRow(token: McpTokenSummary, state: McpPageState) -> Element {
     let reload_gen = state.reload_gen;
 
     rsx! {
-        tr { class: "border-b border-[var(--color-paper-border)] last:border-b-0 hover:bg-[var(--color-paper-theme)]/30 transition-colors",
+        tr { class: "animate-row-enter border-b border-[var(--color-paper-border)] last:border-b-0 hover:bg-[var(--color-paper-theme)]/30 transition-colors",
+            style: "animation-delay: {stagger_index * 40}ms",
             td { class: "px-4 py-3 font-medium text-[var(--color-paper-primary)]",
                 "{token.name}"
             }
@@ -645,8 +654,13 @@ fn ConfigCard() -> Element {
                 }
             } else if let Some(c) = configs() {
                 div { class: "flex flex-col gap-4",
-                    for snippet in c.snippets.iter() {
-                        ConfigSnippet { key: "{snippet.title}", snippet: snippet.clone() }
+                    for (i, snippet) in c.snippets.iter().enumerate() {
+                        div {
+                            key: "{snippet.title}",
+                            class: "animate-row-enter",
+                            style: "animation-delay: {i * 50}ms",
+                            ConfigSnippet { snippet: snippet.clone() }
+                        }
                     }
                 }
             } else {
