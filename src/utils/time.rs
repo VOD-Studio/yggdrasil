@@ -66,6 +66,54 @@ pub fn now_millis() -> i64 {
     }
 }
 
+/// UTC "HH:MM" → 浏览器本地 "HH:MM"（按当天时区偏移换算）。
+///
+/// 非 wasm32 原样返回（SSR 不渲染设置值，此分支不会出现在用户可见路径）。
+/// 供备份设置卡片在挂载回填时使用——服务端只存 UTC，面板按本地时区显示。
+pub fn utc_hhmm_to_local(t: &str) -> String {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let mut parts = t.split(':');
+        let h = parts
+            .next()
+            .and_then(|s| s.parse::<u32>().ok())
+            .unwrap_or(0);
+        let m = parts
+            .next()
+            .and_then(|s| s.parse::<u32>().ok())
+            .unwrap_or(0);
+        let d = js_sys::Date::new_0();
+        d.set_utc_hours(h);
+        d.set_utc_minutes(m);
+        d.set_utc_seconds(0);
+        d.set_utc_milliseconds(0);
+        format!("{:02}:{:02}", d.get_hours(), d.get_minutes())
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        t.to_string()
+    }
+}
+
+/// 浏览器本地 "HH:MM" → UTC "HH:MM"。空串/非法输入回退 "04:00"
+/// （服务端 normalize 会再兜底一次）。仅 wasm 端保存按钮调用。
+#[cfg(target_arch = "wasm32")]
+pub fn local_hhmm_to_utc(t: &str) -> String {
+    let mut parts = t.split(':');
+    let Some(h) = parts.next().and_then(|s| s.parse::<u32>().ok()) else {
+        return "04:00".to_string();
+    };
+    let Some(m) = parts.next().and_then(|s| s.parse::<u32>().ok()) else {
+        return "04:00".to_string();
+    };
+    let d = js_sys::Date::new_0();
+    d.set_hours(h);
+    d.set_minutes(m);
+    d.set_seconds(0);
+    d.set_milliseconds(0);
+    format!("{:02}:{:02}", d.get_utc_hours(), d.get_utc_minutes())
+}
+
 /// 相对时间分档：根据"距现在的毫秒数"返回 (相对文本, 绝对日期 YYYY-MM-DD)。
 ///
 /// 分档规则与服务端 `format_relative_time` 完全一致，前端在展示待审核评论时复用，

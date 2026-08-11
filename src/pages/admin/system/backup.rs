@@ -478,6 +478,9 @@ fn BackupSettingsCard() -> Element {
     #[cfg(target_arch = "wasm32")]
     use crate::api::settings::{get_backup_settings, update_backup_settings};
     use crate::components::forms::{TimePicker, ToggleSwitch};
+    use crate::utils::time::utc_hhmm_to_local;
+    #[cfg(target_arch = "wasm32")]
+    use crate::utils::time::local_hhmm_to_utc;
     use crate::components::ui::{CollapsibleSettingsCard, BTN_ICON};
     use crate::models::settings::BackupSettingsView;
 
@@ -748,52 +751,6 @@ fn BackupSettingsCard() -> Element {
             }
         }
     }
-}
-
-/// UTC "HH:MM" → 浏览器本地 "HH:MM"（按当天时区偏移换算）。
-/// 非 wasm32 原样返回（SSR 不渲染设置值，此分支不会出现在用户可见路径）。
-fn utc_hhmm_to_local(t: &str) -> String {
-    #[cfg(target_arch = "wasm32")]
-    {
-        let mut parts = t.split(':');
-        let h = parts
-            .next()
-            .and_then(|s| s.parse::<u32>().ok())
-            .unwrap_or(0);
-        let m = parts
-            .next()
-            .and_then(|s| s.parse::<u32>().ok())
-            .unwrap_or(0);
-        let d = js_sys::Date::new_0();
-        d.set_utc_hours(h);
-        d.set_utc_minutes(m);
-        d.set_utc_seconds(0);
-        d.set_utc_milliseconds(0);
-        format!("{:02}:{:02}", d.get_hours(), d.get_minutes())
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        t.to_string()
-    }
-}
-
-/// 浏览器本地 "HH:MM" → UTC "HH:MM"。空串/非法输入回退 "04:00"
-/// （服务端 normalize 会再兜底一次）。仅 wasm 端保存按钮调用。
-#[cfg(target_arch = "wasm32")]
-fn local_hhmm_to_utc(t: &str) -> String {
-    let mut parts = t.split(':');
-    let Some(h) = parts.next().and_then(|s| s.parse::<u32>().ok()) else {
-        return "04:00".to_string();
-    };
-    let Some(m) = parts.next().and_then(|s| s.parse::<u32>().ok()) else {
-        return "04:00".to_string();
-    };
-    let d = js_sys::Date::new_0();
-    d.set_hours(h);
-    d.set_minutes(m);
-    d.set_seconds(0);
-    d.set_milliseconds(0);
-    format!("{:02}:{:02}", d.get_utc_hours(), d.get_utc_minutes())
 }
 
 /// RFC3339 → 浏览器本地「YYYY-MM-DD HH:MM」。解析失败原样返回。
