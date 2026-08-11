@@ -589,6 +589,10 @@ fn CoverUploader(cover_image: Signal<String>, cover_uploading: Signal<bool>) -> 
     let mut cover_url_input = use_signal(|| "".to_string());
     // 素材选择 modal 显隐。
     let mut picker_visible = use_signal(|| false);
+    // 封面预览图加载状态：cover_image 变化时置 false，img onload 置 true。
+    // 从素材库选择/拖拽替换/URL 输入后，预览图 ?w=600 版本未缓存需重新加载，
+    // 加载期间显示骨架占位，避免空白无反馈（与上传中的骨架语义独立）。
+    let mut cover_img_loaded = use_signal(|| true);
 
     // 封面图上传：spawn 一个 async 调用 upload_image_file。
     // 三条入口（file input / drop / paste）收敛成拿到 web_sys::File 后统一调用此闭包。
@@ -610,14 +614,17 @@ fn CoverUploader(cover_image: Signal<String>, cover_uploading: Signal<bool>) -> 
             cover_uploading.set(false);
         });
     };
-
-    // 灯箱绑定：封面有图时点击预览图放大查看（复用全局 lightbox.js）。
+    // 灯箱绑定 + 预览图加载占位：封面有图时点击放大查看（复用全局 lightbox.js）。
     // 订阅 cover_image：图片出现/更换后 effect 重跑，data-lb-bound 守卫保证幂等。
+    // 新 src 待加载时置 cover_img_loaded=false，由 img onload 回填 true。
     #[cfg(target_arch = "wasm32")]
     use_effect(move || {
-        if cover_image().is_empty() {
+        let cv = cover_image();
+        if cv.is_empty() {
+            cover_img_loaded.set(true);
             return;
         }
+        cover_img_loaded.set(false);
         let window = web_sys::window()
             .expect("CoverUploader use_effect 仅在 WASM 浏览器上下文执行：无 window");
         let selectors = js_sys::Array::of1(&".cover-preview".into());
@@ -716,10 +723,16 @@ fn CoverUploader(cover_image: Signal<String>, cover_uploading: Signal<bool>) -> 
                         }
                     },
                     alt: "封面预览",
-                    // 外链预览加载失败时提示，避免空白。
+                    // 加载完成清除骨架占位；失败也清除并提示（避免骨架永驻）。
+                    onload: move |_| cover_img_loaded.set(true),
                     onerror: move |_| {
+                        cover_img_loaded.set(true);
                         cover_error.set(Some("封面图加载失败，请检查 URL".to_string()));
                     },
+                }
+                // 预览图加载中骨架占位（素材库选择/拖拽替换/URL 切换后，?w=600 未缓存时）。
+                if !cover_img_loaded() {
+                    div { class: "absolute inset-0 animate-pulse bg-[var(--color-paper-tertiary)]/40 pointer-events-none" }
                 }
                 // 拖拽替换高亮：有图时拖入文件，提示"松开以更换"。
                 if cover_drag_active() {
