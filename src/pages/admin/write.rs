@@ -409,7 +409,7 @@ fn write_editor(post_id: Option<i32>) -> Element {
         // 根容器:flex 分区布局。layout 给 write 的 main 是 flex 容器(无 padding/不滚动),
         // 这里拆成 [内容区 flex-1 overflow-y-auto] + [底栏 flex-shrink-0] 两块。
         // 底栏作为 main 直接子元素永远贴卡片底沿,不随内容滚动,也无需 sticky。
-        div { class: "relative flex flex-col w-full min-h-0 flex-1",
+        div { class: "animate-page-enter relative flex flex-col w-full min-h-0 flex-1",
             if loading() {
                 div { class: "absolute inset-0 z-10 bg-paper-theme flex flex-col", WriteSkeleton {} }
             }
@@ -487,7 +487,8 @@ fn write_editor(post_id: Option<i32>) -> Element {
                 // 透明背景(与左栏共用 paper-theme 底),靠 border-l 和分隔线划分区域。
                 div { class: "w-80 flex-shrink-0 min-h-0 overflow-y-auto border-l border-[var(--color-paper-border)] flex flex-col",
                     // Slug 节
-                    div { class: "p-6 border-b border-[var(--color-paper-border)]",
+                    div { class: "animate-row-enter p-6 border-b border-[var(--color-paper-border)]",
+                        style: "animation-delay: 60ms",
                         label { class: "block text-xs font-semibold uppercase tracking-wide text-[var(--color-paper-tertiary)] mb-3",
                             "链接"
                         }
@@ -499,7 +500,8 @@ fn write_editor(post_id: Option<i32>) -> Element {
                         }
                     }
                     // 标签节
-                    div { class: "p-6 border-b border-[var(--color-paper-border)]",
+                    div { class: "animate-row-enter p-6 border-b border-[var(--color-paper-border)]",
+                        style: "animation-delay: 120ms",
                         label { class: "block text-xs font-semibold uppercase tracking-wide text-[var(--color-paper-tertiary)] mb-3",
                             "标签"
                         }
@@ -511,7 +513,8 @@ fn write_editor(post_id: Option<i32>) -> Element {
                         }
                     }
                     // 摘要节
-                    div { class: "p-6 border-b border-[var(--color-paper-border)]",
+                    div { class: "animate-row-enter p-6 border-b border-[var(--color-paper-border)]",
+                        style: "animation-delay: 180ms",
                         label { class: "block text-xs font-semibold uppercase tracking-wide text-[var(--color-paper-tertiary)] mb-3",
                             "摘要"
                         }
@@ -524,7 +527,8 @@ fn write_editor(post_id: Option<i32>) -> Element {
                         }
                     }
                     // 封面图节
-                    div { class: "p-6",
+                    div { class: "animate-row-enter p-6",
+                        style: "animation-delay: 240ms",
                         label { class: "block text-xs font-semibold uppercase tracking-wide text-[var(--color-paper-tertiary)] mb-3",
                             "封面图"
                         }
