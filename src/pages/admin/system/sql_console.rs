@@ -2,7 +2,7 @@
 
 use dioxus::prelude::*;
 
-use crate::components::ui::{LoadingButton, CHECKBOX_CLASS, CHECKBOX_DANGER_CLASS};
+use crate::components::ui::{Checkbox, LoadingButton};
 
 /// SQL 控制台 tab：CodeMirror 编辑器（SQL 高亮/补全/Vim）+ 4 道护栏 + 结果表 + EXPLAIN。
 ///
@@ -275,31 +275,26 @@ pub(super) fn SqlConsoleTab() -> Element {
                 }
                 // 普通选项
                 label { class: "flex items-center gap-1.5 text-sm text-[var(--color-paper-secondary)] cursor-pointer",
-                    input {
-                        r#type: "checkbox",
-                        class: "{CHECKBOX_CLASS}",
+                    Checkbox {
                         checked: with_explain(),
-                        onchange: move |e| with_explain.set(e.checked()),
+                        onchange: move |checked: bool| with_explain.set(checked),
                     }
                     "EXPLAIN"
                 }
                 label { class: "flex items-center gap-1.5 text-sm text-[var(--color-paper-secondary)] cursor-pointer",
-                    input {
-                        r#type: "checkbox",
-                        class: "{CHECKBOX_CLASS}",
+                    Checkbox {
                         checked: allow_multi(),
-                        onchange: move |e| allow_multi.set(e.checked()),
+                        onchange: move |checked: bool| allow_multi.set(checked),
                     }
                     "允许多语句"
                 }
                 // 危险选项：视觉分隔 + 红色语义
                 span { class: "w-px h-4 bg-[var(--color-paper-border)] mx-1" }
                 label { class: "flex items-center gap-1.5 text-sm text-red-600 dark:text-red-400 cursor-pointer",
-                    input {
-                        r#type: "checkbox",
-                        class: "{CHECKBOX_DANGER_CLASS}",
+                    Checkbox {
+                        danger: true,
                         checked: confirm_dangerous(),
-                        onchange: move |e| confirm_dangerous.set(e.checked()),
+                        onchange: move |checked: bool| confirm_dangerous.set(checked),
                     }
                     "我了解后果（DROP/TRUNCATE/ALTER）"
                 }

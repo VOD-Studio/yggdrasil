@@ -27,7 +27,7 @@ use crate::components::skeletons::posts_trash_skeleton::PostsTrashSkeleton;
 use crate::components::ui::{
     CollapsibleSettingsCard, LoadingButton, Pagination, Popover, StatusBadge, ADMIN_ROW_HOVER,
     ADMIN_TABLE_CLASS, BTN_DANGER_OUTLINE, BTN_ICON, BTN_SOLID_GREEN, BTN_SOLID_RED,
-    BTN_TEXT_ACCENT, BTN_TEXT_RED, BTN_GHOST, CHECKBOX_CLASS,
+    BTN_TEXT_ACCENT, BTN_TEXT_RED, BTN_GHOST, Checkbox,
 };
 use crate::components::forms::ToggleSwitch;
 use crate::hooks::query::use_paginated;
@@ -185,24 +185,20 @@ pub fn PostsTrash() -> Element {
                                         thead {
                                             tr { class: "border-b border-paper-border text-left text-paper-secondary",
                                                 th { class: "px-4 py-3 font-medium w-10",
-                                                    input {
-                                                        r#type: "checkbox",
-                                                        class: "{CHECKBOX_CLASS}",
+                                                    Checkbox {
                                                         checked: all_selected,
-                                                        onchange: {
-                                                            move |_| {
-                                                                let mut s = selected_ids();
-                                                                if all_selected {
-                                                                    for id in &all_ids {
-                                                                        s.remove(id);
-                                                                    }
-                                                                } else {
-                                                                    for id in &all_ids {
-                                                                        s.insert(*id);
-                                                                    }
+                                                        onchange: move |_checked: bool| {
+                                                            let mut s = selected_ids();
+                                                            if all_selected {
+                                                                for id in &all_ids {
+                                                                    s.remove(id);
                                                                 }
-                                                                selected_ids.set(s);
+                                                            } else {
+                                                                for id in &all_ids {
+                                                                    s.insert(*id);
+                                                                }
                                                             }
+                                                            selected_ids.set(s);
                                                         },
                                                     }
                                                 }
@@ -554,11 +550,9 @@ fn TrashRow(
     rsx! {
         tr { class: "{ADMIN_ROW_HOVER}",
             td { class: "px-4 py-3",
-                input {
-                    r#type: "checkbox",
-                    class: "{CHECKBOX_CLASS}",
+                Checkbox {
                     checked: selected,
-                    onchange: move |e| on_select.call(e.checked()),
+                    onchange: move |checked: bool| on_select.call(checked),
                 }
             }
             td { class: "px-4 py-3",

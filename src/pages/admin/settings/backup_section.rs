@@ -8,11 +8,13 @@ use dioxus::prelude::*;
 #[cfg(target_arch = "wasm32")]
 use crate::api::settings::{get_backup_settings, update_backup_settings};
 #[cfg(target_arch = "wasm32")]
-use crate::components::forms::{FormInput, FormLabel, INPUT_CLASS};
+use crate::components::forms::{FormLabel, TimePicker, INPUT_CLASS};
 #[cfg(target_arch = "wasm32")]
-use crate::components::ui::{LoadingButton, ADMIN_CARD_CLASS, CHECKBOX_CLASS};
+use crate::components::ui::{Checkbox, LoadingButton, ADMIN_CARD_CLASS};
 #[cfg(target_arch = "wasm32")]
 use crate::models::settings::{BackupSettings, BackupSettingsView};
+#[cfg(target_arch = "wasm32")]
+use crate::utils::time::{local_hhmm_to_utc, utc_hhmm_to_local};
 
 /// 自动备份调度分区组件。
 #[allow(non_snake_case)]
@@ -44,7 +46,7 @@ pub fn BackupSection(toast: Callback<(String, bool)>) -> Element {
                             let s = v.settings;
                             saved.set(s.clone());
                             auto_draft.set(s.auto_enabled);
-                            time_draft.set(s.time_utc);
+                            time_draft.set(utc_hhmm_to_local(&s.time_utc));
                             retention_draft.set(s.retention_count);
                             include_draft.set(s.include_uploads);
                         }
@@ -58,7 +60,7 @@ pub fn BackupSection(toast: Callback<(String, bool)>) -> Element {
         let dirty = use_memo(move || {
             let s = saved();
             auto_draft() != s.auto_enabled
-                || time_draft().trim() != s.time_utc
+                || time_draft() != utc_hhmm_to_local(&s.time_utc)
                 || retention_draft() != s.retention_count
                 || include_draft() != s.include_uploads
         });
@@ -84,12 +86,10 @@ pub fn BackupSection(toast: Callback<(String, bool)>) -> Element {
 
                     // 启用开关
                     label { class: "flex items-center gap-3 cursor-pointer max-w-xl",
-                        input {
-                            r#type: "checkbox",
-                            class: "{CHECKBOX_CLASS}",
+                        Checkbox {
                             checked: auto_draft(),
-                            onchange: move |e: Event<FormData>| {
-                                auto_draft.set(e.value() == "true");
+                            onchange: move |checked: bool| {
+                                auto_draft.set(checked);
                                 just_saved.set(false);
                             },
                         }
@@ -99,20 +99,21 @@ pub fn BackupSection(toast: Callback<(String, bool)>) -> Element {
                         }
                     }
 
-                    // 执行时间
+                    // 执行时间（本地时间显示/编辑，存 UTC）
                     div { class: "flex flex-col gap-2 max-w-xl",
-                        FormLabel { label: "执行时间（UTC）", html_for: Some("backup-time".to_string()) }
-                        FormInput {
-                            id: Some("backup-time".to_string()),
-                            r#type: "text",
-                            placeholder: "04:00",
-                            value: time_draft(),
-                            oninput: move |v: String| {
-                                time_draft.set(v);
-                                just_saved.set(false);
-                            },
+                        FormLabel { label: "执行时间", html_for: Some("backup-time".to_string()) }
+                        p { class: "text-xs text-[var(--color-paper-secondary)]", "按浏览器本地时间显示与编辑，服务端以 UTC 存储" }
+                        div { class: "flex items-center gap-3",
+                            TimePicker {
+                                id: Some("backup-time".to_string()),
+                                value: time_draft(),
+                                onchange: move |v: String| {
+                                    time_draft.set(v);
+                                    just_saved.set(false);
+                                },
+                            }
+                            span { class: "text-xs text-[var(--color-paper-secondary)]", "本地时间" }
                         }
-                        p { class: "text-xs text-[var(--color-paper-secondary)]", "HH:MM 格式，UTC 时区。面板按浏览器本地时区显示。" }
                     }
 
                     // 保留份数
@@ -135,12 +136,10 @@ pub fn BackupSection(toast: Callback<(String, bool)>) -> Element {
 
                     // 含 uploads
                     label { class: "flex items-center gap-3 cursor-pointer max-w-xl",
-                        input {
-                            r#type: "checkbox",
-                            class: "{CHECKBOX_CLASS}",
+                        Checkbox {
                             checked: include_draft(),
-                            onchange: move |e: Event<FormData>| {
-                                include_draft.set(e.value() == "true");
+                            onchange: move |checked: bool| {
+                                include_draft.set(checked);
                                 just_saved.set(false);
                             },
                         }
@@ -170,7 +169,7 @@ pub fn BackupSection(toast: Callback<(String, bool)>) -> Element {
                             disabled: loading() || just_saved() || !dirty(),
                             onclick: move |_| {
                                 let a = auto_draft();
-                                let t = time_draft().clone();
+                                let t = local_hhmm_to_utc(&time_draft());
                                 let r = retention_draft();
                                 let i = include_draft();
                                 saving.set(true);
@@ -180,7 +179,7 @@ pub fn BackupSection(toast: Callback<(String, bool)>) -> Element {
                                             let s = v.settings;
                                             saved.set(s.clone());
                                             auto_draft.set(s.auto_enabled);
-                                            time_draft.set(s.time_utc);
+                                            time_draft.set(utc_hhmm_to_local(&s.time_utc));
                                             retention_draft.set(s.retention_count);
                                             include_draft.set(s.include_uploads);
                                             just_saved.set(true);

@@ -25,14 +25,6 @@ pub const ADMIN_TABLE_CLASS: &str = "bg-[var(--color-paper-entry)] rounded-2xl s
 pub const ADMIN_ROW_HOVER: &str =
     "border-b border-paper-border last:border-b-0 hover:bg-[var(--color-paper-accent-soft)] transition-colors";
 
-/// 列表复选框统一样式（全选表头 + 行内 + 表单选项）。
-/// `.ygg-checkbox`：appearance:none 全自定义，与文章内 checkbox 视觉一致，
-/// 带 cursor / hover / focus-visible 交互态。CSS 定义在 input.css。
-pub const CHECKBOX_CLASS: &str = "ygg-checkbox";
-
-/// 危险态复选框（SQL 控制台「我了解后果」）：红色语义。叠加在 .ygg-checkbox 上。
-pub const CHECKBOX_DANGER_CLASS: &str = "ygg-checkbox ygg-checkbox-danger";
-
 /// 行内加载 spinner：环形渐变 + 自旋动画，用 currentColor 继承文字色。
 ///
 /// 内联 SVG（含 `@keyframes`），通过 `dangerous_inner_html` 注入；尺寸由外层
@@ -735,6 +727,42 @@ pub fn TagChip(
             "{label}"
             if let Some(c) = count {
                 sup { class: "ml-1 text-sm text-paper-secondary", "{c}" }
+            }
+        }
+    }
+}
+
+
+/// 带勾画动画的复选框：对勾 SVG 用 stroke-dashoffset 描边绘制 + scale 弹入。
+///
+/// 原生 `<input type="checkbox">` 是替换元素，吃不到 `::after`/`::before`，
+/// 无法做 transform 描边动画。本组件用透明 input 做命中/无障碍层，同级 SVG
+/// path 做对勾视觉层；勾选时 path 的 stroke-dashoffset 归零「画出」对勾，
+/// 同时 SVG scale 从 0.6 弹入（弹跳曲线）——双层动画带来盖戳质感。
+///
+/// 与旧的 `.ygg-checkbox`（纯 background-size 缩放）相比，描边动画更像手写勾画，
+/// 且 SVG 是矢量合成层，比光栅 background-image 缩放更锐利。
+///
+/// Props：
+/// - `checked`：受控勾选态
+/// - `onchange`：状态变化回调，返回新的 bool
+/// - `danger`：危险态（红色语义，SQL 控制台「我了解后果」），缺省 `false`
+#[component]
+pub fn Checkbox(
+    checked: bool,
+    onchange: EventHandler<bool>,
+    #[props(default)] danger: bool,
+) -> Element {
+    let wrap = if danger { "ygg-cb ygg-cb-danger" } else { "ygg-cb" };
+    rsx! {
+        span { class: "{wrap}",
+            input {
+                r#type: "checkbox",
+                checked,
+                onchange: move |e: Event<FormData>| onchange.call(e.checked()),
+            }
+            svg { class: "ygg-cb-mark", view_box: "0 0 16 16",
+                path { class: "ygg-cb-check", d: "M3.5 8.5l3 3 6-6.5" }
             }
         }
     }

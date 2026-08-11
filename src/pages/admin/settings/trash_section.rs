@@ -9,7 +9,7 @@ use crate::api::settings::{get_trash_settings, update_trash_settings};
 #[cfg(target_arch = "wasm32")]
 use crate::components::forms::{FormLabel, INPUT_CLASS};
 #[cfg(target_arch = "wasm32")]
-use crate::components::ui::{LoadingButton, ADMIN_CARD_CLASS, CHECKBOX_CLASS};
+use crate::components::ui::{Checkbox, LoadingButton, ADMIN_CARD_CLASS};
 #[cfg(target_arch = "wasm32")]
 use crate::models::settings::TrashSettings;
 
@@ -69,12 +69,10 @@ pub fn TrashSection(toast: Callback<(String, bool)>) -> Element {
                     }
 
                     label { class: "flex items-center gap-3 cursor-pointer max-w-xl",
-                        input {
-                            r#type: "checkbox",
-                            class: "{CHECKBOX_CLASS}",
+                        Checkbox {
                             checked: enabled_draft(),
-                            onchange: move |e: Event<FormData>| {
-                                enabled_draft.set(e.value() == "true");
+                            onchange: move |checked: bool| {
+                                enabled_draft.set(checked);
                                 just_saved.set(false);
                             },
                         }

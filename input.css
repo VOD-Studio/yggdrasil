@@ -1529,73 +1529,104 @@
     background: var(--color-paper-border);
   }
 
-  /* ========== 后台管理交互式 checkbox ==========
-     与文章内 checkbox（.md-content 任务列表）视觉语言一致：appearance:none 全自定义，
-     同样的尺寸/圆角/对勾 SVG，但额外带交互态（cursor / hover / focus-visible）。
-     对勾通过 background-size: 0→0.75rem 缩放过渡（弹跳曲线），勾选/取消双向动画。
-     ui.rs 的 CHECKBOX_CLASS / CHECKBOX_DANGER_CLASS 引用此类名。 */
-  .ygg-checkbox {
-    appearance: none;
-    -webkit-appearance: none;
+  /* ========== Checkbox 组件（描边勾画动画）==========
+     配合 ui.rs::Checkbox 组件。原生 input 是替换元素吃不到伪元素，故用
+     透明 input（命中/无障碍层）+ 同级 SVG path（对勾视觉层）。
+     勾选时 path 的 stroke-dashoffset 归零描边绘制 + SVG scale 弹入。 */
+  .ygg-cb {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     flex-shrink: 0;
     width: 1.15rem;
     height: 1.15rem;
-    margin: 0;
+    vertical-align: middle;
     border: 1.5px solid var(--color-paper-border);
     border-radius: 4px;
     background-color: transparent;
-    /* 对勾 SVG 预载但 background-size:0 不可见；勾选时缩放至 0.75rem 显现。
-       亮色用白对勾，暗色在 .dark .ygg-checkbox 中覆盖为深色对勾。 */
-    background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2016%2016'%20fill='none'%20stroke='%23ffffff'%20stroke-width='2.2'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d='M3.5%208.5l3%203%206-6.5'/%3E%3C/svg%3E");
-    background-position: center;
-    background-repeat: no-repeat;
-    background-size: 0;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+  }
+
+  /* 透明命中层：覆盖整个方框，保留键盘/表单语义 */
+  .ygg-cb > input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    opacity: 0;
     cursor: pointer;
-    transition: background-color 0.15s ease, border-color 0.15s ease, background-size 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+    z-index: 1;
   }
 
-  /* 暗色对勾：#1e1e2e 深色描边在浅绿 #a6e3a1 底上对比充足 */
-  .dark .ygg-checkbox {
-    background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2016%2016'%20fill='none'%20stroke='%231e1e2e'%20stroke-width='2.2'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d='M3.5%208.5l3%203%206-6.5'/%3E%3C/svg%3E");
+  /* 对勾 SVG：描边 + 弹入。dasharray=14 覆盖路径全长（≈13），偏移归零即画出 */
+  .ygg-cb-mark {
+    width: 0.78rem;
+    height: 0.78rem;
+    display: block;
+    transform: scale(0.55);
+    opacity: 0;
+    transition: transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.12s ease;
   }
 
-  .ygg-checkbox:hover:not(:checked) {
-    border-color: var(--color-paper-accent);
+  .ygg-cb-check {
+    fill: none;
+    stroke: #ffffff;
+    stroke-width: 2.2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-dasharray: 14;
+    stroke-dashoffset: 14;
+    transition: stroke-dashoffset 0.28s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
-  .ygg-checkbox:checked {
+  /* 暗色对勾：浅绿底配深色描边对比充足 */
+  .dark .ygg-cb-check {
+    stroke: #1e1e2e;
+  }
+
+  /* 勾选态：方框填充 + 对勾描边绘制 + SVG 弹入 */
+  .ygg-cb:has(input:checked) {
     background-color: var(--color-paper-accent);
     border-color: var(--color-paper-accent);
-    background-size: 0.75rem;
+  }
+  .ygg-cb:has(input:checked) .ygg-cb-mark {
+    transform: scale(1);
+    opacity: 1;
+  }
+  .ygg-cb:has(input:checked) .ygg-cb-check {
+    stroke-dashoffset: 0;
   }
 
-  .ygg-checkbox:focus-visible {
+  .ygg-cb:has(input:not(:checked):hover) {
+    border-color: var(--color-paper-accent);
+  }
+
+  .ygg-cb:has(input:focus-visible) {
     outline: 2px solid var(--color-paper-accent);
     outline-offset: 1px;
   }
 
-  /* 危险态（叠加在 .ygg-checkbox 上）：红色语义，用于 SQL 控制台「我了解后果」。
-     白对勾在 #ef4444 上亮暗均 ≥ 4.5:1，无需暗色变体改色。 */
-  .ygg-checkbox-danger:not(:checked) {
+  /* 危险态：红色语义。白对勾在 #ef4444 上亮暗均 ≥ 4.5:1，需覆盖暗色深对勾 */
+  .ygg-cb-danger {
     border-color: #fca5a5;
   }
-
-  .dark .ygg-checkbox-danger:not(:checked) {
+  .dark .ygg-cb-danger {
     border-color: #f87171;
   }
-
-  .ygg-checkbox-danger:hover:not(:checked) {
+  .ygg-cb-danger:has(input:not(:checked):hover) {
     border-color: #ef4444;
   }
-
-  .ygg-checkbox-danger:checked,
-  .dark .ygg-checkbox-danger:checked {
+  .ygg-cb-danger:has(input:checked) {
     background-color: #ef4444;
     border-color: #ef4444;
-    background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2016%2016'%20fill='none'%20stroke='%23ffffff'%20stroke-width='2.2'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d='M3.5%208.5l3%203%206-6.5'/%3E%3C/svg%3E");
+  }
+  .ygg-cb-danger .ygg-cb-check {
+    stroke: #ffffff;
   }
 
-  .ygg-checkbox-danger:focus-visible {
+  .ygg-cb-danger:has(input:focus-visible) {
     outline: 2px solid #ef4444;
     outline-offset: 1px;
   }

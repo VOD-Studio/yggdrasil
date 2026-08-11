@@ -19,7 +19,7 @@ use crate::components::skeletons::admin_comments_skeleton::AdminCommentsSkeleton
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::ui::{
     FilterTabs, Pagination, StatusBadge, ADMIN_ROW_HOVER, ADMIN_TABLE_CLASS, BTN_SOLID_AMBER,
-    BTN_SOLID_GREEN, BTN_SOLID_RED, BTN_TEXT_AMBER, BTN_TEXT_GREEN, BTN_TEXT_RED, CHECKBOX_CLASS,
+    BTN_SOLID_GREEN, BTN_SOLID_RED, BTN_TEXT_AMBER, BTN_TEXT_GREEN, BTN_TEXT_RED, Checkbox,
 };
 use crate::models::comment::{AdminComment, CommentStatus};
 use crate::router::Route;
@@ -241,24 +241,20 @@ pub fn AdminCommentsPage(page: i32) -> Element {
                                     thead {
                                         tr { class: "border-b border-paper-border text-left text-paper-secondary",
                                             th { class: "px-4 py-3 font-medium w-10",
-                                                input {
-                                                    r#type: "checkbox",
-                                                    class: "{CHECKBOX_CLASS}",
+                                                Checkbox {
                                                     checked: all_selected,
-                                                    onchange: {
-                                                        move |_| {
-                                                            let mut s = selected_ids();
-                                                            if all_selected {
-                                                                for id in &all_ids {
-                                                                    s.remove(id);
-                                                                }
-                                                            } else {
-                                                                for id in &all_ids {
-                                                                    s.insert(*id);
-                                                                }
+                                                    onchange: move |_checked: bool| {
+                                                        let mut s = selected_ids();
+                                                        if all_selected {
+                                                            for id in &all_ids {
+                                                                s.remove(id);
                                                             }
-                                                            selected_ids.set(s);
+                                                        } else {
+                                                            for id in &all_ids {
+                                                                s.insert(*id);
+                                                            }
                                                         }
+                                                        selected_ids.set(s);
                                                     },
                                                 }
                                             }
@@ -384,11 +380,9 @@ fn CommentRow(
     rsx! {
         tr { class: "{ADMIN_ROW_HOVER}",
             td { class: "px-4 py-3",
-                input {
-                    r#type: "checkbox",
-                    class: "{CHECKBOX_CLASS}",
+                Checkbox {
                     checked: selected,
-                    onchange: move |e| on_select.call(e.checked()),
+                    onchange: move |checked: bool| on_select.call(checked),
                 }
             }
             td { class: "px-4 py-3",
