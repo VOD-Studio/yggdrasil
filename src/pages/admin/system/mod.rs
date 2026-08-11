@@ -69,7 +69,7 @@ pub fn System() -> Element {
     let mut active_tab = use_signal(|| SystemTab::DbStatus);
 
     rsx! {
-        div { class: "w-full max-w-7xl mx-auto space-y-6",
+        div { class: "animate-page-enter w-full max-w-7xl mx-auto space-y-6",
             // 页面标题
             div { class: "flex flex-col md:flex-row md:items-end justify-between gap-6 pb-6 border-b border-[var(--color-paper-border)] mb-6",
                 div {
@@ -100,25 +100,32 @@ pub fn System() -> Element {
             }
 
             // tab 内容
-            // key 保证切换 tab 时 Dioxus 完全卸载旧组件、重新挂载新组件，
-            // 避免 hook slot 复用导致 DelayedSkeleton 的 visible 信号残留为 true。
-            div { key: "{active_tab().as_str()}",
-                match active_tab() {
-                    SystemTab::DbStatus => rsx! {
-                        DbStatusTab {}
-                    },
-                    SystemTab::ServerStatus => rsx! {
-                        ServerStatusTab {}
-                    },
-                    SystemTab::SqlConsole => rsx! {
-                        SqlConsoleTab {}
-                    },
-                    SystemTab::Export => rsx! {
-                        ExportTab {}
-                    },
-                    SystemTab::Backup => rsx! {
-                        BackupTab {}
-                    },
+            // 经 std::iter::once 包一层 keyed remount：Dioxus 0.7 对非列表元素的裸 key
+            // 会忽略（见 post_detail.rs 头文档约定 #5、settings/mod.rs 同款修复）。
+            // once 让 active_tab() 变化时真正卸载/重建内层 div，既保证 hook slot
+            // 不复用（DelayedSkeleton 的 visible 信号不残留），又让 animate-section-enter
+            // 在每次切 tab 时重播。
+            for tab_key in std::iter::once(active_tab().as_str()) {
+                div {
+                    key: "{tab_key}",
+                    class: "animate-section-enter",
+                    match active_tab() {
+                        SystemTab::DbStatus => rsx! {
+                            DbStatusTab {}
+                        },
+                        SystemTab::ServerStatus => rsx! {
+                            ServerStatusTab {}
+                        },
+                        SystemTab::SqlConsole => rsx! {
+                            SqlConsoleTab {}
+                        },
+                        SystemTab::Export => rsx! {
+                            ExportTab {}
+                        },
+                        SystemTab::Backup => rsx! {
+                            BackupTab {}
+                        },
+                    }
                 }
             }
         }
