@@ -58,18 +58,20 @@ pub fn Admin() -> Element {
     };
 
     rsx! {
-        div { class: "w-full max-w-7xl mx-auto space-y-8",
+        div { class: "animate-page-enter w-full max-w-7xl mx-auto space-y-8",
             // 顶部标题和全局操作栏
             div { class: "flex flex-col md:flex-row md:items-end justify-between gap-6 pb-8 border-b border-[var(--color-paper-border)]/50",
                 div {
-                    h1 { class: "text-4xl font-extrabold tracking-tight text-[var(--color-paper-primary)]",
+                    h1 { class: "animate-row-enter text-4xl font-extrabold tracking-tight text-[var(--color-paper-primary)]",
                         "仪表盘"
                     }
-                    p { class: "text-base text-[var(--color-paper-secondary)] mt-2",
+                    p { class: "animate-row-enter text-base text-[var(--color-paper-secondary)] mt-2",
+                        style: "animation-delay: 60ms",
                         "数据概览与近期活动"
                     }
                 }
-                div { class: "flex items-center gap-3",
+                div { class: "animate-row-enter flex items-center gap-3",
+                    style: "animation-delay: 120ms",
                     Link { class: "{BTN_SECONDARY}", to: Route::Posts {}, "全部文章" }
                     Link { class: "{BTN_PRIMARY}", to: Route::Write {}, "发布文章" }
                 }
@@ -154,7 +156,8 @@ pub fn Admin() -> Element {
 
             // 最近文章列表
             div { class: "mt-12",
-                div { class: "flex items-center justify-between mb-6",
+                div { class: "animate-row-enter flex items-center justify-between mb-6",
+                    style: "animation-delay: 200ms",
                     h2 { class: "text-xl font-bold text-[var(--color-paper-primary)] tracking-tight",
                         "近期文章"
                     }
