@@ -141,12 +141,31 @@ pub fn SiteSettingsPage() -> Element {
     let mut active = use_signal(|| SettingsSection::Site);
     let mut toast_state: Signal<Option<(String, bool)>> = use_signal(|| None);
     let toast: Callback<(String, bool)> = Callback::new(move |m| toast_state.set(Some(m)));
+    // 展示信号：toast_state 驱动 is-open（展开/收起），display_* 保留最近一条消息，
+    // 使退出动画（收起+淡出）期间文本不闪。
+    let mut display_msg: Signal<String> = use_signal(String::new);
+    let mut display_err: Signal<bool> = use_signal(|| false);
+    // toast 出现时同步展示信号 + 启动 3 秒自动消失计时器。
+    use_effect(move || {
+        if let Some((msg, is_err)) = toast_state() {
+            display_msg.set(msg.clone());
+            display_err.set(is_err);
+            let key = msg.clone();
+            spawn(async move {
+                crate::utils::time::sleep_ms(3000).await;
+                // 仅当 toast 未被新消息覆盖时清除（避免误清后续 toast）
+                if toast_state().map(|(m, _)| m == key).unwrap_or(false) {
+                    toast_state.set(None);
+                }
+            });
+        }
+    });
     rsx! {
         // flex-1 min-h-0 作为 main 的 flex 子项获得有界高度（AdminLayout 对 settings 路由
         // 已切到 internal-scroll 变体：卡片 overflow-hidden、main 无 padding 纯 flex 容器），
         // 故内边距 px-6 py-12 由本页自带。纯 flex 约束，不用百分比——百分比会被 main 的
         // min-height:auto 循环撑大失效。页头固定，下方 flex-1 区域仅占剩余高度。
-        div { class: "w-full flex-1 min-h-0 flex flex-col px-6 py-12",
+        div { class: "animate-page-enter w-full flex-1 min-h-0 flex flex-col px-6 py-12",
             // 页头（固定，不随右侧内容滚动）
             div { class: "flex-shrink-0 flex flex-col md:flex-row md:items-end justify-between gap-6 pb-6 border-b border-[var(--color-paper-border)] mb-6",
                 div {
@@ -159,28 +178,25 @@ pub fn SiteSettingsPage() -> Element {
                 }
             }
 
-            // 操作提示条（各分区共享）
-            {if let Some((msg, is_err)) = toast_state() {
-                rsx! {
-                    div {
-                        class: if is_err {
-                            "text-sm rounded-lg px-3 py-2 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300"
-                        } else {
-                            "text-sm rounded-lg px-3 py-2 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300"
-                        },
-                        "{msg}"
-                    }
+            // 操作提示条（各分区共享；grid-rows 高度过渡 + 淡入淡出，3 秒自动消失）
+            div {
+                class: if toast_state().is_some() { "ygg-toast is-open" } else { "ygg-toast" },
+                div {
+                    class: if display_err() {
+                        "ygg-toast-inner text-sm rounded-lg px-3 py-2 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300"
+                    } else {
+                        "ygg-toast-inner text-sm rounded-lg px-3 py-2 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300"
+                    },
+                    "{display_msg()}"
                 }
-            } else {
-                rsx! { div {} }
-            }}
+            }
 
             // 左侧导航 + 右侧内容（占满剩余高度，仅右侧内容列滚动）
             div { class: "flex flex-col lg:flex-row gap-6 flex-1 min-h-0",
                 // 左侧导航（固定；视口过矮时菜单自身纵向滚动）
                 nav { class: "lg:w-48 flex-shrink-0 min-h-0",
                     div { class: "flex lg:flex-col gap-1 overflow-x-auto lg:overflow-x-visible lg:overflow-y-auto lg:h-full pb-2 lg:pb-0",
-                        for section in SettingsSection::all() {
+                        for (idx, &section) in SettingsSection::all().iter().enumerate() {
                             {
                                 let is_active = active() == section;
                                 let label = section.label();
@@ -194,7 +210,8 @@ pub fn SiteSettingsPage() -> Element {
                                 rsx! {
                                     button {
                                         key: "{section.as_str()}",
-                                        class: "{base} {color}",
+                                        class: "animate-row-enter {base} {color}",
+                                        style: "animation-delay: {idx * 35}ms",
                                         onclick: move |_| active.set(section),
                                         svg {
                                             class: "w-4 h-4 flex-shrink-0",
@@ -218,7 +235,7 @@ pub fn SiteSettingsPage() -> Element {
                 // rounded-2xl：overflow 裁剪沿 padding-box 圆角曲线裁切，滚动到中途时
                 // 面板被截断的底角/顶角也呈现与卡片（ADMIN_CARD_CLASS 16px）一致的圆角，
                 // 不再是直角切断。列无背景，静止态（顶/底）与面板自身圆角重合，无视觉变化。
-                div { class: "flex-1 min-w-0 min-h-0 overflow-y-auto pb-6 rounded-2xl", key: "{active().as_str()}",
+                div { class: "animate-section-enter flex-1 min-w-0 min-h-0 overflow-y-auto pb-6 rounded-2xl", key: "{active().as_str()}",
                     {match active() {
                         SettingsSection::Security => rsx! { SecuritySection { toast } },
                         SettingsSection::RateLimit => rsx! { RateLimitSection { toast } },

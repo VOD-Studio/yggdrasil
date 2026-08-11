@@ -141,6 +141,26 @@
     animation: row-enter 450ms cubic-bezier(0.22, 1, 0.36, 1) both;
   }
 
+  /* 分区面板切换入场（比 page-enter 更轻更快：纯位移无缩放，300ms，
+     供设置页/标签页等子视图 keyed remount 时播放；2026 实践：子视图
+     切换动画应比全页入场更短更克制，仅 transform+opacity） */
+  @keyframes section-enter {
+    0% {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+    100% {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  .animate-section-enter {
+    /* backwards fill：与 page-enter 同理——终态即元素自然值，
+       避免 forwards 的 identity-matrix 残留成 fixed 后代 containing block。 */
+    animation: section-enter 300ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  }
+
   /* 素材弹窗开合动画（进入走 keyframes 挂载即播；关闭走 .is-closing + transition，
      可逆——重开时平滑反向。出(200ms)比入(260ms)快，关闭响应更干脆）。 */
   @keyframes modal-overlay-enter {
@@ -1608,6 +1628,31 @@
     min-height: 0;
   }
 
+  /* ========== 设置页提示条过渡 ==========
+     配合 settings/mod.rs 的 toast。grid-template-rows 0fr↔1fr 实现 auto-height
+     过渡（同 batch-bar 技术），叠加 opacity 淡入淡出、margin-bottom 平滑收放。
+     消息内容由 display 信号在 use_effect 中同步，退出动画期间文本不闪。 */
+  .ygg-toast {
+    display: grid;
+    grid-template-rows: 0fr;
+    opacity: 0;
+    margin-bottom: 0;
+    transition: grid-template-rows 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+                opacity 0.28s ease,
+                margin-bottom 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .ygg-toast.is-open {
+    grid-template-rows: 1fr;
+    opacity: 1;
+    margin-bottom: 1rem;
+  }
+
+  .ygg-toast > .ygg-toast-inner {
+    overflow: hidden;
+    min-height: 0;
+  }
+
   /* 搜索框自定义清除按钮（/search 页）。
      隐藏 WebKit/Blink 原生 ::-webkit-search-cancel-button，改用内联 Material Symbols
      `close` 图标（fill: currentColor，跟随明暗主题）。仅作用于带 .ygg-search-clear 的
@@ -1757,6 +1802,7 @@
   .animate-modal-overlay-enter,
   .animate-modal-panel-enter,
   .animate-row-leave,
+  .animate-section-enter,
   .animate-status-pop {
     animation: none;
   }
