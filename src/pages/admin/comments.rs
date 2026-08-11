@@ -125,7 +125,7 @@ pub fn AdminCommentsPage(page: i32) -> Element {
     };
 
     rsx! {
-        div { class: "w-full max-w-7xl mx-auto space-y-6",
+        div { class: "animate-page-enter w-full max-w-7xl mx-auto space-y-6",
             div { class: "flex flex-col md:flex-row md:items-end justify-between gap-6 pb-6 border-b border-[var(--color-paper-border)] mb-6",
                 div {
                     h1 { class: "text-4xl font-extrabold tracking-tight text-[var(--color-paper-primary)]",
@@ -271,11 +271,12 @@ pub fn AdminCommentsPage(page: i32) -> Element {
                                         }
                                     }
                                     tbody {
-                                        for comment in list.iter() {
+                                        for (idx, comment) in list.iter().enumerate() {
                                             CommentRow {
                                                 key: "{comment.id}",
                                                 comment: comment.clone(),
                                                 selected: selected_ids().contains(&comment.id),
+                                                stagger_index: idx as u32,
                                                 on_select: {
                                                     let id = comment.id;
                                                     move |checked: bool| {
@@ -356,6 +357,7 @@ pub fn AdminCommentsPage(page: i32) -> Element {
 fn CommentRow(
     comment: AdminComment,
     selected: bool,
+    stagger_index: u32,
     on_select: EventHandler<bool>,
     on_approve: EventHandler,
     on_spam: EventHandler,
@@ -378,7 +380,8 @@ fn CommentRow(
     };
 
     rsx! {
-        tr { class: "{ADMIN_ROW_HOVER}",
+        tr { class: "animate-row-enter {ADMIN_ROW_HOVER}",
+            style: "animation-delay: {stagger_index * 35}ms",
             td { class: "px-4 py-3",
                 Checkbox {
                     checked: selected,
