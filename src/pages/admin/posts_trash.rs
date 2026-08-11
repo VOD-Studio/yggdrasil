@@ -86,7 +86,7 @@ pub fn PostsTrash() -> Element {
     };
 
     rsx! {
-        div { class: "w-full max-w-7xl mx-auto space-y-6",
+        div { class: "animate-page-enter w-full max-w-7xl mx-auto space-y-6",
             // 页面 header：计数取自本组件 use_paginated 的 total（比旧 get_post_stats 角标更准）。
             div { class: "pb-6 border-b border-paper-border mb-6",
                 div {
@@ -214,12 +214,13 @@ pub fn PostsTrash() -> Element {
                                             }
                                         }
                                         tbody {
-                                            for post in list.iter() {
+                                            for (idx, post) in list.iter().enumerate() {
                                                 TrashRow {
                                                     key: "{post.id}",
                                                     post: post.clone(),
                                                     retention_days: settings().retention_days,
                                                     selected: selected_ids().contains(&post.id),
+                                                    stagger_index: idx as u32,
                                                     on_select: {
                                                         let id = post.id;
                                                         move |checked: bool| {
@@ -520,6 +521,7 @@ fn TrashRow(
     post: PostListItem,
     retention_days: i32,
     selected: bool,
+    stagger_index: u32,
     on_select: EventHandler<bool>,
     on_restore: EventHandler,
     on_purge: EventHandler,
@@ -548,7 +550,8 @@ fn TrashRow(
         .unwrap_or_else(|| "—".to_string());
 
     rsx! {
-        tr { class: "{ADMIN_ROW_HOVER}",
+        tr { class: "animate-row-enter {ADMIN_ROW_HOVER}",
+            style: "animation-delay: {stagger_index * 35}ms",
             td { class: "px-4 py-3",
                 Checkbox {
                     checked: selected,
