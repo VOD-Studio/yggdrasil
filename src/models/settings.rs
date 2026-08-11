@@ -368,6 +368,36 @@ impl ImageCacheSettings {
     }
 }
 
+/// 系统启动配置的只读快照（面板展示用）。
+///
+/// 这些值在进程启动时读取，无法运行时修改。密钥类仅展示是否已设置，
+/// 不暴露实际值。
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct SystemInfo {
+    /// 数据库连接串（脱敏：仅显示 host/dbname，隐藏密码）。
+    pub database_url_masked: String,
+    /// tracing 日志过滤器。
+    pub rust_log: String,
+    /// 数据库连接池大小。
+    pub db_pool_size: u32,
+    /// 单条 SQL 查询超时秒数。
+    pub statement_timeout_secs: u64,
+    /// SSR 页面缓存时长（秒）。
+    pub ssr_cache_secs: u64,
+    /// 响应压缩算法。
+    pub compression_algorithms: String,
+    /// 是否附加版本响应头。
+    pub expose_version_headers: bool,
+    /// Docker socket 路径。
+    pub docker_socket_path: String,
+    /// MCP 令牌加密主密钥是否已设置（不暴露值）。
+    pub mcp_token_enc_key_set: bool,
+    /// 启动迁移重试窗口（秒）。
+    pub migrate_startup_timeout_secs: u64,
+    /// 系统信息采样间隔（秒）。
+    pub sysinfo_sample_secs: f64,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
