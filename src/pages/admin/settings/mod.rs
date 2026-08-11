@@ -142,9 +142,11 @@ pub fn SiteSettingsPage() -> Element {
     let mut toast_state: Signal<Option<(String, bool)>> = use_signal(|| None);
     let toast: Callback<(String, bool)> = Callback::new(move |m| toast_state.set(Some(m)));
     rsx! {
-        div { class: "w-full max-w-7xl mx-auto",
-            // 页头
-            div { class: "flex flex-col md:flex-row md:items-end justify-between gap-6 pb-6 border-b border-[var(--color-paper-border)] mb-6",
+        // h-full 占满 main 内容盒（AdminLayout 卡片高度确定，flex-1 main 高度亦确定），
+        // flex-col 分区：页头固定，下方 flex-1 区域仅占剩余高度——参照 write 页的分区滚动布局。
+        div { class: "w-full max-w-7xl mx-auto h-full flex flex-col min-h-0",
+            // 页头（固定，不随右侧内容滚动）
+            div { class: "flex-shrink-0 flex flex-col md:flex-row md:items-end justify-between gap-6 pb-6 border-b border-[var(--color-paper-border)] mb-6",
                 div {
                     h1 { class: "text-4xl font-extrabold tracking-tight text-[var(--color-paper-primary)]",
                         "站点配置"
@@ -171,11 +173,11 @@ pub fn SiteSettingsPage() -> Element {
                 rsx! { div {} }
             }}
 
-            // 左侧导航 + 右侧内容
-            div { class: "flex flex-col lg:flex-row gap-6",
-                // 左侧导航
-                nav { class: "lg:w-48 flex-shrink-0",
-                    div { class: "flex lg:flex-col gap-1 overflow-x-auto lg:overflow-visible pb-2 lg:pb-0",
+            // 左侧导航 + 右侧内容（占满剩余高度，仅右侧内容列滚动）
+            div { class: "flex flex-col lg:flex-row gap-6 flex-1 min-h-0",
+                // 左侧导航（固定；视口过矮时菜单自身纵向滚动）
+                nav { class: "lg:w-48 flex-shrink-0 min-h-0",
+                    div { class: "flex lg:flex-col gap-1 overflow-x-auto lg:overflow-x-visible lg:overflow-y-auto lg:h-full pb-2 lg:pb-0",
                         for section in SettingsSection::all() {
                             {
                                 let is_active = active() == section;
@@ -210,8 +212,8 @@ pub fn SiteSettingsPage() -> Element {
                     }
                 }
 
-                // 右侧内容（key 强制切换分区时卸载/重建）
-                div { class: "flex-1 min-w-0", key: "{active().as_str()}",
+                // 右侧内容（key 强制切换分区时卸载/重建；本列独立纵向滚动）
+                div { class: "flex-1 min-w-0 min-h-0 overflow-y-auto pb-6", key: "{active().as_str()}",
                     {match active() {
                         SettingsSection::Security => rsx! { SecuritySection { toast } },
                         SettingsSection::RateLimit => rsx! { RateLimitSection { toast } },
