@@ -57,11 +57,16 @@ pub fn FriendsAdmin() -> Element {
         use_context_provider(|| state);
 
         rsx! {
-            div { class: "w-full max-w-7xl mx-auto space-y-8",
-                PageHeader {}
-                Toast {}
-                EditorCard {}
-                LinkList {}
+            div { class: "animate-page-enter w-full max-w-7xl mx-auto space-y-8",
+                div { class: "animate-row-enter", style: "animation-delay: 0ms",
+                    PageHeader {}
+                }
+                div { class: "animate-row-enter", style: "animation-delay: 60ms",
+                    EditorCard {}
+                }
+                div { class: "animate-row-enter", style: "animation-delay: 120ms",
+                    LinkList {}
+                }
             }
         }
     }
@@ -404,8 +409,13 @@ fn LinkList() -> Element {
                 }
             } else {
                 div { class: "flex flex-col divide-y divide-[var(--color-paper-border)]/50",
-                    for link in links().iter() {
-                        LinkRow { key: "{link.id}", link: link.clone(), state }
+                    for (i, link) in links().iter().enumerate() {
+                        LinkRow {
+                            key: "{link.id}",
+                            link: link.clone(),
+                            state,
+                            stagger_index: i as u32,
+                        }
                     }
                 }
             }
@@ -416,7 +426,7 @@ fn LinkList() -> Element {
 /// 单行友链：头像磁贴 + 名称/URL/描述 + 排序 + 状态徽章 + 编辑/删除操作。
 #[cfg(target_arch = "wasm32")]
 #[component]
-fn LinkRow(link: FriendLink, state: FriendsPageState) -> Element {
+fn LinkRow(link: FriendLink, state: FriendsPageState, stagger_index: u32) -> Element {
     let initial: String = link
         .name
         .chars()
@@ -442,7 +452,8 @@ fn LinkRow(link: FriendLink, state: FriendsPageState) -> Element {
     let mut anchor_y = use_signal(|| 0i32);
 
     rsx! {
-        div { class: "flex items-center gap-4 py-4",
+        div { class: "animate-row-enter flex items-center gap-4 py-4",
+            style: "animation-delay: {stagger_index * 50}ms",
             div { class: "relative h-8 w-8 shrink-0 rounded-2xl bg-[var(--color-paper-code-bg)] flex items-center justify-center overflow-hidden",
                 span { class: "text-sm font-semibold text-[var(--color-paper-primary)] select-none",
                     "{initial}"
