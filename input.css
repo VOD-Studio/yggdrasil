@@ -1608,6 +1608,16 @@
     min-height: 0;
   }
 
+  /* 搜索框自定义清除按钮（/search 页）。
+     隐藏 WebKit/Blink 原生 ::-webkit-search-cancel-button，改用内联 Material Symbols
+     `close` 图标（fill: currentColor，跟随明暗主题）。仅作用于带 .ygg-search-clear 的
+     输入框，不影响 asset_picker / assets / admin posts 等其它 search 输入的原生清除。 */
+  .ygg-search-clear::-webkit-search-cancel-button,
+  .ygg-search-clear::-webkit-search-decoration {
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
 }
 
 @keyframes fadeIn {

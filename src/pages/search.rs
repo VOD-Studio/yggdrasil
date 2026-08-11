@@ -12,7 +12,7 @@ use dioxus::prelude::*;
 
 use crate::api::posts::{search_posts, PostListResponse};
 use crate::components::empty_state::EmptyState;
-use crate::components::forms::{FormInput, INPUT_INLINE_CLASS};
+use crate::components::forms::{INPUT_SEARCH_CLASS, FormInput};
 use crate::components::post_card::PostCard;
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::skeletons::search_skeleton::SearchSkeleton;
@@ -54,17 +54,40 @@ pub fn Search() -> Element {
             }
             div { class: "mb-8",
                 div { class: "flex gap-2",
-                    FormInput {
-                        r#type: "search",
-                        class: INPUT_INLINE_CLASS,
-                        placeholder: "输入关键词搜索文章...",
-                        value: query(),
-                        oninput: move |v: String| query.set(v),
-                        onkeydown: move |e: KeyboardEvent| {
-                            if e.key() == Key::Enter {
-                                on_search()
+                    // 输入框外层 relative 包裹：为绝对定位的清除按钮提供定位上下文，
+                    // 并承接原 INPUT_INLINE_CLASS 的 flex-1/min-w-0 弹性职责。
+                    div { class: "relative flex-1 min-w-0",
+                        FormInput {
+                            r#type: "search",
+                            class: INPUT_SEARCH_CLASS,
+                            placeholder: "输入关键词搜索文章...",
+                            value: query(),
+                            oninput: move |v: String| query.set(v),
+                            onkeydown: move |e: KeyboardEvent| {
+                                if e.key() == Key::Enter {
+                                    on_search()
+                                }
+                            },
+                        }
+                        // 自定义清除按钮：仅在有输入时显示，取代 WebKit 原生清除按钮
+                        // （.ygg-search-clear 已隐藏原生）。close 图标 fill: currentColor
+                        // 跟随明暗主题，源自 public/icons/close_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg。
+                        if !query().is_empty() {
+                            button {
+                                class: "absolute right-3 top-1/2 -translate-y-1/2 flex items-center justify-center w-5 h-5 text-paper-tertiary hover:text-paper-primary transition-colors duration-200 cursor-pointer",
+                                aria_label: "清除",
+                                r#type: "button",
+                                onclick: move |_| query.set(String::new()),
+                                svg {
+                                    xmlns: "http://www.w3.org/2000/svg",
+                                    height: "20px",
+                                    view_box: "0 -960 960 960",
+                                    width: "20px",
+                                    fill: "currentColor",
+                                    path { d: "m256-200-56-56 224-224-224-224 56-56 224 224 224-224 56 56-224 224 224 224-56 56-224-224-224 224Z" }
+                                }
                             }
-                        },
+                        }
                     }
                     LoadingButton {
                         label: "搜索",
