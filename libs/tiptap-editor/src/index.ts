@@ -92,6 +92,7 @@ class TiptapEditorInstance {
     this.toggleButton.type = 'button';
     this.toggleButton.title = '切换 Markdown 源码';
     this.toggleButton.innerHTML = CODE_ICON_SVG;
+    this.toggleButton.addEventListener('click', () => this.toggleSource());
     el.appendChild(this.toggleButton);
 
     // 源码模式 textarea：初始隐藏，与 ProseMirror 共用同一区域
