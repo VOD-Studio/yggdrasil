@@ -1,5 +1,13 @@
 .PHONY: dev build build-linux build-freebsd freebsd-sysroot docker docker-amd64 docker-apple docker-multiarch docker-dev docker-dev-down docker-dev-shell docker-run docker-lint docker-clippy docker-check docker-fmt docker-fix docker-test docker-tools-build docker-tools-clean css css-watch clean build-libs build-editor build-codemirror build-lightbox build-core build-xterm highlight-css katex-css test doc doc-open start lint fix restore-webp esbuild-cache wasm-bindgen-cache
 
+# ── sccache × dx 兼容 ──────────────────────────────────────────
+# dx build / dx serve 构建时把自己设为 RUSTC_WORKSPACE_WRAPPER 拦截 workspace
+# crate 的 rustc 调用（资产捕获）。若宿主 ~/.cargo/config.toml 配了
+# [build] rustc-wrapper（如 sccache），cargo 会组合出 `sccache dx rustc …`：
+# sccache 把 dx 当编译器探测，探测必然失败（"Compiler not supported"）→ dx 报错。
+# 空 RUSTC_WRAPPER env 覆盖 config（env 优先于 config，空值 = 无 wrapper），
+# 只对 dx 构建关闭 sccache；直接 cargo 的构建（test / lint / Dockerfile / CI）不受影响。
+# 下面的 build / build-linux / dev 三个 target 的 dx 调用都带此前缀。
 build:
 	@rm -rf static/
 	@$(MAKE) build-libs
@@ -7,7 +15,7 @@ build:
 	@$(MAKE) katex-css
 	@tailwindcss -i input.css -o public/style.css --minify
 	@$(MAKE) doc
-	@dx build --release --debug-symbols=false
+	@RUSTC_WRAPPER= dx build --release --debug-symbols=false
 	@$(MAKE) restore-webp
 
 build-linux:
@@ -15,8 +23,8 @@ build-linux:
 	@$(MAKE) highlight-css
 	@$(MAKE) katex-css
 	@tailwindcss -i input.css -o public/style.css --minify
-	@dx build @client --release --debug-symbols=false --wasm-js-cfg false
-	@dx build @server --release --debug-symbols=false --target x86_64-unknown-linux-musl --wasm-js-cfg false --features server
+	@RUSTC_WRAPPER= dx build @client --release --debug-symbols=false --wasm-js-cfg false
+	@RUSTC_WRAPPER= dx build @server --release --debug-symbols=false --target x86_64-unknown-linux-musl --wasm-js-cfg false --features server
 	@$(MAKE) restore-webp
 	@echo ""
 	@echo "Linux build complete! The server binary is at target/dx/yggdrasil/release/web/server"
@@ -180,7 +188,7 @@ dev: build-libs highlight-css katex-css esbuild-cache wasm-bindgen-cache
 	@echo "Building CSS..."
 	@$(MAKE) css
 	@echo "Starting dx serve..."
-	@SSR_CACHE_SECS=0 dx serve --addr 0.0.0.0 --interactive false
+	@SSR_CACHE_SECS=0 RUSTC_WRAPPER= dx serve --addr 0.0.0.0 --interactive false
 
 css:
 	@tailwindcss -i input.css -o public/style.css
