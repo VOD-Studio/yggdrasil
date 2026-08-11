@@ -142,9 +142,11 @@ pub fn SiteSettingsPage() -> Element {
     let mut toast_state: Signal<Option<(String, bool)>> = use_signal(|| None);
     let toast: Callback<(String, bool)> = Callback::new(move |m| toast_state.set(Some(m)));
     rsx! {
-        // h-full 占满 main 内容盒（AdminLayout 卡片高度确定，flex-1 main 高度亦确定），
-        // flex-col 分区：页头固定，下方 flex-1 区域仅占剩余高度——参照 write 页的分区滚动布局。
-        div { class: "w-full max-w-7xl mx-auto h-full flex flex-col min-h-0",
+        // flex-1 min-h-0 作为 main 的 flex 子项获得有界高度（AdminLayout 对 settings 路由
+        // 已切到 internal-scroll 变体：卡片 overflow-hidden、main 无 padding 纯 flex 容器），
+        // 故内边距 px-6 py-12 由本页自带。纯 flex 约束，不用百分比——百分比会被 main 的
+        // min-height:auto 循环撑大失效。页头固定，下方 flex-1 区域仅占剩余高度。
+        div { class: "w-full flex-1 min-h-0 flex flex-col px-6 py-12",
             // 页头（固定，不随右侧内容滚动）
             div { class: "flex-shrink-0 flex flex-col md:flex-row md:items-end justify-between gap-6 pb-6 border-b border-[var(--color-paper-border)] mb-6",
                 div {

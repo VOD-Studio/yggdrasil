@@ -55,17 +55,23 @@ pub fn AdminLayout() -> Element {
 
     let is_write_route =
         matches!(route, Route::Write {}) || matches!(route, Route::WriteEdit { .. });
+    // settings 与 write 一样自组织内部滚动（页头/左菜单固定，右侧内容列 overflow-y-auto），
+    // 需要卡片与 main 只提供有界高度而不滚动。注意不能用 h-full 百分比链条：
+    // main 是 flex item 且 min-height:auto，长内容会先把 main 撑大、百分比再相对
+    // 撑大后的高度解析，形成循环依赖导致约束失效（实证于限流分区）。
+    let internal_scroll_route =
+        is_write_route || matches!(route, Route::SiteSettingsPage {});
 
     // 所有 admin 页面共用同一 shell:外层圆角卡片(滚动容器) + 内部 main 负责居中限宽。
-    // write 路由例外:卡片不滚动(overflow-hidden),main 作为 flex 容器不带头尾 padding,
-    // 由 write 页面自身组织 [内容区 flex-1 overflow-y-auto] + [底栏 flex-shrink-0] 的分区布局,
-    // 这样底栏永远贴卡片底部不随内容滚动,也不会出现 sticky + 负 margin 的跳动。
-    let card_overflow = if is_write_route {
+    // write/settings 路由例外:卡片不滚动(overflow-hidden),main 作为 flex 容器不带头尾 padding,
+    // 由页面自身组织 [内容区 flex-1 min-h-0 overflow-y-auto] 的分区布局,
+    // 这样固定区永远贴卡片边缘不随内容滚动,也不会出现 sticky + 负 margin 的跳动。
+    let card_overflow = if internal_scroll_route {
         "overflow-hidden"
     } else {
         "overflow-y-auto"
     };
-    let main_class = if is_write_route {
+    let main_class = if internal_scroll_route {
         "flex-1 w-full max-w-7xl mx-auto flex flex-col min-h-0"
     } else {
         "flex-1 w-full max-w-7xl mx-auto px-6 py-12"
