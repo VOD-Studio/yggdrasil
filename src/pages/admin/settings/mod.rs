@@ -231,23 +231,31 @@ pub fn SiteSettingsPage() -> Element {
                     }
                 }
 
-                // 右侧内容（key 强制切换分区时卸载/重建；本列独立纵向滚动）。
-                // rounded-2xl：overflow 裁剪沿 padding-box 圆角曲线裁切，滚动到中途时
-                // 面板被截断的底角/顶角也呈现与卡片（ADMIN_CARD_CLASS 16px）一致的圆角，
-                // 不再是直角切断。列无背景，静止态（顶/底）与面板自身圆角重合，无视觉变化。
-                div { class: "animate-section-enter flex-1 min-w-0 min-h-0 overflow-y-auto pb-6 rounded-2xl", key: "{active().as_str()}",
-                    {match active() {
-                        SettingsSection::Security => rsx! { SecuritySection { toast } },
-                        SettingsSection::RateLimit => rsx! { RateLimitSection { toast } },
-                        SettingsSection::Site => rsx! { SiteSection { toast } },
-                        SettingsSection::Cache => rsx! { CacheSection { toast } },
-                        SettingsSection::Backup => rsx! { BackupSection { toast } },
-                        SettingsSection::Image => rsx! { ImageSection { toast } },
-                        SettingsSection::Runner => rsx! { RunnerSection { toast } },
-                        SettingsSection::Trash => rsx! { TrashSection { toast } },
-                        SettingsSection::Upload => rsx! { UploadSection { toast } },
-                        SettingsSection::System => rsx! { SystemSection {} },
-                    }}
+                // 右侧内容：滚动容器常驻（不重挂载以免每次切 tab 丢失滚动位置与圆角裁切），
+                // 内层动画节点用 std::iter::once 包一层 keyed remount——非列表元素的裸 key
+                // 会被 Dioxus diff 忽略（见 post_detail.rs 头文档约定 #5），必须走 once 列表
+                // 才能在 active() 变化时真正卸载/重建，从而重播 animate-section-enter。
+                // rounded-2xl 在滚动容器上：overflow 沿 padding-box 圆角裁切，面板被截断的
+                // 底角/顶角也呈现与卡片（16px）一致的圆角，非直角切断。
+                div { class: "flex-1 min-w-0 min-h-0 overflow-y-auto pb-6 rounded-2xl",
+                    for section_key in std::iter::once(active().as_str()) {
+                        div {
+                            key: "{section_key}",
+                            class: "animate-section-enter",
+                            {match active() {
+                                SettingsSection::Security => rsx! { SecuritySection { toast } },
+                                SettingsSection::RateLimit => rsx! { RateLimitSection { toast } },
+                                SettingsSection::Site => rsx! { SiteSection { toast } },
+                                SettingsSection::Cache => rsx! { CacheSection { toast } },
+                                SettingsSection::Backup => rsx! { BackupSection { toast } },
+                                SettingsSection::Image => rsx! { ImageSection { toast } },
+                                SettingsSection::Runner => rsx! { RunnerSection { toast } },
+                                SettingsSection::Trash => rsx! { TrashSection { toast } },
+                                SettingsSection::Upload => rsx! { UploadSection { toast } },
+                                SettingsSection::System => rsx! { SystemSection {} },
+                            }}
+                        }
+                    }
                 }
             }
         }
