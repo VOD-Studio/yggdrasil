@@ -65,14 +65,16 @@ fn escape_xml(input: &str) -> String {
 
 /// 推导站点绝对 URL 基址（无尾部斜杠）。
 ///
-/// 回退链与 CSRF 的 `trusted_origin` 一致：`APP_BASE_URL` → `Host` 头（https 前缀）
-/// → 兜底 `http://localhost` 并告警。生产部署规范要求设置 `APP_BASE_URL`。
-fn site_base_url(headers: &HeaderMap) -> String {
-    if let Ok(base) = std::env::var("APP_BASE_URL") {
-        let base = base.trim();
-        if !base.is_empty() {
-            return base.trim_end_matches('/').to_string();
-        }
+/// 回退链与 CSRF 的 `trusted_origin` 一致：「站点配置 → 安全」面板的
+/// APP_BASE_URL → `Host` 头（https 前缀）→ 兜底 `http://localhost` 并告警。
+/// 生产部署规范要求在设置面板配置 APP_BASE_URL。
+async fn site_base_url(headers: &HeaderMap) -> String {
+    let base = crate::api::settings::runtime_security_settings()
+        .await
+        .app_base_url;
+    let base = base.trim();
+    if !base.is_empty() {
+        return base.trim_end_matches('/').to_string();
     }
     if let Some(host) = headers
         .get(header::HOST)
@@ -82,7 +84,7 @@ fn site_base_url(headers: &HeaderMap) -> String {
     {
         return format!("https://{}", host.trim_end_matches('/'));
     }
-    tracing::warn!("feed: 未配置 APP_BASE_URL 且缺少 Host 头，回退 http://localhost");
+    tracing::warn!("APP_BASE_URL 未配置且请求无 Host 头，RSS/Feed 链接可能不正确");
     "http://localhost".to_string()
 }
 
@@ -225,7 +227,7 @@ async fn load_feed_items() -> Result<Vec<FeedItem>, AppError> {
 pub async fn rss_feed(headers: HeaderMap) -> Response {
     match load_feed_items().await {
         Ok(items) => {
-            let base = site_base_url(&headers);
+            let base = site_base_url(&headers).await;
             let body = render_rss(&base, Utc::now(), &items);
             (
                 [
@@ -254,7 +256,7 @@ pub async fn rss_feed(headers: HeaderMap) -> Response {
 pub async fn json_feed(headers: HeaderMap) -> Response {
     match load_feed_items().await {
         Ok(items) => {
-            let base = site_base_url(&headers);
+            let base = site_base_url(&headers).await;
             match render_json(&base, &items) {
                 Ok(body) => (
                     [
@@ -368,39 +370,22 @@ mod tests {
         assert!(v["items"][0].get("summary").is_none());
     }
 
-    /// 保存/恢复 `APP_BASE_URL`，避免污染进程级环境（serial 保护并发测试）。
-    fn with_env_removed<R>(f: impl FnOnce() -> R) -> R {
-        let saved = std::env::var("APP_BASE_URL").ok();
-        std::env::remove_var("APP_BASE_URL");
-        let r = f();
-        match saved {
-            Some(v) => std::env::set_var("APP_BASE_URL", v),
-            None => std::env::remove_var("APP_BASE_URL"),
-        }
-        r
-    }
-
-    #[test]
+    #[tokio::test]
     #[serial]
-    fn site_base_url_prefers_env() {
-        let saved = std::env::var("APP_BASE_URL").ok();
-        std::env::set_var("APP_BASE_URL", "https://blog.example.com/");
-        let r = site_base_url(&HeaderMap::new());
-        match saved {
-            Some(v) => std::env::set_var("APP_BASE_URL", v),
-            None => std::env::remove_var("APP_BASE_URL"),
-        }
+    async fn site_base_url_falls_back_to_host_when_no_settings() {
+        // 无 DB 连接的单元测试环境中，runtime_security_settings 回退默认值
+        // （app_base_url 为空），应命中 Host 头推导分支。
+        let mut headers = HeaderMap::new();
+        headers.insert(header::HOST, HeaderValue::from_static("blog.example.com"));
+        let r = site_base_url(&headers).await;
         assert_eq!(r, "https://blog.example.com");
     }
 
-    #[test]
+    #[tokio::test]
     #[serial]
-    fn site_base_url_falls_back_to_host() {
-        let mut headers = HeaderMap::new();
-        headers.insert(header::HOST, HeaderValue::from_static("blog.example.com"));
-        assert_eq!(
-            with_env_removed(|| site_base_url(&headers)),
-            "https://blog.example.com"
-        );
+    async fn site_base_url_falls_back_to_localhost_when_nothing() {
+        // 既无配置也无 Host 头 → 兜底 localhost 并告警。
+        let r = site_base_url(&HeaderMap::new()).await;
+        assert_eq!(r, "http://localhost");
     }
 }

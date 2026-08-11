@@ -35,8 +35,8 @@ pub async fn create_comment(
 
         // 从 FullstackContext 获取客户端 IP，并进行评论频率限流。
         if let Some(ctx) = dioxus::fullstack::FullstackContext::current() {
-            let parts = ctx.parts_mut();
-            let ip = crate::api::rate_limit::get_client_ip(&parts.headers);
+            let headers = ctx.parts_mut().headers.clone();
+            let ip = crate::api::rate_limit::get_client_ip(&headers).await;
             if let Err(msg) = crate::api::rate_limit::check_comment_limit(&ip) {
                 return Ok(CommentResponse::error("rate_limited", msg));
             }
@@ -157,8 +157,8 @@ pub async fn create_comment(
             .map(|u| crate::utils::html::escape_html(u.trim()))
             .filter(|u| !u.is_empty());
         let ip_address = if let Some(ctx) = dioxus::fullstack::FullstackContext::current() {
-            let parts = ctx.parts_mut();
-            Some(crate::api::rate_limit::get_client_ip(&parts.headers))
+            let headers = ctx.parts_mut().headers.clone();
+            Some(crate::api::rate_limit::get_client_ip(&headers).await)
         } else {
             None
         };

@@ -78,8 +78,8 @@ pub async fn register(
     #[cfg(feature = "server")]
     {
         if let Some(ctx) = dioxus::fullstack::FullstackContext::current() {
-            let parts = ctx.parts_mut();
-            let ip = crate::api::rate_limit::get_client_ip(&parts.headers);
+            let headers = ctx.parts_mut().headers.clone();
+            let ip = crate::api::rate_limit::get_client_ip(&headers).await;
             if let Err(msg) = crate::api::rate_limit::check_strict_limit(&ip) {
                 return Ok(AuthResponse {
                     success: false,
@@ -176,8 +176,8 @@ pub async fn login(username: String, password: String) -> Result<AuthResponse, S
     #[cfg(feature = "server")]
     {
         if let Some(ctx) = dioxus::fullstack::FullstackContext::current() {
-            let parts = ctx.parts_mut();
-            let ip = crate::api::rate_limit::get_client_ip(&parts.headers);
+            let headers = ctx.parts_mut().headers.clone();
+            let ip = crate::api::rate_limit::get_client_ip(&headers).await;
             if let Err(msg) = crate::api::rate_limit::check_strict_limit(&ip) {
                 return Ok(AuthResponse {
                     success: false,
@@ -244,11 +244,10 @@ pub async fn login(username: String, password: String) -> Result<AuthResponse, S
     let token_hash = session::hash_token(&token);
     let expires_at = session::default_expiry();
 
-    let max_sessions = std::env::var("MAX_SESSIONS_PER_USER")
-        .ok()
-        .and_then(|s| s.parse::<i64>().ok())
-        .unwrap_or(5)
-        .max(1);
+    let max_sessions = crate::api::settings::runtime_security_settings()
+        .await
+        .max_sessions_per_user
+        .max(1) as i64;
 
     // 用事务 + 对 users 行加 FOR UPDATE 锁，串行化同一用户的并发登录，
     // 避免 COUNT→DELETE→INSERT 之间的竞态导致超出上限（M1）。
@@ -290,7 +289,7 @@ pub async fn login(username: String, password: String) -> Result<AuthResponse, S
 
     tx.commit().await.map_err(AppError::query)?;
 
-    let cookie = session::session_cookie(&token, 30 * 24 * 60 * 60, session::cookie_secure());
+    let cookie = session::session_cookie(&token, 30 * 24 * 60 * 60, session::cookie_secure().await);
     // 通过 Dioxus FullstackContext 设置 HttpOnly Cookie 响应头。
     if let Some(ctx) = dioxus::fullstack::FullstackContext::current() {
         if let Ok(value) = HeaderValue::try_from(cookie.as_str()) {
@@ -316,7 +315,7 @@ pub async fn logout() -> Result<AuthResponse, ServerFnError> {
     let client = get_conn().await.map_err(AppError::db_conn)?;
 
     // 设置过期时间为 0 的 Cookie，通知浏览器清除会话。
-    let cookie = session::session_cookie("", 0, session::cookie_secure());
+    let cookie = session::session_cookie("", 0, session::cookie_secure().await);
     if let Some(ctx) = dioxus::fullstack::FullstackContext::current() {
         if let Ok(value) = HeaderValue::try_from(cookie.as_str()) {
             ctx.add_response_header(SET_COOKIE, value);

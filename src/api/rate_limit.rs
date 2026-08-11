@@ -172,11 +172,10 @@ pub fn check_image_limit(ip: &str) -> Result<(), StatusCode> {
 }
 
 #[cfg(feature = "server")]
-fn trusted_proxy_count() -> usize {
-    std::env::var("TRUSTED_PROXY_COUNT")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0)
+async fn trusted_proxy_count() -> usize {
+    crate::api::settings::runtime_security_settings()
+        .await
+        .trusted_proxy_count as usize
 }
 
 #[cfg(feature = "server")]
@@ -273,20 +272,19 @@ fn get_client_ip_internal(
 ///
 /// 当未配置可信代理时，不会信任任何 `X-Forwarded-For` / `X-Real-IP` 头，
 /// 而是直接返回 `peer` 中的 TCP 对端地址（如果提供）。
-pub fn get_client_ip_with_peer(
+pub async fn get_client_ip_with_peer(
     headers: &http::HeaderMap,
     peer: Option<std::net::SocketAddr>,
 ) -> String {
-    get_client_ip_internal(headers, trusted_proxy_count(), peer)
+    get_client_ip_internal(headers, trusted_proxy_count().await, peer)
 }
-
 #[cfg(feature = "server")]
-/// 使用环境变量配置的代理层数提取客户端 IP。
+/// 使用「站点配置 → 安全」面板的代理层数提取客户端 IP。
 ///
 /// 适用于 Dioxus server function 等无法获取 `ConnectInfo` 的场景。
-/// 生产环境建议配合反向代理与 `TRUSTED_PROXY_COUNT` 使用。
-pub fn get_client_ip(headers: &http::HeaderMap) -> String {
-    get_client_ip_internal(headers, trusted_proxy_count(), None)
+/// 生产环境建议配合反向代理与设置面板的 TRUSTED_PROXY_COUNT 使用。
+pub async fn get_client_ip(headers: &http::HeaderMap) -> String {
+    get_client_ip_internal(headers, trusted_proxy_count().await, None)
 }
 
 #[cfg(feature = "server")]
@@ -491,19 +489,13 @@ mod tests {
         );
     }
 
-    #[test]
-    fn get_client_ip_with_env_trusted_proxy_count_zero() {
-        let original = std::env::var("TRUSTED_PROXY_COUNT").ok();
-        std::env::set_var("TRUSTED_PROXY_COUNT", "0");
-
+    #[tokio::test]
+    async fn get_client_ip_defaults_to_unknown_without_db() {
+        // 无 DB 连接的单元测试环境，trusted_proxy_count 回退默认 0，
+        // 不信任任何 XFF 头，返回 "unknown"。
         let mut headers = HeaderMap::new();
         headers.insert("x-forwarded-for", "1.2.3.4, 5.6.7.8".parse().unwrap());
-        assert_eq!(get_client_ip(&headers), "unknown");
-
-        match original {
-            Some(value) => std::env::set_var("TRUSTED_PROXY_COUNT", value),
-            None => std::env::remove_var("TRUSTED_PROXY_COUNT"),
-        }
+        assert_eq!(get_client_ip(&headers).await, "unknown");
     }
 
     #[test]

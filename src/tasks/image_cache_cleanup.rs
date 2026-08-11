@@ -30,15 +30,10 @@ pub async fn run_cleanup() {
 /// 读取环境变量并清理默认磁盘缓存目录。
 pub async fn cleanup_image_cache() -> io::Result<()> {
     let base = Path::new(CACHE_DIR);
-    let max_mb = std::env::var("IMAGE_DISK_CACHE_MAX_MB")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(1024);
-    let max_age_hours = std::env::var("IMAGE_DISK_CACHE_MAX_AGE_HOURS")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(168);
-    let (deleted, bytes_freed) = cleanup_image_cache_at(base, max_mb, max_age_hours).await?;
+    let settings = crate::api::settings::runtime_image_cache_settings().await;
+    let max_mb = settings.disk_cache_max_mb;
+    let max_age_hours = settings.disk_cache_max_age_hours;
+    let (deleted, bytes_freed) = cleanup_image_cache_at(base, max_mb as u64, max_age_hours as u64).await?;
     if !deleted.is_empty() {
         tracing::info!(
             "Image disk cache cleanup: removed {} files, freed {} bytes",

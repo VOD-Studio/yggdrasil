@@ -170,6 +170,21 @@ fn main() {
                 tracing::warn!("upload settings env seeding failed: {e:?}");
             }
 
+            // 安全配置（APP_BASE_URL / COOKIE_SECURE / TRUSTED_PROXY_COUNT /
+            // MAX_SESSIONS_PER_USER）env 播种，语义同上（仅键缺失时生效）。
+            if let Err(e) =
+                crate::api::settings::seed_security_settings_from_env(&conn).await
+            {
+                tracing::warn!("security settings env seeding failed: {e:?}");
+            }
+
+            // 图片磁盘缓存配置（IMAGE_DISK_CACHE_*）env 播种，语义同上。
+            if let Err(e) =
+                crate::api::settings::seed_image_cache_settings_from_env(&conn).await
+            {
+                tracing::warn!("image cache settings env seeding failed: {e:?}");
+            }
+
             // ADMIN_* 环境变量同步初始管理员（env 为凭据源：每次启动覆盖密码、
             // 确保 admin 角色，可免去首次注册）。失败只告警，不阻断启动。
             if let Err(e) = crate::api::auth::sync_admin_from_env(&conn).await {

@@ -66,7 +66,7 @@ pub async fn upload_image(
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     // 0. Rate limit check
     let peer = connect_info.map(|Extension(ConnectInfo(addr))| addr);
-    let ip = crate::api::rate_limit::get_client_ip_with_peer(&headers, peer);
+    let ip = crate::api::rate_limit::get_client_ip_with_peer(&headers, peer).await;
     if let Err(msg) = crate::api::rate_limit::check_upload_limit(&ip) {
         return Err(upload_error(StatusCode::TOO_MANY_REQUESTS, msg));
     }

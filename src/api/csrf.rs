@@ -89,14 +89,15 @@ fn extract_origin(headers: &HeaderMap) -> Option<String> {
         .map(normalize_origin)
 }
 
-/// 计算本站可信 origin：优先 `APP_BASE_URL` 环境变量（生产域名），
+/// 计算本站可信 origin：优先「站点配置 → 安全」面板的 APP_BASE_URL（即时生效），
 /// 否则用请求 Host 头 + `X-Forwarded-Proto`（反代后）或 https 推导。
 ///
 /// 返回 None 表示无法确定本站 origin（此时放行，避免误杀——CSRF 漏判
 /// 是请求被拒，但拿不到本站 origin 时误杀合法请求代价更高，故保守放行）。
 #[cfg(feature = "server")]
-fn trusted_origin(headers: &HeaderMap) -> Option<String> {
-    if let Ok(base) = std::env::var("APP_BASE_URL") {
+async fn trusted_origin(headers: &HeaderMap) -> Option<String> {
+    let base = crate::api::settings::runtime_security_settings().await.app_base_url;
+    if !base.is_empty() {
         return Some(normalize_origin(&base));
     }
     let host = headers.get(axum::http::header::HOST)?.to_str().ok()?;
@@ -118,7 +119,7 @@ pub async fn csrf_middleware(
 ) -> axum::response::Response {
     if is_write_method(req.method()) {
         let headers = req.headers().clone();
-        let trusted = trusted_origin(&headers);
+        let trusted = trusted_origin(&headers).await;
         let incoming = extract_origin(&headers);
         let ok = match (&trusted, &incoming) {
             (Some(t), Some(o)) => t == o,

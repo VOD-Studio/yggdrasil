@@ -39,8 +39,8 @@ pub async fn check_pending_status(ids: Vec<i64>) -> Result<Vec<PendingStatusItem
         // 审核状态，故不加 admin 鉴权；但 strict 限流（对 unknown IP 降级宽松桶）
         // 足以阻止批量枚举。
         if let Some(ctx) = dioxus::fullstack::FullstackContext::current() {
-            let parts = ctx.parts_mut();
-            let ip = crate::api::rate_limit::get_client_ip(&parts.headers);
+            let headers = ctx.parts_mut().headers.clone();
+            let ip = crate::api::rate_limit::get_client_ip(&headers).await;
             if let Err(_msg) = crate::api::rate_limit::check_strict_limit(&ip) {
                 return Err(ServerFnError::new("请求过于频繁，请稍后再试"));
             }

@@ -28,12 +28,12 @@ pub fn default_expiry() -> DateTime<Utc> {
 }
 
 #[cfg(feature = "server")]
-/// 读取环境变量 `COOKIE_SECURE`，决定是否给 Cookie 添加 Secure 标志。
-pub fn cookie_secure() -> bool {
-    std::env::var("COOKIE_SECURE")
-        .ok()
-        .map(|v| matches!(v.as_str(), "1" | "true" | "yes"))
-        .unwrap_or(false)
+/// 是否给会话 Cookie 加 Secure 标志（仅 HTTPS 下发送）。
+///
+/// 即时生效：读取「站点配置 → 安全」面板的 DB 值（经 moka 缓存兜底），
+/// 面板修改后数秒内全链路生效。
+pub async fn cookie_secure() -> bool {
+    crate::api::settings::runtime_security_settings().await.cookie_secure
 }
 
 #[cfg(feature = "server")]

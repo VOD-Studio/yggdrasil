@@ -31,8 +31,8 @@ pub async fn search_posts(query: String) -> Result<PostListResponse, ServerFnErr
 
         // 对搜索接口进行严格限流，防止滥用 expensive 查询。
         if let Some(ctx) = dioxus::fullstack::FullstackContext::current() {
-            let parts = ctx.parts_mut();
-            let ip = rate_limit::get_client_ip(&parts.headers);
+            let headers = ctx.parts_mut().headers.clone();
+            let ip = rate_limit::get_client_ip(&headers).await;
             if let Err(_msg) = rate_limit::check_strict_limit(&ip) {
                 return Ok(PostListResponse {
                     posts: Vec::new(),

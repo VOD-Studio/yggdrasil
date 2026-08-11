@@ -626,7 +626,7 @@ pub async fn serve_image(
     headers: HeaderMap,
 ) -> Response {
     let peer = connect_info.map(|Extension(ConnectInfo(addr))| addr);
-    let ip = crate::api::rate_limit::get_client_ip_with_peer(&headers, peer);
+    let ip = crate::api::rate_limit::get_client_ip_with_peer(&headers, peer).await;
     if let Err(status) = crate::api::rate_limit::check_image_limit(&ip) {
         return status.into_response();
     }

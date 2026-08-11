@@ -18,7 +18,7 @@ use crate::models::friend_link::FriendLink;
 #[cfg(feature = "server")]
 use crate::models::post::{FeedItem, Post, PostListItem, PostStats, Tag};
 #[cfg(feature = "server")]
-use crate::models::settings::SiteSettings;
+use crate::models::settings::{ImageCacheSettings, SecuritySettings, SiteSettings};
 #[cfg(feature = "server")]
 use crate::models::user::SessionUser;
 
@@ -66,6 +66,15 @@ const TTL_SEARCH: Duration = Duration::from_secs(10);
 #[cfg(feature = "server")]
 const TTL_SITE_SETTINGS: Duration = Duration::from_secs(600);
 
+/// 安全配置缓存 TTL：15 秒。安全相关（CSRF/cookie/代理/会话），面板修改后
+/// 需尽快全链路生效，TTL 仅作 DB 兜底而非主失效手段（面板保存会主动失效）。
+#[cfg(feature = "server")]
+const TTL_SECURITY_SETTINGS: Duration = Duration::from_secs(15);
+
+/// 图片磁盘缓存配置 TTL：60 秒。仅清理任务每小时读取一次，TTL 纯为 DB 兜底。
+#[cfg(feature = "server")]
+const TTL_IMAGE_CACHE_SETTINGS: Duration = Duration::from_secs(60);
+
 // ============================================================================
 // 缓存 Key 类型
 // ============================================================================
@@ -96,6 +105,10 @@ pub enum CacheKey {
     FriendLinks,
     /// 站点公开配置（页脚 GitHub 链接等，单键）。
     SiteSettings,
+    /// 安全配置（即时生效层，单键）。
+    SecuritySettings,
+    /// 图片磁盘缓存配置（即时生效层，单键）。
+    ImageCacheSettings,
 }
 
 // ============================================================================
@@ -219,6 +232,25 @@ static SITE_SETTINGS_CACHE: LazyLock<Cache<CacheKey, SiteSettings>> = LazyLock::
         .time_to_live(TTL_SITE_SETTINGS)
         .build()
 });
+
+/// 全局安全配置缓存实例（单键 `SecuritySettings`），最大容量 2。
+#[cfg(feature = "server")]
+static SECURITY_SETTINGS_CACHE: LazyLock<Cache<CacheKey, SecuritySettings>> = LazyLock::new(|| {
+    Cache::builder()
+        .max_capacity(2)
+        .time_to_live(TTL_SECURITY_SETTINGS)
+        .build()
+});
+
+/// 全局图片磁盘缓存配置实例（单键 `ImageCacheSettings`），最大容量 2。
+#[cfg(feature = "server")]
+static IMAGE_CACHE_SETTINGS_CACHE: LazyLock<Cache<CacheKey, ImageCacheSettings>> =
+    LazyLock::new(|| {
+        Cache::builder()
+            .max_capacity(2)
+            .time_to_live(TTL_IMAGE_CACHE_SETTINGS)
+            .build()
+    });
 
 /// 会话用户缓存类型。
 #[cfg(feature = "server")]
@@ -450,6 +482,50 @@ pub async fn set_site_settings(settings: SiteSettings) {
 #[cfg(feature = "server")]
 pub fn invalidate_site_settings() {
     SITE_SETTINGS_CACHE.invalidate_all();
+}
+
+/// 读取安全配置缓存。
+#[cfg(feature = "server")]
+pub async fn get_security_settings() -> Option<SecuritySettings> {
+    SECURITY_SETTINGS_CACHE
+        .get(&CacheKey::SecuritySettings)
+        .await
+}
+
+/// 写入安全配置缓存。
+#[cfg(feature = "server")]
+pub async fn set_security_settings(settings: SecuritySettings) {
+    let _ = SECURITY_SETTINGS_CACHE
+        .insert(CacheKey::SecuritySettings, settings)
+        .await;
+}
+
+/// 失效安全配置缓存（面板保存后调用）。
+#[cfg(feature = "server")]
+pub fn invalidate_security_settings() {
+    SECURITY_SETTINGS_CACHE.invalidate_all();
+}
+
+/// 读取图片磁盘缓存配置缓存。
+#[cfg(feature = "server")]
+pub async fn get_image_cache_settings() -> Option<ImageCacheSettings> {
+    IMAGE_CACHE_SETTINGS_CACHE
+        .get(&CacheKey::ImageCacheSettings)
+        .await
+}
+
+/// 写入图片磁盘缓存配置缓存。
+#[cfg(feature = "server")]
+pub async fn set_image_cache_settings(settings: ImageCacheSettings) {
+    let _ = IMAGE_CACHE_SETTINGS_CACHE
+        .insert(CacheKey::ImageCacheSettings, settings)
+        .await;
+}
+
+/// 失效图片磁盘缓存配置缓存（面板保存后调用）。
+#[cfg(feature = "server")]
+pub fn invalidate_image_cache_settings() {
+    IMAGE_CACHE_SETTINGS_CACHE.invalidate_all();
 }
 
 /// 按 slug 读取单篇文章缓存。

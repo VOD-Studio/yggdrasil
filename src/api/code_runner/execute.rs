@@ -52,11 +52,11 @@ pub static RUNNER_SEMAPHORE: LazyLock<Arc<Semaphore>> =
 
 /// 从 FullstackContext 提取客户端 IP（无上下文时退回 "unknown"）。
 #[cfg(feature = "server")]
-fn client_ip() -> String {
+async fn client_ip() -> String {
     match dioxus::fullstack::FullstackContext::current() {
         Some(ctx) => {
-            let parts = ctx.parts_mut();
-            get_client_ip(&parts.headers)
+            let headers = ctx.parts_mut().headers.clone();
+            get_client_ip(&headers).await
         }
         None => "unknown".to_string(),
     }
@@ -86,7 +86,7 @@ fn validate_exec_request(req: &ExecRequest) -> Result<(), ServerFnError> {
 async fn check_rate_limit_for_user() -> Result<(), ServerFnError> {
     let is_admin = get_current_admin_user().await.is_ok();
     if !is_admin {
-        let ip = client_ip();
+        let ip = client_ip().await;
         if let Err(msg) = check_code_exec_limit(&ip) {
             return Err(ServerFnError::new(msg));
         }

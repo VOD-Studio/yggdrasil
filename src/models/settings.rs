@@ -240,6 +240,134 @@ impl SiteSettings {
     }
 }
 
+// ============================================================================
+// 安全配置（即时生效）
+// ============================================================================
+//
+// 这些设置原本经环境变量每次请求/每次登录读取（src/api/csrf.rs 的
+// trusted_origin、src/auth/session.rs 的 cookie_secure、src/api/rate_limit.rs
+// 的 trusted_proxy_count、src/api/auth.rs 的 max_sessions_per_user）。迁移到
+// settings 表后语义不变：env 在首次部署播种 DB（ON CONFLICT DO NOTHING），
+// 之后面板写入的 DB 值优先，重启不被 env 覆盖。读取走 moka 短 TTL 缓存，
+// 面板保存时失效缓存——最长滞后数秒即全链路生效。
+
+/// 默认 APP_BASE_URL：空串表示未配置（回退到 Host 头推导，仅本地安全）。
+pub const DEFAULT_APP_BASE_URL: &str = "";
+/// 默认不给会话 cookie 加 Secure 标志（本地 HTTP 开发需要）。
+pub const DEFAULT_COOKIE_SECURE: bool = false;
+/// 默认反向代理层数 0（直接对外服务）。
+pub const DEFAULT_TRUSTED_PROXY_COUNT: u32 = 0;
+/// 默认每用户最大并发会话数 5。
+pub const DEFAULT_MAX_SESSIONS_PER_USER: u32 = 5;
+
+/// `TRUSTED_PROXY_COUNT` 上限。超过真实代理层数会信任客户端伪造的 IP，
+/// 导致限流被绕过；上限给一个宽松天花板防误填危险大值。
+#[cfg(feature = "server")]
+pub const MAX_TRUSTED_PROXY_COUNT: u32 = 10;
+/// `MAX_SESSIONS_PER_USER` 下限（至少允许 1 个会话）。
+#[cfg(feature = "server")]
+pub const MIN_MAX_SESSIONS_PER_USER: u32 = 1;
+/// `MAX_SESSIONS_PER_USER` 上限，防误填危险大值。
+#[cfg(feature = "server")]
+pub const MAX_MAX_SESSIONS_PER_USER: u32 = 100;
+
+/// 安全配置（CSRF 可信源、cookie Secure 标志、真实 IP 提取、并发会话上限）。
+///
+/// 即时生效层：读取走 moka 缓存，面板保存后失效缓存，数秒内全链路生效。
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct SecuritySettings {
+    /// 写请求 CSRF 校验的可信来源（如 `https://your-domain.example`）。
+    /// 空串表示未配置，回退到 Host 头 + X-Forwarded-Proto（生产建议显式配置）。
+    pub app_base_url: String,
+    /// 是否给会话 cookie 加 Secure 标志（仅 HTTPS 下发送）。
+    pub cookie_secure: bool,
+    /// 应用前方的反向代理层数，用于从 X-Forwarded-For 提取真实客户端 IP。
+    pub trusted_proxy_count: u32,
+    /// 单用户最大并发会话数，超出按最旧优先淘汰。
+    pub max_sessions_per_user: u32,
+}
+
+impl Default for SecuritySettings {
+    fn default() -> Self {
+        Self {
+            app_base_url: DEFAULT_APP_BASE_URL.to_string(),
+            cookie_secure: DEFAULT_COOKIE_SECURE,
+            trusted_proxy_count: DEFAULT_TRUSTED_PROXY_COUNT,
+            max_sessions_per_user: DEFAULT_MAX_SESSIONS_PER_USER,
+        }
+    }
+}
+
+impl SecuritySettings {
+    /// 将代理层数钳制到合法范围 [0, MAX]。
+    #[cfg(feature = "server")]
+    pub fn clamp_trusted_proxy_count(n: u32) -> u32 {
+        n.min(MAX_TRUSTED_PROXY_COUNT)
+    }
+
+    /// 将并发会话上限钳制到合法范围 [MIN, MAX]。
+    #[cfg(feature = "server")]
+    pub fn clamp_max_sessions(n: u32) -> u32 {
+        n.clamp(MIN_MAX_SESSIONS_PER_USER, MAX_MAX_SESSIONS_PER_USER)
+    }
+
+    /// 规范化 APP_BASE_URL：trim；空串保留为空串（表示未配置）。
+    /// 不在此补 scheme——CSRF 校验需要精确的 origin，补全反而可能失配。
+    pub fn normalize_app_base_url(url: &str) -> String {
+        url.trim().to_string()
+    }
+}
+
+// ============================================================================
+// 图片磁盘缓存配置（即时生效）
+// ============================================================================
+//
+// 原本经环境变量在每次清理 tick 读取（src/tasks/image_cache_cleanup.rs）。
+// 迁移到 settings 表后语义不变：env 首启播种，之后面板值优先。
+
+/// 默认图片磁盘缓存上限 1024 MB。
+pub const DEFAULT_IMAGE_DISK_CACHE_MAX_MB: u32 = 1024;
+/// 默认图片磁盘缓存保留 168 小时（7 天）。
+pub const DEFAULT_IMAGE_DISK_CACHE_MAX_AGE_HOURS: u32 = 168;
+/// 磁盘缓存上限下限（MB），防误填危险小值。
+#[cfg(feature = "server")]
+pub const MIN_IMAGE_DISK_CACHE_MAX_MB: u32 = 1;
+/// 缓存保留时长下限（小时）。
+#[cfg(feature = "server")]
+pub const MIN_IMAGE_DISK_CACHE_MAX_AGE_HOURS: u32 = 1;
+
+/// 图片磁盘缓存配置（uploads/.cache/ 的容量与保留策略）。
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ImageCacheSettings {
+    /// 最大总容量（MB），超限按修改时间删最旧文件。
+    pub disk_cache_max_mb: u32,
+    /// 文件最大保留时长（小时），超期优先删除。
+    pub disk_cache_max_age_hours: u32,
+}
+
+impl Default for ImageCacheSettings {
+    fn default() -> Self {
+        Self {
+            disk_cache_max_mb: DEFAULT_IMAGE_DISK_CACHE_MAX_MB,
+            disk_cache_max_age_hours: DEFAULT_IMAGE_DISK_CACHE_MAX_AGE_HOURS,
+        }
+    }
+}
+
+impl ImageCacheSettings {
+    /// 将容量上限钳制到合法范围 [MIN, ∞)。
+    #[cfg(feature = "server")]
+    pub fn clamp_max_mb(n: u32) -> u32 {
+        n.max(MIN_IMAGE_DISK_CACHE_MAX_MB)
+    }
+
+    /// 将保留时长钳制到合法范围 [MIN, ∞)。
+    #[cfg(feature = "server")]
+    pub fn clamp_max_age_hours(n: u32) -> u32 {
+        n.max(MIN_IMAGE_DISK_CACHE_MAX_AGE_HOURS)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -445,5 +573,77 @@ mod tests {
             MAX_UPLOAD_CONCURRENCY
         );
         assert_eq!(UploadSettings::clamp_concurrency(5), 5);
+    }
+
+    // ── SecuritySettings ─────────────────────────────────────────
+
+    #[test]
+    fn security_settings_default() {
+        let s = SecuritySettings::default();
+        assert!(s.app_base_url.is_empty());
+        assert!(!s.cookie_secure);
+        assert_eq!(s.trusted_proxy_count, 0);
+        assert_eq!(s.max_sessions_per_user, 5);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn security_clamp_trusted_proxy_count() {
+        assert_eq!(SecuritySettings::clamp_trusted_proxy_count(0), 0);
+        assert_eq!(SecuritySettings::clamp_trusted_proxy_count(3), 3);
+        assert_eq!(
+            SecuritySettings::clamp_trusted_proxy_count(99),
+            MAX_TRUSTED_PROXY_COUNT
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn security_clamp_max_sessions() {
+        assert_eq!(
+            SecuritySettings::clamp_max_sessions(0),
+            MIN_MAX_SESSIONS_PER_USER
+        );
+        assert_eq!(SecuritySettings::clamp_max_sessions(5), 5);
+        assert_eq!(
+            SecuritySettings::clamp_max_sessions(u32::MAX),
+            MAX_MAX_SESSIONS_PER_USER
+        );
+    }
+
+    #[test]
+    fn security_normalize_app_base_url_trims() {
+        assert_eq!(SecuritySettings::normalize_app_base_url("  https://x.com "), "https://x.com");
+        assert_eq!(SecuritySettings::normalize_app_base_url(""), "");
+        assert_eq!(SecuritySettings::normalize_app_base_url("   "), "");
+    }
+
+    // ── ImageCacheSettings ───────────────────────────────────────
+
+    #[test]
+    fn image_cache_settings_default() {
+        let s = ImageCacheSettings::default();
+        assert_eq!(s.disk_cache_max_mb, 1024);
+        assert_eq!(s.disk_cache_max_age_hours, 168);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn image_cache_clamp_max_mb() {
+        assert_eq!(
+            ImageCacheSettings::clamp_max_mb(0),
+            MIN_IMAGE_DISK_CACHE_MAX_MB
+        );
+        assert_eq!(ImageCacheSettings::clamp_max_mb(2048), 2048);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn image_cache_clamp_max_age_hours() {
+        assert_eq!(
+            ImageCacheSettings::clamp_max_age_hours(0),
+            MIN_IMAGE_DISK_CACHE_MAX_AGE_HOURS
+        );
+        assert_eq!(ImageCacheSettings::clamp_max_age_hours(720), 720);
     }
 }
