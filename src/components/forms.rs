@@ -498,6 +498,38 @@ pub fn AlertBox(message: String, variant: &'static str) -> Element {
     }
 }
 
+/// 开关（toggle switch）组件。
+///
+/// 自定义滑块开关，取代原生 checkbox 用于设置项的布尔切换。视觉与交互全站统一：
+/// 轨道 44×24px，开启主题绿、关闭 paper-tertiary；圆点 20px 白色，开启右移 20px。
+/// accessibility：`role="switch"` + `aria-checked`，键盘 focus-visible 描边。
+///
+/// Props：
+/// - `checked`：当前开关状态
+/// - `ontoggle`：点击切换回调（父组件在回调内翻转 signal 并触发副作用）
+#[component]
+pub fn ToggleSwitch(checked: bool, ontoggle: Callback<()>) -> Element {
+    let track_class = if checked {
+        "relative w-11 h-6 flex-shrink-0 rounded-full bg-paper-accent cursor-pointer transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-paper-accent/40"
+    } else {
+        "relative w-11 h-6 flex-shrink-0 rounded-full bg-paper-tertiary cursor-pointer transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-paper-accent/40"
+    };
+    let thumb_class = if checked {
+        "absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow-sm dark:shadow-black/30 transition-transform duration-200 translate-x-5"
+    } else {
+        "absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow-sm dark:shadow-black/30 transition-transform duration-200"
+    };
+    rsx! {
+        button {
+            role: "switch",
+            aria_checked: "{checked}",
+            class: "{track_class}",
+            onclick: move |_| ontoggle.call(()),
+            span { class: "{thumb_class}" }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{parse_hhmm, should_flip, wrap_index};

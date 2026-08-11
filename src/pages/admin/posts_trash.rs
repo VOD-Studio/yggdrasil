@@ -27,8 +27,9 @@ use crate::components::skeletons::posts_trash_skeleton::PostsTrashSkeleton;
 use crate::components::ui::{
     CollapsibleSettingsCard, LoadingButton, Pagination, Popover, StatusBadge, ADMIN_ROW_HOVER,
     ADMIN_TABLE_CLASS, BTN_DANGER_OUTLINE, BTN_ICON, BTN_SOLID_GREEN, BTN_SOLID_RED,
-    BTN_TEXT_ACCENT, BTN_TEXT_RED, CHECKBOX_CLASS,
+    BTN_TEXT_ACCENT, BTN_TEXT_RED, BTN_GHOST, CHECKBOX_CLASS,
 };
+use crate::components::forms::ToggleSwitch;
 use crate::hooks::query::use_paginated;
 use crate::models::post::PostListItem;
 use crate::models::settings::TrashSettings;
@@ -382,17 +383,12 @@ fn AutoPurgeSettings(settings: Signal<TrashSettings>) -> Element {
                             "后台任务定期彻底删除超过保留期的文章"
                         }
                     }
-                    // 自定义开关（toggle switch）—— 取代原生 checkbox
-                    button {
-                        role: "switch",
-                        aria_checked: "{settings_draft_enabled()}",
-                        class: if settings_draft_enabled() { "relative w-11 h-6 flex-shrink-0 rounded-full bg-paper-accent cursor-pointer transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-paper-accent/40" } else { "relative w-11 h-6 flex-shrink-0 rounded-full bg-paper-tertiary cursor-pointer transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-paper-accent/40" },
-                        onclick: move |_| {
+                    ToggleSwitch {
+                        checked: settings_draft_enabled(),
+                        ontoggle: move |_| {
                             settings_draft_enabled.set(!settings_draft_enabled());
                             just_saved.set(false);
                         },
-                        // 滑块圆点
-                        span { class: if settings_draft_enabled() { "absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow-sm dark:shadow-black/30 transition-transform duration-200 translate-x-5" } else { "absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow-sm dark:shadow-black/30 transition-transform duration-200" } }
                     }
                 }
 
@@ -614,7 +610,7 @@ fn TrashRow(
                     }
                     div { class: "flex justify-end gap-2 pt-1",
                         button {
-                            class: "px-3 py-1.5 text-xs text-paper-secondary hover:text-paper-primary transition-colors cursor-pointer",
+                            class: "{BTN_GHOST}",
                             onclick: move |_| purge_open.set(false),
                             "取消"
                         }

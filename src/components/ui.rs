@@ -68,6 +68,10 @@ pub const BTN_TEXT_RED: &str =
 pub const BTN_TEXT_ACCENT: &str =
     "text-xs text-paper-accent hover:text-paper-primary transition-colors cursor-pointer";
 
+/// 弱化文字按钮（弹窗「取消」等次要取消操作）：无描边、无填充，悬浮转主色。
+pub const BTN_GHOST: &str =
+    "px-3 py-1.5 text-xs text-paper-secondary hover:text-paper-primary transition-colors cursor-pointer";
+
 // --- 次要按钮（Teal 第二色，ghost 描边风格，从属于主色 Green） ---
 
 /// 次要按钮：极简风次要操作。

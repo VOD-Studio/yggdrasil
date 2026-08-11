@@ -7,7 +7,7 @@ use dioxus::prelude::*;
 #[cfg(target_arch = "wasm32")]
 use crate::api::settings::{get_runner_settings, update_runner_settings};
 #[cfg(target_arch = "wasm32")]
-use crate::components::forms::FormLabel;
+use crate::components::forms::{FormLabel, INPUT_CLASS};
 #[cfg(target_arch = "wasm32")]
 use crate::components::ui::{LoadingButton, ADMIN_CARD_CLASS, CHECKBOX_CLASS};
 #[cfg(target_arch = "wasm32")]
@@ -105,7 +105,7 @@ pub fn RunnerSection(toast: Callback<(String, bool)>) -> Element {
                         FormLabel { label: "语言白名单（逗号分隔，留空=全部）", html_for: Some("runner-langs".to_string()) }
                         input {
                             id: "runner-langs", r#type: "text",
-                            class: "w-full px-4 py-2 border border-[var(--color-paper-border)] rounded-2xl bg-[var(--color-paper-entry)] text-[var(--color-paper-primary)] focus:outline-none focus:border-[var(--color-paper-accent)] focus:ring-1 focus:ring-[var(--color-paper-accent)]/30 transition-colors",
+                            class: "{INPUT_CLASS}",
                             value: draft().languages.as_deref().unwrap_or(""),
                             placeholder: "python,node,rust（留空=全部）",
                             oninput: move |e: Event<FormData>| {
@@ -175,7 +175,7 @@ fn NumberField(
                 id: "{id}",
                 r#type: "number",
                 step: if is_float { "0.1" } else { "1" },
-                class: "w-full px-4 py-2 border border-[var(--color-paper-border)] rounded-2xl bg-[var(--color-paper-entry)] text-[var(--color-paper-primary)] focus:outline-none focus:border-[var(--color-paper-accent)] focus:ring-1 focus:ring-[var(--color-paper-accent)]/30 transition-colors",
+                class: "{INPUT_CLASS}",
                 value: "{value}",
                 oninput: move |e: Event<FormData>| oninput.call(e.value()),
             }

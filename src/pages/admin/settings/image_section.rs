@@ -7,7 +7,7 @@ use dioxus::prelude::*;
 #[cfg(target_arch = "wasm32")]
 use crate::api::settings::{get_image_limit_settings, get_webp_settings, update_image_limit_settings, update_webp_settings};
 #[cfg(target_arch = "wasm32")]
-use crate::components::forms::FormLabel;
+use crate::components::forms::{FormLabel, INPUT_CLASS};
 #[cfg(target_arch = "wasm32")]
 use crate::components::ui::{LoadingButton, ADMIN_CARD_CLASS};
 #[cfg(target_arch = "wasm32")]
@@ -83,7 +83,7 @@ pub fn ImageSection(toast: Callback<(String, bool)>) -> Element {
                         FormLabel { label: "质量系数（0.0–100.0）", html_for: Some("webp-quality".to_string()) }
                         input {
                             id: "webp-quality", r#type: "number", min: "0", max: "100", step: "1",
-                            class: "w-full px-4 py-2 border border-[var(--color-paper-border)] rounded-2xl bg-[var(--color-paper-entry)] text-[var(--color-paper-primary)] focus:outline-none focus:border-[var(--color-paper-accent)] focus:ring-1 focus:ring-[var(--color-paper-accent)]/30 transition-colors",
+                            class: "{INPUT_CLASS}",
                             value: "{webp_draft().quality}",
                             oninput: move |e: Event<FormData>| {
                                 let v = e.value();
@@ -97,7 +97,7 @@ pub fn ImageSection(toast: Callback<(String, bool)>) -> Element {
                         FormLabel { label: "编码方法（0–6）", html_for: Some("webp-method".to_string()) }
                         input {
                             id: "webp-method", r#type: "number", min: "0", max: "6",
-                            class: "w-full px-4 py-2 border border-[var(--color-paper-border)] rounded-2xl bg-[var(--color-paper-entry)] text-[var(--color-paper-primary)] focus:outline-none focus:border-[var(--color-paper-accent)] focus:ring-1 focus:ring-[var(--color-paper-accent)]/30 transition-colors",
+                            class: "{INPUT_CLASS}",
                             value: "{webp_draft().method}",
                             oninput: move |e: Event<FormData>| {
                                 let v = e.value();
@@ -152,7 +152,7 @@ pub fn ImageSection(toast: Callback<(String, bool)>) -> Element {
                         FormLabel { label: "单边最大尺寸（像素）", html_for: Some("img-dim".to_string()) }
                         input {
                             id: "img-dim", r#type: "number", min: "512",
-                            class: "w-full px-4 py-2 border border-[var(--color-paper-border)] rounded-2xl bg-[var(--color-paper-entry)] text-[var(--color-paper-primary)] focus:outline-none focus:border-[var(--color-paper-accent)] focus:ring-1 focus:ring-[var(--color-paper-accent)]/30 transition-colors",
+                            class: "{INPUT_CLASS}",
                             value: "{img_draft().max_dimension}",
                             oninput: move |e: Event<FormData>| {
                                 let v = e.value();
@@ -166,7 +166,7 @@ pub fn ImageSection(toast: Callback<(String, bool)>) -> Element {
                         FormLabel { label: "总像素上限", html_for: Some("img-px".to_string()) }
                         input {
                             id: "img-px", r#type: "number", min: "1000000",
-                            class: "w-full px-4 py-2 border border-[var(--color-paper-border)] rounded-2xl bg-[var(--color-paper-entry)] text-[var(--color-paper-primary)] focus:outline-none focus:border-[var(--color-paper-accent)] focus:ring-1 focus:ring-[var(--color-paper-accent)]/30 transition-colors",
+                            class: "{INPUT_CLASS}",
                             value: "{img_draft().max_pixels}",
                             oninput: move |e: Event<FormData>| {
                                 let v = e.value();
@@ -180,7 +180,7 @@ pub fn ImageSection(toast: Callback<(String, bool)>) -> Element {
                         FormLabel { label: "尺寸缓存 TTL（秒）", html_for: Some("img-ttl".to_string()) }
                         input {
                             id: "img-ttl", r#type: "number", min: "1",
-                            class: "w-full px-4 py-2 border border-[var(--color-paper-border)] rounded-2xl bg-[var(--color-paper-entry)] text-[var(--color-paper-primary)] focus:outline-none focus:border-[var(--color-paper-accent)] focus:ring-1 focus:ring-[var(--color-paper-accent)]/30 transition-colors",
+                            class: "{INPUT_CLASS}",
                             value: "{img_draft().dimensions_cache_ttl_secs}",
                             oninput: move |e: Event<FormData>| {
                                 let v = e.value();

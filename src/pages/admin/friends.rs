@@ -23,7 +23,7 @@ use crate::components::skeletons::friends_admin_skeleton::FriendsAdminSkeleton;
 #[cfg(target_arch = "wasm32")]
 use crate::components::ui::{
     Popover, Tooltip, ADMIN_CARD_CLASS, BADGE_BASE, BTN_DANGER_OUTLINE, BTN_OUTLINE, BTN_PRIMARY,
-    BTN_TEXT_ACCENT, BTN_TEXT_RED,
+    BTN_GHOST, BTN_TEXT_ACCENT, BTN_TEXT_RED,
 };
 #[cfg(target_arch = "wasm32")]
 use crate::models::friend_link::FriendLink;
@@ -513,7 +513,7 @@ fn LinkRow(link: FriendLink, state: FriendsPageState) -> Element {
                     }
                     div { class: "flex justify-end gap-2 pt-1",
                         button {
-                            class: "px-3 py-1.5 text-xs text-paper-secondary hover:text-paper-primary transition-colors cursor-pointer",
+                            class: "{BTN_GHOST}",
                             onclick: move |_| delete_open.set(false),
                             "取消"
                         }

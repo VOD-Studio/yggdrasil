@@ -2,7 +2,7 @@
 
 use dioxus::prelude::*;
 
-use crate::components::ui::{LoadingButton, BTN_OUTLINE, BTN_TEXT_AMBER, BTN_TEXT_RED};
+use crate::components::ui::{LoadingButton, BTN_GHOST, BTN_OUTLINE, BTN_TEXT_AMBER, BTN_TEXT_RED};
 
 use super::format_bytes;
 
@@ -415,7 +415,7 @@ fn BackupRow(props: BackupRowProps) -> Element {
                     }
                     div { class: "flex justify-end gap-2 pt-1",
                         button {
-                            class: "px-3 py-1.5 text-xs text-paper-secondary hover:text-paper-primary transition-colors cursor-pointer",
+                            class: "{BTN_GHOST}",
                             onclick: move |_| open_action.set(None),
                             "取消"
                         }
@@ -447,7 +447,7 @@ fn BackupRow(props: BackupRowProps) -> Element {
                     }
                     div { class: "flex justify-end gap-2 pt-1",
                         button {
-                            class: "px-3 py-1.5 text-xs text-paper-secondary hover:text-paper-primary transition-colors cursor-pointer",
+                            class: "{BTN_GHOST}",
                             onclick: move |_| open_action.set(None),
                             "取消"
                         }
@@ -477,7 +477,7 @@ fn BackupRow(props: BackupRowProps) -> Element {
 fn BackupSettingsCard() -> Element {
     #[cfg(target_arch = "wasm32")]
     use crate::api::settings::{get_backup_settings, update_backup_settings};
-    use crate::components::forms::TimePicker;
+    use crate::components::forms::{TimePicker, ToggleSwitch};
     use crate::components::ui::{CollapsibleSettingsCard, BTN_ICON};
     use crate::models::settings::BackupSettingsView;
 
@@ -568,15 +568,12 @@ fn BackupSettingsCard() -> Element {
                                 "到达设定时间后由后台任务执行"
                             }
                         }
-                        button {
-                            role: "switch",
-                            aria_checked: "{draft_enabled()}",
-                            class: if draft_enabled() { "relative w-11 h-6 flex-shrink-0 rounded-full bg-paper-accent cursor-pointer transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-paper-accent/40" } else { "relative w-11 h-6 flex-shrink-0 rounded-full bg-paper-tertiary cursor-pointer transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-paper-accent/40" },
-                            onclick: move |_| {
+                        ToggleSwitch {
+                            checked: draft_enabled(),
+                            ontoggle: move |_| {
                                 draft_enabled.set(!draft_enabled());
                                 just_saved.set(false);
                             },
-                            span { class: if draft_enabled() { "absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow-sm dark:shadow-black/30 transition-transform duration-200 translate-x-5" } else { "absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow-sm dark:shadow-black/30 transition-transform duration-200" } }
                         }
                     }
 
@@ -660,15 +657,12 @@ fn BackupSettingsCard() -> Element {
                                 "每次备份附带 uploads/ 打包（tar.gz，排除可重建的转码缓存）"
                             }
                         }
-                        button {
-                            role: "switch",
-                            aria_checked: "{draft_include_uploads()}",
-                            class: if draft_include_uploads() { "relative w-11 h-6 flex-shrink-0 rounded-full bg-paper-accent cursor-pointer transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-paper-accent/40" } else { "relative w-11 h-6 flex-shrink-0 rounded-full bg-paper-tertiary cursor-pointer transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-paper-accent/40" },
-                            onclick: move |_| {
+                        ToggleSwitch {
+                            checked: draft_include_uploads(),
+                            ontoggle: move |_| {
                                 draft_include_uploads.set(!draft_include_uploads());
                                 just_saved.set(false);
                             },
-                            span { class: if draft_include_uploads() { "absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow-sm dark:shadow-black/30 transition-transform duration-200 translate-x-5" } else { "absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow-sm dark:shadow-black/30 transition-transform duration-200" } }
                         }
                     }
 

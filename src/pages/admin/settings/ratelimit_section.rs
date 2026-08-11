@@ -8,7 +8,7 @@ use dioxus::prelude::*;
 #[cfg(target_arch = "wasm32")]
 use crate::api::settings::{get_rate_limit_settings, update_rate_limit_settings};
 #[cfg(target_arch = "wasm32")]
-use crate::components::forms::FormLabel;
+use crate::components::forms::{FormLabel, INPUT_CLASS};
 #[cfg(target_arch = "wasm32")]
 use crate::components::ui::{LoadingButton, ADMIN_CARD_CLASS};
 #[cfg(target_arch = "wasm32")]
@@ -95,7 +95,7 @@ pub fn RateLimitSection(toast: Callback<(String, bool)>) -> Element {
                         FormLabel { label: "代码执行日限额（次/天）", html_for: Some("rl-code-daily".to_string()) }
                         input {
                             id: "rl-code-daily", r#type: "number", min: "1",
-                            class: "w-full px-4 py-2 border border-[var(--color-paper-border)] rounded-2xl bg-[var(--color-paper-entry)] text-[var(--color-paper-primary)] focus:outline-none focus:border-[var(--color-paper-accent)] focus:ring-1 focus:ring-[var(--color-paper-accent)]/30 transition-colors",
+                            class: "{INPUT_CLASS}",
                             value: "{draft().code_exec_daily}",
                             oninput: move |e: Event<FormData>| {
                                 let v = e.value();
@@ -107,7 +107,7 @@ pub fn RateLimitSection(toast: Callback<(String, bool)>) -> Element {
                         FormLabel { label: "限流桶 GC 间隔（秒）", html_for: Some("rl-gc".to_string()) }
                         input {
                             id: "rl-gc", r#type: "number", min: "1",
-                            class: "w-full px-4 py-2 border border-[var(--color-paper-border)] rounded-2xl bg-[var(--color-paper-entry)] text-[var(--color-paper-primary)] focus:outline-none focus:border-[var(--color-paper-accent)] focus:ring-1 focus:ring-[var(--color-paper-accent)]/30 transition-colors",
+                            class: "{INPUT_CLASS}",
                             value: "{draft().gc_interval_secs}",
                             oninput: move |e: Event<FormData>| {
                                 let v = e.value();
@@ -179,7 +179,7 @@ fn LimiterField(
                 div { class: "flex-1",
                     input {
                         r#type: "number", min: "1",
-                        class: "w-full px-4 py-2 border border-[var(--color-paper-border)] rounded-2xl bg-[var(--color-paper-entry)] text-[var(--color-paper-primary)] focus:outline-none focus:border-[var(--color-paper-accent)] focus:ring-1 focus:ring-[var(--color-paper-accent)]/30 transition-colors",
+                        class: "{INPUT_CLASS}",
                         value: "{per_sec}",
                         oninput: move |e: Event<FormData>| {
                             let v = e.value();
@@ -191,7 +191,7 @@ fn LimiterField(
                 div { class: "flex-1",
                     input {
                         r#type: "number", min: "1",
-                        class: "w-full px-4 py-2 border border-[var(--color-paper-border)] rounded-2xl bg-[var(--color-paper-entry)] text-[var(--color-paper-primary)] focus:outline-none focus:border-[var(--color-paper-accent)] focus:ring-1 focus:ring-[var(--color-paper-accent)]/30 transition-colors",
+                        class: "{INPUT_CLASS}",
                         value: "{burst}",
                         oninput: move |e: Event<FormData>| {
                             let v = e.value();
