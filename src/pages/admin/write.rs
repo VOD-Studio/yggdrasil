@@ -35,6 +35,8 @@ use wasm_bindgen::closure::Closure;
 use dioxus::html::HasFileData;
 #[cfg(target_arch = "wasm32")]
 use dioxus::web::{WebEventExt, WebFileExt};
+#[cfg(target_arch = "wasm32")]
+use crate::utils::js::invoke_optional_global;
 
 /// 新建文章页面组件。
 ///
@@ -609,12 +611,28 @@ fn CoverUploader(cover_image: Signal<String>, cover_uploading: Signal<bool>) -> 
         });
     };
 
+    // 灯箱绑定：封面有图时点击预览图放大查看（复用全局 lightbox.js）。
+    // 订阅 cover_image：图片出现/更换后 effect 重跑，data-lb-bound 守卫保证幂等。
+    #[cfg(target_arch = "wasm32")]
+    use_effect(move || {
+        if cover_image().is_empty() {
+            return;
+        }
+        let window = web_sys::window()
+            .expect("CoverUploader use_effect 仅在 WASM 浏览器上下文执行：无 window");
+        let selectors = js_sys::Array::of1(&".cover-preview".into());
+        let selectors_val = js_sys::Object::from(selectors).into();
+        let _ = js_sys::Reflect::set(&window, &"__lightboxSelectors".into(), &selectors_val);
+        invoke_optional_global(&window, "__initLightbox", &[selectors_val]);
+    });
+
     rsx! {
         // 封面图上传区：空态矮横条（不挤压编辑器），有图时展开成 21:9 超宽预览。
         // 21:9 与首页卡片封面统一比例，比 16:9 更扁，适合宽屏横幅式封面。
         // 容器统一绑定拖拽与粘贴事件；内部按 cover_image / cover_uploading 切换空态、上传中、预览。
         div {
             class: "relative w-full border border-dashed rounded-2xl overflow-hidden transition-all duration-200 group/cover",
+            class: "cover-preview",
             // 空态矮横条；有图/上传中展开成 21:9。
             class: if cover_image().is_empty() && !cover_uploading() { "h-14" } else { "aspect-[21/9]" },
             class: if cover_drag_active() { "border-[var(--color-paper-primary)] bg-[var(--color-paper-entry)]" } else if cover_image().is_empty() { "border-[var(--color-paper-border)] bg-[var(--color-paper-entry)] hover:border-[var(--color-paper-primary)]" } else { "border-[var(--color-paper-border)] bg-[var(--color-paper-entry)]" },
@@ -622,7 +640,7 @@ fn CoverUploader(cover_image: Signal<String>, cover_uploading: Signal<bool>) -> 
             // 整个容器可接收拖拽与粘贴（ondragover 必须 prevent_default，否则浏览器直接打开文件）。
             ondragover: move |evt| {
                 evt.prevent_default();
-                if !cover_uploading() && cover_image().is_empty() {
+                if !cover_uploading() {
                     cover_drag_active.set(true);
                 }
             },
@@ -634,8 +652,7 @@ fn CoverUploader(cover_image: Signal<String>, cover_uploading: Signal<bool>) -> 
             },
             ondrop: move |evt| {
                 evt.prevent_default();
-                cover_drag_active.set(false);
-                if !cover_uploading() && cover_image().is_empty() {
+                if !cover_uploading() {
                     #[cfg(target_arch = "wasm32")]
                     {
                         if let Some(file) = evt.files().into_iter().next() {
@@ -648,7 +665,7 @@ fn CoverUploader(cover_image: Signal<String>, cover_uploading: Signal<bool>) -> 
             },
             onpaste: move |evt| {
                 evt.prevent_default();
-                if !cover_uploading() && cover_image().is_empty() {
+                if !cover_uploading() {
                     #[cfg(target_arch = "wasm32")]
                     {
                         use wasm_bindgen::JsCast;
@@ -676,12 +693,15 @@ fn CoverUploader(cover_image: Signal<String>, cover_uploading: Signal<bool>) -> 
                 }
             }
 
-            // —— 有图：预览 + 移除/更换 ——
+            // —— 有图：预览（点击放大）+ 拖拽替换 + hover 工具栏 ——
             if !cover_image().is_empty() && !cover_uploading() {
                 // 预览图：/uploads/ 路径加 ?w=600 缩略，外链 URL 原样用。
-                // 用条件表达式内联计算，避免 rsx 内 let 块（宏在 server 端解析受限）。
+                // cursor-zoom-in 提示可点击放大；lightbox-single 标记为单张，
+                // 由全局 lightbox.js 接管点击放大；data-src 为原图 URL。
                 img {
-                    class: "absolute inset-0 w-full h-full object-cover",
+                    class: "absolute inset-0 w-full h-full object-cover cursor-zoom-in lightbox-single",
+                    // data-src：原图 URL，lightbox.js 点击放大时读取（originalUrl 剥离 /uploads/ 的 ?w= 查询）。
+                    "data-src": "{cover_image()}",
                     src: {
                         let cv = cover_image();
                         if cv.starts_with("/uploads/") {
@@ -701,34 +721,57 @@ fn CoverUploader(cover_image: Signal<String>, cover_uploading: Signal<bool>) -> 
                         cover_error.set(Some("封面图加载失败，请检查 URL".to_string()));
                     },
                 }
-                // 右上角移除按钮（hover 出现）。
-                button {
-                    class: "absolute top-2 right-2 w-7 h-7 flex items-center justify-center rounded-full bg-black/50 text-white opacity-0 group-hover/cover:opacity-100 transition-opacity hover:bg-black/70 cursor-pointer",
-                    aria_label: "移除封面",
-                    onclick: move |_| {
-                        cover_image.set(String::new());
-                        cover_error.set(None);
-                        cover_url_mode.set(false);
-                        cover_url_input.set(String::new());
-                    },
-                    // 内联 SVG：关闭 X（与 header.rs 关闭按钮同风格，view_box 0 0 24 24）。
-                    svg {
-                        class: "w-4 h-4",
-                        xmlns: "http://www.w3.org/2000/svg",
-                        view_box: "0 0 24 24",
-                        fill: "none",
-                        stroke: "currentColor",
-                        stroke_width: "2",
-                        stroke_linecap: "round",
-                        stroke_linejoin: "round",
-                        path { d: "M6 6l12 12M6 18L18 6" }
+                // 拖拽替换高亮：有图时拖入文件，提示"松开以更换"。
+                if cover_drag_active() {
+                    div { class: "absolute inset-0 flex items-center justify-center bg-black/50 pointer-events-none",
+                        span { class: "text-sm font-medium text-white drop-shadow-md",
+                            "松开以更换封面"
+                        }
                     }
                 }
-                // 底部渐变遮罩 + "更换封面"提示（hover 出现）。
-                div { class: "absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-black/50 to-transparent opacity-0 group-hover/cover:opacity-100 transition-opacity flex items-end justify-center pb-2 pointer-events-none",
-                    span { class: "text-sm font-medium text-white/90 drop-shadow-md",
-                        "点击更换封面"
+                // hover 工具栏：拖拽时隐藏（由拖拽替换高亮接管），避免两个覆盖层叠加。
+                // pointer-events-none 容器穿透点击到预览图触发灯箱，按钮设 pointer-events-auto。
+                if !cover_drag_active() {
+                div {
+                    class: "absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover/cover:opacity-100 transition-opacity flex items-center justify-center gap-1 py-2 pointer-events-none",
+                    // 更换：label 包裹隐藏 file input，点击触发文件选择。
+                    label {
+                        class: "pointer-events-auto px-3 py-1.5 rounded-full text-xs font-medium text-white/90 hover:bg-white/15 cursor-pointer transition-colors",
+                        "更换"
+                        input {
+                            r#type: "file",
+                            accept: "image/jpeg,image/png,image/gif,image/webp",
+                            class: "hidden",
+                            onchange: move |evt| {
+                                #[cfg(target_arch = "wasm32")]
+                                {
+                                    if let Some(file) = evt.files().into_iter().next() {
+                                        if let Some(web_file) = file.get_web_file() {
+                                            spawn_cover_upload(web_file);
+                                        }
+                                    }
+                                }
+                            },
+                        }
                     }
+                    // 从素材库选择。
+                    button {
+                        class: "pointer-events-auto px-3 py-1.5 rounded-full text-xs font-medium text-white/90 hover:bg-white/15 transition-colors cursor-pointer",
+                        onclick: move |_| picker_visible.set(true),
+                        "素材库"
+                    }
+                    // 移除封面。
+                    button {
+                        class: "pointer-events-auto px-3 py-1.5 rounded-full text-xs font-medium text-white/90 hover:bg-white/15 transition-colors cursor-pointer",
+                        onclick: move |_| {
+                            cover_image.set(String::new());
+                            cover_error.set(None);
+                            cover_url_mode.set(false);
+                            cover_url_input.set(String::new());
+                        },
+                        "移除"
+                    }
+                }
                 }
             }
 
