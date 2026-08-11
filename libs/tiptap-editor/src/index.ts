@@ -54,6 +54,17 @@ class EditorOptions {
 // IIFE 的 name 只能挂一个全局（TiptapEditor），这里手动把 EditorOptions 也挂到 window 上。
 (window as unknown as Record<string, unknown>).EditorOptions = EditorOptions;
 
+/**
+ * 源码模式切换按钮图标（Material Symbols，fill: currentColor 跟随主题）。
+ * 源文件存档于 public/icons/code_24dp_*.svg 与 article_24dp_*.svg。
+ * - code (`</>`)：富文本态下显示，提示切换到源码。
+ * - article (文档)：源码态下显示，提示切换回富文本。
+ */
+const CODE_ICON_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" fill="currentColor" width="18" height="18"><path d="M320-242 80-482l242-242 43 43-199 199 197 197-43 43Zm318 2-43-43 199-199-197-197 43-43 240 240-242 242Z"/></svg>';
+const ARTICLE_ICON_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" fill="currentColor" width="18" height="18"><path d="M277-279h275v-60H277v60Zm0-171h406v-60H277v60Zm0-171h406v-60H277v60Zm-97 501q-24 0-42-18t-18-42v-600q0-24 18-42t42-18h600q24 0 42 18t18 42v600q0 24-18 42t-42 18H180Zm0-60h600v-600H180v600Zm0-600v600-600Z"/></svg>';
+
 class TiptapEditorInstance {
   private editor: Editor | null = null;
   private container: HTMLElement;
@@ -80,8 +91,7 @@ class TiptapEditorInstance {
     this.toggleButton.className = 'tiptap-toggle-btn';
     this.toggleButton.type = 'button';
     this.toggleButton.title = '切换 Markdown 源码';
-    this.toggleButton.textContent = '</>';
-    this.toggleButton.addEventListener('click', () => this.toggleSource());
+    this.toggleButton.innerHTML = CODE_ICON_SVG;
     el.appendChild(this.toggleButton);
 
     // 源码模式 textarea：初始隐藏，与 ProseMirror 共用同一区域
@@ -239,7 +249,7 @@ class TiptapEditorInstance {
       const scrollTopBeforeFocus = this.sourceTextarea.scrollTop;
       this.sourceTextarea.focus();
       this.sourceTextarea.scrollTop = scrollTopBeforeFocus;
-      this.toggleButton.textContent = '✎';
+      this.toggleButton.innerHTML = ARTICLE_ICON_SVG;
       this.toggleButton.title = '切换富文本';
       this.isSourceMode = true;
     } else {
@@ -254,7 +264,7 @@ class TiptapEditorInstance {
       requestAnimationFrame(() => {
         this.applyScrollRatio(proseMirrorDom, sourceRatio);
       });
-      this.toggleButton.textContent = '</>';
+      this.toggleButton.innerHTML = CODE_ICON_SVG;
       this.toggleButton.title = '切换 Markdown 源码';
       this.isSourceMode = false;
       // 注意：不调用 editor.commands.focus()，它会强制滚动到光标位置（默认文档末尾），破坏比例同步

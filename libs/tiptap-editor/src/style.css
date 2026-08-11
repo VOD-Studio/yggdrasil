@@ -604,15 +604,18 @@
   /* Latte text 半透明底 */
   background: rgba(76, 79, 105, 0.05);
   color: #6c6f85;
-  font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, monospace;
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1;
   cursor: pointer;
   opacity: 0.55;
   transition:
     opacity 0.15s,
     background 0.15s;
+}
+
+/* 切换按钮内联 SVG 图标（Material Symbols code / article）。
+   fill: currentColor 已在 SVG 上设置，继承按钮 color，跟随明暗主题。 */
+.tiptap-toggle-btn svg {
+  width: 18px;
+  height: 18px;
 }
 
 .tiptap-toggle-btn:hover {
