@@ -17,6 +17,8 @@ mod tags;
 mod trash;
 mod types;
 mod update;
+#[cfg(test)]
+mod seed;
 
 /// 创建新文章。
 pub use create::create_post;
