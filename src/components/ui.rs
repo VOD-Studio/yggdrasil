@@ -700,3 +700,42 @@ pub fn LoadingButton(
         }
     }
 }
+
+/// 标签芯片组件：统一的标签可视化（标签云软底 / 卡片描边两种变体）。
+///
+/// 收敛原本散落在标签云（`tags.rs` 软底圆角）与文章卡片（`post_card.rs` 描边胶囊）
+/// 的两套手写 `Link` 样式——两者都是跳转到 [`Route::TagDetail`] 的可点击标签，
+/// 仅视觉变体不同，故合并为一个组件 + `variant` prop。
+///
+/// Props：
+/// - `label`：标签名
+/// - `variant`：`"solid"`（标签云：软底圆角，可选计数）/ `"outline"`（卡片内：描边胶囊）
+/// - `count`：可选的文章计数（仅 `solid` 渲染为 `<sup>`）
+/// - `stop_propagation`：是否阻止点击冒泡（卡片内覆盖层链接场景需要，见 `PostCard`）
+#[component]
+pub fn TagChip(
+    label: String,
+    #[props(default = "outline")] variant: &'static str,
+    #[props(default)] count: Option<i64>,
+    #[props(default)] stop_propagation: bool,
+) -> Element {
+    let class = match variant {
+        "solid" => "inline-flex items-center px-3 py-1.5 text-base font-medium bg-paper-accent-soft text-paper-accent rounded-lg hover:bg-paper-accent hover:text-white transition-all duration-200",
+        _ => "inline-flex items-center px-3 py-1 rounded-full border border-paper-border hover:bg-paper-accent hover:border-paper-accent hover:text-white transition-all duration-200",
+    };
+    rsx! {
+        Link {
+            class: "{class}",
+            to: Route::TagDetail { tag: label.clone() },
+            onclick: move |evt: dioxus::events::MouseEvent| {
+                if stop_propagation {
+                    evt.stop_propagation();
+                }
+            },
+            "{label}"
+            if let Some(c) = count {
+                sup { class: "ml-1 text-sm text-paper-secondary", "{c}" }
+            }
+        }
+    }
+}

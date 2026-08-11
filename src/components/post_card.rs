@@ -5,6 +5,7 @@
 use dioxus::prelude::*;
 use dioxus::router::components::Link;
 
+use crate::components::ui::TagChip;
 use crate::models::post::PostListItem;
 use crate::router::Route;
 
@@ -62,14 +63,11 @@ pub fn PostCard(post: PostListItem) -> Element {
                     if !post.tags.is_empty() {
                         span { "·" }
                         for tag in post.tags.clone().into_iter() {
-                            span { key: "{tag}",
-                                Link {
-                                    class: "relative z-10 px-3 py-1 rounded-full border border-[var(--color-paper-border)] hover:bg-[var(--color-paper-accent)] hover:border-[var(--color-paper-accent)] hover:text-white transition-all duration-200",
-                                    to: Route::TagDetail {
-                                        tag: tag.clone(),
-                                    },
-                                    onclick: move |evt: dioxus::events::MouseEvent| evt.stop_propagation(),
-                                    "{tag}"
+                            span { key: "{tag}", class: "relative z-10",
+                                TagChip {
+                                    label: tag.clone(),
+                                    variant: "outline",
+                                    stop_propagation: true,
                                 }
                             }
                         }

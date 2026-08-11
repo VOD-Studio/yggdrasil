@@ -63,9 +63,9 @@ fn FriendsContent() -> Element {
                 }
             }
         }
-        Some(Err(e)) => {
+        Some(Err(_)) => {
             rsx! {
-                div { class: "text-center text-red-500 dark:text-red-400 py-20", "加载失败: {e}" }
+                div { class: "text-center text-red-500 dark:text-red-400 py-20", "加载失败" }
             }
         }
         None => {

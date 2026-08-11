@@ -12,9 +12,11 @@ use dioxus::prelude::*;
 
 use crate::api::posts::{search_posts, PostListResponse};
 use crate::components::empty_state::EmptyState;
+use crate::components::forms::{FormInput, INPUT_INLINE_CLASS};
 use crate::components::post_card::PostCard;
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::skeletons::search_skeleton::SearchSkeleton;
+use crate::components::ui::LoadingButton;
 
 /// 搜索页面组件，对应路由 `/search`。
 ///
@@ -52,22 +54,22 @@ pub fn Search() -> Element {
             }
             div { class: "mb-8",
                 div { class: "flex gap-2",
-                    input {
-                        class: "flex-1 px-4 py-2 border border-paper-border rounded-lg bg-paper-entry text-paper-primary placeholder:text-paper-tertiary focus:outline-none focus:border-paper-accent focus:ring-1 focus:ring-paper-accent/30",
-                        r#type: "text",
+                    FormInput {
+                        r#type: "search",
+                        class: INPUT_INLINE_CLASS,
                         placeholder: "输入关键词搜索文章...",
                         value: query(),
-                        oninput: move |e| query.set(e.value()),
-                        onkeydown: move |e| {
+                        oninput: move |v: String| query.set(v),
+                        onkeydown: move |e: KeyboardEvent| {
                             if e.key() == Key::Enter {
                                 on_search()
                             }
                         },
                     }
-                    button {
-                        class: "px-6 py-2 bg-paper-accent text-white rounded-full font-medium hover:brightness-110 active:scale-[0.98] transition-all duration-200",
+                    LoadingButton {
+                        label: "搜索",
+                        loading: is_searching(),
                         onclick: move |_| on_search(),
-                        "搜索"
                     }
                 }
             }
@@ -88,13 +90,10 @@ pub fn Search() -> Element {
             } else if search_res().as_ref().map(|r| r.is_err()).unwrap_or(false) {
                 div { class: "text-center text-red-500 dark:text-red-400 py-20", "搜索失败" }
             } else {
-                div { class: "flex flex-col items-center justify-center mt-24 mb-12",
-                    img {
-                        class: "w-56 h-auto rounded-lg select-none dark:brightness-90",
-                        src: "/images/xiantiaoxiaogou_02.webp",
-                        alt: "空状态提示",
-                        draggable: "false",
-                    }
+                EmptyState {
+                    image: "/images/xiantiaoxiaogou_02.webp",
+                    title: "开始搜索",
+                    description: "输入关键词，查找你感兴趣的文章。",
                 }
             }
         }

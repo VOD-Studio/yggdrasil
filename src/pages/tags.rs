@@ -12,13 +12,13 @@
 //!   实际的数据库访问逻辑仅在 `feature = "server"` 启用时运行。
 
 use dioxus::prelude::*;
-use dioxus::router::components::Link;
 
 use crate::api::posts::{get_posts_by_tag, list_tags, PostListResponse, TagListResponse};
 use crate::components::empty_state::EmptyState;
 use crate::components::post_card::PostCard;
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::skeletons::tags_skeleton::{TagDetailSkeleton, TagsSkeleton};
+use crate::components::ui::TagChip;
 use crate::router::Route;
 
 /// 标签云页面组件，对应路由 `/tags`。
@@ -74,15 +74,10 @@ fn TagsContent() -> Element {
                     ul { class: "flex flex-wrap gap-4 mt-6",
                         for tag in tags {
                             li { key: "{tag.name}",
-                                Link {
-                                    class: "inline-flex items-center px-3 py-1.5 text-base font-medium bg-paper-accent-soft text-paper-accent rounded-lg hover:bg-paper-accent hover:text-white transition-all duration-200",
-                                    to: Route::TagDetail {
-                                        tag: tag.name.clone(),
-                                    },
-                                    "{tag.name}"
-                                    sup { class: "ml-1 text-sm text-paper-secondary",
-                                        "{tag.post_count}"
-                                    }
+                                TagChip {
+                                    label: tag.name.clone(),
+                                    variant: "solid",
+                                    count: tag.post_count,
                                 }
                             }
                         }
