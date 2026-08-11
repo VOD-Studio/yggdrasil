@@ -20,8 +20,11 @@
 
 mod backup_section;
 mod cache_section;
+mod image_section;
 mod security_section;
 mod site_section;
+mod ratelimit_section;
+mod runner_section;
 mod system_section;
 mod trash_section;
 mod upload_section;
@@ -30,6 +33,9 @@ use dioxus::prelude::*;
 
 use backup_section::BackupSection;
 use cache_section::CacheSection;
+use image_section::ImageSection;
+use ratelimit_section::RateLimitSection;
+use runner_section::RunnerSection;
 use security_section::SecuritySection;
 use site_section::SiteSection;
 use system_section::SystemSection;
@@ -45,6 +51,12 @@ pub enum SettingsSection {
     Security,
     /// 缓存配置（图片磁盘缓存）。
     Cache,
+    /// 限流配置（各接口速率限制）。
+    RateLimit,
+    /// 图片处理配置（WebP 编码 / 尺寸上限）。
+    Image,
+    /// 代码运行器配置（沙箱资源限制）。
+    Runner,
     /// 自动备份调度。
     Backup,
     /// 回收站自动清理。
@@ -56,12 +68,14 @@ pub enum SettingsSection {
 }
 
 impl SettingsSection {
-    /// 变体 → 稳定字符串 key（用于左侧导航激活态判断）。
     fn as_str(&self) -> &'static str {
         match self {
             SettingsSection::Site => "site",
             SettingsSection::Security => "security",
             SettingsSection::Cache => "cache",
+            SettingsSection::RateLimit => "ratelimit",
+            SettingsSection::Image => "image",
+            SettingsSection::Runner => "runner",
             SettingsSection::Backup => "backup",
             SettingsSection::Trash => "trash",
             SettingsSection::Upload => "upload",
@@ -75,6 +89,9 @@ impl SettingsSection {
             SettingsSection::Site => "站点",
             SettingsSection::Security => "安全",
             SettingsSection::Cache => "缓存",
+            SettingsSection::RateLimit => "限流",
+            SettingsSection::Image => "图片",
+            SettingsSection::Runner => "运行器",
             SettingsSection::Backup => "备份",
             SettingsSection::Trash => "回收站",
             SettingsSection::Upload => "上传",
@@ -88,6 +105,9 @@ impl SettingsSection {
             SettingsSection::Site => "M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z M9 22V12h6v10",
             SettingsSection::Security => "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z",
             SettingsSection::Cache => "M21 8v13H3V8 M1 3h22v5H1z M10 12h4",
+            SettingsSection::RateLimit => "M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2z M12 6v6l4 2",
+            SettingsSection::Image => "M21 15l-5-5L5 21 M18 21H3V3h18v9z M8.5 8.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0z",
+            SettingsSection::Runner => "M16 18l6-6-6-6 M8 6l-6 6 6 6",
             SettingsSection::Backup => "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4 M7 10l5 5 5-5 M12 15V3",
             SettingsSection::Trash => "M3 6h18 M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2 M10 11v6 M14 11v6",
             SettingsSection::Upload => "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4 M17 8l-5-5-5 5 M12 3v12",
@@ -96,11 +116,14 @@ impl SettingsSection {
     }
 
     /// 所有分区，按导航顺序。
-    fn all() -> [SettingsSection; 7] {
+    fn all() -> [SettingsSection; 10] {
         [
             SettingsSection::Site,
             SettingsSection::Security,
             SettingsSection::Cache,
+            SettingsSection::RateLimit,
+            SettingsSection::Image,
+            SettingsSection::Runner,
             SettingsSection::Backup,
             SettingsSection::Trash,
             SettingsSection::Upload,
@@ -190,10 +213,13 @@ pub fn SiteSettingsPage() -> Element {
                 // 右侧内容（key 强制切换分区时卸载/重建）
                 div { class: "flex-1 min-w-0", key: "{active().as_str()}",
                     {match active() {
-                        SettingsSection::Site => rsx! { SiteSection { toast } },
                         SettingsSection::Security => rsx! { SecuritySection { toast } },
+                        SettingsSection::RateLimit => rsx! { RateLimitSection { toast } },
+                        SettingsSection::Site => rsx! { SiteSection { toast } },
                         SettingsSection::Cache => rsx! { CacheSection { toast } },
                         SettingsSection::Backup => rsx! { BackupSection { toast } },
+                        SettingsSection::Image => rsx! { ImageSection { toast } },
+                        SettingsSection::Runner => rsx! { RunnerSection { toast } },
                         SettingsSection::Trash => rsx! { TrashSection { toast } },
                         SettingsSection::Upload => rsx! { UploadSection { toast } },
                         SettingsSection::System => rsx! { SystemSection {} },
