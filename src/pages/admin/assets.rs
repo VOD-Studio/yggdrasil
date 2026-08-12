@@ -508,7 +508,10 @@ pub fn Assets() -> Element {
                                         // blur-img 双层结构（对齐前台正文图）：?w=20 模糊占位 +
                                         // data-src 展示层（IO 懒加载）；点击由 lightbox.js 接管为灯箱
                                         // （图集模式，原图 = data-src 去 query）。不加 lightbox-single。
+                                        // data-error-text：缩略图重试耗尽仍失败（本地文件丢失等）时
+                                        // 卡片占位与灯箱错误态显示的定制文案。
                                         div { class: "blur-img aspect-square m-0 cursor-pointer bg-[var(--color-paper-theme)]",
+                                            "data-error-text": "本地文件已丢失",
                                             img {
                                                 class: "blur-img-placeholder",
                                                 src: "{placeholder}",
