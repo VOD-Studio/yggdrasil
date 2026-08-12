@@ -195,7 +195,11 @@ GitHub Actions (`.github/workflows/ci.yml`), **nine** jobs following the 2026 na
 
 ### Issue tracker
 
-GitHub Issues at `VOD-Studio/yggdrasil` via the `origin` remote. See `docs/agents/issue-tracker.md`.
+GitHub Issues at `VOD-Studio/yggdrasil` (uses `gh` CLI). See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five canonical roles (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
 
 ### Domain docs
 
