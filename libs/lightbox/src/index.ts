@@ -7,6 +7,7 @@ interface LightboxState {
   img: HTMLImageElement;
   caption: HTMLElement;
   counter: HTMLDivElement;
+  errorBox: HTMLDivElement;
   prevBtn: HTMLButtonElement | null;
   nextBtn: HTMLButtonElement | null;
   originNode: HTMLElement;
@@ -52,6 +53,36 @@ function rectOf(el: Element): Rect {
 
 // 注意：fitCentered / transformFor / originalUrl 已抽到 ./geometry.ts。
 
+// ============ 加载失败与错误态 ============
+
+// 缩略图加载失败的退避重试间隔（ms）：429 限流等瞬时错误多在几秒内自愈；
+// 全部耗尽才认定永久性失败（文件丢失/损坏）。img 的 error 事件不带 HTTP
+// 状态码，无法区分 404 与 429，故统一先重试。
+const RETRY_DELAYS_MS = [1000, 2000, 4000];
+
+// 默认错误文案。容器可用 data-error-text 定制（素材页传「本地文件已丢失」）；
+// 标 is-error 时补默认属性，卡片 CSS 经 attr() 显示。
+const DEFAULT_ERROR_TEXT = '图片加载失败';
+
+// Material Symbols broken_image（标准 960 视口，fill=currentColor 跟随灯箱文字色）。
+// 源档案：public/icons/broken_image_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg
+const ERROR_ICON_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" fill="currentColor"><path d="M180-120q-24 0-42-18t-18-42v-600q0-24 18-42t42-18h600q24 0 42 18t18 42v600q0 24-18 42t-42 18H180Zm43-314 172-172 170 170 171-171 44 44v-217H180v303l43 43Zm-43 254h600v-298l-44-44-171 171-170-170-172 172-43-43v212Zm0 0v-298 60-362 600Z"/></svg>';
+
+// 标记容器加载失败：CSS 隐藏双层图、改显破图图标 + 文案；灯箱入口据此
+// 直接展示错误态，不再请求原图。
+function markLoadError(container: Element): void {
+  container.classList.add('is-error');
+  if (!container.hasAttribute('data-error-text')) {
+    container.setAttribute('data-error-text', DEFAULT_ERROR_TEXT);
+  }
+}
+
+// 取节点错误文案：data-error-text 定制优先（素材页），缺省通用文案。
+function errorTextOf(node: HTMLElement): string {
+  return node.getAttribute('data-error-text') || DEFAULT_ERROR_TEXT;
+}
+
 // ============ 懒加载 ============
 
 // 为单个 .blur-img 容器初始化高清图懒加载。
@@ -76,10 +107,36 @@ function initLazyLoad(container: Element): void {
     fullImg.style.opacity = '1';
   };
   fullImg.addEventListener('load', onFullLoaded);
+
+  // 加载失败：按退避间隔重试（429 限流等瞬时错误可自愈），重试耗尽仍失败
+  // 才标 is-error 永久错误态（文件丢失/损坏）。
+  let retryCount = 0;
+  const onFullError = (): void => {
+    if (retryCount >= RETRY_DELAYS_MS.length) {
+      markLoadError(container);
+      return;
+    }
+    const delay = RETRY_DELAYS_MS[retryCount];
+    retryCount += 1;
+    setTimeout((): void => {
+      // 重试前若已成功或已终态（理论上不会：is-error 只在本链末端设置），不再重设。
+      if (container.classList.contains('is-loaded') || container.classList.contains('is-error'))
+        return;
+      fullImg.src = fullSrc;
+    }, delay);
+  };
+  fullImg.addEventListener('error', onFullError);
+
   // 缓存兜底：若设 src 时图片已在缓存（load 几乎立即触发，可能早于监听注册），
   // 用 complete 补一次。注意无 src 的 img complete 也为 true，故先判 src。
+  // complete 但 naturalWidth 为 0 = 已失败（error 同样可能早于监听注册），
+  // 走同一错误路径而不是误标 is-loaded。
   if (fullImg.getAttribute('src') && fullImg.complete) {
-    onFullLoaded();
+    if (fullImg.naturalWidth > 0) {
+      onFullLoaded();
+    } else {
+      onFullError();
+    }
   }
 
   if ('IntersectionObserver' in window) {
@@ -178,9 +235,10 @@ function openLightbox(originNode: HTMLElement, gallery: HTMLElement[], index: nu
   // 可滚动区、触发非预期的 scroll 事件。start() 拿到 natural 尺寸后再设真实值。
   img.style.width = '0px';
   img.style.height = '0px';
-  // 原图请求失败时立即移除 overlay，否则它会保持透明并拦截整个页面。
+  // 原图请求失败（404/429/文件丢失）：切错误态展示原因，不再「闪一下就消失」。
+  // 监听常驻 img：打开中失败与图集切换换到坏图走同一路径。
   img.addEventListener('error', (): void => {
-    if (state?.img === img) closeLightbox(true);
+    if (state?.img === img) showErrorState(errorTextOf(state.originNode));
   });
 
   const caption = document.createElement('figcaption');
@@ -195,6 +253,14 @@ function openLightbox(originNode: HTMLElement, gallery: HTMLElement[], index: nu
   } else {
     counter.textContent = `${(index ?? 0) + 1} / ${gallery.length}`;
   }
+
+  // 错误态容器：原图加载失败或点击已知坏图（is-error）时显示原因，
+  // 替代过去的立即 removeOverlay。pointer-events:none（CSS）让点击穿透到
+  // overlay 照常触发关闭。
+  const errorBox = document.createElement('div');
+  errorBox.className = 'lightbox-error';
+  errorBox.style.display = 'none';
+  errorBox.innerHTML = `${ERROR_ICON_SVG}<p class="lightbox-error-text"></p><p class="lightbox-error-hint">按 Esc 或点击背景关闭</p>`;
 
   // 图集模式（>1 张）才加左右导航箭头；单张不显示。
   let prevBtn: HTMLButtonElement | null = null;
@@ -216,6 +282,7 @@ function openLightbox(originNode: HTMLElement, gallery: HTMLElement[], index: nu
   overlay.appendChild(img);
   overlay.appendChild(caption);
   overlay.appendChild(counter);
+  overlay.appendChild(errorBox);
   if (prevBtn) overlay.appendChild(prevBtn);
   if (nextBtn) overlay.appendChild(nextBtn);
   document.body.appendChild(overlay);
@@ -225,6 +292,7 @@ function openLightbox(originNode: HTMLElement, gallery: HTMLElement[], index: nu
     img,
     caption,
     counter,
+    errorBox,
     prevBtn,
     nextBtn,
     originNode,
@@ -310,12 +378,33 @@ function openLightbox(originNode: HTMLElement, gallery: HTMLElement[], index: nu
     });
   };
 
-  if (img.complete && img.naturalWidth) {
+  if (originNode.classList.contains('is-error')) {
+    // 缩略图阶段已确认损坏（重试耗尽）：不再请求原图，直接错误态。
+    // overlay 可 Esc/点击背景关闭，图集模式仍可左右切换离开。
+    showErrorState(errorTextOf(originNode));
+  } else if (img.complete && img.naturalWidth) {
     start();
   } else {
     img.addEventListener('load', start, { once: true });
+    img.src = origSrc;
   }
-  img.src = origSrc;
+}
+
+// 切换灯箱到错误态：隐藏图、显示原因；overlay 保持可交互（Esc/点击背景关闭、
+// 图集仍可切换）。counter/caption 不受影响。
+function showErrorState(message: string): void {
+  if (!state) return;
+  state.img.style.display = 'none';
+  const text = state.errorBox.querySelector('.lightbox-error-text');
+  if (text) text.textContent = message;
+  state.errorBox.style.display = '';
+}
+
+// 从错误态恢复（图集切回可加载的图）：显示图、隐藏错误提示。
+function hideErrorState(): void {
+  if (!state) return;
+  state.errorBox.style.display = 'none';
+  state.img.style.display = '';
 }
 
 function closeLightbox(immediate: boolean): void {
@@ -427,12 +516,18 @@ function gotoIndex(rawIndex: number): void {
       applyGeometry();
       fade();
     };
-    // 先换 src 再判 complete：换之前判的是旧图（必命中），会按旧图尺寸算几何。
-    s.img.src = origSrc;
-    if (s.img.complete && s.img.naturalWidth) {
-      onReady(); // 缓存命中，新图尺寸同步可用
+    if (newNode.classList.contains('is-error')) {
+      // 目标是已知坏图：不请求，直接错误态（counter/caption/originNode 照常更新）。
+      showErrorState(errorTextOf(newNode));
     } else {
-      s.img.addEventListener('load', onReady, { once: true });
+      hideErrorState();
+      // 先换 src 再判 complete：换之前判的是旧图（必命中），会按旧图尺寸算几何。
+      s.img.src = origSrc;
+      if (s.img.complete && s.img.naturalWidth) {
+        onReady(); // 缓存命中，新图尺寸同步可用
+      } else {
+        s.img.addEventListener('load', onReady, { once: true });
+      }
     }
     s.caption.textContent = altText;
     s.caption.style.display = altText ? '' : 'none';

@@ -173,7 +173,7 @@ describe('lightbox 黑盒行为', () => {
       expect(overlay).not.toBeNull();
       expect(overlay?.style.opacity).toBe('1');
     });
-    it('素材原图加载失败时不应留下拦截页面的隐形 overlay', () => {
+    it('素材原图加载失败时显示错误态而非闪退，Esc 仍可关闭', () => {
       const img = makeGalleryImage('/uploads/missing.webp?thumb=300x300', '损坏素材');
       const root = mountRoot([img]);
       root.classList.add('assets-lightbox');
@@ -184,6 +184,16 @@ describe('lightbox 黑盒行为', () => {
       expect(lightboxImg).not.toBeNull();
       lightboxImg?.dispatchEvent(new Event('error'));
 
+      // overlay 保留并展示错误态（含默认文案），不再「闪一下就消失」
+      const overlay = getOverlay();
+      expect(overlay).not.toBeNull();
+      const errBox = overlay?.querySelector('.lightbox-error') as HTMLElement | null;
+      expect(errBox).not.toBeNull();
+      expect(errBox?.style.display).toBe('');
+      expect(errBox?.textContent).toContain('图片加载失败');
+
+      pressKey('Escape');
+      vi.advanceTimersByTime(300);
       expect(getOverlay()).toBeNull();
     });
 
@@ -319,6 +329,94 @@ describe('lightbox 黑盒行为', () => {
       );
       expect(overlayAppends).toHaveLength(1);
       appendSpy.mockRestore();
+    });
+  });
+
+  describe('加载失败错误态（is-error 标记与灯箱错误提示）', () => {
+    /** 取容器内的展示层 img 并驱动一次失败。 */
+    const fullImgOf = (container: HTMLElement): HTMLImageElement =>
+      container.querySelector('.blur-img-full') as HTMLImageElement;
+
+    it('缩略图失败：退避重试耗尽后才标 is-error 并补默认文案', () => {
+      const container = makeGalleryImage('/uploads/gone.webp?thumb=300x300', '丢失');
+      mountRoot([container]);
+      window.__initLightbox('.post-content');
+
+      const full = fullImgOf(container);
+      full.src = full.getAttribute('data-src')!;
+
+      // 前三次失败各自排程一次退避重试，不标错
+      for (const delay of [1000, 2000, 4000]) {
+        full.dispatchEvent(new Event('error'));
+        expect(container.classList.contains('is-error')).toBe(false);
+        vi.advanceTimersByTime(delay); // 触发重试重设 src
+      }
+      // 重试耗尽后的第四次失败 → 永久错误态
+      full.dispatchEvent(new Event('error'));
+      expect(container.classList.contains('is-error')).toBe(true);
+      expect(container.getAttribute('data-error-text')).toBe('图片加载失败');
+    });
+
+    it('重试期间加载成功（429 自愈）：正常 is-loaded，不标 is-error', () => {
+      const container = makeGalleryImage('/uploads/slow.webp?thumb=300x300', '慢图');
+      mountRoot([container]);
+      window.__initLightbox('.post-content');
+
+      const full = fullImgOf(container);
+      full.src = full.getAttribute('data-src')!;
+      full.dispatchEvent(new Event('error'));
+      vi.advanceTimersByTime(1000); // 第一次退避到期，重设 src
+
+      full.dispatchEvent(new Event('load')); // 重试成功
+      expect(container.classList.contains('is-loaded')).toBe(true);
+      expect(container.classList.contains('is-error')).toBe(false);
+    });
+
+    it('点击已标 is-error 的图：直接错误态（用容器定制文案），不请求原图', () => {
+      const container = makeGalleryImage('/uploads/lost.webp?thumb=300x300', '丢失素材');
+      container.classList.add('is-error');
+      container.setAttribute('data-error-text', '本地文件已丢失');
+      mountRoot([container]);
+      window.__initLightbox('.post-content');
+
+      clickEl(container);
+      const overlay = getOverlay();
+      expect(overlay).not.toBeNull();
+      const errBox = overlay?.querySelector('.lightbox-error') as HTMLElement | null;
+      expect(errBox?.style.display).toBe('');
+      expect(errBox?.textContent).toContain('本地文件已丢失');
+      // 不发起原图请求
+      expect(getLightboxImg()?.getAttribute('src')).toBeNull();
+    });
+
+    it('图集切换到坏图显示错误态，再切回好图恢复正常', () => {
+      const good = makeGalleryImage('/uploads/good.webp', '好图');
+      const bad = makeGalleryImage('/uploads/bad.webp', '坏图');
+      bad.classList.add('is-error');
+      bad.setAttribute('data-error-text', '本地文件已丢失');
+      mountRoot([good, bad]);
+      window.__initLightbox('.post-content');
+
+      clickEl(good);
+      const lbImg = getLightboxImg()!;
+      stubNatural(lbImg, 800, 600);
+      lbImg.dispatchEvent(new Event('load'));
+      vi.advanceTimersByTime(50);
+
+      // → 坏图：错误态 + counter 照常更新
+      pressKey('ArrowRight');
+      vi.advanceTimersByTime(200);
+      const errBox = document.querySelector('.lightbox-error') as HTMLElement;
+      expect(errBox.style.display).toBe('');
+      expect(errBox.textContent).toContain('本地文件已丢失');
+      expect(getCounter()?.textContent).toBe('2 / 2');
+
+      // → 循环回好图：错误态隐藏，src 恢复请求
+      pressKey('ArrowRight');
+      vi.advanceTimersByTime(200);
+      expect(errBox.style.display).toBe('none');
+      expect(getLightboxImg()?.getAttribute('src')).toContain('/uploads/good.webp');
+      expect(getCounter()?.textContent).toBe('1 / 2');
     });
   });
 
