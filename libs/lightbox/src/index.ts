@@ -224,9 +224,11 @@ function openLightbox(originNode: HTMLElement, gallery: HTMLElement[], index: nu
   overlay.setAttribute('aria-modal', 'true');
   overlay.setAttribute('aria-label', '图片预览');
   overlay.setAttribute('tabindex', '-1');
-  // 遮罩必须在原图加载前可见：原图慢/失败时仍要让用户知道灯箱已打开，
-  // 而不是留下 opacity:0 的全屏层拦截页面交互。
-  overlay.style.opacity = '1';
+  // 遮罩从 0 淡入：创建即隐藏，append 后立即启动淡入（见下方 rAF），
+  // 与原图加载解耦。若加载期就保持 opacity:1，start() 为首帧硬切回 0 再
+  // 淡入，用户会看到遮罩在打开瞬间闪一下；原图慢/失败时遮罩照常淡入可见，
+  // 不留 opacity:0 的全屏层拦截页面交互。
+  overlay.style.opacity = '0';
 
   const img = document.createElement('img');
   img.className = 'lightbox-img';
@@ -287,6 +289,15 @@ function openLightbox(originNode: HTMLElement, gallery: HTMLElement[], index: nu
   if (nextBtn) overlay.appendChild(nextBtn);
   document.body.appendChild(overlay);
 
+  // 遮罩淡入（一次，单调 0→1）：reflow 提交首帧 opacity:0，rAF 起过渡。
+  // 之后 start()/加载流程不再触碰遮罩 opacity，避免任何可见回退。
+  void overlay.offsetHeight;
+  requestAnimationFrame((): void => {
+    if (!state) return; // 首帧前可能已被关闭（immediate 路径）
+    overlay.style.transition = 'opacity 250ms ease-out';
+    overlay.style.opacity = '1';
+  });
+
   state = {
     overlay,
     img,
@@ -335,19 +346,16 @@ function openLightbox(originNode: HTMLElement, gallery: HTMLElement[], index: nu
     img.style.width = `${baseW}px`;
     img.style.height = `${baseH}px`;
 
-    // reduced-motion：直接淡入居中
+    // reduced-motion：直接淡入居中（遮罩淡入已在创建时启动，这里只动图）
     if (state.reduced) {
       img.style.opacity = '0';
       img.style.transform = transformFor(target, baseW, baseH);
       img.style.left = '0';
       img.style.top = '0';
-      overlay.style.opacity = '0';
       // 下一帧淡入
       requestAnimationFrame((): void => {
         if (!state) return;
-        overlay.style.transition = 'opacity 200ms ease-out';
         img.style.transition = 'opacity 200ms ease-out';
-        overlay.style.opacity = '1';
         img.style.opacity = '1';
       });
       return;
@@ -359,21 +367,19 @@ function openLightbox(originNode: HTMLElement, gallery: HTMLElement[], index: nu
     img.style.top = '0';
     img.style.transform = transformFor(originRect, baseW, baseH);
     img.style.opacity = '0';
-    overlay.style.opacity = '0';
     // 强制 reflow，确保首帧的 transform 已提交到渲染层。
     // 否则单层 rAF 里浏览器可能合并首帧与目标帧，动画从错误位置起跳。
     void img.offsetHeight;
 
     // double-rAF：第一帧绘制首帧（无动画），第二帧才启动 transition 到居中。
+    // 遮罩淡入已在创建时启动并独立进行，这里不再触碰 overlay opacity。
     requestAnimationFrame((): void => {
       if (!state) return;
       requestAnimationFrame((): void => {
         if (!state) return;
         img.style.transition = 'transform 250ms ease-out, opacity 250ms ease-out';
-        overlay.style.transition = 'opacity 250ms ease-out';
         img.style.transform = transformFor(target, baseW, baseH);
         img.style.opacity = '1';
-        overlay.style.opacity = '1';
       });
     });
   };

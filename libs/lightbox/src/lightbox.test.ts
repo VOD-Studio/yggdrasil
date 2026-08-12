@@ -169,8 +169,10 @@ describe('lightbox 黑盒行为', () => {
 
       clickEl(img);
 
+      // 遮罩 DOM 立即出现（不等原图），opacity 从 0 起淡入，动画结束到 1
       const overlay = getOverlay();
       expect(overlay).not.toBeNull();
+      vi.advanceTimersByTime(64);
       expect(overlay?.style.opacity).toBe('1');
     });
     it('素材原图加载失败时显示错误态而非闪退，Esc 仍可关闭', () => {
@@ -204,6 +206,57 @@ describe('lightbox 黑盒行为', () => {
 
       clickEl(img);
       expect(getCounter()?.style.display).toBe('none');
+    });
+  });
+
+  describe('打开动画遮罩不闪烁（opacity 单调）', () => {
+    /**
+     * 记录点击 → 原图 load → rAF 推进全过程中 overlay 的 inline opacity 序列。
+     * 遮罩一旦对用户可见就不得再变透明：创建时 opacity=1（加载期实黑）→
+     * start() 硬切 0（无 transition）→ rAF 再淡入，就是用户看到的「打开时闪一下」。
+     */
+    const expectMonotonic = (seq: number[]): void => {
+      for (let i = 1; i < seq.length; i++) {
+        expect(seq[i]).toBeGreaterThanOrEqual(seq[i - 1]);
+      }
+    };
+
+    it('慢原图路径：遮罩从点击到动画结束 opacity 不回退，且最终为 1', () => {
+      const img = makeGalleryImage('/uploads/x.webp?w=800', '图');
+      mountRoot([img]);
+      window.__initLightbox('.post-content');
+
+      clickEl(img);
+      const overlay = getOverlay()!;
+      const seq: number[] = [Number(overlay.style.opacity || '0')];
+
+      // 原图未缓存（complete=false）：走 load 监听路径，模拟真实慢加载
+      const lbImg = getLightboxImg()!;
+      stubNatural(lbImg, 1200, 800);
+      lbImg.dispatchEvent(new Event('load'));
+      seq.push(Number(overlay.style.opacity || '0'));
+
+      vi.advanceTimersByTime(64); // 推进 double-rAF（淡入动画启动）
+      seq.push(Number(overlay.style.opacity || '0'));
+
+      expectMonotonic(seq);
+      expect(seq[seq.length - 1]).toBe(1); // 动画结束遮罩必须可见
+    });
+
+    it('缓存命中路径：遮罩 opacity 同样不回退', () => {
+      const img = makeGalleryImage('/uploads/x.webp?w=800', '图');
+      mountRoot([img]);
+      window.__initLightbox('.post-content');
+
+      clickEl(img);
+      const overlay = getOverlay()!;
+      const seq: number[] = [Number(overlay.style.opacity || '0')];
+
+      vi.advanceTimersByTime(64);
+      seq.push(Number(overlay.style.opacity || '0'));
+
+      expectMonotonic(seq);
+      expect(seq[seq.length - 1]).toBe(1);
     });
   });
 
