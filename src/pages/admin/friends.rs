@@ -57,13 +57,14 @@ pub fn FriendsAdmin() -> Element {
         use_context_provider(|| state);
 
         rsx! {
-            div { class: "animate-page-enter w-full max-w-7xl mx-auto space-y-8",
-                div { class: "animate-row-enter", style: "animation-delay: 0ms",
-                    PageHeader {}
+            div { class: "w-full max-w-7xl mx-auto space-y-8",
+                div { class: "animate-page-enter",
+                    div { class: "animate-row-enter", style: "animation-delay: 0ms",
+                        PageHeader {}
+                    }
                 }
-                div { class: "animate-row-enter", style: "animation-delay: 60ms",
-                    EditorCard {}
-                }
+                Toast {}
+                EditorCard {}
                 div { class: "animate-row-enter", style: "animation-delay: 120ms",
                     LinkList {}
                 }
@@ -167,196 +168,198 @@ fn EditorCard() -> Element {
     let editing_mode = editing_target.is_some();
 
     rsx! {
-        div { class: "{ADMIN_CARD_CLASS} p-8 flex flex-col gap-6",
-            h2 { class: "text-xl font-bold text-[var(--color-paper-primary)]",
-                if editing_mode {
-                    "编辑友链"
-                } else {
-                    "添加友链"
-                }
-            }
-
-            div { class: "grid grid-cols-1 md:grid-cols-2 gap-4",
-                // 名称
-                div { class: "flex flex-col gap-2",
-                    FormLabel { label: "名称" }
-                    FormInput {
-                        r#type: "text",
-                        placeholder: "站点名称",
-                        value: name(),
-                        oninput: move |v: String| name.set(v),
-                    }
-                }
-                // URL
-                div { class: "flex flex-col gap-2",
-                    FormLabel { label: "URL" }
-                    FormInput {
-                        r#type: "url",
-                        placeholder: "https://example.com",
-                        value: url(),
-                        oninput: move |v: String| url.set(v),
-                    }
-                }
-                // 头像（可留空）：圆形预览磁贴 + 外链输入框 + 素材库按钮。
-                // 保留外链手输（既有用法），新增「素材库」一键选择本站上传的图片。
-                div { class: "flex flex-col gap-2",
-                    FormLabel { label: "头像（可留空）" }
-                    div { class: "flex items-center gap-3",
-                        // 圆形预览磁贴：有 URL 且未加载失败时渲染 img，
-                        // 否则显示名称首字符兜底（与 LinkRow / 前台 FriendCard 磁贴一致）。
-                        div { class: "relative h-10 w-10 shrink-0 rounded-full bg-[var(--color-paper-code-bg)] flex items-center justify-center overflow-hidden",
-                            if avatar().trim().is_empty() || avatar_failed() {
-                                span { class: "text-sm font-semibold text-[var(--color-paper-primary)] select-none",
-                                    {
-                                        name()
-                                            .chars()
-                                            .next()
-                                            .map(|c| c.to_uppercase().collect::<String>())
-                                            .unwrap_or_else(|| "?".to_string())
-                                    }
-                                }
-                            } else {
-                                img {
-                                    class: "w-full h-full object-cover",
-                                    src: "{avatar()}",
-                                    alt: "头像预览",
-                                    // 外链可能失效：失败后切回首字符磁贴，不阻塞保存。
-                                    onerror: move |_| avatar_failed.set(true),
-                                }
-                            }
-                        }
-                        FormInput {
-                            r#type: "url",
-                            placeholder: "粘贴外链或从素材库选择",
-                            value: avatar(),
-                            class: INPUT_INLINE_CLASS,
-                            oninput: move |v: String| {
-                                avatar.set(v);
-                                avatar_failed.set(false);
-                            },
-                        }
-                        button {
-                            class: "shrink-0 {BTN_OUTLINE}",
-                            onclick: move |_| picker_visible.set(true),
-                            "素材库"
-                        }
-                    }
-                }
-                // 排序
-                div { class: "flex flex-col gap-2",
-                    FormLabel { label: "排序（越小越靠前）" }
-                    FormInput {
-                        r#type: "number",
-                        placeholder: "0",
-                        value: sort_str(),
-                        oninput: move |v: String| sort_str.set(v),
-                    }
-                }
-                // 描述
-                div { class: "flex flex-col gap-2 md:col-span-2",
-                    FormLabel { label: "描述" }
-                    textarea {
-                        class: "{INPUT_CLASS}",
-                        rows: "2",
-                        placeholder: "一句话介绍对方站点",
-                        value: desc(),
-                        oninput: move |e| desc.set(e.value()),
-                    }
-                }
-                // 启用状态（仅编辑模式展示）
-                if editing_mode {
-                    div { class: "flex flex-col gap-2",
-                        FormLabel { label: "状态" }
-                        FormSelect {
-                            value: is_active(),
-                            options: vec![(true, "启用"), (false, "停用")],
-                            onchange: move |a: bool| is_active.set(a),
-                        }
-                    }
-                }
-            }
-
-            div { class: "flex items-center gap-3",
-                button {
-                    class: "{BTN_PRIMARY}",
-                    disabled: "{busy() || avatar_uploading() || name().trim().is_empty() || url().trim().is_empty()}",
-                    onclick: move |_| {
-                        if busy() {
-                            return;
-                        }
-                        let n = name().trim().to_string();
-                        let u = url().trim().to_string();
-                        if n.is_empty() || u.is_empty() {
-                            return;
-                        }
-                        let av = {
-                            let a = avatar().trim().to_string();
-                            if a.is_empty() { None } else { Some(a) }
-                        };
-                        let d = desc().trim().to_string();
-                        let sort = match sort_str().trim().parse::<i32>() {
-                            Ok(s) => s,
-                            Err(_) => {
-                                toast.set(Some(("排序值必须是整数".to_string(), true)));
-                                return;
-                            }
-                        };
-                        let active = is_active();
-                        let target = editing();
-                        let was_edit = target.is_some();
-                        busy.set(true);
-                        spawn(async move {
-                            let result = match target {
-                                Some(link) => {
-                                    update_friend_link(link.id, n, u, av, d, sort, active).await
-                                }
-                                None => create_friend_link(n, u, av, d, sort).await,
-                            };
-                            match result {
-                                Ok(_) => {
-                                    toast
-                                        .set(
-                                            Some((
-                                                if was_edit {
-                                                    "已保存".to_string()
-                                                } else {
-                                                    "已添加".to_string()
-                                                },
-                                                false,
-                                            )),
-                                        );
-                                    editing.set(None);
-                                    clear_drafts();
-                                    let g = reload_gen();
-                                    state.reload_gen.set(g + 1);
-                                }
-                                Err(e) => {
-                                    toast.set(Some((format!("保存失败：{e}"), true)));
-                                }
-                            }
-                            busy.set(false);
-                        });
-                    },
-                    if busy() {
-                        "保存中…"
-                    } else if editing_mode {
-                        "保存修改"
+        div {
+            div { class: "{ADMIN_CARD_CLASS} p-8 flex flex-col gap-6 animate-row-enter", style: "animation-delay: 60ms",
+                h2 { class: "text-xl font-bold text-[var(--color-paper-primary)]",
+                    if editing_mode {
+                        "编辑友链"
                     } else {
                         "添加友链"
                     }
                 }
-                if editing_mode {
+
+                div { class: "grid grid-cols-1 md:grid-cols-2 gap-4",
+                    // 名称
+                    div { class: "flex flex-col gap-2",
+                        FormLabel { label: "名称" }
+                        FormInput {
+                            r#type: "text",
+                            placeholder: "站点名称",
+                            value: name(),
+                            oninput: move |v: String| name.set(v),
+                        }
+                    }
+                    // URL
+                    div { class: "flex flex-col gap-2",
+                        FormLabel { label: "URL" }
+                        FormInput {
+                            r#type: "url",
+                            placeholder: "https://example.com",
+                            value: url(),
+                            oninput: move |v: String| url.set(v),
+                        }
+                    }
+                    // 头像（可留空）：圆形预览磁贴 + 外链输入框 + 素材库按钮。
+                    // 保留外链手输（既有用法），新增「素材库」一键选择本站上传的图片。
+                    div { class: "flex flex-col gap-2",
+                        FormLabel { label: "头像（可留空）" }
+                        div { class: "flex items-center gap-3",
+                            // 圆形预览磁贴：有 URL 且未加载失败时渲染 img，
+                            // 否则显示名称首字符兜底（与 LinkRow / 前台 FriendCard 磁贴一致）。
+                            div { class: "relative h-10 w-10 shrink-0 rounded-full bg-[var(--color-paper-code-bg)] flex items-center justify-center overflow-hidden",
+                                if avatar().trim().is_empty() || avatar_failed() {
+                                    span { class: "text-sm font-semibold text-[var(--color-paper-primary)] select-none",
+                                        {
+                                            name()
+                                                .chars()
+                                                .next()
+                                                .map(|c| c.to_uppercase().collect::<String>())
+                                                .unwrap_or_else(|| "?".to_string())
+                                        }
+                                    }
+                                } else {
+                                    img {
+                                        class: "w-full h-full object-cover",
+                                        src: "{avatar()}",
+                                        alt: "头像预览",
+                                        // 外链可能失效：失败后切回首字符磁贴，不阻塞保存。
+                                        onerror: move |_| avatar_failed.set(true),
+                                    }
+                                }
+                            }
+                            FormInput {
+                                r#type: "url",
+                                placeholder: "粘贴外链或从素材库选择",
+                                value: avatar(),
+                                class: INPUT_INLINE_CLASS,
+                                oninput: move |v: String| {
+                                    avatar.set(v);
+                                    avatar_failed.set(false);
+                                },
+                            }
+                            button {
+                                class: "shrink-0 {BTN_OUTLINE}",
+                                onclick: move |_| picker_visible.set(true),
+                                "素材库"
+                            }
+                        }
+                    }
+                    // 排序
+                    div { class: "flex flex-col gap-2",
+                        FormLabel { label: "排序（越小越靠前）" }
+                        FormInput {
+                            r#type: "number",
+                            placeholder: "0",
+                            value: sort_str(),
+                            oninput: move |v: String| sort_str.set(v),
+                        }
+                    }
+                    // 描述
+                    div { class: "flex flex-col gap-2 md:col-span-2",
+                        FormLabel { label: "描述" }
+                        textarea {
+                            class: "{INPUT_CLASS}",
+                            rows: "2",
+                            placeholder: "一句话介绍对方站点",
+                            value: desc(),
+                            oninput: move |e| desc.set(e.value()),
+                        }
+                    }
+                    // 启用状态（仅编辑模式展示）
+                    if editing_mode {
+                        div { class: "flex flex-col gap-2",
+                            FormLabel { label: "状态" }
+                            FormSelect {
+                                value: is_active(),
+                                options: vec![(true, "启用"), (false, "停用")],
+                                onchange: move |a: bool| is_active.set(a),
+                            }
+                        }
+                    }
+                }
+
+                div { class: "flex items-center gap-3",
                     button {
-                        class: "{BTN_OUTLINE}",
+                        class: "{BTN_PRIMARY}",
+                        disabled: "{busy() || avatar_uploading() || name().trim().is_empty() || url().trim().is_empty()}",
                         onclick: move |_| {
-                            editing.set(None);
-                            clear_drafts();
+                            if busy() {
+                                return;
+                            }
+                            let n = name().trim().to_string();
+                            let u = url().trim().to_string();
+                            if n.is_empty() || u.is_empty() {
+                                return;
+                            }
+                            let av = {
+                                let a = avatar().trim().to_string();
+                                if a.is_empty() { None } else { Some(a) }
+                            };
+                            let d = desc().trim().to_string();
+                            let sort = match sort_str().trim().parse::<i32>() {
+                                Ok(s) => s,
+                                Err(_) => {
+                                    toast.set(Some(("排序值必须是整数".to_string(), true)));
+                                    return;
+                                }
+                            };
+                            let active = is_active();
+                            let target = editing();
+                            let was_edit = target.is_some();
+                            busy.set(true);
+                            spawn(async move {
+                                let result = match target {
+                                    Some(link) => {
+                                        update_friend_link(link.id, n, u, av, d, sort, active).await
+                                    }
+                                    None => create_friend_link(n, u, av, d, sort).await,
+                                };
+                                match result {
+                                    Ok(_) => {
+                                        toast
+                                            .set(
+                                                Some((
+                                                    if was_edit {
+                                                        "已保存".to_string()
+                                                    } else {
+                                                        "已添加".to_string()
+                                                    },
+                                                    false,
+                                                )),
+                                            );
+                                        editing.set(None);
+                                        clear_drafts();
+                                        let g = reload_gen();
+                                        state.reload_gen.set(g + 1);
+                                    }
+                                    Err(e) => {
+                                        toast.set(Some((format!("保存失败：{e}"), true)));
+                                    }
+                                }
+                                busy.set(false);
+                            });
                         },
-                        "取消"
+                        if busy() {
+                            "保存中…"
+                        } else if editing_mode {
+                            "保存修改"
+                        } else {
+                            "添加友链"
+                        }
+                    }
+                    if editing_mode {
+                        button {
+                            class: "{BTN_OUTLINE}",
+                            onclick: move |_| {
+                                editing.set(None);
+                                clear_drafts();
+                            },
+                            "取消"
+                        }
                     }
                 }
             }
-            // 素材选择 modal：选中回填头像 URL（复用 write.rs 封面选择的同一组件）。
+            // 放在动画卡片外，避免 fixed 弹窗继承动画 transform 而相对内容区错位。
             AssetPickerModal {
                 visible: picker_visible,
                 cover_uploading: avatar_uploading,
