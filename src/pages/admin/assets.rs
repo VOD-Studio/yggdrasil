@@ -24,7 +24,7 @@ use crate::components::empty_state::EmptyState;
 use crate::components::forms::FormInput;
 use crate::components::skeletons::assets_skeleton::AssetsSkeleton;
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
-use crate::components::ui::{FilterTabs, Pagination};
+use crate::components::ui::{FilterTabs, MEDIA_BADGE_BASE, Pagination};
 #[cfg(target_arch = "wasm32")]
 use crate::models::asset::{AssetFilter, AssetSort};
 use crate::pages::admin::asset_upload::AssetUploadModal;
@@ -495,22 +495,22 @@ pub fn Assets() -> Element {
                                     "absolute top-2 right-2 z-10 w-6 h-6 flex items-center justify-center rounded-full text-xs cursor-pointer transition-all bg-black/40 backdrop-blur-sm text-white border border-white/60 opacity-0 group-hover:opacity-100"
                                 };
                                 // z-10：.blur-img-full 带 z-index:1，不提升会被展示层盖住（灯箱改造的回归）。
-                                let badge_class = if is_orphan {
-                                    "absolute top-2 left-2 z-10 text-[10px] font-mono px-2 py-0.5 rounded-full backdrop-blur-sm bg-amber-500/80 text-white"
+                                let badge_tone = if is_orphan {
+                                    "bg-amber-500/80 text-white"
                                 } else {
-                                    "absolute top-2 left-2 z-10 text-[10px] font-mono px-2 py-0.5 rounded-full backdrop-blur-sm bg-black/50 text-white"
+                                    "bg-black/50 text-white"
                                 };
                                 rsx! {
                                     div {
                                         key: "{a.id}",
-                                        class: "group relative rounded-3xl overflow-hidden border border-[var(--color-paper-border)] bg-[var(--color-paper-entry)] shadow-sm hover:shadow-md hover:-translate-y-1 transition-all duration-300 animate-row-enter {card_ring}",
+                                        class: "group relative rounded-2xl overflow-hidden border border-[var(--color-paper-border)] bg-[var(--color-paper-entry)] shadow-sm hover:shadow-md hover:-translate-y-1 transition-all duration-300 animate-row-enter {card_ring}",
                                         style: "animation-delay: {enter_delay}ms",
                                         // blur-img 双层结构（对齐前台正文图）：?w=20 模糊占位 +
                                         // data-src 展示层（IO 懒加载）；点击由 lightbox.js 接管为灯箱
                                         // （图集模式，原图 = data-src 去 query）。不加 lightbox-single。
                                         // data-error-text：缩略图重试耗尽仍失败（本地文件丢失等）时
                                         // 卡片占位与灯箱错误态显示的定制文案。
-                                        div { class: "blur-img aspect-square m-0 cursor-pointer bg-[var(--color-paper-theme)]",
+                                        div { class: "blur-img !rounded-none aspect-square m-0 cursor-pointer bg-[var(--color-paper-theme)]",
                                             "data-error-text": "本地文件已丢失",
                                             img {
                                                 class: "blur-img-placeholder",
@@ -525,7 +525,7 @@ pub fn Assets() -> Element {
                                         }
                                         // 引用徽标
                                         span {
-                                        class: "{badge_class}",
+                                            class: "absolute top-2 left-2 z-10 {MEDIA_BADGE_BASE} backdrop-blur-sm {badge_tone}",
                                             if is_orphan {
                                                 "未引用"
                                             } else {

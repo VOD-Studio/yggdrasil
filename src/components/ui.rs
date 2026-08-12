@@ -34,6 +34,9 @@ pub const SPINNER_SVG: &str = r#"<svg class="w-3.5 h-3.5" fill="none" viewBox="0
 /// 状态徽章外层：小号圆角胶囊。
 pub const BADGE_BASE: &str =
     "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap";
+/// 素材图片覆盖层徽标：8px 紧凑矩形，独立于通用状态徽章。
+pub const MEDIA_BADGE_BASE: &str =
+    "inline-flex items-center px-2 py-0.5 rounded-lg text-[10px] font-mono font-medium whitespace-nowrap";
 
 // --- 实心小按钮（批量操作栏：通过 / 垃圾 / 删除） ---
 
