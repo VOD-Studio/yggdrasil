@@ -108,7 +108,8 @@ pub fn Mcp() -> Element {
                 div { class: "animate-row-enter", style: "animation-delay: 60ms",
                     TokenList {}
                 }
-                div { class: "animate-row-enter", style: "animation-delay: 120ms",
+                // FormSelect 面板为绝对定位；提高本区块层级，避免被后续 ConfigCard 覆盖。
+                div { class: "animate-row-enter relative z-10", style: "animation-delay: 120ms",
                     CreateTokenCard {}
                 }
                 div { class: "animate-row-enter", style: "animation-delay: 180ms",
