@@ -86,6 +86,20 @@ static IMAGE_CACHE: LazyLock<Cache<String, CachedImage>> = LazyLock::new(|| {
 });
 
 #[cfg(feature = "server")]
+/// 图片处理（解码/缩放/编码）的全局并发上限。
+///
+/// 取 CPU 核数 clamp 到 [2, 8]：单图处理大致单线程吃满一个核，下限保证小
+/// 机型吞吐，上限防止突发缓存 miss 同时分配过多大缓冲（单图最坏约
+/// MAX_IMAGE_PIXELS×4 字节瞬时内存）。只约束并发、不拒绝请求：超出许可
+/// 的 miss 排队等待；配合按 miss 计费的限流器，排队长度有界。
+static IMAGE_PROCESSING_PERMITS: LazyLock<tokio::sync::Semaphore> = LazyLock::new(|| {
+    let cores = std::thread::available_parallelism()
+        .map(std::num::NonZeroUsize::get)
+        .unwrap_or(2);
+    tokio::sync::Semaphore::new(cores.clamp(2, 8))
+});
+
+#[cfg(feature = "server")]
 #[derive(Debug, Deserialize, Clone, Hash, Eq, PartialEq, Default)]
 /// 图片处理查询参数。
 pub struct ImageParams {
@@ -589,8 +603,14 @@ async fn write_disk_cache(cache_key: &str, cached: &CachedImage) {
 #[cfg(feature = "server")]
 /// 图片访问与动态处理的 Axum handler。
 ///
-/// 依次执行：限流 → 路径安全校验 → 参数校验 → 无参数时直接返回原文件 →
-/// 查询内存缓存 → 查询磁盘缓存 → 读取并解码 → 处理 → 写入两级缓存 → 返回。
+/// 依次执行：路径安全校验 → 参数校验 → 分支：
+/// - 无参数原图直返：限流（每次真实读盘，防带宽滥用）→ 读盘返回；
+/// - 处理路径：内存缓存 → 磁盘缓存（命中即返回，本质是静态文件服务，
+///   不计费）→ 限流（只有穿透到「读盘 + 解码处理」的 miss 才扣令牌）→
+///   处理并发排队 → 读取并解码 → 处理 → 写入两级缓存 → 返回。
+///
+/// 按 miss 计费的原因：素材页/长文首刷单页可产生上百个缩略图请求，
+/// 若缓存命中也扣令牌，burst 配额会被正常浏览耗尽，批量 429 误杀。
 pub async fn serve_image(
     connect_info: Option<Extension<ConnectInfo<SocketAddr>>>,
     Path(path): Path<String>,
@@ -599,9 +619,6 @@ pub async fn serve_image(
 ) -> Response {
     let peer = connect_info.map(|Extension(ConnectInfo(addr))| addr);
     let ip = crate::api::rate_limit::get_client_ip_with_peer(&headers, peer).await;
-    if let Err(status) = crate::api::rate_limit::check_image_limit(&ip) {
-        return status.into_response();
-    }
 
     if !is_path_safe(&path).await {
         return StatusCode::FORBIDDEN.into_response();
@@ -616,6 +633,10 @@ pub async fn serve_image(
 
     // No processing params: return raw file with long-lived cache headers.
     if params.is_empty() {
+        // 原图直返不经过任何缓存层（每次真实读盘），保留限流防带宽滥用。
+        if let Err(resp) = crate::api::rate_limit::check_image_limit(&ip) {
+            return resp;
+        }
         // 原始分支也限制大小，避免读取超大文件撑爆内存（M3）。上限 20MB
         // 覆盖正常上传图（上传侧 MAX_FILE_SIZE=5MB），拒绝异常大文件。
         const MAX_RAW_BYTES: u64 = 20 * 1024 * 1024;
@@ -654,11 +675,24 @@ pub async fn serve_image(
         return image_response(data, content_type, "public, max-age=86400", &headers);
     }
 
+    // 两层缓存均未命中：此处起的请求才真实消耗「读盘 + 解码处理」工作量，
+    // 计入限流。
+    if let Err(resp) = crate::api::rate_limit::check_image_limit(&ip) {
+        return resp;
+    }
+
+    // 处理并发上限：限流控速率不控并发，冷缓存突发可在令牌允许内向阻塞池
+    // 瞬间提交几十个重处理任务（单图最坏约 200MB 瞬时内存）。超出许可的
+    // 请求在此排队，把尖峰摊平成有序处理。
+    let _permit = IMAGE_PROCESSING_PERMITS
+        .acquire()
+        .await
+        .expect("图片处理信号量从不 close，acquire 不会失败");
+
     let data = match tokio::fs::read(&file_path).await {
         Ok(d) => d,
         Err(_) => return StatusCode::NOT_FOUND.into_response(),
     };
-
     // Offload decode + resize + encode to the blocking pool so the async
     // runtime stays responsive to other requests.
     let (processed, content_type) =
@@ -1167,5 +1201,85 @@ mod tests {
         let b = etag_for(b"hello");
         assert_eq!(a, b);
         assert_ne!(a, etag_for(b"world"));
+    }
+
+    // —— serve_image 限流计费路径：缓存命中免费 / miss 计费且 429 带 Retry-After ——
+
+    /// 每个测试用独立的 TEST-NET-3 客户端地址：governor 按 IP 分桶，
+    /// 桶互不影响，无需 serial。
+    fn unique_peer(third: u8) -> std::net::SocketAddr {
+        let ip = std::net::Ipv4Addr::new(203, 0, 113, third);
+        std::net::SocketAddr::new(std::net::IpAddr::V4(ip), 8080)
+    }
+
+    #[tokio::test]
+    async fn serve_image_cache_hit_does_not_consume_rate_limit_tokens() {
+        // 直接往内存缓存塞条目，模拟温缓存。
+        let path = "test/rl_hit.webp";
+        let params = ImageParams {
+            thumb: Some("300x300".to_string()),
+            ..Default::default()
+        };
+        let key = params.cache_key(path);
+        IMAGE_CACHE
+            .insert(
+                key.clone(),
+                CachedImage {
+                    data: Bytes::from_static(b"cached"),
+                    content_type: HeaderValue::from_static("image/webp"),
+                },
+            )
+            .await;
+
+        // 连续 60 次（超过默认 burst 50）全部命中缓存 → 无一 429。
+        let peer = unique_peer(1);
+        for _ in 0..60 {
+            let resp = serve_image(
+                Some(Extension(ConnectInfo(peer))),
+                Path(path.to_string()),
+                Query(params.clone()),
+                HeaderMap::new(),
+            )
+            .await;
+            assert_eq!(resp.status(), StatusCode::OK, "缓存命中不应消耗限流令牌");
+        }
+        IMAGE_CACHE.invalidate(&key).await;
+    }
+
+    #[tokio::test]
+    async fn serve_image_cache_miss_is_rate_limited_with_retry_after() {
+        // 不存在的文件 + 每次唯一的 w（保证 miss 且不产生缓存写入）：
+        // burst 内的 miss 正常走完全流程（404），令牌耗尽后 429 且带 Retry-After。
+        let peer = unique_peer(2);
+        let mut not_found = 0;
+        let mut too_many = 0;
+        for w in 1..=60_u32 {
+            let resp = serve_image(
+                Some(Extension(ConnectInfo(peer))),
+                Path("test/rl_miss_nonexistent.webp".to_string()),
+                Query(ImageParams {
+                    w: Some(w),
+                    ..Default::default()
+                }),
+                HeaderMap::new(),
+            )
+            .await;
+            match resp.status() {
+                StatusCode::NOT_FOUND => not_found += 1,
+                StatusCode::TOO_MANY_REQUESTS => {
+                    too_many += 1;
+                    let retry_after = resp
+                        .headers()
+                        .get(header::RETRY_AFTER)
+                        .expect("429 必须带 Retry-After")
+                        .to_str()
+                        .expect("Retry-After 仅含 ASCII 数字");
+                    assert!(retry_after.parse::<u64>().expect("Retry-After 为秒数") >= 1);
+                }
+                other => panic!("unexpected status {other}"),
+            }
+        }
+        assert!(not_found > 0, "burst 内的 miss 应正常处理（404）");
+        assert!(too_many > 0, "超出 burst 的 miss 应被 429 限流");
     }
 }

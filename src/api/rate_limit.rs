@@ -14,7 +14,9 @@
 #[cfg(feature = "server")]
 use axum::http::StatusCode;
 #[cfg(feature = "server")]
-use governor::{DefaultKeyedRateLimiter, Quota, RateLimiter};
+use axum::response::{IntoResponse, Response};
+#[cfg(feature = "server")]
+use governor::{clock::Clock, DefaultKeyedRateLimiter, Quota, RateLimiter};
 #[cfg(feature = "server")]
 use std::num::NonZeroU32;
 #[cfg(feature = "server")]
@@ -156,13 +158,25 @@ pub fn check_comment_limit(ip: &str) -> Result<(), String> {
 }
 
 #[cfg(feature = "server")]
-/// 检查图片访问请求是否超出限流阈值，返回 HTTP 状态码。
-pub fn check_image_limit(ip: &str) -> Result<(), StatusCode> {
+/// 检查图片访问请求是否超出限流阈值。
+///
+/// 超限时返回带 `Retry-After` 头的 429 响应：等待秒数取自 governor 的
+/// `NotUntil`（到下一个可用令牌的精确时长，向上取整、至少 1s），
+/// 客户端可据此安排重试而非盲等。
+pub fn check_image_limit(ip: &str) -> Result<(), Response> {
     ensure_limiter_gc();
     IMAGE_LIMITER
         .check_key(&ip.to_string())
         .map(|_| ())
-        .map_err(|_| StatusCode::TOO_MANY_REQUESTS)
+        .map_err(|not_until| {
+            let wait = not_until.wait_time_from(governor::clock::DefaultClock::default().now());
+            let secs = (wait.as_millis() as u64).div_ceil(1000).max(1);
+            (
+                StatusCode::TOO_MANY_REQUESTS,
+                [(axum::http::header::RETRY_AFTER, secs.to_string())],
+            )
+                .into_response()
+        })
 }
 
 #[cfg(feature = "server")]
