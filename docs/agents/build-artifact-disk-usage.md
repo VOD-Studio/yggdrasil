@@ -57,7 +57,7 @@ Cargo 默认 `dev` profile 是完整 debug info、增量编译开启。增量编
 
 ### sccache 的取舍
 
-sccache 是 rustc wrapper，可复用不同 workspace 的编译结果。官方本地后端默认上限为 10GB，可用 `SCCACHE_CACHE_SIZE` 限制，可用 `SCCACHE_DIR` 搬到单独磁盘。Rust 支持文档要求关闭 rustc incremental 才能缓存 Rust 编译；这意味着“sccache + `CARGO_INCREMENTAL=0`”适合一次性 `cargo check/test/clippy` 或跨项目复用，不应无条件套在 Dioxus 热开发路径上。
+sccache 是 rustc wrapper，可复用不同 workspace 的编译结果。官方本地后端默认上限为 10GB，可用 `SCCACHE_CACHE_SIZE` 限制，可用 `SCCACHE_DIR` 搬到单独磁盘。Rust 支持文档要求关闭 rustc incremental，并要求编译产生可缓存的 link 输出；因此“sccache + `CARGO_INCREMENTAL=0`”更适合实际 `cargo build` 等有 link 产物的工作流，不应无条件套在 Dioxus 热开发路径或把 `cargo check` 命中率当成保证。
 
 来源：
 
@@ -125,7 +125,7 @@ debug = 0
 CARGO_INCREMENTAL=0 cargo check --all-features
 ```
 
-不要把它放进 `make dev`：Dioxus dev 依赖增量/热 patch 的开发体验；且 sccache 的 Rust 缓存要求增量关闭，二者是取舍而不是同时免费获得。
+不要把它放进 `make dev`：Dioxus dev 依赖增量/热 patch 的开发体验；且 sccache 的 Rust 缓存要求增量关闭并需要 link 输出，二者是取舍而不是同时免费获得。
 
 ### 4. 给 sccache 设置硬上限
 
@@ -172,7 +172,7 @@ pnpm store prune
 
 1. 停止 `dx serve` 后清理，再运行 `make dev`，确认 fullstack 页面、SSR 与 server function 请求正常。
 2. 对 `debug = "line-tables-only"` 和依赖 `debug = 0` 分开测量 `target/debug`、`target/dx`、首次启动时间与二次热重载时间。
-3. 对直接 Cargo 命令分别比较默认增量与 `CARGO_INCREMENTAL=0` 的 `sccache --show-stats` 命中率；不要用单次冷构建时间推断长期收益。
+3. 对直接 Cargo 的实际编译命令分别比较默认增量与 `CARGO_INCREMENTAL=0` 的 `sccache --show-stats` 命中率；`cargo check` 可能只有 metadata、没有可缓存的 link 输出，不要用单次冷构建时间推断长期收益。
 4. 清理后再次运行：
 
 ```bash
