@@ -65,6 +65,11 @@ const CONFIG_SKELETON_SHAPES: &[(&str, &str)] = &[
     ("width: 160px;", "height: 104px;"), // 通用 JSON
     ("width: 140px;", "height: 56px;"),  // CLI 一行命令
 ];
+#[cfg(target_arch = "wasm32")]
+const BTN_COPIED_SM: &str =
+    "inline-flex items-center justify-center px-4 py-1.5 text-sm font-medium \
+     text-green-700 dark:text-green-300 bg-green-100 dark:bg-green-900/30 \
+     rounded-full transition-all cursor-default";
 
 /// 跨子组件共享的页面状态：刷新代际、一次性明文弹窗、配置用令牌、操作提示。
 ///
@@ -101,19 +106,64 @@ pub fn Mcp() -> Element {
         use_context_provider(|| state);
 
         rsx! {
-            div { class: "animate-page-enter w-full max-w-7xl mx-auto space-y-8",
-                div { class: "animate-row-enter", style: "animation-delay: 0ms",
-                    PageHeader {}
+            // 将弹窗放在进场动画容器之外，避免 transform 祖先改变 fixed 的定位参考系。
+            div { class: "w-full",
+                div { class: "animate-page-enter w-full max-w-7xl mx-auto space-y-8",
+                    div { class: "animate-row-enter", style: "animation-delay: 0ms",
+                        PageHeader {}
+                    }
+                    div { class: "animate-row-enter", style: "animation-delay: 60ms",
+                        TokenList {}
+                    }
+                    // FormSelect 面板为绝对定位；提高本区块层级，避免被后续 ConfigCard 覆盖。
+                    div { class: "animate-row-enter relative z-10", style: "animation-delay: 120ms",
+                        CreateTokenCard {}
+                    }
+                    div { class: "animate-row-enter", style: "animation-delay: 180ms",
+                        ConfigCard {}
+                    }
                 }
-                div { class: "animate-row-enter", style: "animation-delay: 60ms",
-                    TokenList {}
+
+                // 明文弹窗不放在 TokenList 的动画树内，确保 fixed 相对整个视口居中。
+                if let Some(plaintext) = (state.created_plaintext)() {
+                    PlaintextModal {
+                        title: "令牌已创建（请立即复制，可稍后重新查看）".to_string(),
+                        plaintext: plaintext.clone(),
+                        on_use_config: {
+                            let mut ct = state.config_token;
+                            let mut cp = state.created_plaintext;
+                            let mut toast = state.toast;
+                            move |_| {
+                                ct.set(Some(plaintext.clone()));
+                                cp.set(None);
+                                toast.set(Some(("已选为配置令牌".to_string(), false)));
+                            }
+                        },
+                        on_close: {
+                            let mut cp = state.created_plaintext;
+                            move |_| cp.set(None)
+                        },
+                    }
                 }
-                // FormSelect 面板为绝对定位；提高本区块层级，避免被后续 ConfigCard 覆盖。
-                div { class: "animate-row-enter relative z-10", style: "animation-delay: 120ms",
-                    CreateTokenCard {}
-                }
-                div { class: "animate-row-enter", style: "animation-delay: 180ms",
-                    ConfigCard {}
+                if let Some((_, plaintext)) = (state.revealed)() {
+                    PlaintextModal {
+                        title: "令牌明文".to_string(),
+                        plaintext: plaintext.clone(),
+                        on_use_config: {
+                            let mut ct = state.config_token;
+                            let mut rev = state.revealed;
+                            let mut toast = state.toast;
+                            move |_| {
+                                ct.set(Some(plaintext.clone()));
+                                rev.set(None);
+                                toast.set(Some(("已选为配置令牌".to_string(), false)));
+                            }
+                        },
+                        on_close: {
+                            let mut rev = state.revealed;
+                            move |_| rev.set(None)
+                        },
+                    }
                 }
             }
         }
@@ -165,7 +215,7 @@ fn Toast() -> Element {
     }
 }
 
-/// 令牌列表卡片 + 一次性明文弹窗 + 撤销/重查操作。
+/// 令牌列表卡片 + 撤销/重查操作。
 #[cfg(target_arch = "wasm32")]
 #[component]
 fn TokenList() -> Element {
@@ -192,9 +242,6 @@ fn TokenList() -> Element {
         }
     });
 
-    let mut created_plaintext = state.created_plaintext;
-    let mut revealed = state.revealed;
-
     rsx! {
         div { class: "{ADMIN_CARD_CLASS} p-8 flex flex-col gap-6",
             div { class: "flex items-center justify-between",
@@ -208,44 +255,6 @@ fn TokenList() -> Element {
                         state.reload_gen.set(g + 1);
                     },
                     "刷新"
-                }
-            }
-
-            // 一次性明文弹窗（签发后立即展示）
-            if let Some(plaintext) = created_plaintext() {
-                PlaintextModal {
-                    title: "令牌已创建（请立即复制，可稍后重新查看）".to_string(),
-                    plaintext: plaintext.clone(),
-                    on_use_config: {
-                        let mut ct = state.config_token;
-                        let mut cp = state.created_plaintext;
-                        let mut toast = state.toast;
-                        move |_| {
-                            ct.set(Some(plaintext.clone()));
-                            cp.set(None);
-                            toast.set(Some(("已选为配置令牌".to_string(), false)));
-                        }
-                    },
-                    on_close: move |_| created_plaintext.set(None),
-                }
-            }
-
-            // 重查明文弹窗
-            if let Some((_, plaintext)) = revealed() {
-                PlaintextModal {
-                    title: "令牌明文".to_string(),
-                    plaintext: plaintext.clone(),
-                    on_use_config: {
-                        let mut ct = state.config_token;
-                        let mut rev = state.revealed;
-                        let mut toast = state.toast;
-                        move |_| {
-                            ct.set(Some(plaintext.clone()));
-                            rev.set(None);
-                            toast.set(Some(("已选为配置令牌".to_string(), false)));
-                        }
-                    },
-                    on_close: move |_| revealed.set(None),
                 }
             }
 
@@ -685,9 +694,7 @@ fn ConfigSnippet(snippet: McpConfigSnippet) -> Element {
     // 点击「复制」时 Toast 落在视口之外，用户看不到。故按钮就地短暂变绿提示「已复制」。
     let copied_now = copied();
     let btn_class = if copied_now {
-        "inline-flex items-center justify-center px-4 py-1.5 text-sm font-medium \
-         text-green-700 dark:text-green-300 bg-green-100 dark:bg-green-900/30 \
-         rounded-full transition-all cursor-default"
+        BTN_COPIED_SM
     } else {
         BTN_PRIMARY_SM
     };
@@ -734,6 +741,14 @@ fn PlaintextModal(
     on_use_config: EventHandler<()>,
     on_close: EventHandler<()>,
 ) -> Element {
+    let mut copied = use_signal(|| false);
+    let copied_now = copied();
+    let btn_class = if copied_now {
+        BTN_COPIED_SM
+    } else {
+        BTN_PRIMARY_SM
+    };
+    let btn_label = if copied_now { "已复制" } else { "复制" };
     rsx! {
         div {
             class: "fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4",
@@ -749,14 +764,17 @@ fn PlaintextModal(
                 }
                 div { class: "flex flex-wrap gap-3 justify-end",
                     button {
-                        class: "{BTN_PRIMARY_SM}",
+                        class: "{btn_class}",
                         onclick: move |_| {
                             let p = plaintext.clone();
+                            copied.set(true);
                             spawn(async move {
                                 copy_clipboard_wasm(&p).await;
+                                crate::utils::time::sleep_ms(1500).await;
+                                copied.set(false);
                             });
                         },
-                        "复制"
+                        "{btn_label}"
                     }
                     button {
                         class: "{BTN_PRIMARY_SM}",
