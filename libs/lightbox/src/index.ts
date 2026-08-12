@@ -167,9 +167,9 @@ function openLightbox(originNode: HTMLElement, gallery: HTMLElement[], index: nu
   overlay.setAttribute('aria-modal', 'true');
   overlay.setAttribute('aria-label', '图片预览');
   overlay.setAttribute('tabindex', '-1');
-  // 创建后立即设 opacity 0：append 到 DOM 时是透明的，避免在图片加载期间
-  // （start() 执行前）显示全黑背景造成闪烁。start() 的渐变会把 opacity 升到 1。
-  overlay.style.opacity = '0';
+  // 遮罩必须在原图加载前可见：原图慢/失败时仍要让用户知道灯箱已打开，
+  // 而不是留下 opacity:0 的全屏层拦截页面交互。
+  overlay.style.opacity = '1';
 
   const img = document.createElement('img');
   img.className = 'lightbox-img';
@@ -178,6 +178,10 @@ function openLightbox(originNode: HTMLElement, gallery: HTMLElement[], index: nu
   // 可滚动区、触发非预期的 scroll 事件。start() 拿到 natural 尺寸后再设真实值。
   img.style.width = '0px';
   img.style.height = '0px';
+  // 原图请求失败时立即移除 overlay，否则它会保持透明并拦截整个页面。
+  img.addEventListener('error', (): void => {
+    if (state?.img === img) closeLightbox(true);
+  });
 
   const caption = document.createElement('figcaption');
   caption.className = 'lightbox-caption';

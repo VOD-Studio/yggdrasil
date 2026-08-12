@@ -161,6 +161,31 @@ describe('lightbox 黑盒行为', () => {
       const caption = document.querySelector('.lightbox-caption');
       expect(caption?.textContent).toBe('我的描述文字');
     });
+    it('素材页点击后原图尚未加载时也应立即显示灯箱', () => {
+      const img = makeGalleryImage('/uploads/asset.webp?thumb=300x300', '素材');
+      const root = mountRoot([img]);
+      root.classList.add('assets-lightbox');
+      window.__initLightbox('.assets-lightbox');
+
+      clickEl(img);
+
+      const overlay = getOverlay();
+      expect(overlay).not.toBeNull();
+      expect(overlay?.style.opacity).toBe('1');
+    });
+    it('素材原图加载失败时不应留下拦截页面的隐形 overlay', () => {
+      const img = makeGalleryImage('/uploads/missing.webp?thumb=300x300', '损坏素材');
+      const root = mountRoot([img]);
+      root.classList.add('assets-lightbox');
+      window.__initLightbox('.assets-lightbox');
+
+      clickEl(img);
+      const lightboxImg = getLightboxImg();
+      expect(lightboxImg).not.toBeNull();
+      lightboxImg?.dispatchEvent(new Event('error'));
+
+      expect(getOverlay()).toBeNull();
+    });
 
     it('单张图（lightbox-single）打开时 counter 隐藏', () => {
       const img = makeSingleImage('/cover.webp', '封面');
