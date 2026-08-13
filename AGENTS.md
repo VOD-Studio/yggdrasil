@@ -56,7 +56,7 @@ make css-watch     # with --watch
 # Lint (JS Biome + Rust clippy, no writes)
 make lint
 
-# Auto-fix (Biome -> cargo fix -> cargo fmt -> dx fmt)
+# Auto-fix (Biome -> cargo fix -> cargo fmt; 不含 dx fmt——见 Makefile 注释）
 make fix
 
 # Tests

@@ -234,8 +234,13 @@ lint:
 	@echo "==> Cargo fmt check (Rust)"
 	@cargo fmt -- --check
 # JS + Rust 自动修复（直接写入文件）。
-# 顺序：Biome → cargo fix（应用编译器建议，重写代码）→ cargo fmt（格式化 Rust）
-# → dx fmt（格式化 RSX 宏）。两道格式化收尾，保证最终文件状态整洁。
+# 顺序：Biome → cargo fix（应用编译器建议，重写代码）→ cargo fmt（格式化 Rust）。
+# 故意不含 dx fmt：dioxus-autofmt 0.7.10（dx 0.7.10）会改写 rsx! 事件闭包内
+# 的 Rust，插入重复行 / 悬空片段（如 `&web_file, ).ok();`）使代码无法编译
+# （DioxusLabs/dioxus#5682、#3007）。此前的注释搬运/删除问题已让 docker-fmt
+# 排除 dx fmt；现在它更进一步破坏编译，故从自动修复流水线移除。
+# lint / CI 均不校验 dx fmt 输出，移除无回归。需要 RSX 格式化时手动 `dx fmt`
+# 并务必 git diff 复核，必要时 checkout 被破坏的文件。
 fix:
 	@echo "==> Biome format (libs, 写入文件)"
 	@cd libs && pnpm exec biome format --write .
@@ -243,8 +248,6 @@ fix:
 	@cargo fix --allow-dirty
 	@echo "==> Cargo fmt (Rust, 格式化)"
 	@cargo fmt
-	@echo "==> Dioxus fmt (RSX 宏, 格式化)"
-	@dx fmt
 
 # 只编译当前 crate 的文档（--no-deps 跳过依赖，--document-private-items
 # 让纯 binary crate 的内部模块/私有项也进文档，否则页面基本是空的）。
@@ -384,12 +387,14 @@ docker-check:
 	@$(TOOLS_COMPOSE) run --rm tools cargo check --all-features
 
 # 格式化（写入文件，回流宿主）：cargo fmt + biome format。
-# 注意：不含 dx fmt——dx fmt 0.7.10 会搬运/删除 rsx 注释，仅按需手动跑 docker-fix。
+# 注意：不含 dx fmt——dx fmt 0.7.10（dioxus-autofmt）会改写 rsx! 闭包内的 Rust，
+# 插入重复行 / 悬空片段导致无法编译（DioxusLabs/dioxus#5682、#3007）。
+# 需要 RSX 格式化时手动 `dx fmt` 并 git diff 复核，必要时 checkout 被破坏的文件。
 docker-fmt:
 	@$(TOOLS_COMPOSE) run --rm tools bash -c 'cd libs && pnpm install --frozen-lockfile >/dev/null && pnpm exec biome format --write . && cd /build && cargo fmt'
 
-# fix（写入文件，回流宿主）：biome format + cargo fix + cargo fmt + dx fmt。
-# 警告：dx fmt 会重排 rsx 宏内注释——改完务必 git diff 复核，必要时 checkout 无关文件。
+# fix（写入文件，回流宿主）：biome format + cargo fix + cargo fmt。
+# 委托 make fix，同样不含 dx fmt（原因见上 / docker-fmt 注释）。
 docker-fix:
 	@$(TOOLS_COMPOSE) run --rm tools bash -c 'cd libs && pnpm install --frozen-lockfile >/dev/null && cd /build && make fix'
 
