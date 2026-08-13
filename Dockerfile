@@ -56,6 +56,7 @@ RUN apt-get update \
         libssl-dev \
         musl-tools \
         binaryen \
+        brotli \
         ca-certificates \
         curl \
         gnupg \
@@ -301,6 +302,20 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     rm -rf dist/public/doc && \
     cp -r target/doc dist/public/doc && \
     printf '<!DOCTYPE html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=yggdrasil/index.html"><title>Redirecting…</title></head><body><script>location.replace("yggdrasil/index.html")</script></body></html>' > dist/public/doc/index.html
+
+# Pre-compress all static text assets with brotli (.br sidecars). dx's
+# pre_compress only covers its hashed wasm/js bundle under assets/; but
+# dioxus-server registers ServeFile::precompressed_br() for every public leaf
+# — tower_http serves <file>.br on Accept-Encoding: br, falls back to raw
+# (open_file_with_fallback). So .br sidecars in the same directory are all
+# that's needed: no runtime code change. Text formats only; fonts/images are
+# already compressed and would not shrink. assets/*.wasm|js are harmlessly
+# re-compressed (brotli is deterministic, same q-11 as dx).
+RUN find /build/dist/public -type f \
+        \( -name '*.js' -o -name '*.css' -o -name '*.wasm' \
+           -o -name '*.svg' -o -name '*.html' -o -name '*.json' -o -name '*.xml' \) \
+        -not -name '*.br' \
+        -print0 | xargs -0 -r brotli -q 11 -kf
 
 # Build the server as a fully static musl binary, **natively for the buildx
 # platform leg**. Each leg builds only its own arch, so musl-gcc (which Debian

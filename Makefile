@@ -1,4 +1,5 @@
 .PHONY: dev build build-linux build-freebsd freebsd-sysroot docker docker-amd64 docker-apple docker-multiarch docker-dev docker-dev-down docker-dev-shell docker-run docker-lint docker-clippy docker-check docker-fmt docker-fix docker-test docker-tools-build docker-tools-clean css css-watch clean build-libs build-editor build-codemirror build-lightbox build-core build-xterm highlight-css katex-css test doc doc-open start lint fix restore-webp esbuild-cache wasm-bindgen-cache
+.PHONY: precompress
 
 # ── sccache × dx 兼容 ──────────────────────────────────────────
 # dx build / dx serve 构建时把自己设为 RUSTC_WORKSPACE_WRAPPER 拦截 workspace
@@ -17,6 +18,7 @@ build:
 	@$(MAKE) doc
 	@RUSTC_WRAPPER= dx build --release --debug-symbols=false
 	@$(MAKE) restore-webp
+	@$(MAKE) precompress
 
 build-linux:
 	@$(MAKE) build-libs
@@ -26,6 +28,7 @@ build-linux:
 	@RUSTC_WRAPPER= dx build @client --release --debug-symbols=false --wasm-js-cfg false
 	@RUSTC_WRAPPER= dx build @server --release --debug-symbols=false --target x86_64-unknown-linux-musl --wasm-js-cfg false --features server
 	@$(MAKE) restore-webp
+	@$(MAKE) precompress
 	@echo ""
 	@echo "Linux build complete! The server binary is at target/dx/yggdrasil/release/web/server"
 	@echo "Remember to deploy it alongside the target/dx/yggdrasil/release/web/public directory."
@@ -87,6 +90,17 @@ restore-webp:
 			fi; \
 		done; \
 	done
+
+# Pre-compress static text assets with brotli (.br sidecars). dioxus-server
+# registers ServeFile::precompressed_br() for every public leaf, so .br
+# sidecars are auto-served on Accept-Encoding: br. Text formats only; fonts/
+# images are already compressed. dx's pre_compress already covers assets/.
+precompress:
+	@find target/dx/yggdrasil/release/web/public -type f \
+		\( -name '*.js' -o -name '*.css' -o -name '*.wasm' \
+		   -o -name '*.svg' -o -name '*.html' -o -name '*.json' -o -name '*.xml' \) \
+		-not -name '*.br' \
+		-print0 | xargs -0 -r brotli -q 11 -kf
 
 # Pre-populate dx 的 esbuild 工具缓存（国内镜像加速）。
 # dx CLI 硬编码 esbuild 下载源为 registry.npmjs.org（packages/cli/src/esbuild.rs:62），
