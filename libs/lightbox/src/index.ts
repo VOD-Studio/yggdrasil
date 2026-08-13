@@ -757,6 +757,11 @@ function ensureNormalized(): void {
   if (!s || s.normalized) return;
   s.normalized = true;
   applyView(false);
+  // 强制 reflow：归一化基态（fit 布局盒 + matrix 字符串）必须在此提交绘制。
+  // 否则它与随后的 applyView(true) 合并在同一帧，180ms 过渡的起算值仍是飞行
+  // 动画遗留的 translate+scale 字符串 —— 首个缩放/旋转动画出现非均匀 scale
+  // 回弹与起始帧跳变（素材页正方形缩略图打开竖图时最明显）。
+  void s.img.offsetHeight;
 }
 
 // 缩放倍率徽标：操控时短暂显示，600ms 后淡出。

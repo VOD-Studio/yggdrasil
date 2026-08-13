@@ -490,6 +490,67 @@ describe('lightbox 黑盒行为', () => {
       expect(getOverlay()).not.toBeNull(); // 仍打开
     });
   });
+  describe('查看器操控首下动画（归一化提交）', () => {
+    /**
+     * 素材页场景回归：正方形缩略图打开竖图，飞入静止态是 translate+scale
+     * 非均匀缩放字符串。首个缩放/旋转若不在归一化后强制 reflow 提交基态，
+     * 180ms 过渡会从该字符串起算 —— 首下动画出现非均匀 scale 回弹/起始帧
+     * 跳变。契约：首次操控必须把「transition:none + matrix 基态」先经强制
+     * reflow（offsetHeight 读）提交绘制，再写 180ms 过渡。
+     */
+    const openAndSettle = (img: HTMLElement): HTMLImageElement => {
+      mountRoot([img]);
+      window.__initLightbox('.post-content');
+      clickEl(img);
+      const lbImg = getLightboxImg()!;
+      stubNatural(lbImg, 600, 800);
+      lbImg.dispatchEvent(new Event('load'));
+      vi.advanceTimersByTime(50); // 飞入动画完成
+      return lbImg;
+    };
+
+    /** 给灯箱图装 reflow 探针：记录 offsetHeight 读取次数与读取瞬间的样式。 */
+    const probeReflow = (lbImg: HTMLImageElement): { reads: number; transition: string | null; transform: string | null } => {
+      const probe = { reads: 0, transition: null as string | null, transform: null as string | null };
+      Object.defineProperty(lbImg, 'offsetHeight', {
+        configurable: true,
+        get: () => {
+          probe.reads += 1;
+          probe.transition = lbImg.style.transition;
+          probe.transform = lbImg.style.transform;
+          return 0;
+        },
+      });
+      return probe;
+    };
+
+    it('首次缩放：归一化基态先强制 reflow 提交（none + matrix），再写 180ms 过渡', () => {
+      const lbImg = openAndSettle(makeGalleryImage('/uploads/x.webp?w=800', '图'));
+      const probe = probeReflow(lbImg);
+
+      clickEl(document.querySelector('[aria-label="放大"]')!);
+
+      expect(probe.reads).toBeGreaterThanOrEqual(1); // 无 reflow → 首下动画从字符串起算（红）
+      expect(probe.transition).toBe('none');
+      expect(probe.transform).toContain('matrix(');
+      expect(lbImg.style.transition).toBe('transform 180ms ease-out');
+      expect(lbImg.style.transform).toContain('matrix(');
+    });
+
+    it('首次旋转：同样先提交归一化基态再启动过渡', () => {
+      const lbImg = openAndSettle(makeGalleryImage('/uploads/y.webp?w=800', '图'));
+      const probe = probeReflow(lbImg);
+
+      clickEl(document.querySelector('[aria-label="顺时针旋转 90 度"]')!);
+
+      expect(probe.reads).toBeGreaterThanOrEqual(1);
+      expect(probe.transition).toBe('none');
+      expect(probe.transform).toContain('matrix(');
+      expect(lbImg.style.transition).toBe('transform 180ms ease-out');
+      expect(lbImg.style.transform).toContain('matrix(');
+    });
+  });
+
   describe('外链图片 (HTMLImageElement) 点击放大与混合图集', () => {
     it('单独外链图片点击触发灯箱打开，完整保留 URL，关闭后焦点归还', () => {
       const extUrl = 'https://example.com/photo.jpg?token=xyz';
