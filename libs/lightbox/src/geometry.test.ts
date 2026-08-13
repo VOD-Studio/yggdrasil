@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   clampPanToViewport,
   clampScale,
+  closeFlightTransform,
   DOUBLE_CLICK_SCALE,
   effectiveDims,
   fitCentered,
@@ -89,6 +90,47 @@ describe('transformFor', () => {
     expect(t).toMatch(
       /^translate\(\d+(\.\d+)?px,\d+(\.\d+)?px\) scale\(\d+(\.\d+)?,\d+(\.\d+)?\)$/,
     );
+  });
+});
+
+describe('closeFlightTransform（关闭飞回目标，与 viewTransformCss 同构）', () => {
+  // 回归守卫：累计旋转 900° 后关闭，rotate 槽必须原样保留 900 ——
+  // 逐函数插值下旋转槽两端相等恒不动；若目标退化回 translate+scale
+  // 两函数串，浏览器会回退矩阵插值（900° ≡ 180°），关闭全程可见回 spin。
+  it('rotate 槽保持累计角不取模（900° 关闭不回 spin）', () => {
+    const rect: Rect = { x: 100, y: 500, w: 400, h: 200 };
+    const t = closeFlightTransform(rect, 920, 460, 900, 0.5);
+    expect(t).toContain('rotate(900deg)');
+  });
+
+  it('结构 = 定长 6 函数列表（与操控态逐函数插值的结构前提）', () => {
+    const rect: Rect = { x: 100, y: 500, w: 400, h: 200 };
+    const t = closeFlightTransform(rect, 920, 460, 450, 1);
+    expect(t).toMatch(
+      /^translate\([^)]*\) scale\([^)]*\) translate\([^)]*\) rotate\([^)]*\) scale\([^)]*\) translate\([^)]*\)$/,
+    );
+  });
+
+  it('外层把布局盒映射到缩略图 rect（scale = rect/layout，4 位小数）', () => {
+    const rect: Rect = { x: 100, y: 500, w: 400, h: 200 };
+    // 400/920 = 0.43478… → 0.4348；200/460 同值
+    const t = closeFlightTransform(rect, 920, 460, 0, 1);
+    expect(t).toBe(
+      'translate(100px, 500px) scale(0.4348, 0.4348) ' +
+        'translate(460px, 230px) rotate(0deg) scale(1) translate(-460px, -230px)',
+    );
+  });
+
+  it('支持非均匀缩放（缩略图与布局盒宽高比不同）', () => {
+    const rect: Rect = { x: 0, y: 0, w: 400, h: 230 };
+    const t = closeFlightTransform(rect, 920, 460, 90, 0.5);
+    expect(t).toContain('scale(0.4348, 0.5)');
+  });
+
+  it('layoutW=0 守卫：scale 为 1（不产生 NaN/Infinity）', () => {
+    const rect: Rect = { x: 0, y: 0, w: 0, h: 0 };
+    const t = closeFlightTransform(rect, 0, 0, 0, 1);
+    expect(t).toContain('scale(1, 1)');
   });
 });
 

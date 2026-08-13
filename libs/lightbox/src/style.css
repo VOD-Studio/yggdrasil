@@ -25,6 +25,10 @@
   max-width: none;
   max-height: none;
   opacity: 1;
+  /* 合成层提升：原图可达数千 px，无独立图层时 180/250ms transform 过渡
+     每帧都在主线程重栅格化整张位图（旋转/缩放肉眼掉帧）。will-change 让
+     过渡交给合成器做纹理变换。元素仅存在于灯箱会话期，图层内存有界。 */
+  will-change: transform;
   /* 指针手势由 JS 全权处理：禁止浏览器接管触摸滚动/捏合（fit 态竖直拖拽
      关闭、放大态拖拽平移、双指捏合缩放在 pointer 事件里自行消歧）。 */
   touch-action: none;

@@ -5,6 +5,7 @@ import {
   baseViewGeometry,
   clampPanToViewport,
   clampScale,
+  closeFlightTransform,
   DOUBLE_CLICK_SCALE,
   DRAG_CLOSE_PX,
   fitCentered,
@@ -563,14 +564,13 @@ function hideErrorState(): void {
 
 function closeLightbox(immediate: boolean): void {
   if (!state || state.closing) return;
-  state.closing = true;
+  const s = state;
+  // dragclose 的瞬时位移在 cleanupInteractions 清空前折进 user 平移，
+  // 让下面重写的规范首帧与当前视觉逐像素一致（飞行从拖拽位置起算）。
+  const dragDy = s.gesture?.mode === 'dragclose' ? s.gesture.dy : 0;
+  s.closing = true;
   cleanupInteractions();
 
-  const s = state;
-
-  // 基准 = originRect 尺寸（与打开时一致），scale 相对它缩放。
-  const baseW = s.baseW || (s.target ? s.target.w : 1);
-  const baseH = s.baseH || (s.target ? s.target.h : 1);
   const originRect = rectOf(s.originNode); // 实时读，处理期间滚动过的情况
 
   if (s.reduced || immediate) {
@@ -578,10 +578,40 @@ function closeLightbox(immediate: boolean): void {
     return;
   }
 
-  // 飞回 originRect：scale 从 1 缩到 originRect.w/baseW
-  s.img.style.transition = 'transform 250ms ease-out, opacity 250ms ease-out';
+  if (s.normalized) {
+    // 操控态（缩放/旋转/平移过）：当前 transform 是定长 6 函数列表，或
+    // dragclose 的 matrix() 串。飞回目标必须写成同构 6 函数列表
+    // （closeFlightTransform）：rotate/k 槽两端相等恒不动，只有外层
+    // translate/scale 插值 —— 累计旋转角再大，关闭时也不会反向空转。
+    // （旧实现目标是 transformFor 的 translate+scale 两函数串，函数列表
+    //   结构不匹配时浏览器回退矩阵插值：rotate(900°) ≡ 矩阵上的 180°，
+    //   关闭全程可见回 spin。）
+    const { k, layoutW, layoutH } = baseGeometry(s);
+    const user = panBy(s.view.user ?? matIdentity(), 0, dragDy);
+    // 先无过渡写回规范首帧并强制 reflow 提交（起算值必须是 6 函数列表，
+    // 否则 dragclose 的 matrix 起算值与目标列表不匹配，仍走矩阵插值）。
+    s.img.style.transition = 'none';
+    s.img.style.transform = viewTransformCss(
+      user,
+      s.view.deg,
+      k,
+      layoutW,
+      layoutH,
+      window.innerWidth,
+      window.innerHeight,
+    );
+    void s.img.offsetHeight;
+    s.img.style.transition = 'transform 250ms ease-out, opacity 250ms ease-out';
+    s.img.style.transform = closeFlightTransform(originRect, layoutW, layoutH, s.view.deg, k);
+  } else {
+    // 未操控：当前是 transformFor 的 translate+scale，同构插值直接飞回。
+    // 基准 = originRect 尺寸（与打开时一致），scale 相对它缩放。
+    const baseW = s.baseW || (s.target ? s.target.w : 1);
+    const baseH = s.baseH || (s.target ? s.target.h : 1);
+    s.img.style.transition = 'transform 250ms ease-out, opacity 250ms ease-out';
+    s.img.style.transform = transformFor(originRect, baseW, baseH);
+  }
   s.overlay.style.transition = 'opacity 250ms ease-out';
-  s.img.style.transform = transformFor(originRect, baseW, baseH);
   s.img.style.opacity = '0';
   s.overlay.style.opacity = '0';
 

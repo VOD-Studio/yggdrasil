@@ -614,6 +614,35 @@ describe('lightbox 黑盒行为', () => {
         /^translate\([^)]*\) scale\([^)]*\) translate\([^)]*\) rotate\([^)]*\) scale\([^)]*\) translate\([^)]*\)$/,
       );
     });
+
+    /**
+     * 回归：旋转多圈后关闭，飞回目标必须保留累计 rotate 槽（两端相等恒不动）。
+     * 旧实现目标是 transformFor 的 translate+scale 两函数串，与操控态 6 函数
+     * 列表结构不匹配 → 浏览器回退矩阵插值（450° ≡ 90°），关闭全程可见回 spin。
+     */
+    it('旋转多圈后关闭：飞回目标是同构列表且 rotate 槽不动（不回 spin）', () => {
+      const lbImg = openAndSettle(makeGalleryImage('/uploads/t.webp?w=800', '图'));
+      clickEl(rotateBtn());
+      clickEl(rotateBtn());
+      clickEl(rotateBtn());
+      clickEl(rotateBtn());
+      clickEl(rotateBtn());
+      expect(lbImg.style.transform).toContain('rotate(450deg)');
+
+      pressKey('Escape');
+
+      expect(lbImg.style.transition).toBe('transform 250ms ease-out, opacity 250ms ease-out');
+      // 目标仍是 6 函数同构列表，rotate 槽保持 450deg —— 逐函数插值时旋转恒不动
+      expect(lbImg.style.transform).toMatch(
+        /^translate\([^)]*\) scale\([^)]*\) translate\([^)]*\) rotate\(450deg\) scale\([^)]*\) translate\([^)]*\)$/,
+      );
+    });
+
+    it('未操控直接关闭：飞回目标仍是 transformFor 的 translate+scale（原路径）', () => {
+      const lbImg = openAndSettle(makeGalleryImage('/uploads/s.webp?w=800', '图'));
+      pressKey('Escape');
+      expect(lbImg.style.transform).toMatch(/^translate\([^)]*\) scale\([^)]*\)$/);
+    });
   });
 
   describe('外链图片 (HTMLImageElement) 点击放大与混合图集', () => {

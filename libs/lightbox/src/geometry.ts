@@ -223,6 +223,30 @@ export function viewTransformCss(
   );
 }
 
+// 关闭飞回目标：与 viewTransformCss 同构的定长 6 函数列表。
+// 外层 translate/scale 把布局盒映射到缩略图 rect（支持非均匀，对齐 transformFor）；
+// 内层 rotate(deg)/scale(k) 两端取值与当前操控态完全相等 —— 逐函数插值时
+// 旋转槽恒不动，累计角（如 900°）不会在关闭动画里反向空转。
+// 若目标仍用 transformFor 的 translate+scale 两函数串，函数列表结构不匹配，
+// 浏览器回退矩阵插值：rotate(900°) 在矩阵上 ≡ 180°，关闭全程可见回 spin。
+// 第 3 槽 translate 从「视口中心」插值到「布局盒中心」，旋转轴随图平滑滑向缩略图。
+export function closeFlightTransform(
+  rect: Rect,
+  layoutW: number,
+  layoutH: number,
+  deg: number,
+  k: number,
+): string {
+  const r = (v: number): number => Math.round(v * 1e4) / 1e4;
+  const sx = layoutW > 0 ? rect.w / layoutW : 1;
+  const sy = layoutH > 0 ? rect.h / layoutH : 1;
+  return (
+    `translate(${r(rect.x)}px, ${r(rect.y)}px) scale(${r(sx)}, ${r(sy)}) ` +
+    `translate(${r(layoutW / 2)}px, ${r(layoutH / 2)}px) rotate(${r(deg)}deg) scale(${r(k)}) ` +
+    `translate(${r(-layoutW / 2)}px, ${r(-layoutH / 2)}px)`
+  );
+}
+
 // 旋转后的有效视觉尺寸：90°/270° 时宽高互换（fit 计算用）。
 export function effectiveDims(
   naturalW: number,
