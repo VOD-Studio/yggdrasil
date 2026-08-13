@@ -65,11 +65,7 @@ pub fn EmptyState(
             }
             // 行动按钮：复用全站统一主操作按钮样式（BTN_PRIMARY）。
             if let Some(act) = action {
-                Link {
-                    class: "{BTN_PRIMARY} mt-8",
-                    to: act.to,
-                    "{act.label}"
-                }
+                Link { class: "{BTN_PRIMARY} mt-8", to: act.to, "{act.label}" }
             }
         }
     }

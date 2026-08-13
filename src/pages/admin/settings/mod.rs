@@ -179,14 +179,8 @@ pub fn SiteSettingsPage() -> Element {
             }
 
             // 操作提示条（各分区共享；grid-rows 高度过渡 + 淡入淡出，3 秒自动消失）
-            div {
-                class: if toast_state().is_some() { "ygg-toast is-open" } else { "ygg-toast" },
-                div {
-                    class: if display_err() {
-                        "ygg-toast-inner text-sm rounded-lg px-3 py-2 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300"
-                    } else {
-                        "ygg-toast-inner text-sm rounded-lg px-3 py-2 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300"
-                    },
+            div { class: if toast_state().is_some() { "ygg-toast is-open" } else { "ygg-toast" },
+                div { class: if display_err() { "ygg-toast-inner text-sm rounded-lg px-3 py-2 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300" } else { "ygg-toast-inner text-sm rounded-lg px-3 py-2 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300" },
                     "{display_msg()}"
                 }
             }
@@ -242,18 +236,40 @@ pub fn SiteSettingsPage() -> Element {
                         div {
                             key: "{section_key}",
                             class: "animate-section-enter",
-                            {match active() {
-                                SettingsSection::Security => rsx! { SecuritySection { toast } },
-                                SettingsSection::RateLimit => rsx! { RateLimitSection { toast } },
-                                SettingsSection::Site => rsx! { SiteSection { toast } },
-                                SettingsSection::Cache => rsx! { CacheSection { toast } },
-                                SettingsSection::Backup => rsx! { BackupSection { toast } },
-                                SettingsSection::Image => rsx! { ImageSection { toast } },
-                                SettingsSection::Runner => rsx! { RunnerSection { toast } },
-                                SettingsSection::Trash => rsx! { TrashSection { toast } },
-                                SettingsSection::Upload => rsx! { UploadSection { toast } },
-                                SettingsSection::System => rsx! { SystemSection {} },
-                            }}
+                            {
+                                match active() {
+                                    SettingsSection::Security => rsx! {
+                                        SecuritySection { toast }
+                                    },
+                                    SettingsSection::RateLimit => rsx! {
+                                        RateLimitSection { toast }
+                                    },
+                                    SettingsSection::Site => rsx! {
+                                        SiteSection { toast }
+                                    },
+                                    SettingsSection::Cache => rsx! {
+                                        CacheSection { toast }
+                                    },
+                                    SettingsSection::Backup => rsx! {
+                                        BackupSection { toast }
+                                    },
+                                    SettingsSection::Image => rsx! {
+                                        ImageSection { toast }
+                                    },
+                                    SettingsSection::Runner => rsx! {
+                                        RunnerSection { toast }
+                                    },
+                                    SettingsSection::Trash => rsx! {
+                                        TrashSection { toast }
+                                    },
+                                    SettingsSection::Upload => rsx! {
+                                        UploadSection { toast }
+                                    },
+                                    SettingsSection::System => rsx! {
+                                        SystemSection {}
+                                    },
+                                }
+                            }
                         }
                     }
                 }

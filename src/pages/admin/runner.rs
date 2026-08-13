@@ -88,7 +88,7 @@ pub fn Runner() -> Element {
                                         BTN_PRIMARY_SM
                                     } else {
                                         "px-4 py-1.5 text-sm font-medium rounded-full text-[var(--color-paper-secondary)] bg-[var(--color-paper-theme)] hover:bg-[var(--color-paper-border)] hover:text-[var(--color-paper-primary)] transition cursor-pointer"
-                                    }
+                                    },
                                 ),
                                 style: "animation-delay: {idx * 50}ms",
                                 onclick: {
@@ -138,9 +138,7 @@ pub fn Runner() -> Element {
             // 包一层 animate-section-enter div：随 remount 重挂载，每次切语言重播
             // 300ms 淡入位移（与设置页分区切换同款动画）。
             for lang_key in std::iter::once(lang().clone()) {
-                div {
-                    key: "{lang_key}",
-                    class: "animate-section-enter",
+                div { key: "{lang_key}", class: "animate-section-enter",
                     CodeRunner {
                         source: source(),
                         language: lang(),

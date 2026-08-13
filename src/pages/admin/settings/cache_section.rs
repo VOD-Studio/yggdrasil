@@ -57,12 +57,21 @@ pub fn CacheSection(toast: Callback<(String, bool)>) -> Element {
                 div { class: "{ADMIN_CARD_CLASS} p-6 md:p-8 flex flex-col gap-6",
                     div { class: "flex items-center gap-3",
                         span { class: "inline-flex items-center justify-center w-10 h-10 rounded-full bg-[var(--color-paper-theme)] text-[var(--color-paper-primary)] border border-[var(--color-paper-border)]",
-                            svg { class: "w-5 h-5", view_box: "0 0 24 24", fill: "none", stroke: "currentColor", stroke_width: "1.8", stroke_linecap: "round", stroke_linejoin: "round",
+                            svg {
+                                class: "w-5 h-5",
+                                view_box: "0 0 24 24",
+                                fill: "none",
+                                stroke: "currentColor",
+                                stroke_width: "1.8",
+                                stroke_linecap: "round",
+                                stroke_linejoin: "round",
                                 path { d: "M21 8v13H3V8 M1 3h22v5H1z M10 12h4" }
                             }
                         }
                         div {
-                            h2 { class: "text-xl font-bold text-[var(--color-paper-primary)]", "图片磁盘缓存" }
+                            h2 { class: "text-xl font-bold text-[var(--color-paper-primary)]",
+                                "图片磁盘缓存"
+                            }
                             p { class: "text-sm text-[var(--color-paper-secondary)] mt-0.5",
                                 "uploads/.cache/ 的容量与保留策略，清理任务每小时扫描一次。"
                             }
@@ -70,7 +79,10 @@ pub fn CacheSection(toast: Callback<(String, bool)>) -> Element {
                     }
 
                     div { class: "flex flex-col gap-2 max-w-xl",
-                        FormLabel { label: "最大容量（MB）", html_for: Some("cache-max-mb".to_string()) }
+                        FormLabel {
+                            label: "最大容量（MB）",
+                            html_for: Some("cache-max-mb".to_string()),
+                        }
                         input {
                             id: "cache-max-mb",
                             r#type: "number",
@@ -79,7 +91,9 @@ pub fn CacheSection(toast: Callback<(String, bool)>) -> Element {
                             value: "{mb_draft()}",
                             oninput: move |e: Event<FormData>| {
                                 let v = e.value();
-                                if let Ok(n) = v.parse::<u32>() { mb_draft.set(n); }
+                                if let Ok(n) = v.parse::<u32>() {
+                                    mb_draft.set(n);
+                                }
                                 just_saved.set(false);
                             },
                         }
@@ -89,7 +103,10 @@ pub fn CacheSection(toast: Callback<(String, bool)>) -> Element {
                     }
 
                     div { class: "flex flex-col gap-2 max-w-xl",
-                        FormLabel { label: "最大保留时长（小时）", html_for: Some("cache-max-age".to_string()) }
+                        FormLabel {
+                            label: "最大保留时长（小时）",
+                            html_for: Some("cache-max-age".to_string()),
+                        }
                         input {
                             id: "cache-max-age",
                             r#type: "number",
@@ -98,7 +115,9 @@ pub fn CacheSection(toast: Callback<(String, bool)>) -> Element {
                             value: "{hours_draft()}",
                             oninput: move |e: Event<FormData>| {
                                 let v = e.value();
-                                if let Ok(n) = v.parse::<u32>() { hours_draft.set(n); }
+                                if let Ok(n) = v.parse::<u32>() {
+                                    hours_draft.set(n);
+                                }
                                 just_saved.set(false);
                             },
                         }
@@ -110,13 +129,24 @@ pub fn CacheSection(toast: Callback<(String, bool)>) -> Element {
                     div { class: "flex items-center justify-between gap-4 pt-1",
                         if just_saved() {
                             span { class: "inline-flex items-center gap-1.5 text-xs text-[var(--color-paper-accent)]",
-                                svg { class: "w-3.5 h-3.5", view_box: "0 0 24 24", fill: "none", stroke: "currentColor", stroke_width: "2.5",
-                                    path { stroke_linecap: "round", stroke_linejoin: "round", d: "M5 13l4 4L19 7" }
+                                svg {
+                                    class: "w-3.5 h-3.5",
+                                    view_box: "0 0 24 24",
+                                    fill: "none",
+                                    stroke: "currentColor",
+                                    stroke_width: "2.5",
+                                    path {
+                                        stroke_linecap: "round",
+                                        stroke_linejoin: "round",
+                                        d: "M5 13l4 4L19 7",
+                                    }
                                 }
                                 "已保存"
                             }
                         } else if dirty() {
-                            span { class: "text-xs text-[var(--color-paper-secondary)]", "有未保存的更改" }
+                            span { class: "text-xs text-[var(--color-paper-secondary)]",
+                                "有未保存的更改"
+                            }
                         } else {
                             span { class: "text-xs text-transparent select-none", "·" }
                         }
@@ -150,6 +180,8 @@ pub fn CacheSection(toast: Callback<(String, bool)>) -> Element {
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
-        rsx! { div { class: "p-8 text-[var(--color-paper-secondary)]", "缓存配置（前端渲染）" } }
+        rsx! {
+            div { class: "p-8 text-[var(--color-paper-secondary)]", "缓存配置（前端渲染）" }
+        }
     }
 }

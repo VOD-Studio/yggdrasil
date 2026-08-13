@@ -59,13 +59,17 @@ pub fn FriendsAdmin() -> Element {
         rsx! {
             div { class: "w-full max-w-7xl mx-auto space-y-8",
                 div { class: "animate-page-enter",
-                    div { class: "animate-row-enter", style: "animation-delay: 0ms",
+                    div {
+                        class: "animate-row-enter",
+                        style: "animation-delay: 0ms",
                         PageHeader {}
                     }
                 }
                 Toast {}
                 EditorCard {}
-                div { class: "animate-row-enter", style: "animation-delay: 120ms",
+                div {
+                    class: "animate-row-enter",
+                    style: "animation-delay: 120ms",
                     LinkList {}
                 }
             }
@@ -169,7 +173,9 @@ fn EditorCard() -> Element {
 
     rsx! {
         div {
-            div { class: "{ADMIN_CARD_CLASS} p-8 flex flex-col gap-6 animate-row-enter", style: "animation-delay: 60ms",
+            div {
+                class: "{ADMIN_CARD_CLASS} p-8 flex flex-col gap-6 animate-row-enter",
+                style: "animation-delay: 60ms",
                 h2 { class: "text-xl font-bold text-[var(--color-paper-primary)]",
                     if editing_mode {
                         "编辑友链"
@@ -455,7 +461,8 @@ fn LinkRow(link: FriendLink, state: FriendsPageState, stagger_index: u32) -> Ele
     let mut anchor_y = use_signal(|| 0i32);
 
     rsx! {
-        div { class: "animate-row-enter flex items-center gap-4 py-4",
+        div {
+            class: "animate-row-enter flex items-center gap-4 py-4",
             style: "animation-delay: {stagger_index * 50}ms",
             div { class: "relative h-8 w-8 shrink-0 rounded-2xl bg-[var(--color-paper-code-bg)] flex items-center justify-center overflow-hidden",
                 span { class: "text-sm font-semibold text-[var(--color-paper-primary)] select-none",

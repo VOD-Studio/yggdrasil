@@ -487,7 +487,8 @@ fn write_editor(post_id: Option<i32>) -> Element {
                 // 透明背景(与左栏共用 paper-theme 底),靠 border-l 和分隔线划分区域。
                 div { class: "w-80 flex-shrink-0 min-h-0 overflow-y-auto border-l border-[var(--color-paper-border)] flex flex-col",
                     // Slug 节
-                    div { class: "animate-row-enter p-6 border-b border-[var(--color-paper-border)]",
+                    div {
+                        class: "animate-row-enter p-6 border-b border-[var(--color-paper-border)]",
                         style: "animation-delay: 60ms",
                         label { class: "block text-xs font-semibold uppercase tracking-wide text-[var(--color-paper-tertiary)] mb-3",
                             "链接"
@@ -500,7 +501,8 @@ fn write_editor(post_id: Option<i32>) -> Element {
                         }
                     }
                     // 标签节
-                    div { class: "animate-row-enter p-6 border-b border-[var(--color-paper-border)]",
+                    div {
+                        class: "animate-row-enter p-6 border-b border-[var(--color-paper-border)]",
                         style: "animation-delay: 120ms",
                         label { class: "block text-xs font-semibold uppercase tracking-wide text-[var(--color-paper-tertiary)] mb-3",
                             "标签"
@@ -513,7 +515,8 @@ fn write_editor(post_id: Option<i32>) -> Element {
                         }
                     }
                     // 摘要节
-                    div { class: "animate-row-enter p-6 border-b border-[var(--color-paper-border)]",
+                    div {
+                        class: "animate-row-enter p-6 border-b border-[var(--color-paper-border)]",
                         style: "animation-delay: 180ms",
                         label { class: "block text-xs font-semibold uppercase tracking-wide text-[var(--color-paper-tertiary)] mb-3",
                             "摘要"
@@ -527,7 +530,8 @@ fn write_editor(post_id: Option<i32>) -> Element {
                         }
                     }
                     // 封面图节
-                    div { class: "animate-row-enter p-6",
+                    div {
+                        class: "animate-row-enter p-6",
                         style: "animation-delay: 240ms",
                         label { class: "block text-xs font-semibold uppercase tracking-wide text-[var(--color-paper-tertiary)] mb-3",
                             "封面图"
@@ -749,46 +753,44 @@ fn CoverUploader(cover_image: Signal<String>, cover_uploading: Signal<bool>) -> 
                 // hover 工具栏：拖拽时隐藏（由拖拽替换高亮接管），避免两个覆盖层叠加。
                 // pointer-events-none 容器穿透点击到预览图触发灯箱，按钮设 pointer-events-auto。
                 if !cover_drag_active() {
-                div {
-                    class: "absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover/cover:opacity-100 transition-opacity flex items-center justify-center gap-1 py-2 pointer-events-none",
-                    // 更换：label 包裹隐藏 file input，点击触发文件选择。
-                    label {
-                        class: "pointer-events-auto px-3 py-1.5 rounded-full text-xs font-medium text-white/90 hover:bg-white/15 cursor-pointer transition-colors",
-                        "更换"
-                        input {
-                            r#type: "file",
-                            accept: "image/jpeg,image/png,image/gif,image/webp",
-                            class: "hidden",
-                            onchange: move |evt| {
-                                #[cfg(target_arch = "wasm32")]
-                                {
-                                    if let Some(file) = evt.files().into_iter().next() {
-                                        if let Some(web_file) = file.get_web_file() {
-                                            spawn_cover_upload(web_file);
+                    div { class: "absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover/cover:opacity-100 transition-opacity flex items-center justify-center gap-1 py-2 pointer-events-none",
+                        // 更换：label 包裹隐藏 file input，点击触发文件选择。
+                        label { class: "pointer-events-auto px-3 py-1.5 rounded-full text-xs font-medium text-white/90 hover:bg-white/15 cursor-pointer transition-colors",
+                            "更换"
+                            input {
+                                r#type: "file",
+                                accept: "image/jpeg,image/png,image/gif,image/webp",
+                                class: "hidden",
+                                onchange: move |evt| {
+                                    #[cfg(target_arch = "wasm32")]
+                                    {
+                                        if let Some(file) = evt.files().into_iter().next() {
+                                            if let Some(web_file) = file.get_web_file() {
+                                                spawn_cover_upload(web_file);
+                                            }
                                         }
                                     }
-                                }
+                                },
+                            }
+                        }
+                        // 从素材库选择。
+                        button {
+                            class: "pointer-events-auto px-3 py-1.5 rounded-full text-xs font-medium text-white/90 hover:bg-white/15 transition-colors cursor-pointer",
+                            onclick: move |_| picker_visible.set(true),
+                            "素材库"
+                        }
+                        // 移除封面。
+                        button {
+                            class: "pointer-events-auto px-3 py-1.5 rounded-full text-xs font-medium text-white/90 hover:bg-white/15 transition-colors cursor-pointer",
+                            onclick: move |_| {
+                                cover_image.set(String::new());
+                                cover_error.set(None);
+                                cover_url_mode.set(false);
+                                cover_url_input.set(String::new());
                             },
+                            "移除"
                         }
                     }
-                    // 从素材库选择。
-                    button {
-                        class: "pointer-events-auto px-3 py-1.5 rounded-full text-xs font-medium text-white/90 hover:bg-white/15 transition-colors cursor-pointer",
-                        onclick: move |_| picker_visible.set(true),
-                        "素材库"
-                    }
-                    // 移除封面。
-                    button {
-                        class: "pointer-events-auto px-3 py-1.5 rounded-full text-xs font-medium text-white/90 hover:bg-white/15 transition-colors cursor-pointer",
-                        onclick: move |_| {
-                            cover_image.set(String::new());
-                            cover_error.set(None);
-                            cover_url_mode.set(false);
-                            cover_url_input.set(String::new());
-                        },
-                        "移除"
-                    }
-                }
                 }
             }
 

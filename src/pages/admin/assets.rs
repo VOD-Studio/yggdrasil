@@ -223,14 +223,18 @@ pub fn Assets() -> Element {
         // 故本根节点可解析百分比最小高度——内容不足一页时撑满 main 内容盒，
         // 配合下方分页的 mt-auto wrapper 把分页条吸附到卡片底部。
         div { class: "animate-page-enter min-h-full flex flex-col",
-            h1 { class: "animate-row-enter text-3xl font-extrabold tracking-tight mb-2", "素材管理" }
-            p { class: "animate-row-enter text-sm text-[var(--color-paper-secondary)] mb-8",
+            h1 { class: "animate-row-enter text-3xl font-extrabold tracking-tight mb-2",
+                "素材管理"
+            }
+            p {
+                class: "animate-row-enter text-sm text-[var(--color-paper-secondary)] mb-8",
                 style: "animation-delay: 60ms",
                 "管理文章编辑器上传的图片。共 {all_count} 张，引用中 {used_count} 张，未引用 {orphan_count} 张。"
             }
 
             // 顶栏：筛选 tabs + 搜索 + 排序
-            div { class: "animate-row-enter flex flex-wrap items-end justify-between gap-4",
+            div {
+                class: "animate-row-enter flex flex-wrap items-end justify-between gap-4",
                 style: "animation-delay: 120ms",
                 FilterTabs {
                     items: vec![("all", "全部"), ("used", "引用中"), ("orphan", "未引用")],
@@ -510,13 +514,10 @@ pub fn Assets() -> Element {
                                         // （图集模式，原图 = data-src 去 query）。不加 lightbox-single。
                                         // data-error-text：缩略图重试耗尽仍失败（本地文件丢失等）时
                                         // 卡片占位与灯箱错误态显示的定制文案。
-                                        div { class: "blur-img !rounded-none aspect-square m-0 cursor-pointer bg-[var(--color-paper-theme)]",
+                                        div {
+                                            class: "blur-img !rounded-none aspect-square m-0 cursor-pointer bg-[var(--color-paper-theme)]",
                                             "data-error-text": "本地文件已丢失",
-                                            img {
-                                                class: "blur-img-placeholder",
-                                                src: "{placeholder}",
-                                                alt: "",
-                                            }
+                                            img { class: "blur-img-placeholder", src: "{placeholder}", alt: "" }
                                             img {
                                                 class: "blur-img-full",
                                                 "data-src": "{thumb}",
@@ -525,7 +526,7 @@ pub fn Assets() -> Element {
                                         }
                                         // 引用徽标
                                         span {
-                                            class: "absolute top-2 left-2 z-10 {MEDIA_BADGE_BASE} backdrop-blur-sm {badge_tone}",
+                                        class: "absolute top-2 left-2 z-10 {MEDIA_BADGE_BASE} backdrop-blur-sm {badge_tone}",
                                             if is_orphan {
                                                 "未引用"
                                             } else {

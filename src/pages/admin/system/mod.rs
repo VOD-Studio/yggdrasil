@@ -106,9 +106,7 @@ pub fn System() -> Element {
             // 不复用（DelayedSkeleton 的 visible 信号不残留），又让 animate-section-enter
             // 在每次切 tab 时重播。
             for tab_key in std::iter::once(active_tab().as_str()) {
-                div {
-                    key: "{tab_key}",
-                    class: "animate-section-enter",
+                div { key: "{tab_key}", class: "animate-section-enter",
                     match active_tab() {
                         SystemTab::DbStatus => rsx! {
                             DbStatusTab {}

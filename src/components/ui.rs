@@ -721,7 +721,9 @@ pub fn TagChip(
     rsx! {
         Link {
             class: "{class}",
-            to: Route::TagDetail { tag: label.clone() },
+            to: Route::TagDetail {
+                tag: label.clone(),
+            },
             onclick: move |evt: dioxus::events::MouseEvent| {
                 if stop_propagation {
                     evt.stop_propagation();

@@ -380,7 +380,8 @@ fn CommentRow(
     };
 
     rsx! {
-        tr { class: "animate-row-enter {ADMIN_ROW_HOVER}",
+        tr {
+            class: "animate-row-enter {ADMIN_ROW_HOVER}",
             style: "animation-delay: {stagger_index * 35}ms",
             td { class: "px-4 py-3",
                 Checkbox {

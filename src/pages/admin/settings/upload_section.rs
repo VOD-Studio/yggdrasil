@@ -50,14 +50,28 @@ pub fn UploadSection(toast: Callback<(String, bool)>) -> Element {
                 div { class: "{ADMIN_CARD_CLASS} p-6 md:p-8 flex flex-col gap-6",
                     div { class: "flex items-center gap-3",
                         span { class: "inline-flex items-center justify-center w-10 h-10 rounded-full bg-[var(--color-paper-theme)] text-[var(--color-paper-primary)] border border-[var(--color-paper-border)]",
-                            svg { class: "w-5 h-5", view_box: "0 0 24 24", fill: "none", stroke: "currentColor", stroke_width: "1.8", stroke_linecap: "round", stroke_linejoin: "round",
+                            svg {
+                                class: "w-5 h-5",
+                                view_box: "0 0 24 24",
+                                fill: "none",
+                                stroke: "currentColor",
+                                stroke_width: "1.8",
+                                stroke_linecap: "round",
+                                stroke_linejoin: "round",
                                 path { d: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" }
                                 polyline { points: "17 8 12 3 7 8" }
-                                line { x1: "12", y1: "3", x2: "12", y2: "15" }
+                                line {
+                                    x1: "12",
+                                    y1: "3",
+                                    x2: "12",
+                                    y2: "15",
+                                }
                             }
                         }
                         div {
-                            h2 { class: "text-xl font-bold text-[var(--color-paper-primary)]", "素材上传并发数" }
+                            h2 { class: "text-xl font-bold text-[var(--color-paper-primary)]",
+                                "素材上传并发数"
+                            }
                             p { class: "text-sm text-[var(--color-paper-secondary)] mt-0.5",
                                 "素材管理页上传弹窗同时发起的上传任务数，调高可加速批量上传。"
                             }
@@ -65,13 +79,22 @@ pub fn UploadSection(toast: Callback<(String, bool)>) -> Element {
                     }
 
                     div { class: "flex flex-col gap-2 max-w-xl",
-                        FormLabel { label: "并发数", html_for: Some("upload-concurrency".to_string()) }
+                        FormLabel {
+                            label: "并发数",
+                            html_for: Some("upload-concurrency".to_string()),
+                        }
                         FormSelect {
                             id: Some("upload-concurrency".to_string()),
                             value: draft(),
                             options: vec![
-                                (1, "1（顺序上传）"), (2, "2"), (3, "3（默认）"),
-                                (4, "4"), (5, "5"), (6, "6"), (7, "7"), (8, "8"),
+                                (1, "1（顺序上传）"),
+                                (2, "2"),
+                                (3, "3（默认）"),
+                                (4, "4"),
+                                (5, "5"),
+                                (6, "6"),
+                                (7, "7"),
+                                (8, "8"),
                             ],
                             onchange: move |v: i32| {
                                 draft.set(v);
@@ -86,13 +109,24 @@ pub fn UploadSection(toast: Callback<(String, bool)>) -> Element {
                     div { class: "flex items-center justify-between gap-4 pt-1",
                         if just_saved() {
                             span { class: "inline-flex items-center gap-1.5 text-xs text-[var(--color-paper-accent)]",
-                                svg { class: "w-3.5 h-3.5", view_box: "0 0 24 24", fill: "none", stroke: "currentColor", stroke_width: "2.5",
-                                    path { stroke_linecap: "round", stroke_linejoin: "round", d: "M5 13l4 4L19 7" }
+                                svg {
+                                    class: "w-3.5 h-3.5",
+                                    view_box: "0 0 24 24",
+                                    fill: "none",
+                                    stroke: "currentColor",
+                                    stroke_width: "2.5",
+                                    path {
+                                        stroke_linecap: "round",
+                                        stroke_linejoin: "round",
+                                        d: "M5 13l4 4L19 7",
+                                    }
                                 }
                                 "已保存"
                             }
                         } else if dirty() {
-                            span { class: "text-xs text-[var(--color-paper-secondary)]", "有未保存的更改" }
+                            span { class: "text-xs text-[var(--color-paper-secondary)]",
+                                "有未保存的更改"
+                            }
                         } else {
                             span { class: "text-xs text-transparent select-none", "·" }
                         }
@@ -124,6 +158,8 @@ pub fn UploadSection(toast: Callback<(String, bool)>) -> Element {
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
-        rsx! { div { class: "p-8 text-[var(--color-paper-secondary)]", "上传配置（前端渲染）" } }
+        rsx! {
+            div { class: "p-8 text-[var(--color-paper-secondary)]", "上传配置（前端渲染）" }
+        }
     }
 }

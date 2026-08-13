@@ -52,12 +52,21 @@ pub fn SecuritySection(toast: Callback<(String, bool)>) -> Element {
                 div { class: "{ADMIN_CARD_CLASS} p-6 md:p-8 flex flex-col gap-6",
                     div { class: "flex items-center gap-3",
                         span { class: "inline-flex items-center justify-center w-10 h-10 rounded-full bg-[var(--color-paper-theme)] text-[var(--color-paper-primary)] border border-[var(--color-paper-border)]",
-                            svg { class: "w-5 h-5", view_box: "0 0 24 24", fill: "none", stroke: "currentColor", stroke_width: "1.8", stroke_linecap: "round", stroke_linejoin: "round",
+                            svg {
+                                class: "w-5 h-5",
+                                view_box: "0 0 24 24",
+                                fill: "none",
+                                stroke: "currentColor",
+                                stroke_width: "1.8",
+                                stroke_linecap: "round",
+                                stroke_linejoin: "round",
                                 path { d: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" }
                             }
                         }
                         div {
-                            h2 { class: "text-xl font-bold text-[var(--color-paper-primary)]", "安全配置" }
+                            h2 { class: "text-xl font-bold text-[var(--color-paper-primary)]",
+                                "安全配置"
+                            }
                             p { class: "text-sm text-[var(--color-paper-secondary)] mt-0.5",
                                 "CSRF 可信来源、Cookie 安全、真实 IP 提取与会话管理。保存后即时生效。"
                             }
@@ -66,7 +75,10 @@ pub fn SecuritySection(toast: Callback<(String, bool)>) -> Element {
 
                     // CSRF 可信源
                     div { class: "flex flex-col gap-2 max-w-xl",
-                        FormLabel { label: "CSRF 可信来源 (APP_BASE_URL)", html_for: Some("sec-base-url".to_string()) }
+                        FormLabel {
+                            label: "CSRF 可信来源 (APP_BASE_URL)",
+                            html_for: Some("sec-base-url".to_string()),
+                        }
                         FormInput {
                             id: Some("sec-base-url".to_string()),
                             r#type: "url",
@@ -96,14 +108,21 @@ pub fn SecuritySection(toast: Callback<(String, bool)>) -> Element {
                             },
                         }
                         div { class: "flex flex-col",
-                            span { class: "text-sm font-medium text-[var(--color-paper-primary)]", "Cookie Secure 标志" }
-                            span { class: "text-xs text-[var(--color-paper-secondary)]", "启用后浏览器仅在 HTTPS 下发送会话 Cookie。HTTP 生产环境必开。" }
+                            span { class: "text-sm font-medium text-[var(--color-paper-primary)]",
+                                "Cookie Secure 标志"
+                            }
+                            span { class: "text-xs text-[var(--color-paper-secondary)]",
+                                "启用后浏览器仅在 HTTPS 下发送会话 Cookie。HTTP 生产环境必开。"
+                            }
                         }
                     }
 
                     // 代理层数
                     div { class: "flex flex-col gap-2 max-w-xl",
-                        FormLabel { label: "反向代理层数 (TRUSTED_PROXY_COUNT)", html_for: Some("sec-proxy".to_string()) }
+                        FormLabel {
+                            label: "反向代理层数 (TRUSTED_PROXY_COUNT)",
+                            html_for: Some("sec-proxy".to_string()),
+                        }
                         FormSelect {
                             id: Some("sec-proxy".to_string()),
                             value: draft().trusted_proxy_count as i32,
@@ -129,7 +148,10 @@ pub fn SecuritySection(toast: Callback<(String, bool)>) -> Element {
 
                     // 并发会话上限
                     div { class: "flex flex-col gap-2 max-w-xl",
-                        FormLabel { label: "单用户最大并发会话数", html_for: Some("sec-sessions".to_string()) }
+                        FormLabel {
+                            label: "单用户最大并发会话数",
+                            html_for: Some("sec-sessions".to_string()),
+                        }
                         FormSelect {
                             id: Some("sec-sessions".to_string()),
                             value: draft().max_sessions_per_user as i32,
@@ -157,13 +179,24 @@ pub fn SecuritySection(toast: Callback<(String, bool)>) -> Element {
                     div { class: "flex items-center justify-between gap-4 pt-1",
                         if just_saved() {
                             span { class: "inline-flex items-center gap-1.5 text-xs text-[var(--color-paper-accent)]",
-                                svg { class: "w-3.5 h-3.5", view_box: "0 0 24 24", fill: "none", stroke: "currentColor", stroke_width: "2.5",
-                                    path { stroke_linecap: "round", stroke_linejoin: "round", d: "M5 13l4 4L19 7" }
+                                svg {
+                                    class: "w-3.5 h-3.5",
+                                    view_box: "0 0 24 24",
+                                    fill: "none",
+                                    stroke: "currentColor",
+                                    stroke_width: "2.5",
+                                    path {
+                                        stroke_linecap: "round",
+                                        stroke_linejoin: "round",
+                                        d: "M5 13l4 4L19 7",
+                                    }
                                 }
                                 "已保存"
                             }
                         } else if dirty() {
-                            span { class: "text-xs text-[var(--color-paper-secondary)]", "有未保存的更改" }
+                            span { class: "text-xs text-[var(--color-paper-secondary)]",
+                                "有未保存的更改"
+                            }
                         } else {
                             span { class: "text-xs text-transparent select-none", "·" }
                         }
@@ -176,8 +209,13 @@ pub fn SecuritySection(toast: Callback<(String, bool)>) -> Element {
                                 saving.set(true);
                                 spawn(async move {
                                     match update_security_settings(
-                                        d.app_base_url, d.cookie_secure, d.trusted_proxy_count, d.max_sessions_per_user,
-                                    ).await {
+                                            d.app_base_url,
+                                            d.cookie_secure,
+                                            d.trusted_proxy_count,
+                                            d.max_sessions_per_user,
+                                        )
+                                        .await
+                                    {
                                         Ok(s) => {
                                             saved.set(s.clone());
                                             draft.set(s);
@@ -197,6 +235,8 @@ pub fn SecuritySection(toast: Callback<(String, bool)>) -> Element {
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
-        rsx! { div { class: "p-8 text-[var(--color-paper-secondary)]", "安全配置（前端渲染）" } }
+        rsx! {
+            div { class: "p-8 text-[var(--color-paper-secondary)]", "安全配置（前端渲染）" }
+        }
     }
 }

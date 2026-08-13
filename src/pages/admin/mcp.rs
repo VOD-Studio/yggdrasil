@@ -109,17 +109,25 @@ pub fn Mcp() -> Element {
             // 将弹窗放在进场动画容器之外，避免 transform 祖先改变 fixed 的定位参考系。
             div { class: "w-full",
                 div { class: "animate-page-enter w-full max-w-7xl mx-auto space-y-8",
-                    div { class: "animate-row-enter", style: "animation-delay: 0ms",
+                    div {
+                        class: "animate-row-enter",
+                        style: "animation-delay: 0ms",
                         PageHeader {}
                     }
-                    div { class: "animate-row-enter", style: "animation-delay: 60ms",
+                    div {
+                        class: "animate-row-enter",
+                        style: "animation-delay: 60ms",
                         TokenList {}
                     }
                     // FormSelect 面板为绝对定位；提高本区块层级，避免被后续 ConfigCard 覆盖。
-                    div { class: "animate-row-enter relative z-10", style: "animation-delay: 120ms",
+                    div {
+                        class: "animate-row-enter relative z-10",
+                        style: "animation-delay: 120ms",
                         CreateTokenCard {}
                     }
-                    div { class: "animate-row-enter", style: "animation-delay: 180ms",
+                    div {
+                        class: "animate-row-enter",
+                        style: "animation-delay: 180ms",
                         ConfigCard {}
                     }
                 }
@@ -404,7 +412,8 @@ fn TokenRow(token: McpTokenSummary, state: McpPageState, stagger_index: u32) -> 
     let reload_gen = state.reload_gen;
 
     rsx! {
-        tr { class: "animate-row-enter border-b border-[var(--color-paper-border)] last:border-b-0 hover:bg-[var(--color-paper-theme)]/30 transition-colors",
+        tr {
+            class: "animate-row-enter border-b border-[var(--color-paper-border)] last:border-b-0 hover:bg-[var(--color-paper-theme)]/30 transition-colors",
             style: "animation-delay: {stagger_index * 40}ms",
             td { class: "px-4 py-3 font-medium text-[var(--color-paper-primary)]",
                 "{token.name}"
