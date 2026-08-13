@@ -1,6 +1,27 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
-import { fitCentered, originalUrl, type Rect, transformFor } from './geometry';
+import {
+  clampPanToViewport,
+  clampScale,
+  DOUBLE_CLICK_SCALE,
+  effectiveDims,
+  fitCentered,
+  matApply,
+  matIdentity,
+  matMultiply,
+  matRotateDeg,
+  matToCss,
+  matTranslate,
+  nextRotationCW,
+  originalUrl,
+  panBy,
+  type Rect,
+  SCALE_MAX,
+  SCALE_MIN,
+  transformFor,
+  wheelZoomFactor,
+  zoomAround,
+} from './geometry';
 
 describe('fitCentered', () => {
   // 大图受 maxW=vw*0.92 / maxH=vh*0.88 约束,scale 取较小者
@@ -95,5 +116,114 @@ describe('originalUrl', () => {
 
   it('空串输入返回空串', () => {
     expect(originalUrl('')).toBe('');
+  });
+});
+
+describe('矩阵复合 matMultiply / matApply', () => {
+  it('恒等矩阵不改变点', () => {
+    const p = matApply(matIdentity(), 12, 34);
+    expect(p.x).toBe(12);
+    expect(p.y).toBe(34);
+  });
+
+  it('m∘n：先应用 n（T(10,0)·S(2) 把 (1,1) 映到 (12,2)）', () => {
+    const m = matMultiply(matTranslate(10, 0), { a: 2, b: 0, c: 0, d: 2, e: 0, f: 0 });
+    const p = matApply(m, 1, 1);
+    expect(p.x).toBe(12);
+    expect(p.y).toBe(2);
+  });
+
+  it('matRotateDeg(90) 吸附浮点噪声，x 轴正向顺时针转到 y 轴正向', () => {
+    const r = matRotateDeg(90);
+    expect(r.a).toBe(0);
+    expect(r.b).toBe(1);
+    expect(r.c).toBe(-1);
+    expect(r.d).toBe(0);
+    const p = matApply(r, 10, 0);
+    expect(p.x).toBe(0);
+    expect(p.y).toBe(10);
+  });
+
+  it('matToCss 输出 matrix() 且坐标保留 4 位小数', () => {
+    expect(matToCss(matIdentity())).toBe('matrix(1, 0, 0, 1, 0, 0)');
+    expect(matToCss(matTranslate(1.23456789, -2))).toBe('matrix(1, 0, 0, 1, 1.2346, -2)');
+  });
+});
+
+describe('缩放/旋转/平移手势数学', () => {
+  it('zoomAround 锚点不动：锚点下的像素缩放前后位置一致', () => {
+    const m = zoomAround(matIdentity(), 2, 100, 50);
+    const anchor = matApply(m, 100, 50);
+    expect(anchor.x).toBeCloseTo(100, 6);
+    expect(anchor.y).toBeCloseTo(50, 6);
+    // 原点被拉远：相对锚点翻倍
+    const origin = matApply(m, 0, 0);
+    expect(origin.x).toBeCloseTo(-100, 6);
+    expect(origin.y).toBeCloseTo(-50, 6);
+  });
+
+  it('panBy 在视觉空间附加位移', () => {
+    const p = matApply(panBy(matIdentity(), 7, -3), 10, 10);
+    expect(p.x).toBe(17);
+    expect(p.y).toBe(7);
+  });
+
+  it('clampScale 钳到 [SCALE_MIN, SCALE_MAX]', () => {
+    expect(clampScale(0.5)).toBe(SCALE_MIN);
+    expect(clampScale(99)).toBe(SCALE_MAX);
+    expect(clampScale(2)).toBe(2);
+    expect(DOUBLE_CLICK_SCALE).toBeGreaterThan(SCALE_MIN);
+    expect(DOUBLE_CLICK_SCALE).toBeLessThanOrEqual(SCALE_MAX);
+  });
+
+  it('nextRotationCW 90° 步进并回绕', () => {
+    expect(nextRotationCW(0)).toBe(90);
+    expect(nextRotationCW(270)).toBe(0);
+  });
+
+  it('effectiveDims 仅在 90°/270° 交换宽高', () => {
+    expect(effectiveDims(800, 600, 0)).toEqual({ w: 800, h: 600 });
+    expect(effectiveDims(800, 600, 180)).toEqual({ w: 800, h: 600 });
+    expect(effectiveDims(800, 600, 90)).toEqual({ w: 600, h: 800 });
+    expect(effectiveDims(800, 600, 270)).toEqual({ w: 600, h: 800 });
+  });
+
+  it('wheelZoomFactor：每 100px 行程 ×1.2，行模式折算 ×16，暴冲钳制', () => {
+    expect(wheelZoomFactor(-100, 0)).toBeCloseTo(1.2, 6);
+    expect(wheelZoomFactor(100, 0)).toBeCloseTo(1 / 1.2, 6);
+    expect(wheelZoomFactor(-10, 1)).toBeCloseTo(1.2 ** 1.6, 6);
+    expect(wheelZoomFactor(-100000, 0)).toBe(1.7);
+    expect(wheelZoomFactor(100000, 0)).toBe(0.6);
+  });
+});
+
+describe('clampPanToViewport 平移边界', () => {
+  // 视口 1000x1000，图 1000x500 → fit 920x460，居中于 (40,270)。
+  // M0（rot=0）= translate(40,270)，布局盒 920x460。
+  const vw = 1000;
+  const vh = 1000;
+  const fit = fitCentered(1000, 500, vw, vh);
+  const m0 = matTranslate(fit.x, fit.y);
+
+  it('fit 居中态无需修正（返回原矩阵）', () => {
+    const user = matIdentity();
+    expect(clampPanToViewport(user, m0, fit.w, fit.h, vw, vh)).toBe(user);
+  });
+
+  it('图小于视口的轴：任何平移都被拉回居中', () => {
+    const clamped = clampPanToViewport(matTranslate(30, -15), m0, fit.w, fit.h, vw, vh);
+    const p = matApply(matMultiply(clamped, m0), 0, 0);
+    expect(p.x).toBeCloseTo(fit.x, 6);
+    expect(p.y).toBeCloseTo(fit.y, 6);
+  });
+
+  it('放大后图宽超过视口：往右拖露出左黑边会被钳回图边贴视口边', () => {
+    // 放大 2 倍后视觉宽 1840 > 1000，静止左缘 -420；往右拖 500 后左缘 +80 → 钳回 0
+    const zoomed = zoomAround(matIdentity(), 2, vw / 2, vh / 2);
+    const dragged = panBy(zoomed, 500, 0);
+    const clamped = clampPanToViewport(dragged, m0, fit.w, fit.h, vw, vh);
+    const total = matMultiply(clamped, m0);
+    expect(matApply(total, 0, 0).x).toBeCloseTo(0, 6);
+    expect(matApply(total, fit.w, 0).x).toBeGreaterThanOrEqual(vw - 0.0001);
   });
 });

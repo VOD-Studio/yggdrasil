@@ -25,13 +25,25 @@
   max-width: none;
   max-height: none;
   opacity: 1;
+  /* 指针手势由 JS 全权处理：禁止浏览器接管触摸滚动/捏合（fit 态竖直拖拽
+     关闭、放大态拖拽平移、双指捏合缩放在 pointer 事件里自行消歧）。 */
+  touch-action: none;
+  user-select: none;
+  cursor: zoom-in;
+}
+.lightbox-img.is-zoomed {
+  cursor: grab;
+}
+.lightbox-img.is-zoomed:active {
+  cursor: grabbing;
 }
 
+/* caption 给底部工具栏 + 缩放徽标让位（工具栏约 60px 高 + 徽标区）。 */
 .lightbox-caption {
   position: fixed;
   left: 0;
   right: 0;
-  bottom: 2rem;
+  bottom: 7rem;
   text-align: center;
   color: rgba(255, 255, 255, 0.85);
   font-size: 0.95rem;
@@ -40,10 +52,11 @@
   z-index: 2;
 }
 
+/* counter 移到右上：底部居中工具栏在窄屏会盖住右下角落。 */
 .lightbox-counter {
   position: fixed;
   right: 1.5rem;
-  bottom: 1.5rem;
+  top: 1.5rem;
   color: rgba(255, 255, 255, 0.7);
   font-size: 0.85rem;
   z-index: 2;
@@ -107,4 +120,93 @@
 .lightbox-error .lightbox-error-hint {
   font-size: 0.8rem;
   color: rgba(255, 255, 255, 0.5);
+}
+
+/* ========== 查看器工具栏（毛玻璃胶囊） ==========
+   底部居中、拇指区可达；与站点浮动导航栏同一套毛玻璃语言。
+   空闲 2.5s 自动淡出（JS 加 .is-hidden），指针活动/悬停工具栏时保持可见。 */
+.lightbox-toolbar {
+  position: fixed;
+  left: 50%;
+  bottom: max(1.25rem, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 6px;
+  border-radius: 999px;
+  background: rgba(28, 28, 30, 0.55);
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.1),
+    0 8px 24px rgba(0, 0, 0, 0.35);
+  z-index: 3;
+  transition: opacity 250ms ease-out;
+}
+.lightbox-toolbar.is-hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* 48px 触控目标（2026 移动端可达性标准） */
+.lightbox-tool {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.85);
+  cursor: pointer;
+  transition:
+    background 150ms ease-out,
+    color 150ms ease-out;
+}
+.lightbox-tool:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+}
+.lightbox-tool:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.7);
+  outline-offset: 2px;
+}
+.lightbox-tool svg {
+  width: 24px;
+  height: 24px;
+}
+
+/* 缩放倍率徽标：操控时短暂浮现于工具栏上方，600ms 后淡出。 */
+.lightbox-zoom-badge {
+  position: fixed;
+  left: 50%;
+  bottom: calc(max(1.25rem, env(safe-area-inset-bottom)) + 4.25rem);
+  transform: translateX(-50%);
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(28, 28, 30, 0.55);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 300ms ease-out;
+  z-index: 3;
+}
+.lightbox-zoom-badge.is-visible {
+  opacity: 1;
+}
+
+/* 窄屏：caption 再压低一点、字号收紧，避免与工具栏/徽标叠字。 */
+@media (max-width: 640px) {
+  .lightbox-caption {
+    bottom: 6.5rem;
+    font-size: 0.875rem;
+    padding: 0 1rem;
+  }
 }

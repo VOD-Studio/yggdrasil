@@ -1,6 +1,43 @@
 import { prefersReducedMotion } from '@yggdrasil/shared';
-import { fitCentered, originalUrl, type Rect, transformFor } from './geometry';
+import {
+  BUTTON_ZOOM_STEP,
+  clampPanToViewport,
+  clampScale,
+  DOUBLE_CLICK_SCALE,
+  DRAG_CLOSE_PX,
+  effectiveDims,
+  fitCentered,
+  type Mat,
+  matIdentity,
+  matMultiply,
+  matRotateDeg,
+  matScale,
+  matToCss,
+  matTranslate,
+  nextRotationCW,
+  originalUrl,
+  panBy,
+  type Rect,
+  transformFor,
+  wheelZoomFactor,
+  zoomAround,
+} from './geometry';
 import './style.css';
+
+// 单指/双指手势状态机：pan（放大后拖拽平移）、pinch（双指捏合缩放）、
+// dragclose（fit 态竖直拖拽关闭，对齐旧「滚动关闭」的 120px 行程）。
+type GestureState =
+  | { mode: 'pan'; pointerId: number; startX: number; startY: number; startUser: Mat }
+  | {
+      mode: 'pinch';
+      idA: number;
+      idB: number;
+      startDist: number;
+      startMid: { x: number; y: number };
+      startScale: number;
+      startUser: Mat;
+    }
+  | { mode: 'dragclose'; pointerId: number; startY: number; dy: number };
 
 interface LightboxState {
   overlay: HTMLDivElement;
@@ -8,19 +45,31 @@ interface LightboxState {
   caption: HTMLElement;
   counter: HTMLDivElement;
   errorBox: HTMLDivElement;
+  toolbar: HTMLDivElement;
+  badge: HTMLDivElement;
+  downloadLink: HTMLAnchorElement;
   prevBtn: HTMLButtonElement | null;
   nextBtn: HTMLButtonElement | null;
   originNode: HTMLElement;
   gallery: HTMLElement[];
   index: number | null;
   isSingle: boolean;
-  openScrollY: number;
   origSrc: string;
   altText: string;
   closing: boolean;
   reduced: boolean;
-  scrollHandler: ((this: Window, ev: Event) => void) | null;
   keyHandler: ((this: Document, ev: KeyboardEvent) => void) | null;
+  resizeHandler: (() => void) | null;
+  // 查看器操控：rot 顺时针 0/90/180/270；scale 相对 fit 的倍率；user 矩阵
+  // 承载缩放锚点与平移，null = 恒等（飞行/图集切换路径仍写 transformFor
+  // 字符串，首次操控时才经 ensureNormalized 归一到矩阵基态）。
+  view: { rot: number; scale: number; user: Mat | null };
+  normalized: boolean;
+  pointers: Map<number, { x: number; y: number }>;
+  gesture: GestureState | null;
+  idleTimer: number | undefined;
+  badgeTimer: number | undefined;
+  toolbarHover: boolean;
   target?: Rect;
   baseW?: number;
   baseH?: number;
@@ -68,6 +117,21 @@ const DEFAULT_ERROR_TEXT = '图片加载失败';
 // 源档案：public/icons/broken_image_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg
 const ERROR_ICON_SVG =
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" fill="currentColor"><path d="M180-120q-24 0-42-18t-18-42v-600q0-24 18-42t42-18h600q24 0 42 18t18 42v600q0 24-18 42t-42 18H180Zm43-314 172-172 170 170 171-171 44 44v-217H180v303l43 43Zm-43 254h600v-298l-44-44-171 171-170-170-172 172-43-43v212Zm0 0v-298 60-362 600Z"/></svg>';
+
+// ---- 工具栏图标（Material Symbols，标准 960 视口，fill=currentColor）----
+// 源档案：public/icons/{zoom_in,zoom_out,rotate_90_degrees_cw,fit_screen,download,close}_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg
+const ZOOM_IN_ICON_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" fill="currentColor"><path d="M796-121 533-384q-30 26-69.96 40.5Q423.08-329 378-329q-108.16 0-183.08-75Q120-479 120-585t75-181q75-75 181.5-75t181 75Q632-691 632-584.85 632-542 618-502q-14 40-42 75l264 262-44 44ZM377-389q81.25 0 138.13-57.5Q572-504 572-585t-56.87-138.5Q458.25-781 377-781q-82.08 0-139.54 57.5Q180-666 180-585t57.46 138.5Q294.92-389 377-389Zm-31-85v-82h-82v-60h82v-81h60v81h81v60h-81v82h-60Z"/></svg>';
+const ZOOM_OUT_ICON_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" fill="currentColor"><path d="M796-121 533-384q-30 26-70 40.5T378-329q-108 0-183-75t-75-181q0-106 75-181t182-75q106 0 180.5 75T632-585q0 43-14 83t-42 75l264 262-44 44ZM377-389q81 0 138-57.5T572-585q0-81-57-138.5T377-781q-82 0-139.5 57.5T180-585q0 81 57.5 138.5T377-389ZM275-556v-60h201v60H275Z"/></svg>';
+const ROTATE_ICON_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" fill="currentColor"><path d="M436-80q-73 0-137.5-28.5t-113-77q-48.5-48.5-77-113T80-436q0-146 105-251t251-105h42l-84-84 44-44 158 158-158 158-44-44 84-84h-42q-122 0-209 87t-87 209q0 122 87 209t209 87q54 0 101-14t89-47l42 44q-47 40-108 58.5T436-80Zm262-140L476-442l222-222 222 222-222 222Zm0-82 136-136-136-136-136 136 136 136Zm0-136Z"/></svg>';
+const RESET_ICON_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" fill="currentColor"><path d="M820-610v-130H690v-60h130q24 0 42 18t18 42v130h-60Zm-740 0v-130q0-24 18-42t42-18h130v60H140v130H80Zm610 450v-60h130v-130h60v130q0 24-18 42t-42 18H690Zm-550 0q-24 0-42-18t-18-42v-130h60v130h130v60H140Zm60-120v-400h560v400H200Zm60-60h440v-280H260v280Zm0 0v-280 280Z"/></svg>';
+const DOWNLOAD_ICON_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" fill="currentColor"><path d="M480-313 287-506l43-43 120 120v-371h60v371l120-120 43 43-193 193ZM220-160q-24 0-42-18t-18-42v-143h60v143h520v-143h60v143q0 24-18 42t-42 18H220Z"/></svg>';
+const CLOSE_ICON_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" fill="currentColor"><path d="m256-200-56-56 224-224-224-224 56-56 224 224 224-224 56 56-224 224 224 224-56 56-224-224-224 224Z"/></svg>';
 
 // 标记容器加载失败：CSS 隐藏双层图、改显破图图标 + 文案；灯箱入口据此
 // 直接展示错误态，不再请求原图。
@@ -281,10 +345,77 @@ function openLightbox(originNode: HTMLElement, gallery: HTMLElement[], index: nu
     nextBtn.textContent = '\u203a';
   }
 
+  // ---- 查看器工具栏：毛玻璃胶囊（缩小/放大/旋转/重置/下载/关闭）----
+  const toolbar = document.createElement('div');
+  toolbar.className = 'lightbox-toolbar';
+  toolbar.setAttribute('role', 'toolbar');
+  toolbar.setAttribute('aria-label', '图片操作');
+
+  // 按钮点击 stopPropagation：不冒泡到 overlay 触发关闭
+  const makeTool = (aria: string, svg: string, onClick: () => void): HTMLButtonElement => {
+    const btn = document.createElement('button');
+    btn.className = 'lightbox-tool';
+    btn.setAttribute('type', 'button');
+    btn.setAttribute('aria-label', aria);
+    btn.innerHTML = svg;
+    btn.addEventListener('click', (ev: MouseEvent): void => {
+      ev.stopPropagation();
+      onClick();
+    });
+    return btn;
+  };
+  toolbar.appendChild(
+    makeTool('缩小', ZOOM_OUT_ICON_SVG, () => {
+      zoomBy(1 / BUTTON_ZOOM_STEP, window.innerWidth / 2, window.innerHeight / 2, true);
+    }),
+  );
+  toolbar.appendChild(
+    makeTool('放大', ZOOM_IN_ICON_SVG, () => {
+      zoomBy(BUTTON_ZOOM_STEP, window.innerWidth / 2, window.innerHeight / 2, true);
+    }),
+  );
+  toolbar.appendChild(makeTool('顺时针旋转 90 度', ROTATE_ICON_SVG, rotateCW));
+  toolbar.appendChild(makeTool('重置视图', RESET_ICON_SVG, () => resetView(true)));
+
+  const downloadLink = document.createElement('a');
+  downloadLink.className = 'lightbox-tool';
+  downloadLink.setAttribute('aria-label', '下载原图');
+  downloadLink.innerHTML = DOWNLOAD_ICON_SVG;
+  // 不 preventDefault：保留 download/新标签打开的默认行为；仅阻止冒泡关闭
+  downloadLink.addEventListener('click', (ev: MouseEvent): void => {
+    ev.stopPropagation();
+  });
+  toolbar.appendChild(downloadLink);
+
+  toolbar.appendChild(
+    makeTool('关闭', CLOSE_ICON_SVG, () => {
+      closeLightbox(false);
+    }),
+  );
+
+  // 缩放倍率徽标（操控时短暂显示）
+  const badge = document.createElement('div');
+  badge.className = 'lightbox-zoom-badge';
+  badge.setAttribute('aria-hidden', 'true');
+
+  // 悬停工具栏时不自动隐藏
+  toolbar.addEventListener('pointerenter', (): void => {
+    if (!state) return;
+    state.toolbarHover = true;
+    pokeToolbar();
+  });
+  toolbar.addEventListener('pointerleave', (): void => {
+    if (!state) return;
+    state.toolbarHover = false;
+    pokeToolbar();
+  });
+
   overlay.appendChild(img);
   overlay.appendChild(caption);
   overlay.appendChild(counter);
   overlay.appendChild(errorBox);
+  overlay.appendChild(toolbar);
+  overlay.appendChild(badge);
   if (prevBtn) overlay.appendChild(prevBtn);
   if (nextBtn) overlay.appendChild(nextBtn);
   document.body.appendChild(overlay);
@@ -304,20 +435,31 @@ function openLightbox(originNode: HTMLElement, gallery: HTMLElement[], index: nu
     caption,
     counter,
     errorBox,
+    toolbar,
+    badge,
+    downloadLink,
     prevBtn,
     nextBtn,
     originNode,
     gallery,
     index,
     isSingle,
-    openScrollY: window.scrollY,
     origSrc,
     altText,
     closing: false,
     reduced: prefersReducedMotion(),
-    scrollHandler: null,
     keyHandler: null,
+    resizeHandler: null,
+    view: { rot: 0, scale: 1, user: null },
+    normalized: false,
+    pointers: new Map(),
+    gesture: null,
+    idleTimer: undefined,
+    badgeTimer: undefined,
+    toolbarHover: false,
   };
+  updateDownloadLink();
+  pokeToolbar();
 
   // 焦点移入灯箱
   overlay.focus();
@@ -404,6 +546,9 @@ function showErrorState(message: string): void {
   const text = state.errorBox.querySelector('.lightbox-error-text');
   if (text) text.textContent = message;
   state.errorBox.style.display = '';
+  // 错误态下图不可见，操控无意义：藏起工具栏与徽标
+  state.toolbar.style.display = 'none';
+  state.badge.classList.remove('is-visible');
 }
 
 // 从错误态恢复（图集切回可加载的图）：显示图、隐藏错误提示。
@@ -411,6 +556,7 @@ function hideErrorState(): void {
   if (!state) return;
   state.errorBox.style.display = 'none';
   state.img.style.display = '';
+  state.toolbar.style.display = '';
 }
 
 function closeLightbox(immediate: boolean): void {
@@ -538,12 +684,159 @@ function gotoIndex(rawIndex: number): void {
     s.caption.textContent = altText;
     s.caption.style.display = altText ? '' : 'none';
     s.counter.textContent = `${newIndex + 1} / ${s.gallery.length}`;
-    // 更新 originNode 为新图，使后续关闭/滚动关闭飞回新图位置
+    // 更新 originNode 为新图，使后续关闭/拖拽关闭飞回新图位置
     s.originNode = newNode;
     s.index = newIndex;
-    s.openScrollY = window.scrollY; // 重置滚动关闭基线
+    // 换图归零查看器操控（旋转/缩放/平移不带到下一张）；applyGeometry 已把
+    // 布局盒设为新 target 尺寸，normalized 回退到 transformFor 路径。
+    s.view = { rot: 0, scale: 1, user: null };
+    s.normalized = false;
+    s.img.classList.remove('is-zoomed');
+    updateDownloadLink();
   };
   setTimeout(swap, 150);
+}
+
+// ============ 查看器操控（缩放/旋转/平移/下载） ============
+
+// 错误态（图隐藏）下操控无意义。
+function isErrorShown(s: LightboxState): boolean {
+  return s.errorBox.style.display !== 'none';
+}
+
+// 基态矩阵 M0：布局盒 →「旋转 rot 后 fitCentered 居中」的视觉位置。
+// 布局盒尺寸按旋转后的有效 fit 反推（90°/270° 宽高互换），位图宽高比不变。
+function baseGeometry(s: LightboxState): { m0: Mat; layoutW: number; layoutH: number; fit: Rect } {
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const natW = s.img.naturalWidth || 1;
+  const natH = s.img.naturalHeight || 1;
+  const eff = effectiveDims(natW, natH, s.view.rot);
+  const fit = fitCentered(eff.w, eff.h, vw, vh);
+  const layoutW = s.view.rot % 180 === 0 ? fit.w : fit.h;
+  const layoutH = s.view.rot % 180 === 0 ? fit.h : fit.w;
+  const m0 = matMultiply(
+    matTranslate(vw / 2, vh / 2),
+    matMultiply(matRotateDeg(s.view.rot), matTranslate(-layoutW / 2, -layoutH / 2)),
+  );
+  return { m0, layoutW, layoutH, fit };
+}
+
+// 把 view 写到 DOM。animate=true 走 180ms ease-out（按钮/旋转/重置/回弹）；
+// false 直出（滚轮/拖拽/捏合需 <200ms 响应）。每次写入都重算 fit 并钳制平移。
+function applyView(animate: boolean): void {
+  const s = state;
+  if (!s) return;
+  const { m0, layoutW, layoutH, fit } = baseGeometry(s);
+  const wPx = `${layoutW}px`;
+  const hPx = `${layoutH}px`;
+  if (s.img.style.width !== wPx) s.img.style.width = wPx;
+  if (s.img.style.height !== hPx) s.img.style.height = hPx;
+  const user = clampPanToViewport(
+    s.view.user ?? matIdentity(),
+    m0,
+    layoutW,
+    layoutH,
+    window.innerWidth,
+    window.innerHeight,
+  );
+  s.view.user = user;
+  s.img.style.transition = animate && !s.reduced ? 'transform 180ms ease-out' : 'none';
+  s.img.style.transform = matToCss(matMultiply(user, m0));
+  // 关闭飞回/图集切换的基准同步：baseW/H 恒为当前布局盒尺寸
+  s.target = fit;
+  s.baseW = layoutW;
+  s.baseH = layoutH;
+  s.img.classList.toggle('is-zoomed', s.view.scale > 1);
+}
+
+// 首次操控前把布局盒从「飞行基准」（originRect 尺寸 + 非均匀 scale）归一到
+// 「fit 尺寸 + scale(1)」的矩阵基态——两者视觉完全一致，跳变不可见。
+function ensureNormalized(): void {
+  const s = state;
+  if (!s || s.normalized) return;
+  s.normalized = true;
+  applyView(false);
+}
+
+// 缩放倍率徽标：操控时短暂显示，600ms 后淡出。
+function showBadge(): void {
+  const s = state;
+  if (!s) return;
+  s.badge.textContent = `${Math.round(s.view.scale * 100)}%`;
+  s.badge.classList.add('is-visible');
+  clearTimeout(s.badgeTimer);
+  s.badgeTimer = setTimeout((): void => {
+    state?.badge.classList.remove('is-visible');
+  }, 600);
+}
+
+// 工具栏空闲自动隐藏：任何指针活动唤醒，2.5s 无活动且不在工具栏上/手势中则淡出。
+function pokeToolbar(): void {
+  const s = state;
+  if (!s) return;
+  s.toolbar.classList.remove('is-hidden');
+  clearTimeout(s.idleTimer);
+  s.idleTimer = setTimeout((): void => {
+    if (!state || state.toolbarHover || state.gesture) return;
+    state.toolbar.classList.add('is-hidden');
+  }, 2500);
+}
+
+function zoomBy(k: number, px: number, py: number, animate: boolean): void {
+  const s = state;
+  if (!s?.target || isErrorShown(s)) return;
+  const next = clampScale(s.view.scale * k);
+  if (next === s.view.scale) return; // 已到顶/到底
+  ensureNormalized();
+  s.view.user = zoomAround(s.view.user ?? matIdentity(), next / s.view.scale, px, py);
+  s.view.scale = next;
+  applyView(animate);
+  showBadge();
+  pokeToolbar();
+}
+
+function rotateCW(): void {
+  const s = state;
+  if (!s?.target || isErrorShown(s)) return;
+  ensureNormalized();
+  s.view.rot = nextRotationCW(s.view.rot);
+  // 旋转后保持倍率、绕视口中心重锚定、平移清零（避免旋转把图甩出视口）
+  s.view.user = zoomAround(
+    matIdentity(),
+    s.view.scale,
+    window.innerWidth / 2,
+    window.innerHeight / 2,
+  );
+  applyView(true);
+  pokeToolbar();
+}
+
+function resetView(animate: boolean): void {
+  const s = state;
+  if (!s?.target || isErrorShown(s)) return;
+  ensureNormalized();
+  s.view = { rot: 0, scale: 1, user: null };
+  applyView(animate);
+  showBadge();
+  pokeToolbar();
+}
+
+// 下载链接跟随当前图：同源 /uploads 用 download 属性存原图；
+// 外链 download 跨域无效，改新标签页打开。
+function updateDownloadLink(): void {
+  const s = state;
+  if (!s) return;
+  s.downloadLink.setAttribute('href', s.origSrc);
+  if (s.origSrc.startsWith('/')) {
+    s.downloadLink.setAttribute('download', s.origSrc.split('/').pop() ?? '');
+    s.downloadLink.removeAttribute('target');
+    s.downloadLink.removeAttribute('rel');
+  } else {
+    s.downloadLink.removeAttribute('download');
+    s.downloadLink.setAttribute('target', '_blank');
+    s.downloadLink.setAttribute('rel', 'noopener');
+  }
 }
 
 // ============ 交互绑定 ============
@@ -557,60 +850,108 @@ function bindInteractions(): void {
     if (state && ev.target === state.overlay) closeLightbox(false);
   });
 
-  // 滚动驱动关闭：任何 scroll 都触发，用 scrollY 偏移算进度。
-  // 关键：逐帧读 originNode 实时 rect，文章滚多少图就回多少。
-  s.scrollHandler = (): void => {
-    if (!state) return;
-    const st = state;
-    if (st.closing) return;
-    const dy = Math.abs(window.scrollY - st.openScrollY);
-    if (st.reduced) {
-      // reduced-motion：立即关
-      closeLightbox(true);
-      return;
-    }
-    const target = st.target;
-    const baseW = st.baseW || (target ? target.w : 1);
-    const baseH = st.baseH || (target ? target.h : 1);
-    const originRect = rectOf(st.originNode);
-    if (!target) return; // 无 target 时不插值（忠实原 JS 的兜底语义）
-    // 在 originRect 与居中 target 之间按 progress 线性插值
-    const progress = Math.min(dy / 120, 1);
-    const cur: Rect = {
-      x: target.x + (originRect.x - target.x) * progress,
-      y: target.y + (originRect.y - target.y) * progress,
-      w: target.w + (originRect.w - target.w) * progress,
-      h: target.h + (originRect.h - target.h) * progress,
-    };
-    st.img.style.transition = 'none';
-    st.img.style.transform = transformFor(cur, baseW, baseH);
-    st.img.style.opacity = String(1 - progress);
-    st.overlay.style.opacity = String(1 - progress);
-    if (progress >= 1) {
-      // 已飞回原位：文章停在当前滚动位置，移除灯箱
-      st.closing = true;
-      cleanupInteractions();
-      removeOverlay();
-    }
-  };
-  window.addEventListener('scroll', s.scrollHandler, { passive: true });
+  // 阻断触屏滚动串联到 body（旧「滚动关闭」已由 img 竖直拖拽手势取代；
+  // 固定遮罩下背景滚动只会不可见地挪动页面）。
+  s.overlay.addEventListener(
+    'touchmove',
+    (ev: TouchEvent): void => {
+      ev.preventDefault();
+    },
+    { passive: false },
+  );
 
-  // 键盘：Esc 关；图集模式 ←→ 切换
+  // 滚轮缩放（桌面）：preventDefault 阻断页面滚动，缩放锚定光标。
+  // 工具栏上滚轮不缩放（防误触）。
+  s.overlay.addEventListener(
+    'wheel',
+    (ev: WheelEvent): void => {
+      if (!state) return;
+      ev.preventDefault();
+      if (ev.target instanceof Element && ev.target.closest('.lightbox-toolbar')) return;
+      zoomBy(wheelZoomFactor(ev.deltaY, ev.deltaMode), ev.clientX, ev.clientY, false);
+    },
+    { passive: false },
+  );
+
+  // 双击：fit ↔ 2.5× 切换，锚定点击点
+  s.img.addEventListener('dblclick', (ev: MouseEvent): void => {
+    if (!state?.target || isErrorShown(state)) return;
+    ev.preventDefault();
+    const goal = state.view.scale > 1 ? 1 : DOUBLE_CLICK_SCALE;
+    zoomBy(goal / state.view.scale, ev.clientX, ev.clientY, true);
+  });
+
+  // 键盘：Esc 关；图集 ←→ 切换；+/- 缩放；R 旋转；0 重置
   s.keyHandler = (ev: KeyboardEvent): void => {
     if (!state) return;
     if (ev.key === 'Escape') {
       closeLightbox(false);
-    } else if (!state.isSingle && state.gallery.length > 1) {
+      return;
+    }
+    if (!state.isSingle && state.gallery.length > 1) {
       if (ev.key === 'ArrowLeft') {
         ev.preventDefault();
         gotoIndex((state.index ?? 0) - 1);
-      } else if (ev.key === 'ArrowRight') {
+        return;
+      }
+      if (ev.key === 'ArrowRight') {
         ev.preventDefault();
         gotoIndex((state.index ?? 0) + 1);
+        return;
       }
+    }
+    const cx = window.innerWidth / 2;
+    const cy = window.innerHeight / 2;
+    if (ev.key === '+' || ev.key === '=') {
+      ev.preventDefault();
+      zoomBy(BUTTON_ZOOM_STEP, cx, cy, true);
+    } else if (ev.key === '-' || ev.key === '_') {
+      ev.preventDefault();
+      zoomBy(1 / BUTTON_ZOOM_STEP, cx, cy, true);
+    } else if (ev.key === 'r' || ev.key === 'R') {
+      ev.preventDefault();
+      rotateCW();
+    } else if (ev.key === '0') {
+      ev.preventDefault();
+      resetView(true);
     }
   };
   document.addEventListener('keydown', s.keyHandler);
+
+  // 视口尺寸变化：重算 fit。已操控态保持 rot/scale 由 applyView 重锚定；
+  // 未操控态（transformFor 路径）按原逻辑重算居中目标。
+  s.resizeHandler = (): void => {
+    const st = state;
+    if (!st?.target || st.closing) return;
+    if (st.normalized) {
+      applyView(false);
+      return;
+    }
+    const natW = st.img.naturalWidth || 1;
+    const natH = st.img.naturalHeight || 1;
+    const target = fitCentered(natW, natH, window.innerWidth, window.innerHeight);
+    st.target = target;
+    st.img.style.transition = 'none';
+    st.img.style.transform = transformFor(target, st.baseW ?? target.w, st.baseH ?? target.h);
+  };
+  window.addEventListener('resize', s.resizeHandler);
+
+  // ---- 指针手势（鼠标/触控统一 Pointer Events；img CSS 为 touch-action:none）----
+  s.img.addEventListener('dragstart', (ev: Event): void => {
+    ev.preventDefault();
+  });
+  s.img.addEventListener('pointerdown', onPointerDown);
+  s.img.addEventListener('pointermove', onPointerMove);
+  s.img.addEventListener('pointerup', onPointerUp);
+  s.img.addEventListener('pointercancel', onPointerUp);
+
+  // 工具栏空闲自动隐藏：overlay 上任何指针活动唤醒
+  s.overlay.addEventListener('pointermove', (): void => {
+    pokeToolbar();
+  });
+  s.overlay.addEventListener('pointerdown', (): void => {
+    pokeToolbar();
+  });
 
   // 图集导航箭头点击（stopPropagation 防止冒泡到 overlay 触发关闭）
   s.prevBtn?.addEventListener('click', (ev: MouseEvent): void => {
@@ -623,16 +964,149 @@ function bindInteractions(): void {
   });
 }
 
+// ---- 指针手势处理 ----
+
+function onPointerDown(ev: PointerEvent): void {
+  const s = state;
+  if (!s?.target || isErrorShown(s)) return;
+  if (ev.pointerType === 'mouse' && ev.button !== 0) return; // 仅主键
+  s.img.setPointerCapture(ev.pointerId);
+  s.pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+  pokeToolbar();
+
+  if (s.pointers.size === 2) {
+    // 第二指落下 → 捏合：以当前 user/scale 为起点，单指手势无缝接管
+    const [idA, idB] = [...s.pointers.keys()];
+    const p1 = s.pointers.get(idA) ?? { x: ev.clientX, y: ev.clientY };
+    const p2 = s.pointers.get(idB) ?? { x: ev.clientX, y: ev.clientY };
+    ensureNormalized();
+    s.gesture = {
+      mode: 'pinch',
+      idA,
+      idB,
+      startDist: Math.hypot(p2.x - p1.x, p2.y - p1.y) || 1,
+      startMid: { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 },
+      startScale: s.view.scale,
+      startUser: s.view.user ?? matIdentity(),
+    };
+    return;
+  }
+  if (s.pointers.size > 2) return;
+
+  ensureNormalized();
+  if (s.view.scale > 1) {
+    s.gesture = {
+      mode: 'pan',
+      pointerId: ev.pointerId,
+      startX: ev.clientX,
+      startY: ev.clientY,
+      startUser: s.view.user ?? matIdentity(),
+    };
+  } else {
+    s.gesture = { mode: 'dragclose', pointerId: ev.pointerId, startY: ev.clientY, dy: 0 };
+  }
+}
+
+function onPointerMove(ev: PointerEvent): void {
+  const s = state;
+  if (!s?.gesture || !s.pointers.has(ev.pointerId)) return;
+  s.pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+  const g = s.gesture;
+
+  if (g.mode === 'pinch') {
+    const p1 = s.pointers.get(g.idA);
+    const p2 = s.pointers.get(g.idB);
+    if (!p1 || !p2) return;
+    const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y) || 1;
+    const mid = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+    const next = clampScale(g.startScale * (dist / g.startDist));
+    // 双指锚点：startMid 下的像素跟手移到当前 mid，同时按倍率缩放
+    s.view.user = matMultiply(
+      matTranslate(mid.x, mid.y),
+      matMultiply(
+        matScale(next / g.startScale),
+        matMultiply(matTranslate(-g.startMid.x, -g.startMid.y), g.startUser),
+      ),
+    );
+    s.view.scale = next;
+    applyView(false);
+    showBadge();
+    return;
+  }
+  if (g.pointerId !== ev.pointerId) return;
+
+  if (g.mode === 'pan') {
+    s.view.user = panBy(g.startUser, ev.clientX - g.startX, ev.clientY - g.startY);
+    applyView(false);
+    return;
+  }
+
+  // dragclose：图跟手指竖直移动，遮罩按行程淡出（120px 到位）
+  const dy = ev.clientY - g.startY;
+  g.dy = dy;
+  const { m0 } = baseGeometry(s);
+  s.img.style.transition = 'none';
+  s.img.style.transform = matToCss(matMultiply(matTranslate(0, dy), m0));
+  const progress = Math.min(Math.abs(dy) / DRAG_CLOSE_PX, 1);
+  s.overlay.style.opacity = String(1 - progress);
+}
+
+function onPointerUp(ev: PointerEvent): void {
+  const s = state;
+  if (!s) return;
+  s.pointers.delete(ev.pointerId);
+  const g = s.gesture;
+  if (!g) return;
+
+  if (g.mode === 'pinch') {
+    if (ev.pointerId !== g.idA && ev.pointerId !== g.idB) return;
+    // 剩余一指 → 切换为 pan（重新取起点，避免跳变）；无剩余则结束
+    const remaining = [...s.pointers.entries()][0];
+    s.gesture = remaining
+      ? {
+          mode: 'pan',
+          pointerId: remaining[0],
+          startX: remaining[1].x,
+          startY: remaining[1].y,
+          startUser: s.view.user ?? matIdentity(),
+        }
+      : null;
+    applyView(true); // 钳制回弹
+    return;
+  }
+  if (g.pointerId !== ev.pointerId) return;
+  s.gesture = null;
+
+  if (g.mode === 'dragclose') {
+    if (Math.abs(g.dy) >= DRAG_CLOSE_PX) {
+      closeLightbox(false); // 行程到位 → 走飞回关闭
+    } else {
+      // 未到位 → 回弹：图归位、遮罩恢复不透明
+      applyView(true);
+      s.overlay.style.transition = 'opacity 180ms ease-out';
+      s.overlay.style.opacity = '1';
+    }
+    return;
+  }
+  applyView(true); // pan 结束：边界钳制回弹
+}
+
 function cleanupInteractions(): void {
   if (!state) return;
-  if (state.scrollHandler) {
-    window.removeEventListener('scroll', state.scrollHandler);
-    state.scrollHandler = null;
-  }
   if (state.keyHandler) {
     document.removeEventListener('keydown', state.keyHandler);
     state.keyHandler = null;
   }
+  if (state.resizeHandler) {
+    window.removeEventListener('resize', state.resizeHandler);
+    state.resizeHandler = null;
+  }
+  clearTimeout(state.idleTimer);
+  state.idleTimer = undefined;
+  clearTimeout(state.badgeTimer);
+  state.badgeTimer = undefined;
+  state.pointers.clear();
+  state.gesture = null;
 }
 
 // ============ 初始化入口 ============
