@@ -106,6 +106,20 @@ strip = "symbols"
 # systemd/k8s 拉起。这是 Dioxus 官方 optimizing 指南推荐的 WASM 瘦身项。
 panic = "abort"
 
+# WASM 前端专用 release profile（dx 的 web release 构建固定使用 `wasm-release`
+# profile 名，见 dioxus-cli 0.7.10 platform.rs::profile_name）。显式声明后 dx 会
+# 跳过它对未声明 profile 的临时注入（request.rs::profile_args 仅在 Cargo.toml
+# 缺少该 profile 时才注入 opt-level="s"），从而拿回 rustc 侧优化级别的控制权：
+# - opt-level="z"：比 dx 默认注入的 "s" 更激进的体积优化（禁用循环展开等）。
+#   博客前端对极致运行时性能不敏感，体积优先。
+# - 其余项（lto/codegen-units/panic=abort）继承 release。
+# 注意：dx 始终强制该 profile strip=false（资产系统需要符号），最终 strip 由
+# wasm-opt -Oz 完成，不影响产物体积。
+[profile.wasm-release]
+inherits = "release"
+opt-level = "z"
+lto = "fat"
+
 [features]
 default = ["web", "server"]
 web = ["dioxus/web"]

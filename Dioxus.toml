@@ -3,8 +3,19 @@ name = "yggdrasil"
 default_platform = "web"
 out_dir = "dist"
 
+# 构建期为所有静态资产（wasm/js/css…）生成 .br 预压缩旁车文件。
+# dioxus-server 的静态路由用 ServeFile::precompressed_br() 注册（server.rs），
+# 客户端 Accept-Encoding: br 时直接回 .br：3.4M 的 wasm 线上传输降到 ~1.0M，
+# 且零运行时压缩 CPU。Dockerfile 的 `cp -r public/*` 会带上旁车文件。
+[web]
+pre_compress = true
+
 [web.app]
 title = "Yggdrasil - Dioxus SSR"
+
+# 显式钉住 wasm-opt 级别：-Oz 激进体积优化（0.7.10 枚举默认即 Z，钉住防回归）。
+[web.wasm_opt]
+level = "z"
 
 [web.watcher]
 watch_path = ["src", "Cargo.toml"]
