@@ -559,7 +559,7 @@ pub fn AssetUploadModal(mut visible: Signal<bool>, on_uploaded: EventHandler<()>
                                                             match &item.status {
                                                                 UploadStatus::Queued => rsx! {
                                                                     span { class: "text-xs text-[var(--color-paper-tertiary)] shrink-0", "等待中" }
-                                                                },
+                                                                }, // 失败原因文字展示（不只靠颜色），过长截断 + title 全文。 // 失败原因文字展示（不只靠颜色），过长截断 + title 全文。
                                                                 UploadStatus::Uploading => rsx! {
                                                                     span { class: "flex items-center gap-1.5 text-xs text-[var(--color-paper-secondary)] shrink-0",
                                                                         span {
@@ -578,7 +578,7 @@ pub fn AssetUploadModal(mut visible: Signal<bool>, on_uploaded: EventHandler<()>
                                                                     button {
                                                                         class: "text-xs cursor-pointer text-[var(--color-paper-secondary)] hover:text-[var(--color-paper-primary)] shrink-0",
                                                                         onclick: move |_| {
-                                                                            #[cfg(target_arch = "wasm32")]
+                                                                            #[cfg(target_arch = "wasm32")] // 先标记 removing 播退出动画；文件句柄立即释放，批任务取不到句柄会 // 先标记 removing 播退出动画；文件句柄立即释放，批任务取不到句柄会
                                                                             {
                                                                                 // 从 files 表取回句柄重发本条。
                                                                                 let file = pool_for_retry

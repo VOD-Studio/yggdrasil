@@ -213,7 +213,7 @@ pub fn AssetPickerModal(
                                             cover_uploading.set(true);
                                             error.set(None);
                                             spawn(async move {
-                                                let result = crate::tiptap_bridge::upload_image_file(web_file) // 失败留在 modal 内提示，不关闭。
+                                                let result = crate::tiptap_bridge::upload_image_file(web_file)
                                                     .await;
                                                 if let Some(preview_url) = preview_url.as_deref() {
                                                     let _ = web_sys::Url::revoke_object_url(preview_url);
