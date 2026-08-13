@@ -171,6 +171,7 @@ impl PostListItem {
     }
 }
 
+#[cfg(any(feature = "server", test))]
 /// Feed 条目 DTO（RSS 2.0 / JSON Feed 共享）。
 ///
 /// 与 `PostListItem` 不同，这里携带已渲染的 `content_html` 全文，

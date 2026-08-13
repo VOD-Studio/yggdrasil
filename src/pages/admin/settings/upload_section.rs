@@ -20,7 +20,7 @@ pub fn UploadSection(toast: Callback<(String, bool)>) -> Element {
         let mut saved: Signal<UploadSettings> = use_signal(UploadSettings::default);
         let mut draft: Signal<i32> =
             use_signal(|| crate::models::settings::DEFAULT_UPLOAD_CONCURRENCY);
-        let mut loading = use_signal(|| true);
+        let loading = use_signal(|| true);
         let mut saving = use_signal(|| false);
         let mut just_saved = use_signal(|| false);
 

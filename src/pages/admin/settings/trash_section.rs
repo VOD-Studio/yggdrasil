@@ -22,7 +22,7 @@ pub fn TrashSection(toast: Callback<(String, bool)>) -> Element {
         let mut saved: Signal<TrashSettings> = use_signal(TrashSettings::default);
         let mut enabled_draft: Signal<bool> = use_signal(|| false);
         let mut days_draft: Signal<i32> = use_signal(|| 30);
-        let mut loading = use_signal(|| true);
+        let loading = use_signal(|| true);
         let mut saving = use_signal(|| false);
         let mut just_saved = use_signal(|| false);
 

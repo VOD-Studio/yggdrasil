@@ -34,6 +34,7 @@ pub struct AssetOpResponse {
     pub refs: Vec<crate::models::asset::AssetRef>,
 }
 
+#[cfg(any(feature = "server", test))]
 impl AssetOpResponse {
     pub fn ok(message: String) -> Self {
         Self {

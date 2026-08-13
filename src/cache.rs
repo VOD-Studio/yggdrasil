@@ -386,6 +386,7 @@ pub fn cache_stats() -> Vec<CacheStatSnapshot> {
 // ============================================================================
 
 /// 记录缓存命中/未命中统计，返回原值。
+#[cfg(any(feature = "server", test))]
 macro_rules! record_hit_miss {
     ($v:expr, $stats:expr) => {{
         let v = $v;

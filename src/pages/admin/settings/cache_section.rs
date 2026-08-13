@@ -22,7 +22,7 @@ pub fn CacheSection(toast: Callback<(String, bool)>) -> Element {
         let mut saved: Signal<ImageCacheSettings> = use_signal(ImageCacheSettings::default);
         let mut mb_draft: Signal<u32> = use_signal(|| 1024);
         let mut hours_draft: Signal<u32> = use_signal(|| 168);
-        let mut loading = use_signal(|| true);
+        let loading = use_signal(|| true);
         let mut saving = use_signal(|| false);
         let mut just_saved = use_signal(|| false);
 

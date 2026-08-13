@@ -7,8 +7,8 @@
 //! 与 Tier A（SecuritySettings / ImageCacheSettings）不同，Tier B 配置被烘焙进
 //! LazyLock 静态量，首次请求时构造即固化，修改 DB 值需重启进程才能生效。
 //!
-//! `set_*` 仅在 server feature 下编译（启动期由 main.rs 调用，用 tracing 日志）；
-//! getter 两端可见，未初始化时回退默认值。
+//! `set_*` 与 getter 仅在 server feature（测试构建保留）下编译；未初始化时回退默认值。
+#![cfg(any(feature = "server", test))]
 
 use crate::models::settings::{
     ImageLimitSettings, RateLimitSettings, RunnerSettings, WebpSettings,

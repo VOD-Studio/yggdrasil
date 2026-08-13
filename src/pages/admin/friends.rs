@@ -377,7 +377,7 @@ fn EditorCard() -> Element {
 #[cfg(target_arch = "wasm32")]
 #[component]
 fn LinkList() -> Element {
-    let mut state: FriendsPageState = use_context();
+    let state: FriendsPageState = use_context();
     let mut links = use_signal(|| Vec::<FriendLink>::new());
     let mut loaded_gen = use_signal(|| None::<u32>);
     let mut loading = use_signal(|| true);

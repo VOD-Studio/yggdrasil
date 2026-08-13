@@ -201,7 +201,6 @@ pub fn AssetPickerModal(
                             onchange: move |evt| {
                                 #[cfg(target_arch = "wasm32")]
                                 {
-                                    use dioxus::html::HasFileData;
                                     use dioxus::web::WebFileExt;
                                     if cover_uploading() {
                                         return;

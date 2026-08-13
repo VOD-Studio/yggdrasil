@@ -24,14 +24,14 @@ pub fn ImageSection(toast: Callback<(String, bool)>) -> Element {
         // WebP 编码
         let mut webp_saved: Signal<WebpSettings> = use_signal(WebpSettings::default);
         let mut webp_draft: Signal<WebpSettings> = use_signal(WebpSettings::default);
-        let mut webp_loading = use_signal(|| true);
+        let webp_loading = use_signal(|| true);
         let mut webp_saving = use_signal(|| false);
         let mut webp_just_saved = use_signal(|| false);
 
         // 图片限制
         let mut img_saved: Signal<ImageLimitSettings> = use_signal(ImageLimitSettings::default);
         let mut img_draft: Signal<ImageLimitSettings> = use_signal(ImageLimitSettings::default);
-        let mut img_loading = use_signal(|| true);
+        let img_loading = use_signal(|| true);
         let mut img_saving = use_signal(|| false);
         let mut img_just_saved = use_signal(|| false);
 

@@ -19,8 +19,8 @@ use crate::models::settings::SystemInfo;
 pub fn SystemSection() -> Element {
     #[cfg(target_arch = "wasm32")]
     {
-        let mut info: Signal<Option<SystemInfo>> = use_signal(|| None);
-        let mut loading = use_signal(|| true);
+        let info: Signal<Option<SystemInfo>> = use_signal(|| None);
+        let loading = use_signal(|| true);
 
         use_effect(move || {
             #[cfg(target_arch = "wasm32")]

@@ -199,6 +199,7 @@ impl UploadSettings {
 
 /// 默认 GitHub 链接：空字符串表示不展示页脚图标。
 pub const DEFAULT_SITE_GITHUB_URL: &str = "";
+#[cfg(any(feature = "server", test))]
 /// GitHub 链接最大长度（字符），防止滥用。
 pub const MAX_SITE_GITHUB_URL_LEN: usize = 500;
 
@@ -220,6 +221,7 @@ impl Default for SiteSettings {
 }
 
 impl SiteSettings {
+    #[cfg(any(feature = "server", test))]
     /// 规范化 GitHub 链接：trim、截断、补全 scheme。
     ///
     /// - 空串（trim 后）→ 返回空串，表示未配置。
@@ -311,6 +313,7 @@ impl SecuritySettings {
         n.clamp(MIN_MAX_SESSIONS_PER_USER, MAX_MAX_SESSIONS_PER_USER)
     }
 
+    #[cfg(any(feature = "server", test))]
     /// 规范化 APP_BASE_URL：trim；空串保留为空串（表示未配置）。
     /// 不在此补 scheme——CSRF 校验需要精确的 origin，补全反而可能失配。
     pub fn normalize_app_base_url(url: &str) -> String {

@@ -4,8 +4,9 @@
 //! - `wasm32`：通过 `js_sys` 调用 JavaScript 的 `setTimeout` / `Date.now()`。
 //! - 其他平台：使用 `tokio::time::sleep` / `chrono::Utc`。
 //!
-//! 相对时间分档（`relative_label_from_millis` / `format_relative_time_iso`）由
-//! 前端待审核评论展示与服务端评论预渲染共享，保证两端口径一致。
+//! 相对时间分档的核心实现由前后端共享；服务端通过 `relative_label_from_millis`
+//! 适配预渲染，前端通过 `format_relative_time_iso` 适配待审核评论，二者都复用
+//! `relative_label_inner`，保证分档口径一致。
 
 use chrono::DateTime;
 
@@ -114,6 +115,7 @@ pub fn local_hhmm_to_utc(t: &str) -> String {
     format!("{:02}:{:02}", d.get_utc_hours(), d.get_utc_minutes())
 }
 
+#[cfg(any(feature = "server", test))]
 /// 相对时间分档：根据"距现在的毫秒数"返回 (相对文本, 绝对日期 YYYY-MM-DD)。
 ///
 /// 分档规则与服务端 `format_relative_time` 完全一致，前端在展示待审核评论时复用，

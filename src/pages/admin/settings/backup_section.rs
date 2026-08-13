@@ -12,7 +12,7 @@ use crate::components::forms::{FormLabel, TimePicker, INPUT_CLASS};
 #[cfg(target_arch = "wasm32")]
 use crate::components::ui::{Checkbox, LoadingButton, ADMIN_CARD_CLASS};
 #[cfg(target_arch = "wasm32")]
-use crate::models::settings::{BackupSettings, BackupSettingsView};
+use crate::models::settings::BackupSettings;
 #[cfg(target_arch = "wasm32")]
 use crate::utils::time::{local_hhmm_to_utc, utc_hhmm_to_local};
 
@@ -27,7 +27,7 @@ pub fn BackupSection(toast: Callback<(String, bool)>) -> Element {
         let mut time_draft: Signal<String> = use_signal(|| "04:00".to_string());
         let mut retention_draft: Signal<i32> = use_signal(|| 30);
         let mut include_draft: Signal<bool> = use_signal(|| true);
-        let mut loading = use_signal(|| true);
+        let loading = use_signal(|| true);
         let mut saving = use_signal(|| false);
         let mut just_saved = use_signal(|| false);
 
