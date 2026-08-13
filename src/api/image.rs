@@ -635,7 +635,7 @@ pub async fn serve_image(
     if params.is_empty() {
         // 原图直返不经过任何缓存层（每次真实读盘），保留限流防带宽滥用。
         if let Err(resp) = crate::api::rate_limit::check_image_limit(&ip) {
-            return resp;
+            return *resp;
         }
         // 原始分支也限制大小，避免读取超大文件撑爆内存（M3）。上限 20MB
         // 覆盖正常上传图（上传侧 MAX_FILE_SIZE=5MB），拒绝异常大文件。
@@ -678,7 +678,7 @@ pub async fn serve_image(
     // 两层缓存均未命中：此处起的请求才真实消耗「读盘 + 解码处理」工作量，
     // 计入限流。
     if let Err(resp) = crate::api::rate_limit::check_image_limit(&ip) {
-        return resp;
+        return *resp;
     }
 
     // 处理并发上限：限流控速率不控并发，冷缓存突发可在令牌允许内向阻塞池

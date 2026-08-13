@@ -163,7 +163,7 @@ pub fn check_comment_limit(ip: &str) -> Result<(), String> {
 /// 超限时返回带 `Retry-After` 头的 429 响应：等待秒数取自 governor 的
 /// `NotUntil`（到下一个可用令牌的精确时长，向上取整、至少 1s），
 /// 客户端可据此安排重试而非盲等。
-pub fn check_image_limit(ip: &str) -> Result<(), Response> {
+pub fn check_image_limit(ip: &str) -> Result<(), Box<Response>> {
     ensure_limiter_gc();
     IMAGE_LIMITER
         .check_key(&ip.to_string())
@@ -171,11 +171,13 @@ pub fn check_image_limit(ip: &str) -> Result<(), Response> {
         .map_err(|not_until| {
             let wait = not_until.wait_time_from(governor::clock::DefaultClock::default().now());
             let secs = (wait.as_millis() as u64).div_ceil(1000).max(1);
-            (
-                StatusCode::TOO_MANY_REQUESTS,
-                [(axum::http::header::RETRY_AFTER, secs.to_string())],
+            Box::new(
+                (
+                    StatusCode::TOO_MANY_REQUESTS,
+                    [(axum::http::header::RETRY_AFTER, secs.to_string())],
+                )
+                    .into_response(),
             )
-                .into_response()
         })
 }
 
