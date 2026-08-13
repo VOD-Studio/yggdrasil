@@ -197,3 +197,35 @@ export const UploadImage = Image.configure({ allowBase64: true }).extend({
     };
   },
 });
+
+/** 素材库插入载荷条目（Rust 侧 AssetSelection 的 JSON 形状）。 */
+export interface LibraryInsertItem {
+  src: string;
+  alt?: string;
+}
+
+/**
+ * 解析素材库插入载荷（JSON-over-bridge，与 overridesJson 同一惯例）。
+ *
+ * 桥接另一侧是 Rust 的 serde_json：字段名拼写漂移会让插入静默失败，
+ * 因此这里宽松解析——非法 JSON / 非数组 / 无有效条目一律返回 null（调用方 no-op），
+ * 条目必须有非空 src；alt 非字符串或空串时丢弃（等同未提供）。
+ */
+export function parseLibraryInsertItems(json: string): LibraryInsertItem[] | null {
+  let items: unknown;
+  try {
+    items = JSON.parse(json);
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(items)) return null;
+  const parsed: LibraryInsertItem[] = [];
+  for (const item of items) {
+    if (typeof item !== 'object' || item === null) continue;
+    const raw = item as { src?: unknown; alt?: unknown };
+    if (typeof raw.src !== 'string' || raw.src.length === 0) continue;
+    const alt = typeof raw.alt === 'string' && raw.alt.length > 0 ? raw.alt : undefined;
+    parsed.push(alt ? { src: raw.src, alt } : { src: raw.src });
+  }
+  return parsed.length > 0 ? parsed : null;
+}

@@ -17,7 +17,7 @@ import {
   UploadCoordinator,
   type UploadEvent,
 } from './upload-coordinator';
-import { UploadImage } from './upload-image';
+import { parseLibraryInsertItems, UploadImage } from './upload-image';
 import './style.css';
 
 /**
@@ -38,6 +38,9 @@ class EditorOptions {
   editable?: boolean;
   // 图片上传回调
   onImageUpload?: (file: File) => Promise<string>;
+  // 素材库选择回调：Rust 注入，slash 命令「素材库」触发，宿主打开 AssetPickerModal；
+  // 宿主确认选择后回调 insertImagesFromLibrary 完成插入。
+  onPickFromLibrary?: () => void;
   // 编辑器实例创建完成（含 coordinator）后同步触发一次，替代 window.__tiptap_ready 轮询
   onReady?: () => void;
   // 上传状态事件（error/success/removed + counts），替代 window.__tiptap_uploads 轮询
@@ -150,12 +153,14 @@ class TiptapEditorInstance {
         // 让手动输入 - [ ] / - [x] 直接创建任务列表(priority 1000 抢在 BulletList 前)
         TaskInputRule,
         // 把宿主注入的图片上传回调透传给斜杠命令扩展，使 /上传图片 命令可用。
+        // onPickFromLibrary 同理，使 /素材库 命令可用。
         // 注意：闭包延迟读取 this.coordinator（它在 editor 创建后才实例化）。
         SlashCommand.configure({
           onImageUpload: this.options.onImageUpload,
           onInsertUploading: this.options.onImageUpload
             ? (file) => this.coordinator?.insertUploading(file)
             : undefined,
+          onPickFromLibrary: this.options.onPickFromLibrary,
         }),
         FileHandler.configure({
           allowedMimeTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
@@ -314,6 +319,22 @@ class TiptapEditorInstance {
   /** Rust 侧"×关闭"提示时调用（通过 eval）。返回是否成功删除。 */
   removeUploadByUploadId(uploadId: string): boolean {
     return this.coordinator?.removeUpload(uploadId) ?? false;
+  }
+
+  /**
+   * 从素材库批量插入图片（Rust 侧 AssetPickerModal 确认后调用）。
+   *
+   * `json` 为 `[{ "src": string, "alt"?: string }]` 串（JSON-over-bridge，
+   * 与 overridesJson 同一惯例）。slash 命令触发时已删掉 /素材 文本、光标停在
+   * 删除位置；ProseMirror selection 不随弹窗焦点变化，focus() 即恢复原光标，
+   * 全部图片块在一次事务内按勾选顺序插入。非法/空载荷为 no-op。
+   */
+  insertImagesFromLibrary(json: string): void {
+    if (!this.editor) return;
+    const items = parseLibraryInsertItems(json);
+    if (!items) return;
+    const content = items.map((item) => ({ type: 'image', attrs: item }));
+    this.editor.chain().focus().insertContent(content).run();
   }
 
   destroy(): void {

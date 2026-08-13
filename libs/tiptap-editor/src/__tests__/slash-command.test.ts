@@ -1,6 +1,13 @@
+import type { Editor } from '@tiptap/core';
 import type { SuggestionProps } from '@tiptap/suggestion';
-import { afterEach, describe, expect, it } from 'vitest';
-import { createPopup, isValidUrl, matchCommand } from '../slash-command';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  buildSlashCommands,
+  type CommandItem,
+  createPopup,
+  isValidUrl,
+  matchCommand,
+} from '../slash-command';
 
 /**
  * isValidUrl 纯函数测试。
@@ -211,5 +218,67 @@ describe('createPopup 空状态', () => {
     expect(document.querySelector('.slash-command-empty')).toBeNull();
     popup.updateItems([]);
     expect(document.querySelector('.slash-command-empty')).not.toBeNull();
+  });
+});
+
+/**
+ * buildSlashCommands 命令集 gating 与「素材库」命令行为测试。
+ *
+ * gating 是编辑器与宿主的契约边界：Rust 侧注入哪些回调，slash 菜单就出现哪些命令。
+ */
+describe('buildSlashCommands', () => {
+  const titles = (cmds: CommandItem[]) => cmds.map((c) => c.title);
+
+  it('无回调：无「上传图片」无「素材库」，保留「图片链接」', () => {
+    const ts = titles(buildSlashCommands({}));
+    expect(ts).not.toContain('上传图片');
+    expect(ts).not.toContain('素材库');
+    expect(ts).toContain('图片链接');
+  });
+
+  it('仅 onImageUpload：出现「上传图片」，仍无「素材库」', () => {
+    const ts = titles(buildSlashCommands({ onImageUpload: async () => '' }));
+    expect(ts).toContain('上传图片');
+    expect(ts).not.toContain('素材库');
+  });
+
+  it('仅 onPickFromLibrary：出现「素材库」，仍无「上传图片」', () => {
+    const ts = titles(buildSlashCommands({ onPickFromLibrary: () => {} }));
+    expect(ts).toContain('素材库');
+    expect(ts).not.toContain('上传图片');
+  });
+
+  it('两回调齐备：「素材库」位于「上传图片」与「图片链接」之间', () => {
+    const ts = titles(
+      buildSlashCommands({ onImageUpload: async () => '', onPickFromLibrary: () => {} }),
+    );
+    expect(ts.indexOf('素材库')).toBeGreaterThan(ts.indexOf('上传图片'));
+    expect(ts.indexOf('素材库')).toBeLessThan(ts.indexOf('图片链接'));
+  });
+
+  it('「素材库」命令可被 素材 / library / 图片 搜索命中', () => {
+    const cmd = buildSlashCommands({ onPickFromLibrary: () => {} }).find(
+      (c) => c.title === '素材库',
+    );
+    if (!cmd) throw new Error('素材库命令不存在');
+    for (const q of ['素材', 'library', '图片']) {
+      expect(matchCommand(cmd, q)).toBe(true);
+    }
+  });
+
+  it('「素材库」命令：先 deleteRange 再触发宿主回调', () => {
+    const onPickFromLibrary = vi.fn();
+    const cmd = buildSlashCommands({ onPickFromLibrary }).find((c) => c.title === '素材库');
+    if (!cmd) throw new Error('素材库命令不存在');
+    const run = vi.fn();
+    const deleteRange = vi.fn().mockReturnValue({ run });
+    const focus = vi.fn().mockReturnValue({ deleteRange });
+    const chain = vi.fn().mockReturnValue({ focus });
+    const editor = { chain } as unknown as Editor;
+    const range = { from: 4, to: 7 };
+    cmd.command({ editor, range });
+    expect(deleteRange).toHaveBeenCalledWith(range);
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(onPickFromLibrary).toHaveBeenCalledTimes(1);
   });
 });

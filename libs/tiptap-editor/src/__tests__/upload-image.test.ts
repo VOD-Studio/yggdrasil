@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { UploadImageNodeView, type UploadNodeViewCallbacks } from '../upload-image';
+import {
+  parseLibraryInsertItems,
+  UploadImageNodeView,
+  type UploadNodeViewCallbacks,
+} from '../upload-image';
 
 /**
  * UploadImageNodeView 单元测试（happy-dom 真实 DOM）。
@@ -217,5 +221,44 @@ describe('UploadImageNodeView', () => {
       view.destroy();
       expect(callbacks.onDestroyed).not.toHaveBeenCalled();
     });
+  });
+});
+
+/**
+ * parseLibraryInsertItems 纯函数测试。
+ *
+ * 桥接契约：Rust 侧 AssetSelection 经 serde_json 序列化为 [{ "src", "alt?" }]，
+ * 字段名漂移或载荷非法时插入必须静默 no-op（返回 null），不得抛异常进编辑器。
+ */
+describe('parseLibraryInsertItems', () => {
+  it('完整载荷：多张、带 alt，保持顺序', () => {
+    const json = '[{"src":"/uploads/a.webp","alt":"封面"},{"src":"/uploads/b.webp","alt":"插图"}]';
+    expect(parseLibraryInsertItems(json)).toEqual([
+      { src: '/uploads/a.webp', alt: '封面' },
+      { src: '/uploads/b.webp', alt: '插图' },
+    ]);
+  });
+
+  it('alt 缺省 / 空串 / 非字符串：统一丢弃', () => {
+    const json = '[{"src":"/a.webp"},{"src":"/b.webp","alt":""},{"src":"/c.webp","alt":123}]';
+    expect(parseLibraryInsertItems(json)).toEqual([
+      { src: '/a.webp' },
+      { src: '/b.webp' },
+      { src: '/c.webp' },
+    ]);
+  });
+
+  it('src 缺失或为空串的条目被过滤，其余保留', () => {
+    const json = '[{"alt":"无 src"},{"src":""},{"src":"/ok.webp"},null,42]';
+    expect(parseLibraryInsertItems(json)).toEqual([{ src: '/ok.webp' }]);
+  });
+
+  it.each([
+    ['非 JSON', 'not json'],
+    ['对象而非数组', '{"src":"/a.webp"}'],
+    ['空数组', '[]'],
+    ['全部条目无效', '[{"alt":"x"},null]'],
+  ])('%s：返回 null（调用方 no-op）', (_label, json) => {
+    expect(parseLibraryInsertItems(json)).toBeNull();
   });
 });
