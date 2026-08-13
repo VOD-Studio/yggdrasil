@@ -478,11 +478,11 @@ fn BackupSettingsCard() -> Element {
     #[cfg(target_arch = "wasm32")]
     use crate::api::settings::{get_backup_settings, update_backup_settings};
     use crate::components::forms::{TimePicker, ToggleSwitch};
-    use crate::utils::time::utc_hhmm_to_local;
-    #[cfg(target_arch = "wasm32")]
-    use crate::utils::time::local_hhmm_to_utc;
     use crate::components::ui::{CollapsibleSettingsCard, BTN_ICON};
     use crate::models::settings::BackupSettingsView;
+    #[cfg(target_arch = "wasm32")]
+    use crate::utils::time::local_hhmm_to_utc;
+    use crate::utils::time::utc_hhmm_to_local;
 
     // 服务端视图（设置 + 上次结果 + 下次执行）。SSR/首帧为 None（占位态）。
     let view = use_signal(|| Option::<BackupSettingsView>::None); // 表单草稿：与已存值天然分叉，是独立状态（非镜像）。

@@ -1061,7 +1061,10 @@ mod tests {
 
     #[test]
     fn security_normalize_app_base_url_trims() {
-        assert_eq!(SecuritySettings::normalize_app_base_url("  https://x.com "), "https://x.com");
+        assert_eq!(
+            SecuritySettings::normalize_app_base_url("  https://x.com "),
+            "https://x.com"
+        );
         assert_eq!(SecuritySettings::normalize_app_base_url(""), "");
         assert_eq!(SecuritySettings::normalize_app_base_url("   "), "");
     }
@@ -1232,7 +1235,10 @@ mod tests {
     #[test]
     #[cfg(feature = "server")]
     fn runner_clamp_max_concurrent() {
-        assert_eq!(RunnerSettings::clamp_max_concurrent(0), MIN_RUNNER_MAX_CONCURRENT);
+        assert_eq!(
+            RunnerSettings::clamp_max_concurrent(0),
+            MIN_RUNNER_MAX_CONCURRENT
+        );
         assert_eq!(RunnerSettings::clamp_max_concurrent(8), 8);
         assert_eq!(
             RunnerSettings::clamp_max_concurrent(999),
@@ -1285,7 +1291,10 @@ mod tests {
     fn runner_clamp_byte_limits() {
         assert_eq!(RunnerSettings::clamp_max_output_bytes(0), 1);
         assert_eq!(RunnerSettings::clamp_max_source_bytes(0), 1);
-        assert_eq!(RunnerSettings::clamp_queue_timeout_secs(0), MIN_RUNNER_MAX_TIMEOUT_SECS);
+        assert_eq!(
+            RunnerSettings::clamp_queue_timeout_secs(0),
+            MIN_RUNNER_MAX_TIMEOUT_SECS
+        );
         assert_eq!(RunnerSettings::clamp_task_ttl_secs(0), 1);
     }
 
@@ -1303,5 +1312,4 @@ mod tests {
             Some("go")
         );
     }
-
 }

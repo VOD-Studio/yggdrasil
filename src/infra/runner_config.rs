@@ -52,9 +52,12 @@ pub static RUNNER_CONFIG: LazyLock<RunnerConfig> = LazyLock::new(|| {
         docker_socket_path: env::var("DOCKER_SOCKET_PATH")
             .unwrap_or_else(|_| "/var/run/docker.sock".to_string()),
         // languages 是逗号分隔字符串，拆成 Vec<String>。
-        languages: cfg
-            .languages
-            .map(|s| s.split(',').map(|t| t.trim().to_lowercase()).filter(|t| !t.is_empty()).collect()),
+        languages: cfg.languages.map(|s| {
+            s.split(',')
+                .map(|t| t.trim().to_lowercase())
+                .filter(|t| !t.is_empty())
+                .collect()
+        }),
     }
 });
 

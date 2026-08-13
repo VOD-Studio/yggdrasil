@@ -21,10 +21,10 @@
 mod backup_section;
 mod cache_section;
 mod image_section;
-mod security_section;
-mod site_section;
 mod ratelimit_section;
 mod runner_section;
+mod security_section;
+mod site_section;
 mod system_section;
 mod trash_section;
 mod upload_section;

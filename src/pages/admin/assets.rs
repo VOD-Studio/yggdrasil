@@ -24,7 +24,7 @@ use crate::components::empty_state::EmptyState;
 use crate::components::forms::FormInput;
 use crate::components::skeletons::assets_skeleton::AssetsSkeleton;
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
-use crate::components::ui::{FilterTabs, MEDIA_BADGE_BASE, Pagination};
+use crate::components::ui::{FilterTabs, Pagination, MEDIA_BADGE_BASE};
 #[cfg(target_arch = "wasm32")]
 use crate::models::asset::{AssetFilter, AssetSort};
 use crate::pages::admin::asset_upload::AssetUploadModal;

@@ -726,9 +726,8 @@ pub async fn serve_image(
 /// 用 sync cache 而非 future cache：render_markdown_enhanced 是同步函数，不能 .await。
 #[cfg(feature = "server")]
 static IMAGE_DIMENSIONS_CACHE: LazyLock<SyncCache<String, (u32, u32)>> = LazyLock::new(|| {
-    let ttl = std::time::Duration::from_secs(
-        crate::config::image_limit().dimensions_cache_ttl_secs,
-    );
+    let ttl =
+        std::time::Duration::from_secs(crate::config::image_limit().dimensions_cache_ttl_secs);
     SyncCache::builder().time_to_live(ttl).build()
 });
 

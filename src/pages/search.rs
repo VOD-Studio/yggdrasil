@@ -12,7 +12,7 @@ use dioxus::prelude::*;
 
 use crate::api::posts::{search_posts, PostListResponse};
 use crate::components::empty_state::EmptyState;
-use crate::components::forms::{INPUT_SEARCH_CLASS, FormInput};
+use crate::components::forms::{FormInput, INPUT_SEARCH_CLASS};
 use crate::components::post_card::PostCard;
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::skeletons::search_skeleton::SearchSkeleton;

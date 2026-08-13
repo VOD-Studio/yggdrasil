@@ -33,7 +33,10 @@ pub fn RunnerSection(toast: Callback<(String, bool)>) -> Element {
                 let mut loading = loading;
                 spawn(async move {
                     match get_runner_settings().await {
-                        Ok(s) => { saved.set(s.clone()); draft.set(s); }
+                        Ok(s) => {
+                            saved.set(s.clone());
+                            draft.set(s);
+                        }
                         Err(e) => toast.call((format!("加载失败：{e}"), true)),
                     }
                     loading.set(false);

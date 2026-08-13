@@ -22,14 +22,14 @@ use crate::api::posts::{
 #[allow(unused_imports)]
 use crate::api::settings::{get_trash_settings, update_trash_settings};
 use crate::components::empty_state::EmptyState;
+use crate::components::forms::ToggleSwitch;
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::skeletons::posts_trash_skeleton::PostsTrashSkeleton;
 use crate::components::ui::{
-    CollapsibleSettingsCard, LoadingButton, Pagination, Popover, StatusBadge, ADMIN_ROW_HOVER,
-    ADMIN_TABLE_CLASS, BTN_DANGER_OUTLINE, BTN_ICON, BTN_SOLID_GREEN, BTN_SOLID_RED,
-    BTN_TEXT_ACCENT, BTN_TEXT_RED, BTN_GHOST, Checkbox,
+    Checkbox, CollapsibleSettingsCard, LoadingButton, Pagination, Popover, StatusBadge,
+    ADMIN_ROW_HOVER, ADMIN_TABLE_CLASS, BTN_DANGER_OUTLINE, BTN_GHOST, BTN_ICON, BTN_SOLID_GREEN,
+    BTN_SOLID_RED, BTN_TEXT_ACCENT, BTN_TEXT_RED,
 };
-use crate::components::forms::ToggleSwitch;
 use crate::hooks::query::use_paginated;
 use crate::models::post::PostListItem;
 use crate::models::settings::TrashSettings;

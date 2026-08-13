@@ -59,8 +59,7 @@ pub fn AdminLayout() -> Element {
     // 需要卡片与 main 只提供有界高度而不滚动。注意不能用 h-full 百分比链条：
     // main 是 flex item 且 min-height:auto，长内容会先把 main 撑大、百分比再相对
     // 撑大后的高度解析，形成循环依赖导致约束失效（实证于限流分区）。
-    let internal_scroll_route =
-        is_write_route || matches!(route, Route::SiteSettingsPage {});
+    let internal_scroll_route = is_write_route || matches!(route, Route::SiteSettingsPage {});
 
     // 所有 admin 页面共用同一 shell:外层圆角卡片(滚动容器) + 内部 main 负责居中限宽。
     // write/settings 路由例外:卡片不滚动(overflow-hidden),main 作为 flex 容器不带头尾 padding,

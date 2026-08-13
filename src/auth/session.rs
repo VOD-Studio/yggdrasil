@@ -33,7 +33,9 @@ pub fn default_expiry() -> DateTime<Utc> {
 /// 即时生效：读取「站点配置 → 安全」面板的 DB 值（经 moka 缓存兜底），
 /// 面板修改后数秒内全链路生效。
 pub async fn cookie_secure() -> bool {
-    crate::api::settings::runtime_security_settings().await.cookie_secure
+    crate::api::settings::runtime_security_settings()
+        .await
+        .cookie_secure
 }
 
 #[cfg(feature = "server")]

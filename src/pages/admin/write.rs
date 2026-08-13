@@ -32,11 +32,11 @@ use wasm_bindgen::closure::Closure;
 // - WebFileExt：file.get_web_file()（FileData 取底层 web_sys::File）— dioxus::web
 // - WebEventExt：evt.try_as_web_event()（ClipboardEvent 取原始 web 事件）— dioxus::web
 #[cfg(target_arch = "wasm32")]
+use crate::utils::js::invoke_optional_global;
+#[cfg(target_arch = "wasm32")]
 use dioxus::html::HasFileData;
 #[cfg(target_arch = "wasm32")]
 use dioxus::web::{WebEventExt, WebFileExt};
-#[cfg(target_arch = "wasm32")]
-use crate::utils::js::invoke_optional_global;
 
 /// 新建文章页面组件。
 ///

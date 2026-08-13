@@ -33,7 +33,8 @@ pub async fn cleanup_image_cache() -> io::Result<()> {
     let settings = crate::api::settings::runtime_image_cache_settings().await;
     let max_mb = settings.disk_cache_max_mb;
     let max_age_hours = settings.disk_cache_max_age_hours;
-    let (deleted, bytes_freed) = cleanup_image_cache_at(base, max_mb as u64, max_age_hours as u64).await?;
+    let (deleted, bytes_freed) =
+        cleanup_image_cache_at(base, max_mb as u64, max_age_hours as u64).await?;
     if !deleted.is_empty() {
         tracing::info!(
             "Image disk cache cleanup: removed {} files, freed {} bytes",

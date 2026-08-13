@@ -33,33 +33,25 @@ fn nz(val: u32) -> NonZeroU32 {
 #[cfg(feature = "server")]
 static STRICT_LIMITER: LazyLock<DefaultKeyedRateLimiter<String>> = LazyLock::new(|| {
     let c = crate::config::rate_limit();
-    RateLimiter::keyed(
-        Quota::per_second(nz(c.strict_per_sec)).allow_burst(nz(c.strict_burst)),
-    )
+    RateLimiter::keyed(Quota::per_second(nz(c.strict_per_sec)).allow_burst(nz(c.strict_burst)))
 });
 
 #[cfg(feature = "server")]
 static UPLOAD_LIMITER: LazyLock<DefaultKeyedRateLimiter<String>> = LazyLock::new(|| {
     let c = crate::config::rate_limit();
-    RateLimiter::keyed(
-        Quota::per_second(nz(c.upload_per_sec)).allow_burst(nz(c.upload_burst)),
-    )
+    RateLimiter::keyed(Quota::per_second(nz(c.upload_per_sec)).allow_burst(nz(c.upload_burst)))
 });
 
 #[cfg(feature = "server")]
 static IMAGE_LIMITER: LazyLock<DefaultKeyedRateLimiter<String>> = LazyLock::new(|| {
     let c = crate::config::rate_limit();
-    RateLimiter::keyed(
-        Quota::per_second(nz(c.image_per_sec)).allow_burst(nz(c.image_burst)),
-    )
+    RateLimiter::keyed(Quota::per_second(nz(c.image_per_sec)).allow_burst(nz(c.image_burst)))
 });
 
 #[cfg(feature = "server")]
 static COMMENT_LIMITER: LazyLock<DefaultKeyedRateLimiter<String>> = LazyLock::new(|| {
     let c = crate::config::rate_limit();
-    RateLimiter::keyed(
-        Quota::per_second(nz(c.comment_per_sec)).allow_burst(nz(c.comment_burst)),
-    )
+    RateLimiter::keyed(Quota::per_second(nz(c.comment_per_sec)).allow_burst(nz(c.comment_burst)))
 });
 
 #[cfg(feature = "server")]
@@ -96,9 +88,7 @@ static CODE_EXEC_DAILY_LIMITER: LazyLock<DefaultKeyedRateLimiter<String>> = Lazy
 /// 可通过 settings 表的 ratelimit_unknown_* 配置项调整（重启生效）。
 static UNKNOWN_BUCKET_LIMITER: LazyLock<DefaultKeyedRateLimiter<String>> = LazyLock::new(|| {
     let c = crate::config::rate_limit();
-    RateLimiter::keyed(
-        Quota::per_second(nz(c.unknown_per_sec)).allow_burst(nz(c.unknown_burst)),
-    )
+    RateLimiter::keyed(Quota::per_second(nz(c.unknown_per_sec)).allow_burst(nz(c.unknown_burst)))
 });
 
 /// 限流桶 GC 间隔（秒）：周期性调用 governor 的 `retain_recent`，回收已恢复为

@@ -5,7 +5,9 @@
 use dioxus::prelude::*;
 
 #[cfg(target_arch = "wasm32")]
-use crate::api::settings::{get_image_limit_settings, get_webp_settings, update_image_limit_settings, update_webp_settings};
+use crate::api::settings::{
+    get_image_limit_settings, get_webp_settings, update_image_limit_settings, update_webp_settings,
+};
 #[cfg(target_arch = "wasm32")]
 use crate::components::forms::{FormLabel, INPUT_CLASS};
 #[cfg(target_arch = "wasm32")]
@@ -44,11 +46,17 @@ pub fn ImageSection(toast: Callback<(String, bool)>) -> Element {
                 let mut img_loading = img_loading;
                 spawn(async move {
                     match get_webp_settings().await {
-                        Ok(s) => { webp_saved.set(s.clone()); webp_draft.set(s); }
+                        Ok(s) => {
+                            webp_saved.set(s.clone());
+                            webp_draft.set(s);
+                        }
                         Err(e) => toast.call((format!("WebP 加载失败：{e}"), true)),
                     }
                     match get_image_limit_settings().await {
-                        Ok(s) => { img_saved.set(s.clone()); img_draft.set(s); }
+                        Ok(s) => {
+                            img_saved.set(s.clone());
+                            img_draft.set(s);
+                        }
                         Err(e) => toast.call((format!("图片限制加载失败：{e}"), true)),
                     }
                     webp_loading.set(false);

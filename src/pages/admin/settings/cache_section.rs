@@ -48,7 +48,8 @@ pub fn CacheSection(toast: Callback<(String, bool)>) -> Element {
         });
 
         let dirty = use_memo(move || {
-            mb_draft() != saved().disk_cache_max_mb || hours_draft() != saved().disk_cache_max_age_hours
+            mb_draft() != saved().disk_cache_max_mb
+                || hours_draft() != saved().disk_cache_max_age_hours
         });
 
         rsx! {

@@ -22,8 +22,8 @@ use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::skeletons::friends_admin_skeleton::FriendsAdminSkeleton;
 #[cfg(target_arch = "wasm32")]
 use crate::components::ui::{
-    Popover, Tooltip, ADMIN_CARD_CLASS, BADGE_BASE, BTN_DANGER_OUTLINE, BTN_OUTLINE, BTN_PRIMARY,
-    BTN_GHOST, BTN_TEXT_ACCENT, BTN_TEXT_RED,
+    Popover, Tooltip, ADMIN_CARD_CLASS, BADGE_BASE, BTN_DANGER_OUTLINE, BTN_GHOST, BTN_OUTLINE,
+    BTN_PRIMARY, BTN_TEXT_ACCENT, BTN_TEXT_RED,
 };
 #[cfg(target_arch = "wasm32")]
 use crate::models::friend_link::FriendLink;

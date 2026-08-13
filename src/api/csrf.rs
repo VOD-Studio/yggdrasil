@@ -96,7 +96,9 @@ fn extract_origin(headers: &HeaderMap) -> Option<String> {
 /// 是请求被拒，但拿不到本站 origin 时误杀合法请求代价更高，故保守放行）。
 #[cfg(feature = "server")]
 async fn trusted_origin(headers: &HeaderMap) -> Option<String> {
-    let base = crate::api::settings::runtime_security_settings().await.app_base_url;
+    let base = crate::api::settings::runtime_security_settings()
+        .await
+        .app_base_url;
     if !base.is_empty() {
         return Some(normalize_origin(&base));
     }

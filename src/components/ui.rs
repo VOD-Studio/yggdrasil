@@ -735,7 +735,6 @@ pub fn TagChip(
     }
 }
 
-
 /// 带勾画动画的复选框：对勾 SVG 用 stroke-dashoffset 描边绘制 + scale 弹入。
 ///
 /// 原生 `<input type="checkbox">` 是替换元素，吃不到 `::after`/`::before`，
@@ -756,7 +755,11 @@ pub fn Checkbox(
     onchange: EventHandler<bool>,
     #[props(default)] danger: bool,
 ) -> Element {
-    let wrap = if danger { "ygg-cb ygg-cb-danger" } else { "ygg-cb" };
+    let wrap = if danger {
+        "ygg-cb ygg-cb-danger"
+    } else {
+        "ygg-cb"
+    };
     rsx! {
         span { class: "{wrap}",
             input {

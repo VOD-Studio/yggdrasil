@@ -9,9 +9,9 @@ use dioxus::prelude::*;
 #[cfg(target_arch = "wasm32")]
 use crate::api::settings::get_system_info;
 #[cfg(target_arch = "wasm32")]
-use crate::models::settings::SystemInfo;
-#[cfg(target_arch = "wasm32")]
 use crate::components::ui::ADMIN_CARD_CLASS;
+#[cfg(target_arch = "wasm32")]
+use crate::models::settings::SystemInfo;
 
 /// 系统启动配置分区组件（只读）。
 #[allow(non_snake_case)]

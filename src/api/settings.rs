@@ -24,9 +24,8 @@ use crate::api::error::AppError;
 #[cfg(feature = "server")]
 use crate::db::pool::get_conn;
 use crate::models::settings::{
-    BackupSettingsView, ImageCacheSettings, ImageLimitSettings, RateLimitSettings,
-    RunnerSettings, SecuritySettings, SiteSettings, SystemInfo, TrashSettings, UploadSettings,
-    WebpSettings,
+    BackupSettingsView, ImageCacheSettings, ImageLimitSettings, RateLimitSettings, RunnerSettings,
+    SecuritySettings, SiteSettings, SystemInfo, TrashSettings, UploadSettings, WebpSettings,
 };
 // 仅 server 构建的函数体引用（WASM 端 server fn 体被宏剥离）。
 #[cfg(feature = "server")]
@@ -422,8 +421,7 @@ pub(crate) async fn seed_security_settings_from_env(
         match v.trim().parse::<u32>() {
             Ok(n) => seeds.push((
                 "security_trusted_proxy_count",
-                crate::models::settings::SecuritySettings::clamp_trusted_proxy_count(n)
-                    .to_string(),
+                crate::models::settings::SecuritySettings::clamp_trusted_proxy_count(n).to_string(),
             )),
             Err(_) => tracing::warn!("TRUSTED_PROXY_COUNT={v:?} 非法（期望非负整数），跳过"),
         }
@@ -459,7 +457,10 @@ pub(crate) async fn seed_security_settings_from_env(
 pub(crate) async fn load_security_settings(
     client: &tokio_postgres::Client,
 ) -> Result<crate::models::settings::SecuritySettings, AppError> {
-    async fn read_key(client: &tokio_postgres::Client, key: &str) -> Result<Option<String>, AppError> {
+    async fn read_key(
+        client: &tokio_postgres::Client,
+        key: &str,
+    ) -> Result<Option<String>, AppError> {
         let row = client
             .query_opt("SELECT value FROM settings WHERE key = $1", &[&key])
             .await
@@ -535,7 +536,9 @@ pub async fn get_security_settings() -> Result<SecuritySettings, ServerFnError> 
     #[cfg(feature = "server")]
     {
         let client = get_conn().await.map_err(AppError::db_conn)?;
-        let s = load_security_settings(&client).await.map_err(ServerFnError::from)?;
+        let s = load_security_settings(&client)
+            .await
+            .map_err(ServerFnError::from)?;
         crate::cache::set_security_settings(s.clone()).await;
         Ok(s)
     }
@@ -658,7 +661,10 @@ pub(crate) async fn seed_image_cache_settings_from_env(
 pub(crate) async fn load_image_cache_settings(
     client: &tokio_postgres::Client,
 ) -> Result<crate::models::settings::ImageCacheSettings, AppError> {
-    async fn read_key(client: &tokio_postgres::Client, key: &str) -> Result<Option<String>, AppError> {
+    async fn read_key(
+        client: &tokio_postgres::Client,
+        key: &str,
+    ) -> Result<Option<String>, AppError> {
         let row = client
             .query_opt("SELECT value FROM settings WHERE key = $1", &[&key])
             .await
@@ -721,7 +727,9 @@ pub async fn get_image_cache_settings() -> Result<ImageCacheSettings, ServerFnEr
     #[cfg(feature = "server")]
     {
         let client = get_conn().await.map_err(AppError::db_conn)?;
-        let s = load_image_cache_settings(&client).await.map_err(ServerFnError::from)?;
+        let s = load_image_cache_settings(&client)
+            .await
+            .map_err(ServerFnError::from)?;
         crate::cache::set_image_cache_settings(s.clone()).await;
         Ok(s)
     }
@@ -741,7 +749,8 @@ pub async fn update_image_cache_settings(
     let _user = get_current_admin_user().await?;
 
     let disk_cache_max_mb = ImageCacheSettings::clamp_max_mb(disk_cache_max_mb);
-    let disk_cache_max_age_hours = ImageCacheSettings::clamp_max_age_hours(disk_cache_max_age_hours);
+    let disk_cache_max_age_hours =
+        ImageCacheSettings::clamp_max_age_hours(disk_cache_max_age_hours);
 
     #[cfg(feature = "server")]
     {
@@ -926,20 +935,104 @@ pub(crate) async fn load_rate_limit_settings(
     }
 
     Ok(RateLimitSettings {
-        strict_per_sec: read_clamped(client, "ratelimit_strict_per_sec", m::DEFAULT_RATE_LIMIT_STRICT_PER_SEC, R::clamp_per_sec).await?,
-        strict_burst: read_clamped(client, "ratelimit_strict_burst", m::DEFAULT_RATE_LIMIT_STRICT_BURST, R::clamp_burst).await?,
-        upload_per_sec: read_clamped(client, "ratelimit_upload_per_sec", m::DEFAULT_RATE_LIMIT_UPLOAD_PER_SEC, R::clamp_per_sec).await?,
-        upload_burst: read_clamped(client, "ratelimit_upload_burst", m::DEFAULT_RATE_LIMIT_UPLOAD_BURST, R::clamp_burst).await?,
-        image_per_sec: read_clamped(client, "ratelimit_image_per_sec", m::DEFAULT_RATE_LIMIT_IMAGE_PER_SEC, R::clamp_per_sec).await?,
-        image_burst: read_clamped(client, "ratelimit_image_burst", m::DEFAULT_RATE_LIMIT_IMAGE_BURST, R::clamp_burst).await?,
-        comment_per_sec: read_clamped(client, "ratelimit_comment_per_sec", m::DEFAULT_RATE_LIMIT_COMMENT_PER_SEC, R::clamp_per_sec).await?,
-        comment_burst: read_clamped(client, "ratelimit_comment_burst", m::DEFAULT_RATE_LIMIT_COMMENT_BURST, R::clamp_burst).await?,
-        code_exec_per_sec: read_clamped(client, "ratelimit_code_exec_per_sec", m::DEFAULT_RATE_LIMIT_CODE_EXEC_PER_SEC, R::clamp_per_sec).await?,
-        code_exec_burst: read_clamped(client, "ratelimit_code_exec_burst", m::DEFAULT_RATE_LIMIT_CODE_EXEC_BURST, R::clamp_burst).await?,
-        code_exec_daily: read_clamped(client, "ratelimit_code_exec_daily", m::DEFAULT_RATE_LIMIT_CODE_EXEC_DAILY, R::clamp_daily).await?,
-        unknown_per_sec: read_clamped(client, "ratelimit_unknown_per_sec", m::DEFAULT_RATE_LIMIT_UNKNOWN_PER_SEC, R::clamp_per_sec).await?,
-        unknown_burst: read_clamped(client, "ratelimit_unknown_burst", m::DEFAULT_RATE_LIMIT_UNKNOWN_BURST, R::clamp_burst).await?,
-        gc_interval_secs: read_clamped(client, "ratelimit_gc_interval_secs", m::DEFAULT_RATE_LIMIT_GC_INTERVAL_SECS, R::clamp_gc_interval).await?,
+        strict_per_sec: read_clamped(
+            client,
+            "ratelimit_strict_per_sec",
+            m::DEFAULT_RATE_LIMIT_STRICT_PER_SEC,
+            R::clamp_per_sec,
+        )
+        .await?,
+        strict_burst: read_clamped(
+            client,
+            "ratelimit_strict_burst",
+            m::DEFAULT_RATE_LIMIT_STRICT_BURST,
+            R::clamp_burst,
+        )
+        .await?,
+        upload_per_sec: read_clamped(
+            client,
+            "ratelimit_upload_per_sec",
+            m::DEFAULT_RATE_LIMIT_UPLOAD_PER_SEC,
+            R::clamp_per_sec,
+        )
+        .await?,
+        upload_burst: read_clamped(
+            client,
+            "ratelimit_upload_burst",
+            m::DEFAULT_RATE_LIMIT_UPLOAD_BURST,
+            R::clamp_burst,
+        )
+        .await?,
+        image_per_sec: read_clamped(
+            client,
+            "ratelimit_image_per_sec",
+            m::DEFAULT_RATE_LIMIT_IMAGE_PER_SEC,
+            R::clamp_per_sec,
+        )
+        .await?,
+        image_burst: read_clamped(
+            client,
+            "ratelimit_image_burst",
+            m::DEFAULT_RATE_LIMIT_IMAGE_BURST,
+            R::clamp_burst,
+        )
+        .await?,
+        comment_per_sec: read_clamped(
+            client,
+            "ratelimit_comment_per_sec",
+            m::DEFAULT_RATE_LIMIT_COMMENT_PER_SEC,
+            R::clamp_per_sec,
+        )
+        .await?,
+        comment_burst: read_clamped(
+            client,
+            "ratelimit_comment_burst",
+            m::DEFAULT_RATE_LIMIT_COMMENT_BURST,
+            R::clamp_burst,
+        )
+        .await?,
+        code_exec_per_sec: read_clamped(
+            client,
+            "ratelimit_code_exec_per_sec",
+            m::DEFAULT_RATE_LIMIT_CODE_EXEC_PER_SEC,
+            R::clamp_per_sec,
+        )
+        .await?,
+        code_exec_burst: read_clamped(
+            client,
+            "ratelimit_code_exec_burst",
+            m::DEFAULT_RATE_LIMIT_CODE_EXEC_BURST,
+            R::clamp_burst,
+        )
+        .await?,
+        code_exec_daily: read_clamped(
+            client,
+            "ratelimit_code_exec_daily",
+            m::DEFAULT_RATE_LIMIT_CODE_EXEC_DAILY,
+            R::clamp_daily,
+        )
+        .await?,
+        unknown_per_sec: read_clamped(
+            client,
+            "ratelimit_unknown_per_sec",
+            m::DEFAULT_RATE_LIMIT_UNKNOWN_PER_SEC,
+            R::clamp_per_sec,
+        )
+        .await?,
+        unknown_burst: read_clamped(
+            client,
+            "ratelimit_unknown_burst",
+            m::DEFAULT_RATE_LIMIT_UNKNOWN_BURST,
+            R::clamp_burst,
+        )
+        .await?,
+        gc_interval_secs: read_clamped(
+            client,
+            "ratelimit_gc_interval_secs",
+            m::DEFAULT_RATE_LIMIT_GC_INTERVAL_SECS,
+            R::clamp_gc_interval,
+        )
+        .await?,
     })
 }
 
@@ -1275,8 +1368,7 @@ pub async fn get_system_info() -> Result<SystemInfo, ServerFnError> {
                 .ok()
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(3600),
-            compression_algorithms: std::env::var("COMPRESSION_ALGORITHMS")
-                .unwrap_or_default(),
+            compression_algorithms: std::env::var("COMPRESSION_ALGORITHMS").unwrap_or_default(),
             expose_version_headers: std::env::var("EXPOSE_VERSION_HEADERS")
                 .map(|v| !matches!(v.as_str(), "0" | "false" | "no" | "off"))
                 .unwrap_or(true),
@@ -1314,7 +1406,6 @@ pub async fn get_system_info() -> Result<SystemInfo, ServerFnError> {
     }
 }
 
-
 // ============================================================================
 // WebP 编码配置（需重启生效）
 // ============================================================================
@@ -1334,7 +1425,10 @@ pub(crate) async fn seed_webp_settings_from_env(
 
     if let Ok(v) = std::env::var("WEBP_QUALITY") {
         match v.trim().parse::<f32>() {
-            Ok(q) => seeds.push(("webp_quality", m::WebpSettings::clamp_quality(q).to_string())),
+            Ok(q) => seeds.push((
+                "webp_quality",
+                m::WebpSettings::clamp_quality(q).to_string(),
+            )),
             Err(_) => tracing::warn!("WEBP_QUALITY={v:?} 非法（期望浮点数），跳过"),
         }
     }
@@ -1494,9 +1588,7 @@ pub(crate) async fn seed_image_limit_settings_from_env(
                 m::ImageLimitSettings::clamp_dimensions_cache_ttl_secs(n).to_string(),
             )),
             Err(_) => {
-                tracing::warn!(
-                    "IMAGE_DIMENSIONS_CACHE_TTL_SECS={v:?} 非法（期望正整数），跳过"
-                )
+                tracing::warn!("IMAGE_DIMENSIONS_CACHE_TTL_SECS={v:?} 非法（期望正整数），跳过")
             }
         }
     }
