@@ -101,9 +101,9 @@ pub(super) fn ExportTab() -> Element {
                             trigger_class: Some(FORM_SELECT_COMPACT_CLASS),
                             value: format(),
                             options: vec![
-                                                                                        ("csv".to_string(), "CSV"),
-                                                                                        ("sql".to_string(), "SQL (INSERT)"),
-                                                                                    ],
+                                                                                                                                                                            ("csv".to_string(), "CSV"),
+                                                                                                                                                                            ("sql".to_string(), "SQL (INSERT)"),
+                                                                                                                                                                        ],
                             onchange: move |v| format.set(v),
                         }
                     }
