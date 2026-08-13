@@ -12,7 +12,8 @@ import {
   matRotateDeg,
   matToCss,
   matTranslate,
-  nextRotationCW,
+  nextRotationDeg,
+  normDeg,
   originalUrl,
   panBy,
   type Rect,
@@ -176,9 +177,11 @@ describe('缩放/旋转/平移手势数学', () => {
     expect(DOUBLE_CLICK_SCALE).toBeLessThanOrEqual(SCALE_MAX);
   });
 
-  it('nextRotationCW 90° 步进并回绕', () => {
-    expect(nextRotationCW(0)).toBe(90);
-    expect(nextRotationCW(270)).toBe(0);
+  it('nextRotationDeg 累计步进不取模，normDeg 归一到 [0,360)', () => {
+    expect(nextRotationDeg(0)).toBe(90);
+    expect(nextRotationDeg(270)).toBe(360);
+    expect(normDeg(360)).toBe(0);
+    expect(normDeg(450)).toBe(90);
   });
 
   it('effectiveDims 仅在 90°/270° 交换宽高', () => {

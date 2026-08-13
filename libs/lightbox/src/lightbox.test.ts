@@ -495,8 +495,8 @@ describe('lightbox 黑盒行为', () => {
      * 素材页场景回归：正方形缩略图打开竖图，飞入静止态是 translate+scale
      * 非均匀缩放字符串。首个缩放/旋转若不在归一化后强制 reflow 提交基态，
      * 180ms 过渡会从该字符串起算 —— 首下动画出现非均匀 scale 回弹/起始帧
-     * 跳变。契约：首次操控必须把「transition:none + matrix 基态」先经强制
-     * reflow（offsetHeight 读）提交绘制，再写 180ms 过渡。
+     * 跳变。契约：首次操控必须把「transition:none + 定长函数列表基态」先经
+     * 强制 reflow（offsetHeight 读）提交绘制，再写 180ms 过渡。
      */
     const openAndSettle = (img: HTMLElement): HTMLImageElement => {
       mountRoot([img]);
@@ -510,8 +510,14 @@ describe('lightbox 黑盒行为', () => {
     };
 
     /** 给灯箱图装 reflow 探针：记录 offsetHeight 读取次数与读取瞬间的样式。 */
-    const probeReflow = (lbImg: HTMLImageElement): { reads: number; transition: string | null; transform: string | null } => {
-      const probe = { reads: 0, transition: null as string | null, transform: null as string | null };
+    const probeReflow = (
+      lbImg: HTMLImageElement,
+    ): { reads: number; transition: string | null; transform: string | null } => {
+      const probe = {
+        reads: 0,
+        transition: null as string | null,
+        transform: null as string | null,
+      };
       Object.defineProperty(lbImg, 'offsetHeight', {
         configurable: true,
         get: () => {
@@ -524,7 +530,7 @@ describe('lightbox 黑盒行为', () => {
       return probe;
     };
 
-    it('首次缩放：归一化基态先强制 reflow 提交（none + matrix），再写 180ms 过渡', () => {
+    it('首次缩放：归一化基态先强制 reflow 提交（none + 列表基态），再写 180ms 过渡', () => {
       const lbImg = openAndSettle(makeGalleryImage('/uploads/x.webp?w=800', '图'));
       const probe = probeReflow(lbImg);
 
@@ -532,9 +538,10 @@ describe('lightbox 黑盒行为', () => {
 
       expect(probe.reads).toBeGreaterThanOrEqual(1); // 无 reflow → 首下动画从字符串起算（红）
       expect(probe.transition).toBe('none');
-      expect(probe.transform).toContain('matrix(');
+      // 基态 = 定长同构列表（rotate(0deg) 槽在位），与操控态逐函数插值
+      expect(probe.transform).toContain('rotate(0deg)');
       expect(lbImg.style.transition).toBe('transform 180ms ease-out');
-      expect(lbImg.style.transform).toContain('matrix(');
+      expect(lbImg.style.transform).toContain('scale(1.5)');
     });
 
     it('首次旋转：同样先提交归一化基态再启动过渡', () => {
@@ -545,9 +552,67 @@ describe('lightbox 黑盒行为', () => {
 
       expect(probe.reads).toBeGreaterThanOrEqual(1);
       expect(probe.transition).toBe('none');
-      expect(probe.transform).toContain('matrix(');
+      expect(probe.transform).toContain('rotate(0deg)');
       expect(lbImg.style.transition).toBe('transform 180ms ease-out');
-      expect(lbImg.style.transform).toContain('matrix(');
+      expect(lbImg.style.transform).toContain('rotate(90deg)');
+    });
+  });
+
+  describe('旋转的 DOM 契约（绕中心旋转的结构前提）', () => {
+    const openAndSettle = (img: HTMLElement): HTMLImageElement => {
+      mountRoot([img]);
+      window.__initLightbox('.post-content');
+      clickEl(img);
+      const lbImg = getLightboxImg()!;
+      stubNatural(lbImg, 600, 800);
+      lbImg.dispatchEvent(new Event('load'));
+      vi.advanceTimersByTime(50);
+      return lbImg;
+    };
+    const rotateBtn = (): Element => document.querySelector('[aria-label="顺时针旋转 90 度"]')!;
+
+    it('旋转不交换布局盒 width/height（消灭无过渡的瞬时跳变）', () => {
+      const lbImg = openAndSettle(makeGalleryImage('/uploads/z.webp?w=800', '图'));
+      clickEl(rotateBtn()); // 首次操控：归一化后布局盒 = fit 尺寸
+      const w0 = lbImg.style.width;
+      const h0 = lbImg.style.height;
+      expect(w0).not.toBe('');
+      clickEl(rotateBtn());
+      clickEl(rotateBtn());
+      clickEl(rotateBtn());
+      expect(lbImg.style.width).toBe(w0);
+      expect(lbImg.style.height).toBe(h0);
+    });
+
+    it('rotate 槽累计不取模：第四次旋转是 rotate(360deg) 而非 rotate(0deg)', () => {
+      const lbImg = openAndSettle(makeGalleryImage('/uploads/w.webp?w=800', '图'));
+      clickEl(rotateBtn());
+      expect(lbImg.style.transform).toContain('rotate(90deg)');
+      clickEl(rotateBtn());
+      expect(lbImg.style.transform).toContain('rotate(180deg)');
+      clickEl(rotateBtn());
+      expect(lbImg.style.transform).toContain('rotate(270deg)');
+      clickEl(rotateBtn());
+      expect(lbImg.style.transform).toContain('rotate(360deg)');
+    });
+
+    it('重置吸附最近整圈：270° 后归位到 rotate(360deg)（只回摆 90°）', () => {
+      const lbImg = openAndSettle(makeGalleryImage('/uploads/v.webp?w=800', '图'));
+      clickEl(rotateBtn());
+      clickEl(rotateBtn());
+      clickEl(rotateBtn());
+      expect(lbImg.style.transform).toContain('rotate(270deg)');
+      clickEl(document.querySelector('[aria-label="重置视图"]')!);
+      expect(lbImg.style.transform).toContain('rotate(360deg)');
+      expect(lbImg.style.transform).toContain('scale(1)');
+    });
+
+    it('操控态变换恒为定长函数列表（translate 开头，rotate 槽恒在）', () => {
+      const lbImg = openAndSettle(makeGalleryImage('/uploads/u.webp?w=800', '图'));
+      clickEl(rotateBtn());
+      expect(lbImg.style.transform).toMatch(
+        /^translate\([^)]*\) scale\([^)]*\) translate\([^)]*\) rotate\([^)]*\) scale\([^)]*\) translate\([^)]*\)$/,
+      );
     });
   });
 

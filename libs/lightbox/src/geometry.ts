@@ -45,12 +45,21 @@ export function originalUrl(dataSrc: string | null): string {
 // ============ 查看器操控：2D 矩阵与手势数学 ============
 //
 // 灯箱打开/关闭的飞行动画仍走 transformFor（translate+scale 字符串，支持非均匀
-// 缩放）；用户一旦缩放/旋转/平移，静止态变换统一改由 matrix() 表达：
-//   M_total = M_user · M0
-// M0（基态矩阵）把布局盒映射为「旋转后恰好 fitCentered 居中」的视觉位置；
-// M_user（用户矩阵）承载缩放锚点与平移，恒等时退回 transformFor 路径。
-// CSS Transitions 会把 matrix() 分解为 translate/rotate/scale 插值，
-// 因此按钮/旋转/重置的动画直接用 transition，滚轮/拖拽则直出（<200ms 响应）。
+// 缩放）；用户一旦缩放/旋转/平移，静止态变换统一由 viewTransformCss 的
+// 「定长同构函数列表」表达：
+//   translate(u.e,u.f) scale(u.s) translate(C) rotate(deg) scale(k) translate(−c)
+// 其中 C=视口中心、c=布局盒中心（布局盒恒为未旋转 fit 尺寸，不随旋转交换），
+// k=rotationFitScale（90°/270° 时把旋转后的视觉尺寸收回 fitCentered）。
+//
+// 为什么不用 matrix()：CSS Transitions 对 matrix()↔matrix() 走「分解为
+// translate/rotate/scale 各自线性插值再重组」，绕中心旋转所需的 pivot 补偿
+// 混在 translate 槽里被线性化，过渡中点中心会甩出视口中心（曾偏离 ~124px）。
+// 定长同构列表触发逐函数插值：translate 槽两端恒定，rotate 绕不动点
+// 「布局盒中心→视口中心」进行，全程中心锁定。transform-origin 恒为 top left。
+//
+// M0（基态矩阵，仍用于 dragclose/clampPan 的几何计算）= T(C)·R·S(k)·T(−c)；
+// M_user（用户矩阵）承载缩放锚点与平移，恒为无旋转相似（b=c=0, a=d）。
+// 按钮/旋转/重置的动画用 transition，滚轮/拖拽直出（<200ms 响应）。
 
 // 2D 仿射矩阵（等价 CSS matrix(a,b,c,d,e,f)）：x' = a·x + c·y + e，y' = b·x + d·y + f。
 export interface Mat {
@@ -132,8 +141,86 @@ export function clampScale(s: number): number {
   return Math.min(SCALE_MAX, Math.max(SCALE_MIN, s));
 }
 
-export function nextRotationCW(rot: number): number {
-  return (rot + 90) % 360;
+// 归一化到 [0, 360)。几何计算（fit/宽高互换）只看等效角。
+export function normDeg(deg: number): number {
+  return ((deg % 360) + 360) % 360;
+}
+
+// 累计旋转角步进（不取模）：CSS rotate() 按数值插值，270→360 才是顺时针 90°；
+// 若取模成 270→0，过渡会反向空转 270°。
+export function nextRotationDeg(deg: number): number {
+  return deg + 90;
+}
+
+// 旋转后的适配缩放：布局盒恒为未旋转 fit 尺寸（不随旋转交换），
+// 90°/270° 时视觉宽高互换，需缩小 k 使旋转后仍恰好 fitCentered。
+// 布局盒与旋转后 fit 的宽高比互为倒数，两个比值相等，取 min 仅为浮点稳妥。
+export function rotationFitScale(
+  naturalW: number,
+  naturalH: number,
+  rot: number,
+  vw: number,
+  vh: number,
+): number {
+  if (normDeg(rot) % 180 === 0) return 1;
+  const base = fitCentered(naturalW, naturalH, vw, vh);
+  const fit = fitCentered(naturalH, naturalW, vw, vh);
+  return Math.min(fit.w / base.h, fit.h / base.w);
+}
+
+export interface BaseViewGeometry {
+  // 基态矩阵 M0 = T(视口中心)·R(rot)·S(k)·T(−布局盒中心)，origin top left。
+  m0: Mat;
+  // 旋转适配缩放（viewTransformCss 的第 5 槽）。
+  k: number;
+  // 布局盒尺寸 = 未旋转 fitCentered（旋转不变，消灭 width/height 瞬时跳变）。
+  layoutW: number;
+  layoutH: number;
+  // 旋转后的视觉 fit rect（close/resize 的基准）。
+  fit: Rect;
+}
+
+// 查看器基态几何：deg 可为累计角（≥360），内部归一。
+export function baseViewGeometry(
+  naturalW: number,
+  naturalH: number,
+  deg: number,
+  vw: number,
+  vh: number,
+): BaseViewGeometry {
+  const rot = normDeg(deg);
+  const layout = fitCentered(naturalW, naturalH, vw, vh);
+  const eff = effectiveDims(naturalW, naturalH, rot);
+  const fit = fitCentered(eff.w, eff.h, vw, vh);
+  const k = rotationFitScale(naturalW, naturalH, rot, vw, vh);
+  const m0 = matMultiply(
+    matTranslate(vw / 2, vh / 2),
+    matMultiply(
+      matRotateDeg(rot),
+      matMultiply(matScale(k), matTranslate(-layout.w / 2, -layout.h / 2)),
+    ),
+  );
+  return { m0, k, layoutW: layout.w, layoutH: layout.h, fit };
+}
+
+// 查看器变换的规范字符串：定长同构 6 函数列表（见模块头注释）。
+// deg 用累计角（插值方向正确）；user 恒为无旋转相似（zoomAround/panBy/
+// clampPanToViewport 保持 {a=s, b=0, c=0, d=s} 形）。坐标保留 4 位小数。
+export function viewTransformCss(
+  user: Mat,
+  deg: number,
+  k: number,
+  layoutW: number,
+  layoutH: number,
+  vw: number,
+  vh: number,
+): string {
+  const r = (v: number): number => Math.round(v * 1e4) / 1e4;
+  return (
+    `translate(${r(user.e)}px, ${r(user.f)}px) scale(${r(user.a)}) ` +
+    `translate(${r(vw / 2)}px, ${r(vh / 2)}px) rotate(${r(deg)}deg) scale(${r(k)}) ` +
+    `translate(${r(-layoutW / 2)}px, ${r(-layoutH / 2)}px)`
+  );
 }
 
 // 旋转后的有效视觉尺寸：90°/270° 时宽高互换（fit 计算用）。

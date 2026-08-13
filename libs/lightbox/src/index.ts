@@ -1,24 +1,25 @@
 import { prefersReducedMotion } from '@yggdrasil/shared';
 import {
+  type BaseViewGeometry,
   BUTTON_ZOOM_STEP,
+  baseViewGeometry,
   clampPanToViewport,
   clampScale,
   DOUBLE_CLICK_SCALE,
   DRAG_CLOSE_PX,
-  effectiveDims,
   fitCentered,
   type Mat,
   matIdentity,
   matMultiply,
-  matRotateDeg,
   matScale,
   matToCss,
   matTranslate,
-  nextRotationCW,
+  nextRotationDeg,
   originalUrl,
   panBy,
   type Rect,
   transformFor,
+  viewTransformCss,
   wheelZoomFactor,
   zoomAround,
 } from './geometry';
@@ -60,10 +61,11 @@ interface LightboxState {
   reduced: boolean;
   keyHandler: ((this: Document, ev: KeyboardEvent) => void) | null;
   resizeHandler: (() => void) | null;
-  // 查看器操控：rot 顺时针 0/90/180/270；scale 相对 fit 的倍率；user 矩阵
+  // 查看器操控：deg 累计顺时针角（0/90/180/…不取模，CSS 插值方向正确；
+  // 几何用 normDeg 归一）；scale 相对 fit 的倍率；user 矩阵
   // 承载缩放锚点与平移，null = 恒等（飞行/图集切换路径仍写 transformFor
-  // 字符串，首次操控时才经 ensureNormalized 归一到矩阵基态）。
-  view: { rot: number; scale: number; user: Mat | null };
+  // 字符串，首次操控时才经 ensureNormalized 归一到列表基态）。
+  view: { deg: number; scale: number; user: Mat | null };
   normalized: boolean;
   pointers: Map<number, { x: number; y: number }>;
   gesture: GestureState | null;
@@ -450,7 +452,7 @@ function openLightbox(originNode: HTMLElement, gallery: HTMLElement[], index: nu
     reduced: prefersReducedMotion(),
     keyHandler: null,
     resizeHandler: null,
-    view: { rot: 0, scale: 1, user: null },
+    view: { deg: 0, scale: 1, user: null },
     normalized: false,
     pointers: new Map(),
     gesture: null,
@@ -689,7 +691,7 @@ function gotoIndex(rawIndex: number): void {
     s.index = newIndex;
     // 换图归零查看器操控（旋转/缩放/平移不带到下一张）；applyGeometry 已把
     // 布局盒设为新 target 尺寸，normalized 回退到 transformFor 路径。
-    s.view = { rot: 0, scale: 1, user: null };
+    s.view = { deg: 0, scale: 1, user: null };
     s.normalized = false;
     s.img.classList.remove('is-zoomed');
     updateDownloadLink();
@@ -704,30 +706,23 @@ function isErrorShown(s: LightboxState): boolean {
   return s.errorBox.style.display !== 'none';
 }
 
-// 基态矩阵 M0：布局盒 →「旋转 rot 后 fitCentered 居中」的视觉位置。
-// 布局盒尺寸按旋转后的有效 fit 反推（90°/270° 宽高互换），位图宽高比不变。
-function baseGeometry(s: LightboxState): { m0: Mat; layoutW: number; layoutH: number; fit: Rect } {
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
+// 基态几何：读视口/位图尺寸，委托给纯函数 baseViewGeometry。
+// 布局盒恒为未旋转 fit（旋转不变），90°/270° 的适配折进 k，消灭 width/height
+// 瞬时交换带来的跳变。
+function baseGeometry(s: LightboxState): BaseViewGeometry {
   const natW = s.img.naturalWidth || 1;
   const natH = s.img.naturalHeight || 1;
-  const eff = effectiveDims(natW, natH, s.view.rot);
-  const fit = fitCentered(eff.w, eff.h, vw, vh);
-  const layoutW = s.view.rot % 180 === 0 ? fit.w : fit.h;
-  const layoutH = s.view.rot % 180 === 0 ? fit.h : fit.w;
-  const m0 = matMultiply(
-    matTranslate(vw / 2, vh / 2),
-    matMultiply(matRotateDeg(s.view.rot), matTranslate(-layoutW / 2, -layoutH / 2)),
-  );
-  return { m0, layoutW, layoutH, fit };
+  return baseViewGeometry(natW, natH, s.view.deg, window.innerWidth, window.innerHeight);
 }
 
 // 把 view 写到 DOM。animate=true 走 180ms ease-out（按钮/旋转/重置/回弹）；
 // false 直出（滚轮/拖拽/捏合需 <200ms 响应）。每次写入都重算 fit 并钳制平移。
+// 变换写定长同构函数列表（viewTransformCss）：CSS 逐函数插值，rotate 槽绕
+// 「布局盒中心→视口中心」不动轴进行，旋转全程中心锁定。
 function applyView(animate: boolean): void {
   const s = state;
   if (!s) return;
-  const { m0, layoutW, layoutH, fit } = baseGeometry(s);
+  const { k, layoutW, layoutH, fit, m0 } = baseGeometry(s);
   const wPx = `${layoutW}px`;
   const hPx = `${layoutH}px`;
   if (s.img.style.width !== wPx) s.img.style.width = wPx;
@@ -742,7 +737,15 @@ function applyView(animate: boolean): void {
   );
   s.view.user = user;
   s.img.style.transition = animate && !s.reduced ? 'transform 180ms ease-out' : 'none';
-  s.img.style.transform = matToCss(matMultiply(user, m0));
+  s.img.style.transform = viewTransformCss(
+    user,
+    s.view.deg,
+    k,
+    layoutW,
+    layoutH,
+    window.innerWidth,
+    window.innerHeight,
+  );
   // 关闭飞回/图集切换的基准同步：baseW/H 恒为当前布局盒尺寸
   s.target = fit;
   s.baseW = layoutW;
@@ -751,13 +754,13 @@ function applyView(animate: boolean): void {
 }
 
 // 首次操控前把布局盒从「飞行基准」（originRect 尺寸 + 非均匀 scale）归一到
-// 「fit 尺寸 + scale(1)」的矩阵基态——两者视觉完全一致，跳变不可见。
+// 「fit 布局盒 + 定长函数列表」的基态——两者视觉完全一致，跳变不可见。
 function ensureNormalized(): void {
   const s = state;
   if (!s || s.normalized) return;
   s.normalized = true;
   applyView(false);
-  // 强制 reflow：归一化基态（fit 布局盒 + matrix 字符串）必须在此提交绘制。
+  // 强制 reflow：归一化基态（fit 布局盒 + 列表字符串）必须在此提交绘制。
   // 否则它与随后的 applyView(true) 合并在同一帧，180ms 过渡的起算值仍是飞行
   // 动画遗留的 translate+scale 字符串 —— 首个缩放/旋转动画出现非均匀 scale
   // 回弹与起始帧跳变（素材页正方形缩略图打开竖图时最明显）。
@@ -805,7 +808,7 @@ function rotateCW(): void {
   const s = state;
   if (!s?.target || isErrorShown(s)) return;
   ensureNormalized();
-  s.view.rot = nextRotationCW(s.view.rot);
+  s.view.deg = nextRotationDeg(s.view.deg);
   // 旋转后保持倍率、绕视口中心重锚定、平移清零（避免旋转把图甩出视口）
   s.view.user = zoomAround(
     matIdentity(),
@@ -821,7 +824,8 @@ function resetView(animate: boolean): void {
   const s = state;
   if (!s?.target || isErrorShown(s)) return;
   ensureNormalized();
-  s.view = { rot: 0, scale: 1, user: null };
+  // 归位取最近整圈：rotate 槽按累计角插值，450→360 只回摆 90°（而非 450°）。
+  s.view = { deg: Math.round(s.view.deg / 360) * 360, scale: 1, user: null };
   applyView(animate);
   showBadge();
   pokeToolbar();
@@ -923,7 +927,7 @@ function bindInteractions(): void {
   };
   document.addEventListener('keydown', s.keyHandler);
 
-  // 视口尺寸变化：重算 fit。已操控态保持 rot/scale 由 applyView 重锚定；
+  // 视口尺寸变化：重算 fit。已操控态保持 deg/scale 由 applyView 重锚定；
   // 未操控态（transformFor 路径）按原逻辑重算居中目标。
   s.resizeHandler = (): void => {
     const st = state;
