@@ -1,5 +1,5 @@
 .PHONY: dev build build-linux build-freebsd freebsd-sysroot docker docker-amd64 docker-apple docker-multiarch docker-dev docker-dev-down docker-dev-shell docker-run docker-lint docker-clippy docker-check docker-fmt docker-fix docker-test docker-tools-build docker-tools-clean css css-watch clean build-libs build-editor build-codemirror build-lightbox build-core build-xterm highlight-css katex-css test doc doc-open start lint fix restore-webp esbuild-cache wasm-bindgen-cache
-.PHONY: precompress
+.PHONY: check-brotli precompress
 
 # ── sccache × dx 兼容 ──────────────────────────────────────────
 # dx build / dx serve 构建时把自己设为 RUSTC_WORKSPACE_WRAPPER 拦截 workspace
@@ -9,7 +9,7 @@
 # 空 RUSTC_WRAPPER env 覆盖 config（env 优先于 config，空值 = 无 wrapper），
 # 只对 dx 构建关闭 sccache；直接 cargo 的构建（test / lint / Dockerfile / CI）不受影响。
 # 下面的 build / build-linux / dev 三个 target 的 dx 调用都带此前缀。
-build:
+build: check-brotli
 	@rm -rf static/
 	@$(MAKE) build-libs
 	@$(MAKE) highlight-css
@@ -20,7 +20,7 @@ build:
 	@$(MAKE) restore-webp
 	@$(MAKE) precompress
 
-build-linux:
+build-linux: check-brotli
 	@$(MAKE) build-libs
 	@$(MAKE) highlight-css
 	@$(MAKE) katex-css
@@ -91,11 +91,22 @@ restore-webp:
 		done; \
 	done
 
+# Local release builds use this host-side CLI after dx finishes. Check it before
+# the expensive build so a missing package fails with an actionable message.
+check-brotli:
+	@if command -v brotli >/dev/null 2>&1; then \
+		:; \
+	else \
+		echo "error: brotli CLI is required for release builds" >&2; \
+		echo "Install: sudo dnf install brotli | sudo apt-get install brotli | brew install brotli" >&2; \
+		exit 1; \
+	fi
+
 # Pre-compress static text assets with brotli (.br sidecars). dioxus-server
 # registers ServeFile::precompressed_br() for every public leaf, so .br
 # sidecars are auto-served on Accept-Encoding: br. Text formats only; fonts/
 # images are already compressed. dx's pre_compress already covers assets/.
-precompress:
+precompress: check-brotli
 	@find target/dx/yggdrasil/release/web/public -type f \
 		\( -name '*.js' -o -name '*.css' -o -name '*.wasm' \
 		   -o -name '*.svg' -o -name '*.html' -o -name '*.json' -o -name '*.xml' \) \
