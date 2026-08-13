@@ -22,6 +22,8 @@ use std::num::NonZeroU32;
 #[cfg(feature = "server")]
 use std::sync::LazyLock;
 #[cfg(feature = "server")]
+use std::sync::Once;
+#[cfg(feature = "server")]
 use std::time::Duration;
 
 #[cfg(feature = "server")]
@@ -258,12 +260,15 @@ fn get_client_ip_internal(
         return addr.ip().to_string();
     }
 
-    // Server function 等非 Axum 上下文无法获取对端地址，退回到 unknown。
-    // 此时所有请求共享一个限流桶，生产环境应在反向代理后部署。
-    tracing::warn!(
-        "无法获取客户端真实 IP（未配置 TRUSTED_PROXY_COUNT 且无法读取 TCP 对端地址），\
-         限流将按 'unknown' 键聚合"
-    );
+    // 落到 unknown 是预期的常见路径（TRUSTED_PROXY_COUNT=0 + server function 无 TCP
+    // 对端地址），每个请求都打 WARN 会淹没日志，故进程级仅警告一次。
+    static UNKNOWN_IP_WARNED: Once = Once::new();
+    UNKNOWN_IP_WARNED.call_once(|| {
+        tracing::warn!(
+            "无法获取客户端真实 IP（TRUSTED_PROXY_COUNT=0 不解析代理头，\
+             且当前上下文无 TCP 对端地址，通常为 server function），限流将按 'unknown' 键聚合"
+        );
+    });
     "unknown".to_string()
 }
 
