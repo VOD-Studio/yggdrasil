@@ -12,8 +12,6 @@ mod list;
 mod read;
 mod rebuild;
 mod search;
-#[cfg(test)]
-mod seed;
 mod stats;
 mod tags;
 mod trash;
