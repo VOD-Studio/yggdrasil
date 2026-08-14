@@ -539,8 +539,9 @@ jobs:
   #   - runner：publish-runners 推 amd64 单架构，拉取后 tag 成 LANGUAGES 注册表硬编码的
   #     短名 yggdrasil-runner-*:latest（无 registry 前缀）。runner 拉取 best-effort——失败
   #     仅告警保留旧 tag，绝不阻断 app 部署（app 上线是关键路径）。
-  # 仓库 public → GHCR 包默认 public，匿名拉取即可；若设为 private，在 xun 上一次性
-  # `docker login ghcr.io`（PAT read:packages）即可，CI 无需改动。拉取带 3 次重试
+  # GHCR 容器包一律默认 private（与仓库可见性无关，GITHUB_TOKEN 首推不继承 public）；
+  # 本包已在 package settings 手动改为 public → xun/rua 匿名拉取即可。若日后改回
+  # private，需在 xun 一次性 `docker login ghcr.io`（PAT read:packages）。拉取带 3 次重试
   # （xun 中国网络访问 ghcr.io 偶发超时）。本地构建+scp 兜底仍见 scripts/xun.fish。
   # rua（腾讯云 DR 副本，scripts/both.fish 的 REPLICA）也接入自动部署：xun 主路径完成
   # 且健康检查通过后，再 SSH 到 rua 用 **podman**（非 docker）拉主应用镜像并 compose up。
