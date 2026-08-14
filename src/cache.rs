@@ -946,6 +946,7 @@ mod tests {
             drafts: 3,
             published: 7,
             trash: 2,
+            recent_30d: 4,
         };
 
         set_post_stats(stats.clone()).await;

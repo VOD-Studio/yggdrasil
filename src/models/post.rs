@@ -225,6 +225,8 @@ pub struct PostStats {
     pub published: i64,
     /// 回收站（软删除）数量。
     pub trash: i64,
+    /// 近 30 天新建文章数（不含软删除），供仪表盘趋势徽章展示真实增量。
+    pub recent_30d: i64,
 }
 
 #[cfg(test)]

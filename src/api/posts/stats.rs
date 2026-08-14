@@ -39,7 +39,8 @@ pub async fn get_post_stats() -> Result<PostStatsResponse, ServerFnError> {
                     COUNT(*) FILTER (WHERE deleted_at IS NULL) AS total,
                     COUNT(*) FILTER (WHERE deleted_at IS NULL AND status = 'draft') AS drafts,
                     COUNT(*) FILTER (WHERE deleted_at IS NULL AND status = 'published') AS published,
-                    COUNT(*) FILTER (WHERE deleted_at IS NOT NULL) AS trash
+                    COUNT(*) FILTER (WHERE deleted_at IS NOT NULL) AS trash,
+                    COUNT(*) FILTER (WHERE deleted_at IS NULL AND created_at > now() - interval '30 days') AS recent_30d
                  FROM posts",
                 &[],
             )
@@ -51,6 +52,7 @@ pub async fn get_post_stats() -> Result<PostStatsResponse, ServerFnError> {
             drafts: row.get("drafts"),
             published: row.get("published"),
             trash: row.get("trash"),
+            recent_30d: row.get("recent_30d"),
         };
         crate::cache::set_post_stats(stats.clone()).await;
         Ok(PostStatsResponse { stats })
@@ -64,6 +66,7 @@ pub async fn get_post_stats() -> Result<PostStatsResponse, ServerFnError> {
                 drafts: 0,
                 published: 0,
                 trash: 0,
+                recent_30d: 0,
             },
         })
     }

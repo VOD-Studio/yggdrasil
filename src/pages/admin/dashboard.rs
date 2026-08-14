@@ -87,19 +87,19 @@ pub fn Admin() -> Element {
                             StatCard {
                                 value: s.total,
                                 label: "总文章数".to_string(),
-                                trend: "+12%".to_string(),
+                                trend: Some(format!("近30天 +{}", s.recent_30d)),
                                 delay_ms: 0,
                             }
                             StatCard {
                                 value: s.published,
                                 label: "已发布".to_string(),
-                                trend: "活跃".to_string(),
+                                trend: None,
                                 delay_ms: 120,
                             }
                             StatCard {
                                 value: s.drafts,
                                 label: "草稿".to_string(),
-                                trend: "待处理".to_string(),
+                                trend: None,
                                 delay_ms: 240,
                             }
                         }
@@ -217,7 +217,7 @@ pub fn Admin() -> Element {
 }
 
 #[component]
-fn StatCard(value: i64, label: String, trend: String, delay_ms: i32) -> Element {
+fn StatCard(value: i64, label: String, trend: Option<String>, delay_ms: i32) -> Element {
     rsx! {
         div {
             class: "{ADMIN_CARD_CLASS} p-8 flex flex-col justify-between h-36 relative group hover:-translate-y-1 hover:shadow-md transition-all duration-300 animate-page-enter",
