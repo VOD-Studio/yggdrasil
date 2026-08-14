@@ -21,7 +21,7 @@ use crate::components::forms::{FormInput, FormSelect, INPUT_INLINE_CLASS};
 use crate::components::ui::{LoadingButton, BTN_CLOSE_ICON, BTN_PRIMARY_SM};
 use crate::components::write_skeleton::WriteSkeleton;
 use crate::models::post::Post;
-use crate::pages::admin::asset_picker::AssetPickerModal;
+use crate::pages::admin::asset_picker::{AssetPickerModal, AssetSelection};
 use crate::router::Route;
 use crate::tiptap_bridge::{UploadErrorEntry, UploadsInFlight};
 #[cfg(target_arch = "wasm32")]
@@ -923,9 +923,12 @@ fn CoverUploader(cover_image: Signal<String>, cover_uploading: Signal<bool>) -> 
         AssetPickerModal {
             visible: picker_visible,
             cover_uploading,
-            on_select: move |url: String| {
-                cover_image.set(url);
-                cover_error.set(None);
+            on_select: move |picks: Vec<AssetSelection>| {
+                // 单选模式：载荷恰含一个元素。
+                if let Some(first) = picks.into_iter().next() {
+                    cover_image.set(first.url);
+                    cover_error.set(None);
+                }
             },
         }
     }

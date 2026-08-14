@@ -1,11 +1,15 @@
-//! 素材选择 modal（封面或头像上的「从素材库选择」）。
+//! 素材选择 modal（封面/头像「从素材库选择」、正文编辑器「素材库」插图共用）。
 //!
-//! 网格展示素材库（默认最新排序，支持文件名/alt 搜索），单击选中回填图片 URL。
-//! 内嵌「上传新图」入口（复用 `upload_image_file`），上传成功后留在网格中供用户选择。
+//! 网格展示素材库（默认最新排序，支持文件名/alt 搜索）。
+//! 单选模式（默认）：单击选中即回填并关闭，供封面/头像使用。
+//! 多选模式（`multi: true`，正文插图）：单击切换勾选态（跨页/搜索保留），
+//! 底部确认栏按勾选顺序批量回填。
+//! 内嵌「上传新图」入口（复用 `upload_image_file`），上传成功后留在网格中供用户选择
+//! （多选模式下自动加入选中集——上传即意图）。
 //! 纯 Dioxus 组件，不触碰 Tiptap；数据加载仅在 WASM 前端发生。
 
 use crate::components::forms::{FormInput, INPUT_INLINE_CLASS};
-use crate::components::ui::{Pagination, BTN_ICON, BTN_PRIMARY, SPINNER_SVG};
+use crate::components::ui::{Pagination, BTN_ICON, BTN_OUTLINE, BTN_PRIMARY, SPINNER_SVG};
 use dioxus::prelude::*;
 
 #[cfg(target_arch = "wasm32")]
@@ -22,19 +26,48 @@ const SEARCH_DEBOUNCE_MS: u32 = 300;
 /// 关闭过渡时长，与 input.css 的 modal-overlay / modal-panel 过渡保持一致。
 const EXIT_ANIM_MS: u32 = 200;
 
+/// 素材选中载荷：`on_select` 的回传单元。
+///
+/// 序列化形状即编辑器桥接契约 `[{ "src", "alt?" }]`（`insertImagesFromLibrary`），
+/// 写字页确认后直接 `serde_json::to_string` 传给 JS 侧，无需二次映射。
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+pub struct AssetSelection {
+    /// `/uploads/<path>` URL（序列化为编辑器 Image 节点的 `src`）。
+    #[serde(rename = "src")]
+    pub url: String,
+    /// 图片替代文本（素材 alt）；None 时不序列化，JS 侧等同未提供。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub alt: Option<String>,
+}
+
+/// 切换素材勾选态：已选（按 URL 判重）则移除，未选则按点击顺序追加。
+///
+/// 以 URL 为唯一键：上传新图在网格刷新前后可能以不同条目形态出现
+/// （`uploaded_url` 暂存 vs 素材列表行），URL 判重保证同图不会被选两次。
+/// 抽成纯函数便于单元测试（见本文件 tests 模块）。
+fn toggle_selection(selected: &mut Vec<AssetSelection>, item: AssetSelection) {
+    if let Some(pos) = selected.iter().position(|s| s.url == item.url) {
+        selected.remove(pos);
+    } else {
+        selected.push(item);
+    }
+}
+
 /// 素材选择 modal。
 ///
 /// - `visible`：显隐控制（父组件持有，选中/点遮罩/× 都会置 false）。
-/// - `on_select`：选中回填，参数为 `/uploads/<path>` URL。
+/// - `on_select`：选中回填。单选模式恰含一个元素；多选模式按勾选顺序排列。
 /// - `cover_uploading`：modal 内上传新图时置位，供父页面拦截保存（与 CoverUploader 语义一致）。
-/// - `title`：modal 标题；封面场景缺省为「选择封面图」，头像场景传入「选择头像」。
+/// - `title`：modal 标题；封面场景缺省为「选择封面图」，头像/正文场景各自传入。
+/// - `multi`：多选模式（正文插图）。网格项变为勾选切换，底部确认栏批量回填。
 #[component]
 #[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut, unused_variables))]
 pub fn AssetPickerModal(
     mut visible: Signal<bool>,
-    on_select: EventHandler<String>,
+    on_select: EventHandler<Vec<AssetSelection>>,
     cover_uploading: Signal<bool>,
     #[props(default = "选择封面图")] title: &'static str,
+    #[props(default)] multi: bool,
 ) -> Element {
     #[allow(unused_mut)]
     let mut assets: Signal<Vec<AssetDto>> = use_signal(Vec::new);
@@ -55,6 +88,9 @@ pub fn AssetPickerModal(
     let mut opened = use_signal(|| false);
     // 上传完成后先把新图留在弹窗网格中，用户点击后才真正应用头像。
     let mut uploaded_url = use_signal(|| None::<String>);
+    // 多选模式的选中集：按勾选顺序排列，跨页/搜索/上传保留；每次打开时重置。
+    // 以 URL 判重（见 toggle_selection）。单选模式不使用。
+    let mut selected: Signal<Vec<AssetSelection>> = use_signal(Vec::new);
 
     #[cfg(target_arch = "wasm32")]
     let request_generation = use_hook(|| std::rc::Rc::new(std::cell::Cell::new(0_u64)));
@@ -66,6 +102,8 @@ pub fn AssetPickerModal(
             opened.set(true);
             closing.set(false);
             uploaded_url.set(None);
+            // 每次打开都是一次全新的选择会话（取消或确认后关闭均不留旧勾选）。
+            selected.set(Vec::new());
         } else if *opened.peek() {
             #[cfg(target_arch = "wasm32")]
             request_generation_for_close.set(request_generation_for_close.get().wrapping_add(1));
@@ -220,6 +258,17 @@ pub fn AssetPickerModal(
                                                 }
                                                 match result {
                                                     Ok(url) => {
+                                                        // 多选模式：上传即意图，新图直接进入选中集
+                                                        // （URL 判重，网格刷新后同图不会重复选中）。
+                                                        if multi {
+                                                            toggle_selection(
+                                                                &mut selected.write(),
+                                                                AssetSelection {
+                                                                    url: url.clone(),
+                                                                    alt: None,
+                                                                },
+                                                            );
+                                                        }
                                                         uploaded_url.set(Some(url));
                                                         uploading_preview.set(None);
                                                         cover_uploading.set(false);
@@ -306,16 +355,38 @@ pub fn AssetPickerModal(
                             }
                             if let Some(uploaded_url) = uploaded_url() {
                                 {
-                                    let uploaded_url_for_select = uploaded_url.clone();
+                                    let uploaded_sel = AssetSelection {
+                                        url: uploaded_url.clone(),
+                                        alt: None,
+                                    };
+                                    // 多选模式：勾选顺序即插入顺序，badge 展示 1 基序号。
+                                    let uploaded_order = if multi {
+                                        selected.read().iter().position(|s| s.url == uploaded_url)
+                                    } else {
+                                        None
+                                    };
                                     rsx! {
                                         button {
                                             key: "uploaded-{uploaded_url}",
-                                            class: "group relative aspect-square cursor-pointer overflow-hidden rounded-2xl border-2 border-[var(--color-paper-accent)] bg-[var(--color-paper-theme)] shadow-sm transition-all hover:shadow-md",
-                                            title: "新上传图片，点击使用",
+                                            class: "group relative aspect-square cursor-pointer overflow-hidden rounded-2xl bg-[var(--color-paper-theme)] shadow-sm transition-all hover:shadow-md",
+                                            class: if multi {
+                                                if uploaded_order.is_some() {
+                                                    "border-2 border-[var(--color-paper-accent)]"
+                                                } else {
+                                                    "border-2 border-[var(--color-paper-border)] hover:border-[var(--color-paper-primary)]"
+                                                }
+                                            } else {
+                                                "border-2 border-[var(--color-paper-accent)]"
+                                            },
+                                            title: if multi { "新上传图片，点击切换选中" } else { "新上传图片，点击使用" },
                                             onclick: move |_| {
-                                                on_select.call(uploaded_url_for_select.clone());
-                                                closing.set(true);
-                                                visible.set(false);
+                                                if multi {
+                                                    toggle_selection(&mut selected.write(), uploaded_sel);
+                                                } else {
+                                                    on_select.call(vec![uploaded_sel]);
+                                                    closing.set(true);
+                                                    visible.set(false);
+                                                }
                                             },
                                             img {
                                                 class: "h-full w-full object-cover",
@@ -325,6 +396,11 @@ pub fn AssetPickerModal(
                                             span { class: "absolute inset-x-2 bottom-2 rounded-full bg-black/55 px-2 py-1 text-center text-xs font-medium text-white backdrop-blur-sm",
                                                 "刚上传"
                                             }
+                                            if let Some(n) = uploaded_order {
+                                                span { class: "absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-[var(--color-paper-accent)] text-xs font-bold text-[var(--color-paper-theme)] shadow",
+                                                    "{n + 1}"
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -333,15 +409,35 @@ pub fn AssetPickerModal(
                                 {
                                     let url = format!("/uploads/{}", asset.asset.path);
                                     let thumb = format!("{}?thumb=300x300", url);
+                                    let selection = AssetSelection {
+                                        url: url.clone(),
+                                        alt: asset.asset.alt.clone(),
+                                    };
+                                    // 多选模式：勾选顺序即插入顺序，badge 展示 1 基序号。
+                                    let order = if multi {
+                                        selected.read().iter().position(|s| s.url == url)
+                                    } else {
+                                        None
+                                    };
                                     rsx! {
                                         button {
                                             key: "{asset.asset.id}",
-                                            class: "group relative aspect-square cursor-pointer overflow-hidden rounded-2xl border border-[var(--color-paper-border)] bg-[var(--color-paper-theme)] transition-all hover:border-[var(--color-paper-primary)] hover:shadow-md",
+                                            class: "group relative aspect-square cursor-pointer overflow-hidden rounded-2xl bg-[var(--color-paper-theme)] transition-all hover:shadow-md",
+                                            class: if multi {
+                                                if order.is_some() {
+                                                    "border-2 border-[var(--color-paper-accent)] shadow-sm"
+                                                } else {
+                                                    "border-2 border-[var(--color-paper-border)] hover:border-[var(--color-paper-primary)]"
+                                                }
+                                            } else {
+                                                "border border-[var(--color-paper-border)] hover:border-[var(--color-paper-primary)]"
+                                            },
                                             title: "{asset.asset.filename}",
-                                            onclick: {
-                                                let url = url.clone();
-                                                move |_| {
-                                                    on_select.call(url.clone());
+                                            onclick: move |_| {
+                                                if multi {
+                                                    toggle_selection(&mut selected.write(), selection);
+                                                } else {
+                                                    on_select.call(vec![selection]);
                                                     closing.set(true);
                                                     visible.set(false);
                                                 }
@@ -351,6 +447,11 @@ pub fn AssetPickerModal(
                                                 src: "{thumb}",
                                                 alt: asset.asset.alt.clone().unwrap_or_else(|| { asset.asset.filename.clone() }),
                                                 loading: "lazy",
+                                            }
+                                            if let Some(n) = order {
+                                                span { class: "absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-[var(--color-paper-accent)] text-xs font-bold text-[var(--color-paper-theme)] shadow",
+                                                    "{n + 1}"
+                                                }
                                             }
                                         }
                                     }
@@ -398,7 +499,117 @@ pub fn AssetPickerModal(
                         }
                     }
                 }
+
+                // 多选确认栏：计数 + 清空 + 批量插入（勾选顺序即插入顺序）。
+                if multi {
+                    {
+                        let count = selected.read().len();
+                        let count_label = if count == 0 {
+                            "未选择图片".to_string()
+                        } else {
+                            format!("已选 {count} 张")
+                        };
+                        let confirm_label = if count == 0 {
+                            "插入图片".to_string()
+                        } else {
+                            format!("插入 {count} 张图片")
+                        };
+                        rsx! {
+                            div { class: "flex shrink-0 items-center justify-between gap-3 px-6 py-3 shadow-[inset_0_1px_0_var(--color-paper-border)]",
+                                span { class: "text-sm text-[var(--color-paper-secondary)]",
+                                    "{count_label}"
+                                }
+                                div { class: "flex items-center gap-2",
+                                    button {
+                                        class: "{BTN_OUTLINE}",
+                                        class: if count == 0 { "pointer-events-none opacity-50" } else { "" },
+                                        disabled: count == 0,
+                                        onclick: move |_| selected.set(Vec::new()),
+                                        "清空"
+                                    }
+                                    button {
+                                        class: "{BTN_PRIMARY}",
+                                        class: if count == 0 { "pointer-events-none opacity-50" } else { "" },
+                                        disabled: count == 0,
+                                        onclick: move |_| {
+                                            let picks = selected();
+                                            if picks.is_empty() {
+                                                return;
+                                            }
+                                            on_select.call(picks);
+                                            closing.set(true);
+                                            visible.set(false);
+                                        },
+                                        "{confirm_label}"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{AssetSelection, toggle_selection};
+
+    fn sel(url: &str) -> AssetSelection {
+        AssetSelection {
+            url: url.to_string(),
+            alt: None,
+        }
+    }
+
+    #[test]
+    fn toggle_appends_in_click_order() {
+        let mut selected = Vec::new();
+        toggle_selection(&mut selected, sel("/uploads/b.webp"));
+        toggle_selection(&mut selected, sel("/uploads/a.webp"));
+        toggle_selection(&mut selected, sel("/uploads/c.webp"));
+        let urls: Vec<&str> = selected.iter().map(|s| s.url.as_str()).collect();
+        assert_eq!(urls, ["/uploads/b.webp", "/uploads/a.webp", "/uploads/c.webp"]);
+    }
+
+    #[test]
+    fn toggle_removes_existing_by_url() {
+        let mut selected = vec![sel("/uploads/a.webp"), sel("/uploads/b.webp")];
+        toggle_selection(&mut selected, sel("/uploads/a.webp"));
+        assert_eq!(selected, vec![sel("/uploads/b.webp")]);
+    }
+
+    #[test]
+    fn toggle_dedupes_same_url_regardless_of_alt() {
+        // 同一 URL 先以 alt=None（刚上传形态）入选，网格刷新后同图带 alt 再点：
+        // 应移除（视为同一张图），而非追加重复条目。
+        let mut selected = vec![sel("/uploads/a.webp")];
+        toggle_selection(
+            &mut selected,
+            AssetSelection {
+                url: "/uploads/a.webp".to_string(),
+                alt: Some("封面".to_string()),
+            },
+        );
+        assert!(selected.is_empty());
+    }
+
+    #[test]
+    fn selection_serializes_to_editor_bridge_shape() {
+        // 桥接契约：insertImagesFromLibrary 的载荷为 [{"src","alt"?}]，
+        // JS 侧 parseLibraryInsertItems 依赖字段名 src/alt 与 alt 缺省不序列化。
+        let picks = vec![
+            AssetSelection {
+                url: "/uploads/a.webp".to_string(),
+                alt: Some("封面".to_string()),
+            },
+            sel("/uploads/b.webp"),
+        ];
+        let json = serde_json::to_string(&picks).expect("AssetSelection 必然可序列化");
+        assert_eq!(
+            json,
+            r#"[{"src":"/uploads/a.webp","alt":"封面"},{"src":"/uploads/b.webp"}]"#
+        );
     }
 }

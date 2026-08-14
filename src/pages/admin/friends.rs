@@ -28,7 +28,7 @@ use crate::components::ui::{
 #[cfg(target_arch = "wasm32")]
 use crate::models::friend_link::FriendLink;
 #[cfg(target_arch = "wasm32")]
-use crate::pages::admin::asset_picker::AssetPickerModal;
+use crate::pages::admin::asset_picker::{AssetPickerModal, AssetSelection};
 
 /// 跨子组件共享的页面状态：刷新代际、操作提示、编辑目标。
 ///
@@ -370,9 +370,12 @@ fn EditorCard() -> Element {
                 visible: picker_visible,
                 cover_uploading: avatar_uploading,
                 title: "选择头像",
-                on_select: move |url: String| {
-                    avatar.set(url);
-                    avatar_failed.set(false);
+                on_select: move |picks: Vec<AssetSelection>| {
+                    // 单选模式：载荷恰含一个元素。
+                    if let Some(first) = picks.into_iter().next() {
+                        avatar.set(first.url);
+                        avatar_failed.set(false);
+                    }
                 },
             }
         }
