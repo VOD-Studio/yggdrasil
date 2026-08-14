@@ -40,6 +40,11 @@ const ASSETS_PER_PAGE: i32 = 60;
 #[cfg(target_arch = "wasm32")]
 const SEARCH_DEBOUNCE_MS: u32 = 300;
 
+/// 操作横幅/批量条退出动画时长 ms，与 input.css 的 .animate-row-leave（200ms）一一对应；
+/// 退出动画放完后由 spawn 真正摘除节点（仅 wasm 端的延时任务引用，server 编译门控掉）。
+#[cfg(target_arch = "wasm32")]
+const BANNER_EXIT_MS: u32 = 200;
+
 /// 格式化字节数为可读字符串（B/KB/MB/GB）。
 /// pub(super)：asset_upload 的上传列表复用同一份格式化（不新增第三份拷贝）。
 pub(super) fn format_bytes(bytes: i64) -> String {
@@ -79,6 +84,9 @@ pub fn Assets() -> Element {
     // 操作结果横幅（删除/清理/alt 编辑的反馈）。
     #[allow(unused_mut)]
     let mut op_message: Signal<Option<String>> = use_signal(|| None);
+    // 操作横幅退出动画态：× 后置 true 播 .animate-row-leave，BANNER_EXIT_MS 后真正摘除。
+    #[allow(unused_mut)]
+    let mut op_closing = use_signal(|| false);
     // 待二次确认的删除目标（素材 id）与一键清理确认态。
     let mut confirm_delete: Signal<Option<String>> = use_signal(|| None);
     let mut purge_confirm = use_signal(|| false);
@@ -96,8 +104,48 @@ pub fn Assets() -> Element {
     // 与单删保护语义一致）；选择跨翻页/筛选保留，批量删除成功后整体清空。
     let mut selected_ids: Signal<HashSet<String>> = use_signal(HashSet::new);
     let mut batch_confirm = use_signal(|| false);
+    // 批量操作条退出动画态：选择清空后置 true 播 .animate-row-leave，延迟真正清空
+    // selected_ids，使退出动画期间内容不退化为"已选 0 张"（保持消失前最后一帧）。
+    let mut batch_closing = use_signal(|| false);
     // 页内上传 modal 显隐。
     let mut upload_open = use_signal(|| false);
+    // —— 操作横幅与批量条的进出动画 ——
+    // 出现走 .animate-row-enter（挂载即播）；消失先置 closing=true 切到 .animate-row-leave，
+    // BANNER_EXIT_MS 后由 spawn 真正摘除。peek 门控：摘除前若被新消息/新选择覆盖（closing
+    // 已被重置为 false）则放弃摘除，避免覆盖掉用户刚触发的新内容。
+    // 三 helper 用 Callback（Copy，可在多处 onclick 中重复引用）；普通闭包因 Signal
+    // 的 set(&mut self) 而成为 FnMut、非 Copy，无法跨 move 处理器共享。
+    // show_op(String)：弹新消息（先重置 closing，取消上一条还在播的退出动画）。
+    let show_op = Callback::new(move |msg: String| {
+        op_closing.set(false);
+        op_message.set(Some(msg));
+    });
+    // dismiss_op(())：× 收起操作横幅（播退出动画，延迟摘除；peek 防覆盖）。
+    let dismiss_op = Callback::new(move |()| {
+        op_closing.set(true);
+        #[cfg(target_arch = "wasm32")]
+        spawn(async move {
+            crate::utils::time::sleep_ms(BANNER_EXIT_MS).await;
+            if *op_closing.peek() {
+                op_message.set(None);
+                op_closing.set(false);
+            }
+        });
+    });
+    // dismiss_batch(())：选择清空时收起批量条（延迟清空 selected_ids，使退出动画
+    // 期间内容不退化为"已选 0 张"；peek 防新选择覆盖刚发起的收起）。
+    let dismiss_batch = Callback::new(move |()| {
+        batch_closing.set(true);
+        #[cfg(target_arch = "wasm32")]
+        spawn(async move {
+            crate::utils::time::sleep_ms(BANNER_EXIT_MS).await;
+            if *batch_closing.peek() {
+                selected_ids.set(HashSet::new());
+                batch_confirm.set(false);
+                batch_closing.set(false);
+            }
+        });
+    });
 
     // 搜索防抖：query 是输入框原始值（受控绑定），debounced_query 才是请求参数。
     // 停顿 300ms 无新输入才提交；每次击键重启本 effect 并新 spawn 一个延时任务，
@@ -264,10 +312,10 @@ pub fn Assets() -> Element {
                             spawn(async move {
                                 match rebuild_assets_index().await {
                                     Ok(RebuildAssetsResponse { message, .. }) => {
-                                        op_message.set(Some(message));
+                                        show_op(message);
                                         reload.set(reload() + 1);
                                     }
-                                    Err(e) => op_message.set(Some(format!("重建失败：{e}"))),
+                                    Err(e) => show_op(format!("重建失败：{e}")),
                                 }
                                 rebuilding.set(false);
                             });
@@ -324,10 +372,10 @@ pub fn Assets() -> Element {
                                                         &format!("（{} 个文件删除失败）", failures),
                                                     );
                                                 }
-                                                op_message.set(Some(msg));
+                                                show_op(msg);
                                                 reload.set(reload() + 1);
                                             }
-                                            Err(e) => op_message.set(Some(format!("清理失败：{e}"))),
+                                            Err(e) => show_op(format!("清理失败：{e}")),
                                         }
                                     });
                                 },
@@ -354,11 +402,12 @@ pub fn Assets() -> Element {
             if let Some(msg) = op_message() {
                 // mt-4 会与 FilterTabs 自带的 mb-6 叠加成大空洞；改用 mb-6 后
                 // 上方 = tabs 标准间距 24px，下方与网格 mt-2 塌陷同为 24px，对称。
-                div { class: "mb-6 flex items-center justify-between gap-4 rounded-2xl border border-[var(--color-paper-border)] bg-[var(--color-paper-entry)] px-4 py-3 text-sm text-[var(--color-paper-primary)] shadow-sm animate-row-enter",
+                div { class: "mb-6 flex items-center justify-between gap-4 rounded-2xl border border-[var(--color-paper-border)] bg-[var(--color-paper-entry)] px-4 py-3 text-sm text-[var(--color-paper-primary)] shadow-sm",
+                    class: if op_closing() { "animate-row-leave" } else { "animate-row-enter" },
                     span { "{msg}" }
                     button {
                         class: "text-[var(--color-paper-tertiary)] hover:text-[var(--color-paper-primary)] cursor-pointer",
-                        onclick: move |_| op_message.set(None),
+                        onclick: move |_| dismiss_op(()),
                         "×"
                     }
                 }
@@ -366,7 +415,8 @@ pub fn Assets() -> Element {
 
             // 多选批量操作条：出现即与操作横幅同槽位（顶栏与网格之间）。
             if any_selected {
-                div { class: "mb-6 flex items-center gap-3 rounded-2xl border border-[var(--color-paper-border)] bg-[var(--color-paper-entry)] px-4 py-3 text-sm shadow-sm animate-row-enter",
+                div { class: "mb-6 flex items-center gap-3 rounded-2xl border border-[var(--color-paper-border)] bg-[var(--color-paper-entry)] px-4 py-3 text-sm shadow-sm",
+                    class: if batch_closing() { "animate-row-leave" } else { "animate-row-enter" },
                     span { class: "text-sm text-[var(--color-paper-secondary)]",
                         "已选 {selected_ids().len()} 张"
                     }
@@ -383,7 +433,13 @@ pub fn Assets() -> Element {
                                     s.insert(id.clone());
                                 }
                             }
-                            selected_ids.set(s);
+                            if s.is_empty() {
+                                // 取消本页正好清空 → 收起批量条（延迟清空播退出动画）
+                                dismiss_batch(());
+                            } else {
+                                batch_closing.set(false);
+                                selected_ids.set(s);
+                            }
                         },
                         if all_page_selected {
                             "取消本页"
@@ -394,8 +450,8 @@ pub fn Assets() -> Element {
                     button {
                         class: "text-xs cursor-pointer text-[var(--color-paper-secondary)] hover:text-[var(--color-paper-primary)] transition-colors",
                         onclick: move |_| {
-                            selected_ids.set(HashSet::new());
                             batch_confirm.set(false);
+                            dismiss_batch(());
                         },
                         "清除"
                     }
@@ -426,13 +482,13 @@ pub fn Assets() -> Element {
                                             if failures > 0 {
                                                 msg.push_str(&format!("（{failures} 项失败）"));
                                             }
-                                            op_message.set(Some(msg));
+                                            show_op(msg);
                                             if deleted_count > 0 {
-                                                selected_ids.set(HashSet::new());
                                                 reload.set(reload() + 1);
+                                                dismiss_batch(());
                                             }
                                         }
-                                        Err(e) => op_message.set(Some(format!("批量删除失败：{e}"))),
+                                        Err(e) => show_op(format!("批量删除失败：{e}")),
                                     }
                                 });
                             },
@@ -548,7 +604,13 @@ pub fn Assets() -> Element {
                                                         } else {
                                                             s.insert(id.clone());
                                                         }
-                                                        selected_ids.set(s);
+                                                        if s.is_empty() {
+                                                            // 取消最后一个勾选 → 收起批量条（延迟清空播退出动画）
+                                                            dismiss_batch(());
+                                                        } else {
+                                                            batch_closing.set(false);
+                                                            selected_ids.set(s);
+                                                        }
                                                     }
                                                 },
                                                 if is_selected {
@@ -590,13 +652,12 @@ pub fn Assets() -> Element {
                                                                             // 行已不在 DB（refs 为空的业务拒绝 = 素材不存在）
                                                                             // 说明网格是过期数据，同样触发刷新自愈。
                                                                             let stale = !resp.success && resp.refs.is_empty();
-                                                                            op_message.set(Some(resp.message));
+                                                                            show_op(resp.message);
                                                                             if resp.success || stale {
                                                                                 reload.set(reload() + 1);
                                                                             }
                                                                         }
-                                                                        Err(e) => op_message
-                                                                            .set(Some(format!("删除失败：{e}"))),
+                                                                        Err(e) => show_op(format!("删除失败：{e}")),
                                                                     }
                                                                 });
                                                             }
@@ -630,13 +691,12 @@ pub fn Assets() -> Element {
                                                                 spawn(async move {
                                                                     match update_asset_alt(id, alt).await {
                                                                         Ok(resp) => {
-                                                                            op_message.set(Some(resp.message));
+                                                                            show_op(resp.message);
                                                                             if resp.success {
                                                                                 reload.set(reload() + 1);
                                                                             }
                                                                         }
-                                                                        Err(e) => op_message
-                                                                            .set(Some(format!("保存失败：{e}"))),
+                                                                        Err(e) => show_op(format!("保存失败：{e}")),
                                                                     }
                                                                 });
                                                             }
@@ -663,7 +723,7 @@ pub fn Assets() -> Element {
                                                                         .navigator()
                                                                         .clipboard()
                                                                         .write_text(&url);
-                                                                    op_message.set(Some(format!("已复制 {url}")));
+                                                                    show_op(format!("已复制 {url}"));
                                                                 }
                                                             }
                                                         },
