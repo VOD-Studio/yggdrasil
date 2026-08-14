@@ -912,29 +912,44 @@ mod tests {
             }
         }
 
-        tokio::time::sleep(Duration::from_secs(2)).await;
+        // ContainerGuard::drop 的清理是 fire-and-forget（tokio::spawn +
+        // remove_container 带 3 次重试退避）。固定 sleep + 单次检查会在 CI
+        // runner 高负载时误报泄漏——Docker daemon 的 kill+remove 可能需要
+        // 数秒。改为轮询：容器一消失就立即通过，仅当超过宽限期限仍存在才判定泄漏。
+        let deadline = Duration::from_secs(15);
+        let poll_interval = Duration::from_millis(250);
+        let start = std::time::Instant::now();
 
-        let after = docker
-            .list_containers(Some(ListContainersOptions {
-                all: true,
-                ..Default::default()
-            }))
-            .await
-            .unwrap();
+        let leaked = loop {
+            tokio::time::sleep(poll_interval).await;
 
-        let mut leaked = Vec::new();
-        for c in after {
-            let id = c.id.unwrap();
-            if !before_ids.contains(&id) && c.image.as_deref() == Some("alpine:latest") {
-                leaked.push(id);
+            let after = docker
+                .list_containers(Some(ListContainersOptions {
+                    all: true,
+                    ..Default::default()
+                }))
+                .await
+                .unwrap();
+
+            let leaked: Vec<String> = after
+                .into_iter()
+                .filter(|c| {
+                    c.id.as_ref().is_some_and(|id| !before_ids.contains(id))
+                        && c.image.as_deref() == Some("alpine:latest")
+                })
+                .map(|c| c.id.unwrap())
+                .collect();
+
+            if leaked.is_empty() || start.elapsed() >= deadline {
+                break leaked;
             }
-        }
+        };
 
-        let leaked_count = leaked.len();
-        for id in leaked {
+        // 超时后仍有残留 → 清理掉避免影响后续 serial 测试，再断言失败。
+        for id in &leaked {
             let _ = docker
                 .remove_container(
-                    &id,
+                    id,
                     Some(RemoveContainerOptions {
                         force: true,
                         ..Default::default()
@@ -943,6 +958,6 @@ mod tests {
                 .await;
         }
 
-        assert_eq!(leaked_count, 0, "Found {} leaked containers", leaked_count);
+        assert_eq!(leaked.len(), 0, "Found {} leaked containers after polling", leaked.len());
     }
 }
