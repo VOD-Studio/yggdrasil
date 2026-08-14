@@ -566,6 +566,16 @@ jobs:
           : "${XUN_SSH_KEY:?secret XUN_SSH_KEY 未设置}"
           : "${XUN_HOST:?secret XUN_HOST 未设置}"
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          # keepalive：xun 拉镜像期间 SSH 会话长时间无输出，路径上防火墙/NAT 掐掉
+          # 空闲连接（v0.11.0 deploy 在 blob 下载 4m17s 后 broken pipe）。30s 加密
+          # 通道探活维持 NAT 状态；容 10 次未响应（~5 分钟真断网才放弃）。
+          # Host * 覆盖本 job 全部 ssh 调用（xun 与 rua 副本共用同一 runner home）。
+          cat > ~/.ssh/config <<'SSHCONF'
+          Host *
+            ServerAliveInterval 30
+            ServerAliveCountMax 10
+          SSHCONF
+          chmod 600 ~/.ssh/config
           printf '%s\n' "$XUN_SSH_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           if [ -n "$XUN_KNOWN_HOSTS" ]; then
