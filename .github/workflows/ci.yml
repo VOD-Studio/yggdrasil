@@ -10,7 +10,7 @@ name: CI
 # - 仅 push 新 tag（v*）或手动触发时：
 #     build-arm64（原生 ubuntu-24.04-arm runner）
 #     release（amd64 镜像 + arm64 镜像 + x86_64 musl 二进制 发布到 GitHub Release）
-#     deploy（xun 从 GHCR 拉取 app + runner 镜像，compose up 滚动重启）
+#     deploy（xun 从 GHCR 拉取 app + runner 镜像滚动重启；可选 rua 副本受 RUA_DEPLOY_ENABLED 门控）
 on:
   push:
   pull_request:
@@ -542,6 +542,13 @@ jobs:
   # 仓库 public → GHCR 包默认 public，匿名拉取即可；若设为 private，在 xun 上一次性
   # `docker login ghcr.io`（PAT read:packages）即可，CI 无需改动。拉取带 3 次重试
   # （xun 中国网络访问 ghcr.io 偶发超时）。本地构建+scp 兜底仍见 scripts/xun.fish。
+  # rua（腾讯云 DR 副本，scripts/both.fish 的 REPLICA）也接入自动部署：xun 主路径完成
+  # 且健康检查通过后，再 SSH 到 rua 用 **podman**（非 docker）拉主应用镜像并 compose up。
+  # rua 只拉主应用、不带 runner（rua 内存不够跑沙箱）；其 app 经 pg-tunnel 连 xun 的 PG
+  # （只读副本，迁移恒为 up to date，无需单独迁移）。rua 步骤受 repo 变量 RUA_DEPLOY_ENABLED=true
+  # 控制（未设则跳过，行为与无 rua 完全一致）；失败 best-effort 不阻断作业（continue-on-error）。
+  # 所需 secrets：RUA_SSH_KEY / RUA_HOST / RUA_USER（必填，启用后）、RUA_PORT（默认 29888）、
+  # RUA_DEPLOY_DIR（默认 /root/docker/yggdrasil）、RUA_KNOWN_HOSTS（可选，pin 指纹）。手动兜底见 scripts/both.fish。
   deploy:
     runs-on: ubuntu-latest
     needs: [publish-ghcr, publish-runners]
@@ -644,3 +651,94 @@ jobs:
           # 容器状态快照（postgres healthy + app up）
           ssh -p "$port" -o BatchMode=yes "${XUN_USER}@${XUN_HOST}" \
             'docker ps --filter name=yggdrasil --format "{{.Names}}\t{{.Status}}"'
+
+      # ── rua（DR 副本）配置 + 部署 + 健康检查：xun 主路径全程成功后才执行。──
+      # 受 repo 变量 RUA_DEPLOY_ENABLED=true 门控；未设则三步全跳过（无 secrets 也不报错）。
+      # rua 用 podman（非 docker），只拉主应用（不带 runner），app 经 pg-tunnel 连 xun PG。
+      # 全部 continue-on-error：DR 副本不可用不应让发版作业变红（warning 即可）。
+      - name: Configure SSH (rua replica)
+        if: vars.RUA_DEPLOY_ENABLED == 'true'
+        env:
+          RUA_SSH_KEY: ${{ secrets.RUA_SSH_KEY }}
+          RUA_HOST: ${{ secrets.RUA_HOST }}
+          RUA_KNOWN_HOSTS: ${{ secrets.RUA_KNOWN_HOSTS }}
+        run: |
+          : "${RUA_SSH_KEY:?secret RUA_SSH_KEY 未设置（已启用 RUA_DEPLOY_ENABLED）}"
+          : "${RUA_HOST:?secret RUA_HOST 未设置}"
+          printf '%s\n' "$RUA_SSH_KEY" > ~/.ssh/id_ed25519_rua
+          chmod 600 ~/.ssh/id_ed25519_rua
+          if [ -n "$RUA_KNOWN_HOSTS" ]; then
+            printf '%s\n' "$RUA_KNOWN_HOSTS" >> ~/.ssh/known_hosts
+          else
+            echo "::warning::RUA_KNOWN_HOSTS 未设置，改用 ssh-keyscan（TOFU，建议改为 pin 指纹）"
+            ssh-keyscan -H "$RUA_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          fi
+
+      # 同 xun：quoted heredoc 经 ssh 'bash -s' 送入 rua，REG/部署目录作 $1/$2。
+      # 远端用 podman（rua 是 rootless/rootful podman，非 docker daemon）。
+      - name: Pull app image to rua replica and restart
+        if: vars.RUA_DEPLOY_ENABLED == 'true'
+        continue-on-error: true
+        env:
+          RUA_USER: ${{ secrets.RUA_USER }}
+          RUA_HOST: ${{ secrets.RUA_HOST }}
+          RUA_PORT: ${{ secrets.RUA_PORT }}
+          RUA_DEPLOY_DIR: ${{ secrets.RUA_DEPLOY_DIR }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          : "${RUA_USER:?secret RUA_USER 未设置}"
+          port="${RUA_PORT:-29888}"
+          dir="${RUA_DEPLOY_DIR:-/root/docker/yggdrasil}"
+          owner="$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')"
+          ssh -p "$port" -i ~/.ssh/id_ed25519_rua -o BatchMode=yes \
+            "${RUA_USER}@${RUA_HOST}" 'bash -s' "ghcr.io/${owner}" "${dir}" <<'REMOTE'
+          set -euo pipefail
+          REG="$1"
+          DIR="$2"
+
+          # rua 用 podman（非 docker）；中国网络访问 ghcr.io 偶发超时，3 次重试。
+          pull_retry() {
+            local img="$1" i
+            for i in 1 2 3; do
+              podman pull "$img" && return 0
+              echo "  pull retry $i/3: $img"
+              sleep 5
+            done
+            return 1
+          }
+
+          echo "==> [rua] pull + tag app image (multi-arch latest)"
+          pull_retry "$REG/yggdrasil:latest" \
+            || { echo "::error::rua app image pull failed: $REG/yggdrasil:latest"; exit 1; }
+          podman tag "$REG/yggdrasil:latest" localhost/yggdrasil:latest
+
+          echo "==> [rua] podman compose up -d app (pg-tunnel / pg-standby 不动)"
+          cd "$DIR" && podman compose --env-file .env up -d app
+          echo "==> [rua] done"
+          REMOTE
+
+      # rua 健康检查（经 nginx-proxy 容器访问 app:3000），最多等 ~60s；best-effort。
+      - name: Health check (rua replica)
+        if: vars.RUA_DEPLOY_ENABLED == 'true'
+        continue-on-error: true
+        env:
+          RUA_USER: ${{ secrets.RUA_USER }}
+          RUA_HOST: ${{ secrets.RUA_HOST }}
+          RUA_PORT: ${{ secrets.RUA_PORT }}
+        run: |
+          : "${RUA_USER:?secret RUA_USER 未设置}"
+          port="${RUA_PORT:-29888}"
+          ok=0
+          for i in $(seq 1 12); do
+            echo "rua health probe #$i ..."
+            if ssh -p "$port" -i ~/.ssh/id_ed25519_rua -o BatchMode=yes "${RUA_USER}@${RUA_HOST}" \
+                 'podman exec nginx-proxy curl -sf http://yggdrasil-app:3000/readyz' >/dev/null 2>&1; then
+              ok=1
+              echo "rua readyz OK"
+              break
+            fi
+            sleep 5
+          done
+          [ "$ok" = "1" ] || { echo "::warning::rua /readyz 在 60s 内未就绪（DR 副本，不阻断作业）"; exit 1; }
+          ssh -p "$port" -i ~/.ssh/id_ed25519_rua -o BatchMode=yes "${RUA_USER}@${RUA_HOST}" \
+            'podman ps --filter name=yggdrasil --format "{{.Names}}\t{{.Status}}"'
