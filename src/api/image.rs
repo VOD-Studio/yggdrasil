@@ -357,12 +357,48 @@ fn read_dimensions_by_mime(data: &[u8], mime_type: &str) -> Result<(u32, u32), &
     }
 }
 
-/// 读 WebP header 拿尺寸（zenwebp 只解析 RIFF header，不解码像素）。
+/// 手动解析 WebP RIFF header 拿尺寸（前 30 字节即够，不调用 zenwebp 全解码器）。
+///
+/// 不用 `zenwebp::WebPDecoder::build` 的原因：VP8X（扩展格式）的全解码器在
+/// 构造时会扫描所有 RIFF chunk（EXIF/ICCP/ALPH…），文件大于传入缓冲区时失败。
+/// [`get_image_dimensions`] 只读 64 KiB header 前缀，大 VP8X WebP（> 64 KiB）
+/// 因此丢失尺寸 → rebuild 索引时该文件被跳过 → DB 行被误删（issue #30）。
+///
+/// 三种子格式的尺寸都在 RIFF 签名之后的前 30 字节内：
+/// - `VP8 `（lossy）：byte 26-27 width、28-29 height，`u16_le & 0x3FFF`
+/// - `VP8L`（lossless）：byte 21-24 为 `u32_le` header，
+///   `width=(1+h)&0x3FFF`、`height=(1+(h>>14))&0x3FFF`
+/// - `VP8X`（extended）：byte 24-26 / 27-29 各为 24-bit LE，`+1` 得画布尺寸
 #[cfg(feature = "server")]
 fn read_webp_dimensions(data: &[u8]) -> Option<(u32, u32)> {
-    let decoder = zenwebp::WebPDecoder::build(data).ok()?;
-    let info = decoder.info();
-    Some((info.width, info.height))
+    // RIFF(4) + size(4) + WEBP(4) + chunk(4) = 16 字节签名；VP8X 尺寸到 byte 29。
+    if data.len() < 30 || &data[0..4] != b"RIFF" || &data[8..12] != b"WEBP" {
+        return None;
+    }
+    let dims = match &data[12..16] {
+        b"VP8 " => {
+            // lossy：byte 26-27 / 28-29 为 u16_le，低 14 位是尺寸（高 2 位是缩放系数）。
+            let w = u16::from_le_bytes([data[26], data[27]]) & 0x3FFF;
+            let h = u16::from_le_bytes([data[28], data[29]]) & 0x3FFF;
+            (w as u32, h as u32)
+        }
+        b"VP8L" => {
+            // lossless：byte 21-24 为 u32_le bitstream header。
+            let h = u32::from_le_bytes([data[21], data[22], data[23], data[24]]);
+            ((1 + h) & 0x3FFF, (1 + (h >> 14)) & 0x3FFF)
+        }
+        b"VP8X" => {
+            // extended：byte 24-26 / 27-29 各为 24-bit LE，+1 得画布尺寸。
+            let w = u32::from_le_bytes([data[24], data[25], data[26], 0]) + 1;
+            let h = u32::from_le_bytes([data[27], data[28], data[29], 0]) + 1;
+            (w, h)
+        }
+        _ => return None,
+    };
+    if dims.0 == 0 || dims.1 == 0 {
+        return None;
+    }
+    Some(dims)
 }
 
 /// 读 image crate 支持格式（jpeg/png/gif）的 header 拿尺寸。
@@ -781,6 +817,110 @@ mod tests {
         let webp_bytes = crate::webp::encode(&img, 85.0, 2).unwrap();
         let dims = read_dimensions_from_bytes(&webp_bytes, "test.webp");
         assert_eq!(dims, Some((16, 9)));
+    }
+
+    // —— read_webp_dimensions：手动 RIFF 解析回归测试（issue #30）——
+
+    /// 构造 VP8 (lossy) 最小 RIFF：RIFF+size+WEBP+"VP8 "+chunk_size+
+    /// frame_tag(3)+start_code(3: 9d 01 2a)+width(u16le)+height(u16le)。
+    fn synth_vp8_riff(w: u16, h: u16) -> Vec<u8> {
+        let mut buf = b"RIFF\x00\x00\x00\x00WEBPVP8 \x00\x00\x00\x00".to_vec();
+        // frame tag (3 bytes) + start code (3 bytes)
+        buf.extend_from_slice(&[0x00, 0x00, 0x00, 0x9d, 0x01, 0x2a]);
+        buf.extend_from_slice(&w.to_le_bytes());
+        buf.extend_from_slice(&h.to_le_bytes());
+        buf
+    }
+
+    /// 构造 VP8L (lossless) 最小 RIFF：RIFF+size+WEBP+"VP8L"+chunk_size+
+    /// signature(0x2f)+u32le header。
+    fn synth_vp8l_riff(w: u32, h: u32) -> Vec<u8> {
+        let mut buf = b"RIFF\x00\x00\x00\x00WEBPVP8L\x00\x00\x00\x00".to_vec();
+        buf.push(0x2f); // signature
+        let header: u32 = (w - 1) | ((h - 1) << 14);
+        buf.extend_from_slice(&header.to_le_bytes());
+        // pad to ≥ 30 bytes (VP8L data ends at byte 25, but read_webp_dimensions
+        // requires ≥ 30 for uniformity with VP8/VP8X).
+        while buf.len() < 30 {
+            buf.push(0);
+        }
+        buf
+    }
+
+    /// 构造 VP8X (extended) 最小 RIFF：RIFF+size+WEBP+"VP8X"+chunk_size(10)+
+    /// flags(1)+reserved(3)+canvas_w_minus1(3 LE)+canvas_h_minus1(3 LE)。
+    fn synth_vp8x_riff(w: u32, h: u32) -> Vec<u8> {
+        let mut buf = b"RIFF\x00\x00\x00\x00WEBPVP8X\x0a\x00\x00\x00".to_vec();
+        buf.push(0x00); // flags
+        buf.extend_from_slice(&[0, 0, 0]); // reserved
+        let wm1 = w - 1;
+        buf.extend_from_slice(&[wm1 as u8, (wm1 >> 8) as u8, (wm1 >> 16) as u8]);
+        let hm1 = h - 1;
+        buf.extend_from_slice(&[hm1 as u8, (hm1 >> 8) as u8, (hm1 >> 16) as u8]);
+        buf
+    }
+
+    #[test]
+    fn read_webp_vp8_lossy_dimensions() {
+        let data = synth_vp8_riff(640, 480);
+        assert_eq!(read_webp_dimensions(&data), Some((640, 480)));
+    }
+
+    #[test]
+    fn read_webp_vp8l_lossless_dimensions() {
+        let data = synth_vp8l_riff(100, 50);
+        assert_eq!(read_webp_dimensions(&data), Some((100, 50)));
+    }
+
+    #[test]
+    fn read_webp_vp8x_extended_dimensions() {
+        let data = synth_vp8x_riff(1920, 1080);
+        assert_eq!(read_webp_dimensions(&data), Some((1920, 1080)));
+    }
+
+    #[test]
+    fn read_webp_dimensions_rejects_bad_signature() {
+        let mut data = synth_vp8x_riff(100, 100);
+        data[0] = b'X'; // corrupt RIFF
+        assert_eq!(read_webp_dimensions(&data), None);
+    }
+
+    #[test]
+    fn read_webp_dimensions_rejects_short_data() {
+        assert_eq!(read_webp_dimensions(b"RIFF\x00\x00\x00\x00WEBP"), None);
+    }
+
+    #[test]
+    fn read_webp_dimensions_rejects_zero_size() {
+        // VP8 with zero dimensions → None
+        let data = synth_vp8_riff(0, 100);
+        assert_eq!(read_webp_dimensions(&data), None);
+    }
+
+    /// 核心回归测试：VP8X WebP > 64 KiB 截断后仍能读尺寸（issue #30 根因）。
+    #[test]
+    fn read_webp_vp8x_large_truncated() {
+        // 构造一张大噪声 RGBA 图 → encoder 产出 > 64 KiB 的 VP8X WebP。
+        let (w, h) = (400, 400);
+        let mut rgba = image::RgbaImage::new(w, h);
+        let mut s: u64 = 42;
+        for px in rgba.iter_mut() {
+            s = s.wrapping_mul(6364136223846793005).wrapping_add(1);
+            *px = (s >> 33) as u8;
+        }
+        let webp = crate::webp::encode(&image::DynamicImage::ImageRgba8(rgba), 100.0, 0).unwrap();
+        assert!(
+            webp.len() > 65_536,
+            "test image should produce > 64 KiB webp, got {}",
+            webp.len()
+        );
+        // 截断到 64 KiB（模拟 get_image_dimensions 只读 header 前缀）
+        let truncated = &webp[..65_536];
+        assert_eq!(
+            read_webp_dimensions(truncated),
+            Some((w, h)),
+            "VP8X webp > 64 KiB must parse dimensions from 64 KiB header"
+        );
     }
 
     #[test]

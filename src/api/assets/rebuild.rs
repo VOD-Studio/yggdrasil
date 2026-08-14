@@ -30,7 +30,14 @@ struct ScannedFile {
 
 #[cfg(feature = "server")]
 /// 递归收集 dir 下的图片文件（跳过以 `.` 开头的目录/文件）。
-fn walk_images(dir: &std::path::Path, base: &std::path::Path, out: &mut Vec<ScannedFile>) {
+/// `out` 收集可读文件；`unreadable` 收集磁盘存在但尺寸读取失败的路径
+/// （保护其 DB 行不被删除步骤误删——见 issue #30）。
+fn walk_images(
+    dir: &std::path::Path,
+    base: &std::path::Path,
+    out: &mut Vec<ScannedFile>,
+    unreadable: &mut Vec<String>,
+) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
@@ -44,7 +51,7 @@ fn walk_images(dir: &std::path::Path, base: &std::path::Path, out: &mut Vec<Scan
         }
         let path = entry.path();
         if path.is_dir() {
-            walk_images(&path, base, out);
+            walk_images(&path, base, out, unreadable);
             continue;
         }
         let ext = name_str.rsplit('.').next().unwrap_or("");
@@ -55,9 +62,11 @@ fn walk_images(dir: &std::path::Path, base: &std::path::Path, out: &mut Vec<Scan
             continue;
         };
         let rel_path = rel.to_string_lossy().replace('\\', "/");
-        // 尺寸读 header（命中 IMAGE_DIMENSIONS_CACHE 时零 IO）；读不到则跳过该文件。
+        // 尺寸读 header（命中 IMAGE_DIMENSIONS_CACHE 时零 IO）；读不到说明文件损坏或
+        // 格式不支持——记录路径但不删其 DB 行（issue #30：曾因跳过而误删大 WebP）。
         let Some((w, h)) = crate::api::image::get_image_dimensions(&rel_path) else {
             tracing::warn!("Rebuild: skip unreadable image {}", rel_path);
+            unreadable.push(rel_path);
             continue;
         };
         let size_bytes = entry.metadata().map(|m| m.len() as i64).unwrap_or(0);
@@ -90,11 +99,12 @@ pub async fn rebuild_assets_index() -> Result<RebuildAssetsResponse, ServerFnErr
         let _admin = get_current_admin_user().await?;
 
         // 磁盘扫描 + header 尺寸读取是 IO 密集同步操作，移到阻塞线程池。
-        let scanned = tokio::task::spawn_blocking(|| {
+        let (scanned, unreadable) = tokio::task::spawn_blocking(|| {
             let base = std::path::Path::new("uploads");
             let mut files = Vec::new();
-            walk_images(base, base, &mut files);
-            files
+            let mut unreadable = Vec::new();
+            walk_images(base, base, &mut files, &mut unreadable);
+            (files, unreadable)
         })
         .await
         .map_err(|_| AppError::Internal("素材扫描任务失败"))?;
@@ -147,9 +157,13 @@ pub async fn rebuild_assets_index() -> Result<RebuildAssetsResponse, ServerFnErr
         }
 
         // 2. 删除文件已消失的 DB 行（refs 级联删）。
-        let paths: Vec<String> = scanned.iter().map(|f| f.rel_path.clone()).collect();
+        //    排除集 = 可读文件 + 尺寸读取失败的文件（后者仍在磁盘上，
+        //    不应误删——issue #30 的根因就是此处曾遗漏无法读尺寸的大 WebP）。
+        let mut keep_paths: Vec<String> =
+            scanned.iter().map(|f| f.rel_path.clone()).collect();
+        keep_paths.extend(unreadable.iter().cloned());
         let removed = tx
-            .execute("DELETE FROM assets WHERE NOT (path = ANY($1))", &[&paths])
+            .execute("DELETE FROM assets WHERE NOT (path = ANY($1))", &[&keep_paths])
             .await
             .map_err(AppError::tx)?;
 
@@ -188,17 +202,27 @@ pub async fn rebuild_assets_index() -> Result<RebuildAssetsResponse, ServerFnErr
         tx.commit().await.map_err(AppError::tx)?;
 
         let scanned_count = scanned.len() as i64;
-        Ok(RebuildAssetsResponse {
-            success: true,
-            message: format!(
+        let skipped_count = unreadable.len() as i64;
+        let message = if skipped_count > 0 {
+            format!(
+                "重建完成：扫描 {} 个文件，新增 {}，更新 {}，移除 {}，跳过 {} 个无法读取的文件（已保留）",
+                scanned_count, inserted, updated, removed, skipped_count
+            )
+        } else {
+            format!(
                 "重建完成：扫描 {} 个文件，新增 {}，更新 {}，移除 {}",
                 scanned_count, inserted, updated, removed
-            ),
+            )
+        };
+        Ok(RebuildAssetsResponse {
+            success: true,
+            message,
             scanned: scanned_count,
             inserted,
             updated,
             removed: removed as i64,
             ref_count,
+            skipped: skipped_count,
         })
     }
     #[cfg(not(feature = "server"))]

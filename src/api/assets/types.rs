@@ -92,4 +92,6 @@ pub struct RebuildAssetsResponse {
     pub removed: i64,
     /// 重建后的引用关联总数。
     pub ref_count: i64,
+    /// 磁盘存在但尺寸读取失败、未纳入重建的文件数（不删其 DB 行）。
+    pub skipped: i64,
 }
