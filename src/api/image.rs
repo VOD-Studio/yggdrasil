@@ -418,6 +418,58 @@ pub(crate) fn image_reader_limits() -> image::Limits {
     limits
 }
 
+/// 检测图片是否为动画（多帧）格式。
+///
+/// 动图的每一帧都承载信息（运动、表情、进度），而 `image::DynamicImage` 与
+/// `zenwebp` 的 `read_image`（`api.rs` 中非动画路径）只能解码单帧——经过
+/// `process_image` 解码→缩放→重编码后会永久丢失动画，只剩第一帧。
+///
+/// 因此在处理流水线入口拦截：动图原样返回字节（动画保留），由两层缓存
+/// 按参数化 key 缓存。检测只读容器 header，不做像素解码、不分配：
+/// - **WebP**：扫描 RIFF chunk，出现 `ANMF`（动画帧）即动图。
+/// - **GIF**：扫描 `NETSCAPE2.0` 应用扩展（动图 GIF 的标准循环标记）。
+///
+/// JPEG/PNG 不可能是动图，直接返回 false。
+#[cfg(feature = "server")]
+fn is_animated_image(data: &[u8], format: image::ImageFormat) -> bool {
+    match format {
+        image::ImageFormat::WebP => {
+            // RIFF(4)+size(4)+WEBP(4)=12 字节签名；逐 chunk 扫描 FourCC+size。
+            // Animated WebP 必有 VP8X + ANIM + 至少一个 ANMF。
+            data.len() >= 12
+                && &data[0..4] == b"RIFF"
+                && &data[8..12] == b"WEBP"
+                && {
+                    let mut pos = 12;
+                    let mut found = false;
+                    while pos + 8 <= data.len() {
+                        let fourcc = &data[pos..pos + 4];
+                        let chunk_size = u32::from_le_bytes([
+                            data[pos + 4],
+                            data[pos + 5],
+                            data[pos + 6],
+                            data[pos + 7],
+                        ]) as usize;
+                        if fourcc == b"ANMF" {
+                            found = true;
+                            break;
+                        }
+                        // chunk 体 2 字节对齐（RIFF 规范）。
+                        pos += 8 + ((chunk_size + 1) & !1);
+                    }
+                    found
+                }
+        }
+        image::ImageFormat::Gif => {
+            // 动画 GIF 的标志是 NETSCAPE2.0 应用扩展块（循环控制）。
+            // 块结构：0x21(扩展) 0xFF(应用) 0x0B(块大小) "NETSCAPE2.0" ...
+            const NETSCAPE: &[u8] = b"\x21\xff\x0bNETSCAPE2.0";
+            data.windows(NETSCAPE.len()).any(|w| w == NETSCAPE)
+        }
+        _ => false,
+    }
+}
+
 #[cfg(feature = "server")]
 fn process_image(
     img: image::DynamicImage,
@@ -500,6 +552,15 @@ fn process_image_blocking(
 ) -> Result<(Vec<u8>, HeaderValue), StatusCode> {
     let original_format = detect_format(&path);
 
+    // 动图（animated WebP / GIF）原样返回，绕过解码→缩放→重编码。
+    // `image::DynamicImage` 与 zenwebp 的单帧 `read_image` 无法承载多帧；
+    // 一旦走 process_image，动画会被永久压缩成第一帧（issue #29）。
+    // 原始字节进入两层缓存（key 含 thumb/w 参数），后续命中即静态返回。
+    // 代价：动图缩略图返回全尺寸文件（上传上限 5 MiB，首 miss 后缓存），
+    // 相对丢失动画是不可接受的回归。
+    if is_animated_image(&data, original_format) {
+        return Ok((data, content_type(original_format)));
+    }
     let img = if original_format == image::ImageFormat::WebP {
         match crate::webp::decode(&data) {
             Ok(img) => {
@@ -1420,5 +1481,134 @@ mod tests {
         }
         assert!(not_found > 0, "burst 内的 miss 应正常处理（404）");
         assert!(too_many > 0, "超出 burst 的 miss 应被 429 限流");
+    }
+
+    // —— is_animated_image / 动图保留回归测试（issue #29）——
+    //
+    // 动图（animated WebP/GIF）经 process_image 解码→缩放→重编码后会丢失全部帧
+    // 只剩第一帧。is_animated_image 在处理流水线入口拦截，让动图原样返回。
+    // 以下测试覆盖：真动图检出、静态图不误报、process_image_blocking 字节保留。
+
+    /// 用 zenwebp 的 AnimationEncoder 构造一个真实的多帧 animated WebP（8x8，2 帧）。
+    /// 这是用户实际会上传的格式，比手动拼 RIFF 更贴近真实场景。
+    fn make_animated_webp() -> Vec<u8> {
+        use zenwebp::mux::{AnimationConfig, AnimationEncoder};
+        use zenwebp::{EncoderConfig, PixelLayout};
+
+        let mut enc = AnimationEncoder::new(8, 8, AnimationConfig::default())
+            .expect("8x8 在合法画布范围内");
+        let cfg = EncoderConfig::new_lossy();
+        // 两帧不同内容，确保 finalize 不会降级成单帧静态图。
+        let frame_a = vec![255u8; 8 * 8 * 3]; // 白
+        let frame_b = vec![0u8; 8 * 8 * 3]; // 黑
+        enc.add_frame(&frame_a, PixelLayout::Rgb8, 0, &cfg)
+            .expect("首帧编码");
+        enc.add_frame(&frame_b, PixelLayout::Rgb8, 100, &cfg)
+            .expect("次帧编码");
+        enc.finalize(100).expect("动画装配")
+    }
+
+    #[test]
+    fn is_animated_image_detects_real_animated_webp() {
+        let animated = make_animated_webp();
+        assert!(
+            is_animated_image(&animated, image::ImageFormat::WebP),
+            "真实多帧 animated WebP 必须被检出"
+        );
+        // 交叉验证：zenwebp 自己的 header-only probe 也认为是动画
+        let probe = zenwebp::detect::probe(&animated).expect("合法 WebP");
+        assert!(probe.has_animation, "probe 应报告 has_animation");
+    }
+
+    #[test]
+    fn is_animated_image_false_for_static_webp() {
+        // 普通静态 WebP（三种子格式）都不应被误判为动图。
+        let img = image::DynamicImage::new_rgb8(32, 32);
+        let static_webp = crate::webp::encode(&img, 80.0, 2).unwrap();
+        assert!(
+            !is_animated_image(&static_webp, image::ImageFormat::WebP),
+            "静态 WebP 不应被误报为动图"
+        );
+        // VP8X 扩展格式（无动画标志、无 ANMF chunk）也不应误报
+        let extended = synth_vp8x_riff(100, 100);
+        assert!(
+            !is_animated_image(&extended, image::ImageFormat::WebP),
+            "VP8X 非动画 WebP 不应被误报"
+        );
+    }
+
+    #[test]
+    fn process_image_blocking_preserves_animated_webp_bytes() {
+        // 核心回归：带处理参数（thumb）的动图请求必须原样返回输入字节，
+        // 不能走解码→重编码（会丢帧）。issue #29 的精确症状。
+        let animated = make_animated_webp();
+        let params = ImageParams {
+            thumb: Some("300x300".to_string()),
+            ..Default::default()
+        };
+        let (out_bytes, out_ct) = process_image_blocking(
+            animated.clone(),
+            params,
+            "2026/08/13/anim.webp".to_string(),
+        )
+        .expect("动图绕过处理不应失败");
+        assert_eq!(
+            out_bytes, animated,
+            "动图字节必须原样返回（绕过解码/缩放/重编码）"
+        );
+        assert_eq!(out_ct, "image/webp");
+    }
+
+    #[test]
+    fn process_image_blocking_still_processes_static_webp() {
+        // 静态 WebP 仍走完整处理流水线：输出字节应与输入不同（被缩放/重编码）。
+        let img = image::DynamicImage::new_rgb8(200, 200);
+        let static_webp = crate::webp::encode(&img, 80.0, 2).unwrap();
+        let params = ImageParams {
+            thumb: Some("50x50".to_string()),
+            ..Default::default()
+        };
+        let (out_bytes, out_ct) =
+            process_image_blocking(static_webp.clone(), params, "static.webp".to_string())
+                .expect("静态图处理不应失败");
+        assert_ne!(
+            out_bytes, static_webp,
+            "静态 WebP 应被实际处理（字节变化），不能被错误绕过"
+        );
+        assert_eq!(out_ct, "image/webp");
+    }
+
+    #[test]
+    fn is_animated_image_detects_gif() {
+        // 动画 GIF 的标志是 NETSCAPE2.0 应用扩展块。
+        // 构造包含该标记的最小字节序列（不要求完整 GIF 解码）。
+        let anim_gif: Vec<u8> = {
+            let mut b = b"GIF89a".to_vec();
+            b.extend_from_slice(b"\x21\xff\x0bNETSCAPE2.0\x03\x01\x00\x00\x00");
+            b.extend_from_slice(&[0x3b]); // trailer
+            b
+        };
+        assert!(
+            is_animated_image(&anim_gif, image::ImageFormat::Gif),
+            "含 NETSCAPE2.0 标记的 GIF 应被检出为动图"
+        );
+        // 无标记的 GIF 头不应误报
+        let static_gif = b"GIF89a\x01\x00\x01\x00";
+        assert!(
+            !is_animated_image(static_gif, image::ImageFormat::Gif),
+            "无 NETSCAPE 标记的 GIF 不应被误报"
+        );
+    }
+
+    #[test]
+    fn is_animated_image_false_for_jpeg_png() {
+        // JPEG/PNG 不可能是动图，直接返回 false（不扫描字节）。
+        assert!(!is_animated_image(&[0xFF, 0xD8, 0xFF], image::ImageFormat::Jpeg));
+        assert!(
+            !is_animated_image(
+                &[0x89, 0x50, 0x4E, 0x47],
+                image::ImageFormat::Png
+            )
+        );
     }
 }
