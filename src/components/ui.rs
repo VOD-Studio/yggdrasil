@@ -16,10 +16,14 @@ use crate::router::Route;
 // ===========================================================================
 
 /// Admin 卡片容器：内容档圆角（16px），作为主面板内的内容卡片，与外壳 32px 形成层次。
-pub const ADMIN_CARD_CLASS: &str = "bg-[var(--color-paper-entry)] rounded-2xl shadow-sm border border-transparent hover:border-[var(--color-paper-border)] transition-colors";
+///
+/// 用裸 `transition`（Tailwind v4 默认列表含 colors/transform/box-shadow/opacity）而非
+/// `transition-colors`：编译产物中 `.transition-colors` 排在 `.transition-all` 之后，
+/// 同层同优先级会覆盖组件追加的 `transition-all`，导致 hover 位移/阴影瞬时跳变。
+pub const ADMIN_CARD_CLASS: &str = "bg-[var(--color-paper-entry)] rounded-2xl shadow-sm border border-transparent hover:border-[var(--color-paper-border)] transition";
 
 /// Admin 表格容器：内容档圆角（16px），与卡片一致。
-pub const ADMIN_TABLE_CLASS: &str = "bg-[var(--color-paper-entry)] rounded-2xl shadow-sm border border-transparent hover:border-[var(--color-paper-border)] transition-colors overflow-hidden";
+pub const ADMIN_TABLE_CLASS: &str = "bg-[var(--color-paper-entry)] rounded-2xl shadow-sm border border-transparent hover:border-[var(--color-paper-border)] transition overflow-hidden";
 
 /// Admin 表格行 hover 态：底部分割线 + 悬停背景。
 pub const ADMIN_ROW_HOVER: &str =
