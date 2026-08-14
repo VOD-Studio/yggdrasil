@@ -1,6 +1,11 @@
 name: CI
 
-# 流水线（2026 最佳实践：原生多 runner 构建，零 QEMU）：
+# 流水线（2026 runner fallback + 原生多 runner 构建，零 QEMU）：
+# - 受信任的默认分支 push、tag 和手动触发：x64 检查/amd64 构建优先尝试组织 self-hosted；
+#   runner 不可用、API 无权限或 runner group 未允许公开仓库时自动回退 ubuntu-latest。
+# - pull_request 和非默认分支 push 始终使用 GitHub-hosted runner：本仓库公开，避免不受信任代码污染持久 runner。
+# - release/publish/deploy 保持 GitHub-hosted：这些 job 使用写权限或部署密钥，不把 secrets 带到持久 runner。
+# - arm64 构建保持 ubuntu-24.04-arm（组织 runner-1 是 X64，不能替代）。
 # - 每次 push（任意分支/tag）和 PR：跑 test（单测+lint）→ build-amd64
 # - 仅 push 新 tag（v*）或手动触发时：
 #     build-arm64（原生 ubuntu-24.04-arm runner）
@@ -20,6 +25,73 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # ── runner selection：仅在 hosted runner 上查询，避免 self-hosted 离线时 job 排队 ──
+  # ORG_RUNNER_TOKEN 可作为 repo/org secret 提供；需要读取组织 runner/group 的权限。
+  # 缺少 token、API 失败、runner 忙/离线或公开仓库未获 runner group 授权时均安全回退。
+  select_runner:
+    permissions:
+      actions: read
+      contents: read
+    runs-on: ubuntu-latest
+    outputs:
+      runner: ${{ steps.choose.outputs.runner }}
+    steps:
+      - name: Choose x64 runner
+        id: choose
+        env:
+          GH_TOKEN: ${{ secrets.ORG_RUNNER_TOKEN || github.token }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          runner='["ubuntu-latest"]'
+          reason="default GitHub-hosted runner"
+          trusted_ref=false
+
+          if [[ "$GITHUB_EVENT_NAME" == "push" && ( "$GITHUB_REF" == "refs/heads/$DEFAULT_BRANCH" || "$GITHUB_REF" == refs/tags/* ) ]]; then
+            trusted_ref=true
+          elif [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" && "$GITHUB_REF" == "refs/heads/$DEFAULT_BRANCH" ]]; then
+            trusted_ref=true
+          fi
+
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            reason="public pull request"
+          elif [[ "$trusted_ref" == true ]]; then
+            repo_encoded="${GITHUB_REPOSITORY//\//%2F}"
+            if group_ids="$(gh api --paginate "orgs/${GITHUB_REPOSITORY_OWNER}/actions/runner-groups?visible_to_repository=${repo_encoded}&per_page=100" --jq '.runner_groups[] | .id' 2>/dev/null)"; then
+              available=false
+              while IFS= read -r group_id; do
+                [[ -z "$group_id" ]] && continue
+                if group_runner="$(gh api --paginate "orgs/${GITHUB_REPOSITORY_OWNER}/actions/runner-groups/${group_id}/runners?per_page=100" --jq '
+                  .runners[] |
+                  select(.status == "online" and .busy == false and
+                    ([.labels[].name | ascii_downcase] | index("self-hosted") != null) and
+                    ([.labels[].name | ascii_downcase] | index("linux") != null) and
+                    ([.labels[].name | ascii_downcase] | index("x64") != null)) |
+                  "available"
+                ' 2>/dev/null)"; then
+                  if [[ -n "$group_runner" ]]; then
+                    available=true
+                    break
+                  fi
+                fi
+              done <<< "$group_ids"
+
+              if [[ "$available" == true ]]; then
+                runner='["self-hosted","Linux","X64"]'
+                reason="online and idle organization self-hosted runner"
+              else
+                reason="no online and idle matching self-hosted runner"
+              fi
+            else
+              echo "::warning::无法读取组织 runner/group 状态；请配置 ORG_RUNNER_TOKEN，回退 GitHub-hosted runner"
+              reason="runner status API unavailable"
+            fi
+          else
+            reason="untrusted branch push"
+          fi
+
+          echo "runner=$runner" >> "$GITHUB_OUTPUT"
+          echo "::notice::x64 runner selected: $runner ($reason)"
+
   # ── 检查阶段：拆成 3 个并行 job（按工具链与产物共享切分）──
   # 原 test job 串行跑 fmt/clippy/wasm/biome/test。cargo 对 target/ 持排他锁，同 job 内
   # 并行无效；真正并行只能拆 job（多 runner）。按「能否真正并行 / 是否共享产物」切分：
@@ -32,7 +104,8 @@ jobs:
   # （continue-on-error，仍执行并显示结果，但不阻断下游 build）；只有 cargo test
   # 始终阻断。tag 推送（v*）时全部严格，任一失败即阻断 build/release/deploy。
   test:
-    runs-on: ubuntu-latest
+    needs: select_runner
+    runs-on: ${{ fromJSON(needs.select_runner.outputs.runner) }}
     steps:
       # dtolnay/rust-toolchain：走 GitHub CDN，比 curl|sh 快 ~10-15s，含 clippy+rustfmt 组件。
       - uses: actions/checkout@v7
@@ -61,7 +134,8 @@ jobs:
         run: cargo test --locked --all-features
 
   lint-js:
-    runs-on: ubuntu-latest
+    needs: select_runner
+    runs-on: ${{ fromJSON(needs.select_runner.outputs.runner) }}
     # 非 tag 时整个 lint job 允许失败（不阻断下游 build）；tag 时严格。
     continue-on-error: ${{ !startsWith(github.ref, 'refs/tags/') }}
     steps:
@@ -82,7 +156,8 @@ jobs:
         run: cd libs && pnpm install --frozen-lockfile && pnpm exec biome check .
 
   check-wasm:
-    runs-on: ubuntu-latest
+    needs: select_runner
+    runs-on: ${{ fromJSON(needs.select_runner.outputs.runner) }}
     # 非 tag 时整个检查 job 允许失败（不阻断下游 build）；tag 时严格。
     continue-on-error: ${{ !startsWith(github.ref, 'refs/tags/') }}
     steps:
@@ -108,8 +183,8 @@ jobs:
   # 每次推送都跑（= 编译验证）。用 cargo-chef + GHA 层缓存：依赖不变时
   # cooker 层 cache-hit(秒级),cargo build 只编 app(~2min)。
   build-amd64:
-    runs-on: ubuntu-latest
-    needs: [test, lint-js, check-wasm]
+    runs-on: ${{ fromJSON(needs.select_runner.outputs.runner) }}
+    needs: [select_runner, test, lint-js, check-wasm]
     # 仅主干分支(main/master) push、tag 推送、手动触发时构建完整镜像。
     # 其他分支/PR 的 push 仅靠 test job(fmt/clippy/wasm32/单测)做门槛，
     # 省下完整 Docker 构建的 CI 分钟与 GHA 缓存配额(多分支并发会快速吃满 10GB)。
