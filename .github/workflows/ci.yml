@@ -55,8 +55,8 @@ jobs:
           if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
             reason="public pull request"
           elif [[ "$trusted_ref" == true ]]; then
-            repo_encoded="${GITHUB_REPOSITORY//\//%2F}"
-            if group_ids="$(gh api --paginate "orgs/${GITHUB_REPOSITORY_OWNER}/actions/runner-groups?visible_to_repository=${repo_encoded}&per_page=100" --jq '.runner_groups[] | .id' 2>/dev/null)"; then
+            # visible_to_repository 对 public repo 返回空(GitHub API 已知行为)，改查全部 group 再按 allows_public_repositories 过滤
+            if group_ids="$(gh api --paginate "orgs/${GITHUB_REPOSITORY_OWNER}/actions/runner-groups?per_page=100" --jq '.runner_groups[] | select(.visibility == "all" and .allows_public_repositories == true) | .id' 2>/dev/null)"; then
               available=false
               while IFS= read -r group_id; do
                 [[ -z "$group_id" ]] && continue
