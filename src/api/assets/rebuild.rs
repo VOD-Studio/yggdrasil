@@ -1,11 +1,11 @@
 //! 素材索引全量重建接口。
 //!
 //! 以磁盘为准自愈 DB 与文件系统的不一致：
-//! 1. 扫 `uploads/`（跳过 `.cache` 等点目录）→ upsert assets（技术字段变化才更新，保留 alt）；
+//! 1. 扫 `uploads/`（跳过 `.cache` 等点目录）→ upsert assets（技术字段变化才更新，保留 alt 与原始文件名）；
 //! 2. 删除文件已消失的 DB 行（refs 级联）；
 //! 3. 全表扫 posts（含回收站）重建 asset_refs。
 //!
-//! 幂等：重跑结果相同（技术字段无变化时 updated 为 0，alt 不被覆盖）。
+//! 幂等：重跑结果相同（技术字段无变化时 updated 为 0，alt 与 filename 不被覆盖）。
 //! 幂等性由「手动触发」语义承载，非常态路径。Dioxus server function，仅 admin 可用。
 
 use dioxus::prelude::*;
@@ -113,8 +113,9 @@ pub async fn rebuild_assets_index() -> Result<RebuildAssetsResponse, ServerFnErr
         let tx = client.transaction().await.map_err(AppError::tx)?;
 
         // 1. upsert assets。xmax = 0 判别新插入（PG 系统列：新行 xmax 为 0）。
-        //    ON CONFLICT 仅当技术字段实际变化时才更新（IS DISTINCT FROM），
-        //    保证幂等重跑 updated = 0 且不覆盖 alt。
+        //    ON CONFLICT 仅当技术字段（mime/size/width/height）实际变化时才更新（IS DISTINCT FROM），
+        //    保证幂等重跑 updated = 0 且不覆盖 alt 和原始 filename（issue #31）。
+        //    filename 仅在新插入时取磁盘文件名；已存在的行保留上传时记录的原始文件名。
         let mut inserted: i64 = 0;
         let mut updated: i64 = 0;
         for f in &scanned {
@@ -124,19 +125,17 @@ pub async fn rebuild_assets_index() -> Result<RebuildAssetsResponse, ServerFnErr
                 .query_opt(
                     "INSERT INTO assets (id, path, filename, mime, size_bytes, width, height) \
                      VALUES ($1, $2, $3, $4, $5, $6, $7) \
-                     ON CONFLICT (path) DO UPDATE SET \
-                         filename = EXCLUDED.filename, \
-                         mime = EXCLUDED.mime, \
-                         size_bytes = EXCLUDED.size_bytes, \
-                         width = EXCLUDED.width, \
-                         height = EXCLUDED.height, \
-                         updated_at = NOW() \
-                     WHERE assets.size_bytes IS DISTINCT FROM EXCLUDED.size_bytes \
-                        OR assets.width IS DISTINCT FROM EXCLUDED.width \
-                        OR assets.height IS DISTINCT FROM EXCLUDED.height \
-                        OR assets.mime IS DISTINCT FROM EXCLUDED.mime \
-                        OR assets.filename IS DISTINCT FROM EXCLUDED.filename \
-                     RETURNING (xmax = 0) AS was_inserted",
+                    ON CONFLICT (path) DO UPDATE SET \
+                        mime = EXCLUDED.mime, \
+                        size_bytes = EXCLUDED.size_bytes, \
+                        width = EXCLUDED.width, \
+                        height = EXCLUDED.height, \
+                        updated_at = NOW() \
+                    WHERE assets.size_bytes IS DISTINCT FROM EXCLUDED.size_bytes \
+                       OR assets.width IS DISTINCT FROM EXCLUDED.width \
+                       OR assets.height IS DISTINCT FROM EXCLUDED.height \
+                       OR assets.mime IS DISTINCT FROM EXCLUDED.mime \
+                    RETURNING (xmax = 0) AS was_inserted",
                     &[
                         &asset_id,
                         &f.rel_path,
