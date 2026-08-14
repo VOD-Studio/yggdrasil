@@ -10,7 +10,7 @@ name: CI
 # - 仅 push 新 tag（v*）或手动触发时：
 #     build-arm64（原生 ubuntu-24.04-arm runner）
 #     release（amd64 镜像 + arm64 镜像 + x86_64 musl 二进制 发布到 GitHub Release）
-#     deploy（SSH 到 xun 滚动重启）
+#     deploy（xun 从 GHCR 拉取 app + runner 镜像，compose up 滚动重启）
 on:
   push:
   pull_request:
@@ -395,11 +395,10 @@ jobs:
             /tmp/release/yggdrasil-arm64.tar.gz \
             /tmp/release/yggdrasil-x86_64-musl.tar.gz
 
-  # ── publish-ghcr：合并 amd64 + arm64 为多架构 manifest 推 GHCR（版本归档）──
-  # GHCR 作只读镜像仓库：每次发版(tag)或手动触发时归档一个多架构 manifest，
-  # tag 命名 latest(最新) / vX.Y.Z(git tag) / sha-xxxxxxx(可追溯某次构建)。
-  # 服务器部署仍走下方 deploy job 的 scp(对 xun 中国网络最可靠)，GHCR 不参与部署链路——
-  # 它的价值在于多架构归档、版本可追溯、未来可无缝切换为 pull 部署。
+  # ── publish-ghcr：合并 amd64 + arm64 为多架构 manifest 推 GHCR（部署镜像源）──
+  # 每次 tag 或手动触发归档一个多架构 manifest，tag 命名 latest(最新) / vX.Y.Z(git tag) /
+  # sha-xxxxxxx(可追溯某次构建)。下方 deploy job 直接从 GHCR 拉取 latest 部署到 xun
+  # （pull-based，不再 scp tarball），故本 job 是部署链路的前置依赖（deploy needs: publish-ghcr）。
   # 流程：下载两个单架构 artifact → load → retag → push 单架构(带 sha 后缀) →
   # docker manifest create 合并(从 registry 引用) → push manifest list。
   publish-ghcr:
@@ -469,7 +468,8 @@ jobs:
   # 用普通 `docker build` 而非 buildx：docker-container driver 的 buildx 实例与本地
   # daemon 隔离，本地 load 的 base 在 buildx 里不可见，子镜像 FROM 会失败；普通
   # docker build 走本地 daemon，base 先进 daemon，子镜像 FROM 即可解析。
-  # 服务器部署仍走 scripts/xun.fish 本地构建 scp，GHCR 仅作归档/未来 pull 切换基础。
+  # 下方 deploy job 从 GHCR 拉取这 6 个 runner 镜像并 tag 成 LANGUAGES 注册表硬编码的
+  # 短名（best-effort，拉取失败仅保留旧 tag）。本地构建+scp 兜底见 scripts/xun.fish。
   publish-runners:
     runs-on: ubuntu-latest
     needs: [test, lint-js, check-wasm]
@@ -530,25 +530,25 @@ jobs:
             echo "==> pushed ${REG}/yggdrasil-runner-${img} ← ${TAGS}"
           done
 
-  # ── deploy：scp 镜像到 xun，docker load + compose up，健康检查 ──
+  # ── deploy：xun 从 GHCR 拉取镜像后滚动重启（pull-based，不再 scp tarball）──
   # 仅 push 新 tag（v*）或手动触发时运行（分支推送/PR 不部署）。
+  # 依赖 publish-ghcr + publish-runners：镜像须先入 GHCR 才能拉取（两者并行构建，
+  # deploy 等它们都完成以避免拉取与推送并发竞争同一 tag）。
+  #   - 主应用：publish-ghcr 推 multi-arch manifest(latest)，xun(amd64) 拉取自动解析到
+  #     amd64，再 tag 成 localhost/yggdrasil:latest（xun 的 compose app.image 即此名，无需改 compose）。
+  #   - runner：publish-runners 推 amd64 单架构，拉取后 tag 成 LANGUAGES 注册表硬编码的
+  #     短名 yggdrasil-runner-*:latest（无 registry 前缀）。runner 拉取 best-effort——失败
+  #     仅告警保留旧 tag，绝不阻断 app 部署（app 上线是关键路径）。
+  # 仓库 public → GHCR 包默认 public，匿名拉取即可；若设为 private，在 xun 上一次性
+  # `docker login ghcr.io`（PAT read:packages）即可，CI 无需改动。拉取带 3 次重试
+  # （xun 中国网络访问 ghcr.io 偶发超时）。本地构建+scp 兜底仍见 scripts/xun.fish。
   deploy:
     runs-on: ubuntu-latest
-    needs: build-amd64
+    needs: [publish-ghcr, publish-runners]
     if: >-
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/'))
       || github.event_name == 'workflow_dispatch'
     steps:
-      - uses: actions/checkout@v7
-
-      - name: Download amd64 image artifact
-        uses: actions/download-artifact@v8
-        with:
-          name: yggdrasil-amd64-image
-          path: /tmp
-
-      # 写私钥 + known_hosts。优先用 XUN_KNOWN_HOSTS secret（pin 服务器指纹，更安全）；
-      # 未提供则 ssh-keyscan 兜底（TOFU，存在中间人风险，生产建议设置该 secret）。
       - name: Configure SSH
         env:
           XUN_SSH_KEY: ${{ secrets.XUN_SSH_KEY }}
@@ -568,34 +568,57 @@ jobs:
           fi
           chmod 644 ~/.ssh/known_hosts
 
-      - name: Transfer image to xun
+      # 整段部署脚本以 quoted heredoc（<<'REMOTE'）经 ssh 管道送入 xun 的 bash -s，
+      # 脚本体不在 runner 侧展开（\$img/\$i 等全留给远端 bash 求值）；REG/部署目录作为
+      # 位置参数 $1/$2 传入——绕开 xun 的 fish 默认 shell + 嵌套引号转义地狱。
+      - name: Pull images from GHCR and restart app
         env:
           XUN_USER: ${{ secrets.XUN_USER }}
           XUN_HOST: ${{ secrets.XUN_HOST }}
           XUN_PORT: ${{ secrets.XUN_PORT }}
           XUN_DEPLOY_DIR: ${{ secrets.XUN_DEPLOY_DIR }}
+          OWNER: ${{ github.repository_owner }}
         run: |
           : "${XUN_USER:?secret XUN_USER 未设置}"
           port="${XUN_PORT:-22}"
           dir="${XUN_DEPLOY_DIR:-/root/docker/yggdrasil}"
-          scp -P "$port" -o BatchMode=yes /tmp/yggdrasil-amd64.tar.gz "${XUN_USER}@${XUN_HOST}:${dir}/yggdrasil-app.tar.gz"
+          owner="$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')"
+          ssh -p "$port" -o BatchMode=yes "${XUN_USER}@${XUN_HOST}" 'bash -s' "ghcr.io/${owner}" "${dir}" <<'REMOTE'
+          set -euo pipefail
+          REG="$1"
+          DIR="$2"
 
-# 单条 ssh 串行执行：解压 → load → 滚动重启 app（postgres 与数据卷不动）→ 清理。
-# 显式 bash -lc 执行脚本：xun 默认 login shell 是 fish，set -euo pipefail 等 POSIX
-# 语法 fish 不认（曾报 "set: -euo: unknown option"），bash -lc 绕过 fish。dir 仍在本地
-# （runner）展开后拼进脚本，避免远程二次展开。
-      - name: Load image and restart app
-        env:
-          XUN_USER: ${{ secrets.XUN_USER }}
-          XUN_HOST: ${{ secrets.XUN_HOST }}
-          XUN_PORT: ${{ secrets.XUN_PORT }}
-          XUN_DEPLOY_DIR: ${{ secrets.XUN_DEPLOY_DIR }}
-        run: |
-          : "${XUN_USER:?secret XUN_USER 未设置}"
-          port="${XUN_PORT:-22}"
-          dir="${XUN_DEPLOY_DIR:-/root/docker/yggdrasil}"
-          ssh -p "$port" -o BatchMode=yes "${XUN_USER}@${XUN_HOST}" \
-            "bash -lc 'set -euo pipefail && cd \"${dir}\" && gunzip -kf yggdrasil-app.tar.gz && docker load -i yggdrasil-app.tar && docker compose --env-file .env up -d app && rm -f yggdrasil-app.tar yggdrasil-app.tar.gz'"
+          # 带重试的拉取：xun(中国) 访问 ghcr.io 偶发超时。
+          pull_retry() {
+            local img="$1" i
+            for i in 1 2 3; do
+              docker pull "$img" && return 0
+              echo "  pull retry $i/3: $img"
+              sleep 5
+            done
+            return 1
+          }
+
+          echo "==> [1/3] pull + tag app image (multi-arch latest → amd64)"
+          pull_retry "$REG/yggdrasil:latest" \
+            || { echo "::error::app image pull failed: $REG/yggdrasil:latest"; exit 1; }
+          docker tag "$REG/yggdrasil:latest" localhost/yggdrasil:latest
+
+          echo "==> [2/3] docker compose up -d app (postgres 与数据卷不动)"
+          cd "$DIR" && docker compose --env-file .env up -d app
+
+          echo "==> [3/3] pull + tag runner images (best-effort，保留旧 tag 不阻断 app)"
+          for img in base python node go rust bun; do
+            if pull_retry "$REG/yggdrasil-runner-$img:latest"; then
+              docker tag "$REG/yggdrasil-runner-$img:latest" "yggdrasil-runner-$img:latest"
+              echo "  updated yggdrasil-runner-$img"
+            else
+              echo "  WARN: pull failed yggdrasil-runner-$img，保留现有 tag"
+            fi
+          done
+
+          echo "==> pull-based deploy script done"
+          REMOTE
 
       # 轮询内部健康端点（经 nginx-proxy 容器访问 app:3000），最多等 ~60s。
       - name: Health check
