@@ -78,6 +78,10 @@ fn write_editor(post_id: Option<i32>) -> Element {
     // 无需 mut：本组件只读取（L254）与传递（L452），写入都在 CoverUploader 内部，
     // 而 Dioxus Signal 是 Copy 类型，.set() 不要求 mut 绑定。
     let cover_uploading = use_signal(|| false);
+    // 正文素材选择弹窗：slash 命令「素材库」经 onPickFromLibrary 回调打开（多选模式）；
+    // body_picker_uploading 承载弹窗内上传中状态，供 on_submit 拦截（语义同 cover_uploading）。
+    let mut body_picker_visible = use_signal(|| false);
+    let body_picker_uploading = use_signal(|| false);
     let mut status = use_signal(|| "published".to_string());
     let mut content = use_signal(|| "".to_string());
     // 页面与编辑器加载、保存、错误、成功等状态。
@@ -185,6 +189,12 @@ fn write_editor(post_id: Option<i32>) -> Element {
         });
         // 运行代码 closure：start_exec + 轮询，结果字符串回填 JS 结果区 DOM。
         let on_run_code = crate::tiptap_bridge::make_run_code_closure();
+        // slash 命令「素材库」closure：打开正文素材选择弹窗
+        // （JS 侧已删掉 /命令 文本；选中回填由弹窗 on_select 完成）。
+        let on_pick_from_library = Closure::new({
+            let mut body_picker_visible = body_picker_visible;
+            move || body_picker_visible.set(true)
+        });
 
         // —— 构造 options ——
         let opts = crate::tiptap_bridge::EditorOptions::new();
@@ -194,6 +204,7 @@ fn write_editor(post_id: Option<i32>) -> Element {
         opts.set_on_image_upload(&on_image_upload);
         opts.set_on_upload_event(&on_upload_event);
         opts.set_on_run_code(&on_run_code);
+        opts.set_on_pick_from_library(&on_pick_from_library);
 
         // —— create（同步返回；找不到容器返回 None，构造失败抛异常）——
         match crate::tiptap_bridge::get_module().create("tiptap-editor", &opts) {
@@ -218,6 +229,7 @@ fn write_editor(post_id: Option<i32>) -> Element {
                     on_ready,
                     on_upload_event,
                     on_run_code,
+                    on_pick_from_library,
                 );
                 editor.set(Some(handle));
             }
@@ -271,6 +283,12 @@ fn write_editor(post_id: Option<i32>) -> Element {
         // 封面图上传中拦截：防止保存半成品（cover_uploading 由子组件 CoverUploader 写入）。
         if cover_uploading() {
             error.set(Some("封面图正在上传，请等待完成后再保存".to_string()));
+            return;
+        }
+
+        // 正文素材弹窗内上传中拦截（与封面同一语义）。
+        if body_picker_uploading() {
+            error.set(Some("图片正在上传，请等待完成后再保存".to_string()));
             return;
         }
 
@@ -571,6 +589,26 @@ fn write_editor(post_id: Option<i32>) -> Element {
                     loading: saving(),
                     onclick: move |_| on_submit(()),
                 }
+            } // 底部操作栏闭合
+
+            // 正文素材选择 modal（多选模式）：slash 命令「素材库」→ onPickFromLibrary 打开。
+            // 确认后把选中集序列化为桥接契约 [{src,alt?}]，由 insertImagesFromLibrary
+            // 在 slash 删除 /命令 文本后停留的光标处一次事务批量插入。
+            AssetPickerModal {
+                visible: body_picker_visible,
+                cover_uploading: body_picker_uploading,
+                title: "选择图片",
+                multi: true,
+                on_select: move |picks: Vec<AssetSelection>| {
+                    #[cfg(target_arch = "wasm32")]
+                    if let Some(handle) = &*editor.read() {
+                        if let Ok(json) = serde_json::to_string(&picks) {
+                            handle.instance().insert_images_from_library(&json);
+                        }
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    let _ = picks;
+                },
             }
         }
     }

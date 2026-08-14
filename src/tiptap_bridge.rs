@@ -87,6 +87,12 @@ pub mod wasm {
         #[wasm_bindgen(method, js_name = removeUploadByUploadId)]
         pub fn remove_upload_by_upload_id(this: &EditorInstance, upload_id: &str) -> bool;
 
+        /// 从素材库批量插入图片：`json` 为 `[{ "src", "alt"? }]` 串
+        /// （`AssetSelection` 的 serde 序列化形状）。JS 侧在 slash 命令删除
+        /// `/素材` 文本后停留的光标位置一次事务插入全部图片块；非法载荷 no-op。
+        #[wasm_bindgen(method, js_name = insertImagesFromLibrary)]
+        pub fn insert_images_from_library(this: &EditorInstance, json: &str);
+
         /// 销毁编辑器，释放 JS 侧资源。
         #[wasm_bindgen(method)]
         pub fn destroy(this: &EditorInstance);
@@ -134,6 +140,12 @@ pub mod wasm {
             this: &EditorOptions,
             cb: &Closure<dyn Fn(RunCodeOptsJs) -> js_sys::Promise>,
         );
+
+        /// JS 侧 onPickFromLibrary: () => void。
+        /// slash 命令「素材库」触发（此时 /命令 文本已被 JS 删除、光标停在删除位置）；
+        /// Rust 侧打开 AssetPickerModal，确认后由 insertImagesFromLibrary 回填。
+        #[wasm_bindgen(method, setter, js_name = onPickFromLibrary)]
+        pub fn set_on_pick_from_library(this: &EditorOptions, cb: &Closure<dyn FnMut()>);
     }
 
     // —— 上传事件（JS UploadEvent 的 Rust 映射）——
@@ -215,6 +227,7 @@ pub mod wasm {
         _on_ready: Closure<dyn FnMut()>,
         _on_upload_event: Closure<dyn FnMut(UploadEventJs)>,
         _on_run_code: Closure<dyn Fn(RunCodeOptsJs) -> js_sys::Promise>,
+        _on_pick_from_library: Closure<dyn FnMut()>,
     }
 
     impl EditorHandle {
@@ -230,6 +243,7 @@ pub mod wasm {
             on_ready: Closure<dyn FnMut()>,
             on_upload_event: Closure<dyn FnMut(UploadEventJs)>,
             on_run_code: Closure<dyn Fn(RunCodeOptsJs) -> js_sys::Promise>,
+            on_pick_from_library: Closure<dyn FnMut()>,
         ) -> Self {
             Self {
                 instance,
@@ -238,6 +252,7 @@ pub mod wasm {
                 _on_ready: on_ready,
                 _on_upload_event: on_upload_event,
                 _on_run_code: on_run_code,
+                _on_pick_from_library: on_pick_from_library,
             }
         }
 
