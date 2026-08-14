@@ -226,8 +226,10 @@ fn StatCard(value: i64, label: String, trend: Option<String>, delay_ms: i32) -> 
                 div { class: "text-sm font-medium text-[var(--color-paper-secondary)]",
                     "{label}"
                 }
-                div { class: "text-xs px-2 py-0.5 rounded-full border border-[var(--color-paper-border)] text-[var(--color-paper-tertiary)]",
-                    "{trend}"
+                if let Some(t) = trend {
+                    div { class: "text-xs px-2 py-0.5 rounded-full border border-[var(--color-paper-border)] text-[var(--color-paper-tertiary)]",
+                        "{t}"
+                    }
                 }
             }
             CountUp {
@@ -295,9 +297,11 @@ fn RecentPostItem(post: PostListItem, delay_ms: i32) -> Element {
     let status_class = post.status_class();
 
     rsx! {
-        div {
+        // 整行跳转后台只读预览（/admin/preview/:slug），草稿亦可预览。
+        Link {
             class: "flex flex-col sm:flex-row sm:justify-between sm:items-center px-8 py-5 hover:bg-[var(--color-paper-accent-soft)] transition-colors cursor-pointer group animate-row-enter",
             style: "animation-delay: {delay_ms}ms",
+            to: Route::PostPreview { slug: post.slug.clone() },
             div { class: "flex items-center gap-6",
                 span { class: "text-xs font-mono text-[var(--color-paper-tertiary)] w-12 hidden sm:block",
                     "#{post.id:04}"
