@@ -565,7 +565,7 @@ pub fn AssetPickerModal(
 
 #[cfg(test)]
 mod tests {
-    use super::{AssetSelection, toggle_selection};
+    use super::{toggle_selection, AssetSelection};
 
     fn sel(url: &str) -> AssetSelection {
         AssetSelection {
@@ -581,7 +581,10 @@ mod tests {
         toggle_selection(&mut selected, sel("/uploads/a.webp"));
         toggle_selection(&mut selected, sel("/uploads/c.webp"));
         let urls: Vec<&str> = selected.iter().map(|s| s.url.as_str()).collect();
-        assert_eq!(urls, ["/uploads/b.webp", "/uploads/a.webp", "/uploads/c.webp"]);
+        assert_eq!(
+            urls,
+            ["/uploads/b.webp", "/uploads/a.webp", "/uploads/c.webp"]
+        );
     }
 
     #[test]

@@ -436,29 +436,26 @@ fn is_animated_image(data: &[u8], format: image::ImageFormat) -> bool {
         image::ImageFormat::WebP => {
             // RIFF(4)+size(4)+WEBP(4)=12 字节签名；逐 chunk 扫描 FourCC+size。
             // Animated WebP 必有 VP8X + ANIM + 至少一个 ANMF。
-            data.len() >= 12
-                && &data[0..4] == b"RIFF"
-                && &data[8..12] == b"WEBP"
-                && {
-                    let mut pos = 12;
-                    let mut found = false;
-                    while pos + 8 <= data.len() {
-                        let fourcc = &data[pos..pos + 4];
-                        let chunk_size = u32::from_le_bytes([
-                            data[pos + 4],
-                            data[pos + 5],
-                            data[pos + 6],
-                            data[pos + 7],
-                        ]) as usize;
-                        if fourcc == b"ANMF" {
-                            found = true;
-                            break;
-                        }
-                        // chunk 体 2 字节对齐（RIFF 规范）。
-                        pos += 8 + ((chunk_size + 1) & !1);
+            data.len() >= 12 && &data[0..4] == b"RIFF" && &data[8..12] == b"WEBP" && {
+                let mut pos = 12;
+                let mut found = false;
+                while pos + 8 <= data.len() {
+                    let fourcc = &data[pos..pos + 4];
+                    let chunk_size = u32::from_le_bytes([
+                        data[pos + 4],
+                        data[pos + 5],
+                        data[pos + 6],
+                        data[pos + 7],
+                    ]) as usize;
+                    if fourcc == b"ANMF" {
+                        found = true;
+                        break;
                     }
-                    found
+                    // chunk 体 2 字节对齐（RIFF 规范）。
+                    pos += 8 + ((chunk_size + 1) & !1);
                 }
+                found
+            }
         }
         image::ImageFormat::Gif => {
             // 动画 GIF 的标志是 NETSCAPE2.0 应用扩展块（循环控制）。
@@ -1495,8 +1492,8 @@ mod tests {
         use zenwebp::mux::{AnimationConfig, AnimationEncoder};
         use zenwebp::{EncoderConfig, PixelLayout};
 
-        let mut enc = AnimationEncoder::new(8, 8, AnimationConfig::default())
-            .expect("8x8 在合法画布范围内");
+        let mut enc =
+            AnimationEncoder::new(8, 8, AnimationConfig::default()).expect("8x8 在合法画布范围内");
         let cfg = EncoderConfig::new_lossy();
         // 两帧不同内容，确保 finalize 不会降级成单帧静态图。
         let frame_a = vec![255u8; 8 * 8 * 3]; // 白
@@ -1546,12 +1543,9 @@ mod tests {
             thumb: Some("300x300".to_string()),
             ..Default::default()
         };
-        let (out_bytes, out_ct) = process_image_blocking(
-            animated.clone(),
-            params,
-            "2026/08/13/anim.webp".to_string(),
-        )
-        .expect("动图绕过处理不应失败");
+        let (out_bytes, out_ct) =
+            process_image_blocking(animated.clone(), params, "2026/08/13/anim.webp".to_string())
+                .expect("动图绕过处理不应失败");
         assert_eq!(
             out_bytes, animated,
             "动图字节必须原样返回（绕过解码/缩放/重编码）"
@@ -1603,12 +1597,13 @@ mod tests {
     #[test]
     fn is_animated_image_false_for_jpeg_png() {
         // JPEG/PNG 不可能是动图，直接返回 false（不扫描字节）。
-        assert!(!is_animated_image(&[0xFF, 0xD8, 0xFF], image::ImageFormat::Jpeg));
-        assert!(
-            !is_animated_image(
-                &[0x89, 0x50, 0x4E, 0x47],
-                image::ImageFormat::Png
-            )
-        );
+        assert!(!is_animated_image(
+            &[0xFF, 0xD8, 0xFF],
+            image::ImageFormat::Jpeg
+        ));
+        assert!(!is_animated_image(
+            &[0x89, 0x50, 0x4E, 0x47],
+            image::ImageFormat::Png
+        ));
     }
 }

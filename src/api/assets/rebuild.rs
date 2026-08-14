@@ -159,11 +159,13 @@ pub async fn rebuild_assets_index() -> Result<RebuildAssetsResponse, ServerFnErr
         // 2. 删除文件已消失的 DB 行（refs 级联删）。
         //    排除集 = 可读文件 + 尺寸读取失败的文件（后者仍在磁盘上，
         //    不应误删——issue #30 的根因就是此处曾遗漏无法读尺寸的大 WebP）。
-        let mut keep_paths: Vec<String> =
-            scanned.iter().map(|f| f.rel_path.clone()).collect();
+        let mut keep_paths: Vec<String> = scanned.iter().map(|f| f.rel_path.clone()).collect();
         keep_paths.extend(unreadable.iter().cloned());
         let removed = tx
-            .execute("DELETE FROM assets WHERE NOT (path = ANY($1))", &[&keep_paths])
+            .execute(
+                "DELETE FROM assets WHERE NOT (path = ANY($1))",
+                &[&keep_paths],
+            )
             .await
             .map_err(AppError::tx)?;
 
