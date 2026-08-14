@@ -958,6 +958,11 @@ mod tests {
                 .await;
         }
 
-        assert_eq!(leaked.len(), 0, "Found {} leaked containers after polling", leaked.len());
+        assert_eq!(
+            leaked.len(),
+            0,
+            "Found {} leaked containers after polling",
+            leaked.len()
+        );
     }
 }
