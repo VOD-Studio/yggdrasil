@@ -383,10 +383,16 @@ jobs:
           echo "--- body preview ---"
           head -5 /tmp/release-body.md
 
+      # 幂等：同 tag 重跑（tag 重发/rerun）时 Release 已存在则跳过创建，
+      # 不让「already exists」把发版作业打红——产物已在，无需重复上传。
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          if gh release view "${GITHUB_REF_NAME}" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "==> release ${GITHUB_REF_NAME} 已存在，跳过创建（tag 重发场景）"
+            exit 0
+          fi
           gh release create "${GITHUB_REF_NAME}" \
             --repo "$GITHUB_REPOSITORY" \
             --title "${GITHUB_REF_NAME}" \
