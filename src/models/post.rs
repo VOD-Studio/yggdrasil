@@ -227,6 +227,9 @@ pub struct PostStats {
     pub trash: i64,
     /// 近 30 天新建文章数（不含软删除），供仪表盘趋势徽章展示真实增量。
     pub recent_30d: i64,
+    /// 近 30 个自然日每日新建文章数（旧 → 新，不含软删除，无文章的日为 0），
+    /// 供仪表盘 sparkline 使用。
+    pub activity_30d: Vec<i64>,
 }
 
 #[cfg(test)]

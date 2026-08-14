@@ -947,6 +947,7 @@ mod tests {
             published: 7,
             trash: 2,
             recent_30d: 4,
+            activity_30d: vec![0, 1, 3],
         };
 
         set_post_stats(stats.clone()).await;
