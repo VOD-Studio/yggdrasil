@@ -80,7 +80,7 @@ fn write_editor(post_id: Option<i32>) -> Element {
     let cover_uploading = use_signal(|| false);
     // 正文素材选择弹窗：slash 命令「素材库」经 onPickFromLibrary 回调打开（多选模式）；
     // body_picker_uploading 承载弹窗内上传中状态，供 on_submit 拦截（语义同 cover_uploading）。
-    let mut body_picker_visible = use_signal(|| false);
+    let body_picker_visible = use_signal(|| false);
     let body_picker_uploading = use_signal(|| false);
     let mut status = use_signal(|| "published".to_string());
     let mut content = use_signal(|| "".to_string());

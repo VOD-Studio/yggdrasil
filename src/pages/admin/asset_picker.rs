@@ -365,21 +365,29 @@ pub fn AssetPickerModal(
                                     } else {
                                         None
                                     };
+                                    // rsx 的 class 合并只接受 fmt 字面量：条件类名先算成变量再内插。
+                                    let uploaded_class = if multi {
+                                        if uploaded_order.is_some() {
+                                            "border-2 border-[var(--color-paper-accent)]"
+                                        } else {
+                                            "border-2 border-[var(--color-paper-border)] hover:border-[var(--color-paper-primary)]"
+                                        }
+                                    } else {
+                                        "border-2 border-[var(--color-paper-accent)]"
+                                    };
+                                    let uploaded_title = if multi {
+                                        "新上传图片，点击切换选中"
+                                    } else {
+                                        "新上传图片，点击使用"
+                                    };
                                     rsx! {
                                         button {
                                             key: "uploaded-{uploaded_url}",
-                                            class: "group relative aspect-square cursor-pointer overflow-hidden rounded-2xl bg-[var(--color-paper-theme)] shadow-sm transition-all hover:shadow-md",
-                                            class: if multi {
-                                                if uploaded_order.is_some() {
-                                                    "border-2 border-[var(--color-paper-accent)]"
-                                                } else {
-                                                    "border-2 border-[var(--color-paper-border)] hover:border-[var(--color-paper-primary)]"
-                                                }
-                                            } else {
-                                                "border-2 border-[var(--color-paper-accent)]"
-                                            },
-                                            title: if multi { "新上传图片，点击切换选中" } else { "新上传图片，点击使用" },
+                                            class: "group relative aspect-square cursor-pointer overflow-hidden rounded-2xl bg-[var(--color-paper-theme)] shadow-sm transition-all hover:shadow-md {uploaded_class}",
+                                            title: "{uploaded_title}",
                                             onclick: move |_| {
+                                                // FnMut 闭包不能移出捕获变量，先 clone。
+                                                let uploaded_sel = uploaded_sel.clone();
                                                 if multi {
                                                     toggle_selection(&mut selected.write(), uploaded_sel);
                                                 } else {
@@ -419,21 +427,24 @@ pub fn AssetPickerModal(
                                     } else {
                                         None
                                     };
+                                    // rsx 的 class 合并只接受 fmt 字面量：条件类名先算成变量再内插。
+                                    let item_class = if multi {
+                                        if order.is_some() {
+                                            "border-2 border-[var(--color-paper-accent)] shadow-sm"
+                                        } else {
+                                            "border-2 border-[var(--color-paper-border)] hover:border-[var(--color-paper-primary)]"
+                                        }
+                                    } else {
+                                        "border border-[var(--color-paper-border)] hover:border-[var(--color-paper-primary)]"
+                                    };
                                     rsx! {
                                         button {
                                             key: "{asset.asset.id}",
-                                            class: "group relative aspect-square cursor-pointer overflow-hidden rounded-2xl bg-[var(--color-paper-theme)] transition-all hover:shadow-md",
-                                            class: if multi {
-                                                if order.is_some() {
-                                                    "border-2 border-[var(--color-paper-accent)] shadow-sm"
-                                                } else {
-                                                    "border-2 border-[var(--color-paper-border)] hover:border-[var(--color-paper-primary)]"
-                                                }
-                                            } else {
-                                                "border border-[var(--color-paper-border)] hover:border-[var(--color-paper-primary)]"
-                                            },
+                                            class: "group relative aspect-square cursor-pointer overflow-hidden rounded-2xl bg-[var(--color-paper-theme)] transition-all hover:shadow-md {item_class}",
                                             title: "{asset.asset.filename}",
                                             onclick: move |_| {
+                                                // FnMut 闭包不能移出捕获变量，先 clone。
+                                                let selection = selection.clone();
                                                 if multi {
                                                     toggle_selection(&mut selected.write(), selection);
                                                 } else {
