@@ -1,6 +1,6 @@
 [package]
 name = "yggdrasil"
-version = "0.10.1"
+version = "0.11.0"
 edition = "2021"
 
 # 构建时工具二进制：用 syntect（server-only 依赖）生成 highlight.css。

@@ -7,24 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-08-14
+
 ### Added
 
+- **站点配置页分区化重构**：设置页重制为「左侧导航 + 右侧独立滚动内容区」分区化布局；安全配置与图片缓存配置改为 DB 驱动即时生效层（改完即生效）；限流 / WebP / 图片 / 运行器等 Tier B 配置提供可编辑 UI（重启后生效）。
+- **定时自动备份**：新增备份后端——设置模型 / API、定时调度任务、uploads 打包、自动轮转保留；备份恢复 tab 顶部新增自动备份设置卡片与备份列表配对展示；封装 `TimePicker` 替换原生时间输入。可通过 `BACKUP_*` 环境变量在首次部署时播种。
+- **`ADMIN_*` 环境变量启动同步初始管理员**：启动时自动创建或覆盖密码并确保管理员角色，每次启动均同步（env 优先于 DB），免手动首注册流程。
+- **后台全页面过渡动画**：仪表盘、文章列表、回收站、评论、写作、素材、友链、MCP、代码试运行、系统、设置等页面统一增加进场动画（页头 / 行 / 卡片 stagger），分区切换与切语言时重播。
+- **编辑器接入素材库多选插图**：写作页正文编辑器新增 slash 命令「素材库」与 `insertImagesFromLibrary` 实例方法；`AssetPickerModal` 多选模式，一次插入多张站内图片。
+- **素材上传弹窗增强**：改为 worker 池并发上传，并发数（1–8，默认 3）可在站点配置或 `UPLOAD_CONCURRENCY` 环境变量调整；新增上传状态展示与弹窗内分页。
+- **友链头像素材库选择**：后台友链头像支持从素材库挑选，统一素材弹窗样式。
+- **灯箱查看器操控**：图片灯箱新增底部毛玻璃工具栏（缩小/放大/顺时针旋转 90°/重置/下载原图/关闭），支持滚轮锚定光标缩放、双击切换 2.5×、放大后拖拽平移、移动端双指捏合缩放与竖直拖拽关闭，快捷键 `+`/`-` 缩放、`R` 旋转、`0` 重置；按钮/旋转/重置带 180ms 过渡动画，缩放时浮现倍率徽标，工具栏空闲 2.5s 自动隐藏。
+- **灯箱图片加载失败错误态**：图片加载失败时退避重试、显示 `is-error` 占位、灯箱内给出提示而非闪退。
 - **仪表盘 30 日发文 sparkline**：总文章数卡内嵌近 30 个自然日每日新建文章数迷你折线（真实数据，`get_post_stats` 附带 `activity_30d` 序列，随统计缓存），折线 + 淡色面积填充，全零时如实呈现平线。
 - **仪表盘接口失败重试**：统计、近期文章、待审评论三路加载各自带失败态，接口失败显示「加载失败 + 重试」，不再骨架屏永转，也不回退成 0。
-- **素材多线程上传**：`/admin/assets` 上传弹窗改为 worker 池并发上传，并发数（1–8，默认 3）可在「站点配置」面板调整，或经 `UPLOAD_CONCURRENCY` 环境变量在首次部署时播种；张间间隔随并发数自适应放大，聚合速率始终与上传限流对齐，不触发 429。
-- **灯箱查看器操控**：图片灯箱新增底部毛玻璃工具栏（缩小/放大/顺时针旋转 90°/重置/下载原图/关闭），支持滚轮锚定光标缩放、双击切换 2.5×、放大后拖拽平移、移动端双指捏合缩放与竖直拖拽关闭，快捷键 `+`/`-` 缩放、`R` 旋转、`0` 重置；按钮/旋转/重置带 180ms 过渡动画，缩放时浮现倍率徽标，工具栏空闲 2.5s 自动隐藏。
+- **写作页封面图增强**：封面图点击放大灯箱、拖拽替换、hover 工具栏，加载期间显示骨架占位。
+- **页脚可配置 GitHub 图标**：页脚宽度对齐 header，新增可配置 GitHub 图标。
+- **`x-yggdrasil-hash` 响应头**：服务端新增暴露 git commit hash 的响应头（`EXPOSE_VERSION_HEADERS` 控制）。
+- **图标系统化**：搜索框清除按钮、编辑器切换按钮等改用 Material Symbols 图标，并新增图标工作流 skill 规范化内联 SVG 流程。
+- **双机部署脚本**：新增 `both.fish` 双机部署脚本（xun Primary + rua Replica）。
 
 ### Changed
 
+- **WASM 体积优化**：声明 `wasm-release` profile（`opt-level="z"` / `lto="fat"`，夺回 dx 默认注入的 `opt-level="s"`，WASM 产物 ~2.7MB vs 原 3.47MB）；全部静态文本资源（WASM / JS / CSS）构建期预压缩为 `.br` 旁车，服务端经 `precompressed_br()` 直发，零运行时 CPU，wire size 降至 ~732KB。
+- **部署改为 pull-based**：xun 从 GHCR 拉取镜像部署（替代 scp 推送），并接入 rua DR 副本可选自动部署（best-effort）；runtime 镜像由 scratch 换为 alpine + postgresql16-client，支持 `pg_dump`/`psql` 备份。
+- **图片限流按缓存 miss 计费**：图片处理限流改为按缓存 miss 计费 + 并发处理上限 + 429 响应携带 `Retry-After`，避免对缓存命中请求误限。
 - **仪表盘趋势徽章真实化**：总文章数卡写死的「+12%」改为真实的近 30 天新增篇数（`PostStats.recent_30d`），>0 时绿色徽章 + ↑ 箭头双编码（WCAG 2.2 SC 1.4.1），+0 走中性描边；「活跃」「待处理」占位徽章移除。
-- **仪表盘动效预算收紧**：卡片 hover 过渡 300→200ms、入场去掉内联 600ms 回退到 400ms 类默认、CountUp 数字滚动 900→450ms（NN/g/Atlassian 时长共识）；数值补 `tabular-nums` 防滚动宽度跳动；待审卡 amber 文字提亮至 `amber-600/dark:amber-400` 达 AA 对比；近期文章行 hover 浮现 → 箭头。
+- **仪表盘动效预算收紧**：卡片 hover 过渡 300→200ms、入场去掉内联 600ms 回退到 400ms 类默认、CountUp 数字滚动 900→450ms；数值补 `tabular-nums` 防滚动宽度跳动；待审卡 amber 文字提亮至 `amber-600/dark:amber-400` 达 AA 对比；近期文章行 hover 浮现 → 箭头。
 - **灯箱滚轮行为**：桌面端滚轮由「滚动关闭页面」改为缩放图片（2026 图片查看器惯例）；关闭手势在移动端由滚动驱动改为竖直拖拽直接驱动，行程阈值保持 120px。
+- **Checkbox 组件统一**：封装带描边勾画动画的 `CHECKBOX_CLASS`，迁移全项目调用方。
+- **后台公共组件收敛**：统一复用 `FormInput`/`FormSelect`/`Popover` 等公共组件，消除内联重复样式与信息泄漏；`components` 模块按可复用层级重组并加导航文档。
 
 ### Fixed
 
-- **admin 卡片 hover 无过渡动画**：`ADMIN_CARD_CLASS`/`ADMIN_TABLE_CLASS` 尾部的 `transition-colors` 在 Tailwind v4 编译产物中排在 `.transition-all` 之后，覆盖了组件追加的 `transition-all`，导致 hover 位移/阴影瞬时跳变；改为裸 `transition`（v4 默认属性列表含 colors/transform/box-shadow/opacity）。
+- **素材重建索引误删大图片 (#30)**：重建索引此前对大体积 WebP/JPEG 重新转码并误删，现保留原图、保留原始文件名；动图（GIF/WebP animation）保留动画绕过处理流水线。
+- **灯箱操控动画**：修复打开灯箱后首下缩放/旋转出现非均匀缩放回弹与起始帧跳变（强制 reflow 提交归一化基态矩阵后启动过渡）；旋转改为绕照片中心原地进行；关闭飞行不再反向空转；打开时背景遮罩不再闪烁；加载失败时不再遗留不可见遮罩层。
+- **admin 卡片 hover 无过渡动画**：`ADMIN_CARD_CLASS`/`ADMIN_TABLE_CLASS` 尾部的 `transition-colors` 在 Tailwind v4 编译产物中排在 `.transition-all` 之后，覆盖了组件追加的 `transition-all`，导致 hover 位移/阴影瞬时跳变；改为裸 `transition`。
 - **仪表盘近期文章不可点击**：行容器由 `div` + `cursor-pointer` 改为 `Link`，整行跳转 `/admin/preview/:slug` 只读预览，草稿亦可预览。
-- **灯箱首次操控动画异常**：修复打开灯箱后第一下缩放/旋转动画出现非均匀缩放回弹与起始帧跳变的问题——归一化基态（fit 布局盒 + matrix）现经强制 reflow 提交绘制后才启动 180ms 过渡，过渡起算值不再落到飞入动画遗留的 `translate+scale` 字符串上。
+- **migration 005 幂等**：005 迁移的 comments 触发器改为幂等，重复执行不再报错。
+- **限流日志与错误**：无法获取客户端 IP 的 WARN 改为进程级 warn-once，避免日志刷屏；图片限流响应错误装箱修复。
+- **构建链修复**：空 `RUSTC_WRAPPER` 规避 sccache 与 dx 的 rustc 包装链冲突；清理双目标构建 warning；发布构建前检查 brotli 可用性；`make fix` / docker-fix 移除 `dx fmt`。
+- **友链管理**：修复后台友链头像不显示、默认排序值缺失、素材库头像路径、删除确认改用 Tooltip、素材弹窗定位偏移等问题。
+- **素材弹窗与卡片**：弹窗关闭动画失效、提示框消失缺退出动画、媒体卡片圆角不统一等细节修复。
 
 ## [0.10.1] - 2026-08-06
 
