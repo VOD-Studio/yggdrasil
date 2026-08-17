@@ -80,9 +80,9 @@ pub fn AdminLayout() -> Element {
         "min-h-dvh flex bg-[var(--color-paper-entry)] text-[var(--color-paper-primary)] font-sans";
 
     let nav_content = rsx! {
-        aside { class: "w-64 flex-shrink-0 hidden md:flex flex-col h-screen sticky top-0 p-4 bg-[var(--color-paper-entry)]",
+        aside { class: "w-48 flex-shrink-0 hidden md:flex flex-col h-screen sticky top-0 p-3 bg-[var(--color-paper-entry)]",
             // Logo
-            div { class: "mb-10 px-4",
+            div { class: "mb-8 px-3",
                 Link {
                     class: "font-extrabold text-2xl tracking-tight text-[var(--color-paper-primary)] hover:text-[var(--color-paper-accent)] transition-colors",
                     to: Route::Home {},
@@ -94,7 +94,7 @@ pub fn AdminLayout() -> Element {
                 for (dest, label) in nav_items_top {
                     {
                         let is_active = route == dest || (label == "写文章" && is_write_route);
-                        let base_class = "flex items-center px-4 py-3 rounded-2xl text-sm font-medium transition-all";
+                        let base_class = "flex items-center px-3 py-2.5 rounded-2xl text-sm font-medium transition-all";
                         let text_class = if is_active {
                             "bg-[var(--color-paper-theme)] text-[var(--color-paper-primary)] shadow-sm border border-[var(--color-paper-border)]"
                         } else {
@@ -110,7 +110,7 @@ pub fn AdminLayout() -> Element {
                 for (dest, label) in nav_items_bottom {
                     {
                         let is_active = route == dest || (label == "写文章" && is_write_route);
-                        let base_class = "flex items-center px-4 py-3 rounded-2xl text-sm font-medium transition-all";
+                        let base_class = "flex items-center px-3 py-2.5 rounded-2xl text-sm font-medium transition-all";
                         let text_class = if is_active {
                             "bg-[var(--color-paper-theme)] text-[var(--color-paper-primary)] shadow-sm border border-[var(--color-paper-border)]"
                         } else {
@@ -124,10 +124,10 @@ pub fn AdminLayout() -> Element {
                 ToolsNavGroup {}
             }
             // Bottom Tools
-            div { class: "mt-auto pt-6 border-t border-[var(--color-paper-border)] flex items-center justify-between px-4",
+            div { class: "mt-auto pt-4 border-t border-[var(--color-paper-border)] flex items-center justify-between px-3",
                 ThemeToggle {}
                 button {
-                    class: "text-sm font-medium px-4 py-2 rounded-2xl bg-[var(--color-paper-theme)] border border-[var(--color-paper-border)] shadow-sm hover:shadow-md transition-all text-[var(--color-paper-secondary)] hover:text-red-500 cursor-pointer",
+                    class: "text-sm font-medium px-3 py-1.5 rounded-2xl bg-[var(--color-paper-theme)] border border-[var(--color-paper-border)] shadow-sm hover:shadow-md transition-all text-[var(--color-paper-secondary)] hover:text-red-500 cursor-pointer",
                     onclick: move |_| {
                         spawn(async move {
                             let _ = logout().await;
@@ -279,7 +279,7 @@ fn ContentNavGroup() -> Element {
     rsx! {
         div { class: "flex flex-col gap-1",
             button {
-                class: "flex items-center justify-between w-full px-4 py-3 rounded-2xl text-sm font-medium transition-all cursor-pointer {parent_text_class}",
+                class: "flex items-center justify-between w-full px-3 py-2.5 rounded-2xl text-sm font-medium transition-all cursor-pointer {parent_text_class}",
                 onclick: move |_| expanded.set(!expanded()),
                 span { "内容管理" }
                 svg {
@@ -301,7 +301,7 @@ fn ContentNavGroup() -> Element {
                 style: if expanded() { "grid-template-rows: 1fr; opacity: 1; pointer-events: auto;" } else { "grid-template-rows: 0fr; opacity: 0; pointer-events: none;" },
                 div { class: "overflow-hidden min-h-0",
                     // 左侧竖线引导 + 缩进表示层级。
-                    div { class: "ml-4 pl-3 border-l border-[var(--color-paper-border)] flex flex-col gap-1",
+                    div { class: "ml-3 pl-2.5 border-l border-[var(--color-paper-border)] flex flex-col gap-1",
                         for (dest, label, active) in [
                             (Route::Posts {}, "全部文章", matches!(route, Route::Posts {})),
                             (Route::PostsTrash {}, "回收站", matches!(route, Route::PostsTrash {})),
@@ -314,7 +314,7 @@ fn ContentNavGroup() -> Element {
                         {
                             Link {
                                 key: "{label}",
-                                class: if active { "flex items-center px-3 py-2 rounded-xl text-sm font-medium transition-all bg-[var(--color-paper-theme)] text-[var(--color-paper-primary)] shadow-sm border border-[var(--color-paper-border)]" } else { "flex items-center px-3 py-2 rounded-xl text-sm font-medium transition-all text-[var(--color-paper-secondary)] hover:bg-[var(--color-paper-theme)]/50 hover:text-[var(--color-paper-primary)] border border-transparent" },
+                                class: if active { "flex items-center px-2.5 py-1.5 rounded-xl text-sm font-medium transition-all bg-[var(--color-paper-theme)] text-[var(--color-paper-primary)] shadow-sm border border-[var(--color-paper-border)]" } else { "flex items-center px-2.5 py-1.5 rounded-xl text-sm font-medium transition-all text-[var(--color-paper-secondary)] hover:bg-[var(--color-paper-theme)]/50 hover:text-[var(--color-paper-primary)] border border-transparent" },
                                 to: dest,
                                 "{label}"
                             }
@@ -366,7 +366,7 @@ fn ToolsNavGroup() -> Element {
     rsx! {
         div { class: "flex flex-col gap-1",
             button {
-                class: "flex items-center justify-between w-full px-4 py-3 rounded-2xl text-sm font-medium transition-all cursor-pointer {parent_text_class}",
+                class: "flex items-center justify-between w-full px-3 py-2.5 rounded-2xl text-sm font-medium transition-all cursor-pointer {parent_text_class}",
                 onclick: move |_| expanded.set(!expanded()),
                 span { "工具" }
                 svg {
@@ -388,7 +388,7 @@ fn ToolsNavGroup() -> Element {
                 style: if expanded() { "grid-template-rows: 1fr; opacity: 1; pointer-events: auto;" } else { "grid-template-rows: 0fr; opacity: 0; pointer-events: none;" },
                 div { class: "overflow-hidden min-h-0",
                     // 左侧竖线引导 + 缩进表示层级。
-                    div { class: "ml-4 pl-3 border-l border-[var(--color-paper-border)] flex flex-col gap-1",
+                    div { class: "ml-3 pl-2.5 border-l border-[var(--color-paper-border)] flex flex-col gap-1",
                         for (dest, label, active) in [
                             (
                                 Route::SiteSettingsPage {},
@@ -402,7 +402,7 @@ fn ToolsNavGroup() -> Element {
                         {
                             Link {
                                 key: "{label}",
-                                class: if active { "flex items-center px-3 py-2 rounded-xl text-sm font-medium transition-all bg-[var(--color-paper-theme)] text-[var(--color-paper-primary)] shadow-sm border border-[var(--color-paper-border)]" } else { "flex items-center px-3 py-2 rounded-xl text-sm font-medium transition-all text-[var(--color-paper-secondary)] hover:bg-[var(--color-paper-theme)]/50 hover:text-[var(--color-paper-primary)] border border-transparent" },
+                                class: if active { "flex items-center px-2.5 py-1.5 rounded-xl text-sm font-medium transition-all bg-[var(--color-paper-theme)] text-[var(--color-paper-primary)] shadow-sm border border-[var(--color-paper-border)]" } else { "flex items-center px-2.5 py-1.5 rounded-xl text-sm font-medium transition-all text-[var(--color-paper-secondary)] hover:bg-[var(--color-paper-theme)]/50 hover:text-[var(--color-paper-primary)] border border-transparent" },
                                 to: dest,
                                 "{label}"
                             }
