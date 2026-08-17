@@ -108,7 +108,8 @@ make docker-multiarch IMAGE=ghcr.io/owner/yggdrasil:latest   # amd64+arm64, push
 | Server | `IP` / `PORT` | bind address (set in Dockerfile `0.0.0.0:3000`) |
 | Server | `DIOXUS_PUBLIC_PATH` | public assets path (Dockerfile `/app/public`) |
 | Bootstrap | `ADMIN_USERNAME` / `ADMIN_EMAIL` / `ADMIN_PASSWORD` | startup initial-admin sync (create or overwrite-password + ensure admin role on every boot; unset/empty = disabled) |
-| Backup | `BACKUP_AUTO_ENABLED` / `BACKUP_TIME_UTC` / `BACKUP_RETENTION_COUNT` / `BACKUP_INCLUDE_UPLOADS` | scheduled backup settings (seeded by `BACKUP_*` env on first boot only; thereafter admin panel/DB) |
+|Backup|`BACKUP_AUTO_ENABLED` / `BACKUP_TIME_UTC` / `BACKUP_RETENTION_COUNT` / `BACKUP_INCLUDE_UPLOADS`|scheduled backup settings (seeded by `BACKUP_*` env on first boot only; thereafter admin panel/DB)|
+|Backup|`BACKUP_IMPORT_MAX_MB`|backup import single-file limit MB (512); reverse proxy body limit must exceed it|
 | Perf | `SSR_CACHE_SECS` | SSR page cache TTL (3600) |
 | Perf | `COMPRESSION_ALGORITHMS` | response compression — gzip/brotli/deflate/zstd/`all`/`off` (**off**) |
 | Perf | `TOKIO_WORKER_THREADS` | tokio workers (read by runtime, not app code) |

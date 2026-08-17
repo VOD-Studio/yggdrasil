@@ -370,6 +370,31 @@ fn main() {
                     Duration::from_secs(300),
                 ));
 
+            // 备份导入：大文件 multipart 流式落盘。body 上限与流式计数共用
+            // import_max_bytes()（BACKUP_IMPORT_MAX_MB，默认 512MB）+ 框架宽限；
+            // 600s 超时覆盖慢网上行。CSRF 最外层先拦截非法来源。
+            // 注意：生产反代（nginx client_max_body_size，现 12m）需同步放大，
+            // 否则请求在到达应用前就被反代 413。
+            let backup_import_max = crate::api::database::backup::import_max_bytes();
+            tracing::info!(
+                max_mb = backup_import_max / 1024 / 1024,
+                "备份导入单文件上限生效（BACKUP_IMPORT_MAX_MB）"
+            );
+            let backup_import_route = axum::Router::new()
+                .route(
+                    "/api/database/backups/import",
+                    axum::routing::post(crate::api::database::backup::import_backup),
+                )
+                .layer(axum::extract::DefaultBodyLimit::max(
+                    (backup_import_max + crate::api::database::backup::MULTIPART_FRAME_SLACK)
+                        as usize,
+                ))
+                .layer(TimeoutLayer::with_status_code(
+                    StatusCode::REQUEST_TIMEOUT,
+                    Duration::from_secs(600),
+                ))
+                .layer(axum::middleware::from_fn(crate::api::csrf::csrf_middleware));
+
             // 数据导出：流式响应，走 GET + query（参数较短）。
             // 鉴权在 handler 内部从 cookie 校验 admin；CSRF 最外层拦截非法来源。
             let export_route = axum::Router::new()
@@ -453,6 +478,7 @@ fn main() {
 
             let router = upload_route
                 .merge(mcp_upload_route)
+                .merge(backup_import_route)
                 .merge(export_route)
                 .merge(sse_route)
                 .merge(app_routes)

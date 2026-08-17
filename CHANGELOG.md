@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **备份导入恢复**：备份恢复 tab 新增「导入备份」——本机 `.sql` 备份经 `POST /api/database/backups/import`（multipart 流式落盘，独立 600s 超时）回灌至 `backups/` 并出现在列表，恢复仍走既有管线。导入时即签名校验（外来 SQL 拒收不留盘）、同名冲突拒绝、Content-Length 磁盘空间预检、tmp + 原子 rename 入库；单文件上限 `BACKUP_IMPORT_MAX_MB`（默认 512MB，生产反代 body 限制需同步放大）。
+
 ## [0.11.0] - 2026-08-14
 
 ### Added

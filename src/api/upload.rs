@@ -44,8 +44,12 @@ use crate::utils::server::MAX_FILE_SIZE;
 // ===========================================================================
 
 /// 构造统一的 JSON 错误响应：`{ "success": false, "error": msg }`。
+/// pub(crate)：备份导入（api/database/backup.rs）复用同一契约。
 #[cfg(feature = "server")]
-fn upload_error<T: serde::Serialize>(status: StatusCode, msg: T) -> (StatusCode, Json<Value>) {
+pub(crate) fn upload_error<T: serde::Serialize>(
+    status: StatusCode,
+    msg: T,
+) -> (StatusCode, Json<Value>) {
     (status, Json(json!({ "success": false, "error": msg })))
 }
 

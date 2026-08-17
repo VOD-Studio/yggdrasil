@@ -19,6 +19,12 @@ pub(super) fn BackupTab() -> Element {
     #[cfg(target_arch = "wasm32")]
     use crate::api::database::tasks::{get_task_progress, TaskStatus};
     use crate::components::ui::{ADMIN_CARD_CLASS, ADMIN_TABLE_CLASS};
+    // 导入备份的文件选择事件取底层 web_sys::File（write.rs L30-34 同款 cfg 门控惯例；
+    // HasFileData 已在 prelude 中，无需显式导入）。
+    #[cfg(target_arch = "wasm32")]
+    use dioxus::web::{WebEventExt, WebFileExt};
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen::JsCast;
 
     // backups/active_task_id 仅在闭包内的重绑定副本上 .set()（如 backups_f），
     // 外层绑定本身不改值，故无需 mut。
@@ -29,6 +35,8 @@ pub(super) fn BackupTab() -> Element {
     let active_task_id: Signal<Option<String>> = use_signal(|| None);
     let mut active_progress = use_signal(|| Option::<TaskProgress>::None);
     let mut busy = use_signal(|| false);
+    // 导入上传进行中（同步请求，无后台任务进度，仅按钮不定态）
+    let mut import_busy = use_signal(|| false);
 
     // 刷新备份列表
     let mut refresh_list = move || {
@@ -156,6 +164,74 @@ pub(super) fn BackupTab() -> Element {
                     onclick: move |_| refresh_list(),
                     "刷新列表"
                 }
+                // 导入备份：隐藏 file input 包在 label 内，原生点击唤起文件选择
+                //（asset_picker.rs 同款惯例，无需 JS 触发）。两步式——导入仅入库
+                // backups/ 并刷新列表，恢复仍走列表行的既有管线（见 ADR 0001）。
+                label {
+                    class: "inline-flex cursor-pointer items-center justify-center {BTN_OUTLINE}",
+                    class: if import_busy() || is_busy { "pointer-events-none opacity-60" } else { "" },
+                    if import_busy() { "导入中…" } else { "导入备份" }
+                    input {
+                        r#type: "file",
+                        accept: ".sql",
+                        class: "hidden",
+                        disabled: import_busy() || is_busy,
+                        onchange: move |evt| {
+                            #[cfg(target_arch = "wasm32")]
+                            {
+                                if import_busy() {
+                                    return;
+                                }
+                                let Some(file) = evt.files().into_iter().next() else {
+                                    return;
+                                };
+                                let Some(web_file) = file.get_web_file() else {
+                                    return;
+                                };
+                                // 重置 input value，允许重选同一文件再次触发 change。
+                                if let Some(input) = evt
+                                    .try_as_web_event()
+                                    .and_then(|e| e.target())
+                                    .and_then(|t| t.dyn_into::<web_sys::HtmlInputElement>().ok())
+                                {
+                                    input.set_value("");
+                                }
+                                // 客户端预检（服务端仍兜底）：.sql 后缀 + 体积上限。
+                                if !web_file.name().ends_with(".sql") {
+                                    error.set(Some("仅接受 .sql 备份文件".to_string()));
+                                    return;
+                                }
+                                if web_file.size() as u64 > IMPORT_MAX_BYTES_CLIENT {
+                                    error.set(Some(format!(
+                                        "文件超过导入上限（{}MB）",
+                                        IMPORT_MAX_BYTES_CLIENT / 1024 / 1024
+                                    )));
+                                    return;
+                                }
+                                import_busy.set(true);
+                                error.set(None);
+                                let mut backups_f = backups;
+                                spawn(async move {
+                                    match crate::utils::web_upload::post_multipart_file(
+                                        "/api/database/backups/import",
+                                        "file",
+                                        &web_file,
+                                    )
+                                    .await
+                                    {
+                                        Ok(_) => {
+                                            if let Ok(list) = list_backups().await {
+                                                backups_f.set(list);
+                                            }
+                                        }
+                                        Err(msg) => error.set(Some(msg)),
+                                    }
+                                    import_busy.set(false);
+                                });
+                            }
+                        },
+                    }
+                }
             }
 
             // 进度
@@ -264,10 +340,17 @@ pub(super) fn BackupTab() -> Element {
             p { class: "text-xs text-paper-secondary",
                 "备份优先用 pg_dump（含 schema），不可用时回退纯 SQL（仅数据，且不可经 psql 恢复）。"
                 "恢复仅接受本系统生成的备份，且只恢复数据库；uploads 素材需从配对 tar.gz 手动还原。"
+                "导入仅接受本系统生成的 .sql 备份（签名校验，单文件默认上限 512MB）；"
+                "以 auto_ 前缀导入的文件会参与自动轮转。"
             }
         }
     }
 }
+/// 客户端导入体积预检（字节）：镜像服务端 `BACKUP_IMPORT_MAX_MB` 默认值 512MB。
+/// 仅为早失败；权威校验在服务端（env 可调大，此处不追求同步）。
+#[cfg(target_arch = "wasm32")]
+const IMPORT_MAX_BYTES_CLIENT: u64 = 512 * 1024 * 1024;
+
 /// 下载链接用的 URL 编码（wasm32 才编码，server 端原样返回——rsx 构造 dl_url 时两端都调）。
 /// 自包含实现，不跨文件依赖 export.rs 的 urlencode。
 fn urlencode_dl(s: &str) -> String {
