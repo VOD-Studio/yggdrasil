@@ -127,7 +127,7 @@ pub fn PostPreview(slug: String) -> Element {
                 }
             }
 
-            PostHeader { post: post.clone() }
+            PostHeader { post: post.clone(), full_reload: true }
 
             // 如果文章设置了封面图，则渲染封面组件。
             if let Some(cover) = &post.cover_image {
@@ -152,5 +152,3 @@ pub fn PostPreview(slug: String) -> Element {
         }
     }
 }
-
-// trigger rebuild
