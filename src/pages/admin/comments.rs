@@ -408,11 +408,12 @@ fn CommentRow(
                 p { class: "text-sm text-paper-secondary truncate", "{preview}" }
             }
             td { class: "px-4 py-3",
+                // 外链形态（整页加载）：评论管理在 admin 布局内，跳前台文章是
+                // 跨 layout 分支导航，客户端路由会触发 dioxus 0.7.10 suspense
+                // 卸载双重回收 bug（详见 src/pages/admin/preview.rs 模块文档）。
                 Link {
                     class: "text-sm text-paper-primary hover:text-paper-accent transition-colors",
-                    to: Route::PostDetail {
-                        slug: comment.post_slug.clone(),
-                    },
+                    to: NavigationTarget::<Route>::External(format!("/post/{}", comment.post_slug)),
                     "{comment.post_title}"
                 }
             }
