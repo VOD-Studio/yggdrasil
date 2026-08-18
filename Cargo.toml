@@ -95,6 +95,14 @@ serde-wasm-bindgen = "0.6"
 tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "fs", "time", "sync"] }
 serial_test = "3"
 
+# dev 构建只保留行表 debuginfo：默认 full debuginfo 对每个 crate（含全部依赖）
+# 都生成完整类型/局部变量信息，显著拖慢 rustc emit 与链接、撑大 target/。
+# line-tables-only 砍掉这些（backtrace 行号保留），对生成代码零影响——
+# 运行时性能不变，gdb/lldb 里看不到局部变量是唯一代价。dx serve 每次热重载
+# 都要重链接 server 与 wasm 两个 dev 产物，此处收益是每次重编的固定开销。
+[profile.dev]
+debug = "line-tables-only"
+
 [profile.release]
 debug = false
 opt-level = 3
