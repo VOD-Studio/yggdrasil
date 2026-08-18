@@ -2,8 +2,8 @@
 
 //! 备份与恢复（读写，最高风险）。
 //!
-//! 备份：探测 pg_dump 可用性——可用则子进程生成完整 .sql（`--clean --if-exists`，
-//! 脚本自带 `DROP ... IF EXISTS`，使恢复幂等），不可用则回退纯 SQL（仅数据）。
+//! 备份：探测 pg_dump 可用性——可用则子进程生成完整、角色无关的 .sql
+//! （`--clean --if-exists --no-owner --no-privileges`），不可用则回退纯 SQL（仅数据）。
 //! 备份文件含签名头。每次备份按设置附带 uploads 素材打包（`_uploads.tar.gz`，
 //! 排除可重建的 `.cache/`），与 .sql 成对展示/下载/删除。
 //!
@@ -11,9 +11,9 @@
 //! 自动备份按 `backup_retention_count` 轮转（只删自动，手动永不自动删）。
 //!
 //! 恢复：仅接受本系统生成的备份（签名校验）+ 二次确认 + 路径穿越防护；
-//! 仅恢复数据库——uploads 需从配对 tar.gz 手动还原（tar 覆盖文件风险高，不自动）。
-//! `psql -v ON_ERROR_STOP=1` 确保任何 SQL 错误立即中止并报失败（不再假成功）；
-//! 成功后全量失效文章缓存与 SSR 世代号。
+//! 旧备份的 pg_dump 属主语句会在 COPY 感知的预处理阶段移除，再由
+//! `psql --single-transaction -v ON_ERROR_STOP=1` 原子重放，失败时完整回滚；
+//! 仅恢复数据库——uploads 需从配对 tar.gz 手动还原；成功后全量失效缓存。
 //! 长耗时操作走后台任务 + 进度轮询（见 [`crate::api::database::tasks`]）。
 //!
 //! 导入：`POST /api/database/backups/import`（纯 Axum 路由，multipart 流式落盘）
@@ -308,11 +308,22 @@ fn rotate_auto_backups(keep: i32) {
 
 /// pg_dump 模式：子进程生成完整备份（含 schema），前置签名头。
 ///
-/// `--clean --if-exists`：生成的脚本含 `DROP ... IF EXISTS`，使恢复幂等
-/// （恢复前自动删除现有对象，避免「relation already exists」/主键冲突导致
-/// 数据零写入）。详见 `run_restore`。
+/// `--clean --if-exists` 生成幂等的删后重建脚本；`--no-owner --no-privileges`
+/// 去掉集群角色元数据，使备份可恢复到使用不同数据库角色的环境。详见 `run_restore`。
 ///
 /// 成功返回 SQL 文件名（最终「完成」进度由调用方统一上报）。
+#[cfg(feature = "server")]
+fn pg_dump_command(db_url: &str) -> std::process::Command {
+    let mut command = std::process::Command::new("pg_dump");
+    command
+        .arg(db_url)
+        .arg("--clean")
+        .arg("--if-exists")
+        .arg("--no-owner")
+        .arg("--no-privileges");
+    command
+}
+
 #[cfg(feature = "server")]
 async fn run_pg_dump_backup(
     task_id: &str,
@@ -391,12 +402,8 @@ async fn run_pg_dump_backup(
     // 闭包 panic（JoinError）按「执行失败」处理。
     let dump_result = tokio::task::spawn_blocking(
         move || -> Result<std::process::Output, (bool, std::io::Error)> {
-            std::process::Command::new("pg_dump")
-                .arg(db_url)
-                // --clean --if-exists：生成 DROP ... IF EXISTS，让恢复幂等（先删后建），
-                // 否则恢复时表已存在 → CREATE/COPY 全部失败、数据零写入。
-                .arg("--clean")
-                .arg("--if-exists")
+            let mut command = pg_dump_command(&db_url);
+            command
                 .stdout(std::process::Stdio::from(stdout_file))
                 .stderr(std::process::Stdio::piped())
                 .spawn()
@@ -615,10 +622,15 @@ pub async fn restore_backup(filename: String, confirm: bool) -> Result<String, S
     }
 }
 
-/// 后台执行恢复：探测 psql，可用则 psql -f，不可用则报告。
+/// 后台执行恢复：探测 psql，可用则原子恢复，不可用则报告。
 ///
-/// **幂等恢复**：备份由 `pg_dump --clean --if-exists` 生成，脚本自带
-/// `DROP ... IF EXISTS`，恢复时会先删后建，数据完全回到备份时刻。
+/// **跨环境恢复**：旧备份可能含 `ALTER ... OWNER TO ...`，而目标集群未必存在
+/// 源库角色。恢复前流式生成临时副本，只移除 pg_dump 生成的属主语句；COPY 数据
+/// 原样保留。新备份已由 `--no-owner --no-privileges` 从源头去掉角色元数据。
+///
+/// **原子恢复**：备份由 `pg_dump --clean --if-exists` 生成，脚本自带
+/// `DROP ... IF EXISTS`；psql 使用 `--single-transaction`，任一 SQL 错误都会
+/// 回滚先前的 DROP/CREATE/COPY，不留下半恢复数据库。
 ///
 /// **错误中止**：`-v ON_ERROR_STOP=1` 让 psql 在第一条 SQL 错误时立即退出
 /// （退出码 3）。否则 psql 即使满屏 ERROR 也返回 0，导致 `status.success()`
@@ -627,6 +639,122 @@ pub async fn restore_backup(filename: String, confirm: bool) -> Result<String, S
 /// **恢复成功后失效全量缓存**：恢复会用备份时刻的数据重建 posts 等表，
 /// 现有 moka 缓存（列表/标签/单篇/统计/搜索）与 SSR 世代号必须一并冲刷，
 /// 否则前端仍读旧数据。
+#[cfg(feature = "server")]
+fn sql_line_without_eol(mut line: &[u8]) -> &[u8] {
+    if let Some(stripped) = line.strip_suffix(b"\n") {
+        line = stripped;
+    }
+    if let Some(stripped) = line.strip_suffix(b"\r") {
+        line = stripped;
+    }
+    line
+}
+
+#[cfg(feature = "server")]
+fn is_legacy_pg_dump_owner_statement(line: &[u8]) -> bool {
+    const PREFIXES: [&[u8]; 3] = [b"ALTER FUNCTION ", b"ALTER SEQUENCE ", b"ALTER TABLE "];
+    let line = sql_line_without_eol(line);
+    PREFIXES.iter().any(|prefix| line.starts_with(prefix))
+        && line
+            .windows(b" OWNER TO ".len())
+            .any(|window| window == b" OWNER TO ")
+        && line.ends_with(b";")
+}
+
+#[cfg(feature = "server")]
+fn write_owner_neutral_restore_sql(
+    mut input: impl std::io::BufRead,
+    mut output: impl std::io::Write,
+) -> std::io::Result<usize> {
+    let mut line = Vec::new();
+    let mut in_copy_data = false;
+    let mut removed = 0;
+    loop {
+        line.clear();
+        if input.read_until(b'\n', &mut line)? == 0 {
+            break;
+        }
+        let sql_line = sql_line_without_eol(&line);
+        if in_copy_data {
+            output.write_all(&line)?;
+            if sql_line == b"\\." {
+                in_copy_data = false;
+            }
+            continue;
+        }
+        if sql_line.starts_with(b"COPY ") && sql_line.ends_with(b" FROM stdin;") {
+            in_copy_data = true;
+            output.write_all(&line)?;
+        } else if is_legacy_pg_dump_owner_statement(&line) {
+            removed += 1;
+        } else {
+            output.write_all(&line)?;
+        }
+    }
+    output.flush()?;
+    Ok(removed)
+}
+
+#[cfg(feature = "server")]
+struct PreparedRestoreSql {
+    path: PathBuf,
+    removed_owner_statements: usize,
+}
+
+#[cfg(feature = "server")]
+impl PreparedRestoreSql {
+    fn prepare(source: &Path) -> std::io::Result<Self> {
+        let input = std::io::BufReader::new(std::fs::File::open(source)?);
+        let path =
+            std::env::temp_dir().join(format!("yggdrasil-restore-{}.sql", uuid::Uuid::new_v4()));
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let output = std::io::BufWriter::new(options.open(&path)?);
+        match write_owner_neutral_restore_sql(input, output) {
+            Ok(removed_owner_statements) => Ok(Self {
+                path,
+                removed_owner_statements,
+            }),
+            Err(error) => {
+                let _ = std::fs::remove_file(&path);
+                Err(error)
+            }
+        }
+    }
+}
+
+#[cfg(feature = "server")]
+impl Drop for PreparedRestoreSql {
+    fn drop(&mut self) {
+        if let Err(error) = std::fs::remove_file(&self.path) {
+            tracing::warn!(
+                path = %self.path.display(),
+                "restore: failed to delete prepared SQL: {error}"
+            );
+        }
+    }
+}
+
+#[cfg(feature = "server")]
+fn psql_restore_command(db_url: &str, path: &Path) -> std::process::Command {
+    let mut command = std::process::Command::new("psql");
+    command
+        .arg(db_url)
+        .arg("--single-transaction")
+        .arg("-v")
+        .arg("ON_ERROR_STOP=1")
+        .arg("-f")
+        .arg(path)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped());
+    command
+}
+
 #[cfg(feature = "server")]
 async fn run_restore(task_id: &str, filename: &str) {
     let path = backup_path(filename);
@@ -674,20 +802,17 @@ async fn run_restore(task_id: &str, filename: &str) {
         None,
         None,
     );
-    // psql 恢复可持续数十秒到数分钟，整段 .output() 移入 spawn_blocking，避免阻塞
-    // tokio worker 线程。db_url/path 按值移入闭包（闭包外不再使用）；闭包 panic
-    // （JoinError）按「启动失败」上报。
+    // 预处理备份与 psql 恢复均为阻塞文件/子进程操作，整体移出 tokio worker。
+    // 临时 SQL 由 RAII 守卫在成功、失败和启动错误路径统一删除。
     let restore_result = tokio::task::spawn_blocking(move || {
-        std::process::Command::new("psql")
-            .arg(db_url)
-            // ON_ERROR_STOP=1：遇 SQL 错误立即中止（退出码 3）。
-            // 不加这个，psql 即使满屏 ERROR 也返回 0，status.success() 误报成功。
-            .arg("-v")
-            .arg("ON_ERROR_STOP=1")
-            .arg("-f")
-            .arg(path)
-            .stderr(std::process::Stdio::piped())
-            .output()
+        let prepared = PreparedRestoreSql::prepare(&path)?;
+        if prepared.removed_owner_statements > 0 {
+            tracing::info!(
+                removed = prepared.removed_owner_statements,
+                "restore: removed legacy pg_dump owner statements"
+            );
+        }
+        psql_restore_command(&db_url, &prepared.path).output()
     })
     .await
     .unwrap_or_else(|join_e| Err(std::io::Error::other(join_e.to_string())));
@@ -1501,5 +1626,57 @@ mod tests {
         assert_eq!(sanitize_import_filename("has space.sql"), None);
         let long = format!("{}.sql", "a".repeat(252));
         assert_eq!(sanitize_import_filename(&long), None);
+    }
+    #[test]
+    fn pg_dump_is_owner_and_acl_neutral() {
+        let command = pg_dump_command("<DATABASE_URL>");
+        let args: Vec<_> = command
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        assert!(args.iter().any(|arg| arg == "--no-owner"), "{args:?}");
+        assert!(args.iter().any(|arg| arg == "--no-privileges"), "{args:?}");
+    }
+
+    #[test]
+    fn psql_restore_is_atomic() {
+        let command = psql_restore_command("<DATABASE_URL>", Path::new("backup.sql"));
+        let args: Vec<_> = command
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        assert!(
+            args.iter().any(|arg| arg == "--single-transaction"),
+            "{args:?}"
+        );
+    }
+
+    #[test]
+    fn legacy_owner_statements_are_removed_without_touching_copy_data() {
+        let sql = concat!(
+            "-- YGGDRASIL BACKUP v1\n",
+            "ALTER FUNCTION public.f() OWNER TO yggdrasil;\n",
+            "COPY public.lines (value) FROM stdin;\n",
+            "ALTER TABLE public.literal OWNER TO text;\n",
+            "\\.\n",
+            "ALTER TABLE public.users OWNER TO yggdrasil;\n",
+            "ALTER SEQUENCE public.users_id_seq OWNER TO yggdrasil;\n",
+            "ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;\n",
+        );
+        let mut output = Vec::new();
+        let removed = write_owner_neutral_restore_sql(std::io::Cursor::new(sql), &mut output)
+            .expect("过滤测试 SQL 应成功");
+        let output = String::from_utf8(output).expect("测试 SQL 是 UTF-8");
+
+        assert_eq!(removed, 3);
+        assert!(
+            output.contains("ALTER TABLE public.literal OWNER TO text;"),
+            "COPY 数据不得被当成 SQL 删除: {output}"
+        );
+        assert!(!output.contains("OWNER TO yggdrasil"), "{output}");
+        assert!(
+            output.contains("ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;"),
+            "{output}"
+        );
     }
 }

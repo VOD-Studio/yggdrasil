@@ -45,6 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **数据库备份恢复可移植性与原子性**：新备份不再写入数据库属主/ACL 元数据；恢复旧备份时安全移除 pg_dump 属主语句，并用单事务执行，目标环境缺少源库角色或任一 SQL 失败时不再留下半恢复数据库。
 - **素材重建索引误删大图片 (#30)**：重建索引此前对大体积 WebP/JPEG 重新转码并误删，现保留原图、保留原始文件名；动图（GIF/WebP animation）保留动画绕过处理流水线。
 - **灯箱操控动画**：修复打开灯箱后首下缩放/旋转出现非均匀缩放回弹与起始帧跳变（强制 reflow 提交归一化基态矩阵后启动过渡）；旋转改为绕照片中心原地进行；关闭飞行不再反向空转；打开时背景遮罩不再闪烁；加载失败时不再遗留不可见遮罩层。
 - **admin 卡片 hover 无过渡动画**：`ADMIN_CARD_CLASS`/`ADMIN_TABLE_CLASS` 尾部的 `transition-colors` 在 Tailwind v4 编译产物中排在 `.transition-all` 之后，覆盖了组件追加的 `transition-all`，导致 hover 位移/阴影瞬时跳变；改为裸 `transition`。
