@@ -12,6 +12,10 @@ use crate::models::post::{Post, PostStatus};
 ///
 /// Props：
 /// - `post`：文章数据模型
+/// - `full_reload`：面包屑 Home 链接走整页加载（默认 false）。仅当渲染在
+///   admin 布局内（`/admin/preview`）时传 true——跨 layout 分支的客户端
+///   导航会触发 dioxus 0.7.10 的 suspense 卸载双重回收 bug（详见
+///   `src/pages/admin/preview.rs` 模块文档）。
 ///
 /// 展示内容包括：
 /// - 面包屑导航（Home → 文章标题）
@@ -19,11 +23,10 @@ use crate::models::post::{Post, PostStatus};
 /// - 文章摘要（如有）
 /// - 文章元信息
 #[component]
-pub fn PostHeader(post: Post) -> Element {
+pub fn PostHeader(post: Post, #[props(default = false)] full_reload: bool) -> Element {
     rsx! {
         header { class: "post-header",
-            Breadcrumbs { title: post.title.clone() }
-
+            Breadcrumbs { title: post.title.clone(), full_reload }
             h1 { class: "post-title",
                 "{post.title}"
                 if post.status == PostStatus::Draft {

@@ -83,9 +83,15 @@ pub fn AdminLayout() -> Element {
         aside { class: "w-48 flex-shrink-0 hidden md:flex flex-col h-screen sticky top-0 p-3 bg-[var(--color-paper-entry)]",
             // Logo
             div { class: "mb-8 px-3",
+                // 外链形态（原生 <a href>，浏览器整页加载）：admin→前台是跨
+                // layout 分支的导航，客户端路由会在切走 AdminLayout 的
+                // SuspenseBoundary 时触发 dioxus 0.7.10 的双重回收 bug
+                //（cannot reclaim ElementId → interpreter 崩溃 → 后续点击
+                // 全部失效，详见 src/pages/admin/preview.rs 模块文档）。
+                // 整页加载无 boundary 卸载路径，彻底规避。
                 Link {
                     class: "font-extrabold text-2xl tracking-tight text-[var(--color-paper-primary)] hover:text-[var(--color-paper-accent)] transition-colors",
-                    to: Route::Home {},
+                    to: NavigationTarget::<Route>::External("/".to_string()),
                     "Yggdrasil."
                 }
             }

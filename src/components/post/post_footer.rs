@@ -12,12 +12,25 @@ use crate::router::Route;
 ///
 /// Props：
 /// - `post`：文章数据模型
+/// - `full_reload`：链接走整页加载而非客户端路由（默认 false）。仅当本组件
+///   渲染在 admin 布局内（`/admin/preview`）时传 true——跨 layout 分支的
+///   客户端导航会触发 dioxus 0.7.10 的 suspense 卸载双重回收 bug（详见
+///   `src/pages/admin/preview.rs` 模块文档），整页加载可完全规避。
 ///
 /// 展示内容包括：
 /// - 文章标签云，链接到对应标签详情页
 /// - 相邻文章导航（如有）
 #[component]
-pub fn PostFooter(post: Post) -> Element {
+pub fn PostFooter(post: Post, #[props(default = false)] full_reload: bool) -> Element {
+    let tag_to = |tag: &str| {
+        if full_reload {
+            NavigationTarget::<Route>::External(format!("/tags/{tag}"))
+        } else {
+            NavigationTarget::Internal(Route::TagDetail {
+                tag: tag.to_string(),
+            })
+        }
+    };
     rsx! {
         footer { class: "post-footer",
             if !post.tags.is_empty() {
@@ -25,9 +38,7 @@ pub fn PostFooter(post: Post) -> Element {
                     for tag in &post.tags {
                         li { key: "{tag}",
                             Link {
-                                to: Route::TagDetail {
-                                    tag: tag.clone(),
-                                },
+                                to: tag_to(tag),
                                 "{tag}"
                             }
                         }
@@ -36,7 +47,7 @@ pub fn PostFooter(post: Post) -> Element {
             }
 
             if post.prev_post.is_some() || post.next_post.is_some() {
-                PostNavLinks { prev: post.prev_post, next: post.next_post }
+                PostNavLinks { prev: post.prev_post, next: post.next_post, full_reload }
             }
         }
     }

@@ -16,14 +16,24 @@
 //! 直接拿到草稿正文——草稿属保密内容，泄漏不可接受。`/admin/preview/<slug>` 受
 //! `admin_guard` 中间件保护：匿名在 SSR 渲染前就被 302 跳走，不产生可泄漏的缓存。
 //!
-//! # 反应式取数
-//! 与 `post_detail.rs` 同一手法：`slug` prop 是路由宏注入的冻结 String 快照，
-//! 闭包内需通过 `router().current::<Route>()` 读取当前 slug 才能在路由变化时重跑。
+//! # 取数不挂起（与 post_detail.rs 的关键差异，勿"改回去"）
+//! 本页**不用** `use_server_future(...)?`（挂起式取数），而是 `use_signal` +
+//! `spawn` 的非挂起模式（与仪表盘等所有 admin 页一致）。原因：dioxus 0.7.10
+//! 存在 vdom 状态腐蚀 bug——当挂起中的 SuspenseBoundary 连同其后台子树一起
+//! 卸载（本页从 `/admin/preview/*` 客户端导航回前台时正是此路径：
+//! AdminLayout 的 SuspenseBoundary 在 PostPreview future 尚未 resolve 时被整体
+//! 替换），dioxus-core 会对同一元素双重回收（console 报 `cannot reclaim
+//! ElementId(N)`），进而令 interpreter 的节点表失步（`RawInterpreter.run` 崩溃
+//! `Cannot read properties of undefined (reading 'listening')`），此后所有点击
+//! 事件处理失效（表现为"列表点不动"）。前台页面虽同样挂起，但前台内部导航
+//! 不卸载 FrontendLayout 的 boundary，触发不了该路径；admin 侧只有本页挂起。
+//! 上游 master 的 suspense 卸载逻辑与 0.7.10 相同（未修复）；若日后升级
+//! dioxus 修复了此 bug，可考虑改回挂起式取数以恢复 SSR 数据内嵌。
 
-use dioxus::prelude::*;
-use dioxus::router::components::Link;
-
-use crate::api::posts::{get_post_preview, SinglePostResponse};
+#[cfg(target_arch = "wasm32")]
+use crate::api::posts::get_post_preview;
+#[cfg(target_arch = "wasm32")]
+use crate::api::posts::SinglePostResponse;
 use crate::components::post::post_content::PostContent;
 use crate::components::post::post_cover::PostCover;
 use crate::components::post::post_footer::PostFooter;
@@ -32,7 +42,10 @@ use crate::components::post::post_toc::PostToc;
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::skeletons::post_preview_skeleton::PostPreviewSkeleton;
 use crate::components::ui::{BTN_OUTLINE, BTN_PRIMARY};
+use crate::models::post::Post;
 use crate::router::Route;
+use dioxus::prelude::*;
+use dioxus::router::components::Link;
 
 /// 草稿/文章预览页面组件（管理员只读），对应路由 `/admin/preview/:slug`。
 ///
@@ -40,31 +53,48 @@ use crate::router::Route;
 /// 加载中显示骨架屏；文章不存在或加载失败时就地渲染提示，不向上抛错。
 #[component]
 pub fn PostPreview(slug: String) -> Element {
-    // 取得路由上下文句柄（不订阅组件层渲染，仅在闭包内按需订阅）。
-    // 见模块文档：必须在闭包内读取路由状态才能建立反应式订阅，future 才会在
-    // slug 变化时重跑。`slug` prop 本身是冻结的 String 快照，不能作为依赖。
     let router = dioxus::router::router();
 
-    let post = use_server_future(move || {
-        // 在闭包内读取当前 slug：current() 内部会 subscribe_to_current_context()，
-        // 把订阅注册到 use_server_future 的 ReactiveContext，路由变化即重跑。
+    // 非挂起取数（见模块文档「取数不挂起」一节）：None=加载中；
+    // Some(None)=未找到/失败；Some(Some(post))=成功。错误与未命中同视图。
+    #[allow(unused_mut)]
+    let mut post = use_signal(|| None::<Option<Post>>);
+
+    // 在 effect 内读取当前路由 slug 建立订阅：slug 变化（同为 PostPreview
+    // 变体复用组件实例）时重新拉取，并先回骨架屏。
+    use_effect(move || {
         let current_slug = match router.current::<Route>() {
             Route::PostPreview { slug } => slug,
             // 组件卸载/路由切走的瞬间可能命中其它变体，退回用 prop 值兜底。
             _ => slug.clone(),
         };
-        get_post_preview(current_slug)
-    })?;
+        // native 构建下 spawn 被编译掉；显式引用避免未用告警（dashboard 同款语义）。
+        #[cfg(not(target_arch = "wasm32"))]
+        let _ = &current_slug;
+        // SSR 不取数（与仪表盘等 admin 页一致）：直接 URL 访问首屏为骨架屏，
+        // 客户端水合后再拉取。
+        #[cfg(target_arch = "wasm32")]
+        spawn(async move {
+            let resp = get_post_preview(current_slug.clone()).await;
+            // 竞态守卫：仅当结果返回时仍停留在本 slug 才写回，
+            // 避免快速切换时慢的旧响应覆盖新文章。
+            let still_here = matches!(router.current::<Route>(),
+                Route::PostPreview { slug: s } if s == current_slug);
+            if still_here {
+                post.set(Some(resp.ok().and_then(|SinglePostResponse { post }| post)));
+            }
+        });
+    });
 
     // admin nest 内无 ErrorBoundary：错误/未命中就地渲染，不向上抛。
-    // None（pending）→ 骨架屏；Some(Err) / Ok(post=None) → 居中提示。
+    // None（pending）→ 骨架屏；Some(None)（Err / post=None）→ 居中提示。
     let post = match post.read().as_ref() {
         None => {
             return rsx! {
                 DelayedSkeleton { PostPreviewSkeleton {} }
             };
         }
-        Some(Err(_)) | Some(Ok(SinglePostResponse { post: None })) => {
+        Some(None) => {
             return rsx! {
                 div { class: "flex flex-col items-center justify-center text-center py-20 px-4 animate-page-enter",
                     p { class: "text-sm text-paper-secondary",
@@ -74,7 +104,7 @@ pub fn PostPreview(slug: String) -> Element {
                 }
             };
         }
-        Some(Ok(SinglePostResponse { post: Some(post) })) => post.clone(),
+        Some(Some(post)) => post.clone(),
     };
 
     rsx! {
@@ -97,7 +127,7 @@ pub fn PostPreview(slug: String) -> Element {
                 }
             }
 
-            PostHeader { post: post.clone() }
+            PostHeader { post: post.clone(), full_reload: true }
 
             // 如果文章设置了封面图，则渲染封面组件。
             if let Some(cover) = &post.cover_image {
@@ -118,8 +148,7 @@ pub fn PostPreview(slug: String) -> Element {
                     content_html: post.content_html.clone().unwrap_or_default(),
                 }
             }
-
-            PostFooter { post: post.clone() }
+            PostFooter { post: post.clone(), full_reload: true }
         }
     }
 }
