@@ -1,6 +1,7 @@
 import { Editor } from '@tiptap/core';
 import { describe, expect, it } from 'vitest';
 import { buildExtensions } from '../editor-extensions';
+import TiptapEditor from '../index';
 
 /**
  * buildExtensions 工厂测试：comment 是 full 的真子集（装配级断言 + schema 冒烟）。
@@ -87,4 +88,32 @@ describe('comment 变体 schema 冒烟', () => {
     expect(md).toContain('![截图](/uploads/2026/08/a.webp)');
     editor.destroy();
   });
+});
+
+describe('TiptapEditor.create 全路径挂载', () => {
+  // 回归：init 曾给 full 路径传 `editorProps: undefined`，浅合并冲掉 tiptap
+  // 默认的 `editorProps: {}`，createView 读 `editorProps.dispatchTransaction`
+  // 抛 TypeError——后台编辑器一挂载就崩。此用例走真实入口覆盖两个变体。
+  //
+  // EditorOptions 类未具名导出（避免 IIFE named/default 冲突），由 index.ts
+  // 挂到 window；此处经类型化常量取用，桥回 create 的参数类型。
+  const EditorOptionsCtor = (window as unknown as Record<string, unknown>)
+    .EditorOptions as new () => Record<string, unknown>;
+  for (const variant of ['full', 'comment'] as const) {
+    it(`${variant} 变体经 TiptapEditor.create 成功挂载并销毁`, () => {
+      const container = document.createElement('div');
+      container.id = `editor-mount-${variant}`;
+      document.body.appendChild(container);
+      const raw = new EditorOptionsCtor();
+      raw.variant = variant;
+      // 运行时就是 EditorOptions（同一构造器产出），类型未导出故在命名常量处断言。
+      const opts = raw as Parameters<typeof TiptapEditor.create>[1];
+      const inst = TiptapEditor.create(container.id, opts);
+      expect(inst).not.toBeNull();
+      // ProseMirror DOM 已挂进容器（createView 成功）。
+      expect(container.querySelector('.ProseMirror')).not.toBeNull();
+      inst?.destroy();
+      container.remove();
+    });
+  }
 });

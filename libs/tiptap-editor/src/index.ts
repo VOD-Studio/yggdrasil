@@ -129,15 +129,21 @@ class TiptapEditorInstance {
       editable: this.options.editable !== false,
       autofocus: false,
       // 评论模式给 ProseMirror DOM 补无障碍语义（full 由后台页面结构兜底）。
-      editorProps: isComment
+      // 注意：tiptap Editor 用浅合并覆盖默认 options（editorProps 默认为 {}），
+      // 传 `editorProps: undefined` 会把默认值冲掉，createView 读
+      // `editorProps.dispatchTransaction` 直接抛 TypeError——所以这里用条件
+      // 展开，full 路径绝不出现 editorProps 键。
+      ...(isComment
         ? {
-            attributes: {
-              role: 'textbox',
-              'aria-label': '评论内容',
-              'aria-multiline': 'true',
+            editorProps: {
+              attributes: {
+                role: 'textbox',
+                'aria-label': '评论内容',
+                'aria-multiline': 'true' as const,
+              },
             },
           }
-        : undefined,
+        : {}),
       onUpdate: ({ editor }) => {
         if (this.options.onUpdate) {
           // 脚注 [^id] 现由 atom 节点(footnoteRef/footnoteDef)承载,序列化走
