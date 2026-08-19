@@ -37,7 +37,10 @@ pub async fn run_purge() {
                 }
                 Err(e) => tracing::error!("Orphan asset purge error: {:?}", e),
             },
-            Err(e) => tracing::error!("Failed to get DB connection for orphan asset purge: {:?}", e),
+            Err(e) => tracing::error!(
+                "Failed to get DB connection for orphan asset purge: {:?}",
+                e
+            ),
         }
         ticker.tick().await;
     }
@@ -47,7 +50,9 @@ pub async fn run_purge() {
 ///
 /// 逐项删文件（容忍单项失败：NotFound 静默，其他错误仅告警，DB 行照删——
 /// 残留文件由重建索引的反向语义兜底），最后批量删 DB 行并失效派生缓存。
-async fn purge_orphans(client: &tokio_postgres::Client) -> Result<(u64, i64), tokio_postgres::Error> {
+async fn purge_orphans(
+    client: &tokio_postgres::Client,
+) -> Result<(u64, i64), tokio_postgres::Error> {
     // 读取配置，缺键时回退默认值（默认启用、7 天）。
     let enabled: bool = client
         .query_opt(

@@ -546,11 +546,17 @@ mod tests {
         // 站内相对路径与 https 图片保留，src/alt 属性齐全。
         let out = clean_comment_html(r#"<img src="/uploads/2026/08/a.webp" alt="截图">"#);
         assert!(out.contains("<img"), "评论应保留 img: {out}");
-        assert!(out.contains(r#"src="/uploads/2026/08/a.webp""#), "src 应保留: {out}");
+        assert!(
+            out.contains(r#"src="/uploads/2026/08/a.webp""#),
+            "src 应保留: {out}"
+        );
         assert!(out.contains(r#"alt="截图""#), "alt 应保留: {out}");
 
         let out = clean_comment_html(r#"<img src="https://example.com/a.png" alt="x">"#);
-        assert!(out.contains(r#"src="https://example.com/a.png""#), "https 图床应保留: {out}");
+        assert!(
+            out.contains(r#"src="https://example.com/a.png""#),
+            "https 图床应保留: {out}"
+        );
     }
 
     #[test]
@@ -563,7 +569,9 @@ mod tests {
         ] {
             let out = clean_comment_html(input);
             assert!(
-                !out.contains("javascript:") && !out.contains("data:image") && !out.contains("onerror"),
+                !out.contains("javascript:")
+                    && !out.contains("data:image")
+                    && !out.contains("onerror"),
                 "评论图片的危险属性必须被清除: {input} -> {out}"
             );
         }

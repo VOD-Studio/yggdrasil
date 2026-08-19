@@ -170,9 +170,12 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
             message.set(None);
 
             spawn(async move {
-                let result =
-                    crate::utils::web_upload::post_multipart_file("/api/comments/upload", "image", &file)
-                        .await;
+                let result = crate::utils::web_upload::post_multipart_file(
+                    "/api/comments/upload",
+                    "image",
+                    &file,
+                )
+                .await;
                 match result {
                     Ok(data) => {
                         let url = data["url"].as_str().unwrap_or("").to_string();
@@ -180,7 +183,8 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
                             // success=true 但 url 为空：服务端契约异常，按失败处理
                             let text = content_md().replacen(&placeholder, "", 1);
                             content_md.set(text);
-                            message.set(Some(("图片上传失败：服务端返回异常".to_string(), "error")));
+                            message
+                                .set(Some(("图片上传失败：服务端返回异常".to_string(), "error")));
                         } else {
                             let final_md = format!("![{filename}]({url})");
                             let text = content_md().replacen(&placeholder, &final_md, 1);
