@@ -21,7 +21,7 @@ Yggdrasil is a fullstack blog/CMS built with **Dioxus 0.7**. A single Rust crate
   - `src/models/` — `post.rs`, `user.rs`, `comment.rs`, `settings.rs`, `asset.rs`, `friend_link.rs`, `mcp_token.rs` (serde DTOs shared across SSR/cache/API).
   - `src/mcp/` — MCP server (`#[cfg(server)]`): `auth.rs` (bearer→principal middleware + rate limit + audit), `crypto.rs` (AES-GCM token encryption), `server.rs` (rmcp ServerHandler composing all tool routers), `router.rs` (StreamableHttpService mount), `config.rs` (client config generation), `tools/{read,posts,comments,tags,media,settings,runner}.rs` (tool groups) + `tools/common.rs` (shared helpers). See "MCP Server" section below.
   - `src/pages/` — route components. **`post_detail.rs` header docs are the canonical guide for `use_server_future` + route-subscription gotchas — read before editing pages.**
-  - `src/tasks/` — server-only background loops spawned in `serve()`: `session_cleanup.rs`, `post_purge.rs`, `image_cache_cleanup.rs`, `ip_purge.rs`, `backup.rs` (scheduled backup). Sysinfo sampling runs from `src/sysinfo_sampler.rs`.
+  - `src/tasks/` — server-only background loops spawned in `serve()`: `session_cleanup.rs`, `post_purge.rs`, `image_cache_cleanup.rs`, `ip_purge.rs`, `orphan_asset_purge.rs` (unreferenced-uploads purge), `backup.rs` (scheduled backup). Sysinfo sampling runs from `src/sysinfo_sampler.rs`.
   - `src/infra/` — `docker.rs` (bollard), `runner_config.rs`.
   - `src/hooks/`, `src/utils/` — query/event hooks; text/time/html helpers.
   - `src/bin/generate_highlight_css.rs` — build-tool binary (regenerates `public/highlight.css` from syntect themes; `required-features = ["server"]`).
@@ -125,7 +125,8 @@ make docker-multiarch IMAGE=ghcr.io/owner/yggdrasil:latest   # amd64+arm64, push
 | Images | `IMAGE_DISK_CACHE_MAX_MB` / `_MAX_AGE_HOURS` | `uploads/.cache` cap (1024) / retention (168 = 7d) |
 | Images | `IMAGE_DIMENSIONS_CACHE_TTL_SECS` | image-dimensions moka cache TTL |
 | Upload | `UPLOAD_CONCURRENCY` | concurrent image upload limit |
-| Rate limit | `RATE_LIMIT_{STRICT,UPLOAD,IMAGE,COMMENT,CODE_EXEC,UNKNOWN,MCP,MCP_UPLOAD}_PER_SEC/_BURST`, `RATE_LIMIT_CODE_EXEC_DAILY`, `RATE_LIMIT_GC_INTERVAL_SECS` | governor buckets keyed by client IP (MCP/MCP_UPLOAD keyed by token) |
+|Rate limit|`RATE_LIMIT_{STRICT,UPLOAD,IMAGE,COMMENT,COMMENT_UPLOAD,CODE_EXEC,UNKNOWN,MCP,MCP_UPLOAD}_PER_SEC/_BURST`, `RATE_LIMIT_{COMMENT_UPLOAD,CODE_EXEC}_DAILY`, `RATE_LIMIT_GC_INTERVAL_SECS`|governor buckets keyed by client IP (MCP/MCP_UPLOAD keyed by token)|
+|Assets|`ASSET_ORPHAN_PURGE_ENABLED` / `ASSET_ORPHAN_RETENTION_DAYS`|orphan asset auto-purge (enabled, 7 days) — recycles unreferenced uploads incl. comment images|
 | Runners | `CODE_RUNNER_ALLOW_NETWORK` / `_MAX_CONCURRENT` / `_MAX_CPU_CORES` / `_MAX_MEMORY_MB` / `_MAX_TIMEOUT_SECS` / `_MAX_OUTPUT_BYTES` / `_MAX_SOURCE_BYTES` / `_QUEUE_TIMEOUT_SECS` / `_TASK_TTL_SECS` | sandbox limits |
 | Runners | `CODE_RUNNER_LANGUAGES` | optional allow-list (default: all registered) |
 | Runners | `DOCKER_SOCKET_PATH` | docker.sock for bollard (`/var/run/docker.sock`) |
