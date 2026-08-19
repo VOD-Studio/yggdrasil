@@ -18,8 +18,8 @@ use crate::components::empty_state::EmptyState;
 use crate::components::skeletons::admin_comments_skeleton::AdminCommentsSkeleton;
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::ui::{
-    Checkbox, FilterTabs, Pagination, StatusBadge, ADMIN_ROW_HOVER, ADMIN_TABLE_CLASS,
-    BTN_SOLID_AMBER, BTN_SOLID_GREEN, BTN_SOLID_RED, BTN_TEXT_AMBER, BTN_TEXT_GREEN, BTN_TEXT_RED,
+    Checkbox, FilterTabs, Pagination, UserAvatar, BTN_GHOST, BTN_SOLID_AMBER, BTN_SOLID_GREEN,
+    BTN_SOLID_RED,
 };
 use crate::models::comment::{AdminComment, CommentStatus};
 use crate::router::Route;
@@ -126,17 +126,19 @@ pub fn AdminCommentsPage(page: i32) -> Element {
 
     rsx! {
         div { class: "animate-page-enter w-full max-w-7xl mx-auto space-y-6",
-            div { class: "flex flex-col md:flex-row md:items-end justify-between gap-6 pb-6 border-b border-[var(--color-paper-border)] mb-6",
+            // 页头：标题与副标题
+            div { class: "flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-[var(--color-paper-border)]/70",
                 div {
-                    h1 { class: "text-4xl font-extrabold tracking-tight text-[var(--color-paper-primary)]",
+                    h1 { class: "text-3xl sm:text-4xl font-extrabold tracking-tight text-[var(--color-paper-primary)]",
                         "评论管理"
                     }
-                    p { class: "text-base text-[var(--color-paper-secondary)] mt-2",
-                        "所有文章评论"
+                    p { class: "text-sm text-[var(--color-paper-secondary)] mt-1.5",
+                        "所有文章评论 ({total()}) · 审核读者互动与拦截垃圾内容"
                     }
                 }
             }
 
+            // 状态筛选 Tab 胶囊
             FilterTabs {
                 items: vec![
                     ("", "全部"),
@@ -148,69 +150,115 @@ pub fn AdminCommentsPage(page: i32) -> Element {
                 on_change: move |v| active_filter.set(v),
             }
 
-            div { class: if selected_ids().is_empty() { "batch-bar is-collapsed" } else { "batch-bar" },
-                div { class: "flex items-center gap-3 p-3 bg-paper-theme rounded-lg",
-                    span { class: "text-sm text-paper-secondary", "已选择 {selected_ids().len()} 条" }
-                    button {
-                        class: "{BTN_SOLID_GREEN}",
-                        onclick: move |_| {
-                            let ids: Vec<i64> = selected_ids().iter().copied().collect();
-                            let ids_for_api = ids.clone();
-                            spawn(async move {
-                                let _ = batch_update_comment_status(ids_for_api, "approved".to_string())
-                                    .await;
-                            });
-                            for id in &ids {
-                                set_comment_status(*id, CommentStatus::Approved);
-                            }
-                            selected_ids.set(HashSet::new());
-                        },
-                        "批量通过"
+            // 批量操作栏（选中时浮动展开）
+            if !selected_ids().is_empty() {
+                div { class: "animate-row-enter flex flex-wrap items-center justify-between gap-3 p-3.5 bg-[var(--color-paper-entry)] rounded-2xl border border-[var(--color-paper-border)] shadow-xs",
+                    div { class: "flex items-center gap-2 text-sm font-medium text-[var(--color-paper-primary)]",
+                        span { class: "w-2 h-2 rounded-full bg-[var(--color-paper-accent)]" }
+                        span { "已选中 {selected_ids().len()} 条评论" }
                     }
-                    button {
-                        class: "{BTN_SOLID_AMBER}",
-                        onclick: move |_| {
-                            let ids: Vec<i64> = selected_ids().iter().copied().collect();
-                            let ids_for_api = ids.clone();
-                            spawn(async move {
-                                let _ = batch_update_comment_status(ids_for_api, "spam".to_string()).await;
-                            });
-                            for id in &ids {
-                                set_comment_status(*id, CommentStatus::Spam);
-                            }
-                            selected_ids.set(HashSet::new());
-                        },
-                        "批量垃圾"
-                    }
-                    button {
-                        class: "{BTN_SOLID_RED}",
-                        onclick: move |_| {
-                            #[cfg(target_arch = "wasm32")]
-                            {
-                                if web_sys::window()
-                                    .and_then(|w| {
-                                        w.confirm_with_message("确定要删除这些评论吗？").ok()
-                                    })
-                                    .unwrap_or(false)
-                                {
-                                    let ids: Vec<i64> = selected_ids().iter().copied().collect();
-                                    let ids_for_api = ids.clone();
-                                    spawn(async move {
-                                        let _ = batch_update_comment_status(ids_for_api, "trash".to_string())
-                                            .await;
-                                    });
-                                    for id in &ids {
-                                        remove_comment(*id);
-                                    }
-                                    selected_ids.set(HashSet::new());
+                    div { class: "flex items-center gap-2",
+                        button {
+                            class: "{BTN_SOLID_GREEN} inline-flex items-center gap-1.5",
+                            onclick: move |_| {
+                                let ids: Vec<i64> = selected_ids().iter().copied().collect();
+                                let ids_for_api = ids.clone();
+                                spawn(async move {
+                                    let _ = batch_update_comment_status(ids_for_api, "approved".to_string())
+                                        .await;
+                                });
+                                for id in &ids {
+                                    set_comment_status(*id, CommentStatus::Approved);
                                 }
+                                selected_ids.set(HashSet::new());
+                            },
+                            svg {
+                                class: "w-3.5 h-3.5",
+                                xmlns: "http://www.w3.org/2000/svg",
+                                view_box: "0 0 24 24",
+                                fill: "none",
+                                stroke: "currentColor",
+                                stroke_width: "2",
+                                stroke_linecap: "round",
+                                stroke_linejoin: "round",
+                                polyline { points: "20 6 9 17 4 12" }
                             }
-                        },
-                        "批量删除"
+                            "批量通过"
+                        }
+                        button {
+                            class: "{BTN_SOLID_AMBER} inline-flex items-center gap-1.5",
+                            onclick: move |_| {
+                                let ids: Vec<i64> = selected_ids().iter().copied().collect();
+                                let ids_for_api = ids.clone();
+                                spawn(async move {
+                                    let _ = batch_update_comment_status(ids_for_api, "spam".to_string()).await;
+                                });
+                                for id in &ids {
+                                    set_comment_status(*id, CommentStatus::Spam);
+                                }
+                                selected_ids.set(HashSet::new());
+                            },
+                            svg {
+                                class: "w-3.5 h-3.5",
+                                xmlns: "http://www.w3.org/2000/svg",
+                                view_box: "0 0 24 24",
+                                fill: "none",
+                                stroke: "currentColor",
+                                stroke_width: "2",
+                                stroke_linecap: "round",
+                                stroke_linejoin: "round",
+                                path { d: "M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" }
+                                line { x1: "12", y1: "9", x2: "12", y2: "13" }
+                                line { x1: "12", y1: "17", x2: "12.01", y2: "17" }
+                            }
+                            "批量垃圾"
+                        }
+                        button {
+                            class: "{BTN_SOLID_RED} inline-flex items-center gap-1.5",
+                            onclick: move |_| {
+                                #[cfg(target_arch = "wasm32")]
+                                {
+                                    if web_sys::window()
+                                        .and_then(|w| {
+                                            w.confirm_with_message("确定要删除这些评论吗？").ok()
+                                        })
+                                        .unwrap_or(false)
+                                    {
+                                        let ids: Vec<i64> = selected_ids().iter().copied().collect();
+                                        let ids_for_api = ids.clone();
+                                        spawn(async move {
+                                            let _ = batch_update_comment_status(ids_for_api, "trash".to_string())
+                                                .await;
+                                        });
+                                        for id in &ids {
+                                            remove_comment(*id);
+                                        }
+                                        selected_ids.set(HashSet::new());
+                                    }
+                                }
+                            },
+                            svg {
+                                class: "w-3.5 h-3.5",
+                                xmlns: "http://www.w3.org/2000/svg",
+                                view_box: "0 0 24 24",
+                                fill: "none",
+                                stroke: "currentColor",
+                                stroke_width: "2",
+                                stroke_linecap: "round",
+                                stroke_linejoin: "round",
+                                polyline { points: "3 6 5 6 21 6" }
+                                path { d: "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" }
+                            }
+                            "批量删除"
+                        }
+                        button {
+                            class: "{BTN_GHOST}",
+                            onclick: move |_| selected_ids.set(HashSet::new()),
+                            "取消"
+                        }
                     }
                 }
             }
-
             {
                 if error().is_some() {
                     rsx! {
@@ -235,12 +283,12 @@ pub fn AdminCommentsPage(page: i32) -> Element {
                     let all_selected = list.iter().all(|c| selected_ids().contains(&c.id));
                     let all_ids: Vec<i64> = list.iter().map(|c| c.id).collect();
                     rsx! {
-                        div { class: "{ADMIN_TABLE_CLASS}",
+                        div { class: "bg-[var(--color-paper-entry)]/40 rounded-2xl shadow-xs border border-[var(--color-paper-border)]/70 overflow-hidden",
                             div { class: "overflow-x-auto",
                                 table { class: "w-full text-sm",
                                     thead {
-                                        tr { class: "border-b border-paper-border text-left text-paper-secondary",
-                                            th { class: "px-4 py-3 font-medium w-10",
+                                        tr { class: "bg-[var(--color-paper-entry)]/80 border-b border-[var(--color-paper-border)]/70 text-left text-xs font-semibold uppercase tracking-wider text-[var(--color-paper-secondary)] select-none",
+                                            th { class: "px-4 py-3.5 w-10 text-center",
                                                 Checkbox {
                                                     checked: all_selected,
                                                     onchange: move |_checked: bool| {
@@ -258,14 +306,14 @@ pub fn AdminCommentsPage(page: i32) -> Element {
                                                     },
                                                 }
                                             }
-                                            th { class: "px-4 py-3 font-medium", "作者" }
-                                            th { class: "px-4 py-3 font-medium", "内容" }
-                                            th { class: "px-4 py-3 font-medium", "文章" }
-                                            th { class: "px-4 py-3 font-medium text-center w-24 whitespace-nowrap",
+                                            th { class: "px-5 py-3.5 font-semibold w-48", "评论作者" }
+                                            th { class: "px-5 py-3.5 font-semibold", "评论内容" }
+                                            th { class: "px-5 py-3.5 font-semibold w-56", "关联文章" }
+                                            th { class: "px-4 py-3.5 font-semibold text-center w-24 whitespace-nowrap",
                                                 "状态"
                                             }
-                                            th { class: "px-4 py-3 font-medium w-32 whitespace-nowrap", "日期" }
-                                            th { class: "px-4 py-3 font-medium w-32 text-right whitespace-nowrap",
+                                            th { class: "px-4 py-3.5 font-semibold w-28 whitespace-nowrap", "发表日期" }
+                                            th { class: "px-5 py-3.5 font-semibold w-36 text-right whitespace-nowrap",
                                                 "操作"
                                             }
                                         }
@@ -363,12 +411,6 @@ fn CommentRow(
     on_spam: EventHandler,
     on_trash: EventHandler,
 ) -> Element {
-    let status_label = match &comment.status {
-        CommentStatus::Pending => "待审核".to_string(),
-        CommentStatus::Approved => "已通过".to_string(),
-        CommentStatus::Spam => "垃圾".to_string(),
-        CommentStatus::Trash => "已删除".to_string(),
-    };
     let date_str = comment.created_at.format("%Y-%m-%d").to_string();
     let preview = if comment.content_md.len() > 100 {
         format!(
@@ -381,85 +423,148 @@ fn CommentRow(
 
     rsx! {
         tr {
-            class: "animate-row-enter {ADMIN_ROW_HOVER}",
+            class: "animate-row-enter border-b border-[var(--color-paper-border)]/60 last:border-b-0 hover:bg-[var(--color-paper-accent-soft)]/30 transition-colors duration-150 group",
             style: "animation-delay: {stagger_index * 35}ms",
-            td { class: "px-4 py-3",
+            td { class: "px-4 py-3.5 text-center",
                 Checkbox {
                     checked: selected,
                     onchange: move |checked: bool| on_select.call(checked),
                 }
             }
-            td { class: "px-4 py-3",
-                div { class: "flex items-center gap-2",
-                    img {
-                        class: "w-8 h-8 rounded-full flex-shrink-0",
-                        src: "{comment.avatar_url}",
-                        alt: "{comment.author_name}",
+            // 作者信息：头像 + 姓名 + 邮箱
+            td { class: "px-5 py-3.5",
+                div { class: "flex items-center gap-2.5",
+                    UserAvatar {
+                        name: comment.author_name.clone(),
+                        avatar_url: if comment.avatar_url.is_empty() { None } else { Some(comment.avatar_url.clone()) },
+                        class: "w-8 h-8 rounded-full border border-[var(--color-paper-border)]/60 text-xs shrink-0",
                     }
                     div { class: "min-w-0",
-                        div { class: "text-sm font-medium text-paper-primary truncate",
+                        div { class: "text-sm font-semibold text-[var(--color-paper-primary)] truncate",
                             "{comment.author_name}"
                         }
-                        div { class: "text-xs text-paper-secondary truncate", "{comment.author_email}" }
+                        div { class: "text-xs font-mono text-[var(--color-paper-tertiary)] truncate",
+                            "{comment.author_email}"
+                        }
                     }
                 }
             }
-            td { class: "px-4 py-3 max-w-xs",
-                p { class: "text-sm text-paper-secondary truncate", "{preview}" }
+            // 评论内容
+            td { class: "px-5 py-3.5 max-w-sm",
+                p { class: "text-sm text-[var(--color-paper-primary)] leading-relaxed line-clamp-2",
+                    "{preview}"
+                }
             }
-            td { class: "px-4 py-3",
-                // 外链形态（整页加载）：评论管理在 admin 布局内，跳前台文章是
-                // 跨 layout 分支导航，客户端路由会触发 dioxus 0.7.10 suspense
-                // 卸载双重回收 bug（详见 src/pages/admin/preview.rs 模块文档）。
+            // 关联文章
+            td { class: "px-5 py-3.5 max-w-xs",
                 Link {
-                    class: "text-sm text-paper-primary hover:text-paper-accent transition-colors",
+                    class: "inline-flex items-center gap-1.5 text-xs font-medium text-[var(--color-paper-secondary)] hover:text-[var(--color-paper-accent)] transition-colors line-clamp-1 leading-normal",
                     to: NavigationTarget::<Route>::External(format!("/post/{}", comment.post_slug)),
+                    svg {
+                        class: "w-3.5 h-3.5 shrink-0 opacity-70",
+                        xmlns: "http://www.w3.org/2000/svg",
+                        view_box: "0 0 24 24",
+                        fill: "none",
+                        stroke: "currentColor",
+                        stroke_width: "2",
+                        stroke_linecap: "round",
+                        stroke_linejoin: "round",
+                        path { d: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" }
+                        polyline { points: "14 2 14 8 20 8" }
+                    }
                     "{comment.post_title}"
                 }
             }
-            td { class: "px-4 py-3 text-center whitespace-nowrap",
-                StatusBadge {
-                    // badge_class 是 &'static str 字面量匹配，转为静态生命周期。
-                    color_class: match &comment.status {
-                        CommentStatus::Pending => {
-                            "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
-                        }
-                        CommentStatus::Approved => {
-                            "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                        }
-                        CommentStatus::Spam => {
-                            "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-                        }
-                        CommentStatus::Trash => {
-                            "bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400"
+            // 状态胶囊
+            td { class: "px-4 py-3.5 text-center whitespace-nowrap",
+                match &comment.status {
+                    CommentStatus::Approved => rsx! {
+                        span { class: "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20",
+                            span { class: "w-1.5 h-1.5 rounded-full bg-emerald-500" }
+                            "已通过"
                         }
                     },
-                    label: status_label,
+                    CommentStatus::Pending => rsx! {
+                        span { class: "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20",
+                            span { class: "w-1.5 h-1.5 rounded-full bg-amber-500" }
+                            "待审核"
+                        }
+                    },
+                    CommentStatus::Spam => rsx! {
+                        span { class: "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20",
+                            span { class: "w-1.5 h-1.5 rounded-full bg-red-500" }
+                            "垃圾"
+                        }
+                    },
+                    CommentStatus::Trash => rsx! {
+                        span { class: "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-500/10 text-gray-600 dark:text-gray-400 border border-gray-500/20",
+                            span { class: "w-1.5 h-1.5 rounded-full bg-gray-400" }
+                            "已删除"
+                        }
+                    },
                 }
             }
-            td { class: "px-4 py-3 text-sm text-paper-secondary whitespace-nowrap",
+            // 发表日期
+            td { class: "px-4 py-3.5 text-xs font-mono text-[var(--color-paper-secondary)] whitespace-nowrap",
                 "{date_str}"
             }
-            td { class: "px-4 py-3 text-right whitespace-nowrap",
-                div { class: "flex justify-end gap-2",
+            // 操作按钮
+            td { class: "px-5 py-3.5 text-right whitespace-nowrap",
+                div { class: "flex justify-end items-center gap-1.5",
                     if !matches!(comment.status, CommentStatus::Approved) {
                         button {
-                            class: "{BTN_TEXT_GREEN}",
+                            class: "inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors cursor-pointer",
                             onclick: move |_| on_approve.call(()),
+                            svg {
+                                class: "w-3.5 h-3.5",
+                                xmlns: "http://www.w3.org/2000/svg",
+                                view_box: "0 0 24 24",
+                                fill: "none",
+                                stroke: "currentColor",
+                                stroke_width: "2",
+                                stroke_linecap: "round",
+                                stroke_linejoin: "round",
+                                polyline { points: "20 6 9 17 4 12" }
+                            }
                             "通过"
                         }
                     }
                     if !matches!(comment.status, CommentStatus::Spam) {
                         button {
-                            class: "{BTN_TEXT_AMBER}",
+                            class: "inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors cursor-pointer",
                             onclick: move |_| on_spam.call(()),
+                            svg {
+                                class: "w-3.5 h-3.5",
+                                xmlns: "http://www.w3.org/2000/svg",
+                                view_box: "0 0 24 24",
+                                fill: "none",
+                                stroke: "currentColor",
+                                stroke_width: "2",
+                                stroke_linecap: "round",
+                                stroke_linejoin: "round",
+                                path { d: "M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" }
+                                line { x1: "12", y1: "9", x2: "12", y2: "13" }
+                                line { x1: "12", y1: "17", x2: "12.01", y2: "17" }
+                            }
                             "垃圾"
                         }
                     }
                     if !matches!(comment.status, CommentStatus::Trash) {
                         button {
-                            class: "{BTN_TEXT_RED}",
+                            class: "inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors cursor-pointer",
                             onclick: move |_| on_trash.call(()),
+                            svg {
+                                class: "w-3.5 h-3.5",
+                                xmlns: "http://www.w3.org/2000/svg",
+                                view_box: "0 0 24 24",
+                                fill: "none",
+                                stroke: "currentColor",
+                                stroke_width: "2",
+                                stroke_linecap: "round",
+                                stroke_linejoin: "round",
+                                polyline { points: "3 6 5 6 21 6" }
+                                path { d: "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" }
+                            }
                             "删除"
                         }
                     }

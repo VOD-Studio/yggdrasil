@@ -25,20 +25,18 @@ pub const ADMIN_CARD_CLASS: &str = "bg-[var(--color-paper-entry)] rounded-2xl sh
 /// Admin 表格容器：内容档圆角（16px），与卡片一致。
 pub const ADMIN_TABLE_CLASS: &str = "bg-[var(--color-paper-entry)] rounded-2xl shadow-sm border border-transparent hover:border-[var(--color-paper-border)] transition overflow-hidden";
 
-/// Admin 表格行 hover 态：底部分割线 + 悬停背景。
+#[allow(dead_code)]
 pub const ADMIN_ROW_HOVER: &str =
     "border-b border-paper-border last:border-b-0 hover:bg-[var(--color-paper-accent-soft)] transition-colors";
-
 /// 行内加载 spinner：环形渐变 + 自旋动画，用 currentColor 继承文字色。
 ///
 /// 内联 SVG（含 `@keyframes`），通过 `dangerous_inner_html` 注入；尺寸由外层
 /// Tailwind 类（如 `w-3.5 h-3.5`）控制。源文件 `public/icons/90-ring-with-gradient.svg`。
 pub const SPINNER_SVG: &str = r#"<svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="yggSpinnerGrad"><stop offset="0%" stop-color="currentColor" stop-opacity="1"/><stop offset="100%" stop-color="currentColor" stop-opacity="0.25"/></linearGradient></defs><style>@keyframes yggSpin { to { transform: rotate(360deg); } } .ygg-spinner-circle { transform-origin: 50% 50%; stroke: url(#yggSpinnerGrad); fill: none; animation: yggSpin .5s infinite linear; }</style><circle cx="10" cy="10" r="8" class="ygg-spinner-circle" stroke-width="2"/></svg>"#;
 
-/// 状态徽章外层：小号圆角胶囊。
+#[allow(dead_code)]
 pub const BADGE_BASE: &str =
     "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap";
-/// 素材图片覆盖层徽标：8px 紧凑矩形，独立于通用状态徽章。
 pub const MEDIA_BADGE_BASE: &str =
     "inline-flex items-center px-2 py-0.5 rounded-lg text-[10px] font-mono font-medium whitespace-nowrap";
 
@@ -57,10 +55,10 @@ pub const BTN_SOLID_RED: &str =
 // --- 文字小按钮（表格行内操作：通过 / 垃圾 / 删除 / 恢复） ---
 
 /// 绿色文字小按钮（行内通过）。
+#[allow(dead_code)]
 pub const BTN_TEXT_GREEN: &str = "text-xs text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300 transition-colors cursor-pointer";
-/// 琥珀色文字小按钮（行内标为垃圾）。
+#[allow(dead_code)]
 pub const BTN_TEXT_AMBER: &str = "text-xs text-amber-600 hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-300 transition-colors cursor-pointer";
-/// 红色文字小按钮（行内删除 / 彻底删除）。
 #[allow(dead_code)]
 pub const BTN_TEXT_RED: &str =
     "text-xs text-red-500 hover:text-red-700 dark:hover:text-red-300 transition-colors cursor-pointer";
