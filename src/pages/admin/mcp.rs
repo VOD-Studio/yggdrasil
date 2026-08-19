@@ -27,9 +27,7 @@ use crate::components::skeletons::atoms::SkeletonBox;
 #[cfg(target_arch = "wasm32")]
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 #[cfg(target_arch = "wasm32")]
-use crate::components::ui::{
-    ADMIN_CARD_CLASS, ADMIN_TABLE_CLASS, BADGE_BASE, BTN_PRIMARY, BTN_PRIMARY_SM, BTN_TEXT_RED,
-};
+use crate::components::ui::{BTN_PRIMARY, BTN_PRIMARY_SM};
 #[cfg(target_arch = "wasm32")]
 use crate::models::mcp_token::{McpTokenSummary, TokenScope};
 
@@ -186,17 +184,22 @@ pub fn Mcp() -> Element {
     }
 }
 
-/// 页头标题区。
 #[component]
 fn PageHeader() -> Element {
     rsx! {
-        div { class: "flex flex-col md:flex-row md:items-end justify-between gap-6 pb-8 border-b border-[var(--color-paper-border)]/50",
+        div { class: "flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-[var(--color-paper-border)]/70",
             div {
-                h1 { class: "text-4xl font-extrabold tracking-tight text-[var(--color-paper-primary)]",
+                h1 { class: "text-3xl sm:text-4xl font-extrabold tracking-tight text-[var(--color-paper-primary)]",
                     "MCP 服务器"
                 }
-                p { class: "text-base text-[var(--color-paper-secondary)] mt-2",
-                    "为 AI 客户端（Claude Code / Cursor / Cline）签发访问令牌，并复制接入配置。"
+                p { class: "text-sm text-[var(--color-paper-secondary)] mt-1.5",
+                    "为 AI 客户端（Claude Code / Cursor / Cline / Oh-My-Pi）签发访问令牌并获取接入配置"
+                }
+            }
+            div { class: "flex items-center gap-2.5",
+                div { class: "inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-mono bg-[var(--color-paper-entry)] text-[var(--color-paper-secondary)] border border-[var(--color-paper-border)]/70 shadow-2xs",
+                    span { class: "w-1.5 h-1.5 rounded-full bg-[var(--color-paper-accent)]" }
+                    span { "Endpoint: /mcp" }
                 }
             }
         }
@@ -251,74 +254,98 @@ fn TokenList() -> Element {
     });
 
     rsx! {
-        div { class: "{ADMIN_CARD_CLASS} p-8 flex flex-col gap-6",
-            div { class: "flex items-center justify-between",
-                h2 { class: "text-xl font-bold text-[var(--color-paper-primary)]",
-                    "令牌列表"
+        div { class: "bg-[var(--color-paper-entry)]/40 rounded-2xl shadow-xs border border-[var(--color-paper-border)]/70 p-6 sm:p-8 flex flex-col gap-6",
+            div { class: "flex items-center justify-between border-b border-[var(--color-paper-border)]/60 pb-4",
+                div { class: "flex items-center gap-2.5",
+                    svg {
+                        class: "w-5 h-5 text-[var(--color-paper-accent)]",
+                        xmlns: "http://www.w3.org/2000/svg",
+                        view_box: "0 0 24 24",
+                        fill: "none",
+                        stroke: "currentColor",
+                        stroke_width: "2",
+                        stroke_linecap: "round",
+                        stroke_linejoin: "round",
+                        path { d: "M21 2l-2 2m-1.5 1.5L14 9l-1.5-1.5L11 9l-1.5-1.5L8 9 3 14a5 5 0 0 0 7 7l5-5 1.5 1.5L18 15l-1.5-1.5L18 12l1.5-1.5 1.5 1.5z" }
+                    }
+                    h2 { class: "text-lg sm:text-xl font-bold text-[var(--color-paper-primary)]",
+                        "已签发令牌 ({tokens().len()})"
+                    }
                 }
                 button {
-                    class: "text-xs text-[var(--color-paper-secondary)] hover:text-[var(--color-paper-primary)] transition-colors cursor-pointer",
+                    class: "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium text-[var(--color-paper-secondary)] hover:text-[var(--color-paper-primary)] hover:bg-[var(--color-paper-entry)] transition-colors cursor-pointer",
                     onclick: move |_| {
                         let g = reload_gen();
                         state.reload_gen.set(g + 1);
                     },
-                    "刷新"
+                    svg {
+                        class: "w-3.5 h-3.5",
+                        xmlns: "http://www.w3.org/2000/svg",
+                        view_box: "0 0 24 24",
+                        fill: "none",
+                        stroke: "currentColor",
+                        stroke_width: "2",
+                        stroke_linecap: "round",
+                        stroke_linejoin: "round",
+                        path { d: "M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" }
+                    }
+                    "刷新列表"
                 }
             }
 
-            // 表格区：首次加载（loading 且无数据）显示骨架屏，加载后无数据显示空态，否则显示表格。
+            // 表格区
             if loading() && tokens().is_empty() {
                 DelayedSkeleton {
-                    div { class: "{ADMIN_TABLE_CLASS}",
+                    div { class: "bg-[var(--color-paper-entry)]/40 rounded-2xl shadow-xs border border-[var(--color-paper-border)]/70 overflow-hidden",
                         table { class: "w-full text-sm",
                             thead {
-                                tr { class: "bg-[var(--color-paper-theme)]/50",
-                                    th { class: "px-4 py-3",
-                                        SkeletonBox { class: "h-3 w-10" }
-                                    }
-                                    th { class: "px-4 py-3",
-                                        SkeletonBox { class: "h-3 w-8" }
-                                    }
-                                    th { class: "px-4 py-3",
-                                        SkeletonBox { class: "h-3 w-8" }
-                                    }
-                                    th { class: "px-4 py-3",
-                                        SkeletonBox { class: "h-3 w-8" }
-                                    }
-                                    th { class: "px-4 py-3",
+                                tr { class: "bg-[var(--color-paper-entry)]/80 border-b border-[var(--color-paper-border)]/70",
+                                    th { class: "px-5 py-3.5",
                                         SkeletonBox { class: "h-3 w-12" }
                                     }
-                                    th { class: "px-4 py-3",
-                                        SkeletonBox { class: "h-3 w-8" }
+                                    th { class: "px-4 py-3.5",
+                                        SkeletonBox { class: "h-3 w-10" }
                                     }
-                                    th { class: "px-4 py-3",
-                                        SkeletonBox { class: "h-3 w-10 ml-auto" }
+                                    th { class: "px-4 py-3.5",
+                                        SkeletonBox { class: "h-3 w-14" }
+                                    }
+                                    th { class: "px-4 py-3.5",
+                                        SkeletonBox { class: "h-3 w-14" }
+                                    }
+                                    th { class: "px-4 py-3.5",
+                                        SkeletonBox { class: "h-3 w-16" }
+                                    }
+                                    th { class: "px-4 py-3.5",
+                                        SkeletonBox { class: "h-3 w-10" }
+                                    }
+                                    th { class: "px-5 py-3.5",
+                                        SkeletonBox { class: "h-3 w-16 ml-auto" }
                                     }
                                 }
                             }
                             tbody {
-                                for _ in 0..4 {
-                                    tr { class: "border-b border-[var(--color-paper-border)] last:border-b-0",
-                                        td { class: "px-4 py-3",
+                                for _ in 0..3 {
+                                    tr { class: "border-b border-[var(--color-paper-border)]/60 last:border-b-0",
+                                        td { class: "px-5 py-3.5",
                                             SkeletonBox { class: "h-4 w-28" }
                                         }
-                                        td { class: "px-4 py-3",
+                                        td { class: "px-4 py-3.5",
                                             SkeletonBox { class: "h-4 w-12" }
                                         }
-                                        td { class: "px-4 py-3",
+                                        td { class: "px-4 py-3.5",
                                             SkeletonBox { class: "h-4 w-16" }
                                         }
-                                        td { class: "px-4 py-3",
+                                        td { class: "px-4 py-3.5",
                                             SkeletonBox { class: "h-4 w-16" }
                                         }
-                                        td { class: "px-4 py-3",
+                                        td { class: "px-4 py-3.5",
                                             SkeletonBox { class: "h-4 w-20" }
                                         }
-                                        td { class: "px-4 py-3",
+                                        td { class: "px-4 py-3.5",
                                             SkeletonBox { class: "h-5 w-10 rounded-full" }
                                         }
-                                        td { class: "px-4 py-3",
-                                            SkeletonBox { class: "h-4 w-24 ml-auto" }
+                                        td { class: "px-5 py-3.5",
+                                            SkeletonBox { class: "h-6 w-36 ml-auto rounded" }
                                         }
                                     }
                                 }
@@ -327,38 +354,40 @@ fn TokenList() -> Element {
                     }
                 }
             } else if tokens().is_empty() {
-                p { class: "text-[var(--color-paper-secondary)] text-sm py-4 text-center",
-                    "暂无令牌。在下方新建一个。"
+                p { class: "text-[var(--color-paper-secondary)] text-sm py-8 text-center",
+                    "暂无已签发的 MCP 访问令牌。在下方新建一个。"
                 }
             } else {
-                div { class: "{ADMIN_TABLE_CLASS}",
-                    table { class: "w-full text-sm",
-                        thead {
-                            tr { class: "bg-[var(--color-paper-theme)]/50 text-left text-[var(--color-paper-secondary)]",
-                                th { class: "px-4 py-3 font-medium", "名称" }
-                                th { class: "px-4 py-3 font-medium", "作用域" }
-                                th { class: "px-4 py-3 font-medium whitespace-nowrap",
-                                    "创建"
+                div { class: "bg-[var(--color-paper-entry)]/40 rounded-2xl shadow-xs border border-[var(--color-paper-border)]/70 overflow-hidden",
+                    div { class: "overflow-x-auto",
+                        table { class: "w-full text-sm",
+                            thead {
+                                tr { class: "bg-[var(--color-paper-entry)]/80 border-b border-[var(--color-paper-border)]/70 text-left text-xs font-semibold uppercase tracking-wider text-[var(--color-paper-secondary)] select-none",
+                                    th { class: "px-5 py-3.5 font-semibold", "令牌名称" }
+                                    th { class: "px-4 py-3.5 font-semibold whitespace-nowrap", "权限作用域" }
+                                    th { class: "px-4 py-3.5 font-semibold whitespace-nowrap",
+                                        "创建日期"
+                                    }
+                                    th { class: "px-4 py-3.5 font-semibold whitespace-nowrap",
+                                        "有效期至"
+                                    }
+                                    th { class: "px-4 py-3.5 font-semibold whitespace-nowrap",
+                                        "最近活跃"
+                                    }
+                                    th { class: "px-4 py-3.5 font-semibold whitespace-nowrap text-center",
+                                        "状态"
+                                    }
+                                    th { class: "px-5 py-3.5 font-semibold text-right whitespace-nowrap", "操作" }
                                 }
-                                th { class: "px-4 py-3 font-medium whitespace-nowrap",
-                                    "过期"
-                                }
-                                th { class: "px-4 py-3 font-medium whitespace-nowrap",
-                                    "最近使用"
-                                }
-                                th { class: "px-4 py-3 font-medium whitespace-nowrap",
-                                    "状态"
-                                }
-                                th { class: "px-4 py-3 font-medium text-right", "操作" }
                             }
-                        }
-                        tbody {
-                            for (i, t) in tokens().iter().enumerate() {
-                                TokenRow {
-                                    key: "{t.id}",
-                                    token: t.clone(),
-                                    state,
-                                    stagger_index: i as u32,
+                            tbody {
+                                for (i, t) in tokens().iter().enumerate() {
+                                    TokenRow {
+                                        key: "{t.id}",
+                                        token: t.clone(),
+                                        state,
+                                        stagger_index: i as u32,
+                                    }
                                 }
                             }
                         }
@@ -388,19 +417,6 @@ fn TokenRow(token: McpTokenSummary, state: McpPageState, stagger_index: u32) -> 
         .last_used_at
         .map(|e| e.format("%Y-%m-%d %H:%M").to_string())
         .unwrap_or_else(|| "—".to_string());
-    let status_label = if is_revoked {
-        "已撤销"
-    } else if is_expired {
-        "已过期"
-    } else {
-        "有效"
-    };
-    let status_class = if active {
-        "bg-green-500/10 text-green-600 dark:text-green-400"
-    } else {
-        "bg-gray-500/10 text-gray-500 dark:text-gray-400"
-    };
-
     let id_reveal = token.id.clone();
     let id_config = token.id.clone();
     let id_revoke = token.id.clone();
@@ -413,73 +429,136 @@ fn TokenRow(token: McpTokenSummary, state: McpPageState, stagger_index: u32) -> 
 
     rsx! {
         tr {
-            class: "animate-row-enter border-b border-[var(--color-paper-border)] last:border-b-0 hover:bg-[var(--color-paper-theme)]/30 transition-colors",
+            class: "animate-row-enter border-b border-[var(--color-paper-border)]/60 last:border-b-0 hover:bg-[var(--color-paper-accent-soft)]/30 transition-colors duration-150 group",
             style: "animation-delay: {stagger_index * 40}ms",
-            td { class: "px-4 py-3 font-medium text-[var(--color-paper-primary)]",
+            // 令牌名称
+            td { class: "px-5 py-3.5 font-semibold text-[var(--color-paper-primary)]",
                 "{token.name}"
             }
-            td { class: "px-4 py-3", "{token.scope.as_str()}" }
-            td { class: "px-4 py-3 text-[var(--color-paper-secondary)] whitespace-nowrap",
+            // 作用域胶囊
+            td { class: "px-4 py-3.5 whitespace-nowrap",
+                span { class: "inline-flex items-center px-2 py-0.5 rounded-md text-xs font-mono font-medium bg-[var(--color-paper-entry)] text-[var(--color-paper-primary)] border border-[var(--color-paper-border)]/60",
+                    "{token.scope.as_str()}"
+                }
+            }
+            // 创建日期
+            td { class: "px-4 py-3.5 text-xs font-mono text-[var(--color-paper-secondary)] whitespace-nowrap",
                 "{created}"
             }
-            td { class: "px-4 py-3 text-[var(--color-paper-secondary)] whitespace-nowrap",
+            // 过期时间
+            td { class: "px-4 py-3.5 text-xs font-mono text-[var(--color-paper-secondary)] whitespace-nowrap",
                 "{expires}"
             }
-            td { class: "px-4 py-3 text-[var(--color-paper-secondary)] whitespace-nowrap",
+            // 最近使用
+            td { class: "px-4 py-3.5 text-xs font-mono text-[var(--color-paper-secondary)] whitespace-nowrap",
                 "{last_used}"
             }
-            td { class: "px-4 py-3 whitespace-nowrap",
-                span { class: "{BADGE_BASE} {status_class}", "{status_label}" }
-            }
-            td { class: "px-4 py-3 text-right whitespace-nowrap",
+            // 状态胶囊
+            td { class: "px-4 py-3.5 text-center whitespace-nowrap",
                 if active {
-                    button {
-                        class: "text-xs text-[var(--color-paper-accent)] hover:text-[var(--color-paper-primary)] transition-colors cursor-pointer mr-3",
-                        onclick: move |_| {
-                            let id = id_reveal.clone();
-                            spawn(async move {
-                                match reveal_mcp_token(id.clone()).await {
-                                    Ok(Some(p)) => revealed.set(Some((id, p))),
-                                    Ok(None) => toast.set(Some(("无法解密该令牌".to_string(), true))),
-                                    Err(e) => toast.set(Some((format!("重查失败：{e}"), true))),
-                                }
-                            });
-                        },
-                        "重新查看"
+                    span { class: "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20",
+                        span { class: "w-1.5 h-1.5 rounded-full bg-emerald-500" }
+                        "有效"
                     }
-                    button {
-                        class: "text-xs text-[var(--color-paper-accent)] hover:text-[var(--color-paper-primary)] transition-colors cursor-pointer mr-3",
-                        onclick: move |_| {
-                            let id = id_config.clone();
-                            spawn(async move {
-                                match reveal_mcp_token(id).await {
-                                    Ok(Some(p)) => {
-                                        config_token.set(Some(p));
-                                        toast.set(Some(("已选为配置令牌".to_string(), false)));
-                                    }
-                                    Ok(None) => toast.set(Some(("无法解密该令牌".to_string(), true))),
-                                    Err(e) => toast.set(Some((format!("重查失败：{e}"), true))),
-                                }
-                            });
-                        },
-                        "用于配置"
+                } else if is_expired {
+                    span { class: "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20",
+                        span { class: "w-1.5 h-1.5 rounded-full bg-amber-500" }
+                        "已过期"
                     }
-                    button {
-                        class: "{BTN_TEXT_RED}",
-                        onclick: move |_| {
-                            let id = id_revoke.clone();
-                            spawn(async move {
-                                match revoke_mcp_token(id).await {
-                                    Ok(()) => {
-                                        toast.set(Some(("已撤销".to_string(), false)));
-                                        let g = reload_gen();
-                                        state.reload_gen.set(g + 1);
+                } else {
+                    span { class: "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-500/10 text-gray-600 dark:text-gray-400 border border-gray-500/20",
+                        span { class: "w-1.5 h-1.5 rounded-full bg-gray-400" }
+                        "已撤销"
+                    }
+                }
+            }
+            // 操作列
+            td { class: "px-5 py-3.5 text-right whitespace-nowrap",
+                if active {
+                    div { class: "flex justify-end items-center gap-1.5",
+                        button {
+                            class: "inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors cursor-pointer",
+                            onclick: move |_| {
+                                let id = id_reveal.clone();
+                                spawn(async move {
+                                    match reveal_mcp_token(id.clone()).await {
+                                        Ok(Some(p)) => revealed.set(Some((id, p))),
+                                        Ok(None) => toast.set(Some(("无法解密该令牌".to_string(), true))),
+                                        Err(e) => toast.set(Some((format!("重查失败：{e}"), true))),
                                     }
-                                    Err(e) => toast.set(Some((format!("撤销失败：{e}"), true))),
-                                }
-                            });
-                        },
-                        "撤销"
+                                });
+                            },
+                            svg {
+                                class: "w-3.5 h-3.5",
+                                xmlns: "http://www.w3.org/2000/svg",
+                                view_box: "0 0 24 24",
+                                fill: "none",
+                                stroke: "currentColor",
+                                stroke_width: "2",
+                                stroke_linecap: "round",
+                                stroke_linejoin: "round",
+                                path { d: "M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" }
+                                circle { cx: "12", cy: "12", r: "3" }
+                            }
+                            "重新查看"
+                        }
+                        button {
+                            class: "inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-[var(--color-paper-primary)] hover:bg-[var(--color-paper-theme)] transition-colors cursor-pointer",
+                            onclick: move |_| {
+                                let id = id_config.clone();
+                                spawn(async move {
+                                    match reveal_mcp_token(id).await {
+                                        Ok(Some(p)) => {
+                                            config_token.set(Some(p));
+                                            toast.set(Some(("已选为配置令牌".to_string(), false)));
+                                        }
+                                        Ok(None) => toast.set(Some(("无法解密该令牌".to_string(), true))),
+                                        Err(e) => toast.set(Some((format!("重查失败：{e}"), true))),
+                                    }
+                                });
+                            },
+                            svg {
+                                class: "w-3.5 h-3.5 text-[var(--color-paper-accent)]",
+                                xmlns: "http://www.w3.org/2000/svg",
+                                view_box: "0 0 24 24",
+                                fill: "none",
+                                stroke: "currentColor",
+                                stroke_width: "2",
+                                stroke_linecap: "round",
+                                stroke_linejoin: "round",
+                                path { d: "M12 3v3m0 12v3M3 12h3m12 0h3M5.6 5.6l2.1 2.1m8.6 8.6l2.1 2.1M5.6 18.4l2.1-2.1m8.6-8.6l2.1-2.1" }
+                            }
+                            "用于配置"
+                        }
+                        button {
+                            class: "inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors cursor-pointer",
+                            onclick: move |_| {
+                                let id = id_revoke.clone();
+                                spawn(async move {
+                                    match revoke_mcp_token(id).await {
+                                        Ok(()) => {
+                                            toast.set(Some(("已撤销".to_string(), false)));
+                                            let g = reload_gen();
+                                            state.reload_gen.set(g + 1);
+                                        }
+                                        Err(e) => toast.set(Some((format!("撤销失败：{e}"), true))),
+                                    }
+                                });
+                            },
+                            svg {
+                                class: "w-3.5 h-3.5",
+                                xmlns: "http://www.w3.org/2000/svg",
+                                view_box: "0 0 24 24",
+                                fill: "none",
+                                stroke: "currentColor",
+                                stroke_width: "2",
+                                stroke_linecap: "round",
+                                stroke_linejoin: "round",
+                                circle { cx: "12", cy: "12", r: "10" }
+                                line { x1: "4.93", y1: "4.93", x2: "19.07", y2: "19.07" }
+                            }
+                            "撤销"
+                        }
                     }
                 } else {
                     span { class: "text-xs text-[var(--color-paper-tertiary)]", "—" }
@@ -504,14 +583,30 @@ fn CreateTokenCard() -> Element {
     let mut toast = state.toast;
 
     rsx! {
-        div { class: "{ADMIN_CARD_CLASS} p-8 flex flex-col gap-6",
-            h2 { class: "text-xl font-bold text-[var(--color-paper-primary)]", "新建令牌" }
+        div { class: "bg-[var(--color-paper-entry)]/40 rounded-2xl shadow-xs border border-[var(--color-paper-border)]/70 p-6 sm:p-8 flex flex-col gap-6",
+            div { class: "flex items-center gap-2.5 border-b border-[var(--color-paper-border)]/60 pb-4",
+                svg {
+                    class: "w-5 h-5 text-[var(--color-paper-accent)]",
+                    xmlns: "http://www.w3.org/2000/svg",
+                    view_box: "0 0 24 24",
+                    fill: "none",
+                    stroke: "currentColor",
+                    stroke_width: "2",
+                    stroke_linecap: "round",
+                    stroke_linejoin: "round",
+                    line { x1: "12", y1: "5", x2: "12", y2: "19" }
+                    line { x1: "5", y1: "12", x2: "19", y2: "12" }
+                }
+                h2 { class: "text-lg sm:text-xl font-bold text-[var(--color-paper-primary)]",
+                    "新建访问令牌"
+                }
+            }
 
-            div { class: "grid grid-cols-1 md:grid-cols-3 gap-4",
+            div { class: "grid grid-cols-1 md:grid-cols-3 gap-5",
                 // 名称
                 div { class: "flex flex-col gap-2",
-                    label { class: "text-sm font-medium text-[var(--color-paper-secondary)]",
-                        "名称"
+                    label { class: "text-xs font-semibold uppercase tracking-wider text-[var(--color-paper-secondary)]",
+                        "令牌名称 *"
                     }
                     FormInput {
                         r#type: "text",
@@ -522,8 +617,8 @@ fn CreateTokenCard() -> Element {
                 }
                 // 作用域
                 div { class: "flex flex-col gap-2",
-                    label { class: "text-sm font-medium text-[var(--color-paper-secondary)]",
-                        "作用域"
+                    label { class: "text-xs font-semibold uppercase tracking-wider text-[var(--color-paper-secondary)]",
+                        "权限作用域"
                     }
                     FormSelect {
                         value: scope(),
@@ -533,7 +628,7 @@ fn CreateTokenCard() -> Element {
                 }
                 // 有效期
                 div { class: "flex flex-col gap-2",
-                    label { class: "text-sm font-medium text-[var(--color-paper-secondary)]",
+                    label { class: "text-xs font-semibold uppercase tracking-wider text-[var(--color-paper-secondary)]",
                         "有效期"
                     }
                     FormSelect {
@@ -544,9 +639,9 @@ fn CreateTokenCard() -> Element {
                 }
             }
 
-            div {
+            div { class: "pt-1",
                 button {
-                    class: "{BTN_PRIMARY}",
+                    class: "{BTN_PRIMARY} inline-flex items-center gap-1.5",
                     disabled: "{busy() || name().trim().is_empty()}",
                     onclick: move |_| {
                         if busy() {
@@ -577,7 +672,7 @@ fn CreateTokenCard() -> Element {
                     if busy() {
                         "创建中…"
                     } else {
-                        "创建令牌"
+                        "创建访问令牌"
                     }
                 }
             }
@@ -635,21 +730,41 @@ fn ConfigCard() -> Element {
     };
 
     rsx! {
-        div { class: "{ADMIN_CARD_CLASS} p-8 flex flex-col gap-6",
-            h2 { class: "text-xl font-bold text-[var(--color-paper-primary)]", "客户端配置" }
-            p { class: "text-sm text-[var(--color-paper-secondary)]",
-                "在上方令牌列表点「用于配置」自动填入，或在下方手动粘贴令牌明文（形如 ygg_...）。"
+        div { class: "bg-[var(--color-paper-entry)]/40 rounded-2xl shadow-xs border border-[var(--color-paper-border)]/70 p-6 sm:p-8 flex flex-col gap-6",
+            div { class: "flex flex-col gap-1 border-b border-[var(--color-paper-border)]/60 pb-4",
+                div { class: "flex items-center gap-2.5",
+                    svg {
+                        class: "w-5 h-5 text-[var(--color-paper-accent)]",
+                        xmlns: "http://www.w3.org/2000/svg",
+                        view_box: "0 0 24 24",
+                        fill: "none",
+                        stroke: "currentColor",
+                        stroke_width: "2",
+                        stroke_linecap: "round",
+                        stroke_linejoin: "round",
+                        polyline { points: "4 17 10 11 4 5" }
+                        line { x1: "12", y1: "19", x2: "20", y2: "19" }
+                    }
+                    h2 { class: "text-lg sm:text-xl font-bold text-[var(--color-paper-primary)]",
+                        "客户端接入配置"
+                    }
+                }
+                p { class: "text-sm text-[var(--color-paper-secondary)] mt-1",
+                    "在上方令牌列表点击「用于配置」自动填入，或直接粘贴令牌明文（ygg_...）。"
+                }
             }
 
             div { class: "flex flex-col gap-2",
-                label { class: "text-sm font-medium text-[var(--color-paper-secondary)]",
-                    "令牌明文"
+                label { class: "text-xs font-semibold uppercase tracking-wider text-[var(--color-paper-secondary)]",
+                    "令牌明文 (Bearer Token)"
                 }
-                FormInput {
-                    r#type: "text",
-                    placeholder: "ygg_...",
-                    value: manual_token(),
-                    oninput: move |v: String| on_manual_input(v),
+                div { class: "relative",
+                    FormInput {
+                        r#type: "text",
+                        placeholder: "ygg_xxxxxxxxxxxxxxxxxxxx",
+                        value: manual_token(),
+                        oninput: move |v: String| on_manual_input(v),
+                    }
                 }
             }
 
@@ -672,19 +787,19 @@ fn ConfigCard() -> Element {
                     }
                 }
             } else if let Some(c) = configs() {
-                div { class: "flex flex-col gap-4",
+                div { class: "grid grid-cols-1 gap-5",
                     for (i, snippet) in c.snippets.iter().enumerate() {
                         div {
                             key: "{snippet.title}",
                             class: "animate-row-enter",
-                            style: "animation-delay: {i * 50}ms",
+                            style: "animation-delay: {i * 40}ms",
                             ConfigSnippet { snippet: snippet.clone() }
                         }
                     }
                 }
             } else {
-                p { class: "text-sm text-[var(--color-paper-tertiary)] py-4 text-center",
-                    "粘贴令牌明文后此处显示配置片段。"
+                p { class: "text-sm text-[var(--color-paper-tertiary)] py-8 text-center",
+                    "填入令牌明文后此处自动生成针对各客户端的接入配置代码。"
                 }
             }
         }
@@ -699,8 +814,6 @@ fn ConfigSnippet(snippet: McpConfigSnippet) -> Element {
     let mut toast = state.toast;
     let mut copied = use_signal(|| false);
     let title = snippet.title.clone();
-    // 反馈就在按钮本身：Toast 渲染在页面顶部（见 Mcp 组件树），配置区在页面最末，
-    // 点击「复制」时 Toast 落在视口之外，用户看不到。故按钮就地短暂变绿提示「已复制」。
     let copied_now = copied();
     let btn_class = if copied_now {
         BTN_COPIED_SM
@@ -709,9 +822,9 @@ fn ConfigSnippet(snippet: McpConfigSnippet) -> Element {
     };
     let btn_label = if copied_now { "已复制" } else { "复制" };
     rsx! {
-        div { class: "flex flex-col gap-2",
+        div { class: "bg-[var(--color-paper-theme)]/70 rounded-2xl p-5 border border-[var(--color-paper-border)]/60 flex flex-col gap-3 shadow-2xs",
             div { class: "flex items-center justify-between",
-                span { class: "text-sm font-medium text-[var(--color-paper-primary)]",
+                span { class: "text-sm font-semibold text-[var(--color-paper-primary)]",
                     "{snippet.title}"
                 }
                 button {
@@ -730,10 +843,8 @@ fn ConfigSnippet(snippet: McpConfigSnippet) -> Element {
                     "{btn_label}"
                 }
             }
-            // .md-content 是 highlight.css 的作用域钩子（.md-content pre code …）；
-            // 仅包裹 pre，不触及标题/按钮，避免 prose 排式泄漏。
             div { class: "md-content",
-                pre { class: "bg-[var(--color-paper-code-bg)] text-[var(--color-paper-primary)] rounded-lg p-3 text-xs overflow-x-auto font-mono",
+                pre { class: "bg-[var(--color-paper-entry)] text-[var(--color-paper-primary)] rounded-xl p-3.5 text-xs overflow-x-auto font-mono border border-[var(--color-paper-border)]/50",
                     code { dangerous_inner_html: "{snippet.content_html}" }
                 }
             }
@@ -760,18 +871,25 @@ fn PlaintextModal(
     let btn_label = if copied_now { "已复制" } else { "复制" };
     rsx! {
         div {
-            class: "fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4",
+            class: "fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-modal-overlay-enter",
             onclick: move |_| on_close.call(()),
             div {
-                class: "{ADMIN_CARD_CLASS} p-8 max-w-2xl w-full flex flex-col gap-4",
+                class: "bg-[var(--color-paper-theme)] text-[var(--color-paper-primary)] rounded-3xl p-7 max-w-xl w-full flex flex-col gap-5 border border-[var(--color-paper-border)] shadow-2xl animate-modal-panel-enter",
                 onclick: move |e| e.stop_propagation(),
-                h3 { class: "text-lg font-bold text-[var(--color-paper-primary)]",
-                    "{title}"
+                div { class: "flex items-center justify-between border-b border-[var(--color-paper-border)]/60 pb-3",
+                    h3 { class: "text-base sm:text-lg font-bold text-[var(--color-paper-primary)]",
+                        "{title}"
+                    }
+                    button {
+                        class: "text-[var(--color-paper-tertiary)] hover:text-[var(--color-paper-primary)] p-1 rounded-lg hover:bg-[var(--color-paper-entry)] transition-colors cursor-pointer",
+                        onclick: move |_| on_close.call(()),
+                        "×"
+                    }
                 }
-                pre { class: "bg-[var(--color-paper-code-bg)] text-[var(--color-paper-primary)] rounded-lg p-3 text-sm overflow-x-auto font-mono break-all",
+                pre { class: "bg-[var(--color-paper-entry)] text-[var(--color-paper-primary)] border border-[var(--color-paper-border)]/60 rounded-2xl p-4 text-xs font-mono break-all select-all leading-relaxed",
                     code { "{plaintext}" }
                 }
-                div { class: "flex flex-wrap gap-3 justify-end",
+                div { class: "flex flex-wrap gap-2.5 justify-end pt-1",
                     button {
                         class: "{btn_class}",
                         onclick: move |_| {
@@ -791,7 +909,7 @@ fn PlaintextModal(
                         "用于配置"
                     }
                     button {
-                        class: "px-4 py-1.5 text-sm font-medium text-[var(--color-paper-secondary)] hover:text-[var(--color-paper-primary)] transition-colors cursor-pointer",
+                        class: "px-4 py-1.5 text-sm font-medium text-[var(--color-paper-secondary)] hover:text-[var(--color-paper-primary)] hover:bg-[var(--color-paper-entry)] rounded-full transition-colors cursor-pointer",
                         onclick: move |_| on_close.call(()),
                         "关闭"
                     }

@@ -5,7 +5,6 @@
 use dioxus::prelude::*;
 
 use crate::components::skeletons::atoms::SkeletonBox;
-use crate::components::ui::{ADMIN_CARD_CLASS, ADMIN_TABLE_CLASS};
 
 /// 后台 MCP 服务骨架屏组件。
 #[component]
@@ -13,52 +12,71 @@ pub fn McpSkeleton() -> Element {
     rsx! {
         div { class: "w-full max-w-7xl mx-auto space-y-8",
             // 页头
-            div { class: "flex flex-col md:flex-row md:items-end justify-between gap-6 pb-8 border-b border-[var(--color-paper-border)]/50",
-                div { class: "space-y-2",
+            div { class: "flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-[var(--color-paper-border)]/70",
+                div { class: "space-y-1.5",
                     SkeletonBox { class: "h-9 w-36 rounded-lg" }
                     SkeletonBox { class: "h-4 w-96 rounded" }
                 }
+                SkeletonBox { class: "h-8 w-32 rounded-full" }
             }
 
-            // Token 列表表格卡片
-            div { class: "{ADMIN_TABLE_CLASS}",
-                table { class: "w-full text-sm",
-                    thead {
-                        tr { class: "border-b border-paper-border",
-                            th { class: "px-4 py-3",
-                                SkeletonBox { class: "h-3 w-16" }
-                            }
-                            th { class: "px-4 py-3 w-24",
-                                SkeletonBox { class: "h-3 w-12 mx-auto" }
-                            }
-                            th { class: "px-4 py-3 w-32",
-                                SkeletonBox { class: "h-3 w-16" }
-                            }
-                            th { class: "px-4 py-3 w-32",
-                                SkeletonBox { class: "h-3 w-16" }
-                            }
-                            th { class: "px-4 py-3 w-24",
-                                SkeletonBox { class: "h-3 w-12 ml-auto" }
+            // Token 列表表格卡片占位
+            div { class: "bg-[var(--color-paper-entry)]/40 rounded-2xl p-6 sm:p-8 space-y-6 border border-[var(--color-paper-border)]/70 shadow-xs",
+                div { class: "flex justify-between items-center border-b border-[var(--color-paper-border)]/60 pb-4",
+                    SkeletonBox { class: "h-6 w-36 rounded" }
+                    SkeletonBox { class: "h-7 w-20 rounded-full" }
+                }
+                div { class: "bg-[var(--color-paper-entry)]/40 rounded-2xl border border-[var(--color-paper-border)]/70 overflow-hidden",
+                    table { class: "w-full text-sm",
+                        thead {
+                            tr { class: "bg-[var(--color-paper-entry)]/80 border-b border-[var(--color-paper-border)]/70",
+                                th { class: "px-5 py-3.5",
+                                    SkeletonBox { class: "h-3 w-16" }
+                                }
+                                th { class: "px-4 py-3.5",
+                                    SkeletonBox { class: "h-3 w-16" }
+                                }
+                                th { class: "px-4 py-3.5",
+                                    SkeletonBox { class: "h-3 w-14" }
+                                }
+                                th { class: "px-4 py-3.5",
+                                    SkeletonBox { class: "h-3 w-14" }
+                                }
+                                th { class: "px-4 py-3.5",
+                                    SkeletonBox { class: "h-3 w-16" }
+                                }
+                                th { class: "px-4 py-3.5",
+                                    SkeletonBox { class: "h-3 w-10 mx-auto" }
+                                }
+                                th { class: "px-5 py-3.5",
+                                    SkeletonBox { class: "h-3 w-16 ml-auto" }
+                                }
                             }
                         }
-                    }
-                    tbody {
-                        for _ in 0..4 {
-                            tr { class: "border-b border-paper-border last:border-0",
-                                td { class: "px-4 py-3",
-                                    SkeletonBox { class: "h-4 w-28" }
-                                }
-                                td { class: "px-4 py-3",
-                                    SkeletonBox { class: "h-5 w-14 mx-auto rounded" }
-                                }
-                                td { class: "px-4 py-3",
-                                    SkeletonBox { class: "h-4 w-20" }
-                                }
-                                td { class: "px-4 py-3",
-                                    SkeletonBox { class: "h-4 w-20" }
-                                }
-                                td { class: "px-4 py-3",
-                                    SkeletonBox { class: "h-4 w-12 ml-auto" }
+                        tbody {
+                            for _ in 0..3 {
+                                tr { class: "border-b border-[var(--color-paper-border)]/60 last:border-0",
+                                    td { class: "px-5 py-3.5",
+                                        SkeletonBox { class: "h-4 w-28" }
+                                    }
+                                    td { class: "px-4 py-3.5",
+                                        SkeletonBox { class: "h-5 w-16 rounded-md" }
+                                    }
+                                    td { class: "px-4 py-3.5",
+                                        SkeletonBox { class: "h-4 w-20" }
+                                    }
+                                    td { class: "px-4 py-3.5",
+                                        SkeletonBox { class: "h-4 w-20" }
+                                    }
+                                    td { class: "px-4 py-3.5",
+                                        SkeletonBox { class: "h-4 w-24" }
+                                    }
+                                    td { class: "px-4 py-3.5",
+                                        SkeletonBox { class: "h-5 w-12 mx-auto rounded-full" }
+                                    }
+                                    td { class: "px-5 py-3.5",
+                                        SkeletonBox { class: "h-6 w-36 ml-auto rounded" }
+                                    }
                                 }
                             }
                         }
@@ -67,19 +85,19 @@ pub fn McpSkeleton() -> Element {
             }
 
             // 新建 Token 表单卡片占位
-            div { class: "{ADMIN_CARD_CLASS} p-8 space-y-6",
+            div { class: "bg-[var(--color-paper-entry)]/40 rounded-2xl p-6 sm:p-8 space-y-6 border border-[var(--color-paper-border)]/70 shadow-xs",
                 SkeletonBox { class: "h-6 w-32 rounded" }
-                div { class: "grid grid-cols-1 md:grid-cols-3 gap-4",
+                div { class: "grid grid-cols-1 md:grid-cols-3 gap-5",
                     div { class: "space-y-2",
-                        SkeletonBox { class: "h-4 w-16 rounded" }
+                        SkeletonBox { class: "h-3.5 w-16 rounded" }
                         SkeletonBox { class: "h-10 w-full rounded-2xl" }
                     }
                     div { class: "space-y-2",
-                        SkeletonBox { class: "h-4 w-16 rounded" }
+                        SkeletonBox { class: "h-3.5 w-20 rounded" }
                         SkeletonBox { class: "h-10 w-full rounded-2xl" }
                     }
                     div { class: "space-y-2",
-                        SkeletonBox { class: "h-4 w-16 rounded" }
+                        SkeletonBox { class: "h-3.5 w-16 rounded" }
                         SkeletonBox { class: "h-10 w-full rounded-2xl" }
                     }
                 }
@@ -87,13 +105,17 @@ pub fn McpSkeleton() -> Element {
             }
 
             // 客户端配置卡片占位
-            div { class: "{ADMIN_CARD_CLASS} p-8 space-y-6",
+            div { class: "bg-[var(--color-paper-entry)]/40 rounded-2xl p-6 sm:p-8 space-y-6 border border-[var(--color-paper-border)]/70 shadow-xs",
                 SkeletonBox { class: "h-6 w-36 rounded" }
-                div { class: "grid grid-cols-1 md:grid-cols-2 gap-6",
-                    for _ in 0..4 {
-                        div { class: "p-4 border border-paper-border rounded-2xl space-y-3",
-                            SkeletonBox { class: "h-5 w-28 rounded" }
-                            SkeletonBox { class: "h-24 w-full rounded-xl" }
+                SkeletonBox { class: "h-10 w-full rounded-2xl" }
+                div { class: "space-y-4",
+                    for _ in 0..3 {
+                        div { class: "p-5 rounded-2xl border border-[var(--color-paper-border)]/60 space-y-3",
+                            div { class: "flex justify-between items-center",
+                                SkeletonBox { class: "h-4 w-32 rounded" }
+                                SkeletonBox { class: "h-7 w-16 rounded-full" }
+                            }
+                            SkeletonBox { class: "h-16 w-full rounded-xl" }
                         }
                     }
                 }
