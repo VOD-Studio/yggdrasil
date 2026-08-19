@@ -7,14 +7,8 @@ use dioxus::prelude::*;
 use crate::api::comments::create_comment;
 use crate::components::comments::section::CommentContext;
 use crate::components::forms::{AlertBox, INPUT_CLASS};
-use crate::components::ui::UserAvatar;
+use crate::components::ui::{UserAvatar, BTN_PRIMARY_SM};
 use crate::utils::comment_storage::{self, PendingComment};
-
-/// 评论提交按钮样式：去掉全宽，改为内联宽度并右对齐。
-///
-/// 与 `BUTTON_PRIMARY_CLASS` 视觉一致，但不含 `w-full`，并把 `px-4` 加宽为 `px-6`，
-/// 使按钮宽度跟随文字、更适合文章页内联场景。
-const COMMENT_SUBMIT_CLASS: &str = "py-2.5 px-6 bg-paper-accent text-white font-medium rounded-full hover:brightness-110 active:scale-[0.98] transition-all duration-200 cursor-pointer";
 
 /// 评论表单组件，用于顶层评论或回复评论。
 ///
@@ -187,8 +181,6 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
                     }
                 }
 
-                p { class: "text-xs text-paper-tertiary", "支持 Markdown 语法" }
-
                 // 蜜罐字段：对普通用户隐藏，用于拦截简单机器人（仅匿名渲染；
                 // 登录用户的身份由会话保证，服务端也跳过蜜罐校验）。
                 if viewer().is_none() {
@@ -201,9 +193,11 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
                     }
                 }
 
-                div { class: "flex justify-end",
+                div { class: "flex items-center justify-between pt-1",
+                    p { class: "text-xs text-paper-tertiary", "支持 Markdown 语法" }
                     button {
-                        class: COMMENT_SUBMIT_CLASS,
+                        class: "{BTN_PRIMARY_SM}",
+                        class: if submitting() { "opacity-60 cursor-not-allowed pointer-events-none" } else { "" },
                         disabled: submitting(),
                         onclick: move |_| {
                             if submitting() {
