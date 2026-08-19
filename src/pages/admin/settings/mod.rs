@@ -265,14 +265,14 @@ pub fn SiteSettingsPage() -> Element {
         // 已切到 internal-scroll 变体：卡片 overflow-hidden、main 无 padding 纯 flex 容器），
         // 故内边距 px-6 py-12 由本页自带。纯 flex 约束，不用百分比——百分比会被 main 的
         // min-height:auto 循环撑大失效。页头固定，下方 flex-1 区域仅占剩余高度。
-        div { class: "animate-page-enter w-full flex-1 min-h-0 flex flex-col px-6 py-12",
+        div { class: "animate-page-enter w-full flex-1 min-h-0 flex flex-col px-6 py-8 sm:py-12",
             // 页头（固定，不随右侧内容滚动）
-            div { class: "flex-shrink-0 flex flex-col md:flex-row md:items-end justify-between gap-6 pb-6 border-b border-[var(--color-paper-border)] mb-6",
+            div { class: "flex-shrink-0 flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-[var(--color-paper-border)]/70 mb-6",
                 div {
-                    h1 { class: "text-4xl font-extrabold tracking-tight text-[var(--color-paper-primary)]",
+                    h1 { class: "text-3xl sm:text-4xl font-extrabold tracking-tight text-[var(--color-paper-primary)]",
                         "站点配置"
                     }
-                    p { class: "text-base text-[var(--color-paper-secondary)] mt-2",
+                    p { class: "text-sm text-[var(--color-paper-secondary)] mt-1.5",
                         "管理站点公开配置、安全策略与后台行为参数"
                     }
                 }
@@ -285,99 +285,86 @@ pub fn SiteSettingsPage() -> Element {
                 }
             }
 
-            // 左侧导航 + 右侧内容（占满剩余高度，仅右侧内容列滚动）
-            div { class: "flex flex-col lg:flex-row gap-6 flex-1 min-h-0",
-                // 左侧导航（固定；视口过矮时菜单自身纵向滚动）
-                nav { class: "lg:w-48 flex-shrink-0 min-h-0",
-                    div { class: "flex lg:flex-col gap-1 overflow-x-auto lg:overflow-x-visible lg:overflow-y-auto lg:h-full pb-2 lg:pb-0",
-                        for (idx, &section) in SettingsSection::all().iter().enumerate() {
-                            {
-                                let is_active = active() == section;
-                                let label = section.label();
-                                let icon_path = section.icon_path();
-                                let base = "flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-all whitespace-nowrap cursor-pointer border";
-                                let color = if is_active {
-                                    "bg-[var(--color-paper-theme)] text-[var(--color-paper-primary)] shadow-sm border-[var(--color-paper-border)]"
-                                } else {
-                                    "text-[var(--color-paper-secondary)] hover:bg-[var(--color-paper-theme)]/50 hover:text-[var(--color-paper-primary)] border-transparent"
-                                };
-                                rsx! {
-                                    button {
-                                        key: "{section.as_str()}",
-                                        class: "animate-row-enter {base} {color}",
-                                        style: "animation-delay: {idx * 35}ms",
-                                        onclick: move |_| {
-                                            active.set(section);
-                                            #[cfg(target_arch = "wasm32")]
-                                            {
-                                                let g = lock_gen().wrapping_add(1);
-                                                lock_gen.set(g);
-                                                spy_lock.set(Some((section, g)));
-                                                scroll_to_section(section);
-                                                // 兜底解锁：目标分区过矮或已在
-                                                // 原位时不产生滚动事件，锁靠超时释放。
-                                                spawn(async move {
-                                                    crate::utils::time::sleep_ms(1200).await;
-                                                    if matches!(spy_lock(), Some((_, gg)) if gg == g) {
-                                                        spy_lock.set(None);
-                                                    }
-                                                });
+            // 顶部横向分类导航栏（水平胶囊语言，消除双侧栏宽度不协调问题）
+            div { class: "flex-shrink-0 flex items-center gap-2 overflow-x-auto pb-3 mb-6 border-b border-[var(--color-paper-border)]/60 scrollbar-none select-none",
+                for (idx, &section) in SettingsSection::all().iter().enumerate() {
+                    {
+                        let is_active = active() == section;
+                        let label = section.label();
+                        let icon_path = section.icon_path();
+                        let base = "inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap cursor-pointer shrink-0 border";
+                        let color = if is_active {
+                            "bg-[var(--color-paper-accent)] text-[var(--color-paper-theme)] shadow-2xs border-transparent font-semibold"
+                        } else {
+                            "text-[var(--color-paper-secondary)] bg-[var(--color-paper-entry)]/80 hover:bg-[var(--color-paper-theme)] hover:text-[var(--color-paper-primary)] border-[var(--color-paper-border)]/70"
+                        };
+                        rsx! {
+                            button {
+                                key: "{section.as_str()}",
+                                class: "animate-row-enter {base} {color}",
+                                style: "animation-delay: {idx * 25}ms",
+                                onclick: move |_| {
+                                    active.set(section);
+                                    #[cfg(target_arch = "wasm32")]
+                                    {
+                                        let g = lock_gen().wrapping_add(1);
+                                        lock_gen.set(g);
+                                        spy_lock.set(Some((section, g)));
+                                        scroll_to_section(section);
+                                        spawn(async move {
+                                            crate::utils::time::sleep_ms(1200).await;
+                                            if matches!(spy_lock(), Some((_, gg)) if gg == g) {
+                                                spy_lock.set(None);
                                             }
-                                        },
-                                        svg {
-                                            class: "w-4 h-4 flex-shrink-0",
-                                            view_box: "0 0 24 24",
-                                            fill: "none",
-                                            stroke: "currentColor",
-                                            stroke_width: "1.8",
-                                            stroke_linecap: "round",
-                                            stroke_linejoin: "round",
-                                            path { d: "{icon_path}" }
-                                        }
-                                        "{label}"
+                                        });
                                     }
+                                },
+                                svg {
+                                    class: "w-3.5 h-3.5 flex-shrink-0",
+                                    view_box: "0 0 24 24",
+                                    fill: "none",
+                                    stroke: "currentColor",
+                                    stroke_width: "2",
+                                    stroke_linecap: "round",
+                                    stroke_linejoin: "round",
+                                    path { d: "{icon_path}" }
                                 }
+                                "{label}"
                             }
                         }
                     }
                 }
+            }
 
-                // 右侧内容：全部分区常驻挂载、纵向堆叠在同一个滚动容器里。
-                // rounded-2xl 在滚动容器上：overflow 沿 padding-box 圆角裁切，面板被截断的
-                // 底角/顶角也呈现与卡片（16px）一致的圆角，非直角切断。
-                // scroll-smooth 让点击导航的 scrollIntoView 平滑滚动；onscroll 做
-                // scroll-spy 同步左侧高亮（世代锁期间只检测到达、不改写 active）。
-                div {
-                    id: "settings-scroll",
-                    class: "flex-1 min-w-0 min-h-0 overflow-y-auto pb-6 rounded-2xl scroll-smooth",
-                    onscroll: move |_| {
-                        #[cfg(target_arch = "wasm32")]
-                        {
-                            let Some(current) = compute_visible_section() else {
-                                return;
-                            };
-                            if let Some((target, _)) = spy_lock() {
-                                if current == target {
-                                    spy_lock.set(None);
-                                }
-                                return;
+            // 内容区：全部分区常驻挂载、纵向堆叠在同一个滚动容器里
+            div {
+                id: "settings-scroll",
+                class: "flex-1 min-w-0 min-h-0 overflow-y-auto pb-8 rounded-2xl scroll-smooth",
+                onscroll: move |_| {
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        let Some(current) = compute_visible_section() else {
+                            return;
+                        };
+                        if let Some((target, _)) = spy_lock() {
+                            if current == target {
+                                spy_lock.set(None);
                             }
-                            if *active.peek() != current {
-                                active.set(current);
-                            }
+                            return;
                         }
-                    },
-                    div { class: "flex flex-col gap-8",
-                        for (idx, &section) in SettingsSection::all().iter().enumerate() {
-                            section {
-                                key: "{section.as_str()}",
-                                id: "{section.dom_id()}",
-                                // 入场级联（每个分区错开 60ms）；scroll-mt-2 给
-                                // scrollIntoView 落点留 8px 顶距，须小于 spy 判定线。
-                                class: "scroll-mt-2 animate-section-enter",
-                                style: "animation-delay: {idx * 60}ms",
-                                {render_section(section, toast)}
-                            }
+                        if *active.peek() != current {
+                            active.set(current);
+                        }
+                    }
+                },
+                div { class: "flex flex-col gap-8 max-w-5xl mx-auto w-full",
+                    for (idx, &section) in SettingsSection::all().iter().enumerate() {
+                        section {
+                            key: "{section.as_str()}",
+                            id: "{section.dom_id()}",
+                            class: "scroll-mt-2 animate-section-enter",
+                            style: "animation-delay: {idx * 40}ms",
+                            {render_section(section, toast)}
                         }
                     }
                 }
