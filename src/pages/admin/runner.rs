@@ -10,14 +10,15 @@ use dioxus::prelude::*;
 
 use crate::components::code_runner::CodeRunner;
 use crate::components::forms::FormInput;
-use crate::components::ui::{ADMIN_CARD_CLASS, BTN_PRIMARY_SM};
 use crate::infra::runner_config::ResourceLimits;
-
 /// 受支持的语言集合（与 LANGUAGES 注册表 / CODE_RUNNER_LANGUAGES 对齐）。
-/// 仅列 canonical key；别名（js/ts/rs 等）经 normalize_lang 归一到此处某项，
-/// 按钮不重复展示别名，避免选择拥挤。
-const SUPPORTED_LANGS: &[&str] = &["python", "node", "go", "rust", "bun"];
-
+const SUPPORTED_LANGS: &[(&str, &str)] = &[
+    ("python", "Python"),
+    ("node", "Node.js"),
+    ("go", "Go"),
+    ("rust", "Rust"),
+    ("bun", "Bun (TS)"),
+];
 /// 默认示例源码（按语言）。
 fn default_source(lang: &str) -> String {
     match lang {
@@ -59,38 +60,63 @@ pub fn Runner() -> Element {
 
     rsx! {
         div { class: "animate-page-enter w-full max-w-7xl mx-auto space-y-8",
-            // 页头：与 dashboard / posts / system 对齐（h1 text-4xl + 底部分割线）
-            div { class: "flex flex-col md:flex-row md:items-end justify-between gap-6 pb-8 border-b border-[var(--color-paper-border)]/50",
+            // 页头：标题 + 副标题 + 运行引擎指示胶囊
+            div { class: "flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-[var(--color-paper-border)]/70",
                 div {
-                    h1 { class: "text-4xl font-extrabold tracking-tight text-[var(--color-paper-primary)]",
+                    h1 { class: "text-3xl sm:text-4xl font-extrabold tracking-tight text-[var(--color-paper-primary)]",
                         "代码试运行沙箱"
                     }
-                    p { class: "text-base text-[var(--color-paper-secondary)] mt-2",
-                        "在此快速试运行代码，验证文章中可运行代码块的预期输出。资源钳制与读者侧一致，速率限制对 admin 放行。"
+                    p { class: "text-sm text-[var(--color-paper-secondary)] mt-1.5",
+                        "在线运行与调试多语言代码，实时验证文章内交互代码块的预期输出"
+                    }
+                }
+                div { class: "flex items-center gap-2.5",
+                    div { class: "inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-mono bg-[var(--color-paper-entry)] text-[var(--color-paper-secondary)] border border-[var(--color-paper-border)]/70 shadow-2xs",
+                        span { class: "w-1.5 h-1.5 rounded-full bg-[var(--color-paper-accent)]" }
+                        span { "Docker 沙箱环境" }
                     }
                 }
             }
 
             // 配置卡片：语言切换 + 资源覆盖
-            div { class: "{ADMIN_CARD_CLASS} p-8 flex flex-col gap-6",
-                // 语言切换
-                div { class: "flex flex-col gap-2",
-                    label { class: "text-sm font-medium text-[var(--color-paper-secondary)]",
-                        "语言"
+            div { class: "bg-[var(--color-paper-entry)]/40 rounded-2xl shadow-xs border border-[var(--color-paper-border)]/70 p-6 sm:p-8 flex flex-col gap-6",
+                // 卡片标题
+                div { class: "flex items-center gap-2.5 border-b border-[var(--color-paper-border)]/60 pb-4",
+                    svg {
+                        class: "w-5 h-5 text-[var(--color-paper-accent)]",
+                        xmlns: "http://www.w3.org/2000/svg",
+                        view_box: "0 0 24 24",
+                        fill: "none",
+                        stroke: "currentColor",
+                        stroke_width: "2",
+                        stroke_linecap: "round",
+                        stroke_linejoin: "round",
+                        path { d: "M4 17l6-6-6-6" }
+                        path { d: "M12 19h8" }
                     }
-                    div { class: "flex gap-2",
-                        for (idx, l) in SUPPORTED_LANGS.iter().enumerate() {
+                    h2 { class: "text-lg sm:text-xl font-bold text-[var(--color-paper-primary)]",
+                        "运行环境与配置"
+                    }
+                }
+
+                // 语言选择胶囊群
+                div { class: "flex flex-col gap-2.5",
+                    label { class: "text-xs font-semibold uppercase tracking-wider text-[var(--color-paper-secondary)]",
+                        "编程语言"
+                    }
+                    div { class: "flex flex-wrap gap-2.5",
+                        for (idx, (l, label_text)) in SUPPORTED_LANGS.iter().enumerate() {
                             button {
                                 key: "{l}",
                                 class: format!(
-                                    "animate-row-enter {}",
+                                    "animate-row-enter inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-medium rounded-full transition-all cursor-pointer {}",
                                     if lang() == *l {
-                                        BTN_PRIMARY_SM
+                                        "bg-[var(--color-paper-accent)] text-[var(--color-paper-theme)] shadow-2xs font-semibold"
                                     } else {
-                                        "px-4 py-1.5 text-sm font-medium rounded-full text-[var(--color-paper-secondary)] bg-[var(--color-paper-theme)] hover:bg-[var(--color-paper-border)] hover:text-[var(--color-paper-primary)] transition cursor-pointer"
+                                        "text-[var(--color-paper-secondary)] bg-[var(--color-paper-entry)] hover:bg-[var(--color-paper-theme)] hover:text-[var(--color-paper-primary)] border border-[var(--color-paper-border)]/70"
                                     },
                                 ),
-                                style: "animation-delay: {idx * 50}ms",
+                                style: "animation-delay: {idx * 40}ms",
                                 onclick: {
                                     let ll = (*l).to_string();
                                     move |_| {
@@ -100,7 +126,7 @@ pub fn Runner() -> Element {
                                         }
                                     }
                                 },
-                                "{l}"
+                                span { "{label_text}" }
                             }
                         }
                     }
@@ -108,8 +134,13 @@ pub fn Runner() -> Element {
 
                 // 资源覆盖（JSON）
                 div { class: "flex flex-col gap-2",
-                    label { class: "text-sm font-medium text-[var(--color-paper-secondary)]",
-                        "资源覆盖 (JSON, 可选)"
+                    div { class: "flex items-center justify-between",
+                        label { class: "text-xs font-semibold uppercase tracking-wider text-[var(--color-paper-secondary)]",
+                            "资源限制覆盖 (JSON, 可选)"
+                        }
+                        span { class: "text-[11px] text-[var(--color-paper-tertiary)] font-mono",
+                            "timeout_secs / memory_mb / cpu_cores"
+                        }
                     }
                     FormInput {
                         r#type: "text",
@@ -119,15 +150,14 @@ pub fn Runner() -> Element {
                         oninput: move |v: String| overrides_json.set(v),
                     }
                     if !override_error.is_empty() {
-                        p { class: "text-xs text-red-500 dark:text-red-400", "{override_error}" }
+                        p { class: "text-xs text-red-500 dark:text-red-400 font-medium", "{override_error}" }
                     } else {
-                        p { class: "text-xs text-[var(--color-paper-tertiary)]",
-                            "覆盖 cpu_cores / memory_mb / timeout_secs / output_bytes / allow_network；最终仍受 CODE_RUNNER_MAX_* 钳制"
+                        p { class: "text-xs text-[var(--color-paper-tertiary)] leading-normal",
+                            "支持覆盖 cpu_cores / memory_mb / timeout_secs / output_bytes / allow_network；最终仍受服务端全局上限约束"
                         }
                     }
                 }
             }
-
             // 强制 remount 切换语言：CodeRunner 挂载 use_effect 的「防重复 init」守卫
             // （editor_handle.is_some() → return）阻止 CodeMirror 重建到新语言；且 plain
             // String prop 非响应式，内部 use_effect 不会因 prop 变化重跑（与 post_detail 翻页
