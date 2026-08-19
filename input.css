@@ -921,14 +921,18 @@
     background-color: transparent;
     background-position: center;
     background-repeat: no-repeat;
-    background-size: 0.75rem;
+    background-size: 0;
     cursor: default;
-    transition: background-color 0.15s ease, border-color 0.15s ease;
+    transition:
+      background-color 0.15s ease,
+      border-color 0.15s ease,
+      background-size 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
   }
 
   .md-content li > input[type="checkbox"]:checked {
     background-color: var(--color-paper-accent);
     border-color: var(--color-paper-accent);
+    background-size: 0.78rem;
     /* 亮色：中绿 #40a02b 底 + 白对勾（对比 ≥ 4.5:1） */
     background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2016%2016'%20fill='none'%20stroke='%23ffffff'%20stroke-width='2.2'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d='M3.5%208.5l3%203%206-6.5'/%3E%3C/svg%3E");
   }
@@ -937,7 +941,6 @@
   .dark .md-content li > input[type="checkbox"]:checked {
     background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2016%2016'%20fill='none'%20stroke='%231e1e2e'%20stroke-width='2.2'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d='M3.5%208.5l3%203%206-6.5'/%3E%3C/svg%3E");
   }
-
   .md-content hr {
     margin: 30px 0;
     height: 2px;

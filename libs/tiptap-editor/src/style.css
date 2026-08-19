@@ -386,13 +386,46 @@
 }
 
 .tiptap-editor ul[data-type='taskList'] li > label input[type='checkbox'] {
-  width: 16px;
-  height: 16px;
-  /* 主强调色 Latte green */
-  accent-color: #40a02b;
+  appearance: none;
+  -webkit-appearance: none;
+  width: 1.15rem;
+  height: 1.15rem;
+  margin: 0;
+  border: 1.5px solid #bcc0cc;
+  border-radius: 4px;
+  background-color: transparent;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 0;
   cursor: pointer;
+  flex-shrink: 0;
+  vertical-align: middle;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    background-size 0.22s cubic-bezier(0.34, 1.56, 0.64, 1),
+    transform 0.12s ease;
 }
 
+.tiptap-editor ul[data-type='taskList'] li > label input[type='checkbox']:hover {
+  border-color: #40a02b;
+}
+
+.tiptap-editor ul[data-type='taskList'] li > label input[type='checkbox']:active {
+  transform: scale(0.9);
+}
+
+.tiptap-editor ul[data-type='taskList'] li > label input[type='checkbox']:checked {
+  background-color: #40a02b;
+  border-color: #40a02b;
+  background-size: 0.78rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23ffffff' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 8.5l3 3 6-6.5'/%3E%3C/svg%3E");
+}
+
+.tiptap-editor ul[data-type='taskList'] li > label input[type='checkbox']:focus-visible {
+  outline: 2px solid #40a02b;
+  outline-offset: 1px;
+}
 .tiptap-editor ul[data-type='taskList'] li > div {
   flex: 1;
 }
@@ -584,8 +617,21 @@
 
 /* ========== Dark Theme: Task List (Mocha) ========== */
 .dark .tiptap-editor ul[data-type='taskList'] li > label input[type='checkbox'] {
-  /* 主强调色 Mocha green */
-  accent-color: #a6e3a1;
+  border-color: #45475a;
+}
+
+.dark .tiptap-editor ul[data-type='taskList'] li > label input[type='checkbox']:hover {
+  border-color: #a6e3a1;
+}
+
+.dark .tiptap-editor ul[data-type='taskList'] li > label input[type='checkbox']:checked {
+  background-color: #a6e3a1;
+  border-color: #a6e3a1;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%231e1e2e' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 8.5l3 3 6-6.5'/%3E%3C/svg%3E");
+}
+
+.dark .tiptap-editor ul[data-type='taskList'] li > label input[type='checkbox']:focus-visible {
+  outline: 2px solid #a6e3a1;
 }
 
 /* ========== Source Toggle Button ========== */
