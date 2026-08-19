@@ -1,6 +1,6 @@
-//! 后台「站点配置」页面（分区化重构）。
+//! 后台「站点配置」页面（滚动联动分区布局）。
 //!
-//! 采用左侧分类导航 + 右侧内容的布局（2026 admin UX 最佳实践），将全部站点级
+//! 左侧分类导航 + 右侧滚动内容的布局（2026 admin UX 最佳实践），将全部站点级
 //! 配置集中到一处。分区按功能域组织：
 //!
 //! - **站点**：页脚 GitHub 链接等公开配置（前台可见）
@@ -11,9 +11,13 @@
 //! - **上传**：素材上传弹窗并发数（即时生效）
 //! - **系统**：只读展示启动时配置（数据库、日志、Docker 等，需重启生效）
 //!
-//! 分区切换用 `use_signal`（不深链 / 不走分页路由），与 system 页面的 tab 模式一致。
-//! 各分区拆分为独立子模块，状态完全独立、互不共享——切换分区时父组件用 `key`
-//! 强制卸载旧分区组件，其内部 signal 随之销毁。
+//! 与 tab 切换不同，全部分区**常驻挂载、纵向堆叠**在同一个滚动容器里：
+//! - 点击左侧导航 → 容器 `scroll-smooth` + `scrollIntoView` 平滑滚动到对应分区；
+//! - 手动滚动 → scroll-spy（复用 changelog.rs 的 getBoundingClientRect 判定线
+//!   模式）实时同步左侧高亮；
+//! - 点击触发的平滑滚动期间用「世代锁」抑制 spy，避免途经分区依次闪过高亮。
+//!
+//! 各分区拆分为独立子模块，状态完全独立、互不共享，全部挂载后各自存活。
 //!
 //! 仅 WASM 前端交互（照 mcp.rs / friends.rs 的 `#[cfg(target_arch = "wasm32")]`
 //! 门控模式）。
@@ -130,15 +134,111 @@ impl SettingsSection {
             SettingsSection::System,
         ]
     }
+
+    /// 分区锚点元素的 DOM id（scroll-spy 判定与 scrollIntoView 定位共用）。
+    fn dom_id(&self) -> String {
+        format!("settings-sec-{}", self.as_str())
+    }
 }
 
-/// 管理后台站点配置页面（分区化布局）。
+/// 计算滚动容器中当前命中的分区（仅 wasm；模式复用 changelog.rs 的判定线法：
+/// 容器内部分区数量有限，每次滚动事件十几次 rect 读取成本可忽略，无需
+/// IntersectionObserver 那套可见性集合管理）。
+#[cfg(target_arch = "wasm32")]
+fn compute_visible_section() -> Option<SettingsSection> {
+    let document = web_sys::window()?.document()?;
+    let container = document.get_element_by_id("settings-scroll")?;
+    let container_top = container.get_bounding_client_rect().top();
+
+    // 贴底 → 强制末项：末分区内容短时永远到不了判定线。
+    let at_bottom = f64::from(container.scroll_top()) + f64::from(container.client_height())
+        >= f64::from(container.scroll_height()) - 4.0;
+    let all = SettingsSection::all();
+    if at_bottom {
+        return all.last().copied();
+    }
+
+    // 判定线 = 容器顶部往下 40px（须大于分区的 scroll-mt-2=8px 落点余量）。
+    // 顶部已越过判定线的最后一个分区 = 当前阅读位置。
+    const THRESHOLD_PX: f64 = 40.0;
+    let mut current: Option<SettingsSection> = None;
+    for section in all {
+        let Some(el) = document.get_element_by_id(&section.dom_id()) else {
+            break;
+        };
+        if el.get_bounding_client_rect().top() - container_top <= THRESHOLD_PX {
+            current = Some(section);
+        } else {
+            break;
+        }
+    }
+    // 首分区尚未越过判定线（页面顶附近）→ 回退首项。
+    current.or_else(|| all.first().copied())
+}
+
+/// 平滑滚动到指定分区（仅 wasm）。平滑由滚动容器的 `scroll-smooth`
+/// （scroll-behavior: smooth）提供，这里只需瞬时 scrollIntoView。
+#[cfg(target_arch = "wasm32")]
+fn scroll_to_section(section: SettingsSection) {
+    let Some(document) = web_sys::window().and_then(|w| w.document()) else {
+        return;
+    };
+    let Some(el) = document.get_element_by_id(&section.dom_id()) else {
+        return;
+    };
+    el.scroll_into_view();
+}
+
+/// 渲染单个分区组件。全部分区常驻挂载，各分区状态独立、互不共享。
+fn render_section(section: SettingsSection, toast: Callback<(String, bool)>) -> Element {
+    match section {
+        SettingsSection::Security => rsx! {
+            SecuritySection { toast }
+        },
+        SettingsSection::RateLimit => rsx! {
+            RateLimitSection { toast }
+        },
+        SettingsSection::Site => rsx! {
+            SiteSection { toast }
+        },
+        SettingsSection::Cache => rsx! {
+            CacheSection { toast }
+        },
+        SettingsSection::Backup => rsx! {
+            BackupSection { toast }
+        },
+        SettingsSection::Image => rsx! {
+            ImageSection { toast }
+        },
+        SettingsSection::Runner => rsx! {
+            RunnerSection { toast }
+        },
+        SettingsSection::Trash => rsx! {
+            TrashSection { toast }
+        },
+        SettingsSection::Upload => rsx! {
+            UploadSection { toast }
+        },
+        SettingsSection::System => rsx! {
+            SystemSection {}
+        },
+    }
+}
+
+/// 管理后台站点配置页面（滚动联动分区布局）。
 ///
-/// 左侧分类导航 + 右侧分区内容。分区切换用 `use_signal`，切换时用 `key`
-/// 强制卸载旧分区组件。
+/// 左侧分类导航 + 右侧纵向堆叠的全部分区。点击导航平滑滚动到对应分区；
+/// 手动滚动时 scroll-spy 同步左侧高亮（`active` 信号驱动）。
 #[component]
 pub fn SiteSettingsPage() -> Element {
     let mut active = use_signal(|| SettingsSection::Site);
+    // scroll-spy 锁定：点击导航后的平滑滚动期间抑制 spy 改写 active，避免途经
+    // 分区依次闪过高亮。u32 为单调世代号，防止上一次点击的超时回调误清本次的锁。
+    // 仅 wasm 使用（server 目标下 onscroll/onclick 体内的 DOM 逻辑整体 cfg 掉）。
+    #[cfg(target_arch = "wasm32")]
+    let mut spy_lock: Signal<Option<(SettingsSection, u32)>> = use_signal(|| None);
+    #[cfg(target_arch = "wasm32")]
+    let mut lock_gen: Signal<u32> = use_signal(|| 0);
     let mut toast_state: Signal<Option<(String, bool)>> = use_signal(|| None);
     let toast: Callback<(String, bool)> = Callback::new(move |m| toast_state.set(Some(m)));
     // 展示信号：toast_state 驱动 is-open（展开/收起），display_* 保留最近一条消息，
@@ -206,7 +306,24 @@ pub fn SiteSettingsPage() -> Element {
                                         key: "{section.as_str()}",
                                         class: "animate-row-enter {base} {color}",
                                         style: "animation-delay: {idx * 35}ms",
-                                        onclick: move |_| active.set(section),
+                                        onclick: move |_| {
+                                            active.set(section);
+                                            #[cfg(target_arch = "wasm32")]
+                                            {
+                                                let g = lock_gen().wrapping_add(1);
+                                                lock_gen.set(g);
+                                                spy_lock.set(Some((section, g)));
+                                                scroll_to_section(section);
+                                                // 兜底解锁：目标分区过矮或已在
+                                                // 原位时不产生滚动事件，锁靠超时释放。
+                                                spawn(async move {
+                                                    crate::utils::time::sleep_ms(1200).await;
+                                                    if matches!(spy_lock(), Some((_, gg)) if gg == g) {
+                                                        spy_lock.set(None);
+                                                    }
+                                                });
+                                            }
+                                        },
                                         svg {
                                             class: "w-4 h-4 flex-shrink-0",
                                             view_box: "0 0 24 24",
@@ -225,50 +342,41 @@ pub fn SiteSettingsPage() -> Element {
                     }
                 }
 
-                // 右侧内容：滚动容器常驻（不重挂载以免每次切 tab 丢失滚动位置与圆角裁切），
-                // 内层动画节点用 std::iter::once 包一层 keyed remount——非列表元素的裸 key
-                // 会被 Dioxus diff 忽略（见 post_detail.rs 头文档约定 #5），必须走 once 列表
-                // 才能在 active() 变化时真正卸载/重建，从而重播 animate-section-enter。
+                // 右侧内容：全部分区常驻挂载、纵向堆叠在同一个滚动容器里。
                 // rounded-2xl 在滚动容器上：overflow 沿 padding-box 圆角裁切，面板被截断的
                 // 底角/顶角也呈现与卡片（16px）一致的圆角，非直角切断。
-                div { class: "flex-1 min-w-0 min-h-0 overflow-y-auto pb-6 rounded-2xl",
-                    for section_key in std::iter::once(active().as_str()) {
-                        div {
-                            key: "{section_key}",
-                            class: "animate-section-enter",
-                            {
-                                match active() {
-                                    SettingsSection::Security => rsx! {
-                                        SecuritySection { toast }
-                                    },
-                                    SettingsSection::RateLimit => rsx! {
-                                        RateLimitSection { toast }
-                                    },
-                                    SettingsSection::Site => rsx! {
-                                        SiteSection { toast }
-                                    },
-                                    SettingsSection::Cache => rsx! {
-                                        CacheSection { toast }
-                                    },
-                                    SettingsSection::Backup => rsx! {
-                                        BackupSection { toast }
-                                    },
-                                    SettingsSection::Image => rsx! {
-                                        ImageSection { toast }
-                                    },
-                                    SettingsSection::Runner => rsx! {
-                                        RunnerSection { toast }
-                                    },
-                                    SettingsSection::Trash => rsx! {
-                                        TrashSection { toast }
-                                    },
-                                    SettingsSection::Upload => rsx! {
-                                        UploadSection { toast }
-                                    },
-                                    SettingsSection::System => rsx! {
-                                        SystemSection {}
-                                    },
+                // scroll-smooth 让点击导航的 scrollIntoView 平滑滚动；onscroll 做
+                // scroll-spy 同步左侧高亮（世代锁期间只检测到达、不改写 active）。
+                div {
+                    id: "settings-scroll",
+                    class: "flex-1 min-w-0 min-h-0 overflow-y-auto pb-6 rounded-2xl scroll-smooth",
+                    onscroll: move |_| {
+                        #[cfg(target_arch = "wasm32")]
+                        {
+                            let Some(current) = compute_visible_section() else {
+                                return;
+                            };
+                            if let Some((target, _)) = spy_lock() {
+                                if current == target {
+                                    spy_lock.set(None);
                                 }
+                                return;
+                            }
+                            if *active.peek() != current {
+                                active.set(current);
+                            }
+                        }
+                    },
+                    div { class: "flex flex-col gap-8",
+                        for (idx, &section) in SettingsSection::all().iter().enumerate() {
+                            section {
+                                key: "{section.as_str()}",
+                                id: "{section.dom_id()}",
+                                // 入场级联（每个分区错开 60ms）；scroll-mt-2 给
+                                // scrollIntoView 落点留 8px 顶距，须小于 spy 判定线。
+                                class: "scroll-mt-2 animate-section-enter",
+                                style: "animation-delay: {idx * 60}ms",
+                                {render_section(section, toast)}
                             }
                         }
                     }
