@@ -153,9 +153,22 @@ mod tests {
     }
 
     #[test]
-    fn render_comment_no_img_tags() {
+    fn render_comment_renders_img() {
+        // 评论支持图片：站内上传路径与 https 图床都渲染为 <img>，src/alt 保留。
+        let result = render_comment_markdown("![截图](/uploads/2026/08/a.webp)");
+        assert!(result.contains("<img"), "应渲染 img: {result}");
+        assert!(result.contains(r#"src="/uploads/2026/08/a.webp""#), "src 保留: {result}");
+        assert!(result.contains(r#"alt="截图""#), "alt 保留: {result}");
+
         let result = render_comment_markdown("![alt](https://example.com/img.png)");
-        assert!(!result.contains("<img"));
+        assert!(result.contains(r#"src="https://example.com/img.png""#), "https 图床保留: {result}");
+    }
+
+    #[test]
+    fn render_comment_img_unsafe_src_removed() {
+        // 危险 src（javascript:/data:）被 sanitizer 剥除。
+        let result = render_comment_markdown("![x](javascript:alert(1))");
+        assert!(!result.contains("javascript:"), "危险 src 必须清除: {result}");
     }
 
     #[test]

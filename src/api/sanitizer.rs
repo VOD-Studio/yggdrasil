@@ -137,10 +137,11 @@ static DEFAULT_ALLOWED_SCHEMES: LazyLock<HashSet<&'static str>> = LazyLock::new(
 });
 
 #[cfg(feature = "server")]
-/// 评论允许的标签：在默认集合基础上移除 img / details / summary。
+/// 评论允许的标签：在默认集合基础上移除 details / summary。
+/// img 保留（评论区支持图片）：src 仍受 is_safe_url 约束（仅白名单 scheme
+/// 或站内相对路径），data URI 禁用，事件属性全量剔除。
 static COMMENT_ALLOWED_TAGS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     let mut set = DEFAULT_ALLOWED_TAGS.clone();
-    set.remove("img");
     set.remove("details");
     set.remove("summary");
     set
@@ -427,7 +428,7 @@ pub fn clean_html(input: &str) -> String {
 }
 
 #[cfg(feature = "server")]
-/// 评论 HTML 清理：移除图片与折叠块，禁用 data URI，外链添加 `nofollow noopener`。
+/// 评论 HTML 清理：移除折叠块，保留图片（src 受 URL 安全校验），禁用 data URI，外链添加 `nofollow noopener`。
 pub fn clean_comment_html(input: &str) -> String {
     let config = SanitizerConfig {
         allowed_tags: &COMMENT_ALLOWED_TAGS,
@@ -533,11 +534,39 @@ mod tests {
     }
 
     #[test]
-    fn comment_removes_img_details_summary() {
+    fn comment_removes_details_summary() {
         assert_eq!(
-            clean_comment_html("<img src=\"x\"><details><summary>sum</summary>body</details>"),
+            clean_comment_html("<details><summary>sum</summary>body</details>"),
             "sumbody"
         );
+    }
+
+    #[test]
+    fn comment_keeps_safe_img() {
+        // 站内相对路径与 https 图片保留，src/alt 属性齐全。
+        let out = clean_comment_html(r#"<img src="/uploads/2026/08/a.webp" alt="截图">"#);
+        assert!(out.contains("<img"), "评论应保留 img: {out}");
+        assert!(out.contains(r#"src="/uploads/2026/08/a.webp""#), "src 应保留: {out}");
+        assert!(out.contains(r#"alt="截图""#), "alt 应保留: {out}");
+
+        let out = clean_comment_html(r#"<img src="https://example.com/a.png" alt="x">"#);
+        assert!(out.contains(r#"src="https://example.com/a.png""#), "https 图床应保留: {out}");
+    }
+
+    #[test]
+    fn comment_strips_unsafe_img() {
+        // javascript:/data: URI 的 img src 必须被剥除（标签保留但 src 消失）。
+        for input in [
+            r#"<img src="javascript:alert(1)">"#,
+            r#"<img src="data:image/png;base64,iVBORw0KGgo=">"#,
+            r#"<img src="x" onerror="alert(1)">"#,
+        ] {
+            let out = clean_comment_html(input);
+            assert!(
+                !out.contains("javascript:") && !out.contains("data:image") && !out.contains("onerror"),
+                "评论图片的危险属性必须被清除: {input} -> {out}"
+            );
+        }
     }
     #[test]
     fn katex_svg_and_path_preserved() {
