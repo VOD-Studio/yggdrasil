@@ -284,7 +284,7 @@ pub fn AdminCommentsPage(page: i32) -> Element {
                     let all_ids: Vec<i64> = list.iter().map(|c| c.id).collect();
                     rsx! {
                         div { class: "bg-[var(--color-paper-entry)]/40 rounded-2xl shadow-xs border border-[var(--color-paper-border)]/70 overflow-hidden",
-                            div { class: "overflow-x-auto",
+                            div { class: "overflow-x-auto overflow-y-hidden",
                                 table { class: "w-full text-sm",
                                     thead {
                                         tr { class: "bg-[var(--color-paper-entry)]/80 border-b border-[var(--color-paper-border)]/70 text-left text-xs font-semibold uppercase tracking-wider text-[var(--color-paper-secondary)] select-none",

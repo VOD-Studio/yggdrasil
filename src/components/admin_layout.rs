@@ -26,19 +26,6 @@ use crate::context::UserContext;
 use crate::router::Route;
 use crate::theme::ThemeToggle;
 
-fn admin_card_overflow_class(route: &Route, internal_scroll_route: bool) -> &'static str {
-    if internal_scroll_route {
-        "overflow-hidden"
-    } else if matches!(
-        route,
-        Route::AdminComments {} | Route::AdminCommentsPage { .. }
-    ) {
-        "overflow-y-auto scrollbar-none [&::-webkit-scrollbar]:hidden"
-    } else {
-        "overflow-y-auto"
-    }
-}
-
 #[component]
 pub fn AdminLayout() -> Element {
     let mut ctx: UserContext = use_context();
@@ -80,7 +67,11 @@ pub fn AdminLayout() -> Element {
     // write/settings 路由例外:卡片不滚动(overflow-hidden),main 作为 flex 容器不带头尾 padding,
     // 由页面自身组织 [内容区 flex-1 min-h-0 overflow-y-auto] 的分区布局,
     // 这样固定区永远贴卡片边缘不随内容滚动,也不会出现 sticky + 负 margin 的跳动。
-    let card_overflow = admin_card_overflow_class(&route, internal_scroll_route);
+    let card_overflow = if internal_scroll_route {
+        "overflow-hidden"
+    } else {
+        "overflow-y-auto"
+    };
     let main_class = if internal_scroll_route {
         "flex-1 w-full max-w-7xl mx-auto flex flex-col min-h-0"
     } else {
@@ -460,25 +451,6 @@ fn ToolsNavGroup() -> Element {
                     }
                 }
             }
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn comments_routes_hide_card_scrollbar_without_disabling_scroll() {
-        for route in [
-            Route::AdminComments {},
-            Route::AdminCommentsPage { page: 2 },
-        ] {
-            let class = admin_card_overflow_class(&route, false);
-
-            assert!(class.contains("overflow-y-auto"));
-            assert!(class.contains("scrollbar-none"));
-            assert!(class.contains("[&::-webkit-scrollbar]:hidden"));
         }
     }
 }
