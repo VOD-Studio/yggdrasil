@@ -157,6 +157,40 @@ pub fn CommentSection(post_id: i32) -> Element {
         }
     });
 
+    // 灯箱绑定：评论图片（审核后渲染的 <img>）点击放大，与正文图一致。
+    // lightbox.js 由 Dioxus.toml 全局注入；评论列表随加载/刷新重建节点后重跑此
+    // effect 重新绑定，TS 端 data-lb-bound 守卫保证重复绑定幂等（同 assets.rs 模式）。
+    #[cfg(target_arch = "wasm32")]
+    use_effect(move || {
+        // 订阅 comments_resource：数据落地（DOM 提交后）重绑。
+        let data = comments_resource.read();
+        if !matches!(&*data, Some(Ok(_))) {
+            return;
+        }
+        let window = web_sys::window()
+            .expect("CommentSection use_effect 仅在 WASM 浏览器上下文执行：无 window");
+        let sel: wasm_bindgen::JsValue = ".comment-list".into();
+        // 合并而非覆盖 __lightboxSelectors：PostContent 已把 .post-content /
+        // .entry-cover 写入同一全局；覆盖会让 lightbox.js 晚加载时的 IIFE 自启动
+        // 丢掉正文图绑定。缺数组成员时按新数组处理。
+        let existing =
+            js_sys::Reflect::get(&window, &"__lightboxSelectors".into()).unwrap_or_default();
+        let arr = if existing.is_array() {
+            js_sys::Array::from(&existing)
+        } else {
+            js_sys::Array::new()
+        };
+        if !arr.includes(&sel, 0) {
+            arr.push(&sel);
+        }
+        let selectors_val = js_sys::Object::from(arr).into();
+        let _ = js_sys::Reflect::set(&window, &"__lightboxSelectors".into(), &selectors_val);
+        // 显式绑定评论区（重复调用由 TS 端守卫幂等）；脚本未加载时 no-op，
+        // 由自启动读取上方合并后的配置兜底。
+        let call_arg = js_sys::Array::of1(&sel);
+        crate::utils::js::invoke_optional_global(&window, "__initLightbox", &[call_arg.into()]);
+    });
+
     let data = comments_resource.read();
 
     // 动态计算总评论数（已审核 + 本地待审核）

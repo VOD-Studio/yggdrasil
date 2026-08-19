@@ -115,7 +115,8 @@ pub fn CommentList(
     let merged = merge_and_treeify(comments, pending);
 
     rsx! {
-        div { class: "space-y-0 divide-y divide-[var(--color-paper-border)]/40",
+        // comment-list：评论区灯箱（__initLightbox）的根选择器，绑定在 section.rs。
+        div { class: "comment-list space-y-0 divide-y divide-[var(--color-paper-border)]/40",
             for item in merged {
                 match item {
                     MergedComment::Approved(comment) => rsx! {
