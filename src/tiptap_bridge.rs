@@ -87,6 +87,11 @@ pub mod wasm {
         #[wasm_bindgen(method, js_name = removeUploadByUploadId)]
         pub fn remove_upload_by_upload_id(this: &EditorInstance, upload_id: &str) -> bool;
 
+        /// 工具栏图片按钮入口：把文件交给 coordinator 走占位符上传
+        /// （与粘贴/拖放同一条路径）。
+        #[wasm_bindgen(method, js_name = insertUploading)]
+        pub fn insert_uploading(this: &EditorInstance, file: web_sys::File);
+
         /// 从素材库批量插入图片：`json` 为 `[{ "src", "alt"? }]` 串
         /// （`AssetSelection` 的 serde 序列化形状）。JS 侧在 slash 命令删除
         /// `/素材` 文本后停留的光标位置一次事务插入全部图片块；非法载荷 no-op。
@@ -112,6 +117,11 @@ pub mod wasm {
         /// 编辑器无内容时的占位文案。
         #[wasm_bindgen(method, setter, js_name = placeholder)]
         pub fn set_placeholder(this: &EditorOptions, v: &str);
+
+        /// 编辑器变体：`"full"`（默认，后台文章编辑器）或 `"comment"`
+        /// （评论区精简子集：气泡菜单 + Placeholder，无标题/表格/斜杠命令等）。
+        #[wasm_bindgen(method, setter, js_name = variant)]
+        pub fn set_variant(this: &EditorOptions, v: &str);
 
         /// 文档变更回调（ProseMirror transaction 提交时触发，参数为最新 Markdown）。
         #[wasm_bindgen(method, setter, js_name = onUpdate)]
@@ -260,6 +270,28 @@ pub mod wasm {
         pub fn instance(&self) -> &EditorInstance {
             &self.instance
         }
+
+        /// 评论编辑器用构造：只传入 comment variant 实际使用的 4 个 closure。
+        ///
+        /// run_code / pick_from_library 在 comment variant 下没有触发方
+        /// （无斜杠命令、无代码块 NodeView），以 no-op closure 补齐生命周期结构。
+        pub fn new_comment(
+            instance: EditorInstance,
+            on_update: Closure<dyn FnMut(String)>,
+            on_image_upload: Closure<dyn Fn(web_sys::File) -> js_sys::Promise>,
+            on_ready: Closure<dyn FnMut()>,
+            on_upload_event: Closure<dyn FnMut(UploadEventJs)>,
+        ) -> Self {
+            Self::new(
+                instance,
+                on_update,
+                on_image_upload,
+                on_ready,
+                on_upload_event,
+                Closure::new(|_opts: RunCodeOptsJs| js_sys::Promise::resolve(&JsValue::null())),
+                Closure::new(|| {}),
+            )
+        }
     }
 
     impl Drop for EditorHandle {
@@ -315,7 +347,7 @@ pub mod wasm {
 
     // —— make_upload_closure：Rust fetch 上传 ——
 
-    /// 通用图片上传：multipart POST /api/upload，解析 {success, url, error}。
+    /// 通用图片上传：multipart POST 指定端点，解析 {success, url, error}。
     ///
     /// 由封面图上传（spawn 直接 await）与 Tiptap 编辑器上传（make_upload_closure 包 Promise）共用；
     /// fetch + 契约解析样板收敛在 [`crate::utils::web_upload::post_multipart_file`]
@@ -328,15 +360,24 @@ pub mod wasm {
     ///
     /// 构造阶段的错误以 Err 返回，而非 panic，
     /// 单张坏文件不应导致整个上传流程崩溃。
-    pub async fn upload_image_file(file: web_sys::File) -> Result<String, String> {
-        let data =
-            crate::utils::web_upload::post_multipart_file("/api/upload", "image", &file).await?;
+    async fn upload_file_to(url: &str, file: web_sys::File) -> Result<String, String> {
+        let data = crate::utils::web_upload::post_multipart_file(url, "image", &file).await?;
         let url = data["url"].as_str().unwrap_or("");
         if url.is_empty() {
             // success=true 但 url 为空：服务端契约异常，按失败处理
             return Err("上传成功但未返回图片地址".to_string());
         }
         Ok(url.to_string())
+    }
+
+    /// admin 图片上传（POST /api/upload，需 admin 会话）。
+    pub async fn upload_image_file(file: web_sys::File) -> Result<String, String> {
+        upload_file_to("/api/upload", file).await
+    }
+
+    /// 评论图片上传（POST /api/comments/upload，允许匿名，IP 双层限流）。
+    pub async fn upload_comment_image_file(file: web_sys::File) -> Result<String, String> {
+        upload_file_to("/api/comments/upload", file).await
     }
 
     /// 创建 Tiptap 图片上传 closure：内部复用 [`upload_image_file`]，包装成 JS Promise。
@@ -346,6 +387,19 @@ pub mod wasm {
         Closure::new(move |file: web_sys::File| -> js_sys::Promise {
             wasm_bindgen_futures::future_to_promise(async move {
                 upload_image_file(file)
+                    .await
+                    .map(|url| js_sys::JsString::from(url).into())
+                    .map_err(|msg| js_sys::Error::new(&msg).into())
+            })
+        })
+    }
+
+    /// 创建评论区 Tiptap 图片上传 closure：走匿名可用的评论端点
+    /// （[`upload_comment_image_file`]），其余语义与 [`make_upload_closure`] 一致。
+    pub fn make_comment_upload_closure() -> Closure<dyn Fn(web_sys::File) -> js_sys::Promise> {
+        Closure::new(move |file: web_sys::File| -> js_sys::Promise {
+            wasm_bindgen_futures::future_to_promise(async move {
+                upload_comment_image_file(file)
                     .await
                     .map(|url| js_sys::JsString::from(url).into())
                     .map_err(|msg| js_sys::Error::new(&msg).into())
@@ -450,6 +504,6 @@ pub mod wasm {
 /// server 构建剥离该子模块，故此重导出仅对 WASM 前端生效。
 #[cfg(target_arch = "wasm32")]
 pub use wasm::{
-    consume_upload_event, get_module, make_run_code_closure, make_upload_closure,
-    upload_image_file, EditorHandle, EditorOptions, UploadEventJs,
+    consume_upload_event, get_module, make_comment_upload_closure, make_run_code_closure,
+    make_upload_closure, upload_image_file, EditorHandle, EditorOptions, UploadEventJs,
 };

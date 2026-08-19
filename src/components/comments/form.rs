@@ -1,8 +1,10 @@
 //! 评论表单组件
 //!
 //! 提供发表评论与回复评论的表单，包含昵称、邮箱、网站、内容与反垃圾蜜罐字段。
-//! 支持图片上传：点击工具栏图片按钮或直接粘贴图片到输入框，占位符 +
-//! 上传中指示与后台 tiptap 编辑器的语义一致（上传完成前禁止提交）。
+//! 内容编辑用 tiptap 所见即所得编辑器（comment variant——后台文章编辑器的
+//! 精简子集）：选中浮出气泡菜单（B/I/S/code/link）、StarterKit 输入规则
+//! （`> `、`- `、``` 等）、数学公式、图片上传（点击按钮/粘贴/拖放均走
+//! coordinator 占位符上传，loading/error 态与后台完全一致）。
 
 use dioxus::prelude::*;
 
@@ -10,38 +12,10 @@ use crate::api::comments::create_comment;
 use crate::components::comments::section::CommentContext;
 use crate::components::forms::AlertBox;
 use crate::components::ui::{UserAvatar, BTN_PRIMARY_SM, SPINNER_SVG};
+use crate::tiptap_bridge::{UploadErrorEntry, UploadsInFlight};
 use crate::utils::comment_storage::{self, PendingComment};
-
-/// 单文件大小硬上限（5MiB），镜像服务端 `crate::utils::server::MAX_FILE_SIZE`。
-#[cfg(any(test, target_arch = "wasm32"))]
-const MAX_UPLOAD_BYTES: u64 = 5 * 1024 * 1024;
-/// 允许的 MIME 白名单，镜像服务端 `api/upload.rs` 的 `ALLOWED_MIME_TYPES`。
-#[cfg(any(test, target_arch = "wasm32"))]
-const ALLOWED_MIME: &[&str] = &["image/jpeg", "image/png", "image/gif", "image/webp"];
-
-/// 预校验：MIME 白名单 + 5MiB 上限。失败返回可读原因（直接展示，不发请求）。
-#[cfg(any(test, target_arch = "wasm32"))]
-fn validate_image_file(mime: &str, size: u64) -> Result<(), String> {
-    if !ALLOWED_MIME.contains(&mime) {
-        return Err("不支持的图片格式（仅 JPEG/PNG/GIF/WebP）".to_string());
-    }
-    if size > MAX_UPLOAD_BYTES {
-        return Err("图片超过 5MB 大小限制".to_string());
-    }
-    Ok(())
-}
-
-/// 进行中的评论图片上传。纯数据（两端都可编译）；`web_sys::File` 句柄不进
-/// signal，由 spawn 的上传任务直接持有。
-#[derive(Clone, PartialEq)]
-struct PendingUpload {
-    /// 唯一 id（组件内单调计数器），用于完成后从列表移除。
-    id: u64,
-    /// 插入评论文本的占位 Markdown：`![上传中 name…](uploading-N)`。
-    /// 上传成功被替换为最终图片语法，失败被移除；`uploading-N` 后缀同时是
-    /// 提交防御检查（残留占位符拦截）的识别标记。
-    placeholder: String,
-}
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::closure::Closure;
 
 /// 评论表单组件，用于顶层评论或回复评论。
 ///
@@ -73,10 +47,10 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
     let mut submitting = use_signal(|| false);
     let mut message = use_signal(|| Option::<(String, &'static str)>::None);
     let mut loaded = use_signal(|| false);
-    // 进行中的图片上传：占位符语义对齐后台 tiptap 编辑器（写入文本占位 +
-    // 工具栏「上传中」指示 + 完成前拦截提交）。
-    let mut pending_uploads: Signal<Vec<PendingUpload>> = use_signal(Vec::new);
-    let mut upload_seq: Signal<u64> = use_signal(|| 0);
+    // 图片上传状态（tiptap coordinator 事件驱动，与后台 write.rs 同一类型）：
+    // 进行中计数用于提交门控；失败条目由编辑器内错误态兜底（重试/移除）。
+    let uploads_in_flight = use_signal(UploadsInFlight::default);
+    let upload_errors: Signal<Vec<UploadErrorEntry>> = use_signal(Vec::new);
 
     // 首次挂载时从本地存储加载作者信息
     use_effect(move || {
@@ -114,93 +88,95 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
         _ => String::new(),
     };
 
-    // 图片上传（仅 WASM 端）：校验 → 光标处插入占位符 → POST /api/comments/upload →
-    // 成功替换为最终图片语法 / 失败移除占位符并报错。三入口（工具栏按钮 / 文件
-    // 选择 / 粘贴）收敛到这一个闭包，语义对齐后台 tiptap 的 UploadCoordinator。
+    // tiptap 编辑器挂载容器 id（顶层表单与多个回复表单并存，按 id_suffix 隔离）。
+    let editor_dom_id = format!("comment-editor-{id_suffix}");
+
+    // 编辑器实例句柄（WASM 端）：持有 JS 实例与全部 closure，drop 时销毁。
     #[cfg(target_arch = "wasm32")]
-    let start_upload = {
-        let textarea_dom_id = format!("comment-content-{id_suffix}");
-        move |file: web_sys::File| {
-            let filename = file.name();
-            if let Err(reason) = validate_image_file(&file.type_(), file.size() as u64) {
-                message.set(Some((reason, "error")));
-                return;
+    let mut editor_handle: Signal<Option<crate::tiptap_bridge::EditorHandle>> = use_signal(|| None);
+
+    // 挂载/销毁编辑器。顶层表单立即挂载；回复表单随 active_reply 激活挂载、
+    // 取消时销毁（容器 div 随 rsx 早退消失，JS 实例必须同步回收）。
+    // content_md 在组件存活期内持久，重挂载时经 set_markdown 回填（取消不丢草稿）。
+    #[cfg(target_arch = "wasm32")]
+    let editor_dom_id_for_mount = editor_dom_id.clone();
+    #[cfg(target_arch = "wasm32")]
+    use_effect(move || {
+        let editor_dom_id = editor_dom_id_for_mount.clone();
+        let active = match parent_id {
+            Some(pid) => active_reply() == Some(pid),
+            None => true,
+        };
+        if !active {
+            // 隐藏：销毁已挂载的编辑器（handle drop → JS destroy + closure 释放）。
+            if editor_handle.peek().is_some() {
+                editor_handle.set(None);
             }
-
-            let id = *upload_seq.peek() + 1;
-            upload_seq.set(id);
-            let placeholder = format!("![上传中 {filename}…](uploading-{id})");
-
-            // 在光标处插入占位符：走 DOM set_range_text（JS 字符串索引，避免
-            // UTF-16/UTF-8 偏移错配导致的中文截断），随后从 DOM 回读完整值同步
-            // signal。拿不到 DOM/选区时退化为追加到文末。
-            let mut inserted = false;
-            if let Some(doc) = web_sys::window().and_then(|w| w.document()) {
-                if let Some(el) = doc.get_element_by_id(&textarea_dom_id) {
-                    use wasm_bindgen::JsCast;
-                    if let Ok(ta) = el.dyn_into::<web_sys::HtmlTextAreaElement>() {
-                        let start = ta.selection_start().ok().flatten();
-                        let end = ta.selection_end().ok().flatten();
-                        if let (Some(start), Some(end)) = (start, end) {
-                            // IndexSizeError 等失败时保持 inserted=false，走文末追加兜底。
-                            if ta
-                                .set_range_text_with_start_and_end(&placeholder, start, end)
-                                .is_ok()
-                            {
-                                content_md.set(ta.value());
-                                inserted = true;
-                            }
-                        }
-                    }
-                }
-            }
-            if !inserted {
-                let mut text = content_md();
-                if !text.is_empty() && !text.ends_with('\n') {
-                    text.push('\n');
-                }
-                text.push_str(&placeholder);
-                content_md.set(text);
-            }
-
-            pending_uploads.write().push(PendingUpload {
-                id,
-                placeholder: placeholder.clone(),
-            });
-            message.set(None);
-
-            spawn(async move {
-                let result = crate::utils::web_upload::post_multipart_file(
-                    "/api/comments/upload",
-                    "image",
-                    &file,
-                )
-                .await;
-                match result {
-                    Ok(data) => {
-                        let url = data["url"].as_str().unwrap_or("").to_string();
-                        if url.is_empty() {
-                            // success=true 但 url 为空：服务端契约异常，按失败处理
-                            let text = content_md().replacen(&placeholder, "", 1);
-                            content_md.set(text);
-                            message
-                                .set(Some(("图片上传失败：服务端返回异常".to_string(), "error")));
-                        } else {
-                            let final_md = format!("![{filename}]({url})");
-                            let text = content_md().replacen(&placeholder, &final_md, 1);
-                            content_md.set(text);
-                        }
-                    }
-                    Err(err) => {
-                        let text = content_md().replacen(&placeholder, "", 1);
-                        content_md.set(text);
-                        message.set(Some((format!("图片上传失败：{err}"), "error")));
-                    }
-                }
-                pending_uploads.write().retain(|p| p.id != id);
-            });
+            return;
         }
-    };
+        // 防重复挂载（effect 可能因订阅的信号多次触发）。
+        if editor_handle.peek().is_some() {
+            return;
+        }
+
+        // 用 FnMut：Dioxus Signal 的 set 接收 &mut self，回调需可变借用捕获的 signal。
+        let on_update = Closure::new({
+            let mut content_md = content_md;
+            move |md: String| content_md.set(md)
+        });
+        let on_ready = Closure::new(|| {});
+        let on_image_upload = crate::tiptap_bridge::make_comment_upload_closure();
+        let on_upload_event = Closure::new({
+            let mut message = message;
+            move |ev: crate::tiptap_bridge::UploadEventJs| {
+                // 失败时借表单 AlertBox 同步一行错误（编辑器内错误态为主，
+                // 这里兜底可见性）；成功自动清除。
+                if ev.kind() == "error" {
+                    let msg = ev.error_msg().unwrap_or_else(|| "上传失败".to_string());
+                    message.set(Some((format!("图片上传失败：{msg}"), "error")));
+                }
+                crate::tiptap_bridge::consume_upload_event(&ev, uploads_in_flight, upload_errors);
+            }
+        });
+
+        let opts = crate::tiptap_bridge::EditorOptions::new();
+        opts.set_variant("comment");
+        opts.set_placeholder(if is_reply {
+            "写下你的回复..."
+        } else {
+            "写下你的想法..."
+        });
+        opts.set_on_update(&on_update);
+        opts.set_on_ready(&on_ready);
+        opts.set_on_image_upload(&on_image_upload);
+        opts.set_on_upload_event(&on_upload_event);
+
+        // create 同步返回；找不到容器返回 None（rsx 早退时容器不在 DOM）。
+        match crate::tiptap_bridge::get_module().create(&editor_dom_id, &opts) {
+            Ok(Some(inst)) => {
+                // 草稿回填：回复表单取消再激活时恢复 content_md（组件未卸载，
+                // signal 持久）。顶层表单为空字符串时 no-op。
+                let draft = content_md.peek().clone();
+                if !draft.is_empty() {
+                    inst.set_markdown(&draft);
+                }
+                let handle = crate::tiptap_bridge::EditorHandle::new_comment(
+                    inst,
+                    on_update,
+                    on_image_upload,
+                    on_ready,
+                    on_upload_event,
+                );
+                editor_handle.set(Some(handle));
+            }
+            Ok(None) => {
+                web_sys::console::warn_1(&format!("评论编辑器容器未找到: #{editor_dom_id}").into());
+            }
+            Err(e) => {
+                message.set(Some((format!("编辑器初始化失败: {e:?}"), "error")));
+            }
+        }
+    });
 
     let mut do_submit = move || {
         if submitting() {
@@ -219,21 +195,29 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
         let content = content_md();
         let hp = honeypot();
 
-        // 图片上传未完成拦截：与后台 write.rs 的保存拦截同语义——占位符还在
-        // 文本里时提交会丢失图片/留下半成品。
-        let in_flight = pending_uploads.read().len();
-        if in_flight > 0 {
-            message.set(Some((
-                format!("有 {in_flight} 张图片正在上传，请等待完成后再发表"),
-                "error",
-            )));
+        // 图片上传未完成拦截：与后台 write.rs 的保存拦截同语义——占位节点
+        // 未落定前提交会丢图/留下 blob 半成品。
+        let in_flight = uploads_in_flight();
+        if in_flight.uploading > 0 || in_flight.error > 0 {
+            let msg = if in_flight.uploading > 0 {
+                format!(
+                    "有 {} 张图片正在上传，请等待完成后再发表",
+                    in_flight.uploading
+                )
+            } else {
+                format!(
+                    "有 {} 张图片上传失败，请重试或移除后再发表",
+                    in_flight.error
+                )
+            };
+            message.set(Some((msg, "error")));
             return;
         }
-        // 防御：文本中残留上传占位符（异常路径，如上传任务被打断）时拦截，
-        // 提示用户自行移除。（与 write.rs 的 blob: 检出同款兜底。）
-        if content.contains("](uploading-") {
+        // 防御：markdown 中检出 blob 图片 URL（异常路径，如上传事件丢失）时拦截。
+        // （与 write.rs 的 blob: 检出同款兜底。）
+        if content.contains("](blob:") {
             message.set(Some((
-                "检测到未完成上传的图片，请移除占位内容后再发表".to_string(),
+                "检测到未完成上传的图片，请处理后再发表".to_string(),
                 "error",
             )));
             return;
@@ -301,6 +285,11 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
                             }
                         }
                         content_md.set(String::new());
+                        // 同步清空编辑器文档（onUpdate 会把空 markdown 回写 signal）。
+                        #[cfg(target_arch = "wasm32")]
+                        if let Some(handle) = &*editor_handle.peek() {
+                            handle.instance().set_markdown("");
+                        }
                         message.set(Some((resp.message, "success")));
                         if parent_id.is_some() {
                             active_reply.set(None);
@@ -323,6 +312,13 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
             style: "{negative_margin}",
             role: "form",
             aria_label: if is_reply { "回复评论" } else { "发表评论" },
+            // Ctrl/Cmd+Enter 提交：编辑器内按键事件冒泡到表单根（ProseMirror
+            // 不消费 Mod-Enter），身份输入栏同样生效。
+            onkeydown: move |e: KeyboardEvent| {
+                if (e.modifiers().ctrl() || e.modifiers().meta()) && e.key() == Key::Enter {
+                    do_submit();
+                }
+            },
 
             if let Some((msg, variant)) = message() {
                 div { class: "mb-3", aria_live: "polite",
@@ -402,58 +398,12 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
                 }
 
                 // 编辑区 (Textarea)
-                div { class: "relative bg-transparent p-3 sm:p-4",
-                    textarea {
-                        id: "comment-content-{id_suffix}",
-                        class: "w-full bg-transparent text-sm text-paper-primary placeholder:text-paper-tertiary resize-y min-h-[100px] sm:min-h-[110px] focus:outline-none leading-relaxed block relative z-10",
-                        placeholder: if is_reply { "写下你的回复... (支持 Markdown 语法与代码块)" } else { "写下你的想法... (支持 Markdown 语法与代码块)" },
-                        aria_label: "评论内容",
-                        value: "{content_md}",
-                        disabled: submitting(),
-                        oninput: move |e| content_md.set(e.value()),
-                        onkeydown: move |e: KeyboardEvent| {
-                            if (e.modifiers().ctrl() || e.modifiers().meta()) && e.key() == Key::Enter {
-                                do_submit();
-                            }
-                        },
-                        // 粘贴图片上传：与后台 tiptap 编辑器一致——图片进入占位上传
-                        // 流程（占位符 + 上传中指示），纯文本粘贴不拦截。
-                        onpaste: {
-                            // clone 进闭包：start_upload 在 onchange 里还要再用一份。
-                            // cfg 门控使 server 构建（无 start_upload 绑定）闭包为空捕获。
-                            #[cfg(target_arch = "wasm32")]
-                            let mut start_upload = start_upload.clone();
-                            move |e: ClipboardEvent| {
-                                #[cfg(target_arch = "wasm32")]
-                                {
-                                use dioxus::web::WebEventExt;
-                                use wasm_bindgen::JsCast;
-                                // dioxus-web 0.7 把剪贴板事件包成通用 web_sys::Event；
-                                // 真实 paste 事件底层必为 ClipboardEvent，unchecked 转换安全。
-                                let Some(ev) = e.try_as_web_event() else {
-                                    return;
-                                };
-                                let ev: &web_sys::ClipboardEvent = ev.unchecked_ref();
-                                let Some(dt) = ev.clipboard_data() else {
-                                    return;
-                                };
-                                let Some(list) = dt.files() else {
-                                    return;
-                                };
-                                let files: Vec<web_sys::File> = (0..list.length())
-                                    .filter_map(|i| list.item(i))
-                                    .collect();
-                                if files.is_empty() {
-                                    return;
-                                }
-                                // 剪贴板含文件：阻止默认粘贴（防止文件名文本落入输入框）。
-                                ev.prevent_default();
-                                for f in files {
-                                    start_upload(f);
-                                }
-                                }
-                            }
-                        },
+                // 编辑区（WYSIWYG：tiptap comment variant）。SSR 输出空容器，
+                // hydration 后由编辑器接管；min-height 与编辑器对齐避免 CLS。
+                div { class: "relative bg-transparent",
+                    div {
+                        id: "{editor_dom_id}",
+                        class: "comment-editor-mount min-h-[96px]",
                     }
                     img {
                         src: "/images/xiantiaoxiaogou_input_bg.webp",
@@ -498,19 +448,19 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
                             accept: "image/jpeg,image/png,image/gif,image/webp",
                             multiple: true,
                             onchange: {
-                                // clone 进闭包：start_upload 在 onpaste 里已用一份。
-                                // cfg 门控使 server 构建（无 start_upload 绑定）闭包为空捕获。
-                                #[cfg(target_arch = "wasm32")]
-                                let mut start_upload = start_upload.clone();
+                                // cfg 门控使 server 构建（无 editor_handle 绑定）闭包为空捕获。
                                 #[cfg(target_arch = "wasm32")]
                                 let input_dom_id = image_input_dom_id.clone();
                                 move |e| {
                                     #[cfg(target_arch = "wasm32")]
                                     {
                                         use dioxus::web::WebFileExt;
+                                        // 与粘贴/拖放同一条 coordinator 占位上传路径。
                                         for f in e.files() {
                                             if let Some(web_file) = f.get_web_file() {
-                                                start_upload(web_file);
+                                                if let Some(handle) = &*editor_handle.peek() {
+                                                    handle.instance().insert_uploading(web_file);
+                                                }
                                             }
                                         }
                                         // 重置 value：连续选择同一文件也能再次触发 change。
@@ -528,7 +478,7 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
                             },
                         }
                         // 上传中指示（与后台 tiptap 的「上传中…」遮罩同文案）。
-                        if !pending_uploads.read().is_empty() {
+                        if uploads_in_flight().uploading > 0 {
                             span { class: "inline-flex items-center gap-1.5 text-[11px] text-paper-secondary ml-1",
                                 span { class: "inline-block", dangerous_inner_html: "{SPINNER_SVG}" }
                                 "图片上传中…"
@@ -550,9 +500,10 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
                         button {
                             r#type: "button",
                             class: "{BTN_PRIMARY_SM}",
-                            // 提交中或图片上传中均禁用：占位符未替换前提交会丢图。
-                            class: if submitting() || !pending_uploads.read().is_empty() { "opacity-60 cursor-not-allowed pointer-events-none" } else { "" },
-                            disabled: submitting() || !pending_uploads.read().is_empty(),
+                            // 提交中或图片上传未完成（含失败态）均禁用：占位节点未落定前
+                            // 提交会丢图或残留 blob URL。
+                            class: if submitting() || uploads_in_flight().uploading > 0 || uploads_in_flight().error > 0 { "opacity-60 cursor-not-allowed pointer-events-none" } else { "" },
+                            disabled: submitting() || uploads_in_flight().uploading > 0 || uploads_in_flight().error > 0,
                             onclick: move |_| {
                                 do_submit();
                             },
@@ -571,31 +522,5 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
                 }
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn validate_image_file_accepts_allowed_mime() {
-        for mime in ALLOWED_MIME {
-            assert!(validate_image_file(mime, 1024).is_ok(), "{mime} 应通过");
-        }
-    }
-
-    #[test]
-    fn validate_image_file_rejects_disallowed_mime() {
-        assert!(validate_image_file("image/svg+xml", 1024).is_err());
-        assert!(validate_image_file("image/bmp", 1024).is_err());
-        assert!(validate_image_file("text/html", 1024).is_err());
-        assert!(validate_image_file("", 1024).is_err());
-    }
-
-    #[test]
-    fn validate_image_file_rejects_oversize() {
-        assert!(validate_image_file("image/png", MAX_UPLOAD_BYTES).is_ok());
-        assert!(validate_image_file("image/png", MAX_UPLOAD_BYTES + 1).is_err());
     }
 }
