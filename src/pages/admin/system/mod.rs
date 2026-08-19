@@ -71,17 +71,22 @@ pub fn System() -> Element {
     rsx! {
         div { class: "animate-page-enter w-full max-w-7xl mx-auto space-y-6",
             // 页面标题
-            div { class: "flex flex-col md:flex-row md:items-end justify-between gap-6 pb-6 border-b border-[var(--color-paper-border)] mb-6",
+            div { class: "flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-[var(--color-paper-border)]/70 mb-6",
                 div {
-                    h1 { class: "text-4xl font-extrabold tracking-tight text-[var(--color-paper-primary)]",
+                    h1 { class: "text-3xl sm:text-4xl font-extrabold tracking-tight text-[var(--color-paper-primary)]",
                         "系统面板"
                     }
-                    p { class: "text-base text-[var(--color-paper-secondary)] mt-2",
-                        "数据库与服务器诊断"
+                    p { class: "text-sm text-[var(--color-paper-secondary)] mt-1.5",
+                        "数据库健康状态、服务器性能指标与系统诊断中心"
+                    }
+                }
+                div { class: "flex items-center gap-2.5",
+                    div { class: "inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-mono bg-[var(--color-paper-entry)] text-[var(--color-paper-secondary)] border border-[var(--color-paper-border)]/70 shadow-2xs",
+                        span { class: "w-1.5 h-1.5 rounded-full bg-[var(--color-paper-accent)]" }
+                        span { "诊断引擎在线" }
                     }
                 }
             }
-
             // 顶部 tab 切换栏:复用公共 FilterTabs 组件(String API,经 as_str/from_str 桥接枚举)。
             // 视觉与评论页一致:平滑滑动指示条 + 选中文字 text-paper-primary。
             FilterTabs {

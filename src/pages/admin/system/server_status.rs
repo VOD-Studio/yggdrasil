@@ -42,7 +42,6 @@ pub(super) fn ServerStatusTab() -> Element {
     #[cfg(target_arch = "wasm32")]
     use crate::api::database::system_status::get_server_status;
     use crate::api::database::system_status::ServerStatus;
-    use crate::components::ui::{ADMIN_CARD_CLASS, ADMIN_TABLE_CLASS};
 
     let mut status = use_signal(|| Option::<ServerStatus>::None);
     let mut loading = use_signal(|| true);
@@ -140,9 +139,9 @@ pub(super) fn ServerStatusTab() -> Element {
 
     rsx! {
         div { class: "space-y-6",
-            div { class: "flex items-center justify-between",
+            div { class: "flex items-center justify-between gap-4",
                 LoadingButton {
-                    label: "刷新".to_string(),
+                    label: "刷新数据".to_string(),
                     loading: loading(),
                     variant: "sm",
                     onclick: move |_| {
@@ -166,8 +165,20 @@ pub(super) fn ServerStatusTab() -> Element {
                         }
                     },
                 }
-                div { class: "flex items-center gap-2",
-                    span { class: "text-sm text-paper-secondary", "自动刷新" }
+                div { class: "inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[var(--color-paper-entry)]/60 border border-[var(--color-paper-border)]/60 shadow-2xs",
+                    svg {
+                        class: "w-3.5 h-3.5 text-[var(--color-paper-tertiary)]",
+                        xmlns: "http://www.w3.org/2000/svg",
+                        view_box: "0 0 24 24",
+                        fill: "none",
+                        stroke: "currentColor",
+                        stroke_width: "2",
+                        stroke_linecap: "round",
+                        stroke_linejoin: "round",
+                        circle { cx: "12", cy: "12", r: "10" }
+                        polyline { points: "12 6 12 12 16 14" }
+                    }
+                    span { class: "text-xs font-medium text-[var(--color-paper-secondary)]", "自动刷新" }
                     FormSelect {
                         trigger_class: Some(FORM_SELECT_COMPACT_CLASS),
                         value: refresh_ms(),
@@ -176,111 +187,176 @@ pub(super) fn ServerStatusTab() -> Element {
                     }
                 }
             }
-
             if let Some(err) = error.read().clone() {
                 div { class: "bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 text-sm text-red-700 dark:text-red-300",
                     "加载失败：{err}"
                 }
             } else if let Some(s) = current {
                 // 应用内指标卡片
-                div { class: "grid grid-cols-2 md:grid-cols-4 gap-4",
-                    div { class: "{ADMIN_CARD_CLASS} p-4",
-                        p { class: "text-xs text-paper-secondary", "运行时间" }
-                        p { class: "mt-1 text-lg font-semibold text-paper-primary",
+                div { class: "grid grid-cols-2 lg:grid-cols-4 gap-4",
+                    div { class: "bg-[var(--color-paper-entry)]/40 rounded-2xl p-5 border border-[var(--color-paper-border)]/70 shadow-xs flex flex-col gap-1.5",
+                        div { class: "flex items-center justify-between text-[var(--color-paper-secondary)]",
+                            span { class: "text-xs font-semibold uppercase tracking-wider", "服务运行时间" }
+                            svg {
+                                class: "w-4 h-4 text-[var(--color-paper-tertiary)]",
+                                xmlns: "http://www.w3.org/2000/svg",
+                                view_box: "0 0 24 24",
+                                fill: "none",
+                                stroke: "currentColor",
+                                stroke_width: "2",
+                                stroke_linecap: "round",
+                                stroke_linejoin: "round",
+                                circle { cx: "12", cy: "12", r: "10" }
+                                polyline { points: "12 6 12 12 16 14" }
+                            }
+                        }
+                        p { class: "text-2xl font-extrabold font-mono text-[var(--color-paper-primary)] tracking-tight",
                             "{format_uptime(s.uptime_secs)}"
                         }
                     }
-                    div { class: "{ADMIN_CARD_CLASS} p-4",
-                        p { class: "text-xs text-paper-secondary", "DB 连接池" }
-                        p { class: "mt-1 text-lg font-semibold text-paper-primary",
+                    div { class: "bg-[var(--color-paper-entry)]/40 rounded-2xl p-5 border border-[var(--color-paper-border)]/70 shadow-xs flex flex-col gap-1.5",
+                        div { class: "flex items-center justify-between text-[var(--color-paper-secondary)]",
+                            span { class: "text-xs font-semibold uppercase tracking-wider", "DB 连接池" }
+                            svg {
+                                class: "w-4 h-4 text-[var(--color-paper-tertiary)]",
+                                xmlns: "http://www.w3.org/2000/svg",
+                                view_box: "0 0 24 24",
+                                fill: "none",
+                                stroke: "currentColor",
+                                stroke_width: "2",
+                                stroke_linecap: "round",
+                                stroke_linejoin: "round",
+                                path { d: "M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" }
+                            }
+                        }
+                        p { class: "text-2xl font-extrabold font-mono text-[var(--color-paper-primary)] tracking-tight",
                             "{s.pool_size} / {s.pool_max_size}"
                         }
-                        p { class: "text-xs text-paper-secondary",
+                        p { class: "text-xs text-[var(--color-paper-tertiary)] mt-0.5",
                             "空闲 {s.pool_available} · 等待 {s.pool_waiting}"
                         }
                     }
-                    div { class: "{ADMIN_CARD_CLASS} p-4",
-                        p { class: "text-xs text-paper-secondary", "活跃会话" }
-                        p { class: "mt-1 text-lg font-semibold text-paper-primary",
+                    div { class: "bg-[var(--color-paper-entry)]/40 rounded-2xl p-5 border border-[var(--color-paper-border)]/70 shadow-xs flex flex-col gap-1.5",
+                        div { class: "flex items-center justify-between text-[var(--color-paper-secondary)]",
+                            span { class: "text-xs font-semibold uppercase tracking-wider", "活跃会话" }
+                            svg {
+                                class: "w-4 h-4 text-[var(--color-paper-tertiary)]",
+                                xmlns: "http://www.w3.org/2000/svg",
+                                view_box: "0 0 24 24",
+                                fill: "none",
+                                stroke: "currentColor",
+                                stroke_width: "2",
+                                stroke_linecap: "round",
+                                stroke_linejoin: "round",
+                                path { d: "M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" }
+                                circle { cx: "9", cy: "7", r: "4" }
+                            }
+                        }
+                        p { class: "text-2xl font-extrabold font-mono text-[var(--color-paper-primary)] tracking-tight",
                             "{s.active_sessions}"
                         }
                     }
-                    div { class: "{ADMIN_CARD_CLASS} p-4",
-                        p { class: "text-xs text-paper-secondary", "CPU" }
-                        p { class: "mt-1 text-lg font-semibold text-paper-primary",
+                    div { class: "bg-[var(--color-paper-entry)]/40 rounded-2xl p-5 border border-[var(--color-paper-border)]/70 shadow-xs flex flex-col gap-1.5",
+                        div { class: "flex items-center justify-between text-[var(--color-paper-secondary)]",
+                            span { class: "text-xs font-semibold uppercase tracking-wider", "应用 CPU" }
+                            svg {
+                                class: "w-4 h-4 text-[var(--color-paper-tertiary)]",
+                                xmlns: "http://www.w3.org/2000/svg",
+                                view_box: "0 0 24 24",
+                                fill: "none",
+                                stroke: "currentColor",
+                                stroke_width: "2",
+                                stroke_linecap: "round",
+                                stroke_linejoin: "round",
+                                rect { x: "4", y: "4", width: "16", height: "16", rx: "2" }
+                                rect { x: "9", y: "9", width: "6", height: "6" }
+                            }
+                        }
+                        p { class: "text-2xl font-extrabold font-mono text-[var(--color-paper-accent)] tracking-tight",
                             "{cpu_pct}"
                         }
                     }
                 }
 
                 // 主机层指标卡片
-                div { class: "grid grid-cols-2 md:grid-cols-4 gap-4",
-                    div { class: "{ADMIN_CARD_CLASS} p-4",
-                        p { class: "text-xs text-paper-secondary", "内存" }
-                        p { class: "mt-1 text-lg font-semibold text-paper-primary",
+                div { class: "grid grid-cols-2 lg:grid-cols-4 gap-4",
+                    div { class: "bg-[var(--color-paper-entry)]/40 rounded-2xl p-5 border border-[var(--color-paper-border)]/70 shadow-xs flex flex-col gap-1.5",
+                        div { class: "flex items-center justify-between text-[var(--color-paper-secondary)]",
+                            span { class: "text-xs font-semibold uppercase tracking-wider", "内存占用" }
+                        }
+                        p { class: "text-xl font-bold font-mono text-[var(--color-paper-primary)] tracking-tight",
                             "{format_bytes(s.host.used_memory as i64)} / {format_bytes(s.host.total_memory as i64)}"
                         }
                     }
-                    div { class: "{ADMIN_CARD_CLASS} p-4",
-                        p { class: "text-xs text-paper-secondary", "磁盘" }
-                        p { class: "mt-1 text-lg font-semibold text-paper-primary",
+                    div { class: "bg-[var(--color-paper-entry)]/40 rounded-2xl p-5 border border-[var(--color-paper-border)]/70 shadow-xs flex flex-col gap-1.5",
+                        div { class: "flex items-center justify-between text-[var(--color-paper-secondary)]",
+                            span { class: "text-xs font-semibold uppercase tracking-wider", "磁盘空间" }
+                        }
+                        p { class: "text-xl font-bold font-mono text-[var(--color-paper-primary)] tracking-tight",
                             "{format_bytes((s.host.disk_total - s.host.disk_available) as i64)} / {format_bytes(s.host.disk_total as i64)}"
                         }
                     }
-                    div { class: "{ADMIN_CARD_CLASS} p-4",
-                        p { class: "text-xs text-paper-secondary", "Load (1m)" }
-                        p { class: "mt-1 text-lg font-semibold text-paper-primary",
+                    div { class: "bg-[var(--color-paper-entry)]/40 rounded-2xl p-5 border border-[var(--color-paper-border)]/70 shadow-xs flex flex-col gap-1.5",
+                        div { class: "flex items-center justify-between text-[var(--color-paper-secondary)]",
+                            span { class: "text-xs font-semibold uppercase tracking-wider", "平均负载 (1m)" }
+                        }
+                        p { class: "text-xl font-bold font-mono text-[var(--color-paper-primary)] tracking-tight",
                             "{load_1}"
                         }
                     }
-                    div { class: "{ADMIN_CARD_CLASS} p-4",
-                        p { class: "text-xs text-paper-secondary", "系统" }
-                        p { class: "mt-1 text-sm font-medium text-paper-primary truncate",
+                    div { class: "bg-[var(--color-paper-entry)]/40 rounded-2xl p-5 border border-[var(--color-paper-border)]/70 shadow-xs flex flex-col gap-1.5",
+                        div { class: "flex items-center justify-between text-[var(--color-paper-secondary)]",
+                            span { class: "text-xs font-semibold uppercase tracking-wider", "宿主系统" }
+                        }
+                        p { class: "text-base font-semibold font-mono text-[var(--color-paper-primary)] truncate mt-0.5",
                             "{s.host.os_name}"
                         }
                     }
                 }
 
                 // 缓存命中率表
-                div { class: "{ADMIN_TABLE_CLASS}",
-                    div { class: "px-4 py-3 border-b border-paper-border text-sm font-medium text-paper-primary",
-                        "缓存命中率"
+                div { class: "bg-[var(--color-paper-entry)]/40 rounded-2xl shadow-xs border border-[var(--color-paper-border)]/70 overflow-hidden",
+                    div { class: "px-5 py-4 border-b border-[var(--color-paper-border)]/70 flex items-center gap-2 select-none",
+                        svg {
+                            class: "w-4 h-4 text-[var(--color-paper-accent)]",
+                            xmlns: "http://www.w3.org/2000/svg",
+                            view_box: "0 0 24 24",
+                            fill: "none",
+                            stroke: "currentColor",
+                            stroke_width: "2",
+                            stroke_linecap: "round",
+                            stroke_linejoin: "round",
+                            path { d: "M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" }
+                        }
+                        span { class: "font-semibold text-sm text-[var(--color-paper-primary)]", "内存缓存指标 (Moka Cache)" }
                     }
                     div { class: "overflow-x-auto",
                         table { class: "w-full text-sm",
                             thead {
-                                tr { class: "border-b border-paper-border text-left text-paper-secondary",
-                                    th { class: "px-4 py-2 font-medium", "缓存" }
-                                    th { class: "px-4 py-2 font-medium text-right",
-                                        "条目"
-                                    }
-                                    th { class: "px-4 py-2 font-medium text-right",
-                                        "命中"
-                                    }
-                                    th { class: "px-4 py-2 font-medium text-right",
-                                        "未命中"
-                                    }
-                                    th { class: "px-4 py-2 font-medium text-right",
-                                        "命中率"
-                                    }
+                                tr { class: "bg-[var(--color-paper-entry)]/80 border-b border-[var(--color-paper-border)]/70 text-left text-xs font-semibold uppercase tracking-wider text-[var(--color-paper-secondary)] select-none",
+                                    th { class: "px-5 py-3.5", "缓存名称" }
+                                    th { class: "px-4 py-3.5 text-right whitespace-nowrap", "当前条目" }
+                                    th { class: "px-4 py-3.5 text-right whitespace-nowrap", "命中次数" }
+                                    th { class: "px-4 py-3.5 text-right whitespace-nowrap", "未命中数" }
+                                    th { class: "px-5 py-3.5 text-right whitespace-nowrap", "命中率" }
                                 }
                             }
                             tbody {
                                 for (name, entry_count, hits, misses, rate_pct) in cache_rows.iter() {
-                                    tr { class: "border-b border-paper-border last:border-0 hover:bg-paper-entry transition-colors",
-                                        td { class: "px-4 py-2 text-paper-primary",
+                                    tr { class: "border-b border-[var(--color-paper-border)]/60 last:border-0 hover:bg-[var(--color-paper-accent-soft)]/20 transition-colors",
+                                        td { class: "px-5 py-3 font-mono font-medium text-[var(--color-paper-primary)]",
                                             "{name}"
                                         }
-                                        td { class: "px-4 py-2 text-right text-paper-secondary",
+                                        td { class: "px-4 py-3 text-right font-mono text-[var(--color-paper-secondary)]",
                                             "{entry_count}"
                                         }
-                                        td { class: "px-4 py-2 text-right text-paper-secondary",
+                                        td { class: "px-4 py-3 text-right font-mono text-[var(--color-paper-secondary)]",
                                             "{hits}"
                                         }
-                                        td { class: "px-4 py-2 text-right text-paper-secondary",
+                                        td { class: "px-4 py-3 text-right font-mono text-[var(--color-paper-secondary)]",
                                             "{misses}"
                                         }
-                                        td { class: "px-4 py-2 text-right text-paper-primary font-medium",
+                                        td { class: "px-5 py-3 text-right font-mono text-[var(--color-paper-primary)] font-semibold",
                                             "{rate_pct}"
                                         }
                                     }
