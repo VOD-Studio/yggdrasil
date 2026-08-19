@@ -166,6 +166,7 @@ impl PostListItem {
     }
 
     /// 返回状态徽章在 light/dark 模式下的 Tailwind 背景与颜色类。
+    #[allow(dead_code)]
     pub fn status_badge_class(&self) -> &'static str {
         self.status.badge_class()
     }

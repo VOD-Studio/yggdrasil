@@ -61,9 +61,11 @@ pub const BTN_TEXT_GREEN: &str = "text-xs text-green-600 hover:text-green-800 da
 /// 琥珀色文字小按钮（行内标为垃圾）。
 pub const BTN_TEXT_AMBER: &str = "text-xs text-amber-600 hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-300 transition-colors cursor-pointer";
 /// 红色文字小按钮（行内删除 / 彻底删除）。
+#[allow(dead_code)]
 pub const BTN_TEXT_RED: &str =
     "text-xs text-red-500 hover:text-red-700 dark:hover:text-red-300 transition-colors cursor-pointer";
 /// 主题绿（鼠尾草）文字小按钮（行内恢复）。
+#[allow(dead_code)]
 pub const BTN_TEXT_ACCENT: &str =
     "text-xs text-paper-accent hover:text-paper-primary transition-colors cursor-pointer";
 

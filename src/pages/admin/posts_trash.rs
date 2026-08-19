@@ -4,14 +4,12 @@
 //! 以及自动清理配置（启用开关 + 保留天数）。
 //! 数据加载与操作仅在 WASM 前端通过 Dioxus server functions 交互。
 //!
-//! 原为 `/admin/posts` 单路由下的客户端 tab（由 `posts.rs::Posts` 容器渲染），
-//! issue #17 起提升为独立路由：页面 header 由本组件自带（标题 + 删除计数副标题，
-//! 计数取自 `use_paginated` 的 `total`），翻页仍走客户端 signal。
-
+#[allow(unused_imports)]
 use std::collections::HashSet;
 
+use crate::router::Route;
 use dioxus::prelude::*;
-
+use dioxus::router::components::Link;
 // 操作类 server function 在 SSR 与 WASM 均需可见（spawn 闭包需类型检查），
 // 但部分仅用于 WASM 代码路径，SSR 下触发 unused imports，按项目惯例放行。
 #[allow(unused_imports)]
@@ -26,14 +24,12 @@ use crate::components::forms::ToggleSwitch;
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::skeletons::posts_trash_skeleton::PostsTrashSkeleton;
 use crate::components::ui::{
-    Checkbox, CollapsibleSettingsCard, LoadingButton, Pagination, Popover, StatusBadge,
-    ADMIN_ROW_HOVER, ADMIN_TABLE_CLASS, BTN_DANGER_OUTLINE, BTN_GHOST, BTN_ICON, BTN_SOLID_GREEN,
-    BTN_SOLID_RED, BTN_TEXT_ACCENT, BTN_TEXT_RED,
+    Checkbox, CollapsibleSettingsCard, LoadingButton, Pagination, Popover, BTN_DANGER_OUTLINE,
+    BTN_GHOST, BTN_ICON, BTN_SOLID_GREEN, BTN_SOLID_RED,
 };
 use crate::hooks::query::use_paginated;
 use crate::models::post::PostListItem;
 use crate::models::settings::TrashSettings;
-
 /// 每页展示的回收站文章数量。
 const TRASH_PER_PAGE: i32 = 20;
 
@@ -87,71 +83,160 @@ pub fn PostsTrash() -> Element {
 
     rsx! {
         div { class: "animate-page-enter w-full max-w-7xl mx-auto space-y-6",
-            // 页面 header：计数取自本组件 use_paginated 的 total（比旧 get_post_stats 角标更准）。
-            div { class: "pb-6 border-b border-paper-border mb-6",
+            // 页面页头：标题 + 副标题 + 返回列表与清空回收站入口
+            div { class: "flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-[var(--color-paper-border)]/70",
                 div {
-                    h1 { class: "text-4xl font-extrabold tracking-tight text-[var(--color-paper-primary)]",
+                    h1 { class: "text-3xl sm:text-4xl font-extrabold tracking-tight text-[var(--color-paper-primary)]",
                         "回收站"
                     }
-                    p { class: "text-base text-[var(--color-paper-secondary)] mt-2",
-                        "{subtitle}"
+                    p { class: "text-sm text-[var(--color-paper-secondary)] mt-1.5",
+                        "{subtitle} · 可随时恢复或彻底删除"
                     }
                 }
-            }
-            div { class: "space-y-6",
-                // 自动清理配置卡片（抽取为子组件 AutoPurgeSettings，见文件末尾）。
-                AutoPurgeSettings { settings }
-
-                // 批量操作栏（选中时展开，取消时收起过渡）
-                div { class: if selected_ids().is_empty() { "batch-bar is-collapsed" } else { "batch-bar" },
-                    div { class: "flex items-center gap-3 p-3 bg-paper-theme rounded-lg",
-                        span { class: "text-sm text-paper-secondary",
-                            "已选择 {selected_ids().len()} 条"
+                div { class: "flex items-center gap-3",
+                    Link {
+                        class: "inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium text-[var(--color-paper-secondary)] hover:text-[var(--color-paper-primary)] hover:bg-[var(--color-paper-entry)] transition-colors cursor-pointer",
+                        to: Route::Posts {},
+                        svg {
+                            class: "w-4 h-4",
+                            xmlns: "http://www.w3.org/2000/svg",
+                            view_box: "0 0 24 24",
+                            fill: "none",
+                            stroke: "currentColor",
+                            stroke_width: "2",
+                            stroke_linecap: "round",
+                            stroke_linejoin: "round",
+                            path { d: "M19 12H5M12 19l-7-7 7-7" }
                         }
+                        "全部文章"
+                    }
+                    if total() > 0 {
                         button {
-                            class: "{BTN_SOLID_GREEN}",
-                            onclick: move |_| {
-                                let ids: Vec<i32> = selected_ids().iter().copied().collect();
-                                spawn(async move {
-                                    let _ = batch_restore_posts(ids).await;
-                                });
-                                for id in selected_ids() {
-                                    remove_post(id);
-                                }
-                                selected_ids.set(HashSet::new());
-                            },
-                            "批量恢复"
-                        }
-                        button {
-                            class: "{BTN_SOLID_RED}",
+                            class: "{BTN_DANGER_OUTLINE} inline-flex items-center gap-1.5",
                             onclick: move |_| {
                                 #[cfg(target_arch = "wasm32")]
                                 {
                                     if web_sys::window()
                                         .and_then(|w| {
                                             w.confirm_with_message(
-                                                    "确定要彻底删除选中的文章吗？此操作不可恢复。",
+                                                    "确定要清空回收站吗？所有已删除文章将被彻底移除，此操作不可恢复。",
                                                 )
                                                 .ok()
                                         })
                                         .unwrap_or(false)
                                     {
-                                        let ids: Vec<i32> = selected_ids().iter().copied().collect();
                                         spawn(async move {
-                                            let _ = batch_purge_posts(ids).await;
+                                            let _ = empty_trash().await;
                                         });
-                                        for id in selected_ids() {
-                                            remove_post(id);
-                                        }
+                                        posts.set(Vec::new());
+                                        total.set(0);
                                         selected_ids.set(HashSet::new());
                                     }
                                 }
                             },
-                            "批量彻底删除"
+                            svg {
+                                class: "w-4 h-4",
+                                xmlns: "http://www.w3.org/2000/svg",
+                                view_box: "0 0 24 24",
+                                fill: "none",
+                                stroke: "currentColor",
+                                stroke_width: "2",
+                                stroke_linecap: "round",
+                                stroke_linejoin: "round",
+                                polyline { points: "3 6 5 6 21 6" }
+                                path { d: "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" }
+                            }
+                            "清空回收站"
                         }
                     }
                 }
+            }
 
+            div { class: "space-y-6",
+                // 自动清理配置卡片
+                AutoPurgeSettings { settings }
+
+                // 批量操作栏（浮动卡片风格）
+                if !selected_ids().is_empty() {
+                    div { class: "animate-row-enter flex flex-wrap items-center justify-between gap-3 p-3.5 bg-[var(--color-paper-entry)] rounded-2xl border border-[var(--color-paper-border)] shadow-xs",
+                        div { class: "flex items-center gap-2 text-sm font-medium text-[var(--color-paper-primary)]",
+                            span { class: "w-2 h-2 rounded-full bg-[var(--color-paper-accent)]" }
+                            span { "已选中 {selected_ids().len()} 篇文章" }
+                        }
+                        div { class: "flex items-center gap-2",
+                            button {
+                                class: "{BTN_SOLID_GREEN} inline-flex items-center gap-1.5",
+                                onclick: move |_| {
+                                    let ids: Vec<i32> = selected_ids().iter().copied().collect();
+                                    spawn(async move {
+                                        let _ = batch_restore_posts(ids).await;
+                                    });
+                                    for id in selected_ids() {
+                                        remove_post(id);
+                                    }
+                                    selected_ids.set(HashSet::new());
+                                },
+                                svg {
+                                    class: "w-3.5 h-3.5",
+                                    xmlns: "http://www.w3.org/2000/svg",
+                                    view_box: "0 0 24 24",
+                                    fill: "none",
+                                    stroke: "currentColor",
+                                    stroke_width: "2",
+                                    stroke_linecap: "round",
+                                    stroke_linejoin: "round",
+                                    polyline { points: "1 4 1 10 7 10" }
+                                    path { d: "M3.51 15a9 9 0 1 0 2.13-9.36L1 10" }
+                                }
+                                "批量恢复"
+                            }
+                            button {
+                                class: "{BTN_SOLID_RED} inline-flex items-center gap-1.5",
+                                onclick: move |_| {
+                                    #[cfg(target_arch = "wasm32")]
+                                    {
+                                        if web_sys::window()
+                                            .and_then(|w| {
+                                                w.confirm_with_message(
+                                                        "确定要彻底删除选中的文章吗？此操作不可恢复。",
+                                                    )
+                                                    .ok()
+                                            })
+                                            .unwrap_or(false)
+                                        {
+                                            let ids: Vec<i32> = selected_ids().iter().copied().collect();
+                                            spawn(async move {
+                                                let _ = batch_purge_posts(ids).await;
+                                            });
+                                            for id in selected_ids() {
+                                                remove_post(id);
+                                            }
+                                            selected_ids.set(HashSet::new());
+                                        }
+                                    }
+                                },
+                                svg {
+                                    class: "w-3.5 h-3.5",
+                                    xmlns: "http://www.w3.org/2000/svg",
+                                    view_box: "0 0 24 24",
+                                    fill: "none",
+                                    stroke: "currentColor",
+                                    stroke_width: "2",
+                                    stroke_linecap: "round",
+                                    stroke_linejoin: "round",
+                                    polyline { points: "3 6 5 6 21 6" }
+                                    path { d: "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" }
+                                }
+                                "批量彻底删除"
+                            }
+                            button {
+                                class: "{BTN_GHOST}",
+                                onclick: move |_| selected_ids.set(HashSet::new()),
+                                "取消"
+                            }
+                        }
+                    }
+                }
                 // 主内容：错误 / 加载骨架 / 空态 / 列表
                 {
                     if error().is_some() {
@@ -179,12 +264,12 @@ pub fn PostsTrash() -> Element {
                         let all_selected = list.iter().all(|p| selected_ids().contains(&p.id));
                         let all_ids: Vec<i32> = list.iter().map(|p| p.id).collect();
                         rsx! {
-                            div { class: "{ADMIN_TABLE_CLASS}",
+                            div { class: "bg-[var(--color-paper-entry)]/40 rounded-2xl shadow-xs border border-[var(--color-paper-border)]/70 overflow-hidden",
                                 div { class: "overflow-x-auto",
                                     table { class: "w-full text-sm",
                                         thead {
-                                            tr { class: "border-b border-paper-border text-left text-paper-secondary",
-                                                th { class: "px-4 py-3 font-medium w-10",
+                                            tr { class: "bg-[var(--color-paper-entry)]/80 border-b border-[var(--color-paper-border)]/70 text-left text-xs font-semibold uppercase tracking-wider text-[var(--color-paper-secondary)] select-none",
+                                                th { class: "px-4 py-3.5 w-10 text-center",
                                                     Checkbox {
                                                         checked: all_selected,
                                                         onchange: move |_checked: bool| {
@@ -202,13 +287,13 @@ pub fn PostsTrash() -> Element {
                                                         },
                                                     }
                                                 }
-                                                th { class: "px-4 py-3 font-medium", "标题" }
-                                                th { class: "px-4 py-3 font-medium whitespace-nowrap", "原状态" }
-                                                th { class: "px-4 py-3 font-medium w-32 whitespace-nowrap", "删除时间" }
-                                                th { class: "px-4 py-3 font-medium w-24 text-center whitespace-nowrap",
-                                                    "剩余"
+                                                th { class: "px-5 py-3.5 font-semibold", "文章标题" }
+                                                th { class: "px-4 py-3.5 font-semibold whitespace-nowrap text-center", "原发布状态" }
+                                                th { class: "px-4 py-3.5 font-semibold w-32 whitespace-nowrap", "删除日期" }
+                                                th { class: "px-4 py-3.5 font-semibold w-24 text-center whitespace-nowrap",
+                                                    "剩余保留"
                                                 }
-                                                th { class: "px-4 py-3 font-medium w-32 text-right whitespace-nowrap",
+                                                th { class: "px-5 py-3.5 font-semibold w-36 text-right whitespace-nowrap",
                                                     "操作"
                                                 }
                                             }
@@ -256,34 +341,6 @@ pub fn PostsTrash() -> Element {
                                             }
                                         }
                                     }
-                                }
-                            }
-                            // 底部：清空回收站 + 分页
-                            div { class: "flex items-center justify-between mt-4",
-                                button {
-                                    class: "{BTN_DANGER_OUTLINE}",
-                                    onclick: move |_| {
-                                        #[cfg(target_arch = "wasm32")]
-                                        {
-                                            if web_sys::window()
-                                                .and_then(|w| {
-                                                    w.confirm_with_message(
-                                                            "确定要清空回收站吗？所有已删除文章将被彻底移除，此操作不可恢复。",
-                                                        )
-                                                        .ok()
-                                                })
-                                                .unwrap_or(false)
-                                            {
-                                                spawn(async move {
-                                                    let _ = empty_trash().await;
-                                                });
-                                                posts.set(Vec::new());
-                                                total.set(0);
-                                                selected_ids.set(HashSet::new());
-                                            }
-                                        }
-                                    },
-                                    "清空回收站"
                                 }
                             }
                             Pagination {
@@ -551,46 +608,86 @@ fn TrashRow(
 
     rsx! {
         tr {
-            class: "animate-row-enter {ADMIN_ROW_HOVER}",
+            class: "animate-row-enter border-b border-[var(--color-paper-border)]/60 last:border-b-0 hover:bg-[var(--color-paper-accent-soft)]/30 transition-colors duration-150 group",
             style: "animation-delay: {stagger_index * 35}ms",
-            td { class: "px-4 py-3",
+            td { class: "px-4 py-3.5 text-center",
                 Checkbox {
                     checked: selected,
                     onchange: move |checked: bool| on_select.call(checked),
                 }
             }
-            td { class: "px-4 py-3",
-                div { class: "text-sm font-medium text-paper-primary truncate max-w-xs",
-                    "{post.title}"
+            td { class: "px-5 py-3.5",
+                div { class: "flex flex-col gap-1",
+                    div { class: "font-semibold text-sm text-[var(--color-paper-primary)] leading-snug line-clamp-1",
+                        "{post.title}"
+                    }
+                    div { class: "flex items-center gap-2 text-xs",
+                        span { class: "font-mono text-[11px] text-[var(--color-paper-tertiary)]",
+                            "/post/{post.slug}"
+                        }
+                    }
                 }
             }
-            td { class: "px-4 py-3 whitespace-nowrap",
-                StatusBadge {
-                    color_class: post.status_badge_class(),
-                    label: post.status_label().to_string(),
+            td { class: "px-4 py-3.5 text-center whitespace-nowrap",
+                if post.status == crate::models::post::PostStatus::Published {
+                    span { class: "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20",
+                        span { class: "w-1.5 h-1.5 rounded-full bg-emerald-500" }
+                        "公开"
+                    }
+                } else {
+                    span { class: "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20",
+                        span { class: "w-1.5 h-1.5 rounded-full bg-amber-500" }
+                        "草稿"
+                    }
                 }
             }
-            td { class: "px-4 py-3 text-sm text-paper-secondary whitespace-nowrap",
+            td { class: "px-4 py-3.5 text-xs font-mono text-[var(--color-paper-secondary)] whitespace-nowrap",
                 "{deleted_str}"
             }
-            td { class: "px-4 py-3 text-center whitespace-nowrap",
-                StatusBadge { color_class: badge_class, label: badge_text }
+            td { class: "px-4 py-3.5 text-center whitespace-nowrap",
+                span { class: "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border {badge_class}",
+                    "{badge_text}"
+                }
             }
-            td { class: "px-4 py-3 text-right whitespace-nowrap",
-                div { class: "flex justify-end gap-2",
+            td { class: "px-5 py-3.5 text-right whitespace-nowrap",
+                div { class: "flex justify-end items-center gap-2",
                     button {
-                        class: "{BTN_TEXT_ACCENT}",
+                        class: "inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors cursor-pointer",
                         onclick: move |_| on_restore.call(()),
+                        svg {
+                            class: "w-3.5 h-3.5",
+                            xmlns: "http://www.w3.org/2000/svg",
+                            view_box: "0 0 24 24",
+                            fill: "none",
+                            stroke: "currentColor",
+                            stroke_width: "2",
+                            stroke_linecap: "round",
+                            stroke_linejoin: "round",
+                            polyline { points: "1 4 1 10 7 10" }
+                            path { d: "M3.51 15a9 9 0 1 0 2.13-9.36L1 10" }
+                        }
                         "恢复"
                     }
                     button {
-                        class: "{BTN_TEXT_RED}",
+                        class: "inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors cursor-pointer",
                         onclick: move |e| {
                             let coordinates = e.client_coordinates();
                             anchor_x.set(coordinates.x as i32);
                             anchor_y.set(coordinates.y as i32);
                             purge_open.set(true);
                         },
+                        svg {
+                            class: "w-3.5 h-3.5",
+                            xmlns: "http://www.w3.org/2000/svg",
+                            view_box: "0 0 24 24",
+                            fill: "none",
+                            stroke: "currentColor",
+                            stroke_width: "2",
+                            stroke_linecap: "round",
+                            stroke_linejoin: "round",
+                            polyline { points: "3 6 5 6 21 6" }
+                            path { d: "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" }
+                        }
                         "彻底删除"
                     }
                 }
