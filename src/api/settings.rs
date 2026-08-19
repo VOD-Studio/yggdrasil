@@ -853,6 +853,21 @@ pub(crate) async fn seed_rate_limit_from_env(
             R::clamp_burst,
         ),
         (
+            "RATE_LIMIT_COMMENT_UPLOAD_PER_SEC",
+            "ratelimit_comment_upload_per_sec",
+            R::clamp_per_sec,
+        ),
+        (
+            "RATE_LIMIT_COMMENT_UPLOAD_BURST",
+            "ratelimit_comment_upload_burst",
+            R::clamp_burst,
+        ),
+        (
+            "RATE_LIMIT_COMMENT_UPLOAD_DAILY",
+            "ratelimit_comment_upload_daily",
+            R::clamp_daily,
+        ),
+        (
             "RATE_LIMIT_CODE_EXEC_PER_SEC",
             "ratelimit_code_exec_per_sec",
             R::clamp_per_sec,
@@ -991,6 +1006,27 @@ pub(crate) async fn load_rate_limit_settings(
             R::clamp_burst,
         )
         .await?,
+        comment_upload_per_sec: read_clamped(
+            client,
+            "ratelimit_comment_upload_per_sec",
+            m::DEFAULT_RATE_LIMIT_COMMENT_UPLOAD_PER_SEC,
+            R::clamp_per_sec,
+        )
+        .await?,
+        comment_upload_burst: read_clamped(
+            client,
+            "ratelimit_comment_upload_burst",
+            m::DEFAULT_RATE_LIMIT_COMMENT_UPLOAD_BURST,
+            R::clamp_burst,
+        )
+        .await?,
+        comment_upload_daily: read_clamped(
+            client,
+            "ratelimit_comment_upload_daily",
+            m::DEFAULT_RATE_LIMIT_COMMENT_UPLOAD_DAILY,
+            R::clamp_daily,
+        )
+        .await?,
         code_exec_per_sec: read_clamped(
             client,
             "ratelimit_code_exec_per_sec",
@@ -1070,6 +1106,9 @@ pub async fn update_rate_limit_settings(
     image_burst: u32,
     comment_per_sec: u32,
     comment_burst: u32,
+    comment_upload_per_sec: u32,
+    comment_upload_burst: u32,
+    comment_upload_daily: u32,
     code_exec_per_sec: u32,
     code_exec_burst: u32,
     code_exec_daily: u32,
@@ -1087,6 +1126,9 @@ pub async fn update_rate_limit_settings(
     let image_burst = RateLimitSettings::clamp_burst(image_burst);
     let comment_per_sec = RateLimitSettings::clamp_per_sec(comment_per_sec);
     let comment_burst = RateLimitSettings::clamp_burst(comment_burst);
+    let comment_upload_per_sec = RateLimitSettings::clamp_per_sec(comment_upload_per_sec);
+    let comment_upload_burst = RateLimitSettings::clamp_burst(comment_upload_burst);
+    let comment_upload_daily = RateLimitSettings::clamp_daily(comment_upload_daily);
     let code_exec_per_sec = RateLimitSettings::clamp_per_sec(code_exec_per_sec);
     let code_exec_burst = RateLimitSettings::clamp_burst(code_exec_burst);
     let code_exec_daily = RateLimitSettings::clamp_daily(code_exec_daily);
@@ -1107,6 +1149,18 @@ pub async fn update_rate_limit_settings(
             ("ratelimit_image_burst", image_burst.to_string()),
             ("ratelimit_comment_per_sec", comment_per_sec.to_string()),
             ("ratelimit_comment_burst", comment_burst.to_string()),
+            (
+                "ratelimit_comment_upload_per_sec",
+                comment_upload_per_sec.to_string(),
+            ),
+            (
+                "ratelimit_comment_upload_burst",
+                comment_upload_burst.to_string(),
+            ),
+            (
+                "ratelimit_comment_upload_daily",
+                comment_upload_daily.to_string(),
+            ),
             ("ratelimit_code_exec_per_sec", code_exec_per_sec.to_string()),
             ("ratelimit_code_exec_burst", code_exec_burst.to_string()),
             ("ratelimit_code_exec_daily", code_exec_daily.to_string()),
@@ -1126,7 +1180,7 @@ pub async fn update_rate_limit_settings(
 
         tracing::info!(
             "Rate limit settings updated (需重启生效): strict={}/{}, upload={}/{}, \
-             image={}/{}, comment={}/{}, code_exec={}/{}/{}, unknown={}/{}, gc={}s",
+             image={}/{}, comment={}/{}, comment_upload={}/{}/{}, code_exec={}/{}/{}, unknown={}/{}, gc={}s",
             strict_per_sec,
             strict_burst,
             upload_per_sec,
@@ -1135,6 +1189,9 @@ pub async fn update_rate_limit_settings(
             image_burst,
             comment_per_sec,
             comment_burst,
+            comment_upload_per_sec,
+            comment_upload_burst,
+            comment_upload_daily,
             code_exec_per_sec,
             code_exec_burst,
             code_exec_daily,
@@ -1153,6 +1210,9 @@ pub async fn update_rate_limit_settings(
         image_burst,
         comment_per_sec,
         comment_burst,
+        comment_upload_per_sec,
+        comment_upload_burst,
+        comment_upload_daily,
         code_exec_per_sec,
         code_exec_burst,
         code_exec_daily,

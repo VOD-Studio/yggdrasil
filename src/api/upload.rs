@@ -1,7 +1,8 @@
 //! 图片上传：web 处理器 + 共享入库流水线。
 //!
-//! 两条入口共用 `process_image_upload`：
-//! - web `POST /api/upload`（cookie 鉴权，multipart）—— 见 `upload_image`；
+//! 三条入口共用 `process_image_upload`：
+//! - web `POST /api/upload`（cookie 鉴权 admin，multipart）—— 见 `upload_image`；
+//! - web `POST /api/comments/upload`（评论区，允许匿名，IP 双层限流）—— 见 `comment_upload_image`；
 //! - MCP `POST /api/mcp/upload`（bearer 鉴权，multipart）—— 见 `mcp_upload_image`；
 //! - MCP `upload_media` 工具（URL 抓取）—— 见 `src/mcp/tools/media.rs`。
 //!
@@ -135,6 +136,80 @@ pub async fn upload_image(
     };
 
     // 6. 共享入库流水线。
+    match process_image_upload(data, original_filename).await {
+        Ok(out) => Ok(Json(json!({
+            "success": true,
+            "url": out.url,
+            "reused": out.reused
+        }))),
+        Err(e) => {
+            let (status, msg) = e.status_and_msg();
+            Err(upload_error(status, msg))
+        }
+    }
+}
+
+// ===========================================================================
+// 评论图片处理器（允许匿名，IP 双层限流）
+// ===========================================================================
+
+/// 评论图片上传的 Axum handler（评论区用，**允许匿名**）。
+///
+/// 与 admin `upload_image` 的区别：
+/// - 不做会话/角色校验——匿名访客也能为评论传图；
+/// - 限流用独立的 comment_upload 双层桶（每秒突发 + 每日总额），与 admin 的
+///   upload 桶隔离，匿名滥用不会挤占 admin 额度；
+/// - 入库流水线与响应契约完全一致（magic bytes 检 MIME、5MiB、尺寸/像素校验、
+///   SHA-256 去重、转码、assets 登记）。
+///
+/// 未引用素材由 `tasks::orphan_asset_purge` 定期回收（评论未提交、评论被删等
+/// 场景产生的孤儿图）。
+#[cfg(feature = "server")]
+pub async fn comment_upload_image(
+    connect_info: Option<Extension<ConnectInfo<SocketAddr>>>,
+    headers: HeaderMap,
+    mut multipart: Multipart,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    // 0. 双层限流（先于一切 body 读取）。
+    let peer = connect_info.map(|Extension(ConnectInfo(addr))| addr);
+    let ip = crate::api::rate_limit::get_client_ip_with_peer(&headers, peer).await;
+    if let Err(msg) = crate::api::rate_limit::check_comment_upload_limit(&ip) {
+        return Err(upload_error(StatusCode::TOO_MANY_REQUESTS, msg));
+    }
+
+    // 1. Read multipart field
+    let field = match multipart.next_field().await {
+        Ok(Some(f)) => f,
+        Ok(None) => {
+            return Err(upload_error(StatusCode::BAD_REQUEST, "未找到文件"));
+        }
+        Err(e) => {
+            tracing::error!("Comment multipart error: {:?}", e);
+            return Err(upload_error(StatusCode::BAD_REQUEST, "文件读取失败"));
+        }
+    };
+
+    // 2. 早拒非法声明类型（快速路径；流水线仍以 magic bytes 为权威）。
+    let declared_mime = field.content_type().unwrap_or("").to_string();
+    if !ALLOWED_MIME_TYPES.contains(&declared_mime.as_str()) {
+        return Err(upload_error(StatusCode::BAD_REQUEST, "不支持的文件类型"));
+    }
+
+    let original_filename = field.file_name().map(|s| s.to_string());
+
+    // 3. Read file data
+    let data = match field.bytes().await {
+        Ok(d) => d,
+        Err(e) => {
+            tracing::error!("Comment read file error: {:?}", e);
+            return Err(upload_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "文件读取失败",
+            ));
+        }
+    };
+
+    // 4. 共享入库流水线。
     match process_image_upload(data, original_filename).await {
         Ok(out) => Ok(Json(json!({
             "success": true,

@@ -343,10 +343,16 @@ fn main() {
 
             // 自定义 API 路由：图片上传（大文件，需要更长超时）
             // CSRF 校验置于最外层，先拦截非法来源再做超时/限体。
+            // /api/comments/upload 与 /api/upload 共用同一组约束（10MiB / 300s / CSRF）：
+            // 前者允许匿名（评论区传图，handler 内做 IP 双层限流），后者要求 admin 会话。
             let upload_route = axum::Router::new()
                 .route(
                     "/api/upload",
                     axum::routing::post(crate::api::upload::upload_image),
+                )
+                .route(
+                    "/api/comments/upload",
+                    axum::routing::post(crate::api::upload::comment_upload_image),
                 )
                 .layer(axum::extract::DefaultBodyLimit::max(10 * 1024 * 1024))
                 .layer(TimeoutLayer::with_status_code(

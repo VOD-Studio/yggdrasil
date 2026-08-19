@@ -1,7 +1,7 @@
 //! 基于 governor 的多级限流。
 //!
-//! 提供 strict、upload、image、comment 四个限流器，
-//! 支持从 `X-Forwarded-For` / `X-Real-IP` 中提取客户端 IP，
+//! 提供 strict、upload、image、comment、comment_upload（双层）、code_exec（双层）
+//! 等限流器，支持从 `X-Forwarded-For` / `X-Real-IP` 中提取客户端 IP，
 //! 并可通过 `TRUSTED_PROXY_COUNT` 配置信任代理层数。
 //!
 //! 当未配置可信代理时，Axum handler 可回退到 TCP 连接的对端地址；
@@ -57,6 +57,30 @@ static COMMENT_LIMITER: LazyLock<DefaultKeyedRateLimiter<String>> = LazyLock::ne
 });
 
 #[cfg(feature = "server")]
+/// 评论图片上传单 IP 每秒限流（默认 1 req/s，突发 5）。
+/// 评论区允许匿名上传图片，与 admin 的 UPLOAD_LIMITER 隔离，避免互占额度。
+static COMMENT_UPLOAD_LIMITER: LazyLock<DefaultKeyedRateLimiter<String>> = LazyLock::new(|| {
+    let c = crate::config::rate_limit();
+    RateLimiter::keyed(
+        Quota::per_second(nz(c.comment_upload_per_sec)).allow_burst(nz(c.comment_upload_burst)),
+    )
+});
+
+#[cfg(feature = "server")]
+/// 评论图片上传单 IP 每日限额（默认 30 次/天）。
+/// 匿名可传图意味着任何人都能消耗磁盘，需要硬性日上限（模拟方式同
+/// CODE_EXEC_DAILY_LIMITER：24h 补充 1 token、突发上限即日额度）。
+static COMMENT_UPLOAD_DAILY_LIMITER: LazyLock<DefaultKeyedRateLimiter<String>> =
+    LazyLock::new(|| {
+        let c = crate::config::rate_limit();
+        RateLimiter::keyed(
+            Quota::with_period(Duration::from_secs(86_400))
+                .expect("with_period 仅在 Duration 为 0 时返回 None；86_400s 必然 Some")
+                .allow_burst(nz(c.comment_upload_daily)),
+        )
+    });
+
+#[cfg(feature = "server")]
 /// 代码执行单 IP 每秒限流（默认 1 req/s，突发 3）。
 /// 防止单个客户端高频提交容器任务，与下方日限额共同构成双层速率限制。
 static CODE_EXEC_LIMITER: LazyLock<DefaultKeyedRateLimiter<String>> = LazyLock::new(|| {
@@ -108,7 +132,7 @@ fn limiter_gc_interval() -> Duration {
 
 /// 启动后台限流桶 GC 任务（全进程仅生效一次）。
 ///
-/// 七个 IP 键控限流器均为独立的 `DefaultKeyedRateLimiter`，没有集中状态表，故采用
+/// 九个 IP 键控限流器均为独立的 `DefaultKeyedRateLimiter`，没有集中状态表，故采用
 /// 惰性启动：首个请求到达任一 `check_*` 时，经 `Once` 派生一个常驻 tokio 任务，按
 /// [`limiter_gc_interval`] 周期对全部限流器调用 `retain_recent`，回收长时间未命中的
 /// 键。这直接缓解 IP 轮换攻击下的内存膨胀——攻击者不断换 IP 制造新键，GC 周期性剔除
@@ -131,6 +155,8 @@ fn ensure_limiter_gc() {
                 UPLOAD_LIMITER.retain_recent();
                 IMAGE_LIMITER.retain_recent();
                 COMMENT_LIMITER.retain_recent();
+                COMMENT_UPLOAD_LIMITER.retain_recent();
+                COMMENT_UPLOAD_DAILY_LIMITER.retain_recent();
                 CODE_EXEC_LIMITER.retain_recent();
                 CODE_EXEC_DAILY_LIMITER.retain_recent();
                 UNKNOWN_BUCKET_LIMITER.retain_recent();
@@ -147,6 +173,21 @@ pub fn check_comment_limit(ip: &str) -> Result<(), String> {
         .check_key(&ip.to_string())
         .map(|_| ())
         .map_err(|_| "评论过于频繁，请稍后再试".to_string())
+}
+
+#[cfg(feature = "server")]
+/// 检查评论图片上传的双层速率限制（每秒突发 + 每日总额）。
+///
+/// 两层任一被限即拒绝。评论区允许匿名上传，日限额是防磁盘耗尽的关键防线。
+pub fn check_comment_upload_limit(ip: &str) -> Result<(), String> {
+    ensure_limiter_gc();
+    COMMENT_UPLOAD_LIMITER
+        .check_key(&ip.to_string())
+        .map_err(|_| "上传过于频繁，请稍后再试".to_string())?;
+    COMMENT_UPLOAD_DAILY_LIMITER
+        .check_key(&ip.to_string())
+        .map_err(|_| "今日上传次数已达上限，请明天再试".to_string())?;
+    Ok(())
 }
 
 #[cfg(feature = "server")]

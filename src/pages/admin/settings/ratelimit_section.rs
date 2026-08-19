@@ -145,6 +145,23 @@ pub fn RateLimitSection(toast: Callback<(String, bool)>) -> Element {
                         },
                     }
                     LimiterField {
+                        label: "评论图片上传限流（含匿名）",
+                        per_sec: draft().comment_upload_per_sec,
+                        burst: draft().comment_upload_burst,
+                        on_per_sec: move |v| {
+                            let mut d = draft();
+                            d.comment_upload_per_sec = v;
+                            draft.set(d);
+                            just_saved.set(false);
+                        },
+                        on_burst: move |v| {
+                            let mut d = draft();
+                            d.comment_upload_burst = v;
+                            draft.set(d);
+                            just_saved.set(false);
+                        },
+                    }
+                    LimiterField {
                         label: "代码执行限流",
                         per_sec: draft().code_exec_per_sec,
                         burst: draft().code_exec_burst,
@@ -179,7 +196,32 @@ pub fn RateLimitSection(toast: Callback<(String, bool)>) -> Element {
                         },
                     }
 
-                    // 代码执行日限额 + GC 间隔
+                    // 评论图片上传日限额 + 代码执行日限额 + GC 间隔
+                    div { class: "flex flex-col gap-2 max-w-xl",
+                        FormLabel {
+                            label: "评论图片上传日限额（次/天，按 IP）",
+                            html_for: Some("rl-comment-upload-daily".to_string()),
+                        }
+                        input {
+                            id: "rl-comment-upload-daily",
+                            r#type: "number",
+                            min: "1",
+                            class: "{INPUT_CLASS}",
+                            value: "{draft().comment_upload_daily}",
+                            oninput: move |e: Event<FormData>| {
+                                let v = e.value();
+                                if let Ok(n) = v.parse::<u32>() {
+                                    let mut d = draft();
+                                    d.comment_upload_daily = n;
+                                    draft.set(d);
+                                    just_saved.set(false);
+                                }
+                            },
+                        }
+                        p { class: "text-xs text-[var(--color-paper-secondary)]",
+                            "评论区允许匿名传图，日限额是防磁盘耗尽的关键防线。"
+                        }
+                    }
                     div { class: "flex flex-col gap-2 max-w-xl",
                         FormLabel {
                             label: "代码执行日限额（次/天）",
@@ -269,6 +311,9 @@ pub fn RateLimitSection(toast: Callback<(String, bool)>) -> Element {
                                             d.image_burst,
                                             d.comment_per_sec,
                                             d.comment_burst,
+                                            d.comment_upload_per_sec,
+                                            d.comment_upload_burst,
+                                            d.comment_upload_daily,
                                             d.code_exec_per_sec,
                                             d.code_exec_burst,
                                             d.code_exec_daily,

@@ -394,6 +394,12 @@ pub const DEFAULT_RATE_LIMIT_IMAGE_BURST: u32 = 50;
 /// 默认评论限流：1 req/s，突发 5。
 pub const DEFAULT_RATE_LIMIT_COMMENT_PER_SEC: u32 = 1;
 pub const DEFAULT_RATE_LIMIT_COMMENT_BURST: u32 = 5;
+/// 默认评论图片上传限流：1 req/s，突发 5。
+pub const DEFAULT_RATE_LIMIT_COMMENT_UPLOAD_PER_SEC: u32 = 1;
+pub const DEFAULT_RATE_LIMIT_COMMENT_UPLOAD_BURST: u32 = 5;
+/// 默认评论图片上传日限额：30 次/天。
+/// 评论图片允许匿名上传，磁盘成本需要硬性日上限防滥用（同 code_exec 双层语义）。
+pub const DEFAULT_RATE_LIMIT_COMMENT_UPLOAD_DAILY: u32 = 30;
 /// 默认代码执行限流：1 req/s，突发 3。
 pub const DEFAULT_RATE_LIMIT_CODE_EXEC_PER_SEC: u32 = 1;
 pub const DEFAULT_RATE_LIMIT_CODE_EXEC_BURST: u32 = 3;
@@ -440,6 +446,12 @@ pub struct RateLimitSettings {
     pub comment_per_sec: u32,
     /// 评论限流突发上限。
     pub comment_burst: u32,
+    /// 评论图片上传限流每秒请求数。
+    pub comment_upload_per_sec: u32,
+    /// 评论图片上传限流突发上限。
+    pub comment_upload_burst: u32,
+    /// 评论图片上传日限额（次/天）。
+    pub comment_upload_daily: u32,
     /// 代码执行限流每秒请求数。
     pub code_exec_per_sec: u32,
     /// 代码执行限流突发上限。
@@ -465,6 +477,9 @@ impl Default for RateLimitSettings {
             image_burst: DEFAULT_RATE_LIMIT_IMAGE_BURST,
             comment_per_sec: DEFAULT_RATE_LIMIT_COMMENT_PER_SEC,
             comment_burst: DEFAULT_RATE_LIMIT_COMMENT_BURST,
+            comment_upload_per_sec: DEFAULT_RATE_LIMIT_COMMENT_UPLOAD_PER_SEC,
+            comment_upload_burst: DEFAULT_RATE_LIMIT_COMMENT_UPLOAD_BURST,
+            comment_upload_daily: DEFAULT_RATE_LIMIT_COMMENT_UPLOAD_DAILY,
             code_exec_per_sec: DEFAULT_RATE_LIMIT_CODE_EXEC_PER_SEC,
             code_exec_burst: DEFAULT_RATE_LIMIT_CODE_EXEC_BURST,
             code_exec_daily: DEFAULT_RATE_LIMIT_CODE_EXEC_DAILY,
@@ -1112,6 +1127,9 @@ mod tests {
         assert_eq!(s.image_burst, 50);
         assert_eq!(s.comment_per_sec, 1);
         assert_eq!(s.comment_burst, 5);
+        assert_eq!(s.comment_upload_per_sec, 1);
+        assert_eq!(s.comment_upload_burst, 5);
+        assert_eq!(s.comment_upload_daily, 30);
         assert_eq!(s.code_exec_per_sec, 1);
         assert_eq!(s.code_exec_burst, 3);
         assert_eq!(s.code_exec_daily, 50);
