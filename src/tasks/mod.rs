@@ -11,6 +11,9 @@ pub mod image_cache_cleanup;
 /// 定时清理评论过期的 IP 与用户代理信息，满足隐私保护要求。
 #[cfg(feature = "server")]
 pub mod ip_purge;
+/// 定时物理删除无引用的孤儿素材（评论区匿名传图的主要回收手段）。
+#[cfg(feature = "server")]
+pub mod orphan_asset_purge;
 /// 定时清理回收站中超过保留期的已删除文章。
 #[cfg(feature = "server")]
 pub mod post_purge;

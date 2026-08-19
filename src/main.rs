@@ -186,6 +186,13 @@ fn main() {
                 tracing::warn!("image cache settings env seeding failed: {e:?}");
             }
 
+            // ASSET_ORPHAN_PURGE_* 环境变量播种孤儿素材清理配置（语义同上）。
+            if let Err(e) =
+                crate::api::settings::seed_asset_purge_settings_from_env(&conn).await
+            {
+                tracing::warn!("asset purge settings env seeding failed: {e:?}");
+            }
+
             // 限流配置（RATE_LIMIT_*）env 播种，语义同上（仅键缺失时生效）。
             // Tier B：播种后立即从 DB 加载到 config::RATE_LIMIT_CFG，rate_limit.rs
             // 的 LazyLock 在首次请求时从 config 读取——修改 DB 值需重启生效。
@@ -299,6 +306,11 @@ fn main() {
             // 启动后台定时任务：图片磁盘缓存清理
             tokio::spawn(async {
                 tasks::image_cache_cleanup::run_cleanup().await;
+            });
+
+            // 启动后台定时任务：孤儿素材定期清理（设置存 DB，面板可改）
+            tokio::spawn(async {
+                tasks::orphan_asset_purge::run_purge().await;
             });
 
             // 启动后台采样任务：sysinfo 主机指标（CPU/内存/磁盘），server function 只读快照。

@@ -6,6 +6,7 @@
 //! - **站点**：页脚 GitHub 链接等公开配置（前台可见）
 //! - **安全**：CSRF 可信源、cookie Secure、代理层数、并发会话上限（即时生效）
 //! - **缓存**：图片磁盘缓存容量与保留策略（即时生效）
+//! - **素材清理**：无引用图片自动清理开关与保留天数（即时生效）
 //! - **备份**：自动备份调度与保留份数（即时生效，备份操作仍在 /admin/system）
 //! - **回收站**：自动清理开关与保留天数（即时生效）
 //! - **上传**：素材上传弹窗并发数（即时生效）
@@ -25,6 +26,7 @@
 mod backup_section;
 mod cache_section;
 mod image_section;
+mod purge_section;
 mod ratelimit_section;
 mod runner_section;
 mod security_section;
@@ -38,6 +40,7 @@ use dioxus::prelude::*;
 use backup_section::BackupSection;
 use cache_section::CacheSection;
 use image_section::ImageSection;
+use purge_section::AssetPurgeSection;
 use ratelimit_section::RateLimitSection;
 use runner_section::RunnerSection;
 use security_section::SecuritySection;
@@ -55,6 +58,8 @@ pub enum SettingsSection {
     Security,
     /// 缓存配置（图片磁盘缓存）。
     Cache,
+    /// 孤儿素材自动清理。
+    AssetPurge,
     /// 限流配置（各接口速率限制）。
     RateLimit,
     /// 图片处理配置（WebP 编码 / 尺寸上限）。
@@ -77,6 +82,7 @@ impl SettingsSection {
             SettingsSection::Site => "site",
             SettingsSection::Security => "security",
             SettingsSection::Cache => "cache",
+            SettingsSection::AssetPurge => "assetpurge",
             SettingsSection::RateLimit => "ratelimit",
             SettingsSection::Image => "image",
             SettingsSection::Runner => "runner",
@@ -93,6 +99,7 @@ impl SettingsSection {
             SettingsSection::Site => "站点",
             SettingsSection::Security => "安全",
             SettingsSection::Cache => "缓存",
+            SettingsSection::AssetPurge => "素材清理",
             SettingsSection::RateLimit => "限流",
             SettingsSection::Image => "图片",
             SettingsSection::Runner => "运行器",
@@ -109,6 +116,7 @@ impl SettingsSection {
             SettingsSection::Site => "M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z M9 22V12h6v10",
             SettingsSection::Security => "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z",
             SettingsSection::Cache => "M21 8v13H3V8 M1 3h22v5H1z M10 12h4",
+            SettingsSection::AssetPurge => "M21 15l-5-5L5 21 M18 21H3V3h18v9z M8.5 8.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0z M3 6h18",
             SettingsSection::RateLimit => "M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2z M12 6v6l4 2",
             SettingsSection::Image => "M21 15l-5-5L5 21 M18 21H3V3h18v9z M8.5 8.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0z",
             SettingsSection::Runner => "M16 18l6-6-6-6 M8 6l-6 6 6 6",
@@ -120,11 +128,12 @@ impl SettingsSection {
     }
 
     /// 所有分区，按导航顺序。
-    fn all() -> [SettingsSection; 10] {
+    fn all() -> [SettingsSection; 11] {
         [
             SettingsSection::Site,
             SettingsSection::Security,
             SettingsSection::Cache,
+            SettingsSection::AssetPurge,
             SettingsSection::RateLimit,
             SettingsSection::Image,
             SettingsSection::Runner,
@@ -203,6 +212,9 @@ fn render_section(section: SettingsSection, toast: Callback<(String, bool)>) -> 
         },
         SettingsSection::Cache => rsx! {
             CacheSection { toast }
+        },
+        SettingsSection::AssetPurge => rsx! {
+            AssetPurgeSection { toast }
         },
         SettingsSection::Backup => rsx! {
             BackupSection { toast }

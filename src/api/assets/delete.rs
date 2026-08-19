@@ -1,6 +1,6 @@
 //! 素材删除与孤儿清理接口。
 //!
-//! 删除保护：被任何文章（含回收站文章）引用的素材禁删，返回引用列表；
+//! 删除保护：被任何文章（含回收站文章）或存活评论引用的素材禁删；
 //! 孤儿素材硬删除（文件 + DB 行 + 派生缓存）。一键清理仅作用于
 //! 无引用且超过 7 天保护窗的素材（保护未保存草稿的引用）。
 //! Dioxus server function，注册在 `/api` 路径下，仅 admin 可用。
@@ -102,6 +102,27 @@ pub async fn delete_asset(id: String) -> Result<AssetOpResponse, ServerFnError> 
             });
         }
 
+        // 评论引用检查：存活评论（未进回收站）的 content_html 命中路径即保护。
+        // 评论无 asset_refs 记录，必须单独判定，否则评论图会被当孤儿删掉。
+        let comment_referenced: bool = client
+            .query_one(
+                &format!(
+                    "SELECT {} FROM assets a WHERE a.id = $1",
+                    super::COMMENT_REF_CLAUSE
+                ),
+                &[&asset_uuid],
+            )
+            .await
+            .map_err(AppError::query)?
+            .get(0);
+        if comment_referenced {
+            return Ok(AssetOpResponse {
+                success: false,
+                message: "该素材正被评论引用，无法删除".to_string(),
+                refs: Vec::new(),
+            });
+        }
+
         // 孤儿：先删文件（NotFound 容忍——磁盘与 DB 可能已不一致），再删 DB 行。
         let file_path = format!("uploads/{}", path);
         if let Err(e) = tokio::fs::remove_file(&file_path).await {
@@ -160,11 +181,16 @@ pub async fn batch_delete_assets(
         }
 
         // 一次查询取路径/大小/引用存在性，避免逐 id 往返。
+        // referenced = 文章引用（asset_refs）或存活评论引用（见 super::COMMENT_REF_CLAUSE）。
         let rows = client
             .query(
-                "SELECT a.id AS id, a.path, a.size_bytes, \
-                        EXISTS (SELECT 1 FROM asset_refs r WHERE r.asset_id = a.id) AS referenced \
-                 FROM assets a WHERE a.id = ANY($1)",
+                &format!(
+                    "SELECT a.id AS id, a.path, a.size_bytes, \
+                            (EXISTS (SELECT 1 FROM asset_refs r WHERE r.asset_id = a.id) \
+                             OR {comment_ref}) AS referenced \
+                     FROM assets a WHERE a.id = ANY($1)",
+                    comment_ref = super::COMMENT_REF_CLAUSE
+                ),
                 &[&uuids],
             )
             .await
@@ -237,9 +263,13 @@ pub async fn purge_orphan_assets() -> Result<PurgeOrphansResponse, ServerFnError
 
         let rows = client
             .query(
-                "SELECT a.id AS id, a.path, a.size_bytes FROM assets a \
-                 WHERE NOT EXISTS (SELECT 1 FROM asset_refs r WHERE r.asset_id = a.id) \
-                   AND a.created_at < NOW() - make_interval(days => $1)",
+                &format!(
+                    "SELECT a.id AS id, a.path, a.size_bytes FROM assets a \
+                     WHERE NOT EXISTS (SELECT 1 FROM asset_refs r WHERE r.asset_id = a.id) \
+                       AND NOT {comment_ref} \
+                       AND a.created_at < NOW() - make_interval(days => $1)",
+                    comment_ref = super::COMMENT_REF_CLAUSE
+                ),
                 &[&super::list::PURGE_GRACE_DAYS],
             )
             .await

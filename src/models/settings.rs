@@ -372,6 +372,57 @@ impl ImageCacheSettings {
 }
 
 // ============================================================================
+// 孤儿素材自动清理配置（即时生效）
+// ============================================================================
+//
+// 后台任务每天读取 DB 值执行清理：无文章引用（asset_refs）且无存活评论引用
+// （comments.content_html）的素材，超过保留天数后物理删除（文件 + DB 行 +
+// 派生缓存）。语义与 /admin/assets 的「一键清理孤儿」一致，只是改为定时自动。
+// 评论区允许匿名传图后，未提交/被删评论留下的孤儿图会持续累积，此任务是
+// 磁盘的主要回收手段。env 首启播种，之后面板值优先（下个 tick 生效）。
+
+/// 默认启用孤儿素材自动清理。
+pub const DEFAULT_ASSET_ORPHAN_PURGE_ENABLED: bool = true;
+/// 默认孤儿素材保留 7 天（与 /admin/assets 手动清理的 PURGE_GRACE_DAYS 一致，
+/// 保护尚未首次保存的草稿引用）。
+pub const DEFAULT_ASSET_ORPHAN_RETENTION_DAYS: i32 = 7;
+/// 保留天数下限（天）。
+#[cfg(feature = "server")]
+pub const MIN_ASSET_ORPHAN_RETENTION_DAYS: i32 = 1;
+/// 保留天数上限（天）。防止误填超大值导致永不清理。
+#[cfg(feature = "server")]
+pub const MAX_ASSET_ORPHAN_RETENTION_DAYS: i32 = 365;
+
+/// 孤儿素材自动清理配置（uploads/ 中无引用的图片）。
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AssetPurgeSettings {
+    /// 是否启用自动定时清理。
+    pub auto_purge_enabled: bool,
+    /// 孤儿素材保留天数，超过后被后台任务物理删除。
+    pub retention_days: i32,
+}
+
+impl Default for AssetPurgeSettings {
+    fn default() -> Self {
+        Self {
+            auto_purge_enabled: DEFAULT_ASSET_ORPHAN_PURGE_ENABLED,
+            retention_days: DEFAULT_ASSET_ORPHAN_RETENTION_DAYS,
+        }
+    }
+}
+
+impl AssetPurgeSettings {
+    /// 将保留天数钳制到合法范围 [MIN, MAX]。
+    #[cfg(feature = "server")]
+    pub fn clamp_retention(days: i32) -> i32 {
+        days.clamp(
+            MIN_ASSET_ORPHAN_RETENTION_DAYS,
+            MAX_ASSET_ORPHAN_RETENTION_DAYS,
+        )
+    }
+}
+
+// ============================================================================
 // 限流配置（重启生效）
 // ============================================================================
 //
@@ -876,6 +927,27 @@ mod tests {
         assert_eq!(
             TrashSettings::clamp_retention(MAX_RETENTION_DAYS),
             MAX_RETENTION_DAYS
+        );
+    }
+
+    #[test]
+    fn asset_purge_default_is_enabled_7_days() {
+        let s = AssetPurgeSettings::default();
+        assert!(s.auto_purge_enabled);
+        assert_eq!(s.retention_days, 7);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn asset_purge_clamp_retention() {
+        assert_eq!(
+            AssetPurgeSettings::clamp_retention(0),
+            MIN_ASSET_ORPHAN_RETENTION_DAYS
+        );
+        assert_eq!(AssetPurgeSettings::clamp_retention(7), 7);
+        assert_eq!(
+            AssetPurgeSettings::clamp_retention(366),
+            MAX_ASSET_ORPHAN_RETENTION_DAYS
         );
     }
 

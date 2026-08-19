@@ -47,14 +47,17 @@ pub async fn list_assets(
         let mut params: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = Vec::new();
         match filter {
             AssetFilter::Used => {
-                conditions.push(
-                    "EXISTS (SELECT 1 FROM asset_refs r WHERE r.asset_id = a.id)".to_string(),
-                );
+                conditions.push(format!(
+                    "(EXISTS (SELECT 1 FROM asset_refs r WHERE r.asset_id = a.id) OR {})",
+                    super::COMMENT_REF_CLAUSE
+                ));
             }
             AssetFilter::Orphan => {
-                conditions.push(
-                    "NOT EXISTS (SELECT 1 FROM asset_refs r WHERE r.asset_id = a.id)".to_string(),
-                );
+                conditions.push(format!(
+                    "NOT EXISTS (SELECT 1 FROM asset_refs r WHERE r.asset_id = a.id) \
+                     AND NOT {}",
+                    super::COMMENT_REF_CLAUSE
+                ));
             }
             AssetFilter::All => {}
         }
@@ -77,7 +80,8 @@ pub async fn list_assets(
             AssetSort::SizeDesc => "a.size_bytes DESC, a.id",
         };
 
-        // 列表查询：ref_count 用相关子查询一次带出。
+        // 列表查询：ref_count = 文章引用数 + 存活评论引用数（评论引用判定见
+        // super::COMMENT_REF_CLAUSE），与 Used/Orphan 筛选语义保持一致。
         // const 不能取引用（内联后借临时值会垂悬），绑定到局部变量再进参数列表。
         let per_page = PER_PAGE;
         params.push(&per_page);
@@ -89,7 +93,9 @@ pub async fn list_assets(
                 &format!(
                     "SELECT a.id AS id, a.path, a.filename, a.mime, a.size_bytes, \
                             a.width, a.height, a.alt, a.created_at, \
-                            (SELECT COUNT(*) FROM asset_refs r WHERE r.asset_id = a.id) AS ref_count \
+                            ((SELECT COUNT(*) FROM asset_refs r WHERE r.asset_id = a.id) + \
+                             (SELECT COUNT(*) FROM comments c WHERE c.deleted_at IS NULL \
+                              AND c.content_html LIKE '%' || a.path || '%')) AS ref_count \
                      FROM assets a {where_clause} \
                      ORDER BY {order_clause} LIMIT ${limit_idx} OFFSET ${offset_idx}"
                 ),
@@ -108,16 +114,24 @@ pub async fn list_assets(
             .get(0);
 
         // 汇总计数：tabs 与「清理孤儿」按钮徽标。不受筛选/搜索影响，始终全局。
+        // 孤儿 = 无文章引用且无存活评论引用（与 AssetFilter::Orphan 筛选同语义）。
         let summary = client
             .query_one(
-                "SELECT \
-                    COUNT(*) FILTER (WHERE EXISTS (SELECT 1 FROM asset_refs r WHERE r.asset_id = a.id)), \
-                    COUNT(*) FILTER (WHERE NOT EXISTS (SELECT 1 FROM asset_refs r WHERE r.asset_id = a.id)), \
-                    COUNT(*) FILTER (WHERE NOT EXISTS (SELECT 1 FROM asset_refs r WHERE r.asset_id = a.id) \
-                        AND a.created_at < NOW() - make_interval(days => $1)), \
-                    COALESCE(SUM(a.size_bytes) FILTER (WHERE NOT EXISTS (SELECT 1 FROM asset_refs r WHERE r.asset_id = a.id) \
-                        AND a.created_at < NOW() - make_interval(days => $1)), 0)::bigint \
-                 FROM assets a",
+                &format!(
+                    "SELECT \
+                        COUNT(*) FILTER (WHERE EXISTS (SELECT 1 FROM asset_refs r WHERE r.asset_id = a.id) \
+                            OR {comment_ref}), \
+                        COUNT(*) FILTER (WHERE NOT EXISTS (SELECT 1 FROM asset_refs r WHERE r.asset_id = a.id) \
+                            AND NOT {comment_ref}), \
+                        COUNT(*) FILTER (WHERE NOT EXISTS (SELECT 1 FROM asset_refs r WHERE r.asset_id = a.id) \
+                            AND NOT {comment_ref} \
+                            AND a.created_at < NOW() - make_interval(days => $1)), \
+                        COALESCE(SUM(a.size_bytes) FILTER (WHERE NOT EXISTS (SELECT 1 FROM asset_refs r WHERE r.asset_id = a.id) \
+                            AND NOT {comment_ref} \
+                            AND a.created_at < NOW() - make_interval(days => $1)), 0)::bigint \
+                     FROM assets a",
+                    comment_ref = super::COMMENT_REF_CLAUSE
+                ),
                 &[&PURGE_GRACE_DAYS],
             )
             .await
