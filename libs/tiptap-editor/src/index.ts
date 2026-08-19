@@ -1,23 +1,12 @@
 import { Editor } from '@tiptap/core';
-import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
-import { FileHandler } from '@tiptap/extension-file-handler';
-import { TaskItem, TaskList } from '@tiptap/extension-list';
-import { TableKit } from '@tiptap/extension-table';
-import { Markdown } from '@tiptap/markdown';
-import StarterKit from '@tiptap/starter-kit';
-import { CodeBlockBackspaceFix } from './code-block-backspace-fix';
-import { CodeBlockNodeView, ON_RUN_CODE_STORAGE_KEY } from './code-block-view';
-import { FootnoteDef, FootnoteNumbering, FootnoteRef } from './footnote';
-import { lowlight } from './highlight';
-import { DisplayMath, InlineMath } from './math';
-import { SlashCommand } from './slash-command';
-import { TaskInputRule } from './task-input-rule';
+import { ON_RUN_CODE_STORAGE_KEY } from './code-block-view';
+import { buildExtensions, type EditorVariant } from './editor-extensions';
 import {
   UPLOAD_COORDINATOR_STORAGE_KEY,
   UploadCoordinator,
   type UploadEvent,
 } from './upload-coordinator';
-import { parseLibraryInsertItems, UploadImage } from './upload-image';
+import { parseLibraryInsertItems } from './upload-image';
 import './style.css';
 
 /**
@@ -32,6 +21,12 @@ import './style.css';
 class EditorOptions {
   content?: string;
   placeholder?: string;
+  /**
+   * 编辑器变体：'full'（后台文章编辑器，默认）| 'comment'（评论区精简子集）。
+   * comment 砍掉标题/表格/任务列表/脚注/斜杠命令/源码切换/代码块 NodeView，
+   * 获得气泡菜单与 Placeholder；图片上传占位符 UX 两变体完全一致。
+   */
+  variant?: EditorVariant;
   onUpdate?: (markdown: string) => void;
   onFocus?: () => void;
   onBlur?: () => void;
@@ -85,104 +80,64 @@ class TiptapEditorInstance {
   }
 
   private init() {
+    const variant: EditorVariant = this.options.variant ?? 'full';
+    const isComment = variant === 'comment';
+
     const el = document.createElement('div');
-    el.className = 'tiptap-editor';
+    el.className = isComment ? 'tiptap-editor tiptap-editor--comment' : 'tiptap-editor';
     this.container.appendChild(el);
 
-    // 源码模式切换按钮：悬浮于编辑器右上角
-    this.toggleButton = document.createElement('button');
-    this.toggleButton.className = 'tiptap-toggle-btn';
-    this.toggleButton.type = 'button';
-    this.toggleButton.title = '切换 Markdown 源码';
-    this.toggleButton.innerHTML = CODE_ICON_SVG;
-    this.toggleButton.addEventListener('click', () => this.toggleSource());
-    el.appendChild(this.toggleButton);
+    // 源码模式切换按钮：悬浮于编辑器右上角（仅 full——评论框高度有限，
+    // 浮动按钮会遮挡首行文字；评论的格式面由输入规则/气泡菜单/粘贴承载）。
+    if (!isComment) {
+      this.toggleButton = document.createElement('button');
+      this.toggleButton.className = 'tiptap-toggle-btn';
+      this.toggleButton.type = 'button';
+      this.toggleButton.title = '切换 Markdown 源码';
+      this.toggleButton.innerHTML = CODE_ICON_SVG;
+      this.toggleButton.addEventListener('click', () => this.toggleSource());
+      el.appendChild(this.toggleButton);
 
-    // 源码模式 textarea：初始隐藏，与 ProseMirror 共用同一区域
-    this.sourceTextarea = document.createElement('textarea');
-    this.sourceTextarea.className = 'tiptap-source-textarea';
-    this.sourceTextarea.hidden = true;
-    this.sourceTextarea.placeholder = '在此输入 Markdown 源码...';
-    this.sourceTextarea.spellcheck = false;
-    this.sourceTextarea.addEventListener('input', () => {
-      // 源码模式下通过 onUpdate 回调同步内容（替代旧版 window.__tiptap_content 缓存）
-      if (this.options.onUpdate) {
-        this.options.onUpdate(this.sourceTextarea!.value);
-      }
-    });
-    el.appendChild(this.sourceTextarea);
+      // 源码模式 textarea：初始隐藏，与 ProseMirror 共用同一区域
+      this.sourceTextarea = document.createElement('textarea');
+      this.sourceTextarea.className = 'tiptap-source-textarea';
+      this.sourceTextarea.hidden = true;
+      this.sourceTextarea.placeholder = '在此输入 Markdown 源码...';
+      this.sourceTextarea.spellcheck = false;
+      this.sourceTextarea.addEventListener('input', () => {
+        // 源码模式下通过 onUpdate 回调同步内容（替代旧版 window.__tiptap_content 缓存）
+        if (this.options.onUpdate) {
+          this.options.onUpdate(this.sourceTextarea!.value);
+        }
+      });
+      el.appendChild(this.sourceTextarea);
+    }
 
     this.editor = new Editor({
       element: el,
-      extensions: [
-        StarterKit.configure({
-          heading: {
-            levels: [1, 2, 3],
-          },
-          link: {
-            openOnClick: false,
-            autolink: true,
-            linkOnPaste: true,
-            HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' },
-          },
-          codeBlock: false,
-        }),
-        Markdown,
-        // 数学公式节点必须在 Markdown 之后注册:MarkdownManager 在 onBeforeCreate
-        // 遍历 baseExtensions 收集 markdown spec(tokenizer/parse/render),此时
-        // InlineMath/DisplayMath 需已在扩展列表里,才能让 getMarkdown() 走自定义
-        // renderMarkdown 路径,绕过 encodeTextForMarkdown 对 LaTeX 的双重转义。
-        InlineMath,
-        DisplayMath,
-        // 脚注节点(引用/定义)与编号扩展:同样依赖 markdown spec 收集时机,
-        // 必须在 Markdown 之后注册(见 math.ts 注释)。FootnoteNumbering 通过
-        // ProseMirror plugin 在文档变化后重算编号表并直接刷 DOM,不进文档模型。
-        FootnoteRef,
-        FootnoteDef,
-        FootnoteNumbering,
-        CodeBlockLowlight.configure({ lowlight }).extend({
-          addNodeView() {
-            return ({ node, editor, getPos }) => new CodeBlockNodeView({ node, editor, getPos });
-          },
-        }),
-        CodeBlockBackspaceFix,
-        TableKit,
-        UploadImage,
-        TaskList,
-        TaskItem.configure({ nested: true }),
-        // 让手动输入 - [ ] / - [x] 直接创建任务列表(priority 1000 抢在 BulletList 前)
-        TaskInputRule,
-        // 把宿主注入的图片上传回调透传给斜杠命令扩展，使 /上传图片 命令可用。
-        // onPickFromLibrary 同理，使 /素材库 命令可用。
-        // 注意：闭包延迟读取 this.coordinator（它在 editor 创建后才实例化）。
-        SlashCommand.configure({
-          onImageUpload: this.options.onImageUpload,
-          onInsertUploading: this.options.onImageUpload
-            ? (file) => this.coordinator?.insertUploading(file)
-            : undefined,
-          onPickFromLibrary: this.options.onPickFromLibrary,
-        }),
-        FileHandler.configure({
-          allowedMimeTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
-          onPaste: (_editor, files) => {
-            if (this.coordinator) {
-              files.forEach((file) => {
-                this.coordinator?.insertUploading(file);
-              });
-            }
-          },
-          onDrop: (_editor, files, pos) => {
-            if (this.coordinator) {
-              files.forEach((file) => {
-                this.coordinator?.insertUploading(file, pos);
-              });
-            }
-          },
-        }),
-      ],
+      extensions: buildExtensions({
+        variant,
+        placeholder: this.options.placeholder,
+        onImageUpload: this.options.onImageUpload,
+        onInsertUploading: this.options.onImageUpload
+          ? (file) => this.coordinator?.insertUploading(file)
+          : undefined,
+        onPickFromLibrary: this.options.onPickFromLibrary,
+        getCoordinator: () => this.coordinator,
+      }),
       content: this.options.content || '',
       editable: this.options.editable !== false,
       autofocus: false,
+      // 评论模式给 ProseMirror DOM 补无障碍语义（full 由后台页面结构兜底）。
+      editorProps: isComment
+        ? {
+            attributes: {
+              role: 'textbox',
+              'aria-label': '评论内容',
+              'aria-multiline': 'true',
+            },
+          }
+        : undefined,
       onUpdate: ({ editor }) => {
         if (this.options.onUpdate) {
           // 脚注 [^id] 现由 atom 节点(footnoteRef/footnoteDef)承载,序列化走
@@ -319,6 +274,15 @@ class TiptapEditorInstance {
   /** Rust 侧"×关闭"提示时调用（通过 eval）。返回是否成功删除。 */
   removeUploadByUploadId(uploadId: string): boolean {
     return this.coordinator?.removeUpload(uploadId) ?? false;
+  }
+
+  /**
+   * 工具栏图片按钮入口：把文件交给 coordinator 走占位符上传
+   * （与粘贴/拖放/slash 命令完全同一条路径）。无 coordinator（未注入
+   * onImageUpload）时 no-op。
+   */
+  insertUploading(file: File): void {
+    this.coordinator?.insertUploading(file);
   }
 
   /**

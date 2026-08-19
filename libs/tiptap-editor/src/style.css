@@ -1438,3 +1438,119 @@
   color: #f38ba8;
   border-left-color: #f38ba8;
 }
+
+/* ========== Comment Variant（评论区精简编辑器） ========== */
+
+/* 紧凑尺寸：高度随内容生长（full 是 height:100% 填满后台容器），
+   超过 max-height 内部滚动，避免长评论撑爆页面。 */
+.tiptap-editor--comment {
+  height: auto;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.tiptap-editor--comment .ProseMirror {
+  padding: 12px 16px;
+  min-height: 96px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+/* Placeholder 扩展输出（data-placeholder + is-editor-empty）。
+   full 变体走既有 CSS br 占位方案，勿动；这里只覆盖 comment。 */
+.tiptap-editor--comment .ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  /* Latte overlay0 */
+  color: #9ca0b0;
+  pointer-events: none;
+  height: 0;
+}
+
+.dark .tiptap-editor--comment .ProseMirror p.is-editor-empty:first-child::before {
+  /* Mocha overlay0 */
+  color: #6c7086;
+}
+
+/* 评论里段落间距收紧（长文排版参数对短评论太松）。 */
+.tiptap-editor--comment p {
+  margin: 0.35em 0;
+}
+
+.tiptap-editor--comment pre {
+  margin: 0.6em 0;
+  padding: 12px;
+}
+
+.tiptap-editor--comment blockquote {
+  margin: 0.6em 0;
+}
+
+/* ========== Comment Bubble Menu（选中浮出格式条） ========== */
+
+.comment-bubble-menu {
+  z-index: 60;
+  /* Latte crust 深色药丸（与后台 tooltip 同色系），暗色主题同构。 */
+  background: #292c3c;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  padding: 3px;
+}
+
+.comment-bubble-menu-row {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+}
+
+.comment-bubble-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  /* Mocha text（深色药丸上的浅色图标，明暗主题通用） */
+  color: #cdd6f4;
+  cursor: pointer;
+  transition: background 0.15s ease-out;
+}
+
+.comment-bubble-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.comment-bubble-btn.is-active {
+  /* Latte blue / Mocha blue 同色系强调 */
+  background: rgba(137, 180, 250, 0.35);
+  color: #89b4fa;
+}
+
+.comment-bubble-menu-linkrow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px;
+}
+
+.comment-bubble-link-input {
+  width: 220px;
+  border: none;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #cdd6f4;
+  font-size: 13px;
+  padding: 5px 8px;
+  outline: none;
+}
+
+.comment-bubble-link-input::placeholder {
+  /* Mocha overlay0 */
+  color: #6c7086;
+}
+
+.comment-bubble-link-input:focus {
+  background: rgba(255, 255, 255, 0.16);
+}
