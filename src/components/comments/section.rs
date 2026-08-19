@@ -169,12 +169,29 @@ pub fn CommentSection(post_id: i32) -> Element {
     };
 
     rsx! {
-        div { class: "space-y-8",
-            // 标题：加载中显示通用“评论区”，加载成功后附加数量
-            if let Some(count) = total_count {
-                h2 { class: "text-xl font-bold text-paper-primary", "评论区 ({count})" }
-            } else {
-                h2 { class: "text-xl font-bold text-paper-primary", "评论区" }
+        div { class: "space-y-6",
+            // 标题栏：精致图标 + 评论区 + 数量徽章
+            div { class: "flex items-center justify-between",
+                div { class: "flex items-center gap-2.5",
+                    svg {
+                        class: "w-5 h-5 text-[var(--color-paper-accent)]",
+                        fill: "none",
+                        stroke: "currentColor",
+                        stroke_width: "2",
+                        view_box: "0 0 24 24",
+                        path {
+                            stroke_linecap: "round",
+                            stroke_linejoin: "round",
+                            d: "M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z",
+                        }
+                    }
+                    h2 { class: "text-lg font-bold text-paper-primary tracking-tight", "评论区" }
+                    if let Some(count) = total_count {
+                        span { class: "px-2 py-0.5 rounded-full text-xs font-semibold bg-[var(--color-paper-accent)]/15 text-[var(--color-paper-accent)]",
+                            "{count}"
+                        }
+                    }
+                }
             }
 
             // 真实的评论输入表单始终立即可见且可交互，避免 CLS
@@ -188,7 +205,10 @@ pub fn CommentSection(post_id: i32) -> Element {
                     let has_any = approved_count > 0 || pending_count > 0;
                     if !has_any {
                         rsx! {
-                            p { class: "text-paper-tertiary text-center py-8", "暂无评论，成为第一个评论的人吧！" }
+                            div { class: "text-center py-10 px-4 rounded-2xl bg-[var(--color-paper-entry)]/40 border border-dashed border-[var(--color-paper-border)]/60 my-4",
+                                p { class: "text-sm text-paper-secondary font-medium", "暂无评论" }
+                                p { class: "text-xs text-paper-tertiary mt-1", "成为第一个分享想法的人吧！" }
+                            }
                         }
                     } else {
                         rsx! {
@@ -201,7 +221,7 @@ pub fn CommentSection(post_id: i32) -> Element {
                     }
                 }
                 Some(Err(_)) => rsx! {
-                    div { class: "text-center text-red-500 dark:text-red-400 py-8", "评论加载失败" }
+                    div { class: "text-center text-red-500 dark:text-red-400 py-8 text-sm", "评论加载失败，请刷新重试" }
                 },
                 None => rsx! {
                     DelayedSkeleton { CommentListSkeleton {} }

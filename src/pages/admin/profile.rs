@@ -31,7 +31,7 @@ use crate::components::forms::{FormInput, FormLabel};
 #[cfg(target_arch = "wasm32")]
 use crate::components::skeletons::profile_skeleton::ProfileSkeleton;
 #[cfg(target_arch = "wasm32")]
-use crate::components::ui::{ADMIN_CARD_CLASS, BTN_GHOST, LoadingButton, StatusBadge, UserAvatar};
+use crate::components::ui::{LoadingButton, StatusBadge, UserAvatar, ADMIN_CARD_CLASS, BTN_GHOST};
 #[cfg(target_arch = "wasm32")]
 use crate::context::UserContext;
 #[cfg(target_arch = "wasm32")]

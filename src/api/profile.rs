@@ -16,13 +16,15 @@
 use dioxus::prelude::*;
 
 #[cfg(feature = "server")]
+use crate::api::auth::{
+    admin_env_active, get_current_admin_user, validate_email, validate_password,
+};
+#[cfg(feature = "server")]
 use crate::api::error::AppError;
 #[cfg(feature = "server")]
-use crate::api::auth::{admin_env_active, get_current_admin_user, validate_email, validate_password};
+use crate::auth::session::get_session_from_ctx;
 #[cfg(feature = "server")]
 use crate::auth::{password, session};
-#[cfg(feature = "server")]
-use crate::auth::session::get_session_from_ctx;
 #[cfg(feature = "server")]
 use crate::db::pool::get_conn;
 use crate::models::user::PublicUser;
@@ -309,10 +311,7 @@ mod tests {
         );
         // 恰好 50 字符（含多字节）通过。
         let fifty = "名".repeat(50);
-        assert_eq!(
-            normalize_display_name(Some(fifty.clone())),
-            Ok(Some(fifty))
-        );
+        assert_eq!(normalize_display_name(Some(fifty.clone())), Ok(Some(fifty)));
         // 51 字符拒绝。
         let over = "a".repeat(51);
         assert!(normalize_display_name(Some(over)).is_err());

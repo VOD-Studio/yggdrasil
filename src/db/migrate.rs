@@ -83,10 +83,7 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "022",
         include_str!("../../migrations/022_backup_settings.sql"),
     ),
-    (
-        "023",
-        include_str!("../../migrations/023_user_profile.sql"),
-    ),
+    ("023", include_str!("../../migrations/023_user_profile.sql")),
     (
         "024",
         include_str!("../../migrations/024_comments_user_id.sql"),

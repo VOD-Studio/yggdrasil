@@ -11,36 +11,36 @@ use dioxus::prelude::*;
 #[component]
 pub fn CommentListSkeleton() -> Element {
     rsx! {
-        div { class: "divide-y divide-gray-100 dark:divide-gray-700",
+        div { class: "divide-y divide-[var(--color-paper-border)]/40",
             // 第一条评论占位（顶层评论）
-            div { class: "py-4",
-                div { class: "flex gap-3",
-                    SkeletonBox { class: "w-8 h-8 rounded-full shrink-0 mt-0.5" }
+            div { class: "py-3.5",
+                div { class: "flex items-start gap-3",
+                    SkeletonBox { class: "w-8 h-8 rounded-full shrink-0 mt-0.5 ring-1 ring-[var(--color-paper-border)]/60" }
                     div { class: "flex-1 space-y-2",
-                        SkeletonBox { class: "h-4 w-24 rounded" }
-                        SkeletonBox { class: "h-3.5 w-full rounded" }
-                        SkeletonBox { class: "h-3.5 w-2/3 rounded" }
+                        SkeletonBox { class: "h-4 w-24 rounded-md" }
+                        SkeletonBox { class: "h-3.5 w-full rounded-md" }
+                        SkeletonBox { class: "h-3.5 w-2/3 rounded-md" }
                     }
                 }
             }
-            // 第二条评论占位（子回复，缩进 ml-6 即 24px）
-            div { class: "py-4 ml-6",
-                div { class: "flex gap-3",
-                    SkeletonBox { class: "w-8 h-8 rounded-full shrink-0 mt-0.5" }
+            // 第二条评论占位（子回复，带导轨线）
+            div { class: "py-3.5 border-l-2 border-[var(--color-paper-border)]/50 pl-3.5 sm:pl-4.5 my-1",
+                div { class: "flex items-start gap-3",
+                    SkeletonBox { class: "w-8 h-8 rounded-full shrink-0 mt-0.5 ring-1 ring-[var(--color-paper-border)]/60" }
                     div { class: "flex-1 space-y-2",
-                        SkeletonBox { class: "h-4 w-20 rounded" }
-                        SkeletonBox { class: "h-3.5 w-3/4 rounded" }
+                        SkeletonBox { class: "h-4 w-20 rounded-md" }
+                        SkeletonBox { class: "h-3.5 w-3/4 rounded-md" }
                     }
                 }
             }
             // 第三条评论占位（另一条顶层评论）
-            div { class: "py-4",
-                div { class: "flex gap-3",
-                    SkeletonBox { class: "w-8 h-8 rounded-full shrink-0 mt-0.5" }
+            div { class: "py-3.5",
+                div { class: "flex items-start gap-3",
+                    SkeletonBox { class: "w-8 h-8 rounded-full shrink-0 mt-0.5 ring-1 ring-[var(--color-paper-border)]/60" }
                     div { class: "flex-1 space-y-2",
-                        SkeletonBox { class: "h-4 w-28 rounded" }
-                        SkeletonBox { class: "h-3.5 w-full rounded" }
-                        SkeletonBox { class: "h-3.5 w-1/2 rounded" }
+                        SkeletonBox { class: "h-4 w-28 rounded-md" }
+                        SkeletonBox { class: "h-3.5 w-full rounded-md" }
+                        SkeletonBox { class: "h-3.5 w-1/2 rounded-md" }
                     }
                 }
             }

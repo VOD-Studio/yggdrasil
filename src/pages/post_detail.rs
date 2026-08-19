@@ -118,7 +118,7 @@ pub fn PostDetail(slug: String) -> Element {
 
             // 仅对已发布文章展示评论区域，使用 SuspenseBoundary 处理加载状态。
             if post.status == crate::models::post::PostStatus::Published {
-                div { class: "mt-12 border-t border-gray-200 dark:border-gray-700 pt-8",
+                div { class: "mt-12 border-t border-[var(--color-paper-border)]/60 pt-8",
                     // 用单元素 keyed 列表包裹 CommentSection，key 绑定 post.id，强制
                     // 上/下一篇切换时 remount（与上方 PostContent 同理，见其注释）。
                     // 否则 PostDetail 组件实例被复用、CommentSection 也被复用，其

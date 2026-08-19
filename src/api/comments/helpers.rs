@@ -300,13 +300,8 @@ mod tests {
     #[test]
     fn resolve_author_display_escapes_live_display_name() {
         // users.display_name 是未转义原始输入，与 author_name 列口径一致需转义。
-        let (name, _, _) = resolve_author_display(
-            "snapshot",
-            "a@example.com",
-            Some(1),
-            Some("<b>x</b>"),
-            None,
-        );
+        let (name, _, _) =
+            resolve_author_display("snapshot", "a@example.com", Some(1), Some("<b>x</b>"), None);
         assert!(!name.contains('<'));
     }
 
