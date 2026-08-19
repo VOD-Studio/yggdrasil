@@ -4,9 +4,10 @@
 //! 编辑器通过 [`crate::tiptap_bridge`] 的 wasm-bindgen 绑定在 WASM 前端初始化，
 //! 并与 `window.TiptapEditor` 实例交互，实现 Markdown 内容回填、图片上传与组件卸载时的清理。
 
+#![allow(unused_imports)]
+
 // prelude 在 WASM 构建里直接使用（use_signal/Signal/Element 等）；
 // server 构建里 #[component] 宏会重新导出这些符号导致 native 报 unused，故 allow。
-#[allow(unused_imports)]
 use dioxus::prelude::*;
 
 // 仅在 WASM 前端使用的类型转换与文章 API。
@@ -24,6 +25,7 @@ use crate::models::post::Post;
 use crate::pages::admin::asset_picker::{AssetPickerModal, AssetSelection};
 use crate::router::Route;
 use crate::tiptap_bridge::{UploadErrorEntry, UploadsInFlight};
+use dioxus::router::components::Link;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::closure::Closure;
 // 封面图上传：从 Dioxus 事件拿底层 web_sys::File，以及 paste 事件的原始 web 事件。
@@ -67,6 +69,15 @@ pub fn WriteEdit(id: i32) -> Element {
 #[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut, unused_variables))]
 fn write_editor(post_id: Option<i32>) -> Element {
     let is_edit = post_id.is_some();
+    let mode_title = if is_edit {
+        if let Some(id) = post_id {
+            format!("编辑文章 #{}", id)
+        } else {
+            "编辑文章".to_string()
+        }
+    } else {
+        "新建文章".to_string()
+    };
 
     // 文章元信息表单字段。
     let mut title = use_signal(|| "".to_string());
@@ -84,6 +95,8 @@ fn write_editor(post_id: Option<i32>) -> Element {
     let body_picker_uploading = use_signal(|| false);
     let mut status = use_signal(|| "published".to_string());
     let mut content = use_signal(|| "".to_string());
+    // 专注模式 / 侧栏折叠状态：默认在宽屏展开，支持一键收起进入沉浸式写作。
+    let mut sidebar_open = use_signal(|| true);
     // 页面与编辑器加载、保存、错误、成功等状态。
     let mut loading = use_signal(|| true);
     let mut saving = use_signal(|| false);
@@ -91,7 +104,6 @@ fn write_editor(post_id: Option<i32>) -> Element {
     let mut editor_content_set = use_signal(|| false);
     let mut has_backfilled = use_signal(|| false);
     let mut load_error = use_signal(|| None::<String>);
-
     // 编辑模式：用于暂存从服务端加载的文章数据。
     let mut edit_post = use_signal(|| None::<Post>);
 
@@ -106,6 +118,22 @@ fn write_editor(post_id: Option<i32>) -> Element {
     let uploads_in_flight = use_signal(UploadsInFlight::default);
     let upload_errors: Signal<Vec<UploadErrorEntry>> = use_signal(Vec::new);
 
+    // 派生统计：字数与预计阅读时间（纯计算，随 content 响应式更新）。
+    let word_stats = use_memo(move || {
+        let md = content();
+        let chars = md.chars().filter(|c| !c.is_whitespace()).count();
+        let mins = (chars / 300).max(1);
+        (chars, mins)
+    });
+
+    // 派生标签预览列表（纯计算，支持中英文逗号与分号）。
+    let parsed_tags = use_memo(move || {
+        tags()
+            .split([',', '，', ';', '；'])
+            .map(|t| t.trim().to_string())
+            .filter(|t| !t.is_empty())
+            .collect::<Vec<String>>()
+    });
     // 编辑模式：文章数据加载完成后，将字段回填到表单信号。
     use_effect(move || {
         if !is_edit || has_backfilled() {
@@ -424,176 +452,375 @@ fn write_editor(post_id: Option<i32>) -> Element {
     };
 
     rsx! {
-        // 根容器:flex 分区布局。layout 给 write 的 main 是 flex 容器(无 padding/不滚动),
-        // 这里拆成 [内容区 flex-1 overflow-y-auto] + [底栏 flex-shrink-0] 两块。
-        // 底栏作为 main 直接子元素永远贴卡片底沿,不随内容滚动,也无需 sticky。
-        div { class: "animate-page-enter relative flex flex-col w-full min-h-0 flex-1",
+        // 根容器：flex 分区布局，包含顶部精致导航条 + 主体两栏写作区 + 底部操作栏。
+        div { class: "animate-page-enter relative flex flex-col w-full min-h-0 flex-1 bg-[var(--color-paper-theme)]",
             if loading() {
-                div { class: "absolute inset-0 z-10 bg-paper-theme flex flex-col", WriteSkeleton {} }
+                div { class: "absolute inset-0 z-10 bg-[var(--color-paper-theme)] flex flex-col", WriteSkeleton {} }
             }
 
-            // 两栏容器:flex-1 分配空间,自身不滚动(min-h-0),滚动职责下放给左右两栏。
-            div { class: "flex-1 min-h-0 flex",
-                // 左栏(主写作区):flex-1 撑满宽度,min-w-0 防止长标题/代码块撑破 flex,
-                // overflow-y-auto 独立滚动。
-                div { class: "flex-1 min-w-0 min-h-0 overflow-y-auto px-6 py-8 flex flex-col",
-                    // 标题输入
-                    input {
-                        class: "w-full text-4xl md:text-5xl font-extrabold bg-transparent text-[var(--color-paper-primary)] placeholder-[var(--color-paper-tertiary)] focus:outline-none tracking-tight leading-tight",
-                        placeholder: "输入文章标题...",
-                        value: "{title}",
-                        oninput: move |evt| title.set(evt.value()),
-                    }
-
-                    // 错误和成功提示
-                    if let Some(err) = load_error() {
-                        div { class: "flex-shrink-0 px-4 py-2 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-2xl text-sm border border-red-100 dark:border-red-900/30 mb-2",
-                            "{err}"
+            // 顶部精致工具条：面包屑 / 写作模式 / 实时字数与阅读时长 / 侧栏沉浸式切换
+            div { class: "flex-shrink-0 px-6 py-3 border-b border-[var(--color-paper-border)]/60 bg-[var(--color-paper-theme)] flex items-center justify-between gap-4 z-10 select-none",
+                // 左侧：返回文章列表 + 模式指示 + 状态胶囊
+                div { class: "flex items-center gap-3",
+                    Link {
+                        to: Route::Posts {},
+                        class: "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium text-[var(--color-paper-secondary)] hover:text-[var(--color-paper-primary)] hover:bg-[var(--color-paper-entry)] transition-all cursor-pointer",
+                        svg {
+                            class: "w-4 h-4",
+                            xmlns: "http://www.w3.org/2000/svg",
+                            view_box: "0 0 24 24",
+                            fill: "none",
+                            stroke: "currentColor",
+                            stroke_width: "2",
+                            stroke_linecap: "round",
+                            stroke_linejoin: "round",
+                            path { d: "M19 12H5M12 19l-7-7 7-7" }
                         }
+                        "文章列表"
                     }
-
-                    if let Some(err) = error() {
-                        div { class: "flex-shrink-0 px-4 py-2 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-2xl text-sm border border-red-100 dark:border-red-900/30 mb-2",
-                            "{err}"
+                    div { class: "w-px h-4 bg-[var(--color-paper-border)]/60" }
+                    div { class: "flex items-center gap-2",
+                        span { class: "text-sm font-semibold text-[var(--color-paper-primary)]",
+                            "{mode_title}"
                         }
-                    }
-
-                    // 上传失败提示：多条堆叠，×关闭同时删除编辑器内失败占位符（避免孤儿）
-                    for err in upload_errors().clone() {
-                        div {
-                            key: "{err.id}",
-                            class: "flex-shrink-0 flex items-center justify-between gap-3 px-4 py-2 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-2xl text-sm border border-red-100 dark:border-red-900/30 mb-2",
-                            span { "图片上传失败: {err.file_name} — {err.message}" }
-                            button {
-                                class: "{BTN_CLOSE_ICON}",
-                                aria_label: "关闭提示",
-                                onclick: {
-                                    // 捕获 owned id，避免借用临时值
-                                    let id = err.id.clone();
-                                    let mut upload_errors = upload_errors;
-                                    move |_| {
-                                        // 关闭提示同时删除编辑器内失败占位符（避免孤儿）
-                                        #[cfg(target_arch = "wasm32")]
-                                        if let Some(handle) = &*editor.read() {
-                                            handle.instance().remove_upload_by_upload_id(&id);
-                                        }
-                                        upload_errors.write().retain(|e| e.id != id);
-                                    }
-                                },
-                                "×"
+                        // 状态胶囊
+                        if status() == "published" {
+                            span { class: "inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20",
+                                "公开"
+                            }
+                        } else {
+                            span { class: "inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20",
+                                "草稿"
                             }
                         }
                     }
+                }
 
-                    // 编辑器区域:flex-1 撑满左栏剩余高度,不再硬编码 60vh。
-                    // 编辑器内部 .tiptap-editor/.ProseMirror 均为 height:100% + overflow-y:auto,
-                    // 容器变高编辑器自动跟着变高。min-h-[400px] 保证窗口过矮时仍可用。
-                    div { class: "flex-1 min-h-[400px] flex flex-col my-4",
-                        div {
-                            class: "relative group flex-1 min-h-0 w-full border border-[var(--color-paper-border)] rounded-2xl overflow-hidden bg-[var(--color-paper-entry)] shadow-sm",
-                            id: "tiptap-editor",
-                            img {
-                                src: "/images/xiantiaoxiaogou_input_bg.webp",
-                                alt: "",
-                                class: "absolute bottom-2 right-2 w-24 opacity-10 pointer-events-none z-0",
+                // 中间：实时字数与预计阅读时间
+                div { class: "hidden md:flex items-center gap-3 text-xs text-[var(--color-paper-tertiary)] font-medium",
+                    div { class: "flex items-center gap-1.5",
+                        span { class: "w-1.5 h-1.5 rounded-full bg-[var(--color-paper-accent)]" }
+                        span { "{word_stats().0} 字" }
+                    }
+                    span { "·" }
+                    span { "预计阅读 {word_stats().1} 分钟" }
+                }
+
+                // 右侧：侧栏 / 专注写作模式切换按钮
+                div { class: "flex items-center gap-2",
+                    button {
+                        class: "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-all cursor-pointer",
+                        class: if sidebar_open() {
+                            "border-[var(--color-paper-border)] text-[var(--color-paper-primary)] bg-[var(--color-paper-entry)] hover:bg-[var(--color-paper-border)]/50"
+                        } else {
+                            "border-[var(--color-paper-accent)]/50 text-[var(--color-paper-accent)] bg-[var(--color-paper-accent)]/10 hover:bg-[var(--color-paper-accent)]/20"
+                        },
+                        onclick: move |_| sidebar_open.toggle(),
+                        title: if sidebar_open() { "进入专注写作模式（收起设置）" } else { "展开文章属性面板" },
+                        svg {
+                            class: "w-4 h-4",
+                            xmlns: "http://www.w3.org/2000/svg",
+                            view_box: "0 0 24 24",
+                            fill: "none",
+                            stroke: "currentColor",
+                            stroke_width: "2",
+                            stroke_linecap: "round",
+                            stroke_linejoin: "round",
+                            rect { x: "3", y: "3", width: "18", height: "18", rx: "2", ry: "2" }
+                            line { x1: "15", y1: "3", x2: "15", y2: "21" }
+                        }
+                        if sidebar_open() {
+                            "收起设置"
+                        } else {
+                            "文章设置"
+                        }
+                    }
+                }
+            }
+
+            // 两栏容器：flex-1 分配空间，自身不滚动 (min-h-0)，滚动职责下放给左右两栏。
+            div { class: "flex-1 min-h-0 flex",
+                // 左栏 (主写作区)：类 Notion/Ghost 极简文档流，居中优雅排版。
+                div { class: "flex-1 min-w-0 min-h-0 overflow-y-auto px-6 sm:px-10 md:px-14 py-8 flex flex-col items-center",
+                    div { class: "w-full max-w-4xl flex-1 flex flex-col",
+                        // 标题输入
+                        input {
+                            class: "w-full text-3xl sm:text-4xl md:text-5xl font-extrabold bg-transparent text-[var(--color-paper-primary)] placeholder-[var(--color-paper-tertiary)]/60 focus:outline-none tracking-tight leading-tight transition-colors py-2 mb-4",
+                            placeholder: "输入文章标题...",
+                            value: "{title}",
+                            oninput: move |evt| title.set(evt.value()),
+                        }
+
+                        // 错误和成功提示
+                        if let Some(err) = load_error() {
+                            div { class: "flex-shrink-0 px-4 py-2 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-2xl text-sm border border-red-100 dark:border-red-900/30 mb-3",
+                                "{err}"
+                            }
+                        }
+
+                        if let Some(err) = error() {
+                            div { class: "flex-shrink-0 px-4 py-2 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-2xl text-sm border border-red-100 dark:border-red-900/30 mb-3",
+                                "{err}"
+                            }
+                        }
+
+                        // 上传失败提示：多条堆叠，×关闭同时删除编辑器内失败占位符（避免孤儿）
+                        for err in upload_errors().clone() {
+                            div {
+                                key: "{err.id}",
+                                class: "flex-shrink-0 flex items-center justify-between gap-3 px-4 py-2 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-2xl text-sm border border-red-100 dark:border-red-900/30 mb-3",
+                                span { "图片上传失败: {err.file_name} — {err.message}" }
+                                button {
+                                    class: "{BTN_CLOSE_ICON}",
+                                    aria_label: "关闭提示",
+                                    onclick: {
+                                        let id = err.id.clone();
+                                        let mut upload_errors = upload_errors;
+                                        move |_| {
+                                            #[cfg(target_arch = "wasm32")]
+                                            if let Some(handle) = &*editor.read() {
+                                                handle.instance().remove_upload_by_upload_id(&id);
+                                            }
+                                            upload_errors.write().retain(|e| e.id != id);
+                                        }
+                                    },
+                                    "×"
+                                }
+                            }
+                        }
+
+                        // 编辑器区域：软卡片容器，随窗口自适应扩展。
+                        div { class: "flex-1 min-h-[480px] flex flex-col mb-4",
+                            div {
+                                class: "relative group flex-1 min-h-0 w-full rounded-2xl overflow-hidden bg-[var(--color-paper-entry)]/40 border border-[var(--color-paper-border)]/70 focus-within:border-[var(--color-paper-accent)]/70 focus-within:ring-2 focus-within:ring-[var(--color-paper-accent)]/15 transition-all shadow-xs",
+                                id: "tiptap-editor",
+                                img {
+                                    src: "/images/xiantiaoxiaogou_input_bg.webp",
+                                    alt: "",
+                                    class: "absolute bottom-3 right-3 w-28 opacity-15 pointer-events-none z-0 select-none transition-opacity",
+                                }
                             }
                         }
                     }
                 } // 左栏闭合
 
-                // 右栏(侧边栏):分节式布局,每节带小标题,节间用细分隔线分隔。
-                // 透明背景(与左栏共用 paper-theme 底),靠 border-l 和分隔线划分区域。
-                div { class: "w-80 flex-shrink-0 min-h-0 overflow-y-auto border-l border-[var(--color-paper-border)] flex flex-col",
-                    // Slug 节
-                    div {
-                        class: "animate-row-enter p-6 border-b border-[var(--color-paper-border)]",
-                        style: "animation-delay: 60ms",
-                        label { class: "block text-xs font-semibold uppercase tracking-wide text-[var(--color-paper-tertiary)] mb-3",
-                            "链接"
+                // 右栏 (侧边栏)：折叠/展开动画，分节卡片化，带图标与视觉预览
+                if sidebar_open() {
+                    div { class: "w-80 sm:w-88 flex-shrink-0 min-h-0 overflow-y-auto border-l border-[var(--color-paper-border)]/70 bg-[var(--color-paper-theme)] flex flex-col animate-section-enter",
+                        // 侧栏标题栏
+                        div { class: "px-5 py-4 border-b border-[var(--color-paper-border)]/60 flex items-center justify-between select-none",
+                            div { class: "flex items-center gap-2",
+                                svg {
+                                    class: "w-4 h-4 text-[var(--color-paper-secondary)]",
+                                    xmlns: "http://www.w3.org/2000/svg",
+                                    view_box: "0 0 24 24",
+                                    fill: "none",
+                                    stroke: "currentColor",
+                                    stroke_width: "2",
+                                    stroke_linecap: "round",
+                                    stroke_linejoin: "round",
+                                    line { x1: "4", y1: "21", x2: "4", y2: "14" }
+                                    line { x1: "4", y1: "10", x2: "4", y2: "3" }
+                                    line { x1: "12", y1: "21", x2: "12", y2: "12" }
+                                    line { x1: "12", y1: "8", x2: "12", y2: "3" }
+                                    line { x1: "20", y1: "21", x2: "20", y2: "16" }
+                                    line { x1: "20", y1: "12", x2: "20", y2: "3" }
+                                    line { x1: "1", y1: "14", x2: "7", y2: "14" }
+                                    line { x1: "9", y1: "8", x2: "15", y2: "8" }
+                                    line { x1: "17", y1: "16", x2: "23", y2: "16" }
+                                }
+                                span { class: "text-xs font-bold uppercase tracking-wider text-[var(--color-paper-secondary)]",
+                                    "文章属性"
+                                }
+                            }
+                            button {
+                                class: "text-[var(--color-paper-tertiary)] hover:text-[var(--color-paper-primary)] p-1 rounded-lg hover:bg-[var(--color-paper-entry)] transition-colors cursor-pointer",
+                                title: "收起侧栏",
+                                onclick: move |_| sidebar_open.set(false),
+                                svg {
+                                    class: "w-4 h-4",
+                                    xmlns: "http://www.w3.org/2000/svg",
+                                    view_box: "0 0 24 24",
+                                    fill: "none",
+                                    stroke: "currentColor",
+                                    stroke_width: "2",
+                                    stroke_linecap: "round",
+                                    stroke_linejoin: "round",
+                                    line { x1: "18", y1: "6", x2: "6", y2: "18" }
+                                    line { x1: "6", y1: "6", x2: "18", y2: "18" }
+                                }
+                            }
                         }
-                        FormInput {
-                            r#type: "text",
-                            placeholder: "自动生成",
-                            value: slug(),
-                            oninput: move |v: String| slug.set(v),
+
+                        // Slug 节
+                        div { class: "p-5 border-b border-[var(--color-paper-border)]/60 flex flex-col gap-2.5",
+                            div { class: "flex items-center justify-between",
+                                label { class: "flex items-center gap-1.5 text-xs font-semibold text-[var(--color-paper-secondary)]",
+                                    svg {
+                                        class: "w-3.5 h-3.5 text-[var(--color-paper-tertiary)]",
+                                        xmlns: "http://www.w3.org/2000/svg",
+                                        view_box: "0 0 24 24",
+                                        fill: "none",
+                                        stroke: "currentColor",
+                                        stroke_width: "2",
+                                        stroke_linecap: "round",
+                                        stroke_linejoin: "round",
+                                        path { d: "M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" }
+                                        path { d: "M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" }
+                                    }
+                                    "永久链接 (Slug)"
+                                }
+                            }
+                            div { class: "flex items-center gap-1 text-[11px] text-[var(--color-paper-tertiary)] font-mono px-1 truncate",
+                                span { class: "text-[var(--color-paper-accent)] font-semibold", "/post/" }
+                                span { class: "truncate",
+                                    if slug().trim().is_empty() {
+                                        "(自动生成)"
+                                    } else {
+                                        "{slug()}"
+                                    }
+                                }
+                            }
+                            FormInput {
+                                r#type: "text",
+                                placeholder: "自定义 URL，留空自动生成...",
+                                value: slug(),
+                                oninput: move |v: String| slug.set(v),
+                            }
                         }
-                    }
-                    // 标签节
-                    div {
-                        class: "animate-row-enter p-6 border-b border-[var(--color-paper-border)]",
-                        style: "animation-delay: 120ms",
-                        label { class: "block text-xs font-semibold uppercase tracking-wide text-[var(--color-paper-tertiary)] mb-3",
-                            "标签"
+
+                        // 标签节
+                        div { class: "p-5 border-b border-[var(--color-paper-border)]/60 flex flex-col gap-2.5",
+                            label { class: "flex items-center gap-1.5 text-xs font-semibold text-[var(--color-paper-secondary)]",
+                                svg {
+                                    class: "w-3.5 h-3.5 text-[var(--color-paper-tertiary)]",
+                                    xmlns: "http://www.w3.org/2000/svg",
+                                    view_box: "0 0 24 24",
+                                    fill: "none",
+                                    stroke: "currentColor",
+                                    stroke_width: "2",
+                                    stroke_linecap: "round",
+                                    stroke_linejoin: "round",
+                                    path { d: "M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" }
+                                    line { x1: "7", y1: "7", x2: "7.01", y2: "7" }
+                                }
+                                "文章标签"
+                            }
+                            FormInput {
+                                r#type: "text",
+                                placeholder: "输入标签，逗号或分号分隔...",
+                                value: tags(),
+                                oninput: move |v: String| tags.set(v),
+                            }
+                            // 标签胶囊预览
+                            if !parsed_tags().is_empty() {
+                                div { class: "flex flex-wrap gap-1.5 mt-1",
+                                    for tag in parsed_tags() {
+                                        span {
+                                            key: "{tag}",
+                                            class: "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-[var(--color-paper-entry)] text-[var(--color-paper-primary)] border border-[var(--color-paper-border)]/70 shadow-2xs",
+                                            "#{tag}"
+                                        }
+                                    }
+                                }
+                            }
                         }
-                        FormInput {
-                            r#type: "text",
-                            placeholder: "逗号分隔...",
-                            value: tags(),
-                            oninput: move |v: String| tags.set(v),
+
+                        // 摘要节
+                        div { class: "p-5 border-b border-[var(--color-paper-border)]/60 flex flex-col gap-2.5",
+                            div { class: "flex items-center justify-between",
+                                label { class: "flex items-center gap-1.5 text-xs font-semibold text-[var(--color-paper-secondary)]",
+                                    svg {
+                                        class: "w-3.5 h-3.5 text-[var(--color-paper-tertiary)]",
+                                        xmlns: "http://www.w3.org/2000/svg",
+                                        view_box: "0 0 24 24",
+                                        fill: "none",
+                                        stroke: "currentColor",
+                                        stroke_width: "2",
+                                        stroke_linecap: "round",
+                                        stroke_linejoin: "round",
+                                        path { d: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" }
+                                        polyline { points: "14 2 14 8 20 8" }
+                                        line { x1: "16", y1: "13", x2: "8", y2: "13" }
+                                        line { x1: "16", y1: "17", x2: "8", y2: "17" }
+                                    }
+                                    "文章摘要"
+                                }
+                                span { class: "text-[11px] text-[var(--color-paper-tertiary)]",
+                                    "{summary().chars().count()} 字"
+                                }
+                            }
+                            textarea {
+                                class: "w-full text-sm bg-[var(--color-paper-entry)] text-[var(--color-paper-primary)] placeholder-[var(--color-paper-tertiary)] focus:outline-none border border-[var(--color-paper-border)] focus:border-paper-accent focus:ring-1 focus:ring-paper-accent/30 rounded-2xl px-3.5 py-2.5 transition-all resize-none leading-relaxed",
+                                placeholder: "选填，留空将自动从正文提取...",
+                                rows: "3",
+                                value: "{summary}",
+                                oninput: move |evt| summary.set(evt.value()),
+                            }
                         }
-                    }
-                    // 摘要节
-                    div {
-                        class: "animate-row-enter p-6 border-b border-[var(--color-paper-border)]",
-                        style: "animation-delay: 180ms",
-                        label { class: "block text-xs font-semibold uppercase tracking-wide text-[var(--color-paper-tertiary)] mb-3",
-                            "摘要"
+
+                        // 封面图节
+                        div { class: "p-5 flex flex-col gap-2.5",
+                            div { class: "flex items-center justify-between",
+                                label { class: "flex items-center gap-1.5 text-xs font-semibold text-[var(--color-paper-secondary)]",
+                                    svg {
+                                        class: "w-3.5 h-3.5 text-[var(--color-paper-tertiary)]",
+                                        xmlns: "http://www.w3.org/2000/svg",
+                                        view_box: "0 0 24 24",
+                                        fill: "none",
+                                        stroke: "currentColor",
+                                        stroke_width: "2",
+                                        stroke_linecap: "round",
+                                        stroke_linejoin: "round",
+                                        rect { x: "3", y: "3", width: "18", height: "18", rx: "2", ry: "2" }
+                                        circle { cx: "8.5", cy: "8.5", r: "1.5" }
+                                        polyline { points: "21 15 16 10 5 21" }
+                                    }
+                                    "文章封面"
+                                }
+                                span { class: "text-[11px] text-[var(--color-paper-tertiary)]",
+                                    "21:9 推荐"
+                                }
+                            }
+                            CoverUploader { cover_image, cover_uploading }
                         }
-                        textarea {
-                            class: "w-full text-sm bg-[var(--color-paper-entry)] text-[var(--color-paper-primary)] placeholder-[var(--color-paper-tertiary)] focus:outline-none border border-[var(--color-paper-border)] focus:border-[var(--color-paper-primary)] rounded-2xl px-3 py-2 transition-all resize-none leading-relaxed",
-                            placeholder: "选填...",
-                            rows: "3",
-                            value: "{summary}",
-                            oninput: move |evt| summary.set(evt.value()),
-                        }
-                    }
-                    // 封面图节
-                    div {
-                        class: "animate-row-enter p-6",
-                        style: "animation-delay: 240ms",
-                        label { class: "block text-xs font-semibold uppercase tracking-wide text-[var(--color-paper-tertiary)] mb-3",
-                            "封面图"
-                        }
-                        CoverUploader { cover_image, cover_uploading }
                     }
                 } // 右栏闭合
             } // 两栏容器闭合
 
-            // 底部操作栏 - flex 分区布局的贴底块:作为 main 直接子元素(flex-shrink-0),
-            // 永远贴卡片底沿,不随内容区滚动。无需 sticky,不会跳动。
-            // px-6 py-4 与内容区水平对齐;border-t 与页头分割线视觉一致。
-            div { class: "flex-shrink-0 px-6 py-4 flex items-center gap-4 border-t border-[var(--color-paper-border)] bg-[var(--color-paper-theme)]",
-                button {
-                    class: "px-6 py-2 rounded-full text-sm font-medium text-[var(--color-paper-secondary)] hover:text-[var(--color-paper-primary)] transition-colors cursor-pointer",
-                    onclick: move |_| {
-                        let _ = dioxus::router::navigator().push(Route::Posts {});
-                    },
-                    "取消"
+            // 底部操作栏 - flex 分区布局的贴底块：固定在底部，提供发布、草稿状态切换与返回
+            div { class: "flex-shrink-0 px-6 py-3.5 flex items-center justify-between border-t border-[var(--color-paper-border)]/80 bg-[var(--color-paper-theme)] shadow-xs select-none",
+                // 左侧取消返回
+                Link {
+                    to: Route::Posts {},
+                    class: "inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium text-[var(--color-paper-secondary)] hover:text-[var(--color-paper-primary)] hover:bg-[var(--color-paper-entry)] transition-colors cursor-pointer",
+                    "返回列表"
                 }
-                div { class: "w-px h-5 bg-[var(--color-paper-border)]" }
-                // 文章状态下拉（胶囊触发器；贴底栏，面板自动向上展开）
-                FormSelect {
-                    trigger_class: Some(
-                        "inline-flex w-auto cursor-pointer select-none text-left text-sm font-medium pl-4 pr-8 py-2 rounded-full border border-[var(--color-paper-border)] bg-[var(--color-paper-entry)] text-[var(--color-paper-primary)] hover:bg-[var(--color-paper-theme)] focus:outline-none focus:border-paper-accent focus:ring-1 focus:ring-paper-accent/30 transition-colors duration-200",
-                    ),
-                    value: status(),
-                    options: vec![
-                        ("draft".to_string(), "存为草稿"),
-                        ("published".to_string(), "直接发布"),
-                    ],
-                    onchange: move |v| status.set(v),
-                }
-                div { class: "w-px h-5 bg-[var(--color-paper-border)]" }
-                LoadingButton {
-                    label: if is_edit { "更新文章".to_string() } else { "发布文章".to_string() },
-                    loading: saving(),
-                    onclick: move |_| on_submit(()),
+
+                // 右侧操作群组
+                div { class: "flex items-center gap-3",
+                    // 文章状态下拉（胶囊触发器）
+                    FormSelect {
+                        trigger_class: Some(
+                            "inline-flex w-auto cursor-pointer select-none text-left text-sm font-medium pl-4 pr-8 py-2 rounded-full border border-[var(--color-paper-border)] bg-[var(--color-paper-entry)] text-[var(--color-paper-primary)] hover:bg-[var(--color-paper-theme)] focus:outline-none focus:border-paper-accent focus:ring-1 focus:ring-paper-accent/30 transition-colors duration-200",
+                        ),
+                        value: status(),
+                        options: vec![
+                            ("draft".to_string(), "存为草稿"),
+                            ("published".to_string(), "直接发布"),
+                        ],
+                        onchange: move |v| status.set(v),
+                    }
+                    div { class: "w-px h-5 bg-[var(--color-paper-border)]/60" }
+                    LoadingButton {
+                        label: if is_edit { "更新文章".to_string() } else { "发布文章".to_string() },
+                        loading: saving(),
+                        onclick: move |_| on_submit(()),
+                    }
                 }
             } // 底部操作栏闭合
 
-            // 正文素材选择 modal（多选模式）：slash 命令「素材库」→ onPickFromLibrary 打开。
-            // 确认后把选中集序列化为桥接契约 [{src,alt?}]，由 insertImagesFromLibrary
-            // 在 slash 删除 /命令 文本后停留的光标处一次事务批量插入。
+            // 正文素材选择 modal（多选模式）
             AssetPickerModal {
                 visible: body_picker_visible,
                 cover_uploading: body_picker_uploading,

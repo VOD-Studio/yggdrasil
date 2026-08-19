@@ -15,69 +15,82 @@ pub fn WriteSkeleton() -> Element {
     rsx! {
         // 根:父层是 flex 容器(write.rs 覆盖层 / admin_layout 包裹层均为 flex flex-col),
         // 用 flex-1 撑满父层高度(比 height:100% 更可靠,不依赖父显式 height)。
-        div { class: "relative flex-1 flex flex-col min-h-0 overflow-hidden",
-            // 两栏容器:与真实页面一致,左 flex-1 + 右 w-80
-            div { class: "flex-1 min-h-0 flex",
-                // 左栏(主写作区)
-                div { class: "flex-1 min-w-0 min-h-0 overflow-y-auto px-6 py-8 flex flex-col",
-                    // 标题输入
-                    SkeletonBox { class: "h-10 w-3/4 rounded-lg" }
+        div { class: "relative flex-1 flex flex-col min-h-0 overflow-hidden bg-[var(--color-paper-theme)]",
+            // 顶部工具条骨架
+            div { class: "flex-shrink-0 px-6 py-3 border-b border-[var(--color-paper-border)]/60 flex items-center justify-between gap-4 select-none",
+                div { class: "flex items-center gap-3",
+                    SkeletonBox { class: "h-7 w-20 rounded-full" }
+                    div { class: "w-px h-4 bg-[var(--color-paper-border)]/60" }
+                    SkeletonBox { class: "h-5 w-24 rounded-md" }
+                    SkeletonBox { class: "h-4 w-10 rounded-full" }
+                }
+                div { class: "hidden md:flex items-center gap-3",
+                    SkeletonBox { class: "h-4 w-28 rounded" }
+                }
+                SkeletonBox { class: "h-7 w-20 rounded-full" }
+            }
 
-                    // 编辑器区域:flex-1 撑满左栏剩余高度
-                    div { class: "flex-1 min-h-[400px] flex flex-col my-4",
-                        div { class: "flex-1 min-h-0 w-full border border-[var(--color-paper-border)] rounded-2xl overflow-hidden bg-[var(--color-paper-entry)] shadow-sm p-4",
-                            // 工具栏
-                            div { class: "flex gap-2 pb-3 border-b border-[var(--color-paper-border)]",
-                                for _ in 0..8 {
-                                    SkeletonBox { class: "w-8 h-8 rounded" }
-                                }
-                            }
-                            // 正文占位行
-                            div { class: "space-y-3 pt-4",
-                                SkeletonBox { class: "h-4 w-[90%] rounded" }
-                                SkeletonBox { class: "h-4 w-full rounded" }
-                                SkeletonBox { class: "h-4 w-[85%] rounded" }
-                                SkeletonBox { class: "h-4 w-[95%] rounded" }
-                                SkeletonBox { class: "h-4 w-[60%] rounded" }
-                                SkeletonBox { class: "h-4 w-full rounded" }
-                                SkeletonBox { class: "h-4 w-[75%] rounded" }
+            // 两栏容器：与真实页面一致，左 flex-1 + 右 w-80
+            div { class: "flex-1 min-h-0 flex",
+                // 左栏 (主写作区)
+                div { class: "flex-1 min-w-0 min-h-0 overflow-y-auto px-6 sm:px-10 md:px-14 py-8 flex flex-col items-center",
+                    div { class: "w-full max-w-4xl flex-1 flex flex-col",
+                        // 标题输入骨架
+                        SkeletonBox { class: "h-12 w-3/4 rounded-xl mb-4" }
+
+                        // 编辑器区域骨架
+                        div { class: "flex-1 min-h-[480px] flex flex-col mb-4",
+                            div { class: "flex-1 min-h-0 w-full border border-[var(--color-paper-border)]/70 rounded-2xl overflow-hidden bg-[var(--color-paper-entry)]/40 p-6 space-y-4 shadow-xs",
+                                SkeletonBox { class: "h-5 w-[90%] rounded-md" }
+                                SkeletonBox { class: "h-5 w-full rounded-md" }
+                                SkeletonBox { class: "h-5 w-[85%] rounded-md" }
+                                SkeletonBox { class: "h-5 w-[95%] rounded-md" }
+                                SkeletonBox { class: "h-5 w-[60%] rounded-md" }
+                                SkeletonBox { class: "h-5 w-full rounded-md" }
+                                SkeletonBox { class: "h-5 w-[75%] rounded-md" }
                             }
                         }
                     }
                 }
 
-                // 右栏(侧边栏):w-80 border-l,分节式
-                div { class: "w-80 flex-shrink-0 min-h-0 overflow-y-auto border-l border-[var(--color-paper-border)] flex flex-col",
+                // 右栏 (侧边栏)
+                div { class: "w-80 sm:w-88 flex-shrink-0 min-h-0 overflow-y-auto border-l border-[var(--color-paper-border)]/70 flex flex-col bg-[var(--color-paper-theme)]",
+                    // 侧栏标题栏
+                    div { class: "px-5 py-4 border-b border-[var(--color-paper-border)]/60 flex items-center justify-between",
+                        SkeletonBox { class: "h-4 w-20 rounded" }
+                        SkeletonBox { class: "h-4 w-4 rounded" }
+                    }
                     // 链接节
-                    div { class: "p-6 border-b border-[var(--color-paper-border)]",
-                        SkeletonBox { class: "h-3 w-10 rounded mb-3" }
+                    div { class: "p-5 border-b border-[var(--color-paper-border)]/60 space-y-2.5",
+                        SkeletonBox { class: "h-3 w-16 rounded" }
                         SkeletonBox { class: "h-8 w-full rounded-2xl" }
                     }
                     // 标签节
-                    div { class: "p-6 border-b border-[var(--color-paper-border)]",
-                        SkeletonBox { class: "h-3 w-10 rounded mb-3" }
+                    div { class: "p-5 border-b border-[var(--color-paper-border)]/60 space-y-2.5",
+                        SkeletonBox { class: "h-3 w-16 rounded" }
                         SkeletonBox { class: "h-8 w-full rounded-2xl" }
                     }
                     // 摘要节
-                    div { class: "p-6 border-b border-[var(--color-paper-border)]",
-                        SkeletonBox { class: "h-3 w-10 rounded mb-3" }
-                        SkeletonBox { class: "h-16 w-full rounded-2xl" }
+                    div { class: "p-5 border-b border-[var(--color-paper-border)]/60 space-y-2.5",
+                        SkeletonBox { class: "h-3 w-16 rounded" }
+                        SkeletonBox { class: "h-20 w-full rounded-2xl" }
                     }
                     // 封面图节
-                    div { class: "p-6",
-                        SkeletonBox { class: "h-3 w-12 rounded mb-3" }
+                    div { class: "p-5 space-y-2.5",
+                        SkeletonBox { class: "h-3 w-16 rounded" }
                         SkeletonBox { class: "h-14 w-full rounded-2xl" }
                     }
                 }
             }
 
-            // 底部操作栏:与真实页面 px-6 py-4 border-t 一致
-            div { class: "flex-shrink-0 px-6 py-4 flex items-center gap-4 border-t border-[var(--color-paper-border)]",
-                SkeletonBox { class: "h-9 w-[56px] rounded-full" }
-                div { class: "w-px h-5 bg-[var(--color-paper-border)]" }
-                SkeletonBox { class: "h-9 w-[96px] rounded-full" }
-                div { class: "w-px h-5 bg-[var(--color-paper-border)]" }
-                SkeletonBox { class: "h-9 w-[72px] rounded-full" }
+            // 底部操作栏
+            div { class: "flex-shrink-0 px-6 py-3.5 flex items-center justify-between border-t border-[var(--color-paper-border)]/80 bg-[var(--color-paper-theme)] shadow-xs",
+                SkeletonBox { class: "h-9 w-24 rounded-full" }
+                div { class: "flex items-center gap-3",
+                    SkeletonBox { class: "h-9 w-28 rounded-full" }
+                    div { class: "w-px h-5 bg-[var(--color-paper-border)]/60" }
+                    SkeletonBox { class: "h-9 w-24 rounded-full" }
+                }
             }
         }
     }
