@@ -4,10 +4,10 @@
 //! （见 `posts_trash.rs`），二者与评论管理共同组成侧边栏「内容管理」子菜单
 //! （issue #17）。翻页由客户端 signal 驱动（不走路由参数）。
 //! 数据加载与写操作仅在 WASM 前端通过 Dioxus server functions 完成。
+#![allow(unused_imports)]
 
 use dioxus::prelude::*;
 use dioxus::router::components::Link;
-
 // 分页数据接口：list_posts 是 server function，两端都生成（wasm 端为 client stub，
 // server 端为真实实现），故无需 cfg。实际请求只在 use_paginated 的 wasm 分支发出。
 use crate::api::posts::{list_posts, PostListResponse};
@@ -18,12 +18,10 @@ use crate::api::posts::{
     delete_post, rebuild_content_html, rebuild_post_content_html, CreatePostResponse, RebuildResult,
 };
 use crate::components::empty_state::{EmptyState, EmptyStateAction};
-use crate::components::forms::{FormInput, INPUT_INLINE_CLASS};
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::skeletons::posts_skeleton::PostsSkeleton;
 use crate::components::ui::{
-    Pagination, StatusBadge, Tooltip, ADMIN_ROW_HOVER, ADMIN_TABLE_CLASS, BTN_OUTLINE, BTN_PRIMARY,
-    BTN_TEXT_ACCENT, BTN_TEXT_RED, SPINNER_SVG,
+    FilterTabs, Pagination, Tooltip, BTN_OUTLINE, BTN_PRIMARY, SPINNER_SVG,
 };
 use crate::hooks::query::use_paginated;
 use crate::models::post::{PostListItem, PostStatus};
@@ -40,18 +38,34 @@ const POSTS_PER_PAGE: i32 = 20;
 pub fn Posts() -> Element {
     rsx! {
         div { class: "animate-page-enter w-full max-w-7xl mx-auto space-y-6",
-            div { class: "flex flex-col md:flex-row md:items-end justify-between gap-6 pb-6 border-b border-paper-border mb-6",
+            div { class: "flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-[var(--color-paper-border)]/70",
                 div {
-                    h1 { class: "text-4xl font-extrabold tracking-tight text-[var(--color-paper-primary)]",
+                    h1 { class: "text-3xl sm:text-4xl font-extrabold tracking-tight text-[var(--color-paper-primary)]",
                         "全部文章"
                     }
-                    p { class: "text-base text-[var(--color-paper-secondary)] mt-2",
-                        "所有文章及草稿"
+                    p { class: "text-sm text-[var(--color-paper-secondary)] mt-1.5",
+                        "管理与发布文章、草稿及内容渲染缓存"
                     }
                 }
                 div { class: "flex items-center gap-3",
                     RebuildCacheBar {}
-                    Link { class: "{BTN_PRIMARY}", to: Route::Write {}, "发布文章" }
+                    Link {
+                        class: "inline-flex items-center justify-center gap-1.5 px-5 py-2 text-sm font-medium text-[var(--color-paper-theme)] bg-[var(--color-paper-accent)] rounded-full shadow-xs hover:brightness-110 active:scale-[0.98] transition-all cursor-pointer",
+                        to: Route::Write {},
+                        svg {
+                            class: "w-4 h-4",
+                            xmlns: "http://www.w3.org/2000/svg",
+                            view_box: "0 0 24 24",
+                            fill: "none",
+                            stroke: "currentColor",
+                            stroke_width: "2",
+                            stroke_linecap: "round",
+                            stroke_linejoin: "round",
+                            line { x1: "12", y1: "5", x2: "12", y2: "19" }
+                            line { x1: "5", y1: "12", x2: "19", y2: "12" }
+                        }
+                        "发布文章"
+                    }
                 }
             }
             AllPostsList {}
@@ -66,11 +80,12 @@ pub fn Posts() -> Element {
 #[component]
 fn AllPostsList() -> Element {
     let mut current_page = use_signal(|| 1);
+    // 状态分类过滤：all / published / draft
+    let mut status_filter = use_signal(|| "all".to_string());
     // 搜索输入框实时绑定的文本（每键即更新，但不触发请求）。
     let mut search_input = use_signal(String::new);
     // 已提交的搜索词：空串表示不搜索。仅在此值变化时才重新请求，避免逐键打 DB。
     let mut search_query = use_signal(String::new);
-
     // 分页列表加载（loading / posts / total / error）由 use_paginated 统一管理。
     // page 闭包内同时读取 current_page 与 search_query 建立响应式依赖：
     // 翻页、或提交新搜索词（即便停留在第 1 页）都会自动重新请求。
@@ -103,7 +118,20 @@ fn AllPostsList() -> Element {
     // 重建中文章 ID 集合：支持多篇文章并发重建（行不会随点击消失，单值会被后点
     // 的覆盖先点的，故用 HashSet），按行通过 contains 判断 loading 态。
     let mut rebuilding = use_signal(std::collections::HashSet::<i32>::new);
-    let get_posts = move || -> Vec<PostListItem> { posts() };
+    let get_posts = move || -> Vec<PostListItem> {
+        let list = posts();
+        match status_filter().as_str() {
+            "published" => list
+                .into_iter()
+                .filter(|p| p.status == PostStatus::Published)
+                .collect(),
+            "draft" => list
+                .into_iter()
+                .filter(|p| p.status == PostStatus::Draft)
+                .collect(),
+            _ => list,
+        }
+    };
     // 是否处于搜索结果视图（用于区分空状态文案 / 隐藏「写文章」入口）。
     let is_searching = move || !search_query().is_empty();
     // 提交搜索：写入 search_query 并回到第 1 页（搜索结果从首页开始分页）。
@@ -112,32 +140,78 @@ fn AllPostsList() -> Element {
         search_query.set(q);
         current_page.set(1);
     };
-
     rsx! {
-        // 搜索条：按标题过滤文章（仅管理后台用，覆盖草稿）。
-        div { class: "flex gap-2 mb-4",
-            FormInput {
-                r#type: "search",
-                placeholder: "搜索文章标题...",
-                value: search_input(),
-                class: INPUT_INLINE_CLASS,
-                oninput: move |v: String| search_input.set(v),
-                onkeydown: move |e: KeyboardEvent| {
-                    if e.key() == Key::Enter {
-                        submit_search();
-                    }
+        // 工具栏：左侧状态分类 Tab + 右侧搜索输入框
+        div { class: "flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4",
+            // 状态筛选 Tab 胶囊
+            FilterTabs {
+                items: vec![
+                    ("all", "全部"),
+                    ("published", "已发布"),
+                    ("draft", "草稿"),
+                ],
+                active_value: status_filter(),
+                on_change: move |v: String| {
+                    status_filter.set(v);
                 },
             }
-            button { class: "{BTN_PRIMARY}", onclick: move |_| submit_search(), "搜索" }
-            if is_searching() {
+
+            // 搜索输入框
+            div { class: "relative flex items-center gap-2",
+                div { class: "relative flex-1 sm:w-72",
+                    span { class: "absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-[var(--color-paper-tertiary)]",
+                        svg {
+                            class: "w-4 h-4",
+                            xmlns: "http://www.w3.org/2000/svg",
+                            view_box: "0 0 24 24",
+                            fill: "none",
+                            stroke: "currentColor",
+                            stroke_width: "2",
+                            stroke_linecap: "round",
+                            stroke_linejoin: "round",
+                            circle { cx: "11", cy: "11", r: "8" }
+                            line { x1: "21", y1: "21", x2: "16.65", y2: "16.65" }
+                        }
+                    }
+                    input {
+                        class: "w-full pl-9 pr-8 py-2 text-sm border border-[var(--color-paper-border)]/70 rounded-2xl bg-[var(--color-paper-entry)]/60 text-[var(--color-paper-primary)] placeholder:text-[var(--color-paper-tertiary)] focus:outline-none focus:border-paper-accent focus:ring-1 focus:ring-paper-accent/30 transition-all",
+                        r#type: "text",
+                        placeholder: "搜索文章标题...",
+                        value: "{search_input}",
+                        oninput: move |evt: FormEvent| search_input.set(evt.value()),
+                        onkeydown: move |e: KeyboardEvent| {
+                            if e.key() == Key::Enter {
+                                submit_search();
+                            }
+                        },
+                    }
+                    if !search_input().is_empty() {
+                        button {
+                            class: "absolute inset-y-0 right-0 pr-3 flex items-center text-[var(--color-paper-tertiary)] hover:text-[var(--color-paper-primary)] transition-colors cursor-pointer",
+                            onclick: move |_| {
+                                search_input.set(String::new());
+                                search_query.set(String::new());
+                                current_page.set(1);
+                            },
+                            "×"
+                        }
+                    }
+                }
                 button {
-                    class: "{BTN_OUTLINE}",
-                    onclick: move |_| {
-                        search_input.set(String::new());
-                        search_query.set(String::new());
-                        current_page.set(1);
-                    },
-                    "清除"
+                    class: "{BTN_PRIMARY} px-4 py-2 text-xs",
+                    onclick: move |_| submit_search(),
+                    "搜索"
+                }
+                if is_searching() {
+                    button {
+                        class: "{BTN_OUTLINE} px-3 py-2 text-xs",
+                        onclick: move |_| {
+                            search_input.set(String::new());
+                            search_query.set(String::new());
+                            current_page.set(1);
+                        },
+                        "清除"
+                    }
                 }
             }
         }
@@ -149,11 +223,16 @@ fn AllPostsList() -> Element {
             }
         } else if loading() && posts().is_empty() {
             DelayedSkeleton { PostsSkeleton {} }
-        } else if posts().is_empty() {
+        } else if get_posts().is_empty() {
             if is_searching() {
                 EmptyState {
                     title: "未找到匹配的文章",
                     description: "换个标题关键词再试一次。",
+                }
+            } else if status_filter() == "draft" {
+                EmptyState {
+                    title: "暂无草稿",
+                    description: "当前没有未发布的草稿文章。",
                 }
             } else {
                 EmptyState {
@@ -166,18 +245,21 @@ fn AllPostsList() -> Element {
                 }
             }
         } else {
-            div { class: "{ADMIN_TABLE_CLASS}",
+            div { class: "bg-[var(--color-paper-entry)]/40 rounded-2xl shadow-xs border border-[var(--color-paper-border)]/70 overflow-hidden",
                 table { class: "w-full text-sm",
                     thead {
-                        tr { class: "border-b border-paper-border text-left text-paper-secondary",
-                            th { class: "px-4 py-3 font-medium", "标题" }
-                            th { class: "px-4 py-3 font-medium w-24 text-center whitespace-nowrap",
+                        tr { class: "bg-[var(--color-paper-entry)]/80 border-b border-[var(--color-paper-border)]/70 text-left text-xs font-semibold uppercase tracking-wider text-[var(--color-paper-secondary)] select-none",
+                            th { class: "px-5 py-3.5", "文章标题" }
+                            th { class: "px-4 py-3.5 w-24 text-center whitespace-nowrap",
                                 "状态"
                             }
-                            th { class: "px-4 py-3 font-medium w-32 whitespace-nowrap",
-                                "日期"
+                            th { class: "px-4 py-3.5 w-28 whitespace-nowrap hidden md:table-cell",
+                                "字数"
                             }
-                            th { class: "px-4 py-3 font-medium w-44 text-right whitespace-nowrap",
+                            th { class: "px-4 py-3.5 w-32 whitespace-nowrap",
+                                "发布日期"
+                            }
+                            th { class: "px-5 py-3.5 w-48 text-right whitespace-nowrap",
                                 "操作"
                             }
                         }
@@ -355,7 +437,6 @@ fn PostRow(
 ) -> Element {
     let date_str = post.formatted_date();
     // 草稿标题跳预览（/admin/preview/<slug>），已发布标题跳公开详情页。
-    // 草稿在 /post/<slug> 会被 status 过滤 404，故必须分流避免死链。
     let title_dest = if post.status == PostStatus::Draft {
         Route::PostPreview {
             slug: post.slug.clone(),
@@ -368,37 +449,97 @@ fn PostRow(
 
     rsx! {
         tr {
-            class: "animate-row-enter {ADMIN_ROW_HOVER}",
+            class: "animate-row-enter border-b border-[var(--color-paper-border)]/60 last:border-b-0 hover:bg-[var(--color-paper-accent-soft)]/30 transition-colors duration-150 group",
             style: "animation-delay: {stagger_index * 35}ms",
-            td { class: "px-4 py-3",
-                Link {
-                    class: "text-paper-primary hover:text-paper-accent transition-colors cursor-pointer",
-                    to: title_dest,
-                    "{post.title}"
-                }
-            }
-            td { class: "px-4 py-3 text-center whitespace-nowrap",
-                StatusBadge {
-                    color_class: post.status_badge_class(),
-                    label: post.status_label().to_string(),
-                }
-            }
-            td { class: "px-4 py-3 text-paper-secondary whitespace-nowrap", "{date_str}" }
-            td { class: "px-4 py-3 text-right whitespace-nowrap",
-                div { class: "flex justify-end items-center gap-3",
+            // 标题 + 别名 + 标签
+            td { class: "px-5 py-3.5",
+                div { class: "flex flex-col gap-1",
                     Link {
-                        class: "text-xs text-paper-secondary hover:text-paper-primary transition-colors cursor-pointer",
+                        class: "font-semibold text-[var(--color-paper-primary)] hover:text-[var(--color-paper-accent)] transition-colors cursor-pointer leading-snug line-clamp-1",
+                        to: title_dest,
+                        "{post.title}"
+                    }
+                    div { class: "flex flex-wrap items-center gap-2 text-xs",
+                        span { class: "font-mono text-[11px] text-[var(--color-paper-tertiary)]",
+                            "/post/{post.slug}"
+                        }
+                        if !post.tags.is_empty() {
+                            for tag in post.tags.iter().take(3) {
+                                span {
+                                    key: "{tag}",
+                                    class: "inline-flex items-center px-1.5 py-0.2 rounded text-[10px] bg-[var(--color-paper-theme)] text-[var(--color-paper-tertiary)] border border-[var(--color-paper-border)]/40",
+                                    "#{tag}"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            // 状态指示胶囊
+            td { class: "px-4 py-3.5 text-center whitespace-nowrap",
+                if post.status == PostStatus::Published {
+                    span { class: "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20",
+                        span { class: "w-1.5 h-1.5 rounded-full bg-emerald-500" }
+                        "公开"
+                    }
+                } else {
+                    span { class: "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20",
+                        span { class: "w-1.5 h-1.5 rounded-full bg-amber-500" }
+                        "草稿"
+                    }
+                }
+            }
+            // 字数
+            td { class: "px-4 py-3.5 text-[var(--color-paper-tertiary)] font-mono text-xs whitespace-nowrap hidden md:table-cell",
+                "{post.word_count} 字"
+            }
+            // 日期
+            td { class: "px-4 py-3.5 text-[var(--color-paper-secondary)] font-mono text-xs whitespace-nowrap",
+                "{date_str}"
+            }
+            // 操作按钮栏
+            td { class: "px-5 py-3.5 text-right whitespace-nowrap",
+                div { class: "flex justify-end items-center gap-2",
+                    // 编辑
+                    Link {
+                        class: "inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-[var(--color-paper-secondary)] hover:text-[var(--color-paper-primary)] hover:bg-[var(--color-paper-theme)] transition-colors cursor-pointer",
                         to: Route::WriteEdit { id: post.id },
+                        svg {
+                            class: "w-3.5 h-3.5",
+                            xmlns: "http://www.w3.org/2000/svg",
+                            view_box: "0 0 24 24",
+                            fill: "none",
+                            stroke: "currentColor",
+                            stroke_width: "2",
+                            stroke_linecap: "round",
+                            stroke_linejoin: "round",
+                            path { d: "M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" }
+                            path { d: "M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" }
+                        }
                         "编辑"
                     }
+                    // 重建缓存
                     Tooltip {
                         tip: "重新渲染这篇文章的 HTML".to_string(),
                         align: "end",
                         button {
-                            class: if rebuilding { "relative inline-flex items-center text-xs text-paper-accent cursor-not-allowed" } else { BTN_TEXT_ACCENT },
+                            class: if rebuilding { "relative inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-paper-accent cursor-not-allowed" } else { "inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-paper-accent hover:bg-[var(--color-paper-theme)] transition-colors cursor-pointer" },
                             disabled: rebuilding,
                             onclick: move |_| on_rebuild.call(post.id),
-                            span { class: if rebuilding { "opacity-40" } else { "" }, "重建" }
+                            span { class: if rebuilding { "opacity-0" } else { "flex items-center gap-1" },
+                                svg {
+                                    class: "w-3.5 h-3.5",
+                                    xmlns: "http://www.w3.org/2000/svg",
+                                    view_box: "0 0 24 24",
+                                    fill: "none",
+                                    stroke: "currentColor",
+                                    stroke_width: "2",
+                                    stroke_linecap: "round",
+                                    stroke_linejoin: "round",
+                                    path { d: "M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" }
+                                }
+                                "重建"
+                            }
                             if rebuilding {
                                 span {
                                     class: "absolute inset-0 flex items-center justify-center",
@@ -407,11 +548,26 @@ fn PostRow(
                             }
                         }
                     }
+                    // 删除
                     button {
-                        class: if deleting { "relative inline-flex items-center text-xs text-paper-secondary cursor-not-allowed" } else { BTN_TEXT_RED },
+                        class: if deleting { "relative inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-red-400 cursor-not-allowed" } else { "inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors cursor-pointer" },
                         disabled: deleting,
                         onclick: move |_| on_delete.call(post.id),
-                        span { class: if deleting { "opacity-40" } else { "" }, "删除" }
+                        span { class: if deleting { "opacity-0" } else { "flex items-center gap-1" },
+                            svg {
+                                class: "w-3.5 h-3.5",
+                                xmlns: "http://www.w3.org/2000/svg",
+                                view_box: "0 0 24 24",
+                                fill: "none",
+                                stroke: "currentColor",
+                                stroke_width: "2",
+                                stroke_linecap: "round",
+                                stroke_linejoin: "round",
+                                polyline { points: "3 6 5 6 21 6" }
+                                path { d: "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" }
+                            }
+                            "删除"
+                        }
                         if deleting {
                             span {
                                 class: "absolute inset-0 flex items-center justify-center",
