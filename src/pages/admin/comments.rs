@@ -15,7 +15,7 @@ use crate::api::comments::{approve_comment, batch_update_comment_status, spam_co
 #[cfg(target_arch = "wasm32")]
 use crate::api::comments::{get_all_comments, AllCommentsResponse};
 use crate::components::empty_state::EmptyState;
-use crate::components::skeletons::admin_comments_skeleton::AdminCommentsSkeleton;
+use crate::components::skeletons::admin_comments_skeleton::AdminCommentsTableSkeleton;
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::ui::{
     Checkbox, FilterTabs, Pagination, UserAvatar, BTN_GHOST, BTN_SOLID_AMBER, BTN_SOLID_GREEN,
@@ -269,7 +269,7 @@ pub fn AdminCommentsPage(page: i32) -> Element {
                     }
                 } else if loading() && comments().is_empty() {
                     rsx! {
-                        DelayedSkeleton { AdminCommentsSkeleton {} }
+                        DelayedSkeleton { AdminCommentsTableSkeleton {} }
                     }
                 } else if comments().is_empty() {
                     rsx! {

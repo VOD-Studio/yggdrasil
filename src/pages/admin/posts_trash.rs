@@ -22,7 +22,7 @@ use crate::api::settings::{get_trash_settings, update_trash_settings};
 use crate::components::empty_state::EmptyState;
 use crate::components::forms::ToggleSwitch;
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
-use crate::components::skeletons::posts_trash_skeleton::PostsTrashSkeleton;
+use crate::components::skeletons::posts_trash_skeleton::PostsTrashTableSkeleton;
 use crate::components::ui::{
     Checkbox, CollapsibleSettingsCard, LoadingButton, Pagination, Popover, BTN_DANGER_OUTLINE,
     BTN_GHOST, BTN_ICON, BTN_SOLID_GREEN, BTN_SOLID_RED,
@@ -249,7 +249,7 @@ pub fn PostsTrash() -> Element {
                     } else if loading() && posts().is_empty() {
                         rsx! {
                             DelayedSkeleton {
-                                PostsTrashSkeleton {}
+                                PostsTrashTableSkeleton {}
                             }
                         }
                     } else if posts().is_empty() {

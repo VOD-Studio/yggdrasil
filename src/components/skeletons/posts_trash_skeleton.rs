@@ -6,7 +6,67 @@ use dioxus::prelude::*;
 
 use crate::components::skeletons::atoms::SkeletonBox;
 use crate::components::ui::ADMIN_CARD_CLASS;
-/// 后台回收站骨架屏组件。
+/// 后台回收站表格骨架屏组件（供 PostsTrash 页面内部加载态使用）。
+#[component]
+pub fn PostsTrashTableSkeleton() -> Element {
+    rsx! {
+        div { class: "bg-[var(--color-paper-entry)]/40 rounded-2xl shadow-xs border border-[var(--color-paper-border)]/70 overflow-hidden",
+            table { class: "w-full text-sm",
+                thead {
+                    tr { class: "bg-[var(--color-paper-entry)]/80 border-b border-[var(--color-paper-border)]/70",
+                        th { class: "px-4 py-3.5 w-10 text-center",
+                            SkeletonBox { class: "h-4 w-4 rounded mx-auto" }
+                        }
+                        th { class: "px-5 py-3.5",
+                            SkeletonBox { class: "h-3 w-16" }
+                        }
+                        th { class: "px-4 py-3.5 w-24",
+                            SkeletonBox { class: "h-3 w-14 mx-auto" }
+                        }
+                        th { class: "px-4 py-3.5 w-32",
+                            SkeletonBox { class: "h-3 w-16" }
+                        }
+                        th { class: "px-4 py-3.5 w-24",
+                            SkeletonBox { class: "h-3 w-14 mx-auto" }
+                        }
+                        th { class: "px-5 py-3.5 w-36",
+                            SkeletonBox { class: "h-3 w-16 ml-auto" }
+                        }
+                    }
+                }
+                tbody {
+                    for _ in 0..8 {
+                        tr { class: "border-b border-[var(--color-paper-border)]/60 last:border-0",
+                            td { class: "px-4 py-3.5 text-center",
+                                SkeletonBox { class: "h-4 w-4 rounded mx-auto" }
+                            }
+                            td { class: "px-5 py-3.5",
+                                div { class: "space-y-1.5",
+                                    SkeletonBox { class: "h-4 w-1/3" }
+                                    SkeletonBox { class: "h-3 w-1/4" }
+                                }
+                            }
+                            td { class: "px-4 py-3.5",
+                                SkeletonBox { class: "h-5 w-14 mx-auto rounded-full" }
+                            }
+                            td { class: "px-4 py-3.5",
+                                SkeletonBox { class: "h-4 w-20" }
+                            }
+                            td { class: "px-4 py-3.5",
+                                SkeletonBox { class: "h-5 w-14 mx-auto rounded-full" }
+                            }
+                            td { class: "px-5 py-3.5",
+                                SkeletonBox { class: "h-6 w-24 ml-auto rounded" }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// 后台回收站全页骨架屏组件（供 AdminLayout 路由级 fallback 使用）。
 #[component]
 pub fn PostsTrashSkeleton() -> Element {
     rsx! {
@@ -36,59 +96,7 @@ pub fn PostsTrashSkeleton() -> Element {
                 }
 
                 // 回收站表格
-                div { class: "bg-[var(--color-paper-entry)]/40 rounded-2xl shadow-xs border border-[var(--color-paper-border)]/70 overflow-hidden",
-                    table { class: "w-full text-sm",
-                        thead {
-                            tr { class: "bg-[var(--color-paper-entry)]/80 border-b border-[var(--color-paper-border)]/70",
-                                th { class: "px-4 py-3.5 w-10 text-center",
-                                    SkeletonBox { class: "h-4 w-4 rounded mx-auto" }
-                                }
-                                th { class: "px-5 py-3.5",
-                                    SkeletonBox { class: "h-3 w-16" }
-                                }
-                                th { class: "px-4 py-3.5 w-24",
-                                    SkeletonBox { class: "h-3 w-14 mx-auto" }
-                                }
-                                th { class: "px-4 py-3.5 w-32",
-                                    SkeletonBox { class: "h-3 w-16" }
-                                }
-                                th { class: "px-4 py-3.5 w-24",
-                                    SkeletonBox { class: "h-3 w-14 mx-auto" }
-                                }
-                                th { class: "px-5 py-3.5 w-36",
-                                    SkeletonBox { class: "h-3 w-16 ml-auto" }
-                                }
-                            }
-                        }
-                        tbody {
-                            for _ in 0..8 {
-                                tr { class: "border-b border-[var(--color-paper-border)]/60 last:border-0",
-                                    td { class: "px-4 py-3.5 text-center",
-                                        SkeletonBox { class: "h-4 w-4 rounded mx-auto" }
-                                    }
-                                    td { class: "px-5 py-3.5",
-                                        div { class: "space-y-1.5",
-                                            SkeletonBox { class: "h-4 w-1/3" }
-                                            SkeletonBox { class: "h-3 w-1/4" }
-                                        }
-                                    }
-                                    td { class: "px-4 py-3.5",
-                                        SkeletonBox { class: "h-5 w-14 mx-auto rounded-full" }
-                                    }
-                                    td { class: "px-4 py-3.5",
-                                        SkeletonBox { class: "h-4 w-20" }
-                                    }
-                                    td { class: "px-4 py-3.5",
-                                        SkeletonBox { class: "h-5 w-14 mx-auto rounded-full" }
-                                    }
-                                    td { class: "px-5 py-3.5",
-                                        SkeletonBox { class: "h-6 w-24 ml-auto rounded" }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+                PostsTrashTableSkeleton {}
             }
         }
     }

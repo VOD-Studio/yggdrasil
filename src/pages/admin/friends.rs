@@ -19,7 +19,7 @@ use crate::components::forms::{FormInput, FormSelect, INPUT_CLASS, INPUT_INLINE_
 #[cfg(target_arch = "wasm32")]
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 #[cfg(target_arch = "wasm32")]
-use crate::components::skeletons::friends_admin_skeleton::FriendsAdminSkeleton;
+use crate::components::skeletons::friends_admin_skeleton::FriendsAdminListSkeleton;
 #[cfg(target_arch = "wasm32")]
 use crate::components::ui::{Popover, BTN_DANGER_OUTLINE, BTN_GHOST, BTN_OUTLINE, BTN_PRIMARY};
 #[cfg(target_arch = "wasm32")]
@@ -487,7 +487,7 @@ fn LinkList() -> Element {
             }
 
             if loading() && links().is_empty() {
-                DelayedSkeleton { FriendsAdminSkeleton {} }
+                DelayedSkeleton { FriendsAdminListSkeleton {} }
             } else if links().is_empty() {
                 p { class: "text-[var(--color-paper-secondary)] text-sm py-8 text-center",
                     "还没有友链，在上方表单添加第一位伙伴吧。"

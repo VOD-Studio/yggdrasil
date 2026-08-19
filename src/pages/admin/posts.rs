@@ -19,7 +19,7 @@ use crate::api::posts::{
 };
 use crate::components::empty_state::{EmptyState, EmptyStateAction};
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
-use crate::components::skeletons::posts_skeleton::PostsSkeleton;
+use crate::components::skeletons::posts_skeleton::PostsTableSkeleton;
 use crate::components::ui::{
     FilterTabs, Pagination, Tooltip, BTN_OUTLINE, BTN_PRIMARY, SPINNER_SVG,
 };
@@ -222,7 +222,7 @@ fn AllPostsList() -> Element {
                 description: "获取文章列表时发生错误，请稍后重试。",
             }
         } else if loading() && posts().is_empty() {
-            DelayedSkeleton { PostsSkeleton {} }
+            DelayedSkeleton { PostsTableSkeleton {} }
         } else if get_posts().is_empty() {
             if is_searching() {
                 EmptyState {
