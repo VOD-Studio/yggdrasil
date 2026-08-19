@@ -1,7 +1,10 @@
 use futures::StreamExt;
 use std::collections::HashMap;
+#[cfg(test)]
+use std::future::Future;
 use std::sync::LazyLock;
 use std::time::Duration;
+use tokio::sync::oneshot;
 use tokio::time::timeout;
 
 use crate::infra::runner_config::{ResourceLimits, RUNNER_CONFIG};
@@ -12,6 +15,10 @@ use bollard::query_parameters::{
     WaitContainerOptions,
 };
 use bollard::Docker;
+
+type CleanupSignal = oneshot::Sender<bool>;
+type ContainerOutput = (Option<i64>, String, String, bool);
+type ContainerResult = Result<ContainerOutput, bollard::errors::Error>;
 
 /// 共享的 Docker 客户端。
 ///
@@ -120,47 +127,57 @@ pub fn build_host_config(
 struct ContainerGuard {
     container_id: String,
     docker: Docker,
+    cleanup_signal: Option<CleanupSignal>,
+}
+
+async fn remove_container_with_retry(docker: Docker, container_id: String) -> bool {
+    let max_attempts = 3u8;
+    let mut backoff = Duration::from_millis(200);
+    for attempt in 1..=max_attempts {
+        let remove_options = Some(RemoveContainerOptions {
+            force: true,
+            ..Default::default()
+        });
+        match docker.remove_container(&container_id, remove_options).await {
+            Ok(()) => return true,
+            Err(e) if attempt < max_attempts => {
+                tracing::warn!(
+                    attempt,
+                    max_attempts,
+                    "remove_container 失败，稍后重试: {:?}",
+                    e
+                );
+                tokio::time::sleep(backoff).await;
+                backoff *= 2;
+            }
+            Err(e) => {
+                tracing::error!(
+                    container_id = %container_id,
+                    "重试 {} 次后仍无法删除容器，可能泄漏；请手动执行 `docker rm -f {}`: {:?}",
+                    max_attempts,
+                    container_id,
+                    e
+                );
+                return false;
+            }
+        }
+    }
+    false
 }
 
 impl Drop for ContainerGuard {
     fn drop(&mut self) {
         let docker = self.docker.clone();
         let container_id = self.container_id.clone();
+        let cleanup_signal = self.cleanup_signal.take();
         // 容器清理是 fire-and-forget：调用方已返回，无法把错误回传给业务层。
         // 因此重试几次以抵抗瞬时故障（daemon 繁忙 / socket 抖动），
         // 仍失败则记录 error 级日志并带上 container_id，便于运维手动 `docker rm -f` 清理，
         // 避免容器静默泄漏、长期堆积。
         tokio::spawn(async move {
-            let max_attempts = 3u8;
-            let mut backoff = Duration::from_millis(200);
-            for attempt in 1..=max_attempts {
-                let remove_options = Some(RemoveContainerOptions {
-                    force: true,
-                    ..Default::default()
-                });
-                match docker.remove_container(&container_id, remove_options).await {
-                    Ok(()) => return,
-                    Err(e) if attempt < max_attempts => {
-                        tracing::warn!(
-                            attempt,
-                            max_attempts,
-                            "remove_container 失败，稍后重试: {:?}",
-                            e
-                        );
-                        tokio::time::sleep(backoff).await;
-                        backoff *= 2;
-                    }
-                    Err(e) => {
-                        tracing::error!(
-                            container_id = %container_id,
-                            "重试 {} 次后仍无法删除容器，可能泄漏；请手动执行 `docker rm -f {}`: {:?}",
-                            max_attempts,
-                            container_id,
-                            e
-                        );
-                        return;
-                    }
-                }
+            let cleaned = remove_container_with_retry(docker, container_id).await;
+            if let Some(signal) = cleanup_signal {
+                let _ = signal.send(cleaned);
             }
         });
     }
@@ -173,7 +190,19 @@ pub async fn run_in_container(
     ext: &str,
     limits: ResourceLimits,
     cache_volume: Option<&CacheVolume>,
-) -> Result<(Option<i64>, String, String, bool), bollard::errors::Error> {
+) -> ContainerResult {
+    run_in_container_inner(image_name, run_cmd, source, ext, limits, cache_volume, None).await
+}
+
+async fn run_in_container_inner(
+    image_name: &str,
+    run_cmd: &str,
+    source: &str,
+    ext: &str,
+    limits: ResourceLimits,
+    cache_volume: Option<&CacheVolume>,
+    cleanup_signal: Option<CleanupSignal>,
+) -> ContainerResult {
     let docker = get_docker()?;
     let host_config = build_host_config(&limits, cache_volume);
 
@@ -203,6 +232,7 @@ pub async fn run_in_container(
     let _guard = ContainerGuard {
         container_id: container_id.clone(),
         docker: docker.clone(),
+        cleanup_signal,
     };
 
     // Attach to container to stream stdin, stdout, and stderr
@@ -329,6 +359,33 @@ pub async fn run_in_container(
     Ok((exit_code, stdout, stderr, oom_killed))
 }
 
+#[cfg(test)]
+fn run_in_container_with_cleanup_signal<'a>(
+    image_name: &'a str,
+    run_cmd: &'a str,
+    source: &'a str,
+    ext: &'a str,
+    limits: ResourceLimits,
+    cache_volume: Option<&'a CacheVolume>,
+) -> (
+    impl Future<Output = ContainerResult> + 'a,
+    oneshot::Receiver<bool>,
+) {
+    let (sender, receiver) = oneshot::channel();
+    (
+        run_in_container_inner(
+            image_name,
+            run_cmd,
+            source,
+            ext,
+            limits,
+            cache_volume,
+            Some(sender),
+        ),
+        receiver,
+    )
+}
+
 /// 流式输出 chunk：run_in_container_stream 边读日志边推送给 SSE handler。
 ///
 /// 序列化后作为 SSE event data；`Done` 同时携带终态信息（退出码 / OOM / 超时 / 耗时）。
@@ -401,6 +458,7 @@ pub async fn run_in_container_stream(
     let _guard = ContainerGuard {
         container_id: container_id.clone(),
         docker: docker.clone(),
+        cleanup_signal: None,
     };
 
     // Attach 到容器的 stdin/stdout/stderr 流。
@@ -901,7 +959,14 @@ mod tests {
             allow_network: false,
         };
 
-        let run_fut = run_in_container("alpine:latest", "sleep 100", "", "txt", limits, None);
+        let (run_fut, cleanup_done) = run_in_container_with_cleanup_signal(
+            "alpine:latest",
+            "sleep 100",
+            "",
+            "txt",
+            limits,
+            None,
+        );
 
         tokio::select! {
             _ = run_fut => {
@@ -912,11 +977,21 @@ mod tests {
             }
         }
 
-        // ContainerGuard::drop 的清理是 fire-and-forget（tokio::spawn +
-        // remove_container 带 3 次重试退避）。固定 sleep + 单次检查会在 CI
-        // runner 高负载时误报泄漏——Docker daemon 的 kill+remove 可能需要
-        // 数秒。改为轮询：容器一消失就立即通过，仅当超过宽限期限仍存在才判定泄漏。
-        let deadline = Duration::from_secs(15);
+        // 取消发生后，Drop 仍通过后台任务删除容器。等待清理任务明确报告结果，
+        // 不再用固定时间窗口猜测 Docker daemon 是否已经完成删除。
+        match timeout(Duration::from_secs(30), cleanup_done).await {
+            Ok(Ok(true)) => {}
+            Ok(Ok(false)) => panic!("Container cleanup failed after retries"),
+            Ok(Err(_)) => {
+                // Future 在 create_container 完成前就被取消，没有容器需要清理。
+                return;
+            }
+            Err(_) => panic!("Container cleanup did not finish within 30 seconds"),
+        }
+
+        // remove_container 返回成功后，给 daemon 很短的时间同步 list API，避免
+        // 删除成功与列表可见性之间的最终一致性造成误报。
+        let deadline = Duration::from_secs(5);
         let poll_interval = Duration::from_millis(250);
         let start = std::time::Instant::now();
 
@@ -945,23 +1020,10 @@ mod tests {
             }
         };
 
-        // 超时后仍有残留 → 清理掉避免影响后续 serial 测试，再断言失败。
-        for id in &leaked {
-            let _ = docker
-                .remove_container(
-                    id,
-                    Some(RemoveContainerOptions {
-                        force: true,
-                        ..Default::default()
-                    }),
-                )
-                .await;
-        }
-
         assert_eq!(
             leaked.len(),
             0,
-            "Found {} leaked containers after polling",
+            "Found {} leaked containers after confirmed cleanup",
             leaked.len()
         );
     }
