@@ -16,6 +16,7 @@ use crate::components::skeletons::mcp_skeleton::McpSkeleton;
 use crate::components::skeletons::post_preview_skeleton::PostPreviewSkeleton;
 use crate::components::skeletons::posts_skeleton::PostsSkeleton;
 use crate::components::skeletons::posts_trash_skeleton::PostsTrashSkeleton;
+use crate::components::skeletons::profile_skeleton::ProfileSkeleton;
 use crate::components::skeletons::runner_skeleton::RunnerSkeleton;
 use crate::components::skeletons::settings_admin_skeleton::SettingsAdminSkeleton;
 use crate::components::skeletons::system_skeleton::SystemSkeleton;
@@ -79,6 +80,16 @@ pub fn AdminLayout() -> Element {
     let root_class =
         "min-h-dvh flex bg-[var(--color-paper-entry)] text-[var(--color-paper-primary)] font-sans";
 
+    // 侧栏底部用户卡片（→ /admin/profile）的激活态样式，与导航项同一套 pill 语言。
+    let is_profile_route = matches!(route, Route::Profile {});
+    let chip_state_class = if is_profile_route {
+        "bg-[var(--color-paper-theme)] text-[var(--color-paper-primary)] shadow-sm border border-[var(--color-paper-border)]"
+    } else {
+        "text-[var(--color-paper-secondary)] hover:bg-[var(--color-paper-theme)]/50 hover:text-[var(--color-paper-primary)] border border-transparent"
+    };
+    // 读取一次全局用户上下文（订阅：资料更新后卡片即时刷新）。
+    let side_user = (ctx.user)();
+
     let nav_content = rsx! {
         aside { class: "w-48 flex-shrink-0 hidden md:flex flex-col h-screen sticky top-0 p-3 bg-[var(--color-paper-entry)]",
             // Logo
@@ -129,20 +140,57 @@ pub fn AdminLayout() -> Element {
                 }
                 ToolsNavGroup {}
             }
-            // Bottom Tools
-            div { class: "mt-auto pt-4 border-t border-[var(--color-paper-border)] flex items-center justify-between px-3",
-                ThemeToggle {}
-                button {
-                    class: "text-sm font-medium px-3 py-1.5 rounded-2xl bg-[var(--color-paper-theme)] border border-[var(--color-paper-border)] shadow-sm hover:shadow-md transition-all text-[var(--color-paper-secondary)] hover:text-red-500 cursor-pointer",
-                    onclick: move |_| {
-                        spawn(async move {
-                            let _ = logout().await;
-                            ctx.user.set(None);
-                            ctx.checked.set(false);
-                            let _ = navigator.push(Route::Login {});
-                        });
-                    },
-                    "退出"
+            // Bottom Tools：用户卡片（→ 个人信息页）+ 主题切换 / 退出
+            div { class: "mt-auto pt-4 border-t border-[var(--color-paper-border)] flex flex-col gap-1",
+                if let Some(user) = side_user {
+                    {
+                        // 头像兜底：无头像时显示展示名首字符（2025 头像三态之一）。
+                        let chip_initial = user
+                            .display_label()
+                            .chars()
+                            .next()
+                            .map(|c| c.to_uppercase().collect::<String>())
+                            .unwrap_or_else(|| "?".to_string());
+                        rsx! {
+                            Link {
+                                class: "flex items-center gap-2.5 px-3 py-2 rounded-2xl text-sm font-medium transition-all {chip_state_class}",
+                                to: Route::Profile {},
+                                if let Some(url) = &user.avatar_url {
+                                    img {
+                                        class: "w-7 h-7 rounded-full object-cover flex-shrink-0 border border-[var(--color-paper-border)]",
+                                        src: "{url}",
+                                        alt: "头像",
+                                    }
+                                } else {
+                                    span { class: "w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center bg-[var(--color-paper-accent-soft)] text-[var(--color-paper-accent)] text-xs font-bold select-none",
+                                        "{chip_initial}"
+                                    }
+                                }
+                                span { class: "truncate", "{user.display_label()}" }
+                            }
+                        }
+                    }
+                } else {
+                    // 登录态校验期间的占位（与骨架屏同语言）。
+                    div { class: "flex items-center gap-2.5 px-3 py-2",
+                        div { class: "w-7 h-7 rounded-full bg-[var(--color-paper-theme)] animate-pulse flex-shrink-0" }
+                        div { class: "h-3.5 w-16 rounded bg-[var(--color-paper-theme)] animate-pulse" }
+                    }
+                }
+                div { class: "flex items-center justify-between px-3",
+                    ThemeToggle {}
+                    button {
+                        class: "text-sm font-medium px-3 py-1.5 rounded-2xl bg-[var(--color-paper-theme)] border border-[var(--color-paper-border)] shadow-sm hover:shadow-md transition-all text-[var(--color-paper-secondary)] hover:text-red-500 cursor-pointer",
+                        onclick: move |_| {
+                            spawn(async move {
+                                let _ = logout().await;
+                                ctx.user.set(None);
+                                ctx.checked.set(false);
+                                let _ = navigator.push(Route::Login {});
+                            });
+                        },
+                        "退出"
+                    }
                 }
             }
         }
@@ -232,6 +280,9 @@ fn admin_route_skeleton(route: &Route) -> Element {
         },
         Route::SiteSettingsPage {} => rsx! {
             SettingsAdminSkeleton {}
+        },
+        Route::Profile {} => rsx! {
+            ProfileSkeleton {}
         },
         Route::PostPreview { .. } => rsx! {
             PostPreviewSkeleton {}

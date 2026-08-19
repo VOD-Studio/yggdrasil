@@ -37,7 +37,7 @@ fn validate_username(username: &str) -> Result<(), String> {
 }
 
 #[cfg(feature = "server")]
-fn validate_email(email: &str) -> Result<(), String> {
+pub(crate) fn validate_email(email: &str) -> Result<(), String> {
     if !crate::utils::server::EMAIL_REGEX.is_match(email) {
         return Err("邮箱格式不正确".to_string());
     }
@@ -45,7 +45,7 @@ fn validate_email(email: &str) -> Result<(), String> {
 }
 
 #[cfg(feature = "server")]
-fn validate_password(password: &str) -> Result<(), String> {
+pub(crate) fn validate_password(password: &str) -> Result<(), String> {
     if password.len() < 8 {
         return Err("密码长度至少 8 位".to_string());
     }
@@ -381,7 +381,7 @@ pub async fn get_user_by_token(token: &str) -> Result<Option<SessionUser>, Serve
 
     let row = client
         .query_opt(
-            "SELECT u.id, u.username, u.email, u.role, u.created_at, u.session_generation
+            "SELECT u.id, u.username, u.email, u.display_name, u.avatar_url, u.role, u.created_at, u.session_generation
              FROM sessions s
              JOIN users u ON s.user_id = u.id
              WHERE s.token_hash = $1 AND s.expires_at > NOW()",
@@ -398,6 +398,8 @@ pub async fn get_user_by_token(token: &str) -> Result<Option<SessionUser>, Serve
                 id: row.get("id"),
                 username: row.get("username"),
                 email: row.get("email"),
+                display_name: row.get("display_name"),
+                avatar_url: row.get("avatar_url"),
                 role,
                 created_at: row.get("created_at"),
                 session_generation: row.get("session_generation"),
@@ -482,6 +484,14 @@ fn parse_admin_env() -> Option<AdminEnvConfig> {
         email,
         password,
     })
+}
+
+/// `ADMIN_*` 初始管理员环境变量是否全部就位（即启动同步特性是否激活）。
+///
+/// 激活时每次启动都会用 env 覆盖邮箱与密码——个人信息页据此显示提示横幅。
+#[cfg(feature = "server")]
+pub(crate) fn admin_env_active() -> bool {
+    parse_admin_env().is_some()
 }
 
 /// 启动时按 `ADMIN_*` 环境变量同步初始管理员（env 是超级管理员的凭据源）。

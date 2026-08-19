@@ -40,6 +40,8 @@ pub mod mcp_tokens;
 pub mod mhchem;
 /// 文章 CRUD 相关接口。
 pub mod posts;
+/// 个人信息（当前账号资料与密码）的 Dioxus server function。
+pub mod profile;
 /// 限流工具。
 pub mod rate_limit;
 /// HTML 消毒器。

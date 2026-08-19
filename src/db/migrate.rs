@@ -83,6 +83,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "022",
         include_str!("../../migrations/022_backup_settings.sql"),
     ),
+    (
+        "023",
+        include_str!("../../migrations/023_user_profile.sql"),
+    ),
     // 新增迁移在此追加，同时在 migrations/ 下创建对应 .sql 文件。
 ];
 

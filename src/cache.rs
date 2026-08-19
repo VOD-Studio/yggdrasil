@@ -1051,6 +1051,8 @@ mod tests {
             id: 42,
             username: "cached_user".to_string(),
             email: "cached@example.com".to_string(),
+            display_name: None,
+            avatar_url: None,
             role: UserRole::Admin,
             created_at: chrono::Utc::now(),
             session_generation: 0,

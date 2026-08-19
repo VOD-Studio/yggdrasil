@@ -36,6 +36,10 @@ pub struct SessionUser {
     pub username: String,
     /// 邮箱地址。
     pub email: String,
+    /// 对外展示名称（为空时 UI 回退展示 username）。
+    pub display_name: Option<String>,
+    /// 头像 URL（/uploads/ 素材路径或 http(s) 外链）。
+    pub avatar_url: Option<String>,
     /// 用户角色。
     pub role: UserRole,
     /// 账户创建时间。
@@ -53,6 +57,10 @@ pub struct PublicUser {
     pub username: String,
     /// 邮箱地址。
     pub email: String,
+    /// 对外展示名称（为空时 UI 回退展示 username）。
+    pub display_name: Option<String>,
+    /// 头像 URL（/uploads/ 素材路径或 http(s) 外链）。
+    pub avatar_url: Option<String>,
     /// 用户角色。
     pub role: UserRole,
     /// 账户创建时间。
@@ -66,9 +74,18 @@ impl From<SessionUser> for PublicUser {
             id: u.id,
             username: u.username,
             email: u.email,
+            display_name: u.display_name,
+            avatar_url: u.avatar_url,
             role: u.role,
             created_at: u.created_at,
         }
+    }
+}
+
+impl PublicUser {
+    /// 对外展示名称：优先 display_name，未设置时回退 username。
+    pub fn display_label(&self) -> &str {
+        self.display_name.as_deref().unwrap_or(&self.username)
     }
 }
 
@@ -82,6 +99,8 @@ mod tests {
             id: 1,
             username: "admin".to_string(),
             email: "admin@test.com".to_string(),
+            display_name: None,
+            avatar_url: None,
             role: UserRole::Admin,
             created_at: Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap(),
             session_generation: 0,
@@ -126,5 +145,16 @@ mod tests {
         let public: PublicUser = session.into();
         let json = serde_json::to_string(&public).unwrap();
         assert!(!json.contains("session_generation"));
+    }
+
+    #[test]
+    fn display_label_falls_back_to_username() {
+        let session = sample_user();
+        let mut public: PublicUser = session.into();
+        // 未设置 display_name 时回退 username。
+        assert_eq!(public.display_label(), "admin");
+        // 设置后优先展示 display_name。
+        public.display_name = Some("站长".to_string());
+        assert_eq!(public.display_label(), "站长");
     }
 }

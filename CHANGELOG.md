@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **后台个人信息页（/admin/profile）**：单列居中卡片流——身份卡（大头像 + 显示名 + 管理员徽章 + 注册时间）、「基本资料」卡（显示名称 / 邮箱，用户名只读）、「安全」卡（修改密码）。users 表新增 `display_name` / `avatar_url` 列（迁移 023）；头像复用素材选择弹窗（上传新图 / 素材库挑选 / 移除），无头像时回退展示名首字符。修改密码校验当前密码，成功后 bump 会话世代踢掉其他设备、本端保持登录；保存资料后全局用户上下文即时刷新。检测到 `ADMIN_*` 环境变量时显示「重启后以环境变量为准」提示。侧栏底部新增用户卡片入口（头像 + 显示名）。
 - **备份导入恢复**：备份恢复 tab 新增「导入备份」——本机 `.sql` 备份经 `POST /api/database/backups/import`（multipart 流式落盘，独立 600s 超时）回灌至 `backups/` 并出现在列表，恢复仍走既有管线。导入时即签名校验（外来 SQL 拒收不留盘）、同名冲突拒绝、Content-Length 磁盘空间预检、tmp + 原子 rename 入库；单文件上限 `BACKUP_IMPORT_MAX_MB`（默认 512MB，生产反代 body 限制需同步放大）。
 
 ## [0.11.0] - 2026-08-14

@@ -32,6 +32,8 @@ pub mod post_preview_skeleton;
 pub mod posts_skeleton;
 /// 后台回收站骨架屏组件。
 pub mod posts_trash_skeleton;
+/// 后台个人信息骨架屏组件。
+pub mod profile_skeleton;
 /// 后台代码试运行沙箱骨架屏组件。
 pub mod runner_skeleton;
 /// 搜索页骨架屏组件。

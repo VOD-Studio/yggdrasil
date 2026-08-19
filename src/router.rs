@@ -13,7 +13,7 @@ use crate::context::UserContext;
 use crate::pages::about::About;
 use crate::pages::admin::{
     Admin, AdminComments, AdminCommentsPage, Assets, FriendsAdmin, Mcp, PostPreview, Posts,
-    PostsTrash, Runner, SiteSettingsPage, System, Write, WriteEdit,
+    PostsTrash, Profile, Runner, SiteSettingsPage, System, Write, WriteEdit,
 };
 use crate::pages::archives::Archives;
 use crate::pages::changelog::Changelog;
@@ -116,6 +116,9 @@ pub enum Route {
         /// 站点配置（页脚 GitHub 链接等公开配置）
         #[route("/settings")]
         SiteSettingsPage {},
+        /// 个人信息（当前账号的展示资料与密码）
+        #[route("/profile")]
+        Profile {},
     #[end_layout]
     #[end_nest]
 

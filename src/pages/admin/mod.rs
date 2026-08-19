@@ -22,6 +22,8 @@ pub mod posts;
 pub mod posts_trash;
 /// 草稿/文章预览页面模块（管理员只读）。
 pub mod preview;
+/// 个人信息页面模块（当前账号资料与密码）。
+pub mod profile;
 /// 代码试运行沙箱页面模块。
 pub mod runner;
 /// 站点配置页面模块（页脚 GitHub 链接等公开配置）。
@@ -47,6 +49,8 @@ pub use posts::Posts;
 pub use posts_trash::PostsTrash;
 /// 草稿/文章预览页面组件（管理员只读）。
 pub use preview::PostPreview;
+/// 个人信息页面组件。
+pub use profile::Profile;
 /// 代码试运行沙箱组件。
 pub use runner::Runner;
 /// 站点配置页面组件。
