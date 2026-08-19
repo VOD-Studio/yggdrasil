@@ -327,12 +327,12 @@ pub fn UserAvatar(name: String, avatar_url: Option<String>, class: &'static str)
 /// Tooltip 基础样式（胶囊：黑底白字，hover 显现）。水平定位由调用方经 `align` 选择，
 /// 不在此处写死居中——触发器贴容器边缘时居中会让 tooltip 溢出被 `overflow-hidden` 裁掉。
 const TOOLTIP_STYLE: &str =
-    "pointer-events-none absolute px-3 py-1.5 text-xs font-medium whitespace-nowrap rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-paper-primary text-paper-theme shadow-lg z-50";
+    "pointer-events-none absolute px-3 py-1.5 text-xs font-medium whitespace-nowrap rounded-lg opacity-0 group-hover/tooltip:opacity-100 transition-opacity duration-200 bg-paper-primary text-paper-theme shadow-lg z-50";
 
 /// Tooltip 包裹组件。
 ///
 /// 将任意触发器（按钮等）包裹后，鼠标 hover 时在上方或下方弹出提示。
-/// 用 CSS `group` + `group-hover:opacity-100` 实现，无 JS 状态，`pointer-events-none`
+/// 用 CSS `group/tooltip` + `group-hover/tooltip:opacity-100` 实现，无 JS 状态，`pointer-events-none`
 /// 保证不拦截点击。
 ///
 /// Props：
@@ -366,7 +366,7 @@ pub fn Tooltip(
         _ => "left-1/2 -translate-x-1/2",
     };
     rsx! {
-        div { class: "group relative inline-flex",
+        div { class: "group/tooltip relative inline-flex",
             {children}
             div { class: "{TOOLTIP_STYLE} {position_class} {align_class}", "{tip}" }
         }
@@ -807,5 +807,18 @@ pub fn Checkbox(
                 path { class: "ygg-cb-check", d: "M3.5 8.5l3 3 6-6.5" }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tooltip_uses_named_group_to_prevent_ancestor_trigger() {
+        assert!(
+            TOOLTIP_STYLE.contains("group-hover/tooltip:opacity-100"),
+            "Tooltip 必须使用专属命名空间 group-hover/tooltip:opacity-100，避免被外层祖先 group 误触"
+        );
     }
 }

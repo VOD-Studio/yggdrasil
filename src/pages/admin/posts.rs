@@ -449,7 +449,7 @@ fn PostRow(
 
     rsx! {
         tr {
-            class: "animate-row-enter border-b border-[var(--color-paper-border)]/60 last:border-b-0 hover:bg-[var(--color-paper-accent-soft)]/30 transition-colors duration-150 group",
+            class: "animate-row-enter border-b border-[var(--color-paper-border)]/60 last:border-b-0 hover:bg-[var(--color-paper-accent-soft)]/30 transition-colors duration-150",
             style: "animation-delay: {stagger_index * 35}ms",
             // 标题 + 别名 + 标签
             td { class: "px-5 py-3.5",
