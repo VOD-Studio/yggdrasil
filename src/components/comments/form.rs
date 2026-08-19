@@ -130,10 +130,22 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
             let mut message = message;
             move |ev: crate::tiptap_bridge::UploadEventJs| {
                 // 失败时借表单 AlertBox 同步一行错误（编辑器内错误态为主，
-                // 这里兜底可见性）；成功自动清除。
-                if ev.kind() == "error" {
-                    let msg = ev.error_msg().unwrap_or_else(|| "上传失败".to_string());
-                    message.set(Some((format!("图片上传失败：{msg}"), "error")));
+                // 这里兜底可见性）；成功/移除时若当前消息恰是上传错误则清除。
+                match ev.kind().as_str() {
+                    "error" => {
+                        let msg = ev.error_msg().unwrap_or_else(|| "上传失败".to_string());
+                        message.set(Some((format!("图片上传失败：{msg}"), "error")));
+                    }
+                    "success" | "removed" => {
+                        if message
+                            .peek()
+                            .as_ref()
+                            .is_some_and(|(m, _)| m.starts_with("图片上传失败"))
+                        {
+                            message.set(None);
+                        }
+                    }
+                    _ => {}
                 }
                 crate::tiptap_bridge::consume_upload_event(&ev, uploads_in_flight, upload_errors);
             }
