@@ -15,21 +15,18 @@ use crate::api::friends::{
     create_friend_link, delete_friend_link, list_all_friend_links, update_friend_link,
 };
 #[cfg(target_arch = "wasm32")]
-use crate::components::forms::{FormInput, FormLabel, FormSelect, INPUT_CLASS, INPUT_INLINE_CLASS};
+use crate::components::forms::{FormInput, FormSelect, INPUT_CLASS, INPUT_INLINE_CLASS};
 #[cfg(target_arch = "wasm32")]
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 #[cfg(target_arch = "wasm32")]
 use crate::components::skeletons::friends_admin_skeleton::FriendsAdminSkeleton;
 #[cfg(target_arch = "wasm32")]
-use crate::components::ui::{
-    Popover, Tooltip, ADMIN_CARD_CLASS, BADGE_BASE, BTN_DANGER_OUTLINE, BTN_GHOST, BTN_OUTLINE,
-    BTN_PRIMARY, BTN_TEXT_ACCENT, BTN_TEXT_RED,
-};
+use crate::components::ui::{Popover, BTN_DANGER_OUTLINE, BTN_GHOST, BTN_OUTLINE, BTN_PRIMARY};
 #[cfg(target_arch = "wasm32")]
 use crate::models::friend_link::FriendLink;
 #[cfg(target_arch = "wasm32")]
 use crate::pages::admin::asset_picker::{AssetPickerModal, AssetSelection};
-
+use crate::router::Route;
 /// 跨子组件共享的页面状态：刷新代际、操作提示、编辑目标。
 ///
 /// `editing` 为 `Some(link)` 时表单进入编辑模式（回填该友链），`None` 为新建模式。
@@ -88,13 +85,33 @@ pub fn FriendsAdmin() -> Element {
 #[component]
 fn PageHeader() -> Element {
     rsx! {
-        div { class: "flex flex-col md:flex-row md:items-end justify-between gap-6 pb-8 border-b border-[var(--color-paper-border)]/50",
+        div { class: "flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-[var(--color-paper-border)]/70",
             div {
-                h1 { class: "text-4xl font-extrabold tracking-tight text-[var(--color-paper-primary)]",
+                h1 { class: "text-3xl sm:text-4xl font-extrabold tracking-tight text-[var(--color-paper-primary)]",
                     "友链管理"
                 }
-                p { class: "text-base text-[var(--color-paper-secondary)] mt-2",
-                    "维护前台 /friends 页展示的友链。"
+                p { class: "text-sm text-[var(--color-paper-secondary)] mt-1.5",
+                    "维护前台 /friends 页面展示的友链与合作伙伴"
+                }
+            }
+            div { class: "flex items-center gap-3",
+                Link {
+                    class: "inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium text-[var(--color-paper-secondary)] hover:text-[var(--color-paper-primary)] hover:bg-[var(--color-paper-entry)] transition-colors cursor-pointer",
+                    to: NavigationTarget::<Route>::External("/friends".to_string()),
+                    svg {
+                        class: "w-4 h-4",
+                        xmlns: "http://www.w3.org/2000/svg",
+                        view_box: "0 0 24 24",
+                        fill: "none",
+                        stroke: "currentColor",
+                        stroke_width: "2",
+                        stroke_linecap: "round",
+                        stroke_linejoin: "round",
+                        path { d: "M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" }
+                        polyline { points: "15 3 21 3 21 9" }
+                        line { x1: "10", y1: "14", x2: "21", y2: "3" }
+                    }
+                    "查看前台页面"
                 }
             }
         }
@@ -174,30 +191,61 @@ fn EditorCard() -> Element {
     rsx! {
         div {
             div {
-                class: "{ADMIN_CARD_CLASS} p-8 flex flex-col gap-6 animate-row-enter",
+                class: "bg-[var(--color-paper-entry)]/40 rounded-2xl shadow-xs border border-[var(--color-paper-border)]/70 p-6 sm:p-8 flex flex-col gap-6 animate-row-enter",
                 style: "animation-delay: 60ms",
-                h2 { class: "text-xl font-bold text-[var(--color-paper-primary)]",
+                // 表单标题区
+                div { class: "flex items-center justify-between border-b border-[var(--color-paper-border)]/60 pb-4",
+                    div { class: "flex items-center gap-2.5",
+                        svg {
+                            class: "w-5 h-5 text-[var(--color-paper-accent)]",
+                            xmlns: "http://www.w3.org/2000/svg",
+                            view_box: "0 0 24 24",
+                            fill: "none",
+                            stroke: "currentColor",
+                            stroke_width: "2",
+                            stroke_linecap: "round",
+                            stroke_linejoin: "round",
+                            if editing_mode {
+                                path { d: "M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" }
+                                path { d: "M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" }
+                            } else {
+                                line { x1: "12", y1: "5", x2: "12", y2: "19" }
+                                line { x1: "5", y1: "12", x2: "19", y2: "12" }
+                            }
+                        }
+                        h2 { class: "text-lg sm:text-xl font-bold text-[var(--color-paper-primary)]",
+                            if editing_mode {
+                                "编辑友链"
+                            } else {
+                                "添加新友链"
+                            }
+                        }
+                    }
                     if editing_mode {
-                        "编辑友链"
-                    } else {
-                        "添加友链"
+                        span { class: "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-[var(--color-paper-accent)]/10 text-[var(--color-paper-accent)] border border-[var(--color-paper-accent)]/20",
+                            "编辑中"
+                        }
                     }
                 }
 
-                div { class: "grid grid-cols-1 md:grid-cols-2 gap-4",
+                div { class: "grid grid-cols-1 md:grid-cols-2 gap-5",
                     // 名称
                     div { class: "flex flex-col gap-2",
-                        FormLabel { label: "名称" }
+                        label { class: "text-xs font-semibold uppercase tracking-wider text-[var(--color-paper-secondary)]",
+                            "站点名称 *"
+                        }
                         FormInput {
                             r#type: "text",
-                            placeholder: "站点名称",
+                            placeholder: "如：Rua Lab",
                             value: name(),
                             oninput: move |v: String| name.set(v),
                         }
                     }
                     // URL
                     div { class: "flex flex-col gap-2",
-                        FormLabel { label: "URL" }
+                        label { class: "text-xs font-semibold uppercase tracking-wider text-[var(--color-paper-secondary)]",
+                            "站点链接 (URL) *"
+                        }
                         FormInput {
                             r#type: "url",
                             placeholder: "https://example.com",
@@ -206,15 +254,15 @@ fn EditorCard() -> Element {
                         }
                     }
                     // 头像（可留空）：圆形预览磁贴 + 外链输入框 + 素材库按钮。
-                    // 保留外链手输（既有用法），新增「素材库」一键选择本站上传的图片。
                     div { class: "flex flex-col gap-2",
-                        FormLabel { label: "头像（可留空）" }
+                        label { class: "text-xs font-semibold uppercase tracking-wider text-[var(--color-paper-secondary)]",
+                            "站点头像"
+                        }
                         div { class: "flex items-center gap-3",
-                            // 圆形预览磁贴：有 URL 且未加载失败时渲染 img，
-                            // 否则显示名称首字符兜底（与 LinkRow / 前台 FriendCard 磁贴一致）。
-                            div { class: "relative h-10 w-10 shrink-0 rounded-full bg-[var(--color-paper-code-bg)] flex items-center justify-center overflow-hidden",
+                            // 圆形预览磁贴
+                            div { class: "relative h-10 w-10 shrink-0 rounded-2xl bg-[var(--color-paper-entry)] border border-[var(--color-paper-border)]/70 flex items-center justify-center overflow-hidden shadow-2xs",
                                 if avatar().trim().is_empty() || avatar_failed() {
-                                    span { class: "text-sm font-semibold text-[var(--color-paper-primary)] select-none",
+                                    span { class: "text-sm font-bold text-[var(--color-paper-primary)] select-none",
                                         {
                                             name()
                                                 .chars()
@@ -228,14 +276,13 @@ fn EditorCard() -> Element {
                                         class: "w-full h-full object-cover",
                                         src: "{avatar()}",
                                         alt: "头像预览",
-                                        // 外链可能失效：失败后切回首字符磁贴，不阻塞保存。
                                         onerror: move |_| avatar_failed.set(true),
                                     }
                                 }
                             }
                             FormInput {
                                 r#type: "url",
-                                placeholder: "粘贴外链或从素材库选择",
+                                placeholder: "粘贴外链或从素材库选择...",
                                 value: avatar(),
                                 class: INPUT_INLINE_CLASS,
                                 oninput: move |v: String| {
@@ -244,7 +291,7 @@ fn EditorCard() -> Element {
                                 },
                             }
                             button {
-                                class: "shrink-0 {BTN_OUTLINE}",
+                                class: "shrink-0 {BTN_OUTLINE} text-xs px-3.5 py-2",
                                 onclick: move |_| picker_visible.set(true),
                                 "素材库"
                             }
@@ -252,7 +299,9 @@ fn EditorCard() -> Element {
                     }
                     // 排序
                     div { class: "flex flex-col gap-2",
-                        FormLabel { label: "排序（越小越靠前）" }
+                        label { class: "text-xs font-semibold uppercase tracking-wider text-[var(--color-paper-secondary)]",
+                            "展示排序（数字越小越靠前）"
+                        }
                         FormInput {
                             r#type: "number",
                             placeholder: "0",
@@ -262,11 +311,13 @@ fn EditorCard() -> Element {
                     }
                     // 描述
                     div { class: "flex flex-col gap-2 md:col-span-2",
-                        FormLabel { label: "描述" }
+                        label { class: "text-xs font-semibold uppercase tracking-wider text-[var(--color-paper-secondary)]",
+                            "站点描述"
+                        }
                         textarea {
-                            class: "{INPUT_CLASS}",
+                            class: "{INPUT_CLASS} resize-none",
                             rows: "2",
-                            placeholder: "一句话介绍对方站点",
+                            placeholder: "一句话介绍对方站点...",
                             value: desc(),
                             oninput: move |e| desc.set(e.value()),
                         }
@@ -274,19 +325,21 @@ fn EditorCard() -> Element {
                     // 启用状态（仅编辑模式展示）
                     if editing_mode {
                         div { class: "flex flex-col gap-2",
-                            FormLabel { label: "状态" }
+                            label { class: "text-xs font-semibold uppercase tracking-wider text-[var(--color-paper-secondary)]",
+                                "展示状态"
+                            }
                             FormSelect {
                                 value: is_active(),
-                                options: vec![(true, "启用"), (false, "停用")],
+                                options: vec![(true, "启用展示"), (false, "暂停展示 (停用)")],
                                 onchange: move |a: bool| is_active.set(a),
                             }
                         }
                     }
                 }
 
-                div { class: "flex items-center gap-3",
+                div { class: "flex items-center gap-3 pt-2",
                     button {
-                        class: "{BTN_PRIMARY}",
+                        class: "{BTN_PRIMARY} inline-flex items-center gap-1.5",
                         disabled: "{busy() || avatar_uploading() || name().trim().is_empty() || url().trim().is_empty()}",
                         onclick: move |_| {
                             if busy() {
@@ -326,9 +379,9 @@ fn EditorCard() -> Element {
                                             .set(
                                                 Some((
                                                     if was_edit {
-                                                        "已保存".to_string()
+                                                        "已成功更新友链".to_string()
                                                     } else {
-                                                        "已添加".to_string()
+                                                        "已成功添加友链".to_string()
                                                     },
                                                     false,
                                                 )),
@@ -350,7 +403,7 @@ fn EditorCard() -> Element {
                         } else if editing_mode {
                             "保存修改"
                         } else {
-                            "添加友链"
+                            "确认添加"
                         }
                     }
                     if editing_mode {
@@ -360,7 +413,7 @@ fn EditorCard() -> Element {
                                 editing.set(None);
                                 clear_drafts();
                             },
-                            "取消"
+                            "取消编辑"
                         }
                     }
                 }
@@ -410,14 +463,34 @@ fn LinkList() -> Element {
     });
 
     rsx! {
-        div { class: "{ADMIN_CARD_CLASS} p-8 flex flex-col gap-4",
-            h2 { class: "text-xl font-bold text-[var(--color-paper-primary)]", "友链列表" }
+        div { class: "bg-[var(--color-paper-entry)]/40 rounded-2xl shadow-xs border border-[var(--color-paper-border)]/70 p-6 sm:p-8 flex flex-col gap-6",
+            div { class: "flex items-center justify-between border-b border-[var(--color-paper-border)]/60 pb-4",
+                div { class: "flex items-center gap-2",
+                    svg {
+                        class: "w-5 h-5 text-[var(--color-paper-secondary)]",
+                        xmlns: "http://www.w3.org/2000/svg",
+                        view_box: "0 0 24 24",
+                        fill: "none",
+                        stroke: "currentColor",
+                        stroke_width: "2",
+                        stroke_linecap: "round",
+                        stroke_linejoin: "round",
+                        path { d: "M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" }
+                        circle { cx: "9", cy: "7", r: "4" }
+                        path { d: "M23 21v-2a4 4 0 0 0-3-3.87" }
+                        path { d: "M16 3.13a4 4 0 0 1 0 7.75" }
+                    }
+                    h2 { class: "text-lg sm:text-xl font-bold text-[var(--color-paper-primary)]",
+                        "已添加友链 ({links().len()})"
+                    }
+                }
+            }
 
             if loading() && links().is_empty() {
                 DelayedSkeleton { FriendsAdminSkeleton {} }
             } else if links().is_empty() {
-                p { class: "text-[var(--color-paper-secondary)] text-sm py-4 text-center",
-                    "还没有友链，先添加一位伙伴吧。"
+                p { class: "text-[var(--color-paper-secondary)] text-sm py-8 text-center",
+                    "还没有友链，在上方表单添加第一位伙伴吧。"
                 }
             } else {
                 div { class: "flex flex-col divide-y divide-[var(--color-paper-border)]/50",
@@ -447,12 +520,6 @@ fn LinkRow(link: FriendLink, state: FriendsPageState, stagger_index: u32) -> Ele
         .unwrap_or_else(|| "?".to_string());
     // 图片加载失败时回退到名称首字符。
     let mut img_failed = use_signal(|| false);
-    let status_label = if link.is_active { "启用" } else { "停用" };
-    let status_class = if link.is_active {
-        "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300"
-    } else {
-        "bg-paper-code-block text-paper-tertiary"
-    };
 
     let id_delete = link.id;
     let link_for_edit = link.clone();
@@ -465,63 +532,114 @@ fn LinkRow(link: FriendLink, state: FriendsPageState, stagger_index: u32) -> Ele
 
     rsx! {
         div {
-            class: "animate-row-enter flex items-center gap-4 py-4",
-            style: "animation-delay: {stagger_index * 50}ms",
-            div { class: "relative h-8 w-8 shrink-0 rounded-2xl bg-[var(--color-paper-code-bg)] flex items-center justify-center overflow-hidden",
-                span { class: "text-sm font-semibold text-[var(--color-paper-primary)] select-none",
-                    "{initial}"
-                }
-                if let Some(avatar_url) = &link.avatar_url {
-                    if !img_failed() {
-                        img {
-                            class: "absolute inset-0 w-full h-full object-cover rounded-2xl",
-                            src: "{avatar_url}",
-                            alt: "{link.name} 的头像",
-                            onerror: move |_| img_failed.set(true),
+            class: "animate-row-enter flex flex-col sm:flex-row sm:items-center justify-between gap-4 py-4.5 hover:bg-[var(--color-paper-accent-soft)]/20 px-2 rounded-xl transition-colors duration-150",
+            style: "animation-delay: {stagger_index * 40}ms",
+            div { class: "flex items-start sm:items-center gap-3.5 min-w-0 flex-1",
+                // 头像磁贴
+                div { class: "relative h-10 w-10 shrink-0 rounded-2xl bg-[var(--color-paper-entry)] border border-[var(--color-paper-border)]/70 flex items-center justify-center overflow-hidden shadow-2xs mt-0.5 sm:mt-0",
+                    span { class: "text-sm font-bold text-[var(--color-paper-primary)] select-none",
+                        "{initial}"
+                    }
+                    if let Some(avatar_url) = &link.avatar_url {
+                        if !img_failed() {
+                            img {
+                                class: "absolute inset-0 w-full h-full object-cover rounded-2xl",
+                                src: "{avatar_url}",
+                                alt: "{link.name} 的头像",
+                                onerror: move |_| img_failed.set(true),
+                            }
                         }
                     }
                 }
-            }
-            div { class: "flex-1 min-w-0",
-                div { class: "flex items-baseline gap-2",
-                    span { class: "font-medium text-[var(--color-paper-primary)] truncate",
-                        "{link.name}"
-                    }
-                    span { class: "{BADGE_BASE} {status_class}", "{status_label}" }
-                }
-                div { class: "flex items-baseline gap-3 mt-0.5",
-                    if !link.url.is_empty() {
-                        span { class: "text-xs text-[var(--color-paper-tertiary)] font-mono truncate",
-                            "{link.url}"
+                // 信息主体：名称 + 状态 + 排序 + 描述 + 链接
+                div { class: "flex-1 min-w-0 flex flex-col gap-1",
+                    div { class: "flex flex-wrap items-center gap-2",
+                        span { class: "font-semibold text-sm sm:text-base text-[var(--color-paper-primary)] truncate",
+                            "{link.name}"
+                        }
+                        if link.is_active {
+                            span { class: "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20",
+                                span { class: "w-1.5 h-1.5 rounded-full bg-emerald-500" }
+                                "启用"
+                            }
+                        } else {
+                            span { class: "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-500/10 text-gray-600 dark:text-gray-400 border border-gray-500/20",
+                                span { class: "w-1.5 h-1.5 rounded-full bg-gray-400" }
+                                "停用"
+                            }
+                        }
+                        span { class: "inline-flex items-center px-1.5 py-0.2 rounded text-[11px] font-mono bg-[var(--color-paper-entry)] text-[var(--color-paper-tertiary)] border border-[var(--color-paper-border)]/50",
+                            "排序 #{link.sort_order}"
                         }
                     }
                     if !link.description.is_empty() {
-                        span { class: "text-xs text-[var(--color-paper-secondary)] truncate",
+                        p { class: "text-xs text-[var(--color-paper-secondary)] line-clamp-1 leading-normal",
                             "{link.description}"
+                        }
+                    }
+                    if !link.url.is_empty() {
+                        a {
+                            class: "inline-flex items-center gap-1 text-xs font-mono text-[var(--color-paper-accent)] hover:underline truncate w-fit",
+                            href: "{link.url}",
+                            target: "_blank",
+                            rel: "noopener noreferrer",
+                            svg {
+                                class: "w-3 h-3 shrink-0 opacity-80",
+                                xmlns: "http://www.w3.org/2000/svg",
+                                view_box: "0 0 24 24",
+                                fill: "none",
+                                stroke: "currentColor",
+                                stroke_width: "2",
+                                stroke_linecap: "round",
+                                stroke_linejoin: "round",
+                                path { d: "M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" }
+                                path { d: "M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" }
+                            }
+                            "{link.url}"
                         }
                     }
                 }
             }
-            span { class: "text-xs text-[var(--color-paper-tertiary)] whitespace-nowrap",
-                "排序 {link.sort_order}"
-            }
-            div { class: "flex items-center gap-3 whitespace-nowrap",
+            // 操作按钮
+            div { class: "flex items-center gap-1.5 self-end sm:self-center shrink-0",
                 button {
-                    class: "{BTN_TEXT_ACCENT}",
+                    class: "inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-[var(--color-paper-secondary)] hover:text-[var(--color-paper-primary)] hover:bg-[var(--color-paper-theme)] transition-colors cursor-pointer",
                     onclick: move |_| editing.set(Some(link_for_edit.clone())),
+                    svg {
+                        class: "w-3.5 h-3.5",
+                        xmlns: "http://www.w3.org/2000/svg",
+                        view_box: "0 0 24 24",
+                        fill: "none",
+                        stroke: "currentColor",
+                        stroke_width: "2",
+                        stroke_linecap: "round",
+                        stroke_linejoin: "round",
+                        path { d: "M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" }
+                        path { d: "M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" }
+                    }
                     "编辑"
                 }
-                Tooltip { tip: "删除友链".to_string(), align: "end",
-                    button {
-                        class: "{BTN_TEXT_RED}",
-                        onclick: move |e| {
-                            let coordinates = e.client_coordinates();
-                            anchor_x.set(coordinates.x as i32);
-                            anchor_y.set(coordinates.y as i32);
-                            delete_open.set(true);
-                        },
-                        "删除"
+                button {
+                    class: "inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors cursor-pointer",
+                    onclick: move |e| {
+                        let coordinates = e.client_coordinates();
+                        anchor_x.set(coordinates.x as i32);
+                        anchor_y.set(coordinates.y as i32);
+                        delete_open.set(true);
+                    },
+                    svg {
+                        class: "w-3.5 h-3.5",
+                        xmlns: "http://www.w3.org/2000/svg",
+                        view_box: "0 0 24 24",
+                        fill: "none",
+                        stroke: "currentColor",
+                        stroke_width: "2",
+                        stroke_linecap: "round",
+                        stroke_linejoin: "round",
+                        polyline { points: "3 6 5 6 21 6" }
+                        path { d: "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" }
                     }
+                    "删除"
                 }
             }
             Popover {
@@ -533,7 +651,7 @@ fn LinkRow(link: FriendLink, state: FriendsPageState, stagger_index: u32) -> Ele
                 on_close: move |_| delete_open.set(false),
                 div { class: "w-56 space-y-3",
                     p { class: "text-sm text-paper-primary leading-relaxed",
-                        "确定要删除这条友链吗？"
+                        "确定要删除「{link.name}」吗？"
                     }
                     div { class: "flex justify-end gap-2 pt-1",
                         button {
@@ -549,7 +667,7 @@ fn LinkRow(link: FriendLink, state: FriendsPageState, stagger_index: u32) -> Ele
                                 spawn(async move {
                                     match delete_friend_link(id).await {
                                         Ok(()) => {
-                                            toast.set(Some(("已删除".to_string(), false)));
+                                            toast.set(Some(("已删除友链".to_string(), false)));
                                             let g = reload_gen();
                                             state.reload_gen.set(g + 1);
                                         }

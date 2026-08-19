@@ -5,7 +5,6 @@
 use dioxus::prelude::*;
 
 use crate::components::skeletons::atoms::SkeletonBox;
-use crate::components::ui::{ADMIN_CARD_CLASS, ADMIN_TABLE_CLASS};
 
 /// 后台友链管理骨架屏组件。
 #[component]
@@ -13,82 +12,56 @@ pub fn FriendsAdminSkeleton() -> Element {
     rsx! {
         div { class: "w-full max-w-7xl mx-auto space-y-8",
             // 页头
-            div { class: "flex flex-col md:flex-row md:items-end justify-between gap-6 pb-8 border-b border-[var(--color-paper-border)]/50",
-                div { class: "space-y-2",
+            div { class: "flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-[var(--color-paper-border)]/70",
+                div { class: "space-y-1.5",
                     SkeletonBox { class: "h-9 w-36 rounded-lg" }
                     SkeletonBox { class: "h-4 w-60 rounded" }
                 }
+                SkeletonBox { class: "h-9 w-28 rounded-full" }
             }
 
             // 表单卡片占位
-            div { class: "{ADMIN_CARD_CLASS} p-8 space-y-6",
+            div { class: "bg-[var(--color-paper-entry)]/40 rounded-2xl p-6 sm:p-8 space-y-6 border border-[var(--color-paper-border)]/70 shadow-xs",
                 SkeletonBox { class: "h-6 w-28 rounded" }
-                div { class: "grid grid-cols-1 md:grid-cols-2 gap-4",
+                div { class: "grid grid-cols-1 md:grid-cols-2 gap-5",
                     div { class: "space-y-2",
-                        SkeletonBox { class: "h-4 w-16 rounded" }
+                        SkeletonBox { class: "h-3.5 w-16 rounded" }
                         SkeletonBox { class: "h-10 w-full rounded-2xl" }
                     }
                     div { class: "space-y-2",
-                        SkeletonBox { class: "h-4 w-16 rounded" }
+                        SkeletonBox { class: "h-3.5 w-20 rounded" }
                         SkeletonBox { class: "h-10 w-full rounded-2xl" }
                     }
                     div { class: "space-y-2",
-                        SkeletonBox { class: "h-4 w-24 rounded" }
+                        SkeletonBox { class: "h-3.5 w-20 rounded" }
                         SkeletonBox { class: "h-10 w-full rounded-2xl" }
                     }
                     div { class: "space-y-2",
-                        SkeletonBox { class: "h-4 w-20 rounded" }
+                        SkeletonBox { class: "h-3.5 w-24 rounded" }
                         SkeletonBox { class: "h-10 w-full rounded-2xl" }
                     }
                     div { class: "space-y-2 md:col-span-2",
-                        SkeletonBox { class: "h-4 w-16 rounded" }
+                        SkeletonBox { class: "h-3.5 w-16 rounded" }
                         SkeletonBox { class: "h-16 w-full rounded-2xl" }
                     }
                 }
                 SkeletonBox { class: "h-10 w-24 rounded-full" }
             }
 
-            // 友链列表表格占位
-            div { class: "{ADMIN_TABLE_CLASS}",
-                table { class: "w-full text-sm",
-                    thead {
-                        tr { class: "border-b border-paper-border",
-                            th { class: "px-4 py-3 w-16",
-                                SkeletonBox { class: "h-3 w-8" }
-                            }
-                            th { class: "px-4 py-3",
-                                SkeletonBox { class: "h-3 w-12" }
-                            }
-                            th { class: "px-4 py-3",
-                                SkeletonBox { class: "h-3 w-16" }
-                            }
-                            th { class: "px-4 py-3 w-20",
-                                SkeletonBox { class: "h-3 w-10 mx-auto" }
-                            }
-                            th { class: "px-4 py-3 w-32",
-                                SkeletonBox { class: "h-3 w-12 ml-auto" }
-                            }
-                        }
-                    }
-                    tbody {
-                        for _ in 0..5 {
-                            tr { class: "border-b border-paper-border last:border-0",
-                                td { class: "px-4 py-3",
-                                    SkeletonBox { class: "h-4 w-6" }
-                                }
-                                td { class: "px-4 py-3",
-                                    SkeletonBox { class: "h-4 w-24" }
-                                }
-                                td { class: "px-4 py-3",
-                                    SkeletonBox { class: "h-4 w-40" }
-                                }
-                                td { class: "px-4 py-3",
-                                    SkeletonBox { class: "h-5 w-12 mx-auto rounded" }
-                                }
-                                td { class: "px-4 py-3",
-                                    SkeletonBox { class: "h-4 w-20 ml-auto" }
+            // 友链列表卡片占位
+            div { class: "bg-[var(--color-paper-entry)]/40 rounded-2xl p-6 sm:p-8 space-y-6 border border-[var(--color-paper-border)]/70 shadow-xs",
+                SkeletonBox { class: "h-6 w-32 rounded" }
+                div { class: "space-y-4 divide-y divide-[var(--color-paper-border)]/50",
+                    for _ in 0..4 {
+                        div { class: "pt-4 flex items-center justify-between gap-4",
+                            div { class: "flex items-center gap-3.5 flex-1 min-w-0",
+                                SkeletonBox { class: "h-10 w-10 rounded-2xl shrink-0" }
+                                div { class: "space-y-1.5 flex-1 min-w-0",
+                                    SkeletonBox { class: "h-4 w-32 rounded" }
+                                    SkeletonBox { class: "h-3 w-48 rounded" }
                                 }
                             }
+                            SkeletonBox { class: "h-8 w-24 rounded-lg" }
                         }
                     }
                 }
