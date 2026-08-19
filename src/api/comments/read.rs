@@ -30,11 +30,13 @@ pub async fn get_comments(post_id: i32) -> Result<CommentTreeResponse, ServerFnE
 
         let rows = client
             .query(
-                "SELECT id, parent_id, depth, author_name, author_email, author_url, content_html, created_at \
-                 FROM comments \
-                 WHERE post_id = $1 AND status = 'approved' AND deleted_at IS NULL \
+                "SELECT c.id, c.parent_id, c.depth, c.author_name, c.author_email, c.author_url, c.content_html, c.created_at, \
+                        c.user_id, u.display_name AS user_display_name, u.avatar_url AS user_avatar \
+                 FROM comments c \
+                 LEFT JOIN users u ON c.user_id = u.id \
+                 WHERE c.post_id = $1 AND c.status = 'approved' AND c.deleted_at IS NULL \
                    AND EXISTS (SELECT 1 FROM posts p WHERE p.id = $1 AND p.status = 'published' AND p.deleted_at IS NULL) \
-                 ORDER BY id ASC \
+                 ORDER BY c.id ASC \
                  LIMIT 200",
                 &[&post_id],
             )

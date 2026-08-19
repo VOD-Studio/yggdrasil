@@ -82,8 +82,10 @@ pub async fn get_all_comments(
                     .query(
                         "SELECT c.id, c.post_id, c.parent_id, c.depth, c.author_name, c.author_email, \
                                 c.author_url, c.content_md, c.status, c.created_at, \
+                                c.user_id, u.display_name AS user_display_name, u.avatar_url AS user_avatar, \
                                 p.title as post_title, p.slug as post_slug \
                          FROM comments c JOIN posts p ON c.post_id = p.id \
+                         LEFT JOIN users u ON c.user_id = u.id \
                          WHERE c.status = $1 AND c.deleted_at IS NULL \
                          ORDER BY c.created_at DESC LIMIT $2 OFFSET $3",
                         &[&s, &per_page, &offset],
@@ -107,8 +109,10 @@ pub async fn get_all_comments(
                     .query(
                         "SELECT c.id, c.post_id, c.parent_id, c.depth, c.author_name, c.author_email, \
                                 c.author_url, c.content_md, c.status, c.created_at, \
+                                c.user_id, u.display_name AS user_display_name, u.avatar_url AS user_avatar, \
                                 p.title as post_title, p.slug as post_slug \
                          FROM comments c JOIN posts p ON c.post_id = p.id \
+                         LEFT JOIN users u ON c.user_id = u.id \
                          WHERE c.deleted_at IS NULL \
                          ORDER BY c.created_at DESC LIMIT $1 OFFSET $2",
                         &[&per_page, &offset],

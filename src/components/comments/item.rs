@@ -6,6 +6,7 @@ use dioxus::prelude::*;
 
 use crate::components::comments::form::CommentForm;
 use crate::components::comments::section::CommentContext;
+use crate::components::ui::BADGE_BASE;
 use crate::models::comment::PublicComment;
 
 /// 单条已审核评论组件。
@@ -65,6 +66,11 @@ pub fn CommentItem(comment: PublicComment, post_id: i32) -> Element {
                 div { class: "flex-1 min-w-0",
                     div { class: "flex items-center gap-1.5 text-sm mb-1.5 flex-wrap",
                         {author_element}
+                        if comment.is_author {
+                            span { class: "{BADGE_BASE} bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300",
+                                "作者"
+                            }
+                        }
                         span { class: "text-paper-tertiary", "·" }
                         span {
                             class: "text-paper-tertiary",

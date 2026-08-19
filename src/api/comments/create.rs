@@ -1,7 +1,9 @@
 //! 发表评论接口。
 //!
-//! 校验作者信息、父评论与目标文章，生成内容哈希防止重复提交，
-//! 新评论默认进入 pending 状态等待审核。
+//! 校验作者信息、父评论与目标文章，生成内容哈希防止重复提交。
+//! 匿名评论默认进入 pending 状态等待审核；**登录用户**（有效会话）发表的评论
+//! 以账号身份直发 approved——身份字段取自 users 表（显示名回退用户名），
+//! 跳过昵称/邮箱/网址校验与蜜罐，记录 `user_id` 供读取侧 JOIN 实时展示。
 //! Dioxus server function，注册在 `/api` 路径下。
 //! 仅在 `feature = "server"` 启用的服务端构建中写入数据库。
 
@@ -25,11 +27,13 @@ pub async fn create_comment(
 ) -> Result<CommentResponse, ServerFnError> {
     #[cfg(feature = "server")]
     {
+        use crate::api::auth::get_user_by_token;
         use crate::api::comments::helpers::{
             compute_content_hash, validate_comment_content, validate_comment_email,
             validate_comment_honeypot, validate_comment_name, validate_comment_url,
         };
         use crate::api::error::AppError;
+        use crate::auth::session::get_session_from_ctx;
         use crate::cache;
         use crate::db::pool::get_conn;
 
@@ -42,21 +46,31 @@ pub async fn create_comment(
             }
         }
 
-        // 蜜罐字段二次校验：禁用 JS 的机器人可能绕过前端拦截，这里作为服务端防线。
-        if let Err(e) = validate_comment_honeypot(&honeypot) {
-            return Ok(CommentResponse::error("spam_detected", e));
-        }
+        // 登录用户识别：有效会话 → 以账号身份发表（直发 approved）；
+        // 匿名/会话失效 → 原审核流程。会话校验失败不报错，按匿名兜底。
+        let session_user = match get_session_from_ctx() {
+            Some(token) => get_user_by_token(&token).await.map_err(AppError::query)?,
+            None => None,
+        };
 
-        // 依次校验昵称、邮箱、网址与评论内容。
-        if let Err(e) = validate_comment_name(&author_name) {
-            return Ok(CommentResponse::error("invalid_input", e));
-        }
-        if let Err(e) = validate_comment_email(&author_email) {
-            return Ok(CommentResponse::error("invalid_input", e));
-        }
-        if let Some(ref url) = author_url {
-            if let Err(e) = validate_comment_url(url) {
+        if session_user.is_none() {
+            // 蜜罐字段二次校验：禁用 JS 的机器人可能绕过前端拦截，这里作为服务端防线。
+            // 登录表单不渲染蜜罐，登录用户跳过。
+            if let Err(e) = validate_comment_honeypot(&honeypot) {
+                return Ok(CommentResponse::error("spam_detected", e));
+            }
+
+            // 依次校验昵称、邮箱与网址（登录用户的身份字段取自账号，无需校验）。
+            if let Err(e) = validate_comment_name(&author_name) {
                 return Ok(CommentResponse::error("invalid_input", e));
+            }
+            if let Err(e) = validate_comment_email(&author_email) {
+                return Ok(CommentResponse::error("invalid_input", e));
+            }
+            if let Some(url) = &author_url {
+                if let Err(e) = validate_comment_url(url) {
+                    return Ok(CommentResponse::error("invalid_input", e));
+                }
             }
         }
         if let Err(e) = validate_comment_content(&content_md) {
@@ -140,8 +154,29 @@ pub async fn create_comment(
             }
         }
 
+        // 身份字段定稿：登录用户取账号值（显示名回退用户名、无个人网址），
+        // 匿名取表单值。查重哈希的作者键对用户用稳定 "user:<id>"（改名不影响查重）。
+        let (final_name, final_email, final_url, user_id) = match &session_user {
+            Some(u) => (
+                u.display_name.clone().unwrap_or_else(|| u.username.clone()),
+                u.email.clone(),
+                None,
+                Some(u.id),
+            ),
+            None => (
+                author_name.clone(),
+                author_email.clone(),
+                author_url.clone(),
+                None,
+            ),
+        };
+        let author_key = match user_id {
+            Some(id) => format!("user:{id}"),
+            None => final_name.clone(),
+        };
+
         // 基于文章、父评论、作者与内容计算哈希，防止短时间重复提交。
-        let content_hash = compute_content_hash(post_id, parent_id, &author_name, &content_md);
+        let content_hash = compute_content_hash(post_id, parent_id, &author_key, &content_md);
 
         // Markdown 渲染（含 syntect 高亮 + KaTeX）是 CPU 密集任务，移到阻塞线程池执行，
         // 避免阻塞 async runtime（M4）。content_md 下游 INSERT 仍需使用，故先克隆再移入闭包。
@@ -151,8 +186,8 @@ pub async fn create_comment(
         })
         .await
         .map_err(|_| AppError::Internal("Markdown 渲染任务失败"))?;
-        let author_name_safe = crate::utils::html::escape_html(author_name.trim());
-        let author_url_safe = author_url
+        let author_name_safe = crate::utils::html::escape_html(final_name.trim());
+        let author_url_safe = final_url
             .as_ref()
             .map(|u| crate::utils::html::escape_html(u.trim()))
             .filter(|u| !u.is_empty());
@@ -204,26 +239,38 @@ pub async fn create_comment(
             ));
         }
 
-        // 插入评论，默认状态为 pending，等待管理员审核。
+        // 登录用户直发 approved（记录 approved_at）；匿名进入 pending 等待审核。
+        let initial_status: &str = if session_user.is_some() {
+            "approved"
+        } else {
+            "pending"
+        };
+        let approved_at: Option<chrono::DateTime<chrono::Utc>> =
+            session_user.is_some().then(chrono::Utc::now);
+
         let row = tx
             .query_one(
                 "INSERT INTO comments \
                  (post_id, parent_id, depth, author_name, author_email, author_url, \
-                  content_md, content_html, content_hash, status, ip_address, user_agent) \
-                  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending', $10, $11) \
+                  content_md, content_html, content_hash, status, ip_address, user_agent, \
+                  user_id, approved_at) \
+                  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) \
                   RETURNING id",
                 &[
                     &post_id,
                     &parent_id,
                     &depth,
                     &author_name_safe,
-                    &author_email.trim(),
+                    &final_email.trim(),
                     &author_url_safe,
                     &content_md,
                     &content_html,
                     &content_hash,
+                    &initial_status,
                     &ip_address,
                     &user_agent,
+                    &user_id,
+                    &approved_at,
                 ],
             )
             .await
@@ -233,15 +280,29 @@ pub async fn create_comment(
 
         let comment_id: i64 = row.get(0);
 
-        // 根据邮箱生成 Gravatar 头像链接。
-        let avatar_url = crate::api::comments::helpers::gravatar_url(&author_email);
+        // 响应头像：登录用户用账号头像（未设置回退邮箱 Gravatar），匿名用邮箱 Gravatar。
+        let avatar_url = match &session_user {
+            Some(u) => u
+                .avatar_url
+                .clone()
+                .unwrap_or_else(|| crate::api::comments::helpers::gravatar_url(&u.email)),
+            None => crate::api::comments::helpers::gravatar_url(&final_email),
+        };
 
-        // 新评论可能影响文章评论列表与待审核计数，清空相关缓存。
+        // 新评论影响文章评论列表缓存；仅匿名 pending 评论才影响待审核计数。
         cache::invalidate_comments_by_post(post_id).await;
-        cache::invalidate_pending_count().await;
+        if session_user.is_none() {
+            cache::invalidate_pending_count().await;
+        }
+
+        let message = if session_user.is_some() {
+            "评论已发布"
+        } else {
+            "评论已提交，等待审核"
+        };
 
         Ok(CommentResponse::created(
-            "评论已提交，等待审核".to_string(),
+            message.to_string(),
             comment_id,
             avatar_url,
             depth,

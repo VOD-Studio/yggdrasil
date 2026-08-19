@@ -294,6 +294,36 @@ pub fn StatusBadge(color_class: &'static str, label: String) -> Element {
     }
 }
 
+/// 用户头像：有图显示图，无图回退展示名首字符（accent 软底）。
+///
+/// 头像三态（图片 / 首字符）的统一实现，调用方经 `class` 控制尺寸与形状
+/// （须含 `w-* h-* rounded-full` 与字号如 `text-xs`）。使用处：后台侧栏
+/// 用户卡片（28px）、个人信息页身份卡（96px，外层按钮带 hover 遮罩）、
+/// 前台评论表单身份行（32px）。
+///
+/// Props：
+/// - `name`：展示名（用于首字符兜底与 alt 文本）
+/// - `avatar_url`：头像 URL；`None` 或空白串时渲染首字符兜底
+/// - `class`：尺寸与形状类；组件内补 `object-cover`（图片）/ flex 居中（首字符）
+#[component]
+pub fn UserAvatar(name: String, avatar_url: Option<String>, class: &'static str) -> Element {
+    let initial = name
+        .chars()
+        .next()
+        .map(|c| c.to_uppercase().collect::<String>())
+        .unwrap_or_else(|| "?".to_string());
+    match avatar_url.filter(|u| !u.trim().is_empty()) {
+        Some(url) => rsx! {
+            img { class: "{class} object-cover", src: "{url}", alt: "{name} 的头像" }
+        },
+        None => rsx! {
+            span { class: "{class} flex items-center justify-center bg-[var(--color-paper-accent-soft)] text-[var(--color-paper-accent)] font-bold select-none",
+                "{initial}"
+            }
+        },
+    }
+}
+
 /// Tooltip 基础样式（胶囊：黑底白字，hover 显现）。水平定位由调用方经 `align` 选择，
 /// 不在此处写死居中——触发器贴容器边缘时居中会让 tooltip 溢出被 `overflow-hidden` 裁掉。
 const TOOLTIP_STYLE: &str =

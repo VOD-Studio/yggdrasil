@@ -59,6 +59,8 @@ pub struct PublicComment {
     pub author_url: Option<String>,
     /// 评论者头像 URL。
     pub avatar_url: String,
+    /// 是否为登录用户（作者）发表的评论。
+    pub is_author: bool,
     /// 渲染后的 HTML 内容。
     pub content_html: Option<String>,
     /// 用于展示的人类可读创建时间。

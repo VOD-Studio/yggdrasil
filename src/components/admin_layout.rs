@@ -20,6 +20,7 @@ use crate::components::skeletons::profile_skeleton::ProfileSkeleton;
 use crate::components::skeletons::runner_skeleton::RunnerSkeleton;
 use crate::components::skeletons::settings_admin_skeleton::SettingsAdminSkeleton;
 use crate::components::skeletons::system_skeleton::SystemSkeleton;
+use crate::components::ui::UserAvatar;
 use crate::components::write_skeleton::WriteSkeleton;
 use crate::context::UserContext;
 use crate::router::Route;
@@ -143,32 +144,15 @@ pub fn AdminLayout() -> Element {
             // Bottom Tools：用户卡片（→ 个人信息页）+ 主题切换 / 退出
             div { class: "mt-auto pt-4 border-t border-[var(--color-paper-border)] flex flex-col gap-1",
                 if let Some(user) = side_user {
-                    {
-                        // 头像兜底：无头像时显示展示名首字符（2025 头像三态之一）。
-                        let chip_initial = user
-                            .display_label()
-                            .chars()
-                            .next()
-                            .map(|c| c.to_uppercase().collect::<String>())
-                            .unwrap_or_else(|| "?".to_string());
-                        rsx! {
-                            Link {
-                                class: "flex items-center gap-2.5 px-3 py-2 rounded-2xl text-sm font-medium transition-all {chip_state_class}",
-                                to: Route::Profile {},
-                                if let Some(url) = &user.avatar_url {
-                                    img {
-                                        class: "w-7 h-7 rounded-full object-cover flex-shrink-0 border border-[var(--color-paper-border)]",
-                                        src: "{url}",
-                                        alt: "头像",
-                                    }
-                                } else {
-                                    span { class: "w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center bg-[var(--color-paper-accent-soft)] text-[var(--color-paper-accent)] text-xs font-bold select-none",
-                                        "{chip_initial}"
-                                    }
-                                }
-                                span { class: "truncate", "{user.display_label()}" }
-                            }
+                    Link {
+                        class: "flex items-center gap-2.5 px-3 py-2 rounded-2xl text-sm font-medium transition-all {chip_state_class}",
+                        to: Route::Profile {},
+                        UserAvatar {
+                            name: user.display_label().to_string(),
+                            avatar_url: user.avatar_url.clone(),
+                            class: "w-7 h-7 rounded-full text-xs flex-shrink-0 border border-[var(--color-paper-border)]",
                         }
+                        span { class: "truncate", "{user.display_label()}" }
                     }
                 } else {
                     // 登录态校验期间的占位（与骨架屏同语言）。

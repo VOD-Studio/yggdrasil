@@ -25,6 +25,8 @@ const PENDING_POLL_INTERVAL_MS: u32 = 30_000;
 /// - `active_reply`：当前正在回复的评论 ID
 /// - `refresh_trigger`：刷新触发信号，切换时触发评论列表重新加载
 /// - `pending_comments`：本地存储的待审核评论
+/// - `current_user`：当前登录用户（`None` 为匿名访客）；登录后评论表单
+///   显示身份行、免作者信息字段，评论直发免审核
 #[derive(Clone, Copy)]
 pub struct CommentContext {
     /// 当前正在回复的评论 ID。
@@ -33,6 +35,8 @@ pub struct CommentContext {
     pub refresh_trigger: Signal<bool>,
     /// 本地存储的待审核评论。
     pub pending_comments: Signal<Vec<PendingComment>>,
+    /// 当前登录用户；`None` 表示匿名（或尚未完成探测）。
+    pub current_user: Signal<Option<crate::models::user::PublicUser>>,
 }
 
 /// 评论区段组件。
@@ -51,6 +55,7 @@ pub fn CommentSection(post_id: i32) -> Element {
         active_reply: Signal::new(None),
         refresh_trigger: Signal::new(false),
         pending_comments: Signal::new(Vec::new()),
+        current_user: Signal::new(None),
     });
 
     // 挂载后从本地存储异步加载待审核评论以防 SSR Hydration Mismatch
@@ -58,6 +63,20 @@ pub fn CommentSection(post_id: i32) -> Element {
         let pending = comment_storage::load_pending_comments(post_id);
         comment_storage::prune_all_expired();
         ctx.pending_comments.set(pending);
+    });
+
+    // 探测登录态：登录用户的评论表单切换为身份行变体（免作者信息字段）。
+    // 刻意使用评论区自己的信号而非全局 UserContext——AdminLayout 的守卫以
+    // 「checked=true 且 user=None」表示已确认未登录并跳转登录页，在前台探测
+    // 会污染该语义（匿名访客此后进入 /admin 将永远卡在骨架屏）。
+    use_effect(move || {
+        spawn(async move {
+            if let Ok(resp) = crate::api::auth::get_current_user().await {
+                if let Some(u) = resp.user {
+                    ctx.current_user.set(Some(u));
+                }
+            }
+        });
     });
 
     // 轮询待审核评论状态：只要本地还有待审核评论，就定期查询其审核状态。

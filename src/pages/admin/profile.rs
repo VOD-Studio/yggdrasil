@@ -31,7 +31,7 @@ use crate::components::forms::{FormInput, FormLabel};
 #[cfg(target_arch = "wasm32")]
 use crate::components::skeletons::profile_skeleton::ProfileSkeleton;
 #[cfg(target_arch = "wasm32")]
-use crate::components::ui::{ADMIN_CARD_CLASS, BTN_GHOST, LoadingButton, StatusBadge};
+use crate::components::ui::{ADMIN_CARD_CLASS, BTN_GHOST, LoadingButton, StatusBadge, UserAvatar};
 #[cfg(target_arch = "wasm32")]
 use crate::context::UserContext;
 #[cfg(target_arch = "wasm32")]
@@ -176,11 +176,6 @@ pub fn Profile() -> Element {
                             } else {
                                 display_name_draft().trim().to_string()
                             };
-                            let initial = label
-                                .chars()
-                                .next()
-                                .map(|c| c.to_uppercase().collect::<String>())
-                                .unwrap_or_else(|| "?".to_string());
                             let created = user.created_at.format("%Y-%m-%d").to_string();
                             rsx! {
                                 // 身份卡：头像 + 展示名 + 角色徽章 + 注册时间
@@ -192,16 +187,10 @@ pub fn Profile() -> Element {
                                                 class: "relative block w-24 h-24 rounded-full overflow-hidden border border-[var(--color-paper-border)] shadow-sm cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-paper-accent)]/40",
                                                 aria_label: "更换头像",
                                                 onclick: move |_| picker_visible.set(true),
-                                                if let Some(url) = avatar_draft() {
-                                                    img {
-                                                        class: "w-full h-full object-cover",
-                                                        src: "{url}",
-                                                        alt: "头像",
-                                                    }
-                                                } else {
-                                                    span { class: "w-full h-full flex items-center justify-center bg-[var(--color-paper-accent-soft)] text-[var(--color-paper-accent)] text-3xl font-bold select-none",
-                                                        "{initial}"
-                                                    }
+                                                UserAvatar {
+                                                    name: label.clone(),
+                                                    avatar_url: avatar_draft(),
+                                                    class: "w-24 h-24 rounded-full text-3xl",
                                                 }
                                                 span { class: "absolute inset-0 flex items-center justify-center bg-black/45 text-white opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity",
                                                     svg {

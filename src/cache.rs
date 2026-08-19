@@ -1002,6 +1002,7 @@ mod tests {
             author_name: "Alice".to_string(),
             author_url: None,
             avatar_url: "https://example.com/avatar".to_string(),
+            is_author: false,
             content_html: Some("<p>Hello</p>".to_string()),
             created_at: "刚刚".to_string(),
             created_at_iso: "2026-01-01T00:00:00Z".to_string(),

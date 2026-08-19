@@ -175,6 +175,10 @@ pub async fn update_profile(
         };
         crate::cache::set_session_user(&session::hash_token(&token), updated.clone()).await;
 
+        // 评论列表经 LEFT JOIN users 实时解析显示名/头像：资料变更后失效全部
+        // 评论缓存，否则旧显示名/头像会残留到缓存 TTL 过期。
+        crate::cache::invalidate_all_comments();
+
         Ok(UpdateProfileResponse {
             success: true,
             message: "资料已保存".to_string(),

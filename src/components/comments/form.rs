@@ -7,6 +7,7 @@ use dioxus::prelude::*;
 use crate::api::comments::create_comment;
 use crate::components::comments::section::CommentContext;
 use crate::components::forms::{AlertBox, INPUT_CLASS};
+use crate::components::ui::UserAvatar;
 use crate::utils::comment_storage::{self, PendingComment};
 
 /// 评论提交按钮样式：去掉全宽，改为内联宽度并右对齐。
@@ -32,6 +33,7 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
     let mut active_reply = ctx.active_reply;
     let mut refresh_trigger = ctx.refresh_trigger;
     let mut pending_comments = ctx.pending_comments;
+    let viewer = ctx.current_user;
 
     let mut author_name = use_signal(String::new);
     let mut author_email = use_signal(String::new);
@@ -90,54 +92,76 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
             }
 
             div { class: "space-y-3",
-                div { class: "grid grid-cols-1 sm:grid-cols-2 gap-3",
-                    div {
-                        label {
-                            r#for: "comment-name-{id_suffix}",
-                            class: "block text-sm font-medium text-paper-secondary mb-1",
-                            "昵称 *"
+                if let Some(user) = viewer() {
+                    {
+                        let label = user.display_label().to_string();
+                        let action = if is_reply { "回复" } else { "发表评论" };
+                        rsx! {
+                            // 登录态：身份行替代昵称/邮箱/网站字段（身份由服务端会话确定）。
+                            div { class: "flex items-center gap-2.5",
+                                UserAvatar {
+                                    name: label.clone(),
+                                    avatar_url: user.avatar_url.clone(),
+                                    class: "w-8 h-8 rounded-full text-sm border border-[var(--color-paper-border)]",
+                                }
+                                span { class: "text-sm text-paper-secondary",
+                                    "以 "
+                                    span { class: "font-medium text-paper-primary", "{label}" }
+                                    " 的身份{action}"
+                                }
+                            }
                         }
-                        input {
-                            id: "comment-name-{id_suffix}",
-                            class: INPUT_CLASS,
-                            r#type: "text",
-                            placeholder: "你的昵称",
-                            value: "{author_name}",
-                            disabled: submitting(),
-                            oninput: move |e| author_name.set(e.value()),
+                    }
+                } else {
+                    div { class: "grid grid-cols-1 sm:grid-cols-2 gap-3",
+                        div {
+                            label {
+                                r#for: "comment-name-{id_suffix}",
+                                class: "block text-sm font-medium text-paper-secondary mb-1",
+                                "昵称 *"
+                            }
+                            input {
+                                id: "comment-name-{id_suffix}",
+                                class: INPUT_CLASS,
+                                r#type: "text",
+                                placeholder: "你的昵称",
+                                value: "{author_name}",
+                                disabled: submitting(),
+                                oninput: move |e| author_name.set(e.value()),
+                            }
+                        }
+                        div {
+                            label {
+                                r#for: "comment-email-{id_suffix}",
+                                class: "block text-sm font-medium text-paper-secondary mb-1",
+                                "邮箱 *"
+                            }
+                            input {
+                                id: "comment-email-{id_suffix}",
+                                class: INPUT_CLASS,
+                                r#type: "email",
+                                placeholder: "your@email.com",
+                                value: "{author_email}",
+                                disabled: submitting(),
+                                oninput: move |e| author_email.set(e.value()),
+                            }
                         }
                     }
                     div {
                         label {
-                            r#for: "comment-email-{id_suffix}",
+                            r#for: "comment-url-{id_suffix}",
                             class: "block text-sm font-medium text-paper-secondary mb-1",
-                            "邮箱 *"
+                            "网站"
                         }
                         input {
-                            id: "comment-email-{id_suffix}",
+                            id: "comment-url-{id_suffix}",
                             class: INPUT_CLASS,
-                            r#type: "email",
-                            placeholder: "your@email.com",
-                            value: "{author_email}",
+                            r#type: "url",
+                            placeholder: "https://example.com（可选）",
+                            value: "{author_url}",
                             disabled: submitting(),
-                            oninput: move |e| author_email.set(e.value()),
+                            oninput: move |e| author_url.set(e.value()),
                         }
-                    }
-                }
-                div {
-                    label {
-                        r#for: "comment-url-{id_suffix}",
-                        class: "block text-sm font-medium text-paper-secondary mb-1",
-                        "网站"
-                    }
-                    input {
-                        id: "comment-url-{id_suffix}",
-                        class: INPUT_CLASS,
-                        r#type: "url",
-                        placeholder: "https://example.com（可选）",
-                        value: "{author_url}",
-                        disabled: submitting(),
-                        oninput: move |e| author_url.set(e.value()),
                     }
                 }
 
@@ -165,13 +189,16 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
 
                 p { class: "text-xs text-paper-tertiary", "支持 Markdown 语法" }
 
-                // 蜜罐字段：对普通用户隐藏，用于拦截简单机器人
-                textarea {
-                    class: "hidden",
-                    aria_hidden: "true",
-                    tabindex: "-1",
-                    value: "{honeypot}",
-                    oninput: move |e| honeypot.set(e.value()),
+                // 蜜罐字段：对普通用户隐藏，用于拦截简单机器人（仅匿名渲染；
+                // 登录用户的身份由会话保证，服务端也跳过蜜罐校验）。
+                if viewer().is_none() {
+                    textarea {
+                        class: "hidden",
+                        aria_hidden: "true",
+                        tabindex: "-1",
+                        value: "{honeypot}",
+                        oninput: move |e| honeypot.set(e.value()),
+                    }
                 }
 
                 div { class: "flex justify-end",
@@ -185,9 +212,13 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
 
                             let post_id = post_id;
                             let parent_id = parent_id;
-                            let name = author_name();
-                            let email = author_email();
-                            let url_val = author_url();
+                            let is_anon = viewer().is_none();
+                            // 登录用户的身份字段由服务端从会话推导，表单值仅匿名路径使用。
+                            let (name, email, url_val) = if is_anon {
+                                (author_name(), author_email(), author_url())
+                            } else {
+                                (String::new(), String::new(), String::new())
+                            };
                             let content = content_md();
                             let hp = honeypot();
 
@@ -196,8 +227,11 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
                                 return;
                             }
 
-                            if name.trim().is_empty() || email.trim().is_empty() || content.trim().is_empty()
-                            {
+                            if content.trim().is_empty() {
+                                message.set(Some(("请填写评论内容".to_string(), "error")));
+                                return;
+                            }
+                            if is_anon && (name.trim().is_empty() || email.trim().is_empty()) {
                                 message.set(Some(("请填写所有必填项".to_string(), "error")));
                                 return;
                             }
@@ -218,31 +252,35 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
                                 match result {
                                     Ok(resp) => {
                                         if resp.success {
-                                            comment_storage::save_author(&name, &email, &url_val);
-                                            if let Some(comment_id) = resp.comment_id {
-                                                let avatar_url = resp.avatar_url.unwrap_or_default();
-                                                let depth = resp.depth.unwrap_or(0);
-                                                let now = chrono::Utc::now().to_rfc3339();
-                                                let pending = PendingComment {
-                                                    id: comment_id,
-                                                    parent_id,
-                                                    depth,
-                                                    author_name: name.clone(),
-                                                    author_url: if url_val.trim().is_empty() {
-                                                        None
-                                                    } else {
-                                                        Some(url_val)
-                                                    },
-                                                    avatar_url,
-                                                    content_md: content,
-                                                    created_at: now.clone(),
-                                                    stored_at: now,
-                                                };
-                                                comment_storage::save_pending_comment(
-                                                    post_id,
-                                                    pending.clone(),
-                                                );
-                                                pending_comments.write().push(pending);
+                                            // 登录评论直发 approved：不写本地待审核
+                                            // 存储，列表刷新后即按正式状态展示。
+                                            if is_anon {
+                                                comment_storage::save_author(&name, &email, &url_val);
+                                                if let Some(comment_id) = resp.comment_id {
+                                                    let avatar_url = resp.avatar_url.unwrap_or_default();
+                                                    let depth = resp.depth.unwrap_or(0);
+                                                    let now = chrono::Utc::now().to_rfc3339();
+                                                    let pending = PendingComment {
+                                                        id: comment_id,
+                                                        parent_id,
+                                                        depth,
+                                                        author_name: name.clone(),
+                                                        author_url: if url_val.trim().is_empty() {
+                                                            None
+                                                        } else {
+                                                            Some(url_val)
+                                                        },
+                                                        avatar_url,
+                                                        content_md: content,
+                                                        created_at: now.clone(),
+                                                        stored_at: now,
+                                                    };
+                                                    comment_storage::save_pending_comment(
+                                                        post_id,
+                                                        pending.clone(),
+                                                    );
+                                                    pending_comments.write().push(pending);
+                                                }
                                             }
                                             content_md.set(String::new());
                                             message.set(Some((resp.message, "success")));

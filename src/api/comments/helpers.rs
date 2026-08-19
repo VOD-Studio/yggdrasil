@@ -22,7 +22,38 @@ pub fn gravatar_url(email: &str) -> String {
     format!("https://cravatar.cn/avatar/{}?d=mp&s=80", hash)
 }
 
+/// 解析评论的对外展示身份：`(名称, 头像 URL, 是否作者)`。
+///
+/// `user_id` 非空（登录用户发表的评论）时，优先使用 JOIN users 得到的
+/// **实时**显示名与头像——改名/换头像后历史评论自动跟随；匿名评论
+/// （`user_id` 为 NULL）回退到评论行内快照名 + 邮箱 Gravatar。
+/// 返回的名称经 HTML 转义，与 `author_name` 列的存储口径一致。
+#[cfg(feature = "server")]
+pub fn resolve_author_display(
+    author_name: &str,
+    author_email: &str,
+    user_id: Option<i32>,
+    user_display_name: Option<&str>,
+    user_avatar_url: Option<&str>,
+) -> (String, String, bool) {
+    let is_author = user_id.is_some();
+    let name = user_display_name
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(crate::utils::html::escape_html)
+        .unwrap_or_else(|| author_name.to_string());
+    let avatar = user_avatar_url
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| gravatar_url(author_email));
+    (name, avatar, is_author)
+}
+
 /// 将数据库行转换为前端展示的公开评论结构。
+///
+/// 调用方查询须 LEFT JOIN users 并提供 `user_id` / `user_display_name` /
+/// `user_avatar` 三列（匿名评论为 NULL）。
 #[cfg(feature = "server")]
 pub fn row_to_public_comment(row: &tokio_postgres::Row) -> PublicComment {
     let email: String = row.get("author_email");
@@ -30,13 +61,26 @@ pub fn row_to_public_comment(row: &tokio_postgres::Row) -> PublicComment {
     let created_at_iso = created_at_dt.to_rfc3339();
     let created_at_relative = format_relative_time(created_at_dt);
 
+    let snapshot_name: String = row.get("author_name");
+    let user_id: Option<i32> = row.get("user_id");
+    let user_display_name: Option<String> = row.get("user_display_name");
+    let user_avatar: Option<String> = row.get("user_avatar");
+    let (author_name, avatar_url, is_author) = resolve_author_display(
+        &snapshot_name,
+        &email,
+        user_id,
+        user_display_name.as_deref(),
+        user_avatar.as_deref(),
+    );
+
     PublicComment {
         id: row.get("id"),
         parent_id: row.get("parent_id"),
         depth: row.get("depth"),
-        author_name: row.get("author_name"),
+        author_name,
         author_url: row.get("author_url"),
-        avatar_url: gravatar_url(&email),
+        avatar_url,
+        is_author,
         content_html: row.get("content_html"),
         created_at: created_at_relative,
         created_at_iso,
@@ -44,10 +88,25 @@ pub fn row_to_public_comment(row: &tokio_postgres::Row) -> PublicComment {
 }
 
 /// 将数据库行转换为后台管理使用的评论结构。
+///
+/// 与 [`row_to_public_comment`] 同一套身份解析：查询须 LEFT JOIN users
+/// 提供 `user_id` / `user_display_name` / `user_avatar` 三列。
 #[cfg(feature = "server")]
 pub fn row_to_admin_comment(row: &tokio_postgres::Row) -> AdminComment {
     let status_str: String = row.get("status");
     let email: String = row.get("author_email");
+
+    let snapshot_name: String = row.get("author_name");
+    let user_id: Option<i32> = row.get("user_id");
+    let user_display_name: Option<String> = row.get("user_display_name");
+    let user_avatar: Option<String> = row.get("user_avatar");
+    let (author_name, avatar_url, _) = resolve_author_display(
+        &snapshot_name,
+        &email,
+        user_id,
+        user_display_name.as_deref(),
+        user_avatar.as_deref(),
+    );
 
     AdminComment {
         id: row.get("id"),
@@ -56,10 +115,10 @@ pub fn row_to_admin_comment(row: &tokio_postgres::Row) -> AdminComment {
         post_slug: row.get("post_slug"),
         parent_id: row.get("parent_id"),
         depth: row.get("depth"),
-        author_name: row.get("author_name"),
+        author_name,
         author_email: email.clone(),
         author_url: row.get("author_url"),
-        avatar_url: gravatar_url(&email),
+        avatar_url,
         content_md: row.get("content_md"),
         status: CommentStatus::from_str(&status_str),
         created_at: row.get("created_at"),
@@ -203,6 +262,52 @@ mod tests {
         let url1 = gravatar_url(" test@example.com ");
         let url2 = gravatar_url("test@example.com");
         assert_eq!(url1, url2);
+    }
+
+    #[test]
+    fn resolve_author_display_anonymous_uses_snapshot_and_gravatar() {
+        let (name, avatar, is_author) =
+            resolve_author_display("Alice", "a@example.com", None, None, None);
+        assert_eq!(name, "Alice");
+        assert_eq!(avatar, gravatar_url("a@example.com"));
+        assert!(!is_author);
+    }
+
+    #[test]
+    fn resolve_author_display_user_with_profile_fields() {
+        let (name, avatar, is_author) = resolve_author_display(
+            "snapshot",
+            "a@example.com",
+            Some(1),
+            Some("站长"),
+            Some("/uploads/a.webp"),
+        );
+        assert_eq!(name, "站长");
+        assert_eq!(avatar, "/uploads/a.webp");
+        assert!(is_author);
+    }
+
+    #[test]
+    fn resolve_author_display_user_without_display_name_falls_back_to_snapshot() {
+        // 登录用户未设显示名/头像：名称回退到写入时的快照（username），头像回退 Gravatar。
+        let (name, avatar, is_author) =
+            resolve_author_display("admin", "a@example.com", Some(1), Some("  "), None);
+        assert_eq!(name, "admin");
+        assert_eq!(avatar, gravatar_url("a@example.com"));
+        assert!(is_author);
+    }
+
+    #[test]
+    fn resolve_author_display_escapes_live_display_name() {
+        // users.display_name 是未转义原始输入，与 author_name 列口径一致需转义。
+        let (name, _, _) = resolve_author_display(
+            "snapshot",
+            "a@example.com",
+            Some(1),
+            Some("<b>x</b>"),
+            None,
+        );
+        assert!(!name.contains('<'));
     }
 
     #[test]
