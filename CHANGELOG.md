@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.2] - 2026-08-20
+
+### Added
+
+- **前台首页与文章卡片现代排版重构**：
+  - **首页 Hero 区域**：新增状态呼吸徽标、编辑风大字主标题与探索胶囊（快速直达搜索、归档、标签与友链）。
+  - **分页与面包屑导航**：翻页模式（`/page/:page`）下自动呈现精简面包屑，提升阅读聚焦度。
+  - **头条与文章卡片**：首篇支持 Featured 专属排版展示；卡片集成 Retina 高清缩略图适配、阅读时长与字数统计、悬浮平滑动效与现代化视觉设计。
+  - **骨架屏对齐**：重构 `HomeSkeleton` 与 `PostCardSkeleton`，保持占位结构与真实文章卡片的几何比例严密契合。
+
 ## [0.12.1] - 2026-08-20
 
 ### Added
