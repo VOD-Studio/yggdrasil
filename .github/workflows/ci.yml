@@ -490,31 +490,52 @@ jobs:
           # 需要 tag 历史做与前一个 tag 的 docker/ diff；浅克隆拿不到祖先 tag。
           fetch-depth: 0
 
-      # 变更检测：tag push 时比较与前一个 tag 的 docker/ 变更，无变更则跳过 6 个镜像构建。
-      # workflow_dispatch(手动触发)通常是有意重建，总是运行。fetch-depth: 0 提供祖先 tag。
-      - name: Detect docker/ changes since last tag
-        id: changes
-        run: |
-          if [ "${GITHUB_EVENT_NAME}" != "push" ]; then
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          PREV_TAG="$(git describe --tags --abbrev=0 "${GITHUB_SHA}^" 2>/dev/null || true)"
-          if [ -z "$PREV_TAG" ]; then
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          elif git diff --name-only "${PREV_TAG}..${GITHUB_SHA}" -- docker/ | grep -q .; then
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "::notice::docker/ 自 ${PREV_TAG} 起无变更，跳过沙箱镜像构建"
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          fi
+      # 变更检测前先登录 GHCR：即使 docker/ 未变，也要验证 runner manifest 是否仍存在。
       - name: Login to GHCR
-        if: steps.changes.outputs.changed == 'true'
         uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      # tag push 且 docker/ 未变时，只要 GHCR runner tag 缺失也必须重建，避免归档被删后
+      # 部署继续放行。workflow_dispatch 总是重建，fetch-depth: 0 提供祖先 tag。
+      - name: Detect docker changes and runner tags
+        id: changes
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          OWNER="$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')"
+          IMAGE="ghcr.io/${OWNER}/yggdrasil"
+
+          if [ "${GITHUB_EVENT_NAME}" != "push" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::非 push 事件，重建全部 runner 镜像"
+            exit 0
+          fi
+
+          PREV_TAG="$(git describe --tags --abbrev=0 "${GITHUB_SHA}^" 2>/dev/null || true)"
+          if [ -z "$PREV_TAG" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::没有可比较的前一个 tag，重建全部 runner 镜像"
+          elif git diff --name-only "${PREV_TAG}..${GITHUB_SHA}" -- docker/ | grep -q .; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::docker/ 自 ${PREV_TAG} 起有变更，重建全部 runner 镜像"
+          else
+            missing=()
+            for img in base python node go rust bun; do
+              if ! docker manifest inspect "$IMAGE:runner-$img" >/dev/null 2>&1; then
+                missing+=("$img")
+              fi
+            done
+            if ((${#missing[@]} > 0)); then
+              echo "::warning::GHCR runner tag 缺失：${missing[*]}，触发完整重建"
+              echo "changed=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "::notice::docker/ 自 ${PREV_TAG} 起无变更且 GHCR runner tag 完整，跳过沙箱镜像构建"
+              echo "changed=false" >> "$GITHUB_OUTPUT"
+            fi
+          fi
 
       - name: Build and push runner images
         if: steps.changes.outputs.changed == 'true'
@@ -539,8 +560,8 @@ jobs:
   # ── deploy-xun：从 GHCR 拉取镜像后滚动重启（pull-based，不再 scp tarball）──
   # 仅 push 新 tag（v*）或手动触发时运行（分支推送/PR 不部署）。
   # 主应用由 publish-ghcr 提供 multi-arch latest，xun 自动拉取 amd64；runner 由
-  # publish-runners 推入同一个公开 yggdrasil 包的 runner-* 标签。runner 拉取
-  # best-effort——失败仅告警保留旧 tag，绝不阻断 app 部署。
+  # publish-runners 推入同一个公开 yggdrasil 包的 runner-* 标签。部署前必须确认每个
+  # runner 已成功拉取或远端已有可用旧 tag；缺失时阻断 app 重启，避免 CI 绿但运行时报 404。
   # deploy-xun 与 deploy-rua 是独立 job，均在镜像发布完成后启动，因此两台并行部署。
   deploy-xun:
     runs-on: ubuntu-latest
@@ -610,19 +631,35 @@ jobs:
           pull_retry "$REG/yggdrasil:latest" \
             || { echo "::error::app image pull failed: $REG/yggdrasil:latest"; exit 1; }
           docker tag "$REG/yggdrasil:latest" localhost/yggdrasil:latest
+          docker image inspect localhost/yggdrasil:latest >/dev/null \
+            || { echo "::error::app image tag failed: localhost/yggdrasil:latest"; exit 1; }
 
-          echo "==> [2/3] docker compose up -d app (postgres 与数据卷不动)"
-          cd "$DIR" && docker compose --env-file .env up -d app
-
-          echo "==> [3/3] pull + tag runner images (best-effort，保留旧 tag 不阻断 app)"
+          echo "==> [2/3] pull + tag runner images (required; missing images block deploy)"
+          missing=()
           for img in base python node go rust bun; do
+            target="yggdrasil-runner-$img:latest"
             if pull_retry "$REG/yggdrasil:runner-$img"; then
-              docker tag "$REG/yggdrasil:runner-$img" "yggdrasil-runner-$img:latest"
-              echo "  updated yggdrasil-runner-$img"
+              if docker tag "$REG/yggdrasil:runner-$img" "$target"; then
+                echo "  updated $target"
+              else
+                echo "  WARN: tag failed $target，检查远端已有 tag"
+              fi
             else
-              echo "  WARN: pull failed yggdrasil:runner-$img，保留现有 tag"
+              echo "  WARN: pull failed yggdrasil:runner-$img，检查远端已有 tag"
+            fi
+
+            if ! docker image inspect "$target" >/dev/null 2>&1; then
+              missing+=("$target")
+              echo "  ERROR: runner image unavailable: $target"
             fi
           done
+          if ((${#missing[@]} > 0)); then
+            echo "::error::runner 镜像不可用：${missing[*]}；已阻止 app 重启"
+            exit 1
+          fi
+
+          echo "==> [3/3] docker compose up -d app (postgres 与数据卷不动)"
+          cd "$DIR" && docker compose --env-file .env up -d app
 
           echo "==> pull-based xun deploy script done"
           REMOTE
