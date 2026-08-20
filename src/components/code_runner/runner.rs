@@ -1,11 +1,11 @@
 //! CodeRunner 组件实现：源码 + 运行按钮 + SSE 流式输出 + xterm.js 终端。
 //!
 //! 编辑器挂载：组件在 WASM 端按自身 `container_id` 调用
-//! `codemirror_bridge::get_module().create(...)` 挂载 CodeMirror，`onChange`
+//! `codemirror::get_module().create(...)` 挂载 CodeMirror，`onChange`
 //! 回写到内部 `source_signal`，`use_drop` 时销毁实例。范式镜像 SQL 控制台
 //!（`src/pages/admin/system.rs`）与 Tiptap 编辑器（`src/pages/admin/write.rs`）。
 //!
-//! 输出渲染：WASM 端按 `output_container_id` 调用 `xterm_bridge::get_module().create(...)`
+//! 输出渲染：WASM 端按 `output_container_id` 调用 `xterm::get_module().create(...)`
 //! 挂载 xterm.js 终端（输出专用，无 stdin），SSE stdout/stderr 事件实时写入。
 //! SSE 不可用时降级到轮询 get_exec_result，整段写入终端（writeAll）。
 
@@ -79,7 +79,8 @@ pub fn CodeRunner(
     // xterm.js 终端实例句柄（仅 WASM）：声明在 cfg block 外的组件作用域，
     // 使 run_code 的 WASM 版闭包能捕获它。server 构建整行不存在。
     #[cfg(target_arch = "wasm32")]
-    let mut term_handle: Signal<Option<crate::xterm_bridge::TerminalHandle>> = use_signal(|| None);
+    let mut term_handle: Signal<Option<crate::bridges::xterm::TerminalHandle>> =
+        use_signal(|| None);
 
     // 编辑器是否已挂载就绪。声明在 cfg 块外，使 SSR 端也能读取：
     // SSR 与 hydration 完成前为 false → 容器内渲染骨架屏；CodeMirror 挂载后置 true
@@ -118,12 +119,11 @@ pub fn CodeRunner(
     // 范式镜像 src/pages/admin/system.rs 的 SQL 控制台与 src/pages/admin/write.rs 的 Tiptap。
     #[cfg(target_arch = "wasm32")]
     {
-        use crate::codemirror_bridge;
+        use crate::bridges::codemirror;
         use crate::theme::{use_resolved_theme, ResolvedTheme};
         use wasm_bindgen::closure::Closure;
 
-        let mut editor_handle: Signal<Option<codemirror_bridge::EditorHandle>> =
-            use_signal(|| None);
+        let mut editor_handle: Signal<Option<codemirror::EditorHandle>> = use_signal(|| None);
         // 在 cfg 块顶层（渲染路径）取主题 memo，move 进下方 effect 闭包；闭包内只
         // 调用 memo（resolved()）读值——调用 memo 本身不是 hook，use_resolved_theme
         // 这个 hook 必须在组件体顶层调用，不能放进 use_effect 闭包（dx check 会报）。
@@ -154,7 +154,7 @@ pub fn CodeRunner(
                 "light"
             };
 
-            let opts = codemirror_bridge::EditorOptions::new();
+            let opts = codemirror::EditorOptions::new();
             opts.set_language(&mount_language);
             opts.set_theme(theme_name);
             opts.set_vim(*vim_enabled.read());
@@ -163,15 +163,9 @@ pub fn CodeRunner(
             opts.set_on_ready(&on_ready);
             opts.set_on_run_shortcut(&on_run_shortcut);
 
-            if let Ok(Some(inst)) =
-                codemirror_bridge::get_module().create(&mount_container_id, &opts)
-            {
-                let handle = codemirror_bridge::EditorHandle::new(
-                    inst,
-                    on_change,
-                    on_ready,
-                    on_run_shortcut,
-                );
+            if let Ok(Some(inst)) = codemirror::get_module().create(&mount_container_id, &opts) {
+                let handle =
+                    codemirror::EditorHandle::new(inst, on_change, on_ready, on_run_shortcut);
                 editor_handle.set(Some(handle));
                 editor_ready.set(true);
             }
@@ -227,8 +221,8 @@ pub fn CodeRunner(
     // 范式镜像 CodeMirror 挂载：get_module().create() → TerminalHandle，use_drop 销毁。
     #[cfg(target_arch = "wasm32")]
     {
+        use crate::bridges::xterm;
         use crate::theme::{use_resolved_theme, ResolvedTheme};
-        use crate::xterm_bridge;
         use wasm_bindgen::closure::Closure;
 
         // 在 cfg 块顶层（渲染路径）取主题 memo，move 进下方 effect 闭包；闭包内只
@@ -254,13 +248,13 @@ pub fn CodeRunner(
                 "light"
             };
 
-            let opts = xterm_bridge::XtermOptions::new();
+            let opts = xterm::XtermOptions::new();
             opts.set_theme(theme_name);
             opts.set_font_size(13);
             opts.set_on_ready(&on_ready);
 
-            if let Ok(Some(inst)) = xterm_bridge::get_module().create(&mount_container_id, &opts) {
-                let handle = xterm_bridge::TerminalHandle::new(inst, on_ready);
+            if let Ok(Some(inst)) = xterm::get_module().create(&mount_container_id, &opts) {
+                let handle = xterm::TerminalHandle::new(inst, on_ready);
                 term_handle.set(Some(handle));
             }
         });
@@ -606,8 +600,8 @@ mod sse_consumer {
 
     use crate::api::code_runner::execute::get_exec_result;
     use crate::api::code_runner::ExecStatus;
+    use crate::bridges::xterm::TerminalHandle;
     use crate::utils::time::sleep_ms;
-    use crate::xterm_bridge::TerminalHandle;
 
     /// SSE done 事件的 JSON payload。
     #[derive(serde::Deserialize)]

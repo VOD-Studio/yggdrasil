@@ -587,7 +587,7 @@ fn mime_for_ext(ext: &str) -> &'static str {
 #[cfg(feature = "server")]
 fn validate_raw_image(data: &[u8], mime_type: &str) -> bool {
     match mime_type {
-        "image/webp" => crate::webp::decode(data).is_ok(),
+        "image/webp" => crate::infra::webp::decode(data).is_ok(),
         "image/gif" => image::load_from_memory(data).is_ok(),
         _ => true,
     }
@@ -620,8 +620,8 @@ fn transcode_image_blocking(
 
     match reader.decode() {
         Ok(img) => {
-            let config = crate::webp::WEBP_CONFIG.clone();
-            match crate::webp::encode(&img, config.quality, config.method) {
+            let config = crate::infra::webp::WEBP_CONFIG.clone();
+            match crate::infra::webp::encode(&img, config.quality, config.method) {
                 Ok(webp_data) if webp_data.len() < data.len() => {
                     tracing::info!(
                         "WebP conversion: {}x{} {} -> {} bytes",
@@ -709,15 +709,15 @@ mod tests {
     #[test]
     fn convert_to_webp_produces_bytes() {
         let img = image::DynamicImage::new_rgb8(10, 10);
-        let result = crate::webp::encode(&img, 85.0, 4).unwrap();
+        let result = crate::infra::webp::encode(&img, 85.0, 4).unwrap();
         assert!(!result.is_empty());
     }
 
     #[test]
     fn webp_roundtrip_from_rgba() {
         let img = image::DynamicImage::new_rgba8(2, 2);
-        let webp_bytes = crate::webp::encode(&img, 85.0, 4).unwrap();
-        let loaded = crate::webp::decode(&webp_bytes);
+        let webp_bytes = crate::infra::webp::encode(&img, 85.0, 4).unwrap();
+        let loaded = crate::infra::webp::decode(&webp_bytes);
         assert!(loaded.is_ok());
     }
 

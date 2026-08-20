@@ -16,7 +16,7 @@ pub(super) fn SqlConsoleTab() -> Element {
     #[cfg(target_arch = "wasm32")]
     use crate::api::database::sql_console::{execute_sql, ExecuteSqlOpts};
     #[cfg(target_arch = "wasm32")]
-    use crate::codemirror_bridge;
+    use crate::bridges::codemirror;
     use crate::components::sql_result_table::SqlResultTable;
     use crate::components::ui::ADMIN_TABLE_CLASS;
     // use_resolved_theme 两种构建都用：resolved() 在 wasm 块内消费，非 wasm 仅引用避免警告。
@@ -39,7 +39,7 @@ pub(super) fn SqlConsoleTab() -> Element {
 
     // CodeMirror 实例句柄（仅 WASM）。
     #[cfg(target_arch = "wasm32")]
-    let mut editor_handle: Signal<Option<codemirror_bridge::EditorHandle>> = use_signal(|| None);
+    let mut editor_handle: Signal<Option<codemirror::EditorHandle>> = use_signal(|| None);
 
     // 执行 SQL 的核心逻辑：抽成独立闭包，按钮 onclick 与 Ctrl+Enter 快捷键共用。
     // 所有捕获都是 Copy 的 Signal，故每次调用读取最新值，闭包本身是 Fn 可重复调用。
@@ -126,7 +126,7 @@ pub(super) fn SqlConsoleTab() -> Element {
             } else {
                 "light"
             };
-            let opts = codemirror_bridge::EditorOptions::new();
+            let opts = codemirror::EditorOptions::new();
             opts.set_language("sql");
             opts.set_theme(theme_name);
             opts.set_vim(true);
@@ -134,13 +134,9 @@ pub(super) fn SqlConsoleTab() -> Element {
             opts.set_on_ready(&on_ready);
             opts.set_on_run_shortcut(&on_run_shortcut);
 
-            if let Ok(Some(inst)) = codemirror_bridge::get_module().create("sql-editor", &opts) {
-                let handle = codemirror_bridge::EditorHandle::new(
-                    inst,
-                    on_change,
-                    on_ready,
-                    on_run_shortcut,
-                );
+            if let Ok(Some(inst)) = codemirror::get_module().create("sql-editor", &opts) {
+                let handle =
+                    codemirror::EditorHandle::new(inst, on_change, on_ready, on_run_shortcut);
                 editor_handle.set(Some(handle));
             }
 

@@ -30,9 +30,9 @@ use dioxus::prelude::*;
 use crate::components::ui::SPINNER_SVG;
 
 #[cfg(target_arch = "wasm32")]
-use super::assets::format_bytes;
+use crate::bridges::tiptap::upload_image_file;
 #[cfg(target_arch = "wasm32")]
-use crate::tiptap_bridge::upload_image_file;
+use crate::utils::format_bytes;
 // 从 Dioxus 事件拿底层 web_sys::File（write.rs L30-34 同款 cfg 门控惯例）：
 // - HasFileData：evt.files()（FormEvent / DragEvent 取文件）
 // - WebFileExt：file.get_web_file()（FileData 取底层 web_sys::File）

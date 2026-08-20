@@ -7,7 +7,7 @@
 /// 读取 `window` 上的可选全局函数并调用；函数未定义/为 null 时静默跳过。
 ///
 /// 替代 `js_sys::eval("if(window.__x) window.__x(...)")` 字符串拼贴模式：用
-/// `Reflect::get` 取属性 + `Function::apply` 调用，无字符串求值，与 `tiptap_bridge`
+/// `Reflect::get` 取属性 + `Function::apply` 调用，无字符串求值，与 `bridges::tiptap`
 /// 的类型化 extern 风格一致。
 ///
 /// 用于调用各 IIFE 库暴露的 `window.__init*` 入口（lightbox / mermaid / 锚点拦截等），

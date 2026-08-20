@@ -135,22 +135,6 @@ pub fn System() -> Element {
     }
 }
 
-/// 字节数 → 人类可读（如 1.2 MB）。db_status / server_status / backup 三个 tab 共用。
-pub(super) fn format_bytes(bytes: i64) -> String {
-    const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
-    let mut size = bytes as f64;
-    let mut unit = 0;
-    while size.abs() >= 1024.0 && unit < UNITS.len() - 1 {
-        size /= 1024.0;
-        unit += 1;
-    }
-    if unit == 0 {
-        format!("{} {}", bytes, UNITS[0])
-    } else {
-        format!("{:.2} {}", size, UNITS[unit])
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::SystemTab;

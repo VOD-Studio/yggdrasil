@@ -44,6 +44,8 @@ pub mod nav;
 // ========= feature 层 — 绑定特定领域 (models / Route / api) =========
 // 按页面域划分；跨域复用前先考虑原子层。
 
+/// 素材选择与上传 modal 组件。
+pub mod assets;
 /// 代码运行器组件（可运行代码块 UI）。
 pub mod code_runner;
 /// 评论组件（列表 / 表单 / 待审核项）。
@@ -54,10 +56,3 @@ pub mod post;
 pub mod post_card;
 /// SQL 查询结果表格组件（SQL 控制台专用）。
 pub mod sql_result_table;
-
-// ========= 页面级骨架 =========
-
-/// 后台仪表盘内容区骨架屏组件。
-pub mod admin_skeleton;
-/// 编辑器页面骨架屏组件。
-pub mod write_skeleton;

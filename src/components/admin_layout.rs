@@ -7,9 +7,9 @@ use dioxus::prelude::*;
 use dioxus::router::components::Link;
 
 use crate::api::auth::{get_current_user, logout};
-use crate::components::admin_skeleton::AdminDashboardSkeleton;
 use crate::components::skeletons::admin_comments_skeleton::AdminCommentsSkeleton;
 use crate::components::skeletons::assets_skeleton::AssetsSkeleton;
+use crate::components::skeletons::dashboard_skeleton::AdminDashboardSkeleton;
 
 use crate::components::skeletons::friends_admin_skeleton::FriendsAdminSkeleton;
 use crate::components::skeletons::mcp_skeleton::McpSkeleton;
@@ -20,8 +20,8 @@ use crate::components::skeletons::profile_skeleton::ProfileSkeleton;
 use crate::components::skeletons::runner_skeleton::RunnerSkeleton;
 use crate::components::skeletons::settings_admin_skeleton::SettingsAdminSkeleton;
 use crate::components::skeletons::system_skeleton::SystemSkeleton;
+use crate::components::skeletons::write_skeleton::WriteSkeleton;
 use crate::components::ui::UserAvatar;
-use crate::components::write_skeleton::WriteSkeleton;
 use crate::context::UserContext;
 use crate::router::Route;
 use crate::theme::ThemeToggle;

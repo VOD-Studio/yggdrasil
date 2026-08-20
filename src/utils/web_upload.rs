@@ -1,6 +1,6 @@
 //! WASM 端 multipart 文件上传助手：FormData POST + `{success, error, ...}` JSON 契约解析。
 //!
-//! 图片上传（`tiptap_bridge::upload_image_file`）与备份导入共用同一份 fetch 样板。
+//! 图片上传（`bridges::tiptap::upload_image_file`）与备份导入共用同一份 fetch 样板。
 //! 仅当 `success == true` 返回完整 JSON（调用方自取 `url`/`filename` 字段）；
 //! 其余一律 `Err`：优先服务端中文 `error`，兜底状态码。
 #![cfg(target_arch = "wasm32")]

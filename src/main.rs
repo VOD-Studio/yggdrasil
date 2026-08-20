@@ -49,24 +49,14 @@ mod models;
 mod mcp;
 mod pages;
 mod router;
-// sysinfo_sampler：主机指标快照。
-// SystemSnapshot 结构体两端都编译（被 system_status 的 ServerStatus 字段引用）；
-// 真正的采样任务 / RwLock / read_snapshot 实现在本模块内部自行 #[cfg(feature = "server")] gate。
-mod sysinfo_sampler;
 // ssr_cache 仅在 server feature 启用时编译；保存 SSR 世代号失效状态。
 #[cfg(feature = "server")]
 mod ssr_cache;
 mod tasks;
 mod theme;
-// tiptap_bridge：共享类型（UploadsInFlight/UploadErrorEntry）两端都编译；
-// wasm-bindgen extern 与 EditorHandle 在内部的 #[cfg(wasm32)] 子模块里。
-mod tiptap_bridge;
-// codemirror_bridge：SQL 编辑器的 wasm-bindgen 绑定，结构镜像 tiptap_bridge。
-// 共享类型（SqlSchema/SqlTable）两端都编译；extern 与 EditorHandle 在 #[cfg(wasm32)] 子模块里。
-mod codemirror_bridge;
+// bridges：libs/ 下各 JS IIFE（tiptap / codemirror / xterm）的 wasm-bindgen 桥接层。
+mod bridges;
 mod utils;
-mod webp;
-mod xterm_bridge;
 
 /// 程序入口
 fn main() {
@@ -207,7 +197,7 @@ fn main() {
             crate::config::set_rate_limit(rate_limit_cfg);
 
             // WebP 配置（WEBP_QUALITY / WEBP_METHOD）env 播种，语义同上。
-            // Tier B：播种后从 DB 加载到 config::WEBP_CFG，webp.rs 的 LazyLock
+            // Tier B：播种后从 DB 加载到 config::WEBP_CFG，infra/webp.rs 的 LazyLock
             // 首次编码时从 config 读取——修改 DB 值需重启生效。
             if let Err(e) =
                 crate::api::settings::seed_webp_settings_from_env(&conn).await
@@ -314,7 +304,7 @@ fn main() {
             });
 
             // 启动后台采样任务：sysinfo 主机指标（CPU/内存/磁盘），server function 只读快照。
-            sysinfo_sampler::spawn_sampler();
+            tasks::sysinfo_sampler::spawn_sampler();
 
             // 启动期探测代码运行器就绪度（Docker daemon + runner 镜像），缺失时打印可操作日志。
             // 不阻塞启动、不 exit——代码运行是可选功能（博客本身不依赖 Docker）。

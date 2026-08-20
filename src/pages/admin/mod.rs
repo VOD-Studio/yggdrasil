@@ -2,10 +2,6 @@
 //!
 //! 汇总并重新导出后台管理相关的页面组件，供路由与其他模块使用。
 
-/// 素材选择 modal（封面上「从素材库选择」）。
-pub mod asset_picker;
-/// 素材上传 modal（素材管理页内上传）。
-pub mod asset_upload;
 /// 素材管理页面模块。
 pub mod assets;
 /// 评论管理页面模块。

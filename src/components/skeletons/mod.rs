@@ -12,6 +12,8 @@ pub mod assets_skeleton;
 pub mod atoms;
 /// 评论区骨架屏组件。
 pub mod comment_skeleton;
+/// 后台仪表盘内容区骨架屏组件。
+pub mod dashboard_skeleton;
 /// 延迟显示骨架屏组件。
 pub mod delayed_skeleton;
 /// 后台友链管理骨架屏组件。
@@ -44,3 +46,5 @@ pub mod settings_admin_skeleton;
 pub mod system_skeleton;
 /// 标签页骨架屏组件。
 pub mod tags_skeleton;
+/// 编辑器页面骨架屏组件。
+pub mod write_skeleton;

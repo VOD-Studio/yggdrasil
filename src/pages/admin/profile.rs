@@ -27,6 +27,8 @@ use std::sync::Arc;
 #[cfg(target_arch = "wasm32")]
 use crate::api::profile::{change_password, get_profile, update_profile};
 #[cfg(target_arch = "wasm32")]
+use crate::components::assets::{AssetPickerModal, AssetSelection};
+#[cfg(target_arch = "wasm32")]
 use crate::components::forms::{FormInput, FormLabel};
 #[cfg(target_arch = "wasm32")]
 use crate::components::skeletons::profile_skeleton::ProfileSkeleton;
@@ -36,8 +38,6 @@ use crate::components::ui::{LoadingButton, StatusBadge, UserAvatar, ADMIN_CARD_C
 use crate::context::UserContext;
 #[cfg(target_arch = "wasm32")]
 use crate::models::user::PublicUser;
-#[cfg(target_arch = "wasm32")]
-use crate::pages::admin::asset_picker::{AssetPickerModal, AssetSelection};
 
 /// Material Symbols `photo_camera`（头像 hover 遮罩；`public/icons/` 有存档）。
 #[cfg(target_arch = "wasm32")]

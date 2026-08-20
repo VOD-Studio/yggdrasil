@@ -1,6 +1,6 @@
 //! xterm.js 终端桥接：输出专用（无 stdin），配合 SSE 流式渲染容器 stdout/stderr。
 //!
-//! 镜像 `codemirror_bridge.rs` 范式：
+//! 镜像 `codemirror.rs` 范式：
 //! - `window.XtermTerminal` 是 IIFE 产物挂在 window 上的对象字面量（含 create 方法），
 //!   不是函数。用 `js_sys::Reflect::get` 做属性访问拿到模块对象，再 `unchecked_into`。
 //! - `XtermOptions` 是 class（非 interface），TS 擦除后存活，wasm 侧能 `new`。

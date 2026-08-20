@@ -17,5 +17,7 @@ pub mod mcp_token;
 pub mod post;
 /// 回收站与站点配置模型。
 pub mod settings;
+/// 主机指标快照模型（server 状态聚合用，两端共享序列化）。
+pub mod system;
 /// 用户模型、用户角色与可公开用户信息。
 pub mod user;

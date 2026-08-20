@@ -525,9 +525,9 @@ fn process_image(
                 .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
         }
         image::ImageFormat::WebP => {
-            let config = crate::webp::WEBP_CONFIG.clone();
+            let config = crate::infra::webp::WEBP_CONFIG.clone();
             let webp_quality = params.quality.map(|q| q as f32).unwrap_or(config.quality);
-            let webp_data = crate::webp::encode(&img, webp_quality, config.method)
+            let webp_data = crate::infra::webp::encode(&img, webp_quality, config.method)
                 .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
             buf = std::io::Cursor::new(webp_data);
         }
@@ -559,7 +559,7 @@ fn process_image_blocking(
         return Ok((data, content_type(original_format)));
     }
     let img = if original_format == image::ImageFormat::WebP {
-        match crate::webp::decode(&data) {
+        match crate::infra::webp::decode(&data) {
             Ok(img) => {
                 check_image_dimensions(img.width(), img.height())?;
                 img
@@ -872,7 +872,7 @@ mod tests {
     fn read_webp_dimensions_from_bytes() {
         // 构造一个 16x9 的 webp
         let img = image::DynamicImage::new_rgb8(16, 9);
-        let webp_bytes = crate::webp::encode(&img, 85.0, 2).unwrap();
+        let webp_bytes = crate::infra::webp::encode(&img, 85.0, 2).unwrap();
         let dims = read_dimensions_from_bytes(&webp_bytes, "test.webp");
         assert_eq!(dims, Some((16, 9)));
     }
@@ -966,7 +966,8 @@ mod tests {
             s = s.wrapping_mul(6364136223846793005).wrapping_add(1);
             *px = (s >> 33) as u8;
         }
-        let webp = crate::webp::encode(&image::DynamicImage::ImageRgba8(rgba), 100.0, 0).unwrap();
+        let webp =
+            crate::infra::webp::encode(&image::DynamicImage::ImageRgba8(rgba), 100.0, 0).unwrap();
         assert!(
             webp.len() > 65_536,
             "test image should produce > 64 KiB webp, got {}",
@@ -1038,7 +1039,7 @@ mod tests {
     #[test]
     fn upload_dimensions_accepts_small_webp() {
         let img = image::DynamicImage::new_rgb8(64, 48);
-        let webp_bytes = crate::webp::encode(&img, 85.0, 2).unwrap();
+        let webp_bytes = crate::infra::webp::encode(&img, 85.0, 2).unwrap();
         assert!(upload_dimensions(&webp_bytes, "image/webp").is_ok());
     }
 
@@ -1061,7 +1062,7 @@ mod tests {
     #[test]
     fn read_dimensions_by_mime_dispatches_webp() {
         let img = image::DynamicImage::new_rgb8(16, 9);
-        let webp_bytes = crate::webp::encode(&img, 85.0, 2).unwrap();
+        let webp_bytes = crate::infra::webp::encode(&img, 85.0, 2).unwrap();
         assert_eq!(
             read_dimensions_by_mime(&webp_bytes, "image/webp").unwrap(),
             (16, 9)
@@ -1521,7 +1522,7 @@ mod tests {
     fn is_animated_image_false_for_static_webp() {
         // 普通静态 WebP（三种子格式）都不应被误判为动图。
         let img = image::DynamicImage::new_rgb8(32, 32);
-        let static_webp = crate::webp::encode(&img, 80.0, 2).unwrap();
+        let static_webp = crate::infra::webp::encode(&img, 80.0, 2).unwrap();
         assert!(
             !is_animated_image(&static_webp, image::ImageFormat::WebP),
             "静态 WebP 不应被误报为动图"
@@ -1557,7 +1558,7 @@ mod tests {
     fn process_image_blocking_still_processes_static_webp() {
         // 静态 WebP 仍走完整处理流水线：输出字节应与输入不同（被缩放/重编码）。
         let img = image::DynamicImage::new_rgb8(200, 200);
-        let static_webp = crate::webp::encode(&img, 80.0, 2).unwrap();
+        let static_webp = crate::infra::webp::encode(&img, 80.0, 2).unwrap();
         let params = ImageParams {
             thumb: Some("50x50".to_string()),
             ..Default::default()

@@ -15,6 +15,8 @@ use crate::api::friends::{
     create_friend_link, delete_friend_link, list_all_friend_links, update_friend_link,
 };
 #[cfg(target_arch = "wasm32")]
+use crate::components::assets::{AssetPickerModal, AssetSelection};
+#[cfg(target_arch = "wasm32")]
 use crate::components::forms::{FormInput, FormSelect, INPUT_CLASS, INPUT_INLINE_CLASS};
 #[cfg(target_arch = "wasm32")]
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
@@ -24,8 +26,6 @@ use crate::components::skeletons::friends_admin_skeleton::FriendsAdminListSkelet
 use crate::components::ui::{Popover, BTN_DANGER_OUTLINE, BTN_GHOST, BTN_OUTLINE, BTN_PRIMARY};
 #[cfg(target_arch = "wasm32")]
 use crate::models::friend_link::FriendLink;
-#[cfg(target_arch = "wasm32")]
-use crate::pages::admin::asset_picker::{AssetPickerModal, AssetSelection};
 use crate::router::Route;
 /// 跨子组件共享的页面状态：刷新代际、操作提示、编辑目标。
 ///

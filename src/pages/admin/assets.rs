@@ -22,6 +22,7 @@ use crate::api::assets::{
 };
 #[cfg(target_arch = "wasm32")]
 use crate::api::assets::{BatchDeleteAssetsResponse, PurgeOrphansResponse, RebuildAssetsResponse};
+use crate::components::assets::AssetUploadModal;
 use crate::components::empty_state::EmptyState;
 use crate::components::forms::FormInput;
 use crate::components::skeletons::assets_skeleton::AssetsSkeleton;
@@ -30,8 +31,8 @@ use crate::components::ui::{FilterTabs, Pagination, Popover, BADGE_BASE, MEDIA_B
 #[cfg(target_arch = "wasm32")]
 use crate::models::asset::{AssetFilter, AssetSort};
 use crate::models::asset::{AssetRef, AssetRefPostStatus};
-use crate::pages::admin::asset_upload::AssetUploadModal;
 use crate::router::Route;
+use crate::utils::format_bytes;
 #[cfg(target_arch = "wasm32")]
 use crate::utils::js::invoke_optional_global;
 use std::collections::HashSet;
@@ -48,24 +49,6 @@ const SEARCH_DEBOUNCE_MS: u32 = 300;
 /// 退出动画放完后由 spawn 真正摘除节点（仅 wasm 端的延时任务引用，server 编译门控掉）。
 #[cfg(target_arch = "wasm32")]
 const BANNER_EXIT_MS: u32 = 200;
-
-/// 格式化字节数为可读字符串（B/KB/MB/GB）。
-/// pub(super)：asset_upload 的上传列表复用同一份格式化（不新增第三份拷贝）。
-pub(super) fn format_bytes(bytes: i64) -> String {
-    const KB: f64 = 1024.0;
-    const MB: f64 = KB * 1024.0;
-    const GB: f64 = MB * 1024.0;
-    let b = bytes as f64;
-    if b >= GB {
-        format!("{:.1} GB", b / GB)
-    } else if b >= MB {
-        format!("{:.1} MB", b / MB)
-    } else if b >= KB {
-        format!("{:.1} KB", b / KB)
-    } else {
-        format!("{} B", bytes)
-    }
-}
 
 // —— 引用明细浮层 ——
 

@@ -20,3 +20,6 @@ pub mod post_purge;
 /// 定时删除已过期会话，避免 `sessions` 表无限增长。
 #[cfg(feature = "server")]
 pub mod session_cleanup;
+/// sysinfo 主机指标（CPU/内存/磁盘）后台采样，server function 只读快照。
+#[cfg(feature = "server")]
+pub mod sysinfo_sampler;

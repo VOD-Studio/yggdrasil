@@ -1,7 +1,7 @@
 //! 文章编辑器页面。
 //!
 //! 提供新建文章与编辑文章两种模式，使用基于 Tiptap 的富文本编辑器。
-//! 编辑器通过 [`crate::tiptap_bridge`] 的 wasm-bindgen 绑定在 WASM 前端初始化，
+//! 编辑器通过 [`crate::bridges::tiptap`] 的 wasm-bindgen 绑定在 WASM 前端初始化，
 //! 并与 `window.TiptapEditor` 实例交互，实现 Markdown 内容回填、图片上传与组件卸载时的清理。
 
 #![allow(unused_imports)]
@@ -16,15 +16,15 @@ use crate::api::posts::{
     create_post, get_post_by_id, update_post, CreatePostResponse, SinglePostResponse,
 };
 #[cfg(target_arch = "wasm32")]
-use crate::tiptap_bridge::{consume_upload_event, upload_image_file, EditorHandle};
+use crate::bridges::tiptap::{consume_upload_event, upload_image_file, EditorHandle};
 // 共享上传状态类型：两端都编译（rsx 在 server SSR 时也要渲染这些结构）。
+use crate::bridges::tiptap::{UploadErrorEntry, UploadsInFlight};
+use crate::components::assets::{AssetPickerModal, AssetSelection};
 use crate::components::forms::{FormInput, FormSelect, INPUT_INLINE_CLASS};
+use crate::components::skeletons::write_skeleton::WriteSkeleton;
 use crate::components::ui::{LoadingButton, BTN_CLOSE_ICON, BTN_PRIMARY_SM};
-use crate::components::write_skeleton::WriteSkeleton;
 use crate::models::post::Post;
-use crate::pages::admin::asset_picker::{AssetPickerModal, AssetSelection};
 use crate::router::Route;
-use crate::tiptap_bridge::{UploadErrorEntry, UploadsInFlight};
 use dioxus::router::components::Link;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::closure::Closure;
@@ -62,7 +62,7 @@ pub fn WriteEdit(id: i32) -> Element {
 ///
 /// 负责：
 /// - 编辑模式下通过 server function 拉取文章数据；
-/// - 在 WASM 前端通过 tiptap_bridge 的 closure 回调初始化 Tiptap 富文本编辑器；
+/// - 在 WASM 前端通过 bridges::tiptap 的 closure 回调初始化 Tiptap 富文本编辑器；
 /// - 编辑模式下将 Markdown 内容回填到编辑器；
 /// - 提交时读取编辑器 Markdown、校验并调用 create_post / update_post；
 /// - 组件卸载时销毁 Tiptap 实例（EditorHandle::drop 自动 destroy + 释放 closure）。
@@ -207,16 +207,16 @@ fn write_editor(post_id: Option<i32>) -> Element {
             let mut ready = ready;
             move || ready.set(true)
         });
-        let on_image_upload = crate::tiptap_bridge::make_upload_closure();
+        let on_image_upload = crate::bridges::tiptap::make_upload_closure();
         let on_upload_event = Closure::new({
             let uploads_in_flight = uploads_in_flight;
             let upload_errors = upload_errors;
-            move |ev: crate::tiptap_bridge::UploadEventJs| {
+            move |ev: crate::bridges::tiptap::UploadEventJs| {
                 consume_upload_event(&ev, uploads_in_flight, upload_errors);
             }
         });
         // 运行代码 closure：start_exec + 轮询，结果字符串回填 JS 结果区 DOM。
-        let on_run_code = crate::tiptap_bridge::make_run_code_closure();
+        let on_run_code = crate::bridges::tiptap::make_run_code_closure();
         // slash 命令「素材库」closure：打开正文素材选择弹窗
         // （JS 侧已删掉 /命令 文本；选中回填由弹窗 on_select 完成）。
         let on_pick_from_library = Closure::new({
@@ -225,7 +225,7 @@ fn write_editor(post_id: Option<i32>) -> Element {
         });
 
         // —— 构造 options ——
-        let opts = crate::tiptap_bridge::EditorOptions::new();
+        let opts = crate::bridges::tiptap::EditorOptions::new();
         opts.set_placeholder("在此输入内容...");
         opts.set_on_update(&on_update);
         opts.set_on_ready(&on_ready);
@@ -235,7 +235,7 @@ fn write_editor(post_id: Option<i32>) -> Element {
         opts.set_on_pick_from_library(&on_pick_from_library);
 
         // —— create（同步返回；找不到容器返回 None，构造失败抛异常）——
-        match crate::tiptap_bridge::get_module().create("tiptap-editor", &opts) {
+        match crate::bridges::tiptap::get_module().create("tiptap-editor", &opts) {
             Ok(Some(inst)) => {
                 // 编辑模式回填：create 成功立即回填（实例已创建，时机确定）。
                 // 直接从 edit_post 取 content_md：本 effect 已在上面 guard 了 edit_post.is_none()，

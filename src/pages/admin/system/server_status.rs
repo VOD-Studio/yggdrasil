@@ -7,7 +7,7 @@ use crate::components::skeletons::atoms::SkeletonBox;
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::ui::LoadingButton;
 
-use super::format_bytes;
+use crate::utils::format_bytes;
 
 /// 秒数 → 人类可读运行时间（如 1d 2h 3m）。
 fn format_uptime(secs: u64) -> String {

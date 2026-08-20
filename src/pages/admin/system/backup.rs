@@ -4,7 +4,7 @@ use dioxus::prelude::*;
 
 use crate::components::ui::{LoadingButton, BTN_GHOST, BTN_OUTLINE, BTN_TEXT_AMBER, BTN_TEXT_RED};
 
-use super::format_bytes;
+use crate::utils::format_bytes;
 
 /// 备份恢复 tab：备份按钮 + 进度轮询 + 备份列表（下载/恢复/删除）。
 #[allow(non_snake_case)]

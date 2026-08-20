@@ -571,7 +571,7 @@ impl RateLimitSettings {
 // WebP 编码配置（需重启生效）
 // ============================================================================
 //
-// 原本经环境变量在首启读取（src/webp.rs 的 WEBP_QUALITY / WEBP_METHOD）。
+// 原本经环境变量在首启读取（src/infra/webp.rs 的 WEBP_QUALITY / WEBP_METHOD）。
 // 迁移到 settings 表后：env 首启播种 DB（ON CONFLICT DO NOTHING），之后面板值
 // 优先。这些值在进程启动时烘焙进 LazyLock 静态量，改 DB 值后需重启才生效。
 

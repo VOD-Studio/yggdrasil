@@ -7,7 +7,7 @@ use crate::components::skeletons::atoms::SkeletonBox;
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::ui::LoadingButton;
 
-use super::format_bytes;
+use crate::utils::format_bytes;
 
 /// 自动刷新间隔可选项（秒；None = 手动）。
 const REFRESH_INTERVAL_OPTIONS: &[(Option<u32>, &str)] = &[

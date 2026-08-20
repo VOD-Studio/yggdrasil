@@ -9,10 +9,10 @@
 use dioxus::prelude::*;
 
 use crate::api::comments::create_comment;
+use crate::bridges::tiptap::{UploadErrorEntry, UploadsInFlight};
 use crate::components::comments::section::CommentContext;
 use crate::components::forms::AlertBox;
 use crate::components::ui::{UserAvatar, BTN_PRIMARY_SM, SPINNER_SVG};
-use crate::tiptap_bridge::{UploadErrorEntry, UploadsInFlight};
 use crate::utils::comment_storage::{self, PendingComment};
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::closure::Closure;
@@ -93,7 +93,8 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
 
     // 编辑器实例句柄（WASM 端）：持有 JS 实例与全部 closure，drop 时销毁。
     #[cfg(target_arch = "wasm32")]
-    let mut editor_handle: Signal<Option<crate::tiptap_bridge::EditorHandle>> = use_signal(|| None);
+    let mut editor_handle: Signal<Option<crate::bridges::tiptap::EditorHandle>> =
+        use_signal(|| None);
 
     // 挂载/销毁编辑器。顶层表单立即挂载；回复表单随 active_reply 激活挂载、
     // 取消时销毁（容器 div 随 rsx 早退消失，JS 实例必须同步回收）。
@@ -125,10 +126,10 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
             move |md: String| content_md.set(md)
         });
         let on_ready = Closure::new(|| {});
-        let on_image_upload = crate::tiptap_bridge::make_comment_upload_closure();
+        let on_image_upload = crate::bridges::tiptap::make_comment_upload_closure();
         let on_upload_event = Closure::new({
             let mut message = message;
-            move |ev: crate::tiptap_bridge::UploadEventJs| {
+            move |ev: crate::bridges::tiptap::UploadEventJs| {
                 // 失败时借表单 AlertBox 同步一行错误（编辑器内错误态为主，
                 // 这里兜底可见性）；成功/移除时若当前消息恰是上传错误则清除。
                 match ev.kind().as_str() {
@@ -147,11 +148,11 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
                     }
                     _ => {}
                 }
-                crate::tiptap_bridge::consume_upload_event(&ev, uploads_in_flight, upload_errors);
+                crate::bridges::tiptap::consume_upload_event(&ev, uploads_in_flight, upload_errors);
             }
         });
 
-        let opts = crate::tiptap_bridge::EditorOptions::new();
+        let opts = crate::bridges::tiptap::EditorOptions::new();
         opts.set_variant("comment");
         opts.set_placeholder(if is_reply {
             "写下你的回复..."
@@ -164,7 +165,7 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
         opts.set_on_upload_event(&on_upload_event);
 
         // create 同步返回；找不到容器返回 None（rsx 早退时容器不在 DOM）。
-        match crate::tiptap_bridge::get_module().create(&editor_dom_id, &opts) {
+        match crate::bridges::tiptap::get_module().create(&editor_dom_id, &opts) {
             Ok(Some(inst)) => {
                 // 草稿回填：回复表单取消再激活时恢复 content_md（组件未卸载，
                 // signal 持久）。顶层表单为空字符串时 no-op。
@@ -172,7 +173,7 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
                 if !draft.is_empty() {
                     inst.set_markdown(&draft);
                 }
-                let handle = crate::tiptap_bridge::EditorHandle::new_comment(
+                let handle = crate::bridges::tiptap::EditorHandle::new_comment(
                     inst,
                     on_update,
                     on_image_upload,

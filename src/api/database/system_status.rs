@@ -3,7 +3,7 @@
 //! 服务器状态聚合查询（只读）：应用内指标 + 主机层指标。
 //!
 //! 应用内：DB 连接池、moka 缓存命中率、活跃会话数、进程运行时间。
-//! 主机层：sysinfo 后台采样快照（CPU/内存/磁盘/load），由 [`crate::sysinfo_sampler`] 维护。
+//! 主机层：sysinfo 后台采样快照（CPU/内存/磁盘/load），由 [`crate::tasks::sysinfo_sampler`] 维护。
 
 use dioxus::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -41,7 +41,7 @@ pub struct ServerStatus {
     /// 有效会话数（sessions 表 expires_at > now()）。
     pub active_sessions: i64,
     /// 主机层指标快照（CPU/内存/磁盘等）。
-    pub host: crate::sysinfo_sampler::SystemSnapshot,
+    pub host: crate::models::system::SystemSnapshot,
     /// 各缓存命中率与条目数。
     pub caches: Vec<CacheStat>,
 }
@@ -83,7 +83,7 @@ pub async fn get_server_status() -> Result<ServerStatus, ServerFnError> {
         let uptime_secs = STARTED_AT.elapsed().as_secs();
 
         // 主机层快照
-        let host = crate::sysinfo_sampler::read_snapshot().await;
+        let host = crate::tasks::sysinfo_sampler::read_snapshot().await;
 
         // 缓存统计
         let caches = cache_stats()
@@ -117,7 +117,7 @@ pub async fn get_server_status() -> Result<ServerStatus, ServerFnError> {
             pool_available: 0,
             pool_waiting: 0,
             active_sessions: 0,
-            host: crate::sysinfo_sampler::read_snapshot().await,
+            host: crate::models::system::SystemSnapshot::default(),
             caches: vec![],
         })
     }
