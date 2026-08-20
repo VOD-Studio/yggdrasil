@@ -15,10 +15,23 @@ use crate::components::skeletons::post_card_skeleton::PostCardSkeleton;
 pub fn HomeSkeleton() -> Element {
     rsx! {
         div {
-            // 10 个文章卡片骨架，对齐首页 POSTS_PER_PAGE。
-            for _ in 0..10 {
+            // 列表头部小标占位
+            div { class: "flex items-center justify-between mb-8 pb-3.5 border-b border-[var(--color-paper-border)]/30",
+                div { class: "flex items-center gap-2.5",
+                    SkeletonBox { class: "w-2 h-2 rounded-full" }
+                    SkeletonBox { class: "h-5 w-20 rounded" }
+                }
+                SkeletonBox { class: "h-4 w-14 rounded" }
+            }
+
+            // 第 1 篇作为 Featured 骨架（含封面与大号字形占位）
+            PostCardSkeleton { featured: true, has_cover: true }
+
+            // 后续 9 篇常规卡片骨架
+            for _ in 0..9 {
                 PostCardSkeleton {}
             }
+
             // 分页按钮占位
             div { class: "flex mt-10 mb-6 justify-between",
                 SkeletonBox { class: "h-9 w-24 rounded-full" }

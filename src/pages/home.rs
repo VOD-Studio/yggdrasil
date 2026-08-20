@@ -41,24 +41,130 @@ pub fn HomePage(page: i32) -> Element {
 
     rsx! {
         div { class: "animate-page-enter",
-            HomeInfo {}
+            if current_page == 1 {
+                HomeHero {}
+            } else {
+                HomePaginatedHeader { current_page }
+            }
             HomePosts { current_page }
         }
     }
 }
 
+/// 首页 Hero 组件：现代极简与诗意叙事的视觉锚点。
+#[component]
+fn HomeHero() -> Element {
+    rsx! {
+        div { class: "mt-6 sm:mt-8 mb-12 sm:mb-16 flex flex-col items-start gap-6",
+            // 顶部微标：动态呼吸光标 + 沉静文案
+            div { class: "inline-flex items-center gap-2.5 px-3.5 py-1.5 rounded-full text-xs font-medium bg-[var(--color-paper-accent)]/10 text-[var(--color-paper-accent)] border border-[var(--color-paper-accent)]/20 shadow-xs backdrop-blur-xs",
+                span { class: "relative flex h-2 w-2",
+                    span { class: "animate-ping absolute inline-flex h-full w-full rounded-full bg-[var(--color-paper-accent)] opacity-75" }
+                    span { class: "relative inline-flex rounded-full h-2 w-2 bg-[var(--color-paper-accent)]" }
+                }
+                span { "专注于文字与思考" }
+                span { class: "opacity-40", "·" }
+                span { "Yggdrasil" }
+            }
+
+            // 核心标题与诗意导语
+            div { class: "flex flex-col gap-3.5 max-w-2xl",
+                h1 { class: "text-4xl sm:text-5xl md:text-6xl font-extrabold text-[var(--color-paper-primary)] tracking-tighter leading-[1.1]",
+                    "世界遗忘的，"
+                    br {}
+                    span { class: "text-[var(--color-paper-accent)]", "树记得。" }
+                }
+                p { class: "text-base sm:text-lg text-[var(--color-paper-secondary)] font-normal leading-relaxed mt-1",
+                    "极简、快速、现代。在数字世界树的枝叶间，拾取并珍藏每一篇文字、代码与思考。"
+                }
+            }
+
+            // 快速探索栏（胶囊导航）
+            div { class: "w-full pt-2 flex flex-wrap items-center gap-2.5 sm:gap-3 text-xs font-medium",
+                Link {
+                    to: Route::Search {},
+                    class: "inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[var(--color-paper-entry)] hover:bg-[var(--color-paper-border)]/60 text-[var(--color-paper-primary)] border border-[var(--color-paper-border)]/50 transition-all duration-200 active:scale-[0.98] shadow-xs group",
+                    svg {
+                        class: "w-3.5 h-3.5 text-[var(--color-paper-accent)] group-hover:scale-110 transition-transform",
+                        fill: "currentColor",
+                        view_box: "0 -960 960 960",
+                        path { d: "M784-120 532-372q-30 24-69 38t-83 14q-109 0-184.5-75.5T120-580q0-109 75.5-184.5T380-840q109 0 184.5 75.5T640-580q0 44-14 83t-38 69l252 252-56 56ZM380-400q75 0 127.5-52.5T560-580q0-75-52.5-127.5T380-760q-75 0-127.5 52.5T200-580q0 75 52.5 127.5T380-400Z" }
+                    }
+                    span { "搜索文章" }
+                }
+                Link {
+                    to: Route::Archives {},
+                    class: "inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[var(--color-paper-entry)] hover:bg-[var(--color-paper-border)]/60 text-[var(--color-paper-secondary)] hover:text-[var(--color-paper-primary)] border border-[var(--color-paper-border)]/40 transition-all duration-200 active:scale-[0.98] group",
+                    svg {
+                        class: "w-3.5 h-3.5 text-[var(--color-paper-tertiary)] group-hover:text-[var(--color-paper-accent)] transition-colors",
+                        fill: "none",
+                        stroke: "currentColor",
+                        stroke_width: "2",
+                        stroke_linecap: "round",
+                        stroke_linejoin: "round",
+                        view_box: "0 0 24 24",
+                        path { d: "M3 4v16a2 2 0 002 2h14a2 2 0 002-2V4M3 4h18M3 4l3-3h12l3 3M10 12h4" }
+                    }
+                    span { "时间归档" }
+                }
+                Link {
+                    to: Route::Tags {},
+                    class: "inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[var(--color-paper-entry)] hover:bg-[var(--color-paper-border)]/60 text-[var(--color-paper-secondary)] hover:text-[var(--color-paper-primary)] border border-[var(--color-paper-border)]/40 transition-all duration-200 active:scale-[0.98] group",
+                    svg {
+                        class: "w-3.5 h-3.5 text-[var(--color-paper-tertiary)] group-hover:text-[var(--color-paper-accent)] transition-colors",
+                        fill: "none",
+                        stroke: "currentColor",
+                        stroke_width: "2",
+                        stroke_linecap: "round",
+                        stroke_linejoin: "round",
+                        view_box: "0 0 24 24",
+                        path { d: "M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" }
+                    }
+                    span { "分类标签" }
+                }
+                Link {
+                    to: Route::Friends {},
+                    class: "inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[var(--color-paper-entry)] hover:bg-[var(--color-paper-border)]/60 text-[var(--color-paper-secondary)] hover:text-[var(--color-paper-primary)] border border-[var(--color-paper-border)]/40 transition-all duration-200 active:scale-[0.98] group",
+                    svg {
+                        class: "w-3.5 h-3.5 text-[var(--color-paper-tertiary)] group-hover:text-[var(--color-paper-accent)] transition-colors",
+                        fill: "none",
+                        stroke: "currentColor",
+                        stroke_width: "2",
+                        stroke_linecap: "round",
+                        stroke_linejoin: "round",
+                        view_box: "0 0 24 24",
+                        path { d: "M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" }
+                    }
+                    span { "朋友们" }
+                }
+            }
+        }
+    }
+}
+
+/// 首页分页头部：在翻页模式下呈现精简的面包屑导航。
+#[component]
+fn HomePaginatedHeader(current_page: i32) -> Element {
+    rsx! {
+        div { class: "mt-4 mb-10 flex items-center justify-between pb-5 border-b border-[var(--color-paper-border)]/60",
+            div { class: "flex items-baseline gap-3",
+                h1 { class: "text-2xl sm:text-3xl font-extrabold tracking-tight text-[var(--color-paper-primary)]",
+                    "文章列表"
+                }
+                span { class: "text-sm text-[var(--color-paper-secondary)] font-medium",
+                    "第 {current_page} 页"
+                }
+            }
+            Link {
+                to: Route::Home {},
+                class: "text-xs font-semibold text-[var(--color-paper-accent)] hover:underline inline-flex items-center gap-1 transition-colors",
+                "← 返回首页"
+            }
+        }
+    }
+}
+
 /// 首页文章列表与分页展示组件。
-///
-/// 通过 `use_server_future` 异步获取当前页文章；
-/// 加载中显示骨架屏，加载失败显示错误提示，成功则渲染文章卡片与分页。
-///
-/// # 反应式取数
-/// 同 `post_detail.rs`：`current_page` 是普通 `i32` prop，被 `move` 进
-/// `use_server_future` 闭包后成为冻结快照，读取它不建立反应式订阅。因此
-/// `/page/1 → /page/2`（同为 `Route::HomePage` 变体，复用组件实例）这样的
-/// 同变体分页导航无法触发 future 重跑。修复方式：在闭包内通过
-/// `router().current::<Route>()` 读取当前 page，建立订阅，路由变化即重跑。
-/// `Home`（`/`）调用时路由变体无 page 字段，兜底用传入的 `current_page`。
 #[component]
 fn HomePosts(current_page: i32) -> Element {
     let router = dioxus::router::router();
@@ -81,21 +187,30 @@ fn HomePosts(current_page: i32) -> Element {
     match posts_data {
         Some(Ok((posts, total))) => {
             rsx! {
-                for post in posts.iter() {
-                    PostCard { key: "{post.id}", post: post.clone() }
-                }
-                // total == 0 表示站点确实无文章：显示空状态，且不渲染分页。
-                // 注意：total > 0 但 posts 为空（如越界页码 /page/9999）也不显示空状态，
-                // 避免误导用户以为站点无内容；此时仅靠下方的分页导航引导回有效页。
-                if total == 0 {
-                    EmptyState {
-                        title: "还没有文章",
-                        description: "这里会收集你写下的每一篇文字。",
-                    }
-                }
-                // 仅在有文章时渲染分页导航，避免越界页码下出现孤立的空分页。
-                // frontend variant 不渲染页码计数，unit 不显示（仅满足必填 prop）。
                 if total > 0 {
+                    // 列表前置小标题
+                    div { class: "flex items-center justify-between mb-8 pb-3.5 border-b border-[var(--color-paper-border)]/30",
+                        div { class: "flex items-center gap-2.5",
+                            span { class: "w-2 h-2 rounded-full bg-[var(--color-paper-accent)]" }
+                            h2 { class: "text-base sm:text-lg font-bold text-[var(--color-paper-primary)] tracking-tight",
+                                if current_page == 1 { "最新发布" } else { "文章列表" }
+                            }
+                        }
+                        span { class: "text-xs text-[var(--color-paper-tertiary)] font-mono",
+                            "共 {total} 篇"
+                        }
+                    }
+
+                    // 文章卡片列表：第 1 页的第一篇若存在，作为 Featured 头条渲染
+                    for (index, post) in posts.iter().enumerate() {
+                        PostCard {
+                            key: "{post.id}",
+                            post: post.clone(),
+                            featured: current_page == 1 && index == 0,
+                        }
+                    }
+
+                    // 分页导航
                     Pagination {
                         variant: "frontend",
                         current_page,
@@ -109,6 +224,11 @@ fn HomePosts(current_page: i32) -> Element {
                         },
                         unit: "篇",
                     }
+                } else {
+                    EmptyState {
+                        title: "还没有文章",
+                        description: "这里会收集你写下的每一篇文字与思考。",
+                    }
                 }
             }
         }
@@ -121,21 +241,6 @@ fn HomePosts(current_page: i32) -> Element {
         _ => {
             rsx! {
                 DelayedSkeleton { HomeSkeleton {} }
-            }
-        }
-    }
-}
-
-/// 首页头部信息组件，展示站点名称与副标题。
-#[component]
-fn HomeInfo() -> Element {
-    rsx! {
-        div { class: "mt-12 mb-20 flex flex-col items-start gap-4",
-            h1 { class: "text-6xl md:text-[5rem] font-extrabold text-[var(--color-paper-primary)] tracking-tighter leading-none",
-                "Yggdrasil."
-            }
-            p { class: "text-lg md:text-xl text-[var(--color-paper-secondary)] font-medium max-w-lg leading-relaxed",
-                "极简、快速、现代。专注于文字本身的开源博客平台。"
             }
         }
     }
