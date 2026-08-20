@@ -16,7 +16,7 @@ pub fn HomeSkeleton() -> Element {
     rsx! {
         div {
             // 列表头部小标占位
-            div { class: "flex items-center justify-between mb-8 pb-3.5 border-b border-[var(--color-paper-border)]/30",
+            div { class: "flex items-center justify-between mb-6",
                 div { class: "flex items-center gap-2.5",
                     SkeletonBox { class: "w-2 h-2 rounded-full" }
                     SkeletonBox { class: "h-5 w-20 rounded" }

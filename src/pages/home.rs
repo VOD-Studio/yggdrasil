@@ -189,7 +189,7 @@ fn HomePosts(current_page: i32) -> Element {
             rsx! {
                 if total > 0 {
                     // 列表前置小标题
-                    div { class: "flex items-center justify-between mb-8 pb-3.5 border-b border-[var(--color-paper-border)]/30",
+                    div { class: "flex items-center justify-between mb-6",
                         div { class: "flex items-center gap-2.5",
                             span { class: "w-2 h-2 rounded-full bg-[var(--color-paper-accent)]" }
                             h2 { class: "text-base sm:text-lg font-bold text-[var(--color-paper-primary)] tracking-tight",
