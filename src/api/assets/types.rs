@@ -30,7 +30,7 @@ pub struct AssetListResponse {
 pub struct AssetOpResponse {
     pub success: bool,
     pub message: String,
-    /// 删除被拦截时的引用文章列表（post_id, title）。
+    /// 删除被拦截时的文章引用列表（仅 Post 变体；前端以非空判定业务拒绝）。
     pub refs: Vec<crate::models::asset::AssetRef>,
 }
 

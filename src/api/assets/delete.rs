@@ -56,7 +56,7 @@ pub async fn delete_asset(id: String) -> Result<AssetOpResponse, ServerFnError> 
         use crate::api::auth::get_current_admin_user;
         use crate::api::error::AppError;
         use crate::db::pool::get_conn;
-        use crate::models::asset::AssetRef;
+        use crate::models::asset::{AssetRef, AssetRefPostStatus};
 
         let _admin = get_current_admin_user().await?;
         let client = get_conn().await.map_err(AppError::db_conn)?;
@@ -81,7 +81,8 @@ pub async fn delete_asset(id: String) -> Result<AssetOpResponse, ServerFnError> 
         // 引用检查：含回收站文章（其 purge 时 refs 级联删，图自然变孤儿）。
         let ref_rows = client
             .query(
-                "SELECT p.id, p.title FROM asset_refs r JOIN posts p ON p.id = r.post_id \
+                "SELECT p.id, p.title, p.slug, p.status, p.deleted_at \
+                 FROM asset_refs r JOIN posts p ON p.id = r.post_id \
                  WHERE r.asset_id = $1 ORDER BY p.id",
                 &[&asset_uuid],
             )
@@ -90,9 +91,17 @@ pub async fn delete_asset(id: String) -> Result<AssetOpResponse, ServerFnError> 
         if !ref_rows.is_empty() {
             let refs: Vec<AssetRef> = ref_rows
                 .iter()
-                .map(|r| AssetRef {
-                    post_id: r.get(0),
-                    title: r.get(1),
+                .map(|r| {
+                    let status = AssetRefPostStatus::resolve(
+                        r.get::<_, &str>(3),
+                        r.get::<_, Option<chrono::DateTime<chrono::Utc>>>(4),
+                    );
+                    AssetRef::Post {
+                        post_id: r.get(0),
+                        title: r.get(1),
+                        slug: r.get(2),
+                        status,
+                    }
                 })
                 .collect();
             return Ok(AssetOpResponse {
