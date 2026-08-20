@@ -7,8 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- **CI 双机并行部署**：xun 与 rua 拆为独立 job，在 GHCR 镜像发布完成后并行拉取并滚动重启；runner 镜像改用公开 `ghcr.io/vod-studio/yggdrasil:runner-*` 标签，避免独立私有包无法匿名拉取。
-- **CI runner 镜像完整性门禁**：发布任务在跳过构建前核对 GHCR 的 6 个 runner tag；部署前核对 xun 本地最终 tag，缺失时阻止 app 重启，避免 CI 绿色但线上代码运行器返回 404。
+## [0.12.1] - 2026-08-20
+
+### Added
+
+- **素材引用明细浮层**：素材管理支持查看文章、评论和头像的全部引用来源。
+
+### Fixed
+
+- 修复素材引用统计未计入头像图片。
+- **CI 双机并行部署**：xun 与 rua 拆为独立 job，在 GHCR 镜像发布后并行拉取并滚动重启；runner 镜像改用公开标签，避免独立私有包无法匿名拉取。
+- **CI runner 镜像完整性门禁**：发布任务核对 GHCR 的 6 个 runner tag，部署前核对 xun 本地最终 tag，缺失时阻止 app 重启，避免代码运行器返回 404。
 
 ## [0.12.0] - 2026-08-19
 
