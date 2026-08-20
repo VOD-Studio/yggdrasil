@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **CI 双机并行部署**：xun 与 rua 拆为独立 job，在 GHCR 镜像发布完成后并行拉取并滚动重启；runner 镜像改用公开 `ghcr.io/vod-studio/yggdrasil:runner-*` 标签，避免独立私有包无法匿名拉取。
+
 ## [0.12.0] - 2026-08-19
 
 ### Added

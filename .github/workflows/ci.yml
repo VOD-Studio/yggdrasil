@@ -10,7 +10,7 @@ name: CI
 # - 仅 push 新 tag（v*）或手动触发时：
 #     build-arm64（原生 ubuntu-24.04-arm runner）
 #     release（amd64 镜像 + arm64 镜像 + x86_64 musl 二进制 发布到 GitHub Release）
-#     deploy（xun 从 GHCR 拉取 app + runner 镜像滚动重启；可选 rua 副本受 RUA_DEPLOY_ENABLED 门控）
+#     deploy-xun + deploy-rua（两台并行从 GHCR 拉取镜像并滚动重启；rua 受 RUA_DEPLOY_ENABLED 门控）
 on:
   push:
   pull_request:
@@ -403,8 +403,8 @@ jobs:
 
   # ── publish-ghcr：合并 amd64 + arm64 为多架构 manifest 推 GHCR（部署镜像源）──
   # 每次 tag 或手动触发归档一个多架构 manifest，tag 命名 latest(最新) / vX.Y.Z(git tag) /
-  # sha-xxxxxxx(可追溯某次构建)。下方 deploy job 直接从 GHCR 拉取 latest 部署到 xun
-  # （pull-based，不再 scp tarball），故本 job 是部署链路的前置依赖（deploy needs: publish-ghcr）。
+  # sha-xxxxxxx(可追溯某次构建)。下方 deploy-xun/deploy-rua jobs 直接从 GHCR 拉取部署
+  # （pull-based，不再 scp tarball），故本 job 是部署链路的前置依赖。
   # 流程：下载两个单架构 artifact → load → retag → push 单架构(带 sha 后缀) →
   # docker manifest create 合并(从 registry 引用) → push manifest list。
   publish-ghcr:
@@ -474,8 +474,8 @@ jobs:
   # 用普通 `docker build` 而非 buildx：docker-container driver 的 buildx 实例与本地
   # daemon 隔离，本地 load 的 base 在 buildx 里不可见，子镜像 FROM 会失败；普通
   # docker build 走本地 daemon，base 先进 daemon，子镜像 FROM 即可解析。
-  # 下方 deploy job 从 GHCR 拉取这 6 个 runner 镜像并 tag 成 LANGUAGES 注册表硬编码的
-  # 短名（best-effort，拉取失败仅保留旧 tag）。本地构建+scp 兜底见 scripts/xun.fish。
+  # 下方 deploy-xun job 从同一个公开 GHCR 包拉取这 6 个 runner 镜像，并 tag 成
+  # LANGUAGES 注册表硬编码的短名（runner-* 标签避免独立私有包无法匿名拉取）。
   publish-runners:
     runs-on: ubuntu-latest
     needs: [test, lint-js, check-wasm]
@@ -522,41 +522,27 @@ jobs:
           OWNER: ${{ github.repository_owner }}
         run: |
           OWNER="$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')"
-          REG="ghcr.io/${OWNER}"
+          IMAGE="ghcr.io/${OWNER}/yggdrasil"
           SHA="$(echo '${{ github.sha }}' | cut -c1-7)"
-          TAGS="latest sha-${SHA}"
-          [ "${GITHUB_REF_TYPE}" = "tag" ] && TAGS="${TAGS} ${GITHUB_REF_NAME}"
           docker build --platform linux/amd64 -t yggdrasil-runner-base docker/runner-base
           for img in base python node go rust bun; do
             [ "$img" != "base" ] && docker build --platform linux/amd64 -t "yggdrasil-runner-${img}" "docker/runner-${img}"
+            TAGS="runner-${img} runner-${img}-sha-${SHA}"
+            [ "${GITHUB_REF_TYPE}" = "tag" ] && TAGS="${TAGS} runner-${img}-${GITHUB_REF_NAME}"
             for t in $TAGS; do
-              docker tag "yggdrasil-runner-${img}" "${REG}/yggdrasil-runner-${img}:${t}"
-              docker push "${REG}/yggdrasil-runner-${img}:${t}"
+              docker tag "yggdrasil-runner-${img}" "${IMAGE}:${t}"
+              docker push "${IMAGE}:${t}"
             done
-            echo "==> pushed ${REG}/yggdrasil-runner-${img} ← ${TAGS}"
+            echo "==> pushed ${IMAGE}:runner-${img} (+ sha/tag aliases)"
           done
 
-  # ── deploy：xun 从 GHCR 拉取镜像后滚动重启（pull-based，不再 scp tarball）──
+  # ── deploy-xun：从 GHCR 拉取镜像后滚动重启（pull-based，不再 scp tarball）──
   # 仅 push 新 tag（v*）或手动触发时运行（分支推送/PR 不部署）。
-  # 依赖 publish-ghcr + publish-runners：镜像须先入 GHCR 才能拉取（两者并行构建，
-  # deploy 等它们都完成以避免拉取与推送并发竞争同一 tag）。
-  #   - 主应用：publish-ghcr 推 multi-arch manifest(latest)，xun(amd64) 拉取自动解析到
-  #     amd64，再 tag 成 localhost/yggdrasil:latest（xun 的 compose app.image 即此名，无需改 compose）。
-  #   - runner：publish-runners 推 amd64 单架构，拉取后 tag 成 LANGUAGES 注册表硬编码的
-  #     短名 yggdrasil-runner-*:latest（无 registry 前缀）。runner 拉取 best-effort——失败
-  #     仅告警保留旧 tag，绝不阻断 app 部署（app 上线是关键路径）。
-  # GHCR 容器包一律默认 private（与仓库可见性无关，GITHUB_TOKEN 首推不继承 public）；
-  # 本包已在 package settings 手动改为 public → xun/rua 匿名拉取即可。若日后改回
-  # private，需在 xun 一次性 `docker login ghcr.io`（PAT read:packages）。拉取带 3 次重试
-  # （xun 中国网络访问 ghcr.io 偶发超时）。本地构建+scp 兜底仍见 scripts/xun.fish。
-  # rua（腾讯云 DR 副本，scripts/both.fish 的 REPLICA）也接入自动部署：xun 主路径完成
-  # 且健康检查通过后，再 SSH 到 rua 用 **podman**（非 docker）拉主应用镜像并 compose up。
-  # rua 只拉主应用、不带 runner（rua 内存不够跑沙箱）；其 app 经 pg-tunnel 连 xun 的 PG
-  # （只读副本，迁移恒为 up to date，无需单独迁移）。rua 步骤受 repo 变量 RUA_DEPLOY_ENABLED=true
-  # 控制（未设则跳过，行为与无 rua 完全一致）；失败 best-effort 不阻断作业（continue-on-error）。
-  # 所需 secrets：RUA_SSH_KEY / RUA_HOST / RUA_USER（必填，启用后）、RUA_PORT（默认 29888）、
-  # RUA_DEPLOY_DIR（默认 /root/docker/yggdrasil）、RUA_KNOWN_HOSTS（可选，pin 指纹）。手动兜底见 scripts/both.fish。
-  deploy:
+  # 主应用由 publish-ghcr 提供 multi-arch latest，xun 自动拉取 amd64；runner 由
+  # publish-runners 推入同一个公开 yggdrasil 包的 runner-* 标签。runner 拉取
+  # best-effort——失败仅告警保留旧 tag，绝不阻断 app 部署。
+  # deploy-xun 与 deploy-rua 是独立 job，均在镜像发布完成后启动，因此两台并行部署。
+  deploy-xun:
     runs-on: ubuntu-latest
     needs: [publish-ghcr, publish-runners]
     if: >-
@@ -573,9 +559,7 @@ jobs:
           : "${XUN_HOST:?secret XUN_HOST 未设置}"
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
           # keepalive：xun 拉镜像期间 SSH 会话长时间无输出，路径上防火墙/NAT 掐掉
-          # 空闲连接（v0.11.0 deploy 在 blob 下载 4m17s 后 broken pipe）。30s 加密
-          # 通道探活维持 NAT 状态；容 10 次未响应（~5 分钟真断网才放弃）。
-          # Host * 覆盖本 job 全部 ssh 调用（xun 与 rua 副本共用同一 runner home）。
+          # 空闲连接；30s 加密通道探活，容 10 次未响应（约 5 分钟真断网才放弃）。
           cat > ~/.ssh/config <<'SSHCONF'
           Host *
             ServerAliveInterval 30
@@ -592,9 +576,8 @@ jobs:
           fi
           chmod 644 ~/.ssh/known_hosts
 
-      # 整段部署脚本以 quoted heredoc（<<'REMOTE'）经 ssh 管道送入 xun 的 bash -s，
-      # 脚本体不在 runner 侧展开（\$img/\$i 等全留给远端 bash 求值）；REG/部署目录作为
-      # 位置参数 $1/$2 传入——绕开 xun 的 fish 默认 shell + 嵌套引号转义地狱。
+      # quoted heredoc 经 ssh 'bash -s' 送入 xun，REG/部署目录作为位置参数传入，
+      # 绕开 xun 的 fish 默认 shell 与嵌套引号转义问题。
       - name: Pull images from GHCR and restart app
         env:
           XUN_USER: ${{ secrets.XUN_USER }}
@@ -612,7 +595,7 @@ jobs:
           REG="$1"
           DIR="$2"
 
-          # 带重试的拉取：xun(中国) 访问 ghcr.io 偶发超时。
+          # 带重试的拉取：xun(中国)访问 ghcr.io 偶发超时。
           pull_retry() {
             local img="$1" i
             for i in 1 2 3; do
@@ -633,18 +616,18 @@ jobs:
 
           echo "==> [3/3] pull + tag runner images (best-effort，保留旧 tag 不阻断 app)"
           for img in base python node go rust bun; do
-            if pull_retry "$REG/yggdrasil-runner-$img:latest"; then
-              docker tag "$REG/yggdrasil-runner-$img:latest" "yggdrasil-runner-$img:latest"
+            if pull_retry "$REG/yggdrasil:runner-$img"; then
+              docker tag "$REG/yggdrasil:runner-$img" "yggdrasil-runner-$img:latest"
               echo "  updated yggdrasil-runner-$img"
             else
-              echo "  WARN: pull failed yggdrasil-runner-$img，保留现有 tag"
+              echo "  WARN: pull failed yggdrasil:runner-$img，保留现有 tag"
             fi
           done
 
-          echo "==> pull-based deploy script done"
+          echo "==> pull-based xun deploy script done"
           REMOTE
 
-      # 轮询内部健康端点（经 nginx-proxy 容器访问 app:3000），最多等 ~60s。
+      # 轮询内部健康端点（经 nginx-proxy 容器访问 app:3000），最多等约 60s。
       - name: Health check
         env:
           XUN_USER: ${{ secrets.XUN_USER }}
@@ -665,16 +648,24 @@ jobs:
             sleep 5
           done
           [ "$ok" = "1" ] || { echo "::error::app /readyz 在 60s 内未就绪"; exit 1; }
-          # 容器状态快照（postgres healthy + app up）
           ssh -p "$port" -o BatchMode=yes "${XUN_USER}@${XUN_HOST}" \
             'docker ps --filter name=yggdrasil --format "{{.Names}}\t{{.Status}}"'
 
-      # ── rua（DR 副本）配置 + 部署 + 健康检查：xun 主路径全程成功后才执行。──
-      # 受 repo 变量 RUA_DEPLOY_ENABLED=true 门控；未设则三步全跳过（无 secrets 也不报错）。
-      # rua 用 podman（非 docker），只拉主应用（不带 runner），app 经 pg-tunnel 连 xun PG。
-      # 全部 continue-on-error：DR 副本不可用不应让发版作业变红（warning 即可）。
+  # ── deploy-rua：与 deploy-xun 并行拉取 GHCR 主应用并滚动重启 ──
+  # rua 是腾讯云 DR 副本：只拉主应用，不带 runner；app 经 pg-tunnel 连 xun PG。
+  # 受 repo 变量 RUA_DEPLOY_ENABLED=true 门控；未设则跳过。rua 失败 best-effort，
+  # 不阻断 xun 主部署和发版作业。
+  # 所需 secrets：RUA_SSH_KEY / RUA_HOST / RUA_USER（启用后）、RUA_PORT（默认 29888）、
+  # RUA_DEPLOY_DIR（默认 /root/docker/yggdrasil）、RUA_KNOWN_HOSTS（可选 pin 指纹）。
+  deploy-rua:
+    runs-on: ubuntu-latest
+    needs: [publish-ghcr, publish-runners]
+    if: >-
+      vars.RUA_DEPLOY_ENABLED == 'true'
+      && ((github.event_name == 'push' && startsWith(github.ref, 'refs/tags/'))
+      || github.event_name == 'workflow_dispatch')
+    steps:
       - name: Configure SSH (rua replica)
-        if: vars.RUA_DEPLOY_ENABLED == 'true'
         env:
           RUA_SSH_KEY: ${{ secrets.RUA_SSH_KEY }}
           RUA_HOST: ${{ secrets.RUA_HOST }}
@@ -682,19 +673,20 @@ jobs:
         run: |
           : "${RUA_SSH_KEY:?secret RUA_SSH_KEY 未设置（已启用 RUA_DEPLOY_ENABLED）}"
           : "${RUA_HOST:?secret RUA_HOST 未设置}"
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
           printf '%s\n' "$RUA_SSH_KEY" > ~/.ssh/id_ed25519_rua
           chmod 600 ~/.ssh/id_ed25519_rua
           if [ -n "$RUA_KNOWN_HOSTS" ]; then
-            printf '%s\n' "$RUA_KNOWN_HOSTS" >> ~/.ssh/known_hosts
+            printf '%s\n' "$RUA_KNOWN_HOSTS" > ~/.ssh/known_hosts
           else
             echo "::warning::RUA_KNOWN_HOSTS 未设置，改用 ssh-keyscan（TOFU，建议改为 pin 指纹）"
             ssh-keyscan -H "$RUA_HOST" >> ~/.ssh/known_hosts 2>/dev/null
           fi
+          chmod 644 ~/.ssh/known_hosts
 
-      # 同 xun：quoted heredoc 经 ssh 'bash -s' 送入 rua，REG/部署目录作 $1/$2。
-      # 远端用 podman（rua 是 rootless/rootful podman，非 docker daemon）。
+      # 同 xun：quoted heredoc 经 ssh 'bash -s' 送入 rua，REG/部署目录作为位置参数传入。
+      # 远端用 podman（rua 是 rootful Podman，非 Docker daemon）。
       - name: Pull app image to rua replica and restart
-        if: vars.RUA_DEPLOY_ENABLED == 'true'
         continue-on-error: true
         env:
           RUA_USER: ${{ secrets.RUA_USER }}
@@ -713,7 +705,6 @@ jobs:
           REG="$1"
           DIR="$2"
 
-          # rua 用 podman（非 docker）；中国网络访问 ghcr.io 偶发超时，3 次重试。
           pull_retry() {
             local img="$1" i
             for i in 1 2 3; do
@@ -731,12 +722,11 @@ jobs:
 
           echo "==> [rua] podman compose up -d app (pg-tunnel / pg-standby 不动)"
           cd "$DIR" && podman compose --env-file .env up -d app
-          echo "==> [rua] done"
+          echo "==> pull-based rua deploy script done"
           REMOTE
 
-      # rua 健康检查（经 nginx-proxy 容器访问 app:3000），最多等 ~60s；best-effort。
+      # rua 健康检查（经 nginx-proxy 容器访问 app:3000），最多等约 60s；best-effort。
       - name: Health check (rua replica)
-        if: vars.RUA_DEPLOY_ENABLED == 'true'
         continue-on-error: true
         env:
           RUA_USER: ${{ secrets.RUA_USER }}
