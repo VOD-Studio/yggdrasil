@@ -88,6 +88,7 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "024",
         include_str!("../../migrations/024_comments_user_id.sql"),
     ),
+    ("025", include_str!("../../migrations/025_logs.sql")),
     // 新增迁移在此追加，同时在 migrations/ 下创建对应 .sql 文件。
 ];
 

@@ -12,7 +12,7 @@ use crate::components::frontend_layout::FrontendLayout;
 use crate::context::UserContext;
 use crate::pages::about::About;
 use crate::pages::admin::{
-    Admin, AdminComments, AdminCommentsPage, Assets, FriendsAdmin, Mcp, PostPreview, Posts,
+    Admin, AdminComments, AdminCommentsPage, Assets, FriendsAdmin, Logs, Mcp, PostPreview, Posts,
     PostsTrash, Profile, Runner, SiteSettingsPage, System, Write, WriteEdit,
 };
 use crate::pages::archives::Archives;
@@ -113,6 +113,9 @@ pub enum Route {
         /// MCP 令牌管理 + 客户端配置生成
         #[route("/mcp")]
         Mcp {},
+        /// 运行日志（进程内日志查询 + SSE 实时流 + 导出）
+        #[route("/logs")]
+        Logs {},
         /// 站点配置（页脚 GitHub 链接等公开配置）
         #[route("/settings")]
         SiteSettingsPage {},

@@ -12,6 +12,7 @@ use crate::components::skeletons::assets_skeleton::AssetsSkeleton;
 use crate::components::skeletons::dashboard_skeleton::AdminDashboardSkeleton;
 
 use crate::components::skeletons::friends_admin_skeleton::FriendsAdminSkeleton;
+use crate::components::skeletons::logs_skeleton::LogsSkeleton;
 use crate::components::skeletons::mcp_skeleton::McpSkeleton;
 use crate::components::skeletons::post_preview_skeleton::PostPreviewSkeleton;
 use crate::components::skeletons::posts_skeleton::PostsSkeleton;
@@ -61,7 +62,9 @@ pub fn AdminLayout() -> Element {
     // 需要卡片与 main 只提供有界高度而不滚动。注意不能用 h-full 百分比链条：
     // main 是 flex item 且 min-height:auto，长内容会先把 main 撑大、百分比再相对
     // 撑大后的高度解析，形成循环依赖导致约束失效（实证于限流分区）。
-    let internal_scroll_route = is_write_route || matches!(route, Route::SiteSettingsPage {});
+    let internal_scroll_route = is_write_route
+        || matches!(route, Route::SiteSettingsPage {})
+        || matches!(route, Route::Logs {});
 
     // 所有 admin 页面共用同一 shell:外层圆角卡片(滚动容器) + 内部 main 负责居中限宽。
     // write/settings 路由例外:卡片不滚动(overflow-hidden),main 作为 flex 容器不带头尾 padding,
@@ -262,6 +265,9 @@ fn admin_route_skeleton(route: &Route) -> Element {
         Route::Mcp {} => rsx! {
             McpSkeleton {}
         },
+        Route::Logs {} => rsx! {
+            LogsSkeleton {}
+        },
         Route::SiteSettingsPage {} => rsx! {
             SettingsAdminSkeleton {}
         },
@@ -367,7 +373,7 @@ fn ContentNavGroup() -> Element {
     }
 }
 
-/// 「工具」子菜单组：试运行 / MCP / 系统（issue #26）。
+/// 「工具」子菜单组：设置 / 试运行 / MCP / 日志 / 系统（issue #26）。
 ///
 /// 父项整行点击仅切换展开/收起（不跳转），chevron 旋转 + grid-template-rows
 /// 0fr↔1fr 过渡动画（复用 posts_trash.rs AutoPurgeSettings 的既有模式）。
@@ -380,7 +386,11 @@ fn ToolsNavGroup() -> Element {
     fn in_group(route: &Route) -> bool {
         matches!(
             route,
-            Route::Runner {} | Route::Mcp {} | Route::System {} | Route::SiteSettingsPage {}
+            Route::Runner {}
+                | Route::Mcp {}
+                | Route::System {}
+                | Route::SiteSettingsPage {}
+                | Route::Logs {}
         )
     }
     let group_active = in_group(&route);
@@ -438,6 +448,7 @@ fn ToolsNavGroup() -> Element {
                             ),
                             (Route::Runner {}, "试运行", matches!(route, Route::Runner {})),
                             (Route::Mcp {}, "MCP", matches!(route, Route::Mcp {})),
+                            (Route::Logs {}, "日志", matches!(route, Route::Logs {})),
                             (Route::System {}, "系统", matches!(route, Route::System {})),
                         ]
                         {

@@ -22,6 +22,8 @@ pub mod friends_admin_skeleton;
 pub mod friends_skeleton;
 /// 首页骨架屏组件。
 pub mod home_skeleton;
+/// 后台运行日志骨架屏组件。
+pub mod logs_skeleton;
 /// 后台 MCP 服务骨架屏组件。
 pub mod mcp_skeleton;
 /// 文章卡片骨架屏组件。

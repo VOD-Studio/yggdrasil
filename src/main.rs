@@ -65,12 +65,22 @@ fn main() {
     {
         // 加载 .env 环境变量
         dotenvy::dotenv().ok();
-        // 初始化 tracing 日志，默认级别为 info
-        tracing_subscriber::fmt()
-            .with_env_filter(
-                tracing_subscriber::EnvFilter::try_from_default_env()
-                    .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-            )
+        // 初始化 tracing：registry 组合两个 Layer。
+        // - fmt 层：控制台输出，行为与原 fmt() subscriber 完全一致
+        //   （RUST_LOG / 默认 info 的 EnvFilter 改为 per-layer filter）。
+        // - capture 层：把全部 target 的日志事件经 mpsc 送进日志查看器管道
+        //   （独立 EnvFilter 读 LOG_VIEWER_LEVEL，默认 info，不吃 RUST_LOG）。
+        // capture 层在迁移 runtime 之前安装：启动期日志先进 mpsc 缓冲
+        // （容量 4096），log_writer 启动后批量补写落库。
+        use tracing_subscriber::prelude::*;
+        let fmt_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+        let fmt_layer = tracing_subscriber::fmt::layer().with_filter(fmt_filter);
+        let capture_layer =
+            api::logs::capture::CaptureLayer.with_filter(api::logs::capture::log_viewer_filter());
+        tracing_subscriber::registry()
+            .with(fmt_layer)
+            .with(capture_layer)
             .init();
 
         // 打印构建元信息(版本 / git / 提交时间 / rustc / 编译时刻)。
@@ -303,6 +313,16 @@ fn main() {
                 tasks::orphan_asset_purge::run_purge().await;
             });
 
+            // 启动后台任务：运行日志批量落库（tracing capture → mpsc → logs 表）
+            tokio::spawn(async {
+                tasks::log_writer::run_writer().await;
+            });
+
+            // 启动后台定时任务：运行日志保留策略裁剪（龄期 + 行数上限，设置存 DB）
+            tokio::spawn(async {
+                tasks::log_purge::run_purge().await;
+            });
+
             // 启动后台采样任务：sysinfo 主机指标（CPU/内存/磁盘），server function 只读快照。
             tasks::sysinfo_sampler::spawn_sampler();
 
@@ -434,6 +454,17 @@ fn main() {
                 )
                 .layer(axum::middleware::from_fn(crate::api::csrf::csrf_middleware));
 
+            // 日志实时流 SSE 端点：GET /api/logs/stream?levels=ERROR,WARN&target=X&q=Y
+            // 与 /api/exec/stream 同理：长连接不挂 TimeoutLayer、不挂压缩；
+            // CSRF 对 GET 放行（is_write_method 返回 false）；
+            // admin 鉴权在 handler 内从 cookie 校验（export.rs 模式）。
+            let logs_sse_route = axum::Router::new()
+                .route(
+                    "/api/logs/stream",
+                    axum::routing::get(crate::api::logs::sse::log_stream),
+                )
+                .layer(axum::middleware::from_fn(crate::api::csrf::csrf_middleware));
+
             // Dioxus 应用路由：自动挂载所有 server function 并渲染前端组件
             let dioxus_app =
                 axum::Router::new().serve_dioxus_application(config, router::AppRouter);
@@ -489,6 +520,7 @@ fn main() {
                 .merge(backup_import_route)
                 .merge(export_route)
                 .merge(sse_route)
+                .merge(logs_sse_route)
                 .merge(app_routes)
                 .merge(static_routes)
                 .merge(crate::mcp::router::mcp_route());

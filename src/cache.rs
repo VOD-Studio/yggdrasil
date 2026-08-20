@@ -75,6 +75,10 @@ const TTL_SECURITY_SETTINGS: Duration = Duration::from_secs(15);
 #[cfg(feature = "server")]
 const TTL_IMAGE_CACHE_SETTINGS: Duration = Duration::from_secs(60);
 
+/// 日志 target 去重列表缓存 TTL：60 秒。DISTINCT 全表扫不值得每开页面跑一次。
+#[cfg(feature = "server")]
+const TTL_LOG_TARGETS: Duration = Duration::from_secs(60);
+
 // ============================================================================
 // 缓存 Key 类型
 // ============================================================================
@@ -109,6 +113,8 @@ pub enum CacheKey {
     SecuritySettings,
     /// 图片磁盘缓存配置（即时生效层，单键）。
     ImageCacheSettings,
+    /// 日志 target 去重列表（日志查看器筛选项，单键）。
+    LogTargets,
 }
 
 // ============================================================================
@@ -251,6 +257,15 @@ static IMAGE_CACHE_SETTINGS_CACHE: LazyLock<Cache<CacheKey, ImageCacheSettings>>
             .time_to_live(TTL_IMAGE_CACHE_SETTINGS)
             .build()
     });
+
+/// 全局日志 target 去重列表缓存实例（单键 `LogTargets`），最大容量 2。
+#[cfg(feature = "server")]
+static LOG_TARGETS_CACHE: LazyLock<Cache<CacheKey, Vec<String>>> = LazyLock::new(|| {
+    Cache::builder()
+        .max_capacity(2)
+        .time_to_live(TTL_LOG_TARGETS)
+        .build()
+});
 
 /// 会话用户缓存类型。
 #[cfg(feature = "server")]
@@ -527,6 +542,20 @@ pub async fn set_image_cache_settings(settings: ImageCacheSettings) {
 #[cfg(feature = "server")]
 pub fn invalidate_image_cache_settings() {
     IMAGE_CACHE_SETTINGS_CACHE.invalidate_all();
+}
+
+/// 读取日志 target 去重列表缓存。
+#[cfg(feature = "server")]
+pub async fn get_log_targets() -> Option<Vec<String>> {
+    LOG_TARGETS_CACHE.get(&CacheKey::LogTargets).await
+}
+
+/// 写入日志 target 去重列表缓存。
+#[cfg(feature = "server")]
+pub async fn set_log_targets(targets: Vec<String>) {
+    let _ = LOG_TARGETS_CACHE
+        .insert(CacheKey::LogTargets, targets)
+        .await;
 }
 
 /// 按 slug 读取单篇文章缓存。

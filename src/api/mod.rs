@@ -31,6 +31,8 @@ pub mod image;
 /// KaTeX 服务端数学公式渲染（server-only）。
 #[cfg(feature = "server")]
 pub mod katex;
+/// 运行日志查看器（查询 / 导出 / target 列表 / 设置 / SSE 实时流）。
+pub mod logs;
 /// Markdown 渲染与 HTML 清理。
 pub mod markdown;
 /// MCP 访问令牌管理（签发 / 列表 / 重查 / 撤销）的 Dioxus server function。

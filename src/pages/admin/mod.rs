@@ -10,6 +10,8 @@ pub mod comments;
 pub mod dashboard;
 /// 友链管理页面模块。
 pub mod friends;
+/// 运行日志查看页面模块（/admin/logs）。
+pub mod logs;
 /// MCP 令牌管理 + 客户端配置生成页面模块。
 pub mod mcp;
 /// 文章管理列表页面模块。
@@ -37,6 +39,8 @@ pub use comments::{AdminComments, AdminCommentsPage};
 pub use dashboard::Admin;
 /// 友链管理页面组件。
 pub use friends::FriendsAdmin;
+/// 运行日志查看页面组件。
+pub use logs::Logs;
 /// MCP 令牌管理 + 客户端配置生成页面组件。
 pub use mcp::Mcp;
 /// 文章管理入口组件（全部文章列表）。
