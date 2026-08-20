@@ -188,19 +188,6 @@ fn HomePosts(current_page: i32) -> Element {
         Some(Ok((posts, total))) => {
             rsx! {
                 if total > 0 {
-                    // 列表前置小标题
-                    div { class: "flex items-center justify-between mb-6",
-                        div { class: "flex items-center gap-2.5",
-                            span { class: "w-2 h-2 rounded-full bg-[var(--color-paper-accent)]" }
-                            h2 { class: "text-base sm:text-lg font-bold text-[var(--color-paper-primary)] tracking-tight",
-                                if current_page == 1 { "最新发布" } else { "文章列表" }
-                            }
-                        }
-                        span { class: "text-xs text-[var(--color-paper-tertiary)] font-mono",
-                            "共 {total} 篇"
-                        }
-                    }
-
                     // 文章卡片列表：第 1 页的第一篇若存在，作为 Featured 头条渲染
                     for (index, post) in posts.iter().enumerate() {
                         PostCard {

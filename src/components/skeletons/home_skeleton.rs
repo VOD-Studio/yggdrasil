@@ -15,15 +15,6 @@ use crate::components::skeletons::post_card_skeleton::PostCardSkeleton;
 pub fn HomeSkeleton() -> Element {
     rsx! {
         div {
-            // 列表头部小标占位
-            div { class: "flex items-center justify-between mb-6",
-                div { class: "flex items-center gap-2.5",
-                    SkeletonBox { class: "w-2 h-2 rounded-full" }
-                    SkeletonBox { class: "h-5 w-20 rounded" }
-                }
-                SkeletonBox { class: "h-4 w-14 rounded" }
-            }
-
             // 第 1 篇作为 Featured 骨架（含封面与大号字形占位）
             PostCardSkeleton { featured: true, has_cover: true }
 
