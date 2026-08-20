@@ -47,17 +47,10 @@ pub async fn list_assets(
         let mut params: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = Vec::new();
         match filter {
             AssetFilter::Used => {
-                conditions.push(format!(
-                    "(EXISTS (SELECT 1 FROM asset_refs r WHERE r.asset_id = a.id) OR {})",
-                    super::COMMENT_REF_CLAUSE
-                ));
+                conditions.push(super::ASSET_REF_CLAUSE.to_string());
             }
             AssetFilter::Orphan => {
-                conditions.push(format!(
-                    "NOT EXISTS (SELECT 1 FROM asset_refs r WHERE r.asset_id = a.id) \
-                     AND NOT {}",
-                    super::COMMENT_REF_CLAUSE
-                ));
+                conditions.push(format!("NOT {}", super::ASSET_REF_CLAUSE));
             }
             AssetFilter::All => {}
         }
@@ -80,8 +73,8 @@ pub async fn list_assets(
             AssetSort::SizeDesc => "a.size_bytes DESC, a.id",
         };
 
-        // 列表查询：ref_count = 文章引用数 + 存活评论引用数（评论引用判定见
-        // super::COMMENT_REF_CLAUSE），与 Used/Orphan 筛选语义保持一致。
+        // 列表查询：ref_count 按文章、存活评论、用户头像和友链头像的使用次数累计，
+        // 与 Used/Orphan 筛选及汇总计数使用同一引用来源。
         // const 不能取引用（内联后借临时值会垂悬），绑定到局部变量再进参数列表。
         let per_page = PER_PAGE;
         params.push(&per_page);
@@ -93,11 +86,10 @@ pub async fn list_assets(
                 &format!(
                     "SELECT a.id AS id, a.path, a.filename, a.mime, a.size_bytes, \
                             a.width, a.height, a.alt, a.created_at, \
-                            ((SELECT COUNT(*) FROM asset_refs r WHERE r.asset_id = a.id) + \
-                             (SELECT COUNT(*) FROM comments c WHERE c.deleted_at IS NULL \
-                              AND c.content_html LIKE '%' || a.path || '%')) AS ref_count \
+                            {ref_count} AS ref_count \
                      FROM assets a {where_clause} \
-                     ORDER BY {order_clause} LIMIT ${limit_idx} OFFSET ${offset_idx}"
+                     ORDER BY {order_clause} LIMIT ${limit_idx} OFFSET ${offset_idx}",
+                    ref_count = super::ASSET_REF_COUNT_EXPR,
                 ),
                 &params,
             )
@@ -114,23 +106,19 @@ pub async fn list_assets(
             .get(0);
 
         // 汇总计数：tabs 与「清理孤儿」按钮徽标。不受筛选/搜索影响，始终全局。
-        // 孤儿 = 无文章引用且无存活评论引用（与 AssetFilter::Orphan 筛选同语义）。
+        // 孤儿 = 不存在任何文章、评论或头像引用（与 AssetFilter::Orphan 同语义）。
         let summary = client
             .query_one(
                 &format!(
                     "SELECT \
-                        COUNT(*) FILTER (WHERE EXISTS (SELECT 1 FROM asset_refs r WHERE r.asset_id = a.id) \
-                            OR {comment_ref}), \
-                        COUNT(*) FILTER (WHERE NOT EXISTS (SELECT 1 FROM asset_refs r WHERE r.asset_id = a.id) \
-                            AND NOT {comment_ref}), \
-                        COUNT(*) FILTER (WHERE NOT EXISTS (SELECT 1 FROM asset_refs r WHERE r.asset_id = a.id) \
-                            AND NOT {comment_ref} \
+                        COUNT(*) FILTER (WHERE {asset_ref}), \
+                        COUNT(*) FILTER (WHERE NOT {asset_ref}), \
+                        COUNT(*) FILTER (WHERE NOT {asset_ref} \
                             AND a.created_at < NOW() - make_interval(days => $1)), \
-                        COALESCE(SUM(a.size_bytes) FILTER (WHERE NOT EXISTS (SELECT 1 FROM asset_refs r WHERE r.asset_id = a.id) \
-                            AND NOT {comment_ref} \
+                        COALESCE(SUM(a.size_bytes) FILTER (WHERE NOT {asset_ref} \
                             AND a.created_at < NOW() - make_interval(days => $1)), 0)::bigint \
                      FROM assets a",
-                    comment_ref = super::COMMENT_REF_CLAUSE
+                    asset_ref = super::ASSET_REF_CLAUSE
                 ),
                 &[&PURGE_GRACE_DAYS],
             )

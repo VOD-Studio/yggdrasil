@@ -102,23 +102,32 @@ pub async fn delete_asset(id: String) -> Result<AssetOpResponse, ServerFnError> 
             });
         }
 
-        // 评论引用检查：存活评论（未进回收站）的 content_html 命中路径即保护。
-        // 评论无 asset_refs 记录，必须单独判定，否则评论图会被当孤儿删掉。
-        let comment_referenced: bool = client
+        // 评论与头像引用共用一次查询，避免单删路径额外往返数据库。
+        let reference_row = client
             .query_one(
                 &format!(
-                    "SELECT {} FROM assets a WHERE a.id = $1",
-                    super::COMMENT_REF_CLAUSE
+                    "SELECT {comment_ref} AS comment_referenced, \
+                            {avatar_ref} AS avatar_referenced \
+                     FROM assets a WHERE a.id = $1",
+                    comment_ref = super::COMMENT_REF_CLAUSE,
+                    avatar_ref = super::AVATAR_REF_CLAUSE,
                 ),
                 &[&asset_uuid],
             )
             .await
-            .map_err(AppError::query)?
-            .get(0);
-        if comment_referenced {
+            .map_err(AppError::query)?;
+        if reference_row.get::<_, bool>("comment_referenced") {
             return Ok(AssetOpResponse {
                 success: false,
                 message: "该素材正被评论引用，无法删除".to_string(),
+                refs: Vec::new(),
+            });
+        }
+
+        if reference_row.get::<_, bool>("avatar_referenced") {
+            return Ok(AssetOpResponse {
+                success: false,
+                message: "该素材正被头像引用，无法删除".to_string(),
                 refs: Vec::new(),
             });
         }
@@ -181,15 +190,14 @@ pub async fn batch_delete_assets(
         }
 
         // 一次查询取路径/大小/引用存在性，避免逐 id 往返。
-        // referenced = 文章引用（asset_refs）或存活评论引用（见 super::COMMENT_REF_CLAUSE）。
+        // referenced = 文章、评论或头像引用（见 super::ASSET_REF_CLAUSE）。
         let rows = client
             .query(
                 &format!(
                     "SELECT a.id AS id, a.path, a.size_bytes, \
-                            (EXISTS (SELECT 1 FROM asset_refs r WHERE r.asset_id = a.id) \
-                             OR {comment_ref}) AS referenced \
+                            {asset_ref} AS referenced \
                      FROM assets a WHERE a.id = ANY($1)",
-                    comment_ref = super::COMMENT_REF_CLAUSE
+                    asset_ref = super::ASSET_REF_CLAUSE
                 ),
                 &[&uuids],
             )
@@ -265,10 +273,9 @@ pub async fn purge_orphan_assets() -> Result<PurgeOrphansResponse, ServerFnError
             .query(
                 &format!(
                     "SELECT a.id AS id, a.path, a.size_bytes FROM assets a \
-                     WHERE NOT EXISTS (SELECT 1 FROM asset_refs r WHERE r.asset_id = a.id) \
-                       AND NOT {comment_ref} \
+                     WHERE NOT {asset_ref} \
                        AND a.created_at < NOW() - make_interval(days => $1)",
-                    comment_ref = super::COMMENT_REF_CLAUSE
+                    asset_ref = super::ASSET_REF_CLAUSE
                 ),
                 &[&super::list::PURGE_GRACE_DAYS],
             )
