@@ -649,7 +649,7 @@ jobs:
           OWNER: ${{ github.repository_owner }}
         run: |
           : "${XUN_USER:?secret XUN_USER 未设置}"
-          port="${XUN_PORT:-22}"
+          port="${XUN_PORT:-29888}"
           dir="${XUN_DEPLOY_DIR:-/root/docker/yggdrasil}"
           owner="$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')"
           app_tag="sha-$(echo '${{ github.sha }}' | cut -c1-7)-amd64"
@@ -715,7 +715,7 @@ jobs:
           XUN_PORT: ${{ secrets.XUN_PORT }}
         run: |
           : "${XUN_USER:?secret XUN_USER 未设置}"
-          port="${XUN_PORT:-22}"
+          port="${XUN_PORT:-29888}"
           ok=0
           for i in $(seq 1 12); do
             echo "health probe #$i ..."
