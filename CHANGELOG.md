@@ -7,9 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.3] - 2026-08-21
+
 ### Added
 
-- **后台运行日志查看器**：新增 `/admin/logs`「运行日志」页（侧边栏「工具」组）。进程内 tracing Layer 捕获全部 target 的 info+ 日志（独立 `LOG_VIEWER_LEVEL` 过滤，不受 `RUST_LOG` 影响），经 mpsc 攒批批量落库 `logs` 表（迁移 025）；页面支持级别多选、模块 target 筛选（Popover 选择器）、关键字搜索、SSE 实时滚动（`/api/logs/stream`，自动跟随/回到底部）、游标翻页查看历史与按筛选导出 .log 下载。保留策略（`logs_retention_days` 默认 7 天、`logs_max_rows` 默认 10 万行）在页面「清理策略」卡片配置，后台任务每小时按龄期与行数裁剪。日志管道对自身模块做防递归排除，写库失败只计入 dropped 并在页头展示。
+- **后台运行日志查看器**：新增 `/admin/logs`「运行日志」页，支持级别与模块筛选、关键字搜索、SSE 实时滚动、历史游标翻页和按筛选导出 `.log`；可配置日志保留策略，后台任务按龄期与行数自动裁剪。
+- **MCP 文章发布时间控制**：创建或更新文章时可通过 `published_at` 指定或调整发布时间。
+
+### Fixed
+
+- 修复运行日志页面 target 下拉框与搜索框的样式和垂直对齐问题。
+- 修复文档中的 Rust API 链接。
 
 ## [0.12.2] - 2026-08-20
 
