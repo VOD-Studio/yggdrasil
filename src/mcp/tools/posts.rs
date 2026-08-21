@@ -84,11 +84,24 @@ impl crate::mcp::server::YggMcpServer {
             .filter(|s| !s.is_empty())
             .map(|s| s.to_string())
             .unwrap_or(fields.auto_summary);
+        let explicit_published_at = match &p.published_at {
+            Some(s) if !s.trim().is_empty() => {
+                let Some(dt) = parse_date_opt(s) else {
+                    return Err(McpError::invalid_request(
+                        "published_at 格式无效，支持 YYYY-MM-DD 或 ISO 8601",
+                        None,
+                    ));
+                };
+                Some(dt)
+            }
+            _ => None,
+        };
         let published_at = if fields.status == PostStatus::Published {
-            Some(chrono::Utc::now())
+            explicit_published_at.or_else(|| Some(chrono::Utc::now()))
         } else {
             None
         };
+        let created_at = explicit_published_at.unwrap_or_else(chrono::Utc::now);
 
         let mut client = get_conn().await.map_err(|e| internal(e, "db connection"))?;
         let tx = client
@@ -102,8 +115,8 @@ impl crate::mcp::server::YggMcpServer {
 
         let row = tx
             .query_one(
-                "INSERT INTO posts (author_id, title, slug, summary, content_md, content_html, toc_html, status, published_at, cover_image, word_count, reading_time)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                "INSERT INTO posts (author_id, title, slug, summary, content_md, content_html, toc_html, status, published_at, cover_image, word_count, reading_time, created_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
                  RETURNING id",
                 &[
                     &principal.user_id,
@@ -118,6 +131,7 @@ impl crate::mcp::server::YggMcpServer {
                     &fields.cover_image,
                     &fields.word_count,
                     &fields.reading_time,
+                    &created_at,
                 ],
             )
             .await
@@ -171,7 +185,8 @@ impl crate::mcp::server::YggMcpServer {
             || p.slug.is_some()
             || p.tags.is_some()
             || p.status.is_some()
-            || p.cover_image.is_some();
+            || p.cover_image.is_some()
+            || p.published_at.is_some();
         if !any_change {
             return Err(McpError::invalid_request("至少提供一个可更新字段", None));
         }
@@ -270,19 +285,38 @@ impl crate::mcp::server::YggMcpServer {
             None => None,
         };
 
+        // published_at 显式指定或依据 status 转换联动。
+        let explicit_published_at = match &p.published_at {
+            Some(s) if !s.trim().is_empty() => {
+                let Some(dt) = parse_date_opt(s) else {
+                    return Err(McpError::invalid_request(
+                        "published_at 格式无效，支持 YYYY-MM-DD 或 ISO 8601",
+                        None,
+                    ));
+                };
+                Some(Some(dt))
+            }
+            Some(_) => Some(None), // 空串清空 published_at
+            None => None,
+        };
+
         // status + published_at 决策（首发 published 填 published_at；转 draft 保留旧值）。
         let new_status: Option<PostStatus> = p
             .status
             .as_deref()
             .map(|s| PostStatus::from_str(s).unwrap_or(PostStatus::Draft));
-        let published_at: Option<Option<chrono::DateTime<chrono::Utc>>> = match &new_status {
-            Some(PostStatus::Published) => Some(if old_status == "published" {
-                old_published_at
-            } else {
-                Some(chrono::Utc::now())
-            }),
-            Some(PostStatus::Draft) => Some(old_published_at),
-            None => None,
+        let published_at: Option<Option<chrono::DateTime<chrono::Utc>>> = if let Some(epa) = explicit_published_at {
+            Some(epa)
+        } else {
+            match &new_status {
+                Some(PostStatus::Published) => Some(if old_status == "published" {
+                    old_published_at
+                } else {
+                    Some(chrono::Utc::now())
+                }),
+                Some(PostStatus::Draft) => Some(old_published_at),
+                None => None,
+            }
         };
 
         // cover 决策（空串 → 清空 None）。
@@ -328,6 +362,9 @@ impl crate::mcp::server::YggMcpServer {
         }
         if let Some(pa) = published_at {
             push!("published_at", pa);
+            if let Some(dt) = pa {
+                push!("created_at", dt);
+            }
         }
         if cover_changed {
             push!("cover_image", new_cover.clone());
@@ -617,6 +654,9 @@ pub struct CreatePostParams {
     /// 封面图 URL。
     #[serde(default)]
     pub cover_image: Option<String>,
+    /// 发布时间（ISO 8601 或 YYYY-MM-DD）；仅在 status=published 时生效，未提供则使用当前时间。
+    #[serde(default)]
+    pub published_at: Option<String>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -644,6 +684,9 @@ pub struct UpdatePostParams {
     /// 新封面图 URL。未提供则不修改；空字符串清空封面。
     #[serde(default)]
     pub cover_image: Option<String>,
+    /// 发布时间（ISO 8601 或 YYYY-MM-DD）；未提供则不修改。
+    #[serde(default)]
+    pub published_at: Option<String>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -662,4 +705,20 @@ struct PostResult {
 
 fn default_status() -> String {
     "draft".to_string()
+}
+
+fn parse_date_opt(s: &str) -> Option<chrono::DateTime<chrono::Utc>> {
+    let s = s.trim();
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {
+        return Some(dt.with_timezone(&chrono::Utc));
+    }
+    if let Ok(nd) = chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d") {
+        if let Some(ndt) = nd.and_hms_opt(0, 0, 0) {
+            return Some(chrono::DateTime::from_naive_utc_and_offset(ndt, chrono::Utc));
+        }
+    }
+    if let Ok(ndt) = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S") {
+        return Some(chrono::DateTime::from_naive_utc_and_offset(ndt, chrono::Utc));
+    }
+    None
 }
