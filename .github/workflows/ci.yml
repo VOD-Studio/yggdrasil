@@ -701,8 +701,16 @@ jobs:
             exit 1
           fi
 
-          echo "==> [3/3] docker compose up -d app (postgres 与数据卷不动)"
-          cd "$DIR" && docker compose --env-file .env up -d app
+          echo "==> [3/3] force recreate app (postgres 与数据卷不动)"
+          cd "$DIR"
+          docker compose --env-file .env up -d --no-deps --force-recreate app
+          expected_id="$(docker image inspect "$REG/yggdrasil:$APP_TAG" --format '{{.Id}}')"
+          running_id="$(docker inspect yggdrasil-app --format '{{.Image}}')"
+          if [[ "${expected_id#sha256:}" != "${running_id#sha256:}" ]]; then
+            echo "::error::app container image mismatch: expected ${expected_id}, running ${running_id}"
+            exit 1
+          fi
+          echo "  running app image: ${running_id}"
 
           echo "==> pull-based xun deploy script done"
           REMOTE
@@ -713,24 +721,27 @@ jobs:
           XUN_USER: ${{ secrets.XUN_USER }}
           XUN_HOST: ${{ secrets.XUN_HOST }}
           XUN_PORT: ${{ secrets.XUN_PORT }}
+          EXPECTED_HASH: ${{ github.sha }}
         run: |
           : "${XUN_USER:?secret XUN_USER 未设置}"
           port="${XUN_PORT:-29888}"
+          expected_hash="$EXPECTED_HASH"
           ok=0
           for i in $(seq 1 12); do
             echo "health probe #$i ..."
-            if ssh -p "$port" -o BatchMode=yes "${XUN_USER}@${XUN_HOST}" \
-                 'docker exec nginx-proxy curl -sf http://yggdrasil-app:3000/readyz' >/dev/null 2>&1; then
+            if headers="$(ssh -p "$port" -o BatchMode=yes "${XUN_USER}@${XUN_HOST}" \
+                 'docker exec nginx-proxy curl -fsS -D - -o /dev/null http://yggdrasil-app:3000/readyz' 2>/dev/null)" \
+              && printf '%s\n' "$headers" | tr -d '\r' \
+                | grep -Fqi "x-yggdrasil-hash: $expected_hash"; then
               ok=1
-              echo "readyz OK"
+              echo "readyz + version OK"
               break
             fi
             sleep 5
           done
-          [ "$ok" = "1" ] || { echo "::error::app /readyz 在 60s 内未就绪"; exit 1; }
+          [ "$ok" = "1" ] || { echo "::error::app /readyz 未就绪或运行版本不是 $expected_hash"; exit 1; }
           ssh -p "$port" -o BatchMode=yes "${XUN_USER}@${XUN_HOST}" \
             'docker ps --filter name=yggdrasil --format "{{.Names}}\t{{.Status}}"'
-
   # ── deploy-rua：与 deploy-xun 并行拉取 amd64 主应用并滚动重启 ──
   # rua 是腾讯云 DR 副本：只拉主应用，不带 runner；app 经 pg-tunnel 连 xun PG。
   # 受 repo 变量 RUA_DEPLOY_ENABLED=true 门控；未设则跳过。rua 失败 best-effort，
@@ -802,8 +813,16 @@ jobs:
             || { echo "::error::rua app image pull failed: $REG/yggdrasil:$APP_TAG"; exit 1; }
           podman tag "$REG/yggdrasil:$APP_TAG" localhost/yggdrasil:latest
 
-          echo "==> [rua] podman compose up -d app (pg-tunnel / pg-standby 不动)"
-          cd "$DIR" && podman compose --env-file .env up -d app
+          echo "==> [rua] force recreate app (pg-tunnel / pg-standby 不动)"
+          cd "$DIR"
+          podman compose --env-file .env up -d --no-deps --force-recreate app
+          expected_id="$(podman image inspect "$REG/yggdrasil:$APP_TAG" --format '{{.Id}}')"
+          running_id="$(podman inspect yggdrasil-app --format '{{.Image}}')"
+          if [[ "${expected_id#sha256:}" != "${running_id#sha256:}" ]]; then
+            echo "::error::rua app container image mismatch: expected ${expected_id}, running ${running_id}"
+            exit 1
+          fi
+          echo "  rua running app image: ${running_id}"
           echo "==> pull-based rua deploy script done"
           REMOTE
 
@@ -814,20 +833,24 @@ jobs:
           RUA_USER: ${{ secrets.RUA_USER }}
           RUA_HOST: ${{ secrets.RUA_HOST }}
           RUA_PORT: ${{ secrets.RUA_PORT }}
+          EXPECTED_HASH: ${{ github.sha }}
         run: |
           : "${RUA_USER:?secret RUA_USER 未设置}"
           port="${RUA_PORT:-29888}"
+          expected_hash="$EXPECTED_HASH"
           ok=0
           for i in $(seq 1 12); do
             echo "rua health probe #$i ..."
-            if ssh -p "$port" -i ~/.ssh/id_ed25519_rua -o BatchMode=yes "${RUA_USER}@${RUA_HOST}" \
-                 'podman exec nginx-proxy curl -sf http://yggdrasil-app:3000/readyz' >/dev/null 2>&1; then
+            if headers="$(ssh -p "$port" -i ~/.ssh/id_ed25519_rua -o BatchMode=yes "${RUA_USER}@${RUA_HOST}" \
+                 'podman exec nginx-proxy curl -fsS -D - -o /dev/null http://yggdrasil-app:3000/readyz' 2>/dev/null)" \
+              && printf '%s\n' "$headers" | tr -d '\r' \
+                | grep -Fqi "x-yggdrasil-hash: $expected_hash"; then
               ok=1
-              echo "rua readyz OK"
+              echo "rua readyz + version OK"
               break
             fi
             sleep 5
           done
-          [ "$ok" = "1" ] || { echo "::warning::rua /readyz 在 60s 内未就绪（DR 副本，不阻断作业）"; exit 1; }
+          [ "$ok" = "1" ] || { echo "::warning::rua /readyz 未就绪或运行版本不是 $expected_hash（DR 副本，不阻断作业）"; exit 1; }
           ssh -p "$port" -i ~/.ssh/id_ed25519_rua -o BatchMode=yes "${RUA_USER}@${RUA_HOST}" \
             'podman ps --filter name=yggdrasil --format "{{.Names}}\t{{.Status}}"'
