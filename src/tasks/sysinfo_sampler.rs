@@ -5,7 +5,7 @@
 //! [`tokio::sync::RwLock`] 快照（毫秒级返回，零采样成本）。
 //!
 //! 采样间隔由环境变量 `SYSINFO_SAMPLE_SECS` 配置（默认 0.5 秒，支持小数如 0.1）。
-//! 快照 DTO [`SystemSnapshot`] 定义在 [`crate::models::system`]（两端共享）。
+//! 快照 DTO [`crate::models::system::SystemSnapshot`] 定义在 [`crate::models::system`]（两端共享）。
 
 use std::sync::LazyLock;
 use std::time::Duration;

@@ -110,7 +110,7 @@ pub fn log_viewer_filter() -> EnvFilter {
 /// 挂进 registry；本体的 `enabled` 恒 true，级别过滤全部交给 per-layer filter。
 /// 泛型实现（非特化 Registry）：registry().with(fmt).with(capture) 组合时，
 /// 外层 S 是 Layered<...> 而非裸 Registry，特化实现会导致 Layered 不再满足
-/// Into<Dispatch>。
+/// `Into<Dispatch>`。
 pub struct CaptureLayer;
 
 impl<S: Subscriber> Layer<S> for CaptureLayer {

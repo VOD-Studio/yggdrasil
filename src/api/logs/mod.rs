@@ -2,8 +2,8 @@
 //!
 //! - 本文件：5 个 Dioxus server function（查询 / 导出 / target 列表 / 设置读写），
 //!   双目标编译，DB 逻辑 gate 在 `#[cfg(feature = "server")]` 块内。
-//! - [`capture`]：进程内 tracing Layer（日志捕获进 mpsc/broadcast），server-only。
-//! - [`sse`]：`GET /api/logs/stream` 实时流 axum handler，server-only。
+//! - [`crate::api::logs::capture`]：进程内 tracing Layer（日志捕获 mpsc/broadcast），server-only。
+//! - [`crate::api::logs::sse`]：`GET /api/logs/stream` 实时流 axum handler，server-only。
 //!
 //! 数据源：logs 表（迁移 025），由 [`crate::tasks::log_writer`] 批量写入、
 //! [`crate::tasks::log_purge`] 按保留策略裁剪。
