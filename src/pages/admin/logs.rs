@@ -20,9 +20,7 @@ use crate::api::logs::{
 use crate::components::forms::{FormInput, ToggleSwitch, INPUT_INLINE_CLASS};
 use crate::components::skeletons::atoms::SkeletonBox;
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
-use crate::components::ui::{
-    CollapsibleSettingsCard, LoadingButton, BADGE_BASE, BTN_GHOST,
-};
+use crate::components::ui::{CollapsibleSettingsCard, LoadingButton, BADGE_BASE, BTN_GHOST};
 use crate::models::log::{LogEntry, LogSettings};
 
 /// 全部可选级别（多选 chips，顺序即展示与服务端白名单顺序）。
