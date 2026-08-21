@@ -305,19 +305,20 @@ impl crate::mcp::server::YggMcpServer {
             .status
             .as_deref()
             .map(|s| PostStatus::from_str(s).unwrap_or(PostStatus::Draft));
-        let published_at: Option<Option<chrono::DateTime<chrono::Utc>>> = if let Some(epa) = explicit_published_at {
-            Some(epa)
-        } else {
-            match &new_status {
-                Some(PostStatus::Published) => Some(if old_status == "published" {
-                    old_published_at
-                } else {
-                    Some(chrono::Utc::now())
-                }),
-                Some(PostStatus::Draft) => Some(old_published_at),
-                None => None,
-            }
-        };
+        let published_at: Option<Option<chrono::DateTime<chrono::Utc>>> =
+            if let Some(epa) = explicit_published_at {
+                Some(epa)
+            } else {
+                match &new_status {
+                    Some(PostStatus::Published) => Some(if old_status == "published" {
+                        old_published_at
+                    } else {
+                        Some(chrono::Utc::now())
+                    }),
+                    Some(PostStatus::Draft) => Some(old_published_at),
+                    None => None,
+                }
+            };
 
         // cover 决策（空串 → 清空 None）。
         let new_cover: Option<String> = p
@@ -714,11 +715,17 @@ fn parse_date_opt(s: &str) -> Option<chrono::DateTime<chrono::Utc>> {
     }
     if let Ok(nd) = chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d") {
         if let Some(ndt) = nd.and_hms_opt(0, 0, 0) {
-            return Some(chrono::DateTime::from_naive_utc_and_offset(ndt, chrono::Utc));
+            return Some(chrono::DateTime::from_naive_utc_and_offset(
+                ndt,
+                chrono::Utc,
+            ));
         }
     }
     if let Ok(ndt) = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S") {
-        return Some(chrono::DateTime::from_naive_utc_and_offset(ndt, chrono::Utc));
+        return Some(chrono::DateTime::from_naive_utc_and_offset(
+            ndt,
+            chrono::Utc,
+        ));
     }
     None
 }
