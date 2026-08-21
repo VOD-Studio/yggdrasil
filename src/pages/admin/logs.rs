@@ -214,7 +214,7 @@ pub fn Logs() -> Element {
                         span { class: "text-xs text-[var(--color-paper-tertiary)]", "未选择级别时显示全部" }
                     }
                 }
-                div { class: "flex flex-col sm:flex-row gap-3",
+                div { class: "flex flex-col sm:flex-row sm:items-center gap-3",
                     TargetSelect {
                         value: target(),
                         options: targets(),
@@ -462,7 +462,7 @@ fn TargetSelect(
             button {
                 id: "{trigger_id}",
                 r#type: "button",
-                class: "relative inline-flex w-full items-center justify-between cursor-pointer select-none text-left pl-4 pr-10 py-2 border border-paper-border rounded-2xl bg-paper-entry text-paper-primary hover:bg-paper-theme focus:outline-none focus:border-paper-accent focus:ring-1 focus:ring-paper-accent/30 transition-colors duration-200 text-sm",
+                class: "relative inline-flex w-full items-center justify-between cursor-pointer select-none text-left pl-4 pr-10 py-2 border border-paper-border rounded-2xl bg-paper-entry text-paper-primary hover:bg-paper-theme focus:outline-none focus:border-paper-accent focus:ring-1 focus:ring-paper-accent/30 transition-colors duration-200",
                 aria_haspopup: "listbox",
                 aria_expanded: "{open()}",
                 aria_label: "按 target 筛选",
