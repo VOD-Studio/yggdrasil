@@ -54,7 +54,7 @@ fn wrap_index(cur: usize, delta: i32, len: usize) -> usize {
 
 /// 测量触发器视口位置，决定面板展开方向（仅 wasm；SSR 无 DOM）。
 #[cfg(target_arch = "wasm32")]
-fn measure_flip(trigger_id: &str, option_count: usize) -> bool {
+pub(crate) fn measure_flip(trigger_id: &str, option_count: usize) -> bool {
     /// 选项行高：24px 行盒 + py-2.5（20px 垂直内边距）。
     const ROW_HEIGHT: f64 = 44.0;
     /// 面板 1px 边框 ×2 + p-1.5 内边距。
