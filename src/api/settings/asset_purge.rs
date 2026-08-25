@@ -47,17 +47,7 @@ pub(crate) async fn seed_asset_purge_settings_from_env(
         }
     }
 
-    for (key, value) in seeds {
-        client
-            .execute(
-                "INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING",
-                &[&key, &value],
-            )
-            .await
-            .map_err(AppError::query)?;
-        tracing::info!("孤儿素材清理配置已从环境变量播种: {key}={value}（仅键缺失时生效）");
-    }
-    Ok(())
+    super::insert_env_seeds(client, seeds).await
 }
 
 /// 读取孤儿素材清理配置（面板用）。
@@ -71,24 +61,18 @@ pub async fn get_asset_purge_settings() -> Result<AssetPurgeSettings, ServerFnEr
     {
         let client = get_conn().await.map_err(AppError::db_conn)?;
 
-        let enabled: bool = client
-            .query_opt(
-                "SELECT value FROM settings WHERE key = 'asset_orphan_purge_enabled'",
-                &[],
-            )
-            .await
-            .map_err(AppError::query)?
-            .and_then(|r| r.get::<_, String>("value").parse().ok())
+        let values = super::load_setting_values(
+            &client,
+            &["asset_orphan_purge_enabled", "asset_orphan_retention_days"],
+        )
+        .await?;
+        let enabled = values
+            .get("asset_orphan_purge_enabled")
+            .and_then(|v| v.parse().ok())
             .unwrap_or(crate::models::settings::DEFAULT_ASSET_ORPHAN_PURGE_ENABLED);
-
-        let days: i32 = client
-            .query_opt(
-                "SELECT value FROM settings WHERE key = 'asset_orphan_retention_days'",
-                &[],
-            )
-            .await
-            .map_err(AppError::query)?
-            .and_then(|r| r.get::<_, String>("value").parse().ok())
+        let days = values
+            .get("asset_orphan_retention_days")
+            .and_then(|v| v.parse().ok())
             .unwrap_or(crate::models::settings::DEFAULT_ASSET_ORPHAN_RETENTION_DAYS);
 
         Ok(AssetPurgeSettings {

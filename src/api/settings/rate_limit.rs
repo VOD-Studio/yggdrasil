@@ -133,23 +133,14 @@ pub(crate) async fn seed_rate_limit_from_env(
         }
     }
 
-    for (key, value) in seeds {
-        client
-            .execute(
-                "INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING",
-                &[&key, &value],
-            )
-            .await
-            .map_err(AppError::query)?;
-        tracing::info!("限流配置已从环境变量播种: {key}={value}（仅键缺失时生效）");
-    }
-    Ok(())
+    super::insert_env_seeds(client, seeds).await
 }
 
 /// 从 settings 表读取限流配置（缺键回退默认值）。
 ///
-/// 启动时由 main.rs 调用，将结果写入 `config::RATE_LIMIT_CFG`，供 rate_limit.rs
+/// 启动时由 startup.rs 调用，将结果写入 `config::RATE_LIMIT_CFG`，供 rate_limit.rs
 /// 的 LazyLock 在首次请求时读取。
+
 #[cfg(feature = "server")]
 pub(crate) async fn load_rate_limit_settings(
     client: &tokio_postgres::Client,
@@ -157,143 +148,123 @@ pub(crate) async fn load_rate_limit_settings(
     use crate::models::settings as m;
     use RateLimitSettings as R;
 
-    async fn read_clamped(
-        client: &tokio_postgres::Client,
-        key: &str,
-        default: u32,
-        clamp: fn(u32) -> u32,
-    ) -> Result<u32, AppError> {
-        let row = client
-            .query_opt("SELECT value FROM settings WHERE key = $1", &[&key])
-            .await
-            .map_err(AppError::query)?;
-        Ok(row
-            .map(|r| r.get::<_, String>("value"))
+    let values = super::load_setting_values(
+        client,
+        &[
+            "ratelimit_strict_per_sec",
+            "ratelimit_strict_burst",
+            "ratelimit_upload_per_sec",
+            "ratelimit_upload_burst",
+            "ratelimit_image_per_sec",
+            "ratelimit_image_burst",
+            "ratelimit_comment_per_sec",
+            "ratelimit_comment_burst",
+            "ratelimit_comment_upload_per_sec",
+            "ratelimit_comment_upload_burst",
+            "ratelimit_comment_upload_daily",
+            "ratelimit_code_exec_per_sec",
+            "ratelimit_code_exec_burst",
+            "ratelimit_code_exec_daily",
+            "ratelimit_unknown_per_sec",
+            "ratelimit_unknown_burst",
+            "ratelimit_gc_interval_secs",
+        ],
+    )
+    .await?;
+    let read_clamped = |key: &str, default: u32, clamp: fn(u32) -> u32| {
+        values
+            .get(key)
             .and_then(|v| v.parse().ok())
             .map(clamp)
-            .unwrap_or(default))
-    }
+            .unwrap_or(default)
+    };
 
     Ok(RateLimitSettings {
         strict_per_sec: read_clamped(
-            client,
             "ratelimit_strict_per_sec",
             m::DEFAULT_RATE_LIMIT_STRICT_PER_SEC,
             R::clamp_per_sec,
-        )
-        .await?,
+        ),
         strict_burst: read_clamped(
-            client,
             "ratelimit_strict_burst",
             m::DEFAULT_RATE_LIMIT_STRICT_BURST,
             R::clamp_burst,
-        )
-        .await?,
+        ),
         upload_per_sec: read_clamped(
-            client,
             "ratelimit_upload_per_sec",
             m::DEFAULT_RATE_LIMIT_UPLOAD_PER_SEC,
             R::clamp_per_sec,
-        )
-        .await?,
+        ),
         upload_burst: read_clamped(
-            client,
             "ratelimit_upload_burst",
             m::DEFAULT_RATE_LIMIT_UPLOAD_BURST,
             R::clamp_burst,
-        )
-        .await?,
+        ),
         image_per_sec: read_clamped(
-            client,
             "ratelimit_image_per_sec",
             m::DEFAULT_RATE_LIMIT_IMAGE_PER_SEC,
             R::clamp_per_sec,
-        )
-        .await?,
+        ),
         image_burst: read_clamped(
-            client,
             "ratelimit_image_burst",
             m::DEFAULT_RATE_LIMIT_IMAGE_BURST,
             R::clamp_burst,
-        )
-        .await?,
+        ),
         comment_per_sec: read_clamped(
-            client,
             "ratelimit_comment_per_sec",
             m::DEFAULT_RATE_LIMIT_COMMENT_PER_SEC,
             R::clamp_per_sec,
-        )
-        .await?,
+        ),
         comment_burst: read_clamped(
-            client,
             "ratelimit_comment_burst",
             m::DEFAULT_RATE_LIMIT_COMMENT_BURST,
             R::clamp_burst,
-        )
-        .await?,
+        ),
         comment_upload_per_sec: read_clamped(
-            client,
             "ratelimit_comment_upload_per_sec",
             m::DEFAULT_RATE_LIMIT_COMMENT_UPLOAD_PER_SEC,
             R::clamp_per_sec,
-        )
-        .await?,
+        ),
         comment_upload_burst: read_clamped(
-            client,
             "ratelimit_comment_upload_burst",
             m::DEFAULT_RATE_LIMIT_COMMENT_UPLOAD_BURST,
             R::clamp_burst,
-        )
-        .await?,
+        ),
         comment_upload_daily: read_clamped(
-            client,
             "ratelimit_comment_upload_daily",
             m::DEFAULT_RATE_LIMIT_COMMENT_UPLOAD_DAILY,
             R::clamp_daily,
-        )
-        .await?,
+        ),
         code_exec_per_sec: read_clamped(
-            client,
             "ratelimit_code_exec_per_sec",
             m::DEFAULT_RATE_LIMIT_CODE_EXEC_PER_SEC,
             R::clamp_per_sec,
-        )
-        .await?,
+        ),
         code_exec_burst: read_clamped(
-            client,
             "ratelimit_code_exec_burst",
             m::DEFAULT_RATE_LIMIT_CODE_EXEC_BURST,
             R::clamp_burst,
-        )
-        .await?,
+        ),
         code_exec_daily: read_clamped(
-            client,
             "ratelimit_code_exec_daily",
             m::DEFAULT_RATE_LIMIT_CODE_EXEC_DAILY,
             R::clamp_daily,
-        )
-        .await?,
+        ),
         unknown_per_sec: read_clamped(
-            client,
             "ratelimit_unknown_per_sec",
             m::DEFAULT_RATE_LIMIT_UNKNOWN_PER_SEC,
             R::clamp_per_sec,
-        )
-        .await?,
+        ),
         unknown_burst: read_clamped(
-            client,
             "ratelimit_unknown_burst",
             m::DEFAULT_RATE_LIMIT_UNKNOWN_BURST,
             R::clamp_burst,
-        )
-        .await?,
+        ),
         gc_interval_secs: read_clamped(
-            client,
             "ratelimit_gc_interval_secs",
             m::DEFAULT_RATE_LIMIT_GC_INTERVAL_SECS,
             R::clamp_gc_interval,
-        )
-        .await?,
+        ),
     })
 }
 

@@ -62,17 +62,7 @@ pub(crate) async fn seed_security_settings_from_env(
         }
     }
 
-    for (key, value) in seeds {
-        client
-            .execute(
-                "INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING",
-                &[&key, &value],
-            )
-            .await
-            .map_err(AppError::query)?;
-        tracing::info!("安全配置已从环境变量播种: {key}={value}（仅键缺失时生效）");
-    }
-    Ok(())
+    super::insert_env_seeds(client, seeds).await
 }
 
 /// 从 settings 表读取安全配置（缺键回退默认值）。
@@ -83,32 +73,32 @@ pub(crate) async fn seed_security_settings_from_env(
 pub(crate) async fn load_security_settings(
     client: &tokio_postgres::Client,
 ) -> Result<crate::models::settings::SecuritySettings, AppError> {
-    async fn read_key(
-        client: &tokio_postgres::Client,
-        key: &str,
-    ) -> Result<Option<String>, AppError> {
-        let row = client
-            .query_opt("SELECT value FROM settings WHERE key = $1", &[&key])
-            .await
-            .map_err(AppError::query)?;
-        Ok(row.map(|r| r.get::<_, String>("value")))
-    }
+    let values = super::load_setting_values(
+        client,
+        &[
+            "security_app_base_url",
+            "security_cookie_secure",
+            "security_trusted_proxy_count",
+            "security_max_sessions_per_user",
+        ],
+    )
+    .await?;
 
-    let app_base_url = read_key(client, "security_app_base_url")
-        .await?
-        .map(|v| crate::models::settings::SecuritySettings::normalize_app_base_url(&v))
+    let app_base_url = values
+        .get("security_app_base_url")
+        .map(|v| crate::models::settings::SecuritySettings::normalize_app_base_url(v))
         .unwrap_or_default();
-    let cookie_secure = read_key(client, "security_cookie_secure")
-        .await?
+    let cookie_secure = values
+        .get("security_cookie_secure")
         .and_then(|v| v.parse().ok())
         .unwrap_or(crate::models::settings::DEFAULT_COOKIE_SECURE);
-    let trusted_proxy_count = read_key(client, "security_trusted_proxy_count")
-        .await?
+    let trusted_proxy_count = values
+        .get("security_trusted_proxy_count")
         .and_then(|v| v.parse().ok())
         .map(crate::models::settings::SecuritySettings::clamp_trusted_proxy_count)
         .unwrap_or(crate::models::settings::DEFAULT_TRUSTED_PROXY_COUNT);
-    let max_sessions_per_user = read_key(client, "security_max_sessions_per_user")
-        .await?
+    let max_sessions_per_user = values
+        .get("security_max_sessions_per_user")
         .and_then(|v| v.parse().ok())
         .map(crate::models::settings::SecuritySettings::clamp_max_sessions)
         .unwrap_or(crate::models::settings::DEFAULT_MAX_SESSIONS_PER_USER);

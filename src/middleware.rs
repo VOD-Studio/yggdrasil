@@ -4,7 +4,7 @@
 //! 守卫）与压缩层构造逻辑。整体 server-only——WASM 构建不会编译本模块。
 //!
 //! 这些函数此前散落在 `main.rs`，既无法单独测试也使入口职责过载。迁移后
-//! `main.rs` 的路由组装以全路径 `crate::middleware::xxx` 引用，语义不变。
+//! `startup.rs` 的路由组装以全路径 `crate::middleware::xxx` 引用，语义不变。
 
 #![cfg(feature = "server")]
 
@@ -86,9 +86,9 @@ pub(crate) fn parse_compression_algorithms(env: &str) -> Option<CompressionAlgor
 ///   唯一例外是 `image/svg+xml`，作为 XML 文本可被压缩）；
 /// - 跳过 gRPC 与 `text/event-stream`（SSE）；
 /// - 跳过小于 32 字节的响应。
-///
 /// 因此无需在此处对图片响应做额外的 content-type 过滤。另：图片实际挂在
-/// `static_routes`（无中间件），根本不经此层，详见 main.rs 路由 merge 处。
+/// `static_routes`（无中间件），根本不经此层，详见 startup.rs 路由 merge 处。
+
 pub(crate) fn compression_layer_from_env() -> Option<tower_http::compression::CompressionLayer> {
     use tower_http::compression::CompressionLayer;
 
@@ -251,7 +251,7 @@ pub(crate) async fn ssr_generation_middleware(
 
 /// Axum 中间件：为所有响应附加 Server / X-Yggdrasil-Version / X-Yggdrasil-Git / X-Yggdrasil-Hash 头。
 /// 数据源与启动日志 `log_build_info()` 同源（`crate::build_info::BUILD_INFO`）。
-/// 受 `EXPOSE_VERSION_HEADERS` 控制——该开关在 `main.rs` 决定是否挂载本层。
+/// 受 `EXPOSE_VERSION_HEADERS` 控制——该开关在 `startup.rs` 决定是否挂载本层。
 ///
 /// 暴露 hash 头的原因：tag 精确 checkout 时 `git describe` 只返回纯 tag 名（如 `v0.10.1`），
 /// 不含 commit hash；单独暴露 `git_hash`（完整 40 位）以精确定位线上二进制对应的提交。

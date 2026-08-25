@@ -142,15 +142,16 @@ impl<S: Subscriber> Layer<S> for CaptureLayer {
             message,
         };
 
-        // mpsc 满 / 已关闭：只增 dropped 计数，绝不阻塞日志路径。
-        if CHANNELS.db_tx.try_send(record.clone()).is_err() {
-            CHANNELS.dropped.fetch_add(1, Ordering::Relaxed);
-        }
-
-        // 实时流：无订阅者时 broadcast::send 只会返回 Err，直接跳过省一次分发；
-        // 通道满时最旧事件被覆盖，慢客户端走 RecvError::Lagged → gap 事件。
-        if CHANNELS.live_tx.receiver_count() > 0 {
+        let has_live_receivers = CHANNELS.live_tx.receiver_count() > 0;
+        if has_live_receivers {
+            // The database writer and live stream need ownership of the same
+            // record; avoid this clone entirely when no SSE client exists.
+            if CHANNELS.db_tx.try_send(record.clone()).is_err() {
+                CHANNELS.dropped.fetch_add(1, Ordering::Relaxed);
+            }
             let _ = CHANNELS.live_tx.send(record);
+        } else if CHANNELS.db_tx.try_send(record).is_err() {
+            CHANNELS.dropped.fetch_add(1, Ordering::Relaxed);
         }
     }
 }

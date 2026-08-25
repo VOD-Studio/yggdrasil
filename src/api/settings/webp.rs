@@ -45,22 +45,12 @@ pub(crate) async fn seed_webp_settings_from_env(
         }
     }
 
-    for (key, value) in seeds {
-        client
-            .execute(
-                "INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING",
-                &[&key, &value],
-            )
-            .await
-            .map_err(AppError::query)?;
-        tracing::info!("WebP 配置已从环境变量播种: {key}={value}（仅键缺失时生效）");
-    }
-    Ok(())
+    super::insert_env_seeds(client, seeds).await
 }
 
 /// 从 settings 表读取 WebP 配置（缺键回退默认值）。
 ///
-/// 启动时由 main.rs 调用，将结果写入 `config::WEBP_CFG`，供 infra/webp.rs 的 LazyLock
+/// 启动时由 startup.rs 调用，将结果写入 `config::WEBP_CFG`，供 infra/webp.rs 的 LazyLock
 /// 在首次编码时读取。
 #[cfg(feature = "server")]
 pub(crate) async fn load_webp_settings(
@@ -68,24 +58,14 @@ pub(crate) async fn load_webp_settings(
 ) -> Result<WebpSettings, AppError> {
     use crate::models::settings as m;
 
-    async fn read_key(
-        client: &tokio_postgres::Client,
-        key: &str,
-    ) -> Result<Option<String>, AppError> {
-        let row = client
-            .query_opt("SELECT value FROM settings WHERE key = $1", &[&key])
-            .await
-            .map_err(AppError::query)?;
-        Ok(row.map(|r| r.get::<_, String>("value")))
-    }
-
-    let quality = read_key(client, "webp_quality")
-        .await?
+    let values = super::load_setting_values(client, &["webp_quality", "webp_method"]).await?;
+    let quality = values
+        .get("webp_quality")
         .and_then(|v| v.parse().ok())
         .map(m::WebpSettings::clamp_quality)
         .unwrap_or(m::DEFAULT_WEBP_QUALITY);
-    let method = read_key(client, "webp_method")
-        .await?
+    let method = values
+        .get("webp_method")
         .and_then(|v| v.parse().ok())
         .map(m::WebpSettings::clamp_method)
         .unwrap_or(m::DEFAULT_WEBP_METHOD);

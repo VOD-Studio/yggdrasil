@@ -27,32 +27,32 @@ use crate::models::settings::{BackupSettings, LastBackupRun};
 pub(crate) async fn load_backup_settings(
     client: &tokio_postgres::Client,
 ) -> Result<BackupSettings, AppError> {
-    async fn read_key(
-        client: &tokio_postgres::Client,
-        key: &str,
-    ) -> Result<Option<String>, AppError> {
-        let row = client
-            .query_opt("SELECT value FROM settings WHERE key = $1", &[&key])
-            .await
-            .map_err(AppError::query)?;
-        Ok(row.map(|r| r.get::<_, String>("value")))
-    }
+    let values = super::load_setting_values(
+        client,
+        &[
+            "backup_auto_enabled",
+            "backup_time_utc",
+            "backup_retention_count",
+            "backup_include_uploads",
+        ],
+    )
+    .await?;
 
-    let auto_enabled = read_key(client, "backup_auto_enabled")
-        .await?
+    let auto_enabled = values
+        .get("backup_auto_enabled")
         .and_then(|v| v.parse().ok())
         .unwrap_or(crate::models::settings::DEFAULT_BACKUP_AUTO_ENABLED);
-    let time_utc = read_key(client, "backup_time_utc")
-        .await?
-        .map(|v| BackupSettings::normalize_time_utc(&v))
+    let time_utc = values
+        .get("backup_time_utc")
+        .map(|v| BackupSettings::normalize_time_utc(v))
         .unwrap_or_else(|| crate::models::settings::DEFAULT_BACKUP_TIME_UTC.to_string());
-    let retention_count = read_key(client, "backup_retention_count")
-        .await?
+    let retention_count = values
+        .get("backup_retention_count")
         .and_then(|v| v.parse().ok())
         .map(BackupSettings::clamp_retention)
         .unwrap_or(crate::models::settings::DEFAULT_BACKUP_RETENTION_COUNT);
-    let include_uploads = read_key(client, "backup_include_uploads")
-        .await?
+    let include_uploads = values
+        .get("backup_include_uploads")
         .and_then(|v| v.parse().ok())
         .unwrap_or(crate::models::settings::DEFAULT_BACKUP_INCLUDE_UPLOADS);
 
@@ -163,17 +163,7 @@ pub(crate) async fn seed_backup_settings_from_env(
         }
     }
 
-    for (key, value) in seeds {
-        client
-            .execute(
-                "INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING",
-                &[&key, &value],
-            )
-            .await
-            .map_err(AppError::query)?;
-        tracing::info!("备份配置已从环境变量播种: {key}={value}（仅键缺失时生效）");
-    }
-    Ok(())
+    super::insert_env_seeds(client, seeds).await
 }
 
 /// 组装面板视图：设置 + 上次结果 + 下次执行时间。

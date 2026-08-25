@@ -56,17 +56,7 @@ pub(crate) async fn seed_image_limit_settings_from_env(
         }
     }
 
-    for (key, value) in seeds {
-        client
-            .execute(
-                "INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING",
-                &[&key, &value],
-            )
-            .await
-            .map_err(AppError::query)?;
-        tracing::info!("图片尺寸限制配置已从环境变量播种: {key}={value}（仅键缺失时生效）");
-    }
-    Ok(())
+    super::insert_env_seeds(client, seeds).await
 }
 
 /// 从 settings 表读取图片尺寸限制配置（缺键回退默认值）。
@@ -76,29 +66,27 @@ pub(crate) async fn load_image_limit_settings(
 ) -> Result<ImageLimitSettings, AppError> {
     use crate::models::settings as m;
 
-    async fn read_key(
-        client: &tokio_postgres::Client,
-        key: &str,
-    ) -> Result<Option<String>, AppError> {
-        let row = client
-            .query_opt("SELECT value FROM settings WHERE key = $1", &[&key])
-            .await
-            .map_err(AppError::query)?;
-        Ok(row.map(|r| r.get::<_, String>("value")))
-    }
-
-    let max_dimension = read_key(client, "image_max_dimension")
-        .await?
+    let values = super::load_setting_values(
+        client,
+        &[
+            "image_max_dimension",
+            "image_max_pixels",
+            "image_dimensions_cache_ttl_secs",
+        ],
+    )
+    .await?;
+    let max_dimension = values
+        .get("image_max_dimension")
         .and_then(|v| v.parse().ok())
         .map(m::ImageLimitSettings::clamp_max_dimension)
         .unwrap_or(m::DEFAULT_IMAGE_MAX_DIMENSION);
-    let max_pixels = read_key(client, "image_max_pixels")
-        .await?
+    let max_pixels = values
+        .get("image_max_pixels")
         .and_then(|v| v.parse().ok())
         .map(m::ImageLimitSettings::clamp_max_pixels)
         .unwrap_or(m::DEFAULT_IMAGE_MAX_PIXELS);
-    let dimensions_cache_ttl_secs = read_key(client, "image_dimensions_cache_ttl_secs")
-        .await?
+    let dimensions_cache_ttl_secs = values
+        .get("image_dimensions_cache_ttl_secs")
         .and_then(|v| v.parse().ok())
         .map(m::ImageLimitSettings::clamp_dimensions_cache_ttl_secs)
         .unwrap_or(m::DEFAULT_IMAGE_DIMENSIONS_CACHE_TTL_SECS);

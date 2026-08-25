@@ -49,17 +49,7 @@ pub(crate) async fn seed_image_cache_settings_from_env(
         }
     }
 
-    for (key, value) in seeds {
-        client
-            .execute(
-                "INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING",
-                &[&key, &value],
-            )
-            .await
-            .map_err(AppError::query)?;
-        tracing::info!("图片缓存配置已从环境变量播种: {key}={value}（仅键缺失时生效）");
-    }
-    Ok(())
+    super::insert_env_seeds(client, seeds).await
 }
 
 /// 从 settings 表读取图片磁盘缓存配置（缺键回退默认值）。
@@ -67,24 +57,19 @@ pub(crate) async fn seed_image_cache_settings_from_env(
 pub(crate) async fn load_image_cache_settings(
     client: &tokio_postgres::Client,
 ) -> Result<crate::models::settings::ImageCacheSettings, AppError> {
-    async fn read_key(
-        client: &tokio_postgres::Client,
-        key: &str,
-    ) -> Result<Option<String>, AppError> {
-        let row = client
-            .query_opt("SELECT value FROM settings WHERE key = $1", &[&key])
-            .await
-            .map_err(AppError::query)?;
-        Ok(row.map(|r| r.get::<_, String>("value")))
-    }
+    let values = super::load_setting_values(
+        client,
+        &["image_disk_cache_max_mb", "image_disk_cache_max_age_hours"],
+    )
+    .await?;
 
-    let disk_cache_max_mb = read_key(client, "image_disk_cache_max_mb")
-        .await?
+    let disk_cache_max_mb = values
+        .get("image_disk_cache_max_mb")
         .and_then(|v| v.parse().ok())
         .map(crate::models::settings::ImageCacheSettings::clamp_max_mb)
         .unwrap_or(crate::models::settings::DEFAULT_IMAGE_DISK_CACHE_MAX_MB);
-    let disk_cache_max_age_hours = read_key(client, "image_disk_cache_max_age_hours")
-        .await?
+    let disk_cache_max_age_hours = values
+        .get("image_disk_cache_max_age_hours")
         .and_then(|v| v.parse().ok())
         .map(crate::models::settings::ImageCacheSettings::clamp_max_age_hours)
         .unwrap_or(crate::models::settings::DEFAULT_IMAGE_DISK_CACHE_MAX_AGE_HOURS);

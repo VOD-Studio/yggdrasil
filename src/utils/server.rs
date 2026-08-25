@@ -39,6 +39,68 @@ pub fn parse_migrate_startup_timeout() -> u64 {
         .unwrap_or(30)
 }
 
+/// 默认 SSR 增量缓存时长（秒）。
+pub const DEFAULT_SSR_CACHE_SECS: u64 = 3600;
+
+pub fn parse_bool_value(value: Option<&str>, default: bool) -> bool {
+    match value.map(str::trim) {
+        Some(value)
+            if value.eq_ignore_ascii_case("1")
+                || value.eq_ignore_ascii_case("true")
+                || value.eq_ignore_ascii_case("yes")
+                || value.eq_ignore_ascii_case("on") =>
+        {
+            true
+        }
+        Some(value)
+            if value.eq_ignore_ascii_case("0")
+                || value.eq_ignore_ascii_case("false")
+                || value.eq_ignore_ascii_case("no")
+                || value.eq_ignore_ascii_case("off") =>
+        {
+            false
+        }
+        _ => default,
+    }
+}
+
+/// Read a boolean environment variable with an explicit default.
+pub fn parse_env_bool(name: &str, default: bool) -> bool {
+    let value = std::env::var(name).ok();
+    parse_bool_value(value.as_deref(), default)
+}
+
+/// SSR cache TTL from the environment, with the shared default.
+pub fn parse_ssr_cache_secs() -> u64 {
+    std::env::var("SSR_CACHE_SECS")
+        .ok()
+        .and_then(|value| value.trim().parse().ok())
+        .unwrap_or(DEFAULT_SSR_CACHE_SECS)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_bool_value;
+
+    #[test]
+    fn parse_bool_value_accepts_common_spellings() {
+        for value in ["1", "true", "yes", "on"] {
+            assert!(parse_bool_value(Some(value), false));
+        }
+        for value in ["0", "false", "no", "off"] {
+            assert!(!parse_bool_value(Some(value), true));
+        }
+    }
+
+    #[test]
+    fn parse_bool_value_uses_default_for_unknown_values() {
+        assert!(parse_bool_value(Some("maybe"), true));
+        assert!(!parse_bool_value(Some("maybe"), false));
+        assert!(parse_bool_value(None, true));
+        assert!(!parse_bool_value(None, false));
+    }
+}
+
 /// 转义 SQL `LIKE` 模式串中的特殊字符（`\`、`%`、`_`），配合 `ESCAPE '\\'` 使用。
 ///
 /// 此前 `api/posts/list.rs`（逐字符循环）与 `api/posts/search.rs`、`mcp/tools/read.rs`

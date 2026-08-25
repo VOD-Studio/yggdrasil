@@ -35,15 +35,7 @@ pub(crate) async fn seed_upload_settings_from_env(
             return Ok(());
         }
     };
-    client
-        .execute(
-            "INSERT INTO settings (key, value) VALUES ('upload_concurrency', $1) ON CONFLICT (key) DO NOTHING",
-            &[&value.to_string()],
-        )
-        .await
-        .map_err(AppError::query)?;
-    tracing::info!("素材上传配置已从环境变量播种: upload_concurrency={value}（仅键缺失时生效）");
-    Ok(())
+    super::insert_env_seeds(client, vec![("upload_concurrency", value.to_string())]).await
 }
 
 /// 读取素材上传配置（上传弹窗并发数）。
@@ -57,14 +49,11 @@ pub async fn get_upload_settings() -> Result<UploadSettings, ServerFnError> {
     {
         let client = get_conn().await.map_err(AppError::db_conn)?;
 
-        let concurrency: i32 = client
-            .query_opt(
-                "SELECT value FROM settings WHERE key = 'upload_concurrency'",
-                &[],
-            )
-            .await
-            .map_err(AppError::query)?
-            .and_then(|r| r.get::<_, String>("value").parse().ok())
+        let values = super::load_setting_values(&client, &["upload_concurrency"]).await?;
+
+        let concurrency = values
+            .get("upload_concurrency")
+            .and_then(|v| v.parse().ok())
             .map(UploadSettings::clamp_concurrency)
             .unwrap_or(crate::models::settings::DEFAULT_UPLOAD_CONCURRENCY);
 

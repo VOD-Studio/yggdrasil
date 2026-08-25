@@ -45,14 +45,12 @@ pub async fn get_system_info() -> Result<SystemInfo, ServerFnError> {
                 .ok()
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(30),
-            ssr_cache_secs: std::env::var("SSR_CACHE_SECS")
-                .ok()
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(3600),
+            ssr_cache_secs: crate::utils::server::parse_ssr_cache_secs(),
             compression_algorithms: std::env::var("COMPRESSION_ALGORITHMS").unwrap_or_default(),
-            expose_version_headers: std::env::var("EXPOSE_VERSION_HEADERS")
-                .map(|v| !matches!(v.as_str(), "0" | "false" | "no" | "off"))
-                .unwrap_or(true),
+            expose_version_headers: crate::utils::server::parse_env_bool(
+                "EXPOSE_VERSION_HEADERS",
+                true,
+            ),
             docker_socket_path: std::env::var("DOCKER_SOCKET_PATH")
                 .unwrap_or_else(|_| "/var/run/docker.sock".to_string()),
             mcp_token_enc_key_set: std::env::var("MCP_TOKEN_ENC_KEY")

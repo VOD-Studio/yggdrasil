@@ -108,17 +108,7 @@ pub(crate) async fn seed_runner_settings_from_env(
         }
     }
 
-    for (key, value) in seeds {
-        client
-            .execute(
-                "INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING",
-                &[&key, &value],
-            )
-            .await
-            .map_err(AppError::query)?;
-        tracing::info!("运行器配置已从环境变量播种: {key}={value}（仅键缺失时生效）");
-    }
-    Ok(())
+    super::insert_env_seeds(client, seeds).await
 }
 
 /// 从 settings 表读取代码运行器配置（缺键回退默认值）。
@@ -128,64 +118,69 @@ pub(crate) async fn load_runner_settings(
 ) -> Result<RunnerSettings, AppError> {
     use crate::models::settings as m;
 
-    async fn read_key(
-        client: &tokio_postgres::Client,
-        key: &str,
-    ) -> Result<Option<String>, AppError> {
-        let row = client
-            .query_opt("SELECT value FROM settings WHERE key = $1", &[&key])
-            .await
-            .map_err(AppError::query)?;
-        Ok(row.map(|r| r.get::<_, String>("value")))
-    }
-
-    let allow_network = read_key(client, "runner_allow_network")
-        .await?
+    let values = super::load_setting_values(
+        client,
+        &[
+            "runner_allow_network",
+            "runner_max_concurrent",
+            "runner_max_cpu_cores",
+            "runner_max_memory_mb",
+            "runner_max_timeout_secs",
+            "runner_max_output_bytes",
+            "runner_max_source_bytes",
+            "runner_queue_timeout_secs",
+            "runner_task_ttl_secs",
+            "runner_languages",
+        ],
+    )
+    .await?;
+    let allow_network = values
+        .get("runner_allow_network")
         .and_then(|v| v.parse().ok())
         .unwrap_or(m::DEFAULT_RUNNER_ALLOW_NETWORK);
-    let max_concurrent = read_key(client, "runner_max_concurrent")
-        .await?
+    let max_concurrent = values
+        .get("runner_max_concurrent")
         .and_then(|v| v.parse().ok())
         .map(m::RunnerSettings::clamp_max_concurrent)
         .unwrap_or(m::DEFAULT_RUNNER_MAX_CONCURRENT);
-    let max_cpu_cores = read_key(client, "runner_max_cpu_cores")
-        .await?
+    let max_cpu_cores = values
+        .get("runner_max_cpu_cores")
         .and_then(|v| v.parse().ok())
         .map(m::RunnerSettings::clamp_max_cpu_cores)
         .unwrap_or(m::DEFAULT_RUNNER_MAX_CPU_CORES);
-    let max_memory_mb = read_key(client, "runner_max_memory_mb")
-        .await?
+    let max_memory_mb = values
+        .get("runner_max_memory_mb")
         .and_then(|v| v.parse().ok())
         .map(m::RunnerSettings::clamp_max_memory_mb)
         .unwrap_or(m::DEFAULT_RUNNER_MAX_MEMORY_MB);
-    let max_timeout_secs = read_key(client, "runner_max_timeout_secs")
-        .await?
+    let max_timeout_secs = values
+        .get("runner_max_timeout_secs")
         .and_then(|v| v.parse().ok())
         .map(m::RunnerSettings::clamp_max_timeout_secs)
         .unwrap_or(m::DEFAULT_RUNNER_MAX_TIMEOUT_SECS);
-    let max_output_bytes = read_key(client, "runner_max_output_bytes")
-        .await?
+    let max_output_bytes = values
+        .get("runner_max_output_bytes")
         .and_then(|v| v.parse().ok())
         .map(m::RunnerSettings::clamp_max_output_bytes)
         .unwrap_or(m::DEFAULT_RUNNER_MAX_OUTPUT_BYTES);
-    let max_source_bytes = read_key(client, "runner_max_source_bytes")
-        .await?
+    let max_source_bytes = values
+        .get("runner_max_source_bytes")
         .and_then(|v| v.parse().ok())
         .map(m::RunnerSettings::clamp_max_source_bytes)
         .unwrap_or(m::DEFAULT_RUNNER_MAX_SOURCE_BYTES);
-    let queue_timeout_secs = read_key(client, "runner_queue_timeout_secs")
-        .await?
+    let queue_timeout_secs = values
+        .get("runner_queue_timeout_secs")
         .and_then(|v| v.parse().ok())
         .map(m::RunnerSettings::clamp_queue_timeout_secs)
         .unwrap_or(m::DEFAULT_RUNNER_QUEUE_TIMEOUT_SECS);
-    let task_ttl_secs = read_key(client, "runner_task_ttl_secs")
-        .await?
+    let task_ttl_secs = values
+        .get("runner_task_ttl_secs")
         .and_then(|v| v.parse().ok())
         .map(m::RunnerSettings::clamp_task_ttl_secs)
         .unwrap_or(m::DEFAULT_RUNNER_TASK_TTL_SECS);
-    let languages = read_key(client, "runner_languages")
-        .await?
-        .and_then(|v| m::RunnerSettings::normalize_languages(&v));
+    let languages = values
+        .get("runner_languages")
+        .and_then(|v| m::RunnerSettings::normalize_languages(v));
 
     Ok(RunnerSettings {
         allow_network,
