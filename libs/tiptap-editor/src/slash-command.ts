@@ -573,6 +573,7 @@ function createLangSelect(
   const label = document.createElement('span');
   trigger.appendChild(label);
   trigger.appendChild(makeSvgIcon('M6 9l6 6 6-6', 'tiptap-select-chevron'));
+  root.appendChild(trigger);
 
   let open = false;
   let selected = Math.max(
