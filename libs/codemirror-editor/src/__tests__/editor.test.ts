@@ -1,5 +1,10 @@
+import { syntaxTree } from '@codemirror/language';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { CodeMirrorInstance, EditorOptions } from '../editor';
+
+type CodeMirrorInternals = {
+  view: { state: Parameters<typeof syntaxTree>[0] };
+};
 
 describe('CodeMirrorInstance', () => {
   let container: HTMLElement;
@@ -22,6 +27,32 @@ describe('CodeMirrorInstance', () => {
     opts.value = 'SELECT * FROM posts';
     const inst = new CodeMirrorInstance(container, opts);
     expect(inst.getValue()).toBe('SELECT * FROM posts');
+    inst.destroy();
+  });
+
+  it('go 语言将 // 注释解析为完整注释节点', () => {
+    const source = '// MaxMessages: 超过上限时丢弃最旧消息\npackage main\nfunc main() {}';
+    const opts = new EditorOptions();
+    opts.language = 'go';
+    opts.value = source;
+    const inst = new CodeMirrorInstance(container, opts);
+    // Test-only private view access verifies the real parser tree.
+    const internals = inst as unknown as CodeMirrorInternals;
+    const state = internals.view.state;
+    const nodes: string[] = [];
+    syntaxTree(state).iterate({
+      enter: (node) => {
+        if (
+          node.name === 'LineComment' ||
+          node.name === 'PackageClause' ||
+          node.name === 'FunctionDecl'
+        ) {
+          nodes.push(node.name);
+        }
+      },
+    });
+
+    expect(nodes).toEqual(expect.arrayContaining(['LineComment', 'PackageClause', 'FunctionDecl']));
     inst.destroy();
   });
 

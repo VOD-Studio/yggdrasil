@@ -5,6 +5,7 @@ import {
   completionKeymap,
 } from '@codemirror/autocomplete';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
+import { go } from '@codemirror/lang-go';
 import { javascript } from '@codemirror/lang-javascript';
 import { python } from '@codemirror/lang-python';
 import { PostgreSQL, sql } from '@codemirror/lang-sql';
@@ -107,18 +108,22 @@ export class EditorOptions {
 /**
  * 把语言标识映射成 CodeMirror 语言 Extension。
  * - `python` → @codemirror/lang-python
+ * - `go` / `golang` → @codemirror/lang-go
  * - `node` / `javascript` / `js` → @codemirror/lang-javascript（JS 模式）
  * - `bun` / `typescript` / `ts` → @codemirror/lang-javascript（TypeScript 模式）
  * - `sql` / 缺省 → @codemirror/lang-sql（PostgreSQL 方言 + schema 补全）
  *
- * 归一化后（src/api/code_runner/languages.rs::normalize_lang）CodeRunner 只会
- * 传来 canonical key（node/bun/python/go/rust），但这里仍保留别名分支作防御——
+ * 归一化后（src/api/code_runner/languages.rs::normalize_lang）CodeRunner 会传来
+ * canonical key（node/bun/python/go/rust），但这里仍保留别名分支作防御——
  * CodeMirror 也用在 SQL 控制台等场景，调用方可能直接传别名。
  *
  * SQL 分支使用 schema 补全；非 SQL 语言忽略 schema（补全仅对 SQL 有意义）。
  */
 function buildLanguageExtension(lang: string, schema: SqlSchema): Extension {
   const normalized = (lang ?? '').toLowerCase();
+  if (normalized === 'go' || normalized === 'golang') {
+    return go();
+  }
   if (normalized === 'python') {
     return python();
   }
@@ -220,7 +225,7 @@ export class CodeMirrorInstance {
     });
   }
 
-  /** 热切换语言（python/node/javascript/sql），不重建实例（Compartment.reconfigure）。 */
+  /** 热切换语言（go/python/node/javascript/sql），不重建实例（Compartment.reconfigure）。 */
   setLanguage(lang: string): void {
     this.language = lang;
     this.view.dispatch({
