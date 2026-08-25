@@ -313,15 +313,90 @@ fn rotate_auto_backups(keep: i32) {
 ///
 /// 成功返回 SQL 文件名（最终「完成」进度由调用方统一上报）。
 #[cfg(feature = "server")]
-fn pg_dump_command(db_url: &str) -> std::process::Command {
-    let mut command = std::process::Command::new("pg_dump");
-    command
-        .arg(db_url)
-        .arg("--clean")
-        .arg("--if-exists")
-        .arg("--no-owner")
-        .arg("--no-privileges");
-    command
+fn pg_command_with_db_config(
+    program: &str,
+    db_url: &str,
+) -> std::io::Result<std::process::Command> {
+    use std::str::FromStr;
+    use tokio_postgres::config::{Host, SslMode};
+
+    let config = tokio_postgres::Config::from_str(db_url).map_err(|error| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("DATABASE_URL 解析失败: {error}"),
+        )
+    })?;
+    let mut command = std::process::Command::new(program);
+    // pg_dump/psql 不读取 DATABASE_URL；移除继承的敏感环境变量，只保留
+    // 拆出的 PG* 连接参数，避免子进程环境再次暴露完整 URI。
+    command.env_remove("DATABASE_URL");
+
+    let hosts: Vec<String> = config
+        .get_hosts()
+        .iter()
+        .map(|host| match host {
+            Host::Tcp(host) => host.clone(),
+            Host::Unix(path) => path.to_string_lossy().into_owned(),
+        })
+        .collect();
+    if !hosts.is_empty() {
+        command.env("PGHOST", hosts.join(","));
+    }
+    if !config.get_hostaddrs().is_empty() {
+        command.env(
+            "PGHOSTADDR",
+            config
+                .get_hostaddrs()
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(","),
+        );
+    }
+    if !config.get_ports().is_empty() {
+        command.env(
+            "PGPORT",
+            config
+                .get_ports()
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(","),
+        );
+    }
+    if let Some(user) = config.get_user() {
+        command.env("PGUSER", user);
+    }
+    if let Some(password) = config.get_password() {
+        command.env("PGPASSWORD", String::from_utf8_lossy(password).into_owned());
+    }
+    if let Some(dbname) = config.get_dbname() {
+        command.env("PGDATABASE", dbname);
+    }
+    if let Some(options) = config.get_options() {
+        command.env("PGOPTIONS", options);
+    }
+    if let Some(application_name) = config.get_application_name() {
+        command.env("PGAPPNAME", application_name);
+    }
+    let ssl_mode = match config.get_ssl_mode() {
+        SslMode::Disable => "disable",
+        SslMode::Prefer => "prefer",
+        SslMode::Require => "require",
+        _ => "prefer",
+    };
+    command.env("PGSSLMODE", ssl_mode);
+    if let Some(timeout) = config.get_connect_timeout() {
+        command.env("PGCONNECT_TIMEOUT", timeout.as_secs().max(1).to_string());
+    }
+    Ok(command)
+}
+
+#[cfg(feature = "server")]
+fn pg_dump_command(db_url: &str) -> std::io::Result<std::process::Command> {
+    let mut command = pg_command_with_db_config("pg_dump", db_url)?;
+    command.args(["--clean", "--if-exists", "--no-owner", "--no-privileges"]);
+    Ok(command)
 }
 
 #[cfg(feature = "server")]
@@ -402,7 +477,7 @@ async fn run_pg_dump_backup(
     // 闭包 panic（JoinError）按「执行失败」处理。
     let dump_result = tokio::task::spawn_blocking(
         move || -> Result<std::process::Output, (bool, std::io::Error)> {
-            let mut command = pg_dump_command(&db_url);
+            let mut command = pg_dump_command(&db_url).map_err(|error| (true, error))?;
             command
                 .stdout(std::process::Stdio::from(stdout_file))
                 .stderr(std::process::Stdio::piped())
@@ -661,6 +736,42 @@ fn is_legacy_pg_dump_owner_statement(line: &[u8]) -> bool {
         && line.ends_with(b";")
 }
 
+/// 去除恢复脚本行首空白，确保带缩进的 psql 元命令也进入安全检查。
+#[cfg(feature = "server")]
+fn trim_restore_line_start(line: &[u8]) -> &[u8] {
+    let line = sql_line_without_eol(line);
+    let start = line
+        .iter()
+        .position(|byte| !byte.is_ascii_whitespace())
+        .unwrap_or(line.len());
+    &line[start..]
+}
+
+#[cfg(feature = "server")]
+fn is_allowed_restore_meta_command(line: &[u8]) -> bool {
+    let line = trim_restore_line_start(line);
+    let Some(rest) = line.strip_prefix(b"\\") else {
+        return false;
+    };
+    let mut fields = rest
+        .split(|byte| byte.is_ascii_whitespace())
+        .filter(|field| !field.is_empty());
+    let Some(command) = fields.next() else {
+        return false;
+    };
+    if command != b"restrict" && command != b"unrestrict" {
+        return false;
+    }
+    let Some(token) = fields.next() else {
+        return false;
+    };
+    !token.is_empty()
+        && token
+            .iter()
+            .all(|byte| byte.is_ascii_alphanumeric() || *byte == b'_')
+        && fields.next().is_none()
+}
+
 #[cfg(feature = "server")]
 fn write_owner_neutral_restore_sql(
     mut input: impl std::io::BufRead,
@@ -687,10 +798,18 @@ fn write_owner_neutral_restore_sql(
             output.write_all(&line)?;
         } else if is_legacy_pg_dump_owner_statement(&line) {
             removed += 1;
+        } else if trim_restore_line_start(sql_line).first() == Some(&b'\\')
+            && !is_allowed_restore_meta_command(&line)
+        {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "unsupported psql meta-command in restore file",
+            ));
         } else {
             output.write_all(&line)?;
         }
     }
+
     output.flush()?;
     Ok(removed)
 }
@@ -741,18 +860,14 @@ impl Drop for PreparedRestoreSql {
 }
 
 #[cfg(feature = "server")]
-fn psql_restore_command(db_url: &str, path: &Path) -> std::process::Command {
-    let mut command = std::process::Command::new("psql");
+fn psql_restore_command(db_url: &str, path: &Path) -> std::io::Result<std::process::Command> {
+    let mut command = pg_command_with_db_config("psql", db_url)?;
     command
-        .arg(db_url)
-        .arg("--single-transaction")
-        .arg("-v")
-        .arg("ON_ERROR_STOP=1")
-        .arg("-f")
+        .args(["--single-transaction", "-v", "ON_ERROR_STOP=1", "-f"])
         .arg(path)
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped());
-    command
+    Ok(command)
 }
 
 #[cfg(feature = "server")]
@@ -812,16 +927,27 @@ async fn run_restore(task_id: &str, filename: &str) {
                 "restore: removed legacy pg_dump owner statements"
             );
         }
-        psql_restore_command(&db_url, &prepared.path).output()
+
+        let mut command = psql_restore_command(&db_url, &prepared.path)?;
+        command.output()
     })
     .await
     .unwrap_or_else(|join_e| Err(std::io::Error::other(join_e.to_string())));
     match restore_result {
         Ok(o) if o.status.success() => {
-            // 恢复用备份时刻的数据重建了 posts 等表，必须冲刷全部文章相关缓存
-            // 与 SSR 世代号，否则前端仍读旧数据（被删的文章不会重新出现）。
+            // 恢复会覆盖文章、评论、用户、设置与素材元数据；所有内存/磁盘缓存
+            // 必须一起冲刷。generation 仅用于观测，不能替代物理 SSR 删除。
             crate::cache::invalidate_all_post_caches();
             crate::cache::invalidate_search_results();
+            crate::cache::invalidate_all_comments();
+            crate::cache::invalidate_friend_links();
+            crate::cache::invalidate_site_settings();
+            crate::cache::invalidate_security_settings();
+            crate::cache::invalidate_image_cache_settings();
+            crate::cache::invalidate_log_targets();
+            crate::cache::SESSION_CACHE.invalidate_all();
+            crate::api::image::invalidate_all_caches().await;
+            crate::ssr_cache::invalidate_ssr_all_public();
             crate::ssr_cache::bump_global_generation();
             tasks::update(task_id, "恢复完成", 100, TaskStatus::Done, None, None, None);
         }
@@ -1628,19 +1754,26 @@ mod tests {
         assert_eq!(sanitize_import_filename(&long), None);
     }
     #[test]
-    fn pg_dump_is_owner_and_acl_neutral() {
-        let command = pg_dump_command("<DATABASE_URL>");
+    fn pg_dump_is_owner_acl_neutral_without_db_url_in_args() {
+        let db_url = "postgres://user:secret@example.com:5432/dbname";
+        let command = pg_dump_command(db_url).expect("valid database URL");
         let args: Vec<_> = command
             .get_args()
             .map(|arg| arg.to_string_lossy().into_owned())
             .collect();
         assert!(args.iter().any(|arg| arg == "--no-owner"), "{args:?}");
         assert!(args.iter().any(|arg| arg == "--no-privileges"), "{args:?}");
+        assert!(!args.iter().any(|arg| arg.contains("secret")), "{args:?}");
+        assert!(command
+            .get_envs()
+            .any(|(key, value)| key == "PGPASSWORD" && value.is_some()));
     }
 
     #[test]
-    fn psql_restore_is_atomic() {
-        let command = psql_restore_command("<DATABASE_URL>", Path::new("backup.sql"));
+    fn psql_restore_is_atomic_without_db_url_in_args() {
+        let db_url = "postgres://user:secret@example.com:5432/dbname";
+        let command =
+            psql_restore_command(db_url, Path::new("backup.sql")).expect("valid database URL");
         let args: Vec<_> = command
             .get_args()
             .map(|arg| arg.to_string_lossy().into_owned())
@@ -1649,6 +1782,7 @@ mod tests {
             args.iter().any(|arg| arg == "--single-transaction"),
             "{args:?}"
         );
+        assert!(!args.iter().any(|arg| arg.contains("secret")), "{args:?}");
     }
 
     #[test]
@@ -1678,5 +1812,31 @@ mod tests {
             output.contains("ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;"),
             "{output}"
         );
+    }
+    #[test]
+    fn restore_rejects_shell_meta_commands() {
+        let sql = concat!(
+            "-- YGGDRASIL BACKUP v1\n",
+            "\\! touch /tmp/yggdrasil-pwned\n",
+        );
+        let mut output = Vec::new();
+        let error =
+            write_owner_neutral_restore_sql(std::io::Cursor::new(sql), &mut output).unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn restore_keeps_generated_restrict_meta_commands() {
+        let sql = concat!(
+            "\\restrict abc123\n",
+            "SELECT 1;\n",
+            "\\unrestrict abc123\n",
+        );
+        let mut output = Vec::new();
+        write_owner_neutral_restore_sql(std::io::Cursor::new(sql), &mut output)
+            .expect("generated restrict commands are allowed");
+        let output = String::from_utf8(output).expect("test SQL is UTF-8");
+        assert!(output.contains("\\restrict abc123"));
+        assert!(output.contains("\\unrestrict abc123"));
     }
 }

@@ -8,6 +8,8 @@
 //! 鉴权走 cookie session（`get_current_admin_user`），与其它后台 server-fn 一致；
 //! MCP 工具路径（bearer）无法调用这些 server-fn——那是 `src/mcp/tools/*` 的职责。
 
+#![allow(clippy::unused_unit, deprecated)]
+
 use dioxus::prelude::*;
 
 #[cfg(feature = "server")]
@@ -52,7 +54,7 @@ impl TokenLifetime {
 ///
 /// 生成明文 `ygg_<32 hex>`，AES-GCM 加密后存密文 + SHA-256 哈希；明文随响应一次性
 /// 返回给管理员（后续可经 [`reveal_mcp_token`] 重新查看）。仅 admin。
-#[server]
+#[server(CreateMcpToken, "/api")]
 pub async fn create_mcp_token(
     name: String,
     scope: TokenScope,
@@ -120,7 +122,7 @@ pub async fn create_mcp_token(
 /// 列出当前管理员名下的全部令牌（不含任何密钥材料，仅展示用元数据）。
 ///
 /// 按 `created_at DESC` 排序，最近签发的在前。仅 admin。
-#[server]
+#[server(ListMcpTokens, "/api")]
 pub async fn list_mcp_tokens() -> Result<Vec<McpTokenSummary>, ServerFnError> {
     #[cfg(feature = "server")]
     {
@@ -157,7 +159,7 @@ pub async fn list_mcp_tokens() -> Result<Vec<McpTokenSummary>, ServerFnError> {
 ///
 /// 找不到令牌、或令牌不属于当前管理员 → 返回 `None`（不区分原因，避免探测）。
 /// 仅 admin。
-#[server]
+#[server(RevealMcpToken, "/api")]
 pub async fn reveal_mcp_token(id: String) -> Result<Option<String>, ServerFnError> {
     #[cfg(feature = "server")]
     {
@@ -197,7 +199,7 @@ pub async fn reveal_mcp_token(id: String) -> Result<Option<String>, ServerFnErro
 /// 撤销令牌（软删除：置 `revoked_at = now()`，行保留以备审计）。
 ///
 /// 找不到或非本人令牌 → 静默无操作（不报错，避免探测）。仅 admin。
-#[server]
+#[server(RevokeMcpToken, "/api")]
 pub async fn revoke_mcp_token(id: String) -> Result<(), ServerFnError> {
     #[cfg(feature = "server")]
     {
@@ -284,7 +286,7 @@ pub struct McpClientConfigs {
 ///
 /// 配置生成与高亮均在服务端完成（`crate::mcp::config` / `crate::highlight` 均为
 /// server-only），返回给前端展示。`APP_BASE_URL` 环境变量也只在服务端读取。仅 admin。
-#[server]
+#[server(GetMcpClientConfigs, "/api")]
 pub async fn get_mcp_client_configs(token: String) -> Result<McpClientConfigs, ServerFnError> {
     #[cfg(feature = "server")]
     {

@@ -247,6 +247,17 @@ pub async fn login(username: String, password: String) -> Result<AuthResponse, S
         });
     }
 
+    // blocked / 未知角色即使密码正确也不能建立会话；统一返回通用凭据错误，
+    // 避免泄露账号当前状态。
+    let role_str: String = row.get("role");
+    if !matches!(UserRole::from_str(&role_str), Some(UserRole::Admin)) {
+        return Ok(AuthResponse {
+            success: false,
+            message: "Invalid credentials".to_string(),
+            token: None,
+        });
+    }
+
     let user_id: i32 = row.get("id");
     let token = session::generate_token();
     let token_hash = session::hash_token(&token);
@@ -300,7 +311,9 @@ pub async fn login(username: String, password: String) -> Result<AuthResponse, S
     let cookie = session::session_cookie(
         &token,
         session::SESSION_MAX_AGE_SECS,
-        crate::api::settings::runtime_security_settings().await.cookie_secure,
+        crate::api::settings::runtime_security_settings()
+            .await
+            .cookie_secure,
     );
     // 通过 Dioxus FullstackContext 设置 HttpOnly Cookie 响应头。
     if let Some(ctx) = dioxus::fullstack::FullstackContext::current() {
@@ -330,7 +343,9 @@ pub async fn logout() -> Result<AuthResponse, ServerFnError> {
     let cookie = session::session_cookie(
         "",
         0,
-        crate::api::settings::runtime_security_settings().await.cookie_secure,
+        crate::api::settings::runtime_security_settings()
+            .await
+            .cookie_secure,
     );
     if let Some(ctx) = dioxus::fullstack::FullstackContext::current() {
         if let Ok(value) = HeaderValue::try_from(cookie.as_str()) {
@@ -364,31 +379,40 @@ pub struct CurrentUserResponse {
 #[cfg(feature = "server")]
 /// 根据会话 token 查询对应用户（不含密码哈希，供会话缓存使用）。
 ///
-/// 优先命中内存缓存，避免每次请求都执行 DB JOIN；未命中时回查数据库并回填缓存。
-/// 缓存命中后仍回查 `users.session_generation`：若用户已被降级/封禁（generation 被
-/// bump），缓存的旧 SessionUser.generation 不再匹配，此时逐出缓存并视为未登录，
-/// 消除权限残留窗口（见 H2）。仅服务端内部使用，不会暴露给前端。
+/// 优先命中内存缓存，避免每次请求都执行完整用户查询；未命中时回查数据库并回填缓存。
+/// 缓存命中后仍按 token 校验 `sessions.expires_at`、用户角色与世代号，
+/// 确保过期、撤销或被封禁的会话不会在 TTL 内继续有效。
 pub async fn get_user_by_token(token: &str) -> Result<Option<SessionUser>, ServerFnError> {
     let token_hash = session::hash_token(token);
 
     if let Some(cached) = crate::cache::get_session_user(&token_hash).await {
-        // 缓存命中后校验世代号：bump 后该用户所有 session 应失效。
-        // 查询走主键，亚毫秒级，代价可接受。
-        let current_gen: Option<i32> = get_conn()
+        // 缓存命中后同时校验 session 是否存在/未过期、角色与世代号。
+        let session_state: Option<(i32, String)> = get_conn()
             .await
             .map_err(AppError::db_conn)?
             .query_opt(
-                "SELECT session_generation FROM users WHERE id = $1",
-                &[&cached.id],
+                "SELECT u.session_generation, u.role
+                 FROM sessions s
+                 JOIN users u ON s.user_id = u.id
+                 WHERE s.token_hash = $1 AND s.expires_at > NOW()",
+                &[&token_hash],
             )
             .await
             .map_err(AppError::query)?
-            .map(|r| r.get::<_, i32>(0));
-        match current_gen {
-            Some(gen) if gen == cached.session_generation => return Ok(Some(cached)),
+            .map(|r| (r.get(0), r.get(1)));
+
+        match session_state {
+            Some((generation, role))
+                if generation == cached.session_generation
+                    && role == "admin"
+                    && matches!(cached.role, UserRole::Admin) =>
+            {
+                return Ok(Some(cached));
+            }
             _ => {
-                // 世代不匹配或用户已删：逐出缓存，落入下方重新查询。
+                // session 不存在/已过期、世代不匹配或角色已禁用：逐出缓存并视为未登录。
                 crate::cache::invalidate_session_user(&token_hash).await;
+                return Ok(None);
             }
         }
     }
@@ -409,7 +433,10 @@ pub async fn get_user_by_token(token: &str) -> Result<Option<SessionUser>, Serve
     let user = match row {
         Some(row) => {
             let role_str: String = row.get("role");
-            let role = UserRole::from_str(&role_str).unwrap_or(UserRole::Blocked);
+            let role = match UserRole::from_str(&role_str) {
+                Some(UserRole::Admin) => UserRole::Admin,
+                _ => return Ok(None),
+            };
             Some(SessionUser {
                 id: row.get("id"),
                 username: row.get("username"),

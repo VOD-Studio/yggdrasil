@@ -7,6 +7,8 @@
 //! 排序用整数 `sort_order`（越小越靠前）；删除为物理删除（无回收站/软删除，
 //! 友链无审计需求）。
 
+#![allow(clippy::unused_unit, deprecated)]
+
 use dioxus::prelude::*;
 
 use crate::models::friend_link::FriendLink;
@@ -17,7 +19,7 @@ use crate::api::error::AppError;
 /// 前台友链列表（仅活跃，按 sort_order 升序）。
 ///
 /// 缓存命中直返；未命中查询 `friend_links` 活跃行后写缓存。公开接口，无需登录。
-#[server]
+#[server(ListFriendLinks, "/api")]
 pub async fn list_friend_links() -> Result<Vec<FriendLink>, ServerFnError> {
     #[cfg(feature = "server")]
     {
@@ -49,7 +51,7 @@ pub async fn list_friend_links() -> Result<Vec<FriendLink>, ServerFnError> {
 }
 
 /// 后台友链列表（含停用项，按 sort_order 升序）。仅 admin。
-#[server]
+#[server(ListAllFriendLinks, "/api")]
 pub async fn list_all_friend_links() -> Result<Vec<FriendLink>, ServerFnError> {
     #[cfg(feature = "server")]
     {
@@ -79,7 +81,7 @@ pub async fn list_all_friend_links() -> Result<Vec<FriendLink>, ServerFnError> {
 ///
 /// 校验通过后 `INSERT ... RETURNING *`，并失效友链 moka 缓存 + `/friends` SSR 缓存
 /// + 递增全局世代号，保证前台下次访问立即看到新卡片。
-#[server]
+#[server(CreateFriendLink, "/api")]
 pub async fn create_friend_link(
     name: String,
     url: String,
@@ -119,7 +121,7 @@ pub async fn create_friend_link(
 /// 更新友链（含启用状态）。仅 admin。
 ///
 /// 行不存在返回 `AppError::NotFound`；成功后同样失效缓存与 SSR。
-#[server]
+#[server(UpdateFriendLink, "/api")]
 pub async fn update_friend_link(
     id: i32,
     name: String,
@@ -173,7 +175,7 @@ pub async fn update_friend_link(
 /// 删除友链（物理删除）。仅 admin。
 ///
 /// id 不存在时静默成功（幂等删除），成功后失效缓存与 SSR。
-#[server]
+#[server(DeleteFriendLink, "/api")]
 pub async fn delete_friend_link(id: i32) -> Result<(), ServerFnError> {
     #[cfg(feature = "server")]
     {

@@ -42,6 +42,8 @@ pub struct SqlResult {
     /// 语句类型（来自 AST，如 "Select"/"Update"/"CreateTable"）。
     pub statement_type: String,
     pub explain: Option<String>,
+    /// SQL 已解析但执行失败时的脱敏/截断错误文本（admin-only 控制台可见）。
+    pub error: Option<String>,
     /// 是否因 500 行上限截断。
     pub truncated: bool,
 }
@@ -335,6 +337,9 @@ pub async fn execute_sql(sql: String, opts: ExecuteSqlOpts) -> Result<SqlResult,
             // 重序列化单条语句为可执行 SQL（去掉末尾分号，避免与 execute 的隐式分号冲突）
             let stmt_sql = stmt.to_string();
             last_result = execute_one(&client, stmt, &stmt_sql, opts.with_explain, start).await?;
+            if last_result.error.is_some() {
+                break;
+            }
         }
         // 是否含写语句：抽成纯函数便于单测（见 writes_affect_cache）。
         let has_write = writes_affect_cache(&asts);
@@ -361,6 +366,13 @@ pub async fn execute_sql(sql: String, opts: ExecuteSqlOpts) -> Result<SqlResult,
 ///
 /// `stmt_sql` 必须是 `stmt` 重序列化后的**单条**语句 SQL（不含其他语句），
 /// 保证护栏检查的 AST 与实际执行的语句一致。
+
+/// 把 admin-only SQL 执行错误限制在可控长度，避免异常文本撑大 server function 响应。
+#[cfg(feature = "server")]
+fn format_sql_error(error: impl std::fmt::Display) -> String {
+    error.to_string().chars().take(2_000).collect()
+}
+
 #[cfg(feature = "server")]
 async fn execute_one(
     client: &deadpool_postgres::Object,
@@ -375,10 +387,17 @@ async fn execute_one(
     if with_explain && read_only {
         // EXPLAIN 模式：包裹单条语句取执行计划，取首列文本拼接
         let explain_sql = format!("EXPLAIN {}", stmt_sql.trim_end_matches(';'));
-        let rows = client
-            .query(&explain_sql, &[])
-            .await
-            .map_err(AppError::query)?;
+        let rows = match client.query(&explain_sql, &[]).await {
+            Ok(rows) => rows,
+            Err(error) => {
+                return Ok(SqlResult {
+                    statement_type,
+                    error: Some(format_sql_error(error)),
+                    elapsed_ms: start().elapsed().as_millis() as u64,
+                    ..Default::default()
+                });
+            }
+        };
         let explain = rows
             .iter()
             .filter_map(|r| r.try_get::<_, String>(0).ok())
@@ -403,10 +422,17 @@ async fn execute_one(
             stmt_sql.trim_end_matches(';'),
             MAX_ROWS + 1
         );
-        let rows = client
-            .query(&limited_sql, &[])
-            .await
-            .map_err(AppError::query)?;
+        let rows = match client.query(&limited_sql, &[]).await {
+            Ok(rows) => rows,
+            Err(error) => {
+                return Ok(SqlResult {
+                    statement_type,
+                    error: Some(format_sql_error(error)),
+                    elapsed_ms: start().elapsed().as_millis() as u64,
+                    ..Default::default()
+                });
+            }
+        };
         let columns: Vec<String> = rows
             .first()
             .map(|r| r.columns().iter().map(|c| c.name().to_string()).collect())
@@ -431,10 +457,17 @@ async fn execute_one(
         })
     } else {
         // 写操作：返回影响行数
-        let affected = client
-            .execute(stmt_sql, &[])
-            .await
-            .map_err(AppError::query)?;
+        let affected = match client.execute(stmt_sql, &[]).await {
+            Ok(affected) => affected,
+            Err(error) => {
+                return Ok(SqlResult {
+                    statement_type,
+                    error: Some(format_sql_error(error)),
+                    elapsed_ms: start().elapsed().as_millis() as u64,
+                    ..Default::default()
+                });
+            }
+        };
         Ok(SqlResult {
             affected_rows: affected,
             statement_type,
@@ -783,5 +816,10 @@ mod tests {
         // 多语句中混入任一写语句即应触发（与 allow_multi 语义一致）。
         let stmts = parse("SELECT 1; UPDATE posts SET deleted_at = NULL WHERE id = 648");
         assert!(writes_affect_cache(&stmts));
+    }
+    #[test]
+    fn format_sql_error_truncates_long_messages() {
+        let message = format_sql_error("x".repeat(2_500));
+        assert_eq!(message.chars().count(), 2_000);
     }
 }

@@ -65,10 +65,10 @@ fn escape_xml(input: &str) -> String {
 
 /// 推导站点绝对 URL 基址（无尾部斜杠）。
 ///
-/// 回退链与 CSRF 的 `trusted_origin` 一致：「站点配置 → 安全」面板的
-/// APP_BASE_URL → `Host` 头（https 前缀）→ 兜底 `http://localhost` 并告警。
-/// 生产部署规范要求在设置面板配置 APP_BASE_URL。
-async fn site_base_url(headers: &HeaderMap) -> String {
+/// 仅信任「站点配置 → 安全」面板中的 APP_BASE_URL；绝不使用请求 Host
+/// 生成公开 Feed 链接，避免 Host header poisoning。未配置时仅回退到
+/// `http://localhost`，生产环境必须配置固定的 APP_BASE_URL。
+async fn site_base_url(_headers: &HeaderMap) -> String {
     let base = crate::api::settings::runtime_security_settings()
         .await
         .app_base_url;
@@ -76,15 +76,7 @@ async fn site_base_url(headers: &HeaderMap) -> String {
     if !base.is_empty() {
         return base.trim_end_matches('/').to_string();
     }
-    if let Some(host) = headers
-        .get(header::HOST)
-        .and_then(|h| h.to_str().ok())
-        .map(str::trim)
-        .filter(|h| !h.is_empty())
-    {
-        return format!("https://{}", host.trim_end_matches('/'));
-    }
-    tracing::warn!("APP_BASE_URL 未配置且请求无 Host 头，RSS/Feed 链接可能不正确");
+    tracing::warn!("APP_BASE_URL 未配置，RSS/Feed 链接回退到 localhost");
     "http://localhost".to_string()
 }
 
@@ -372,13 +364,12 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn site_base_url_falls_back_to_host_when_no_settings() {
-        // 无 DB 连接的单元测试环境中，runtime_security_settings 回退默认值
-        // （app_base_url 为空），应命中 Host 头推导分支。
+    async fn site_base_url_ignores_untrusted_host_when_no_settings() {
+        // 未配置固定 APP_BASE_URL 时，不能使用请求 Host 生成公开链接。
         let mut headers = HeaderMap::new();
-        headers.insert(header::HOST, HeaderValue::from_static("blog.example.com"));
+        headers.insert(header::HOST, HeaderValue::from_static("attacker.example"));
         let r = site_base_url(&headers).await;
-        assert_eq!(r, "https://blog.example.com");
+        assert_eq!(r, "http://localhost");
     }
 
     #[tokio::test]

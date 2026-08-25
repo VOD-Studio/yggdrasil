@@ -61,33 +61,40 @@ pub async fn readyz() -> (StatusCode, Json<Value>) {
                 StatusCode::OK,
                 Json(json!({ "status": "ready", "db": "ok", "pool": pool_info })),
             ),
-            Err(e) => (
+            Err(e) => {
+                tracing::warn!(error = ?e, "readiness database probe query failed");
+                (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    Json(json!({
+                        "status": "unready",
+                        "db": "error",
+                        "pool": pool_info
+                    })),
+                )
+            }
+        },
+        Ok(Err(e)) => {
+            tracing::warn!(error = ?e, "readiness database connection failed");
+            (
                 StatusCode::SERVICE_UNAVAILABLE,
                 Json(json!({
                     "status": "unready",
-                    "db": "error",
-                    "error": e.to_string(),
+                    "db": "down",
                     "pool": pool_info
                 })),
-            ),
-        },
-        Ok(Err(e)) => (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(json!({
-                "status": "unready",
-                "db": "down",
-                "error": e.to_string(),
-                "pool": pool_info
-            })),
-        ),
-        Err(_) => (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(json!({
-                "status": "unready",
-                "db": "timeout",
-                "pool": pool_info
-            })),
-        ),
+            )
+        }
+        Err(_) => {
+            tracing::warn!("readiness database probe timed out");
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(json!({
+                    "status": "unready",
+                    "db": "timeout",
+                    "pool": pool_info
+                })),
+            )
+        }
     }
 }
 

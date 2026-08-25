@@ -59,16 +59,19 @@ pub async fn delete_asset(id: String) -> Result<AssetOpResponse, ServerFnError> 
         use crate::models::asset::{AssetRef, AssetRefPostStatus};
 
         let _admin = get_current_admin_user().await?;
-        let client = get_conn().await.map_err(AppError::db_conn)?;
+        let mut client = get_conn().await.map_err(AppError::db_conn)?;
+        // 锁住素材行，令并发文章保存的 asset_refs 外键检查在删除提交前排队，
+        // 避免引用检查后插入新引用再被 ON DELETE CASCADE 静默移除。
+        let tx = client.transaction().await.map_err(AppError::tx)?;
 
         let asset_uuid = match uuid::Uuid::parse_str(&id) {
             Ok(u) => u,
             Err(_) => return Ok(AssetOpResponse::err("素材 id 非法".to_string())),
         };
 
-        let row = client
+        let row = tx
             .query_opt(
-                "SELECT id AS id, path, filename FROM assets WHERE id = $1",
+                "SELECT id AS id, path, filename FROM assets WHERE id = $1 FOR UPDATE",
                 &[&asset_uuid],
             )
             .await
@@ -79,7 +82,7 @@ pub async fn delete_asset(id: String) -> Result<AssetOpResponse, ServerFnError> 
         let path: String = row.get("path");
 
         // 引用检查：含回收站文章（其 purge 时 refs 级联删，图自然变孤儿）。
-        let ref_rows = client
+        let ref_rows = tx
             .query(
                 "SELECT p.id, p.title, p.slug, p.status, p.deleted_at \
                  FROM asset_refs r JOIN posts p ON p.id = r.post_id \
@@ -112,7 +115,7 @@ pub async fn delete_asset(id: String) -> Result<AssetOpResponse, ServerFnError> 
         }
 
         // 评论与头像引用共用一次查询，避免单删路径额外往返数据库。
-        let reference_row = client
+        let reference_row = tx
             .query_one(
                 &format!(
                     "SELECT {comment_ref} AS comment_referenced, \
@@ -141,17 +144,18 @@ pub async fn delete_asset(id: String) -> Result<AssetOpResponse, ServerFnError> 
             });
         }
 
-        // 孤儿：先删文件（NotFound 容忍——磁盘与 DB 可能已不一致），再删 DB 行。
+        // 先提交 DB 删除，再清理文件；文件删除失败只会留下可由重建索引清理的孤儿文件，
+        // 不会在事务失败时丢失仍被引用的实体文件。
         let file_path = format!("uploads/{}", path);
+        tx.execute("DELETE FROM assets WHERE id = $1", &[&asset_uuid])
+            .await
+            .map_err(AppError::tx)?;
+        tx.commit().await.map_err(AppError::tx)?;
         if let Err(e) = tokio::fs::remove_file(&file_path).await {
             if e.kind() != std::io::ErrorKind::NotFound {
                 tracing::warn!("Remove asset file failed ({}): {}", file_path, e);
             }
         }
-        client
-            .execute("DELETE FROM assets WHERE id = $1", &[&asset_uuid])
-            .await
-            .map_err(AppError::query)?;
         crate::api::image::invalidate_asset_caches(&path).await;
 
         Ok(AssetOpResponse::ok("已删除".to_string()))
@@ -176,7 +180,6 @@ pub async fn batch_delete_assets(
         use crate::db::pool::get_conn;
 
         let _admin = get_current_admin_user().await?;
-        let client = get_conn().await.map_err(AppError::db_conn)?;
 
         // id 在边界处从 String 解析为 Uuid；非法 id 属业务错误，计入 failures 不走 500。
         let mut uuids: Vec<uuid::Uuid> = Vec::with_capacity(ids.len());
@@ -198,14 +201,16 @@ pub async fn batch_delete_assets(
             });
         }
 
-        // 一次查询取路径/大小/引用存在性，避免逐 id 往返。
-        // referenced = 文章、评论或头像引用（见 super::ASSET_REF_CLAUSE）。
-        let rows = client
+        let mut client = get_conn().await.map_err(AppError::db_conn)?;
+        let tx = client.transaction().await.map_err(AppError::tx)?;
+
+        // 锁住候选素材行，保护引用检查与删除之间的窗口。
+        let rows = tx
             .query(
                 &format!(
                     "SELECT a.id AS id, a.path, a.size_bytes, \
                             {asset_ref} AS referenced \
-                     FROM assets a WHERE a.id = ANY($1)",
+                     FROM assets a WHERE a.id = ANY($1) FOR UPDATE",
                     asset_ref = super::ASSET_REF_CLAUSE
                 ),
                 &[&uuids],
@@ -214,6 +219,7 @@ pub async fn batch_delete_assets(
             .map_err(AppError::query)?;
 
         let mut delete_ids: Vec<uuid::Uuid> = Vec::with_capacity(rows.len());
+        let mut files_to_remove: Vec<String> = Vec::with_capacity(rows.len());
         let mut freed_bytes: i64 = 0;
         let mut skipped: i64 = 0;
         for row in &rows {
@@ -224,27 +230,30 @@ pub async fn batch_delete_assets(
             }
             let path: String = row.get("path");
             freed_bytes += row.get::<_, i64>("size_bytes");
-            let file_path = format!("uploads/{}", path);
-            if let Err(e) = tokio::fs::remove_file(&file_path).await {
-                // NotFound 可容忍（文件可能已被手动删）；其他错误计入 failures，
-                // DB 行照删——残留文件由重建索引的反向语义兜底。
-                if e.kind() != std::io::ErrorKind::NotFound {
-                    tracing::warn!("Batch delete: remove file failed ({}): {}", file_path, e);
-                    failures += 1;
-                }
-            }
-            crate::api::image::invalidate_asset_caches(&path).await;
+            files_to_remove.push(path);
             delete_ids.push(id);
         }
 
         let deleted = if delete_ids.is_empty() {
             0
         } else {
-            client
-                .execute("DELETE FROM assets WHERE id = ANY($1)", &[&delete_ids])
+            tx.execute("DELETE FROM assets WHERE id = ANY($1)", &[&delete_ids])
                 .await
-                .map_err(AppError::query)?
+                .map_err(AppError::tx)?
         };
+        tx.commit().await.map_err(AppError::tx)?;
+
+        // DB 删除成功后再清理文件；失败文件由重建索引兜底。
+        for path in files_to_remove {
+            let file_path = format!("uploads/{}", path);
+            if let Err(e) = tokio::fs::remove_file(&file_path).await {
+                if e.kind() != std::io::ErrorKind::NotFound {
+                    tracing::warn!("Batch delete: remove file failed ({}): {}", file_path, e);
+                    failures += 1;
+                }
+            }
+            crate::api::image::invalidate_asset_caches(&path).await;
+        }
 
         let mut message = format!("已删除 {} 张素材", deleted);
         if skipped > 0 {
@@ -276,14 +285,17 @@ pub async fn purge_orphan_assets() -> Result<PurgeOrphansResponse, ServerFnError
         use crate::db::pool::get_conn;
 
         let _admin = get_current_admin_user().await?;
-        let client = get_conn().await.map_err(AppError::db_conn)?;
+        let mut client = get_conn().await.map_err(AppError::db_conn)?;
+        let tx = client.transaction().await.map_err(AppError::tx)?;
 
-        let rows = client
+        // 锁住候选素材行，令并发文章保存的外键引用在删除提交前排队。
+        let rows = tx
             .query(
                 &format!(
                     "SELECT a.id AS id, a.path, a.size_bytes FROM assets a \
                      WHERE NOT {asset_ref} \
-                       AND a.created_at < NOW() - make_interval(days => $1)",
+                       AND a.created_at < NOW() - make_interval(days => $1) \
+                     FOR UPDATE",
                     asset_ref = super::ASSET_REF_CLAUSE
                 ),
                 &[&super::list::PURGE_GRACE_DAYS],
@@ -292,6 +304,7 @@ pub async fn purge_orphan_assets() -> Result<PurgeOrphansResponse, ServerFnError
             .map_err(AppError::query)?;
 
         if rows.is_empty() {
+            tx.commit().await.map_err(AppError::tx)?;
             return Ok(PurgeOrphansResponse {
                 success: true,
                 message: "没有可清理的未引用素材".to_string(),
@@ -302,29 +315,31 @@ pub async fn purge_orphan_assets() -> Result<PurgeOrphansResponse, ServerFnError
         }
 
         let mut ids: Vec<uuid::Uuid> = Vec::with_capacity(rows.len());
+        let mut paths: Vec<String> = Vec::with_capacity(rows.len());
         let mut freed_bytes: i64 = 0;
-        let mut failures: i64 = 0;
         for row in &rows {
-            let id: uuid::Uuid = row.get("id");
-            let path: String = row.get("path");
+            ids.push(row.get("id"));
+            paths.push(row.get("path"));
             freed_bytes += row.get::<_, i64>("size_bytes");
+        }
+
+        let deleted = tx
+            .execute("DELETE FROM assets WHERE id = ANY($1)", &[&ids])
+            .await
+            .map_err(AppError::tx)?;
+        tx.commit().await.map_err(AppError::tx)?;
+
+        let mut failures: i64 = 0;
+        for path in paths {
             let file_path = format!("uploads/{}", path);
             if let Err(e) = tokio::fs::remove_file(&file_path).await {
-                // NotFound 可容忍（文件可能已被手动删）；其他错误计入 failures，
-                // DB 行照删——残留文件由重建索引的反向语义兜底。
                 if e.kind() != std::io::ErrorKind::NotFound {
                     tracing::warn!("Purge: remove file failed ({}): {}", file_path, e);
                     failures += 1;
                 }
             }
             crate::api::image::invalidate_asset_caches(&path).await;
-            ids.push(id);
         }
-
-        let deleted = client
-            .execute("DELETE FROM assets WHERE id = ANY($1)", &[&ids])
-            .await
-            .map_err(AppError::query)?;
 
         Ok(PurgeOrphansResponse {
             success: true,

@@ -187,9 +187,15 @@ fn is_forbidden_ip(ip: &IpAddr) -> bool {
             }
         }
         IpAddr::V6(v6) => {
-            v6.is_loopback()       // ::1
-            || v6.is_unspecified() // ::
-            || v6.is_multicast()   // ff00::/8
+            if v6.is_loopback() || v6.is_unspecified() {
+                return true;
+            }
+            // IPv4-mapped / compatible IPv6 地址仍可能连接到 IPv4 内网服务；
+            // 先归一化后复用完整 IPv4 禁止网段检查，避免 ::ffff:127.0.0.1 绕过。
+            if let Some(v4) = v6.to_ipv4() {
+                return is_forbidden_ip(&IpAddr::V4(v4));
+            }
+            v6.is_multicast()   // ff00::/8
             || {
                 let s = v6.segments();
                 (s[0] & 0xfe00) == 0xfc00 // ULA fc00::/7
@@ -242,6 +248,21 @@ mod tests {
         assert!(is_forbidden_ip(&IpAddr::V6("fc00::1".parse().unwrap()))); // ULA
         assert!(is_forbidden_ip(&IpAddr::V6("fd12::1".parse().unwrap()))); // ULA
         assert!(is_forbidden_ip(&IpAddr::V6("fe80::1".parse().unwrap()))); // 链路本地
+    }
+
+    #[test]
+    fn forbidden_ipv4_mapped_ipv6_ranges() {
+        assert!(is_forbidden_ip(&IpAddr::V6(
+            "::ffff:127.0.0.1".parse().expect("valid mapped loopback")
+        )));
+        assert!(is_forbidden_ip(&IpAddr::V6(
+            "::ffff:169.254.169.254"
+                .parse()
+                .expect("valid mapped link-local")
+        )));
+        assert!(is_forbidden_ip(&IpAddr::V6(
+            "::ffff:10.0.0.1".parse().expect("valid mapped private")
+        )));
     }
 
     #[test]

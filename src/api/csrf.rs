@@ -92,8 +92,8 @@ fn extract_origin(headers: &HeaderMap) -> Option<String> {
 /// 计算本站可信 origin：优先「站点配置 → 安全」面板的 APP_BASE_URL（即时生效），
 /// 否则用请求 Host 头 + `X-Forwarded-Proto`（反代后）或 https 推导。
 ///
-/// 返回 None 表示无法确定本站 origin（此时放行，避免误杀——CSRF 漏判
-/// 是请求被拒，但拿不到本站 origin 时误杀合法请求代价更高，故保守放行）。
+/// 返回 None 表示无法确定本站 origin；写请求在这种情况下会被拒绝，
+/// 避免在来源头缺失时把 cookie-auth 请求当作可信请求。
 #[cfg(feature = "server")]
 async fn trusted_origin(headers: &HeaderMap) -> Option<String> {
     let base = crate::api::settings::runtime_security_settings()
@@ -110,10 +110,19 @@ async fn trusted_origin(headers: &HeaderMap) -> Option<String> {
     Some(normalize_origin(&format!("{}://{}", proto, host)))
 }
 
+/// 判断写请求的来源是否可信。
+///
+/// cookie-auth 写请求必须同时拥有可确定的本站 origin 与来源头；
+/// 任一缺失都拒绝，避免 `Origin`/`Referer` 被剥离时形成 CSRF fail-open。
+#[cfg(feature = "server")]
+fn origin_matches(trusted: Option<&str>, incoming: Option<&str>) -> bool {
+    matches!((trusted, incoming), (Some(t), Some(o)) if t == o)
+}
+
 /// CSRF 校验中间件。
 ///
 /// 对写方法校验请求来源等于本站；不匹配返回 403。GET/OPTIONS 等放行。
-/// 拿不到本站 origin 或请求来源时放行（见 trusted_origin 注释）。
+/// 拿不到本站 origin 或请求来源时拒绝写请求。
 #[cfg(feature = "server")]
 pub async fn csrf_middleware(
     req: Request<axum::body::Body>,
@@ -123,11 +132,7 @@ pub async fn csrf_middleware(
         let headers = req.headers().clone();
         let trusted = trusted_origin(&headers).await;
         let incoming = extract_origin(&headers);
-        let ok = match (&trusted, &incoming) {
-            (Some(t), Some(o)) => t == o,
-            // 拿不到本站 origin 或请求来源时放行。
-            _ => true,
-        };
+        let ok = origin_matches(trusted.as_deref(), incoming.as_deref());
         if !ok {
             return axum::response::Response::builder()
                 .status(axum::http::StatusCode::FORBIDDEN)
@@ -229,6 +234,20 @@ mod tests {
     fn extract_origin_returns_none_when_both_absent() {
         let headers = HeaderMap::new();
         assert_eq!(extract_origin(&headers), None);
+    }
+
+    #[test]
+    fn origin_matches_requires_both_origins() {
+        assert!(origin_matches(
+            Some("https://example.com"),
+            Some("https://example.com")
+        ));
+        assert!(!origin_matches(Some("https://example.com"), None));
+        assert!(!origin_matches(None, Some("https://example.com")));
+        assert!(!origin_matches(
+            Some("https://example.com"),
+            Some("https://evil.example")
+        ));
     }
 
     // ── APP_BASE_URL 启动告警 ──────────────────────────────────────

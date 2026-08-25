@@ -54,7 +54,7 @@ pub(super) fn row_to_post_list_item(row: &tokio_postgres::Row) -> PostListItem {
 /// 相比列表项额外包含上一篇/下一篇导航，
 /// 并在 content_html 为空时重新渲染 Markdown 以兼容旧数据。
 #[cfg(feature = "server")]
-pub(super) async fn row_to_post_full(row: &tokio_postgres::Row) -> Post {
+pub(super) async fn row_to_post_full(row: &tokio_postgres::Row) -> Result<Post, AppError> {
     let id: i32 = row.get("id");
     let role_str: String = row.get("status");
     let status = PostStatus::from_str(&role_str).unwrap_or(PostStatus::Draft);
@@ -109,7 +109,14 @@ pub(super) async fn row_to_post_full(row: &tokio_postgres::Row) -> Post {
     let (content_html, toc_html) = if let Some(html) = content_html {
         (html, toc_html_row)
     } else {
-        let rendered = crate::api::markdown::render_markdown_enhanced(&content_md);
+        // 旧数据 fallback 仍可能触发完整 Markdown/KaTeX/高亮渲染，
+        // 必须移出 Tokio worker，避免单条旧文章阻塞其它请求。
+        let md_for_render = content_md.clone();
+        let rendered = tokio::task::spawn_blocking(move || {
+            crate::api::markdown::render_markdown_enhanced(&md_for_render)
+        })
+        .await
+        .map_err(|_| AppError::Internal("旧文章 Markdown 渲染任务失败"))?;
         (
             rendered.html,
             if rendered.toc_html.is_empty() {
@@ -120,7 +127,7 @@ pub(super) async fn row_to_post_full(row: &tokio_postgres::Row) -> Post {
         )
     };
 
-    Post {
+    Ok(Post {
         id,
         author_id: row.get("author_id"),
         title: row.get("title"),
@@ -140,7 +147,7 @@ pub(super) async fn row_to_post_full(row: &tokio_postgres::Row) -> Post {
         toc_html,
         prev_post,
         next_post,
-    }
+    })
 }
 
 /// 在事务中同步文章的标签关联。

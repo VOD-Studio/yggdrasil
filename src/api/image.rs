@@ -630,6 +630,21 @@ pub async fn invalidate_asset_caches(rel_path: &str) {
     IMAGE_DIMENSIONS_CACHE.invalidate(rel_path);
 }
 
+/// 全量清理图片内存、尺寸与磁盘派生缓存。
+///
+/// 数据库恢复可能让同一路径对应不同的 assets/文件内容，不能只递增 SSR
+/// generation；必须同时删除磁盘 `.cache`，否则缓存命中会返回恢复前的图片。
+#[cfg(feature = "server")]
+pub async fn invalidate_all_caches() {
+    IMAGE_CACHE.invalidate_all();
+    IMAGE_DIMENSIONS_CACHE.invalidate_all();
+    if let Err(error) = tokio::fs::remove_dir_all(CACHE_DIR).await {
+        if error.kind() != std::io::ErrorKind::NotFound {
+            tracing::warn!("Failed to clear image disk cache: {error}");
+        }
+    }
+}
+
 #[cfg(feature = "server")]
 fn disk_cache_base(cache_key: &str) -> String {
     // 使用 SHA-256 生成稳定的磁盘缓存文件名，避免进程重启后 DefaultHasher 随机 seed

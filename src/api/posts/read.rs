@@ -44,7 +44,7 @@ pub async fn get_post_by_id(post_id: i32) -> Result<SinglePostResponse, ServerFn
             .map_err(AppError::query)?;
 
         let post = match row {
-            Some(row) => Some(row_to_post_full(&row).await),
+            Some(row) => Some(row_to_post_full(&row).await?),
             None => None,
         };
 
@@ -107,7 +107,7 @@ pub async fn get_post_by_slug(slug: String) -> Result<SinglePostResponse, Server
             .map_err(AppError::query)?;
 
         let post = match row {
-            Some(row) => Some(row_to_post_full(&row).await),
+            Some(row) => Some(row_to_post_full(&row).await?),
             None => None,
         };
 
@@ -154,7 +154,7 @@ pub async fn get_post_preview(slug: String) -> Result<SinglePostResponse, Server
             .map_err(AppError::query)?;
 
         let post = match row {
-            Some(row) => Some(row_to_post_full(&row).await),
+            Some(row) => Some(row_to_post_full(&row).await?),
             None => None,
         };
 

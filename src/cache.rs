@@ -558,6 +558,12 @@ pub async fn set_log_targets(targets: Vec<String>) {
         .await;
 }
 
+/// 清空日志 target 缓存。
+#[cfg(feature = "server")]
+pub fn invalidate_log_targets() {
+    LOG_TARGETS_CACHE.invalidate_all();
+}
+
 /// 按 slug 读取单篇文章缓存。
 #[cfg(feature = "server")]
 pub async fn get_post_by_slug(slug: &str) -> Option<Option<Post>> {
