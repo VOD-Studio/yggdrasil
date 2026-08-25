@@ -22,20 +22,14 @@ pub fn hash_token(token: &str) -> String {
 }
 
 #[cfg(feature = "server")]
-/// 返回默认会话过期时间（当前时间 + 30 天）。
-pub fn default_expiry() -> DateTime<Utc> {
-    Utc::now() + Duration::days(30)
-}
+/// 会话默认生命周期（秒）：30 天。同时驱动 DB `expires_at`（见 [`default_expiry`]）
+/// 与登录时下发的 Cookie `Max-Age`（`api/auth.rs::login`），避免两处独立硬编码导致漂移。
+pub const SESSION_MAX_AGE_SECS: i32 = 30 * 24 * 60 * 60;
 
 #[cfg(feature = "server")]
-/// 是否给会话 Cookie 加 Secure 标志（仅 HTTPS 下发送）。
-///
-/// 即时生效：读取「站点配置 → 安全」面板的 DB 值（经 moka 缓存兜底），
-/// 面板修改后数秒内全链路生效。
-pub async fn cookie_secure() -> bool {
-    crate::api::settings::runtime_security_settings()
-        .await
-        .cookie_secure
+/// 返回默认会话过期时间（当前时间 + [`SESSION_MAX_AGE_SECS`]）。
+pub fn default_expiry() -> DateTime<Utc> {
+    Utc::now() + Duration::seconds(SESSION_MAX_AGE_SECS as i64)
 }
 
 #[cfg(feature = "server")]

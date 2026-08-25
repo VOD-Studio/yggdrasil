@@ -45,9 +45,17 @@ pub(crate) fn validate_email(email: &str) -> Result<(), String> {
 }
 
 #[cfg(feature = "server")]
+/// 密码长度上限（字节）：纵深防御，避免 Argon2 对超大输入做无意义的线性哈希扫描
+/// （Argon2 本身的 memory_cost 才是主要开销，这里只是零成本兜底）。
+const MAX_PASSWORD_BYTES: usize = 256;
+
+#[cfg(feature = "server")]
 pub(crate) fn validate_password(password: &str) -> Result<(), String> {
     if password.len() < 8 {
         return Err("密码长度至少 8 位".to_string());
+    }
+    if password.len() > MAX_PASSWORD_BYTES {
+        return Err("密码长度不能超过 256 位".to_string());
     }
     Ok(())
 }
@@ -289,7 +297,11 @@ pub async fn login(username: String, password: String) -> Result<AuthResponse, S
 
     tx.commit().await.map_err(AppError::query)?;
 
-    let cookie = session::session_cookie(&token, 30 * 24 * 60 * 60, session::cookie_secure().await);
+    let cookie = session::session_cookie(
+        &token,
+        session::SESSION_MAX_AGE_SECS,
+        crate::api::settings::runtime_security_settings().await.cookie_secure,
+    );
     // 通过 Dioxus FullstackContext 设置 HttpOnly Cookie 响应头。
     if let Some(ctx) = dioxus::fullstack::FullstackContext::current() {
         if let Ok(value) = HeaderValue::try_from(cookie.as_str()) {
@@ -315,7 +327,11 @@ pub async fn logout() -> Result<AuthResponse, ServerFnError> {
     let client = get_conn().await.map_err(AppError::db_conn)?;
 
     // 设置过期时间为 0 的 Cookie，通知浏览器清除会话。
-    let cookie = session::session_cookie("", 0, session::cookie_secure().await);
+    let cookie = session::session_cookie(
+        "",
+        0,
+        crate::api::settings::runtime_security_settings().await.cookie_secure,
+    );
     if let Some(ctx) = dioxus::fullstack::FullstackContext::current() {
         if let Ok(value) = HeaderValue::try_from(cookie.as_str()) {
             ctx.add_response_header(SET_COOKIE, value);
@@ -707,6 +723,12 @@ mod tests {
     #[test]
     fn validate_password_empty() {
         assert!(validate_password("").is_err());
+    }
+
+    #[test]
+    fn validate_password_too_long() {
+        assert!(validate_password(&"a".repeat(257)).is_err());
+        assert!(validate_password(&"a".repeat(256)).is_ok());
     }
 
     /// 在给定环境变量集下运行闭包，结束后恢复原值（env 是进程全局状态，需 serial 隔离）。
