@@ -907,6 +907,12 @@
   .md-content li p {
     margin-bottom: 0;
   }
+  /* 列表项内的代码块：li p 的底距已被上面清零（紧凑列表），而 .md-content pre
+     只设 margin-bottom、无顶距，导致正文与代码块几乎贴合。此处给列表内 pre
+     补顶距；列表外场景由相邻 margin 折叠兜底，不产生双倍间距。 */
+  .md-content li pre {
+    margin-top: var(--content-gap-paper);
+  }
 
   /* 任务列表：pulldown-cmark 把 - [ ] / - [x] 渲染成裸 <li><input type="checkbox">…
    * （无 <label> 包裹，也无 data-type 标记）。用 :has() 识别含 checkbox 的 li，
