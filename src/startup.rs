@@ -50,9 +50,7 @@ pub fn run() {
         "版本响应头开关(Server / X-Yggdrasil-Version / X-Yggdrasil-Git / X-Yggdrasil-Hash)"
     );
 
-    // Dioxus 负责自己的 server runtime 与 listener。callback 在开发态热重载时
-    // 会再次执行，因此 build_router() 内的后台任务启动必须是幂等的。
-    dioxus::server::serve(move || async move { Ok(build_router(options)) });
+    serve_application(options);
 }
 
 fn init_tracing() {
@@ -153,23 +151,67 @@ fn run_database_bootstrap() {
             tracing::warn!(error = ?error, "初始管理员 env 同步失败");
         }
 
-        // Dioxus 0.7.10 的 serve() 会再次 bind listener。这个探测只能改善
-        // 常见端口占用时的错误提示，仍存在二次 bind 的 TOCTOU 竞态，不能视为
-        // listener 预留或绝对保证。
-        let addr = dioxus::cli_config::fullstack_address_or_localhost();
-        if let Err(error) = tokio::net::TcpListener::bind(addr).await {
-            tracing::error!(%error, "无法绑定监听地址 {addr}");
-            eprintln!("ERROR: 无法绑定监听地址 {addr}: {error}");
-            eprintln!(
-                "HINT: 端口 {} 可能已被占用。用 `lsof -i :{}` 查看占用进程，或设置 PORT 环境变量换一个端口。",
-                addr.port(),
-                addr.port()
-            );
-            std::process::exit(1);
-        }
     });
 
     drop(migrate_rt);
+}
+
+fn serve_application(options: ServerOptions) -> ! {
+    #[cfg(debug_assertions)]
+    {
+        // 开发态继续使用 Dioxus serve 以保留 devtools/hot reload。这里只做
+        // best-effort 预检；真实 listener 仍由 Dioxus 绑定。
+        let addr = dioxus::cli_config::fullstack_address_or_localhost();
+        if let Err(error) = std::net::TcpListener::bind(addr) {
+            fatal_bind_error(addr, error);
+        }
+        dioxus::server::serve(move || async move { Ok(build_router(options)) });
+    }
+
+    #[cfg(not(debug_assertions))]
+    {
+        let runtime = match tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+        {
+            Ok(runtime) => runtime,
+            Err(error) => {
+                tracing::error!(%error, "failed to build server runtime");
+                eprintln!("ERROR: failed to build server runtime: {error}");
+                std::process::exit(1);
+            }
+        };
+
+        let result = runtime.block_on(async move {
+            let addr = dioxus::cli_config::fullstack_address_or_localhost();
+            let listener = match tokio::net::TcpListener::bind(addr).await {
+                Ok(listener) => listener,
+                Err(error) => fatal_bind_error(addr, error),
+            };
+            tracing::info!("server listening on {addr}");
+            axum::serve(listener, build_router(options).into_make_service()).await
+        });
+
+        match result {
+            Ok(()) => std::process::exit(0),
+            Err(error) => {
+                tracing::error!(%error, "server stopped unexpectedly");
+                eprintln!("ERROR: server stopped unexpectedly: {error}");
+                std::process::exit(1);
+            }
+        }
+    }
+}
+
+fn fatal_bind_error(addr: std::net::SocketAddr, error: impl std::fmt::Display) -> ! {
+    tracing::error!(%error, "无法绑定监听地址 {addr}");
+    eprintln!("ERROR: 无法绑定监听地址 {addr}: {error}");
+    eprintln!(
+        "HINT: 端口 {} 可能已被占用。用 `lsof -i :{}` 查看占用进程，或设置 PORT 环境变量换一个端口。",
+        addr.port(),
+        addr.port()
+    );
+    std::process::exit(1);
 }
 
 fn spawn_background_tasks_once() {
