@@ -499,10 +499,17 @@ export function buildRunnableInfo(opts: RunnableInfoOpts): string {
 }
 
 /**
- * 受支持的语言（与 src/pages/admin/runner.rs SUPPORTED_LANGS 对齐）。
- * 编辑器是纯 JS lib，不调 server function，故写死。
+ * 受支持的语言（canonical key + 展示标签，与 src/pages/admin/runner.rs 的
+ * SUPPORTED_LANGS 对齐；后者镜像后端 LANGUAGES 注册表，见
+ * src/api/code_runner/languages.rs）。编辑器是纯 JS lib，不调 server function，故写死。
  */
-const RUNNABLE_LANGS = ['python', 'node'] as const;
+const RUNNABLE_LANGS = [
+  { value: 'python', label: 'Python' },
+  { value: 'node', label: 'Node.js' },
+  { value: 'go', label: 'Go' },
+  { value: 'rust', label: 'Rust' },
+  { value: 'bun', label: 'Bun (TS)' },
+] as const;
 
 /** 模态框默认值（与后端 ResourceLimits 默认对齐：见 languages.rs）。 */
 const RUNNABLE_DEFAULTS = { timeoutSecs: 5, memoryMb: 256, allowNetwork: false };
@@ -511,6 +518,204 @@ const RUNNABLE_DEFAULTS = { timeoutSecs: 5, memoryMb: 256, allowNetwork: false }
 const TIMEOUT_RANGE = { min: 1, max: 30 } as const;
 /** memory_mb 取值范围（与 CODE_RUNNER_MAX_MEMORY_MB 对齐）。 */
 const MEMORY_RANGE = { min: 16, max: 1024 } as const;
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+/** 描边图标（与 Dioxus 侧 FormSelect 的 chevron / 选中对勾同源）。 */
+function makeSvgIcon(pathD: string, className: string): SVGSVGElement {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('class', className);
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '2');
+  const path = document.createElementNS(SVG_NS, 'path');
+  path.setAttribute('stroke-linecap', 'round');
+  path.setAttribute('stroke-linejoin', 'round');
+  path.setAttribute('d', pathD);
+  svg.appendChild(path);
+  return svg;
+}
+
+/** createLangSelect 返回的控件句柄。 */
+interface LangSelectWidget {
+  /** 根元素（relative 容器，挂进表单行）。 */
+  el: HTMLElement;
+  /** 面板当前是否展开（模态框 Enter 提交据此避让）。 */
+  isOpen(): boolean;
+  /** 聚焦触发器（模态框打开时的初始焦点）。 */
+  focus(): void;
+}
+
+/**
+ * 自定义语言下拉：对齐 Dioxus 侧 FormSelect（src/components/forms.rs）的视觉与
+ * 交互契约——原生 <select> 的弹出列表由 OS 渲染、无法跟随主题，故重写为
+ * `button[aria-haspopup=listbox]` + 绝对定位面板：
+ * - 打开时透明遮罩拦截外部点击关闭；选项 mousedown 阻止默认行为，焦点始终留在触发器；
+ * - 键盘：↑↓ 循环高亮、Enter/Space 选中、Esc 关闭（不冒泡到模态框）、
+ *   Home/End 跳首尾、Tab 关闭并自然流转焦点；
+ * - 视口下方空间不足且上方更宽余时向上展开（FormSelect should_flip 同款判定）；
+ * - 面板进出场复用全站 animate-select-enter（input.css）。
+ */
+function createLangSelect(
+  options: readonly { value: string; label: string }[],
+  initial: string,
+  onChange: (value: string) => void,
+): LangSelectWidget {
+  const root = document.createElement('div');
+  root.className = 'tiptap-select';
+
+  const trigger = document.createElement('button');
+  trigger.type = 'button';
+  trigger.className = 'tiptap-select-trigger';
+  trigger.setAttribute('aria-haspopup', 'listbox');
+  trigger.setAttribute('aria-expanded', 'false');
+  const label = document.createElement('span');
+  trigger.appendChild(label);
+  trigger.appendChild(makeSvgIcon('M6 9l6 6 6-6', 'tiptap-select-chevron'));
+
+  let open = false;
+  let selected = Math.max(
+    0,
+    options.findIndex((o) => o.value === initial),
+  );
+  let active = selected;
+  let overlay: HTMLElement | null = null;
+  let panel: HTMLElement | null = null;
+
+  label.textContent = options[selected].label;
+
+  /** 视口下方空间不足且上方更宽余时向上展开。 */
+  function shouldFlip(): boolean {
+    const rect = trigger.getBoundingClientRect();
+    // 行高 40px（py-2.5+行盒）×选项数 + 面板 chrome（边框+padding），封顶 254px。
+    const panelHeight = Math.min(options.length * 40 + 14, 254);
+    const below = window.innerHeight - rect.bottom;
+    const above = rect.top;
+    return below < panelHeight + 14 && above > below;
+  }
+
+  /** 同步 active/selected 的展示态（不重排 DOM，避免 hover 时选项抖动）。 */
+  function paintOptions(): void {
+    if (!panel) return;
+    const items = panel.querySelectorAll<HTMLElement>('.tiptap-select-option');
+    items.forEach((li, i) => {
+      li.classList.toggle('active', i === active);
+      li.classList.toggle('selected', i === selected);
+      li.setAttribute('aria-selected', String(i === selected));
+    });
+  }
+
+  function scrollActiveIntoView(): void {
+    (panel?.children[active] as HTMLElement | undefined)?.scrollIntoView({ block: 'nearest' });
+  }
+
+  function closePanel(): void {
+    if (!open) return;
+    open = false;
+    trigger.setAttribute('aria-expanded', 'false');
+    root.classList.remove('open');
+    overlay?.remove();
+    panel?.remove();
+    overlay = null;
+    panel = null;
+  }
+
+  function select(i: number): void {
+    selected = i;
+    label.textContent = options[i].label;
+    onChange(options[i].value);
+    closePanel();
+  }
+
+  function openPanel(): void {
+    if (open) return;
+    open = true;
+    active = selected;
+    trigger.setAttribute('aria-expanded', 'true');
+    root.classList.add('open');
+
+    overlay = document.createElement('div');
+    overlay.className = 'tiptap-select-overlay';
+    overlay.addEventListener('click', closePanel);
+
+    panel = document.createElement('ul');
+    panel.className = 'tiptap-select-panel animate-select-enter';
+    panel.setAttribute('role', 'listbox');
+    if (shouldFlip()) panel.classList.add('flip');
+    options.forEach((opt, i) => {
+      const li = document.createElement('li');
+      li.className = 'tiptap-select-option';
+      li.setAttribute('role', 'option');
+      const text = document.createElement('span');
+      text.textContent = opt.label;
+      li.appendChild(text);
+      li.appendChild(makeSvgIcon('M20 6L9 17l-5-5', 'tiptap-select-check'));
+      // 阻止 mousedown 默认行为：点击选项不夺走触发器焦点。
+      li.addEventListener('mousedown', (e) => e.preventDefault());
+      li.addEventListener('mouseenter', () => {
+        active = i;
+        paintOptions();
+      });
+      li.addEventListener('click', () => select(i));
+      panel?.appendChild(li);
+    });
+
+    root.appendChild(overlay);
+    root.appendChild(panel);
+    paintOptions();
+    scrollActiveIntoView();
+  }
+
+  trigger.addEventListener('click', () => {
+    // 打开态下触发器被透明遮罩盖住，点击落在遮罩上即关闭；这里只需处理「未开 → 开」。
+    if (!open) openPanel();
+  });
+
+  trigger.addEventListener('keydown', (e) => {
+    if (!open) {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        openPanel();
+      }
+      return;
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      active = (active + 1) % options.length;
+      paintOptions();
+      scrollActiveIntoView();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      active = (active - 1 + options.length) % options.length;
+      paintOptions();
+      scrollActiveIntoView();
+    } else if (e.key === 'Home') {
+      e.preventDefault();
+      active = 0;
+      paintOptions();
+      scrollActiveIntoView();
+    } else if (e.key === 'End') {
+      e.preventDefault();
+      active = options.length - 1;
+      paintOptions();
+      scrollActiveIntoView();
+    } else if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      select(active);
+    } else if (e.key === 'Escape') {
+      // stopPropagation：只关面板，不触发模态框的 Esc 关闭。
+      e.preventDefault();
+      e.stopPropagation();
+      closePanel();
+    } else if (e.key === 'Tab') {
+      // 不拦截：关闭后焦点自然流转到下一个控件。
+      closePanel();
+    }
+  });
+
+  return { el: root, isOpen: () => open, focus: () => trigger.focus() };
+}
 
 /**
  * 打开「可运行代码块」配置模态框。
@@ -523,7 +728,10 @@ const MEMORY_RANGE = { min: 16, max: 1024 } as const;
  *
  * 作者选语言 + 可选 overrides（超时/内存/网络）。
  * 任一 overrides 字段被改动即 dirty；dirty=false 用 'python runnable'（无 JSON）。
- * Esc / 遮罩点击 / 取消按钮 → 关闭不改动。
+ * Esc / 遮罩点击 / 取消按钮 / × → 关闭不改动。
+ * 控件对齐站点设计系统：自定义下拉（FormSelect）、INPUT_CLASS 契约输入框、
+ * 全站 .ygg-cb 复选框（src/components/ui.rs Checkbox）、BTN_PRIMARY 契约主按钮；
+ * 配色全部走 --color-paper-* token，亮暗主题自动切换。
  */
 export function openRunnableModal(editor: Editor, editPos?: number, currentInfo?: string): void {
   const isEdit = editPos !== undefined;
@@ -540,7 +748,7 @@ export function openRunnableModal(editor: Editor, editPos?: number, currentInfo?
       })()
     : null;
   const state = {
-    lang: (RUNNABLE_LANGS as readonly string[]).includes(initialLang) ? initialLang : 'python',
+    lang: RUNNABLE_LANGS.some((l) => l.value === initialLang) ? initialLang : 'python',
     timeoutSecs: parsedOverrides?.timeout_secs ?? RUNNABLE_DEFAULTS.timeoutSecs,
     memoryMb: parsedOverrides?.memory_mb ?? RUNNABLE_DEFAULTS.memoryMb,
     allowNetwork: parsedOverrides?.allow_network ?? RUNNABLE_DEFAULTS.allowNetwork,
@@ -549,77 +757,104 @@ export function openRunnableModal(editor: Editor, editPos?: number, currentInfo?
   };
 
   const mask = document.createElement('div');
-  mask.className = 'tiptap-runnable-modal-mask';
+  mask.className = 'tiptap-runnable-modal-mask animate-modal-overlay-enter';
 
   const modal = document.createElement('div');
-  modal.className = 'tiptap-runnable-modal';
+  modal.className = 'tiptap-runnable-modal animate-modal-panel-enter';
 
+  // 头部：标题 + × 关闭（对齐 admin 弹窗头部契约，如 mcp.rs PlaintextModal）
+  const header = document.createElement('div');
+  header.className = 'tiptap-runnable-modal-header';
   const title = document.createElement('div');
   title.className = 'tiptap-runnable-modal-title';
   title.textContent = isEdit ? '编辑可运行代码块' : '插入可运行代码块';
-  modal.appendChild(title);
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'tiptap-runnable-modal-close';
+  closeBtn.type = 'button';
+  closeBtn.textContent = '×';
+  closeBtn.setAttribute('aria-label', '关闭');
+  closeBtn.addEventListener('click', close);
+  header.appendChild(title);
+  header.appendChild(closeBtn);
+  modal.appendChild(header);
 
-  // 语言选择
-  const langRow = document.createElement('label');
+  // 语言选择（自定义下拉，对齐 FormSelect；原生 select 弹出层由 OS 渲染、无法跟随主题）
+  const langRow = document.createElement('div');
   langRow.className = 'tiptap-runnable-field';
-  langRow.textContent = '语言';
-  const langSelect = document.createElement('select');
-  langSelect.id = 'runnable-lang';
-  for (const l of RUNNABLE_LANGS) {
-    const opt = document.createElement('option');
-    opt.value = l;
-    opt.textContent = l;
-    langSelect.appendChild(opt);
-  }
-  langSelect.value = state.lang;
-  langSelect.addEventListener('change', () => {
-    state.lang = langSelect.value;
+  const langLabel = document.createElement('span');
+  langLabel.className = 'tiptap-runnable-label';
+  langLabel.textContent = '语言';
+  const langSelect = createLangSelect(RUNNABLE_LANGS, state.lang, (value) => {
+    state.lang = value;
     updatePreview();
   });
-  langRow.appendChild(langSelect);
+  langRow.appendChild(langLabel);
+  langRow.appendChild(langSelect.el);
   modal.appendChild(langRow);
 
-  // 超时
-  const timeoutRow = document.createElement('label');
-  timeoutRow.className = 'tiptap-runnable-field';
-  timeoutRow.textContent = '超时（秒）';
-  const timeoutInput = document.createElement('input');
-  timeoutInput.id = 'runnable-timeout';
-  timeoutInput.type = 'number';
-  timeoutInput.min = String(TIMEOUT_RANGE.min);
-  timeoutInput.max = String(TIMEOUT_RANGE.max);
-  timeoutInput.value = String(state.timeoutSecs);
-  timeoutInput.addEventListener('input', () => {
-    state.timeoutSecs = Number(timeoutInput.value) || RUNNABLE_DEFAULTS.timeoutSecs;
-    state.dirty = true;
-    updatePreview();
-    updateInsertEnabled();
-  });
-  timeoutRow.appendChild(timeoutInput);
-  modal.appendChild(timeoutRow);
+  /** 数字输入行（label + INPUT_CLASS 契约输入框），值改动时联动预览与校验。 */
+  function numberField(
+    labelText: string,
+    inputId: string,
+    range: { readonly min: number; readonly max: number },
+    initial: number,
+    fallback: number,
+    onInput: (v: number) => void,
+  ): { row: HTMLElement; input: HTMLInputElement } {
+    const row = document.createElement('label');
+    row.className = 'tiptap-runnable-field';
+    const lab = document.createElement('span');
+    lab.className = 'tiptap-runnable-label';
+    lab.textContent = labelText;
+    const input = document.createElement('input');
+    input.id = inputId;
+    input.className = 'tiptap-runnable-input';
+    input.type = 'number';
+    input.min = String(range.min);
+    input.max = String(range.max);
+    input.value = String(initial);
+    input.addEventListener('input', () => {
+      onInput(Number(input.value) || fallback);
+      state.dirty = true;
+      updatePreview();
+      updateInsertEnabled();
+    });
+    row.appendChild(lab);
+    row.appendChild(input);
+    return { row, input };
+  }
 
-  // 内存
-  const memRow = document.createElement('label');
-  memRow.className = 'tiptap-runnable-field';
-  memRow.textContent = '内存（MB）';
-  const memInput = document.createElement('input');
-  memInput.id = 'runnable-memory';
-  memInput.type = 'number';
-  memInput.min = String(MEMORY_RANGE.min);
-  memInput.max = String(MEMORY_RANGE.max);
-  memInput.value = String(state.memoryMb);
-  memInput.addEventListener('input', () => {
-    state.memoryMb = Number(memInput.value) || RUNNABLE_DEFAULTS.memoryMb;
-    state.dirty = true;
-    updatePreview();
-    updateInsertEnabled();
-  });
-  memRow.appendChild(memInput);
-  modal.appendChild(memRow);
+  const timeoutField = numberField(
+    '超时（秒）',
+    'runnable-timeout',
+    TIMEOUT_RANGE,
+    state.timeoutSecs,
+    RUNNABLE_DEFAULTS.timeoutSecs,
+    (v) => {
+      state.timeoutSecs = v;
+    },
+  );
+  modal.appendChild(timeoutField.row);
 
-  // 网络
-  const netRow = document.createElement('label');
+  const memField = numberField(
+    '内存（MB）',
+    'runnable-memory',
+    MEMORY_RANGE,
+    state.memoryMb,
+    RUNNABLE_DEFAULTS.memoryMb,
+    (v) => {
+      state.memoryMb = v;
+    },
+  );
+  modal.appendChild(memField.row);
+
+  // 网络（复选框复用全站 .ygg-cb 结构与样式，见 src/components/ui.rs Checkbox）
+  const netRow = document.createElement('div');
   netRow.className = 'tiptap-runnable-field';
+  const netLabel = document.createElement('label');
+  netLabel.className = 'tiptap-runnable-check-row';
+  const netBox = document.createElement('span');
+  netBox.className = 'ygg-cb';
   const netInput = document.createElement('input');
   netInput.id = 'runnable-network';
   netInput.type = 'checkbox';
@@ -629,8 +864,20 @@ export function openRunnableModal(editor: Editor, editPos?: number, currentInfo?
     state.dirty = true;
     updatePreview();
   });
-  netRow.appendChild(netInput);
-  netRow.appendChild(document.createTextNode('允许网络'));
+  const netMark = document.createElementNS(SVG_NS, 'svg');
+  netMark.setAttribute('class', 'ygg-cb-mark');
+  netMark.setAttribute('viewBox', '0 0 16 16');
+  const netPath = document.createElementNS(SVG_NS, 'path');
+  netPath.setAttribute('class', 'ygg-cb-check');
+  netPath.setAttribute('d', 'M3.5 8.5l3 3 6-6.5');
+  netMark.appendChild(netPath);
+  netBox.appendChild(netInput);
+  netBox.appendChild(netMark);
+  const netText = document.createElement('span');
+  netText.textContent = '允许网络';
+  netLabel.appendChild(netBox);
+  netLabel.appendChild(netText);
+  netRow.appendChild(netLabel);
   modal.appendChild(netRow);
 
   // 预览
@@ -667,8 +914,8 @@ export function openRunnableModal(editor: Editor, editPos?: number, currentInfo?
 
   /** 校验数字字段：全合法才启用「插入」。 */
   function updateInsertEnabled(): void {
-    const t = Number(timeoutInput.value);
-    const m = Number(memInput.value);
+    const t = Number(timeoutField.input.value);
+    const m = Number(memField.input.value);
     insertBtn.disabled = !(
       t >= TIMEOUT_RANGE.min &&
       t <= TIMEOUT_RANGE.max &&
@@ -703,14 +950,14 @@ export function openRunnableModal(editor: Editor, editPos?: number, currentInfo?
       e.preventDefault();
       close();
     } else if (e.key === 'Enter' && !insertBtn.disabled) {
-      // Enter 在表单元素内提交（浏览器原生 number input 的 Enter 不会触发 click）。
-      // 注意：网络 checkbox 的 tagName 也是 'input'，Enter 会触发提交而非切换
-      // （checkbox 原生用 Space 切换），符合模态框 Enter=确认的惯例。
-      // 例外：语言 <select> 下拉展开时 Enter 用于确认选项，不应触发插入。
-      // （HTMLSelectElement.open 在浏览器存在，但 TS lib.dom 未声明，需断言。）
-      if ((langSelect as HTMLSelectElement & { open: boolean }).open) return;
+      // Enter 在 number input 内提交（浏览器原生 number input 的 Enter 不会触发 click）。
+      // 语言下拉展开时 Enter 由触发器自身消费（选中高亮项并 stopPropagation 前的
+      // preventDefault），此处经 isOpen() 避让；按钮（触发器/取消/插入/×）的 Enter
+      // 走原生 click，不在此处理。网络 checkbox 的 tagName 也是 'input'，Enter 触发
+      // 提交而非切换（checkbox 原生用 Space 切换），符合模态框 Enter=确认的惯例。
+      if (langSelect.isOpen()) return;
       const tag = (document.activeElement?.tagName ?? '').toLowerCase();
-      if (tag === 'input' || tag === 'select') {
+      if (tag === 'input') {
         e.preventDefault();
         insert();
       }

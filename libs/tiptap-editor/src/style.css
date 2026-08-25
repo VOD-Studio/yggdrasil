@@ -716,6 +716,12 @@
 }
 
 /* ========== Runnable Code Block Modal ========== */
+/* 视觉对齐站点设计系统，配色全部走 --color-paper-* token（亮暗主题自动切换，
+   无需 .dark 覆盖）：
+   - 卡片/头部/按钮对齐 admin 弹窗契约（src/pages/admin/mcp.rs PlaintextModal）；
+   - 输入框对齐 INPUT_CLASS、下拉对齐 FormSelect（src/components/forms.rs）；
+   - 复选框直接复用全站 .ygg-cb 结构（src/components/ui.rs Checkbox），本文件无需样式；
+   - 进出场动画复用全站 animate-modal-overlay-enter / animate-modal-panel-enter（input.css）。 */
 .tiptap-runnable-modal-mask {
   position: fixed;
   inset: 0;
@@ -723,154 +729,303 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.3);
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(2px);
 }
 
 .tiptap-runnable-modal {
-  /* Latte mantle —— 复用 .slash-command 配色 */
-  background: #e6e9ef;
-  border: 1px solid #bcc0cc;
-  border-radius: 8px;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
-  padding: 16px;
-  min-width: 320px;
-  max-width: 90vw;
-  font-family:
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: 100%;
+  max-width: 28rem;
+  padding: 28px;
+  background: var(--color-paper-theme);
+  color: var(--color-paper-primary);
+  border: 1px solid var(--color-paper-border);
+  border-radius: 24px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+}
+
+.tiptap-runnable-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-paper-border) 60%, transparent);
 }
 
 .tiptap-runnable-modal-title {
-  font-size: 15px;
-  font-weight: 600;
-  /* Latte text */
-  color: #4c4f69;
-  margin-bottom: 12px;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--color-paper-primary);
 }
 
+.tiptap-runnable-modal-close {
+  padding: 4px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-paper-tertiary);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    color 0.2s,
+    background-color 0.2s;
+}
+
+.tiptap-runnable-modal-close:hover {
+  color: var(--color-paper-primary);
+  background: var(--color-paper-entry);
+}
+
+/* 表单行：label 在上、控件在下（对齐 admin 表单的 flex-col gap-2 契约） */
 .tiptap-runnable-field {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 8px;
-  margin-bottom: 8px;
-  font-size: 13px;
-  /* Latte subtext0 */
-  color: #6c6f85;
 }
 
-.tiptap-runnable-field input[type='number'],
-.tiptap-runnable-field select {
-  flex: 1;
-  padding: 4px 8px;
-  border: 1px solid #bcc0cc;
-  border-radius: 4px;
-  background: #fff;
-  /* Latte text */
-  color: #4c4f69;
-  font-size: 13px;
+.tiptap-runnable-label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--color-paper-secondary);
+}
+
+/* 输入框：INPUT_CLASS 契约（rounded-2xl + entry 底 + focus accent 描边/ring） */
+.tiptap-runnable-input {
+  width: 100%;
+  padding: 8px 16px;
+  border: 1px solid var(--color-paper-border);
+  border-radius: 16px;
+  background: var(--color-paper-entry);
+  color: var(--color-paper-primary);
+  font-size: 14px;
   font-family: inherit;
   outline: none;
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s;
 }
 
-.tiptap-runnable-field input[type='checkbox'] {
-  accent-color: #40a02b;
+.tiptap-runnable-input:focus {
+  border-color: var(--color-paper-accent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-paper-accent) 30%, transparent);
 }
 
+/* 自定义下拉：FormSelect 契约（触发器 + 面板 + 遮罩）。
+   面板进出场复用全站 animate-select-enter（关键帧烘了 translateX(-50%)，故此处
+   水平居中同样用 transform: translateX(-50%)，不得叠加其他位移类）。 */
+.tiptap-select {
+  position: relative;
+}
+
+.tiptap-select-trigger {
+  position: relative;
+  display: block;
+  width: 100%;
+  padding: 8px 40px 8px 16px;
+  border: 1px solid var(--color-paper-border);
+  border-radius: 16px;
+  background: var(--color-paper-entry);
+  color: var(--color-paper-primary);
+  font-size: 14px;
+  font-family: inherit;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  user-select: none;
+  outline: none;
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s;
+}
+
+.tiptap-select-trigger:focus-visible {
+  border-color: var(--color-paper-accent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-paper-accent) 30%, transparent);
+}
+
+.tiptap-select-chevron {
+  position: absolute;
+  right: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  color: var(--color-paper-secondary);
+  pointer-events: none;
+  transition: transform 0.2s;
+}
+
+.tiptap-select.open .tiptap-select-chevron {
+  transform: translateY(-50%) rotate(180deg);
+}
+
+/* 打开时的透明遮罩：拦截外部点击关闭（z-40 < 面板 z-50） */
+.tiptap-select-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+
+.tiptap-select-panel {
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  transform: translateX(-50%);
+  z-index: 50;
+  width: max-content;
+  min-width: 100%;
+  max-width: calc(100vw - 2rem);
+  max-height: 240px;
+  overflow-y: auto;
+  margin: 6px 0 0;
+  padding: 6px;
+  border: 1px solid var(--color-paper-border);
+  border-radius: 16px;
+  background: var(--color-paper-entry);
+  box-shadow:
+    0 10px 15px -3px rgba(0, 0, 0, 0.1),
+    0 4px 6px -4px rgba(0, 0, 0, 0.1);
+  list-style: none;
+}
+
+/* 视口下方空间不足时向上展开（origin-bottom 让 enter 动画方向自然） */
+.tiptap-select-panel.flip {
+  top: auto;
+  bottom: 100%;
+  margin: 0 0 6px;
+  transform-origin: bottom;
+}
+
+.tiptap-select-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  color: var(--color-paper-primary);
+  font-size: 14px;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.15s;
+}
+
+.tiptap-select-option:hover,
+.tiptap-select-option.active {
+  background: var(--color-paper-accent-soft);
+}
+
+.tiptap-select-option.selected {
+  color: var(--color-paper-accent);
+}
+
+.tiptap-select-check {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  visibility: hidden;
+}
+
+.tiptap-select-option.selected .tiptap-select-check {
+  visibility: visible;
+}
+
+/* 复选框行：盒子本体是全站 .ygg-cb（input.css），这里只排行内布局 */
+.tiptap-runnable-check-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  font-size: 14px;
+  color: var(--color-paper-primary);
+  cursor: pointer;
+}
+
+/* info string 预览：对齐 admin 弹窗 pre 契约（entry 底 + 圆角 + 等宽） */
 .tiptap-runnable-preview {
-  margin: 12px 0;
-  padding: 8px;
-  /* Latte surface0 */
-  background: #ccd0da;
-  border-radius: 4px;
-  font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, monospace;
+  padding: 16px;
+  border: 1px solid color-mix(in srgb, var(--color-paper-border) 60%, transparent);
+  border-radius: 16px;
+  background: var(--color-paper-entry);
+  color: var(--color-paper-primary);
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
+    monospace;
   font-size: 12px;
-  /* Latte subtext1 */
-  color: #5c5f77;
+  line-height: 1.625;
   word-break: break-all;
+  user-select: all;
 }
 
 .tiptap-runnable-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-top: 4px;
 }
 
 .tiptap-runnable-actions button {
+  font-family: inherit;
+}
+
+/* 取消：ghost 文字按钮（对齐 admin 弹窗「关闭」契约） */
+.tiptap-runnable-actions .cancel {
   padding: 6px 16px;
   border: none;
-  border-radius: 4px;
-  font-size: 13px;
+  border-radius: 9999px;
+  background: transparent;
+  color: var(--color-paper-secondary);
+  font-size: 14px;
+  font-weight: 500;
   cursor: pointer;
+  transition:
+    color 0.2s,
+    background-color 0.2s;
 }
 
-.tiptap-runnable-actions .cancel {
-  /* Latte surface0 */
-  background: #ccd0da;
-  /* Latte text */
-  color: #4c4f69;
+.tiptap-runnable-actions .cancel:hover {
+  color: var(--color-paper-primary);
+  background: var(--color-paper-entry);
 }
 
+/* 插入/保存：BTN_PRIMARY 契约（主题绿实心胶囊） */
 .tiptap-runnable-actions .insert {
-  /* Catppuccin green —— 与 Code Runner 运行按钮主色一致 */
-  background: #40a02b;
-  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 20px;
+  border: none;
+  border-radius: 9999px;
+  background: var(--color-paper-accent);
+  color: var(--color-paper-theme);
+  font-size: 14px;
+  font-weight: 500;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.tiptap-runnable-actions .insert:hover {
+  filter: brightness(1.1);
+}
+
+.tiptap-runnable-actions .insert:active {
+  transform: scale(0.98);
 }
 
 .tiptap-runnable-actions .insert:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-}
-
-/* ========== Dark Theme: Runnable Modal (Mocha) ========== */
-.dark .tiptap-runnable-modal {
-  /* Mocha mantle */
-  background: #181825;
-  border-color: #45475a;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
-}
-
-.dark .tiptap-runnable-modal-title {
-  /* Mocha text */
-  color: #cdd6f4;
-}
-
-.dark .tiptap-runnable-field {
-  /* Mocha subtext0 */
-  color: #a6adc8;
-}
-
-.dark .tiptap-runnable-field input[type='number'],
-.dark .tiptap-runnable-field select {
-  border-color: #45475a;
-  /* Mocha base */
-  background: #1e1e2e;
-  /* Mocha text */
-  color: #cdd6f4;
-}
-
-.dark .tiptap-runnable-field input[type='checkbox'] {
-  /* Mocha green */
-  accent-color: #a6e3a1;
-}
-
-.dark .tiptap-runnable-preview {
-  /* Mocha surface0 */
-  background: #313244;
-  /* Mocha subtext1 */
-  color: #bac2de;
-}
-
-.dark .tiptap-runnable-actions .cancel {
-  /* Mocha surface0 */
-  background: #313244;
-  /* Mocha text */
-  color: #cdd6f4;
-}
-
-.dark .tiptap-runnable-actions .insert {
-  /* Mocha green */
-  background: #a6e3a1;
-  /* Mocha base */
-  color: #1e1e2e;
 }
 
 /* ========== Code Block Syntax Highlighting (Catppuccin Latte) ========== */

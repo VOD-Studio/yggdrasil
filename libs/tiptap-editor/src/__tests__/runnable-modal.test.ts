@@ -170,12 +170,32 @@ describe('openRunnableModal 编辑模式', () => {
   it('回填当前语言（python runnable + overrides）', () => {
     const { editor } = mockEditorWithView();
     openRunnableModal(editor, 0, 'python runnable {"timeout_secs":10,"memory_mb":512}');
-    const langSelect = document.querySelector<HTMLSelectElement>('#runnable-lang')!;
+    const langTrigger = document.querySelector<HTMLButtonElement>('.tiptap-select-trigger')!;
     const timeoutInput = document.querySelector<HTMLInputElement>('#runnable-timeout')!;
     const memInput = document.querySelector<HTMLInputElement>('#runnable-memory')!;
-    expect(langSelect.value).toBe('python');
+    expect(langTrigger.textContent).toContain('Python');
     expect(timeoutInput.value).toBe('10');
     expect(memInput.value).toBe('512');
+  });
+
+  it('语言列表与代码运行器注册表同步', () => {
+    const { editor } = mockEditorWithView();
+    openRunnableModal(editor);
+    document.querySelector<HTMLButtonElement>('.tiptap-select-trigger')!.click();
+    const options = [...document.querySelectorAll<HTMLElement>('.tiptap-select-option')].map(
+      (option) => option.textContent?.trim(),
+    );
+    expect(options).toEqual(['Python', 'Node.js', 'Go', 'Rust', 'Bun (TS)']);
+  });
+
+  it('语言下拉使用项目化 listbox 控件', () => {
+    const { editor } = mockEditorWithView();
+    openRunnableModal(editor);
+    const trigger = document.querySelector<HTMLButtonElement>('.tiptap-select-trigger')!;
+    trigger.click();
+    expect(trigger.getAttribute('aria-haspopup')).toBe('listbox');
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    expect(document.querySelector('.tiptap-select-panel')).not.toBeNull();
   });
 
   it('标题为「编辑」、按钮为「保存」', () => {
@@ -200,9 +220,11 @@ describe('openRunnableModal 编辑模式', () => {
   it('改语言后保存，新语言写入', () => {
     const { editor, markupCalls } = mockEditorWithView();
     openRunnableModal(editor, 5, 'python runnable');
-    const langSelect = document.querySelector<HTMLSelectElement>('#runnable-lang')!;
-    langSelect.value = 'node';
-    langSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    document.querySelector<HTMLButtonElement>('.tiptap-select-trigger')!.click();
+    const nodeOption = [...document.querySelectorAll<HTMLElement>('.tiptap-select-option')].find(
+      (option) => option.textContent?.trim() === 'Node.js',
+    )!;
+    nodeOption.click();
     document.querySelector<HTMLButtonElement>('.tiptap-runnable-actions .insert')!.click();
     expect(markupCalls[0].language).toBe('node runnable');
   });
