@@ -168,6 +168,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
+          components: clippy
 
       # Swatinem/rust-cache：prefix 与 test job（host target）隔离。
       - uses: Swatinem/rust-cache@v2
@@ -177,6 +178,12 @@ jobs:
       # wasm32 目标单独 check，覆盖 web 特性的编译（无需 dx，由 build 阶段容器内 dx 全量构建兜底）。
       - name: WASM target check
         run: cargo check --locked --target wasm32-unknown-unknown --no-default-features --features web
+
+      # 单独跑 wasm32 target 的 clippy：test job 的 clippy 是原生 target，
+      # #[cfg(target_arch = "wasm32")] 门控的代码（含 src/bridges 的 wasm 子模块）
+      # 完全不会被那边编译到，等于从未被 clippy 检查过。这里补上。
+      - name: Clippy (wasm32, web feature)
+        run: cargo clippy --locked --target wasm32-unknown-unknown --no-default-features --features web -- -D warnings
 
   # ── build-amd64：Docker in-container 全量构建（libs/WASM/rustdoc/静态 musl server）──
   # GitHub x86_64 runner，原生 Dockerfile（非 Dockerfile.cross），宿主仅需 Docker。
