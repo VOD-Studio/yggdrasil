@@ -44,9 +44,15 @@ pub mod wasm {
     /// unchecked_into 只做编译期类型标注，不做运行时校验
     /// （Reflect.get 已保证拿到的是目标对象）。
     pub fn get_module() -> XtermTerminalModule {
-        let window = web_sys::window().expect("no window");
-        let val = js_sys::Reflect::get(&window, &"XtermTerminal".into())
-            .expect("window.XtermTerminal missing");
+        // 缺 window：本函数只应在浏览器环境的 wasm32 前端调用，不应在其它上下文触发。
+        let window = web_sys::window().expect("no window: get_module 只能在浏览器 wasm32 前端调用");
+        // 缺全局对象：Dioxus.toml [web.resource] script 把 /xterm/terminal.js 列为阻塞式
+        // <script src>，位于生成 HTML 里 wasm 模块 <script type=module async> 之前——解析器
+        // 必须先跑完它才能碰到 wasm 模块，故正常部署下不会撞上时序竞态；触发说明该静态资源
+        // 没有随构建产物一起部署（404/CDN 故障/资源清单漂移），是部署问题而非运行时竞态。
+        let val = js_sys::Reflect::get(&window, &"XtermTerminal".into()).expect(
+            "window.XtermTerminal missing: /xterm/terminal.js 未加载，检查该静态资源是否随构建产物部署",
+        );
         val.unchecked_into::<XtermTerminalModule>()
     }
 
@@ -72,7 +78,8 @@ pub mod wasm {
         #[wasm_bindgen(method, js_name = setTheme)]
         pub fn set_theme(this: &TerminalInstance, theme: &str);
 
-        /// 重新计算列宽以适配容器（如父容器尺寸变化时调用）。
+        /// 手动强制重新计算列宽。容器尺寸变化已由 JS 侧内部 ResizeObserver 自动处理，
+        /// 这里保留给需要立即刷新的边界场景（如容器从 display:none 切到可见）。
         #[wasm_bindgen(method)]
         pub fn fit(this: &TerminalInstance);
 

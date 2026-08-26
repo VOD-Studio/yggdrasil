@@ -1,5 +1,23 @@
-import { describe, expect, it } from 'vitest';
+import { FitAddon } from '@xterm/addon-fit';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TerminalInstance, XtermOptions } from '../terminal';
+
+// --- ResizeObserver mock：happy-dom 不实现，手动提供回调钩子
+//     （同 @yggdrasil/core hash-scroll.test.ts 惯例） ---
+let resizeCallback: (() => void) | null = null;
+const roDisconnect = vi.fn();
+vi.stubGlobal(
+  'ResizeObserver',
+  class {
+    constructor(cb: () => void) {
+      resizeCallback = cb;
+    }
+    observe() {}
+    disconnect() {
+      roDisconnect();
+    }
+  },
+);
 
 describe('XtermOptions', () => {
   it('可无参构造，字段全部 undefined', () => {
@@ -20,6 +38,11 @@ describe('XtermOptions', () => {
 });
 
 describe('TerminalInstance', () => {
+  beforeEach(() => {
+    resizeCallback = null;
+    roDisconnect.mockClear();
+  });
+
   it('挂载到容器并触发 onReady', () => {
     const container = document.createElement('div');
     let ready = false;
@@ -46,5 +69,28 @@ describe('TerminalInstance', () => {
     inst.clear();
 
     inst.destroy();
+  });
+
+  it('容器 resize 时通过 ResizeObserver 自动重新 fit', () => {
+    const container = document.createElement('div');
+    const fitSpy = vi.spyOn(FitAddon.prototype, 'fit');
+    const inst = new TerminalInstance(container, new XtermOptions());
+
+    expect(fitSpy).toHaveBeenCalledTimes(1); // 构造时的初始 fit
+    expect(resizeCallback).not.toBeNull();
+
+    resizeCallback?.();
+    expect(fitSpy).toHaveBeenCalledTimes(2); // resize 回调触发的自动 fit
+
+    inst.destroy();
+    fitSpy.mockRestore();
+  });
+
+  it('destroy 时断开 ResizeObserver，避免销毁后继续 fit', () => {
+    const container = document.createElement('div');
+    const inst = new TerminalInstance(container, new XtermOptions());
+
+    inst.destroy();
+    expect(roDisconnect).toHaveBeenCalledTimes(1);
   });
 });

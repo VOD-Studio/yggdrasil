@@ -33,6 +33,7 @@ function red(text: string): string {
 export class TerminalInstance {
   private term: Terminal;
   private fitAddon: FitAddon;
+  private resizeObserver?: ResizeObserver;
 
   constructor(container: HTMLElement, options: XtermOptions) {
     this.term = new Terminal({
@@ -54,6 +55,17 @@ export class TerminalInstance {
     this.term.open(container);
     // 初始 fit，让列宽适配容器宽度。
     this.fitAddon.fit();
+
+    // 容器尺寸变化后自动重新 fit（侧边栏收起/展开、窗口 resize、输出面板展开动画等）；
+    // 否则终端会一直沿用挂载时的列宽换行，直到下次重新挂载才刷新。
+    // happy-dom 测试环境不实现 ResizeObserver（见 hash-scroll.ts 同款判空），
+    // 缺失时降级为仅保留构造时的初始 fit，不影响现有测试断言。
+    if (typeof ResizeObserver !== 'undefined') {
+      this.resizeObserver = new ResizeObserver(() => {
+        this.fitAddon.fit();
+      });
+      this.resizeObserver.observe(container);
+    }
 
     options.onReady?.();
   }
@@ -82,7 +94,8 @@ export class TerminalInstance {
     this.term.options.theme = theme === 'dark' ? DARK_THEME : LIGHT_THEME;
   }
 
-  /** 重新计算列宽以适配容器（如父容器尺寸变化时调用）。 */
+  /** 手动强制重新计算列宽（容器尺寸变化已由内部 ResizeObserver 自动处理；
+   *  这里保留给需要立即刷新的边界场景，如容器从 display:none 切到可见）。 */
   fit(): void {
     this.fitAddon.fit();
   }
@@ -92,8 +105,9 @@ export class TerminalInstance {
     this.term.reset();
   }
 
-  /** 销毁实例，释放 DOM 与事件监听。EditorHandle::drop → destroy。 */
+  /** 销毁实例，释放 DOM 与事件监听、ResizeObserver。EditorHandle::drop → destroy。 */
   destroy(): void {
+    this.resizeObserver?.disconnect();
     this.term.dispose();
   }
 }
