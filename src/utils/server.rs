@@ -78,6 +78,15 @@ pub fn parse_ssr_cache_secs() -> u64 {
         .unwrap_or(DEFAULT_SSR_CACHE_SECS)
 }
 
+/// 转义 SQL `LIKE` 模式串中的特殊字符（`\`、`%`、`_`），配合 `ESCAPE '\\'` 使用。
+///
+/// 此前 `api/posts/list.rs`（逐字符循环）与 `api/posts/search.rs`、`mcp/tools/read.rs`
+///（replace 链）各有一份实现；统一为等价且更简洁的 replace 链风格。
+pub fn escape_like_pattern(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
+}
 #[cfg(test)]
 mod tests {
     use super::parse_bool_value;
@@ -99,14 +108,4 @@ mod tests {
         assert!(parse_bool_value(None, true));
         assert!(!parse_bool_value(None, false));
     }
-}
-
-/// 转义 SQL `LIKE` 模式串中的特殊字符（`\`、`%`、`_`），配合 `ESCAPE '\\'` 使用。
-///
-/// 此前 `api/posts/list.rs`（逐字符循环）与 `api/posts/search.rs`、`mcp/tools/read.rs`
-///（replace 链）各有一份实现；统一为等价且更简洁的 replace 链风格。
-pub fn escape_like_pattern(s: &str) -> String {
-    s.replace('\\', "\\\\")
-        .replace('%', "\\%")
-        .replace('_', "\\_")
 }

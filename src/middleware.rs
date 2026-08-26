@@ -86,9 +86,9 @@ pub(crate) fn parse_compression_algorithms(env: &str) -> Option<CompressionAlgor
 ///   唯一例外是 `image/svg+xml`，作为 XML 文本可被压缩）；
 /// - 跳过 gRPC 与 `text/event-stream`（SSE）；
 /// - 跳过小于 32 字节的响应。
+///
 /// 因此无需在此处对图片响应做额外的 content-type 过滤。另：图片实际挂在
 /// `static_routes`（无中间件），根本不经此层，详见 startup.rs 路由 merge 处。
-
 pub(crate) fn compression_layer_from_env() -> Option<tower_http::compression::CompressionLayer> {
     use tower_http::compression::CompressionLayer;
 

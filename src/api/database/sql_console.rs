@@ -366,7 +366,6 @@ pub async fn execute_sql(sql: String, opts: ExecuteSqlOpts) -> Result<SqlResult,
 ///
 /// `stmt_sql` 必须是 `stmt` 重序列化后的**单条**语句 SQL（不含其他语句），
 /// 保证护栏检查的 AST 与实际执行的语句一致。
-
 /// 把 admin-only SQL 执行错误限制在可控长度，避免异常文本撑大 server function 响应。
 #[cfg(feature = "server")]
 fn format_sql_error(error: impl std::fmt::Display) -> String {

@@ -137,10 +137,8 @@ pub(crate) async fn seed_rate_limit_from_env(
 }
 
 /// 从 settings 表读取限流配置（缺键回退默认值）。
-///
 /// 启动时由 startup.rs 调用，将结果写入 `config::RATE_LIMIT_CFG`，供 rate_limit.rs
 /// 的 LazyLock 在首次请求时读取。
-
 #[cfg(feature = "server")]
 pub(crate) async fn load_rate_limit_settings(
     client: &tokio_postgres::Client,
