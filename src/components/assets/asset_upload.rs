@@ -1,14 +1,7 @@
 //! 素材上传 modal（素材管理页内上传）。
 //!
-//! 三条入口（点击选择 / 拖拽 / 粘贴）收敛到同一个 `enqueue_files`：拿到的
-//! `web_sys::File` 先过 `validate_file`（镜像服务端 5MiB / 四种 MIME 的硬限制，
-//! 不合格立即记失败行、不发请求），合格项入共享队列后由 **worker 池**并发上传：
-//! 在跑 worker 数上限 = 并发配置（「站点配置」面板 / `UPLOAD_CONCURRENCY` env 播种，
-//! 挂载时经 `get_upload_settings` 拉取，失败回退默认 3）。每个 worker 张间停顿
-//! `500ms × 当前并发数`——N 路并行时聚合速率恒 ≤ 2/s，与默认上传限流桶
-//! （`RATE_LIMIT_UPLOAD_PER_SEC=2` / `BURST=15`）对齐：N=1 时与旧顺序版逐张 500ms
-//! 完全一致，N 调大也不触发 429。上传管线与文章编辑器完全同源
-//! （`upload_image_file` → `POST /api/upload`）。
+//! UI 外壳（遮罩/面板/关闭动效经 [`crate::components::ui::ModalShell`]，逐文件状态列表
+//! 在此渲染）；上传状态机、worker 池并发调度与校验规则见 [`super::upload_pool`]。
 //!
 //! Esc / 粘贴监听挂在 window 上，只在 mount 注册一次、`use_drop` 移除；handler 内用
 //! `visible.peek()` 守卫——modal 关闭后粘贴绝不触发上传。无文件的文本粘贴不拦截
@@ -20,19 +13,17 @@
 //! 组件始终挂载（`visible` 只控制渲染早退），上传中途允许关闭弹窗：spawn 的 worker 与
 //! signals 随组件实例存活，后台续传，每批（一次拖拽/选择/粘贴）收尾时 ≥1 个成功仍照常
 //! 回调 `on_uploaded`。
-//!
-//! 注：worker 池共享状态用 `Rc<UploadPool>` 而非裸 Cell/RefCell——`use_hook` 每次渲染
-//! 都会 clone 存储值（dioxus-core `use_hook_inner` 走 `.cloned()`），裸结构会被按值
-//! 拷贝，各入口闭包拿到互不同步的副本导致 id 冲突与队列分裂；Rc 克隆共享同一实例。
 
 use dioxus::prelude::*;
 
-use crate::components::ui::SPINNER_SVG;
+use crate::components::ui::{ModalShell, BTN_ICON, EXIT_ANIM_MS, SPINNER_SVG};
+
+use super::upload_pool::{UploadItem, UploadStatus};
+#[cfg(target_arch = "wasm32")]
+use super::upload_pool::{enqueue_files, set_status, UploadPool};
 
 #[cfg(target_arch = "wasm32")]
 use crate::bridges::tiptap::upload_image_file;
-#[cfg(target_arch = "wasm32")]
-use crate::utils::format_bytes;
 // 从 Dioxus 事件拿底层 web_sys::File（write.rs L30-34 同款 cfg 门控惯例）：
 // - HasFileData：evt.files()（FormEvent / DragEvent 取文件）
 // - WebFileExt：file.get_web_file()（FileData 取底层 web_sys::File）
@@ -40,187 +31,6 @@ use crate::utils::format_bytes;
 use dioxus::html::HasFileData;
 #[cfg(target_arch = "wasm32")]
 use dioxus::web::WebFileExt;
-
-/// 单文件大小硬上限（5MiB），镜像服务端 `crate::utils::server::MAX_FILE_SIZE`。
-#[cfg(any(test, target_arch = "wasm32"))]
-const MAX_UPLOAD_BYTES: u64 = 5 * 1024 * 1024;
-/// 允许的 MIME 白名单，镜像服务端 `api/upload.rs` 的 `ALLOWED_MIME_TYPES`。
-#[cfg(any(test, target_arch = "wasm32"))]
-const ALLOWED_MIME: &[&str] = &["image/jpeg", "image/png", "image/gif", "image/webp"];
-
-/// 关闭/移除动画时长 ms，与 input.css 的 200ms 过渡/动画时长一一对应。
-const EXIT_ANIM_MS: u32 = 200;
-
-/// 单条上传状态机：Queued → Uploading → Done / Failed(原因)。
-// 变体仅在 WASM 端构造，server SSR 只匹配渲染，非 wasm 构建放行 dead_code。
-#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
-#[derive(Clone, PartialEq)]
-enum UploadStatus {
-    Queued,
-    Uploading,
-    Done,
-    Failed(String),
-}
-
-/// 列表行数据（纯数据，两端都可编译；`web_sys::File` 句柄不进 signal，
-/// 由 WASM 端的 files 表以 id 关联保存，供重试取回）。
-// 同 UploadStatus：实例仅在 WASM 端构造。
-#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
-#[derive(Clone, PartialEq)]
-struct UploadItem {
-    id: u64,
-    name: String,
-    /// 入队时已用 `format_bytes` 格式化好的可读大小。
-    size: String,
-    status: UploadStatus,
-    /// 用户点了 ×：先播退出动画（animate-row-leave），EXIT_ANIM_MS 后真正摘除。
-    removing: bool,
-}
-
-/// 一批入队（一次拖拽/选择/粘贴）的完成追踪：remaining 归零且 ≥1 成功时回调一次。
-#[cfg(target_arch = "wasm32")]
-struct BatchCtx {
-    remaining: std::cell::Cell<usize>,
-    any_done: std::cell::Cell<bool>,
-}
-
-/// Worker 池共享状态：id 分配、重试句柄表、待传队列、在跑 worker 数。
-/// `use_hook` 持 `Rc<UploadPool>`：渲染期 clone 的是 Rc（共享同一实例），各入口闭包
-/// 与 worker 看到的永远是同一份队列/句柄表。
-#[cfg(target_arch = "wasm32")]
-struct UploadPool {
-    next_id: std::cell::Cell<u64>,
-    files: std::cell::RefCell<Vec<(u64, web_sys::File)>>,
-    queue: std::cell::RefCell<std::collections::VecDeque<(u64, std::rc::Rc<BatchCtx>)>>,
-    active_workers: std::cell::Cell<u32>,
-}
-
-/// 预校验：MIME 白名单 + 5MiB 上限。失败返回可读原因（直接展示在行内，不发请求）。
-#[cfg(any(test, target_arch = "wasm32"))]
-fn validate_file(mime: &str, size: u64) -> Result<(), String> {
-    if !ALLOWED_MIME.contains(&mime) {
-        return Err("不支持的文件类型（仅 JPEG / PNG / GIF / WebP）".into());
-    }
-    if size > MAX_UPLOAD_BYTES {
-        return Err("大小超过 5MB 限制".into());
-    }
-    Ok(())
-}
-
-/// 更新单条状态：write guard 在函数内立即释放，绝不跨 await 持有。
-#[cfg(target_arch = "wasm32")]
-fn set_status(items: &mut Signal<Vec<UploadItem>>, id: u64, status: UploadStatus) {
-    let mut guard = items.write();
-    if let Some(it) = guard.iter_mut().find(|it| it.id == id) {
-        it.status = status;
-    }
-}
-
-/// 单个 worker 的消费循环：队列空即退出并归还名额。
-///
-/// 张间停顿 `500ms × 当前并发数`：N 个 worker 并行时聚合速率恒 ≤ 2/s（停顿随 N
-/// 线性放大），与默认上传限流桶（`RATE_LIMIT_UPLOAD_PER_SEC=2` / `BURST=15`）对齐——
-/// N=1 时与旧顺序版逐张 500ms 完全一致，N 调大也不会触发 429。
-#[cfg(target_arch = "wasm32")]
-async fn worker_loop(
-    mut items: Signal<Vec<UploadItem>>,
-    pool: std::rc::Rc<UploadPool>,
-    concurrency: Signal<i32>,
-    on_uploaded: EventHandler<()>,
-) {
-    loop {
-        // borrow 不出块，guard 不跨 await。
-        let next = pool.queue.borrow_mut().pop_front();
-        let Some((id, batch)) = next else { break };
-        // 句柄可能已被「×」移除：跳过上传但仍计入批次完成度（否则该批永不合拢，
-        // 其他成功项的 on_uploaded 无法触发）。
-        let file = pool
-            .files
-            .borrow()
-            .iter()
-            .find(|(fid, _)| *fid == id)
-            .map(|(_, f)| f.clone());
-        if let Some(file) = file {
-            set_status(&mut items, id, UploadStatus::Uploading);
-            match upload_image_file(file).await {
-                Ok(_) => {
-                    set_status(&mut items, id, UploadStatus::Done);
-                    batch.any_done.set(true);
-                }
-                Err(msg) => set_status(&mut items, id, UploadStatus::Failed(msg)),
-            }
-        }
-        // 本批最后一条收尾且 ≥1 成功 → 回调一次（父组件刷新网格）。
-        let remaining = batch.remaining.get() - 1;
-        batch.remaining.set(remaining);
-        if remaining == 0 && batch.any_done.get() {
-            on_uploaded.call(());
-        }
-        // 队列未空则停顿压速率；停顿随并发数线性放大（见 fn doc），live 读取
-        // 让面板改动即时生效。clamp(1, 32) 纯防御：服务端已钳到 1–8，
-        // 此处只防异常值导致 500*n 溢出或路径级长停。
-        if !pool.queue.borrow().is_empty() {
-            let n = (*concurrency.peek()).clamp(1, 32) as u32;
-            crate::utils::time::sleep_ms(500 * n).await;
-        }
-    }
-    pool.active_workers.set(pool.active_workers.get() - 1);
-}
-
-/// 三入口收敛点：校验入队 + 按需补足 worker。仅 WASM 端存在（`web_sys::File` /
-/// `spawn` / `upload_image_file` 都是 WASM-only 符号）。
-#[cfg(target_arch = "wasm32")]
-fn enqueue_files(
-    mut items: Signal<Vec<UploadItem>>,
-    pool: std::rc::Rc<UploadPool>,
-    concurrency: Signal<i32>,
-    on_uploaded: EventHandler<()>,
-    new_files: Vec<web_sys::File>,
-) {
-    // 1) 校验入队：不合格直接记 Failed（不发请求）；合格记 Queued 并留存句柄供重试。
-    let mut valid_ids = Vec::new();
-    for file in new_files {
-        let id = pool.next_id.get() + 1;
-        pool.next_id.set(id);
-        let item = UploadItem {
-            id,
-            name: file.name(),
-            size: format_bytes(file.size() as i64),
-            removing: false,
-            status: match validate_file(&file.type_(), file.size() as u64) {
-                Ok(()) => {
-                    pool.files.borrow_mut().push((id, file));
-                    valid_ids.push(id);
-                    UploadStatus::Queued
-                }
-                Err(msg) => UploadStatus::Failed(msg),
-            },
-        };
-        items.write().push(item);
-    }
-    if valid_ids.is_empty() {
-        return;
-    }
-
-    // 2) 一批一个 BatchCtx 追踪完成度；id 入共享队列后补足 worker：在跑数低于
-    //    并发上限且队列非空时逐个 spawn（worker 队列空自退，不会超额驻留）。
-    let batch = std::rc::Rc::new(BatchCtx {
-        remaining: std::cell::Cell::new(valid_ids.len()),
-        any_done: std::cell::Cell::new(false),
-    });
-    {
-        let mut q = pool.queue.borrow_mut();
-        for id in valid_ids {
-            q.push_back((id, batch.clone()));
-        }
-    }
-    // clamp 上界与 worker_loop 的停顿同款防御（正常值 1–8）。
-    let target = (*concurrency.peek()).clamp(1, 32) as u32;
-    while pool.active_workers.get() < target && !pool.queue.borrow().is_empty() {
-        pool.active_workers.set(pool.active_workers.get() + 1);
-        spawn(worker_loop(items, pool.clone(), concurrency, on_uploaded));
-    }
-}
 
 /// 素材上传 modal。
 ///
@@ -233,19 +43,9 @@ pub fn AssetUploadModal(mut visible: Signal<bool>, on_uploaded: EventHandler<()>
     let mut drag_active = use_signal(|| false);
     // 关闭动画状态：visible 翻 false 时先置 closing 播退出动画，EXIT_ANIM_MS 后再卸载内容。
     let mut closing = use_signal(|| false);
-    // 是否曾开过弹窗：mount 时 visible=false 也会跑一次 use_effect，不加此守卫会
-    // 在页面加载后 200ms 内渲染一层透明遮罩（opacity:0 仍拦截点击）吞掉首次点击。
-    let mut opened = use_signal(|| false);
     // worker 池共享状态（WASM-only）：use_hook 持 Rc，跨渲染共享同一实例。
     #[cfg(target_arch = "wasm32")]
-    let pool = use_hook(|| {
-        std::rc::Rc::new(UploadPool {
-            next_id: std::cell::Cell::new(0_u64),
-            files: std::cell::RefCell::new(Vec::new()),
-            queue: std::cell::RefCell::new(std::collections::VecDeque::new()),
-            active_workers: std::cell::Cell::new(0),
-        })
-    });
+    let pool = use_hook(|| std::rc::Rc::new(UploadPool::new()));
     // 并发配置：默认值先行，挂载后经 admin server fn 拉服务端值覆盖（面板改了
     // 无需刷新页面——下次打开本站页面即生效；进行中的 worker live 读取停顿）。
     let mut concurrency: Signal<i32> =
@@ -362,48 +162,14 @@ pub fn AssetUploadModal(mut visible: Signal<bool>, on_uploaded: EventHandler<()>
     #[cfg(target_arch = "wasm32")]
     let pool_for_rows = pool.clone();
 
-    // visible 翻转驱动关闭动画：关闭入口（× / 遮罩 / Esc）会同步先置 closing 再翻
-    // visible（同帧渲染在存活元素上换 .is-closing 类 → transition 从可见态出发）；
-    // 这里只负责重开复位与 EXIT_ANIM_MS 后的复位卸载。闭包只订阅 visible，
-    // closing/opened 全用 peek 防自触发循环。
-    use_effect(move || {
-        if visible() {
-            opened.set(true);
-            closing.set(false);
-        } else if *opened.peek() {
-            // 非交互路径的 visible 翻转（理论上不存在）兜底补置 closing。
-            if !*closing.peek() {
-                closing.set(true);
-            }
-            spawn(async move {
-                crate::utils::time::sleep_ms(EXIT_ANIM_MS).await;
-                closing.set(false);
-            });
-        }
-    });
-
-    // closing() 的订阅读是必需的——closing.set 靠这个订阅触发重渲染，peek 会不重绘。
-    let is_closing = closing();
-    if !visible() && !is_closing {
-        return rsx! {};
-    }
-
     // 快照当前列表（小 Vec，clone 成本可忽略；status 变化驱动重渲染）。
     let items_snapshot = items.read().clone();
 
     rsx! {
-        // 遮罩：点击关闭（照抄 AssetPickerModal）。
-        div {
-            class: "fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-6 modal-overlay animate-modal-overlay-enter",
-            class: if is_closing { "is-closing" } else { "" },
-            onclick: move |_| {
-                closing.set(true);
-                visible.set(false);
-            },
-            // 面板：阻止点击穿透到遮罩。
-            div {
-                class: "w-full max-w-lg max-h-[80vh] flex flex-col rounded-[2rem] bg-[var(--color-paper-entry)] border border-[var(--color-paper-border)] shadow-xl overflow-hidden modal-panel animate-modal-panel-enter",
-                onclick: move |evt| evt.stop_propagation(),
+        ModalShell {
+            visible,
+            closing,
+            title: "上传素材",
 
                 // 头部（照抄 AssetPickerModal 头部类）。
                 div { class: "flex items-center gap-3 px-6 py-4 border-b border-[var(--color-paper-border)]",
@@ -412,7 +178,7 @@ pub fn AssetUploadModal(mut visible: Signal<bool>, on_uploaded: EventHandler<()>
                     }
                     div { class: "flex-1" }
                     button {
-                        class: "shrink-0 w-8 h-8 flex items-center justify-center rounded-full text-[var(--color-paper-secondary)] hover:bg-[var(--color-paper-theme)] transition-colors cursor-pointer",
+                        class: "{BTN_ICON} shrink-0 rounded-full",
                         aria_label: "关闭",
                         onclick: move |_| {
                             closing.set(true);
@@ -581,12 +347,7 @@ pub fn AssetUploadModal(mut visible: Signal<bool>, on_uploaded: EventHandler<()>
                                                                             #[cfg(target_arch = "wasm32")] // 先标记 removing 播退出动画；文件句柄立即释放，批任务取不到句柄会 // 先标记 removing 播退出动画；文件句柄立即释放，批任务取不到句柄会
                                                                             {
                                                                                 // 从 files 表取回句柄重发本条。
-                                                                                let file = pool_for_retry
-                                                                                    .files
-                                                                                    .borrow()
-                                                                                    .iter()
-                                                                                    .find(|(fid, _)| *fid == item_id)
-                                                                                    .map(|(_, f)| f.clone());
+                                                                                let file = pool_for_retry.find_file(item_id);
                                                                                 if let Some(file) = file {
                                                                                     set_status(&mut items, item_id, UploadStatus::Uploading);
                                                                                     spawn(async move {
@@ -618,10 +379,7 @@ pub fn AssetUploadModal(mut visible: Signal<bool>, on_uploaded: EventHandler<()>
                                                                                 }
                                                                             }
                                                                             #[cfg(target_arch = "wasm32")]
-                                                                            pool_for_remove
-                                                                                .files
-                                                                                .borrow_mut()
-                                                                                .retain(|(fid, _)| *fid != item_id);
+                                                                            pool_for_remove.remove_file(item_id);
                                                                             spawn(async move {
                                                                                 crate::utils::time::sleep_ms(EXIT_ANIM_MS).await;
                                                                                 items.write().retain(|it| it.id != item_id);
@@ -642,41 +400,6 @@ pub fn AssetUploadModal(mut visible: Signal<bool>, on_uploaded: EventHandler<()>
                         }
                     }
                 }
-            }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{validate_file, ALLOWED_MIME, MAX_UPLOAD_BYTES};
-
-    /// 四种支持的类型在上限边缘全部接受。
-    #[test]
-    fn validate_file_accepts_supported_types_at_limit() {
-        for mime in ALLOWED_MIME {
-            assert!(
-                validate_file(mime, MAX_UPLOAD_BYTES).is_ok(),
-                "{mime} 应被接受"
-            );
-        }
-    }
-
-    /// svg 不在白名单（服务端同样拒绝）。
-    #[test]
-    fn validate_file_rejects_svg() {
-        assert!(validate_file("image/svg+xml", 1024).is_err());
-    }
-
-    /// 空 MIME（浏览器给不出类型）也拒绝。
-    #[test]
-    fn validate_file_rejects_empty_mime() {
-        assert!(validate_file("", 1024).is_err());
-    }
-
-    /// 上限 +1 字节拒绝。
-    #[test]
-    fn validate_file_rejects_oversize() {
-        assert!(validate_file("image/png", MAX_UPLOAD_BYTES + 1).is_err());
     }
 }

@@ -587,6 +587,99 @@ pub fn Popover(
     }
 }
 
+/// 弹窗关闭/元素退出动画统一时长（ms），与 input.css 里 `.modal-panel` / `.animate-row-leave`
+/// 等退出过渡动画时长一一对应；调用方需要在动画播放完毕后再真正卸载/摘除元素时复用本常量。
+pub const EXIT_ANIM_MS: u32 = 200;
+
+/// 弹窗遮罩基础类（不含内边距——不同弹窗尺寸的响应式内边距不同，经 `overlay_padding` 传入）。
+const MODAL_OVERLAY_BASE: &str = "fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm modal-overlay animate-modal-overlay-enter";
+/// 弹窗面板基础类（不含宽度——不同弹窗尺寸不同，经 `panel_class` 传入追加）。
+const MODAL_PANEL_BASE: &str = "flex flex-col max-h-[80vh] rounded-[2rem] border border-[var(--color-paper-border)] bg-[var(--color-paper-entry)] shadow-xl overflow-hidden modal-panel animate-modal-panel-enter";
+
+/// 通用弹窗外壳：遮罩 + 面板容器 + 开合动画状态机（`opened` / `closing` / 退出计时）。
+///
+/// 收敛 `AssetUploadModal` / `AssetPickerModal` 曾各自照抄的一份遮罩 + 面板 + 开合动画
+/// 状态机，顺带补齐两者曾意外分叉的 `role="dialog"` / `aria-modal` / `aria-label`
+/// （此前只有 `AssetPickerModal` 有）。调用方仍各自负责标题栏、内容区等具体内容
+/// （经 `children` 传入），以及自身域相关的开关副作用（如重置搜索词/选中集）。
+///
+/// ## 关闭路径与同帧动画
+///
+/// 本组件自身处理遮罩点击关闭。调用方若在 `children` 内还有别的关闭入口
+/// （标题栏 × 按钮、选中即关闭等），必须用与本组件相同的写法**同步**先置
+/// `closing.set(true)` 再置 `visible.set(false)`——同一帧内让存活元素换上
+/// `.is-closing` 类，过渡动画才能从可见态播放（只翻 `visible`、等下一帧的
+/// `use_effect` 兜底补置 `closing` 为时已晚，元素已被提前卸载，动画会变成
+/// 瞬间消失而非淡出）。因此 `visible` / `closing` 是与调用方共享的 `Signal`，
+/// 而非本组件内部私有状态；`opened`（mount 守卫）才是本组件私有的。
+///
+/// ## Props
+///
+/// - `visible` / `closing`：与调用方共享的显隐 / 关闭动画信号。
+/// - `title`：面板的 `aria-label`（不渲染可见标题——各调用方的标题栏自行渲染）。
+/// - `overlay_padding`：遮罩内边距（响应式内边距因弹窗尺寸而异，默认 `"p-6"`）。
+/// - `panel_class`：在共享面板底座上追加的宽度等布局类（默认 `"w-full max-w-lg"`）。
+/// - `children`：面板内容（含调用方自己的标题栏、× 按钮等）。
+#[component]
+pub fn ModalShell(
+    mut visible: Signal<bool>,
+    mut closing: Signal<bool>,
+    title: &'static str,
+    #[props(default = "p-6")] overlay_padding: &'static str,
+    #[props(default = "w-full max-w-lg")] panel_class: &'static str,
+    children: Element,
+) -> Element {
+    // 是否曾开过弹窗：mount 时 visible=false 也会跑一次 use_effect，不加此守卫会
+    // 在页面加载后 EXIT_ANIM_MS 内渲染一层透明遮罩（opacity:0 仍拦截点击）吞掉首次点击。
+    let mut opened = use_signal(|| false);
+
+    // visible 翻转驱动关闭动画：关闭入口（× / 遮罩 / Esc）会同步先置 closing 再翻
+    // visible（见本组件 doc）；这里只负责重开复位与 EXIT_ANIM_MS 后的复位卸载。
+    // 闭包只订阅 visible，closing/opened 全用 peek 防自触发循环。
+    use_effect(move || {
+        if visible() {
+            opened.set(true);
+            closing.set(false);
+        } else if *opened.peek() {
+            // 非交互路径的 visible 翻转（理论上不存在）兜底补置 closing。
+            if !*closing.peek() {
+                closing.set(true);
+            }
+            spawn(async move {
+                crate::utils::time::sleep_ms(EXIT_ANIM_MS).await;
+                closing.set(false);
+            });
+        }
+    });
+
+    // closing() 的订阅读是必需的——closing.set 靠这个订阅触发重渲染，peek 不会重绘。
+    let is_closing = closing();
+    if !visible() && !is_closing {
+        return rsx! {};
+    }
+
+    rsx! {
+        // 遮罩：点击关闭。
+        div {
+            class: "{MODAL_OVERLAY_BASE} {overlay_padding}",
+            class: if is_closing { "is-closing" } else { "" },
+            onclick: move |_| {
+                closing.set(true);
+                visible.set(false);
+            },
+            // 面板：阻止点击穿透到遮罩。
+            div {
+                class: "{MODAL_PANEL_BASE} {panel_class}",
+                role: "dialog",
+                aria_modal: "true",
+                aria_label: "{title}",
+                onclick: move |evt| evt.stop_propagation(),
+                {children}
+            }
+        }
+    }
+}
+
 static TAB_GROUP_ID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 /// 筛选选项卡组件。

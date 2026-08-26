@@ -9,7 +9,7 @@
 //! 纯 Dioxus 组件，不触碰 Tiptap；数据加载仅在 WASM 前端发生。
 
 use crate::components::forms::{FormInput, INPUT_INLINE_CLASS};
-use crate::components::ui::{Pagination, BTN_ICON, BTN_OUTLINE, BTN_PRIMARY, SPINNER_SVG};
+use crate::components::ui::{ModalShell, Pagination, BTN_ICON, BTN_OUTLINE, BTN_PRIMARY, SPINNER_SVG};
 use dioxus::prelude::*;
 
 #[cfg(target_arch = "wasm32")]
@@ -24,8 +24,6 @@ const ASSETS_PER_PAGE: i32 = 60;
 /// 搜索输入防抖窗口，复用素材管理页的请求节流约定。
 #[cfg(target_arch = "wasm32")]
 const SEARCH_DEBOUNCE_MS: u32 = 300;
-/// 关闭过渡时长，与 input.css 的 modal-overlay / modal-panel 过渡保持一致。
-const EXIT_ANIM_MS: u32 = 200;
 
 /// 素材选中载荷：`on_select` 的回传单元。
 ///
@@ -101,7 +99,6 @@ pub fn AssetPickerModal(
     use_effect(move || {
         if visible() {
             opened.set(true);
-            closing.set(false);
             uploaded_url.set(None);
             // 每次打开都是一次全新的选择会话（取消或确认后关闭均不留旧勾选）。
             selected.set(Vec::new());
@@ -109,13 +106,6 @@ pub fn AssetPickerModal(
             #[cfg(target_arch = "wasm32")]
             request_generation_for_close.set(request_generation_for_close.get().wrapping_add(1));
             page.set(1);
-            if !*closing.peek() {
-                closing.set(true);
-            }
-            spawn(async move {
-                crate::utils::time::sleep_ms(EXIT_ANIM_MS).await;
-                closing.set(false);
-            });
         }
     });
 
@@ -189,34 +179,21 @@ pub fn AssetPickerModal(
         }
     });
 
-    let is_closing = closing();
-    if !visible() && !is_closing {
-        return rsx! {};
-    }
     let current_page = page();
     let total_assets = total();
     let loading_now = loading();
     let show_pagination = total_assets > ASSETS_PER_PAGE as i64;
 
     rsx! {
-        // 遮罩：点击关闭
-        div {
-            class: "fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm sm:p-6 modal-overlay animate-modal-overlay-enter",
-            class: if is_closing { "is-closing" } else { "" },
-            onclick: move |_| {
-                closing.set(true);
-                visible.set(false);
-            },
-            // 面板：阻止点击穿透到遮罩
-            div {
-                class: "flex max-h-[80vh] min-h-0 w-full max-w-3xl flex-col overflow-hidden rounded-[2rem] border border-[var(--color-paper-border)] bg-[var(--color-paper-entry)] shadow-xl modal-panel animate-modal-panel-enter",
-                role: "dialog",
-                aria_modal: "true",
-                aria_label: "{title}",
-                onclick: move |evt| evt.stop_propagation(),
+        ModalShell {
+            visible,
+            closing,
+            title,
+            overlay_padding: "p-4 sm:p-6",
+            panel_class: "w-full max-w-3xl min-h-0",
 
-                // 头部：标题、搜索、上传与关闭按钮共享同一组内边距。
-                div { class: "flex flex-wrap items-center gap-3 border-b border-[var(--color-paper-border)] p-6",
+            // 头部：标题、搜索、上传与关闭按钮共享同一组内边距。
+            div { class: "flex flex-wrap items-center gap-3 border-b border-[var(--color-paper-border)] p-6",
                     h2 { class: "shrink-0 text-lg font-bold text-[var(--color-paper-primary)]",
                         "{title}"
                     }
@@ -245,43 +222,53 @@ pub fn AssetPickerModal(
                                         return;
                                     }
                                     if let Some(file) = evt.files().into_iter().next() {
-                                        if let Some(web_file) = file.get_web_file() {
-                                            let preview_url =
-                                                web_sys::Url::create_object_url_with_blob(&web_file).ok();
-                                            uploading_preview.set(preview_url.clone());
-                                            cover_uploading.set(true);
-                                            error.set(None);
-                                            spawn(async move {
-                                                let result = crate::bridges::tiptap::upload_image_file(web_file)
-                                                    .await;
-                                                if let Some(preview_url) = preview_url.as_deref() {
-                                                    let _ = web_sys::Url::revoke_object_url(preview_url);
-                                                }
-                                                match result {
-                                                    Ok(url) => {
-                                                        // 多选模式：上传即意图，新图直接进入选中集
-                                                        // （URL 判重，网格刷新后同图不会重复选中）。
-                                                        if multi {
-                                                            toggle_selection(
-                                                                &mut selected.write(),
-                                                                AssetSelection {
-                                                                    url: url.clone(),
-                                                                    alt: None,
-                                                                },
-                                                            );
-                                                        }
-                                                        uploaded_url.set(Some(url));
-                                                        uploading_preview.set(None);
-                                                        cover_uploading.set(false);
-                                                    }
-                                                    Err(msg) => {
-                                                        error.set(Some(msg));
-                                                        uploading_preview.set(None);
-                                                        cover_uploading.set(false);
-                                                    }
-                                                }
-                                            });
+                    if let Some(web_file) = file.get_web_file() {
+                        // 与 AssetUploadModal 的 worker 池入队校验（upload_pool::validate_file）
+                        // 同一份规则：不合格直接提示、不发请求——此前这里只靠 accept 属性
+                        // （客户端可绕过）+ 服务端兜底校验，缺了与批量上传一致的客户端预检。
+                        if let Err(msg) = crate::components::assets::upload_pool::validate_file(
+                            &web_file.type_(),
+                            web_file.size() as u64,
+                        ) {
+                            error.set(Some(msg));
+                        } else {
+                            let preview_url =
+                                web_sys::Url::create_object_url_with_blob(&web_file).ok();
+                            uploading_preview.set(preview_url.clone());
+                            cover_uploading.set(true);
+                            error.set(None);
+                            spawn(async move {
+                                let result = crate::bridges::tiptap::upload_image_file(web_file)
+                                    .await;
+                                if let Some(preview_url) = preview_url.as_deref() {
+                                    let _ = web_sys::Url::revoke_object_url(preview_url);
+                                }
+                                match result {
+                                    Ok(url) => {
+                                        // 多选模式：上传即意图，新图直接进入选中集
+                                        // （URL 判重，网格刷新后同图不会重复选中）。
+                                        if multi {
+                                            toggle_selection(
+                                                &mut selected.write(),
+                                                AssetSelection {
+                                                    url: url.clone(),
+                                                    alt: None,
+                                                },
+                                            );
                                         }
+                                        uploaded_url.set(Some(url));
+                                        uploading_preview.set(None);
+                                        cover_uploading.set(false);
+                                    }
+                                    Err(msg) => {
+                                        error.set(Some(msg));
+                                        uploading_preview.set(None);
+                                        cover_uploading.set(false);
+                                    }
+                                }
+                            });
+                        }
+                    }
                                     }
                                 }
                             },
@@ -559,7 +546,6 @@ pub fn AssetPickerModal(
                         }
                     }
                 }
-            }
         }
     }
 }

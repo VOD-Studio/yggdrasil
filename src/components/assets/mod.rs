@@ -7,6 +7,8 @@
 pub mod asset_picker;
 /// 素材上传 modal（素材管理页内上传）。
 pub mod asset_upload;
+/// 上传引擎内部状态机（校验规则 / worker 池并发调度），与 UI 完全解耦。
+mod upload_pool;
 
 pub use asset_picker::{AssetPickerModal, AssetSelection};
 pub use asset_upload::AssetUploadModal;
