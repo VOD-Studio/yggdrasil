@@ -341,10 +341,14 @@ fn NavGroup(kind: NavGroupKind, items: Vec<(Route, &'static str, bool)>) -> Elem
     use_effect(move || {
         let current = router().current::<Route>();
         let now_in_group = kind.contains(&current);
-        if now_in_group && !was_in_group() {
+        let was = was_in_group();
+
+        if now_in_group && !was {
             expanded.set(true);
         }
-        was_in_group.set(now_in_group);
+        if was != now_in_group {
+            was_in_group.set(now_in_group);
+        }
     });
 
     let chevron_rotate = if expanded() { "rotate-180" } else { "" };
