@@ -14,8 +14,8 @@ pub fn SearchSkeleton() -> Element {
     rsx! {
         div { class: "space-y-6 py-4",
             // 3 个结果卡片骨架
-            for _ in 0..3 {
-                PostCardSkeleton {}
+            for i in 0..3 {
+                PostCardSkeleton { key: "{i}" }
             }
         }
     }

@@ -19,8 +19,8 @@ pub fn HomeSkeleton() -> Element {
             PostCardSkeleton { featured: true, has_cover: true }
 
             // 后续 9 篇常规卡片骨架
-            for _ in 0..9 {
-                PostCardSkeleton {}
+            for i in 0..9 {
+                PostCardSkeleton { key: "{i}" }
             }
 
             // 分页按钮占位

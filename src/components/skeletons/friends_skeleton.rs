@@ -12,8 +12,8 @@ use dioxus::prelude::*;
 pub fn FriendsSkeleton() -> Element {
     rsx! {
         div { class: "grid grid-cols-1 sm:grid-cols-2 gap-6",
-            for _ in 0..6 {
-                div { class: "h-40 rounded-card bg-paper-entry/60" }
+            for i in 0..6 {
+                div { key: "{i}", class: "h-40 rounded-card bg-paper-entry/60" }
             }
         }
     }

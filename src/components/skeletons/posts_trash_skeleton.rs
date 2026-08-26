@@ -4,64 +4,53 @@
 
 use dioxus::prelude::*;
 
-use crate::components::skeletons::atoms::SkeletonBox;
-use crate::components::ui::ADMIN_CARD_CLASS;
+use crate::components::skeletons::atoms::{
+    SkeletonBox, SkeletonCard, SkeletonCellShape, SkeletonTable, SkeletonTableColumn,
+};
 /// 后台回收站表格骨架屏组件（供 PostsTrash 页面内部加载态使用）。
 #[component]
 pub fn PostsTrashTableSkeleton() -> Element {
+    let columns = vec![
+        SkeletonTableColumn {
+            header_class: "px-4 py-3.5 w-10 text-center",
+            header_box_class: "h-4 w-4 rounded mx-auto",
+            cell_class: "px-4 py-3.5 text-center",
+            cell_shape: SkeletonCellShape::Single("h-4 w-4 rounded mx-auto"),
+        },
+        SkeletonTableColumn {
+            header_class: "px-5 py-3.5",
+            header_box_class: "h-3 w-16",
+            cell_class: "px-5 py-3.5",
+            cell_shape: SkeletonCellShape::Stacked("h-4 w-1/3", "h-3 w-1/4"),
+        },
+        SkeletonTableColumn {
+            header_class: "px-4 py-3.5 w-24",
+            header_box_class: "h-3 w-14 mx-auto",
+            cell_class: "px-4 py-3.5",
+            cell_shape: SkeletonCellShape::Single("h-5 w-14 mx-auto rounded-full"),
+        },
+        SkeletonTableColumn {
+            header_class: "px-4 py-3.5 w-32",
+            header_box_class: "h-3 w-16",
+            cell_class: "px-4 py-3.5",
+            cell_shape: SkeletonCellShape::Single("h-4 w-20"),
+        },
+        SkeletonTableColumn {
+            header_class: "px-4 py-3.5 w-24",
+            header_box_class: "h-3 w-14 mx-auto",
+            cell_class: "px-4 py-3.5",
+            cell_shape: SkeletonCellShape::Single("h-5 w-14 mx-auto rounded-full"),
+        },
+        SkeletonTableColumn {
+            header_class: "px-5 py-3.5 w-36",
+            header_box_class: "h-3 w-16 ml-auto",
+            cell_class: "px-5 py-3.5",
+            cell_shape: SkeletonCellShape::Single("h-6 w-24 ml-auto rounded"),
+        },
+    ];
     rsx! {
-        div { class: "bg-[var(--color-paper-entry)]/40 rounded-2xl shadow-xs border border-[var(--color-paper-border)]/70 overflow-hidden",
-            table { class: "w-full text-sm",
-                thead {
-                    tr { class: "bg-[var(--color-paper-entry)]/80 border-b border-[var(--color-paper-border)]/70",
-                        th { class: "px-4 py-3.5 w-10 text-center",
-                            SkeletonBox { class: "h-4 w-4 rounded mx-auto" }
-                        }
-                        th { class: "px-5 py-3.5",
-                            SkeletonBox { class: "h-3 w-16" }
-                        }
-                        th { class: "px-4 py-3.5 w-24",
-                            SkeletonBox { class: "h-3 w-14 mx-auto" }
-                        }
-                        th { class: "px-4 py-3.5 w-32",
-                            SkeletonBox { class: "h-3 w-16" }
-                        }
-                        th { class: "px-4 py-3.5 w-24",
-                            SkeletonBox { class: "h-3 w-14 mx-auto" }
-                        }
-                        th { class: "px-5 py-3.5 w-36",
-                            SkeletonBox { class: "h-3 w-16 ml-auto" }
-                        }
-                    }
-                }
-                tbody {
-                    for _ in 0..8 {
-                        tr { class: "border-b border-[var(--color-paper-border)]/60 last:border-0",
-                            td { class: "px-4 py-3.5 text-center",
-                                SkeletonBox { class: "h-4 w-4 rounded mx-auto" }
-                            }
-                            td { class: "px-5 py-3.5",
-                                div { class: "space-y-1.5",
-                                    SkeletonBox { class: "h-4 w-1/3" }
-                                    SkeletonBox { class: "h-3 w-1/4" }
-                                }
-                            }
-                            td { class: "px-4 py-3.5",
-                                SkeletonBox { class: "h-5 w-14 mx-auto rounded-full" }
-                            }
-                            td { class: "px-4 py-3.5",
-                                SkeletonBox { class: "h-4 w-20" }
-                            }
-                            td { class: "px-4 py-3.5",
-                                SkeletonBox { class: "h-5 w-14 mx-auto rounded-full" }
-                            }
-                            td { class: "px-5 py-3.5",
-                                SkeletonBox { class: "h-6 w-24 ml-auto rounded" }
-                            }
-                        }
-                    }
-                }
-            }
+        SkeletonCard { class: Some("shadow-xs overflow-hidden"),
+            SkeletonTable { columns, rows: 8 }
         }
     }
 }
@@ -85,7 +74,7 @@ pub fn PostsTrashSkeleton() -> Element {
 
             div { class: "space-y-6",
                 // 自动清理配置卡片占位
-                div { class: "{ADMIN_CARD_CLASS} p-6 space-y-4",
+                SkeletonCard { class: Some("p-6 space-y-4"),
                     div { class: "flex justify-between items-center",
                         div { class: "space-y-1",
                             SkeletonBox { class: "h-5 w-32 rounded" }

@@ -5,7 +5,7 @@
 
 use dioxus::prelude::*;
 
-use crate::components::skeletons::atoms::SkeletonBox;
+use crate::components::skeletons::atoms::{SkeletonBox, SkeletonCard};
 
 /// 后台运行日志页骨架屏组件。
 ///
@@ -30,7 +30,7 @@ pub fn LogsSkeleton() -> Element {
             }
 
             // 筛选栏卡片：级别 chips + target 选择器 + 搜索框
-            div { class: "flex-shrink-0 bg-[var(--color-paper-entry)]/40 rounded-2xl p-4 sm:p-5 space-y-4 border border-[var(--color-paper-border)]/70 shadow-xs mb-4",
+            SkeletonCard { class: Some("flex-shrink-0 p-4 sm:p-5 space-y-4 shadow-xs mb-4"),
                 div { class: "flex flex-wrap gap-2",
                     SkeletonBox { class: "h-7 w-16 rounded-full" }
                     SkeletonBox { class: "h-7 w-14 rounded-full" }
@@ -48,7 +48,7 @@ pub fn LogsSkeleton() -> Element {
             SkeletonBox { class: "flex-shrink-0 h-14 w-full rounded-2xl mb-4" }
 
             // 日志区：等宽行占位（flex-1 占满剩余高度）
-            div { class: "flex-1 min-h-0 bg-[var(--color-paper-entry)]/40 rounded-2xl border border-[var(--color-paper-border)]/70 shadow-xs p-4 space-y-3 overflow-hidden",
+            SkeletonCard { class: Some("flex-1 min-h-0 shadow-xs p-4 space-y-3 overflow-hidden"),
                 SkeletonBox { class: "h-4 w-[92%] rounded" }
                 SkeletonBox { class: "h-4 w-[78%] rounded" }
                 SkeletonBox { class: "h-4 w-[85%] rounded" }

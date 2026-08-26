@@ -5,8 +5,7 @@
 
 use dioxus::prelude::*;
 
-use crate::components::skeletons::atoms::SkeletonBox;
-use crate::components::ui::ADMIN_CARD_CLASS;
+use crate::components::skeletons::atoms::{SkeletonBox, SkeletonCard};
 
 /// 后台个人信息骨架屏组件。
 #[component]
@@ -20,7 +19,7 @@ pub fn ProfileSkeleton() -> Element {
             }
 
             // 身份卡：圆形头像 + 文字行
-            div { class: "{ADMIN_CARD_CLASS} p-6 md:p-8 flex items-center gap-6",
+            SkeletonCard { class: Some("p-6 md:p-8 flex items-center gap-6"),
                 SkeletonBox { class: "h-24 w-24 rounded-full flex-shrink-0" }
                 div { class: "flex-1 space-y-2.5",
                     SkeletonBox { class: "h-6 w-40 rounded" }
@@ -30,7 +29,7 @@ pub fn ProfileSkeleton() -> Element {
             }
 
             // 基本资料卡：卡头 + 三条输入行 + 按钮行
-            div { class: "{ADMIN_CARD_CLASS} p-6 md:p-8 space-y-6",
+            SkeletonCard { class: Some("p-6 md:p-8 space-y-6"),
                 div { class: "flex items-center gap-3",
                     SkeletonBox { class: "h-10 w-10 rounded-full flex-shrink-0" }
                     div { class: "space-y-2",
@@ -52,7 +51,7 @@ pub fn ProfileSkeleton() -> Element {
             }
 
             // 安全卡：卡头 + 输入行 + 双列输入 + 按钮行
-            div { class: "{ADMIN_CARD_CLASS} p-6 md:p-8 space-y-6",
+            SkeletonCard { class: Some("p-6 md:p-8 space-y-6"),
                 div { class: "flex items-center gap-3",
                     SkeletonBox { class: "h-10 w-10 rounded-full flex-shrink-0" }
                     div { class: "space-y-2",

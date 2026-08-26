@@ -24,6 +24,7 @@ pub fn TagsSkeleton() -> Element {
                 // 生成 24 个不同宽度的标签 pill
                 for i in 0..24 {
                     SkeletonBox {
+                        key: "{i}",
                         class: "h-8 rounded-lg",
                         style: match i % 6 {
                             0 => "width: 60px;",
@@ -53,8 +54,8 @@ pub fn TagDetailSkeleton() -> Element {
             }
 
             // 文章卡片列表
-            for _ in 0..5 {
-                PostCardSkeleton {}
+            for i in 0..5 {
+                PostCardSkeleton { key: "{i}" }
             }
         }
     }

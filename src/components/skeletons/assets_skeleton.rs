@@ -35,8 +35,8 @@ pub fn AssetsSkeleton() -> Element {
 
             // 响应式缩略图网格
             div { class: "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4",
-                for _ in 0..12 {
-                    div { class: "aspect-square rounded-2xl border border-paper-border bg-paper-entry overflow-hidden p-2 flex flex-col justify-between",
+                for i in 0..12 {
+                    div { key: "{i}", class: "aspect-square rounded-2xl border border-paper-border bg-paper-entry overflow-hidden p-2 flex flex-col justify-between",
                         SkeletonBox { class: "w-full flex-1 rounded-xl" }
                         div { class: "mt-2 flex justify-between items-center",
                             SkeletonBox { class: "h-3 w-20 rounded" }

@@ -40,7 +40,7 @@ pub fn WriteSkeleton() -> Element {
 
                         // 编辑器区域骨架
                         div { class: "flex-1 min-h-[480px] flex flex-col mb-4",
-                            div { class: "flex-1 min-h-0 w-full border border-[var(--color-paper-border)]/70 rounded-2xl overflow-hidden bg-[var(--color-paper-entry)]/40 p-6 space-y-4 shadow-xs",
+                            SkeletonCard { class: Some("flex-1 min-h-0 w-full overflow-hidden p-6 space-y-4 shadow-xs"),
                                 SkeletonBox { class: "h-5 w-[90%] rounded-md" }
                                 SkeletonBox { class: "h-5 w-full rounded-md" }
                                 SkeletonBox { class: "h-5 w-[85%] rounded-md" }

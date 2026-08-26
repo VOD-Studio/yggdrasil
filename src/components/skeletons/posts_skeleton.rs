@@ -4,57 +4,47 @@
 
 use dioxus::prelude::*;
 
-use crate::components::skeletons::atoms::SkeletonBox;
+use crate::components::skeletons::atoms::{
+    SkeletonBox, SkeletonCard, SkeletonCellShape, SkeletonTable, SkeletonTableColumn,
+};
 /// 后台文章管理表格骨架屏组件（供 AllPostsList 内部加载态使用）。
 #[component]
 pub fn PostsTableSkeleton() -> Element {
+    let columns = vec![
+        SkeletonTableColumn {
+            header_class: "px-5 py-3.5",
+            header_box_class: "h-3 w-16",
+            cell_class: "px-5 py-3.5",
+            cell_shape: SkeletonCellShape::Stacked("h-4 w-2/3", "h-3 w-1/3"),
+        },
+        SkeletonTableColumn {
+            header_class: "px-4 py-3.5 w-24",
+            header_box_class: "h-3 w-10 mx-auto",
+            cell_class: "px-4 py-3.5",
+            cell_shape: SkeletonCellShape::Single("h-5 w-14 mx-auto rounded-full"),
+        },
+        SkeletonTableColumn {
+            header_class: "px-4 py-3.5 w-28 hidden md:table-cell",
+            header_box_class: "h-3 w-10",
+            cell_class: "px-4 py-3.5 hidden md:table-cell",
+            cell_shape: SkeletonCellShape::Single("h-4 w-16"),
+        },
+        SkeletonTableColumn {
+            header_class: "px-4 py-3.5 w-32",
+            header_box_class: "h-3 w-16",
+            cell_class: "px-4 py-3.5",
+            cell_shape: SkeletonCellShape::Single("h-4 w-24"),
+        },
+        SkeletonTableColumn {
+            header_class: "px-5 py-3.5 w-48",
+            header_box_class: "h-3 w-12 ml-auto",
+            cell_class: "px-5 py-3.5",
+            cell_shape: SkeletonCellShape::Single("h-6 w-32 ml-auto rounded"),
+        },
+    ];
     rsx! {
-        div { class: "bg-[var(--color-paper-entry)]/40 rounded-2xl shadow-xs border border-[var(--color-paper-border)]/70 overflow-hidden",
-            table { class: "w-full text-sm",
-                thead {
-                    tr { class: "bg-[var(--color-paper-entry)]/80 border-b border-[var(--color-paper-border)]/70",
-                        th { class: "px-5 py-3.5",
-                            SkeletonBox { class: "h-3 w-16" }
-                        }
-                        th { class: "px-4 py-3.5 w-24",
-                            SkeletonBox { class: "h-3 w-10 mx-auto" }
-                        }
-                        th { class: "px-4 py-3.5 w-28 hidden md:table-cell",
-                            SkeletonBox { class: "h-3 w-10" }
-                        }
-                        th { class: "px-4 py-3.5 w-32",
-                            SkeletonBox { class: "h-3 w-16" }
-                        }
-                        th { class: "px-5 py-3.5 w-48",
-                            SkeletonBox { class: "h-3 w-12 ml-auto" }
-                        }
-                    }
-                }
-                tbody {
-                    for _ in 0..8 {
-                        tr { class: "border-b border-[var(--color-paper-border)]/60 last:border-0",
-                            td { class: "px-5 py-3.5",
-                                div { class: "space-y-1.5",
-                                    SkeletonBox { class: "h-4 w-2/3" }
-                                    SkeletonBox { class: "h-3 w-1/3" }
-                                }
-                            }
-                            td { class: "px-4 py-3.5",
-                                SkeletonBox { class: "h-5 w-14 mx-auto rounded-full" }
-                            }
-                            td { class: "px-4 py-3.5 hidden md:table-cell",
-                                SkeletonBox { class: "h-4 w-16" }
-                            }
-                            td { class: "px-4 py-3.5",
-                                SkeletonBox { class: "h-4 w-24" }
-                            }
-                            td { class: "px-5 py-3.5",
-                                SkeletonBox { class: "h-6 w-32 ml-auto rounded" }
-                            }
-                        }
-                    }
-                }
-            }
+        SkeletonCard { class: Some("shadow-xs overflow-hidden"),
+            SkeletonTable { columns, rows: 8 }
         }
     }
 }

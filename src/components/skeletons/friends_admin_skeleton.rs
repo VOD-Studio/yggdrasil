@@ -4,17 +4,17 @@
 
 use dioxus::prelude::*;
 
-use crate::components::skeletons::atoms::SkeletonBox;
+use crate::components::skeletons::atoms::{SkeletonBox, SkeletonCard};
 
 /// 后台友链列表卡片骨架屏组件（供 LinkList 组件内部加载态使用）。
 #[component]
 pub fn FriendsAdminListSkeleton() -> Element {
     rsx! {
-        div { class: "bg-[var(--color-paper-entry)]/40 rounded-2xl p-6 sm:p-8 space-y-6 border border-[var(--color-paper-border)]/70 shadow-xs",
+        SkeletonCard { class: Some("p-6 sm:p-8 space-y-6 shadow-xs"),
             SkeletonBox { class: "h-6 w-32 rounded" }
             div { class: "space-y-4 divide-y divide-[var(--color-paper-border)]/50",
-                for _ in 0..4 {
-                    div { class: "pt-4 flex items-center justify-between gap-4",
+                for i in 0..4 {
+                    div { key: "{i}", class: "pt-4 flex items-center justify-between gap-4",
                         div { class: "flex items-center gap-3.5 flex-1 min-w-0",
                             SkeletonBox { class: "h-10 w-10 rounded-2xl shrink-0" }
                             div { class: "space-y-1.5 flex-1 min-w-0",
@@ -45,7 +45,7 @@ pub fn FriendsAdminSkeleton() -> Element {
             }
 
             // 表单卡片占位
-            div { class: "bg-[var(--color-paper-entry)]/40 rounded-2xl p-6 sm:p-8 space-y-6 border border-[var(--color-paper-border)]/70 shadow-xs",
+            SkeletonCard { class: Some("p-6 sm:p-8 space-y-6 shadow-xs"),
                 SkeletonBox { class: "h-6 w-28 rounded" }
                 div { class: "grid grid-cols-1 md:grid-cols-2 gap-5",
                     div { class: "space-y-2",

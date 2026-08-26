@@ -9,12 +9,15 @@
 //! - [`crate::pages::admin::preview::PostPreview`] 内 `use_server_future` 取数 pending 期。
 
 use crate::components::skeletons::atoms::SkeletonBox;
+use crate::components::skeletons::post_detail_skeleton::PostDetailBody;
 use dioxus::prelude::*;
 
 /// 草稿/文章预览页骨架屏组件。
 ///
-/// 结构（与真实页面逐段对应）：
-/// 预览横幅 + 面包屑 + 标题(h1) + 摘要 + 元信息 + 封面图 + 正文(多段) + 页脚占位。
+/// 结构（与真实页面逐段对应）：预览横幅 + 与 [`PostDetailSkeleton`] 共享的正文
+/// （面包屑/标题/摘要/元信息/封面图/正文(多段)/页脚占位，见 [`PostDetailBody`]）。
+///
+/// [`PostDetailSkeleton`]: crate::components::skeletons::post_detail_skeleton::PostDetailSkeleton
 #[component]
 pub fn PostPreviewSkeleton() -> Element {
     rsx! {
@@ -36,49 +39,7 @@ pub fn PostPreviewSkeleton() -> Element {
                 }
             }
 
-            // 面包屑占位（PostHeader 内的 Breadcrumbs）
-            SkeletonBox { class: "h-4 w-48 rounded mb-6" }
-
-            // 标题占位（模拟 h1.post-title）
-            SkeletonBox { class: "h-10 w-4/5 rounded mb-4" }
-
-            // 摘要占位（post-description）
-            SkeletonBox { class: "h-5 w-2/3 rounded mb-4" }
-
-            // 元信息行（PostMeta：作者 · 日期 · 阅读时间）
-            div { class: "flex items-center gap-2 mb-8",
-                SkeletonBox { class: "h-4 w-16 rounded" }
-                SkeletonBox { class: "h-4 w-1 rounded" }
-                SkeletonBox { class: "h-4 w-24 rounded" }
-                SkeletonBox { class: "h-4 w-1 rounded" }
-                SkeletonBox { class: "h-4 w-20 rounded" }
-            }
-
-            // 封面图占位（PostCover 16:9 比例）
-            SkeletonBox { class: "w-full aspect-video rounded-lg mb-8" }
-
-            // 正文段落占位（PostContent 多段）
-            div { class: "space-y-4 mb-8",
-                SkeletonBox { class: "h-4 w-full rounded" }
-                SkeletonBox { class: "h-4 w-full rounded" }
-                SkeletonBox { class: "h-4 w-5/6 rounded" }
-                SkeletonBox { class: "h-4 w-full rounded" }
-                SkeletonBox { class: "h-4 w-full rounded" }
-                SkeletonBox { class: "h-4 w-3/4 rounded" }
-                // 空行模拟段落间距
-                div { class: "h-2" }
-                SkeletonBox { class: "h-4 w-full rounded" }
-                SkeletonBox { class: "h-4 w-full rounded" }
-                SkeletonBox { class: "h-4 w-2/3 rounded" }
-            }
-
-            // PostFooter 占位
-            div { class: "border-t border-gray-200 dark:border-gray-700 pt-6 mt-8",
-                div { class: "flex items-center justify-between",
-                    SkeletonBox { class: "h-4 w-32 rounded" }
-                    SkeletonBox { class: "h-4 w-24 rounded" }
-                }
-            }
+            PostDetailBody {}
         }
     }
 }

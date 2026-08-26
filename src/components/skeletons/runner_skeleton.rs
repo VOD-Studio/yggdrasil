@@ -4,7 +4,7 @@
 
 use dioxus::prelude::*;
 
-use crate::components::skeletons::atoms::SkeletonBox;
+use crate::components::skeletons::atoms::{SkeletonBox, SkeletonCard};
 
 /// 后台代码试运行沙箱骨架屏组件。
 #[component]
@@ -21,7 +21,7 @@ pub fn RunnerSkeleton() -> Element {
             }
 
             // 配置卡片：语言切换 Tabs + 资源覆盖
-            div { class: "bg-[var(--color-paper-entry)]/40 rounded-2xl p-6 sm:p-8 space-y-6 border border-[var(--color-paper-border)]/70 shadow-xs",
+            SkeletonCard { class: Some("p-6 sm:p-8 space-y-6 shadow-xs"),
                 SkeletonBox { class: "h-6 w-36 rounded" }
                 div { class: "space-y-2.5",
                     SkeletonBox { class: "h-3.5 w-16 rounded" }
@@ -40,7 +40,7 @@ pub fn RunnerSkeleton() -> Element {
             }
 
             // 沙箱代码编辑器卡片占位
-            div { class: "bg-[var(--color-paper-entry)]/40 rounded-2xl p-6 space-y-4 border border-[var(--color-paper-border)]/70 shadow-xs",
+            SkeletonCard { class: Some("p-6 space-y-4 shadow-xs"),
                 div { class: "flex justify-between items-center pb-3 border-b border-[var(--color-paper-border)]/60",
                     SkeletonBox { class: "h-5 w-24 rounded" }
                     SkeletonBox { class: "h-8 w-20 rounded-full" }

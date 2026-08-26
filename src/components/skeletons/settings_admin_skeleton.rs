@@ -6,7 +6,7 @@
 
 use dioxus::prelude::*;
 
-use crate::components::skeletons::atoms::SkeletonBox;
+use crate::components::skeletons::atoms::{SkeletonBox, SkeletonCard};
 /// 后台站点配置骨架屏组件。
 #[component]
 pub fn SettingsAdminSkeleton() -> Element {
@@ -24,14 +24,14 @@ pub fn SettingsAdminSkeleton() -> Element {
 
             // 顶部横向分类导航栏占位
             div { class: "flex-shrink-0 flex items-center gap-2 overflow-x-auto pb-3 mb-6 border-b border-[var(--color-paper-border)]/60 scrollbar-none",
-                for _ in 0..8 {
-                    SkeletonBox { class: "h-8 w-20 rounded-full shrink-0" }
+                for i in 0..8 {
+                    SkeletonBox { key: "{i}", class: "h-8 w-20 rounded-full shrink-0" }
                 }
             }
 
             // 右侧/居中内容占位（镜像配置卡片堆叠）
             div { class: "flex-1 min-w-0 min-h-0 overflow-hidden max-w-5xl mx-auto w-full space-y-8",
-                div { class: "bg-[var(--color-paper-entry)]/40 rounded-2xl p-6 sm:p-8 space-y-6 border border-[var(--color-paper-border)]/70 shadow-xs",
+                SkeletonCard { class: Some("p-6 sm:p-8 space-y-6 shadow-xs"),
                     div { class: "flex items-center gap-3",
                         SkeletonBox { class: "w-10 h-10 rounded-full" }
                         div { class: "space-y-1.5",
