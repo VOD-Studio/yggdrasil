@@ -9,7 +9,7 @@
 use dioxus::prelude::*;
 use dioxus::router::components::Link;
 
-use crate::router::Route;
+use crate::components::forms::FormInput;
 
 // ===========================================================================
 // 样式常量
@@ -123,8 +123,8 @@ pub const BTN_ICON: &str =
 /// - `current_page`：当前页码（从 1 开始）
 /// - `total`：数据总条数
 /// - `per_page`：每页条数，用于计算总页数
-/// - `prev_route`：点击上一页跳转的目标路由（路由式翻页用）
-/// - `next_route`：点击下一页跳转的目标路由（路由式翻页用）
+/// - `prev_route`：点击上一页跳转的目标路由（路由式翻页用；回调式翻页可不传，默认 `None`）
+/// - `next_route`：点击下一页跳转的目标路由（路由式翻页用；回调式翻页可不传，默认 `None`）
 /// - `unit`：计数单位（"篇" / "条"），仅 admin 显示计数时使用
 /// - `on_prev` / `on_next`：可选回调。传入时渲染 `<button onclick>` 走客户端
 ///   signal 翻页（与路由式 `prev_route`/`next_route` 互斥，回调优先）；不传则保持
@@ -136,13 +136,13 @@ pub const BTN_ICON: &str =
 ///   `Route`，故路由式调用方不传此 prop，页码保持纯文本。
 /// - `compact`：admin 变体是否去掉默认外边距，供弹窗等固定底栏嵌入使用。
 #[component]
-pub fn Pagination(
+pub fn Pagination<R: Routable + Clone + PartialEq + 'static>(
     variant: &'static str,
     current_page: i32,
     total: i64,
     per_page: i32,
-    #[props(default = Route::Home {})] prev_route: Route,
-    #[props(default = Route::Home {})] next_route: Route,
+    #[props(default)] prev_route: Option<R>,
+    #[props(default)] next_route: Option<R>,
     unit: &'static str,
     #[props(default)] on_prev: Option<EventHandler<()>>,
     #[props(default)] on_next: Option<EventHandler<()>>,
@@ -165,16 +165,13 @@ pub fn Pagination(
     } else {
         "flex mt-10 mb-6 justify-between"
     };
-    let (link_class, link_extra_next) = if is_admin {
+    let (link_class, link_extra_next): (String, &'static str) = if is_admin {
         (
-            "inline-flex items-center px-4 py-2 text-sm font-medium text-paper-primary border border-paper-border rounded-full hover:border-paper-accent hover:text-paper-accent active:scale-[0.98] transition-all duration-200 cursor-pointer",
+            format!("{BTN_OUTLINE} inline-flex items-center active:scale-[0.98]"),
             "",
         )
     } else {
-        (
-            "inline-flex items-center px-4 py-2 text-sm text-white bg-paper-accent rounded-full hover:brightness-110 active:scale-[0.98] transition-all duration-200 cursor-pointer",
-            "ml-auto",
-        )
+        (BTN_PRIMARY.to_string(), "ml-auto")
     };
     let disabled_class =
         "inline-flex items-center px-4 py-2 text-sm font-medium text-paper-secondary border border-paper-border rounded-full cursor-not-allowed";
@@ -205,8 +202,8 @@ pub fn Pagination(
                         onclick: move |_| on_prev.call(()),
                         {prev_inner}
                     }
-                } else {
-                    Link { class: "{link_class}", to: prev_route, {prev_inner} }
+                } else if let Some(pr) = prev_route.clone() {
+                    Link { class: "{link_class}", to: pr, {prev_inner} }
                 }
             } else if is_admin {
                 span { class: "{disabled_class}",
@@ -219,19 +216,22 @@ pub fn Pagination(
             if is_admin {
                 span { class: "flex items-center gap-1.5 self-center text-sm text-paper-secondary",
                     if total_pages > 1 && on_jump.is_some() {
-                        input {
-                            class: "w-11 px-1 py-0.5 text-sm text-center bg-transparent text-paper-primary border border-paper-border rounded-full hover:border-paper-accent/60 focus:outline-none focus:border-paper-accent transition-colors",
+                        FormInput {
                             r#type: "text",
-                            inputmode: "numeric",
-                            title: "输入页码，回车跳转",
+                            placeholder: "",
                             value: if jump_editing() { jump_draft() } else { current_page.to_string() },
+                            class: Some(
+                                "w-11 px-1 py-0.5 text-sm text-center bg-transparent text-paper-primary border border-paper-border rounded-full hover:border-paper-accent/60 focus:outline-none focus:border-paper-accent transition-colors",
+                            ),
+                            inputmode: Some("numeric"),
+                            title: Some("输入页码，回车跳转"),
+                            oninput: move |v: String| jump_draft.set(v),
                             onfocus: move |_| {
                                 jump_draft.set(current_page.to_string());
                                 jump_editing.set(true);
                             },
                             onblur: move |_| jump_editing.set(false),
-                            oninput: move |e| jump_draft.set(e.value()),
-                            onkeydown: move |e| {
+                            onkeydown: move |e: KeyboardEvent| {
                                 if e.key() == Key::Enter {
                                     if let Some(on_jump) = on_jump {
                                         // 合法页码：夹取到 [1, total_pages] 后回调并回显；
@@ -261,10 +261,10 @@ pub fn Pagination(
                         onclick: move |_| on_next.call(()),
                         {next_inner}
                     }
-                } else {
+                } else if let Some(nr) = next_route.clone() {
                     Link {
                         class: "{link_class} {link_extra_next}",
-                        to: next_route,
+                        to: nr,
                         {next_inner}
                     }
                 }
@@ -694,29 +694,21 @@ pub fn LoadingButton(
     #[props(default = "primary")] variant: &'static str,
     onclick: EventHandler<()>,
 ) -> Element {
-    // 尺寸变体：sm 用于工具栏（刷新/导出），primary 用于主 CTA（执行/发布/保存）。
-    let size = if variant == "sm" {
-        "px-4 py-1.5"
-    } else {
-        "px-5 py-2 shadow-sm"
-    };
-
-    // 三态背景：loading 与正常都是主题绿（保持视觉连续），disabled 灰化。
-    let (bg, cursor) = if disabled && !loading {
-        (
-            "bg-[var(--color-paper-tertiary)] text-[var(--color-paper-secondary)]",
-            "cursor-not-allowed",
+    let base = if variant == "sm" { BTN_PRIMARY_SM } else { BTN_PRIMARY };
+    // 尺寸随 base 常量而定；禁用态需要独立灰色配色（BTN_PRIMARY/_SM 未建模禁用态），
+    // 故仅在此分支手写尺寸 + 灰色板，正常态直接复用常量，避免两套配色定义分叉。
+    let class = if disabled && !loading {
+        let size = if variant == "sm" { "px-4 py-1.5" } else { "px-5 py-2" };
+        format!(
+            "relative inline-flex items-center justify-center {size} rounded-full text-sm font-medium transition-all bg-[var(--color-paper-tertiary)] text-[var(--color-paper-secondary)] cursor-not-allowed"
         )
     } else {
-        (
-            "text-[var(--color-paper-theme)] bg-[var(--color-paper-accent)] hover:brightness-110 active:scale-[0.98]",
-            "cursor-pointer",
-        )
+        format!("relative {base}")
     };
 
     rsx! {
         button {
-            class: "relative inline-flex items-center justify-center {size} {bg} {cursor} rounded-full text-sm font-medium transition-all",
+            class: "{class}",
             disabled: loading || disabled,
             onclick: move |_| onclick.call(()),
             span { class: if loading { "opacity-0" } else { "" }, "{label}" }
@@ -738,12 +730,14 @@ pub fn LoadingButton(
 ///
 /// Props：
 /// - `label`：标签名
+/// - `to`：跳转目标路由（泛型，调用方传入具体 `Route` 变体，原子层不绑定 app 路由类型）
 /// - `variant`：`"solid"`（标签云：软底圆角，可选计数）/ `"outline"`（卡片内：描边胶囊）
 /// - `count`：可选的文章计数（仅 `solid` 渲染为 `<sup>`）
 /// - `stop_propagation`：是否阻止点击冒泡（卡片内覆盖层链接场景需要，见 `PostCard`）
 #[component]
-pub fn TagChip(
+pub fn TagChip<R: Routable + Clone + PartialEq + 'static>(
     label: String,
+    to: R,
     #[props(default = "outline")] variant: &'static str,
     #[props(default)] count: Option<i64>,
     #[props(default)] stop_propagation: bool,
@@ -755,9 +749,7 @@ pub fn TagChip(
     rsx! {
         Link {
             class: "{class}",
-            to: Route::TagDetail {
-                tag: label.clone(),
-            },
+            to,
             onclick: move |evt: dioxus::events::MouseEvent| {
                 if stop_propagation {
                     evt.stop_propagation();

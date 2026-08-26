@@ -252,7 +252,9 @@ pub fn Admin() -> Element {
                                 description: "还没有创建任何文章，开始写下你的第一篇文字吧。",
                                 action: Some(EmptyStateAction {
                                     label: "写文章".to_string(),
-                                    to: Route::Write {},
+                                    onclick: Callback::new(move |_| {
+                                        let _ = dioxus::router::navigator().push(Route::Write {});
+                                    }),
                                 }),
                             }
                         }

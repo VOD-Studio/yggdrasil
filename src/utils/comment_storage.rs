@@ -96,13 +96,8 @@ fn is_expired(stored_at: &str) -> bool {
 }
 
 /// 保存评论作者信息到 localStorage。
-pub fn save_author(name: &str, email: &str, url: &str) {
-    let info = AuthorInfo {
-        name: name.to_string(),
-        email: email.to_string(),
-        url: url.to_string(),
-    };
-    if let Ok(json) = serde_json::to_string(&info) {
+pub fn save_author(info: &AuthorInfo) {
+    if let Ok(json) = serde_json::to_string(info) {
         write_storage(AUTHOR_KEY, &json);
     }
 }

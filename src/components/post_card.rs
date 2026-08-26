@@ -116,11 +116,12 @@ pub fn PostCard(post: PostListItem, #[props(default = false)] featured: bool) ->
                             span { "·" }
                             for tag in post.tags.clone().into_iter() {
                                 span { key: "{tag}", class: "relative z-10",
-                                    TagChip {
-                                         label: tag.clone(),
-                                         variant: "outline",
-                                         stop_propagation: true,
-                                     }
+                                TagChip {
+                                    label: tag.clone(),
+                                    to: Route::TagDetail { tag: tag.clone() },
+                                    variant: "outline",
+                                    stop_propagation: true,
+                                }
                                  }
                              }
                          }

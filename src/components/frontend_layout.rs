@@ -7,7 +7,7 @@ use dioxus::prelude::*;
 
 use crate::components::footer::Footer;
 use crate::components::header::{Header, SearchIconLink};
-use crate::components::nav::use_nav_items;
+use crate::components::nav::build_nav_items;
 use crate::components::skeletons::archive_skeleton::ArchiveSkeleton;
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::skeletons::friends_skeleton::FriendsSkeleton;
@@ -52,7 +52,7 @@ fn route_skeleton(route: &Route) -> Element {
 #[component]
 pub fn FrontendLayout() -> Element {
     let route = use_route::<Route>();
-    let nav_items = use_nav_items(route.clone());
+    let nav_items = build_nav_items(route.clone());
 
     rsx! {
         div { class: "min-h-screen flex flex-col bg-paper-theme",

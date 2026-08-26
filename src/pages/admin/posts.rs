@@ -240,7 +240,9 @@ fn AllPostsList() -> Element {
                     description: "还没有创建任何文章，开始写下你的第一篇文字吧。",
                     action: EmptyStateAction {
                         label: "写文章".to_string(),
-                        to: Route::Write {},
+                        onclick: Callback::new(move |_| {
+                            let _ = dioxus::router::navigator().push(Route::Write {});
+                        }),
                     },
                 }
             }
@@ -304,7 +306,7 @@ fn AllPostsList() -> Element {
                     }
                 }
             }
-            Pagination {
+            Pagination::<Route> {
                 variant: "admin",
                 current_page: current_page(),
                 total: total(),

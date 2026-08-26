@@ -950,7 +950,7 @@ pub fn Assets() -> Element {
                 // wrapper 是 flex item 建立独立格式化上下文，Pagination nav 自带的 mt-6
                 // 不会穿透塌陷，24px 间距恒在。
                 div { class: "mt-auto",
-                    Pagination {
+                    Pagination::<Route> {
                         variant: "admin",
                         current_page: page(),
                         total,

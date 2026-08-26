@@ -9,18 +9,21 @@
 //! 通过 `<img>` 引用绝对路径，由 Dioxus 的静态资源服务直接返回。
 
 use dioxus::prelude::*;
-use dioxus::router::components::Link;
 
 use crate::components::ui::BTN_PRIMARY;
 
 /// 空状态行动按钮。
+///
+/// `onclick` 而非直接绑定 `Route`：原子层不依赖 app 路由类型（见 `mod.rs` 分层约定），
+/// 跳转由调用方在回调内用 `dioxus::router::navigator().push(route)` 完成（与
+/// `router.rs`/`login.rs`/`not_found.rs`/`admin/write.rs` 的既有命令式导航约定一致）。
 #[derive(Props, Clone, PartialEq)]
 pub struct EmptyStateAction {
     /// 按钮文案。
     #[props(into)]
     pub label: String,
-    /// 跳转目标路由。
-    pub to: crate::router::Route,
+    /// 点击回调，调用方负责导航。
+    pub onclick: EventHandler<()>,
 }
 
 /// 空状态组件。
@@ -65,7 +68,11 @@ pub fn EmptyState(
             }
             // 行动按钮：复用全站统一主操作按钮样式（BTN_PRIMARY）。
             if let Some(act) = action {
-                Link { class: "{BTN_PRIMARY} mt-8", to: act.to, "{act.label}" }
+                button {
+                    class: "{BTN_PRIMARY} mt-8",
+                    onclick: move |_| act.onclick.call(()),
+                    "{act.label}"
+                }
             }
         }
     }

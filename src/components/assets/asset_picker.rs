@@ -15,6 +15,7 @@ use dioxus::prelude::*;
 #[cfg(target_arch = "wasm32")]
 use crate::api::assets::list_assets;
 use crate::models::asset::AssetDto;
+use crate::router::Route;
 #[cfg(target_arch = "wasm32")]
 use crate::models::asset::{AssetFilter, AssetSort};
 
@@ -482,7 +483,7 @@ pub fn AssetPickerModal(
                         rsx! {
                             div { class: "shrink-0 px-6 py-3 shadow-[inset_0_1px_0_var(--color-paper-border)]",
                                 div { class: if loading_now { "pointer-events-none opacity-60" } else { "" },
-                                    Pagination {
+                                    Pagination::<Route> {
                                         variant: "admin",
                                         compact: true,
                                         current_page,

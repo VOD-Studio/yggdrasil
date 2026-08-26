@@ -18,7 +18,11 @@ pub const INPUT_INLINE_CLASS: &str = "flex-1 min-w-0 px-4 py-2 border border-pap
 pub const INPUT_SEARCH_CLASS: &str = "w-full pr-10 px-4 py-2 border border-paper-border rounded-2xl bg-paper-entry text-paper-primary placeholder:text-paper-tertiary focus:outline-none focus:border-paper-accent focus:ring-1 focus:ring-paper-accent/30 transition-colors duration-200 ygg-search-clear";
 
 /// 主按钮 CSS 类，用于表单提交等主操作按钮。
-pub const BUTTON_PRIMARY_CLASS: &str = "w-full py-2.5 px-4 bg-paper-accent text-white font-medium rounded-full hover:brightness-110 active:scale-[0.98] transition-all duration-200 cursor-pointer";
+///
+/// 用 `text-paper-theme` 而非硬编码 `text-white`：`--color-paper-theme` 随主题反转
+/// （浅色主题近白、深色主题近黑），配合深色主题下偏浅的 `--color-paper-accent`
+/// 背景色（`#a6e3a1` 柔和绿）才能保住文字对比度——硬编码白字在深色主题下几乎不可读。
+pub const BUTTON_PRIMARY_CLASS: &str = "w-full py-2.5 px-4 bg-paper-accent text-paper-theme font-medium rounded-full hover:brightness-110 active:scale-[0.98] transition-all duration-200 cursor-pointer";
 
 /// FormSelect 实例 id 计数器（跨泛型单例化全局唯一）。
 static FORM_SELECT_ID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
@@ -437,8 +441,12 @@ pub fn FormInput(
     #[props(default)] disabled: bool,
     oninput: EventHandler<String>,
     #[props(default)] onkeydown: Option<EventHandler<KeyboardEvent>>,
+    #[props(default)] onfocus: Option<EventHandler<FocusEvent>>,
+    #[props(default)] onblur: Option<EventHandler<FocusEvent>>,
     #[props(default)] class: Option<&'static str>,
     #[props(default)] mono: bool,
+    #[props(default)] inputmode: Option<&'static str>,
+    #[props(default)] title: Option<&'static str>,
 ) -> Element {
     let base = class.unwrap_or(INPUT_CLASS);
     let mono_class = if mono { " font-mono" } else { "" };
@@ -455,9 +463,21 @@ pub fn FormInput(
             placeholder: "{placeholder}",
             value: "{value}",
             disabled,
+            inputmode: inputmode.unwrap_or_default(),
+            title: title.unwrap_or_default(),
             oninput: move |e| oninput.call(e.value()),
             onkeydown: move |e| {
-                if let Some(ref handler) = onkeydown {
+                if let Some(handler) = &onkeydown {
+                    handler.call(e);
+                }
+            },
+            onfocus: move |e| {
+                if let Some(handler) = &onfocus {
+                    handler.call(e);
+                }
+            },
+            onblur: move |e| {
+                if let Some(handler) = &onblur {
                     handler.call(e);
                 }
             },

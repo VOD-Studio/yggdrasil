@@ -13,7 +13,7 @@ use crate::bridges::tiptap::{UploadErrorEntry, UploadsInFlight};
 use crate::components::comments::section::CommentContext;
 use crate::components::forms::AlertBox;
 use crate::components::ui::{UserAvatar, BTN_PRIMARY_SM, SPINNER_SVG};
-use crate::utils::comment_storage::{self, PendingComment};
+use crate::utils::comment_storage::{self, AuthorInfo, PendingComment};
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::closure::Closure;
 
@@ -273,7 +273,11 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
                         // 登录评论直发 approved：不写本地待审核
                         // 存储，列表刷新后即按正式状态展示。
                         if is_anon {
-                            comment_storage::save_author(&name, &email, &url_val);
+                            comment_storage::save_author(&AuthorInfo {
+                                name: name.clone(),
+                                email: email.clone(),
+                                url: url_val.clone(),
+                            });
                             if let Some(comment_id) = resp.comment_id {
                                 let avatar_url = resp.avatar_url.unwrap_or_default();
                                 let depth = resp.depth.unwrap_or(0);

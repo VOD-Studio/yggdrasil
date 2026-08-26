@@ -76,6 +76,7 @@ fn TagsContent() -> Element {
                             li { key: "{tag.name}",
                                 TagChip {
                                     label: tag.name.clone(),
+                                    to: Route::TagDetail { tag: tag.name.clone() },
                                     variant: "solid",
                                     count: tag.post_count,
                                 }

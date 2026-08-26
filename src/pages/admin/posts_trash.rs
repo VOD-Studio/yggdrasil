@@ -343,7 +343,7 @@ pub fn PostsTrash() -> Element {
                                     }
                                 }
                             }
-                            Pagination {
+                            Pagination::<Route> {
                                 variant: "admin",
                                 current_page: current_page(),
                                 total: total(),
