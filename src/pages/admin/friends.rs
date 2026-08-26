@@ -440,7 +440,7 @@ fn EditorCard() -> Element {
 #[component]
 fn LinkList() -> Element {
     let state: FriendsPageState = use_context();
-    let mut links = use_signal(|| Vec::<FriendLink>::new());
+    let mut links = use_signal(Vec::<FriendLink>::new);
     let mut loaded_gen = use_signal(|| None::<u32>);
     let mut loading = use_signal(|| true);
 

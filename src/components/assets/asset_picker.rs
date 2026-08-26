@@ -9,15 +9,17 @@
 //! 纯 Dioxus 组件，不触碰 Tiptap；数据加载仅在 WASM 前端发生。
 
 use crate::components::forms::{FormInput, INPUT_INLINE_CLASS};
-use crate::components::ui::{ModalShell, Pagination, BTN_ICON, BTN_OUTLINE, BTN_PRIMARY, SPINNER_SVG};
+use crate::components::ui::{
+    ModalShell, Pagination, BTN_ICON, BTN_OUTLINE, BTN_PRIMARY, SPINNER_SVG,
+};
 use dioxus::prelude::*;
 
 #[cfg(target_arch = "wasm32")]
 use crate::api::assets::list_assets;
 use crate::models::asset::AssetDto;
-use crate::router::Route;
 #[cfg(target_arch = "wasm32")]
 use crate::models::asset::{AssetFilter, AssetSort};
+use crate::router::Route;
 
 /// 每页素材数，与素材管理页及服务端列表接口保持一致。
 const ASSETS_PER_PAGE: i32 = 60;

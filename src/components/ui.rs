@@ -787,11 +787,19 @@ pub fn LoadingButton(
     #[props(default = "primary")] variant: &'static str,
     onclick: EventHandler<()>,
 ) -> Element {
-    let base = if variant == "sm" { BTN_PRIMARY_SM } else { BTN_PRIMARY };
+    let base = if variant == "sm" {
+        BTN_PRIMARY_SM
+    } else {
+        BTN_PRIMARY
+    };
     // 尺寸随 base 常量而定；禁用态需要独立灰色配色（BTN_PRIMARY/_SM 未建模禁用态），
     // 故仅在此分支手写尺寸 + 灰色板，正常态直接复用常量，避免两套配色定义分叉。
     let class = if disabled && !loading {
-        let size = if variant == "sm" { "px-4 py-1.5" } else { "px-5 py-2" };
+        let size = if variant == "sm" {
+            "px-4 py-1.5"
+        } else {
+            "px-5 py-2"
+        };
         format!(
             "relative inline-flex items-center justify-center {size} rounded-full text-sm font-medium transition-all bg-[var(--color-paper-tertiary)] text-[var(--color-paper-secondary)] cursor-not-allowed"
         )

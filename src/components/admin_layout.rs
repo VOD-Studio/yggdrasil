@@ -408,12 +408,23 @@ fn NavGroup(kind: NavGroupKind, items: Vec<(Route, &'static str, bool)>) -> Elem
 fn ContentNavGroup() -> Element {
     let route = use_route::<Route>();
     let items = vec![
-        (Route::Posts {}, "全部文章", matches!(route, Route::Posts {})),
-        (Route::PostsTrash {}, "回收站", matches!(route, Route::PostsTrash {})),
+        (
+            Route::Posts {},
+            "全部文章",
+            matches!(route, Route::Posts {}),
+        ),
+        (
+            Route::PostsTrash {},
+            "回收站",
+            matches!(route, Route::PostsTrash {}),
+        ),
         (
             Route::AdminComments {},
             "评论管理",
-            matches!(route, Route::AdminComments {} | Route::AdminCommentsPage { .. }),
+            matches!(
+                route,
+                Route::AdminComments {} | Route::AdminCommentsPage { .. }
+            ),
         ),
     ];
     rsx! {
@@ -432,7 +443,11 @@ fn ToolsNavGroup() -> Element {
             "设置",
             matches!(route, Route::SiteSettingsPage {}),
         ),
-        (Route::Runner {}, "试运行", matches!(route, Route::Runner {})),
+        (
+            Route::Runner {},
+            "试运行",
+            matches!(route, Route::Runner {}),
+        ),
         (Route::Mcp {}, "MCP", matches!(route, Route::Mcp {})),
         (Route::Logs {}, "日志", matches!(route, Route::Logs {})),
         (Route::System {}, "系统", matches!(route, Route::System {})),

@@ -137,15 +137,15 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
                         let msg = ev.error_msg().unwrap_or_else(|| "上传失败".to_string());
                         message.set(Some((format!("图片上传失败：{msg}"), "error")));
                     }
-                    "success" | "removed" => {
+                    "success" | "removed"
                         if message
                             .peek()
                             .as_ref()
-                            .is_some_and(|(m, _)| m.starts_with("图片上传失败"))
-                        {
-                            message.set(None);
-                        }
+                            .is_some_and(|(m, _)| m.starts_with("图片上传失败")) =>
+                    {
+                        message.set(None);
                     }
+                    "success" | "removed" => {}
                     _ => {}
                 }
                 crate::bridges::tiptap::consume_upload_event(&ev, uploads_in_flight, upload_errors);

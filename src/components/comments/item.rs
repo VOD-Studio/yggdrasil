@@ -37,7 +37,11 @@ pub fn CommentItem(comment: PublicComment, post_id: i32) -> Element {
     let show_reply = depth < 20;
     // 本评论卡片自身的缩进像素值（与 CommentCardShell 的 style 计算一致），
     // 传给回复表单用于抵消缩进、把表单拉回内容区左边缘。
-    let indent_px = if depth > 1 { (depth.min(5) - 1) * 16 } else { 0 };
+    let indent_px = if depth > 1 {
+        (depth.min(5) - 1) * 16
+    } else {
+        0
+    };
 
     // 作者名展示为链接或普通文本
     let author_element = match &comment.author_url {

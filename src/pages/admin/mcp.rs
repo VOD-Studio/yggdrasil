@@ -231,7 +231,7 @@ fn Toast() -> Element {
 #[component]
 fn TokenList() -> Element {
     let mut state: McpPageState = use_context();
-    let mut tokens = use_signal(|| Vec::<McpTokenSummary>::new());
+    let mut tokens = use_signal(Vec::<McpTokenSummary>::new);
     let mut loaded_gen = use_signal(|| None::<u32>);
     let mut loading = use_signal(|| true);
 

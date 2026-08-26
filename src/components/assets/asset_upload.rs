@@ -18,9 +18,9 @@ use dioxus::prelude::*;
 
 use crate::components::ui::{ModalShell, BTN_ICON, EXIT_ANIM_MS, SPINNER_SVG};
 
-use super::upload_pool::{UploadItem, UploadStatus};
 #[cfg(target_arch = "wasm32")]
 use super::upload_pool::{enqueue_files, set_status, UploadPool};
+use super::upload_pool::{UploadItem, UploadStatus};
 
 #[cfg(target_arch = "wasm32")]
 use crate::bridges::tiptap::upload_image_file;

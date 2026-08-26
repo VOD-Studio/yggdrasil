@@ -413,7 +413,11 @@ pub fn CodeRunner(
                                     if terminal {
                                         running.set(false);
                                         if let Some(res) = task.result {
-                                            apply_exec_outcome(&mut exit_info, &mut error_msg, &res);
+                                            apply_exec_outcome(
+                                                &mut exit_info,
+                                                &mut error_msg,
+                                                &res,
+                                            );
                                         }
                                         break;
                                     }
@@ -548,7 +552,11 @@ fn status_label(status: &ExecStatus) -> String {
 /// 把执行结果（耗时/状态）写入 exit_info / error_msg：成功清空错误提示，
 /// 非成功态回填状态中文标签。非 WASM 占位轮询路径与 WASM 端 SSE 降级轮询
 /// （sse_consumer::poll_result）共用同一套结果展示逻辑，避免重复维护。
-fn apply_exec_outcome(exit_info: &mut Signal<String>, error_msg: &mut Signal<String>, res: &ExecResult) {
+fn apply_exec_outcome(
+    exit_info: &mut Signal<String>,
+    error_msg: &mut Signal<String>,
+    res: &ExecResult,
+) {
     exit_info.set(format!(
         "耗时: {}ms · 状态: {}",
         res.duration_ms,
