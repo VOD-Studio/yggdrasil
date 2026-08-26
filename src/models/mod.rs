@@ -19,6 +19,9 @@ pub mod mcp_token;
 pub mod post;
 /// 回收站与站点配置模型。
 pub mod settings;
+/// SQL 补全用 schema 模型（`get_db_schema` server function 的返回值 DTO，
+/// 供 `bridges::codemirror` 消费做 SQL 补全）。
+pub mod sql_schema;
 /// 主机指标快照模型（server 状态聚合用，两端共享序列化）。
 pub mod system;
 /// 用户模型、用户角色与可公开用户信息。

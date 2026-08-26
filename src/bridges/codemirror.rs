@@ -1,27 +1,14 @@
 //! CodeMirror 编辑器的 wasm-bindgen 绑定层。
 //!
 //! 封装与 `window.CodeMirrorEditor`（IIFE 暴露的全局对象字面量）的全部交互，
-//! 严格镜像 [`crate::bridges::tiptap`] 的结构：共享纯数据类型双目标编译，
-//! wasm-bindgen extern + `EditorHandle` 仅在 WASM 前端编译（server 构建无 window）。
+//! 严格镜像 [`crate::bridges::tiptap`] 的结构：wasm-bindgen extern +
+//! `EditorHandle` 仅在 WASM 前端编译（server 构建无 window）。SQL 补全用的
+//! `SqlSchema`/`SqlTable` 是 server function 返回值 DTO，定义在
+//! [`crate::models::sql_schema`]（不属于本文件——避免 API 层反向依赖桥接层）。
 //!
 //! 与 tiptap 一样，`CodeMirrorEditor` 是 IIFE 挂在 window 上的**对象字面量**
 //! （`{ create }`），不是函数——因此用 `js_sys::Reflect::get` 做属性访问拿到，
 //! 不能用 wasm-bindgen 的 extern fn（那会被编成函数调用，"not a function"）。
-
-use serde::{Deserialize, Serialize};
-
-/// SQL 补全用 schema 数据，由 `get_db_schema` server function 填充。
-#[derive(Serialize, Deserialize, Clone, Default, Debug)]
-pub struct SqlSchema {
-    pub tables: Vec<SqlTable>,
-}
-
-/// 单张表的补全数据：表名 + 列名列表。
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct SqlTable {
-    pub name: String,
-    pub columns: Vec<String>,
-}
 
 // ============================================================================
 // 以下全部仅在 WASM 前端编译：wasm-bindgen extern + EditorHandle + 闭包。
@@ -62,9 +49,15 @@ pub mod wasm {
     /// unchecked_into 只做编译期类型标注，不做运行时校验
     /// （Reflect.get 已保证拿到的是目标对象）。
     pub fn get_module() -> CodeMirrorEditorModule {
-        let window = web_sys::window().expect("no window");
-        let val = js_sys::Reflect::get(&window, &"CodeMirrorEditor".into())
-            .expect("window.CodeMirrorEditor missing");
+        // 缺 window：本函数只应在浏览器环境的 wasm32 前端调用，不应在其它上下文触发。
+        let window = web_sys::window().expect("no window: get_module 只能在浏览器 wasm32 前端调用");
+        // 缺全局对象：Dioxus.toml [web.resource] script 把 /codemirror/editor.js 列为阻塞式
+        // <script src>，位于生成 HTML 里 wasm 模块 <script type=module async> 之前——解析器
+        // 必须先跑完它才能碰到 wasm 模块，故正常部署下不会撞上时序竞态；触发说明该静态资源
+        // 没有随构建产物一起部署（404/CDN 故障/资源清单漂移），是部署问题而非运行时竞态。
+        let val = js_sys::Reflect::get(&window, &"CodeMirrorEditor".into()).expect(
+            "window.CodeMirrorEditor missing: /codemirror/editor.js 未加载，检查该静态资源是否随构建产物部署",
+        );
         val.unchecked_into::<CodeMirrorEditorModule>()
     }
 

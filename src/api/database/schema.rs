@@ -11,8 +11,11 @@ use crate::api::auth::get_current_admin_user;
 use crate::api::error::AppError;
 #[cfg(feature = "server")]
 use crate::db::pool::get_conn;
-// SqlSchema/SqlTable 是两端共享的纯数据类型（定义在 bridges::codemirror）。
-use crate::bridges::codemirror::SqlSchema;
+// SqlSchema 是两端共享的纯数据类型（server function 返回值 DTO，定义在 models）；
+// SqlTable 只在下面的 server 构建分支里构造，故单独 cfg 门控，避免 web 构建 unused_imports。
+use crate::models::sql_schema::SqlSchema;
+#[cfg(feature = "server")]
+use crate::models::sql_schema::SqlTable;
 
 /// 拉取数据库 schema（表名 + 列名），供 CodeMirror SQL 补全。
 #[server(GetDbSchema, "/api")]
@@ -38,7 +41,7 @@ pub async fn get_db_schema() -> Result<SqlSchema, ServerFnError> {
             .into_iter()
             .map(|r| {
                 let cols: String = r.get(1);
-                crate::bridges::codemirror::SqlTable {
+                SqlTable {
                     name: r.get(0),
                     columns: cols.split(',').map(|s| s.to_string()).collect(),
                 }
