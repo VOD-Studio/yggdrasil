@@ -38,22 +38,19 @@ pub fn PostCard(post: PostListItem, #[props(default = false)] featured: bool) ->
     let thumb_url = format!("{}?thumb={}", cover_src, thumb_size);
     let placeholder_url = format!("{}?w=30", cover_src);
 
-    let article_class = if featured {
-        "group relative mb-12 flex flex-col bg-[var(--color-paper-entry)] rounded-[2rem] border border-[var(--color-paper-border)]/60 hover:border-[var(--color-paper-accent)]/50 hover:shadow-lg transition-all duration-300 overflow-hidden"
+    // 三组尺寸/配色随 featured 一起变化，合并一次判断而非分别重复三次 if featured。
+    let (article_class, title_class, summary_class) = if featured {
+        (
+            "group relative mb-12 flex flex-col bg-[var(--color-paper-entry)] rounded-[2rem] border border-[var(--color-paper-border)]/60 hover:border-[var(--color-paper-accent)]/50 hover:shadow-lg transition-all duration-300 overflow-hidden",
+            "text-2xl sm:text-3xl md:text-4xl font-extrabold tracking-tight leading-tight text-[var(--color-paper-primary)] group-hover:text-[var(--color-paper-accent)] transition-colors duration-200",
+            "text-base sm:text-lg text-[var(--color-paper-secondary)] leading-relaxed line-clamp-3",
+        )
     } else {
-        "group relative mb-10 flex flex-col bg-[var(--color-paper-entry)] rounded-[2rem] border border-transparent hover:border-[var(--color-paper-border)] hover:shadow-md transition-all duration-300 overflow-hidden"
-    };
-
-    let title_class = if featured {
-        "text-2xl sm:text-3xl md:text-4xl font-extrabold tracking-tight leading-tight text-[var(--color-paper-primary)] group-hover:text-[var(--color-paper-accent)] transition-colors duration-200"
-    } else {
-        "text-xl sm:text-2xl md:text-3xl font-extrabold tracking-tight leading-snug text-[var(--color-paper-primary)] group-hover:text-[var(--color-paper-accent)] transition-colors duration-200"
-    };
-
-    let summary_class = if featured {
-        "text-base sm:text-lg text-[var(--color-paper-secondary)] leading-relaxed line-clamp-3"
-    } else {
-        "text-base text-[var(--color-paper-secondary)] leading-relaxed line-clamp-2"
+        (
+            "group relative mb-10 flex flex-col bg-[var(--color-paper-entry)] rounded-[2rem] border border-transparent hover:border-[var(--color-paper-border)] hover:shadow-md transition-all duration-300 overflow-hidden",
+            "text-xl sm:text-2xl md:text-3xl font-extrabold tracking-tight leading-snug text-[var(--color-paper-primary)] group-hover:text-[var(--color-paper-accent)] transition-colors duration-200",
+            "text-base text-[var(--color-paper-secondary)] leading-relaxed line-clamp-2",
+        )
     };
 
     rsx! {

@@ -22,15 +22,12 @@ use crate::router::Route;
 /// - 相邻文章导航（如有）
 #[component]
 pub fn PostFooter(post: Post, #[props(default = false)] full_reload: bool) -> Element {
-    let tag_to = |tag: &str| {
-        if full_reload {
-            NavigationTarget::<Route>::External(format!("/tags/{tag}"))
-        } else {
-            NavigationTarget::Internal(Route::TagDetail {
-                tag: tag.to_string(),
-            })
-        }
-    };
+    let tag_to = |tag: &str| super::nav_target(
+        Route::TagDetail {
+            tag: tag.to_string(),
+        },
+        full_reload,
+    );
     rsx! {
         footer { class: "post-footer",
             if !post.tags.is_empty() {

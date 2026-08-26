@@ -28,22 +28,20 @@ pub fn PostNavLinks(
     // NavigationTarget::External 生成原生 <a href>（Link 不接管 preventDefault），
     // 浏览器整页加载；内部路由变体保持客户端导航。
     let prev_to = prev.as_ref().map(|p| {
-        if full_reload {
-            NavigationTarget::<Route>::External(format!("/post/{}", p.slug))
-        } else {
-            NavigationTarget::Internal(Route::PostDetail {
+        super::nav_target(
+            Route::PostDetail {
                 slug: p.slug.clone(),
-            })
-        }
+            },
+            full_reload,
+        )
     });
     let next_to = next.as_ref().map(|p| {
-        if full_reload {
-            NavigationTarget::<Route>::External(format!("/post/{}", p.slug))
-        } else {
-            NavigationTarget::Internal(Route::PostDetail {
+        super::nav_target(
+            Route::PostDetail {
                 slug: p.slug.clone(),
-            })
-        }
+            },
+            full_reload,
+        )
     });
     rsx! {
         nav { class: "paginav",

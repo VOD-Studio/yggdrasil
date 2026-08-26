@@ -74,7 +74,7 @@ fn render_expanded_value(col: &str, value: &serde_json::Value) -> Element {
         other => other.to_string(),
     };
     rsx! {
-        div { class: "flex gap-2 py-0.5",
+        div { key: "{col}", class: "flex gap-2 py-0.5",
             span { class: "shrink-0 font-mono text-xs text-[var(--color-paper-tertiary)] min-w-[6rem]",
                 "{col}"
             }
@@ -111,7 +111,9 @@ pub fn SqlResultTable(props: SqlResultTableProps) -> Element {
                         tr { class: "border-b border-[var(--color-paper-border)] sticky top-0 bg-[var(--color-paper-entry)] z-10",
                             th { class: "w-8 px-2 py-2", "" }
                             for col in props.result.columns.iter() {
-                                th { class: "px-4 py-2 text-left font-medium whitespace-nowrap text-[var(--color-paper-secondary)]",
+                                th {
+                                    key: "{col}",
+                                    class: "px-4 py-2 text-left font-medium whitespace-nowrap text-[var(--color-paper-secondary)]",
                                     "{col}"
                                 }
                             }
@@ -121,6 +123,7 @@ pub fn SqlResultTable(props: SqlResultTableProps) -> Element {
                         for (row_idx, row) in props.result.rows.iter().enumerate() {
                             // 数据行：点击切换展开
                             tr {
+                                key: "row-{row_idx}",
                                 class: "border-b border-[var(--color-paper-border)] last:border-0 hover:bg-[var(--color-paper-accent-soft)] transition-colors cursor-pointer",
                                 onclick: move |_| {
                                     let cur = expanded_row();
@@ -137,13 +140,14 @@ pub fn SqlResultTable(props: SqlResultTableProps) -> Element {
                                         "▸"
                                     }
                                 }
-                                for cell in row.iter() {
-                                    td { class: "px-4 py-2 align-top", {render_cell(cell)} }
+                                for (ci, cell) in row.iter().enumerate() {
+                                    td { key: "{ci}", class: "px-4 py-2 align-top", {render_cell(cell)} }
                                 }
                             }
                             // 展开详情行（跨列）
                             if expanded_row() == Some(row_idx) {
                                 tr {
+                                    key: "row-{row_idx}-detail",
                                     td {
                                         colspan: "{expand_colspan}",
                                         class: "px-4 py-3 bg-[var(--color-paper-theme)]",

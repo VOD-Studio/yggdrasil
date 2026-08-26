@@ -205,7 +205,7 @@ pub fn PostContent(content_html: String) -> Element {
                         ContentFragment::Html(html) => rsx! {
                             div { key: "html-{i}", dangerous_inner_html: "{html}" }
                         },
-                        ContentFragment::Runnable { lang, source, overrides } => rsx! { // i 是片段序列中的确定性索引（来自纯函数 split_content_fragments
+                        ContentFragment::Runnable { lang, source, overrides } => rsx! {
                             CodeRunner {
                                 key: "runner-{i}",
                                 source: source.clone(),

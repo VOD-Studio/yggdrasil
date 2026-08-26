@@ -19,11 +19,7 @@ use crate::router::Route;
 /// 渲染 `Home > 当前标题` 的面包屑路径。
 #[component]
 pub fn Breadcrumbs(title: String, #[props(default = false)] full_reload: bool) -> Element {
-    let home_to = if full_reload {
-        NavigationTarget::<Route>::External("/".to_string())
-    } else {
-        NavigationTarget::Internal(Route::Home {})
-    };
+    let home_to = super::nav_target(Route::Home {}, full_reload);
     rsx! {
         nav {
             class: "breadcrumbs",
