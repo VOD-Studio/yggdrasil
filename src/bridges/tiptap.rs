@@ -63,9 +63,15 @@ pub mod wasm {
     /// 不是 wasm-bindgen 注册的构造函数实例，dyn_into 的 instanceof 检查必然失败。
     /// unchecked_into 只做编译期类型标注，不做运行时校验（Reflect.get 已保证拿到的是目标对象）。
     pub fn get_module() -> TiptapEditorModule {
-        let window = web_sys::window().expect("no window");
-        let val = js_sys::Reflect::get(&window, &"TiptapEditor".into())
-            .expect("window.TiptapEditor missing");
+        // 缺 window：本函数只应在浏览器环境的 wasm32 前端调用，不应在其它上下文触发。
+        let window = web_sys::window().expect("no window: get_module 只能在浏览器 wasm32 前端调用");
+        // 缺全局对象：Dioxus.toml [web.resource] script 把 /tiptap/editor.js 列为阻塞式
+        // <script src>，位于生成 HTML 里 wasm 模块 <script type=module async> 之前——解析器
+        // 必须先跑完它才能碰到 wasm 模块，故正常部署下不会撞上时序竞态；触发说明该静态资源
+        // 没有随构建产物一起部署（404/CDN 故障/资源清单漂移），是部署问题而非运行时竞态。
+        let val = js_sys::Reflect::get(&window, &"TiptapEditor".into()).expect(
+            "window.TiptapEditor missing: /tiptap/editor.js 未加载，检查该静态资源是否随构建产物部署",
+        );
         val.unchecked_into::<TiptapEditorModule>()
     }
 
@@ -455,14 +461,12 @@ pub mod wasm {
                 let source = opts.source();
                 let overrides_json = opts.overrides_json();
 
-                // 反序列化 overrides JSON（前端已提取大括号部分；空串视为 None）
+                // 反序列化 overrides JSON（前端已提取大括号部分；空串视为 None；
+                // 畸形 JSON 静默降级为无 overrides）。
                 let overrides = if overrides_json.trim().is_empty() {
                     None
                 } else {
-                    match serde_json::from_str::<ResourceLimits>(&overrides_json) {
-                        Ok(o) => Some(o),
-                        Err(_) => None, // 畸形 JSON 静默降级为无 overrides
-                    }
+                    serde_json::from_str::<ResourceLimits>(&overrides_json).ok()
                 };
 
                 let req = ExecRequest {
@@ -502,6 +506,13 @@ pub mod wasm {
 
 /// 将 WASM 子模块中的桥接类型与函数重导出到 crate 根，供 `write.rs` 直接引用。
 /// server 构建剥离该子模块，故此重导出仅对 WASM 前端生效。
+///
+/// 故意手工列名单，而非像 `codemirror`/`xterm` 那样 `pub use wasm::*;`：只导出调用方
+/// 需要按名字写出来的项（如 `on_upload_event` 闭包签名里的 `UploadEventJs`）。
+/// `TiptapEditorModule`/`EditorInstance`/`UploadCountsJs`/`RunCodeOptsJs`/
+/// `upload_comment_image_file` 故意不导出——它们全部只经方法链（`get_module().create(...)`、
+/// `handle.instance().xxx()`）或模块内部（`make_comment_upload_closure`）使用，调用方从不
+/// 需要在 crate 根按名字引用。新增 `pub fn`/`pub type` 供外部按名调用时记得同步加进这里。
 #[cfg(target_arch = "wasm32")]
 pub use wasm::{
     consume_upload_event, get_module, make_comment_upload_closure, make_run_code_closure,
