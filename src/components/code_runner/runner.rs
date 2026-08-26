@@ -15,8 +15,9 @@ use dioxus::prelude::*;
 use crate::api::code_runner::execute::start_exec_stream;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::api::code_runner::execute::{get_exec_result, start_exec};
-use crate::api::code_runner::{ExecRequest, ExecStatus};
-use crate::components::ui::SPINNER_SVG;
+use crate::api::code_runner::{ExecRequest, ExecResult, ExecStatus};
+use crate::components::skeletons::atoms::SkeletonBox;
+use crate::components::ui::{BTN_PRIMARY_SM, SPINNER_SVG};
 use crate::infra::runner_config::ResourceLimits;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::utils::time::sleep_ms;
@@ -52,7 +53,6 @@ pub fn CodeRunner(
 ) -> Element {
     let mut running = use_signal(|| false);
     let mut stage = use_signal(String::new);
-    let mut output = use_signal(String::new);
     let mut exit_info = use_signal(String::new);
     let mut error_msg = use_signal(String::new);
     // 输出区可见性：点运行后置 true，控制输出区按需出现（而非页面加载就显示空区）。
@@ -299,7 +299,6 @@ pub fn CodeRunner(
     let run_code = {
         let mut running = running;
         let mut stage = stage;
-        let mut output = output;
         let mut exit_info = exit_info;
         let mut error_msg = error_msg;
         let mut source_signal = source_signal;
@@ -360,7 +359,6 @@ pub fn CodeRunner(
                         &task_id,
                         &mut running,
                         &mut stage,
-                        &mut output,
                         &mut exit_info,
                         &mut error_msg,
                         &term_handle,
@@ -377,7 +375,6 @@ pub fn CodeRunner(
     let run_code = {
         let mut running = running;
         let mut stage = stage;
-        let mut output = output;
         let mut exit_info = exit_info;
         let mut error_msg = error_msg;
         let mut source_signal = source_signal;
@@ -391,7 +388,6 @@ pub fn CodeRunner(
             running.set(true);
             show_output.set(true);
             stage.set("提交中...".to_string());
-            output.set(String::new());
             exit_info.set(String::new());
             error_msg.set(String::new());
 
@@ -417,21 +413,7 @@ pub fn CodeRunner(
                                     if terminal {
                                         running.set(false);
                                         if let Some(res) = task.result {
-                                            let out = format!(
-                                                "Stdout:\n{}\nStderr:\n{}",
-                                                res.stdout, res.stderr
-                                            );
-                                            output.set(out);
-                                            exit_info.set(format!(
-                                                "耗时: {}ms · 状态: {}",
-                                                res.duration_ms,
-                                                status_label(&res.status)
-                                            ));
-                                            if res.status == ExecStatus::Success {
-                                                error_msg.set(String::new());
-                                            } else {
-                                                error_msg.set(status_label(&res.status));
-                                            }
+                                            apply_exec_outcome(&mut exit_info, &mut error_msg, &res);
                                         }
                                         break;
                                     }
@@ -485,7 +467,7 @@ pub fn CodeRunner(
                     }
                 }
                 button {
-                    class: "inline-flex items-center gap-1.5 px-4 py-1.5 text-sm font-medium rounded-full text-[var(--color-paper-theme)] bg-[var(--color-paper-accent)] hover:brightness-110 active:scale-[0.98] transition disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer",
+                    class: format!("{BTN_PRIMARY_SM} gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"),
                     disabled: running(),
                     onclick: run_code,
                     if running() {
@@ -509,26 +491,11 @@ pub fn CodeRunner(
                 if !editor_ready() {
                     div { class: "absolute inset-0 flex flex-col justify-center gap-2.5 px-4 py-4 bg-[var(--color-paper-code-block)]",
                         // 代码行占位条：递减宽度模拟代码缩进，贴合等宽字体语境。
-                        div {
-                            class: "h-3 rounded bg-[var(--color-paper-tertiary)]/25 dark:bg-gray-600/50 animate-pulse",
-                            style: "width: 90%",
-                        }
-                        div {
-                            class: "h-3 rounded bg-[var(--color-paper-tertiary)]/25 dark:bg-gray-600/50 animate-pulse",
-                            style: "width: 70%",
-                        }
-                        div {
-                            class: "h-3 rounded bg-[var(--color-paper-tertiary)]/25 dark:bg-gray-600/50 animate-pulse",
-                            style: "width: 55%",
-                        }
-                        div {
-                            class: "h-3 rounded bg-[var(--color-paper-tertiary)]/25 dark:bg-gray-600/50 animate-pulse",
-                            style: "width: 85%",
-                        }
-                        div {
-                            class: "h-3 rounded bg-[var(--color-paper-tertiary)]/25 dark:bg-gray-600/50 animate-pulse",
-                            style: "width: 40%",
-                        }
+                        SkeletonBox { class: "h-3 rounded", style: Some("width: 90%") }
+                        SkeletonBox { class: "h-3 rounded", style: Some("width: 70%") }
+                        SkeletonBox { class: "h-3 rounded", style: Some("width: 55%") }
+                        SkeletonBox { class: "h-3 rounded", style: Some("width: 85%") }
+                        SkeletonBox { class: "h-3 rounded", style: Some("width: 40%") }
                     }
                 }
             }
@@ -546,18 +513,9 @@ pub fn CodeRunner(
                         // running 且尚未收到首个 chunk 时，显示骨架屏占位。
                         if running() && !has_output() {
                             div { class: "absolute inset-0 flex flex-col justify-center gap-2.5 px-4 py-4 bg-[var(--color-paper-code-block)]",
-                                div {
-                                    class: "h-3 rounded bg-[var(--color-paper-tertiary)]/25 dark:bg-gray-600/50 animate-pulse",
-                                    style: "width: 70%",
-                                }
-                                div {
-                                    class: "h-3 rounded bg-[var(--color-paper-tertiary)]/25 dark:bg-gray-600/50 animate-pulse",
-                                    style: "width: 55%",
-                                }
-                                div {
-                                    class: "h-3 rounded bg-[var(--color-paper-tertiary)]/25 dark:bg-gray-600/50 animate-pulse",
-                                    style: "width: 85%",
-                                }
+                                SkeletonBox { class: "h-3 rounded", style: Some("width: 70%") }
+                                SkeletonBox { class: "h-3 rounded", style: Some("width: 55%") }
+                                SkeletonBox { class: "h-3 rounded", style: Some("width: 85%") }
                             }
                         }
                     }
@@ -584,6 +542,22 @@ fn status_label(status: &ExecStatus) -> String {
         ExecStatus::Error => "运行错误".to_string(),
         ExecStatus::Failed => "系统失败".to_string(),
         ExecStatus::RateLimited => "请求过频".to_string(),
+    }
+}
+
+/// 把执行结果（耗时/状态）写入 exit_info / error_msg：成功清空错误提示，
+/// 非成功态回填状态中文标签。非 WASM 占位轮询路径与 WASM 端 SSE 降级轮询
+/// （sse_consumer::poll_result）共用同一套结果展示逻辑，避免重复维护。
+fn apply_exec_outcome(exit_info: &mut Signal<String>, error_msg: &mut Signal<String>, res: &ExecResult) {
+    exit_info.set(format!(
+        "耗时: {}ms · 状态: {}",
+        res.duration_ms,
+        status_label(&res.status)
+    ));
+    if res.status == ExecStatus::Success {
+        error_msg.set(String::new());
+    } else {
+        error_msg.set(status_label(&res.status));
     }
 }
 
@@ -739,7 +713,6 @@ mod sse_consumer {
         task_id: &str,
         running: &mut Signal<bool>,
         stage: &mut Signal<String>,
-        output: &mut Signal<String>,
         exit_info: &mut Signal<String>,
         error_msg: &mut Signal<String>,
         term_handle: &Signal<Option<TerminalHandle>>,
@@ -757,18 +730,7 @@ mod sse_consumer {
                     if terminal {
                         running.set(false);
                         if let Some(res) = task.result {
-                            let out = format!("Stdout:\n{}\nStderr:\n{}", res.stdout, res.stderr);
-                            output.set(out);
-                            exit_info.set(format!(
-                                "耗时: {}ms · 状态: {}",
-                                res.duration_ms,
-                                super::status_label(&res.status)
-                            ));
-                            if res.status == ExecStatus::Success {
-                                error_msg.set(String::new());
-                            } else {
-                                error_msg.set(super::status_label(&res.status));
-                            }
+                            super::apply_exec_outcome(exit_info, error_msg, &res);
                             // 整段写入终端
                             if let Some(h) = term_handle.read().as_ref() {
                                 h.instance().write_all(&res.stdout, &res.stderr);
