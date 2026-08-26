@@ -113,34 +113,12 @@ pub fn AdminLayout() -> Element {
             // Nav Items
             nav { class: "flex-1 flex flex-col gap-2",
                 for (dest, label) in nav_items_top {
-                    {
-                        let is_active = route == dest || (label == "写文章" && is_write_route);
-                        let base_class = "flex items-center px-3 py-2.5 rounded-2xl text-sm font-medium transition-all";
-                        let text_class = if is_active {
-                            "bg-[var(--color-paper-theme)] text-[var(--color-paper-primary)] shadow-sm border border-[var(--color-paper-border)]"
-                        } else {
-                            "text-[var(--color-paper-secondary)] hover:bg-[var(--color-paper-theme)]/50 hover:text-[var(--color-paper-primary)] border border-transparent"
-                        };
-                        rsx! {
-                            Link { key: "{label}", class: "{base_class} {text_class}", to: dest, "{label}" }
-                        }
-                    }
+                    {nav_item(&route, dest, label, is_write_route)}
                 }
                 // 「内容管理」子菜单：全部文章 / 回收站 / 评论管理（issue #17）。
                 ContentNavGroup {}
                 for (dest, label) in nav_items_bottom {
-                    {
-                        let is_active = route == dest || (label == "写文章" && is_write_route);
-                        let base_class = "flex items-center px-3 py-2.5 rounded-2xl text-sm font-medium transition-all";
-                        let text_class = if is_active {
-                            "bg-[var(--color-paper-theme)] text-[var(--color-paper-primary)] shadow-sm border border-[var(--color-paper-border)]"
-                        } else {
-                            "text-[var(--color-paper-secondary)] hover:bg-[var(--color-paper-theme)]/50 hover:text-[var(--color-paper-primary)] border border-transparent"
-                        };
-                        rsx! {
-                            Link { key: "{label}", class: "{base_class} {text_class}", to: dest, "{label}" }
-                        }
-                    }
+                    {nav_item(&route, dest, label, is_write_route)}
                 }
                 ToolsNavGroup {}
             }
@@ -230,6 +208,21 @@ pub fn AdminLayout() -> Element {
     }
 }
 
+/// 渲染单个顶层导航项（含激活态判定），供顶部/底部两组导航项列表共用，
+/// 避免同一 pill 高亮逻辑在两处重复。
+fn nav_item(route: &Route, dest: Route, label: &'static str, is_write_route: bool) -> Element {
+    let is_active = *route == dest || (label == "写文章" && is_write_route);
+    let base_class = "flex items-center px-3 py-2.5 rounded-2xl text-sm font-medium transition-all";
+    let text_class = if is_active {
+        "bg-[var(--color-paper-theme)] text-[var(--color-paper-primary)] shadow-sm border border-[var(--color-paper-border)]"
+    } else {
+        "text-[var(--color-paper-secondary)] hover:bg-[var(--color-paper-theme)]/50 hover:text-[var(--color-paper-primary)] border border-transparent"
+    };
+    rsx! {
+        Link { key: "{label}", class: "{base_class} {text_class}", to: dest, "{label}" }
+    }
+}
+
 /// 根据当前后台路由，渲染对应的专属骨架屏。
 fn admin_route_skeleton(route: &Route) -> Element {
     match route {
@@ -283,35 +276,75 @@ fn admin_route_skeleton(route: &Route) -> Element {
     }
 }
 
-/// 「内容管理」子菜单组：全部文章 / 回收站 / 评论管理。
-///
-/// 父项整行点击仅切换展开/收起（不跳转），chevron 旋转 + grid-template-rows
-/// 0fr↔1fr 过渡动画（复用 posts_trash.rs AutoPurgeSettings 的既有模式）。
-/// 当前路由落在组内时自动展开，保证激活子项始终可见；用户手动收起后，
-/// 仅当再次从组外导航进入组内路由时才重新展开。
-#[component]
-fn ContentNavGroup() -> Element {
-    let route = use_route::<Route>();
-    // 判断路由是否属于本组（回收站/评论分页路由一并归入）。
-    fn in_group(route: &Route) -> bool {
-        matches!(
-            route,
-            Route::Posts {}
-                | Route::PostsTrash {}
-                | Route::AdminComments {}
-                | Route::AdminCommentsPage { .. }
-        )
-    }
-    let group_active = in_group(&route);
-    let mut expanded = use_signal(|| group_active);
+/// 侧栏子菜单组的分类标识：内容管理组与工具组结构完全一致（父项整行点击
+/// 切换展开/收起，chevron 旋转 + grid-template-rows 0fr↔1fr 过渡动画，复用
+/// posts_trash.rs AutoPurgeSettings 的既有模式），仅路由集合与标签不同，故
+/// 抽成单一 NavGroup 组件、以枚举区分（而非函数指针 props：函数指针参与
+/// derive(PartialEq) 比较会触发 rustc 的
+/// `unpredictable_function_pointer_comparisons` lint）。
+#[derive(Clone, Copy, PartialEq)]
+enum NavGroupKind {
+    /// 「内容管理」：全部文章 / 回收站 / 评论管理。
+    Content,
+    /// 「工具」：设置 / 试运行 / MCP / 日志 / 系统（issue #26）。
+    Tools,
+}
 
-    // 路由从组外进入组内时自动展开。闭包内读 router().current 建立
-    // ReactiveContext 订阅（仓库约定 #5），路由变化时本 effect 重跑。
+impl NavGroupKind {
+    fn label(self) -> &'static str {
+        match self {
+            NavGroupKind::Content => "内容管理",
+            NavGroupKind::Tools => "工具",
+        }
+    }
+
+    /// 判断路由是否属于本组（回收站/评论分页路由一并归入内容管理组）。
+    fn contains(self, route: &Route) -> bool {
+        match self {
+            NavGroupKind::Content => matches!(
+                route,
+                Route::Posts {}
+                    | Route::PostsTrash {}
+                    | Route::AdminComments {}
+                    | Route::AdminCommentsPage { .. }
+            ),
+            NavGroupKind::Tools => matches!(
+                route,
+                Route::Runner {}
+                    | Route::Mcp {}
+                    | Route::System {}
+                    | Route::SiteSettingsPage {}
+                    | Route::Logs {}
+            ),
+        }
+    }
+}
+
+/// 侧栏可折叠子菜单组的共享实现。`kind` 选择路由归属判定与标签，`items` 提供
+/// 子项列表（路由 / 标签 / 是否激活，由调用方基于当前路由预先算好）。
+///
+/// 当前路由落在组内时自动展开，保证激活子项始终可见；用户手动收起后，
+/// 仅当再次从组外导航进入组内路由时才重新展开——而非组内路由间导航
+/// （如评论分页）也强制重新展开。
+#[component]
+fn NavGroup(kind: NavGroupKind, items: Vec<(Route, &'static str, bool)>) -> Element {
+    let route = use_route::<Route>();
+    let group_active = kind.contains(&route);
+    let mut expanded = use_signal(|| group_active);
+    // 记录上一次 effect 运行时路由是否在组内，用于判断"从组外→组内"的跳变
+    // （而非"当前在组内"这一恒真条件），避免组内路由间导航（如评论分页）
+    // 反复触发强制展开——这才是本组件文档承诺的行为。
+    let mut was_in_group = use_signal(|| group_active);
+
+    // 闭包内读 router().current 建立 ReactiveContext 订阅（仓库约定 #5），
+    // 路由变化时本 effect 重跑。
     use_effect(move || {
         let current = router().current::<Route>();
-        if in_group(&current) {
+        let now_in_group = kind.contains(&current);
+        if now_in_group && !was_in_group() {
             expanded.set(true);
         }
+        was_in_group.set(now_in_group);
     });
 
     let chevron_rotate = if expanded() { "rotate-180" } else { "" };
@@ -322,13 +355,14 @@ fn ContentNavGroup() -> Element {
     } else {
         "text-[var(--color-paper-secondary)] hover:bg-[var(--color-paper-theme)]/50 hover:text-[var(--color-paper-primary)] border border-transparent"
     };
+    let label = kind.label();
 
     rsx! {
         div { class: "flex flex-col gap-1",
             button {
                 class: "flex items-center justify-between w-full px-3 py-2.5 rounded-2xl text-sm font-medium transition-all cursor-pointer {parent_text_class}",
                 onclick: move |_| expanded.set(!expanded()),
-                span { "内容管理" }
+                span { "{label}" }
                 svg {
                     class: "w-4 h-4 transition-transform duration-200 flex-shrink-0 {chevron_rotate}",
                     view_box: "0 0 24 24",
@@ -349,21 +383,12 @@ fn ContentNavGroup() -> Element {
                 div { class: "overflow-hidden min-h-0",
                     // 左侧竖线引导 + 缩进表示层级。
                     div { class: "ml-3 pl-2.5 border-l border-[var(--color-paper-border)] flex flex-col gap-1",
-                        for (dest, label, active) in [
-                            (Route::Posts {}, "全部文章", matches!(route, Route::Posts {})),
-                            (Route::PostsTrash {}, "回收站", matches!(route, Route::PostsTrash {})),
-                            (
-                                Route::AdminComments {},
-                                "评论管理",
-                                matches!(route, Route::AdminComments {} | Route::AdminCommentsPage { .. }),
-                            ),
-                        ]
-                        {
+                        for (dest, item_label, active) in items {
                             Link {
-                                key: "{label}",
+                                key: "{item_label}",
                                 class: if active { "flex items-center px-2.5 py-1.5 rounded-xl text-sm font-medium transition-all bg-[var(--color-paper-theme)] text-[var(--color-paper-primary)] shadow-sm border border-[var(--color-paper-border)]" } else { "flex items-center px-2.5 py-1.5 rounded-xl text-sm font-medium transition-all text-[var(--color-paper-secondary)] hover:bg-[var(--color-paper-theme)]/50 hover:text-[var(--color-paper-primary)] border border-transparent" },
                                 to: dest,
-                                "{label}"
+                                "{item_label}"
                             }
                         }
                     }
@@ -373,95 +398,42 @@ fn ContentNavGroup() -> Element {
     }
 }
 
-/// 「工具」子菜单组：设置 / 试运行 / MCP / 日志 / 系统（issue #26）。
-///
-/// 父项整行点击仅切换展开/收起（不跳转），chevron 旋转 + grid-template-rows
-/// 0fr↔1fr 过渡动画（复用 posts_trash.rs AutoPurgeSettings 的既有模式）。
-/// 当前路由落在组内时自动展开，保证激活子项始终可见；用户手动收起后，
-/// 仅当再次从组外导航进入组内路由时才重新展开。
+/// 「内容管理」子菜单组：全部文章 / 回收站 / 评论管理（issue #17）。NavGroup
+/// 的薄封装，只提供本组的子项列表。
+#[component]
+fn ContentNavGroup() -> Element {
+    let route = use_route::<Route>();
+    let items = vec![
+        (Route::Posts {}, "全部文章", matches!(route, Route::Posts {})),
+        (Route::PostsTrash {}, "回收站", matches!(route, Route::PostsTrash {})),
+        (
+            Route::AdminComments {},
+            "评论管理",
+            matches!(route, Route::AdminComments {} | Route::AdminCommentsPage { .. }),
+        ),
+    ];
+    rsx! {
+        NavGroup { kind: NavGroupKind::Content, items }
+    }
+}
+
+/// 「工具」子菜单组：设置 / 试运行 / MCP / 日志 / 系统（issue #26）。NavGroup
+/// 的薄封装，只提供本组的子项列表。
 #[component]
 fn ToolsNavGroup() -> Element {
     let route = use_route::<Route>();
-    // 判断路由是否属于本组。
-    fn in_group(route: &Route) -> bool {
-        matches!(
-            route,
-            Route::Runner {}
-                | Route::Mcp {}
-                | Route::System {}
-                | Route::SiteSettingsPage {}
-                | Route::Logs {}
-        )
-    }
-    let group_active = in_group(&route);
-    let mut expanded = use_signal(|| group_active);
-
-    // 路由从组外进入组内时自动展开。闭包内读 router().current 建立
-    // ReactiveContext 订阅（仓库约定 #5），路由变化时本 effect 重跑。
-    use_effect(move || {
-        let current = router().current::<Route>();
-        if in_group(&current) {
-            expanded.set(true);
-        }
-    });
-
-    let chevron_rotate = if expanded() { "rotate-180" } else { "" };
-    // 父项样式：与顶层导航项同盒模型；组内路由激活时仅提为 primary 文字色，
-    // 不给自己加 pill（pill 高亮由激活子项承担，避免双层高亮竞争）。
-    let parent_text_class = if group_active {
-        "text-[var(--color-paper-primary)] border border-transparent"
-    } else {
-        "text-[var(--color-paper-secondary)] hover:bg-[var(--color-paper-theme)]/50 hover:text-[var(--color-paper-primary)] border border-transparent"
-    };
-
+    let items = vec![
+        (
+            Route::SiteSettingsPage {},
+            "设置",
+            matches!(route, Route::SiteSettingsPage {}),
+        ),
+        (Route::Runner {}, "试运行", matches!(route, Route::Runner {})),
+        (Route::Mcp {}, "MCP", matches!(route, Route::Mcp {})),
+        (Route::Logs {}, "日志", matches!(route, Route::Logs {})),
+        (Route::System {}, "系统", matches!(route, Route::System {})),
+    ];
     rsx! {
-        div { class: "flex flex-col gap-1",
-            button {
-                class: "flex items-center justify-between w-full px-3 py-2.5 rounded-2xl text-sm font-medium transition-all cursor-pointer {parent_text_class}",
-                onclick: move |_| expanded.set(!expanded()),
-                span { "工具" }
-                svg {
-                    class: "w-4 h-4 transition-transform duration-200 flex-shrink-0 {chevron_rotate}",
-                    view_box: "0 0 24 24",
-                    fill: "none",
-                    stroke: "currentColor",
-                    stroke_width: "2",
-                    path {
-                        stroke_linecap: "round",
-                        stroke_linejoin: "round",
-                        d: "M19 9l-7 7-7-7",
-                    }
-                }
-            }
-            // 展开动画容器：与 AutoPurgeSettings 完全同款（grid 0fr↔1fr + 内层 overflow-hidden）。
-            div {
-                class: "grid transition-all duration-300 ease-in-out",
-                style: if expanded() { "grid-template-rows: 1fr; opacity: 1; pointer-events: auto;" } else { "grid-template-rows: 0fr; opacity: 0; pointer-events: none;" },
-                div { class: "overflow-hidden min-h-0",
-                    // 左侧竖线引导 + 缩进表示层级。
-                    div { class: "ml-3 pl-2.5 border-l border-[var(--color-paper-border)] flex flex-col gap-1",
-                        for (dest, label, active) in [
-                            (
-                                Route::SiteSettingsPage {},
-                                "设置",
-                                matches!(route, Route::SiteSettingsPage {}),
-                            ),
-                            (Route::Runner {}, "试运行", matches!(route, Route::Runner {})),
-                            (Route::Mcp {}, "MCP", matches!(route, Route::Mcp {})),
-                            (Route::Logs {}, "日志", matches!(route, Route::Logs {})),
-                            (Route::System {}, "系统", matches!(route, Route::System {})),
-                        ]
-                        {
-                            Link {
-                                key: "{label}",
-                                class: if active { "flex items-center px-2.5 py-1.5 rounded-xl text-sm font-medium transition-all bg-[var(--color-paper-theme)] text-[var(--color-paper-primary)] shadow-sm border border-[var(--color-paper-border)]" } else { "flex items-center px-2.5 py-1.5 rounded-xl text-sm font-medium transition-all text-[var(--color-paper-secondary)] hover:bg-[var(--color-paper-theme)]/50 hover:text-[var(--color-paper-primary)] border border-transparent" },
-                                to: dest,
-                                "{label}"
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        NavGroup { kind: NavGroupKind::Tools, items }
     }
 }
