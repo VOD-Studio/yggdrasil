@@ -5,6 +5,7 @@
 
 use dioxus::prelude::*;
 
+use crate::components::comments::card::CommentCardShell;
 use crate::utils::comment_storage::{render_pending_content, PendingComment};
 use crate::utils::time::format_relative_time_iso;
 
@@ -26,7 +27,6 @@ pub fn PendingCommentItem(comment: PendingComment, post_id: i32) -> Element {
         comment.depth
     };
 
-    let is_child = depth > 0;
     let content_html = render_pending_content(&comment.content_md);
     // 基于创建时间实时计算相对时间，避免"刚刚"永久显示。
     let relative_time = format_relative_time_iso(&comment.created_at);
@@ -47,41 +47,31 @@ pub fn PendingCommentItem(comment: PendingComment, post_id: i32) -> Element {
         },
     };
 
+    let status_badge = rsx! {
+        span { class: "inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20",
+            "审核中"
+        }
+    };
+
+    let timestamp = rsx! {
+        span {
+            class: "text-paper-tertiary",
+            title: "{comment.created_at}",
+            "{relative_time}"
+        }
+    };
+
     rsx! {
-        div {
-            class: "py-3.5 opacity-75 transition-opacity",
-            class: if is_child { "border-l-2 border-[var(--color-paper-border)]/50 pl-3.5 sm:pl-4.5 my-1" } else { "" },
-            style: if depth > 1 { format!("margin-left: {}px;", (depth.min(5) - 1) * 16) } else { String::new() },
-
-            div { class: "flex items-start gap-3",
-                img {
-                    src: "{comment.avatar_url}",
-                    alt: "{comment.author_name} 的头像",
-                    loading: "lazy",
-                    decoding: "async",
-                    class: "w-8 h-8 rounded-full shrink-0 object-cover ring-1 ring-[var(--color-paper-border)]/60 bg-[var(--color-paper-entry)] mt-0.5",
-                }
-
-                div { class: "flex-1 min-w-0",
-                    div { class: "flex items-center gap-2 text-xs mb-1 flex-wrap",
-                        {author_element}
-                        span { class: "text-paper-tertiary", "·" }
-                        span {
-                            class: "text-paper-tertiary",
-                            title: "{comment.created_at}",
-                            "{relative_time}"
-                        }
-                        span { class: "inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20",
-                            "审核中"
-                        }
-                    }
-
-                    div {
-                        class: "prose prose-sm dark:prose-invert max-w-none text-paper-secondary leading-relaxed",
-                        dangerous_inner_html: "{content_html}",
-                    }
-                }
-            }
+        CommentCardShell {
+            depth,
+            muted: true,
+            avatar_url: comment.avatar_url.clone(),
+            author_name: comment.author_name.clone(),
+            author_element,
+            author_badge: rsx! {},
+            timestamp,
+            status_badge,
+            content_html,
         }
     }
 }

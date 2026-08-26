@@ -11,7 +11,7 @@ use dioxus::prelude::*;
 use crate::api::comments::create_comment;
 use crate::bridges::tiptap::{UploadErrorEntry, UploadsInFlight};
 use crate::components::comments::section::CommentContext;
-use crate::components::forms::AlertBox;
+use crate::components::forms::{AlertBox, FormInput};
 use crate::components::ui::{UserAvatar, BTN_PRIMARY_SM, SPINNER_SVG};
 use crate::utils::comment_storage::{self, AuthorInfo, PendingComment};
 #[cfg(target_arch = "wasm32")]
@@ -376,39 +376,41 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
                 } else {
                     div { class: "grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-[var(--color-paper-border)]/40 bg-[var(--color-paper-theme)]/30 border-b border-[var(--color-paper-border)]/40",
                         div { class: "relative",
-                            input {
-                                id: "comment-name-{id_suffix}",
-                                class: "w-full px-3.5 py-2 bg-transparent text-sm text-paper-primary placeholder:text-paper-tertiary focus:outline-none focus:bg-[var(--color-paper-entry)]/60 transition-colors",
+                            FormInput {
+                                id: Some(format!("comment-name-{id_suffix}")),
                                 r#type: "text",
                                 placeholder: "昵称 *",
-                                aria_label: "昵称",
-                                value: "{author_name}",
+                                // FormInput 无 aria_label prop：借 title 承载原 aria-label 文案
+                                // （原生 placeholder 亦可作无障碍名回退）。
+                                title: Some("昵称"),
+                                value: author_name(),
                                 disabled: submitting(),
-                                oninput: move |e| author_name.set(e.value()),
+                                class: Some("w-full px-3.5 py-2 bg-transparent text-sm text-paper-primary placeholder:text-paper-tertiary focus:outline-none focus:bg-[var(--color-paper-entry)]/60 transition-colors"),
+                                oninput: move |v| author_name.set(v),
                             }
                         }
                         div { class: "relative",
-                            input {
-                                id: "comment-email-{id_suffix}",
-                                class: "w-full px-3.5 py-2 bg-transparent text-sm text-paper-primary placeholder:text-paper-tertiary focus:outline-none focus:bg-[var(--color-paper-entry)]/60 transition-colors",
+                            FormInput {
+                                id: Some(format!("comment-email-{id_suffix}")),
                                 r#type: "email",
                                 placeholder: "邮箱 * (保密)",
-                                aria_label: "邮箱",
-                                value: "{author_email}",
+                                title: Some("邮箱"),
+                                value: author_email(),
                                 disabled: submitting(),
-                                oninput: move |e| author_email.set(e.value()),
+                                class: Some("w-full px-3.5 py-2 bg-transparent text-sm text-paper-primary placeholder:text-paper-tertiary focus:outline-none focus:bg-[var(--color-paper-entry)]/60 transition-colors"),
+                                oninput: move |v| author_email.set(v),
                             }
                         }
                         div { class: "relative",
-                            input {
-                                id: "comment-url-{id_suffix}",
-                                class: "w-full px-3.5 py-2 bg-transparent text-sm text-paper-primary placeholder:text-paper-tertiary focus:outline-none focus:bg-[var(--color-paper-entry)]/60 transition-colors",
+                            FormInput {
+                                id: Some(format!("comment-url-{id_suffix}")),
                                 r#type: "url",
                                 placeholder: "网站 (https://，可选)",
-                                aria_label: "网站",
-                                value: "{author_url}",
+                                title: Some("网站"),
+                                value: author_url(),
                                 disabled: submitting(),
-                                oninput: move |e| author_url.set(e.value()),
+                                class: Some("w-full px-3.5 py-2 bg-transparent text-sm text-paper-primary placeholder:text-paper-tertiary focus:outline-none focus:bg-[var(--color-paper-entry)]/60 transition-colors"),
+                                oninput: move |v| author_url.set(v),
                             }
                         }
                     }
