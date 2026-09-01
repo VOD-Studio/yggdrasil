@@ -56,6 +56,34 @@ describe('CodeMirrorInstance', () => {
     inst.destroy();
   });
 
+  it('rust 语言将 // 注释、fn 函数与 println! 宏解析为对应节点', () => {
+    const source = 'fn main() {\n    // test\n    println!("Hello world");\n}';
+    const opts = new EditorOptions();
+    opts.language = 'rust';
+    opts.value = source;
+    const inst = new CodeMirrorInstance(container, opts);
+    // Test-only private view access verifies the real parser tree.
+    const internals = inst as unknown as CodeMirrorInternals;
+    const state = internals.view.state;
+    const nodes: string[] = [];
+    syntaxTree(state).iterate({
+      enter: (node) => {
+        if (
+          node.name === 'LineComment' ||
+          node.name === 'FunctionItem' ||
+          node.name === 'MacroInvocation'
+        ) {
+          nodes.push(node.name);
+        }
+      },
+    });
+
+    expect(nodes).toEqual(
+      expect.arrayContaining(['LineComment', 'FunctionItem', 'MacroInvocation']),
+    );
+    inst.destroy();
+  });
+
   it('setTheme 不抛错（走 Compartment reconfigure）', () => {
     const inst = new CodeMirrorInstance(container, new EditorOptions());
     expect(() => inst.setTheme('dark')).not.toThrow();

@@ -8,6 +8,7 @@ import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { go } from '@codemirror/lang-go';
 import { javascript } from '@codemirror/lang-javascript';
 import { python } from '@codemirror/lang-python';
+import { rust } from '@codemirror/lang-rust';
 import { PostgreSQL, sql } from '@codemirror/lang-sql';
 import {
   bracketMatching,
@@ -109,6 +110,7 @@ export class EditorOptions {
  * 把语言标识映射成 CodeMirror 语言 Extension。
  * - `python` → @codemirror/lang-python
  * - `go` / `golang` → @codemirror/lang-go
+ * - `rust` → @codemirror/lang-rust
  * - `node` / `javascript` / `js` → @codemirror/lang-javascript（JS 模式）
  * - `bun` / `typescript` / `ts` → @codemirror/lang-javascript（TypeScript 模式）
  * - `sql` / 缺省 → @codemirror/lang-sql（PostgreSQL 方言 + schema 补全）
@@ -126,6 +128,9 @@ function buildLanguageExtension(lang: string, schema: SqlSchema): Extension {
   }
   if (normalized === 'python') {
     return python();
+  }
+  if (normalized === 'rust') {
+    return rust();
   }
   if (normalized === 'node' || normalized === 'javascript' || normalized === 'js') {
     return javascript();

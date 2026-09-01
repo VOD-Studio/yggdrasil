@@ -83,7 +83,7 @@ pub mod wasm {
         #[wasm_bindgen(method, js_name = setVim)]
         pub fn set_vim(this: &EditorInstance, v: bool);
 
-        /// 热切换语言（go/python/node/javascript/sql，Compartment.reconfigure）。
+        /// 热切换语言（go/rust/python/node/javascript/sql，Compartment.reconfigure）。
         /// 由 CodeRunner 组件在挂载时按 data-lang 调用。
         #[wasm_bindgen(method, js_name = setLanguage)]
         pub fn set_language(this: &EditorInstance, lang: &str);
