@@ -12,7 +12,8 @@
 # 架构：
 #   ┌─────────────────────────────────────────────────────┐
 #   │ Host (macOS)                                        │
-#   │   PostgreSQL :5432 (宿主原生, 不由 compose 管理)      │
+#   │   PostgreSQL = 全局 Docker 容器 global-postgres      │
+#   │     (global-databases_default 网络, 不由本 compose 管理) │
 #   │   IDE 编辑源码 ──compose watch sync──▶ /build        │
 #   │  浏览器 ◀── :8080 ────────── dx serve (:8080)       │
 #   └─────────────────────────────────────────────────────┘
@@ -24,8 +25,10 @@
 #   宿主 public/ 下的生成物（style.css/tiptap/ 等）不 sync —— 容器内 make dev 自行生成。
 #   依赖清单（Cargo.lock/pnpm-lock 等）变化 → watch 自动 rebuild 镜像。
 #
-# 数据库：dev 容器通过 host.docker.internal 连接宿主 PostgreSQL。
-# 前提：宿主已运行 PostgreSQL 且 DATABASE_URL 指向它（见 .env）。
+# 数据库：dev 容器加入 global-databases_default 外部网络, 直接按容器名
+# 连接 global-postgres（issuser/trust）。不走 host.docker.internal ——
+# Docker Desktop 会为该域名同时注入 AAAA(IPv6) 记录, 容器无 v6 路由时
+# tokio-postgres 会拿到 ENETUNREACH(os error 101) 并直接失败。
 #
 # Volume 策略：
 #   target/ → named volume        cargo 编译缓存（避免 VirtioFS 性能瓶颈）
@@ -46,10 +49,11 @@ services:
         CN_MIRROR: "true"  # 本地开发在国内，启用镜像加速
     # PID 1 信号/僵尸处理（make dev 作为入口, 否则 Ctrl+C 会残留 dx serve 子进程）
     init: true
-    # host.docker.internal 在 Docker Desktop 上自动解析到宿主 IP，
-    # 让容器内的 server 能连接宿主原生 PostgreSQL（:5432）。
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    networks:
+      - default
+      # 全局 PostgreSQL 所在网络（global-postgres 容器, 由用户的
+      # global-databases compose 项目管理, external 引用）
+      - global-databases
     volumes:
       # cargo 编译产物 — named volume 避免 VirtioFS 小文件性能瓶颈
       - yggdrasil-dev-target:/build/target
@@ -75,8 +79,9 @@ services:
     env_file:
       - .env
     environment:
-      # 连接宿主 PostgreSQL。优先级高于 env_file（.env 里是 localhost 直连串）。
-      DATABASE_URL: postgres://postgres:postgres@host.docker.internal:5432/yggdrasil
+      # 连接全局 Docker PostgreSQL（issuser/trust, 无需密码）。
+      # 优先级高于 env_file（.env 里是宿主直跑的 localhost 直连串）。
+      DATABASE_URL: postgres://issuser@global-postgres:5432/yggdrasil
       RUST_LOG: info
       SSR_CACHE_SECS: "0"
       APP_BASE_URL: http://localhost:8080
@@ -139,6 +144,11 @@ services:
           action: rebuild
         - path: ./Dockerfile.dev
           action: rebuild
+
+networks:
+  global-databases:
+    external: true
+    name: global-databases_default
 
 volumes:
   yggdrasil-dev-target:

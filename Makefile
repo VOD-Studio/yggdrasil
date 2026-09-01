@@ -344,8 +344,8 @@ docker-multiarch:
 # ── Docker 开发环境 ────────────────────────────────────────────
 # 使用 Dockerfile.dev + docker-compose.dev.yml 在容器内运行 dx serve。
 # 源码以镜像内 COPY 快照 + compose watch 增量 sync 进容器（宿主 IDE 编辑即时
-# 生效, 容器内 inotify 原生热重载）。PostgreSQL 用宿主原生实例
-# （host.docker.internal:5432, 不由 compose 管理）。
+# 生效, 容器内 inotify 原生热重载）。PostgreSQL 用全局 Docker 容器
+# global-postgres（global-databases_default 外部网络, 不由本 compose 管理）。
 # 首次启动需编译 Rust 依赖（~10 分钟），后续启动约 10 秒（cargo target 缓存）。
 # up --build 重建镜像（COPY 当前源码快照）后前台跑 compose watch：
 # 源码变更增量 sync 进容器（dx serve inotify 热重载），Cargo.lock/pnpm-lock
