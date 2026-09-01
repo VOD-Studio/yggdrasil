@@ -112,12 +112,19 @@ RUN if [ "$CN_MIRROR" = "true" ]; then \
     fi
 
 # 开发只需 wasm32 target（dx serve 原生编译 server + 交叉编译 wasm 前端）
+# 必须预装 nightly：dx serve 用 `cargo +nightly rustc --unit-graph -Z unstable-options`
+# 编 WASM 前端。镜像里没有 nightly 时，rustup 代理会在容器运行时自动安装——而
+# RUSTUP_DIST_SERVER 只在构建期生效，运行时回退默认 static.rust-lang.org，直连极慢
+# （实测 ~10KB/s），dx 卡在 banner 后像死住一样。--profile minimal 只装 cargo/rustc/std，
+# dx 不需要 nightly 的 clippy/rustfmt/docs。
 RUN if [ "$CN_MIRROR" = "true" ]; then \
         export RUSTUP_DIST_SERVER="${RS_PROXY}" \
         && export RUSTUP_UPDATE_ROOT="${RS_PROXY}/rustup"; \
     fi \
     && rustup target add wasm32-unknown-unknown \
-    && rustup component add clippy rustfmt
+    && rustup component add clippy rustfmt \
+    && rustup toolchain install nightly --profile minimal \
+    && rustup target add wasm32-unknown-unknown --toolchain nightly
 
 # ── dx CLI（与生产 Dockerfile 一致，从 GitHub Releases 安装预编译二进制）──
 ARG DX_VERSION=0.7.10
