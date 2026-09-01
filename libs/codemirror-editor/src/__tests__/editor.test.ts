@@ -84,6 +84,43 @@ describe('CodeMirrorInstance', () => {
     inst.destroy();
   });
 
+  // 与 /admin/runner 的 SUPPORTED_LANGS（python/node/go/rust/bun）一一对应；
+  // go/rust 由上方独立用例覆盖，这里锁定 python/node/bun 的 grammar 映射，
+  // 防止新增分支时重蹈 rust 落入 SQL 兜底的覆辙。
+  it.each([
+    {
+      lang: 'python',
+      source: 'def main():\n    # test\n    print(f"hi {1 + 1}")\n',
+      expected: ['FunctionDefinition', 'Comment', 'FormatString'],
+    },
+    {
+      lang: 'node',
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: ${x} 是喂给 parser 的 JS 源码字面量，非笔误
+      source: 'const x = 1;\n// test\nconsole.log(`hi ${x}`);\n',
+      expected: ['VariableDeclaration', 'LineComment', 'TemplateString'],
+    },
+    {
+      lang: 'bun',
+      source: 'interface User { name: string }\n// test\nconst u: User = { name: "x" };\n',
+      expected: ['InterfaceDeclaration', 'TypeAnnotation', 'LineComment'],
+    },
+  ])('$lang 语言解析出预期语法节点', ({ lang, source, expected }) => {
+    const opts = new EditorOptions();
+    opts.language = lang;
+    opts.value = source;
+    const inst = new CodeMirrorInstance(container, opts);
+    // Test-only private view access verifies the real parser tree.
+    const internals = inst as unknown as CodeMirrorInternals;
+    const names: string[] = [];
+    syntaxTree(internals.view.state).iterate({
+      enter: (node) => {
+        names.push(node.name);
+      },
+    });
+    expect(names).toEqual(expect.arrayContaining(expected));
+    inst.destroy();
+  });
+
   it('setTheme 不抛错（走 Compartment reconfigure）', () => {
     const inst = new CodeMirrorInstance(container, new EditorOptions());
     expect(() => inst.setTheme('dark')).not.toThrow();
