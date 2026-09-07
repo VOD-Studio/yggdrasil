@@ -76,6 +76,5 @@ public/       静态资源（构建期生成）
 
 ## 文档
 
-- [开发指南](DEVELOPMENT.md)（性能基准、代码高亮扩展）
 - [更新日志](CHANGELOG.md)（亦可在 `/changelog` 查看）
 - [贡献者约定](AGENTS.md)
