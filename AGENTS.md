@@ -37,7 +37,7 @@ Yggdrasil is a fullstack blog/CMS built with **Dioxus 0.7**. A single Rust crate
 
 ## Development Commands
 
-Prerequisites: Rust 1.95+, `wasm32-unknown-unknown` target, `dx` CLI (v0.7.10), `tailwindcss` CLI v4, PostgreSQL, Node 20+ / pnpm.
+Prerequisites: Rust 1.95+, `wasm32-unknown-unknown` target, `dx` CLI (v0.7.10), `tailwindcss` CLI v4, PostgreSQL, Node 22.12+ (22.x / 24.x / 26+) / pnpm.
 
 ```bash
 # Dev server (builds libs + highlight.css + katex.css first; runs pnpm install via build-libs)
