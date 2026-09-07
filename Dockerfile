@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1
-
 # -----------------------------------------------------------------------------
 # Builder stage: compile the static-linked musl server binary and frontend assets
 # -----------------------------------------------------------------------------

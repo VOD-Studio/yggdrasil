@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1
-
 # =============================================================================
 # Cross-build an amd64 image on an arm64 host WITHOUT QEMU.
 #
