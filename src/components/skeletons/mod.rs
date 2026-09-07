@@ -10,6 +10,8 @@ pub mod archive_skeleton;
 pub mod assets_skeleton;
 /// 通用骨架原子组件。
 pub mod atoms;
+/// 更新日志页骨架屏组件。
+pub mod changelog_skeleton;
 /// 评论区骨架屏组件。
 pub mod comment_skeleton;
 /// 后台仪表盘内容区骨架屏组件。

@@ -16,8 +16,8 @@
 use dioxus::prelude::*;
 
 use crate::api::changelog::{get_changelog, ChangeGroup, ChangelogData, VersionEntry};
+use crate::components::skeletons::changelog_skeleton::ChangelogSkeleton;
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
-use crate::components::skeletons::post_detail_skeleton::PostDetailSkeleton;
 
 /// 更新日志页面组件，对应路由 `/changelog`。
 ///
@@ -37,7 +37,7 @@ pub fn Changelog() -> Element {
         Some(Err(err)) => return Err(err.into()),
         None => {
             return rsx! {
-                DelayedSkeleton { PostDetailSkeleton {} }
+                DelayedSkeleton { ChangelogSkeleton {} }
             };
         }
     };

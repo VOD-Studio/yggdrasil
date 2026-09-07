@@ -9,6 +9,7 @@ use crate::components::footer::Footer;
 use crate::components::header::{Header, SearchIconLink};
 use crate::components::nav::build_nav_items;
 use crate::components::skeletons::archive_skeleton::ArchiveSkeleton;
+use crate::components::skeletons::changelog_skeleton::ChangelogSkeleton;
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::skeletons::friends_skeleton::FriendsSkeleton;
 use crate::components::skeletons::home_skeleton::HomeSkeleton;
@@ -33,8 +34,11 @@ fn route_skeleton(route: &Route) -> Element {
         Route::Search {} => rsx! {
             DelayedSkeleton { SearchSkeleton {} }
         },
-        Route::PostDetail { .. } | Route::Changelog { .. } => rsx! {
+        Route::PostDetail { .. } => rsx! {
             DelayedSkeleton { PostDetailSkeleton {} }
+        },
+        Route::Changelog {} => rsx! {
+            DelayedSkeleton { ChangelogSkeleton {} }
         },
         Route::NotFound { .. } => rsx! {
             div { class: "py-20 md:py-28" }
