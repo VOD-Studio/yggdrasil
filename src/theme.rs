@@ -8,8 +8,8 @@
 //!   主题时实时同步 `.dark` class 与下游（CodeMirror 等）。
 //!
 //! SSR 与客户端 hydration 都从 `Theme::System` 开始；挂载后再读取
-//! localStorage 恢复用户选择，确保图标经历正常的响应式更新。
-//! 首屏配色由 `ThemePreload` 提前设置，不依赖服务端无法读取的浏览器偏好。
+//! localStorage 恢复用户选择。首屏配色和图标均由 `ThemePreload` 提前设置，
+//! 不依赖 WASM 加载速度或服务端无法读取的浏览器偏好。
 //!
 //! 下游消费者（CodeMirror、SVG 图标判定）应读 `ResolvedTheme`（实际生效明暗），
 //! 而非 `Theme`（用户意图），这样 System 模式下系统偏好变化能自动传播。
@@ -155,18 +155,20 @@ pub fn use_theme_provider() -> Signal<Theme> {
                 return;
             }
             let current = theme();
+            let mode = match current {
+                Theme::Light => "light",
+                Theme::Dark => "dark",
+                Theme::System => "system",
+            };
             if let Some(window) = web_sys::window() {
+                if let Some(html) = window.document().and_then(|doc| doc.document_element()) {
+                    let _ = html.set_attribute("data-theme-mode", mode);
+                }
                 if let Ok(Some(storage)) = window.local_storage() {
-                    match current {
-                        Theme::System => {
-                            let _ = storage.remove_item(THEME_KEY);
-                        }
-                        Theme::Light => {
-                            let _ = storage.set_item(THEME_KEY, "light");
-                        }
-                        Theme::Dark => {
-                            let _ = storage.set_item(THEME_KEY, "dark");
-                        }
+                    if current == Theme::System {
+                        let _ = storage.remove_item(THEME_KEY);
+                    } else {
+                        let _ = storage.set_item(THEME_KEY, mode);
                     }
                 }
             }
@@ -274,32 +276,42 @@ pub fn use_resolved_theme() -> Memo<ResolvedTheme> {
 
 const THEME_PRELOAD_SCRIPT: &str = r#"
 (function() {
+    var theme = 'system';
     try {
-        var theme = localStorage.getItem('yggdrasil-theme');
-        if (theme === 'dark' || (!theme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-            document.documentElement.classList.add('dark');
-        }
+        var saved = localStorage.getItem('yggdrasil-theme');
+        if (saved === 'dark' || saved === 'light') theme = saved;
     } catch (e) {}
+    document.documentElement.setAttribute('data-theme-mode', theme);
+    document.documentElement.classList.toggle('dark',
+        theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches));
 })();
+"#;
+
+// 图标显隐是首屏必需样式，随 SSR 输出，避免外部 CSS 旧缓存影响模式显示。
+const THEME_ICON_STYLE: &str = r#"
+.theme-toggle svg { display: none; }
+html[data-theme-mode="light"] .theme-toggle .theme-icon-light,
+html[data-theme-mode="dark"] .theme-toggle .theme-icon-dark,
+html[data-theme-mode="system"] .theme-toggle .theme-icon-system,
+html:not([data-theme-mode]) .theme-toggle .theme-icon-system { display: block; }
 "#;
 
 /// 首屏主题预加载脚本组件。
 ///
-/// 通过内联脚本在页面渲染前读取 localStorage / 系统偏好并设置 `dark` class，
-/// 防止主题切换时出现闪烁。
+/// 在页面渲染前读取 localStorage / 系统偏好，设置 `dark` class 和控制图标的
+/// `data-theme-mode`，防止配色和图标在 hydration 前后错位。
 #[component]
 pub fn ThemePreload() -> Element {
     rsx! {
+        style { dangerous_inner_html: "{THEME_ICON_STYLE}" }
         script { dangerous_inner_html: "{THEME_PRELOAD_SCRIPT}" }
     }
 }
 
 /// 主题切换按钮组件（三态循环：Dark → Light → System → Dark）。
 ///
-/// 点击后**立即**切换图标（theme.set 不再延迟），让用户即时获得反馈；
-/// 图标自身的进入动画（缩放+淡入）由 CSS `.theme-toggle svg` 的 keyframe
-/// 驱动，配合 SVG 元素的 `key` 属性——theme 变化时 Dioxus 重新挂载 SVG，
-/// 进入动画随之重新触发。
+/// 三个图标使用固定 SSR 结构，由 `data-theme-mode` 决定哪个可见。
+/// 首屏无需等待 WASM；切换模式时通过 CSS 显示对应图标并播放进入动画。
 ///
 /// 仅当**实际生效明暗**（ResolvedTheme）因切换而翻转时，才额外触发圆形展开
 /// VT 动画（颜色过渡）；明暗不变时（如 Light → System 且系统浅色）只换图标。
@@ -319,8 +331,6 @@ pub fn ThemeToggle() -> Element {
         button {
             class: "theme-toggle p-2 rounded-full cursor-pointer hover:text-paper-accent transition-colors duration-200 text-paper-secondary",
             r#type: "button",
-            aria_label: "主题切换（当前：{mode_label(theme())}）",
-            title: "当前：{mode_label(theme())}（点击切换）",
             onclick: move |evt| {
                 let next = theme().cycle();
                 #[cfg(target_arch = "wasm32")]
@@ -355,50 +365,42 @@ pub fn ThemeToggle() -> Element {
                     theme.set(next);
                 }
             },
-            // 图标按当前主题意图（而非 resolved）选择，用户能看出自己在哪种模式。
-            // key 强制 theme 变化时 Dioxus 重新挂载 SVG，从而重新触发 CSS 进入动画。
-            // （Dioxus 要求 key 为格式化字符串，故用 {icon_key} 占位。）
-            {
-                let icon_key: &str = match theme() {
-                    Theme::Dark => "dark",
-                    Theme::Light => "light",
-                    Theme::System => "system",
-                };
-                match theme() {
-                    Theme::Dark => rsx! {
-                        svg {
-                            key: "icon-{icon_key}",
-                            xmlns: "http://www.w3.org/2000/svg",
-                            height: "24px",
-                            view_box: "0 -960 960 960",
-                            width: "24px",
-                            fill: "currentColor",
-                            path { d: "M484-80q-84 0-157.5-32t-128-86.5Q144-253 112-326.5T80-484q0-146 93-257.5T410-880q-18 99 11 193.5T521-521q71 71 165.5 100T880-410q-26 144-138 237T484-80Zm0-80q88 0 163-44t118-121q-86-8-163-43.5T464-465q-61-61-97-138t-43-163q-77 43-120.5 118.5T160-484q0 135 94.5 229.5T484-160Zm-20-305Z" }
-                        }
-                    },
-                    Theme::Light => rsx! {
-                        svg {
-                            key: "icon-{icon_key}",
-                            xmlns: "http://www.w3.org/2000/svg",
-                            height: "24px",
-                            view_box: "0 -960 960 960",
-                            width: "24px",
-                            fill: "currentColor",
-                            path { d: "M440-800v-120h80v120h-80Zm0 760v-120h80v120h-80Zm360-400v-80h120v80H800Zm-760 0v-80h120v80H40Zm708-252-56-56 70-72 58 58-72 70ZM198-140l-58-58 72-70 56 56-70 72Zm564 0-70-72 56-56 72 70-58 58ZM212-692l-72-70 58-58 70 72-56 56Zm98 382q-70-70-70-170t70-170q70-70 170-70t170 70q70 70 70 170t-70 170q-70 70-170 70t-170-70Zm283.5-56.5Q640-413 640-480t-46.5-113.5Q547-640 480-640t-113.5 46.5Q320-547 320-480t46.5 113.5Q413-320 480-320t113.5-46.5ZM480-480Z" }
-                        }
-                    },
-                    Theme::System => rsx! {
-                        svg {
-                            key: "icon-{icon_key}",
-                            xmlns: "http://www.w3.org/2000/svg",
-                            height: "24px",
-                            view_box: "0 -960 960 960",
-                            width: "24px",
-                            fill: "currentColor",
-                            path { d: "M40-120v-80h880v80H40Zm120-120q-33 0-56.5-23.5T80-320v-440q0-33 23.5-56.5T160-840h640q33 0 56.5 23.5T880-760v440q0 33-23.5 56.5T800-240H160Zm0-80h640v-440H160v440Zm0 0v-440 440Z" }
-                        }
-                    },
-                }
+            // 隐藏的 SVG 不参与无障碍名称计算，可见图标提供当前模式和提示。
+            svg {
+                class: "theme-icon-dark",
+                role: "img",
+                "aria-label": "主题切换（当前：{mode_label(Theme::Dark)}）",
+                xmlns: "http://www.w3.org/2000/svg",
+                height: "24px",
+                view_box: "0 -960 960 960",
+                width: "24px",
+                fill: "currentColor",
+                title { "当前：{mode_label(Theme::Dark)}（点击切换）" }
+                path { d: "M484-80q-84 0-157.5-32t-128-86.5Q144-253 112-326.5T80-484q0-146 93-257.5T410-880q-18 99 11 193.5T521-521q71 71 165.5 100T880-410q-26 144-138 237T484-80Zm0-80q88 0 163-44t118-121q-86-8-163-43.5T464-465q-61-61-97-138t-43-163q-77 43-120.5 118.5T160-484q0 135 94.5 229.5T484-160Zm-20-305Z" }
+            }
+            svg {
+                class: "theme-icon-light",
+                role: "img",
+                "aria-label": "主题切换（当前：{mode_label(Theme::Light)}）",
+                xmlns: "http://www.w3.org/2000/svg",
+                height: "24px",
+                view_box: "0 -960 960 960",
+                width: "24px",
+                fill: "currentColor",
+                title { "当前：{mode_label(Theme::Light)}（点击切换）" }
+                path { d: "M440-800v-120h80v120h-80Zm0 760v-120h80v120h-80Zm360-400v-80h120v80H800Zm-760 0v-80h120v80H40Zm708-252-56-56 70-72 58 58-72 70ZM198-140l-58-58 72-70 56 56-70 72Zm564 0-70-72 56-56 72 70-58 58ZM212-692l-72-70 58-58 70 72-56 56Zm98 382q-70-70-70-170t70-170q70-70 170-70t170 70q70 70 70 170t-70 170q-70 70-170 70t-170-70Zm283.5-56.5Q640-413 640-480t-46.5-113.5Q547-640 480-640t-113.5 46.5Q320-547 320-480t46.5 113.5Q413-320 480-320t113.5-46.5ZM480-480Z" }
+            }
+            svg {
+                class: "theme-icon-system",
+                role: "img",
+                "aria-label": "主题切换（当前：{mode_label(Theme::System)}）",
+                xmlns: "http://www.w3.org/2000/svg",
+                height: "24px",
+                view_box: "0 -960 960 960",
+                width: "24px",
+                fill: "currentColor",
+                title { "当前：{mode_label(Theme::System)}（点击切换）" }
+                path { d: "M40-120v-80h880v80H40Zm120-120q-33 0-56.5-23.5T80-320v-440q0-33 23.5-56.5T160-840h640q33 0 56.5 23.5T880-760v440q0 33-23.5 56.5T800-240H160Zm0-80h640v-440H160v440Zm0 0v-440 440Z" }
             }
         }
     }
@@ -475,9 +477,9 @@ mod tests {
     }
 
     #[test]
-    fn theme_preload_script_adds_dark_class() {
-        // 预加载脚本必须包含给 documentElement 添加 dark class 的逻辑。
-        assert!(THEME_PRELOAD_SCRIPT.contains("classList.add('dark')"));
+    fn theme_preload_script_sets_dark_class() {
+        // 预加载脚本必须包含给 documentElement 设置 dark class 的逻辑。
+        assert!(THEME_PRELOAD_SCRIPT.contains("classList.toggle('dark',"));
     }
 
     #[test]
