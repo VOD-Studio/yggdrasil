@@ -121,6 +121,38 @@ describe('数学公式节点 - markdown 序列化往返', () => {
     expect(md2).toBe(md1);
     expect(md2).toContain(tex);
   });
+
+  it.each([
+    { markdown: '$E=mc^2$', pos: 1 },
+    { markdown: '$$E=mc^2$$', pos: 0 },
+  ])('编辑 $markdown 时键盘输入不替换公式节点', ({ markdown, pos }) => {
+    editor.commands.setContent(markdown, { contentType: 'markdown' });
+    editor.commands.setNodeSelection(pos);
+    const before = editor.getJSON();
+    const formula = editor.view.dom.querySelector('.math-node');
+    expect(formula).not.toBeNull();
+    formula!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    const textarea = formula!.querySelector('textarea');
+    expect(textarea).not.toBeNull();
+
+    // ProseMirror 会把冒泡的 keypress 当成替换当前 NodeSelection 的输入。
+    const key = new KeyboardEvent('keypress', {
+      key: 'x',
+      bubbles: true,
+      cancelable: true,
+    });
+    // happy-dom 未实现 charCode，补齐浏览器 keypress 实际携带的值。
+    Object.defineProperty(key, 'charCode', { value: 120 });
+    textarea!.dispatchEvent(key);
+    expect(editor.getJSON()).toEqual(before);
+    expect(key.defaultPrevented).toBe(false);
+
+    textarea!.value = '\\frac{a}{b}';
+    textarea!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true }));
+    expect(collectMathNodes(editor)[0].latex).toBe('\\frac{a}{b}');
+    expect(editor.getMarkdown()).toContain('\\frac{a}{b}');
+    editor.destroy();
+  });
 });
 
 describe('数学公式节点 - 边界情况', () => {

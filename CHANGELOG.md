@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **前端依赖升级**：更新 CodeMirror、Tiptap 3.31.3、Mermaid 11.17.2 与公共构建测试工具，迁移 Markdown 转义补丁；编辑器公式渲染与全局样式统一到 KaTeX 0.18.7。pnpm 同步至 11.26.0，Vitest 保持 4.x 并更新至 4.1.11。
 
+### Fixed
+
+- 修复双击编辑行内或块级公式时，键盘输入被外层编辑器接管、整条公式被替换为普通文本的问题。
+
 ## [0.12.5] - 2026-09-07
 
 ### Changed

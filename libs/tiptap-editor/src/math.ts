@@ -98,10 +98,9 @@ class MathNodeView {
     return true;
   }
 
-  /** 点击事件不被编辑器拦截(双击编辑需响应)。 */
-  stopEvent(_event: Event): boolean {
-    // 编辑态下 textarea 的事件由浏览器处理;其余放行。
-    return false;
+  /** textarea 自行处理输入，避免 ProseMirror 用输入字符替换选中的公式节点。 */
+  stopEvent(event: Event): boolean {
+    return this.editEl !== null && event.target === this.editEl;
   }
 
   destroy(): void {
