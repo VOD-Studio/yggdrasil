@@ -32,7 +32,7 @@ pub fn PostToc(
     let mut pinned = use_signal(|| false);
 
     // 挂载后初始化 scroll-spy（yggdrasil-core.js 由 Dioxus.toml 全局注入）。
-    // article 以 slug 为 key，上下篇切换会 remount 本组件 → effect 重跑；
+    // 调用方以 slug 为 key 的单元素列表包裹本组件，切文章时 remount → effect 重跑；
     // __initTocSidebar 内部幂等（先 dispose 上一次的 observer 与激活态）。
     #[cfg(target_arch = "wasm32")]
     use_effect(move || {

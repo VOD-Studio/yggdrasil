@@ -87,9 +87,12 @@ pub fn PostDetail(slug: String) -> Element {
                 PostCover { src: cover.clone() }
             }
 
-            // 如果文章生成了目录 HTML，则渲染目录组件。
+            // 与 PostContent 同样按 slug 强制 remount，重新绑定新文章标题的 scroll-spy。
+            // 外层非列表 article 的 key 不会触发 remount（见下方 keyed diff 说明）。
             if let Some(toc) = &post.toc_html {
-                PostToc { toc_html: toc.clone() }
+                for toc_slug in std::iter::once(post.slug.clone()) {
+                    PostToc { key: "{toc_slug}", toc_html: toc.clone() }
+                }
             }
 
             // 用单元素 keyed 列表包裹 PostContent，key 绑定 slug。

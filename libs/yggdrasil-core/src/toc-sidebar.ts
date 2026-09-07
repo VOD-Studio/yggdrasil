@@ -1,7 +1,7 @@
 /**
  * 侧边目录 scroll-spy：IntersectionObserver「探测带」追踪当前阅读节。
  *
- * 幂等重入：article 以 slug 为 key 强制 remount（post_detail.rs），
+ * 幂等重入：调用方用以 slug 为 key 的单元素列表强制 remount PostToc，
  * PostToc 的 use_effect 每次挂载重调本函数——入口先 dispose 上一次的
  * observer 与激活态，再重新扫描。
  */
