@@ -465,42 +465,52 @@
 
   .post-single {
     margin: 0 auto;
+    width: 100%;
+    max-width: var(--main-width-paper);
+    min-width: 0;
   }
 
   .post-header {
-    margin: 48px auto 48px auto;
+    margin: clamp(1rem, 3vw, 2.5rem) 0 2.5rem;
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 1.25rem;
+    padding-bottom: 2rem;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-paper-border) 60%, transparent);
   }
 
   .post-title {
-    font-size: clamp(2.5rem, 6vw, 4.5rem);
-    font-weight: 800;
-    line-height: 1.1;
+    font-size: clamp(1.875rem, 4vw, 3rem);
+    font-weight: 600;
+    line-height: 1.35;
     color: var(--color-paper-primary);
     word-break: break-word;
-    letter-spacing: -0.04em;
+    letter-spacing: -0.025em;
+    text-wrap: pretty;
     margin: 0;
   }
 
   .post-description {
     color: var(--color-paper-secondary);
-    font-size: 1.125rem;
-    font-weight: 500;
-    line-height: 1.7;
+    font-size: 1rem;
+    font-weight: 400;
+    line-height: 1.85;
     margin: 0;
   }
 
   .post-meta {
-    margin-top: 8px;
-    color: var(--color-paper-tertiary);
-    font-size: 15px;
+    margin-top: 0.25rem;
+    color: var(--color-paper-secondary);
+    font-size: 13px;
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    gap: 0.65rem;
     flex-wrap: wrap;
-    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .post-meta span {
+    white-space: nowrap;
   }
 
   .post-meta a {
@@ -516,22 +526,34 @@
 
   .breadcrumbs {
     display: flex;
-    flex-wrap: wrap;
+    min-width: 0;
     align-items: center;
-    gap: 0.2rem;
+    gap: 0.375rem;
     color: var(--color-paper-secondary);
-    font-size: 14px;
-    margin-bottom: 10px;
+    font-size: 13px;
+    margin-bottom: 0.5rem;
   }
 
   .breadcrumbs a {
-    font-size: 16px;
-    color: var(--color-paper-primary);
+    flex-shrink: 0;
+    color: inherit;
   }
 
   .breadcrumbs a:hover {
     text-decoration: underline;
     text-underline-offset: 0.2rem;
+  }
+
+  .breadcrumbs svg {
+    flex-shrink: 0;
+    width: 14px;
+    height: 14px;
+  }
+
+  .breadcrumbs span {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
   }
 
   .entry-hint {
@@ -541,31 +563,61 @@
   }
 
   details.toc {
-    margin-bottom: var(--content-gap-paper);
-    background: var(--color-paper-code-bg);
-    border-radius: var(--radius-mini);
-    border: 1px solid var(--color-paper-border);
+    margin-bottom: 2rem;
+    background: color-mix(in srgb, var(--color-paper-entry) 35%, transparent);
+    border-radius: var(--radius-paper);
+    border: 1px solid color-mix(in srgb, var(--color-paper-border) 60%, transparent);
   }
 
   details.toc summary {
-    padding: 0.3rem 1.2rem;
-    border-radius: var(--radius-mini);
+    min-height: 52px;
+    padding: 0.875rem 1rem;
+    border-radius: var(--radius-paper);
     cursor: pointer;
-    display: list-item;
-    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    list-style: none;
     user-select: none;
     color: var(--color-paper-primary);
   }
 
+  details.toc summary::-webkit-details-marker {
+    display: none;
+  }
+
+  details.toc summary::after {
+    content: "";
+    width: 0.45rem;
+    height: 0.45rem;
+    flex-shrink: 0;
+    margin-inline-end: 0.2rem;
+    border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    transform: rotate(45deg);
+  }
+
+  details.toc[open] summary::after {
+    transform: rotate(225deg);
+  }
+
+  details.toc :is(summary, a):focus-visible {
+    outline: 2px solid var(--color-paper-accent);
+    outline-offset: -2px;
+  }
+
   details.toc .title {
-    display: inline;
+    font-size: 14px;
     font-weight: 500;
-    margin-inline-start: 0.2rem;
   }
 
   details.toc .inner {
-    margin: 0 2.4rem;
-    padding-bottom: 0.6rem;
+    padding: 0.25rem 0.75rem 0.75rem;
+    max-height: min(50svh, 24rem);
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    scrollbar-width: thin;
   }
 
   details.toc ul {
@@ -575,23 +627,30 @@
   }
 
   details.toc li {
-    margin: 0.3rem 0;
+    margin: 0;
   }
 
   details.toc a {
+    display: block;
+    min-height: 44px;
+    padding: 0.625rem 0.75rem;
+    border-radius: var(--radius-mini);
+    overflow-wrap: anywhere;
     color: var(--color-paper-secondary);
     text-decoration: none;
     font-size: 14px;
+    line-height: 1.6;
   }
 
   details.toc a:hover {
     color: var(--color-paper-primary);
-    text-decoration: underline;
-    text-underline-offset: 0.3rem;
+    background: color-mix(in srgb, var(--color-paper-entry) 70%, transparent);
   }
 
   details.toc li ul {
-    margin-inline-start: var(--gap-paper);
+    margin-inline-start: 1rem;
+    padding-inline-start: 0.375rem;
+    border-inline-start: 1px solid color-mix(in srgb, var(--color-paper-border) 60%, transparent);
   }
 
   /* ===== 桌面悬浮侧边目录（≥1200px）=====
@@ -930,8 +989,44 @@
   }
 
   .post-content {
-    color: var(--color-paper-content);
-    margin: 30px 0;
+    color: var(--color-paper-secondary);
+    margin: 2.5rem 0 3.5rem;
+    font-size: 1rem;
+    line-height: 1.9;
+    overflow-wrap: anywhere;
+  }
+
+  /* 只调整文章排版，不改变评论与编辑器复用的 md-content。 */
+  .post-content.md-content :is(h1, h2, h3, h4, h5, h6) {
+    margin-block: 2.5rem 1rem;
+    font-weight: 600;
+    line-height: 1.5;
+    letter-spacing: -0.015em;
+    text-wrap: pretty;
+  }
+
+  .post-content.md-content h1 {
+    font-size: clamp(1.625rem, 3vw, 2rem);
+  }
+
+  .post-content.md-content h2 {
+    font-size: clamp(1.375rem, 2.5vw, 1.625rem);
+  }
+
+  .post-content.md-content h3 {
+    font-size: 1.25rem;
+  }
+
+  .post-content.md-content blockquote {
+    margin-block: 1.5rem;
+    padding-inline-start: 1.25rem;
+    border-inline-start: 2px solid var(--color-paper-border);
+  }
+
+  .post-content.md-content hr {
+    margin-block: 2.5rem;
+    height: 1px;
+    background: color-mix(in srgb, var(--color-paper-border) 60%, transparent);
   }
 
   .md-content h1 {
@@ -1445,7 +1540,7 @@
   }
 
   .post-footer {
-    margin-top: var(--content-gap-paper);
+    margin-top: 3rem;
   }
 
   .post-tags {
@@ -1467,11 +1562,11 @@
     color: var(--color-paper-secondary);
     font-size: 14px;
     line-height: 34px;
-    background: var(--color-paper-code-bg);
-    border-radius: var(--radius-mini);
+    background: transparent;
+    border-radius: 999px;
     border: 1px solid var(--color-paper-border);
     text-decoration: none;
-    transition: all 0.2s ease-out;
+    transition: background-color 0.2s ease-out, border-color 0.2s ease-out, color 0.2s ease-out;
   }
 
   .post-tags a:hover {
@@ -1482,25 +1577,25 @@
 
   .paginav {
     display: flex;
-    border-radius: var(--radius-mini);
-    background: var(--color-paper-code-bg);
-    border: 1px solid var(--color-paper-border);
+    margin-top: 2rem;
+    border-block: 1px solid color-mix(in srgb, var(--color-paper-border) 60%, transparent);
     overflow: hidden;
   }
 
   .paginav a {
     width: 50%;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
-    padding: 0.8rem;
+    padding: 1.5rem 1rem;
     text-decoration: none;
     color: var(--color-paper-primary);
     transition: background 0.2s ease-out;
   }
 
   .paginav a:hover {
-    background: var(--color-paper-border);
+    background: color-mix(in srgb, var(--color-paper-entry) 55%, transparent);
   }
 
   .paginav .next {
@@ -1509,7 +1604,7 @@
   }
 
   .paginav .title {
-    letter-spacing: 1px;
+    font-weight: 400;
     font-size: 0.8rem;
     color: var(--color-paper-secondary);
   }
@@ -1517,6 +1612,14 @@
   .paginav .post-title-nav {
     font-size: 16px;
     font-weight: 500;
+    line-height: 1.65;
+    overflow-wrap: anywhere;
+  }
+
+  .paginav a:focus-visible,
+  .post-tags a:focus-visible {
+    outline: 2px solid var(--color-paper-accent);
+    outline-offset: -2px;
   }
 
   /* 卡片封面：blur-img 结构，固定 21:9 比例，hover 缩放。
@@ -1973,10 +2076,6 @@
 }
 
 @media screen and (max-width: 768px) {
-  .post-title {
-    font-size: 32px;
-  }
-
   .md-content h1 {
     font-size: 32px;
   }
@@ -2000,11 +2099,10 @@
   .paginav .next {
     margin-inline-start: 0;
     text-align: left;
-    border-top: 1px solid var(--color-paper-border);
   }
 
-  details.toc .inner {
-    margin: 0 1rem;
+  .paginav a + a {
+    border-top: 1px solid color-mix(in srgb, var(--color-paper-border) 60%, transparent);
   }
 
   /* 旧文章兜底：未重建的文章是裸 table（无 .table-wrap 包裹），移动端需 block 化才能滚动。
