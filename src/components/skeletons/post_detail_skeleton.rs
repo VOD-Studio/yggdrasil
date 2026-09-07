@@ -64,7 +64,7 @@ pub fn PostDetailBody() -> Element {
 #[component]
 pub fn PostDetailSkeleton() -> Element {
     rsx! {
-        article { class: "post-single",
+        article { class: "post-single max-w-none",
             PostDetailBody {}
         }
     }

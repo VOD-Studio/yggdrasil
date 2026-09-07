@@ -79,7 +79,7 @@ pub fn PostDetail(slug: String) -> Element {
     };
 
     rsx! {
-        article { class: "post-single animate-page-enter", key: "{post.slug}",
+        article { class: "post-single max-w-none animate-page-enter", key: "{post.slug}",
             PostHeader { post: post.clone() }
 
             // 如果文章设置了封面图，则渲染封面组件。
