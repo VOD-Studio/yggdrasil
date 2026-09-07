@@ -439,7 +439,7 @@ pub fn CollapsibleSettingsCard(
                 }
                 svg {
                     class: "collapsible-chevron w-4 h-4 text-paper-secondary transition-transform duration-200 flex-shrink-0 {chevron_rotate}",
-                    aria_hidden: "true",
+                    "aria-hidden": "true",
                     view_box: "0 0 24 24",
                     fill: "none",
                     stroke: "currentColor",
