@@ -344,6 +344,11 @@ fn build_router(options: ServerOptions) -> axum::Router {
     let app_routes = app_routes.layer(axum::middleware::from_fn(crate::middleware::admin_guard));
 
     let static_routes = axum::Router::new()
+        // 旧收藏链接直接返回永久重定向，客户端导航由 Route 的 redirect 同步兼容。
+        .route(
+            "/tags",
+            axum::routing::get(|| async { axum::response::Redirect::permanent("/archives") }),
+        )
         .route("/healthz", axum::routing::get(crate::api::health::healthz))
         .route("/readyz", axum::routing::get(crate::api::health::readyz))
         .route(

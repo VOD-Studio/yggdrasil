@@ -2018,6 +2018,293 @@
   animation: pageEnter 0.15s ease-out;
 }
 
+/* 共享折叠卡片：内容常驻，0fr ↔ 1fr 让下方内容随真实高度移动。
+   不使用 max-height 或 JS 定时器，快速反向点击也能从当前帧继续。 */
+.collapsible-card {
+  --collapse-duration: 320ms;
+  --collapse-ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.collapsible-trigger {
+  transition: background-color 200ms ease, box-shadow 200ms ease;
+}
+
+.collapsible-panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    grid-template-rows var(--collapse-duration) var(--collapse-ease),
+    opacity var(--collapse-duration) ease,
+    visibility var(--collapse-duration);
+}
+
+.collapsible-card[data-open="true"] > .collapsible-panel {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  visibility: visible;
+}
+
+/* 归档标签索引：纸面色、浅绿光晕和细描边，与站点明暗主题共用语义色。 */
+.archive-tags {
+  --collapse-duration: 420ms;
+  margin-bottom: 2.25rem;
+  border-radius: 1.5rem;
+  border-color: color-mix(in srgb, var(--color-paper-border) 65%, transparent);
+  background:
+    radial-gradient(ellipse at top right, color-mix(in srgb, var(--color-paper-accent) 7%, transparent), transparent 65%),
+    color-mix(in srgb, var(--color-paper-entry) 55%, var(--color-paper-theme));
+  box-shadow: 0 4px 20px -16px color-mix(in srgb, var(--color-paper-primary) 25%, transparent);
+  transition: border-color 240ms ease, box-shadow 240ms ease;
+}
+
+.archive-tags:focus-within {
+  border-color: color-mix(in srgb, var(--color-paper-accent) 60%, var(--color-paper-border));
+}
+
+.archive-tags .collapsible-trigger {
+  gap: 1rem;
+  padding: 1.5rem;
+  border-radius: 1.5rem;
+}
+
+.archive-tags .collapsible-trigger:hover {
+  background: color-mix(in srgb, var(--color-paper-accent) 4%, transparent);
+}
+
+.archive-tags .collapsible-trigger:focus-visible {
+  outline: 2px solid var(--color-paper-accent);
+  outline-offset: -4px;
+}
+
+.archive-tags .collapsible-indicator {
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 1rem;
+  background: color-mix(in srgb, var(--color-paper-accent) 10%, var(--color-paper-theme));
+  color: var(--color-paper-accent);
+  transition: transform 240ms var(--collapse-ease), background-color 240ms ease;
+}
+
+.archive-tags .collapsible-indicator > div {
+  display: none;
+}
+
+.archive-tags .collapsible-indicator::before {
+  content: "#";
+  font-size: 1.6rem;
+  font-weight: 500;
+}
+
+.archive-tags .collapsible-trigger:hover .collapsible-indicator {
+  transform: rotate(-8deg);
+}
+
+.archive-tags .collapsible-trigger:active .collapsible-indicator {
+  transform: rotate(-8deg) scale(0.92);
+}
+
+.archive-tags .collapsible-title {
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.025em;
+}
+
+.archive-tags .collapsible-summary {
+  margin-top: 0.35rem;
+  white-space: normal;
+  line-height: 1.7;
+}
+
+.archive-tags .collapsible-chevron {
+  width: 1.125rem;
+  height: 1.125rem;
+  transition:
+    rotate var(--collapse-duration) var(--collapse-ease),
+    transform var(--collapse-duration) var(--collapse-ease),
+    color 200ms ease;
+}
+
+.archive-tags .collapsible-trigger:hover .collapsible-chevron {
+  color: var(--color-paper-accent);
+}
+
+.archive-tags-body {
+  margin-inline: 1.5rem;
+  padding-block: 1.25rem 1.5rem;
+  border-top: 1px solid color-mix(in srgb, var(--color-paper-border) 50%, transparent);
+}
+
+.archive-tags-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.625rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.archive-tags-list > li {
+  display: flex;
+  max-width: 100%;
+  min-width: 0;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 180ms ease, transform 240ms var(--collapse-ease);
+}
+
+.archive-tags[data-open="true"] .archive-tags-list > li {
+  opacity: 1;
+  transform: translateY(0);
+  transition-duration: 280ms, 360ms;
+  transition-delay: var(--tag-delay, 0ms);
+}
+
+.archive-tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 44px;
+  max-width: 100%;
+  padding: 0.5rem 0.625rem 0.5rem 0.875rem;
+  border: 1px solid color-mix(in srgb, var(--color-paper-border) 65%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-paper-theme) 80%, transparent);
+  color: var(--color-paper-primary);
+  font-size: 0.875rem;
+  line-height: 1.4;
+  text-decoration: none;
+  transition:
+    transform 220ms var(--collapse-ease),
+    background-color 220ms ease,
+    border-color 220ms ease,
+    color 220ms ease,
+    box-shadow 220ms ease;
+}
+
+.archive-tag-mark {
+  color: var(--color-paper-accent);
+  opacity: 0.7;
+  transition: opacity 200ms ease;
+}
+
+.archive-tag-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.archive-tag-count {
+  flex-shrink: 0;
+  min-width: 1.5rem;
+  padding: 0.2rem 0.4rem;
+  border-radius: 999px;
+  background: var(--color-paper-entry);
+  color: var(--color-paper-secondary);
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  transition: background-color 220ms ease, color 220ms ease;
+}
+
+.archive-tag-chip:is(:hover, :focus-visible) {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--color-paper-accent) 65%, var(--color-paper-border));
+  background: color-mix(in srgb, var(--color-paper-accent) 8%, var(--color-paper-theme));
+  color: var(--color-paper-accent);
+  box-shadow: 0 4px 10px -6px color-mix(in srgb, var(--color-paper-accent) 30%, transparent);
+}
+
+.archive-tag-chip:is(:hover, :focus-visible) .archive-tag-count {
+  background: color-mix(in srgb, var(--color-paper-accent) 14%, var(--color-paper-theme));
+  color: var(--color-paper-accent);
+}
+
+.archive-tag-chip:is(:hover, :focus-visible) .archive-tag-mark {
+  opacity: 1;
+}
+
+.archive-tag-chip:active {
+  transform: translateY(0) scale(0.96);
+}
+
+.archive-tag-chip:focus-visible,
+.archives-page .archive-header-link:focus-visible,
+.archives-page .entry-link:focus-visible,
+.archive-tags-retry:focus-visible,
+.archive-back-link:focus-visible {
+  outline: 2px solid var(--color-paper-accent);
+  outline-offset: 3px;
+}
+
+.archives-page :is(h2, h3)[id] {
+  scroll-margin-top: 6rem;
+}
+
+.archives-page .archive-header-link {
+  transition: color 200ms ease, opacity 200ms ease;
+}
+
+.archives-page .archive-header-link:hover {
+  color: var(--color-paper-accent);
+}
+
+.archives-page .archive-entry {
+  border-radius: 0.75rem;
+  transition: transform 220ms ease, background-color 220ms ease;
+}
+
+.archives-page .archive-entry:is(:hover, :focus-within) {
+  transform: translateX(4px);
+  background: color-mix(in srgb, var(--color-paper-entry) 55%, transparent);
+}
+
+.archives-page .archive-entry:active {
+  transform: translateX(2px) scale(0.99);
+}
+
+.archives-page .entry-link {
+  border-radius: inherit;
+}
+
+.archives-page .archive-entry-title {
+  transition: color 220ms ease;
+}
+
+.archives-page .archive-entry:is(:hover, :focus-within) .archive-entry-title {
+  color: var(--color-paper-accent);
+}
+
+.archive-back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  padding-inline-start: 0;
+  transition: color 200ms ease, transform 200ms ease;
+}
+
+.archive-back-link:hover {
+  transform: translateX(-3px);
+}
+
+.archive-back-link:active,
+.archive-tags-retry:active {
+  transform: scale(0.97);
+}
+
+@media (max-width: 480px) {
+  .archive-tags .collapsible-trigger {
+    gap: 0.75rem;
+    padding: 1.25rem;
+  }
+
+  .archive-tags-body {
+    margin-inline: 1.25rem;
+    padding-block: 1rem 1.25rem;
+  }
+}
+
 /* 移动端顶部导航菜单展开/折叠双向平滑动画 */
 .mobile-nav-panel {
   display: grid;
@@ -2120,8 +2407,30 @@
 
   .mobile-nav-panel,
   .mobile-nav-content,
-  .mobile-nav-item {
+  .mobile-nav-item,
+  .collapsible-panel,
+  .collapsible-trigger,
+  .collapsible-chevron,
+  .archive-tags,
+  .archive-tags *,
+  .archives-page .archive-entry,
+  .archives-page .archive-entry-title,
+  .archives-page .archive-header-link,
+  .archive-back-link {
     transition: none !important;
+  }
+
+  .archive-tags .collapsible-indicator,
+  .archive-tags-list > li,
+  .archive-tag-chip,
+  .archive-tags-retry,
+  .archives-page .archive-entry,
+  .archive-back-link {
+    transform: none !important;
+  }
+
+  .archive-tags-skeleton .animate-pulse {
+    animation: none;
   }
   .post-card-editorial,
   .post-card-editorial .post-card-cover-blur img {

@@ -24,7 +24,7 @@ use crate::pages::not_found::NotFound;
 use crate::pages::post_detail::PostDetail;
 use crate::pages::register::Register;
 use crate::pages::search::Search;
-use crate::pages::tags::{TagDetail, Tags};
+use crate::pages::tags::TagDetail;
 use crate::theme::{use_theme_provider, ThemePreload};
 
 /// 全站路由枚举，每个变体对应一个页面路径
@@ -40,12 +40,10 @@ pub enum Route {
             /// 首页分页
             #[route("/page/:page")]
             HomePage { page: i32 },
-            /// 文章归档页
+            /// 文章归档与标签索引；兼容旧标签列表地址。
+            #[redirect("/tags", || Route::Archives {})]
             #[route("/archives")]
             Archives {},
-            /// 标签列表页
-            #[route("/tags")]
-            Tags {},
             /// 单个标签下的文章列表
             #[route("/tags/:tag")]
             TagDetail { tag: String },

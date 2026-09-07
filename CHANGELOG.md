@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **归档与标签合并**：归档页顶部新增默认展开的标签索引，支持平滑折叠、标签错峰显隐与悬停/按压反馈；统一导航入口、加载占位和标签详情返回链接，旧 `/tags` 地址永久重定向至 `/archives`。
 - **前端依赖升级**：更新 CodeMirror、Tiptap 3.31.3、Mermaid 11.17.2 与公共构建测试工具，迁移 Markdown 转义补丁；编辑器公式渲染与全局样式统一到 KaTeX 0.18.7。pnpm 升级至 12.3.4，Docker 与 CI 通过 npm 安装其原生二进制；Vitest 升级至 5.0.0，开发环境要求 Node 22.12+（22.x / 24.x / 26+）。
 
 ### Fixed

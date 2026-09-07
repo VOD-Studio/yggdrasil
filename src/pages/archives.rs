@@ -1,6 +1,7 @@
 //! 归档页面模块。
 //!
 //! 对应路由 `/archives`。
+//! 顶部标签索引复用可折叠卡片与 TagChip，独立加载，避免标签接口失败影响时间归档。
 //!
 //! 数据获取：通过 `use_server_future` 调用 `list_published_posts(1, 10000)` server function，
 //! 一次性拉取全部已发布文章，然后在内存中按发布日期的年、月进行分组展示。
@@ -10,10 +11,12 @@
 use dioxus::prelude::*;
 use dioxus::router::components::Link;
 
-use crate::api::posts::{list_published_posts, PostListResponse};
+use crate::api::posts::{list_published_posts, list_tags, PostListResponse, TagListResponse};
 use crate::components::empty_state::EmptyState;
 use crate::components::skeletons::archive_skeleton::ArchiveSkeleton;
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
+use crate::components::skeletons::tags_skeleton::TagsSkeleton;
+use crate::components::ui::{CollapsibleSettingsCard, TagChip, BTN_OUTLINE};
 use crate::models::post::PostListItem;
 use crate::router::Route;
 
@@ -101,13 +104,82 @@ fn group_posts(posts: &[PostListItem]) -> Vec<YearGroup> {
 #[component]
 pub fn Archives() -> Element {
     rsx! {
-        div { class: "animate-page-enter",
+        div { class: "archives-page animate-page-enter",
             header { class: "page-header mb-6",
                 h1 { class: "text-4xl font-bold text-paper-primary tracking-tight",
                     "归档"
                 }
+                p { class: "mt-3 text-sm leading-relaxed text-paper-secondary",
+                    "按时间回看文章，或从感兴趣的标签开始。"
+                }
             }
-            ArchivesContent {}
+            SuspenseBoundary {
+                fallback: move |_| rsx! { DelayedSkeleton { TagsSkeleton {} } },
+                ArchiveTags {}
+            }
+            SuspenseBoundary {
+                fallback: move |_| rsx! { DelayedSkeleton { ArchiveSkeleton { include_tags: false } } },
+                ArchivesContent {}
+            }
+        }
+    }
+}
+
+/// 标签云保持挂载，让收起也能完成高度与标签淡出动画。
+#[component]
+fn ArchiveTags() -> Element {
+    let mut tags_res = use_server_future(list_tags)?;
+    let tags_data = tags_res.read();
+    let summary = match &*tags_data {
+        Some(Ok(TagListResponse { tags })) => {
+            format!("{} 个标签 · 选择一个话题，发现相关文章", tags.len())
+        }
+        Some(Err(_)) => "标签暂时未能加载，仍可浏览下方归档".to_string(),
+        None => "正在整理标签…".to_string(),
+    };
+
+    rsx! {
+        CollapsibleSettingsCard {
+            title: "标签索引",
+            summary,
+            enabled: true,
+            default_open: true,
+            class: "archive-tags",
+            panel_id: "archive-tags-panel",
+            div { class: "archive-tags-body",
+                match &*tags_data {
+                    Some(Ok(TagListResponse { tags })) if !tags.is_empty() => rsx! {
+                        ul { class: "archive-tags-list", aria_label: "文章标签",
+                            for (index, tag) in tags.iter().enumerate() {
+                                li {
+                                    key: "{tag.id}",
+                                    style: "--tag-delay: {index.min(10) * 18}ms",
+                                    TagChip {
+                                        label: tag.name.clone(),
+                                        to: Route::TagDetail { tag: tag.name.clone() },
+                                        variant: "archive",
+                                        count: tag.post_count,
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    Some(Ok(_)) => rsx! {
+                        p { class: "text-sm text-paper-secondary py-2", "还没有标签，先看看下方的文章吧。" }
+                    },
+                    Some(Err(_)) => rsx! {
+                        button {
+                            r#type: "button",
+                            class: "{BTN_OUTLINE} archive-tags-retry",
+                            onclick: move |_| tags_res.restart(),
+                            "重新加载标签"
+                        }
+                    },
+                    None => rsx! {
+                        p { class: "text-sm text-paper-secondary py-2", role: "status", "正在加载标签…" }
+                    },
+                }
+            }
         }
     }
 }
@@ -155,7 +227,7 @@ fn ArchivesContent() -> Element {
         }
         None => {
             rsx! {
-                DelayedSkeleton { ArchiveSkeleton {} }
+                DelayedSkeleton { ArchiveSkeleton { include_tags: false } }
             }
         }
     }

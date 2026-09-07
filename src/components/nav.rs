@@ -13,7 +13,7 @@ use crate::router::Route;
 /// 参数：
 /// - `route`：当前路由
 ///
-/// 返回：包含首页、归档、标签、关于的导航配置数组。
+/// 返回：包含首页、归档（含标签）、友链、关于的导航配置数组。
 /// 搜索以图标形式置于 Header 右侧（主题切换左边），不在此文本导航中。
 pub fn build_nav_items(route: Route) -> Vec<NavItemConfig> {
     vec![
@@ -25,12 +25,7 @@ pub fn build_nav_items(route: Route) -> Vec<NavItemConfig> {
         NavItemConfig {
             route: Route::Archives {},
             label: "归档",
-            is_active: matches!(route, Route::Archives {}),
-        },
-        NavItemConfig {
-            route: Route::Tags {},
-            label: "标签",
-            is_active: matches!(route, Route::Tags {}) || matches!(route, Route::TagDetail { .. }),
+            is_active: matches!(route, Route::Archives {} | Route::TagDetail { .. }),
         },
         NavItemConfig {
             route: Route::Friends {},

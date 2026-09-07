@@ -382,7 +382,7 @@ pub fn Tooltip(
         }
     }
 }
-/// 可折叠的后台设置卡片外壳。
+/// 可折叠卡片外壳，默认使用后台设置样式，前台可通过 `class` 定制外观。
 ///
 /// 复用回收站与系统设置的同一套交互：状态指示灯、摘要标题、旋转箭头，以及
 /// `grid-template-rows` 的 0fr↔1fr 平滑展开。调用方通过 `children` 提供面板内容，
@@ -394,6 +394,8 @@ pub fn Tooltip(
 /// - `enabled`：状态指示灯是否使用主题色
 /// - `children`：折叠面板内容（调用方负责内容内边距与分隔线）
 /// - `on_toggle`：可选的展开/收起回调
+/// - `default_open`：首次挂载时是否展开
+/// - `class` / `panel_id`：可选的外观类名与面板 ID（连接 aria-controls）
 #[component]
 pub fn CollapsibleSettingsCard(
     title: String,
@@ -401,8 +403,11 @@ pub fn CollapsibleSettingsCard(
     enabled: bool,
     children: Element,
     #[props(default)] on_toggle: Option<EventHandler<()>>,
+    #[props(default)] default_open: bool,
+    #[props(default)] class: String,
+    #[props(default)] panel_id: Option<String>,
 ) -> Element {
-    let mut open = use_signal(|| false);
+    let mut open = use_signal(|| default_open);
     let chevron_rotate = if open() { "rotate-180" } else { "" };
     let dot_class = if enabled {
         "w-2 h-2 rounded-full bg-paper-accent shadow-[0_0_0_3px_rgba(64,160,43,0.15)]"
@@ -411,26 +416,30 @@ pub fn CollapsibleSettingsCard(
     };
 
     rsx! {
-        div { class: "rounded-2xl border border-paper-border overflow-hidden bg-paper-entry",
+        div {
+            class: "collapsible-card rounded-2xl border border-paper-border overflow-hidden bg-paper-entry {class}",
+            "data-open": "{open()}",
             button {
                 r#type: "button",
-                class: "w-full flex items-center gap-3 px-5 py-4 text-left cursor-pointer hover:bg-paper-theme focus:outline-none focus-visible:ring-2 focus-visible:ring-paper-accent/40",
+                class: "collapsible-trigger w-full flex items-center gap-3 px-5 py-4 text-left cursor-pointer hover:bg-paper-theme focus:outline-none focus-visible:ring-2 focus-visible:ring-paper-accent/40",
                 aria_expanded: "{open()}",
+                aria_controls: panel_id.clone(),
                 onclick: move |_| {
                     open.set(!open());
                     if let Some(on_toggle) = on_toggle {
                         on_toggle.call(());
                     }
                 },
-                div { class: "w-2 flex-shrink-0 flex items-center justify-center",
+                div { class: "collapsible-indicator w-2 flex-shrink-0 flex items-center justify-center", aria_hidden: "true",
                     div { class: "{dot_class}" }
                 }
-                div { class: "flex-1 min-w-0",
-                    div { class: "text-sm font-medium text-paper-primary", "{title}" }
-                    div { class: "text-xs text-paper-secondary mt-0.5 truncate", "{summary}" }
+                div { class: "collapsible-heading flex-1 min-w-0",
+                    div { class: "collapsible-title text-sm font-medium text-paper-primary", "{title}" }
+                    div { class: "collapsible-summary text-xs text-paper-secondary mt-0.5 truncate", "{summary}" }
                 }
                 svg {
-                    class: "w-4 h-4 text-paper-secondary transition-transform duration-200 flex-shrink-0 {chevron_rotate}",
+                    class: "collapsible-chevron w-4 h-4 text-paper-secondary transition-transform duration-200 flex-shrink-0 {chevron_rotate}",
+                    aria_hidden: "true",
                     view_box: "0 0 24 24",
                     fill: "none",
                     stroke: "currentColor",
@@ -443,8 +452,10 @@ pub fn CollapsibleSettingsCard(
                 }
             }
             div {
-                class: "grid transition-all duration-300 ease-in-out",
-                style: if open() { "grid-template-rows: 1fr; opacity: 1; pointer-events: auto;" } else { "grid-template-rows: 0fr; opacity: 0; pointer-events: none;" },
+                id: panel_id,
+                class: "collapsible-panel",
+                // 常驻 DOM 保留双向动画；收起时立即移出键盘与辅助技术的交互范围。
+                inert: if open() { None } else { Some("") },
                 div { class: "overflow-hidden min-h-0", {children} }
             }
         }
@@ -833,17 +844,17 @@ pub fn LoadingButton(
     }
 }
 
-/// 标签芯片组件：统一的标签可视化（标签云软底 / 卡片描边两种变体）。
+/// 标签芯片组件：统一归档索引、软底标签、卡片胶囊与文字链接的展示。
 ///
-/// 收敛原本散落在标签云（`tags.rs` 软底圆角）与文章卡片（`post_card.rs` 描边胶囊）
+/// 收敛原本散落在标签云与文章卡片（`post_card.rs` 描边胶囊）
 /// 的两套手写 `Link` 样式——两者都是跳转到 [`Route::TagDetail`] 的可点击标签，
 /// 仅视觉变体不同，故合并为一个组件 + `variant` prop。
 ///
 /// Props：
 /// - `label`：标签名
 /// - `to`：跳转目标路由（泛型，调用方传入具体 `Route` 变体，原子层不绑定 app 路由类型）
-/// - `variant`：`"solid"`（标签云）/ `"outline"`（卡片胶囊）/ `"text"`（紧凑文章流）
-/// - `count`：可选的文章计数（仅 `solid` 渲染为 `<sup>`）
+/// - `variant`：`"archive"`（归档标签索引）/ `"solid"`（软底）/ `"outline"`（卡片胶囊）/ `"text"`（紧凑文章流）
+/// - `count`：可选的文章计数，归档变体使用独立计数徽标，其余使用 `<sup>`
 /// - `stop_propagation`：是否阻止点击冒泡（卡片内覆盖层链接场景需要，见 `PostCard`）
 #[component]
 pub fn TagChip<R: Routable + Clone + PartialEq + 'static>(
@@ -854,6 +865,7 @@ pub fn TagChip<R: Routable + Clone + PartialEq + 'static>(
     #[props(default)] stop_propagation: bool,
 ) -> Element {
     let class = match variant {
+        "archive" => "archive-tag-chip",
         "solid" => "inline-flex items-center px-3 py-1.5 text-base font-medium bg-paper-accent-soft text-paper-accent rounded-lg hover:bg-paper-accent hover:text-white transition-all duration-200",
         "text" => "inline-flex items-center py-1 text-paper-secondary hover:text-paper-primary underline decoration-paper-border underline-offset-4 hover:decoration-paper-accent transition-colors focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-paper-accent",
         _ => "inline-flex items-center px-3 py-1 rounded-full border border-paper-border hover:bg-paper-accent hover:border-paper-accent hover:text-white transition-all duration-200",
@@ -867,9 +879,18 @@ pub fn TagChip<R: Routable + Clone + PartialEq + 'static>(
                     evt.stop_propagation();
                 }
             },
-            "{label}"
+            if variant == "archive" {
+                span { class: "archive-tag-mark", aria_hidden: "true", "#" }
+                span { class: "archive-tag-name", "{label}" }
+            } else {
+                "{label}"
+            }
             if let Some(c) = count {
-                sup { class: "ml-1 text-sm text-paper-secondary", "{c}" }
+                if variant == "archive" {
+                    span { class: "archive-tag-count", aria_label: "{c} 篇文章", "{c}" }
+                } else {
+                    sup { class: "ml-1 text-sm text-paper-secondary", "{c}" }
+                }
             }
         }
     }

@@ -1,11 +1,10 @@
-//! 标签页面模块。
+//! 标签详情页面模块，标签索引已合并到归档页面。
 //!
 //! 对应路由：
-//! - `/tags`：标签云，展示所有标签及关联文章数量。
+//! - `/tags`：由路由层重定向到 `/archives`。
 //! - `/tags/:tag`：标签详情页，展示指定标签下的已发布文章列表。
 //!
 //! 数据获取：
-//! - 标签云通过 `use_server_future(list_tags)` 获取全部标签信息。
 //! - 标签详情通过 `use_server_future` 调用 `get_posts_by_tag(tag)`
 //!   获取该标签下的全部已发布文章（不分页）。
 //!   在 `wasm32` 目标下，这些 server function 的函数体被替换为向服务端端点发起 HTTP POST 请求的客户端存根；
@@ -13,91 +12,13 @@
 
 use dioxus::prelude::*;
 
-use crate::api::posts::{get_posts_by_tag, list_tags, PostListResponse, TagListResponse};
+use crate::api::posts::{get_posts_by_tag, PostListResponse};
 use crate::components::empty_state::EmptyState;
 use crate::components::post_card::PostCard;
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
-use crate::components::skeletons::tags_skeleton::{TagDetailSkeleton, TagsSkeleton};
-use crate::components::ui::TagChip;
+use crate::components::skeletons::tags_skeleton::TagDetailSkeleton;
+use crate::components::ui::BTN_GHOST;
 use crate::router::Route;
-
-/// 标签云页面组件，对应路由 `/tags`。
-///
-/// 渲染页面标题，并委托给 `TagsContent` 展示所有标签。
-#[component]
-pub fn Tags() -> Element {
-    rsx! {
-        div { class: "animate-page-enter",
-            header { class: "page-header mb-6",
-                h1 { class: "text-4xl font-bold text-paper-primary tracking-tight",
-                    "标签"
-                }
-            }
-            TagsContent {}
-        }
-    }
-}
-
-/// 标签云内容组件。
-///
-/// 通过 `use_server_future(list_tags)` 异步获取标签列表；
-/// 成功时渲染标签总数、文章总数以及每个标签的链接。
-#[component]
-fn TagsContent() -> Element {
-    let tags_res = use_server_future(list_tags)?;
-
-    // 将结果映射为仅包含标签列表的形式。
-    let tags_data = tags_res.read().as_ref().map(|r| match r {
-        Ok(TagListResponse { tags }) => Ok(tags.clone()),
-        Err(e) => Err(e.to_string()),
-    });
-
-    match tags_data {
-        Some(Ok(tags)) => {
-            if tags.is_empty() {
-                rsx! {
-                    EmptyState {
-                        title: "暂无标签",
-                        description: "当前还没有任何标签。",
-                    }
-                }
-            } else {
-                let total = tags.iter().map(|t| t.post_count).sum::<i64>();
-                rsx! {
-                    div { class: "mt-2 text-base text-paper-secondary",
-                        "共 "
-                        span { class: "font-medium text-paper-primary", "{tags.len()}" }
-                        " 个标签，"
-                        span { class: "font-medium text-paper-primary", "{total}" }
-                        " 篇文章"
-                    }
-                    ul { class: "flex flex-wrap gap-4 mt-6",
-                        for tag in tags {
-                            li { key: "{tag.name}",
-                                TagChip {
-                                    label: tag.name.clone(),
-                                    to: Route::TagDetail { tag: tag.name.clone() },
-                                    variant: "solid",
-                                    count: tag.post_count,
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        Some(Err(_)) => {
-            rsx! {
-                div { class: "text-center text-red-500 dark:text-red-400 py-20", "加载失败" }
-            }
-        }
-        _ => {
-            rsx! {
-                DelayedSkeleton { TagsSkeleton {} }
-            }
-        }
-    }
-}
 
 /// 标签详情页面组件，对应路由 `/tags/:tag`。
 ///
@@ -107,6 +28,12 @@ pub fn TagDetail(tag: String) -> Element {
     rsx! {
         div { class: "animate-page-enter",
             header { class: "page-header mb-6",
+                Link {
+                    class: "{BTN_GHOST} archive-back-link",
+                    to: Route::Archives {},
+                    span { aria_hidden: "true", "←" }
+                    "归档与标签"
+                }
                 h1 { class: "text-4xl font-bold text-paper-primary tracking-tight",
                     "{tag}"
                 }

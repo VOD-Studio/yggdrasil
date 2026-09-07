@@ -1,38 +1,40 @@
 //! 标签相关骨架屏
 //!
-//! 提供标签列表页与标签详情页的加载占位组件。
+//! 提供归档页标签索引与标签详情页的加载占位组件。
 
 use dioxus::prelude::*;
 
-use crate::components::skeletons::atoms::SkeletonBox;
+use crate::components::skeletons::atoms::{SkeletonBox, SkeletonCard};
 use crate::components::skeletons::post_card_skeleton::PostCardSkeleton;
 
-/// 标签列表页骨架屏组件。
+/// 归档页标签索引骨架屏组件。
 ///
-/// 结构：统计行（"共 N 个标签，M 篇文章"）+ 标签云（flex wrap 的 pill 列表）。
+/// 结构：图标与摘要 + 标签胶囊，匹配默认展开的折叠卡片。
 #[component]
 pub fn TagsSkeleton() -> Element {
     rsx! {
-        div {
-            // 统计行占位
-            div { class: "mt-2 mb-6",
-                SkeletonBox { class: "h-5 w-48 rounded" }
+        SkeletonCard { class: "archive-tags-skeleton mb-9 p-5 sm:p-6",
+            div { class: "flex items-center gap-3 mb-5",
+                SkeletonBox { class: "h-11 w-11 shrink-0 rounded-2xl" }
+                div { class: "flex-1 min-w-0",
+                    SkeletonBox { class: "h-5 w-24 rounded mb-2" }
+                    SkeletonBox { class: "h-3 w-48 max-w-full rounded" }
+                }
+                SkeletonBox { class: "h-4 w-4 rounded" }
             }
 
-            // 标签云占位 (flex wrap gap-4)
-            div { class: "flex flex-wrap gap-4 mt-6",
-                // 生成 24 个不同宽度的标签 pill
-                for i in 0..24 {
+            div { class: "flex flex-wrap gap-2.5 border-t border-paper-border/50 pt-5",
+                for i in 0..8 {
                     SkeletonBox {
                         key: "{i}",
-                        class: "h-8 rounded-lg",
+                        class: "h-11 rounded-full",
                         style: match i % 6 {
-                            0 => "width: 60px;",
-                            1 => "width: 80px;",
-                            2 => "width: 50px;",
-                            3 => "width: 100px;",
-                            4 => "width: 70px;",
-                            _ => "width: 90px;",
+                            0 => "width: 100px;",
+                            1 => "width: 120px;",
+                            2 => "width: 90px;",
+                            3 => "width: 140px;",
+                            4 => "width: 110px;",
+                            _ => "width: 130px;",
                         },
                     }
                 }

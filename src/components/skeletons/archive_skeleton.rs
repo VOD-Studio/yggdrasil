@@ -1,18 +1,23 @@
 //! 归档页骨架屏
 //!
-//! 在归档数据加载期间展示按年份/月份分组的文章列表占位。
+//! 在归档数据加载期间展示标签索引与按年份/月份分组的文章列表占位。
 
 use crate::components::skeletons::atoms::*;
+use crate::components::skeletons::tags_skeleton::TagsSkeleton;
 use dioxus::prelude::*;
 
 /// 归档页骨架屏组件。
 ///
-/// 结构：统计行（"共 N 篇文章"）+ 年份标题 + 月份标题 + 文章条目列表。
+/// 结构：可选标签索引 + 统计行 + 年份标题 + 月份标题 + 文章条目列表。
+/// 页面内部的独立文章加载边界传 `include_tags: false`，避免重复标签卡片。
 /// 模拟 2 个年份，每个年份 2 个月，每个月 3 篇文章。
 #[component]
-pub fn ArchiveSkeleton() -> Element {
+pub fn ArchiveSkeleton(#[props(default = true)] include_tags: bool) -> Element {
     rsx! {
         div {
+            if include_tags {
+                TagsSkeleton {}
+            }
             // 统计行占位
             div { class: "mt-2 mb-6",
                 SkeletonBox { class: "h-5 w-32 rounded" }

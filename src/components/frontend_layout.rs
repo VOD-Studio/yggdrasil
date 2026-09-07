@@ -15,7 +15,7 @@ use crate::components::skeletons::friends_skeleton::FriendsSkeleton;
 use crate::components::skeletons::home_skeleton::HomeSkeleton;
 use crate::components::skeletons::post_detail_skeleton::PostDetailSkeleton;
 use crate::components::skeletons::search_skeleton::SearchSkeleton;
-use crate::components::skeletons::tags_skeleton::TagsSkeleton;
+use crate::components::skeletons::tags_skeleton::TagDetailSkeleton;
 use crate::router::Route;
 use crate::theme::ThemeToggle;
 
@@ -25,8 +25,8 @@ fn route_skeleton(route: &Route) -> Element {
         Route::Archives {} => rsx! {
             DelayedSkeleton { ArchiveSkeleton {} }
         },
-        Route::Tags {} | Route::TagDetail { .. } => rsx! {
-            DelayedSkeleton { TagsSkeleton {} }
+        Route::TagDetail { .. } => rsx! {
+            DelayedSkeleton { TagDetailSkeleton {} }
         },
         Route::Friends {} => rsx! {
             DelayedSkeleton { FriendsSkeleton {} }
