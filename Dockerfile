@@ -76,7 +76,7 @@ RUN ARCH="$(dpkg --print-architecture)" \
     && curl -fsSL "${NODE_SRC}/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.gz" \
         | tar -xz -C /usr/local --strip-components=1 \
     && corepack enable \
-    && corepack prepare pnpm@11.8.0 --activate
+    && corepack prepare pnpm@11.26.0 --activate
 
 # Configure npm/pnpm registry (CN_MIRROR only — default is registry.npmjs.org).
 RUN if [ "$CN_MIRROR" = "true" ]; then \
@@ -182,7 +182,7 @@ WORKDIR /build
 # only links deps for the manifests it sees and `pnpm -r run build` fails later
 # (e.g. mermaid-renderer "Cannot find module 'mermaid'").
 # `pnpm-workspace.yaml` declares a patched dep (@tiptap/markdown) pointing at
-# `patches/@tiptap__markdown@3.27.3.patch`, so the patches/ tree must be present
+# `patches/@tiptap__markdown@3.31.3.patch`, so the patches/ tree must be present
 # before `pnpm install --frozen-lockfile` or it fails with ENOENT on the patch.
 COPY libs/package.json libs/pnpm-workspace.yaml libs/pnpm-lock.yaml libs/
 COPY libs/patches/                         libs/patches/

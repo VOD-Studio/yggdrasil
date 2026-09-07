@@ -146,7 +146,7 @@ jobs:
         with:
           node-version: '22'
 
-      # package.json 的 packageManager 锁定 pnpm@11.8.0，corepack 按它激活。
+      # package.json 的 packageManager 锁定 pnpm@11.26.0，corepack 按它激活。
       - name: Enable pnpm via corepack
         run: corepack enable pnpm
         env:

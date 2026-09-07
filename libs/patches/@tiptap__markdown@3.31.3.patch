@@ -1,0 +1,219 @@
+diff --git a/dist/index.cjs b/dist/index.cjs
+index e4a07ed..9719520 100644
+--- a/dist/index.cjs
++++ b/dist/index.cjs
+@@ -330,6 +330,9 @@ function htmlContainsUnrecognizedTag(html, schemaTags) {
+ }
+ //#endregion
+ //#region src/MarkdownManager.ts
++function encodeLimitedHtmlEntities(text) {
++  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;')
++}
+ var MarkdownManager = class {
+ 	/**
+ 	* Create a MarkdownManager.
+@@ -1024,7 +1027,7 @@ var MarkdownManager = class {
+ 	*/
+ 	encodeTextForMarkdown(text, node, parentNode) {
+ 		if ((parentNode === null || parentNode === void 0 ? void 0 : parentNode.type) != null && this.codeTypes.has(parentNode.type) || (node.marks || []).some((m) => this.codeTypes.has(typeof m === "string" ? m : m.type))) return text;
+-		return this.escapeMarkdownSyntax((0, _tiptap_core.encodeHtmlEntities)(text));
++		return this.escapeMarkdownSyntax(encodeLimitedHtmlEntities(text));
+ 	}
+ 	/**
+ 	* Backslash-escape characters that have special meaning in markdown inline
+@@ -1036,7 +1039,31 @@ var MarkdownManager = class {
+ 	* (`encodeTextForMarkdown`) via the existing `isInsideCode` guard.
+ 	*/
+ 	escapeMarkdownSyntax(text) {
+-		return text.replace(/([\\`*_[\]~])/g, "\\$1");
++		// CommonMark 标点集；CJK/字母/数字属 "other"。
++		const punct = '!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~'
++		let result = ''
++		for (let i = 0; i < text.length; i++) {
++			const ch = text[i]
++			if (ch === '*' || ch === '_') {
++				const prev = i > 0 ? text[i - 1] : ''
++				const next = i < text.length - 1 ? text[i + 1] : ''
++				const leftSpace = prev === '' || /\s/.test(prev)
++				const leftPunct = punct.includes(prev)
++				const leftOther = !leftSpace && !leftPunct
++				const rightSpace = next === '' || /\s/.test(next)
++				const rightPunct = punct.includes(next)
++				const rightOther = !rightSpace && !rightPunct
++				// 可作开边界：(left∈{start,space,punct}) 且 (right∈other)
++				// 可作闭边界：(right∈{start,space,punct}) 且 (left∈other)
++				const isBoundary = ((leftSpace || leftPunct) && rightOther) || ((rightSpace || rightPunct) && leftOther)
++				result += isBoundary ? '\\' + ch : ch
++			} else if (ch === '`' || ch === '[' || ch === ']' || ch === '~' || ch === '\\') {
++				result += '\\' + ch
++			} else {
++				result += ch
++			}
++		}
++		return result
+ 	}
+ 	renderNodeToMarkdown(node, parentNode, index = 0, level = 0, meta = {}) {
+ 		var _handler$renderMarkdo;
+diff --git a/dist/index.js b/dist/index.js
+index 76a9e77..8ef0c32 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -1,4 +1,4 @@
+-import { Extension, attrsEqual, callOrReturn, commands, decodeHtmlEntities, encodeHtmlEntities, flattenExtensions, generateJSON, getExtensionField, getSchema, marksEqual, sortExtensions } from "@tiptap/core";
++import { Extension, attrsEqual, callOrReturn, commands, decodeHtmlEntities, flattenExtensions, generateJSON, getExtensionField, getSchema, marksEqual, sortExtensions } from "@tiptap/core";
+ import { marked } from "marked";
+ //#region src/utils.ts
+ /**
+@@ -329,6 +329,9 @@ function htmlContainsUnrecognizedTag(html, schemaTags) {
+ }
+ //#endregion
+ //#region src/MarkdownManager.ts
++function encodeLimitedHtmlEntities(text) {
++  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;')
++}
+ var MarkdownManager = class {
+ 	/**
+ 	* Create a MarkdownManager.
+@@ -1023,7 +1026,7 @@ var MarkdownManager = class {
+ 	*/
+ 	encodeTextForMarkdown(text, node, parentNode) {
+ 		if ((parentNode === null || parentNode === void 0 ? void 0 : parentNode.type) != null && this.codeTypes.has(parentNode.type) || (node.marks || []).some((m) => this.codeTypes.has(typeof m === "string" ? m : m.type))) return text;
+-		return this.escapeMarkdownSyntax(encodeHtmlEntities(text));
++		return this.escapeMarkdownSyntax(encodeLimitedHtmlEntities(text));
+ 	}
+ 	/**
+ 	* Backslash-escape characters that have special meaning in markdown inline
+@@ -1035,7 +1038,31 @@ var MarkdownManager = class {
+ 	* (`encodeTextForMarkdown`) via the existing `isInsideCode` guard.
+ 	*/
+ 	escapeMarkdownSyntax(text) {
+-		return text.replace(/([\\`*_[\]~])/g, "\\$1");
++		// CommonMark 标点集；CJK/字母/数字属 "other"。
++		const punct = '!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~'
++		let result = ''
++		for (let i = 0; i < text.length; i++) {
++			const ch = text[i]
++			if (ch === '*' || ch === '_') {
++				const prev = i > 0 ? text[i - 1] : ''
++				const next = i < text.length - 1 ? text[i + 1] : ''
++				const leftSpace = prev === '' || /\s/.test(prev)
++				const leftPunct = punct.includes(prev)
++				const leftOther = !leftSpace && !leftPunct
++				const rightSpace = next === '' || /\s/.test(next)
++				const rightPunct = punct.includes(next)
++				const rightOther = !rightSpace && !rightPunct
++				// 可作开边界：(left∈{start,space,punct}) 且 (right∈other)
++				// 可作闭边界：(right∈{start,space,punct}) 且 (left∈other)
++				const isBoundary = ((leftSpace || leftPunct) && rightOther) || ((rightSpace || rightPunct) && leftOther)
++				result += isBoundary ? '\\' + ch : ch
++			} else if (ch === '`' || ch === '[' || ch === ']' || ch === '~' || ch === '\\') {
++				result += '\\' + ch
++			} else {
++				result += ch
++			}
++		}
++		return result
+ 	}
+ 	renderNodeToMarkdown(node, parentNode, index = 0, level = 0, meta = {}) {
+ 		var _handler$renderMarkdo;
+diff --git a/src/MarkdownManager.ts b/src/MarkdownManager.ts
+index 7a28740..7049e9a 100644
+--- a/src/MarkdownManager.ts
++++ b/src/MarkdownManager.ts
+@@ -13,7 +13,6 @@ import {
+   attrsEqual,
+   callOrReturn,
+   decodeHtmlEntities,
+-  encodeHtmlEntities,
+   flattenExtensions,
+   generateJSON,
+   getExtensionField,
+@@ -35,6 +34,19 @@ import {
+ } from './utils.js'
+ import { htmlContainsUnrecognizedTag } from './utils/htmlTagDetection.js'
+ 
++/**
++ * Encode only `<` and `&` as HTML entities. Patch replacement for the
++ * `encodeHtmlEntities` from `@tiptap/core`, which also encodes `>`.
++ *
++ * `>` inside a text node is never a blockquote start (block tokenizer consumes
++ * line-leading `>` before text nodes exist), so encoding it only produces
++ * `&gt;` that re-imports as literal `&gt;` text — the `&gt;` corruption.
++ * `<` and `&` still need encoding to avoid being parsed as tags/entities.
++ */
++function encodeLimitedHtmlEntities(text: string): string {
++  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;')
++}
++
+ export class MarkdownManager {
+   private markedInstance: typeof marked
+   private activeParseLexer: Lexer | null = null
+@@ -1140,6 +1152,12 @@ export class MarkdownManager {
+    * (code mark or code-block parent) where literal characters should be preserved.
+    * Also backslash-escape markdown-significant characters in non-code text to
+    * prevent them from being misinterpreted as formatting delimiters.
++   *
++   * Patch: drop `>` from HTML entity encoding (only encode `<` and `&`).
++   * A `>` inside a text node never starts a blockquote (line-start `>` is
++   * consumed by the block tokenizer before reaching text nodes), so encoding
++   * it only produces `&gt;` that re-imports as literal text — the root cause of
++   * the `&gt;` corruption.
+    */
+   private encodeTextForMarkdown(text: string, node: JSONContent, parentNode?: JSONContent): string {
+     const isInsideCode =
+@@ -1150,7 +1168,7 @@ export class MarkdownManager {
+       return text
+     }
+ 
+-    return this.escapeMarkdownSyntax(encodeHtmlEntities(text))
++    return this.escapeMarkdownSyntax(encodeLimitedHtmlEntities(text))
+   }
+ 
+   /**
+@@ -1158,12 +1176,44 @@ export class MarkdownManager {
+    * syntax. This prevents literal characters in text nodes from being
+    * misinterpreted as formatting delimiters when the output is parsed again.
+    *
+-   * The set covers the most common inline markdown syntax characters.
++   * Patch: CommonMark direction-aware escaping for `*` and `_`. Instead of
++   * blindly escaping every `*`/`_` (which corrupts intra-word underscores like
++   * `content_html` → `content\_html`), only escape positions that would be
++   * consumed as emphasis open/close boundaries by a CommonMark parser. An
++   * emphasis boundary requires one flank to be {start, whitespace, punctuation}
++   * and the other to be a non-space non-punct char (letters / CJK / digits).
++   * Intra-word `*`/`_` (both flanks "other") is left alone.
++   * Structural characters (` ` [ ] ~ \) stay fully escaped — they are never
++   * emphasis boundaries but are structurally significant.
+    * Characters inside code blocks/code marks are skipped by the caller
+    * (`encodeTextForMarkdown`) via the existing `isInsideCode` guard.
+    */
+   private escapeMarkdownSyntax(text: string): string {
+-    return text.replace(/([\\`*_[\]~])/g, '\\$1')
++    // CommonMark 标点集；CJK/字母/数字属 "other"。
++    const punct = '!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~'
++    let result = ''
++    for (let i = 0; i < text.length; i++) {
++      const ch = text[i]
++      if (ch === '*' || ch === '_') {
++        const prev = i > 0 ? text[i - 1] : ''
++        const next = i < text.length - 1 ? text[i + 1] : ''
++        const leftSpace = prev === '' || /\s/.test(prev)
++        const leftPunct = punct.includes(prev)
++        const leftOther = !leftSpace && !leftPunct
++        const rightSpace = next === '' || /\s/.test(next)
++        const rightPunct = punct.includes(next)
++        const rightOther = !rightSpace && !rightPunct
++        // 可作开边界：(left∈{start,space,punct}) 且 (right∈other)
++        // 可作闭边界：(right∈{start,space,punct}) 且 (left∈other)
++        const isBoundary = ((leftSpace || leftPunct) && rightOther) || ((rightSpace || rightPunct) && leftOther)
++        result += isBoundary ? '\\' + ch : ch
++      } else if (ch === '`' || ch === '[' || ch === ']' || ch === '~' || ch === '\\') {
++        result += '\\' + ch
++      } else {
++        result += ch
++      }
++    }
++    return result
+   }
+ 
+   renderNodeToMarkdown(

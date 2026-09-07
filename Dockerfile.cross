@@ -111,7 +111,7 @@ RUN ARCH="$(dpkg --print-architecture)" \
     && curl -fsSL "${NODE_SRC}/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.gz" \
         | tar -xz -C /usr/local --strip-components=1 \
     && corepack enable \
-    && corepack prepare pnpm@11.8.0 --activate
+    && corepack prepare pnpm@11.26.0 --activate
 
 # Configure npm/pnpm registry (CN_MIRROR only — default is registry.npmjs.org).
 # pnpm 11 enables verify-deps-before-run by default: before every `pnpm run` it

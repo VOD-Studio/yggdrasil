@@ -26,7 +26,8 @@
 }
 
 /* Placeholder - shown when document has only one empty paragraph */
-.tiptap-editor .ProseMirror
+.tiptap-editor
+  .ProseMirror
   p:first-child:last-child:has(br.ProseMirror-trailingBreak:only-child)::before {
   content: '在此输入内容...';
   float: left;

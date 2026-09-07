@@ -1,4 +1,7 @@
 packages:
   - '*'
+# 本次统一采用刚发布的 KaTeX 0.18.7，仅豁免这个版本的发布时间限制。
+minimumReleaseAgeExclude:
+  - katex@0.18.7
 patchedDependencies:
-  '@tiptap/markdown@3.27.3': patches/@tiptap__markdown@3.27.3.patch
+  '@tiptap/markdown@3.31.3': patches/@tiptap__markdown@3.31.3.patch
