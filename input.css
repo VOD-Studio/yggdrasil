@@ -276,73 +276,6 @@
 }
 
 @layer components {
-  /* 首页：介绍侧栏 + 文章流。只扩展首页，详情页仍沿用阅读宽度。 */
-  .home-layout {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    align-items: start;
-    gap: 2.5rem;
-  }
-  .home-intro {
-    min-width: 0;
-    padding-block: 0.75rem 1rem;
-  }
-  .home-intro-kicker {
-    margin-bottom: 1.5rem;
-    color: var(--color-paper-secondary);
-    font-size: 0.8125rem;
-  }
-  .home-intro-title {
-    color: var(--color-paper-primary);
-    font-size: clamp(2rem, 3.5vw, 2.5rem);
-    font-weight: 700;
-    line-height: 1.3;
-    letter-spacing: -0.05em;
-  }
-  .home-intro-title span {
-    display: block;
-    color: color-mix(in srgb, var(--color-paper-accent) 90%, var(--color-paper-primary));
-  }
-  .home-intro-description {
-    max-width: 22rem;
-    margin-block: 1.25rem 1.75rem;
-    color: var(--color-paper-secondary);
-    font-size: 0.875rem;
-    line-height: 1.9;
-  }
-  .home-search-link {
-    display: inline-flex;
-    align-items: center;
-    min-height: 44px;
-    white-space: nowrap;
-  }
-  .home-search-link:focus-visible,
-  .home-back-link:focus-visible {
-    outline: 2px solid var(--color-paper-accent);
-    outline-offset: 4px;
-  }
-  .home-feed {
-    min-width: 0;
-  }
-  .home-feed-heading {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 1rem;
-    padding: 0 2rem 1.25rem;
-    color: var(--color-paper-secondary);
-    font-size: 0.8125rem;
-  }
-  .home-feed-heading p {
-    font-weight: 600;
-    color: var(--color-paper-primary);
-  }
-  .home-feed-heading span {
-    font-variant-numeric: tabular-nums;
-  }
-  .home-page-heading .home-intro-title {
-    margin-bottom: 1.75rem;
-  }
   .frontend-pagination {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
@@ -397,42 +330,6 @@
     margin: 2rem 2rem 0;
     border-radius: var(--radius-card);
   }
-  @media (max-width: 1023px) {
-    .home-layout {
-      gap: 1.5rem;
-    }
-    .home-intro {
-      padding-block: 0.25rem 0;
-    }
-    .home-intro-kicker {
-      margin-bottom: 1rem;
-    }
-    .home-intro-title span {
-      display: inline-block;
-    }
-    .home-intro-description {
-      max-width: 40rem;
-      margin-block: 1rem 1.25rem;
-    }
-    .home-page-heading {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      align-items: center;
-      gap: 0.5rem 1rem;
-    }
-    .home-page-heading .home-intro-kicker {
-      margin: 0;
-    }
-    .home-page-heading .home-intro-title {
-      grid-column: 1;
-      margin: 0;
-      font-size: 1.75rem;
-    }
-    .home-page-heading .home-back-link {
-      grid-column: 2;
-      grid-row: 1 / 3;
-    }
-  }
   @media (min-width: 640px) {
     .post-card-compact:has(> .post-card-cover) {
       display: grid;
@@ -450,16 +347,6 @@
     }
     .post-card-compact .blur-img.post-card-cover-blur {
       aspect-ratio: 4 / 3;
-    }
-  }
-  @media (min-width: 1024px) {
-    .home-layout {
-      grid-template-columns: 16rem minmax(0, 1fr);
-      gap: 4rem;
-    }
-    .home-intro {
-      position: sticky;
-      top: 7rem;
     }
   }
 
@@ -2237,8 +2124,7 @@
     transition: none !important;
   }
   .post-card-editorial,
-  .post-card-editorial .post-card-cover-blur img,
-  .home-search-link {
+  .post-card-editorial .post-card-cover-blur img {
     transition: none;
   }
   .post-card-editorial:hover .post-card-cover-blur img {
