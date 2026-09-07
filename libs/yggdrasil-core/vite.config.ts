@@ -3,10 +3,10 @@ import { defineConfig } from 'vite';
 
 export default defineConfig({
   build: {
-    outDir: resolve(__dirname, '../../public/yggdrasil-core'),
+    outDir: resolve(import.meta.dirname, '../../public/yggdrasil-core'),
     emptyOutDir: true,
     lib: {
-      entry: resolve(__dirname, 'src/index.ts'),
+      entry: resolve(import.meta.dirname, 'src/index.ts'),
       name: 'YggdrasilCore',
       fileName: () => 'yggdrasil-core.js',
       formats: ['iife'],

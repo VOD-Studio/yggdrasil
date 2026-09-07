@@ -6,19 +6,14 @@ import { defineConfig } from 'vite';
 // 输出到 public/mermaid/mermaid.js，dx build 会作为静态资源拷贝。
 export default defineConfig({
   build: {
-    outDir: resolve(__dirname, '../../public/mermaid'),
+    outDir: resolve(import.meta.dirname, '../../public/mermaid'),
     emptyOutDir: true,
     lib: {
-      entry: resolve(__dirname, 'src/index.ts'),
+      entry: resolve(import.meta.dirname, 'src/index.ts'),
       name: 'MermaidRenderer',
       fileName: () => 'mermaid.js',
+      // IIFE 输出单文件，包含 Mermaid 的动态导入依赖。
       formats: ['iife'],
-    },
-    // mermaid 全量打进单文件（含其依赖 cytoscape/dagre-d3 等）。
-    rolldownOptions: {
-      output: {
-        inlineDynamicImports: true,
-      },
     },
     cssCodeSplit: false,
     minify: true,

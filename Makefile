@@ -155,7 +155,7 @@ esbuild-cache:
 # 跳过联网下载。dx 按平台选 musl/darwin triplet（见 git_install_url）。
 # 升级 wasm-bindgen 后须同步 WASM_BINDGEN_VERSION（查 Cargo.lock 的 [[package]]
 # wasm-bindgen 版本）。triplet 必须与 dx 源码 git_install_url 的平台映射一致。
-WASM_BINDGEN_VERSION := 0.2.126
+WASM_BINDGEN_VERSION := 0.2.128
 wasm-bindgen-cache:
 	@WB_DIR="$${DX_HOME:-$$HOME/.local/share/.dx}/tools/wasm-bindgen-$(WASM_BINDGEN_VERSION)"; \
 	if [ -x "$$WB_DIR/wasm-bindgen" ]; then \

@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - 修复双击编辑行内或块级公式时，键盘输入被外层编辑器接管、整条公式被替换为普通文本的问题。
+- 清理 Vite 配置的 `__dirname` 兼容警告与 Mermaid 的重复打包选项；同步 wasm-bindgen 预缓存版本至 0.2.128，避免与锁文件不一致导致重复下载。
 
 ## [0.12.5] - 2026-09-07
 

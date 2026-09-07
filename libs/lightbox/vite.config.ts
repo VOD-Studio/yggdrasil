@@ -3,10 +3,10 @@ import { defineConfig } from 'vite';
 
 export default defineConfig({
   build: {
-    outDir: resolve(__dirname, '../../public/lightbox'),
+    outDir: resolve(import.meta.dirname, '../../public/lightbox'),
     emptyOutDir: true,
     lib: {
-      entry: resolve(__dirname, 'src/index.ts'),
+      entry: resolve(import.meta.dirname, 'src/index.ts'),
       name: 'Lightbox',
       fileName: () => 'lightbox.js',
       formats: ['iife'],
