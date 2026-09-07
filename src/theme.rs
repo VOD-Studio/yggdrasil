@@ -7,10 +7,9 @@
 //!   `matchMedia('(prefers-color-scheme: dark)')` 的 `change` 事件，系统切换
 //!   主题时实时同步 `.dark` class 与下游（CodeMirror 等）。
 //!
-//! 提供两条初始化路径：
-//! - **SSR**：从 HTTP 请求 Cookie 中的 `theme` 字段检测主题，避免首屏闪烁。
-//! - **WASM 客户端**：优先读取 `localStorage` 中的持久化主题；不存在时回退到
-//!   `Theme::System`（不再直接固化系统偏好）。
+//! SSR 与客户端 hydration 都从 `Theme::System` 开始；挂载后再读取
+//! localStorage 恢复用户选择，确保图标经历正常的响应式更新。
+//! 首屏配色由 `ThemePreload` 提前设置，不依赖服务端无法读取的浏览器偏好。
 //!
 //! 下游消费者（CodeMirror、SVG 图标判定）应读 `ResolvedTheme`（实际生效明暗），
 //! 而非 `Theme`（用户意图），这样 System 模式下系统偏好变化能自动传播。
@@ -50,12 +49,12 @@ pub enum Theme {
 }
 
 impl Theme {
-    /// 三态循环切换：Light → Dark → System → Light。
+    /// 三态循环切换：Dark → Light → System → Dark。
     pub fn cycle(&self) -> Self {
         match self {
-            Theme::Light => Theme::Dark,
-            Theme::Dark => Theme::System,
-            Theme::System => Theme::Light,
+            Theme::Dark => Theme::Light,
+            Theme::Light => Theme::System,
+            Theme::System => Theme::Dark,
         }
     }
 
@@ -97,52 +96,20 @@ fn read_system_dark() -> bool {
 /// 检测初始主题意图。
 ///
 /// 在 WASM 客户端优先读取 localStorage（`"light"`/`"dark"`），无值时回退到
-/// `Theme::System`（不再直接固化系统偏好）；在 SSR 阶段解析请求 Cookie。
+/// `Theme::System`（不再直接固化系统偏好）。仅在 hydration 完成后调用。
+#[cfg(target_arch = "wasm32")]
 fn detect_initial_theme() -> Theme {
-    #[cfg(target_arch = "wasm32")]
-    {
-        if let Some(window) = web_sys::window() {
-            // 优先读取 localStorage 中持久化的主题值。
-            if let Ok(Some(storage)) = window.local_storage() {
-                if let Ok(Some(value)) = storage.get_item(THEME_KEY) {
-                    return match value.as_str() {
-                        "dark" => Theme::Dark,
-                        "light" => Theme::Light,
-                        // 未知值（含历史遗留）视为未选择，回退到 System。
-                        _ => Theme::System,
-                    };
-                }
-            }
-        }
-        // 无持久化值：跟随系统。
-        Theme::System
-    }
-
-    #[cfg(feature = "server")]
-    {
-        // SSR 路径：从请求 Cookie 中解析 `theme` 字段。
-        if let Some(ctx) = dioxus::fullstack::FullstackContext::current() {
-            if let Some(cookie) = ctx.parts_mut().headers.get("cookie") {
-                if let Ok(cookie_str) = cookie.to_str() {
-                    // 按 ';' 分割 Cookie 字符串，再按 '=' 分割键值对。
-                    for cookie_pair in cookie_str.split(';') {
-                        let mut parts = cookie_pair.trim().splitn(2, '=');
-                        if let (Some(name), Some(value)) = (parts.next(), parts.next()) {
-                            match (name, value) {
-                                ("theme", "dark") => return Theme::Dark,
-                                ("theme", "light") => return Theme::Light,
-                                _ => {}
-                            }
-                        }
-                    }
-                }
+    if let Some(window) = web_sys::window() {
+        if let Ok(Some(storage)) = window.local_storage() {
+            if let Ok(Some(value)) = storage.get_item(THEME_KEY) {
+                return match value.as_str() {
+                    "dark" => Theme::Dark,
+                    "light" => Theme::Light,
+                    _ => Theme::System,
+                };
             }
         }
     }
-
-    // wasm 分支末尾已无条件 return Theme::System，不会到达这里；
-    // 此兜底仅服务 server 分支（cookie 未命中）或其他边角构建。
-    #[cfg(not(target_arch = "wasm32"))]
     Theme::System
 }
 
@@ -163,7 +130,9 @@ fn detect_initial_theme() -> Theme {
 /// 通过 `yggdrasil-core.js` 的圆形展开动画在 View Transition 回调里同步 toggle。
 /// 初始 class 由 `ThemePreload` 首屏脚本设置,避免闪烁。
 pub fn use_theme_provider() -> Signal<Theme> {
-    let theme = use_signal(detect_initial_theme);
+    // hydration 不会修补首轮 VDOM 与 SSR 的差异，必须使用一致的初始模式。
+    #[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut))]
+    let mut theme = use_signal(|| Theme::System);
     // system_dark 仅在 wasm32 监听闭包里 .set()；非 wasm 构建剥离该闭包，
     // 此处统一标注 mut 以满足 wasm32 的借用检查（非 wasm 端会触发 unused_mut，
     // 由下方 cfg_attr 抑制）。
@@ -172,11 +141,20 @@ pub fn use_theme_provider() -> Signal<Theme> {
     // resolved 是 theme 与 system_dark 的派生态：任一变化都自动重算。
     let resolved = use_memo(move || theme().resolve(system_dark()));
 
-    // 持久化：System 移除 localStorage；Light/Dark 写入对应值。
-    use_effect(move || {
-        let current = theme();
-        #[cfg(target_arch = "wasm32")]
-        {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let mut initialized = use_signal(|| false);
+        use_effect(move || {
+            theme.set(detect_initial_theme());
+            initialized.set(true);
+        });
+
+        // 恢复选择后才允许持久化，避免初始 System 清掉已保存的 Light/Dark。
+        use_effect(move || {
+            if !initialized() {
+                return;
+            }
+            let current = theme();
             if let Some(window) = web_sys::window() {
                 if let Ok(Some(storage)) = window.local_storage() {
                     match current {
@@ -192,10 +170,8 @@ pub fn use_theme_provider() -> Signal<Theme> {
                     }
                 }
             }
-        }
-        // 避免 unused 警告:非 wasm 构建下 current 未被读取。
-        let _ = current;
-    });
+        });
+    }
 
     // WASM 端：System 模式下系统颜色偏好变化时，把新明暗同步到 <html> 的 dark class。
     //
@@ -213,8 +189,7 @@ pub fn use_theme_provider() -> Signal<Theme> {
     // 完成、CSS 也正确挂上 tt-expand，但视觉上仅瞬切），故跟随系统走瞬切更可靠；
     // 手动点击仍走 __startThemeTransition 保留圆形展开动画。
     //
-    // 首次挂载自然跳过：effect 通过 prev 信号记录上一次 resolved，初次运行 prev 为
-    // None，此时 DOM 已由 ThemePreload 脚本设为正确状态，直接对齐 prev 后返回。
+    // 首次挂载也对齐 DOM：系统偏好可能在 ThemePreload 执行后、hydration 前变化。
     #[cfg(target_arch = "wasm32")]
     {
         let mut prev_resolved: Signal<Option<ResolvedTheme>> = use_signal(|| None);
@@ -224,13 +199,8 @@ pub fn use_theme_provider() -> Signal<Theme> {
                 return;
             }
             let current = resolved();
-            // 首次运行：DOM 已由 ThemePreload 设好，仅记录基线，不触发同步。
-            let Some(prev) = prev_resolved() else {
-                prev_resolved.set(Some(current));
-                return;
-            };
             // 未翻转（如 signal 因无关读取重算）直接跳过。
-            if prev == current {
+            if prev_resolved() == Some(current) {
                 return;
             }
             prev_resolved.set(Some(current));
@@ -259,12 +229,15 @@ pub fn use_theme_provider() -> Signal<Theme> {
         use crate::hooks::event_listener::use_event_listener;
 
         use_event_listener(
-            || {
+            move || {
                 let window = web_sys::window()?;
-                window
+                let media = window
                     .match_media("(prefers-color-scheme: dark)")
                     .ok()
-                    .flatten()
+                    .flatten()?;
+                // 补齐首轮渲染到监听器挂载之间发生的系统配色变化。
+                system_dark.set(media.matches());
+                Some(media)
             },
             "change",
             move || {
@@ -321,7 +294,7 @@ pub fn ThemePreload() -> Element {
     }
 }
 
-/// 主题切换按钮组件（三态循环：Light → Dark → System → Light）。
+/// 主题切换按钮组件（三态循环：Dark → Light → System → Dark）。
 ///
 /// 点击后**立即**切换图标（theme.set 不再延迟），让用户即时获得反馈；
 /// 图标自身的进入动画（缩放+淡入）由 CSS `.theme-toggle svg` 的 keyframe
@@ -338,14 +311,9 @@ pub fn ThemeToggle() -> Element {
     // theme 在 wasm 与 server 两侧都需要 mut（onclick 内 theme.set）。
     #[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut))]
     let mut theme = use_theme();
-    // resolved / system_dark 用于判断切换前后实际明暗是否翻转（决定是否触发 VT）。
-    // 仅在 wasm 分支读取；非 wasm 端用占位值避免 unused 警告。
+    // resolved 用于判断切换前后实际明暗是否翻转（决定是否触发 VT）。
     #[cfg(target_arch = "wasm32")]
     let resolved = use_resolved_theme();
-    #[cfg(target_arch = "wasm32")]
-    let system_dark = use_signal(read_system_dark);
-    #[cfg(not(target_arch = "wasm32"))]
-    let (_resolved, _system_dark): (ResolvedTheme, bool) = (ResolvedTheme::Light, false);
 
     rsx! {
         button {
@@ -358,7 +326,7 @@ pub fn ThemeToggle() -> Element {
                 #[cfg(target_arch = "wasm32")]
                 {
                     let prev_resolved = resolved();
-                    let new_resolved = next.resolve(system_dark());
+                    let new_resolved = next.resolve(read_system_dark());
                     if prev_resolved != new_resolved {
                         use wasm_bindgen::JsCast;
                         // 实际明暗翻转 → 触发圆形展开 VT 动画（颜色过渡）。
@@ -451,10 +419,10 @@ mod tests {
 
     #[test]
     fn cycle_rotates_three_states() {
-        // 三态循环：Light → Dark → System → Light。
-        assert_eq!(Theme::Light.cycle(), Theme::Dark);
-        assert_eq!(Theme::Dark.cycle(), Theme::System);
-        assert_eq!(Theme::System.cycle(), Theme::Light);
+        // 三态循环：Dark → Light → System → Dark。
+        assert_eq!(Theme::Dark.cycle(), Theme::Light);
+        assert_eq!(Theme::Light.cycle(), Theme::System);
+        assert_eq!(Theme::System.cycle(), Theme::Dark);
     }
 
     #[test]
