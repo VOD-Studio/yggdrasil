@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.5] - 2026-09-07
+
 ### Changed
 
 - **文章阅读版式**：正文收敛到 720px 阅读宽度，降低标题与摘要的视觉重量，优化章节间距、引用和页尾导航。桌面悬浮目录保持原样；移动端折叠目录改用轻边框、44px 链接点击区与限高滚动，保留原生键盘展开和章节跳转。
