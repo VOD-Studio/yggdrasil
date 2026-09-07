@@ -213,11 +213,9 @@ struct CompiledPat(Option<Regex>);
 impl CompiledPat {
     /// 锚定头部匹配（坏正则 → `None`）。匹配失败/编译失败统一为不匹配。
     ///
-    /// fancy-regex 的 `Captures` 同时借用 regex 与 input，故签名把两者绑到同一
-    /// 生命周期 `'s`。调用处 `self` 来自 `&*RE`（`'static`），所以实际约束是 input
-    /// 须在 captures 使用期间存活——与原始 `re.captures(input)` 一致。
+    /// fancy-regex 0.19 的 captures 只借用 input；`str` 指明 UTF-8 文本输入。
     #[inline]
-    fn captures_head<'s>(&'s self, input: &'s str) -> Option<fancy_regex::Captures<'s>> {
+    fn captures_head<'s>(&self, input: &'s str) -> Option<fancy_regex::Captures<'s, str>> {
         self.0.as_ref()?.captures(input).ok().flatten()
     }
 

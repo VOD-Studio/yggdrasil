@@ -86,11 +86,11 @@ pub async fn create_mcp_token(
 
         // 明文 token：`ygg_` + 32 字节随机数 hex（64 hex 字符）。
         let mut bytes = [0u8; 32];
-        rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut bytes);
+        rand::TryRng::try_fill_bytes(&mut rand::rngs::SysRng, &mut bytes)
+            .map_err(|_| AppError::Internal("令牌随机数生成失败"))?;
         let plaintext = format!("{TOKEN_PREFIX}{}", hex::encode(bytes));
         let hash = hash_token(&plaintext);
-        let enc =
-            encrypt_token(&plaintext).ok_or(AppError::Internal("MCP_TOKEN_ENC_KEY 未设置"))?;
+        let enc = encrypt_token(&plaintext).ok_or(AppError::Internal("MCP 令牌加密失败"))?;
         let id = uuid::Uuid::new_v4();
         let expires_at = lifetime.expires_at();
         let scope_str = scope.as_str();

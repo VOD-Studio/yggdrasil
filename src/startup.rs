@@ -34,6 +34,11 @@ pub fn run() {
 
     run_database_bootstrap();
 
+    // 数据迁移已切换持久化公式 HTML；每个实例都清除旧渲染缓存，避免另一实例
+    // 已提交迁移或上次启动在提交后中断时，仍向新版 KaTeX CSS 发送旧 class。
+    crate::ssr_cache::invalidate_ssr_all_public();
+    crate::ssr_cache::invalidate_ssr_route("/admin/preview");
+
     let options = ServerOptions {
         ssr_cache_secs: crate::utils::server::parse_ssr_cache_secs(),
         expose_version_headers: crate::utils::server::parse_env_bool(

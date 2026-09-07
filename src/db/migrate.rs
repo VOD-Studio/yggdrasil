@@ -9,7 +9,7 @@
 //!
 //! 前置条件：目标数据库的存在性由 [`crate::db::pool::ensure_database`] 在本模块
 //! 被调用前保证（它先连 `postgres` 维护库做 `CREATE DATABASE IF NOT EXISTS` 等价逻辑）。
-//! 本模块只负责 schema，不再关心"库不存在"。
+//! 本模块负责 schema 与一次性存储格式迁移，不再关心"库不存在"。
 //!
 //! 仅在 `feature = "server"` 时编译。
 
@@ -89,6 +89,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         include_str!("../../migrations/024_comments_user_id.sql"),
     ),
     ("025", include_str!("../../migrations/025_logs.sql")),
+    (
+        "026",
+        include_str!("../../migrations/026_katex_html_classes.sql"),
+    ),
     // 新增迁移在此追加，同时在 migrations/ 下创建对应 .sql 文件。
 ];
 
@@ -103,6 +107,12 @@ pub enum MigrateError {
     Apply {
         version: String,
         source: tokio_postgres::Error,
+    },
+    /// 迁移 026 的 HTML 解析/改写失败；整笔迁移回滚，不丢弃正文。
+    KatexHtml {
+        table: &'static str,
+        id: i64,
+        source: lol_html::errors::RewritingError,
     },
 }
 
@@ -145,6 +155,12 @@ impl std::fmt::Display for MigrateError {
                     crate::db::format_with_sources(source)
                 )
             }
+            MigrateError::KatexHtml { table, id, source } => {
+                write!(
+                    f,
+                    "migration 026 failed rewriting {table} row {id}: {source}"
+                )
+            }
         }
     }
 }
@@ -155,6 +171,7 @@ impl std::error::Error for MigrateError {
             MigrateError::Pool(e) => Some(e),
             MigrateError::Query(e) => Some(e),
             MigrateError::Apply { source, .. } => Some(source),
+            MigrateError::KatexHtml { source, .. } => Some(source),
         }
     }
 }
@@ -273,6 +290,13 @@ async fn apply_one(
         });
     }
 
+    if version == "026" {
+        if let Err(error) = migrate_katex_html(&tx).await {
+            let _ = tx.rollback().await;
+            return Err(error);
+        }
+    }
+
     // 记录版本行。显式构造 Apply 错误（不能用 ?，否则会被 blanket From 映射成 Query）。
     if let Err(e) = tx
         .execute(
@@ -295,9 +319,149 @@ async fn apply_one(
     Ok(())
 }
 
+/// 一次性格式迁移：不重渲染 Markdown、不触碰原文/目录/时间戳/审核状态。
+/// SQL 已锁住两张表，批次仅限制内存；所有批次与版本行仍属于同一事务。
+async fn migrate_katex_html(tx: &deadpool_postgres::Transaction<'_>) -> Result<(), MigrateError> {
+    let db_error = |source| MigrateError::Apply {
+        version: "026".to_string(),
+        source,
+    };
+    // 只暂停时间戳触发器；外键等完整性约束照常执行。失败时 DDL 一同回滚。
+    tx.batch_execute("ALTER TABLE comments DISABLE TRIGGER trg_comments_updated_at")
+        .await
+        .map_err(db_error)?;
+
+    for table in ["posts", "comments"] {
+        // table 仅来自上面的常量列表，绝不接受外部输入。
+        let select = tx
+            .prepare(&format!(
+                "SELECT id::bigint, content_html FROM {table} \
+                 WHERE ($1::bigint IS NULL OR id > $1) AND content_html LIKE '%katex%' \
+                 ORDER BY id LIMIT 100"
+            ))
+            .await
+            .map_err(db_error)?;
+        let update = tx
+            .prepare(&format!(
+                "UPDATE {table} SET content_html = $1 WHERE id = $2::bigint"
+            ))
+            .await
+            .map_err(db_error)?;
+        let mut last_id: Option<i64> = None;
+        loop {
+            let rows = tx.query(&select, &[&last_id]).await.map_err(db_error)?;
+            if rows.is_empty() {
+                break;
+            }
+            for row in rows {
+                let id: i64 = row.get(0);
+                let html: &str = row.get(1);
+                if let Some(rewritten) = migrate_katex_classes(html)
+                    .map_err(|source| MigrateError::KatexHtml { table, id, source })?
+                {
+                    tx.execute(&update, &[&rewritten, &id])
+                        .await
+                        .map_err(db_error)?;
+                }
+                last_id = Some(id);
+            }
+        }
+    }
+
+    tx.batch_execute("ALTER TABLE comments ENABLE TRIGGER trg_comments_updated_at")
+        .await
+        .map_err(db_error)?;
+    Ok(())
+}
+
+/// KaTeX 0.18 的精确 class 改名表（上游 commit 6f5c44f，katex-rs 0.3）。
+/// `hbox` 的未使用 CSS 被上游删除，没有对应的旧渲染节点需要迁移。
+fn is_old_katex_class(class: &str) -> bool {
+    matches!(
+        class,
+        "accent"
+            | "base"
+            | "fix"
+            | "hdashline"
+            | "hline"
+            | "inner"
+            | "newline"
+            | "overlay"
+            | "overline"
+            | "root"
+            | "rule"
+            | "sizing"
+            | "smash"
+            | "sout"
+            | "stretchy"
+            | "strut"
+            | "tag"
+            | "thinbox"
+            | "underline"
+            | "vbox"
+    )
+}
+
+/// 仅修改公式视觉层 span 的完整 class token，保留文字、其它属性和注释。
+/// lol_html 不重新序列化未改动的节点；无旧 class 返回 None，避免无效 UPDATE。
+fn migrate_katex_classes(html: &str) -> Result<Option<String>, lol_html::errors::RewritingError> {
+    let mut changed = false;
+    let settings = lol_html::RewriteStrSettings::new().append_element_content_handler(
+        lol_html::element!("span.katex > span.katex-html span[class]", |el| {
+            let Some(classes) = el.get_attribute("class") else {
+                return Ok(());
+            };
+            if !classes.split_ascii_whitespace().any(is_old_katex_class) {
+                return Ok(());
+            }
+            let mut rewritten = String::with_capacity(classes.len() + 6);
+            for class in classes.split_ascii_whitespace() {
+                if !rewritten.is_empty() {
+                    rewritten.push(' ');
+                }
+                if is_old_katex_class(class) {
+                    rewritten.push_str("katex-");
+                }
+                rewritten.push_str(class);
+            }
+            el.set_attribute("class", &rewritten)?;
+            changed = true;
+            Ok(())
+        }),
+    );
+    let rewritten = lol_html::rewrite_str(html, settings)?;
+    Ok(changed.then_some(rewritten))
+}
+
 #[cfg(all(test, feature = "server"))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn katex_migration_preserves_non_formula_html() {
+        let before = r#"<!-- base class="overline" --><p class="base underline" title="overline">base &amp; underline</p><pre><code>&lt;span class="base"&gt;</code></pre>"#;
+        let formula = r#"<span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="mord overline" title="base &amp; overline">overline &amp; base</span></span></span></span>"#;
+        let after = r#"<span class="overline">unchanged</span><span class="katex"><span class="base">not a rendered visual layer</span></span>"#;
+        let input = format!("{before}{formula}{after}");
+        let output = migrate_katex_classes(&input).unwrap().unwrap();
+        assert!(output.starts_with(before));
+        assert!(output.ends_with(after));
+        assert!(output.contains(r#"class="katex-base""#));
+        assert!(output.contains(
+            r#"class="mord katex-overline" title="base &amp; overline">overline &amp; base</span>"#
+        ));
+        assert_eq!(migrate_katex_classes(&output).unwrap(), None);
+    }
+
+    #[test]
+    fn katex_migration_renames_only_complete_layout_tokens() {
+        let input = r#"<span class="katex"><span class="katex-html"><span class="accent base fix hdashline hline inner newline overlay overline root rule sizing smash sout stretchy strut tag thinbox underline vbox mord overline-line underline-line accent-body reset-size6 size3 mtight my-base katex-base">x</span></span></span>"#;
+        let expected = r#"<span class="katex"><span class="katex-html"><span class="katex-accent katex-base katex-fix katex-hdashline katex-hline katex-inner katex-newline katex-overlay katex-overline katex-root katex-rule katex-sizing katex-smash katex-sout katex-stretchy katex-strut katex-tag katex-thinbox katex-underline katex-vbox mord overline-line underline-line accent-body reset-size6 size3 mtight my-base katex-base">x</span></span></span>"#;
+        assert_eq!(
+            migrate_katex_classes(input).unwrap().as_deref(),
+            Some(expected)
+        );
+    }
 
     #[test]
     fn migrations_are_sorted_ascending() {
@@ -321,11 +485,6 @@ mod tests {
             total,
             "MIGRATIONS has duplicate version strings"
         );
-    }
-
-    #[test]
-    fn migrations_non_empty() {
-        assert!(!MIGRATIONS.is_empty(), "MIGRATIONS must not be empty");
     }
 
     /// 防止"新建了 .sql 但忘记在 MIGRATIONS 加行"的脚枪。

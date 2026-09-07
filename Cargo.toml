@@ -16,26 +16,26 @@ serde = { version = "1.0", features = ["derive"] }
 tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "fs", "io-util", "time", "sync"], optional = true }
 tokio-postgres = { version = "0.7", features = ["with-chrono-0_4", "with-uuid-1"], optional = true }
 deadpool-postgres = { version = "0.14", optional = true }
-argon2 = { version = "0.5", optional = true }
+argon2 = { version = "0.6", optional = true }
 uuid = { version = "1", features = ["v4"], optional = true }
 chrono = { version = "0.4", features = ["serde"] }
 regex = { version = "1.13", optional = true }
 # mhchem 化学公式转译器（src/api/mhchem.rs）需要 lookahead 正则，
 # Rust `regex` crate 不支持 `(?=...)`/`(?!...)`，故用 `fancy-regex`。
-# 该 crate 已被 syntect 间接引入（0.16.2，见 Cargo.lock），此处显式声明为直接依赖。
-fancy-regex = { version = "0.16", optional = true }
+# syntect 仍使用 0.16；直接依赖单独升级，以使用新版匹配修复。
+fancy-regex = { version = "0.19", optional = true }
 pulldown-cmark = { version = "0.13", optional = true }
 dotenvy = { version = "0.15", optional = true }
 tracing = { version = "0.1", optional = true, features = ["release_max_level_info"] }
 tracing-subscriber = { version = "0.3", optional = true }
 
-rand = { version = "0.8", features = ["getrandom"], optional = true }
+rand = { version = "0.10", optional = true }
 http = { version = "1", optional = true }
 axum = { version = "0.8", optional = true, features = ["multipart"] }
 tower-http = { version = "0.7", optional = true, features = ["compression-full", "timeout", "trace"] }
 
 serde_json = "1.0"
-sha2 = { version = "0.10", optional = true }
+sha2 = { version = "0.11", optional = true }
 hex = { version = "0.4", optional = true }
 lol_html = { version = "3", optional = true }
 syntect = { version = "5", default-features = false, features = ["default-syntaxes", "default-themes", "default-fancy", "html", "parsing", "dump-load", "yaml-load"], optional = true }
@@ -51,7 +51,7 @@ sqlparser = { version = "0.62", optional = true }
 dashmap = { version = "6.2", optional = true }
 # 中文标题 → 拼音 slug（纯 Rust、零依赖，安全交叉编译到 musl/FreeBSD）。
 pinyin = { version = "0.11", optional = true }
-md-5 = { version = "0.10", optional = true }
+md-5 = { version = "0.11", optional = true }
 futures = { version = "0.3", optional = true }
 bytes = { version = "1", optional = true }
 bollard = { version = "0.21", optional = true }
@@ -66,18 +66,18 @@ mimalloc = { version = "0.1", optional = true }
 # 为 HTML span。库名是 katex（crate 名 katex-rs），代码用 `use katex::...`。
 # 默认 features 为空即原生服务端编译；wasm feature 仅前端构建才需，这里不开。
 # 配套前端需引入 katex.min.css + 字体（见 public/katex/、Makefile katex-css）。
-katex-rs = { version = "0.2", optional = true }
+katex-rs = { version = "0.3", optional = true }
 # MCP（Model Context Protocol）服务器：官方 Rust SDK rmcp。
-# 必须锁在 3.x beta 线（稳定版 0.2.1 缺 Origin 校验/协议版本头/体积上限/无状态默认等
-# spec 强制项）。2026-07-28 经临时 axum-0.8 探针验证可挂载（见 docs/mcp-spec.md）。
-# transport-worker 必须显式加：LocalSessionManager 无条件引用 transport::worker。
-rmcp = { version = "=3.0.0-beta.3", optional = true, features = ["server", "macros", "transport-streamable-http-server", "transport-worker"] }
+# 稳定版 3.2 保留 Origin/Host 校验、请求体上限与无状态传输，并修复协议协商。
+# 使用兼容版本范围，实际构建版本由 Cargo.lock 固定；HTTP server feature 已包含 worker。
+rmcp = { version = "3.2", optional = true, features = ["server", "macros", "transport-streamable-http-server"] }
 # MCP token 静态加密（AES-GCM）：管理员可在后台重查明文，DB 不裸存。
-aes-gcm = { version = "0.10", optional = true }
-# MCP 媒体上传：URL 抓取（服务端按图，带 SSRF 防护）。rustls-tls 不引入 OpenSSL，
-# 对静态 musl 链接友好；stream 用于按大小上限流式读取，避免无界响应撑爆内存。
+aes-gcm = { version = "0.11", optional = true }
+# MCP 媒体上传：URL 抓取（服务端按图，带 SSRF 防护）。Rustls 不引入 OpenSSL。
+# 默认 AWS-LC 后端使用系统证书验证，运行镜像需安装 CA 证书。
+# stream 用于按大小上限流式读取，避免无界响应撑爆内存。
 # 重定向在代码里禁用（避免被 302 到内网 IP，绕过 SSRF 白名单）。
-reqwest = { version = "0.12", optional = true, default-features = false, features = ["rustls-tls", "stream"] }
+reqwest = { version = "0.13", optional = true, default-features = false, features = ["rustls", "stream"] }
 # 备份的 uploads 素材打包（tar.gz）。纯 Rust 实现，不依赖运行时镜像里的
 # busybox/GNU tar 行为；仅 server 构建使用（spawn_blocking 内跑）。
 tar = { version = "0.4", optional = true }
@@ -93,7 +93,7 @@ serde-wasm-bindgen = "0.6"
 
 [dev-dependencies]
 tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "fs", "time", "sync"] }
-serial_test = "3"
+serial_test = "4"
 
 # dev 构建只保留行表 debuginfo：默认 full debuginfo 对每个 crate（含全部依赖）
 # 都生成完整类型/局部变量信息，显著拖慢 rustc emit 与链接、撑大 target/。

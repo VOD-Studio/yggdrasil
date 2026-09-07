@@ -37,6 +37,8 @@ RUN if [ "$CN_MIRROR" = "true" ]; then \
     fi
 
 # Install system build tooling. Native dependencies are needed for:
+#   - build-essential + musl-tools: AWS-LC's non-FIPS C build (no OpenSSL,
+#     CMake or Go requirement); musl-gcc supplies the native musl sysroot.
 #   - musl-tools: linker for x86_64-unknown-linux-musl
 #   - cmake/clang/nasm/libssl-dev: libwebp (zenwebp), ring, syntect
 #   - binaryen: provides `wasm-opt` on PATH so dx's release client build
@@ -357,12 +359,12 @@ RUN ARCH="$(dpkg --print-architecture)" \
 # pg_dump/psql 是应用内备份/恢复功能的运行时依赖：scratch 镜像里没有它们，
 # 生产曾因此回退到「仅数据、不可恢复」的纯 SQL 导出。服务器 PG 为 16，
 # 客户端包与其对齐（pg_dump 官方保证向下 dump 旧版 server）。
-# 静态 musl server 二进制在 alpine 上原生运行；rustls 内嵌 webpki-roots，
-# 无需 ca-certificates。
+# 静态 musl server 二进制在 alpine 上原生运行；reqwest 的 Rustls/AWS-LC
+# 使用 rustls-platform-verifier 读取系统 CA，运行时须安装 ca-certificates。
 # -----------------------------------------------------------------------------
 FROM alpine:3.22
 
-RUN apk add --no-cache postgresql16-client
+RUN apk add --no-cache ca-certificates postgresql16-client
 
 WORKDIR /app
 

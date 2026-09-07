@@ -5,18 +5,15 @@
 
 #[cfg(feature = "server")]
 use argon2::{
-    password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
+    password_hash::{phc::PasswordHash, PasswordHasher, PasswordVerifier},
     Argon2,
 };
-#[cfg(feature = "server")]
-use rand::rngs::OsRng;
 
 #[cfg(feature = "server")]
 /// 使用 Argon2 对明文密码进行哈希。
 pub fn hash_password(password: &str) -> Result<String, argon2::password_hash::Error> {
-    let salt = SaltString::generate(&mut OsRng);
     let argon2 = Argon2::default();
-    let password_hash = argon2.hash_password(password.as_bytes(), &salt)?;
+    let password_hash = argon2.hash_password(password.as_bytes())?;
     Ok(password_hash.to_string())
 }
 
@@ -27,7 +24,7 @@ pub fn verify_password(password: &str, hash: &str) -> Result<bool, argon2::passw
     let argon2 = Argon2::default();
     match argon2.verify_password(password.as_bytes(), &parsed_hash) {
         Ok(()) => Ok(true),
-        Err(argon2::password_hash::Error::Password) => Ok(false),
+        Err(argon2::password_hash::Error::PasswordInvalid) => Ok(false),
         Err(e) => Err(e),
     }
 }
@@ -35,6 +32,15 @@ pub fn verify_password(password: &str, hash: &str) -> Result<bool, argon2::passw
 #[cfg(all(test, feature = "server"))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn verify_legacy_argon2id_phc() {
+        // Argon2 0.5.3 tests/phc_strings.rs, from the reference implementation:
+        // https://github.com/RustCrypto/password-hashes/blob/argon2-v0.5.3/argon2/tests/phc_strings.rs
+        let hash = "$argon2id$v=19$m=65536,t=2,p=1$c29tZXNhbHQ$CTFhFdXPJO1aFaMaO6Mm5c8y7cJHAph8ArZWb2GRPPc";
+        assert_eq!(verify_password("password", hash), Ok(true));
+        assert_eq!(verify_password("sassword", hash), Ok(false));
+    }
 
     #[test]
     fn hash_and_verify_roundtrip() {

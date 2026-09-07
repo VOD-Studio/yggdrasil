@@ -108,9 +108,9 @@ pub static DB_POOL: LazyLock<Pool> = LazyLock::new(|| {
 ///
 /// 退避策略见 `retry::backoff_for`。仅对 Backend/Postgres 错误（DB 不可达）重试；
 /// Timeout（池满）直接返回，让上层限流兜底，避免雪崩。
-/// 若所有重试均失败，返回最后一次的 PoolError。
+/// 若所有重试均失败或系统随机源不可用，返回最后一次的 PoolError。
 pub async fn get_conn() -> Result<deadpool_postgres::Object, deadpool_postgres::PoolError> {
-    use rand::Rng;
+    use rand::TryRng;
 
     let mut last_err = None;
     for attempt in 0..=crate::db::retry::MAX_RETRIES {
@@ -122,7 +122,12 @@ pub async fn get_conn() -> Result<deadpool_postgres::Object, deadpool_postgres::
                 let is_timeout = matches!(e, deadpool_postgres::PoolError::Timeout(_));
                 last_err = Some(e);
                 if !is_timeout && attempt < crate::db::retry::MAX_RETRIES {
-                    let jitter = rand::thread_rng().gen::<f64>();
+                    let Ok(random_bits) = rand::rngs::SysRng.try_next_u64() else {
+                        // 随机源不可用时返回原连接错误，不 panic 或使用固定 jitter。
+                        break;
+                    };
+                    // 与 rand 的 StandardUniform<f64> 一致：53 个随机位映射到 [0, 1)。
+                    let jitter = (random_bits >> 11) as f64 * (1.0 / (1u64 << 53) as f64);
                     let delay = crate::db::retry::backoff_for(attempt, jitter);
                     tracing::warn!(
                         "DB connection attempt {} failed (backend error), retrying in {:?}: {:?}",

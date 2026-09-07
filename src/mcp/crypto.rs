@@ -13,8 +13,8 @@
 //! 且 nonce 与密文一同存储，解密时无需额外恢复。仅用 hex（已是直接依赖）编码，
 //! 避免把 base64 由传递依赖提升为直接依赖。
 
-use aes_gcm::aead::{Aead, KeyInit, OsRng};
-use aes_gcm::{AeadCore, Aes256Gcm, Key, Nonce};
+use aes_gcm::aead::{Aead, Generate, KeyInit};
+use aes_gcm::{Aes256Gcm, Nonce};
 
 /// 从环境读取并解码主密钥；缺失或非法返回 None（降级，不 panic）。
 ///
@@ -37,11 +37,11 @@ pub fn mcp_enc_key() -> Option<[u8; 32]> {
 
 /// 加密明文 token，返回 `nonce‖ct‖tag` 的 hex 字符串（存入 `token_enc`）。
 ///
-/// 失败仅在不持有有效主密钥时（调用方应在签发前已检查 `mcp_enc_key().is_some()`）。
+/// 密钥缺失或非法、系统随机源失败、加密失败时返回 None。
 pub fn encrypt_token(plaintext: &str) -> Option<String> {
     let key_bytes = mcp_enc_key()?;
-    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&key_bytes));
-    let nonce = Aes256Gcm::generate_nonce(&mut OsRng); // 12 字节，每次独立
+    let cipher = Aes256Gcm::new((&key_bytes).into());
+    let nonce = Nonce::try_generate().ok()?; // 12 字节，每次独立
     let ct = cipher.encrypt(&nonce, plaintext.as_bytes()).ok()?;
     let mut buf = Vec::with_capacity(nonce.len() + ct.len());
     buf.extend_from_slice(nonce.as_slice());
@@ -61,8 +61,8 @@ pub fn decrypt_token(enc_hex: &str) -> Option<String> {
         return None;
     }
     let (nonce_bytes, ct) = buf.split_at(12);
-    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&key_bytes));
-    let nonce = Nonce::from_slice(nonce_bytes);
+    let cipher = Aes256Gcm::new((&key_bytes).into());
+    let nonce = nonce_bytes.try_into().ok()?;
     let pt = cipher.decrypt(nonce, ct).ok()?;
     String::from_utf8(pt).ok()
 }
@@ -89,6 +89,26 @@ mod tests {
         }
         let _r = Restore(prev);
         body()
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn decrypt_legacy_nist_empty_plaintext() {
+        // AES-GCM 0.10.3 tests/aes256gcm.rs: first NIST CAVS vector,
+        // gcmEncryptExtIV256.rsp, empty plaintext and AAD.
+        // https://github.com/RustCrypto/AEADs/blob/aes-gcm-v0.10.3/aes-gcm/tests/aes256gcm.rs
+        let key: [u8; 32] =
+            hex::decode("b52c505a37d78eda5dd34f20c22540ea1b58963cf8e5bf8ffa85f9f2492505b4")
+                .unwrap()
+                .try_into()
+                .unwrap();
+        let enc = concat!(
+            "516c33929df5a3284ff463d7",
+            "bdc1ac884d332457a1d2664f168c76f0"
+        );
+        with_key(&key, || {
+            assert_eq!(decrypt_token(enc).as_deref(), Some(""));
+        });
     }
 
     #[test]

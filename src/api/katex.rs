@@ -187,76 +187,6 @@ fn expand_chem(tex: &str) -> String {
     }
 }
 
-/// 参数按**文本模式**解析的 `\text` 家族命令（对齐 KaTeX `argTypes: ["text"]`）。
-/// 这些命令的 `{...}` 组内不应做数学宏展开。
-const TEXT_MODE_CMDS: &[&str] = &[
-    "\\text",
-    "\\textrm",
-    "\\textsf",
-    "\\texttt",
-    "\\textmd",
-    "\\textbf",
-    "\\textnormal",
-    "\\textup",
-    "\\textit",
-    "\\textsl",
-    "\\textsc",
-];
-
-/// 修复 katex-rs 0.2 的上游缺陷：`·`（U+00B7）被注册为**内置宏** `\cdotp`
-/// （`macros/builtins.rs`），宏展开不分模式——在 `\text{...}` 的文本模式里
-/// `\cdotp` 是数学专用符号，解析失败渲染成红字 `\cdotp`（issue #13，
-/// `\text{m·K}` → `m\cdotp K`）。KaTeX JS 无此问题：`·` 在 JS 里是
-/// math/text 双模式直接符号（glyph U+22C5），不走宏。
-///
-/// 修法：把 `\text` 家族花括号组内的 U+00B7 替换为 U+22C5（⋅）。katex-rs
-/// 文本模式对无宏表项的 Unicode 字符按字面 glyph 渲染（实测 浓度/×/α 均正常），
-/// 而 U+22C5 正是 KaTeX JS 两侧模式共同的 glyph——替换后与 JS 输出像素级一致。
-/// 数学模式不受影响：`a · b` 仍走内置宏 `\cdotp`（punct 间距），保持 JS 语义。
-///
-/// 注意同类缺陷还存在于其余 41 个数学符号宏（≠ U+2260、∉ U+2209 等），
-/// 均会在 `\text{}` 内报红；这里只修 issue 实发的 U+00B7，其余等上游或按需再扩。
-/// 无 `·` 时零分配原样返回。
-fn fix_text_mode_middle_dot(tex: &str) -> String {
-    if !tex.contains('\u{00B7}') || !tex.contains('\\') {
-        return tex.to_string();
-    }
-    let bytes = tex.as_bytes();
-    let mut out = String::with_capacity(tex.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'\\' {
-            // 读命令名（`\` 后的连续 ASCII 字母；非字母则命令名为空）。
-            let name_start = i + 1;
-            let mut name_end = name_start;
-            while name_end < bytes.len() && bytes[name_end].is_ascii_alphabetic() {
-                name_end += 1;
-            }
-            let cmd = &tex[i..name_end];
-            // 是 \text 家族且紧跟 `{`：整体替换组内 `·`，跳到闭括号后。
-            if TEXT_MODE_CMDS.contains(&cmd) && name_end < bytes.len() && bytes[name_end] == b'{' {
-                if let Some((content, close_end)) = read_braced(tex, name_end) {
-                    out.push_str(cmd);
-                    out.push('{');
-                    out.push_str(&content.replace('\u{00B7}', "\u{22C5}"));
-                    out.push('}');
-                    i = close_end;
-                    continue;
-                }
-                // 未闭合：按普通文本处理，交给 katex 报红（容错语义一致）。
-            }
-            out.push_str(cmd);
-            i = name_end;
-        } else {
-            // 普通段：原样拷贝到下一个 `\`（str 切片保证 UTF-8 边界安全）。
-            let next = tex[i..].find('\\').map(|p| i + p).unwrap_or(bytes.len());
-            out.push_str(&tex[i..next]);
-            i = next;
-        }
-    }
-    out
-}
-
 /// 从 `open`（指向 `{`）读取配对花括号内容，返回 `(内容, 闭括号后位置)`。
 /// 不闭合返回 `None`。嵌套 `{}` 正确计数。
 fn read_braced(s: &str, open: usize) -> Option<(&str, usize)> {
@@ -285,7 +215,6 @@ fn read_braced(s: &str, open: usize) -> Option<(&str, usize)> {
 /// 渲染失败（坏 TeX）时回退到 HTML 转义后的原文，保证文章不因一个坏公式全篇崩。
 pub fn render_inline(tex: &str) -> String {
     let tex = expand_chem(tex);
-    let tex = fix_text_mode_middle_dot(&tex);
     KATEX_CTX.with(|ctx| {
         INLINE_SETTINGS.with(|settings| {
             katex::render_to_string(ctx, &tex, settings)
@@ -300,7 +229,6 @@ pub fn render_inline(tex: &str) -> String {
 /// （如 `<p class="math-display">`），这里只产出 KaTeX 的 span 串。
 pub fn render_display(tex: &str) -> String {
     let tex = expand_chem(tex);
-    let tex = fix_text_mode_middle_dot(&tex);
     KATEX_CTX.with(|ctx| {
         DISPLAY_SETTINGS.with(|settings| {
             katex::render_to_string(ctx, &tex, settings)
@@ -329,15 +257,6 @@ mod tests {
             html.contains("katex-display"),
             "块级公式应产出含 katex-display class 的结构, got: {html}"
         );
-    }
-
-    #[test]
-    fn render_bad_tex_does_not_panic() {
-        // throw_on_error=false：坏 TeX 不应 panic、不应返回 Err。
-        // KaTeX 可能渲染成红色错误 span，也可能把未知宏当字面文本处理。
-        // 关键契约：返回非空字符串、不中断调用方。
-        let html = render_inline("\\thisisnotarealmacroxyz{");
-        assert!(!html.is_empty(), "坏公式应返回非空 HTML, got empty");
     }
 
     #[test]
@@ -503,11 +422,8 @@ mod tests {
         assert_eq!(expand_chem(r"纯中文无公式"), r"纯中文无公式");
     }
 
-    // ── issue #13：\text{} 内的 `·`（U+00B7）报红 ─────────────────
-    // katex-rs 把 U+00B7 注册为内置宏 \cdotp，宏展开不分模式，文本模式里
-    // \cdotp 非法 → 红字 `\cdotp`。修复：\text 家族组内 U+00B7 → U+22C5。
-    // 注意：katex-rs 错误渲染是逐字母包 span 的 color node（无连续 "\cdotp"
-    // 子串、无 katex-error class），断言必须查 `color:#cc0000`。
+    // issue #13：保留真实渲染回归。katex-rs 0.3 已支持文本模式 U+00B7，
+    // 不再预处理 TeX。未知命令也可能产出 color node，不能只检查 katex-error。
 
     #[test]
     fn text_mode_middle_dot_does_not_render_red() {
@@ -531,7 +447,7 @@ mod tests {
     }
 
     #[test]
-    fn text_family_commands_all_shield_middle_dot() {
+    fn text_family_commands_render_middle_dot() {
         for cmd in [r"\text", r"\textbf", r"\textit", r"\texttt"] {
             let html = render_inline(&format!(r"{cmd}{{m·K}}"));
             assert!(
@@ -542,9 +458,8 @@ mod tests {
     }
 
     #[test]
-    fn math_mode_middle_dot_unchanged() {
-        // 数学模式的 `·` 仍走内置宏 \cdotp → punct 间距（mpunct span），
-        // 不得被文本模式修复改写成 bin 间距（\cdot）。
+    fn math_mode_middle_dot_renders_as_punctuation() {
+        // 数学模式 U+00B7 是标点符号，保持 \cdotp 的间距语义。
         let html = render_inline("a · b");
         assert!(
             !html.contains("#cc0000"),
@@ -554,30 +469,10 @@ mod tests {
             html.contains("mpunct"),
             "数学模式 · 应保持 \\cdotp（mpunct）语义, got: {html}"
         );
-        // 预处理不得触碰数学模式：原样返回。
-        assert_eq!(fix_text_mode_middle_dot("a · b"), "a · b");
     }
 
     #[test]
-    fn fix_text_mode_middle_dot_fast_path_and_nesting() {
-        // 无 `·` 零改动。
-        assert_eq!(fix_text_mode_middle_dot(r"\text{mK}"), r"\text{mK}");
-        // 嵌套花括号组内的 `·` 也替换（外层组整体处于文本模式）。
-        assert_eq!(
-            fix_text_mode_middle_dot(r"\text{a \textbf{b·c} ·}"),
-            "\\text{a \\textbf{b\u{22C5}c} \u{22C5}}"
-        );
-        // 未闭合 `\text{` 保持原样，交 katex 容错。
-        assert_eq!(fix_text_mode_middle_dot(r"\text{m·K"), r"\text{m·K");
-        // 多字节内容按 str 切片拷贝，不产生乱码。
-        assert_eq!(
-            fix_text_mode_middle_dot(r"\text{浓度·温度} x·y"),
-            "\\text{浓度\u{22C5}温度} x·y"
-        );
-    }
-
-    #[test]
-    fn display_mode_middle_dot_also_fixed() {
+    fn display_mode_middle_dot_renders() {
         let html = render_display(r"T = \frac{b}{\lambda}, \text{单位 m·K}");
         assert!(
             !html.contains("#cc0000"),

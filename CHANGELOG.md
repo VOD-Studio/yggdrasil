@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Rust 依赖升级**：升级至 rmcp 3.2、reqwest 0.13、Argon2 0.6、rand 0.10、AES-GCM 0.11、SHA-2 / MD5 0.11、fancy-regex 0.19、katex-rs 0.3 与 serial_test 4，并更新兼容范围内的锁定依赖。rmcp 不再精确固定预发布版本。
+- **密码与令牌兼容**：适配新版密码哈希、随机数和加密 API，保留既有 Argon2 PHC、MCP token 密文与哈希格式；操作系统随机源失败时返回错误，不中止服务进程。
+- **公式渲染升级**：同步 npm KaTeX 0.18.6 样式与字体，移除上游已修复的文本中间点兼容补丁。迁移 026 在事务内更新文章、评论中已保存的公式布局 class，涵盖草稿和回收站，保留原始正文、状态及时间戳；启动时清理公共页面和预览页的旧 SSR 缓存。
+- **HTTPS 信任配置**：reqwest 切换到新版 Rustls / AWS-LC 与平台证书验证器，两种 Docker 运行时镜像显式安装 `ca-certificates`。
+
+**部署注意**：首次启动新版前备份数据库并停止所有旧版实例，避免迁移完成后旧渲染器继续写入不兼容的公式 HTML。回滚时须同步恢复旧版公式 HTML 与静态资源，不能仅回退二进制。
+
 ## [0.12.4] - 2026-08-26
 
 ### Added
