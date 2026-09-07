@@ -146,11 +146,11 @@ jobs:
         with:
           node-version: '22'
 
-      # package.json 的 packageManager 锁定 pnpm@11.26.0，corepack 按它激活。
-      - name: Enable pnpm via corepack
-        run: corepack enable pnpm
-        env:
-          COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
+      # pnpm 12 使用原生二进制，Corepack 的旧 bin/pnpm.cjs 启动路径不再适用。
+      - name: Install pnpm 12
+        run: |
+          corepack disable pnpm
+          npm install --global pnpm@12.3.4
 
       - name: Biome lint (libs)
         run: cd libs && pnpm install --frozen-lockfile && pnpm exec biome check .

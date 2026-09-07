@@ -75,8 +75,7 @@ RUN ARCH="$(dpkg --print-architecture)" \
     && if [ "$CN_MIRROR" = "true" ]; then NODE_SRC="${NODE_MIRROR}"; else NODE_SRC="https://nodejs.org/dist"; fi \
     && curl -fsSL "${NODE_SRC}/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.gz" \
         | tar -xz -C /usr/local --strip-components=1 \
-    && corepack enable \
-    && corepack prepare pnpm@11.26.0 --activate
+    && npm install --global pnpm@12.3.4
 
 # CI=true: 无 TTY 容器内 pnpm install 检测到 node_modules volume 与 lockfile
 # 不匹配（如 watch rebuild 后 lockfile 更新）需清空重建时, 默认因无法交互

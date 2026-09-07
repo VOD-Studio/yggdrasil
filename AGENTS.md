@@ -37,7 +37,7 @@ Yggdrasil is a fullstack blog/CMS built with **Dioxus 0.7**. A single Rust crate
 
 ## Development Commands
 
-Prerequisites: Rust 1.95+, `wasm32-unknown-unknown` target, `dx` CLI (v0.7.10), `tailwindcss` CLI v4, PostgreSQL, Node 22.12+ (22.x / 24.x / 26+) / pnpm.
+Prerequisites: Rust 1.95+, `wasm32-unknown-unknown` target, `dx` CLI (v0.7.10), `tailwindcss` CLI v4, PostgreSQL, Node 22.12+ (22.x / 24.x / 26+) / pnpm 12.3.4. Install pnpm with `npm install --global pnpm@12.3.4`; if Corepack currently provides the pnpm shim, run `corepack disable pnpm` first (Corepack's legacy `bin/pnpm.cjs` launcher does not support pnpm 12).
 
 ```bash
 # Dev server (builds libs + highlight.css + katex.css first; runs pnpm install via build-libs)
