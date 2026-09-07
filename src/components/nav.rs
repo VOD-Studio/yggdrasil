@@ -20,7 +20,7 @@ pub fn build_nav_items(route: Route) -> Vec<NavItemConfig> {
         NavItemConfig {
             route: Route::Home {},
             label: "首页",
-            is_active: matches!(route, Route::Home {}),
+            is_active: matches!(route, Route::Home {} | Route::HomePage { .. }),
         },
         NavItemConfig {
             route: Route::Archives {},

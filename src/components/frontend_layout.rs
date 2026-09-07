@@ -36,6 +36,12 @@ fn route_skeleton(route: &Route) -> Element {
         Route::PostDetail { .. } | Route::Changelog { .. } => rsx! {
             DelayedSkeleton { PostDetailSkeleton {} }
         },
+        Route::Home {} => rsx! {
+            DelayedSkeleton { HomeSkeleton { with_intro: true } }
+        },
+        Route::HomePage { page } => rsx! {
+            DelayedSkeleton { HomeSkeleton { with_intro: true, paginated: *page > 1 } }
+        },
         Route::NotFound { .. } => rsx! {
             div { class: "py-20 md:py-28" }
         },
@@ -53,18 +59,24 @@ fn route_skeleton(route: &Route) -> Element {
 pub fn FrontendLayout() -> Element {
     let route = use_route::<Route>();
     let nav_items = build_nav_items(route.clone());
+    // 仅首页文章流使用宽版式，文章详情等页面保留原来的阅读宽度。
+    let max_width = if matches!(route, Route::Home {} | Route::HomePage { .. }) {
+        "max-w-6xl"
+    } else {
+        "max-w-4xl"
+    };
 
     rsx! {
         div { class: "min-h-screen flex flex-col bg-paper-theme",
             Header {
-                max_width: "max-w-4xl",
+                max_width,
                 nav_items,
                 right_content: rsx! {
                     SearchIconLink {}
                     ThemeToggle {}
                 },
             }
-            main { class: "flex-1 w-full max-w-4xl mx-auto px-6 py-6 md:py-12 overflow-x-clip",
+            main { class: "flex-1 w-full {max_width} mx-auto px-6 py-6 md:py-12 overflow-x-clip",
                 SuspenseBoundary { fallback: move |_| route_skeleton(&route), Outlet::<Route> {} }
             }
             Footer {}
