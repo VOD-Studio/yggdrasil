@@ -143,7 +143,7 @@ fn ArchiveTags() -> Element {
             title: "标签索引",
             summary,
             enabled: true,
-            default_open: true,
+            default_open: false,
             class: "archive-tags",
             panel_id: "archive-tags-panel",
             div { class: "archive-tags-body",
