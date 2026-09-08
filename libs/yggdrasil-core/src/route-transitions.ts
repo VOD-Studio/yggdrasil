@@ -6,6 +6,7 @@ import {
   type ScrollSnapshot,
   stabilizeNavigationScroll,
 } from './navigation-scroll';
+import { markPageEntryHandled } from './page-entry';
 import { beginTransition, type TransitionOwner } from './view-transition-lifecycle';
 
 const WAIT_MS = 300;
@@ -438,14 +439,7 @@ export class RouteTransitions {
           return;
         }
         const wrapper = this.wrapper(nav);
-        if (nav.rendered && wrapper) {
-          wrapper.setAttribute('data-vt-enter-handled', 'true');
-          // Suppress sections present in this snapshot, retaining animations of future tab panes.
-          for (const element of wrapper.querySelectorAll('.animate-section-enter')) {
-            if (!element.closest('[role="dialog"], .animate-modal-panel-enter'))
-              element.setAttribute('data-vt-entry-captured', 'true');
-          }
-        }
+        if (nav.rendered && wrapper) markPageEntryHandled(wrapper);
         this.correctScroll(nav);
         this.assignShell(nav);
         if (nav.post && nav.rendered) {

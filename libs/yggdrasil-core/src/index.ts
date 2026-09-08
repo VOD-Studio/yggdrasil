@@ -2,6 +2,7 @@ import type { ThemeName } from '@yggdrasil/shared';
 import { initAnchorClick } from './anchor-click';
 import { scrollToHash } from './hash-scroll';
 import { initMermaid } from './mermaid';
+import { initPageReveal } from './page-entry';
 import { initPostContent } from './post-content';
 import { routeTransitions } from './route-transitions';
 import { applyResolvedTheme, startThemeTransition } from './theme-transition';
@@ -29,3 +30,6 @@ window.__startThemeTransition = startThemeTransition;
 window.__applyResolvedTheme = applyResolvedTheme;
 window.__initTocSidebar = initTocSidebar;
 window.__routeTransitions = routeTransitions;
+
+// Cross-document transitions can reveal before the WASM router connects.
+initPageReveal();
