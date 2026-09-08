@@ -134,8 +134,8 @@ export const SCALE_MIN = 1; // 最小 = 适应窗口
 export const SCALE_MAX = 8; // 相对 fit 的最大倍率
 export const BUTTON_ZOOM_STEP = 1.5; // 工具栏 ± 按钮步进
 export const DOUBLE_CLICK_SCALE = 2.5; // 双击/双敲击放大的目标倍率
-// 竖直拖拽关闭的行程阈值（px）：与旧「滚动关闭」的 120px 行程对齐。
-export const DRAG_CLOSE_PX = 120;
+export const SCROLL_CLOSE_PX = 120; // 页面滚动缩回原图的行程
+export const DRAG_CLOSE_PX = SCROLL_CLOSE_PX;
 
 export function clampScale(s: number): number {
   return Math.min(SCALE_MAX, Math.max(SCALE_MIN, s));
@@ -245,6 +245,21 @@ export function closeFlightTransform(
     `translate(${r(layoutW / 2)}px, ${r(layoutH / 2)}px) rotate(${r(deg)}deg) scale(${r(k)}) ` +
     `translate(${r(-layoutW / 2)}px, ${r(-layoutH / 2)}px)`
   );
+}
+
+// 在当前绘制结果外层插值到页面原图的实时 rect。保留快照 transform，
+// 缩放、旋转甚至尚未结束的打开动画都从眼前位置起算，不重置视图或反向旋转。
+export function scrollFlightTransform(
+  from: Rect,
+  to: Rect,
+  progress: number,
+  transform: string,
+): string {
+  const sx = 1 + (from.w > 0 ? to.w / from.w - 1 : 0) * progress;
+  const sy = 1 + (from.h > 0 ? to.h / from.h - 1 : 0) * progress;
+  const x = from.x + (to.x - from.x) * progress - from.x * sx;
+  const y = from.y + (to.y - from.y) * progress - from.y * sy;
+  return `translate(${x}px, ${y}px) scale(${sx}, ${sy}) ${transform === 'none' ? '' : transform}`;
 }
 
 // 旋转后的有效视觉尺寸：90°/270° 时宽高互换（fit 计算用）。

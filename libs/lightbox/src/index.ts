@@ -19,6 +19,8 @@ import {
   originalUrl,
   panBy,
   type Rect,
+  SCROLL_CLOSE_PX,
+  scrollFlightTransform,
   transformFor,
   viewTransformCss,
   wheelZoomFactor,
@@ -56,6 +58,9 @@ interface LightboxState {
   gallery: HTMLElement[];
   index: number | null;
   isSingle: boolean;
+  openScrollY: number;
+  scrollHandler: (() => void) | null;
+  scrollClose: { rect: Rect; transform: string; imgOpacity: number; overlayOpacity: number } | null;
   origSrc: string;
   altText: string;
   closing: boolean;
@@ -427,7 +432,7 @@ function openLightbox(originNode: HTMLElement, gallery: HTMLElement[], index: nu
   // 之后 start()/加载流程不再触碰遮罩 opacity，避免任何可见回退。
   void overlay.offsetHeight;
   requestAnimationFrame((): void => {
-    if (!state) return; // 首帧前可能已被关闭（immediate 路径）
+    if (state?.overlay !== overlay || state.closing || state.scrollClose) return;
     overlay.style.transition = 'opacity 250ms ease-out';
     overlay.style.opacity = '1';
   });
@@ -447,6 +452,9 @@ function openLightbox(originNode: HTMLElement, gallery: HTMLElement[], index: nu
     gallery,
     index,
     isSingle,
+    openScrollY: window.scrollY,
+    scrollHandler: null,
+    scrollClose: null,
     origSrc,
     altText,
     closing: false,
@@ -465,13 +473,13 @@ function openLightbox(originNode: HTMLElement, gallery: HTMLElement[], index: nu
   pokeToolbar();
 
   // 焦点移入灯箱
-  overlay.focus();
+  overlay.focus({ preventScroll: true });
   // 立即绑定交互（不等图片加载）：加载期间 Esc/滚动/点背景也须可关闭。
   bindInteractions();
 
   // 图片加载后再做动画（naturalW/H 要等加载）
   const start = (): void => {
-    if (!state) return; // 加载前可能已被关闭
+    if (state?.img !== img || state.closing || state.scrollClose) return;
     const naturalW = img.naturalWidth || img.clientWidth || 1;
     const naturalH = img.naturalHeight || img.clientHeight || 1;
     const originRect = rectOf(originNode);
@@ -499,7 +507,7 @@ function openLightbox(originNode: HTMLElement, gallery: HTMLElement[], index: nu
       img.style.top = '0';
       // 下一帧淡入
       requestAnimationFrame((): void => {
-        if (!state) return;
+        if (state?.img !== img || state.closing || state.scrollClose) return;
         img.style.transition = 'opacity 200ms ease-out';
         img.style.opacity = '1';
       });
@@ -519,9 +527,9 @@ function openLightbox(originNode: HTMLElement, gallery: HTMLElement[], index: nu
     // double-rAF：第一帧绘制首帧（无动画），第二帧才启动 transition 到居中。
     // 遮罩淡入已在创建时启动并独立进行，这里不再触碰 overlay opacity。
     requestAnimationFrame((): void => {
-      if (!state) return;
+      if (state?.img !== img || state.closing || state.scrollClose) return;
       requestAnimationFrame((): void => {
-        if (!state) return;
+        if (state?.img !== img || state.closing || state.scrollClose) return;
         img.style.transition = 'transform 250ms ease-out, opacity 250ms ease-out';
         img.style.transform = transformFor(target, baseW, baseH);
         img.style.opacity = '1';
@@ -578,7 +586,24 @@ function closeLightbox(immediate: boolean): void {
     return;
   }
 
-  if (s.normalized) {
+  let followScroll: (() => void) | null = null;
+  if (s.scrollClose) {
+    // 与滚动中的外层变换同构，Esc/大步滚轮都从当前动画帧继续飞回。
+    const flight = s.scrollClose;
+    s.img.style.transition = 'transform 250ms ease-out, opacity 250ms ease-out';
+    followScroll = (): void => {
+      if (state !== s) return;
+      s.img.style.transform = scrollFlightTransform(
+        flight.rect,
+        rectOf(s.originNode),
+        1,
+        flight.transform,
+      );
+    };
+    followScroll();
+    // 收尾的 250ms 内滚轮惯性仍可能移动页面，终点继续跟随，结束后解除。
+    window.addEventListener('scroll', followScroll, { passive: true });
+  } else if (s.normalized) {
     // 操控态（缩放/旋转/平移过）：当前 transform 是定长 6 函数列表，或
     // dragclose 的 matrix() 串。飞回目标必须写成同构 6 函数列表
     // （closeFlightTransform）：rotate/k 槽两端相等恒不动，只有外层
@@ -616,7 +641,8 @@ function closeLightbox(immediate: boolean): void {
   s.overlay.style.opacity = '0';
 
   const done = (): void => {
-    removeOverlay();
+    if (followScroll) window.removeEventListener('scroll', followScroll);
+    if (state === s) removeOverlay();
   };
   // 250ms 兜底，避免 transitionend 不触发
   const timer = setTimeout(done, 280);
@@ -653,7 +679,7 @@ function removeOverlay(): void {
 
 // 图集切换：淡入淡出，不飞行。newIndex 循环（首尾衔接）。
 function gotoIndex(rawIndex: number): void {
-  if (!state || state.isSingle) return;
+  if (!state || state.closing || state.isSingle) return;
   const s = state;
   if (!s.gallery || s.gallery.length === 0) return;
   let newIndex = rawIndex;
@@ -665,6 +691,7 @@ function gotoIndex(rawIndex: number): void {
   const details = getImageDetails(newNode);
   if (!details) return;
   const { origSrc, altText } = details;
+  resetScrollClose(s);
 
   // 淡出当前图
   s.img.style.transition = 'opacity 150ms ease-out';
@@ -672,13 +699,13 @@ function gotoIndex(rawIndex: number): void {
 
   // 150ms 后换图淡入
   const swap = (): void => {
-    if (!state) return; // 切换中可能已关闭
+    if (state !== s || s.closing || s.scrollClose) return;
     // 换图后必须按新图真实尺寸重算几何，否则新图沿用第一张的
     // target/scale，宽高比不同的图会被压扁/拉伸。
     // 布局盒直接设为 target 尺寸（宽高比 = 新图），transform 归位 scale(1,1)；
     // baseW/H 同步为 target 尺寸，关闭/滚动关闭的飞回动画以它为 scale 基准。
     const applyGeometry = (): void => {
-      if (!state) return;
+      if (state !== s || s.closing || s.scrollClose) return;
       const naturalW = s.img.naturalWidth || 1;
       const naturalH = s.img.naturalHeight || 1;
       const target = fitCentered(naturalW, naturalH, window.innerWidth, window.innerHeight);
@@ -692,7 +719,7 @@ function gotoIndex(rawIndex: number): void {
       s.img.style.transform = transformFor(target, target.w, target.h);
     };
     const fade = (): void => {
-      if (!state) return;
+      if (state !== s || s.closing || s.scrollClose) return;
       s.img.style.transition = 'opacity 150ms ease-out';
       s.img.style.opacity = '1';
     };
@@ -719,6 +746,7 @@ function gotoIndex(rawIndex: number): void {
     // 更新 originNode 为新图，使后续关闭/拖拽关闭飞回新图位置
     s.originNode = newNode;
     s.index = newIndex;
+    s.openScrollY = window.scrollY;
     // 换图归零查看器操控（旋转/缩放/平移不带到下一张）；applyGeometry 已把
     // 布局盒设为新 target 尺寸，normalized 回退到 transformFor 路径。
     s.view = { deg: 0, scale: 1, user: null };
@@ -752,6 +780,7 @@ function baseGeometry(s: LightboxState): BaseViewGeometry {
 function applyView(animate: boolean): void {
   const s = state;
   if (!s) return;
+  resetScrollClose(s);
   const { k, layoutW, layoutH, fit, m0 } = baseGeometry(s);
   const wPx = `${layoutW}px`;
   const hPx = `${layoutH}px`;
@@ -812,7 +841,7 @@ function showBadge(): void {
 // 工具栏空闲自动隐藏：任何指针活动唤醒，2.5s 无活动且不在工具栏上/手势中则淡出。
 function pokeToolbar(): void {
   const s = state;
-  if (!s) return;
+  if (!s || s.closing) return;
   s.toolbar.classList.remove('is-hidden');
   clearTimeout(s.idleTimer);
   s.idleTimer = setTimeout((): void => {
@@ -823,7 +852,7 @@ function pokeToolbar(): void {
 
 function zoomBy(k: number, px: number, py: number, animate: boolean): void {
   const s = state;
-  if (!s?.target || isErrorShown(s)) return;
+  if (!s?.target || s.closing || isErrorShown(s)) return;
   const next = clampScale(s.view.scale * k);
   if (next === s.view.scale) return; // 已到顶/到底
   ensureNormalized();
@@ -836,7 +865,7 @@ function zoomBy(k: number, px: number, py: number, animate: boolean): void {
 
 function rotateCW(): void {
   const s = state;
-  if (!s?.target || isErrorShown(s)) return;
+  if (!s?.target || s.closing || isErrorShown(s)) return;
   ensureNormalized();
   s.view.deg = nextRotationDeg(s.view.deg);
   // 旋转后保持倍率、绕视口中心重锚定、平移清零（避免旋转把图甩出视口）
@@ -852,7 +881,7 @@ function rotateCW(): void {
 
 function resetView(animate: boolean): void {
   const s = state;
-  if (!s?.target || isErrorShown(s)) return;
+  if (!s?.target || s.closing || isErrorShown(s)) return;
   ensureNormalized();
   // 归位取最近整圈：rotate 槽按累计角插值，450→360 只回摆 90°（而非 450°）。
   s.view = { deg: Math.round(s.view.deg / 360) * 360, scale: 1, user: null };
@@ -880,6 +909,59 @@ function updateDownloadLink(): void {
 
 // ============ 交互绑定 ============
 
+function resetScrollClose(s: LightboxState): void {
+  s.openScrollY = window.scrollY;
+  if (!s.scrollClose) return;
+  s.scrollClose = null;
+  s.img.style.opacity = '1';
+  s.overlay.style.transition = 'opacity 180ms ease-out';
+  s.overlay.style.opacity = '1';
+}
+
+function onScrollClose(): void {
+  const s = state;
+  if (!s || s.closing) return;
+  const progress = Math.min(Math.abs(window.scrollY - s.openScrollY) / SCROLL_CLOSE_PX, 1);
+  if (progress === 0 && !s.scrollClose) return;
+  if (s.reduced || !s.target || isErrorShown(s)) {
+    closeLightbox(false);
+    return;
+  }
+  if (!s.scrollClose) {
+    const style = getComputedStyle(s.img);
+    s.scrollClose = {
+      rect: rectOf(s.img),
+      transform: style.transform,
+      imgOpacity: Number(style.opacity),
+      overlayOpacity: Number(getComputedStyle(s.overlay).opacity),
+    };
+    // 先提交同构首帧；快照包含实际绘制中的缩放/旋转，不依赖动画目标值。
+    s.img.style.transition = 'none';
+    s.img.style.transform = scrollFlightTransform(
+      s.scrollClose.rect,
+      s.scrollClose.rect,
+      0,
+      s.scrollClose.transform,
+    );
+    void s.img.offsetHeight;
+  }
+  if (progress >= 1) {
+    closeLightbox(false);
+    return;
+  }
+  // 短过渡平滑离散的鼠标滚轮步进；连续滚动持续更新原图实时位置。
+  s.img.style.transition = 'transform 100ms ease-out, opacity 100ms ease-out';
+  s.img.style.transform = scrollFlightTransform(
+    s.scrollClose.rect,
+    rectOf(s.originNode),
+    progress,
+    s.scrollClose.transform,
+  );
+  s.img.style.opacity = String(s.scrollClose.imgOpacity * (1 - progress));
+  s.overlay.style.transition = 'opacity 100ms ease-out';
+  s.overlay.style.opacity = String(s.scrollClose.overlayOpacity * (1 - progress));
+}
+
 function bindInteractions(): void {
   const s = state;
   if (!s) return;
@@ -889,8 +971,7 @@ function bindInteractions(): void {
     if (state && ev.target === state.overlay) closeLightbox(false);
   });
 
-  // 阻断触屏滚动串联到 body（旧「滚动关闭」已由 img 竖直拖拽手势取代；
-  // 固定遮罩下背景滚动只会不可见地挪动页面）。
+  // 触屏仍由图片指针手势处理，避免同时触发页面滚动关闭。
   s.overlay.addEventListener(
     'touchmove',
     (ev: TouchEvent): void => {
@@ -899,14 +980,21 @@ function bindInteractions(): void {
     { passive: false },
   );
 
-  // 滚轮缩放（桌面）：preventDefault 阻断页面滚动，缩放锚定光标。
-  // 工具栏上滚轮不缩放（防误触）。
+  s.scrollHandler = onScrollClose;
+  window.addEventListener('scroll', s.scrollHandler, { passive: true });
+
+  // 普通滚轮保留页面滚动，驱动图片缩回原位；Ctrl/⌘ + 滚轮及触控板
+  // 捏合（ctrlKey）继续锚定光标缩放。工具栏上阻止滚动，避免误关。
   s.overlay.addEventListener(
     'wheel',
     (ev: WheelEvent): void => {
-      if (!state) return;
+      if (!state || state.closing) return;
+      if (ev.target instanceof Element && ev.target.closest('.lightbox-toolbar')) {
+        ev.preventDefault();
+        return;
+      }
+      if (!ev.ctrlKey && !ev.metaKey) return;
       ev.preventDefault();
-      if (ev.target instanceof Element && ev.target.closest('.lightbox-toolbar')) return;
       zoomBy(wheelZoomFactor(ev.deltaY, ev.deltaMode), ev.clientX, ev.clientY, false);
     },
     { passive: false },
@@ -1007,7 +1095,7 @@ function bindInteractions(): void {
 
 function onPointerDown(ev: PointerEvent): void {
   const s = state;
-  if (!s?.target || isErrorShown(s)) return;
+  if (!s?.target || s.closing || isErrorShown(s)) return;
   if (ev.pointerType === 'mouse' && ev.button !== 0) return; // 仅主键
   s.img.setPointerCapture(ev.pointerId);
   s.pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
@@ -1132,6 +1220,10 @@ function onPointerUp(ev: PointerEvent): void {
 
 function cleanupInteractions(): void {
   if (!state) return;
+  if (state.scrollHandler) {
+    window.removeEventListener('scroll', state.scrollHandler);
+    state.scrollHandler = null;
+  }
   if (state.keyHandler) {
     document.removeEventListener('keydown', state.keyHandler);
     state.keyHandler = null;
