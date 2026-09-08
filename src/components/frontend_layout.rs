@@ -22,6 +22,9 @@ use crate::theme::ThemeToggle;
 /// 根据当前前台路由选择对应的骨架屏组件。
 fn route_skeleton(route: &Route) -> Element {
     match route {
+        Route::HomePage { page } => rsx! {
+            DelayedSkeleton { HomeSkeleton { current_page: (*page).max(1) } }
+        },
         Route::Archives {} => rsx! {
             DelayedSkeleton { ArchiveSkeleton {} }
         },
