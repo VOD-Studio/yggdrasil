@@ -27,6 +27,7 @@
   --color-paper-code-bg: #ccd0da;
   --color-paper-border: #bcc0cc;
   --color-paper-accent: #40a02b;
+  --color-paper-selection: color-mix(in srgb, var(--color-paper-accent) 30%, transparent);
   --color-paper-accent-soft: #ccd0da;
   --color-paper-accent-2: #179299;
   --color-paper-accent-2-soft: #ccd0da;
@@ -56,6 +57,10 @@
       "PingFang SC", "Microsoft YaHei", sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::selection {
+    background-color: var(--color-paper-selection);
   }
 
   @keyframes page-enter {
@@ -269,6 +274,7 @@
     --color-paper-code-bg: #313244;
     --color-paper-border: #45475a;
     --color-paper-accent: #a6e3a1;
+    --color-paper-selection: color-mix(in srgb, var(--color-paper-accent) 30%, transparent);
     --color-paper-accent-soft: #1e2e22;
     --color-paper-accent-2: #94e2d5;
     --color-paper-accent-2-soft: #1e2a28;

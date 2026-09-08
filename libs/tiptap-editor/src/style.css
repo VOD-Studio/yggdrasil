@@ -149,8 +149,7 @@
 
 /* Selection */
 .tiptap-editor .ProseMirror ::selection {
-  /* Latte surface0 */
-  background: #ccd0da;
+  background-color: var(--color-paper-selection);
 }
 
 /* Cursor */
@@ -204,10 +203,6 @@
 .dark .tiptap-editor a {
   /* Mocha blue */
   color: #89b4fa;
-}
-
-.dark .tiptap-editor .ProseMirror ::selection {
-  background: rgba(30, 102, 245, 0.3);
 }
 
 /* ========== Link ========== */

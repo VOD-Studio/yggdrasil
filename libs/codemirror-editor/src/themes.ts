@@ -1,11 +1,22 @@
 // @catppuccin/codemirror 提供现成的 Catppuccin 主题 Extension，
 // 与项目 themes/ 下的 Catppuccin Latte/Mocha .tmTheme 视觉一致。
 import { catppuccinLatte, catppuccinMocha } from '@catppuccin/codemirror';
-import type { Extension } from '@codemirror/state';
+import { type Extension, Prec } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import type { ThemeName } from '@yggdrasil/shared';
 
 export type { ThemeName };
+
+// 高于 Catppuccin 的选区规则；只改背景，保留 drawSelection 对原生选区的隐藏，
+// 避免原生选区与自绘选区叠加，也不覆盖语法高亮的文字颜色。
+const selectionBackgroundOverride: Extension = Prec.high(
+  EditorView.theme({
+    '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection':
+      {
+        backgroundColor: 'var(--color-paper-selection)',
+      },
+  }),
+);
 
 /**
  * 覆盖 CodeMirror core 内置 base theme 的两处问题：
@@ -60,5 +71,10 @@ const foldGutterCenterOverride: Extension = EditorView.theme({
 /** 根据主题名返回对应的 CodeMirror 主题 Extension。 */
 export function themeExtension(name: ThemeName): Extension {
   const catppuccin = name === 'light' ? catppuccinLatte : catppuccinMocha;
-  return [catppuccin, gutterBackgroundOverride, foldGutterCenterOverride];
+  return [
+    catppuccin,
+    selectionBackgroundOverride,
+    gutterBackgroundOverride,
+    foldGutterCenterOverride,
+  ];
 }
