@@ -872,6 +872,8 @@
   /* 封面用 blur-img 结构：去 margin、保持圆角，内层 img cover 填充 */
   .entry-cover .blur-img {
     margin: 0;
+    /* 客户端挂载没有服务端尺寸时仍保留可见占位，加载后写入真实 --ar。 */
+    aspect-ratio: var(--ar, 16 / 9);
     border-radius: var(--radius-card);
     overflow: hidden;
   }

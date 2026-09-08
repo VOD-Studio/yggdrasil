@@ -390,6 +390,28 @@ describe('lightbox 黑盒行为', () => {
     const fullImgOf = (container: HTMLElement): HTMLImageElement =>
       container.querySelector('.blur-img-full') as HTMLImageElement;
 
+    it('客户端挂载的封面在加载后恢复真实宽高比', () => {
+      const container = makeGalleryImage('/uploads/cover.webp', '封面');
+      mountRoot([container]);
+      window.__initLightbox('.post-content');
+      const full = fullImgOf(container);
+      stubNatural(full, 1200, 800);
+      full.dispatchEvent(new Event('load'));
+      expect(container.style.getPropertyValue('--ar')).toBe('1200 / 800');
+      expect(container.classList.contains('is-loaded')).toBe(true);
+    });
+
+    it('保留服务端已提供的图片宽高比', () => {
+      const container = makeGalleryImage('/uploads/cover.webp', '封面');
+      container.style.setProperty('--ar', '1600 / 900');
+      mountRoot([container]);
+      window.__initLightbox('.post-content');
+      const full = fullImgOf(container);
+      stubNatural(full, 1200, 675);
+      full.dispatchEvent(new Event('load'));
+      expect(container.style.getPropertyValue('--ar')).toBe('1600 / 900');
+    });
+
     it('缩略图失败：退避重试耗尽后才标 is-error 并补默认文案', () => {
       const container = makeGalleryImage('/uploads/gone.webp?thumb=300x300', '丢失');
       mountRoot([container]);

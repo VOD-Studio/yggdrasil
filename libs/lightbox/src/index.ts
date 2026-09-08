@@ -170,6 +170,16 @@ function initLazyLoad(container: Element): void {
   if (!fullSrc) return;
 
   const onFullLoaded = (): void => {
+    // Client route mounts have no server-measured ratio. Preserve the SSR ratio
+    // when present, and size other containers once their image is available.
+    if (
+      container instanceof HTMLElement &&
+      !container.style.getPropertyValue('--ar') &&
+      fullImg.naturalWidth > 0 &&
+      fullImg.naturalHeight > 0
+    ) {
+      container.style.setProperty('--ar', `${fullImg.naturalWidth} / ${fullImg.naturalHeight}`);
+    }
     // 给容器加 is-loaded，CSS 据此显式隐藏 placeholder。
     // 直接把 full 层 opacity 设为 1（清掉 transition），不依赖 CSS 的 opacity
     // 过渡：合成层重绘时机不稳定，可能导致 full 层卡在 opacity:0，直到一次
