@@ -1,7 +1,8 @@
 //! 素材上传 modal（素材管理页内上传）。
 //!
 //! UI 外壳（遮罩/面板/关闭动效经 [`crate::components::ui::ModalShell`]，逐文件状态列表
-//! 在此渲染）；上传状态机、worker 池并发调度与校验规则见 [`super::upload_pool`]。
+//! 在此渲染）；上传状态机、worker 池并发调度与校验规则见
+//! [`crate::components::assets::upload_pool`]。
 //!
 //! Esc / 粘贴监听挂在 window 上，只在 mount 注册一次、`use_drop` 移除；handler 内用
 //! `visible.peek()` 守卫——modal 关闭后粘贴绝不触发上传。无文件的文本粘贴不拦截

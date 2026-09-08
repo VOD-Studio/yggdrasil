@@ -1,8 +1,8 @@
 //! 上传引擎内部状态机：与 UI 完全解耦的纯逻辑（无 `rsx!` / 无 Dioxus 组件），
-//! 供 [`super::asset_upload::AssetUploadModal`] 组合使用。
+//! 供 [`crate::components::assets::AssetUploadModal`] 组合使用。
 //!
-//! 三条入口（点击选择 / 拖拽 / 粘贴）收敛到同一个 [`enqueue_files`]：拿到的
-//! `web_sys::File` 先过 [`validate_file`]（镜像服务端 5MiB / 四种 MIME 的硬限制，
+//! 三条入口（点击选择 / 拖拽 / 粘贴）收敛到同一个 `enqueue_files`：拿到的
+//! `web_sys::File` 先过 `validate_file`（镜像服务端 5MiB / 四种 MIME 的硬限制，
 //! 不合格立即记失败行、不发请求），合格项入共享队列后由 **worker 池**并发上传：
 //! 在跑 worker 数上限 = 并发配置（「站点配置」面板 / `UPLOAD_CONCURRENCY` env 播种，
 //! 挂载时经 `get_upload_settings` 拉取，失败回退默认 3）。每个 worker 张间停顿
