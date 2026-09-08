@@ -1,5 +1,5 @@
 //! 搜索页：全文检索、主题入口与轻量阅读索引。
-//! 搜索由显式提交触发；请求序号确保清空或新搜索后不会回填旧结果。
+//! 输入停顿后自动检索，回车可立即提交；编辑与清空会立即作废旧请求。
 
 use std::rc::Rc;
 
@@ -10,6 +10,9 @@ use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::skeletons::search_skeleton::SearchSkeleton;
 use crate::models::post::PostListItem;
 use crate::router::Route;
+use crate::utils::time::sleep_ms;
+
+const SEARCH_DEBOUNCE_MS: u32 = 350;
 
 #[component]
 pub fn Search() -> Element {
@@ -18,11 +21,12 @@ pub fn Search() -> Element {
     let mut search_res = use_signal(|| None::<Result<PostListResponse, ServerFnError>>);
     let mut is_searching = use_signal(|| false);
     let mut request_id = use_signal(|| 0_u64);
+    let mut is_composing = use_signal(|| false);
     let mut input_element = use_signal(|| None::<Rc<MountedData>>);
 
     let mut on_search = move |value: String| {
         let q = value.trim().to_string();
-        if q.is_empty() || (is_searching() && q == submitted_query()) {
+        if is_composing() || q.is_empty() || (is_searching() && q == submitted_query()) {
             return;
         }
         let id = request_id() + 1;
@@ -50,6 +54,31 @@ pub fn Search() -> Element {
                 let _ = element.set_focus(true).await;
             });
         }
+    };
+
+    let mut schedule_search = move || {
+        // 同一序号同时约束防抖计时与网络响应，A → B → A 也不会提前提交。
+        request_id += 1;
+        is_searching.set(false);
+        let id = request_id();
+        let q = query().trim().to_string();
+        if q.is_empty() {
+            submitted_query.set(String::new());
+            search_res.set(None);
+            return;
+        }
+        if is_composing() {
+            return;
+        }
+        spawn(async move {
+            sleep_ms(SEARCH_DEBOUNCE_MS).await;
+            if request_id() == id
+                && !is_composing()
+                && !(q == submitted_query() && search_res().as_ref().is_some_and(|res| res.is_ok()))
+            {
+                on_search(q);
+            }
+        });
     };
 
     let status = if is_searching() {
@@ -107,9 +136,21 @@ pub fn Search() -> Element {
                                     clear_search();
                                 } else {
                                     query.set(value);
+                                    schedule_search();
                                 }
                             },
+                            oncompositionstart: move |_| {
+                                is_composing.set(true);
+                                schedule_search();
+                            },
+                            oncompositionend: move |_| {
+                                is_composing.set(false);
+                                schedule_search();
+                            },
                             onkeydown: move |event| {
+                                if event.is_composing() || is_composing() {
+                                    return;
+                                }
                                 if event.key() == Key::Escape {
                                     event.prevent_default();
                                     clear_search();
@@ -140,8 +181,8 @@ pub fn Search() -> Element {
                         }
                     }
                     div { class: "search-hints", id: "search-hint",
-                        span { "搜索标题与正文，让好奇心带路。" }
-                        span { class: "search-keyboard-hint", kbd { "Enter" } " 搜索" span { "·" } kbd { "Esc" } " 清空" }
+                        span { "输入完成后自动搜索标题与正文。" }
+                        span { class: "search-keyboard-hint", kbd { "Enter" } " 立即搜索" span { "·" } kbd { "Esc" } " 清空" }
                     }
                 }
             }
@@ -155,7 +196,7 @@ pub fn Search() -> Element {
                     }
                     DelayedSkeleton { SearchSkeleton {} }
                 } else if let Some(Ok(res)) = search_res() {
-                    div { key: "results-{request_id}", class: "search-enter",
+                    div { key: "results-{submitted_query}", class: "search-enter",
                         div { class: "search-results-heading",
                             h2 { "关于「{submitted_query}」" }
                             span { "{status}" }
@@ -183,7 +224,7 @@ pub fn Search() -> Element {
                         span { class: "search-empty-symbol", aria_hidden: "true", "↻" }
                         h2 { "线索还在，稍后再试。" }
                         p { "暂时没能完成搜索，请重新试一次。" }
-                        button { class: "search-text-link", r#type: "button", onclick: move |_| on_search(submitted_query()),
+                        button { class: "search-text-link", r#type: "button", onclick: move |_| on_search(query()),
                             "重新搜索" span { aria_hidden: "true", "↗" }
                         }
                     }
