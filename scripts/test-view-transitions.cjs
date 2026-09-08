@@ -331,6 +331,7 @@ async function admin() {
   const { page, browser } = state;
   let loggedIn = false;
   let seed = [];
+  let paginationFixture = false;
   try {
     // Browser-only table rows exercise pagination and nested scrolling without
     // creating or editing posts. The first row retains a real preview identity.
@@ -338,6 +339,7 @@ async function admin() {
       const response = await route.fetch();
       const data = await response.json();
       if (data.posts?.length) seed = data.posts;
+      if (!paginationFixture) return route.fulfill({ response });
       assert(seed.length, 'admin fixture requires at least one existing post');
       const item = seed.find(post => post.status === 'Draft') || seed[0];
       data.posts = Array.from({ length: 20 }, (_, index) => ({
@@ -364,6 +366,21 @@ async function admin() {
     await page.waitForURL(/\/admin\/?$/);
     loggedIn = true;
     await settle(page);
+    await push(page, '/admin/posts');
+    await page.waitForSelector('a[data-vt-post-link]');
+    const published = seed.find(post => post.status === 'Published');
+    assert(published, 'published-to-preview regression requires one published post');
+    const publishedLink = page.locator(`a[data-vt-post-link="${published.id}"]`);
+    const preview = await publishedLink.getAttribute('href');
+    assert(preview.startsWith('/admin/preview/'), 'published admin titles must keep the stable preview layout');
+    await publishedLink.click();
+    await ready(page, preview);
+    await page.waitForSelector(`[data-vt-detail="${published.id}"]`);
+    await page.locator('a[data-vt-return]').filter({ hasText: '返回列表' }).click();
+    await ready(page, '/admin/posts');
+    console.log('PASS published-admin-article-preview-return');
+    paginationFixture = true;
+    await push(page, '/admin/');
     await push(page, '/admin/posts');
     await page.waitForSelector('a[data-vt-post-link]');
     await page.getByRole('button', { name: '草稿', exact: true }).click();
