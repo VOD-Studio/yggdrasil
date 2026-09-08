@@ -477,15 +477,10 @@ fn PostRow(
     on_rebuild: EventHandler<i32>,
 ) -> Element {
     let date_str = post.formatted_date();
-    // 草稿标题跳预览（/admin/preview/<slug>），已发布标题跳公开详情页。
-    let title_dest = if post.status == PostStatus::Draft {
-        Route::PostPreview {
-            slug: post.slug.clone(),
-        }
-    } else {
-        Route::PostDetail {
-            slug: post.slug.clone(),
-        }
+    // 两种状态都在后台预览，保留列表来源与侧栏。直接切到公开详情会触发
+    // Dioxus 0.7.10 的跨布局 suspense 回收问题（见 preview.rs 模块文档）。
+    let title_dest = Route::PostPreview {
+        slug: post.slug.clone(),
     };
 
     rsx! {
