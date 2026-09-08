@@ -28,6 +28,29 @@ use crate::router::Route;
 /// - 封面用裸 `.blur-img`（纯展示，无灯箱），点击走卡片跳转，避免交互歧义。
 #[component]
 pub fn PostCard(post: PostListItem, #[props(default = false)] compact: bool) -> Element {
+    // 记住失败的 URL；同一文章更换封面后仍可重新加载。
+    let mut failed_cover = use_signal(|| None::<String>);
+    let cover_for_error = post.cover_image.clone();
+    let cover_failed = failed_cover.read().as_ref() == post.cover_image.as_ref();
+    let post_id = post.id;
+    #[cfg(target_arch = "wasm32")]
+    let cover_for_mount = post.cover_image.clone();
+    // 与友链头像一致：SSR 图片可能在 hydration 前就失败，补查已经完成的请求。
+    use_effect(move || {
+        #[cfg(target_arch = "wasm32")]
+        {
+            use wasm_bindgen::JsCast;
+            if let Some(img) = web_sys::window()
+                .and_then(|window| window.document())
+                .and_then(|document| document.get_element_by_id(&format!("post-cover-{post_id}")))
+                .and_then(|element| element.dyn_into::<web_sys::HtmlImageElement>().ok())
+            {
+                if img.complete() && img.natural_width() == 0 {
+                    failed_cover.set(cover_for_mount.clone());
+                }
+            }
+        }
+    });
     let post_slug = post.slug.clone();
     let date_str = post.formatted_date();
     let reading_time = post.reading_time.max(1);
@@ -52,18 +75,28 @@ pub fn PostCard(post: PostListItem, #[props(default = false)] compact: bool) -> 
             if let Some(cover) = post.cover_image.as_deref() {
                 div { class: "post-card-cover overflow-hidden",
                     div { class: "blur-img post-card-cover-blur !rounded-none",
-                        img {
-                            class: "blur-img-placeholder",
-                            src: "{cover}?w=30",
-                            alt: "",
-                            loading: "lazy",
-                        }
-                        img {
-                            class: "blur-img-full is-loaded",
-                            src: "{cover}?thumb={thumb_size}",
-                            alt: "{post.title}",
-                            loading: "lazy",
-                            decoding: "async",
+                        if cover_failed {
+                            div { class: "absolute inset-0 flex items-center justify-center bg-paper-entry text-paper-tertiary", aria_hidden: "true",
+                                svg { class: "w-8 h-8", view_box: "0 0 32 32", fill: "none", "aria-hidden": "true",
+                                    path { d: "M16 27V15M16 21C7 21 4 15 5 8C12 8 17 12 16 21ZM16 16C16 7 21 4 28 5C28 12 23 17 16 16M10 27H22", stroke: "currentColor", stroke_width: "1.2", stroke_linecap: "round", stroke_linejoin: "round" }
+                                }
+                            }
+                        } else {
+                            img {
+                                class: "blur-img-placeholder",
+                                src: "{cover}?w=30",
+                                alt: "",
+                                loading: "lazy",
+                            }
+                            img {
+                                id: "post-cover-{post_id}",
+                                class: "blur-img-full is-loaded",
+                                src: "{cover}?thumb={thumb_size}",
+                                alt: "{post.title}",
+                                loading: "lazy",
+                                decoding: "async",
+                                onerror: move |_| failed_cover.set(cover_for_error.clone()),
+                            }
                         }
                     }
                 }
