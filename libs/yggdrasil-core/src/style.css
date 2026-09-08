@@ -1,26 +1,103 @@
-/* ========== 主题切换圆形展开(View Transitions API) ========== */
+/* ========== 原生页面与文章共享元素过渡 ========== */
 
-/* 取消所有 UA 默认的动画和颜色混合 */
-::view-transition-old(root),
-::view-transition-new(root) {
+/* 独立文档只启用基础过渡；共享名称由客户端导航按次分配。 */
+@media (prefers-reduced-motion: no-preference) {
+  @view-transition {
+    navigation: auto;
+  }
+}
+
+html:not(.is-theme-transitioning)::view-transition-group(root) {
+  animation-duration: 240ms;
+}
+
+html:not(.is-theme-transitioning)::view-transition-old(root) {
+  animation: vt-fade-out 240ms ease both;
+  mix-blend-mode: normal;
+}
+
+html:not(.is-theme-transitioning)::view-transition-new(root) {
+  animation: vt-fade-in 240ms ease both;
+  mix-blend-mode: normal;
+}
+
+html.is-route-transitioning::view-transition-group(vt-post-title),
+html.is-route-transitioning::view-transition-group(vt-post-cover) {
+  animation-duration: 360ms;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+html.is-route-transitioning::view-transition-old(vt-post-title),
+html.is-route-transitioning::view-transition-old(vt-post-cover) {
+  animation: vt-fade-out 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  mix-blend-mode: normal;
+}
+
+html.is-route-transitioning::view-transition-new(vt-post-title),
+html.is-route-transitioning::view-transition-new(vt-post-cover) {
+  animation: vt-fade-in 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  mix-blend-mode: normal;
+}
+
+html.is-route-transitioning::view-transition-old(vt-post-cover),
+html.is-route-transitioning::view-transition-new(vt-post-cover) {
+  height: 100%;
+  object-fit: cover;
+}
+
+/* 相同布局的固定外壳独立捕获；只展示新快照，避免文字重影。 */
+html.is-route-transitioning::view-transition-group(vt-frontend-header),
+html.is-route-transitioning::view-transition-group(vt-frontend-footer),
+html.is-route-transitioning::view-transition-group(vt-admin-sidebar) {
+  animation: none;
+  z-index: 2;
+}
+
+html.is-route-transitioning::view-transition-old(vt-frontend-header),
+html.is-route-transitioning::view-transition-old(vt-frontend-footer),
+html.is-route-transitioning::view-transition-old(vt-admin-sidebar) {
+  display: none;
+}
+
+html.is-route-transitioning::view-transition-new(vt-frontend-header),
+html.is-route-transitioning::view-transition-new(vt-frontend-footer),
+html.is-route-transitioning::view-transition-new(vt-admin-sidebar) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+@keyframes vt-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes vt-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* ========== 主题切换圆形展开 ========== */
+
+/* 页面快照规则不参与主题圆形展开。 */
+html.is-theme-transitioning::view-transition-old(root),
+html.is-theme-transitioning::view-transition-new(root) {
   animation: none;
   mix-blend-mode: normal;
   display: block;
 }
 
-/* 无论什么方向,始终让 new (新状态) 在上方,并从小圆扩展覆盖 old */
-::view-transition-old(root) {
+html.is-theme-transitioning::view-transition-old(root) {
   z-index: 1;
 }
 
-::view-transition-new(root) {
+html.is-theme-transitioning::view-transition-new(root) {
   z-index: 2;
-  animation: tt-expand 0.4s ease-out forwards;
-  /* 显式给伪元素加上不透明背景,防止截图透明导致看不到覆盖效果 */
+  animation: tt-expand 400ms ease-out forwards;
   background: var(--color-paper-theme);
 }
 
-/* CSS 变量由 JS 注入到 html style 中 */
 @keyframes tt-expand {
   from {
     clip-path: circle(0px at var(--tt-x) var(--tt-y));
@@ -30,8 +107,8 @@
   }
 }
 
-/* 在 View Transition 期间强制禁用所有 CSS 过渡,
-   确保 VT 回调中 toggle dark class 后截图捕获的是最终颜色。 */
+/* 捕获最终颜色，同时将所有路由元素留在 root 快照内。
+   !important 仅用于覆盖导航临时设置的内联 view-transition-name。 */
 html.is-theme-transitioning,
 html.is-theme-transitioning *,
 html.is-theme-transitioning *::before,
@@ -39,22 +116,23 @@ html.is-theme-transitioning *::after {
   transition: none;
 }
 
-/* VT 期间清除动画残留的 transform,避免创建堆叠上下文(stack context)
-   导致 ::view-transition 伪元素无法覆盖可运行代码块区域。
+html.is-theme-transitioning * {
+  /* biome-ignore lint/complexity/noImportantStyles: theme snapshots must override route inline names */
+  view-transition-name: none !important;
+}
 
-   根因:animate-page-enter 动画用 transform: translateY/scale 做入场,
-   动画结束后因 animation-fill-mode: both 保留计算值(transform: none 被浏览器
-   序列化为 matrix(1,0,0,1,0,0),仍是"非 none"的 transform)。非 none transform
-   会创建堆叠上下文,使 ::view-transition-old/new(root) 顶层伪元素无法正确覆盖
-   其内部的 CodeMirror/xterm——圆形展开扫过时代码块直接瞬切而非被圆形揭示。
-
-   is-theme-transitioning 在 startViewTransition 之前添加(OLD/NEW 快照均含此 class),
-   故 OLD 与 NEW 快照里 transform 都被清为 none,两者一致,不影响动画效果。 */
 html.is-theme-transitioning .animate-page-enter {
-  /* !important 必需:animation-fill-mode: both 保留的关键帧值优先级高于普通
-     规则,只有 !important 能覆盖,确保 VT 期间 transform 被清为 none。 */
-  /* biome-ignore lint/complexity/noImportantStyles: animation-fill-mode: both 保留非 none transform 创建堆叠上下文,仅 !important 可覆盖(详见上方注释) */
+  /* biome-ignore lint/complexity/noImportantStyles: neutralize animation-created stacking contexts during theme capture */
   transform: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    /* biome-ignore lint/complexity/noImportantStyles: reduced motion also applies to a transition already in progress */
+    animation-duration: 0s !important;
+  }
 }
 
 /* ========== Mermaid 流程图放大浮层 ========== */

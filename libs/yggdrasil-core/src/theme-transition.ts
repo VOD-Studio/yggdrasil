@@ -1,16 +1,11 @@
 /**
- * 圆形展开主题切换动画(View Transitions API)。
- *
- * 采用纯 CSS 配合 CSS 变量的实现方案。
- * 核心策略:始终让"暗色层"在上方,通过 clip-path 揭示下方的"亮色层"。
- * - 亮 -> 暗: NEW 是暗色(在上方),从小圆扩大(`tt-expand`)覆盖底部的 OLD。
- * - 暗 -> 亮: OLD 是暗色(在上方),从大圆缩小(`tt-shrink`)揭开底部的 NEW。
- *
- * 相比 WAAPI 或动态注入 <style>,这种方式完全没有特异性冲突、DOM 残留或
- * API 优先级 bug,是目前最稳定的 VT 主题切换方案。
+ * 主题切换时以点击位置为圆心，让新主题从小圆展开覆盖旧主题。
+ * CSS 变量控制圆心与半径，异步换肤组件在新快照之前完成更新。
+ * 与页面导航共享所有权，避免被打断的回调改变后续快照或主题。
  */
 
 import { prefersReducedMotion, THEME_CHANGE_EVENT } from '@yggdrasil/shared';
+import { beginTransition } from './view-transition-lifecycle';
 
 /**
  * 主题切换自定义事件。
@@ -108,57 +103,71 @@ function notifyThemeChange(isDark: boolean): Promise<void> {
  * (与 Dioxus use_effect 幂等共存,后者作兜底)。
  */
 export function applyResolvedTheme(isDark: boolean): void {
-  notifyThemeChange(isDark);
+  // System preference changes also supersede any pending manual theme callback.
+  const owner = beginTransition('theme');
+  void notifyThemeChange(isDark);
   applyDarkClass(isDark);
+  owner.finish();
 }
 
 export function startThemeTransition(x: number, y: number): void {
+  // Cancellation commits a pending earlier theme before deriving the next target.
+  // Two quick clicks therefore toggle twice, even before the first native callback.
+  const owner = beginTransition('theme');
   const html = document.documentElement;
   const isDark = !html.classList.contains('dark');
-
-  const hasVT = typeof document.startViewTransition === 'function';
-  const reduced = prefersReducedMotion();
-
-  if (!hasVT || reduced) {
-    // 降级路径:无 VT 动画,同步换肤 + 翻 class(瞬切)。
-    // 同样通知换肤(不 await,保持瞬切语义;mermaid 等异步组件后台重渲染)。
-    void notifyThemeChange(isDark);
-    applyDarkClass(isDark);
-    return;
-  }
-
-  const maxR = maxCornerDistance(x, y);
-
-  // 注入动画需要的 CSS 变量
-  html.style.setProperty('--tt-x', `${x}px`);
-  html.style.setProperty('--tt-y', `${y}px`);
-  html.style.setProperty('--tt-r', `${maxR}px`);
-
-  // 禁用所有 CSS transition,确保 VT 截图是最终颜色
-  html.classList.add('is-theme-transitioning');
-
-  const vt = document.startViewTransition(async () => {
-    // ★ 关键:先通知换肤(同步 dispatch 事件让编辑器同步换肤 + 收集 registry 的
-    // 异步 Promise),再翻 .dark class。顺序不能反——编辑器换肤 + class 翻转必须被
-    // 同一个 getComputedStyle reflow 捕获进 NEW 快照。
+  let committed = false;
+  const commit = (): Promise<void> => {
+    if (committed) return Promise.resolve();
+    committed = true;
+    // Notify editors synchronously before flipping the class, then await Mermaid.
     const asyncWork = notifyThemeChange(isDark);
     applyDarkClass(isDark);
-    // 强制同步样式重算:确保 body 的 background-color 解析为目标值,
-    // 同时 flush 编辑器的同步换肤(CodeMirror <style> / xterm inline bg)。
-    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-    getComputedStyle(document.body).backgroundColor;
-    // ★ 等 registry 里异步换肤组件(mermaid.render)完成。callback 返回 Promise 时,
-    // 浏览器等它 resolve 才拍 NEW 快照、播圆形扩散——这样快照里已是新主题流程图。
-    await asyncWork;
-  });
-
-  vt.ready.catch(() => {});
-
-  vt.finished.finally(() => {
+    return asyncWork;
+  };
+  const cleanup = () => {
     html.classList.remove('is-theme-transitioning');
-    // 清理 CSS 变量
     html.style.removeProperty('--tt-x');
     html.style.removeProperty('--tt-y');
     html.style.removeProperty('--tt-r');
+  };
+  owner.onCancel(() => {
+    // skipTransition() still schedules the callback. Settle the requested color
+    // now, so that callback can safely no-op after a newer route/theme takes over.
+    void commit();
+    cleanup();
   });
+
+  if (typeof document.startViewTransition !== 'function' || prefersReducedMotion()) {
+    void commit();
+    owner.finish();
+    return;
+  }
+
+  html.style.setProperty('--tt-x', `${x}px`);
+  html.style.setProperty('--tt-y', `${y}px`);
+  html.style.setProperty('--tt-r', `${maxCornerDistance(x, y)}px`);
+  html.classList.add('is-theme-transitioning');
+
+  try {
+    const vt = document.startViewTransition(async () => {
+      if (!owner.isCurrent()) return;
+      const asyncWork = commit();
+      // Capture both CSS-based and imperative editor colors in the same reflow.
+      getComputedStyle(document.body).backgroundColor;
+      await asyncWork;
+    });
+    owner.attach(vt);
+    const finish = () => {
+      if (!owner.isCurrent()) return;
+      cleanup();
+      owner.finish();
+    };
+    void vt.finished.then(finish, finish);
+  } catch {
+    // Native snapshot setup can fail; changing the theme must still succeed.
+    void commit();
+    cleanup();
+    owner.finish();
+  }
 }

@@ -13,6 +13,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { onThemeChange, THEME_CHANGE_EVENT } from './theme-transition';
 import './index';
+import { beginTransition } from './view-transition-lifecycle';
 
 describe('startThemeTransition', () => {
   beforeEach(() => {
@@ -257,5 +258,132 @@ describe('startThemeTransition', () => {
     expect(registryCalled).toBe(true);
 
     off();
+  });
+});
+
+function deferred() {
+  let resolve!: () => void;
+  let reject!: (error: Error) => void;
+  const promise = new Promise<void>((done, fail) => {
+    resolve = done;
+    reject = fail;
+  });
+  return { promise, resolve, reject };
+}
+
+describe('theme and route transition interruptions', () => {
+  const nativeTransitions: Array<{
+    update: () => Promise<void>;
+    ready: ReturnType<typeof deferred>;
+    done: ReturnType<typeof deferred>;
+    finished: ReturnType<typeof deferred>;
+    skip: ReturnType<typeof vi.fn>;
+  }> = [];
+
+  beforeEach(() => {
+    vi.unstubAllGlobals();
+    document.documentElement.className = '';
+    document.documentElement.style.cssText = '';
+    nativeTransitions.length = 0;
+    Object.defineProperty(document, 'startViewTransition', {
+      configurable: true,
+      value: vi.fn((update: () => Promise<void>) => {
+        const native = {
+          update,
+          ready: deferred(),
+          done: deferred(),
+          finished: deferred(),
+          skip: vi.fn(),
+        };
+        nativeTransitions.push(native);
+        return {
+          ready: native.ready.promise,
+          updateCallbackDone: native.done.promise,
+          finished: native.finished.promise,
+          skipTransition: native.skip,
+        };
+      }),
+    });
+  });
+
+  afterEach(() => {
+    beginTransition('route').finish();
+    delete (document as unknown as { startViewTransition?: unknown }).startViewTransition;
+    document.documentElement.className = '';
+    document.documentElement.style.cssText = '';
+    vi.unstubAllGlobals();
+  });
+
+  it('two clicks before the first update commit both toggles, and stale callbacks cannot revert the latest color', async () => {
+    window.__startThemeTransition(10, 20);
+    window.__startThemeTransition(30, 40);
+    const [first, second] = nativeTransitions;
+    expect(first.skip).toHaveBeenCalledOnce();
+    expect(document.documentElement.classList.contains('dark')).toBe(true);
+
+    await second.update();
+    await first.update();
+    expect(document.documentElement.classList.contains('dark')).toBe(false);
+    expect(document.documentElement.style.getPropertyValue('--tt-x')).toBe('30px');
+
+    first.finished.resolve();
+    await Promise.resolve();
+    expect(document.documentElement.classList.contains('is-theme-transitioning')).toBe(true);
+    second.finished.resolve();
+    await Promise.resolve();
+    expect(document.documentElement.classList.contains('is-theme-transitioning')).toBe(false);
+  });
+
+  it('navigation commits a pending theme before taking over its snapshots', async () => {
+    window.__startThemeTransition(10, 20);
+    const route = beginTransition('route');
+    expect(document.documentElement.classList.contains('dark')).toBe(true);
+    expect(document.documentElement.classList.contains('is-theme-transitioning')).toBe(false);
+    expect(document.documentElement.style.getPropertyValue('--tt-r')).toBe('');
+    await nativeTransitions[0].update();
+    nativeTransitions[0].finished.resolve();
+    await Promise.resolve();
+    expect(route.isCurrent()).toBe(true);
+  });
+
+  it('theme changes cancel route ownership before native capture', () => {
+    const route = beginTransition('route');
+    const cleanup = vi.fn();
+    route.onCancel(cleanup);
+    window.__startThemeTransition(10, 20);
+    expect(cleanup).toHaveBeenCalledOnce();
+    expect(route.isCurrent()).toBe(false);
+  });
+
+  it('system preference overrides pending manual callbacks', async () => {
+    window.__startThemeTransition(10, 20);
+    window.__applyResolvedTheme(false);
+    await nativeTransitions[0].update();
+    expect(document.documentElement.classList.contains('dark')).toBe(false);
+    expect(document.documentElement.classList.contains('is-theme-transitioning')).toBe(false);
+  });
+
+  it('failed native promises clean scoped styles without unhandled rejections', async () => {
+    window.__startThemeTransition(10, 20);
+    await nativeTransitions[0].update();
+    nativeTransitions[0].ready.reject(new Error('capture failed'));
+    nativeTransitions[0].done.reject(new Error('update failed'));
+    nativeTransitions[0].finished.reject(new Error('update failed'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(document.documentElement.classList.contains('dark')).toBe(true);
+    expect(document.documentElement.classList.contains('is-theme-transitioning')).toBe(false);
+    expect(document.documentElement.style.getPropertyValue('--tt-x')).toBe('');
+  });
+
+  it('native setup failures still commit the theme and remove snapshot styles', () => {
+    Object.defineProperty(document, 'startViewTransition', {
+      configurable: true,
+      value: () => {
+        throw new Error('native setup failed');
+      },
+    });
+    window.__startThemeTransition(10, 20);
+    expect(document.documentElement.classList.contains('dark')).toBe(true);
+    expect(document.documentElement.classList.contains('is-theme-transitioning')).toBe(false);
   });
 });

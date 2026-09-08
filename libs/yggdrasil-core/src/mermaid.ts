@@ -124,7 +124,12 @@ function preloadMermaidOnIdle(): void {
  * - source 存进 dataset.mermaidSource，主题切换重渲染时回取（此时 <code> 已被
  *   SVG 替换，textContent 不再可用）。
  */
+const renderRequests = new WeakMap<HTMLPreElement, symbol>();
+
 async function renderBlock(pre: HTMLPreElement, source: string, theme: ThemeName): Promise<void> {
+  const request = Symbol();
+  renderRequests.set(pre, request);
+  const isCurrent = () => renderRequests.get(pre) === request && pre.isConnected;
   // 加载角标：仅初次渲染（源码仍可见）挂；主题重渲染时旧 SVG 在原位，不加噪。
   // :scope > 守卫幂等（异常重复触发不叠第二个）。角标 absolute 定位，不影响布局。
   let badge: HTMLSpanElement | null = null;
@@ -138,9 +143,11 @@ async function renderBlock(pre: HTMLPreElement, source: string, theme: ThemeName
   try {
     mermaid = await loadMermaid();
   } catch (err) {
+    if (!isCurrent()) return;
     badge?.remove();
     throw err;
   }
+  if (!isCurrent()) return;
   mermaid.initialize({
     startOnLoad: false,
     // base 主题不硬编码颜色，让 themeVariables 完全控制 Catppuccin 调色板。
@@ -159,6 +166,8 @@ async function renderBlock(pre: HTMLPreElement, source: string, theme: ThemeName
   const id = `mermaid-svg-${++renderCounter}`;
   try {
     const { svg } = await mermaid.render(id, source);
+    // A newer theme or route may have superseded this asynchronous render.
+    if (!isCurrent()) return;
     // mermaid 给每个节点 <foreignObject> 设的高度恰好等于文字测量高度（零余量），
     // foreignObject 默认 overflow:hidden（SVG 规范），跨浏览器/字体的 sub-pixel 渲染
     // 差异让实际行高略大于测量值，多行节点第二行的 descender 被 foreignObject 裁切。
@@ -177,6 +186,7 @@ async function renderBlock(pre: HTMLPreElement, source: string, theme: ThemeName
     // mermaid.render 失败时会在 document.body 残留临时渲染容器 div#d${id}
     // （内含「Syntax error in text」错误 SVG）。不清除则这些错误块泄漏到页面底部。
     document.getElementById(`d${id}`)?.remove();
+    if (!isCurrent()) return;
     badge?.remove();
     throw err;
   }
@@ -267,7 +277,12 @@ function rerenderExistingBlocks(root: Element, theme: ThemeName): Promise<void> 
   const rendered = root.querySelectorAll<HTMLPreElement>('pre[data-mermaid-rendered]');
   const tasks: Promise<void>[] = [];
   rendered.forEach((pre) => {
-    if (pre.dataset.mermaidTheme === theme) return;
+    if (pre.dataset.mermaidTheme === theme) {
+      // The displayed SVG is already correct, but an opposite-theme render may
+      // still be pending after a rapid toggle back. Invalidate that old result.
+      renderRequests.delete(pre);
+      return;
+    }
     const source = pre.dataset.mermaidSource;
     if (!source) return; // 无缓存源码无法重渲染，保守跳过
     tasks.push(

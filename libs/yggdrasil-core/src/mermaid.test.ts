@@ -198,6 +198,74 @@ describe('initMermaid', () => {
     expect(mockRender).not.toHaveBeenCalled();
   });
 
+  it('快速切回已有主题时，过期异步 SVG 不覆盖当前主题', async () => {
+    document.body.innerHTML =
+      '<div class="post-content"><pre data-mermaid-rendered="true" data-mermaid-theme="light" data-mermaid-source="graph TD; A-->B"><svg>light</svg></pre></div>';
+    const pre = document.querySelector('pre')!;
+    let resolveDark!: (value: { svg: string }) => void;
+    mockRender.mockImplementationOnce(
+      () =>
+        new Promise<{ svg: string }>((resolve) => {
+          resolveDark = resolve;
+        }),
+    );
+
+    const darkWork = window.__initMermaid('.post-content', 'dark');
+    await vi.waitFor(() => expect(mockRender).toHaveBeenCalledOnce());
+    await window.__initMermaid('.post-content', 'light');
+    resolveDark({ svg: '<svg>stale dark</svg>' });
+    await darkWork;
+
+    expect(pre.dataset.mermaidTheme).toBe('light');
+    expect(pre.innerHTML).toBe('<svg>light</svg>');
+    expect(mockRender).toHaveBeenCalledOnce();
+  });
+
+  it('已取消的主题渲染失败不会给当前图表加错误标记', async () => {
+    document.body.innerHTML =
+      '<div class="post-content"><pre data-mermaid-rendered="true" data-mermaid-theme="light" data-mermaid-source="graph TD; A-->B"><svg>light</svg></pre></div>';
+    const pre = document.querySelector('pre')!;
+    let rejectDark!: (error: Error) => void;
+    mockRender.mockImplementationOnce(
+      () =>
+        new Promise<{ svg: string }>((_resolve, reject) => {
+          rejectDark = reject;
+        }),
+    );
+
+    const darkWork = window.__initMermaid('.post-content', 'dark');
+    await vi.waitFor(() => expect(mockRender).toHaveBeenCalledOnce());
+    await window.__initMermaid('.post-content', 'light');
+    rejectDark(new Error('superseded render failed'));
+    await darkWork;
+
+    expect(pre.classList.contains('mermaid-error')).toBe(false);
+    expect(pre.dataset.mermaidTheme).toBe('light');
+    expect(pre.innerHTML).toBe('<svg>light</svg>');
+  });
+
+  it('渲染完成前离开页面时，不再改写已卸载的图表', async () => {
+    document.body.innerHTML =
+      '<div class="post-content"><pre data-mermaid-rendered="true" data-mermaid-theme="light" data-mermaid-source="graph TD; A-->B"><svg>light</svg></pre></div>';
+    const pre = document.querySelector('pre')!;
+    let resolveDark!: (value: { svg: string }) => void;
+    mockRender.mockImplementationOnce(
+      () =>
+        new Promise<{ svg: string }>((resolve) => {
+          resolveDark = resolve;
+        }),
+    );
+
+    const darkWork = window.__initMermaid('.post-content', 'dark');
+    await vi.waitFor(() => expect(mockRender).toHaveBeenCalledOnce());
+    document.body.innerHTML = '';
+    resolveDark({ svg: '<svg>stale dark</svg>' });
+    await darkWork;
+
+    expect(pre.innerHTML).toBe('<svg>light</svg>');
+    expect(pre.dataset.mermaidTheme).toBe('light');
+  });
+
   it('主题切换重渲染用唯一 render id（避免 mermaid 残留节点冲突）', async () => {
     const root = document.createElement('div');
     root.className = 'post-content';

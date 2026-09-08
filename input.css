@@ -3751,3 +3751,26 @@ a.friend-card:active { transform: translateY(-1px) scale(0.985); transition-dura
   .tag-page :is(.tag-arrow, .tag-entry-arrow, .tag-retry-icon),
   .tag-page .post-card-cover-blur img { transform: none !important; }
 }
+
+
+/* 已由原生页面过渡处理的本次挂载不再播放独立入场动画。
+   保留 spinner、浮层、展开/收起、状态变更及 hover 的交互动画。 */
+[data-vt-enter-handled] :is(
+  .animate-page-enter,
+  .animate-row-enter,
+  .page-enter,
+  .home-enter,
+  .home-error,
+  .tag-enter,
+  .tag-skeleton,
+  .search-enter,
+  .friends-intro-copy,
+  .friends-orbit,
+  .friends-card-enter,
+  .friends-state,
+  .about-hero-copy,
+  .archive-posts > li
+):not(.animate-modal-panel-enter *, [role="dialog"] *, .animate-popover-enter *, .animate-select-enter *),
+[data-vt-enter-handled]:is(.animate-page-enter, .page-enter) {
+  animation-name: none;
+}
