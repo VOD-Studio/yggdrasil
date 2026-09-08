@@ -78,7 +78,7 @@ fn group_posts(posts: &[PostListItem]) -> Vec<YearGroup> {
                     }
                 }
                 yg.months.push(MonthGroup {
-                    month: month_en.to_string(),
+                    month: month_num.to_string(),
                     month_en: month_en.to_string(),
                     posts: vec![post.clone()],
                 });
@@ -88,7 +88,7 @@ fn group_posts(posts: &[PostListItem]) -> Vec<YearGroup> {
         years.push(YearGroup {
             year,
             months: vec![MonthGroup {
-                month: month_en.to_string(),
+                month: month_num.to_string(),
                 month_en: month_en.to_string(),
                 posts: vec![post.clone()],
             }],
@@ -105,12 +105,11 @@ fn group_posts(posts: &[PostListItem]) -> Vec<YearGroup> {
 pub fn Archives() -> Element {
     rsx! {
         div { class: "archives-page animate-page-enter",
-            header { class: "page-header mb-6",
-                h1 { class: "text-4xl font-bold text-paper-primary tracking-tight",
-                    "归档"
-                }
-                p { class: "mt-3 text-sm leading-relaxed text-paper-secondary",
-                    "按时间回看文章，或从感兴趣的标签开始。"
+            header { class: "archive-intro",
+                p { class: "archive-eyebrow", span { aria_hidden: "true" } "THE ARCHIVE / 时间的索引" }
+                div { class: "archive-intro-line",
+                    h1 { "归档" span { class: "archive-title-dot", "。" } }
+                    p { "把片刻写成文字，把文字留给时间。" }
                 }
             }
             SuspenseBoundary {
@@ -191,7 +190,7 @@ fn ArchiveTags() -> Element {
 #[component]
 fn ArchivesContent() -> Element {
     // 一次性获取足够多的已发布文章，用于生成完整的年/月归档。
-    let posts_res = use_server_future(move || list_published_posts(1, 10000))?;
+    let mut posts_res = use_server_future(move || list_published_posts(1, 10000))?;
 
     let posts_data = posts_res.read();
     match &*posts_data {
@@ -206,15 +205,30 @@ fn ArchivesContent() -> Element {
             } else {
                 let grouped = group_posts(posts);
                 rsx! {
-                    div { class: "mt-2 text-base text-paper-secondary",
-                        "共 "
-                        span { class: "font-medium text-paper-primary", "{total}" }
-                        " 篇文章"
-                    }
-                    for year_group in grouped.iter() {
-                        YearSection {
-                            key: "{year_group.year}",
-                            year_group: year_group.clone(),
+                    section { class: "archive-timeline", aria_labelledby: "archive-timeline-title",
+                        div { class: "archive-toolbar",
+                            div { class: "archive-toolbar-title",
+                                h2 { id: "archive-timeline-title", "时间归档" }
+                                span { class: "archive-total", "{total} 篇文章" }
+                            }
+                            span { class: "archive-order", "由近及远" span { aria_hidden: "true", "↓" } }
+                        }
+                        if grouped.len() > 1 {
+                            nav { class: "archive-year-nav", aria_label: "按年份跳转",
+                                for year_group in grouped.iter() {
+                                    a { key: "{year_group.year}", href: "#{year_group.year}", "{year_group.year}" }
+                                }
+                            }
+                        }
+                        for year_group in grouped.iter() {
+                            YearSection {
+                                key: "{year_group.year}",
+                                year_group: year_group.clone(),
+                            }
+                        }
+                        footer { class: "archive-colophon",
+                            span { aria_hidden: "true", "✳" }
+                            p { "写下的，替我们记得。" }
                         }
                     }
                 }
@@ -222,7 +236,16 @@ fn ArchivesContent() -> Element {
         }
         Some(Err(_)) => {
             rsx! {
-                div { class: "text-center text-red-500 dark:text-red-400 py-20", "加载失败" }
+                div { class: "archive-state", role: "alert",
+                    h2 { "暂时没能翻开归档" }
+                    p { "文章加载失败，请稍后再试。" }
+                    button {
+                        r#type: "button",
+                        class: "{BTN_OUTLINE} archive-tags-retry",
+                        onclick: move |_| posts_res.restart(),
+                        "重新加载"
+                    }
+                }
             }
         }
         None => {
@@ -243,22 +266,24 @@ fn YearSection(year_group: YearGroup) -> Element {
         .sum::<usize>();
 
     rsx! {
-        div { class: "archive-year mt-10",
-            h2 {
-                class: "archive-year-header text-2xl font-bold text-paper-primary mb-4",
-                id: "{year_group.year}",
-                a {
-                    class: "archive-header-link hover:opacity-80 transition-opacity",
-                    href: "#{year_group.year}",
-                    "{year_group.year}"
+        section { class: "archive-year", aria_labelledby: "{year_group.year}",
+            header { class: "archive-year-heading",
+                div { class: "archive-year-sticky",
+                    span { class: "archive-year-kicker", aria_hidden: "true", "YEAR / 年份" }
+                    h3 { class: "archive-year-number", id: "{year_group.year}",
+                        a { class: "archive-header-link", href: "#{year_group.year}", "{year_group.year}" }
+                    }
+                    p { class: "archive-year-summary", "{total} 篇文章" span { aria_hidden: "true", "·" } "{year_group.months.len()} 个月" }
+                    span { class: "archive-year-rule", aria_hidden: "true" }
                 }
-                sup { class: "archive-count text-sm text-paper-secondary ml-1", "{total}" }
             }
-            for month_group in year_group.months.iter() {
-                MonthSection {
-                    key: "{month_group.month_en}",
-                    month_group: month_group.clone(),
-                    year: year_group.year.clone(),
+            div { class: "archive-months",
+                for month_group in year_group.months.iter() {
+                    MonthSection {
+                        key: "{month_group.month_en}",
+                        month_group: month_group.clone(),
+                        year: year_group.year.clone(),
+                    }
                 }
             }
         }
@@ -271,44 +296,69 @@ fn MonthSection(month_group: MonthGroup, year: String) -> Element {
     let count = month_group.posts.len();
 
     rsx! {
-        div { class: "archive-month flex flex-col md:flex-row md:items-start py-2.5 border-b border-paper-border/50",
-            h3 {
-                class: "archive-month-header text-lg font-medium text-paper-secondary md:w-[200px] shrink-0 mt-0 mb-0 py-1.5",
+        section { class: "archive-month", aria_labelledby: "{year}-{month_group.month_en}",
+            h4 {
+                class: "archive-month-header",
                 id: "{year}-{month_group.month_en}",
                 a {
-                    class: "archive-header-link hover:opacity-80 transition-opacity",
+                    class: "archive-header-link",
                     href: "#{year}-{month_group.month_en}",
-                    "{month_group.month}"
+                    span { class: "archive-month-number", "{month_group.month}" }
+                    span { "月" }
+                    span { class: "archive-month-name", "{month_group.month_en}" }
                 }
-                sup { class: "archive-count text-sm text-paper-secondary ml-1", "{count}" }
+                span { class: "archive-month-count", "{count:02} 篇" }
             }
-            div { class: "archive-posts flex-1",
-                for post in month_group.posts.iter() {
-                    ArchiveEntry { key: "{post.id}", post: post.clone() }
+            ul { class: "archive-posts",
+                for (index, post) in month_group.posts.iter().enumerate() {
+                    li { key: "{post.id}", style: "--archive-delay: {index.min(6) * 35}ms",
+                        ArchiveEntry { post: post.clone() }
+                    }
                 }
             }
         }
     }
 }
 
-/// 单条归档文章组件，展示标题与发布日期，并通过覆盖层链接到文章详情。
+/// 整行使用原生链接，日期保留完整 datetime，标题在窄屏自然换行。
 #[component]
 fn ArchiveEntry(post: PostListItem) -> Element {
     let date_str = post.formatted_date();
+    let day = post
+        .published_at
+        .unwrap_or(post.created_at)
+        .format("%d")
+        .to_string();
+    let topics = post
+        .tags
+        .iter()
+        .take(2)
+        .cloned()
+        .collect::<Vec<_>>()
+        .join(" / ");
 
     rsx! {
-        div { class: "archive-entry relative py-1.5 my-2.5 group",
-            h3 { class: "archive-entry-title text-base font-normal text-paper-primary m-0",
-                "{post.title}"
+        Link {
+            class: "archive-entry",
+            to: Route::PostDetail { slug: post.slug.clone() },
+            time { class: "archive-date", datetime: "{date_str}", title: "{date_str}", aria_label: "{date_str}", "{day}" }
+            div { class: "archive-entry-copy",
+                h5 { class: "archive-entry-title", "{post.title}" }
+                if !topics.is_empty() || post.reading_time > 0 {
+                    div { class: "archive-entry-meta",
+                        if !topics.is_empty() {
+                            span { class: "archive-entry-topics", "{topics}" }
+                        }
+                        if !topics.is_empty() && post.reading_time > 0 {
+                            span { aria_hidden: "true", "·" }
+                        }
+                        if post.reading_time > 0 {
+                            span { class: "archive-reading-time", "{post.reading_time} 分钟阅读" }
+                        }
+                    }
+                }
             }
-            div { class: "archive-meta text-sm text-paper-secondary mt-1", "{date_str}" }
-            Link {
-                class: "entry-link absolute inset-0 z-10",
-                aria_label: "post link to {post.title}",
-                to: Route::PostDetail {
-                    slug: post.slug.clone(),
-                },
-            }
+            span { class: "archive-entry-arrow", aria_hidden: "true", "↗" }
         }
     }
 }
