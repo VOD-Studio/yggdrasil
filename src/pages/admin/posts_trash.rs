@@ -728,14 +728,17 @@ fn TrashRow(
 mod tests {
     #[test]
     fn settings_pages_use_shared_collapsible_card() {
-        let common_code = include_str!("../../components/ui.rs");
-        assert!(common_code.contains("grid transition-all duration-300 ease-in-out"));
-        assert!(common_code.contains("grid-template-rows: 1fr; opacity: 1;"));
-        assert!(common_code.contains("grid-template-rows: 0fr; opacity: 0;"));
-
-        let trash_code = include_str!("posts_trash.rs");
-        assert!(trash_code.contains("CollapsibleSettingsCard"));
-        let backup_code = include_str!("system/backup.rs");
-        assert!(backup_code.contains("CollapsibleSettingsCard"));
+        // 此处只检查页面复用；折叠动画由 input.css 管理。
+        for (page, source) in [
+            ("posts_trash", include_str!("posts_trash.rs")),
+            ("system/backup", include_str!("system/backup.rs")),
+        ] {
+            // 排除测试自身，避免断言中的组件名让检查始终通过。
+            let page_code = source.split("#[cfg(test)]").next().unwrap();
+            assert!(
+                page_code.contains("CollapsibleSettingsCard {"),
+                "{page} should render the shared collapsible settings card"
+            );
+        }
     }
 }
