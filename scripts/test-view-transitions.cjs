@@ -322,14 +322,30 @@ async function slowResponse() {
   } finally { await browser.close(); }
 }
 
+async function ensureLoggedOut(context, logoutEndpoint) {
+  // Use the context cookie jar even when login succeeded but routing or rendering
+  // failed. A DOM click cannot reliably clean up that case.
+  const session = (await context.cookies(BASE)).find(cookie => cookie.name === 'session' && cookie.value);
+  if (!session) return;
+  assert(logoutEndpoint, 'missing logout endpoint for test-session cleanup');
+  const response = await context.request.post(`${BASE}${logoutEndpoint}`, {
+    headers: { Origin: new URL(BASE).origin, 'Content-Type': 'application/json' },
+    data: {},
+  });
+  assert(response.ok(), `test-session cleanup failed: HTTP ${response.status()}`);
+  assert.equal((await response.json()).success, true, 'test-session cleanup was rejected');
+  assert(!(await context.cookies(BASE)).some(cookie => cookie.name === 'session' && cookie.value),
+    'test-session cleanup did not expire the session cookie');
+}
+
 async function admin() {
   if (!process.env.VT_ADMIN_USERNAME || !process.env.VT_ADMIN_PASSWORD) {
     console.log('SKIP admin (set VT_ADMIN_USERNAME and VT_ADMIN_PASSWORD to include session checks)');
     return;
   }
   const state = await launch();
-  const { page, browser } = state;
-  let loggedIn = false;
+  const { page, browser, context } = state;
+  let logoutEndpoint;
   let seed = [];
   let paginationFixture = false;
   try {
@@ -358,13 +374,21 @@ async function admin() {
       }
       await route.fulfill({ response, json: data });
     });
+    // Read the generated path from the same WASM the browser loaded. Resolve it
+    // before login so a changed server-function hash cannot strand a test session.
+    let wasmResponse;
+    page.on('response', response => {
+      if (new URL(response.url()).pathname.endsWith('.wasm')) wasmResponse = response;
+    });
     await fresh(state);
+    assert(wasmResponse, 'could not inspect the served WASM before login');
+    logoutEndpoint = (await wasmResponse.body()).toString('latin1').match(/\/api\/logout\d+/)?.[0];
+    assert(logoutEndpoint, 'could not resolve the served logout endpoint before login');
     await push(page, '/login');
     await page.locator('#login-username').fill(process.env.VT_ADMIN_USERNAME);
     await page.locator('#login-password').fill(process.env.VT_ADMIN_PASSWORD);
     await page.getByRole('button', { name: '登录', exact: true }).click();
     await page.waitForURL(/\/admin\/?$/);
-    loggedIn = true;
     await settle(page);
     await push(page, '/admin/posts');
     await page.waitForSelector('a[data-vt-post-link]');
@@ -414,7 +438,6 @@ async function admin() {
     console.log('PASS admin-preview-return-pagination-filters-scroll');
     await page.getByRole('button', { name: '退出', exact: true }).click();
     await ready(page, '/login');
-    loggedIn = false;
     const previousValues = await page.evaluate(id => __routeTransitions.entries.get(id)?.values.size, source.entry);
     assert(previousValues === undefined || previousValues === 0);
     console.log('PASS login-logout-clears-admin-history');
@@ -423,14 +446,13 @@ async function admin() {
     console.log('PASS login-register-transition');
     assert.deepEqual(state.errors, []);
   } finally {
-    if (loggedIn) {
-      await page.getByRole('button', { name: '退出', exact: true }).click().catch(() => {});
-    }
-    await browser.close();
+    try { await ensureLoggedOut(context, logoutEndpoint); }
+    finally { await browser.close(); }
   }
 }
 
-(async () => {
+module.exports = { launch, fresh, ensureLoggedOut };
+if (require.main === module) (async () => {
   const mode = process.argv[2] || 'all';
   if (mode === 'all' || mode === 'public') await main();
   if (mode === 'all' || mode === 'reduced') await fallback({ name: 'reduced-motion', reducedMotion: 'reduce' });
