@@ -5,7 +5,8 @@
 use dioxus::prelude::*;
 
 use crate::components::skeletons::atoms::{SkeletonBox, SkeletonCard};
-use crate::components::skeletons::post_card_skeleton::PostCardSkeleton;
+use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
+use crate::pages::tags::TagIntro;
 
 /// 归档页标签索引骨架屏组件。
 ///
@@ -28,19 +29,51 @@ pub fn TagsSkeleton() -> Element {
 
 /// 标签详情页骨架屏组件。
 ///
-/// 结构与首页文章列表相同，包含统计行与文章卡片骨架。
+/// 开场立即显示，数据区独立延迟，和真实页面使用相同的结构。
 #[component]
-pub fn TagDetailSkeleton() -> Element {
+pub fn TagDetailSkeleton(tag: String) -> Element {
     rsx! {
-        div {
-            // 统计行占位
-            div { class: "mt-2 mb-6",
-                SkeletonBox { class: "h-5 w-32 rounded" }
-            }
+        div { class: "tag-page",
+            TagIntro { tag }
+            div { class: "tag-workspace", TagPostsLoading {} }
+        }
+    }
+}
 
-            // 文章卡片列表
-            for i in 0..5 {
-                PostCardSkeleton { key: "{i}" }
+/// 状态即时播报、占位延迟出现，避免快速请求时闪屏及嵌套 pulse。
+#[component]
+pub fn TagPostsLoading() -> Element {
+    rsx! {
+        section { class: "tag-loading", aria_label: "主题文章", aria_busy: "true",
+            p { class: "sr-only", role: "status", "正在加载文章，请稍候。" }
+            DelayedSkeleton { pulse: false,
+                div { class: "tag-skeleton", aria_hidden: "true", inert: true,
+                    div { class: "tag-toolbar",
+                        div { class: "tag-collection-meta",
+                            span { class: "tag-skeleton-count tag-skeleton-block" }
+                            span { class: "tag-skeleton-date tag-skeleton-block" }
+                        }
+                        span { class: "tag-skeleton-sort tag-skeleton-block" }
+                    }
+                    for index in 0..3 {
+                        div { key: "{index}", class: if index == 0 { "tag-entry tag-featured" } else { "tag-entry" },
+                            if index == 0 {
+                                span { class: "tag-skeleton-label tag-skeleton-block" }
+                            } else {
+                                span { class: "tag-entry-number", span { class: "tag-skeleton-number tag-skeleton-block" } }
+                            }
+                            div { class: "tag-skeleton-body",
+                                span { class: "tag-skeleton-date tag-skeleton-block" }
+                                span { class: "tag-skeleton-title tag-skeleton-block" }
+                                span { class: "tag-skeleton-title-short tag-skeleton-block" }
+                                span { class: "tag-skeleton-summary tag-skeleton-block" }
+                                div { class: "tag-skeleton-tags",
+                                    for index in 0..3 { span { key: "{index}", class: "tag-skeleton-tag tag-skeleton-block" } }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }

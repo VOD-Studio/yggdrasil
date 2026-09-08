@@ -18,8 +18,9 @@ const SKELETON_DELAY_MS: u32 = 200;
 ///
 /// 快加载（< 200ms）：组件在渲染前就被卸载，用户完全看不到骨架屏。
 /// 慢加载：骨架屏正常显示并 pulse，提示正在加载。
+/// `pulse = false` 可保留延迟、关闭外层呼吸动画，供自带扫光的骨架使用。
 #[component]
-pub fn DelayedSkeleton(children: Element) -> Element {
+pub fn DelayedSkeleton(children: Element, #[props(default = true)] pulse: bool) -> Element {
     let mut visible = use_signal(|| false);
 
     use_effect(move || {
@@ -31,7 +32,7 @@ pub fn DelayedSkeleton(children: Element) -> Element {
 
     if visible() {
         rsx! {
-            div { class: "animate-pulse", {children} }
+            div { class: if pulse { "animate-pulse" } else { "" }, {children} }
         }
     } else {
         rsx! {}

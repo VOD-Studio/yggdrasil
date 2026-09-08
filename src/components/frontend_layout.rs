@@ -28,8 +28,8 @@ fn route_skeleton(route: &Route) -> Element {
         Route::Archives {} => rsx! {
             DelayedSkeleton { ArchiveSkeleton {} }
         },
-        Route::TagDetail { .. } => rsx! {
-            DelayedSkeleton { TagDetailSkeleton {} }
+        Route::TagDetail { tag } => rsx! {
+            TagDetailSkeleton { tag: tag.clone() }
         },
         Route::Friends {} => rsx! {
             DelayedSkeleton { FriendsSkeleton {} }
