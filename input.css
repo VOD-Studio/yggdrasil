@@ -3285,46 +3285,110 @@ a.friend-card:active { transform: translateY(-1px) scale(0.985); transition-dura
 .home-post-count { color: var(--color-paper-secondary); font-size: 0.7rem; }
 .home-section-heading .home-text-link { flex-shrink: 0; font-size: 0.75rem; }
 .home-entry {
+  --home-entry-active: 0;
+  --home-entry-title: var(--color-paper-primary);
+  --home-entry-detail: var(--color-paper-secondary);
   display: grid;
   grid-template-columns: 2.75rem minmax(0, 1fr);
   position: relative;
+  isolation: isolate;
   border-bottom: 1px solid color-mix(in srgb, var(--color-paper-border) 45%, transparent);
-  transition: border-color 300ms ease;
+}
+/* 整行共用一层淡色；分隔线保持安静，编号与正文不再被内层卡片割开。 */
+.home-entry::before {
+  content: "";
+  position: absolute;
+  inset: 0.5rem -0.85rem;
+  z-index: -1;
+  border-radius: 12px;
+  background: linear-gradient(105deg, color-mix(in srgb, var(--home-ink) 7%, transparent), color-mix(in srgb, var(--home-ink) 3%, transparent) 65%, transparent);
+  opacity: var(--home-entry-active);
+  pointer-events: none;
+  transition: opacity 320ms var(--home-ease);
 }
 .home-entry-number {
+  position: relative;
   padding-top: 2rem;
-  color: var(--color-paper-secondary);
-  opacity: 0.65;
+  color: var(--home-entry-detail);
+  opacity: calc(0.65 + var(--home-entry-active) * 0.35);
   font-family: ui-monospace, monospace;
   font-size: 0.65rem;
   font-variant-numeric: tabular-nums;
   transition: color 250ms ease, opacity 250ms ease;
 }
-.home-page .post-card-editorial {
-  margin: 0;
-  border-radius: 12px;
-  transition: background-color 300ms ease;
+.home-entry-number::before {
+  content: "";
+  position: absolute;
+  top: 2.1rem;
+  left: -0.55rem;
+  width: 2px;
+  height: 0.7rem;
+  border-radius: 2px;
+  background: var(--home-ink);
+  opacity: var(--home-entry-active);
+  transform: scaleY(calc(0.5 + var(--home-entry-active) * 0.5));
+  transition: opacity 250ms ease, transform 320ms var(--home-ease);
 }
+.home-page .post-card-editorial {
+  /* 覆盖链接以整行为定位容器，编号、留白和箭头都落在同一点击区域内。 */
+  position: static;
+  margin: 0;
+  border-radius: inherit;
+  background: transparent;
+}
+.home-page .post-card-editorial > a { border-radius: 12px; }
+.home-page .post-card-editorial > a:focus-visible { outline-offset: -4px; }
+.home-page .post-card-editorial > a:active { transform: none; }
 .home-page .post-card-body { padding: 1.75rem 2.8rem 1.75rem 0.5rem; gap: 0.6rem; }
 .home-page .post-card-meta { font-size: 0.65rem; gap: 0.75rem; }
-.home-page .post-card-title { font-size: 1.15rem; line-height: 1.65; transition: color 250ms ease; }
+.home-page .post-card-title { color: var(--home-entry-title); font-size: 1.15rem; line-height: 1.65; transition: color 250ms ease; }
 .home-page .post-card-summary { font-size: 0.8rem; }
 .home-page .post-card-editorial:hover .post-card-title { text-decoration: none; }
-.home-page .post-card-editorial:is(:hover, :focus-within) .post-card-title { color: var(--home-ink); }
 .home-page .post-card-footer { font-size: 0.65rem; gap: 0.4rem 0.75rem; }
-.home-page .post-card-tags a { transition: color 220ms ease, text-decoration-color 220ms ease, transform 300ms var(--home-ease); }
-.home-page .post-card-tags a:hover { color: var(--home-ink); transform: translateY(-2px); }
+.home-page .post-card-tags a { transition: color 220ms ease, text-decoration-color 220ms ease; }
+.home-page .post-card-tags a:is(:hover, :focus-visible) { color: var(--home-ink); }
 .home-entry-arrow {
+  display: grid;
+  place-items: center;
   position: absolute;
-  right: 0.85rem;
-  top: 3.7rem;
-  color: var(--color-paper-secondary);
-  opacity: 0.55;
+  right: 0.5rem;
+  top: 3.35rem;
+  width: 1.8rem;
+  height: 1.8rem;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  color: var(--home-entry-detail);
+  opacity: calc(0.55 + var(--home-entry-active) * 0.45);
+  line-height: 1;
+  transform: translate(calc(var(--home-entry-active) * 2px), calc(var(--home-entry-active) * -2px));
   pointer-events: none;
+  transition: color 250ms ease, opacity 250ms ease, transform 400ms var(--home-ease);
 }
-.home-entry:has(.post-card-editorial:is(:hover, :focus-within)) { border-color: var(--home-ink); }
-.home-entry:has(.post-card-editorial:is(:hover, :focus-within)) .home-entry-arrow { color: var(--home-ink); opacity: 1; transform: translate(3px, -3px); }
-.home-entry:has(.post-card-editorial:is(:hover, :focus-within)) .home-entry-number { color: var(--home-ink); opacity: 1; }
+.home-entry-arrow::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  z-index: -1;
+  border: 1px solid color-mix(in srgb, var(--home-ink) 18%, transparent);
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--home-ink) 6%, transparent);
+  opacity: var(--home-entry-active);
+  transition: opacity 300ms ease;
+}
+/* 只响应文章链接；经过标签时保留标签自己的反馈，触屏不锁住 hover。 */
+.home-entry:has(.post-card-editorial > a:focus-visible) {
+  --home-entry-active: 1;
+  --home-entry-title: color-mix(in srgb, var(--home-ink) 72%, var(--color-paper-primary));
+  --home-entry-detail: var(--home-ink);
+}
+@media (hover: hover) and (pointer: fine) {
+  .home-entry:has(.post-card-editorial > a:hover) {
+    --home-entry-active: 1;
+    --home-entry-title: color-mix(in srgb, var(--home-ink) 72%, var(--color-paper-primary));
+    --home-entry-detail: var(--home-ink);
+  }
+  .home-page .post-card-editorial:has(> a:hover) .post-card-cover-blur .blur-img-full { transform: scale(1.025); }
+}
 .home-entry-featured {
   display: block;
   margin-block: 0.25rem 0.8rem;
@@ -3333,16 +3397,17 @@ a.friend-card:active { transform: translateY(-1px) scale(0.985); transition-dura
   border-radius: 20px;
   background: linear-gradient(115deg, color-mix(in srgb, var(--home-ink) 6%, var(--color-paper-theme)), color-mix(in srgb, var(--color-paper-entry) 25%, var(--color-paper-theme)));
 }
+.home-entry-featured::before { inset: 0; border-radius: inherit; }
 .home-featured-label { display: flex; gap: 0.5rem; color: var(--home-ink); font-size: 0.65rem; letter-spacing: 0.12em; }
 .home-featured-label > span { opacity: 0.7; font-size: 0.6rem; }
 .home-entry-featured .post-card-body { padding: 1.3rem 1.5rem 1.5rem 0; gap: 0.8rem; }
 .home-entry-featured .post-card-title { font-family: var(--font-serif); font-size: clamp(1.4rem, 2.6vw, 1.85rem); font-weight: 500; line-height: 1.6; }
 .home-entry-featured .post-card-summary { max-width: 40rem; }
-.home-entry-featured .post-card-editorial { position: static; }
-.home-entry-featured .post-card-editorial:hover { background: transparent; }
 .home-entry-featured .post-card-editorial > a { border-radius: 20px; }
-.home-entry-featured .home-entry-arrow { top: 1.5rem; right: 2rem; color: var(--home-ink); opacity: 1; }
+.home-entry-featured .home-entry-arrow { top: 1.2rem; right: 1.7rem; color: var(--home-ink); opacity: 1; }
 .home-page .post-card-cover { border-radius: 12px; margin: 1.5rem 2.5rem 0 0.5rem; }
+.home-page .post-card-cover-blur img { transform: none; transition: transform 550ms var(--home-ease), opacity 400ms ease; }
+.home-page .post-card-cover-blur .blur-img-placeholder { transform: scale(1.1); }
 .home-page .frontend-pagination { margin-block: 2rem; }
 .home-page .frontend-pagination a { min-height: 44px; transition: background-color 250ms ease, color 250ms ease, transform 350ms var(--home-ease), border-color 250ms ease; }
 .home-page .frontend-pagination a:hover { border-color: var(--home-ink); transform: translateY(-2px); }
@@ -3372,14 +3437,17 @@ a.friend-card:active { transform: translateY(-1px) scale(0.985); transition-dura
   .home-garden-caption { font-size: 0.6rem; letter-spacing: 0.06em; gap: 0.5rem; white-space: nowrap; }
   .home-hero-actions { gap: 1.5rem; margin-top: 1.5rem; }
   .home-entry { grid-template-columns: 1.65rem minmax(0, 1fr); }
+  .home-entry::before { inset-inline: -0.5rem; }
   .home-entry-number { padding-top: 1.8rem; font-size: 0.6rem; }
+  .home-entry-number::before { top: 1.85rem; left: -0.35rem; height: 0.65rem; }
   .home-page .post-card-body { padding: 1.5rem 1.5rem 1.5rem 0.25rem; }
   .home-page .post-card-title { font-size: 1.05rem; }
-  .home-entry-arrow { right: 0.2rem; top: 3.4rem; font-size: 0.85rem; }
+  .home-entry-arrow { right: -0.05rem; top: 3.15rem; width: 1.5rem; height: 1.5rem; font-size: 0.85rem; }
   .home-entry-featured { padding: 1.25rem 1.25rem 0; }
+  .home-entry-featured::before { inset: 0; }
   .home-entry-featured .post-card-body { padding: 1.1rem 0 1.4rem; }
   .home-entry-featured .post-card-title { font-size: 1.4rem; }
-  .home-entry-featured .home-entry-arrow { top: 1.1rem; right: 1.25rem; }
+  .home-entry-featured .home-entry-arrow { top: 0.85rem; right: 1rem; }
   .home-entry-featured .post-card-cover { margin: 1.25rem 0 0; }
   .home-section-title { gap: 0.5rem; }
   .home-section-title h2 { font-size: 1rem; }
@@ -3387,13 +3455,12 @@ a.friend-card:active { transform: translateY(-1px) scale(0.985); transition-dura
   .home-page-heading { padding-bottom: 2rem; }
   .home-colophon { margin-top: 2rem; }
 }
-@media (hover: none) {
-  .home-page .post-card-compact:hover { background: transparent; }
-}
 @media (prefers-reduced-motion: reduce) {
   .home-page *, .home-page *::before, .home-page *::after { animation: none !important; transition: none !important; }
   .home-page :is(a, button):is(:hover, :active, :focus-visible),
   .home-page .home-arrow,
+  .home-entry-number::before,
+  .home-page .post-card-cover-blur img,
   .home-garden:is(:hover, :focus-visible) :is(.home-ring-lines, .home-ring-orbit, .home-sprout),
   .home-garden:is(:hover, :focus-visible)::before { transform: none !important; }
 }
