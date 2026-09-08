@@ -2691,3 +2691,248 @@ a.friend-card:active { transform: translateY(-1px) scale(0.985); transition-dura
 .code-runner-editor .cm-scroller {
   overflow: auto;
 }
+
+/* 关于：植物手稿般的世界树、书页留白与轻缓的交互。仅作用于 /about。 */
+.about-page {
+  --about-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --about-ink: color-mix(in srgb, var(--color-paper-accent) 65%, var(--color-paper-primary));
+  --about-line: color-mix(in srgb, var(--color-paper-border) 58%, transparent);
+  padding-top: 0.5rem;
+}
+.about-enter,
+.about-hero-copy { animation: page-enter 850ms var(--about-delay, 0ms) var(--about-ease) backwards; }
+.about-hero {
+  display: grid;
+  grid-template-columns: 1.12fr 1fr;
+  align-items: center;
+  gap: 1rem;
+  padding: 0 0 3.25rem;
+}
+.about-eyebrow,
+.about-index,
+.about-card-kicker,
+.about-colophon-name {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  color: var(--color-paper-secondary);
+  font-size: 0.625rem;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+}
+.about-eyebrow { margin-bottom: 2rem; font-size: 0.6875rem; }
+.about-eyebrow > span { width: 6px; height: 6px; border-radius: 50%; background: var(--about-ink); }
+.about-hero h1 {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: clamp(2.5rem, 4.7vw, 3.375rem);
+  font-weight: 500;
+  line-height: 1.45;
+  letter-spacing: -0.045em;
+}
+.about-hero h1 > span { display: block; color: var(--about-ink); }
+.about-hero-description { margin-top: 1.5rem; color: var(--color-paper-secondary); font-size: 0.875rem; line-height: 2; }
+.about-reading-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 1.25rem;
+  min-height: 44px;
+  margin-top: 1.75rem;
+  border-bottom: 1px solid var(--about-line);
+  color: var(--color-paper-primary);
+  font-size: 0.8125rem;
+  transition: color 240ms ease, border-color 240ms ease, gap 350ms var(--about-ease);
+}
+.about-arrow { display: inline-block; transition: transform 350ms var(--about-ease); }
+.about-reading-link:is(:hover, :focus-visible) { gap: 1.75rem; color: var(--about-ink); border-color: var(--about-ink); }
+.about-reading-link:is(:hover, :focus-visible) .about-arrow { transform: translate(2px, -2px); }
+.about-reading-link:active .about-arrow { transform: translate(3px, -3px) scale(0.9); }
+
+.about-tree-figure { min-width: 0; margin: 0; text-align: center; }
+.about-tree {
+  position: relative;
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--about-ink);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.about-tree-glow {
+  position: absolute;
+  inset: 10% 0 12%;
+  border-radius: 50%;
+  background: radial-gradient(ellipse, color-mix(in srgb, var(--color-paper-accent) 12%, transparent), transparent 70%);
+  opacity: 0.65;
+  transform: scale(0.9);
+  transition: opacity 900ms ease, transform 1200ms var(--about-ease);
+}
+.about-tree-art { position: relative; display: block; width: 100%; height: auto; transition: transform 900ms var(--about-ease); }
+.about-tree-orbits { opacity: 0.28; transform-origin: 200px 208px; transition: transform 1400ms var(--about-ease), opacity 700ms ease; }
+.about-tree-stars { opacity: 0.65; transition: opacity 500ms ease; }
+.about-tree-roots { opacity: 0.55; }
+.about-tree-ground { opacity: 0.35; }
+.about-tree-branches { opacity: 0.85; }
+.about-tree-leaf {
+  fill: color-mix(in srgb, var(--color-paper-accent) 18%, var(--color-paper-theme));
+  stroke: var(--about-ink);
+  stroke-width: 0.8;
+  opacity: 0.8;
+  transform: scale(0.88);
+  transition: transform 1000ms var(--leaf-delay) var(--about-ease), opacity 650ms var(--leaf-delay) ease, fill 800ms ease;
+}
+.about-tree-new-leaf { opacity: 0; transform: scale(0.15); }
+.about-tree-touch {
+  position: absolute;
+  bottom: 5%;
+  left: calc(50% - 16px);
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--about-line);
+  border-radius: 50%;
+  background: var(--color-paper-theme);
+  font-size: 1rem;
+  transition: transform 800ms var(--about-ease), background-color 400ms ease, border-color 400ms ease;
+}
+.about-tree:is(:hover, :focus-visible) .about-tree-art { transform: translateY(-4px); }
+.about-tree:is(:hover, :focus-visible) .about-tree-orbits { transform: rotate(7deg); opacity: 0.5; }
+.about-tree:is(:hover, :focus-visible) .about-tree-glow,
+.about-tree[data-grown="true"] .about-tree-glow { opacity: 1; transform: scale(1.16); }
+.about-tree:is(:hover, :focus-visible) .about-tree-touch { border-color: var(--about-ink); transform: rotate(90deg); }
+.about-tree:active .about-tree-art { transform: scale(0.97); }
+.about-tree[data-grown="true"] .about-tree-leaf { opacity: 1; transform: scale(1.12); fill: color-mix(in srgb, var(--color-paper-accent) 38%, var(--color-paper-theme)); }
+.about-tree[data-grown="true"] .about-tree-orbits { transform: rotate(16deg); opacity: 0.5; }
+.about-tree[data-grown="true"] .about-tree-stars { opacity: 1; }
+.about-tree[data-grown="true"] .about-tree-touch { transform: rotate(180deg); background: color-mix(in srgb, var(--color-paper-accent) 12%, var(--color-paper-theme)); }
+.about-tree-caption { min-height: 2.5rem; padding-top: 0.5rem; color: var(--color-paper-secondary); font-size: 0.625rem; line-height: 1.7; letter-spacing: 0.12em; }
+
+.about-story {
+  display: grid;
+  grid-template-columns: 1fr 2.35fr;
+  gap: 2rem;
+  padding: 2.5rem 0 3.25rem;
+  border-top: 1px solid var(--about-line);
+}
+.about-section-label h2 { margin-top: 0.6rem; font-family: var(--font-serif); font-size: 1.1875rem; font-weight: 500; }
+.about-story-copy { color: var(--color-paper-secondary); font-size: 0.875rem; line-height: 2; }
+.about-story-copy > p + p { margin-top: 0.75rem; }
+.about-story-copy .about-name { display: flex; align-items: center; gap: 1rem; margin-top: -0.35rem; color: var(--color-paper-primary); font-family: var(--font-serif); font-size: 1.75rem; }
+.about-name > span { padding-left: 1rem; border-left: 1px solid var(--about-line); color: var(--color-paper-secondary); font-family: var(--font-sans); font-size: 0.75rem; line-height: 1.2; letter-spacing: 0.12em; }
+.about-memory {
+  position: relative;
+  overflow: hidden;
+  padding: 3.25rem 3rem 0;
+  border: 1px solid var(--about-line);
+  border-radius: 2rem 0.5rem 2rem 0.5rem;
+  background: radial-gradient(ellipse at 100% 0%, color-mix(in srgb, var(--color-paper-accent) 6%, transparent), transparent 65%), color-mix(in srgb, var(--color-paper-entry) 48%, var(--color-paper-theme));
+  text-align: center;
+}
+.about-quote-mark { position: absolute; top: 0.15rem; left: 1.6rem; color: var(--about-ink); opacity: 0.14; font-family: Georgia, serif; font-size: 8rem; line-height: 1; pointer-events: none; }
+.about-memory blockquote { position: relative; }
+.about-memory blockquote > p { font-family: var(--font-serif); font-size: clamp(1.5rem, 3vw, 1.875rem); font-weight: 500; letter-spacing: 0.08em; }
+.about-memory blockquote > footer { margin-top: 1rem; color: var(--color-paper-secondary); font-size: 0.75rem; letter-spacing: 0.1em; }
+.about-memory-response { margin: 1.75rem 0 2.5rem; color: var(--color-paper-secondary); font-size: 0.8125rem; line-height: 2; }
+.about-memory-response p:last-child { color: var(--about-ink); }
+.about-small-rule { display: block; width: 24px; height: 1px; margin: 0 auto 1.5rem; background: var(--about-ink); opacity: 0.5; }
+.about-footnote { border-top: 1px solid var(--about-line); text-align: left; }
+.about-footnote > summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  min-height: 60px;
+  border-radius: 0.25rem;
+  color: var(--color-paper-secondary);
+  font-size: 0.75rem;
+  list-style: none;
+  cursor: pointer;
+  transition: color 250ms ease;
+}
+.about-footnote > summary::-webkit-details-marker { display: none; }
+.about-footnote > summary:is(:hover, :focus-visible) { color: var(--about-ink); }
+.about-plus { position: relative; flex-shrink: 0; width: 24px; height: 24px; border: 1px solid var(--about-line); border-radius: 50%; transition: transform 450ms var(--about-ease), background-color 300ms ease; }
+.about-plus::before,
+.about-plus::after { position: absolute; content: ""; left: 7px; top: 10px; width: 8px; height: 1px; background: currentColor; }
+.about-plus::after { transform: rotate(90deg); }
+.about-footnote[open] .about-plus { transform: rotate(45deg); background: color-mix(in srgb, var(--color-paper-accent) 9%, transparent); }
+.about-footnote > summary:active .about-plus { scale: 0.9; }
+.about-footnote::details-content { transition: height 450ms var(--about-ease), opacity 350ms ease, content-visibility 450ms allow-discrete; }
+.about-footnote-copy { padding: 0.25rem 0 1.75rem; color: var(--color-paper-secondary); font-size: 0.8125rem; line-height: 2; }
+.about-footnote-copy p + p { margin-top: 0.75rem; }
+
+.about-rings { padding-top: 3.5rem; }
+.about-rings-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 1.5rem; margin-bottom: 1.5rem; }
+.about-rings-heading > p { padding-bottom: 0.1rem; color: var(--color-paper-secondary); font-size: 0.75rem; }
+.about-link-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.about-ring-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 1.625rem;
+  border: 1px solid var(--about-line);
+  border-radius: 1rem;
+  color: var(--color-paper-primary);
+  background: color-mix(in srgb, var(--color-paper-entry) 25%, var(--color-paper-theme));
+  transition: transform 450ms var(--about-ease), border-color 300ms ease, background-color 300ms ease, box-shadow 450ms ease;
+}
+.about-card-top { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.75rem; }
+.about-card-kicker { font-size: 0.5625rem; letter-spacing: 0.14em; }
+.about-ring-symbol { position: relative; display: block; width: 36px; height: 36px; color: var(--about-ink); }
+.about-ring-symbol > span { position: absolute; inset: 0; border: 1px solid currentColor; border-radius: 46% 54% 49% 51%; transition: transform 700ms var(--about-ease); }
+.about-ring-symbol > span:nth-child(2) { inset: 5px; rotate: 35deg; }
+.about-ring-symbol > span:nth-child(3) { inset: 11px; rotate: -20deg; }
+.about-book-symbol { width: 36px; height: 36px; color: var(--about-ink); transition: transform 600ms var(--about-ease); }
+.about-card-title { font-family: var(--font-serif); font-size: 1.25rem; transition: color 250ms ease; }
+.about-card-description { margin-top: 0.625rem; padding-right: 1.75rem; color: var(--color-paper-secondary); font-size: 0.75rem; line-height: 1.8; }
+.about-card-arrow { position: absolute; right: 1.625rem; bottom: 1.625rem; color: var(--about-ink); font-size: 1.25rem; }
+.about-ring-card:is(:hover, :focus-visible) { transform: translateY(-4px); border-color: color-mix(in srgb, var(--about-ink) 50%, var(--about-line)); background: color-mix(in srgb, var(--color-paper-accent) 4%, var(--color-paper-theme)); box-shadow: 0 12px 24px -20px color-mix(in srgb, var(--about-ink) 50%, transparent); }
+.about-ring-card:is(:hover, :focus-visible) .about-card-title { color: var(--about-ink); }
+.about-ring-card:is(:hover, :focus-visible) .about-card-arrow { transform: translateX(4px); }
+.about-doc-card:is(:hover, :focus-visible) .about-card-arrow { transform: translate(3px, -3px); }
+.about-ring-card:is(:hover, :focus-visible) .about-ring-symbol > span { transform: rotate(65deg); }
+.about-ring-card:is(:hover, :focus-visible) .about-ring-symbol > span:nth-child(2) { transform: rotate(-45deg); }
+.about-ring-card:is(:hover, :focus-visible) .about-book-symbol { transform: rotate(-8deg) translateY(-2px); }
+.about-ring-card:active { transform: translateY(-1px) scale(0.985); }
+.about-colophon { display: flex; flex-direction: column; align-items: center; gap: 0.875rem; padding: 3.5rem 0 0.5rem; text-align: center; }
+.about-colophon-star { color: var(--about-ink); font-size: 1.25rem; }
+.about-colophon > p { color: var(--color-paper-secondary); font-family: var(--font-serif); font-size: 0.875rem; letter-spacing: 0.08em; }
+.about-colophon-name { font-size: 0.5rem; letter-spacing: 0.2em; }
+.about-page :is(a, button, summary):focus-visible { outline: 2px solid var(--about-ink); outline-offset: 5px; }
+.about-page .about-tree:focus-visible { outline: none; }
+.about-tree:focus-visible .about-tree-touch { outline: 2px solid var(--about-ink); outline-offset: 5px; }
+
+@media (max-width: 639px) {
+  .about-page { padding-top: 0.75rem; }
+  .about-hero { grid-template-columns: minmax(0, 1fr); gap: 0; padding-bottom: 2rem; }
+  .about-hero-copy { position: relative; z-index: 1; }
+  .about-eyebrow { margin-bottom: 1.5rem; }
+  .about-hero h1 { font-size: clamp(2.25rem, 9vw, 3.25rem); }
+  .about-hero-description { margin-top: 1.25rem; }
+  .about-reading-link { margin-top: 1.25rem; }
+  .about-tree-figure { width: min(100%, 310px); justify-self: center; margin-top: -0.5rem; }
+  .about-tree-caption { padding-top: 0; min-height: 1.5rem; }
+  .about-story { grid-template-columns: minmax(0, 1fr); gap: 1.5rem; padding: 2rem 0 2.5rem; }
+  .about-memory { padding: 2.75rem 1.5rem 0; }
+  .about-memory blockquote > p { font-size: 1.375rem; }
+  .about-quote-mark { left: 0.75rem; }
+  .about-rings { padding-top: 2.5rem; }
+  .about-rings-heading { align-items: flex-start; flex-direction: column; gap: 0.75rem; }
+  .about-link-grid { grid-template-columns: minmax(0, 1fr); }
+  .about-ring-card { padding: 1.5rem; }
+  .about-card-top { margin-bottom: 1.25rem; }
+  .about-colophon { padding-top: 2.5rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .about-page *,
+  .about-page *::before,
+  .about-page *::after,
+  .about-footnote::details-content { animation: none !important; transition: none !important; }
+  .about-page :is(.about-ring-card, .about-arrow, .about-book-symbol, .about-ring-symbol > span, .about-tree-art, .about-tree-orbits) { transform: none !important; }
+}
