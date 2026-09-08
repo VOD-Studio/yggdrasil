@@ -2250,17 +2250,14 @@
 }
 
 .archives-page .archive-entry {
+  margin-inline: -0.75rem;
+  padding-inline: 0.75rem;
   border-radius: 0.75rem;
-  transition: transform 220ms ease, background-color 220ms ease;
+  transition: background-color 220ms ease;
 }
 
 .archives-page .archive-entry:is(:hover, :focus-within) {
-  transform: translateX(4px);
   background: color-mix(in srgb, var(--color-paper-entry) 55%, transparent);
-}
-
-.archives-page .archive-entry:active {
-  transform: translateX(2px) scale(0.99);
 }
 
 .archives-page .entry-link {
@@ -2424,7 +2421,6 @@
   .archive-tags-list > li,
   .archive-tag-chip,
   .archive-tags-retry,
-  .archives-page .archive-entry,
   .archive-back-link {
     transform: none !important;
   }
