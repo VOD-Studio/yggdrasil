@@ -11,12 +11,6 @@ pub const INPUT_CLASS: &str = "w-full px-4 py-2 border border-paper-border round
 /// 用于与按钮并排、需填充剩余宽度的场景（搜索栏、URL 输入栏等）。
 pub const INPUT_INLINE_CLASS: &str = "flex-1 min-w-0 px-4 py-2 border border-paper-border rounded-2xl bg-paper-entry text-paper-primary placeholder:text-paper-tertiary focus:outline-none focus:border-paper-accent focus:ring-1 focus:ring-paper-accent/30 transition-colors duration-200";
 
-/// 可清除输入框 CSS 类：与 [`INPUT_CLASS`] 同主题（`w-full` 撑满外层 relative 包裹），
-/// 右侧 `pr-10` 为输入框内的自定义清除按钮（Material Symbols `close` 图标）让位，
-/// `ygg-search-clear` 钩子隐藏 WebKit/Blink 原生 `::-webkit-search-cancel-button`
-/// （见 input.css）。用于「输入框内带清除图标」场景（/search 页）。
-pub const INPUT_SEARCH_CLASS: &str = "w-full pr-10 px-4 py-2 border border-paper-border rounded-2xl bg-paper-entry text-paper-primary placeholder:text-paper-tertiary focus:outline-none focus:border-paper-accent focus:ring-1 focus:ring-paper-accent/30 transition-colors duration-200 ygg-search-clear";
-
 /// 主按钮 CSS 类，用于表单提交等主操作按钮。
 ///
 /// 用 `text-paper-theme` 而非硬编码 `text-white`：`--color-paper-theme` 随主题反转
