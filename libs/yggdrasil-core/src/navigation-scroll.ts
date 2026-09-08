@@ -19,8 +19,7 @@ export function restoreScroll(snapshot: ScrollSnapshot | undefined, hash: string
     window.scrollTo({ left: snapshot.window[0], top: snapshot.window[1], behavior: 'instant' });
     for (const element of document.querySelectorAll<HTMLElement>('[data-vt-scroll]')) {
       const [left, top] = snapshot.containers[element.dataset.vtScroll!] ?? [0, 0];
-      element.scrollLeft = left;
-      element.scrollTop = top;
+      element.scrollTo({ left, top, behavior: 'instant' });
     }
     return;
   }
@@ -37,8 +36,7 @@ export function restoreScroll(snapshot: ScrollSnapshot | undefined, hash: string
   }
   window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
   for (const element of document.querySelectorAll<HTMLElement>('[data-vt-scroll]')) {
-    element.scrollLeft = 0;
-    element.scrollTop = 0;
+    element.scrollTo({ left: 0, top: 0, behavior: 'instant' });
   }
 }
 

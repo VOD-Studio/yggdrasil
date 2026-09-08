@@ -351,6 +351,7 @@ pub fn SiteSettingsPage() -> Element {
             // 内容区：全部分区常驻挂载、纵向堆叠在同一个滚动容器里
             div {
                 id: "settings-scroll",
+                "data-vt-scroll": "admin-settings",
                 class: "flex-1 min-w-0 min-h-0 overflow-y-auto pb-8 rounded-2xl scroll-smooth",
                 onscroll: move |_| {
                     #[cfg(target_arch = "wasm32")]

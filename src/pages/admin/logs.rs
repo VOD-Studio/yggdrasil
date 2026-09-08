@@ -773,6 +773,7 @@ fn LogsStreamPane(
             // 日志滚动区（等宽字体行列表，新行自底部进入）
             div {
                 id: "{scroll_id}",
+                "data-vt-scroll": "admin-logs",
                 class: "flex-1 min-h-0 overflow-y-auto overscroll-contain py-1 font-mono text-xs leading-5",
                 onscroll: move |_| {
                     #[cfg(target_arch = "wasm32")]

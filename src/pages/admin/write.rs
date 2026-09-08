@@ -541,7 +541,7 @@ fn write_editor(post_id: Option<i32>) -> Element {
             // 两栏容器：flex-1 分配空间，自身不滚动 (min-h-0)，滚动职责下放给左右两栏。
             div { class: "flex-1 min-h-0 flex",
                 // 左栏 (主写作区)：类 Notion/Ghost 极简文档流，居中优雅排版。
-                div { class: "flex-1 min-w-0 min-h-0 overflow-y-auto px-6 sm:px-10 md:px-14 py-8 flex flex-col items-center",
+                div { "data-vt-scroll": "admin-write-content", class: "flex-1 min-w-0 min-h-0 overflow-y-auto px-6 sm:px-10 md:px-14 py-8 flex flex-col items-center",
                     div { class: "w-full max-w-4xl flex-1 flex flex-col",
                         // 标题输入
                         input {
@@ -606,7 +606,7 @@ fn write_editor(post_id: Option<i32>) -> Element {
 
                 // 右栏 (侧边栏)：折叠/展开动画，分节卡片化，带图标与视觉预览
                 if sidebar_open() {
-                    div { class: "w-80 sm:w-88 flex-shrink-0 min-h-0 overflow-y-auto border-l border-[var(--color-paper-border)]/70 bg-[var(--color-paper-theme)] flex flex-col animate-section-enter",
+                    div { "data-vt-scroll": "admin-write-settings", class: "w-80 sm:w-88 flex-shrink-0 min-h-0 overflow-y-auto border-l border-[var(--color-paper-border)]/70 bg-[var(--color-paper-theme)] flex flex-col animate-section-enter",
                         // 侧栏标题栏
                         div { class: "px-5 py-4 border-b border-[var(--color-paper-border)]/60 flex items-center justify-between select-none",
                             div { class: "flex items-center gap-2",

@@ -525,6 +525,7 @@ describe('entry scroll and private state', () => {
   });
 
   it('restores the admin scroll container on return and stops correcting after user input', async () => {
+    const scroll = vi.spyOn(HTMLElement.prototype, 'scrollTo');
     routes.disconnect();
     history.replaceState({}, '', '/admin/posts');
     routes.connect(notify, null);
@@ -540,6 +541,9 @@ describe('entry scroll and private state', () => {
     await native[1].invoke();
     const container = document.querySelector<HTMLElement>('[data-vt-scroll]')!;
     expect(container.scrollTop).toBe(650);
+    // Settings and other internal panes use CSS smooth scrolling; snapshots need
+    // their restored position synchronously, before the transition begins.
+    expect(scroll).toHaveBeenLastCalledWith({ left: 0, top: 650, behavior: 'instant' });
     expect(routes.isRestoring()).toBe(true);
     window.dispatchEvent(new Event('wheel'));
     expect(routes.isRestoring()).toBe(false);
