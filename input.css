@@ -2046,6 +2046,233 @@
   visibility: visible;
 }
 
+/* 友链：相连的轨道与纸面名片。动效只改变合成属性，不移动周围布局。 */
+.friends-page,
+.friends-skeleton {
+  --friend-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --friend-line: color-mix(in srgb, var(--color-paper-border) 48%, transparent);
+}
+
+.friends-intro {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2rem;
+  min-height: 232px;
+  padding: 0.5rem 0 2.5rem;
+}
+
+.friends-intro-copy {
+  animation: page-enter 700ms var(--friend-ease) backwards;
+}
+
+.friends-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  color: var(--color-paper-secondary);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+}
+
+.friends-eyebrow > span {
+  width: 20px;
+  height: 1px;
+  background: var(--color-paper-accent);
+}
+
+.friends-intro h1 {
+  margin: 1rem 0 0.875rem;
+  font-size: clamp(2.75rem, 6vw, 3.5rem);
+  font-weight: 650;
+  line-height: 1.1;
+  letter-spacing: -0.06em;
+}
+
+.friends-title-dot { color: var(--color-paper-accent); }
+.friends-intro-lead { font-size: 1.125rem; line-height: 1.8; }
+.friends-intro-note { margin-top: 0.375rem; color: var(--color-paper-secondary); font-size: 0.8125rem; }
+
+.friends-orbit {
+  position: relative;
+  flex: 0 0 230px;
+  height: 190px;
+  color: var(--color-paper-accent);
+  animation: page-enter 1000ms 120ms var(--friend-ease) backwards;
+}
+
+.friends-orbit-ring {
+  position: absolute;
+  top: 20px;
+  width: 130px;
+  height: 130px;
+  border: 1px solid color-mix(in srgb, var(--color-paper-accent) 28%, transparent);
+  border-radius: 50%;
+}
+
+.friends-orbit-ring-one { left: 16px; transform: rotate(-28deg) scaleX(0.9); }
+.friends-orbit-ring-two { right: 16px; transform: rotate(28deg) scaleX(0.9); border-style: dashed; }
+
+.friends-orbit-node {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  border: 1px solid color-mix(in srgb, var(--color-paper-accent) 20%, transparent);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--color-paper-accent) 7%, var(--color-paper-theme));
+  box-shadow: 0 8px 20px -16px var(--color-paper-accent);
+  font-size: 2rem;
+  animation: friends-float 8s ease-in-out infinite;
+}
+
+.friends-orbit-node-one { left: 34px; top: 15px; rotate: -12deg; }
+.friends-orbit-node-two { right: 24px; top: 85px; rotate: 12deg; animation-delay: -4s; }
+.friends-orbit-dot { position: absolute; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.friends-orbit-dot-one { top: 29px; right: 51px; opacity: 0.55; }
+.friends-orbit-dot-two { top: 139px; left: 54px; opacity: 0.35; }
+.friends-orbit-caption { position: absolute; bottom: 0; width: 100%; text-align: center; font-size: 10px; letter-spacing: 0.16em; color: var(--color-paper-secondary); }
+
+.friends-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 58px;
+  margin-bottom: 1.25rem;
+  border-top: 1px solid var(--friend-line);
+}
+
+.friends-section-heading h2 { display: flex; align-items: center; gap: 0.75rem; font-size: 0.875rem; font-weight: 600; }
+.friends-count { color: var(--color-paper-accent); font: 11px ui-monospace, monospace; }
+.friends-section-hint { color: var(--color-paper-secondary); font-size: 0.6875rem; letter-spacing: 0.025em; }
+.friends-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.25rem; list-style: none; margin: 0; padding: 0; }
+.friends-card-enter { min-width: 0; animation: page-enter 650ms var(--friend-delay, 0ms) var(--friend-ease) backwards; }
+
+.friend-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 262px;
+  padding: 1.5rem 1.625rem 1.125rem;
+  border: 1px solid var(--friend-line);
+  border-radius: 1.375rem;
+  background: color-mix(in srgb, var(--color-paper-theme) 60%, var(--color-paper-entry));
+  color: var(--color-paper-primary);
+  box-shadow: 0 2px 3px -3px color-mix(in srgb, var(--color-paper-primary) 15%, transparent);
+  text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 450ms var(--friend-ease), border-color 300ms ease, background-color 300ms ease, box-shadow 450ms var(--friend-ease);
+}
+
+.friend-card-top { display: flex; align-items: flex-start; justify-content: space-between; }
+.friend-number { padding-top: 0.25rem; color: var(--color-paper-secondary); font: 10px ui-monospace, monospace; opacity: 0.65; transition: color 300ms ease, opacity 300ms ease; }
+
+.friend-avatar {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  flex-shrink: 0;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--color-paper-accent) 15%, transparent);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--color-paper-accent) 8%, var(--color-paper-theme));
+  color: var(--color-paper-accent);
+  font: 600 1.375rem var(--font-serif);
+  transition: transform 500ms var(--friend-ease), border-radius 500ms var(--friend-ease);
+}
+
+.friend-avatar-image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 350ms ease; }
+.friend-avatar-image.is-loaded { opacity: 1; }
+.friend-card-copy { margin: 1.125rem 0 1.25rem; }
+.friend-card h3 { font-size: 1.0625rem; font-weight: 650; line-height: 1.5; overflow-wrap: anywhere; transition: color 250ms ease; }
+.friend-description { margin-top: 0.375rem; color: var(--color-paper-secondary); font-size: 0.8125rem; line-height: 1.8; overflow-wrap: anywhere; }
+.friend-card-bottom { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-top: auto; padding-top: 0.875rem; border-top: 1px solid var(--friend-line); }
+.friend-address { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-paper-secondary); font: 10px ui-monospace, monospace; }
+.friend-visit { display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; }
+.friend-visit-label { color: var(--color-paper-accent); font-size: 0.6875rem; opacity: 0; transform: translateX(-6px); transition: opacity 250ms ease, transform 350ms var(--friend-ease); }
+.friend-arrow { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: var(--color-paper-entry); font-size: 1rem; transition: background-color 250ms ease, color 250ms ease; }
+.friend-arrow > span { display: block; transition: transform 400ms var(--friend-ease); }
+
+.friend-card:focus-visible,
+.friends-action:focus-visible { outline: 2px solid var(--color-paper-accent); outline-offset: 5px; }
+.friend-card:focus-visible { border-color: var(--color-paper-accent); }
+.friend-card:focus-visible h3 { color: var(--color-paper-accent); }
+.friend-card:focus-visible .friend-visit-label { opacity: 1; transform: none; }
+.friend-card:focus-visible .friend-arrow { background: var(--color-paper-accent); color: var(--color-paper-theme); }
+
+@media (hover: hover) and (pointer: fine) {
+  a.friend-card:hover {
+    transform: translateY(-5px);
+    border-color: color-mix(in srgb, var(--color-paper-accent) 45%, var(--color-paper-border));
+    background: color-mix(in srgb, var(--color-paper-accent) 3%, var(--color-paper-theme));
+    box-shadow: 0 14px 30px -20px color-mix(in srgb, var(--color-paper-accent) 35%, transparent);
+  }
+  .friend-card:hover .friend-avatar { transform: rotate(-5deg) scale(1.04); border-radius: 19px; }
+  .friend-card:hover h3,
+  .friend-card:hover .friend-number { color: var(--color-paper-accent); opacity: 1; }
+  .friend-card:hover .friend-visit-label { opacity: 1; transform: none; }
+  .friend-card:hover .friend-arrow { background: var(--color-paper-accent); color: var(--color-paper-theme); }
+  .friend-card:hover .friend-arrow > span { transform: translate(2px, -2px); }
+  .friends-action:hover { background: color-mix(in srgb, var(--color-paper-accent) 12%, var(--color-paper-theme)); transform: translateY(-2px); }
+  .friends-action:hover > span { transform: translate(2px, -2px); }
+}
+
+a.friend-card:active { transform: translateY(-1px) scale(0.985); transition-duration: 120ms; }
+.friends-action:active { transform: scale(0.97); transition-duration: 120ms; }
+.friends-colophon { display: flex; align-items: center; justify-content: center; gap: 0.625rem; padding: 2.5rem 0 0.5rem; color: var(--color-paper-secondary); font-size: 0.6875rem; letter-spacing: 0.12em; }
+.friends-colophon > span { color: var(--color-paper-accent); font-size: 1rem; }
+.friends-state { padding: 3.5rem 1.5rem; border: 1px dashed var(--friend-line); border-radius: 1.375rem; text-align: center; animation: page-enter 500ms var(--friend-ease) backwards; }
+.friends-state-symbol { display: inline-block; margin-bottom: 1rem; color: var(--color-paper-accent); font-size: 2rem; }
+.friends-state h2 { font-size: 1.125rem; font-weight: 600; }
+.friends-state p { margin: 0.75rem 0 1.5rem; color: var(--color-paper-secondary); font-size: 0.8125rem; line-height: 1.8; }
+.friends-action { display: inline-flex; align-items: center; gap: 0.875rem; padding: 0.75rem 1.25rem; border-radius: 999px; background: color-mix(in srgb, var(--color-paper-accent) 7%, var(--color-paper-theme)); color: var(--color-paper-accent); font-size: 0.8125rem; cursor: pointer; transition: transform 300ms var(--friend-ease), background-color 250ms ease; }
+.friends-action > span { display: inline-block; transition: transform 300ms var(--friend-ease); }
+.friends-skeleton-intro { flex-direction: column; align-items: flex-start; justify-content: center; gap: 1.25rem; }
+.friends-skeleton-line { flex-shrink: 0; border-radius: 5px; background: var(--color-paper-entry); }
+.friends-skeleton-card { pointer-events: none; }
+
+@keyframes friends-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-7px); }
+}
+
+@media (max-width: 639px) {
+  .friends-intro { position: relative; min-height: 220px; padding-top: 1rem; gap: 0; }
+  .friends-intro-copy { position: relative; z-index: 1; }
+  .friends-intro h1 { font-size: 3rem; }
+  .friends-intro-lead { font-size: 0.9375rem; }
+  .friends-intro-note { font-size: 0.75rem; }
+  .friends-orbit { position: absolute; right: -40px; top: -24px; width: 180px; scale: 0.65; transform-origin: top right; opacity: 0.45; pointer-events: none; }
+  .friends-orbit-caption { display: none; }
+  .friends-section-hint { display: none; }
+  .friends-grid { grid-template-columns: minmax(0, 1fr); gap: 1rem; }
+  .friend-card { min-height: 252px; padding: 1.375rem 1.375rem 1rem; }
+  .friend-visit-label { opacity: 1; transform: none; }
+  .friends-colophon { padding-top: 2rem; }
+}
+
+@media (hover: none) {
+  .friend-visit-label { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .friends-page *,
+  .friends-skeleton * { animation: none !important; transition: none !important; }
+  .friends-page a.friend-card,
+  .friends-page .friend-avatar,
+  .friends-page .friend-arrow > span,
+  .friends-page .friend-visit-label,
+  .friends-page .friends-action,
+  .friends-page .friends-action > span { transform: none !important; }
+  .animate-pulse:has(.friends-skeleton) { animation: none; }
+}
+
 /* 归档标签索引：纸面色、浅绿光晕和细描边，与站点明暗主题共用语义色。 */
 .archive-tags {
   --collapse-duration: 420ms;

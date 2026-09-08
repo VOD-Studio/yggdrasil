@@ -1,19 +1,33 @@
-//! 友链页骨架屏
-//!
-//! 在友链数据加载期间展示卡片网格占位。纯色块，无动画
-//! （符合规范「避免骨架屏截断动画」的反模式）。
+//! 与友链页同尺寸的静态占位；由 DelayedSkeleton 统一控制加载提示。
 
 use dioxus::prelude::*;
 
-/// 友链页骨架屏组件。
-///
-/// 结构：两列网格内 6 个与真实卡片高度相近的圆角色块。
 #[component]
-pub fn FriendsSkeleton() -> Element {
+pub fn FriendsSkeleton(#[props(default = true)] with_header: bool) -> Element {
     rsx! {
-        div { class: "grid grid-cols-1 sm:grid-cols-2 gap-6",
-            for i in 0..6 {
-                div { key: "{i}", class: "h-40 rounded-card bg-paper-entry/60" }
+        div { class: "friends-skeleton", role: "status", aria_label: "正在加载友链",
+            div { aria_hidden: "true",
+                if with_header {
+                    div { class: "friends-intro friends-skeleton-intro",
+                        div { class: "friends-skeleton-line w-40 h-3" }
+                        div { class: "friends-skeleton-line w-32 h-14" }
+                        div { class: "friends-skeleton-line w-64 max-w-full h-5" }
+                    }
+                }
+                div { class: "friends-section-heading",
+                    div { class: "friends-skeleton-line w-28 h-5" }
+                }
+                div { class: "friends-grid",
+                    for i in 0..4 {
+                        div { key: "{i}", class: "friend-card friends-skeleton-card",
+                            div { class: "friends-skeleton-line w-13 h-13 rounded-2xl" }
+                            div { class: "friends-skeleton-line w-36 h-5 mt-5" }
+                            div { class: "friends-skeleton-line w-full h-4 mt-3" }
+                            div { class: "friends-skeleton-line w-2/3 h-4 mt-2" }
+                            div { class: "friends-skeleton-line w-24 h-3 mt-auto" }
+                        }
+                    }
+                }
             }
         }
     }
