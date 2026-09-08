@@ -54,37 +54,48 @@ use dioxus::router::components::Link;
 #[component]
 pub fn PostPreview(slug: String) -> Element {
     let router = dioxus::router::router();
+    let render_slug = slug.clone();
+    let requested_slug = use_memo(move || match router.current::<Route>() {
+        Route::PostPreview { slug } => slug,
+        _ => slug.clone(),
+    });
 
     // 非挂起取数（见模块文档「取数不挂起」一节）：None=加载中；
     // Some(None)=未找到/失败；Some(Some(post))=成功。错误与未命中同视图。
     #[allow(unused_mut)]
     let mut post = use_signal(|| None::<Option<Post>>);
+    #[allow(unused_mut)]
+    let mut loaded_slug = use_signal(String::new);
 
-    // 在 effect 内读取当前路由 slug 建立订阅：slug 变化（同为 PostPreview
-    // 变体复用组件实例）时重新拉取，并先回骨架屏。
+    // 仅订阅实际 slug 变化；Router 在 VT 提交前对旧路由的通知不能清空旧快照。
     use_effect(move || {
-        let current_slug = match router.current::<Route>() {
-            Route::PostPreview { slug } => slug,
-            // 组件卸载/路由切走的瞬间可能命中其它变体，退回用 prop 值兜底。
-            _ => slug.clone(),
-        };
+        let current_slug = requested_slug();
         // native 构建下 spawn 被编译掉；显式引用避免未用告警（dashboard 同款语义）。
         #[cfg(not(target_arch = "wasm32"))]
         let _ = &current_slug;
         // SSR 不取数（与仪表盘等 admin 页一致）：直接 URL 访问首屏为骨架屏，
         // 客户端水合后再拉取。
         #[cfg(target_arch = "wasm32")]
-        spawn(async move {
-            let resp = get_post_preview(current_slug.clone()).await;
-            // 竞态守卫：仅当结果返回时仍停留在本 slug 才写回，
-            // 避免快速切换时慢的旧响应覆盖新文章。
-            let still_here = matches!(router.current::<Route>(),
+        {
+            post.set(None);
+            spawn(async move {
+                let resp = get_post_preview(current_slug.clone()).await;
+                // 竞态守卫：仅当结果返回时仍停留在本 slug 才写回，
+                // 避免快速切换时慢的旧响应覆盖新文章。
+                let still_here = matches!(router.current::<Route>(),
                 Route::PostPreview { slug: s } if s == current_slug);
-            if still_here {
-                post.set(Some(resp.ok().and_then(|SinglePostResponse { post }| post)));
-            }
-        });
+                if still_here {
+                    loaded_slug.set(current_slug);
+                    post.set(Some(resp.ok().and_then(|SinglePostResponse { post }| post)));
+                }
+            });
+        }
     });
+
+    // 同路由实例复用时，effect 尚未执行的一帧也不能暴露旧文章的共享标记。
+    if loaded_slug() != render_slug {
+        return rsx! { DelayedSkeleton { PostPreviewSkeleton {} } };
+    }
 
     // admin nest 内无 ErrorBoundary：错误/未命中就地渲染，不向上抛。
     // None（pending）→ 骨架屏；Some(None)（Err / post=None）→ 居中提示。
@@ -100,7 +111,7 @@ pub fn PostPreview(slug: String) -> Element {
                     p { class: "text-sm text-paper-secondary",
                         "未找到该文章（可能已被删除）。"
                     }
-                    Link { class: "mt-6 {BTN_OUTLINE}", to: Route::Posts {}, "返回文章列表" }
+                    Link { class: "mt-6 {BTN_OUTLINE}", "data-vt-return": "true", to: Route::Posts {}, "返回文章列表" }
                 }
             };
         }
@@ -108,7 +119,7 @@ pub fn PostPreview(slug: String) -> Element {
     };
 
     rsx! {
-        article { class: "post-single animate-page-enter", key: "{post.slug}",
+        article { class: "post-single animate-page-enter", key: "{post.slug}", "data-vt-detail": "{post.id}",
             // 预览横幅：状态徽章 + 继续编辑 / 返回列表。
             div { class: "flex flex-wrap items-center justify-between gap-3 mb-6 p-3 rounded-2xl bg-[var(--color-paper-entry)] border border-[var(--color-paper-border)]",
                 div { class: "flex items-center gap-2 text-sm text-paper-secondary",
@@ -123,7 +134,7 @@ pub fn PostPreview(slug: String) -> Element {
                         to: Route::WriteEdit { id: post.id },
                         "继续编辑"
                     }
-                    Link { class: "{BTN_OUTLINE}", to: Route::Posts {}, "返回列表" }
+                    Link { class: "{BTN_OUTLINE}", "data-vt-return": "true", to: Route::Posts {}, "返回列表" }
                 }
             }
 
@@ -131,7 +142,7 @@ pub fn PostPreview(slug: String) -> Element {
 
             // 如果文章设置了封面图，则渲染封面组件。
             if let Some(cover) = &post.cover_image {
-                PostCover { src: cover.clone() }
+                PostCover { src: cover.clone(), post_id: post.id }
             }
 
             // 与公开详情页一致：按 slug 强制 remount，重新绑定新文章标题的 scroll-spy。

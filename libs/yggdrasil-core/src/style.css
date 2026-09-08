@@ -21,22 +21,34 @@ html:not(.is-theme-transitioning)::view-transition-new(root) {
   mix-blend-mode: normal;
 }
 
+/* 未匹配到目标的旧元素与 root 同步淡出，不延长降级过渡。 */
 html.is-route-transitioning::view-transition-group(vt-post-title),
 html.is-route-transitioning::view-transition-group(vt-post-cover) {
-  animation-duration: 360ms;
-  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  animation-duration: 240ms;
+  animation-timing-function: ease;
 }
 
 html.is-route-transitioning::view-transition-old(vt-post-title),
 html.is-route-transitioning::view-transition-old(vt-post-cover) {
-  animation: vt-fade-out 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: vt-fade-out 240ms ease both;
   mix-blend-mode: normal;
 }
 
 html.is-route-transitioning::view-transition-new(vt-post-title),
 html.is-route-transitioning::view-transition-new(vt-post-cover) {
-  animation: vt-fade-in 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: vt-fade-in 240ms ease both;
   mix-blend-mode: normal;
+}
+
+/* 协调器在新快照就绪后按角色启用双向匹配，标题与封面独立降级。 */
+html.is-route-transitioning.vt-shared-title::view-transition-group(vt-post-title),
+html.is-route-transitioning.vt-shared-title::view-transition-old(vt-post-title),
+html.is-route-transitioning.vt-shared-title::view-transition-new(vt-post-title),
+html.is-route-transitioning.vt-shared-cover::view-transition-group(vt-post-cover),
+html.is-route-transitioning.vt-shared-cover::view-transition-old(vt-post-cover),
+html.is-route-transitioning.vt-shared-cover::view-transition-new(vt-post-cover) {
+  animation-duration: 360ms;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 html.is-route-transitioning::view-transition-old(vt-post-cover),

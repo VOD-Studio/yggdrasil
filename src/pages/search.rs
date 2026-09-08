@@ -14,15 +14,57 @@ use crate::utils::time::sleep_ms;
 
 const SEARCH_DEBOUNCE_MS: u32 = 350;
 
+/// Only settled responses are persisted; request IDs and pending work belong to
+/// the mounted page and must never be revived by browser Back.
+#[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
+struct SearchHistoryState {
+    query: String,
+    submitted_query: String,
+    response: Option<PostListResponse>,
+    failed: bool,
+}
+
+impl SearchHistoryState {
+    fn result(&self) -> Option<Result<PostListResponse, ServerFnError>> {
+        if self.failed {
+            Some(Err(ServerFnError::new("搜索暂时未能完成，请重试")))
+        } else {
+            self.response.clone().map(Ok)
+        }
+    }
+}
+
 #[component]
 pub fn Search() -> Element {
-    let mut query = use_signal(String::new);
-    let mut submitted_query = use_signal(String::new);
-    let mut search_res = use_signal(|| None::<Result<PostListResponse, ServerFnError>>);
+    let entry_id = use_hook(crate::bridges::navigation::entry_id);
+    let saved = use_hook(|| {
+        crate::bridges::navigation::read_state::<SearchHistoryState>("search").unwrap_or_default()
+    });
+    let mut query = use_signal(|| saved.query.clone());
+    let mut submitted_query = use_signal(|| saved.submitted_query.clone());
+    let mut search_res = use_signal(|| saved.result());
     let mut is_searching = use_signal(|| false);
     let mut request_id = use_signal(|| 0_u64);
     let mut is_composing = use_signal(|| false);
     let mut input_element = use_signal(|| None::<Rc<MountedData>>);
+
+    use_effect(move || {
+        let result = search_res();
+        let state = SearchHistoryState {
+            query: query(),
+            submitted_query: if is_searching() {
+                String::new()
+            } else {
+                submitted_query()
+            },
+            response: result
+                .as_ref()
+                .and_then(|result| result.as_ref().ok())
+                .cloned(),
+            failed: result.as_ref().is_some_and(|result| result.is_err()),
+        };
+        crate::bridges::navigation::write_state(&entry_id, "search", &state);
+    });
 
     let mut on_search = move |value: String| {
         let q = value.trim().to_string();
@@ -188,7 +230,7 @@ pub fn Search() -> Element {
             }
 
             p { class: "sr-only", role: "status", aria_live: "polite", "{status}" }
-            section { class: "search-content", aria_label: "搜索结果", aria_busy: is_searching().to_string(),
+            section { class: "search-content", "data-vt-list": (!is_searching()).then_some("true"), aria_label: "搜索结果", aria_busy: is_searching().to_string(),
                 if is_searching() {
                     div { class: "search-results-heading search-enter",
                         h2 { "正在翻阅文字" }
@@ -286,11 +328,11 @@ fn SearchResult(post: PostListItem, index: usize) -> Element {
     let reading_time = post.reading_time.max(1);
     rsx! {
         article { class: "search-result search-enter", style: "--search-delay: {delay}ms",
-            Link { class: "search-result-link", to: Route::PostDetail { slug: post.slug },
+            Link { class: "search-result-link", "data-vt-post-link": "{post.id}", to: Route::PostDetail { slug: post.slug },
                 span { class: "search-result-number", aria_hidden: "true", "{number}" }
                 div { class: "search-result-body",
                     div { class: "search-result-meta", time { datetime: "{date}", "{date}" } span { "{reading_time} 分钟阅读" } }
-                    h2 { "{post.title}" }
+                    h2 { "data-vt-post-id": "{post.id}", "data-vt-role": "title", "{post.title}" }
                     if let Some(summary) = post.summary.filter(|text| !text.is_empty()) {
                         p { class: "search-result-summary", "{summary}" }
                     }

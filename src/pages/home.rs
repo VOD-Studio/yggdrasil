@@ -108,19 +108,20 @@ pub(crate) fn HomeIntro(current_page: i32) -> Element {
 #[component]
 fn HomePosts(current_page: i32) -> Element {
     let router = dioxus::router::router();
-    let mut posts_res = use_server_future(move || {
-        let page = match router.current::<Route>() {
-            Route::HomePage { page } => page.max(1),
-            _ => current_page,
-        };
-        list_published_posts(page, POSTS_PER_PAGE)
-    })?;
+    // Router 会在原生快照前通知旧路由；页码未变时不重新挂起旧列表。
+    let requested_page = use_memo(move || match router.current::<Route>() {
+        Route::HomePage { page } => page.max(1),
+        _ => current_page,
+    });
+    let mut posts_res =
+        use_server_future(move || list_published_posts(requested_page(), POSTS_PER_PAGE))?;
 
     let posts_data = posts_res.read();
     match posts_data.as_ref() {
         Some(Ok(PostListResponse { posts, total })) => {
             let total = *total;
             rsx! {
+                span { hidden: true, "data-vt-list": "true" }
                 HomePostsHeading { current_page, total }
                 if !posts.is_empty() {
                     div { key: "page-{current_page}", class: "home-post-list",
@@ -158,6 +159,7 @@ fn HomePosts(current_page: i32) -> Element {
             }
         }
         Some(Err(_)) => rsx! {
+            span { hidden: true, "data-vt-list": "true" }
             HomePostsHeading { current_page }
             HomePostsError {
                 current_page,

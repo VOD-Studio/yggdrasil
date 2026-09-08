@@ -73,7 +73,7 @@ pub fn PostCard(post: PostListItem, #[props(default = false)] compact: bool) -> 
     rsx! {
         article { class: "{article_class}",
             if let Some(cover) = post.cover_image.as_deref() {
-                div { class: "post-card-cover overflow-hidden",
+                div { class: "post-card-cover overflow-hidden", "data-vt-post-id": "{post.id}", "data-vt-role": "cover",
                     div { class: "blur-img post-card-cover-blur !rounded-none",
                         if cover_failed {
                             div { class: "absolute inset-0 flex items-center justify-center bg-paper-entry text-paper-tertiary", aria_hidden: "true",
@@ -109,7 +109,7 @@ pub fn PostCard(post: PostListItem, #[props(default = false)] compact: bool) -> 
                         span { "{post.word_count} 字" }
                     }
                 }
-                h2 { class: "{title_class}",
+                h2 { class: "{title_class}", "data-vt-post-id": "{post.id}", "data-vt-role": "title",
                     "{post.title}"
                 }
                 if let Some(summary) = post.summary.as_deref().filter(|s| !s.is_empty()) {
@@ -135,6 +135,7 @@ pub fn PostCard(post: PostListItem, #[props(default = false)] compact: bool) -> 
             Link {
                 class: "absolute inset-0 z-[2] rounded-[inherit] focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-paper-accent",
                 aria_label: "阅读文章：{post.title}",
+                "data-vt-post-link": "{post.id}",
                 to: Route::PostDetail {
                     slug: post_slug,
                 },

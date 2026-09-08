@@ -27,7 +27,7 @@ pub fn PostHeader(post: Post, #[props(default = false)] full_reload: bool) -> El
     rsx! {
         header { class: "post-header",
             Breadcrumbs { title: post.title.clone(), full_reload }
-            h1 { class: "post-title",
+            h1 { class: "post-title", "data-vt-post-id": "{post.id}", "data-vt-role": "title",
                 "{post.title}"
                 if post.status == PostStatus::Draft {
                     span { class: "entry-hint", title: "Draft",

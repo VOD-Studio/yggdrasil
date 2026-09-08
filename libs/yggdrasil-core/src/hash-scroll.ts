@@ -31,6 +31,11 @@ const USER_INPUT_EVENTS: Array<keyof WindowEventMap> = ['wheel', 'touchmove', 'k
 /** 当前活跃的稳定器；重入时先 dispose 上一次，避免泄漏/叠加。 */
 let activeStabilizer: (() => void) | null = null;
 
+window.addEventListener('yggdrasil:navigation-start', () => {
+  activeStabilizer?.();
+  activeStabilizer = null;
+});
+
 /**
  * 布局稳定期：在 STABILIZE_WINDOW_MS 内监听内容容器尺寸变化，位移后用 rAF 合并
  * 并重新校正落点。用户主动滚动或超时后自动停止。
@@ -92,6 +97,8 @@ function stabilizeScrollOnResize(el: Element): void {
 }
 
 export function scrollToHash(): void {
+  // History traversal restores the actual reading position, which may be far below the hash.
+  if (window.__routeTransitions?.isRestoring()) return;
   const hash = window.location.hash.slice(1); // 去掉前导 #
   if (!hash) return;
 

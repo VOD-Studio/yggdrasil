@@ -68,7 +68,8 @@ export function initAnchorClick(): void {
       // 更新 URL hash 但不产生历史记录抖动：replaceState 不触发 popstate/hashchange。
       // 这样地址栏显示当前章节，刷新页面也能 scrollToHash 回到原位。
       if (window.location.hash !== href) {
-        history.replaceState(null, '', href);
+        history.replaceState(history.state, '', href);
+        window.__routeTransitions?.syncHash();
       }
     },
     true, // capture：在 Dioxus 的 bubble 监听器之前执行

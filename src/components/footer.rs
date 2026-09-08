@@ -76,7 +76,7 @@ pub fn Footer() -> Element {
     });
 
     rsx! {
-        footer { class: "w-full border-t border-paper-border mt-auto",
+        footer { "data-vt-shell": "frontend-footer", class: "w-full border-t border-paper-border mt-auto",
             div { class: "max-w-4xl mx-auto px-6 py-5 flex items-center justify-between text-sm text-paper-secondary",
                 span { "© 2026 Yggdrasil" }
                 if let Some(url) = github_url.as_ref() {

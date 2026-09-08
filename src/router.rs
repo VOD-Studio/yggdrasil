@@ -5,6 +5,7 @@
 //! 既用于生成 URL 匹配规则，也用于组件导航。
 
 use dioxus::prelude::*;
+use dioxus::router::components::HistoryProvider;
 use std::sync::Arc;
 
 use crate::components::admin_layout::AdminLayout;
@@ -31,7 +32,9 @@ use crate::theme::{use_theme_provider, ThemePreload};
 #[derive(Clone, Routable, Debug, PartialEq)]
 #[rustfmt::skip]
 pub enum Route {
-    // 前台页面共享布局，最外层嵌套错误边界布局以拦截报错
+    // 不挂起的全局布局负责通知实际 DOM 提交，覆盖前台、后台及认证页面。
+    #[layout(NavigationLayout)]
+    // 前台页面共享布局，嵌套错误边界布局以拦截报错
     #[layout(ErrorLayout)]
         #[layout(FrontendLayout)]
             /// 首页
@@ -150,7 +153,31 @@ pub fn AppRouter() -> Element {
         document::Link { rel: "icon", href: "/favicon.ico" }
         div {
             ThemePreload {}
-            Router::<Route> {}
+            HistoryProvider {
+                history: move |_| crate::navigation::transition_history(dioxus::history::history()),
+                Router::<Route> {}
+            }
+        }
+    }
+}
+
+#[component]
+fn NavigationLayout() -> Element {
+    let route = dioxus::router::router().full_route_string();
+    let navigation = crate::bridges::navigation::navigation_id();
+    use_effect(use_reactive(
+        (&route, &navigation),
+        |(route, navigation)| {
+            crate::bridges::navigation::rendered(navigation, &route);
+        },
+    ));
+
+    rsx! {
+        div {
+            style: "display: contents",
+            "data-vt-route": route,
+            "data-vt-navigation": navigation,
+            Outlet::<Route> {}
         }
     }
 }

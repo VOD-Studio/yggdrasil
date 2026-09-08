@@ -34,6 +34,7 @@ mod hooks;
 #[cfg(feature = "server")]
 mod middleware;
 mod models;
+mod navigation;
 // mcp：Model Context Protocol 服务器（/mcp Streamable HTTP，bearer token 鉴权）。
 // 仅 server feature 编译；WASM 前端不引用任何 mcp 符号。
 // allow(dead_code)：原用于掩盖 T1 tracer bullet 期间未接线的 mcp/resources.rs（273 行

@@ -3774,3 +3774,7 @@ a.friend-card:active { transform: translateY(-1px) scale(0.985); transition-dura
 [data-vt-enter-handled]:is(.animate-page-enter, .page-enter) {
   animation-name: none;
 }
+
+[data-vt-entry-captured] {
+  animation-name: none;
+}

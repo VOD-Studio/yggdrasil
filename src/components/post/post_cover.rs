@@ -9,12 +9,13 @@ use dioxus::prelude::*;
 ///
 /// Props：
 /// - `src`：封面原图 URL
+/// - `post_id`：参与文章共享过渡的文章 ID（可选）
 ///
 /// 渲染 `.blur-img` 结构，与正文图片一致；`data-single="true"` 标记为单张，
 /// 由 `lightbox.js` 接管点击放大（原地缩放飞出 + 原图展示）。
 /// 服务端读取真实尺寸写入 `--ar`，确保占位期间维持正确宽高比。
 #[component]
-pub fn PostCover(src: String) -> Element {
+pub fn PostCover(src: String, #[props(default)] post_id: Option<i32>) -> Element {
     // SSR 时读真实尺寸算 --ar；WASM 端不读（HTML 已在 SSR 写入）。
     let ar_style = {
         #[cfg_attr(not(feature = "server"), allow(unused_mut))]
@@ -48,6 +49,8 @@ pub fn PostCover(src: String) -> Element {
 
     rsx! {
         figure { class: "entry-cover",
+            "data-vt-post-id": post_id.map(|id| id.to_string()),
+            "data-vt-role": post_id.map(|_| "cover"),
             span {
                 class: "blur-img entry-cover-blur lightbox-single",
                 style: "{ar_style}",

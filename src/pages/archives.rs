@@ -113,7 +113,11 @@ pub fn Archives() -> Element {
                 }
             }
             SuspenseBoundary {
-                fallback: move |_| rsx! { DelayedSkeleton { TagsSkeleton {} } },
+                fallback: move |_| rsx! {
+                    div { "data-vt-list-pending": "true",
+                        DelayedSkeleton { TagsSkeleton {} }
+                    }
+                },
                 ArchiveTags {}
             }
             SuspenseBoundary {
@@ -127,6 +131,12 @@ pub fn Archives() -> Element {
 /// 标签云保持挂载，让收起也能完成高度与标签淡出动画。
 #[component]
 fn ArchiveTags() -> Element {
+    let entry_id = use_hook(crate::bridges::navigation::entry_id);
+    let mut tags_open =
+        use_signal(|| crate::bridges::navigation::read_state("archive-tags-open").unwrap_or(false));
+    use_effect(move || {
+        crate::bridges::navigation::write_state(&entry_id, "archive-tags-open", &tags_open());
+    });
     let mut tags_res = use_server_future(list_tags)?;
     let tags_data = tags_res.read();
     let summary = match &*tags_data {
@@ -142,7 +152,8 @@ fn ArchiveTags() -> Element {
             title: "标签索引",
             summary,
             enabled: true,
-            default_open: false,
+            default_open: tags_open(),
+            on_toggle: move |_| tags_open.set(!tags_open()),
             class: "archive-tags",
             panel_id: "archive-tags-panel",
             div { class: "archive-tags-body",
@@ -197,6 +208,7 @@ fn ArchivesContent() -> Element {
         Some(Ok(PostListResponse { posts, total })) => {
             if *total == 0 {
                 rsx! {
+                    span { hidden: true, "data-vt-list": "true" }
                     EmptyState {
                         title: "还没有文章归档",
                         description: "发布文章后，这里会自动按年月进行归档显示。",
@@ -205,7 +217,7 @@ fn ArchivesContent() -> Element {
             } else {
                 let grouped = group_posts(posts);
                 rsx! {
-                    section { class: "archive-timeline", aria_labelledby: "archive-timeline-title",
+                    section { class: "archive-timeline", "data-vt-list": "true", aria_labelledby: "archive-timeline-title",
                         div { class: "archive-toolbar",
                             div { class: "archive-toolbar-title",
                                 h2 { id: "archive-timeline-title", "时间归档" }
@@ -236,7 +248,7 @@ fn ArchivesContent() -> Element {
         }
         Some(Err(_)) => {
             rsx! {
-                div { class: "archive-state", role: "alert",
+                div { class: "archive-state", "data-vt-list": "true", role: "alert",
                     h2 { "暂时没能翻开归档" }
                     p { "文章加载失败，请稍后再试。" }
                     button {
@@ -340,10 +352,11 @@ fn ArchiveEntry(post: PostListItem) -> Element {
     rsx! {
         Link {
             class: "archive-entry",
+            "data-vt-post-link": "{post.id}",
             to: Route::PostDetail { slug: post.slug.clone() },
             time { class: "archive-date", datetime: "{date_str}", title: "{date_str}", aria_label: "{date_str}", "{day}" }
             div { class: "archive-entry-copy",
-                h5 { class: "archive-entry-title", "{post.title}" }
+                h5 { class: "archive-entry-title", "data-vt-post-id": "{post.id}", "data-vt-role": "title", "{post.title}" }
                 if !topics.is_empty() || post.reading_time > 0 {
                     div { class: "archive-entry-meta",
                         if !topics.is_empty() {

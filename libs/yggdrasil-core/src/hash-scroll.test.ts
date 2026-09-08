@@ -42,6 +42,15 @@ describe('scrollToHash', () => {
     history.replaceState(null, '', '#');
   });
 
+  it('历史返回恢复阅读位置时不会重新跳到旧 hash', () => {
+    document.body.innerHTML = '<h2 id="chapter">Chapter</h2>';
+    history.replaceState(null, '', '#chapter');
+    vi.spyOn(window.__routeTransitions, 'isRestoring').mockReturnValue(true);
+    const scroll = vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
+    window.__scrollToHash();
+    expect(scroll).not.toHaveBeenCalled();
+  });
+
   it('hash 为 CJK 百分号编码时解码后命中并滚动', () => {
     const heading = document.createElement('h2');
     heading.id = '三-五-零法则';

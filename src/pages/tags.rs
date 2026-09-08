@@ -11,7 +11,7 @@ use crate::components::skeletons::tags_skeleton::TagPostsLoading;
 use crate::models::post::PostListItem;
 use crate::router::Route;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 enum TagSortOrder {
     Latest,
     Earliest,
@@ -143,7 +143,15 @@ fn TagIllustration(#[props(default = false)] paused: bool) -> Element {
 
 #[component]
 fn TagDetailContent(tag: String) -> Element {
-    let mut order = use_signal(|| TagSortOrder::Latest);
+    let entry_id = use_hook(crate::bridges::navigation::entry_id);
+    let mut order = use_signal(|| {
+        crate::bridges::navigation::read_state("tag-order").unwrap_or(TagSortOrder::Latest)
+    });
+    // Capture the entry at mount: a late effect from the outgoing page must not
+    // overwrite the destination history entry.
+    use_effect(move || {
+        crate::bridges::navigation::write_state(&entry_id, "tag-order", &order());
+    });
     // 父组件按标签 remount，因此闭包中的 tag 在此作用域内不会过期。
     let request_tag = tag.clone();
     let mut posts_res = use_server_future(move || get_posts_by_tag(request_tag.clone()))?;
@@ -158,7 +166,7 @@ fn TagDetailContent(tag: String) -> Element {
                 .max_by_key(|post| post.published_at.unwrap_or(post.created_at));
             let truncated = *total > posts.len() as i64;
             rsx! {
-                section { class: "tag-results", aria_label: "主题文章", aria_busy: "false",
+                section { class: "tag-results", "data-vt-list": "true", aria_label: "主题文章", aria_busy: "false",
                     p { class: "sr-only", role: "status", aria_atomic: "true",
                         "已加载 {posts.len()} 篇文章，按{order().label()}排序。"
                     }
@@ -234,7 +242,7 @@ fn TagDetailContent(tag: String) -> Element {
             }
         }
         Some(Err(_)) => rsx! {
-            section { class: "tag-results", aria_label: "主题文章", aria_busy: "false",
+            section { class: "tag-results", "data-vt-list": "true", aria_label: "主题文章", aria_busy: "false",
                 TagStatus { failed: true, on_retry: move |_| {
                     if !posts_res.pending() { posts_res.restart(); }
                 } }

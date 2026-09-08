@@ -34,6 +34,7 @@ export function scrollToHeading(el: Element, smooth = true): void {
     HEADING_OFFSET_PX;
   window.scrollTo({
     top: Math.max(top, 0),
-    behavior: smooth ? 'smooth' : 'auto',
+    // 'auto' inherits the document's scroll-behavior:smooth; snapshots need an instant landing.
+    behavior: smooth ? 'smooth' : 'instant',
   });
 }

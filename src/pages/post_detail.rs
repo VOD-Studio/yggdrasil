@@ -13,9 +13,9 @@
 //! 变化）会复用组件实例、更新 props，却无法触发 future 重跑——表现为「URL 变了
 //! 但内容不变，刷新才生效」。
 //!
-//! 修复：在闭包内通过 `router().current::<Route>()` 读取当前 slug。`current()`
-//! 内部调用 `subscribe_to_current_context()`，在 `use_server_future` 的
-//! ReactiveContext 中注册订阅；路由变化时订阅触发，future 自动重跑。
+//! 使用 memo 读取 `router().current::<Route>()` 中的 slug，future 仅订阅 memo。
+//! Router 在 VT 提交前也会通知订阅者；memo 的相等比较过滤仍指向旧 slug 的通知，
+//! 避免在旧快照捕获前重新挂起文章。实际 slug 变化仍会自动重跑 future。
 //! 在 `wasm32` 目标下，server function 的函数体被替换为向服务端端点发起 HTTP POST 请求的客户端存根；
 //! 实际的数据库访问逻辑仅在 `feature = "server"` 启用时运行。
 
@@ -37,22 +37,14 @@ use crate::router::Route;
 /// 若文章不存在或加载失败，则展示对应的提示页面。
 #[component]
 pub fn PostDetail(slug: String) -> Element {
-    // 取得路由上下文句柄（不订阅组件层渲染，仅在闭包内按需订阅）。
-    // 见模块文档：必须在闭包内读取路由状态才能建立反应式订阅，future 才会在
-    // slug 变化（上/下一篇导航）时重跑。`slug` prop 本身是冻结的 String 快照，
-    // 不能作为依赖。
     let router = dioxus::router::router();
-
-    let post = use_server_future(move || {
-        // 在闭包内读取当前 slug：current() 内部会 subscribe_to_current_context()，
-        // 把订阅注册到 use_server_future 的 ReactiveContext，路由变化即重跑。
-        let current_slug = match router.current::<Route>() {
-            Route::PostDetail { slug } => slug,
-            // 组件卸载/路由切走的瞬间可能命中其它变体，退回用 prop 值兜底。
-            _ => slug.clone(),
-        };
-        get_post_by_slug(current_slug)
-    })?;
+    let render_slug = slug.clone();
+    let current_slug = use_memo(move || match router.current::<Route>() {
+        Route::PostDetail { slug } => slug,
+        // 组件卸载/路由切走的瞬间可能命中其它变体，退回用 prop 值兜底。
+        _ => slug.clone(),
+    });
+    let post = use_server_future(move || get_post_by_slug(current_slug()))?;
 
     // 将结果映射为 Ok(post) 或 Err(ServerFnError) 用于错误边界捕获
     let post_data = post.read().as_ref().map(|r| match r {
@@ -66,7 +58,11 @@ pub fn PostDetail(slug: String) -> Element {
     });
 
     let post = match post_data {
-        Some(Ok(post)) => post,
+        Some(Ok(post)) if post.slug == render_slug => post,
+        // The resource retains its last value while the next slug is loading.
+        Some(Ok(_)) => {
+            return rsx! { DelayedSkeleton { PostDetailSkeleton {} } };
+        }
         Some(Err(err)) => {
             // Bubble the error up to the ErrorBoundary
             return Err(err.into());
@@ -79,12 +75,12 @@ pub fn PostDetail(slug: String) -> Element {
     };
 
     rsx! {
-        article { class: "post-single max-w-none animate-page-enter", key: "{post.slug}",
+        article { class: "post-single max-w-none animate-page-enter", key: "{post.slug}", "data-vt-detail": "{post.id}",
             PostHeader { post: post.clone() }
 
             // 如果文章设置了封面图，则渲染封面组件。
             if let Some(cover) = &post.cover_image {
-                PostCover { src: cover.clone() }
+                PostCover { src: cover.clone(), post_id: post.id }
             }
 
             // 与 PostContent 同样按 slug 强制 remount，重新绑定新文章标题的 scroll-spy。

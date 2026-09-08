@@ -95,7 +95,7 @@ pub fn AdminLayout() -> Element {
     let side_user = (ctx.user)();
 
     let nav_content = rsx! {
-        aside { class: "w-48 flex-shrink-0 hidden md:flex flex-col h-screen sticky top-0 p-3 bg-[var(--color-paper-entry)]",
+        aside { "data-vt-shell": "admin-sidebar", class: "w-48 flex-shrink-0 hidden md:flex flex-col h-screen sticky top-0 p-3 bg-[var(--color-paper-entry)]",
             // Logo
             div { class: "mb-8 px-3",
                 // 外链形态（原生 <a href>，浏览器整页加载）：admin→前台是跨
@@ -148,7 +148,9 @@ pub fn AdminLayout() -> Element {
                         class: "text-sm font-medium px-3 py-1.5 rounded-2xl bg-[var(--color-paper-theme)] border border-[var(--color-paper-border)] shadow-sm hover:shadow-md transition-all text-[var(--color-paper-secondary)] hover:text-red-500 cursor-pointer",
                         onclick: move |_| {
                             spawn(async move {
-                                let _ = logout().await;
+                                if logout().await.is_ok_and(|response| response.success) {
+                                    crate::bridges::navigation::clear_admin_state();
+                                }
                                 ctx.user.set(None);
                                 ctx.checked.set(false);
                                 let _ = navigator.push(Route::Login {});
@@ -168,7 +170,7 @@ pub fn AdminLayout() -> Element {
                 div { class: "{root_class}",
                     {nav_content}
                     div { class: "flex-1 flex flex-col min-w-0 h-screen p-2 md:p-4",
-                        div { class: "flex-1 bg-[var(--color-paper-theme)] rounded-[2rem] shadow-sm border border-[var(--color-paper-border)] {card_overflow} relative flex flex-col",
+                        div { "data-vt-scroll": "admin-main", class: "flex-1 bg-[var(--color-paper-theme)] rounded-[2rem] shadow-sm border border-[var(--color-paper-border)] {card_overflow} relative flex flex-col",
                             main { class: "{main_class}",
                                 // 与前台 frontend_layout.rs 同理：admin 内的 use_server_future(...)?
                                 // （如 preview.rs）pending 时会向上抛 RenderError::Suspended；没有
@@ -192,7 +194,7 @@ pub fn AdminLayout() -> Element {
                 div { class: "{root_class}",
                     {nav_content}
                     div { class: "flex-1 flex flex-col min-w-0 h-screen p-2 md:p-4",
-                        div { class: "flex-1 bg-[var(--color-paper-theme)] rounded-[2rem] shadow-sm border border-[var(--color-paper-border)] overflow-hidden relative flex flex-col",
+                        div { "data-vt-scroll": "admin-main", class: "flex-1 bg-[var(--color-paper-theme)] rounded-[2rem] shadow-sm border border-[var(--color-paper-border)] overflow-hidden relative flex flex-col",
                             main { class: "{main_class}",
                                 // flex-1 撑满 main(使 write 骨架屏能引用到确定高度),
                                 // 非 write 页面的 py-12 padding 由 main_class 自带,这里不重复加。

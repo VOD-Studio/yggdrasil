@@ -30,6 +30,25 @@ use crate::router::Route;
 /// 每页展示的文章数量。
 const POSTS_PER_PAGE: i32 = 20;
 
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+struct PostsHistoryState {
+    page: i32,
+    status: String,
+    search_input: String,
+    search_query: String,
+}
+
+impl Default for PostsHistoryState {
+    fn default() -> Self {
+        Self {
+            page: 1,
+            status: "all".to_string(),
+            search_input: String::new(),
+            search_query: String::new(),
+        }
+    }
+}
+
 /// 文章管理入口组件：全部文章列表页。
 ///
 /// 纯壳组件：header（标题 + 重建缓存 + 发布文章入口）+ `AllPostsList`。
@@ -79,13 +98,30 @@ pub fn Posts() -> Element {
 /// 建立依赖，页码变化自动重载），不走路由。删除/重建逻辑与旧实现一致。
 #[component]
 fn AllPostsList() -> Element {
-    let mut current_page = use_signal(|| 1);
+    let entry_id = use_hook(crate::bridges::navigation::entry_id);
+    let saved = use_hook(|| {
+        crate::bridges::navigation::read_state::<PostsHistoryState>("admin-posts")
+            .unwrap_or_default()
+    });
+    let mut current_page = use_signal(|| saved.page.max(1));
     // 状态分类过滤：all / published / draft
-    let mut status_filter = use_signal(|| "all".to_string());
+    let mut status_filter = use_signal(|| saved.status.clone());
     // 搜索输入框实时绑定的文本（每键即更新，但不触发请求）。
-    let mut search_input = use_signal(String::new);
+    let mut search_input = use_signal(|| saved.search_input.clone());
     // 已提交的搜索词：空串表示不搜索。仅在此值变化时才重新请求，避免逐键打 DB。
-    let mut search_query = use_signal(String::new);
+    let mut search_query = use_signal(|| saved.search_query.clone());
+    use_effect(move || {
+        crate::bridges::navigation::write_state(
+            &entry_id,
+            "admin-posts",
+            &PostsHistoryState {
+                page: current_page(),
+                status: status_filter(),
+                search_input: search_input(),
+                search_query: search_query(),
+            },
+        );
+    });
     // 分页列表加载（loading / posts / total / error）由 use_paginated 统一管理。
     // page 闭包内同时读取 current_page 与 search_query 建立响应式依赖：
     // 翻页、或提交新搜索词（即便停留在第 1 页）都会自动重新请求。
@@ -141,6 +177,9 @@ fn AllPostsList() -> Element {
         current_page.set(1);
     };
     rsx! {
+        if !loading() || error().is_some() {
+            span { hidden: true, "data-vt-list": "true" }
+        }
         // 工具栏：左侧状态分类 Tab + 右侧搜索输入框
         div { class: "flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4",
             // 状态筛选 Tab 胶囊
@@ -459,6 +498,9 @@ fn PostRow(
                     Link {
                         class: "font-semibold text-[var(--color-paper-primary)] hover:text-[var(--color-paper-accent)] transition-colors cursor-pointer leading-snug line-clamp-1",
                         to: title_dest,
+                        "data-vt-post-link": "{post.id}",
+                        "data-vt-post-id": "{post.id}",
+                        "data-vt-role": "title",
                         "{post.title}"
                     }
                     div { class: "flex flex-wrap items-center gap-2 text-xs",

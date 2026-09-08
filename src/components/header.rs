@@ -58,7 +58,7 @@ pub fn Header(
         "mobile-nav-panel md:hidden bg-paper-theme/95 backdrop-blur-sm"
     };
     rsx! {
-        header { class: "sticky top-0 z-40 w-full bg-[var(--color-paper-theme)]/70 backdrop-blur-md transition-all duration-300",
+        header { "data-vt-shell": "frontend-header", class: "sticky top-0 z-40 w-full bg-[var(--color-paper-theme)]/70 backdrop-blur-md transition-all duration-300",
             nav { class: "{max_width} mx-auto px-6 h-16 flex items-center justify-between",
                 Link {
                     class: "text-2xl font-extrabold tracking-tight text-[var(--color-paper-primary)] hover:text-[var(--color-paper-accent)] transition-colors duration-200",

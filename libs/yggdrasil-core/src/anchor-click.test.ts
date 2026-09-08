@@ -73,6 +73,15 @@ describe('initAnchorClick', () => {
     expect(dioxusInterceptorCalled).toBe(true);
   });
 
+  it('锚点替换保留导航记录及其它 history state', () => {
+    history.replaceState({ __yggdrasilNavigation: 'entry-7', unrelated: 42 }, '', '#');
+    document.body.innerHTML = '<h2 id="chapter">Chapter</h2><a href="#chapter">Jump</a>';
+    const sync = vi.spyOn(window.__routeTransitions, 'syncHash');
+    document.querySelector<HTMLAnchorElement>('a')!.click();
+    expect(history.state).toEqual({ __yggdrasilNavigation: 'entry-7', unrelated: 42 });
+    expect(sync).toHaveBeenCalledOnce();
+  });
+
   it('非 hash 链接不拦截（外链/路径链接交给原行为）', () => {
     const anchor = document.createElement('a');
     anchor.setAttribute('href', '/post/other');
