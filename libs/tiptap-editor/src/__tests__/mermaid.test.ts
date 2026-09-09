@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 /**
  * mermaid 代码块预览测试。
  *
- * mock `./mermaid` 模块的 renderMermaid/getCurrentTheme/loadMermaidRenderer,
+ * mock `./mermaid` 模块的 renderMermaid/getCurrentTheme,
  * 绕过真实 mermaid 运行时(happy-dom 不支持 SVG 引擎)。重点验证 NodeView 的
  * 生命周期:预览区创建/移除、debounce、竞态取消、主题重渲染、错误态、清理。
  */
@@ -21,7 +21,6 @@ vi.mock('../mermaid', () => ({
 // THEME_CHANGE_EVENT 实际从 @yggdrasil/shared import,需一并 stub(vi.mock 对裸模块名)。
 vi.mock('@yggdrasil/shared', () => ({
   THEME_CHANGE_EVENT: 'yggdrasil:theme-change',
-  mermaidThemeVarsFor: () => ({}),
 }));
 
 const CODEBLOCK_TYPE = { name: 'codeBlock' };

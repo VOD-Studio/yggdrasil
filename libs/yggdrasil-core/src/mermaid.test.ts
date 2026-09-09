@@ -4,7 +4,6 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import './index';
-import { _resetMermaidLoader } from './mermaid';
 import { _resetOverlay } from './mermaid-overlay';
 
 // mock IntersectionObserver：observe 时立即异步触发 isIntersecting 回调，模拟块进视口。
@@ -39,10 +38,11 @@ describe('initMermaid', () => {
     mockInitialize.mockClear();
     observe.mockClear();
     disconnect.mockClear();
-    // 注入 mock mermaid bundle 加载函数
-    _resetMermaidLoader(async () => ({ initialize: mockInitialize, render: mockRender }));
+    // 注入已加载的 Mermaid API，加载失败与重试由 shared 的测试覆盖。
+    window.MermaidRenderer = { initialize: mockInitialize, render: mockRender };
   });
   afterEach(() => {
+    delete window.MermaidRenderer;
     document.body.innerHTML = '';
   });
 
@@ -402,6 +402,24 @@ describe('initMermaid', () => {
     expect(root.querySelector('pre code.language-mermaid')).not.toBeNull();
   });
 
+  it('失败后重试成功清除错误标记，恢复图表和放大入口', async () => {
+    mockRender.mockRejectedValueOnce(new Error('temporary failure'));
+    document.body.innerHTML =
+      '<div class="post-content"><pre><code class="language-mermaid">graph TD; A--&gt;B</code></pre></div>';
+    const pre = document.querySelector('pre')!;
+    window.__initMermaid('.post-content', 'light');
+    await vi.waitFor(() => expect(pre.classList.contains('mermaid-error')).toBe(true));
+
+    window.__initMermaid('.post-content', 'light');
+    await vi.waitFor(() => expect(pre.dataset.mermaidRendered).toBe('true'));
+    expect(pre.classList.contains('mermaid-error')).toBe(false);
+    expect(pre.querySelector('svg')).not.toBeNull();
+    expect(pre.querySelector('.mermaid-loading')).toBeNull();
+    pre.click();
+    expect(document.querySelector('.mermaid-overlay')).not.toBeNull();
+    _resetOverlay();
+  });
+
   it('主题切换重渲染不挂加载角标', async () => {
     const root = document.createElement('div');
     root.className = 'post-content';
@@ -442,9 +460,10 @@ describe('mermaid 放大浮层', () => {
     document.body.innerHTML = '';
     mockRender.mockClear();
     mockInitialize.mockClear();
-    _resetMermaidLoader(async () => ({ initialize: mockInitialize, render: mockRender }));
+    window.MermaidRenderer = { initialize: mockInitialize, render: mockRender };
   });
   afterEach(() => {
+    delete window.MermaidRenderer;
     _resetOverlay();
     document.body.innerHTML = '';
   });

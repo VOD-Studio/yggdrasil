@@ -1260,15 +1260,6 @@
     filter: brightness(0.9);
   }
 
-  .md-content-img-zoomable {
-    cursor: zoom-in;
-    transition: opacity 0.2s ease-out;
-  }
-
-  .md-content-img-zoomable:hover {
-    opacity: 0.9;
-  }
-
   .md-content iframe {
     max-width: 100%;
     border-radius: var(--radius-paper);
@@ -1534,32 +1525,6 @@
   }
   .group:hover .post-card-cover-blur img {
     transform: scale(1.05);
-  }
-
-  a.accent-link {
-    color: var(--color-paper-accent);
-    text-decoration: none;
-    transition: color 0.2s ease-out;
-  }
-  a.accent-link:hover {
-    color: var(--color-paper-primary);
-  }
-
-  .post-card-accent {
-    position: relative;
-  }
-  .post-card-accent::after {
-    content: "";
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    width: 0;
-    height: 2px;
-    background: var(--color-paper-accent);
-    transition: width 0.3s ease-out;
-  }
-  .post-card-accent:hover::after {
-    width: 100%;
   }
 
   /* ========== Blur-up 渐进图片加载 ==========
@@ -1896,38 +1861,9 @@
     outline-offset: 1px;
   }
 
-  /* ========== 批量操作栏展开/收起过渡 ==========
-     选中评论/文章时批量操作栏展开，取消时收起。使用 grid-template-rows 0fr↔1fr
-     技术实现 auto-height 过渡（现代浏览器原生支持）。
-     Tailwind v4 space-y 用 margin-block-start（逻辑属性），与 margin-top（物理属性）
-     在级联中是不同属性，必须同时覆盖。 */
-  .batch-bar {
-    display: grid;
-    grid-template-rows: 1fr;
-    opacity: 1;
-    transition:
-      grid-template-rows 0.2s cubic-bezier(0.22, 1, 0.36, 1),
-      opacity 0.2s cubic-bezier(0.22, 1, 0.36, 1),
-      margin 0.2s cubic-bezier(0.22, 1, 0.36, 1);
-  }
-
-  .batch-bar.is-collapsed {
-    grid-template-rows: 0fr;
-    opacity: 0;
-    margin-top: 0 !important;
-    margin-block-start: 0 !important;
-    margin-bottom: 0 !important;
-    margin-block-end: 0 !important;
-  }
-
-  .batch-bar > * {
-    overflow: hidden;
-    min-height: 0;
-  }
-
   /* ========== 设置页提示条过渡 ==========
      配合 settings/mod.rs 的 toast。grid-template-rows 0fr↔1fr 实现 auto-height
-     过渡（同 batch-bar 技术），叠加 opacity 淡入淡出、margin-bottom 平滑收放。
+     过渡，叠加 opacity 淡入淡出、margin-bottom 平滑收放。
      消息内容由 display 信号在 use_effect 中同步，退出动画期间文本不闪。 */
   .ygg-toast {
     display: grid;
@@ -2468,8 +2404,7 @@ a.friend-card:active { transform: translateY(-1px) scale(0.985); transition-dura
 .archive-header-link:focus-visible,
 .archive-entry:focus-visible,
 .archive-year-nav a:focus-visible,
-.archive-tags-retry:focus-visible,
-.archive-back-link:focus-visible {
+.archive-tags-retry:focus-visible {
   outline: 2px solid var(--color-paper-accent);
   outline-offset: 3px;
 }
@@ -2568,20 +2503,6 @@ a.friend-card:active { transform: translateY(-1px) scale(0.985); transition-dura
   .archive-entry:is(:hover, :focus-visible) .archive-entry-arrow { transform: none; }
 }
 
-.archive-back-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 1rem;
-  padding-inline-start: 0;
-  transition: color 200ms ease, transform 200ms ease;
-}
-
-.archive-back-link:hover {
-  transform: translateX(-3px);
-}
-
-.archive-back-link:active,
 .archive-tags-retry:active {
   transform: scale(0.97);
 }
@@ -2719,16 +2640,14 @@ a.friend-card:active { transform: translateY(-1px) scale(0.985); transition-dura
   .archive-tags *,
   .archives-page .archive-entry,
   .archives-page .archive-entry-title,
-  .archives-page .archive-header-link,
-  .archive-back-link {
+  .archives-page .archive-header-link {
     transition: none !important;
   }
 
   .archive-tags .collapsible-indicator,
   .archive-tags-list > li,
   .archive-tag-chip,
-  .archive-tags-retry,
-  .archive-back-link {
+  .archive-tags-retry {
     transform: none !important;
   }
 

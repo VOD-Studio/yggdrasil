@@ -153,3 +153,70 @@ export const MERMAID_MOCHA_VARS: MermaidThemeVariables = {
 export function mermaidThemeVarsFor(theme: ThemeName): MermaidThemeVariables {
   return theme === 'dark' ? { ...MERMAID_MOCHA_VARS } : { ...MERMAID_LATTE_VARS };
 }
+
+/** 前台正文与编辑器使用的 Mermaid API 子集。 */
+export type MermaidApi = {
+  initialize: (config: Record<string, unknown>) => void;
+  render: (id: string, text: string) => Promise<{ svg: string }>;
+};
+
+declare global {
+  interface Window {
+    MermaidRenderer?: MermaidApi;
+    // shared 会内联进不同 IIFE；加载中的 Promise 必须放在 window 才能跨库复用。
+    __yggdrasilMermaidPromise?: Promise<MermaidApi>;
+  }
+}
+
+/** 按需加载独立 bundle，同页并发共用一次请求，失败后允许重试。 */
+export function loadMermaidRenderer(): Promise<MermaidApi> {
+  if (window.MermaidRenderer) return Promise.resolve(window.MermaidRenderer);
+  if (!window.__yggdrasilMermaidPromise) {
+    const script = document.createElement('script');
+    script.src = '/mermaid/mermaid.js';
+    window.__yggdrasilMermaidPromise = new Promise<MermaidApi>((resolve, reject) => {
+      script.onload = () => {
+        if (window.MermaidRenderer) resolve(window.MermaidRenderer);
+        else reject(new Error('mermaid bundle loaded but window.MermaidRenderer undefined'));
+      };
+      script.onerror = () => reject(new Error('failed to load /mermaid/mermaid.js'));
+      document.head.appendChild(script);
+    }).catch((error) => {
+      script.remove();
+      delete window.__yggdrasilMermaidPromise;
+      throw error;
+    });
+  }
+  return window.__yggdrasilMermaidPromise;
+}
+
+/** 渲染配置、SVG 修正与错误容器清理由两端共用；挂载与取消仍由调用方处理。 */
+export async function renderMermaidSvg(
+  mermaid: MermaidApi,
+  id: string,
+  source: string,
+  theme: ThemeName,
+): Promise<string> {
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: 'base',
+    darkMode: theme === 'dark',
+    securityLevel: 'strict',
+    flowchart: {
+      curve: 'basis',
+      diagramPadding: 16,
+      useMaxWidth: true,
+      htmlLabels: true,
+    },
+    themeVariables: mermaidThemeVarsFor(theme),
+  });
+  try {
+    const { svg } = await mermaid.render(id, source);
+    // 防止 foreignObject 默认 overflow:hidden 裁切多行标签的文字下沿。
+    return svg.replace(/<foreignObject(?=[\s>])/g, '<foreignObject overflow="visible"');
+  } catch (error) {
+    // Mermaid 语法错误时会把临时错误 SVG 留在 body 中。
+    document.getElementById(`d${id}`)?.remove();
+    throw error;
+  }
+}

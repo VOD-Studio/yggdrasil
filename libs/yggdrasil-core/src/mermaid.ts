@@ -14,97 +14,36 @@
  * `language-mermaid` class 的普通代码块，不挂 data 属性。
  *
  * 主题切换：mermaid 把颜色/主题变量烤进 SVG 内联样式，无法靠 CSS 原地改主题。
- * 唯一办法是移除旧 SVG → 用新主题重新 render → 插入新 SVG。post_content.rs 的
+ * 主题变化时重新 render，完成后替换旧 SVG。post_content.rs 的
  * use_effect 读 use_resolved_theme() 建立订阅，主题切换时重跑、重调 __initMermaid
  * 传入新 theme；本模块用 dataset.mermaidTheme 记住上次渲染主题，主题变化时触发重渲染。
  */
 
-import type { ThemeName } from '@yggdrasil/shared';
-import { mermaidThemeVarsFor } from '@yggdrasil/shared';
+import {
+  loadMermaidRenderer,
+  type MermaidApi,
+  renderMermaidSvg,
+  type ThemeName,
+} from '@yggdrasil/shared';
 import { attachOverlayTrigger } from './mermaid-overlay';
 import { onThemeChange } from './theme-transition';
 
 /** 文章正文容器选择器（与 post_content.rs 的 __initMermaid 调用一致）。 */
 const POST_CONTENT_SELECTOR = '.post-content';
 
-type MermaidApi = {
-  initialize: (config: Record<string, unknown>) => void;
-  render: (id: string, text: string) => Promise<{ svg: string }>;
-};
-
-/**
- * Catppuccin themeVariables 已下沉到 @yggdrasil/shared（前台与后台 tiptap 编辑器
- * 共用单一真相源，保证渲染一致）。用 `theme: 'base'` 让 themeVariables 完全控制
- * 调色板；详见 shared/src/index.ts 的 MERMAID_LATTE_VARS / MERMAID_MOCHA_VARS。
- */
-
-declare global {
-  interface Window {
-    MermaidRenderer?: MermaidApi;
-  }
-}
-
-let mermaidPromise: Promise<MermaidApi> | null = null;
-
-/** render id 自增计数器，保证每次 render 生成唯一 id，避开 mermaid 残留节点冲突。 */
+/** 前台和编辑器使用不同前缀，避免 SVG/marker id 冲突。 */
 let renderCounter = 0;
-
-/**
- * 动态加载 mermaid 独立 IIFE bundle 的底层函数（可注入以便测试）。
- *
- * IIFE bundle 挂在 `window.MermaidRenderer`（非 ES module export），故用动态注入
- * `<script>` 标签的方式加载，标签 onload 后从 window 取。测试时可通过
- * [`_resetMermaidLoader`] 注入 mock。
- */
-export let loadMermaidBundle: () => Promise<MermaidApi> = () =>
-  new Promise((resolve, reject) => {
-    // 已加载（同页多次调用 / SPA 导航）直接复用。
-    if (window.MermaidRenderer) {
-      resolve(window.MermaidRenderer);
-      return;
-    }
-    const script = document.createElement('script');
-    script.src = '/mermaid/mermaid.js';
-    script.onload = () => {
-      if (window.MermaidRenderer) {
-        resolve(window.MermaidRenderer);
-      } else {
-        reject(new Error('mermaid bundle loaded but window.MermaidRenderer undefined'));
-      }
-    };
-    script.onerror = () => reject(new Error('failed to load /mermaid/mermaid.js'));
-    document.head.appendChild(script);
-  });
-
-/** 重置加载函数（测试用，重新注入 mock 后必须重置 mermaidPromise 缓存）。 */
-export function _resetMermaidLoader(loader?: () => Promise<MermaidApi>): void {
-  mermaidPromise = null;
-  if (loader) loadMermaidBundle = loader;
-}
-
-/**
- * 动态加载 mermaid 独立 bundle（单例缓存，失败清空允许重试）。
- */
-function loadMermaid(): Promise<MermaidApi> {
-  if (!mermaidPromise) {
-    mermaidPromise = loadMermaidBundle().catch((err) => {
-      mermaidPromise = null;
-      throw err;
-    });
-  }
-  return mermaidPromise;
-}
 
 /**
  * 页面含 mermaid 块时，在浏览器空闲期预拉 bundle（3.2MB，传输是首图延迟主导项）。
  * 等 IntersectionObserver 触发才拉会把网络时间暴露给用户；页面加载后的空闲期足够拉完。
  * requestIdleCallback 无原生支持的环境（Firefox / 旧 Safari）回退 setTimeout。
- * 失败静默：loadMermaid 失败会清空 mermaidPromise，observer 触发 render 时自然重试
+ * 失败静默：loadMermaidRenderer 失败会清空加载缓存，observer 触发 render 时自然重试
  * 并走正常错误回退；预拉本身不产生额外副作用。
  */
 function preloadMermaidOnIdle(): void {
   const preload = () => {
-    void loadMermaid().catch(() => {});
+    void loadMermaidRenderer().catch(() => {});
   };
   if (typeof window.requestIdleCallback === 'function') {
     window.requestIdleCallback(preload, { timeout: 3000 });
@@ -119,8 +58,7 @@ function preloadMermaidOnIdle(): void {
  * - render 用全局自增 id（`mermaid-svg-${++renderCounter}`），避免同页多次 render
  *   撞上 mermaid 内部残留的 `d`-前缀布局辅助节点（mermaid#357）与 marker id
  *   冲突（mermaid#5741）。
- * - 渲染前清空 pre.innerHTML，确保旧 SVG 与残留 `d-` 节点先消失再插入新 SVG，
- *   不让亮/暗两版并存。
+ * - 成功后替换 pre.innerHTML；等待期间保留旧图，避免主题切换时闪空。
  * - source 存进 dataset.mermaidSource，主题切换重渲染时回取（此时 <code> 已被
  *   SVG 替换，textContent 不再可用）。
  */
@@ -141,51 +79,26 @@ async function renderBlock(pre: HTMLPreElement, source: string, theme: ThemeName
   }
   let mermaid: MermaidApi;
   try {
-    mermaid = await loadMermaid();
+    mermaid = await loadMermaidRenderer();
   } catch (err) {
     if (!isCurrent()) return;
     badge?.remove();
     throw err;
   }
   if (!isCurrent()) return;
-  mermaid.initialize({
-    startOnLoad: false,
-    // base 主题不硬编码颜色，让 themeVariables 完全控制 Catppuccin 调色板。
-    theme: 'base',
-    darkMode: theme === 'dark',
-    securityLevel: 'strict',
-    // flowchart：平滑曲线 + 边缘留白 + 缩放至容器宽度（配合 CSS 消除横向滚动）。
-    flowchart: {
-      curve: 'basis',
-      diagramPadding: 16,
-      useMaxWidth: true,
-      htmlLabels: true,
-    },
-    themeVariables: mermaidThemeVarsFor(theme),
-  });
   const id = `mermaid-svg-${++renderCounter}`;
   try {
-    const { svg } = await mermaid.render(id, source);
+    const svg = await renderMermaidSvg(mermaid, id, source, theme);
     // A newer theme or route may have superseded this asynchronous render.
     if (!isCurrent()) return;
-    // mermaid 给每个节点 <foreignObject> 设的高度恰好等于文字测量高度（零余量），
-    // foreignObject 默认 overflow:hidden（SVG 规范），跨浏览器/字体的 sub-pixel 渲染
-    // 差异让实际行高略大于测量值，多行节点第二行的 descender 被 foreignObject 裁切。
-    // 注入 overflow="visible" SVG 属性让 descender 显示——node rect 比 foreignObject
-    // 高约 30px，文字仍在节点框内。必须写 SVG 属性（CSS 对 foreignObject overflow
-    // 不生效，Chrome 实现差异）。
-    const patched = svg.replace(/<foreignObject(?=[\s>])/g, '<foreignObject overflow="visible"');
-    // 清空 pre 旧内容（旧 SVG + mermaid 残留的 `d` 辅助节点），再注入新 SVG。
-    pre.innerHTML = patched;
+    pre.innerHTML = svg;
+    pre.classList.remove('mermaid-error');
     pre.dataset.mermaidRendered = 'true';
     pre.dataset.mermaidSource = source;
     pre.dataset.mermaidTheme = theme;
     // 绑定点击放大浮层（dataset 守卫幂等，主题切换重渲染不重复绑定）。
     attachOverlayTrigger(pre);
   } catch (err) {
-    // mermaid.render 失败时会在 document.body 残留临时渲染容器 div#d${id}
-    // （内含「Syntax error in text」错误 SVG）。不清除则这些错误块泄漏到页面底部。
-    document.getElementById(`d${id}`)?.remove();
     if (!isCurrent()) return;
     badge?.remove();
     throw err;
