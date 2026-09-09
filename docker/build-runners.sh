@@ -11,10 +11,28 @@
 #   yggdrasil-runner-bun:latest
 set -e
 
+usage() {
+    echo "用法: $0 [--cn-mirror]"
+    echo "  --cn-mirror  使用清华 Alpine 镜像源（默认使用官方源）"
+    echo "  -h, --help   显示帮助"
+}
+
+CN_MIRROR=false
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --cn-mirror) CN_MIRROR=true ;;
+        -h|--help) usage; exit 0 ;;
+        *) echo "未知参数: $1" >&2; usage >&2; exit 1 ;;
+    esac
+    shift
+done
+
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 
 echo "==> Building yggdrasil-runner-base:latest"
-docker build -t yggdrasil-runner-base:latest "$SCRIPT_DIR/runner-base"
+# 后续语言镜像继承 base 中的 /etc/apk/repositories，只需在这里传入换源开关。
+docker build --build-arg "CN_MIRROR=$CN_MIRROR" \
+    -t yggdrasil-runner-base:latest "$SCRIPT_DIR/runner-base"
 
 echo "==> Building yggdrasil-runner-python:latest"
 docker build -t yggdrasil-runner-python:latest "$SCRIPT_DIR/runner-python"
