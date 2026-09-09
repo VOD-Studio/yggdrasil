@@ -21,6 +21,96 @@ html:not(.is-theme-transitioning)::view-transition-new(root) {
   mix-blend-mode: normal;
 }
 
+/* 正文单独捕获，页头保留点击能力，允许中途切换栏目或主题。 */
+html[data-vt-section] {
+  --vt-section-offset: 24px;
+  view-transition-name: none;
+}
+
+html[data-vt-section] main {
+  view-transition-name: vt-section-content;
+}
+
+html[data-vt-section='backward'] {
+  --vt-section-offset: -24px;
+}
+
+html[data-vt-section]::view-transition {
+  pointer-events: none;
+}
+
+html[data-vt-section] [data-vt-shell='frontend-header'] a {
+  transition: none;
+}
+
+html[data-vt-section]::view-transition-group(vt-section-content) {
+  animation: none;
+  clip-path: inset(var(--vt-section-clip-top, 0px) 0 0);
+}
+
+html[data-vt-section]::view-transition-old(vt-section-content),
+html[data-vt-section]::view-transition-new(vt-section-content) {
+  height: auto;
+  mix-blend-mode: normal;
+}
+
+html[data-vt-section]::view-transition-old(vt-section-content) {
+  animation: vt-section-out 160ms ease-out both;
+}
+
+html[data-vt-section]::view-transition-new(vt-section-content) {
+  animation: vt-section-in 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes vt-section-out {
+  from {
+    transform: translateY(var(--vt-section-old-y, 0px));
+  }
+  to {
+    opacity: 0;
+    transform: translate(calc(var(--vt-section-offset) * -0.5), var(--vt-section-old-y, 0px));
+  }
+}
+
+@keyframes vt-section-in {
+  from {
+    opacity: 0;
+    transform: translateX(var(--vt-section-offset));
+  }
+}
+
+/* 仅捕获桌面上唯一的当前栏目下划线，搜索图标也能接住它。 */
+@media (min-width: 768px) {
+  html[data-vt-section] .nav-indicator {
+    view-transition-name: vt-nav-indicator;
+  }
+}
+
+html[data-vt-section]::view-transition-group(vt-nav-indicator) {
+  animation-duration: 300ms;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  z-index: 3;
+}
+
+html[data-vt-section]::view-transition-old(vt-nav-indicator) {
+  display: none;
+}
+
+html[data-vt-section]::view-transition-new(vt-nav-indicator) {
+  height: 100%;
+  animation: none;
+}
+
+@media (max-width: 767px) {
+  html[data-vt-section] {
+    --vt-section-offset: 12px;
+  }
+
+  html[data-vt-section='backward'] {
+    --vt-section-offset: -12px;
+  }
+}
+
 /* 未匹配到目标的旧元素与 root 同步淡出，不延长降级过渡。 */
 html.is-route-transitioning::view-transition-group(vt-post-title),
 html.is-route-transitioning::view-transition-group(vt-post-cover) {

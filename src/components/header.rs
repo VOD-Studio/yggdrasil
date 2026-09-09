@@ -142,9 +142,10 @@ pub fn Header(
 /// 单个桌面导航项组件，根据 `is_active` 切换高亮样式。
 #[component]
 fn NavItem(route: Route, label: &'static str, is_active: bool) -> Element {
-    let base_class = "px-3 py-1 text-base rounded-lg transition-all duration-200";
+    let base_class =
+        "relative inline-flex px-3 py-1 text-base rounded-lg transition-colors duration-200";
     let class_str = if is_active {
-        format!("{} font-medium text-paper-accent underline underline-offset-[0.3rem] decoration-2 decoration-paper-accent", base_class)
+        format!("{} font-medium text-paper-accent", base_class)
     } else {
         format!(
             "{} text-paper-secondary hover:text-paper-primary",
@@ -154,7 +155,15 @@ fn NavItem(route: Route, label: &'static str, is_active: bool) -> Element {
 
     rsx! {
         li {
-            Link { class: "{class_str}", to: route, "{label}" }
+            Link {
+                class: "{class_str}",
+                to: route,
+                aria_current: is_active.then_some("page"),
+                "{label}"
+                if is_active {
+                    span { class: "nav-indicator", "aria-hidden": "true" }
+                }
+            }
         }
     }
 }
@@ -177,6 +186,7 @@ fn MobileNavItem(
         Link {
             class: "{class_str}",
             to: route,
+            aria_current: is_active.then_some("page"),
             onclick: move |_| on_navigate.call(()),
             "{label}"
         }
@@ -190,10 +200,17 @@ fn MobileNavItem(
 /// 改用 `fill: "currentColor"` 以适配明暗主题。
 #[component]
 pub fn SearchIconLink() -> Element {
+    let is_active = matches!(use_route::<Route>(), Route::Search {});
+    let color = if is_active {
+        "text-paper-accent"
+    } else {
+        "text-paper-secondary hover:text-paper-accent"
+    };
     rsx! {
         Link {
-            class: "p-2 rounded-full text-paper-secondary hover:text-paper-accent transition-colors duration-200",
+            class: "relative p-2 rounded-full {color} transition-colors duration-200",
             to: Route::Search {},
+            aria_current: is_active.then_some("page"),
             aria_label: "搜索",
             title: "搜索",
             svg {
@@ -203,6 +220,9 @@ pub fn SearchIconLink() -> Element {
                 width: "24px",
                 fill: "currentColor",
                 path { d: "M784-120 532-372q-30 24-69 38t-83 14q-109 0-184.5-75.5T120-580q0-109 75.5-184.5T380-840q109 0 184.5 75.5T640-580q0 44-14 83t-38 69l252 252-56 56ZM380-400q75 0 127.5-52.5T560-580q0-75-52.5-127.5T380-760q-75 0-127.5 52.5T200-580q0 75 52.5 127.5T380-400Z" }
+            }
+            if is_active {
+                span { class: "nav-indicator hidden md:block", "aria-hidden": "true" }
             }
         }
     }

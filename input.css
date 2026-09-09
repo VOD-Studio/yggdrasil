@@ -45,6 +45,7 @@
 
 @layer base {
   html {
+    scrollbar-gutter: stable;
     scroll-behavior: smooth;
     background-color: var(--color-paper-theme);
   }
@@ -2595,6 +2596,17 @@ a.friend-card:active { transform: translateY(-1px) scale(0.985); transition-dura
     margin-inline: 1.25rem;
     padding-block: 1rem 1.25rem;
   }
+}
+
+/* 独立下划线可在栏目间共享快照，保留原有文字导航的轻量外观。 */
+.nav-indicator {
+  position: absolute;
+  inset-inline: 0.75rem;
+  top: calc(50% + 0.725rem);
+  height: 2px;
+  border-radius: 999px;
+  background: var(--color-paper-accent);
+  pointer-events: none;
 }
 
 /* 移动端顶部导航菜单展开/折叠双向平滑动画 */

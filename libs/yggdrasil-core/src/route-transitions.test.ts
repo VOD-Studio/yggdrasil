@@ -188,13 +188,16 @@ describe('route publication and rendering', () => {
     expect(location.pathname).toBe('/archives');
     expect(notify).toHaveBeenCalledOnce();
     expect(document.documentElement.classList.contains('is-route-transitioning')).toBe(true);
+    expect(document.documentElement.dataset.vtSection).toBe('forward');
     await finish(1);
     expect(document.documentElement.classList.contains('is-route-transitioning')).toBe(false);
+    expect(document.documentElement.dataset.vtSection).toBeUndefined();
   });
 
   it('a theme interruption preserves the pending route and its callback commits only once', async () => {
     routes.push('/about');
     const theme = beginTransition('theme');
+    expect(document.documentElement.dataset.vtSection).toBeUndefined();
     expect(routes.currentRoute()).toBe('/about');
     expect(notify).toHaveBeenCalledOnce();
     await native[0].invoke();
@@ -231,6 +234,7 @@ describe('route publication and rendering', () => {
       expect(routes.currentRoute()).toBe(target);
       expect(notify).toHaveBeenCalledOnce();
       expect(native).toHaveLength(0);
+      expect(document.documentElement.dataset.vtSection).toBeUndefined();
     },
   );
 
@@ -266,6 +270,85 @@ describe('route publication and rendering', () => {
     document.querySelector('main')!.append(document.createElement('p'));
     await vi.advanceTimersByTimeAsync(10);
     expect(window.scrollTo).toHaveBeenCalledOnce();
+  });
+});
+
+describe('section navigation', () => {
+  it.each([
+    [-535, 65, '-600px', '0px'],
+    [65, -535, '600px', '600px'],
+  ])(
+    'keeps a scrolled source aligned and the live header clear (%s → %s)',
+    async (from, to, offset, clip) => {
+      const content = '<header data-vt-shell="frontend-header"></header><main>Section</main>';
+      render(content);
+      const header = document.querySelector<HTMLElement>('header')!;
+      vi.spyOn(document.querySelector('main')!, 'getBoundingClientRect').mockReturnValue(
+        new DOMRect(20, Number(from), 800, 2000),
+      );
+      autoRender = false;
+      routes.push('/archives');
+      expect(header.style.viewTransitionName).toBe('');
+      const update = native[0].invoke();
+      paint(content);
+      vi.spyOn(document.querySelector('main')!, 'getBoundingClientRect').mockReturnValue(
+        new DOMRect(20, Number(to), 800, 2000),
+      );
+      vi.spyOn(document.querySelector('header')!, 'getBoundingClientRect').mockReturnValue(
+        new DOMRect(0, 0, 1280, 65),
+      );
+      routes.rendered(routes.navigationId(), routes.currentRoute());
+      await update;
+      expect(document.documentElement.style.getPropertyValue('--vt-section-old-y')).toBe(offset);
+      expect(document.documentElement.style.getPropertyValue('--vt-section-clip-top')).toBe(clip);
+      await finish();
+      expect(document.documentElement.style.getPropertyValue('--vt-section-old-y')).toBe('');
+      expect(document.documentElement.style.getPropertyValue('--vt-section-clip-top')).toBe('');
+    },
+  );
+
+  it.each([
+    ['/', '/archives', 'forward'],
+    ['/archives', '/friends', 'forward'],
+    ['/friends', '/about', 'forward'],
+    ['/about', '/search', 'forward'],
+    ['/search', '/', 'backward'],
+    ['/about', '/friends', 'backward'],
+    ['/page/2', '/archives', 'forward'],
+    ['/tags/Rust', '/', 'backward'],
+    ['/archives', '/tags/Rust', undefined],
+    ['/', '/page/2', undefined],
+    ['/', '/post/article', undefined],
+    ['/about', '/admin', undefined],
+    ['/about', '/changelog', undefined],
+  ])(
+    '%s → %s follows section order without affecting other routes',
+    async (from, to, direction) => {
+      if (from !== '/') {
+        routes.push(from!);
+        await native[native.length - 1].invoke();
+        await finish();
+      }
+      routes.push(to!);
+      expect(document.documentElement.dataset.vtSection).toBe(direction);
+      await native[native.length - 1].invoke();
+      expect(document.documentElement.dataset.vtSection).toBe(direction);
+      await finish();
+      expect(document.documentElement.dataset.vtSection).toBeUndefined();
+    },
+  );
+
+  it('history navigation uses the displayed section, even when the URL has already changed', async () => {
+    const home = history.state;
+    routes.push('/search');
+    await native[0].invoke();
+    await finish();
+    history.replaceState(home, '', '/');
+    window.dispatchEvent(new PopStateEvent('popstate', { state: home }));
+    expect(document.documentElement.dataset.vtSection).toBe('backward');
+    await native[1].invoke();
+    await finish();
+    expect(document.documentElement.dataset.vtSection).toBeUndefined();
   });
 });
 

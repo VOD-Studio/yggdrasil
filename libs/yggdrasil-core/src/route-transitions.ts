@@ -40,6 +40,7 @@ interface Navigation {
   names: Map<HTMLElement, string>;
   oldRoles: Set<string>;
   shell: boolean;
+  sectionTop?: number;
   attempt?: () => void;
   release?: () => void;
   vt?: ViewTransition;
@@ -51,6 +52,12 @@ interface Navigation {
 
 function page(url: string): string {
   return url.split('#')[0];
+}
+function sectionIndex(url: string): number {
+  const path = page(url).split('?')[0];
+  if (/^\/page\/\d+$/.test(path)) return 0;
+  if (/^\/tags(?:\/|$)/.test(path)) return 1;
+  return ['/', '/archives', '/friends', '/about', '/search'].indexOf(path);
 }
 function shell(url: string): string {
   const path = page(url).split('?')[0];
@@ -372,6 +379,12 @@ export class RouteTransitions {
       return;
     }
     document.documentElement.classList.add('is-route-transitioning');
+    const fromSection = sectionIndex(previous.url);
+    const toSection = sectionIndex(entry.url);
+    if (fromSection >= 0 && toSection >= 0 && fromSection !== toSection) {
+      document.documentElement.dataset.vtSection = toSection > fromSection ? 'forward' : 'backward';
+      nav.sectionTop = document.querySelector('main')?.getBoundingClientRect().top;
+    }
     this.assignShell(nav);
     if (nav.post) {
       for (const role of ['title', 'cover']) {
@@ -441,6 +454,17 @@ export class RouteTransitions {
         const wrapper = this.wrapper(nav);
         if (nav.rendered && wrapper) markPageEntryHandled(wrapper);
         this.correctScroll(nav);
+        if (nav.sectionTop !== undefined) {
+          // Preserve the outgoing scroll position without moving snapshots over the live header.
+          const top = document.querySelector('main')?.getBoundingClientRect().top ?? 0;
+          const header = document.querySelector('[data-vt-shell="frontend-header"]');
+          const style = document.documentElement.style;
+          style.setProperty('--vt-section-old-y', `${nav.sectionTop - top}px`);
+          style.setProperty(
+            '--vt-section-clip-top',
+            `${Math.max(0, (header?.getBoundingClientRect().bottom ?? 0) - top)}px`,
+          );
+        }
         this.assignShell(nav);
         if (nav.post && nav.rendered) {
           for (const role of nav.oldRoles) {
@@ -579,6 +603,8 @@ export class RouteTransitions {
     if (!nav.shell) return;
     for (const element of document.querySelectorAll<HTMLElement>('[data-vt-shell]')) {
       const key = element.dataset.vtShell;
+      // Keep the section header live so another click can interrupt the animation.
+      if (nav.sectionTop !== undefined && key === 'frontend-header') continue;
       if (key === 'frontend-header' || key === 'frontend-footer' || key === 'admin-sidebar')
         this.name(nav, element, `vt-${key}`);
     }
@@ -613,8 +639,12 @@ export class RouteTransitions {
     for (const [element, original] of nav.names) element.style.viewTransitionName = original;
     nav.names.clear();
     for (const cleanup of nav.imageCleanups.splice(0)) cleanup();
-    if (this.navigation === nav)
+    if (this.navigation === nav) {
       document.documentElement.classList.remove('vt-shared-title', 'vt-shared-cover');
+      delete document.documentElement.dataset.vtSection;
+      document.documentElement.style.removeProperty('--vt-section-old-y');
+      document.documentElement.style.removeProperty('--vt-section-clip-top');
+    }
   }
   private cancel(nav: Navigation): void {
     if (nav.cancelled) return;
