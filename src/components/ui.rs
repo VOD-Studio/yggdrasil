@@ -25,9 +25,6 @@ pub const ADMIN_CARD_CLASS: &str = "bg-[var(--color-paper-entry)] rounded-2xl sh
 /// Admin 表格容器：内容档圆角（16px），与卡片一致。
 pub const ADMIN_TABLE_CLASS: &str = "bg-[var(--color-paper-entry)] rounded-2xl shadow-sm border border-transparent hover:border-[var(--color-paper-border)] transition overflow-hidden";
 
-#[allow(dead_code)]
-pub const ADMIN_ROW_HOVER: &str =
-    "border-b border-paper-border last:border-b-0 hover:bg-[var(--color-paper-accent-soft)] transition-colors";
 /// 行内加载 spinner：环形渐变 + 自旋动画，用 currentColor 继承文字色。
 ///
 /// 内联 SVG（含 `@keyframes`），通过 `dangerous_inner_html` 注入；尺寸由外层
@@ -54,18 +51,11 @@ pub const BTN_SOLID_RED: &str =
 
 // --- 文字小按钮（表格行内操作：通过 / 垃圾 / 删除 / 恢复） ---
 
-/// 绿色文字小按钮（行内通过）。
-#[allow(dead_code)]
-pub const BTN_TEXT_GREEN: &str = "text-xs text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300 transition-colors cursor-pointer";
 #[allow(dead_code)]
 pub const BTN_TEXT_AMBER: &str = "text-xs text-amber-600 hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-300 transition-colors cursor-pointer";
 #[allow(dead_code)]
 pub const BTN_TEXT_RED: &str =
     "text-xs text-red-500 hover:text-red-700 dark:hover:text-red-300 transition-colors cursor-pointer";
-/// 主题绿（鼠尾草）文字小按钮（行内恢复）。
-#[allow(dead_code)]
-pub const BTN_TEXT_ACCENT: &str =
-    "text-xs text-paper-accent hover:text-paper-primary transition-colors cursor-pointer";
 
 /// 弱化文字按钮（弹窗「取消」等次要取消操作）：无描边、无填充，悬浮转主色。
 pub const BTN_GHOST: &str =
@@ -295,7 +285,7 @@ pub fn Pagination<R: Routable + Clone + PartialEq + 'static>(
 /// （>7 天中性 / ≤7 天主题绿 / ≤0 琥珀），硬编码 variant 反而不够灵活。
 ///
 /// Props：
-/// - `color_class`：背景与文字颜色类（如 `post.status_badge_class()` 的返回值）
+/// - `color_class`：背景与文字颜色类（如 `post.status.badge_class()` 的返回值）
 /// - `label`：徽章文本
 #[component]
 pub fn StatusBadge(color_class: &'static str, label: String) -> Element {

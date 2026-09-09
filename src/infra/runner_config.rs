@@ -30,12 +30,6 @@ pub struct RunnerConfig {
     pub languages: Option<Vec<String>>,
 }
 
-#[cfg(all(test, feature = "server"))]
-fn parse_allow_network(v: &str) -> bool {
-    let l = v.to_lowercase();
-    l == "true" || l == "1" || l == "yes"
-}
-
 #[cfg(feature = "server")]
 pub static RUNNER_CONFIG: LazyLock<RunnerConfig> = LazyLock::new(|| {
     let cfg = crate::config::runner();
@@ -150,19 +144,5 @@ mod tests {
         assert_eq!(clamped.timeout_secs, 0);
         assert_eq!(clamped.output_bytes, 50);
         assert!(clamped.allow_network);
-    }
-
-    #[test]
-    fn test_parse_allow_network() {
-        assert!(parse_allow_network("true"));
-        assert!(parse_allow_network("TRUE"));
-        assert!(parse_allow_network("True"));
-        assert!(parse_allow_network("1"));
-        assert!(parse_allow_network("yes"));
-        assert!(parse_allow_network("YES"));
-        assert!(parse_allow_network("Yes"));
-        assert!(!parse_allow_network("false"));
-        assert!(!parse_allow_network("0"));
-        assert!(!parse_allow_network("no"));
     }
 }

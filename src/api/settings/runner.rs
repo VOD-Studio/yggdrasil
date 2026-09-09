@@ -16,6 +16,12 @@ use crate::models::settings::RunnerSettings;
 // 代码运行器配置（需重启生效）
 // ============================================================================
 
+#[cfg(feature = "server")]
+fn parse_allow_network(value: &str) -> bool {
+    let value = value.to_lowercase();
+    value == "true" || value == "1" || value == "yes"
+}
+
 /// 启动时用 `CODE_RUNNER_*` 环境变量播种代码运行器配置。
 #[cfg(feature = "server")]
 pub(crate) async fn seed_runner_settings_from_env(
@@ -26,9 +32,7 @@ pub(crate) async fn seed_runner_settings_from_env(
     let mut seeds: Vec<(&'static str, String)> = Vec::new();
 
     if let Ok(v) = std::env::var("CODE_RUNNER_ALLOW_NETWORK") {
-        let l = v.to_lowercase();
-        let b = l == "true" || l == "1" || l == "yes";
-        seeds.push(("runner_allow_network", b.to_string()));
+        seeds.push(("runner_allow_network", parse_allow_network(&v).to_string()));
     }
     if let Ok(v) = std::env::var("CODE_RUNNER_MAX_CONCURRENT") {
         match v.trim().parse::<u32>() {
@@ -295,4 +299,19 @@ pub async fn update_runner_settings(
         task_ttl_secs,
         languages,
     })
+}
+
+#[cfg(all(test, feature = "server"))]
+mod tests {
+    use super::parse_allow_network;
+
+    #[test]
+    fn allow_network_env_requires_explicit_opt_in() {
+        for value in ["true", "TRUE", "True", "1", "yes", "YES", "Yes"] {
+            assert!(parse_allow_network(value), "{value:?}");
+        }
+        for value in ["false", "0", "no", "", "maybe", "on", " true "] {
+            assert!(!parse_allow_network(value), "{value:?}");
+        }
+    }
 }

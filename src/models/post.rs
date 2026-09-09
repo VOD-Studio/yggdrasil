@@ -164,12 +164,6 @@ impl PostListItem {
             PostStatus::Draft => "text-gray-400 dark:text-gray-500",
         }
     }
-
-    /// 返回状态徽章在 light/dark 模式下的 Tailwind 背景与颜色类。
-    #[allow(dead_code)]
-    pub fn status_badge_class(&self) -> &'static str {
-        self.status.badge_class()
-    }
 }
 
 #[cfg(any(feature = "server", test))]
@@ -352,16 +346,13 @@ mod tests {
     }
 
     #[test]
-    fn post_list_item_status_badge_class_returns_non_empty() {
-        let mut post = sample_post_list_item();
-        post.status = PostStatus::Published;
+    fn post_status_badge_class_matches_status() {
         assert_eq!(
-            post.status_badge_class(),
+            PostStatus::Published.badge_class(),
             "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300"
         );
-        post.status = PostStatus::Draft;
         assert_eq!(
-            post.status_badge_class(),
+            PostStatus::Draft.badge_class(),
             "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400"
         );
     }
