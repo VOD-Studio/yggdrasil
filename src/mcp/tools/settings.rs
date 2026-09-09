@@ -1,7 +1,6 @@
 //! 站点设置 MCP 工具：读取/更新回收站自动清理配置。
 //!
-//! 与 `src/api/settings.rs` 的 `get_trash_settings` / `update_trash_settings`
-//! server-fn 一致（同样的 SQL、同样的 clamp）。区别仅在鉴权入口：web 走 cookie
+//! 与 Web server-fn 共用 `api::settings` 的配置读写函数。鉴权入口各自保留：Web 走 cookie
 //! `get_current_admin_user()`，MCP 走 bearer token → `McpPrincipal`，要求 admin 作用域。
 //!
 //! 缓存失效：与 web fn 保持一致——`update_trash_settings` **不做任何缓存失效**。
@@ -20,8 +19,8 @@ use super::common::require_admin;
 use serde::Deserialize;
 
 use crate::api::error::AppError;
+use crate::api::settings::{load_trash_settings, save_trash_settings};
 use crate::db::pool::get_conn;
-use crate::models::settings::{TrashSettings, DEFAULT_AUTO_PURGE_ENABLED, DEFAULT_RETENTION_DAYS};
 
 /// `get_settings` 入参（无字段——预留扩展点，未来可按子域过滤）。
 #[derive(Debug, Deserialize, schemars::JsonSchema, Default)]
@@ -47,9 +46,12 @@ impl crate::mcp::server::YggMcpServer {
     ) -> Result<CallToolResult, McpError> {
         require_admin(&parts, "get_settings")?;
 
-        let settings = load_trash_settings()
-            .await
-            .map_err(|e| McpError::internal_error(format!("settings read failed: {e:?}"), None))?;
+        let settings = async {
+            let client = get_conn().await.map_err(AppError::db_conn)?;
+            load_trash_settings(&client).await
+        }
+        .await
+        .map_err(|e| McpError::internal_error(format!("settings read failed: {e:?}"), None))?;
 
         let text = serde_json::to_string_pretty(&settings)
             .map_err(|e| McpError::internal_error(format!("encode failed: {e}"), None))?;
@@ -72,11 +74,18 @@ impl crate::mcp::server::YggMcpServer {
     ) -> Result<CallToolResult, McpError> {
         require_admin(&parts, "update_settings")?;
 
-        let retention_days = TrashSettings::clamp_retention(retention_days);
+        let updated = async {
+            let client = get_conn().await.map_err(AppError::db_conn)?;
+            save_trash_settings(&client, auto_purge_enabled, retention_days).await
+        }
+        .await
+        .map_err(|e| McpError::internal_error(format!("settings write failed: {e:?}"), None))?;
 
-        let updated = save_trash_settings(auto_purge_enabled, retention_days)
-            .await
-            .map_err(|e| McpError::internal_error(format!("settings write failed: {e:?}"), None))?;
+        tracing::info!(
+            "MCP: trash settings updated: auto_purge={}, retention_days={}",
+            updated.auto_purge_enabled,
+            updated.retention_days
+        );
 
         let text = serde_json::to_string_pretty(&updated)
             .map_err(|e| McpError::internal_error(format!("encode failed: {e}"), None))?;
@@ -84,73 +93,4 @@ impl crate::mcp::server::YggMcpServer {
             TextContent::new(text),
         )]))
     }
-}
-
-/// 读取回收站配置（与 `get_trash_settings` 的 SQL 一致）。
-///
-/// settings 表缺失键时回退默认值，保证向后兼容。
-async fn load_trash_settings() -> Result<TrashSettings, AppError> {
-    let client = get_conn().await.map_err(AppError::db_conn)?;
-
-    let enabled: bool = client
-        .query_opt(
-            "SELECT value FROM settings WHERE key = 'trash_auto_purge_enabled'",
-            &[],
-        )
-        .await
-        .map_err(AppError::query)?
-        .and_then(|r| r.get::<_, String>("value").parse().ok())
-        .unwrap_or(DEFAULT_AUTO_PURGE_ENABLED);
-
-    let days: i32 = client
-        .query_opt(
-            "SELECT value FROM settings WHERE key = 'trash_retention_days'",
-            &[],
-        )
-        .await
-        .map_err(AppError::query)?
-        .and_then(|r| r.get::<_, String>("value").parse().ok())
-        .unwrap_or(DEFAULT_RETENTION_DAYS);
-
-    Ok(TrashSettings {
-        auto_purge_enabled: enabled,
-        retention_days: TrashSettings::clamp_retention(days),
-    })
-}
-
-/// 写入回收站配置（与 `update_trash_settings` 的 UPSERT 一致）。返回写入后的值。
-async fn save_trash_settings(
-    auto_purge_enabled: bool,
-    retention_days: i32,
-) -> Result<TrashSettings, AppError> {
-    let client = get_conn().await.map_err(AppError::db_conn)?;
-
-    client
-        .execute(
-            "INSERT INTO settings (key, value, updated_at) VALUES ('trash_auto_purge_enabled', $1, NOW())
-             ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()",
-            &[&auto_purge_enabled.to_string()],
-        )
-        .await
-        .map_err(AppError::query)?;
-
-    client
-        .execute(
-            "INSERT INTO settings (key, value, updated_at) VALUES ('trash_retention_days', $1, NOW())
-             ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()",
-            &[&retention_days.to_string()],
-        )
-        .await
-        .map_err(AppError::query)?;
-
-    tracing::info!(
-        "MCP: trash settings updated: auto_purge={}, retention_days={}",
-        auto_purge_enabled,
-        retention_days
-    );
-
-    Ok(TrashSettings {
-        auto_purge_enabled,
-        retention_days,
-    })
 }
