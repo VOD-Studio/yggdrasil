@@ -9,6 +9,8 @@
 
 use dioxus::prelude::*;
 
+use crate::components::ui::UserAvatar;
+
 /// 评论卡片外壳组件。
 ///
 /// Props：
@@ -51,11 +53,9 @@ pub fn CommentCardShell(
             style: if depth > 1 { format!("margin-left: {}px;", (depth.min(5) - 1) * 16) } else { String::new() },
 
             div { class: "flex items-start gap-3",
-                img {
-                    src: "{avatar_url}",
-                    alt: "{author_name} 的头像",
-                    loading: "lazy",
-                    decoding: "async",
+                UserAvatar {
+                    name: author_name,
+                    avatar_url: Some(avatar_url),
                     class: "w-8 h-8 rounded-full shrink-0 object-cover ring-1 ring-[var(--color-paper-border)]/60 bg-[var(--color-paper-entry)] mt-0.5",
                 }
 

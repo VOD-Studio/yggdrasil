@@ -5,7 +5,7 @@
 use dioxus::prelude::*;
 use dioxus::router::components::Link;
 
-use crate::components::ui::TagChip;
+use crate::components::ui::{SproutPlaceholder, TagChip};
 use crate::models::post::PostListItem;
 use crate::router::Route;
 
@@ -77,9 +77,7 @@ pub fn PostCard(post: PostListItem, #[props(default = false)] compact: bool) -> 
                     div { class: "blur-img post-card-cover-blur !rounded-none",
                         if cover_failed {
                             div { class: "absolute inset-0 flex items-center justify-center bg-paper-entry text-paper-tertiary", aria_hidden: "true",
-                                svg { class: "w-8 h-8", view_box: "0 0 32 32", fill: "none", "aria-hidden": "true",
-                                    path { d: "M16 27V15M16 21C7 21 4 15 5 8C12 8 17 12 16 21ZM16 16C16 7 21 4 28 5C28 12 23 17 16 16M10 27H22", stroke: "currentColor", stroke_width: "1.2", stroke_linecap: "round", stroke_linejoin: "round" }
-                                }
+                                SproutPlaceholder { class: "w-8 h-8" }
                             }
                         } else {
                             img {
