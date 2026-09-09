@@ -25,7 +25,7 @@ pub fn Breadcrumbs(title: String, #[props(default = false)] full_reload: bool) -
             class: "breadcrumbs",
             role: "navigation",
             aria_label: "Breadcrumb",
-            Link { to: home_to, "Home" }
+            Link { to: home_to, "data-vt-return": (!full_reload).then_some("true"), "Home" }
             svg {
                 xmlns: "http://www.w3.org/2000/svg",
                 view_box: "0 0 24 24",

@@ -126,7 +126,7 @@ async function fresh(state, options = {}) {
 function traceSummary(calls) {
   return calls.map(c => ({ from: c.from, to: c.to, old: c.oldNames.map(n => n.name), next: c.newNames?.map(n => n.name), snapshotDelay: Math.round(c.callbackAt - c.started), callbackWait: Math.round(c.updateDoneAt - c.callbackAt), wait: Math.round(c.updateDoneAt - c.started), readyError: c.readyError }));
 }
-async function titleRoundTrip(page, selector = 'a[data-vt-post-link]') {
+async function titleRoundTrip(page, selector = 'a[data-vt-post-link]', returnViaHome = false) {
   const link = page.locator(selector).first();
   const id = await link.getAttribute('data-vt-post-link');
   const href = await link.getAttribute('href');
@@ -144,11 +144,16 @@ async function titleRoundTrip(page, selector = 'a[data-vt-post-link]') {
   assert(forward?.oldNames.some(n => n.name === 'vt-post-title'), 'source title must be named');
   assert(forward?.newNames.some(n => n.name === 'vt-post-title'), 'destination title must be named');
   assert(!forward.readyError, `forward transition rejected: ${forward.readyError}`);
-  await page.goBack();
+  if (returnViaHome) await page.getByRole('link', { name: 'Home', exact: true }).click();
+  else await page.goBack();
   await ready(page, new URL(before.url).pathname);
   await page.waitForSelector(selector);
   const after = await page.evaluate(() => ({ entry: history.state.__yggdrasilNavigation, y: scrollY, call: __vtCalls.at(-1) }));
-  assert.equal(after.entry, before.entry, 'back restores original history entry');
+  if (returnViaHome) {
+    assert.notEqual(after.entry, before.entry, 'Home creates a new history entry');
+    assert.equal(await page.evaluate(() => __vtDocument), before.document, 'Home retains document');
+    assert(after.call.oldNames.some(n => n.name === 'vt-post-title'), 'Home source title must be named');
+  } else assert.equal(after.entry, before.entry, 'back restores original history entry');
   assert(Math.abs(after.y - before.y) < 5, `scroll restored: expected ${before.y}, actual ${after.y}`);
   assert(after.call.newNames.some(n => n.name === 'vt-post-title'), 'reverse target title must be named');
   assert(!after.call.readyError, `reverse transition rejected: ${after.call.readyError}`);
@@ -160,6 +165,7 @@ async function main() {
   try {
     await fresh(state);
     console.log('PASS home-detail-back', JSON.stringify(await titleRoundTrip(page)));
+    console.log('PASS home-detail-breadcrumb', JSON.stringify(await titleRoundTrip(page, undefined, true)));
     await push(page, '/search');
     await page.locator('#article-search').fill(SEARCH_QUERY);
     await page.locator('#article-search').press('Enter');
@@ -221,6 +227,11 @@ async function fallback({ name, ...options }) {
     await state.page.goBack();
     await state.page.waitForSelector('a[data-vt-post-link]');
     await settle(state.page);
+    await state.page.locator('a[data-vt-post-link]').first().click();
+    await state.page.waitForSelector('[data-vt-detail]');
+    await state.page.getByRole('link', { name: 'Home', exact: true }).click();
+    await ready(state.page, '/');
+    assert.equal(await state.page.evaluate(() => __vtCalls.length), initial, `${name} Home return`);
     assert.deepEqual(state.errors, []);
     console.log(`PASS ${name}`);
   } finally { await state.browser.close(); }
@@ -230,6 +241,7 @@ async function mobile() {
   try {
     await fresh(state);
     console.log('PASS mobile-title-roundtrip', JSON.stringify(await titleRoundTrip(state.page)));
+    console.log('PASS mobile-breadcrumb-roundtrip', JSON.stringify(await titleRoundTrip(state.page, undefined, true)));
     assert.deepEqual(state.errors, []);
   } finally { await state.browser.close(); }
 }
