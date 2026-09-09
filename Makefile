@@ -1,4 +1,4 @@
-.PHONY: dev build build-linux build-freebsd freebsd-sysroot docker docker-amd64 docker-apple docker-multiarch docker-dev docker-dev-down docker-dev-shell docker-run docker-lint docker-clippy docker-check docker-fmt docker-fix docker-test docker-tools-build docker-tools-clean css css-watch clean build-libs build-editor build-codemirror build-lightbox build-core build-xterm highlight-css katex-css test doc doc-open start lint fix restore-webp esbuild-cache wasm-bindgen-cache
+.PHONY: dev build build-linux docker docker-amd64 docker-apple docker-multiarch docker-dev docker-dev-down docker-dev-shell docker-run docker-lint docker-clippy docker-check docker-fmt docker-fix docker-test docker-tools-build docker-tools-clean css css-watch clean build-libs build-editor build-codemirror build-lightbox build-core build-xterm highlight-css katex-css test doc doc-open start lint fix restore-webp esbuild-cache wasm-bindgen-cache
 .PHONY: check-tools check-dev-tools check-build-tools check-brotli precompress
 
 # ── sccache × dx 兼容 ──────────────────────────────────────────
@@ -33,43 +33,6 @@ build-linux: check-tools check-brotli
 	@echo "Linux build complete! The server binary is at target/dx/yggdrasil/release/web/server"
 	@echo "Remember to deploy it alongside the target/dx/yggdrasil/release/web/public directory."
 	@echo "When running the server, ensure DIOXUS_ASSET_DIR is set or the public directory is in CWD."
-
-# FreeBSD 15.1 base.txz 版本与下载源。sysroot 仅需 ./lib 与 ./usr/lib（crt 对象 + 系统库）。
-FREEBSD_VERSION ?= 15.1-RELEASE
-FREEBSD_BASE_URL ?= https://download.freebsd.org/ftp/releases/amd64/amd64/$(FREEBSD_VERSION)/base.txz
-FREEBSD_SYSROOT := $(CURDIR)/.freebsd-sysroot
-
-# 下载并解压 FreeBSD base.txz 到 .freebsd-sysroot/，供交叉链接（crt 对象 + 系统库）。
-# 幂等：若 sysroot 已存在则跳过下载。
-freebsd-sysroot:
-	@if [ -d "$(FREEBSD_SYSROOT)/usr/lib" ] && [ -d "$(FREEBSD_SYSROOT)/lib" ]; then \
-		echo "FreeBSD sysroot already present at $(FREEBSD_SYSROOT)"; \
-	else \
-		echo "Downloading FreeBSD $(FREEBSD_VERSION) base.txz..."; \
-		curl -fL --retry 3 -o /tmp/freebsd-base.txz "$(FREEBSD_BASE_URL)"; \
-		mkdir -p "$(FREEBSD_SYSROOT)"; \
-		echo "Extracting crt objects and system libs..."; \
-		tar -xf /tmp/freebsd-base.txz -C "$(FREEBSD_SYSROOT)" ./lib ./usr/lib; \
-		rm -f /tmp/freebsd-base.txz; \
-		echo "FreeBSD sysroot ready at $(FREEBSD_SYSROOT)"; \
-	fi
-
-# 交叉编译 FreeBSD x86_64 release server 二进制。
-# 前置：clang + lld 已装（pacman -S clang lld）、rustup target add x86_64-unknown-freebsd、
-# `make freebsd-sysroot`。sysroot 路径经 CARGO_TARGET_*_RUSTFLAGS 注入，避免在
-# .cargo/config.toml 里硬编码机器相关路径。server 二进制用 cargo 直出（dx CLI 对该
-# target 未经验证）；前端 wasm 与静态资源与 build-linux 相同，不在此重复构建。
-build-freebsd:
-	@$(MAKE) freebsd-sysroot
-	@SYSROOT="$(FREEBSD_SYSROOT)"; \
-	RUSTFLAGS_FREEBSD="-C linker=clang -C link-arg=--target=x86_64-unknown-freebsd -C link-arg=-fuse-ld=lld -C link-arg=--sysroot=$$SYSROOT -C link-arg=-L$$SYSROOT/usr/lib -C link-arg=-L$$SYSROOT/lib"; \
-	echo "Cross-compiling yggdrasil server for FreeBSD x86_64..."; \
-	CARGO_TARGET_X86_64_UNKNOWN_FREEBSD_RUSTFLAGS="$$RUSTFLAGS_FREEBSD" \
-		cargo build --release --target x86_64-unknown-freebsd --features server --bin yggdrasil
-	@echo ""
-	@echo "FreeBSD build complete! Server binary: target/x86_64-unknown-freebsd/release/yggdrasil"
-	@echo "Deploy it to FreeBSD 15+ alongside the static public/ directory."
-	@echo "Runtime needs (bundled in FreeBSD base): libc.so.7 libthr.so.3 libkvm.so.7 etc."
 
 # 兜底：dx build 0.7.10 会把 public/ 下的 .webp 重编码成 VP8L 无损静图
 # （动画帧被丢弃，静图体积反增 7-8 倍），与文档承诺的"原样拷贝"不符。

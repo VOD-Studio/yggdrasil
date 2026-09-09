@@ -24,30 +24,3 @@ rustflags = ["--cfg", "getrandom_backend=\"wasm_js\""]
 # Uncomment and adjust after installing a musl C toolchain:
 [target.x86_64-unknown-linux-musl]
 linker = "x86_64-linux-musl-gcc"
-
-# FreeBSD x86_64 交叉编译（方案 A：clang + lld + 本地 sysroot）。
-#
-# rustc 为 freebsd target 链接的系统库（libc/libexecinfo/libgcc_s/libthr 等）及 sysinfo
-# 依赖的 freebsd 专有库（libkvm/libmemstat/libprocstat/libdevstat）需 FreeBSD 运行时，
-# 因此除 clang + lld 外还需一个本地 sysroot（由 base.txz 解出，见 .freebsd-sysroot/）。
-# ring（C + 预生成 ELF 汇编，freebsd 归入 LINUX_ABI）与 zstd-sys（bundled C）用 clang 编译。
-#
-# sysroot 路径与机器绑定，故此 target 配置默认注释；`make build-freebsd` 会用环境变量
-# CARGO_TARGET_X86_64_UNKNOWN_FREEBSD_RUSTFLAGS 注入当前机器的 sysroot 路径。
-#
-# 准备步骤：
-#   1. pacman -S clang lld              # 或 apt install clang lld
-#   2. rustup target add x86_64-unknown-freebsd
-#   3. make freebsd-sysroot             # 下载 base.txz 并解压到 .freebsd-sysroot/
-#   4. make build-freebsd               # 交叉编译 release server 二进制
-#
-# 手动调用（Makefile 之外）时取消注释并把 <SYSROOT> 改成实际路径：
-# [target.x86_64-unknown-freebsd]
-# linker = "clang"
-# rustflags = [
-#     "-C", "link-arg=--target=x86_64-unknown-freebsd",
-#     "-C", "link-arg=-fuse-ld=lld",
-#     "-C", "link-arg=--sysroot=<SYSROOT>",
-#     "-C", "link-arg=-L<SYSROOT>/usr/lib",
-#     "-C", "link-arg=-L<SYSROOT>/lib",
-# ]
