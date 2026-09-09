@@ -1,5 +1,5 @@
 .PHONY: dev build build-linux build-freebsd freebsd-sysroot docker docker-amd64 docker-apple docker-multiarch docker-dev docker-dev-down docker-dev-shell docker-run docker-lint docker-clippy docker-check docker-fmt docker-fix docker-test docker-tools-build docker-tools-clean css css-watch clean build-libs build-editor build-codemirror build-lightbox build-core build-xterm highlight-css katex-css test doc doc-open start lint fix restore-webp esbuild-cache wasm-bindgen-cache
-.PHONY: check-brotli precompress
+.PHONY: check-tools check-dev-tools check-build-tools check-brotli precompress
 
 # ── sccache × dx 兼容 ──────────────────────────────────────────
 # dx build / dx serve 构建时把自己设为 RUSTC_WORKSPACE_WRAPPER 拦截 workspace
@@ -9,7 +9,7 @@
 # 空 RUSTC_WRAPPER env 覆盖 config（env 优先于 config，空值 = 无 wrapper），
 # 只对 dx 构建关闭 sccache；直接 cargo 的构建（test / lint / Dockerfile / CI）不受影响。
 # 下面的 build / build-linux / dev 三个 target 的 dx 调用都带此前缀。
-build: check-brotli
+build: check-tools check-brotli
 	@rm -rf static/
 	@$(MAKE) build-libs
 	@$(MAKE) highlight-css
@@ -20,7 +20,7 @@ build: check-brotli
 	@$(MAKE) restore-webp
 	@$(MAKE) precompress
 
-build-linux: check-brotli
+build-linux: check-tools check-brotli
 	@$(MAKE) build-libs
 	@$(MAKE) highlight-css
 	@$(MAKE) katex-css
@@ -91,6 +91,44 @@ restore-webp:
 		done; \
 	done
 
+# Check that host CLI tools required for development and builds are installed.
+# Fails early with actionable installation hints before running expensive targets.
+check-tools:
+	@missing=0; \
+	if ! command -v cargo >/dev/null 2>&1; then \
+		echo "error: cargo (Rust toolchain) is required" >&2; \
+		echo "  Install: https://rustup.rs" >&2; \
+		missing=1; \
+	fi; \
+	if ! command -v dx >/dev/null 2>&1; then \
+		echo "error: dx CLI (Dioxus CLI 0.7.10) is required" >&2; \
+		echo "  Install: cargo install dioxus-cli --version 0.7.10" >&2; \
+		echo "  Prebuilt binary: https://github.com/DioxusLabs/dioxus/releases/tag/v0.7.10" >&2; \
+		missing=1; \
+	fi; \
+	if ! command -v tailwindcss >/dev/null 2>&1; then \
+		echo "error: tailwindcss CLI (Tailwind CSS v4) is required" >&2; \
+		echo "  Install: brew install tailwindcss | npm install -g @tailwindcss/cli" >&2; \
+		echo "  Standalone binary: https://github.com/tailwindlabs/tailwindcss/releases" >&2; \
+		missing=1; \
+	fi; \
+	if ! command -v node >/dev/null 2>&1; then \
+		echo "error: node (Node.js >= 22) is required for frontend build scripts" >&2; \
+		echo "  Install: brew install node | https://nodejs.org" >&2; \
+		missing=1; \
+	fi; \
+	if ! command -v pnpm >/dev/null 2>&1; then \
+		echo "error: pnpm is required for frontend libraries in libs/" >&2; \
+		echo "  Install: npm install -g pnpm | brew install pnpm | curl -fsSL https://get.pnpm.io/install.sh | sh -" >&2; \
+		missing=1; \
+	fi; \
+	if [ "$$missing" -ne 0 ]; then \
+		exit 1; \
+	fi
+
+check-dev-tools: check-tools
+check-build-tools: check-tools check-brotli
+
 # Local release builds use this host-side CLI after dx finishes. Check it before
 # the expensive build so a missing package fails with an actionable message.
 check-brotli:
@@ -98,7 +136,7 @@ check-brotli:
 		:; \
 	else \
 		echo "error: brotli CLI is required for release builds" >&2; \
-		echo "Install: sudo dnf install brotli | sudo apt-get install brotli | brew install brotli" >&2; \
+		echo "  Install: sudo dnf install brotli | sudo apt-get install brotli | brew install brotli" >&2; \
 		exit 1; \
 	fi
 
@@ -207,7 +245,7 @@ build-core:       ; @cd libs && pnpm --filter @yggdrasil/core run build
 build-xterm:      ; @cd libs && pnpm --filter @yggdrasil/xterm-terminal run build
 build-mermaid:    ; @cd libs && pnpm --filter @yggdrasil/mermaid-renderer run build
 
-dev: build-libs highlight-css katex-css esbuild-cache wasm-bindgen-cache
+dev: check-tools build-libs highlight-css katex-css esbuild-cache wasm-bindgen-cache
 	@echo "Cleaning static/..."
 	@rm -rf static/
 	@echo "Building CSS..."
