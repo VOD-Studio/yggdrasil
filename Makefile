@@ -100,6 +100,16 @@ check-tools:
 		echo "  Install: https://rustup.rs" >&2; \
 		missing=1; \
 	fi; \
+	if ! command -v rustup >/dev/null 2>&1; then \
+		echo "error: rustup is required to check LLVM tools" >&2; \
+		echo "  Install: https://rustup.rs" >&2; \
+		missing=1; \
+	elif ! rustup component list --installed 2>/dev/null | grep -Eq '^llvm-tools(-preview)?-'; then \
+		echo "error: llvm-tools component is required for the active Rust toolchain" >&2; \
+		toolchain=$$(rustup show active-toolchain 2>/dev/null | cut -d ' ' -f 1); \
+		echo "  Install: rustup component add llvm-tools --toolchain $${toolchain:-stable}" >&2; \
+		missing=1; \
+	fi; \
 	if ! command -v dx >/dev/null 2>&1; then \
 		echo "error: dx CLI (Dioxus CLI 0.7.10) is required" >&2; \
 		echo "  Install: cargo install dioxus-cli --version 0.7.10" >&2; \
