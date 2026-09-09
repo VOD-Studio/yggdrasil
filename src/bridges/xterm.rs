@@ -46,10 +46,7 @@ pub mod wasm {
     pub fn get_module() -> XtermTerminalModule {
         // 缺 window：本函数只应在浏览器环境的 wasm32 前端调用，不应在其它上下文触发。
         let window = web_sys::window().expect("no window: get_module 只能在浏览器 wasm32 前端调用");
-        // 缺全局对象：Dioxus.toml [web.resource] script 把 /xterm/terminal.js 列为阻塞式
-        // <script src>，位于生成 HTML 里 wasm 模块 <script type=module async> 之前——解析器
-        // 必须先跑完它才能碰到 wasm 模块，故正常部署下不会撞上时序竞态；触发说明该静态资源
-        // 没有随构建产物一起部署（404/CDN 故障/资源清单漂移），是部署问题而非运行时竞态。
+        // 调用方先等待 use_browser_library 就绪，再构造 Options 并调用 create。
         let val = js_sys::Reflect::get(&window, &"XtermTerminal".into()).expect(
             "window.XtermTerminal missing: /xterm/terminal.js 未加载，检查该静态资源是否随构建产物部署",
         );

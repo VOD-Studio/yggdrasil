@@ -1,5 +1,6 @@
 import type { ThemeName } from '@yggdrasil/shared';
 import { initAnchorClick } from './anchor-click';
+import { loadBrowserLibrary } from './browser-library';
 import { scrollToHash } from './hash-scroll';
 import { initMermaid } from './mermaid';
 import { initPageReveal } from './page-entry';
@@ -11,6 +12,7 @@ import './style.css';
 
 declare global {
   interface Window {
+    __loadBrowserLibrary: typeof loadBrowserLibrary;
     __initPostContent: (selector: string) => void;
     __initMermaid: (selector: string, theme: ThemeName) => Promise<void>;
     __initAnchorClick: () => void;
@@ -23,6 +25,7 @@ declare global {
 }
 
 window.__initPostContent = initPostContent;
+window.__loadBrowserLibrary = loadBrowserLibrary;
 window.__initMermaid = initMermaid;
 window.__initAnchorClick = initAnchorClick;
 window.__scrollToHash = scrollToHash;

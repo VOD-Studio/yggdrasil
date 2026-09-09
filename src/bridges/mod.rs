@@ -8,6 +8,8 @@
 /// SQL 补全 schema DTO（SqlSchema/SqlTable）是 server function 返回值，
 /// 定义在 `crate::models::sql_schema`，不在本模块。
 pub mod codemirror;
+/// 浏览器库的按需加载与错误重试。
+pub mod library;
 /// 页面过渡与按历史记录保存的客户端状态。
 pub mod navigation;
 /// Tiptap 富文本编辑器桥接：共享类型（UploadsInFlight/UploadErrorEntry）两端都编译；

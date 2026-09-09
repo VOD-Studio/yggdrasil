@@ -127,17 +127,15 @@ pub(crate) fn cache_control_for_path(
         return None;
     }
 
-    // 静态资源：长期缓存（Dioxus/WASM 资源通常带内容哈希）
+    // 固定路径的脚本、样式和 WASM 会随部署变化，允许存储但每次使用前须校验。
+    // Dioxus 已为真正带内容哈希的资源设置 immutable；中间件不会覆盖该响应头。
     if path.starts_with("/_dioxus/")
         || path.starts_with("/wasm/")
         || path.ends_with(".wasm")
         || path.ends_with(".js")
-        || path == "/style.css"
-        || path == "/highlight.css"
+        || path.ends_with(".css")
     {
-        return Some(HeaderValue::from_static(
-            "public, max-age=31536000, immutable",
-        ));
+        return Some(HeaderValue::from_static("public, no-cache"));
     }
 
     // 公开页面：5 分钟新鲜期，过期后 1 小时内可提供过期内容并后台重新验证
@@ -312,23 +310,28 @@ mod tests {
     }
 
     #[test]
-    fn static_assets_are_cached_long_term() {
-        assert_eq!(
-            cache_value("/style.css", Method::GET),
-            Some("public, max-age=31536000, immutable".to_string())
-        );
-        assert_eq!(
-            cache_value("/highlight.css", Method::GET),
-            Some("public, max-age=31536000, immutable".to_string())
-        );
-        assert_eq!(
-            cache_value("/wasm/app.wasm", Method::GET),
-            Some("public, max-age=31536000, immutable".to_string())
-        );
-        assert_eq!(
-            cache_value("/_dioxus/assets/main.js", Method::GET),
-            Some("public, max-age=31536000, immutable".to_string())
-        );
+    fn unversioned_assets_require_revalidation() {
+        for path in [
+            "/style.css",
+            "/highlight.css",
+            "/tiptap/editor.css",
+            "/xterm/terminal.css",
+            "/tiptap/editor.js",
+            "/codemirror/editor.js",
+            "/yggdrasil-core/yggdrasil-core.js",
+            "/mermaid/mermaid.js",
+            "/wasm/app.wasm",
+            "/wasm/app.js",
+            "/_dioxus/assets/main.js",
+        ] {
+            for method in [Method::GET, Method::HEAD] {
+                assert_eq!(
+                    cache_value(path, method).as_deref(),
+                    Some("public, no-cache"),
+                    "{path}"
+                );
+            }
+        }
     }
 
     #[test]

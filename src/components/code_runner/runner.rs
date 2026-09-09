@@ -16,6 +16,9 @@ use crate::api::code_runner::execute::start_exec_stream;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::api::code_runner::execute::{get_exec_result, start_exec};
 use crate::api::code_runner::{ExecRequest, ExecResult, ExecStatus};
+#[cfg(target_arch = "wasm32")]
+use crate::bridges::library::library_ready;
+use crate::bridges::library::{use_browser_library, LibraryLoadError};
 use crate::components::skeletons::atoms::SkeletonBox;
 use crate::components::ui::{BTN_PRIMARY_SM, SPINNER_SVG};
 use crate::infra::runner_config::ResourceLimits;
@@ -59,6 +62,11 @@ pub fn CodeRunner(
     let mut show_output = use_signal(|| false);
     // 是否已收到首个输出 chunk：收到后骨架屏消失，露出终端实时渲染。
     let mut has_output = use_signal(|| false);
+    let editor_library = use_browser_library("codemirror", || true);
+    let terminal_library = use_browser_library("xterm", move || *show_output.read());
+    // 终端首次加载期间先保存运行请求，挂载后才开始执行，避免丢掉前几个输出块。
+    #[cfg(target_arch = "wasm32")]
+    let mut pending_exec: Signal<Option<ExecRequest>> = use_signal(|| None);
 
     // 编辑器内容的唯一真源；初始化为 prop 值。
     // C4 修复：删去 source_prop_signal。旧代码在 render body 里对它做镜像 .set()
@@ -136,6 +144,9 @@ pub fn CodeRunner(
         use_effect(move || {
             if editor_handle.read().is_some() {
                 return; // 防重复 init
+            }
+            if !library_ready(editor_library) {
+                return;
             }
 
             // onChange 回写到 source_signal（编辑器内容 = 唯一真源）。
@@ -240,6 +251,9 @@ pub fn CodeRunner(
             if !show_output() {
                 return; // 输出区未显示，容器不在 DOM，等 show_output 变 true 再挂载
             }
+            if !library_ready(terminal_library) {
+                return;
+            }
 
             let on_ready = Closure::new(|| {});
             let theme_name = if resolved_theme() == ResolvedTheme::Dark {
@@ -299,7 +313,6 @@ pub fn CodeRunner(
     let run_code = {
         let mut running = running;
         let mut stage = stage;
-        let mut exit_info = exit_info;
         let mut error_msg = error_msg;
         let mut source_signal = source_signal;
         let mut term_handle = term_handle;
@@ -308,13 +321,13 @@ pub fn CodeRunner(
         let run_language = run_language.clone();
         let run_overrides = run_overrides.clone();
         move |_| {
-            if running() {
+            if running() || !editor_ready() {
                 return;
             }
             running.set(true);
             show_output.set(true);
             has_output.set(false);
-            stage.set("提交中...".to_string());
+            stage.set("准备中...".to_string());
             error_msg.set(String::new());
 
             // 清空终端，准备新一轮输出。
@@ -329,46 +342,58 @@ pub fn CodeRunner(
                 overrides: run_overrides.clone(),
             };
 
-            spawn(async move {
-                let task_id = match start_exec_stream(req).await {
-                    Ok(id) => id,
-                    Err(e) => {
-                        running.set(false);
-                        let msg = e.to_string();
-                        stage.set(msg.clone());
-                        error_msg.set(msg);
-                        return;
-                    }
-                };
-                stage.set("运行中".to_string());
-
-                // 启动 SSE：用原生 EventSource 消费流，回调写入终端与 signal。
-                // 若 EventSource 创建失败，降级到轮询。
-                if sse_consumer::start_sse(
-                    &task_id,
-                    &term_handle,
-                    &mut running,
-                    &mut exit_info,
-                    &mut error_msg,
-                    &mut has_output,
-                )
-                .is_err()
-                {
-                    // 降级轮询
-                    sse_consumer::poll_result(
-                        &task_id,
-                        &mut running,
-                        &mut stage,
-                        &mut exit_info,
-                        &mut error_msg,
-                        &term_handle,
-                        &mut has_output,
-                    )
-                    .await;
-                }
-            });
+            pending_exec.set(Some(req));
         }
     };
+
+    #[cfg(target_arch = "wasm32")]
+    use_effect(move || {
+        if term_handle.read().is_none() || pending_exec.read().is_none() {
+            return;
+        }
+        let Some(req) = pending_exec.write().take() else {
+            return;
+        };
+        stage.set("提交中...".to_string());
+        spawn(async move {
+            let task_id = match start_exec_stream(req).await {
+                Ok(id) => id,
+                Err(e) => {
+                    running.set(false);
+                    let msg = e.to_string();
+                    stage.set(msg.clone());
+                    error_msg.set(msg);
+                    return;
+                }
+            };
+            stage.set("运行中".to_string());
+
+            // 启动 SSE：用原生 EventSource 消费流，回调写入终端与 signal。
+            // 若 EventSource 创建失败，降级到轮询。
+            if sse_consumer::start_sse(
+                &task_id,
+                &term_handle,
+                &mut running,
+                &mut exit_info,
+                &mut error_msg,
+                &mut has_output,
+            )
+            .is_err()
+            {
+                // 降级轮询
+                sse_consumer::poll_result(
+                    &task_id,
+                    &mut running,
+                    &mut stage,
+                    &mut exit_info,
+                    &mut error_msg,
+                    &term_handle,
+                    &mut has_output,
+                )
+                .await;
+            }
+        });
+    });
 
     // Server 版（占位，组件在前端运行）：保留轮询逻辑使双目标都能编译。
     #[cfg(not(target_arch = "wasm32"))]
@@ -472,7 +497,7 @@ pub fn CodeRunner(
                 }
                 button {
                     class: format!("{BTN_PRIMARY_SM} gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"),
-                    disabled: running(),
+                    disabled: running() || !editor_ready(),
                     onclick: run_code,
                     if running() {
                         span {
@@ -485,6 +510,7 @@ pub fn CodeRunner(
                     }
                 }
             }
+            LibraryLoadError { library: editor_library }
             div {
                 id: "{container_id}",
                 class: "code-runner-editor font-mono text-sm relative",
@@ -507,6 +533,7 @@ pub fn CodeRunner(
             // running 时显示骨架屏占位（等首个 chunk 到达）；有内容后 xterm 终端渲染。
             if show_output() {
                 div { class: "border-t border-[var(--color-paper-border)]",
+                    LibraryLoadError { library: terminal_library }
                     div { class: "flex justify-between items-center px-4 py-2 text-xs text-[var(--color-paper-tertiary)] border-b border-[var(--color-paper-border)] bg-[var(--color-paper-code-block)]",
                         span { class: "font-medium uppercase tracking-wide", "输出" }
                         span { "{exit_info()}" }

@@ -147,8 +147,6 @@ pub fn AppRouter() -> Element {
     use_context_provider(|| UserContext { user, checked });
 
     rsx! {
-        document::Stylesheet { href: "/style.css" }
-        document::Stylesheet { href: "/highlight.css" }
         document::Title { "Yggdrasil Blog" }
         document::Link { rel: "icon", href: "/favicon.ico" }
         div {

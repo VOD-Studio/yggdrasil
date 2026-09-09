@@ -9,6 +9,7 @@
 use dioxus::prelude::*;
 
 use crate::api::comments::create_comment;
+use crate::bridges::library::{library_ready, use_browser_library, LibraryLoadError};
 use crate::bridges::tiptap::{UploadErrorEntry, UploadsInFlight};
 use crate::components::comments::section::CommentContext;
 use crate::components::forms::{AlertBox, FormInput};
@@ -47,6 +48,9 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
     let mut submitting = use_signal(|| false);
     let mut message = use_signal(|| Option::<(String, &'static str)>::None);
     let mut loaded = use_signal(|| false);
+    let editor_library = use_browser_library("tiptap", move || {
+        parent_id.is_none_or(|pid| active_reply() == Some(pid))
+    });
     // 图片上传状态（tiptap coordinator 事件驱动，与后台 write.rs 同一类型）：
     // 进行中计数用于提交门控；失败条目由编辑器内错误态兜底（重试/移除）。
     let uploads_in_flight = use_signal(UploadsInFlight::default);
@@ -117,6 +121,9 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
         }
         // 防重复挂载（effect 可能因订阅的信号多次触发）。
         if editor_handle.peek().is_some() {
+            return;
+        }
+        if !library_ready(editor_library) {
             return;
         }
 
@@ -192,7 +199,7 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
     });
 
     let mut do_submit = move || {
-        if submitting() {
+        if submitting() || !library_ready(editor_library) {
             return;
         }
 
@@ -342,6 +349,7 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
                     AlertBox { message: msg, variant }
                 }
             }
+            LibraryLoadError { library: editor_library }
 
             // 一体化聚焦卡片容器 (All-in-One Focus Card)
             div { class: "rounded-2xl bg-[var(--color-paper-entry)] border border-[var(--color-paper-border)]/60 shadow-xs focus-within:border-[var(--color-paper-accent)]/60 focus-within:ring-2 focus-within:ring-[var(--color-paper-accent)]/20 transition-all duration-200 overflow-hidden",
@@ -423,6 +431,9 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
                     div {
                         id: "{editor_dom_id}",
                         class: "comment-editor-mount min-h-[96px]",
+                    }
+                    if !library_ready(editor_library) {
+                        span { class: "absolute top-4 left-4 text-sm text-[var(--color-paper-tertiary)]", "正在加载编辑器…" }
                     }
                     img {
                         src: "/images/xiantiaoxiaogou_input_bg.webp",
@@ -522,7 +533,7 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
                             // 提交中或图片上传未完成（含失败态）均禁用：占位节点未落定前
                             // 提交会丢图或残留 blob URL。
                             class: if submitting() || uploads_in_flight().uploading > 0 || uploads_in_flight().error > 0 { "opacity-60 cursor-not-allowed pointer-events-none" } else { "" },
-                            disabled: submitting() || uploads_in_flight().uploading > 0 || uploads_in_flight().error > 0,
+                            disabled: !library_ready(editor_library) || submitting() || uploads_in_flight().uploading > 0 || uploads_in_flight().error > 0,
                             onclick: move |_| {
                                 do_submit();
                             },

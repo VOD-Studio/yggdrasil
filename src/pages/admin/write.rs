@@ -68,6 +68,8 @@ pub fn WriteEdit(id: i32) -> Element {
 /// - 组件卸载时销毁 Tiptap 实例（EditorHandle::drop 自动 destroy + 释放 closure）。
 #[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut, unused_variables))]
 fn write_editor(post_id: Option<i32>) -> Element {
+    use crate::bridges::library::{library_ready, use_browser_library, LibraryLoadError};
+    let editor_library = use_browser_library("tiptap", || true);
     let is_edit = post_id.is_some();
     let mode_title = if is_edit {
         if let Some(id) = post_id {
@@ -196,6 +198,9 @@ fn write_editor(post_id: Option<i32>) -> Element {
         if editor.read().is_some() {
             return;
         }
+        if !library_ready(editor_library) {
+            return;
+        }
 
         // —— 构造 closure ——
         // 用 FnMut：Dioxus Signal 的 write/set 接收 &mut self，回调需可变借用捕获的 signal。
@@ -289,6 +294,9 @@ fn write_editor(post_id: Option<i32>) -> Element {
 
     // 提交表单：校验标题与内容，读取 Tiptap 编辑器 Markdown，调用 create_post 或 update_post。
     let mut on_submit = move |_| {
+        if loading() || !library_ready(editor_library) {
+            return;
+        }
         // 上传未完成/失败拦截：有占位符时阻止保存
         let in_flight = uploads_in_flight.read();
         if in_flight.uploading > 0 || in_flight.error > 0 {
@@ -454,7 +462,7 @@ fn write_editor(post_id: Option<i32>) -> Element {
     rsx! {
         // 根容器：flex 分区布局，包含顶部精致导航条 + 主体两栏写作区 + 底部操作栏。
         div { class: "animate-page-enter relative flex flex-col w-full min-h-0 flex-1 bg-[var(--color-paper-theme)]",
-            if loading() {
+            if loading() && !matches!(&*editor_library.read(), Some(Err(_))) {
                 div { class: "absolute inset-0 z-10 bg-[var(--color-paper-theme)] flex flex-col", WriteSkeleton {} }
             }
 
@@ -552,6 +560,7 @@ fn write_editor(post_id: Option<i32>) -> Element {
                         }
 
                         // 错误和成功提示
+                        LibraryLoadError { library: editor_library }
                         if let Some(err) = load_error() {
                             div { class: "flex-shrink-0 px-4 py-2 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-2xl text-sm border border-red-100 dark:border-red-900/30 mb-3",
                                 "{err}"
@@ -815,6 +824,7 @@ fn write_editor(post_id: Option<i32>) -> Element {
                     LoadingButton {
                         label: if is_edit { "更新文章".to_string() } else { "发布文章".to_string() },
                         loading: saving(),
+                        disabled: loading() || !library_ready(editor_library),
                         onclick: move |_| on_submit(()),
                     }
                 }

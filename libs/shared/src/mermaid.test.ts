@@ -14,7 +14,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   delete window.MermaidRenderer;
   delete window.__yggdrasilMermaidPromise;
-  document.querySelectorAll('script[src="/mermaid/mermaid.js"]').forEach((script) => {
+  document.querySelectorAll('script[src="/mermaid/mermaid.js?v=2"]').forEach((script) => {
     script.remove();
   });
   document.body.innerHTML = '';
@@ -29,7 +29,7 @@ describe('Mermaid bundle 加载', () => {
   it('复用已加载的运行时，不注入脚本', async () => {
     window.MermaidRenderer = renderer();
     expect(await loadMermaidRenderer()).toBe(window.MermaidRenderer);
-    expect(document.querySelector('script[src="/mermaid/mermaid.js"]')).toBeNull();
+    expect(document.querySelector('script[src="/mermaid/mermaid.js?v=2"]')).toBeNull();
   });
 
   it('独立模块副本同时加载也只发出一次请求', async () => {
@@ -40,7 +40,7 @@ describe('Mermaid bundle 加载', () => {
     const first = loadMermaidRenderer();
     const second = otherBundle.loadMermaidRenderer();
     expect(second).toBe(first);
-    const scripts = document.querySelectorAll('script[src="/mermaid/mermaid.js"]');
+    const scripts = document.querySelectorAll('script[src="/mermaid/mermaid.js?v=2"]');
     expect(scripts).toHaveLength(1);
     window.MermaidRenderer = renderer();
     scripts[0]?.dispatchEvent(new Event('load'));
@@ -53,12 +53,16 @@ describe('Mermaid bundle 加载', () => {
     ['load', 'mermaid bundle loaded but window.MermaidRenderer undefined'],
   ])('%s 失败后清理脚本，并允许重新加载', async (event, message) => {
     const failed = expect(loadMermaidRenderer()).rejects.toThrow(message);
-    document.querySelector('script[src="/mermaid/mermaid.js"]')?.dispatchEvent(new Event(event));
+    document
+      .querySelector('script[src="/mermaid/mermaid.js?v=2"]')
+      ?.dispatchEvent(new Event(event));
     await failed;
-    expect(document.querySelector('script[src="/mermaid/mermaid.js"]')).toBeNull();
+    expect(document.querySelector('script[src="/mermaid/mermaid.js?v=2"]')).toBeNull();
     const retry = loadMermaidRenderer();
     window.MermaidRenderer = renderer();
-    document.querySelector('script[src="/mermaid/mermaid.js"]')?.dispatchEvent(new Event('load'));
+    document
+      .querySelector('script[src="/mermaid/mermaid.js?v=2"]')
+      ?.dispatchEvent(new Event('load'));
     expect(await retry).toBe(window.MermaidRenderer);
   });
 });

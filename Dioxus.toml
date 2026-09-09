@@ -21,9 +21,13 @@ level = "z"
 watch_path = ["src", "Cargo.toml"]
 
 [web.resource]
-style = ["/style.css", "/highlight.css", "/katex/katex.min.css", "/tiptap/editor.css", "/lightbox/lightbox.css", "/yggdrasil-core/yggdrasil-core.css", "/xterm/terminal.css"]
-script = ["/tiptap/editor.js", "/codemirror/editor.js", "/lightbox/lightbox.js", "/yggdrasil-core/yggdrasil-core.js", "/xterm/terminal.js"]
+# v=2 用于绕开旧的一年 immutable 缓存；后续更新由 no-cache 条件请求校验。
+# dev 会继承此列表，勿在 web.resource.dev 再次声明。
+# 编辑器与终端由组件挂载时按需加载（yggdrasil-core/browser-library.ts）。
+style = ["/style.css?v=2", "/highlight.css?v=2", "/katex/katex.min.css?v=2", "/lightbox/lightbox.css?v=2", "/yggdrasil-core/yggdrasil-core.css?v=2"]
+script = ["/lightbox/lightbox.js?v=2", "/yggdrasil-core/yggdrasil-core.js?v=2"]
 
+# Dioxus 0.7 要求 dev 字段存在；空列表表示没有额外的开发资源。
 [web.resource.dev]
-style = ["/style.css", "/highlight.css", "/katex/katex.min.css", "/tiptap/editor.css", "/lightbox/lightbox.css", "/yggdrasil-core/yggdrasil-core.css", "/xterm/terminal.css"]
-script = ["/tiptap/editor.js", "/codemirror/editor.js", "/lightbox/lightbox.js", "/yggdrasil-core/yggdrasil-core.js", "/xterm/terminal.js"]
+style = []
+script = []

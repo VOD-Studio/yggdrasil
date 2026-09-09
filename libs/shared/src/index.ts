@@ -173,7 +173,8 @@ export function loadMermaidRenderer(): Promise<MermaidApi> {
   if (window.MermaidRenderer) return Promise.resolve(window.MermaidRenderer);
   if (!window.__yggdrasilMermaidPromise) {
     const script = document.createElement('script');
-    script.src = '/mermaid/mermaid.js';
+    // 与站点其它固定路径资源一起绕过旧的一年 immutable 缓存。
+    script.src = '/mermaid/mermaid.js?v=2';
     window.__yggdrasilMermaidPromise = new Promise<MermaidApi>((resolve, reject) => {
       script.onload = () => {
         if (window.MermaidRenderer) resolve(window.MermaidRenderer);

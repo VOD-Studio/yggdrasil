@@ -10,6 +10,8 @@ use crate::components::ui::{Checkbox, LoadingButton};
 #[allow(non_snake_case)]
 #[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut, unused_variables))]
 pub(super) fn SqlConsoleTab() -> Element {
+    use crate::bridges::library::{library_ready, use_browser_library, LibraryLoadError};
+    let editor_library = use_browser_library("codemirror", || true);
     #[cfg(target_arch = "wasm32")]
     use crate::api::database::schema::get_db_schema;
     use crate::api::database::sql_console::SqlResult;
@@ -47,6 +49,9 @@ pub(super) fn SqlConsoleTab() -> Element {
     // 它们捕获相同的 Copy signal，行为完全等价。
     #[cfg(target_arch = "wasm32")]
     let mut execute_for_editor = move || {
+        if !library_ready(editor_library) {
+            return;
+        }
         running.set(true);
         error.set(None);
         let sql = sql_text.read().clone();
@@ -104,6 +109,9 @@ pub(super) fn SqlConsoleTab() -> Element {
         use wasm_bindgen::closure::Closure;
         use_effect(move || {
             if editor_handle.read().is_some() {
+                return;
+            }
+            if !library_ready(editor_library) {
                 return;
             }
             let mut text = sql_text;
@@ -171,6 +179,9 @@ pub(super) fn SqlConsoleTab() -> Element {
     // 执行 SQL：按钮 onclick 用的闭包。wasm 下复制 execute_for_editor 的逻辑，
     // server 下仅复位 running（无网络层）。两处闭包捕获相同的 Copy signal。
     let mut run_sql = move || {
+        if !library_ready(editor_library) {
+            return;
+        }
         running.set(true);
         error.set(None);
         #[cfg(target_arch = "wasm32")]
@@ -254,6 +265,7 @@ pub(super) fn SqlConsoleTab() -> Element {
                         "⌘↵ 执行"
                     }
                 }
+                LibraryLoadError { library: editor_library }
                 // CodeMirror 容器：用 flex 让 .cm-editor(flex:1) 填满整个高度，
                 // 避免编辑器塌缩到内容高度、底部透出容器背景造成上下色差。
                 div {
@@ -267,6 +279,7 @@ pub(super) fn SqlConsoleTab() -> Element {
                 LoadingButton {
                     label: "执行".to_string(),
                     loading: running(),
+                    disabled: !library_ready(editor_library),
                     onclick: move |_| run_sql(),
                 }
                 // 普通选项
