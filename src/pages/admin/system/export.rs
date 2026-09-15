@@ -3,7 +3,7 @@
 use dioxus::prelude::*;
 
 use crate::components::forms::{FormInput, FormSelect, FORM_SELECT_COMPACT_CLASS};
-use crate::components::ui::{Checkbox, BTN_PRIMARY_SM};
+use crate::components::ui::{Checkbox, Radio, BTN_PRIMARY_SM};
 
 /// 数据导出 tab：按表/按查询导出 SQL/CSV，走 Axum 流式下载。
 #[allow(non_snake_case)]
@@ -41,22 +41,22 @@ pub(super) fn ExportTab() -> Element {
         div { class: "space-y-4",
             div { class: "{ADMIN_CARD_CLASS} p-4 space-y-4",
                 // 模式选择
-                div { class: "flex items-center gap-4",
-                    label { class: "flex items-center gap-2 text-sm text-paper-primary",
-                        input {
-                            r#type: "radio",
+                div { class: "flex flex-wrap items-center gap-4", role: "radiogroup", aria_label: "导出模式",
+                    label { class: "flex items-center gap-2 text-sm text-paper-primary cursor-pointer",
+                        Radio {
                             name: "export-mode",
+                            value: "table",
                             checked: mode() == "table",
-                            onchange: move |_| mode.set("table".to_string()),
+                            onchange: move |value| mode.set(value),
                         }
                         "按表导出"
                     }
-                    label { class: "flex items-center gap-2 text-sm text-paper-primary",
-                        input {
-                            r#type: "radio",
+                    label { class: "flex items-center gap-2 text-sm text-paper-primary cursor-pointer",
+                        Radio {
                             name: "export-mode",
+                            value: "query",
                             checked: mode() == "query",
-                            onchange: move |_| mode.set("query".to_string()),
+                            onchange: move |value| mode.set(value),
                         }
                         "按查询导出"
                     }

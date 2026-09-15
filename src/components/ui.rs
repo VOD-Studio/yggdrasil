@@ -970,6 +970,31 @@ pub fn Checkbox(
     }
 }
 
+/// 主题化单选框，与 Checkbox 使用相同尺寸、主题色和焦点描边。
+///
+/// 同组使用相同 `name`，每项提供独立 `value`；用外层 `label` 关联可见文案。
+/// 保留原生 radio 的互斥、方向键和表单语义，`onchange` 返回选中项的值。
+#[component]
+pub fn Radio(
+    name: String,
+    value: String,
+    checked: bool,
+    onchange: EventHandler<String>,
+    #[props(default)] disabled: bool,
+) -> Element {
+    rsx! {
+        input {
+            class: "ygg-radio",
+            r#type: "radio",
+            name,
+            value,
+            checked,
+            disabled,
+            onchange: move |event: Event<FormData>| onchange.call(event.value()),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

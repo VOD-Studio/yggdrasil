@@ -1755,6 +1755,49 @@
     background: var(--color-paper-border);
   }
 
+  /* Radio 组件：保留原生交互，圆点、边框与 Checkbox 使用相同主题色。 */
+  .ygg-radio {
+    appearance: none;
+    flex-shrink: 0;
+    width: 1.15rem;
+    height: 1.15rem;
+    margin: 0;
+    vertical-align: middle;
+    border: 1.5px solid var(--color-paper-border);
+    border-radius: 50%;
+    background-color: transparent;
+    cursor: pointer;
+    transition:
+      background-color 0.15s ease,
+      border-color 0.15s ease;
+  }
+
+  .ygg-radio:checked {
+    border-color: var(--color-paper-accent);
+    background-color: var(--color-paper-accent);
+    background-image: radial-gradient(circle, var(--color-paper-theme) 3px, transparent 3.5px);
+  }
+
+  .ygg-radio:hover:not(:disabled) {
+    border-color: var(--color-paper-accent);
+  }
+
+  .ygg-radio:focus-visible {
+    outline: 2px solid var(--color-paper-accent);
+    outline-offset: 1px;
+  }
+
+  .ygg-radio:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ygg-radio {
+      transition: none;
+    }
+  }
+
   /* ========== Checkbox 组件（描边勾画动画）==========
      配合 ui.rs::Checkbox 组件。原生 input 是替换元素吃不到伪元素，故用
      透明 input（命中/无障碍层）+ 同级 SVG path（对勾视觉层）。
