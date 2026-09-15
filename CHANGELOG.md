@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.1] - 2026-09-15
+
+### Added
+
+- **Codex MCP 接入配置**：MCP 令牌页面新增可直接复制的 Codex TOML 配置，支持用户级或项目级 `config.toml` 通过 Bearer Token 连接站点 MCP 服务。
+- **后台单选框组件**：新增主题化原生 Radio 组件，保留键盘、互斥与表单语义；数据导出页的导出模式切换改用该组件。
+
 ## [0.20.0] - 2026-09-09
 
 ### Added
