@@ -298,12 +298,17 @@ pub async fn get_mcp_client_configs(token: String) -> Result<McpClientConfigs, S
             &crate::mcp::config::base_url_from_env(),
             &token,
         );
-        // (标题, 内容, 语言)：JSON 配置用 json 语法高亮，CLI 一行命令用 bash。
-        let entries: [(&str, String, &str); 7] = [
+        // (标题, 内容, 语言)：按客户端配置格式选择语法高亮。
+        let entries: [(&str, String, &str); 8] = [
             (
                 "Oh-My-Pi（项目根 .mcp.json / ~/.omp/agent/mcp.json 或 ~/.mcp.json）",
                 c.omp_json,
                 "json",
+            ),
+            (
+                "Codex（追加到 ~/.codex/config.toml 或项目根 .codex/config.toml）",
+                c.codex_toml,
+                "toml",
             ),
             (
                 "OpenCode（~/.config/opencode/opencode.json 或项目根 opencode.json）",

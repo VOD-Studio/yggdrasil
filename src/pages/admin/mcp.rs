@@ -1,10 +1,10 @@
 //! 管理后台「MCP 服务器」页面。
 //!
-//! 管理员在此签发/查看/撤销为 AI 客户端（Claude Code / Cursor / Cline）准备的
+//! 管理员在此签发/查看/撤销为 AI 客户端（Codex / Claude Code / Cursor / Cline 等）准备的
 //! bearer 令牌，并复制对应的客户端配置片段。功能分三块：
 //! - 令牌列表：名称 / 作用域 / 创建时间 / 过期 / 最近使用 / 状态 + 撤销 / 重查按钮。
 //! - 新建令牌表单：名称 + 作用域下拉 + 有效期下拉；提交后一次性弹窗展示明文。
-//! - 客户端配置：选中令牌后展示 4 种可复制的配置片段 + CLI 一行命令。
+//! - 客户端配置：选中令牌后展示各客户端可复制的配置片段 + CLI 命令。
 //!
 //! 仅 WASM 前端交互，数据经 Dioxus server functions（`src/api/mcp_tokens.rs`）加载。
 //! 配置片段由服务端生成（`src/mcp/config.rs`，server-only 模块），经 `get_mcp_client_configs`
@@ -51,11 +51,12 @@ const LIFETIME_OPTIONS: &[(TokenLifetime, &str)] = &[
 
 /// 配置骨架屏的尺寸变化：(标题宽度 px, 代码块高度 px)。
 ///
-/// 按 7 个真实配置片段的长短差异给出不同占位尺寸，让骨架屏更像即将出现的真实内容
+/// 按真实配置片段的长短差异给出不同占位尺寸，让骨架屏更像即将出现的真实内容
 /// 而非千篇一律的等高块。
 #[cfg(target_arch = "wasm32")]
 const CONFIG_SKELETON_SHAPES: &[(&str, &str)] = &[
     ("width: 320px;", "height: 152px;"), // Oh-My-Pi JSON
+    ("width: 280px;", "height: 88px;"),  // Codex TOML
     ("width: 280px;", "height: 168px;"), // OpenCode JSON
     ("width: 260px;", "height: 168px;"), // Claude Code JSON
     ("width: 200px;", "height: 136px;"), // Cursor JSON
@@ -193,7 +194,7 @@ fn PageHeader() -> Element {
                     "MCP 服务器"
                 }
                 p { class: "text-sm text-[var(--color-paper-secondary)] mt-1.5",
-                    "为 AI 客户端（Claude Code / Cursor / Cline / Oh-My-Pi）签发访问令牌并获取接入配置"
+                    "为 AI 客户端（Codex / Claude Code / Cursor / Cline / Oh-My-Pi / OpenCode）签发访问令牌并获取接入配置"
                 }
             }
             div { class: "flex items-center gap-2.5",
@@ -680,7 +681,7 @@ fn CreateTokenCard() -> Element {
     }
 }
 
-/// 客户端配置卡片：展示 4 种配置片段（需先在令牌列表点「用于配置」或手动粘贴）。
+/// 客户端配置卡片（需先在令牌列表点「用于配置」或手动粘贴）。
 #[cfg(target_arch = "wasm32")]
 #[component]
 fn ConfigCard() -> Element {
@@ -770,7 +771,7 @@ fn ConfigCard() -> Element {
 
             if loading() {
                 div { class: "flex flex-col gap-4",
-                    for i in 0..7 {
+                    for i in 0..CONFIG_SKELETON_SHAPES.len() {
                         div { key: "{i}", class: "flex flex-col gap-2",
                             div { class: "flex items-center justify-between",
                                 SkeletonBox {

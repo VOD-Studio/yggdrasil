@@ -4,12 +4,12 @@
 //! 同一个 `/mcp` 端点、携带同一个 `Authorization: Bearer` 头。
 //!
 //! 形状来源：`docs/mcp-research.md` §"Client-config output format"，各客户端官方文档
-//! （Claude Code / Cursor / Cline / Oh-My-Pi / OpenCode）核实。所有 JSON 都是 `serde_json`
+//! （Claude Code / Cursor / Cline / Oh-My-Pi / OpenCode / Codex）核实。所有 JSON 都是 `serde_json`
 //! 构造再 pretty-print，保证格式合法（不会手抖写错逗号/引号）。
 
 use serde::Serialize;
 
-/// 4 种客户端配置 + 一个 CLI 一行命令。
+/// 各客户端配置 + 一个 CLI 命令。
 ///
 /// 所有字段是可直接复制粘贴的最终字符串（JSON 已 pretty-print，CLI 是单行 shell）。
 /// `token` 形如 `ygg_...`，已嵌入各片段的 `Authorization` 头中。
@@ -33,6 +33,9 @@ pub struct ClientConfigs {
     /// 关键差异：schema 根键是 `mcp`（非 `mcpServers`），远程端点用 `type: "remote"`
     ///（非 `streamable-http`），并带 `$schema` 与 `enabled` 字段（2026 opencode.ai 官方文档）。
     pub opencode_json: String,
+    /// Codex（`~/.codex/config.toml` / 项目根 `.codex/config.toml`）。
+    /// Streamable HTTP 使用 `url` + `http_headers.Authorization`。
+    pub codex_toml: String,
     /// 通用原始 JSON：一个 server entry 的纯净形式，供其它兼容客户端粘贴。
     pub generic_json: String,
     /// Claude Code CLI 一行命令：`claude mcp add --transport http <name> <url> --header ...`。
@@ -51,7 +54,7 @@ fn join_mcp_url(base_url: &str) -> String {
     format!("{trimmed}/mcp")
 }
 
-/// 生成 4 种客户端配置 + CLI 一行命令。
+/// 生成各客户端配置 + CLI 命令。
 ///
 /// - `base_url`：站点根 URL（形如 `https://rua.plus`），不带 `/mcp` 后缀。
 /// - `token`：明文 bearer 令牌（形如 `ygg_...`），会被嵌入 `Authorization` 头。
@@ -119,6 +122,14 @@ pub fn generate_client_configs(base_url: &str, token: &str) -> ClientConfigs {
         }
     });
 
+    // Codex 官方文档：https://developers.openai.com/codex/mcp
+    // JSON 字符串的引号与转义也适用于 TOML 基本字符串，复用 serde_json 避免直接插值。
+    let codex_toml = format!(
+        "[mcp_servers.{SERVER_NAME}]\nurl = {}\nhttp_headers = {{ Authorization = {} }}",
+        serde_json::json!(mcp_url),
+        serde_json::json!(auth_header),
+    );
+
     // --- 通用：单个 server entry 的纯净形式 ---
     let generic_json = serde_json::json!({
         "type": "streamable-http",
@@ -138,6 +149,7 @@ pub fn generate_client_configs(base_url: &str, token: &str) -> ClientConfigs {
         cline_json: pretty_json(&cline_json),
         omp_json: pretty_json(&omp_json),
         opencode_json: pretty_json(&opencode_json),
+        codex_toml,
         generic_json: pretty_json(&generic_json),
         claude_cli,
     }
@@ -256,6 +268,15 @@ mod tests {
         assert!(cfg.claude_cli.contains("claude mcp add --transport http"));
         assert!(cfg.claude_cli.contains("https://rua.plus/mcp"));
         assert!(cfg.claude_cli.contains(&format!("Bearer {TOKEN}")));
+    }
+
+    #[test]
+    fn codex_toml_carries_endpoint_and_escaped_bearer() {
+        let cfg = generate_client_configs("https://rua.plus/", "ygg_\"test\\token\n");
+        assert_eq!(
+            cfg.codex_toml,
+            "[mcp_servers.yggdrasil]\nurl = \"https://rua.plus/mcp\"\nhttp_headers = { Authorization = \"Bearer ygg_\\\"test\\\\token\\n\" }"
+        );
     }
 
     #[test]
