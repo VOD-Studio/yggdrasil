@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.2] - 2026-09-16
+
+### Added
+
+- **MCP 草稿与回收站工具**：新增 `list_posts`（按 `status` 查询草稿，支持标题 `query`）、`get_post_by_id`（读取完整编辑内容及 `updated_at`）、`list_trashed_posts`、`restore_post`（恢复保留原发布状态，slug 冲突自动追加后缀）；均需 `write`/`admin` 令牌且仅访问令牌用户自己的文章，公开的 `search_posts`/`get_post` 行为不变。
+- **MCP 文章更新乐观锁**：`update_post` 支持携带 `expected_updated_at` 做版本冲突检测，版本不匹配返回 `conflict` 及当前版本且不写入更改；不传版本保留原有行为。
+- **MCP 素材管理工具**：新增 `list_assets`、`update_asset_alt`、`delete_asset`、`batch_delete_assets`、`purge_orphan_assets`、`rebuild_assets_index`（均需 `admin` 令牌），与后台共用引用保护，草稿及回收站文章引用同样受保护。
+- **MCP 上传返回素材 ID**：`upload_media` 与本地 multipart 上传通道统一返回 `asset_id`/`alt`/`url`/尺寸/最终 MIME/`reused`；`alt` 持久化到素材库，重复上传按内容去重返回相同素材 ID。
+- **Agent 写作指南页面**：关于页新增入口卡片，新增 `/about/writing` 页面展示写作 skill 说明、安装步骤与 MCP 客户端配置，新增 `public/skills/yggdrasil-writing/SKILL.md` 供 Agent 直接安装。
+
 ## [0.20.1] - 2026-09-15
 
 ### Added
