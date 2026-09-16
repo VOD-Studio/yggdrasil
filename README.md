@@ -30,6 +30,10 @@ MCP 私有文章查询需要 `write` 或 `admin` 令牌，且只访问令牌用�
 `get_post_by_id({"post_id":123})` 读取完整编辑内容及 `updated_at`。
 `list_trashed_posts({"page":1})` 查询回收站，`restore_post({"post_id":123})` 恢复文章；
 恢复保留原发布状态，slug 被占用时自动追加后缀，返回最终 slug。
+更新时建议携带读取结果中的 `expected_updated_at`，例如
+`update_post({"post_id":123,"title":"新标题","expected_updated_at":"2026-09-16T00:00:00.123456Z"})`。
+版本不匹配返回 `conflict` 及当前版本，不写入更改；成功返回新的 `updated_at`。
+不传版本保留原有更新行为。
 原有 `search_posts` / `get_post` 仍只返回公开已发布文章。
 
 MCP 素材工具（管理操作均需要 `admin` 令牌）：

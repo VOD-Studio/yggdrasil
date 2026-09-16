@@ -232,7 +232,7 @@ impl crate::mcp::server::YggMcpServer {
     /// 更新指定文章（PATCH 语义：仅更新提供的字段）。要求 write 作用域。
     /// 仅文章原作者可更新。
     #[tool(
-        description = "部分更新一篇已有文章（PATCH 语义）。仅更新提供的字段：未提供 content_md 时跳过重新渲染；未提供 summary 时随 content_md 联动（自动提取或保留旧值）。仅文章原作者可更新。"
+        description = "部分更新一篇已有文章（PATCH 语义）。仅更新提供的字段：未提供 content_md 时跳过重新渲染；未提供 summary 时随 content_md 联动（自动提取或保留旧值）。仅文章原作者可更新。可传 expected_updated_at（RFC 3339）检测冲突；成功返回新 updated_at。"
     )]
     async fn update_post(
         &self,
@@ -242,6 +242,7 @@ impl crate::mcp::server::YggMcpServer {
         let principal = require_scope(&parts, "update_post", TokenScope::Write)?;
 
         use tokio_postgres::types::ToSql;
+        let expected_updated_at = parse_expected_updated_at(p.expected_updated_at.as_deref())?;
 
         // 至少一个可更新字段。
         let any_change = p.title.is_some()
@@ -275,8 +276,8 @@ impl crate::mcp::server::YggMcpServer {
         // 校验存在、未删除、归属，并取旧值（slug/status/published_at/cover）。
         let old_row = tx
             .query_opt(
-                "SELECT slug, status, published_at, cover_image FROM posts \
-                 WHERE id = $1 AND author_id = $2 AND deleted_at IS NULL",
+                "SELECT slug, status, published_at, cover_image, updated_at FROM posts \
+                 WHERE id = $1 AND author_id = $2 AND deleted_at IS NULL FOR UPDATE",
                 &[&p.post_id, &principal.user_id],
             )
             .await
@@ -284,6 +285,15 @@ impl crate::mcp::server::YggMcpServer {
         let Some(old_row) = old_row else {
             return Err(McpError::invalid_request("文章不存在或无权限", None));
         };
+        let current_updated_at: chrono::DateTime<chrono::Utc> = old_row.get("updated_at");
+        if expected_updated_at.is_some_and(|expected| expected != current_updated_at) {
+            return Err(McpError::invalid_request(
+                "conflict: 文章已被修改，请重新读取后合并更改",
+                Some(
+                    serde_json::json!({"code": "conflict", "current_updated_at": current_updated_at}),
+                ),
+            ));
+        }
         let old_slug: String = old_row.get(0);
         let old_status: String = old_row.get(1);
         let old_published_at: Option<chrono::DateTime<chrono::Utc>> = old_row.get(2);
@@ -435,21 +445,26 @@ impl crate::mcp::server::YggMcpServer {
         if cover_changed {
             push!("cover_image", new_cover.clone());
         }
-        sets.push("updated_at = NOW()".to_string());
+        sets.push(
+            "updated_at = GREATEST(clock_timestamp(), updated_at + INTERVAL '1 microsecond')"
+                .to_string(),
+        );
 
-        let sql = format!("UPDATE posts SET {} WHERE id = ${}", sets.join(", "), idx);
+        let sql = format!(
+            "UPDATE posts SET {} WHERE id = ${} RETURNING updated_at",
+            sets.join(", "),
+            idx
+        );
         params.push(Box::new(p.post_id));
         let refs: Vec<&(dyn ToSql + Sync)> = params
             .iter()
             .map(|b| b.as_ref() as &(dyn ToSql + Sync))
             .collect();
         let updated = tx
-            .execute(&sql, &refs)
+            .query_one(&sql, &refs)
             .await
             .map_err(|e| internal(e, "update post"))?;
-        if updated == 0 {
-            return Err(McpError::invalid_request("文章不存在或无权限", None));
-        }
+        let updated_at: chrono::DateTime<chrono::Utc> = updated.get("updated_at");
 
         // 标签同步（仅当 tags 提供时）。先取旧标签供缓存失效，再完全替换。
         let tags_changed = p.tags.is_some();
@@ -519,12 +534,10 @@ impl crate::mcp::server::YggMcpServer {
             cache::invalidate_tag_posts_for(&all_tags).await;
         }
 
-        ok_json(PostResult {
-            success: true,
-            message: "更新成功".into(),
-            post_id: Some(p.post_id),
-            slug: Some(effective_slug),
-        })
+        ok_json(serde_json::json!({
+            "success": true, "message": "更新成功", "post_id": p.post_id,
+            "slug": effective_slug, "updated_at": updated_at,
+        }))
     }
 
     /// 发布指定文章（设置 status=published 与 published_at）。要求 write 作用域。
@@ -727,6 +740,9 @@ pub struct CreatePostParams {
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct UpdatePostParams {
+    /// 上次读取的 updated_at（RFC 3339）。提供时原子校验版本，不匹配返回 conflict；省略保留原有行为。
+    #[serde(default)]
+    pub expected_updated_at: Option<String>,
     /// 要更新的文章 id。
     pub post_id: i32,
     /// 新标题。未提供则不修改（且不联动 slug）。
@@ -771,6 +787,18 @@ struct PostResult {
 
 fn default_status() -> String {
     "draft".to_string()
+}
+
+fn parse_expected_updated_at(
+    value: Option<&str>,
+) -> Result<Option<chrono::DateTime<chrono::Utc>>, McpError> {
+    value
+        .map(|s| {
+            chrono::DateTime::parse_from_rfc3339(s)
+                .map(|date| date.with_timezone(&chrono::Utc))
+                .map_err(|_| McpError::invalid_params("expected_updated_at must be RFC 3339", None))
+        })
+        .transpose()
 }
 
 fn parse_date_opt(s: &str) -> Option<chrono::DateTime<chrono::Utc>> {
@@ -1007,6 +1035,90 @@ mod tests {
         assert!(row
             .get::<_, Option<chrono::DateTime<chrono::Utc>>>(1)
             .is_none());
+        let before: chrono::DateTime<chrono::Utc> = client
+            .query_one("SELECT updated_at FROM posts WHERE id = 101", &[])
+            .await
+            .unwrap()
+            .get(0);
+        let update = |title: &str, version: chrono::DateTime<chrono::Utc>| {
+            serde_json::from_value::<UpdatePostParams>(serde_json::json!({
+                "post_id": 101, "title": title, "expected_updated_at": version.to_rfc3339()
+            }))
+            .unwrap()
+        };
+        // Two writers using the same version must not both succeed.
+        let (a, b) = tokio::join!(
+            YggMcpServer.update_post(
+                Parameters(update("writer-a", before)),
+                Extension(parts(Some(TokenScope::Write)))
+            ),
+            YggMcpServer.update_post(
+                Parameters(update("writer-b", before)),
+                Extension(parts(Some(TokenScope::Write)))
+            ),
+        );
+        assert_ne!(a.is_ok(), b.is_ok());
+        let (winner, conflict) = match (a, b) {
+            (Ok(winner), Err(conflict)) | (Err(conflict), Ok(winner)) => (winner, conflict),
+            _ => panic!("exactly one concurrent writer must succeed"),
+        };
+        assert!(conflict.message.contains("conflict"));
+        let winner = result_json(winner);
+        let after = client
+            .query_one("SELECT title, updated_at FROM posts WHERE id = 101", &[])
+            .await
+            .unwrap();
+        assert_eq!(
+            winner["updated_at"],
+            serde_json::to_value(after.get::<_, chrono::DateTime<chrono::Utc>>(1)).unwrap()
+        );
+        assert!(YggMcpServer
+            .update_post(
+                Parameters(update("stale overwrite", before)),
+                Extension(parts(Some(TokenScope::Write)))
+            )
+            .await
+            .is_err());
+        assert_eq!(
+            client
+                .query_one("SELECT title FROM posts WHERE id = 101", &[])
+                .await
+                .unwrap()
+                .get::<_, String>(0),
+            after.get::<_, String>(0)
+        );
+        // An edit from the web/backend also invalidates the previously read version.
+        let version = after.get::<_, chrono::DateTime<chrono::Utc>>(1);
+        client.execute("UPDATE posts SET title = 'web edit', updated_at = clock_timestamp() WHERE id = 101", &[]).await.unwrap();
+        assert!(YggMcpServer
+            .update_post(
+                Parameters(update("stale web overwrite", version)),
+                Extension(parts(Some(TokenScope::Write)))
+            )
+            .await
+            .is_err());
+        let legacy = serde_json::from_value::<UpdatePostParams>(
+            serde_json::json!({"post_id":101,"title":"legacy update"}),
+        )
+        .unwrap();
+        assert!(YggMcpServer
+            .update_post(
+                Parameters(legacy),
+                Extension(parts(Some(TokenScope::Write)))
+            )
+            .await
+            .is_ok());
+    }
+
+    #[test]
+    fn expected_version_requires_precise_timestamp() {
+        assert!(parse_expected_updated_at(None).unwrap().is_none());
+        assert!(parse_expected_updated_at(Some("2026-09-16")).is_err());
+        assert!(parse_expected_updated_at(Some("invalid")).is_err());
+        assert_eq!(
+            parse_expected_updated_at(Some("2026-09-16T08:00:00.123456+08:00")).unwrap(),
+            parse_expected_updated_at(Some("2026-09-16T00:00:00.123456Z")).unwrap()
+        );
     }
 
     #[test]
