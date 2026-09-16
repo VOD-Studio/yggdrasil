@@ -150,7 +150,7 @@ Markdown 源码中保留单个反斜杠；如果手写 JSON 参数，要按 JSON
 
 图片使用 `![有意义的替代文本](图片URL)`，阅读页提供图片灯箱。URL 使用可访问的 HTTPS 地址或真实的站内根路径（如素材工具返回的 `/uploads/...`），不要写本机路径、`data:` URI 或凭空构造素材地址。
 
-需要把远程图片保存到站点时，按用户授权调用 MCP `upload_media`，传入 HTTPS 图片 URL，取得返回的 `url` 后写进正文。它支持 JPEG/PNG/GIF/WebP，不接收本地文件路径或 Base64 数据。`alt` 参数目前不持久化，替代文本仍需写在 Markdown 里。封面使用单独的 `cover_image` 字段。
+需要把远程图片保存到站点时，按用户授权调用 MCP `upload_media`，传入 HTTPS 图片 URL，取得返回的 `url` 后写进正文。它支持 JPEG/PNG/GIF/WebP，不接收本地文件路径或 Base64 数据。`alt` 参数会保存到素材库，结果含 `asset_id` 和 `alt`；重复上传时省略 alt 保留旧值，空白清除。正文替代文本仍需写在 Markdown 里，不会自动回写已有文章。封面使用单独的 `cover_image` 字段。
 
 文章服务端允许 `details` / `summary`，可用于补充推导或参考答案：
 

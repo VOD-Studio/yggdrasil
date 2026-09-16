@@ -54,17 +54,19 @@ MCP 素材工具（管理操作均需要 `admin` 令牌）：
 
 上传需要 `write` 或 `admin` 令牌，支持 JPEG/PNG/GIF/WebP，最大 5 MiB：
 
-- 远程图片：`upload_media({"url":"https://example.com/image.png"})`，服务端抓取并入库。
+- 远程图片：`upload_media({"url":"https://example.com/image.png","alt":"图片说明"})`，服务端抓取并入库。
 - 本地图片：通过 HTTP multipart 接口上传，二进制不经过 MCP JSON-RPC：
 
 ```sh
 curl "$APP_BASE_URL/api/mcp/upload" \
   -H "Authorization: Bearer $YGG_MCP_TOKEN" \
-  -F 'file=@/path/to/image.png;type=image/png'
+  -F 'file=@/path/to/image.png;type=image/png' \
+  -F 'alt=图片说明'
 ```
 
-两条通道都返回 `/uploads/...` 地址。`upload_media` 的 `alt` 参数目前不持久化，
-可在上传后通过 `list_assets` 获取素材 id，再调用 `update_asset_alt`。
+两条通道都返回 `asset_id`、`alt`、`url`、尺寸、最终 MIME 和 `reused`。
+`alt` 会保存到素材库；重复上传返回相同素材 ID，不传 alt 保留旧值，传空白清除。
+这些修改不回写已有文章，Markdown 的图片替代文本仍需单独填写。
 
 **媒体与素材**
 
@@ -114,6 +116,18 @@ themes/       Catppuccin Latte / Mocha 高亮主题
 docker/       Dockerfile 与代码运行沙箱镜像
 public/       静态资源（构建期生成）
 ```
+
+## 数据库回归测试
+
+MCP 数据库回归测试需使用名为 `ygg_mcp_test` 的一次性 PostgreSQL 数据库：
+
+```sh
+DATABASE_URL=postgresql://postgres@127.0.0.1:55439/ygg_mcp_test \
+YGGDRASIL_TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:55439/ygg_mcp_test \
+  cargo test --locked --features server database -- --ignored
+```
+
+测试会自动迁移并重置该测试库的用户和文章夹具，同时验证上传 HTTP 接口。
 
 ## 文档
 

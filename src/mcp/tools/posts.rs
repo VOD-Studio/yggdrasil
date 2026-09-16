@@ -927,9 +927,14 @@ mod tests {
     }
 
     /// Run only against a disposable database named ygg_mcp_test.
-    #[tokio::test]
+    #[test]
     #[ignore = "requires disposable DATABASE_URL database ygg_mcp_test"]
-    async fn private_post_workflow_database() {
+    fn private_post_workflow_database() {
+        crate::db::TEST_DATABASE_RUNTIME.block_on(private_post_workflow_database_impl());
+    }
+
+    async fn private_post_workflow_database_impl() {
+        let _guard = crate::db::TEST_DATABASE_LOCK.lock().await;
         let mut client = get_conn().await.unwrap();
         let database: String = client
             .query_one("SELECT current_database()", &[])
@@ -941,13 +946,13 @@ mod tests {
         client
             .batch_execute(
                 "TRUNCATE users CASCADE;
-            INSERT INTO users (id, username, email, password_hash, role) VALUES
-                (1, 'mcp-owner', 'owner@test.invalid', 'unused', 'admin'),
-                (2, 'mcp-other', 'other@test.invalid', 'unused', 'blocked');
-            INSERT INTO posts (id, author_id, title, slug, content_md, content_html, status) VALUES
-                (101, 1, 'Draft 100%_', 'mcp-draft', 'draft body', '<p>draft body</p>', 'draft'),
-                (102, 2, 'Other draft', 'mcp-other', 'private', '<p>private</p>', 'draft'),
-                (103, 1, 'Published', 'mcp-published', 'public', '<p>public</p>', 'published');",
+        INSERT INTO users (id, username, email, password_hash, role) VALUES
+            (1, 'mcp-owner', 'owner@test.invalid', 'unused', 'admin'),
+            (2, 'mcp-other', 'other@test.invalid', 'unused', 'blocked');
+        INSERT INTO posts (id, author_id, title, slug, content_md, content_html, status) VALUES
+            (101, 1, 'Draft 100%_', 'mcp-draft', 'draft body', '<p>draft body</p>', 'draft'),
+            (102, 2, 'Other draft', 'mcp-other', 'private', '<p>private</p>', 'draft'),
+            (103, 1, 'Published', 'mcp-published', 'public', '<p>public</p>', 'published');",
             )
             .await
             .unwrap();
@@ -989,8 +994,8 @@ mod tests {
         client
             .batch_execute(
                 "UPDATE posts SET deleted_at = NOW() WHERE id IN (101, 102);
-            INSERT INTO posts (id, author_id, title, slug, content_md, status) VALUES
-            (104, 1, 'Slug collision', 'mcp-draft', 'body', 'draft');",
+        INSERT INTO posts (id, author_id, title, slug, content_md, status) VALUES
+        (104, 1, 'Slug collision', 'mcp-draft', 'body', 'draft');",
             )
             .await
             .unwrap();

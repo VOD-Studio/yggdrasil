@@ -55,7 +55,10 @@ impl FetchError {
 /// 抓取 URL → 图片字节 → 走共享入库流水线 → 返回 `/uploads/...` 结果。
 ///
 /// `original_filename` 从 URL 路径末段推导（无则 None）。见模块头部的 SSRF 防护说明。
-pub(crate) async fn fetch_and_ingest(url: &str) -> Result<UploadOutcome, FetchError> {
+pub(crate) async fn fetch_and_ingest(
+    url: &str,
+    alt: Option<String>,
+) -> Result<UploadOutcome, FetchError> {
     // 1. 解析 URL：强制 https。
     let uri: Uri = url
         .parse()
@@ -152,7 +155,7 @@ pub(crate) async fn fetch_and_ingest(url: &str) -> Result<UploadOutcome, FetchEr
         .map(|s| s.to_string());
 
     // 7. 走共享入库流水线（magic bytes 二次验真 + 尺寸 + 去重 + 转码 + 落盘）。
-    process_image_upload(data, original_filename)
+    process_image_upload(data, original_filename, alt)
         .await
         .map_err(|e| match e {
             UploadError::TooLarge => FetchError::TooLarge,

@@ -40,3 +40,12 @@ pub mod retry;
 /// 数据库迁移运行器，仅在启用 server feature 时编译。
 #[cfg(feature = "server")]
 pub mod migrate;
+
+/// 串行使用共享的一次性测试数据库，避免文章夹具清理与上传测试互相干扰。
+#[cfg(all(test, feature = "server"))]
+pub(crate) static TEST_DATABASE_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+/// 全局连接池的连接任务需跨测试存活，不能绑定到单个 #[tokio::test] 的 runtime。
+#[cfg(all(test, feature = "server"))]
+pub(crate) static TEST_DATABASE_RUNTIME: std::sync::LazyLock<tokio::runtime::Runtime> =
+    std::sync::LazyLock::new(|| tokio::runtime::Runtime::new().unwrap());

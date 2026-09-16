@@ -33,7 +33,7 @@ impl crate::mcp::server::YggMcpServer {
     /// 仅接受 `https://` URL；服务端做 SSRF 防护（私网/回环/保留段拒绝、
     /// DNS 锁定防 rebinding、禁重定向、体积上限）。二进制不经 JSON-RPC。
     #[tool(
-        description = "从图片 URL 抓取并入库（服务端转 WebP 若更小），返回 /uploads/... URL（可直接用于 Markdown 正文 img）。仅接受 https:// URL，支持 JPEG/PNG/GIF/WebP。二进制不经 JSON-RPC。"
+        description = "从图片 URL 抓取并入库（服务端转 WebP 若更小），返回 asset_id、alt 和 /uploads/... URL（可直接用于 Markdown 正文 img），提供 alt 时保存到素材。仅接受 https:// URL，支持 JPEG/PNG/GIF/WebP。二进制不经 JSON-RPC。"
     )]
     async fn upload_media(
         &self,
@@ -43,7 +43,7 @@ impl crate::mcp::server::YggMcpServer {
         let _principal = require_scope(&parts, "upload_media", TokenScope::Write)?;
 
         // SSRF 防护抓取 + 共享入库流水线。
-        let outcome = crate::api::url_fetch::fetch_and_ingest(&p.url)
+        let outcome = crate::api::url_fetch::fetch_and_ingest(&p.url, p.alt)
             .await
             .map_err(|e| match e {
                 crate::api::url_fetch::FetchError::Invalid(msg)
@@ -71,6 +71,8 @@ impl crate::mcp::server::YggMcpServer {
         ok_json(UploadResult {
             success: true,
             url: outcome.url,
+            asset_id: outcome.asset_id,
+            alt: outcome.alt,
             reused: outcome.reused,
             width: outcome.width,
             height: outcome.height,
@@ -181,15 +183,16 @@ impl crate::mcp::server::YggMcpServer {
 pub struct UploadMediaParams {
     /// 图片的 https URL（服务端抓取，二进制不经 JSON-RPC）。
     pub url: String,
-    /// 替代文本（alt），目前未持久化，保留供未来扩展。
+    /// 保存素材 alt；重复上传时省略保留原值，空白清除，不回写已有文章。
     #[serde(default)]
-    #[allow(dead_code)] // 面向未来：客户端可传入，assets 表未存 alt 列
     pub alt: Option<String>,
 }
 
 #[derive(Debug, serde::Serialize)]
 struct UploadResult {
     success: bool,
+    asset_id: String,
+    alt: Option<String>,
     url: String,
     reused: bool,
     width: u32,

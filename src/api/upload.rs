@@ -136,7 +136,7 @@ pub async fn upload_image(
     };
 
     // 6. 共享入库流水线。
-    match process_image_upload(data, original_filename).await {
+    match process_image_upload(data, original_filename, None).await {
         Ok(out) => Ok(Json(json!({
             "success": true,
             "url": out.url,
@@ -210,7 +210,7 @@ pub async fn comment_upload_image(
     };
 
     // 4. 共享入库流水线。
-    match process_image_upload(data, original_filename).await {
+    match process_image_upload(data, original_filename, None).await {
         Ok(out) => Ok(Json(json!({
             "success": true,
             "url": out.url,
@@ -263,36 +263,51 @@ pub async fn mcp_upload_image(headers: HeaderMap, mut multipart: Multipart) -> R
         return mcp_upload_error(StatusCode::TOO_MANY_REQUESTS, msg);
     }
 
-    // 3. 读取 multipart 字段。
-    let field = match multipart.next_field().await {
-        Ok(Some(f)) => f,
-        Ok(None) => return mcp_upload_error(StatusCode::BAD_REQUEST, "未找到文件"),
-        Err(e) => {
-            tracing::error!("MCP multipart error: {:?}", e);
-            return mcp_upload_error(StatusCode::BAD_REQUEST, "文件读取失败");
+    // 3. 支持 file + 可选 alt，字段顺序不限；不接受重复字段。
+    let mut file = None;
+    let mut alt = None;
+    loop {
+        let field = match multipart.next_field().await {
+            Ok(Some(field)) => field,
+            Ok(None) => break,
+            Err(_) => return mcp_upload_error(StatusCode::BAD_REQUEST, "文件读取失败"),
+        };
+        if field.name() == Some("alt") {
+            if alt.is_some() {
+                return mcp_upload_error(StatusCode::BAD_REQUEST, "alt 字段重复");
+            }
+            alt = match field.text().await {
+                Ok(value) => Some(value),
+                Err(_) => return mcp_upload_error(StatusCode::BAD_REQUEST, "alt 读取失败"),
+            };
+        } else if field.name() == Some("file") || field.file_name().is_some() {
+            if file.is_some() {
+                return mcp_upload_error(StatusCode::BAD_REQUEST, "每次只允许上传一个文件");
+            }
+            if !ALLOWED_MIME_TYPES.contains(&field.content_type().unwrap_or("")) {
+                return mcp_upload_error(StatusCode::BAD_REQUEST, "不支持的文件类型");
+            }
+            let filename = field.file_name().map(str::to_string);
+            let data = match field.bytes().await {
+                Ok(data) => data,
+                Err(_) => return mcp_upload_error(StatusCode::BAD_REQUEST, "文件读取失败"),
+            };
+            file = Some((data, filename));
+        } else {
+            return mcp_upload_error(StatusCode::BAD_REQUEST, "未知的上传字段");
         }
-    };
-
-    // 早拒非法声明类型（快速路径）。
-    let declared_mime = field.content_type().unwrap_or("").to_string();
-    if !ALLOWED_MIME_TYPES.contains(&declared_mime.as_str()) {
-        return mcp_upload_error(StatusCode::BAD_REQUEST, "不支持的文件类型");
     }
-
-    let original_filename = field.file_name().map(|s| s.to_string());
-    let data = match field.bytes().await {
-        Ok(d) => d,
-        Err(e) => {
-            tracing::error!("MCP read file error: {:?}", e);
-            return mcp_upload_error(StatusCode::INTERNAL_SERVER_ERROR, "文件读取失败");
-        }
+    let Some((data, original_filename)) = file else {
+        return mcp_upload_error(StatusCode::BAD_REQUEST, "未找到文件");
     };
 
     // 4. 共享入库流水线。
-    match process_image_upload(data, original_filename).await {
+    match process_image_upload(data, original_filename, alt).await {
         Ok(out) => Json(json!({
             "success": true,
             "url": out.url,
+            "asset_id": out.asset_id,
+            "alt": out.alt,
             "reused": out.reused,
             "width": out.width,
             "height": out.height,
@@ -316,6 +331,9 @@ pub async fn mcp_upload_image(headers: HeaderMap, mut multipart: Multipart) -> R
 pub(crate) struct UploadOutcome {
     /// 可直接嵌入 Markdown 的相对 URL：`/uploads/YYYY/MM/DD/HHMMSS.uuid.ext`。
     pub url: String,
+    /// 素材注册表 ID，重复上传返回同一 ID。
+    pub asset_id: String,
+    pub alt: Option<String>,
     /// 是否命中已登记素材（内容去重或并发竞态复用）。
     pub reused: bool,
     pub width: u32,
@@ -371,6 +389,7 @@ impl UploadError {
 pub(crate) async fn process_image_upload(
     data: bytes::Bytes,
     original_filename: Option<String>,
+    alt: Option<String>,
 ) -> Result<UploadOutcome, UploadError> {
     if data.is_empty() {
         return Err(UploadError::Empty);
@@ -390,6 +409,7 @@ pub(crate) async fn process_image_upload(
             UploadError::Oversized
         })?;
 
+    let alt = alt.map(|value| value.trim().to_string());
     let is_gif = mime_type == "image/gif";
     let is_webp = mime_type == "image/webp";
 
@@ -408,9 +428,10 @@ pub(crate) async fn process_image_upload(
             .map_err(|e| UploadError::internal(e, "dedup conn"))?;
         let reused = client
             .query_opt(
-                "UPDATE assets SET created_at = NOW(), updated_at = NOW() \
-                 WHERE content_hash = $1 RETURNING path",
-                &[&content_hash],
+                "UPDATE assets SET created_at = NOW(), updated_at = NOW(), \
+                 alt = CASE WHEN $2::text IS NULL THEN alt ELSE NULLIF($2, '') END \
+                 WHERE content_hash = $1 RETURNING id, path, mime, width, height, alt",
+                &[&content_hash, &alt],
             )
             .await
             .map_err(|e| UploadError::internal(e, "dedup check"))?;
@@ -421,13 +442,7 @@ pub(crate) async fn process_image_upload(
                 path,
                 &content_hash[..12]
             );
-            return Ok(UploadOutcome {
-                url: format!("/uploads/{}", path),
-                reused: true,
-                width: img_width,
-                height: img_height,
-                mime: mime_type.to_string(),
-            });
+            return Ok(upload_outcome(&row, true));
         }
     }
 
@@ -460,7 +475,6 @@ pub(crate) async fn process_image_upload(
     let file_name = format!("{}.{}.{}", now.format("%H%M%S"), uuid_str, final_ext);
     let file_path = format!("{}/{}", dir_path, file_name);
     let rel_path = format!("{}/{}", date, file_name);
-    let url_path = format!("/uploads/{}", rel_path);
     let final_mime = mime_for_ext(&final_ext);
 
     if let Err(e) = tokio::fs::create_dir_all(&dir_path).await {
@@ -472,73 +486,51 @@ pub(crate) async fn process_image_upload(
 
     tracing::info!("Image uploaded: {} ({} bytes)", file_path, final_data.len());
 
-    // 7. 登记 assets 注册表。失败时补偿删除已落盘文件，避免产生未登记的孤儿文件。
-    //    ON CONFLICT (content_hash) DO NOTHING 兜底并发竞态：两个请求同时上传同一
-    //    新内容时会双双错过上面的去重检查，唯一索引保证只有一个 INSERT 成功；
-    //    落败者删自己的落盘文件、复用胜出者的路径（返回 Some(reused_path)）。
-    let registered: Result<Option<String>, UploadError> = async {
+    // 7. 注册或复用同内容素材，原子返回最终元数据；并发落败者删除自己落盘的文件。
+    let registered: Result<tokio_postgres::Row, UploadError> = async {
         let client = crate::db::pool::get_conn()
             .await
             .map_err(|e| UploadError::internal(e, "register conn"))?;
-        // id 用 Uuid 类型直连 uuid 列（with-uuid-1 桥接），避免 String→uuid 序列化失败。
-        let asset_id = uuid::Uuid::new_v4();
-        let inserted = client
-            .execute(
-                "INSERT INTO assets (id, path, filename, mime, size_bytes, width, height, content_hash)\
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8) \
-                 ON CONFLICT (content_hash) DO NOTHING",
-                &[
-                    &asset_id,
-                    &rel_path,
-                    &original_filename.unwrap_or_else(|| file_name.clone()),
-                    &final_mime,
-                    &(final_data.len() as i64),
-                    &(img_width as i32),
-                    &(img_height as i32),
-                    &content_hash,
-                ],
-            )
-            .await
-            .map_err(|e| UploadError::internal(e, "register asset"))?;
-        if inserted == 0 {
-            // 竞态落败：胜出者的行必然已提交（唯一索引冲突即可见），取其路径复用。
-            let row = client
-                .query_one(
-                    "SELECT path FROM assets WHERE content_hash = $1",
-                    &[&content_hash],
-                )
-                .await
-                .map_err(|e| UploadError::internal(e, "select reused asset"))?;
-            return Ok(Some(row.get("path")));
-        }
-        Ok(None)
-    }
-    .await;
+        client.query_one(
+            "INSERT INTO assets (id, path, filename, mime, size_bytes, width, height, content_hash, alt)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULLIF($9, ''))
+             ON CONFLICT (content_hash) DO UPDATE SET
+                 created_at = NOW(), updated_at = NOW(),
+                 alt = CASE WHEN $9::text IS NULL THEN assets.alt ELSE NULLIF($9, '') END
+             RETURNING id, path, mime, width, height, alt",
+            &[&uuid::Uuid::new_v4(), &rel_path,
+              &original_filename.unwrap_or_else(|| file_name.clone()), &final_mime,
+              &(final_data.len() as i64), &(img_width as i32), &(img_height as i32),
+              &content_hash, &alt],
+        ).await.map_err(|e| UploadError::internal(e, "register asset"))
+    }.await;
 
     match registered {
-        Ok(Some(reused_path)) => {
-            let _ = tokio::fs::remove_file(&file_path).await;
-            tracing::info!("Image deduped (concurrent race): reuse {}", reused_path);
-            Ok(UploadOutcome {
-                url: format!("/uploads/{}", reused_path),
-                reused: true,
-                width: img_width,
-                height: img_height,
-                mime: mime_type.to_string(),
-            })
+        Ok(row) => {
+            let reused = row.get::<_, String>("path") != rel_path;
+            if reused {
+                let _ = tokio::fs::remove_file(&file_path).await;
+            }
+            Ok(upload_outcome(&row, reused))
         }
-        Ok(None) => Ok(UploadOutcome {
-            url: url_path,
-            reused: false,
-            width: img_width,
-            height: img_height,
-            mime: final_mime.to_string(),
-        }),
         Err(e) => {
             // 登记失败：补偿删除已落盘文件。
             let _ = tokio::fs::remove_file(&file_path).await;
             Err(e)
         }
+    }
+}
+
+#[cfg(feature = "server")]
+fn upload_outcome(row: &tokio_postgres::Row, reused: bool) -> UploadOutcome {
+    UploadOutcome {
+        url: format!("/uploads/{}", row.get::<_, String>("path")),
+        asset_id: row.get::<_, uuid::Uuid>("id").to_string(),
+        alt: row.get("alt"),
+        reused,
+        width: row.get::<_, i32>("width") as u32,
+        height: row.get::<_, i32>("height") as u32,
+        mime: row.get("mime"),
     }
 }
 
@@ -675,6 +667,180 @@ async fn transcode(
 
 #[cfg(all(test, feature = "server"))]
 mod tests {
+
+    /// Uses the same disposable database as the private article workflow test.
+    #[test]
+    #[ignore = "requires disposable DATABASE_URL database ygg_mcp_test"]
+    fn upload_metadata_database_and_http() {
+        crate::db::TEST_DATABASE_RUNTIME.block_on(upload_metadata_database_and_http_impl());
+    }
+
+    async fn upload_metadata_database_and_http_impl() {
+        let _guard = crate::db::TEST_DATABASE_LOCK.lock().await;
+        use super::*;
+        let mut client = crate::db::pool::get_conn().await.unwrap();
+        let database: String = client
+            .query_one("SELECT current_database()", &[])
+            .await
+            .unwrap()
+            .get(0);
+        assert_eq!(database, "ygg_mcp_test", "requires isolated test database");
+        crate::db::migrate::run_on_conn(&mut client).await.unwrap();
+        let owner = client
+            .query_opt("SELECT id FROM users WHERE role = 'admin'", &[])
+            .await
+            .unwrap();
+        let user_id: i32 = match owner {
+        Some(row) => row.get(0),
+        None => client.query_one("INSERT INTO users (username, email, password_hash, role) VALUES ('upload-test', 'upload@test.invalid', 'unused', 'admin') RETURNING id", &[]).await.unwrap().get(0),
+    };
+        let nonce = uuid::Uuid::new_v4();
+        let color = nonce.as_bytes();
+        let image = image::RgbaImage::from_fn(64, 64, |x, _| {
+            image::Rgba([color[x as usize % 16], color[1], color[2], 255])
+        });
+        let mut png = std::io::Cursor::new(Vec::new());
+        image.write_to(&mut png, image::ImageFormat::Png).unwrap();
+        let data = bytes::Bytes::from(png.into_inner());
+        let (a, b) = tokio::join!(
+            process_image_upload(
+                data.clone(),
+                Some("test.png".into()),
+                Some("  首次图片  ".into())
+            ),
+            process_image_upload(
+                data.clone(),
+                Some("test.png".into()),
+                Some("  首次图片  ".into())
+            ),
+        );
+        let (a, b) = (a.unwrap(), b.unwrap());
+        assert_eq!(a.asset_id, b.asset_id);
+        assert_eq!(a.url, b.url);
+        assert_ne!(a.reused, b.reused);
+        assert_eq!(a.mime, b.mime);
+        assert_eq!(a.alt.as_deref(), Some("首次图片"));
+        let reused = process_image_upload(data.clone(), None, None)
+            .await
+            .unwrap();
+        assert_eq!(reused.asset_id, a.asset_id);
+        assert_eq!(reused.alt, a.alt);
+        assert_eq!(reused.mime, a.mime);
+        let id = uuid::Uuid::parse_str(&a.asset_id).unwrap();
+        let stored = client
+            .query_one("SELECT alt, mime FROM assets WHERE id = $1", &[&id])
+            .await
+            .unwrap();
+        assert_eq!(stored.get::<_, Option<String>>(0), a.alt);
+        assert_eq!(stored.get::<_, String>(1), a.mime);
+
+        // Exercise actual multipart parsing, authentication and serialized response.
+        let token = format!("ygg_{nonce}");
+        client.execute("INSERT INTO mcp_tokens (id, user_id, name, scope, token_enc, token_hash) VALUES ($1, $2, 'upload-test', 'write', 'unused', $3)",
+        &[&nonce, &user_id, &crate::mcp::auth::hash_token(&token)]).await.unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let router = axum::Router::new().route("/upload", axum::routing::post(mcp_upload_image));
+        let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        let http = reqwest::Client::new();
+        let body = |alt: &str, alt_first: bool, duplicate: bool| {
+            let alt_part = format!(
+                "--test-boundary\r\nContent-Disposition: form-data; name=\"alt\"\r\n\r\n{alt}\r\n"
+            )
+            .into_bytes();
+            let mut file_part = b"--test-boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"test.png\"\r\nContent-Type: image/png\r\n\r\n".to_vec();
+            file_part.extend_from_slice(&data);
+            file_part.extend_from_slice(b"\r\n");
+            let mut out = Vec::new();
+            if alt_first {
+                out.extend_from_slice(&alt_part);
+            }
+            out.extend_from_slice(&file_part);
+            if duplicate {
+                out.extend_from_slice(&file_part);
+            }
+            if !alt_first {
+                out.extend_from_slice(&alt_part);
+            }
+            out.extend_from_slice(b"--test-boundary--\r\n");
+            out
+        };
+        for (alt, alt_first) in [("  HTTP 图片  ", true), ("   ", false)] {
+            let response = http
+                .post(format!("http://{addr}/upload"))
+                .bearer_auth(&token)
+                .header(
+                    "content-type",
+                    "multipart/form-data; boundary=test-boundary",
+                )
+                .body(body(alt, alt_first, false))
+                .send()
+                .await
+                .unwrap();
+            let status = response.status();
+            let text = response.text().await.unwrap();
+            assert_eq!(status, StatusCode::OK, "{text}");
+            let result: serde_json::Value = serde_json::from_str(&text).unwrap();
+            assert_eq!(result["asset_id"], a.asset_id);
+            assert_eq!(result["mime"], a.mime);
+            let expected = if alt.trim().is_empty() {
+                None
+            } else {
+                Some(alt.trim().to_string())
+            };
+            assert_eq!(result["alt"], serde_json::to_value(&expected).unwrap());
+            assert_eq!(
+                client
+                    .query_one("SELECT alt FROM assets WHERE id = $1", &[&id])
+                    .await
+                    .unwrap()
+                    .get::<_, Option<String>>(0),
+                expected
+            );
+        }
+        let response = http
+            .post(format!("http://{addr}/upload"))
+            .bearer_auth(&token)
+            .header(
+                "content-type",
+                "multipart/form-data; boundary=test-boundary",
+            )
+            .body(body("rejected", false, true))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert!(client
+            .query_one("SELECT alt FROM assets WHERE id = $1", &[&id])
+            .await
+            .unwrap()
+            .get::<_, Option<String>>(0)
+            .is_none());
+        let response = http
+            .post(format!("http://{addr}/upload"))
+            .header(
+                "content-type",
+                "multipart/form-data; boundary=test-boundary",
+            )
+            .body(body("unauthorized", true, false))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        server.abort();
+        client
+            .execute("DELETE FROM mcp_tokens WHERE id = $1", &[&nonce])
+            .await
+            .unwrap();
+        client
+            .execute("DELETE FROM assets WHERE id = $1", &[&id])
+            .await
+            .unwrap();
+        tokio::fs::remove_file(a.url.trim_start_matches('/'))
+            .await
+            .unwrap();
+    }
+
     #[test]
     fn filename_format_no_spaces() {
         let now_str = "120000";
