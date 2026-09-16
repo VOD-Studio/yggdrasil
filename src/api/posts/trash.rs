@@ -29,61 +29,62 @@ const PRECISE_INVALIDATION_LIMIT: usize = 50;
 pub async fn restore_post(post_id: i32) -> Result<CreatePostResponse, ServerFnError> {
     let _user = get_current_admin_user().await?;
 
-    #[cfg(feature = "server")]
-    {
-        let mut client = get_conn().await.map_err(AppError::db_conn)?;
-        let tx = client.transaction().await.map_err(AppError::tx)?;
+    restore_post_impl(post_id, None).await
+}
 
-        // 在事务内锁定行并读取当前 slug、标签与是否确已删除。
-        let row = tx
-            .query_opt(
-                "SELECT slug FROM posts WHERE id = $1 AND deleted_at IS NOT NULL FOR UPDATE",
-                &[&post_id],
-            )
-            .await
-            .map_err(AppError::query)?;
+/// 已鉴权入口共用的恢复逻辑；Some(author_id) 将访问限制到指定作者。
+#[cfg(feature = "server")]
+pub(crate) async fn restore_post_impl(
+    post_id: i32,
+    author_id: Option<i32>,
+) -> Result<CreatePostResponse, ServerFnError> {
+    let mut client = get_conn().await.map_err(AppError::db_conn)?;
+    let tx = client.transaction().await.map_err(AppError::tx)?;
 
-        let Some(row) = row else {
-            return Ok(CreatePostResponse::err("文章不在回收站".to_string()));
-        };
+    // 在事务内锁定行并读取当前 slug、标签与是否确已删除。
+    let row = tx
+        .query_opt(
+            "SELECT slug FROM posts WHERE id = $1 AND deleted_at IS NOT NULL AND ($2::int IS NULL OR author_id = $2) FOR UPDATE",
+            &[&post_id, &author_id],
+        )
+        .await
+        .map_err(AppError::query)?;
 
-        let current_slug: String = row.get("slug");
+    let Some(row) = row else {
+        return Ok(CreatePostResponse::err("文章不在回收站".to_string()));
+    };
 
-        // 恢复时确保 slug 在未删除文章中唯一（自动加后缀）；在事务内检查避免并发竞态。
-        let new_slug = ensure_unique_slug(&tx, &current_slug, Some(post_id)).await?;
+    let current_slug: String = row.get("slug");
 
-        let tags = super::helpers::fetch_post_tags(&tx, post_id).await?;
+    // 恢复时确保 slug 在未删除文章中唯一（自动加后缀）；在事务内检查避免并发竞态。
+    let new_slug = ensure_unique_slug(&tx, &current_slug, Some(post_id)).await?;
 
-        // 置空 deleted_at，并更新 slug（可能已加后缀）。
-        let result = tx
-            .execute(
-                "UPDATE posts SET deleted_at = NULL, slug = $1 WHERE id = $2 AND deleted_at IS NOT NULL",
-                &[&new_slug, &post_id],
-            )
-            .await
-            .map_err(AppError::tx)?;
+    let tags = super::helpers::fetch_post_tags(&tx, post_id).await?;
 
-        if result == 0 {
-            return Ok(CreatePostResponse::err("文章不在回收站".to_string()));
-        }
+    // 置空 deleted_at，并更新 slug（可能已加后缀）。
+    let result = tx
+        .execute(
+            "UPDATE posts SET deleted_at = NULL, slug = $1 WHERE id = $2 AND deleted_at IS NOT NULL",
+            &[&new_slug, &post_id],
+        )
+        .await
+        .map_err(AppError::tx)?;
 
-        tx.commit().await.map_err(AppError::tx)?;
-
-        // 精准失效：列表、标签云、统计、旧/新 slug 与相关标签文章（moka + SSR）。
-        let restore_slugs = [current_slug, new_slug.clone()];
-        crate::cache::invalidate_for_post_write(&restore_slugs, &tags).await;
-
-        Ok(CreatePostResponse::ok(
-            "恢复成功".to_string(),
-            post_id,
-            new_slug,
-        ))
+    if result == 0 {
+        return Ok(CreatePostResponse::err("文章不在回收站".to_string()));
     }
 
-    #[cfg(not(feature = "server"))]
-    {
-        Ok(CreatePostResponse::err("server only".to_string()))
-    }
+    tx.commit().await.map_err(AppError::tx)?;
+
+    // 精准失效：列表、标签云、统计、旧/新 slug 与相关标签文章（moka + SSR）。
+    let restore_slugs = [current_slug, new_slug.clone()];
+    crate::cache::invalidate_for_post_write(&restore_slugs, &tags).await;
+
+    Ok(CreatePostResponse::ok(
+        "恢复成功".to_string(),
+        post_id,
+        new_slug,
+    ))
 }
 
 /// 彻底删除一篇已删除的文章（物理删除，不可恢复）。

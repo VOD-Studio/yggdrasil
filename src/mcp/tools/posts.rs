@@ -42,41 +42,7 @@ impl crate::mcp::server::YggMcpServer {
         Extension(parts): Extension<http::request::Parts>,
     ) -> Result<CallToolResult, McpError> {
         let principal = require_scope(&parts, "list_posts", TokenScope::Write)?;
-        let (page, per_page, pattern) = p.normalize()?;
-        let client = get_conn().await.map_err(|e| internal(e, "db connection"))?;
-        let offset = (i64::from(page) - 1) * i64::from(per_page);
-        let limit = i64::from(per_page);
-        let condition = "p.author_id = $1 AND p.deleted_at IS NULL AND ($2::text IS NULL OR p.status = $2) AND p.title ILIKE $3";
-        let total: i64 = client
-            .query_one(
-                &format!("SELECT COUNT(*) FROM posts p WHERE {condition}"),
-                &[&principal.user_id, &p.status, &pattern],
-            )
-            .await
-            .map_err(|e| internal(e, "count posts"))?
-            .get(0);
-        let rows = client
-            .query(
-                &format!(
-                    "SELECT p.id, p.author_id, p.title, p.slug, p.summary, p.status,
-                p.published_at, p.created_at, p.updated_at, p.deleted_at, p.cover_image,
-                p.word_count, p.reading_time,
-                COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{{}}') as tags
-                FROM posts p LEFT JOIN post_tags pt ON p.id = pt.post_id
-                LEFT JOIN tags t ON pt.tag_id = t.id WHERE {condition}
-                GROUP BY p.id ORDER BY p.created_at DESC, p.id DESC LIMIT $4 OFFSET $5"
-                ),
-                &[&principal.user_id, &p.status, &pattern, &limit, &offset],
-            )
-            .await
-            .map_err(|e| internal(e, "list posts"))?;
-        let posts: Vec<_> = rows
-            .iter()
-            .map(crate::api::posts::helpers::row_to_post_list_item)
-            .collect();
-        ok_json(
-            serde_json::json!({"posts": posts, "total": total, "page": page, "per_page": per_page}),
-        )
+        list_owned_posts(principal.user_id, p, false).await
     }
 
     #[tool(
@@ -106,7 +72,33 @@ impl crate::mcp::server::YggMcpServer {
         ok_json(post)
     }
 
-    /// 创建一篇新文章（草稿或直接发布）。要求 write 作用域。
+    #[tool(
+        description = "分页查询当前令牌用户的回收站文章，按删除时间倒序。支持 status、query、page、per_page，与 list_posts 相同。需要 write 权限。"
+    )]
+    async fn list_trashed_posts(
+        &self,
+        Parameters(p): Parameters<ListPostsParams>,
+        Extension(parts): Extension<http::request::Parts>,
+    ) -> Result<CallToolResult, McpError> {
+        let principal = require_scope(&parts, "list_trashed_posts", TokenScope::Write)?;
+        list_owned_posts(principal.user_id, p, true).await
+    }
+
+    #[tool(
+        description = "恢复当前令牌用户的回收站文章，保留原发布状态。slug 被占用时自动追加数字后缀，返回恢复后的 slug。需要 write 权限。"
+    )]
+    async fn restore_post(
+        &self,
+        Parameters(p): Parameters<PostIdParams>,
+        Extension(parts): Extension<http::request::Parts>,
+    ) -> Result<CallToolResult, McpError> {
+        let principal = require_scope(&parts, "restore_post", TokenScope::Write)?;
+        let result = crate::api::posts::restore_post_impl(p.post_id, Some(principal.user_id))
+            .await
+            .map_err(|e| internal(e, "restore post"))?;
+        ok_json(result)
+    }
+
     #[tool(
         description = "创建一篇新文章。渲染 Markdown 为 HTML，同步标签与素材引用。返回 post_id/slug。"
     )]
@@ -839,6 +831,52 @@ impl ListPostsParams {
     }
 }
 
+async fn list_owned_posts(
+    user_id: i32,
+    p: ListPostsParams,
+    trashed: bool,
+) -> Result<CallToolResult, McpError> {
+    let (page, per_page, pattern) = p.normalize()?;
+    let client = get_conn().await.map_err(|e| internal(e, "db connection"))?;
+    let offset = (i64::from(page) - 1) * i64::from(per_page);
+    let limit = i64::from(per_page);
+    let deleted = if trashed { "IS NOT NULL" } else { "IS NULL" };
+    let order = if trashed {
+        "p.deleted_at"
+    } else {
+        "p.created_at"
+    };
+    let condition = format!("p.author_id = $1 AND p.deleted_at {deleted} AND ($2::text IS NULL OR p.status = $2) AND p.title ILIKE $3");
+    let total: i64 = client
+        .query_one(
+            &format!("SELECT COUNT(*) FROM posts p WHERE {condition}"),
+            &[&user_id, &p.status, &pattern],
+        )
+        .await
+        .map_err(|e| internal(e, "count posts"))?
+        .get(0);
+    let rows = client
+        .query(
+            &format!(
+                "SELECT p.id, p.author_id, p.title, p.slug, p.summary, p.status,
+                p.published_at, p.created_at, p.updated_at, p.deleted_at, p.cover_image,
+                p.word_count, p.reading_time,
+                COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{{}}') as tags
+                FROM posts p LEFT JOIN post_tags pt ON p.id = pt.post_id
+                LEFT JOIN tags t ON pt.tag_id = t.id WHERE {condition}
+                GROUP BY p.id ORDER BY {order} DESC, p.id DESC LIMIT $4 OFFSET $5"
+            ),
+            &[&user_id, &p.status, &pattern, &limit, &offset],
+        )
+        .await
+        .map_err(|e| internal(e, "list posts"))?;
+    let posts: Vec<_> = rows
+        .iter()
+        .map(crate::api::posts::helpers::row_to_post_list_item)
+        .collect();
+    ok_json(serde_json::json!({"posts": posts, "total": total, "page": page, "per_page": per_page}))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -920,6 +958,55 @@ mod tests {
             .await
             .unwrap()
             .is_none());
+        client
+            .batch_execute(
+                "UPDATE posts SET deleted_at = NOW() WHERE id IN (101, 102);
+            INSERT INTO posts (id, author_id, title, slug, content_md, status) VALUES
+            (104, 1, 'Slug collision', 'mcp-draft', 'body', 'draft');",
+            )
+            .await
+            .unwrap();
+        let trash = result_json(
+            YggMcpServer
+                .list_trashed_posts(
+                    Parameters(ListPostsParams::default()),
+                    Extension(parts(Some(TokenScope::Write))),
+                )
+                .await
+                .unwrap(),
+        );
+        assert_eq!(trash["total"], 1);
+        assert_eq!(trash["posts"][0]["id"], 101);
+        assert!(trash["posts"][0]["deleted_at"].is_string());
+        let denied = result_json(
+            YggMcpServer
+                .restore_post(
+                    Parameters(PostIdParams { post_id: 102 }),
+                    Extension(parts(Some(TokenScope::Write))),
+                )
+                .await
+                .unwrap(),
+        );
+        assert_eq!(denied["success"], false);
+        let restored = result_json(
+            YggMcpServer
+                .restore_post(
+                    Parameters(PostIdParams { post_id: 101 }),
+                    Extension(parts(Some(TokenScope::Write))),
+                )
+                .await
+                .unwrap(),
+        );
+        assert_eq!(restored["success"], true);
+        assert_ne!(restored["slug"], "mcp-draft");
+        let row = client
+            .query_one("SELECT status, deleted_at FROM posts WHERE id = 101", &[])
+            .await
+            .unwrap();
+        assert_eq!(row.get::<_, String>(0), "draft");
+        assert!(row
+            .get::<_, Option<chrono::DateTime<chrono::Utc>>>(1)
+            .is_none());
     }
 
     #[test]
@@ -937,6 +1024,20 @@ mod tests {
     #[tokio::test]
     async fn private_reads_reject_missing_and_read_only_principals_before_io() {
         for scope in [None, Some(TokenScope::Read)] {
+            assert!(YggMcpServer
+                .list_trashed_posts(
+                    Parameters(ListPostsParams::default()),
+                    Extension(parts(scope))
+                )
+                .await
+                .is_err());
+            assert!(YggMcpServer
+                .restore_post(
+                    Parameters(PostIdParams { post_id: 101 }),
+                    Extension(parts(scope))
+                )
+                .await
+                .is_err());
             assert!(YggMcpServer
                 .list_posts(
                     Parameters(ListPostsParams::default()),

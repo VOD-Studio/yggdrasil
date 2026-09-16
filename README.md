@@ -28,6 +28,8 @@
 MCP 私有文章查询需要 `write` 或 `admin` 令牌，且只访问令牌用户自己的文章：
 `list_posts({"status":"draft","page":1,"per_page":20})` 查询草稿，支持 `query` 标题搜索；
 `get_post_by_id({"post_id":123})` 读取完整编辑内容及 `updated_at`。
+`list_trashed_posts({"page":1})` 查询回收站，`restore_post({"post_id":123})` 恢复文章；
+恢复保留原发布状态，slug 被占用时自动追加后缀，返回最终 slug。
 原有 `search_posts` / `get_post` 仍只返回公开已发布文章。
 
 MCP 素材工具（管理操作均需要 `admin` 令牌）：
