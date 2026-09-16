@@ -5,14 +5,16 @@
 Yggdrasil is a Rust 2021/Dioxus fullstack blog and CMS with an Axum backend and PostgreSQL.
 
 - `src/pages/` and `src/components/`: UI; `src/api/`, `src/db/`, and `src/mcp/`: backend; `src/models/`: shared types. Consult `src/CONTEXT.md` for domain terminology.
-- `libs/`: pnpm workspace for editors, lightbox, terminal, and browser utilities.
-- `migrations/`: sequential SQL migrations (`NNN_description.sql`), applied at startup.
+- `libs/`: pnpm workspace for editors, lightbox, terminal, and browser utilities. Consult `libs/CONTEXT.md` for bundle and shared-code conventions.
+- `migrations/`: sequential SQL migrations (`NNN_description.sql`), applied at startup. Register each new SQL file in the `MIGRATIONS` array in `src/db/migrate.rs`, keeping versions in ascending order.
 - `public/`: static assets and generated bundles. Edit `input.css` and `libs/` sources, then rebuild generated CSS/JS.
 - `scripts/`: browser regression tooling; `docker/`: deployment and code-runner support.
 
 ## Build, Test, and Development Commands
 
-Prefer the local toolchain; use Docker only when required local tools are missing. Native development needs Rust, Dioxus CLI, Tailwind CLI, Node, and the pnpm version in `libs/package.json`.
+Prefer the local toolchain; use Docker only when required local tools are missing. Native development needs Rust with the `llvm-tools` component, Dioxus CLI 0.7.10, and Tailwind CSS v4 CLI. Follow `engines.node` and `packageManager` in `libs/package.json` for Node and pnpm requirements. Run `make check-dev-tools` or `make check-build-tools` to check tool availability before development or release builds.
+
+Prefer the Makefile targets for development and release builds: they clear `RUSTC_WRAPPER` for `dx` to avoid sccache conflicts, disable SSR caching during development with `SSR_CACHE_SECS=0`, and restore source WebP files after release builds to preserve animations.
 
 - `make dev`: build assets and start native `dx serve`.
 - `make build`: assemble release assets, documentation, and application; requires Brotli CLI.
@@ -38,7 +40,7 @@ For navigation changes, follow `scripts/README-view-transitions.md`; verify dire
 
 ## Commit & Pull Request Guidelines
 
-Use `type(scope): summary`, commonly with Chinese summaries, e.g. `fix(navigation): 恢复后台滚动位置`. Keep commits scoped to validated logical changes; push only when requested. PRs should explain behavior, link relevant issues, report checks and limitations, and include screenshots for UI changes.
+Use `type(scope): summary`, commonly with Chinese summaries, e.g. `fix(navigation): 恢复后台滚动位置`. After completing and validating each functional unit, create a scoped commit autonomously without asking for confirmation. Include only changes belonging to that unit; do not bundle unrelated work. Push only when requested. PRs should explain behavior, link relevant issues, report checks and limitations, and include screenshots for UI changes.
 
 ## Security & Production Configuration
 
