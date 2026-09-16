@@ -57,3 +57,5 @@ pub mod upload;
 /// SSRF 防护的 URL 抓取（服务端按图，供 MCP upload_media 工具）。
 #[cfg(feature = "server")]
 pub mod url_fetch;
+/// 公开的 Agent 写作技能与客户端接入示例。
+pub mod writing_guide;

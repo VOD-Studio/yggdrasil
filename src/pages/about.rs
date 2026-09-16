@@ -114,6 +114,17 @@ pub fn About() -> Element {
                 }
             }
 
+            Link { class: "about-writing-card about-enter", to: Route::WritingGuide {},
+                style: "--about-delay: 320ms",
+                div {
+                    span { class: "about-index", "03 / COLLABORATE" }
+                    h2 { "与 Agent 一起，种下文字。" }
+                    p { "把这里的写作方式，交给你的 AI。" }
+                    span { class: "about-writing-tags", "SKILL.md · MCP · 可运行代码 · 图表与公式" }
+                }
+                span { class: "about-writing-action", "打开写作指南" span { aria_hidden: "true", "↗" } }
+            }
+
             footer { class: "about-colophon about-enter", style: "--about-delay: 340ms",
                 span { class: "about-colophon-star", aria_hidden: "true", "✳" }
                 p { "生长未完，故事继续。" }

@@ -35,7 +35,7 @@ pub fn build_nav_items(route: Route) -> Vec<NavItemConfig> {
         NavItemConfig {
             route: Route::About {},
             label: "关于",
-            is_active: matches!(route, Route::About {}),
+            is_active: matches!(route, Route::About {} | Route::WritingGuide {}),
         },
     ]
 }

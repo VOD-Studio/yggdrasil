@@ -43,6 +43,11 @@ fn route_skeleton(route: &Route) -> Element {
         Route::Changelog {} => rsx! {
             DelayedSkeleton { ChangelogSkeleton {} }
         },
+        Route::WritingGuide {} => rsx! {
+            DelayedSkeleton {
+                p { class: "py-20 text-sm text-paper-secondary", role: "status", "正在载入写作指南…" }
+            }
+        },
         Route::NotFound { .. } => rsx! {
             div { class: "py-20 md:py-28" }
         },

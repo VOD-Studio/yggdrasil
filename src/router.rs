@@ -26,6 +26,7 @@ use crate::pages::post_detail::PostDetail;
 use crate::pages::register::Register;
 use crate::pages::search::Search;
 use crate::pages::tags::TagDetail;
+use crate::pages::writing_guide::WritingGuide;
 use crate::theme::{use_theme_provider, ThemePreload};
 
 /// 全站路由枚举，每个变体对应一个页面路径
@@ -59,6 +60,9 @@ pub enum Route {
             /// 关于页面
             #[route("/about")]
             About {},
+            /// Agent 写作技能与 MCP 接入指南。
+            #[route("/about/writing")]
+            WritingGuide {},
             /// 友链页
             #[route("/friends")]
             Friends {},

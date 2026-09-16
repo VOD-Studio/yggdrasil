@@ -15,3 +15,4 @@ pub mod post_detail;
 pub mod register;
 pub mod search;
 pub mod tags;
+pub mod writing_guide;
