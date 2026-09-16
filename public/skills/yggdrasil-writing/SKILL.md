@@ -150,7 +150,16 @@ Markdown 源码中保留单个反斜杠；如果手写 JSON 参数，要按 JSON
 
 图片使用 `![有意义的替代文本](图片URL)`，阅读页提供图片灯箱。URL 使用可访问的 HTTPS 地址或真实的站内根路径（如素材工具返回的 `/uploads/...`），不要写本机路径、`data:` URI 或凭空构造素材地址。
 
-需要把远程图片保存到站点时，按用户授权调用 MCP `upload_media`，传入 HTTPS 图片 URL，取得返回的 `url` 后写进正文。它支持 JPEG/PNG/GIF/WebP，不接收本地文件路径或 Base64 数据。`alt` 参数会保存到素材库，结果含 `asset_id` 和 `alt`；重复上传时省略 alt 保留旧值，空白清除。正文替代文本仍需写在 Markdown 里，不会自动回写已有文章。封面使用单独的 `cover_image` 字段。
+配图优先复用已有素材。当前连接提供 `list_assets` 且令牌具备 admin 权限时，可按 `query` 搜索文件名或 alt；返回的 `path` 加 `/uploads/` 前缀即为图片 URL，`refs` 可查看引用情况。封面使用独立的 `cover_image` 字段。
+
+上传图片需要 write 或 admin 权限，支持 JPEG/PNG/GIF/WebP，最大 5 MiB：
+
+- 远程图片：调用 `upload_media`，传入 HTTPS `url` 和可选 `alt`。该工具不接收本地路径或 Base64。
+- 本地图片：客户端具备 HTTP 或 shell 能力且已配置令牌时，调用 `POST /api/mcp/upload`，使用 Bearer 鉴权及 multipart 的 `file`、可选 `alt` 字段。两字段顺序不限；仅连接 MCP 工具并不自动具备本地文件上传能力。
+
+两条通道均返回 `asset_id`、`url`、`alt`、尺寸、最终 MIME 和 `reused`。使用实际返回的 URL；重复上传返回相同素材 ID，省略 alt 保留旧值，空白清除。具有 admin 权限时可用 `update_asset_alt(id, alt)` 修改素材说明。素材 alt 不会回写已有文章，正文仍需填写 Markdown 图片替代文本。
+
+素材删除、批量删除、孤儿清理与索引重建属于独立管理操作，不作为写作收尾自动执行；被草稿、回收站文章等引用的素材同样受删除保护。
 
 文章服务端允许 `details` / `summary`，可用于补充推导或参考答案：
 
@@ -169,17 +178,29 @@ Markdown 源码中保留单个反斜杠；如果手写 JSON 参数，要按 JSON
 
 ## 通过 MCP 交付文章
 
-先查看当前连接实际暴露的工具与 schema；工具名可能带连接器前缀。以下是 Yggdrasil 工具的本地名称，不要虚构未提供的预览或草稿读取接口。
+先查看当前连接实际暴露的工具与 schema；工具名可能带连接器前缀，部署版本也可能尚未提供下列新工具。以下使用本地工具名称，以实际可用能力为准。
 
-- 了解已有内容时，可用 `search_posts(query, limit?)`、`get_post(slug)` 和 `list_tags()`。搜索与读取只返回已发布文章，草稿不可见。
+### 查找与读取
+
+- 公开内容：`search_posts(query, limit?)`、`get_post(slug)` 和 `list_tags()` 使用 read 或更高权限。搜索和读取仅返回公开已发布文章；标签工具列出全部标签及各自的已发布文章数。
+- 自己的文章：write 或 admin 权限可用 `list_posts`，支持 `status`（`draft` / `published`）、`query`（标题搜索）、`page`（从 1 开始）、`per_page`（1–50，默认 20）；省略状态返回全部未删除文章。查草稿可传 `{"status":"draft","page":1}`。
+- 编辑前用 `get_post_by_id(post_id)` 读取完整正文、摘要、封面、标签、状态及 `updated_at`。私有查询和文章修改都限令牌用户自己的文章，admin 令牌也不扩大作者范围。
+
+### 保存与更新
+
 - `create_post` 必填 `title`、`content_md`；可选 `summary`、`slug`、`tags`、`status`、`cover_image`、`published_at`。`status` 默认为 `draft`，发布用 `published`。摘要省略时自动提取，slug 省略时自动生成。
-- `update_post` 用 `post_id` 定位，按 PATCH 语义只传需要修改的字段；但传入的 `content_md` 是完整替换正文，不是文本补丁。先取得现有全文再修改；草稿全文不可读取时使用当前已知原文，缺失则请用户提供。修改工具限文章原作者使用。
+- `update_post` 用 `post_id` 定位，按 PATCH 语义只传需要修改的字段；但 `content_md` 是完整替换正文，不是文本补丁。先读取现有全文，再合入本次改动。若部署暂未提供私有读取工具，使用已有完整原文；缺失时请用户提供，不要凭空覆盖正文。
+- schema 提供 `expected_updated_at` 时，将读取结果的 `updated_at` 原样传入（RFC 3339，保留小数秒精度）。服务端原子校验版本，成功返回新的 `updated_at`；收到 `conflict` 时，重新读取并合并更改后再提交，不要删除版本参数绕过冲突。该参数在接口中可选，编辑已有文章时优先使用。
 - 更新正文而省略 `summary` 会重新自动提取摘要；要保留人工摘要时一并传入。`tags` 整体替换，空数组清空；`cover_image` 空字符串清空封面。
 - 自定义 slug 仅用字母、数字、连字符和下划线。以工具实际返回的 slug 为准，冲突时可能自动去重。`published_at` 可用 ISO 8601 或 `YYYY-MM-DD`，不需要指定日期时省略。
 
 用户只要文稿或“先看看”时，交付文稿；要求保存草稿时使用 `draft`；明确要求发布时按已有授权使用 `published` 或 `publish_post(post_id)`，无需重复确认。不要把撰写文章自动扩大为线上发布。
 
-保存后核对工具成功状态及返回的 `post_id` / `slug`。草稿不能用 `get_post` 回读，不要为核验而临时发布。已发布文章可回读 Markdown；如果有浏览器预览条件，再检查图表、公式和运行器。分别说明“已保存”“已发布”“代码已运行”“页面已检查”，只报告实际完成的验证。
+### 回收站与核验
+
+用户要求找回文章时，用 `list_trashed_posts` 查找自己的回收站文章，筛选和分页参数与 `list_posts` 相同，再按授权调用 `restore_post(post_id)`。恢复会保留原发布状态，因此已发布文章恢复后会重新公开；slug 被占用时自动加后缀，使用恢复结果中的最终 slug。`trash_post` 是移入回收站，`delete_post` 是不可恢复的永久删除，两者不能互换。
+
+保存或恢复后核对工具成功状态和返回的 `post_id` / `slug`，通过 `get_post_by_id` 回读正文及元数据；草稿不可用公开工具 `get_post` 回读，不要为核验而临时发布。已发布文章也可用 `get_post` 检查公开内容。如果有浏览器预览条件，再检查图表、公式和运行器。分别说明“已保存”“已发布”“代码已运行”“页面已检查”，只报告实际完成的验证。
 
 ## 交付前核对
 
@@ -196,3 +217,4 @@ Markdown 源码中保留单个反斜杠；如果手写 JSON 参数，要按 JSON
 - `libs/shared/src/index.ts`、`libs/yggdrasil-core/src/mermaid.ts`：图表配置与阅读页渲染。
 - `libs/tiptap-editor/src/editor-extensions.ts`：后台编辑器支持范围。
 - `src/mcp/tools/{posts,read,media,runner}.rs`：文章、素材与代码执行工具契约。
+- `src/api/upload.rs`、`src/api/url_fetch.rs`、`src/api/posts/trash.rs`：上传入库、远程图片抓取及恢复语义。
