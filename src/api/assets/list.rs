@@ -26,258 +26,262 @@ pub async fn list_assets(
     sort: AssetSort,
     page: i32,
 ) -> Result<AssetListResponse, ServerFnError> {
-    #[cfg(feature = "server")]
-    {
-        use crate::api::auth::get_current_admin_user;
-        use crate::api::error::AppError;
-        use crate::db::pool::get_conn;
-        use crate::models::asset::{Asset, AssetDto, AssetRef, AssetRefPostStatus};
+    crate::api::auth::get_current_admin_user().await?;
+    list_assets_impl(filter, query, sort, page).await
+}
 
-        let _admin = get_current_admin_user().await?;
+/// 共享素材操作；调用方须先完成管理员鉴权。
+#[cfg(feature = "server")]
+pub(crate) async fn list_assets_impl(
+    filter: AssetFilter,
+    query: String,
+    sort: AssetSort,
+    page: i32,
+) -> Result<AssetListResponse, ServerFnError> {
+    use crate::api::error::AppError;
+    use crate::db::pool::get_conn;
+    use crate::models::asset::{Asset, AssetDto, AssetRef, AssetRefPostStatus};
 
-        let client = get_conn().await.map_err(AppError::db_conn)?;
+    let client = get_conn().await.map_err(AppError::db_conn)?;
 
-        let page = page.max(1);
-        let offset: i64 = (page as i64 - 1) * PER_PAGE;
-        let query = query.trim().to_string();
+    let page = page.max(1);
+    let offset: i64 = (page as i64 - 1) * PER_PAGE;
+    let query = query.trim().to_string();
 
-        // 筛选/搜索条件统一拼进 WHERE；参数按出现顺序编号。
-        // 引用状态用 EXISTS 子查询，搜索用 ILIKE 转义通配符。
-        let mut conditions: Vec<String> = Vec::new();
-        let mut params: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = Vec::new();
-        match filter {
-            AssetFilter::Used => {
-                conditions.push(super::ASSET_REF_CLAUSE.to_string());
-            }
-            AssetFilter::Orphan => {
-                conditions.push(format!("NOT {}", super::ASSET_REF_CLAUSE));
-            }
-            AssetFilter::All => {}
+    // 筛选/搜索条件统一拼进 WHERE；参数按出现顺序编号。
+    // 引用状态用 EXISTS 子查询，搜索用 ILIKE 转义通配符。
+    let mut conditions: Vec<String> = Vec::new();
+    let mut params: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = Vec::new();
+    match filter {
+        AssetFilter::Used => {
+            conditions.push(super::ASSET_REF_CLAUSE.to_string());
         }
-        if !query.is_empty() {
-            params.push(&query);
-            conditions.push(format!(
-                "(a.filename ILIKE '%' || ${} || '%' OR a.alt ILIKE '%' || ${} || '%')",
-                params.len(),
-                params.len()
-            ));
+        AssetFilter::Orphan => {
+            conditions.push(format!("NOT {}", super::ASSET_REF_CLAUSE));
         }
-        let where_clause = if conditions.is_empty() {
-            String::new()
-        } else {
-            format!("WHERE {}", conditions.join(" AND "))
-        };
-
-        let order_clause = match sort {
-            AssetSort::CreatedDesc => "a.created_at DESC, a.id",
-            AssetSort::SizeDesc => "a.size_bytes DESC, a.id",
-        };
-
-        // 列表查询：ref_count 按文章、存活评论、用户头像和友链头像的使用次数累计，
-        // 与 Used/Orphan 筛选及汇总计数使用同一引用来源。
-        // const 不能取引用（内联后借临时值会垂悬），绑定到局部变量再进参数列表。
-        let per_page = PER_PAGE;
-        params.push(&per_page);
-        let limit_idx = params.len();
-        params.push(&offset);
-        let offset_idx = params.len();
-        let rows = client
-            .query(
-                &format!(
-                    "SELECT a.id AS id, a.path, a.filename, a.mime, a.size_bytes, \
-                            a.width, a.height, a.alt, a.created_at, \
-                            {ref_count} AS ref_count \
-                     FROM assets a {where_clause} \
-                     ORDER BY {order_clause} LIMIT ${limit_idx} OFFSET ${offset_idx}",
-                    ref_count = super::ASSET_REF_COUNT_EXPR,
-                ),
-                &params,
-            )
-            .await
-            .map_err(AppError::query)?;
-
-        let total: i64 = client
-            .query_one(
-                &format!("SELECT COUNT(*) FROM assets a {where_clause}"),
-                &params[..params.len() - 2],
-            )
-            .await
-            .map_err(AppError::query)?
-            .get(0);
-
-        // 汇总计数：tabs 与「清理孤儿」按钮徽标。不受筛选/搜索影响，始终全局。
-        // 孤儿 = 不存在任何文章、评论或头像引用（与 AssetFilter::Orphan 同语义）。
-        let summary = client
-            .query_one(
-                &format!(
-                    "SELECT \
-                        COUNT(*) FILTER (WHERE {asset_ref}), \
-                        COUNT(*) FILTER (WHERE NOT {asset_ref}), \
-                        COUNT(*) FILTER (WHERE NOT {asset_ref} \
-                            AND a.created_at < NOW() - make_interval(days => $1)), \
-                        COALESCE(SUM(a.size_bytes) FILTER (WHERE NOT {asset_ref} \
-                            AND a.created_at < NOW() - make_interval(days => $1)), 0)::bigint \
-                     FROM assets a",
-                    asset_ref = super::ASSET_REF_CLAUSE
-                ),
-                &[&PURGE_GRACE_DAYS],
-            )
-            .await
-            .map_err(AppError::query)?;
-
-        // 本页素材的引用明细（第二组查询，避免 JOIN fan-out 与分页错位）。
-        // 四个来源与 ASSET_REF_CLAUSE 一一对应；按 文章→评论→用户头像→友链头像
-        // 的顺序插入，前端即按此分组顺序渲染。
-        let ids: Vec<uuid::Uuid> = rows.iter().map(|r| r.get::<_, uuid::Uuid>("id")).collect();
-        let mut refs_map: std::collections::HashMap<String, Vec<AssetRef>> =
-            std::collections::HashMap::new();
-        if !ids.is_empty() {
-            // 1. 文章（asset_refs 表，含草稿与回收站——slug/status/deleted_at 供前端
-            //    决定链接走向：已发布→前台新标签，其余→后台编辑页）。
-            let ref_rows = client
-                .query(
-                    "SELECT r.asset_id AS asset_id, p.id AS post_id, p.title, p.slug, \
-                            p.status, p.deleted_at \
-                     FROM asset_refs r JOIN posts p ON p.id = r.post_id \
-                     WHERE r.asset_id = ANY($1) \
-                     ORDER BY p.id",
-                    &[&ids],
-                )
-                .await
-                .map_err(AppError::query)?;
-            for rr in ref_rows {
-                let asset_key: String = rr.get::<_, uuid::Uuid>("asset_id").to_string();
-                let status = AssetRefPostStatus::resolve(
-                    rr.get::<_, &str>("status"),
-                    rr.get::<_, Option<chrono::DateTime<chrono::Utc>>>("deleted_at"),
-                );
-                refs_map.entry(asset_key).or_default().push(AssetRef::Post {
-                    post_id: rr.get("post_id"),
-                    title: rr.get("title"),
-                    slug: rr.get("slug"),
-                    status,
-                });
-            }
-
-            // 2. 存活评论（content_html 子串匹配；所属文章信息供链接与展示）。
-            let comment_rows = client
-                .query(
-                    "SELECT a.id AS asset_id, c.id AS comment_id, c.author_name, \
-                            p.id AS post_id, p.title AS post_title, p.slug AS post_slug, \
-                            p.status AS post_status, p.deleted_at AS post_deleted_at \
-                     FROM assets a \
-                     JOIN comments c ON c.deleted_at IS NULL \
-                         AND c.content_html LIKE '%' || a.path || '%' \
-                     JOIN posts p ON p.id = c.post_id \
-                     WHERE a.id = ANY($1) \
-                     ORDER BY c.id",
-                    &[&ids],
-                )
-                .await
-                .map_err(AppError::query)?;
-            for rr in comment_rows {
-                let asset_key: String = rr.get::<_, uuid::Uuid>("asset_id").to_string();
-                let post_status = AssetRefPostStatus::resolve(
-                    rr.get::<_, &str>("post_status"),
-                    rr.get::<_, Option<chrono::DateTime<chrono::Utc>>>("post_deleted_at"),
-                );
-                refs_map
-                    .entry(asset_key)
-                    .or_default()
-                    .push(AssetRef::Comment {
-                        comment_id: rr.get("comment_id"),
-                        author_name: rr.get("author_name"),
-                        post_id: rr.get("post_id"),
-                        post_title: rr.get("post_title"),
-                        post_slug: rr.get("post_slug"),
-                        post_status,
-                    });
-            }
-
-            // 3. 用户头像（label = display_name 回退 username）。
-            let user_rows = client
-                .query(
-                    "SELECT a.id AS asset_id, u.id AS user_id, u.username, u.display_name \
-                     FROM assets a \
-                     JOIN users u ON u.avatar_url = '/uploads/' || a.path \
-                     WHERE a.id = ANY($1) \
-                     ORDER BY u.id",
-                    &[&ids],
-                )
-                .await
-                .map_err(AppError::query)?;
-            for rr in user_rows {
-                let asset_key: String = rr.get::<_, uuid::Uuid>("asset_id").to_string();
-                let username: String = rr.get("username");
-                let display_name: Option<String> = rr.get("display_name");
-                let label = display_name
-                    .filter(|s| !s.trim().is_empty())
-                    .unwrap_or(username);
-                refs_map
-                    .entry(asset_key)
-                    .or_default()
-                    .push(AssetRef::UserAvatar {
-                        user_id: rr.get("user_id"),
-                        label,
-                    });
-            }
-
-            // 4. 友链头像。
-            let friend_rows = client
-                .query(
-                    "SELECT a.id AS asset_id, f.id AS friend_id, f.name \
-                     FROM assets a \
-                     JOIN friend_links f ON f.avatar_url = '/uploads/' || a.path \
-                     WHERE a.id = ANY($1) \
-                     ORDER BY f.id",
-                    &[&ids],
-                )
-                .await
-                .map_err(AppError::query)?;
-            for rr in friend_rows {
-                let asset_key: String = rr.get::<_, uuid::Uuid>("asset_id").to_string();
-                refs_map
-                    .entry(asset_key)
-                    .or_default()
-                    .push(AssetRef::FriendAvatar {
-                        friend_id: rr.get("friend_id"),
-                        name: rr.get("name"),
-                    });
-            }
-        }
-
-        let assets = rows
-            .into_iter()
-            .map(|row| {
-                let id: String = row.get::<_, uuid::Uuid>("id").to_string();
-                let refs = refs_map.remove(&id).unwrap_or_default();
-                AssetDto {
-                    asset: Asset {
-                        id,
-                        path: row.get("path"),
-                        filename: row.get("filename"),
-                        mime: row.get("mime"),
-                        size_bytes: row.get("size_bytes"),
-                        width: row.get("width"),
-                        height: row.get("height"),
-                        alt: row.get("alt"),
-                        created_at: row.get("created_at"),
-                    },
-                    ref_count: row.get("ref_count"),
-                    refs,
-                }
-            })
-            .collect();
-
-        Ok(AssetListResponse {
-            assets,
-            total,
-            used_count: summary.get(0),
-            orphan_count: summary.get(1),
-            purgeable_count: summary.get(2),
-            purgeable_bytes: summary.get(3),
-        })
+        AssetFilter::All => {}
     }
-    #[cfg(not(feature = "server"))]
-    unreachable!()
+    if !query.is_empty() {
+        params.push(&query);
+        conditions.push(format!(
+            "(a.filename ILIKE '%' || ${} || '%' OR a.alt ILIKE '%' || ${} || '%')",
+            params.len(),
+            params.len()
+        ));
+    }
+    let where_clause = if conditions.is_empty() {
+        String::new()
+    } else {
+        format!("WHERE {}", conditions.join(" AND "))
+    };
+
+    let order_clause = match sort {
+        AssetSort::CreatedDesc => "a.created_at DESC, a.id",
+        AssetSort::SizeDesc => "a.size_bytes DESC, a.id",
+    };
+
+    // 列表查询：ref_count 按文章、存活评论、用户头像和友链头像的使用次数累计，
+    // 与 Used/Orphan 筛选及汇总计数使用同一引用来源。
+    // const 不能取引用（内联后借临时值会垂悬），绑定到局部变量再进参数列表。
+    let per_page = PER_PAGE;
+    params.push(&per_page);
+    let limit_idx = params.len();
+    params.push(&offset);
+    let offset_idx = params.len();
+    let rows = client
+        .query(
+            &format!(
+                "SELECT a.id AS id, a.path, a.filename, a.mime, a.size_bytes, \
+                        a.width, a.height, a.alt, a.created_at, \
+                        {ref_count} AS ref_count \
+                 FROM assets a {where_clause} \
+                 ORDER BY {order_clause} LIMIT ${limit_idx} OFFSET ${offset_idx}",
+                ref_count = super::ASSET_REF_COUNT_EXPR,
+            ),
+            &params,
+        )
+        .await
+        .map_err(AppError::query)?;
+
+    let total: i64 = client
+        .query_one(
+            &format!("SELECT COUNT(*) FROM assets a {where_clause}"),
+            &params[..params.len() - 2],
+        )
+        .await
+        .map_err(AppError::query)?
+        .get(0);
+
+    // 汇总计数：tabs 与「清理孤儿」按钮徽标。不受筛选/搜索影响，始终全局。
+    // 孤儿 = 不存在任何文章、评论或头像引用（与 AssetFilter::Orphan 同语义）。
+    let summary = client
+        .query_one(
+            &format!(
+                "SELECT \
+                    COUNT(*) FILTER (WHERE {asset_ref}), \
+                    COUNT(*) FILTER (WHERE NOT {asset_ref}), \
+                    COUNT(*) FILTER (WHERE NOT {asset_ref} \
+                        AND a.created_at < NOW() - make_interval(days => $1)), \
+                    COALESCE(SUM(a.size_bytes) FILTER (WHERE NOT {asset_ref} \
+                        AND a.created_at < NOW() - make_interval(days => $1)), 0)::bigint \
+                 FROM assets a",
+                asset_ref = super::ASSET_REF_CLAUSE
+            ),
+            &[&PURGE_GRACE_DAYS],
+        )
+        .await
+        .map_err(AppError::query)?;
+
+    // 本页素材的引用明细（第二组查询，避免 JOIN fan-out 与分页错位）。
+    // 四个来源与 ASSET_REF_CLAUSE 一一对应；按 文章→评论→用户头像→友链头像
+    // 的顺序插入，前端即按此分组顺序渲染。
+    let ids: Vec<uuid::Uuid> = rows.iter().map(|r| r.get::<_, uuid::Uuid>("id")).collect();
+    let mut refs_map: std::collections::HashMap<String, Vec<AssetRef>> =
+        std::collections::HashMap::new();
+    if !ids.is_empty() {
+        // 1. 文章（asset_refs 表，含草稿与回收站——slug/status/deleted_at 供前端
+        //    决定链接走向：已发布→前台新标签，其余→后台编辑页）。
+        let ref_rows = client
+            .query(
+                "SELECT r.asset_id AS asset_id, p.id AS post_id, p.title, p.slug, \
+                        p.status, p.deleted_at \
+                 FROM asset_refs r JOIN posts p ON p.id = r.post_id \
+                 WHERE r.asset_id = ANY($1) \
+                 ORDER BY p.id",
+                &[&ids],
+            )
+            .await
+            .map_err(AppError::query)?;
+        for rr in ref_rows {
+            let asset_key: String = rr.get::<_, uuid::Uuid>("asset_id").to_string();
+            let status = AssetRefPostStatus::resolve(
+                rr.get::<_, &str>("status"),
+                rr.get::<_, Option<chrono::DateTime<chrono::Utc>>>("deleted_at"),
+            );
+            refs_map.entry(asset_key).or_default().push(AssetRef::Post {
+                post_id: rr.get("post_id"),
+                title: rr.get("title"),
+                slug: rr.get("slug"),
+                status,
+            });
+        }
+
+        // 2. 存活评论（content_html 子串匹配；所属文章信息供链接与展示）。
+        let comment_rows = client
+            .query(
+                "SELECT a.id AS asset_id, c.id AS comment_id, c.author_name, \
+                        p.id AS post_id, p.title AS post_title, p.slug AS post_slug, \
+                        p.status AS post_status, p.deleted_at AS post_deleted_at \
+                 FROM assets a \
+                 JOIN comments c ON c.deleted_at IS NULL \
+                     AND c.content_html LIKE '%' || a.path || '%' \
+                 JOIN posts p ON p.id = c.post_id \
+                 WHERE a.id = ANY($1) \
+                 ORDER BY c.id",
+                &[&ids],
+            )
+            .await
+            .map_err(AppError::query)?;
+        for rr in comment_rows {
+            let asset_key: String = rr.get::<_, uuid::Uuid>("asset_id").to_string();
+            let post_status = AssetRefPostStatus::resolve(
+                rr.get::<_, &str>("post_status"),
+                rr.get::<_, Option<chrono::DateTime<chrono::Utc>>>("post_deleted_at"),
+            );
+            refs_map
+                .entry(asset_key)
+                .or_default()
+                .push(AssetRef::Comment {
+                    comment_id: rr.get("comment_id"),
+                    author_name: rr.get("author_name"),
+                    post_id: rr.get("post_id"),
+                    post_title: rr.get("post_title"),
+                    post_slug: rr.get("post_slug"),
+                    post_status,
+                });
+        }
+
+        // 3. 用户头像（label = display_name 回退 username）。
+        let user_rows = client
+            .query(
+                "SELECT a.id AS asset_id, u.id AS user_id, u.username, u.display_name \
+                 FROM assets a \
+                 JOIN users u ON u.avatar_url = '/uploads/' || a.path \
+                 WHERE a.id = ANY($1) \
+                 ORDER BY u.id",
+                &[&ids],
+            )
+            .await
+            .map_err(AppError::query)?;
+        for rr in user_rows {
+            let asset_key: String = rr.get::<_, uuid::Uuid>("asset_id").to_string();
+            let username: String = rr.get("username");
+            let display_name: Option<String> = rr.get("display_name");
+            let label = display_name
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or(username);
+            refs_map
+                .entry(asset_key)
+                .or_default()
+                .push(AssetRef::UserAvatar {
+                    user_id: rr.get("user_id"),
+                    label,
+                });
+        }
+
+        // 4. 友链头像。
+        let friend_rows = client
+            .query(
+                "SELECT a.id AS asset_id, f.id AS friend_id, f.name \
+                 FROM assets a \
+                 JOIN friend_links f ON f.avatar_url = '/uploads/' || a.path \
+                 WHERE a.id = ANY($1) \
+                 ORDER BY f.id",
+                &[&ids],
+            )
+            .await
+            .map_err(AppError::query)?;
+        for rr in friend_rows {
+            let asset_key: String = rr.get::<_, uuid::Uuid>("asset_id").to_string();
+            refs_map
+                .entry(asset_key)
+                .or_default()
+                .push(AssetRef::FriendAvatar {
+                    friend_id: rr.get("friend_id"),
+                    name: rr.get("name"),
+                });
+        }
+    }
+
+    let assets = rows
+        .into_iter()
+        .map(|row| {
+            let id: String = row.get::<_, uuid::Uuid>("id").to_string();
+            let refs = refs_map.remove(&id).unwrap_or_default();
+            AssetDto {
+                asset: Asset {
+                    id,
+                    path: row.get("path"),
+                    filename: row.get("filename"),
+                    mime: row.get("mime"),
+                    size_bytes: row.get("size_bytes"),
+                    width: row.get("width"),
+                    height: row.get("height"),
+                    alt: row.get("alt"),
+                    created_at: row.get("created_at"),
+                },
+                ref_count: row.get("ref_count"),
+                refs,
+            }
+        })
+        .collect();
+
+    Ok(AssetListResponse {
+        assets,
+        total,
+        used_count: summary.get(0),
+        orphan_count: summary.get(1),
+        purgeable_count: summary.get(2),
+        purgeable_bytes: summary.get(3),
+    })
 }

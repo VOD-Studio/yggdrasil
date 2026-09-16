@@ -90,142 +90,141 @@ fn walk_images(
 /// 全量重建素材索引。
 #[server(RebuildAssetsIndex, "/api")]
 pub async fn rebuild_assets_index() -> Result<RebuildAssetsResponse, ServerFnError> {
-    #[cfg(feature = "server")]
-    {
-        use crate::api::auth::get_current_admin_user;
-        use crate::api::error::AppError;
-        use crate::db::pool::get_conn;
+    crate::api::auth::get_current_admin_user().await?;
+    rebuild_assets_index_impl().await
+}
 
-        let _admin = get_current_admin_user().await?;
+/// 共享素材操作；调用方须先完成管理员鉴权。
+#[cfg(feature = "server")]
+pub(crate) async fn rebuild_assets_index_impl() -> Result<RebuildAssetsResponse, ServerFnError> {
+    use crate::api::error::AppError;
+    use crate::db::pool::get_conn;
 
-        // 磁盘扫描 + header 尺寸读取是 IO 密集同步操作，移到阻塞线程池。
-        let (scanned, unreadable) = tokio::task::spawn_blocking(|| {
-            let base = std::path::Path::new("uploads");
-            let mut files = Vec::new();
-            let mut unreadable = Vec::new();
-            walk_images(base, base, &mut files, &mut unreadable);
-            (files, unreadable)
-        })
-        .await
-        .map_err(|_| AppError::Internal("素材扫描任务失败"))?;
+    // 磁盘扫描 + header 尺寸读取是 IO 密集同步操作，移到阻塞线程池。
+    let (scanned, unreadable) = tokio::task::spawn_blocking(|| {
+        let base = std::path::Path::new("uploads");
+        let mut files = Vec::new();
+        let mut unreadable = Vec::new();
+        walk_images(base, base, &mut files, &mut unreadable);
+        (files, unreadable)
+    })
+    .await
+    .map_err(|_| AppError::Internal("素材扫描任务失败"))?;
 
-        let mut client = get_conn().await.map_err(AppError::db_conn)?;
-        let tx = client.transaction().await.map_err(AppError::tx)?;
+    let mut client = get_conn().await.map_err(AppError::db_conn)?;
+    let tx = client.transaction().await.map_err(AppError::tx)?;
 
-        // 1. upsert assets。xmax = 0 判别新插入（PG 系统列：新行 xmax 为 0）。
-        //    ON CONFLICT 仅当技术字段（mime/size/width/height）实际变化时才更新（IS DISTINCT FROM），
-        //    保证幂等重跑 updated = 0 且不覆盖 alt 和原始 filename（issue #31）。
-        //    filename 仅在新插入时取磁盘文件名；已存在的行保留上传时记录的原始文件名。
-        let mut inserted: i64 = 0;
-        let mut updated: i64 = 0;
-        for f in &scanned {
-            // DO UPDATE 的 WHERE 不满足时不返回行（技术字段无变化），用 query_opt 区分三种结果。
-            let asset_id = uuid::Uuid::new_v4();
-            let row = tx
-                .query_opt(
-                    "INSERT INTO assets (id, path, filename, mime, size_bytes, width, height) \
-                     VALUES ($1, $2, $3, $4, $5, $6, $7) \
-                    ON CONFLICT (path) DO UPDATE SET \
-                        mime = EXCLUDED.mime, \
-                        size_bytes = EXCLUDED.size_bytes, \
-                        width = EXCLUDED.width, \
-                        height = EXCLUDED.height, \
-                        updated_at = NOW() \
-                    WHERE assets.size_bytes IS DISTINCT FROM EXCLUDED.size_bytes \
-                       OR assets.width IS DISTINCT FROM EXCLUDED.width \
-                       OR assets.height IS DISTINCT FROM EXCLUDED.height \
-                       OR assets.mime IS DISTINCT FROM EXCLUDED.mime \
-                    RETURNING (xmax = 0) AS was_inserted",
-                    &[
-                        &asset_id,
-                        &f.rel_path,
-                        &f.filename,
-                        &f.mime,
-                        &f.size_bytes,
-                        &f.width,
-                        &f.height,
-                    ],
-                )
-                .await
-                .map_err(AppError::tx)?;
-            match row {
-                Some(r) if r.get::<_, bool>("was_inserted") => inserted += 1,
-                Some(_) => updated += 1,
-                None => {} // 技术字段无变化，幂等跳过
-            }
-        }
-
-        // 2. 删除文件已消失的 DB 行（refs 级联删）。
-        //    排除集 = 可读文件 + 尺寸读取失败的文件（后者仍在磁盘上，
-        //    不应误删——issue #30 的根因就是此处曾遗漏无法读尺寸的大 WebP）。
-        let mut keep_paths: Vec<String> = scanned.iter().map(|f| f.rel_path.clone()).collect();
-        keep_paths.extend(unreadable.iter().cloned());
-        let removed = tx
-            .execute(
-                "DELETE FROM assets WHERE NOT (path = ANY($1))",
-                &[&keep_paths],
+    // 1. upsert assets。xmax = 0 判别新插入（PG 系统列：新行 xmax 为 0）。
+    //    ON CONFLICT 仅当技术字段（mime/size/width/height）实际变化时才更新（IS DISTINCT FROM），
+    //    保证幂等重跑 updated = 0 且不覆盖 alt 和原始 filename（issue #31）。
+    //    filename 仅在新插入时取磁盘文件名；已存在的行保留上传时记录的原始文件名。
+    let mut inserted: i64 = 0;
+    let mut updated: i64 = 0;
+    for f in &scanned {
+        // DO UPDATE 的 WHERE 不满足时不返回行（技术字段无变化），用 query_opt 区分三种结果。
+        let asset_id = uuid::Uuid::new_v4();
+        let row = tx
+            .query_opt(
+                "INSERT INTO assets (id, path, filename, mime, size_bytes, width, height) \
+                 VALUES ($1, $2, $3, $4, $5, $6, $7) \
+                ON CONFLICT (path) DO UPDATE SET \
+                    mime = EXCLUDED.mime, \
+                    size_bytes = EXCLUDED.size_bytes, \
+                    width = EXCLUDED.width, \
+                    height = EXCLUDED.height, \
+                    updated_at = NOW() \
+                WHERE assets.size_bytes IS DISTINCT FROM EXCLUDED.size_bytes \
+                   OR assets.width IS DISTINCT FROM EXCLUDED.width \
+                   OR assets.height IS DISTINCT FROM EXCLUDED.height \
+                   OR assets.mime IS DISTINCT FROM EXCLUDED.mime \
+                RETURNING (xmax = 0) AS was_inserted",
+                &[
+                    &asset_id,
+                    &f.rel_path,
+                    &f.filename,
+                    &f.mime,
+                    &f.size_bytes,
+                    &f.width,
+                    &f.height,
+                ],
             )
             .await
             .map_err(AppError::tx)?;
-
-        // 3. 重建 asset_refs：全表扫 posts（含回收站——回收站文章的引用同样阻止删除）。
-        let post_rows = tx
-            .query("SELECT id, content_html, cover_image FROM posts", &[])
-            .await
-            .map_err(AppError::query)?;
-        tx.execute("DELETE FROM asset_refs", &[])
-            .await
-            .map_err(AppError::tx)?;
-        let mut ref_count: i64 = 0;
-        for pr in &post_rows {
-            let post_id: i32 = pr.get("id");
-            let content_html: Option<String> = pr.get("content_html");
-            let cover_image: Option<String> = pr.get("cover_image");
-            let found = crate::api::posts::helpers::extract_asset_paths(
-                content_html.as_deref().unwrap_or(""),
-                cover_image.as_deref(),
-            );
-            if found.is_empty() {
-                continue;
-            }
-            let n = tx
-                .execute(
-                    "INSERT INTO asset_refs (asset_id, post_id) \
-                     SELECT id, $1 FROM assets WHERE path = ANY($2) \
-                     ON CONFLICT DO NOTHING",
-                    &[&post_id, &found],
-                )
-                .await
-                .map_err(AppError::tx)?;
-            ref_count += n as i64;
+        match row {
+            Some(r) if r.get::<_, bool>("was_inserted") => inserted += 1,
+            Some(_) => updated += 1,
+            None => {} // 技术字段无变化，幂等跳过
         }
-
-        tx.commit().await.map_err(AppError::tx)?;
-
-        let scanned_count = scanned.len() as i64;
-        let skipped_count = unreadable.len() as i64;
-        let message = if skipped_count > 0 {
-            format!(
-                "重建完成：扫描 {} 个文件，新增 {}，更新 {}，移除 {}，跳过 {} 个无法读取的文件（已保留）",
-                scanned_count, inserted, updated, removed, skipped_count
-            )
-        } else {
-            format!(
-                "重建完成：扫描 {} 个文件，新增 {}，更新 {}，移除 {}",
-                scanned_count, inserted, updated, removed
-            )
-        };
-        Ok(RebuildAssetsResponse {
-            success: true,
-            message,
-            scanned: scanned_count,
-            inserted,
-            updated,
-            removed: removed as i64,
-            ref_count,
-            skipped: skipped_count,
-        })
     }
-    #[cfg(not(feature = "server"))]
-    unreachable!()
+
+    // 2. 删除文件已消失的 DB 行（refs 级联删）。
+    //    排除集 = 可读文件 + 尺寸读取失败的文件（后者仍在磁盘上，
+    //    不应误删——issue #30 的根因就是此处曾遗漏无法读尺寸的大 WebP）。
+    let mut keep_paths: Vec<String> = scanned.iter().map(|f| f.rel_path.clone()).collect();
+    keep_paths.extend(unreadable.iter().cloned());
+    let removed = tx
+        .execute(
+            "DELETE FROM assets WHERE NOT (path = ANY($1))",
+            &[&keep_paths],
+        )
+        .await
+        .map_err(AppError::tx)?;
+
+    // 3. 重建 asset_refs：全表扫 posts（含回收站——回收站文章的引用同样阻止删除）。
+    let post_rows = tx
+        .query("SELECT id, content_html, cover_image FROM posts", &[])
+        .await
+        .map_err(AppError::query)?;
+    tx.execute("DELETE FROM asset_refs", &[])
+        .await
+        .map_err(AppError::tx)?;
+    let mut ref_count: i64 = 0;
+    for pr in &post_rows {
+        let post_id: i32 = pr.get("id");
+        let content_html: Option<String> = pr.get("content_html");
+        let cover_image: Option<String> = pr.get("cover_image");
+        let found = crate::api::posts::helpers::extract_asset_paths(
+            content_html.as_deref().unwrap_or(""),
+            cover_image.as_deref(),
+        );
+        if found.is_empty() {
+            continue;
+        }
+        let n = tx
+            .execute(
+                "INSERT INTO asset_refs (asset_id, post_id) \
+                 SELECT id, $1 FROM assets WHERE path = ANY($2) \
+                 ON CONFLICT DO NOTHING",
+                &[&post_id, &found],
+            )
+            .await
+            .map_err(AppError::tx)?;
+        ref_count += n as i64;
+    }
+
+    tx.commit().await.map_err(AppError::tx)?;
+
+    let scanned_count = scanned.len() as i64;
+    let skipped_count = unreadable.len() as i64;
+    let message = if skipped_count > 0 {
+        format!(
+            "重建完成：扫描 {} 个文件，新增 {}，更新 {}，移除 {}，跳过 {} 个无法读取的文件（已保留）",
+            scanned_count, inserted, updated, removed, skipped_count
+        )
+    } else {
+        format!(
+            "重建完成：扫描 {} 个文件，新增 {}，更新 {}，移除 {}",
+            scanned_count, inserted, updated, removed
+        )
+    };
+    Ok(RebuildAssetsResponse {
+        success: true,
+        message,
+        scanned: scanned_count,
+        inserted,
+        updated,
+        removed: removed as i64,
+        ref_count,
+        skipped: skipped_count,
+    })
 }

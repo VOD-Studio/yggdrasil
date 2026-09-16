@@ -25,6 +25,36 @@
 - 内置 MCP 服务器（`POST /mcp`，Streamable HTTP，bearer token 鉴权）。
 - AI 客户端（Claude Code / Cursor / Cline 等）可把已发布文章当知识库检索，并按作用域（read / write / admin）执行文章、评论、标签、媒体、设置与代码运行等后台操作。
 
+MCP 素材工具（管理操作均需要 `admin` 令牌）：
+
+| 工具 | 用途 |
+| --- | --- |
+| `list_assets` | 分页搜索素材及引用明细；默认每页 60 张，页码从 1 开始 |
+| `update_asset_alt` | 修改或清除 alt，不回写已有文章 |
+| `delete_asset` | 永久删除单张无引用素材 |
+| `batch_delete_assets` | 批量删除，每次 1–100 个 id，被引用的跳过 |
+| `purge_orphan_assets` | 清理无引用且上传超过 7 天的素材 |
+| `rebuild_assets_index` | 扫描磁盘重建素材及文章引用索引 |
+
+例如 `list_assets({"filter":"Orphan","query":"截图","sort":"CreatedDesc","page":1})`；
+`filter` 可选 `All` / `Used` / `Orphan`，`sort` 可选 `CreatedDesc` / `SizeDesc`。
+返回的 `path` 加上 `/uploads/` 前缀即可作为图片地址；`refs` 包含文章、评论和头像引用。
+删除与后台共用引用保护，草稿及回收站文章引用同样受保护；删除为永久操作。
+
+上传需要 `write` 或 `admin` 令牌，支持 JPEG/PNG/GIF/WebP，最大 5 MiB：
+
+- 远程图片：`upload_media({"url":"https://example.com/image.png"})`，服务端抓取并入库。
+- 本地图片：通过 HTTP multipart 接口上传，二进制不经过 MCP JSON-RPC：
+
+```sh
+curl "$APP_BASE_URL/api/mcp/upload" \
+  -H "Authorization: Bearer $YGG_MCP_TOKEN" \
+  -F 'file=@/path/to/image.png;type=image/png'
+```
+
+两条通道都返回 `/uploads/...` 地址。`upload_media` 的 `alt` 参数目前不持久化，
+可在上传后通过 `list_assets` 获取素材 id，再调用 `update_asset_alt`。
+
 **媒体与素材**
 
 - 素材库：按内容 SHA-256 去重、引用追踪、孤儿清理、就地编辑 alt，WebP 转码与图片尺寸/像素校验。

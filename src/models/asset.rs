@@ -7,6 +7,8 @@
 //! id 以 String 承载（SQL 侧 `id::text` 读出、`$1::uuid` 写入），
 //! 避免把 server-only 的 uuid crate 引入 WASM 前端构建。
 
+#[cfg(feature = "server")]
+use rmcp::schemars;
 use serde::{Deserialize, Serialize};
 
 /// 素材记录（对应 assets 表一行）。
@@ -125,6 +127,7 @@ pub struct AssetDto {
 
 /// 列表筛选：按引用状态。
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Default)]
+#[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 pub enum AssetFilter {
     #[default]
     All,
@@ -134,6 +137,7 @@ pub enum AssetFilter {
 
 /// 列表排序。
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Default)]
+#[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 pub enum AssetSort {
     #[default]
     CreatedDesc,
