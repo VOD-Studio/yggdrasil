@@ -33,6 +33,79 @@ use crate::ssr_cache;
 
 #[tool_router(router = posts_router, vis = "pub")]
 impl crate::mcp::server::YggMcpServer {
+    #[tool(
+        description = "分页查询当前令牌用户的文章（含草稿）。需要 write 权限；status 可选 draft/published，省略返回全部未删除文章。query 按标题搜索，page 从 1 开始，per_page 为 1..=50。"
+    )]
+    async fn list_posts(
+        &self,
+        Parameters(p): Parameters<ListPostsParams>,
+        Extension(parts): Extension<http::request::Parts>,
+    ) -> Result<CallToolResult, McpError> {
+        let principal = require_scope(&parts, "list_posts", TokenScope::Write)?;
+        let (page, per_page, pattern) = p.normalize()?;
+        let client = get_conn().await.map_err(|e| internal(e, "db connection"))?;
+        let offset = (i64::from(page) - 1) * i64::from(per_page);
+        let limit = i64::from(per_page);
+        let condition = "p.author_id = $1 AND p.deleted_at IS NULL AND ($2::text IS NULL OR p.status = $2) AND p.title ILIKE $3";
+        let total: i64 = client
+            .query_one(
+                &format!("SELECT COUNT(*) FROM posts p WHERE {condition}"),
+                &[&principal.user_id, &p.status, &pattern],
+            )
+            .await
+            .map_err(|e| internal(e, "count posts"))?
+            .get(0);
+        let rows = client
+            .query(
+                &format!(
+                    "SELECT p.id, p.author_id, p.title, p.slug, p.summary, p.status,
+                p.published_at, p.created_at, p.updated_at, p.deleted_at, p.cover_image,
+                p.word_count, p.reading_time,
+                COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{{}}') as tags
+                FROM posts p LEFT JOIN post_tags pt ON p.id = pt.post_id
+                LEFT JOIN tags t ON pt.tag_id = t.id WHERE {condition}
+                GROUP BY p.id ORDER BY p.created_at DESC, p.id DESC LIMIT $4 OFFSET $5"
+                ),
+                &[&principal.user_id, &p.status, &pattern, &limit, &offset],
+            )
+            .await
+            .map_err(|e| internal(e, "list posts"))?;
+        let posts: Vec<_> = rows
+            .iter()
+            .map(crate::api::posts::helpers::row_to_post_list_item)
+            .collect();
+        ok_json(
+            serde_json::json!({"posts": posts, "total": total, "page": page, "per_page": per_page}),
+        )
+    }
+
+    #[tool(
+        description = "按 ID 读取当前令牌用户的文章，包含草稿、Markdown 正文、封面、标签、状态和 updated_at。需要 write 权限，不读取回收站文章。"
+    )]
+    async fn get_post_by_id(
+        &self,
+        Parameters(p): Parameters<PostIdParams>,
+        Extension(parts): Extension<http::request::Parts>,
+    ) -> Result<CallToolResult, McpError> {
+        let principal = require_scope(&parts, "get_post_by_id", TokenScope::Write)?;
+        let client = get_conn().await.map_err(|e| internal(e, "db connection"))?;
+        let row = client.query_opt(
+            "SELECT p.id, p.author_id, p.title, p.slug, p.summary, p.content_md, p.content_html,
+                p.toc_html, p.status, p.published_at, p.created_at, p.updated_at, p.cover_image,
+                p.word_count, p.reading_time,
+                COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{}') as tags
+                FROM posts p LEFT JOIN post_tags pt ON p.id = pt.post_id
+                LEFT JOIN tags t ON pt.tag_id = t.id
+                WHERE p.id = $1 AND p.author_id = $2 AND p.deleted_at IS NULL GROUP BY p.id",
+            &[&p.post_id, &principal.user_id],
+        ).await.map_err(|e| internal(e, "read post"))?;
+        let row = row.ok_or_else(|| McpError::invalid_request("文章不存在或无权限", None))?;
+        let post = crate::api::posts::helpers::row_to_post_full(&row)
+            .await
+            .map_err(|e| internal(format!("{e:?}"), "read post"))?;
+        ok_json(post)
+    }
+
     /// 创建一篇新文章（草稿或直接发布）。要求 write 作用域。
     #[tool(
         description = "创建一篇新文章。渲染 Markdown 为 HTML，同步标签与素材引用。返回 post_id/slug。"
@@ -728,4 +801,156 @@ fn parse_date_opt(s: &str) -> Option<chrono::DateTime<chrono::Utc>> {
         ));
     }
     None
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema, Default)]
+pub struct ListPostsParams {
+    pub status: Option<String>,
+    pub query: Option<String>,
+    pub page: Option<i32>,
+    pub per_page: Option<i32>,
+}
+
+impl ListPostsParams {
+    fn normalize(&self) -> Result<(i32, i32, String), McpError> {
+        if self
+            .status
+            .as_deref()
+            .is_some_and(|s| !matches!(s, "draft" | "published"))
+        {
+            return Err(McpError::invalid_params(
+                "status must be draft or published",
+                None,
+            ));
+        }
+        let query: String = self
+            .query
+            .as_deref()
+            .unwrap_or("")
+            .trim()
+            .chars()
+            .take(200)
+            .collect();
+        Ok((
+            self.page.unwrap_or(1).max(1),
+            self.per_page.unwrap_or(20).clamp(1, 50),
+            format!("%{}%", crate::utils::server::escape_like_pattern(&query)),
+        ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::mcp::{auth::McpPrincipal, server::YggMcpServer};
+
+    fn parts(scope: Option<TokenScope>) -> http::request::Parts {
+        let (mut parts, _) = http::Request::new(()).into_parts();
+        if let Some(scope) = scope {
+            parts.extensions.insert(McpPrincipal {
+                user_id: 1,
+                scope,
+                token_id: "test".into(),
+            });
+        }
+        parts
+    }
+
+    fn result_json(result: CallToolResult) -> serde_json::Value {
+        serde_json::from_str(&result.content[0].as_text().unwrap().text).unwrap()
+    }
+
+    /// Run only against a disposable database named ygg_mcp_test.
+    #[tokio::test]
+    #[ignore = "requires disposable DATABASE_URL database ygg_mcp_test"]
+    async fn private_post_workflow_database() {
+        let mut client = get_conn().await.unwrap();
+        let database: String = client
+            .query_one("SELECT current_database()", &[])
+            .await
+            .unwrap()
+            .get(0);
+        assert_eq!(database, "ygg_mcp_test", "requires isolated test database");
+        crate::db::migrate::run_on_conn(&mut client).await.unwrap();
+        client
+            .batch_execute(
+                "TRUNCATE users CASCADE;
+            INSERT INTO users (id, username, email, password_hash, role) VALUES
+                (1, 'mcp-owner', 'owner@test.invalid', 'unused', 'admin'),
+                (2, 'mcp-other', 'other@test.invalid', 'unused', 'blocked');
+            INSERT INTO posts (id, author_id, title, slug, content_md, content_html, status) VALUES
+                (101, 1, 'Draft 100%_', 'mcp-draft', 'draft body', '<p>draft body</p>', 'draft'),
+                (102, 2, 'Other draft', 'mcp-other', 'private', '<p>private</p>', 'draft'),
+                (103, 1, 'Published', 'mcp-published', 'public', '<p>public</p>', 'published');",
+            )
+            .await
+            .unwrap();
+        let p = ListPostsParams {
+            status: Some("draft".into()),
+            query: Some("100%_".into()),
+            ..Default::default()
+        };
+        let list = result_json(
+            YggMcpServer
+                .list_posts(Parameters(p), Extension(parts(Some(TokenScope::Write))))
+                .await
+                .unwrap(),
+        );
+        assert_eq!(list["total"], 1);
+        assert_eq!(list["posts"][0]["id"], 101);
+        let post = result_json(
+            YggMcpServer
+                .get_post_by_id(
+                    Parameters(PostIdParams { post_id: 101 }),
+                    Extension(parts(Some(TokenScope::Write))),
+                )
+                .await
+                .unwrap(),
+        );
+        assert_eq!(post["content_md"], "draft body");
+        assert!(post["updated_at"].is_string());
+        assert!(YggMcpServer
+            .get_post_by_id(
+                Parameters(PostIdParams { post_id: 102 }),
+                Extension(parts(Some(TokenScope::Write)))
+            )
+            .await
+            .is_err());
+        assert!(crate::mcp::tools::read::get_published_by_slug("mcp-draft")
+            .await
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    fn list_validates_status_bounds_paging_and_escapes_search() {
+        let mut p = ListPostsParams::default();
+        assert_eq!(p.normalize().unwrap(), (1, 20, "%".repeat(2)));
+        p.page = Some(i32::MIN);
+        p.per_page = Some(i32::MAX);
+        p.query = Some("  100%_  ".into());
+        assert_eq!(p.normalize().unwrap(), (1, 50, r"%100\%\_%".into()));
+        p.status = Some("unknown".into());
+        assert!(p.normalize().is_err());
+    }
+
+    #[tokio::test]
+    async fn private_reads_reject_missing_and_read_only_principals_before_io() {
+        for scope in [None, Some(TokenScope::Read)] {
+            assert!(YggMcpServer
+                .list_posts(
+                    Parameters(ListPostsParams::default()),
+                    Extension(parts(scope))
+                )
+                .await
+                .is_err());
+            assert!(YggMcpServer
+                .get_post_by_id(
+                    Parameters(PostIdParams { post_id: 1 }),
+                    Extension(parts(scope))
+                )
+                .await
+                .is_err());
+        }
+    }
 }

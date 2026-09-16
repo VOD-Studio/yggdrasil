@@ -19,7 +19,7 @@ pub(super) use crate::api::auth::get_current_admin_user;
 /// 不包含 `content_md`/`content_html`；字数与阅读时长直接读取已持久化的列。
 /// 同步函数，不依赖数据库连接。
 #[cfg(feature = "server")]
-pub(super) fn row_to_post_list_item(row: &tokio_postgres::Row) -> PostListItem {
+pub(crate) fn row_to_post_list_item(row: &tokio_postgres::Row) -> PostListItem {
     let id: i32 = row.get("id");
     let status_str: String = row.get("status");
     let status = PostStatus::from_str(&status_str).unwrap_or(PostStatus::Draft);
@@ -54,7 +54,7 @@ pub(super) fn row_to_post_list_item(row: &tokio_postgres::Row) -> PostListItem {
 /// 相比列表项额外包含上一篇/下一篇导航，
 /// 并在 content_html 为空时重新渲染 Markdown 以兼容旧数据。
 #[cfg(feature = "server")]
-pub(super) async fn row_to_post_full(row: &tokio_postgres::Row) -> Result<Post, AppError> {
+pub(crate) async fn row_to_post_full(row: &tokio_postgres::Row) -> Result<Post, AppError> {
     let id: i32 = row.get("id");
     let role_str: String = row.get("status");
     let status = PostStatus::from_str(&role_str).unwrap_or(PostStatus::Draft);

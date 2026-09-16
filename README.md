@@ -25,6 +25,11 @@
 - 内置 MCP 服务器（`POST /mcp`，Streamable HTTP，bearer token 鉴权）。
 - AI 客户端（Claude Code / Cursor / Cline 等）可把已发布文章当知识库检索，并按作用域（read / write / admin）执行文章、评论、标签、媒体、设置与代码运行等后台操作。
 
+MCP 私有文章查询需要 `write` 或 `admin` 令牌，且只访问令牌用户自己的文章：
+`list_posts({"status":"draft","page":1,"per_page":20})` 查询草稿，支持 `query` 标题搜索；
+`get_post_by_id({"post_id":123})` 读取完整编辑内容及 `updated_at`。
+原有 `search_posts` / `get_post` 仍只返回公开已发布文章。
+
 MCP 素材工具（管理操作均需要 `admin` 令牌）：
 
 | 工具 | 用途 |
