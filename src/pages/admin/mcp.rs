@@ -441,6 +441,11 @@ fn TokenRow(token: McpTokenSummary, state: McpPageState, stagger_index: u32) -> 
                 span { class: "inline-flex items-center px-2 py-0.5 rounded-md text-xs font-mono font-medium bg-[var(--color-paper-entry)] text-[var(--color-paper-primary)] border border-[var(--color-paper-border)]/60",
                     "{token.scope.as_str()}"
                 }
+                if token.notes.read || token.notes.write {
+                    p {class:"text-xs text-paper-accent mt-1",if token.notes.write {"笔记读写"} else {"知识库只读"}
+                        if let Some(ids)=&token.notes.notebook_ids {" · {ids.len()} 个笔记本"} else {" · 全部笔记本"}
+                    }
+                }
             }
             // 创建日期
             td { class: "px-4 py-3.5 text-xs font-mono text-[var(--color-paper-secondary)] whitespace-nowrap",
@@ -578,6 +583,11 @@ fn CreateTokenCard() -> Element {
     let mut scope = use_signal(|| TokenScope::Read);
     let mut lifetime = use_signal(|| TokenLifetime::Days30);
     let mut busy = use_signal(|| false);
+    let mut notes_read = use_signal(|| false);
+    let mut notes_write = use_signal(|| false);
+    let mut restricted = use_signal(|| false);
+    let mut selected_books = use_signal(Vec::<i32>::new);
+    let books = use_resource(|| super::notes::client_request(crate::api::notes::owned_notebooks()));
 
     let mut created_plaintext = state.created_plaintext;
     let reload_gen = state.reload_gen;
@@ -640,10 +650,28 @@ fn CreateTokenCard() -> Element {
                 }
             }
 
+            fieldset {class:"space-y-3 text-sm border-t border-paper-border pt-4",
+                legend {class:"font-semibold","笔记知识库授权"}
+                p {class:"text-xs text-paper-secondary","与文章权限独立。只读授权可检索已收录的私人笔记；写入授权可读写工作稿，不会自动发布。"}
+                label {class:"flex items-center gap-2",crate::components::ui::Checkbox {checked:notes_read(),onchange:move |v| {notes_read.set(v);if !v{notes_write.set(false);}}} "读取我的知识库"}
+                label {class:"flex items-center gap-2",crate::components::ui::Checkbox {checked:notes_write(),onchange:move |v| {notes_write.set(v);if v{notes_read.set(true);}}} "允许创建和修改笔记草稿"}
+                if notes_read() {
+                    label {class:"flex items-center gap-2",crate::components::ui::Checkbox {checked:restricted(),onchange:move |v|restricted.set(v)} "仅授权指定笔记本"}
+                    if restricted() {
+                        if let Some(Ok(items))=books.read().as_ref() {
+                            for book in items {label {class:"flex items-center gap-2 ml-4",key:"{book.id}",
+                                crate::components::ui::Checkbox {checked:selected_books().contains(&book.id),onchange:{let id=book.id;move |v|selected_books.with_mut(|ids| {ids.retain(|x|*x!=id);if v{ids.push(id);}})}} "{book.title}"
+                            }}
+                            if items.is_empty() {p {class:"text-xs text-paper-secondary","请先在笔记管理中创建笔记本。"}}
+                        }
+                    }
+                }
+            }
+
             div { class: "pt-1",
                 button {
                     class: "{BTN_PRIMARY} inline-flex items-center gap-1.5",
-                    disabled: "{busy() || name().trim().is_empty()}",
+                    disabled: busy() || name().trim().is_empty() || (notes_read() && restricted() && selected_books().is_empty()),
                     onclick: move |_| {
                         if busy() {
                             return;
@@ -654,9 +682,10 @@ fn CreateTokenCard() -> Element {
                         }
                         let sc = scope();
                         let lt = lifetime();
+                        let notes=crate::models::mcp_token::NoteGrant {read:notes_read(),write:notes_write(),notebook_ids:if notes_read() && restricted(){Some(selected_books())}else{None}};
                         busy.set(true);
                         spawn(async move {
-                            match create_mcp_token(n, sc, lt).await {
+                            match create_mcp_token(n, sc, lt, Some(notes)).await {
                                 Ok(resp) => {
                                     created_plaintext.set(Some(resp.plaintext));
                                     name.set(String::new());

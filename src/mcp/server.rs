@@ -25,6 +25,7 @@ impl YggMcpServer {
     fn combined_router() -> rmcp::handler::server::router::tool::ToolRouter<Self> {
         YggMcpServer::read_router()
             + YggMcpServer::posts_router()
+            + YggMcpServer::notes_router()
             + YggMcpServer::comments_router()
             + YggMcpServer::tags_router()
             + YggMcpServer::media_router()

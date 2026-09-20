@@ -59,6 +59,7 @@ pub async fn create_mcp_token(
     name: String,
     scope: TokenScope,
     lifetime: TokenLifetime,
+    notes: Option<crate::models::mcp_token::NoteGrant>,
 ) -> Result<CreateTokenResponse, ServerFnError> {
     #[cfg(feature = "server")]
     {
@@ -97,14 +98,32 @@ pub async fn create_mcp_token(
 
         let client = get_conn().await.map_err(AppError::db_conn)?;
 
+        let mut notes = notes.unwrap_or_default();
+        notes.read |= notes.write;
+        if let Some(ids) = notes.notebook_ids.as_mut() {
+            ids.sort_unstable();
+            ids.dedup();
+            let owned: i64 = client
+                .query_one(
+                    "SELECT COUNT(*) FROM notebooks WHERE owner_id=$1 AND id=ANY($2)",
+                    &[&admin.id, &ids.as_slice()],
+                )
+                .await
+                .map_err(AppError::query)?
+                .get(0);
+            if ids.is_empty() || owned != ids.len() as i64 {
+                return Err(AppError::BadRequest("请选择自己拥有的笔记本".into()).into());
+            }
+        }
+
         let row = client
             .query_one(
                 "INSERT INTO mcp_tokens \
-                    (id, user_id, name, scope, token_enc, token_hash, expires_at) \
-                 VALUES ($1::uuid, $2, $3, $4, $5, $6, $7) \
+                    (id, user_id, name, scope, token_enc, token_hash, expires_at, notes_read, notes_write, notebook_ids) \
+                 VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10) \
                  RETURNING id::text, user_id, name, scope, created_at, expires_at, \
-                           last_used_at, revoked_at",
-                &[&id, &admin.id, &name, &scope_str, &enc, &hash, &expires_at],
+                           last_used_at, revoked_at, notes_read, notes_write, notebook_ids",
+                &[&id, &admin.id, &name, &scope_str, &enc, &hash, &expires_at, &notes.read, &notes.write, &notes.notebook_ids],
             )
             .await
             .map_err(AppError::query)?;
@@ -136,7 +155,7 @@ pub async fn list_mcp_tokens() -> Result<Vec<McpTokenSummary>, ServerFnError> {
         let rows = client
             .query(
                 "SELECT id::text, user_id, name, scope, created_at, expires_at, \
-                        last_used_at, revoked_at \
+                        last_used_at, revoked_at, notes_read, notes_write, notebook_ids \
                  FROM mcp_tokens \
                  WHERE user_id = $1 \
                  ORDER BY created_at DESC",
@@ -247,6 +266,11 @@ fn row_to_mcp_token_meta(row: &tokio_postgres::Row) -> McpToken {
         user_id: row.get("user_id"),
         name: row.get("name"),
         scope,
+        notes: crate::models::mcp_token::NoteGrant {
+            read: row.get("notes_read"),
+            write: row.get("notes_write"),
+            notebook_ids: row.get("notebook_ids"),
+        },
         token_enc: String::new(),
         token_hash: String::new(),
         created_at: row.get("created_at"),

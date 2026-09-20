@@ -22,6 +22,8 @@
 
 **AI 集成**
 
+- [笔记与 AI 知识库](docs/notes.md)：随记 / 主题笔记、有序笔记本、私密图片，以及独立的工作稿、公开版、知识库收录版。前台 `/notes`，后台 `/admin/notes`。
+
 - 内置 MCP 服务器（`POST /mcp`，Streamable HTTP，bearer token 鉴权）。
 - AI 客户端（Claude Code / Cursor / Cline 等）可把已发布文章当知识库检索，并按作用域（read / write / admin）执行文章、评论、标签、媒体、设置与代码运行等后台操作。
 

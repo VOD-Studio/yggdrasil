@@ -15,6 +15,7 @@ pub mod comments;
 pub(super) mod common;
 #[cfg(feature = "server")]
 pub mod media;
+pub mod notes;
 #[cfg(feature = "server")]
 pub mod posts;
 #[cfg(feature = "server")]

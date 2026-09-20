@@ -79,6 +79,7 @@ pub struct McpToken {
     pub user_id: i32,
     pub name: String,
     pub scope: TokenScope,
+    pub notes: NoteGrant,
     /// AES-GCM 密文 hex（nonce ‖ ct ‖ tag）。仅服务端解密使用，不向前端暴露。
     #[serde(skip)]
     pub token_enc: String,
@@ -97,6 +98,8 @@ pub struct McpTokenSummary {
     pub id: String,
     pub name: String,
     pub scope: TokenScope,
+    #[serde(default)]
+    pub notes: NoteGrant,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
     pub last_used_at: Option<chrono::DateTime<chrono::Utc>>,
@@ -109,12 +112,21 @@ impl From<McpToken> for McpTokenSummary {
             id: t.id,
             name: t.name,
             scope: t.scope,
+            notes: t.notes,
             created_at: t.created_at,
             expires_at: t.expires_at,
             last_used_at: t.last_used_at,
             revoked_at: t.revoked_at,
         }
     }
+}
+
+/// 独立于文章权限的笔记授权。None 表示全部笔记本，空列表不授权任何笔记本。
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NoteGrant {
+    pub read: bool,
+    pub write: bool,
+    pub notebook_ids: Option<Vec<i32>>,
 }
 
 /// 签发令牌的响应：摘要 + 一次性明文（明文仅在签发/重查时返回，不持久明文）。
