@@ -90,6 +90,13 @@ fn render_ref_row(r: &AssetRef, close: Callback<()>) -> Element {
     const TEXT_CLASS: &str = "flex-1 min-w-0 truncate text-sm text-[var(--color-paper-primary)]";
     const OPEN_CLASS: &str = "w-3.5 h-3.5 shrink-0 text-[var(--color-paper-tertiary)] opacity-0 group-hover/row:opacity-100 transition-opacity";
     match r {
+        AssetRef::Note { note_id, title } => rsx! {
+            Link {class:ROW_CLASS,to:Route::EditNote {id:*note_id},
+                {ref_icon(ARTICLE_ICON_PATH, ICON_CLASS)}
+                span {class:TEXT_CLASS,"{title}"}
+                span {class:"text-xs text-[var(--color-paper-secondary)]","含历史版本"}
+            }
+        },
         AssetRef::Post {
             post_id,
             title,
@@ -978,6 +985,7 @@ pub fn Assets() -> Element {
                             .iter()
                             .filter(|r| matches!(r, AssetRef::Comment { .. }))
                             .collect();
+                        let notes: Vec<&AssetRef> = target.refs.iter().filter(|r|matches!(r,AssetRef::Note {..})).collect();
                         let avatars: Vec<&AssetRef> = target
                             .refs
                             .iter()
@@ -1016,12 +1024,17 @@ pub fn Assets() -> Element {
                                         }
                                     }
                                     if !comments.is_empty() {
+                                        // 评论与笔记分别展示，笔记历史引用也受保护。
                                         p { class: "mt-3 mb-1 text-[10px] font-mono tracking-widest text-[var(--color-paper-tertiary)]",
                                             "评论 · {comments.len()}"
                                         }
                                         for r in comments {
                                             {render_ref_row(r, dismiss_refs)}
                                         }
+                                    }
+                                    if !notes.is_empty() {
+                                        p {class:"mt-3 mb-1 text-[10px] font-mono tracking-widest text-[var(--color-paper-tertiary)]","笔记 · {notes.len()}"}
+                                        for r in notes {{render_ref_row(r,dismiss_refs)}}
                                     }
                                     if !avatars.is_empty() {
                                         p { class: "mt-3 mb-1 text-[10px] font-mono tracking-widest text-[var(--color-paper-tertiary)]",

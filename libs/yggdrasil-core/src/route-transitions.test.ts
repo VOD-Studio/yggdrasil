@@ -309,6 +309,11 @@ describe('section navigation', () => {
 
   it.each([
     ['/', '/archives', 'forward'],
+    ['/', '/notes', 'forward'],
+    ['/notes', '/archives', 'forward'],
+    ['/notes/example', '/', 'backward'],
+    ['/notes', '/notes/example', undefined],
+    ['/notes/book/1', '/notes/example', undefined],
     ['/archives', '/friends', 'forward'],
     ['/friends', '/about', 'forward'],
     ['/about', '/search', 'forward'],

@@ -378,6 +378,10 @@ pub mod wasm {
         upload_file_to("/api/upload", file).await
     }
 
+    pub async fn upload_note_image_file(file: web_sys::File) -> Result<String, String> {
+        upload_file_to("/api/notes/upload", file).await
+    }
+
     /// 评论图片上传（POST /api/comments/upload，允许匿名，IP 双层限流）。
     pub async fn upload_comment_image_file(file: web_sys::File) -> Result<String, String> {
         upload_file_to("/api/comments/upload", file).await

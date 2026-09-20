@@ -23,6 +23,14 @@ pub fn build_nav_items(route: Route) -> Vec<NavItemConfig> {
             is_active: matches!(route, Route::Home {} | Route::HomePage { .. }),
         },
         NavItemConfig {
+            route: Route::Notes {},
+            label: "笔记",
+            is_active: matches!(
+                route,
+                Route::Notes {} | Route::NoteDetail { .. } | Route::NotebookDetail { .. }
+            ),
+        },
+        NavItemConfig {
             route: Route::Archives {},
             label: "归档",
             is_active: matches!(route, Route::Archives {} | Route::TagDetail { .. }),

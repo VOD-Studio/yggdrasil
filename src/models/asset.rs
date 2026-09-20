@@ -28,13 +28,16 @@ pub struct Asset {
 
 /// 引用该素材的一处来源（素材详情浮层/删除拦截时列出）。
 ///
-/// serde tagged enum，WASM 前端按 `kind` 判别分组渲染。四个来源与
+/// serde tagged enum，WASM 前端按 `kind` 判别分组渲染。来源与
 /// `api::assets::ASSET_REF_CLAUSE` 一一对应：
 /// 文章引用来自 asset_refs 表（正文 HTML + 封面，含草稿与回收站文章）；
+/// 笔记引用来自 note_asset_refs（包含所有历史版本）；
 /// 评论/头像引用在查询时按素材路径直接匹配（存活评论、用户头像、友链头像）。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum AssetRef {
+    /// 包括工作稿、收录版、公开版和历史版本，始终链接后台。
+    Note { note_id: i32, title: String },
     /// 文章引用（asset_refs 表）。
     Post {
         post_id: i32,
@@ -61,6 +64,7 @@ impl AssetRef {
     /// 一行可读描述（删除禁用 tooltip 等纯文本场景）。
     pub fn describe(&self) -> String {
         match self {
+            AssetRef::Note { title, .. } => format!("笔记《{title}》（含历史版本）"),
             AssetRef::Post { title, .. } => format!("文章《{title}》"),
             AssetRef::Comment {
                 author_name,

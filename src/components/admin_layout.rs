@@ -237,6 +237,12 @@ fn admin_route_skeleton(route: &Route) -> Element {
         Route::Posts {} => rsx! {
             PostsSkeleton {}
         },
+        Route::AdminNotes {}
+        | Route::AdminNotebooks {}
+        | Route::NewNote {}
+        | Route::EditNote { .. } => rsx! {
+            crate::pages::notes::NotesSkeleton {}
+        },
         Route::PostsTrash {} => rsx! {
             PostsTrashSkeleton {}
         },
@@ -306,6 +312,10 @@ impl NavGroupKind {
             NavGroupKind::Content => matches!(
                 route,
                 Route::Posts {}
+                    | Route::AdminNotes {}
+                    | Route::AdminNotebooks {}
+                    | Route::NewNote {}
+                    | Route::EditNote { .. }
                     | Route::PostsTrash {}
                     | Route::AdminComments {}
                     | Route::AdminCommentsPage { .. }
@@ -410,6 +420,19 @@ fn NavGroup(kind: NavGroupKind, items: Vec<(Route, &'static str, bool)>) -> Elem
 fn ContentNavGroup() -> Element {
     let route = use_route::<Route>();
     let items = vec![
+        (
+            Route::AdminNotes {},
+            "笔记",
+            matches!(
+                route,
+                Route::AdminNotes {} | Route::NewNote {} | Route::EditNote { .. }
+            ),
+        ),
+        (
+            Route::AdminNotebooks {},
+            "笔记本",
+            matches!(route, Route::AdminNotebooks {}),
+        ),
         (
             Route::Posts {},
             "全部文章",

@@ -56,8 +56,9 @@ function page(url: string): string {
 function sectionIndex(url: string): number {
   const path = page(url).split('?')[0];
   if (/^\/page\/\d+$/.test(path)) return 0;
-  if (/^\/tags(?:\/|$)/.test(path)) return 1;
-  return ['/', '/archives', '/friends', '/about', '/search'].indexOf(path);
+  if (/^\/notes(?:\/|$)/.test(path)) return 1;
+  if (/^\/tags(?:\/|$)/.test(path)) return 2;
+  return ['/', '/notes', '/archives', '/friends', '/about', '/search'].indexOf(path);
 }
 function shell(url: string): string {
   const path = page(url).split('?')[0];

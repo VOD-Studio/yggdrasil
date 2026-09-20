@@ -12,6 +12,8 @@ use crate::components::admin_layout::AdminLayout;
 use crate::components::frontend_layout::FrontendLayout;
 use crate::context::UserContext;
 use crate::pages::about::About;
+use crate::pages::admin::note_editor::{EditNote, NewNote};
+use crate::pages::admin::notes::{AdminNotebooks, AdminNotes};
 use crate::pages::admin::{
     Admin, AdminComments, AdminCommentsPage, Assets, FriendsAdmin, Logs, Mcp, PostPreview, Posts,
     PostsTrash, Profile, Runner, SiteSettingsPage, System, Write, WriteEdit,
@@ -22,6 +24,7 @@ use crate::pages::friends::Friends;
 use crate::pages::home::{Home, HomePage};
 use crate::pages::login::Login;
 use crate::pages::not_found::NotFound;
+use crate::pages::notes::{NoteDetail, NotebookDetail, Notes};
 use crate::pages::post_detail::PostDetail;
 use crate::pages::register::Register;
 use crate::pages::search::Search;
@@ -44,6 +47,12 @@ pub enum Route {
             /// 首页分页
             #[route("/page/:page")]
             HomePage { page: i32 },
+            #[route("/notes")]
+            Notes {},
+            #[route("/notes/book/:id")]
+            NotebookDetail { id: i32 },
+            #[route("/notes/:slug")]
+            NoteDetail { slug: String },
             /// 文章归档与标签索引；兼容旧标签列表地址。
             #[redirect("/tags", || Route::Archives {})]
             #[route("/archives")]
@@ -94,6 +103,14 @@ pub enum Route {
         /// 文章管理（全部文章列表）
         #[route("/posts")]
         Posts {},
+        #[route("/notes")]
+        AdminNotes {},
+        #[route("/notes/new")]
+        NewNote {},
+        #[route("/notes/edit/:id")]
+        EditNote { id: i32 },
+        #[route("/notebooks")]
+        AdminNotebooks {},
         /// 回收站（已软删除文章；原 /admin/posts 的客户端 tab，独立路由后归「内容管理」子菜单）
         #[route("/posts/trash")]
         PostsTrash {},

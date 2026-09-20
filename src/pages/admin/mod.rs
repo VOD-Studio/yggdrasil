@@ -14,6 +14,8 @@ pub mod friends;
 pub mod logs;
 /// MCP 令牌管理 + 客户端配置生成页面模块。
 pub mod mcp;
+pub mod note_editor;
+pub mod notes;
 /// 文章管理列表页面模块。
 pub mod posts;
 /// 回收站页面模块（/admin/posts/trash 独立路由）。

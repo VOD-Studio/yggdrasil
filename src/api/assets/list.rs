@@ -139,6 +139,19 @@ pub(crate) async fn list_assets_impl(
     let mut refs_map: std::collections::HashMap<String, Vec<AssetRef>> =
         std::collections::HashMap::new();
     if !ids.is_empty() {
+        let note_rows = client.query(
+            "SELECT DISTINCT r.asset_id, n.id, CASE WHEN v.title='' THEN left(v.summary,48) ELSE v.title END AS title FROM note_asset_refs r JOIN notes n ON n.id=r.note_id JOIN note_revisions v ON v.note_id=n.id AND v.version=n.version WHERE r.asset_id=ANY($1) ORDER BY n.id",
+            &[&ids],
+        ).await.map_err(AppError::query)?;
+        for row in note_rows {
+            refs_map
+                .entry(row.get::<_, uuid::Uuid>("asset_id").to_string())
+                .or_default()
+                .push(AssetRef::Note {
+                    note_id: row.get("id"),
+                    title: row.get("title"),
+                });
+        }
         // 1. 文章（asset_refs 表，含草稿与回收站——slug/status/deleted_at 供前端
         //    决定链接走向：已发布→前台新标签，其余→后台编辑页）。
         let ref_rows = client

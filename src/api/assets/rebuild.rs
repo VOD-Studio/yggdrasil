@@ -202,6 +202,23 @@ pub(crate) async fn rebuild_assets_index_impl() -> Result<RebuildAssetsResponse,
         ref_count += n as i64;
     }
 
+    // 笔记所有快照（含回收站与历史）同样保护公开素材。补齐保存时尚未登记的图片。
+    let note_rows = tx
+        .query(
+            "SELECT note_id,version,content_html FROM note_revisions",
+            &[],
+        )
+        .await
+        .map_err(AppError::query)?;
+    tx.execute("DELETE FROM note_asset_refs", &[])
+        .await
+        .map_err(AppError::tx)?;
+    for row in note_rows {
+        let paths = crate::api::posts::helpers::extract_asset_paths(row.get("content_html"), None);
+        if !paths.is_empty() {
+            ref_count+=tx.execute("INSERT INTO note_asset_refs(note_id,version,asset_id) SELECT $1,$2,id FROM assets WHERE path=ANY($3) ON CONFLICT DO NOTHING",&[&row.get::<_,i32>("note_id"),&row.get::<_,i32>("version"),&paths]).await.map_err(AppError::tx)? as i64;
+        }
+    }
     tx.commit().await.map_err(AppError::tx)?;
 
     let scanned_count = scanned.len() as i64;

@@ -250,6 +250,10 @@ fn build_router(options: ServerOptions) -> axum::Router {
 
     let upload_route = axum::Router::new()
         .route(
+            "/api/notes/upload",
+            axum::routing::post(crate::api::notes::attachments::upload),
+        )
+        .route(
             "/api/upload",
             axum::routing::post(crate::api::upload::upload_image),
         )
@@ -324,7 +328,20 @@ fn build_router(options: ServerOptions) -> axum::Router {
         )
         .layer(axum::middleware::from_fn(crate::api::csrf::csrf_middleware));
 
-    let dioxus_app = axum::Router::new().serve_dioxus_application(config, crate::router::AppRouter);
+    // 笔记可随时撤回公开。独立的无增量缓存 renderer 避免命中旧的内存/磁盘快照。
+    let notes_routes = axum::Router::new()
+        .route("/notes", axum::routing::get(dioxus::server::render_handler))
+        .route(
+            "/notes/{*path}",
+            axum::routing::get(dioxus::server::render_handler),
+        )
+        .with_state(dioxus::server::FullstackState::new(
+            ServeConfig::new(),
+            crate::router::AppRouter,
+        ));
+    let dioxus_app = axum::Router::new()
+        .serve_dioxus_application(config, crate::router::AppRouter)
+        .merge(notes_routes);
 
     let mut app_routes = dioxus_app
         .layer(axum::middleware::from_fn(
@@ -344,6 +361,10 @@ fn build_router(options: ServerOptions) -> axum::Router {
     let app_routes = app_routes.layer(axum::middleware::from_fn(crate::middleware::admin_guard));
 
     let static_routes = axum::Router::new()
+        .route(
+            "/note-media/{id}",
+            axum::routing::get(crate::api::notes::attachments::read),
+        )
         // 旧收藏链接直接返回永久重定向，客户端导航由 Route 的 redirect 同步兼容。
         .route(
             "/tags",

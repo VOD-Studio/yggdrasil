@@ -13,6 +13,7 @@
 #[cfg(feature = "server")]
 pub(crate) const ASSET_REF_CLAUSE: &str =
     "(EXISTS (SELECT 1 FROM asset_refs r WHERE r.asset_id = a.id) \
+     OR EXISTS (SELECT 1 FROM note_asset_refs r WHERE r.asset_id = a.id) \
      OR EXISTS (SELECT 1 FROM comments c \
                WHERE c.deleted_at IS NULL AND c.content_html LIKE '%' || a.path || '%') \
      OR EXISTS (SELECT 1 FROM users u WHERE u.avatar_url = '/uploads/' || a.path) \
@@ -33,6 +34,7 @@ pub(crate) const AVATAR_REF_CLAUSE: &str =
 #[cfg(feature = "server")]
 pub(crate) const ASSET_REF_COUNT_EXPR: &str =
     "((SELECT COUNT(*) FROM asset_refs r WHERE r.asset_id = a.id) + \
+      (SELECT COUNT(DISTINCT note_id) FROM note_asset_refs r WHERE r.asset_id = a.id) + \
      (SELECT COUNT(*) FROM comments c WHERE c.deleted_at IS NULL \
       AND c.content_html LIKE '%' || a.path || '%') + \
      (SELECT COUNT(*) FROM users u WHERE u.avatar_url = '/uploads/' || a.path) + \

@@ -87,6 +87,20 @@ pub(crate) async fn delete_asset_impl(id: String) -> Result<AssetOpResponse, Ser
     };
     let path: String = row.get("path");
 
+    let note_reference: bool = tx
+        .query_one(
+            "SELECT EXISTS(SELECT 1 FROM note_asset_refs WHERE asset_id=$1)",
+            &[&asset_uuid],
+        )
+        .await
+        .map_err(AppError::query)?
+        .get(0);
+    if note_reference {
+        return Ok(AssetOpResponse::err(
+            "该素材被笔记或历史版本引用，无法删除".to_string(),
+        ));
+    }
+
     // 引用检查：含回收站文章（其 purge 时 refs 级联删，图自然变孤儿）。
     let ref_rows = tx
         .query(

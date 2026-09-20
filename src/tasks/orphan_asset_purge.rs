@@ -2,7 +2,7 @@
 //!
 //! 仅在 `server` feature 启用时编译，每天运行一次。
 //! 每次执行前读取 settings 表：若自动清理关闭则跳过，否则物理删除
-//! 「无文章引用（asset_refs）且无存活评论引用、超过保留天数」的素材
+//! 「无文章、笔记版本、存活评论或头像引用，且超过保留天数」的素材
 //! （文件 + DB 行 + 派生缓存），语义与 /admin/assets 的「一键清理孤儿」
 //! 一致，只是改为定时自动。
 //!
@@ -78,15 +78,14 @@ async fn purge_orphans(
 
     let days = AssetPurgeSettings::clamp_retention(days);
 
-    // 孤儿 = 无文章引用（asset_refs）且无存活评论引用（见 COMMENT_REF_CLAUSE）。
+    // 与管理页面共用完整引用判定，包含笔记历史版本和头像。
     let rows = client
         .query(
             &format!(
                 "SELECT a.id AS id, a.path, a.size_bytes FROM assets a \
-                 WHERE NOT EXISTS (SELECT 1 FROM asset_refs r WHERE r.asset_id = a.id) \
-                   AND NOT {comment_ref} \
+                 WHERE NOT {asset_ref} \
                    AND a.created_at < NOW() - make_interval(days => $1)",
-                comment_ref = crate::api::assets::COMMENT_REF_CLAUSE
+                asset_ref = crate::api::assets::ASSET_REF_CLAUSE
             ),
             &[&days],
         )

@@ -117,7 +117,16 @@ pub(crate) fn cache_control_for_path(
         return None;
     }
 
-    // API 接口：不缓存（可能涉及认证、写操作）
+    // 可撤回的笔记与受保护图片不缓存，包含未公开时的 404 响应。
+    if path == "/notes" || path.starts_with("/notes/") {
+        return Some(HeaderValue::from_static("no-store"));
+    }
+    if path.starts_with("/admin/notes")
+        || path == "/admin/notebooks"
+        || path.starts_with("/note-media/")
+    {
+        return Some(HeaderValue::from_static("private, no-store"));
+    }
     if path.starts_with("/api") {
         return None;
     }
@@ -306,6 +315,23 @@ mod tests {
         assert_eq!(
             cache_value("/tags/rust", Method::GET),
             Some("public, max-age=300, stale-while-revalidate=3600".to_string())
+        );
+    }
+
+    #[test]
+    fn revocable_notes_never_use_browser_or_cdn_cache() {
+        for path in ["/notes", "/notes/example", "/notes/book/1"] {
+            for method in [Method::GET, Method::HEAD] {
+                assert_eq!(cache_value(path, method).as_deref(), Some("no-store"));
+            }
+        }
+        assert_eq!(
+            cache_value("/admin/notes/edit/1", Method::GET).as_deref(),
+            Some("private, no-store")
+        );
+        assert_eq!(
+            cache_value("/note-media/example", Method::GET).as_deref(),
+            Some("private, no-store")
         );
     }
 

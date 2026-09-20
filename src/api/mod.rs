@@ -40,6 +40,8 @@ pub mod mcp_tokens;
 /// mhchem 化学公式转译器（\ce/\pu → LaTeX，server-only）。
 #[cfg(feature = "server")]
 pub mod mhchem;
+/// 笔记、笔记本与知识库共用规则。
+pub mod notes;
 /// 文章 CRUD 相关接口。
 pub mod posts;
 /// 个人信息（当前账号资料与密码）的 Dioxus server function。
