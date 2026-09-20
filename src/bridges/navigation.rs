@@ -119,6 +119,15 @@ pub mod wasm {
 
         #[wasm_bindgen(method, js_name = clearAdminState)]
         pub fn clear_admin_state(this: &NavigationModule);
+
+        #[wasm_bindgen(method, js_name = setLeaveGuard)]
+        pub fn set_leave_guard(
+            this: &NavigationModule,
+            check: &Closure<dyn FnMut() -> bool>,
+        ) -> u32;
+
+        #[wasm_bindgen(method, js_name = clearLeaveGuard)]
+        pub fn clear_leave_guard(this: &NavigationModule, id: u32);
     }
 
     pub fn get_module() -> Option<NavigationModule> {

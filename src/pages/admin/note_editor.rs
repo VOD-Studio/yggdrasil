@@ -1,4 +1,5 @@
 //! 自动保存工作稿；公开与知识库快照只由明确操作更新。
+use super::note_drafts::use_draft_protection;
 use super::notes::client_request;
 use crate::api::notes::*;
 use crate::components::ui::{Checkbox, BTN_PRIMARY_SM, BTN_SECONDARY};
@@ -125,7 +126,14 @@ fn NoteEditor(initial: Option<Note>) -> Element {
     };
     let mut editor_epoch = use_signal(|| 0_u32);
     let mut tags = use_signal(|| state.draft().tags.join(", "));
-    let mut recovery = use_draft_recovery(state);
+    let slot = state
+        .draft()
+        .id
+        .map(|id| id.to_string())
+        .unwrap_or_else(|| "new".into());
+    let (mut recovery, cache_failed) = use_draft_protection(slot, state.draft, move || {
+        state.dirty() || (state.busy)() || (state.uploading)()
+    });
     let books = use_resource(|| client_request(owned_notebooks()));
     let mut preview = use_signal(|| false);
     let mut revisions = use_signal(Vec::<NoteRevision>::new);
@@ -139,7 +147,7 @@ fn NoteEditor(initial: Option<Note>) -> Element {
         let busy = (state.busy)();
         let uploading = (state.uploading)();
         let failed = !(state.error)().is_empty();
-        if busy || uploading || failed || !state.dirty() {
+        if busy || uploading || failed || recovery().is_some() || !state.dirty() {
             return;
         }
         spawn(async move {
@@ -149,6 +157,7 @@ fn NoteEditor(initial: Option<Note>) -> Element {
                 && !(state.uploading)()
                 && state.dirty()
                 && (state.error)().is_empty()
+                && recovery().is_none()
             {
                 persist(state, None).await;
             }
@@ -164,14 +173,15 @@ fn NoteEditor(initial: Option<Note>) -> Element {
                     p {class:"notes-status",role:"status",aria_live:"polite","{state.status}" if state.dirty() {" · 有未保存修改"}}
                 }
                 div {class:"notes-admin-actions",
-                    button {class:BTN_SECONDARY,disabled:(state.busy)() || deleted,onclick:move |_|async move {persist(state,None).await;},"保存草稿"}
-                    button {class:BTN_SECONDARY,disabled:(state.busy)() || state.saved().is_none(),onclick:move |_| {spawn(async move {persist(state,None).await;if (state.error)().is_empty(){preview.set(!preview());}});},if preview(){"返回编辑"}else{"预览"}}
-                    button {class:BTN_PRIMARY_SM,disabled:(state.busy)() || deleted,onclick:move |_|async move {persist(state,Some(NoteAction::Publish)).await;},
+                    button {class:BTN_SECONDARY,disabled:(state.busy)() || deleted || recovery().is_some(),onclick:move |_|async move {persist(state,None).await;},"保存草稿"}
+                    button {class:BTN_SECONDARY,disabled:(state.busy)() || state.saved().is_none() || recovery().is_some(),onclick:move |_| {spawn(async move {persist(state,None).await;if (state.error)().is_empty(){preview.set(!preview());}});},if preview(){"返回编辑"}else{"预览"}}
+                    button {class:BTN_PRIMARY_SM,disabled:(state.busy)() || deleted || recovery().is_some(),onclick:move |_|async move {persist(state,Some(NoteAction::Publish)).await;},
                         if state.saved().is_some_and(|n|n.published_version.is_some()) {"更新公开版"} else {"发布到前台"}
                     }
                 }
             }
             if !(state.error)().is_empty() {p {class:"notes-error",role:"alert","{state.error}"}}
+            if cache_failed(){p {class:"notes-error",role:"alert","浏览器无法保存本地恢复副本，请先保存到服务端再离开。"}}
             if let Some(local) = recovery() {
                 div {class:"notes-error",role:"alert",
                     p {"此标签页留有未保存内容。恢复只修改工作稿，不会发布；若服务端已有新版本，请先核对内容。"}
@@ -183,7 +193,9 @@ fn NoteEditor(initial: Option<Note>) -> Element {
                     button {class:"note-read",onclick:move |_|recovery.set(None),"使用服务端版本"}
                 }
             }
-            if deleted {
+            if recovery().is_some() {
+                p {class:"notes-status","请选择恢复或使用服务端版本，再继续编辑。"}
+            } else if deleted {
                 p {class:"notes-error","这条笔记在回收站中。恢复后可继续编辑，公开状态与知识库收录需要重新确认。"}
                 button {class:BTN_PRIMARY_SM,onclick:move |_|async move {persist(state,Some(NoteAction::Restore)).await;},"恢复笔记"}
             } else if preview() {
@@ -262,89 +274,7 @@ fn NoteEditor(initial: Option<Note>) -> Element {
     }
 }
 
-/// 标签页级恢复按账号和笔记隔离；不把私密正文长期留在 localStorage。
-fn use_draft_recovery(state: EditorState) -> Signal<Option<NoteDraft>> {
-    #[cfg(target_arch = "wasm32")]
-    {
-        use std::{cell::Cell, rc::Rc};
-        use wasm_bindgen::{closure::Closure, JsCast};
-        let user: crate::context::UserContext = use_context();
-        let key = use_hook(move || {
-            format!(
-                "ygg.note-draft.{}.{}",
-                user.user.peek().as_ref().map(|u| u.id).unwrap_or_default(),
-                state
-                    .draft()
-                    .id
-                    .map(|id| id.to_string())
-                    .unwrap_or_else(|| "new".into())
-            )
-        });
-        let read_key = key.clone();
-        let recovery = use_signal(move || {
-            let storage = web_sys::window()?.session_storage().ok()??;
-            let draft: NoteDraft =
-                serde_json::from_str(&storage.get_item(&read_key).ok()??).ok()?;
-            (draft != state.draft()).then_some(draft)
-        });
-        let dirty = use_hook(|| Rc::new(Cell::new(false)));
-        let listener_dirty = dirty.clone();
-        let listener = use_hook(move || {
-            Rc::new(Closure::<dyn FnMut(web_sys::Event)>::new(
-                move |event: web_sys::Event| {
-                    if listener_dirty.get() {
-                        event.prevent_default();
-                        let _ =
-                            js_sys::Reflect::set(event.as_ref(), &"returnValue".into(), &"".into());
-                    }
-                },
-            ))
-        });
-        let callback = listener.clone();
-        use_hook(move || {
-            if let Some(window) = web_sys::window() {
-                let _ = window.add_event_listener_with_callback(
-                    "beforeunload",
-                    callback.as_ref().as_ref().unchecked_ref(),
-                );
-            }
-        });
-        use_drop(move || {
-            if let Some(window) = web_sys::window() {
-                let _ = window.remove_event_listener_with_callback(
-                    "beforeunload",
-                    listener.as_ref().as_ref().unchecked_ref(),
-                );
-            }
-        });
-        use_effect(move || {
-            let snapshot = state.draft();
-            let unsaved = state.dirty();
-            dirty.set(unsaved || (state.uploading)());
-            if recovery().is_some() {
-                return;
-            }
-            if let Some(storage) =
-                web_sys::window().and_then(|w| w.session_storage().ok().flatten())
-            {
-                if unsaved {
-                    if let Ok(json) = serde_json::to_string(&snapshot) {
-                        let _ = storage.set_item(&key, &json);
-                    }
-                } else {
-                    let _ = storage.remove_item(&key);
-                }
-            }
-        });
-        recovery
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        let _ = state;
-        use_signal(|| None)
-    }
-}
-
+/// 富文本编辑与笔记专用的受保护图片上传。
 #[component]
 fn NoteComposer(
     initial: String,

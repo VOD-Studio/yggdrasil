@@ -3933,6 +3933,7 @@ button.note-tag { cursor: pointer; }
 .notes-quick textarea { width: 100%; resize: vertical; min-height: 96px; background: transparent; outline: none; font-size: .9rem; line-height: 1.8; }
 .notes-quick footer { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-top: .75rem; }
 .notes-quick footer span { color: var(--color-paper-tertiary); font-size: .75rem; }
+.notes-quick footer button { flex-shrink: 0; white-space: nowrap; }
 .notes-admin-list { display: grid; gap: .75rem; }
 .notes-admin-row { border: 1px solid var(--color-paper-border); border-radius: 14px; padding: 1rem 1.2rem; display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
 .notes-admin-row h3 { font-weight: 600; font-size: .95rem; }

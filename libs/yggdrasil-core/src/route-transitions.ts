@@ -11,10 +11,12 @@ import { beginTransition, type TransitionOwner } from './view-transition-lifecyc
 
 const WAIT_MS = 300;
 const STATE_KEY = '__yggdrasilNavigation';
+const POSITION_KEY = '__yggdrasilPosition';
 const MAX_ENTRIES = 40;
 
 interface Entry {
   id: string;
+  position: number;
   url: string;
   values: Map<string, string>;
   scroll?: ScrollSnapshot;
@@ -111,6 +113,9 @@ export class RouteTransitions {
   private restoreCleanup: (() => void) | undefined;
   private restoring = false;
   private oldRestoration: ScrollRestoration = 'auto';
+  private leaveGuard: { id: number; check: () => boolean } | undefined;
+  private guardSequence = 0;
+  private rollingBack = false;
 
   connect(notify: () => void, prefix: string | null): void {
     if (this.notify) {
@@ -121,6 +126,7 @@ export class RouteTransitions {
     this.prefix = prefix?.replace(/\/$/, '') ?? '';
     this.displayed = this.locationRoute();
     this.active = this.newEntry(this.displayed);
+    this.active.position = this.historyPosition() ?? 0;
     this.writeHistory(this.active, 'replace');
     this.oldRestoration = history.scrollRestoration;
     history.scrollRestoration = 'manual';
@@ -145,6 +151,8 @@ export class RouteTransitions {
     this.navigation = undefined;
     this.entries.clear();
     this.active = undefined;
+    this.leaveGuard = undefined;
+    this.rollingBack = false;
   }
 
   currentRoute = (): string => this.displayed;
@@ -152,6 +160,15 @@ export class RouteTransitions {
   navigationId = (): number => this.sequence;
   entryId = (): string => this.active?.id ?? '';
   isRestoring = (): boolean => this.restoring;
+  /** Registration IDs prevent an outgoing page from clearing the next page's guard. */
+  setLeaveGuard = (check: () => boolean): number => {
+    const id = ++this.guardSequence;
+    this.leaveGuard = { id, check };
+    return id;
+  };
+  clearLeaveGuard = (id: number): void => {
+    if (this.leaveGuard?.id === id) this.leaveGuard = undefined;
+  };
   readState = (key: string): string | null => this.active?.values.get(key) ?? null;
   writeState = (id: string, key: string, value: string): void => {
     this.entries.get(id)?.values.set(key, value);
@@ -222,6 +239,7 @@ export class RouteTransitions {
   private newEntry(url: string, restore?: Entry): Entry {
     const entry: Entry = {
       id: `vt-${Date.now().toString(36)}-${++this.entrySequence}`,
+      position: this.active?.position ?? 0,
       url,
       values: new Map(restore?.values),
       scroll: restore?.scroll,
@@ -237,7 +255,7 @@ export class RouteTransitions {
     const previous: unknown = history.state;
     const state =
       previous && typeof previous === 'object' && !Array.isArray(previous) ? { ...previous } : {};
-    const value = { ...state, [STATE_KEY]: entry.id };
+    const value = { ...state, [STATE_KEY]: entry.id, [POSITION_KEY]: entry.position };
     const url = this.prefix + entry.url;
     if (kind === 'push') history.pushState(value, '', url);
     else history.replaceState(value, '', url);
@@ -276,22 +294,42 @@ export class RouteTransitions {
     if (this.navigation) this.cancel(this.navigation);
   };
   private onHash = (): void => {
+    if (this.rollingBack) return;
     if (this.locationRoute() === this.displayed) return;
     if (!this.navigation || this.navigation.cancelled || this.navigation.committed) this.syncHash();
   };
   private onPop = (): void => {
     const route = this.locationRoute();
+    const position = this.historyPosition();
+    if (this.rollingBack) {
+      if (route === this.displayed && position === this.active?.position) {
+        this.rollingBack = false;
+      } else {
+        this.restoreHistory(position);
+      }
+      return;
+    }
+    if (!this.canLeave(route)) {
+      const pending = this.navigation;
+      if (pending && !pending.committed && !pending.cancelled) {
+        this.cancel(pending);
+        pending.owner.finish();
+      }
+      this.restoreHistory(position);
+      return;
+    }
     if (this.active) this.active.scroll = captureScroll();
     const id: unknown = history.state?.[STATE_KEY];
     const entry = typeof id === 'string' ? this.entries.get(id) : undefined;
     const target = entry ?? this.newEntry(route);
+    target.position = position ?? target.position;
     target.url = route;
     if (!entry) this.writeHistory(target, 'replace');
     this.start(target, 'pop', target.scroll);
   };
 
   private request(route: string, kind: 'push' | 'replace'): void {
-    if (!this.notify || !this.active) return;
+    if (!this.notify || !this.active || this.rollingBack) return;
     let target: string;
     try {
       target = this.normalize(route);
@@ -310,12 +348,14 @@ export class RouteTransitions {
     const intent = this.intent?.url === target ? this.intent : undefined;
     this.intent = undefined;
     clearTimeout(this.intentTimer);
+    if (!this.canLeave(target)) return;
     const origin = this.active.origin;
     const source =
       intent?.returning && origin && page(origin.url) === page(target)
         ? this.entries.get(origin.id)
         : undefined;
     const entry = this.newEntry(target, source);
+    entry.position = this.active.position + (kind === 'push' ? 1 : 0);
     if (page(target) === page(this.displayed)) {
       // Fragment navigation keeps the page mounted, including its captured entry ID.
       // Share live page state while retaining independent history/scroll positions.
@@ -324,6 +364,33 @@ export class RouteTransitions {
     }
     if (intent?.post) entry.origin = { id: this.active.id, url: this.displayed, post: intent.post };
     this.start(entry, kind, source?.scroll);
+  }
+
+  private canLeave(target: string): boolean {
+    if (page(target) === page(this.displayed) || !this.leaveGuard) return true;
+    try {
+      return this.leaveGuard.check();
+    } catch {
+      return false;
+    }
+  }
+
+  private historyPosition(): number | undefined {
+    const value: unknown = history.state?.[POSITION_KEY];
+    return typeof value === 'number' && Number.isSafeInteger(value) ? value : undefined;
+  }
+
+  private restoreHistory(position: number | undefined): void {
+    if (!this.active) return;
+    if (position !== undefined && position !== this.active.position) {
+      this.rollingBack = true;
+      history.go(this.active.position - position);
+    } else {
+      // Unmarked third-party history cannot be traversed reliably. Retain the draft
+      // and URL, at the cost of replacing that untracked forward branch.
+      this.rollingBack = false;
+      this.writeHistory(this.active, 'push');
+    }
   }
 
   private start(entry: Entry, kind: Navigation['kind'], restore?: ScrollSnapshot): void {

@@ -1,4 +1,5 @@
 //! 笔记管理与笔记本编辑。
+use super::note_drafts::{clear_submitted, use_draft_protection};
 use crate::api::notes::*;
 use crate::components::forms::INPUT_CLASS;
 use crate::components::ui::{FilterTabs, BTN_PRIMARY_SM, BTN_SECONDARY as BTN_SECONDARY_SM};
@@ -26,6 +27,9 @@ pub fn AdminNotes() -> Element {
     let mut quick = use_signal(String::new);
     let mut busy = use_signal(|| false);
     let mut error = use_signal(String::new);
+    let mut last_saved = use_signal(|| None::<i32>);
+    let (mut recovery, cache_failed) =
+        use_draft_protection("quick".into(), quick, move || !quick().is_empty() || busy());
     let mut response = use_resource(move || client_request(list_owned_notes(filter())));
     let navigator = navigator();
     rsx! {
@@ -38,21 +42,34 @@ pub fn AdminNotes() -> Element {
                 }
             }
             if !error().is_empty() { p { class: "notes-error", role: "alert", "{error}" } }
+            if cache_failed() {p {class:"notes-error",role:"alert","浏览器无法保存本地恢复副本，请先保存到服务端再离开。"}}
+            if let Some(local)=recovery() {
+                div {class:"notes-error",role:"alert",p {"此标签页有尚未保存的快速记录。"}
+                    button {class:BTN_SECONDARY_SM,onclick:move |_| {quick.set(local.clone());recovery.set(None);},"恢复记录"}
+                    button {class:"note-read",onclick:move |_|recovery.set(None),"放弃恢复"}
+                }
+            }
+            if let Some(id)=last_saved() {p {class:"notes-status",role:"status","上一条已保存，继续输入的内容已保留。 " Link {class:"note-read",to:Route::EditNote {id},"查看已保存记录 →"}}}
             form { class: "notes-quick", onsubmit: move |ev| {
                 ev.prevent_default();
-                if busy() || quick().trim().is_empty() {return;}
+                if busy() || recovery().is_some() || quick().trim().is_empty() {return;}
                 busy.set(true); error.set(String::new());
                 let content_md=quick();
                 spawn(async move {
-                    match save_note(NoteDraft {content_md,..Default::default()}).await {
-                        Ok(note) => {quick.set(String::new()); navigator.push(Route::EditNote {id:note.id});},
+                    let result=save_note(NoteDraft {content_md:content_md.clone(),..Default::default()}).await;
+                    busy.set(false);
+                    match result {
+                        Ok(note) => {
+                            let unchanged=quick.with_mut(|current|clear_submitted(current,&content_md));
+                            if unchanged {navigator.push(Route::EditNote {id:note.id});}
+                            else {last_saved.set(Some(note.id));response.restart();}
+                        },
                         Err(e) => error.set(e.to_string()),
                     }
-                    busy.set(false);
                 });
             },
-                textarea { aria_label: "快速记录", placeholder: "有什么想记下的？一句话、一段代码，或一个刚发现的链接。", value: "{quick}", oninput: move |ev| quick.set(ev.value()) }
-                footer { span { "先存为私密草稿，稍后整理。" } button { class: BTN_PRIMARY_SM, r#type: "submit", disabled: busy() || quick().trim().is_empty(), if busy() { "保存中…" } else { "记下来 →" } } }
+                textarea { aria_label: "快速记录", disabled:recovery().is_some(),placeholder: "有什么想记下的？一句话、一段代码，或一个刚发现的链接。", value: "{quick}", oninput: move |ev| quick.set(ev.value()) }
+                footer { span { "先存为私密草稿，稍后整理。" } button { class: BTN_PRIMARY_SM, r#type: "submit", disabled: busy() || recovery().is_some() || quick().trim().is_empty(), if busy() { "保存中…" } else { "记下来 →" } } }
             }
             FilterTabs { items: vec![("all","全部"),("moment","随记"),("topic","主题笔记"),("trash","回收站")],
                 active_value: if filter().trash {"trash".to_string()} else {filter().kind.map(|k|k.as_str()).unwrap_or("all").to_string()},

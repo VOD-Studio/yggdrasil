@@ -133,6 +133,106 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe('unsaved draft navigation guard', () => {
+  it('blocks push and replace before URL, history, DOM or transition changes', () => {
+    const guard = vi.fn(() => false);
+    routes.setLeaveGuard(guard);
+    const state = history.state;
+    click('/admin/notes');
+    routes.replace('/about');
+    expect(guard).toHaveBeenCalledTimes(2);
+    expect(routes.currentRoute()).toBe('/');
+    expect(location.pathname).toBe('/');
+    expect(history.state).toEqual(state);
+    expect(native).toHaveLength(0);
+    expect(notify).not.toHaveBeenCalled();
+  });
+
+  it('allows fragment changes without asking and respects registration ownership', async () => {
+    const stale = routes.setLeaveGuard(() => true);
+    const guard = vi.fn(() => false);
+    const current = routes.setLeaveGuard(guard);
+    routes.clearLeaveGuard(stale);
+    routes.push('/about');
+    expect(native).toHaveLength(0);
+    routes.push('/#section');
+    // Hash-only navigation commits without a native transition.
+    expect(routes.currentRoute()).toBe('/#section');
+    expect(guard).toHaveBeenCalledTimes(1);
+    routes.clearLeaveGuard(current);
+    routes.push('/about');
+    await native[0].invoke();
+    await finish();
+    expect(routes.currentRoute()).toBe('/about');
+  });
+
+  it('undoes cancelled back navigation without losing the forward entry or prompting twice', async () => {
+    const first = history.state;
+    routes.push('/admin/notes');
+    await native[0].invoke();
+    await finish();
+    const second = history.state;
+    const guard = vi.fn(() => false);
+    routes.setLeaveGuard(guard);
+    const go = vi.spyOn(history, 'go').mockImplementation(() => {});
+    const push = vi.spyOn(history, 'pushState');
+    const pop = (state: unknown, url: string) => {
+      history.replaceState(state, '', url);
+      window.dispatchEvent(new PopStateEvent('popstate', { state }));
+    };
+    pop(first, '/');
+    expect(go).toHaveBeenCalledWith(1);
+    expect(routes.currentRoute()).toBe('/admin/notes');
+    routes.push('/about'); // No extra navigation while rollback is in flight.
+    expect(native).toHaveLength(1);
+    pop(second, '/admin/notes');
+    expect(guard).toHaveBeenCalledTimes(1);
+    expect(push).not.toHaveBeenCalled();
+    guard.mockReturnValue(true);
+    pop(first, '/');
+    await native[1].invoke();
+    await finish();
+    expect(routes.currentRoute()).toBe('/');
+    pop(second, '/admin/notes');
+    await native[2].invoke();
+    await finish();
+    expect(routes.currentRoute()).toBe('/admin/notes');
+  });
+
+  it('retains the draft route for unmarked history and fails closed if the guard throws', () => {
+    routes.setLeaveGuard(() => {
+      throw new Error('unavailable');
+    });
+    history.replaceState(null, '', '/about');
+    window.dispatchEvent(new PopStateEvent('popstate'));
+    expect(location.pathname).toBe('/');
+    expect(routes.currentRoute()).toBe('/');
+    expect(native).toHaveLength(0);
+  });
+
+  it('cancels an uncommitted transition before undoing rejected history navigation', async () => {
+    const first = history.state;
+    routes.push('/admin/notes');
+    await native[0].invoke();
+    await finish();
+    const second = history.state;
+    const guard = vi.fn(() => true);
+    routes.setLeaveGuard(guard);
+    routes.push('/about');
+    guard.mockReturnValue(false);
+    vi.spyOn(history, 'go').mockImplementation(() => {});
+    history.replaceState(first, '', '/');
+    window.dispatchEvent(new PopStateEvent('popstate'));
+    await native[1].invoke();
+    expect(routes.currentRoute()).toBe('/admin/notes');
+    history.replaceState(second, '', '/admin/notes');
+    window.dispatchEvent(new PopStateEvent('popstate'));
+    await finish();
+    expect(routes.currentRoute()).toBe('/admin/notes');
+    expect(guard).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('route publication and rendering', () => {
   it('preserves the old URL, route and DOM until the native update callback', async () => {
     routes.push('/about');
