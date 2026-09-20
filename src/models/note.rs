@@ -109,6 +109,9 @@ pub struct NoteFilter {
     pub tag: String,
     #[serde(default)]
     pub trash: bool,
+    /// 仅管理接口应用；公开查询不能借此探测私密状态。
+    pub published: Option<bool>,
+    pub knowledge: Option<bool>,
     #[serde(default)]
     pub page: i32,
 }
@@ -119,6 +122,7 @@ pub struct Notebook {
     pub title: String,
     pub description: String,
     pub is_public: bool,
+    pub archived_at: Option<DateTime<Utc>>,
     pub note_count: i64,
     pub updated_at: DateTime<Utc>,
 }

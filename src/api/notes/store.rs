@@ -78,7 +78,7 @@ const COLUMNS: &str = "n.id, n.slug, n.created_at, n.published_at, n.published_v
 // 笔记本本身的可见性也参与过滤，公开结果不泄露私密笔记本的 ID。
 const BOOK_IDS: &str =
     "ARRAY(SELECT b.id FROM notebooks b JOIN notebook_notes bn ON bn.notebook_id=b.id
-    WHERE bn.note_id=n.id AND ($1::int IS NOT NULL OR b.is_public)
+    WHERE bn.note_id=n.id AND ($1::int IS NOT NULL OR (b.is_public AND b.archived_at IS NULL))
       AND ($2::int[] IS NULL OR b.id=ANY($2)) ORDER BY b.id) AS notebook_ids";
 
 pub async fn list(access: Access, filter: NoteFilter) -> Result<NotePage, AppError> {
@@ -89,6 +89,11 @@ pub async fn list(access: Access, filter: NoteFilter) -> Result<NotePage, AppErr
     let owner = access.owner();
     let books = access.books();
     let trash = matches!(access, Access::Owner(_)) && filter.trash;
+    let (published, knowledge) = if matches!(access, Access::Owner(_)) {
+        (filter.published, filter.knowledge)
+    } else {
+        (None, None)
+    };
     let query = crate::utils::server::escape_like_pattern(filter.query.trim());
     let kind = filter.kind.map(|k| k.as_str());
     let predicate = format!("FROM notes n JOIN note_revisions r ON r.note_id=n.id AND r.version=n.{}
@@ -97,8 +102,10 @@ pub async fn list(access: Access, filter: NoteFilter) -> Result<NotePage, AppErr
         AND (n.deleted_at IS NOT NULL)=$3
         AND ($4='' OR r.search_text ILIKE '%' || $4 || '%' ESCAPE '\\' OR EXISTS (SELECT 1 FROM unnest(r.tags) tag WHERE tag ILIKE '%' || $4 || '%' ESCAPE '\\'))
         AND ($5::text IS NULL OR r.kind=$5)
-        AND ($6::int IS NULL OR EXISTS (SELECT 1 FROM notebook_notes bn JOIN notebooks b ON b.id=bn.notebook_id WHERE bn.note_id=n.id AND b.id=$6 AND ($1::int IS NOT NULL OR b.is_public)))
-        AND ($7='' OR $7=ANY(r.tags))", access.revision());
+        AND ($6::int IS NULL OR EXISTS (SELECT 1 FROM notebook_notes bn JOIN notebooks b ON b.id=bn.notebook_id WHERE bn.note_id=n.id AND b.id=$6 AND ($1::int IS NOT NULL OR (b.is_public AND b.archived_at IS NULL))))
+        AND ($7='' OR $7=ANY(r.tags))
+        AND ($8::bool IS NULL OR (n.published_version IS NOT NULL)=$8)
+        AND ($9::bool IS NULL OR (n.knowledge_version IS NOT NULL)=$9)", access.revision());
     let params: &[&(dyn tokio_postgres::types::ToSql + Sync)] = &[
         &owner,
         &books,
@@ -107,6 +114,8 @@ pub async fn list(access: Access, filter: NoteFilter) -> Result<NotePage, AppErr
         &kind,
         &filter.notebook_id,
         &filter.tag,
+        &published,
+        &knowledge,
     ];
     let total = client
         .query_one(&format!("SELECT COUNT(*) {predicate}"), params)
@@ -334,11 +343,13 @@ pub async fn notebooks(access: Access) -> Result<Vec<Notebook>, AppError> {
     let client = get_conn().await.map_err(AppError::db_conn)?;
     let owner = access.owner();
     let books = access.books();
+    let include_archived = matches!(access, Access::Owner(_));
     let sql = format!("SELECT b.*, (SELECT COUNT(*) FROM notebook_notes bn JOIN notes n ON n.id=bn.note_id WHERE bn.notebook_id=b.id AND n.deleted_at IS NULL AND n.{} IS NOT NULL) AS note_count
         FROM notebooks b WHERE ($1::int IS NULL AND b.is_public OR b.owner_id=$1)
-        AND ($2::int[] IS NULL OR b.id=ANY($2)) ORDER BY b.updated_at DESC,b.id DESC", access.revision());
+        AND ($2::int[] IS NULL OR b.id=ANY($2)) AND ($3 OR b.archived_at IS NULL)
+        ORDER BY b.updated_at DESC,b.id DESC", access.revision());
     let rows = client
-        .query(&sql, &[&owner, &books])
+        .query(&sql, &[&owner, &books, &include_archived])
         .await
         .map_err(AppError::query)?;
     Ok(rows
@@ -348,6 +359,7 @@ pub async fn notebooks(access: Access) -> Result<Vec<Notebook>, AppError> {
             title: r.get("title"),
             description: r.get("description"),
             is_public: r.get("is_public"),
+            archived_at: r.get("archived_at"),
             note_count: r.get("note_count"),
             updated_at: r.get("updated_at"),
         })
@@ -363,9 +375,11 @@ pub async fn save_notebook(owner_id: i32, input: NotebookInput) -> Result<(), Ap
     }
     let client = get_conn().await.map_err(AppError::db_conn)?;
     if let Some(id) = input.id {
-        let changed = client.execute("UPDATE notebooks SET title=$3,description=$4,is_public=$5,updated_at=NOW() WHERE id=$1 AND owner_id=$2", &[&id,&owner_id,&title,&input.description,&input.is_public]).await.map_err(AppError::query)?;
+        let changed = client.execute("UPDATE notebooks SET title=$3,description=$4,is_public=$5,updated_at=NOW() WHERE id=$1 AND owner_id=$2 AND (archived_at IS NULL OR NOT $5)", &[&id,&owner_id,&title,&input.description,&input.is_public]).await.map_err(AppError::query)?;
         if changed == 0 {
-            return Err(AppError::NotFound("笔记本不存在"));
+            return Err(AppError::BadRequest(
+                "笔记本不存在，或已归档；请先恢复再公开".into(),
+            ));
         }
     } else {
         client
@@ -375,6 +389,20 @@ pub async fn save_notebook(owner_id: i32, input: NotebookInput) -> Result<(), Ap
             )
             .await
             .map_err(AppError::query)?;
+    }
+    invalidate();
+    Ok(())
+}
+
+pub async fn archive_notebook(owner_id: i32, id: i32, archived: bool) -> Result<(), AppError> {
+    let client = get_conn().await.map_err(AppError::db_conn)?;
+    let changed = client.execute(
+        "UPDATE notebooks SET archived_at=CASE WHEN $3 THEN COALESCE(archived_at,NOW()) ELSE NULL END,
+         is_public=CASE WHEN $3 THEN FALSE ELSE is_public END, updated_at=NOW() WHERE id=$1 AND owner_id=$2",
+        &[&id,&owner_id,&archived],
+    ).await.map_err(AppError::query)?;
+    if changed == 0 {
+        return Err(AppError::NotFound("笔记本不存在"));
     }
     invalidate();
     Ok(())
@@ -666,6 +694,31 @@ mod tests {
             assert_eq!(assets.assets[0].ref_count,1);
             assert!(matches!(&assets.assets[0].refs[0],crate::models::asset::AssetRef::Note {note_id,..} if *note_id==asset_note.id));
             assert!(!crate::api::assets::delete::delete_asset_impl(asset_id.to_string()).await.unwrap().success);
+
+            let filtered=save(1,NoteDraft {title:"状态筛选验收".into(),content_md:"正文".into(),notebook_ids:vec![public],..Default::default()},None).await.unwrap();
+            let count=|scope,published,knowledge|list(scope,NoteFilter {query:"状态筛选验收".into(),published,knowledge,..Default::default()});
+            assert_eq!(count(Access::Owner(1),Some(false),Some(false)).await.unwrap().total,1);
+            assert_eq!(count(Access::Owner(1),Some(true),None).await.unwrap().total,0);
+            act(1,filtered.id,1,NoteAction::Publish).await.unwrap();
+            assert_eq!(count(Access::Owner(1),Some(true),Some(false)).await.unwrap().total,1);
+            act(1,filtered.id,1,NoteAction::IncludeKnowledge).await.unwrap();
+            assert_eq!(count(Access::Owner(1),Some(true),Some(true)).await.unwrap().total,1);
+            assert_eq!(count(Access::Owner(1),None,Some(false)).await.unwrap().total,0);
+            assert_eq!(count(Access::Public,Some(false),Some(false)).await.unwrap().total,1,"public endpoint ignores private state probes");
+            assert!(archive_notebook(2,public,true).await.is_err());
+            archive_notebook(1,public,true).await.unwrap();
+            assert!(notebooks(Access::Public).await.unwrap().iter().all(|b|b.id!=public));
+            let archived=notebooks(Access::Owner(1)).await.unwrap().into_iter().find(|b|b.id==public).unwrap();
+            assert!(archived.archived_at.is_some());assert!(!archived.is_public);
+            assert!(get(Access::Public,Some(filtered.id),None,None).await.is_ok(),"archiving directory does not retract published notes");
+            let knowledge=Access::Knowledge {owner_id:1,notebook_ids:Some(vec![public])};
+            assert!(get(knowledge.clone(),Some(filtered.id),None,None).await.is_ok(),"archiving does not silently revoke grants");
+            assert!(notebooks(knowledge).await.unwrap().is_empty());
+            assert!(save_notebook(1,NotebookInput {id:Some(public),title:"归档目录".into(),is_public:true,..Default::default()}).await.is_err());
+            archive_notebook(1,public,false).await.unwrap();
+            let restored=notebooks(Access::Owner(1)).await.unwrap().into_iter().find(|b|b.id==public).unwrap();
+            assert!(restored.archived_at.is_none());assert!(!restored.is_public,"restore requires explicit re-publication");
+            assert_eq!(get(Access::Owner(1),Some(filtered.id),None,None).await.unwrap().notebook_ids,vec![public]);
         });
     }
 }

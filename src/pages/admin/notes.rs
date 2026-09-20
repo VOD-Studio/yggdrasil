@@ -62,6 +62,20 @@ pub fn AdminNotes() -> Element {
                 input { r#type: "search", aria_label: "筛选笔记", placeholder: "搜索标题、正文或标签", value: "{query}", oninput: move |ev| query.set(ev.value()) }
                 button { r#type: "submit", "搜索" }
             }
+            div {class:"notes-admin-actions mt-4 text-sm",
+                label {"公开状态 "
+                    select {class:INPUT_CLASS,aria_label:"按公开状态筛选",value:filter().published.map(|v|if v{"yes"}else{"no"}).unwrap_or("all"),
+                        onchange:move |ev|filter.with_mut(|f|{f.published=match ev.value().as_str(){"yes"=>Some(true),"no"=>Some(false),_=>None};f.page=1;}),
+                        option {value:"all","全部"} option {value:"yes","已公开"} option {value:"no","未公开（私密）"}
+                    }
+                }
+                label {"知识库状态 "
+                    select {class:INPUT_CLASS,aria_label:"按知识库状态筛选",value:filter().knowledge.map(|v|if v{"yes"}else{"no"}).unwrap_or("all"),
+                        onchange:move |ev|filter.with_mut(|f|{f.knowledge=match ev.value().as_str(){"yes"=>Some(true),"no"=>Some(false),_=>None};f.page=1;}),
+                        option {value:"all","全部"} option {value:"yes","已收录"} option {value:"no","未收录"}
+                    }
+                }
+            }
             div { class: "notes-admin-list mt-5",
                 match response.read().as_ref() {
                     Some(Ok(page)) => rsx! {
@@ -104,6 +118,10 @@ pub fn AdminNotebooks() -> Element {
     let mut editing = use_signal(|| None::<Notebook>);
     let mut form_open = use_signal(|| false);
     let mut order = use_signal(|| None::<i32>);
+    let mut archived = use_signal(|| false);
+    let mut confirm_archive = use_signal(|| None::<i32>);
+    let mut busy = use_signal(|| false);
+    let mut error = use_signal(String::new);
     rsx! {
         div { class:"notes-admin",
             div {class:"notes-admin-heading",
@@ -121,16 +139,26 @@ pub fn AdminNotebooks() -> Element {
             if let Some(id)=order() {
                 for key in std::iter::once(id) {NotebookOrder {key:"{key}",id,on_close:move |_|order.set(None)}}
             }
+            FilterTabs {items:vec![("active","使用中"),("archived","已归档")],active_value:if archived(){"archived".to_string()}else{"active".to_string()},on_change:move |value:String|{archived.set(value=="archived");confirm_archive.set(None);}}
+            p {class:"notes-status my-3","归档隐藏公开目录，不删除笔记，也不撤回笔记自身的发布或 AI 授权。恢复后目录保持私密。"}
+            if !error().is_empty(){p {class:"notes-error",role:"alert","{error}"}}
             div {class:"notes-admin-list",
                 match books.read().as_ref() {
                     Some(Ok(items))=>rsx! {
-                        if items.is_empty() {crate::components::empty_state::EmptyState {title:"还没有笔记本",description:"为你的第一个主题取个名字。"}}
-                        for book in items {
+                        if !items.iter().any(|b|b.archived_at.is_some()==archived()) {crate::components::empty_state::EmptyState {title:"这里还没有笔记本",description:"新建一个主题，或切换使用中和已归档列表。"}}
+                        for book in items.iter().filter(|b|b.archived_at.is_some()==archived()) {
                             div {class:"notes-admin-row",key:"{book.id}",
                                 div {h3 {"{book.title}"} p {"{book.note_count} 篇 · " if book.is_public {"公开笔记本"} else {"私密笔记本"}} p {"{book.description}"}}
                                 div {class:"notes-admin-actions",
-                                    button {class:BTN_SECONDARY_SM,onclick:{let book=book.clone();move |_| {editing.set(Some(book.clone()));form_open.set(true);}},"编辑"}
-                                    button {class:BTN_SECONDARY_SM,onclick:{let id=book.id;move |_|order.set(Some(id))},"编排目录"}
+                                    button {class:BTN_SECONDARY_SM,disabled:busy(),onclick:{let book=book.clone();move |_| {editing.set(Some(book.clone()));form_open.set(true);}},"编辑"}
+                                    button {class:BTN_SECONDARY_SM,disabled:busy(),onclick:{let id=book.id;move |_|order.set(Some(id))},"编排目录"}
+                                    if archived() || confirm_archive()==Some(book.id) {
+                                        button {class:BTN_SECONDARY_SM,disabled:busy(),onclick:{let id=book.id;move |_|async move {
+                                            busy.set(true);error.set(String::new());
+                                            match archive_notebook(id,!archived()).await {Ok(())=>{confirm_archive.set(None);form_open.set(false);books.restart();},Err(e)=>error.set(e.to_string())};busy.set(false);
+                                        }},if archived(){"恢复笔记本"}else{"确认归档"}}
+                                        if !archived(){button {class:"note-read",onclick:move |_|confirm_archive.set(None),"取消"}}
+                                    } else {button {class:"note-read",disabled:busy(),onclick:{let id=book.id;move |_|confirm_archive.set(Some(id))},"归档"}}
                                 }
                             }
                         }
@@ -146,6 +174,7 @@ pub fn AdminNotebooks() -> Element {
 #[component]
 fn NotebookForm(book: Option<Notebook>, on_done: EventHandler<()>) -> Element {
     let id = book.as_ref().map(|b| b.id);
+    let archived = book.as_ref().is_some_and(|b| b.archived_at.is_some());
     let mut title = use_signal(|| book.as_ref().map(|b| b.title.clone()).unwrap_or_default());
     let mut description = use_signal(|| {
         book.as_ref()
@@ -161,7 +190,9 @@ fn NotebookForm(book: Option<Notebook>, on_done: EventHandler<()>) -> Element {
         });},
             label {"名称" input {class:INPUT_CLASS,required:true,maxlength:100,value:"{title}",oninput:move |ev|title.set(ev.value())}}
             label {"介绍" textarea {class:INPUT_CLASS,maxlength:1000,value:"{description}",oninput:move |ev|description.set(ev.value())}}
-            label {class:"flex items-center gap-2",crate::components::ui::Checkbox {checked:public(),onchange:move |v|public.set(v)} "公开展示这个笔记本（其中仅已发布的笔记对访客可见）"}
+            fieldset {disabled:archived,
+                label {class:"flex items-center gap-2",crate::components::ui::Checkbox {checked:public(),onchange:move |v|public.set(v)} "公开展示这个笔记本（已归档时须先恢复；其中仅已发布的笔记对访客可见）"}
+            }
             if !error().is_empty() {p {class:"notes-error",role:"alert","{error}"}}
             div {class:"notes-admin-actions",button {class:BTN_PRIMARY_SM,r#type:"submit",disabled:busy(),"保存笔记本"} button {class:BTN_SECONDARY_SM,r#type:"button",onclick:move |_|on_done.call(()),"取消"}}
         }

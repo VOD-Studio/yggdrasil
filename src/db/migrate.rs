@@ -94,6 +94,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         include_str!("../../migrations/026_katex_html_classes.sql"),
     ),
     ("027", include_str!("../../migrations/027_notes.sql")),
+    (
+        "028",
+        include_str!("../../migrations/028_notebook_archive.sql"),
+    ),
     // 新增迁移在此追加，同时在 migrations/ 下创建对应 .sql 文件。
 ];
 

@@ -209,7 +209,7 @@ fn NoteEditor(initial: Option<Note>) -> Element {
                         fieldset {legend {"收录到笔记本"}
                             if let Some(Ok(items))=books.read().as_ref() {
                                 for book in items {label {class:"notebook-check",key:"{book.id}",
-                                    Checkbox {checked:state.draft().notebook_ids.contains(&book.id),onchange:{let id=book.id;move |checked|state.draft.with_mut(|d| {d.notebook_ids.retain(|b|*b!=id);if checked{d.notebook_ids.push(id);d.notebook_ids.sort_unstable();}})}} "{book.title}"
+                                    Checkbox {checked:state.draft().notebook_ids.contains(&book.id),onchange:{let id=book.id;move |checked|state.draft.with_mut(|d| {d.notebook_ids.retain(|b|*b!=id);if checked{d.notebook_ids.push(id);d.notebook_ids.sort_unstable();}})}} "{book.title}" if book.archived_at.is_some(){"（已归档）"}
                                 }}
                                 if items.is_empty() {Link {to:Route::AdminNotebooks {},"创建第一个笔记本 →"}}
                             }

@@ -74,6 +74,12 @@ pub async fn reorder_notebook(id: i32, note_ids: Vec<i32>) -> Result<(), ServerF
     Ok(store::reorder(user.id, id, note_ids).await?)
 }
 
+#[server(ArchiveNotebook, "/api")]
+pub async fn archive_notebook(id: i32, archived: bool) -> Result<(), ServerFnError> {
+    let user = crate::api::auth::get_current_admin_user().await?;
+    Ok(store::archive_notebook(user.id, id, archived).await?)
+}
+
 #[server(NotebookOrder, "/api")]
 pub async fn notebook_order(id: i32) -> Result<Vec<(i32, String)>, ServerFnError> {
     let user = crate::api::auth::get_current_admin_user().await?;
