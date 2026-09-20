@@ -39,3 +39,4 @@ profile.json.gz
 .freebsd-sysroot/
 
 .zcode/
+.idea/
