@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.1] - 2026-09-21
+
+### Changed
+
+- **MCP 令牌管理**：支持编辑已签发令牌的权限，可追加或收回笔记读写授权，并限制到指定笔记本；修改后原令牌继续有效。
+
 ## [0.21.0] - 2026-09-21
 
 ### Added
