@@ -2,6 +2,7 @@
 use super::note_drafts::use_draft_protection;
 use super::notes::client_request;
 use crate::api::notes::*;
+use crate::components::forms::FormSelect;
 use crate::components::ui::{Checkbox, BTN_PRIMARY_SM, BTN_SECONDARY};
 use crate::models::note::*;
 use crate::router::Route;
@@ -211,8 +212,11 @@ fn NoteEditor(initial: Option<Note>) -> Element {
                     }
                     aside {class:"notes-editor-side",
                         div {label {r#for:"note-kind","记录方式"}
-                            select {id:"note-kind",value:state.draft().kind.as_str(),onchange:move |ev|state.draft.with_mut(|d|d.kind=if ev.value()=="topic"{NoteKind::Topic}else{NoteKind::Moment}),
-                                option {value:"moment","随记"} option {value:"topic","主题笔记"}
+                            FormSelect {
+                                id: Some("note-kind".to_string()),
+                                value: state.draft().kind,
+                                options: vec![(NoteKind::Moment, "随记"), (NoteKind::Topic, "主题笔记")],
+                                onchange: move |kind: NoteKind| state.draft.with_mut(|d| d.kind = kind),
                             }
                         }
                         div {label {r#for:"note-tags","标签"} input {id:"note-tags",r#type:"text",placeholder:"Rust, 排错, 读书",value:"{tags}",oninput:move |ev| {

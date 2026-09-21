@@ -3938,9 +3938,15 @@ button.note-tag { cursor: pointer; }
 .notes-quick footer span { color: var(--color-paper-tertiary); font-size: .75rem; }
 .notes-quick footer button { flex-shrink: 0; white-space: nowrap; }
 .notes-admin-list { display: grid; gap: .75rem; }
-.notes-admin-row { border: 1px solid var(--color-paper-border); border-radius: 14px; padding: 1rem 1.2rem; display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
-.notes-admin-row h3 { font-weight: 600; font-size: .95rem; }
-.notes-admin-row p { font-size: .75rem; color: var(--color-paper-secondary); margin-top: .4rem; }
+.notes-admin-row { border: 1px solid var(--color-paper-border); border-radius: 14px; padding: 1rem 1.2rem; display: flex; justify-content: space-between; align-items: center; gap: 1.5rem; background: color-mix(in srgb, var(--color-paper-entry) 22%, transparent); }
+.notes-admin-row-main { min-width: 0; }
+.notes-admin-row h3 { font-weight: 600; font-size: 1rem; line-height: 1.4; }
+.notes-admin-row-meta { display: flex; align-items: center; gap: .35rem; font-size: .75rem; color: var(--color-paper-secondary); margin-top: .45rem; }
+.notes-admin-row-public { color: var(--color-paper-accent); }
+.notes-admin-row-private { color: var(--color-paper-tertiary); }
+.notes-admin-row-description { max-width: 48rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .75rem; color: var(--color-paper-secondary); margin-top: .55rem; }
+.notes-admin-row-actions { flex-shrink: 0; justify-content: flex-end; }
+.notes-admin-row-actions .note-read { padding-top: 0; padding-inline: .25rem; white-space: nowrap; }
 .notes-editor-grid { display: grid; grid-template-columns: minmax(0, 1fr) 230px; gap: 1.5rem; align-items: start; }
 .notes-editor-main { min-width: 0; }
 .notes-editor-main > input { width: 100%; border: 0; outline: none; background: transparent; font-family: var(--font-serif); font-size: 1.9rem; padding: .8rem 0; }
@@ -3971,7 +3977,9 @@ button.note-tag { cursor: pointer; }
   .notes-editor-grid { grid-template-columns: 1fr; }
   .notes-editor-side { border-left: 0; border-top: 1px solid var(--color-paper-border); padding: 1.2rem 0 0; }
   .notes-admin-filters { grid-template-columns: 1fr; }
-  .notes-admin-row { align-items: flex-start; flex-direction: column; }
+  .notes-admin-row { align-items: stretch; flex-direction: column; gap: .9rem; }
+  .notes-admin-row-description { white-space: normal; }
+  .notes-admin-row-actions { justify-content: flex-start; border-top: 1px solid color-mix(in srgb, var(--color-paper-border) 70%, transparent); padding-top: .85rem; }
 }
 @media (prefers-reduced-motion: reduce) {
   .notebook-card { transition: none; }

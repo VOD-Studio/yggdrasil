@@ -254,10 +254,10 @@ pub fn FormSelect<T: Clone + PartialEq + 'static>(
                         active.set(len.saturating_sub(1));
                     } else if key == Key::Enter || is_space {
                         e.prevent_default();
+                        open.set(false);
                         if let Some((v, _)) = options_for_keys.get(active()) {
                             onchange.call(v.clone());
                         }
-                        open.set(false);
                     } else if key == Key::Escape {
                         e.prevent_default();
                         open.set(false);
@@ -300,8 +300,8 @@ pub fn FormSelect<T: Clone + PartialEq + 'static>(
                             // 阻止 mousedown 默认行为：点击选项不夺走触发器焦点。
                             onmousedown: move |e| e.prevent_default(),
                             onclick: move |_| {
-                                onchange.call(opt_value.clone());
                                 open.set(false);
+                                onchange.call(opt_value.clone());
                             },
                             onmouseenter: move |_| active.set(i),
                             span { class: "truncate", "{opt_label}" }

@@ -179,8 +179,14 @@ pub fn AdminNotebooks() -> Element {
                         if !items.iter().any(|b|b.archived_at.is_some()==archived()) {crate::components::empty_state::EmptyState {title:"这里还没有笔记本",description:"新建一个主题，或切换使用中和已归档列表。"}}
                         for book in items.iter().filter(|b|b.archived_at.is_some()==archived()) {
                             div {class:"notes-admin-row",key:"{book.id}",
-                                div {h3 {"{book.title}"} p {"{book.note_count} 篇 · " if book.is_public {"公开笔记本"} else {"私密笔记本"}} p {"{book.description}"}}
-                                div {class:"notes-admin-actions",
+                                div {class:"notes-admin-row-main",
+                                    h3 {"{book.title}"}
+                                    p {class:"notes-admin-row-meta","{book.note_count} 篇 · "
+                                        span {class:if book.is_public {"notes-admin-row-public"} else {"notes-admin-row-private"},if book.is_public {"公开笔记本"} else {"私密笔记本"}}
+                                    }
+                                    if !book.description.trim().is_empty() {p {class:"notes-admin-row-description","{book.description}"}}
+                                }
+                                div {class:"notes-admin-actions notes-admin-row-actions",
                                     button {class:BTN_SECONDARY_SM,disabled:busy(),onclick:{let book=book.clone();move |_| {editing.set(Some(book.clone()));form_open.set(true);}},"编辑"}
                                     button {class:BTN_SECONDARY_SM,disabled:busy(),onclick:{let id=book.id;move |_|order.set(Some(id))},"编排目录"}
                                     if archived() || confirm_archive()==Some(book.id) {
