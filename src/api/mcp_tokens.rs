@@ -73,12 +73,8 @@ pub async fn create_mcp_token(
 
         // 名称规范化与校验：去空白后非空，限制长度。
         let name = name.trim().to_string();
-        if name.is_empty() {
-            return Err(AppError::BadRequest("令牌名称不能为空".to_string()).into());
-        }
-        if name.chars().count() > 64 {
-            return Err(AppError::BadRequest("令牌名称过长（上限 64 字符）".to_string()).into());
-        }
+        crate::models::mcp_token::validate_token_name(&name)
+            .map_err(|message| AppError::BadRequest(message.to_string()))?;
 
         // 加密主密钥必须已配置，否则无法安全存储明文。
         if crate::mcp::crypto::mcp_enc_key().is_none() {

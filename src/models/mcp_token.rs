@@ -9,6 +9,18 @@
 
 use serde::{Deserialize, Serialize};
 
+/// 前后端共用的令牌名称校验，按去除首尾空白后的字符数计算。
+pub fn validate_token_name(name: &str) -> Result<(), &'static str> {
+    let name = name.trim();
+    if name.is_empty() {
+        Err("请输入令牌名称，不能只包含空白字符")
+    } else if name.chars().count() > 64 {
+        Err("令牌名称不能超过 64 个字符")
+    } else {
+        Ok(())
+    }
+}
+
 /// 令牌作用域：read < write < admin，支持偏序比较用于工具调度鉴权。
 ///
 /// - `read`：仅查询已发布文章（知识库）。
@@ -140,6 +152,18 @@ pub struct CreateTokenResponse {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn token_name_requires_non_whitespace_and_at_most_64_characters() {
+        for name in ["", " \t\n", "\u{3000}"] {
+            assert!(super::validate_token_name(name).is_err());
+        }
+        for name in [" claude-code-macbook ".to_string(), "名".repeat(64)] {
+            assert!(super::validate_token_name(&name).is_ok());
+        }
+        assert!(super::validate_token_name(&"名".repeat(65)).is_err());
+        assert!(super::validate_token_name(&"a".repeat(65)).is_err());
+    }
+
     use super::*;
 
     #[test]

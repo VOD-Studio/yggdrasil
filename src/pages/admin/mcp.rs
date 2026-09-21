@@ -587,7 +587,13 @@ fn CreateTokenCard() -> Element {
     let mut notes_write = use_signal(|| false);
     let mut restricted = use_signal(|| false);
     let mut selected_books = use_signal(Vec::<i32>::new);
+    let mut name_touched = use_signal(|| false);
+    let mut submitted = use_signal(|| false);
     let books = use_resource(|| super::notes::client_request(crate::api::notes::owned_notebooks()));
+
+    let name_error = crate::models::mcp_token::validate_token_name(&name()).err();
+    let show_name_error = (name_touched() || submitted()) && name_error.is_some();
+    let missing_books = notes_read() && restricted() && selected_books().is_empty();
 
     let mut created_plaintext = state.created_plaintext;
     let reload_gen = state.reload_gen;
@@ -616,14 +622,27 @@ fn CreateTokenCard() -> Element {
             div { class: "grid grid-cols-1 md:grid-cols-3 gap-5",
                 // 名称
                 div { class: "flex flex-col gap-2",
-                    label { class: "text-xs font-semibold uppercase tracking-wider text-[var(--color-paper-secondary)]",
+                    label { r#for: "mcp-token-name", class: "text-xs font-semibold uppercase tracking-wider text-[var(--color-paper-secondary)]",
                         "令牌名称 *"
                     }
-                    FormInput {
+                    input {
+                        id: "mcp-token-name",
+                        class: crate::components::forms::INPUT_CLASS,
+                        style: if show_name_error { "border-color: var(--color-red-500);" } else { "" },
                         r#type: "text",
+                        required: true,
+                        aria_invalid: if show_name_error { "true" } else { "false" },
+                        aria_describedby: "mcp-token-name-hint",
                         placeholder: "如 claude-code-macbook",
                         value: name(),
-                        oninput: move |v: String| name.set(v),
+                        oninput: move |e| name.set(e.value()),
+                        onblur: move |_| name_touched.set(true),
+                    }
+                    p {
+                        id: "mcp-token-name-hint",
+                        class: if show_name_error { "text-xs text-red-500" } else { "text-xs text-paper-secondary" },
+                        aria_live: "polite",
+                        if show_name_error { "{name_error.unwrap_or_default()}" } else { "必填，最多 64 个字符" }
                     }
                 }
                 // 作用域
@@ -664,6 +683,11 @@ fn CreateTokenCard() -> Element {
                             }}
                             if items.is_empty() {p {class:"text-xs text-paper-secondary","请先在笔记管理中创建笔记本。"}}
                         }
+                        p {
+                            class: if submitted() && missing_books { "text-xs text-red-500" } else { "text-xs text-paper-secondary" },
+                            aria_live: "polite",
+                            if missing_books { "请至少选择一个笔记本（必选）" }
+                        }
                     }
                 }
             }
@@ -671,13 +695,14 @@ fn CreateTokenCard() -> Element {
             div { class: "pt-1",
                 button {
                     class: "{BTN_PRIMARY} inline-flex items-center gap-1.5",
-                    disabled: busy() || name().trim().is_empty() || (notes_read() && restricted() && selected_books().is_empty()),
+                    disabled: busy(),
                     onclick: move |_| {
                         if busy() {
                             return;
                         }
+                        submitted.set(true);
                         let n = name().trim().to_string();
-                        if n.is_empty() {
+                        if crate::models::mcp_token::validate_token_name(&n).is_err() || missing_books {
                             return;
                         }
                         let sc = scope();
@@ -689,6 +714,8 @@ fn CreateTokenCard() -> Element {
                                 Ok(resp) => {
                                     created_plaintext.set(Some(resp.plaintext));
                                     name.set(String::new());
+                                    name_touched.set(false);
+                                    submitted.set(false);
                                     let g = reload_gen();
                                     state.reload_gen.set(g + 1);
                                 }
