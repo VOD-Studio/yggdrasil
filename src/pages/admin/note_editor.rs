@@ -211,7 +211,7 @@ fn NoteEditor(initial: Option<Note>) -> Element {
                         }
                     }
                     aside {class:"notes-editor-side",
-                        div {label {r#for:"note-kind","记录方式"}
+                        div {class:"notes-editor-field",label {r#for:"note-kind","记录方式"}
                             FormSelect {
                                 id: Some("note-kind".to_string()),
                                 value: state.draft().kind,
@@ -219,10 +219,10 @@ fn NoteEditor(initial: Option<Note>) -> Element {
                                 onchange: move |kind: NoteKind| state.draft.with_mut(|d| d.kind = kind),
                             }
                         }
-                        div {label {r#for:"note-tags","标签"} input {id:"note-tags",r#type:"text",placeholder:"Rust, 排错, 读书",value:"{tags}",oninput:move |ev| {
+                        div {class:"notes-editor-field",label {r#for:"note-tags","标签"} input {id:"note-tags",r#type:"text",placeholder:"Rust, 排错, 读书",value:"{tags}",oninput:move |ev| {
                             let value=ev.value();state.draft.with_mut(|d|d.tags=value.split([',','，']).map(str::trim).filter(|s|!s.is_empty()).map(str::to_string).collect());tags.set(value);
                         }}}
-                        fieldset {legend {"收录到笔记本"}
+                        fieldset {class:"notes-editor-section notes-editor-notebooks",legend {"收录到笔记本"}
                             if let Some(Ok(items))=books.read().as_ref() {
                                 for book in items {label {class:"notebook-check",key:"{book.id}",
                                     Checkbox {checked:state.draft().notebook_ids.contains(&book.id),onchange:{let id=book.id;move |checked|state.draft.with_mut(|d| {d.notebook_ids.retain(|b|*b!=id);if checked{d.notebook_ids.push(id);d.notebook_ids.sort_unstable();}})}} "{book.title}" if book.archived_at.is_some(){"（已归档）"}
@@ -230,21 +230,23 @@ fn NoteEditor(initial: Option<Note>) -> Element {
                                 if items.is_empty() {Link {to:Route::AdminNotebooks {},"创建第一个笔记本 →"}}
                             }
                         }
-                        div {h2 {class:"font-semibold mb-2","AI 知识库"}
+                        div {class:"notes-editor-section notes-editor-knowledge",h2 {"AI 知识库"}
                             p {"收录后，获得授权的 AI 可以读取这一版内容。无需公开发布。"}
                             if let Some(version)=state.saved().and_then(|n|n.knowledge_version) {p {"当前收录：v{version}"}}
                             button {class:BTN_SECONDARY,disabled:(state.busy)(),onclick:move |_|async move {persist(state,Some(NoteAction::IncludeKnowledge)).await;},"收录当前版本"}
                             if state.saved().is_some_and(|n|n.knowledge_version.is_some()) {button {class:"note-read",disabled:(state.busy)(),onclick:move |_|async move {persist(state,Some(NoteAction::ExcludeKnowledge)).await;},"移出知识库"}}
                         }
                         if let Some(note)=state.saved() {
-                            div {h2 {class:"font-semibold mb-2","公开状态"}
+                            div {class:"notes-editor-section notes-editor-public",h2 {"公开状态"}
                                 if let Some(version)=note.published_version {p {"已公开 v{version}，草稿修改不会自动发布。"}
-                                    a {class:"note-read",href:format!("/notes/{}",note.slug),target:"_blank",rel:"noopener","查看公开页面 ↗"}
-                                    button {class:"note-read",disabled:(state.busy)(),onclick:move |_|async move {persist(state,Some(NoteAction::Unpublish)).await;},"撤回公开版"}
+                                    div {class:"notes-editor-inline-actions",
+                                        a {class:"note-read",href:format!("/notes/{}",note.slug),target:"_blank",rel:"noopener","查看公开页面 ↗"}
+                                        button {class:"note-read",disabled:(state.busy)(),onclick:move |_|async move {persist(state,Some(NoteAction::Unpublish)).await;},"撤回公开版"}
+                                    }
                                 } else {p {"仅自己可见。"}}
                             }
-                            div {
-                                button {class:"note-read",onclick:move |_| {show_history.set(!show_history());if let Some(n)=state.saved(){spawn(async move {match note_history(n.id).await {Ok(items)=>revisions.set(items),Err(e)=>state.error.set(e.to_string())}});}},"历史版本"}
+                            div {class:"notes-editor-section notes-editor-history-section",
+                                button {class:"note-read notes-editor-history-toggle",onclick:move |_| {show_history.set(!show_history());if let Some(n)=state.saved(){spawn(async move {match note_history(n.id).await {Ok(items)=>revisions.set(items),Err(e)=>state.error.set(e.to_string())}});}},"历史版本"}
                                 if show_history() {
                                     p {"恢复会生成新草稿，保留现有历史。"}
                                     div {class:"notes-editor-history",
@@ -263,7 +265,7 @@ fn NoteEditor(initial: Option<Note>) -> Element {
                                     }
                                 }
                             }
-                            div {
+                            div {class:"notes-editor-section notes-editor-danger",
                                 if confirm_trash() {
                                     p {"移入回收站将撤回公开版并移出知识库，之后可以恢复。"}
                                     button {class:BTN_SECONDARY,disabled:(state.busy)(),onclick:move |_|async move {persist(state,Some(NoteAction::Trash)).await;if (state.error)().is_empty(){navigator.push(Route::AdminNotes {});}},"确认移入回收站"}
