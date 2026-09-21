@@ -1,6 +1,6 @@
 //! MCP 访问令牌管理：Dioxus server functions。
 //!
-//! 管理员在后台 `/admin/mcp` 签发/查看/撤销为 AI 客户端（Claude Code / Cursor /
+//! 管理员在后台 `/admin/mcp` 签发/查看/编辑权限/撤销为 AI 客户端（Claude Code / Cursor /
 //! Cline）准备的 bearer 令牌。明文 token 仅在签发与「重新查看」时返回给管理员，
 //! 数据库只存 AES-GCM 密文（`token_enc`，可解密重查）+ SHA-256 哈希（`token_hash`，
 //! 每请求 O(1) 常量查找，见 `src/mcp/auth.rs`）。
@@ -14,7 +14,7 @@ use dioxus::prelude::*;
 
 #[cfg(feature = "server")]
 use crate::models::mcp_token::McpToken;
-use crate::models::mcp_token::{CreateTokenResponse, McpTokenSummary, TokenScope};
+use crate::models::mcp_token::{CreateTokenResponse, McpTokenSummary, NoteGrant, TokenScope};
 
 /// 令牌有效期预设：管理员在 UI 上从下拉菜单选择。
 ///
@@ -94,23 +94,7 @@ pub async fn create_mcp_token(
 
         let client = get_conn().await.map_err(AppError::db_conn)?;
 
-        let mut notes = notes.unwrap_or_default();
-        notes.read |= notes.write;
-        if let Some(ids) = notes.notebook_ids.as_mut() {
-            ids.sort_unstable();
-            ids.dedup();
-            let owned: i64 = client
-                .query_one(
-                    "SELECT COUNT(*) FROM notebooks WHERE owner_id=$1 AND id=ANY($2)",
-                    &[&admin.id, &ids.as_slice()],
-                )
-                .await
-                .map_err(AppError::query)?
-                .get(0);
-            if ids.is_empty() || owned != ids.len() as i64 {
-                return Err(AppError::BadRequest("请选择自己拥有的笔记本".into()).into());
-            }
-        }
+        let notes = validate_note_grant(&client, admin.id, notes.unwrap_or_default()).await?;
 
         let row = client
             .query_one(
@@ -132,6 +116,240 @@ pub async fn create_mcp_token(
     }
     #[cfg(not(feature = "server"))]
     unreachable!()
+}
+
+/// 修改本人名下有效令牌的权限，不轮换密钥，也不修改有效期。
+#[server(UpdateMcpTokenPermissions, "/api")]
+pub async fn update_mcp_token_permissions(
+    id: String,
+    scope: TokenScope,
+    notes: NoteGrant,
+) -> Result<(), ServerFnError> {
+    let admin = crate::api::auth::get_current_admin_user().await?;
+    let client = crate::db::pool::get_conn()
+        .await
+        .map_err(crate::api::error::AppError::db_conn)?;
+    save_token_permissions(&client, admin.id, &id, scope, notes).await?;
+    Ok(())
+}
+
+#[cfg(feature = "server")]
+async fn validate_note_grant(
+    client: &tokio_postgres::Client,
+    owner_id: i32,
+    mut notes: NoteGrant,
+) -> Result<NoteGrant, crate::api::error::AppError> {
+    use crate::api::error::AppError;
+    notes.read |= notes.write;
+    if !notes.read {
+        notes.notebook_ids = None;
+    }
+    if let Some(ids) = notes.notebook_ids.as_mut() {
+        ids.sort_unstable();
+        ids.dedup();
+        let owned: i64 = client
+            .query_one(
+                "SELECT COUNT(*) FROM notebooks WHERE owner_id=$1 AND id=ANY($2)",
+                &[&owner_id, &ids.as_slice()],
+            )
+            .await
+            .map_err(AppError::query)?
+            .get(0);
+        if ids.is_empty() || owned != ids.len() as i64 {
+            return Err(AppError::BadRequest("请选择自己拥有的笔记本".into()));
+        }
+    }
+    Ok(notes)
+}
+
+#[cfg(feature = "server")]
+async fn save_token_permissions(
+    client: &tokio_postgres::Client,
+    owner_id: i32,
+    id: &str,
+    scope: TokenScope,
+    notes: NoteGrant,
+) -> Result<(), crate::api::error::AppError> {
+    use crate::api::error::AppError;
+    let invalid_token = || AppError::BadRequest("令牌不存在或已失效，请刷新列表".into());
+    let id = uuid::Uuid::parse_str(id).map_err(|_| invalid_token())?;
+    let notes = validate_note_grant(client, owner_id, notes).await?;
+    let changed = client
+        .execute(
+            "UPDATE mcp_tokens SET scope=$3, notes_read=$4, notes_write=$5, notebook_ids=$6 \
+             WHERE id=$1 AND user_id=$2 AND revoked_at IS NULL \
+               AND (expires_at IS NULL OR expires_at>NOW())",
+            &[
+                &id,
+                &owner_id,
+                &scope.as_str(),
+                &notes.read,
+                &notes.write,
+                &notes.notebook_ids,
+            ],
+        )
+        .await
+        .map_err(AppError::query)?;
+    if changed == 0 {
+        return Err(invalid_token());
+    }
+    Ok(())
+}
+
+#[cfg(all(test, feature = "server"))]
+mod permission_tests {
+    use super::*;
+
+    #[tokio::test]
+    #[ignore = "requires YGGDRASIL_TEST_DATABASE_URL; uses connection-local temporary tables"]
+    async fn edit_permissions_preserves_token_and_enforces_ownership_and_validity() {
+        let url = std::env::var("YGGDRASIL_TEST_DATABASE_URL").unwrap();
+        let (client, connection) = tokio_postgres::connect(&url, tokio_postgres::NoTls)
+            .await
+            .unwrap();
+        let connection = tokio::spawn(connection);
+        client.batch_execute(
+            "CREATE TEMP TABLE notebooks (id INT PRIMARY KEY, owner_id INT NOT NULL);
+             INSERT INTO notebooks VALUES (10,1),(20,2);
+             CREATE TEMP TABLE mcp_tokens (
+                 id UUID PRIMARY KEY, user_id INT NOT NULL, scope TEXT NOT NULL,
+                 notes_read BOOLEAN DEFAULT false, notes_write BOOLEAN DEFAULT false,
+                 notebook_ids INT[], revoked_at TIMESTAMPTZ, expires_at TIMESTAMPTZ,
+                 token_hash TEXT DEFAULT 'original-hash', token_enc TEXT DEFAULT 'original-ciphertext'
+             )"
+        ).await.unwrap();
+        let id = uuid::Uuid::new_v4();
+        client
+            .execute(
+                "INSERT INTO mcp_tokens(id,user_id,scope) VALUES($1,1,'admin')",
+                &[&id],
+            )
+            .await
+            .unwrap();
+        let grant = NoteGrant {
+            read: false,
+            write: true,
+            notebook_ids: Some(vec![10, 10]),
+        };
+        save_token_permissions(&client, 1, &id.to_string(), TokenScope::Read, grant)
+            .await
+            .unwrap();
+        let row = client
+            .query_one("SELECT * FROM mcp_tokens WHERE id=$1", &[&id])
+            .await
+            .unwrap();
+        assert!(row.get::<_, bool>("notes_read"));
+        assert!(row.get::<_, bool>("notes_write"));
+        assert_eq!(row.get::<_, Vec<i32>>("notebook_ids"), vec![10]);
+        assert_eq!(row.get::<_, String>("scope"), "read");
+        assert_eq!(row.get::<_, String>("token_hash"), "original-hash");
+        assert_eq!(row.get::<_, String>("token_enc"), "original-ciphertext");
+        assert!(row
+            .get::<_, Option<chrono::DateTime<chrono::Utc>>>("expires_at")
+            .is_none());
+
+        for ids in [vec![], vec![20], vec![10, 20], vec![999]] {
+            assert!(save_token_permissions(
+                &client,
+                1,
+                &id.to_string(),
+                TokenScope::Admin,
+                NoteGrant {
+                    read: true,
+                    write: false,
+                    notebook_ids: Some(ids)
+                }
+            )
+            .await
+            .is_err());
+        }
+        for (owner, target) in [
+            (2, id.to_string()),
+            (1, uuid::Uuid::new_v4().to_string()),
+            (1, "invalid".into()),
+        ] {
+            assert!(save_token_permissions(
+                &client,
+                owner,
+                &target,
+                TokenScope::Admin,
+                NoteGrant::default()
+            )
+            .await
+            .is_err());
+        }
+        let row = client
+            .query_one(
+                "SELECT scope,notes_write,notebook_ids FROM mcp_tokens WHERE id=$1",
+                &[&id],
+            )
+            .await
+            .unwrap();
+        assert_eq!(row.get::<_, String>(0), "read");
+        assert!(row.get::<_, bool>(1));
+        assert_eq!(row.get::<_, Vec<i32>>(2), vec![10]);
+
+        // 改为全部笔记本，然后收回笔记访问；关闭授权时清除无效的旧范围。
+        save_token_permissions(
+            &client,
+            1,
+            &id.to_string(),
+            TokenScope::Write,
+            NoteGrant {
+                read: true,
+                write: false,
+                notebook_ids: None,
+            },
+        )
+        .await
+        .unwrap();
+        save_token_permissions(
+            &client,
+            1,
+            &id.to_string(),
+            TokenScope::Write,
+            NoteGrant {
+                read: false,
+                write: false,
+                notebook_ids: Some(vec![999]),
+            },
+        )
+        .await
+        .unwrap();
+        let row = client
+            .query_one(
+                "SELECT notes_read,notes_write,notebook_ids FROM mcp_tokens WHERE id=$1",
+                &[&id],
+            )
+            .await
+            .unwrap();
+        assert!(!row.get::<_, bool>(0));
+        assert!(!row.get::<_, bool>(1));
+        assert!(row.get::<_, Option<Vec<i32>>>(2).is_none());
+        for sql in [
+            "UPDATE mcp_tokens SET expires_at=NOW()-INTERVAL '1 second' WHERE id=$1",
+            "UPDATE mcp_tokens SET expires_at=NULL,revoked_at=NOW() WHERE id=$1",
+        ] {
+            client.execute(sql, &[&id]).await.unwrap();
+            assert!(save_token_permissions(
+                &client,
+                1,
+                &id.to_string(),
+                TokenScope::Admin,
+                NoteGrant::default()
+            )
+            .await
+            .is_err());
+            let scope: String = client
+                .query_one("SELECT scope FROM mcp_tokens WHERE id=$1", &[&id])
+                .await
+                .unwrap()
+                .get(0);
+            assert_eq!(scope, "write");
+        }
+        drop(client);
+        connection.await.unwrap().unwrap();
+    }
 }
 
 /// 列出当前管理员名下的全部令牌（不含任何密钥材料，仅展示用元数据）。

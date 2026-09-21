@@ -1,6 +1,6 @@
 //! 管理后台「MCP 服务器」页面。
 //!
-//! 管理员在此签发/查看/撤销为 AI 客户端（Codex / Claude Code / Cursor / Cline 等）准备的
+//! 管理员在此签发/查看/编辑权限/撤销为 AI 客户端（Codex / Claude Code / Cursor / Cline 等）准备的
 //! bearer 令牌，并复制对应的客户端配置片段。功能分三块：
 //! - 令牌列表：名称 / 作用域 / 创建时间 / 过期 / 最近使用 / 状态 + 撤销 / 重查按钮。
 //! - 新建令牌表单：名称 + 作用域下拉 + 有效期下拉；提交后一次性弹窗展示明文。
@@ -18,7 +18,7 @@ use dioxus::prelude::*;
 #[cfg(target_arch = "wasm32")]
 use crate::api::mcp_tokens::{
     create_mcp_token, get_mcp_client_configs, list_mcp_tokens, reveal_mcp_token, revoke_mcp_token,
-    McpClientConfigs, McpConfigSnippet, TokenLifetime,
+    update_mcp_token_permissions, McpClientConfigs, McpConfigSnippet, TokenLifetime,
 };
 #[cfg(target_arch = "wasm32")]
 use crate::components::forms::{FormInput, FormSelect};
@@ -77,7 +77,7 @@ const BTN_COPIED_SM: &str =
 #[cfg(target_arch = "wasm32")]
 #[derive(Clone, Copy, PartialEq)]
 struct McpPageState {
-    /// 递增以触发令牌列表重新加载（创建/撤销后 +1）。
+    /// 递增以触发令牌列表重新加载（创建/编辑/撤销后 +1）。
     reload_gen: Signal<u32>,
     /// 一次性明文弹窗：Some 时展示。
     created_plaintext: Signal<Option<String>>,
@@ -87,6 +87,7 @@ struct McpPageState {
     config_token: Signal<Option<String>>,
     /// 全局操作提示：(消息, 是否错误)。
     toast: Signal<Option<(String, bool)>>,
+    editing: Signal<Option<McpTokenSummary>>,
 }
 
 /// 管理后台 MCP 令牌管理页面。
@@ -101,6 +102,7 @@ pub fn Mcp() -> Element {
             revealed: use_signal(|| None),
             config_token: use_signal(|| None),
             toast: use_signal(|| None),
+            editing: use_signal(|| None),
         };
         use_context_provider(|| state);
 
@@ -131,6 +133,9 @@ pub fn Mcp() -> Element {
                     }
                 }
 
+                if let Some(token) = (state.editing)() {
+                    EditTokenPermissionsModal { key: "{token.id}", token }
+                }
                 // 明文弹窗不放在 TokenList 的动画树内，确保 fixed 相对整个视口居中。
                 if let Some(plaintext) = (state.created_plaintext)() {
                     PlaintextModal {
@@ -421,6 +426,7 @@ fn TokenRow(token: McpTokenSummary, state: McpPageState, stagger_index: u32) -> 
     let id_reveal = token.id.clone();
     let id_config = token.id.clone();
     let id_revoke = token.id.clone();
+    let edit_token = token.clone();
 
     // 提取信号到局部，避免 `state.field()` 被解析为方法调用。
     let mut revealed = state.revealed;
@@ -482,6 +488,11 @@ fn TokenRow(token: McpTokenSummary, state: McpPageState, stagger_index: u32) -> 
             td { class: "px-5 py-3.5 text-right whitespace-nowrap",
                 if active {
                     div { class: "flex justify-end items-center gap-1.5",
+                        button {
+                            class: "inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-[var(--color-paper-primary)] hover:bg-[var(--color-paper-theme)] transition-colors cursor-pointer",
+                            onclick: move |_| state.editing.set(Some(edit_token.clone())),
+                            "编辑权限"
+                        }
                         button {
                             class: "inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors cursor-pointer",
                             onclick: move |_| {
@@ -583,13 +594,12 @@ fn CreateTokenCard() -> Element {
     let mut scope = use_signal(|| TokenScope::Read);
     let mut lifetime = use_signal(|| TokenLifetime::Days30);
     let mut busy = use_signal(|| false);
-    let mut notes_read = use_signal(|| false);
-    let mut notes_write = use_signal(|| false);
-    let mut restricted = use_signal(|| false);
-    let mut selected_books = use_signal(Vec::<i32>::new);
+    let notes_read = use_signal(|| false);
+    let notes_write = use_signal(|| false);
+    let restricted = use_signal(|| false);
+    let selected_books = use_signal(Vec::<i32>::new);
     let mut name_touched = use_signal(|| false);
     let mut submitted = use_signal(|| false);
-    let books = use_resource(|| super::notes::client_request(crate::api::notes::owned_notebooks()));
 
     let name_error = crate::models::mcp_token::validate_token_name(&name()).err();
     let show_name_error = (name_touched() || submitted()) && name_error.is_some();
@@ -669,28 +679,7 @@ fn CreateTokenCard() -> Element {
                 }
             }
 
-            fieldset {class:"space-y-3 text-sm border-t border-paper-border pt-4",
-                legend {class:"font-semibold","笔记知识库授权"}
-                p {class:"text-xs text-paper-secondary","与文章权限独立。只读授权可检索已收录的私人笔记；写入授权可读写工作稿，不会自动发布。"}
-                label {class:"flex items-center gap-2",crate::components::ui::Checkbox {checked:notes_read(),onchange:move |v| {notes_read.set(v);if !v{notes_write.set(false);}}} "读取我的知识库"}
-                label {class:"flex items-center gap-2",crate::components::ui::Checkbox {checked:notes_write(),onchange:move |v| {notes_write.set(v);if v{notes_read.set(true);}}} "允许创建和修改笔记草稿"}
-                if notes_read() {
-                    label {id:"mcp-token-restricted",class:"flex items-center gap-2",crate::components::ui::Checkbox {checked:restricted(),onchange:move |v|restricted.set(v)} "仅授权指定笔记本"}
-                    if restricted() {
-                        if let Some(Ok(items))=books.read().as_ref() {
-                            for book in items {label {class:"mcp-token-notebook flex items-center gap-2 ml-4",key:"{book.id}",
-                                crate::components::ui::Checkbox {checked:selected_books().contains(&book.id),onchange:{let id=book.id;move |v|selected_books.with_mut(|ids| {ids.retain(|x|*x!=id);if v{ids.push(id);}})}} "{book.title}"
-                            }}
-                            if items.is_empty() {p {class:"text-xs text-paper-secondary","请先在笔记管理中创建笔记本。"}}
-                        }
-                        p {
-                            class: if submitted() && missing_books { "text-xs text-red-500" } else { "text-xs text-paper-secondary" },
-                            aria_live: "polite",
-                            if missing_books { "请至少选择一个笔记本（必选）" }
-                        }
-                    }
-                }
-            }
+            NoteGrantFields { notes_read, notes_write, restricted, selected_books, submitted: submitted(), id_prefix: "mcp-token" }
 
             div { class: "pt-1",
                 button {
@@ -744,6 +733,148 @@ fn CreateTokenCard() -> Element {
                         "创建中…"
                     } else {
                         "创建访问令牌"
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// 创建和编辑令牌共用的笔记授权字段。
+#[cfg(target_arch = "wasm32")]
+#[component]
+fn NoteGrantFields(
+    mut notes_read: Signal<bool>,
+    mut notes_write: Signal<bool>,
+    mut restricted: Signal<bool>,
+    mut selected_books: Signal<Vec<i32>>,
+    submitted: bool,
+    id_prefix: &'static str,
+) -> Element {
+    let mut books =
+        use_resource(|| super::notes::client_request(crate::api::notes::owned_notebooks()));
+    let missing_books = notes_read() && restricted() && selected_books().is_empty();
+    rsx! {
+        fieldset { class: "min-w-0 space-y-3 text-sm border-t border-paper-border pt-4",
+            legend { class: "font-semibold", "笔记知识库授权" }
+            p { class: "text-xs text-paper-secondary", "与文章权限独立。只读授权可检索已收录的私人笔记；写入授权可读写工作稿，不会自动发布。" }
+            label { class: "flex items-center gap-2",
+                crate::components::ui::Checkbox { checked: notes_read(), onchange: move |v| { notes_read.set(v); if !v { notes_write.set(false); } } }
+                "读取我的知识库"
+            }
+            label { class: "flex items-center gap-2",
+                crate::components::ui::Checkbox { checked: notes_write(), onchange: move |v| { notes_write.set(v); if v { notes_read.set(true); } } }
+                "允许创建和修改笔记草稿"
+            }
+            if notes_read() {
+                label { id: "{id_prefix}-restricted", class: "flex items-center gap-2",
+                    crate::components::ui::Checkbox { checked: restricted(), onchange: move |v| restricted.set(v) }
+                    "仅授权指定笔记本"
+                }
+                if restricted() {
+                    match books.read().as_ref() {
+                        Some(Ok(items)) => rsx! {
+                            for book in items {
+                                label { class: "{id_prefix}-notebook flex items-center gap-2 ml-4", key: "{book.id}",
+                                    crate::components::ui::Checkbox {
+                                        checked: selected_books().contains(&book.id),
+                                        onchange: { let id = book.id; move |v| selected_books.with_mut(|ids| { ids.retain(|x| *x != id); if v { ids.push(id); } }) },
+                                    }
+                                    "{book.title}"
+                                }
+                            }
+                            if items.is_empty() { p { class: "text-xs text-paper-secondary", "请先在笔记管理中创建笔记本。" } }
+                        },
+                        Some(Err(e)) => rsx! {
+                            p { role: "alert", class: "text-xs text-red-500", "笔记本加载失败：{e}" }
+                            button { r#type: "button", class: "text-xs text-paper-accent", onclick: move |_| books.restart(), "重试" }
+                        },
+                        None => rsx! { p { class: "text-xs text-paper-secondary", "正在加载笔记本…" } },
+                    }
+                    p {
+                        class: if submitted && missing_books { "text-xs text-red-500" } else { "text-xs text-paper-secondary" },
+                        aria_live: "polite",
+                        if missing_books { "请至少选择一个笔记本（必选）" }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+#[component]
+fn EditTokenPermissionsModal(token: McpTokenSummary) -> Element {
+    let mut state: McpPageState = use_context();
+    let mut visible = use_signal(|| true);
+    let mut closing = use_signal(|| false);
+    let mut scope = use_signal(|| token.scope);
+    let notes_read = use_signal(|| token.notes.read);
+    let notes_write = use_signal(|| token.notes.write);
+    let restricted = use_signal(|| token.notes.notebook_ids.is_some());
+    let selected_books = use_signal(|| token.notes.notebook_ids.clone().unwrap_or_default());
+    let mut submitted = use_signal(|| false);
+    let mut busy = use_signal(|| false);
+    let mut error = use_signal(|| None::<String>);
+    use_effect(move || {
+        if !visible() && !closing() && !busy() {
+            state.editing.set(None);
+        }
+    });
+    rsx! {
+        crate::components::ui::ModalShell {
+            visible, closing, title: "编辑令牌权限", overlay_padding: "p-4",
+            panel_class: "w-full max-w-xl max-h-[90dvh] overflow-y-auto p-6",
+            div { class: "space-y-5", onkeydown: move |e| {
+                if e.key() == Key::Escape && !busy() { closing.set(true); visible.set(false); }
+            },
+                h2 { class: "text-lg font-bold", "编辑权限 · {token.name}" }
+                p { class: "text-sm text-paper-secondary", "保存后下次调用生效，无需更换客户端令牌。有效期保持不变。" }
+                fieldset { disabled: busy(), class: "min-w-0 space-y-5",
+                    div { class: "space-y-2",
+                        label { class: "text-sm font-semibold", "权限作用域" }
+                        FormSelect { value: scope(), options: SCOPE_OPTIONS.to_vec(), onchange: move |v| scope.set(v) }
+                    }
+                    NoteGrantFields { notes_read, notes_write, restricted, selected_books, submitted: submitted(), id_prefix: "mcp-edit-token" }
+                }
+                if let Some(message) = error() {
+                    p { role: "alert", class: "text-sm text-red-500", "{message}" }
+                }
+                div { class: "flex justify-end gap-3",
+                    button {
+                        class: crate::components::ui::BTN_SECONDARY,
+                        disabled: busy(),
+                        onclick: move |_| { closing.set(true); visible.set(false); },
+                        "取消"
+                    }
+                    button {
+                        class: BTN_PRIMARY_SM, disabled: busy(),
+                        onclick: move |_| {
+                            if busy() { return; }
+                            submitted.set(true);
+                            if notes_read() && restricted() && selected_books().is_empty() { return; }
+                            let notes = crate::models::mcp_token::NoteGrant {
+                                read: notes_read(), write: notes_write(),
+                                notebook_ids: if notes_read() && restricted() { Some(selected_books()) } else { None },
+                            };
+                            let id = token.id.clone();
+                            let scope = scope();
+                            busy.set(true);
+                            error.set(None);
+                            spawn(async move {
+                                match update_mcp_token_permissions(id, scope, notes).await {
+                                    Ok(()) => {
+                                        state.reload_gen.with_mut(|g| *g += 1);
+                                        state.toast.set(Some(("权限已更新，原令牌继续有效".into(), false)));
+                                        closing.set(true);
+                                        visible.set(false);
+                                    }
+                                    Err(e) => error.set(Some(format!("保存失败：{e}"))),
+                                }
+                                busy.set(false);
+                            });
+                        },
+                        if busy() { "保存中…" } else { "保存权限" }
                     }
                 }
             }
