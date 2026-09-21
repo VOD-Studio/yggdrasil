@@ -1,7 +1,7 @@
 //! 笔记管理与笔记本编辑。
 use super::note_drafts::{clear_submitted, use_draft_protection};
 use crate::api::notes::*;
-use crate::components::forms::INPUT_CLASS;
+use crate::components::forms::{FormSelect, INPUT_CLASS};
 use crate::components::ui::{FilterTabs, BTN_PRIMARY_SM, BTN_SECONDARY as BTN_SECONDARY_SM};
 use crate::models::note::*;
 use crate::router::Route;
@@ -79,17 +79,31 @@ pub fn AdminNotes() -> Element {
                 input { r#type: "search", aria_label: "筛选笔记", placeholder: "搜索标题、正文或标签", value: "{query}", oninput: move |ev| query.set(ev.value()) }
                 button { r#type: "submit", "搜索" }
             }
-            div {class:"notes-admin-actions mt-4 text-sm",
-                label {"公开状态 "
-                    select {class:INPUT_CLASS,aria_label:"按公开状态筛选",value:filter().published.map(|v|if v{"yes"}else{"no"}).unwrap_or("all"),
-                        onchange:move |ev|filter.with_mut(|f|{f.published=match ev.value().as_str(){"yes"=>Some(true),"no"=>Some(false),_=>None};f.page=1;}),
-                        option {value:"all","全部"} option {value:"yes","已公开"} option {value:"no","未公开（私密）"}
+            div { class: "notes-admin-filters mt-4",
+                div { class: "notes-admin-filter",
+                    label { r#for: "notes-published-filter", "公开状态" }
+                    FormSelect {
+                        id: Some("notes-published-filter".to_string()),
+                        aria_label: "按公开状态筛选",
+                        value: filter().published,
+                        options: vec![(None, "全部"), (Some(true), "已公开"), (Some(false), "未公开（私密）")],
+                        onchange: move |value: Option<bool>| filter.with_mut(|f| {
+                            f.published = value;
+                            f.page = 1;
+                        }),
                     }
                 }
-                label {"知识库状态 "
-                    select {class:INPUT_CLASS,aria_label:"按知识库状态筛选",value:filter().knowledge.map(|v|if v{"yes"}else{"no"}).unwrap_or("all"),
-                        onchange:move |ev|filter.with_mut(|f|{f.knowledge=match ev.value().as_str(){"yes"=>Some(true),"no"=>Some(false),_=>None};f.page=1;}),
-                        option {value:"all","全部"} option {value:"yes","已收录"} option {value:"no","未收录"}
+                div { class: "notes-admin-filter",
+                    label { r#for: "notes-knowledge-filter", "知识库状态" }
+                    FormSelect {
+                        id: Some("notes-knowledge-filter".to_string()),
+                        aria_label: "按知识库状态筛选",
+                        value: filter().knowledge,
+                        options: vec![(None, "全部"), (Some(true), "已收录"), (Some(false), "未收录")],
+                        onchange: move |value: Option<bool>| filter.with_mut(|f| {
+                            f.knowledge = value;
+                            f.page = 1;
+                        }),
                     }
                 }
             }
