@@ -675,10 +675,10 @@ fn CreateTokenCard() -> Element {
                 label {class:"flex items-center gap-2",crate::components::ui::Checkbox {checked:notes_read(),onchange:move |v| {notes_read.set(v);if !v{notes_write.set(false);}}} "读取我的知识库"}
                 label {class:"flex items-center gap-2",crate::components::ui::Checkbox {checked:notes_write(),onchange:move |v| {notes_write.set(v);if v{notes_read.set(true);}}} "允许创建和修改笔记草稿"}
                 if notes_read() {
-                    label {class:"flex items-center gap-2",crate::components::ui::Checkbox {checked:restricted(),onchange:move |v|restricted.set(v)} "仅授权指定笔记本"}
+                    label {id:"mcp-token-restricted",class:"flex items-center gap-2",crate::components::ui::Checkbox {checked:restricted(),onchange:move |v|restricted.set(v)} "仅授权指定笔记本"}
                     if restricted() {
                         if let Some(Ok(items))=books.read().as_ref() {
-                            for book in items {label {class:"flex items-center gap-2 ml-4",key:"{book.id}",
+                            for book in items {label {class:"mcp-token-notebook flex items-center gap-2 ml-4",key:"{book.id}",
                                 crate::components::ui::Checkbox {checked:selected_books().contains(&book.id),onchange:{let id=book.id;move |v|selected_books.with_mut(|ids| {ids.retain(|x|*x!=id);if v{ids.push(id);}})}} "{book.title}"
                             }}
                             if items.is_empty() {p {class:"text-xs text-paper-secondary","请先在笔记管理中创建笔记本。"}}
@@ -703,6 +703,20 @@ fn CreateTokenCard() -> Element {
                         submitted.set(true);
                         let n = name().trim().to_string();
                         if crate::models::mcp_token::validate_token_name(&n).is_err() || missing_books {
+                            use wasm_bindgen::JsCast;
+
+                            let selector = if crate::models::mcp_token::validate_token_name(&n).is_err() {
+                                "#mcp-token-name"
+                            } else {
+                                ".mcp-token-notebook input"
+                            };
+                            if let Some(document) = web_sys::window().and_then(|w| w.document()) {
+                                let target = document.query_selector(selector).ok().flatten()
+                                    .or_else(|| document.query_selector("#mcp-token-restricted input").ok().flatten());
+                                if let Some(target) = target.and_then(|el| el.dyn_into::<web_sys::HtmlElement>().ok()) {
+                                    let _ = target.focus();
+                                }
+                            }
                             return;
                         }
                         let sc = scope();
