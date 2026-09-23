@@ -865,7 +865,7 @@ fn PageSkeletonPreview(name: String) -> Element {
             rsx! { crate::components::skeletons::tags_skeleton::TagDetailSkeleton { tag: "设计".to_string() } }
         }
         "TagPostsLoading" => {
-            rsx! { crate::components::skeletons::tags_skeleton::TagPostsLoading {} }
+            rsx! { div { class: "tag-page", crate::components::skeletons::tags_skeleton::TagPostsLoading {} } }
         }
         "TagsSkeleton" => rsx! { crate::components::skeletons::tags_skeleton::TagsSkeleton {} },
         "WriteSkeleton" => rsx! { crate::components::skeletons::write_skeleton::WriteSkeleton {} },
