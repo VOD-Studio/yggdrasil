@@ -528,7 +528,11 @@ pub fn AlertBox(message: String, variant: &'static str) -> Element {
 /// - `checked`：当前开关状态
 /// - `ontoggle`：点击切换回调（父组件在回调内翻转 signal 并触发副作用）
 #[component]
-pub fn ToggleSwitch(checked: bool, ontoggle: Callback<()>) -> Element {
+pub fn ToggleSwitch(
+    checked: bool,
+    ontoggle: Callback<()>,
+    #[props(default)] aria_label: Option<String>,
+) -> Element {
     let track_class = if checked {
         "relative w-11 h-6 flex-shrink-0 rounded-full bg-paper-accent cursor-pointer transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-paper-accent/40"
     } else {
@@ -542,6 +546,7 @@ pub fn ToggleSwitch(checked: bool, ontoggle: Callback<()>) -> Element {
     rsx! {
         button {
             role: "switch",
+            aria_label: aria_label.unwrap_or_default(),
             aria_checked: "{checked}",
             class: "{track_class}",
             onclick: move |_| ontoggle.call(()),

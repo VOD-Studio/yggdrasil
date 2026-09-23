@@ -560,7 +560,7 @@ pub fn Popover(
     // KeyboardEvent 的 key()。用 use_hook 持有 Closure,use_effect 注册,use_drop 清理。
     #[cfg(target_arch = "wasm32")]
     {
-        use dioxus::prelude::{use_drop, use_effect, use_hook};
+        use dioxus::prelude::{use_drop, use_effect, use_hook, use_reactive};
         use std::cell::RefCell;
         use std::rc::Rc;
         type EscState =
@@ -569,13 +569,19 @@ pub fn Popover(
         let state_for_drop = state.clone();
         let open_for_effect = open;
         let on_close_for_esc = on_close;
-        use_effect(move || {
-            if !open_for_effect {
-                return;
-            }
+        use_effect(use_reactive((&open_for_effect,), move |(is_open,)| {
             let Some(window) = web_sys::window() else {
                 return;
             };
+            if let Some(previous) = state.borrow_mut().take() {
+                let _ = window.remove_event_listener_with_callback(
+                    "keydown",
+                    wasm_bindgen::JsCast::unchecked_ref(previous.as_ref()),
+                );
+            }
+            if !is_open {
+                return;
+            }
             let on_close_for_esc = on_close_for_esc;
             // Closure 带 KeyboardEvent 参数:浏览器调用 handler 时传入事件对象,
             // 无需依赖已废弃的 window.event()。as_ref + unchecked_ref 转成 JS Function。
@@ -591,7 +597,7 @@ pub fn Popover(
                 wasm_bindgen::JsCast::unchecked_ref(closure.as_ref()),
             );
             *state.borrow_mut() = Some(closure);
-        });
+        }));
         use_drop(move || {
             if let Some(closure) = state_for_drop.borrow_mut().take() {
                 if let Some(window) = web_sys::window() {
@@ -685,6 +691,69 @@ pub fn ModalShell(
     #[props(default = "w-full max-w-lg")] panel_class: &'static str,
     children: Element,
 ) -> Element {
+    // 公共弹窗在打开时接管焦点，Escape 关闭后还给触发器；监听随显隐同步清理。
+    #[cfg(target_arch = "wasm32")]
+    {
+        use std::cell::RefCell;
+        use std::rc::Rc;
+        use wasm_bindgen::JsCast;
+
+        type KeyListener =
+            Rc<RefCell<Option<wasm_bindgen::prelude::Closure<dyn FnMut(web_sys::KeyboardEvent)>>>>;
+        let listener: KeyListener = use_hook(|| Rc::new(RefCell::new(None)));
+        let previous_focus: Rc<RefCell<Option<web_sys::Element>>> =
+            use_hook(|| Rc::new(RefCell::new(None)));
+        let listener_for_drop = listener.clone();
+        let mut close_visible = visible;
+        let mut close_closing = closing;
+        use_effect(move || {
+            let is_visible = visible();
+            let Some(window) = web_sys::window() else {
+                return;
+            };
+            if let Some(old) = listener.borrow_mut().take() {
+                let _ = window
+                    .remove_event_listener_with_callback("keydown", old.as_ref().unchecked_ref());
+            }
+            if is_visible {
+                if let Some(document) = window.document() {
+                    *previous_focus.borrow_mut() = document.active_element();
+                    if let Ok(Some(panel)) = document.query_selector("[data-ygg-modal-panel]") {
+                        if let Some(element) = panel.dyn_ref::<web_sys::HtmlElement>() {
+                            let _ = element.focus();
+                        }
+                    }
+                }
+                let closure = wasm_bindgen::prelude::Closure::wrap(Box::new(
+                    move |event: web_sys::KeyboardEvent| {
+                        if event.key() == "Escape" {
+                            close_closing.set(true);
+                            close_visible.set(false);
+                        }
+                    },
+                )
+                    as Box<dyn FnMut(web_sys::KeyboardEvent)>);
+                let _ = window
+                    .add_event_listener_with_callback("keydown", closure.as_ref().unchecked_ref());
+                *listener.borrow_mut() = Some(closure);
+            } else if let Some(element) = previous_focus.borrow_mut().take() {
+                if let Some(element) = element.dyn_ref::<web_sys::HtmlElement>() {
+                    let _ = element.focus();
+                }
+            }
+        });
+        use_drop(move || {
+            if let Some(old) = listener_for_drop.borrow_mut().take() {
+                if let Some(window) = web_sys::window() {
+                    let _ = window.remove_event_listener_with_callback(
+                        "keydown",
+                        old.as_ref().unchecked_ref(),
+                    );
+                }
+            }
+        });
+    }
+
     // 是否曾开过弹窗：mount 时 visible=false 也会跑一次 use_effect，不加此守卫会
     // 在页面加载后 EXIT_ANIM_MS 内渲染一层透明遮罩（opacity:0 仍拦截点击）吞掉首次点击。
     let mut opened = use_signal(|| false);
@@ -727,6 +796,8 @@ pub fn ModalShell(
             div {
                 class: "{MODAL_PANEL_BASE} {panel_class}",
                 role: "dialog",
+                tabindex: "-1",
+                "data-ygg-modal-panel": "true",
                 aria_modal: "true",
                 aria_label: "{title}",
                 onclick: move |evt| evt.stop_propagation(),
