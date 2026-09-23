@@ -4100,12 +4100,18 @@ button.note-tag { cursor: pointer; }
 .showcase-reference-art strong { position: relative; max-width: 80%; margin: .7rem 0 .1rem; font: 500 1.2rem var(--sc-serif); }
 .showcase-reference-art code { position: relative; color: var(--color-paper-accent); font: .62rem var(--sc-mono); }
 .showcase-reference-source { position: relative; overflow: hidden; margin-top: .7rem; padding-top: .5rem; border-top: 1px solid var(--sc-line); color: var(--color-paper-secondary); text-overflow: ellipsis; white-space: nowrap; font: .53rem var(--sc-mono); }
-.showcase-skeleton-window { width: 100%; max-width: 20rem; height: 140px; overflow: hidden; border: 1px solid var(--sc-line); border-radius: 14px; background: var(--color-paper-theme); }
-.showcase-skeleton-window-bar { display: flex; gap: .3rem; align-items: center; height: 19px; padding: 0 .7rem; border-bottom: 1px solid var(--sc-line); }
+.showcase-skeleton-window { width: 100%; max-width: 20rem; height: 140px; overflow-x: hidden; overflow-y: auto; scrollbar-width: thin; border: 1px solid var(--sc-line); border-radius: 14px; background: var(--color-paper-theme); }
+.showcase-skeleton-window-bar { position: sticky; top: 0; z-index: 1; display: flex; gap: .3rem; align-items: center; height: 19px; padding: 0 .7rem; border-bottom: 1px solid var(--sc-line); background: var(--color-paper-theme); }
 .showcase-skeleton-window-bar span { width: 5px; height: 5px; border-radius: 50%; background: var(--color-paper-border); }
-.showcase-skeleton-scale { width: 700px; padding: .8rem; transform: scale(.4); transform-origin: top left; }
+.showcase-skeleton-scale { width: 100%; padding: .8rem; zoom: .3; }
 .showcase-detail .showcase-skeleton-window { max-width: 30rem; height: 190px; }
-.showcase-detail .showcase-skeleton-scale { transform: scale(.5); }
+.showcase-detail .showcase-skeleton-scale { zoom: .5; }
+@media (max-width: 560px) {
+  .showcase-skeleton-scale, .showcase-detail .showcase-skeleton-scale { zoom: .28; }
+}
+@media (max-width: 360px) {
+  .showcase-skeleton-scale, .showcase-detail .showcase-skeleton-scale { zoom: .22; }
+}
 .showcase-scene-window { width: 100%; max-width: 20rem; height: 140px; overflow: hidden; border: 1px solid var(--sc-line); border-radius: 14px; background: var(--color-paper-theme); }
 .showcase-scene-canvas { width: 700px; padding: .8rem; transform: scale(.43); transform-origin: top left; }
 .showcase-detail .showcase-scene-window { max-width: 30rem; height: 190px; }
