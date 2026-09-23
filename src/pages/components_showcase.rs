@@ -932,6 +932,20 @@ fn sample_post() -> Post {
 /// 不请求服务、不修改数据的业务组件使用固定样例资料展示真实结构。
 #[component]
 fn SceneComponentPreview(name: String) -> Element {
+    let cover_preview = name == "PostCover";
+    use_effect(move || {
+        if !cover_preview {
+            return;
+        }
+        #[cfg(target_arch = "wasm32")]
+        if let Some(window) = web_sys::window() {
+            let selectors = js_sys::Array::new();
+            selectors.push(&".showcase-cover-window".into());
+            let selectors = js_sys::Object::from(selectors).into();
+            let _ = js_sys::Reflect::set(&window, &"__lightboxSelectors".into(), &selectors);
+            crate::utils::js::invoke_optional_global(&window, "__initLightbox", &[selectors]);
+        }
+    });
     let post = sample_post();
     let inner = match name.as_str() {
         "PostCard" => rsx! {
@@ -997,7 +1011,7 @@ fn SceneComponentPreview(name: String) -> Element {
         _ => rsx! {},
     };
     rsx! {
-        div { class: "showcase-scene-window", aria_label: "{name} 的静态样例",
+        div { class: if cover_preview { "showcase-scene-window showcase-cover-window" } else { "showcase-scene-window" }, aria_label: "{name} 的静态样例",
             div { class: "showcase-skeleton-window-bar", span {} span {} span {} }
             div { class: "showcase-scene-canvas", inert: "true", {inner} }
         }
