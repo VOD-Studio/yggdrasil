@@ -4151,18 +4151,6 @@ button.note-tag { cursor: pointer; }
 .showcase-description { margin: 0 0 .9rem; color: var(--color-paper-secondary); font-size: .75rem; }
 .showcase-code-panel { overflow: hidden; }
 .showcase-code-panel pre { padding: 1.5rem; overflow-x: auto; font: .75rem/1.8 var(--sc-mono); }
-.showcase-code-keyword { color: #8839ef; }
-.showcase-code-function { color: #1e66f5; }
-.showcase-code-type { color: #df8e1d; }
-.showcase-code-property { color: #179299; }
-.showcase-code-literal { color: #fe640b; }
-.showcase-code-string { color: #40a02b; }
-.dark .showcase-code-keyword { color: #cba6f7; }
-.dark .showcase-code-function { color: #89b4fa; }
-.dark .showcase-code-type { color: #f9e2af; }
-.dark .showcase-code-property { color: #94e2d5; }
-.dark .showcase-code-literal { color: #fab387; }
-.dark .showcase-code-string { color: #a6e3a1; }
 .showcase-props-wrap { overflow-x: auto; }
 .showcase-props-wrap table { width: 100%; border-collapse: collapse; text-align: left; font-size: .75rem; }
 .showcase-props-wrap th, .showcase-props-wrap td { padding: .8rem 1rem; border-bottom: 1px solid var(--sc-line); vertical-align: top; }

@@ -56,6 +56,120 @@ fn group_label(group: &str) -> &str {
         .unwrap_or("全部组件")
 }
 
+struct CodeToken<'a> {
+    class: Option<&'static str>,
+    text: &'a str,
+}
+
+fn highlight_snippet(code: &str) -> Vec<CodeToken<'_>> {
+    const KEYWORDS: &str = concat!(
+        "as async await const crate else enum export fn for from if impl import in ",
+        "interface let match mod move mut new pub return self static struct super trait ",
+        "type use where while",
+    );
+    let bytes = code.as_bytes();
+    let mut tokens = Vec::new();
+    let mut position = 0;
+    let mut plain_start = 0;
+
+    while position < bytes.len() {
+        let start = position;
+        let class = if bytes[position..].starts_with(b"//") {
+            position = bytes[position..]
+                .iter()
+                .position(|byte| *byte == b'\n')
+                .map_or(bytes.len(), |offset| position + offset);
+            Some("comment")
+        } else if bytes[position..].starts_with(b"/*") {
+            position = bytes[position + 2..]
+                .windows(2)
+                .position(|pair| pair == b"*/")
+                .map_or(bytes.len(), |offset| position + offset + 4);
+            Some("comment")
+        } else if matches!(bytes[position], b'"' | b'`') {
+            let quote = bytes[position];
+            position += 1;
+            while position < bytes.len() {
+                if bytes[position] == b'\\' {
+                    position = (position + 2).min(bytes.len());
+                } else if bytes[position] == quote {
+                    position += 1;
+                    break;
+                } else {
+                    position += 1;
+                }
+            }
+            Some("string")
+        } else if bytes[position].is_ascii_digit() {
+            position += 1;
+            while position < bytes.len()
+                && (bytes[position].is_ascii_alphanumeric() || bytes[position] == b'_')
+            {
+                position += 1;
+            }
+            Some("constant numeric")
+        } else if bytes[position].is_ascii_alphabetic() || bytes[position] == b'_' {
+            let raw_identifier = bytes[position..].starts_with(b"r#");
+            position += if raw_identifier { 2 } else { 1 };
+            while position < bytes.len()
+                && (bytes[position].is_ascii_alphanumeric() || bytes[position] == b'_')
+            {
+                position += 1;
+            }
+            let word = &code[start..position];
+            let next = bytes.get(position).copied();
+            if matches!(word, "true" | "false") {
+                Some("constant language boolean")
+            } else if !raw_identifier && KEYWORDS.split_ascii_whitespace().any(|item| item == word)
+            {
+                Some("keyword")
+            } else if next == Some(b':') && bytes.get(position + 1) != Some(&b':') {
+                Some("meta property object")
+            } else if word.starts_with(|character: char| character.is_ascii_uppercase()) {
+                Some("entity name class")
+            } else if matches!(next, Some(b'(' | b'!')) {
+                Some("entity name function")
+            } else if next == Some(b'{') {
+                Some("keyword")
+            } else {
+                None
+            }
+        } else {
+            position += code[position..].chars().next().unwrap().len_utf8();
+            None
+        };
+
+        if let Some(class) = class {
+            if plain_start < start {
+                tokens.push(CodeToken {
+                    class: None,
+                    text: &code[plain_start..start],
+                });
+            }
+            tokens.push(CodeToken {
+                class: Some(class),
+                text: &code[start..position],
+            });
+            plain_start = position;
+        }
+    }
+
+    if plain_start < code.len() {
+        tokens.push(CodeToken {
+            class: None,
+            text: &code[plain_start..],
+        });
+    }
+    tokens
+}
+
+fn checkbox_snippet(checked: bool, danger: bool) -> String {
+    format!(
+        "let mut checked = use_signal(|| {checked});\n\nrsx! {{\n    label {{\n        Checkbox {{\n            checked: checked(),\n            onchange: move |value| checked.set(value),{}\n        }}\n        \"记住这个小小的选择\"\n    }}\n}}",
+        if danger { "\n            danger: true," } else { "" },
+    )
+}
+
 #[component]
 pub fn ComponentShowcase() -> Element {
     let mut filters = use_context::<Signal<ShowcaseFilters>>();
@@ -225,16 +339,13 @@ pub fn ComponentDetail(component: String) -> Element {
         };
     };
     let snippet = if spec.name == "Checkbox" {
-        format!(
-            "let mut checked = use_signal(|| {});\n\nrsx! {{\n    label {{\n        Checkbox {{\n            checked: checked(),\n            onchange: move |value| checked.set(value),{}\n        }}\n        \"记住这个小小的选择\"\n    }}\n}}",
-            checked(),
-            if danger() { "\n            danger: true," } else { "" },
-        )
+        checkbox_snippet(checked(), danger())
     } else {
         spec.code.clone()
     };
     #[cfg(target_arch = "wasm32")]
     let snippet_for_copy = snippet.clone();
+    let highlighted_snippet = highlight_snippet(&snippet);
     let previous = index.checked_sub(1).map(|i| &SHOWCASE.components[i]);
     let next = SHOWCASE.components.get(index + 1);
 
@@ -352,37 +463,8 @@ pub fn ComponentDetail(component: String) -> Element {
                                 }
                             }
                             pre { code {
-                                if spec.name == "Checkbox" {
-                                    span { class: "showcase-code-keyword", "let mut" }
-                                    " checked = "
-                                    span { class: "showcase-code-function", "use_signal" }
-                                    "(|| "
-                                    span { class: "showcase-code-literal", "{checked()}" }
-                                    ");\n\n"
-                                    span { class: "showcase-code-function", "rsx!" }
-                                    " {{\n    "
-                                    span { class: "showcase-code-keyword", "label" }
-                                    " {{\n        "
-                                    span { class: "showcase-code-type", "Checkbox" }
-                                    " {{\n            "
-                                    span { class: "showcase-code-property", "checked" }
-                                    ": checked(),\n            "
-                                    span { class: "showcase-code-property", "onchange" }
-                                    ": "
-                                    span { class: "showcase-code-keyword", "move" }
-                                    " |value| checked.set(value),"
-                                    if danger() {
-                                        "\n            "
-                                        span { class: "showcase-code-property", "danger" }
-                                        ": "
-                                        span { class: "showcase-code-literal", "true" }
-                                        ","
-                                    }
-                                    "\n        }}\n        "
-                                    span { class: "showcase-code-string", "\"记住这个小小的选择\"" }
-                                    "\n    }}\n}}"
-                                } else {
-                                    "{snippet}"
+                                for (token_index, token) in highlighted_snippet.iter().enumerate() {
+                                    span { key: "{token_index}", class: token.class.unwrap_or(""), "{token.text}" }
                                 }
                             } }
                         }
@@ -989,5 +1071,41 @@ mod tests {
                 component.name
             );
         }
+    }
+
+    #[test]
+    fn highlighted_usage_preserves_every_snippet() {
+        let snippets = SHOWCASE
+            .components
+            .iter()
+            .map(|component| component.code.clone())
+            .chain([true, false].into_iter().flat_map(|checked| {
+                [true, false].map(move |danger| checkbox_snippet(checked, danger))
+            }));
+
+        for snippet in snippets {
+            let tokens = highlight_snippet(&snippet);
+            assert_eq!(
+                tokens.iter().map(|token| token.text).collect::<String>(),
+                snippet
+            );
+            assert!(tokens.iter().any(|token| token.class.is_some()));
+        }
+    }
+
+    #[test]
+    fn highlighted_usage_keeps_strings_and_comments_intact() {
+        let code = "let text = \"中文 \\\"// still a string\\\"\";\n// 注释\n";
+        let tokens = highlight_snippet(code);
+        assert!(tokens
+            .iter()
+            .any(|token| token.class == Some("string") && token.text.contains("中文")));
+        assert!(tokens
+            .iter()
+            .any(|token| token.class == Some("comment") && token.text == "// 注释"));
+        assert_eq!(
+            tokens.iter().map(|token| token.text).collect::<String>(),
+            code
+        );
     }
 }
