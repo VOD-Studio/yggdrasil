@@ -351,7 +351,40 @@ pub fn ComponentDetail(component: String) -> Element {
                                     if copied() { "✓ 已复制" } else { "复制代码 ↗" }
                                 }
                             }
-                            pre { code { "{snippet}" } }
+                            pre { code {
+                                if spec.name == "Checkbox" {
+                                    span { class: "showcase-code-keyword", "let mut" }
+                                    " checked = "
+                                    span { class: "showcase-code-function", "use_signal" }
+                                    "(|| "
+                                    span { class: "showcase-code-literal", "{checked()}" }
+                                    ");\n\n"
+                                    span { class: "showcase-code-function", "rsx!" }
+                                    " {{\n    "
+                                    span { class: "showcase-code-keyword", "label" }
+                                    " {{\n        "
+                                    span { class: "showcase-code-type", "Checkbox" }
+                                    " {{\n            "
+                                    span { class: "showcase-code-property", "checked" }
+                                    ": checked(),\n            "
+                                    span { class: "showcase-code-property", "onchange" }
+                                    ": "
+                                    span { class: "showcase-code-keyword", "move" }
+                                    " |value| checked.set(value),"
+                                    if danger() {
+                                        "\n            "
+                                        span { class: "showcase-code-property", "danger" }
+                                        ": "
+                                        span { class: "showcase-code-literal", "true" }
+                                        ","
+                                    }
+                                    "\n        }}\n        "
+                                    span { class: "showcase-code-string", "\"记住这个小小的选择\"" }
+                                    "\n    }}\n}}"
+                                } else {
+                                    "{snippet}"
+                                }
+                            } }
                         }
                     }
                     section { class: "showcase-detail-section", id: "properties",
