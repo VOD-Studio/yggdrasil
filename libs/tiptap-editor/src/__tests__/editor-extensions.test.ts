@@ -113,7 +113,22 @@ describe('TiptapEditor.create 全路径挂载', () => {
       // ProseMirror DOM 已挂进容器（createView 成功）。
       expect(container.querySelector('.ProseMirror')).not.toBeNull();
       inst?.destroy();
+      expect(TiptapEditor._instances.has(container.id)).toBe(false);
       container.remove();
     });
   }
+
+  it('同 ID 替换后旧句柄再次销毁不会移除新实例', () => {
+    const container = document.createElement('div');
+    container.id = 'editor-replacement';
+    document.body.appendChild(container);
+    const old = TiptapEditor.create(container.id);
+    const current = TiptapEditor.create(container.id);
+    old?.destroy();
+    expect(TiptapEditor._instances.get(container.id)).toBe(current);
+    expect(container.querySelector('.ProseMirror')).not.toBeNull();
+    current?.destroy();
+    expect(TiptapEditor._instances.has(container.id)).toBe(false);
+    container.remove();
+  });
 });

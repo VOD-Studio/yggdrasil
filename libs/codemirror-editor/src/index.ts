@@ -30,10 +30,12 @@ const CodeMirrorEditor = {
     const existing = this._instances.get(containerId);
     if (existing) {
       existing.destroy();
-      this._instances.delete(containerId);
     }
 
-    const instance = new CodeMirrorInstance(container, options);
+    let instance!: CodeMirrorInstance;
+    instance = new CodeMirrorInstance(container, options, () => {
+      if (this._instances.get(containerId) === instance) this._instances.delete(containerId);
+    });
     this._instances.set(containerId, instance);
     return instance;
   },

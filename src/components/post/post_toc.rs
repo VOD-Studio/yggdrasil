@@ -21,15 +21,20 @@ use crate::utils::js::invoke_optional_global;
 /// - `toc_html`：服务端生成的目录 HTML 字符串
 /// - `title`：目录标题，文章详情用默认的 "Table of Contents"，
 ///   更新日志页传入「版本索引」
+/// - `nav_id`、`content_id`、`scroll_id`：可选的图鉴局部作用域；
+///   正式文章使用默认的页面目录和窗口滚动。
 ///
 /// 通过 `dangerous_inner_html` 注入目录结构，快捷键 `Alt + C` 可聚焦（移动端形态）。
 #[component]
 pub fn PostToc(
     toc_html: String,
     #[props(default = "Table of Contents")] title: &'static str,
+    #[props(default)] nav_id: Option<&'static str>,
+    #[props(default)] content_id: Option<&'static str>,
+    #[props(default)] scroll_id: Option<&'static str>,
 ) -> Element {
     // pin 状态：是否锁定展开（仅本次挂载有效，切文章 remount 后重置）。
-    let mut pinned = use_signal(|| false);
+    let mut pinned = use_signal(|| nav_id.is_some());
 
     // 挂载后初始化 scroll-spy（yggdrasil-core.js 由 Dioxus.toml 全局注入）。
     // 调用方以 slug 为 key 的单元素列表包裹本组件，切文章时 remount → effect 重跑；
@@ -38,7 +43,34 @@ pub fn PostToc(
     use_effect(move || {
         let window =
             web_sys::window().expect("post_toc use_effect 仅在 WASM 浏览器上下文执行：无 window");
-        invoke_optional_global(&window, "__initTocSidebar", &[]);
+        if let (Some(nav_id), Some(content_id), Some(scroll_id)) = (nav_id, content_id, scroll_id) {
+            invoke_optional_global(
+                &window,
+                "__initTocSidebar",
+                &[
+                    format!("#{nav_id}").into(),
+                    format!("#{content_id}").into(),
+                    format!("#{scroll_id}").into(),
+                ],
+            );
+        } else {
+            invoke_optional_global(&window, "__initTocSidebar", &[]);
+        }
+    });
+
+    #[cfg(target_arch = "wasm32")]
+    use_drop(move || {
+        if let Some(window) = web_sys::window() {
+            if let Some(nav_id) = nav_id {
+                invoke_optional_global(
+                    &window,
+                    "__disposeTocSidebar",
+                    &[format!("#{nav_id}").into()],
+                );
+            } else {
+                invoke_optional_global(&window, "__disposeTocSidebar", &[]);
+            }
+        }
     });
 
     rsx! {
@@ -54,6 +86,7 @@ pub fn PostToc(
         // 展开动画纯 CSS（:hover + .pinned），SSR/未 hydration 时已可用；
         // scroll-spy 由 __initTocSidebar 增强。
         nav {
+            id: nav_id,
             class: if pinned() { "toc-sidebar pinned" } else { "toc-sidebar" },
             aria_label: "{title}",
             div { class: "toc-sidebar-panel",

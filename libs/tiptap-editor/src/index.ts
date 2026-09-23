@@ -72,10 +72,16 @@ class TiptapEditorInstance {
   private sourceTextarea: HTMLTextAreaElement | null = null;
   private toggleButton: HTMLButtonElement | null = null;
   private coordinator: UploadCoordinator | null = null;
+  private onDestroy?: () => void;
 
-  constructor(container: HTMLElement, options: EditorOptions = new EditorOptions()) {
+  constructor(
+    container: HTMLElement,
+    options: EditorOptions = new EditorOptions(),
+    onDestroy?: () => void,
+  ) {
     this.container = container;
     this.options = options;
+    this.onDestroy = onDestroy;
     this.init();
   }
 
@@ -308,6 +314,7 @@ class TiptapEditorInstance {
   }
 
   destroy(): void {
+    if (!this.onDestroy && !this.editor) return;
     this.editor?.destroy();
     this.editor = null;
     // coordinator 通过 editor.storage 访问，随 editor 实例一同回收，无需显式清除引用。
@@ -317,6 +324,8 @@ class TiptapEditorInstance {
     this.toggleButton = null;
     this.isSourceMode = false;
     this.container.innerHTML = '';
+    this.onDestroy?.();
+    this.onDestroy = undefined;
   }
 }
 
@@ -338,7 +347,10 @@ const TiptapEditor = {
       existing.destroy();
     }
 
-    const instance = new TiptapEditorInstance(container, options);
+    let instance!: TiptapEditorInstance;
+    instance = new TiptapEditorInstance(container, options, () => {
+      if (this._instances.get(containerId) === instance) this._instances.delete(containerId);
+    });
     this._instances.set(containerId, instance);
     return instance;
   },

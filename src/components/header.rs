@@ -31,15 +31,19 @@ pub struct NavItemConfig {
 /// - `right_content`：右侧自定义内容（如主题切换、登出按钮）
 /// - `max_width`：内部导航的宽度类，需与正文 `max-w-*` 一致以保证左右边缘对齐。
 ///   默认 `max-w-3xl`（前台阅读宽度）；后台传 `max-w-5xl` 与之同宽。
+/// - `menu_id`：小屏菜单的稳定 DOM ID；同页有多个 Header 时必须各不相同。
+/// - `on_demo_navigate`：图鉴用局部导航回调；正式页面省略以保留 Link 行为。
+/// - `page_shell`：图鉴实例设 false，避免被页面过渡系统识别为真实站点外壳。
 #[component]
 pub fn Header(
     nav_items: Vec<NavItemConfig>,
     right_content: Element,
     #[props(default = "max-w-3xl")] max_width: &'static str,
+    #[props(default = "mobile-nav-menu")] menu_id: &'static str,
+    #[props(default)] on_demo_navigate: Option<EventHandler<&'static str>>,
+    #[props(default = true)] page_shell: bool,
 ) -> Element {
     let mut mobile_open = use_signal(|| false);
-    // D12：对常量字符串做 use_memo 是无谓的 memo+String 分配，改用 &'static str。
-    let menu_id: &str = "mobile-nav-menu";
 
     let is_open = mobile_open();
     let burger_icon_class = if is_open {
@@ -58,12 +62,21 @@ pub fn Header(
         "mobile-nav-panel md:hidden bg-paper-theme/95 backdrop-blur-sm"
     };
     rsx! {
-        header { "data-vt-shell": "frontend-header", class: "sticky top-0 z-40 w-full bg-[var(--color-paper-theme)]/70 backdrop-blur-md transition-all duration-300",
+        header { "data-vt-shell": page_shell.then_some("frontend-header"), class: "sticky top-0 z-40 w-full bg-[var(--color-paper-theme)]/70 backdrop-blur-md transition-all duration-300",
             nav { class: "{max_width} mx-auto px-6 h-16 flex items-center justify-between",
-                Link {
-                    class: "text-2xl font-extrabold tracking-tight text-[var(--color-paper-primary)] hover:text-[var(--color-paper-accent)] transition-colors duration-200",
-                    to: Route::Home {},
-                    "Yggdrasil"
+                if let Some(on_navigate) = on_demo_navigate {
+                    button {
+                        class: "text-2xl font-extrabold tracking-tight text-[var(--color-paper-primary)] hover:text-[var(--color-paper-accent)] transition-colors duration-200",
+                        r#type: "button",
+                        onclick: move |_| on_navigate.call("首页"),
+                        "Yggdrasil"
+                    }
+                } else {
+                    Link {
+                        class: "text-2xl font-extrabold tracking-tight text-[var(--color-paper-primary)] hover:text-[var(--color-paper-accent)] transition-colors duration-200",
+                        to: Route::Home {},
+                        "Yggdrasil"
+                    }
                 }
                 div { class: "flex items-center gap-2",
                     // 桌面端导航
@@ -74,6 +87,7 @@ pub fn Header(
                                 route: item.route,
                                 label: item.label,
                                 is_active: item.is_active,
+                                on_demo_navigate,
                             }
                         }
                     }
@@ -128,6 +142,7 @@ pub fn Header(
                                     route: item.route,
                                     label: item.label,
                                     is_active: item.is_active,
+                                    on_demo_navigate,
                                     on_navigate: move |_| mobile_open.set(false),
                                 }
                             }
@@ -141,7 +156,12 @@ pub fn Header(
 
 /// 单个桌面导航项组件，根据 `is_active` 切换高亮样式。
 #[component]
-fn NavItem(route: Route, label: &'static str, is_active: bool) -> Element {
+fn NavItem(
+    route: Route,
+    label: &'static str,
+    is_active: bool,
+    on_demo_navigate: Option<EventHandler<&'static str>>,
+) -> Element {
     let base_class =
         "relative inline-flex px-3 py-1 text-base rounded-lg transition-colors duration-200";
     let class_str = if is_active {
@@ -155,13 +175,22 @@ fn NavItem(route: Route, label: &'static str, is_active: bool) -> Element {
 
     rsx! {
         li {
-            Link {
-                class: "{class_str}",
-                to: route,
-                aria_current: is_active.then_some("page"),
-                "{label}"
-                if is_active {
-                    span { class: "nav-indicator", "aria-hidden": "true" }
+            if let Some(on_navigate) = on_demo_navigate {
+                button {
+                    class: "{class_str}",
+                    r#type: "button",
+                    aria_current: is_active.then_some("page"),
+                    onclick: move |_| on_navigate.call(label),
+                    "{label}"
+                    if is_active { span { class: "nav-indicator", "aria-hidden": "true" } }
+                }
+            } else {
+                Link {
+                    class: "{class_str}",
+                    to: route,
+                    aria_current: is_active.then_some("page"),
+                    "{label}"
+                    if is_active { span { class: "nav-indicator", "aria-hidden": "true" } }
                 }
             }
         }
@@ -174,6 +203,7 @@ fn MobileNavItem(
     route: Route,
     label: &'static str,
     is_active: bool,
+    on_demo_navigate: Option<EventHandler<&'static str>>,
     on_navigate: EventHandler<()>,
 ) -> Element {
     let class_str = if is_active {
@@ -183,12 +213,25 @@ fn MobileNavItem(
     };
 
     rsx! {
-        Link {
-            class: "{class_str}",
-            to: route,
-            aria_current: is_active.then_some("page"),
-            onclick: move |_| on_navigate.call(()),
-            "{label}"
+        if let Some(demo_navigate) = on_demo_navigate {
+            button {
+                class: "{class_str}",
+                r#type: "button",
+                aria_current: is_active.then_some("page"),
+                onclick: move |_| {
+                    demo_navigate.call(label);
+                    on_navigate.call(());
+                },
+                "{label}"
+            }
+        } else {
+            Link {
+                class: "{class_str}",
+                to: route,
+                aria_current: is_active.then_some("page"),
+                onclick: move |_| on_navigate.call(()),
+                "{label}"
+            }
         }
     }
 }

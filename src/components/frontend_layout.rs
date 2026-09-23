@@ -82,19 +82,40 @@ pub fn FrontendLayout() -> Element {
     };
 
     rsx! {
-        div { class: "min-h-screen flex flex-col bg-paper-theme",
-            Header {
+        FrontendShell {
+            max_width,
+            header: rsx! { Header {
                 max_width,
                 nav_items,
                 right_content: rsx! {
                     SearchIconLink {}
                     ThemeToggle {}
                 },
-            }
-            main { class: "flex-1 w-full {max_width} mx-auto px-6 py-6 md:py-12 overflow-x-clip",
+            } },
+            footer: rsx! { Footer {} },
+            main_content: rsx! {
                 SuspenseBoundary { fallback: move |_| route_skeleton(&route), Outlet::<Route> {} }
+            },
+        }
+    }
+}
+
+/// 前台页面与图鉴样例共用的布局关系；路由内容由外层提供。
+#[component]
+pub(crate) fn FrontendShell(
+    header: Element,
+    main_content: Element,
+    footer: Element,
+    #[props(default = "max-w-4xl")] max_width: &'static str,
+    #[props(default = "min-h-screen")] min_height: &'static str,
+) -> Element {
+    rsx! {
+        div { class: "{min_height} flex flex-col bg-paper-theme",
+            {header}
+            main { class: "flex-1 w-full {max_width} mx-auto px-6 py-6 md:py-12 overflow-x-clip",
+                {main_content}
             }
-            Footer {}
+            {footer}
         }
     }
 }

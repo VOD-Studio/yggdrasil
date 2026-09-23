@@ -65,18 +65,33 @@ pub fn Footer() -> Element {
         sync_visible();
     });
 
-    // 根据 visible 动态切换按钮显示/隐藏样式
-    let btn_class = use_memo(move || {
-        let base = "fixed bottom-16 right-8 z-50 w-10 h-10 rounded-full bg-paper-entry border border-paper-border shadow-sm flex items-center justify-center cursor-pointer transition-all duration-300 text-paper-secondary hover:text-paper-accent";
-        if visible() {
-            format!("{} opacity-100 translate-y-0", base)
-        } else {
-            format!("{} opacity-0 translate-y-2 pointer-events-none", base)
-        }
-    });
-
     rsx! {
-        footer { "data-vt-shell": "frontend-footer", class: "w-full border-t border-paper-border mt-auto",
+        FooterView {
+            github_url,
+            top_visible: visible(),
+            on_top: move |_| scroll_to_top(),
+        }
+    }
+}
+
+/// 页脚共用展示；数据读取与滚动策略由调用方负责。
+#[component]
+pub(crate) fn FooterView(
+    github_url: Option<String>,
+    top_visible: bool,
+    on_top: EventHandler<()>,
+    #[props(default = true)] page_shell: bool,
+    #[props(default)] inline_top: bool,
+) -> Element {
+    let btn_class = if inline_top {
+        "w-9 h-9 rounded-full bg-paper-entry border border-paper-border shadow-sm flex items-center justify-center cursor-pointer text-paper-secondary hover:text-paper-accent"
+    } else if top_visible {
+        "fixed bottom-16 right-8 z-50 w-10 h-10 rounded-full bg-paper-entry border border-paper-border shadow-sm flex items-center justify-center cursor-pointer transition-all duration-300 text-paper-secondary hover:text-paper-accent opacity-100 translate-y-0"
+    } else {
+        "fixed bottom-16 right-8 z-50 w-10 h-10 rounded-full bg-paper-entry border border-paper-border shadow-sm flex items-center justify-center cursor-pointer transition-all duration-300 text-paper-secondary hover:text-paper-accent opacity-0 translate-y-2 pointer-events-none"
+    };
+    rsx! {
+        footer { "data-vt-shell": page_shell.then_some("frontend-footer"), class: "w-full border-t border-paper-border mt-auto",
             div { class: "max-w-4xl mx-auto px-6 py-5 flex items-center justify-between text-sm text-paper-secondary",
                 span { "© 2026 Yggdrasil" }
                 if let Some(url) = github_url.as_ref() {
@@ -101,26 +116,45 @@ pub fn Footer() -> Element {
                         }
                     }
                 }
+                if inline_top {
+                    button {
+                        class: "{btn_class}",
+                        r#type: "button",
+                        aria_label: "go to top",
+                        title: "回到演示顶部",
+                        onclick: move |_| on_top.call(()),
+                        TopIcon {}
+                    }
+                }
             }
         }
-        a {
-            class: "{btn_class}",
-            href: "#top",
-            aria_label: "go to top",
-            title: "Go to Top (Alt + G)",
-            accesskey: "g",
-            onclick: move |evt| {
-                evt.prevent_default();
-                scroll_to_top();
-            },
-            svg {
-                xmlns: "http://www.w3.org/2000/svg",
-                height: "24px",
-                view_box: "0 -960 960 960",
-                width: "24px",
-                fill: "currentColor",
-                path { d: "m296-224-56-56 240-240 240 240-56 56-184-183-184 183Zm0-240-56-56 240-240 240 240-56 56-184-183-184 183Z" }
+        if !inline_top {
+            a {
+                class: "{btn_class}",
+                href: "#top",
+                aria_label: "go to top",
+                title: "Go to Top (Alt + G)",
+                accesskey: "g",
+                onclick: move |event| {
+                    event.prevent_default();
+                    on_top.call(());
+                },
+                TopIcon {}
             }
+        }
+    }
+}
+
+#[component]
+fn TopIcon() -> Element {
+    rsx! {
+        svg {
+            xmlns: "http://www.w3.org/2000/svg",
+            height: "24px",
+            view_box: "0 -960 960 960",
+            width: "24px",
+            fill: "currentColor",
+            path { d: "m296-224-56-56 240-240 240 240-56 56-184-183-184 183Zm0-240-56-56 240-240 240 240-56 56-184-183-184 183Z" }
         }
     }
 }

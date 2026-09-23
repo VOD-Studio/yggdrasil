@@ -53,90 +53,184 @@ pub fn AdminLayout() -> Element {
         }
     });
 
-    let nav_items_top = vec![(Route::Admin {}, "仪表盘"), (Route::Write {}, "写文章")];
-    let nav_items_bottom = vec![(Route::Assets {}, "素材"), (Route::FriendsAdmin {}, "友链")];
-
     let is_write_route =
         matches!(route, Route::Write {}) || matches!(route, Route::WriteEdit { .. });
-    // settings 与 write 一样自组织内部滚动（页头/左菜单固定，右侧内容列 overflow-y-auto），
-    // 需要卡片与 main 只提供有界高度而不滚动。注意不能用 h-full 百分比链条：
-    // main 是 flex item 且 min-height:auto，长内容会先把 main 撑大、百分比再相对
-    // 撑大后的高度解析，形成循环依赖导致约束失效（实证于限流分区）。
+    // 写作、设置和日志页面在主内容区内部自行滚动。
     let internal_scroll_route = is_write_route
         || matches!(route, Route::SiteSettingsPage {})
         || matches!(route, Route::Logs {});
+    let side_user = (ctx.user)();
+    let sidebar = rsx! {
+        AdminSidebar {
+            route: route.clone(),
+            user_name: side_user.as_ref().map(|user| user.display_label().to_string()),
+            avatar_url: side_user.as_ref().and_then(|user| user.avatar_url.clone()),
+            on_logout: move |_| {
+                spawn(async move {
+                    if logout().await.is_ok_and(|response| response.success) {
+                        crate::bridges::navigation::clear_admin_state();
+                    }
+                    ctx.user.set(None);
+                    ctx.checked.set(false);
+                    let _ = navigator.push(Route::Login {});
+                });
+            },
+        }
+    };
+    let authenticated = matches!(((ctx.checked)(), (ctx.user)()), (true, Some(_)));
+    let skeleton_route = route.clone();
+    let content = if authenticated {
+        rsx! {
+            // 路由挂起时沿用同一布局内的页面骨架。
+            SuspenseBoundary {
+                fallback: move |_| rsx! {
+                    div { class: "flex-1 min-h-0 flex flex-col animate-pulse", {admin_route_skeleton(&skeleton_route)} }
+                },
+                Outlet::<Route> {}
+            }
+        }
+    } else {
+        rsx! {
+            div { class: "flex-1 min-h-0 flex flex-col animate-pulse",
+                {admin_route_skeleton(&route)}
+            }
+        }
+    };
+    rsx! {
+        AdminShell {
+            sidebar,
+            content,
+            internal_scroll: internal_scroll_route,
+            checking: !authenticated,
+        }
+    }
+}
 
-    // 所有 admin 页面共用同一 shell:外层圆角卡片(滚动容器) + 内部 main 负责居中限宽。
-    // write/settings 路由例外:卡片不滚动(overflow-hidden),main 作为 flex 容器不带头尾 padding,
-    // 由页面自身组织 [内容区 flex-1 min-h-0 overflow-y-auto] 的分区布局,
-    // 这样固定区永远贴卡片边缘不随内容滚动,也不会出现 sticky + 负 margin 的跳动。
-    let card_overflow = if internal_scroll_route {
+/// 认证和路由留在 AdminLayout，图鉴只向此壳传入固定内容。
+#[component]
+pub(crate) fn AdminShell(
+    sidebar: Element,
+    content: Element,
+    #[props(default)] internal_scroll: bool,
+    #[props(default)] checking: bool,
+    #[props(default)] preview: bool,
+) -> Element {
+    let root_class = if preview {
+        "showcase-admin-shell flex bg-[var(--color-paper-entry)] text-[var(--color-paper-primary)] font-sans"
+    } else {
+        "min-h-dvh flex bg-[var(--color-paper-entry)] text-[var(--color-paper-primary)] font-sans"
+    };
+    let height_class = if preview { "h-full" } else { "h-screen" };
+    let card_overflow = if internal_scroll || checking {
         "overflow-hidden"
     } else {
         "overflow-y-auto"
     };
-    let main_class = if internal_scroll_route {
+    let main_class = if internal_scroll {
         "flex-1 w-full max-w-7xl mx-auto flex flex-col min-h-0"
     } else {
         "flex-1 w-full max-w-7xl mx-auto px-6 py-12"
     };
+    rsx! {
+        div { class: "{root_class}",
+            {sidebar}
+            div { class: "flex-1 flex flex-col min-w-0 {height_class} p-2 md:p-4",
+                div {
+                    "data-vt-scroll": (!preview).then_some("admin-main"),
+                    class: "flex-1 bg-[var(--color-paper-theme)] rounded-[2rem] shadow-sm border border-[var(--color-paper-border)] {card_overflow} relative flex flex-col",
+                    main { class: "{main_class}", {content} }
+                }
+            }
+        }
+    }
+}
 
-    let root_class =
-        "min-h-dvh flex bg-[var(--color-paper-entry)] text-[var(--color-paper-primary)] font-sans";
-
-    // 侧栏底部用户卡片（→ /admin/profile）的激活态样式，与导航项同一套 pill 语言。
-    let is_profile_route = matches!(route, Route::Profile {});
+/// 正式后台与图鉴共享侧栏结构；图鉴导航通过回调更新局部选中项。
+#[component]
+pub(crate) fn AdminSidebar(
+    route: Route,
+    user_name: Option<String>,
+    avatar_url: Option<String>,
+    on_logout: EventHandler<()>,
+    #[props(default)] demo_active: Option<String>,
+    #[props(default)] on_demo_navigate: Option<EventHandler<&'static str>>,
+    #[props(default)] preview: bool,
+) -> Element {
+    let nav_items_top = vec![(Route::Admin {}, "仪表盘"), (Route::Write {}, "写文章")];
+    let nav_items_bottom = vec![(Route::Assets {}, "素材"), (Route::FriendsAdmin {}, "友链")];
+    let is_write_route =
+        matches!(route, Route::Write {}) || matches!(route, Route::WriteEdit { .. });
+    let is_profile_route = demo_active
+        .as_deref()
+        .map_or(matches!(route, Route::Profile {}), |active| {
+            active == "个人信息"
+        });
     let chip_state_class = if is_profile_route {
         "bg-[var(--color-paper-theme)] text-[var(--color-paper-primary)] shadow-sm border border-[var(--color-paper-border)]"
     } else {
         "text-[var(--color-paper-secondary)] hover:bg-[var(--color-paper-theme)]/50 hover:text-[var(--color-paper-primary)] border border-transparent"
     };
-    // 读取一次全局用户上下文（订阅：资料更新后卡片即时刷新）。
-    let side_user = (ctx.user)();
-
-    let nav_content = rsx! {
-        aside { "data-vt-shell": "admin-sidebar", class: "w-48 flex-shrink-0 hidden md:flex flex-col h-screen sticky top-0 p-3 bg-[var(--color-paper-entry)]",
-            // Logo
+    let aside_class = if preview {
+        "w-48 flex-shrink-0 flex flex-col h-full sticky top-0 p-3 bg-[var(--color-paper-entry)]"
+    } else {
+        "w-48 flex-shrink-0 hidden md:flex flex-col h-screen sticky top-0 p-3 bg-[var(--color-paper-entry)]"
+    };
+    rsx! {
+        aside { "data-vt-shell": (!preview).then_some("admin-sidebar"), class: "{aside_class}",
             div { class: "mb-8 px-3",
-                // 外链形态（原生 <a href>，浏览器整页加载）：admin→前台是跨
-                // layout 分支的导航，客户端路由会在切走 AdminLayout 的
-                // SuspenseBoundary 时触发 dioxus 0.7.10 的双重回收 bug
-                //（cannot reclaim ElementId → interpreter 崩溃 → 后续点击
-                // 全部失效，详见 src/pages/admin/preview.rs 模块文档）。
-                // 整页加载无 boundary 卸载路径，彻底规避。
-                Link {
-                    class: "font-extrabold text-2xl tracking-tight text-[var(--color-paper-primary)] hover:text-[var(--color-paper-accent)] transition-colors",
-                    to: NavigationTarget::<Route>::External("/".to_string()),
-                    "Yggdrasil."
-                }
-            }
-            // Nav Items
-            nav { class: "flex-1 flex flex-col gap-2",
-                for (dest, label) in nav_items_top {
-                    {nav_item(&route, dest, label, is_write_route)}
-                }
-                // 「内容管理」子菜单：全部文章 / 回收站 / 评论管理（issue #17）。
-                ContentNavGroup {}
-                for (dest, label) in nav_items_bottom {
-                    {nav_item(&route, dest, label, is_write_route)}
-                }
-                ToolsNavGroup {}
-            }
-            // Bottom Tools：用户卡片（→ 个人信息页）+ 主题切换 / 退出
-            div { class: "mt-auto pt-4 border-t border-[var(--color-paper-border)] flex flex-col gap-1",
-                if let Some(user) = side_user {
-                    Link {
-                        class: "flex items-center gap-2.5 px-3 py-2 rounded-2xl text-sm font-medium transition-all {chip_state_class}",
-                        to: Route::Profile {},
-                        UserAvatar {
-                            name: user.display_label().to_string(),
-                            avatar_url: user.avatar_url.clone(),
-                            class: "w-7 h-7 rounded-full text-xs flex-shrink-0 border border-[var(--color-paper-border)]",
-                        }
-                        span { class: "truncate", "{user.display_label()}" }
+                if let Some(on_navigate) = on_demo_navigate {
+                    button {
+                        class: "font-extrabold text-2xl tracking-tight text-[var(--color-paper-primary)] hover:text-[var(--color-paper-accent)] transition-colors",
+                        r#type: "button",
+                        onclick: move |_| on_navigate.call("仪表盘"),
+                        "Yggdrasil."
                     }
                 } else {
-                    // 登录态校验期间的占位（与骨架屏同语言）。
+                    // admin→前台跨 layout，保留整页加载以避开 Dioxus 0.7.10 的卸载问题。
+                    Link {
+                        class: "font-extrabold text-2xl tracking-tight text-[var(--color-paper-primary)] hover:text-[var(--color-paper-accent)] transition-colors",
+                        to: NavigationTarget::<Route>::External("/".to_string()),
+                        "Yggdrasil."
+                    }
+                }
+            }
+            nav { class: "flex-1 flex flex-col gap-2",
+                for (dest, label) in nav_items_top {
+                    {nav_item(&route, dest, label, is_write_route, demo_active.as_deref(), on_demo_navigate)}
+                }
+                ContentNavGroup { demo_active: demo_active.clone(), on_demo_navigate }
+                for (dest, label) in nav_items_bottom {
+                    {nav_item(&route, dest, label, is_write_route, demo_active.as_deref(), on_demo_navigate)}
+                }
+                ToolsNavGroup { demo_active: demo_active.clone(), on_demo_navigate }
+            }
+            div { class: "mt-auto pt-4 border-t border-[var(--color-paper-border)] flex flex-col gap-1",
+                if let Some(name) = user_name {
+                    if let Some(on_navigate) = on_demo_navigate {
+                        button {
+                            class: "flex items-center gap-2.5 px-3 py-2 rounded-2xl text-sm font-medium transition-all {chip_state_class}",
+                            r#type: "button",
+                            onclick: move |_| on_navigate.call("个人信息"),
+                            UserAvatar {
+                                name: name.clone(),
+                                avatar_url: avatar_url.clone(),
+                                class: "w-7 h-7 rounded-full text-xs flex-shrink-0 border border-[var(--color-paper-border)]",
+                            }
+                            span { class: "truncate", "{name}" }
+                        }
+                    } else {
+                        Link {
+                            class: "flex items-center gap-2.5 px-3 py-2 rounded-2xl text-sm font-medium transition-all {chip_state_class}",
+                            to: Route::Profile {},
+                            UserAvatar {
+                                name: name.clone(),
+                                avatar_url: avatar_url.clone(),
+                                class: "w-7 h-7 rounded-full text-xs flex-shrink-0 border border-[var(--color-paper-border)]",
+                            }
+                            span { class: "truncate", "{name}" }
+                        }
+                    }
+                } else {
                     div { class: "flex items-center gap-2.5 px-3 py-2",
                         div { class: "w-7 h-7 rounded-full bg-[var(--color-paper-theme)] animate-pulse flex-shrink-0" }
                         div { class: "h-3.5 w-16 rounded bg-[var(--color-paper-theme)] animate-pulse" }
@@ -146,63 +240,9 @@ pub fn AdminLayout() -> Element {
                     ThemeToggle {}
                     button {
                         class: "text-sm font-medium px-3 py-1.5 rounded-2xl bg-[var(--color-paper-theme)] border border-[var(--color-paper-border)] shadow-sm hover:shadow-md transition-all text-[var(--color-paper-secondary)] hover:text-red-500 cursor-pointer",
-                        onclick: move |_| {
-                            spawn(async move {
-                                if logout().await.is_ok_and(|response| response.success) {
-                                    crate::bridges::navigation::clear_admin_state();
-                                }
-                                ctx.user.set(None);
-                                ctx.checked.set(false);
-                                let _ = navigator.push(Route::Login {});
-                            });
-                        },
+                        r#type: "button",
+                        onclick: move |_| on_logout.call(()),
                         "退出"
-                    }
-                }
-            }
-        }
-    };
-
-    let skeleton_route = route.clone();
-    match ((ctx.checked)(), (ctx.user)()) {
-        (true, Some(_)) => {
-            rsx! {
-                div { class: "{root_class}",
-                    {nav_content}
-                    div { class: "flex-1 flex flex-col min-w-0 h-screen p-2 md:p-4",
-                        div { "data-vt-scroll": "admin-main", class: "flex-1 bg-[var(--color-paper-theme)] rounded-[2rem] shadow-sm border border-[var(--color-paper-border)] {card_overflow} relative flex flex-col",
-                            main { class: "{main_class}",
-                                // 与前台 frontend_layout.rs 同理：admin 内的 use_server_future(...)?
-                                // （如 preview.rs）pending 时会向上抛 RenderError::Suspended；没有
-                                // SuspenseBoundary 时挂起 scope 渲染为空占位节点，主内容区在 server fn
-                                // 往返期间整片空白。fallback 复用登录校验期的同款路由骨架屏（同样的
-                                // flex wrapper + animate-pulse），骨架屏→骨架屏→内容全程无缝、无空白帧。
-                                SuspenseBoundary {
-                                    fallback: move |_| rsx! {
-                                        div { class: "flex-1 min-h-0 flex flex-col animate-pulse", {admin_route_skeleton(&skeleton_route)} }
-                                    },
-                                    Outlet::<Route> {}
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        _ => {
-            rsx! {
-                div { class: "{root_class}",
-                    {nav_content}
-                    div { class: "flex-1 flex flex-col min-w-0 h-screen p-2 md:p-4",
-                        div { "data-vt-scroll": "admin-main", class: "flex-1 bg-[var(--color-paper-theme)] rounded-[2rem] shadow-sm border border-[var(--color-paper-border)] overflow-hidden relative flex flex-col",
-                            main { class: "{main_class}",
-                                // flex-1 撑满 main(使 write 骨架屏能引用到确定高度),
-                                // 非 write 页面的 py-12 padding 由 main_class 自带,这里不重复加。
-                                div { class: "flex-1 min-h-0 flex flex-col animate-pulse",
-                                    {admin_route_skeleton(&route)}
-                                }
-                            }
-                        }
                     }
                 }
             }
@@ -210,10 +250,18 @@ pub fn AdminLayout() -> Element {
     }
 }
 
-/// 渲染单个顶层导航项（含激活态判定），供顶部/底部两组导航项列表共用，
-/// 避免同一 pill 高亮逻辑在两处重复。
-fn nav_item(route: &Route, dest: Route, label: &'static str, is_write_route: bool) -> Element {
-    let is_active = *route == dest || (label == "写文章" && is_write_route);
+fn nav_item(
+    route: &Route,
+    dest: Route,
+    label: &'static str,
+    is_write_route: bool,
+    demo_active: Option<&str>,
+    on_demo_navigate: Option<EventHandler<&'static str>>,
+) -> Element {
+    let is_active = demo_active.map_or(
+        *route == dest || (label == "写文章" && is_write_route),
+        |active| active == label,
+    );
     let base_class = "flex items-center px-3 py-2.5 rounded-2xl text-sm font-medium transition-all";
     let text_class = if is_active {
         "bg-[var(--color-paper-theme)] text-[var(--color-paper-primary)] shadow-sm border border-[var(--color-paper-border)]"
@@ -221,7 +269,11 @@ fn nav_item(route: &Route, dest: Route, label: &'static str, is_write_route: boo
         "text-[var(--color-paper-secondary)] hover:bg-[var(--color-paper-theme)]/50 hover:text-[var(--color-paper-primary)] border border-transparent"
     };
     rsx! {
-        Link { key: "{label}", class: "{base_class} {text_class}", to: dest, "{label}" }
+        if let Some(on_navigate) = on_demo_navigate {
+            button { key: "{label}", class: "{base_class} {text_class}", r#type: "button", onclick: move |_| on_navigate.call(label), "{label}" }
+        } else {
+            Link { key: "{label}", class: "{base_class} {text_class}", to: dest, "{label}" }
+        }
     }
 }
 
@@ -339,9 +391,17 @@ impl NavGroupKind {
 /// 仅当再次从组外导航进入组内路由时才重新展开——而非组内路由间导航
 /// （如评论分页）也强制重新展开。
 #[component]
-fn NavGroup(kind: NavGroupKind, items: Vec<(Route, &'static str, bool)>) -> Element {
+fn NavGroup(
+    kind: NavGroupKind,
+    items: Vec<(Route, &'static str, bool)>,
+    #[props(default)] on_demo_navigate: Option<EventHandler<&'static str>>,
+) -> Element {
     let route = use_route::<Route>();
-    let group_active = kind.contains(&route);
+    let group_active = if on_demo_navigate.is_some() {
+        items.iter().any(|(_, _, active)| *active)
+    } else {
+        kind.contains(&route)
+    };
     let mut expanded = use_signal(|| group_active);
     // 记录上一次 effect 运行时路由是否在组内，用于判断"从组外→组内"的跳变
     // （而非"当前在组内"这一恒真条件），避免组内路由间导航（如评论分页）
@@ -351,6 +411,9 @@ fn NavGroup(kind: NavGroupKind, items: Vec<(Route, &'static str, bool)>) -> Elem
     // 闭包内读 router().current 建立 ReactiveContext 订阅（仓库约定 #5），
     // 路由变化时本 effect 重跑。
     use_effect(move || {
+        if on_demo_navigate.is_some() {
+            return;
+        }
         let current = router().current::<Route>();
         let now_in_group = kind.contains(&current);
         let was = was_in_group();
@@ -377,6 +440,8 @@ fn NavGroup(kind: NavGroupKind, items: Vec<(Route, &'static str, bool)>) -> Elem
         div { class: "flex flex-col gap-1",
             button {
                 class: "flex items-center justify-between w-full px-3 py-2.5 rounded-2xl text-sm font-medium transition-all cursor-pointer {parent_text_class}",
+                r#type: "button",
+                aria_expanded: expanded(),
                 onclick: move |_| expanded.set(!expanded()),
                 span { "{label}" }
                 svg {
@@ -400,11 +465,21 @@ fn NavGroup(kind: NavGroupKind, items: Vec<(Route, &'static str, bool)>) -> Elem
                     // 左侧竖线引导 + 缩进表示层级。
                     div { class: "ml-3 pl-2.5 border-l border-[var(--color-paper-border)] flex flex-col gap-1",
                         for (dest, item_label, active) in items {
-                            Link {
-                                key: "{item_label}",
-                                class: if active { "flex items-center px-2.5 py-1.5 rounded-xl text-sm font-medium transition-all bg-[var(--color-paper-theme)] text-[var(--color-paper-primary)] shadow-sm border border-[var(--color-paper-border)]" } else { "flex items-center px-2.5 py-1.5 rounded-xl text-sm font-medium transition-all text-[var(--color-paper-secondary)] hover:bg-[var(--color-paper-theme)]/50 hover:text-[var(--color-paper-primary)] border border-transparent" },
-                                to: dest,
-                                "{item_label}"
+                            if let Some(on_navigate) = on_demo_navigate {
+                                button {
+                                    key: "{item_label}",
+                                    class: if active { "flex items-center px-2.5 py-1.5 rounded-xl text-sm font-medium transition-all bg-[var(--color-paper-theme)] text-[var(--color-paper-primary)] shadow-sm border border-[var(--color-paper-border)]" } else { "flex items-center px-2.5 py-1.5 rounded-xl text-sm font-medium transition-all text-[var(--color-paper-secondary)] hover:bg-[var(--color-paper-theme)]/50 hover:text-[var(--color-paper-primary)] border border-transparent" },
+                                    r#type: "button",
+                                    onclick: move |_| on_navigate.call(item_label),
+                                    "{item_label}"
+                                }
+                            } else {
+                                Link {
+                                    key: "{item_label}",
+                                    class: if active { "flex items-center px-2.5 py-1.5 rounded-xl text-sm font-medium transition-all bg-[var(--color-paper-theme)] text-[var(--color-paper-primary)] shadow-sm border border-[var(--color-paper-border)]" } else { "flex items-center px-2.5 py-1.5 rounded-xl text-sm font-medium transition-all text-[var(--color-paper-secondary)] hover:bg-[var(--color-paper-theme)]/50 hover:text-[var(--color-paper-primary)] border border-transparent" },
+                                    to: dest,
+                                    "{item_label}"
+                                }
                             }
                         }
                     }
@@ -417,67 +492,101 @@ fn NavGroup(kind: NavGroupKind, items: Vec<(Route, &'static str, bool)>) -> Elem
 /// 「内容管理」子菜单组：全部文章 / 回收站 / 评论管理（issue #17）。NavGroup
 /// 的薄封装，只提供本组的子项列表。
 #[component]
-fn ContentNavGroup() -> Element {
+fn ContentNavGroup(
+    #[props(default)] demo_active: Option<String>,
+    #[props(default)] on_demo_navigate: Option<EventHandler<&'static str>>,
+) -> Element {
     let route = use_route::<Route>();
+    let active = |label: &str, route_active: bool| {
+        demo_active
+            .as_ref()
+            .map_or(route_active, |name| name == label)
+    };
     let items = vec![
         (
             Route::AdminNotes {},
             "笔记",
-            matches!(
-                route,
-                Route::AdminNotes {} | Route::NewNote {} | Route::EditNote { .. }
+            active(
+                "笔记",
+                matches!(
+                    route,
+                    Route::AdminNotes {} | Route::NewNote {} | Route::EditNote { .. }
+                ),
             ),
         ),
         (
             Route::AdminNotebooks {},
             "笔记本",
-            matches!(route, Route::AdminNotebooks {}),
+            active("笔记本", matches!(route, Route::AdminNotebooks {})),
         ),
         (
             Route::Posts {},
             "全部文章",
-            matches!(route, Route::Posts {}),
+            active("全部文章", matches!(route, Route::Posts {})),
         ),
         (
             Route::PostsTrash {},
             "回收站",
-            matches!(route, Route::PostsTrash {}),
+            active("回收站", matches!(route, Route::PostsTrash {})),
         ),
         (
             Route::AdminComments {},
             "评论管理",
-            matches!(
-                route,
-                Route::AdminComments {} | Route::AdminCommentsPage { .. }
+            active(
+                "评论管理",
+                matches!(
+                    route,
+                    Route::AdminComments {} | Route::AdminCommentsPage { .. }
+                ),
             ),
         ),
     ];
     rsx! {
-        NavGroup { kind: NavGroupKind::Content, items }
+        NavGroup { kind: NavGroupKind::Content, items, on_demo_navigate }
     }
 }
 
 /// 「工具」子菜单组：设置 / 试运行 / MCP / 日志 / 系统（issue #26）。NavGroup
 /// 的薄封装，只提供本组的子项列表。
 #[component]
-fn ToolsNavGroup() -> Element {
+fn ToolsNavGroup(
+    #[props(default)] demo_active: Option<String>,
+    #[props(default)] on_demo_navigate: Option<EventHandler<&'static str>>,
+) -> Element {
     let route = use_route::<Route>();
+    let active = |label: &str, route_active: bool| {
+        demo_active
+            .as_ref()
+            .map_or(route_active, |name| name == label)
+    };
     let items = vec![
         (
             Route::SiteSettingsPage {},
             "设置",
-            matches!(route, Route::SiteSettingsPage {}),
+            active("设置", matches!(route, Route::SiteSettingsPage {})),
         ),
         (
             Route::Runner {},
             "试运行",
-            matches!(route, Route::Runner {}),
+            active("试运行", matches!(route, Route::Runner {})),
         ),
-        (Route::Mcp {}, "MCP", matches!(route, Route::Mcp {})),
-        (Route::Logs {}, "日志", matches!(route, Route::Logs {})),
-        (Route::System {}, "系统", matches!(route, Route::System {})),
+        (
+            Route::Mcp {},
+            "MCP",
+            active("MCP", matches!(route, Route::Mcp {})),
+        ),
+        (
+            Route::Logs {},
+            "日志",
+            active("日志", matches!(route, Route::Logs {})),
+        ),
+        (
+            Route::System {},
+            "系统",
+            active("系统", matches!(route, Route::System {})),
+        ),
     ];
     rsx! {
-        NavGroup { kind: NavGroupKind::Tools, items }
+        NavGroup { kind: NavGroupKind::Tools, items, on_demo_navigate }
     }
 }

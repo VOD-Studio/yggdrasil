@@ -55,6 +55,21 @@ export function initAnchorClick(): void {
       if (!href?.startsWith('#') || href === '#') return;
 
       const id = decodeURIComponent(href.slice(1));
+      const localRoot = anchor.closest<HTMLElement>('[data-local-anchor-scroll]');
+      if (localRoot) {
+        const localTarget = Array.from(localRoot.querySelectorAll<HTMLElement>('[id]')).find(
+          (node) => node.id === id,
+        );
+        if (!localTarget) return;
+        event.stopPropagation();
+        event.preventDefault();
+        const top =
+          localRoot.scrollTop +
+          localTarget.getBoundingClientRect().top -
+          localRoot.getBoundingClientRect().top;
+        localRoot.scrollTo({ top, behavior: 'smooth' });
+        return;
+      }
       const el = document.getElementById(id);
       if (!el) return; // 目标不存在：放行，交还原生行为（不滚动但不刷新）
 

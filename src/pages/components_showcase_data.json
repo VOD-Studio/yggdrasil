@@ -93,7 +93,9 @@
         ]
       ],
       "source": "src/components/ui.rs",
-      "code": "let mut checked = use_signal(|| false);\n\nrsx! {\n    Checkbox {\n        checked: checked(),\n        onchange: move |v| checked.set(v),\n    }\n}"
+      "code": "let mut checked = use_signal(|| false);\n\nrsx! {\n    Checkbox {\n        checked: checked(),\n        onchange: move |v| checked.set(v),\n    }\n}",
+      "preview_mode": "interactive",
+      "usage_kind": "rust"
     },
     {
       "name": "ToggleSwitch",
@@ -134,7 +136,9 @@
         ]
       ],
       "source": "src/components/forms.rs",
-      "code": "let mut enabled = use_signal(|| true);\nrsx! {\n    ToggleSwitch {\n        checked: enabled(),\n        aria_label: Some(\"接收更新\".to_string()),\n        ontoggle: move |_| enabled.toggle(),\n    }\n}"
+      "code": "let mut enabled = use_signal(|| true);\nrsx! {\n    ToggleSwitch {\n        checked: enabled(),\n        aria_label: Some(\"接收更新\".to_string()),\n        ontoggle: move |_| enabled.toggle(),\n    }\n}",
+      "preview_mode": "interactive",
+      "usage_kind": "rust"
     },
     {
       "name": "FormSelect",
@@ -197,7 +201,9 @@
         ]
       ],
       "source": "src/components/forms.rs",
-      "code": "let mut topic = use_signal(|| \"all\".to_string());\nrsx! {\n    FormSelect {\n        value: topic(),\n        options: vec![(\"all\".to_string(), \"全部\"), (\"design\".to_string(), \"设计\")],\n        onchange: move |value| topic.set(value),\n    }\n}"
+      "code": "let mut topic = use_signal(|| \"all\".to_string());\nrsx! {\n    FormSelect {\n        value: topic(),\n        options: vec![(\"all\".to_string(), \"全部\"), (\"design\".to_string(), \"设计\")],\n        onchange: move |value| topic.set(value),\n    }\n}",
+      "preview_mode": "interactive",
+      "usage_kind": "rust"
     },
     {
       "name": "Radio",
@@ -250,7 +256,9 @@
         ]
       ],
       "source": "src/components/ui.rs",
-      "code": "let mut visibility = use_signal(|| \"public\".to_string());\nrsx! {\n    label {\n        Radio {\n            name: \"visibility\",\n            value: \"public\",\n            checked: visibility() == \"public\",\n            onchange: move |value| visibility.set(value),\n        }\n        \"公开分享\"\n    }\n}"
+      "code": "let mut visibility = use_signal(|| \"public\".to_string());\nrsx! {\n    label {\n        Radio {\n            name: \"visibility\",\n            value: \"public\",\n            checked: visibility() == \"public\",\n            onchange: move |value| visibility.set(value),\n        }\n        \"公开分享\"\n    }\n}",
+      "preview_mode": "interactive",
+      "usage_kind": "rust"
     },
     {
       "name": "LoadingButton",
@@ -303,7 +311,9 @@
         ]
       ],
       "source": "src/components/ui.rs",
-      "code": "let mut saved = use_signal(|| false);\nrsx! {\n    LoadingButton {\n        label: if saved() { \"已保存\" } else { \"保存设置\" },\n        loading: false,\n        onclick: move |_| saved.set(true),\n    }\n}"
+      "code": "let mut saved = use_signal(|| false);\nrsx! {\n    LoadingButton {\n        label: if saved() { \"已保存\" } else { \"保存设置\" },\n        loading: false,\n        onclick: move |_| saved.set(true),\n    }\n}",
+      "preview_mode": "interactive",
+      "usage_kind": "rust"
     },
     {
       "name": "FormInput",
@@ -362,7 +372,9 @@
         ]
       ],
       "source": "src/components/forms.rs",
-      "code": "let mut title = use_signal(String::new);\nrsx! {\n    FormInput {\n        r#type: \"text\",\n        placeholder: \"一个新的开始…\",\n        value: title(),\n        oninput: move |value| title.set(value),\n    }\n}"
+      "code": "let mut title = use_signal(String::new);\nrsx! {\n    FormInput {\n        r#type: \"text\",\n        placeholder: \"一个新的开始…\",\n        value: title(),\n        oninput: move |value| title.set(value),\n    }\n}",
+      "preview_mode": "interactive",
+      "usage_kind": "rust"
     },
     {
       "name": "TimePicker",
@@ -403,7 +415,9 @@
         ]
       ],
       "source": "src/components/forms.rs",
-      "code": "let mut time = use_signal(|| \"08:30\".to_string());\nrsx! {\n    TimePicker {\n        value: time(),\n        onchange: move |value| time.set(value),\n    }\n}"
+      "code": "let mut time = use_signal(|| \"08:30\".to_string());\nrsx! {\n    TimePicker {\n        value: time(),\n        onchange: move |value| time.set(value),\n    }\n}",
+      "preview_mode": "interactive",
+      "usage_kind": "rust"
     },
     {
       "name": "FormLabel",
@@ -434,7 +448,9 @@
         ]
       ],
       "source": "src/components/forms.rs",
-      "code": "let mut title = use_signal(String::new);\nrsx! {\n    div {\n        FormLabel {\n            label: \"文章标题\",\n            html_for: Some(\"post-title\".to_string()),\n        }\n        FormInput {\n            id: Some(\"post-title\".to_string()),\n            r#type: \"text\",\n            placeholder: \"点击标签也能聚焦这里\",\n            value: title(),\n            oninput: move |value| title.set(value),\n        }\n    }\n}"
+      "code": "let mut title = use_signal(String::new);\nrsx! {\n    div {\n        FormLabel {\n            label: \"文章标题\",\n            html_for: Some(\"post-title\".to_string()),\n        }\n        FormInput {\n            id: Some(\"post-title\".to_string()),\n            r#type: \"text\",\n            placeholder: \"点击标签也能聚焦这里\",\n            value: title(),\n            oninput: move |value| title.set(value),\n        }\n    }\n}",
+      "preview_mode": "interactive",
+      "usage_kind": "rust"
     },
     {
       "name": "FilterTabs",
@@ -475,7 +491,9 @@
         ]
       ],
       "source": "src/components/ui.rs",
-      "code": "let mut filter = use_signal(|| \"all\".to_string());\nrsx! {\n    FilterTabs {\n        items: vec![(\"all\", \"全部\"), (\"published\", \"已发布\")],\n        active_value: filter(),\n        on_change: move |value| filter.set(value),\n    }\n}"
+      "code": "let mut filter = use_signal(|| \"all\".to_string());\nrsx! {\n    FilterTabs {\n        items: vec![(\"all\", \"全部\"), (\"published\", \"已发布\")],\n        active_value: filter(),\n        on_change: move |value| filter.set(value),\n    }\n}",
+      "preview_mode": "interactive",
+      "usage_kind": "rust"
     },
     {
       "name": "Pagination",
@@ -534,7 +552,9 @@
         ]
       ],
       "source": "src/components/ui.rs",
-      "code": "let mut page = use_signal(|| 1i32);\nrsx! {\n    Pagination::<Route> {\n        variant: \"admin\",\n        current_page: page(),\n        total: 80,\n        per_page: 10,\n        unit: \"篇\",\n        on_prev: move |_| page.set((page() - 1).max(1)),\n        on_next: move |_| page.set((page() + 1).min(8)),\n    }\n}"
+      "code": "let mut page = use_signal(|| 1i32);\nrsx! {\n    Pagination::<Route> {\n        variant: \"admin\",\n        current_page: page(),\n        total: 80,\n        per_page: 10,\n        unit: \"篇\",\n        on_prev: move |_| page.set((page() - 1).max(1)),\n        on_next: move |_| page.set((page() + 1).min(8)),\n    }\n}",
+      "preview_mode": "interactive",
+      "usage_kind": "rust"
     },
     {
       "name": "Tooltip",
@@ -577,7 +597,9 @@
         ]
       ],
       "source": "src/components/ui.rs",
-      "code": "rsx! {\n    Tooltip {\n        tip: \"一条恰到好处的说明\",\n        button { \"停留片刻\" }\n    }\n}"
+      "code": "rsx! {\n    Tooltip {\n        tip: \"一条恰到好处的说明\",\n        button { \"停留片刻\" }\n    }\n}",
+      "preview_mode": "interactive",
+      "usage_kind": "rust"
     },
     {
       "name": "Popover",
@@ -632,7 +654,9 @@
         ]
       ],
       "source": "src/components/ui.rs",
-      "code": "let mut open = use_signal(|| false);\nlet mut anchor_x = use_signal(|| 0i32);\nlet mut anchor_y = use_signal(|| 0i32);\nrsx! {\n    div {\n        button {\n            onclick: move |event: MouseEvent| {\n                #[cfg(target_arch = \"wasm32\")]\n                {\n                    use dioxus::html::InteractionLocation;\n                    let point = event.client_coordinates();\n                    anchor_x.set(point.x as i32);\n                    anchor_y.set(point.y as i32);\n                }\n                open.set(true);\n            },\n            \"打开浮层\"\n        }\n        Popover {\n            open: open(),\n            anchor_x: anchor_x(),\n            anchor_y: anchor_y(),\n            on_close: move |_| open.set(false),\n            p { \"保留这片灵感？\" }\n        }\n    }\n}"
+      "code": "let mut open = use_signal(|| false);\nlet mut anchor_x = use_signal(|| 0i32);\nlet mut anchor_y = use_signal(|| 0i32);\nrsx! {\n    div {\n        button {\n            onclick: move |event: MouseEvent| {\n                #[cfg(target_arch = \"wasm32\")]\n                {\n                    use dioxus::html::InteractionLocation;\n                    let point = event.client_coordinates();\n                    anchor_x.set(point.x as i32);\n                    anchor_y.set(point.y as i32);\n                }\n                open.set(true);\n            },\n            \"打开浮层\"\n        }\n        Popover {\n            open: open(),\n            anchor_x: anchor_x(),\n            anchor_y: anchor_y(),\n            on_close: move |_| open.set(false),\n            p { \"保留这片灵感？\" }\n        }\n    }\n}",
+      "preview_mode": "interactive",
+      "usage_kind": "rust"
     },
     {
       "name": "ModalShell",
@@ -681,7 +705,9 @@
         ]
       ],
       "source": "src/components/ui.rs",
-      "code": "let mut visible = use_signal(|| false);\nlet mut closing = use_signal(|| false);\nrsx! {\n    div {\n        button { onclick: move |_| visible.set(true), \"打开弹窗\" }\n        ModalShell {\n            visible,\n            closing,\n            title: \"留住一片灵感\",\n            h2 { \"留住一片灵感。\" }\n            button {\n                onclick: move |_| {\n                    closing.set(true);\n                    visible.set(false);\n                },\n                \"收好了\"\n            }\n        }\n    }\n}"
+      "code": "let mut visible = use_signal(|| false);\nlet mut closing = use_signal(|| false);\nrsx! {\n    div {\n        button { onclick: move |_| visible.set(true), \"打开弹窗\" }\n        ModalShell {\n            visible,\n            closing,\n            title: \"留住一片灵感\",\n            h2 { \"留住一片灵感。\" }\n            button {\n                onclick: move |_| {\n                    closing.set(true);\n                    visible.set(false);\n                },\n                \"收好了\"\n            }\n        }\n    }\n}",
+      "preview_mode": "interactive",
+      "usage_kind": "rust"
     },
     {
       "name": "AlertBox",
@@ -707,7 +733,9 @@
       ],
       "keys": [],
       "source": "src/components/forms.rs",
-      "code": "rsx! {\n    AlertBox {\n        message: \"已保存，新的想法正在生长。\",\n        variant: \"success\",\n    }\n}"
+      "code": "rsx! {\n    AlertBox {\n        message: \"已保存，新的想法正在生长。\",\n        variant: \"success\",\n    }\n}",
+      "preview_mode": "interactive",
+      "usage_kind": "rust"
     },
     {
       "name": "CollapsibleSettingsCard",
@@ -766,7 +794,9 @@
         ]
       ],
       "source": "src/components/ui.rs",
-      "code": "rsx! {\n    CollapsibleSettingsCard {\n        title: \"自动备份\",\n        summary: \"每天 08:30 留下一份记录\",\n        enabled: true,\n        p { \"这里放置详细设置。\" }\n    }\n}"
+      "code": "rsx! {\n    CollapsibleSettingsCard {\n        title: \"自动备份\",\n        summary: \"每天 08:30 留下一份记录\",\n        enabled: true,\n        p { \"这里放置详细设置。\" }\n    }\n}",
+      "preview_mode": "interactive",
+      "usage_kind": "rust"
     },
     {
       "name": "StatusBadge",
@@ -792,7 +822,9 @@
       ],
       "keys": [],
       "source": "src/components/ui.rs",
-      "code": "rsx! {\n    StatusBadge {\n        color_class: \"bg-green-500/10 text-green-600\",\n        label: \"已发布\",\n    }\n}"
+      "code": "rsx! {\n    StatusBadge {\n        color_class: \"bg-green-500/10 text-green-600\",\n        label: \"已发布\",\n    }\n}",
+      "preview_mode": "static",
+      "usage_kind": "rust"
     },
     {
       "name": "TagChip",
@@ -845,7 +877,9 @@
         ]
       ],
       "source": "src/components/ui.rs",
-      "code": "rsx! {\n    TagChip {\n        label: \"设计\",\n        to: Route::TagDetail { tag: \"设计\".to_string() },\n        variant: \"outline\",\n        count: 12,\n    }\n}"
+      "code": "rsx! {\n    TagChip {\n        label: \"设计\",\n        to: Route::TagDetail { tag: \"设计\".to_string() },\n        variant: \"outline\",\n        count: 12,\n    }\n}",
+      "preview_mode": "interactive",
+      "usage_kind": "rust"
     },
     {
       "name": "UserAvatar",
@@ -877,7 +911,9 @@
       ],
       "keys": [],
       "source": "src/components/ui.rs",
-      "code": "rsx! {\n    UserAvatar {\n        name: \"叶子\",\n        avatar_url: None,\n        class: \"w-10 h-10 rounded-full text-sm\",\n    }\n}"
+      "code": "rsx! {\n    UserAvatar {\n        name: \"叶子\",\n        avatar_url: None,\n        class: \"w-10 h-10 rounded-full text-sm\",\n    }\n}",
+      "preview_mode": "static",
+      "usage_kind": "rust"
     },
     {
       "name": "SproutPlaceholder",
@@ -897,7 +933,9 @@
       ],
       "keys": [],
       "source": "src/components/ui.rs",
-      "code": "rsx! {\n    SproutPlaceholder { class: \"w-8 h-8 text-paper-accent\" }\n}"
+      "code": "rsx! {\n    SproutPlaceholder { class: \"w-8 h-8 text-paper-accent\" }\n}",
+      "preview_mode": "static",
+      "usage_kind": "rust"
     },
     {
       "name": "EmptyState",
@@ -935,7 +973,9 @@
       ],
       "keys": [],
       "source": "src/components/empty_state.rs",
-      "code": "rsx! {\n    EmptyState {\n        title: \"这里，等待第一颗种子。\",\n        description: \"写下一个新的开始。\",\n    }\n}"
+      "code": "rsx! {\n    EmptyState {\n        title: \"这里，等待第一颗种子。\",\n        description: \"写下一个新的开始。\",\n    }\n}",
+      "preview_mode": "static",
+      "usage_kind": "rust"
     },
     {
       "name": "SkeletonBox",
@@ -967,7 +1007,9 @@
       ],
       "keys": [],
       "source": "src/components/skeletons/atoms.rs",
-      "code": "rsx! {\n    SkeletonBox { class: \"w-48 h-3 rounded\", animate: true }\n}"
+      "code": "rsx! {\n    SkeletonBox { class: \"w-48 h-3 rounded\", animate: true }\n}",
+      "preview_mode": "static",
+      "usage_kind": "rust"
     },
     {
       "name": "SkeletonCard",
@@ -993,7 +1035,9 @@
       ],
       "keys": [],
       "source": "src/components/skeletons/atoms.rs",
-      "code": "rsx! {\n    SkeletonCard { class: Some(\"p-6\"),\n        SkeletonBox { class: \"w-32 h-4 rounded\" }\n    }\n}"
+      "code": "rsx! {\n    SkeletonCard { class: Some(\"p-6\"),\n        SkeletonBox { class: \"w-32 h-4 rounded\" }\n    }\n}",
+      "preview_mode": "static",
+      "usage_kind": "rust"
     },
     {
       "name": "SkeletonTable",
@@ -1019,7 +1063,9 @@
       ],
       "keys": [],
       "source": "src/components/skeletons/atoms.rs",
-      "code": "let columns = vec![SkeletonTableColumn {\n    header_class: \"px-3 py-2\",\n    header_box_class: \"w-10 h-3 rounded\",\n    cell_class: \"px-3 py-2\",\n    cell_shape: SkeletonCellShape::Single(\"w-12 h-3 rounded\"),\n}];\nrsx! {\n    SkeletonTable { columns, rows: 3 }\n}"
+      "code": "let columns = vec![SkeletonTableColumn {\n    header_class: \"px-3 py-2\",\n    header_box_class: \"w-10 h-3 rounded\",\n    cell_class: \"px-3 py-2\",\n    cell_shape: SkeletonCellShape::Single(\"w-12 h-3 rounded\"),\n}];\nrsx! {\n    SkeletonTable { columns, rows: 3 }\n}",
+      "preview_mode": "static",
+      "usage_kind": "rust"
     },
     {
       "name": "DelayedSkeleton",
@@ -1045,16 +1091,18 @@
       ],
       "keys": [],
       "source": "src/components/skeletons/delayed_skeleton.rs",
-      "code": "rsx! {\n    DelayedSkeleton {\n        SkeletonBox { class: \"w-48 h-3 rounded\" }\n    }\n}"
+      "code": "rsx! {\n    DelayedSkeleton {\n        SkeletonBox { class: \"w-48 h-3 rounded\" }\n    }\n}",
+      "preview_mode": "static",
+      "usage_kind": "rust"
     },
     {
       "name": "AdminLayout",
       "slug": "admin-layout",
       "label": "后台布局",
       "group": "layout",
-      "summary": "后台布局，用于页面导航与结构。",
-      "states": "业务组合 · 场景组件",
-      "description": "后台布局是项目自写的页面导航与结构组件。它需要相应的业务数据或页面上下文；这里展示它的用途、接口和源码位置。",
+      "summary": "后台侧栏、导航分组和内容卡片。",
+      "states": "侧栏 · 展开/收起 · 本地激活项 · 示例正文",
+      "description": "图鉴与正式后台共用 AdminSidebar 和 AdminShell；演示用户、栏目与退出按钮仅修改局部状态。正式 AdminLayout 仍处理认证守卫、路由内容、主题和注销。",
       "props": [
         [
           "—",
@@ -1065,17 +1113,18 @@
       ],
       "keys": [],
       "source": "src/components/admin_layout.rs",
-      "code": "pub fn AdminLayout() -> Element",
-      "kind": "reference"
+      "code": "#[nest(\"/admin\")]\n#[layout(AdminLayout)]\n#[route(\"/\")]\nAdmin {}, // 后台布局继续处理登录态、侧栏和内容区",
+      "preview_mode": "interactive",
+      "usage_kind": "router"
     },
     {
       "name": "AssetPickerModal",
       "slug": "asset-picker-modal",
       "label": "素材选择弹窗",
       "group": "assets",
-      "summary": "素材选择弹窗，用于素材管理。",
-      "states": "业务组合 · 场景组件",
-      "description": "素材选择弹窗是项目自写的素材管理组件。它需要相应的业务数据或页面上下文；这里展示它的用途、接口和源码位置。",
+      "summary": "从素材库搜索、翻页并按勾选顺序选择图片。",
+      "states": "单选 · 多选 · 搜索 · 跨页选择",
+      "description": "图鉴使用仓库图片与局部状态；正式弹窗继续分页读取素材库、上传新图，并按 URL 去重返回单项或勾选顺序的多项。",
       "props": [
         [
           "visible",
@@ -1110,17 +1159,18 @@
       ],
       "keys": [],
       "source": "src/components/assets/asset_picker.rs",
-      "code": "pub fn AssetPickerModal( mut visible: Signal<bool>, on_select: EventHandler<Vec<AssetSelection>>, cover_uploading: Signal<bool>, #[props(default = \"选择封面图\")] title: &'static str, #[props(default)] multi: bool, ) -> Element",
-      "kind": "reference"
+      "code": "let mut visible = use_signal(|| false);\nlet uploading = use_signal(|| false);\nlet mut picked = use_signal(Vec::<AssetSelection>::new);\nrsx! {\n    button { onclick: move |_| visible.set(true), \"从素材库选择\" }\n    AssetPickerModal {\n        visible,\n        cover_uploading: uploading,\n        title: \"选择文章图片\",\n        multi: true,\n        on_select: move |items: Vec<AssetSelection>| picked.set(items),\n    }\n}",
+      "preview_mode": "interactive",
+      "usage_kind": "rust"
     },
     {
       "name": "AssetUploadModal",
       "slug": "asset-upload-modal",
       "label": "素材上传弹窗",
       "group": "assets",
-      "summary": "素材上传弹窗，用于素材管理。",
-      "states": "业务组合 · 场景组件",
-      "description": "素材上传弹窗是项目自写的素材管理组件。它需要相应的业务数据或页面上下文；这里展示它的用途、接口和源码位置。",
+      "summary": "选择、拖入或粘贴图片，并查看逐文件状态。",
+      "states": "空列表 · 排队 · 上传中 · 完成 · 失败",
+      "description": "图鉴只切换预置 UploadItem 状态；正式素材页仍使用 UploadPool 校验、并发上传、失败重试及完成回调。",
       "props": [
         [
           "visible",
@@ -1137,47 +1187,55 @@
       ],
       "keys": [],
       "source": "src/components/assets/asset_upload.rs",
-      "code": "pub fn AssetUploadModal(mut visible: Signal<bool>, on_uploaded: EventHandler<()>) -> Element",
-      "kind": "reference"
+      "code": "let mut visible = use_signal(|| false);\nlet mut refresh = use_signal(|| 0_u32);\nrsx! {\n    button { onclick: move |_| visible.set(true), \"上传素材\" }\n    AssetUploadModal {\n        visible,\n        on_uploaded: move |_| refresh.set(refresh().wrapping_add(1)),\n    }\n    // 素材列表订阅 refresh，在成功回调后重新读取。\n}",
+      "preview_mode": "interactive",
+      "usage_kind": "rust"
     },
     {
       "name": "CodeRunner",
       "slug": "code-runner",
       "label": "代码运行器",
       "group": "tools",
-      "summary": "代码运行器，用于后台工具。",
-      "states": "业务组合 · 场景组件",
-      "description": "代码运行器是项目自写的后台工具组件。它需要相应的业务数据或页面上下文；这里展示它的用途、接口和源码位置。",
+      "summary": "用 CodeMirror 编辑代码并在 Xterm 中查看运行输出。",
+      "states": "可编辑代码 · 正常输出 · 错误输出 · 退出状态",
+      "description": "图鉴播放与编辑内容无关的固定输出示例，不执行程序；正式运行器仍提交任务并消费 SSE，失败时降级轮询。",
       "props": [
         [
           "source",
           "String",
-          "由调用方提供",
-          "代码运行器的 source 参数。"
+          "必填",
+          "首次挂载时填入 CodeMirror 的源码。"
         ],
         [
           "language",
           "String",
-          "由调用方提供",
-          "代码运行器的 language 参数。"
+          "必填",
+          "执行语言，例 python。"
         ],
         [
           "overrides",
           "Option<ResourceLimits>",
           "None",
-          "代码运行器的 overrides 参数。"
+          "正式执行任务的资源覆盖。"
         ],
         [
           "instance_id",
           "usize",
-          "由调用方提供",
-          "代码运行器的 instance_id 参数。"
+          "必填",
+          "SSR 与水合一致的实例编号。"
+        ],
+        [
+          "example_output",
+          "Option<RunnerExample>",
+          "None",
+          "仅本地展示使用的固定输出；正式入口不传。"
         ]
       ],
       "keys": [],
       "source": "src/components/code_runner/runner.rs",
-      "code": "pub fn CodeRunner( source: String, language: String, overrides: Option<ResourceLimits>, instance_id: usize, ) -> Element",
-      "kind": "reference"
+      "code": "rsx! {\n    CodeRunner {\n        source: \"print('Hello, Yggdrasil')\\n\".to_string(),\n        language: \"python\".to_string(),\n        overrides: None,\n        instance_id: 0, // 同一页面上稳定且唯一\n    }\n}",
+      "preview_mode": "interactive",
+      "usage_kind": "rust"
     },
     {
       "name": "CommentCardShell",
@@ -1258,157 +1316,163 @@
       "keys": [],
       "source": "src/components/comments/card.rs",
       "code": "pub fn CommentCardShell( depth: i32, #[props(default)] muted: bool, avatar_url: String, author_name: String, author_element: Element, author_badge: Element, timestamp: Element, status_badge: Element, content_html: String, #[props(default)] content_extra_class: &'static str, children: Element, ) -> Element",
-      "kind": "reference"
+      "preview_mode": "static",
+      "usage_kind": "api"
     },
     {
       "name": "CommentForm",
       "slug": "comment-form",
       "label": "评论表单",
       "group": "comments",
-      "summary": "评论表单，用于评论阅读与编辑。",
-      "states": "业务组合 · 场景组件",
-      "description": "评论表单是项目自写的评论阅读与编辑组件。它需要相应的业务数据或页面上下文；这里展示它的用途、接口和源码位置。",
+      "summary": "填写匿名身份与评论内容，提交后查看本地结果。",
+      "states": "匿名填写 · 本地提交 · 校验提示",
+      "description": "正式文章由 CommentSection 提供上下文，表单提交到评论接口；这里复用同一表单与编辑器，以本地样例显示校验和提交结果，不读取作者资料，也不会上传图片或保存评论。",
       "props": [
         [
           "post_id",
           "i32",
           "由调用方提供",
-          "评论表单的 post_id 参数。"
+          "所属文章 ID，由评论区传入。"
         ],
         [
           "parent_id",
           "Option<i64>",
           "None",
-          "评论表单的 parent_id 参数。"
+          "None 发表顶层评论；Some(id) 回复指定评论。"
         ],
         [
           "parent_indent",
           "Option<i32>",
           "None",
-          "评论表单的 parent_indent 参数。"
+          "回复时抵消父评论缩进的像素值。"
         ]
       ],
       "keys": [],
       "source": "src/components/comments/form.rs",
-      "code": "pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i32>) -> Element",
-      "kind": "reference"
+      "code": "// 位于 CommentSection 提供的 CommentContext 中\nrsx! {\n    CommentForm { post_id, parent_id: None, parent_indent: None }\n}",
+      "preview_mode": "interactive",
+      "usage_kind": "rust"
     },
     {
       "name": "CommentItem",
       "slug": "comment-item",
       "label": "评论项",
       "group": "comments",
-      "summary": "评论项，用于评论阅读与编辑。",
-      "states": "业务组合 · 场景组件",
-      "description": "评论项是项目自写的评论阅读与编辑组件。它需要相应的业务数据或页面上下文；这里展示它的用途、接口和源码位置。",
+      "summary": "已审核评论及嵌套回复，支持展开回复草稿。",
+      "states": "嵌套回复 · 取消回复 · 草稿保留",
+      "description": "顶层评论和一条回复使用正式 CommentItem 展示；点击回复会打开同一评论表单，取消后再打开仍保留草稿。图鉴的回复只加入当前预览，不会提交业务数据。",
       "props": [
         [
           "comment",
           "PublicComment",
           "由调用方提供",
-          "评论项的 comment 参数。"
+          "已审核的评论资料，包含作者、时间与安全 HTML。"
         ],
         [
           "post_id",
           "i32",
           "由调用方提供",
-          "评论项的 post_id 参数。"
+          "所属文章 ID，传给回复表单。"
         ]
       ],
       "keys": [],
       "source": "src/components/comments/item.rs",
-      "code": "pub fn CommentItem(comment: PublicComment, post_id: i32) -> Element",
-      "kind": "reference"
+      "code": "// 位于 CommentSection 提供的 CommentContext 中\nrsx! {\n    CommentItem { comment: comment.clone(), post_id }\n}",
+      "preview_mode": "interactive",
+      "usage_kind": "rust"
     },
     {
       "name": "CommentList",
       "slug": "comment-list",
       "label": "评论列表",
       "group": "comments",
-      "summary": "评论列表，用于评论阅读与编辑。",
-      "states": "业务组合 · 场景组件",
-      "description": "评论列表是项目自写的评论阅读与编辑组件。它需要相应的业务数据或页面上下文；这里展示它的用途、接口和源码位置。",
+      "summary": "已审核与待审核评论合并成树形回复列表。",
+      "states": "空列表 · 已审核 · 混合待审核",
+      "description": "预览复用正式 CommentList 的合并、排序和缩进逻辑，可切换空列表、仅已审核与混合待审核状态。回复使用局部评论上下文，只改变当前预览。",
       "props": [
         [
           "comments",
           "Vec<PublicComment>",
           "由调用方提供",
-          "评论列表的 comments 参数。"
+          "服务端返回的已审核评论。"
         ],
         [
           "pending",
           "Vec<PendingComment>",
           "由调用方提供",
-          "评论列表的 pending 参数。"
+          "当前文章的待审核评论；正式入口来自本地待审核状态。"
         ],
         [
           "post_id",
           "i32",
           "由调用方提供",
-          "评论列表的 post_id 参数。"
+          "所属文章 ID，供每条评论的回复表单使用。"
         ]
       ],
       "keys": [],
       "source": "src/components/comments/list.rs",
-      "code": "pub fn CommentList( comments: Vec<PublicComment>, pending: Vec<PendingComment>, post_id: i32, ) -> Element",
-      "kind": "reference"
+      "code": "// 位于 CommentSection 提供的 CommentContext 中\nrsx! {\n    CommentList {\n        comments: response.comments.clone(),\n        pending: ctx.pending_comments.read().clone(),\n        post_id,\n    }\n}",
+      "preview_mode": "interactive",
+      "usage_kind": "rust"
     },
     {
       "name": "PendingCommentItem",
       "slug": "pending-comment-item",
       "label": "待审核评论项",
       "group": "comments",
-      "summary": "待审核评论项，用于评论阅读与编辑。",
-      "states": "业务组合 · 场景组件",
-      "description": "待审核评论项是项目自写的评论阅读与编辑组件。它需要相应的业务数据或页面上下文；这里展示它的用途、接口和源码位置。",
+      "summary": "展示评论作者、正文和审核中状态。",
+      "states": "审核中 · 固定样例",
+      "description": "使用固定的本地访客身份与正文展示正式 PendingCommentItem。徽章和正文渲染来自生产组件，此条目只用于阅读，无提交操作。",
       "props": [
         [
           "comment",
           "PendingComment",
           "由调用方提供",
-          "待审核评论项的 comment 参数。"
+          "包含作者、Markdown 内容及待审核时间的评论。"
         ],
         [
           "post_id",
           "i32",
           "由调用方提供",
-          "待审核评论项的 post_id 参数。"
+          "所属文章 ID；当前展示未读取它。"
         ]
       ],
       "keys": [],
       "source": "src/components/comments/pending_item.rs",
-      "code": "pub fn PendingCommentItem(comment: PendingComment, post_id: i32) -> Element",
-      "kind": "reference"
+      "code": "rsx! {\n    PendingCommentItem { comment: pending.clone(), post_id }\n}",
+      "preview_mode": "static",
+      "usage_kind": "rust"
     },
     {
       "name": "CommentSection",
       "slug": "comment-section",
       "label": "评论区",
       "group": "comments",
-      "summary": "评论区，用于评论阅读与编辑。",
-      "states": "业务组合 · 场景组件",
-      "description": "评论区是项目自写的评论阅读与编辑组件。它需要相应的业务数据或页面上下文；这里展示它的用途、接口和源码位置。",
+      "summary": "表单、数量、回复树与空状态组成完整评论区。",
+      "states": "本地提交 · 回复 · 空状态",
+      "description": "正式 CommentSection 负责认证探测、评论取数与待审核轮询；预览复用区段展示、表单和列表，只用固定样例及局部状态。提交或回复会出现在预览中，不会写入服务端或浏览器存储。",
       "props": [
         [
           "post_id",
           "i32",
           "由调用方提供",
-          "评论区的 post_id 参数。"
+          "所属文章 ID，正式入口据此读取和提交评论。"
         ]
       ],
       "keys": [],
       "source": "src/components/comments/section.rs",
-      "code": "pub fn CommentSection(post_id: i32) -> Element",
-      "kind": "reference"
+      "code": "// 文章详情页中，传入当前文章 ID\nrsx! {\n    CommentSection { post_id: post.id }\n}",
+      "preview_mode": "interactive",
+      "usage_kind": "rust"
     },
     {
       "name": "Footer",
       "slug": "footer",
       "label": "页脚",
       "group": "layout",
-      "summary": "页脚，用于页面导航与结构。",
-      "states": "业务组合 · 场景组件",
-      "description": "页脚是项目自写的页面导航与结构组件。它需要相应的业务数据或页面上下文；这里展示它的用途、接口和源码位置。",
+      "summary": "站点版权、配置链接与回到顶部操作。",
+      "states": "版权 · GitHub 链接 · 局部回到顶部",
+      "description": "正式页脚读取公开站点配置，并按窗口滚动位置显示回到顶部按钮。图鉴复用同一展示层；按钮只滚动演示容器。",
       "props": [
         [
           "—",
@@ -1419,17 +1483,18 @@
       ],
       "keys": [],
       "source": "src/components/footer.rs",
-      "code": "pub fn Footer() -> Element",
-      "kind": "reference"
+      "code": "rsx! { Footer {} } // 在 FrontendLayout 中挂载，配置读取和窗口滚动由 Footer 自己处理",
+      "preview_mode": "interactive",
+      "usage_kind": "rust"
     },
     {
       "name": "FrontendLayout",
       "slug": "frontend-layout",
       "label": "前台布局",
       "group": "layout",
-      "summary": "前台布局，用于页面导航与结构。",
-      "states": "业务组合 · 场景组件",
-      "description": "前台布局是项目自写的页面导航与结构组件。它需要相应的业务数据或页面上下文；这里展示它的用途、接口和源码位置。",
+      "summary": "组合导航、内容区和页脚的前台页面布局。",
+      "states": "导航 · 示例正文 · 页脚",
+      "description": "正式布局在 FrontendShell 中渲染路由 Outlet 和对应骨架屏；图鉴向同一个壳传入固定正文与局部导航。",
       "props": [
         [
           "—",
@@ -1440,17 +1505,18 @@
       ],
       "keys": [],
       "source": "src/components/frontend_layout.rs",
-      "code": "pub fn FrontendLayout() -> Element",
-      "kind": "reference"
+      "code": "#[layout(FrontendLayout)]\n#[route(\"/\")]\nHome {}, // 前台路由共享 Header、主内容区与 Footer",
+      "preview_mode": "interactive",
+      "usage_kind": "router"
     },
     {
       "name": "Header",
       "slug": "header",
       "label": "导航页头",
       "group": "layout",
-      "summary": "导航页头，用于页面导航与结构。",
-      "states": "业务组合 · 场景组件",
-      "description": "导航页头是项目自写的页面导航与结构组件。它需要相应的业务数据或页面上下文；这里展示它的用途、接口和源码位置。",
+      "summary": "站点 Logo、栏目导航与小屏菜单。",
+      "states": "当前栏目 · 桌面导航 · 手机菜单",
+      "description": "图鉴中的栏目和搜索只改变本地样例状态；正式 Header 继续使用可通过辅助键打开的路由链接。每个演示实例拥有独立菜单 ID。",
       "props": [
         [
           "nav_items",
@@ -1467,14 +1533,21 @@
         [
           "max_width",
           "&'static str",
-          "由调用方提供",
-          "导航页头的 max_width 参数。"
+          "max-w-3xl",
+          "导航宽度，与正文宽度保持一致。"
+        ],
+        [
+          "menu_id / on_demo_navigate / page_shell",
+          "&'static str / Option<EventHandler> / bool",
+          "正式入口使用默认值",
+          "用于局部演示菜单 ID、导航回调和页面过渡标记；正式导航保留 Link。"
         ]
       ],
       "keys": [],
       "source": "src/components/header.rs",
-      "code": "pub fn Header( nav_items: Vec<NavItemConfig>, right_content: Element, #[props(default = \"max-w-3xl\")] max_width: &'static str, ) -> Element",
-      "kind": "reference"
+      "code": "let route = use_route::<Route>();\nHeader {\n    nav_items: build_nav_items(route),\n    right_content: rsx! { SearchIconLink {} ThemeToggle {} },\n    max_width: \"max-w-4xl\",\n}",
+      "preview_mode": "interactive",
+      "usage_kind": "rust"
     },
     {
       "name": "SearchIconLink",
@@ -1495,7 +1568,8 @@
       "keys": [],
       "source": "src/components/header.rs",
       "code": "pub fn SearchIconLink() -> Element",
-      "kind": "reference"
+      "preview_mode": "static",
+      "usage_kind": "api"
     },
     {
       "name": "Breadcrumbs",
@@ -1522,28 +1596,36 @@
       "keys": [],
       "source": "src/components/post/breadcrumbs.rs",
       "code": "pub fn Breadcrumbs(title: String, #[props(default = false)] full_reload: bool) -> Element",
-      "kind": "reference"
+      "preview_mode": "static",
+      "usage_kind": "api"
     },
     {
       "name": "PostContent",
       "slug": "post-content",
       "label": "文章正文",
       "group": "post",
-      "summary": "文章正文，用于文章阅读与展示。",
-      "states": "业务组合 · 场景组件",
-      "description": "文章正文是项目自写的文章阅读与展示组件。它需要相应的业务数据或页面上下文；这里展示它的用途、接口和源码位置。",
+      "summary": "渲染文章标题、列表、引用、代码与图片。",
+      "states": "固定文章 · 切换样例 · 代码复制 · 图片灯箱",
+      "description": "固定文章直接交给正式 PostContent 渲染；切换样例会重新挂载正文并只初始化该演示范围内的复制与灯箱增强。样例不包含可执行代码块。",
       "props": [
         [
           "content_html",
           "String",
           "由调用方提供",
-          "文章正文的 content_html 参数。"
+          "经服务端处理后的正文 HTML；可包含普通代码和图片。"
+        ],
+        [
+          "scope_id",
+          "Option<&'static str>",
+          "None",
+          "可选的正文增强作用域；正式文章使用默认值。"
         ]
       ],
       "keys": [],
       "source": "src/components/post/post_content.rs",
-      "code": "pub fn PostContent(content_html: String) -> Element",
-      "kind": "reference"
+      "code": "for post_slug in std::iter::once(post.slug.clone()) {\n    PostContent {\n        key: \"{post_slug}\",\n        content_html: post.content_html.clone().unwrap_or_default(),\n    }\n}",
+      "preview_mode": "interactive",
+      "usage_kind": "rust"
     },
     {
       "name": "PostCover",
@@ -1570,16 +1652,17 @@
       "keys": [],
       "source": "src/components/post/post_cover.rs",
       "code": "pub fn PostCover(src: String, #[props(default)] post_id: Option<i32>) -> Element",
-      "kind": "reference"
+      "preview_mode": "static",
+      "usage_kind": "api"
     },
     {
       "name": "PostFooter",
       "slug": "post-footer",
       "label": "文章页脚",
       "group": "post",
-      "summary": "文章页脚，用于文章阅读与展示。",
-      "states": "业务组合 · 场景组件",
-      "description": "文章页脚是项目自写的文章阅读与展示组件。它需要相应的业务数据或页面上下文；这里展示它的用途、接口和源码位置。",
+      "summary": "展示标签及上一篇、下一篇文章。",
+      "states": "标签 · 相邻文章 · 静态样例",
+      "description": "图鉴使用同一文章页脚展示，样例链接留在本页；正式文章仍链接真实标签和相邻文章。",
       "props": [
         [
           "post",
@@ -1590,14 +1673,21 @@
         [
           "full_reload",
           "bool",
-          "由调用方提供",
-          "文章页脚的 full_reload 参数。"
+          "false",
+          "后台预览跨布局跳转时设为 true。"
+        ],
+        [
+          "sample",
+          "bool",
+          "false",
+          "图鉴中的非跳转样例链接；正式文章使用默认值。"
         ]
       ],
       "keys": [],
       "source": "src/components/post/post_footer.rs",
-      "code": "pub fn PostFooter(post: Post, #[props(default = false)] full_reload: bool) -> Element",
-      "kind": "reference"
+      "code": "PostFooter { post: post.clone() } // 后台预览可传 full_reload: true",
+      "preview_mode": "static",
+      "usage_kind": "rust"
     },
     {
       "name": "PostHeader",
@@ -1624,7 +1714,8 @@
       "keys": [],
       "source": "src/components/post/post_header.rs",
       "code": "pub fn PostHeader(post: Post, #[props(default = false)] full_reload: bool) -> Element",
-      "kind": "reference"
+      "preview_mode": "static",
+      "usage_kind": "api"
     },
     {
       "name": "PostMeta",
@@ -1645,7 +1736,8 @@
       "keys": [],
       "source": "src/components/post/post_meta.rs",
       "code": "pub fn PostMeta(post: Post) -> Element",
-      "kind": "reference"
+      "preview_mode": "static",
+      "usage_kind": "api"
     },
     {
       "name": "PostNavLinks",
@@ -1678,16 +1770,17 @@
       "keys": [],
       "source": "src/components/post/post_nav_links.rs",
       "code": "pub fn PostNavLinks( prev: Option<PostNav>, next: Option<PostNav>, #[props(default = false)] full_reload: bool, ) -> Element",
-      "kind": "reference"
+      "preview_mode": "static",
+      "usage_kind": "api"
     },
     {
       "name": "PostToc",
       "slug": "post-toc",
       "label": "文章目录",
       "group": "post",
-      "summary": "文章目录，用于文章阅读与展示。",
-      "states": "业务组合 · 场景组件",
-      "description": "文章目录是项目自写的文章阅读与展示组件。它需要相应的业务数据或页面上下文；这里展示它的用途、接口和源码位置。",
+      "summary": "按标题层级导航文章章节。",
+      "states": "层级目录 · 展开/固定 · 当前章节 · 局部滚动",
+      "description": "目录和正文使用同一组固定章节。演示目录只观察、滚动自己的正文；正式文章保留视口滚动和地址栏 hash 行为。",
       "props": [
         [
           "toc_html",
@@ -1698,14 +1791,21 @@
         [
           "title",
           "&'static str",
-          "由调用方提供",
-          "文章目录的 title 参数。"
+          "Table of Contents",
+          "目录标题。"
+        ],
+        [
+          "nav_id / content_id / scroll_id",
+          "Option<&'static str>",
+          "None",
+          "可选局部目录、正文与滚动容器作用域；正式文章使用默认值。"
         ]
       ],
       "keys": [],
       "source": "src/components/post/post_toc.rs",
-      "code": "pub fn PostToc( toc_html: String, #[props(default = \"Table of Contents\")] title: &'static str, ) -> Element",
-      "kind": "reference"
+      "code": "if let Some(toc) = post.toc_html.clone() {\n    PostToc { toc_html: toc, title: \"文章目录\" }\n}",
+      "preview_mode": "interactive",
+      "usage_kind": "rust"
     },
     {
       "name": "PostCard",
@@ -1732,7 +1832,8 @@
       "keys": [],
       "source": "src/components/post_card.rs",
       "code": "pub fn PostCard(post: PostListItem, #[props(default = false)] compact: bool) -> Element",
-      "kind": "reference"
+      "preview_mode": "static",
+      "usage_kind": "api"
     },
     {
       "name": "AdminCommentsTableSkeleton",
@@ -1753,7 +1854,8 @@
       "keys": [],
       "source": "src/components/skeletons/admin_comments_skeleton.rs",
       "code": "pub fn AdminCommentsTableSkeleton() -> Element",
-      "kind": "reference"
+      "preview_mode": "static",
+      "usage_kind": "api"
     },
     {
       "name": "AdminCommentsSkeleton",
@@ -1774,7 +1876,8 @@
       "keys": [],
       "source": "src/components/skeletons/admin_comments_skeleton.rs",
       "code": "pub fn AdminCommentsSkeleton() -> Element",
-      "kind": "reference"
+      "preview_mode": "static",
+      "usage_kind": "api"
     },
     {
       "name": "ArchiveSkeleton",
@@ -1795,7 +1898,8 @@
       "keys": [],
       "source": "src/components/skeletons/archive_skeleton.rs",
       "code": "pub fn ArchiveSkeleton(#[props(default = true)] include_tags: bool) -> Element",
-      "kind": "reference"
+      "preview_mode": "static",
+      "usage_kind": "api"
     },
     {
       "name": "AssetsSkeleton",
@@ -1816,7 +1920,8 @@
       "keys": [],
       "source": "src/components/skeletons/assets_skeleton.rs",
       "code": "pub fn AssetsSkeleton() -> Element",
-      "kind": "reference"
+      "preview_mode": "static",
+      "usage_kind": "api"
     },
     {
       "name": "ChangelogSkeleton",
@@ -1837,7 +1942,8 @@
       "keys": [],
       "source": "src/components/skeletons/changelog_skeleton.rs",
       "code": "pub fn ChangelogSkeleton() -> Element",
-      "kind": "reference"
+      "preview_mode": "static",
+      "usage_kind": "api"
     },
     {
       "name": "CommentListSkeleton",
@@ -1858,7 +1964,8 @@
       "keys": [],
       "source": "src/components/skeletons/comment_skeleton.rs",
       "code": "pub fn CommentListSkeleton() -> Element",
-      "kind": "reference"
+      "preview_mode": "static",
+      "usage_kind": "api"
     },
     {
       "name": "AdminDashboardSkeleton",
@@ -1879,7 +1986,8 @@
       "keys": [],
       "source": "src/components/skeletons/dashboard_skeleton.rs",
       "code": "pub fn AdminDashboardSkeleton() -> Element",
-      "kind": "reference"
+      "preview_mode": "static",
+      "usage_kind": "api"
     },
     {
       "name": "FriendsAdminListSkeleton",
@@ -1900,7 +2008,8 @@
       "keys": [],
       "source": "src/components/skeletons/friends_admin_skeleton.rs",
       "code": "pub fn FriendsAdminListSkeleton() -> Element",
-      "kind": "reference"
+      "preview_mode": "static",
+      "usage_kind": "api"
     },
     {
       "name": "FriendsAdminSkeleton",
@@ -1921,7 +2030,8 @@
       "keys": [],
       "source": "src/components/skeletons/friends_admin_skeleton.rs",
       "code": "pub fn FriendsAdminSkeleton() -> Element",
-      "kind": "reference"
+      "preview_mode": "static",
+      "usage_kind": "api"
     },
     {
       "name": "FriendsSkeleton",
@@ -1942,7 +2052,8 @@
       "keys": [],
       "source": "src/components/skeletons/friends_skeleton.rs",
       "code": "pub fn FriendsSkeleton(#[props(default = true)] with_header: bool) -> Element",
-      "kind": "reference"
+      "preview_mode": "static",
+      "usage_kind": "api"
     },
     {
       "name": "HomeSkeleton",
@@ -1963,7 +2074,8 @@
       "keys": [],
       "source": "src/components/skeletons/home_skeleton.rs",
       "code": "pub fn HomeSkeleton(#[props(default = 1)] current_page: i32) -> Element",
-      "kind": "reference"
+      "preview_mode": "static",
+      "usage_kind": "api"
     },
     {
       "name": "HomePostsSkeleton",
@@ -1984,7 +2096,8 @@
       "keys": [],
       "source": "src/components/skeletons/home_skeleton.rs",
       "code": "pub fn HomePostsSkeleton(current_page: i32) -> Element",
-      "kind": "reference"
+      "preview_mode": "static",
+      "usage_kind": "api"
     },
     {
       "name": "LogsSkeleton",
@@ -2005,7 +2118,8 @@
       "keys": [],
       "source": "src/components/skeletons/logs_skeleton.rs",
       "code": "pub fn LogsSkeleton() -> Element",
-      "kind": "reference"
+      "preview_mode": "static",
+      "usage_kind": "api"
     },
     {
       "name": "McpSkeleton",
@@ -2026,7 +2140,8 @@
       "keys": [],
       "source": "src/components/skeletons/mcp_skeleton.rs",
       "code": "pub fn McpSkeleton() -> Element",
-      "kind": "reference"
+      "preview_mode": "static",
+      "usage_kind": "api"
     },
     {
       "name": "PostCardSkeleton",
@@ -2053,7 +2168,8 @@
       "keys": [],
       "source": "src/components/skeletons/post_card_skeleton.rs",
       "code": "pub fn PostCardSkeleton( #[props(default = false)] has_cover: bool, #[props(default = false)] compact: bool, ) -> Element",
-      "kind": "reference"
+      "preview_mode": "static",
+      "usage_kind": "api"
     },
     {
       "name": "PostDetailBody",
@@ -2074,7 +2190,8 @@
       "keys": [],
       "source": "src/components/skeletons/post_detail_skeleton.rs",
       "code": "pub fn PostDetailBody() -> Element",
-      "kind": "reference"
+      "preview_mode": "static",
+      "usage_kind": "api"
     },
     {
       "name": "PostDetailSkeleton",
@@ -2095,7 +2212,8 @@
       "keys": [],
       "source": "src/components/skeletons/post_detail_skeleton.rs",
       "code": "pub fn PostDetailSkeleton() -> Element",
-      "kind": "reference"
+      "preview_mode": "static",
+      "usage_kind": "api"
     },
     {
       "name": "PostPreviewSkeleton",
@@ -2116,7 +2234,8 @@
       "keys": [],
       "source": "src/components/skeletons/post_preview_skeleton.rs",
       "code": "pub fn PostPreviewSkeleton() -> Element",
-      "kind": "reference"
+      "preview_mode": "static",
+      "usage_kind": "api"
     },
     {
       "name": "PostsTableSkeleton",
@@ -2137,7 +2256,8 @@
       "keys": [],
       "source": "src/components/skeletons/posts_skeleton.rs",
       "code": "pub fn PostsTableSkeleton() -> Element",
-      "kind": "reference"
+      "preview_mode": "static",
+      "usage_kind": "api"
     },
     {
       "name": "PostsSkeleton",
@@ -2158,7 +2278,8 @@
       "keys": [],
       "source": "src/components/skeletons/posts_skeleton.rs",
       "code": "pub fn PostsSkeleton() -> Element",
-      "kind": "reference"
+      "preview_mode": "static",
+      "usage_kind": "api"
     },
     {
       "name": "PostsTrashTableSkeleton",
@@ -2179,7 +2300,8 @@
       "keys": [],
       "source": "src/components/skeletons/posts_trash_skeleton.rs",
       "code": "pub fn PostsTrashTableSkeleton() -> Element",
-      "kind": "reference"
+      "preview_mode": "static",
+      "usage_kind": "api"
     },
     {
       "name": "PostsTrashSkeleton",
@@ -2200,7 +2322,8 @@
       "keys": [],
       "source": "src/components/skeletons/posts_trash_skeleton.rs",
       "code": "pub fn PostsTrashSkeleton() -> Element",
-      "kind": "reference"
+      "preview_mode": "static",
+      "usage_kind": "api"
     },
     {
       "name": "ProfileSkeleton",
@@ -2221,7 +2344,8 @@
       "keys": [],
       "source": "src/components/skeletons/profile_skeleton.rs",
       "code": "pub fn ProfileSkeleton() -> Element",
-      "kind": "reference"
+      "preview_mode": "static",
+      "usage_kind": "api"
     },
     {
       "name": "RunnerSkeleton",
@@ -2242,7 +2366,8 @@
       "keys": [],
       "source": "src/components/skeletons/runner_skeleton.rs",
       "code": "pub fn RunnerSkeleton() -> Element",
-      "kind": "reference"
+      "preview_mode": "static",
+      "usage_kind": "api"
     },
     {
       "name": "SearchSkeleton",
@@ -2263,7 +2388,8 @@
       "keys": [],
       "source": "src/components/skeletons/search_skeleton.rs",
       "code": "pub fn SearchSkeleton() -> Element",
-      "kind": "reference"
+      "preview_mode": "static",
+      "usage_kind": "api"
     },
     {
       "name": "SettingsAdminSkeleton",
@@ -2284,7 +2410,8 @@
       "keys": [],
       "source": "src/components/skeletons/settings_admin_skeleton.rs",
       "code": "pub fn SettingsAdminSkeleton() -> Element",
-      "kind": "reference"
+      "preview_mode": "static",
+      "usage_kind": "api"
     },
     {
       "name": "SystemSkeleton",
@@ -2305,7 +2432,8 @@
       "keys": [],
       "source": "src/components/skeletons/system_skeleton.rs",
       "code": "pub fn SystemSkeleton() -> Element",
-      "kind": "reference"
+      "preview_mode": "static",
+      "usage_kind": "api"
     },
     {
       "name": "TagsSkeleton",
@@ -2326,7 +2454,8 @@
       "keys": [],
       "source": "src/components/skeletons/tags_skeleton.rs",
       "code": "pub fn TagsSkeleton() -> Element",
-      "kind": "reference"
+      "preview_mode": "static",
+      "usage_kind": "api"
     },
     {
       "name": "TagDetailSkeleton",
@@ -2347,7 +2476,8 @@
       "keys": [],
       "source": "src/components/skeletons/tags_skeleton.rs",
       "code": "pub fn TagDetailSkeleton(tag: String) -> Element",
-      "kind": "reference"
+      "preview_mode": "static",
+      "usage_kind": "api"
     },
     {
       "name": "TagPostsLoading",
@@ -2368,7 +2498,8 @@
       "keys": [],
       "source": "src/components/skeletons/tags_skeleton.rs",
       "code": "pub fn TagPostsLoading() -> Element",
-      "kind": "reference"
+      "preview_mode": "static",
+      "usage_kind": "api"
     },
     {
       "name": "WriteSkeleton",
@@ -2389,7 +2520,8 @@
       "keys": [],
       "source": "src/components/skeletons/write_skeleton.rs",
       "code": "pub fn WriteSkeleton() -> Element",
-      "kind": "reference"
+      "preview_mode": "static",
+      "usage_kind": "api"
     },
     {
       "name": "SqlResultTable",
@@ -2410,7 +2542,8 @@
       "keys": [],
       "source": "src/components/sql_result_table.rs",
       "code": "pub fn SqlResultTable(props: SqlResultTableProps) -> Element",
-      "kind": "reference"
+      "preview_mode": "static",
+      "usage_kind": "api"
     },
     {
       "name": "TiptapEditor",
@@ -2418,20 +2551,27 @@
       "label": "富文本编辑器",
       "group": "browser",
       "summary": "基于 Tiptap 的文章编辑器封装。",
-      "states": "浏览器集成 · 自写封装",
-      "description": "基于 Tiptap 的文章编辑器封装。 详情页说明模块入口与浏览器调用方式。",
+      "states": "本地编辑 · 格式化 · Markdown 源码",
+      "description": "真实 Tiptap 实例使用固定初始内容；图鉴修改只留在当前实例，不连接文章保存、图片上传或素材库。",
       "props": [
         [
-          "入口",
-          "TypeScript module",
-          "—",
-          "浏览器端通过打包后的全局对象调用。"
+          "containerId",
+          "string",
+          "必填",
+          "已挂载的编辑器容器 ID。"
+        ],
+        [
+          "options",
+          "EditorOptions",
+          "默认配置",
+          "可设置初始内容、更新回调和编辑器能力。"
         ]
       ],
       "keys": [],
       "source": "libs/tiptap-editor/src/index.ts",
-      "code": "// 查看 libs/tiptap-editor/src/index.ts 中的公开接口",
-      "kind": "reference"
+      "code": "const editor = window.TiptapEditor.create('article-editor');\neditor?.setMarkdown('# 一页正在生长的笔记');\n// 宿主卸载时销毁实例，释放监听与编辑器资源。\neditor?.destroy();",
+      "preview_mode": "interactive",
+      "usage_kind": "browser"
     },
     {
       "name": "CodeMirrorEditor",
@@ -2439,20 +2579,27 @@
       "label": "代码编辑器",
       "group": "browser",
       "summary": "基于 CodeMirror 的代码编辑器封装。",
-      "states": "浏览器集成 · 自写封装",
-      "description": "基于 CodeMirror 的代码编辑器封装。 详情页说明模块入口与浏览器调用方式。",
+      "states": "编辑 · 撤销 · 语言切换 · 主题",
+      "description": "真实 CodeMirror 实例展示示例代码；编辑与快捷键只作用于本地预览，不执行 SQL 或运行器任务。",
       "props": [
         [
-          "入口",
-          "TypeScript module",
-          "—",
-          "浏览器端通过打包后的全局对象调用。"
+          "containerId",
+          "string",
+          "必填",
+          "已挂载的代码编辑器容器 ID。"
+        ],
+        [
+          "options",
+          "EditorOptions",
+          "默认配置",
+          "语言、主题、初始代码及回调。"
         ]
       ],
       "keys": [],
       "source": "libs/codemirror-editor/src/index.ts",
-      "code": "// 查看 libs/codemirror-editor/src/index.ts 中的公开接口",
-      "kind": "reference"
+      "code": "const editor = window.CodeMirrorEditor.create('code-host');\neditor?.setValue(\"print('Hello, Yggdrasil')\");\neditor?.setLanguage('python');\n// 宿主卸载时销毁实例。\neditor?.destroy();",
+      "preview_mode": "interactive",
+      "usage_kind": "browser"
     },
     {
       "name": "XtermTerminal",
@@ -2460,20 +2607,27 @@
       "label": "终端视图",
       "group": "browser",
       "summary": "基于 xterm.js 的浏览器终端封装。",
-      "states": "浏览器集成 · 自写封装",
-      "description": "基于 xterm.js 的浏览器终端封装。 详情页说明模块入口与浏览器调用方式。",
+      "states": "固定输出 · 错误输出 · 重放 · 清屏",
+      "description": "真实 Xterm 实例只播放固定 stdout/stderr；它是输出终端，不建立 shell 输入或 SSE 连接。",
       "props": [
         [
-          "入口",
-          "TypeScript module",
-          "—",
-          "浏览器端通过打包后的全局对象调用。"
+          "containerId",
+          "string",
+          "必填",
+          "已挂载的终端容器 ID。"
+        ],
+        [
+          "options",
+          "XtermOptions",
+          "默认配置",
+          "主题、字号及就绪回调。"
         ]
       ],
       "keys": [],
       "source": "libs/xterm-terminal/src/index.ts",
-      "code": "// 查看 libs/xterm-terminal/src/index.ts 中的公开接口",
-      "kind": "reference"
+      "code": "const terminal = window.XtermTerminal.create('output-host');\nterminal?.writeAll('stdout 示例\\n', 'stderr 示例\\n');\nterminal?.clear();\n// 宿主卸载时销毁实例。\nterminal?.destroy();",
+      "preview_mode": "interactive",
+      "usage_kind": "browser"
     },
     {
       "name": "Lightbox",
@@ -2481,20 +2635,21 @@
       "label": "图片灯箱",
       "group": "browser",
       "summary": "支持缩放、旋转与关闭交互的图片灯箱。",
-      "states": "浏览器集成 · 自写封装",
-      "description": "支持缩放、旋转与关闭交互的图片灯箱。 详情页说明模块入口与浏览器调用方式。",
+      "states": "图集 · 缩放 · 旋转 · 切换 · 关闭",
+      "description": "图鉴对仓库图片组成的局部图集初始化真实灯箱；离开时只关闭演示拥有的浮层，不接管站点其他图片。",
       "props": [
         [
-          "入口",
-          "TypeScript module",
-          "—",
-          "浏览器端通过打包后的全局对象调用。"
+          "selectors",
+          "string | string[]",
+          "必填",
+          "局部图集容器选择器。"
         ]
       ],
       "keys": [],
       "source": "libs/lightbox/src/index.ts",
-      "code": "// 查看 libs/lightbox/src/index.ts 中的公开接口",
-      "kind": "reference"
+      "code": "// #sample-gallery 中放置项目的 .blur-img 图片节点。\nwindow.__initLightbox('#sample-gallery');\n// 若该图集打开了灯箱，卸载时只关闭它的浮层。\nwindow.__closeLightboxFor('sample-gallery');",
+      "preview_mode": "interactive",
+      "usage_kind": "browser"
     }
   ]
 }

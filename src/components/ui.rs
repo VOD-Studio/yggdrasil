@@ -718,9 +718,21 @@ pub fn ModalShell(
             if is_visible {
                 if let Some(document) = window.document() {
                     *previous_focus.borrow_mut() = document.active_element();
-                    if let Ok(Some(panel)) = document.query_selector("[data-ygg-modal-panel]") {
-                        if let Some(element) = panel.dyn_ref::<web_sys::HtmlElement>() {
-                            let _ = element.focus();
+                    if let Ok(panels) = document
+                        .query_selector_all("[data-ygg-modal-panel][data-ygg-modal-open='true']")
+                    {
+                        for index in (0..panels.length()).rev() {
+                            if let Some(panel) = panels
+                                .item(index)
+                                .and_then(|node| node.dyn_into::<web_sys::Element>().ok())
+                            {
+                                if panel.get_attribute("aria-label").as_deref() == Some(title) {
+                                    if let Some(element) = panel.dyn_ref::<web_sys::HtmlElement>() {
+                                        let _ = element.focus();
+                                    }
+                                    break;
+                                }
+                            }
                         }
                     }
                 }
@@ -798,6 +810,7 @@ pub fn ModalShell(
                 role: "dialog",
                 tabindex: "-1",
                 "data-ygg-modal-panel": "true",
+                "data-ygg-modal-open": if visible() { "true" } else { "false" },
                 aria_modal: "true",
                 aria_label: "{title}",
                 onclick: move |evt| evt.stop_propagation(),

@@ -34,8 +34,13 @@ export class TerminalInstance {
   private term: Terminal;
   private fitAddon: FitAddon;
   private resizeObserver?: ResizeObserver;
+  private destroyed = false;
 
-  constructor(container: HTMLElement, options: XtermOptions) {
+  constructor(
+    container: HTMLElement,
+    options: XtermOptions,
+    private readonly onDestroy?: () => void,
+  ) {
     this.term = new Terminal({
       // 容器输出是 \n，终端需要 \r\n 才能回车换行；convertEol 自动转换。
       convertEol: true,
@@ -107,8 +112,11 @@ export class TerminalInstance {
 
   /** 销毁实例，释放 DOM 与事件监听、ResizeObserver。EditorHandle::drop → destroy。 */
   destroy(): void {
+    if (this.destroyed) return;
+    this.destroyed = true;
     this.resizeObserver?.disconnect();
     this.term.dispose();
+    this.onDestroy?.();
   }
 }
 

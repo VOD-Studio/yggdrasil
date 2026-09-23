@@ -103,6 +103,30 @@ describe('lightbox 黑盒行为', () => {
     document.body.innerHTML = '';
   });
 
+  it('图鉴卸载只关闭自己打开的灯箱', () => {
+    const previewImage = makeGalleryImage('/preview.webp', '图鉴');
+    const preview = mountRoot([previewImage]);
+    preview.setAttribute('data-showcase-lightbox-owner', 'preview-1');
+    const articleImage = makeGalleryImage('/article.webp', '文章');
+    const article = mountRoot([articleImage]);
+    window.__initLightbox('.post-content');
+
+    clickEl(previewImage);
+    window.__closeLightboxFor('another-preview');
+    expect(getOverlay()).not.toBeNull();
+    // 组件卸载时，根节点可能已经从 document 脱离。
+    preview.remove();
+    window.__closeLightboxFor('preview-1');
+    expect(getOverlay()).toBeNull();
+
+    clickEl(articleImage);
+    window.__closeLightboxFor('preview-1');
+    expect(getOverlay()).not.toBeNull();
+    pressKey('Escape');
+    vi.advanceTimersByTime(300);
+    article.remove();
+  });
+
   describe('循环闭包捕获 idx（gallery 绑定）', () => {
     it('点击第 1/2/3 张图，counter 分别显示 1/3、2/3、3/3', () => {
       const imgs = [

@@ -153,6 +153,7 @@ function buildLanguageExtension(lang: string, schema: SqlSchema): Extension {
  * 支持后续热切换（reconfigure）而不重建实例——保留 Vim 状态、光标、撤销栈。
  */
 export class CodeMirrorInstance {
+  private destroyed = false;
   private view: EditorView;
   private themeCompartment = new Compartment();
   private languageCompartment = new Compartment();
@@ -160,7 +161,11 @@ export class CodeMirrorInstance {
   private language: string;
   private schema: SqlSchema;
 
-  constructor(container: HTMLElement, options: EditorOptions) {
+  constructor(
+    container: HTMLElement,
+    options: EditorOptions,
+    private readonly onDestroy?: () => void,
+  ) {
     const theme: ThemeName = options.theme ?? 'light';
     const schema = options.schema ?? { tables: [] };
     this.schema = schema;
@@ -255,7 +260,10 @@ export class CodeMirrorInstance {
   }
 
   destroy(): void {
+    if (this.destroyed) return;
+    this.destroyed = true;
     this.view.destroy();
+    this.onDestroy?.();
   }
 }
 

@@ -98,6 +98,7 @@ fn decode_html_entities(s: &str) -> String {
 ///
 /// Props：
 /// - `content_html`：服务端渲染的文章 HTML 字符串
+/// - `scope_id`：可选的局部正文 ID；图鉴只增强该实例，正式页面使用默认范围。
 ///
 /// 关键行为：
 /// - 把可运行代码块拆成 [`CodeRunner`] 组件穿插渲染，其余 HTML 片段照旧。
@@ -106,7 +107,10 @@ fn decode_html_entities(s: &str) -> String {
 ///   灯箱（图片灯箱 + 懒加载）改由 `Dioxus.toml` 全局注入 `lightbox.js`，
 ///   这里仅设置其初始化配置 `__lightboxSelectors` 并兜底调用。
 #[component]
-pub fn PostContent(content_html: String) -> Element {
+pub fn PostContent(
+    content_html: String,
+    #[props(default)] scope_id: Option<&'static str>,
+) -> Element {
     // 直接在 render 内拆分片段（纯函数调用，符合渲染纯净性）。
     //
     // 不用 use_memo：memo 依赖 ReactiveContext 追踪闭包内读取的 signal 才会重算，
@@ -136,9 +140,11 @@ pub fn PostContent(content_html: String) -> Element {
         let window = web_sys::window()
             .expect("post_content use_effect 仅在 WASM 浏览器上下文执行：无 window");
 
-        // 调用 window.__initPostContent('.post-content')：函数不存在时静默跳过
+        // 图鉴实例只增强自己的正文，正式页面仍按原选择器处理。
+        let selector = scope_id.map_or_else(|| ".post-content".to_string(), |id| format!("#{id}"));
+        // 调用 window.__initPostContent：函数不存在时静默跳过
         // (与旧 eval 中的 if 守卫语义一致)。
-        invoke_optional_global(&window, "__initPostContent", &[".post-content".into()]);
+        invoke_optional_global(&window, "__initPostContent", &[selector.clone().into()]);
 
         // mermaid 流程图懒加载渲染：扫描 .post-content 下的 language-mermaid 代码块,
         // IntersectionObserver 视口可见时动态 import /mermaid/mermaid.js 渲染成 SVG。
@@ -164,7 +170,7 @@ pub fn PostContent(content_html: String) -> Element {
             invoke_optional_global(
                 &window,
                 "__initMermaid",
-                &[".post-content".into(), theme_str.into()],
+                &[selector.clone().into(), theme_str.into()],
             );
         }
 
@@ -172,10 +178,14 @@ pub fn PostContent(content_html: String) -> Element {
         // 双保险契约：先设配置,若 lightbox.js 已加载则立即调用;
         // 否则 lightbox.js 加载完后其 IIFE 尾部读到配置自启动。
         let selectors = js_sys::Array::new();
-        selectors.push(&".post-content".into());
-        selectors.push(&".entry-cover".into());
+        selectors.push(&selector.into());
+        if scope_id.is_none() {
+            selectors.push(&".entry-cover".into());
+        }
         let selectors_val = js_sys::Object::from(selectors).into();
-        let _ = js_sys::Reflect::set(&window, &"__lightboxSelectors".into(), &selectors_val);
+        if scope_id.is_none() {
+            let _ = js_sys::Reflect::set(&window, &"__lightboxSelectors".into(), &selectors_val);
+        }
         invoke_optional_global(&window, "__initLightbox", &[selectors_val]);
 
         // 安装 hash 锚点点击拦截器（幂等）。
@@ -191,14 +201,21 @@ pub fn PostContent(content_html: String) -> Element {
         //
         // 仅首次运行：此 effect 因读取 resolved_theme() 而在主题切换时重跑，但
         // hash 滚动是首屏补救措施，重跑会导致切主题时页面跳回 URL hash 位置。
-        if !did_scroll() {
+        if scope_id.is_none() && !did_scroll() {
             did_scroll.set(true);
             invoke_optional_global(&window, "__scrollToHash", &[]);
         }
     });
 
+    #[cfg(target_arch = "wasm32")]
+    use_drop(move || {
+        if let (Some(window), Some(owner)) = (web_sys::window(), scope_id) {
+            invoke_optional_global(&window, "__closeLightboxFor", &[owner.into()]);
+        }
+    });
+
     rsx! {
-        div { class: "post-content md-content",
+        div { id: scope_id, "data-showcase-lightbox-owner": scope_id, class: "post-content md-content",
             for (i, fragment) in fragments.iter().enumerate() {
                 {
                     match fragment {

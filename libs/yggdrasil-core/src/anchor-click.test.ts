@@ -62,6 +62,24 @@ describe('initAnchorClick', () => {
     expect(window.location.hash).toBe('#section-2');
   });
 
+  it('局部目录只滚动自己的容器，不修改图鉴 URL hash', () => {
+    document.body.innerHTML = `
+      <div data-local-anchor-scroll id="sample-root">
+        <a href="#sample-heading">章节</a><h2 id="sample-heading">正文</h2>
+      </div>`;
+    const root = document.getElementById('sample-root')!;
+    const scroll = vi.fn();
+    root.scrollTo = scroll;
+    const windowScroll = vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
+
+    root.querySelector('a')!.click();
+
+    expect(scroll).toHaveBeenCalledOnce();
+    expect(windowScroll).not.toHaveBeenCalled();
+    expect(window.location.hash).toBe('');
+    expect(dioxusInterceptorCalled).toBe(false);
+  });
+
   it('目标元素不存在时放行，不阻止 Dioxus 原行为', () => {
     const anchor = document.createElement('a');
     anchor.setAttribute('href', '#no-such-heading');

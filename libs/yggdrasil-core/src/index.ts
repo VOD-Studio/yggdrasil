@@ -7,7 +7,7 @@ import { initPageReveal } from './page-entry';
 import { initPostContent } from './post-content';
 import { routeTransitions } from './route-transitions';
 import { applyResolvedTheme, startThemeTransition } from './theme-transition';
-import { initTocSidebar } from './toc-sidebar';
+import { disposeTocSidebar, initTocSidebar } from './toc-sidebar';
 import './style.css';
 
 declare global {
@@ -19,7 +19,8 @@ declare global {
     __scrollToHash: () => void;
     __startThemeTransition: (x: number, y: number) => void;
     __applyResolvedTheme: (isDark: boolean) => void;
-    __initTocSidebar: () => void;
+    __initTocSidebar: typeof initTocSidebar;
+    __disposeTocSidebar: typeof disposeTocSidebar;
     __routeTransitions: typeof routeTransitions;
   }
 }
@@ -32,6 +33,7 @@ window.__scrollToHash = scrollToHash;
 window.__startThemeTransition = startThemeTransition;
 window.__applyResolvedTheme = applyResolvedTheme;
 window.__initTocSidebar = initTocSidebar;
+window.__disposeTocSidebar = disposeTocSidebar;
 window.__routeTransitions = routeTransitions;
 
 // Cross-document transitions can reveal before the WASM router connects.

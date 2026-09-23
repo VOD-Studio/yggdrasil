@@ -10,6 +10,7 @@ use crate::components::comments::form::CommentForm;
 use crate::components::comments::list::CommentList;
 use crate::components::skeletons::comment_skeleton::CommentListSkeleton;
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
+use crate::models::comment::PublicComment;
 use crate::utils::comment_storage::{self, PendingComment};
 use crate::utils::time::sleep_ms;
 
@@ -37,6 +38,18 @@ pub struct CommentContext {
     pub pending_comments: Signal<Vec<PendingComment>>,
     /// 当前登录用户；`None` 表示匿名（或尚未完成探测）。
     pub current_user: Signal<Option<crate::models::user::PublicUser>>,
+    /// 正式评论走服务端；图鉴只更新当前预览的内存状态。
+    pub source: CommentSource,
+    /// 区分同页多个表单的 DOM ID，避免图鉴卡片与正式文章互相接管编辑器。
+    pub id_scope: &'static str,
+}
+
+#[derive(Clone, Copy)]
+pub enum CommentSource {
+    Production,
+    Local {
+        approved: Signal<Vec<PublicComment>>,
+    },
 }
 
 /// 评论区段组件。
@@ -56,6 +69,8 @@ pub fn CommentSection(post_id: i32) -> Element {
         refresh_trigger: Signal::new(false),
         pending_comments: Signal::new(Vec::new()),
         current_user: Signal::new(None),
+        source: CommentSource::Production,
+        id_scope: "post",
     });
 
     // 挂载后从本地存储异步加载待审核评论以防 SSR Hydration Mismatch
@@ -192,15 +207,28 @@ pub fn CommentSection(post_id: i32) -> Element {
     });
 
     let data = comments_resource.read();
-
-    // 动态计算总评论数（已审核 + 本地待审核）
-    let total_count = if let Some(Ok(CommentTreeResponse { count, .. })) = &*data {
-        let approved_count = *count;
-        let pending_count = ctx.pending_comments.read().len() as i64;
-        Some(approved_count + pending_count)
-    } else {
-        None
+    let (comments, approved_count, failed) = match &*data {
+        Some(Ok(CommentTreeResponse {
+            comments, count, ..
+        })) => (Some(comments.clone()), Some(*count), false),
+        Some(Err(_)) => (None, None, true),
+        None => (None, None, false),
     };
+
+    rsx! { CommentSectionContent { post_id, comments, approved_count, failed } }
+}
+
+/// 正式文章和图鉴共同使用的评论区展示；数据获取与持久化由上层负责。
+#[component]
+pub(crate) fn CommentSectionContent(
+    post_id: i32,
+    comments: Option<Vec<PublicComment>>,
+    approved_count: Option<i64>,
+    #[props(default)] failed: bool,
+) -> Element {
+    let ctx: CommentContext = use_context();
+    let pending = ctx.pending_comments.read().clone();
+    let total_count = approved_count.map(|count| count + pending.len() as i64);
 
     rsx! {
         div { class: "space-y-6",
@@ -232,10 +260,10 @@ pub fn CommentSection(post_id: i32) -> Element {
             CommentForm { post_id, parent_id: None, parent_indent: None }
 
             // 根据数据状态渲染列表区、错误提示或骨架屏
-            match &*data {
-                Some(Ok(CommentTreeResponse { comments, .. })) => {
+            match comments {
+                Some(comments) => {
                     let approved_count = comments.len();
-                    let pending_count = ctx.pending_comments.read().len();
+                    let pending_count = pending.len();
                     let has_any = approved_count > 0 || pending_count > 0;
                     if !has_any {
                         rsx! {
@@ -248,13 +276,13 @@ pub fn CommentSection(post_id: i32) -> Element {
                         rsx! {
                             CommentList {
                                 comments: comments.clone(),
-                                pending: ctx.pending_comments.read().clone(),
+                                pending,
                                 post_id,
                             }
                         }
                     }
                 }
-                Some(Err(_)) => rsx! {
+                None if failed => rsx! {
                     div { class: "text-center text-red-500 dark:text-red-400 py-8 text-sm", "评论加载失败，请刷新重试" }
                 },
                 None => rsx! {

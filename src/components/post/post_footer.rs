@@ -16,12 +16,17 @@ use crate::router::Route;
 ///   渲染在 admin 布局内（`/admin/preview`）时传 true——跨 layout 分支的
 ///   客户端导航会触发 dioxus 0.7.10 的 suspense 卸载双重回收 bug（详见
 ///   `src/pages/admin/preview.rs` 模块文档），整页加载可完全规避。
+/// - `sample`：图鉴展示非跳转的样例链接；正式文章默认 false。
 ///
 /// 展示内容包括：
 /// - 文章标签云，链接到对应标签详情页
 /// - 相邻文章导航（如有）
 #[component]
-pub fn PostFooter(post: Post, #[props(default = false)] full_reload: bool) -> Element {
+pub fn PostFooter(
+    post: Post,
+    #[props(default = false)] full_reload: bool,
+    #[props(default = false)] sample: bool,
+) -> Element {
     let tag_to = |tag: &str| {
         super::nav_target(
             Route::TagDetail {
@@ -36,9 +41,10 @@ pub fn PostFooter(post: Post, #[props(default = false)] full_reload: bool) -> El
                 ul { class: "post-tags",
                     for tag in &post.tags {
                         li { key: "{tag}",
-                            Link {
-                                to: tag_to(tag),
-                                "{tag}"
+                            if sample {
+                                a { href: "#", onclick: move |event| event.prevent_default(), "{tag}" }
+                            } else {
+                                Link { to: tag_to(tag), "{tag}" }
                             }
                         }
                     }
@@ -46,7 +52,7 @@ pub fn PostFooter(post: Post, #[props(default = false)] full_reload: bool) -> El
             }
 
             if post.prev_post.is_some() || post.next_post.is_some() {
-                PostNavLinks { prev: post.prev_post, next: post.next_post, full_reload }
+                PostNavLinks { prev: post.prev_post, next: post.next_post, full_reload, sample }
             }
         }
     }

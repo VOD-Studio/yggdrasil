@@ -32,6 +32,15 @@ const POLL_INTERVAL_MS: u32 = 500;
 #[cfg(not(target_arch = "wasm32"))]
 const MAX_POLLS: u32 = 240; // 500ms * 240 = 120s 上限
 
+/// Fixed local output for callers that demonstrate the runner without execution.
+#[derive(Clone, PartialEq)]
+pub struct RunnerExample {
+    pub stdout: String,
+    pub stderr: String,
+    pub status: String,
+    pub error: String,
+}
+
 /// 代码运行器组件。
 ///
 /// Props：
@@ -53,15 +62,26 @@ pub fn CodeRunner(
     language: String,
     overrides: Option<ResourceLimits>,
     instance_id: usize,
+    #[props(default)] example_output: Option<RunnerExample>,
 ) -> Element {
     let mut running = use_signal(|| false);
     let mut stage = use_signal(String::new);
-    let mut exit_info = use_signal(String::new);
-    let mut error_msg = use_signal(String::new);
+    let mut exit_info = use_signal(|| {
+        example_output
+            .as_ref()
+            .map(|output| output.status.clone())
+            .unwrap_or_default()
+    });
+    let mut error_msg = use_signal(|| {
+        example_output
+            .as_ref()
+            .map(|output| output.error.clone())
+            .unwrap_or_default()
+    });
     // 输出区可见性：点运行后置 true，控制输出区按需出现（而非页面加载就显示空区）。
-    let mut show_output = use_signal(|| false);
+    let mut show_output = use_signal(|| example_output.is_some());
     // 是否已收到首个输出 chunk：收到后骨架屏消失，露出终端实时渲染。
-    let mut has_output = use_signal(|| false);
+    let mut has_output = use_signal(|| example_output.is_some());
     let editor_library = use_browser_library("codemirror", || true);
     let terminal_library = use_browser_library("xterm", move || *show_output.read());
     // 终端首次加载期间先保存运行请求，挂载后才开始执行，避免丢掉前几个输出块。
@@ -96,13 +116,17 @@ pub fn CodeRunner(
     let mut editor_ready = use_signal(|| false);
 
     // Vim 模式状态（通过 localStorage 持久化偏好，默认开启）
+    #[cfg(target_arch = "wasm32")]
+    let example_mode = example_output.is_some();
     let mut vim_enabled = use_signal(|| {
         #[cfg(target_arch = "wasm32")]
         {
-            if let Some(window) = web_sys::window() {
-                if let Ok(Some(storage)) = window.local_storage() {
-                    if let Ok(Some(val)) = storage.get_item("yggdrasil-code-runner-vim") {
-                        return val == "true";
+            if !example_mode {
+                if let Some(window) = web_sys::window() {
+                    if let Ok(Some(storage)) = window.local_storage() {
+                        if let Ok(Some(val)) = storage.get_item("yggdrasil-code-runner-vim") {
+                            return val == "true";
+                        }
                     }
                 }
             }
@@ -115,9 +139,11 @@ pub fn CodeRunner(
         vim_enabled.set(next);
         #[cfg(target_arch = "wasm32")]
         {
-            if let Some(window) = web_sys::window() {
-                if let Ok(Some(storage)) = window.local_storage() {
-                    let _ = storage.set_item("yggdrasil-code-runner-vim", &next.to_string());
+            if !example_mode {
+                if let Some(window) = web_sys::window() {
+                    if let Ok(Some(storage)) = window.local_storage() {
+                        let _ = storage.set_item("yggdrasil-code-runner-vim", &next.to_string());
+                    }
                 }
             }
         }
@@ -244,6 +270,7 @@ pub fn CodeRunner(
         // 订阅 show_output：输出区在 show_output 变 true（用户点运行）后才渲染进 DOM，
         // 容器此前不存在；读 show_output 建立订阅，使其变 true 时重跑本 effect 完成挂载。
         let mount_container_id = output_container_id.clone();
+        let mount_example = example_output.clone();
         use_effect(move || {
             if term_handle.read().is_some() {
                 return; // 防重复 init
@@ -268,6 +295,9 @@ pub fn CodeRunner(
             opts.set_on_ready(&on_ready);
 
             if let Ok(Some(inst)) = xterm::get_module().create(&mount_container_id, &opts) {
+                if let Some(example) = &mount_example {
+                    inst.write_all(&example.stdout, &example.stderr);
+                }
                 let handle = xterm::TerminalHandle::new(inst, on_ready);
                 term_handle.set(Some(handle));
             }
@@ -313,6 +343,7 @@ pub fn CodeRunner(
     let run_code = {
         let mut running = running;
         let mut stage = stage;
+        let mut exit_info = exit_info;
         let mut error_msg = error_msg;
         let mut source_signal = source_signal;
         let mut term_handle = term_handle;
@@ -320,8 +351,22 @@ pub fn CodeRunner(
         let mut has_output = has_output;
         let run_language = run_language.clone();
         let run_overrides = run_overrides.clone();
+        let run_example = example_output.clone();
         move |_| {
             if running() || !editor_ready() {
+                return;
+            }
+            if let Some(example) = &run_example {
+                show_output.set(true);
+                has_output.set(true);
+                stage.set("输出示例".to_string());
+                exit_info.set(example.status.clone());
+                error_msg.set(example.error.clone());
+                if let Some(handle) = term_handle.read().as_ref() {
+                    handle
+                        .instance()
+                        .write_all(&example.stdout, &example.stderr);
+                }
                 return;
             }
             running.set(true);
@@ -406,8 +451,16 @@ pub fn CodeRunner(
         let mut show_output = show_output;
         let run_language = run_language.clone();
         let run_overrides = run_overrides.clone();
+        let run_example = example_output.clone();
         move |_| {
             if running() {
+                return;
+            }
+            if let Some(example) = &run_example {
+                show_output.set(true);
+                stage.set("输出示例".to_string());
+                exit_info.set(example.status.clone());
+                error_msg.set(example.error.clone());
                 return;
             }
             running.set(true);
@@ -506,7 +559,7 @@ pub fn CodeRunner(
                         }
                         "{stage()}"
                     } else {
-                        "运行"
+                        if example_output.is_some() { "播放输出示例" } else { "运行" }
                     }
                 }
             }
@@ -535,8 +588,19 @@ pub fn CodeRunner(
                 div { class: "border-t border-[var(--color-paper-border)]",
                     LibraryLoadError { library: terminal_library }
                     div { class: "flex justify-between items-center px-4 py-2 text-xs text-[var(--color-paper-tertiary)] border-b border-[var(--color-paper-border)] bg-[var(--color-paper-code-block)]",
-                        span { class: "font-medium uppercase tracking-wide", "输出" }
-                        span { "{exit_info()}" }
+                        span { class: "font-medium uppercase tracking-wide", if example_output.is_some() { "输出示例" } else { "输出" } }
+                        div { class: "flex items-center gap-3",
+                            span { "{exit_info()}" }
+                            if example_output.is_some() {
+                                button { r#type: "button", onclick: move |_| {
+                                    #[cfg(target_arch = "wasm32")]
+                                    if let Some(handle) = term_handle.read().as_ref() { handle.instance().clear(); }
+                                    exit_info.set(String::new());
+                                    error_msg.set(String::new());
+                                    has_output.set(false);
+                                }, "清空" }
+                            }
+                        }
                     }
                     div {
                         id: "{output_container_id}",

@@ -1,5 +1,6 @@
 import { FitAddon } from '@xterm/addon-fit';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import XtermTerminal from '../index';
 import { TerminalInstance, XtermOptions } from '../terminal';
 
 // --- ResizeObserver mock：happy-dom 不实现，手动提供回调钩子
@@ -58,6 +59,19 @@ describe('TerminalInstance', () => {
     expect(container.querySelector('.xterm')).toBeTruthy();
 
     inst.destroy();
+  });
+
+  it('注册表随销毁清理，旧句柄不会误删同 ID 新实例', () => {
+    const container = document.createElement('div');
+    container.id = 'terminal-replacement';
+    document.body.appendChild(container);
+    const old = XtermTerminal.create(container.id);
+    const current = XtermTerminal.create(container.id);
+    old?.destroy();
+    expect(XtermTerminal._instances.get(container.id)).toBe(current);
+    current?.destroy();
+    expect(XtermTerminal._instances.has(container.id)).toBe(false);
+    container.remove();
   });
 
   it('writeAll 清屏后重写 stdout + stderr', () => {

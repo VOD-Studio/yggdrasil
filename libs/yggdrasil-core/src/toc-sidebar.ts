@@ -8,16 +8,27 @@
 
 const BAND_ROOT_MARGIN = '-80px 0px -70% 0px'; // 带：视口顶 80px（避开 64px sticky header）~ 30vh
 
-let disposePrev: (() => void) | null = null;
+const DEFAULT_NAV = 'nav.toc-sidebar:not([id^="showcase-"])';
+const disposers = new Map<string, () => void>();
 
-export function initTocSidebar(): void {
-  disposePrev?.();
-  disposePrev = null;
+export function disposeTocSidebar(navSelector = DEFAULT_NAV): void {
+  disposers.get(navSelector)?.();
+  disposers.delete(navSelector);
+}
 
-  const nav = document.querySelector<HTMLElement>('nav.toc-sidebar');
+export function initTocSidebar(
+  navSelector = DEFAULT_NAV,
+  contentSelector?: string,
+  scrollSelector?: string,
+): void {
+  disposeTocSidebar(navSelector);
+
+  const nav = document.querySelector<HTMLElement>(navSelector);
   if (!nav) return;
   const body = nav.querySelector<HTMLElement>('.toc-sidebar-body');
   if (!body) return;
+  const content = contentSelector ? document.querySelector<HTMLElement>(contentSelector) : null;
+  const scrollRoot = scrollSelector ? document.querySelector<HTMLElement>(scrollSelector) : null;
 
   // 按文档序收集 (目录链接 → 标题元素) 对；href 是 #id，id 可能含 CJK，
   // getAttribute 返回原始字符，location.hash 才是百分号编码——这里 decodeURIComponent
@@ -26,7 +37,10 @@ export function initTocSidebar(): void {
   for (const link of body.querySelectorAll<HTMLAnchorElement>('a[href^="#"]')) {
     const raw = link.getAttribute('href')!.slice(1);
     if (!raw) continue;
-    const el = document.getElementById(decodeURIComponent(raw)) ?? document.getElementById(raw);
+    const id = decodeURIComponent(raw);
+    const el = content
+      ? Array.from(content.querySelectorAll<HTMLElement>('[id]')).find((node) => node.id === id)
+      : (document.getElementById(id) ?? document.getElementById(raw));
     if (el) items.push({ id: raw, el, link });
   }
   if (items.length === 0) return;
@@ -55,16 +69,20 @@ export function initTocSidebar(): void {
 
   // 初始激活：同步扫一遍，取「顶线（80px）之上最后一个标题」；全文在顶线之下则为 null。
   const pickAboveLine = (): HTMLAnchorElement | null => {
+    const lineTop = scrollRoot ? scrollRoot.getBoundingClientRect().top + 20 : 80;
     let last: HTMLAnchorElement | null = null;
     for (const it of items) {
-      if (it.el.getBoundingClientRect().top <= 80) last = it.link;
+      if (it.el.getBoundingClientRect().top <= lineTop) last = it.link;
       else break; // 文档序单调，越过即停
     }
     return last;
   };
   setActive(pickAboveLine());
 
-  if (typeof IntersectionObserver === 'undefined') return; // 旧环境：只留初始态
+  if (typeof IntersectionObserver === 'undefined') {
+    disposers.set(navSelector, () => setActive(null));
+    return; // 旧环境：只留初始态
+  }
 
   const visible = new Set<string>();
   const io = new IntersectionObserver(
@@ -83,12 +101,16 @@ export function initTocSidebar(): void {
         setActive(pickAboveLine());
       }
     },
-    { rootMargin: BAND_ROOT_MARGIN, threshold: 0 },
+    {
+      root: scrollRoot,
+      rootMargin: scrollRoot ? '-20px 0px -70% 0px' : BAND_ROOT_MARGIN,
+      threshold: 0,
+    },
   );
   for (const it of items) io.observe(it.el);
 
-  disposePrev = () => {
+  disposers.set(navSelector, () => {
     io.disconnect();
     setActive(null);
-  };
+  });
 }

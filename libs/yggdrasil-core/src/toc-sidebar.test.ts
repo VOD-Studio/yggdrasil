@@ -3,7 +3,7 @@
  * happy-dom 无 IntersectionObserver，vi.stubGlobal 捕获回调手动注入。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { initTocSidebar } from './toc-sidebar';
+import { disposeTocSidebar, initTocSidebar } from './toc-sidebar';
 
 const disconnect = vi.fn();
 const observe = vi.fn();
@@ -155,6 +155,37 @@ describe('initTocSidebar', () => {
     expect(disconnect).toHaveBeenCalledTimes(1);
     // 第二次 init 重建 observer，只观察当前 DOM 的 2 个标题（第一次的 observe 记录已含 2 次）。
     expect(observe).toHaveBeenCalledTimes(4);
+  });
+
+  it('局部目录初始化和清理不接管页面目录', () => {
+    setupDom();
+    document.body.insertAdjacentHTML(
+      'beforeend',
+      `<div id="sample-scroll"><nav id="sample-toc" class="toc-sidebar"><div class="toc-sidebar-body"><a href="#sample-a">样例</a></div></nav><article id="sample-content"><h2 id="sample-a">样例</h2></article></div>`,
+    );
+    initTocSidebar();
+    expect(observe).toHaveBeenCalledTimes(2);
+
+    initTocSidebar('#sample-toc', '#sample-content', '#sample-scroll');
+    expect(observe).toHaveBeenCalledTimes(3);
+    expect(disconnect).not.toHaveBeenCalled();
+
+    disposeTocSidebar('#sample-toc');
+    expect(disconnect).toHaveBeenCalledTimes(1);
+    initTocSidebar();
+    expect(disconnect).toHaveBeenCalledTimes(2);
+  });
+
+  it('页面目录初始化不会选中排在前面的图鉴目录', () => {
+    const { h2a, h2b } = setupDom();
+    document.body.insertAdjacentHTML(
+      'afterbegin',
+      '<nav id="showcase-post-toc-nav-card" class="toc-sidebar"><div class="toc-sidebar-body"><a href="#sample-a">样例</a></div></nav><h2 id="sample-a">样例</h2>',
+    );
+    mockTop(h2a, 500);
+    mockTop(h2b, 900);
+    initTocSidebar();
+    expect(observe.mock.calls.map(([element]) => element.id)).toEqual(['a', 'b']);
   });
 
   it('IntersectionObserver 不存在时不抛错，初始同步激活仍生效', () => {

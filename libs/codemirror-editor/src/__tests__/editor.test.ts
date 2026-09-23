@@ -1,9 +1,11 @@
-import { syntaxTree } from '@codemirror/language';
+import { ensureSyntaxTree } from '@codemirror/language';
+import type { EditorState } from '@codemirror/state';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { CodeMirrorInstance, EditorOptions } from '../editor';
+import CodeMirrorEditor from '../index';
 
 type CodeMirrorInternals = {
-  view: { state: Parameters<typeof syntaxTree>[0] };
+  view: { state: EditorState };
 };
 
 describe('CodeMirrorInstance', () => {
@@ -20,6 +22,15 @@ describe('CodeMirrorInstance', () => {
     inst.setValue('SELECT 1');
     expect(inst.getValue()).toBe('SELECT 1');
     inst.destroy();
+  });
+
+  it('注册表随销毁清理，旧句柄不会误删同 ID 新实例', () => {
+    const old = CodeMirrorEditor.create(container.id);
+    const current = CodeMirrorEditor.create(container.id);
+    old?.destroy();
+    expect(CodeMirrorEditor._instances.get(container.id)).toBe(current);
+    current?.destroy();
+    expect(CodeMirrorEditor._instances.has(container.id)).toBe(false);
   });
 
   it('初始 value 正确', () => {
@@ -40,7 +51,9 @@ describe('CodeMirrorInstance', () => {
     const internals = inst as unknown as CodeMirrorInternals;
     const state = internals.view.state;
     const nodes: string[] = [];
-    syntaxTree(state).iterate({
+    const tree = ensureSyntaxTree(state, state.doc.length, 5000);
+    expect(tree).not.toBeNull();
+    tree?.iterate({
       enter: (node) => {
         if (
           node.name === 'LineComment' ||
@@ -66,7 +79,9 @@ describe('CodeMirrorInstance', () => {
     const internals = inst as unknown as CodeMirrorInternals;
     const state = internals.view.state;
     const nodes: string[] = [];
-    syntaxTree(state).iterate({
+    const tree = ensureSyntaxTree(state, state.doc.length, 5000);
+    expect(tree).not.toBeNull();
+    tree?.iterate({
       enter: (node) => {
         if (
           node.name === 'LineComment' ||
@@ -112,7 +127,10 @@ describe('CodeMirrorInstance', () => {
     // Test-only private view access verifies the real parser tree.
     const internals = inst as unknown as CodeMirrorInternals;
     const names: string[] = [];
-    syntaxTree(internals.view.state).iterate({
+    const state = internals.view.state;
+    const tree = ensureSyntaxTree(state, state.doc.length, 5000);
+    expect(tree).not.toBeNull();
+    tree?.iterate({
       enter: (node) => {
         names.push(node.name);
       },

@@ -21,7 +21,7 @@ use crate::components::ui::{ModalShell, BTN_ICON, EXIT_ANIM_MS, SPINNER_SVG};
 
 #[cfg(target_arch = "wasm32")]
 use super::upload_pool::{enqueue_files, set_status, UploadPool};
-use super::upload_pool::{UploadItem, UploadStatus};
+pub(crate) use super::upload_pool::{UploadItem, UploadStatus};
 
 #[cfg(target_arch = "wasm32")]
 use crate::bridges::tiptap::upload_image_file;
@@ -161,7 +161,7 @@ pub fn AssetUploadModal(mut visible: Signal<bool>, on_uploaded: EventHandler<()>
     // 行列表内层 for 闭包用：状态区 keyed 包装引入的嵌套闭包无法 move 外层闭包捕获的
     // Rc（FnMut 链，E0507），故在组件体预克隆一份，供内层闭包从组件体直接捕获。
     #[cfg(target_arch = "wasm32")]
-    let pool_for_rows = pool.clone();
+    let (pool_for_rows, pool_for_remove) = (pool.clone(), pool.clone());
 
     // 快照当前列表（小 Vec，clone 成本可忽略；status 变化驱动重渲染）。
     let items_snapshot = items.read().clone();
@@ -190,7 +190,35 @@ pub fn AssetUploadModal(mut visible: Signal<bool>, on_uploaded: EventHandler<()>
                 }
 
                 // 主体：拖放区 + 逐文件状态列表。
-                div { class: "flex-1 overflow-y-auto p-6 flex flex-col gap-4",
+                    UploadPanel {
+                        items: items_snapshot,
+                        on_retry: move |item_id: u64| {
+                            #[cfg(target_arch = "wasm32")]
+                            if let Some(file) = pool_for_rows.find_file(item_id) {
+                                set_status(&mut items, item_id, UploadStatus::Uploading);
+                                spawn(async move {
+                                    match upload_image_file(file).await {
+                                        Ok(_) => {
+                                            set_status(&mut items, item_id, UploadStatus::Done);
+                                            on_uploaded.call(());
+                                        }
+                                        Err(msg) => set_status(&mut items, item_id, UploadStatus::Failed(msg)),
+                                    }
+                                });
+                            }
+                        },
+                        on_remove: move |item_id: u64| {
+                            if let Some(item) = items.write().iter_mut().find(|item| item.id == item_id) {
+                                item.removing = true;
+                            }
+                            #[cfg(target_arch = "wasm32")]
+                            pool_for_remove.remove_file(item_id);
+                            spawn(async move {
+                                crate::utils::time::sleep_ms(EXIT_ANIM_MS).await;
+                                items.write().retain(|item| item.id != item_id);
+                            });
+                        },
+
                     // 拖放区 = label：点击天然触发隐藏 file input（同 CoverUploader），无需 JS。
                     // 内部内容包一层 pointer-events-none，防子元素进出触发 dragleave 高亮闪烁。
                     label {
@@ -228,33 +256,7 @@ pub fn AssetUploadModal(mut visible: Signal<bool>, on_uploaded: EventHandler<()>
                                 }
                             }
                         },
-                        div { class: "pointer-events-none flex flex-col items-center gap-2",
-                            // 上传图标（Feather 风格线框，照抄 CoverUploader）。
-                            svg {
-                                class: "w-8 h-8 text-[var(--color-paper-tertiary)]",
-                                xmlns: "http://www.w3.org/2000/svg",
-                                view_box: "0 0 24 24",
-                                fill: "none",
-                                stroke: "currentColor",
-                                stroke_width: "1.8",
-                                stroke_linecap: "round",
-                                stroke_linejoin: "round",
-                                path { d: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" }
-                                polyline { points: "17 8 12 3 7 8" }
-                                line {
-                                    x1: "12",
-                                    y1: "3",
-                                    x2: "12",
-                                    y2: "15",
-                                }
-                            }
-                            p { class: "text-sm font-medium text-[var(--color-paper-primary)]",
-                                "拖拽图片到这里，或点击选择"
-                            }
-                            p { class: "text-xs text-[var(--color-paper-tertiary)]",
-                                "支持 Ctrl/⌘+V 粘贴 · JPEG / PNG / GIF / WebP · 单张 ≤ 5MB"
-                            }
-                        }
+                        UploadDropZoneContent {}
                         input {
                             r#type: "file",
                             accept: "image/jpeg,image/png,image/gif,image/webp",
@@ -282,125 +284,101 @@ pub fn AssetUploadModal(mut visible: Signal<bool>, on_uploaded: EventHandler<()>
                         }
                     }
 
-                    // 逐文件状态列表。
-                    if !items_snapshot.is_empty() {
-                        div { class: "flex flex-col gap-2",
-                            for (idx, item) in items_snapshot.iter().enumerate() {
-                                {
-                                    let item_id = item.id;
-                                    // 状态切换 key（q/u/d/f）：status 变化强制重挂载状态区 → 重放 status-pop。
-                                    let status_key = match &item.status {
-                                        UploadStatus::Queued => "q",
-                                        UploadStatus::Uploading => "u",
-                                        UploadStatus::Done => "d",
-                                        UploadStatus::Failed(_) => "f",
-                                    };
-                                    rsx! {
-                                        div {
-                                            key: "{item_id}",
-                                            class: "flex items-center gap-3 rounded-2xl border border-[var(--color-paper-border)] bg-[var(--color-paper-theme)] px-4 py-3",
-                                            class: if item.removing { "animate-row-leave" } else { "animate-row-enter" },
-                                            // 进场阶梯 delay（复用 .animate-row-enter）；removing 时清空，避免退出动画被残留 delay 推迟。
-                                            style: if item.removing { String::new() } else { format!("animation-delay:{}ms", idx * 30) },
-                                            // 左：文件名 + 大小（min-w-0 + truncate 防长文件名撑破行）。
-                                            div { class: "flex-1 min-w-0",
-                                                p {
-                                                    class: "text-sm truncate text-[var(--color-paper-primary)]",
-                                                    title: "{item.name}",
-                                                    "{item.name}"
-                                                }
-                                                p { class: "text-xs font-mono text-[var(--color-paper-tertiary)]", "{item.size}" }
-                                            }
-                                            // 右：状态 + 操作。外层 keyed（status 变化强制重挂载）→ 重放 status-pop。
-                                            for _ in std::iter::once(()) {
-                                                {
-                                                    // for 闭包体内声明 Rc 局部：下层 onclick 的 move 捕获落在本层
-                                                    // 局部（可自由 move），而非跨层 move 外层闭包捕获（FnMut 链 E0507）。
-                                                    #[cfg(target_arch = "wasm32")]
-                                                    let (pool_for_retry, pool_for_remove) =
-                                                        (pool_for_rows.clone(), pool_for_rows.clone());
-                                                    rsx! {
-                                                        div {
-                                                            key: "{status_key}",
-                                                            class: "flex items-center gap-2 shrink-0 animate-status-pop",
-                                                            match &item.status {
-                                                                UploadStatus::Queued => rsx! {
-                                                                    span { class: "text-xs text-[var(--color-paper-tertiary)] shrink-0", "等待中" }
-                                                                }, // 失败原因文字展示（不只靠颜色），过长截断 + title 全文。 // 失败原因文字展示（不只靠颜色），过长截断 + title 全文。
-                                                                UploadStatus::Uploading => rsx! {
-                                                                    span { class: "flex items-center gap-1.5 text-xs text-[var(--color-paper-secondary)] shrink-0",
-                                                                        span {
-                                                                            class: "inline-block w-3.5 h-3.5",
-                                                                            dangerous_inner_html: SPINNER_SVG,
-                                                                        }
-                                                                        "上传中"
-                                                                    }
-                                                                },
-                                                                UploadStatus::Done => rsx! {
-                                                                    span { class: "text-xs text-emerald-600 dark:text-emerald-400 shrink-0", "✓ 已上传" }
-                                                                },
-                                                                UploadStatus::Failed(msg) => rsx! {
-                                                                    // 失败原因文字展示（不只靠颜色），过长截断 + title 全文。
-                                                                    span { class: "text-xs text-red-500 shrink-0 max-w-56 truncate", title: "{msg}", "{msg}" }
-                                                                    button {
-                                                                        class: "text-xs cursor-pointer text-[var(--color-paper-secondary)] hover:text-[var(--color-paper-primary)] shrink-0",
-                                                                        onclick: move |_| {
-                                                                            #[cfg(target_arch = "wasm32")] // 先标记 removing 播退出动画；文件句柄立即释放，批任务取不到句柄会 // 先标记 removing 播退出动画；文件句柄立即释放，批任务取不到句柄会
-                                                                            {
-                                                                                // 从 files 表取回句柄重发本条。
-                                                                                let file = pool_for_retry.find_file(item_id);
-                                                                                if let Some(file) = file {
-                                                                                    set_status(&mut items, item_id, UploadStatus::Uploading);
-                                                                                    spawn(async move {
-                                                                                        match upload_image_file(file).await {
-                                                                                            Ok(_) => {
-                                                                                                set_status(&mut items, item_id, UploadStatus::Done);
-                                                                                                on_uploaded.call(());
-                                                                                            }
-                                                                                            Err(msg) => {
-                                                                                                set_status(&mut items, item_id, UploadStatus::Failed(msg));
-                                                                                            }
-                                                                                        }
-                                                                                    });
-                                                                                }
-                                                                            }
-                                                                        },
-                                                                        "重试"
-                                                                    }
-                                                                    button {
-                                                                        class: "text-xs cursor-pointer text-[var(--color-paper-tertiary)] hover:text-[var(--color-paper-primary)] transition-colors shrink-0",
-                                                                        aria_label: "移除",
-                                                                        onclick: move |_| {
-                                                                            // 先标记 removing 播退出动画；文件句柄立即释放，批任务取不到句柄会
-                                                                            // 跳过该条（不会在淡出行上写状态）；EXIT_ANIM_MS 后真正摘除列表项。
-                                                                            {
-                                                                                let mut guard = items.write();
-                                                                                if let Some(it) = guard.iter_mut().find(|it| it.id == item_id) {
-                                                                                    it.removing = true;
-                                                                                }
-                                                                            }
-                                                                            #[cfg(target_arch = "wasm32")]
-                                                                            pool_for_remove.remove_file(item_id);
-                                                                            spawn(async move {
-                                                                                crate::utils::time::sleep_ms(EXIT_ANIM_MS).await;
-                                                                                items.write().retain(|it| it.id != item_id);
-                                                                            });
-                                                                        },
-                                                                        "×"
-                                                                    }
-                                                                },
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
+
+
+                }
+        }
+    }
+}
+
+/// Visual panel shared by the upload controller and local demonstration.
+#[component]
+pub(crate) fn UploadPanel(
+    items: Vec<UploadItem>,
+    on_retry: EventHandler<u64>,
+    on_remove: EventHandler<u64>,
+    children: Element,
+) -> Element {
+    rsx! {
+        div { class: "flex-1 overflow-y-auto p-6 flex flex-col gap-4",
+            {children}
+            UploadRows { items, on_retry, on_remove }
+        }
+    }
+}
+
+/// Shared drop-zone artwork; the caller owns its file or local-sample action.
+#[component]
+pub(crate) fn UploadDropZoneContent(
+    #[props(default = "拖拽图片到这里，或点击选择")] title: &'static str,
+    #[props(default = "支持 Ctrl/⌘+V 粘贴 · JPEG / PNG / GIF / WebP · 单张 ≤ 5MB")]
+    hint: &'static str,
+) -> Element {
+    rsx! {
+        div { class: "pointer-events-none flex flex-col items-center gap-2",
+            svg { class: "w-8 h-8 text-[var(--color-paper-tertiary)]", xmlns: "http://www.w3.org/2000/svg",
+                view_box: "0 0 24 24", fill: "none", stroke: "currentColor", stroke_width: "1.8",
+                stroke_linecap: "round", stroke_linejoin: "round",
+                path { d: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" }
+                polyline { points: "17 8 12 3 7 8" }
+                line { x1: "12", y1: "3", x2: "12", y2: "15" }
+            }
+            p { class: "text-sm font-medium text-[var(--color-paper-primary)]", "{title}" }
+            p { class: "text-xs text-[var(--color-paper-tertiary)]", "{hint}" }
+        }
+    }
+}
+
+/// Shared file status list; production and showcase provide their own actions.
+#[component]
+pub(crate) fn UploadRows(
+    items: Vec<UploadItem>,
+    on_retry: EventHandler<u64>,
+    on_remove: EventHandler<u64>,
+) -> Element {
+    rsx! {
+        div { class: "flex flex-col gap-2",
+            for (index, item) in items.iter().enumerate() {
+                {
+                    let id = item.id;
+                    let status_key = match item.status {
+                        UploadStatus::Queued => "q",
+                        UploadStatus::Uploading => "u",
+                        UploadStatus::Done => "d",
+                        UploadStatus::Failed(_) => "f",
+                    };
+                    rsx! {
+                        div { key: "{id}",
+                            class: "flex items-center gap-3 rounded-2xl border border-[var(--color-paper-border)] bg-[var(--color-paper-theme)] px-4 py-3",
+                            class: if item.removing { "animate-row-leave" } else { "animate-row-enter" },
+                            style: if item.removing { String::new() } else { format!("animation-delay:{}ms", index * 30) },
+                            div { class: "flex-1 min-w-0",
+                                p { class: "text-sm truncate text-[var(--color-paper-primary)]", title: "{item.name}", "{item.name}" }
+                                p { class: "text-xs font-mono text-[var(--color-paper-tertiary)]", "{item.size}" }
+                            }
+                            div { key: "{status_key}", class: "flex items-center gap-2 shrink-0 animate-status-pop",
+                                match &item.status {
+                                    UploadStatus::Queued => rsx! { span { class: "text-xs text-[var(--color-paper-tertiary)] shrink-0", "等待中" } },
+                                    UploadStatus::Uploading => rsx! {
+                                        span { class: "flex items-center gap-1.5 text-xs text-[var(--color-paper-secondary)] shrink-0",
+                                            span { class: "inline-block w-3.5 h-3.5", dangerous_inner_html: SPINNER_SVG }
+                                            "上传中"
                                         }
-                                    }
+                                    },
+                                    UploadStatus::Done => rsx! { span { class: "text-xs text-emerald-600 dark:text-emerald-400 shrink-0", "✓ 已上传" } },
+                                    UploadStatus::Failed(message) => rsx! {
+                                        span { class: "text-xs text-red-500 shrink-0 max-w-56 truncate", title: "{message}", "{message}" }
+                                        button { r#type: "button", class: "text-xs cursor-pointer text-[var(--color-paper-secondary)] hover:text-[var(--color-paper-primary)] shrink-0",
+                                            onclick: move |_| on_retry.call(id), "重试" }
+                                        button { r#type: "button", class: "text-xs cursor-pointer text-[var(--color-paper-tertiary)] hover:text-[var(--color-paper-primary)] transition-colors shrink-0",
+                                            aria_label: "移除", onclick: move |_| on_remove.call(id), "×" }
+                                    },
                                 }
                             }
                         }
                     }
                 }
+            }
         }
     }
 }

@@ -27,10 +27,12 @@ const XtermTerminal = {
     const existing = this._instances.get(containerId);
     if (existing) {
       existing.destroy();
-      this._instances.delete(containerId);
     }
 
-    const instance = new TerminalInstance(container, options);
+    let instance!: TerminalInstance;
+    instance = new TerminalInstance(container, options, () => {
+      if (this._instances.get(containerId) === instance) this._instances.delete(containerId);
+    });
     this._instances.set(containerId, instance);
     return instance;
   },

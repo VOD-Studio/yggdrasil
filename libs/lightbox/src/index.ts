@@ -86,6 +86,7 @@ interface LightboxState {
 declare global {
   interface Window {
     __initLightbox: (selectors: string | string[]) => void;
+    __closeLightboxFor: (owner: string) => void;
     __lightboxSelectors?: string[];
   }
 }
@@ -1293,6 +1294,14 @@ window.__initLightbox = (selectors: string | string[]): void => {
       openLightbox(node, [], null);
     });
   }
+};
+
+// 图鉴预览卸载时只关闭自己打开的灯箱，不影响文章或素材页的浮层。
+window.__closeLightboxFor = (owner: string): void => {
+  const activeOwner = state?.originNode
+    .closest('[data-showcase-lightbox-owner]')
+    ?.getAttribute('data-showcase-lightbox-owner');
+  if (activeOwner === owner) closeLightbox(true);
 };
 
 // ============ 自启动 ============

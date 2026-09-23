@@ -41,6 +41,45 @@ pub struct AssetSelection {
     pub alt: Option<String>,
 }
 
+/// Grid data shared by the authenticated picker and the local showcase.
+#[derive(Clone, PartialEq)]
+pub(crate) struct PickerAsset {
+    pub(crate) url: String,
+    pub(crate) thumbnail: String,
+    pub(crate) filename: String,
+    pub(crate) alt: Option<String>,
+    pub(crate) fresh: bool,
+}
+
+impl From<&AssetDto> for PickerAsset {
+    fn from(dto: &AssetDto) -> Self {
+        let url = format!("/uploads/{}", dto.asset.path);
+        Self {
+            thumbnail: format!("{url}?thumb=300x300"),
+            url,
+            filename: dto.asset.filename.clone(),
+            alt: dto.asset.alt.clone(),
+            fresh: false,
+        }
+    }
+}
+
+fn prepend_uploaded_asset(items: &mut Vec<PickerAsset>, url: String) {
+    if items.iter().any(|item| item.url == url) {
+        return;
+    }
+    items.insert(
+        0,
+        PickerAsset {
+            thumbnail: url.clone(),
+            url,
+            filename: "新上传图片".to_string(),
+            alt: None,
+            fresh: true,
+        },
+    );
+}
+
 /// 切换素材勾选态：已选（按 URL 判重）则移除，未选则按点击顺序追加。
 ///
 /// 以 URL 为唯一键：上传新图在网格刷新前后可能以不同条目形态出现
@@ -185,6 +224,10 @@ pub fn AssetPickerModal(
     let total_assets = total();
     let loading_now = loading();
     let show_pagination = total_assets > ASSETS_PER_PAGE as i64;
+    let mut gallery_items: Vec<PickerAsset> = assets.read().iter().map(PickerAsset::from).collect();
+    if let Some(url) = uploaded_url() {
+        prepend_uploaded_asset(&mut gallery_items, url);
+    }
 
     rsx! {
         ModalShell {
@@ -287,179 +330,19 @@ pub fn AssetPickerModal(
                     }
                 }
 
-                // 网格内容区：与头部统一使用 p-6，min-h-0 保证面板内部滚动。
-                div { class: "relative min-h-0 flex-1 overflow-y-auto p-6",
-                    // 翻页时保留旧网格，仅叠加半透明加载态，避免内容闪空。
-                    if loading_now && !assets.read().is_empty() {
-                        div {
-                            class: "pointer-events-none absolute inset-0 z-10 flex items-start justify-center bg-[var(--color-paper-theme)]/35 pt-6 backdrop-blur-[1px]",
-                            aria_live: "polite",
-                            aria_label: "正在加载素材",
-                            div { class: "inline-flex items-center gap-2 rounded-full bg-[var(--color-paper-entry)] px-3 py-1.5 text-xs text-[var(--color-paper-secondary)] shadow-sm",
-                                span {
-                                    class: "inline-flex h-4 w-4",
-                                    dangerous_inner_html: SPINNER_SVG,
-                                }
-                                "加载中…"
-                            }
-                        }
-                    }
-                    if let Some(err) = error() {
-                        div { class: "rounded-2xl bg-red-500/10 px-4 py-3 text-center text-sm text-red-600 dark:text-red-400",
-                            "加载失败：{err}"
-                        }
-                    } else if loading_now && assets.read().is_empty() && !cover_uploading() {
-                        div { class: "px-4 py-16 text-center text-sm text-[var(--color-paper-secondary)]",
-                            "加载中..."
-                        }
-                    } else if assets.read().is_empty() && !cover_uploading() && uploaded_url().is_none() {
-                        div { class: "px-4 py-16 text-center text-sm text-[var(--color-paper-secondary)]",
-                            "素材库为空，点击「上传新图」添加"
-                        }
-                    } else {
-                        div { class: "grid grid-cols-3 gap-4 sm:grid-cols-4",
-                            if cover_uploading() {
-                                div {
-                                    class: "relative aspect-square overflow-hidden rounded-2xl border border-[var(--color-paper-accent)]/60 bg-[var(--color-paper-theme)] shadow-sm",
-                                    aria_live: "polite",
-                                    aria_label: "正在上传图片",
-                                    if let Some(preview_url) = uploading_preview() {
-                                        img {
-                                            class: "h-full w-full scale-110 object-cover blur-md opacity-60",
-                                            src: "{preview_url}",
-                                            alt: "正在上传",
-                                        }
-                                    } else {
-                                        div { class: "absolute inset-0 animate-pulse bg-[var(--color-paper-code-bg)]" }
-                                    }
-                                    div { class: "absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/30 backdrop-blur-[2px]",
-                                        span {
-                                            class: "inline-flex h-5 w-5 text-white",
-                                            dangerous_inner_html: SPINNER_SVG,
-                                        }
-                                        span { class: "text-xs font-medium text-white drop-shadow",
-                                            "上传中"
-                                        }
-                                    }
-                                }
-                            }
-                            if let Some(uploaded_url) = uploaded_url() {
-                                {
-                                    let uploaded_sel = AssetSelection {
-                                        url: uploaded_url.clone(),
-                                        alt: None,
-                                    };
-                                    // 多选模式：勾选顺序即插入顺序，badge 展示 1 基序号。
-                                    let uploaded_order = if multi {
-                                        selected.read().iter().position(|s| s.url == uploaded_url)
-                                    } else {
-                                        None
-                                    };
-                                    // rsx 的 class 合并只接受 fmt 字面量：条件类名先算成变量再内插。
-                                    let uploaded_class = if multi {
-                                        if uploaded_order.is_some() {
-                                            "border-2 border-[var(--color-paper-accent)]"
-                                        } else {
-                                            "border-2 border-[var(--color-paper-border)] hover:border-[var(--color-paper-primary)]"
-                                        }
-                                    } else {
-                                        "border-2 border-[var(--color-paper-accent)]"
-                                    };
-                                    let uploaded_title = if multi {
-                                        "新上传图片，点击切换选中"
-                                    } else {
-                                        "新上传图片，点击使用"
-                                    };
-                                    rsx! {
-                                        button {
-                                            key: "uploaded-{uploaded_url}",
-                                            class: "group relative aspect-square cursor-pointer overflow-hidden rounded-2xl bg-[var(--color-paper-theme)] shadow-sm transition-all hover:shadow-md {uploaded_class}",
-                                            title: "{uploaded_title}",
-                                            onclick: move |_| {
-                                                // FnMut 闭包不能移出捕获变量，先 clone。
-                                                let uploaded_sel = uploaded_sel.clone();
-                                                if multi {
-                                                    toggle_selection(&mut selected.write(), uploaded_sel);
-                                                } else {
-                                                    on_select.call(vec![uploaded_sel]);
-                                                    closing.set(true);
-                                                    visible.set(false);
-                                                }
-                                            },
-                                            img {
-                                                class: "h-full w-full object-cover",
-                                                src: "{uploaded_url}",
-                                                alt: "新上传图片",
-                                            }
-                                            span { class: "absolute inset-x-2 bottom-2 rounded-full bg-black/55 px-2 py-1 text-center text-xs font-medium text-white backdrop-blur-sm",
-                                                "刚上传"
-                                            }
-                                            if let Some(n) = uploaded_order {
-                                                span { class: "absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-[var(--color-paper-accent)] text-xs font-bold text-[var(--color-paper-theme)] shadow",
-                                                    "{n + 1}"
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            for asset in assets.read().iter() {
-                                {
-                                    let url = format!("/uploads/{}", asset.asset.path);
-                                    let thumb = format!("{}?thumb=300x300", url);
-                                    let selection = AssetSelection {
-                                        url: url.clone(),
-                                        alt: asset.asset.alt.clone(),
-                                    };
-                                    // 多选模式：勾选顺序即插入顺序，badge 展示 1 基序号。
-                                    let order = if multi {
-                                        selected.read().iter().position(|s| s.url == url)
-                                    } else {
-                                        None
-                                    };
-                                    // rsx 的 class 合并只接受 fmt 字面量：条件类名先算成变量再内插。
-                                    let item_class = if multi {
-                                        if order.is_some() {
-                                            "border-2 border-[var(--color-paper-accent)] shadow-sm"
-                                        } else {
-                                            "border-2 border-[var(--color-paper-border)] hover:border-[var(--color-paper-primary)]"
-                                        }
-                                    } else {
-                                        "border border-[var(--color-paper-border)] hover:border-[var(--color-paper-primary)]"
-                                    };
-                                    rsx! {
-                                        button {
-                                            key: "{asset.asset.id}",
-                                            class: "group relative aspect-square cursor-pointer overflow-hidden rounded-2xl bg-[var(--color-paper-theme)] transition-all hover:shadow-md {item_class}",
-                                            title: "{asset.asset.filename}",
-                                            onclick: move |_| {
-                                                // FnMut 闭包不能移出捕获变量，先 clone。
-                                                let selection = selection.clone();
-                                                if multi {
-                                                    toggle_selection(&mut selected.write(), selection);
-                                                } else {
-                                                    on_select.call(vec![selection]);
-                                                    closing.set(true);
-                                                    visible.set(false);
-                                                }
-                                            },
-                                            img {
-                                                class: "h-full w-full object-cover",
-                                                src: "{thumb}",
-                                                alt: asset.asset.alt.clone().unwrap_or_else(|| { asset.asset.filename.clone() }),
-                                                loading: "lazy",
-                                            }
-                                            if let Some(n) = order {
-                                                span { class: "absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-[var(--color-paper-accent)] text-xs font-bold text-[var(--color-paper-theme)] shadow",
-                                                    "{n + 1}"
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
+                PickerGallery {
+                    items: gallery_items.clone(),
+                    selected,
+                    multi,
+                    loading: loading_now,
+                    uploading: cover_uploading(),
+                    error: error(),
+                    uploading_preview: uploading_preview(),
+                    on_pick: move |picks| {
+                        on_select.call(picks);
+                        closing.set(true);
+                        visible.set(false);
+                    },
                 }
                 if show_pagination {
                     {
@@ -501,60 +384,124 @@ pub fn AssetPickerModal(
                     }
                 }
 
-                // 多选确认栏：计数 + 清空 + 批量插入（勾选顺序即插入顺序）。
                 if multi {
-                    {
-                        let count = selected.read().len();
-                        let count_label = if count == 0 {
-                            "未选择图片".to_string()
-                        } else {
-                            format!("已选 {count} 张")
-                        };
-                        let confirm_label = if count == 0 {
-                            "插入图片".to_string()
-                        } else {
-                            format!("插入 {count} 张图片")
-                        };
-                        rsx! {
-                            div { class: "flex shrink-0 items-center justify-between gap-3 px-6 py-3 shadow-[inset_0_1px_0_var(--color-paper-border)]",
-                                span { class: "text-sm text-[var(--color-paper-secondary)]",
-                                    "{count_label}"
-                                }
-                                div { class: "flex items-center gap-2",
-                                    button {
-                                        class: "{BTN_OUTLINE}",
-                                        class: if count == 0 { "pointer-events-none opacity-50" } else { "" },
-                                        disabled: count == 0,
-                                        onclick: move |_| selected.set(Vec::new()),
-                                        "清空"
-                                    }
-                                    button {
-                                        class: "{BTN_PRIMARY}",
-                                        class: if count == 0 { "pointer-events-none opacity-50" } else { "" },
-                                        disabled: count == 0,
-                                        onclick: move |_| {
-                                            let picks = selected();
-                                            if picks.is_empty() {
-                                                return;
-                                            }
-                                            on_select.call(picks);
-                                            closing.set(true);
-                                            visible.set(false);
-                                        },
-                                        "{confirm_label}"
+                    PickerSelectionFooter { selected, on_pick: move |picks| {
+                        on_select.call(picks);
+                        closing.set(true);
+                        visible.set(false);
+                    } }
+                }
+
+        }
+    }
+}
+
+/// The actual picker grid is shared; callers provide already loaded display rows.
+#[component]
+pub(crate) fn PickerGallery(
+    items: Vec<PickerAsset>,
+    mut selected: Signal<Vec<AssetSelection>>,
+    multi: bool,
+    loading: bool,
+    uploading: bool,
+    error: Option<String>,
+    uploading_preview: Option<String>,
+    on_pick: EventHandler<Vec<AssetSelection>>,
+) -> Element {
+    rsx! {
+        div { class: "relative min-h-0 flex-1 overflow-y-auto p-6",
+            if loading && !items.is_empty() {
+                div { class: "pointer-events-none absolute inset-0 z-10 flex items-start justify-center bg-[var(--color-paper-theme)]/35 pt-6 backdrop-blur-[1px]",
+                    aria_live: "polite", aria_label: "正在加载素材",
+                    span { class: "inline-flex items-center gap-2 rounded-full bg-[var(--color-paper-entry)] px-3 py-1.5 text-xs text-[var(--color-paper-secondary)] shadow-sm",
+                        span { class: "inline-flex h-4 w-4", dangerous_inner_html: SPINNER_SVG }
+                        "加载中…"
+                    }
+                }
+            }
+            if let Some(error) = error {
+                div { class: "rounded-2xl bg-red-500/10 px-4 py-3 text-center text-sm text-red-600 dark:text-red-400", "加载失败：{error}" }
+            } else if loading && items.is_empty() && !uploading {
+                div { class: "px-4 py-16 text-center text-sm text-[var(--color-paper-secondary)]", "加载中..." }
+            } else if items.is_empty() && !uploading {
+                div { class: "px-4 py-16 text-center text-sm text-[var(--color-paper-secondary)]", "素材库为空" }
+            } else {
+                div { class: "grid grid-cols-3 gap-4 sm:grid-cols-4",
+                    if uploading {
+                        div { class: "relative aspect-square overflow-hidden rounded-2xl border border-[var(--color-paper-accent)]/60 bg-[var(--color-paper-theme)] shadow-sm", aria_live: "polite", aria_label: "正在上传图片",
+                            if let Some(preview_url) = uploading_preview {
+                                img { class: "h-full w-full scale-110 object-cover blur-md opacity-60", src: "{preview_url}", alt: "正在上传" }
+                            } else {
+                                div { class: "absolute inset-0 animate-pulse bg-[var(--color-paper-code-bg)]" }
+                            }
+                            div { class: "absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/30 backdrop-blur-[2px]",
+                                span { class: "inline-flex h-5 w-5 text-white", dangerous_inner_html: SPINNER_SVG }
+                                span { class: "text-xs font-medium text-white drop-shadow", "上传中" }
+                            }
+                        }
+                    }
+                    for item in items.iter() {
+                        {
+                            let selection = AssetSelection { url: item.url.clone(), alt: item.alt.clone() };
+                            let order = if multi { selected.read().iter().position(|value| value.url == item.url) } else { None };
+                            let item_class = if order.is_some() {
+                                "border-2 border-[var(--color-paper-accent)] shadow-sm"
+                            } else if multi {
+                                "border-2 border-[var(--color-paper-border)] hover:border-[var(--color-paper-primary)]"
+                            } else {
+                                "border border-[var(--color-paper-border)] hover:border-[var(--color-paper-primary)]"
+                            };
+                            rsx! {
+                                button {
+                                    key: "{item.url}",
+                                    class: "group relative aspect-square cursor-pointer overflow-hidden rounded-2xl bg-[var(--color-paper-theme)] transition-all hover:shadow-md {item_class}",
+                                    title: "{item.filename}",
+                                    aria_label: "{item.filename}",
+                                    onclick: move |_| {
+                                        if multi {
+                                            toggle_selection(&mut selected.write(), selection.clone());
+                                        } else {
+                                            on_pick.call(vec![selection.clone()]);
+                                        }
+                                    },
+                                    img { class: "h-full w-full object-cover", src: "{item.thumbnail}", alt: item.alt.clone().unwrap_or_else(|| item.filename.clone()), loading: "lazy" }
+                                    if item.fresh { span { class: "absolute inset-x-2 bottom-2 rounded-full bg-black/55 px-2 py-1 text-center text-xs font-medium text-white backdrop-blur-sm", "刚上传" } }
+                                    if let Some(index) = order {
+                                        span { class: "absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-[var(--color-paper-accent)] text-xs font-bold text-[var(--color-paper-theme)] shadow", "{index + 1}" }
                                     }
                                 }
                             }
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+#[component]
+pub(crate) fn PickerSelectionFooter(
+    mut selected: Signal<Vec<AssetSelection>>,
+    on_pick: EventHandler<Vec<AssetSelection>>,
+) -> Element {
+    let count = selected.read().len();
+    rsx! {
+        div { class: "flex shrink-0 items-center justify-between gap-3 px-6 py-3 shadow-[inset_0_1px_0_var(--color-paper-border)]",
+            span { class: "text-sm text-[var(--color-paper-secondary)]", if count == 0 { "未选择图片" } else { "已选 {count} 张" } }
+            div { class: "flex items-center gap-2",
+                button { class: "{BTN_OUTLINE}", disabled: count == 0, onclick: move |_| selected.set(Vec::new()), "清空" }
+                button { class: "{BTN_PRIMARY}", disabled: count == 0, onclick: move |_| {
+                    let picks = selected();
+                    if !picks.is_empty() { on_pick.call(picks); }
+                }, "插入 {count} 张图片" }
+            }
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{toggle_selection, AssetSelection};
+    use super::{prepend_uploaded_asset, toggle_selection, AssetSelection, PickerAsset};
 
     fn sel(url: &str) -> AssetSelection {
         AssetSelection {
@@ -596,6 +543,27 @@ mod tests {
             },
         );
         assert!(selected.is_empty());
+    }
+
+    #[test]
+    fn uploaded_asset_does_not_duplicate_a_loaded_grid_url() {
+        let mut items = vec![PickerAsset {
+            url: "/uploads/a.webp".to_string(),
+            thumbnail: "/uploads/a.webp?thumb=300x300".to_string(),
+            filename: "a.webp".to_string(),
+            alt: Some("封面".to_string()),
+            fresh: false,
+        }];
+        prepend_uploaded_asset(&mut items, "/uploads/a.webp".to_string());
+        assert_eq!(items.len(), 1);
+        prepend_uploaded_asset(&mut items, "/uploads/b.webp".to_string());
+        assert_eq!(
+            items
+                .iter()
+                .map(|item| item.url.as_str())
+                .collect::<Vec<_>>(),
+            ["/uploads/b.webp", "/uploads/a.webp"]
+        );
     }
 
     #[test]

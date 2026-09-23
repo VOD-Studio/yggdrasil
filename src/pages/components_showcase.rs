@@ -12,6 +12,11 @@ use serde::Deserialize;
 use crate::models::post::{Post, PostListItem, PostNav, PostStatus};
 use crate::router::Route;
 
+mod browser_previews;
+mod business_previews;
+mod comment_previews;
+mod layout_article_previews;
+
 #[derive(Clone, Default, PartialEq)]
 pub struct ShowcaseFilters {
     pub category: String,
@@ -38,8 +43,24 @@ struct ComponentSpec {
     keys: Vec<[String; 2]>,
     source: String,
     code: String,
-    #[serde(default)]
-    kind: String,
+    preview_mode: PreviewMode,
+    usage_kind: UsageKind,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum PreviewMode {
+    Interactive,
+    Static,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum UsageKind {
+    Rust,
+    Api,
+    Router,
+    Browser,
 }
 
 static SHOWCASE: LazyLock<ShowcaseData> = LazyLock::new(|| {
@@ -191,6 +212,12 @@ pub fn ComponentShowcase() -> Element {
         })
         .collect();
     let count = shown.len();
+    let interactive_count = SHOWCASE
+        .components
+        .iter()
+        .filter(|spec| spec.preview_mode == PreviewMode::Interactive)
+        .count();
+    let static_count = SHOWCASE.components.len() - interactive_count;
 
     use_effect(move || {
         #[cfg(target_arch = "wasm32")]
@@ -221,8 +248,8 @@ pub fn ComponentShowcase() -> Element {
                     h1 { "组件图鉴" small { "↗ 01—{SHOWCASE.components.len()}" } }
                     p { class: "showcase-lead", "一枚按钮，一次勾选，一点恰好的回应。" br {} "这里收藏着，让 Yggdrasil 长成自己的界面细节。" }
                     div { class: "showcase-hero-meta",
-                        span { "24 枚基础组件" }
-                        span { "59 枚场景组件" }
+                        span { "{interactive_count} 枚交互预览" }
+                        span { "{static_count} 枚静态展示" }
                         span { "可以触碰的设计" }
                     }
                 }
@@ -278,12 +305,11 @@ pub fn ComponentShowcase() -> Element {
                         for spec in shown.iter() {
                             {
                                 let slug = spec.slug.clone();
-                                let name = spec.name.clone();
                                 rsx! {
                                     article { class: "showcase-card", id: "showcase-{slug}", key: "{slug}",
-                                        div { class: "showcase-card-preview",
+                                        div { class: "showcase-card-preview showcase-card-preview--{slug}",
                                             span { class: "showcase-card-index", "{spec.name.to_uppercase()} / {group_label(&spec.group)}" }
-                                            ComponentPreview { name: name.clone(), detail: false }
+                                            ComponentPreview { slug: slug.clone(), detail: false }
                                         }
                                         div { class: "showcase-card-caption",
                                             div { class: "showcase-card-title", h3 { "{spec.label}" } code { "{spec.name}" } }
@@ -317,6 +343,7 @@ pub fn ComponentDetail(component: String) -> Element {
     let mut filters = use_context::<Signal<ShowcaseFilters>>();
     let mut checked = use_signal(|| true);
     let mut danger = use_signal(|| false);
+    let mut reset_generation = use_signal(|| 0_u32);
     #[allow(unused_mut)]
     let mut copied = use_signal(|| false);
     let Some((index, spec)) = SHOWCASE
@@ -346,6 +373,13 @@ pub fn ComponentDetail(component: String) -> Element {
     #[cfg(target_arch = "wasm32")]
     let snippet_for_copy = snippet.clone();
     let highlighted_snippet = highlight_snippet(&snippet);
+    let workarea_class = if spec.preview_mode == PreviewMode::Static {
+        "showcase-live-workarea showcase-live-workarea-static"
+    } else if is_wide_preview(&spec.slug) {
+        "showcase-live-workarea showcase-live-workarea-wide"
+    } else {
+        "showcase-live-workarea"
+    };
     let previous = index.checked_sub(1).map(|i| &SHOWCASE.components[i]);
     let next = SHOWCASE.components.get(index + 1);
 
@@ -400,22 +434,35 @@ pub fn ComponentDetail(component: String) -> Element {
                         span { class: "showcase-detail-number", aria_hidden: "true", "{index + 1:02}" }
                     }
                     nav { class: "showcase-detail-tabs", aria_label: "本页章节",
-                        a { href: "#preview", "交互预览" }
+                        a { href: "#preview", if spec.preview_mode == PreviewMode::Interactive { "交互预览" } else { "组件预览" } }
                         a { href: "#usage", "用法" }
                         a { href: "#properties", "属性" }
                         if !spec.keys.is_empty() { a { href: "#keyboard", "操作方式" } }
                     }
                     section { class: "showcase-detail-section", id: "preview",
-                        div { class: "showcase-section-heading", h2 { "亲手试一试。" } span { "01 / LIVE PREVIEW" } }
+                        div { class: "showcase-section-heading",
+                            h2 { if spec.preview_mode == PreviewMode::Interactive { "亲手试一试。" } else { "组件预览。" } }
+                            span { if spec.preview_mode == PreviewMode::Interactive { "01 / LIVE PREVIEW" } else { "01 / COMPONENT PREVIEW" } }
+                        }
                         div { class: "showcase-live-panel",
                             div { class: "showcase-live-toolbar", span { "● {spec.name}" }
-                                button { r#type: "button", onclick: move |_| { checked.set(true); danger.set(false); }, "↻ 恢复默认" }
-                            }
-                            div { class: "showcase-live-workarea",
-                                div { class: "showcase-live-preview",
-                                    ComponentPreview { name: spec.name.clone(), detail: true, checked, danger }
+                                if spec.preview_mode == PreviewMode::Interactive {
+                                    button { r#type: "button", onclick: move |_| {
+                                        checked.set(true);
+                                        danger.set(false);
+                                        reset_generation.set(reset_generation().wrapping_add(1));
+                                    }, "↻ 恢复默认" }
                                 }
-                                div { class: "showcase-live-controls",
+                            }
+                            div { class: "{workarea_class}",
+                                div { class: "showcase-live-preview",
+                                    for generation in std::iter::once(reset_generation()) {
+                                        div { key: "{spec.slug}-{generation}", class: "showcase-preview-instance",
+                                            ComponentPreview { slug: spec.slug.clone(), detail: true, checked, danger }
+                                        }
+                                    }
+                                }
+                                if spec.preview_mode == PreviewMode::Interactive { div { class: "showcase-live-controls",
                                     if spec.name == "Checkbox" {
                                         p { "PROPERTIES / 调整属性" }
                                         div { class: "showcase-property-row", span { "checked" }
@@ -426,23 +473,23 @@ pub fn ComponentDetail(component: String) -> Element {
                                         }
                                         small { "调整属性，看看细节如何回应。" }
                                     } else {
-                                        p { if spec.kind == "reference" { "CONTEXT / 使用场景" } else { "STATES / 示例状态" } }
+                                        p { "STATES / 示例状态" }
                                         div { class: "showcase-state-chips",
                                             for state in spec.states.split(" · ") { span { "{state}" } }
                                         }
-                                        small { if spec.kind == "reference" { "场景组件需要页面数据；这里展示其用途和接口。" } else { "在左侧预览中体验这枚组件。" } }
+                                        small { if is_local_demo(&spec.slug) { "本地演示，内容不会保存。" } else { "在左侧预览中体验这枚组件。" } }
                                     }
-                                }
+                                } }
                             }
-                            div { class: "showcase-live-status", if spec.name == "Checkbox" { "checked: {checked()}　 danger: {danger()}" } else if spec.kind == "reference" { "COMPONENT REFERENCE · {spec.source}" } else { "INTERACTIVE SPECIMEN · 跟随全站主题" } }
+                            div { class: "showcase-live-status", if spec.name == "Checkbox" { "checked: {checked()}　 danger: {danger()}" } else if spec.preview_mode == PreviewMode::Interactive { "INTERACTIVE SPECIMEN · 跟随全站主题" } else { "COMPONENT PREVIEW · 跟随全站主题" } }
                         }
                     }
                     section { class: "showcase-detail-section", id: "usage",
                         div { class: "showcase-section-heading", h2 { "用法" } span { "02 / USAGE" } }
-                        p { class: "showcase-description", if spec.kind == "reference" { "下方展示组件接口；完整场景需要业务数据或页面上下文。" } else { "组件的调用片段；状态与回调由父组件提供。" } }
+                        p { class: "showcase-description", if spec.usage_kind == UsageKind::Api { "下方列出组件接口；正式调用由所在页面提供数据与回调。" } else { "下方展示组件的调用方式。" } }
                         div { class: "showcase-code-panel",
                             div { class: "showcase-code-toolbar",
-                                span { if spec.kind == "reference" { if spec.group == "browser" { "TYPESCRIPT · 模块入口" } else { "RUST · 组件接口" } } else { "RUST · DIOXUS RSX" } }
+                                span { match spec.usage_kind { UsageKind::Rust => "RUST · DIOXUS RSX", UsageKind::Api => "RUST · 组件接口", UsageKind::Router => "RUST · 路由配置", UsageKind::Browser => "TYPESCRIPT · 浏览器调用" } }
                                 button {
                                     r#type: "button",
                                     aria_label: "复制代码",
@@ -527,34 +574,142 @@ fn ShowcaseStillLife() -> Element {
 
 #[component]
 fn ComponentPreview(
-    name: String,
+    slug: String,
     detail: bool,
     #[props(default)] checked: Option<Signal<bool>>,
     #[props(default)] danger: Option<Signal<bool>>,
 ) -> Element {
-    if let Some(spec) = SHOWCASE.components.iter().find(|item| item.name == name) {
-        if spec.kind == "reference" {
-            if spec.group == "page-loading" {
-                return rsx! { PageSkeletonPreview { name: name.clone() } };
-            }
-            if matches!(
-                name.as_str(),
-                "PostCard"
-                    | "PostHeader"
-                    | "PostMeta"
-                    | "PostNavLinks"
-                    | "Breadcrumbs"
-                    | "PostCover"
-                    | "CommentCardShell"
-                    | "SqlResultTable"
-                    | "SearchIconLink"
-            ) {
-                return rsx! { SceneComponentPreview { name: name.clone() } };
-            }
-            return rsx! { CompositeSpecimen { name: name.clone(), group: spec.group.clone(), label: spec.label.clone(), source: spec.source.clone() } };
+    let spec = SHOWCASE
+        .components
+        .iter()
+        .find(|item| item.slug == slug)
+        .expect("预览必须对应图鉴条目");
+    match preview_route(&slug).expect("图鉴条目必须有专属预览分派") {
+        PreviewRoute::Live => {
+            rsx! { LiveComponentPreview { name: spec.name.clone(), detail, checked, danger } }
+        }
+        PreviewRoute::Skeleton => rsx! { PageSkeletonPreview { name: spec.name.clone() } },
+        PreviewRoute::Scene => rsx! { SceneComponentPreview { name: spec.name.clone() } },
+        PreviewRoute::Business => {
+            business_previews::preview(&slug, detail).expect("业务预览必须实现")
+        }
+        PreviewRoute::LayoutArticle => {
+            layout_article_previews::preview(&slug, detail).expect("布局与文章预览必须实现")
+        }
+        PreviewRoute::Comment => {
+            comment_previews::preview(&slug, detail).expect("评论预览必须实现")
+        }
+        PreviewRoute::Browser => {
+            browser_previews::preview(&slug, detail).expect("浏览器预览必须实现")
         }
     }
-    rsx! { LiveComponentPreview { name, detail, checked, danger } }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PreviewRoute {
+    Live,
+    Skeleton,
+    Scene,
+    Business,
+    LayoutArticle,
+    Comment,
+    Browser,
+}
+
+fn preview_route(slug: &str) -> Option<PreviewRoute> {
+    Some(match slug {
+        "checkbox"
+        | "toggle-switch"
+        | "form-select"
+        | "radio"
+        | "loading-button"
+        | "form-input"
+        | "time-picker"
+        | "form-label"
+        | "filter-tabs"
+        | "pagination"
+        | "tooltip"
+        | "popover"
+        | "modal-shell"
+        | "alert-box"
+        | "collapsible-settings-card"
+        | "status-badge"
+        | "tag-chip"
+        | "user-avatar"
+        | "sprout-placeholder"
+        | "empty-state"
+        | "skeleton-box"
+        | "skeleton-card"
+        | "skeleton-table"
+        | "delayed-skeleton" => PreviewRoute::Live,
+        "admin-comments-table-skeleton"
+        | "admin-comments-skeleton"
+        | "archive-skeleton"
+        | "assets-skeleton"
+        | "changelog-skeleton"
+        | "comment-list-skeleton"
+        | "admin-dashboard-skeleton"
+        | "friends-admin-list-skeleton"
+        | "friends-admin-skeleton"
+        | "friends-skeleton"
+        | "home-skeleton"
+        | "home-posts-skeleton"
+        | "logs-skeleton"
+        | "mcp-skeleton"
+        | "post-card-skeleton"
+        | "post-detail-body"
+        | "post-detail-skeleton"
+        | "post-preview-skeleton"
+        | "posts-table-skeleton"
+        | "posts-skeleton"
+        | "posts-trash-table-skeleton"
+        | "posts-trash-skeleton"
+        | "profile-skeleton"
+        | "runner-skeleton"
+        | "search-skeleton"
+        | "settings-admin-skeleton"
+        | "system-skeleton"
+        | "tags-skeleton"
+        | "tag-detail-skeleton"
+        | "tag-posts-loading"
+        | "write-skeleton" => PreviewRoute::Skeleton,
+        "comment-card-shell" | "search-icon-link" | "breadcrumbs" | "post-cover"
+        | "post-header" | "post-meta" | "post-nav-links" | "post-card" | "sql-result-table" => {
+            PreviewRoute::Scene
+        }
+        "asset-picker-modal" | "asset-upload-modal" | "code-runner" => PreviewRoute::Business,
+        "admin-layout" | "footer" | "frontend-layout" | "header" | "post-content"
+        | "post-footer" | "post-toc" => PreviewRoute::LayoutArticle,
+        "comment-form"
+        | "comment-item"
+        | "comment-list"
+        | "pending-comment-item"
+        | "comment-section" => PreviewRoute::Comment,
+        "tiptap-editor" | "code-mirror-editor" | "xterm-terminal" | "lightbox" => {
+            PreviewRoute::Browser
+        }
+        _ => return None,
+    })
+}
+
+fn is_local_demo(slug: &str) -> bool {
+    slug == "admin-layout"
+        || matches!(
+            preview_route(slug),
+            Some(PreviewRoute::Business | PreviewRoute::Comment | PreviewRoute::Browser)
+        )
+}
+
+fn is_wide_preview(slug: &str) -> bool {
+    matches!(
+        preview_route(slug),
+        Some(
+            PreviewRoute::Business
+                | PreviewRoute::LayoutArticle
+                | PreviewRoute::Comment
+                | PreviewRoute::Browser
+        )
+    )
 }
 
 #[component]
@@ -780,7 +935,7 @@ fn LiveComponentPreview(
                 }
             }
         },
-        _ => rsx! { span { "组件预览即将到来" } },
+        _ => panic!("基础组件缺少预览: {name}"),
     }
 }
 
@@ -869,37 +1024,12 @@ fn PageSkeletonPreview(name: String) -> Element {
         }
         "TagsSkeleton" => rsx! { crate::components::skeletons::tags_skeleton::TagsSkeleton {} },
         "WriteSkeleton" => rsx! { crate::components::skeletons::write_skeleton::WriteSkeleton {} },
-        _ => {
-            rsx! { crate::components::skeletons::atoms::SkeletonBox { class: "w-40 h-3 rounded" } }
-        }
+        _ => panic!("页面骨架缺少预览: {name}"),
     };
     rsx! { div { class: "showcase-skeleton-window",
         div { class: "showcase-skeleton-window-bar", span {} span {} span {} }
         div { class: "showcase-skeleton-scale", {skeleton} }
     } }
-}
-
-/// 有业务模型或权限要求的组件展示其实际所属场景和源码，避免触发公开页写操作。
-#[component]
-fn CompositeSpecimen(name: String, group: String, label: String, source: String) -> Element {
-    let motif = match group.as_str() {
-        "post" => "✦",
-        "comments" => "❞",
-        "assets" => "▣",
-        "layout" => "◫",
-        "tools" => "⌘",
-        "browser" => "⌘",
-        _ => "✳",
-    };
-    rsx! {
-        div { class: "showcase-reference-art", aria_label: "{label}的场景示意",
-            span { class: "showcase-reference-kicker", "{group_label(&group)} / COMPONENT" }
-            span { class: "showcase-reference-motif", aria_hidden: "true", "{motif}" }
-            strong { "{label}" }
-            code { "{name}" }
-            span { class: "showcase-reference-source", "{source}" }
-        }
-    }
 }
 
 fn sample_post() -> Post {
@@ -933,16 +1063,15 @@ fn sample_post() -> Post {
 #[component]
 fn SceneComponentPreview(name: String) -> Element {
     let cover_preview = name == "PostCover";
+    #[cfg(target_arch = "wasm32")]
     use_effect(move || {
         if !cover_preview {
             return;
         }
-        #[cfg(target_arch = "wasm32")]
         if let Some(window) = web_sys::window() {
             let selectors = js_sys::Array::new();
             selectors.push(&".showcase-cover-window".into());
             let selectors = js_sys::Object::from(selectors).into();
-            let _ = js_sys::Reflect::set(&window, &"__lightboxSelectors".into(), &selectors);
             crate::utils::js::invoke_optional_global(&window, "__initLightbox", &[selectors]);
         }
     });
@@ -1008,7 +1137,7 @@ fn SceneComponentPreview(name: String) -> Element {
             }
         },
         "SearchIconLink" => rsx! { crate::components::header::SearchIconLink {} },
-        _ => rsx! {},
+        _ => panic!("场景组件缺少预览: {name}"),
     };
     rsx! {
         div { class: if cover_preview { "showcase-scene-window showcase-cover-window" } else { "showcase-scene-window" }, aria_label: "{name} 的静态样例",
@@ -1083,6 +1212,11 @@ mod tests {
                 !component.code.trim().is_empty(),
                 "缺少用法: {}",
                 component.name
+            );
+            assert!(
+                preview_route(&component.slug).is_some(),
+                "缺少真实预览分派: {}",
+                component.slug
             );
         }
     }
