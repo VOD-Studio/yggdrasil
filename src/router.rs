@@ -20,6 +20,7 @@ use crate::pages::admin::{
 };
 use crate::pages::archives::Archives;
 use crate::pages::changelog::Changelog;
+use crate::pages::components_showcase::{ComponentDetail, ComponentShowcase};
 use crate::pages::friends::Friends;
 use crate::pages::home::{Home, HomePage};
 use crate::pages::login::Login;
@@ -72,6 +73,12 @@ pub enum Route {
             /// Agent 写作技能与 MCP 接入指南。
             #[route("/about/writing")]
             WritingGuide {},
+            /// 项目自写组件的公开图鉴。
+            #[route("/about/components")]
+            ComponentShowcase {},
+            /// 单枚组件的交互示例与用法。
+            #[route("/about/components/:component")]
+            ComponentDetail { component: String },
             /// 友链页
             #[route("/friends")]
             Friends {},
@@ -166,6 +173,8 @@ pub fn AppRouter() -> Element {
     let user = use_signal(|| None::<Arc<crate::models::user::PublicUser>>);
     let checked = use_signal(|| false);
     use_context_provider(|| UserContext { user, checked });
+    let showcase_filters = use_signal(crate::pages::components_showcase::ShowcaseFilters::default);
+    use_context_provider(|| showcase_filters);
 
     rsx! {
         document::Title { "Yggdrasil Blog" }

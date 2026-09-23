@@ -7,6 +7,7 @@ pub mod about;
 pub mod admin;
 pub mod archives;
 pub mod changelog;
+pub mod components_showcase;
 pub mod friends;
 pub mod home;
 pub mod login;

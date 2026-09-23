@@ -1,0 +1,2500 @@
+{
+  "groups": [
+    [
+      "all",
+      "全部组件"
+    ],
+    [
+      "form",
+      "输入与选择"
+    ],
+    [
+      "action",
+      "操作与导航"
+    ],
+    [
+      "overlay",
+      "浮层与反馈"
+    ],
+    [
+      "display",
+      "展示与容器"
+    ],
+    [
+      "loading",
+      "加载与占位"
+    ],
+    [
+      "page-loading",
+      "页面骨架"
+    ],
+    [
+      "assets",
+      "素材"
+    ],
+    [
+      "post",
+      "文章"
+    ],
+    [
+      "comments",
+      "评论"
+    ],
+    [
+      "layout",
+      "页面布局"
+    ],
+    [
+      "tools",
+      "后台工具"
+    ],
+    [
+      "browser",
+      "浏览器模块"
+    ]
+  ],
+  "components": [
+    {
+      "name": "Checkbox",
+      "slug": "checkbox",
+      "label": "复选框",
+      "group": "form",
+      "summary": "从一个小小的勾选，确认心中的选择。",
+      "states": "默认 · 已选 · 危险态",
+      "description": "在多个选项中自由选择，或确认一项操作。勾选时，以轻巧的描边动画给予回应。",
+      "props": [
+        [
+          "checked",
+          "bool",
+          "必填",
+          "当前是否选中，由父组件控制。"
+        ],
+        [
+          "onchange",
+          "EventHandler<bool>",
+          "必填",
+          "选择发生变化时，返回新的布尔值。"
+        ],
+        [
+          "danger",
+          "bool",
+          "false",
+          "使用红色强调，适合需要谨慎确认的操作。"
+        ]
+      ],
+      "keys": [
+        [
+          "Tab",
+          "移动焦点"
+        ],
+        [
+          "Space",
+          "切换选中状态"
+        ]
+      ],
+      "source": "src/components/ui.rs",
+      "code": "let mut checked = use_signal(|| false);\n\nrsx! {\n    Checkbox {\n        checked: checked(),\n        onchange: move |v| checked.set(v),\n    }\n}"
+    },
+    {
+      "name": "ToggleSwitch",
+      "slug": "toggle-switch",
+      "label": "开关",
+      "group": "form",
+      "summary": "轻轻拨动，让设置进入另一种状态。",
+      "states": "关闭 · 开启",
+      "description": "直接开启或关闭一项设置。滑块的位置与主题色共同传达当前状态。",
+      "props": [
+        [
+          "checked",
+          "bool",
+          "必填",
+          "当前开关状态。"
+        ],
+        [
+          "ontoggle",
+          "Callback<()>",
+          "必填",
+          "点击后通知父组件切换状态。"
+        ],
+        [
+          "aria_label",
+          "Option<String>",
+          "None",
+          "开关的无障碍名称。"
+        ]
+      ],
+      "keys": [
+        [
+          "Tab",
+          "移动焦点"
+        ],
+        [
+          "Space / Enter",
+          "切换开关"
+        ]
+      ],
+      "source": "src/components/forms.rs",
+      "code": "let mut enabled = use_signal(|| true);\nrsx! {\n    ToggleSwitch {\n        checked: enabled(),\n        aria_label: Some(\"接收更新\".to_string()),\n        ontoggle: move |_| enabled.toggle(),\n    }\n}"
+    },
+    {
+      "name": "FormSelect",
+      "slug": "form-select",
+      "label": "下拉选择",
+      "group": "form",
+      "summary": "在有序的选项中，找到合适的那一个。",
+      "states": "展开 · 键盘导航",
+      "description": "使用统一主题的选择面板展示选项，支持泛型值绑定和键盘导航。",
+      "props": [
+        [
+          "value",
+          "T",
+          "必填",
+          "当前选中的值。"
+        ],
+        [
+          "options",
+          "Vec<(T, &'static str)>",
+          "必填",
+          "选项值与显示文本。"
+        ],
+        [
+          "onchange",
+          "EventHandler<T>",
+          "必填",
+          "返回选择的新值。"
+        ],
+        [
+          "id",
+          "Option<String>",
+          "自动生成",
+          "关联表单标签。"
+        ],
+        [
+          "trigger_class",
+          "Option<&'static str>",
+          "默认样式",
+          "覆盖触发器样式。"
+        ],
+        [
+          "aria_label",
+          "Option<&'static str>",
+          "None",
+          "触发器的无障碍名称。"
+        ]
+      ],
+      "keys": [
+        [
+          "↑ ↓",
+          "移动选项"
+        ],
+        [
+          "Enter",
+          "确认选择"
+        ],
+        [
+          "Escape",
+          "关闭面板"
+        ]
+      ],
+      "source": "src/components/forms.rs",
+      "code": "let mut topic = use_signal(|| \"all\".to_string());\nrsx! {\n    FormSelect {\n        value: topic(),\n        options: vec![(\"all\".to_string(), \"全部\"), (\"design\".to_string(), \"设计\")],\n        onchange: move |value| topic.set(value),\n    }\n}"
+    },
+    {
+      "name": "Radio",
+      "slug": "radio",
+      "label": "单选框",
+      "group": "form",
+      "summary": "让每一次选择，都清晰而确定。",
+      "states": "未选 · 已选 · 禁用",
+      "description": "从一组互斥选项中选择一项。相同 name 连接同组控件，并保留原生键盘行为。",
+      "props": [
+        [
+          "name",
+          "String",
+          "必填",
+          "同一组单选框共用的名称。"
+        ],
+        [
+          "value",
+          "String",
+          "必填",
+          "当前选项的值。"
+        ],
+        [
+          "checked",
+          "bool",
+          "必填",
+          "是否选中当前选项。"
+        ],
+        [
+          "onchange",
+          "EventHandler<String>",
+          "必填",
+          "返回被选中选项的值。"
+        ],
+        [
+          "disabled",
+          "bool",
+          "false",
+          "禁止选择此项。"
+        ]
+      ],
+      "keys": [
+        [
+          "Tab",
+          "进入选项组"
+        ],
+        [
+          "↑ ↓ ← →",
+          "切换选项"
+        ]
+      ],
+      "source": "src/components/ui.rs",
+      "code": "let mut visibility = use_signal(|| \"public\".to_string());\nrsx! {\n    label {\n        Radio {\n            name: \"visibility\",\n            value: \"public\",\n            checked: visibility() == \"public\",\n            onchange: move |value| visibility.set(value),\n        }\n        \"公开分享\"\n    }\n}"
+    },
+    {
+      "name": "LoadingButton",
+      "slug": "loading-button",
+      "label": "操作按钮",
+      "group": "action",
+      "summary": "等待，也可以是一段从容的体验。",
+      "states": "默认 · 加载 · 禁用",
+      "description": "在正常、加载与禁用之间切换，加载时保留按钮宽度，减少布局跳动。",
+      "props": [
+        [
+          "label",
+          "String",
+          "必填",
+          "按钮正常状态的文案。"
+        ],
+        [
+          "loading",
+          "bool",
+          "必填",
+          "显示加载指示并阻止重复操作。"
+        ],
+        [
+          "disabled",
+          "bool",
+          "false",
+          "设置禁用状态。"
+        ],
+        [
+          "variant",
+          "&'static str",
+          "primary",
+          "primary 或 sm。"
+        ],
+        [
+          "onclick",
+          "EventHandler<()>",
+          "必填",
+          "点击回调。"
+        ]
+      ],
+      "keys": [
+        [
+          "Tab",
+          "聚焦按钮"
+        ],
+        [
+          "Space / Enter",
+          "执行操作"
+        ]
+      ],
+      "source": "src/components/ui.rs",
+      "code": "let mut saved = use_signal(|| false);\nrsx! {\n    LoadingButton {\n        label: if saved() { \"已保存\" } else { \"保存设置\" },\n        loading: false,\n        onclick: move |_| saved.set(true),\n    }\n}"
+    },
+    {
+      "name": "FormInput",
+      "slug": "form-input",
+      "label": "输入框",
+      "group": "form",
+      "summary": "给文字一个安静的落点。",
+      "states": "文本 · 密码 · 禁用",
+      "description": "统一输入框的主题、间距与焦点样式，支持文本、密码等原生输入类型。",
+      "props": [
+        [
+          "value",
+          "String",
+          "必填",
+          "当前输入内容。"
+        ],
+        [
+          "oninput",
+          "EventHandler<String>",
+          "必填",
+          "输入时返回新内容。"
+        ],
+        [
+          "r#type",
+          "&'static str",
+          "必填",
+          "例如 text、email 或 password。"
+        ],
+        [
+          "placeholder",
+          "&'static str",
+          "必填",
+          "空内容时的提示。"
+        ],
+        [
+          "disabled",
+          "bool",
+          "false",
+          "禁止编辑。"
+        ],
+        [
+          "mono",
+          "bool",
+          "false",
+          "使用等宽字体。"
+        ]
+      ],
+      "keys": [
+        [
+          "Tab",
+          "移动焦点"
+        ],
+        [
+          "← →",
+          "移动光标"
+        ]
+      ],
+      "source": "src/components/forms.rs",
+      "code": "let mut title = use_signal(String::new);\nrsx! {\n    FormInput {\n        r#type: \"text\",\n        placeholder: \"一个新的开始…\",\n        value: title(),\n        oninput: move |value| title.set(value),\n    }\n}"
+    },
+    {
+      "name": "TimePicker",
+      "slug": "time-picker",
+      "label": "时间选择",
+      "group": "form",
+      "summary": "为下一次发生，留一个准确的时刻。",
+      "states": "小时 · 分钟",
+      "description": "用两个主题化选择框组合小时与分钟，返回清晰的 HH:MM 时间值。",
+      "props": [
+        [
+          "value",
+          "String",
+          "必填",
+          "HH:MM 格式的当前值。"
+        ],
+        [
+          "onchange",
+          "EventHandler<String>",
+          "必填",
+          "时间改变时返回新的 HH:MM。"
+        ],
+        [
+          "id",
+          "Option<String>",
+          "None",
+          "小时触发器的标签关联 ID。"
+        ]
+      ],
+      "keys": [
+        [
+          "Tab",
+          "切换小时与分钟"
+        ],
+        [
+          "↑ ↓",
+          "选择时间"
+        ]
+      ],
+      "source": "src/components/forms.rs",
+      "code": "let mut time = use_signal(|| \"08:30\".to_string());\nrsx! {\n    TimePicker {\n        value: time(),\n        onchange: move |value| time.set(value),\n    }\n}"
+    },
+    {
+      "name": "FormLabel",
+      "slug": "form-label",
+      "label": "表单标签",
+      "group": "form",
+      "summary": "用清晰的名字，解释一次输入。",
+      "states": "标签关联",
+      "description": "为输入框提供明确的名称，通过 html_for 关联输入元素。",
+      "props": [
+        [
+          "label",
+          "String",
+          "必填",
+          "标签显示的文本。"
+        ],
+        [
+          "html_for",
+          "Option<String>",
+          "None",
+          "关联 input 的 id。"
+        ]
+      ],
+      "keys": [
+        [
+          "点击标签",
+          "聚焦关联输入框"
+        ]
+      ],
+      "source": "src/components/forms.rs",
+      "code": "let mut title = use_signal(String::new);\nrsx! {\n    div {\n        FormLabel {\n            label: \"文章标题\",\n            html_for: Some(\"post-title\".to_string()),\n        }\n        FormInput {\n            id: Some(\"post-title\".to_string()),\n            r#type: \"text\",\n            placeholder: \"点击标签也能聚焦这里\",\n            value: title(),\n            oninput: move |value| title.set(value),\n        }\n    }\n}"
+    },
+    {
+      "name": "FilterTabs",
+      "slug": "filter-tabs",
+      "label": "筛选标签页",
+      "group": "action",
+      "summary": "在不同视角之间，自然地切换。",
+      "states": "当前 · 切换",
+      "description": "切换列表的筛选条件，用轻缓移动的底线表达当前选项。",
+      "props": [
+        [
+          "items",
+          "Vec<(&'static str, &'static str)>",
+          "必填",
+          "选项的值与标签。"
+        ],
+        [
+          "active_value",
+          "String",
+          "必填",
+          "当前选中的值。"
+        ],
+        [
+          "on_change",
+          "EventHandler<String>",
+          "必填",
+          "切换后返回新值。"
+        ]
+      ],
+      "keys": [
+        [
+          "Tab",
+          "移动焦点"
+        ],
+        [
+          "Space / Enter",
+          "切换筛选"
+        ]
+      ],
+      "source": "src/components/ui.rs",
+      "code": "let mut filter = use_signal(|| \"all\".to_string());\nrsx! {\n    FilterTabs {\n        items: vec![(\"all\", \"全部\"), (\"published\", \"已发布\")],\n        active_value: filter(),\n        on_change: move |value| filter.set(value),\n    }\n}"
+    },
+    {
+      "name": "Pagination",
+      "slug": "pagination",
+      "label": "分页导航",
+      "group": "action",
+      "summary": "每一次翻页，都是一次继续。",
+      "states": "前台 · 后台 · 跳页",
+      "description": "为前后台列表提供一致的上一页、下一页与页码信息，支持路由和回调两种方式。",
+      "props": [
+        [
+          "current_page",
+          "i32",
+          "必填",
+          "当前页码，从 1 开始。"
+        ],
+        [
+          "total",
+          "i64",
+          "必填",
+          "全部记录数。"
+        ],
+        [
+          "per_page",
+          "i32",
+          "必填",
+          "每页记录数，必须大于 0。"
+        ],
+        [
+          "variant",
+          "&'static str",
+          "必填",
+          "admin 或 frontend。"
+        ],
+        [
+          "unit",
+          "&'static str",
+          "必填",
+          "数量单位，例如篇。"
+        ],
+        [
+          "on_jump",
+          "Option<EventHandler<i32>>",
+          "None",
+          "后台回调分页的跳页处理。"
+        ]
+      ],
+      "keys": [
+        [
+          "Tab",
+          "选择翻页操作"
+        ],
+        [
+          "Enter",
+          "翻页或提交页码"
+        ]
+      ],
+      "source": "src/components/ui.rs",
+      "code": "let mut page = use_signal(|| 1i32);\nrsx! {\n    Pagination::<Route> {\n        variant: \"admin\",\n        current_page: page(),\n        total: 80,\n        per_page: 10,\n        unit: \"篇\",\n        on_prev: move |_| page.set((page() - 1).max(1)),\n        on_next: move |_| page.set((page() + 1).min(8)),\n    }\n}"
+    },
+    {
+      "name": "Tooltip",
+      "slug": "tooltip",
+      "label": "文字提示",
+      "group": "overlay",
+      "summary": "恰到好处地，多说一句。",
+      "states": "上方 · 下方 · 对齐",
+      "description": "在触发器附近展示一条简短说明，提供上下位置与水平对齐选项。",
+      "props": [
+        [
+          "tip",
+          "String",
+          "必填",
+          "提示内容。"
+        ],
+        [
+          "children",
+          "Element",
+          "必填",
+          "触发提示的元素。"
+        ],
+        [
+          "placement",
+          "&'static str",
+          "top",
+          "top 或 bottom。"
+        ],
+        [
+          "align",
+          "&'static str",
+          "center",
+          "center、start 或 end。"
+        ]
+      ],
+      "keys": [
+        [
+          "鼠标停留",
+          "显示提示"
+        ]
+      ],
+      "source": "src/components/ui.rs",
+      "code": "rsx! {\n    Tooltip {\n        tip: \"一条恰到好处的说明\",\n        button { \"停留片刻\" }\n    }\n}"
+    },
+    {
+      "name": "Popover",
+      "slug": "popover",
+      "label": "交互浮层",
+      "group": "overlay",
+      "summary": "把下一步，放在触手可及的地方。",
+      "states": "确认 · 关闭",
+      "description": "在触发位置旁容纳轻量确认或小表单，用受控状态管理浮层的显示与关闭。",
+      "props": [
+        [
+          "open",
+          "bool",
+          "必填",
+          "是否显示面板。"
+        ],
+        [
+          "anchor_x / anchor_y",
+          "i32",
+          "必填",
+          "视口内的锚点坐标。"
+        ],
+        [
+          "children",
+          "Element",
+          "必填",
+          "浮层内容。"
+        ],
+        [
+          "on_close",
+          "EventHandler<()>",
+          "必填",
+          "请求关闭浮层。"
+        ],
+        [
+          "placement",
+          "&'static str",
+          "top",
+          "top 或 bottom。"
+        ],
+        [
+          "align",
+          "&'static str",
+          "center",
+          "center、start 或 end。"
+        ]
+      ],
+      "keys": [
+        [
+          "Escape",
+          "关闭浮层"
+        ]
+      ],
+      "source": "src/components/ui.rs",
+      "code": "let mut open = use_signal(|| false);\nlet mut anchor_x = use_signal(|| 0i32);\nlet mut anchor_y = use_signal(|| 0i32);\nrsx! {\n    div {\n        button {\n            onclick: move |event: MouseEvent| {\n                #[cfg(target_arch = \"wasm32\")]\n                {\n                    use dioxus::html::InteractionLocation;\n                    let point = event.client_coordinates();\n                    anchor_x.set(point.x as i32);\n                    anchor_y.set(point.y as i32);\n                }\n                open.set(true);\n            },\n            \"打开浮层\"\n        }\n        Popover {\n            open: open(),\n            anchor_x: anchor_x(),\n            anchor_y: anchor_y(),\n            on_close: move |_| open.set(false),\n            p { \"保留这片灵感？\" }\n        }\n    }\n}"
+    },
+    {
+      "name": "ModalShell",
+      "slug": "modal-shell",
+      "label": "弹窗外壳",
+      "group": "overlay",
+      "summary": "为需要专注的内容，留一处空间。",
+      "states": "打开 · 关闭",
+      "description": "为弹窗统一遮罩、面板和开合动画。标题栏和具体内容由调用方提供。",
+      "props": [
+        [
+          "visible",
+          "Signal<bool>",
+          "必填",
+          "弹窗显隐状态。"
+        ],
+        [
+          "closing",
+          "Signal<bool>",
+          "必填",
+          "共享关闭动画状态。"
+        ],
+        [
+          "title",
+          "&'static str",
+          "必填",
+          "弹窗无障碍名称。"
+        ],
+        [
+          "children",
+          "Element",
+          "必填",
+          "弹窗内部内容。"
+        ],
+        [
+          "panel_class",
+          "&'static str",
+          "w-full max-w-lg",
+          "面板宽度等布局样式。"
+        ]
+      ],
+      "keys": [
+        [
+          "演示关闭按钮",
+          "关闭示例弹窗"
+        ]
+      ],
+      "source": "src/components/ui.rs",
+      "code": "let mut visible = use_signal(|| false);\nlet mut closing = use_signal(|| false);\nrsx! {\n    div {\n        button { onclick: move |_| visible.set(true), \"打开弹窗\" }\n        ModalShell {\n            visible,\n            closing,\n            title: \"留住一片灵感\",\n            h2 { \"留住一片灵感。\" }\n            button {\n                onclick: move |_| {\n                    closing.set(true);\n                    visible.set(false);\n                },\n                \"收好了\"\n            }\n        }\n    }\n}"
+    },
+    {
+      "name": "AlertBox",
+      "slug": "alert-box",
+      "label": "状态提示",
+      "group": "overlay",
+      "summary": "让结果被看见，也被理解。",
+      "states": "成功 · 错误 · 普通",
+      "description": "把成功、错误或普通结果放在明确的提示区域，让反馈自然出现在操作附近。",
+      "props": [
+        [
+          "message",
+          "String",
+          "必填",
+          "需要显示的消息。"
+        ],
+        [
+          "variant",
+          "&'static str",
+          "必填",
+          "error、success 或默认普通样式。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/forms.rs",
+      "code": "rsx! {\n    AlertBox {\n        message: \"已保存，新的想法正在生长。\",\n        variant: \"success\",\n    }\n}"
+    },
+    {
+      "name": "CollapsibleSettingsCard",
+      "slug": "collapsible-settings-card",
+      "label": "折叠卡片",
+      "group": "display",
+      "summary": "需要的时候，再展开一点细节。",
+      "states": "收起 · 展开",
+      "description": "将设置内容收进可展开的卡片，用标题、摘要和指示灯概括当前状态。",
+      "props": [
+        [
+          "title",
+          "String",
+          "必填",
+          "卡片标题。"
+        ],
+        [
+          "summary",
+          "String",
+          "必填",
+          "当前设置的简短摘要。"
+        ],
+        [
+          "enabled",
+          "bool",
+          "必填",
+          "状态指示灯是否使用强调色。"
+        ],
+        [
+          "children",
+          "Element",
+          "必填",
+          "展开后的内容。"
+        ],
+        [
+          "default_open",
+          "bool",
+          "false",
+          "首次挂载时是否展开。"
+        ],
+        [
+          "on_toggle",
+          "Option<EventHandler<()>>",
+          "None",
+          "展开状态变化的回调。"
+        ]
+      ],
+      "keys": [
+        [
+          "Tab",
+          "聚焦标题"
+        ],
+        [
+          "Space / Enter",
+          "展开或收起"
+        ]
+      ],
+      "source": "src/components/ui.rs",
+      "code": "rsx! {\n    CollapsibleSettingsCard {\n        title: \"自动备份\",\n        summary: \"每天 08:30 留下一份记录\",\n        enabled: true,\n        p { \"这里放置详细设置。\" }\n    }\n}"
+    },
+    {
+      "name": "StatusBadge",
+      "slug": "status-badge",
+      "label": "状态徽章",
+      "group": "display",
+      "summary": "用一个轻巧的标记，交代当前状态。",
+      "states": "颜色 · 文案",
+      "description": "以紧凑标记表达状态，颜色由调用方按具体语义提供。",
+      "props": [
+        [
+          "label",
+          "String",
+          "必填",
+          "徽章文字。"
+        ],
+        [
+          "color_class",
+          "&'static str",
+          "必填",
+          "背景与文字颜色类。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/ui.rs",
+      "code": "rsx! {\n    StatusBadge {\n        color_class: \"bg-green-500/10 text-green-600\",\n        label: \"已发布\",\n    }\n}"
+    },
+    {
+      "name": "TagChip",
+      "slug": "tag-chip",
+      "label": "标签",
+      "group": "display",
+      "summary": "让零散的内容，有迹可循。",
+      "states": "描边 · 软底 · 文字",
+      "description": "将标签展示为可跳转的胶囊或文字，适配文章卡片、归档与标签列表。",
+      "props": [
+        [
+          "label",
+          "String",
+          "必填",
+          "标签名称。"
+        ],
+        [
+          "to",
+          "R: Routable",
+          "必填",
+          "点击后的目标路由。"
+        ],
+        [
+          "variant",
+          "&'static str",
+          "outline",
+          "archive、solid、outline 或 text。"
+        ],
+        [
+          "count",
+          "Option<i64>",
+          "None",
+          "可选的文章数量。"
+        ],
+        [
+          "stop_propagation",
+          "bool",
+          "false",
+          "阻止点击事件冒泡。"
+        ]
+      ],
+      "keys": [
+        [
+          "Tab",
+          "聚焦标签"
+        ],
+        [
+          "Enter",
+          "打开标签页"
+        ]
+      ],
+      "source": "src/components/ui.rs",
+      "code": "rsx! {\n    TagChip {\n        label: \"设计\",\n        to: Route::TagDetail { tag: \"设计\".to_string() },\n        variant: \"outline\",\n        count: 12,\n    }\n}"
+    },
+    {
+      "name": "UserAvatar",
+      "slug": "user-avatar",
+      "label": "用户头像",
+      "group": "display",
+      "summary": "一张头像，也有温柔的替补。",
+      "states": "图片 · 首字 · 树芽",
+      "description": "显示用户头像，无图片时回退为名字首字，图片加载失败时显示树芽。",
+      "props": [
+        [
+          "name",
+          "String",
+          "必填",
+          "显示名与图片替代文本。"
+        ],
+        [
+          "avatar_url",
+          "Option<String>",
+          "None",
+          "头像图片地址。"
+        ],
+        [
+          "class",
+          "&'static str",
+          "必填",
+          "尺寸、形状与字号。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/ui.rs",
+      "code": "rsx! {\n    UserAvatar {\n        name: \"叶子\",\n        avatar_url: None,\n        class: \"w-10 h-10 rounded-full text-sm\",\n    }\n}"
+    },
+    {
+      "name": "SproutPlaceholder",
+      "slug": "sprout-placeholder",
+      "label": "树芽占位",
+      "group": "display",
+      "summary": "空缺的地方，也可以长出新意。",
+      "states": "封面 · 头像",
+      "description": "封面与头像共用的树芽图形，在内容缺失时保留站点的视觉语言。",
+      "props": [
+        [
+          "class",
+          "&'static str",
+          "必填",
+          "树芽的尺寸与颜色样式。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/ui.rs",
+      "code": "rsx! {\n    SproutPlaceholder { class: \"w-8 h-8 text-paper-accent\" }\n}"
+    },
+    {
+      "name": "EmptyState",
+      "slug": "empty-state",
+      "label": "空状态",
+      "group": "display",
+      "summary": "还没有内容，也是故事的开始。",
+      "states": "标题 · 说明 · 行动",
+      "description": "通过插画、标题和说明呈现空列表，可提供一个明确的下一步操作。",
+      "props": [
+        [
+          "title",
+          "String",
+          "还没有文章",
+          "空状态标题。"
+        ],
+        [
+          "description",
+          "String",
+          "空字符串",
+          "补充说明。"
+        ],
+        [
+          "image",
+          "String",
+          "默认插画",
+          "展示图片的路径。"
+        ],
+        [
+          "action",
+          "Option<EmptyStateAction>",
+          "None",
+          "可选操作按钮的文案与回调。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/empty_state.rs",
+      "code": "rsx! {\n    EmptyState {\n        title: \"这里，等待第一颗种子。\",\n        description: \"写下一个新的开始。\",\n    }\n}"
+    },
+    {
+      "name": "SkeletonBox",
+      "slug": "skeleton-box",
+      "label": "骨架块",
+      "group": "loading",
+      "summary": "内容到来之前，先让轮廓出现。",
+      "states": "尺寸 · 动效",
+      "description": "用基础矩形占据内容加载后的空间，可以组合出文字、图片等轮廓。",
+      "props": [
+        [
+          "class",
+          "&'static str",
+          "必填",
+          "宽度、高度与形状。"
+        ],
+        [
+          "style",
+          "Option<&'static str>",
+          "None",
+          "可选行内样式。"
+        ],
+        [
+          "animate",
+          "bool",
+          "true",
+          "是否显示脉冲动画。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/skeletons/atoms.rs",
+      "code": "rsx! {\n    SkeletonBox { class: \"w-48 h-3 rounded\", animate: true }\n}"
+    },
+    {
+      "name": "SkeletonCard",
+      "slug": "skeleton-card",
+      "label": "骨架卡片",
+      "group": "loading",
+      "summary": "提前保留一张卡片的位置。",
+      "states": "组合占位",
+      "description": "为内容骨架提供统一的卡片容器，内部可以组合文字、头像和图片占位。",
+      "props": [
+        [
+          "class",
+          "Option<&'static str>",
+          "None",
+          "追加布局样式。"
+        ],
+        [
+          "children",
+          "Element",
+          "必填",
+          "卡片内的占位元素。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/skeletons/atoms.rs",
+      "code": "rsx! {\n    SkeletonCard { class: Some(\"p-6\"),\n        SkeletonBox { class: \"w-32 h-4 rounded\" }\n    }\n}"
+    },
+    {
+      "name": "SkeletonTable",
+      "slug": "skeleton-table",
+      "label": "表格骨架",
+      "group": "loading",
+      "summary": "在等待中，保持列表的秩序。",
+      "states": "列 · 行",
+      "description": "用列规格与行数构造表格加载轮廓，保持加载前后的视觉秩序。",
+      "props": [
+        [
+          "columns",
+          "Vec<SkeletonTableColumn>",
+          "必填",
+          "每列的表头与内容规格。"
+        ],
+        [
+          "rows",
+          "usize",
+          "必填",
+          "占位行数。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/skeletons/atoms.rs",
+      "code": "let columns = vec![SkeletonTableColumn {\n    header_class: \"px-3 py-2\",\n    header_box_class: \"w-10 h-3 rounded\",\n    cell_class: \"px-3 py-2\",\n    cell_shape: SkeletonCellShape::Single(\"w-12 h-3 rounded\"),\n}];\nrsx! {\n    SkeletonTable { columns, rows: 3 }\n}"
+    },
+    {
+      "name": "DelayedSkeleton",
+      "slug": "delayed-skeleton",
+      "label": "延迟骨架",
+      "group": "loading",
+      "summary": "只在需要等待时，出现。",
+      "states": "延迟展示",
+      "description": "在内容需要等待时再显示骨架，减少快速加载时出现的闪烁。",
+      "props": [
+        [
+          "children",
+          "Element",
+          "必填",
+          "加载期间展示的骨架。"
+        ],
+        [
+          "pulse",
+          "bool",
+          "true",
+          "是否启用脉冲效果。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/skeletons/delayed_skeleton.rs",
+      "code": "rsx! {\n    DelayedSkeleton {\n        SkeletonBox { class: \"w-48 h-3 rounded\" }\n    }\n}"
+    },
+    {
+      "name": "AdminLayout",
+      "slug": "admin-layout",
+      "label": "后台布局",
+      "group": "layout",
+      "summary": "后台布局，用于页面导航与结构。",
+      "states": "业务组合 · 场景组件",
+      "description": "后台布局是项目自写的页面导航与结构组件。它需要相应的业务数据或页面上下文；这里展示它的用途、接口和源码位置。",
+      "props": [
+        [
+          "—",
+          "无",
+          "—",
+          "此组件不接收显式属性。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/admin_layout.rs",
+      "code": "pub fn AdminLayout() -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "AssetPickerModal",
+      "slug": "asset-picker-modal",
+      "label": "素材选择弹窗",
+      "group": "assets",
+      "summary": "素材选择弹窗，用于素材管理。",
+      "states": "业务组合 · 场景组件",
+      "description": "素材选择弹窗是项目自写的素材管理组件。它需要相应的业务数据或页面上下文；这里展示它的用途、接口和源码位置。",
+      "props": [
+        [
+          "visible",
+          "Signal<bool>",
+          "由调用方提供",
+          "素材选择弹窗的 visible 参数。"
+        ],
+        [
+          "on_select",
+          "EventHandler<Vec<AssetSelection>>",
+          "由调用方提供",
+          "素材选择弹窗的 on_select 参数。"
+        ],
+        [
+          "cover_uploading",
+          "Signal<bool>",
+          "由调用方提供",
+          "素材选择弹窗的 cover_uploading 参数。"
+        ],
+        [
+          "title",
+          "&'static str",
+          "由调用方提供",
+          "素材选择弹窗的 title 参数。"
+        ],
+        [
+          "multi",
+          "bool",
+          "由调用方提供",
+          "素材选择弹窗的 multi 参数。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/assets/asset_picker.rs",
+      "code": "pub fn AssetPickerModal( mut visible: Signal<bool>, on_select: EventHandler<Vec<AssetSelection>>, cover_uploading: Signal<bool>, #[props(default = \"选择封面图\")] title: &'static str, #[props(default)] multi: bool, ) -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "AssetUploadModal",
+      "slug": "asset-upload-modal",
+      "label": "素材上传弹窗",
+      "group": "assets",
+      "summary": "素材上传弹窗，用于素材管理。",
+      "states": "业务组合 · 场景组件",
+      "description": "素材上传弹窗是项目自写的素材管理组件。它需要相应的业务数据或页面上下文；这里展示它的用途、接口和源码位置。",
+      "props": [
+        [
+          "visible",
+          "Signal<bool>",
+          "由调用方提供",
+          "素材上传弹窗的 visible 参数。"
+        ],
+        [
+          "on_uploaded",
+          "EventHandler<()>",
+          "由调用方提供",
+          "素材上传弹窗的 on_uploaded 参数。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/assets/asset_upload.rs",
+      "code": "pub fn AssetUploadModal(mut visible: Signal<bool>, on_uploaded: EventHandler<()>) -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "CodeRunner",
+      "slug": "code-runner",
+      "label": "代码运行器",
+      "group": "tools",
+      "summary": "代码运行器，用于后台工具。",
+      "states": "业务组合 · 场景组件",
+      "description": "代码运行器是项目自写的后台工具组件。它需要相应的业务数据或页面上下文；这里展示它的用途、接口和源码位置。",
+      "props": [
+        [
+          "source",
+          "String",
+          "由调用方提供",
+          "代码运行器的 source 参数。"
+        ],
+        [
+          "language",
+          "String",
+          "由调用方提供",
+          "代码运行器的 language 参数。"
+        ],
+        [
+          "overrides",
+          "Option<ResourceLimits>",
+          "None",
+          "代码运行器的 overrides 参数。"
+        ],
+        [
+          "instance_id",
+          "usize",
+          "由调用方提供",
+          "代码运行器的 instance_id 参数。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/code_runner/runner.rs",
+      "code": "pub fn CodeRunner( source: String, language: String, overrides: Option<ResourceLimits>, instance_id: usize, ) -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "CommentCardShell",
+      "slug": "comment-card-shell",
+      "label": "评论卡片外壳",
+      "group": "comments",
+      "summary": "评论卡片外壳，用于评论阅读与编辑。",
+      "states": "真实组件 · 本地样例",
+      "description": "评论卡片外壳使用固定的本地样例资料渲染项目里的真实组件。预览不会请求或修改业务数据；详情同时列出组件接口与源码位置。",
+      "props": [
+        [
+          "depth",
+          "i32",
+          "由调用方提供",
+          "评论卡片外壳的 depth 参数。"
+        ],
+        [
+          "muted",
+          "bool",
+          "由调用方提供",
+          "评论卡片外壳的 muted 参数。"
+        ],
+        [
+          "avatar_url",
+          "String",
+          "由调用方提供",
+          "评论卡片外壳的 avatar_url 参数。"
+        ],
+        [
+          "author_name",
+          "String",
+          "由调用方提供",
+          "评论卡片外壳的 author_name 参数。"
+        ],
+        [
+          "author_element",
+          "Element",
+          "由调用方提供",
+          "评论卡片外壳的 author_element 参数。"
+        ],
+        [
+          "author_badge",
+          "Element",
+          "由调用方提供",
+          "评论卡片外壳的 author_badge 参数。"
+        ],
+        [
+          "timestamp",
+          "Element",
+          "由调用方提供",
+          "评论卡片外壳的 timestamp 参数。"
+        ],
+        [
+          "status_badge",
+          "Element",
+          "由调用方提供",
+          "评论卡片外壳的 status_badge 参数。"
+        ],
+        [
+          "content_html",
+          "String",
+          "由调用方提供",
+          "评论卡片外壳的 content_html 参数。"
+        ],
+        [
+          "content_extra_class",
+          "&'static str",
+          "由调用方提供",
+          "评论卡片外壳的 content_extra_class 参数。"
+        ],
+        [
+          "children",
+          "Element",
+          "由调用方提供",
+          "评论卡片外壳的 children 参数。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/comments/card.rs",
+      "code": "pub fn CommentCardShell( depth: i32, #[props(default)] muted: bool, avatar_url: String, author_name: String, author_element: Element, author_badge: Element, timestamp: Element, status_badge: Element, content_html: String, #[props(default)] content_extra_class: &'static str, children: Element, ) -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "CommentForm",
+      "slug": "comment-form",
+      "label": "评论表单",
+      "group": "comments",
+      "summary": "评论表单，用于评论阅读与编辑。",
+      "states": "业务组合 · 场景组件",
+      "description": "评论表单是项目自写的评论阅读与编辑组件。它需要相应的业务数据或页面上下文；这里展示它的用途、接口和源码位置。",
+      "props": [
+        [
+          "post_id",
+          "i32",
+          "由调用方提供",
+          "评论表单的 post_id 参数。"
+        ],
+        [
+          "parent_id",
+          "Option<i64>",
+          "None",
+          "评论表单的 parent_id 参数。"
+        ],
+        [
+          "parent_indent",
+          "Option<i32>",
+          "None",
+          "评论表单的 parent_indent 参数。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/comments/form.rs",
+      "code": "pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i32>) -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "CommentItem",
+      "slug": "comment-item",
+      "label": "评论项",
+      "group": "comments",
+      "summary": "评论项，用于评论阅读与编辑。",
+      "states": "业务组合 · 场景组件",
+      "description": "评论项是项目自写的评论阅读与编辑组件。它需要相应的业务数据或页面上下文；这里展示它的用途、接口和源码位置。",
+      "props": [
+        [
+          "comment",
+          "PublicComment",
+          "由调用方提供",
+          "评论项的 comment 参数。"
+        ],
+        [
+          "post_id",
+          "i32",
+          "由调用方提供",
+          "评论项的 post_id 参数。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/comments/item.rs",
+      "code": "pub fn CommentItem(comment: PublicComment, post_id: i32) -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "CommentList",
+      "slug": "comment-list",
+      "label": "评论列表",
+      "group": "comments",
+      "summary": "评论列表，用于评论阅读与编辑。",
+      "states": "业务组合 · 场景组件",
+      "description": "评论列表是项目自写的评论阅读与编辑组件。它需要相应的业务数据或页面上下文；这里展示它的用途、接口和源码位置。",
+      "props": [
+        [
+          "comments",
+          "Vec<PublicComment>",
+          "由调用方提供",
+          "评论列表的 comments 参数。"
+        ],
+        [
+          "pending",
+          "Vec<PendingComment>",
+          "由调用方提供",
+          "评论列表的 pending 参数。"
+        ],
+        [
+          "post_id",
+          "i32",
+          "由调用方提供",
+          "评论列表的 post_id 参数。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/comments/list.rs",
+      "code": "pub fn CommentList( comments: Vec<PublicComment>, pending: Vec<PendingComment>, post_id: i32, ) -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "PendingCommentItem",
+      "slug": "pending-comment-item",
+      "label": "待审核评论项",
+      "group": "comments",
+      "summary": "待审核评论项，用于评论阅读与编辑。",
+      "states": "业务组合 · 场景组件",
+      "description": "待审核评论项是项目自写的评论阅读与编辑组件。它需要相应的业务数据或页面上下文；这里展示它的用途、接口和源码位置。",
+      "props": [
+        [
+          "comment",
+          "PendingComment",
+          "由调用方提供",
+          "待审核评论项的 comment 参数。"
+        ],
+        [
+          "post_id",
+          "i32",
+          "由调用方提供",
+          "待审核评论项的 post_id 参数。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/comments/pending_item.rs",
+      "code": "pub fn PendingCommentItem(comment: PendingComment, post_id: i32) -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "CommentSection",
+      "slug": "comment-section",
+      "label": "评论区",
+      "group": "comments",
+      "summary": "评论区，用于评论阅读与编辑。",
+      "states": "业务组合 · 场景组件",
+      "description": "评论区是项目自写的评论阅读与编辑组件。它需要相应的业务数据或页面上下文；这里展示它的用途、接口和源码位置。",
+      "props": [
+        [
+          "post_id",
+          "i32",
+          "由调用方提供",
+          "评论区的 post_id 参数。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/comments/section.rs",
+      "code": "pub fn CommentSection(post_id: i32) -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "Footer",
+      "slug": "footer",
+      "label": "页脚",
+      "group": "layout",
+      "summary": "页脚，用于页面导航与结构。",
+      "states": "业务组合 · 场景组件",
+      "description": "页脚是项目自写的页面导航与结构组件。它需要相应的业务数据或页面上下文；这里展示它的用途、接口和源码位置。",
+      "props": [
+        [
+          "—",
+          "无",
+          "—",
+          "此组件不接收显式属性。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/footer.rs",
+      "code": "pub fn Footer() -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "FrontendLayout",
+      "slug": "frontend-layout",
+      "label": "前台布局",
+      "group": "layout",
+      "summary": "前台布局，用于页面导航与结构。",
+      "states": "业务组合 · 场景组件",
+      "description": "前台布局是项目自写的页面导航与结构组件。它需要相应的业务数据或页面上下文；这里展示它的用途、接口和源码位置。",
+      "props": [
+        [
+          "—",
+          "无",
+          "—",
+          "此组件不接收显式属性。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/frontend_layout.rs",
+      "code": "pub fn FrontendLayout() -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "Header",
+      "slug": "header",
+      "label": "导航页头",
+      "group": "layout",
+      "summary": "导航页头，用于页面导航与结构。",
+      "states": "业务组合 · 场景组件",
+      "description": "导航页头是项目自写的页面导航与结构组件。它需要相应的业务数据或页面上下文；这里展示它的用途、接口和源码位置。",
+      "props": [
+        [
+          "nav_items",
+          "Vec<NavItemConfig>",
+          "由调用方提供",
+          "导航页头的 nav_items 参数。"
+        ],
+        [
+          "right_content",
+          "Element",
+          "由调用方提供",
+          "导航页头的 right_content 参数。"
+        ],
+        [
+          "max_width",
+          "&'static str",
+          "由调用方提供",
+          "导航页头的 max_width 参数。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/header.rs",
+      "code": "pub fn Header( nav_items: Vec<NavItemConfig>, right_content: Element, #[props(default = \"max-w-3xl\")] max_width: &'static str, ) -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "SearchIconLink",
+      "slug": "search-icon-link",
+      "label": "搜索入口",
+      "group": "layout",
+      "summary": "搜索入口，用于页面导航与结构。",
+      "states": "真实组件 · 本地样例",
+      "description": "搜索入口使用固定的本地样例资料渲染项目里的真实组件。预览不会请求或修改业务数据；详情同时列出组件接口与源码位置。",
+      "props": [
+        [
+          "—",
+          "无",
+          "—",
+          "此组件不接收显式属性。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/header.rs",
+      "code": "pub fn SearchIconLink() -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "Breadcrumbs",
+      "slug": "breadcrumbs",
+      "label": "面包屑",
+      "group": "post",
+      "summary": "面包屑，用于文章阅读与展示。",
+      "states": "真实组件 · 本地样例",
+      "description": "面包屑使用固定的本地样例资料渲染项目里的真实组件。预览不会请求或修改业务数据；详情同时列出组件接口与源码位置。",
+      "props": [
+        [
+          "title",
+          "String",
+          "由调用方提供",
+          "面包屑的 title 参数。"
+        ],
+        [
+          "full_reload",
+          "bool",
+          "由调用方提供",
+          "面包屑的 full_reload 参数。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/post/breadcrumbs.rs",
+      "code": "pub fn Breadcrumbs(title: String, #[props(default = false)] full_reload: bool) -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "PostContent",
+      "slug": "post-content",
+      "label": "文章正文",
+      "group": "post",
+      "summary": "文章正文，用于文章阅读与展示。",
+      "states": "业务组合 · 场景组件",
+      "description": "文章正文是项目自写的文章阅读与展示组件。它需要相应的业务数据或页面上下文；这里展示它的用途、接口和源码位置。",
+      "props": [
+        [
+          "content_html",
+          "String",
+          "由调用方提供",
+          "文章正文的 content_html 参数。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/post/post_content.rs",
+      "code": "pub fn PostContent(content_html: String) -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "PostCover",
+      "slug": "post-cover",
+      "label": "文章封面",
+      "group": "post",
+      "summary": "文章封面，用于文章阅读与展示。",
+      "states": "真实组件 · 本地样例",
+      "description": "文章封面使用固定的本地样例资料渲染项目里的真实组件。预览不会请求或修改业务数据；详情同时列出组件接口与源码位置。",
+      "props": [
+        [
+          "src",
+          "String",
+          "由调用方提供",
+          "文章封面的 src 参数。"
+        ],
+        [
+          "post_id",
+          "Option<i32>",
+          "None",
+          "文章封面的 post_id 参数。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/post/post_cover.rs",
+      "code": "pub fn PostCover(src: String, #[props(default)] post_id: Option<i32>) -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "PostFooter",
+      "slug": "post-footer",
+      "label": "文章页脚",
+      "group": "post",
+      "summary": "文章页脚，用于文章阅读与展示。",
+      "states": "业务组合 · 场景组件",
+      "description": "文章页脚是项目自写的文章阅读与展示组件。它需要相应的业务数据或页面上下文；这里展示它的用途、接口和源码位置。",
+      "props": [
+        [
+          "post",
+          "Post",
+          "由调用方提供",
+          "文章页脚的 post 参数。"
+        ],
+        [
+          "full_reload",
+          "bool",
+          "由调用方提供",
+          "文章页脚的 full_reload 参数。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/post/post_footer.rs",
+      "code": "pub fn PostFooter(post: Post, #[props(default = false)] full_reload: bool) -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "PostHeader",
+      "slug": "post-header",
+      "label": "文章页头",
+      "group": "post",
+      "summary": "文章页头，用于文章阅读与展示。",
+      "states": "真实组件 · 本地样例",
+      "description": "文章页头使用固定的本地样例资料渲染项目里的真实组件。预览不会请求或修改业务数据；详情同时列出组件接口与源码位置。",
+      "props": [
+        [
+          "post",
+          "Post",
+          "由调用方提供",
+          "文章页头的 post 参数。"
+        ],
+        [
+          "full_reload",
+          "bool",
+          "由调用方提供",
+          "文章页头的 full_reload 参数。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/post/post_header.rs",
+      "code": "pub fn PostHeader(post: Post, #[props(default = false)] full_reload: bool) -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "PostMeta",
+      "slug": "post-meta",
+      "label": "文章元信息",
+      "group": "post",
+      "summary": "文章元信息，用于文章阅读与展示。",
+      "states": "真实组件 · 本地样例",
+      "description": "文章元信息使用固定的本地样例资料渲染项目里的真实组件。预览不会请求或修改业务数据；详情同时列出组件接口与源码位置。",
+      "props": [
+        [
+          "post",
+          "Post",
+          "由调用方提供",
+          "文章元信息的 post 参数。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/post/post_meta.rs",
+      "code": "pub fn PostMeta(post: Post) -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "PostNavLinks",
+      "slug": "post-nav-links",
+      "label": "相邻文章导航",
+      "group": "post",
+      "summary": "相邻文章导航，用于文章阅读与展示。",
+      "states": "真实组件 · 本地样例",
+      "description": "相邻文章导航使用固定的本地样例资料渲染项目里的真实组件。预览不会请求或修改业务数据；详情同时列出组件接口与源码位置。",
+      "props": [
+        [
+          "prev",
+          "Option<PostNav>",
+          "None",
+          "相邻文章导航的 prev 参数。"
+        ],
+        [
+          "next",
+          "Option<PostNav>",
+          "None",
+          "相邻文章导航的 next 参数。"
+        ],
+        [
+          "full_reload",
+          "bool",
+          "由调用方提供",
+          "相邻文章导航的 full_reload 参数。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/post/post_nav_links.rs",
+      "code": "pub fn PostNavLinks( prev: Option<PostNav>, next: Option<PostNav>, #[props(default = false)] full_reload: bool, ) -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "PostToc",
+      "slug": "post-toc",
+      "label": "文章目录",
+      "group": "post",
+      "summary": "文章目录，用于文章阅读与展示。",
+      "states": "业务组合 · 场景组件",
+      "description": "文章目录是项目自写的文章阅读与展示组件。它需要相应的业务数据或页面上下文；这里展示它的用途、接口和源码位置。",
+      "props": [
+        [
+          "toc_html",
+          "String",
+          "由调用方提供",
+          "文章目录的 toc_html 参数。"
+        ],
+        [
+          "title",
+          "&'static str",
+          "由调用方提供",
+          "文章目录的 title 参数。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/post/post_toc.rs",
+      "code": "pub fn PostToc( toc_html: String, #[props(default = \"Table of Contents\")] title: &'static str, ) -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "PostCard",
+      "slug": "post-card",
+      "label": "文章卡片",
+      "group": "post",
+      "summary": "文章卡片，用于文章阅读与展示。",
+      "states": "真实组件 · 本地样例",
+      "description": "文章卡片使用固定的本地样例资料渲染项目里的真实组件。预览不会请求或修改业务数据；详情同时列出组件接口与源码位置。",
+      "props": [
+        [
+          "post",
+          "PostListItem",
+          "由调用方提供",
+          "文章卡片的 post 参数。"
+        ],
+        [
+          "compact",
+          "bool",
+          "由调用方提供",
+          "文章卡片的 compact 参数。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/post_card.rs",
+      "code": "pub fn PostCard(post: PostListItem, #[props(default = false)] compact: bool) -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "AdminCommentsTableSkeleton",
+      "slug": "admin-comments-table-skeleton",
+      "label": "后台评论表格骨架",
+      "group": "page-loading",
+      "summary": "后台评论表格骨架，在内容到来前保留页面轮廓。",
+      "states": "页面占位 · 动画",
+      "description": "后台评论表格骨架用于加载期间的页面布局轮廓。预览将调用项目现有的骨架屏组件。",
+      "props": [
+        [
+          "—",
+          "无",
+          "—",
+          "此组件不接收显式属性。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/skeletons/admin_comments_skeleton.rs",
+      "code": "pub fn AdminCommentsTableSkeleton() -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "AdminCommentsSkeleton",
+      "slug": "admin-comments-skeleton",
+      "label": "后台评论骨架",
+      "group": "page-loading",
+      "summary": "后台评论骨架，在内容到来前保留页面轮廓。",
+      "states": "页面占位 · 动画",
+      "description": "后台评论骨架用于加载期间的页面布局轮廓。预览将调用项目现有的骨架屏组件。",
+      "props": [
+        [
+          "—",
+          "无",
+          "—",
+          "此组件不接收显式属性。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/skeletons/admin_comments_skeleton.rs",
+      "code": "pub fn AdminCommentsSkeleton() -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "ArchiveSkeleton",
+      "slug": "archive-skeleton",
+      "label": "归档页骨架",
+      "group": "page-loading",
+      "summary": "归档页骨架，在内容到来前保留页面轮廓。",
+      "states": "页面占位 · 动画",
+      "description": "归档页骨架用于加载期间的页面布局轮廓。预览将调用项目现有的骨架屏组件。",
+      "props": [
+        [
+          "include_tags",
+          "bool",
+          "由调用方提供",
+          "归档页骨架的 include_tags 参数。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/skeletons/archive_skeleton.rs",
+      "code": "pub fn ArchiveSkeleton(#[props(default = true)] include_tags: bool) -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "AssetsSkeleton",
+      "slug": "assets-skeleton",
+      "label": "素材页骨架",
+      "group": "page-loading",
+      "summary": "素材页骨架，在内容到来前保留页面轮廓。",
+      "states": "页面占位 · 动画",
+      "description": "素材页骨架用于加载期间的页面布局轮廓。预览将调用项目现有的骨架屏组件。",
+      "props": [
+        [
+          "—",
+          "无",
+          "—",
+          "此组件不接收显式属性。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/skeletons/assets_skeleton.rs",
+      "code": "pub fn AssetsSkeleton() -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "ChangelogSkeleton",
+      "slug": "changelog-skeleton",
+      "label": "更新日志骨架",
+      "group": "page-loading",
+      "summary": "更新日志骨架，在内容到来前保留页面轮廓。",
+      "states": "页面占位 · 动画",
+      "description": "更新日志骨架用于加载期间的页面布局轮廓。预览将调用项目现有的骨架屏组件。",
+      "props": [
+        [
+          "—",
+          "无",
+          "—",
+          "此组件不接收显式属性。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/skeletons/changelog_skeleton.rs",
+      "code": "pub fn ChangelogSkeleton() -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "CommentListSkeleton",
+      "slug": "comment-list-skeleton",
+      "label": "评论列表骨架",
+      "group": "page-loading",
+      "summary": "评论列表骨架，在内容到来前保留页面轮廓。",
+      "states": "页面占位 · 动画",
+      "description": "评论列表骨架用于加载期间的页面布局轮廓。预览将调用项目现有的骨架屏组件。",
+      "props": [
+        [
+          "—",
+          "无",
+          "—",
+          "此组件不接收显式属性。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/skeletons/comment_skeleton.rs",
+      "code": "pub fn CommentListSkeleton() -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "AdminDashboardSkeleton",
+      "slug": "admin-dashboard-skeleton",
+      "label": "仪表盘骨架",
+      "group": "page-loading",
+      "summary": "仪表盘骨架，在内容到来前保留页面轮廓。",
+      "states": "页面占位 · 动画",
+      "description": "仪表盘骨架用于加载期间的页面布局轮廓。预览将调用项目现有的骨架屏组件。",
+      "props": [
+        [
+          "—",
+          "无",
+          "—",
+          "此组件不接收显式属性。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/skeletons/dashboard_skeleton.rs",
+      "code": "pub fn AdminDashboardSkeleton() -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "FriendsAdminListSkeleton",
+      "slug": "friends-admin-list-skeleton",
+      "label": "友链表格骨架",
+      "group": "page-loading",
+      "summary": "友链表格骨架，在内容到来前保留页面轮廓。",
+      "states": "页面占位 · 动画",
+      "description": "友链表格骨架用于加载期间的页面布局轮廓。预览将调用项目现有的骨架屏组件。",
+      "props": [
+        [
+          "—",
+          "无",
+          "—",
+          "此组件不接收显式属性。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/skeletons/friends_admin_skeleton.rs",
+      "code": "pub fn FriendsAdminListSkeleton() -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "FriendsAdminSkeleton",
+      "slug": "friends-admin-skeleton",
+      "label": "友链后台骨架",
+      "group": "page-loading",
+      "summary": "友链后台骨架，在内容到来前保留页面轮廓。",
+      "states": "页面占位 · 动画",
+      "description": "友链后台骨架用于加载期间的页面布局轮廓。预览将调用项目现有的骨架屏组件。",
+      "props": [
+        [
+          "—",
+          "无",
+          "—",
+          "此组件不接收显式属性。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/skeletons/friends_admin_skeleton.rs",
+      "code": "pub fn FriendsAdminSkeleton() -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "FriendsSkeleton",
+      "slug": "friends-skeleton",
+      "label": "友链页骨架",
+      "group": "page-loading",
+      "summary": "友链页骨架，在内容到来前保留页面轮廓。",
+      "states": "页面占位 · 动画",
+      "description": "友链页骨架用于加载期间的页面布局轮廓。预览将调用项目现有的骨架屏组件。",
+      "props": [
+        [
+          "with_header",
+          "bool",
+          "由调用方提供",
+          "友链页骨架的 with_header 参数。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/skeletons/friends_skeleton.rs",
+      "code": "pub fn FriendsSkeleton(#[props(default = true)] with_header: bool) -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "HomeSkeleton",
+      "slug": "home-skeleton",
+      "label": "首页骨架",
+      "group": "page-loading",
+      "summary": "首页骨架，在内容到来前保留页面轮廓。",
+      "states": "页面占位 · 动画",
+      "description": "首页骨架用于加载期间的页面布局轮廓。预览将调用项目现有的骨架屏组件。",
+      "props": [
+        [
+          "current_page",
+          "i32",
+          "由调用方提供",
+          "首页骨架的 current_page 参数。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/skeletons/home_skeleton.rs",
+      "code": "pub fn HomeSkeleton(#[props(default = 1)] current_page: i32) -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "HomePostsSkeleton",
+      "slug": "home-posts-skeleton",
+      "label": "首页文章骨架",
+      "group": "page-loading",
+      "summary": "首页文章骨架，在内容到来前保留页面轮廓。",
+      "states": "页面占位 · 动画",
+      "description": "首页文章骨架用于加载期间的页面布局轮廓。预览将调用项目现有的骨架屏组件。",
+      "props": [
+        [
+          "current_page",
+          "i32",
+          "由调用方提供",
+          "首页文章骨架的 current_page 参数。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/skeletons/home_skeleton.rs",
+      "code": "pub fn HomePostsSkeleton(current_page: i32) -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "LogsSkeleton",
+      "slug": "logs-skeleton",
+      "label": "日志页骨架",
+      "group": "page-loading",
+      "summary": "日志页骨架，在内容到来前保留页面轮廓。",
+      "states": "页面占位 · 动画",
+      "description": "日志页骨架用于加载期间的页面布局轮廓。预览将调用项目现有的骨架屏组件。",
+      "props": [
+        [
+          "—",
+          "无",
+          "—",
+          "此组件不接收显式属性。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/skeletons/logs_skeleton.rs",
+      "code": "pub fn LogsSkeleton() -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "McpSkeleton",
+      "slug": "mcp-skeleton",
+      "label": "MCP 页骨架",
+      "group": "page-loading",
+      "summary": "MCP 页骨架，在内容到来前保留页面轮廓。",
+      "states": "页面占位 · 动画",
+      "description": "MCP 页骨架用于加载期间的页面布局轮廓。预览将调用项目现有的骨架屏组件。",
+      "props": [
+        [
+          "—",
+          "无",
+          "—",
+          "此组件不接收显式属性。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/skeletons/mcp_skeleton.rs",
+      "code": "pub fn McpSkeleton() -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "PostCardSkeleton",
+      "slug": "post-card-skeleton",
+      "label": "文章卡片骨架",
+      "group": "page-loading",
+      "summary": "文章卡片骨架，在内容到来前保留页面轮廓。",
+      "states": "页面占位 · 动画",
+      "description": "文章卡片骨架用于加载期间的页面布局轮廓。预览将调用项目现有的骨架屏组件。",
+      "props": [
+        [
+          "has_cover",
+          "bool",
+          "由调用方提供",
+          "文章卡片骨架的 has_cover 参数。"
+        ],
+        [
+          "compact",
+          "bool",
+          "由调用方提供",
+          "文章卡片骨架的 compact 参数。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/skeletons/post_card_skeleton.rs",
+      "code": "pub fn PostCardSkeleton( #[props(default = false)] has_cover: bool, #[props(default = false)] compact: bool, ) -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "PostDetailBody",
+      "slug": "post-detail-body",
+      "label": "文章详情正文骨架",
+      "group": "page-loading",
+      "summary": "文章详情正文骨架，在内容到来前保留页面轮廓。",
+      "states": "页面占位 · 动画",
+      "description": "文章详情正文骨架用于加载期间的页面布局轮廓。预览将调用项目现有的骨架屏组件。",
+      "props": [
+        [
+          "—",
+          "无",
+          "—",
+          "此组件不接收显式属性。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/skeletons/post_detail_skeleton.rs",
+      "code": "pub fn PostDetailBody() -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "PostDetailSkeleton",
+      "slug": "post-detail-skeleton",
+      "label": "文章详情骨架",
+      "group": "page-loading",
+      "summary": "文章详情骨架，在内容到来前保留页面轮廓。",
+      "states": "页面占位 · 动画",
+      "description": "文章详情骨架用于加载期间的页面布局轮廓。预览将调用项目现有的骨架屏组件。",
+      "props": [
+        [
+          "—",
+          "无",
+          "—",
+          "此组件不接收显式属性。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/skeletons/post_detail_skeleton.rs",
+      "code": "pub fn PostDetailSkeleton() -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "PostPreviewSkeleton",
+      "slug": "post-preview-skeleton",
+      "label": "文章预览骨架",
+      "group": "page-loading",
+      "summary": "文章预览骨架，在内容到来前保留页面轮廓。",
+      "states": "页面占位 · 动画",
+      "description": "文章预览骨架用于加载期间的页面布局轮廓。预览将调用项目现有的骨架屏组件。",
+      "props": [
+        [
+          "—",
+          "无",
+          "—",
+          "此组件不接收显式属性。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/skeletons/post_preview_skeleton.rs",
+      "code": "pub fn PostPreviewSkeleton() -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "PostsTableSkeleton",
+      "slug": "posts-table-skeleton",
+      "label": "文章表格骨架",
+      "group": "page-loading",
+      "summary": "文章表格骨架，在内容到来前保留页面轮廓。",
+      "states": "页面占位 · 动画",
+      "description": "文章表格骨架用于加载期间的页面布局轮廓。预览将调用项目现有的骨架屏组件。",
+      "props": [
+        [
+          "—",
+          "无",
+          "—",
+          "此组件不接收显式属性。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/skeletons/posts_skeleton.rs",
+      "code": "pub fn PostsTableSkeleton() -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "PostsSkeleton",
+      "slug": "posts-skeleton",
+      "label": "文章管理骨架",
+      "group": "page-loading",
+      "summary": "文章管理骨架，在内容到来前保留页面轮廓。",
+      "states": "页面占位 · 动画",
+      "description": "文章管理骨架用于加载期间的页面布局轮廓。预览将调用项目现有的骨架屏组件。",
+      "props": [
+        [
+          "—",
+          "无",
+          "—",
+          "此组件不接收显式属性。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/skeletons/posts_skeleton.rs",
+      "code": "pub fn PostsSkeleton() -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "PostsTrashTableSkeleton",
+      "slug": "posts-trash-table-skeleton",
+      "label": "回收站表格骨架",
+      "group": "page-loading",
+      "summary": "回收站表格骨架，在内容到来前保留页面轮廓。",
+      "states": "页面占位 · 动画",
+      "description": "回收站表格骨架用于加载期间的页面布局轮廓。预览将调用项目现有的骨架屏组件。",
+      "props": [
+        [
+          "—",
+          "无",
+          "—",
+          "此组件不接收显式属性。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/skeletons/posts_trash_skeleton.rs",
+      "code": "pub fn PostsTrashTableSkeleton() -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "PostsTrashSkeleton",
+      "slug": "posts-trash-skeleton",
+      "label": "回收站骨架",
+      "group": "page-loading",
+      "summary": "回收站骨架，在内容到来前保留页面轮廓。",
+      "states": "页面占位 · 动画",
+      "description": "回收站骨架用于加载期间的页面布局轮廓。预览将调用项目现有的骨架屏组件。",
+      "props": [
+        [
+          "—",
+          "无",
+          "—",
+          "此组件不接收显式属性。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/skeletons/posts_trash_skeleton.rs",
+      "code": "pub fn PostsTrashSkeleton() -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "ProfileSkeleton",
+      "slug": "profile-skeleton",
+      "label": "个人资料骨架",
+      "group": "page-loading",
+      "summary": "个人资料骨架，在内容到来前保留页面轮廓。",
+      "states": "页面占位 · 动画",
+      "description": "个人资料骨架用于加载期间的页面布局轮廓。预览将调用项目现有的骨架屏组件。",
+      "props": [
+        [
+          "—",
+          "无",
+          "—",
+          "此组件不接收显式属性。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/skeletons/profile_skeleton.rs",
+      "code": "pub fn ProfileSkeleton() -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "RunnerSkeleton",
+      "slug": "runner-skeleton",
+      "label": "代码运行页骨架",
+      "group": "page-loading",
+      "summary": "代码运行页骨架，在内容到来前保留页面轮廓。",
+      "states": "页面占位 · 动画",
+      "description": "代码运行页骨架用于加载期间的页面布局轮廓。预览将调用项目现有的骨架屏组件。",
+      "props": [
+        [
+          "—",
+          "无",
+          "—",
+          "此组件不接收显式属性。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/skeletons/runner_skeleton.rs",
+      "code": "pub fn RunnerSkeleton() -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "SearchSkeleton",
+      "slug": "search-skeleton",
+      "label": "搜索页骨架",
+      "group": "page-loading",
+      "summary": "搜索页骨架，在内容到来前保留页面轮廓。",
+      "states": "页面占位 · 动画",
+      "description": "搜索页骨架用于加载期间的页面布局轮廓。预览将调用项目现有的骨架屏组件。",
+      "props": [
+        [
+          "—",
+          "无",
+          "—",
+          "此组件不接收显式属性。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/skeletons/search_skeleton.rs",
+      "code": "pub fn SearchSkeleton() -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "SettingsAdminSkeleton",
+      "slug": "settings-admin-skeleton",
+      "label": "后台设置骨架",
+      "group": "page-loading",
+      "summary": "后台设置骨架，在内容到来前保留页面轮廓。",
+      "states": "页面占位 · 动画",
+      "description": "后台设置骨架用于加载期间的页面布局轮廓。预览将调用项目现有的骨架屏组件。",
+      "props": [
+        [
+          "—",
+          "无",
+          "—",
+          "此组件不接收显式属性。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/skeletons/settings_admin_skeleton.rs",
+      "code": "pub fn SettingsAdminSkeleton() -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "SystemSkeleton",
+      "slug": "system-skeleton",
+      "label": "系统页骨架",
+      "group": "page-loading",
+      "summary": "系统页骨架，在内容到来前保留页面轮廓。",
+      "states": "页面占位 · 动画",
+      "description": "系统页骨架用于加载期间的页面布局轮廓。预览将调用项目现有的骨架屏组件。",
+      "props": [
+        [
+          "—",
+          "无",
+          "—",
+          "此组件不接收显式属性。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/skeletons/system_skeleton.rs",
+      "code": "pub fn SystemSkeleton() -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "TagsSkeleton",
+      "slug": "tags-skeleton",
+      "label": "标签页骨架",
+      "group": "page-loading",
+      "summary": "标签页骨架，在内容到来前保留页面轮廓。",
+      "states": "页面占位 · 动画",
+      "description": "标签页骨架用于加载期间的页面布局轮廓。预览将调用项目现有的骨架屏组件。",
+      "props": [
+        [
+          "—",
+          "无",
+          "—",
+          "此组件不接收显式属性。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/skeletons/tags_skeleton.rs",
+      "code": "pub fn TagsSkeleton() -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "TagDetailSkeleton",
+      "slug": "tag-detail-skeleton",
+      "label": "标签详情骨架",
+      "group": "page-loading",
+      "summary": "标签详情骨架，在内容到来前保留页面轮廓。",
+      "states": "页面占位 · 动画",
+      "description": "标签详情骨架用于加载期间的页面布局轮廓。预览将调用项目现有的骨架屏组件。",
+      "props": [
+        [
+          "tag",
+          "String",
+          "由调用方提供",
+          "标签详情骨架的 tag 参数。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/skeletons/tags_skeleton.rs",
+      "code": "pub fn TagDetailSkeleton(tag: String) -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "TagPostsLoading",
+      "slug": "tag-posts-loading",
+      "label": "标签文章占位",
+      "group": "page-loading",
+      "summary": "标签文章占位，在内容到来前保留页面轮廓。",
+      "states": "页面占位 · 动画",
+      "description": "标签文章占位用于加载期间的页面布局轮廓。预览将调用项目现有的骨架屏组件。",
+      "props": [
+        [
+          "—",
+          "无",
+          "—",
+          "此组件不接收显式属性。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/skeletons/tags_skeleton.rs",
+      "code": "pub fn TagPostsLoading() -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "WriteSkeleton",
+      "slug": "write-skeleton",
+      "label": "写作页骨架",
+      "group": "page-loading",
+      "summary": "写作页骨架，在内容到来前保留页面轮廓。",
+      "states": "页面占位 · 动画",
+      "description": "写作页骨架用于加载期间的页面布局轮廓。预览将调用项目现有的骨架屏组件。",
+      "props": [
+        [
+          "—",
+          "无",
+          "—",
+          "此组件不接收显式属性。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/skeletons/write_skeleton.rs",
+      "code": "pub fn WriteSkeleton() -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "SqlResultTable",
+      "slug": "sql-result-table",
+      "label": "SQL 结果表",
+      "group": "tools",
+      "summary": "SQL 结果表，用于后台工具。",
+      "states": "真实组件 · 本地样例",
+      "description": "SQL 结果表使用固定的本地样例资料渲染项目里的真实组件。预览不会请求或修改业务数据；详情同时列出组件接口与源码位置。",
+      "props": [
+        [
+          "props",
+          "SqlResultTableProps",
+          "由调用方提供",
+          "SQL 结果表的 props 参数。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/sql_result_table.rs",
+      "code": "pub fn SqlResultTable(props: SqlResultTableProps) -> Element",
+      "kind": "reference"
+    },
+    {
+      "name": "TiptapEditor",
+      "slug": "tiptap-editor",
+      "label": "富文本编辑器",
+      "group": "browser",
+      "summary": "基于 Tiptap 的文章编辑器封装。",
+      "states": "浏览器集成 · 自写封装",
+      "description": "基于 Tiptap 的文章编辑器封装。 详情页说明模块入口与浏览器调用方式。",
+      "props": [
+        [
+          "入口",
+          "TypeScript module",
+          "—",
+          "浏览器端通过打包后的全局对象调用。"
+        ]
+      ],
+      "keys": [],
+      "source": "libs/tiptap-editor/src/index.ts",
+      "code": "// 查看 libs/tiptap-editor/src/index.ts 中的公开接口",
+      "kind": "reference"
+    },
+    {
+      "name": "CodeMirrorEditor",
+      "slug": "code-mirror-editor",
+      "label": "代码编辑器",
+      "group": "browser",
+      "summary": "基于 CodeMirror 的代码编辑器封装。",
+      "states": "浏览器集成 · 自写封装",
+      "description": "基于 CodeMirror 的代码编辑器封装。 详情页说明模块入口与浏览器调用方式。",
+      "props": [
+        [
+          "入口",
+          "TypeScript module",
+          "—",
+          "浏览器端通过打包后的全局对象调用。"
+        ]
+      ],
+      "keys": [],
+      "source": "libs/codemirror-editor/src/index.ts",
+      "code": "// 查看 libs/codemirror-editor/src/index.ts 中的公开接口",
+      "kind": "reference"
+    },
+    {
+      "name": "XtermTerminal",
+      "slug": "xterm-terminal",
+      "label": "终端视图",
+      "group": "browser",
+      "summary": "基于 xterm.js 的浏览器终端封装。",
+      "states": "浏览器集成 · 自写封装",
+      "description": "基于 xterm.js 的浏览器终端封装。 详情页说明模块入口与浏览器调用方式。",
+      "props": [
+        [
+          "入口",
+          "TypeScript module",
+          "—",
+          "浏览器端通过打包后的全局对象调用。"
+        ]
+      ],
+      "keys": [],
+      "source": "libs/xterm-terminal/src/index.ts",
+      "code": "// 查看 libs/xterm-terminal/src/index.ts 中的公开接口",
+      "kind": "reference"
+    },
+    {
+      "name": "Lightbox",
+      "slug": "lightbox",
+      "label": "图片灯箱",
+      "group": "browser",
+      "summary": "支持缩放、旋转与关闭交互的图片灯箱。",
+      "states": "浏览器集成 · 自写封装",
+      "description": "支持缩放、旋转与关闭交互的图片灯箱。 详情页说明模块入口与浏览器调用方式。",
+      "props": [
+        [
+          "入口",
+          "TypeScript module",
+          "—",
+          "浏览器端通过打包后的全局对象调用。"
+        ]
+      ],
+      "keys": [],
+      "source": "libs/lightbox/src/index.ts",
+      "code": "// 查看 libs/lightbox/src/index.ts 中的公开接口",
+      "kind": "reference"
+    }
+  ]
+}

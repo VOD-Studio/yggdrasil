@@ -51,6 +51,9 @@ fn route_skeleton(route: &Route) -> Element {
                 p { class: "py-20 text-sm text-paper-secondary", role: "status", "正在载入写作指南…" }
             }
         },
+        Route::ComponentShowcase {} | Route::ComponentDetail { .. } => rsx! {
+            div { class: "py-20", role: "status", "正在翻开组件图鉴…" }
+        },
         Route::NotFound { .. } => rsx! {
             div { class: "py-20 md:py-28" }
         },
@@ -69,7 +72,14 @@ pub fn FrontendLayout() -> Element {
     let route = use_route::<Route>();
     let nav_items = build_nav_items(route.clone());
     // 首页与其它前台页面共用阅读宽度，导航和正文保持对齐。
-    let max_width = "max-w-4xl";
+    let max_width = if matches!(
+        route,
+        Route::ComponentShowcase {} | Route::ComponentDetail { .. }
+    ) {
+        "max-w-6xl"
+    } else {
+        "max-w-4xl"
+    };
 
     rsx! {
         div { class: "min-h-screen flex flex-col bg-paper-theme",
