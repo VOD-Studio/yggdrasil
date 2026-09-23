@@ -5,7 +5,7 @@
  *
  * PLAYWRIGHT_MODULE=/path/to/playwright CHROMIUM_PATH=/usr/bin/chromium \
  *   node scripts/test-view-transitions.cjs
- * Optional: VT_BASE, VT_SEARCH_QUERY, VT_TAG_PATH, VT_DEBUG=1.
+ * Optional: VT_BASE, VT_SEARCH_QUERY, VT_TAG_PATH, VT_TOC_POST_PATH, VT_DEBUG=1.
  * Supply VT_ADMIN_USERNAME and VT_ADMIN_PASSWORD to include login/preview/logout.
  */
 const assert = require('node:assert/strict');
@@ -14,6 +14,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const BASE = (process.env.VT_BASE || 'http://127.0.0.1:8080').replace(/\/$/, '');
 const SEARCH_QUERY = process.env.VT_SEARCH_QUERY || 'Rust';
 const TAG_PATH = process.env.VT_TAG_PATH || '/tags/Rust';
+const TOC_POST_PATH = process.env.VT_TOC_POST_PATH;
 const FIXTURE_IMAGE = '/images/xiantiaoxiaogou_02.webp';
 const FIXTURE_FILE = path.join(__dirname, '../public', FIXTURE_IMAGE);
 
@@ -188,9 +189,12 @@ async function main() {
     console.log('PASS archive-detail-back', JSON.stringify(await titleRoundTrip(page, '.archive-entry')));
     assert.equal(await page.locator('.archive-tags').getAttribute('data-open'), 'true');
     console.log('PASS archive-open-restored');
-    await page.locator('.archive-entry').first().click();
-    await page.waitForSelector('[data-vt-detail]');
-    await settle(page);
+    if (TOC_POST_PATH) await push(page, TOC_POST_PATH);
+    else {
+      await page.locator('.archive-entry').first().click();
+      await page.waitForSelector('[data-vt-detail]');
+      await settle(page);
+    }
     const anchorBefore = await page.evaluate(() => ({ entry: history.state.__yggdrasilNavigation, count: __vtCalls.length }));
     const hash = await page.locator('.toc-sidebar a[href^="#"]').first().getAttribute('href');
     await page.locator('.toc-sidebar a[href^="#"]').first().evaluate(a => a.click());
