@@ -4057,7 +4057,7 @@ button.note-tag { cursor: pointer; }
 .showcase-collection-heading h2 { font: 500 1.45rem var(--sc-serif); }
 .showcase-collection-heading small { color: var(--color-paper-secondary); font: .62rem var(--sc-mono); }
 .showcase-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.25rem; }
-.showcase-card { min-width: 0; border: 1px solid var(--sc-line); border-radius: 18px; background: var(--sc-surface); transition: border-color .2s, box-shadow .2s; scroll-margin-top: 7rem; }
+.showcase-card { min-width: 0; border: 1px solid var(--sc-line); border-radius: 18px; background: var(--sc-surface); cursor: pointer; transition: border-color .2s, box-shadow .2s; scroll-margin-top: 7rem; }
 .showcase-card:hover { border-color: color-mix(in srgb, var(--color-paper-accent) 45%, var(--sc-line)); box-shadow: 0 12px 25px -25px var(--color-paper-primary); }
 .showcase-card-preview { position: relative; display: flex; justify-content: center; align-items: center; min-height: 183px; padding: 1.5rem; border-radius: 18px 18px 0 0; background-image: radial-gradient(var(--sc-line) .65px, transparent .65px); background-size: 16px 16px; }
 .showcase-card-index { position: absolute; top: .9rem; left: 1rem; color: var(--color-paper-secondary); opacity: .65; font: .56rem var(--sc-mono); }

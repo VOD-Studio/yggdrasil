@@ -7,7 +7,11 @@ use chrono::{DateTime, Utc};
 #[cfg(target_arch = "wasm32")]
 use dioxus::html::InteractionLocation;
 use dioxus::prelude::*;
+#[cfg(target_arch = "wasm32")]
+use dioxus::web::WebEventExt;
 use serde::Deserialize;
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::JsCast;
 
 use crate::models::post::{Post, PostListItem, PostNav, PostStatus};
 use crate::router::Route;
@@ -305,8 +309,30 @@ pub fn ComponentShowcase() -> Element {
                         for spec in shown.iter() {
                             {
                                 let slug = spec.slug.clone();
+                                let card_slug = slug.clone();
                                 rsx! {
-                                    article { class: "showcase-card", id: "showcase-{slug}", key: "{slug}",
+                                    article {
+                                        class: "showcase-card",
+                                        id: "showcase-{slug}",
+                                        key: "{slug}",
+                                        onclick: move |event: MouseEvent| {
+                                            #[cfg(not(target_arch = "wasm32"))]
+                                            let _ = event;
+                                            #[cfg(target_arch = "wasm32")]
+                                            {
+                                                let interactive = event.try_as_web_event()
+                                                    .and_then(|event| event.target())
+                                                    .and_then(|target| target.dyn_into::<web_sys::Element>().ok())
+                                                    .and_then(|element| element.closest(
+                                                        "a, button, input, select, textarea, label, summary, [contenteditable], [role=button], [role=tab], .cm-editor, .xterm"
+                                                    ).ok().flatten())
+                                                    .is_some();
+                                                if interactive {
+                                                    return;
+                                                }
+                                            }
+                                            navigator().push(Route::ComponentDetail { component: card_slug.clone() });
+                                        },
                                         div { class: "showcase-card-preview showcase-card-preview--{slug}",
                                             span { class: "showcase-card-index", "{spec.name.to_uppercase()} / {group_label(&spec.group)}" }
                                             ComponentPreview { slug: slug.clone(), detail: false }

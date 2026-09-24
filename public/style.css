@@ -10633,6 +10633,7 @@ button.note-tag {
   border: 1px solid var(--sc-line);
   border-radius: 18px;
   background: var(--sc-surface);
+  cursor: pointer;
   transition: border-color .2s, box-shadow .2s;
   scroll-margin-top: 7rem;
 }

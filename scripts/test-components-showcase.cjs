@@ -212,13 +212,22 @@ async function catalog(page) {
   }
   pass('19 catalog cards render their actual UI');
 
+  await page.locator('.showcase-search input').fill('Checkbox');
+  const checkboxCard = page.locator('#showcase-checkbox');
+  assert.equal(await checkboxCard.evaluate(element => getComputedStyle(element).cursor), 'pointer');
+  await checkboxCard.locator('label').first().click();
+  assert.equal(new URL(page.url()).pathname, '/about/components',
+    'using a card preview should not open its detail page');
+  pass('cards show a pointer without hijacking preview controls');
+
   await page.locator('.showcase-search input').fill('TiptapEditor');
   const card = page.locator('#showcase-tiptap-editor');
   await card.scrollIntoViewIfNeeded();
   const y = await page.evaluate(() => scrollY);
   visitId++;
-  await card.locator('a[href="/about/components/tiptap-editor"]').click();
+  await card.locator('.showcase-card-caption p').click();
   await page.waitForURL(`${BASE}/about/components/tiptap-editor`);
+  pass('clicking a card caption opens its detail page');
   await realPreview(page, 'tiptap-editor', TARGETS.find(item => item[0] === 'tiptap-editor')[2]);
   visitId++;
   await page.locator('.showcase-back').click();
