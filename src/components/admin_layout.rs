@@ -116,7 +116,7 @@ pub(crate) fn AdminShell(
     #[props(default)] preview: bool,
 ) -> Element {
     let root_class = if preview {
-        "showcase-admin-shell flex bg-[var(--color-paper-entry)] text-[var(--color-paper-primary)] font-sans"
+        "showcase-admin-shell flex bg-[var(--color-paper-entry)] text-[var(--color-paper-primary)] font-sans w-full h-full overflow-hidden"
     } else {
         "min-h-dvh flex bg-[var(--color-paper-entry)] text-[var(--color-paper-primary)] font-sans"
     };
@@ -126,7 +126,7 @@ pub(crate) fn AdminShell(
     } else {
         "overflow-y-auto"
     };
-    let main_class = if internal_scroll {
+    let main_class = if preview || internal_scroll {
         "flex-1 w-full max-w-7xl mx-auto flex flex-col min-h-0"
     } else {
         "flex-1 w-full max-w-7xl mx-auto px-6 py-12"
@@ -137,7 +137,7 @@ pub(crate) fn AdminShell(
             div { class: "flex-1 flex flex-col min-w-0 {height_class} p-2 md:p-4",
                 div {
                     "data-vt-scroll": (!preview).then_some("admin-main"),
-                    class: "flex-1 bg-[var(--color-paper-theme)] rounded-[2rem] shadow-sm border border-[var(--color-paper-border)] {card_overflow} relative flex flex-col",
+                    class: "flex-1 min-h-0 bg-[var(--color-paper-theme)] rounded-[2rem] shadow-sm border border-[var(--color-paper-border)] {card_overflow} relative flex flex-col",
                     main { class: "{main_class}", {content} }
                 }
             }
@@ -171,13 +171,13 @@ pub(crate) fn AdminSidebar(
         "text-[var(--color-paper-secondary)] hover:bg-[var(--color-paper-theme)]/50 hover:text-[var(--color-paper-primary)] border border-transparent"
     };
     let aside_class = if preview {
-        "w-48 flex-shrink-0 flex flex-col h-full sticky top-0 p-3 bg-[var(--color-paper-entry)]"
+        "w-48 flex-shrink-0 flex flex-col h-full sticky top-0 p-3 bg-[var(--color-paper-entry)] overflow-hidden"
     } else {
         "w-48 flex-shrink-0 hidden md:flex flex-col h-screen sticky top-0 p-3 bg-[var(--color-paper-entry)]"
     };
     rsx! {
         aside { "data-vt-shell": (!preview).then_some("admin-sidebar"), class: "{aside_class}",
-            div { class: "mb-8 px-3",
+            div { class: "mb-8 px-3 flex-shrink-0",
                 if let Some(on_navigate) = on_demo_navigate {
                     button {
                         class: "font-extrabold text-2xl tracking-tight text-[var(--color-paper-primary)] hover:text-[var(--color-paper-accent)] transition-colors",
@@ -194,7 +194,7 @@ pub(crate) fn AdminSidebar(
                     }
                 }
             }
-            nav { class: "flex-1 flex flex-col gap-2",
+            nav { class: "flex-1 min-h-0 flex flex-col gap-2 overflow-y-auto overflow-x-hidden pr-0.5",
                 for (dest, label) in nav_items_top {
                     {nav_item(&route, dest, label, is_write_route, demo_active.as_deref(), on_demo_navigate)}
                 }
@@ -204,7 +204,7 @@ pub(crate) fn AdminSidebar(
                 }
                 ToolsNavGroup { demo_active: demo_active.clone(), on_demo_navigate }
             }
-            div { class: "mt-auto pt-4 border-t border-[var(--color-paper-border)] flex flex-col gap-1",
+            div { class: "mt-auto pt-4 border-t border-[var(--color-paper-border)] flex flex-col gap-1 flex-shrink-0",
                 if let Some(name) = user_name {
                     if let Some(on_navigate) = on_demo_navigate {
                         button {

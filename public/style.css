@@ -543,6 +543,9 @@
   .ml-1 {
     margin-left: var(--spacing);
   }
+  .ml-2 {
+    margin-left: calc(var(--spacing) * 2);
+  }
   .ml-3 {
     margin-left: calc(var(--spacing) * 3);
   }
@@ -1285,6 +1288,9 @@
   .overflow-x-clip {
     overflow-x: clip;
   }
+  .overflow-x-hidden {
+    overflow-x: hidden;
+  }
   .overflow-y-auto {
     overflow-y: auto;
   }
@@ -1716,6 +1722,12 @@
   .bg-paper-entry {
     background-color: var(--color-paper-entry);
   }
+  .bg-paper-entry\/40 {
+    background-color: color-mix(in srgb, #e6e9ef 40%, transparent);
+    @supports (color: color-mix(in lab, red, red)) {
+      background-color: color-mix(in oklab, var(--color-paper-entry) 40%, transparent);
+    }
+  }
   .bg-paper-primary {
     background-color: var(--color-paper-primary);
   }
@@ -1910,6 +1922,9 @@
   }
   .pt-8 {
     padding-top: calc(var(--spacing) * 8);
+  }
+  .pr-0\.5 {
+    padding-right: calc(var(--spacing) * 0.5);
   }
   .pr-3 {
     padding-right: calc(var(--spacing) * 3);
@@ -2628,6 +2643,14 @@
     }
     .hover\:bg-paper-entry:hover {
       background-color: var(--color-paper-entry);
+    }
+    .hover\:bg-paper-entry\/80:hover {
+      background-color: color-mix(in srgb, #e6e9ef 80%, transparent);
+    }
+    @supports (color: color-mix(in lab, red, red)) {
+      .hover\:bg-paper-entry\/80:hover {
+        background-color: color-mix(in oklab, var(--color-paper-entry) 80%, transparent);
+      }
     }
     .hover\:bg-paper-theme:hover {
       background-color: var(--color-paper-theme);
@@ -11326,37 +11349,159 @@ button.note-tag {
   width: 100%;
   min-width: 0;
   height: 225px;
-  overflow: auto;
+  overflow: hidden;
   border: 1px solid var(--sc-line);
   border-radius: 14px;
 }
 .showcase-admin-window .showcase-admin-shell {
+  width: 100%;
   height: 100%;
   min-height: 0;
+  overflow: hidden;
 }
 .showcase-admin-window .showcase-admin-content {
   min-width: 0;
 }
+.showcase-admin-window aside nav {
+  scrollbar-width: thin;
+  scrollbar-color: var(--sc-line) transparent;
+}
+.showcase-admin-window aside nav::-webkit-scrollbar {
+  width: 3px;
+}
+.showcase-admin-window aside nav::-webkit-scrollbar-thumb {
+  background: var(--sc-line);
+  border-radius: 9999px;
+}
 .showcase-card-preview .showcase-admin-window aside {
-  width: 7.8rem;
-  padding: .5rem;
-  font-size: .7rem;
+  width: 7.2rem;
+  padding: .35rem;
+  font-size: .65rem;
+}
+.showcase-card-preview .showcase-admin-window aside > div:first-child {
+  margin-bottom: .3rem;
+  padding: 0 .2rem;
+}
+.showcase-card-preview .showcase-admin-window aside > div:first-child button {
+  font-size: .9rem;
+  line-height: 1.2;
 }
 .showcase-card-preview .showcase-admin-window aside nav {
-  gap: .1rem;
+  gap: .12rem;
 }
 .showcase-card-preview .showcase-admin-window aside nav :is(a, button) {
-  padding: .35rem .5rem;
-  font-size: .62rem;
+  padding: .2rem .35rem;
+  font-size: .58rem;
+  border-radius: .35rem;
+  line-height: 1.25;
+}
+.showcase-card-preview .showcase-admin-window aside nav .ml-3 {
+  margin-left: .3rem;
+  padding-left: .25rem;
+  gap: .08rem;
+}
+.showcase-card-preview .showcase-admin-window aside nav .ml-3 :is(a, button) {
+  padding: .15rem .3rem;
+  font-size: .55rem;
+  border-radius: .3rem;
+}
+.showcase-card-preview .showcase-admin-window aside nav svg {
+  width: .7rem;
+  height: .7rem;
+}
+.showcase-card-preview .showcase-admin-window aside > div:last-child {
+  margin-top: auto;
+  padding-top: .2rem;
+  gap: .1rem;
+}
+.showcase-card-preview .showcase-admin-window aside > div:last-child :is(button, a) {
+  padding: .12rem .3rem;
+  font-size: .55rem;
+  border-radius: .35rem;
+}
+.showcase-card-preview .showcase-admin-window aside > div:last-child .w-7 {
+  width: 1.1rem;
+  height: 1.1rem;
+  font-size: .55rem;
+}
+.showcase-card-preview .showcase-admin-window aside > div:last-child span {
+  font-size: .55rem;
+}
+.showcase-card-preview .showcase-admin-window aside > div:last-child > div:last-child {
+  padding: 0 .15rem;
+}
+.showcase-card-preview .showcase-admin-window aside > div:last-child > div:last-child button {
+  padding: .1rem .3rem;
+  font-size: .52rem;
+  border-radius: .3rem;
+}
+.showcase-card-preview .showcase-admin-window aside > div:last-child svg {
+  width: .7rem;
+  height: .7rem;
+}
+.showcase-card-preview .showcase-admin-window .showcase-admin-shell > div:last-child {
+  padding: .25rem;
+}
+.showcase-card-preview .showcase-admin-window .showcase-admin-shell > div:last-child > div {
+  border-radius: .75rem;
 }
 .showcase-card-preview .showcase-admin-window main {
-  padding: .75rem;
+  padding: .45rem .55rem;
+}
+.showcase-card-preview .showcase-admin-window .showcase-admin-content p:first-child {
+  font-size: .55rem;
+}
+.showcase-card-preview .showcase-admin-window .showcase-admin-content h2 {
+  font-size: .85rem;
+  margin-top: .15rem;
+  line-height: 1.2;
+}
+.showcase-card-preview .showcase-admin-window .showcase-admin-content p:nth-of-type(2) {
+  font-size: .58rem;
+  margin-top: .15rem;
+  line-height: 1.3;
+}
+.showcase-card-preview .showcase-admin-window .showcase-admin-content .grid {
+  margin-top: .35rem;
+  gap: .3rem;
+}
+.showcase-card-preview .showcase-admin-window .showcase-admin-content .grid > div {
+  padding: .3rem .45rem;
+  border-radius: .45rem;
+}
+.showcase-card-preview .showcase-admin-window .showcase-admin-content .grid small {
+  font-size: .52rem;
+}
+.showcase-card-preview .showcase-admin-window .showcase-admin-content .grid strong {
+  font-size: .8rem;
+  line-height: 1.2;
 }
 .showcase-detail .showcase-admin-window {
-  height: 520px;
+  height: 560px;
+  overflow: hidden;
+}
+.showcase-detail .showcase-admin-window .showcase-admin-shell {
+  height: 100%;
+  overflow: hidden;
+}
+.showcase-detail .showcase-admin-window aside {
+  width: 12.5rem;
+  padding: .75rem;
+}
+.showcase-detail .showcase-admin-window aside > div:first-child {
+  margin-bottom: 1.25rem;
+}
+.showcase-detail .showcase-admin-window aside nav {
+  gap: .35rem;
+}
+.showcase-detail .showcase-admin-window .showcase-admin-shell > div:last-child {
+  padding: .75rem;
+}
+.showcase-detail .showcase-admin-window .showcase-admin-shell > div:last-child > div {
+  border-radius: 1.5rem;
 }
 .showcase-detail .showcase-admin-window main {
-  padding: 2rem;
+  padding: 1.5rem;
 }
 .showcase-layout-window, .showcase-article-window, .showcase-toc-window {
   width: 100%;
@@ -12058,22 +12203,24 @@ button.note-tag {
     min-height: 300px;
     padding: .6rem;
   }
-  .showcase-admin-window .showcase-admin-shell {
+  .showcase-detail .showcase-admin-window {
+    height: 620px;
+  }
+  .showcase-detail .showcase-admin-window .showcase-admin-shell {
     flex-direction: column;
   }
-  .showcase-admin-window .showcase-admin-shell aside {
+  .showcase-detail .showcase-admin-window .showcase-admin-shell aside {
     position: static;
     width: 100%;
     height: auto;
-    max-height: 190px;
+    max-height: 180px;
     overflow-y: auto;
+    flex-shrink: 0;
   }
-  .showcase-admin-window .showcase-admin-shell > div {
-    min-height: 260px;
+  .showcase-detail .showcase-admin-window .showcase-admin-shell > div {
+    min-height: 0;
+    flex: 1;
     height: auto;
-  }
-  .showcase-detail .showcase-admin-window {
-    height: 620px;
   }
   .showcase-detail .showcase-admin-window main {
     padding: 1rem;

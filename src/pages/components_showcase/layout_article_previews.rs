@@ -30,6 +30,22 @@ pub(super) fn preview(slug: &str, detail: bool) -> Option<Element> {
 fn AdminLayoutPreview(detail: bool) -> Element {
     let mut active = use_signal(|| "全部文章");
     let mut status = use_signal(|| "侧栏操作只更新这份本地演示。");
+
+    let active_name = active();
+    let (stat_1_label, stat_1_val, stat_2_label, stat_2_val) = match active_name {
+        "仪表盘" => ("总访客", "1,280", "今日阅读", "342"),
+        "写文章" => ("当前字数", "1,420", "自动保存", "2分钟前"),
+        "笔记" | "笔记本" => ("公开笔记", "24", "笔记本数", "05"),
+        "回收站" => ("待清理", "02", "保留期限", "30天"),
+        "评论管理" => ("待审核", "01", "累计评论", "156"),
+        "素材" => ("媒体文件", "48", "已占用", "12.8MB"),
+        "友链" => ("正常链接", "18", "待确认", "02"),
+        "个人信息" => ("账号角色", "管理员", "安全状态", "双重认证"),
+        "设置" | "系统" => ("系统状态", "正常", "运行时间", "14天"),
+        "日志" => ("今日日志", "84条", "错误告警", "0"),
+        _ => ("草稿", "03", "已发布", "12"),
+    };
+
     rsx! {
         div { class: "showcase-admin-window", "data-showcase-preview": "admin-layout",
             AdminShell {
@@ -47,15 +63,56 @@ fn AdminLayoutPreview(detail: bool) -> Element {
                     on_logout: move |_| status.set("这里只演示退出按钮，不会退出当前账号。"),
                 } },
                 content: rsx! {
-                    article { class: "showcase-admin-content",
-                        p { class: "text-xs text-paper-secondary", "ADMIN / LOCAL DEMO" }
-                        h2 { class: "text-xl font-semibold mt-2", "{active()}" }
-                        p { class: "text-sm text-paper-secondary mt-2", "{status()}" }
-                        div { class: "mt-6 grid grid-cols-2 gap-3",
-                            div { class: "rounded-2xl bg-paper-entry p-4", small { "草稿" } strong { class: "block text-lg", "03" } }
-                            div { class: "rounded-2xl bg-paper-entry p-4", small { "已发布" } strong { class: "block text-lg", "12" } }
+                    article { class: "showcase-admin-content flex flex-col h-full",
+                        div { class: "flex items-center justify-between",
+                            p { class: "text-xs font-mono text-paper-secondary tracking-wider", "ADMIN / LOCAL DEMO" }
+                            if detail {
+                                span { class: "text-xs px-2 py-0.5 rounded-full bg-[var(--color-paper-entry)] text-paper-secondary border border-[var(--color-paper-border)]", "本地演示" }
+                            }
                         }
-                        if detail { p { class: "text-xs text-paper-secondary mt-4", "可展开内容管理或工具菜单，并切换本地激活项。" } }
+                        h2 { class: "text-xl font-semibold mt-1.5 flex items-center gap-2", "{active()}" }
+                        p { class: "text-sm text-paper-secondary mt-1", "{status()}" }
+
+                        div { class: "mt-4 grid grid-cols-2 gap-3",
+                            div { class: "rounded-2xl bg-paper-entry p-3.5 border border-[var(--color-paper-border)]/50",
+                                small { class: "text-paper-secondary text-xs", "{stat_1_label}" }
+                                strong { class: "block text-lg mt-0.5 font-bold tracking-tight", "{stat_1_val}" }
+                            }
+                            div { class: "rounded-2xl bg-paper-entry p-3.5 border border-[var(--color-paper-border)]/50",
+                                small { class: "text-paper-secondary text-xs", "{stat_2_label}" }
+                                strong { class: "block text-lg mt-0.5 font-bold tracking-tight", "{stat_2_val}" }
+                            }
+                        }
+
+                        if detail {
+                            div { class: "mt-5 flex-1 min-h-0 flex flex-col",
+                                p { class: "text-xs font-medium text-paper-secondary mb-2 tracking-wide", "示例内容列表" }
+                                div { class: "rounded-xl border border-[var(--color-paper-border)] divide-y divide-[var(--color-paper-border)] bg-paper-entry/40 overflow-hidden text-xs",
+                                    div { class: "px-3.5 py-2.5 flex items-center justify-between hover:bg-paper-entry/80 transition-colors",
+                                        div { class: "flex items-center gap-2 min-w-0",
+                                            span { class: "w-1.5 h-1.5 rounded-full bg-emerald-500 flex-shrink-0" }
+                                            span { class: "truncate font-medium", "Dioxus 0.7 响应式设计实践" }
+                                        }
+                                        span { class: "text-paper-secondary flex-shrink-0 ml-2 font-mono text-[11px]", "09-22" }
+                                    }
+                                    div { class: "px-3.5 py-2.5 flex items-center justify-between hover:bg-paper-entry/80 transition-colors",
+                                        div { class: "flex items-center gap-2 min-w-0",
+                                            span { class: "w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0" }
+                                            span { class: "truncate font-medium", "Rust 全栈博客架构与布局演进" }
+                                        }
+                                        span { class: "text-paper-secondary flex-shrink-0 ml-2 font-mono text-[11px]", "09-18" }
+                                    }
+                                    div { class: "px-3.5 py-2.5 flex items-center justify-between hover:bg-paper-entry/80 transition-colors",
+                                        div { class: "flex items-center gap-2 min-w-0",
+                                            span { class: "w-1.5 h-1.5 rounded-full bg-emerald-500 flex-shrink-0" }
+                                            span { class: "truncate font-medium", "Tailwind CSS v4 样式系统接入记录" }
+                                        }
+                                        span { class: "text-paper-secondary flex-shrink-0 ml-2 font-mono text-[11px]", "09-15" }
+                                    }
+                                }
+                                p { class: "text-xs text-paper-secondary mt-auto pt-3", "可展开内容管理或工具菜单，点击任意栏目查看联动状态。" }
+                            }
+                        }
                     }
                 },
             }
