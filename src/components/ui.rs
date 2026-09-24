@@ -148,9 +148,9 @@ pub fn Pagination<R: Routable + Clone + PartialEq + 'static>(
     let is_admin = variant == "admin";
     let nav_class = if is_admin {
         if compact {
-            "flex justify-between"
+            "admin-pagination"
         } else {
-            "flex mt-6 justify-between"
+            "admin-pagination mt-6"
         }
     } else {
         "frontend-pagination"
@@ -207,7 +207,7 @@ pub fn Pagination<R: Routable + Clone + PartialEq + 'static>(
 
             // admin 显示页码计数；回调式翻页且多页时，当前页码可直接编辑跳页。
             if is_admin {
-                span { class: "flex items-center gap-1.5 self-center text-sm text-paper-secondary",
+                span { class: "flex items-center gap-1.5 text-sm text-paper-secondary whitespace-nowrap tabular-nums",
                     if total_pages > 1 && on_jump.is_some() {
                         FormInput {
                             r#type: "text",

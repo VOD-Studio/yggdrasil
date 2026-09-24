@@ -3324,6 +3324,19 @@
   }
 }
 @layer components {
+  .admin-pagination {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    gap: 0.75rem;
+    width: 100%;
+  }
+  .admin-pagination > :first-child {
+    justify-self: start;
+  }
+  .admin-pagination > :last-child {
+    justify-self: end;
+  }
   .frontend-pagination {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
@@ -3334,6 +3347,16 @@
   .frontend-pagination > :is(a, button) {
     width: max-content;
     max-width: 100%;
+  }
+  @media (max-width: 640px) {
+    .admin-pagination {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .admin-pagination > :nth-child(2) {
+      grid-column: 1 / -1;
+      grid-row: 1;
+      justify-self: center;
+    }
   }
   .post-card-editorial {
     min-width: 0;
