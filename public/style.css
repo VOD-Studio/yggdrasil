@@ -483,6 +483,9 @@
   .mt-2 {
     margin-top: calc(var(--spacing) * 2);
   }
+  .mt-2\.5 {
+    margin-top: calc(var(--spacing) * 2.5);
+  }
   .mt-3 {
     margin-top: calc(var(--spacing) * 3);
   }
@@ -1726,6 +1729,12 @@
     background-color: color-mix(in srgb, #e6e9ef 40%, transparent);
     @supports (color: color-mix(in lab, red, red)) {
       background-color: color-mix(in oklab, var(--color-paper-entry) 40%, transparent);
+    }
+  }
+  .bg-paper-entry\/50 {
+    background-color: color-mix(in srgb, #e6e9ef 50%, transparent);
+    @supports (color: color-mix(in lab, red, red)) {
+      background-color: color-mix(in oklab, var(--color-paper-entry) 50%, transparent);
     }
   }
   .bg-paper-primary {
@@ -11168,6 +11177,9 @@ button.note-tag {
   align-items: flex-start;
   overflow: hidden;
 }
+.showcase-card-preview.showcase-card-preview--admin-layout {
+  height: 295px;
+}
 .showcase-card-preview.showcase-card-preview--asset-picker-modal {
   height: auto;
   min-height: 320px;
@@ -11348,7 +11360,7 @@ button.note-tag {
 .showcase-admin-window {
   width: 100%;
   min-width: 0;
-  height: 225px;
+  height: 248px;
   overflow: hidden;
   border: 1px solid var(--sc-line);
   border-radius: 14px;
@@ -11373,111 +11385,115 @@ button.note-tag {
   background: var(--sc-line);
   border-radius: 9999px;
 }
+.showcase-card-preview .showcase-admin-window {
+  height: 248px;
+}
 .showcase-card-preview .showcase-admin-window aside {
-  width: 7.2rem;
-  padding: .35rem;
-  font-size: .65rem;
+  width: 8.2rem;
+  padding: .45rem .4rem;
+  font-size: .72rem;
 }
 .showcase-card-preview .showcase-admin-window aside > div:first-child {
-  margin-bottom: .3rem;
-  padding: 0 .2rem;
+  margin-bottom: .4rem;
+  padding: 0 .25rem;
 }
 .showcase-card-preview .showcase-admin-window aside > div:first-child button {
-  font-size: .9rem;
+  font-size: 1.05rem;
   line-height: 1.2;
+  font-weight: 800;
 }
 .showcase-card-preview .showcase-admin-window aside nav {
-  gap: .12rem;
+  gap: .15rem;
 }
 .showcase-card-preview .showcase-admin-window aside nav :is(a, button) {
-  padding: .2rem .35rem;
-  font-size: .58rem;
-  border-radius: .35rem;
+  padding: .26rem .45rem;
+  font-size: .68rem;
+  border-radius: .42rem;
   line-height: 1.25;
 }
 .showcase-card-preview .showcase-admin-window aside nav .ml-3 {
-  margin-left: .3rem;
-  padding-left: .25rem;
-  gap: .08rem;
+  margin-left: .35rem;
+  padding-left: .3rem;
+  gap: .1rem;
 }
 .showcase-card-preview .showcase-admin-window aside nav .ml-3 :is(a, button) {
-  padding: .15rem .3rem;
-  font-size: .55rem;
-  border-radius: .3rem;
+  padding: .2rem .4rem;
+  font-size: .64rem;
+  border-radius: .38rem;
 }
 .showcase-card-preview .showcase-admin-window aside nav svg {
-  width: .7rem;
-  height: .7rem;
+  width: .75rem;
+  height: .75rem;
 }
 .showcase-card-preview .showcase-admin-window aside > div:last-child {
   margin-top: auto;
-  padding-top: .2rem;
-  gap: .1rem;
+  padding-top: .3rem;
+  gap: .15rem;
 }
 .showcase-card-preview .showcase-admin-window aside > div:last-child :is(button, a) {
-  padding: .12rem .3rem;
-  font-size: .55rem;
-  border-radius: .35rem;
+  padding: .18rem .4rem;
+  font-size: .64rem;
+  border-radius: .4rem;
 }
 .showcase-card-preview .showcase-admin-window aside > div:last-child .w-7 {
-  width: 1.1rem;
-  height: 1.1rem;
-  font-size: .55rem;
+  width: 1.25rem;
+  height: 1.25rem;
+  font-size: .62rem;
 }
 .showcase-card-preview .showcase-admin-window aside > div:last-child span {
-  font-size: .55rem;
+  font-size: .64rem;
 }
 .showcase-card-preview .showcase-admin-window aside > div:last-child > div:last-child {
-  padding: 0 .15rem;
+  padding: 0 .2rem;
 }
 .showcase-card-preview .showcase-admin-window aside > div:last-child > div:last-child button {
-  padding: .1rem .3rem;
-  font-size: .52rem;
-  border-radius: .3rem;
+  padding: .14rem .4rem;
+  font-size: .62rem;
+  border-radius: .35rem;
 }
 .showcase-card-preview .showcase-admin-window aside > div:last-child svg {
-  width: .7rem;
-  height: .7rem;
+  width: .75rem;
+  height: .75rem;
 }
 .showcase-card-preview .showcase-admin-window .showcase-admin-shell > div:last-child {
-  padding: .25rem;
+  padding: .3rem;
 }
 .showcase-card-preview .showcase-admin-window .showcase-admin-shell > div:last-child > div {
-  border-radius: .75rem;
+  border-radius: .9rem;
 }
 .showcase-card-preview .showcase-admin-window main {
-  padding: .45rem .55rem;
+  padding: .55rem .7rem;
 }
 .showcase-card-preview .showcase-admin-window .showcase-admin-content p:first-child {
-  font-size: .55rem;
+  font-size: .62rem;
 }
 .showcase-card-preview .showcase-admin-window .showcase-admin-content h2 {
-  font-size: .85rem;
-  margin-top: .15rem;
+  font-size: 1.05rem;
+  margin-top: .2rem;
   line-height: 1.2;
 }
 .showcase-card-preview .showcase-admin-window .showcase-admin-content p:nth-of-type(2) {
-  font-size: .58rem;
+  font-size: .68rem;
   margin-top: .15rem;
   line-height: 1.3;
 }
 .showcase-card-preview .showcase-admin-window .showcase-admin-content .grid {
-  margin-top: .35rem;
-  gap: .3rem;
+  margin-top: .45rem;
+  gap: .4rem;
 }
 .showcase-card-preview .showcase-admin-window .showcase-admin-content .grid > div {
-  padding: .3rem .45rem;
-  border-radius: .45rem;
+  padding: .4rem .55rem;
+  border-radius: .55rem;
 }
 .showcase-card-preview .showcase-admin-window .showcase-admin-content .grid small {
-  font-size: .52rem;
+  font-size: .62rem;
 }
 .showcase-card-preview .showcase-admin-window .showcase-admin-content .grid strong {
-  font-size: .8rem;
+  font-size: .95rem;
   line-height: 1.2;
 }
 .showcase-detail .showcase-admin-window {
-  height: 560px;
+  height: 580px;
   overflow: hidden;
 }
 .showcase-detail .showcase-admin-window .showcase-admin-shell {
@@ -11485,23 +11501,23 @@ button.note-tag {
   overflow: hidden;
 }
 .showcase-detail .showcase-admin-window aside {
-  width: 12.5rem;
-  padding: .75rem;
+  width: 13rem;
+  padding: .85rem;
 }
 .showcase-detail .showcase-admin-window aside > div:first-child {
-  margin-bottom: 1.25rem;
+  margin-bottom: 1.35rem;
 }
 .showcase-detail .showcase-admin-window aside nav {
   gap: .35rem;
 }
 .showcase-detail .showcase-admin-window .showcase-admin-shell > div:last-child {
-  padding: .75rem;
+  padding: .85rem;
 }
 .showcase-detail .showcase-admin-window .showcase-admin-shell > div:last-child > div {
   border-radius: 1.5rem;
 }
 .showcase-detail .showcase-admin-window main {
-  padding: 1.5rem;
+  padding: 1.75rem;
 }
 .showcase-layout-window, .showcase-article-window, .showcase-toc-window {
   width: 100%;

@@ -84,6 +84,16 @@ fn AdminLayoutPreview(detail: bool) -> Element {
                             }
                         }
 
+                        if !detail {
+                            div { class: "mt-2.5 rounded-lg bg-paper-entry/50 border border-[var(--color-paper-border)]/40 px-2.5 py-1.5 flex items-center justify-between text-xs",
+                                div { class: "flex items-center gap-1.5 min-w-0",
+                                    span { class: "w-1.5 h-1.5 rounded-full bg-emerald-500 flex-shrink-0" }
+                                    span { class: "truncate font-medium text-[11px]", "响应式设计实践" }
+                                }
+                                span { class: "text-paper-secondary text-[10px] font-mono flex-shrink-0 ml-1", "已发布" }
+                            }
+                        }
+
                         if detail {
                             div { class: "mt-5 flex-1 min-h-0 flex flex-col",
                                 p { class: "text-xs font-medium text-paper-secondary mb-2 tracking-wide", "示例内容列表" }

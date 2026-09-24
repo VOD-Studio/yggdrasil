@@ -4234,6 +4234,7 @@ button.note-tag { cursor: pointer; }
 
 /* Real previews have individual bounded workspaces; the small samples stay readable. */
 .showcase-card-preview:is(.showcase-card-preview--asset-picker-modal, .showcase-card-preview--asset-upload-modal, .showcase-card-preview--admin-layout, .showcase-card-preview--code-runner, .showcase-card-preview--comment-form, .showcase-card-preview--comment-item, .showcase-card-preview--comment-list, .showcase-card-preview--comment-section, .showcase-card-preview--post-content, .showcase-card-preview--post-toc, .showcase-card-preview--tiptap-editor, .showcase-card-preview--code-mirror-editor, .showcase-card-preview--xterm-terminal) { height: 270px; padding: 2.2rem .7rem .7rem; align-items: flex-start; overflow: hidden; }
+.showcase-card-preview.showcase-card-preview--admin-layout { height: 295px; }
 .showcase-card-preview.showcase-card-preview--asset-picker-modal { height: auto; min-height: 320px; }
 .showcase-card-preview:is(.showcase-card-preview--header, .showcase-card-preview--footer, .showcase-card-preview--frontend-layout, .showcase-card-preview--post-footer, .showcase-card-preview--lightbox) { height: 230px; padding: 2.2rem .7rem .7rem; align-items: flex-start; overflow: hidden; }
 .showcase-card-preview > :last-child { max-width: 100%; }
@@ -4275,48 +4276,49 @@ button.note-tag { cursor: pointer; }
 .showcase-card-preview--code-runner .showcase-runner-demo [id^="code-runner-output-"] { min-height: 68px; max-height: 68px; }
 .showcase-runner-detail .code-runner-editor, .showcase-runner-detail .code-runner-editor .cm-editor { min-height: 220px; max-height: 350px; }
 .showcase-runner-demo > div > div { margin-top: 0; margin-bottom: 0; }
-.showcase-admin-window { width: 100%; min-width: 0; height: 225px; overflow: hidden; border: 1px solid var(--sc-line); border-radius: 14px; }
+.showcase-admin-window { width: 100%; min-width: 0; height: 248px; overflow: hidden; border: 1px solid var(--sc-line); border-radius: 14px; }
 .showcase-admin-window .showcase-admin-shell { width: 100%; height: 100%; min-height: 0; overflow: hidden; }
 .showcase-admin-window .showcase-admin-content { min-width: 0; }
 .showcase-admin-window aside nav { scrollbar-width: thin; scrollbar-color: var(--sc-line) transparent; }
 .showcase-admin-window aside nav::-webkit-scrollbar { width: 3px; }
 .showcase-admin-window aside nav::-webkit-scrollbar-thumb { background: var(--sc-line); border-radius: 9999px; }
 
-.showcase-card-preview .showcase-admin-window aside { width: 7.2rem; padding: .35rem; font-size: .65rem; }
-.showcase-card-preview .showcase-admin-window aside > div:first-child { margin-bottom: .3rem; padding: 0 .2rem; }
-.showcase-card-preview .showcase-admin-window aside > div:first-child button { font-size: .9rem; line-height: 1.2; }
-.showcase-card-preview .showcase-admin-window aside nav { gap: .12rem; }
-.showcase-card-preview .showcase-admin-window aside nav :is(a, button) { padding: .2rem .35rem; font-size: .58rem; border-radius: .35rem; line-height: 1.25; }
-.showcase-card-preview .showcase-admin-window aside nav .ml-3 { margin-left: .3rem; padding-left: .25rem; gap: .08rem; }
-.showcase-card-preview .showcase-admin-window aside nav .ml-3 :is(a, button) { padding: .15rem .3rem; font-size: .55rem; border-radius: .3rem; }
-.showcase-card-preview .showcase-admin-window aside nav svg { width: .7rem; height: .7rem; }
-.showcase-card-preview .showcase-admin-window aside > div:last-child { margin-top: auto; padding-top: .2rem; gap: .1rem; }
-.showcase-card-preview .showcase-admin-window aside > div:last-child :is(button, a) { padding: .12rem .3rem; font-size: .55rem; border-radius: .35rem; }
-.showcase-card-preview .showcase-admin-window aside > div:last-child .w-7 { width: 1.1rem; height: 1.1rem; font-size: .55rem; }
-.showcase-card-preview .showcase-admin-window aside > div:last-child span { font-size: .55rem; }
-.showcase-card-preview .showcase-admin-window aside > div:last-child > div:last-child { padding: 0 .15rem; }
-.showcase-card-preview .showcase-admin-window aside > div:last-child > div:last-child button { padding: .1rem .3rem; font-size: .52rem; border-radius: .3rem; }
-.showcase-card-preview .showcase-admin-window aside > div:last-child svg { width: .7rem; height: .7rem; }
+.showcase-card-preview .showcase-admin-window { height: 248px; }
+.showcase-card-preview .showcase-admin-window aside { width: 8.2rem; padding: .45rem .4rem; font-size: .72rem; }
+.showcase-card-preview .showcase-admin-window aside > div:first-child { margin-bottom: .4rem; padding: 0 .25rem; }
+.showcase-card-preview .showcase-admin-window aside > div:first-child button { font-size: 1.05rem; line-height: 1.2; font-weight: 800; }
+.showcase-card-preview .showcase-admin-window aside nav { gap: .15rem; }
+.showcase-card-preview .showcase-admin-window aside nav :is(a, button) { padding: .26rem .45rem; font-size: .68rem; border-radius: .42rem; line-height: 1.25; }
+.showcase-card-preview .showcase-admin-window aside nav .ml-3 { margin-left: .35rem; padding-left: .3rem; gap: .1rem; }
+.showcase-card-preview .showcase-admin-window aside nav .ml-3 :is(a, button) { padding: .2rem .4rem; font-size: .64rem; border-radius: .38rem; }
+.showcase-card-preview .showcase-admin-window aside nav svg { width: .75rem; height: .75rem; }
+.showcase-card-preview .showcase-admin-window aside > div:last-child { margin-top: auto; padding-top: .3rem; gap: .15rem; }
+.showcase-card-preview .showcase-admin-window aside > div:last-child :is(button, a) { padding: .18rem .4rem; font-size: .64rem; border-radius: .4rem; }
+.showcase-card-preview .showcase-admin-window aside > div:last-child .w-7 { width: 1.25rem; height: 1.25rem; font-size: .62rem; }
+.showcase-card-preview .showcase-admin-window aside > div:last-child span { font-size: .64rem; }
+.showcase-card-preview .showcase-admin-window aside > div:last-child > div:last-child { padding: 0 .2rem; }
+.showcase-card-preview .showcase-admin-window aside > div:last-child > div:last-child button { padding: .14rem .4rem; font-size: .62rem; border-radius: .35rem; }
+.showcase-card-preview .showcase-admin-window aside > div:last-child svg { width: .75rem; height: .75rem; }
 
-.showcase-card-preview .showcase-admin-window .showcase-admin-shell > div:last-child { padding: .25rem; }
-.showcase-card-preview .showcase-admin-window .showcase-admin-shell > div:last-child > div { border-radius: .75rem; }
-.showcase-card-preview .showcase-admin-window main { padding: .45rem .55rem; }
-.showcase-card-preview .showcase-admin-window .showcase-admin-content p:first-child { font-size: .55rem; }
-.showcase-card-preview .showcase-admin-window .showcase-admin-content h2 { font-size: .85rem; margin-top: .15rem; line-height: 1.2; }
-.showcase-card-preview .showcase-admin-window .showcase-admin-content p:nth-of-type(2) { font-size: .58rem; margin-top: .15rem; line-height: 1.3; }
-.showcase-card-preview .showcase-admin-window .showcase-admin-content .grid { margin-top: .35rem; gap: .3rem; }
-.showcase-card-preview .showcase-admin-window .showcase-admin-content .grid > div { padding: .3rem .45rem; border-radius: .45rem; }
-.showcase-card-preview .showcase-admin-window .showcase-admin-content .grid small { font-size: .52rem; }
-.showcase-card-preview .showcase-admin-window .showcase-admin-content .grid strong { font-size: .8rem; line-height: 1.2; }
+.showcase-card-preview .showcase-admin-window .showcase-admin-shell > div:last-child { padding: .3rem; }
+.showcase-card-preview .showcase-admin-window .showcase-admin-shell > div:last-child > div { border-radius: .9rem; }
+.showcase-card-preview .showcase-admin-window main { padding: .55rem .7rem; }
+.showcase-card-preview .showcase-admin-window .showcase-admin-content p:first-child { font-size: .62rem; }
+.showcase-card-preview .showcase-admin-window .showcase-admin-content h2 { font-size: 1.05rem; margin-top: .2rem; line-height: 1.2; }
+.showcase-card-preview .showcase-admin-window .showcase-admin-content p:nth-of-type(2) { font-size: .68rem; margin-top: .15rem; line-height: 1.3; }
+.showcase-card-preview .showcase-admin-window .showcase-admin-content .grid { margin-top: .45rem; gap: .4rem; }
+.showcase-card-preview .showcase-admin-window .showcase-admin-content .grid > div { padding: .4rem .55rem; border-radius: .55rem; }
+.showcase-card-preview .showcase-admin-window .showcase-admin-content .grid small { font-size: .62rem; }
+.showcase-card-preview .showcase-admin-window .showcase-admin-content .grid strong { font-size: .95rem; line-height: 1.2; }
 
-.showcase-detail .showcase-admin-window { height: 560px; overflow: hidden; }
+.showcase-detail .showcase-admin-window { height: 580px; overflow: hidden; }
 .showcase-detail .showcase-admin-window .showcase-admin-shell { height: 100%; overflow: hidden; }
-.showcase-detail .showcase-admin-window aside { width: 12.5rem; padding: .75rem; }
-.showcase-detail .showcase-admin-window aside > div:first-child { margin-bottom: 1.25rem; }
+.showcase-detail .showcase-admin-window aside { width: 13rem; padding: .85rem; }
+.showcase-detail .showcase-admin-window aside > div:first-child { margin-bottom: 1.35rem; }
 .showcase-detail .showcase-admin-window aside nav { gap: .35rem; }
-.showcase-detail .showcase-admin-window .showcase-admin-shell > div:last-child { padding: .75rem; }
+.showcase-detail .showcase-admin-window .showcase-admin-shell > div:last-child { padding: .85rem; }
 .showcase-detail .showcase-admin-window .showcase-admin-shell > div:last-child > div { border-radius: 1.5rem; }
-.showcase-detail .showcase-admin-window main { padding: 1.5rem; }
+.showcase-detail .showcase-admin-window main { padding: 1.75rem; }
 .showcase-layout-window, .showcase-article-window, .showcase-toc-window { width: 100%; min-width: 0; border: 1px solid var(--sc-line); border-radius: 14px; background: var(--color-paper-theme); overflow: auto; }
 .showcase-card-preview .showcase-layout-window, .showcase-card-preview .showcase-article-window { height: 182px; }
 .showcase-detail .showcase-layout-window { min-height: 310px; max-height: 620px; }
