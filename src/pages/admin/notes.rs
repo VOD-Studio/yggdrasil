@@ -1,7 +1,7 @@
 //! 笔记管理与笔记本编辑。
 use super::note_drafts::{clear_submitted, use_draft_protection};
 use crate::api::notes::*;
-use crate::components::forms::{FormSelect, INPUT_CLASS};
+use crate::components::forms::{FormInput, FormSelect, INPUT_CLASS, INPUT_INLINE_CLASS};
 use crate::components::ui::{FilterTabs, BTN_PRIMARY_SM, BTN_SECONDARY as BTN_SECONDARY_SM};
 use crate::models::note::*;
 use crate::router::Route;
@@ -75,9 +75,50 @@ pub fn AdminNotes() -> Element {
                 active_value: if filter().trash {"trash".to_string()} else {filter().kind.map(|k|k.as_str()).unwrap_or("all").to_string()},
                 on_change: move |value: String| filter.with_mut(|f| {f.trash=value=="trash";f.kind=match value.as_str(){"moment"=>Some(NoteKind::Moment),"topic"=>Some(NoteKind::Topic),_=>None};f.page=1;})
             }
-            form { class: "notes-search", onsubmit: move |ev| {ev.prevent_default();filter.with_mut(|f| {f.query=query();f.page=1;});},
-                input { r#type: "search", aria_label: "筛选笔记", placeholder: "搜索标题、正文或标签", value: "{query}", oninput: move |ev| query.set(ev.value()) }
-                button { r#type: "submit", "搜索" }
+            form {
+                class: "flex items-center gap-2 mt-4",
+                onsubmit: move |ev| {
+                    ev.prevent_default();
+                    filter.with_mut(|f| {
+                        f.query = query();
+                        f.page = 1;
+                    });
+                },
+                FormInput {
+                    r#type: "search",
+                    aria_label: "筛选笔记",
+                    placeholder: "搜索标题、正文或标签",
+                    value: query(),
+                    class: INPUT_INLINE_CLASS,
+                    oninput: move |v: String| {
+                        query.set(v.clone());
+                        if v.is_empty() && !filter().query.is_empty() {
+                            filter.with_mut(|f| {
+                                f.query = String::new();
+                                f.page = 1;
+                            });
+                        }
+                    },
+                }
+                button {
+                    class: "{BTN_PRIMARY_SM} shrink-0",
+                    r#type: "submit",
+                    "搜索"
+                }
+                if !filter().query.is_empty() {
+                    button {
+                        class: "{BTN_SECONDARY_SM} shrink-0",
+                        r#type: "button",
+                        onclick: move |_| {
+                            query.set(String::new());
+                            filter.with_mut(|f| {
+                                f.query = String::new();
+                                f.page = 1;
+                            });
+                        },
+                        "清除"
+                    }
+                }
             }
             div { class: "notes-admin-filters mt-4",
                 div { class: "notes-admin-filter",
