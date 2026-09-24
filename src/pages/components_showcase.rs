@@ -198,6 +198,20 @@ fn checkbox_snippet(checked: bool, danger: bool) -> String {
 #[component]
 pub fn ComponentShowcase() -> Element {
     let mut filters = use_context::<Signal<ShowcaseFilters>>();
+
+    #[cfg(target_arch = "wasm32")]
+    use_effect(move || {
+        if let Some(window) = web_sys::window() {
+            crate::utils::js::invoke_optional_global(&window, "__initShowcaseMasonry", &[]);
+        }
+    });
+    #[cfg(target_arch = "wasm32")]
+    use_drop(move || {
+        if let Some(window) = web_sys::window() {
+            crate::utils::js::invoke_optional_global(&window, "__disposeShowcaseMasonry", &[]);
+        }
+    });
+
     let state = filters();
     let active_group = if state.category.is_empty() {
         "all"

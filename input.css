@@ -4153,6 +4153,8 @@ button.note-tag { cursor: pointer; }
 .showcase-collection-heading h2 { font: 500 1.45rem var(--sc-serif); }
 .showcase-collection-heading small { color: var(--color-paper-secondary); font: .62rem var(--sc-mono); }
 .showcase-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.25rem; }
+.showcase-grid.is-masonry { grid-auto-rows: 5px; row-gap: 0; align-items: start; margin-bottom: -1.25rem; }
+.showcase-grid.is-masonry .showcase-card { margin-bottom: 1.25rem; }
 .showcase-card { min-width: 0; border: 1px solid var(--sc-line); border-radius: 18px; background: var(--sc-surface); cursor: pointer; transition: border-color .2s, box-shadow .2s; scroll-margin-top: 7rem; }
 .showcase-card:hover { border-color: color-mix(in srgb, var(--color-paper-accent) 45%, var(--sc-line)); box-shadow: 0 12px 25px -25px var(--color-paper-primary); }
 .showcase-card-preview { position: relative; display: flex; justify-content: center; align-items: center; min-height: 183px; padding: 1.5rem; border-radius: 18px 18px 0 0; background-image: radial-gradient(var(--sc-line) .65px, transparent .65px); background-size: 16px 16px; }
@@ -4160,7 +4162,7 @@ button.note-tag { cursor: pointer; }
 .showcase-card-caption { padding: 1.1rem 1.2rem .95rem; border-top: 1px solid var(--sc-line); }
 .showcase-card-title { display: flex; justify-content: space-between; gap: .4rem; align-items: baseline; }
 .showcase-card-title h3 { font-size: .88rem; font-weight: 600; }
-.showcase-card-title code { color: var(--color-paper-secondary); font: .64rem var(--sc-mono); }
+.showcase-card-title code { min-width: 0; overflow-wrap: anywhere; text-align: right; color: var(--color-paper-secondary); font: .64rem var(--sc-mono); }
 .showcase-card-caption > p { margin-top: .35rem; color: var(--color-paper-secondary); font-size: .7rem; }
 .showcase-card-foot { display: flex; justify-content: space-between; align-items: center; gap: .5rem; margin-top: .8rem; font-size: .64rem; }
 .showcase-card-foot > span { color: var(--color-paper-secondary); }
@@ -4232,6 +4234,7 @@ button.note-tag { cursor: pointer; }
 
 /* Real previews have individual bounded workspaces; the small samples stay readable. */
 .showcase-card-preview:is(.showcase-card-preview--asset-picker-modal, .showcase-card-preview--asset-upload-modal, .showcase-card-preview--admin-layout, .showcase-card-preview--code-runner, .showcase-card-preview--comment-form, .showcase-card-preview--comment-item, .showcase-card-preview--comment-list, .showcase-card-preview--comment-section, .showcase-card-preview--post-content, .showcase-card-preview--post-toc, .showcase-card-preview--tiptap-editor, .showcase-card-preview--code-mirror-editor, .showcase-card-preview--xterm-terminal) { height: 270px; padding: 1.9rem .7rem .7rem; overflow: hidden; }
+.showcase-card-preview.showcase-card-preview--asset-picker-modal { height: auto; min-height: 320px; }
 .showcase-card-preview:is(.showcase-card-preview--header, .showcase-card-preview--footer, .showcase-card-preview--frontend-layout, .showcase-card-preview--post-footer, .showcase-card-preview--lightbox) { height: 230px; padding: 1.9rem .7rem .7rem; overflow: hidden; }
 .showcase-card-preview > :last-child { max-width: 100%; }
 .showcase-preview-instance { width: 100%; min-width: 0; }
@@ -4390,6 +4393,7 @@ button.note-tag { cursor: pointer; }
 @media (max-width: 900px) {
   .showcase-hero { gap: 1rem; }
   .showcase-still-life { transform: scale(.85); }
+  .showcase-grid { grid-template-columns: minmax(0, 1fr); }
   .showcase-detail-layout { grid-template-columns: 150px minmax(0, 1fr); gap: 1.7rem; }
   .showcase-live-workarea { grid-template-columns: minmax(0, 1fr); }
   .showcase-live-controls { border-left: 0; border-top: 1px solid var(--sc-line); }
@@ -4411,7 +4415,6 @@ button.note-tag { cursor: pointer; }
   .showcase-categories { flex-direction: row; overflow-x: auto; scrollbar-width: none; }
   .showcase-categories::-webkit-scrollbar { display: none; }
   .showcase-categories button { flex-shrink: 0; width: auto; gap: .8rem; font-size: .7rem; }
-  .showcase-grid { grid-template-columns: 1fr; }
   .showcase-card-title code { font-size: .65rem; }
   .showcase-composition { align-items: flex-start; flex-direction: column; }
   .showcase-closing { flex-direction: column; }

@@ -184,6 +184,45 @@ async function catalog(page) {
   }
   pass(`${CATALOG.components.length} catalog cards have preview structure and valid modes`);
 
+  await page.waitForFunction(() => document.querySelector('.showcase-grid')?.classList.contains('is-masonry'));
+  const layout = await page.evaluate(() => {
+    const box = slug => document.querySelector(`#showcase-${slug}`).getBoundingClientRect();
+    const preview = document.querySelector('#showcase-asset-picker-modal .showcase-card-preview');
+    const panel = document.querySelector('#showcase-asset-picker-modal .showcase-picker-panel');
+    return {
+      admin: { top: box('admin-layout').top, bottom: box('admin-layout').bottom },
+      picker: { top: box('asset-picker-modal').top, bottom: box('asset-picker-modal').bottom },
+      upload: { top: box('asset-upload-modal').top, left: box('asset-upload-modal').left },
+      runner: { top: box('code-runner').top, left: box('code-runner').left },
+      panelBottom: panel.getBoundingClientRect().bottom,
+      previewBottom: preview.getBoundingClientRect().bottom,
+    };
+  });
+  assert.equal(layout.admin.top, layout.picker.top, 'adjacent cards keep catalog order');
+  assert(layout.picker.bottom > layout.admin.bottom, 'cards keep different natural heights');
+  assert(layout.upload.top < layout.runner.top, 'the next card fills the shorter column');
+  assert(layout.upload.left < layout.runner.left, 'card columns keep source order');
+  assert(layout.panelBottom <= layout.previewBottom, 'asset picker actions are fully visible');
+  pass('catalog uses ordered masonry and shows the full asset picker preview');
+
+  await page.setViewportSize({ width: 901, height: 900 });
+  await page.waitForFunction(() => {
+    const preview = document.querySelector('#showcase-asset-picker-modal .showcase-card-preview');
+    const panel = preview?.querySelector('.showcase-picker-panel');
+    return panel && panel.getBoundingClientRect().bottom <= preview.getBoundingClientRect().bottom;
+  });
+  await assertNoDocumentOverflow(page, 'narrow masonry catalog');
+
+  for (const width of [768, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.waitForFunction(() => !document.querySelector('.showcase-grid')?.classList.contains('is-masonry'));
+    assert.equal(await page.locator('.showcase-card').first().evaluate(element => element.style.gridRowEnd), '');
+    await assertNoDocumentOverflow(page, 'catalog');
+  }
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.waitForFunction(() => document.querySelector('.showcase-grid')?.classList.contains('is-masonry'));
+  pass('catalog switches to one column on narrow viewports');
+
   for (const [index, [group]] of CATALOG.groups.entries()) {
     const button = page.locator('.showcase-categories button').nth(index);
     await button.click();
@@ -277,7 +316,7 @@ async function interactions(page, onlyModalResets = false) {
   const dialog = page.getByRole('dialog');
   await dialog.waitFor();
   await page.waitForFunction(() => document.activeElement?.matches('[data-ygg-modal-panel][data-ygg-modal-open="true"]'));
-  await dialog.getByRole('button', { name: '初春的小狗.webp' }).click();
+  await dialog.getByRole('button', { name: '相机里的小狗.webp' }).click();
   await dialog.getByRole('button', { name: '下一页' }).click();
   await dialog.getByRole('button', { name: '手绘小狗.webp' }).click();
   await dialog.getByRole('button', { name: '插入 2 张图片' }).click();

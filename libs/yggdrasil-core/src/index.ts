@@ -6,6 +6,7 @@ import { initMermaid } from './mermaid';
 import { initPageReveal } from './page-entry';
 import { initPostContent } from './post-content';
 import { routeTransitions } from './route-transitions';
+import { disposeShowcaseMasonry, initShowcaseMasonry } from './showcase-masonry';
 import { applyResolvedTheme, startThemeTransition } from './theme-transition';
 import { disposeTocSidebar, initTocSidebar } from './toc-sidebar';
 import './style.css';
@@ -22,6 +23,8 @@ declare global {
     __initTocSidebar: typeof initTocSidebar;
     __disposeTocSidebar: typeof disposeTocSidebar;
     __routeTransitions: typeof routeTransitions;
+    __initShowcaseMasonry: typeof initShowcaseMasonry;
+    __disposeShowcaseMasonry: typeof disposeShowcaseMasonry;
   }
 }
 
@@ -35,6 +38,8 @@ window.__applyResolvedTheme = applyResolvedTheme;
 window.__initTocSidebar = initTocSidebar;
 window.__disposeTocSidebar = disposeTocSidebar;
 window.__routeTransitions = routeTransitions;
+window.__initShowcaseMasonry = initShowcaseMasonry;
+window.__disposeShowcaseMasonry = disposeShowcaseMasonry;
 
 // Cross-document transitions can reveal before the WASM router connects.
 initPageReveal();

@@ -10742,6 +10742,15 @@ button.note-tag {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1.25rem;
 }
+.showcase-grid.is-masonry {
+  grid-auto-rows: 5px;
+  row-gap: 0;
+  align-items: start;
+  margin-bottom: -1.25rem;
+}
+.showcase-grid.is-masonry .showcase-card {
+  margin-bottom: 1.25rem;
+}
 .showcase-card {
   min-width: 0;
   border: 1px solid var(--sc-line);
@@ -10792,6 +10801,9 @@ button.note-tag {
   font-weight: 600;
 }
 .showcase-card-title code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: right;
   color: var(--color-paper-secondary);
   font: .64rem var(--sc-mono);
 }
@@ -11127,6 +11139,10 @@ button.note-tag {
   height: 270px;
   padding: 1.9rem .7rem .7rem;
   overflow: hidden;
+}
+.showcase-card-preview.showcase-card-preview--asset-picker-modal {
+  height: auto;
+  min-height: 320px;
 }
 .showcase-card-preview:is(.showcase-card-preview--header, .showcase-card-preview--footer, .showcase-card-preview--frontend-layout, .showcase-card-preview--post-footer, .showcase-card-preview--lightbox) {
   height: 230px;
@@ -11902,6 +11918,9 @@ button.note-tag {
   .showcase-still-life {
     transform: scale(.85);
   }
+  .showcase-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
   .showcase-detail-layout {
     grid-template-columns: 150px minmax(0, 1fr);
     gap: 1.7rem;
@@ -11974,9 +11993,6 @@ button.note-tag {
     width: auto;
     gap: .8rem;
     font-size: .7rem;
-  }
-  .showcase-grid {
-    grid-template-columns: 1fr;
   }
   .showcase-card-title code {
     font-size: .65rem;
