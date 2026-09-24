@@ -356,23 +356,25 @@ pub(crate) fn UploadRows(
                                 p { class: "text-sm truncate text-[var(--color-paper-primary)]", title: "{item.name}", "{item.name}" }
                                 p { class: "text-xs font-mono text-[var(--color-paper-tertiary)]", "{item.size}" }
                             }
-                            div { key: "{status_key}", class: "flex items-center gap-2 shrink-0 animate-status-pop",
-                                match &item.status {
-                                    UploadStatus::Queued => rsx! { span { class: "text-xs text-[var(--color-paper-tertiary)] shrink-0", "等待中" } },
-                                    UploadStatus::Uploading => rsx! {
-                                        span { class: "flex items-center gap-1.5 text-xs text-[var(--color-paper-secondary)] shrink-0",
-                                            span { class: "inline-block w-3.5 h-3.5", dangerous_inner_html: SPINNER_SVG }
-                                            "上传中"
-                                        }
-                                    },
-                                    UploadStatus::Done => rsx! { span { class: "text-xs text-emerald-600 dark:text-emerald-400 shrink-0", "✓ 已上传" } },
-                                    UploadStatus::Failed(message) => rsx! {
-                                        span { class: "text-xs text-red-500 shrink-0 max-w-56 truncate", title: "{message}", "{message}" }
-                                        button { r#type: "button", class: "text-xs cursor-pointer text-[var(--color-paper-secondary)] hover:text-[var(--color-paper-primary)] shrink-0",
-                                            onclick: move |_| on_retry.call(id), "重试" }
-                                        button { r#type: "button", class: "text-xs cursor-pointer text-[var(--color-paper-tertiary)] hover:text-[var(--color-paper-primary)] transition-colors shrink-0",
-                                            aria_label: "移除", onclick: move |_| on_remove.call(id), "×" }
-                                    },
+                            for status_key in std::iter::once(status_key) {
+                                div { key: "{status_key}", class: "flex items-center gap-2 shrink-0 animate-status-pop",
+                                    match &item.status {
+                                        UploadStatus::Queued => rsx! { span { class: "text-xs text-[var(--color-paper-tertiary)] shrink-0", "等待中" } },
+                                        UploadStatus::Uploading => rsx! {
+                                            span { class: "flex items-center gap-1.5 text-xs text-[var(--color-paper-secondary)] shrink-0",
+                                                span { class: "inline-block w-3.5 h-3.5", dangerous_inner_html: SPINNER_SVG }
+                                                "上传中"
+                                            }
+                                        },
+                                        UploadStatus::Done => rsx! { span { class: "text-xs text-emerald-600 dark:text-emerald-400 shrink-0", "✓ 已上传" } },
+                                        UploadStatus::Failed(message) => rsx! {
+                                            span { class: "text-xs text-red-500 shrink-0 max-w-56 truncate", title: "{message}", "{message}" }
+                                            button { r#type: "button", class: "text-xs cursor-pointer text-[var(--color-paper-secondary)] hover:text-[var(--color-paper-primary)] shrink-0",
+                                                onclick: move |_| on_retry.call(id), "重试" }
+                                            button { r#type: "button", class: "text-xs cursor-pointer text-[var(--color-paper-tertiary)] hover:text-[var(--color-paper-primary)] transition-colors shrink-0",
+                                                aria_label: "移除", onclick: move |_| on_remove.call(id), "×" }
+                                        },
+                                    }
                                 }
                             }
                         }
