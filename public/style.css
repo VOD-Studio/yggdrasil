@@ -10063,6 +10063,14 @@ button.note-tag {
   border-radius: 18px;
   margin-bottom: 1.8rem;
   background: var(--color-paper-entry);
+  transition: border-color .2s ease, box-shadow .2s ease;
+}
+.notes-quick:focus-within {
+  border-color: var(--color-paper-accent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, #40a02b 30%, transparent);
+  @supports (color: color-mix(in lab, red, red)) {
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-paper-accent) 30%, transparent);
+  }
 }
 .notes-quick textarea {
   width: 100%;
@@ -10072,6 +10080,9 @@ button.note-tag {
   outline: none;
   font-size: .9rem;
   line-height: 1.8;
+}
+.notes-quick textarea:focus, .notes-quick textarea:focus-visible {
+  outline: none;
 }
 .notes-quick footer {
   display: flex;
@@ -10211,6 +10222,14 @@ button.note-tag {
   padding: .7rem .9rem;
   border-radius: 12px;
 }
+.notes-editor-side select:focus, .notes-editor-side input[type=text]:focus {
+  outline: none;
+  border-color: var(--color-paper-accent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, #40a02b 30%, transparent);
+  @supports (color: color-mix(in lab, red, red)) {
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-paper-accent) 30%, transparent);
+  }
+}
 .notes-editor-side #note-kind {
   min-height: 2.75rem;
   border-radius: 12px;
@@ -10290,9 +10309,12 @@ button.note-tag {
   background: var(--color-paper-entry);
   border-radius: 6px;
 }
-.notes-page :is(button,a,input):focus-visible, .notes-admin :is(button,a,input,textarea,select):focus-visible {
+.notes-page :is(button,a):focus-visible, .notes-admin :is(button,a):focus-visible {
   outline: 2px solid var(--color-paper-accent);
   outline-offset: 4px;
+}
+.notes-admin .notes-quick textarea:focus, .notes-admin .notes-quick textarea:focus-visible, .notes-page .notes-search input:focus, .notes-page .notes-search input:focus-visible, .notes-admin .notes-search input:focus, .notes-admin .notes-search input:focus-visible, .notes-admin .notes-editor-main > input:focus, .notes-admin .notes-editor-main > input:focus-visible {
+  outline: none;
 }
 @media (max-width: 700px) {
   .notes-hero {
@@ -10356,7 +10378,7 @@ button.note-tag {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .notebook-card {
+  .notes-quick, .notebook-card {
     transition: none;
   }
   .notebook-card:hover {

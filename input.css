@@ -3951,8 +3951,10 @@ button.note-tag { cursor: pointer; }
 .notes-admin-filters { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 1.25rem; align-items: end; }
 .notes-admin-filter { min-width: 0; display: grid; gap: .5rem; }
 .notes-admin-filter > label { color: var(--color-paper-secondary); font-size: .8rem; font-weight: 600; }
-.notes-quick { padding: 1.2rem; border: 1px solid var(--color-paper-border); border-radius: 18px; margin-bottom: 1.8rem; background: var(--color-paper-entry); }
+.notes-quick { padding: 1.2rem; border: 1px solid var(--color-paper-border); border-radius: 18px; margin-bottom: 1.8rem; background: var(--color-paper-entry); transition: border-color .2s ease, box-shadow .2s ease; }
+.notes-quick:focus-within { border-color: var(--color-paper-accent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-paper-accent) 30%, transparent); }
 .notes-quick textarea { width: 100%; resize: vertical; min-height: 96px; background: transparent; outline: none; font-size: .9rem; line-height: 1.8; }
+.notes-quick textarea:focus, .notes-quick textarea:focus-visible { outline: none; }
 .notes-quick footer { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-top: .75rem; }
 .notes-quick footer span { color: var(--color-paper-tertiary); font-size: .75rem; }
 .notes-quick footer button { flex-shrink: 0; white-space: nowrap; }
@@ -3977,6 +3979,7 @@ button.note-tag { cursor: pointer; }
 .notes-editor-side p { margin: 0; line-height: 1.7; color: var(--color-paper-secondary); font-size: .75rem; }
 .notes-editor-side h2 { margin: 0; font-size: .95rem; line-height: 1.35; font-weight: 600; }
 .notes-editor-side select, .notes-editor-side input[type=text] { width: 100%; min-height: 2.75rem; border: 1px solid var(--color-paper-border); background: var(--color-paper-entry); padding: .7rem .9rem; border-radius: 12px; }
+.notes-editor-side select:focus, .notes-editor-side input[type=text]:focus { outline: none; border-color: var(--color-paper-accent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-paper-accent) 30%, transparent); }
 .notes-editor-side #note-kind { min-height: 2.75rem; border-radius: 12px; }
 .notes-editor-side .notes-editor-section { min-inline-size: 0; display: grid; gap: .6rem; border: 0; border-top: 1px solid color-mix(in srgb, var(--color-paper-border) 70%, transparent); padding: 1rem 0 0; margin: 0; }
 .notes-editor-side .notebook-check { display: flex; gap: .65rem; align-items: center; min-height: 1.8rem; margin: 0; font-weight: 400; color: var(--color-paper-secondary); }
@@ -3990,7 +3993,15 @@ button.note-tag { cursor: pointer; }
 .dark .notes-error { color: #f38ba8; }
 .notes-editor-history { display: grid; gap: .5rem; max-height: 240px; overflow-y: auto; }
 .notes-editor-history button { text-align: left; cursor: pointer; padding: .5rem; background: var(--color-paper-entry); border-radius: 6px; }
-.notes-page :is(button,a,input):focus-visible, .notes-admin :is(button,a,input,textarea,select):focus-visible { outline: 2px solid var(--color-paper-accent); outline-offset: 4px; }
+.notes-page :is(button,a):focus-visible, .notes-admin :is(button,a):focus-visible { outline: 2px solid var(--color-paper-accent); outline-offset: 4px; }
+.notes-admin .notes-quick textarea:focus,
+.notes-admin .notes-quick textarea:focus-visible,
+.notes-page .notes-search input:focus,
+.notes-page .notes-search input:focus-visible,
+.notes-admin .notes-search input:focus,
+.notes-admin .notes-search input:focus-visible,
+.notes-admin .notes-editor-main > input:focus,
+.notes-admin .notes-editor-main > input:focus-visible { outline: none; }
 @media (max-width: 700px) {
   .notes-hero { padding: 1rem 0 2rem; gap: 1rem; }
   .notes-hero-mark { width: 5rem; }
@@ -4010,6 +4021,7 @@ button.note-tag { cursor: pointer; }
   .notes-admin-row-actions { justify-content: flex-start; border-top: 1px solid color-mix(in srgb, var(--color-paper-border) 70%, transparent); padding-top: .85rem; }
 }
 @media (prefers-reduced-motion: reduce) {
+  .notes-quick,
   .notebook-card { transition: none; }
   .notebook-card:hover { transform: none; }
 }
