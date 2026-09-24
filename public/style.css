@@ -10810,13 +10810,25 @@ button.note-tag {
   background: var(--color-paper-entry);
   border: 1px solid var(--sc-line);
 }
+.showcase-card-preview--popover {
+  align-items: flex-end;
+}
 .showcase-popover-content {
-  padding: 1rem;
-  min-width: 12rem;
+  min-width: 11rem;
 }
 .showcase-popover-content p {
+  margin-bottom: .75rem;
   font-size: .75rem;
-  margin-bottom: .8rem;
+  line-height: 1.6;
+}
+.showcase-popover-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: .5rem;
+}
+.showcase-popover-actions .showcase-demo-button {
+  padding: .45rem .85rem;
+  font-size: .7rem;
 }
 .showcase-demo-modal-content {
   padding: 1.5rem;

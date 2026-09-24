@@ -5,7 +5,7 @@ use std::sync::LazyLock;
 
 use chrono::{DateTime, Utc};
 #[cfg(target_arch = "wasm32")]
-use dioxus::html::InteractionLocation;
+use dioxus::html::{InteractionElementOffset, InteractionLocation};
 use dioxus::prelude::*;
 #[cfg(target_arch = "wasm32")]
 use dioxus::web::WebEventExt;
@@ -862,11 +862,13 @@ fn LiveComponentPreview(
         "Popover" => rsx! {
             div { class: "showcase-popover-example",
                 button { class: "showcase-demo-button secondary", onclick: move |event: MouseEvent| {
+                    event.stop_propagation();
                     #[cfg(target_arch = "wasm32")]
                     {
                         let coords = event.client_coordinates();
+                        let offset = event.element_coordinates();
                         popover_x.set(coords.x as i32);
-                        popover_y.set(coords.y as i32);
+                        popover_y.set((coords.y - offset.y) as i32);
                     }
                     #[cfg(not(target_arch = "wasm32"))]
                     let _ = event;
@@ -876,8 +878,11 @@ fn LiveComponentPreview(
                     open: popover_open(), anchor_x: popover_x(), anchor_y: popover_y(), placement: "top", align: "center",
                     on_close: move |_| popover_open.set(false),
                     div { class: "showcase-popover-content",
-                        p { "保留这片小小的灵感？" }
-                        button { class: "showcase-demo-button", onclick: move |_| popover_open.set(false), "保留" }
+                        p { "要保留这片小小的灵感吗？" }
+                        div { class: "showcase-popover-actions",
+                            button { class: "showcase-demo-button secondary", onclick: move |_| popover_open.set(false), "取消" }
+                            button { class: "showcase-demo-button", onclick: move |_| popover_open.set(false), "保留" }
+                        }
                     }
                 }
             }

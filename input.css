@@ -4103,8 +4103,11 @@ button.note-tag { cursor: pointer; }
 .showcase-preview-field { width: 100%; max-width: 13rem; }
 .showcase-demo-button { display: inline-flex; align-items: center; padding: .6rem 1.15rem; border-radius: 100px; color: var(--color-paper-theme); background: var(--color-paper-accent); font-size: .75rem; cursor: pointer; }
 .showcase-demo-button.secondary { color: var(--color-paper-primary); background: var(--color-paper-entry); border: 1px solid var(--sc-line); }
-.showcase-popover-content { padding: 1rem; min-width: 12rem; }
-.showcase-popover-content p { font-size: .75rem; margin-bottom: .8rem; }
+.showcase-card-preview--popover { align-items: flex-end; }
+.showcase-popover-content { min-width: 11rem; }
+.showcase-popover-content p { margin-bottom: .75rem; font-size: .75rem; line-height: 1.6; }
+.showcase-popover-actions { display: flex; justify-content: flex-end; gap: .5rem; }
+.showcase-popover-actions .showcase-demo-button { padding: .45rem .85rem; font-size: .7rem; }
 .showcase-demo-modal-content { padding: 1.5rem; }
 .showcase-demo-modal-content h2 { font: 500 1.5rem var(--sc-serif); }
 .showcase-demo-modal-content p { margin: .7rem 0 1.3rem; color: var(--color-paper-secondary); }
