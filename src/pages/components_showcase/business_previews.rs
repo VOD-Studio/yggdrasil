@@ -23,9 +23,9 @@ pub(super) fn preview(slug: &str, detail: bool) -> Option<Element> {
 
 const IMAGES: [(&str, &str, &str); 5] = [
     (
-        "/images/xiaotiaoxiaogou_01.webp",
-        "初春的小狗.webp",
-        "小狗坐在草地上",
+        "/images/empty-state/dog-camera.webp",
+        "相机里的小狗.webp",
+        "相机里的两只小狗",
     ),
     (
         "/images/xiantiaoxiaogou_02.webp",

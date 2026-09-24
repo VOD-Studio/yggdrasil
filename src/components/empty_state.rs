@@ -1,75 +1,77 @@
-//! 空状态组件。
-//!
-//! 当列表（首页、标签、搜索等）无数据时展示：插画配图 + 标题 + 副文案，
-//! 可选行动按钮。视觉语言沿用项目 Forest 调色板（鼠尾草绿强调色）与
-//! Source Serif 4 衬线标题，留白克制，与首页 HomeInfo 标题区风格一致。
-//!
-//! 配图默认为「线条小狗」插画（`public/images/xiaotiaoxiaogou_01.webp`），
-//! 可通过 `image` prop 覆盖（如搜索页初始引导态用 `xiantiaoxiaogou_02`）。
-//! 通过 `<img>` 引用绝对路径，由 Dioxus 的静态资源服务直接返回。
+//! 空列表、无搜索结果等状态共用的插画与行动入口。
 
 use dioxus::prelude::*;
 
 use crate::components::ui::BTN_PRIMARY;
 
-/// 空状态行动按钮。
-///
-/// `onclick` 而非直接绑定 `Route`：原子层不依赖 app 路由类型（见 `mod.rs` 分层约定），
-/// 跳转由调用方在回调内用 `dioxus::router::navigator().push(route)` 完成（与
-/// `router.rs`/`login.rs`/`not_found.rs`/`admin/write.rs` 的既有命令式导航约定一致）。
+const EMPTY_STATE_IMAGES: &[&str] = &[
+    "/images/empty-state/dog-camera.webp",
+    "/images/empty-state/dog-wind-chime.webp",
+    "/images/empty-state/dog-delivery.webp",
+    "/images/empty-state/dog-pajamas.webp",
+    "/images/empty-state/dog-watermelon.webp",
+    "/images/empty-state/dog-heart.webp",
+    "/images/empty-state/dog-head-pat.webp",
+    "/images/empty-state/dog-mirror.webp",
+    "/images/empty-state/dog-chopsticks.webp",
+    "/images/empty-state/dog-grass.webp",
+    "/images/empty-state/dog-polaroid.webp",
+    "/images/empty-state/dog-autumn-leaf.webp",
+    "/images/empty-state/dog-laptop.webp",
+    "/images/empty-state/dog-heartbeat.webp",
+    "/images/empty-state/dog-travel.webp",
+    "/images/empty-state/dog-ring.webp",
+    "/images/empty-state/dog-hug.webp",
+    "/images/empty-state/dog-sparklers.webp",
+];
+
+/// 空状态行动按钮。跳转或重试由调用方负责。
 #[derive(Props, Clone, PartialEq)]
 pub struct EmptyStateAction {
-    /// 按钮文案。
     #[props(into)]
     pub label: String,
-    /// 点击回调，调用方负责导航。
     pub onclick: EventHandler<()>,
 }
 
-/// 空状态组件。
-///
-/// 默认渲染「线条小狗」配图；`title` / `description` / `image` / `action` 均可覆盖默认。
-/// 所有元素垂直居中，配图下方留白，与首页 `HomeInfo` 的居中布局对齐。
-///
-/// Props 由 `#[component]` 宏自动生成（均为可选）。
+/// 展示标题、说明与随机小狗插画，可选行动按钮或指定配图。
 #[component]
 pub fn EmptyState(
-    /// 主标题（通常为「还没有文章」之类）。
-    #[props(into, default = "还没有文章".to_string())]
-    title: String,
-    /// 副文案，说明当前状态或引导用户。
+    #[props(into, default = "还没有文章".to_string())] title: String,
+    #[props(into, default = String::new())] description: String,
+    /// 指定配图时覆盖随机图库；空字符串使用随机图库。
     #[props(into, default = String::new())]
-    description: String,
-    /// 配图路径（缺省「线条小狗」持相机插画）。
-    #[props(into, default = "/images/xiaotiaoxiaogou_01.webp".to_string())]
     image: String,
-    /// 可选的行动按钮。
-    #[props(default)]
-    action: Option<EmptyStateAction>,
+    #[props(default)] action: Option<EmptyStateAction>,
 ) -> Element {
+    // 首次 SSR 与 hydration 使用同一张图；挂载后随机一次，后续重绘保持不变。
+    let selected = use_signal(|| 0_usize);
+    use_effect(move || {
+        #[cfg(target_arch = "wasm32")]
+        {
+            let mut selected = selected;
+            selected.set((js_sys::Math::random() * EMPTY_STATE_IMAGES.len() as f64) as usize);
+        }
+    });
+    let src = if image.is_empty() {
+        EMPTY_STATE_IMAGES[selected()]
+    } else {
+        &image
+    };
+
     rsx! {
-        div { class: "flex flex-col items-center justify-center text-center py-20 px-4 page-enter",
-            // 配图。
-            img {
-                class: "w-48 h-auto rounded-lg select-none dark:brightness-90",
-                src: "{image}",
-                alt: "线条小狗插画",
-                draggable: "false",
+        section { class: "empty-state",
+            div { class: "empty-state-art",
+                img { src: "{src}", alt: "", width: "192", height: "192", draggable: "false" }
             }
-            // 主标题：衬线字体，与首页 H1 风格呼应但更轻量。
-            h2 { class: "mt-8 text-2xl font-bold tracking-tight text-paper-primary",
-                "{title}"
-            }
-            // 副文案：次要色，限宽保证可读性。
+            span { class: "empty-state-kicker", "YGGDRASIL / 一处留白" }
+            h2 { "{title}" }
             if !description.is_empty() {
-                p { class: "mt-3 text-sm leading-relaxed text-paper-secondary max-w-md",
-                    "{description}"
-                }
+                p { class: "empty-state-description", "{description}" }
             }
-            // 行动按钮：复用全站统一主操作按钮样式（BTN_PRIMARY）。
             if let Some(act) = action {
                 button {
-                    class: "{BTN_PRIMARY} mt-8",
+                    class: "{BTN_PRIMARY} empty-state-action",
+                    r#type: "button",
                     onclick: move |_| act.onclick.call(()),
                     "{act.label}"
                 }

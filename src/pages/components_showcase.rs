@@ -1142,7 +1142,7 @@ fn SceneComponentPreview(name: String) -> Element {
             rsx! { crate::components::post::breadcrumbs::Breadcrumbs { title: post.title.clone() } }
         }
         "PostCover" => {
-            rsx! { crate::components::post::post_cover::PostCover { src: "/images/xiaotiaoxiaogou_01.webp".to_string() } }
+            rsx! { crate::components::post::post_cover::PostCover { src: "/images/empty-state/dog-camera.webp".to_string() } }
         }
         "CommentCardShell" => rsx! {
             crate::components::comments::card::CommentCardShell {

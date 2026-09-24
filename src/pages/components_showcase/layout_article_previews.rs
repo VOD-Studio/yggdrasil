@@ -205,7 +205,7 @@ fn article_html(prefix: &str, alternate: bool) -> String {
 <pre><code class="language-rust">let leaf = "Yggdrasil";
 println!("{{leaf}}");</code></pre>
 <h2 id="{prefix}-image">留下一张照片</h2>
-<p><img src="/images/xiaotiaoxiaogou_01.webp" alt="草地上的小狗" loading="lazy"></p>"#
+<p><img src="/images/empty-state/dog-camera.webp" alt="相机里的两只小狗" loading="lazy"></p>"#
     )
 }
 

@@ -679,9 +679,6 @@
   .h-\[2px\] {
     height: 2px;
   }
-  .h-auto {
-    height: auto;
-  }
   .h-full {
     height: 100%;
   }
@@ -3102,10 +3099,6 @@
     @supports (color: color-mix(in lab, red, red)) {
       --tw-shadow-color: color-mix(in oklab, color-mix(in oklab, var(--color-black) 30%, transparent) var(--tw-shadow-alpha), transparent);
     }
-  }
-  .dark\:brightness-90:where(.dark, .dark *) {
-    --tw-brightness: brightness(90%);
-    filter: var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,);
   }
   @media (hover: hover) {
     .dark\:hover\:bg-amber-900\/20:where(.dark, .dark *):hover {
@@ -10338,6 +10331,104 @@ button.note-tag {
     transform: none;
   }
 }
+.empty-state {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: min(100%, 42rem);
+  margin: 1.5rem auto;
+  padding: clamp(2rem, 5vw, 3.25rem) 1.5rem 2.75rem;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, #bcc0cc 65%, transparent);
+  @supports (color: color-mix(in lab, red, red)) {
+    border: 1px solid color-mix(in srgb, var(--color-paper-border) 65%, transparent);
+  }
+  border-radius: 28px;
+  background: radial-gradient(circle at 50% 0, color-mix(in srgb, #40a02b 11%, transparent), transparent 60%), color-mix(in srgb, #e6e9ef 45%, #eff1f5);
+  @supports (color: color-mix(in lab, red, red)) {
+    background: radial-gradient(circle at 50% 0, color-mix(in srgb, var(--color-paper-accent) 11%, transparent), transparent 60%), color-mix(in srgb, var(--color-paper-entry) 45%, var(--color-paper-theme));
+  }
+  box-shadow: 0 20px 50px -42px color-mix(in srgb, #4c4f69 50%, transparent);
+  @supports (color: color-mix(in lab, red, red)) {
+    box-shadow: 0 20px 50px -42px color-mix(in srgb, var(--color-paper-primary) 50%, transparent);
+  }
+  text-align: center;
+}
+.empty-state::before {
+  content: "";
+  position: absolute;
+  inset: 12px;
+  border: 1px solid color-mix(in srgb, #bcc0cc 40%, transparent);
+  @supports (color: color-mix(in lab, red, red)) {
+    border: 1px solid color-mix(in srgb, var(--color-paper-border) 40%, transparent);
+  }
+  border-radius: 19px;
+  pointer-events: none;
+}
+.empty-state-art {
+  position: relative;
+  width: clamp(9.5rem, 27vw, 12rem);
+  padding: .5rem;
+  border: 1px solid color-mix(in srgb, #bcc0cc 60%, transparent);
+  @supports (color: color-mix(in lab, red, red)) {
+    border: 1px solid color-mix(in srgb, var(--color-paper-border) 60%, transparent);
+  }
+  border-radius: 22px;
+  background: var(--color-paper-theme);
+  box-shadow: 0 16px 30px -22px color-mix(in srgb, #4c4f69 48%, transparent);
+  @supports (color: color-mix(in lab, red, red)) {
+    box-shadow: 0 16px 30px -22px color-mix(in srgb, var(--color-paper-primary) 48%, transparent);
+  }
+  transform: rotate(-3deg);
+}
+.empty-state-art::after {
+  content: "✳";
+  position: absolute;
+  top: -.9rem;
+  right: -1rem;
+  color: var(--color-paper-accent);
+  font-size: 1.6rem;
+  line-height: 1;
+}
+.empty-state-art img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 15px;
+  user-select: none;
+}
+.empty-state-kicker {
+  margin-top: 2rem;
+  color: var(--color-paper-accent);
+  font-size: .65rem;
+  font-weight: 600;
+  letter-spacing: .15em;
+}
+.empty-state h2 {
+  margin-top: .55rem;
+  color: var(--color-paper-primary);
+  font: 500 clamp(1.3rem, 3vw, 1.8rem)/1.45 var(--font-serif);
+  text-wrap: balance;
+}
+.empty-state-description {
+  max-width: 30rem;
+  margin-top: .7rem;
+  color: var(--color-paper-secondary);
+  font-size: .875rem;
+  line-height: 1.85;
+  text-wrap: pretty;
+}
+.empty-state .empty-state-action {
+  margin-top: 1.5rem;
+}
+.empty-state-action:focus-visible {
+  outline: 2px solid var(--color-paper-accent);
+  outline-offset: 4px;
+}
 .showcase, .showcase-entry {
   --sc-surface: color-mix(in srgb, #eff1f5 93%, white);
   @supports (color: color-mix(in lab, red, red)) {
@@ -10845,14 +10936,37 @@ button.note-tag {
   font-size: .75rem;
 }
 .showcase-empty-preview {
-  width: 360px;
-  height: 160px;
-  overflow: hidden;
-  display: grid;
-  place-items: center;
+  width: 100%;
 }
-.showcase-empty-preview > div {
-  transform: scale(.35);
+.showcase-empty-preview > .empty-state {
+  margin: 0;
+}
+.showcase-card-preview .showcase-empty-preview .empty-state {
+  padding: 1rem;
+  border-radius: 14px;
+}
+.showcase-card-preview .showcase-empty-preview .empty-state::before {
+  display: none;
+}
+.showcase-card-preview .showcase-empty-preview .empty-state-art {
+  width: 4.5rem;
+  padding: .25rem;
+  border-radius: 11px;
+}
+.showcase-card-preview .showcase-empty-preview .empty-state-art img {
+  border-radius: 7px;
+}
+.showcase-card-preview .showcase-empty-preview .empty-state-art::after {
+  top: -.35rem;
+  right: -.4rem;
+  font-size: .8rem;
+}
+.showcase-card-preview .showcase-empty-preview .empty-state-kicker, .showcase-card-preview .showcase-empty-preview .empty-state-description {
+  display: none;
+}
+.showcase-card-preview .showcase-empty-preview h2 {
+  margin-top: .7rem;
+  font-size: .8rem;
 }
 .showcase-skeleton-lines {
   width: 13rem;
