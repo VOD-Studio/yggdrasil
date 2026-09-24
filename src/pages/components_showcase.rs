@@ -13,6 +13,7 @@ use serde::Deserialize;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::JsCast;
 
+use crate::components::forms::FormInput;
 use crate::models::post::{Post, PostListItem, PostNav, PostStatus};
 use crate::router::Route;
 
@@ -280,14 +281,13 @@ pub fn ComponentShowcase() -> Element {
             div { class: "showcase-catalog", id: "showcase-collection",
                 aside { class: "showcase-sidebar",
                     p { class: "showcase-sidebar-label", "沿着目录，慢慢翻阅" }
-                    label { class: "showcase-search",
-                        span { aria_hidden: "true", "⌕" }
-                        input {
+                    div { class: "showcase-search",
+                        FormInput {
                             r#type: "search",
-                            aria_label: "搜索组件",
+                            aria_label: Some("搜索组件"),
                             placeholder: "搜索组件…",
                             value: state.search,
-                            oninput: move |event| filters.write().search = event.value(),
+                            oninput: move |event: String| filters.write().search = event,
                         }
                     }
                     nav { class: "showcase-categories", aria_label: "组件分类",

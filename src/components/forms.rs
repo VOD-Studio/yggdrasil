@@ -441,6 +441,7 @@ pub fn FormInput(
     #[props(default)] mono: bool,
     #[props(default)] inputmode: Option<&'static str>,
     #[props(default)] title: Option<&'static str>,
+    #[props(default)] aria_label: Option<&'static str>,
 ) -> Element {
     let base = class.unwrap_or(INPUT_CLASS);
     let mono_class = if mono { " font-mono" } else { "" };
@@ -459,6 +460,7 @@ pub fn FormInput(
             disabled,
             inputmode: inputmode.unwrap_or_default(),
             title: title.unwrap_or_default(),
+            aria_label,
             oninput: move |e| oninput.call(e.value()),
             onkeydown: move |e| {
                 if let Some(handler) = &onkeydown {
