@@ -189,18 +189,53 @@ pub fn AdminNotebooks() -> Element {
     let mut books = use_resource(|| client_request(owned_notebooks()));
     let mut editing = use_signal(|| None::<Notebook>);
     let mut form_open = use_signal(|| false);
-    let mut order = use_signal(|| None::<i32>);
+    let mut order_id = use_signal(|| None::<i32>);
+    let mut order_open = use_signal(|| false);
     let mut archived = use_signal(|| false);
     let mut confirm_archive = use_signal(|| None::<i32>);
     let mut busy = use_signal(|| false);
     let mut error = use_signal(String::new);
+
+    let mut close_order = move |()| {
+        order_open.set(false);
+        #[cfg(target_arch = "wasm32")]
+        spawn(async move {
+            crate::utils::time::sleep_ms(320).await;
+            if !*order_open.peek() {
+                order_id.set(None);
+            }
+        });
+        #[cfg(not(target_arch = "wasm32"))]
+        order_id.set(None);
+    };
+
+    let mut toggle_order = move |id: i32| {
+        if order_open() && order_id() == Some(id) {
+            close_order(());
+        } else {
+            form_open.set(false);
+            order_id.set(Some(id));
+            order_open.set(true);
+        }
+    };
+
     rsx! {
         div { class:"notes-admin",
             div {class:"notes-admin-heading",
                 div {h1 {"笔记本"} p {"把相关的记录放在一起，按你的思路排列。"}}
                 div {class:"notes-admin-actions",
                     Link {class:BTN_SECONDARY_SM,to:Route::AdminNotes {},"返回笔记"}
-                    button {class:BTN_PRIMARY_SM,onclick:move |_| {editing.set(None);form_open.set(true);},"＋ 新建笔记本"}
+                    button {
+                        class: BTN_PRIMARY_SM,
+                        onclick: move |_| {
+                            editing.set(None);
+                            form_open.set(true);
+                            if order_open() {
+                                close_order(());
+                            }
+                        },
+                        "＋ 新建笔记本"
+                    }
                 }
             }
             if form_open() {
@@ -208,10 +243,32 @@ pub fn AdminNotebooks() -> Element {
                     NotebookForm {key:"{key}",book:editing(),on_done:move |_| {form_open.set(false);books.restart();}}
                 }
             }
-            if let Some(id)=order() {
-                for key in std::iter::once(id) {NotebookOrder {key:"{key}",id,on_close:move |_|order.set(None)}}
+            div {
+                class: "notebook-order-panel",
+                "data-open": "{order_open()}",
+                inert: if order_open() { None } else { Some("") },
+                div {
+                    class: "overflow-hidden min-h-0",
+                    if let Some(id) = order_id() {
+                        NotebookOrder {
+                            key: "{id}",
+                            id,
+                            on_close: move |_| close_order(()),
+                        }
+                    }
+                }
             }
-            FilterTabs {items:vec![("active","使用中"),("archived","已归档")],active_value:if archived(){"archived".to_string()}else{"active".to_string()},on_change:move |value:String|{archived.set(value=="archived");confirm_archive.set(None);}}
+            FilterTabs {
+                items: vec![("active","使用中"),("archived","已归档")],
+                active_value: if archived(){"archived".to_string()}else{"active".to_string()},
+                on_change: move |value: String| {
+                    archived.set(value == "archived");
+                    confirm_archive.set(None);
+                    if order_open() {
+                        close_order(());
+                    }
+                }
+            }
             p {class:"notes-status my-3","归档隐藏公开目录，不删除笔记，也不撤回笔记自身的发布或 AI 授权。恢复后目录保持私密。"}
             if !error().is_empty(){p {class:"notes-error",role:"alert","{error}"}}
             div {class:"notes-admin-list",
@@ -228,12 +285,49 @@ pub fn AdminNotebooks() -> Element {
                                     if !book.description.trim().is_empty() {p {class:"notes-admin-row-description","{book.description}"}}
                                 }
                                 div {class:"notes-admin-actions notes-admin-row-actions",
-                                    button {class:BTN_SECONDARY_SM,disabled:busy(),onclick:{let book=book.clone();move |_| {editing.set(Some(book.clone()));form_open.set(true);}},"编辑"}
-                                    button {class:BTN_SECONDARY_SM,disabled:busy(),onclick:{let id=book.id;move |_|order.set(Some(id))},"编排目录"}
+                                    button {
+                                        class: BTN_SECONDARY_SM,
+                                        disabled: busy(),
+                                        onclick: {
+                                            let book = book.clone();
+                                            move |_| {
+                                                editing.set(Some(book.clone()));
+                                                form_open.set(true);
+                                                if order_open() {
+                                                    close_order(());
+                                                }
+                                            }
+                                        },
+                                        "编辑"
+                                    }
+                                    button {
+                                        class: if order_open() && order_id() == Some(book.id) {
+                                            format!("{BTN_SECONDARY_SM} ring-2 ring-[var(--color-paper-accent)] text-[var(--color-paper-primary)]")
+                                        } else {
+                                            BTN_SECONDARY_SM.to_string()
+                                        },
+                                        disabled: busy(),
+                                        onclick: {
+                                            let id = book.id;
+                                            move |_| toggle_order(id)
+                                        },
+                                        "编排目录"
+                                    }
                                     if archived() || confirm_archive()==Some(book.id) {
                                         button {class:BTN_SECONDARY_SM,disabled:busy(),onclick:{let id=book.id;move |_|async move {
                                             busy.set(true);error.set(String::new());
-                                            match archive_notebook(id,!archived()).await {Ok(())=>{confirm_archive.set(None);form_open.set(false);books.restart();},Err(e)=>error.set(e.to_string())};busy.set(false);
+                                            match archive_notebook(id,!archived()).await {
+                                                Ok(())=>{
+                                                    confirm_archive.set(None);
+                                                    form_open.set(false);
+                                                    if order_id() == Some(id) {
+                                                        close_order(());
+                                                    }
+                                                    books.restart();
+                                                },
+                                                Err(e)=>error.set(e.to_string())
+                                            };
+                                            busy.set(false);
                                         }},if archived(){"恢复笔记本"}else{"确认归档"}}
                                         if !archived(){button {class:"note-read",onclick:move |_|confirm_archive.set(None),"取消"}}
                                     } else {button {class:"note-read",disabled:busy(),onclick:{let id=book.id;move |_|confirm_archive.set(Some(id))},"归档"}}
@@ -293,23 +387,67 @@ fn NotebookOrder(id: i32, on_close: EventHandler<()>) -> Element {
         }
     });
     rsx! {
-        section {class:"notes-quick",aria_label:"编排笔记本目录",
-            h2 {class:"font-semibold mb-3","编排目录"}
-            p {class:"notes-status mb-3","上移或下移调整阅读顺序，保存后生效。"}
-            if let Some(Err(e))=response.read().as_ref(){p {class:"notes-error",role:"alert","{e}"}}
-            if response.read().is_none(){p {role:"status","正在加载目录…"}}
-            for (index,(note_id,title)) in rows().iter().enumerate() {
-                div {class:"flex justify-between gap-3 py-2",key:"{note_id}",span {"{title}"}
-                    div {class:"notes-admin-actions",
-                        button {r#type:"button",disabled:index==0,aria_label:"上移",onclick:move |_|rows.with_mut(|r|r.swap(index,index-1)),"↑"}
-                        button {r#type:"button",disabled:index+1==rows().len(),aria_label:"下移",onclick:move |_|rows.with_mut(|r|r.swap(index,index+1)),"↓"}
+        section {
+            class: "notes-quick animate-notebook-order-enter",
+            aria_label: "编排笔记本目录",
+            h2 { class: "font-semibold mb-3", "编排目录" }
+            p { class: "notes-status mb-3", "上移或下移调整阅读顺序，保存后生效。" }
+            if let Some(Err(e)) = response.read().as_ref() {
+                p { class: "notes-error", role: "alert", "{e}" }
+            }
+            if response.read().is_none() {
+                p { class: "notes-status animate-pulse", role: "status", "正在加载目录…" }
+            }
+            for (index, (note_id, title)) in rows().iter().enumerate() {
+                div {
+                    class: "flex justify-between items-center gap-3 py-2 transition-all duration-150",
+                    key: "{note_id}",
+                    span { "{title}" }
+                    div {
+                        class: "notes-admin-actions",
+                        button {
+                            r#type: "button",
+                            disabled: index == 0,
+                            aria_label: "上移",
+                            onclick: move |_| rows.with_mut(|r| r.swap(index, index - 1)),
+                            "↑"
+                        }
+                        button {
+                            r#type: "button",
+                            disabled: index + 1 == rows().len(),
+                            aria_label: "下移",
+                            onclick: move |_| rows.with_mut(|r| r.swap(index, index + 1)),
+                            "↓"
+                        }
                     }
                 }
             }
-            if !error().is_empty() {p {class:"notes-error",role:"alert","{error}"}}
-            div {class:"notes-admin-actions mt-4",
-                button {class:BTN_PRIMARY_SM,disabled:busy() || !initialized(),onclick:move |_| {busy.set(true);let ids=rows().iter().map(|r|r.0).collect();spawn(async move {match reorder_notebook(id,ids).await {Ok(())=>on_close.call(()),Err(e)=>error.set(e.to_string())};busy.set(false);});},"保存顺序"}
-                button {class:BTN_SECONDARY_SM,onclick:move |_|on_close.call(()),"关闭"}
+            if !error().is_empty() {
+                p { class: "notes-error", role: "alert", "{error}" }
+            }
+            div {
+                class: "notes-admin-actions mt-4",
+                button {
+                    class: BTN_PRIMARY_SM,
+                    disabled: busy() || !initialized(),
+                    onclick: move |_| {
+                        busy.set(true);
+                        let ids = rows().iter().map(|r| r.0).collect();
+                        spawn(async move {
+                            match reorder_notebook(id, ids).await {
+                                Ok(()) => on_close.call(()),
+                                Err(e) => error.set(e.to_string()),
+                            };
+                            busy.set(false);
+                        });
+                    },
+                    "保存顺序"
+                }
+                button {
+                    class: BTN_SECONDARY_SM,
+                    onclick: move |_| on_close.call(()),
+                    "关闭"
+                }
             }
         }
     }

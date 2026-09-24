@@ -10099,6 +10099,40 @@ button.note-tag {
   flex-shrink: 0;
   white-space: nowrap;
 }
+.notebook-order-panel {
+  --collapse-duration: 320ms;
+  --collapse-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  visibility: hidden;
+  transition: grid-template-rows var(--collapse-duration) var(--collapse-ease), opacity var(--collapse-duration) var(--collapse-ease), visibility var(--collapse-duration);
+}
+.notebook-order-panel[data-open="true"] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  visibility: visible;
+}
+.notebook-order-panel .notes-quick {
+  transform: translateY(-8px);
+  transition: transform var(--collapse-duration) var(--collapse-ease);
+}
+.notebook-order-panel[data-open="true"] .notes-quick {
+  transform: translateY(0);
+}
+@keyframes notebook-order-enter {
+  0% {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+.animate-notebook-order-enter {
+  animation: notebook-order-enter var(--collapse-duration, 320ms) cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
 .notes-admin-list {
   display: grid;
   gap: .75rem;
@@ -10378,8 +10412,11 @@ button.note-tag {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .notes-quick, .notebook-card {
+  .notes-quick, .notebook-card, .notebook-order-panel, .notebook-order-panel .notes-quick {
     transition: none;
+  }
+  .animate-notebook-order-enter {
+    animation: none;
   }
   .notebook-card:hover {
     transform: none;
