@@ -10772,8 +10772,8 @@ button.note-tag {
   display: flex;
   justify-content: center;
   align-items: center;
-  min-height: 183px;
-  padding: 1.5rem;
+  min-height: 198px;
+  padding: 2.2rem 1.25rem 1.25rem;
   border-radius: 18px 18px 0 0;
   background-image: radial-gradient(var(--sc-line) .65px, transparent .65px);
   background-size: 16px 16px;
@@ -10782,6 +10782,9 @@ button.note-tag {
   position: absolute;
   top: .9rem;
   left: 1rem;
+  z-index: 2;
+  pointer-events: none;
+  line-height: 1.2;
   color: var(--color-paper-secondary);
   opacity: .65;
   font: .56rem var(--sc-mono);
@@ -10949,6 +10952,7 @@ button.note-tag {
 }
 .showcase-empty-preview {
   width: 100%;
+  max-width: 22rem;
 }
 .showcase-empty-preview > .empty-state {
   margin: 0;
@@ -11137,7 +11141,8 @@ button.note-tag {
 }
 .showcase-card-preview:is(.showcase-card-preview--asset-picker-modal, .showcase-card-preview--asset-upload-modal, .showcase-card-preview--admin-layout, .showcase-card-preview--code-runner, .showcase-card-preview--comment-form, .showcase-card-preview--comment-item, .showcase-card-preview--comment-list, .showcase-card-preview--comment-section, .showcase-card-preview--post-content, .showcase-card-preview--post-toc, .showcase-card-preview--tiptap-editor, .showcase-card-preview--code-mirror-editor, .showcase-card-preview--xterm-terminal) {
   height: 270px;
-  padding: 1.9rem .7rem .7rem;
+  padding: 2.2rem .7rem .7rem;
+  align-items: flex-start;
   overflow: hidden;
 }
 .showcase-card-preview.showcase-card-preview--asset-picker-modal {
@@ -11146,7 +11151,8 @@ button.note-tag {
 }
 .showcase-card-preview:is(.showcase-card-preview--header, .showcase-card-preview--footer, .showcase-card-preview--frontend-layout, .showcase-card-preview--post-footer, .showcase-card-preview--lightbox) {
   height: 230px;
-  padding: 1.9rem .7rem .7rem;
+  padding: 2.2rem .7rem .7rem;
+  align-items: flex-start;
   overflow: hidden;
 }
 .showcase-card-preview > :last-child {
@@ -11361,7 +11367,7 @@ button.note-tag {
   overflow: auto;
 }
 .showcase-card-preview .showcase-layout-window, .showcase-card-preview .showcase-article-window {
-  height: 215px;
+  height: 182px;
 }
 .showcase-detail .showcase-layout-window {
   min-height: 310px;
