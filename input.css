@@ -4249,16 +4249,51 @@ button.note-tag { cursor: pointer; }
 .showcase-demo-result { padding: .6rem; overflow-wrap: anywhere; color: var(--color-paper-secondary); font-size: .7rem; }
 .showcase-picker-demo, .showcase-upload-demo, .showcase-runner-demo { width: 100%; min-width: 0; }
 .showcase-picker-panel { display: flex; flex-direction: column; min-width: 0; border: 1px solid var(--sc-line); border-radius: 14px; overflow: hidden; background: var(--color-paper-theme); }
-.showcase-picker-toolbar { display: flex; align-items: center; gap: .5rem; padding: .6rem; border-bottom: 1px solid var(--sc-line); }
+.showcase-picker-toolbar { display: flex; align-items: center; gap: .5rem; padding: .6rem .8rem; border-bottom: 1px solid var(--sc-line); }
 .showcase-picker-toolbar > :first-child { min-width: 0; flex: 1; }
 .showcase-picker-toolbar button { flex-shrink: 0; font-size: .7rem; cursor: pointer; }
 .showcase-picker-toolbar button[aria-pressed="true"] { color: var(--color-paper-accent); font-weight: 600; }
-.showcase-picker-panel > .relative { min-height: 130px; max-height: 170px; padding: .65rem; }
-.showcase-picker-panel .grid { gap: .45rem; }
-.showcase-picker-panel > .flex:last-child { padding: .5rem; }
-.showcase-picker-panel > .flex:last-child button { font-size: .65rem; padding: .35rem .55rem; }
-.showcase-picker-detail .showcase-picker-panel > .relative { max-height: 390px; min-height: 250px; padding: 1rem; }
-.showcase-picker-detail .showcase-picker-panel .grid { gap: .8rem; }
+.showcase-picker-mode-switch { display: inline-flex; align-items: center; padding: 2px; border-radius: 999px; background: var(--color-paper-code-bg); border: 1px solid var(--sc-line); gap: 2px; flex-shrink: 0; }
+.showcase-picker-mode-switch button { flex-shrink: 0; font-size: .72rem; padding: .22rem .65rem; border-radius: 999px; color: var(--color-paper-secondary); transition: all .15s ease; cursor: pointer; }
+.showcase-picker-mode-switch button[aria-pressed="true"] { background: var(--color-paper-theme); color: var(--color-paper-accent); font-weight: 600; box-shadow: 0 1px 2px rgba(0, 0, 0, .06); }
+.showcase-picker-panel > .relative { min-height: 0; padding: .75rem; }
+.showcase-picker-panel .grid { gap: .5rem; }
+.showcase-picker-pagination { padding: .5rem .8rem; }
+.showcase-picker-panel > .flex:last-child { padding: .5rem .8rem; }
+
+/* Card preview specific: proportional scaling so all controls breathe gracefully */
+.showcase-card-preview .showcase-picker-toolbar { padding: .35rem .55rem; }
+.showcase-card-preview .showcase-picker-toolbar input { padding: .28rem .55rem; font-size: .72rem; border-radius: 8px; }
+.showcase-card-preview .showcase-picker-panel > .relative { padding: .45rem .55rem; min-height: 0; max-height: none; }
+.showcase-card-preview .showcase-picker-panel .grid { gap: .35rem; }
+.showcase-card-preview .showcase-picker-panel .grid button { border-radius: 10px; }
+.showcase-card-preview .showcase-picker-panel .grid span[class*="rounded-full"] { width: 1.15rem; height: 1.15rem; font-size: .62rem; top: .2rem; right: .2rem; }
+.showcase-card-preview .showcase-picker-pagination { padding: .3rem .55rem; }
+.showcase-card-preview .showcase-picker-pagination .admin-pagination { display: flex; align-items: center; justify-content: space-between; gap: .25rem; font-size: .65rem; }
+.showcase-card-preview .showcase-picker-pagination .admin-pagination > :is(:first-child, :last-child) { padding: .18rem .45rem; font-size: .65rem; border-radius: 999px; min-height: 0; line-height: 1.2; }
+.showcase-card-preview .showcase-picker-pagination .admin-pagination > :nth-child(2) { font-size: .65rem; }
+.showcase-card-preview .showcase-picker-pagination .admin-pagination input,
+.showcase-card-preview .showcase-picker-pagination .admin-pagination > :nth-child(2) span:first-child { width: 1.6rem; height: 1.3rem; font-size: .65rem; padding: 0 .15rem; border-radius: 6px; }
+.showcase-card-preview .showcase-picker-pagination .admin-pagination > :nth-child(2) span { font-size: .65rem; }
+.showcase-card-preview .showcase-picker-panel > .flex:last-child { padding: .35rem .55rem; }
+.showcase-card-preview .showcase-picker-panel > .flex:last-child span { font-size: .65rem; }
+.showcase-card-preview .showcase-picker-panel > .flex:last-child button { font-size: .65rem; padding: .2rem .45rem; border-radius: 999px; }
+
+/* Detail view specific: generous breathing room and bounded maximum width */
+.showcase-picker-detail { max-width: 680px; margin-inline: auto; }
+.showcase-picker-detail .showcase-demo-actions { margin-bottom: .75rem; padding: 0; }
+.showcase-picker-detail .showcase-picker-toolbar { padding: .75rem 1.25rem; gap: .75rem; }
+.showcase-picker-detail .showcase-picker-toolbar input { padding: .45rem .85rem; font-size: .85rem; border-radius: 12px; }
+.showcase-picker-detail .showcase-picker-panel > .relative { padding: 1rem 1.25rem; max-height: 340px; min-height: 0; }
+.showcase-picker-detail .showcase-picker-panel .grid { gap: .85rem; }
+.showcase-picker-detail .showcase-picker-pagination { padding: .65rem 1.25rem; }
+.showcase-picker-detail .showcase-picker-pagination .admin-pagination { gap: .5rem; font-size: .78rem; }
+.showcase-picker-detail .showcase-picker-pagination .admin-pagination > :is(:first-child, :last-child) { padding: .3rem .75rem; font-size: .78rem; border-radius: 999px; }
+.showcase-picker-detail .showcase-picker-pagination .admin-pagination > :nth-child(2) { font-size: .78rem; }
+.showcase-picker-detail .showcase-picker-pagination .admin-pagination > :nth-child(2) span { font-size: .78rem; }
+.showcase-picker-detail .showcase-picker-panel > .flex:last-child { padding: .65rem 1.25rem; }
+.showcase-picker-detail .showcase-picker-panel > .flex:last-child span { font-size: .82rem; }
+.showcase-picker-detail .showcase-picker-panel > .flex:last-child button { font-size: .78rem; padding: .35rem .8rem; border-radius: 999px; }
 .showcase-upload-demo { display: flex; flex-direction: column; max-height: 100%; overflow: auto; }
 .showcase-upload-demo > .flex-1 { min-height: 0; }
 .showcase-upload-demo .animate-row-enter { animation-duration: .2s; }

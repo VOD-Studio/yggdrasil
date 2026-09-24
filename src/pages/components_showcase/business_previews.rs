@@ -152,8 +152,10 @@ fn PickerDemoContent(
                     oninput: move |value: String| { query.set(value); page.set(1); }
                 }
                 if detail {
-                    button { r#type: "button", aria_pressed: "{!multi()}", onclick: move |_| { multi.set(false); selected.set(Vec::new()); }, "单选" }
-                    button { r#type: "button", aria_pressed: "{multi()}", onclick: move |_| { multi.set(true); selected.set(Vec::new()); }, "多选" }
+                    div { class: "showcase-picker-mode-switch",
+                        button { r#type: "button", aria_pressed: "{!multi()}", onclick: move |_| { multi.set(false); selected.set(Vec::new()); }, "单选" }
+                        button { r#type: "button", aria_pressed: "{multi()}", onclick: move |_| { multi.set(true); selected.set(Vec::new()); }, "多选" }
+                    }
                 }
             }
             PickerGallery { items, selected, multi: multi(), loading: false, uploading: false, error: None,
@@ -161,11 +163,13 @@ fn PickerDemoContent(
                 on_pick: move |picks: Vec<AssetSelection>| { confirmed.set(picks); visible.set(false); }
             }
             if total > 3 {
-                Pagination::<Route> { variant: "admin", compact: true, current_page: page(), total,
-                    per_page: 3, unit: "张",
-                    on_prev: move |_| page_prev.set((page_prev() - 1).max(1)),
-                    on_next: move |_| page_next.set((page_next() + 1).min(((total + 2) / 3) as i32)),
-                    on_jump: move |next: i32| page_jump.set(next.clamp(1, ((total + 2) / 3) as i32)),
+                div { class: "showcase-picker-pagination shrink-0 shadow-[inset_0_1px_0_var(--color-paper-border)]",
+                    Pagination::<Route> { variant: "admin", compact: true, current_page: page(), total,
+                        per_page: 3, unit: "张",
+                        on_prev: move |_| page_prev.set((page_prev() - 1).max(1)),
+                        on_next: move |_| page_next.set((page_next() + 1).min(((total + 2) / 3) as i32)),
+                        on_jump: move |next: i32| page_jump.set(next.clamp(1, ((total + 2) / 3) as i32)),
+                    }
                 }
             }
             if multi() {
