@@ -4353,6 +4353,30 @@ button.note-tag { cursor: pointer; }
 .showcase-cover-window .entry-cover .blur-img { aspect-ratio: 1080 / 1077; }
 .showcase-detail .showcase-cover-window .showcase-scene-canvas { width: 10.5rem; transform: none; }
 
+/* Article headers use the available width instead of a scaled, clipped browser scene. */
+.showcase-post-header-demo { width: 100%; max-width: 46rem; margin-inline: auto; }
+.showcase-post-header-sheet { min-width: 0; padding: clamp(1rem, 2.5vw, 2rem); border: 1px solid var(--sc-line); border-radius: 14px; background: var(--color-paper-theme); }
+.showcase-post-header-demo .post-header { margin: 0; padding-bottom: 0; border-bottom: 0; }
+.showcase-post-header-demo .post-description { max-width: 36rem; }
+.showcase-detail .showcase-live-preview:has([data-showcase-preview="post-header"]) { min-height: 0; padding: clamp(.75rem, 2vw, 1.75rem); }
+.showcase-card-preview .showcase-post-header-sheet { padding: 1.1rem; }
+.showcase-card-preview .showcase-post-header-demo .post-header { gap: .8rem; }
+.showcase-card-preview .showcase-post-header-demo .post-title { font-size: 1.65rem; }
+.showcase-card-preview .showcase-post-header-demo .post-description { font-size: .8rem; }
+.showcase-card-preview .showcase-post-header-demo :is(.breadcrumbs, .post-meta) { font-size: .65rem; }
+.showcase-card-preview .showcase-post-header-demo .post-meta { gap: .4rem; }
+.showcase-post-header-examples { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; margin-top: 1.2rem; }
+.showcase-post-header-example { min-width: 0; }
+.showcase-post-header-example h3 { display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; margin-bottom: .5rem; font-size: .75rem; font-weight: 500; }
+.showcase-post-header-example h3 span { color: var(--color-paper-secondary); font-size: .6rem; }
+.showcase-post-header-example .showcase-post-header-sheet { padding: 1rem; }
+.showcase-post-header-example .post-header { gap: .75rem; }
+.showcase-post-header-example .post-title { font-size: 1.25rem; }
+.showcase-post-header-example .post-description { font-size: .8rem; }
+.showcase-post-header-example :is(.breadcrumbs, .post-meta) { font-size: .65rem; }
+.showcase-post-header-example .post-meta { gap: .4rem; }
+.showcase-post-header-example .entry-hint svg { height: 1em; }
+
 .showcase-breadcrumb-demo { width: 100%; max-width: 42rem; margin-inline: auto; }
 .showcase-breadcrumb-context { min-width: 0; overflow: hidden; border: 1px solid var(--sc-line); border-radius: 14px; background: var(--color-paper-theme); }
 .showcase-breadcrumb-path { min-width: 0; padding: .85rem 1rem; background: var(--sc-wash); }
@@ -4372,7 +4396,7 @@ button.note-tag { cursor: pointer; }
 .showcase-breadcrumb-path--narrow { width: 280px; max-width: 100%; }
 .showcase-breadcrumb-note { margin-top: .8rem; color: var(--color-paper-secondary); font-size: .7rem; line-height: 1.7; }
 @media (max-width: 900px) {
-  .showcase-breadcrumb-examples { grid-template-columns: minmax(0, 1fr); }
+  .showcase-breadcrumb-examples, .showcase-post-header-examples { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* Real previews have individual bounded workspaces; the small samples stay readable. */

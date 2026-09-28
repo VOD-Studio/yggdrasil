@@ -6,6 +6,7 @@
  *   CHROMIUM_PATH=/path/to/chromium node scripts/test-components-showcase.cjs
  * Optional SHOWCASE_ARTIFACT_DIR stores screenshots/report; default is a temporary directory.
  * SHOWCASE_ONLY=post-footer runs focused footer layout, theme, and sample-link checks.
+ * SHOWCASE_ONLY=post-header checks full, unscaled headers and draft/summary variants.
  * Sensitive showcase requests are recorded, aborted, and fail the run.
  */
 const assert = require('node:assert/strict');
@@ -36,6 +37,7 @@ const TARGETS = [
   ['header', 'Header', '[data-showcase-preview="header"] nav'],
   ['post-content', 'PostContent', '[data-showcase-preview="post-content"] .post-content'],
   ['post-footer', 'PostFooter', '[data-showcase-preview="post-footer"] .post-footer'],
+  ['post-header', 'PostHeader', '[data-showcase-preview="post-header"] .post-header'],
   ['post-toc', 'PostToc', '[data-showcase-preview="post-toc"] .toc-sidebar'],
   ['tiptap-editor', 'TiptapEditor', '.showcase-browser-host--tiptap .ProseMirror'],
   ['code-mirror-editor', 'CodeMirrorEditor', '.showcase-browser-host--code .cm-editor'],
@@ -138,6 +140,37 @@ async function realPreview(page, slug, selector, card = false) {
   if (HEAVY.includes(slug)) {
     await root.locator('.showcase-browser-placeholder').first()
       .waitFor({ state: 'hidden', timeout: 10000 });
+  }
+  if (slug === 'post-header') {
+    const layout = await root.evaluate(element => {
+      const preview = element.querySelector('[data-showcase-preview="post-header"]');
+      const outer = element.getBoundingClientRect();
+      const box = preview.getBoundingClientRect();
+      const title = preview.querySelector('[data-showcase-sample="published"] .post-title');
+      return {
+        centered: Math.abs(box.left + box.width / 2 - outer.left - outer.width / 2) < 1,
+        titleSize: Number.parseFloat(getComputedStyle(title).fontSize),
+        samples: [...preview.querySelectorAll('[data-showcase-sample]')].map(sample => {
+          const sheet = sample.getBoundingClientRect();
+          const header = sample.querySelector('.post-header');
+          return {
+            unscaled: Math.abs(header.getBoundingClientRect().width -
+              Number.parseFloat(getComputedStyle(header).width)) < 1,
+            noOverflow: sample.scrollWidth <= sample.clientWidth + 1 &&
+              sample.scrollHeight <= sample.clientHeight + 1,
+            visibleContent: [...header.children].every(child => {
+              const rect = child.getBoundingClientRect();
+              return rect.top >= sheet.top && rect.bottom <= Math.min(sheet.bottom, outer.bottom) + 1 &&
+                rect.left >= sheet.left && rect.right <= sheet.right + 1;
+            }),
+          };
+        }),
+      };
+    });
+    assert(layout.centered, 'article header preview is centered in its workspace');
+    assert(layout.titleSize >= (card ? 24 : 28), 'article title stays readable');
+    assert(layout.samples.every(sample => sample.unscaled && sample.noOverflow && sample.visibleContent),
+      'all header samples render at natural size with complete content and no inner scrollbars');
   }
   if (slug === 'post-footer') {
     const layout = await root.evaluate(element => {
@@ -318,7 +351,52 @@ async function details(page, viewport, colorScheme, reducedMotion, label) {
     await assertNoDocumentOverflow(page, slug);
     await screenshot(page, `${slug}-${label}`);
   }
-  pass(`19 direct details at ${viewport.width}px ${colorScheme} ${reducedMotion}`);
+  pass(`${TARGETS.length} direct details at ${viewport.width}px ${colorScheme} ${reducedMotion}`);
+}
+
+async function postHeader(page) {
+  const selector = '[data-showcase-preview="post-header"] .post-header';
+  for (const width of [1440, 390, 320]) {
+    for (const colorScheme of ['light', 'dark']) {
+      stage = `post-header-${width}-${colorScheme}`;
+      await page.setViewportSize({ width, height: 1000 });
+      await page.emulateMedia({ colorScheme, reducedMotion: width < 640 ? 'reduce' : 'no-preference' });
+      await goto(page, '/about/components');
+      await page.locator('.showcase-search input').fill('PostHeader');
+      const card = page.locator('#showcase-post-header');
+      await card.scrollIntoViewIfNeeded();
+      await realPreview(page, 'post-header', selector, true);
+      await assertNoDocumentOverflow(page, 'post-header-card');
+      await elementScreenshot(card, `${stage}-card`);
+
+      visitId++;
+      await card.locator('.showcase-card-caption p').click();
+      await page.waitForURL(`${BASE}/about/components/post-header`);
+      await realPreview(page, 'post-header', selector);
+      const preview = page.locator('[data-showcase-preview="post-header"]');
+      assert.equal(await preview.locator('.post-header').count(), 3);
+      assert.equal(await preview.locator('[data-showcase-sample="draft"] .entry-hint').count(), 1);
+      assert.equal(await preview.locator('[data-showcase-sample="published"] .entry-hint').count(), 0);
+      assert.equal(await preview.locator('[data-showcase-sample="no-summary"] .post-description').count(), 0);
+      const longTitle = await preview.locator('[data-showcase-sample="no-summary"] .post-title')
+        .evaluate(element => element.getBoundingClientRect().height >
+          Number.parseFloat(getComputedStyle(element).lineHeight) + 1);
+      assert(longTitle, 'long article titles wrap onto multiple lines');
+      await assertNoDocumentOverflow(page, 'post-header-detail');
+      await elementScreenshot(page.locator('.showcase-live-panel'), `${stage}-detail`);
+
+      // Stress natural wrapping without creating or modifying an article.
+      await preview.locator('[data-showcase-sample="published"]').evaluate(element => {
+        element.querySelector('.post-title').textContent = 'LongTitleWithoutSpaces'.repeat(16);
+        element.querySelector('.post-description').textContent = '一段较长的摘要，用来观察窄屏下的自然换行。'.repeat(6);
+      });
+      await realPreview(page, 'post-header', selector);
+      await assertNoDocumentOverflow(page, 'post-header-long-content');
+      await goto(page, '/about/components/post-header');
+      await realPreview(page, 'post-header', selector);
+      pass(`${stage}: complete card, SPA/direct detail, draft mark, no summary and long content`);
+    }
+  }
 }
 
 async function postFooter(page) {
@@ -651,6 +729,15 @@ async function main() {
       baselineReads.set(endpoint, (baselineReads.get(endpoint) || 0) + 1);
     }
     const storageBefore = await commentStorage(page);
+    if (process.env.SHOWCASE_ONLY === 'post-header') {
+      await postHeader(page);
+      assertNetworkDelta();
+      assert.deepEqual(await commentStorage(page), storageBefore);
+      assert.deepEqual(report.blockedBusinessRequests, []);
+      assert.deepEqual(report.pageErrors, []);
+      pass('focused header checks have no business requests, storage changes or browser errors');
+      return;
+    }
     if (process.env.SHOWCASE_ONLY === 'post-footer') {
       await postFooter(page);
       assertNetworkDelta();

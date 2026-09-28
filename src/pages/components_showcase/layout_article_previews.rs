@@ -10,9 +10,10 @@ use crate::components::nav::build_nav_items;
 use crate::components::post::breadcrumbs::Breadcrumbs;
 use crate::components::post::post_content::PostContent;
 use crate::components::post::post_footer::PostFooter;
+use crate::components::post::post_header::PostHeader;
 use crate::components::post::post_toc::PostToc;
 use crate::components::skeletons::home_skeleton::HomeSkeleton;
-use crate::models::post::PostNav;
+use crate::models::post::{PostNav, PostStatus};
 use crate::router::Route;
 use crate::theme::ThemeToggle;
 
@@ -24,10 +25,52 @@ pub(super) fn preview(slug: &str, detail: bool) -> Option<Element> {
         "footer" => Some(rsx! { FooterPreview { detail } }),
         "frontend-layout" => Some(rsx! { FrontendLayoutPreview { detail } }),
         "breadcrumbs" => Some(rsx! { BreadcrumbsPreview { detail } }),
+        "post-header" => Some(rsx! { PostHeaderPreview { detail } }),
         "post-content" => Some(rsx! { PostContentPreview { detail } }),
         "post-footer" => Some(rsx! { PostFooterPreview { detail } }),
         "post-toc" => Some(rsx! { PostTocPreview { detail } }),
         _ => None,
+    }
+}
+
+#[component]
+fn PostHeaderPreview(detail: bool) -> Element {
+    let mut post = super::sample_post();
+    post.summary = Some(
+        "在时间的缝隙里，种下一些文字。记录设计、代码与日常，让零散的念头慢慢长成一片风景。"
+            .to_string(),
+    );
+    let mut draft = post.clone();
+    draft.title = "还在生长的想法".to_string();
+    draft.summary = Some("这一页，留给尚未完成的念头。".to_string());
+    draft.status = PostStatus::Draft;
+    draft.published_at = None;
+    let mut without_summary = post.clone();
+    without_summary.title = "在时间的缝隙里种下一些文字：从零开始构建自己的数字花园".to_string();
+    without_summary.summary = None;
+
+    rsx! {
+        div { class: "showcase-post-header-demo", "data-showcase-preview": "post-header",
+            article { class: "showcase-post-header-sheet", "data-showcase-sample": "published", inert: "true",
+                PostHeader { post }
+            }
+            if detail {
+                div { class: "showcase-post-header-examples",
+                    section { class: "showcase-post-header-example",
+                        h3 { "草稿" span { "标题旁显示草稿标记" } }
+                        article { class: "showcase-post-header-sheet", "data-showcase-sample": "draft", inert: "true",
+                            PostHeader { post: draft }
+                        }
+                    }
+                    section { class: "showcase-post-header-example",
+                        h3 { "长标题 · 无摘要" span { "自然换行" } }
+                        article { class: "showcase-post-header-sheet", "data-showcase-sample": "no-summary", inert: "true",
+                            PostHeader { post: without_summary }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

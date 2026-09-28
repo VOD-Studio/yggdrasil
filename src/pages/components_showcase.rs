@@ -891,14 +891,14 @@ fn preview_route(slug: &str) -> Option<PreviewRoute> {
         | "tag-detail-skeleton"
         | "tag-posts-loading"
         | "write-skeleton" => PreviewRoute::Skeleton,
-        "post-cover" | "post-header" | "post-meta" | "post-nav-links" | "post-card" => {
-            PreviewRoute::Scene
-        }
+        "post-cover" | "post-meta" | "post-nav-links" | "post-card" => PreviewRoute::Scene,
         "asset-picker-modal" | "asset-upload-modal" | "code-runner" | "sql-result-table" => {
             PreviewRoute::Business
         }
         "breadcrumbs" | "search-icon-link" | "admin-layout" | "footer" | "frontend-layout"
-        | "header" | "post-content" | "post-footer" | "post-toc" => PreviewRoute::LayoutArticle,
+        | "header" | "post-header" | "post-content" | "post-footer" | "post-toc" => {
+            PreviewRoute::LayoutArticle
+        }
         "comment-card-shell"
         | "comment-form"
         | "comment-item"
@@ -1336,9 +1336,6 @@ fn SceneComponentPreview(name: String) -> Element {
                 },
             }
         },
-        "PostHeader" => {
-            rsx! { crate::components::post::post_header::PostHeader { post: post.clone() } }
-        }
         "PostMeta" => rsx! { crate::components::post::post_meta::PostMeta { post: post.clone() } },
         "PostNavLinks" => rsx! {
             crate::components::post::post_nav_links::PostNavLinks {

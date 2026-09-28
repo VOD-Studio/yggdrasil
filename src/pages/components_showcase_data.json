@@ -1755,28 +1755,28 @@
       "slug": "post-header",
       "label": "文章页头",
       "group": "post",
-      "summary": "文章页头，用于文章阅读与展示。",
-      "states": "真实组件 · 本地样例",
-      "description": "文章页头使用固定的本地样例资料渲染项目里的真实组件。预览不会请求或修改业务数据；详情同时列出组件接口与源码位置。",
+      "summary": "用面包屑、标题、摘要与阅读信息，开启一篇文章。",
+      "states": "已发布 · 草稿 · 无摘要",
+      "description": "复用真实 PostHeader，以自然宽度展示文章的开场。下方同时呈现草稿标记、长标题换行与无摘要的布局，所有内容均为本地样例。",
       "props": [
         [
           "post",
           "Post",
           "由调用方提供",
-          "文章页头的 post 参数。"
+          "文章数据，包含标题、可选摘要、发布状态、日期、阅读时长与字数。"
         ],
         [
           "full_reload",
           "bool",
-          "由调用方提供",
-          "文章页头的 full_reload 参数。"
+          "false",
+          "面包屑首页链接是否整页加载；仅后台预览跨布局导航时设为 true。"
         ]
       ],
       "keys": [],
       "source": "src/components/post/post_header.rs",
-      "code": "pub fn PostHeader(post: Post, #[props(default = false)] full_reload: bool) -> Element",
+      "code": "rsx! {\n    PostHeader { post: post.clone() }\n}",
       "preview_mode": "static",
-      "usage_kind": "api"
+      "usage_kind": "rust"
     },
     {
       "name": "PostMeta",
