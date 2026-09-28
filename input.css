@@ -4669,6 +4669,8 @@ button.note-tag { cursor: pointer; }
   flex-direction: column;
 }
 .showcase-card-preview:is(.showcase-card-preview--comment-card-shell, .showcase-card-preview--comment-form, .showcase-card-preview--comment-item, .showcase-card-preview--comment-list, .showcase-card-preview--pending-comment-item, .showcase-card-preview--comment-section) > div { width: 100%; max-height: 220px; overflow-y: auto; }
+.showcase-card-preview:is(.showcase-card-preview--comment-card-shell, .showcase-card-preview--comment-item, .showcase-card-preview--comment-list) > div { overflow-y: hidden; }
+.showcase-card-preview:is(.showcase-card-preview--comment-card-shell, .showcase-card-preview--comment-item, .showcase-card-preview--comment-list) :is(.comment-list, .divide-y) > div { padding-top: 0.35rem; padding-bottom: 0.35rem; }
 .showcase-browser-preview { width: 100%; min-width: 0; overflow: hidden; border: 1px solid var(--sc-line); border-radius: 14px; background: var(--color-paper-theme); }
 .showcase-browser-toolbar { display: flex; justify-content: space-between; align-items: center; gap: .5rem; padding: .5rem .7rem; border-bottom: 1px solid var(--sc-line); font: .68rem var(--sc-mono); }
 .showcase-browser-toolbar :is(button, select) { border: 1px solid var(--sc-line); border-radius: 6px; padding: .25rem .4rem; cursor: pointer; }

@@ -1358,26 +1358,26 @@
       "slug": "comment-item",
       "label": "评论项",
       "group": "comments",
-      "summary": "已审核评论及嵌套回复，支持展开回复草稿。",
-      "states": "嵌套回复 · 取消回复 · 草稿保留",
-      "description": "顶层评论和一条回复使用正式 CommentItem 展示；点击回复会打开同一评论表单，取消后再打开仍保留草稿。图鉴的回复只加入当前预览，不会提交业务数据。",
+      "summary": "已审核评论卡片，支持嵌套层级、作者标识与展开回复草稿。",
+      "states": "标准回复链 · 展开回复与草稿 · 身份与外链 · 深层缩进 (depth=20)",
+      "description": "CommentItem 负责渲染单条已审核评论：展示作者头像、昵称（支持外部网站跳转）、专属作者徽章与格式化时间；支持点击展开内嵌回复表单，表单自动使用负 margin 抵消嵌套缩进对齐左边缘，且折叠取消后依然保留输入草稿；当嵌套深度达 20 层时自动隐藏回复按钮防止版面破坏。",
       "props": [
         [
           "comment",
           "PublicComment",
           "由调用方提供",
-          "已审核的评论资料，包含作者、时间与安全 HTML。"
+          "已审核的评论数据，包含评论 ID、父评论 ID、嵌套深度、作者信息、发布时间与安全 HTML 正文。"
         ],
         [
           "post_id",
           "i32",
           "由调用方提供",
-          "所属文章 ID，传给回复表单。"
+          "所属文章 ID，传给下方的内嵌 CommentForm 回复表单。"
         ]
       ],
       "keys": [],
       "source": "src/components/comments/item.rs",
-      "code": "// 位于 CommentSection 提供的 CommentContext 中\nrsx! {\n    CommentItem { comment: comment.clone(), post_id }\n}",
+      "code": "// 位于 CommentContext 作用域中\nrsx! {\n    CommentItem {\n        comment: PublicComment {\n            id: 101,\n            parent_id: None,\n            depth: 0,\n            author_name: \"青禾\".to_string(),\n            author_url: None,\n            avatar_url: String::new(),\n            is_author: true,\n            content_html: Some(\"<p>春天的第一片叶子，总会记得来时的风。</p>\".to_string()),\n            created_at: \"昨天 17:30\".to_string(),\n            created_at_iso: \"2026-09-22T10:00:00Z\".to_string(),\n        },\n        post_id: 1,\n    }\n}",
       "preview_mode": "interactive",
       "usage_kind": "rust"
     },
@@ -1386,32 +1386,32 @@
       "slug": "comment-list",
       "label": "评论列表",
       "group": "comments",
-      "summary": "已审核与待审核评论合并成树形回复列表。",
-      "states": "空列表 · 已审核 · 混合待审核",
-      "description": "预览复用正式 CommentList 的合并、排序和缩进逻辑，可切换空列表、仅已审核与混合待审核状态。回复使用局部评论上下文，只改变当前预览。",
+      "summary": "已审核与待审核评论合并树，支持时序排序与深度缩进。",
+      "states": "评论与待审核 · 仅已审核 · 空列表 · 多分支与孤儿容错",
+      "description": "CommentList 将服务端已审核评论与本地待审核评论统一合并为树形结构（merge_and_treeify）：同父子评论按时间戳升序排序，采用深度优先前序遍历展开；待审核评论展示为带审核中呼吸灯的半透明卡片；若父评论不存在则自动作为顶层孤儿评论容错渲染。",
       "props": [
         [
           "comments",
           "Vec<PublicComment>",
           "由调用方提供",
-          "服务端返回的已审核评论。"
+          "服务端返回的已审核评论列表。"
         ],
         [
           "pending",
           "Vec<PendingComment>",
           "由调用方提供",
-          "当前文章的待审核评论；正式入口来自本地待审核状态。"
+          "本地存储的待审核评论列表，与已审核评论混合组装为树形展示。"
         ],
         [
           "post_id",
           "i32",
           "由调用方提供",
-          "所属文章 ID，供每条评论的回复表单使用。"
+          "所属文章 ID，供子级每条评论的回复表单使用。"
         ]
       ],
       "keys": [],
       "source": "src/components/comments/list.rs",
-      "code": "// 位于 CommentSection 提供的 CommentContext 中\nrsx! {\n    CommentList {\n        comments: response.comments.clone(),\n        pending: ctx.pending_comments.read().clone(),\n        post_id,\n    }\n}",
+      "code": "// 位于 CommentContext 作用域中\nrsx! {\n    CommentList {\n        comments: approved_comments,\n        pending: pending_comments,\n        post_id: 1,\n    }\n}",
       "preview_mode": "interactive",
       "usage_kind": "rust"
     },

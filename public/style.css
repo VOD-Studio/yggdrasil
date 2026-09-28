@@ -1745,6 +1745,12 @@
   .bg-paper-accent-soft {
     background-color: var(--color-paper-accent-soft);
   }
+  .bg-paper-accent\/10 {
+    background-color: color-mix(in srgb, #40a02b 10%, transparent);
+    @supports (color: color-mix(in lab, red, red)) {
+      background-color: color-mix(in oklab, var(--color-paper-accent) 10%, transparent);
+    }
+  }
   .bg-paper-border {
     background-color: var(--color-paper-border);
   }
@@ -12224,6 +12230,13 @@ button.note-tag {
   width: 100%;
   max-height: 220px;
   overflow-y: auto;
+}
+.showcase-card-preview:is(.showcase-card-preview--comment-card-shell, .showcase-card-preview--comment-item, .showcase-card-preview--comment-list) > div {
+  overflow-y: hidden;
+}
+.showcase-card-preview:is(.showcase-card-preview--comment-card-shell, .showcase-card-preview--comment-item, .showcase-card-preview--comment-list) :is(.comment-list, .divide-y) > div {
+  padding-top: 0.35rem;
+  padding-bottom: 0.35rem;
 }
 .showcase-browser-preview {
   width: 100%;
