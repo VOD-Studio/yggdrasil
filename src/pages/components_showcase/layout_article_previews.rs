@@ -402,27 +402,32 @@ fn SearchIconLinkPreview(detail: bool) -> Element {
                             span { class: "px-1.5 py-0.5 rounded bg-paper-bg/60 border border-[var(--sc-line)]/50", "笔记" }
                         }
                     }
-                    div { class: "flex items-center gap-1.5",
-                        // 主角组件：SearchIconLink 带呼吸高光圈与背景指示
-                        div {
-                            class: "relative flex items-center justify-center p-0.5 rounded-full ring-2 ring-paper-accent/40 bg-paper-accent/10 transition-all",
-                            SearchIconLink { active: Some(true) }
-                        }
-                        div { class: "p-0.5 text-paper-secondary/70 scale-90",
-                            ThemeToggle {}
-                        }
+                    div { class: "flex items-center gap-1",
+                        // 主角组件：真实渲染 SearchIconLink 与 ThemeToggle 并列
+                        SearchIconLink { active: Some(false) }
+                        ThemeToggle {}
                     }
                 }
 
-                // 中间：状态与交互特性对比
+                // 中间：状态与交互特性直观对比
                 div { class: "grid grid-cols-2 gap-2 my-auto py-1",
-                    div { class: "rounded-lg border border-[var(--sc-line)]/60 bg-paper-entry/30 px-2 py-1.5 flex items-center gap-1.5",
-                        span { class: "text-paper-secondary text-[11px] font-mono", "⚪ 默认" }
-                        span { class: "text-[10px] text-paper-tertiary truncate", "次级色 · 悬停反馈" }
+                    div { class: "rounded-lg border border-[var(--sc-line)]/60 bg-paper-entry/30 p-2 flex items-center gap-2",
+                        div { class: "shrink-0 scale-90 -m-1 pointer-events-none",
+                            SearchIconLink { active: Some(false) }
+                        }
+                        div { class: "min-w-0 flex flex-col",
+                            span { class: "text-[11px] font-mono text-paper-secondary font-medium", "默认状态" }
+                            span { class: "text-[10px] text-paper-tertiary truncate", "次级色 · 悬停高亮" }
+                        }
                     }
-                    div { class: "rounded-lg border border-paper-accent/30 bg-paper-accent/5 px-2 py-1.5 flex items-center gap-1.5",
-                        span { class: "text-paper-accent text-[11px] font-mono font-medium", "🟢 激活" }
-                        span { class: "text-[10px] text-paper-accent/80 truncate", "下划线 · /search" }
+                    div { class: "rounded-lg border border-paper-accent/30 bg-paper-accent/5 p-2 flex items-center gap-2",
+                        div { class: "shrink-0 scale-90 -m-1 pointer-events-none",
+                            SearchIconLink { active: Some(true) }
+                        }
+                        div { class: "min-w-0 flex flex-col",
+                            span { class: "text-[11px] font-mono text-paper-accent font-medium", "激活状态" }
+                            span { class: "text-[10px] text-paper-accent/80 truncate", "下划线 · /search" }
+                        }
                     }
                 }
 
@@ -625,9 +630,15 @@ fn SearchIconLinkPreview(detail: bool) -> Element {
                                         svg {
                                             xmlns: "http://www.w3.org/2000/svg",
                                             class: "w-4 h-4",
-                                            view_box: "0 -960 960 960",
-                                            fill: "currentColor",
-                                            path { d: "M784-120 532-372q-30 24-69 38t-83 14q-109 0-184.5-75.5T120-580q0-109 75.5-184.5T380-840q109 0 184.5 75.5T640-580q0 44-14 83t-38 69l252 252-56 56ZM380-400q75 0 127.5-52.5T560-580q0-75-52.5-127.5T380-760q-75 0-127.5 52.5T200-580q0 75 52.5 127.5T380-400Z" }
+                                            view_box: "0 0 24 24",
+                                            fill: "none",
+                                            stroke: "currentColor",
+                                            stroke_width: "1.6",
+                                            stroke_linecap: "round",
+                                            stroke_linejoin: "round",
+                                            "aria-hidden": "true",
+                                            circle { cx: "10.75", cy: "10.75", r: "6.75" }
+                                            path { d: "m16 16 4.5 4.5" }
                                         }
                                     }
                                     input {
@@ -738,13 +749,13 @@ fn SearchIconLinkPreview(detail: bool) -> Element {
                                     }
                                     div { class: "grid grid-cols-3 px-4 py-2.5 items-center",
                                         span { class: "font-mono font-medium text-paper-primary", "Vector Icon" }
-                                        span { class: "text-paper-secondary font-mono", "24px × 24px (Material Symbols)" }
-                                        span { class: "text-paper-secondary", "高清晰度矢量路径，放大零失真" }
+                                        span { class: "text-paper-secondary font-mono", "24px × 24px (统一线性放大镜)" }
+                                        span { class: "text-paper-secondary", "与 /search 搜索页面图标风格保持 100% 呼应" }
                                     }
                                     div { class: "grid grid-cols-3 px-4 py-2.5 items-center",
-                                        span { class: "font-mono font-medium text-paper-primary", "Color Theme" }
-                                        span { class: "text-paper-secondary font-mono", "fill=\"currentColor\"" }
-                                        span { class: "text-paper-secondary", "跟随纸质主题明暗模式自动无感切换" }
+                                        span { class: "font-mono font-medium text-paper-primary", "Color & Stroke" }
+                                        span { class: "text-paper-secondary font-mono", "stroke=\"currentColor\"" }
+                                        span { class: "text-paper-secondary", "1.6px 极简线条，跟随纸质主题自适应着色" }
                                     }
                                     div { class: "grid grid-cols-3 px-4 py-2.5 items-center",
                                         span { class: "font-mono font-medium text-paper-primary", "Indicator" }
