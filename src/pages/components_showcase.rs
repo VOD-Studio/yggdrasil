@@ -891,13 +891,14 @@ fn preview_route(slug: &str) -> Option<PreviewRoute> {
         | "tag-detail-skeleton"
         | "tag-posts-loading"
         | "write-skeleton" => PreviewRoute::Skeleton,
-        "breadcrumbs" | "post-cover" | "post-header" | "post-meta" | "post-nav-links"
-        | "post-card" => PreviewRoute::Scene,
+        "post-cover" | "post-header" | "post-meta" | "post-nav-links" | "post-card" => {
+            PreviewRoute::Scene
+        }
         "asset-picker-modal" | "asset-upload-modal" | "code-runner" | "sql-result-table" => {
             PreviewRoute::Business
         }
-        "search-icon-link" | "admin-layout" | "footer" | "frontend-layout" | "header"
-        | "post-content" | "post-footer" | "post-toc" => PreviewRoute::LayoutArticle,
+        "breadcrumbs" | "search-icon-link" | "admin-layout" | "footer" | "frontend-layout"
+        | "header" | "post-content" | "post-footer" | "post-toc" => PreviewRoute::LayoutArticle,
         "comment-card-shell"
         | "comment-form"
         | "comment-item"
@@ -1345,9 +1346,6 @@ fn SceneComponentPreview(name: String) -> Element {
                 next: Some(PostNav { title: "下一圈年轮".to_string(), slug: "showcase-next".to_string() }),
             }
         },
-        "Breadcrumbs" => {
-            rsx! { crate::components::post::breadcrumbs::Breadcrumbs { title: post.title.clone() } }
-        }
         "PostCover" => {
             rsx! { crate::components::post::post_cover::PostCover { src: "/images/empty-state/dog-camera.webp".to_string() } }
         }

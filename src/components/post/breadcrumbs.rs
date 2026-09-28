@@ -37,9 +37,10 @@ pub fn Breadcrumbs(title: String, #[props(default = false)] full_reload: bool) -
                 class: "feather feather-chevron-right",
                 width: "16",
                 height: "16",
+                "aria-hidden": "true",
                 polyline { points: "9 18 15 12 9 6" }
             }
-            span { "{title}" }
+            span { aria_current: "page", title: "{title}", "{title}" }
         }
     }
 }

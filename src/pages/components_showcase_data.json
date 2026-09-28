@@ -1637,28 +1637,28 @@
       "slug": "breadcrumbs",
       "label": "面包屑",
       "group": "post",
-      "summary": "面包屑，用于文章阅读与展示。",
-      "states": "真实组件 · 本地样例",
-      "description": "面包屑使用固定的本地样例资料渲染项目里的真实组件。预览不会请求或修改业务数据；详情同时列出组件接口与源码位置。",
+      "summary": "从首页定位当前文章，长标题自动省略。",
+      "states": "首页入口 · 当前文章 · 长标题省略",
+      "description": "在文章标题上方展示 Home → 当前文章，帮助读者确认位置并返回首页。路径保持单行，长标题按可用宽度省略，窄屏下仍保留首页入口。",
       "props": [
         [
           "title",
           "String",
-          "由调用方提供",
-          "面包屑的 title 参数。"
+          "必填",
+          "当前文章标题；超出宽度时单行省略，完整标题保留在提示与无障碍文本中。"
         ],
         [
           "full_reload",
           "bool",
-          "由调用方提供",
-          "面包屑的 full_reload 参数。"
+          "false",
+          "Home 是否整页加载。后台文章预览（/admin/preview）中设为 true，避免跨布局的客户端导航。"
         ]
       ],
       "keys": [],
       "source": "src/components/post/breadcrumbs.rs",
-      "code": "pub fn Breadcrumbs(title: String, #[props(default = false)] full_reload: bool) -> Element",
+      "code": "use crate::components::post::breadcrumbs::Breadcrumbs;\n\nrsx! {\n    // 公开文章：Home 使用客户端导航\n    Breadcrumbs { title: \"让想法生根\".to_string() }\n\n    // 后台文章预览：Home 使用整页加载\n    Breadcrumbs {\n        title: post.title.clone(),\n        full_reload: true,\n    }\n}",
       "preview_mode": "static",
-      "usage_kind": "api"
+      "usage_kind": "rust"
     },
     {
       "name": "PostContent",
