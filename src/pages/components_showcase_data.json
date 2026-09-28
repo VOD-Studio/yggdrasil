@@ -1596,22 +1596,41 @@
       "slug": "search-icon-link",
       "label": "搜索入口",
       "group": "layout",
-      "summary": "搜索入口，用于页面导航与结构。",
-      "states": "真实组件 · 本地样例",
-      "description": "搜索入口使用固定的本地样例资料渲染项目里的真实组件。预览不会请求或修改业务数据；详情同时列出组件接口与源码位置。",
+      "summary": "全局导航栏的核心搜索入口，集成路由自动感知、平滑激活指示线与全站无障碍语义。",
+      "states": "默认态 · 激活指示 · 导航栏协同 · 快捷搜索联动",
+      "description": "全站顶部导航栏右侧的核心搜索入口。与主题切换按钮对齐，组件内部自动响应全局路由变更：在处于搜索页面时，自动高亮并挂载平滑的 nav-indicator 激活指示线；同时内置完整的无障碍属性 (aria-label、title、aria-current) 与平滑颜色过渡。",
       "props": [
         [
-          "—",
-          "无",
-          "—",
-          "此组件不接收显式属性。"
+          "active",
+          "Option<bool>",
+          "None",
+          "可选显式覆盖激活状态。默认自动响应当前路由 (Route::Search)。"
+        ],
+        [
+          "on_click",
+          "Option<EventHandler<MouseEvent>>",
+          "None",
+          "可选点击事件处理。提供时将拦截默认路由跳转，用于呼出搜索弹层等自定义交互。"
         ]
       ],
-      "keys": [],
+      "keys": [
+        [
+          "Tab / Shift+Tab",
+          "在页面导航项与搜索入口之间切换焦点。"
+        ],
+        [
+          "Enter / Space",
+          "激活搜索入口，跳转至搜索页面或呼出检索浮层。"
+        ],
+        [
+          "⌘ K / Ctrl+K",
+          "全站全局搜索快捷唤起倡导热键。"
+        ]
+      ],
       "source": "src/components/header.rs",
-      "code": "pub fn SearchIconLink() -> Element",
-      "preview_mode": "static",
-      "usage_kind": "api"
+      "code": "Header {\n    nav_items: build_nav_items(route),\n    right_content: rsx! {\n        SearchIconLink {}\n        ThemeToggle {}\n    },\n    max_width: \"max-w-4xl\",\n}",
+      "preview_mode": "interactive",
+      "usage_kind": "rust"
     },
     {
       "name": "Breadcrumbs",

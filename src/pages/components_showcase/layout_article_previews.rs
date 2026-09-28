@@ -5,7 +5,7 @@ use dioxus::prelude::*;
 use crate::components::admin_layout::{AdminShell, AdminSidebar};
 use crate::components::footer::FooterView;
 use crate::components::frontend_layout::FrontendShell;
-use crate::components::header::Header;
+use crate::components::header::{Header, SearchIconLink};
 use crate::components::nav::build_nav_items;
 use crate::components::post::post_content::PostContent;
 use crate::components::post::post_footer::PostFooter;
@@ -13,11 +13,13 @@ use crate::components::post::post_toc::PostToc;
 use crate::components::skeletons::home_skeleton::HomeSkeleton;
 use crate::models::post::PostNav;
 use crate::router::Route;
+use crate::theme::ThemeToggle;
 
 pub(super) fn preview(slug: &str, detail: bool) -> Option<Element> {
     match slug {
         "admin-layout" => Some(rsx! { AdminLayoutPreview { detail } }),
         "header" => Some(rsx! { HeaderPreview { detail } }),
+        "search-icon-link" => Some(rsx! { SearchIconLinkPreview { detail } }),
         "footer" => Some(rsx! { FooterPreview { detail } }),
         "frontend-layout" => Some(rsx! { FrontendLayoutPreview { detail } }),
         "post-content" => Some(rsx! { PostContentPreview { detail } }),
@@ -329,6 +331,462 @@ fn HeaderPreview(detail: bool) -> Element {
                         div { class: "py-12 text-center text-xs font-mono text-paper-tertiary",
                             "— 往下滚动查看 Header 磨砂吸顶效果 —"
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SearchSceneMode {
+    HeaderNav,
+    SearchPalette,
+    DesignSpecs,
+}
+
+struct SampleSearchResult {
+    title: &'static str,
+    snippet: &'static str,
+    tag: &'static str,
+    date: &'static str,
+}
+
+const SAMPLE_SEARCH_ITEMS: &[SampleSearchResult] = &[
+    SampleSearchResult {
+        title: "让想法生根：Yggdrasil 设计体系与架构总览",
+        snippet: "在时间的缝隙里，种下一些文字。探讨 Rust、Dioxus 与响应式设计。",
+        tag: "设计",
+        date: "2026-09-23",
+    },
+    SampleSearchResult {
+        title: "响应式导航栏与自适应平滑指示器实践",
+        snippet: "如何通过 nav-indicator 独立下划线实现多栏目与搜索入口间的平滑视觉对齐。",
+        tag: "前端",
+        date: "2026-09-18",
+    },
+    SampleSearchResult {
+        title: "Dioxus 0.7 全栈组件化重构笔记",
+        snippet: "从桌面端全宽到移动端 380px 折叠抽屉，打造极致纯粹的 Web 交互体验。",
+        tag: "Rust",
+        date: "2026-09-10",
+    },
+    SampleSearchResult {
+        title: "Tailwind CSS v4 现代暗黑模式调色板指南",
+        snippet: "基于 currentColor 与 paper 主题语义变量的自适应图标与组件规范。",
+        tag: "样式",
+        date: "2026-08-28",
+    },
+];
+
+#[component]
+fn SearchIconLinkPreview(detail: bool) -> Element {
+    let mut scene_mode = use_signal(|| SearchSceneMode::HeaderNav);
+    let mut is_active_route = use_signal(|| false);
+    let mut query = use_signal(String::new);
+
+    // 卡片预览视图（在组件图鉴列表卡片中展示）
+    if !detail {
+        return rsx! {
+            div {
+                class: "showcase-layout-window flex flex-col justify-between p-3 select-none h-full",
+                "data-showcase-preview": "search-icon-link",
+
+                // 顶部：精美的迷你模拟 Header 导航栏
+                div { class: "rounded-xl border border-[var(--sc-line)] bg-paper-entry/60 px-3 py-2 flex items-center justify-between shadow-xs",
+                    div { class: "flex items-center gap-2",
+                        span { class: "w-2 h-2 rounded-full bg-paper-accent animate-pulse" }
+                        span { class: "text-xs font-serif font-bold text-paper-primary tracking-wide", "Yggdrasil" }
+                        div { class: "hidden sm:flex items-center gap-1.5 ml-1 text-[10px] text-paper-secondary/80",
+                            span { class: "px-1.5 py-0.5 rounded bg-paper-bg/60 border border-[var(--sc-line)]/50", "首页" }
+                            span { class: "px-1.5 py-0.5 rounded bg-paper-bg/60 border border-[var(--sc-line)]/50", "笔记" }
+                        }
+                    }
+                    div { class: "flex items-center gap-1.5",
+                        // 主角组件：SearchIconLink 带呼吸高光圈与背景指示
+                        div {
+                            class: "relative flex items-center justify-center p-0.5 rounded-full ring-2 ring-paper-accent/40 bg-paper-accent/10 transition-all",
+                            SearchIconLink { active: Some(true) }
+                        }
+                        div { class: "p-0.5 text-paper-secondary/70 scale-90",
+                            ThemeToggle {}
+                        }
+                    }
+                }
+
+                // 中间：状态与交互特性对比
+                div { class: "grid grid-cols-2 gap-2 my-auto py-1",
+                    div { class: "rounded-lg border border-[var(--sc-line)]/60 bg-paper-entry/30 px-2 py-1.5 flex items-center gap-1.5",
+                        span { class: "text-paper-secondary text-[11px] font-mono", "⚪ 默认" }
+                        span { class: "text-[10px] text-paper-tertiary truncate", "次级色 · 悬停反馈" }
+                    }
+                    div { class: "rounded-lg border border-paper-accent/30 bg-paper-accent/5 px-2 py-1.5 flex items-center gap-1.5",
+                        span { class: "text-paper-accent text-[11px] font-mono font-medium", "🟢 激活" }
+                        span { class: "text-[10px] text-paper-accent/80 truncate", "下划线 · /search" }
+                    }
+                }
+
+                // 底部微标签
+                div { class: "flex items-center justify-between text-[10px] text-paper-secondary/80 pt-1.5 border-t border-[var(--sc-line)]/40 font-mono",
+                    span { "ARIA 语义友好" }
+                    span { "快捷键 ⌘K" }
+                    span { "40px 规范热区" }
+                }
+            }
+        };
+    }
+
+    // 详情页视图（丰富交互与场景全景）
+    let current_q = query().trim().to_lowercase();
+    let mock_url = if is_active_route() {
+        "https://yggdrasil.site/search"
+    } else {
+        "https://yggdrasil.site/about"
+    };
+    let filtered_items: Vec<_> = SAMPLE_SEARCH_ITEMS
+        .iter()
+        .filter(|item| {
+            if current_q.is_empty() {
+                true
+            } else {
+                item.title.to_lowercase().contains(&current_q)
+                    || item.snippet.to_lowercase().contains(&current_q)
+                    || item.tag.to_lowercase().contains(&current_q)
+            }
+        })
+        .collect();
+
+    rsx! {
+        div { class: "w-full flex flex-col gap-4",
+            // 顶部交互控制栏
+            div { class: "flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-paper-entry/50 border border-[var(--sc-line)]",
+                div { class: "flex items-center gap-2",
+                    span { class: "text-xs font-mono text-paper-secondary tracking-wider", "SCENE / 演示场景" }
+                    div { class: "showcase-picker-mode-switch",
+                        button {
+                            r#type: "button",
+                            aria_pressed: "{scene_mode() == SearchSceneMode::HeaderNav}",
+                            onclick: move |_| scene_mode.set(SearchSceneMode::HeaderNav),
+                            "🖥️ 导航栏场景"
+                        }
+                        button {
+                            r#type: "button",
+                            aria_pressed: "{scene_mode() == SearchSceneMode::SearchPalette}",
+                            onclick: move |_| scene_mode.set(SearchSceneMode::SearchPalette),
+                            "🔍 检索面板联动"
+                        }
+                        button {
+                            r#type: "button",
+                            aria_pressed: "{scene_mode() == SearchSceneMode::DesignSpecs}",
+                            onclick: move |_| scene_mode.set(SearchSceneMode::DesignSpecs),
+                            "📐 规范与无障碍"
+                        }
+                    }
+                }
+
+                div { class: "flex items-center gap-2",
+                    span { class: "text-xs font-mono text-paper-secondary tracking-wider", "ROUTE / 路由模拟" }
+                    div { class: "showcase-picker-mode-switch",
+                        button {
+                            r#type: "button",
+                            aria_pressed: "{!is_active_route()}",
+                            onclick: move |_| is_active_route.set(false),
+                            "常规页面 (/about)"
+                        }
+                        button {
+                            r#type: "button",
+                            aria_pressed: "{is_active_route()}",
+                            onclick: move |_| is_active_route.set(true),
+                            "搜索页面 (/search)"
+                        }
+                    }
+                }
+            }
+
+            // 核心展示区域
+            div { class: "rounded-2xl border border-[var(--sc-line)] bg-paper-theme overflow-hidden shadow-xs",
+                match scene_mode() {
+                    // 场景 1：在真实完整 Header 导航栏中的场景
+                    SearchSceneMode::HeaderNav => rsx! {
+                        div { class: "p-6 flex flex-col gap-6",
+                            div { class: "rounded-xl border border-[var(--sc-line)] bg-paper-entry/30 overflow-hidden shadow-xs",
+                                // 模拟顶部窗口标题栏
+                                div { class: "flex items-center justify-between px-3.5 py-2 border-b border-[var(--sc-line)] bg-paper-entry/50 text-[11px] font-mono text-paper-secondary",
+                                    div { class: "flex items-center gap-1.5",
+                                        span { class: "w-2.5 h-2.5 rounded-full bg-rose-500/70" }
+                                        span { class: "w-2.5 h-2.5 rounded-full bg-amber-500/70" }
+                                        span { class: "w-2.5 h-2.5 rounded-full bg-emerald-500/70" }
+                                    }
+                                    span { "{mock_url}" }
+                                    span { class: "text-[10px] text-paper-tertiary", "Header 预览" }
+                                }
+
+                                // 真实模拟导航栏
+                                div { class: "px-4 md:px-6 py-2.5 flex items-center justify-between bg-paper-theme/80 backdrop-blur-sm",
+                                    // 左侧 Logo
+                                    div { class: "flex items-center gap-2",
+                                        span { class: "w-2 h-2 rounded-full bg-paper-accent" }
+                                        span { class: "font-serif font-bold text-sm tracking-wide text-paper-primary", "Yggdrasil" }
+                                    }
+
+                                    // 中间导航项
+                                    div { class: "hidden md:flex items-center gap-4 text-xs font-medium text-paper-secondary",
+                                        span { class: if !is_active_route() { "text-paper-accent relative pb-1 border-b-2 border-paper-accent" } else { "hover:text-paper-primary transition-colors cursor-pointer" }, "关于" }
+                                        span { class: "hover:text-paper-primary transition-colors cursor-pointer", "首页" }
+                                        span { class: "hover:text-paper-primary transition-colors cursor-pointer", "笔记" }
+                                        span { class: "hover:text-paper-primary transition-colors cursor-pointer", "归档" }
+                                    }
+
+                                    // 右侧操作项：SearchIconLink 与 ThemeToggle
+                                    div { class: "flex items-center gap-2",
+                                        div {
+                                            class: "relative cursor-pointer group flex items-center justify-center",
+                                            title: "点击可切换激活状态",
+                                            // 真实渲染 SearchIconLink
+                                            SearchIconLink {
+                                                active: Some(is_active_route()),
+                                                on_click: move |_| is_active_route.toggle(),
+                                            }
+                                            // 悬浮指示角标
+                                            span { class: "absolute -top-1 -right-1 flex h-2 w-2",
+                                                span { class: "animate-ping absolute inline-flex h-full w-full rounded-full bg-paper-accent opacity-60" }
+                                                span { class: "relative inline-flex rounded-full h-2 w-2 bg-paper-accent" }
+                                            }
+                                        }
+                                        div { class: "text-paper-secondary",
+                                            ThemeToggle {}
+                                        }
+                                    }
+                                }
+                            }
+
+                            // 状态与属性说明条
+                            div { class: "grid grid-cols-1 md:grid-cols-3 gap-3 text-xs",
+                                div { class: "p-3.5 rounded-xl border border-[var(--sc-line)] bg-paper-entry/40",
+                                    p { class: "font-mono text-[10px] text-paper-secondary tracking-wider", "CURRENT STATUS / 当前状态" }
+                                    p { class: "font-semibold text-paper-primary mt-1 flex items-center gap-1.5",
+                                        if is_active_route() {
+                                            span { class: "w-2 h-2 rounded-full bg-paper-accent" }
+                                            "已激活 · 位于搜索页 (/search)"
+                                        } else {
+                                            span { class: "w-2 h-2 rounded-full bg-paper-secondary" }
+                                            "默认待命 · 常规页面 (/about)"
+                                        }
+                                    }
+                                    p { class: "text-[11px] text-paper-secondary mt-1 leading-relaxed",
+                                        if is_active_route() {
+                                            "当前图标呈现 text-paper-accent，底部挂载独立的 nav-indicator 绿色下划线指示条。"
+                                        } else {
+                                            "当前图标呈现 text-paper-secondary，鼠标悬浮时平滑过渡至强调色。"
+                                        }
+                                    }
+                                }
+
+                                div { class: "p-3.5 rounded-xl border border-[var(--sc-line)] bg-paper-entry/40",
+                                    p { class: "font-mono text-[10px] text-paper-secondary tracking-wider", "A11Y SEMANTICS / 无障碍语义" }
+                                    div { class: "mt-1 space-y-1 font-mono text-[11px] text-paper-primary",
+                                        p { "aria-label = \"搜索\"" }
+                                        p { "title = \"搜索\"" }
+                                        p { if is_active_route() { "aria-current = \"page\"" } else { "aria-current = (none)" } }
+                                    }
+                                    p { class: "text-[11px] text-paper-secondary mt-1", "屏幕阅读器与辅助工具可精准感知当前定位。" }
+                                }
+
+                                div { class: "p-3.5 rounded-xl border border-[var(--sc-line)] bg-paper-entry/40 flex flex-col justify-between",
+                                    div {
+                                        p { class: "font-mono text-[10px] text-paper-secondary tracking-wider", "INTERACTION / 交互提示" }
+                                        p { class: "text-xs text-paper-primary font-medium mt-1", "点击上方搜索图标直接联动" }
+                                        p { class: "text-[11px] text-paper-secondary mt-0.5", "通过 on_click 事件拦截即可就地演示激活与指示条过渡效果。" }
+                                    }
+                                    button {
+                                        r#type: "button",
+                                        class: "mt-2 self-start px-2.5 py-1 text-[11px] rounded-lg bg-paper-entry border border-[var(--sc-line)] text-paper-primary hover:border-paper-accent transition-colors",
+                                        onclick: move |_| is_active_route.toggle(),
+                                        "↻ 切换激活状态"
+                                    }
+                                }
+                            }
+                        }
+                    },
+
+                    // 场景 2：检索面板与全局搜索浮层模拟
+                    SearchSceneMode::SearchPalette => rsx! {
+                        div { class: "p-6 flex flex-col gap-4",
+                            div { class: "flex items-center justify-between text-xs text-paper-secondary font-mono",
+                                span { "SEARCH OVERLAY / 模拟点击搜索入口后唤起的快捷检索面板" }
+                                span { "共收录 {SAMPLE_SEARCH_ITEMS.len()} 篇样例索引" }
+                            }
+
+                            // 模拟 Spotlight 搜索弹层
+                            div { class: "rounded-2xl border border-[var(--sc-line)] bg-paper-entry/40 backdrop-blur-md p-4 sm:p-5 flex flex-col gap-3 shadow-md",
+                                // 搜索输入框
+                                div { class: "relative flex items-center",
+                                    span { class: "absolute left-3.5 text-paper-secondary",
+                                        svg {
+                                            xmlns: "http://www.w3.org/2000/svg",
+                                            class: "w-4 h-4",
+                                            view_box: "0 -960 960 960",
+                                            fill: "currentColor",
+                                            path { d: "M784-120 532-372q-30 24-69 38t-83 14q-109 0-184.5-75.5T120-580q0-109 75.5-184.5T380-840q109 0 184.5 75.5T640-580q0 44-14 83t-38 69l252 252-56 56ZM380-400q75 0 127.5-52.5T560-580q0-75-52.5-127.5T380-760q-75 0-127.5 52.5T200-580q0 75 52.5 127.5T380-400Z" }
+                                        }
+                                    }
+                                    input {
+                                        class: "w-full pl-10 pr-20 py-2.5 text-sm rounded-xl border border-[var(--sc-line)] bg-paper-theme text-paper-primary placeholder:text-paper-tertiary focus:outline-none focus:border-paper-accent focus:ring-1 focus:ring-paper-accent/30 transition-all",
+                                        r#type: "text",
+                                        placeholder: "输入关键词快速检索，如 Rust、设计、Dioxus…",
+                                        value: "{query()}",
+                                        oninput: move |e| query.set(e.value()),
+                                    }
+                                    div { class: "absolute right-3 flex items-center gap-1.5",
+                                        if !query().is_empty() {
+                                            button {
+                                                r#type: "button",
+                                                class: "text-xs text-paper-secondary hover:text-paper-primary p-1 rounded-md",
+                                                onclick: move |_| query.set(String::new()),
+                                                "✕"
+                                            }
+                                        }
+                                        span { class: "text-[10px] font-mono px-1.5 py-0.5 rounded border border-[var(--sc-line)] bg-paper-entry text-paper-tertiary", "ESC" }
+                                    }
+                                }
+
+                                // 热门推荐标签
+                                div { class: "flex flex-wrap items-center gap-1.5 text-xs",
+                                    span { class: "text-[11px] text-paper-secondary mr-1", "快速填入:" }
+                                    for tag in &["Rust", "设计", "Dioxus", "Tailwind", "前端"] {
+                                        button {
+                                            r#type: "button",
+                                            class: "px-2 py-0.5 text-[11px] rounded-full border border-[var(--sc-line)] bg-paper-theme/60 text-paper-secondary hover:text-paper-accent hover:border-paper-accent transition-colors",
+                                            onclick: {
+                                                let t = tag.to_string();
+                                                move |_| query.set(t.clone())
+                                            },
+                                            "{tag}"
+                                        }
+                                    }
+                                }
+
+                                // 结果列表
+                                div { class: "mt-1 flex flex-col gap-2 max-h-60 overflow-y-auto pr-1",
+                                    if filtered_items.is_empty() {
+                                        div { class: "py-8 text-center text-xs text-paper-secondary",
+                                            "没有匹配到相关结果，换个关键词试试。"
+                                        }
+                                    } else {
+                                        for (idx, item) in filtered_items.iter().enumerate() {
+                                            div {
+                                                key: "{idx}",
+                                                class: "p-3 rounded-xl border border-[var(--sc-line)]/60 bg-paper-theme/40 hover:bg-paper-theme/80 hover:border-paper-accent/50 transition-all flex flex-col gap-1 cursor-pointer",
+                                                div { class: "flex items-center justify-between gap-2",
+                                                    h4 { class: "text-xs font-semibold text-paper-primary truncate", "{item.title}" }
+                                                    div { class: "flex items-center gap-1.5 shrink-0",
+                                                        span { class: "text-[10px] font-mono text-paper-tertiary", "{item.date}" }
+                                                        span { class: "text-[10px] font-mono px-1.5 py-0.5 rounded bg-paper-entry text-paper-secondary", "{item.tag}" }
+                                                    }
+                                                }
+                                                p { class: "text-[11px] text-paper-secondary line-clamp-1", "{item.snippet}" }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+
+                    // 场景 3：设计规范与无障碍解构
+                    SearchSceneMode::DesignSpecs => rsx! {
+                        div { class: "p-6 flex flex-col gap-6",
+                            // 双态大图特写
+                            div { class: "grid grid-cols-1 md:grid-cols-2 gap-4",
+                                // 默认态特写
+                                div { class: "p-6 rounded-2xl border border-[var(--sc-line)] bg-paper-entry/30 flex flex-col items-center justify-center gap-3 text-center",
+                                    div { class: "relative p-4 rounded-full border-2 border-dashed border-paper-border/60 bg-paper-theme shadow-xs",
+                                        SearchIconLink { active: Some(false) }
+                                        span { class: "absolute -bottom-2 px-2 py-0.5 text-[9px] font-mono rounded bg-paper-entry text-paper-secondary border border-[var(--sc-line)]", "40×40px" }
+                                    }
+                                    div {
+                                        h4 { class: "text-sm font-semibold text-paper-primary", "默认待命态 (Default State)" }
+                                        p { class: "text-xs text-paper-secondary mt-1", "柔和次级色调 text-paper-secondary，提供平滑悬停过渡色" }
+                                    }
+                                }
+
+                                // 激活态特写
+                                div { class: "p-6 rounded-2xl border border-paper-accent/30 bg-paper-accent/5 flex flex-col items-center justify-center gap-3 text-center",
+                                    div { class: "relative p-4 rounded-full border-2 border-dashed border-paper-accent/40 bg-paper-theme shadow-xs",
+                                        SearchIconLink { active: Some(true) }
+                                        span { class: "absolute -bottom-2 px-2 py-0.5 text-[9px] font-mono rounded bg-paper-accent text-white", "Active" }
+                                    }
+                                    div {
+                                        h4 { class: "text-sm font-semibold text-paper-accent", "路由激活态 (Active State)" }
+                                        p { class: "text-xs text-paper-secondary mt-1", "强调色 text-paper-accent，底部显示独立的 nav-indicator 指示条" }
+                                    }
+                                }
+                            }
+
+                            // 规范对照参数表
+                            div { class: "rounded-xl border border-[var(--sc-line)] overflow-hidden text-xs",
+                                div { class: "grid grid-cols-3 bg-paper-entry/60 px-4 py-2 font-mono text-[11px] text-paper-secondary border-b border-[var(--sc-line)]",
+                                    span { "参数维度" }
+                                    span { "实现规范" }
+                                    span { "设计目的" }
+                                }
+                                div { class: "divide-y divide-[var(--sc-line)] bg-paper-theme/50",
+                                    div { class: "grid grid-cols-3 px-4 py-2.5 items-center",
+                                        span { class: "font-mono font-medium text-paper-primary", "Touch Target" }
+                                        span { class: "text-paper-secondary font-mono", "40px × 40px (p-2 rounded-full)" }
+                                        span { class: "text-paper-secondary", "符合 WCAG 移动触控最小热区标准" }
+                                    }
+                                    div { class: "grid grid-cols-3 px-4 py-2.5 items-center",
+                                        span { class: "font-mono font-medium text-paper-primary", "Vector Icon" }
+                                        span { class: "text-paper-secondary font-mono", "24px × 24px (Material Symbols)" }
+                                        span { class: "text-paper-secondary", "高清晰度矢量路径，放大零失真" }
+                                    }
+                                    div { class: "grid grid-cols-3 px-4 py-2.5 items-center",
+                                        span { class: "font-mono font-medium text-paper-primary", "Color Theme" }
+                                        span { class: "text-paper-secondary font-mono", "fill=\"currentColor\"" }
+                                        span { class: "text-paper-secondary", "跟随纸质主题明暗模式自动无感切换" }
+                                    }
+                                    div { class: "grid grid-cols-3 px-4 py-2.5 items-center",
+                                        span { class: "font-mono font-medium text-paper-primary", "Indicator" }
+                                        span { class: "text-paper-secondary font-mono", "nav-indicator (hidden md:block)" }
+                                        span { class: "text-paper-secondary", "与文字导航保持一致的激活视觉语法" }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                }
+            }
+
+            // 底部设计说明卡片
+            div { class: "grid grid-cols-1 md:grid-cols-3 gap-3.5",
+                div { class: "p-4 rounded-xl border border-[var(--sc-line)]/70 bg-paper-entry/20 flex flex-col gap-1.5",
+                    div { class: "flex items-center gap-1.5 text-paper-accent font-medium text-xs",
+                        span { "🌲" }
+                        span { "路由自动感知" }
+                    }
+                    p { class: "text-xs text-paper-secondary leading-relaxed",
+                        "组件内部通过 use_route::<Route>() 自动感知是否匹配 Route::Search，零额外代码即可同步高亮状态。"
+                    }
+                }
+
+                div { class: "p-4 rounded-xl border border-[var(--sc-line)]/70 bg-paper-entry/20 flex flex-col gap-1.5",
+                    div { class: "flex items-center gap-1.5 text-paper-accent font-medium text-xs",
+                        span { "🎨" }
+                        span { "图标组视觉统一" }
+                    }
+                    p { class: "text-xs text-paper-secondary leading-relaxed",
+                        "与 ThemeToggle 主题切换按钮共享一致的内边距、圆角与过渡时长，维持导航栏右侧图标组严格对齐。"
+                    }
+                }
+
+                div { class: "p-4 rounded-xl border border-[var(--sc-line)]/70 bg-paper-entry/20 flex flex-col gap-1.5",
+                    div { class: "flex items-center gap-1.5 text-paper-accent font-medium text-xs",
+                        span { "♿" }
+                        span { "无障碍可达性" }
+                    }
+                    p { class: "text-xs text-paper-secondary leading-relaxed",
+                        "内置 aria-label=\"搜索\" 与 aria-current 状态宣告，全键盘操作友好，支持右键新标签页打开。"
                     }
                 }
             }

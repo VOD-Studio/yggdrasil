@@ -891,13 +891,13 @@ fn preview_route(slug: &str) -> Option<PreviewRoute> {
         | "tag-detail-skeleton"
         | "tag-posts-loading"
         | "write-skeleton" => PreviewRoute::Skeleton,
-        "search-icon-link" | "breadcrumbs" | "post-cover" | "post-header" | "post-meta"
-        | "post-nav-links" | "post-card" => PreviewRoute::Scene,
+        "breadcrumbs" | "post-cover" | "post-header" | "post-meta" | "post-nav-links"
+        | "post-card" => PreviewRoute::Scene,
         "asset-picker-modal" | "asset-upload-modal" | "code-runner" | "sql-result-table" => {
             PreviewRoute::Business
         }
-        "admin-layout" | "footer" | "frontend-layout" | "header" | "post-content"
-        | "post-footer" | "post-toc" => PreviewRoute::LayoutArticle,
+        "search-icon-link" | "admin-layout" | "footer" | "frontend-layout" | "header"
+        | "post-content" | "post-footer" | "post-toc" => PreviewRoute::LayoutArticle,
         "comment-card-shell"
         | "comment-form"
         | "comment-item"
@@ -914,6 +914,7 @@ fn preview_route(slug: &str) -> Option<PreviewRoute> {
 fn is_local_demo(slug: &str) -> bool {
     slug == "admin-layout"
         || slug == "header"
+        || slug == "search-icon-link"
         || slug == "frontend-layout"
         || slug == "footer"
         || matches!(

@@ -237,13 +237,24 @@ fn MobileNavItem(
 }
 
 /// 搜索图标链接：置于 Header 右侧（主题切换左边），点击跳转搜索页。
+/// 顶部导航栏右侧的搜索入口链接。
 ///
+/// 默认自动根据全局路由匹配判断激活状态；支持通过 `active` 属性显式覆盖，
+/// 以及通过 `on_click` 拦截默认跳转行为以支持弹层或自定义检索交互。
 /// 样式与 `ThemeToggle` 对齐（圆形 padding + currentColor 图标），保持右侧
 /// 图标组视觉一致。SVG 来自 `public/icons/search_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg`，
 /// 改用 `fill: "currentColor"` 以适配明暗主题。
 #[component]
-pub fn SearchIconLink() -> Element {
-    let is_active = matches!(use_route::<Route>(), Route::Search {});
+pub fn SearchIconLink(
+    /// 可选显式覆盖激活状态。默认为随全局路由自动感知 (`Route::Search`).
+    #[props(default)]
+    active: Option<bool>,
+    /// 可选点击事件回调。若提供，将拦截默认路由跳转。
+    #[props(default)]
+    on_click: Option<EventHandler<MouseEvent>>,
+) -> Element {
+    let route_active = matches!(use_route::<Route>(), Route::Search {});
+    let is_active = active.unwrap_or(route_active);
     let color = if is_active {
         "text-paper-accent"
     } else {
@@ -256,6 +267,12 @@ pub fn SearchIconLink() -> Element {
             aria_current: is_active.then_some("page"),
             aria_label: "搜索",
             title: "搜索",
+            onclick: move |e: MouseEvent| {
+                if let Some(ref handler) = on_click {
+                    e.prevent_default();
+                    handler.call(e);
+                }
+            },
             svg {
                 xmlns: "http://www.w3.org/2000/svg",
                 height: "24px",
