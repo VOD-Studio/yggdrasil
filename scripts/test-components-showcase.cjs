@@ -7,6 +7,7 @@
  * Optional SHOWCASE_ARTIFACT_DIR stores screenshots/report; default is a temporary directory.
  * SHOWCASE_ONLY=post-footer runs focused footer layout, theme, and sample-link checks.
  * SHOWCASE_ONLY=post-header checks full, unscaled headers and draft/summary variants.
+ * SHOWCASE_ONLY=post-nav-links checks responsive navigation and missing-neighbor states.
  * Sensitive showcase requests are recorded, aborted, and fail the run.
  */
 const assert = require('node:assert/strict');
@@ -38,6 +39,7 @@ const TARGETS = [
   ['post-content', 'PostContent', '[data-showcase-preview="post-content"] .post-content'],
   ['post-footer', 'PostFooter', '[data-showcase-preview="post-footer"] .post-footer'],
   ['post-header', 'PostHeader', '[data-showcase-preview="post-header"] .post-header'],
+  ['post-nav-links', 'PostNavLinks', '[data-showcase-preview="post-nav-links"] .paginav'],
   ['post-toc', 'PostToc', '[data-showcase-preview="post-toc"] .toc-sidebar'],
   ['tiptap-editor', 'TiptapEditor', '.showcase-browser-host--tiptap .ProseMirror'],
   ['code-mirror-editor', 'CodeMirrorEditor', '.showcase-browser-host--code .cm-editor'],
@@ -190,6 +192,30 @@ async function realPreview(page, slug, selector, card = false) {
     assert(layout.scrollHeight <= layout.clientHeight + 1, 'footer preview has no inner scrollbar');
     assert(layout.visibleTitles, 'footer preview shows adjacent article titles in full');
   }
+  if (slug === 'post-nav-links') {
+    const layout = await root.evaluate(element => {
+      const preview = element.querySelector('[data-showcase-preview="post-nav-links"]');
+      const outer = element.getBoundingClientRect();
+      const box = preview.getBoundingClientRect();
+      return {
+        centered: Math.abs(box.left + box.width / 2 - outer.left - outer.width / 2) < 1,
+        noOverflow: preview.scrollWidth <= preview.clientWidth + 1 &&
+          preview.scrollHeight <= preview.clientHeight + 1,
+        titleSize: Math.min(...[...preview.querySelectorAll('.post-title-nav')]
+          .map(title => Number.parseFloat(getComputedStyle(title).fontSize))),
+        naturalSize: [...preview.querySelectorAll('.paginav')].every(nav =>
+          Math.abs(nav.getBoundingClientRect().width - Number.parseFloat(getComputedStyle(nav).width)) < 1),
+        visibleTitles: [...preview.querySelectorAll('.post-title-nav')].every(title => {
+          const rect = title.getBoundingClientRect();
+          return rect.left >= box.left && rect.right <= box.right + 1 &&
+            rect.top >= box.top && rect.bottom <= Math.min(box.bottom, outer.bottom) + 1;
+        }),
+      };
+    });
+    assert(layout.centered && layout.naturalSize, 'navigation preview stays centered and unscaled');
+    assert(layout.noOverflow && layout.visibleTitles, 'navigation titles are complete without inner scrolling');
+    assert(layout.titleSize >= (card ? 14 : 16), 'article titles remain readable');
+  }
 }
 async function screenshot(page, name) {
   const file = path.join(ARTIFACTS, `${name}.png`);
@@ -301,7 +327,7 @@ async function catalog(page) {
       await elementScreenshot(card, `card-element-${slug}`);
     }
   }
-  pass('19 catalog cards render their actual UI');
+  pass(`${TARGETS.length} catalog cards render their actual UI`);
 
   await page.locator('.showcase-search input').fill('Checkbox');
   const checkboxCard = page.locator('#showcase-checkbox');
@@ -452,6 +478,82 @@ async function postFooter(page) {
 
       await goto(page, '/about/components/post-footer');
       await realPreview(page, 'post-footer', selector);
+    }
+  }
+}
+
+async function postNavLinks(page) {
+  const selector = '[data-showcase-preview="post-nav-links"] .paginav';
+  for (const width of [1440, 760, 390, 320]) {
+    for (const colorScheme of ['light', 'dark']) {
+      stage = `post-nav-links-${width}-${colorScheme}`;
+      await page.setViewportSize({ width, height: 1000 });
+      await page.emulateMedia({ colorScheme, reducedMotion: width < 640 ? 'reduce' : 'no-preference' });
+      await goto(page, '/about/components');
+      await page.waitForFunction(dark => document.documentElement.classList.contains('dark') === dark,
+        colorScheme === 'dark');
+      await page.locator('.showcase-search input').fill('PostNavLinks');
+      const card = page.locator('#showcase-post-nav-links');
+      await card.scrollIntoViewIfNeeded();
+      await realPreview(page, 'post-nav-links', selector, true);
+      await assertNoDocumentOverflow(page, 'post-nav-links-card');
+      await card.locator('.paginav a').first().click();
+      assert.equal(new URL(page.url()).pathname + new URL(page.url()).hash, '/about/components');
+      await elementScreenshot(card, `${stage}-card`);
+
+      visitId++;
+      await card.locator('.showcase-card-caption p').click();
+      await page.waitForURL(`${BASE}/about/components/post-nav-links`);
+      await realPreview(page, 'post-nav-links', selector);
+      const preview = page.locator('[data-showcase-preview="post-nav-links"]');
+      const both = preview.locator('[data-showcase-sample="both"]');
+      assert.equal(await both.locator('.paginav a').count(), 2);
+      assert.equal(await preview.locator('[data-showcase-sample="next-only"] a.prev').count(), 0);
+      assert.equal(await preview.locator('[data-showcase-sample="next-only"] a.next').count(), 1);
+      assert.equal(await preview.locator('[data-showcase-sample="prev-only"] a.prev').count(), 1);
+      assert.equal(await preview.locator('[data-showcase-sample="prev-only"] a.next').count(), 0);
+      assert.equal(await preview.locator('[data-showcase-sample="empty"] nav').count(), 0,
+        'no neighbors means no empty navigation landmark');
+
+      const grids = await preview.locator('.paginav').evaluateAll(navs => navs.map(nav => {
+        const box = nav.getBoundingClientRect();
+        const links = [...nav.querySelectorAll('a')].map(link => link.getBoundingClientRect());
+        return { narrow: box.width <= 480 || innerWidth <= 600,
+          fullWidth: links.every(link => Math.abs(link.width - box.width) < 1),
+          stacked: links.length < 2 || links[1].top >= links[0].bottom,
+          alignedRight: Math.abs(links.at(-1).right - box.right) < 1 };
+      }));
+      for (const [index, grid] of grids.entries()) {
+        assert.equal(grid.fullWidth, grid.narrow, 'card layout follows its container width');
+        assert.equal(grid.stacked, grid.narrow || index > 0);
+        if (grid.narrow || index === 0) assert(grid.alignedRight);
+      }
+      for (const link of await preview.locator('.paginav a').all()) {
+        await link.click();
+        assert.equal(new URL(page.url()).pathname + new URL(page.url()).hash,
+          '/about/components/post-nav-links', 'sample links stay on the preview');
+      }
+      await page.keyboard.press('Tab');
+      const first = both.locator('a.prev');
+      await first.focus();
+      assert.equal(await first.evaluate(element => getComputedStyle(element).outlineWidth), '2px');
+      await page.keyboard.press('Enter');
+      assert.equal(new URL(page.url()).pathname + new URL(page.url()).hash,
+        '/about/components/post-nav-links', 'keyboard activation keeps samples local');
+      if (width < 640) {
+        assert.equal(await first.evaluate(element => getComputedStyle(element).transitionDuration), '0s');
+      }
+      await assertNoDocumentOverflow(page, 'post-nav-links-detail');
+      await elementScreenshot(page.locator('.showcase-live-panel'), `${stage}-detail`);
+
+      await both.locator('.post-title-nav').evaluateAll(titles => {
+        for (const title of titles) title.textContent = 'LongTitleWithoutSpaces'.repeat(15);
+      });
+      await realPreview(page, 'post-nav-links', selector);
+      await assertNoDocumentOverflow(page, 'post-nav-links-long-titles');
+      await goto(page, '/about/components/post-nav-links');
+      await realPreview(page, 'post-nav-links', selector);
+      pass(`${stage}: natural card/detail, single/empty states, focus and long titles`);
     }
   }
 }
@@ -729,6 +831,15 @@ async function main() {
       baselineReads.set(endpoint, (baselineReads.get(endpoint) || 0) + 1);
     }
     const storageBefore = await commentStorage(page);
+    if (process.env.SHOWCASE_ONLY === 'post-nav-links') {
+      await postNavLinks(page);
+      assertNetworkDelta();
+      assert.deepEqual(await commentStorage(page), storageBefore);
+      assert.deepEqual(report.blockedBusinessRequests, []);
+      assert.deepEqual(report.pageErrors, []);
+      pass('focused navigation checks have no business requests, storage changes or browser errors');
+      return;
+    }
     if (process.env.SHOWCASE_ONLY === 'post-header') {
       await postHeader(page);
       assertNetworkDelta();

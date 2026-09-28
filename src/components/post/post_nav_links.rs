@@ -19,7 +19,8 @@ use crate::router::Route;
 ///   `src/pages/admin/preview.rs` 模块文档），整页加载可完全规避。
 /// - `sample`：图鉴使用不可导航的样例锚点，默认 false。
 ///
-/// 左右两侧分别渲染上一篇/下一篇链接，无相邻文章时不渲染对应链接。
+/// 左右两侧分别渲染上一篇/下一篇链接；窄容器中纵向排列。
+/// 无相邻文章时不渲染对应链接，两侧都缺失时不渲染导航。
 #[component]
 pub fn PostNavLinks(
     prev: Option<PostNav>,
@@ -27,6 +28,10 @@ pub fn PostNavLinks(
     #[props(default = false)] full_reload: bool,
     #[props(default = false)] sample: bool,
 ) -> Element {
+    if prev.is_none() && next.is_none() {
+        return rsx! {};
+    }
+
     // NavigationTarget::External 生成原生 <a href>（Link 不接管 preventDefault），
     // 浏览器整页加载；内部路由变体保持客户端导航。
     let prev_to = prev.as_ref().map(|p| {

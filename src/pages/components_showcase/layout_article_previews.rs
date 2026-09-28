@@ -12,6 +12,7 @@ use crate::components::post::post_content::PostContent;
 use crate::components::post::post_footer::PostFooter;
 use crate::components::post::post_header::PostHeader;
 use crate::components::post::post_meta::PostMeta;
+use crate::components::post::post_nav_links::PostNavLinks;
 use crate::components::post::post_toc::PostToc;
 use crate::components::skeletons::home_skeleton::HomeSkeleton;
 use crate::models::post::{PostNav, PostStatus};
@@ -30,6 +31,7 @@ pub(super) fn preview(slug: &str, detail: bool) -> Option<Element> {
         "post-meta" => Some(rsx! { PostMetaPreview {} }),
         "post-content" => Some(rsx! { PostContentPreview { detail } }),
         "post-footer" => Some(rsx! { PostFooterPreview { detail } }),
+        "post-nav-links" => Some(rsx! { PostNavLinksPreview { detail } }),
         "post-toc" => Some(rsx! { PostTocPreview { detail } }),
         _ => None,
     }
@@ -1255,6 +1257,44 @@ fn PostFooterPreview(detail: bool) -> Element {
             PostFooter { post, sample: true }
             if detail {
                 p { class: "showcase-post-footer-note", "样例标签和相邻文章不跳转。" }
+            }
+        }
+    }
+}
+
+#[component]
+fn PostNavLinksPreview(detail: bool) -> Element {
+    let prev = PostNav {
+        title: "一片叶子，落在代码之间".to_string(),
+        slug: "sample-previous".to_string(),
+    };
+    let next = PostNav {
+        title: "下一圈年轮：让想法慢慢长成一座数字花园".to_string(),
+        slug: "sample-next".to_string(),
+    };
+
+    rsx! {
+        div { class: "showcase-post-nav-demo", "data-showcase-preview": "post-nav-links",
+            section { class: "showcase-post-nav-sheet", "data-showcase-sample": "both",
+                h3 { class: "showcase-post-nav-heading", "继续阅读" span { "沿着文字，走向下一页" } }
+                PostNavLinks { prev: Some(prev.clone()), next: Some(next.clone()), sample: true }
+            }
+            if detail {
+                div { class: "showcase-post-nav-examples",
+                    section { class: "showcase-post-nav-example", "data-showcase-sample": "next-only",
+                        h3 { "第一篇文章" span { "只有下一篇" } }
+                        PostNavLinks { prev: None, next: Some(next), sample: true }
+                    }
+                    section { class: "showcase-post-nav-example", "data-showcase-sample": "prev-only",
+                        h3 { "最后一篇文章" span { "只有上一篇" } }
+                        PostNavLinks { prev: Some(prev), next: None, sample: true }
+                    }
+                    section { class: "showcase-post-nav-empty", "data-showcase-sample": "empty",
+                        PostNavLinks { prev: None, next: None, sample: true }
+                        p { "没有相邻文章时，不展示导航入口。" }
+                    }
+                }
+                p { class: "showcase-post-nav-note", "试试悬停或用 Tab 聚焦卡片。样例链接停留在本页。" }
             }
         }
     }

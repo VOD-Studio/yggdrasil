@@ -1805,34 +1805,43 @@
       "slug": "post-nav-links",
       "label": "相邻文章导航",
       "group": "post",
-      "summary": "相邻文章导航，用于文章阅读与展示。",
-      "states": "真实组件 · 本地样例",
-      "description": "相邻文章导航使用固定的本地样例资料渲染项目里的真实组件。预览不会请求或修改业务数据；详情同时列出组件接口与源码位置。",
+      "summary": "用方向与标题，串联相邻两篇文章。",
+      "states": "双侧 / 单侧 · 长标题 · 键盘聚焦",
+      "description": "在文章底部继续阅读上一篇或下一篇。卡片随可用宽度并排或纵向排列，长标题自然换行；缺少相邻文章时，只显示可用的入口。下方展示双侧、单侧与空状态，样例链接停留在本页。",
       "props": [
         [
           "prev",
           "Option<PostNav>",
           "None",
-          "相邻文章导航的 prev 参数。"
+          "上一篇文章的标题与 slug；None 时不显示该入口。"
         ],
         [
           "next",
           "Option<PostNav>",
           "None",
-          "相邻文章导航的 next 参数。"
+          "下一篇文章的标题与 slug；None 时不显示该入口。"
         ],
         [
           "full_reload",
           "bool",
-          "由调用方提供",
-          "相邻文章导航的 full_reload 参数。"
+          "false",
+          "使用整页加载，适用于后台文章预览跨布局跳转。"
+        ],
+        [
+          "sample",
+          "bool",
+          "false",
+          "图鉴样例链接保持在当前页，保留悬停与键盘聚焦。"
         ]
       ],
-      "keys": [],
+      "keys": [
+        ["Tab / Shift + Tab", "依次聚焦可用的文章入口。"],
+        ["Enter", "打开聚焦的文章；本页样例不跳转。"]
+      ],
       "source": "src/components/post/post_nav_links.rs",
-      "code": "pub fn PostNavLinks( prev: Option<PostNav>, next: Option<PostNav>, #[props(default = false)] full_reload: bool, ) -> Element",
+      "code": "PostNavLinks {\n    prev: Some(PostNav {\n        title: \"一片叶子\".to_string(),\n        slug: \"a-leaf\".to_string(),\n    }),\n    next: Some(PostNav {\n        title: \"下一圈年轮\".to_string(),\n        slug: \"next-ring\".to_string(),\n    }),\n}",
       "preview_mode": "static",
-      "usage_kind": "api"
+      "usage_kind": "rust"
     },
     {
       "name": "PostToc",

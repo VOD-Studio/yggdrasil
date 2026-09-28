@@ -14,7 +14,7 @@ use serde::Deserialize;
 use wasm_bindgen::JsCast;
 
 use crate::components::forms::FormInput;
-use crate::models::post::{Post, PostListItem, PostNav, PostStatus};
+use crate::models::post::{Post, PostListItem, PostStatus};
 use crate::router::Route;
 
 mod browser_previews;
@@ -891,14 +891,13 @@ fn preview_route(slug: &str) -> Option<PreviewRoute> {
         | "tag-detail-skeleton"
         | "tag-posts-loading"
         | "write-skeleton" => PreviewRoute::Skeleton,
-        "post-cover" | "post-nav-links" | "post-card" => PreviewRoute::Scene,
+        "post-cover" | "post-card" => PreviewRoute::Scene,
         "asset-picker-modal" | "asset-upload-modal" | "code-runner" | "sql-result-table" => {
             PreviewRoute::Business
         }
         "breadcrumbs" | "search-icon-link" | "admin-layout" | "footer" | "frontend-layout"
-        | "header" | "post-header" | "post-meta" | "post-content" | "post-footer" | "post-toc" => {
-            PreviewRoute::LayoutArticle
-        }
+        | "header" | "post-header" | "post-meta" | "post-content" | "post-footer"
+        | "post-nav-links" | "post-toc" => PreviewRoute::LayoutArticle,
         "comment-card-shell"
         | "comment-form"
         | "comment-item"
@@ -1334,12 +1333,6 @@ fn SceneComponentPreview(name: String) -> Element {
                     reading_time: post.reading_time,
                     word_count: post.word_count,
                 },
-            }
-        },
-        "PostNavLinks" => rsx! {
-            crate::components::post::post_nav_links::PostNavLinks {
-                prev: Some(PostNav { title: "一片叶子".to_string(), slug: "showcase-previous".to_string() }),
-                next: Some(PostNav { title: "下一圈年轮".to_string(), slug: "showcase-next".to_string() }),
             }
         },
         "PostCover" => {
