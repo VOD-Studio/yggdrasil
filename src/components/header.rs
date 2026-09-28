@@ -163,7 +163,7 @@ fn NavItem(
     on_demo_navigate: Option<EventHandler<&'static str>>,
 ) -> Element {
     let base_class =
-        "relative inline-flex px-3 py-1 text-base rounded-lg transition-colors duration-200";
+        "relative inline-flex px-3 py-1 text-base rounded-lg transition-colors duration-200 whitespace-nowrap shrink-0";
     let class_str = if is_active {
         format!("{} font-medium text-paper-accent", base_class)
     } else {

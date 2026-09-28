@@ -10,6 +10,7 @@ use crate::components::nav::build_nav_items;
 use crate::components::post::post_content::PostContent;
 use crate::components::post::post_footer::PostFooter;
 use crate::components::post::post_toc::PostToc;
+use crate::components::skeletons::home_skeleton::HomeSkeleton;
 use crate::models::post::PostNav;
 use crate::router::Route;
 
@@ -141,33 +142,196 @@ fn sample_route(label: &str) -> Route {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum HeaderViewportMode {
+    Desktop,
+    Mobile,
+}
+
 #[component]
 fn HeaderPreview(detail: bool) -> Element {
     let mut active = use_signal(|| "笔记");
+    let mut viewport_mode = use_signal(|| HeaderViewportMode::Desktop);
+    let mut max_width_choice = use_signal(|| "max-w-6xl");
     let menu_id = if detail {
         "mobile-nav-menu-showcase-header-detail"
     } else {
         "mobile-nav-menu-showcase-header-card"
     };
-    rsx! {
-        div { class: "showcase-layout-window", "data-showcase-preview": "header",
-            Header {
-                nav_items: build_nav_items(sample_route(active())),
-                right_content: rsx! {
-                    button {
-                        class: "p-2 rounded-full text-paper-secondary hover:text-paper-accent",
-                        r#type: "button",
-                        aria_label: "演示搜索操作",
-                        onclick: move |_| active.set("搜索"),
-                        "⌕"
-                    }
-                },
-                max_width: "max-w-6xl",
-                menu_id,
-                page_shell: false,
-                on_demo_navigate: move |label| active.set(label),
+
+    let search_button = rsx! {
+        button {
+            class: if active() == "搜索" {
+                "relative p-2 rounded-full text-paper-accent transition-colors duration-200"
+            } else {
+                "relative p-2 rounded-full text-paper-secondary hover:text-paper-accent transition-colors duration-200"
+            },
+            r#type: "button",
+            aria_label: "演示搜索操作",
+            title: "搜索",
+            onclick: move |_| active.set("搜索"),
+            svg {
+                xmlns: "http://www.w3.org/2000/svg",
+                class: "w-4 h-4 md:w-5 md:h-5",
+                view_box: "0 -960 960 960",
+                fill: "currentColor",
+                path { d: "M784-120 532-372q-30 24-69 38t-83 14q-109 0-184.5-75.5T120-580q0-109 75.5-184.5T380-840q109 0 184.5 75.5T640-580q0 44-14 83t-38 69l252 252-56 56ZM380-400q75 0 127.5-52.5T560-580q0-75-52.5-127.5T380-760q-75 0-127.5 52.5T200-580q0 75 52.5 127.5T380-400Z" }
             }
-            if detail { p { class: "px-6 py-3 text-sm text-paper-secondary", "当前演示栏目：{active()}。窄屏下可展开导航菜单。" } }
+            if active() == "搜索" {
+                span { class: "nav-indicator hidden md:block", "aria-hidden": "true" }
+            }
+        }
+    };
+
+    if !detail {
+        return rsx! {
+            div { class: "showcase-layout-window", "data-showcase-preview": "header",
+                Header {
+                    nav_items: build_nav_items(sample_route(active())),
+                    right_content: rsx! { {search_button} },
+                    max_width: "max-w-6xl",
+                    menu_id,
+                    page_shell: false,
+                    on_demo_navigate: move |label| active.set(label),
+                }
+                div { class: "showcase-header-card-body",
+                    div { class: "showcase-header-card-hero",
+                        div {
+                            p { class: "text-[11px] font-mono text-paper-secondary", "ACTIVE / 当前栏目" }
+                            p { class: "text-sm font-semibold text-paper-primary mt-0.5", "{active()}" }
+                        }
+                        span { class: "text-[10px] px-2 py-0.5 rounded-full bg-paper-accent-soft text-paper-accent font-medium", "交互演示" }
+                    }
+                    div { class: "showcase-header-card-tags",
+                        span { "自适应居中" }
+                        span { "平滑下划指示" }
+                        span { "窄屏自动折叠" }
+                    }
+                }
+            }
+        };
+    }
+
+    rsx! {
+        div { class: "w-full flex flex-col gap-3",
+            div { class: "flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-paper-entry/50 border border-[var(--sc-line)]",
+                div { class: "flex items-center gap-2",
+                    span { class: "text-xs font-mono text-paper-secondary tracking-wider", "VIEWPORT" }
+                    div { class: "showcase-picker-mode-switch",
+                        button {
+                            r#type: "button",
+                            aria_pressed: "{viewport_mode() == HeaderViewportMode::Desktop}",
+                            onclick: move |_| viewport_mode.set(HeaderViewportMode::Desktop),
+                            "🖥️ 桌面端"
+                        }
+                        button {
+                            r#type: "button",
+                            aria_pressed: "{viewport_mode() == HeaderViewportMode::Mobile}",
+                            onclick: move |_| viewport_mode.set(HeaderViewportMode::Mobile),
+                            "📱 移动端 (380px)"
+                        }
+                    }
+                }
+                if viewport_mode() == HeaderViewportMode::Desktop {
+                    div { class: "flex items-center gap-2",
+                        span { class: "text-xs font-mono text-paper-secondary tracking-wider", "WIDTH" }
+                        div { class: "showcase-picker-mode-switch",
+                            button {
+                                r#type: "button",
+                                aria_pressed: "{max_width_choice() == \"max-w-3xl\"}",
+                                onclick: move |_| max_width_choice.set("max-w-3xl"),
+                                "3xl (768px)"
+                            }
+                            button {
+                                r#type: "button",
+                                aria_pressed: "{max_width_choice() == \"max-w-4xl\"}",
+                                onclick: move |_| max_width_choice.set("max-w-4xl"),
+                                "4xl (896px)"
+                            }
+                            button {
+                                r#type: "button",
+                                aria_pressed: "{max_width_choice() == \"max-w-6xl\"}",
+                                onclick: move |_| max_width_choice.set("max-w-6xl"),
+                                "6xl (1152px)"
+                            }
+                        }
+                    }
+                }
+            }
+
+            div {
+                class: if viewport_mode() == HeaderViewportMode::Mobile { "showcase-layout-phone-wrap" } else { "w-full" },
+                div {
+                    class: if viewport_mode() == HeaderViewportMode::Mobile {
+                        "showcase-mobile-phone-frame"
+                    } else {
+                        "showcase-layout-window showcase-detail-window-scroll"
+                    },
+                    "data-showcase-preview": "header",
+
+                    if viewport_mode() == HeaderViewportMode::Mobile {
+                        div { class: "showcase-phone-notch",
+                            span { "09:41" }
+                            div { class: "showcase-phone-notch-pill" }
+                            span { "5G 100%" }
+                        }
+                    }
+
+                    Header {
+                        nav_items: build_nav_items(sample_route(active())),
+                        right_content: rsx! { {search_button} },
+                        max_width: if viewport_mode() == HeaderViewportMode::Mobile { "w-full" } else { max_width_choice() },
+                        menu_id,
+                        page_shell: false,
+                        on_demo_navigate: move |label| active.set(label),
+                    }
+
+                    div {
+                        class: if viewport_mode() == HeaderViewportMode::Mobile {
+                            "showcase-phone-scroll p-4 space-y-4"
+                        } else {
+                            "flex-1 p-6 md:p-8 space-y-6 max-w-4xl mx-auto w-full"
+                        },
+                        div { class: "rounded-2xl border border-[var(--sc-line)] bg-paper-entry/40 p-5",
+                            div { class: "flex items-center justify-between",
+                                span { class: "text-xs font-mono text-paper-secondary uppercase tracking-wider", "当前演示栏目" }
+                                span { class: "text-xs px-2.5 py-0.5 rounded-full bg-paper-accent-soft text-paper-accent font-semibold", "{active()}" }
+                            }
+                            h3 { class: "text-lg font-semibold mt-2 text-paper-primary",
+                                match active() {
+                                    "首页" => "首页 · 最新动态与精选文章",
+                                    "笔记" => "笔记 · 碎片记录与灵感闪光",
+                                    "归档" => "归档 · 按年份组织的历史文章",
+                                    "友链" => "友链 · 互联互通的网络邻居",
+                                    "关于" => "关于 · 站点介绍与设计故事",
+                                    "搜索" => "搜索 · 全局快速文本检索",
+                                    _ => "栏目演示",
+                                }
+                            }
+                            p { class: "text-xs text-paper-secondary mt-1.5 leading-relaxed",
+                                if viewport_mode() == HeaderViewportMode::Mobile {
+                                    "点击右上角汉堡按钮，可展开移动端全屏抽屉菜单；点击任意栏目自动收起并切换当前状态。"
+                                } else {
+                                    "点击上方导航栏项目可切换激活项；向下滚动本区域可体验 Header 粘性吸顶 (sticky) 与磨砂毛玻璃 (backdrop-blur) 效果。"
+                                }
+                            }
+                        }
+
+                        div { class: "rounded-2xl border border-[var(--sc-line)]/60 bg-paper-entry/20 p-5 space-y-3",
+                            p { class: "text-xs font-mono text-paper-secondary tracking-wider", "FEATURE HIGHLIGHTS / 特性说明" }
+                            ul { class: "text-xs text-paper-secondary space-y-2 list-disc list-inside",
+                                li { "自适应居中对齐：通过 max_width 参数确保顶部导航项左右边缘与下方文章正文精准对齐。" }
+                                li { "指示器平滑过渡：激活项下方带独立的 nav-indicator 下划线，栏目切换时平滑滑动。" }
+                                li { "移动端交互：在移动端或窄屏视口下自动转换为旋转图标汉堡按钮与平滑展开面板。" }
+                            }
+                        }
+
+                        div { class: "py-12 text-center text-xs font-mono text-paper-tertiary",
+                            "— 往下滚动查看 Header 磨砂吸顶效果 —"
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -200,9 +364,18 @@ fn FooterPreview(detail: bool) -> Element {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FrontendLayoutMode {
+    Desktop,
+    Mobile,
+    Skeleton,
+}
+
 #[component]
 fn FrontendLayoutPreview(detail: bool) -> Element {
     let mut active = use_signal(|| "首页");
+    let mut layout_mode = use_signal(|| FrontendLayoutMode::Desktop);
+    let mut max_width_choice = use_signal(|| "max-w-4xl");
     let menu_id = if detail {
         "mobile-nav-menu-showcase-layout-detail"
     } else {
@@ -213,33 +386,216 @@ fn FrontendLayoutPreview(detail: bool) -> Element {
     } else {
         "showcase-frontend-scroll-card"
     };
-    rsx! {
-        div { id: scroll_id, class: "showcase-layout-window showcase-frontend-scroll", "data-showcase-preview": "frontend-layout",
-            FrontendShell {
-                min_height: "min-h-[250px]",
-                max_width: "max-w-4xl",
-                header: rsx! { Header {
-                    nav_items: build_nav_items(sample_route(active())),
-                    right_content: rsx! { button { r#type: "button", aria_label: "演示搜索操作", onclick: move |_| active.set("搜索"), "⌕" } },
+
+    let search_button = rsx! {
+        button {
+            class: if active() == "搜索" {
+                "p-2 rounded-full text-paper-accent transition-colors duration-200"
+            } else {
+                "p-2 rounded-full text-paper-secondary hover:text-paper-accent transition-colors duration-200"
+            },
+            r#type: "button",
+            aria_label: "演示搜索操作",
+            onclick: move |_| active.set("搜索"),
+            svg {
+                xmlns: "http://www.w3.org/2000/svg",
+                class: "w-4 h-4 md:w-5 md:h-5",
+                view_box: "0 -960 960 960",
+                fill: "currentColor",
+                path { d: "M784-120 532-372q-30 24-69 38t-83 14q-109 0-184.5-75.5T120-580q0-109 75.5-184.5T380-840q109 0 184.5 75.5T640-580q0 44-14 83t-38 69l252 252-56 56ZM380-400q75 0 127.5-52.5T560-580q0-75-52.5-127.5T380-760q-75 0-127.5 52.5T200-580q0 75 52.5 127.5T380-400Z" }
+            }
+        }
+    };
+
+    if !detail {
+        return rsx! {
+            div { id: scroll_id, class: "showcase-layout-window", "data-showcase-preview": "frontend-layout",
+                FrontendShell {
+                    min_height: "h-full min-h-0",
                     max_width: "max-w-4xl",
-                    menu_id,
-                    page_shell: false,
-                    on_demo_navigate: move |label| active.set(label),
-                } },
-                main_content: rsx! {
-                    article {
-                        h2 { class: "text-xl font-semibold", "一页内容，安心阅读" }
-                        p { class: "mt-3 text-paper-secondary", "前台布局将导航、正文和页脚排成清晰的阅读路线。当前栏目：{active()}。" }
-                        if detail { p { class: "mt-3 text-paper-secondary", "菜单和搜索仅更新这份固定样例，不会离开组件图鉴。" } }
+                    header: rsx! {
+                        Header {
+                            nav_items: build_nav_items(sample_route(active())),
+                            right_content: rsx! { {search_button} },
+                            max_width: "max-w-4xl",
+                            menu_id,
+                            page_shell: false,
+                            on_demo_navigate: move |label| active.set(label),
+                        }
+                    },
+                    main_content: rsx! {
+                        article { class: "flex flex-col justify-center h-full",
+                            h2 { class: "font-semibold text-paper-primary", "一页内容，安心阅读" }
+                            p { class: "text-paper-secondary mt-1", "前台布局将导航、正文和页脚排成清晰的阅读路线。" }
+                        }
+                    },
+                    footer: rsx! {
+                        FooterView {
+                            github_url: Some("https://github.com".to_string()),
+                            top_visible: false,
+                            page_shell: false,
+                            inline_top: true,
+                            on_top: move |_| scroll_demo_to_top(scroll_id),
+                        }
+                    },
+                }
+            }
+        };
+    }
+
+    rsx! {
+        div { class: "w-full flex flex-col gap-3",
+            div { class: "flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-paper-entry/50 border border-[var(--sc-line)]",
+                div { class: "flex items-center gap-2",
+                    span { class: "text-xs font-mono text-paper-secondary tracking-wider", "LAYOUT" }
+                    div { class: "showcase-picker-mode-switch",
+                        button {
+                            r#type: "button",
+                            aria_pressed: "{layout_mode() == FrontendLayoutMode::Desktop}",
+                            onclick: move |_| layout_mode.set(FrontendLayoutMode::Desktop),
+                            "🖥️ 完整页面"
+                        }
+                        button {
+                            r#type: "button",
+                            aria_pressed: "{layout_mode() == FrontendLayoutMode::Mobile}",
+                            onclick: move |_| layout_mode.set(FrontendLayoutMode::Mobile),
+                            "📱 移动端布局"
+                        }
+                        button {
+                            r#type: "button",
+                            aria_pressed: "{layout_mode() == FrontendLayoutMode::Skeleton}",
+                            onclick: move |_| layout_mode.set(FrontendLayoutMode::Skeleton),
+                            "🦴 骨架屏加载"
+                        }
                     }
-                },
-                footer: rsx! { FooterView {
-                    github_url: Some("https://github.com".to_string()),
-                    top_visible: true,
-                    page_shell: false,
-                    inline_top: true,
-                    on_top: move |_| scroll_demo_to_top(scroll_id),
-                } },
+                }
+                if layout_mode() == FrontendLayoutMode::Desktop {
+                    div { class: "flex items-center gap-2",
+                        span { class: "text-xs font-mono text-paper-secondary tracking-wider", "WIDTH" }
+                        div { class: "showcase-picker-mode-switch",
+                            button {
+                                r#type: "button",
+                                aria_pressed: "{max_width_choice() == \"max-w-4xl\"}",
+                                onclick: move |_| max_width_choice.set("max-w-4xl"),
+                                "4xl (896px 常规)"
+                            }
+                            button {
+                                r#type: "button",
+                                aria_pressed: "{max_width_choice() == \"max-w-6xl\"}",
+                                onclick: move |_| max_width_choice.set("max-w-6xl"),
+                                "6xl (1152px 宽屏)"
+                            }
+                        }
+                    }
+                }
+            }
+
+            div {
+                class: if layout_mode() == FrontendLayoutMode::Mobile { "showcase-layout-phone-wrap" } else { "w-full" },
+                div {
+                    id: scroll_id,
+                    class: if layout_mode() == FrontendLayoutMode::Mobile {
+                        "showcase-mobile-phone-frame"
+                    } else {
+                        "showcase-layout-window showcase-detail-window-scroll"
+                    },
+                    "data-showcase-preview": "frontend-layout",
+
+                    if layout_mode() == FrontendLayoutMode::Mobile {
+                        div { class: "showcase-phone-notch",
+                            span { "09:41" }
+                            div { class: "showcase-phone-notch-pill" }
+                            span { "5G 100%" }
+                        }
+                    }
+
+                    FrontendShell {
+                        min_height: "min-h-[480px]",
+                        max_width: if layout_mode() == FrontendLayoutMode::Mobile { "w-full" } else { max_width_choice() },
+                        header: rsx! {
+                            Header {
+                                nav_items: build_nav_items(sample_route(active())),
+                                right_content: rsx! { {search_button} },
+                                max_width: if layout_mode() == FrontendLayoutMode::Mobile { "w-full" } else { max_width_choice() },
+                                menu_id,
+                                page_shell: false,
+                                on_demo_navigate: move |label| active.set(label),
+                            }
+                        },
+                        main_content: rsx! {
+                            if layout_mode() == FrontendLayoutMode::Skeleton {
+                                div { class: "space-y-4 py-4",
+                                    div { class: "p-3 rounded-xl bg-paper-accent-soft text-paper-accent text-xs font-mono flex items-center justify-between",
+                                        span { "SUSPENSE BOUNDARY SKELETON PLACEHOLDER" }
+                                        span { "路由加载中" }
+                                    }
+                                    HomeSkeleton { current_page: 1 }
+                                }
+                            } else {
+                                article { class: "space-y-6",
+                                    div { class: "border-b border-[var(--sc-line)] pb-5",
+                                        span { class: "text-xs font-mono text-paper-secondary", "FRONTEND LAYOUT SPECIMEN" }
+                                        h2 { class: "text-2xl font-bold tracking-tight text-paper-primary mt-1",
+                                            match active() {
+                                                "首页" => "一页内容，安心阅读",
+                                                "笔记" => "公开笔记 · 随笔与灵感",
+                                                "归档" => "岁月归档 · 时间线检索",
+                                                "友链" => "友情链接 · 志趣相投的伙伴",
+                                                "关于" => "关于本站 · 架构设计与理念",
+                                                "搜索" => "站内检索 · 快速定位内容",
+                                                _ => "前台内容展示",
+                                            }
+                                        }
+                                        p { class: "mt-2 text-sm text-paper-secondary leading-relaxed",
+                                            "前台布局通过统一的 FrontendShell 组合顶部 Header、弹性内容主区 main 与底部 Footer。当前选中栏目：{active()}。"
+                                        }
+                                    }
+
+                                    div { class: "space-y-4",
+                                        div { class: "p-5 rounded-2xl border border-[var(--sc-line)] bg-paper-entry/40 hover:bg-paper-entry/70 transition-colors",
+                                            div { class: "flex items-center gap-2 text-xs text-paper-secondary font-mono",
+                                                span { class: "px-2 py-0.5 rounded-full bg-paper-accent-soft text-paper-accent font-medium", "精选文章" }
+                                                span { "•" }
+                                                span { "2026-09-28" }
+                                                span { "•" }
+                                                span { "5 分钟阅读" }
+                                            }
+                                            h3 { class: "text-lg font-semibold text-paper-primary mt-2", "Dioxus 0.7 与全栈 Rust 博客布局演进" }
+                                            p { class: "text-xs text-paper-secondary mt-1.5 leading-relaxed",
+                                                "探讨全栈 Rust 前端在 SSR、水合、骨架屏与页面过渡动画上的工程实践，兼顾极致的加载性能与阅读体验。"
+                                            }
+                                        }
+
+                                        div { class: "p-5 rounded-2xl border border-[var(--sc-line)] bg-paper-entry/40 hover:bg-paper-entry/70 transition-colors",
+                                            div { class: "flex items-center gap-2 text-xs text-paper-secondary font-mono",
+                                                span { class: "px-2 py-0.5 rounded-full bg-paper-entry text-paper-secondary border border-[var(--sc-line)]", "设计系统" }
+                                                span { "•" }
+                                                span { "2026-09-15" }
+                                            }
+                                            h3 { class: "text-lg font-semibold text-paper-primary mt-2", "统一宽度与响应式对齐的排版艺术" }
+                                            p { class: "text-xs text-paper-secondary mt-1.5 leading-relaxed",
+                                                "导航栏 max-w 与正文容器严格对齐，保证视口放大缩小时视觉焦点稳定不飘移。"
+                                            }
+                                        }
+                                    }
+
+                                    div { class: "pt-8 pb-4 text-center text-xs font-mono text-paper-tertiary",
+                                        "— 滚动至底部可点击页脚回到顶部 —"
+                                    }
+                                }
+                            }
+                        },
+                        footer: rsx! {
+                            FooterView {
+                                github_url: Some("https://github.com".to_string()),
+                                top_visible: true,
+                                page_shell: false,
+                                inline_top: true,
+                                on_top: move |_| scroll_demo_to_top(scroll_id),
+                            }
+                        },
+                    }
+                }
             }
         }
     }

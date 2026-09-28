@@ -912,6 +912,9 @@ fn preview_route(slug: &str) -> Option<PreviewRoute> {
 
 fn is_local_demo(slug: &str) -> bool {
     slug == "admin-layout"
+        || slug == "header"
+        || slug == "frontend-layout"
+        || slug == "footer"
         || matches!(
             preview_route(slug),
             Some(PreviewRoute::Business | PreviewRoute::Comment | PreviewRoute::Browser)

@@ -1493,14 +1493,44 @@
       "label": "前台布局",
       "group": "layout",
       "summary": "组合导航、内容区和页脚的前台页面布局。",
-      "states": "导航 · 示例正文 · 页脚",
-      "description": "正式布局在 FrontendShell 中渲染路由 Outlet 和对应骨架屏；图鉴向同一个壳传入固定正文与局部导航。",
+      "states": "导航 · 示例正文 · 页脚 · 骨架屏",
+      "description": "前台整体布局组件，通过统一的 FrontendShell 组织粘性吸顶 Header、弹性正文内容区与 Footer，并在路由加载过程中通过 SuspenseBoundary 展示匹配的骨架屏。图鉴提供完整页面、移动端窄屏与骨架屏等多种模式演示。",
       "props": [
         [
           "—",
           "无",
           "—",
-          "此组件不接收显式属性。"
+          "FrontendLayout 为全局路由布局外壳，不接收外部显式参数，内部自动绑定当前路由与骨架屏。"
+        ],
+        [
+          "FrontendShell · header",
+          "Element",
+          "必填",
+          "顶部导航栏插槽，通常挂载 Header 组件。"
+        ],
+        [
+          "FrontendShell · main_content",
+          "Element",
+          "必填",
+          "正文内容插槽，在 SuspenseBoundary 中渲染路由 Outlet 或骨架屏。"
+        ],
+        [
+          "FrontendShell · footer",
+          "Element",
+          "必填",
+          "页面底部插槽，通常挂载 Footer 组件。"
+        ],
+        [
+          "FrontendShell · max_width",
+          "&'static str",
+          "max-w-4xl",
+          "正文容器最大宽度类，与 Header 的 max_width 保持严格对齐。"
+        ],
+        [
+          "FrontendShell · min_height",
+          "&'static str",
+          "min-h-screen",
+          "容器最小高度，保证页面内容较少时页脚依然贴底。"
         ]
       ],
       "keys": [],
@@ -1515,32 +1545,44 @@
       "label": "导航页头",
       "group": "layout",
       "summary": "站点 Logo、栏目导航与小屏菜单。",
-      "states": "当前栏目 · 桌面导航 · 手机菜单",
-      "description": "图鉴中的栏目和搜索只改变本地样例状态；正式 Header 继续使用可通过辅助键打开的路由链接。每个演示实例拥有独立菜单 ID。",
+      "states": "当前栏目 · 桌面导航 · 手机菜单 · 视口切换",
+      "description": "站点顶部导航栏组件，支持 Logo 品牌标识、桌面端横向导航（带平滑滑动下划指示器）、右侧功能区（搜索与主题切换），以及窄屏视口下的平滑抽屉式汉堡折叠菜单。图鉴支持桌面全宽与移动端 380px 模拟视口双向切换。",
       "props": [
         [
           "nav_items",
           "Vec<NavItemConfig>",
           "由调用方提供",
-          "导航页头的 nav_items 参数。"
+          "导航项列表（包含 route 目标路由、label 显示文本及 is_active 激活状态）。"
         ],
         [
           "right_content",
           "Element",
           "由调用方提供",
-          "导航页头的 right_content 参数。"
+          "右侧自定义内容插槽（如 SearchIconLink 搜索入口与 ThemeToggle 主题切换按钮）。"
         ],
         [
           "max_width",
           "&'static str",
           "max-w-3xl",
-          "导航宽度，与正文宽度保持一致。"
+          "内部导航最大宽度类，需与正文 max-w-* 严格对齐以保证左右边缘一致。"
         ],
         [
-          "menu_id / on_demo_navigate / page_shell",
-          "&'static str / Option<EventHandler> / bool",
-          "正式入口使用默认值",
-          "用于局部演示菜单 ID、导航回调和页面过渡标记；正式导航保留 Link。"
+          "menu_id",
+          "&'static str",
+          "mobile-nav-menu",
+          "小屏汉堡菜单的稳定 DOM ID；同页有多个 Header 实例时必须各不相同。"
+        ],
+        [
+          "on_demo_navigate",
+          "Option<EventHandler<&'static str>>",
+          "None",
+          "图鉴局部演示回调；正式页面省略以保留真实的全局路由 Link 跳转行为。"
+        ],
+        [
+          "page_shell",
+          "bool",
+          "true",
+          "页面过渡外壳标记；图鉴实例设为 false 以免被 View Transition 识别为真实全站外壳。"
         ]
       ],
       "keys": [],
