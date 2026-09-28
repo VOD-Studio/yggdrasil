@@ -164,7 +164,7 @@ fn CommentPreview(slug: String, detail: bool) -> Element {
                         });
                         match web_sys::IntersectionObserver::new(callback.as_ref().unchecked_ref()) {
                             Ok(watcher) => {
-                                watcher.observe(&element);
+                                watcher.observe(element);
                                 observer.set(Some(VisibleObserver { observer: watcher, _callback: callback }));
                             }
                             Err(_) => visible.set(true),
