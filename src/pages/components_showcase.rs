@@ -891,12 +891,12 @@ fn preview_route(slug: &str) -> Option<PreviewRoute> {
         | "tag-detail-skeleton"
         | "tag-posts-loading"
         | "write-skeleton" => PreviewRoute::Skeleton,
-        "post-cover" | "post-meta" | "post-nav-links" | "post-card" => PreviewRoute::Scene,
+        "post-cover" | "post-nav-links" | "post-card" => PreviewRoute::Scene,
         "asset-picker-modal" | "asset-upload-modal" | "code-runner" | "sql-result-table" => {
             PreviewRoute::Business
         }
         "breadcrumbs" | "search-icon-link" | "admin-layout" | "footer" | "frontend-layout"
-        | "header" | "post-header" | "post-content" | "post-footer" | "post-toc" => {
+        | "header" | "post-header" | "post-meta" | "post-content" | "post-footer" | "post-toc" => {
             PreviewRoute::LayoutArticle
         }
         "comment-card-shell"
@@ -1336,7 +1336,6 @@ fn SceneComponentPreview(name: String) -> Element {
                 },
             }
         },
-        "PostMeta" => rsx! { crate::components::post::post_meta::PostMeta { post: post.clone() } },
         "PostNavLinks" => rsx! {
             crate::components::post::post_nav_links::PostNavLinks {
                 prev: Some(PostNav { title: "一片叶子".to_string(), slug: "showcase-previous".to_string() }),

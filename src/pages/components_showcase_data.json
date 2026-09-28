@@ -1783,22 +1783,22 @@
       "slug": "post-meta",
       "label": "文章元信息",
       "group": "post",
-      "summary": "文章元信息，用于文章阅读与展示。",
+      "summary": "发布日期、阅读时长与字数，清晰呈现文章的阅读信息。",
       "states": "真实组件 · 本地样例",
-      "description": "文章元信息使用固定的本地样例资料渲染项目里的真实组件。预览不会请求或修改业务数据；详情同时列出组件接口与源码位置。",
+      "description": "用日历、时钟和文档图标展示文章日期、预计阅读时长与字数。日期优先使用发布时间，未发布时回退到创建时间。每项信息保持完整，窄屏下自然换行；预览在文章标题和摘要下展示真实组件。",
       "props": [
         [
           "post",
           "Post",
           "由调用方提供",
-          "文章元信息的 post 参数。"
+          "读取发布时间（缺省时回退到创建时间）、reading_time 与 word_count。"
         ]
       ],
       "keys": [],
       "source": "src/components/post/post_meta.rs",
-      "code": "pub fn PostMeta(post: Post) -> Element",
+      "code": "rsx! {\n    PostMeta { post: post.clone() }\n}",
       "preview_mode": "static",
-      "usage_kind": "api"
+      "usage_kind": "rust"
     },
     {
       "name": "PostNavLinks",

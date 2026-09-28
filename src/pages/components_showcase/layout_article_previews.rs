@@ -11,6 +11,7 @@ use crate::components::post::breadcrumbs::Breadcrumbs;
 use crate::components::post::post_content::PostContent;
 use crate::components::post::post_footer::PostFooter;
 use crate::components::post::post_header::PostHeader;
+use crate::components::post::post_meta::PostMeta;
 use crate::components::post::post_toc::PostToc;
 use crate::components::skeletons::home_skeleton::HomeSkeleton;
 use crate::models::post::{PostNav, PostStatus};
@@ -26,10 +27,25 @@ pub(super) fn preview(slug: &str, detail: bool) -> Option<Element> {
         "frontend-layout" => Some(rsx! { FrontendLayoutPreview { detail } }),
         "breadcrumbs" => Some(rsx! { BreadcrumbsPreview { detail } }),
         "post-header" => Some(rsx! { PostHeaderPreview { detail } }),
+        "post-meta" => Some(rsx! { PostMetaPreview {} }),
         "post-content" => Some(rsx! { PostContentPreview { detail } }),
         "post-footer" => Some(rsx! { PostFooterPreview { detail } }),
         "post-toc" => Some(rsx! { PostTocPreview { detail } }),
         _ => None,
+    }
+}
+
+#[component]
+fn PostMetaPreview() -> Element {
+    let post = super::sample_post();
+
+    rsx! {
+        article { class: "showcase-post-meta-demo", "data-showcase-preview": "post-meta",
+            p { class: "showcase-post-meta-kicker", "设计手记" }
+            h3 { class: "post-title", "{post.title}" }
+            p { class: "post-description", "{post.summary.as_deref().unwrap_or_default()}" }
+            PostMeta { post }
+        }
     }
 }
 

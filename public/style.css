@@ -3562,15 +3562,29 @@
   .post-meta {
     margin-top: 0.25rem;
     color: var(--color-paper-secondary);
-    font-size: 13px;
+    font-size: 14px;
+    line-height: 1.6;
     display: flex;
     align-items: center;
-    gap: 0.65rem;
+    gap: 0.5rem 1.1rem;
     flex-wrap: wrap;
     font-variant-numeric: tabular-nums;
   }
-  .post-meta span {
+  .post-meta-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45em;
     white-space: nowrap;
+  }
+  .post-meta-item svg {
+    width: 1em;
+    height: 1em;
+    flex-shrink: 0;
+    opacity: 0.8;
+  }
+  .post-meta-item strong {
+    color: var(--color-paper-primary);
+    font-weight: 500;
   }
   .post-meta a {
     color: var(--color-paper-secondary);
@@ -11428,6 +11442,37 @@ button.note-tag {
 .showcase-detail .showcase-cover-window .showcase-scene-canvas {
   width: 10.5rem;
   transform: none;
+}
+.showcase-post-meta-demo {
+  width: 100%;
+  max-width: 38rem;
+  margin-inline: auto;
+  padding: clamp(1rem, 2.5vw, 2rem);
+  border: 1px solid var(--sc-line);
+  border-radius: 14px;
+  background: var(--color-paper-theme);
+}
+.showcase-post-meta-kicker {
+  margin-bottom: .65rem;
+  color: var(--color-paper-accent);
+  font-size: .65rem;
+  letter-spacing: .08em;
+}
+.showcase-post-meta-demo .post-title {
+  font-size: clamp(1.4rem, 3vw, 2rem);
+}
+.showcase-post-meta-demo .post-description {
+  margin-top: .6rem;
+  font-size: .8rem;
+}
+.showcase-post-meta-demo .post-meta {
+  margin-top: 1.2rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--sc-line);
+}
+.showcase-detail .showcase-live-preview:has([data-showcase-preview="post-meta"]) {
+  min-height: 0;
+  padding: clamp(.75rem, 2vw, 1.75rem);
 }
 .showcase-post-header-demo {
   width: 100%;
