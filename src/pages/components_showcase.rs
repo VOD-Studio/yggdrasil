@@ -714,10 +714,10 @@ fn preview_route(slug: &str) -> Option<PreviewRoute> {
         | "tag-posts-loading"
         | "write-skeleton" => PreviewRoute::Skeleton,
         "comment-card-shell" | "search-icon-link" | "breadcrumbs" | "post-cover"
-        | "post-header" | "post-meta" | "post-nav-links" | "post-card" | "sql-result-table" => {
-            PreviewRoute::Scene
+        | "post-header" | "post-meta" | "post-nav-links" | "post-card" => PreviewRoute::Scene,
+        "asset-picker-modal" | "asset-upload-modal" | "code-runner" | "sql-result-table" => {
+            PreviewRoute::Business
         }
-        "asset-picker-modal" | "asset-upload-modal" | "code-runner" => PreviewRoute::Business,
         "admin-layout" | "footer" | "frontend-layout" | "header" | "post-content"
         | "post-footer" | "post-toc" => PreviewRoute::LayoutArticle,
         "comment-form"
@@ -1169,16 +1169,6 @@ fn SceneComponentPreview(name: String) -> Element {
                 status_badge: rsx! {},
                 content_html: "<p>一片叶子，也记得来时的风。</p>".to_string(),
                 div { "回复" }
-            }
-        },
-        "SqlResultTable" => rsx! {
-            crate::components::sql_result_table::SqlResultTable {
-                result: crate::api::database::sql_console::SqlResult {
-                    columns: vec!["id".to_string(), "title".to_string(), "published".to_string()],
-                    rows: vec![vec![serde_json::json!(1), serde_json::json!("让想法生根"), serde_json::json!(true)]],
-                    statement_type: "Select".to_string(),
-                    ..Default::default()
-                }
             }
         },
         "SearchIconLink" => rsx! { crate::components::header::SearchIconLink {} },

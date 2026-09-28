@@ -1,6 +1,7 @@
 //! Local examples for business components. The production controllers stay in components/.
 use dioxus::prelude::*;
 
+use crate::api::database::sql_console::SqlResult;
 use crate::components::assets::asset_picker::{PickerAsset, PickerGallery, PickerSelectionFooter};
 use crate::components::assets::asset_upload::{
     UploadDropZoneContent, UploadItem, UploadPanel, UploadStatus,
@@ -9,6 +10,7 @@ use crate::components::assets::AssetSelection;
 use crate::components::code_runner::runner::RunnerExample;
 use crate::components::code_runner::CodeRunner;
 use crate::components::forms::{FormInput, INPUT_INLINE_CLASS};
+use crate::components::sql_result_table::SqlResultTable;
 use crate::components::ui::{ModalShell, Pagination};
 use crate::router::Route;
 
@@ -17,6 +19,7 @@ pub(super) fn preview(slug: &str, detail: bool) -> Option<Element> {
         "asset-picker-modal" => rsx! { PickerDemo { detail } },
         "asset-upload-modal" => rsx! { UploadDemo { detail } },
         "code-runner" => rsx! { RunnerDemo { detail } },
+        "sql-result-table" => rsx! { SqlTableDemo { detail } },
         _ => return None,
     })
 }
@@ -357,6 +360,287 @@ fn RunnerDemo(detail: bool) -> Element {
                 }
             } else {
                 div { class: "showcase-browser-placeholder", "运行器进入视野后加载编辑器和终端…" }
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SqlPreset {
+    Posts,
+    Comments,
+    Metrics,
+}
+
+fn sample_sql_result(preset: SqlPreset, detail: bool) -> (SqlResult, &'static str, &'static str) {
+    match preset {
+        SqlPreset::Posts => {
+            let columns = if detail {
+                vec![
+                    "id".to_string(),
+                    "title".to_string(),
+                    "slug".to_string(),
+                    "published".to_string(),
+                    "views".to_string(),
+                    "deleted_at".to_string(),
+                ]
+            } else {
+                vec![
+                    "id".to_string(),
+                    "title".to_string(),
+                    "published".to_string(),
+                    "views".to_string(),
+                ]
+            };
+            let mut rows = vec![
+                if detail {
+                    vec![
+                        serde_json::json!(108),
+                        serde_json::json!("让想法生根"),
+                        serde_json::json!("roots-of-thought"),
+                        serde_json::json!(true),
+                        serde_json::json!(1280),
+                        serde_json::Value::Null,
+                    ]
+                } else {
+                    vec![
+                        serde_json::json!(108),
+                        serde_json::json!("让想法生根"),
+                        serde_json::json!(true),
+                        serde_json::json!(1280),
+                    ]
+                },
+                if detail {
+                    vec![
+                        serde_json::json!(107),
+                        serde_json::json!("在时间的缝隙里种下文字"),
+                        serde_json::json!("writing-in-time"),
+                        serde_json::json!(true),
+                        serde_json::json!(856),
+                        serde_json::Value::Null,
+                    ]
+                } else {
+                    vec![
+                        serde_json::json!(107),
+                        serde_json::json!("在时间的缝隙里种下文字"),
+                        serde_json::json!(true),
+                        serde_json::json!(856),
+                    ]
+                },
+                if detail {
+                    vec![
+                        serde_json::json!(106),
+                        serde_json::json!("未命名草稿：微风与山岗"),
+                        serde_json::json!("draft-whispering-wind"),
+                        serde_json::json!(false),
+                        serde_json::json!(42),
+                        serde_json::Value::Null,
+                    ]
+                } else {
+                    vec![
+                        serde_json::json!(106),
+                        serde_json::json!("未命名草稿：微风与山岗"),
+                        serde_json::json!(false),
+                        serde_json::json!(42),
+                    ]
+                },
+            ];
+            if detail {
+                rows.push(vec![
+                    serde_json::json!(105),
+                    serde_json::json!("已归档随笔：初春记事"),
+                    serde_json::json!("archived-early-notes"),
+                    serde_json::json!(false),
+                    serde_json::json!(310),
+                    serde_json::json!("2026-09-01 14:20"),
+                ]);
+            }
+            let query = if detail {
+                "SELECT id, title, slug, published, views, deleted_at FROM posts ORDER BY id DESC LIMIT 4;"
+            } else {
+                "SELECT id, title, published, views FROM posts LIMIT 3;"
+            };
+            let stats = if detail {
+                "4 行 · 12ms"
+            } else {
+                "3 行 · 8ms"
+            };
+            (
+                SqlResult {
+                    columns,
+                    rows,
+                    statement_type: "SELECT".to_string(),
+                    ..Default::default()
+                },
+                query,
+                stats,
+            )
+        }
+        SqlPreset::Comments => {
+            let columns = vec![
+                "id".to_string(),
+                "post_id".to_string(),
+                "author".to_string(),
+                "content".to_string(),
+                "is_approved".to_string(),
+                "created_at".to_string(),
+            ];
+            let rows = vec![
+                vec![
+                    serde_json::json!(34),
+                    serde_json::json!(108),
+                    serde_json::json!("叶子"),
+                    serde_json::json!("风吹过的时候，树叶也在点头。"),
+                    serde_json::json!(true),
+                    serde_json::json!("2026-09-28 09:12"),
+                ],
+                vec![
+                    serde_json::json!(33),
+                    serde_json::json!(108),
+                    serde_json::json!("林中客"),
+                    serde_json::json!("文字很有力量，期待下一篇更新！"),
+                    serde_json::json!(true),
+                    serde_json::json!("2026-09-28 09:25"),
+                ],
+                vec![
+                    serde_json::json!(32),
+                    serde_json::json!(107),
+                    serde_json::json!("待审访客"),
+                    serde_json::json!(
+                        "这是一条待审核留言，用于验证长文本在表格中的截断展示与点击展开详情效果。"
+                    ),
+                    serde_json::json!(false),
+                    serde_json::json!("2026-09-27 22:40"),
+                ],
+            ];
+            (
+                SqlResult {
+                    columns,
+                    rows,
+                    statement_type: "SELECT".to_string(),
+                    ..Default::default()
+                },
+                "SELECT id, post_id, author, content, is_approved, created_at FROM comments ORDER BY id DESC;",
+                "3 行 · 9ms",
+            )
+        }
+        SqlPreset::Metrics => {
+            let columns = vec![
+                "metric".to_string(),
+                "category".to_string(),
+                "value".to_string(),
+                "unit".to_string(),
+                "healthy".to_string(),
+                "updated_at".to_string(),
+            ];
+            let rows = vec![
+                vec![
+                    serde_json::json!("db_pool_active"),
+                    serde_json::json!("database"),
+                    serde_json::json!(8),
+                    serde_json::json!("conns"),
+                    serde_json::json!(true),
+                    serde_json::json!("2026-09-28 09:50"),
+                ],
+                vec![
+                    serde_json::json!("cache_hit_rate"),
+                    serde_json::json!("memory"),
+                    serde_json::json!(94.6),
+                    serde_json::json!("%"),
+                    serde_json::json!(true),
+                    serde_json::json!("2026-09-28 09:50"),
+                ],
+                vec![
+                    serde_json::json!("p99_latency"),
+                    serde_json::json!("query"),
+                    serde_json::json!(18.2),
+                    serde_json::json!("ms"),
+                    serde_json::json!(true),
+                    serde_json::json!("2026-09-28 09:50"),
+                ],
+                vec![
+                    serde_json::json!("disk_usage_warn"),
+                    serde_json::json!("storage"),
+                    serde_json::json!(88.4),
+                    serde_json::json!("%"),
+                    serde_json::json!(false),
+                    serde_json::json!("2026-09-28 09:50"),
+                ],
+            ];
+            (
+                SqlResult {
+                    columns,
+                    rows,
+                    statement_type: "SELECT".to_string(),
+                    ..Default::default()
+                },
+                "SELECT metric, category, value, unit, healthy, updated_at FROM system_metrics;",
+                "4 行 · 15ms",
+            )
+        }
+    }
+}
+
+#[component]
+fn SqlTableDemo(detail: bool) -> Element {
+    let mut preset = use_signal(|| SqlPreset::Posts);
+    let (result, query_text, stats_text) = sample_sql_result(preset(), detail);
+
+    rsx! {
+        div { class: if detail { "showcase-sql-demo showcase-sql-detail" } else { "showcase-sql-demo" },
+            if detail {
+                div { class: "showcase-demo-actions",
+                    button {
+                        r#type: "button",
+                        aria_pressed: "{preset() == SqlPreset::Posts}",
+                        onclick: move |_| preset.set(SqlPreset::Posts),
+                        "文章数据 (posts)"
+                    }
+                    button {
+                        r#type: "button",
+                        aria_pressed: "{preset() == SqlPreset::Comments}",
+                        onclick: move |_| preset.set(SqlPreset::Comments),
+                        "评论数据 (comments)"
+                    }
+                    button {
+                        r#type: "button",
+                        aria_pressed: "{preset() == SqlPreset::Metrics}",
+                        onclick: move |_| preset.set(SqlPreset::Metrics),
+                        "系统指标 (metrics)"
+                    }
+                    span { "点击任意行展开跨列完整详情；布尔、数字、文本与 NULL 呈现差异化渲染。" }
+                }
+            }
+            div { class: "showcase-sql-window",
+                div { class: "showcase-sql-window-bar",
+                    div { class: "showcase-sql-window-dots",
+                        span { class: "dot-close" }
+                        span { class: "dot-min" }
+                        span { class: "dot-max" }
+                    }
+                    div { class: "showcase-sql-query-tag",
+                        span { class: "opacity-50 mr-1 select-none", "yggdrasil=#" }
+                        span { class: "truncate", "{query_text}" }
+                    }
+                    div { class: "showcase-sql-meta-badge",
+                        span { class: "badge-type", "SELECT" }
+                        span { class: "badge-stats", "{stats_text}" }
+                    }
+                }
+                div { class: "showcase-sql-content",
+                    div { key: "{preset() as usize}-{detail}",
+                        SqlResultTable {
+                            result,
+                            initial_expanded: if detail && preset() == SqlPreset::Posts { Some(0) } else { None },
+                        }
+                    }
+                }
+                if detail {
+                    div { class: "showcase-sql-window-foot",
+                        span { "PostgreSQL 16.2 · UTF-8" }
+                        span { "提示：点击左侧箭头或行内容展开 / 收起完整字段" }
+                    }
+                }
             }
         }
     }

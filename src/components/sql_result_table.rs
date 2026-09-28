@@ -25,24 +25,23 @@ fn render_cell(value: &serde_json::Value) -> Element {
     use serde_json::Value;
     match value {
         Value::Null => rsx! {
-            span { class: "italic text-[var(--color-paper-tertiary)]", "NULL" }
+            span { class: "italic text-[var(--color-paper-tertiary)] select-none", "NULL" }
         },
         Value::Bool(true) => rsx! {
             span {
-                class: "inline-flex items-center px-1.5 py-0.5 rounded text-xs font-mono",
+                class: "inline-flex items-center px-1.5 py-0.5 rounded text-xs font-mono font-medium",
                 style: "background-color: var(--color-paper-accent-soft); color: var(--color-paper-accent);",
                 "true"
             }
         },
         Value::Bool(false) => rsx! {
             span {
-                class: "inline-flex items-center px-1.5 py-0.5 rounded text-xs font-mono",
-                style: "background-color: rgb(254 243 199); color: rgb(180 83 9);",
+                class: "inline-flex items-center px-1.5 py-0.5 rounded text-xs font-mono font-medium bg-amber-500/15 text-amber-700 dark:text-amber-400",
                 "false"
             }
         },
         Value::Number(n) => rsx! {
-            span { class: "block text-right tabular-nums text-[var(--color-paper-primary)]",
+            span { class: "block text-right tabular-nums font-mono text-xs text-[var(--color-paper-primary)]",
                 "{n}"
             }
         },
@@ -66,19 +65,23 @@ fn render_cell(value: &serde_json::Value) -> Element {
 /// （`whitespace-pre-wrap break-all` + `max-h-80 overflow-y-auto`）承载。
 fn render_expanded_value(col: &str, value: &serde_json::Value) -> Element {
     use serde_json::Value;
-    let display = match value {
-        Value::Null => "NULL".to_string(),
-        Value::Bool(b) => b.to_string(),
-        Value::Number(n) => n.to_string(),
-        Value::String(s) => s.clone(),
-        other => other.to_string(),
+    let (display, is_null) = match value {
+        Value::Null => ("NULL".to_string(), true),
+        Value::Bool(b) => (b.to_string(), false),
+        Value::Number(n) => (n.to_string(), false),
+        Value::String(s) => (s.clone(), false),
+        other => (other.to_string(), false),
     };
     rsx! {
-        div { key: "{col}", class: "flex gap-2 py-0.5",
-            span { class: "shrink-0 font-mono text-xs text-[var(--color-paper-tertiary)] min-w-[6rem]",
+        div { key: "{col}", class: "flex items-baseline gap-3 py-1 border-b border-[var(--color-paper-border)]/30 last:border-0",
+            span { class: "shrink-0 font-mono text-xs font-medium text-[var(--color-paper-tertiary)] min-w-[7rem] select-none",
                 "{col}"
             }
-            span { class: "font-mono text-xs text-[var(--color-paper-secondary)]", "{display}" }
+            if is_null {
+                span { class: "font-mono text-xs italic text-[var(--color-paper-tertiary)] select-none", "NULL" }
+            } else {
+                span { class: "font-mono text-xs text-[var(--color-paper-primary)] select-all", "{display}" }
+            }
         }
     }
 }
@@ -87,6 +90,8 @@ fn render_expanded_value(col: &str, value: &serde_json::Value) -> Element {
 #[derive(Props, Clone, PartialEq)]
 pub struct SqlResultTableProps {
     pub result: SqlResult,
+    #[props(default)]
+    pub initial_expanded: Option<usize>,
 }
 
 /// 渲染 SQL 查询结果表格。
@@ -98,7 +103,8 @@ pub struct SqlResultTableProps {
 #[allow(non_snake_case)]
 #[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut))]
 pub fn SqlResultTable(props: SqlResultTableProps) -> Element {
-    let mut expanded_row: Signal<Option<usize>> = use_signal(|| None);
+    let initial = props.initial_expanded;
+    let mut expanded_row: Signal<Option<usize>> = use_signal(move || initial);
     let cols_len = props.result.columns.len();
     // colspan = 列数 + 行头箭头列
     let expand_colspan = cols_len + 1;
@@ -109,11 +115,11 @@ pub fn SqlResultTable(props: SqlResultTableProps) -> Element {
                 table { class: "w-full text-sm border-collapse",
                     thead {
                         tr { class: "border-b border-[var(--color-paper-border)] sticky top-0 bg-[var(--color-paper-entry)] z-10",
-                            th { class: "w-8 px-2 py-2", "" }
+                            th { class: "w-8 px-2 py-2.5 text-center", "" }
                             for col in props.result.columns.iter() {
                                 th {
                                     key: "{col}",
-                                    class: "px-4 py-2 text-left font-medium whitespace-nowrap text-[var(--color-paper-secondary)]",
+                                    class: "px-4 py-2.5 text-left font-mono text-xs font-semibold tracking-wider text-[var(--color-paper-secondary)] whitespace-nowrap",
                                     "{col}"
                                 }
                             }
@@ -124,7 +130,7 @@ pub fn SqlResultTable(props: SqlResultTableProps) -> Element {
                             // 数据行：点击切换展开
                             tr {
                                 key: "row-{row_idx}",
-                                class: "border-b border-[var(--color-paper-border)] last:border-0 hover:bg-[var(--color-paper-accent-soft)] transition-colors cursor-pointer",
+                                class: "group border-b border-[var(--color-paper-border)] last:border-0 hover:bg-[var(--color-paper-accent-soft)] transition-colors cursor-pointer",
                                 onclick: move |_| {
                                     let cur = expanded_row();
                                     if cur == Some(row_idx) {
@@ -133,15 +139,17 @@ pub fn SqlResultTable(props: SqlResultTableProps) -> Element {
                                         expanded_row.set(Some(row_idx));
                                     }
                                 },
-                                td { class: "px-2 py-2 text-center text-[var(--color-paper-tertiary)] text-xs select-none",
-                                    if expanded_row() == Some(row_idx) {
-                                        "▾"
-                                    } else {
-                                        "▸"
+                                td { class: "w-8 px-2 py-2.5 text-center text-[var(--color-paper-tertiary)] text-xs select-none",
+                                    span {
+                                        class: format!(
+                                            "inline-block transition-transform duration-150 text-[10px] {}",
+                                            if expanded_row() == Some(row_idx) { "rotate-90 text-[var(--color-paper-accent)]" } else { "text-[var(--color-paper-tertiary)] group-hover:text-[var(--color-paper-secondary)]" }
+                                        ),
+                                        "▶"
                                     }
                                 }
                                 for (ci, cell) in row.iter().enumerate() {
-                                    td { key: "{ci}", class: "px-4 py-2 align-top", {render_cell(cell)} }
+                                    td { key: "{ci}", class: "px-4 py-2.5 align-middle", {render_cell(cell)} }
                                 }
                             }
                             // 展开详情行（跨列）
@@ -150,8 +158,8 @@ pub fn SqlResultTable(props: SqlResultTableProps) -> Element {
                                     key: "row-{row_idx}-detail",
                                     td {
                                         colspan: "{expand_colspan}",
-                                        class: "px-4 py-3 bg-[var(--color-paper-theme)]",
-                                        div { class: "{EXPAND_MAX_HEIGHT_CLASS} overflow-y-auto space-y-0.5 whitespace-pre-wrap break-all",
+                                        class: "px-5 py-3.5 bg-[var(--color-paper-theme)]/80 border-b border-[var(--color-paper-border)] shadow-inner",
+                                        div { class: "{EXPAND_MAX_HEIGHT_CLASS} overflow-y-auto space-y-1 whitespace-pre-wrap break-all",
                                             for (ci, col) in props.result.columns.iter().enumerate() {
                                                 {render_expanded_value(col, row.get(ci).unwrap_or(&serde_json::Value::Null))}
                                             }
@@ -164,5 +172,25 @@ pub fn SqlResultTable(props: SqlResultTableProps) -> Element {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn props_default_initial_expanded_is_none() {
+        let result = SqlResult {
+            columns: vec!["id".to_string()],
+            rows: vec![vec![serde_json::json!(1)]],
+            statement_type: "SELECT".to_string(),
+            ..Default::default()
+        };
+        let props = SqlResultTableProps {
+            result,
+            initial_expanded: None,
+        };
+        assert_eq!(props.initial_expanded, None);
     }
 }

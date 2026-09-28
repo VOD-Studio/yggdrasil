@@ -2529,21 +2529,21 @@
       "label": "SQL 结果表",
       "group": "tools",
       "summary": "SQL 结果表，用于后台工具。",
-      "states": "真实组件 · 本地样例",
-      "description": "SQL 结果表使用固定的本地样例资料渲染项目里的真实组件。预览不会请求或修改业务数据；详情同时列出组件接口与源码位置。",
+      "states": "多数据类型 · 点击展开详情 · 查询预设切换",
+      "description": "SQL 结果表按单元格类型优雅渲染布尔徽章、等宽数字、文本与 NULL 值，支持点击任意行展开跨列完整详情；可切换预设查询观察不同数据结构。",
       "props": [
         [
           "props",
           "SqlResultTableProps",
           "由调用方提供",
-          "SQL 结果表的 props 参数。"
+          "SQL 结果表的 props 参数，包含 result (SqlResult) 与可选的 initial_expanded。"
         ]
       ],
       "keys": [],
       "source": "src/components/sql_result_table.rs",
-      "code": "pub fn SqlResultTable(props: SqlResultTableProps) -> Element",
-      "preview_mode": "static",
-      "usage_kind": "api"
+      "code": "rsx! {\n    SqlResultTable {\n        result: sql_result,\n    }\n}",
+      "preview_mode": "interactive",
+      "usage_kind": "rust"
     },
     {
       "name": "TiptapEditor",
