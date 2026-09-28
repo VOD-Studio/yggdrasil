@@ -121,15 +121,21 @@ public/       静态资源（构建期生成）
 
 ## 数据库回归测试
 
-MCP 数据库回归测试需使用名为 `ygg_mcp_test` 的一次性 PostgreSQL 数据库：
+常规 `make test` 会跳过标记为 `#[ignore]` 的数据库回归。下列文章和上传回归仅允许使用已创建、名为 `ygg_mcp_test` 的一次性 PostgreSQL 数据库；按本机连接信息调整示例 URL：
 
 ```sh
+# 文章私有工作流
 DATABASE_URL=postgresql://postgres@127.0.0.1:55439/ygg_mcp_test \
-YGGDRASIL_TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:55439/ygg_mcp_test \
-  cargo test --locked --features server database -- --ignored
+  cargo test --locked --features server private_post_workflow_database -- --ignored
+
+# 上传元信息及 HTTP 接口
+DATABASE_URL=postgresql://postgres@127.0.0.1:55439/ygg_mcp_test \
+  cargo test --locked --features server upload_metadata_database_and_http -- --ignored
 ```
 
-测试会自动迁移并重置该测试库的用户和文章夹具，同时验证上传 HTTP 接口。
+两项测试均会自动迁移；文章回归会重置用户及关联内容，上传回归会验证真实 HTTP 上传接口。
+
+笔记数据库回归使用独立的 `ygg_notes_test`，命令见[笔记回归说明](docs/notes.md#回归与待补验收)。
 
 ## 文档
 
