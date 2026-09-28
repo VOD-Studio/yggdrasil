@@ -38,7 +38,7 @@ pub fn PostFooter(
     rsx! {
         footer { class: "post-footer",
             if !post.tags.is_empty() {
-                ul { class: "post-tags",
+                ul { class: "post-tags", aria_label: "文章标签",
                     for tag in &post.tags {
                         li { key: "{tag}",
                             if sample {

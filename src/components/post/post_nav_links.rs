@@ -19,7 +19,7 @@ use crate::router::Route;
 ///   `src/pages/admin/preview.rs` 模块文档），整页加载可完全规避。
 /// - `sample`：图鉴使用不可导航的样例锚点，默认 false。
 ///
-/// 左右两侧分别渲染 Prev/Next 链接，若无相邻文章则占位空白。
+/// 左右两侧分别渲染上一篇/下一篇链接，无相邻文章时不渲染对应链接。
 #[component]
 pub fn PostNavLinks(
     prev: Option<PostNav>,
@@ -46,35 +46,49 @@ pub fn PostNavLinks(
         )
     });
     rsx! {
-        nav { class: "paginav",
+        nav { class: "paginav", aria_label: "相邻文章",
             if let (Some(prev_post), Some(prev_to)) = (prev, prev_to) {
                 if sample {
-                    a { class: "prev", href: "#", onclick: move |event| event.prevent_default(), span { class: "title", "« Prev" } span { class: "post-title-nav", "{prev_post.title}" } }
+                    a { class: "prev", href: "#", onclick: move |event| event.prevent_default(),
+                        span { class: "title",
+                            span { class: "post-nav-arrow", aria_hidden: "true", "←" }
+                            "上一篇"
+                        }
+                        span { class: "post-title-nav", "{prev_post.title}" }
+                    }
                 } else {
                     Link {
                         class: "prev",
                         to: prev_to,
-                        span { class: "title", "« Prev" }
+                        span { class: "title",
+                            span { class: "post-nav-arrow", aria_hidden: "true", "←" }
+                            "上一篇"
+                        }
                         span { class: "post-title-nav", "{prev_post.title}" }
                     }
                 }
-            } else {
-                span { class: "prev" }
             }
 
             if let (Some(next_post), Some(next_to)) = (next, next_to) {
                 if sample {
-                    a { class: "next", href: "#", onclick: move |event| event.prevent_default(), span { class: "title", "Next »" } span { class: "post-title-nav", "{next_post.title}" } }
+                    a { class: "next", href: "#", onclick: move |event| event.prevent_default(),
+                        span { class: "title",
+                            "下一篇"
+                            span { class: "post-nav-arrow", aria_hidden: "true", "→" }
+                        }
+                        span { class: "post-title-nav", "{next_post.title}" }
+                    }
                 } else {
                     Link {
                         class: "next",
                         to: next_to,
-                        span { class: "title", "Next »" }
+                        span { class: "title",
+                            "下一篇"
+                            span { class: "post-nav-arrow", aria_hidden: "true", "→" }
+                        }
                         span { class: "post-title-nav", "{next_post.title}" }
                     }
                 }
-            } else {
-                span { class: "next" }
             }
         }
     }

@@ -1181,7 +1181,6 @@ fn PostContentPreview(detail: bool) -> Element {
 
 #[component]
 fn PostFooterPreview(detail: bool) -> Element {
-    let _ = detail;
     let mut post = super::sample_post();
     post.tags = vec!["设计".to_string(), "阅读".to_string(), "Rust".to_string()];
     post.prev_post = Some(PostNav {
@@ -1195,7 +1194,9 @@ fn PostFooterPreview(detail: bool) -> Element {
     rsx! {
         div { class: "showcase-article-window", "data-showcase-preview": "post-footer",
             PostFooter { post, sample: true }
-            p { class: "mt-3 text-xs text-paper-secondary", "样例标签和相邻文章不跳转。" }
+            if detail {
+                p { class: "showcase-post-footer-note", "样例标签和相邻文章不跳转。" }
+            }
         }
     }
 }

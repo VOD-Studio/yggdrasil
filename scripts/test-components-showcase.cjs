@@ -5,6 +5,7 @@
  * SHOWCASE_BASE=http://127.0.0.1:8080 PLAYWRIGHT_MODULE=/path/to/playwright \
  *   CHROMIUM_PATH=/path/to/chromium node scripts/test-components-showcase.cjs
  * Optional SHOWCASE_ARTIFACT_DIR stores screenshots/report; default is a temporary directory.
+ * SHOWCASE_ONLY=post-footer runs focused footer layout, theme, and sample-link checks.
  * Sensitive showcase requests are recorded, aborted, and fail the run.
  */
 const assert = require('node:assert/strict');
@@ -137,6 +138,24 @@ async function realPreview(page, slug, selector, card = false) {
   if (HEAVY.includes(slug)) {
     await root.locator('.showcase-browser-placeholder').first()
       .waitFor({ state: 'hidden', timeout: 10000 });
+  }
+  if (slug === 'post-footer') {
+    const layout = await root.evaluate(element => {
+      const preview = element.querySelector('[data-showcase-preview="post-footer"]');
+      const box = preview.getBoundingClientRect();
+      const outer = element.getBoundingClientRect();
+      return {
+        scrollHeight: preview.scrollHeight,
+        clientHeight: preview.clientHeight,
+        visibleTitles: [...preview.querySelectorAll('.post-title-nav')].every(title => {
+          const rect = title.getBoundingClientRect();
+          return rect.top >= box.top && rect.bottom <= Math.min(box.bottom, outer.bottom) + 1 &&
+            rect.left >= box.left && rect.right <= box.right + 1;
+        }),
+      };
+    });
+    assert(layout.scrollHeight <= layout.clientHeight + 1, 'footer preview has no inner scrollbar');
+    assert(layout.visibleTitles, 'footer preview shows adjacent article titles in full');
   }
 }
 async function screenshot(page, name) {
@@ -301,6 +320,64 @@ async function details(page, viewport, colorScheme, reducedMotion, label) {
   }
   pass(`19 direct details at ${viewport.width}px ${colorScheme} ${reducedMotion}`);
 }
+
+async function postFooter(page) {
+  const selector = '[data-showcase-preview="post-footer"] .post-footer';
+  for (const width of [1440, 390]) {
+    for (const colorScheme of ['light', 'dark']) {
+      stage = `post-footer-${width}-${colorScheme}`;
+      await page.setViewportSize({ width, height: 1000 });
+      await page.emulateMedia({ colorScheme, reducedMotion: width === 390 ? 'reduce' : 'no-preference' });
+      await goto(page, '/about/components');
+      await page.locator('.showcase-search input').fill('PostFooter');
+      const card = page.locator('#showcase-post-footer');
+      await card.scrollIntoViewIfNeeded();
+      await realPreview(page, 'post-footer', selector, true);
+      await assertNoDocumentOverflow(page, 'post-footer-card');
+      await elementScreenshot(card, `${stage}-card`);
+
+      visitId++;
+      await card.locator('.showcase-card-caption p').click();
+      await page.waitForURL(`${BASE}/about/components/post-footer`);
+      await realPreview(page, 'post-footer', selector);
+      const footer = page.locator(selector);
+      assert.equal(await footer.locator('a').count(), 5);
+      await elementScreenshot(page.locator('.showcase-live-panel'), `${stage}-detail`);
+      for (const link of await footer.locator('a').all()) {
+        await link.click();
+        assert.equal(new URL(page.url()).pathname + new URL(page.url()).hash,
+          '/about/components/post-footer', 'sample links stay on the footer preview');
+      }
+      await page.keyboard.press('Tab');
+      await footer.locator('a.prev').focus();
+      const focus = await footer.locator('a.prev').evaluate(element => getComputedStyle(element).outlineWidth);
+      assert.equal(focus, '2px', 'adjacent article links have a visible keyboard focus');
+
+      // Temporary content stresses wrapping without writing articles or changing fixture data.
+      await footer.evaluate(element => {
+        element.querySelector('.post-tags a').textContent = 'A-long-unbroken-tag-'.repeat(12);
+        for (const title of element.querySelectorAll('.post-title-nav')) {
+          title.textContent = '一篇很长的文章标题，保留完整的文字与阅读方向。'.repeat(5);
+        }
+      });
+      await realPreview(page, 'post-footer', selector);
+      await assertNoDocumentOverflow(page, 'post-footer-long-content');
+      await footer.locator('a.prev').evaluate(element => element.remove());
+      const position = await footer.locator('a.next').evaluate(element => {
+        const parent = element.parentElement.getBoundingClientRect();
+        const box = element.getBoundingClientRect();
+        return { fullWidth: Math.abs(box.width - parent.width) < 1, right: box.right, parentRight: parent.right };
+      });
+      assert.equal(position.fullWidth, width === 390, 'a lone next article fills the mobile row');
+      assert(Math.abs(position.right - position.parentRight) < 1, 'a lone next article keeps its alignment');
+      pass(`${stage}: full card/detail, sample links, focus, long content and lone next article`);
+
+      await goto(page, '/about/components/post-footer');
+      await realPreview(page, 'post-footer', selector);
+    }
+  }
+}
+
 async function interactions(page, onlyModalResets = false) {
   stage = 'interactions';
   await goto(page, '/about/components/admin-layout');
@@ -574,6 +651,15 @@ async function main() {
       baselineReads.set(endpoint, (baselineReads.get(endpoint) || 0) + 1);
     }
     const storageBefore = await commentStorage(page);
+    if (process.env.SHOWCASE_ONLY === 'post-footer') {
+      await postFooter(page);
+      assertNetworkDelta();
+      assert.deepEqual(await commentStorage(page), storageBefore);
+      assert.deepEqual(report.blockedBusinessRequests, []);
+      assert.deepEqual(report.pageErrors, []);
+      pass('focused footer checks have no business requests, storage changes or browser errors');
+      return;
+    }
     if (process.env.SHOWCASE_ONLY === 'modal-reset') {
       await interactions(page, true);
       assertNetworkDelta();
