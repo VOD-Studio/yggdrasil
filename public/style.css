@@ -612,6 +612,10 @@
   .aspect-video {
     aspect-ratio: var(--aspect-video);
   }
+  .size-1\.5 {
+    width: calc(var(--spacing) * 1.5);
+    height: calc(var(--spacing) * 1.5);
+  }
   .size-2 {
     width: calc(var(--spacing) * 2);
     height: calc(var(--spacing) * 2);
@@ -1561,6 +1565,12 @@
   .bg-\[var\(--color-paper-entry\)\] {
     background-color: var(--color-paper-entry);
   }
+  .bg-\[var\(--color-paper-entry\)\]\/30 {
+    background-color: color-mix(in srgb, #e6e9ef 30%, transparent);
+    @supports (color: color-mix(in lab, red, red)) {
+      background-color: color-mix(in oklab, var(--color-paper-entry) 30%, transparent);
+    }
+  }
   .bg-\[var\(--color-paper-entry\)\]\/40 {
     background-color: color-mix(in srgb, #e6e9ef 40%, transparent);
     @supports (color: color-mix(in lab, red, red)) {
@@ -1836,6 +1846,9 @@
   }
   .p-2 {
     padding: calc(var(--spacing) * 2);
+  }
+  .p-2\.5 {
+    padding: calc(var(--spacing) * 2.5);
   }
   .p-3 {
     padding: calc(var(--spacing) * 3);
@@ -2566,6 +2579,14 @@
     }
     .hover\:border-\[var\(--color-paper-border\)\]:hover {
       border-color: var(--color-paper-border);
+    }
+    .hover\:border-\[var\(--color-paper-border\)\]\/80:hover {
+      border-color: color-mix(in srgb, #bcc0cc 80%, transparent);
+    }
+    @supports (color: color-mix(in lab, red, red)) {
+      .hover\:border-\[var\(--color-paper-border\)\]\/80:hover {
+        border-color: color-mix(in oklab, var(--color-paper-border) 80%, transparent);
+      }
     }
     .hover\:border-\[var\(--color-paper-primary\)\]:hover {
       border-color: var(--color-paper-primary);
@@ -11354,7 +11375,7 @@ button.note-tag {
   width: 10.5rem;
   transform: none;
 }
-.showcase-card-preview:is(.showcase-card-preview--asset-picker-modal, .showcase-card-preview--asset-upload-modal, .showcase-card-preview--admin-layout, .showcase-card-preview--code-runner, .showcase-card-preview--comment-form, .showcase-card-preview--comment-item, .showcase-card-preview--comment-list, .showcase-card-preview--comment-section, .showcase-card-preview--post-content, .showcase-card-preview--post-toc, .showcase-card-preview--tiptap-editor, .showcase-card-preview--code-mirror-editor, .showcase-card-preview--xterm-terminal, .showcase-card-preview--sql-result-table) {
+.showcase-card-preview:is(.showcase-card-preview--asset-picker-modal, .showcase-card-preview--asset-upload-modal, .showcase-card-preview--admin-layout, .showcase-card-preview--code-runner, .showcase-card-preview--comment-card-shell, .showcase-card-preview--comment-form, .showcase-card-preview--comment-item, .showcase-card-preview--comment-list, .showcase-card-preview--pending-comment-item, .showcase-card-preview--comment-section, .showcase-card-preview--post-content, .showcase-card-preview--post-toc, .showcase-card-preview--tiptap-editor, .showcase-card-preview--code-mirror-editor, .showcase-card-preview--xterm-terminal, .showcase-card-preview--sql-result-table) {
   height: 270px;
   padding: 2.2rem .7rem .7rem;
   align-items: flex-start;
@@ -12199,7 +12220,7 @@ button.note-tag {
   display: flex;
   flex-direction: column;
 }
-.showcase-card-preview:is(.showcase-card-preview--comment-form, .showcase-card-preview--comment-item, .showcase-card-preview--comment-list, .showcase-card-preview--comment-section) > div {
+.showcase-card-preview:is(.showcase-card-preview--comment-card-shell, .showcase-card-preview--comment-form, .showcase-card-preview--comment-item, .showcase-card-preview--comment-list, .showcase-card-preview--pending-comment-item, .showcase-card-preview--comment-section) > div {
   width: 100%;
   max-height: 220px;
   overflow-y: auto;

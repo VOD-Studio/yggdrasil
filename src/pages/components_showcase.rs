@@ -891,14 +891,15 @@ fn preview_route(slug: &str) -> Option<PreviewRoute> {
         | "tag-detail-skeleton"
         | "tag-posts-loading"
         | "write-skeleton" => PreviewRoute::Skeleton,
-        "comment-card-shell" | "search-icon-link" | "breadcrumbs" | "post-cover"
-        | "post-header" | "post-meta" | "post-nav-links" | "post-card" => PreviewRoute::Scene,
+        "search-icon-link" | "breadcrumbs" | "post-cover" | "post-header" | "post-meta"
+        | "post-nav-links" | "post-card" => PreviewRoute::Scene,
         "asset-picker-modal" | "asset-upload-modal" | "code-runner" | "sql-result-table" => {
             PreviewRoute::Business
         }
         "admin-layout" | "footer" | "frontend-layout" | "header" | "post-content"
         | "post-footer" | "post-toc" => PreviewRoute::LayoutArticle,
-        "comment-form"
+        "comment-card-shell"
+        | "comment-form"
         | "comment-item"
         | "comment-list"
         | "pending-comment-item"
@@ -1349,19 +1350,6 @@ fn SceneComponentPreview(name: String) -> Element {
         "PostCover" => {
             rsx! { crate::components::post::post_cover::PostCover { src: "/images/empty-state/dog-camera.webp".to_string() } }
         }
-        "CommentCardShell" => rsx! {
-            crate::components::comments::card::CommentCardShell {
-                depth: 0,
-                avatar_url: String::new(),
-                author_name: "叶子".to_string(),
-                author_element: rsx! { span { "叶子" } },
-                author_badge: rsx! { span { "作者" } },
-                timestamp: rsx! { time { "刚刚" } },
-                status_badge: rsx! {},
-                content_html: "<p>一片叶子，也记得来时的风。</p>".to_string(),
-                div { "回复" }
-            }
-        },
         "SearchIconLink" => rsx! { crate::components::header::SearchIconLink {} },
         _ => panic!("场景组件缺少预览: {name}"),
     };

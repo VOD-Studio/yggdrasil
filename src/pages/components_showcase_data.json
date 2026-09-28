@@ -1242,82 +1242,82 @@
       "slug": "comment-card-shell",
       "label": "评论卡片外壳",
       "group": "comments",
-      "summary": "评论卡片外壳，用于评论阅读与编辑。",
-      "states": "真实组件 · 本地样例",
-      "description": "评论卡片外壳使用固定的本地样例资料渲染项目里的真实组件。预览不会请求或修改业务数据；详情同时列出组件接口与源码位置。",
+      "summary": "评论卡片共享骨架，统一头像、层级缩进与状态展示。",
+      "states": "全部形态 · 顶层评论 · 嵌套回复 · 深层缩进 · 待审核",
+      "description": "CommentCardShell 抽离了已审核与待审核评论卡片的共享布局：头像与内容两栏布局、作者名与时间头部行、深度嵌套左侧引导线与阶梯缩进、以及待审核半透明淡化与状态徽章。",
       "props": [
         [
           "depth",
           "i32",
-          "由调用方提供",
-          "评论卡片外壳的 depth 参数。"
+          "0",
+          "归一化后的嵌套深度。depth > 0 显示左侧引导线，depth > 1 产生 margin-left 阶梯缩进。"
         ],
         [
           "muted",
           "bool",
-          "由调用方提供",
-          "评论卡片外壳的 muted 参数。"
+          "false",
+          "是否降低整体透明度（opacity-75），用于待审核评论。"
         ],
         [
           "avatar_url",
           "String",
-          "由调用方提供",
-          "评论卡片外壳的 avatar_url 参数。"
+          "String::new()",
+          "作者头像图片 URL，为空时由 UserAvatar 显示首字缩略图。"
         ],
         [
           "author_name",
           "String",
           "由调用方提供",
-          "评论卡片外壳的 author_name 参数。"
+          "作者昵称与无障碍 alt 文本。"
         ],
         [
           "author_element",
           "Element",
           "由调用方提供",
-          "评论卡片外壳的 author_element 参数。"
+          "作者名展示节点，可为纯文本或指向主页的超链接。"
         ],
         [
           "author_badge",
           "Element",
-          "由调用方提供",
-          "评论卡片外壳的 author_badge 参数。"
+          "rsx! {}",
+          "作者名右侧的身份徽章（如博主专属'作者'徽章）。"
         ],
         [
           "timestamp",
           "Element",
           "由调用方提供",
-          "评论卡片外壳的 timestamp 参数。"
+          "时间展示节点（如绝对时间或实时相对时间）。"
         ],
         [
           "status_badge",
           "Element",
-          "由调用方提供",
-          "评论卡片外壳的 status_badge 参数。"
+          "rsx! {}",
+          "时间右侧的状态徽章（如待审核评论的'审核中'徽章）。"
         ],
         [
           "content_html",
           "String",
           "由调用方提供",
-          "评论卡片外壳的 content_html 参数。"
+          "经过消毒安全渲染的 HTML 评论正文。"
         ],
         [
           "content_extra_class",
           "&'static str",
-          "由调用方提供",
-          "评论卡片外壳的 content_extra_class 参数。"
+          "\"\"",
+          "正文容器附加类名（如 md-content 用于 Markdown 排版与代码高亮）。"
         ],
         [
           "children",
           "Element",
-          "由调用方提供",
-          "评论卡片外壳的 children 参数。"
+          "rsx! {}",
+          "正文下方的附加操作区（如回复按钮或回复编辑器容器）。"
         ]
       ],
       "keys": [],
       "source": "src/components/comments/card.rs",
-      "code": "pub fn CommentCardShell( depth: i32, #[props(default)] muted: bool, avatar_url: String, author_name: String, author_element: Element, author_badge: Element, timestamp: Element, status_badge: Element, content_html: String, #[props(default)] content_extra_class: &'static str, children: Element, ) -> Element",
-      "preview_mode": "static",
-      "usage_kind": "api"
+      "code": "rsx! {\n    CommentCardShell {\n        depth: 0,\n        muted: false,\n        avatar_url: author_avatar.clone(),\n        author_name: author_name.clone(),\n        author_element: rsx! { span { class: \"font-medium text-paper-primary\", \"{author_name}\" } },\n        author_badge: rsx! { span { class: \"px-1.5 py-0.5 rounded text-[10px] bg-paper-accent/10 text-paper-accent\", \"作者\" } },\n        timestamp: rsx! { time { class: \"text-paper-tertiary\", \"昨天 17:30\" } },\n        status_badge: rsx! {},\n        content_html: \"<p>春天的第一片叶子，总会记得来时的风。</p>\".to_string(),\n        content_extra_class: \"md-content\",\n        div { class: \"flex items-center gap-3 mt-2\",\n            button { class: \"text-xs text-paper-tertiary hover:text-paper-accent cursor-pointer\", \"回复\" }\n        }\n    }\n}",
+      "preview_mode": "interactive",
+      "usage_kind": "rust"
     },
     {
       "name": "CommentForm",
