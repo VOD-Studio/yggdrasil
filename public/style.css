@@ -12189,6 +12189,7 @@ button.note-tag {
   border: 1px solid var(--sc-line);
   border-radius: 18px;
   background: var(--sc-surface);
+  overflow: hidden;
 }
 .showcase-live-toolbar, .showcase-code-toolbar {
   display: flex;
@@ -12209,7 +12210,7 @@ button.note-tag {
 }
 .showcase-live-workarea {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 206px;
+  grid-template-columns: minmax(0, 1fr) 224px;
   min-height: 210px;
 }
 .showcase-live-preview {
@@ -12224,11 +12225,12 @@ button.note-tag {
 }
 .showcase-live-controls {
   border-left: 1px solid var(--sc-line);
-  padding: 1.5rem 1.25rem;
+  padding: 1.5rem 1.15rem;
   background: color-mix(in srgb, #e6e9ef 30%, transparent);
   @supports (color: color-mix(in lab, red, red)) {
     background: color-mix(in srgb, var(--color-paper-entry) 30%, transparent);
   }
+  min-width: 0;
 }
 .showcase-live-controls > p {
   color: var(--color-paper-secondary);
@@ -12243,6 +12245,29 @@ button.note-tag {
   gap: 1rem;
   margin: .85rem 0;
   font: .7rem var(--sc-mono);
+}
+.showcase-property-col {
+  display: flex;
+  flex-direction: column;
+  gap: .45rem;
+  margin: .85rem 0;
+  min-width: 0;
+}
+.showcase-property-name {
+  font: .68rem var(--sc-mono);
+  color: var(--color-paper-secondary);
+}
+.showcase-control-switcher {
+  display: flex;
+  width: 100%;
+  box-sizing: border-box;
+}
+.showcase-control-switcher button {
+  flex: 1;
+  justify-content: center;
+  padding: .24rem .35rem;
+  font-size: .68rem;
+  min-width: 0;
 }
 .showcase-live-controls input {
   accent-color: var(--color-paper-accent);

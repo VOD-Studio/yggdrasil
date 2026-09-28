@@ -630,26 +630,53 @@ pub fn ComponentDetail(component: String) -> Element {
                                         small { "调整属性，看看细节如何回应。" }
                                     } else if spec.name == "AlertBox" {
                                         p { "PROPERTIES / 调整属性" }
-                                        div { class: "showcase-property-row", span { "variant" }
-                                            crate::components::forms::FormSelect {
-                                                value: alert_variant(),
-                                                options: vec![
-                                                    ("success".to_string(), "success (成功)"),
-                                                    ("error".to_string(), "error (错误)"),
-                                                    ("default".to_string(), "default (普通)"),
-                                                ],
-                                                onchange: move |val: String| {
-                                                    alert_variant.set(val.clone());
-                                                    alert_message.set(alert_box_preset_message(&val).to_string());
-                                                },
+                                        div { class: "showcase-property-col",
+                                            span { class: "showcase-property-name", "variant" }
+                                            div { class: "showcase-alert-switcher showcase-control-switcher", role: "tablist", aria_label: "切换提示状态",
+                                                button {
+                                                    r#type: "button",
+                                                    class: if alert_variant() == "success" { "state-success" } else { "" },
+                                                    aria_pressed: "{alert_variant() == \"success\"}",
+                                                    onclick: move |_| {
+                                                        alert_variant.set("success".to_string());
+                                                        alert_message.set(alert_box_preset_message("success").to_string());
+                                                    },
+                                                    span { class: "dot dot-success" }
+                                                    "成功"
+                                                }
+                                                button {
+                                                    r#type: "button",
+                                                    class: if alert_variant() == "error" { "state-error" } else { "" },
+                                                    aria_pressed: "{alert_variant() == \"error\"}",
+                                                    onclick: move |_| {
+                                                        alert_variant.set("error".to_string());
+                                                        alert_message.set(alert_box_preset_message("error").to_string());
+                                                    },
+                                                    span { class: "dot dot-error" }
+                                                    "错误"
+                                                }
+                                                button {
+                                                    r#type: "button",
+                                                    class: if alert_variant() == "default" { "state-default" } else { "" },
+                                                    aria_pressed: "{alert_variant() == \"default\"}",
+                                                    onclick: move |_| {
+                                                        alert_variant.set("default".to_string());
+                                                        alert_message.set(alert_box_preset_message("default").to_string());
+                                                    },
+                                                    span { class: "dot dot-default" }
+                                                    "普通"
+                                                }
                                             }
                                         }
-                                        div { class: "showcase-property-row", span { "message" } }
-                                        crate::components::forms::FormInput {
-                                            r#type: "text",
-                                            placeholder: "输入自定义提示文案…",
-                                            value: alert_message(),
-                                            oninput: move |val| alert_message.set(val),
+                                        div { class: "showcase-property-col",
+                                            span { class: "showcase-property-name", "message" }
+                                            crate::components::forms::FormInput {
+                                                class: Some("w-full px-3 py-1.5 text-xs border border-paper-border rounded-xl bg-paper-entry text-paper-primary placeholder:text-paper-tertiary focus:outline-none focus:border-paper-accent focus:ring-1 focus:ring-paper-accent/30 transition-colors duration-200"),
+                                                r#type: "text",
+                                                placeholder: "输入自定义提示文案…",
+                                                value: alert_message(),
+                                                oninput: move |val| alert_message.set(val),
+                                            }
                                         }
                                         small { "切换状态或修改文案，观察视觉语义与下方用法代码的联动。" }
                                     } else {
