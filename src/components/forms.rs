@@ -516,7 +516,7 @@ pub fn AlertBox(message: String, variant: &'static str) -> Element {
         _ => ("bg-paper-code-bg", "text-paper-secondary"),
     };
     rsx! {
-        div { class: "mb-4 p-3 {bg_class} {text_class} rounded-lg text-center", "{message}" }
+        div { class: "mb-4 p-3 {bg_class} {text_class} rounded-lg text-center transition-colors duration-200", "{message}" }
     }
 }
 

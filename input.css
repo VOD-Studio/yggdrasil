@@ -4230,6 +4230,27 @@ button.note-tag { cursor: pointer; }
 .showcase-switch-row { display: flex; align-items: center; justify-content: space-between; gap: 2rem; font-size: .75rem; }
 .showcase-preview-row { display: flex; align-items: center; justify-content: center; gap: .8rem; flex-wrap: wrap; }
 .showcase-preview-field { width: 100%; max-width: 13rem; }
+.showcase-alert-demo { display: flex; flex-direction: column; align-items: center; gap: .85rem; width: 100%; max-width: 22rem; }
+.showcase-alert-switcher { display: inline-flex; align-items: center; padding: 3px; border-radius: 999px; background: var(--color-paper-code-bg); border: 1px solid var(--sc-line); gap: 2px; }
+.showcase-alert-switcher button { display: inline-flex; align-items: center; gap: .35rem; font-size: .72rem; padding: .24rem .7rem; border-radius: 999px; color: var(--color-paper-secondary); transition: all .18s ease; cursor: pointer; border: none; background: transparent; }
+.showcase-alert-switcher button:hover { color: var(--color-paper-primary); }
+.showcase-alert-switcher button .dot { width: 6px; height: 6px; border-radius: 50%; opacity: .65; transition: opacity .18s ease; }
+.showcase-alert-switcher button:hover .dot { opacity: 1; }
+.showcase-alert-switcher button .dot-success { background: #22c55e; }
+.showcase-alert-switcher button .dot-error { background: #ef4444; }
+.showcase-alert-switcher button .dot-default { background: var(--color-paper-tertiary); }
+.showcase-alert-switcher button[aria-pressed="true"] { background: var(--color-paper-theme); font-weight: 600; box-shadow: 0 1px 2px rgba(0, 0, 0, .06); }
+.showcase-alert-switcher button[aria-pressed="true"] .dot { opacity: 1; }
+.showcase-alert-switcher button[aria-pressed="true"].state-success { color: #15803d; }
+:root.dark .showcase-alert-switcher button[aria-pressed="true"].state-success { color: #86efac; }
+.showcase-alert-switcher button[aria-pressed="true"].state-error { color: #b91c1c; }
+:root.dark .showcase-alert-switcher button[aria-pressed="true"].state-error { color: #fca5a5; }
+.showcase-alert-switcher button[aria-pressed="true"].state-default { color: var(--color-paper-primary); }
+.showcase-alert-box-target { width: 100%; cursor: pointer; transition: transform .15s ease; user-select: none; }
+.showcase-alert-box-target:hover { transform: translateY(-1px); }
+.showcase-alert-box-target:active { transform: translateY(1px); }
+.showcase-alert-box-target > .mb-4 { margin-bottom: 0; }
+.showcase-alert-hint { font-size: .68rem; color: var(--color-paper-secondary); text-align: center; }
 .showcase-demo-button { display: inline-flex; align-items: center; padding: .6rem 1.15rem; border-radius: 100px; color: var(--color-paper-theme); background: var(--color-paper-accent); font-size: .75rem; cursor: pointer; }
 .showcase-demo-button.secondary { color: var(--color-paper-primary); background: var(--color-paper-entry); border: 1px solid var(--sc-line); }
 .showcase-card-preview--popover { align-items: flex-end; }

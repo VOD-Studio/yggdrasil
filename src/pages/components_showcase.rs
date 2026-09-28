@@ -196,6 +196,109 @@ fn checkbox_snippet(checked: bool, danger: bool) -> String {
     )
 }
 
+fn alert_box_preset_message(variant: &str) -> &'static str {
+    match variant {
+        "error" => "保存失败，网络连接似乎中断了。",
+        "default" => "草稿已自动保存至本地缓存。",
+        _ => "已保存，新的想法正在生长。",
+    }
+}
+
+fn alert_box_next_variant(variant: &str) -> &'static str {
+    match variant {
+        "success" => "error",
+        "error" => "default",
+        _ => "success",
+    }
+}
+
+fn alert_box_snippet(variant: &str, message: &str) -> String {
+    let escaped_message = message.replace('\\', "\\\\").replace('"', "\\\"");
+    format!(
+        "rsx! {{\n    AlertBox {{\n        message: \"{escaped_message}\",\n        variant: \"{variant}\",\n    }}\n}}"
+    )
+}
+
+#[component]
+fn AlertBoxDemo(
+    detail: bool,
+    mut alert_variant: Signal<String>,
+    mut alert_message: Signal<String>,
+) -> Element {
+    let current_variant = alert_variant();
+    let variant_str: &'static str = match current_variant.as_str() {
+        "error" => "error",
+        "default" => "default",
+        _ => "success",
+    };
+
+    rsx! {
+        div { class: if detail { "showcase-alert-demo showcase-alert-detail" } else { "showcase-alert-demo" },
+            div { class: "showcase-alert-switcher", role: "tablist", aria_label: "切换提示状态",
+                button {
+                    r#type: "button",
+                    class: if variant_str == "success" { "state-success" } else { "" },
+                    aria_pressed: "{variant_str == \"success\"}",
+                    onclick: move |_| {
+                        alert_variant.set("success".to_string());
+                        alert_message.set(alert_box_preset_message("success").to_string());
+                    },
+                    span { class: "dot dot-success" }
+                    "成功"
+                }
+                button {
+                    r#type: "button",
+                    class: if variant_str == "error" { "state-error" } else { "" },
+                    aria_pressed: "{variant_str == \"error\"}",
+                    onclick: move |_| {
+                        alert_variant.set("error".to_string());
+                        alert_message.set(alert_box_preset_message("error").to_string());
+                    },
+                    span { class: "dot dot-error" }
+                    "错误"
+                }
+                button {
+                    r#type: "button",
+                    class: if variant_str == "default" { "state-default" } else { "" },
+                    aria_pressed: "{variant_str == \"default\"}",
+                    onclick: move |_| {
+                        alert_variant.set("default".to_string());
+                        alert_message.set(alert_box_preset_message("default").to_string());
+                    },
+                    span { class: "dot dot-default" }
+                    "普通"
+                }
+            }
+            div {
+                class: "showcase-alert-box-target",
+                role: "button",
+                tabindex: 0,
+                title: "点击循环切换状态",
+                aria_label: "点击循环切换状态",
+                onclick: move |_| {
+                    let next_v = alert_box_next_variant(&alert_variant());
+                    alert_variant.set(next_v.to_string());
+                    alert_message.set(alert_box_preset_message(next_v).to_string());
+                },
+                onkeydown: move |evt: KeyboardEvent| {
+                    if evt.key() == Key::Enter {
+                        let next_v = alert_box_next_variant(&alert_variant());
+                        alert_variant.set(next_v.to_string());
+                        alert_message.set(alert_box_preset_message(next_v).to_string());
+                    }
+                },
+                crate::components::forms::AlertBox {
+                    message: alert_message(),
+                    variant: variant_str,
+                }
+            }
+            if detail {
+                p { class: "showcase-alert-hint", "点击上方状态切换不同视觉反馈；亦可直接点击提示框或在右侧调整文案" }
+            }
+        }
+    }
+}
+
 #[component]
 pub fn ComponentShowcase() -> Element {
     let mut filters = use_context::<Signal<ShowcaseFilters>>();
@@ -383,6 +486,8 @@ pub fn ComponentDetail(component: String) -> Element {
     let mut filters = use_context::<Signal<ShowcaseFilters>>();
     let mut checked = use_signal(|| true);
     let mut danger = use_signal(|| false);
+    let mut alert_variant = use_signal(|| "success".to_string());
+    let mut alert_message = use_signal(|| "已保存，新的想法正在生长。".to_string());
     let mut reset_generation = use_signal(|| 0_u32);
     #[allow(unused_mut)]
     let mut copied = use_signal(|| false);
@@ -407,6 +512,8 @@ pub fn ComponentDetail(component: String) -> Element {
     };
     let snippet = if spec.name == "Checkbox" {
         checkbox_snippet(checked(), danger())
+    } else if spec.name == "AlertBox" {
+        alert_box_snippet(&alert_variant(), &alert_message())
     } else {
         spec.code.clone()
     };
@@ -490,6 +597,8 @@ pub fn ComponentDetail(component: String) -> Element {
                                     button { r#type: "button", onclick: move |_| {
                                         checked.set(true);
                                         danger.set(false);
+                                        alert_variant.set("success".to_string());
+                                        alert_message.set(alert_box_preset_message("success").to_string());
                                         reset_generation.set(reset_generation().wrapping_add(1));
                                     }, "↻ 恢复默认" }
                                 }
@@ -498,7 +607,14 @@ pub fn ComponentDetail(component: String) -> Element {
                                 div { class: "showcase-live-preview",
                                     for generation in std::iter::once(reset_generation()) {
                                         div { key: "{spec.slug}-{generation}", class: "showcase-preview-instance",
-                                            ComponentPreview { slug: spec.slug.clone(), detail: true, checked, danger }
+                                            ComponentPreview {
+                                                slug: spec.slug.clone(),
+                                                detail: true,
+                                                checked,
+                                                danger,
+                                                alert_variant,
+                                                alert_message,
+                                            }
                                         }
                                     }
                                 }
@@ -512,6 +628,30 @@ pub fn ComponentDetail(component: String) -> Element {
                                             crate::components::forms::ToggleSwitch { checked: danger(), aria_label: Some("设置 danger".to_string()), ontoggle: move |_| danger.toggle() }
                                         }
                                         small { "调整属性，看看细节如何回应。" }
+                                    } else if spec.name == "AlertBox" {
+                                        p { "PROPERTIES / 调整属性" }
+                                        div { class: "showcase-property-row", span { "variant" }
+                                            crate::components::forms::FormSelect {
+                                                value: alert_variant(),
+                                                options: vec![
+                                                    ("success".to_string(), "success (成功)"),
+                                                    ("error".to_string(), "error (错误)"),
+                                                    ("default".to_string(), "default (普通)"),
+                                                ],
+                                                onchange: move |val: String| {
+                                                    alert_variant.set(val.clone());
+                                                    alert_message.set(alert_box_preset_message(&val).to_string());
+                                                },
+                                            }
+                                        }
+                                        div { class: "showcase-property-row", span { "message" } }
+                                        crate::components::forms::FormInput {
+                                            r#type: "text",
+                                            placeholder: "输入自定义提示文案…",
+                                            value: alert_message(),
+                                            oninput: move |val| alert_message.set(val),
+                                        }
+                                        small { "切换状态或修改文案，观察视觉语义与下方用法代码的联动。" }
                                     } else {
                                         p { "STATES / 示例状态" }
                                         div { class: "showcase-state-chips",
@@ -521,7 +661,7 @@ pub fn ComponentDetail(component: String) -> Element {
                                     }
                                 } }
                             }
-                            div { class: "showcase-live-status", if spec.name == "Checkbox" { "checked: {checked()}　 danger: {danger()}" } else if spec.preview_mode == PreviewMode::Interactive { "INTERACTIVE SPECIMEN · 跟随全站主题" } else { "COMPONENT PREVIEW · 跟随全站主题" } }
+                            div { class: "showcase-live-status", if spec.name == "Checkbox" { "checked: {checked()}　 danger: {danger()}" } else if spec.name == "AlertBox" { "variant: \"{alert_variant()}\"　 message: \"{alert_message()}\"" } else if spec.preview_mode == PreviewMode::Interactive { "INTERACTIVE SPECIMEN · 跟随全站主题" } else { "COMPONENT PREVIEW · 跟随全站主题" } }
                         }
                     }
                     section { class: "showcase-detail-section", id: "usage",
@@ -618,6 +758,8 @@ fn ComponentPreview(
     detail: bool,
     #[props(default)] checked: Option<Signal<bool>>,
     #[props(default)] danger: Option<Signal<bool>>,
+    #[props(default)] alert_variant: Option<Signal<String>>,
+    #[props(default)] alert_message: Option<Signal<String>>,
 ) -> Element {
     let spec = SHOWCASE
         .components
@@ -626,7 +768,16 @@ fn ComponentPreview(
         .expect("预览必须对应图鉴条目");
     match preview_route(&slug).expect("图鉴条目必须有专属预览分派") {
         PreviewRoute::Live => {
-            rsx! { LiveComponentPreview { name: spec.name.clone(), detail, checked, danger } }
+            rsx! {
+                LiveComponentPreview {
+                    name: spec.name.clone(),
+                    detail,
+                    checked,
+                    danger,
+                    alert_variant,
+                    alert_message,
+                }
+            }
         }
         PreviewRoute::Skeleton => rsx! { PageSkeletonPreview { name: spec.name.clone() } },
         PreviewRoute::Scene => rsx! { SceneComponentPreview { name: spec.name.clone() } },
@@ -758,11 +909,17 @@ fn LiveComponentPreview(
     detail: bool,
     #[props(default)] checked: Option<Signal<bool>>,
     #[props(default)] danger: Option<Signal<bool>>,
+    #[props(default)] alert_variant: Option<Signal<String>>,
+    #[props(default)] alert_message: Option<Signal<String>>,
 ) -> Element {
     let local_checked = use_signal(|| true);
     let local_danger = use_signal(|| false);
     let mut checked = checked.unwrap_or(local_checked);
     let danger = danger.unwrap_or(local_danger);
+    let local_alert_variant = use_signal(|| "success".to_string());
+    let local_alert_message = use_signal(|| "已保存，新的想法正在生长。".to_string());
+    let alert_variant = alert_variant.unwrap_or(local_alert_variant);
+    let alert_message = alert_message.unwrap_or(local_alert_message);
     let mut switch_on = use_signal(|| true);
     let mut selected_radio = use_signal(|| "public".to_string());
     let mut select_value = use_signal(|| "leaf".to_string());
@@ -915,7 +1072,11 @@ fn LiveComponentPreview(
             }
         },
         "AlertBox" => rsx! {
-            crate::components::forms::AlertBox { message: "已保存，新的想法正在生长。", variant: "success" }
+            AlertBoxDemo {
+                detail,
+                alert_variant,
+                alert_message,
+            }
         },
         "CollapsibleSettingsCard" => rsx! {
             crate::components::ui::CollapsibleSettingsCard {
@@ -1264,7 +1425,12 @@ mod tests {
             .map(|component| component.code.clone())
             .chain([true, false].into_iter().flat_map(|checked| {
                 [true, false].map(move |danger| checkbox_snippet(checked, danger))
-            }));
+            }))
+            .chain(
+                ["success", "error", "default"]
+                    .into_iter()
+                    .map(|variant| alert_box_snippet(variant, alert_box_preset_message(variant))),
+            );
 
         for snippet in snippets {
             let tokens = highlight_snippet(&snippet);
