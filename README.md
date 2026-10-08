@@ -119,6 +119,14 @@ docker/       Dockerfile 与代码运行沙箱镜像
 public/       静态资源（构建期生成）
 ```
 
+## 开发启动
+
+`make dev` 检查工具和依赖后，只重建变化的前端库、高亮 CSS 与 KaTeX 资源，再启动 Dioxus。成功构建记录在 `target/dev-assets/`；源码新增、修改或删除，以及配置、依赖或补丁变化都会使相关记录失效，缺失产物也会自动补建。共享代码变化会重建使用它的库。
+
+前端资源准备默认最多运行 4 个任务，可用 `make dev DEV_ASSET_JOBS=8` 调整。开发服务运行期间修改 `libs/` 后，可执行 `make dev-assets` 更新资源。Tailwind 继续在每次资源准备时扫描模板；`make build` 和 `make build-libs` 仍执行完整构建。
+
+缓存失效与失败重试回归：`node scripts/test-dev-assets.cjs`。测试使用临时目录和模拟编译器，不需要数据库或下载依赖。
+
 ## WASM 发布构建回归
 
 升级 Rust／LLVM 或调整 release profile 后，可用当前工具链检查最小 WASM 导出在剥离阶段仍保留 wasm-bindgen 元数据。需要已安装 WASM target、`llvm-tools` 及锁文件中的依赖：

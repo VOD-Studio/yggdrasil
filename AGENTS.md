@@ -16,7 +16,7 @@ Prefer the local toolchain; use Docker only when required local tools are missin
 
 Prefer the Makefile targets for development and release builds: they clear `RUSTC_WRAPPER` for `dx` to avoid sccache conflicts, disable SSR caching during development with `SSR_CACHE_SECS=0`, and restore source WebP files after release builds to preserve animations.
 
-- `make dev`: build assets and start native `dx serve`.
+- `make dev`: incrementally build assets and start native `dx serve`; `make dev-assets` refreshes changed assets without starting another server.
 - `make build`: assemble release assets, documentation, and application; requires Brotli CLI.
 - `make build-libs` / `make css`: rebuild frontend libraries / Tailwind CSS.
 - `make test`: run Rust and frontend tests.

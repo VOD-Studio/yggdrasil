@@ -1,5 +1,6 @@
 .PHONY: dev build build-linux docker docker-amd64 docker-apple docker-multiarch docker-dev docker-dev-down docker-dev-shell docker-run docker-lint docker-clippy docker-check docker-fmt docker-fix docker-test docker-tools-build docker-tools-clean css css-watch clean build-libs build-editor build-codemirror build-lightbox build-core build-xterm highlight-css katex-css test doc doc-open start lint fix restore-webp esbuild-cache wasm-bindgen-cache
 .PHONY: check-tools check-dev-tools check-build-tools check-brotli precompress
+.PHONY: dev-assets dev-libs dev-highlight-css dev-katex-css dev-assets-force
 
 # ── sccache × dx 兼容 ──────────────────────────────────────────
 # dx build / dx serve 构建时把自己设为 RUSTC_WORKSPACE_WRAPPER 拦截 workspace
@@ -218,11 +219,63 @@ build-core:       ; @cd libs && pnpm --filter @yggdrasil/core run build
 build-xterm:      ; @cd libs && pnpm --filter @yggdrasil/xterm-terminal run build
 build-mermaid:    ; @cd libs && pnpm --filter @yggdrasil/mermaid-renderer run build
 
-dev: check-tools build-libs highlight-css katex-css esbuild-cache wasm-bindgen-cache
+# 开发启动只重建变化的资源；发布和显式 build-libs 仍执行完整构建。
+# stamp 写在成功构建之后。src 目录也参与依赖，文件新增/删除同样会使缓存失效。
+DEV_ASSET_DIR := target/dev-assets
+DEV_ASSET_JOBS ?= 4
+DEV_LIBS := shared codemirror-editor lightbox mermaid-renderer tiptap-editor xterm-terminal yggdrasil-core
+DEV_COMMON_INPUTS := Makefile libs/package.json libs/pnpm-lock.yaml libs/pnpm-workspace.yaml libs/tsconfig.base.json $(wildcard libs/patches/*) libs/patches $(wildcard libs/node_modules/.modules.yaml)
+dev_lib_inputs = libs/$(1) $(shell find libs/$(1)/src -type f -o -type d) $(wildcard libs/$(1)/*config*.ts) libs/$(1)/tsconfig.json libs/$(1)/package.json
+
+DEV_OUTPUTS_codemirror-editor := public/codemirror/editor.js public/codemirror/editor.js.map
+DEV_OUTPUTS_lightbox := public/lightbox/lightbox.js public/lightbox/lightbox.js.map public/lightbox/lightbox.css
+DEV_OUTPUTS_mermaid-renderer := public/mermaid/mermaid.js public/mermaid/mermaid.js.map
+DEV_OUTPUTS_tiptap-editor := public/tiptap/editor.js public/tiptap/editor.js.map public/tiptap/editor.css
+DEV_OUTPUTS_xterm-terminal := public/xterm/terminal.js public/xterm/terminal.js.map public/xterm/terminal.css
+DEV_OUTPUTS_yggdrasil-core := public/yggdrasil-core/yggdrasil-core.js public/yggdrasil-core/yggdrasil-core.js.map public/yggdrasil-core/yggdrasil-core.css
+
+define dev_lib_rule
+$(DEV_ASSET_DIR)/$(1).stamp: $(call dev_lib_inputs,$(1)) $(DEV_COMMON_INPUTS)
+	@mkdir -p $(DEV_ASSET_DIR)
+	@cd libs/$(1) && pnpm run build
+	@touch $$@
+$(if $(filter-out $(wildcard $(DEV_OUTPUTS_$(1))),$(DEV_OUTPUTS_$(1))),$(DEV_ASSET_DIR)/$(1).stamp: dev-assets-force)
+endef
+$(foreach lib,$(DEV_LIBS),$(eval $(call dev_lib_rule,$(lib))))
+
+# shared 内联进这些库；Mermaid 自身不依赖 shared。
+$(addprefix $(DEV_ASSET_DIR)/,$(addsuffix .stamp,$(filter-out shared mermaid-renderer,$(DEV_LIBS)))): $(DEV_ASSET_DIR)/shared.stamp
+dev-libs: $(addprefix $(DEV_ASSET_DIR)/,$(addsuffix .stamp,$(DEV_LIBS)))
+dev-assets-force:
+
+$(DEV_ASSET_DIR)/highlight.stamp: Makefile Cargo.toml Cargo.lock build.rs src/bin/generate_highlight_css.rs themes/Catppuccin\ Latte.tmTheme themes/Catppuccin\ Mocha.tmTheme
+	@$(MAKE) --no-print-directory highlight-css
+	@mkdir -p $(DEV_ASSET_DIR)
+	@touch $@
+ifeq ($(wildcard public/highlight.css),)
+$(DEV_ASSET_DIR)/highlight.stamp: dev-assets-force
+endif
+dev-highlight-css: $(DEV_ASSET_DIR)/highlight.stamp
+
+DEV_KATEX_FONTS := $(wildcard libs/node_modules/katex/dist/fonts/*.woff2)
+DEV_KATEX_OUTPUTS := public/katex/katex.min.css $(patsubst libs/node_modules/katex/dist/%,public/katex/%,$(DEV_KATEX_FONTS))
+$(DEV_ASSET_DIR)/katex.stamp: Makefile libs/package.json libs/pnpm-lock.yaml libs/node_modules/katex/dist/katex.min.css $(DEV_KATEX_FONTS)
+	@$(MAKE) --no-print-directory katex-css
+	@mkdir -p $(DEV_ASSET_DIR)
+	@touch $@
+ifneq ($(filter-out $(wildcard $(DEV_KATEX_OUTPUTS)),$(DEV_KATEX_OUTPUTS)),)
+$(DEV_ASSET_DIR)/katex.stamp: dev-assets-force
+endif
+dev-katex-css: $(DEV_ASSET_DIR)/katex.stamp
+
+# 先安装依赖，再由子 make 读取新依赖和输出清单。Tailwind 扫描所有模板，继续实时生成。
+dev-assets: check-dev-tools
+	@cd libs && pnpm install
+	@$(MAKE) --no-print-directory -j$(DEV_ASSET_JOBS) dev-libs dev-highlight-css dev-katex-css css
+
+dev: dev-assets esbuild-cache wasm-bindgen-cache
 	@echo "Cleaning static/..."
 	@rm -rf static/
-	@echo "Building CSS..."
-	@$(MAKE) css
 	@echo "Starting dx serve..."
 	@SSR_CACHE_SECS=0 RUSTC_WRAPPER= dx serve --addr 0.0.0.0 --interactive false
 

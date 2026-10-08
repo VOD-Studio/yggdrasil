@@ -169,7 +169,7 @@ COPY . /build
 ENV DX_HOME=/usr/local/dx
 RUN make esbuild-cache wasm-bindgen-cache
 
-# 启动开发服务器：make dev 内含 pnpm install → build-libs → highlight-css
-# → katex-css → tailwindcss → dx serve --interactive false。
+# 启动开发服务器：make dev 内含 pnpm install → 增量构建变化的库/高亮/字体
+# → tailwindcss → dx serve --interactive false；构建记录放在 target/ volume 中。
 # pnpm install 和 CSS 生成每次都执行（幂等，pnpm 有缓存秒完）。
 CMD ["make", "dev"]
