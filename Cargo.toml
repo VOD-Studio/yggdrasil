@@ -47,7 +47,7 @@ zenwebp = { version = "0.4", optional = true }
 moka = { version = "0.12", features = ["future", "sync"], optional = true }
 governor = { version = "0.10", optional = true }
 sysinfo = { version = "0.39", optional = true }
-sqlparser = { version = "0.62", optional = true }
+sqlparser = { version = "0.63", optional = true }
 dashmap = { version = "6.2", optional = true }
 # 中文标题 → 拼音 slug（纯 Rust、零依赖，安全交叉编译到 musl/FreeBSD）。
 pinyin = { version = "0.11", optional = true }
@@ -68,9 +68,9 @@ mimalloc = { version = "0.1", optional = true }
 # 配套前端需引入 katex.min.css + 字体（见 public/katex/、Makefile katex-css）。
 katex-rs = { version = "0.3", optional = true }
 # MCP（Model Context Protocol）服务器：官方 Rust SDK rmcp。
-# 稳定版 3.2 保留 Origin/Host 校验、请求体上限与无状态传输，并修复协议协商。
+# 稳定版 3.5 保留 Origin/Host 校验、请求体上限与无状态传输，并修复协议生命周期。
 # 使用兼容版本范围，实际构建版本由 Cargo.lock 固定；HTTP server feature 已包含 worker。
-rmcp = { version = "3.2", optional = true, features = ["server", "macros", "transport-streamable-http-server"] }
+rmcp = { version = "3.5", optional = true, features = ["server", "macros", "transport-streamable-http-server"] }
 # MCP token 静态加密（AES-GCM）：管理员可在后台重查明文，DB 不裸存。
 aes-gcm = { version = "0.11", optional = true }
 # MCP 媒体上传：URL 抓取（服务端按图，带 SSRF 防护）。Rustls 不引入 OpenSSL。
@@ -121,12 +121,14 @@ panic = "abort"
 # - opt-level="z"：比 dx 默认注入的 "s" 更激进的体积优化（禁用循环展开等）。
 #   博客前端对极致运行时性能不敏感，体积优先。
 # - 其余项（lto/codegen-units/panic=abort）继承 release。
-# 注意：dx 始终强制该 profile strip=false（资产系统需要符号），最终 strip 由
-# wasm-opt -Oz 完成，不影响产物体积。
+# dx 编译时强制 strip=false，但提取资产后会再按此 profile 调用 llvm-objcopy。
+# LLVM 23 的 --strip-all 会删除 wasm-bindgen 元数据，故这里显式禁止提前剥离；
+# 最终体积优化交给 wasm-bindgen 后的 wasm-opt -Oz。
 [profile.wasm-release]
 inherits = "release"
 opt-level = "z"
 lto = "fat"
+strip = false
 
 [features]
 default = ["web", "server"]

@@ -14,7 +14,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   delete window.MermaidRenderer;
   delete window.__yggdrasilMermaidPromise;
-  document.querySelectorAll('script[src="/mermaid/mermaid.js?v=2"]').forEach((script) => {
+  document.querySelectorAll('script[src="/mermaid/mermaid.js?v=3"]').forEach((script) => {
     script.remove();
   });
   document.body.innerHTML = '';
@@ -29,7 +29,7 @@ describe('Mermaid bundle 加载', () => {
   it('复用已加载的运行时，不注入脚本', async () => {
     window.MermaidRenderer = renderer();
     expect(await loadMermaidRenderer()).toBe(window.MermaidRenderer);
-    expect(document.querySelector('script[src="/mermaid/mermaid.js?v=2"]')).toBeNull();
+    expect(document.querySelector('script[src="/mermaid/mermaid.js?v=3"]')).toBeNull();
   });
 
   it('独立模块副本同时加载也只发出一次请求', async () => {
@@ -40,7 +40,7 @@ describe('Mermaid bundle 加载', () => {
     const first = loadMermaidRenderer();
     const second = otherBundle.loadMermaidRenderer();
     expect(second).toBe(first);
-    const scripts = document.querySelectorAll('script[src="/mermaid/mermaid.js?v=2"]');
+    const scripts = document.querySelectorAll('script[src="/mermaid/mermaid.js?v=3"]');
     expect(scripts).toHaveLength(1);
     window.MermaidRenderer = renderer();
     scripts[0]?.dispatchEvent(new Event('load'));
@@ -54,14 +54,14 @@ describe('Mermaid bundle 加载', () => {
   ])('%s 失败后清理脚本，并允许重新加载', async (event, message) => {
     const failed = expect(loadMermaidRenderer()).rejects.toThrow(message);
     document
-      .querySelector('script[src="/mermaid/mermaid.js?v=2"]')
+      .querySelector('script[src="/mermaid/mermaid.js?v=3"]')
       ?.dispatchEvent(new Event(event));
     await failed;
-    expect(document.querySelector('script[src="/mermaid/mermaid.js?v=2"]')).toBeNull();
+    expect(document.querySelector('script[src="/mermaid/mermaid.js?v=3"]')).toBeNull();
     const retry = loadMermaidRenderer();
     window.MermaidRenderer = renderer();
     document
-      .querySelector('script[src="/mermaid/mermaid.js?v=2"]')
+      .querySelector('script[src="/mermaid/mermaid.js?v=3"]')
       ?.dispatchEvent(new Event('load'));
     expect(await retry).toBe(window.MermaidRenderer);
   });
@@ -73,6 +73,8 @@ describe('Mermaid SVG 渲染', () => {
     const svg = await renderMermaidSvg(api, 'diagram-1', 'graph TD; A-->B', theme);
     expect(api.initialize).toHaveBeenCalledWith({
       startOnLoad: false,
+      layout: 'dagre',
+      look: 'classic',
       theme: 'base',
       darkMode: theme === 'dark',
       securityLevel: 'strict',

@@ -9,11 +9,11 @@
 # The build is split into TWO native-arm64 builder stages because the two
 # toolchains it needs cannot live in one base image:
 #
-#   Stage A (frontend, rust:1.96-trixie / glibc)  — the prebuilt `dx` CLI is a
+#   Stage A (frontend, rust:1.99-trixie / glibc)  — the prebuilt `dx` CLI is a
 #     glibc binary needing GLIBC_2.39, so it only runs on Trixie (glibc 2.41).
 #     Builds the WASM client + JS libs + syntax/katex/tailwind CSS.
 #
-#   Stage B (server, rust:1.96-alpine3.22 / musl) — the ONLY reliable zig
+#   Stage B (server, rust:1.99-alpine3.22 / musl) — the ONLY reliable zig
 #     source in China is Alpine's apk (TUNA mirror). ziglang.org is unreachable,
 #     GitHub Releases carries NO zig binaries, and every Chinese "ziglang"
 #     mirror returns an HTML error page. Alpine's zig is dynamically linked to
@@ -33,7 +33,7 @@
 # Trixie (Debian 13, glibc 2.41) — required because the prebuilt `dx` v0.7.10
 # binary (aarch64/x86_64-unknown-linux-gnu) needs GLIBC_2.39; Bookworm only
 # ships 2.36, so `dx --version` fails with "version `GLIBC_2.39' not found".
-FROM --platform=$BUILDPLATFORM rust:1.96-trixie AS frontend
+FROM --platform=$BUILDPLATFORM rust:1.99-trixie AS frontend
 
 # Master switch for Chinese mirrors.
 #   CN_MIRROR=false (default): use all upstream/official sources (fast on CI
@@ -100,7 +100,7 @@ RUN apt-get update \
 
 # --- Node.js 22 + pnpm ---
 # CN_MIRROR=true: download from npmmirror; CN_MIRROR=false: from nodejs.org.
-ARG NODE_VERSION=22.20.0
+ARG NODE_VERSION=22.23.3
 RUN ARCH="$(dpkg --print-architecture)" \
     && case "$ARCH" in \
         amd64)  NODE_ARCH=x64   ;; \
@@ -110,7 +110,7 @@ RUN ARCH="$(dpkg --print-architecture)" \
     && if [ "$CN_MIRROR" = "true" ]; then NODE_SRC="${NODE_MIRROR}"; else NODE_SRC="https://nodejs.org/dist"; fi \
     && curl -fsSL "${NODE_SRC}/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.gz" \
         | tar -xz -C /usr/local --strip-components=1 \
-    && npm install --global pnpm@12.3.4
+    && npm install --global pnpm@12.10.1
 
 # Configure npm/pnpm registry (CN_MIRROR only — default is registry.npmjs.org).
 # pnpm 11 enables verify-deps-before-run by default: before every `pnpm run` it
@@ -180,7 +180,7 @@ RUN ARCH="$(dpkg --print-architecture)" \
 
 # --- Tailwind CSS v4: the standalone binary is distributed via GitHub
 # Releases (~106 MB). ---
-ARG TAILWIND_VERSION=4.3.1
+ARG TAILWIND_VERSION=4.3.3
 RUN ARCH="$(dpkg --print-architecture)" \
     && case "$ARCH" in \
         amd64)  TW_ARCH=x64   ;; \
@@ -311,7 +311,7 @@ RUN find /build/dist/public -type f \
 # system cross-toolchain. The output is a fully static ELF dropped into a
 # linux/amd64 alpine image by Stage C.
 # -----------------------------------------------------------------------------
-FROM --platform=$BUILDPLATFORM rust:1.96-alpine3.22 AS server
+FROM --platform=$BUILDPLATFORM rust:1.99-alpine3.22 AS server
 
 # ARGs don't carry across stages, so CN_MIRROR must be re-declared here.
 ARG CN_MIRROR=false
@@ -340,7 +340,7 @@ RUN if [ "$CN_MIRROR" = "true" ]; then \
     fi
 
 # The cross-compile target (the host target, aarch64-unknown-linux-musl, is
-# already installed by the rust:1.96-alpine3.22 base image for build-scripts
+# already installed by the rust:1.99-alpine3.22 base image for build-scripts
 # and proc-macros that run on the builder).
 # RUSTUP_DIST_SERVER is exported inline (only rustup-download that needs it).
 RUN if [ "$CN_MIRROR" = "true" ]; then \

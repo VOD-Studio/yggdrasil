@@ -2,10 +2,10 @@
 const libraries = {
   tiptap: {
     global: 'TiptapEditor',
-    script: '/tiptap/editor.js?v=2',
-    style: '/tiptap/editor.css?v=2',
+    script: '/tiptap/editor.js?v=3',
+    style: '/tiptap/editor.css?v=3',
   },
-  codemirror: { global: 'CodeMirrorEditor', script: '/codemirror/editor.js?v=2' },
+  codemirror: { global: 'CodeMirrorEditor', script: '/codemirror/editor.js?v=3' },
   xterm: {
     global: 'XtermTerminal',
     script: '/xterm/terminal.js?v=2',

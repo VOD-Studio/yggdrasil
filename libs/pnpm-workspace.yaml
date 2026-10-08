@@ -1,7 +1,9 @@
 packages:
   - '*'
-# 本次统一采用刚发布的 KaTeX 0.18.7，仅豁免这个版本的发布时间限制。
+# 已核对的 CodeMirror 稳定版，仅豁免这些版本的发布时间限制。
 minimumReleaseAgeExclude:
-  - katex@0.18.7
+  - '@codemirror/language@6.13.1'
+  - '@codemirror/view@6.43.14'
+  - '@codemirror/streamparser@6.0.0'
 patchedDependencies:
-  '@tiptap/markdown@3.31.3': patches/@tiptap__markdown@3.31.3.patch
+  '@tiptap/markdown@3.31.4': patches/@tiptap__markdown@3.31.4.patch

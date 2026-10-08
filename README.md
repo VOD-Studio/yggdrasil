@@ -119,6 +119,17 @@ docker/       Dockerfile 与代码运行沙箱镜像
 public/       静态资源（构建期生成）
 ```
 
+## WASM 发布构建回归
+
+升级 Rust／LLVM 或调整 release profile 后，可用当前工具链检查最小 WASM 导出在剥离阶段仍保留 wasm-bindgen 元数据。需要已安装 WASM target、`llvm-tools` 及锁文件中的依赖：
+
+```sh
+make wasm-bindgen-cache
+node scripts/test-wasm-bindgen-metadata.cjs
+```
+
+脚本使用临时项目，模拟 Dioxus 按 `wasm-release` 配置执行 LLVM 后处理，再调用与 `Cargo.lock` 一致的 wasm-bindgen；结束时清理临时项目。
+
 ## 数据库回归测试
 
 常规 `make test` 会跳过标记为 `#[ignore]` 的数据库回归。下列文章和上传回归仅允许使用已创建、名为 `ygg_mcp_test` 的一次性 PostgreSQL 数据库；按本机连接信息调整示例 URL：

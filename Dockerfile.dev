@@ -13,7 +13,7 @@
 #   target/        ← named volume（cargo 编译产物，跨重启缓存）
 #   libs/node_modules ← named volume（pnpm 虚拟存储，跨重启缓存）
 
-FROM rust:1.97-trixie
+FROM rust:1.99-trixie
 
 # Master switch for Chinese mirrors.
 #   CN_MIRROR=false (default): use all upstream/official sources (fast on CI
@@ -65,7 +65,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Node.js 22 + pnpm（与生产 Dockerfile 一致）──────────────────
-ARG NODE_VERSION=22.20.0
+ARG NODE_VERSION=22.23.3
 RUN ARCH="$(dpkg --print-architecture)" \
     && case "$ARCH" in \
         amd64)  NODE_ARCH=x64   ;; \
@@ -75,7 +75,7 @@ RUN ARCH="$(dpkg --print-architecture)" \
     && if [ "$CN_MIRROR" = "true" ]; then NODE_SRC="${NODE_MIRROR}"; else NODE_SRC="https://nodejs.org/dist"; fi \
     && curl -fsSL "${NODE_SRC}/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.gz" \
         | tar -xz -C /usr/local --strip-components=1 \
-    && npm install --global pnpm@12.3.4
+    && npm install --global pnpm@12.10.1
 
 # CI=true: 无 TTY 容器内 pnpm install 检测到 node_modules volume 与 lockfile
 # 不匹配（如 watch rebuild 后 lockfile 更新）需清空重建时, 默认因无法交互
@@ -142,7 +142,7 @@ RUN ARCH="$(dpkg --print-architecture)" \
     && dx --version
 
 # ── Tailwind CSS v4 standalone ──────────────────────────────────
-ARG TAILWIND_VERSION=4.3.1
+ARG TAILWIND_VERSION=4.3.3
 RUN ARCH="$(dpkg --print-architecture)" \
     && case "$ARCH" in \
         amd64)  TW_ARCH=x64   ;; \

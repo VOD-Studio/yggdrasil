@@ -9,6 +9,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "mermaid": "^11.17.2"
+    "mermaid": "^12.1.0"
   }
 }

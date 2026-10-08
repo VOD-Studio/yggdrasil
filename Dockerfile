@@ -4,7 +4,7 @@
 # Trixie (Debian 13, glibc 2.41) — required because the prebuilt `dx` v0.7.10
 # binary (aarch64/x86_64-unknown-linux-gnu) needs GLIBC_2.39; Bookworm only
 # ships 2.36, so `dx --version` fails with "version `GLIBC_2.39' not found".
-FROM rust:1.96-trixie AS builder
+FROM rust:1.99-trixie AS builder
 
 # Master switch for Chinese mirrors.
 #   CN_MIRROR=false (default): use all upstream/official sources (fast on CI
@@ -65,7 +65,7 @@ RUN apt-get update \
 
 # --- Node.js 22 + pnpm ---
 # CN_MIRROR=true: download from npmmirror; CN_MIRROR=false: from nodejs.org.
-ARG NODE_VERSION=22.20.0
+ARG NODE_VERSION=22.23.3
 RUN ARCH="$(dpkg --print-architecture)" \
     && case "$ARCH" in \
         amd64)  NODE_ARCH=x64   ;; \
@@ -75,7 +75,7 @@ RUN ARCH="$(dpkg --print-architecture)" \
     && if [ "$CN_MIRROR" = "true" ]; then NODE_SRC="${NODE_MIRROR}"; else NODE_SRC="https://nodejs.org/dist"; fi \
     && curl -fsSL "${NODE_SRC}/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.gz" \
         | tar -xz -C /usr/local --strip-components=1 \
-    && npm install --global pnpm@12.3.4
+    && npm install --global pnpm@12.10.1
 
 # Configure npm/pnpm registry (CN_MIRROR only — default is registry.npmjs.org).
 RUN if [ "$CN_MIRROR" = "true" ]; then \
@@ -139,7 +139,7 @@ RUN ARCH="$(dpkg --print-architecture)" \
 
 # --- Tailwind CSS v4: the standalone binary is distributed via GitHub
 # Releases (~106 MB). ---
-ARG TAILWIND_VERSION=4.3.1
+ARG TAILWIND_VERSION=4.3.3
 RUN ARCH="$(dpkg --print-architecture)" \
     && case "$ARCH" in \
         amd64)  TW_ARCH=x64   ;; \
@@ -181,7 +181,7 @@ WORKDIR /build
 # only links deps for the manifests it sees and `pnpm -r run build` fails later
 # (e.g. mermaid-renderer "Cannot find module 'mermaid'").
 # `pnpm-workspace.yaml` declares a patched dep (@tiptap/markdown) pointing at
-# `patches/@tiptap__markdown@3.31.3.patch`, so the patches/ tree must be present
+# `patches/@tiptap__markdown@3.31.4.patch`, so the patches/ tree must be present
 # before `pnpm install --frozen-lockfile` or it fails with ENOENT on the patch.
 COPY libs/package.json libs/pnpm-workspace.yaml libs/pnpm-lock.yaml libs/
 COPY libs/patches/                         libs/patches/

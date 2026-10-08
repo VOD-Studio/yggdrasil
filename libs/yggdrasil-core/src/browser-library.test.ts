@@ -48,7 +48,7 @@ describe('浏览器库按需加载', () => {
 
   it('CodeMirror 不依赖独立 CSS，也不会带入 Tiptap 或终端', async () => {
     const work = load('codemirror');
-    expect(document.querySelector('script')?.getAttribute('src')).toBe('/codemirror/editor.js?v=2');
+    expect(document.querySelector('script')?.getAttribute('src')).toBe('/codemirror/editor.js?v=3');
     expect(document.querySelector('link')).toBeNull();
     Reflect.set(window, 'CodeMirrorEditor', {});
     document.querySelector('script')!.dispatchEvent(new Event('load'));

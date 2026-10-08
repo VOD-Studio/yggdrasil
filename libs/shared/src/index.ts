@@ -174,7 +174,7 @@ export function loadMermaidRenderer(): Promise<MermaidApi> {
   if (!window.__yggdrasilMermaidPromise) {
     const script = document.createElement('script');
     // 与站点其它固定路径资源一起绕过旧的一年 immutable 缓存。
-    script.src = '/mermaid/mermaid.js?v=2';
+    script.src = '/mermaid/mermaid.js?v=3';
     window.__yggdrasilMermaidPromise = new Promise<MermaidApi>((resolve, reject) => {
       script.onload = () => {
         if (window.MermaidRenderer) resolve(window.MermaidRenderer);
@@ -200,6 +200,9 @@ export async function renderMermaidSvg(
 ): Promise<string> {
   mermaid.initialize({
     startOnLoad: false,
+    // Mermaid 12 改用 ELK/neo 默认值；保留现有文章的布局与节点外观。
+    layout: 'dagre',
+    look: 'classic',
     theme: 'base',
     darkMode: theme === 'dark',
     securityLevel: 'strict',
