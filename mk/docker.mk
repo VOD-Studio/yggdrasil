@@ -22,12 +22,13 @@
 # git 信息透传:.dockerignore 排除 .git/,容器内取不到 git 信息,所以在宿主采集后
 # 用 --build-arg 注入(取值顺序见 build.rs)。所有 docker target 复用;git 不可用时
 # 为空串,build.rs 最终降级为 "unknown",不阻断构建。
-HOST_ARCH := $(shell uname -m)
+# 下面的 $(shell ...) 一律用 `=` 延迟求值：只有 docker target 的配方展开到它们时才会
+# 真正启动 git/uname；用 `:=` 的话每次 make（包括 make lint）都要白白付这几个进程的成本。
 IMAGE ?= yggdrasil
 PLATFORMS ?= linux/amd64,linux/arm64
-GIT_DESCRIBE := $(shell git describe --tags --always --dirty 2>/dev/null)
-GIT_HASH := $(shell git rev-parse HEAD 2>/dev/null)
-GIT_DATE := $(shell git log -1 --format=%cd --date=iso-strict 2>/dev/null)
+GIT_DESCRIBE = $(shell git describe --tags --always --dirty 2>/dev/null)
+GIT_HASH = $(shell git rev-parse HEAD 2>/dev/null)
+GIT_DATE = $(shell git log -1 --format=%cd --date=iso-strict 2>/dev/null)
 # 镜像版本号:取最近 git tag 原值(v0.10.0,带 v,与 CI publish-ghcr 的 GITHUB_REF_NAME 一致);
 # 可用 VERSION=v0.10.1 覆盖。生产镜像据此打版本 tag(yggdrasil:v0.10.0、yggdrasil:v0.10.0-amd64)。
 # 没有 tag 时 VERSION 为空，此时只打 latest/amd64，不生成非法的 `yggdrasil:` tag。
@@ -47,14 +48,10 @@ docker: ## 构建本机架构镜像并加载到本地 daemon
 
 # x86_64 宿主用普通 Dockerfile，其他宿主（如 Apple Silicon）用 Dockerfile.cross。
 # 产物可直接 docker run / docker save 导出。
+DOCKERFILE_AMD64 = $(if $(filter x86_64,$(shell uname -m)),,-f Dockerfile.cross)
 docker-amd64: ## 构建 amd64 镜像并加载到本地 daemon
-ifeq ($(HOST_ARCH),x86_64)
-	@docker buildx build --platform linux/amd64 --load $(GIT_BUILD_ARGS) $(CN_BUILD_ARGS) \
+	@docker buildx build --platform linux/amd64 --load $(DOCKERFILE_AMD64) $(GIT_BUILD_ARGS) $(CN_BUILD_ARGS) \
 		-t yggdrasil:amd64 $(VERSION_TAG_AMD64) .
-else
-	@docker buildx build --platform linux/amd64 --load -f Dockerfile.cross $(GIT_BUILD_ARGS) $(CN_BUILD_ARGS) \
-		-t yggdrasil:amd64 $(VERSION_TAG_AMD64) .
-endif
 
 docker-multiarch: ## 构建多架构镜像并推送（IMAGE=... PLATFORMS=...）
 	@docker buildx build --platform $(PLATFORMS) $(GIT_BUILD_ARGS) $(CN_BUILD_ARGS) -t $(IMAGE) --push .
