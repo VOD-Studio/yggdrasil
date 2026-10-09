@@ -107,6 +107,10 @@ services:
         - path: ./Makefile
           target: /build/Makefile
           action: sync
+        # Makefile 的 include 模块（mk/*.mk），与 Makefile 一起 sync
+        - path: ./mk
+          target: /build/mk
+          action: sync
         - path: ./Dioxus.toml
           target: /build/Dioxus.toml
           action: sync
