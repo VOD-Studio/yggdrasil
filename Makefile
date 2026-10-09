@@ -1,4 +1,4 @@
-.PHONY: help dev build build-linux build-assets docker docker-amd64 docker-multiarch docker-dev docker-dev-down docker-dev-shell docker-run docker-lint docker-clippy docker-check docker-fmt docker-fix docker-test docker-tools-build docker-tools-clean css css-watch clean build-libs build-editor build-codemirror build-lightbox build-core build-xterm build-mermaid highlight-css katex-css test doc doc-open lint fix restore-webp esbuild-cache wasm-bindgen-cache
+.PHONY: help dev build build-linux build-assets docker docker-amd64 docker-multiarch docker-dev docker-dev-down docker-dev-shell docker-run docker-lint docker-clippy docker-check docker-fmt docker-fix docker-test docker-tools-build docker-tools-clean css css-watch clean build-libs highlight-css katex-css test doc doc-open lint fix restore-webp esbuild-cache wasm-bindgen-cache
 .PHONY: check-tools check-dev-tools check-build-tools check-brotli precompress
 .PHONY: dev-assets dev-libs dev-highlight-css dev-katex-css dev-assets-force
 
@@ -221,14 +221,6 @@ katex-css: ## 拷贝 KaTeX CSS 与 woff2 字体到 public/katex/
 # build-libs 会先安装依赖（bun install），无需调用方自行安装。
 build-libs: ## 全量构建 libs/ 前端库
 	@cd libs && bun install && bun run --filter '*' build
-
-# 单库便利 target（替代旧的 build-<name>，用 bun --filter 精确定位）。
-build-editor:     ; @cd libs && bun run --filter '@yggdrasil/tiptap-editor' build
-build-codemirror: ; @cd libs && bun run --filter '@yggdrasil/codemirror-editor' build
-build-lightbox:   ; @cd libs && bun run --filter '@yggdrasil/lightbox' build
-build-core:       ; @cd libs && bun run --filter '@yggdrasil/core' build
-build-xterm:      ; @cd libs && bun run --filter '@yggdrasil/xterm-terminal' build
-build-mermaid:    ; @cd libs && bun run --filter '@yggdrasil/mermaid-renderer' build
 
 # 开发启动只重建变化的资源；发布和显式 build-libs 仍执行完整构建。
 # stamp 写在成功构建之后。src 目录也参与依赖，文件新增/删除同样会使缓存失效。
