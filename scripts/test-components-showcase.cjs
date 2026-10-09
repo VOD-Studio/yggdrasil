@@ -1,9 +1,9 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 /**
  * Browser acceptance for the public component atlas. Connects to an existing site only.
  *
  * SHOWCASE_BASE=http://127.0.0.1:8080 PLAYWRIGHT_MODULE=/path/to/playwright \
- *   CHROMIUM_PATH=/path/to/chromium node scripts/test-components-showcase.cjs
+ *   CHROMIUM_PATH=/path/to/chromium bun scripts/test-components-showcase.cjs
  * Optional SHOWCASE_ARTIFACT_DIR stores screenshots/report; default is a temporary directory.
  * SHOWCASE_ONLY=post-footer runs focused footer layout, theme, and sample-link checks.
  * SHOWCASE_ONLY=post-header checks full, unscaled headers and draft/summary variants.

@@ -1,6 +1,6 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Read-only browser regression. Uses the same Playwright setup as test-view-transitions.cjs.
-// VT_BASE=http://localhost:8080 PLAYWRIGHT_MODULE=/path/to/playwright node scripts/test-writing-guide.cjs
+// VT_BASE=http://localhost:8080 PLAYWRIGHT_MODULE=/path/to/playwright bun scripts/test-writing-guide.cjs
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');

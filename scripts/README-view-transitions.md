@@ -9,15 +9,15 @@
 - 在 390px 宽度通过折叠菜单互切，正文位移缩为 12px，菜单收起，不捕获隐藏的桌面下划线。检查浅色、深色、键盘 Enter、直接刷新、前进后退和连续导航。
 - 减少动态效果或缺少原生 API 时应正常切换页面，不保留方向标记或临时快照名。主题切换打断导航后，最后一次路由仍须正确，文章标题共享过渡仍须双向匹配。
 
-方向、路由范围、历史记录与中断清理的单元回归：`cd libs && pnpm --filter @yggdrasil/core test`。
+方向、路由范围、历史记录与中断清理的单元回归：`cd libs && bun run --filter '@yggdrasil/core' test`。
 
 ```bash
 PLAYWRIGHT_MODULE=/path/to/playwright \
 CHROMIUM_PATH=/usr/bin/chromium \
-node scripts/test-view-transitions.cjs
+bun scripts/test-view-transitions.cjs
 ```
 
-如果项目外已经安装了可被 Node 解析的 `playwright`，可以省略 `PLAYWRIGHT_MODULE`；使用 Playwright 自带 Chromium 时可省略 `CHROMIUM_PATH`。脚本不安装依赖，也不会启动或停止开发服务器。
+如果项目外已经安装了可被 Bun 解析的 `playwright`，可以省略 `PLAYWRIGHT_MODULE`；使用 Playwright 自带 Chromium 时可省略 `CHROMIUM_PATH`。脚本不安装依赖，也不会启动或停止开发服务器。
 
 - `VT_BASE` 默认 `http://127.0.0.1:8080`，必须与站点配置的 `APP_BASE_URL` 同源；用 `localhost` 替代 `127.0.0.1` 可能触发 CSRF 403。
 - 公开页面检查需要已有已发布文章、搜索结果，以及至少两篇文章的标签。`VT_SEARCH_QUERY` 默认 `Rust`，`VT_TAG_PATH` 默认 `/tags/Rust`，可按当前数据调整。目录 hash 检查默认使用归档首篇文章；若该文章没有目录，可用 `VT_TOC_POST_PATH=/post/<slug>` 指向一篇有目录的已发布文章。

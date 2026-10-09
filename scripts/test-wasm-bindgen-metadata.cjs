@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Reproduce dx's LLVM post-processing with the project's WASM release strip setting.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');

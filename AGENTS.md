@@ -5,14 +5,14 @@
 Yggdrasil is a Rust 2021/Dioxus fullstack blog and CMS with an Axum backend and PostgreSQL.
 
 - `src/pages/` and `src/components/`: UI; `src/api/`, `src/db/`, and `src/mcp/`: backend; `src/models/`: shared types. Consult `src/CONTEXT.md` for domain terminology.
-- `libs/`: pnpm workspace for editors, lightbox, terminal, and browser utilities. Consult `libs/CONTEXT.md` for bundle and shared-code conventions.
+- `libs/`: Bun workspace for editors, lightbox, terminal, and browser utilities. Consult `libs/CONTEXT.md` for bundle and shared-code conventions.
 - `migrations/`: sequential SQL migrations (`NNN_description.sql`), applied at startup. Register each new SQL file in the `MIGRATIONS` array in `src/db/migrate.rs`, keeping versions in ascending order.
 - `public/`: static assets and generated bundles. Edit `input.css` and `libs/` sources, then rebuild generated CSS/JS. Keep `public/style.css` untracked; it is ignored build output.
 - `scripts/`: browser regression tooling; `docker/`: deployment and code-runner support.
 
 ## Build, Test, and Development Commands
 
-Prefer the local toolchain; use Docker only when required local tools are missing. Native development needs Rust with the `llvm-tools` component, Dioxus CLI 0.7.10, and Tailwind CSS v4 CLI. Follow `engines.node` and `packageManager` in `libs/package.json` for Node and pnpm requirements. Run `make check-dev-tools` or `make check-build-tools` to check tool availability before development or release builds.
+Prefer the local toolchain; use Docker only when required local tools are missing. Native development needs Rust with the `llvm-tools` component, Dioxus CLI 0.7.10, Tailwind CSS v4 CLI, and Bun. Follow `packageManager` in `libs/package.json` for the Bun version; Node.js and pnpm are not used. Run `make check-dev-tools` or `make check-build-tools` to check tool availability before development or release builds.
 
 Prefer the Makefile targets for development and release builds: they clear `RUSTC_WRAPPER` for `dx` to avoid sccache conflicts, disable SSR caching during development with `SSR_CACHE_SECS=0`, and restore source WebP files after release builds to preserve animations.
 
@@ -21,7 +21,7 @@ Prefer the Makefile targets for development and release builds: they clear `RUST
 - `make build-libs` / `make css`: rebuild frontend libraries / Tailwind CSS.
 - `make test`: run Rust and frontend tests.
 - `make lint`: run Biome, TypeScript checks, Clippy for the native target, and rustfmt checks.
-- `cargo fmt` and `(cd libs && pnpm format)`: format Rust and frontend files.
+- `cargo fmt` and `(cd libs && bun run format)`: format Rust and frontend files.
 - `cargo check --locked --target wasm32-unknown-unknown --no-default-features --features web`: verify the browser target.
 - `cargo clippy --locked --target wasm32-unknown-unknown --no-default-features --features web -- -D warnings`: lint Rust for the browser target when changing WASM paths; native Clippy does not cover WASM-gated code.
 

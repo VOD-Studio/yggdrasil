@@ -1,10 +1,10 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 /**
  * Native Chromium regression checks against a running, populated development site.
  * No content is written. Cover and slow-response cases use isolated browser fixtures.
  *
  * PLAYWRIGHT_MODULE=/path/to/playwright CHROMIUM_PATH=/usr/bin/chromium \
- *   node scripts/test-view-transitions.cjs
+ *   bun scripts/test-view-transitions.cjs
  * Optional: VT_BASE, VT_SEARCH_QUERY, VT_TAG_PATH, VT_TOC_POST_PATH, VT_DEBUG=1.
  * Supply VT_ADMIN_USERNAME and VT_ADMIN_PASSWORD to include login/preview/logout.
  */

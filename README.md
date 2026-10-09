@@ -92,7 +92,7 @@ curl "$APP_BASE_URL/api/mcp/upload" \
 - **框架**：Dioxus 0.7（fullstack + router，单代码库双目标）
 - **服务端**：Axum、tokio、tokio-postgres + deadpool 连接池、moka 缓存、mimalloc
 - **数据库**：PostgreSQL
-- **前端**：Tailwind CSS v4 + Catppuccin 双主题；JS 子工程以 pnpm workspace 组织（Tiptap / CodeMirror / xterm.js / Mermaid / Lightbox），构建为 IIFE bundle 注入 `public/`
+- **前端**：Tailwind CSS v4 + Catppuccin 双主题；JS 子工程以 Bun workspace 组织（Tiptap / CodeMirror / xterm.js / Mermaid / Lightbox），构建为 IIFE bundle 注入 `public/`
 - **安全**：Argon2、AES-GCM-256（MCP 令牌静态加密）、governor 限流
 - **沙箱**：bollard（Docker 执行层）
 
@@ -111,7 +111,7 @@ src/          Rust 源码（前端 + 服务端，feature 门控双目标）
   api/        端点：auth / posts / comments / settings / code_runner / mcp ...
   mcp/        MCP 服务器（rmcp，bearer 鉴权 + 作用域）
   db/         连接池、迁移、重试
-libs/         pnpm workspace 前端 JS 库（构建产物写入 public/）
+libs/         Bun workspace 前端 JS 库（构建产物写入 public/）
 migrations/   编号 SQL 迁移（启动时自动运行）
 syntaxes/     syntect 代码高亮语法定义（Sublime 格式）
 themes/       Catppuccin Latte / Mocha 高亮主题
@@ -125,7 +125,7 @@ public/       静态资源（构建期生成）
 
 前端资源准备默认最多运行 4 个任务，可用 `make dev DEV_ASSET_JOBS=8` 调整。开发服务运行期间修改 `libs/` 后，可执行 `make dev-assets` 更新资源。Tailwind 继续在每次资源准备时扫描模板；`make build` 和 `make build-libs` 仍执行完整构建。
 
-缓存失效与失败重试回归：`node scripts/test-dev-assets.cjs`。测试使用临时目录和模拟编译器，不需要数据库或下载依赖。
+缓存失效与失败重试回归：`bun scripts/test-dev-assets.cjs`。测试使用临时目录和模拟编译器，不需要数据库或下载依赖。
 
 ## WASM 发布构建回归
 
@@ -133,7 +133,7 @@ public/       静态资源（构建期生成）
 
 ```sh
 make wasm-bindgen-cache
-node scripts/test-wasm-bindgen-metadata.cjs
+bun scripts/test-wasm-bindgen-metadata.cjs
 ```
 
 脚本使用临时项目，模拟 Dioxus 按 `wasm-release` 配置执行 LLVM 后处理，再调用与 `Cargo.lock` 一致的 wasm-bindgen；结束时清理临时项目。

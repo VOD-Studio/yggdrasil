@@ -41,7 +41,7 @@ cargo check --locked --target wasm32-unknown-unknown --no-default-features --fea
 浏览器脚本连接已经运行的本地站点，不会替你启动或停止服务；将地址改为实际监听地址：
 
 ```bash
-SHOWCASE_BASE=http://localhost:8080 node scripts/test-components-showcase.cjs
+SHOWCASE_BASE=http://localhost:8080 bun scripts/test-components-showcase.cjs
 ```
 
 `SHOWCASE_BASE` 应与本地 `APP_BASE_URL` 同源。需要指定本机 Playwright 或 Chromium 时设置 `PLAYWRIGHT_MODULE`、`CHROMIUM_PATH`；用 `SHOWCASE_ARTIFACT_DIR` 指定截图与报告目录，默认写入系统临时目录。

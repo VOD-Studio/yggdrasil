@@ -262,7 +262,7 @@ Tiptap、CodeMirror、Xterm 复用 `src/bridges/library.rs` 的加载器和已�
 
 ### 8.2 浏览器验收脚本
 
-建议新增 `scripts/test-components-showcase.cjs`，沿用 `scripts/test-view-transitions.cjs` 的 Node + Playwright 调用方式，不引入新的测试框架。脚本连接已经运行的站点，不隐式启动/停止服务、不创建真实业务记录。
+建议新增 `scripts/test-components-showcase.cjs`，沿用 `scripts/test-view-transitions.cjs` 的 Bun + Playwright 调用方式，不引入新的测试框架。脚本连接已经运行的站点，不隐式启动/停止服务、不创建真实业务记录。
 
 建议环境变量：
 
@@ -337,7 +337,7 @@ cargo check --locked --target wasm32-unknown-unknown --no-default-features --fea
 新脚本的建议调用约定：
 
 ```bash
-SHOWCASE_BASE=http://127.0.0.1:8080 node scripts/test-components-showcase.cjs
+SHOWCASE_BASE=http://127.0.0.1:8080 bun scripts/test-components-showcase.cjs
 ```
 
 地址必须与本地实际配置一致。有导航、目录或布局共用代码变更时，再按 `scripts/README-view-transitions.md` 执行受影响的既有回归。开发数据或凭据不足导致的未运行项要单独列明。
