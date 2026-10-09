@@ -23,7 +23,7 @@
 #   compose watch 把宿主变更增量 sync 进容器 —— 容器内 inotify 原生生效,
 #   源码 stat 不再走 VirtioFS 桥, cargo/git 操作更快更可靠。
 #   宿主 public/ 下的生成物（style.css/tiptap/ 等）不 sync —— 容器内 make dev 自行生成。
-#   依赖清单（Cargo.lock/pnpm-lock 等）变化 → watch 自动 rebuild 镜像。
+#   依赖清单（Cargo.lock/bun.lock 等）变化 → watch 自动 rebuild 镜像。
 #
 # 数据库：dev 容器加入 global-databases_default 外部网络, 直接按容器名
 # 连接 global-postgres（issuser/trust）。不走 host.docker.internal ——
@@ -32,7 +32,7 @@
 #
 # Volume 策略：
 #   target/ → named volume        cargo 编译缓存（避免 VirtioFS 性能瓶颈）
-#   libs/node_modules → volume    pnpm 依赖（与宿主隔离）
+#   libs/node_modules → volume    bun 依赖（与宿主隔离）
 #   cargo registry → named volume crate 下载缓存
 #   uploads/ → bind mount          宿主与容器双向共享素材(修复 serve_image 404)
 #
@@ -57,15 +57,13 @@ services:
     volumes:
       # cargo 编译产物 — named volume 避免 VirtioFS 小文件性能瓶颈
       - yggdrasil-dev-target:/build/target
-      # pnpm 依赖 — 与宿主 node_modules 隔离
+      # bun 依赖 — 与宿主 node_modules 隔离
       - yggdrasil-dev-node-modules:/build/libs/node_modules
-      # pnpm 全局 store — named volume 避免重复下载
-      - yggdrasil-dev-pnpm-store:/root/.local/share/pnpm/store
+      # bun 全局缓存 — named volume 避免重复下载
+      - yggdrasil-dev-bun-cache:/root/.bun/install/cache
       # cargo registry + git 缓存 — named volume 避免 crate 重复下载
       - yggdrasil-dev-cargo-registry:/usr/local/cargo/registry
       - yggdrasil-dev-cargo-git:/usr/local/cargo/git
-      # 防止 pnpm 在项目根目录创建 .pnpm-store/ 残留进容器层
-      - /build/.pnpm-store
       # Code runner: 挂载 Docker socket（代码沙箱默认启用, 需先构建 runner 镜像
       # bash docker/build-runners.sh）。docker.sock 是宿主 root 级边界, 仅限本地开发。
       - /var/run/docker.sock:/var/run/docker.sock
@@ -140,7 +138,7 @@ services:
           action: rebuild
         - path: ./libs/package.json
           action: rebuild
-        - path: ./libs/pnpm-lock.yaml
+        - path: ./libs/bun.lock
           action: rebuild
         - path: ./Dockerfile.dev
           action: rebuild
@@ -155,4 +153,4 @@ volumes:
   yggdrasil-dev-node-modules:
   yggdrasil-dev-cargo-registry:
   yggdrasil-dev-cargo-git:
-  yggdrasil-dev-pnpm-store:
+  yggdrasil-dev-bun-cache:

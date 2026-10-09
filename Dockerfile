@@ -10,7 +10,7 @@ FROM rust:1.99-trixie AS builder
 #   CN_MIRROR=false (default): use all upstream/official sources (fast on CI
 #     runners outside China — GitHub runners are in the US/EU).
 #   CN_MIRROR=true: route all downloads through Chinese mirrors (TUNA for
-#     Debian/Alpine apt, rsproxy for Rust/crates.io, npmmirror for Node/npm,
+#     Debian/Alpine apt, rsproxy for Rust/crates.io, npmmirror for Bun/npm,
 #     gh-proxy for GitHub Releases). Pass via: --build-arg CN_MIRROR=true
 # Individual mirror URLs are still ARG-overridable for custom mirrors.
 ARG CN_MIRROR=false
@@ -20,7 +20,6 @@ ENV CN_MIRROR=${CN_MIRROR}
 
 ARG DEBIAN_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/debian
 ARG DEBIAN_SECURITY_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/debian-security
-ARG NODE_MIRROR=https://registry.npmmirror.com/-/binary/node
 ARG NPM_REGISTRY=https://registry.npmmirror.com
 ARG RS_PROXY=https://rsproxy.cn
 ARG GH_PROXY=https://gh-proxy.com
@@ -63,24 +62,26 @@ RUN apt-get update \
         xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
-# --- Node.js 22 + pnpm ---
-# CN_MIRROR=true: download from npmmirror; CN_MIRROR=false: from nodejs.org.
-ARG NODE_VERSION=22.23.3
+# --- Bun ---
+# 官方 npm 包 @oven/bun-linux-<arch> 的 tgz 内只有单文件二进制，无需 Node.js 和 unzip。
+# CN_MIRROR=true: 走 npmmirror；CN_MIRROR=false: 走 registry.npmjs.org（与 make esbuild-cache 同源）。
+ARG BUN_VERSION=1.4.2
 RUN ARCH="$(dpkg --print-architecture)" \
     && case "$ARCH" in \
-        amd64)  NODE_ARCH=x64   ;; \
-        arm64)  NODE_ARCH=arm64 ;; \
+        amd64)  BUN_ARCH=x64     ;; \
+        arm64)  BUN_ARCH=aarch64 ;; \
         *) echo "unsupported arch: $ARCH" >&2; exit 1 ;; \
     esac \
-    && if [ "$CN_MIRROR" = "true" ]; then NODE_SRC="${NODE_MIRROR}"; else NODE_SRC="https://nodejs.org/dist"; fi \
-    && curl -fsSL "${NODE_SRC}/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.gz" \
-        | tar -xz -C /usr/local --strip-components=1 \
-    && npm install --global pnpm@12.10.1
+    && if [ "$CN_MIRROR" = "true" ]; then BUN_REGISTRY="${NPM_REGISTRY}"; else BUN_REGISTRY="https://registry.npmjs.org"; fi \
+    && curl -fsSL "${BUN_REGISTRY}/@oven/bun-linux-${BUN_ARCH}/-/bun-linux-${BUN_ARCH}-${BUN_VERSION}.tgz" \
+        | tar -xz -C /usr/local/bin --strip-components=2 package/bin/bun \
+    && bun --version
 
-# Configure npm/pnpm registry (CN_MIRROR only — default is registry.npmjs.org).
+# Configure the npm registry for `bun install` (CN_MIRROR only — default is registry.npmjs.org).
+# Bun reads ~/.npmrc; bun.lock records default-registry packages without a URL,
+# so this redirects every dependency download.
 RUN if [ "$CN_MIRROR" = "true" ]; then \
-        npm config set registry "${NPM_REGISTRY}" \
-        && pnpm config set registry "${NPM_REGISTRY}"; \
+        echo "registry=${NPM_REGISTRY}" > /root/.npmrc; \
     fi
 
 # --- Rust: rsproxy mirror for rustup + cargo (CN_MIRROR only). ---
@@ -173,17 +174,15 @@ RUN ARCH="$(dpkg --print-architecture)" \
 
 WORKDIR /build
 
-# Cache the pnpm workspace node_modules by copying only package manifests first.
-# Copying every sub-package's manifest + the workspace root lets pnpm install
-# everything in one shot; this layer is reused as long as the manifests don't
-# change. pnpm-workspace.yaml uses `packages: ['*']`, so ALL sub-package
-# manifests must be present before `pnpm install --frozen-lockfile` or pnpm
-# only links deps for the manifests it sees and `pnpm -r run build` fails later
-# (e.g. mermaid-renderer "Cannot find module 'mermaid'").
-# `pnpm-workspace.yaml` declares a patched dep (@tiptap/markdown) pointing at
+# Cache the bun workspace node_modules by copying only package manifests first.
+# package.json declares `workspaces: ["*"]`, so every sub-package manifest is
+# copied before `bun install --frozen-lockfile`, keeping this layer reusable until
+# a manifest or the lockfile changes (and matching the workspaces recorded in bun.lock).
+# `patchedDependencies` in package.json points at
 # `patches/@tiptap__markdown@3.31.4.patch`, so the patches/ tree must be present
-# before `pnpm install --frozen-lockfile` or it fails with ENOENT on the patch.
-COPY libs/package.json libs/pnpm-workspace.yaml libs/pnpm-lock.yaml libs/
+# before the install or it fails on the missing patch. bunfig.toml carries the
+# release-age policy and `[run] bun = true`.
+COPY libs/package.json libs/bunfig.toml libs/bun.lock libs/
 COPY libs/patches/                         libs/patches/
 COPY libs/shared/package.json             libs/shared/
 COPY libs/tiptap-editor/package.json      libs/tiptap-editor/
@@ -192,7 +191,7 @@ COPY libs/lightbox/package.json           libs/lightbox/
 COPY libs/xterm-terminal/package.json     libs/xterm-terminal/
 COPY libs/mermaid-renderer/package.json   libs/mermaid-renderer/
 COPY libs/yggdrasil-core/package.json     libs/yggdrasil-core/
-RUN cd libs && pnpm install --frozen-lockfile
+RUN cd libs && bun install --frozen-lockfile
 
 # Build-time git info, injected by the caller via --build-arg. `.dockerignore`
 # excludes `.git/`, so build.rs can't run `git` inside the container — these

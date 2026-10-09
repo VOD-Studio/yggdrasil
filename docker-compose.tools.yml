@@ -14,7 +14,7 @@
 #   make docker-check     # cargo check --all-features（最快编译校验）
 #   make docker-fmt       # cargo fmt + biome format（只格式化，无 cargo fix / dx fmt）
 #   make docker-fix       # make fix（biome format + cargo fix + cargo fmt + dx fmt）
-#   make docker-test      # make test（cargo test + libs pnpm test）
+#   make docker-test      # make test（cargo test + libs 前端测试）
 #   make docker-run CMD='cargo build --no-default-features --features server'
 #
 # 架构：
@@ -28,10 +28,10 @@
 # Volume 策略：
 #   /build                              bind mount（宿主源码，双向）
 #   /build/target            ↕ shadow   named volume（Linux 编译产物，不污染宿主 darwin target/）
-#   /build/libs/node_modules ↕ shadow   named volume（pnpm 虚拟存储，与宿主隔离）
-#   pnpm store / cargo registry / git   named volume（跨运行缓存）
+#   /build/libs/node_modules ↕ shadow   named volume（bun 依赖，与宿主隔离）
+#   bun cache / cargo registry / git    named volume（跨运行缓存）
 #
-# 首次运行：cargo 依赖全量编译约 10 分钟，pnpm install 约 30 秒；之后命名卷缓存命中，
+# 首次运行：cargo 依赖全量编译约 10 分钟，bun install 约 10 秒；之后命名卷缓存命中，
 # clippy/test 秒级启动。
 #
 # 不挂 docker.sock：clippy/fmt/test 不需要 Docker（需要 daemon 的 code-runner 测试
@@ -51,10 +51,10 @@ services:
       - .:/build
       # Shadow：容器侧 Linux 产物不写进宿主 target/（宿主是 darwin，混用会脏）。
       - yggdrasil-tools-target:/build/target
-      # Shadow：libs/node_modules 是 Linux pnpm 产物，与宿主 node_modules 隔离。
+      # Shadow：libs/node_modules 是 Linux bun 产物，与宿主 node_modules 隔离。
       - yggdrasil-tools-node-modules:/build/libs/node_modules
-      # pnpm 全局 store + cargo 缓存——跨运行复用，避免重复下载。
-      - yggdrasil-tools-pnpm-store:/root/.local/share/pnpm/store
+      # bun 全局缓存 + cargo 缓存——跨运行复用，避免重复下载。
+      - yggdrasil-tools-bun-cache:/root/.bun/install/cache
       - yggdrasil-tools-cargo-registry:/usr/local/cargo/registry
       - yggdrasil-tools-cargo-git:/usr/local/cargo/git
     # 保持容器可被 `compose up` 常驻（一般用 `compose run` 传命令覆盖）。
@@ -63,6 +63,6 @@ services:
 volumes:
   yggdrasil-tools-target:
   yggdrasil-tools-node-modules:
-  yggdrasil-tools-pnpm-store:
+  yggdrasil-tools-bun-cache:
   yggdrasil-tools-cargo-registry:
   yggdrasil-tools-cargo-git:

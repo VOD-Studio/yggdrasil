@@ -11,7 +11,7 @@
 # 容器内布局：
 #   /build         ← 镜像内源码快照, 运行时被 compose watch sync 增量覆盖
 #   target/        ← named volume（cargo 编译产物，跨重启缓存）
-#   libs/node_modules ← named volume（pnpm 虚拟存储，跨重启缓存）
+#   libs/node_modules ← named volume（bun 依赖，跨重启缓存）
 
 FROM rust:1.99-trixie
 
@@ -19,7 +19,7 @@ FROM rust:1.99-trixie
 #   CN_MIRROR=false (default): use all upstream/official sources (fast on CI
 #     runners outside China).
 #   CN_MIRROR=true: route all downloads through Chinese mirrors (TUNA for
-#     Debian apt, rsproxy for Rust/crates.io, npmmirror for Node/npm,
+#     Debian apt, rsproxy for Rust/crates.io, npmmirror for Bun/npm,
 #     gh-proxy for GitHub Releases). Pass via: --build-arg CN_MIRROR=true
 # Individual mirror URLs are still ARG-overridable for custom mirrors.
 ARG CN_MIRROR=false
@@ -30,7 +30,6 @@ ENV CN_MIRROR=${CN_MIRROR}
 # ── 镜像源（与生产 Dockerfile 一致）─────────────────────────────
 ARG DEBIAN_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/debian
 ARG DEBIAN_SECURITY_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/debian-security
-ARG NODE_MIRROR=https://registry.npmmirror.com/-/binary/node
 ARG NPM_REGISTRY=https://registry.npmmirror.com
 ARG RS_PROXY=https://rsproxy.cn
 ARG GH_PROXY=https://gh-proxy.com
@@ -64,31 +63,26 @@ RUN apt-get update \
         postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
-# ── Node.js 22 + pnpm（与生产 Dockerfile 一致）──────────────────
-ARG NODE_VERSION=22.23.3
+# ── Bun（与生产 Dockerfile 一致）──────────────────────────────
+# 官方 npm 包 @oven/bun-linux-<arch> 的 tgz 内只有单文件二进制，无需 Node.js 和 unzip。
+# CN_MIRROR=true: 走 npmmirror；CN_MIRROR=false: 走 registry.npmjs.org（与 make esbuild-cache 同源）。
+ARG BUN_VERSION=1.4.2
 RUN ARCH="$(dpkg --print-architecture)" \
     && case "$ARCH" in \
-        amd64)  NODE_ARCH=x64   ;; \
-        arm64)  NODE_ARCH=arm64 ;; \
-        *) echo "unsupported arch: $ARCH" >&2; exit 1; \
+        amd64)  BUN_ARCH=x64     ;; \
+        arm64)  BUN_ARCH=aarch64 ;; \
+        *) echo "unsupported arch: $ARCH" >&2; exit 1 ;; \
     esac \
-    && if [ "$CN_MIRROR" = "true" ]; then NODE_SRC="${NODE_MIRROR}"; else NODE_SRC="https://nodejs.org/dist"; fi \
-    && curl -fsSL "${NODE_SRC}/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.gz" \
-        | tar -xz -C /usr/local --strip-components=1 \
-    && npm install --global pnpm@12.10.1
+    && if [ "$CN_MIRROR" = "true" ]; then BUN_REGISTRY="${NPM_REGISTRY}"; else BUN_REGISTRY="https://registry.npmjs.org"; fi \
+    && curl -fsSL "${BUN_REGISTRY}/@oven/bun-linux-${BUN_ARCH}/-/bun-linux-${BUN_ARCH}-${BUN_VERSION}.tgz" \
+        | tar -xz -C /usr/local/bin --strip-components=2 package/bin/bun \
+    && bun --version
 
-# CI=true: 无 TTY 容器内 pnpm install 检测到 node_modules volume 与 lockfile
-# 不匹配（如 watch rebuild 后 lockfile 更新）需清空重建时, 默认因无法交互
-# 确认而 abort（ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY）。pnpm 11 已
-# 移除 confirmModulesPurge 配置通道, 官方做法是设 CI=true 启用 CI 默认值
-# （跳过交互确认）。副作用: install 走 frozen-lockfile 语义, lockfile 与
-# package.json 不一致时失败——正是期望信号（该由 watch rebuild 处理）。
-ENV CI=true
-
-# Configure npm/pnpm registry (CN_MIRROR only — default is registry.npmjs.org).
+# Configure the npm registry for `bun install` (CN_MIRROR only — default is registry.npmjs.org).
+# Bun reads ~/.npmrc; bun.lock records default-registry packages without a URL,
+# so this redirects every dependency download.
 RUN if [ "$CN_MIRROR" = "true" ]; then \
-        npm config set registry "${NPM_REGISTRY}" \
-        && pnpm config set registry "${NPM_REGISTRY}"; \
+        echo "registry=${NPM_REGISTRY}" > /root/.npmrc; \
     fi
 
 # --- Rust: rsproxy mirror for rustup + cargo (CN_MIRROR only). ---
@@ -169,7 +163,7 @@ COPY . /build
 ENV DX_HOME=/usr/local/dx
 RUN make esbuild-cache wasm-bindgen-cache
 
-# 启动开发服务器：make dev 内含 pnpm install → 增量构建变化的库/高亮/字体
+# 启动开发服务器：make dev 内含 bun install → 增量构建变化的库/高亮/字体
 # → tailwindcss → dx serve --interactive false；构建记录放在 target/ volume 中。
-# pnpm install 和 CSS 生成每次都执行（幂等，pnpm 有缓存秒完）。
+# bun install 和 CSS 生成每次都执行（幂等，bun 有缓存秒完）。
 CMD ["make", "dev"]
