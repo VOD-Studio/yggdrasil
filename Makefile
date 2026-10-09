@@ -1,4 +1,4 @@
-.PHONY: help dev build build-linux build-assets docker docker-amd64 docker-multiarch docker-dev docker-dev-down docker-dev-shell docker-run docker-lint docker-clippy docker-check docker-fmt docker-fix docker-test docker-tools-build docker-tools-clean css css-watch clean build-libs highlight-css katex-css test doc doc-open lint fix restore-webp esbuild-cache wasm-bindgen-cache
+.PHONY: help dev build build-linux build-assets fmt docker docker-amd64 docker-multiarch docker-dev docker-dev-down docker-dev-shell docker-run docker-lint docker-clippy docker-check docker-fmt docker-fix docker-test docker-tools-build docker-tools-clean css css-watch clean build-libs highlight-css katex-css test doc doc-open lint fix restore-webp esbuild-cache wasm-bindgen-cache
 .PHONY: check-tools check-dev-tools check-build-tools check-brotli precompress
 .PHONY: dev-assets dev-libs dev-highlight-css dev-katex-css dev-assets-force
 
@@ -301,21 +301,26 @@ lint: ## Biome、TypeScript、Clippy、rustfmt 检查（只读）
 	@echo "==> Cargo fmt check (Rust)"
 	@cargo fmt -- --check
 
-# JS + Rust 自动修复（直接写入文件）。
-# 顺序：Biome → cargo fix（应用编译器建议，重写代码）→ cargo fmt（格式化 Rust）。
+# JS + Rust 格式化（直接写入文件）。
 # 故意不含 dx fmt：dioxus-autofmt 0.7.10（dx 0.7.10）会改写 rsx! 事件闭包内
 # 的 Rust，插入重复行 / 悬空片段（如 `&web_file, ).ok();`）使代码无法编译
 # （DioxusLabs/dioxus#5682、#3007）。此前的注释搬运/删除问题已让 docker-fmt
-# 排除 dx fmt；现在它更进一步破坏编译，故从自动修复流水线移除。
+# 排除 dx fmt；现在它更进一步破坏编译，故从格式化/自动修复流水线移除。
 # lint / CI 均不校验 dx fmt 输出，移除无回归。需要 RSX 格式化时手动 `dx fmt`
 # 并务必 git diff 复核，必要时 checkout 被破坏的文件。
-fix: ## Biome format + cargo fix + cargo fmt（写入文件）
+# fix、docker-fmt、docker-fix 都经由本 target，同样不含 dx fmt。
+fmt: ## Biome format + cargo fmt（写入文件）
 	@echo "==> Biome format (libs, 写入文件)"
-	@cd libs && bun run biome format --write .
-	@echo "==> Cargo fix (Rust, 应用编译器建议)"
-	@cargo fix --allow-dirty
+	@cd libs && bun run format
 	@echo "==> Cargo fmt (Rust, 格式化)"
 	@cargo fmt
+
+# JS + Rust 自动修复（直接写入文件）。
+# 顺序：cargo fix（应用编译器建议，重写代码）→ fmt（Biome + cargo fmt）。
+fix: ## cargo fix + Biome format + cargo fmt（写入文件）
+	@echo "==> Cargo fix (Rust, 应用编译器建议)"
+	@cargo fix --allow-dirty
+	@$(MAKE) --no-print-directory fmt
 
 # 只编译当前 crate 的文档（--no-deps 跳过依赖，--document-private-items
 # 让纯 binary crate 的内部模块/私有项也进文档，否则页面基本是空的）。
@@ -433,6 +438,8 @@ docker-dev-shell: ## 进入开发容器的 shell
 # 用 bind mount（双向）：fmt/fix 写文件直接回流宿主工作区。
 # 首次运行 cargo 依赖全量编译约 10 分钟；之后命名卷缓存命中，秒级启动。
 TOOLS_COMPOSE := docker compose -f docker-compose.tools.yml
+# 在工具容器内先冻结 lockfile 安装前端依赖，再于 /build 执行 `make <target>`。
+tools_make = $(TOOLS_COMPOSE) run --rm tools bash -c 'cd libs && bun install --frozen-lockfile >/dev/null && cd /build && make $(1)'
 
 # 一次性运行任意命令（例：make docker-run CMD='cargo build --features server'）。
 docker-run: ## 在工具容器内运行任意命令（CMD='...'）
@@ -440,7 +447,7 @@ docker-run: ## 在工具容器内运行任意命令（CMD='...'）
 
 # lint（只读）：clippy + cargo fmt --check + biome check + typecheck。
 docker-lint: ## 容器内运行 make lint
-	@$(TOOLS_COMPOSE) run --rm tools bash -c 'cd libs && bun install --frozen-lockfile >/dev/null && cd /build && make lint'
+	@$(call tools_make,lint)
 
 # 仅 clippy（最常用的编译期检查，不需要 bun）。
 docker-clippy: ## 容器内只运行 clippy
@@ -450,21 +457,17 @@ docker-clippy: ## 容器内只运行 clippy
 docker-check: ## 容器内运行 cargo check --all-features
 	@$(TOOLS_COMPOSE) run --rm tools cargo check --all-features
 
-# 格式化（写入文件，回流宿主）：cargo fmt + biome format。
-# 注意：不含 dx fmt——dx fmt 0.7.10（dioxus-autofmt）会改写 rsx! 闭包内的 Rust，
-# 插入重复行 / 悬空片段导致无法编译（DioxusLabs/dioxus#5682、#3007）。
-# 需要 RSX 格式化时手动 `dx fmt` 并 git diff 复核，必要时 checkout 被破坏的文件。
-docker-fmt: ## 容器内格式化 Rust 与前端（写回宿主）
-	@$(TOOLS_COMPOSE) run --rm tools bash -c 'cd libs && bun install --frozen-lockfile >/dev/null && bun run biome format --write . && cd /build && cargo fmt'
+# 格式化（写入文件，回流宿主）：委托 make fmt，不含 dx fmt（原因见 fmt）。
+docker-fmt: ## 容器内运行 make fmt（写回宿主）
+	@$(call tools_make,fmt)
 
-# fix（写入文件，回流宿主）：biome format + cargo fix + cargo fmt。
-# 委托 make fix，同样不含 dx fmt（原因见上 / docker-fmt 注释）。
+# fix（写入文件，回流宿主）：委托 make fix，同样不含 dx fmt。
 docker-fix: ## 容器内运行 make fix（写回宿主）
-	@$(TOOLS_COMPOSE) run --rm tools bash -c 'cd libs && bun install --frozen-lockfile >/dev/null && cd /build && make fix'
+	@$(call tools_make,fix)
 
 # test：cargo test + libs 前端测试（vitest）。需要 Docker daemon 的 code-runner 测试自动 skip。
 docker-test: ## 容器内运行 make test
-	@$(TOOLS_COMPOSE) run --rm tools bash -c 'cd libs && bun install --frozen-lockfile >/dev/null && cd /build && make test'
+	@$(call tools_make,test)
 
 # 重建工具镜像（Dockerfile.dev 变更后用；正常情况下 run 会按需自动构建）。
 docker-tools-build: ## 重建工具镜像

@@ -22,7 +22,7 @@ Prefer the Makefile targets for development and release builds: they clear `RUST
 - Changing frontend dependencies: run `BUN_CONFIG_REGISTRY=https://registry.npmjs.org/ bun install` in `libs/`. Bun records a non-default registry (for example an npmmirror `~/.npmrc`) as per-package URLs in `bun.lock`; keep them empty so CI and `CN_MIRROR` Docker builds choose their own registry.
 - `make test`: run Rust and frontend tests.
 - `make lint`: run Biome, TypeScript checks, Clippy for the native target, and rustfmt checks.
-- `cargo fmt` and `(cd libs && bun run format)`: format Rust and frontend files.
+- `make fmt`: format Rust (`cargo fmt`) and frontend files (`bun run format` in `libs/`); `make fix` additionally applies `cargo fix`.
 - `cargo check --locked --target wasm32-unknown-unknown --no-default-features --features web`: verify the browser target.
 - `cargo clippy --locked --target wasm32-unknown-unknown --no-default-features --features web -- -D warnings`: lint Rust for the browser target when changing WASM paths; native Clippy does not cover WASM-gated code.
 
