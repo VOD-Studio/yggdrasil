@@ -86,14 +86,9 @@ check-tools:
 		echo "  Standalone binary: https://github.com/tailwindlabs/tailwindcss/releases" >&2; \
 		missing=1; \
 	fi; \
-	if ! command -v node >/dev/null 2>&1; then \
-		echo "error: node (Node.js >= 22) is required for frontend build scripts" >&2; \
-		echo "  Install: brew install node | https://nodejs.org" >&2; \
-		missing=1; \
-	fi; \
-	if ! command -v pnpm >/dev/null 2>&1; then \
-		echo "error: pnpm is required for frontend libraries in libs/" >&2; \
-		echo "  Install: npm install -g pnpm | brew install pnpm | curl -fsSL https://get.pnpm.io/install.sh | sh -" >&2; \
+	if ! command -v bun >/dev/null 2>&1; then \
+		echo "error: bun (>= 1.4.2) is required for frontend libraries in libs/" >&2; \
+		echo "  Install: brew install oven-sh/bun/bun | curl -fsSL https://bun.sh/install | bash" >&2; \
 		missing=1; \
 	fi; \
 	if [ "$$missing" -ne 0 ]; then \
@@ -198,7 +193,7 @@ highlight-css:
 # 把 npm 包 katex 的 dist/ 拷贝到 public/katex/（服务端 katex-rs 不打包 CSS）。
 # KaTeX 的 katex.min.css 用相对 URL 引 fonts/，故 fonts/ 必须与 CSS 同级。
 # 只拷 woff2（现代浏览器全支持，省去 woff/ttf ~70% 字体体积）。
-# katex 作为 libs/ workspace 根 devDependency，pnpm install 后在 libs/node_modules/katex/。
+# katex 作为 libs/ workspace 根 devDependency，bun install 后在 libs/node_modules/katex/。
 katex-css:
 	@echo "Copying KaTeX CSS + woff2 fonts to public/katex/..."
 	@mkdir -p public/katex/fonts
@@ -206,25 +201,25 @@ katex-css:
 	@cp libs/node_modules/katex/dist/fonts/*.woff2 public/katex/fonts/
 	@echo "KaTeX CSS ready at public/katex/"
 
-# 并行构建全部 libs/ 子项目（pnpm -r 拓扑顺序，无相互依赖则并发）。
-# build-libs 会先安装依赖（pnpm install），无需调用方自行安装。
+# 并行构建全部 libs/ 子项目（bun --filter 按依赖拓扑排序，无相互依赖则并发）。
+# build-libs 会先安装依赖（bun install），无需调用方自行安装。
 build-libs:
-	@cd libs && pnpm install && pnpm -r run build
+	@cd libs && bun install && bun run --filter '*' build
 
-# 单库便利 target（替代旧的 build-<name>，用 pnpm --filter 精确定位）。
-build-editor:     ; @cd libs && pnpm --filter @yggdrasil/tiptap-editor run build
-build-codemirror: ; @cd libs && pnpm --filter @yggdrasil/codemirror-editor run build
-build-lightbox:   ; @cd libs && pnpm --filter @yggdrasil/lightbox run build
-build-core:       ; @cd libs && pnpm --filter @yggdrasil/core run build
-build-xterm:      ; @cd libs && pnpm --filter @yggdrasil/xterm-terminal run build
-build-mermaid:    ; @cd libs && pnpm --filter @yggdrasil/mermaid-renderer run build
+# 单库便利 target（替代旧的 build-<name>，用 bun --filter 精确定位）。
+build-editor:     ; @cd libs && bun run --filter '@yggdrasil/tiptap-editor' build
+build-codemirror: ; @cd libs && bun run --filter '@yggdrasil/codemirror-editor' build
+build-lightbox:   ; @cd libs && bun run --filter '@yggdrasil/lightbox' build
+build-core:       ; @cd libs && bun run --filter '@yggdrasil/core' build
+build-xterm:      ; @cd libs && bun run --filter '@yggdrasil/xterm-terminal' build
+build-mermaid:    ; @cd libs && bun run --filter '@yggdrasil/mermaid-renderer' build
 
 # 开发启动只重建变化的资源；发布和显式 build-libs 仍执行完整构建。
 # stamp 写在成功构建之后。src 目录也参与依赖，文件新增/删除同样会使缓存失效。
 DEV_ASSET_DIR := target/dev-assets
 DEV_ASSET_JOBS ?= 4
 DEV_LIBS := shared codemirror-editor lightbox mermaid-renderer tiptap-editor xterm-terminal yggdrasil-core
-DEV_COMMON_INPUTS := Makefile libs/package.json libs/pnpm-lock.yaml libs/pnpm-workspace.yaml libs/tsconfig.base.json $(wildcard libs/patches/*) libs/patches $(wildcard libs/node_modules/.modules.yaml)
+DEV_COMMON_INPUTS := Makefile libs/package.json libs/bun.lock libs/bunfig.toml libs/tsconfig.base.json $(wildcard libs/patches/*) libs/patches $(wildcard libs/node_modules/.bun)
 dev_lib_inputs = libs/$(1) $(shell find libs/$(1)/src -type f -o -type d) $(wildcard libs/$(1)/*config*.ts) libs/$(1)/tsconfig.json libs/$(1)/package.json
 
 DEV_OUTPUTS_codemirror-editor := public/codemirror/editor.js public/codemirror/editor.js.map
@@ -237,7 +232,7 @@ DEV_OUTPUTS_yggdrasil-core := public/yggdrasil-core/yggdrasil-core.js public/ygg
 define dev_lib_rule
 $(DEV_ASSET_DIR)/$(1).stamp: $(call dev_lib_inputs,$(1)) $(DEV_COMMON_INPUTS)
 	@mkdir -p $(DEV_ASSET_DIR)
-	@cd libs/$(1) && pnpm run build
+	@cd libs/$(1) && bun run build
 	@touch $$@
 $(if $(filter-out $(wildcard $(DEV_OUTPUTS_$(1))),$(DEV_OUTPUTS_$(1))),$(DEV_ASSET_DIR)/$(1).stamp: dev-assets-force)
 endef
@@ -259,7 +254,7 @@ dev-highlight-css: $(DEV_ASSET_DIR)/highlight.stamp
 
 DEV_KATEX_FONTS := $(wildcard libs/node_modules/katex/dist/fonts/*.woff2)
 DEV_KATEX_OUTPUTS := public/katex/katex.min.css $(patsubst libs/node_modules/katex/dist/%,public/katex/%,$(DEV_KATEX_FONTS))
-$(DEV_ASSET_DIR)/katex.stamp: Makefile libs/package.json libs/pnpm-lock.yaml libs/node_modules/katex/dist/katex.min.css $(DEV_KATEX_FONTS)
+$(DEV_ASSET_DIR)/katex.stamp: Makefile libs/package.json libs/bun.lock libs/node_modules/katex/dist/katex.min.css $(DEV_KATEX_FONTS)
 	@$(MAKE) --no-print-directory katex-css
 	@mkdir -p $(DEV_ASSET_DIR)
 	@touch $@
@@ -270,7 +265,7 @@ dev-katex-css: $(DEV_ASSET_DIR)/katex.stamp
 
 # 先安装依赖，再由子 make 读取新依赖和输出清单。Tailwind 扫描所有模板，继续实时生成。
 dev-assets: check-dev-tools
-	@cd libs && pnpm install
+	@cd libs && bun install
 	@$(MAKE) --no-print-directory -j$(DEV_ASSET_JOBS) dev-libs dev-highlight-css dev-katex-css css
 
 dev: dev-assets esbuild-cache wasm-bindgen-cache
@@ -287,12 +282,12 @@ css-watch:
 
 test:
 	@cargo test
-	@cd libs && pnpm -r run test
+	@cd libs && bun run --filter '*' test
 
 # JS + Rust 一次性检查（不改动文件）。
 lint:
 	@echo "==> Biome check (libs)"
-	@cd libs && pnpm exec biome check . && pnpm typecheck
+	@cd libs && bun run biome check . && bun run typecheck
 	@echo "==> Cargo clippy (Rust)"
 	@cargo clippy --all-targets --all-features -- -D warnings
 	@echo "==> Cargo fmt check (Rust)"
@@ -307,7 +302,7 @@ lint:
 # 并务必 git diff 复核，必要时 checkout 被破坏的文件。
 fix:
 	@echo "==> Biome format (libs, 写入文件)"
-	@cd libs && pnpm exec biome format --write .
+	@cd libs && bun run biome format --write .
 	@echo "==> Cargo fix (Rust, 应用编译器建议)"
 	@cargo fix --allow-dirty
 	@echo "==> Cargo fmt (Rust, 格式化)"
@@ -412,7 +407,7 @@ docker-multiarch:
 # global-postgres（global-databases_default 外部网络, 不由本 compose 管理）。
 # 首次启动需编译 Rust 依赖（~10 分钟），后续启动约 10 秒（cargo target 缓存）。
 # up --build 重建镜像（COPY 当前源码快照）后前台跑 compose watch：
-# 源码变更增量 sync 进容器（dx serve inotify 热重载），Cargo.lock/pnpm-lock
+# 源码变更增量 sync 进容器（dx serve inotify 热重载），Cargo.lock/bun.lock
 # 等依赖清单变更自动 rebuild 镜像。Ctrl+C 只停 watch, 容器继续后台跑。
 docker-dev:
 	@docker compose -f docker-compose.dev.yml up --build -d
@@ -440,9 +435,9 @@ docker-run:
 
 # lint（只读）：clippy + cargo fmt --check + biome check + typecheck。
 docker-lint:
-	@$(TOOLS_COMPOSE) run --rm tools bash -c 'cd libs && pnpm install --frozen-lockfile >/dev/null && cd /build && make lint'
+	@$(TOOLS_COMPOSE) run --rm tools bash -c 'cd libs && bun install --frozen-lockfile >/dev/null && cd /build && make lint'
 
-# 仅 clippy（最常用的编译期检查，不需要 pnpm）。
+# 仅 clippy（最常用的编译期检查，不需要 bun）。
 docker-clippy:
 	@$(TOOLS_COMPOSE) run --rm tools cargo clippy --all-targets --all-features -- -D warnings
 
@@ -455,16 +450,16 @@ docker-check:
 # 插入重复行 / 悬空片段导致无法编译（DioxusLabs/dioxus#5682、#3007）。
 # 需要 RSX 格式化时手动 `dx fmt` 并 git diff 复核，必要时 checkout 被破坏的文件。
 docker-fmt:
-	@$(TOOLS_COMPOSE) run --rm tools bash -c 'cd libs && pnpm install --frozen-lockfile >/dev/null && pnpm exec biome format --write . && cd /build && cargo fmt'
+	@$(TOOLS_COMPOSE) run --rm tools bash -c 'cd libs && bun install --frozen-lockfile >/dev/null && bun run biome format --write . && cd /build && cargo fmt'
 
 # fix（写入文件，回流宿主）：biome format + cargo fix + cargo fmt。
 # 委托 make fix，同样不含 dx fmt（原因见上 / docker-fmt 注释）。
 docker-fix:
-	@$(TOOLS_COMPOSE) run --rm tools bash -c 'cd libs && pnpm install --frozen-lockfile >/dev/null && cd /build && make fix'
+	@$(TOOLS_COMPOSE) run --rm tools bash -c 'cd libs && bun install --frozen-lockfile >/dev/null && cd /build && make fix'
 
-# test：cargo test + libs pnpm test。需要 Docker daemon 的 code-runner 测试自动 skip。
+# test：cargo test + libs 前端测试（vitest）。需要 Docker daemon 的 code-runner 测试自动 skip。
 docker-test:
-	@$(TOOLS_COMPOSE) run --rm tools bash -c 'cd libs && pnpm install --frozen-lockfile >/dev/null && cd /build && make test'
+	@$(TOOLS_COMPOSE) run --rm tools bash -c 'cd libs && bun install --frozen-lockfile >/dev/null && cd /build && make test'
 
 # 重建工具镜像（Dockerfile.dev 变更后用；正常情况下 run 会按需自动构建）。
 docker-tools-build:

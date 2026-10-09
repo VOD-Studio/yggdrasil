@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Exercise the real Make dependency graph without Rust/JS compilation or downloads.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -43,7 +43,7 @@ async function edit(file, content = 'changed') {
 async function main() {
   write('Makefile', fs.readFileSync(path.join(__dirname, '../Makefile'), 'utf8'));
   for (const file of ['Cargo.toml', 'Cargo.lock', 'build.rs', 'src/bin/generate_highlight_css.rs',
-    'input.css', 'libs/package.json', 'libs/pnpm-lock.yaml', 'libs/pnpm-workspace.yaml',
+    'input.css', 'libs/package.json', 'libs/bun.lock', 'libs/bunfig.toml',
     'libs/tsconfig.base.json', 'libs/patches/example.patch',
     'themes/Catppuccin Latte.tmTheme', 'themes/Catppuccin Mocha.tmTheme']) write(file);
   for (const name of packages) {
@@ -64,13 +64,13 @@ function write(file) {
   fs.writeFileSync(target, 'built');
 }
 function record(line) { fs.appendFileSync(path.join(root, 'commands.log'), line + '\\n'); }
-if (command === 'pnpm' && args[0] === 'install') {
+if (command === 'bun' && args[0] === 'install') {
   record('install');
-  for (const file of ['libs/node_modules/.modules.yaml', 'libs/node_modules/katex/dist/katex.min.css',
+  for (const file of ['libs/node_modules/.bun/marker', 'libs/node_modules/katex/dist/katex.min.css',
     'libs/node_modules/katex/dist/fonts/example.woff2']) {
     if (!fs.existsSync(path.join(root, file))) write(file);
   }
-} else if (command === 'pnpm') {
+} else if (command === 'bun') {
   const name = path.basename(process.cwd());
   record('build ' + name);
   if (fs.existsSync(path.join(root, 'fail-' + name))) process.exit(1);
@@ -81,7 +81,7 @@ if (command === 'pnpm' && args[0] === 'install') {
   record('css'); write('public/style.css');
 } else if (command === 'rustup') console.log('llvm-tools-aarch64-apple-darwin');
 `;
-  for (const tool of ['pnpm', 'cargo', 'tailwindcss', 'rustup', 'dx']) {
+  for (const tool of ['bun', 'cargo', 'tailwindcss', 'rustup', 'dx']) {
     write(`bin/${tool}`, mock);
     fs.chmodSync(path.join(root, `bin/${tool}`), 0o755);
   }
@@ -106,7 +106,7 @@ if (command === 'pnpm' && args[0] === 'install') {
   fs.unlinkSync(path.join(root, 'public/katex/fonts/example.woff2'));
   step([]);
   assert.ok(fs.existsSync(path.join(root, 'public/katex/fonts/example.woff2')));
-  await edit('libs/pnpm-lock.yaml');
+  await edit('libs/bun.lock');
   assert.ok(!step(packages).includes('highlight'));
   await edit('themes/Catppuccin Latte.tmTheme');
   assert.ok(step([]).includes('highlight'));
