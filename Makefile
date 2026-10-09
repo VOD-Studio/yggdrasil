@@ -7,7 +7,7 @@
 include mk/assets.mk mk/dx-cache.mk mk/docker.mk
 
 .PHONY: help build build-linux restore-webp precompress
-.PHONY: check-tools check-dev-tools check-build-tools check-brotli
+.PHONY: check-dev-tools check-build-tools check-brotli
 .PHONY: dev test lint fmt fix doc doc-open clean
 
 # ── 配置 ───────────────────────────────────────────────────────
@@ -29,9 +29,9 @@ help: ## 列出常用 target
 	@awk 'BEGIN { FS = ":.*## " } /^[a-zA-Z0-9_-]+:.*## / { printf "  %-20s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 
 # ── 宿主工具检查 ───────────────────────────────────────────────
-# 检查开发和构建所需的宿主 CLI 是否已安装。
+# 检查开发所需的宿主 CLI 是否已安装；release 构建（check-build-tools）另需 brotli。
 # 在耗时 target 开跑之前尽早失败，并给出可执行的安装提示。
-check-tools:
+check-dev-tools: ## 检查开发所需的宿主工具
 	@missing=0; \
 	if ! command -v cargo >/dev/null 2>&1; then \
 		echo "error: cargo (Rust toolchain) is required" >&2; \
@@ -70,8 +70,7 @@ check-tools:
 		exit 1; \
 	fi
 
-check-dev-tools: check-tools ## 检查开发所需的宿主工具
-check-build-tools: check-tools check-brotli ## 检查 release 构建所需的宿主工具
+check-build-tools: check-dev-tools check-brotli ## 检查 release 构建所需的宿主工具
 
 # 本地 release 构建在 dx 结束后要用宿主的 brotli CLI。
 # 在耗时构建之前先检查，缺包时直接给出安装提示。
