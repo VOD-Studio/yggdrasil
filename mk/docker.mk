@@ -4,17 +4,11 @@
 .PHONY: docker-run docker-lint docker-clippy docker-check docker-fmt docker-fix docker-test
 .PHONY: docker-tools-build docker-tools-clean
 
-# Docker 镜像构建。两个 Dockerfile 对应两种场景：
+# Docker 镜像构建。两个 Dockerfile 对应两种场景（构建细节见各自文件头部）：
 #
-#   Dockerfile        容器内构建服务端（本机架构）。目标架构 == 宿主架构时适用，
-#                     例如 x86 Linux 机器构建 amd64 镜像。宿主无需任何工具链。
-#   Dockerfile.cross  整个构建都在容器内，固定在 $BUILDPLATFORM 上原生运行
-#                     （arm64 原生，零 QEMU）。两个 builder stage：glibc Trixie
-#                     stage 编 WASM 前端（预编译的 dx CLI 需要 GLIBC_2.39），
-#                     Alpine-musl stage 用 zig（apk 安装，国内唯一可达的 zig 来源）
-#                     交叉编出静态 x86_64-musl 服务端。宿主架构 != 目标架构时适用，
-#                     例如 Apple Silicon 构建 amd64 镜像。只需要 Docker 本身：
-#                     无 QEMU、无 Rosetta、无 `cross`、无宿主 zig。
+#   Dockerfile        目标架构 == 宿主架构时用，容器内原生构建（如 x86 Linux 构建 amd64）。
+#   Dockerfile.cross  目标架构 != 宿主架构时用（如 Apple Silicon 构建 amd64），
+#                     全程在容器内原生编译，无 QEMU / Rosetta / 宿主工具链，只需 Docker。
 #
 #   make docker              只构建本机架构，加载到本地 daemon（用于测试）
 #   make docker-amd64        x86_64 镜像；按宿主架构自动选 Dockerfile
@@ -25,11 +19,9 @@
 #   make docker-multiarch IMAGE=ghcr.io/owner/yggdrasil:latest
 #   make docker-multiarch IMAGE=user/yggdrasil:v1 PLATFORMS=linux/amd64
 #
-# git 信息透传:.dockerignore 排除 .git/,容器内 build.rs 跑不了 git 命令,
-# 所以在宿主(本 Makefile 里)采集后用 --build-arg 注入。Dockerfile 把 ARG
-# 再 export 成 ENV,build.rs 的 std::env::var 优先读它。三个值在 Make 变量
-# 里采集一次,所有 docker target 复用;git 不可用时退化为空串,Dockerfile
-# 默认值也是空,build.rs 最终降级为 "unknown",不阻断构建。
+# git 信息透传:.dockerignore 排除 .git/,容器内取不到 git 信息,所以在宿主采集后
+# 用 --build-arg 注入(取值顺序见 build.rs)。所有 docker target 复用;git 不可用时
+# 为空串,build.rs 最终降级为 "unknown",不阻断构建。
 HOST_ARCH := $(shell uname -m)
 IMAGE ?= yggdrasil
 PLATFORMS ?= linux/amd64,linux/arm64
@@ -68,14 +60,10 @@ docker-multiarch: ## 构建多架构镜像并推送（IMAGE=... PLATFORMS=...）
 	@docker buildx build --platform $(PLATFORMS) $(GIT_BUILD_ARGS) $(CN_BUILD_ARGS) -t $(IMAGE) --push .
 
 # ── Docker 开发环境 ────────────────────────────────────────────
-# 使用 Dockerfile.dev + docker-compose.dev.yml 在容器内运行 dx serve。
-# 源码以镜像内 COPY 快照 + compose watch 增量 sync 进容器（宿主 IDE 编辑即时
-# 生效, 容器内 inotify 原生热重载）。PostgreSQL 用全局 Docker 容器
-# global-postgres（global-databases_default 外部网络, 不由本 compose 管理）。
+# 使用 Dockerfile.dev + docker-compose.dev.yml 在容器内运行 dx serve；源码同步、
+# 网络和数据库见 docker-compose.dev.yml 头部。
 # 首次启动需编译 Rust 依赖（~10 分钟），后续启动约 10 秒（cargo target 缓存）。
-# up --build 重建镜像（COPY 当前源码快照）后前台跑 compose watch：
-# 源码变更增量 sync 进容器（dx serve inotify 热重载），Cargo.lock/bun.lock
-# 等依赖清单变更自动 rebuild 镜像。Ctrl+C 只停 watch, 容器继续后台跑。
+# up --build 后前台跑 compose watch；Ctrl+C 只停 watch，容器继续后台跑。
 docker-dev: ## 启动 Docker 开发环境并 watch 同步源码
 	@docker compose -f docker-compose.dev.yml up --build -d
 	@docker compose -f docker-compose.dev.yml watch
@@ -89,11 +77,8 @@ docker-dev-shell: ## 进入开发容器的 shell
 	@docker compose -f docker-compose.dev.yml exec dev bash
 
 # ── Docker 工具容器（lint / test / fix / check）──────────────────
-# 本地（xfy 的 Mac）AliEDR 会 SIGKILL 本地构建链二进制（wasm-bindgen exit 137），
-# 故 lint/fix/test/check 一律在容器内跑，避开 EDR。见 docker-compose.tools.yml。
-#
-# 用 bind mount（双向）：fmt/fix 写文件直接回流宿主工作区。
-# 首次运行 cargo 依赖全量编译约 10 分钟；之后命名卷缓存命中，秒级启动。
+# lint/fmt/fix/test/check 一律在容器内跑，避开本机 EDR 对构建链二进制的拦截；
+# bind mount 让 fmt/fix 的改动回流宿主。原因与卷策略见 docker-compose.tools.yml。
 TOOLS_COMPOSE := docker compose -f docker-compose.tools.yml
 # 在工具容器内先冻结 lockfile 安装前端依赖，再于 /build 执行 `make <target>`。
 tools_make = $(TOOLS_COMPOSE) run --rm tools bash -c 'cd libs && bun install --frozen-lockfile >/dev/null && cd /build && make $(1)'

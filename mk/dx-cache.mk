@@ -6,11 +6,11 @@
 .PHONY: esbuild-cache wasm-bindgen-cache
 
 # 预置 dx 的 esbuild 工具缓存。
-# dx CLI 硬编码 esbuild 下载源为 registry.npmjs.org（packages/cli/src/esbuild.rs:62），
+# dx CLI 硬编码 esbuild 下载源为 registry.npmjs.org（见 dx 源码 packages/cli/src/esbuild.rs），
 # 不读 NPM_CONFIG_REGISTRY 也不读 .npmrc——npm config set registry 无效。
 # 此处预下载与 dx 内置 ESBUILD_VERSION 完全一致的 tarball，解压到 dx 缓存目录；
 # 默认取自 registry.npmjs.org，CN_MIRROR=true 时改取 npmmirror（阿里，SHA256 与
-# npmjs.org 相同）。dx 的 esbuild.rs:24-28 在 path.exists() 命中时跳过联网下载。
+# npmjs.org 相同）。dx 在该路径已存在时跳过联网下载。
 # 升级 dx 后须同步 ESBUILD_VERSION（查 dx 源码 esbuild.rs 的 ESBUILD_VERSION 常量）。
 ESBUILD_VERSION := 0.27.3
 esbuild-cache: ## 预置 dx 的 esbuild 缓存（CN_MIRROR=true 走国内镜像）

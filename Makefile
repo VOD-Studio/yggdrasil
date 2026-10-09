@@ -11,7 +11,7 @@ include mk/assets.mk mk/dx-cache.mk mk/docker.mk
 .PHONY: dev test lint fmt fix doc doc-open clean
 
 # ── 配置 ───────────────────────────────────────────────────────
-# ── sccache × dx 兼容 ──────────────────────────────────────────
+# sccache × dx 兼容：
 # dx build / dx serve 构建时把自己设为 RUSTC_WORKSPACE_WRAPPER 拦截 workspace
 # crate 的 rustc 调用（资产捕获）。若宿主 ~/.cargo/config.toml 配了
 # [build] rustc-wrapper（如 sccache），cargo 会组合出 `sccache dx rustc …`：
