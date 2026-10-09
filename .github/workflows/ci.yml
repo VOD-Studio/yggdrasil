@@ -97,7 +97,7 @@ jobs:
   # 并行无效；真正并行只能拆 job（多 runner）。按「能否真正并行 / 是否共享产物」切分：
   #   test       — fmt + clippy + cargo test（Rust，三者共享 target/debug 编译：
   #                clippy --all-targets 已编译全部 test targets，cargo test 复用其产物）
-  #   lint-js    — Biome（仅 Node，不装 Rust；test job 也不再装 Node）
+  #   lint-js    — Biome（仅 Bun，不装 Rust；test job 也不再装 Bun）
   #   check-wasm — wasm32 check（独立 feature 集 web-only + 独立 triple，与 server 产物不相交）
   # 两个 cargo job 用独立 cache key 后缀（-rust- / -wasm-），避免并行写同一 GHA cache key
   # 失败策略：非 tag 推送时，所有 lint/check（fmt/clippy/Biome/wasm）允许失败
@@ -141,19 +141,14 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Install Node.js 22
-        uses: actions/setup-node@v6
+      # 版本取自 libs/package.json 的 packageManager 字段（bun@x.y.z），与本地、Docker 保持一致。
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
         with:
-          node-version: '22'
-
-      # pnpm 12 使用原生二进制，Corepack 的旧 bin/pnpm.cjs 启动路径不再适用。
-      - name: Install pnpm 12
-        run: |
-          corepack disable pnpm
-          npm install --global pnpm@12.10.1
+          bun-version-file: libs/package.json
 
       - name: Biome lint (libs)
-        run: cd libs && pnpm install --frozen-lockfile && pnpm exec biome check .
+        run: cd libs && bun install --frozen-lockfile && bun run biome check .
 
   check-wasm:
     needs: select_runner
