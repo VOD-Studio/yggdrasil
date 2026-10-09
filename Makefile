@@ -62,8 +62,8 @@ restore-webp: ## 把被 dx 重编码的 .webp 还原为源文件
 		done; \
 	done
 
-# Check that host CLI tools required for development and builds are installed.
-# Fails early with actionable installation hints before running expensive targets.
+# 检查开发和构建所需的宿主 CLI 是否已安装。
+# 在耗时 target 开跑之前尽早失败，并给出可执行的安装提示。
 check-tools:
 	@missing=0; \
 	if ! command -v cargo >/dev/null 2>&1; then \
@@ -106,8 +106,8 @@ check-tools:
 check-dev-tools: check-tools ## 检查开发所需的宿主工具
 check-build-tools: check-tools check-brotli ## 检查 release 构建所需的宿主工具
 
-# Local release builds use this host-side CLI after dx finishes. Check it before
-# the expensive build so a missing package fails with an actionable message.
+# 本地 release 构建在 dx 结束后要用宿主的 brotli CLI。
+# 在耗时构建之前先检查，缺包时直接给出安装提示。
 check-brotli:
 	@if command -v brotli >/dev/null 2>&1; then \
 		:; \
@@ -117,10 +117,10 @@ check-brotli:
 		exit 1; \
 	fi
 
-# Pre-compress static text assets with brotli (.br sidecars). dioxus-server
-# registers ServeFile::precompressed_br() for every public leaf, so .br
-# sidecars are auto-served on Accept-Encoding: br. Text formats only; fonts/
-# images are already compressed. dx's pre_compress already covers assets/.
+# 用 brotli 预压缩静态文本资源（生成 .br 旁路文件）。dioxus-server 对 public
+# 下每个叶子文件都注册了 ServeFile::precompressed_br()，请求带
+# Accept-Encoding: br 时自动命中 .br。只压文本格式；字体/图片本身已压缩。
+# dx 的 pre_compress 已覆盖 assets/。
 precompress: check-brotli
 	@find target/dx/yggdrasil/release/web/public -type f \
 		\( -name '*.js' -o -name '*.css' -o -name '*.wasm' \
@@ -343,24 +343,24 @@ doc: ## 生成 rustdoc 到 public/doc/
 doc-open: ## 生成 rustdoc 并用浏览器打开
 	@RUSTDOCFLAGS="--default-theme=ayu" cargo doc --no-deps --document-private-items --open
 
-# Docker image build. Two Dockerfiles cover two scenarios:
+# Docker 镜像构建。两个 Dockerfile 对应两种场景：
 #
-#   Dockerfile        in-container server build (native arch). Works on any host
-#                     when the target arch == host arch — e.g. an x86 Linux box
-#                     building an amd64 image. Zero host-side toolchain deps.
-#   Dockerfile.cross  fully in-container build pinned to $BUILDPLATFORM (native
-#                     arm64, zero QEMU). Two builder stages: a glibc Trixie stage
-#                     for the WASM frontend (the prebuilt dx CLI needs GLIBC_2.39)
-#                     and an Alpine-musl stage where zig (apk) cross-compiles the
-#                     x86_64 server. Used when host arch != target arch — e.g.
-#                     Apple Silicon building an amd64 image. Needs only Docker.
+#   Dockerfile        容器内构建服务端（本机架构）。目标架构 == 宿主架构时适用，
+#                     例如 x86 Linux 机器构建 amd64 镜像。宿主无需任何工具链。
+#   Dockerfile.cross  整个构建都在容器内，固定在 $BUILDPLATFORM 上原生运行
+#                     （arm64 原生，零 QEMU）。两个 builder stage：glibc Trixie
+#                     stage 编 WASM 前端（预编译的 dx CLI 需要 GLIBC_2.39），
+#                     Alpine-musl stage 用 zig（apk 安装，国内唯一可达的 zig 来源）
+#                     交叉编出静态 x86_64-musl 服务端。宿主架构 != 目标架构时适用，
+#                     例如 Apple Silicon 构建 amd64 镜像。只需要 Docker 本身：
+#                     无 QEMU、无 Rosetta、无 `cross`、无宿主 zig。
 #
-#   make docker              native arch only, load into local daemon (for testing)
-#   make docker-amd64        x86_64 image; picks the right Dockerfile for your host
-#   make docker-multiarch    build amd64+arm64 and push to a registry
-#                            (multi-arch manifests can't be --load-ed locally)
+#   make docker              只构建本机架构，加载到本地 daemon（用于测试）
+#   make docker-amd64        x86_64 镜像；按宿主架构自动选 Dockerfile
+#   make docker-multiarch    构建 amd64+arm64 并推送到 registry
+#                            （多架构 manifest 无法 --load 到本地）
 #
-# Push examples:
+# 推送示例：
 #   make docker-multiarch IMAGE=ghcr.io/owner/yggdrasil:latest
 #   make docker-multiarch IMAGE=user/yggdrasil:v1 PLATFORMS=linux/amd64
 #
@@ -392,14 +392,8 @@ docker: ## 构建本机架构镜像并加载到本地 daemon
 	@docker buildx build --load $(GIT_BUILD_ARGS) $(CN_BUILD_ARGS) \
 		-t yggdrasil:latest $(VERSION_TAG) .
 
-# Build an amd64 image. On an x86_64 host the server compiles in-container via
-# the plain Dockerfile (native, no host toolchain). On any other host (e.g.
-# Apple Silicon arm64) Dockerfile.cross does the whole build in-container too:
-# a native-arm64 frontend stage (glibc Trixie, for the prebuilt dx CLI) plus a
-# native-arm64 server stage (Alpine musl, where zig — installed via apk, the
-# only China-reachable zig source — cross-compiles a static x86_64-musl binary).
-# No QEMU, no Rosetta, no `cross`, no host zig: the only host-side dep is Docker
-# itself. Product is directly docker run / docker save exportable.
+# x86_64 宿主用普通 Dockerfile，其他宿主（如 Apple Silicon）用 Dockerfile.cross。
+# 产物可直接 docker run / docker save 导出。
 docker-amd64: ## 构建 amd64 镜像并加载到本地 daemon
 ifeq ($(HOST_ARCH),x86_64)
 	@docker buildx build --platform linux/amd64 --load $(GIT_BUILD_ARGS) $(CN_BUILD_ARGS) \
