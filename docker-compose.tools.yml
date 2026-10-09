@@ -13,7 +13,7 @@
 #   make docker-clippy    # 仅 cargo clippy --all-targets --all-features -D warnings
 #   make docker-check     # cargo check --all-features（最快编译校验）
 #   make docker-fmt       # cargo fmt + biome format（只格式化，无 cargo fix / dx fmt）
-#   make docker-fix       # make fix（biome format + cargo fix + cargo fmt + dx fmt）
+#   make docker-fix       # make fix（biome format + cargo fix + cargo fmt，不含 dx fmt）
 #   make docker-test      # make test（cargo test + libs 前端测试）
 #   make docker-run CMD='cargo build --no-default-features --features server'
 #

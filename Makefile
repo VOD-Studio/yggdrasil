@@ -89,12 +89,13 @@ check-tools:
 	fi; \
 	if ! command -v tailwindcss >/dev/null 2>&1; then \
 		echo "error: tailwindcss CLI (Tailwind CSS v4) is required" >&2; \
-		echo "  Install: brew install tailwindcss | npm install -g @tailwindcss/cli" >&2; \
+		echo "  Install: brew install tailwindcss" >&2; \
 		echo "  Standalone binary: https://github.com/tailwindlabs/tailwindcss/releases" >&2; \
 		missing=1; \
 	fi; \
 	if ! command -v bun >/dev/null 2>&1; then \
-		echo "error: bun (>= 1.4.2) is required for frontend libraries in libs/" >&2; \
+		bun_want=$$(sed -n 's/.*"packageManager": *"bun@\([^"]*\)".*/\1/p' libs/package.json); \
+		echo "error: bun $${bun_want:+(>= $$bun_want) }is required for frontend libraries in libs/" >&2; \
 		echo "  Install: brew install oven-sh/bun/bun | curl -fsSL https://bun.sh/install | bash" >&2; \
 		missing=1; \
 	fi; \
@@ -127,12 +128,12 @@ precompress: check-brotli
 		-not -name '*.br' \
 		-print0 | xargs -0 -r brotli -q 11 -kf
 
-# Pre-populate dx 的 esbuild 工具缓存（国内镜像加速）。
+# Pre-populate dx 的 esbuild 工具缓存。
 # dx CLI 硬编码 esbuild 下载源为 registry.npmjs.org（packages/cli/src/esbuild.rs:62），
 # 不读 NPM_CONFIG_REGISTRY 也不读 .npmrc——npm config set registry 无效。
-# 此处从 npmmirror（阿里）预下载与 dx 内置 ESBUILD_VERSION 完全一致的 tarball
-# （SHA256 与 npmjs.org 相同），解压到 dx 缓存目录。dx 的 esbuild.rs:24-28 在
-# path.exists() 命中时跳过联网下载。
+# 此处预下载与 dx 内置 ESBUILD_VERSION 完全一致的 tarball，解压到 dx 缓存目录；
+# 默认取自 registry.npmjs.org，CN_MIRROR=true 时改取 npmmirror（阿里，SHA256 与
+# npmjs.org 相同）。dx 的 esbuild.rs:24-28 在 path.exists() 命中时跳过联网下载。
 # 升级 dx 后须同步 ESBUILD_VERSION（查 dx 源码 esbuild.rs 的 ESBUILD_VERSION 常量）。
 ESBUILD_VERSION := 0.27.3
 esbuild-cache: ## 预置 dx 的 esbuild 缓存（CN_MIRROR=true 走国内镜像）
@@ -163,8 +164,9 @@ esbuild-cache: ## 预置 dx 的 esbuild 缓存（CN_MIRROR=true 走国内镜像�
 # dx CLI 在 dx build 时会自动下载 wasm-bindgen-cli 二进制（packages/cli/src/
 # wasm_bindgen.rs 的 verify_managed_install → install_github），下载源硬编码为
 # github.com/rustwasm/wasm-bindgen/releases，既不读 GH_PROXY 也不读 NPM_REGISTRY——
-# 国内直连必然慢/连接重置（"Taking a while..." 的主要来源之一）。此处经 gh-proxy
-# 预下载与 Cargo.lock wasm-bindgen crate 版本完全一致的 tarball，解压到 dx 缓存目录。
+# 国内直连必然慢/连接重置（"Taking a while..." 的主要来源之一）。此处预下载与
+# Cargo.lock wasm-bindgen crate 版本完全一致的 tarball，解压到 dx 缓存目录；
+# 默认直连 GitHub，CN_MIRROR=true 时经 gh-proxy。
 # dx 的 wasm_bindgen.rs 在 install_dir.join(installed_bin_name).exists() 命中时
 # 跳过联网下载。dx 按平台选 musl/darwin triplet（见 git_install_url）。
 # 升级 wasm-bindgen 后须同步 WASM_BINDGEN_VERSION（查 Cargo.lock 的 [[package]]
@@ -299,6 +301,7 @@ lint: ## Biome、TypeScript、Clippy、rustfmt 检查（只读）
 	@cargo clippy --all-targets --all-features -- -D warnings
 	@echo "==> Cargo fmt check (Rust)"
 	@cargo fmt -- --check
+
 # JS + Rust 自动修复（直接写入文件）。
 # 顺序：Biome → cargo fix（应用编译器建议，重写代码）→ cargo fmt（格式化 Rust）。
 # 故意不含 dx fmt：dioxus-autofmt 0.7.10（dx 0.7.10）会改写 rsx! 事件闭包内
@@ -374,7 +377,10 @@ GIT_HASH := $(shell git rev-parse HEAD 2>/dev/null)
 GIT_DATE := $(shell git log -1 --format=%cd --date=iso-strict 2>/dev/null)
 # 镜像版本号:取最近 git tag 原值(v0.10.0,带 v,与 CI publish-ghcr 的 GITHUB_REF_NAME 一致);
 # 可用 VERSION=v0.10.1 覆盖。生产镜像据此打版本 tag(yggdrasil:v0.10.0、yggdrasil:v0.10.0-amd64)。
+# 没有 tag 时 VERSION 为空，此时只打 latest/amd64，不生成非法的 `yggdrasil:` tag。
 VERSION ?= $(shell git describe --tags --abbrev=0 2>/dev/null)
+VERSION_TAG = $(if $(VERSION),-t yggdrasil:$(VERSION))
+VERSION_TAG_AMD64 = $(if $(VERSION),-t yggdrasil:$(VERSION)-amd64)
 # build-arg 复用块:每个 docker target 展开一次。空值也传(让 Dockerfile 默认接管)。
 GIT_BUILD_ARGS = --build-arg YGG_BUILD_GIT_DESCRIBE="$(GIT_DESCRIBE)" \
                  --build-arg YGG_BUILD_GIT_HASH="$(GIT_HASH)" \
@@ -384,7 +390,7 @@ GIT_BUILD_ARGS = --build-arg YGG_BUILD_GIT_DESCRIBE="$(GIT_DESCRIBE)" \
 CN_BUILD_ARGS = $(if $(filter true,$(CN_MIRROR)),--build-arg CN_MIRROR=true)
 docker: ## 构建本机架构镜像并加载到本地 daemon
 	@docker buildx build --load $(GIT_BUILD_ARGS) $(CN_BUILD_ARGS) \
-		-t yggdrasil:latest -t yggdrasil:$(VERSION) .
+		-t yggdrasil:latest $(VERSION_TAG) .
 
 # Build an amd64 image. On an x86_64 host the server compiles in-container via
 # the plain Dockerfile (native, no host toolchain). On any other host (e.g.
@@ -397,10 +403,10 @@ docker: ## 构建本机架构镜像并加载到本地 daemon
 docker-amd64: ## 构建 amd64 镜像并加载到本地 daemon
 ifeq ($(HOST_ARCH),x86_64)
 	@docker buildx build --platform linux/amd64 --load $(GIT_BUILD_ARGS) $(CN_BUILD_ARGS) \
-		-t yggdrasil:amd64 -t yggdrasil:$(VERSION)-amd64 .
+		-t yggdrasil:amd64 $(VERSION_TAG_AMD64) .
 else
 	@docker buildx build --platform linux/amd64 --load -f Dockerfile.cross $(GIT_BUILD_ARGS) $(CN_BUILD_ARGS) \
-		-t yggdrasil:amd64 -t yggdrasil:$(VERSION)-amd64 .
+		-t yggdrasil:amd64 $(VERSION_TAG_AMD64) .
 endif
 
 docker-multiarch: ## 构建多架构镜像并推送（IMAGE=... PLATFORMS=...）
