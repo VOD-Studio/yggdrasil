@@ -226,10 +226,11 @@ ENV YGG_BUILD_GIT_COMMIT_DATE=${YGG_BUILD_GIT_COMMIT_DATE}
 # Copy the rest of the source tree and build everything.
 COPY . .
 
-# Build all 4 JS libs, syntax-highlight CSS, KaTeX CSS + fonts and Tailwind
+# Build the JS libs, syntax-highlight CSS, KaTeX CSS + fonts and Tailwind
 # stylesheet. These steps produce the contents of the public/ directory.
-# Must stay in sync with make build-linux — katex-css was previously missing,
-# which left math rendering as bare spans without KaTeX fonts.
+# Shared with make build / build-linux via the build-assets target, so the
+# pipeline cannot drift (katex-css was once missing here, which left math
+# rendering as bare spans without KaTeX fonts).
 # cache mount: highlight-css (cargo run --bin) 首次编译整棵 server-feature
 # native 依赖;dx build (wasm32) 与 cargo doc (native) 复用同一 fe-target 卷
 # (wasm32/host 子目录互不干扰)。registry/git 跨 stage 共享(crate 源码架构无关)。
@@ -237,7 +238,7 @@ COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
     --mount=type=cache,id=fe-target,target=/build/target,sharing=locked \
-    make build-libs && make highlight-css && make katex-css && tailwindcss -i input.css -o public/style.css --minify
+    make build-assets
 
 # Pre-populate dx's esbuild tool cache from the Chinese npm mirror.
 # dx hardcodes registry.npmjs.org for esbuild (packages/cli/src/esbuild.rs:62) —

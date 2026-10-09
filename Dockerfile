@@ -252,11 +252,12 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
 # 此后的 cargo build/doc 只增量编译 app 代码。
 COPY . .
 
-# Build all 4 JS libs, syntax-highlight CSS, KaTeX CSS + fonts and Tailwind
+# Build the JS libs, syntax-highlight CSS, KaTeX CSS + fonts and Tailwind
 # stylesheet. These steps produce the contents of the public/ directory.
-# Must stay in sync with make build-linux — katex-css was previously missing,
-# which left math rendering as bare spans without KaTeX fonts.
-RUN make build-libs && make highlight-css && make katex-css && tailwindcss -i input.css -o public/style.css --minify
+# Shared with make build / build-linux via the build-assets target, so the
+# pipeline cannot drift (katex-css was once missing here, which left math
+# rendering as bare spans without KaTeX fonts).
+RUN make build-assets
 
 # Pre-populate dx's esbuild tool cache from the Chinese npm mirror.
 # dx hardcodes registry.npmjs.org for esbuild (packages/cli/src/esbuild.rs:62) —

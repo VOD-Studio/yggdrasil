@@ -1,6 +1,8 @@
-.PHONY: help dev build build-linux docker docker-amd64 docker-multiarch docker-dev docker-dev-down docker-dev-shell docker-run docker-lint docker-clippy docker-check docker-fmt docker-fix docker-test docker-tools-build docker-tools-clean css css-watch clean build-libs build-editor build-codemirror build-lightbox build-core build-xterm build-mermaid highlight-css katex-css test doc doc-open lint fix restore-webp esbuild-cache wasm-bindgen-cache
+.PHONY: help dev build build-linux build-assets docker docker-amd64 docker-multiarch docker-dev docker-dev-down docker-dev-shell docker-run docker-lint docker-clippy docker-check docker-fmt docker-fix docker-test docker-tools-build docker-tools-clean css css-watch clean build-libs build-editor build-codemirror build-lightbox build-core build-xterm build-mermaid highlight-css katex-css test doc doc-open lint fix restore-webp esbuild-cache wasm-bindgen-cache
 .PHONY: check-tools check-dev-tools check-build-tools check-brotli precompress
 .PHONY: dev-assets dev-libs dev-highlight-css dev-katex-css dev-assets-force
+
+TAILWIND := tailwindcss -i input.css -o public/style.css
 
 # 裸 `make` 只列出 target，不触发任何构建。
 .DEFAULT_GOAL := help
@@ -19,20 +21,14 @@ help: ## 列出常用 target
 # 下面的 build / build-linux / dev 三个 target 的 dx 调用都带此前缀。
 build: check-tools check-brotli ## 完整 release 构建（资源 + 文档 + dx build + 压缩）
 	@rm -rf static/
-	@$(MAKE) build-libs
-	@$(MAKE) highlight-css
-	@$(MAKE) katex-css
-	@tailwindcss -i input.css -o public/style.css --minify
+	@$(MAKE) build-assets
 	@$(MAKE) doc
 	@RUSTC_WRAPPER= dx build --release --debug-symbols=false
 	@$(MAKE) restore-webp
 	@$(MAKE) precompress
 
 build-linux: check-tools check-brotli ## 构建 Linux x86_64 musl 服务端 + 客户端
-	@$(MAKE) build-libs
-	@$(MAKE) highlight-css
-	@$(MAKE) katex-css
-	@tailwindcss -i input.css -o public/style.css --minify
+	@$(MAKE) build-assets
 	@RUSTC_WRAPPER= dx build @client --release --debug-symbols=false --wasm-js-cfg false
 	@RUSTC_WRAPPER= dx build @server --release --debug-symbols=false --target x86_64-unknown-linux-musl --wasm-js-cfg false --features server
 	@$(MAKE) restore-webp
@@ -41,6 +37,15 @@ build-linux: check-tools check-brotli ## 构建 Linux x86_64 musl 服务端 + �
 	@echo "Linux build complete! The server binary is at target/dx/yggdrasil/release/web/server"
 	@echo "Remember to deploy it alongside the target/dx/yggdrasil/release/web/public directory."
 	@echo "When running the server, ensure DIOXUS_ASSET_DIR is set or the public directory is in CWD."
+
+# release 构建共用的资源流水线：libs 前端库、语法高亮 CSS、KaTeX CSS + 字体、
+# Tailwind（压缩）。build / build-linux / 两个 Dockerfile 都调用它，不要在别处
+# 再手写这几步——KaTeX 曾因 Dockerfile 里漏掉 katex-css 而退化成裸 span。
+build-assets: ## 构建 public/ 下的全部生成资源（libs、高亮/KaTeX CSS、Tailwind）
+	@$(MAKE) build-libs
+	@$(MAKE) highlight-css
+	@$(MAKE) katex-css
+	@$(TAILWIND) --minify
 
 # 兜底：dx build 0.7.10 会把 public/ 下的 .webp 重编码成 VP8L 无损静图
 # （动画帧被丢弃，静图体积反增 7-8 倍），与文档承诺的"原样拷贝"不符。
@@ -284,10 +289,10 @@ dev: dev-assets esbuild-cache wasm-bindgen-cache ## 启动开发服务器（增�
 	@SSR_CACHE_SECS=0 RUSTC_WRAPPER= dx serve --addr 0.0.0.0 --interactive false
 
 css: ## 生成 Tailwind CSS（未压缩）
-	@tailwindcss -i input.css -o public/style.css
+	@$(TAILWIND)
 
 css-watch: ## 监听并持续生成 Tailwind CSS
-	@tailwindcss -i input.css -o public/style.css --watch
+	@$(TAILWIND) --watch
 
 test: ## 运行 Rust 与前端测试
 	@cargo test
