@@ -176,11 +176,16 @@ esbuild-cache: ## 预置 dx 的 esbuild 缓存（CN_MIRROR=true 走国内镜像�
 # 默认直连 GitHub，CN_MIRROR=true 时经 gh-proxy。
 # dx 的 wasm_bindgen.rs 在 install_dir.join(installed_bin_name).exists() 命中时
 # 跳过联网下载。dx 按平台选 musl/darwin triplet（见 git_install_url）。
-# 升级 wasm-bindgen 后须同步 WASM_BINDGEN_VERSION（查 Cargo.lock 的 [[package]]
-# wasm-bindgen 版本）。triplet 必须与 dx 源码 git_install_url 的平台映射一致。
-WASM_BINDGEN_VERSION := 0.2.129
+# WASM_BINDGEN_VERSION 直接取自 Cargo.lock，升级 wasm-bindgen 后无需手动同步。
+# triplet 必须与 dx 源码 git_install_url 的平台映射一致。
+WASM_BINDGEN_VERSION = $(shell awk '/^name = "wasm-bindgen"$$/ { getline; gsub(/[^0-9.]/, "", $$3); print $$3; exit }' Cargo.lock)
 wasm-bindgen-cache: ## 预置 dx 的 wasm-bindgen 缓存（CN_MIRROR=true 走国内镜像）
-	@set -e; WB_DIR="$${DX_HOME:-$$HOME/.local/share/.dx}/tools/wasm-bindgen-$(WASM_BINDGEN_VERSION)"; \
+	@set -e; \
+	if [ -z "$(WASM_BINDGEN_VERSION)" ]; then \
+		echo "error: 无法从 Cargo.lock 读取 wasm-bindgen 版本" >&2; \
+		exit 1; \
+	fi; \
+	WB_DIR="$${DX_HOME:-$$HOME/.local/share/.dx}/tools/wasm-bindgen-$(WASM_BINDGEN_VERSION)"; \
 	if [ -x "$$WB_DIR/wasm-bindgen" ]; then \
 		echo "wasm-bindgen $(WASM_BINDGEN_VERSION) already cached at $$WB_DIR/wasm-bindgen"; \
 	else \
