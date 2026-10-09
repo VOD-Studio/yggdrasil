@@ -109,7 +109,11 @@ build-linux: check-build-tools ## 构建 Linux x86_64 musl 服务端 + 客户端
 # 遍历所有 dx 产物目录（release/debug），用源 public/ 的同名文件覆盖回去。
 # 仅覆盖产物中已存在的 .webp，不引入源里新增但 dx 未生成的文件。
 # 参考：https://dioxuslabs.com/learn/0.7/essentials/ui/assets/
-# 上游修复后可移除此 target 及 build/build-linux 里的调用。
+# 复验记录：2026-10-09 在 dx 0.7.10 上重新验证，release 构建的 22 个 .webp 全部被
+# 改写（体积 7-8 倍），其中 2 个 79 帧的动画 webp 被丢帧成静图；本 target 跑完后与源
+# 文件逐字节一致。升级 dx 后复验方法：清空 target/dx/yggdrasil/release/web/public，
+# 重新 dx build，再用 cmp 比对产物与 public/ 下同名 .webp，全部一致才可移除。
+# 上游修复后可移除此 target 及 build/build-linux 里的调用（Dockerfile 也有调用）。
 restore-webp: ## 把被 dx 重编码的 .webp 还原为源文件
 	@find target/dx -type d -path "*/web/public" 2>/dev/null | while read prod; do \
 		find "$$prod" -type f -name "*.webp" 2>/dev/null | while read p; do \
