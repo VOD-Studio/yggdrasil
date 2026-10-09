@@ -4,13 +4,6 @@
 
 TAILWIND := tailwindcss -i input.css -o public/style.css
 
-# 裸 `make` 只列出 target，不触发任何构建。
-.DEFAULT_GOAL := help
-
-# 在 target 行尾加 `## 说明` 即可出现在 help 里；无说明的是内部构建步骤。
-help: ## 列出常用 target
-	@awk 'BEGIN { FS = ":.*## " } /^[a-zA-Z0-9_-]+:.*## / { printf "  %-20s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
-
 # ── sccache × dx 兼容 ──────────────────────────────────────────
 # dx build / dx serve 构建时把自己设为 RUSTC_WORKSPACE_WRAPPER 拦截 workspace
 # crate 的 rustc 调用（资产捕获）。若宿主 ~/.cargo/config.toml 配了
@@ -18,19 +11,28 @@ help: ## 列出常用 target
 # sccache 把 dx 当编译器探测，探测必然失败（"Compiler not supported"）→ dx 报错。
 # 空 RUSTC_WRAPPER env 覆盖 config（env 优先于 config，空值 = 无 wrapper），
 # 只对 dx 构建关闭 sccache；直接 cargo 的构建（test / lint / Dockerfile / CI）不受影响。
-# 下面的 build / build-linux / dev 三个 target 的 dx 调用都带此前缀。
-build: check-tools check-brotli ## 完整 release 构建（资源 + 文档 + dx build + 压缩）
+# 所有本机 dx 调用（build / build-linux / dev）都经由 $(DX)。
+DX := RUSTC_WRAPPER= dx
+
+# 裸 `make` 只列出 target，不触发任何构建。
+.DEFAULT_GOAL := help
+
+# 在 target 行尾加 `## 说明` 即可出现在 help 里；无说明的是内部构建步骤。
+help: ## 列出常用 target
+	@awk 'BEGIN { FS = ":.*## " } /^[a-zA-Z0-9_-]+:.*## / { printf "  %-20s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
+
+build: check-build-tools ## 完整 release 构建（资源 + 文档 + dx build + 压缩）
 	@rm -rf static/
 	@$(MAKE) build-assets
 	@$(MAKE) doc
-	@RUSTC_WRAPPER= dx build --release --debug-symbols=false
+	@$(DX) build --release --debug-symbols=false
 	@$(MAKE) restore-webp
 	@$(MAKE) precompress
 
-build-linux: check-tools check-brotli ## 构建 Linux x86_64 musl 服务端 + 客户端
+build-linux: check-build-tools ## 构建 Linux x86_64 musl 服务端 + 客户端
 	@$(MAKE) build-assets
-	@RUSTC_WRAPPER= dx build @client --release --debug-symbols=false --wasm-js-cfg false
-	@RUSTC_WRAPPER= dx build @server --release --debug-symbols=false --target x86_64-unknown-linux-musl --wasm-js-cfg false --features server
+	@$(DX) build @client --release --debug-symbols=false --wasm-js-cfg false
+	@$(DX) build @server --release --debug-symbols=false --target x86_64-unknown-linux-musl --wasm-js-cfg false --features server
 	@$(MAKE) restore-webp
 	@$(MAKE) precompress
 	@echo ""
@@ -286,7 +288,7 @@ dev: dev-assets esbuild-cache wasm-bindgen-cache ## 启动开发服务器（增�
 	@echo "Cleaning static/..."
 	@rm -rf static/
 	@echo "Starting dx serve..."
-	@SSR_CACHE_SECS=0 RUSTC_WRAPPER= dx serve --addr 0.0.0.0 --interactive false
+	@SSR_CACHE_SECS=0 $(DX) serve --addr 0.0.0.0 --interactive false
 
 css: ## 生成 Tailwind CSS（未压缩）
 	@$(TAILWIND)
