@@ -6,7 +6,6 @@
 /node_modules
 **/**/node_modules
 /package-lock.json
-/.pnpm-store
 others/
 public/style.css
 public/highlight.css

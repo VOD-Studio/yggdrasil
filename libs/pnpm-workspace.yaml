@@ -1,9 +1,0 @@
-packages:
-  - '*'
-# 已核对的 CodeMirror 稳定版，仅豁免这些版本的发布时间限制。
-minimumReleaseAgeExclude:
-  - '@codemirror/language@6.13.1'
-  - '@codemirror/view@6.43.14'
-  - '@codemirror/streamparser@6.0.0'
-patchedDependencies:
-  '@tiptap/markdown@3.31.4': patches/@tiptap__markdown@3.31.4.patch

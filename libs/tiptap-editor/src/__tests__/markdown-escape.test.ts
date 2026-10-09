@@ -6,7 +6,7 @@ import StarterKit from '@tiptap/starter-kit';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 /**
- * Markdown 转义往返回归(Fix 1:pnpm patch @tiptap/markdown)。
+ * Markdown 转义往返回归(Fix 1:patchedDependencies 补丁 @tiptap/markdown)。
  *
  * 根因:@tiptap/markdown 的 escapeMarkdownSyntax 对 *每个* 非代码文本节点的
  * `*`/`_`/`>` 等无差别转义,破坏词内下划线(content_html → content\_html)、

@@ -1,0 +1,13 @@
+[run]
+# vite / vitest / tsc 等 bin 的 shebang 是 node；强制由 Bun 运行，开发和 CI 都不再依赖 Node.js。
+bun = true
+
+[install]
+# 只安装发布满 1 天的版本（秒），与此前 pnpm 的默认策略一致。
+minimumReleaseAge = 86400
+# 已核对的 CodeMirror 稳定版；Bun 只能按包名豁免（不能像 pnpm 那样锁定版本）。
+minimumReleaseAgeExcludes = [
+  "@codemirror/language",
+  "@codemirror/view",
+  "@codemirror/streamparser",
+]
