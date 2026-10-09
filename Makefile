@@ -1,6 +1,13 @@
-.PHONY: dev build build-linux docker docker-amd64 docker-apple docker-multiarch docker-dev docker-dev-down docker-dev-shell docker-run docker-lint docker-clippy docker-check docker-fmt docker-fix docker-test docker-tools-build docker-tools-clean css css-watch clean build-libs build-editor build-codemirror build-lightbox build-core build-xterm highlight-css katex-css test doc doc-open start lint fix restore-webp esbuild-cache wasm-bindgen-cache
+.PHONY: help dev build build-linux docker docker-amd64 docker-multiarch docker-dev docker-dev-down docker-dev-shell docker-run docker-lint docker-clippy docker-check docker-fmt docker-fix docker-test docker-tools-build docker-tools-clean css css-watch clean build-libs build-editor build-codemirror build-lightbox build-core build-xterm build-mermaid highlight-css katex-css test doc doc-open lint fix restore-webp esbuild-cache wasm-bindgen-cache
 .PHONY: check-tools check-dev-tools check-build-tools check-brotli precompress
 .PHONY: dev-assets dev-libs dev-highlight-css dev-katex-css dev-assets-force
+
+# 裸 `make` 只列出 target，不触发任何构建。
+.DEFAULT_GOAL := help
+
+# 在 target 行尾加 `## 说明` 即可出现在 help 里；无说明的是内部构建步骤。
+help: ## 列出常用 target
+	@awk 'BEGIN { FS = ":.*## " } /^[a-zA-Z0-9_-]+:.*## / { printf "  %-20s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 
 # ── sccache × dx 兼容 ──────────────────────────────────────────
 # dx build / dx serve 构建时把自己设为 RUSTC_WORKSPACE_WRAPPER 拦截 workspace
@@ -10,7 +17,7 @@
 # 空 RUSTC_WRAPPER env 覆盖 config（env 优先于 config，空值 = 无 wrapper），
 # 只对 dx 构建关闭 sccache；直接 cargo 的构建（test / lint / Dockerfile / CI）不受影响。
 # 下面的 build / build-linux / dev 三个 target 的 dx 调用都带此前缀。
-build: check-tools check-brotli
+build: check-tools check-brotli ## 完整 release 构建（资源 + 文档 + dx build + 压缩）
 	@rm -rf static/
 	@$(MAKE) build-libs
 	@$(MAKE) highlight-css
@@ -21,7 +28,7 @@ build: check-tools check-brotli
 	@$(MAKE) restore-webp
 	@$(MAKE) precompress
 
-build-linux: check-tools check-brotli
+build-linux: check-tools check-brotli ## 构建 Linux x86_64 musl 服务端 + 客户端
 	@$(MAKE) build-libs
 	@$(MAKE) highlight-css
 	@$(MAKE) katex-css
@@ -42,7 +49,7 @@ build-linux: check-tools check-brotli
 # 仅覆盖产物中已存在的 .webp，不引入源里新增但 dx 未生成的文件。
 # 参考：https://dioxuslabs.com/learn/0.7/essentials/ui/assets/
 # 上游修复后可移除此 target 及 build/build-linux 里的调用。
-restore-webp:
+restore-webp: ## 把被 dx 重编码的 .webp 还原为源文件
 	@find target/dx -type d -path "*/web/public" 2>/dev/null | while read prod; do \
 		find "$$prod" -type f -name "*.webp" 2>/dev/null | while read p; do \
 			rel=$${p#$$prod/}; \
@@ -95,8 +102,8 @@ check-tools:
 		exit 1; \
 	fi
 
-check-dev-tools: check-tools
-check-build-tools: check-tools check-brotli
+check-dev-tools: check-tools ## 检查开发所需的宿主工具
+check-build-tools: check-tools check-brotli ## 检查 release 构建所需的宿主工具
 
 # Local release builds use this host-side CLI after dx finishes. Check it before
 # the expensive build so a missing package fails with an actionable message.
@@ -128,7 +135,7 @@ precompress: check-brotli
 # path.exists() 命中时跳过联网下载。
 # 升级 dx 后须同步 ESBUILD_VERSION（查 dx 源码 esbuild.rs 的 ESBUILD_VERSION 常量）。
 ESBUILD_VERSION := 0.27.3
-esbuild-cache:
+esbuild-cache: ## 预置 dx 的 esbuild 缓存（CN_MIRROR=true 走国内镜像）
 	@ESBUILD_DIR="$${DX_HOME:-$$HOME/.local/share/.dx}/tools/esbuild-$(ESBUILD_VERSION)"; \
 	if [ -x "$$ESBUILD_DIR/esbuild" ]; then \
 		echo "esbuild $(ESBUILD_VERSION) already cached at $$ESBUILD_DIR/esbuild"; \
@@ -163,7 +170,7 @@ esbuild-cache:
 # 升级 wasm-bindgen 后须同步 WASM_BINDGEN_VERSION（查 Cargo.lock 的 [[package]]
 # wasm-bindgen 版本）。triplet 必须与 dx 源码 git_install_url 的平台映射一致。
 WASM_BINDGEN_VERSION := 0.2.129
-wasm-bindgen-cache:
+wasm-bindgen-cache: ## 预置 dx 的 wasm-bindgen 缓存（CN_MIRROR=true 走国内镜像）
 	@set -e; WB_DIR="$${DX_HOME:-$$HOME/.local/share/.dx}/tools/wasm-bindgen-$(WASM_BINDGEN_VERSION)"; \
 	if [ -x "$$WB_DIR/wasm-bindgen" ]; then \
 		echo "wasm-bindgen $(WASM_BINDGEN_VERSION) already cached at $$WB_DIR/wasm-bindgen"; \
@@ -187,14 +194,14 @@ wasm-bindgen-cache:
 		echo "wasm-bindgen $(WASM_BINDGEN_VERSION) cached at $$WB_DIR/wasm-bindgen"; \
 	fi
 
-highlight-css:
+highlight-css: ## 生成语法高亮 CSS
 	@cargo run --bin generate_highlight_css
 
 # 把 npm 包 katex 的 dist/ 拷贝到 public/katex/（服务端 katex-rs 不打包 CSS）。
 # KaTeX 的 katex.min.css 用相对 URL 引 fonts/，故 fonts/ 必须与 CSS 同级。
 # 只拷 woff2（现代浏览器全支持，省去 woff/ttf ~70% 字体体积）。
 # katex 作为 libs/ workspace 根 devDependency，bun install 后在 libs/node_modules/katex/。
-katex-css:
+katex-css: ## 拷贝 KaTeX CSS 与 woff2 字体到 public/katex/
 	@echo "Copying KaTeX CSS + woff2 fonts to public/katex/..."
 	@mkdir -p public/katex/fonts
 	@cp libs/node_modules/katex/dist/katex.min.css public/katex/katex.min.css
@@ -203,7 +210,7 @@ katex-css:
 
 # 并行构建全部 libs/ 子项目（bun --filter 按依赖拓扑排序，无相互依赖则并发）。
 # build-libs 会先安装依赖（bun install），无需调用方自行安装。
-build-libs:
+build-libs: ## 全量构建 libs/ 前端库
 	@cd libs && bun install && bun run --filter '*' build
 
 # 单库便利 target（替代旧的 build-<name>，用 bun --filter 精确定位）。
@@ -264,28 +271,28 @@ endif
 dev-katex-css: $(DEV_ASSET_DIR)/katex.stamp
 
 # 先安装依赖，再由子 make 读取新依赖和输出清单。Tailwind 扫描所有模板，继续实时生成。
-dev-assets: check-dev-tools
+dev-assets: check-dev-tools ## 只刷新变化的前端/CSS 资源，不启动服务
 	@cd libs && bun install
 	@$(MAKE) --no-print-directory -j$(DEV_ASSET_JOBS) dev-libs dev-highlight-css dev-katex-css css
 
-dev: dev-assets esbuild-cache wasm-bindgen-cache
+dev: dev-assets esbuild-cache wasm-bindgen-cache ## 启动开发服务器（增量构建资源 + dx serve）
 	@echo "Cleaning static/..."
 	@rm -rf static/
 	@echo "Starting dx serve..."
 	@SSR_CACHE_SECS=0 RUSTC_WRAPPER= dx serve --addr 0.0.0.0 --interactive false
 
-css:
+css: ## 生成 Tailwind CSS（未压缩）
 	@tailwindcss -i input.css -o public/style.css
 
-css-watch:
+css-watch: ## 监听并持续生成 Tailwind CSS
 	@tailwindcss -i input.css -o public/style.css --watch
 
-test:
+test: ## 运行 Rust 与前端测试
 	@cargo test
 	@cd libs && bun run --filter '*' test
 
 # JS + Rust 一次性检查（不改动文件）。
-lint:
+lint: ## Biome、TypeScript、Clippy、rustfmt 检查（只读）
 	@echo "==> Biome check (libs)"
 	@cd libs && bun run biome check . && bun run typecheck
 	@echo "==> Cargo clippy (Rust)"
@@ -300,7 +307,7 @@ lint:
 # 排除 dx fmt；现在它更进一步破坏编译，故从自动修复流水线移除。
 # lint / CI 均不校验 dx fmt 输出，移除无回归。需要 RSX 格式化时手动 `dx fmt`
 # 并务必 git diff 复核，必要时 checkout 被破坏的文件。
-fix:
+fix: ## Biome format + cargo fix + cargo fmt（写入文件）
 	@echo "==> Biome format (libs, 写入文件)"
 	@cd libs && bun run biome format --write .
 	@echo "==> Cargo fix (Rust, 应用编译器建议)"
@@ -323,14 +330,14 @@ fix:
 # 返回 index.html。用 meta refresh + JS 跳转到真正的文档入口
 # yggdrasil/index.html，这样裸路径 /doc 也能直达文档，且不与 Dioxus 的
 # /doc/* 路由冲突（手动注册 /doc 会在 merge 时 panic）。
-doc:
+doc: ## 生成 rustdoc 到 public/doc/
 	@RUSTDOCFLAGS="--default-theme=ayu" cargo doc --no-deps --document-private-items
 	@rm -rf public/doc
 	@cp -r target/doc public/doc
 	@printf '<!DOCTYPE html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=yggdrasil/index.html"><title>Redirecting…</title></head><body><script>location.replace("yggdrasil/index.html")</script></body></html>' > public/doc/index.html
 
 # 同 doc，生成完自动用浏览器打开。
-doc-open:
+doc-open: ## 生成 rustdoc 并用浏览器打开
 	@RUSTDOCFLAGS="--default-theme=ayu" cargo doc --no-deps --document-private-items --open
 
 # Docker image build. Two Dockerfiles cover two scenarios:
@@ -347,7 +354,6 @@ doc-open:
 #
 #   make docker              native arch only, load into local daemon (for testing)
 #   make docker-amd64        x86_64 image; picks the right Dockerfile for your host
-#   make docker-apple        x86_64 only, via Apple Container CLI (macOS 26+, Apple Silicon native; no Docker needed)
 #   make docker-multiarch    build amd64+arm64 and push to a registry
 #                            (multi-arch manifests can't be --load-ed locally)
 #
@@ -376,7 +382,7 @@ GIT_BUILD_ARGS = --build-arg YGG_BUILD_GIT_DESCRIBE="$(GIT_DESCRIBE)" \
 # CN_MIRROR build-arg：传 CN_MIRROR=true 时透传 --build-arg CN_MIRROR=true，
 # 否则不传（Dockerfile 内 ARG CN_MIRROR=false 默认关闭国内镜像）。
 CN_BUILD_ARGS = $(if $(filter true,$(CN_MIRROR)),--build-arg CN_MIRROR=true)
-docker:
+docker: ## 构建本机架构镜像并加载到本地 daemon
 	@docker buildx build --load $(GIT_BUILD_ARGS) $(CN_BUILD_ARGS) \
 		-t yggdrasil:latest -t yggdrasil:$(VERSION) .
 
@@ -388,7 +394,7 @@ docker:
 # only China-reachable zig source — cross-compiles a static x86_64-musl binary).
 # No QEMU, no Rosetta, no `cross`, no host zig: the only host-side dep is Docker
 # itself. Product is directly docker run / docker save exportable.
-docker-amd64:
+docker-amd64: ## 构建 amd64 镜像并加载到本地 daemon
 ifeq ($(HOST_ARCH),x86_64)
 	@docker buildx build --platform linux/amd64 --load $(GIT_BUILD_ARGS) $(CN_BUILD_ARGS) \
 		-t yggdrasil:amd64 -t yggdrasil:$(VERSION)-amd64 .
@@ -397,7 +403,7 @@ else
 		-t yggdrasil:amd64 -t yggdrasil:$(VERSION)-amd64 .
 endif
 
-docker-multiarch:
+docker-multiarch: ## 构建多架构镜像并推送（IMAGE=... PLATFORMS=...）
 	@docker buildx build --platform $(PLATFORMS) $(GIT_BUILD_ARGS) $(CN_BUILD_ARGS) -t $(IMAGE) --push .
 
 # ── Docker 开发环境 ────────────────────────────────────────────
@@ -409,16 +415,16 @@ docker-multiarch:
 # up --build 重建镜像（COPY 当前源码快照）后前台跑 compose watch：
 # 源码变更增量 sync 进容器（dx serve inotify 热重载），Cargo.lock/bun.lock
 # 等依赖清单变更自动 rebuild 镜像。Ctrl+C 只停 watch, 容器继续后台跑。
-docker-dev:
+docker-dev: ## 启动 Docker 开发环境并 watch 同步源码
 	@docker compose -f docker-compose.dev.yml up --build -d
 	@docker compose -f docker-compose.dev.yml watch
 
 # 停止并移除 dev 容器（volume 数据保留）。
-docker-dev-down:
+docker-dev-down: ## 停止并移除开发容器
 	@docker compose -f docker-compose.dev.yml down
 
 # 进入 dev 容器的交互式 shell（容器需已在运行）。
-docker-dev-shell:
+docker-dev-shell: ## 进入开发容器的 shell
 	@docker compose -f docker-compose.dev.yml exec dev bash
 
 # ── Docker 工具容器（lint / test / fix / check）──────────────────
@@ -430,46 +436,46 @@ docker-dev-shell:
 TOOLS_COMPOSE := docker compose -f docker-compose.tools.yml
 
 # 一次性运行任意命令（例：make docker-run CMD='cargo build --features server'）。
-docker-run:
+docker-run: ## 在工具容器内运行任意命令（CMD='...'）
 	@$(TOOLS_COMPOSE) run --rm tools bash -c '$(CMD)'
 
 # lint（只读）：clippy + cargo fmt --check + biome check + typecheck。
-docker-lint:
+docker-lint: ## 容器内运行 make lint
 	@$(TOOLS_COMPOSE) run --rm tools bash -c 'cd libs && bun install --frozen-lockfile >/dev/null && cd /build && make lint'
 
 # 仅 clippy（最常用的编译期检查，不需要 bun）。
-docker-clippy:
+docker-clippy: ## 容器内只运行 clippy
 	@$(TOOLS_COMPOSE) run --rm tools cargo clippy --all-targets --all-features -- -D warnings
 
 # 最快编译校验：cargo check --all-features（不跑 clippy lint、不跑测试）。
-docker-check:
+docker-check: ## 容器内运行 cargo check --all-features
 	@$(TOOLS_COMPOSE) run --rm tools cargo check --all-features
 
 # 格式化（写入文件，回流宿主）：cargo fmt + biome format。
 # 注意：不含 dx fmt——dx fmt 0.7.10（dioxus-autofmt）会改写 rsx! 闭包内的 Rust，
 # 插入重复行 / 悬空片段导致无法编译（DioxusLabs/dioxus#5682、#3007）。
 # 需要 RSX 格式化时手动 `dx fmt` 并 git diff 复核，必要时 checkout 被破坏的文件。
-docker-fmt:
+docker-fmt: ## 容器内格式化 Rust 与前端（写回宿主）
 	@$(TOOLS_COMPOSE) run --rm tools bash -c 'cd libs && bun install --frozen-lockfile >/dev/null && bun run biome format --write . && cd /build && cargo fmt'
 
 # fix（写入文件，回流宿主）：biome format + cargo fix + cargo fmt。
 # 委托 make fix，同样不含 dx fmt（原因见上 / docker-fmt 注释）。
-docker-fix:
+docker-fix: ## 容器内运行 make fix（写回宿主）
 	@$(TOOLS_COMPOSE) run --rm tools bash -c 'cd libs && bun install --frozen-lockfile >/dev/null && cd /build && make fix'
 
 # test：cargo test + libs 前端测试（vitest）。需要 Docker daemon 的 code-runner 测试自动 skip。
-docker-test:
+docker-test: ## 容器内运行 make test
 	@$(TOOLS_COMPOSE) run --rm tools bash -c 'cd libs && bun install --frozen-lockfile >/dev/null && cd /build && make test'
 
 # 重建工具镜像（Dockerfile.dev 变更后用；正常情况下 run 会按需自动构建）。
-docker-tools-build:
+docker-tools-build: ## 重建工具镜像
 	@$(TOOLS_COMPOSE) build
 
 # 清理工具容器命名卷（释放磁盘；下次运行重新编译依赖）。
-docker-tools-clean:
+docker-tools-clean: ## 清理工具容器的命名卷
 	@$(TOOLS_COMPOSE) down -v
 
-clean:
+clean: ## 清理构建产物与前端依赖
 	@cargo clean
 	@rm -f public/style.css public/highlight.css
 	@rm -rf public/katex
