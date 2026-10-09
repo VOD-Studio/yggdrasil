@@ -19,6 +19,7 @@ Prefer the Makefile targets for development and release builds: they clear `RUST
 - `make dev`: incrementally build assets and start native `dx serve`; `make dev-assets` refreshes changed assets without starting another server.
 - `make build`: assemble release assets, documentation, and application; requires Brotli CLI.
 - `make build-libs` / `make css`: rebuild frontend libraries / Tailwind CSS.
+- Changing frontend dependencies: run `BUN_CONFIG_REGISTRY=https://registry.npmjs.org/ bun install` in `libs/`. Bun records a non-default registry (for example an npmmirror `~/.npmrc`) as per-package URLs in `bun.lock`; keep them empty so CI and `CN_MIRROR` Docker builds choose their own registry.
 - `make test`: run Rust and frontend tests.
 - `make lint`: run Biome, TypeScript checks, Clippy for the native target, and rustfmt checks.
 - `cargo fmt` and `(cd libs && bun run format)`: format Rust and frontend files.
