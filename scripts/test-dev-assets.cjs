@@ -42,6 +42,7 @@ async function edit(file, content = 'changed') {
 }
 async function main() {
   write('Makefile', fs.readFileSync(path.join(__dirname, '../Makefile'), 'utf8'));
+  fs.cpSync(path.join(__dirname, '../mk'), path.join(root, 'mk'), { recursive: true });
   for (const file of ['Cargo.toml', 'Cargo.lock', 'build.rs', 'src/bin/generate_highlight_css.rs',
     'input.css', 'libs/package.json', 'libs/bun.lock', 'libs/bunfig.toml',
     'libs/tsconfig.base.json', 'libs/patches/example.patch',
