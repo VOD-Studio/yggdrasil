@@ -7,16 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-10-10
+
 ### Changed
 
 - **更新日志导航**：版本目录改为高度受限的独立滚动卡片，加入滑动高亮、边缘渐隐与阅读进度；阅读时自动保持当前版本可见，小屏使用横向版本条，支持减少动态效果。
 - **开发启动**：`make dev` 按源码、配置及依赖变化增量构建前端库、高亮 CSS 和 KaTeX 资源，自动补建缺失产物；共享代码变化会重建使用它的库，失败的构建不会更新缓存记录。新增 `make dev-assets` 与缓存失效回归脚本。
 - **Rust 依赖**：更新 rmcp 至 3.5.1、sqlparser 至 0.63.0，并更新 Tokio、Reqwest、UUID、正则与 WASM 依赖；wasm-bindgen 工具缓存同步至 0.2.129。
 - **前端依赖**：更新 Tiptap 至 3.31.4、CodeMirror、KaTeX 0.19.0、Mermaid 12.1.0、Vite、Vitest 与 Biome；按新版重新生成 Markdown 补丁，合并 CodeMirror 的 state/view 依赖实例。Mermaid 显式沿用 dagre 布局、classic 外观和现有配色，更新资源版本以刷新浏览器缓存。
-- **构建工具**：Docker 构建器统一使用 Rust 1.99、Node 22.23.3、Tailwind CSS 4.3.3；pnpm 在 workspace、Docker 与 CI 中统一至 12.10.1。
+- **构建工具**：前端包管理在 workspace、Makefile、Docker 与 CI 中统一迁移至 Bun 1.4.2，Docker 构建器使用 Rust 1.99 和 Tailwind CSS 4.3.3；Makefile 拆分为入口与资源、工具缓存、Docker 模块，默认显示目标帮助，并统一发布资源流水线与工具检查。
 
 ### Fixed
 
+- **首页开始阅读**：修复平滑滚动被路由恢复打断及重复点击失效的问题，同页锚点保持当前文档与历史记录，适配键盘操作、手机和减少动态效果。
 - **WASM 发布构建**：显式禁止在 wasm-bindgen 运行前剥离 WASM 自定义段，修复 Rust 1.99／LLVM 23 下继承 `strip = "symbols"` 导致绑定元数据丢失的问题；新增最小导出回归脚本。wasm-bindgen 缓存下载失败时立即停止，避免误报安装成功。
 
 ## [0.22.0] - 2026-09-28
