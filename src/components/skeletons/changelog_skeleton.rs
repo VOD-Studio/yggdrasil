@@ -6,7 +6,7 @@
 use crate::components::skeletons::atoms::{SkeletonBox, SkeletonCard};
 use dioxus::prelude::*;
 
-/// 更新日志加载占位：桌面端版本导航 + 版本卡片，小屏隐藏导航。
+/// 更新日志加载占位：镜像有界侧栏和小屏横向版本条。
 #[component]
 pub fn ChangelogSkeleton() -> Element {
     rsx! {
@@ -20,14 +20,25 @@ pub fn ChangelogSkeleton() -> Element {
                 SkeletonBox { class: "h-5 w-24 rounded", animate: false }
             }
 
-            div { class: "flex gap-8",
-                div { class: "hidden lg:block w-40 shrink-0",
-                    div { class: "sticky top-20",
-                        for i in 0..6 {
-                            div { key: "{i}", class: "flex items-center gap-2 py-1.5",
-                                SkeletonBox { class: "w-1.5 h-1.5 rounded-full shrink-0", animate: false }
-                                SkeletonBox { class: "h-5 w-16 rounded", animate: false }
+            div { class: "changelog-layout",
+                div { class: "changelog-nav",
+                    div { class: "changelog-nav-panel",
+                        div { class: "changelog-nav-head",
+                            SkeletonBox { class: "h-4 w-16 rounded", animate: false }
+                            SkeletonBox { class: "h-4 w-6 rounded-full", animate: false }
+                        }
+                        div { class: "changelog-nav-scroll",
+                            div { class: "changelog-nav-items",
+                                for i in 0..6 {
+                                    div { key: "{i}", class: "changelog-nav-link",
+                                        SkeletonBox { class: "w-1.5 h-1.5 rounded-full shrink-0", animate: false }
+                                        SkeletonBox { class: "h-4 w-16 rounded", animate: false }
+                                    }
+                                }
                             }
+                        }
+                        div { class: "changelog-nav-foot",
+                            SkeletonBox { class: "h-3 w-full rounded", animate: false }
                         }
                     }
                 }

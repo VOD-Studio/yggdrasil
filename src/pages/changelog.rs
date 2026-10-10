@@ -69,8 +69,8 @@ pub fn Changelog() -> Element {
             }
 
             // 双栏布局
-            div { class: "flex gap-8",
-                // 版本导航：桌面端 sticky 侧栏（scroll-spy 高亮当前版本）
+            div { class: "changelog-layout",
+                // 有界侧栏 / 小屏横向版本条，共用 scroll-spy。
                 if versions.len() > 1 {
                     VersionNav { versions: versions.clone() }
                 }
@@ -86,171 +86,72 @@ pub fn Changelog() -> Element {
     }
 }
 
-/// 版本导航侧栏（桌面端 sticky）。
-///
-/// 高亮语义：accent 标记「当前视口顶部命中的版本卡片」（scroll-spy），而非固定
-/// 标记最新版本——否则带 #hash 访问或点击导航跳转旧版本时，侧栏高亮仍停在最新
-/// 版本上，与右侧内容区脱节。
+/// 有界版本目录：桌面纵向滚动，小屏横向滚动。
+/// 浏览器增强负责阅读位置、滑动指示器和目录自身滚动，卸载时清理监听。
 #[component]
 fn VersionNav(versions: Vec<VersionEntry>) -> Element {
-    // 当前命中的版本号。None = SSR/首帧尚未计算，渲染时回退首项——页面顶端
-    // 即最新版本，与修复前的常驻高亮表现一致，也无 hydration mismatch。
-    let active = use_signal(|| None::<String>);
-
-    // scroll-spy：window scroll 监听 + getBoundingClientRect 判定。一版本一张
-    // 卡片，数量有限，每次事件十几次 rect 读取成本可忽略，无需 IntersectionObserver
-    // 那套可见性集合管理。
     #[cfg(target_arch = "wasm32")]
-    {
-        use dioxus::prelude::{use_drop, use_effect, use_hook};
-        use std::cell::RefCell;
-        use std::rc::Rc;
-        use wasm_bindgen::JsCast;
+    use_effect(move || {
+        if let Some(window) = web_sys::window() {
+            crate::utils::js::invoke_optional_global(&window, "__initChangelogNav", &[]);
+        }
+    });
 
-        let mut active = active;
+    #[cfg(target_arch = "wasm32")]
+    use_drop(move || {
+        if let Some(window) = web_sys::window() {
+            crate::utils::js::invoke_optional_global(&window, "__disposeChangelogNav", &[]);
+        }
+    });
 
-        // 手写监听而非复用 hooks/event_listener.rs：那里 handler 只在事件触发时
-        // 运行，这里挂载后要先算一次初始命中（直接带 #hash 访问时浏览器原生锚点
-        // 滚动已完成，首帧即应高亮正确版本）。模式镜像 ui.rs 的 Escape 监听：
-        // use_hook 持有 Closure，use_drop 移除监听防泄漏。
-        type ScrollState = Rc<RefCell<Option<wasm_bindgen::prelude::Closure<dyn FnMut()>>>>;
-        let state: ScrollState = use_hook(|| Rc::new(RefCell::new(None)));
-        let state_for_effect = state.clone();
-        let state_for_drop = state.clone();
-
-        // effect 体内不读任何 signal（compute 里只有 peek/set），无依赖 → 只跑一次。
-        use_effect(move || {
-            let Some(window) = web_sys::window() else {
-                return;
-            };
-            let Some(document) = window.document() else {
-                return;
-            };
-            let Ok(list) = document.query_selector_all("article.changelog-version") else {
-                return;
-            };
-            let mut cards: Vec<web_sys::Element> = Vec::with_capacity(list.length() as usize);
-            for i in 0..list.length() {
-                if let Some(el) = list
-                    .item(i)
-                    .and_then(|n| n.dyn_into::<web_sys::Element>().ok())
-                {
-                    cards.push(el);
-                }
-            }
-            if cards.is_empty() {
-                return;
-            }
-
-            // compute 捕获 window 副本，原件留给下方注册监听。
-            let window_for_compute = window.clone();
-            let mut compute = move || {
-                // 视口顶部判定线：sticky header + 卡片 scroll-mt-20（80px）落点余量。
-                const THRESHOLD_PX: f64 = 120.0;
-
-                // 顶部已越过判定线的最后一张卡片 = 当前阅读位置。
-                // 卡片 id 为 "v{version}"，strip 掉渲染时加的前缀还原版本号。
-                let mut current: Option<String> = None;
-                for el in &cards {
-                    if el.get_bounding_client_rect().top() <= THRESHOLD_PX {
-                        current = el.id().strip_prefix('v').map(str::to_owned);
-                    } else {
-                        break;
-                    }
-                }
-                // 页面顶端没有任何卡片越过判定线 → 回退首项（最新版本）。
-                let mut ver = current.or_else(|| {
-                    cards
-                        .first()
-                        .and_then(|e| e.id().strip_prefix('v').map(str::to_owned))
-                });
-
-                // 滚到页面底部 → 强制末项：末卡片内容短时永远到不了判定线。
-                let at_bottom = window_for_compute
-                    .inner_height()
-                    .ok()
-                    .and_then(|v| v.as_f64())
-                    .zip(window_for_compute.scroll_y().ok())
-                    .zip(
-                        document
-                            .document_element()
-                            .map(|e| f64::from(e.scroll_height())),
-                    )
-                    .is_some_and(|((vh, sy), sh)| vh + sy >= sh - 4.0);
-                if at_bottom {
-                    ver = cards
-                        .last()
-                        .and_then(|e| e.id().strip_prefix('v').map(str::to_owned));
-                }
-
-                if let Some(ver) = ver {
-                    if active.peek().as_deref() != Some(ver.as_str()) {
-                        active.set(Some(ver));
-                    }
-                }
-            };
-
-            compute();
-
-            let closure =
-                wasm_bindgen::prelude::Closure::wrap(Box::new(compute) as Box<dyn FnMut()>);
-            let _ =
-                window.add_event_listener_with_callback("scroll", closure.as_ref().unchecked_ref());
-            *state_for_effect.borrow_mut() = Some(closure);
-        });
-
-        use_drop(move || {
-            if let Some(closure) = state_for_drop.borrow_mut().take() {
-                if let Some(window) = web_sys::window() {
-                    let _ = window.remove_event_listener_with_callback(
-                        "scroll",
-                        closure.as_ref().unchecked_ref(),
-                    );
-                }
-            }
-        });
-    }
-
-    // 回退首项：SSR 与 WASM 首帧一致（active 均为 None）。
-    let fallback = versions.first().map(|v| v.version.clone());
-    let active_ver = active.read().clone().or(fallback);
+    let count = versions.len();
+    let progress = 1.0 / count as f64;
 
     rsx! {
-        nav { class: "hidden lg:block w-40 shrink-0",
-            div { class: "sticky top-20",
-                for v in versions.iter() {
-                    VersionNavItem {
-                        key: "{v.version}",
-                        version: v.version.clone(),
-                        active: active_ver.as_deref() == Some(v.version.as_str()),
+        nav { class: "changelog-nav", aria_label: "更新日志版本导航",
+            div { class: "changelog-nav-panel", style: "--nav-progress: {progress}",
+                div { class: "changelog-nav-head",
+                    span { "版本导航" }
+                    span { class: "changelog-nav-count", "{count}" }
+                }
+                div { class: "changelog-nav-scroll", tabindex: "0", aria_label: "滚动浏览所有版本",
+                    div { class: "changelog-nav-items",
+                        div { class: "changelog-nav-indicator", aria_hidden: "true" }
+                        for (index, v) in versions.iter().enumerate() {
+                            VersionNavItem {
+                                key: "{v.version}",
+                                version: v.version.clone(),
+                                active: index == 0,
+                                latest: v.is_latest,
+                            }
+                        }
                     }
+                }
+                div { class: "changelog-nav-foot", aria_hidden: "true",
+                    div { class: "changelog-nav-position",
+                        span { "阅读位置" }
+                        span { "data-nav-position": "", "01 / {count:02}" }
+                    }
+                    div { class: "changelog-nav-progress", span {} }
                 }
             }
         }
     }
 }
 
-/// 版本导航侧栏中的单条链接。
-///
-/// `active` = scroll-spy 命中的当前版本（见 [`VersionNav`]），用 accent 高亮。
+/// 原生锚点链接，SSR 和未水合时也能导航。
 #[component]
-fn VersionNavItem(version: String, active: bool) -> Element {
-    let base = "group flex items-center gap-2 py-1.5 text-sm transition-colors";
-    let text_class = if active {
-        "font-medium text-paper-accent"
-    } else {
-        "text-paper-secondary group-hover:text-paper-primary"
-    };
-    let dot_class = if active {
-        "bg-[var(--color-paper-accent)]"
-    } else {
-        "bg-[var(--color-paper-border)]"
-    };
-
+fn VersionNavItem(version: String, active: bool, latest: bool) -> Element {
     rsx! {
-        a { href: "#v{version}", class: "{base}",
-            span { class: "w-1.5 h-1.5 rounded-full shrink-0 {dot_class}" }
-            span { class: "{text_class}", "{version}" }
+        a {
+            href: "#v{version}",
+            class: "changelog-nav-link",
+            aria_current: active.then_some("location"),
+            span { class: "changelog-nav-dot", aria_hidden: "true" }
+            span { class: "changelog-nav-label", "{version}" }
+            if latest {
+                span { class: "changelog-nav-latest", "最新" }
+            }
         }
     }
 }
@@ -272,7 +173,7 @@ fn VersionCard(version: VersionEntry) -> Element {
     rsx! {
         article {
             id: "v{ver}",
-            class: "changelog-version scroll-mt-20 rounded-[2rem] bg-[var(--color-paper-entry)] border border-transparent hover:border-[var(--color-paper-border)] transition-colors p-6 md:p-8",
+            class: "changelog-version rounded-[2rem] bg-[var(--color-paper-entry)] border border-transparent hover:border-[var(--color-paper-border)] transition-colors p-6 md:p-8",
 
             // 版本头
             div { class: "flex items-baseline gap-3",

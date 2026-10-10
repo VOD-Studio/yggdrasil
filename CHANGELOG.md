@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **更新日志导航**：版本目录改为高度受限的独立滚动卡片，加入滑动高亮、边缘渐隐与阅读进度；阅读时自动保持当前版本可见，小屏使用横向版本条，支持减少动态效果。
 - **开发启动**：`make dev` 按源码、配置及依赖变化增量构建前端库、高亮 CSS 和 KaTeX 资源，自动补建缺失产物；共享代码变化会重建使用它的库，失败的构建不会更新缓存记录。新增 `make dev-assets` 与缓存失效回归脚本。
 - **Rust 依赖**：更新 rmcp 至 3.5.1、sqlparser 至 0.63.0，并更新 Tokio、Reqwest、UUID、正则与 WASM 依赖；wasm-bindgen 工具缓存同步至 0.2.129。
 - **前端依赖**：更新 Tiptap 至 3.31.4、CodeMirror、KaTeX 0.19.0、Mermaid 12.1.0、Vite、Vitest 与 Biome；按新版重新生成 Markdown 补丁，合并 CodeMirror 的 state/view 依赖实例。Mermaid 显式沿用 dagre 布局、classic 外观和现有配色，更新资源版本以刷新浏览器缓存。

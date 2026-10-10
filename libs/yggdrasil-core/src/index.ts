@@ -1,6 +1,7 @@
 import type { ThemeName } from '@yggdrasil/shared';
 import { initAnchorClick } from './anchor-click';
 import { loadBrowserLibrary } from './browser-library';
+import { disposeChangelogNav, initChangelogNav } from './changelog-nav';
 import { scrollToHash } from './hash-scroll';
 import { initMermaid } from './mermaid';
 import { initPageReveal } from './page-entry';
@@ -25,6 +26,8 @@ declare global {
     __routeTransitions: typeof routeTransitions;
     __initShowcaseMasonry: typeof initShowcaseMasonry;
     __disposeShowcaseMasonry: typeof disposeShowcaseMasonry;
+    __initChangelogNav: typeof initChangelogNav;
+    __disposeChangelogNav: typeof disposeChangelogNav;
   }
 }
 
@@ -40,6 +43,8 @@ window.__disposeTocSidebar = disposeTocSidebar;
 window.__routeTransitions = routeTransitions;
 window.__initShowcaseMasonry = initShowcaseMasonry;
 window.__disposeShowcaseMasonry = disposeShowcaseMasonry;
+window.__initChangelogNav = initChangelogNav;
+window.__disposeChangelogNav = disposeChangelogNav;
 
 // Cross-document transitions can reveal before the WASM router connects.
 initPageReveal();

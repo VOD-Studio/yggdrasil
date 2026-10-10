@@ -25,16 +25,28 @@ function measureStickyHeaderHeight(): number {
  * 元素不存在时安全跳过。
  */
 export function scrollToHeading(el: Element, smooth = true): void {
+  // The compact changelog directory sticks below the header on small screens.
+  const directory = el.matches('.changelog-version')
+    ? document.querySelector('.changelog-nav')
+    : null;
+  const directoryHeight =
+    directory && window.matchMedia('(max-width: 1023px)').matches
+      ? directory.getBoundingClientRect().height + 8
+      : 0;
   // scrollIntoView 配合 scroll-margin-top 在点击场景能工作，但直接访问 #hash 时
   // 浏览器原生 fragment-scroll 会争抢落点。统一用手动计算绕开时序竞态。
   const top =
     el.getBoundingClientRect().top +
     window.scrollY -
     measureStickyHeaderHeight() -
+    directoryHeight -
     HEADING_OFFSET_PX;
   window.scrollTo({
     top: Math.max(top, 0),
     // 'auto' inherits the document's scroll-behavior:smooth; snapshots need an instant landing.
-    behavior: smooth ? 'smooth' : 'instant',
+    behavior:
+      smooth && !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+        ? 'smooth'
+        : 'instant',
   });
 }
