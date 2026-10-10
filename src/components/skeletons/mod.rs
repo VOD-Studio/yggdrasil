@@ -52,3 +52,5 @@ pub mod system_skeleton;
 pub mod tags_skeleton;
 /// 编辑器页面骨架屏组件。
 pub mod write_skeleton;
+/// 写作指南页骨架屏组件。
+pub mod writing_guide_skeleton;

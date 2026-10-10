@@ -2,6 +2,8 @@
 use dioxus::prelude::*;
 
 use crate::api::writing_guide::{get_writing_guide, SKILL_SOURCE, SKILL_URL};
+use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
+use crate::components::skeletons::writing_guide_skeleton::WritingGuideSkeleton;
 use crate::router::Route;
 
 const CLIENTS: [(&str, &str, &str); 3] = [
@@ -29,7 +31,11 @@ pub fn WritingGuide() -> Element {
     let data = match response.read().as_ref() {
         Some(Ok(data)) => data.clone(),
         Some(Err(error)) => return Err(error.clone().into()),
-        None => return rsx! { p { role: "status", "正在载入写作指南…" } },
+        None => {
+            return rsx! {
+                DelayedSkeleton { WritingGuideSkeleton {} }
+            };
+        }
     };
     let current = selected();
     let (client, config_path, docs_url) = CLIENTS[current];

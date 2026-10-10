@@ -890,7 +890,8 @@ fn preview_route(slug: &str) -> Option<PreviewRoute> {
         | "tags-skeleton"
         | "tag-detail-skeleton"
         | "tag-posts-loading"
-        | "write-skeleton" => PreviewRoute::Skeleton,
+        | "write-skeleton"
+        | "writing-guide-skeleton" => PreviewRoute::Skeleton,
         "post-cover" | "post-card" => PreviewRoute::Scene,
         "asset-picker-modal" | "asset-upload-modal" | "code-runner" | "sql-result-table" => {
             PreviewRoute::Business
@@ -1262,6 +1263,9 @@ fn PageSkeletonPreview(name: String) -> Element {
         }
         "TagsSkeleton" => rsx! { crate::components::skeletons::tags_skeleton::TagsSkeleton {} },
         "WriteSkeleton" => rsx! { crate::components::skeletons::write_skeleton::WriteSkeleton {} },
+        "WritingGuideSkeleton" => {
+            rsx! { crate::components::skeletons::writing_guide_skeleton::WritingGuideSkeleton {} }
+        }
         _ => panic!("页面骨架缺少预览: {name}"),
     };
     rsx! { div { class: "showcase-skeleton-window",

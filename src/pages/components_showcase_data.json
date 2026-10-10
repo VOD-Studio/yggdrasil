@@ -2594,6 +2594,28 @@
       "usage_kind": "api"
     },
     {
+      "name": "WritingGuideSkeleton",
+      "slug": "writing-guide-skeleton",
+      "label": "写作指南骨架",
+      "group": "page-loading",
+      "summary": "写作指南骨架，在内容到来前保留页面轮廓。",
+      "states": "页面占位 · 动画",
+      "description": "写作指南骨架用于加载期间的页面布局轮廓。预览将调用项目现有的骨架屏组件。",
+      "props": [
+        [
+          "—",
+          "无",
+          "—",
+          "此组件不接收显式属性。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/skeletons/writing_guide_skeleton.rs",
+      "code": "pub fn WritingGuideSkeleton() -> Element",
+      "preview_mode": "static",
+      "usage_kind": "api"
+    },
+    {
       "name": "SqlResultTable",
       "slug": "sql-result-table",
       "label": "SQL 结果表",

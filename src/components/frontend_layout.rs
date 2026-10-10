@@ -16,6 +16,7 @@ use crate::components::skeletons::home_skeleton::HomeSkeleton;
 use crate::components::skeletons::post_detail_skeleton::PostDetailSkeleton;
 use crate::components::skeletons::search_skeleton::SearchSkeleton;
 use crate::components::skeletons::tags_skeleton::TagDetailSkeleton;
+use crate::components::skeletons::writing_guide_skeleton::WritingGuideSkeleton;
 use crate::router::Route;
 use crate::theme::ThemeToggle;
 
@@ -47,9 +48,7 @@ fn route_skeleton(route: &Route) -> Element {
             DelayedSkeleton { ChangelogSkeleton {} }
         },
         Route::WritingGuide {} => rsx! {
-            DelayedSkeleton {
-                p { class: "py-20 text-sm text-paper-secondary", role: "status", "正在载入写作指南…" }
-            }
+            DelayedSkeleton { WritingGuideSkeleton {} }
         },
         Route::ComponentShowcase {} | Route::ComponentDetail { .. } => rsx! {
             div { class: "py-20", role: "status", "正在翻开组件图鉴…" }
