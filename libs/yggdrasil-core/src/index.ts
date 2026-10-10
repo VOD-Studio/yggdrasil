@@ -46,5 +46,8 @@ window.__disposeShowcaseMasonry = disposeShowcaseMasonry;
 window.__initChangelogNav = initChangelogNav;
 window.__disposeChangelogNav = disposeChangelogNav;
 
+// Same-page links also appear on the homepage, before any article is mounted.
+initAnchorClick();
+
 // Cross-document transitions can reveal before the WASM router connects.
 initPageReveal();

@@ -1,6 +1,6 @@
 /**
  * anchor-click 测试:钉住 hash 锚点点击的拦截、滚动与 URL 更新。
- * 黑盒驱动:只通过 window.__initAnchorClick 入口 + 真实 DOM 事件派发。
+ * 黑盒驱动:加载站点 bundle 后直接派发真实 DOM 事件，不依赖文章组件初始化。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import './index';
@@ -24,11 +24,44 @@ describe('initAnchorClick', () => {
       },
       false,
     );
-    window.__initAnchorClick();
   });
   afterEach(() => {
     document.body.innerHTML = '';
     history.replaceState(null, '', '#');
+  });
+
+  it('首次加载首页即可平滑开始阅读，相同 hash 的重复点击仍生效', () => {
+    document.body.innerHTML = `
+      <a class="home-reading-link" href="#home-posts">开始阅读 <span>↓</span></a>
+      <section id="home-posts" tabindex="-1">文章列表</section>`;
+    const scroll = vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
+    const sync = vi.spyOn(window.__routeTransitions, 'syncHash');
+    const arrow = document.querySelector<HTMLElement>('.home-reading-link span')!;
+
+    arrow.click();
+    expect(scroll).toHaveBeenCalledExactlyOnceWith({ top: 0, behavior: 'smooth' });
+    expect(window.location.hash).toBe('#home-posts');
+    expect(dioxusInterceptorCalled).toBe(false);
+
+    // 回到首屏后再次点击：hash 没变也必须启动新的滚动。
+    scroll.mockClear();
+    arrow.click();
+    expect(scroll).toHaveBeenCalledExactlyOnceWith({ top: 0, behavior: 'smooth' });
+    expect(sync).toHaveBeenCalledOnce();
+    expect(dioxusInterceptorCalled).toBe(false);
+  });
+
+  it('减少动态效果时开始阅读立即到达列表', () => {
+    document.body.innerHTML =
+      '<a href="#home-posts">开始阅读</a><section id="home-posts"></section>';
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
+    vi.spyOn(window, 'matchMedia').mockReturnValue({ ...media, matches: true });
+    const scroll = vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
+
+    document.querySelector<HTMLAnchorElement>('a')!.click();
+
+    expect(scroll).toHaveBeenCalledExactlyOnceWith({ top: 0, behavior: 'instant' });
+    expect(dioxusInterceptorCalled).toBe(false);
   });
 
   it('点击 hash 锚点滚动到目标并阻止 Dioxus 委托监听器', () => {
