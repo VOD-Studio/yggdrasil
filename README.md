@@ -162,6 +162,15 @@ DATABASE_URL=postgresql://postgres@127.0.0.1:55439/ygg_mcp_test \
 
 CI 在每次 push 和 PR 上严格执行 Rust 格式、原生/WASM Clippy、WASM 编译、Rust 测试及前端 Biome、TypeScript、Vitest。文章数据库回归使用工作流创建的一次性 PostgreSQL 服务，覆盖后台与 MCP 两个入口。备份恢复的独立数据库验收见[备份回归说明](docs/backup-regressions.md)。
 
+后台浏览器回归使用已有 Playwright 安装及已启动的开发站点，会保存指定的测试文章。先运行 `post_write_service_database` 在一次性数据库中创建会话和文章，再以该数据库启动 `make dev`。在该开发站点的素材库上传测试图片，并给测试文章设置有效封面；从文章列表获取其 ID 后执行：
+
+```sh
+ADMIN_BASE=http://127.0.0.1:8080 ADMIN_POST_ID=1 \
+ADMIN_SESSION=post-write-regression bun scripts/test-admin-editor.cjs
+```
+
+脚本验证编辑回填、保存失败重试、素材选择、剪贴板、日志 SSE 及组件卸载，检查桌面明暗主题、窄屏和减少动态效果，并输出截图与 JSON 报告。素材预览需提供对应的测试图片文件；`PLAYWRIGHT_MODULE`、`CHROMIUM_PATH` 可指定已有浏览器工具的位置。灯箱动画和触摸手势另用 `bun scripts/test-lightbox.cjs` 验证。
+
 ## 文档
 
 - [更新日志](CHANGELOG.md)（亦可在 `/changelog` 查看）

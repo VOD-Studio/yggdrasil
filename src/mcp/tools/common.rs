@@ -2,7 +2,7 @@
 //!
 //! `require_scope`/`require_admin`/`internal`/`ok_json` 此前在每个工具文件
 //! （posts/comments/media/tags/settings/runner）各有一份逐字拷贝，仅 `tracing::error!`
-//! 前缀字符串不同。集中到本模块，消除 ~10 份拷贝（R2）。
+//! 前缀字符串不同。集中到本模块，消除 ~10 份拷贝。
 
 #![cfg(feature = "server")]
 
