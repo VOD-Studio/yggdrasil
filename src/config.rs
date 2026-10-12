@@ -80,6 +80,30 @@ pub fn image_limit() -> ImageLimitSettings {
     IMAGE_LIMIT_CFG.get().cloned().unwrap_or_default()
 }
 
+#[cfg(feature = "server")]
+/// 图片单边（宽或高）尺寸上限，单位像素。
+///
+/// 启动时从 settings 表（经 [`crate::config::image_limit`]）读取，默认 8192。
+/// 下限 512（防误调到危险小值）。值烘焙进 LazyLock，修改面板值后需重启生效。
+pub static MAX_IMAGE_DIMENSION: std::sync::LazyLock<u32> = std::sync::LazyLock::new(|| {
+    let val = crate::config::image_limit().max_dimension;
+    tracing::info!("Image dimension limit loaded from DB: {}", val);
+    val
+});
+#[cfg(feature = "server")]
+/// 允许处理的最大图片像素数（默认约 7k x 7k）。
+///
+/// 启动时从 settings 表（经 [`crate::config::image_limit`]）读取，默认 50_000_000。
+/// 下限 1_000_000（防误调）。⚠️ 此值同时决定单图解码内存缓冲
+/// （max_alloc = pixels × 4 + 1MB），默认 50M 像素对应约 200MB/图。
+/// 值烘焙进 LazyLock，修改面板值后需重启生效。
+pub static MAX_IMAGE_PIXELS: std::sync::LazyLock<u32> = std::sync::LazyLock::new(|| {
+    // config 中以 u64 存储；此处回退到 u32（原 env 版本亦是 u32）。
+    let val = crate::config::image_limit().max_pixels.min(u32::MAX as u64) as u32;
+    tracing::info!("Image pixel limit loaded from DB: {}", val);
+    val
+});
+
 // ============================================================================
 // 代码运行器配置
 // ============================================================================
