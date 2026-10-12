@@ -147,14 +147,20 @@ bun scripts/test-wasm-bindgen-metadata.cjs
 DATABASE_URL=postgresql://postgres@127.0.0.1:55439/ygg_mcp_test \
   cargo test --locked --features server private_post_workflow_database -- --ignored
 
+# 浏览器与 MCP 共同写入规则：校验、PATCH、素材引用、发布状态、事务回滚与权限
+DATABASE_URL=postgresql://postgres@127.0.0.1:55439/ygg_mcp_test \
+  cargo test --locked --all-features post_write_service_database -- --ignored
+
 # 上传元信息及 HTTP 接口
 DATABASE_URL=postgresql://postgres@127.0.0.1:55439/ygg_mcp_test \
   cargo test --locked --features server upload_metadata_database_and_http -- --ignored
 ```
 
-两项测试均会自动迁移；文章回归会重置用户及关联内容，上传回归会验证真实 HTTP 上传接口。
+上述测试均会自动迁移；文章回归会重置用户及关联内容，上传回归会验证真实 HTTP 上传接口。
 
 笔记数据库回归使用独立的 `ygg_notes_test`，命令见[笔记回归说明](docs/notes.md#回归与待补验收)。
+
+CI 在每次 push 和 PR 上严格执行 Rust 格式、原生/WASM Clippy、WASM 编译、Rust 测试及前端 Biome、TypeScript、Vitest。文章数据库回归使用工作流创建的一次性 PostgreSQL 服务，覆盖后台与 MCP 两个入口。备份恢复的独立数据库验收见[备份回归说明](docs/backup-regressions.md)。
 
 ## 文档
 
