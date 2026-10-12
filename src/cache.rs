@@ -691,12 +691,9 @@ pub async fn invalidate_tag_posts_for(tags: &[String]) {
 /// `invalidate_tag_posts_for` 等函数，避免不必要的缓存击穿。
 #[cfg(feature = "server")]
 pub fn invalidate_all_post_caches() {
-    POST_LIST_CACHE.invalidate_all();
-    TAG_LIST_CACHE.invalidate_all();
+    invalidate_post_metadata();
     SINGLE_POST_CACHE.invalidate_all();
-    POST_STATS_CACHE.invalidate_all();
     TAG_POSTS_CACHE.invalidate_all();
-    invalidate_feed();
 }
 
 /// 清空 Feed 条目缓存。
@@ -1161,6 +1158,15 @@ mod tests {
 
         invalidate_search_results();
         assert!(get_search_results(query).await.is_none());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn full_post_invalidation_also_clears_search_results() {
+        set_search_results("removed article", vec![], 0).await;
+        assert!(get_search_results("removed article").await.is_some());
+        invalidate_all_post_caches();
+        assert!(get_search_results("removed article").await.is_none());
     }
 
     #[tokio::test]

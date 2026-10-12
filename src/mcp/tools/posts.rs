@@ -1,7 +1,6 @@
 //! MCP 写作用域工具：文章 CRUD。
 //!
-//! 镜像 `src/api/posts/{create,update,trash,delete}.rs` 的 server-fn 逻辑，
-//! 但用 bearer-token 鉴权（`principal.user_id` 作 author_id），不走 cookie。
+//! bearer-token 鉴权后调用文章业务模块；协议参数与错误在此转换。
 //! 每个写操作后执行与 web 后台完全一致的缓存失效（moka + SSR）。
 //!
 //! 本模块仅 `feature = "server"` 编译；`server.rs` 在最终装配时把 `posts_router`
@@ -17,11 +16,11 @@ use rmcp::{schemars, tool, tool_router, ErrorData as McpError};
 use serde::Deserialize;
 
 use super::common::{internal, ok_json, require_scope};
-use crate::cache;
+use crate::api::posts::service::{
+    self, FieldChange, PostAction, PostDraft, PostPatch, UpdatePost, WriteError,
+};
 use crate::db::pool::get_conn;
 use crate::models::mcp_token::TokenScope;
-use crate::models::post::PostStatus;
-use crate::ssr_cache;
 
 // ---------------------------------------------------------------------------
 // 结构体
@@ -109,123 +108,37 @@ impl crate::mcp::server::YggMcpServer {
     ) -> Result<CallToolResult, McpError> {
         let principal = require_scope(&parts, "create_post", TokenScope::Write)?;
 
-        if p.title.trim().is_empty() {
-            return Err(McpError::invalid_request("title must not be empty", None));
-        }
-        if p.content_md.trim().is_empty() {
-            return Err(McpError::invalid_request(
-                "content_md must not be empty",
-                None,
-            ));
-        }
-
-        // 确定基础 slug。
-        let base_slug = match &p.slug {
-            Some(s) if !s.trim().is_empty() => {
-                let s = s.trim();
-                if !crate::api::slug::is_valid_slug(s) {
-                    return Err(McpError::invalid_request(
-                        "slug 格式无效，只能包含字母、数字、连字符和下划线",
-                        None,
-                    ));
-                }
-                s.to_string()
-            }
-            _ => crate::api::slug::slugify(&p.title),
-        };
-
-        // Markdown 渲染 + 度量派生收敛到 helper（R4）。
-        let fields = crate::api::posts::helpers::render_post_fields(
-            &p.content_md,
-            &p.status,
-            p.cover_image.as_deref(),
-        )
-        .await
-        .map_err(|_| internal("markdown render", "render_post_fields"))?;
-        let summary = p
-            .summary
+        let published_at = match p
+            .published_at
             .as_deref()
             .map(str::trim)
             .filter(|s| !s.is_empty())
-            .map(|s| s.to_string())
-            .unwrap_or(fields.auto_summary);
-        let explicit_published_at = match &p.published_at {
-            Some(s) if !s.trim().is_empty() => {
-                let Some(dt) = parse_date_opt(s) else {
-                    return Err(McpError::invalid_request(
-                        "published_at 格式无效，支持 YYYY-MM-DD 或 ISO 8601",
-                        None,
-                    ));
-                };
-                Some(dt)
-            }
-            _ => None,
+        {
+            Some(date) => Some(parse_date_opt(date).ok_or_else(|| {
+                McpError::invalid_request(
+                    "published_at 格式无效，支持 YYYY-MM-DD 或 ISO 8601",
+                    None,
+                )
+            })?),
+            None => None,
         };
-        let published_at = if fields.status == PostStatus::Published {
-            explicit_published_at.or_else(|| Some(chrono::Utc::now()))
-        } else {
-            None
+        let draft = PostDraft {
+            title: p.title,
+            slug: p.slug,
+            summary: p.summary,
+            content_md: p.content_md,
+            status: p.status,
+            tags: p.tags,
+            cover_image: p.cover_image,
         };
-        let created_at = explicit_published_at.unwrap_or_else(chrono::Utc::now);
-
-        let mut client = get_conn().await.map_err(|e| internal(e, "db connection"))?;
-        let tx = client
-            .transaction()
+        let result = service::create(principal.user_id, draft, published_at)
             .await
-            .map_err(|e| internal(e, "begin txn"))?;
-
-        let final_slug = crate::api::slug::ensure_unique_slug(&tx, &base_slug, None)
-            .await
-            .map_err(|e| internal(e, "ensure_unique_slug"))?;
-
-        let row = tx
-            .query_one(
-                "INSERT INTO posts (author_id, title, slug, summary, content_md, content_html, toc_html, status, published_at, cover_image, word_count, reading_time, created_at)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-                 RETURNING id",
-                &[
-                    &principal.user_id,
-                    &p.title.trim(),
-                    &final_slug,
-                    &summary,
-                    &p.content_md,
-                    &fields.content_html,
-                    &fields.toc_html,
-                    &fields.status.as_str(),
-                    &published_at,
-                    &fields.cover_image,
-                    &fields.word_count,
-                    &fields.reading_time,
-                    &created_at,
-                ],
-            )
-            .await
-            .map_err(|e| internal(e, "insert post"))?;
-        let post_id: i32 = row.get(0);
-
-        let tags_cleaned = crate::api::posts::helpers::clean_tags(&p.tags);
-        crate::api::posts::helpers::sync_tags(&tx, post_id, &tags_cleaned)
-            .await
-            .map_err(|_| internal("tag sync", "sync_tags"))?;
-        crate::api::posts::helpers::sync_asset_refs(
-            &tx,
-            post_id,
-            &fields.content_html,
-            fields.cover_image.as_deref(),
-        )
-        .await
-        .map_err(|_| internal("asset_refs sync", "sync_asset_refs"))?;
-
-        tx.commit().await.map_err(|e| internal(e, "commit"))?;
-
-        // 与 web 后台一致的缓存失效（moka + SSR）。
-        cache::invalidate_for_post_write(std::slice::from_ref(&final_slug), &tags_cleaned).await;
-
+            .map_err(write_error)?;
         ok_json(PostResult {
             success: true,
             message: "创建成功".into(),
-            post_id: Some(post_id),
-            slug: Some(final_slug),
+            post_id: Some(result.post_id),
+            slug: Some(result.slug),
         })
     }
 
@@ -241,303 +154,40 @@ impl crate::mcp::server::YggMcpServer {
     ) -> Result<CallToolResult, McpError> {
         let principal = require_scope(&parts, "update_post", TokenScope::Write)?;
 
-        use tokio_postgres::types::ToSql;
         let expected_updated_at = parse_expected_updated_at(p.expected_updated_at.as_deref())?;
-
-        // 至少一个可更新字段。
-        let any_change = p.title.is_some()
-            || p.content_md.is_some()
-            || p.summary.is_some()
-            || p.slug.is_some()
-            || p.tags.is_some()
-            || p.status.is_some()
-            || p.cover_image.is_some()
-            || p.published_at.is_some();
-        if !any_change {
-            return Err(McpError::invalid_request("至少提供一个可更新字段", None));
-        }
-        // 提供时的非空校验。
-        if matches!(&p.title, Some(t) if t.trim().is_empty()) {
-            return Err(McpError::invalid_request("title must not be empty", None));
-        }
-        if matches!(&p.content_md, Some(c) if c.trim().is_empty()) {
-            return Err(McpError::invalid_request(
-                "content_md must not be empty",
-                None,
-            ));
-        }
-
-        let mut client = get_conn().await.map_err(|e| internal(e, "db connection"))?;
-        let tx = client
-            .transaction()
-            .await
-            .map_err(|e| internal(e, "begin txn"))?;
-
-        // 校验存在、未删除、归属，并取旧值（slug/status/published_at/cover）。
-        let old_row = tx
-            .query_opt(
-                "SELECT slug, status, published_at, cover_image, updated_at FROM posts \
-                 WHERE id = $1 AND author_id = $2 AND deleted_at IS NULL FOR UPDATE",
-                &[&p.post_id, &principal.user_id],
-            )
-            .await
-            .map_err(|e| internal(e, "select post"))?;
-        let Some(old_row) = old_row else {
-            return Err(McpError::invalid_request("文章不存在或无权限", None));
-        };
-        let current_updated_at: chrono::DateTime<chrono::Utc> = old_row.get("updated_at");
-        if expected_updated_at.is_some_and(|expected| expected != current_updated_at) {
-            return Err(McpError::invalid_request(
-                "conflict: 文章已被修改，请重新读取后合并更改",
-                Some(
-                    serde_json::json!({"code": "conflict", "current_updated_at": current_updated_at}),
-                ),
-            ));
-        }
-        let old_slug: String = old_row.get(0);
-        let old_status: String = old_row.get(1);
-        let old_published_at: Option<chrono::DateTime<chrono::Utc>> = old_row.get(2);
-        let old_cover: Option<String> = old_row.get(3);
-
-        // 渲染（仅当 content_md 提供时）。status/cover 用新值或回退旧值。
-        let rendered: Option<crate::api::posts::helpers::RenderedFields> = match &p.content_md {
-            Some(md) => {
-                let status_for_render = p.status.as_deref().unwrap_or(&old_status);
-                let cover_for_render: Option<&str> = p
-                    .cover_image
-                    .as_deref()
-                    .map(str::trim)
-                    .filter(|s| !s.is_empty())
-                    .or(old_cover.as_deref());
-                Some(
-                    crate::api::posts::helpers::render_post_fields(
-                        md,
-                        status_for_render,
-                        cover_for_render,
-                    )
-                    .await
-                    .map_err(|_| internal("markdown render", "render_post_fields"))?,
+        let published_at = match p.published_at.as_deref() {
+            Some(date) if date.trim().is_empty() => FieldChange::Clear,
+            Some(date) => FieldChange::Set(parse_date_opt(date).ok_or_else(|| {
+                McpError::invalid_request(
+                    "published_at 格式无效，支持 YYYY-MM-DD 或 ISO 8601",
+                    None,
                 )
-            }
-            None => None,
+            })?),
+            None => FieldChange::Keep,
         };
-
-        // summary 决策（随 content_md 联动）：
-        //  提供了 summary → 用之（空则回退自动提取）；未提供但 content_md 变了 → 自动提取；都未变 → 不动。
-        let summary_value: Option<String> = match (&p.summary, &rendered) {
-            (Some(s), r) => {
-                let t = s.trim();
-                if t.is_empty() {
-                    r.as_ref().map(|f| f.auto_summary.clone())
-                } else {
-                    Some(t.to_string())
-                }
-            }
-            (None, Some(f)) => Some(f.auto_summary.clone()),
-            (None, None) => None,
+        let cover_image = match p.cover_image {
+            Some(cover) if cover.trim().is_empty() => FieldChange::Clear,
+            Some(cover) => FieldChange::Set(cover),
+            None => FieldChange::Keep,
         };
-
-        // slug 决策（仅显式提供才动；空串视为未提供）。
-        let new_slug: Option<String> = match &p.slug {
-            Some(s) => {
-                let t = s.trim();
-                if t.is_empty() {
-                    None
-                } else if !crate::api::slug::is_valid_slug(t) {
-                    return Err(McpError::invalid_request("slug 格式无效", None));
-                } else {
-                    Some(t.to_string())
-                }
-            }
-            None => None,
+        let patch = PostPatch {
+            title: p.title,
+            slug: p.slug,
+            summary: p.summary,
+            content_md: p.content_md,
+            status: p.status,
+            tags: p.tags,
+            cover_image,
+            published_at,
+            expected_updated_at,
         };
-        let final_slug: Option<String> = match new_slug {
-            Some(base) => Some(
-                crate::api::slug::ensure_unique_slug(&tx, &base, Some(p.post_id))
-                    .await
-                    .map_err(|e| internal(e, "ensure_unique_slug"))?,
-            ),
-            None => None,
-        };
-
-        // published_at 显式指定或依据 status 转换联动。
-        let explicit_published_at = match &p.published_at {
-            Some(s) if !s.trim().is_empty() => {
-                let Some(dt) = parse_date_opt(s) else {
-                    return Err(McpError::invalid_request(
-                        "published_at 格式无效，支持 YYYY-MM-DD 或 ISO 8601",
-                        None,
-                    ));
-                };
-                Some(Some(dt))
-            }
-            Some(_) => Some(None), // 空串清空 published_at
-            None => None,
-        };
-
-        // status + published_at 决策（首发 published 填 published_at；转 draft 保留旧值）。
-        let new_status: Option<PostStatus> = p
-            .status
-            .as_deref()
-            .map(|s| PostStatus::from_str(s).unwrap_or(PostStatus::Draft));
-        let published_at: Option<Option<chrono::DateTime<chrono::Utc>>> =
-            if let Some(epa) = explicit_published_at {
-                Some(epa)
-            } else {
-                match &new_status {
-                    Some(PostStatus::Published) => Some(if old_status == "published" {
-                        old_published_at
-                    } else {
-                        Some(chrono::Utc::now())
-                    }),
-                    Some(PostStatus::Draft) => Some(old_published_at),
-                    None => None,
-                }
-            };
-
-        // cover 决策（空串 → 清空 None）。
-        let new_cover: Option<String> = p
-            .cover_image
-            .as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(|s| s.to_string());
-        let cover_changed = p.cover_image.is_some();
-
-        // 动态构建 UPDATE（仅 SET 提供的字段）。
-        let mut sets: Vec<String> = Vec::new();
-        let mut params: Vec<Box<dyn ToSql + Sync + Send>> = Vec::new();
-        let mut idx = 1usize;
-        macro_rules! push {
-            ($col:expr, $val:expr) => {{
-                sets.push(format!("{} = ${}", $col, idx));
-                params.push(Box::new($val));
-                idx += 1;
-            }};
-        }
-        if let Some(t) = &p.title {
-            push!("title", t.trim().to_string());
-        }
-        if let Some(c) = &p.content_md {
-            push!("content_md", c.clone());
-        }
-        if let Some(f) = &rendered {
-            push!("content_html", f.content_html.clone());
-            push!("toc_html", f.toc_html.clone());
-            push!("word_count", f.word_count);
-            push!("reading_time", f.reading_time);
-        }
-        if let Some(s) = &summary_value {
-            push!("summary", s.clone());
-        }
-        if let Some(s) = &final_slug {
-            push!("slug", s.clone());
-        }
-        if let Some(st) = &new_status {
-            push!("status", st.as_str().to_string());
-        }
-        if let Some(pa) = published_at {
-            push!("published_at", pa);
-            if let Some(dt) = pa {
-                push!("created_at", dt);
-            }
-        }
-        if cover_changed {
-            push!("cover_image", new_cover.clone());
-        }
-        sets.push(
-            "updated_at = GREATEST(clock_timestamp(), updated_at + INTERVAL '1 microsecond')"
-                .to_string(),
-        );
-
-        let sql = format!(
-            "UPDATE posts SET {} WHERE id = ${} RETURNING updated_at",
-            sets.join(", "),
-            idx
-        );
-        params.push(Box::new(p.post_id));
-        let refs: Vec<&(dyn ToSql + Sync)> = params
-            .iter()
-            .map(|b| b.as_ref() as &(dyn ToSql + Sync))
-            .collect();
-        let updated = tx
-            .query_one(&sql, &refs)
+        let result = service::update(principal.user_id, p.post_id, UpdatePost::Patch(patch))
             .await
-            .map_err(|e| internal(e, "update post"))?;
-        let updated_at: chrono::DateTime<chrono::Utc> = updated.get("updated_at");
-
-        // 标签同步（仅当 tags 提供时）。先取旧标签供缓存失效，再完全替换。
-        let tags_changed = p.tags.is_some();
-        let mut old_tags: Vec<String> = Vec::new();
-        if tags_changed {
-            old_tags = crate::api::posts::helpers::fetch_post_tags(&tx, p.post_id)
-                .await
-                .map_err(|_| internal("select old tags", "fetch_post_tags"))?;
-            let tags_cleaned = crate::api::posts::helpers::clean_tags(p.tags.as_ref().unwrap());
-            tx.execute("DELETE FROM post_tags WHERE post_id = $1", &[&p.post_id])
-                .await
-                .map_err(|e| internal(e, "delete old post_tags"))?;
-            crate::api::posts::helpers::sync_tags(&tx, p.post_id, &tags_cleaned)
-                .await
-                .map_err(|_| internal("tag sync", "sync_tags"))?;
-        }
-
-        // 素材引用同步（content_html 或 cover 变了）。
-        if rendered.is_some() || cover_changed {
-            let content_html: String = match &rendered {
-                Some(f) => f.content_html.clone(),
-                None => tx
-                    .query_one(
-                        "SELECT content_html FROM posts WHERE id = $1",
-                        &[&p.post_id],
-                    )
-                    .await
-                    .map_err(|e| internal(e, "select content_html"))?
-                    .get::<_, String>(0),
-            };
-            let cover_for_sync = new_cover.as_deref().or(old_cover.as_deref());
-            crate::api::posts::helpers::sync_asset_refs(
-                &tx,
-                p.post_id,
-                &content_html,
-                cover_for_sync,
-            )
-            .await
-            .map_err(|_| internal("asset_refs sync", "sync_asset_refs"))?;
-        }
-
-        tx.commit().await.map_err(|e| internal(e, "commit"))?;
-
-        // 缓存失效（moka + SSR）。
-        let effective_slug = final_slug.clone().unwrap_or_else(|| old_slug.clone());
-
-        cache::invalidate_post_metadata();
-        cache::invalidate_post_by_slug(&effective_slug).await;
-
-        if let Some(new) = &final_slug {
-            if new != &old_slug {
-                cache::invalidate_post_by_slug(&old_slug).await;
-                ssr_cache::invalidate_ssr_route(&format!("/post/{old_slug}"));
-                ssr_cache::invalidate_post_preview(&old_slug);
-            }
-        }
-        ssr_cache::invalidate_ssr_route(&format!("/post/{effective_slug}"));
-        ssr_cache::invalidate_post_preview(&effective_slug);
-        ssr_cache::invalidate_ssr_all_public();
-        ssr_cache::bump_global_generation();
-
-        if tags_changed {
-            let new_tags = crate::api::posts::helpers::clean_tags(p.tags.as_ref().unwrap());
-            let mut all: std::collections::HashSet<String> = old_tags.into_iter().collect();
-            all.extend(new_tags);
-            let all_tags: Vec<String> = all.into_iter().collect();
-            cache::invalidate_tag_posts_for(&all_tags).await;
-        }
-
-        ok_json(serde_json::json!({
-            "success": true, "message": "更新成功", "post_id": p.post_id,
-            "slug": effective_slug, "updated_at": updated_at,
-        }))
+            .map_err(write_error)?;
+        ok_json(
+            serde_json::json!({"success": true, "message": "更新成功", "post_id": result.post_id,
+            "slug": result.slug, "updated_at": result.updated_at}),
+        )
     }
 
     /// 发布指定文章（设置 status=published 与 published_at）。要求 write 作用域。
@@ -550,51 +200,14 @@ impl crate::mcp::server::YggMcpServer {
         Extension(parts): Extension<http::request::Parts>,
     ) -> Result<CallToolResult, McpError> {
         let principal = require_scope(&parts, "publish_post", TokenScope::Write)?;
-
-        let client = get_conn().await.map_err(|e| internal(e, "db connection"))?;
-
-        // 校验存在、未删除、归属当前用户，并取 slug 用于缓存失效。
-        let row = client
-            .query_opt(
-                "SELECT slug FROM posts WHERE id = $1 AND author_id = $2 AND deleted_at IS NULL",
-                &[&p.post_id, &principal.user_id],
-            )
+        let result = service::act(p.post_id, Some(principal.user_id), PostAction::Publish)
             .await
-            .map_err(|e| internal(e, "select post"))?;
-        let slug: String = match row {
-            Some(r) => r.get(0),
-            None => {
-                return Err(McpError::invalid_request("文章不存在或无权限", None));
-            }
-        };
-
-        // M6 修复：发布后文章出现在公开标签列表页，须失效标签缓存（api update.rs:202
-        // 会失效，此 MCP 路径此前漏掉 → 标签页新发文陈旧 ≤120s）。
-        let tags = crate::api::posts::helpers::fetch_post_tags(&client, p.post_id)
-            .await
-            .map_err(|_| internal("select tags", "select tags"))?;
-
-        let result = client
-            .execute(
-                "UPDATE posts SET status = 'published', \
-                 published_at = COALESCE(published_at, NOW()), updated_at = NOW() \
-                 WHERE id = $1 AND deleted_at IS NULL",
-                &[&p.post_id],
-            )
-            .await
-            .map_err(|e| internal(e, "publish post"))?;
-        if result == 0 {
-            return Err(McpError::invalid_request("文章不存在", None));
-        }
-
-        // 发布后失效文章详情、列表、标签与 SSR 缓存（moka + SSR）。
-        cache::invalidate_for_post_write(std::slice::from_ref(&slug), &tags).await;
-
+            .map_err(write_error)?;
         ok_json(PostResult {
             success: true,
             message: "发布成功".into(),
-            post_id: Some(p.post_id),
-            slug: Some(slug),
+            post_id: Some(result.post_id),
+            slug: Some(result.slug),
         })
     }
 
@@ -606,50 +219,14 @@ impl crate::mcp::server::YggMcpServer {
         Extension(parts): Extension<http::request::Parts>,
     ) -> Result<CallToolResult, McpError> {
         let principal = require_scope(&parts, "trash_post", TokenScope::Write)?;
-
-        let mut client = get_conn().await.map_err(|e| internal(e, "db connection"))?;
-        let tx = client
-            .transaction()
+        let result = service::act(p.post_id, Some(principal.user_id), PostAction::Trash)
             .await
-            .map_err(|e| internal(e, "begin txn"))?;
-
-        let slug_row = tx
-            .query_opt(
-                "SELECT slug FROM posts WHERE id = $1 AND author_id = $2 AND deleted_at IS NULL FOR UPDATE",
-                &[&p.post_id, &principal.user_id],
-            )
-            .await
-            .map_err(|e| internal(e, "select post"))?;
-        let Some(slug_row) = slug_row else {
-            return Err(McpError::invalid_request("文章不存在", None));
-        };
-        let slug: String = slug_row.get(0);
-
-        let tags = crate::api::posts::helpers::fetch_post_tags(&tx, p.post_id)
-            .await
-            .map_err(|_| internal("select tags", "select tags"))?;
-
-        let result = tx
-            .execute(
-                "UPDATE posts SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL",
-                &[&p.post_id],
-            )
-            .await
-            .map_err(|e| internal(e, "soft delete"))?;
-        if result == 0 {
-            return Err(McpError::invalid_request("文章不存在", None));
-        }
-
-        tx.commit().await.map_err(|e| internal(e, "commit"))?;
-
-        // 移入回收站后失效相关缓存（moka + SSR）。
-        cache::invalidate_for_post_write(std::slice::from_ref(&slug), &tags).await;
-
+            .map_err(write_error)?;
         ok_json(PostResult {
             success: true,
             message: "已移入回收站".into(),
-            post_id: Some(p.post_id),
-            slug: Some(slug),
+            post_id: Some(result.post_id),
+            slug: Some(result.slug),
         })
     }
 
@@ -663,48 +240,27 @@ impl crate::mcp::server::YggMcpServer {
         Extension(parts): Extension<http::request::Parts>,
     ) -> Result<CallToolResult, McpError> {
         let principal = require_scope(&parts, "delete_post", TokenScope::Write)?;
-
-        let mut client = get_conn().await.map_err(|e| internal(e, "db connection"))?;
-        let tx = client
-            .transaction()
+        let result = service::act(p.post_id, Some(principal.user_id), PostAction::Delete)
             .await
-            .map_err(|e| internal(e, "begin txn"))?;
-
-        let slug_row = tx
-            .query_opt(
-                "SELECT slug FROM posts WHERE id = $1 AND author_id = $2 FOR UPDATE",
-                &[&p.post_id, &principal.user_id],
-            )
-            .await
-            .map_err(|e| internal(e, "select post"))?;
-        let Some(slug_row) = slug_row else {
-            return Err(McpError::invalid_request("文章不存在", None));
-        };
-        let slug: String = slug_row.get(0);
-
-        let tags = crate::api::posts::helpers::fetch_post_tags(&tx, p.post_id)
-            .await
-            .map_err(|_| internal("select tags", "select tags"))?;
-
-        let result = tx
-            .execute("DELETE FROM posts WHERE id = $1", &[&p.post_id])
-            .await
-            .map_err(|e| internal(e, "hard delete"))?;
-        if result == 0 {
-            return Err(McpError::invalid_request("文章不存在", None));
-        }
-
-        tx.commit().await.map_err(|e| internal(e, "commit"))?;
-
-        // 彻底删除后失效相关缓存（moka + SSR）。
-        cache::invalidate_for_post_write(std::slice::from_ref(&slug), &tags).await;
-
+            .map_err(write_error)?;
         ok_json(PostResult {
             success: true,
             message: "已彻底删除".into(),
-            post_id: Some(p.post_id),
-            slug: Some(slug),
+            post_id: Some(result.post_id),
+            slug: Some(result.slug),
         })
+    }
+}
+
+/// 把共同业务错误转换为 MCP 错误，数据库细节只写日志。
+fn write_error(error: WriteError) -> McpError {
+    match error {
+        WriteError::Invalid(message) => McpError::invalid_request(message, None),
+        WriteError::Conflict(current_updated_at) => McpError::invalid_request(
+            "conflict: 文章已被修改，请重新读取后合并更改",
+            Some(serde_json::json!({"code":"conflict", "current_updated_at":current_updated_at})),
+        ),
+        WriteError::Failed(error) => internal(format!("{error:?}"), "post write"),
     }
 }
 
@@ -733,7 +289,8 @@ pub struct CreatePostParams {
     /// 封面图 URL。
     #[serde(default)]
     pub cover_image: Option<String>,
-    /// 发布时间（ISO 8601 或 YYYY-MM-DD）；仅在 status=published 时生效，未提供则使用当前时间。
+    /// 发布时间（ISO 8601 或 YYYY-MM-DD）；已发布文章写入 published_at，同时用作 created_at。
+    /// 草稿只设置 created_at；未提供时使用当前时间。
     #[serde(default)]
     pub published_at: Option<String>,
 }
@@ -906,269 +463,4 @@ async fn list_owned_posts(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::mcp::{auth::McpPrincipal, server::YggMcpServer};
-
-    fn parts(scope: Option<TokenScope>) -> http::request::Parts {
-        let (mut parts, _) = http::Request::new(()).into_parts();
-        if let Some(scope) = scope {
-            parts.extensions.insert(McpPrincipal {
-                user_id: 1,
-                scope,
-                token_id: "test".into(),
-            });
-        }
-        parts
-    }
-
-    fn result_json(result: CallToolResult) -> serde_json::Value {
-        serde_json::from_str(&result.content[0].as_text().unwrap().text).unwrap()
-    }
-
-    /// Run only against a disposable database named ygg_mcp_test.
-    #[test]
-    #[ignore = "requires disposable DATABASE_URL database ygg_mcp_test"]
-    fn private_post_workflow_database() {
-        crate::db::TEST_DATABASE_RUNTIME.block_on(private_post_workflow_database_impl());
-    }
-
-    async fn private_post_workflow_database_impl() {
-        let _guard = crate::db::TEST_DATABASE_LOCK.lock().await;
-        let mut client = get_conn().await.unwrap();
-        let database: String = client
-            .query_one("SELECT current_database()", &[])
-            .await
-            .unwrap()
-            .get(0);
-        assert_eq!(database, "ygg_mcp_test", "requires isolated test database");
-        crate::db::migrate::run_on_conn(&mut client).await.unwrap();
-        client
-            .batch_execute(
-                "TRUNCATE users CASCADE;
-        INSERT INTO users (id, username, email, password_hash, role) VALUES
-            (1, 'mcp-owner', 'owner@test.invalid', 'unused', 'admin'),
-            (2, 'mcp-other', 'other@test.invalid', 'unused', 'blocked');
-        INSERT INTO posts (id, author_id, title, slug, content_md, content_html, status) VALUES
-            (101, 1, 'Draft 100%_', 'mcp-draft', 'draft body', '<p>draft body</p>', 'draft'),
-            (102, 2, 'Other draft', 'mcp-other', 'private', '<p>private</p>', 'draft'),
-            (103, 1, 'Published', 'mcp-published', 'public', '<p>public</p>', 'published');",
-            )
-            .await
-            .unwrap();
-        let p = ListPostsParams {
-            status: Some("draft".into()),
-            query: Some("100%_".into()),
-            ..Default::default()
-        };
-        let list = result_json(
-            YggMcpServer
-                .list_posts(Parameters(p), Extension(parts(Some(TokenScope::Write))))
-                .await
-                .unwrap(),
-        );
-        assert_eq!(list["total"], 1);
-        assert_eq!(list["posts"][0]["id"], 101);
-        let post = result_json(
-            YggMcpServer
-                .get_post_by_id(
-                    Parameters(PostIdParams { post_id: 101 }),
-                    Extension(parts(Some(TokenScope::Write))),
-                )
-                .await
-                .unwrap(),
-        );
-        assert_eq!(post["content_md"], "draft body");
-        assert!(post["updated_at"].is_string());
-        assert!(YggMcpServer
-            .get_post_by_id(
-                Parameters(PostIdParams { post_id: 102 }),
-                Extension(parts(Some(TokenScope::Write)))
-            )
-            .await
-            .is_err());
-        assert!(crate::mcp::tools::read::get_published_by_slug("mcp-draft")
-            .await
-            .unwrap()
-            .is_none());
-        client
-            .batch_execute(
-                "UPDATE posts SET deleted_at = NOW() WHERE id IN (101, 102);
-        INSERT INTO posts (id, author_id, title, slug, content_md, status) VALUES
-        (104, 1, 'Slug collision', 'mcp-draft', 'body', 'draft');",
-            )
-            .await
-            .unwrap();
-        let trash = result_json(
-            YggMcpServer
-                .list_trashed_posts(
-                    Parameters(ListPostsParams::default()),
-                    Extension(parts(Some(TokenScope::Write))),
-                )
-                .await
-                .unwrap(),
-        );
-        assert_eq!(trash["total"], 1);
-        assert_eq!(trash["posts"][0]["id"], 101);
-        assert!(trash["posts"][0]["deleted_at"].is_string());
-        let denied = result_json(
-            YggMcpServer
-                .restore_post(
-                    Parameters(PostIdParams { post_id: 102 }),
-                    Extension(parts(Some(TokenScope::Write))),
-                )
-                .await
-                .unwrap(),
-        );
-        assert_eq!(denied["success"], false);
-        let restored = result_json(
-            YggMcpServer
-                .restore_post(
-                    Parameters(PostIdParams { post_id: 101 }),
-                    Extension(parts(Some(TokenScope::Write))),
-                )
-                .await
-                .unwrap(),
-        );
-        assert_eq!(restored["success"], true);
-        assert_ne!(restored["slug"], "mcp-draft");
-        let row = client
-            .query_one("SELECT status, deleted_at FROM posts WHERE id = 101", &[])
-            .await
-            .unwrap();
-        assert_eq!(row.get::<_, String>(0), "draft");
-        assert!(row
-            .get::<_, Option<chrono::DateTime<chrono::Utc>>>(1)
-            .is_none());
-        let before: chrono::DateTime<chrono::Utc> = client
-            .query_one("SELECT updated_at FROM posts WHERE id = 101", &[])
-            .await
-            .unwrap()
-            .get(0);
-        let update = |title: &str, version: chrono::DateTime<chrono::Utc>| {
-            serde_json::from_value::<UpdatePostParams>(serde_json::json!({
-                "post_id": 101, "title": title, "expected_updated_at": version.to_rfc3339()
-            }))
-            .unwrap()
-        };
-        // Two writers using the same version must not both succeed.
-        let (a, b) = tokio::join!(
-            YggMcpServer.update_post(
-                Parameters(update("writer-a", before)),
-                Extension(parts(Some(TokenScope::Write)))
-            ),
-            YggMcpServer.update_post(
-                Parameters(update("writer-b", before)),
-                Extension(parts(Some(TokenScope::Write)))
-            ),
-        );
-        assert_ne!(a.is_ok(), b.is_ok());
-        let (winner, conflict) = match (a, b) {
-            (Ok(winner), Err(conflict)) | (Err(conflict), Ok(winner)) => (winner, conflict),
-            _ => panic!("exactly one concurrent writer must succeed"),
-        };
-        assert!(conflict.message.contains("conflict"));
-        let winner = result_json(winner);
-        let after = client
-            .query_one("SELECT title, updated_at FROM posts WHERE id = 101", &[])
-            .await
-            .unwrap();
-        assert_eq!(
-            winner["updated_at"],
-            serde_json::to_value(after.get::<_, chrono::DateTime<chrono::Utc>>(1)).unwrap()
-        );
-        assert!(YggMcpServer
-            .update_post(
-                Parameters(update("stale overwrite", before)),
-                Extension(parts(Some(TokenScope::Write)))
-            )
-            .await
-            .is_err());
-        assert_eq!(
-            client
-                .query_one("SELECT title FROM posts WHERE id = 101", &[])
-                .await
-                .unwrap()
-                .get::<_, String>(0),
-            after.get::<_, String>(0)
-        );
-        // An edit from the web/backend also invalidates the previously read version.
-        let version = after.get::<_, chrono::DateTime<chrono::Utc>>(1);
-        client.execute("UPDATE posts SET title = 'web edit', updated_at = clock_timestamp() WHERE id = 101", &[]).await.unwrap();
-        assert!(YggMcpServer
-            .update_post(
-                Parameters(update("stale web overwrite", version)),
-                Extension(parts(Some(TokenScope::Write)))
-            )
-            .await
-            .is_err());
-        let legacy = serde_json::from_value::<UpdatePostParams>(
-            serde_json::json!({"post_id":101,"title":"legacy update"}),
-        )
-        .unwrap();
-        assert!(YggMcpServer
-            .update_post(
-                Parameters(legacy),
-                Extension(parts(Some(TokenScope::Write)))
-            )
-            .await
-            .is_ok());
-    }
-
-    #[test]
-    fn expected_version_requires_precise_timestamp() {
-        assert!(parse_expected_updated_at(None).unwrap().is_none());
-        assert!(parse_expected_updated_at(Some("2026-09-16")).is_err());
-        assert!(parse_expected_updated_at(Some("invalid")).is_err());
-        assert_eq!(
-            parse_expected_updated_at(Some("2026-09-16T08:00:00.123456+08:00")).unwrap(),
-            parse_expected_updated_at(Some("2026-09-16T00:00:00.123456Z")).unwrap()
-        );
-    }
-
-    #[test]
-    fn list_validates_status_bounds_paging_and_escapes_search() {
-        let mut p = ListPostsParams::default();
-        assert_eq!(p.normalize().unwrap(), (1, 20, "%".repeat(2)));
-        p.page = Some(i32::MIN);
-        p.per_page = Some(i32::MAX);
-        p.query = Some("  100%_  ".into());
-        assert_eq!(p.normalize().unwrap(), (1, 50, r"%100\%\_%".into()));
-        p.status = Some("unknown".into());
-        assert!(p.normalize().is_err());
-    }
-
-    #[tokio::test]
-    async fn private_reads_reject_missing_and_read_only_principals_before_io() {
-        for scope in [None, Some(TokenScope::Read)] {
-            assert!(YggMcpServer
-                .list_trashed_posts(
-                    Parameters(ListPostsParams::default()),
-                    Extension(parts(scope))
-                )
-                .await
-                .is_err());
-            assert!(YggMcpServer
-                .restore_post(
-                    Parameters(PostIdParams { post_id: 101 }),
-                    Extension(parts(scope))
-                )
-                .await
-                .is_err());
-            assert!(YggMcpServer
-                .list_posts(
-                    Parameters(ListPostsParams::default()),
-                    Extension(parts(scope))
-                )
-                .await
-                .is_err());
-            assert!(YggMcpServer
-                .get_post_by_id(
-                    Parameters(PostIdParams { post_id: 1 }),
-                    Extension(parts(scope))
-                )
-                .await
-                .is_err());
-        }
-    }
-}
+mod tests;

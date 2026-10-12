@@ -95,55 +95,10 @@ pub(crate) async fn restore_post_impl(
 pub async fn purge_post(post_id: i32) -> Result<CreatePostResponse, ServerFnError> {
     let _user = get_current_admin_user().await?;
 
-    #[cfg(feature = "server")]
-    {
-        let mut client = get_conn().await.map_err(AppError::db_conn)?;
-        let tx = client.transaction().await.map_err(AppError::tx)?;
-
-        // 在事务内锁定行并读取 slug 与标签，避免并发更新导致缓存失效目标过期。
-        let slug_row = tx
-            .query_opt(
-                "SELECT slug FROM posts WHERE id = $1 AND deleted_at IS NOT NULL FOR UPDATE",
-                &[&post_id],
-            )
-            .await
-            .map_err(AppError::query)?;
-
-        let Some(slug_row) = slug_row else {
-            return Ok(CreatePostResponse::err("文章不在回收站".to_string()));
-        };
-        let slug: String = slug_row.get(0);
-
-        let tags = super::helpers::fetch_post_tags(&tx, post_id).await?;
-
-        let result = tx
-            .execute(
-                "DELETE FROM posts WHERE id = $1 AND deleted_at IS NOT NULL",
-                &[&post_id],
-            )
-            .await
-            .map_err(AppError::tx)?;
-
-        if result == 0 {
-            return Ok(CreatePostResponse::err("文章不在回收站".to_string()));
-        }
-
-        tx.commit().await.map_err(AppError::tx)?;
-
-        // 精准失效相关缓存（moka + SSR）。
-        crate::cache::invalidate_for_post_write(std::slice::from_ref(&slug), &tags).await;
-
-        Ok(CreatePostResponse::ok(
-            "彻底删除成功".to_string(),
-            post_id,
-            slug,
-        ))
-    }
-
-    #[cfg(not(feature = "server"))]
-    {
-        Ok(CreatePostResponse::err("server only".to_string()))
-    }
+    super::types::write_response(
+        super::service::act(post_id, None, super::service::PostAction::Purge).await,
+        "彻底删除成功",
+    )
 }
 
 /// 批量恢复文章。

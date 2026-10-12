@@ -207,7 +207,7 @@ pub(crate) fn clean_tags(tags: &[String]) -> Vec<String> {
         .collect()
 }
 #[cfg(feature = "server")]
-/// 取指定文章的全部标签名（按 post_tags 关联）。R5：此前 9+ 处重复同一条 SQL。
+/// 取指定文章的全部标签名（按 post_tags 关联）。此前 9+ 处重复同一条 SQL。
 pub(crate) async fn fetch_post_tags(
     client: &impl deadpool_postgres::GenericClient,
     post_id: i32,
@@ -316,7 +316,7 @@ pub(crate) struct RenderedFields {
     pub reading_time: i32,
 }
 
-/// 渲染 Markdown 并派生全部度量字段（R4）。
+/// 渲染 Markdown 并派生全部度量字段。
 ///
 /// 收敛 create / update / MCP 写操作中重复的「spawn_blocking 渲染 → 7 步派生」：
 /// content_html、toc_html（空则 None）、auto_summary、status（from_str 回退 Draft）、
@@ -343,7 +343,8 @@ pub(crate) async fn render_post_fields(
     let auto_summary = auto_summary(content_md);
     let status = PostStatus::from_str(status_str).unwrap_or(PostStatus::Draft);
     let cover_image = cover_image
-        .filter(|s| !s.trim().is_empty())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
         .map(str::to_string);
 
     let word_count = count_words(content_md);
@@ -360,7 +361,7 @@ pub(crate) async fn render_post_fields(
     })
 }
 
-/// 渲染 Markdown 并仅派生重建所需的最小字段（R4）。
+/// 渲染 Markdown 并仅派生重建所需的最小字段。
 ///
 /// rebuild 仅需 content_html / toc_html / word_count / reading_time，
 /// 不计算 summary / status / cover_image，避免无谓开销。

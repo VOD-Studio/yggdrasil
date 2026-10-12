@@ -90,3 +90,20 @@ pub struct RebuildResult {
     /// 失败信息摘要（最多 5 条）。
     pub errors: Vec<String>,
 }
+
+/// 浏览器协议适配：业务拒绝保留 success=false，内部错误使用统一脱敏转换。
+#[cfg(feature = "server")]
+pub(super) fn write_response(
+    result: Result<super::service::WriteOutcome, super::service::WriteError>,
+    message: &str,
+) -> Result<CreatePostResponse, dioxus::prelude::ServerFnError> {
+    use super::service::WriteError;
+    match result {
+        Ok(value) => Ok(CreatePostResponse::ok(message, value.post_id, value.slug)),
+        Err(WriteError::Invalid(message)) => Ok(CreatePostResponse::err(message)),
+        Err(WriteError::Conflict(_)) => Ok(CreatePostResponse::err(
+            "文章已被修改，请重新读取后合并更改",
+        )),
+        Err(WriteError::Failed(error)) => Err(error.into()),
+    }
+}

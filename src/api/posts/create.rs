@@ -10,16 +10,10 @@
 use dioxus::prelude::*;
 
 #[cfg(feature = "server")]
-use super::helpers::{
-    clean_tags, get_current_admin_user, render_post_fields, sync_asset_refs, sync_tags,
-};
+use super::helpers::get_current_admin_user;
 use super::types::CreatePostResponse;
 #[cfg(feature = "server")]
-use crate::api::error::AppError;
-#[cfg(feature = "server")]
-use crate::db::pool::get_conn;
-#[cfg(feature = "server")]
-use crate::models::post::PostStatus;
+use super::{service, types::write_response};
 
 /// 创建一篇新文章。
 ///
@@ -36,115 +30,14 @@ pub async fn create_post(
     cover_image: Option<String>,
 ) -> Result<CreatePostResponse, ServerFnError> {
     let user = get_current_admin_user().await?;
-
-    // 标题不能为空。
-    if title.trim().is_empty() {
-        return Ok(CreatePostResponse::err("标题不能为空".to_string()));
-    }
-
-    // 内容不能为空。
-    if content_md.trim().is_empty() {
-        return Ok(CreatePostResponse::err("内容不能为空".to_string()));
-    }
-
-    // 确定基础 slug：用户传入时校验格式，否则由标题生成。
-    let base_slug = match slug {
-        Some(ref s) if !s.trim().is_empty() => {
-            let s = s.trim();
-            if !crate::api::slug::is_valid_slug(s) {
-                return Ok(CreatePostResponse::err(
-                    "slug 格式无效，只能包含字母、数字、连字符和下划线".to_string(),
-                ));
-            }
-            s.to_string()
-        }
-        _ => crate::api::slug::slugify(&title),
+    let draft = service::PostDraft {
+        title,
+        slug,
+        summary,
+        content_md,
+        status,
+        tags,
+        cover_image,
     };
-
-    #[cfg(feature = "server")]
-    {
-        let mut client = get_conn().await.map_err(AppError::db_conn)?;
-
-        // Markdown 渲染 + 度量派生收敛到 helper（R4）。
-        let fields = render_post_fields(&content_md, &status, cover_image.as_deref()).await?;
-        // 未填写摘要时用自动摘要兜底。
-        let summary = summary
-            .filter(|s| !s.trim().is_empty())
-            .unwrap_or(fields.auto_summary);
-
-        // 发布状态的文章设置当前发布时间；草稿则为 None。
-        let published_at = if fields.status == PostStatus::Published {
-            Some(chrono::Utc::now())
-        } else {
-            None
-        };
-
-        let tx = client.transaction().await.map_err(AppError::tx)?;
-
-        // 保证 slug 全局唯一，若冲突则追加数字后缀；在事务内检查避免并发竞态。
-        let final_slug = crate::api::slug::ensure_unique_slug(&tx, &base_slug, None).await?;
-
-        // 插入文章记录。
-        let row = tx
-            .query_one(
-                "INSERT INTO posts (author_id, title, slug, summary, content_md, content_html, toc_html, status, published_at, cover_image, word_count, reading_time)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-                 RETURNING id",
-                &[
-                    &user.id,
-                    &title.trim(),
-                    &final_slug,
-                    &summary,
-                    &content_md,
-                    &fields.content_html,
-                    &fields.toc_html,
-                    &fields.status.as_str(),
-                    &published_at,
-                    &fields.cover_image,
-                    &fields.word_count,
-                    &fields.reading_time,
-                ],
-            )
-            .await
-            .map_err(AppError::tx)?;
-
-        let post_id: i32 = row.get(0);
-
-        // 清洗标签并在事务中同步 post_tags 关联。
-        let tags_cleaned = clean_tags(&tags);
-        sync_tags(&tx, post_id, &tags_cleaned).await?;
-
-        // 同步素材引用关联（asset_refs）：内部自带 DELETE 再重建。
-        sync_asset_refs(
-            &tx,
-            post_id,
-            &fields.content_html,
-            fields.cover_image.as_deref(),
-        )
-        .await?;
-
-        tx.commit().await.map_err(AppError::tx)?;
-
-        // 写入成功后按粒度失效相关缓存。
-        crate::cache::invalidate_post_metadata();
-        // 失效按 slug 缓存，避免之前缓存的 404 继续命中。
-        crate::cache::invalidate_post_by_slug(&final_slug).await;
-        // 失效该文章涉及的所有标签下文章列表缓存。
-        crate::cache::invalidate_tag_posts_for(&tags_cleaned).await;
-
-        // SSR：新文章会出现在首页/分页/归档/标签等所有列表页，全量失效。
-        crate::ssr_cache::invalidate_ssr_all_public();
-        crate::ssr_cache::bump_global_generation();
-
-        Ok(CreatePostResponse::ok(
-            "创建成功".to_string(),
-            post_id,
-            final_slug,
-        ))
-    }
-
-    #[cfg(not(feature = "server"))]
-    {
-        Ok(CreatePostResponse::err("server only".to_string()))
-    }
+    write_response(service::create(user.id, draft, None).await, "创建成功")
 }

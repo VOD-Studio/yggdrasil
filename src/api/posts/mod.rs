@@ -12,11 +12,15 @@ mod list;
 mod read;
 mod rebuild;
 mod search;
+#[cfg(feature = "server")]
+pub(crate) mod service;
 mod stats;
 mod tags;
 mod trash;
 mod types;
 mod update;
+#[cfg(feature = "server")]
+mod validation;
 
 /// 创建新文章。
 pub use create::create_post;

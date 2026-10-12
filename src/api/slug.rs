@@ -7,9 +7,6 @@
 #![allow(clippy::unused_unit, deprecated)]
 
 #[cfg(feature = "server")]
-use dioxus::prelude::*;
-
-#[cfg(feature = "server")]
 use pinyin::ToPinyin;
 
 #[cfg(feature = "server")]
@@ -117,7 +114,7 @@ pub async fn ensure_unique_slug(
     tx: &deadpool_postgres::Transaction<'_>,
     base: &str,
     exclude_id: Option<i32>,
-) -> Result<String, ServerFnError> {
+) -> Result<String, crate::api::error::AppError> {
     use crate::api::error::AppError;
 
     let mut candidate = base.to_string();
@@ -152,7 +149,7 @@ pub async fn ensure_unique_slug(
 
         // 防止无限循环：slug 总长度超过 200 时直接报错。
         if candidate.len() > 200 {
-            return Err(AppError::Internal("无法生成唯一 slug").into());
+            return Err(AppError::Internal("无法生成唯一 slug"));
         }
     }
 }
