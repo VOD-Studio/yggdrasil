@@ -509,6 +509,22 @@ pub struct McpConfigSnippet {
     pub content_html: String,
 }
 
+#[cfg(any(target_arch = "wasm32", test))]
+impl McpConfigSnippet {
+    /// 将原始配置作为 JSON 字符串嵌入一句话，保留 TOML 换行及特殊字符。
+    pub fn agent_prompt(&self) -> String {
+        format!(
+            "请帮我接入 Yggdrasil MCP，目标客户端及配置位置为 {}，\
+             配置内容为以下 JSON 字符串（请先解码字符串，再按原生格式合并）：{}；\
+             请先读取实际生效的配置，保留其他服务和设置，已有同名服务则更新而不重复添加，\
+             将令牌仅写入本地配置并避免提交到 Git 或在回复中展示，\
+             完成后验证连接及工具列表，若需重启或当前会话无法加载请明确告知。",
+            self.title,
+            serde_json::json!(self.content),
+        )
+    }
+}
+
 /// 各客户端 MCP 配置片段集合。
 ///
 /// 由 `get_mcp_client_configs` server fn 返回。`ClientConfigs`（在 `src/mcp/config.rs`）
@@ -516,6 +532,8 @@ pub struct McpConfigSnippet {
 /// 原始文本与高亮 HTML 打包为可两端共享的 DTO，让 WASM 前端单次请求即可渲染带高亮的配置块。
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct McpClientConfigs {
+    /// 携带端点与令牌、适配当前 Agent 所用客户端的一句话指令。
+    pub agent_prompt: String,
     /// 有序配置片段（标题、原始文本、高亮 HTML）。
     pub snippets: Vec<McpConfigSnippet>,
 }
@@ -571,7 +589,10 @@ pub async fn get_mcp_client_configs(token: String) -> Result<McpClientConfigs, S
                 content,
             })
             .collect();
-        Ok(McpClientConfigs { snippets })
+        Ok(McpClientConfigs {
+            agent_prompt: c.agent_prompt,
+            snippets,
+        })
     }
     #[cfg(not(feature = "server"))]
     unreachable!()
@@ -580,6 +601,39 @@ pub async fn get_mcp_client_configs(token: String) -> Result<McpClientConfigs, S
 #[cfg(all(test, feature = "server"))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn agent_prompt_preserves_client_config_when_decoded() {
+        let configs = crate::mcp::config::generate_client_configs(
+            "https://example.com/",
+            "ygg_fixture_\"quoted\\token\n",
+        );
+        for (title, content) in [
+            ("Codex（~/.codex/config.toml）", configs.codex_toml),
+            ("Oh-My-Pi（~/.omp/agent/mcp.json）", configs.omp_json),
+        ] {
+            let snippet = McpConfigSnippet {
+                title: title.into(),
+                content: content.clone(),
+                content_html: String::new(),
+            };
+            let prompt = snippet.agent_prompt();
+            assert!(!prompt.contains(['\n', '\r']));
+            assert!(prompt.contains(title));
+            let encoded = prompt
+                .split_once("（请先解码字符串，再按原生格式合并）：")
+                .unwrap()
+                .1;
+            let decoded = serde_json::Deserializer::from_str(encoded)
+                .into_iter::<String>()
+                .next()
+                .unwrap()
+                .unwrap();
+            assert_eq!(decoded, content);
+            assert!(prompt.contains("保留其他服务和设置"));
+            assert!(prompt.contains("已有同名服务则更新而不重复添加"));
+        }
+    }
 
     #[test]
     fn lifetime_expires_at_days() {

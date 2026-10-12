@@ -44,6 +44,190 @@
 }
 
 @layer base {
+  /* MCP 接入：一条指令交给 Agent，复制与反馈共用交互样式。 */
+  .mcp-agent-card {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    padding: 1.5rem;
+    border: 1px solid color-mix(in srgb, var(--color-paper-accent) 30%, var(--color-paper-border));
+    border-radius: var(--radius-paper);
+    background: linear-gradient(120deg, color-mix(in srgb, var(--color-paper-accent) 7%, var(--color-paper-theme)), var(--color-paper-theme) 70%);
+    transition: border-color 240ms ease, box-shadow 240ms ease;
+  }
+
+  .mcp-agent-card::before {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    top: -5rem;
+    right: -3rem;
+    width: 18rem;
+    height: 18rem;
+    border-radius: 50%;
+    background: radial-gradient(circle, color-mix(in srgb, var(--color-paper-accent) 9%, transparent), transparent 70%);
+    pointer-events: none;
+    transition: transform 400ms ease;
+  }
+
+  .mcp-agent-card:hover,
+  .mcp-agent-card:focus-within {
+    border-color: color-mix(in srgb, var(--color-paper-accent) 55%, var(--color-paper-border));
+    box-shadow: 0 8px 24px color-mix(in srgb, var(--color-paper-accent) 5%, transparent);
+  }
+
+  .mcp-agent-card:hover::before { transform: scale(1.2); }
+  .mcp-agent-heading { display: flex; align-items: flex-start; gap: 0.9rem; }
+  .mcp-agent-emblem {
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    width: 2.75rem;
+    height: 2.75rem;
+    color: var(--color-paper-accent);
+    border-radius: 0.9rem;
+    border: 1px solid color-mix(in srgb, var(--color-paper-accent) 20%, transparent);
+    background: color-mix(in srgb, var(--color-paper-accent) 10%, transparent);
+    transition: transform 280ms ease;
+  }
+  .mcp-agent-emblem .mcp-copy-icon { width: 1.5rem; height: 1.5rem; }
+  .mcp-agent-card:hover .mcp-agent-emblem { transform: rotate(-8deg); }
+  .mcp-agent-badge {
+    padding: 0.2rem 0.55rem;
+    border-radius: 999px;
+    color: var(--color-paper-accent);
+    background: color-mix(in srgb, var(--color-paper-accent) 9%, transparent);
+    font-size: 0.65rem;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .mcp-agent-prompt {
+    position: relative;
+    padding: 1.1rem 1.1rem 1.1rem 2.7rem;
+    border: 1px solid color-mix(in srgb, var(--color-paper-border) 55%, transparent);
+    border-radius: 0.8rem;
+    background: color-mix(in srgb, var(--color-paper-entry) 50%, transparent);
+  }
+  .mcp-agent-quote {
+    position: absolute;
+    top: 0.65rem;
+    left: 1rem;
+    color: var(--color-paper-accent);
+    font-family: Georgia, serif;
+    font-size: 2.4rem;
+    line-height: 1;
+  }
+  .mcp-agent-prompt p { font-size: 0.875rem; line-height: 1.8; }
+  .mcp-agent-prompt-caption { display: block; margin-top: 0.45rem; color: var(--color-paper-secondary); font-size: 0.7rem; }
+  .mcp-agent-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem; }
+  .mcp-agent-steps { display: flex; flex-wrap: wrap; align-items: center; gap: 1.1rem; }
+  .mcp-agent-steps li { display: flex; align-items: center; gap: 0.4rem; font-size: 0.7rem; color: var(--color-paper-secondary); }
+  .mcp-agent-steps li span {
+    display: grid;
+    place-items: center;
+    width: 1.2rem;
+    height: 1.2rem;
+    border: 1px solid color-mix(in srgb, var(--color-paper-accent) 25%, var(--color-paper-border));
+    border-radius: 50%;
+    color: var(--color-paper-accent);
+    font-size: 0.6rem;
+    font-weight: 600;
+  }
+  .mcp-copy-control { display: flex; flex-direction: column; align-items: flex-start; gap: 0.4rem; }
+  .mcp-copy-button {
+    position: relative;
+    overflow: hidden;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    gap: 0.45rem;
+    min-height: 2.25rem;
+    padding: 0.4rem 0.85rem;
+    border: 1px solid color-mix(in srgb, var(--color-paper-border) 80%, transparent);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--color-paper-theme) 80%, transparent);
+    color: var(--color-paper-secondary);
+    font-size: 0.75rem;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: transform 180ms ease, background-color 180ms ease, border-color 180ms ease, color 180ms ease, box-shadow 180ms ease;
+  }
+  .mcp-copy-button:hover:enabled {
+    transform: translateY(-2px);
+    border-color: var(--color-paper-accent);
+    color: var(--color-paper-accent);
+    background: color-mix(in srgb, var(--color-paper-accent) 7%, var(--color-paper-theme));
+  }
+  .mcp-copy-button:active:enabled { transform: translateY(0) scale(0.97); }
+  .mcp-copy-button:focus-visible { outline: 2px solid var(--color-paper-accent); outline-offset: 3px; }
+  .mcp-copy-button:disabled { cursor: default; opacity: 0.5; }
+  .mcp-copy-button-primary {
+    min-height: 2.75rem;
+    min-width: 10rem;
+    padding: 0.65rem 1.15rem;
+    background: var(--color-paper-accent);
+    border-color: var(--color-paper-accent);
+    color: var(--color-paper-theme);
+    font-size: 0.8rem;
+    box-shadow: 0 3px 12px color-mix(in srgb, var(--color-paper-accent) 15%, transparent);
+  }
+  .mcp-copy-button-primary:hover:enabled {
+    background: var(--color-paper-accent);
+    color: var(--color-paper-theme);
+    box-shadow: 0 6px 18px color-mix(in srgb, var(--color-paper-accent) 25%, transparent);
+  }
+  .mcp-copy-button[data-copied="true"] {
+    opacity: 1;
+    color: var(--color-paper-accent);
+    border-color: color-mix(in srgb, var(--color-paper-accent) 45%, transparent);
+    background: color-mix(in srgb, var(--color-paper-accent) 10%, var(--color-paper-theme));
+  }
+  .mcp-copy-button[data-copied="true"]::after {
+    content: "";
+    position: absolute;
+    inset: auto 0 0;
+    height: 2px;
+    background: var(--color-paper-accent);
+    transform-origin: left;
+    animation: mcp-copy-countdown 2s linear forwards;
+  }
+  .mcp-copy-icon { width: 1rem; height: 1rem; flex-shrink: 0; }
+  .mcp-copy-check { stroke-dasharray: 24; animation: mcp-copy-check 320ms ease-out; }
+  .mcp-copy-arrow { transition: transform 200ms ease; }
+  .mcp-copy-button:hover:enabled .mcp-copy-arrow { transform: translate(2px, -2px); }
+  .mcp-copy-error { max-width: 20rem; white-space: normal; color: #d20f39; font-size: 0.75rem; }
+  .dark .mcp-copy-error { color: #f38ba8; }
+  @keyframes mcp-copy-check { from { stroke-dashoffset: 24; } to { stroke-dashoffset: 0; } }
+  @keyframes mcp-copy-countdown { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+  @media (max-width: 640px) {
+    .mcp-agent-card { padding: 1.15rem; gap: 1rem; }
+    .mcp-agent-heading { gap: 0.65rem; }
+    .mcp-agent-emblem { width: 2.25rem; height: 2.25rem; border-radius: 0.7rem; }
+    .mcp-agent-steps { gap: 0.7rem; }
+    .mcp-copy-button { min-height: 2.75rem; }
+    .mcp-agent-footer > .mcp-copy-control,
+    .mcp-agent-footer .mcp-copy-button { width: 100%; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .mcp-agent-card,
+    .mcp-agent-card::before,
+    .mcp-agent-emblem,
+    .mcp-copy-button,
+    .mcp-copy-arrow { transition: none; }
+    .mcp-copy-check,
+    .mcp-copy-button[data-copied="true"]::after { animation: none; }
+    .mcp-agent-card:hover::before,
+    .mcp-agent-card:hover .mcp-agent-emblem,
+    .mcp-copy-button:hover:enabled,
+    .mcp-copy-button:active:enabled,
+    .mcp-copy-button:hover:enabled .mcp-copy-arrow { transform: none; }
+  }
+
   html {
     scrollbar-gutter: stable;
     scroll-behavior: smooth;

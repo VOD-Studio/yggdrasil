@@ -15,6 +15,8 @@ use serde::Serialize;
 /// `token` 形如 `ygg_...`，已嵌入各片段的 `Authorization` 头中。
 #[derive(Debug, Clone, Serialize)]
 pub struct ClientConfigs {
+    /// 一句话接入指令：由 Agent 识别当前客户端并合并原生配置。
+    pub agent_prompt: String,
     /// Claude Code（`.mcp.json` / `~/.claude.json`）。注意 `type` 值是 `"http"`
     ///（不是 `"streamable-http"`——Claude Code 用 `"streamable-http"` 会静默失败/卡在
     /// "connecting"，2026 官方文档明确要求 `http`）。字段：`type`，`url`，`headers.Authorization`。
@@ -144,6 +146,16 @@ pub fn generate_client_configs(base_url: &str, token: &str) -> ClientConfigs {
     );
 
     ClientConfigs {
+        agent_prompt: format!(
+            "请为你当前使用的客户端接入名为 {SERVER_NAME} 的 Yggdrasil MCP 服务，\
+             使用 Streamable HTTP，端点为 {}，Authorization 请求头为 {}；\
+             请先识别客户端并读取其实际生效的 MCP 配置，按该客户端的原生格式合并此服务，\
+             保留其他服务和设置，已有同名服务则更新而不重复添加，\
+             将令牌仅写入本地配置并避免提交到 Git 或在回复中展示，\
+             完成后验证连接及工具列表，若需重启或当前会话无法加载请明确告知。",
+            serde_json::json!(mcp_url),
+            serde_json::json!(auth_header),
+        ),
         claude_code_json: pretty_json(&claude_code_json),
         cursor_json: pretty_json(&cursor_json),
         cline_json: pretty_json(&cline_json),
@@ -180,6 +192,18 @@ mod tests {
         assert_eq!(join_mcp_url("https://rua.plus/"), "https://rua.plus/mcp");
         assert_eq!(join_mcp_url("https://rua.plus"), "https://rua.plus/mcp");
         assert_eq!(join_mcp_url("https://rua.plus///"), "https://rua.plus/mcp");
+    }
+
+    #[test]
+    fn agent_prompt_carries_connection_details_on_one_line() {
+        let cfg = generate_client_configs("https://rua.plus/", "ygg_\"test\\token\n");
+        assert!(cfg.agent_prompt.contains("\"https://rua.plus/mcp\""));
+        assert!(cfg
+            .agent_prompt
+            .contains("\"Bearer ygg_\\\"test\\\\token\\n\""));
+        assert!(!cfg.agent_prompt.contains(['\n', '\r']));
+        assert!(cfg.agent_prompt.contains("保留其他服务和设置"));
+        assert!(cfg.agent_prompt.contains("验证连接及工具列表"));
     }
 
     #[test]

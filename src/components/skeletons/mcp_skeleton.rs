@@ -101,6 +101,15 @@ pub fn McpSkeleton() -> Element {
             SkeletonCard { class: Some("p-6 sm:p-8 space-y-6 shadow-xs"),
                 SkeletonBox { class: "h-6 w-36 rounded" }
                 SkeletonBox { class: "h-10 w-full rounded-2xl" }
+                div { class: "p-5 sm:p-6 rounded-2xl border border-[var(--color-paper-border)]/60 space-y-4",
+                    SkeletonBox { class: "h-6 w-64 max-w-full rounded" }
+                    SkeletonBox { class: "h-4 w-80 max-w-full rounded" }
+                    SkeletonBox { class: "h-24 w-full rounded-xl" }
+                    div { class: "flex flex-wrap items-center justify-between gap-4",
+                        SkeletonBox { class: "h-6 w-56 max-w-full rounded" }
+                        SkeletonBox { class: "h-11 w-40 rounded-full" }
+                    }
+                }
                 div { class: "space-y-4",
                     for i in 0..3 {
                         div { key: "{i}", class: "p-5 rounded-2xl border border-[var(--color-paper-border)]/60 space-y-3",
