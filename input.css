@@ -4323,9 +4323,23 @@ a.friend-card:active { transform: translateY(-1px) scale(0.985); transition-dura
 .notes-search input { min-width: 0; flex: 1; outline: none; background: transparent; font-size: .875rem; }
 .notes-search:focus-within { border-color: var(--color-paper-accent); }
 .notes-search button { font-size: .75rem; color: var(--color-paper-secondary); padding: .5rem; cursor: pointer; }
-.notes-tabs { display: flex; gap: 1.5rem; padding: 1.5rem 0; flex-wrap: wrap; }
-.notes-tabs button { padding: .35rem 0; font-size: .8rem; color: var(--color-paper-secondary); cursor: pointer; border-bottom: 2px solid transparent; }
+.notes-tabs { position: relative; display: flex; gap: 1.5rem; padding: 1.5rem 0; flex-wrap: wrap; }
+.notes-tabs button { padding: .35rem 0; font-size: .8rem; color: var(--color-paper-secondary); cursor: pointer; border-bottom: 2px solid transparent; transition: color 200ms ease; }
+.notes-tabs button:hover { color: var(--color-paper-primary); }
 .notes-tabs button.active { color: var(--color-paper-accent); border-color: currentColor; }
+/* 水合测量后，由独立下划线接替按钮边框，在标签间滑动。 */
+.notes-tabs[data-ready] button.active { border-color: transparent; }
+.notes-tab-indicator { position: absolute; top: 0; left: 0; width: var(--tab-w); height: 2px; background: var(--color-paper-accent); transform: translate(var(--tab-x), calc(var(--tab-y) - 100%)); transition: transform 300ms cubic-bezier(0.22, 1, 0.36, 1), width 300ms cubic-bezier(0.22, 1, 0.36, 1); pointer-events: none; }
+/* 切换结果到达后整体替换：方向沿用前台栏目切换，两组相同关键帧交替使用才能重播。 */
+.notes-panel { --notes-enter-x: 0px; --notes-enter-y: 0px; transition: opacity 200ms ease; }
+.notes-panel[aria-busy="true"] { opacity: .55; transition-delay: 150ms; }
+.notes-panel[data-direction="forward"] { --notes-enter-x: 24px; }
+.notes-panel[data-direction="backward"] { --notes-enter-x: -24px; }
+.notes-panel[data-direction="none"] { --notes-enter-y: 8px; }
+.notes-panel[data-swap="odd"] { animation: notes-panel-enter-odd 300ms cubic-bezier(0.22, 1, 0.36, 1); }
+.notes-panel[data-swap="even"] { animation: notes-panel-enter-even 300ms cubic-bezier(0.22, 1, 0.36, 1); }
+@keyframes notes-panel-enter-odd { from { opacity: 0; transform: translate(var(--notes-enter-x), var(--notes-enter-y)); } }
+@keyframes notes-panel-enter-even { from { opacity: 0; transform: translate(var(--notes-enter-x), var(--notes-enter-y)); } }
 .notes-section-heading { display: flex; justify-content: space-between; gap: 1rem; align-items: baseline; margin: 1.8rem 0 1rem; }
 .notes-section-heading h2 { font-size: .85rem; font-weight: 600; }
 .notes-section-heading > span { font-size: .7rem; color: var(--color-paper-tertiary); }
@@ -4465,6 +4479,8 @@ button.note-tag { cursor: pointer; }
   .notes-hero-mark svg { width: 4.5rem; }
   .notes-hero-mark span { display: none; }
   .notes-tabs { gap: 1.15rem; }
+  .notes-panel[data-direction="forward"] { --notes-enter-x: 12px; }
+  .notes-panel[data-direction="backward"] { --notes-enter-x: -12px; }
   .notebook-grid { grid-template-columns: 1fr; }
   .notebook-card { min-height: 170px; }
   .note-entry { grid-template-columns: 42px minmax(0,1fr); gap: .5rem; }
@@ -4481,8 +4497,10 @@ button.note-tag { cursor: pointer; }
   .notes-quick,
   .notebook-card,
   .notebook-order-panel,
-  .notebook-order-panel .notes-quick { transition: none; }
-  .animate-notebook-order-enter { animation: none; }
+  .notebook-order-panel .notes-quick,
+  .notes-tab-indicator { transition: none; }
+  .animate-notebook-order-enter,
+  .notes-panel[data-swap] { animation: none; }
   .notebook-card:hover { transform: none; }
 }
 /* 空状态：一张小小的插画卡片，衬线标题与主题色细节跟随明暗主题。 */
