@@ -3,6 +3,9 @@ name: CI
 # 流水线（2026 runner fallback + 原生多 runner 构建，零 QEMU）：
 # - 受信任的默认分支 push、tag 和手动触发：x64 检查/amd64 构建优先尝试组织 self-hosted；
 #   runner 不可用、API 无权限或 runner group 未允许公开仓库时自动回退 ubuntu-latest。
+#   仓库变量 CI_RUNNER_MODE 可手动控制（Settings → Secrets and variables → Actions → Variables）：
+#     auto（默认/未设置）按上述探测；github 强制 GitHub-hosted；self-hosted 跳过探测直接用组织 runner。
+#     无论取值，PR 和非默认分支 push 都不会使用 self-hosted。
 # - pull_request 和非默认分支 push 始终使用 GitHub-hosted runner：本仓库公开，避免不受信任代码污染持久 runner。
 # - release/publish/deploy 保持 GitHub-hosted：这些 job 使用写权限或部署密钥，不把 secrets 带到持久 runner。
 # - arm64 构建保持 ubuntu-24.04-arm（组织 runner-1 是 X64，不能替代）。
@@ -28,6 +31,8 @@ jobs:
   # ── runner selection：仅在 hosted runner 上查询，避免 self-hosted 离线时 job 排队 ──
   # ORG_RUNNER_TOKEN 可作为 repo/org secret 提供；需要读取组织 runner/group 的权限。
   # 缺少 token、API 失败、runner 忙/离线或公开仓库未获 runner group 授权时均安全回退。
+  # CI_RUNNER_MODE（repo/org variable）：auto | github | self-hosted。强制 self-hosted 时不探测，
+  # runner 离线则 job 会一直排队，需手动改回 auto/github 后重跑。
   select_runner:
     permissions:
       actions: read
@@ -41,6 +46,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.ORG_RUNNER_TOKEN || github.token }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          RUNNER_MODE: ${{ vars.CI_RUNNER_MODE || 'auto' }}
         run: |
           runner='["ubuntu-latest"]'
           reason="default GitHub-hosted runner"
@@ -52,9 +58,25 @@ jobs:
             trusted_ref=true
           fi
 
+          RUNNER_MODE="$(echo "$RUNNER_MODE" | tr '[:upper:]' '[:lower:]' | xargs)"
+          case "$RUNNER_MODE" in
+            auto|github|self-hosted) ;;
+            *)
+              echo "::warning::CI_RUNNER_MODE='$RUNNER_MODE' 无效（可选 auto|github|self-hosted），按 auto 处理"
+              RUNNER_MODE=auto
+              ;;
+          esac
+
           if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
             reason="public pull request"
-          elif [[ "$trusted_ref" == true ]]; then
+          elif [[ "$trusted_ref" != true ]]; then
+            reason="untrusted branch push"
+          elif [[ "$RUNNER_MODE" == "github" ]]; then
+            reason="CI_RUNNER_MODE=github"
+          elif [[ "$RUNNER_MODE" == "self-hosted" ]]; then
+            runner='["self-hosted","Linux","X64"]'
+            reason="CI_RUNNER_MODE=self-hosted (availability check skipped)"
+          else
             # visible_to_repository 对 public repo 返回空(GitHub API 已知行为)，改查全部 group 再按 allows_public_repositories 过滤
             if group_ids="$(gh api --paginate "orgs/${GITHUB_REPOSITORY_OWNER}/actions/runner-groups?per_page=100" --jq '.runner_groups[] | select(.visibility == "all" and .allows_public_repositories == true) | .id' 2>/dev/null)"; then
               available=false
@@ -85,8 +107,6 @@ jobs:
               echo "::warning::无法读取组织 runner/group 状态；请配置 ORG_RUNNER_TOKEN，回退 GitHub-hosted runner"
               reason="runner status API unavailable"
             fi
-          else
-            reason="untrusted branch push"
           fi
 
           echo "runner=$runner" >> "$GITHUB_OUTPUT"
