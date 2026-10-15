@@ -145,6 +145,18 @@ dev: dev-assets esbuild-cache wasm-bindgen-cache ## 启动开发服务器（增�
 	@echo "Starting dx serve..."
 	@SSR_CACHE_SECS=0 $(DX) serve --addr 0.0.0.0 --interactive false
 
+.PHONY: regression-build test-databases test-browser
+regression-build: dev-assets esbuild-cache wasm-bindgen-cache ## 构建隔离浏览器回归使用的应用
+	@$(DX) build --platform web
+	@$(MAKE) restore-webp
+
+test-databases: ## 在临时 PostgreSQL 中验证文章、笔记和备份，结束后清理
+	@bun scripts/regression.cjs database
+
+BROWSER_SUITE ?= smoke
+test-browser: ## 隔离浏览器回归（先 regression-build；BROWSER_SUITE=smoke/admin/lightbox/showcase）
+	@bun scripts/regression.cjs $(BROWSER_SUITE)
+
 # ── 测试与代码质量 ─────────────────────────────────────────────
 test: ## 运行 Rust 与前端测试
 	@cargo test

@@ -130,11 +130,11 @@ jobs:
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: ygg_mcp_test
+          POSTGRES_DB: postgres
         ports:
           - 5432/tcp
         options: >-
-          --health-cmd "pg_isready -U postgres -d ygg_mcp_test"
+          --health-cmd "pg_isready -U postgres -d postgres"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
@@ -162,12 +162,21 @@ jobs:
       - name: Run tests
         run: cargo test --locked --all-features
 
-      - name: Article database regressions
-        env:
-          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:${{ job.services.postgres.ports[5432] }}/ygg_mcp_test
+      - name: Install matching PostgreSQL client
         run: |
-          cargo test --locked --all-features private_post_workflow_database -- --ignored
-          cargo test --locked --all-features post_write_service_database -- --ignored
+          sudo apt-get update
+          sudo apt-get install -y postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y postgresql-client-18
+          echo /usr/lib/postgresql/18/bin >> "$GITHUB_PATH"
+
+      - name: Article, notes and backup database regressions
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: ${{ job.services.postgres.ports[5432] }}
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/test-databases.sh
 
   lint-js:
     needs: select_runner
@@ -221,13 +230,56 @@ jobs:
       - name: Clippy (wasm32, web feature)
         run: cargo clippy --locked --target wasm32-unknown-unknown --no-default-features --features web -- -D warnings
 
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: browser
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: libs/package.json
+      - name: Install browser build tools
+        run: |
+          curl -fsSL --retry 3 https://github.com/DioxusLabs/dioxus/releases/download/v0.7.10/dx-x86_64-unknown-linux-gnu.tar.gz -o /tmp/dx.tar.gz
+          echo '4363e4ed2a3f1eb7f4d38d2d59aed59ce43271c44c16b425e92c89a64761fbe7  /tmp/dx.tar.gz' | sha256sum -c -
+          sudo tar -xzf /tmp/dx.tar.gz -C /usr/local/bin
+          sudo curl -fsSL --retry 3 https://github.com/tailwindlabs/tailwindcss/releases/download/v4.3.3/tailwindcss-linux-x64 -o /usr/local/bin/tailwindcss
+          sudo chmod +x /usr/local/bin/tailwindcss
+          sudo apt-get update
+          sudo apt-get install -y postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y postgresql-client-18
+          echo /usr/lib/postgresql/18/bin >> "$GITHUB_PATH"
+          cd libs
+          bun install --frozen-lockfile
+          bun run playwright install --with-deps chromium
+      - name: Build browser regression application
+        run: make regression-build
+      - name: Isolated browser acceptance
+        run: |
+          make test-browser BROWSER_SUITE=smoke
+          make test-browser BROWSER_SUITE=admin
+          make test-browser BROWSER_SUITE=lightbox
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-regressions
+          path: target/regressions/
+
   # ── build-amd64：Docker in-container 全量构建（libs/WASM/rustdoc/静态 musl server）──
   # GitHub x86_64 runner，原生 Dockerfile（非 Dockerfile.cross），宿主仅需 Docker。
   # 每次推送都跑（= 编译验证）。用 cargo-chef + GHA 层缓存：依赖不变时
   # cooker 层 cache-hit(秒级),cargo build 只编 app(~2min)。
   build-amd64:
     runs-on: ${{ fromJSON(needs.select_runner.outputs.runner) }}
-    needs: [select_runner, test, lint-js, check-wasm]
+    needs: [select_runner, test, lint-js, check-wasm, browser]
     # 仅主干分支(main/master) push、tag 推送、手动触发时构建完整镜像。
     # 其他分支/PR 的 push 仅靠 test job(fmt/clippy/wasm32/单测)做门槛，
     # 省下完整 Docker 构建的 CI 分钟与 GHA 缓存配额(多分支并发会快速吃满 10GB)。
