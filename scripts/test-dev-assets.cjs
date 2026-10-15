@@ -88,6 +88,8 @@ if (command === 'bun' && args[0] === 'install') {
   }
   assert.ok(step(packages).includes('highlight'));
   assert.ok(!step([]).includes('highlight'));
+  await edit('styles/pages/notes.css');
+  step([]); // Imported CSS refreshes without rebuilding JavaScript packages.
   await edit('libs/tiptap-editor/src/index.ts');
   step(['tiptap-editor']);
   await edit('libs/shared/src/index.ts');

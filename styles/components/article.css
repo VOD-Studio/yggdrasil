@@ -1,0 +1,541 @@
+@layer components {
+  /* 正文折叠块（作者手写的 <details>，区别于 .toc 导航块）。
+     复用代码块/blockquote 的视觉语言：同款底色 + 边框 + 16px 圆角；
+     自绘 chevron 替代浏览器原生三角，展开时旋转 90°。
+     :not(.toc) 避免与上面的 TOC 专用样式冲突。 */
+  .md-content details:not(.toc) {
+    margin: 1rem 0;
+    background: var(--color-paper-code-bg);
+    border: 1px solid var(--color-paper-border);
+    border-radius: var(--radius-paper);
+  }
+
+  .md-content details:not(.toc) > summary {
+    padding: 0.6rem 1rem;
+    cursor: pointer;
+    user-select: none;
+    list-style: none;
+    color: var(--color-paper-primary);
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    transition: background-color 120ms ease;
+  }
+
+  /* 去掉 WebKit/Blink 原生三角，统一用 ::before 自绘 chevron。 */
+  .md-content details:not(.toc) > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  /* 自绘 chevron：实心三角，展开时旋转 90° 平滑过渡。
+     用 currentColor 继承 summary 文字色，随主题变化。 */
+  .md-content details:not(.toc) > summary::before {
+    content: "";
+    display: inline-block;
+    flex-shrink: 0;
+    width: 0;
+    height: 0;
+    border-style: solid;
+    border-width: 0.32rem 0.42rem 0.32rem 0;
+    border-color: transparent currentColor transparent transparent;
+    transform: rotate(0deg);
+    transition: transform 150ms ease;
+    margin-inline-start: 0.1rem;
+  }
+
+  .md-content details:not(.toc)[open] > summary::before {
+    transform: rotate(90deg);
+  }
+
+  .md-content details:not(.toc) > summary:hover {
+    background-color: color-mix(
+      in srgb,
+      var(--color-paper-accent) 8%,
+      transparent
+    );
+  }
+
+  /* 键盘可访问：focus-visible 给可见轮廓（WCAG 2.4.7）。
+     .dark 前缀走暗色主题色。 */
+  .md-content details:not(.toc) > summary:focus-visible {
+    outline: 2px solid var(--color-paper-accent);
+    outline-offset: -2px;
+    border-radius: var(--radius-paper);
+  }
+
+  /* 展开内容左右内边距（代码块/段落不贴边），末元素留底部呼吸空间。 */
+  .md-content details:not(.toc)[open] > *:not(summary) {
+    padding-inline: 1rem;
+  }
+
+  /* 首元素紧接 summary 去顶部 margin，末元素去底部 margin（容器已留白）。 */
+  .md-content details:not(.toc)[open] > *:not(summary):first-of-type {
+    margin-top: 0;
+  }
+
+  .md-content details:not(.toc)[open] > *:not(summary):last-child {
+    margin-bottom: 0;
+    padding-bottom: 0.8rem;
+  }
+
+  .entry-cover {
+    margin-bottom: var(--content-gap-paper);
+  }
+
+  /* 封面用 blur-img 结构：去 margin、保持圆角，内层 img cover 填充 */
+  .entry-cover .blur-img {
+    margin: 0;
+    /* 客户端挂载没有服务端尺寸时仍保留可见占位，加载后写入真实 --ar。 */
+    aspect-ratio: var(--ar, 16 / 9);
+    border-radius: var(--radius-card);
+    overflow: hidden;
+  }
+  .entry-cover img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .post-content {
+    color: var(--color-paper-secondary);
+    margin: 2.5rem 0 3.5rem;
+    font-size: 1rem;
+    line-height: 1.9;
+    overflow-wrap: anywhere;
+  }
+
+  /* 只调整文章排版，不改变评论与编辑器复用的 md-content。 */
+  .post-content.md-content :is(h1, h2, h3, h4, h5, h6) {
+    margin-block: 2.5rem 1rem;
+    font-weight: 600;
+    line-height: 1.5;
+    letter-spacing: -0.015em;
+    text-wrap: pretty;
+  }
+
+  .post-content.md-content h1 {
+    font-size: clamp(1.625rem, 3vw, 2rem);
+  }
+
+  .post-content.md-content h2 {
+    font-size: clamp(1.375rem, 2.5vw, 1.625rem);
+  }
+
+  .post-content.md-content h3 {
+    font-size: 1.25rem;
+  }
+
+  .post-content.md-content blockquote {
+    margin-block: 1.5rem;
+    padding-inline-start: 1.25rem;
+    border-inline-start: 2px solid var(--color-paper-border);
+  }
+
+  .post-content.md-content hr {
+    margin-block: 2.5rem;
+    height: 1px;
+    background: color-mix(in srgb, var(--color-paper-border) 60%, transparent);
+  }
+
+  .md-content h1 {
+    margin: 40px auto 32px;
+    font-size: 40px;
+    color: var(--color-paper-primary);
+    letter-spacing: -0.01em;
+  }
+
+  .md-content h2 {
+    margin: 32px auto 24px;
+    font-size: 32px;
+    color: var(--color-paper-primary);
+    letter-spacing: -0.01em;
+  }
+
+  .md-content h3 {
+    margin: 24px 0 16px;
+    font-size: 24px;
+    color: var(--color-paper-primary);
+  }
+
+  .md-content h4 {
+    margin: 24px 0 16px;
+    font-size: 16px;
+    color: var(--color-paper-primary);
+  }
+
+  .md-content h5 {
+    margin: 24px 0 16px;
+    font-size: 14px;
+    color: var(--color-paper-primary);
+  }
+
+  .md-content h6 {
+    margin: 24px 0 16px;
+    font-size: 12px;
+    color: var(--color-paper-primary);
+  }
+
+  /* 锚点目标偏移：scrollIntoView / 原生 fragment-scroll 落点避开 80px sticky header。
+     [id] 限定只作用于带锚点 id 的标题；6rem = 80px header + 16px 呼吸空间。 */
+  .md-content :is(h1, h2, h3, h4, h5, h6)[id] {
+    scroll-margin-top: 6rem;
+  }
+
+  .md-content a:not(.anchor) {
+    text-underline-offset: 0.3rem;
+    text-decoration: underline;
+    color: var(--color-paper-accent);
+  }
+
+  .md-content a:not(.anchor):hover {
+    color: var(--color-paper-accent-2);
+  }
+
+  .md-content p {
+    margin-bottom: var(--content-gap-paper);
+    line-height: 1.85;
+  }
+
+  .md-content p:last-child {
+    margin-bottom: 0;
+  }
+
+  .md-content blockquote {
+    margin: 1rem 0;
+    padding-inline-start: 1rem;
+    border-inline-start: 0.3rem solid var(--color-paper-content);
+    color: var(--color-paper-secondary);
+  }
+
+  .md-content blockquote p:last-child {
+    margin-bottom: 0;
+  }
+
+  /* 脚注引用上标：[^id] 渲染成的 <sup class="fn-ref">。
+   * line-height: 0 防止上标撑高所在行行高；font-size 缩小为 0.75em。 */
+  .md-content .fn-ref {
+    font-size: 0.75em;
+    line-height: 0;
+    vertical-align: super;
+    margin-inline-start: 0.1em;
+  }
+
+  /* 引用数字链接：不加下划线（上标下划线极难看），用 accent 色区分。 */
+  .md-content .fn-ref-link {
+    text-decoration: none;
+    color: var(--color-paper-accent);
+  }
+
+  .md-content .fn-ref-link:hover {
+    color: var(--color-paper-accent-2);
+  }
+
+  /* 脚注定义块：仿 blockquote 的左侧边框视觉语言，但更轻（0.2rem + 稍小字号）。 */
+  .md-content .footnote-definition {
+    margin: 1rem 0;
+    padding-inline-start: 1rem;
+    border-inline-start: 0.2rem solid var(--color-paper-content);
+    font-size: 0.875em;
+    color: var(--color-paper-secondary);
+  }
+
+  .md-content .footnote-definition:last-child {
+    margin-bottom: 0;
+  }
+
+  /* 定义内末段去底距，避免与 back-link 间距过大。 */
+  .md-content .footnote-definition > p:last-child {
+    margin-bottom: 0;
+  }
+
+  /* 定义编号上标：与正文引用数字呼应。 */
+  .md-content .footnote-definition-label {
+    font-size: 0.75em;
+    line-height: 0;
+    vertical-align: super;
+    margin-inline-end: 0.25em;
+    color: var(--color-paper-tertiary);
+  }
+
+  /* 返回正文链接：↩ 符号，弱色，hover 转 accent。 */
+  .md-content .fn-backref {
+    margin-inline-start: 0.25em;
+    text-decoration: none;
+    color: var(--color-paper-tertiary);
+  }
+
+  .md-content .fn-backref:hover {
+    color: var(--color-paper-accent);
+  }
+
+  /* 多引用时的数字上标（↩² 中的 ²）。 */
+  .md-content .fn-backref-num {
+    font-size: 0.75em;
+    vertical-align: super;
+  }
+
+  .md-content ol,
+  .md-content ul {
+    padding-inline-start: 1.25rem;
+    margin-bottom: var(--content-gap-paper);
+  }
+
+  /* Tailwind Preflight 把 list-style 清成 none,这里恢复被清掉的 marker。
+   * 任务列表项（含 checkbox 的 li）另有规则覆盖为 none，不受影响。 */
+  .md-content ul {
+    list-style-type: disc;
+  }
+
+  .md-content ol {
+    list-style-type: decimal;
+  }
+
+  .md-content li {
+    margin-top: 0.3rem;
+  }
+
+  .md-content li p {
+    margin-bottom: 0;
+  }
+  /* 列表项内的代码块：li p 的底距已被上面清零（紧凑列表），而 .md-content pre
+     只设 margin-bottom、无顶距，导致正文与代码块几乎贴合。此处给列表内 pre
+     补顶距；列表外场景由相邻 margin 折叠兜底，不产生双倍间距。 */
+  .md-content li pre {
+    margin-top: var(--content-gap-paper);
+  }
+
+  /* 任务列表：pulldown-cmark 把 - [ ] / - [x] 渲染成裸 <li><input type="checkbox">…
+   * （无 <label> 包裹，也无 data-type 标记）。用 :has() 识别含 checkbox 的 li，
+   * 布局成 flex 让复选框与文本对齐；不支持 :has() 的浏览器降级为普通列表，仍可读。 */
+  .md-content li:has(> input[type="checkbox"]) {
+    list-style: none;
+    margin-left: -1.25rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .md-content li > input[type="checkbox"] {
+    /* appearance:none 全自定义：告别浏览器原生方框形状/边框差异。
+       对勾用内联 SVG background（<input> 是替换元素，吃不到 ::after），
+       颜色按主题烘焙——亮色中绿底配白对勾，暗色浅绿底配深对勾，对比最强。
+       文章内 checkbox 是 disabled 的纯展示态，故不加 focus/cursor 交互。 */
+    appearance: none;
+    -webkit-appearance: none;
+    flex-shrink: 0;
+    width: 1.15rem;
+    height: 1.15rem;
+    margin: 0;
+    border: 1.5px solid var(--color-paper-border);
+    border-radius: 4px;
+    background-color: transparent;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: 0;
+    cursor: default;
+    transition:
+      background-color 0.15s ease,
+      border-color 0.15s ease,
+      background-size 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  .md-content li > input[type="checkbox"]:checked {
+    background-color: var(--color-paper-accent);
+    border-color: var(--color-paper-accent);
+    background-size: 0.78rem;
+    /* 亮色：中绿 #40a02b 底 + 白对勾（对比 ≥ 4.5:1） */
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2016%2016'%20fill='none'%20stroke='%23ffffff'%20stroke-width='2.2'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d='M3.5%208.5l3%203%206-6.5'/%3E%3C/svg%3E");
+  }
+
+  /* 暗色：浅绿 #a6e3a1 底上白对勾对比不足，改深色对勾（主题底色 #1e1e2e） */
+  .dark .md-content li > input[type="checkbox"]:checked {
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2016%2016'%20fill='none'%20stroke='%231e1e2e'%20stroke-width='2.2'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d='M3.5%208.5l3%203%206-6.5'/%3E%3C/svg%3E");
+  }
+  .md-content hr {
+    margin: 30px 0;
+    height: 2px;
+    background: var(--color-paper-tertiary);
+    border: 0;
+  }
+
+  /* table-wrap：渲染器给宽表格套的滚动容器，移动端窄屏可横向滚动。
+     （见 src/api/markdown.rs::wrap_tables）。min-width 让窄表仍撑满、宽表撑开触发滚动。
+     padding 为 table 的 1px box-shadow 描边预留空间：overflow 容器（overflow-x:auto 会
+     强制 overflow-y 也建滚动盒）会裁切向外 spread 的阴影，导致右下边框断裂。
+     负 margin 抵消 padding 的外部尺寸，使 wrap 不撑大父容器、左上仍贴齐正文边缘。 */
+  .md-content .table-wrap {
+    margin: -1px;
+    padding: 1px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .md-content table {
+    margin-bottom: var(--content-gap-paper);
+    width: 100%;
+    min-width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    border-radius: var(--radius-paper);
+    box-shadow: 0 0 0 1px var(--color-paper-border);
+    overflow: hidden;
+  }
+
+  .md-content table thead th {
+    background: var(--color-paper-code-block);
+    font-weight: 600;
+    color: var(--color-paper-primary);
+    padding: 14px 20px;
+    text-align: left;
+    vertical-align: middle;
+    border-bottom: 1px solid var(--color-paper-border);
+    white-space: nowrap;
+  }
+
+  .md-content table thead th:first-child {
+    border-top-left-radius: var(--radius-paper);
+  }
+
+  .md-content table thead th:last-child {
+    border-top-right-radius: var(--radius-paper);
+  }
+
+  .md-content table tbody tr:last-child td:first-child {
+    border-bottom-left-radius: var(--radius-paper);
+  }
+
+  .md-content table tbody tr:last-child td:last-child {
+    border-bottom-right-radius: var(--radius-paper);
+  }
+
+  .md-content table tbody td {
+    padding: 14px 20px;
+    line-height: 1.6;
+    vertical-align: middle;
+    border-bottom: 1px solid var(--color-paper-border);
+    color: var(--color-paper-secondary);
+  }
+
+  .md-content table tbody tr:last-child td {
+    border-bottom: none;
+  }
+
+  .md-content table tbody tr {
+    transition: background-color 0.2s ease;
+  }
+
+  .md-content table tbody tr:nth-child(even) {
+    background: color-mix(in srgb, var(--color-paper-code-bg) 40%, transparent);
+  }
+
+  .md-content table tbody tr:hover {
+    background: var(--color-paper-entry);
+  }
+
+  .md-content table td code {
+    padding: 0.15rem 0.35rem;
+    border: 1px solid
+      color-mix(in srgb, var(--color-paper-border) 60%, transparent);
+    white-space: nowrap;
+    word-break: break-word;
+  }
+
+  .md-content table .katex {
+    line-height: 1.2;
+  }
+
+  .md-content table .katex-display {
+    margin: 0.4em 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+  /* 排除 CodeMirror 编辑器内的 <img>：CM 用 <img class="cm-widgetBuffer">（width:0、
+     height:1em 的占位符）对齐折叠 widget 的基线。若被这里的 margin/height 命中，
+     会把折叠那行 .cm-line 撑高约 32px（上下各 1rem margin）。用 :where() 把
+     .cm-editor 后代的 img 优先级压到 0，确保 CM 内部任何 img 都不受正文图片样式影响。 */
+  .md-content img:where(:not(.cm-widgetBuffer)) {
+    border-radius: var(--radius-paper);
+    margin: 1rem 0;
+    max-width: 100%;
+    height: auto;
+    cursor: zoom-in;
+    transition: opacity 0.2s ease-out;
+  }
+
+  .md-content img:where(:not(.cm-widgetBuffer)):hover {
+    opacity: 0.9;
+  }
+
+  .dark .md-content img:not(.blur-img-placeholder):not(.blur-img-full),
+  .dark .md-content .blur-img,
+  .dark .lightbox-img {
+    filter: brightness(0.9);
+  }
+
+  .md-content iframe {
+    max-width: 100%;
+    border-radius: var(--radius-paper);
+  }
+
+  .md-content code {
+    padding: 0.2rem 0.3rem;
+    font-size: 0.85em;
+    line-height: 1.5;
+    background: var(--color-paper-code-bg);
+    border-radius: 0.2rem;
+    font-family:
+      ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+      "Courier New", monospace;
+  }
+
+  .md-content pre {
+    position: relative;
+    margin-bottom: var(--content-gap-paper);
+    background: var(--color-paper-code-block);
+    border-radius: var(--radius-paper);
+    overflow-x: auto;
+  }
+
+  .md-content pre code {
+    display: block;
+    padding: 16px;
+    background: transparent;
+    border-radius: 0;
+    overflow-x: auto;
+    white-space: pre;
+    font-size: 15px;
+    line-height: 1.6;
+  }
+
+  .md-content pre code span {
+    display: inline !important;
+  }
+
+  .copy-code {
+    display: none;
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    color: var(--color-paper-theme);
+    background: var(--color-paper-tertiary);
+    border-radius: var(--radius-mini);
+    padding: 4px 8px;
+    font-size: 12px;
+    user-select: none;
+    cursor: pointer;
+    border: none;
+    font-family: inherit;
+    transition: background 0.2s ease-out;
+  }
+
+  .copy-code:hover {
+    background: var(--color-paper-accent);
+  }
+
+  pre:hover .copy-code,
+  .highlight:hover .copy-code {
+    display: block;
+  }
+
+}

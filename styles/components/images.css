@@ -1,0 +1,134 @@
+@layer components {
+  /* 卡片封面：blur-img 结构，固定 21:9 比例，hover 缩放。
+     双类选择器提升特异性，可靠覆盖 .blur-img 的 aspect-ratio: var(--ar)
+     （卡片不写 --ar，var(--ar) 解析为空会导致高度塌陷）。
+     21:9 与后台编辑器封面区统一比例，宽屏横幅式。 */
+  .blur-img.post-card-cover-blur {
+    margin: 0;
+    aspect-ratio: 21 / 9;
+  }
+  .post-card-cover-blur img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.3s ease-out;
+  }
+  .group:hover .post-card-cover-blur img {
+    transform: scale(1.05);
+  }
+
+  /* ========== Blur-up 渐进图片加载 ==========
+     放在 @layer components 内，与 .blur-img.post-card-cover-blur 同层，
+     这样特异性能正常生效（layer 外规则会无条件覆盖 layer 内规则，
+     导致卡片的 aspect-ratio:4/3 败给全局 var(--ar)）。 */
+  .blur-img {
+    position: relative;
+    display: block;
+    overflow: hidden;
+    aspect-ratio: var(--ar);
+    /* 加载中灰底（占位图未加载完时） */
+    background: var(--color-paper-code-bg);
+    border-radius: var(--radius-mini);
+    margin: 1em 0;
+    cursor: zoom-in;
+    transition: opacity 0.2s ease-out;
+  }
+  .blur-img:hover {
+    opacity: 0.9;
+  }
+  .blur-img-placeholder {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    /* 重置 .md-content img 的 margin/max-width/height，避免把 absolute 图层推偏 */
+    margin: 0;
+    max-width: none;
+    /* 20px 占位图放大后模糊，scale 遮边缘 */
+    filter: blur(20px) saturate(1.2);
+    transform: scale(1.1);
+    transition: opacity 0.4s ease;
+  }
+  .blur-img-full {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    /* 重置 .md-content img 的 margin/max-width/height，避免把 absolute 图层推偏 */
+    margin: 0;
+    max-width: none;
+    opacity: 0;
+    z-index: 1;
+  }
+  /* full 加载完成后由 JS 直接设 opacity:1（不依赖 CSS transition，
+     避免合成层重绘时机导致 opacity 卡在 0）。 */
+  .blur-img-full.is-loaded,
+  .blur-img.is-loaded .blur-img-full {
+    opacity: 1;
+  }
+  /* 容器标记 loaded 后：显式隐藏占位图 + 去掉灰底，避免重绘时机导致残留/灰边 */
+  .blur-img.is-loaded .blur-img-placeholder {
+    opacity: 0;
+  }
+  .blur-img.is-loaded {
+    background: transparent;
+  }
+
+  /* 加载失败（退避重试耗尽，如本地文件丢失）：隐藏双层图，居中显示破图图标 +
+     错误文案。文案读容器的 data-error-text（lightbox.js 标 is-error 时已兜底
+     默认值「图片加载失败」，素材页传入「本地文件已丢失」）。点击仍会打开灯箱
+     错误态说明原因，故不改 cursor。 */
+  .blur-img.is-error {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+  }
+  .blur-img.is-error .blur-img-placeholder,
+  .blur-img.is-error .blur-img-full {
+    display: none;
+  }
+  /* 破图图标：Material Symbols broken_image（源档案 public/icons/broken_image_*.svg），
+     mask 方案让图标颜色跟随 --color-paper-tertiary 适配明暗主题。 */
+  .blur-img.is-error::before {
+    content: "";
+    width: 1.75rem;
+    height: 1.75rem;
+    flex-shrink: 0;
+    background-color: var(--color-paper-tertiary);
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='M180-120q-24 0-42-18t-18-42v-600q0-24 18-42t42-18h600q24 0 42 18t18 42v600q0 24-18 42t-42 18H180Zm43-314 172-172 170 170 171-171 44 44v-217H180v303l43 43Zm-43 254h600v-298l-44-44-171 171-170-170-172 172-43-43v212Zm0 0v-298 60-362 600Z'/%3E%3C/svg%3E")
+      center / contain no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='M180-120q-24 0-42-18t-18-42v-600q0-24 18-42t42-18h600q24 0 42 18t18 42v600q0 24-18 42t-42 18H180Zm43-314 172-172 170 170 171-171 44 44v-217H180v303l43 43Zm-43 254h600v-298l-44-44-171 171-170-170-172 172-43-43v212Zm0 0v-298 60-362 600Z'/%3E%3C/svg%3E")
+      center / contain no-repeat;
+  }
+  .blur-img.is-error::after {
+    content: attr(data-error-text);
+    font-size: 0.75rem;
+    line-height: 1.2;
+    color: var(--color-paper-tertiary);
+    text-align: center;
+    padding: 0 0.5rem;
+  }
+
+  /* ========== 主题切换图标进入动画 ==========
+     点击切换主题时 theme.set 立即换 SVG（配合 RSX 的 key 强制重挂载），
+     该动画为新挂载的图标播放一次缩放+淡入，给用户即时反馈。
+     仅作用于 .theme-toggle 内的 svg，不影响页面其它 svg。 */
+  .theme-toggle svg {
+    animation: theme-icon-enter 0.3s ease-out;
+  }
+
+  @keyframes theme-icon-enter {
+    from {
+      opacity: 0;
+      transform: scale(0.5) rotate(-60deg);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1) rotate(0deg);
+    }
+  }
+}

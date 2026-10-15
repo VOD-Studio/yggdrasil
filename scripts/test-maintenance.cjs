@@ -20,7 +20,7 @@ async function main() {
       page.on('pageerror', e => report.errors.push(e.message));
       page.on('request', r => { if (r.url().startsWith(base)) report.requests.push(r.url().slice(base.length)); });
       await page.route('https://fonts.googleapis.com/**', r => r.fulfill({ body: '' }));
-      for (const route of ['/notes', '/admin/notes', '/admin/notebooks', '/admin/system', '/admin/runner']) {
+      for (const route of ['/', '/archives', '/friends', '/about', '/search', '/writing-guide', '/notes', '/admin/notes', '/admin/notebooks', '/admin/system', '/admin/runner']) {
         await page.goto(base + route);
         await page.waitForFunction(() => window.__routeTransitions?.push, null, { timeout: 60000 });
         await page.locator('h1').first().waitFor({ timeout: 60000 });

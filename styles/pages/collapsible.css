@@ -1,0 +1,27 @@
+/* 共享折叠卡片：内容常驻，0fr ↔ 1fr 让下方内容随真实高度移动。
+   不使用 max-height 或 JS 定时器，快速反向点击也能从当前帧继续。 */
+.collapsible-card {
+  --collapse-duration: 320ms;
+  --collapse-ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.collapsible-trigger {
+  transition: background-color 200ms ease, box-shadow 200ms ease;
+}
+
+.collapsible-panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    grid-template-rows var(--collapse-duration) var(--collapse-ease),
+    opacity var(--collapse-duration) ease,
+    visibility var(--collapse-duration);
+}
+
+.collapsible-card[data-open="true"] > .collapsible-panel {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  visibility: visible;
+}

@@ -1,0 +1,78 @@
+@layer components {
+  /* ── mermaid 图表容器 ──
+     data-mermaid-rendered 由 yggdrasil-core/mermaid.ts 渲染成功后标记在 <pre> 上。
+     渲染后 pre 唯一子元素是 <svg>（mermaid 块不注入 copy-code 按钮），flex 安全。
+     居中 + 缩放适配宽度，消除常规图的横向滚动；超宽图 overflow-x:auto 兜底。 */
+  .md-content pre[data-mermaid-rendered] {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 24px 16px;
+    overflow-x: auto;
+    cursor: zoom-in;
+  }
+
+  .md-content pre[data-mermaid-rendered] > svg {
+    max-width: 100%;
+    height: auto;
+    display: block;
+  }
+
+  /* 点击放大提示图标：hover 时显示在右上角 */
+  .md-content pre[data-mermaid-rendered]::after {
+    content: "⤢";
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    font-size: 1.1rem;
+    color: var(--color-text-secondary);
+    opacity: 0;
+    transition: opacity 0.2s ease-out;
+    pointer-events: none;
+  }
+
+  .md-content pre[data-mermaid-rendered]:hover::after {
+    opacity: 0.5;
+  }
+
+  /* 渲染失败：保留原始源码，加 accent 色左边条提示（站点 accent 为绿，沿用配色体系） */
+  .md-content pre.mermaid-error {
+    border-left: 3px solid var(--color-paper-accent);
+  }
+
+  /* 渲染中角标：observer 触发 render 时由 yggdrasil-core/mermaid.ts 挂到 pre 右上角。
+     源码保持可见（失败降级链不动），成功后随 innerHTML 替换自然消失。 */
+  .md-content pre .mermaid-loading {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    font-size: 12px;
+    line-height: 1;
+    color: var(--color-paper-theme);
+    background: var(--color-paper-tertiary);
+    border-radius: var(--radius-mini);
+    opacity: 0.8;
+    pointer-events: none;
+    user-select: none;
+  }
+
+  .md-content pre .mermaid-loading::before {
+    content: "";
+    width: 10px;
+    height: 10px;
+    border: 2px solid var(--color-paper-accent);
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: mermaid-loading-spin 0.8s linear infinite;
+  }
+
+  @keyframes mermaid-loading-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+}

@@ -1,0 +1,43 @@
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  /* 覆盖 Tailwind v4 默认 --font-sans(ui-sans-serif, system-ui, sans-serif, ...):
+     默认栈不含 CJK sans,font-sans 类一旦生效,body 的中文字体栈会被绕过,
+     中文 fallback 到系统衬线体。这里对齐 body 的 CJK sans 栈,根治全项目。 */
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif,
+    "Noto Sans SC", "PingFang SC", "Microsoft YaHei";
+  --font-serif:
+    "Source Serif 4", "Noto Serif SC", "Source Han Serif SC", "Songti SC",
+    Georgia, serif;
+
+  /* Catppuccin Latte（亮色）。语义 token → 调色板角色：
+     theme=base  entry=mantle  primary=text  secondary=subtext1
+     tertiary=overlay0  content=subtext0  code-block=crust  code-bg=surface0
+     border=surface1  accent=green  accent-2=teal（主/次强调色） */
+  --color-paper-theme: #eff1f5;
+  --color-paper-entry: #e6e9ef;
+  --color-paper-primary: #4c4f69;
+  --color-paper-secondary: #5c5f77;
+  --color-paper-tertiary: #9ca0b0;
+  --color-paper-content: #6c6f85;
+  --color-paper-code-block: #dce0e8;
+  --color-paper-code-bg: #ccd0da;
+  --color-paper-border: #bcc0cc;
+  --color-paper-accent: #40a02b;
+  --color-paper-selection: color-mix(in srgb, var(--color-paper-accent) 30%, transparent);
+  --color-paper-accent-soft: #ccd0da;
+  --color-paper-accent-2: #179299;
+  --color-paper-accent-2-soft: #ccd0da;
+
+  /* 圆角三档梯度：容器 32 → 内容 16 → 微元素 8。
+     按钮/头像/徽章另用胶囊（Tailwind rounded-full），独立于本梯度。 */
+  --radius-card: 2rem; /* 32px：文章卡片、封面、admin 主面板 */
+  --radius-paper: 16px; /* 16px：代码块、正文图片、iframe、表格、输入框、admin 卡片 */
+  --radius-mini: 8px; /* 8px：标签、复制按钮、toc、paginav */
+  --gap-paper: 24px;
+  --content-gap-paper: 20px;
+  --nav-width-paper: 1024px;
+  --main-width-paper: 720px;
+}

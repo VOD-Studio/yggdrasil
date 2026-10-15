@@ -1,0 +1,15 @@
+/* ========== Blur-up 渐进图片加载（已移入 @layer components） ========== */
+
+/* ========== CodeMirror 代码运行器高度自适应优化 ========== */
+.code-runner-editor {
+  min-height: 120px;
+  max-height: 400px;
+  display: flex;
+  flex-direction: column;
+}
+.code-runner-editor .cm-editor {
+  flex: 1 1 auto !important;
+}
+.code-runner-editor .cm-scroller {
+  overflow: auto;
+}

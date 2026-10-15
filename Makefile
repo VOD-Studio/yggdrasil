@@ -154,7 +154,7 @@ test-databases: ## 在临时 PostgreSQL 中验证文章、笔记和备份，结�
 	@bun scripts/regression.cjs database
 
 BROWSER_SUITE ?= smoke
-test-browser: ## 隔离浏览器回归（先 regression-build；BROWSER_SUITE=smoke/admin/lightbox/showcase）
+test-browser: ## 隔离浏览器回归（先 regression-build；BROWSER_SUITE=smoke/admin/notes/backup/runner/slash/lightbox/showcase）
 	@bun scripts/regression.cjs $(BROWSER_SUITE)
 
 # ── 测试与代码质量 ─────────────────────────────────────────────

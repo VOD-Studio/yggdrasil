@@ -133,6 +133,8 @@ services:
             - yggdrasil-core/
             - xterm/
             - doc/
+        - path: ./styles
+          action: rebuild
         - path: ./input.css
           target: /build/input.css
           action: rebuild

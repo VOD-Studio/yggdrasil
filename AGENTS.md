@@ -7,7 +7,7 @@ Yggdrasil is a Rust 2021/Dioxus fullstack blog and CMS with an Axum backend and 
 - `src/pages/` and `src/components/`: UI; `src/api/`, `src/db/`, and `src/mcp/`: backend; `src/models/`: shared types. Consult `src/CONTEXT.md` for domain terminology.
 - `libs/`: Bun workspace for editors, lightbox, terminal, and browser utilities. Consult `libs/CONTEXT.md` for bundle and shared-code conventions.
 - `migrations/`: sequential SQL migrations (`NNN_description.sql`), applied at startup. Register each new SQL file in the `MIGRATIONS` array in `src/db/migrate.rs`, keeping versions in ascending order.
-- `public/`: static assets and generated bundles. Edit `input.css` and `libs/` sources, then rebuild generated CSS/JS. Keep `public/style.css` untracked; it is ignored build output.
+- `public/`: static assets and generated bundles. Edit the ordered `input.css` imports, `styles/` modules, and `libs/` sources, then rebuild generated CSS/JS. Keep `public/style.css` untracked; it is ignored build output.
 - `scripts/`: browser regression tooling; `docker/`: deployment and code-runner support.
 - `Makefile` and `mk/*.mk`: build, dev, test, and Docker entry points; run bare `make` to list targets (annotated with `##`).
 

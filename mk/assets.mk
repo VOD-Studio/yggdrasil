@@ -8,6 +8,7 @@
 .PHONY: build-assets build-libs highlight-css katex-css css css-watch
 .PHONY: dev-assets dev-libs dev-highlight-css dev-katex-css dev-assets-force
 
+# Tailwind follows the explicit styles/ imports for both builds and css-watch.
 TAILWIND := tailwindcss -i input.css -o public/style.css
 
 # release 构建共用的资源流水线：libs 前端库、语法高亮 CSS、KaTeX CSS + 字体、
