@@ -731,7 +731,10 @@ mod tests {
         // 此处只检查页面复用；折叠动画由 input.css 管理。
         for (page, source) in [
             ("posts_trash", include_str!("posts_trash.rs")),
-            ("system/backup", include_str!("system/backup.rs")),
+            (
+                "system/backup/settings",
+                include_str!("system/backup/settings.rs"),
+            ),
         ] {
             // 排除测试自身，避免断言中的组件名让检查始终通过。
             let page_code = source.split("#[cfg(test)]").next().unwrap();

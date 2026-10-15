@@ -80,6 +80,11 @@ async function main() {
     await page.getByRole('alert').filter({ hasText: '获取备份任务进度失败' }).waitFor();
     await finished();
     pass('poll failure is visible and permits subsequent operations');
+    const refreshed = page.waitForResponse(r => endpoint(r.url()).startsWith('listbackups') && r.ok());
+    await page.getByRole('button', { name: '刷新列表', exact: true }).click();
+    await refreshed;
+    await page.getByRole('alert').waitFor({ state: 'detached' });
+    pass('successful explicit refresh clears the previous error');
 
     await create.click();
     const started = polls;

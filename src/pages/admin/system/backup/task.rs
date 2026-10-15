@@ -30,6 +30,7 @@ impl BackupState {
     }
 
     pub fn refresh(mut self) {
+        self.error.set(None);
         let next_generation = *self.list_generation.peek() + 1;
         self.list_generation.set(next_generation);
         let generation = *self.list_generation.peek();
