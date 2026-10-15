@@ -158,7 +158,7 @@ describe('createPopup 空状态', () => {
   ): SuggestionProps<Parameters<typeof matchCommand>[0]> {
     return {
       items,
-      editor: {} as any,
+      editor: { on: vi.fn(), off: vi.fn() } as any,
       range: {} as any,
       query: '',
       text: '',

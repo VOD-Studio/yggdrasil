@@ -10,4 +10,6 @@ This context covers the packages under `libs/`, their browser-side IIFE bundles,
 
 The lightbox's DOM/geometry regressions run with its Vitest suite. `bun scripts/test-lightbox.cjs` (from the repository root) uses the existing Playwright installation and the built IIFE to check actual browser animations, themes, mobile gestures, reduced motion and SPA cleanup. Set `PLAYWRIGHT_MODULE` or `CHROMIUM_PATH` when their installed locations differ.
 
+- **editor command UI**: `tiptap-editor/src/slash-command.ts` keeps the extension and public exports. The sibling directory owns commands, popup, runnable info, language selector and modal. Popup/modal listeners are tied to editor destruction; closing a modal cancels deferred keyboard registration.
+
 Keep JavaScript-specific domain decisions and scoped ADRs under this context when they are resolved.

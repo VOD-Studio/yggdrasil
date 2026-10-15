@@ -273,6 +273,7 @@ jobs:
           make test-browser BROWSER_SUITE=notes
           make test-browser BROWSER_SUITE=backup
           make test-browser BROWSER_SUITE=runner
+          make test-browser BROWSER_SUITE=slash
           make test-browser BROWSER_SUITE=showcase
           make test-browser BROWSER_SUITE=lightbox
       - uses: actions/upload-artifact@v4

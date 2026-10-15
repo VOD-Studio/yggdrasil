@@ -9,8 +9,26 @@ import { openRunnableModal } from '../slash-command';
  * editor 用 mock,只校验 setCodeBlock 被以正确 language 调用。
  */
 
+const editors: { destroy(): void }[] = [];
+function lifecycle() {
+  const callbacks = new Set<() => void>();
+  const editor = {
+    isDestroyed: false,
+    on: vi.fn((_event: string, callback: () => void) => callbacks.add(callback)),
+    off: vi.fn((_event: string, callback: () => void) => callbacks.delete(callback)),
+    destroy() {
+      editor.isDestroyed = true;
+      for (const callback of callbacks) callback();
+    },
+  };
+  editors.push(editor);
+  return editor;
+}
 // happy-dom 提供 document.body;每个用例后清理。
 afterEach(() => {
+  for (const editor of editors.splice(0)) editor.destroy();
+  vi.useRealTimers();
+  vi.restoreAllMocks();
   document.body.innerHTML = '';
 });
 
@@ -25,7 +43,7 @@ function mockEditor() {
     }),
     run: vi.fn(),
   };
-  return { editor: { chain: vi.fn(() => chain) } as unknown as Editor, calls };
+  return { editor: { ...lifecycle(), chain: vi.fn(() => chain) } as unknown as Editor, calls };
 }
 
 /**
@@ -53,6 +71,7 @@ function mockEditorWithView() {
     dispatch: vi.fn(() => {}),
   };
   const editor = {
+    ...lifecycle(),
     chain: vi.fn(() => chain),
     view,
     state: { tr },
@@ -227,5 +246,41 @@ describe('openRunnableModal 编辑模式', () => {
     nodeOption.click();
     document.querySelector<HTMLButtonElement>('.tiptap-runnable-actions .insert')!.click();
     expect(markupCalls[0].language).toBe('node runnable');
+  });
+});
+
+describe('modal lifetime', () => {
+  it('immediate close cancels delayed keyboard registration', () => {
+    vi.useFakeTimers();
+    const add = vi.spyOn(document, 'addEventListener');
+    const { editor } = mockEditor();
+    openRunnableModal(editor);
+    document.querySelector<HTMLButtonElement>('.tiptap-runnable-actions .cancel')!.click();
+    vi.runAllTimers();
+    expect(add.mock.calls.filter(([name]) => name === 'keydown')).toHaveLength(0);
+  });
+
+  it('editor destruction removes a mounted modal and its keyboard listener', () => {
+    vi.useFakeTimers();
+    const add = vi.spyOn(document, 'addEventListener');
+    const remove = vi.spyOn(document, 'removeEventListener');
+    const { editor } = mockEditor();
+    openRunnableModal(editor);
+    vi.runAllTimers();
+    const callback = add.mock.calls.find(([name]) => name === 'keydown')![1];
+    editor.destroy();
+    expect(document.querySelector('.tiptap-runnable-modal-mask')).toBeNull();
+    expect(remove).toHaveBeenCalledWith('keydown', callback);
+  });
+
+  it('reopening replaces the previous modal and repeated closes are harmless', () => {
+    vi.useFakeTimers();
+    const { editor } = mockEditor();
+    for (let i = 0; i < 5; i++) openRunnableModal(editor);
+    vi.runAllTimers();
+    expect(document.querySelectorAll('.tiptap-runnable-modal-mask')).toHaveLength(1);
+    document.querySelector<HTMLButtonElement>('.tiptap-runnable-actions .cancel')!.click();
+    editor.destroy();
+    expect(document.querySelectorAll('.tiptap-runnable-modal-mask')).toHaveLength(0);
   });
 });

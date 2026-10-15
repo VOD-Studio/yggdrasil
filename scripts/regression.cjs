@@ -8,7 +8,7 @@ const { createHash } = require('node:crypto');
 const ROOT = path.resolve(__dirname, '..');
 const mode = process.argv[2] || 'database';
 const suites = {
-  smoke: 'test-maintenance.cjs', admin: 'test-admin-editor.cjs',
+  slash: 'test-slash-menu.cjs', smoke: 'test-maintenance.cjs', admin: 'test-admin-editor.cjs',
   lightbox: 'test-lightbox.cjs', showcase: 'test-components-showcase.cjs',
   notes: 'test-notes-editor.cjs', backup: 'test-backup-ui.cjs', runner: 'test-runner-ui.cjs',
 };
