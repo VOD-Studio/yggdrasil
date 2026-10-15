@@ -262,12 +262,18 @@ jobs:
           bun run playwright install --with-deps chromium
       - name: Build browser regression application
         run: make regression-build
+      - name: Build Python regression runner
+        run: |
+          docker build -t yggdrasil-runner-base:latest docker/runner-base
+          docker build -t yggdrasil-runner-python:latest docker/runner-python
       - name: Isolated browser acceptance
         run: |
           make test-browser BROWSER_SUITE=smoke
           make test-browser BROWSER_SUITE=admin
           make test-browser BROWSER_SUITE=notes
           make test-browser BROWSER_SUITE=backup
+          make test-browser BROWSER_SUITE=runner
+          make test-browser BROWSER_SUITE=showcase
           make test-browser BROWSER_SUITE=lightbox
       - uses: actions/upload-artifact@v4
         if: always()

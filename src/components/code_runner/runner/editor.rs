@@ -1,0 +1,110 @@
+//! CodeMirror resources belong to the component scope.
+use crate::bridges::library::{library_ready, LibraryResource};
+use dioxus::prelude::*;
+pub(super) fn use_editor(
+    language: String,
+    container_id: String,
+    source_signal: Signal<String>,
+    vim_enabled: Signal<bool>,
+    mut editor_ready: Signal<bool>,
+    editor_library: LibraryResource,
+) {
+    use crate::bridges::codemirror;
+    use crate::theme::{use_resolved_theme, ResolvedTheme};
+    use wasm_bindgen::closure::Closure;
+
+    let mut editor_handle: Signal<Option<codemirror::EditorHandle>> = use_signal(|| None);
+    // 在 cfg 块顶层（渲染路径）取主题 memo，move 进下方 effect 闭包；闭包内只
+    // 调用 memo（resolved()）读值——调用 memo 本身不是 hook，use_resolved_theme
+    // 这个 hook 必须在组件体顶层调用，不能放进 use_effect 闭包（dx check 会报）。
+    let resolved_theme = use_resolved_theme();
+
+    // 首次挂载：构造 closure + options，create 后存进 editor_handle。
+    // 用 resolved() 读取主题作为初始值（同时订阅，但主题切换由下方独立 effect 处理）。
+    let mount_language = language;
+    let mount_container_id = container_id;
+    use_effect(move || {
+        if editor_handle.read().is_some() {
+            return; // 防重复 init
+        }
+        if !library_ready(editor_library) {
+            return;
+        }
+
+        // onChange 回写到 source_signal（编辑器内容 = 唯一真源）。
+        let on_change = Closure::new({
+            let mut sig = source_signal;
+            move |v: String| sig.set(v)
+        });
+        let on_ready = Closure::new(|| {});
+        // CodeRunner 不使用 Ctrl+Enter 运行快捷键（它有自己的运行按钮），
+        // 但 EditorHandle 签名要求该闭包，传 no-op 满足生命周期。
+        let on_run_shortcut = Closure::new(|| {});
+
+        let theme_name = if resolved_theme() == ResolvedTheme::Dark {
+            "dark"
+        } else {
+            "light"
+        };
+
+        let opts = codemirror::EditorOptions::new();
+        opts.set_language(&mount_language);
+        opts.set_theme(theme_name);
+        opts.set_vim(*vim_enabled.read());
+        opts.set_value(&source_signal.read());
+        opts.set_on_change(&on_change);
+        opts.set_on_ready(&on_ready);
+        opts.set_on_run_shortcut(&on_run_shortcut);
+
+        if let Ok(Some(inst)) = codemirror::get_module().create(&mount_container_id, &opts) {
+            let handle = codemirror::EditorHandle::new(inst, on_change, on_ready, on_run_shortcut);
+            editor_handle.set(Some(handle));
+            editor_ready.set(true);
+        }
+    });
+
+    // 主题切换（含 System 模式下系统偏好变化）时同步编辑器主题。
+    //
+    // VT 动画期间跳过:手动点击主题按钮时,__startThemeTransition 已在 VT 回调内
+    // 通过 'yggdrasil:theme-change' 事件同步调了 setTheme(出现在 NEW 快照里)。
+    // 但 use_effect 在 theme.set(next) 后立即触发——早于 VT 回调(异步),会直接改
+    // 实时 DOM 的编辑器背景。VT 动画播的是伪元素快照,实时 DOM 改动会穿透伪元素,
+    // 表现为「圆形还没展开到代码块,代码块就整体瞬切」。is-theme-transitioning
+    // 期间跳过,让 VT 事件负责换肤;动画结束后此 effect 会因 resolved 信号变化重跑
+    // (此时 is-theme-transitioning 已移除),做一次幂等的兜底同步。
+    use_effect(move || {
+        #[cfg(target_arch = "wasm32")]
+        {
+            let transitioning = web_sys::window()
+                .and_then(|w| w.document())
+                .and_then(|d| d.document_element())
+                .map(|el| el.class_list().contains("is-theme-transitioning"))
+                .unwrap_or(false);
+            if transitioning {
+                return;
+            }
+        }
+        if let Some(h) = editor_handle.read().as_ref() {
+            h.instance()
+                .set_theme(if resolved_theme() == ResolvedTheme::Dark {
+                    "dark"
+                } else {
+                    "light"
+                });
+        }
+    });
+
+    // 监听 vim 模式切换并同步。
+    use_effect(move || {
+        let enabled = vim_enabled();
+        if let Some(h) = editor_handle.read().as_ref() {
+            h.instance().set_vim(enabled);
+        }
+    });
+
+    // 组件卸载时销毁 CodeMirror 实例（EditorHandle::drop → instance.destroy）。
+    use_drop(move || {
+        editor_handle.set(None);
+        editor_ready.set(false);
+    });
+}

@@ -14,4 +14,6 @@ This context covers the fullstack Yggdrasil blog/CMS in `src/`: Dioxus 0.7 pages
 
 - **笔记编辑**：`pages/admin/note_editor/` separates save state, autosave, history, metadata and Tiptap lifetime. Saving reconciles a submitted snapshot with current input; history restoration keeps the save lock through loading and refuses to overwrite intervening edits. Browser requests and debounce tasks belong to the keyed editor scope.
 
+- **运行器会话**：`components/code_runner/runner/` separates editor/terminal hooks from execution state. `StreamHandle` owns the EventSource and callbacks; completion, replacement and unmount detach listeners and close the stream. Async submit/poll tasks belong to the component scope. Showcase examples use local output only.
+
 Keep new domain decisions and Rust-specific ADRs under this context when they are resolved.
