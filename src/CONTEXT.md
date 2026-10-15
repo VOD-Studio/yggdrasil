@@ -12,4 +12,6 @@ This context covers the fullstack Yggdrasil blog/CMS in `src/`: Dioxus 0.7 pages
 - **完整更新与部分更新**: the browser editor replaces a `PostDraft`; MCP sends a `PostPatch`. `FieldChange::{Keep, Set, Clear}` distinguishes omitted nullable fields from explicit clearing. MCP publication dates and `expected_updated_at` remain protocol-specific inputs.
 - **编辑页状态**: `pages/admin/write/` separates the form, editor lifecycle, save snapshot and display components. `EditorHandle` owns browser callbacks and destroys Tiptap on unmount; editor readiness and save progress are separate state enums.
 
+- **笔记编辑**：`pages/admin/note_editor/` separates save state, autosave, history, metadata and Tiptap lifetime. Saving reconciles a submitted snapshot with current input; history restoration keeps the save lock through loading and refuses to overwrite intervening edits. Browser requests and debounce tasks belong to the keyed editor scope.
+
 Keep new domain decisions and Rust-specific ADRs under this context when they are resolved.
