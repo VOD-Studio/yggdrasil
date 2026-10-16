@@ -179,7 +179,14 @@ pub fn AppRouter() -> Element {
 
     rsx! {
         document::Title { "Yggdrasil Blog" }
-        document::Link { rel: "icon", href: "/favicon.ico" }
+        // 网站图标由 scripts/generate-favicons.cjs 生成：SVG 随系统明暗换色，
+        // 旧浏览器回退 ICO；manifest 供安装为应用。
+        document::Link { rel: "icon", href: "/favicon.svg", r#type: "image/svg+xml" }
+        document::Link { rel: "icon", href: "/favicon.ico", sizes: "16x16 32x32 48x48" }
+        document::Link { rel: "apple-touch-icon", href: "/apple-touch-icon.png" }
+        document::Link { rel: "manifest", href: "/manifest.webmanifest" }
+        document::Meta { name: "theme-color", content: "#f5f5f3", "media": "(prefers-color-scheme: light)" }
+        document::Meta { name: "theme-color", content: "#0f0f0e", "media": "(prefers-color-scheme: dark)" }
         div {
             ThemePreload {}
             HistoryProvider {

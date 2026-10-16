@@ -1,0 +1,14 @@
+{
+  "name": "Yggdrasil",
+  "short_name": "Yggdrasil",
+  "description": "源码剖析与长文笔记",
+  "start_url": "/",
+  "scope": "/",
+  "display": "minimal-ui",
+  "background_color": "#f5f5f3",
+  "theme_color": "#f5f5f3",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
