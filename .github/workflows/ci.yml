@@ -276,6 +276,7 @@ jobs:
           make test-browser BROWSER_SUITE=slash
           make test-browser BROWSER_SUITE=showcase
           make test-browser BROWSER_SUITE=lightbox
+          bun scripts/test-public-performance.cjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
