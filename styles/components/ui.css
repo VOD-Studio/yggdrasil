@@ -184,3 +184,380 @@
     }
   }
 }
+
+@layer components {
+  /* ---- 输入框 ----
+     浅底加发丝线环；悬停环加深，聚焦换成陶土双环，aria-invalid 时红环。 */
+  .field {
+    display: block;
+    height: 2.25rem;
+    padding: 0 0.75rem;
+    border: 0;
+    border-radius: 8px;
+    background-color: var(--color-surface-1);
+    color: var(--color-fg);
+    font: inherit;
+    font-size: 0.875rem;
+    line-height: 1.5;
+    box-shadow: 0 0 0 1px var(--color-hairline);
+    transition:
+      box-shadow 200ms var(--ease-out-expo),
+      background-color 150ms var(--ease-out-expo);
+  }
+
+  .field::placeholder {
+    color: var(--color-fg-3);
+  }
+
+  .field:hover:not(:disabled, :focus, :focus-within) {
+    box-shadow: 0 0 0 1px var(--color-ink-3);
+  }
+
+  .field:focus,
+  .field:focus-within,
+  .field[aria-expanded="true"] {
+    outline: none;
+    box-shadow: var(--shadow-focus);
+  }
+
+  .field[aria-invalid="true"],
+  .field:has([aria-invalid="true"]) {
+    box-shadow: 0 0 0 1.5px var(--color-danger);
+  }
+
+  .field:disabled,
+  .field:has(:disabled) {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  .field-sm {
+    height: 1.875rem;
+    padding: 0 0.625rem;
+    font-size: 0.8125rem;
+  }
+
+  /* 多行：随内容长高（不支持 field-sizing 的浏览器保持 rows 高度）。 */
+  .field-textarea {
+    height: auto;
+    min-height: 5rem;
+    padding: 0.5rem 0.75rem;
+    resize: vertical;
+    field-sizing: content;
+  }
+
+  .field-label {
+    display: block;
+    margin-bottom: 0.375rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--color-fg-2);
+  }
+
+  .field-hint {
+    margin-top: 0.5rem;
+    font-size: 0.8125rem;
+    color: var(--color-fg-3);
+  }
+
+  .field-hint[data-tone="danger"] {
+    color: var(--color-danger);
+  }
+
+  /* ---- 下拉与时间选择的触发器 ---- */
+  .select-trigger {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.625rem;
+    width: 100%;
+    padding-right: 0.625rem;
+    text-align: left;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .select-trigger > .select-value {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .select-trigger > .select-chevron {
+    flex-shrink: 0;
+    color: var(--color-fg-3);
+    transition: transform var(--spring-bouncy-duration) var(--ease-spring-bouncy);
+  }
+
+  .select-trigger[aria-expanded="true"] > .select-chevron {
+    transform: rotate(180deg);
+  }
+
+  /* ---- 浮层列表（下拉选项、时间列） ---- */
+  .listbox {
+    position: absolute;
+    z-index: 50;
+    left: 0;
+    min-width: 100%;
+    max-width: calc(100vw - 2rem);
+    width: max-content;
+    max-height: 18rem;
+    margin: 0;
+    padding: 4px;
+    overflow-y: auto;
+    list-style: none;
+    border-radius: 10px;
+    background-color: var(--color-popover);
+    box-shadow: var(--shadow-popover);
+    animation: listbox-enter var(--spring-snappy-duration) var(--ease-spring-snappy) both;
+  }
+
+  .listbox[data-placement="top"] {
+    bottom: calc(100% + 6px);
+    transform-origin: bottom left;
+  }
+
+  .listbox[data-placement="bottom"] {
+    top: calc(100% + 6px);
+    transform-origin: top left;
+  }
+
+  @keyframes listbox-enter {
+    from {
+      opacity: 0;
+      transform: translateY(-4px) scale(0.98);
+    }
+  }
+
+  @keyframes listbox-fade {
+    from {
+      opacity: 0;
+    }
+  }
+
+  .listbox-filter {
+    position: sticky;
+    top: -4px;
+    z-index: 1;
+    margin: -4px -4px 4px;
+    padding: 4px;
+    background-color: var(--color-popover);
+    box-shadow: inset 0 -1px 0 var(--color-hairline);
+  }
+
+  .listbox-option {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    padding: 0.5rem 0.625rem;
+    border-radius: 7px;
+    font-size: 0.84375rem;
+    color: var(--color-fg);
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .listbox-option[data-active="true"] {
+    background-color: var(--color-ink-1);
+  }
+
+  .listbox-option[aria-selected="true"] > .listbox-check {
+    color: var(--color-clay-text);
+  }
+
+  .listbox-option[aria-disabled="true"] {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .listbox-option-hint {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--color-fg-3);
+  }
+
+  .listbox-empty {
+    padding: 0.75rem 0.625rem;
+    font-size: 0.8125rem;
+    color: var(--color-fg-3);
+  }
+
+  /* ---- 时间选择面板：小时、分钟两列 ---- */
+  .time-panel {
+    width: 13.75rem;
+    max-height: none;
+    padding: 8px;
+    overflow: visible;
+  }
+
+  .time-columns {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .time-column {
+    max-height: 12.25rem;
+    overflow-y: auto;
+    scrollbar-width: none;
+    mask-image: linear-gradient(to bottom, transparent, #000 14px, #000 calc(100% - 14px), transparent);
+  }
+
+  .time-cell {
+    display: block;
+    width: 100%;
+    height: 1.875rem;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--color-fg-2);
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+  }
+
+  .time-cell:hover {
+    background-color: var(--color-ink-1);
+  }
+
+  .time-cell[aria-selected="true"] {
+    background-color: var(--color-clay-soft);
+    color: var(--color-clay-text);
+    font-weight: 600;
+  }
+
+  .time-cell:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
+  }
+
+  .time-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 8px;
+    padding-top: 8px;
+    box-shadow: inset 0 1px 0 var(--color-hairline);
+    font-size: 0.75rem;
+    color: var(--color-fg-3);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ---- 数字输入：单位写在框内，两侧步进 ---- */
+  .number-field {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: auto;
+    padding: 2px;
+    border-radius: 9px;
+  }
+
+  .number-field > input {
+    width: 4rem;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: var(--color-fg);
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+  }
+
+  /* 焦点环画在外框上（.field:focus-within），内部输入框不再单独描边。 */
+  .number-field > input:focus,
+  .number-field > input:focus-visible {
+    outline: none;
+    box-shadow: none;
+  }
+
+  .number-field > .number-unit {
+    font-size: 0.8125rem;
+    color: var(--color-fg-3);
+  }
+
+  /* ---- 开关 ---- */
+  .switch {
+    position: relative;
+    flex-shrink: 0;
+    width: 2.25rem;
+    height: 1.375rem;
+    padding: 2px;
+    border: 0;
+    border-radius: 999px;
+    background-color: var(--color-ink-3);
+    cursor: pointer;
+    transition:
+      background-color 200ms var(--ease-out-expo),
+      box-shadow 200ms var(--ease-out-expo);
+  }
+
+  .switch > .switch-thumb {
+    display: block;
+    width: 1.125rem;
+    height: 1.125rem;
+    border-radius: 50%;
+    background-color: #ffffff;
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
+    transition: transform var(--spring-bouncy-duration) var(--ease-spring-bouncy);
+  }
+
+  .switch[aria-checked="true"] {
+    background-color: var(--color-clay-fill);
+  }
+
+  .switch[aria-checked="true"] > .switch-thumb {
+    transform: translateX(0.875rem);
+  }
+
+  .switch:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
+  }
+
+  .switch:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  /* ---- 提示条 ---- */
+  .alert {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.625rem;
+    padding: 0.625rem 0.75rem;
+    border-radius: 10px;
+    background-color: var(--color-ink-1);
+    color: var(--color-fg-2);
+    font-size: 0.84375rem;
+    line-height: 1.6;
+  }
+
+  .alert > svg {
+    margin-top: 0.15em;
+  }
+
+  .alert[data-tone="danger"] {
+    background-color: var(--color-danger-soft);
+    color: var(--color-danger);
+  }
+
+  .alert[data-tone="success"] {
+    background-color: var(--color-success-soft);
+    color: var(--color-success);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .listbox {
+      animation: listbox-fade 120ms linear both;
+    }
+
+    .select-trigger > .select-chevron,
+    .switch > .switch-thumb {
+      transition-duration: 0ms;
+    }
+  }
+}

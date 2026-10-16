@@ -1,29 +1,33 @@
 //! 表单控件组件
 //!
-//! 提供登录、注册、评论等页面共享的输入框、按钮与提示框样式常量与组件。
+//! 提供登录、注册、评论等页面共享的输入框、下拉、时间、数字、开关与提示条。
+//! 外观定义在 styles/components/ui.css（`.field`、`.listbox`、`.switch`、`.alert`）。
 
+use crate::components::ui::{Icon, IconName};
 use dioxus::prelude::*;
 
-/// 输入框基础 CSS 类，统一文本框、邮箱框、URL 框等样式。
-pub const INPUT_CLASS: &str = "w-full px-4 py-2 border border-paper-border rounded-2xl bg-paper-entry text-paper-primary placeholder:text-paper-tertiary focus:outline-none focus:border-paper-accent focus:ring-1 focus:ring-paper-accent/30 transition-colors duration-200";
+/// 输入框基础类：浅底、发丝线环，聚焦陶土双环，`aria-invalid` 时红环。
+pub const INPUT_CLASS: &str = "field w-full";
 
-/// 内联输入框 CSS 类：与 [`INPUT_CLASS`] 同主题，但用 `flex-1 min-w-0` 取代 `w-full`，
-/// 用于与按钮并排、需填充剩余宽度的场景（搜索栏、URL 输入栏等）。
-pub const INPUT_INLINE_CLASS: &str = "flex-1 min-w-0 px-4 py-2 border border-paper-border rounded-2xl bg-paper-entry text-paper-primary placeholder:text-paper-tertiary focus:outline-none focus:border-paper-accent focus:ring-1 focus:ring-paper-accent/30 transition-colors duration-200";
+/// 内联输入框：与 [`INPUT_CLASS`] 同外观，用 `flex-1 min-w-0` 填充剩余宽度，
+/// 用于与按钮并排的场景（搜索栏、URL 输入栏等）。
+pub const INPUT_INLINE_CLASS: &str = "field flex-1 min-w-0";
 
-/// 主按钮 CSS 类，用于表单提交等主操作按钮。
-///
-/// 用 `text-paper-theme` 而非硬编码 `text-white`：`--color-paper-theme` 随主题反转
-/// （浅色主题近白、深色主题近黑），配合深色主题下偏浅的 `--color-paper-accent`
-/// 背景色（`#e08264` 浅陶土）才能保住文字对比度——硬编码白字在深色主题下几乎不可读。
-pub const BUTTON_PRIMARY_CLASS: &str = "w-full py-2.5 px-4 bg-paper-accent text-paper-theme font-medium rounded-full hover:brightness-110 active:scale-[0.98] transition-all duration-200 cursor-pointer";
+/// 多行输入框：随内容长高（`field-sizing: content`）。
+#[allow(dead_code)] // 文本域随页面重写逐步改用
+pub const TEXTAREA_CLASS: &str = "field field-textarea w-full";
+
+/// 整宽主按钮（登录、注册表单的提交）。
+pub const BUTTON_PRIMARY_CLASS: &str = "btn btn-lg btn-primary w-full";
 
 /// FormSelect 实例 id 计数器（跨泛型单例化全局唯一）。
 static FORM_SELECT_ID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
-/// FormSelect 紧凑触发器样式：工具栏内联小下拉（自动刷新、导出格式等）。
-/// 自动宽度 + text-sm + 小圆角，chevron 与面板样式与默认表单款一致。
-pub const FORM_SELECT_COMPACT_CLASS: &str = "inline-flex w-auto cursor-pointer select-none text-left text-sm pl-3 pr-8 py-1 border border-paper-border rounded-lg bg-paper-theme text-paper-primary focus:outline-none focus:border-paper-accent focus:ring-1 focus:ring-paper-accent/30 transition-colors duration-200";
+/// FormSelect 紧凑触发器：工具栏内联小下拉（自动刷新、导出格式等）。
+pub const FORM_SELECT_COMPACT_CLASS: &str = "field field-sm w-auto";
+
+/// 选项多于该数量时，下拉面板顶部出现筛选框。
+const FILTER_THRESHOLD: usize = 8;
 
 /// 面板应向上展开的条件：视口下方空间不足，且上方空间比下方更宽余。
 ///
@@ -35,7 +39,7 @@ fn should_flip(
     viewport_height: f64,
     panel_height: f64,
 ) -> bool {
-    /// 面板与触发器的间隙（mt-1.5）加视口边缘留白。
+    /// 面板与触发器的间隙（6px）加视口边缘留白。
     const MARGIN: f64 = 14.0;
     let below = viewport_height - trigger_bottom;
     let above = trigger_top;
@@ -50,15 +54,33 @@ fn wrap_index(cur: usize, delta: i32, len: usize) -> usize {
     (cur as i32 + delta).rem_euclid(len as i32) as usize
 }
 
+/// 在可选项（已筛选、未禁用）之间移动高亮；当前项不在其中时落到首项或末项。
+fn step_active(navigable: &[usize], cur: usize, delta: i32) -> Option<usize> {
+    if navigable.is_empty() {
+        return None;
+    }
+    match navigable.iter().position(|&i| i == cur) {
+        Some(pos) => Some(navigable[wrap_index(pos, delta, navigable.len())]),
+        None if delta < 0 => navigable.last().copied(),
+        None => navigable.first().copied(),
+    }
+}
+
+/// 筛选：忽略大小写的子串匹配，空查询匹配全部。
+fn matches_query(label: &str, query: &str) -> bool {
+    let query = query.trim();
+    query.is_empty() || label.to_lowercase().contains(&query.to_lowercase())
+}
+
 /// 测量触发器视口位置，决定面板展开方向（仅 wasm；SSR 无 DOM）。
 #[cfg(target_arch = "wasm32")]
 pub(crate) fn measure_flip(trigger_id: &str, option_count: usize) -> bool {
-    /// 选项行高：24px 行盒 + py-2.5（20px 垂直内边距）。
-    const ROW_HEIGHT: f64 = 44.0;
-    /// 面板 1px 边框 ×2 + p-1.5 内边距。
-    const PANEL_CHROME: f64 = 14.0;
-    /// 面板高度上限：max-h-60（240px）+ PANEL_CHROME。
-    const PANEL_MAX: f64 = 254.0;
+    /// 选项行高：20px 行盒 + 上下各 8px 内边距。
+    const ROW_HEIGHT: f64 = 36.0;
+    /// 面板内边距 4px ×2。
+    const PANEL_CHROME: f64 = 8.0;
+    /// 面板高度上限：18rem。
+    const PANEL_MAX: f64 = 288.0;
 
     let Some(window) = web_sys::window() else {
         return false;
@@ -79,7 +101,7 @@ pub(crate) fn measure_flip(trigger_id: &str, option_count: usize) -> bool {
     should_flip(rect.top(), rect.bottom(), viewport, panel_height)
 }
 
-/// 把指定选项滚入面板可视区（打开/键盘导航时跟随；仅 wasm）。
+/// 把指定元素滚入所在面板的可视区（打开/键盘导航时跟随；仅 wasm）。
 #[cfg(target_arch = "wasm32")]
 fn scroll_option_into_view(element_id: &str) {
     let Some(document) = web_sys::window().and_then(|w| w.document()) else {
@@ -93,124 +115,201 @@ fn scroll_option_into_view(element_id: &str) {
     el.scroll_into_view_with_scroll_into_view_options(&opts);
 }
 
+/// 把指定元素滚到所在列的中间（时间列打开时；仅 wasm）。
+#[cfg(target_arch = "wasm32")]
+fn scroll_into_center(element_id: &str) {
+    let Some(document) = web_sys::window().and_then(|w| w.document()) else {
+        return;
+    };
+    let Some(el) = document.get_element_by_id(element_id) else {
+        return;
+    };
+    let opts = web_sys::ScrollIntoViewOptions::new();
+    opts.set_block(web_sys::ScrollLogicalPosition::Center);
+    el.scroll_into_view_with_scroll_into_view_options(&opts);
+}
+
+/// 按 id 聚焦元素（仅 wasm）。
+#[cfg(target_arch = "wasm32")]
+fn focus_by_id(element_id: &str) {
+    use wasm_bindgen::JsCast;
+    if let Some(el) = web_sys::window()
+        .and_then(|w| w.document())
+        .and_then(|d| d.get_element_by_id(element_id))
+        .and_then(|el| el.dyn_into::<web_sys::HtmlElement>().ok())
+    {
+        let _ = el.focus();
+    }
+}
+
 /// 下拉选择框组件（自定义弹层，全主题化）。
 ///
 /// 原生 `<select>` 的弹出列表由 OS/浏览器渲染，无法跟随主题（暗色下是白底
 /// 系统菜单），故用 `button[aria-haspopup=listbox]` + 绝对定位面板重写：
-/// - 面板/选项全部使用 Catppuccin 语义色，带 `select-enter` 入场动画；
-/// - focus 始终留在触发器，键盘经 `aria-activedescendant` 高亮（↑↓ 循环、
+/// - 面板从触发器下方展开（snappy 弹簧，0.98 → 1），视口下方不够时向上展开；
+/// - 焦点留在触发器，键盘经 `aria-activedescendant` 高亮（↑↓ 循环、
 ///   Enter/Space 选中、Esc 关闭、Home/End 跳首尾、Tab 关闭并自然流转焦点）；
-/// - 透明遮罩拦截外部点击关闭（同 Popover 模式）；选项 `onmousedown` 阻止默认
-///   行为，点击不夺走触发器焦点；
-/// - 打开时视口下方空间不足且上方更宽余则向上展开（`should_flip`）；
+/// - 选项多于 8 个时面板顶部出现筛选框，打开即聚焦，键盘规则相同，Esc 把焦点还给触发器；
+/// - `disabled_options` 中的项保留但变淡，并在下方写明原因，键盘与点击都跳过；
+/// - 透明遮罩拦截外部点击关闭；选项 `onmousedown` 阻止默认行为，点击不夺走焦点；
 /// - 泛型值绑定：`onchange` 直接回传选中项的 `T`，无需字符串反查。
 ///
 /// Props：
 /// - `id`：触发器 id，用于与 label 关联（缺省用内部计数器生成）
 /// - `value`：当前选中项（受控）
 /// - `options`：可选项 `(值, 标签)` 列表
+/// - `disabled_options`：不可用的项及原因 `(值, 原因)`
 /// - `onchange`：选中变化回调，回传新选中项的值
-/// - `aria_label`：触发器无障碍标签（可选）；可见文本不足以表意时传入，
-///   如 TimePicker 的「小时」/「分钟」
+/// - `trigger_class`：触发器外观（缺省全宽 `field`；工具栏传 [`FORM_SELECT_COMPACT_CLASS`]）
+/// - `aria_label`：触发器无障碍标签；可见文本不足以表意时传入
 #[component]
 pub fn FormSelect<T: Clone + PartialEq + 'static>(
     id: Option<String>,
     value: T,
     options: Vec<(T, &'static str)>,
     onchange: EventHandler<T>,
-    /// 触发器样式覆盖：缺省为全宽表单款；工具栏内联场景传
-    /// [`FORM_SELECT_COMPACT_CLASS`]，或自定义类串（如编辑器底部胶囊）。
-    #[props(default)]
-    trigger_class: Option<&'static str>,
-    /// 触发器无障碍标签：缺省不加 aria-label（触发器可见文本即标签）。
-    #[props(default)]
-    aria_label: Option<&'static str>,
+    #[props(default)] disabled_options: Vec<(T, &'static str)>,
+    #[props(default)] trigger_class: Option<&'static str>,
+    #[props(default)] aria_label: Option<&'static str>,
 ) -> Element {
-    // 面板与 POPOVER_PANEL_CLASS 同源（卡片化圆角 + 阴影）。宽度取 max(触发器,
-    // 最长选项)：紧凑触发器（如“手动”）下面板仍能完整展示长选项；上限防出屏。
-    // 水平以触发器中心居中：面板宽于触发器时两侧对称探出，窄触发器不失衡。
-    // 居中用 [transform:translateX(-50%)] 而非 -translate-x-1/2 utility：Tailwind
-    // v4 的 translate utility 走独立 translate 属性，会与 select-enter 关键帧的
-    // transform 叠加造成双倍位移；关键帧的 fill 值与此处 transform 完全一致。
-    // 定义在函数体内：模块级私有常量若仅被 wasm 门控调用点引用，会在 server
-    // 构建下触发 dead_code。
-    const TRIGGER_CLASS: &str = "w-full block cursor-pointer truncate select-none text-left pl-4 pr-10 py-2 border border-paper-border rounded-2xl bg-paper-entry text-paper-primary focus:outline-none focus:border-paper-accent focus:ring-1 focus:ring-paper-accent/30 transition-colors duration-200";
-    const PANEL_CLASS: &str = "absolute left-1/2 z-50 w-max min-w-full max-w-[calc(100vw_-_2rem)] [transform:translateX(-50%)] max-h-60 overflow-y-auto rounded-2xl border border-[var(--color-paper-border)] bg-[var(--color-paper-entry)] p-1.5 shadow-lg animate-select-enter";
-
-    let trigger_cls = trigger_class.unwrap_or(TRIGGER_CLASS);
-
+    let trigger_cls = trigger_class.unwrap_or("field");
     let id_prefix = use_hook(|| FORM_SELECT_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst));
 
     // 受控选中序号；value 不在 options 时兜底 0（与浏览器默认选中第一项一致）。
     let selected = options.iter().position(|(v, _)| *v == value).unwrap_or(0);
     let selected_label = options.get(selected).map(|(_, l)| *l).unwrap_or_default();
     let len = options.len();
+    let filterable = len > FILTER_THRESHOLD;
 
     let mut open = use_signal(|| false);
     let mut active = use_signal(|| selected);
-    // flip_up 的 set 均在 wasm 门控语句内（宿主构建下只读），参照 FilterTabs 先例。
+    let mut query = use_signal(String::new);
+    // flip_up 的 set 均在 wasm 门控语句内（宿主构建下只读）。
     #[allow(unused_mut)]
     let mut flip_up = use_signal(|| false);
 
-    // onkeydown 闭包与下方选项渲染各需一份 options（键盘选中回查 / 渲染）。
-    let options_for_keys = options.clone();
-
-    // 触发器 id：外部未指定时用内部前缀生成，ARIA 关联统一走它。
     let trigger_id = id.unwrap_or_else(|| format!("form-select-{id_prefix}"));
-    // 两个事件闭包各持一份（仅 wasm 用于 flip 测量按 id 查元素）。
-    #[cfg(target_arch = "wasm32")]
-    let trigger_id_click = trigger_id.clone();
-    #[cfg(target_arch = "wasm32")]
-    let trigger_id_keys = trigger_id.clone();
+    let filter_id = format!("form-select-{id_prefix}-filter");
 
-    // 打开或键盘导航时，把高亮项滚入面板可视区。
+    // 每项的禁用原因；与 options 一一对应。
+    let reasons: Vec<Option<&'static str>> = options
+        .iter()
+        .map(|(v, _)| {
+            disabled_options
+                .iter()
+                .find(|(d, _)| d == v)
+                .map(|(_, reason)| *reason)
+        })
+        .collect();
+    let q = query();
+    let visible: Vec<usize> = (0..len)
+        .filter(|&i| matches_query(options[i].1, &q))
+        .collect();
+    let navigable: Vec<usize> = visible
+        .iter()
+        .copied()
+        .filter(|&i| reasons[i].is_none())
+        .collect();
+    // 筛选框输入时用来重算首个可选项；渲染用的逐行数据。
+    let searchable: Vec<(&'static str, bool)> = options
+        .iter()
+        .zip(&reasons)
+        .map(|((_, label), reason)| (*label, reason.is_none()))
+        .collect();
+    let rows: Vec<(usize, T, &'static str, Option<&'static str>)> = visible
+        .iter()
+        .map(|&i| (i, options[i].0.clone(), options[i].1, reasons[i]))
+        .collect();
+    let nothing_visible = rows.is_empty();
+
+    // 打开或键盘导航时，把高亮项滚入面板可视区；带筛选框时打开即聚焦筛选框。
+    #[cfg(target_arch = "wasm32")]
+    let filter_id_effect = filter_id.clone();
     use_effect(move || {
         if open() {
             #[cfg(target_arch = "wasm32")]
             {
                 let idx = active();
                 scroll_option_into_view(&format!("form-select-{id_prefix}-opt-{idx}"));
+                if filterable {
+                    focus_by_id(&filter_id_effect);
+                }
             }
         }
     });
 
-    // 预计算每行展示态，rsx 循环内只做移动与闭包捕获。
-    let active_idx = active();
-    let rows: Vec<(usize, T, &'static str, &'static str, &'static str)> = options
-        .iter()
-        .enumerate()
-        .map(|(i, (v, l))| {
-            let highlight = if i == active_idx {
-                "bg-[var(--color-paper-accent-soft)]"
-            } else {
-                ""
-            };
-            let text = if i == selected {
-                "text-paper-accent"
-            } else {
-                "text-[var(--color-paper-primary)]"
-            };
-            (i, v.clone(), *l, highlight, text)
-        })
-        .collect();
-
-    let chevron_rotate = if open() { "rotate-180" } else { "" };
-    let placement_cls = if flip_up() {
-        "bottom-full mb-1.5 origin-bottom"
-    } else {
-        "top-full mt-1.5 origin-top"
+    let open_panel = {
+        #[cfg(target_arch = "wasm32")]
+        let trigger_id = trigger_id.clone();
+        move || {
+            #[cfg(target_arch = "wasm32")]
+            flip_up.set(measure_flip(&trigger_id, len.min(FILTER_THRESHOLD + 1)));
+            query.set(String::new());
+            active.set(selected);
+            open.set(true);
+        }
     };
-    let active_descendant = open().then(|| {
-        let idx = active();
-        format!("form-select-{id_prefix}-opt-{idx}")
-    });
+
+    // 面板打开后的键盘处理；触发器与筛选框共用。返回 true 表示已处理。
+    let options_for_keys = options.clone();
+    let navigable_for_keys = navigable.clone();
+    #[cfg(target_arch = "wasm32")]
+    let trigger_id_keys = trigger_id.clone();
+    let mut handle_open_key = move |e: &KeyboardEvent| {
+        let key = e.key();
+        let is_space = matches!(&key, Key::Character(s) if s == " ");
+        if key == Key::ArrowDown || key == Key::ArrowUp {
+            e.prevent_default();
+            let delta = if key == Key::ArrowDown { 1 } else { -1 };
+            if let Some(next) = step_active(&navigable_for_keys, active(), delta) {
+                active.set(next);
+            }
+        } else if key == Key::Home {
+            e.prevent_default();
+            if let Some(&first) = navigable_for_keys.first() {
+                active.set(first);
+            }
+        } else if key == Key::End {
+            e.prevent_default();
+            if let Some(&last) = navigable_for_keys.last() {
+                active.set(last);
+            }
+        } else if key == Key::Enter || (is_space && !filterable) {
+            e.prevent_default();
+            if navigable_for_keys.contains(&active()) {
+                open.set(false);
+                if let Some((v, _)) = options_for_keys.get(active()) {
+                    onchange.call(v.clone());
+                }
+                #[cfg(target_arch = "wasm32")]
+                focus_by_id(&trigger_id_keys);
+            }
+        } else if key == Key::Escape {
+            e.prevent_default();
+            open.set(false);
+            #[cfg(target_arch = "wasm32")]
+            focus_by_id(&trigger_id_keys);
+        } else if key == Key::Tab {
+            open.set(false);
+        }
+    };
+    let mut handle_filter_key = handle_open_key.clone();
+
+    let active_idx = active();
+    let placement = if flip_up() { "top" } else { "bottom" };
+    let active_descendant =
+        (open() && !filterable).then(|| format!("form-select-{id_prefix}-opt-{}", active()));
+    // wasm 下闭包捕获了 trigger_id（String），不是 Copy；宿主构建下是 Copy。
+    #[allow(clippy::clone_on_copy)]
+    let mut open_from_click = open_panel.clone();
+    let mut open_from_key = open_panel;
 
     rsx! {
         div { class: "relative",
             button {
                 id: "{trigger_id}",
                 r#type: "button",
-                class: "{trigger_cls}",
+                class: "select-trigger {trigger_cls}",
                 aria_haspopup: "listbox",
                 aria_expanded: "{open()}",
                 aria_activedescendant: active_descendant,
@@ -219,106 +318,84 @@ pub fn FormSelect<T: Clone + PartialEq + 'static>(
                     // 打开态下触发器被透明遮罩盖住，点击落在遮罩上即关闭；
                     // 这里只需处理「未开 → 开」。
                     if !open() {
-                        #[cfg(target_arch = "wasm32")]
-                        flip_up.set(measure_flip(&trigger_id_click, len));
-                        active.set(selected);
-                        open.set(true);
+                        open_from_click();
                     }
                 },
                 onkeydown: move |e| {
-                    let key = e.key();
-                    let is_space = matches!(&key, Key::Character(s) if s == " ");
-                    if !open() {
-                        if key == Key::ArrowDown || key == Key::ArrowUp || key == Key::Enter
-                            || is_space
-                        {
-                            e.prevent_default();
-                            #[cfg(target_arch = "wasm32")]
-                            flip_up.set(measure_flip(&trigger_id_keys, len));
-                            active.set(selected);
-                            open.set(true);
-                        }
+                    if open() {
+                        handle_open_key(&e);
                         return;
                     }
-                    if key == Key::ArrowDown {
+                    let key = e.key();
+                    let is_space = matches!(&key, Key::Character(s) if s == " ");
+                    if key == Key::ArrowDown || key == Key::ArrowUp || key == Key::Enter || is_space {
                         e.prevent_default();
-                        active.set(wrap_index(active(), 1, len));
-                    } else if key == Key::ArrowUp {
-                        e.prevent_default();
-                        active.set(wrap_index(active(), -1, len));
-                    } else if key == Key::Home { // 不拦截：关闭后焦点自然流转到下一个控件。
-                        e.prevent_default();
-                        active.set(0);
-                    } else if key == Key::End {
-                        e.prevent_default();
-                        active.set(len.saturating_sub(1));
-                    } else if key == Key::Enter || is_space {
-                        e.prevent_default();
-                        open.set(false);
-                        if let Some((v, _)) = options_for_keys.get(active()) {
-                            onchange.call(v.clone());
-                        }
-                    } else if key == Key::Escape {
-                        e.prevent_default();
-                        open.set(false);
-                    } else if key == Key::Tab {
-                        open.set(false);
+                        open_from_key();
                     }
                 },
-                "{selected_label}"
-                // 下拉箭头（打开时翻转）
-                svg {
-                    class: "pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-paper-secondary transition-transform duration-200 {chevron_rotate}",
-                    view_box: "0 0 24 24",
-                    fill: "none",
-                    stroke: "currentColor",
-                    stroke_width: "2",
-                    path {
-                        stroke_linecap: "round",
-                        stroke_linejoin: "round",
-                        d: "M6 9l6 6 6-6",
-                    }
-                }
+                span { class: "select-value", "{selected_label}" }
+                Icon { name: IconName::ChevronDown, size: 15, class: "select-chevron" }
             }
 
             if open() {
                 // 透明遮罩：拦截外部点击（点遮罩即关），z-40 < 面板 z-50。
-                div {
-                    class: "fixed inset-0 z-40",
-                    onclick: move |_| open.set(false),
-                }
+                div { class: "fixed inset-0 z-40", onclick: move |_| open.set(false) }
                 ul {
-                    class: "{PANEL_CLASS} {placement_cls}",
+                    class: "listbox",
+                    "data-placement": placement,
                     role: "listbox",
                     aria_labelledby: "{trigger_id}",
-                    for (i, opt_value, opt_label, highlight_cls, text_cls) in rows {
-                        li {
-                            id: "form-select-{id_prefix}-opt-{i}",
-                            class: "flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl cursor-pointer select-none transition-colors hover:bg-[var(--color-paper-accent-soft)] {text_cls} {highlight_cls}",
-                            role: "option",
-                            aria_selected: "{i == selected}",
-                            // 阻止 mousedown 默认行为：点击选项不夺走触发器焦点。
-                            onmousedown: move |e| e.prevent_default(),
-                            onclick: move |_| {
-                                open.set(false);
-                                onchange.call(opt_value.clone());
-                            },
-                            onmouseenter: move |_| active.set(i),
-                            span { class: "truncate", "{opt_label}" }
-                            if i == selected {
-                                svg {
-                                    class: "w-4 h-4 flex-shrink-0",
-                                    view_box: "0 0 24 24",
-                                    fill: "none",
-                                    stroke: "currentColor",
-                                    stroke_width: "2",
-                                    path {
-                                        stroke_linecap: "round",
-                                        stroke_linejoin: "round",
-                                        d: "M20 6L9 17l-5-5",
+                    if filterable {
+                        li { class: "listbox-filter", role: "presentation",
+                            input {
+                                id: "{filter_id}",
+                                class: "field field-sm w-full",
+                                r#type: "text",
+                                placeholder: "筛选",
+                                autocomplete: "off",
+                                value: "{q}",
+                                aria_label: "筛选选项",
+                                aria_activedescendant: format!("form-select-{id_prefix}-opt-{active_idx}"),
+                                oninput: move |e| {
+                                    let text = e.value();
+                                    if let Some(first) = searchable
+                                        .iter()
+                                        .position(|(label, enabled)| *enabled && matches_query(label, &text))
+                                    {
+                                        active.set(first);
                                     }
-                                }
+                                    query.set(text);
+                                },
+                                onkeydown: move |e| handle_filter_key(&e),
                             }
+                        }
+                    }
+                    if nothing_visible {
+                        li { class: "listbox-empty", role: "presentation", "没有匹配的选项" }
+                    }
+                    for (i, value, label, reason) in rows {
+                        SelectOption {
+                            key: "{i}",
+                            id: format!("form-select-{id_prefix}-opt-{i}"),
+                            label,
+                            reason,
+                            selected: i == selected,
+                            active: i == active_idx,
+                            on_hover: move |_| {
+                                if reason.is_none() {
+                                    active.set(i);
+                                }
+                            },
+                            on_pick: {
+                                #[cfg(target_arch = "wasm32")]
+                                let trigger_id = trigger_id.clone();
+                                move |_| {
+                                    open.set(false);
+                                    onchange.call(value.clone());
+                                    #[cfg(target_arch = "wasm32")]
+                                    focus_by_id(&trigger_id);
+                                }
+                            },
                         }
                     }
                 }
@@ -327,18 +404,45 @@ pub fn FormSelect<T: Clone + PartialEq + 'static>(
     }
 }
 
-/// 小时/分钟选项标签表（"00"–"23" / "00"–"59"）。
-/// 静态表避免每次渲染堆分配；FormSelect 选项标签要求 `&'static str`。
-const HOUR_LABELS: [&str; 24] = [
-    "00", "01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12", "13", "14", "15",
-    "16", "17", "18", "19", "20", "21", "22", "23",
-];
-const MINUTE_LABELS: [&str; 60] = [
-    "00", "01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12", "13", "14", "15",
-    "16", "17", "18", "19", "20", "21", "22", "23", "24", "25", "26", "27", "28", "29", "30", "31",
-    "32", "33", "34", "35", "36", "37", "38", "39", "40", "41", "42", "43", "44", "45", "46", "47",
-    "48", "49", "50", "51", "52", "53", "54", "55", "56", "57", "58", "59",
-];
+/// 下拉面板中的一项。禁用项（`reason` 为 Some）变淡、写明原因，不响应点击。
+#[component]
+fn SelectOption(
+    id: String,
+    label: &'static str,
+    reason: Option<&'static str>,
+    selected: bool,
+    active: bool,
+    on_hover: EventHandler<()>,
+    on_pick: EventHandler<()>,
+) -> Element {
+    rsx! {
+        li {
+            id,
+            class: "listbox-option",
+            role: "option",
+            aria_selected: "{selected}",
+            aria_disabled: reason.is_some().then_some("true"),
+            "data-active": "{active}",
+            // 阻止 mousedown 默认行为：点击选项不夺走焦点。
+            onmousedown: move |e| e.prevent_default(),
+            onmouseenter: move |_| on_hover.call(()),
+            onclick: move |_| {
+                if reason.is_none() {
+                    on_pick.call(());
+                }
+            },
+            span { class: "min-w-0 flex-1",
+                span { class: "block truncate", "{label}" }
+                if let Some(reason) = reason {
+                    span { class: "listbox-option-hint", "{reason}" }
+                }
+            }
+            if selected {
+                Icon { name: IconName::Check, size: 14, class: "listbox-check" }
+            }
+        }
+    }
+}
 
 /// 解析 "HH:MM" 为 (时, 分)；任一段缺失或越界整体回退 (0, 0)。
 /// 纯防御性兜底：正常路径下 value 只来自服务端 normalize 或本组件输出，必然合法。
@@ -358,56 +462,150 @@ fn parse_hhmm(value: &str) -> (u8, u8) {
     }
 }
 
-/// 时间选择器（24 小时制 "HH:MM"）。
+/// 时间选择器（24 小时制 "HH:MM"，浏览器本地时间）。
 ///
-/// 原生 `<input type="time">` 的弹出层由浏览器/OS 绘制，暗色主题下是白底
-/// 系统菜单（与原生 `<select>` 同款问题），故用两个 [`FormSelect`]（时/分）
-/// 组合重写，弹层配色、`select-enter` 动画、键盘导航、视口翻转与遮罩关闭
-/// 逻辑全部继承：
-/// - 外框容器镜像步进器控件（rounded-lg 边框 + `bg-paper-entry`），触发器无边框；
-/// - 打开任一段下拉自动滚动到当前值，点击即回调组合后的 "HH:MM"；
-/// - 键盘：Tab 进入时/分列，↑↓ 或 Enter 展开，Enter 选定，Esc 关闭。
+/// 触发器显示当前时间与「本地时间」；点开是小时、分钟两列的浮层，点选即回调，
+/// 底部给出对应的 UTC 时间（服务端以 UTC 存储，换算由调用方在保存时完成）。
+/// Esc 或点外部关闭，焦点回到触发器；列内 ↑↓ 逐格调整。
 ///
 /// Props：
-/// - `id`：小时触发器 id，用于与 label 关联（缺省用内部计数器生成）
+/// - `id`：触发器 id，用于与 label 关联（缺省用内部计数器生成）
 /// - `value`：当前值 "HH:MM"（受控；非法值回退显示 00:00，不 panic）
 /// - `onchange`：选中变化回调，回传组合后的 "HH:MM"
 #[component]
 pub fn TimePicker(id: Option<String>, value: String, onchange: EventHandler<String>) -> Element {
-    // 无边框紧凑触发器：外框由容器统一绘制（镜像「保留份数」步进器）。
-    // 定义在函数体内：模块级私有常量若仅被 wasm 门控调用点引用，会在 server
-    // 构建下触发 dead_code（同 FormSelect 的 TRIGGER_CLASS 先例）。
-    const TIME_TRIGGER_CLASS: &str = "inline-flex w-auto cursor-pointer select-none text-sm tabular-nums pl-2.5 pr-8 py-2 rounded-md bg-transparent text-paper-primary focus:outline-none focus:ring-1 focus:ring-paper-accent/30 transition-colors duration-200";
-
+    let id_prefix = use_hook(|| FORM_SELECT_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst));
+    let trigger_id = id.unwrap_or_else(|| format!("time-picker-{id_prefix}"));
     let (hour, minute) = parse_hhmm(&value);
-    let hour_options: Vec<(u8, &'static str)> = HOUR_LABELS
-        .iter()
-        .enumerate()
-        .map(|(i, l)| (i as u8, *l))
-        .collect();
-    let minute_options: Vec<(u8, &'static str)> = MINUTE_LABELS
-        .iter()
-        .enumerate()
-        .map(|(i, l)| (i as u8, *l))
-        .collect();
+    let text = format!("{hour:02}:{minute:02}");
+    let mut open = use_signal(|| false);
+
+    // 打开时把当前小时、分钟滚到列中间（避开上下渐隐）。
+    use_effect(move || {
+        if open() {
+            #[cfg(target_arch = "wasm32")]
+            {
+                scroll_into_center(&format!("time-picker-{id_prefix}-h"));
+                scroll_into_center(&format!("time-picker-{id_prefix}-m"));
+            }
+        }
+    });
+
+    // UTC 换算依赖浏览器时区，仅在客户端打开浮层后显示。
+    #[cfg(target_arch = "wasm32")]
+    let utc = Some(crate::utils::time::local_hhmm_to_utc(&text));
+    #[cfg(not(target_arch = "wasm32"))]
+    let utc: Option<String> = None;
+
+    #[cfg(target_arch = "wasm32")]
+    let trigger_for_close = trigger_id.clone();
+    let close = move || {
+        open.set(false);
+        #[cfg(target_arch = "wasm32")]
+        focus_by_id(&trigger_for_close);
+    };
+    // 同上：wasm 下捕获 String，宿主构建下是 Copy。
+    #[allow(clippy::clone_on_copy)]
+    let mut close_key = close.clone();
+    let mut close_done = close;
 
     rsx! {
-        div { class: "inline-flex items-center gap-0.5 rounded-lg border border-paper-border bg-paper-entry",
-            FormSelect {
-                id,
-                aria_label: "小时",
-                value: hour,
-                options: hour_options,
-                trigger_class: TIME_TRIGGER_CLASS,
-                onchange: move |h: u8| onchange.call(format!("{h:02}:{minute:02}")),
+        div { class: "relative inline-block",
+            button {
+                id: "{trigger_id}",
+                r#type: "button",
+                class: "select-trigger field w-40",
+                aria_haspopup: "dialog",
+                aria_expanded: "{open()}",
+                onclick: move |_| open.set(true),
+                span { class: "font-mono tabular-nums", "{text}" }
+                span { class: "text-xs text-fg-3", "本地时间" }
             }
-            span { class: "text-sm text-paper-tertiary select-none", ":" }
-            FormSelect {
-                aria_label: "分钟",
-                value: minute,
-                options: minute_options,
-                trigger_class: TIME_TRIGGER_CLASS,
-                onchange: move |m: u8| onchange.call(format!("{hour:02}:{m:02}")),
+            if open() {
+                div { class: "fixed inset-0 z-40", onclick: move |_| open.set(false) }
+                div {
+                    class: "listbox time-panel",
+                    "data-placement": "bottom",
+                    role: "dialog",
+                    aria_label: "选择时间",
+                    onkeydown: move |e| {
+                        if e.key() == Key::Escape {
+                            e.prevent_default();
+                            close_key();
+                        }
+                    },
+                    div { class: "time-columns",
+                        div {
+                            class: "time-column",
+                            role: "listbox",
+                            aria_label: "小时",
+                            onkeydown: move |e| {
+                                let delta = match e.key() {
+                                    Key::ArrowDown => 1,
+                                    Key::ArrowUp => -1,
+                                    _ => return,
+                                };
+                                e.prevent_default();
+                                let h = wrap_index(hour as usize, delta, 24);
+                                onchange.call(format!("{h:02}:{minute:02}"));
+                            },
+                            for h in 0..24u8 {
+                                button {
+                                    key: "{h}",
+                                    id: if h == hour { format!("time-picker-{id_prefix}-h") } else { String::new() },
+                                    class: "time-cell",
+                                    r#type: "button",
+                                    role: "option",
+                                    aria_selected: "{h == hour}",
+                                    tabindex: if h == hour { "0" } else { "-1" },
+                                    onclick: move |_| onchange.call(format!("{h:02}:{minute:02}")),
+                                    "{h:02}"
+                                }
+                            }
+                        }
+                        div {
+                            class: "time-column",
+                            role: "listbox",
+                            aria_label: "分钟",
+                            onkeydown: move |e| {
+                                let delta = match e.key() {
+                                    Key::ArrowDown => 1,
+                                    Key::ArrowUp => -1,
+                                    _ => return,
+                                };
+                                e.prevent_default();
+                                let m = wrap_index(minute as usize, delta, 60);
+                                onchange.call(format!("{hour:02}:{m:02}"));
+                            },
+                            for m in 0..60u8 {
+                                button {
+                                    key: "{m}",
+                                    id: if m == minute { format!("time-picker-{id_prefix}-m") } else { String::new() },
+                                    class: "time-cell",
+                                    r#type: "button",
+                                    role: "option",
+                                    aria_selected: "{m == minute}",
+                                    tabindex: if m == minute { "0" } else { "-1" },
+                                    onclick: move |_| onchange.call(format!("{hour:02}:{m:02}")),
+                                    "{m:02}"
+                                }
+                            }
+                        }
+                    }
+                    div { class: "time-footer",
+                        span {
+                            if let Some(utc) = utc {
+                                "UTC {utc}"
+                            }
+                        }
+                        button {
+                            class: "btn btn-xs btn-primary",
+                            r#type: "button",
+                            onclick: move |_| close_done(),
+                            "确定"
+                        }
+                    }
+                }
             }
         }
     }
@@ -421,6 +619,7 @@ pub fn TimePicker(id: Option<String>, value: String, onchange: EventHandler<Stri
 /// - `placeholder`：占位提示文本
 /// - `value`：当前值
 /// - `disabled`：是否禁用（可选，缺省 `false`）
+/// - `invalid`：是否校验未通过（红环，输出 `aria-invalid`）
 /// - `oninput`：输入事件回调，返回新的字符串值
 /// - `onkeydown`：可选的键盘事件回调
 /// - `class`：自定义 class（可选，缺省用 [`INPUT_CLASS`] 全宽表单款）。
@@ -433,6 +632,7 @@ pub fn FormInput(
     placeholder: &'static str,
     value: String,
     #[props(default)] disabled: bool,
+    #[props(default)] invalid: bool,
     oninput: EventHandler<String>,
     #[props(default)] onkeydown: Option<EventHandler<KeyboardEvent>>,
     #[props(default)] onfocus: Option<EventHandler<FocusEvent>>,
@@ -445,19 +645,15 @@ pub fn FormInput(
 ) -> Element {
     let base = class.unwrap_or(INPUT_CLASS);
     let mono_class = if mono { " font-mono" } else { "" };
-    let disabled_class = if disabled {
-        " opacity-60 cursor-not-allowed"
-    } else {
-        ""
-    };
     rsx! {
         input {
             id: id.unwrap_or_default(),
-            class: "{base}{mono_class}{disabled_class}",
+            class: "{base}{mono_class}",
             r#type: "{r#type}",
             placeholder: "{placeholder}",
             value: "{value}",
             disabled,
+            aria_invalid: invalid.then_some("true"),
             inputmode: inputmode.unwrap_or_default(),
             title: title.unwrap_or_default(),
             aria_label,
@@ -481,6 +677,126 @@ pub fn FormInput(
     }
 }
 
+/// 数字输入框：单位写在框内右侧，两侧 −/+ 步进；越界时边框与说明一起变红。
+///
+/// 输入过程中保留草稿文本，只有在 `[min, max]` 内的整数才回调 `onchange`；
+/// 越界或非数字时显示红环与范围说明，不改动父组件的值。
+///
+/// Props：
+/// - `id`：input id，用于与 label 关联
+/// - `value`：当前值（受控）
+/// - `min` / `max`：允许范围（含端点）
+/// - `step`：步进，缺省 1
+/// - `unit`：单位，如「天」「次/分钟」
+/// - `hint`：范围内时显示的说明（可选）
+/// - `onchange`：合法新值回调
+#[component]
+pub fn NumberInput(
+    id: Option<String>,
+    value: i64,
+    min: i64,
+    max: i64,
+    #[props(default = 1)] step: i64,
+    #[props(default)] unit: Option<&'static str>,
+    #[props(default)] hint: Option<String>,
+    #[props(default)] aria_label: Option<&'static str>,
+    onchange: EventHandler<i64>,
+) -> Element {
+    let id_prefix = use_hook(|| FORM_SELECT_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst));
+    let input_id = id.unwrap_or_else(|| format!("number-input-{id_prefix}"));
+    let help_id = format!("{input_id}-help");
+    let mut draft = use_signal(|| value.to_string());
+    // 父组件改值（外部重置、保存回填）时同步草稿。
+    let mut last_value = use_signal(|| value);
+    if *last_value.peek() != value {
+        last_value.set(value);
+        draft.set(value.to_string());
+    }
+
+    let parsed = parse_in_range(&draft(), min, max);
+    let invalid = parsed.is_none();
+    let current = parsed.unwrap_or(value);
+    let help = if invalid {
+        Some(format!("超出范围：请输入 {min} 到 {max} 之间的整数。"))
+    } else {
+        hint
+    };
+    let described_by = help.as_ref().map(|_| help_id.clone());
+    let mut set = move |next: i64| {
+        let next = next.clamp(min, max);
+        draft.set(next.to_string());
+        onchange.call(next);
+    };
+    let mut set_dec = set;
+
+    rsx! {
+        div {
+            div { class: "field number-field",
+                button {
+                    class: "btn btn-sm btn-icon btn-ghost",
+                    r#type: "button",
+                    aria_label: "减少",
+                    disabled: current <= min,
+                    onclick: move |_| set_dec(current - step),
+                    Icon { name: IconName::Minus, size: 14 }
+                }
+                input {
+                    id: "{input_id}",
+                    r#type: "text",
+                    inputmode: "numeric",
+                    value: "{draft}",
+                    aria_label,
+                    aria_invalid: invalid.then_some("true"),
+                    aria_describedby: described_by,
+                    oninput: move |e| {
+                        let text: String = e.value().chars().filter(|c| c.is_ascii_digit() || *c == '-').collect();
+                        if let Some(v) = parse_in_range(&text, min, max) {
+                            onchange.call(v);
+                        }
+                        draft.set(text);
+                    },
+                    onkeydown: move |e| {
+                        let delta = match e.key() {
+                            Key::ArrowUp => step,
+                            Key::ArrowDown => -step,
+                            _ => return,
+                        };
+                        e.prevent_default();
+                        set(current + delta);
+                    },
+                }
+                if let Some(unit) = unit {
+                    span { class: "number-unit", "{unit}" }
+                }
+                button {
+                    class: "btn btn-sm btn-icon btn-ghost",
+                    r#type: "button",
+                    aria_label: "增加",
+                    disabled: current >= max,
+                    onclick: move |_| set(current + step),
+                    Icon { name: IconName::Plus, size: 14 }
+                }
+            }
+            if let Some(help) = help {
+                p {
+                    id: "{help_id}",
+                    class: "field-hint",
+                    "data-tone": if invalid { "danger" } else { "" },
+                    "{help}"
+                }
+            }
+        }
+    }
+}
+
+/// 解析草稿文本，在 `[min, max]` 内才返回。
+fn parse_in_range(text: &str, min: i64, max: i64) -> Option<i64> {
+    text.trim()
+        .parse::<i64>()
+        .ok()
+        .filter(|v| (min..=max).contains(v))
+}
+
 /// 表单标签组件。
 ///
 /// Props：
@@ -489,77 +805,63 @@ pub fn FormInput(
 #[component]
 pub fn FormLabel(label: String, html_for: Option<String>) -> Element {
     rsx! {
-        label {
-            class: "block text-sm font-medium text-paper-secondary mb-1",
-            r#for: html_for.unwrap_or_default(),
-            "{label}"
-        }
+        label { class: "field-label", r#for: html_for.unwrap_or_default(), "{label}" }
     }
 }
 
-/// 提示框组件，用于显示成功、错误等状态消息。
+/// 提示条，用于显示成功、错误等状态消息。
 ///
 /// Props：
 /// - `message`：提示文本
-/// - `variant`：风格类型，支持 `"error"`、`"success"` 与其他默认类型
+/// - `variant`：`"error"`、`"success"`，其他值为中性说明
 #[component]
 pub fn AlertBox(message: String, variant: &'static str) -> Element {
-    let (bg_class, text_class) = match variant {
-        "error" => (
-            "bg-red-100 dark:bg-red-900/30",
-            "text-red-700 dark:text-red-300",
-        ),
-        "success" => (
-            "bg-green-100 dark:bg-green-900/30",
-            "text-green-700 dark:text-green-300",
-        ),
-        _ => ("bg-paper-code-bg", "text-paper-secondary"),
+    let (tone, icon, role) = match variant {
+        "error" => ("danger", IconName::CircleAlert, "alert"),
+        "success" => ("success", IconName::CircleCheck, "status"),
+        _ => ("", IconName::Info, "status"),
     };
     rsx! {
-        div { class: "mb-4 p-3 {bg_class} {text_class} rounded-lg text-center transition-colors duration-200", "{message}" }
+        div { class: "alert mb-4", "data-tone": tone, role,
+            Icon { name: icon, size: 16 }
+            span { "{message}" }
+        }
     }
 }
 
 /// 开关（toggle switch）组件。
 ///
-/// 自定义滑块开关，取代原生 checkbox 用于设置项的布尔切换。视觉与交互全站统一：
-/// 轨道 44×24px，开启主题绿、关闭 paper-tertiary；圆点 20px 白色，开启右移 20px。
-/// accessibility：`role="switch"` + `aria-checked`，键盘 focus-visible 描边。
+/// 设置项的布尔切换：轨道 36×22，开启陶土色；圆点以 bouncy 弹簧滑动。
+/// accessibility：`role="switch"` + `aria-checked`，键盘焦点陶土双环。
 ///
 /// Props：
 /// - `checked`：当前开关状态
 /// - `ontoggle`：点击切换回调（父组件在回调内翻转 signal 并触发副作用）
+/// - `aria_label`：没有可见标签时的无障碍名称
 #[component]
 pub fn ToggleSwitch(
     checked: bool,
     ontoggle: Callback<()>,
     #[props(default)] aria_label: Option<String>,
+    #[props(default)] disabled: bool,
 ) -> Element {
-    let track_class = if checked {
-        "relative w-11 h-6 flex-shrink-0 rounded-full bg-paper-accent cursor-pointer transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-paper-accent/40"
-    } else {
-        "relative w-11 h-6 flex-shrink-0 rounded-full bg-paper-tertiary cursor-pointer transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-paper-accent/40"
-    };
-    let thumb_class = if checked {
-        "absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow-sm dark:shadow-black/30 transition-transform duration-200 translate-x-5"
-    } else {
-        "absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow-sm dark:shadow-black/30 transition-transform duration-200"
-    };
     rsx! {
         button {
+            r#type: "button",
             role: "switch",
+            class: "switch",
             aria_label: aria_label.unwrap_or_default(),
             aria_checked: "{checked}",
-            class: "{track_class}",
+            disabled,
             onclick: move |_| ontoggle.call(()),
-            span { class: "{thumb_class}" }
+            span { class: "switch-thumb" }
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_hhmm, should_flip, wrap_index};
+    use super::{matches_query, parse_hhmm, parse_in_range, should_flip, step_active, wrap_index};
 
     #[test]
     fn parse_hhmm_valid_values() {
@@ -600,5 +902,36 @@ mod tests {
         assert!(!should_flip(30.0, 70.0, 260.0, 200.0));
         // 恰好放得下（below = 214 == 200+14，非严格小于）：不翻
         assert!(!should_flip(300.0, 340.0, 554.0, 200.0));
+    }
+
+    #[test]
+    fn step_active_skips_filtered_and_disabled_options() {
+        // 可选项为 1、3、4（0、2 被筛掉或禁用）
+        let navigable = [1, 3, 4];
+        assert_eq!(step_active(&navigable, 1, 1), Some(3));
+        assert_eq!(step_active(&navigable, 4, 1), Some(1)); // 末尾回绕
+        assert_eq!(step_active(&navigable, 1, -1), Some(4)); // 首位回绕
+                                                             // 当前项被筛掉：向下落到首项，向上落到末项
+        assert_eq!(step_active(&navigable, 2, 1), Some(1));
+        assert_eq!(step_active(&navigable, 2, -1), Some(4));
+        assert_eq!(step_active(&[], 0, 1), None);
+    }
+
+    #[test]
+    fn filter_matches_case_insensitive_substrings() {
+        assert!(matches_query("PostgreSQL", "sql"));
+        assert!(matches_query("最新上传", "上传"));
+        assert!(matches_query("任意", "  "));
+        assert!(!matches_query("按文件名", "体积"));
+    }
+
+    #[test]
+    fn number_input_accepts_only_values_in_range() {
+        assert_eq!(parse_in_range("30", 1, 90), Some(30));
+        assert_eq!(parse_in_range(" 90 ", 1, 90), Some(90));
+        assert_eq!(parse_in_range("0", 1, 90), None);
+        assert_eq!(parse_in_range("120", 1, 90), None);
+        assert_eq!(parse_in_range("", 1, 90), None);
+        assert_eq!(parse_in_range("-", 1, 90), None);
     }
 }

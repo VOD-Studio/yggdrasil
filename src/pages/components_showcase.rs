@@ -858,6 +858,7 @@ fn preview_route(slug: &str) -> Option<PreviewRoute> {
         | "icon"
         | "button"
         | "icon-button"
+        | "number-input"
         | "empty-state"
         | "skeleton-box"
         | "skeleton-card"
@@ -963,6 +964,7 @@ fn LiveComponentPreview(
     let mut input_value = use_signal(String::new);
     let mut tab_value = use_signal(|| "all".to_string());
     let mut page = use_signal(|| 1i32);
+    let mut number_value = use_signal(|| 14i64);
     let mut clicked = use_signal(|| false);
     let mut popover_open = use_signal(|| false);
     #[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut))]
@@ -1017,10 +1019,31 @@ fn LiveComponentPreview(
             }
         },
         "FormSelect" => rsx! {
-            crate::components::forms::FormSelect {
-                value: select_value(),
-                options: vec![("leaf".to_string(), "每一片叶子"), ("design".to_string(), "关于设计"), ("daily".to_string(), "日常与灵感")],
-                onchange: move |value| select_value.set(value),
+            div { class: "showcase-preview-stack",
+                div { class: "showcase-preview-field",
+                    crate::components::forms::FormLabel { label: "素材排序", html_for: Some("showcase-sort".to_string()) }
+                    crate::components::forms::FormSelect {
+                        id: Some("showcase-sort".to_string()),
+                        value: select_value(),
+                        options: vec![("leaf".to_string(), "最新上传"), ("design".to_string(), "体积最大"), ("daily".to_string(), "引用最多"), ("name".to_string(), "按文件名")],
+                        disabled_options: vec![("name".to_string(), "需要先重建索引")],
+                        onchange: move |value| select_value.set(value),
+                    }
+                }
+                div { class: "showcase-preview-field",
+                    crate::components::forms::FormLabel { label: "主题标签（多于 8 项时可筛选）", html_for: Some("showcase-tag".to_string()) }
+                    crate::components::forms::FormSelect {
+                        id: Some("showcase-tag".to_string()),
+                        value: tab_value(),
+                        options: vec![
+                            ("all".to_string(), "全部标签"), ("rust".to_string(), "Rust"), ("dioxus".to_string(), "Dioxus"),
+                            ("pg".to_string(), "PostgreSQL"), ("wasm".to_string(), "WebAssembly"), ("design".to_string(), "设计"),
+                            ("arch".to_string(), "架构"), ("note".to_string(), "读书笔记"), ("emu".to_string(), "模拟器"),
+                            ("mcp".to_string(), "MCP"),
+                        ],
+                        onchange: move |value| tab_value.set(value),
+                    }
+                }
             }
         },
         "TimePicker" => rsx! {
@@ -1071,6 +1094,17 @@ fn LiveComponentPreview(
                     pressed: Some(clicked()), onclick: move |_| clicked.set(!clicked()),
                 }
                 crate::components::ui::IconButton { icon: crate::components::ui::IconName::Trash, label: "删除", disabled: true }
+            }
+        },
+        "NumberInput" => rsx! {
+            div { class: "showcase-preview-field",
+                crate::components::forms::FormLabel { label: "日志保留", html_for: Some("showcase-retention".to_string()) }
+                crate::components::forms::NumberInput {
+                    id: Some("showcase-retention".to_string()),
+                    value: number_value(), min: 1, max: 90, unit: "天",
+                    hint: "超过保留期的日志由后台任务自动清理。".to_string(),
+                    onchange: move |v| number_value.set(v),
+                }
             }
         },
         "LoadingButton" => rsx! {

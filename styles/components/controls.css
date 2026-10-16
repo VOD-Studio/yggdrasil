@@ -1,38 +1,39 @@
 @layer components {
-  /* Radio 组件：保留原生交互，圆点、边框与 Checkbox 使用相同主题色。 */
+  /* Radio：保留原生交互，外观与 Checkbox 同尺寸、同配色。 */
   .ygg-radio {
     appearance: none;
     flex-shrink: 0;
-    width: 1.15rem;
-    height: 1.15rem;
+    width: 1.125rem;
+    height: 1.125rem;
     margin: 0;
     vertical-align: middle;
-    border: 1.5px solid var(--color-paper-border);
+    border: 0;
     border-radius: 50%;
-    background-color: transparent;
+    background-color: var(--color-surface-2);
+    box-shadow: inset 0 0 0 1.5px var(--color-ink-3);
     cursor: pointer;
     transition:
-      background-color 0.15s ease,
-      border-color 0.15s ease;
+      background-color 150ms var(--ease-out-expo),
+      box-shadow 150ms var(--ease-out-expo);
   }
 
   .ygg-radio:checked {
-    border-color: var(--color-paper-accent);
-    background-color: var(--color-paper-accent);
-    background-image: radial-gradient(circle, var(--color-paper-theme) 3px, transparent 3.5px);
+    background-color: var(--color-clay-fill);
+    background-image: radial-gradient(circle, var(--color-on-clay) 3px, transparent 3.5px);
+    box-shadow: none;
   }
 
-  .ygg-radio:hover:not(:disabled) {
-    border-color: var(--color-paper-accent);
+  .ygg-radio:hover:not(:disabled, :checked) {
+    box-shadow: inset 0 0 0 1.5px var(--color-ink-4);
   }
 
   .ygg-radio:focus-visible {
-    outline: 2px solid var(--color-paper-accent);
-    outline-offset: 1px;
+    outline: none;
+    box-shadow: var(--shadow-focus);
   }
 
   .ygg-radio:disabled {
-    opacity: 0.5;
+    opacity: 0.45;
     cursor: not-allowed;
   }
 
@@ -45,22 +46,22 @@
   /* ========== Checkbox 组件（描边勾画动画）==========
      配合 ui.rs::Checkbox 组件。原生 input 是替换元素吃不到伪元素，故用
      透明 input（命中/无障碍层）+ 同级 SVG path（对勾视觉层）。
-     勾选时 path 的 stroke-dashoffset 归零描边绘制 + SVG scale 弹入。 */
+     勾选时 path 的 stroke-dashoffset 归零描边绘制 + SVG 以 bouncy 弹簧弹入。 */
   .ygg-cb {
     position: relative;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    width: 1.15rem;
-    height: 1.15rem;
+    width: 1.125rem;
+    height: 1.125rem;
     vertical-align: middle;
-    border: 1.5px solid var(--color-paper-border);
-    border-radius: 4px;
-    background-color: transparent;
+    border-radius: 5px;
+    background-color: var(--color-surface-2);
+    box-shadow: inset 0 0 0 1.5px var(--color-ink-3);
     transition:
-      background-color 0.15s ease,
-      border-color 0.15s ease;
+      background-color 150ms var(--ease-out-expo),
+      box-shadow 150ms var(--ease-out-expo);
   }
 
   /* 透明命中层：覆盖整个方框，保留键盘/表单语义 */
@@ -83,30 +84,25 @@
     transform: scale(0.55);
     opacity: 0;
     transition:
-      transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1),
-      opacity 0.12s ease;
+      transform var(--spring-bouncy-duration) var(--ease-spring-bouncy),
+      opacity 120ms ease;
   }
 
   .ygg-cb-check {
     fill: none;
-    stroke: #ffffff;
+    stroke: var(--color-on-clay);
     stroke-width: 2.2;
     stroke-linecap: round;
     stroke-linejoin: round;
     stroke-dasharray: 14;
     stroke-dashoffset: 14;
-    transition: stroke-dashoffset 0.28s cubic-bezier(0.4, 0, 0.2, 1);
-  }
-
-  /* 暗色对勾：浅陶土底配深色描边对比充足 */
-  .dark .ygg-cb-check {
-    stroke: var(--color-on-clay);
+    transition: stroke-dashoffset 260ms var(--ease-out-expo);
   }
 
   /* 勾选态：方框填充 + 对勾描边绘制 + SVG 弹入 */
   .ygg-cb:has(input:checked) {
-    background-color: var(--color-paper-accent);
-    border-color: var(--color-paper-accent);
+    background-color: var(--color-clay-fill);
+    box-shadow: none;
   }
   .ygg-cb:has(input:checked) .ygg-cb-mark {
     transform: scale(1);
@@ -117,35 +113,34 @@
   }
 
   .ygg-cb:has(input:not(:checked):hover) {
-    border-color: var(--color-paper-accent);
+    box-shadow: inset 0 0 0 1.5px var(--color-ink-4);
   }
 
   .ygg-cb:has(input:focus-visible) {
-    outline: 2px solid var(--color-paper-accent);
-    outline-offset: 1px;
+    box-shadow: var(--shadow-focus);
   }
 
-  /* 危险态：红色语义。白对勾在 #ef4444 上亮暗均 ≥ 4.5:1，需覆盖暗色深对勾 */
-  .ygg-cb-danger {
-    border-color: #fca5a5;
+  .ygg-cb:has(input:disabled) {
+    opacity: 0.45;
   }
-  .dark .ygg-cb-danger {
-    border-color: #f87171;
-  }
-  .ygg-cb-danger:has(input:not(:checked):hover) {
-    border-color: #ef4444;
+
+  /* 危险态：红色语义（SQL 控制台「我了解后果」等）。 */
+  .ygg-cb-danger:has(input:not(:checked)) {
+    box-shadow: inset 0 0 0 1.5px color-mix(in oklab, var(--color-danger) 45%, transparent);
   }
   .ygg-cb-danger:has(input:checked) {
-    background-color: #ef4444;
-    border-color: #ef4444;
+    background-color: var(--color-danger);
   }
   .ygg-cb-danger .ygg-cb-check {
-    stroke: #ffffff;
+    stroke: var(--color-on-danger);
   }
 
-  .ygg-cb-danger:has(input:focus-visible) {
-    outline: 2px solid #ef4444;
-    outline-offset: 1px;
+  @media (prefers-reduced-motion: reduce) {
+    .ygg-cb,
+    .ygg-cb-mark,
+    .ygg-cb-check {
+      transition: none;
+    }
   }
 
   /* ========== 设置页提示条过渡 ==========

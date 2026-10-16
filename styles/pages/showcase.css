@@ -14,7 +14,7 @@
 .showcase select,
 .showcase input,
 .showcase-entry { outline-offset: 4px; }
-.showcase :is(a, button, select, input):focus-visible,
+.showcase :is(a, button, select, input):not(.btn, .field, .field *, .switch, .select-trigger, .time-cell):focus-visible,
 .showcase-entry:focus-visible { outline: 2px solid var(--color-paper-accent); }
 .showcase-breadcrumb { display: flex; align-items: center; gap: .75rem; color: var(--color-paper-secondary); font-size: .75rem; padding: 0 0 1.5rem; }
 .showcase-breadcrumb > span:not(:last-child) { opacity: .45; }
@@ -650,6 +650,8 @@
 .showcase-section-heading h2 { font: 500 1.4rem var(--sc-serif); }
 .showcase-section-heading span { color: var(--color-paper-secondary); font: .58rem var(--sc-mono); letter-spacing: .12em; }
 .showcase-live-panel, .showcase-code-panel, .showcase-props-wrap { border: 1px solid var(--sc-line); border-radius: 18px; background: var(--sc-surface); overflow: hidden; }
+/* 预览台要承载下拉、时间面板等浮层，不能裁切；内部区块各自带圆角。 */
+.showcase-live-panel { overflow: visible; }
 .showcase-live-toolbar, .showcase-code-toolbar { display: flex; justify-content: space-between; align-items: center; padding: .75rem 1.1rem; border-bottom: 1px solid var(--sc-line); color: var(--color-paper-secondary); font: .62rem var(--sc-mono); }
 .showcase-live-toolbar span { color: var(--color-paper-primary); }
 .showcase-live-toolbar button, .showcase-code-toolbar button { color: var(--color-paper-accent); font-size: .65rem; cursor: pointer; }

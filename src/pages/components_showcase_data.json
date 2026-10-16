@@ -104,7 +104,7 @@
       "group": "form",
       "summary": "轻轻拨动，让设置进入另一种状态。",
       "states": "关闭 · 开启",
-      "description": "直接开启或关闭一项设置。滑块的位置与主题色共同传达当前状态。",
+      "description": "直接开启或关闭一项设置。开启时轨道变为陶土色，圆点以弹簧滑到右侧。",
       "props": [
         [
           "checked",
@@ -123,6 +123,12 @@
           "Option<String>",
           "None",
           "开关的无障碍名称。"
+        ],
+        [
+          "disabled",
+          "bool",
+          "false",
+          "禁用。"
         ]
       ],
       "keys": [
@@ -147,7 +153,7 @@
       "group": "form",
       "summary": "在有序的选项中，找到合适的那一个。",
       "states": "展开 · 键盘导航",
-      "description": "使用统一主题的选择面板展示选项，支持泛型值绑定和键盘导航。",
+      "description": "触发器下方展开选项面板，键盘上下移动、回车确认、Esc 关闭并把焦点还给触发器。选项多于 8 个时顶部出现筛选框；不可用的项保留但变淡并说明原因。",
       "props": [
         [
           "value",
@@ -160,6 +166,12 @@
           "Vec<(T, &'static str)>",
           "必填",
           "选项值与显示文本。"
+        ],
+        [
+          "disabled_options",
+          "Vec<(T, &'static str)>",
+          "空",
+          "不可用的项及原因，变淡并写明原因，键盘与点击都跳过。"
         ],
         [
           "onchange",
@@ -322,7 +334,7 @@
       "group": "form",
       "summary": "给文字一个安静的落点。",
       "states": "文本 · 密码 · 禁用",
-      "description": "统一输入框的主题、间距与焦点样式，支持文本、密码等原生输入类型。",
+      "description": "浅底加发丝线环的输入框，聚焦换成陶土双环，校验未通过时红环。支持文本、密码等原生输入类型。",
       "props": [
         [
           "value",
@@ -355,6 +367,12 @@
           "禁止编辑。"
         ],
         [
+          "invalid",
+          "bool",
+          "false",
+          "校验未通过：红环并输出 aria-invalid。"
+        ],
+        [
           "mono",
           "bool",
           "false",
@@ -383,7 +401,7 @@
       "group": "form",
       "summary": "为下一次发生，留一个准确的时刻。",
       "states": "小时 · 分钟",
-      "description": "用两个主题化选择框组合小时与分钟，返回清晰的 HH:MM 时间值。",
+      "description": "小时、分钟两列的浮层，按浏览器本地时间显示与选择，底部给出对应的 UTC 时间。",
       "props": [
         [
           "value",
@@ -400,8 +418,8 @@
         [
           "id",
           "Option<String>",
-          "None",
-          "小时触发器的标签关联 ID。"
+          "自动生成",
+          "触发器的标签关联 ID。"
         ]
       ],
       "keys": [
@@ -716,7 +734,7 @@
       "group": "overlay",
       "summary": "让结果被看见，也被理解。",
       "states": "成功 · 错误 · 普通",
-      "description": "把成功、错误或普通结果放在明确的提示区域，让反馈自然出现在操作附近。",
+      "description": "带图标的提示条：错误用红、成功用绿、其余为中性说明，出现在操作附近。",
       "props": [
         [
           "message",
@@ -1701,6 +1719,31 @@
       ],
       "source": "src/components/ui/controls.rs",
       "code": "rsx! {\n    IconButton { icon: IconName::Copy, label: \"复制链接\", onclick: move |_| copy() }\n}",
+      "preview_mode": "interactive",
+      "usage_kind": "rust"
+    },
+    {
+      "name": "NumberInput",
+      "slug": "number-input",
+      "label": "数字输入",
+      "group": "form",
+      "summary": "把数字和它的单位放在一起。",
+      "states": "范围内 · 越界 · 到达边界",
+      "description": "接口限流、保留天数等设置都用它。单位写在框内右侧，两侧步进；超出范围时边框和说明一起变红，只有范围内的整数才回传。",
+      "props": [
+        ["value", "i64", "必填", "当前值，由父组件控制。"],
+        ["min", "i64", "必填", "最小值（含）。"],
+        ["max", "i64", "必填", "最大值（含）。"],
+        ["step", "i64", "1", "步进与方向键的增量。"],
+        ["unit", "Option<&'static str>", "None", "单位，写在框内右侧。"],
+        ["hint", "Option<String>", "None", "范围内时显示的说明。"],
+        ["onchange", "EventHandler<i64>", "必填", "合法新值回调。"]
+      ],
+      "keys": [
+        ["↑ / ↓", "按步进增减。"]
+      ],
+      "source": "src/components/forms.rs",
+      "code": "rsx! {\n    NumberInput {\n        value: days(), min: 1, max: 90, unit: \"天\",\n        hint: \"超过保留期的日志由后台任务自动清理。\".to_string(),\n        onchange: move |v| days.set(v),\n    }\n}",
       "preview_mode": "interactive",
       "usage_kind": "rust"
     },
