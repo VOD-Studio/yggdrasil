@@ -82,14 +82,6 @@ pub fn CollapsibleSettingsCard(
 
 /// Popover 遮罩与面板的层级(z-40 遮罩 < z-50 面板),与 Tooltip/lightbox 同 z-50。
 const POPOVER_OVERLAY_CLASS: &str = "fixed inset-0 z-40";
-/// Popover 面板:卡片化大圆角 + 阴影 + 淡入缩放动画。
-/// 居中变体:animate-popover-enter 的关键帧烘了 translateX(-50%),与居中的
-/// 静态 transform 一致;端点对齐(start/end)变体静态 transform 为空,必须换用
-/// 无位移的 animate-popover-enter-edge,否则 both fill 期面板水平错位半宽。
-const POPOVER_PANEL_CLASS: &str =
-    "fixed z-50 bg-[var(--color-paper-entry)] rounded-2xl shadow-lg border border-[var(--color-paper-border)] p-4 animate-popover-enter";
-const POPOVER_PANEL_EDGE_CLASS: &str =
-    "fixed z-50 bg-[var(--color-paper-entry)] rounded-2xl shadow-lg border border-[var(--color-paper-border)] p-4 animate-popover-enter-edge";
 
 /// 受控式通用 Popover(浮层)组件。
 ///
@@ -198,12 +190,13 @@ pub fn Popover(
     }
 
     // 面板定位:placement 决定垂直方向;align 决定水平。end 用 right 锚定
-    // (右缘 = 点击点),无需 translate,故与面板宽度解耦;start/end 的入场动画
-    // 必须是无位移变体(关键帧 fill 值须等于静态 transform,见常量注释)。
-    let horizontal = match align {
-        "start" => format!("left: {x}px;", x = anchor_x),
-        "end" => format!("right: calc(100vw - {x}px);", x = anchor_x),
-        _ => format!("left: {x}px; transform: translateX(-50%);", x = anchor_x),
+    // (右缘 = 点击点),与面板宽度解耦。
+    // 居中由 .popover-panel[data-align="center"] 的 translate 属性完成，
+    // 与入场动画的 transform（只缩放）互不干扰。
+    let (horizontal, align_attr) = match align {
+        "start" => (format!("left: {x}px;", x = anchor_x), "start"),
+        "end" => (format!("right: calc(100vw - {x}px);", x = anchor_x), "end"),
+        _ => (format!("left: {x}px;", x = anchor_x), "center"),
     };
     let style = if placement == "bottom" {
         format!("top: {y}px; {horizontal}", y = anchor_y + 8)
@@ -215,10 +208,10 @@ pub fn Popover(
             y = anchor_y
         )
     };
-    let panel_class = if align == "center" {
-        POPOVER_PANEL_CLASS
+    let placement_attr = if placement == "bottom" {
+        "bottom"
     } else {
-        POPOVER_PANEL_EDGE_CLASS
+        "top"
     };
 
     rsx! {
@@ -228,7 +221,13 @@ pub fn Popover(
             onclick: move |_| on_close.call(()),
         }
         // 面板:fixed 定位逃出 overflow-hidden 容器。
-        div { class: "{panel_class}", style: "{style}", {children} }
+        div {
+            class: "popover-panel",
+            "data-placement": placement_attr,
+            "data-align": align_attr,
+            style: "{style}",
+            {children}
+        }
     }
 }
 
@@ -237,9 +236,66 @@ pub fn Popover(
 pub const EXIT_ANIM_MS: u32 = 200;
 
 /// 弹窗遮罩基础类（不含内边距——不同弹窗尺寸的响应式内边距不同，经 `overlay_padding` 传入）。
-const MODAL_OVERLAY_BASE: &str = "fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm modal-overlay animate-modal-overlay-enter";
+const MODAL_OVERLAY_BASE: &str = "dialog-overlay modal-overlay animate-modal-overlay-enter";
 /// 弹窗面板基础类（不含宽度——不同弹窗尺寸不同，经 `panel_class` 传入追加）。
-const MODAL_PANEL_BASE: &str = "flex flex-col max-h-[80vh] rounded-[2rem] border border-[var(--color-paper-border)] bg-[var(--color-paper-entry)] shadow-xl overflow-hidden modal-panel animate-modal-panel-enter";
+const MODAL_PANEL_BASE: &str = "dialog-panel modal-panel animate-modal-panel-enter";
+
+/// 焦点锁定：Tab / Shift+Tab 在最上层打开的弹窗内循环，焦点不会跑到页面背后。
+#[cfg(target_arch = "wasm32")]
+fn trap_tab(event: &web_sys::KeyboardEvent, title: &str) {
+    use wasm_bindgen::JsCast;
+    const FOCUSABLE: &str = "a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])";
+    let Some(document) = web_sys::window().and_then(|w| w.document()) else {
+        return;
+    };
+    let Ok(panels) =
+        document.query_selector_all("[data-ygg-modal-panel][data-ygg-modal-open='true']")
+    else {
+        return;
+    };
+    let panel = (0..panels.length())
+        .rev()
+        .filter_map(|i| panels.item(i))
+        .filter_map(|node| node.dyn_into::<web_sys::Element>().ok())
+        .find(|panel| panel.get_attribute("aria-label").as_deref() == Some(title));
+    let Some(panel) = panel else {
+        return;
+    };
+    let Ok(nodes) = panel.query_selector_all(FOCUSABLE) else {
+        return;
+    };
+    let focusable: Vec<web_sys::HtmlElement> = (0..nodes.length())
+        .filter_map(|i| nodes.item(i))
+        .filter_map(|node| node.dyn_into::<web_sys::HtmlElement>().ok())
+        .filter(|el| el.offset_parent().is_some())
+        .collect();
+    let (Some(first), Some(last)) = (focusable.first(), focusable.last()) else {
+        event.prevent_default();
+        return;
+    };
+    let active = document.active_element();
+    let inside = active
+        .as_ref()
+        .is_some_and(|el| panel.contains(Some(el.unchecked_ref())));
+    let at = |target: &web_sys::HtmlElement| {
+        active
+            .as_ref()
+            .is_some_and(|el| el.is_same_node(Some(target.unchecked_ref())))
+    };
+    if event.shift_key()
+        && (!inside
+            || at(first)
+            || active
+                .as_ref()
+                .is_some_and(|el| el.is_same_node(Some(panel.unchecked_ref()))))
+    {
+        event.prevent_default();
+        let _ = last.focus();
+    } else if !event.shift_key() && (!inside || at(last)) {
+        event.prevent_default();
+        let _ = first.focus();
+    }
+}
 
 /// 通用弹窗外壳：遮罩 + 面板容器 + 开合动画状态机（`opened` / `closing` / 退出计时）。
 ///
@@ -324,6 +380,8 @@ pub fn ModalShell(
                         if event.key() == "Escape" {
                             close_closing.set(true);
                             close_visible.set(false);
+                        } else if event.key() == "Tab" {
+                            trap_tab(&event, title);
                         }
                     },
                 )

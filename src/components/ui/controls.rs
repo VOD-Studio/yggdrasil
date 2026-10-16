@@ -1,4 +1,5 @@
 //! Buttons and native selection controls.
+use super::display::Tooltip;
 use super::icons::{Icon, IconName};
 use dioxus::prelude::*;
 
@@ -110,7 +111,8 @@ pub fn Button(
     }
 }
 
-/// 只有图标的方形按钮。`label` 必填：作为读屏名称，同时显示为悬浮提示。
+/// 只有图标的方形按钮。`label` 必填：作为读屏名称，同时显示为悬浮提示；
+/// `shortcut` 会跟在提示文字后面。
 #[component]
 pub fn IconButton(
     icon: IconName,
@@ -119,24 +121,28 @@ pub fn IconButton(
     #[props(default)] size: ButtonSize,
     #[props(default)] disabled: bool,
     #[props(default)] pressed: Option<bool>,
+    #[props(default)] shortcut: Option<&'static str>,
+    #[props(default = "top")] tooltip_placement: &'static str,
+    #[props(default = "center")] tooltip_align: &'static str,
     #[props(default)] class: String,
     #[props(default)] onclick: Option<EventHandler<MouseEvent>>,
 ) -> Element {
     let base = button_class(variant, size);
     rsx! {
-        button {
-            class: "{base} btn-icon {class}",
-            r#type: "button",
-            disabled,
-            "aria-label": "{label}",
-            "aria-pressed": pressed.map(|p| if p { "true" } else { "false" }),
-            title: "{label}",
-            onclick: move |e| {
-                if let Some(handler) = &onclick {
-                    handler.call(e);
-                }
-            },
-            Icon { name: icon, size: size.icon_px() }
+        Tooltip { tip: label.clone(), shortcut, placement: tooltip_placement, align: tooltip_align,
+            button {
+                class: "{base} btn-icon {class}",
+                r#type: "button",
+                disabled,
+                "aria-label": "{label}",
+                "aria-pressed": pressed.map(|p| if p { "true" } else { "false" }),
+                onclick: move |e| {
+                    if let Some(handler) = &onclick {
+                        handler.call(e);
+                    }
+                },
+                Icon { name: icon, size: size.icon_px() }
+            }
         }
     }
 }

@@ -580,14 +580,20 @@
       "label": "文字提示",
       "group": "overlay",
       "summary": "恰到好处地，多说一句。",
-      "states": "上方 · 下方 · 对齐",
-      "description": "在触发器附近展示一条简短说明，提供上下位置与水平对齐选项。",
+      "states": "悬停延迟 · 聚焦即现 · 快捷键",
+      "description": "深色小气泡，只给图标按钮补名称或快捷键。悬停 300ms 后出现，键盘聚焦立即出现；不放可点击内容。",
       "props": [
         [
           "tip",
           "String",
           "必填",
           "提示内容。"
+        ],
+        [
+          "shortcut",
+          "Option<&'static str>",
+          "None",
+          "快捷键，显示在提示文字右侧。"
         ],
         [
           "children",
@@ -615,7 +621,7 @@
         ]
       ],
       "source": "src/components/ui.rs",
-      "code": "rsx! {\n    Tooltip {\n        tip: \"一条恰到好处的说明\",\n        button { \"停留片刻\" }\n    }\n}",
+      "code": "rsx! {\n    Tooltip { tip: \"搜索\", shortcut: \"⌘K\",\n        button { aria_label: \"搜索\", Icon { name: IconName::Search } }\n    }\n}",
       "preview_mode": "interactive",
       "usage_kind": "rust"
     },
@@ -626,7 +632,7 @@
       "group": "overlay",
       "summary": "把下一步，放在触手可及的地方。",
       "states": "确认 · 关闭",
-      "description": "在触发位置旁容纳轻量确认或小表单，用受控状态管理浮层的显示与关闭。",
+      "description": "点击触发的浮层，承载确认框或轻量表单。以弹簧从 0.98 放大淡入；点外部、按 Esc 或面板内按钮关闭。",
       "props": [
         [
           "open",
@@ -683,7 +689,7 @@
       "group": "overlay",
       "summary": "为需要专注的内容，留一处空间。",
       "states": "打开 · 关闭",
-      "description": "为弹窗统一遮罩、面板和开合动画。标题栏和具体内容由调用方提供。",
+      "description": "对话框外壳：遮罩、面板与开合动画。打开时接管焦点，Tab 只在弹窗内循环，Esc 或点遮罩关闭后把焦点还给触发器。",
       "props": [
         [
           "visible",
@@ -1710,6 +1716,9 @@
         ["variant", "ButtonVariant", "Ghost", "按钮样式。"],
         ["size", "ButtonSize", "Md", "尺寸，按钮为正方形。"],
         ["pressed", "Option<bool>", "None", "切换按钮的按下状态，输出 aria-pressed。"],
+        ["shortcut", "Option<&'static str>", "None", "快捷键，显示在悬浮提示里。"],
+        ["tooltip_placement", "&'static str", "\"top\"", "提示出现在上方或下方。"],
+        ["tooltip_align", "&'static str", "\"center\"", "贴边时让提示朝内侧对齐。"],
         ["disabled", "bool", "false", "禁用。"],
         ["class", "String", "空", "附加类名。"],
         ["onclick", "Option<EventHandler<MouseEvent>>", "None", "点击回调。"]

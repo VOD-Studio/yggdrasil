@@ -1088,7 +1088,7 @@ fn LiveComponentPreview(
         "IconButton" => rsx! {
             div { class: "showcase-preview-row",
                 crate::components::ui::IconButton { icon: crate::components::ui::IconName::Copy, label: "复制链接" }
-                crate::components::ui::IconButton { icon: crate::components::ui::IconName::Search, label: "搜索", variant: crate::components::ui::ButtonVariant::Secondary }
+                crate::components::ui::IconButton { icon: crate::components::ui::IconName::Search, label: "搜索", shortcut: "⌘K", variant: crate::components::ui::ButtonVariant::Secondary }
                 crate::components::ui::IconButton {
                     icon: crate::components::ui::IconName::PanelLeft, label: "收起侧栏",
                     pressed: Some(clicked()), onclick: move |_| clicked.set(!clicked()),
@@ -1128,7 +1128,23 @@ fn LiveComponentPreview(
             }
         },
         "Tooltip" => rsx! {
-            crate::components::ui::Tooltip { tip: "一条恰到好处的说明", button { class: "showcase-demo-button secondary", "停留片刻" } }
+            div { class: "showcase-preview-row",
+                crate::components::ui::Tooltip { tip: "复制链接",
+                    button { class: "btn btn-icon btn-secondary", aria_label: "复制链接",
+                        crate::components::ui::Icon { name: crate::components::ui::IconName::Copy }
+                    }
+                }
+                crate::components::ui::Tooltip { tip: "搜索", shortcut: "⌘K",
+                    button { class: "btn btn-icon btn-secondary", aria_label: "搜索",
+                        crate::components::ui::Icon { name: crate::components::ui::IconName::Search }
+                    }
+                }
+                crate::components::ui::Tooltip { tip: "向右旋转", shortcut: "R", placement: "bottom",
+                    button { class: "btn btn-icon btn-secondary", aria_label: "向右旋转",
+                        crate::components::ui::Icon { name: crate::components::ui::IconName::RotateCw }
+                    }
+                }
+            }
         },
         "Popover" => rsx! {
             div { class: "showcase-popover-example",

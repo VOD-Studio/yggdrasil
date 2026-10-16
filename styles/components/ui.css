@@ -561,3 +561,149 @@
     }
   }
 }
+
+@layer components {
+  /* ---- 浮层面板（Popover、确认框） ---- */
+  .popover-panel {
+    position: fixed;
+    z-index: 50;
+    padding: 0.875rem 1rem;
+    border-radius: 12px;
+    background-color: var(--color-popover);
+    color: var(--color-fg);
+    box-shadow: var(--shadow-popover);
+    font-size: 0.875rem;
+    animation: popover-pop var(--spring-snappy-duration) var(--ease-spring-snappy) both;
+  }
+
+  /* 居中面板用独立的 translate 属性居中，入场的 transform 只管缩放，二者不打架。 */
+  .popover-panel[data-align="center"] {
+    translate: -50% 0;
+  }
+
+  .popover-panel[data-placement="top"] {
+    transform-origin: bottom center;
+  }
+
+  .popover-panel[data-placement="bottom"] {
+    transform-origin: top center;
+  }
+
+  @keyframes popover-pop {
+    from {
+      opacity: 0;
+      transform: scale(0.98);
+    }
+  }
+
+  /* ---- 对话框 ---- */
+  .dialog-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: rgb(15 15 14 / 0.38);
+  }
+
+  .dark .dialog-overlay {
+    background-color: rgb(0 0 0 / 0.6);
+  }
+
+  .dialog-panel {
+    display: flex;
+    flex-direction: column;
+    max-height: 85dvh;
+    overflow: hidden;
+    border-radius: var(--radius-dialog);
+    background-color: var(--color-surface-2);
+    color: var(--color-fg);
+    box-shadow: 0 0 0 1px var(--color-hairline), var(--shadow-lg);
+  }
+
+  .dialog-panel:focus {
+    outline: none;
+  }
+
+  /* ---- 悬浮提示 ----
+     只给图标按钮补名称或快捷键；悬停 300ms 后出现，键盘聚焦立即出现。
+     只认直接子元素，祖先上的提示不会被内层悬停误触。 */
+  .tooltip-wrap {
+    position: relative;
+    display: inline-flex;
+  }
+
+  .tooltip {
+    position: absolute;
+    z-index: 50;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 5px 9px;
+    border-radius: 7px;
+    background-color: var(--color-fg);
+    color: var(--color-surface-0);
+    font-size: 0.75rem;
+    font-weight: 500;
+    line-height: 1.4;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(var(--tooltip-shift, 4px));
+    transition:
+      opacity 150ms var(--ease-out-expo),
+      transform 220ms var(--ease-out-expo);
+  }
+
+  .tooltip[data-placement="top"] {
+    bottom: calc(100% + 8px);
+  }
+
+  .tooltip[data-placement="bottom"] {
+    top: calc(100% + 8px);
+    --tooltip-shift: -4px;
+  }
+
+  .tooltip[data-align="center"] {
+    left: 50%;
+    translate: -50% 0;
+  }
+
+  .tooltip[data-align="start"] {
+    left: 0;
+  }
+
+  .tooltip[data-align="end"] {
+    right: 0;
+  }
+
+  .tooltip > kbd {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    opacity: 0.7;
+  }
+
+  .tooltip-wrap:hover > .tooltip {
+    opacity: 1;
+    transform: none;
+    transition-delay: 300ms;
+  }
+
+  .tooltip-wrap:has(> :focus-visible) > .tooltip {
+    opacity: 1;
+    transform: none;
+    transition-delay: 0ms;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .popover-panel {
+      animation: listbox-fade 120ms linear both;
+    }
+
+    .tooltip {
+      transform: none;
+      transition: opacity 120ms linear;
+    }
+  }
+}

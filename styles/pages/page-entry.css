@@ -15,7 +15,7 @@
   .friends-state,
   .about-hero-copy,
   .archive-posts > li
-):not(.animate-modal-panel-enter *, [role="dialog"] *, .animate-popover-enter *, .animate-select-enter *),
+):not(.animate-modal-panel-enter *, [role="dialog"] *, .animate-popover-enter *, .animate-select-enter *, .popover-panel *, .listbox *),
 [data-vt-enter-handled]:is(.animate-page-enter, .page-enter) {
   animation-name: none;
 }
