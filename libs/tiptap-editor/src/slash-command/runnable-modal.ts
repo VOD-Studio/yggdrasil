@@ -250,7 +250,9 @@ export function openRunnableModal(editor: Editor, editPos?: number, currentInfo?
     editor.off('destroy', onDestroy);
     activeModals.delete(editor);
     mask.remove();
-    if (restoreFocus && !editor.isDestroyed) editor.chain().focus().run();
+    // Tiptap 的 focus command 会延迟到下一帧；快速重开时会从新模态框抢走焦点，
+    // 使 Escape 落到编辑器而被其快捷键消费。同步恢复已有 selection 即可。
+    if (restoreFocus && !editor.isDestroyed) editor.view.focus();
   }
 
   function onKeydown(e: KeyboardEvent): void {
