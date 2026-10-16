@@ -66,6 +66,35 @@ pub struct TagListResponse {
     pub tags: Vec<Tag>,
 }
 
+/// 搜索面板（⌘K）里的一条文章建议：只含标题、摘要、发布时间与标签。
+// 浏览器端只经反序列化构造，静态分析看不到。
+#[cfg_attr(not(feature = "server"), allow(dead_code))]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PostSuggestion {
+    /// URL slug。
+    pub slug: String,
+    /// 文章标题。
+    pub title: String,
+    /// 摘要，可选。
+    pub summary: Option<String>,
+    /// 发布时间。
+    pub published_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// 标签名（按名称排序）。
+    pub tags: Vec<String>,
+}
+
+/// 文章建议响应。
+#[cfg_attr(not(feature = "server"), allow(dead_code))]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PostSuggestionResponse {
+    /// 最多 8 条。
+    pub posts: Vec<PostSuggestion>,
+}
+
+/// 文章建议的条数上限。
+#[cfg(feature = "server")]
+pub const SUGGESTION_LIMIT: i64 = 8;
+
 /// 文章统计响应。
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PostStatsResponse {

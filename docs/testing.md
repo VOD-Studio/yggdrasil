@@ -39,6 +39,10 @@ DATABASE_URL=postgresql://postgres@127.0.0.1:55439/ygg_mcp_test \
 # 上传元信息及 HTTP 接口
 DATABASE_URL=postgresql://postgres@127.0.0.1:55439/ygg_mcp_test \
   cargo test --locked --features server upload_metadata_database_and_http -- --ignored
+
+# 搜索面板文章建议：标题 > 摘要 > 标签排序、草稿排除、通配符转义
+DATABASE_URL=postgresql://postgres@127.0.0.1:55439/ygg_mcp_test \
+  cargo test --locked --features server suggestions_rank_and_filter_database -- --ignored
 ```
 
 上述测试均会自动迁移；文章回归会重置用户及关联内容，上传回归会验证真实 HTTP 上传接口。

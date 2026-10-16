@@ -61,6 +61,9 @@ const TTL_SESSION: Duration = Duration::from_secs(300);
 /// 搜索结果缓存 TTL：10 秒。
 #[cfg(feature = "server")]
 const TTL_SEARCH: Duration = Duration::from_secs(10);
+/// 搜索面板文章建议的缓存时长；文章写操作时整体失效。
+#[cfg(feature = "server")]
+const TTL_SUGGEST: Duration = Duration::from_secs(30);
 
 /// 站点配置缓存 TTL：600 秒。配置极少变更，但前台页脚每页读取，缓存兜底 DB。
 #[cfg(feature = "server")]
@@ -293,6 +296,16 @@ static SEARCH_CACHE: LazyLock<SearchCache> = LazyLock::new(|| {
         .build()
 });
 
+/// 搜索面板文章建议缓存：键为规范化查询，最大 500 条，TTL 30 秒。
+#[cfg(feature = "server")]
+static SUGGEST_CACHE: LazyLock<Cache<String, Vec<crate::api::posts::PostSuggestion>>> =
+    LazyLock::new(|| {
+        Cache::builder()
+            .max_capacity(500)
+            .time_to_live(TTL_SUGGEST)
+            .build()
+    });
+
 // ============================================================================
 // 命中率统计（供系统状态面板展示）
 // ============================================================================
@@ -343,6 +356,8 @@ static SESSION_STATS: CacheStats = CacheStats::new("会话用户");
 #[cfg(feature = "server")]
 static SEARCH_STATS: CacheStats = CacheStats::new("搜索");
 #[cfg(feature = "server")]
+static SUGGEST_STATS: CacheStats = CacheStats::new("搜索建议");
+#[cfg(feature = "server")]
 static FEED_STATS: CacheStats = CacheStats::new("Feed");
 #[cfg(feature = "server")]
 static FRIEND_STATS: CacheStats = CacheStats::new("友链");
@@ -390,6 +405,7 @@ pub fn cache_stats() -> Vec<CacheStatSnapshot> {
         snap(&PENDING_COUNT_STATS, PENDING_COUNT_CACHE.entry_count()),
         snap(&SESSION_STATS, SESSION_CACHE.entry_count()),
         snap(&SEARCH_STATS, SEARCH_CACHE.entry_count()),
+        snap(&SUGGEST_STATS, SUGGEST_CACHE.entry_count()),
         snap(&FEED_STATS, FEED_CACHE.entry_count()),
         snap(&FRIEND_STATS, FRIEND_LINKS_CACHE.entry_count()),
         snap(&SITE_SETTINGS_STATS, SITE_SETTINGS_CACHE.entry_count()),
@@ -716,6 +732,7 @@ pub fn invalidate_post_metadata() {
     invalidate_all_tags();
     invalidate_post_stats();
     invalidate_search_results();
+    invalidate_suggestions();
     invalidate_feed();
 }
 
@@ -833,6 +850,29 @@ pub async fn set_search_results(query: &str, posts: Vec<PostListItem>, total: i6
 #[cfg(feature = "server")]
 pub fn invalidate_search_results() {
     SEARCH_CACHE.invalidate_all();
+}
+
+/// 读取搜索面板文章建议缓存。
+#[cfg(feature = "server")]
+pub async fn get_suggestions(query: &str) -> Option<Vec<crate::api::posts::PostSuggestion>> {
+    record_hit_miss!(
+        SUGGEST_CACHE.get(&normalize_search_key(query)).await,
+        SUGGEST_STATS
+    )
+}
+
+/// 写入搜索面板文章建议缓存。
+#[cfg(feature = "server")]
+pub async fn set_suggestions(query: &str, posts: Vec<crate::api::posts::PostSuggestion>) {
+    let _ = SUGGEST_CACHE
+        .insert(normalize_search_key(query), posts)
+        .await;
+}
+
+/// 清空搜索面板文章建议缓存。
+#[cfg(feature = "server")]
+pub fn invalidate_suggestions() {
+    SUGGEST_CACHE.invalidate_all();
 }
 
 /// 按文章主键失效评论列表缓存。

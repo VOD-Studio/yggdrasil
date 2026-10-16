@@ -15,6 +15,7 @@ mod search;
 #[cfg(feature = "server")]
 pub(crate) mod service;
 mod stats;
+mod suggest;
 mod tags;
 mod trash;
 mod types;
@@ -44,6 +45,10 @@ pub use rebuild::rebuild_post_content_html;
 pub use search::search_posts;
 /// 获取文章统计信息。
 pub use stats::get_post_stats;
+#[cfg(feature = "server")]
+pub(crate) use suggest::query_suggestions;
+/// 搜索面板（⌘K）的文章建议。
+pub use suggest::suggest_posts;
 /// 获取全部标签及其文章数量。
 pub use tags::list_tags;
 /// 恢复已删除文章。

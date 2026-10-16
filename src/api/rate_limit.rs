@@ -106,6 +106,12 @@ static CODE_EXEC_DAILY_LIMITER: LazyLock<DefaultKeyedRateLimiter<String>> = Lazy
 });
 
 #[cfg(feature = "server")]
+/// 搜索建议（⌘K 面板逐字查询）每 IP 每秒 10 次、突发 30 次：比 strict 宽松，
+/// 正常打字不会被拦，批量抓取仍有上限。额度固定，不随设置表变化。
+static SUGGEST_LIMITER: LazyLock<DefaultKeyedRateLimiter<String>> =
+    LazyLock::new(|| RateLimiter::keyed(Quota::per_second(nz(10)).allow_burst(nz(30))));
+
+#[cfg(feature = "server")]
 /// 当无法识别真实客户端 IP（"unknown"）时使用的宽松限流桶。
 ///
 /// TRUSTED_PROXY_COUNT=0（默认）时，Dioxus server function 拿不到 TCP 对端地址，
@@ -132,7 +138,7 @@ fn limiter_gc_interval() -> Duration {
 
 /// 启动后台限流桶 GC 任务（全进程仅生效一次）。
 ///
-/// 九个 IP 键控限流器均为独立的 `DefaultKeyedRateLimiter`，没有集中状态表，故采用
+/// 十个 IP 键控限流器均为独立的 `DefaultKeyedRateLimiter`，没有集中状态表，故采用
 /// 惰性启动：首个请求到达任一 `check_*` 时，经 `Once` 派生一个常驻 tokio 任务，按
 /// [`limiter_gc_interval`] 周期对全部限流器调用 `retain_recent`，回收长时间未命中的
 /// 键。这直接缓解 IP 轮换攻击下的内存膨胀——攻击者不断换 IP 制造新键，GC 周期性剔除
@@ -160,6 +166,7 @@ fn ensure_limiter_gc() {
                 CODE_EXEC_LIMITER.retain_recent();
                 CODE_EXEC_DAILY_LIMITER.retain_recent();
                 UNKNOWN_BUCKET_LIMITER.retain_recent();
+                SUGGEST_LIMITER.retain_recent();
             }
         });
     });
@@ -353,6 +360,21 @@ pub fn check_strict_limit(ip: &str) -> Result<(), String> {
             .map(|_| ())
             .map_err(|_| "请求过于频繁，请稍后再试".to_string())
     }
+}
+
+#[cfg(feature = "server")]
+/// 检查搜索建议请求是否超出限流阈值；无法识别 IP 时与 strict 一样落到 unknown 宽松桶。
+pub fn check_suggest_limit(ip: &str) -> Result<(), String> {
+    ensure_limiter_gc();
+    let limiter = if ip == "unknown" {
+        &*UNKNOWN_BUCKET_LIMITER
+    } else {
+        &*SUGGEST_LIMITER
+    };
+    limiter
+        .check_key(&ip.to_string())
+        .map(|_| ())
+        .map_err(|_| "搜索过于频繁，请稍后再试".to_string())
 }
 
 #[cfg(feature = "server")]
