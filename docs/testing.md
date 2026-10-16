@@ -55,3 +55,13 @@ ADMIN_SESSION=post-write-regression bun scripts/test-admin-editor.cjs
 ```
 
 脚本验证编辑回填、保存失败重试、素材选择、剪贴板、日志 SSE 及组件卸载，检查桌面明暗主题、窄屏和减少动态效果，并输出截图与 JSON 报告。素材预览需提供对应的测试图片文件；`PLAYWRIGHT_MODULE`、`CHROMIUM_PATH` 可指定已有浏览器工具的位置。灯箱动画和触摸手势另用 `bun scripts/test-lightbox.cjs` 验证。
+
+## 公开阅读性能与双机缓存
+
+```sh
+make test-public-performance
+```
+
+脚本创建自己的 PostgreSQL 16 容器和 `ygg_mcp_test` 数据库，启动两个本地应用实例，验证 HTML 缓存命中、ETag/304、TTL、认证与笔记绕过缓存、事务回滚、提交后的双机失效及通知断线恢复。浏览器覆盖桌面/手机、明暗主题、151 篇归档分页、文章 SPA 跳转，以及评论区在接近视口前不加载 Tiptap。截图、结果和服务器日志保存到 `target/regressions/*-public-performance/`，结束后清理本次创建的容器和应用进程。
+
+生产匿名公开页缓存默认 60 秒、最多 32 MiB；不依赖 `/app/static`。每次内容提交通过 PostgreSQL 通知失效，应用每 5 秒核对持久化版本兜底。浏览器 HTML 使用 `no-cache` 配合 ETag 校验；带哈希的静态资源保留 immutable。`SSR_CACHE_SECS=0` 禁用 HTML 缓存。

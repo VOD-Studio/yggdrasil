@@ -39,8 +39,8 @@ pub fn parse_migrate_startup_timeout() -> u64 {
         .unwrap_or(30)
 }
 
-/// 默认 SSR 增量缓存时长（秒）。
-pub const DEFAULT_SSR_CACHE_SECS: u64 = 3600;
+/// 默认匿名公开页 HTML 缓存时长（秒）。
+pub const DEFAULT_SSR_CACHE_SECS: u64 = 60;
 
 pub fn parse_bool_value(value: Option<&str>, default: bool) -> bool {
     match value.map(str::trim) {

@@ -233,8 +233,7 @@ pub(crate) async fn admin_guard(
 }
 
 /// Axum 中间件：把当前 SSR 全局世代号注入请求扩展，并对 GET 请求的响应附加
-/// `X-SSR-Generation` 头。这是为未来 Dioxus 支持自定义 SSR 缓存键预留的钩子；
-/// 目前主要提供可观测性，不会实际失效 SSR 缓存。
+/// `X-SSR-Generation` 头。世代号同时保护应用 HTML 缓存，阻止失效前的在途响应回填。
 pub(crate) async fn ssr_generation_middleware(
     req: axum::extract::Request,
     next: axum::middleware::Next,

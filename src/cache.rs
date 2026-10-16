@@ -716,6 +716,18 @@ pub fn invalidate_all_post_caches() {
     TAG_POSTS_CACHE.invalidate_all();
 }
 
+/// 数据库内容版本变化时清除本节点的派生数据；不再向数据库发通知，避免回路。
+#[cfg(feature = "server")]
+pub fn invalidate_shared_content() {
+    invalidate_all_post_caches();
+    invalidate_all_comments();
+    invalidate_friend_links();
+    invalidate_site_settings();
+    invalidate_security_settings();
+    invalidate_image_cache_settings();
+    crate::ssr_cache::invalidate_ssr_all_public();
+}
+
 /// 清空 Feed 条目缓存。
 ///
 /// 使用同步签名是因为 `moka::Cache::invalidate_all` 为同步操作，
