@@ -211,6 +211,11 @@
     text-wrap: pretty;
   }
 
+  /* 行内图标与文字的光学对齐。 */
+  .icon-inline {
+    vertical-align: -0.125em;
+  }
+
   ::selection {
     background-color: var(--color-paper-selection);
   }

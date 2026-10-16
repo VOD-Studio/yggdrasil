@@ -11,6 +11,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "motion-css": "bun scripts/generate-motion-css.ts",
-    "code-themes": "bun scripts/generate-code-themes.ts"
+    "code-themes": "bun scripts/generate-code-themes.ts",
+    "icons": "bun scripts/generate-icons.ts"
+  },
+  "devDependencies": {
+    "lucide-static": "1.57.0"
   }
 }

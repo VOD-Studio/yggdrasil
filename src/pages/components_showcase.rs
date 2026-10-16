@@ -855,6 +855,7 @@ fn preview_route(slug: &str) -> Option<PreviewRoute> {
         | "tag-chip"
         | "user-avatar"
         | "sprout-placeholder"
+        | "icon"
         | "empty-state"
         | "skeleton-box"
         | "skeleton-card"
@@ -1137,6 +1138,15 @@ fn LiveComponentPreview(
         },
         "SproutPlaceholder" => rsx! {
             crate::components::ui::SproutPlaceholder { class: "w-10 h-10 text-paper-accent" }
+        },
+        "Icon" => rsx! {
+            div { class: "grid grid-cols-8 gap-3 text-paper-secondary",
+                for icon in crate::components::ui::IconName::ALL {
+                    span { class: "grid place-items-center", title: icon.slug(),
+                        crate::components::ui::Icon { name: icon, size: 18 }
+                    }
+                }
+            }
         },
         "EmptyState" => rsx! {
             div { class: "showcase-empty-preview",

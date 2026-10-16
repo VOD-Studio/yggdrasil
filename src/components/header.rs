@@ -6,6 +6,7 @@
 use dioxus::prelude::*;
 use dioxus::router::components::Link;
 
+use crate::components::ui::{Icon, IconName};
 use crate::router::Route;
 
 /// 导航项配置，用于描述 Header 中的一个链接。
@@ -242,7 +243,7 @@ fn MobileNavItem(
 /// 默认自动根据全局路由匹配判断激活状态；支持通过 `active` 属性显式覆盖，
 /// 以及通过 `on_click` 拦截默认跳转行为以支持弹层或自定义检索交互。
 /// 样式与 `ThemeToggle` 对齐（圆形 padding + currentColor 图标），保持右侧
-/// 图标组视觉一致。图标采用项目标准线性放大镜（与 `/search` 页面风格一致）。
+/// 图标组视觉一致。图标为 Lucide `search`。
 #[component]
 pub fn SearchIconLink(
     /// 可选显式覆盖激活状态。默认为随全局路由自动感知 (`Route::Search`).
@@ -272,19 +273,7 @@ pub fn SearchIconLink(
                     handler.call(e);
                 }
             },
-            svg {
-                xmlns: "http://www.w3.org/2000/svg",
-                class: "w-6 h-6 shrink-0",
-                view_box: "0 0 24 24",
-                fill: "none",
-                stroke: "currentColor",
-                stroke_width: "1.6",
-                stroke_linecap: "round",
-                stroke_linejoin: "round",
-                "aria-hidden": "true",
-                circle { cx: "10.75", cy: "10.75", r: "6.75" }
-                path { d: "m16 16 4.5 4.5" }
-            }
+            Icon { name: IconName::Search, size: 24 }
             if is_active {
                 span { class: "nav-indicator hidden md:block", "aria-hidden": "true" }
             }

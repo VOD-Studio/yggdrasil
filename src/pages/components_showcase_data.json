@@ -1633,6 +1633,26 @@
       "usage_kind": "rust"
     },
     {
+      "name": "Icon",
+      "slug": "icon",
+      "label": "图标",
+      "group": "display",
+      "summary": "一套线条，指向每一个动作。",
+      "states": "装饰 · 朗读 · 尺寸",
+      "description": "Lucide 线性图标，统一 1.5 线宽并跟随文字颜色。默认作为装饰对读屏隐藏；独立使用、没有旁边文字时传入 label。",
+      "props": [
+        ["name", "IconName", "必填", "图标名，如 IconName::Search。"],
+        ["size", "u32", "16", "边长，单位像素。"],
+        ["class", "String", "空", "附加类名；行内图标可加 icon-inline 做光学对齐。"],
+        ["label", "Option<String>", "None", "读屏朗读的名称；不传则 aria-hidden。"]
+      ],
+      "keys": [],
+      "source": "src/components/ui/icons.rs",
+      "code": "rsx! {\n    Icon { name: IconName::Search }\n    Icon { name: IconName::X, size: 20, label: \"关闭\".to_string() }\n}",
+      "preview_mode": "static",
+      "usage_kind": "rust"
+    },
+    {
       "name": "Breadcrumbs",
       "slug": "breadcrumbs",
       "label": "面包屑",

@@ -8,12 +8,14 @@
 
 mod controls;
 mod display;
+mod icons;
 mod navigation;
 mod styles;
 mod surfaces;
 
 pub use controls::*;
 pub use display::*;
+pub use icons::*;
 pub use navigation::*;
 pub use styles::*;
 pub use surfaces::*;
