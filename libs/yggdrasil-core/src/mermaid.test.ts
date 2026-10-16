@@ -68,15 +68,15 @@ describe('initMermaid', () => {
     window.__initMermaid('.post-content', 'dark');
 
     await vi.waitFor(() => {
-      // base 主题 + darkMode 标志：让 themeVariables 完全控制 Catppuccin 调色板
+      // base 主题 + darkMode 标志：让 themeVariables 完全控制调色板
       expect(mockInitialize).toHaveBeenCalledWith(
         expect.objectContaining({ theme: 'base', darkMode: true }),
       );
     });
   });
 
-  it('亮/暗主题传入对应的 Catppuccin themeVariables', async () => {
-    // 暗色：Mocha 调色板（背景 #313244、文字 #cdd6f4）
+  it('亮/暗主题传入对应的 themeVariables', async () => {
+    // 暗色：背景 #161615、文字 #f2f1ee
     const darkRoot = document.createElement('div');
     darkRoot.className = 'post-content';
     darkRoot.innerHTML = '<pre><code class="language-mermaid">graph TD; A--&gt;B</code></pre>';
@@ -87,11 +87,11 @@ describe('initMermaid', () => {
     });
     const darkCall = mockInitialize.mock.calls.slice(-1)[0]?.[0] as Record<string, unknown>;
     const darkVars = darkCall.themeVariables as Record<string, string>;
-    expect(darkVars.background).toBe('#313244');
-    expect(darkVars.primaryTextColor).toBe('#cdd6f4');
-    expect(darkVars.lineColor).toBe('#a6adc8');
+    expect(darkVars.background).toBe('#161615');
+    expect(darkVars.primaryTextColor).toBe('#f2f1ee');
+    expect(darkVars.lineColor).toBe('#a9a7a1');
 
-    // 亮色：Latte 调色板（背景 #dce0e8、文字 #4c4f69）
+    // 亮色：背景 #fafaf8、文字 #151515
     document.body.innerHTML = '';
     const lightRoot = document.createElement('div');
     lightRoot.className = 'post-content';
@@ -103,9 +103,9 @@ describe('initMermaid', () => {
     });
     const lightCall = mockInitialize.mock.calls.slice(-1)[0]?.[0] as Record<string, unknown>;
     const lightVars = lightCall.themeVariables as Record<string, string>;
-    expect(lightVars.background).toBe('#dce0e8');
-    expect(lightVars.primaryTextColor).toBe('#4c4f69');
-    expect(lightVars.lineColor).toBe('#5c5f77');
+    expect(lightVars.background).toBe('#fafaf8');
+    expect(lightVars.primaryTextColor).toBe('#151515');
+    expect(lightVars.lineColor).toBe('#6b6b69');
   });
 
   it('幂等：重复调用不重复渲染已处理的块', async () => {

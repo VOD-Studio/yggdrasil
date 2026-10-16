@@ -80,7 +80,7 @@ describe('Mermaid SVG 渲染', () => {
       securityLevel: 'strict',
       flowchart: { curve: 'basis', diagramPadding: 16, useMaxWidth: true, htmlLabels: true },
       themeVariables: expect.objectContaining({
-        primaryTextColor: theme === 'dark' ? '#cdd6f4' : '#4c4f69',
+        primaryTextColor: theme === 'dark' ? '#f2f1ee' : '#151515',
       }),
     });
     expect(api.render).toHaveBeenCalledWith('diagram-1', 'graph TD; A-->B');
