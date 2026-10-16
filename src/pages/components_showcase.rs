@@ -1202,8 +1202,11 @@ fn LiveComponentPreview(
         },
         "StatusBadge" => rsx! {
             div { class: "showcase-preview-row",
-                crate::components::ui::StatusBadge { color_class: "bg-green-500/10 text-green-600 dark:text-green-400", label: "已发布" }
-                crate::components::ui::StatusBadge { color_class: "bg-paper-tertiary/20 text-paper-secondary", label: "草稿" }
+                crate::components::ui::StatusBadge { color_class: "badge-success", label: "已发布" }
+                crate::components::ui::StatusBadge { color_class: "", label: "草稿" }
+                crate::components::ui::StatusBadge { color_class: "badge-warning", label: "待审核" }
+                crate::components::ui::StatusBadge { color_class: "badge-danger", label: "3 天后清除" }
+                crate::components::ui::StatusBadge { color_class: "badge-clay", label: "新" }
             }
         },
         "TagChip" => rsx! {

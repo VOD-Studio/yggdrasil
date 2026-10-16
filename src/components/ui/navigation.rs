@@ -1,14 +1,14 @@
 //! Pagination, tabs and navigable tag chips.
-use super::styles::BTN_OUTLINE;
+use super::icons::{Icon, IconName};
 use crate::components::forms::FormInput;
 use dioxus::prelude::*;
 use dioxus::router::components::Link;
 /// 分页导航组件。
 ///
 /// 统一了后台与前台的分页 UI，通过 `variant` 切换配色与展示细节：
-/// - `"admin"`：描边胶囊按钮（与 `BTN_OUTLINE` 同族），显示页码计数
+/// - `"admin"`：小号描边按钮，显示页码计数
 ///   （`{当前} / {总} 页 (共 {total} {unit})`），首尾页渲染禁用态。
-/// - `"frontend"`：描边胶囊按钮与居中页码，首尾页不渲染越界按钮。
+/// - `"frontend"`：小号描边按钮与居中页码，首尾页不渲染越界按钮。
 ///
 /// Props：
 /// - `variant`：`"admin"` 或 `"frontend"`
@@ -45,8 +45,6 @@ pub fn Pagination<R: Routable + Clone + PartialEq + 'static>(
     let total_pages = ((total + per_page as i64 - 1) / per_page as i64).max(1) as i32;
     let has_next = current_page < total_pages;
 
-    // admin 与 frontend 的配色差异。admin 上一页/下一页用描边胶囊，与本页其它
-    // 操作按钮（BTN_OUTLINE）同族，避免出现方角实心按钮破坏整体圆角语言。
     let is_admin = variant == "admin";
     let nav_class = if is_admin {
         if compact {
@@ -57,29 +55,22 @@ pub fn Pagination<R: Routable + Clone + PartialEq + 'static>(
     } else {
         "frontend-pagination"
     };
-    let (link_class, link_extra_next): (String, &'static str) = if is_admin {
-        (
-            format!("{BTN_OUTLINE} inline-flex items-center active:scale-[0.98]"),
-            "",
-        )
+    let link_class = "btn btn-sm btn-outline";
+    let link_extra_next = if is_admin {
+        ""
     } else {
-        (
-            format!("{BTN_OUTLINE} inline-flex items-center justify-center whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-paper-primary"),
-            "col-start-3 row-start-1 justify-self-end",
-        )
+        "col-start-3 row-start-1 justify-self-end"
     };
-    let disabled_class =
-        "inline-flex items-center px-4 py-2 text-sm font-medium text-paper-secondary border border-paper-border rounded-full cursor-not-allowed";
 
     // admin 首尾页渲染禁用态；frontend 首尾页直接不渲染。
     // on_prev/on_next 存在时走回调式 button（客户端 signal 翻页），否则走路由式 Link。
     let prev_inner = rsx! {
-        span { class: "mr-1", "«" }
+        Icon { name: IconName::ChevronLeft, size: 15 }
         "上一页"
     };
     let next_inner = rsx! {
         "下一页"
-        span { class: "ml-1", "»" }
+        Icon { name: IconName::ChevronRight, size: 15 }
     };
 
     // 跳页状态：当前页码本身渲染为可编辑输入框（仅回调式翻页且多页时）。
@@ -101,23 +92,21 @@ pub fn Pagination<R: Routable + Clone + PartialEq + 'static>(
                     Link { class: "{link_class}", to: pr, {prev_inner} }
                 }
             } else if is_admin {
-                span { class: "{disabled_class}",
-                    span { class: "mr-1", "«" }
+                span { class: "{link_class}", aria_disabled: "true",
+                    Icon { name: IconName::ChevronLeft, size: 15 }
                     "上一页"
                 }
             }
 
             // admin 显示页码计数；回调式翻页且多页时，当前页码可直接编辑跳页。
             if is_admin {
-                span { class: "flex items-center gap-1.5 text-sm text-paper-secondary whitespace-nowrap tabular-nums",
+                span { class: "flex items-center gap-1.5 text-sm text-fg-2 whitespace-nowrap tabular-nums",
                     if total_pages > 1 && on_jump.is_some() {
                         FormInput {
                             r#type: "text",
                             placeholder: "",
                             value: if jump_editing() { jump_draft() } else { current_page.to_string() },
-                            class: Some(
-                                "w-11 px-1 py-0.5 text-sm text-center bg-transparent text-paper-primary border border-paper-border rounded-full hover:border-paper-accent/60 focus:outline-none focus:border-paper-accent transition-colors",
-                            ),
+                            class: Some("field field-sm w-12 text-center tabular-nums"),
                             inputmode: Some("numeric"),
                             title: Some("输入页码，回车跳转"),
                             oninput: move |v: String| jump_draft.set(v),
@@ -149,7 +138,7 @@ pub fn Pagination<R: Routable + Clone + PartialEq + 'static>(
                 }
             } else {
                 span {
-                    class: "col-start-2 row-start-1 text-xs text-paper-secondary whitespace-nowrap tabular-nums",
+                    class: "col-start-2 row-start-1 text-xs text-fg-3 whitespace-nowrap tabular-nums",
                     aria_label: "第 {current_page} 页，共 {total_pages} 页",
                     aria_current: "page",
                     "{current_page} / {total_pages}"
@@ -171,9 +160,9 @@ pub fn Pagination<R: Routable + Clone + PartialEq + 'static>(
                     }
                 }
             } else if is_admin {
-                span { class: "{disabled_class}",
+                span { class: "{link_class}", aria_disabled: "true",
                     "下一页"
-                    span { class: "ml-1", "»" }
+                    Icon { name: IconName::ChevronRight, size: 15 }
                 }
             }
         }
@@ -182,82 +171,124 @@ pub fn Pagination<R: Routable + Clone + PartialEq + 'static>(
 
 static TAB_GROUP_ID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
-/// 筛选选项卡组件。
+/// 在选项卡之间循环移动（←/→、Home/End 用）。
+fn neighbor_tab<'a>(items: &[(&'a str, &'a str)], active: &str, delta: i32) -> Option<&'a str> {
+    let len = items.len() as i32;
+    if len == 0 {
+        return None;
+    }
+    let cur = items.iter().position(|(v, _)| *v == active).unwrap_or(0) as i32;
+    Some(items[(cur + delta).rem_euclid(len) as usize].0)
+}
+
+/// 筛选选项卡（分段控件）。
 ///
-/// 用于切换不同的视图或筛选条件（例如：全部、待审核、已通过等）。
-/// 具备高级的平滑滑动底部指示器动画。
+/// 胶囊轨道里放一组选项，选中项是浮起的白色滑块，切换时以 snappy 弹簧滑到新位置。
+/// 语义为 `tablist`：←/→ 在选项间移动并立即切换，Home/End 跳到首尾，焦点随之移动
+/// （roving tabindex，Tab 只停在当前项）。滑块测量完成前，选中项直接画浮起底色，
+/// 首屏不闪。
 ///
 /// Props：
 /// - `items`：选项卡列表，每一项为 `(value, label)`
 /// - `active_value`：当前选中的值
 /// - `on_change`：选项卡切换时的回调
+/// - `aria_label`：选项卡组的无障碍名称（可选）
 #[component]
 pub fn FilterTabs(
     items: Vec<(&'static str, &'static str)>,
     active_value: String,
     on_change: EventHandler<String>,
+    #[props(default)] aria_label: Option<&'static str>,
 ) -> Element {
     #[allow(unused_mut)]
-    let mut indicator_style = use_signal(|| "left: 0px; width: 0px; opacity: 0;".to_string());
+    let mut thumb_style = use_signal(|| None::<String>);
     let id_prefix = use_hook(|| TAB_GROUP_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst));
-
     #[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))]
-    let update_indicator = move |active: String| {
+    let update_thumb = move |active: String| {
         spawn(async move {
             #[cfg(target_arch = "wasm32")]
             {
                 use wasm_bindgen::JsCast;
-
                 // 等待 DOM 节点更新
-                crate::utils::time::sleep_ms(50).await;
-
-                if let Some(window) = web_sys::window() {
-                    if let Some(doc) = window.document() {
-                        let element_id = format!("tab-{}-{}", id_prefix, active);
-                        if let Some(el) = doc.get_element_by_id(&element_id) {
-                            if let Ok(html_el) = el.dyn_into::<web_sys::HtmlElement>() {
-                                let left = html_el.offset_left();
-                                let width = html_el.offset_width();
-                                indicator_style.set(format!(
-                                    "left: {}px; width: {}px; opacity: 1;",
-                                    left, width
-                                ));
-                            }
-                        }
-                    }
+                crate::utils::time::sleep_ms(30).await;
+                if let Some(el) = web_sys::window()
+                    .and_then(|w| w.document())
+                    .and_then(|d| d.get_element_by_id(&format!("tab-{id_prefix}-{active}")))
+                    .and_then(|el| el.dyn_into::<web_sys::HtmlElement>().ok())
+                {
+                    thumb_style.set(Some(format!(
+                        "transform: translateX({}px); width: {}px;",
+                        el.offset_left(),
+                        el.offset_width()
+                    )));
                 }
             }
         });
     };
-
     use_effect({
         let active_value = active_value.clone();
         move || {
-            update_indicator(active_value.clone());
+            update_thumb(active_value.clone());
         }
     });
 
+    let measured = thumb_style().is_some();
+    let thumb = thumb_style().unwrap_or_else(|| "opacity: 0;".to_string());
+    let items_for_keys = items.clone();
+    let active_for_keys = active_value.clone();
+
     rsx! {
-        div { class: "relative flex gap-4 border-b border-paper-border mb-6",
-            for (value, label) in items {
-                button {
-                    id: "tab-{id_prefix}-{value}",
-                    key: "{value}",
-                    class: if active_value == *value { "cursor-pointer px-2 py-3 text-xs font-mono tracking-widest uppercase text-paper-primary transition-colors" } else { "cursor-pointer px-2 py-3 text-xs font-mono tracking-widest uppercase text-paper-secondary hover:text-paper-primary transition-colors" },
-                    onclick: {
-                        let v = value.to_string();
-                        move |_| {
-                            on_change.call(v.clone());
-                            update_indicator(v.clone());
-                        }
-                    },
-                    "{label}"
-                }
-            }
-            // 绝对定位的滑动颜色条
+        div { class: "mb-6",
             div {
-                class: "absolute bottom-[-1px] h-[2px] bg-paper-primary transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] pointer-events-none",
-                style: "{indicator_style}",
+                class: "segmented",
+                role: "tablist",
+                aria_label,
+                "data-ready": measured.then_some("true"),
+                onkeydown: move |e| {
+                    let next = match e.key() {
+                        Key::ArrowRight => neighbor_tab(&items_for_keys, &active_for_keys, 1),
+                        Key::ArrowLeft => neighbor_tab(&items_for_keys, &active_for_keys, -1),
+                        Key::Home => items_for_keys.first().map(|(v, _)| *v),
+                        Key::End => items_for_keys.last().map(|(v, _)| *v),
+                        _ => None,
+                    };
+                    if let Some(next) = next {
+                        e.prevent_default();
+                        on_change.call(next.to_string());
+                        update_thumb(next.to_string());
+                        #[cfg(target_arch = "wasm32")]
+                        {
+                            use wasm_bindgen::JsCast;
+                            if let Some(el) = web_sys::window()
+                                .and_then(|w| w.document())
+                                .and_then(|d| d.get_element_by_id(&format!("tab-{id_prefix}-{next}")))
+                                .and_then(|el| el.dyn_into::<web_sys::HtmlElement>().ok())
+                            {
+                                let _ = el.focus();
+                            }
+                        }
+                    }
+                },
+                span { class: "segmented-thumb", aria_hidden: "true", style: "{thumb}" }
+                for (value, label) in items {
+                    button {
+                        id: "tab-{id_prefix}-{value}",
+                        key: "{value}",
+                        r#type: "button",
+                        class: "segmented-item",
+                        role: "tab",
+                        aria_selected: "{active_value == *value}",
+                        tabindex: if active_value == *value { "0" } else { "-1" },
+                        onclick: {
+                            let v = value.to_string();
+                            move |_| {
+                                on_change.call(v.clone());
+                                update_thumb(v.clone());
+                            }
+                        },
+                        "{label}"
+                    }
+                }
             }
         }
     }
@@ -285,9 +316,9 @@ pub fn TagChip<R: Routable + Clone + PartialEq + 'static>(
 ) -> Element {
     let class = match variant {
         "archive" => "archive-tag-chip",
-        "solid" => "inline-flex items-center px-3 py-1.5 text-base font-medium bg-paper-accent-soft text-paper-accent rounded-lg hover:bg-paper-accent hover:text-white transition-all duration-200",
-        "text" => "inline-flex items-center py-1 text-paper-secondary hover:text-paper-primary underline decoration-paper-border underline-offset-4 hover:decoration-paper-accent transition-colors focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-paper-accent",
-        _ => "inline-flex items-center px-3 py-1 rounded-full border border-paper-border hover:bg-paper-accent hover:border-paper-accent hover:text-white transition-all duration-200",
+        "solid" => "chip chip-clay",
+        "text" => "inline-flex items-center py-1 text-fg-2 hover:text-fg underline decoration-hairline underline-offset-4 hover:decoration-clay transition-colors focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-clay",
+        _ => "chip",
     };
     rsx! {
         Link {
@@ -308,9 +339,25 @@ pub fn TagChip<R: Routable + Clone + PartialEq + 'static>(
                 if variant == "archive" {
                     span { class: "archive-tag-count", aria_label: "{c} 篇文章", "{c}" }
                 } else {
-                    sup { class: "ml-1 text-sm text-paper-secondary", "{c}" }
+                    span { class: "chip-count", "{c}" }
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::neighbor_tab;
+
+    #[test]
+    fn neighbor_tab_wraps_in_both_directions() {
+        let items = [("all", "全部"), ("pending", "待审核"), ("spam", "垃圾")];
+        assert_eq!(neighbor_tab(&items, "all", 1), Some("pending"));
+        assert_eq!(neighbor_tab(&items, "spam", 1), Some("all"));
+        assert_eq!(neighbor_tab(&items, "all", -1), Some("spam"));
+        // 当前值不在列表里时从第一项起算
+        assert_eq!(neighbor_tab(&items, "missing", 1), Some("pending"));
+        assert_eq!(neighbor_tab(&[], "all", 1), None);
     }
 }

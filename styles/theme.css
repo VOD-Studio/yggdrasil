@@ -51,6 +51,8 @@
   --color-on-danger: #ffffff;
   --color-success: #2f6f4f;
   --color-success-soft: #e7f1ea;
+  --color-warning: #8a5a0b;
+  --color-warning-soft: #f6ecd8;
 
   /* 阴影：发丝线环 + 极淡投影。 */
   --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.04);
@@ -127,6 +129,8 @@
     --color-on-danger: #1f0b0b;
     --color-success: #8fcfae;
     --color-success-soft: rgb(143 207 174 / 0.12);
+    --color-warning: #e8c27a;
+    --color-warning-soft: rgb(232 194 122 / 0.13);
 
     --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.3);
     --shadow-md: 0 2px 10px rgb(0 0 0 / 0.35), 0 1px 2px rgb(0 0 0 / 0.3);

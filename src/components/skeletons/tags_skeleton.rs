@@ -46,7 +46,7 @@ pub fn TagPostsLoading() -> Element {
     rsx! {
         section { class: "tag-loading", aria_label: "主题文章", aria_busy: "true",
             p { class: "sr-only", role: "status", "正在加载文章，请稍候。" }
-            DelayedSkeleton { pulse: false,
+            DelayedSkeleton {
                 div { class: "tag-skeleton", aria_hidden: "true", inert: true,
                     div { class: "tag-toolbar",
                         div { class: "tag-collection-meta",

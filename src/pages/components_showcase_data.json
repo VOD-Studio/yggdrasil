@@ -477,7 +477,7 @@
       "group": "action",
       "summary": "在不同视角之间，自然地切换。",
       "states": "当前 · 切换",
-      "description": "切换列表的筛选条件，用轻缓移动的底线表达当前选项。",
+      "description": "分段控件：胶囊轨道里的一组选项，选中项是浮起的滑块，切换时以弹簧滑到新位置。",
       "props": [
         [
           "items",
@@ -496,16 +496,26 @@
           "EventHandler<String>",
           "必填",
           "切换后返回新值。"
+        ],
+        [
+          "aria_label",
+          "Option<&'static str>",
+          "None",
+          "选项卡组的无障碍名称。"
         ]
       ],
       "keys": [
         [
-          "Tab",
-          "移动焦点"
+          "← / →",
+          "切换到相邻选项"
         ],
         [
-          "Space / Enter",
-          "切换筛选"
+          "Home / End",
+          "切换到首个或末个选项"
+        ],
+        [
+          "Tab",
+          "进入或离开选项卡组"
         ]
       ],
       "source": "src/components/ui.rs",
@@ -520,7 +530,7 @@
       "group": "action",
       "summary": "每一次翻页，都是一次继续。",
       "states": "前台 · 后台 · 跳页",
-      "description": "为前后台列表提供一致的上一页、下一页与页码信息，支持路由和回调两种方式。",
+      "description": "为前后台列表提供一致的上一页、下一页与页码信息，按钮为小号描边样式，支持路由和回调两种方式。",
       "props": [
         [
           "current_page",
@@ -829,7 +839,7 @@
       "group": "display",
       "summary": "用一个轻巧的标记，交代当前状态。",
       "states": "颜色 · 文案",
-      "description": "以紧凑标记表达状态，颜色由调用方按具体语义提供。",
+      "description": "以紧凑的胶囊标记表达状态，语气由调用方按具体含义选择。",
       "props": [
         [
           "label",
@@ -841,12 +851,12 @@
           "color_class",
           "&'static str",
           "必填",
-          "背景与文字颜色类。"
+          "语气类：badge-success、badge-warning、badge-danger、badge-clay，空串为中性。"
         ]
       ],
       "keys": [],
       "source": "src/components/ui.rs",
-      "code": "rsx! {\n    StatusBadge {\n        color_class: \"bg-green-500/10 text-green-600\",\n        label: \"已发布\",\n    }\n}",
+      "code": "rsx! {\n    StatusBadge { color_class: \"badge-success\", label: \"已发布\" }\n}",
       "preview_mode": "static",
       "usage_kind": "rust"
     },
@@ -857,7 +867,7 @@
       "group": "display",
       "summary": "让零散的内容，有迹可循。",
       "states": "描边 · 软底 · 文字",
-      "description": "将标签展示为可跳转的胶囊或文字，适配文章卡片、归档与标签列表。",
+      "description": "将标签展示为可跳转的胶囊或文字：默认浅灰胶囊，solid 为陶土浅底，适配文章卡片、归档与标签列表。",
       "props": [
         [
           "label",
@@ -912,7 +922,7 @@
       "group": "display",
       "summary": "一张头像，也有温柔的替补。",
       "states": "图片 · 首字 · 树芽",
-      "description": "显示用户头像，无图片时回退为名字首字，图片加载失败时显示树芽。",
+      "description": "显示用户头像，无图片时回退为名字首字（陶土浅底），图片加载失败时显示图片占位。",
       "props": [
         [
           "name",
@@ -1008,7 +1018,7 @@
       "group": "loading",
       "summary": "内容到来之前，先让轮廓出现。",
       "states": "尺寸 · 动效",
-      "description": "用基础矩形占据内容加载后的空间，可以组合出文字、图片等轮廓。",
+      "description": "用柔和扫光的矩形占据内容加载后的空间，可以组合出文字、图片等轮廓；减少动态效果时静止。",
       "props": [
         [
           "class",
@@ -1026,7 +1036,7 @@
           "animate",
           "bool",
           "true",
-          "是否显示脉冲动画。"
+          "是否显示扫光动画。"
         ]
       ],
       "keys": [],

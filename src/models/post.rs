@@ -32,13 +32,11 @@ impl PostStatus {
         }
     }
 
-    /// 返回状态徽章在 light/dark 模式下的 Tailwind 背景与颜色类。
+    /// 状态徽章的语气类（配合 `.badge`）：已发布为成功色，草稿为中性。
     pub fn badge_class(&self) -> &'static str {
         match self {
-            PostStatus::Published => {
-                "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300"
-            }
-            PostStatus::Draft => "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400",
+            PostStatus::Published => "badge-success",
+            PostStatus::Draft => "",
         }
     }
 
@@ -160,8 +158,8 @@ impl PostListItem {
     /// 返回状态文本在 light/dark 模式下的 Tailwind 颜色类。
     pub fn status_class(&self) -> &'static str {
         match self.status {
-            PostStatus::Published => "text-green-600 dark:text-green-400",
-            PostStatus::Draft => "text-gray-400 dark:text-gray-500",
+            PostStatus::Published => "text-success",
+            PostStatus::Draft => "text-fg-3",
         }
     }
 }
@@ -340,21 +338,15 @@ mod tests {
     fn post_list_item_status_class_returns_non_empty() {
         let mut post = sample_post_list_item();
         post.status = PostStatus::Published;
-        assert_eq!(post.status_class(), "text-green-600 dark:text-green-400");
+        assert_eq!(post.status_class(), "text-success");
         post.status = PostStatus::Draft;
-        assert_eq!(post.status_class(), "text-gray-400 dark:text-gray-500");
+        assert_eq!(post.status_class(), "text-fg-3");
     }
 
     #[test]
     fn post_status_badge_class_matches_status() {
-        assert_eq!(
-            PostStatus::Published.badge_class(),
-            "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300"
-        );
-        assert_eq!(
-            PostStatus::Draft.badge_class(),
-            "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400"
-        );
+        assert_eq!(PostStatus::Published.badge_class(), "badge-success");
+        assert_eq!(PostStatus::Draft.badge_class(), "");
     }
 
     #[test]

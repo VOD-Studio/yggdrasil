@@ -104,18 +104,12 @@ impl AssetRefPostStatus {
         }
     }
 
-    /// 状态徽标（label, class）：已发布不显示徽标，返回 None。
+    /// 状态徽标（label, 语气类）：已发布不显示徽标，返回 None；语气类配合 `.badge`。
     pub fn badge(&self) -> Option<(&'static str, &'static str)> {
         match self {
             Self::Published => None,
-            Self::Draft => Some((
-                "草稿",
-                "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400",
-            )),
-            Self::Trashed => Some((
-                "回收站",
-                "bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400",
-            )),
+            Self::Draft => Some(("草稿", "")),
+            Self::Trashed => Some(("回收站", "badge-danger")),
         }
     }
 }

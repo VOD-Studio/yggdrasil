@@ -1,6 +1,6 @@
 //! 骨架屏原子组件
 //!
-//! 提供通用的脉冲动画占位块，供各页面骨架屏组合使用。
+//! 提供通用的扫光占位块，供各页面骨架屏组合使用。
 
 use dioxus::prelude::*;
 
@@ -9,28 +9,27 @@ use dioxus::prelude::*;
 /// Props：
 /// - `class`：Tailwind CSS 类，控制尺寸与形状
 /// - `style`：可选的内联样式字符串
-/// - `animate`：是否带 `animate-pulse` 呼吸动画（缺省 `true`）。少数骨架屏在
-///   切换动画/骨架屏截断场景需要关闭，避免动画被截断显得突兀。
+/// - `animate`：是否带扫光动画（缺省 `true`）。少数骨架屏在切换动画/骨架屏截断
+///   场景需要关闭，避免动画被截断显得突兀。
 ///
-/// 默认带有 `animate-pulse` 动画与半透明的占位背景。
+/// 外观见 ui.css 的 `.skeleton`：`ink-1` 到 `ink-2` 的柔和扫光，减少动态效果时静止。
 #[component]
 pub fn SkeletonBox(
     class: &'static str,
     style: Option<&'static str>,
     #[props(default = true)] animate: bool,
 ) -> Element {
-    let pulse = if animate { " animate-pulse" } else { "" };
     rsx! {
         div {
-            class: "bg-paper-tertiary/30 dark:bg-gray-600{pulse} {class}",
+            class: "skeleton {class}",
+            "data-static": (!animate).then_some("true"),
             style: style.unwrap_or(""),
         }
     }
 }
 
-/// 通用骨架「幽灵卡片」外壳：半透明背景 + 圆角 + 描边，供各页面骨架屏包裹
-/// 内容占位（列表行、表格、日志区等）。收敛此前散落在各骨架屏文件里手打的
-/// 同一段 `bg-[var(--color-paper-entry)]/40 rounded-2xl border ...` 前缀。
+/// 通用骨架卡片外壳：与真实卡片同为 `.panel`，供各页面骨架屏包裹内容占位
+/// （列表行、表格、日志区等），数据到达后外框不跳动。
 ///
 /// Props：
 /// - `class`：追加类（内边距、间距、`overflow-hidden`、`shadow-xs` 等按调用方需要传入）
@@ -40,7 +39,7 @@ pub fn SkeletonCard(#[props(default)] class: Option<&'static str>, children: Ele
     let extra = class.unwrap_or_default();
     rsx! {
         div {
-            class: "bg-[var(--color-paper-entry)]/40 rounded-2xl border border-[var(--color-paper-border)]/70 {extra}",
+            class: "panel {extra}",
             {children}
         }
     }
@@ -90,7 +89,7 @@ pub fn SkeletonTable(columns: Vec<SkeletonTableColumn>, rows: usize) -> Element 
     rsx! {
         table { class: "w-full text-sm",
             thead {
-                tr { class: "bg-[var(--color-paper-entry)]/80 border-b border-[var(--color-paper-border)]/70",
+                tr { class: "border-b border-hairline",
                     for (i, col) in columns.iter().enumerate() {
                         th { key: "{i}", class: col.header_class,
                             SkeletonBox { class: col.header_box_class }
@@ -100,7 +99,7 @@ pub fn SkeletonTable(columns: Vec<SkeletonTableColumn>, rows: usize) -> Element 
             }
             tbody {
                 for r in 0..rows {
-                    tr { key: "{r}", class: "border-b border-[var(--color-paper-border)]/60 last:border-0",
+                    tr { key: "{r}", class: "border-b border-hairline last:border-0",
                         for (i, col) in columns.iter().enumerate() {
                             td { key: "{i}", class: col.cell_class,
                                 match col.cell_shape {

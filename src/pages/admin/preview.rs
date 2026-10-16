@@ -124,7 +124,7 @@ pub fn PostPreview(slug: String) -> Element {
             div { class: "flex flex-wrap items-center justify-between gap-3 mb-6 p-3 rounded-2xl bg-[var(--color-paper-entry)] border border-[var(--color-paper-border)]",
                 div { class: "flex items-center gap-2 text-sm text-paper-secondary",
                     span { "预览模式" }
-                    span { class: "px-2 py-0.5 rounded-full text-xs font-medium {post.status.badge_class()}",
+                    span { class: "badge {post.status.badge_class()}",
                         "{post.status.label()}"
                     }
                 }

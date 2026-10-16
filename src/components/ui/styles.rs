@@ -3,15 +3,11 @@
 // 样式常量
 // ===========================================================================
 
-/// Admin 卡片容器：内容档圆角（16px），作为主面板内的内容卡片，与外壳 32px 形成层次。
-///
-/// 用裸 `transition`（Tailwind v4 默认列表含 colors/transform/box-shadow/opacity）而非
-/// `transition-colors`：编译产物中 `.transition-colors` 排在 `.transition-all` 之后，
-/// 同层同优先级会覆盖组件追加的 `transition-all`，导致 hover 位移/阴影瞬时跳变。
-pub const ADMIN_CARD_CLASS: &str = "bg-[var(--color-paper-entry)] rounded-2xl shadow-sm border border-transparent hover:border-[var(--color-paper-border)] transition";
+/// 后台卡片：单层发丝线边框的白卡（`.panel`，12px 圆角）。
+pub const ADMIN_CARD_CLASS: &str = "panel";
 
-/// Admin 表格容器：内容档圆角（16px），与卡片一致。
-pub const ADMIN_TABLE_CLASS: &str = "bg-[var(--color-paper-entry)] rounded-2xl shadow-sm border border-transparent hover:border-[var(--color-paper-border)] transition overflow-hidden";
+/// 后台表格容器：与卡片同外观，裁掉表格溢出的圆角。
+pub const ADMIN_TABLE_CLASS: &str = "panel overflow-hidden";
 
 /// 行内加载 spinner：环形渐变 + 自旋动画，用 currentColor 继承文字色。
 ///
@@ -19,11 +15,12 @@ pub const ADMIN_TABLE_CLASS: &str = "bg-[var(--color-paper-entry)] rounded-2xl s
 /// Tailwind 类（如 `w-3.5 h-3.5`）控制。源文件 `public/icons/90-ring-with-gradient.svg`。
 pub const SPINNER_SVG: &str = r#"<svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="yggSpinnerGrad"><stop offset="0%" stop-color="currentColor" stop-opacity="1"/><stop offset="100%" stop-color="currentColor" stop-opacity="0.25"/></linearGradient></defs><style>@keyframes yggSpin { to { transform: rotate(360deg); } } .ygg-spinner-circle { transform-origin: 50% 50%; stroke: url(#yggSpinnerGrad); fill: none; animation: yggSpin .5s infinite linear; }</style><circle cx="10" cy="10" r="8" class="ygg-spinner-circle" stroke-width="2"/></svg>"#;
 
+/// 徽章底座（`.badge`，中性色）；语气追加 `badge-clay` / `badge-success` /
+/// `badge-warning` / `badge-danger`。
 #[allow(dead_code)]
-pub const BADGE_BASE: &str =
-    "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap";
-pub const MEDIA_BADGE_BASE: &str =
-    "inline-flex items-center px-2 py-0.5 rounded-lg text-[10px] font-mono font-medium whitespace-nowrap";
+pub const BADGE_BASE: &str = "badge";
+/// 素材卡片上的等宽小徽章（格式、尺寸）。
+pub const MEDIA_BADGE_BASE: &str = "badge badge-mono";
 
 // --- 按钮 ---
 //

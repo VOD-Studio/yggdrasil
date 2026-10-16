@@ -4,12 +4,12 @@ use super::styles::BADGE_BASE;
 use dioxus::prelude::*;
 /// 状态徽章组件。
 ///
-/// 外层固定 `BADGE_BASE`，颜色类由调用方传入。之所以用 `color_class` prop
-/// 而非枚举变体，是因为部分场景（如回收站剩余天数）的颜色由动态逻辑决定
-/// （>7 天中性 / ≤7 天主题绿 / ≤0 琥珀），硬编码 variant 反而不够灵活。
+/// 外层固定 `.badge`，语气类由调用方传入（`badge-success`、`badge-warning` 等，
+/// 空串为中性）。之所以用 `color_class` prop 而非枚举变体，是因为部分场景
+/// （如回收站剩余天数）的语气由动态逻辑决定，硬编码 variant 反而不够灵活。
 ///
 /// Props：
-/// - `color_class`：背景与文字颜色类（如 `post.status.badge_class()` 的返回值）
+/// - `color_class`：语气类（如 `post.status.badge_class()` 的返回值）
 /// - `label`：徽章文本
 #[component]
 pub fn StatusBadge(color_class: &'static str, label: String) -> Element {
@@ -26,7 +26,7 @@ pub fn ImagePlaceholder(class: &'static str) -> Element {
     }
 }
 
-/// 用户头像：加载失败显示图片占位，无图回退展示名首字符（accent 软底）。
+/// 用户头像：加载失败显示图片占位，无图回退展示名首字符（陶土浅底）。
 ///
 /// 头像三态（图片 / 占位 / 首字符）的统一实现，调用方经 `class` 控制尺寸与形状
 /// （须含 `w-* h-* rounded-full` 与字号如 `text-xs`）。使用处：后台侧栏
@@ -49,7 +49,7 @@ pub fn UserAvatar(name: String, avatar_url: Option<String>, class: &'static str)
     match avatar_url.filter(|u| !u.trim().is_empty()) {
         Some(url) if failed_url.read().as_ref() == Some(&url) => rsx! {
             span {
-                class: "{class} flex items-center justify-center bg-paper-entry text-paper-tertiary",
+                class: "{class} flex items-center justify-center bg-ink-1 text-fg-3",
                 role: "img",
                 aria_label: "{name} 的头像",
                 ImagePlaceholder { class: "w-1/2 h-1/2" }
@@ -84,7 +84,7 @@ pub fn UserAvatar(name: String, avatar_url: Option<String>, class: &'static str)
             }
         }
         None => rsx! {
-            span { class: "{class} flex items-center justify-center bg-[var(--color-paper-accent-soft)] text-[var(--color-paper-accent)] font-bold select-none",
+            span { class: "{class} flex items-center justify-center bg-clay-soft text-clay-text font-semibold select-none",
                 "{initial}"
             }
         },
