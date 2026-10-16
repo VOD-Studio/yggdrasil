@@ -148,10 +148,9 @@ button.note-tag { cursor: pointer; }
 .notes-editor-side .notes-editor-section > button:not(.note-read) { justify-self: start; margin-top: .15rem; }
 .notes-editor-side .note-read { display: inline-flex; align-items: center; line-height: 1.5; margin: 0; padding: 0; }
 .notes-editor-side .notes-editor-history-toggle { justify-self: start; }
-.notes-editor-side .notes-editor-danger { border-top-color: color-mix(in srgb, #f38ba8 22%, var(--color-paper-border)); }
+.notes-editor-side .notes-editor-danger { border-top-color: color-mix(in srgb, var(--color-danger) 22%, var(--color-paper-border)); }
 .notes-status { color: var(--color-paper-secondary); font-size: .75rem; }
-.notes-error { color: #c5304c; background: color-mix(in srgb, #c5304c 8%, transparent); border-radius: 10px; padding: .8rem 1rem; margin: 1rem 0; font-size: .85rem; }
-.dark .notes-error { color: #f38ba8; }
+.notes-error { color: var(--color-danger); background: var(--color-danger-soft); border-radius: 10px; padding: .8rem 1rem; margin: 1rem 0; font-size: .85rem; }
 .notes-editor-history { display: grid; gap: .5rem; max-height: 240px; overflow-y: auto; }
 .notes-editor-history button { text-align: left; cursor: pointer; padding: .5rem; background: var(--color-paper-entry); border-radius: 6px; }
 .notes-page :is(button,a):focus-visible, .notes-admin :is(button,a):focus-visible { outline: 2px solid var(--color-paper-accent); outline-offset: 4px; }

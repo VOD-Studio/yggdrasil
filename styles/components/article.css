@@ -344,13 +344,13 @@
     background-color: var(--color-paper-accent);
     border-color: var(--color-paper-accent);
     background-size: 0.78rem;
-    /* 亮色：中绿 #40a02b 底 + 白对勾（对比 ≥ 4.5:1） */
+    /* 亮色：clay-text 底 + 白对勾（对比 ≥ 4.5:1） */
     background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2016%2016'%20fill='none'%20stroke='%23ffffff'%20stroke-width='2.2'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d='M3.5%208.5l3%203%206-6.5'/%3E%3C/svg%3E");
   }
 
-  /* 暗色：浅绿 #a6e3a1 底上白对勾对比不足，改深色对勾（主题底色 #1e1e2e） */
+  /* 暗色：浅陶土底上白对勾对比不足，改深色对勾（on-clay #1a0f0a） */
   .dark .md-content li > input[type="checkbox"]:checked {
-    background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2016%2016'%20fill='none'%20stroke='%231e1e2e'%20stroke-width='2.2'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d='M3.5%208.5l3%203%206-6.5'/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2016%2016'%20fill='none'%20stroke='%231a0f0a'%20stroke-width='2.2'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d='M3.5%208.5l3%203%206-6.5'/%3E%3C/svg%3E");
   }
   .md-content hr {
     margin: 30px 0;

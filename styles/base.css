@@ -155,8 +155,7 @@
   .mcp-copy-check { stroke-dasharray: 24; animation: mcp-copy-check 320ms ease-out; }
   .mcp-copy-arrow { transition: transform 200ms ease; }
   .mcp-copy-button:hover:enabled .mcp-copy-arrow { transform: translate(2px, -2px); }
-  .mcp-copy-error { max-width: 20rem; white-space: normal; color: #d20f39; font-size: 0.75rem; }
-  .dark .mcp-copy-error { color: #f38ba8; }
+  .mcp-copy-error { max-width: 20rem; white-space: normal; color: var(--color-danger); font-size: 0.75rem; }
   @keyframes mcp-copy-check { from { stroke-dashoffset: 24; } to { stroke-dashoffset: 0; } }
   @keyframes mcp-copy-countdown { from { transform: scaleX(1); } to { transform: scaleX(0); } }
   @media (max-width: 640px) {
@@ -186,17 +185,30 @@
   html {
     scrollbar-gutter: stable;
     scroll-behavior: smooth;
-    background-color: var(--color-paper-theme);
+    background-color: var(--color-surface-0);
   }
 
   body {
-    background-color: var(--color-paper-theme);
-    color: var(--color-paper-primary);
-    font-family:
-      -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC",
-      "PingFang SC", "Microsoft YaHei", sans-serif;
+    background-color: var(--color-surface-0);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    /* 中文与西文、数字相接处自动留 1/8 字宽；行首全角标点去掉前半空白。
+       不支持的浏览器保持原样，内容里不手动补空格。 */
+    text-autospace: normal;
+    text-spacing-trim: trim-start;
+  }
+
+  /* 中文标题不收字距；两行标题均分字数，段尾避开孤字。 */
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
   }
 
   ::selection {
@@ -380,7 +392,7 @@
   /* Minimalist custom scrollbars */
   * {
     scrollbar-width: thin;
-    scrollbar-color: var(--color-paper-border) transparent;
+    scrollbar-color: var(--color-ink-3) transparent;
   }
 
   ::-webkit-scrollbar {
@@ -393,30 +405,11 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    background-color: var(--color-paper-border);
+    background-color: var(--color-ink-3);
     border-radius: 10px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background-color: var(--color-paper-tertiary);
-  }
-
-  .dark {
-    /* Catppuccin Mocha（暗色）。accent-soft 带绿调、accent-2-soft 带 teal 调，
-       在 surface0 暗底上透出微弱主/次强调色。 */
-    --color-paper-theme: #1e1e2e;
-    --color-paper-entry: #181825;
-    --color-paper-primary: #cdd6f4;
-    --color-paper-secondary: #bac2de;
-    --color-paper-tertiary: #6c7086;
-    --color-paper-content: #a6adc8;
-    --color-paper-code-block: #313244;
-    --color-paper-code-bg: #313244;
-    --color-paper-border: #45475a;
-    --color-paper-accent: #a6e3a1;
-    --color-paper-selection: color-mix(in srgb, var(--color-paper-accent) 30%, transparent);
-    --color-paper-accent-soft: #1e2e22;
-    --color-paper-accent-2: #94e2d5;
-    --color-paper-accent-2-soft: #1e2a28;
+    background-color: var(--color-ink-4);
   }
 }

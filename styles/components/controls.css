@@ -98,9 +98,9 @@
     transition: stroke-dashoffset 0.28s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
-  /* 暗色对勾：浅绿底配深色描边对比充足 */
+  /* 暗色对勾：浅陶土底配深色描边对比充足 */
   .dark .ygg-cb-check {
-    stroke: #1e1e2e;
+    stroke: var(--color-on-clay);
   }
 
   /* 勾选态：方框填充 + 对勾描边绘制 + SVG 弹入 */

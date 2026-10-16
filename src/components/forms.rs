@@ -15,7 +15,7 @@ pub const INPUT_INLINE_CLASS: &str = "flex-1 min-w-0 px-4 py-2 border border-pap
 ///
 /// 用 `text-paper-theme` 而非硬编码 `text-white`：`--color-paper-theme` 随主题反转
 /// （浅色主题近白、深色主题近黑），配合深色主题下偏浅的 `--color-paper-accent`
-/// 背景色（`#a6e3a1` 柔和绿）才能保住文字对比度——硬编码白字在深色主题下几乎不可读。
+/// 背景色（`#e08264` 浅陶土）才能保住文字对比度——硬编码白字在深色主题下几乎不可读。
 pub const BUTTON_PRIMARY_CLASS: &str = "w-full py-2.5 px-4 bg-paper-accent text-paper-theme font-medium rounded-full hover:brightness-110 active:scale-[0.98] transition-all duration-200 cursor-pointer";
 
 /// FormSelect 实例 id 计数器（跨泛型单例化全局唯一）。
