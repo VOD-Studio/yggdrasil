@@ -856,6 +856,8 @@ fn preview_route(slug: &str) -> Option<PreviewRoute> {
         | "user-avatar"
         | "sprout-placeholder"
         | "icon"
+        | "button"
+        | "icon-button"
         | "empty-state"
         | "skeleton-box"
         | "skeleton-card"
@@ -1039,6 +1041,36 @@ fn LiveComponentPreview(
                     id: Some("showcase-title".to_string()), r#type: "text", placeholder: "点击标签也能聚焦这里",
                     value: input_value(), oninput: move |value| input_value.set(value),
                 }
+            }
+        },
+        "Button" => rsx! {
+            div { class: "flex flex-col gap-4",
+                div { class: "showcase-preview-row flex-wrap",
+                    crate::components::ui::Button { onclick: move |_| clicked.set(true), if clicked() { "已发布" } else { "发布文章" } }
+                    crate::components::ui::Button { variant: crate::components::ui::ButtonVariant::Secondary, icon: crate::components::ui::IconName::Save, "保存草稿" }
+                    crate::components::ui::Button { variant: crate::components::ui::ButtonVariant::Outline, "预览" }
+                    crate::components::ui::Button { variant: crate::components::ui::ButtonVariant::Ghost, "取消" }
+                    crate::components::ui::Button { variant: crate::components::ui::ButtonVariant::Danger, "永久删除" }
+                    crate::components::ui::Button { variant: crate::components::ui::ButtonVariant::Secondary, loading: true, "处理中" }
+                }
+                div { class: "showcase-preview-row flex-wrap items-center",
+                    crate::components::ui::Button { size: crate::components::ui::ButtonSize::Xs, variant: crate::components::ui::ButtonVariant::Secondary, "XS" }
+                    crate::components::ui::Button { size: crate::components::ui::ButtonSize::Sm, variant: crate::components::ui::ButtonVariant::Secondary, "SM" }
+                    crate::components::ui::Button { variant: crate::components::ui::ButtonVariant::Secondary, "MD" }
+                    crate::components::ui::Button { size: crate::components::ui::ButtonSize::Lg, variant: crate::components::ui::ButtonVariant::Secondary, "LG" }
+                    crate::components::ui::Button { variant: crate::components::ui::ButtonVariant::DangerSoft, icon: crate::components::ui::IconName::Trash, "清空回收站" }
+                }
+            }
+        },
+        "IconButton" => rsx! {
+            div { class: "showcase-preview-row",
+                crate::components::ui::IconButton { icon: crate::components::ui::IconName::Copy, label: "复制链接" }
+                crate::components::ui::IconButton { icon: crate::components::ui::IconName::Search, label: "搜索", variant: crate::components::ui::ButtonVariant::Secondary }
+                crate::components::ui::IconButton {
+                    icon: crate::components::ui::IconName::PanelLeft, label: "收起侧栏",
+                    pressed: Some(clicked()), onclick: move |_| clicked.set(!clicked()),
+                }
+                crate::components::ui::IconButton { icon: crate::components::ui::IconName::Trash, label: "删除", disabled: true }
             }
         },
         "LoadingButton" => rsx! {

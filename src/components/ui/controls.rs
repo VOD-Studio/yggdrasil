@@ -1,21 +1,153 @@
 //! Buttons and native selection controls.
-use super::styles::{BTN_PRIMARY, BTN_PRIMARY_SM, SPINNER_SVG};
+use super::icons::{Icon, IconName};
 use dioxus::prelude::*;
-/// 主操作按钮，内置 loading spinner 叠加（统一三态）。
+
+/// 按钮样式，对应 styles/components/ui.css 的 `.btn-*`。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ButtonVariant {
+    /// 陶土底：一屏只放一个的主操作。
+    #[default]
+    Primary,
+    /// 浅灰底：并列的次要操作。
+    Secondary,
+    /// 透明底：取消、工具栏里的弱操作。
+    Ghost,
+    /// 发丝线描边：与主操作并排、需要一点分量的操作。
+    Outline,
+    /// 红底：不可撤销的删除。
+    Danger,
+    /// 浅红底：危险但可撤销，或危险操作的入口。
+    DangerSoft,
+}
+
+impl ButtonVariant {
+    const fn class(self) -> &'static str {
+        match self {
+            ButtonVariant::Primary => "btn-primary",
+            ButtonVariant::Secondary => "btn-secondary",
+            ButtonVariant::Ghost => "btn-ghost",
+            ButtonVariant::Outline => "btn-outline",
+            ButtonVariant::Danger => "btn-danger",
+            ButtonVariant::DangerSoft => "btn-danger-soft",
+        }
+    }
+}
+
+/// 按钮尺寸：XS 26px、SM 30px、MD 34px、LG 40px。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ButtonSize {
+    Xs,
+    Sm,
+    #[default]
+    Md,
+    Lg,
+}
+
+impl ButtonSize {
+    const fn class(self) -> &'static str {
+        match self {
+            ButtonSize::Xs => "btn-xs",
+            ButtonSize::Sm => "btn-sm",
+            ButtonSize::Md => "",
+            ButtonSize::Lg => "btn-lg",
+        }
+    }
+
+    const fn icon_px(self) -> u32 {
+        match self {
+            ButtonSize::Xs => 14,
+            ButtonSize::Sm | ButtonSize::Md => 16,
+            ButtonSize::Lg => 18,
+        }
+    }
+}
+
+/// 组合按钮类名，供 `Link` 等需要按钮外观的非按钮元素使用。
+pub fn button_class(variant: ButtonVariant, size: ButtonSize) -> String {
+    format!("btn {} {}", size.class(), variant.class())
+}
+
+/// 通用按钮。
 ///
-/// 用于全站所有主题绿 CTA（执行 / 刷新 / 创建备份 / 发布 / 保存设置）。
-/// 三态：
-/// - `loading=true`：主题绿底 + 文字隐藏（`opacity-0`）+ spinner 绝对居中
-///   （按钮宽度不变，避免加载时布局抖动）
-/// - `disabled=true`（且未 loading）：灰色底（`bg-paper-tertiary`）+
-///   `cursor-not-allowed`
-/// - 正常：主题绿底 + `hover:brightness-110` + `active:scale-[0.98]`
+/// - `icon` 放在文字前；`loading` 时文字隐去、转圈居中，按钮宽度不变，并标 `aria-busy`。
+/// - `loading` 或 `disabled` 时不响应点击。
+#[component]
+pub fn Button(
+    #[props(default)] variant: ButtonVariant,
+    #[props(default)] size: ButtonSize,
+    #[props(default)] icon: Option<IconName>,
+    #[props(default)] loading: bool,
+    #[props(default)] disabled: bool,
+    #[props(default = "button")] r#type: &'static str,
+    #[props(default)] class: String,
+    #[props(default)] onclick: Option<EventHandler<MouseEvent>>,
+    children: Element,
+) -> Element {
+    let base = button_class(variant, size);
+    rsx! {
+        button {
+            class: "{base} {class}",
+            r#type,
+            disabled: disabled || loading,
+            "aria-busy": loading.then_some("true"),
+            onclick: move |e| {
+                if let Some(handler) = &onclick {
+                    handler.call(e);
+                }
+            },
+            span { class: "btn-label inline-flex items-center gap-[inherit]",
+                if let Some(icon) = icon {
+                    Icon { name: icon, size: size.icon_px() }
+                }
+                {children}
+            }
+            if loading {
+                span { class: "btn-spinner",
+                    Icon { name: IconName::LoaderCircle, size: size.icon_px() }
+                }
+            }
+        }
+    }
+}
+
+/// 只有图标的方形按钮。`label` 必填：作为读屏名称，同时显示为悬浮提示。
+#[component]
+pub fn IconButton(
+    icon: IconName,
+    label: String,
+    #[props(default = ButtonVariant::Ghost)] variant: ButtonVariant,
+    #[props(default)] size: ButtonSize,
+    #[props(default)] disabled: bool,
+    #[props(default)] pressed: Option<bool>,
+    #[props(default)] class: String,
+    #[props(default)] onclick: Option<EventHandler<MouseEvent>>,
+) -> Element {
+    let base = button_class(variant, size);
+    rsx! {
+        button {
+            class: "{base} btn-icon {class}",
+            r#type: "button",
+            disabled,
+            "aria-label": "{label}",
+            "aria-pressed": pressed.map(|p| if p { "true" } else { "false" }),
+            title: "{label}",
+            onclick: move |e| {
+                if let Some(handler) = &onclick {
+                    handler.call(e);
+                }
+            },
+            Icon { name: icon, size: size.icon_px() }
+        }
+    }
+}
+
+/// 主操作按钮，内置 loading 转圈（旧接口，内部用 `Button` 实现）。
 ///
 /// Props：
-/// - `label`：正常态显示的文案（loading 时隐藏，由 spinner 占位）
+/// - `label`：文案（loading 时隐去，转圈占位，宽度不变）
 /// - `loading`：是否处于加载态
 /// - `disabled`：是否禁用（loading 优先级更高）
-/// - `variant`：`"primary"`（默认，`px-5 py-2`）或 `"sm"`（`px-4 py-1.5`）
+/// - `variant`：`"primary"`（默认）或 `"sm"`（小号）
 /// - `onclick`：点击回调
 #[component]
 pub fn LoadingButton(
@@ -25,38 +157,18 @@ pub fn LoadingButton(
     #[props(default = "primary")] variant: &'static str,
     onclick: EventHandler<()>,
 ) -> Element {
-    let base = if variant == "sm" {
-        BTN_PRIMARY_SM
+    let size = if variant == "sm" {
+        ButtonSize::Sm
     } else {
-        BTN_PRIMARY
+        ButtonSize::Md
     };
-    // 尺寸随 base 常量而定；禁用态需要独立灰色配色（BTN_PRIMARY/_SM 未建模禁用态），
-    // 故仅在此分支手写尺寸 + 灰色板，正常态直接复用常量，避免两套配色定义分叉。
-    let class = if disabled && !loading {
-        let size = if variant == "sm" {
-            "px-4 py-1.5"
-        } else {
-            "px-5 py-2"
-        };
-        format!(
-            "relative inline-flex items-center justify-center {size} rounded-full text-sm font-medium transition-all bg-[var(--color-paper-tertiary)] text-[var(--color-paper-secondary)] cursor-not-allowed"
-        )
-    } else {
-        format!("relative {base}")
-    };
-
     rsx! {
-        button {
-            class: "{class}",
-            disabled: loading || disabled,
+        Button {
+            size,
+            loading,
+            disabled,
             onclick: move |_| onclick.call(()),
-            span { class: if loading { "opacity-0" } else { "" }, "{label}" }
-            if loading {
-                span {
-                    class: "absolute inset-0 flex items-center justify-center",
-                    dangerous_inner_html: SPINNER_SVG,
-                }
-            }
+            "{label}"
         }
     }
 }

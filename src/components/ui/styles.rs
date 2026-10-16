@@ -25,65 +25,49 @@ pub const BADGE_BASE: &str =
 pub const MEDIA_BADGE_BASE: &str =
     "inline-flex items-center px-2 py-0.5 rounded-lg text-[10px] font-mono font-medium whitespace-nowrap";
 
-// --- 实心小按钮（批量操作栏：通过 / 垃圾 / 删除） ---
+// --- 按钮 ---
+//
+// 样式定义在 styles/components/ui.css（`.btn` 系列）。新代码优先用 `Button` /
+// `IconButton` 组件；这些常量供 `Link`、`label` 等非按钮元素与旧页面沿用，
+// 页面重写时逐步收敛。
 
-/// 绿色实心小按钮（批量通过、批量恢复）。
-pub const BTN_SOLID_GREEN: &str =
-    "px-4 py-1.5 text-sm font-medium bg-green-500/10 text-green-600 dark:text-green-400 rounded-full hover:bg-green-500/20 transition-colors cursor-pointer";
-/// 琥珀色实心小按钮（批量标为垃圾）。
-pub const BTN_SOLID_AMBER: &str =
-    "px-4 py-1.5 text-sm font-medium bg-amber-500/10 text-amber-600 dark:text-amber-400 rounded-full hover:bg-amber-500/20 transition-colors cursor-pointer";
-/// 红色实心小按钮（批量删除、批量彻底删除）。
-pub const BTN_SOLID_RED: &str =
-    "px-4 py-1.5 text-sm font-medium bg-red-500/10 text-red-600 dark:text-red-400 rounded-full hover:bg-red-500/20 transition-colors cursor-pointer";
+/// 批量通过、批量恢复：小号次要按钮。
+pub const BTN_SOLID_GREEN: &str = "btn btn-sm btn-secondary";
+/// 批量标为垃圾：小号次要按钮。
+pub const BTN_SOLID_AMBER: &str = "btn btn-sm btn-secondary";
+/// 批量删除、批量彻底删除：小号浅红按钮。
+pub const BTN_SOLID_RED: &str = "btn btn-sm btn-danger-soft";
 
-// --- 文字小按钮（表格行内操作：通过 / 垃圾 / 删除 / 恢复） ---
-
+/// 表格行内的次要文字操作。
 #[allow(dead_code)]
-pub const BTN_TEXT_AMBER: &str = "text-xs text-amber-600 hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-300 transition-colors cursor-pointer";
+pub const BTN_TEXT_AMBER: &str = "btn btn-xs btn-ghost";
+/// 表格行内的危险文字操作。
 #[allow(dead_code)]
-pub const BTN_TEXT_RED: &str =
-    "text-xs text-red-500 hover:text-red-700 dark:hover:text-red-300 transition-colors cursor-pointer";
+pub const BTN_TEXT_RED: &str = "btn btn-xs btn-ghost text-danger";
 
-/// 弱化文字按钮（弹窗「取消」等次要取消操作）：无描边、无填充，悬浮转主色。
-pub const BTN_GHOST: &str =
-    "px-3 py-1.5 text-xs text-paper-secondary hover:text-paper-primary transition-colors cursor-pointer";
+/// 弱化按钮（弹窗「取消」等）：透明底，悬停浅灰底。
+pub const BTN_GHOST: &str = "btn btn-sm btn-ghost";
 
-// --- 次要按钮（Teal 第二色，ghost 描边风格，从属于主色 Green） ---
+/// 次要按钮：浅灰底。
+pub const BTN_SECONDARY: &str = "btn btn-secondary";
 
-/// 次要按钮：极简风次要操作。
-pub const BTN_SECONDARY: &str =
-    "px-6 py-2.5 rounded-full text-sm font-medium text-center text-[var(--color-paper-secondary)] bg-[var(--color-paper-entry)] hover:bg-[var(--color-paper-border)] hover:text-[var(--color-paper-primary)] active:scale-[0.98] transition-all cursor-pointer";
-
-// --- 主操作按钮（主题绿实心胶囊，全站统一 CTA） ---
-
-/// 主操作按钮：主题绿实心胶囊（用于 `<Link>`、无 loading 态的静态按钮）。
-pub const BTN_PRIMARY: &str =
-    "inline-flex items-center justify-center px-5 py-2 text-sm font-medium text-[var(--color-paper-theme)] bg-[var(--color-paper-accent)] rounded-full shadow-sm hover:brightness-110 active:scale-[0.98] transition-all cursor-pointer";
+/// 主操作按钮：陶土底（用于 `Link`、无 loading 态的静态按钮）。
+pub const BTN_PRIMARY: &str = "btn btn-primary";
 
 /// 小号主操作按钮：工具栏场景（刷新 / 导出 / 创建备份）。
-pub const BTN_PRIMARY_SM: &str =
-    "inline-flex items-center justify-center px-4 py-1.5 text-sm font-medium text-[var(--color-paper-theme)] bg-[var(--color-paper-accent)] rounded-full hover:brightness-110 active:scale-[0.98] transition-all cursor-pointer";
+pub const BTN_PRIMARY_SM: &str = "btn btn-sm btn-primary";
 
-// --- 描边按钮 ---
+/// 描边按钮：发丝线描边，透明底。
+pub const BTN_OUTLINE: &str = "btn btn-outline";
 
-/// 描边次要按钮（posts 重建、system 刷新列表）：`relative` 以承载 spinner 叠加层。
-pub const BTN_OUTLINE: &str =
-    "relative px-4 py-2 rounded-full text-sm font-medium text-paper-primary border border-paper-border hover:border-paper-accent hover:text-paper-accent transition-all cursor-pointer";
-
-/// 红色描边危险按钮（trash 清空回收站）。
-pub const BTN_DANGER_OUTLINE: &str =
-    "px-4 py-2 text-sm font-medium text-red-600 dark:text-red-400 border border-red-300 dark:border-red-900/50 rounded-full hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors cursor-pointer";
-
-// --- 图标按钮 ---
+/// 危险操作的弱化形式（清空回收站等）：浅红底红字。
+pub const BTN_DANGER_OUTLINE: &str = "btn btn-danger-soft";
 
 /// 关闭图标按钮（× 关闭提示条）。
-pub const BTN_CLOSE_ICON: &str =
-    "shrink-0 text-red-400 hover:text-red-600 cursor-pointer text-lg leading-none";
+pub const BTN_CLOSE_ICON: &str = "btn btn-xs btn-icon btn-ghost";
 
-/// 方形图标按钮（trash 步进 −/+）。
-pub const BTN_ICON: &str =
-    "w-9 h-9 flex items-center justify-center text-sm text-paper-secondary hover:text-paper-primary hover:bg-paper-theme cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-paper-accent/40";
+/// 方形图标按钮（步进 −/+ 等）。
+pub const BTN_ICON: &str = "btn btn-icon btn-ghost";
 
 // ===========================================================================
 // 组件

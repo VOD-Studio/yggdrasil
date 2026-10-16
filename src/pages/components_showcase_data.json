@@ -1653,6 +1653,58 @@
       "usage_kind": "rust"
     },
     {
+      "name": "Button",
+      "slug": "button",
+      "label": "按钮",
+      "group": "action",
+      "summary": "一次点击，一个明确的结果。",
+      "states": "五种样式 · 四种尺寸 · 加载 · 禁用",
+      "description": "陶土底的主按钮一屏只放一个；次要、描边与透明按钮承担其余操作，红色只留给删除。按下时缩到 0.98 并以弹簧回弹；加载时文字隐去、转圈居中，按钮宽度不变。",
+      "props": [
+        ["variant", "ButtonVariant", "Primary", "Primary / Secondary / Ghost / Outline / Danger / DangerSoft。"],
+        ["size", "ButtonSize", "Md", "Xs 26px、Sm 30px、Md 34px、Lg 40px。"],
+        ["icon", "Option<IconName>", "None", "文字前的图标。"],
+        ["loading", "bool", "false", "加载中：不响应点击，标 aria-busy。"],
+        ["disabled", "bool", "false", "禁用。"],
+        ["type", "&'static str", "\"button\"", "表单内提交时传 \"submit\"。"],
+        ["class", "String", "空", "附加类名。"],
+        ["onclick", "Option<EventHandler<MouseEvent>>", "None", "点击回调。"]
+      ],
+      "keys": [
+        ["Enter / Space", "触发按钮。"]
+      ],
+      "source": "src/components/ui/controls.rs",
+      "code": "rsx! {\n    Button { onclick: move |_| publish(), \"发布文章\" }\n    Button { variant: ButtonVariant::Secondary, icon: IconName::Save, \"保存草稿\" }\n    Button { variant: ButtonVariant::Danger, loading: deleting(), \"永久删除\" }\n}",
+      "preview_mode": "interactive",
+      "usage_kind": "rust"
+    },
+    {
+      "name": "IconButton",
+      "slug": "icon-button",
+      "label": "图标按钮",
+      "group": "action",
+      "summary": "省下文字，但不省下名字。",
+      "states": "透明 · 次要 · 按下 · 禁用",
+      "description": "只有图标的方形按钮，默认透明底。label 必填，作为读屏名称并显示为悬浮提示；切换类按钮可传 pressed 表示开合状态。",
+      "props": [
+        ["icon", "IconName", "必填", "图标。"],
+        ["label", "String", "必填", "读屏名称与悬浮提示。"],
+        ["variant", "ButtonVariant", "Ghost", "按钮样式。"],
+        ["size", "ButtonSize", "Md", "尺寸，按钮为正方形。"],
+        ["pressed", "Option<bool>", "None", "切换按钮的按下状态，输出 aria-pressed。"],
+        ["disabled", "bool", "false", "禁用。"],
+        ["class", "String", "空", "附加类名。"],
+        ["onclick", "Option<EventHandler<MouseEvent>>", "None", "点击回调。"]
+      ],
+      "keys": [
+        ["Enter / Space", "触发按钮。"]
+      ],
+      "source": "src/components/ui/controls.rs",
+      "code": "rsx! {\n    IconButton { icon: IconName::Copy, label: \"复制链接\", onclick: move |_| copy() }\n}",
+      "preview_mode": "interactive",
+      "usage_kind": "rust"
+    },
+    {
       "name": "Breadcrumbs",
       "slug": "breadcrumbs",
       "label": "面包屑",
