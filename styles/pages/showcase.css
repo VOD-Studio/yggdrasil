@@ -14,7 +14,7 @@
 .showcase select,
 .showcase input,
 .showcase-entry { outline-offset: 4px; }
-.showcase :is(a, button, select, input):not(.btn, .field, .field *, .switch, .select-trigger, .time-cell):focus-visible,
+.showcase :is(a, button, select, input):not(.btn, .field, .field *, .switch, .select-trigger, .time-cell, .menu-item, .segmented-item, .chip, .breadcrumb a):focus-visible,
 .showcase-entry:focus-visible { outline: 2px solid var(--color-paper-accent); }
 .showcase-breadcrumb { display: flex; align-items: center; gap: .75rem; color: var(--color-paper-secondary); font-size: .75rem; padding: 0 0 1.5rem; }
 .showcase-breadcrumb > span:not(:last-child) { opacity: .45; }

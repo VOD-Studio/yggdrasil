@@ -1767,6 +1767,70 @@
       "usage_kind": "rust"
     },
     {
+      "name": "Menu",
+      "slug": "menu",
+      "label": "操作菜单",
+      "group": "overlay",
+      "summary": "把不常用的操作，收进一个按钮里。",
+      "states": "展开 · 键盘移动 · 危险项 · 不可用项",
+      "description": "「⋯」等图标按钮触发的一列操作。打开后焦点落在第一项，↑/↓ 在可用项间移动，回车选中，Esc 关闭并把焦点还给触发按钮；删除类操作用红色，不可用项变淡并写明原因。手机上替代只在悬停时出现的操作。",
+      "props": [
+        ["label", "String", "必填", "触发按钮的读屏名称与悬浮提示。"],
+        ["items", "Vec<MenuItem>", "必填", "菜单项，用 MenuItem::new(id, 标签) 构造，可链式加 icon、danger、disabled、shortcut、separated。"],
+        ["on_select", "EventHandler<&'static str>", "必填", "选中某项时回传其 id。"],
+        ["icon", "IconName", "Ellipsis", "触发按钮图标。"],
+        ["size", "ButtonSize", "Sm", "触发按钮尺寸。"],
+        ["placement", "&'static str", "\"bottom\"", "菜单在下方或上方展开。"],
+        ["align", "&'static str", "\"end\"", "右对齐（end）或左对齐（start）。"]
+      ],
+      "keys": [
+        ["↓ / ↑", "打开菜单，或在可用项间移动"],
+        ["Home / End", "跳到首项或末项"],
+        ["Enter / Space", "执行当前项"],
+        ["Esc", "关闭并回到触发按钮"]
+      ],
+      "source": "src/components/ui/menu.rs",
+      "code": "rsx! {\n    Menu {\n        label: \"更多操作\",\n        items: vec![\n            MenuItem::new(\"edit\", \"编辑\").icon(IconName::Pencil),\n            MenuItem::new(\"copy\", \"复制链接\").icon(IconName::Link),\n            MenuItem::new(\"trash\", \"移入回收站\").icon(IconName::Trash).danger().separated(),\n        ],\n        on_select: move |id| handle(id),\n    }\n}",
+      "preview_mode": "interactive",
+      "usage_kind": "rust"
+    },
+    {
+      "name": "ToastRegion",
+      "slug": "toast",
+      "label": "提示",
+      "group": "overlay",
+      "summary": "做完一件事，轻声告诉你结果。",
+      "states": "说明 · 成功 · 错误 · 自动消失",
+      "description": "操作结果的短暂反馈，出现在屏幕底部居中，最多同时三条。成功与说明约 3.6 秒后消失，错误停留 6 秒；读屏软件会播报新提示。ToastRegion 已挂在应用根部，页面里用 use_toast() 发提示。",
+      "props": [],
+      "keys": [
+        ["Tab", "聚焦提示上的关闭按钮"]
+      ],
+      "source": "src/components/ui/feedback.rs",
+      "code": "let toast = use_toast();\nrsx! {\n    button { onclick: move |_| toast.success(\"已保存\"), \"保存\" }\n}",
+      "preview_mode": "interactive",
+      "usage_kind": "rust"
+    },
+    {
+      "name": "Breadcrumb",
+      "slug": "breadcrumb",
+      "label": "面包屑",
+      "group": "action",
+      "summary": "告诉你从哪里来，现在在哪里。",
+      "states": "链接 · 当前页 · 截断",
+      "description": "用斜线分隔的层级路径。前几级是链接，最后一级是当前页，过长时截断。",
+      "props": [
+        ["items", "Vec<Crumb<R>>", "必填", "层级列表，用 Crumb::link(标签, 路由) 与 Crumb::current(标签) 构造。"]
+      ],
+      "keys": [
+        ["Tab", "在链接之间移动"]
+      ],
+      "source": "src/components/ui/navigation.rs",
+      "code": "rsx! {\n    Breadcrumb::<Route> {\n        items: vec![\n            Crumb::link(\"关于\", Route::About {}),\n            Crumb::link(\"组件图鉴\", Route::ComponentShowcase {}),\n            Crumb::current(\"复选框\"),\n        ],\n    }\n}",
+      "preview_mode": "static",
+      "usage_kind": "rust"
+    },
+    {
       "name": "Breadcrumbs",
       "slug": "breadcrumbs",
       "label": "面包屑",

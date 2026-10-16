@@ -8,14 +8,18 @@
 
 mod controls;
 mod display;
+mod feedback;
 mod icons;
+mod menu;
 mod navigation;
 mod styles;
 mod surfaces;
 
 pub use controls::*;
 pub use display::*;
+pub use feedback::*;
 pub use icons::*;
+pub use menu::*;
 pub use navigation::*;
 pub use styles::*;
 pub use surfaces::*;

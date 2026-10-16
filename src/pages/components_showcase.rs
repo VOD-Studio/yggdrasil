@@ -859,6 +859,9 @@ fn preview_route(slug: &str) -> Option<PreviewRoute> {
         | "button"
         | "icon-button"
         | "number-input"
+        | "menu"
+        | "toast"
+        | "breadcrumb"
         | "empty-state"
         | "skeleton-box"
         | "skeleton-card"
@@ -1105,6 +1108,35 @@ fn LiveComponentPreview(
                     hint: "超过保留期的日志由后台任务自动清理。".to_string(),
                     onchange: move |v| number_value.set(v),
                 }
+            }
+        },
+        "Menu" => rsx! {
+            div { class: "flex flex-col items-center gap-3",
+                crate::components::ui::Menu {
+                    label: "更多操作",
+                    items: vec![
+                        crate::components::ui::MenuItem::new("edit", "编辑").icon(crate::components::ui::IconName::Pencil),
+                        crate::components::ui::MenuItem::new("copy", "复制链接").icon(crate::components::ui::IconName::Link).shortcut("⌘C"),
+                        crate::components::ui::MenuItem::new("archive", "归档").icon(crate::components::ui::IconName::Archive).disabled("已发布的文章不能归档"),
+                        crate::components::ui::MenuItem::new("trash", "移入回收站").icon(crate::components::ui::IconName::Trash).danger().separated(),
+                    ],
+                    on_select: move |id: &'static str| input_value.set(id.to_string()),
+                }
+                if !input_value().is_empty() {
+                    p { class: "text-xs text-fg-3 font-mono", "on_select: {input_value}" }
+                }
+            }
+        },
+        "ToastRegion" => rsx! {
+            ToastDemo {}
+        },
+        "Breadcrumb" => rsx! {
+            crate::components::ui::Breadcrumb::<Route> {
+                items: vec![
+                    crate::components::ui::Crumb::link("关于", Route::About {}),
+                    crate::components::ui::Crumb::link("组件图鉴", Route::ComponentShowcase {}),
+                    crate::components::ui::Crumb::current("复选框"),
+                ],
             }
         },
         "LoadingButton" => rsx! {
@@ -1444,6 +1476,31 @@ fn SceneComponentPreview(name: String) -> Element {
         div { class: if cover_preview { "showcase-scene-window showcase-cover-window" } else { "showcase-scene-window" }, aria_label: "{name} 的静态样例",
             div { class: "showcase-skeleton-window-bar", span {} span {} span {} }
             div { class: "showcase-scene-canvas", inert: "true", {inner} }
+        }
+    }
+}
+
+/// 提示演示：三种语气各发一条，走正式的全站提示区。
+#[component]
+fn ToastDemo() -> Element {
+    let toast = crate::components::ui::use_toast();
+    rsx! {
+        div { class: "showcase-preview-row flex-wrap",
+            crate::components::ui::Button {
+                variant: crate::components::ui::ButtonVariant::Secondary,
+                onclick: move |_| toast.show(crate::components::ui::ToastTone::Info, "草稿已自动保存"),
+                "说明"
+            }
+            crate::components::ui::Button {
+                variant: crate::components::ui::ButtonVariant::Secondary,
+                onclick: move |_| toast.success("设置已保存"),
+                "成功"
+            }
+            crate::components::ui::Button {
+                variant: crate::components::ui::ButtonVariant::Secondary,
+                onclick: move |_| toast.error("保存失败：网络连接中断，请稍后重试"),
+                "错误"
+            }
         }
     }
 }

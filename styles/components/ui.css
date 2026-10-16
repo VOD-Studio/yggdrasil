@@ -944,3 +944,273 @@
     box-shadow: 0 0 0 1px var(--color-hairline), var(--shadow-sm);
   }
 }
+
+/* 滚动渐隐的两端长度可被滚动时间线驱动，需注册为可插值的长度。 */
+@property --fade-start {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --fade-end {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@layer components {
+  /* ---- 菜单：「⋯」等触发的操作列表 ---- */
+  .menu-wrap {
+    position: relative;
+    display: inline-flex;
+  }
+
+  .menu {
+    position: absolute;
+    z-index: 50;
+    min-width: 11rem;
+    padding: 4px;
+    border-radius: 10px;
+    background-color: var(--color-popover);
+    box-shadow: var(--shadow-popover);
+    animation: listbox-enter var(--spring-snappy-duration) var(--ease-spring-snappy) both;
+  }
+
+  .menu[data-placement="bottom"] {
+    top: calc(100% + 6px);
+  }
+
+  .menu[data-placement="top"] {
+    bottom: calc(100% + 6px);
+  }
+
+  .menu[data-align="start"] {
+    left: 0;
+    transform-origin: top left;
+  }
+
+  .menu[data-align="end"] {
+    right: 0;
+    transform-origin: top right;
+  }
+
+  .menu-item {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    width: 100%;
+    padding: 0.4375rem 0.625rem;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--color-fg);
+    font: inherit;
+    font-size: 0.84375rem;
+    text-align: left;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+
+  .menu-item > svg {
+    color: var(--color-fg-3);
+  }
+
+  .menu-item:hover,
+  .menu-item:focus-visible {
+    outline: none;
+    background-color: var(--color-ink-1);
+  }
+
+  .menu-item[data-tone="danger"],
+  .menu-item[data-tone="danger"] > svg {
+    color: var(--color-danger);
+  }
+
+  .menu-item[data-tone="danger"]:hover,
+  .menu-item[data-tone="danger"]:focus-visible {
+    background-color: var(--color-danger-soft);
+  }
+
+  .menu-item[aria-disabled="true"] {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .menu-item > kbd {
+    margin-left: auto;
+    padding-left: 1rem;
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    color: var(--color-fg-3);
+  }
+
+  .menu-separator {
+    height: 1px;
+    margin: 4px 6px;
+    background-color: var(--color-hairline);
+  }
+
+  /* ---- Toast：屏幕底部居中的短暂提示 ---- */
+  .toast-region {
+    position: fixed;
+    z-index: 60;
+    left: 50%;
+    bottom: max(1.25rem, env(safe-area-inset-bottom));
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    width: min(calc(100vw - 2rem), 26rem);
+    translate: -50% 0;
+    pointer-events: none;
+  }
+
+  .toast {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    width: max-content;
+    max-width: 100%;
+    padding: 0.5rem 0.5rem 0.5rem 0.875rem;
+    border-radius: 12px;
+    background-color: var(--color-popover);
+    color: var(--color-fg);
+    box-shadow: var(--shadow-popover);
+    font-size: 0.875rem;
+    pointer-events: auto;
+    animation: toast-enter var(--spring-snappy-duration) var(--ease-spring-snappy) both;
+  }
+
+  .toast > .toast-icon {
+    flex-shrink: 0;
+    color: var(--color-fg-3);
+  }
+
+  .toast[data-tone="success"] > .toast-icon {
+    color: var(--color-success);
+  }
+
+  .toast[data-tone="danger"] > .toast-icon {
+    color: var(--color-danger);
+  }
+
+  .toast[data-leaving="true"] {
+    animation: toast-leave 180ms var(--ease-out-expo) both;
+  }
+
+  @keyframes toast-enter {
+    from {
+      opacity: 0;
+      transform: translateY(8px) scale(0.98);
+    }
+  }
+
+  @keyframes toast-leave {
+    to {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+  }
+
+  /* ---- 面包屑 ---- */
+  .breadcrumb {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.8125rem;
+    color: var(--color-fg-3);
+  }
+
+  .breadcrumb a {
+    color: var(--color-fg-3);
+    text-decoration: none;
+    transition: color 150ms var(--ease-out-expo);
+  }
+
+  .breadcrumb a:hover {
+    color: var(--color-fg);
+  }
+
+  .breadcrumb a:focus-visible {
+    outline: none;
+    border-radius: 4px;
+    box-shadow: var(--shadow-focus);
+  }
+
+  .breadcrumb [aria-current="page"] {
+    max-width: 24rem;
+    overflow: hidden;
+    color: var(--color-fg);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* ---- 滚动渐隐：可滚动区域的两端渐隐，提示还有内容 ----
+     默认两端固定渐隐；支持滚动时间线的浏览器只在还能滚动的一侧渐隐。 */
+  .scroll-fade-y,
+  .scroll-fade-x {
+    --fade-size: 1.25rem;
+    --fade-start: var(--fade-size);
+    --fade-end: var(--fade-size);
+  }
+
+  .scroll-fade-y {
+    overflow-y: auto;
+    mask-image: linear-gradient(to bottom, transparent, #000 var(--fade-start), #000 calc(100% - var(--fade-end)), transparent);
+  }
+
+  .scroll-fade-x {
+    overflow-x: auto;
+    mask-image: linear-gradient(to right, transparent, #000 var(--fade-start), #000 calc(100% - var(--fade-end)), transparent);
+  }
+
+  /* 支持时默认不渐隐：内容不够滚动时时间线不生效，两端保持完整。 */
+  @supports (animation-timeline: scroll()) {
+    .scroll-fade-y,
+    .scroll-fade-x {
+      --fade-start: 0px;
+      --fade-end: 0px;
+    }
+
+    .scroll-fade-y {
+      animation: scroll-fade linear both;
+      animation-timeline: scroll(self block);
+    }
+
+    .scroll-fade-x {
+      animation: scroll-fade linear both;
+      animation-timeline: scroll(self inline);
+    }
+  }
+
+  @keyframes scroll-fade {
+    0% {
+      --fade-start: 0px;
+      --fade-end: var(--fade-size);
+    }
+
+    8% {
+      --fade-start: var(--fade-size);
+    }
+
+    92% {
+      --fade-end: var(--fade-size);
+    }
+
+    100% {
+      --fade-start: var(--fade-size);
+      --fade-end: 0px;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .menu {
+      animation: listbox-fade 120ms linear both;
+    }
+
+    .toast {
+      animation: listbox-fade 120ms linear both;
+    }
+  }
+}

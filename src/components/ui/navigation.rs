@@ -294,6 +294,52 @@ pub fn FilterTabs(
     }
 }
 
+/// 面包屑中的一级。`to` 为 `None` 表示当前页（不可点击，标 `aria-current`）。
+#[derive(Clone, PartialEq)]
+pub struct Crumb<R: Clone + PartialEq> {
+    pub label: String,
+    pub to: Option<R>,
+}
+
+impl<R: Clone + PartialEq> Crumb<R> {
+    pub fn link(label: impl Into<String>, to: R) -> Self {
+        Self {
+            label: label.into(),
+            to: Some(to),
+        }
+    }
+
+    pub fn current(label: impl Into<String>) -> Self {
+        Self {
+            label: label.into(),
+            to: None,
+        }
+    }
+}
+
+/// 面包屑：`关于 / 组件图鉴 / 复选框`，最后一级为当前页并在过长时截断。
+#[component]
+pub fn Breadcrumb<R: Routable + Clone + PartialEq + 'static>(items: Vec<Crumb<R>>) -> Element {
+    let last = items.len().saturating_sub(1);
+    rsx! {
+        nav { class: "breadcrumb", aria_label: "面包屑",
+            for (i, crumb) in items.into_iter().enumerate() {
+                if i > 0 {
+                    span { key: "sep-{i}", aria_hidden: "true", "/" }
+                }
+                match crumb.to {
+                    Some(to) if i < last => rsx! {
+                        Link { key: "{i}", to, "{crumb.label}" }
+                    },
+                    _ => rsx! {
+                        span { key: "{i}", aria_current: "page", "{crumb.label}" }
+                    },
+                }
+            }
+        }
+    }
+}
+
 /// 标签芯片组件：统一归档索引、软底标签、卡片胶囊与文字链接的展示。
 ///
 /// 收敛原本散落在标签云与文章卡片（`post_card.rs` 描边胶囊）

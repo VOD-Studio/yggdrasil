@@ -175,6 +175,7 @@ pub fn AppRouter() -> Element {
     use_context_provider(|| UserContext { user, checked });
     let showcase_filters = use_signal(crate::pages::components_showcase::ShowcaseFilters::default);
     use_context_provider(|| showcase_filters);
+    crate::components::ui::use_toast_provider();
 
     rsx! {
         document::Title { "Yggdrasil Blog" }
@@ -185,6 +186,7 @@ pub fn AppRouter() -> Element {
                 history: move |_| crate::navigation::transition_history(dioxus::history::history()),
                 Router::<Route> {}
             }
+            crate::components::ui::ToastRegion {}
         }
     }
 }
