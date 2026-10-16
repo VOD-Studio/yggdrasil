@@ -9,6 +9,7 @@
     "build": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "motion-css": "bun scripts/generate-motion-css.ts"
   }
 }

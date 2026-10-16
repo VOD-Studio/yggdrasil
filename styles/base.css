@@ -218,7 +218,7 @@
   @keyframes page-enter {
     0% {
       opacity: 0;
-      transform: translateY(16px) scale(0.995);
+      transform: translateY(8px);
     }
     100% {
       opacity: 1;
@@ -230,14 +230,14 @@
     /* fill 用 backwards 而非 both：终态（opacity 1 / transform none）本就是元素自然值，
        无需 forwards 保持；且 forwards 会让动画合成的 transform 以 identity matrix 残留，
        使本元素成为 fixed 后代的 containing block（toc-sidebar 曾被锚定到 article 中部）。 */
-    animation: page-enter 400ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+    animation: page-enter var(--spring-snappy-duration) var(--ease-spring-snappy) backwards;
   }
 
-  /* Popover / 确认框淡入缩放(比 page-enter 更轻、更快) */
+  /* Popover / 确认框：spring-snappy 从 0.98 缩放淡入。 */
   @keyframes popover-enter {
     0% {
       opacity: 0;
-      transform: translateX(-50%) scale(0.95);
+      transform: translateX(-50%) scale(0.98);
     }
     100% {
       opacity: 1;
@@ -246,7 +246,7 @@
   }
 
   .animate-popover-enter {
-    animation: popover-enter 150ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation: popover-enter var(--spring-snappy-duration) var(--ease-spring-snappy) both;
   }
 
   /* Popover 端点对齐变体（align="start"/"end"）：面板不居中于锚点，静态
@@ -255,7 +255,7 @@
   @keyframes popover-enter-edge {
     0% {
       opacity: 0;
-      transform: scale(0.95);
+      transform: scale(0.98);
     }
     100% {
       opacity: 1;
@@ -264,7 +264,7 @@
   }
 
   .animate-popover-enter-edge {
-    animation: popover-enter-edge 150ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation: popover-enter-edge var(--spring-snappy-duration) var(--ease-spring-snappy) both;
   }
 
   /* 下拉选择面板入场。面板的水平居中用 [transform:translateX(-50%)]（不用
@@ -284,10 +284,10 @@
   }
 
   .animate-select-enter {
-    animation: select-enter 150ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation: select-enter var(--spring-snappy-duration) var(--ease-spring-snappy) both;
   }
 
-  /* 列表行进场（比 page-enter 更轻的位移，供 admin 列表逐行 stagger 使用，
+  /* 列表行进场（与 page-enter 同为 8px 位移加淡入，供 admin 列表逐行 stagger 使用，
      配合内联 style="animation-delay: Nms" 与 both fill-mode 实现阶梯入场） */
   @keyframes row-enter {
     0% {
@@ -301,16 +301,15 @@
   }
 
   .animate-row-enter {
-    animation: row-enter 450ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation: row-enter var(--spring-snappy-duration) var(--ease-spring-snappy) both;
   }
 
-  /* 分区面板切换入场（比 page-enter 更轻更快：纯位移无缩放，300ms，
-     供设置页/标签页等子视图 keyed remount 时播放；2026 实践：子视图
-     切换动画应比全页入场更短更克制，仅 transform+opacity） */
+  /* 分区面板切换入场（纯位移无缩放，供设置页/标签页等子视图 keyed remount
+     时播放；仅 transform+opacity） */
   @keyframes section-enter {
     0% {
       opacity: 0;
-      transform: translateY(12px);
+      transform: translateY(8px);
     }
     100% {
       opacity: 1;
@@ -321,11 +320,11 @@
   .animate-section-enter {
     /* backwards fill：与 page-enter 同理——终态即元素自然值，
        避免 forwards 的 identity-matrix 残留成 fixed 后代 containing block。 */
-    animation: section-enter 300ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+    animation: section-enter var(--spring-snappy-duration) var(--ease-spring-snappy) backwards;
   }
 
-  /* 素材弹窗开合动画（进入走 keyframes 挂载即播；关闭走 .is-closing + transition，
-     可逆——重开时平滑反向。出(200ms)比入(260ms)快，关闭响应更干脆）。 */
+  /* 弹窗开合动画（进入走 keyframes 挂载即播：遮罩 150ms 淡入，面板 8px 下落加
+     0.98 缩放；关闭走 .is-closing + transition，可逆——重开时平滑反向）。 */
   @keyframes modal-overlay-enter {
     from {
       opacity: 0;
@@ -333,18 +332,18 @@
   }
 
   .animate-modal-overlay-enter {
-    animation: modal-overlay-enter 200ms ease-out backwards;
+    animation: modal-overlay-enter 150ms var(--ease-out-expo) backwards;
   }
 
   @keyframes modal-panel-enter {
     from {
       opacity: 0;
-      transform: translateY(16px) scale(0.96);
+      transform: translateY(-8px) scale(0.98);
     }
   }
 
   .animate-modal-panel-enter {
-    animation: modal-panel-enter 260ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+    animation: modal-panel-enter var(--spring-snappy-duration) var(--ease-spring-snappy) backwards;
   }
 
   /* 关闭态基类：遮罩淡出 + 面板淡出微缩。fill 用 backwards（与 page-enter 同因：

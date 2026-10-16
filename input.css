@@ -1,6 +1,7 @@
 /* Import order is the cascade order. Keep layer declarations in the source modules. */
 @import "tailwindcss";
 @import "./styles/theme.css";
+@import "./styles/motion.css";
 @import "./styles/base.css";
 @import "./styles/components/pagination.css";
 @import "./styles/components/post-cards.css";
