@@ -516,11 +516,6 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
                     if !library_ready(editor_library) {
                         span { class: "absolute top-4 left-4 text-sm text-[var(--color-paper-tertiary)]", "正在加载编辑器…" }
                     }
-                    img {
-                        src: "/images/xiantiaoxiaogou_input_bg.webp",
-                        alt: "",
-                        class: "absolute bottom-2 right-2 w-20 sm:w-24 opacity-15 dark:opacity-20 pointer-events-none select-none z-0",
-                    }
                 }
 
                 // 蜜罐字段：对普通用户隐藏，用于拦截简单机器人（仅匿名渲染；

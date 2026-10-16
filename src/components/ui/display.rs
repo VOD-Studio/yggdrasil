@@ -1,4 +1,5 @@
 //! Badges, avatars, placeholders and CSS tooltips.
+use super::icons::{Icon, IconName};
 use super::styles::BADGE_BASE;
 use dioxus::prelude::*;
 /// 状态徽章组件。
@@ -17,19 +18,17 @@ pub fn StatusBadge(color_class: &'static str, label: String) -> Element {
     }
 }
 
-/// 首页封面与头像共用的树芽占位图。
+/// 封面与头像加载失败时的图片占位：Lucide `image-off` 图标，尺寸与颜色由 `class` 控制。
 #[component]
-pub fn SproutPlaceholder(class: &'static str) -> Element {
+pub fn ImagePlaceholder(class: &'static str) -> Element {
     rsx! {
-        svg { class, view_box: "0 0 32 32", fill: "none", "aria-hidden": "true",
-            path { d: "M16 27V15M16 21C7 21 4 15 5 8C12 8 17 12 16 21ZM16 16C16 7 21 4 28 5C28 12 23 17 16 16M10 27H22", stroke: "currentColor", stroke_width: "1.2", stroke_linecap: "round", stroke_linejoin: "round" }
-        }
+        Icon { name: IconName::ImageOff, size: 24, class }
     }
 }
 
-/// 用户头像：加载失败显示树芽，无图回退展示名首字符（accent 软底）。
+/// 用户头像：加载失败显示图片占位，无图回退展示名首字符（accent 软底）。
 ///
-/// 头像三态（图片 / 树芽 / 首字符）的统一实现，调用方经 `class` 控制尺寸与形状
+/// 头像三态（图片 / 占位 / 首字符）的统一实现，调用方经 `class` 控制尺寸与形状
 /// （须含 `w-* h-* rounded-full` 与字号如 `text-xs`）。使用处：后台侧栏
 /// 用户卡片（28px）、个人信息页身份卡（96px，外层按钮带 hover 遮罩）、
 /// 前台评论表单身份行（24px）与评论列表（32px）。
@@ -53,7 +52,7 @@ pub fn UserAvatar(name: String, avatar_url: Option<String>, class: &'static str)
                 class: "{class} flex items-center justify-center bg-paper-entry text-paper-tertiary",
                 role: "img",
                 aria_label: "{name} 的头像",
-                SproutPlaceholder { class: "w-2/3 h-2/3" }
+                ImagePlaceholder { class: "w-1/2 h-1/2" }
             }
         },
         Some(url) => {

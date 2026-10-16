@@ -76,7 +76,7 @@ async function main() {
   const base = `http://127.0.0.1:${appPort}`;
   fs.symlinkSync(path.join(build, 'public'), path.join(runtime, 'public'), 'dir');
   fs.mkdirSync(path.join(runtime, 'uploads'));
-  fs.copyFileSync(path.join(ROOT, 'public/images/xiantiaoxiaogou_02.webp'), path.join(runtime, 'uploads/fixture.webp'));
+  fs.copyFileSync(path.join(ROOT, 'public/images/samples/paper-clay.webp'), path.join(runtime, 'uploads/fixture.webp'));
   const env = { ...pg, DATABASE_URL: `postgresql://postgres:regression@127.0.0.1:${port}/ygg_browser_test`,
     IP: '127.0.0.1', PORT: String(appPort), APP_BASE_URL: base, COOKIE_SECURE: 'false', SSR_CACHE_SECS: '0',
     DIOXUS_ASSET_DIR: path.join(build, 'public'), MCP_TOKEN_ENC_KEY: '42'.repeat(32),

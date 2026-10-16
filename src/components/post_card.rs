@@ -5,7 +5,7 @@
 use dioxus::prelude::*;
 use dioxus::router::components::Link;
 
-use crate::components::ui::{SproutPlaceholder, TagChip};
+use crate::components::ui::{ImagePlaceholder, TagChip};
 use crate::models::post::PostListItem;
 use crate::router::Route;
 
@@ -77,7 +77,7 @@ pub fn PostCard(post: PostListItem, #[props(default = false)] compact: bool) -> 
                     div { class: "blur-img post-card-cover-blur !rounded-none",
                         if cover_failed {
                             div { class: "absolute inset-0 flex items-center justify-center bg-paper-entry text-paper-tertiary", aria_hidden: "true",
-                                SproutPlaceholder { class: "w-8 h-8" }
+                                ImagePlaceholder { class: "w-8 h-8" }
                             }
                         } else {
                             img {

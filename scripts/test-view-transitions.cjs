@@ -15,7 +15,7 @@ const BASE = (process.env.VT_BASE || 'http://127.0.0.1:8080').replace(/\/$/, '')
 const SEARCH_QUERY = process.env.VT_SEARCH_QUERY || 'Rust';
 const TAG_PATH = process.env.VT_TAG_PATH || '/tags/Rust';
 const TOC_POST_PATH = process.env.VT_TOC_POST_PATH;
-const FIXTURE_IMAGE = '/images/xiantiaoxiaogou_02.webp';
+const FIXTURE_IMAGE = '/images/samples/paper-clay.webp';
 const FIXTURE_FILE = path.join(__dirname, '../public', FIXTURE_IMAGE);
 
 async function launch(options = {}) {

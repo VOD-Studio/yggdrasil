@@ -854,7 +854,7 @@ fn preview_route(slug: &str) -> Option<PreviewRoute> {
         | "status-badge"
         | "tag-chip"
         | "user-avatar"
-        | "sprout-placeholder"
+        | "image-placeholder"
         | "icon"
         | "button"
         | "icon-button"
@@ -1218,8 +1218,8 @@ fn LiveComponentPreview(
                 crate::components::ui::UserAvatar { name: "Yggdrasil", avatar_url: Some("/missing-avatar-for-showcase.png".to_string()), class: "w-10 h-10 rounded-full text-sm" }
             }
         },
-        "SproutPlaceholder" => rsx! {
-            crate::components::ui::SproutPlaceholder { class: "w-10 h-10 text-paper-accent" }
+        "ImagePlaceholder" => rsx! {
+            crate::components::ui::ImagePlaceholder { class: "w-10 h-10 text-fg-3" }
         },
         "Icon" => rsx! {
             div { class: "grid grid-cols-8 gap-3 text-paper-secondary",
@@ -1432,7 +1432,7 @@ fn SceneComponentPreview(name: String) -> Element {
             }
         },
         "PostCover" => {
-            rsx! { crate::components::post::post_cover::PostCover { src: "/images/empty-state/dog-camera.webp".to_string() } }
+            rsx! { crate::components::post::post_cover::PostCover { src: "/images/samples/paper-clay.webp".to_string() } }
         }
         "SearchIconLink" => rsx! { crate::components::header::SearchIconLink {} },
         _ => panic!("场景组件缺少预览: {name}"),

@@ -26,29 +26,29 @@ pub(super) fn preview(slug: &str, detail: bool) -> Option<Element> {
 
 const IMAGES: [(&str, &str, &str); 5] = [
     (
-        "/images/empty-state/dog-camera.webp",
-        "相机里的小狗.webp",
-        "相机里的两只小狗",
+        "/images/samples/paper-clay.webp",
+        "纸面与陶土.webp",
+        "暖白纸面上的一轮陶土色圆",
     ),
     (
-        "/images/xiantiaoxiaogou_02.webp",
-        "光里的院子.webp",
-        "院子里的光",
+        "/images/samples/hairline-grid.webp",
+        "细线网格.webp",
+        "细线网格上连起的几个点",
     ),
     (
-        "/images/xiantiaoxiaogou_03.webp",
-        "午后散步.webp",
-        "午后的散步",
+        "/images/samples/ink-dusk.webp",
+        "夜色弧线.webp",
+        "深色背景上层层展开的陶土色弧线",
     ),
     (
-        "/images/xiantiaoxiaogou_input.webp",
-        "手绘小狗.webp",
-        "小狗插画",
+        "/images/samples/stacked.webp",
+        "叠放的卡片.webp",
+        "两张叠放的卡片",
     ),
     (
-        "/images/xiantiaoxiaogou_input_bg.webp",
-        "草地背景.webp",
-        "绿色草地",
+        "/images/samples/contours.webp",
+        "等高线.webp",
+        "起伏的等高线",
     ),
 ];
 

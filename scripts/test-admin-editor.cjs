@@ -191,7 +191,7 @@ async function main() {
     await page.locator('.cover-preview').hover();
     await page.locator('.cover-preview').getByRole('button', { name: '移除', exact: true }).click();
     await page.getByText('输入链接', { exact: true }).click();
-    await page.getByPlaceholder('粘贴图片链接...').fill('/images/xiantiaoxiaogou_02.webp');
+    await page.getByPlaceholder('粘贴图片链接...').fill('/images/samples/paper-clay.webp');
     await page.getByRole('button', { name: '确认', exact: true }).click();
     await page.waitForFunction(() => {
       const img = document.querySelector('.cover-preview img');

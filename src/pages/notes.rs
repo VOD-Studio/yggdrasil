@@ -351,7 +351,7 @@ fn NoteFeed(
                         button { disabled: i64::from(page_no)*20>=page.total, onclick: move |_| filter.with_mut(|f| f.page=page_no+1), "下一页 →" }
                     }
                 },
-                Some(Ok(_)) => rsx! { EmptyState { title: "这里还没有笔记", description: "换个关键词看看，或等下一次灵感落下。" } },
+                Some(Ok(_)) => rsx! { EmptyState { icon: crate::components::ui::IconName::SearchX, title: "这里还没有笔记", description: "换个关键词看看，或等下一次灵感落下。" } },
                 Some(Err(_)) => rsx! { p { role: "alert", "笔记暂时加载失败，请刷新重试。" } },
                 None => rsx! { NotesSkeleton {} },
             }

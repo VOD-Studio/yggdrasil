@@ -514,9 +514,9 @@ fn LightboxPreview(detail: bool) -> Element {
     }
     rsx! {
         div { class: "showcase-browser-lightbox-grid", id: owner.clone(), "data-showcase-lightbox-owner": owner,
-            img { src: "/images/empty-state/dog-camera.webp", alt: "相机里的两只小狗", loading: "lazy" }
-            img { src: "/images/xiantiaoxiaogou_02.webp", alt: "小狗的第二张照片", loading: "lazy" }
-            img { src: "/images/xiantiaoxiaogou_03.webp", alt: "小狗的第三张照片", loading: "lazy" }
+            img { src: "/images/samples/paper-clay.webp", alt: "暖白纸面上的一轮陶土色圆", loading: "lazy" }
+            img { src: "/images/samples/hairline-grid.webp", alt: "细线网格上连起的几个点", loading: "lazy" }
+            img { src: "/images/samples/ink-dusk.webp", alt: "深色背景上层层展开的陶土色弧线", loading: "lazy" }
         }
         if detail { p { class: "showcase-browser-note", "点击图片打开灯箱，可切换、缩放、旋转，并用 Esc 关闭。" } }
     }

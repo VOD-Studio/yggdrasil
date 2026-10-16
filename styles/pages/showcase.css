@@ -119,12 +119,7 @@
 .showcase-collapse-content { padding: 1rem; font-size: .75rem; }
 .showcase-empty-preview { width: 100%; max-width: 22rem; }
 .showcase-empty-preview > .empty-state { margin: 0; }
-.showcase-card-preview .showcase-empty-preview .empty-state { padding: 1rem; border-radius: 14px; }
-.showcase-card-preview .showcase-empty-preview .empty-state::before { display: none; }
-.showcase-card-preview .showcase-empty-preview .empty-state-art { width: 4.5rem; padding: .25rem; border-radius: 11px; }
-.showcase-card-preview .showcase-empty-preview .empty-state-art img { border-radius: 7px; }
-.showcase-card-preview .showcase-empty-preview .empty-state-art::after { top: -.35rem; right: -.4rem; font-size: .8rem; }
-.showcase-card-preview .showcase-empty-preview .empty-state-kicker,
+.showcase-card-preview .showcase-empty-preview .empty-state { padding: 1rem; }
 .showcase-card-preview .showcase-empty-preview .empty-state-description { display: none; }
 .showcase-card-preview .showcase-empty-preview h2 { margin-top: .7rem; font-size: .8rem; }
 .showcase-skeleton-lines { width: 13rem; }

@@ -257,6 +257,7 @@ fn AllPostsList() -> Element {
 
         if error().is_some() {
             EmptyState {
+                icon: crate::components::ui::IconName::CircleAlert,
                 title: "加载失败",
                 description: "获取文章列表时发生错误，请稍后重试。",
             }
@@ -265,6 +266,7 @@ fn AllPostsList() -> Element {
         } else if get_posts().is_empty() {
             if is_searching() {
                 EmptyState {
+                    icon: crate::components::ui::IconName::SearchX,
                     title: "未找到匹配的文章",
                     description: "换个标题关键词再试一次。",
                 }

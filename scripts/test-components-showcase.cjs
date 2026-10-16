@@ -573,9 +573,9 @@ async function interactions(page, onlyModalResets = false) {
   const dialog = page.getByRole('dialog');
   await dialog.waitFor();
   await page.waitForFunction(() => document.activeElement?.matches('[data-ygg-modal-panel][data-ygg-modal-open="true"]'));
-  await dialog.getByRole('button', { name: '相机里的小狗.webp' }).click();
+  await dialog.getByRole('button', { name: '纸面与陶土.webp' }).click();
   await dialog.getByRole('button', { name: '下一页' }).click();
-  await dialog.getByRole('button', { name: '手绘小狗.webp' }).click();
+  await dialog.getByRole('button', { name: '叠放的卡片.webp' }).click();
   await dialog.getByRole('button', { name: '插入 2 张图片' }).click();
   await dialog.waitFor({ state: 'hidden' });
   await page.locator('.showcase-demo-result').getByText('已确认').waitFor();
@@ -584,7 +584,7 @@ async function interactions(page, onlyModalResets = false) {
   await pickerTrigger.click();
   await page.getByRole('dialog').waitFor();
   await page.waitForFunction(() => document.activeElement?.matches('[data-ygg-modal-panel][data-ygg-modal-open="true"]'));
-  await dialog.getByPlaceholder('搜索文件名 / alt').fill('院子');
+  await dialog.getByPlaceholder('搜索文件名 / alt').fill('网格');
   await dialog.getByRole('button', { name: '单选' }).click();
   await dialog.getByRole('button', { name: '↻ 恢复默认' }).click();
   await dialog.waitFor({ state: 'hidden' });

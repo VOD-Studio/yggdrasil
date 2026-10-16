@@ -238,11 +238,6 @@ fn write_editor(post_id: Option<i32>) -> Element {
                             div {
                                 class: "relative group flex-1 min-h-0 w-full rounded-2xl overflow-hidden bg-[var(--color-paper-entry)]/40 border border-[var(--color-paper-border)]/70 focus-within:border-[var(--color-paper-accent)]/70 focus-within:ring-2 focus-within:ring-[var(--color-paper-accent)]/15 transition-all shadow-xs",
                                 id: "tiptap-editor",
-                                img {
-                                    src: "/images/xiantiaoxiaogou_input_bg.webp",
-                                    alt: "",
-                                    class: "absolute bottom-3 right-3 w-28 opacity-15 pointer-events-none z-0 select-none transition-opacity",
-                                }
                             }
                         }
                     }

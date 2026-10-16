@@ -242,6 +242,7 @@ pub fn PostsTrash() -> Element {
                     if error().is_some() {
                         rsx! {
                             EmptyState {
+                                icon: crate::components::ui::IconName::CircleAlert,
                                 title: "加载失败",
                                 description: "获取回收站列表时发生错误，请稍后重试。",
                             }

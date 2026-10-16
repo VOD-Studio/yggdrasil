@@ -940,24 +940,24 @@
       "usage_kind": "rust"
     },
     {
-      "name": "SproutPlaceholder",
-      "slug": "sprout-placeholder",
-      "label": "树芽占位",
+      "name": "ImagePlaceholder",
+      "slug": "image-placeholder",
+      "label": "图片占位",
       "group": "display",
-      "summary": "空缺的地方，也可以长出新意。",
+      "summary": "图片缺席时，留一个安静的位置。",
       "states": "封面 · 头像",
-      "description": "封面与头像共用的树芽图形，在内容缺失时保留站点的视觉语言。",
+      "description": "封面与头像加载失败时显示的图片图标，保持版面不塌陷。",
       "props": [
         [
           "class",
           "&'static str",
           "必填",
-          "树芽的尺寸与颜色样式。"
+          "图标的尺寸与颜色样式。"
         ]
       ],
       "keys": [],
-      "source": "src/components/ui.rs",
-      "code": "rsx! {\n    SproutPlaceholder { class: \"w-8 h-8 text-paper-accent\" }\n}",
+      "source": "src/components/ui/display.rs",
+      "code": "rsx! {\n    ImagePlaceholder { class: \"w-8 h-8 text-fg-3\" }\n}",
       "preview_mode": "static",
       "usage_kind": "rust"
     },
@@ -967,8 +967,8 @@
       "label": "空状态",
       "group": "display",
       "summary": "还没有内容，也是故事的开始。",
-      "states": "随机插画 · 标题 · 说明 · 行动",
-      "description": "从 18 张小狗插画中随机展示一张，配合标题和说明呈现空列表，可提供一个明确的下一步操作。",
+      "states": "图标 · 标题 · 说明 · 行动",
+      "description": "用一个线条图标、标题和说明呈现空列表或无结果，可提供一个明确的下一步操作。",
       "props": [
         [
           "title",
@@ -983,10 +983,10 @@
           "补充说明。"
         ],
         [
-          "image",
-          "String",
-          "随机插画",
-          "指定图片路径时覆盖随机插画。"
+          "icon",
+          "IconName",
+          "Inbox",
+          "线条图标；无搜索结果用 SearchX，加载失败用 CircleAlert。"
         ],
         [
           "action",

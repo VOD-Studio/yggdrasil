@@ -60,6 +60,7 @@ export const ICONS: readonly string[] = [
   'eye',
   'eye-off',
   'image',
+  'image-off',
   // 运行与状态
   'play',
   'square',
@@ -81,6 +82,8 @@ export const ICONS: readonly string[] = [
   'rss',
   'archive',
   'folder',
+  'inbox',
+  'search-x',
   // 账户与系统
   'user',
   'users',
