@@ -39,7 +39,7 @@ Frontend Biome settings use two spaces, single quotes, semicolons, and 100-colum
 
 Rust tests live in inline `#[cfg(test)] mod tests`, including Tokio async tests. Frontend tests use Vitest, with happy-dom for browser utilities, under each `libs/` package's `src/` directory (`**/*.test.{ts,js}` or `__tests__/`). Name tests after observable behavior; add regression coverage for fixes. No numeric coverage threshold is configured.
 
-`make test` skips `#[ignore]` database regressions. Run relevant database regressions when changing their workflows, using the disposable databases required by each test: `ygg_mcp_test` for posts/uploads and `ygg_notes_test` for notes. See [database test commands](README.md#数据库回归测试) and [notes regression guidance](docs/notes.md#回归与待补验收); these tests can reset user and content fixtures.
+`make test` skips `#[ignore]` database regressions. Run relevant database regressions when changing their workflows, using the disposable databases required by each test: `ygg_mcp_test` for posts/uploads and `ygg_notes_test` for notes. See [database test commands](docs/testing.md#数据库回归测试) and [notes regression guidance](docs/notes.md#回归与待补验收); these tests can reset user and content fixtures.
 
 For component showcase changes, follow [docs/components-showcase.md](docs/components-showcase.md). Keep catalog metadata and preview dispatch aligned, reuse production display code with fixtures and local callbacks, and clean up browser instances on unmount. Verify previews do not send authentication, upload, comment submission, or code execution requests with `scripts/test-components-showcase.cjs`.
 
