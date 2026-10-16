@@ -65,6 +65,7 @@ pub fn Header(
 ) -> Element {
     let mut sheet_open = use_signal(|| false);
     let menu_button_id = format!("{menu_id}-trigger");
+    let palette = crate::components::search_palette::use_search_palette();
 
     rsx! {
         header { "data-vt-shell": page_shell.then_some("frontend-header"), class: "site-header",
@@ -97,8 +98,19 @@ pub fn Header(
                 div { class: "site-actions",
                     {right_content}
                     if on_demo_navigate.is_none() {
-                        Link { class: "touch-icon", to: Route::Search {}, aria_label: "搜索",
-                            Icon { name: IconName::Search, size: 19 }
+                        if let Some(palette) = palette {
+                            button {
+                                class: "touch-icon",
+                                r#type: "button",
+                                aria_label: "搜索",
+                                aria_haspopup: "dialog",
+                                onclick: move |_| palette.open(),
+                                Icon { name: IconName::Search, size: 19 }
+                            }
+                        } else {
+                            Link { class: "touch-icon", to: Route::Search { q: String::new() }, aria_label: "搜索",
+                                Icon { name: IconName::Search, size: 19 }
+                            }
                         }
                     }
                     button {
@@ -394,12 +406,12 @@ pub fn SearchIconLink(
     #[props(default)]
     on_click: Option<EventHandler<MouseEvent>>,
 ) -> Element {
-    let route_active = matches!(use_route::<Route>(), Route::Search {});
+    let route_active = matches!(use_route::<Route>(), Route::Search { .. });
     let is_active = active.unwrap_or(route_active);
     rsx! {
         Link {
             class: "search-trigger",
-            to: Route::Search {},
+            to: Route::Search { q: String::new() },
             aria_current: is_active.then_some("page"),
             aria_label: "搜索",
             aria_keyshortcuts: "Meta+K Control+K",

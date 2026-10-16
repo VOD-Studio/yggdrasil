@@ -34,13 +34,19 @@ impl SearchHistoryState {
     }
 }
 
+/// 搜索页。`q` 来自 `/search?q=`：历史记录里没有保存的查询时用它作为初始查询并立即搜索。
 #[component]
-pub fn Search() -> Element {
+pub fn Search(#[props(default)] q: String) -> Element {
     let entry_id = use_hook(crate::bridges::navigation::entry_id);
     let saved = use_hook(|| {
         crate::bridges::navigation::read_state::<SearchHistoryState>("search").unwrap_or_default()
     });
-    let mut query = use_signal(|| saved.query.clone());
+    let initial_query = if saved.query.is_empty() {
+        q.trim().to_string()
+    } else {
+        saved.query.clone()
+    };
+    let mut query = use_signal(|| initial_query.clone());
     let mut submitted_query = use_signal(|| saved.submitted_query.clone());
     let mut search_res = use_signal(|| saved.result());
     let mut is_searching = use_signal(|| false);
@@ -122,6 +128,16 @@ pub fn Search() -> Element {
             }
         });
     };
+
+    // 带 `?q=` 进入或在本页再次带入新查询时立即搜索；与已提交的查询相同则不重复请求。
+    use_effect(use_reactive((&q,), move |(q,)| {
+        let q = q.trim().to_string();
+        if q.is_empty() || q == *submitted_query.peek() {
+            return;
+        }
+        query.set(q.clone());
+        on_search(q);
+    }));
 
     let status = if is_searching() {
         format!("正在查找「{}」…", submitted_query())

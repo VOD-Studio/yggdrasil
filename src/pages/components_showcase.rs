@@ -862,6 +862,7 @@ fn preview_route(slug: &str) -> Option<PreviewRoute> {
         | "menu"
         | "toast"
         | "breadcrumb"
+        | "search-palette"
         | "empty-state"
         | "skeleton-box"
         | "skeleton-card"
@@ -1138,6 +1139,9 @@ fn LiveComponentPreview(
                     crate::components::ui::Crumb::current("复选框"),
                 ],
             }
+        },
+        "SearchPalette" => rsx! {
+            SearchPaletteDemo {}
         },
         "LoadingButton" => rsx! {
             div { class: "showcase-preview-row",
@@ -1477,6 +1481,23 @@ fn SceneComponentPreview(name: String) -> Element {
             div { class: "showcase-skeleton-window-bar", span {} span {} span {} }
             div { class: "showcase-scene-canvas", inert: "true", {inner} }
         }
+    }
+}
+
+/// 搜索面板演示：自带句柄与面板实例，不注册全局快捷键，不影响页面上的正式面板。
+#[component]
+fn SearchPaletteDemo() -> Element {
+    let palette = crate::components::search_palette::use_search_palette_provider();
+    rsx! {
+        div { class: "showcase-preview-row",
+            crate::components::ui::Button {
+                variant: crate::components::ui::ButtonVariant::Secondary,
+                icon: crate::components::ui::IconName::Search,
+                onclick: move |_| palette.open(),
+                "打开搜索面板"
+            }
+        }
+        crate::components::search_palette::SearchPalette { shortcut: false }
     }
 }
 

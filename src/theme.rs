@@ -310,6 +310,35 @@ pub fn ThemePreload() -> Element {
     }
 }
 
+/// 切换到指定外观：只有**实际明暗**翻转时才以 `origin`（视口坐标）为圆心做圆形扩散。
+///
+/// 主题分段控件与搜索面板的「切换外观」命令共用。
+#[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))]
+pub fn choose_theme(mut theme: Signal<Theme>, mode: Theme, origin: (f64, f64)) {
+    if *theme.peek() == mode {
+        return;
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        let prev_resolved = theme.peek().resolve(read_system_dark());
+        let new_resolved = mode.resolve(read_system_dark());
+        if prev_resolved != new_resolved {
+            use wasm_bindgen::JsCast;
+            // 实际明暗翻转 → 圆形扩散 VT。JS 从 DOM 现状推导目标主题。
+            if let Some(window) = web_sys::window() {
+                let key = "__startThemeTransition".into();
+                if let Ok(fn_val) = js_sys::Reflect::get(&window, &key) {
+                    if !fn_val.is_undefined() && !fn_val.is_null() {
+                        let fn_obj = fn_val.unchecked_into::<js_sys::Function>();
+                        let _ = fn_obj.call2(&window, &origin.0.into(), &origin.1.into());
+                    }
+                }
+            }
+        }
+    }
+    theme.set(mode);
+}
+
 /// 主题切换：浅色 / 深色 / 跟随系统三段式分段控件。
 ///
 /// 选中态由 `<html data-theme-mode>` 经 [`THEME_SEGMENT_STYLE`] 决定，首屏无需
@@ -322,12 +351,7 @@ pub fn ThemePreload() -> Element {
 #[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))]
 #[component]
 pub fn ThemeToggle(#[props(default)] labels: bool) -> Element {
-    // theme 在 wasm 与 server 两侧都需要 mut（onclick 内 theme.set）。
-    #[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut))]
-    let mut theme = use_theme();
-    // resolved 用于判断切换前后实际明暗是否翻转（决定是否触发 VT）。
-    #[cfg(target_arch = "wasm32")]
-    let resolved = use_resolved_theme();
+    let theme = use_theme();
     let current = theme();
     let modes = [
         (Theme::Light, "light", IconName::Sun),
@@ -347,29 +371,14 @@ pub fn ThemeToggle(#[props(default)] labels: bool) -> Element {
                     aria_label: if labels { None } else { Some(mode_label(mode)) },
                     title: if labels { "" } else { mode_label(mode) },
                     onclick: move |evt| {
-                        if theme() == mode {
-                            return;
-                        }
                         #[cfg(target_arch = "wasm32")]
-                        {
-                            let prev_resolved = resolved();
-                            let new_resolved = mode.resolve(read_system_dark());
-                            if prev_resolved != new_resolved {
-                                use wasm_bindgen::JsCast;
-                                // 实际明暗翻转 → 圆形扩散 VT。JS 从 DOM 现状推导目标主题。
-                                let coords = evt.client_coordinates();
-                                let window = web_sys::window()
-                                    .expect("主题切换回调仅在 WASM 浏览器上下文执行：无 window");
-                                let key = "__startThemeTransition".into();
-                                if let Ok(fn_val) = js_sys::Reflect::get(&window, &key) {
-                                    if !fn_val.is_undefined() && !fn_val.is_null() {
-                                        let fn_obj = fn_val.unchecked_into::<js_sys::Function>();
-                                        let _ = fn_obj.call2(&window, &coords.x.into(), &coords.y.into());
-                                    }
-                                }
-                            }
-                        }
-                        theme.set(mode);
+                        let origin = {
+                            let coords = evt.client_coordinates();
+                            (coords.x, coords.y)
+                        };
+                        #[cfg(not(target_arch = "wasm32"))]
+                        let origin = (0.0, 0.0);
+                        choose_theme(theme, mode, origin);
                     },
                     Icon { name: icon, size: 14 }
                     if labels {

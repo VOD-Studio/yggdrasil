@@ -1826,6 +1826,28 @@
       "usage_kind": "rust"
     },
     {
+      "name": "SearchPalette",
+      "slug": "search-palette",
+      "label": "搜索面板",
+      "group": "overlay",
+      "summary": "按下 ⌘K，从任何地方出发。",
+      "states": "最近搜索 · 分组结果 · 无结果 · 加载中",
+      "description": "页头「搜索 ⌘K」与全局快捷键打开同一个面板。文章来自建议接口（标题、摘要、标签，最多 8 条），标签与页面在浏览器内过滤；按「文章 · 标签 · 跳转」分组，命中词高亮。空查询显示最近搜索与常用跳转；没有命中时引导去全文搜索。640px 以下全屏。",
+      "props": [
+        ["shortcut", "bool", "true", "是否注册全局 ⌘K / Ctrl+K。"]
+      ],
+      "keys": [
+        ["⌘K / Ctrl+K", "打开面板（焦点在输入框等可编辑区域时不拦截）"],
+        ["↑ / ↓", "在结果间循环移动"],
+        ["↵", "打开当前项；⌘↵ 在新标签页打开文章"],
+        ["Esc", "有内容时清空，再按一次关闭"]
+      ],
+      "source": "src/components/search_palette.rs",
+      "code": "// 前台布局里提供句柄并挂载一次\nlet palette = use_search_palette_provider();\nrsx! {\n    SearchIconLink { on_click: move |_| palette.open() }\n    SearchPalette {}\n}",
+      "preview_mode": "interactive",
+      "usage_kind": "rust"
+    },
+    {
       "name": "Breadcrumbs",
       "slug": "breadcrumbs",
       "label": "面包屑",

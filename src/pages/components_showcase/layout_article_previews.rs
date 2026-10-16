@@ -240,7 +240,7 @@ fn sample_route(label: &str) -> Route {
         "归档" => Route::Archives {},
         "友链" => Route::Friends {},
         "关于" => Route::About {},
-        "搜索" => Route::Search {},
+        "搜索" => Route::Search { q: String::new() },
         _ => Route::Home {},
     }
 }

@@ -40,6 +40,8 @@ pub mod frontend_layout;
 pub mod header;
 /// 导航项生成组件。
 pub mod nav;
+/// 搜索面板（⌘K）
+pub mod search_palette;
 
 // ========= feature 层 — 绑定特定领域 (models / Route / api) =========
 // 按页面域划分；跨域复用前先考虑原子层。
