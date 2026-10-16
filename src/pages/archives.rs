@@ -3,21 +3,22 @@
 //! 对应路由 `/archives`。
 //! 顶部标签索引复用可折叠卡片与 TagChip，独立加载，避免标签接口失败影响时间归档。
 //!
-//! 数据获取：通过 `use_server_future` 调用 `list_published_posts(1, 10000)` server function，
-//! 一次性拉取全部已发布文章，然后在内存中按发布日期的年、月进行分组展示。
+//! 数据获取：首屏请求轻量归档分页，按需加载更早的文章，再按年月分组。
 //! 在 `wasm32` 目标下，server function 的函数体被替换为向服务端端点发起 HTTP POST 请求的客户端存根；
 //! 实际的数据库访问逻辑仅在 `feature = "server"` 启用时运行。
 
 use dioxus::prelude::*;
 use dioxus::router::components::Link;
 
-use crate::api::posts::{list_published_posts, list_tags, PostListResponse, TagListResponse};
+use crate::api::posts::{
+    list_archive_posts, list_tags, ArchiveResponse, TagListResponse, ARCHIVE_PAGE_SIZE,
+};
 use crate::components::empty_state::EmptyState;
 use crate::components::skeletons::archive_skeleton::ArchiveSkeleton;
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::skeletons::tags_skeleton::TagsSkeleton;
 use crate::components::ui::{CollapsibleSettingsCard, TagChip, BTN_OUTLINE};
-use crate::models::post::PostListItem;
+use crate::models::archive::ArchivePost;
 use crate::router::Route;
 
 /// 按年份分组的文章归档结构。
@@ -32,13 +33,13 @@ struct YearGroup {
 struct MonthGroup {
     month: String,
     month_en: String,
-    posts: Vec<PostListItem>,
+    posts: Vec<ArchivePost>,
 }
 
 /// 将文章列表按 `formatted_date()` 返回的 `YYYY-MM-DD` 格式进行年、月分组。
 ///
 /// 返回的结果按原始文章顺序组织，调用前已按发布时间降序排列。
-fn group_posts(posts: &[PostListItem]) -> Vec<YearGroup> {
+fn group_posts(posts: &[ArchivePost]) -> Vec<YearGroup> {
     let mut years: Vec<YearGroup> = vec![];
 
     for post in posts {
@@ -200,12 +201,16 @@ fn ArchiveTags() -> Element {
 /// 加载中显示骨架屏，失败显示错误提示。
 #[component]
 fn ArchivesContent() -> Element {
-    // 一次性获取足够多的已发布文章，用于生成完整的年/月归档。
-    let mut posts_res = use_server_future(move || list_published_posts(1, 10000))?;
+    let mut posts_res = use_server_future(move || list_archive_posts(1))?;
+    let mut older_posts = use_signal(Vec::<ArchivePost>::new);
+    let mut next_page = use_signal(|| 2_i32);
+    let mut loading_more = use_signal(|| false);
+    let mut load_error = use_signal(|| false);
+    let mut exhausted = use_signal(|| false);
 
     let posts_data = posts_res.read();
     match &*posts_data {
-        Some(Ok(PostListResponse { posts, total })) => {
+        Some(Ok(ArchiveResponse { posts, total })) => {
             if *total == 0 {
                 rsx! {
                     span { hidden: true, "data-vt-list": "true" }
@@ -215,7 +220,10 @@ fn ArchivesContent() -> Element {
                     }
                 }
             } else {
-                let grouped = group_posts(posts);
+                let mut displayed = posts.clone();
+                displayed.extend(older_posts.read().iter().cloned());
+                let has_more = !exhausted() && (displayed.len() as i64) < *total;
+                let grouped = group_posts(&displayed);
                 rsx! {
                     section { class: "archive-timeline", "data-vt-list": "true", aria_labelledby: "archive-timeline-title",
                         div { class: "archive-toolbar",
@@ -236,6 +244,33 @@ fn ArchivesContent() -> Element {
                             YearSection {
                                 key: "{year_group.year}",
                                 year_group: year_group.clone(),
+                            }
+                        }
+                        if has_more {
+                            div { class: "flex flex-col items-center gap-2 py-6",
+                                button {
+                                    r#type: "button", class: BTN_OUTLINE, disabled: loading_more(),
+                                    onclick: move |_| {
+                                        if loading_more() { return; }
+                                        loading_more.set(true);
+                                        load_error.set(false);
+                                        spawn(async move {
+                                            match list_archive_posts(next_page()).await {
+                                                Ok(response) => {
+                                                    exhausted.set(response.posts.len() < ARCHIVE_PAGE_SIZE);
+                                                    older_posts.write().extend(response.posts);
+                                                    next_page += 1;
+                                                }
+                                                Err(_) => load_error.set(true),
+                                            }
+                                            loading_more.set(false);
+                                        });
+                                    },
+                                    if loading_more() { "正在加载…" } else { "加载更早的文章" }
+                                }
+                                if load_error() {
+                                    p { role: "alert", class: "text-sm text-red-500", "加载失败，请重试。" }
+                                }
                             }
                         }
                         footer { class: "archive-colophon",
@@ -334,13 +369,9 @@ fn MonthSection(month_group: MonthGroup, year: String) -> Element {
 
 /// 整行使用原生链接，日期保留完整 datetime，标题在窄屏自然换行。
 #[component]
-fn ArchiveEntry(post: PostListItem) -> Element {
+fn ArchiveEntry(post: ArchivePost) -> Element {
     let date_str = post.formatted_date();
-    let day = post
-        .published_at
-        .unwrap_or(post.created_at)
-        .format("%d")
-        .to_string();
+    let day = post.published_at.format("%d").to_string();
     let topics = post
         .tags
         .iter()

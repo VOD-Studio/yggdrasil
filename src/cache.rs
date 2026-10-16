@@ -150,6 +150,25 @@ static POST_LIST_CACHE: LazyLock<PostListCache> = LazyLock::new(|| {
         .build()
 });
 
+#[cfg(feature = "server")]
+static ARCHIVE_CACHE: LazyLock<Cache<i32, crate::api::posts::ArchiveResponse>> =
+    LazyLock::new(|| {
+        Cache::builder()
+            .max_capacity(100)
+            .time_to_live(TTL_POST_LIST)
+            .build()
+    });
+
+#[cfg(feature = "server")]
+pub async fn get_archive(page: i32) -> Option<crate::api::posts::ArchiveResponse> {
+    ARCHIVE_CACHE.get(&page).await
+}
+
+#[cfg(feature = "server")]
+pub async fn set_archive(page: i32, response: crate::api::posts::ArchiveResponse) {
+    ARCHIVE_CACHE.insert(page, response).await;
+}
+
 /// 全局标签列表缓存实例，最大容量 50。
 #[cfg(feature = "server")]
 static TAG_LIST_CACHE: LazyLock<TagListCache> = LazyLock::new(|| {
@@ -636,6 +655,7 @@ pub async fn set_feed(items: Vec<FeedItem>) {
 /// 清空所有文章分页列表缓存。
 #[cfg(feature = "server")]
 pub fn invalidate_post_lists() {
+    ARCHIVE_CACHE.invalidate_all();
     POST_LIST_CACHE.invalidate_all();
 }
 

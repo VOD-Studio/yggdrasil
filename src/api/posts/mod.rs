@@ -5,6 +5,7 @@
 
 #![allow(clippy::unused_unit, deprecated, unused_imports)]
 
+mod archive;
 mod create;
 mod delete;
 pub(crate) mod helpers;
@@ -22,6 +23,7 @@ mod update;
 #[cfg(feature = "server")]
 mod validation;
 
+pub use archive::{list_archive_posts, ArchiveResponse, ARCHIVE_PAGE_SIZE};
 /// 创建新文章。
 pub use create::create_post;
 /// 删除指定文章。

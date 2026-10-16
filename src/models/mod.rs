@@ -3,6 +3,8 @@
 //! 定义博客系统使用的核心领域模型，包括文章（Post）、用户（User）与评论（Comment）。
 //! 这些结构体通过 serde 在服务端与客户端之间共享序列化。
 
+/// 归档时间线的轻量展示模型。
+pub mod archive;
 /// 素材（图片）模型：assets 注册表与引用关联的 serde DTO。
 pub mod asset;
 /// 评论模型及其状态枚举。
