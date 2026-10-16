@@ -64,9 +64,9 @@ pub enum Route {
             /// 文章详情页，按 slug 匹配
             #[route("/post/:slug")]
             PostDetail { slug: String },
-            /// 搜索页
-            #[route("/search")]
-            Search {},
+            /// 搜索页；`?q=` 带入初始查询（搜索面板的「全文搜索」入口）
+            #[route("/search?:q")]
+            Search { q: String },
             /// 关于页面
             #[route("/about")]
             About {},

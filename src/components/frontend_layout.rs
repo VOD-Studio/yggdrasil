@@ -8,6 +8,7 @@ use dioxus::prelude::*;
 use crate::components::footer::Footer;
 use crate::components::header::{Header, SearchIconLink};
 use crate::components::nav::build_nav_items;
+use crate::components::search_palette::{use_search_palette_provider, SearchPalette};
 use crate::components::skeletons::archive_skeleton::ArchiveSkeleton;
 use crate::components::skeletons::changelog_skeleton::ChangelogSkeleton;
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
@@ -38,7 +39,7 @@ fn route_skeleton(route: &Route) -> Element {
         Route::Friends {} => rsx! {
             DelayedSkeleton { FriendsSkeleton {} }
         },
-        Route::Search {} => rsx! {
+        Route::Search { .. } => rsx! {
             DelayedSkeleton { SearchSkeleton {} }
         },
         Route::PostDetail { .. } => rsx! {
@@ -70,6 +71,7 @@ fn route_skeleton(route: &Route) -> Element {
 pub fn FrontendLayout() -> Element {
     let route = use_route::<Route>();
     let nav_items = build_nav_items(route.clone());
+    let palette = use_search_palette_provider();
     // 前台页面共用 880px 的索引宽度（正文页在内部收窄到 680px），图鉴 1152px；
     // 页头、正文与页脚同宽，左右边缘对齐。
     let max_width = if matches!(
@@ -88,13 +90,14 @@ pub fn FrontendLayout() -> Element {
                 max_width,
                 nav_items,
                 right_content: rsx! {
-                    SearchIconLink {}
+                    SearchIconLink { on_click: move |_| palette.open() }
                     ThemeToggle {}
                 },
             } },
             footer: rsx! { Footer { max_width } },
             main_content: rsx! {
                 SuspenseBoundary { fallback: move |_| route_skeleton(&route), Outlet::<Route> {} }
+                SearchPalette {}
             },
         }
     }

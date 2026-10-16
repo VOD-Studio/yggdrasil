@@ -242,7 +242,7 @@ const MODAL_PANEL_BASE: &str = "dialog-panel modal-panel animate-modal-panel-ent
 
 /// 焦点锁定：Tab / Shift+Tab 在最上层打开的弹窗内循环，焦点不会跑到页面背后。
 #[cfg(target_arch = "wasm32")]
-fn trap_tab(event: &web_sys::KeyboardEvent, title: &str) {
+pub(crate) fn trap_tab(event: &web_sys::KeyboardEvent, title: &str) {
     use wasm_bindgen::JsCast;
     const FOCUSABLE: &str = "a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])";
     let Some(document) = web_sys::window().and_then(|w| w.document()) else {
