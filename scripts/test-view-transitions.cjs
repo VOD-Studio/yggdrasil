@@ -207,7 +207,12 @@ async function main() {
     await ready(page, '/search');
     assert.equal(await page.locator('#article-search').count(), 1);
     console.log('PASS rapid-programmatic-navigation');
-    await page.evaluate(() => { __routeTransitions.push('/about'); document.querySelector('.theme-toggle').click(); });
+    await page.evaluate(() => {
+      __routeTransitions.push('/about');
+      // 点与当前明暗相反的一段，确保触发圆形扩散。
+      const target = document.documentElement.classList.contains('dark') ? 'light' : 'dark';
+      document.querySelector(`[data-vt-shell="frontend-header"] .theme-seg [data-mode="${target}"]`).click();
+    });
     await ready(page, '/about');
     console.log('PASS navigation-theme-race');
     assert.equal(await page.locator('[style*="view-transition-name: vt-"]').count(), 0, 'temporary shared names cleaned');

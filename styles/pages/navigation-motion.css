@@ -1,83 +1,3 @@
-/* 独立下划线可在栏目间共享快照，保留原有文字导航的轻量外观。 */
-.nav-indicator {
-  position: absolute;
-  inset-inline: 0.75rem;
-  top: calc(50% + 0.725rem);
-  height: 2px;
-  border-radius: 999px;
-  background: var(--color-paper-accent);
-  pointer-events: none;
-}
-
-/* 移动端顶部导航菜单展开/折叠双向平滑动画 */
-.mobile-nav-panel {
-  display: grid;
-  grid-template-rows: 0fr;
-  opacity: 0;
-  visibility: hidden;
-  border-top-width: 1px;
-  border-color: transparent;
-  transition:
-    grid-template-rows 250ms cubic-bezier(0.16, 1, 0.3, 1),
-    opacity 200ms cubic-bezier(0.16, 1, 0.3, 1),
-    visibility 250ms ease,
-    border-color 200ms ease;
-}
-
-.mobile-nav-panel.is-open {
-  grid-template-rows: 1fr;
-  opacity: 1;
-  visibility: visible;
-  border-color: var(--color-paper-border);
-}
-
-.mobile-nav-content {
-  min-height: 0;
-  overflow: hidden;
-  transition: transform 250ms cubic-bezier(0.16, 1, 0.3, 1);
-  transform: translateY(-8px);
-}
-
-.mobile-nav-panel.is-open .mobile-nav-content {
-  transform: translateY(0);
-}
-
-/* 移动端菜单项微动与阶梯递进效果 (Staggered fade/slide in) */
-.mobile-nav-item {
-  opacity: 0;
-  transform: translateY(-6px);
-  transition:
-    opacity 200ms cubic-bezier(0.16, 1, 0.3, 1),
-    transform 200ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.mobile-nav-panel.is-open .mobile-nav-item {
-  opacity: 1;
-  transform: translateY(0);
-}
-
-.mobile-nav-panel.is-open .mobile-nav-item:nth-child(1) {
-  transition-delay: 30ms;
-}
-.mobile-nav-panel.is-open .mobile-nav-item:nth-child(2) {
-  transition-delay: 60ms;
-}
-.mobile-nav-panel.is-open .mobile-nav-item:nth-child(3) {
-  transition-delay: 90ms;
-}
-.mobile-nav-panel.is-open .mobile-nav-item:nth-child(4) {
-  transition-delay: 120ms;
-}
-.mobile-nav-panel.is-open .mobile-nav-item:nth-child(5) {
-  transition-delay: 150ms;
-}
-.mobile-nav-panel.is-open .mobile-nav-item:nth-child(6) {
-  transition-delay: 180ms;
-}
-.mobile-nav-panel.is-open .mobile-nav-item:nth-child(7) {
-  transition-delay: 210ms;
-}
-
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
@@ -101,17 +21,10 @@
     animation: none;
   }
 
-  .theme-toggle svg {
-    animation: none;
-  }
-
   .md-content pre .mermaid-loading::before {
     animation: none;
   }
 
-  .mobile-nav-panel,
-  .mobile-nav-content,
-  .mobile-nav-item,
   .collapsible-panel,
   .collapsible-trigger,
   .collapsible-chevron,

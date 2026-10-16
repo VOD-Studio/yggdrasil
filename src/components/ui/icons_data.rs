@@ -82,6 +82,7 @@ pub enum IconName {
     LogOut,
     Settings,
     Mail,
+    Github,
     AtSign,
     Database,
     Server,
@@ -94,7 +95,7 @@ pub enum IconName {
 impl IconName {
     /// 全部图标，供图鉴与测试遍历。
     #[allow(dead_code)]
-    pub const ALL: [IconName; 84] = [
+    pub const ALL: [IconName; 85] = [
         IconName::Search,
         IconName::X,
         IconName::Menu,
@@ -172,6 +173,7 @@ impl IconName {
         IconName::LogOut,
         IconName::Settings,
         IconName::Mail,
+        IconName::Github,
         IconName::AtSign,
         IconName::Database,
         IconName::Server,
@@ -261,6 +263,7 @@ impl IconName {
             IconName::LogOut => "log-out",
             IconName::Settings => "settings",
             IconName::Mail => "mail",
+            IconName::Github => "github",
             IconName::AtSign => "at-sign",
             IconName::Database => "database",
             IconName::Server => "server",
@@ -351,6 +354,7 @@ impl IconName {
             IconName::LogOut => "<path d=\"m16 17 5-5-5-5\"/><path d=\"M21 12H9\"/><path d=\"M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4\"/>",
             IconName::Settings => "<path d=\"M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915\"/><circle cx=\"12\" cy=\"12\" r=\"3\"/>",
             IconName::Mail => "<path d=\"m22 7-8.991 5.727a2 2 0 0 1-2.009 0L2 7\"/><rect x=\"2\" y=\"4\" width=\"20\" height=\"16\" rx=\"2\"/>",
+            IconName::Github => "<path d=\"M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.4 5.4 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4\"/><path d=\"M9 18c-4.51 2-5-2-7-2\"/>",
             IconName::AtSign => "<circle cx=\"12\" cy=\"12\" r=\"4\"/><path d=\"M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8\"/>",
             IconName::Database => "<ellipse cx=\"12\" cy=\"5\" rx=\"9\" ry=\"3\"/><path d=\"M3 5V19A9 3 0 0 0 21 19V5\"/><path d=\"M3 12A9 3 0 0 0 21 12\"/>",
             IconName::Server => "<rect width=\"20\" height=\"8\" x=\"2\" y=\"2\" rx=\"2\" ry=\"2\"/><rect width=\"20\" height=\"8\" x=\"2\" y=\"14\" rx=\"2\" ry=\"2\"/><line x1=\"6\" x2=\"6.01\" y1=\"6\" y2=\"6\"/><line x1=\"6\" x2=\"6.01\" y1=\"18\" y2=\"18\"/>",

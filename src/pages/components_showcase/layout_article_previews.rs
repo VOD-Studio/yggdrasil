@@ -307,7 +307,7 @@ fn HeaderPreview(detail: bool) -> Element {
                     }
                     div { class: "showcase-header-card-tags",
                         span { "自适应居中" }
-                        span { "平滑下划指示" }
+                        span { "滑动胶囊" }
                         span { "窄屏自动折叠" }
                     }
                 }
@@ -424,8 +424,8 @@ fn HeaderPreview(detail: bool) -> Element {
                             p { class: "text-xs font-mono text-paper-secondary tracking-wider", "FEATURE HIGHLIGHTS / 特性说明" }
                             ul { class: "text-xs text-paper-secondary space-y-2 list-disc list-inside",
                                 li { "自适应居中对齐：通过 max_width 参数确保顶部导航项左右边缘与下方文章正文精准对齐。" }
-                                li { "指示器平滑过渡：激活项下方带独立的 nav-indicator 下划线，栏目切换时平滑滑动。" }
-                                li { "移动端交互：在移动端或窄屏视口下自动转换为旋转图标汉堡按钮与平滑展开面板。" }
+                                li { "当前栏目：激活项是浮起的胶囊（nav-indicator），切换栏目时以弹簧滑到新位置。" }
+                                li { "移动端交互：760px 以下只留文字标、搜索与菜单按钮，菜单为可拖动关闭的底部抽屉。" }
                             }
                         }
 
@@ -462,7 +462,7 @@ const SAMPLE_SEARCH_ITEMS: &[SampleSearchResult] = &[
     },
     SampleSearchResult {
         title: "响应式导航栏与自适应平滑指示器实践",
-        snippet: "如何通过 nav-indicator 独立下划线实现多栏目与搜索入口间的平滑视觉对齐。",
+        snippet: "如何让当前栏目的胶囊在栏目之间滑动，同时不遮挡其余导航文字。",
         tag: "前端",
         date: "2026-09-18",
     },
@@ -527,7 +527,7 @@ fn SearchIconLinkPreview(detail: bool) -> Element {
                         }
                         div { class: "min-w-0 flex flex-col",
                             span { class: "text-[11px] font-mono text-paper-accent font-medium", "激活状态" }
-                            span { class: "text-[10px] text-paper-accent/80 truncate", "下划线 · /search" }
+                            span { class: "text-[10px] text-paper-accent/80 truncate", "浅灰加深 · /search" }
                         }
                     }
                 }
@@ -681,9 +681,9 @@ fn SearchIconLinkPreview(detail: bool) -> Element {
                                     }
                                     p { class: "text-[11px] text-paper-secondary mt-1 leading-relaxed",
                                         if is_active_route() {
-                                            "当前图标呈现 text-paper-accent，底部挂载独立的 nav-indicator 绿色下划线指示条。"
+                                            "位于搜索页时，入口胶囊底色加深、文字转为主色，并标记 aria-current。"
                                         } else {
-                                            "当前图标呈现 text-paper-secondary，鼠标悬浮时平滑过渡至强调色。"
+                                            "默认为浅灰底胶囊，悬停时底色加深。"
                                         }
                                     }
                                 }
@@ -925,9 +925,7 @@ fn FooterPreview(detail: bool) -> Element {
             }
             FooterView {
                 github_url: Some("https://github.com".to_string()),
-                top_visible: true,
-                page_shell: false,
-                inline_top: true,
+                    page_shell: false,
                 on_top: move |_| scroll_demo_to_top(scroll_id),
             }
         }
@@ -1002,9 +1000,7 @@ fn FrontendLayoutPreview(detail: bool) -> Element {
                     footer: rsx! {
                         FooterView {
                             github_url: Some("https://github.com".to_string()),
-                            top_visible: false,
-                            page_shell: false,
-                            inline_top: true,
+                                            page_shell: false,
                             on_top: move |_| scroll_demo_to_top(scroll_id),
                         }
                     },
@@ -1158,9 +1154,7 @@ fn FrontendLayoutPreview(detail: bool) -> Element {
                         footer: rsx! {
                             FooterView {
                                 github_url: Some("https://github.com".to_string()),
-                                top_visible: true,
-                                page_shell: false,
-                                inline_top: true,
+                                                    page_shell: false,
                                 on_top: move |_| scroll_demo_to_top(scroll_id),
                             }
                         },

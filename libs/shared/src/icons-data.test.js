@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { expect, it } from 'vitest';
-import { ICONS, iconBody, iconsRust, variantName } from './icons';
+import { CUSTOM_ICONS, ICONS, iconBody, iconsRust, variantName } from './icons';
 
 const require = createRequire(import.meta.url);
 const nodes = require('lucide-static/icon-nodes.json');
@@ -16,7 +16,7 @@ it('matches the committed src/components/ui/icons_data.rs', () => {
 
 it('keeps icon names unique and present in lucide-static', () => {
   expect(new Set(ICONS).size).toBe(ICONS.length);
-  for (const slug of ICONS) expect(nodes[slug], slug).toBeDefined();
+  for (const slug of ICONS) expect(nodes[slug] ?? CUSTOM_ICONS[slug], slug).toBeDefined();
 });
 
 it('converts slugs and nodes', () => {

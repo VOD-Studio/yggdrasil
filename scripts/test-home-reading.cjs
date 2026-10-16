@@ -38,7 +38,7 @@ async function startReading(page, reduced, keyboard = false) {
   else await link.click();
   await page.waitForTimeout(1100);
   const after = await page.evaluate(() => {
-    const header = document.querySelector('header.sticky').getBoundingClientRect();
+    const header = document.querySelector('[data-vt-shell="frontend-header"]').getBoundingClientRect();
     const posts = document.getElementById('home-posts').getBoundingClientRect();
     return {
       entry: window.__routeTransitions.entryId(),
@@ -126,7 +126,7 @@ async function startReading(page, reduced, keyboard = false) {
         const direct = await page.evaluate(() => ({
           scroll: scrollY,
           top: document.getElementById('home-posts').getBoundingClientRect().top,
-          header: document.querySelector('header.sticky').getBoundingClientRect().bottom,
+          header: document.querySelector('[data-vt-shell="frontend-header"]').getBoundingClientRect().bottom,
           overflow: document.documentElement.scrollWidth > innerWidth,
         }));
         assert(direct.scroll > 100 && direct.top >= direct.header - 2,

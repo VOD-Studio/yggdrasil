@@ -112,23 +112,4 @@
     text-align: center;
     padding: 0 0.5rem;
   }
-
-  /* ========== 主题切换图标进入动画 ==========
-     点击切换主题时 theme.set 立即换 SVG（配合 RSX 的 key 强制重挂载），
-     该动画为新挂载的图标播放一次缩放+淡入，给用户即时反馈。
-     仅作用于 .theme-toggle 内的 svg，不影响页面其它 svg。 */
-  .theme-toggle svg {
-    animation: theme-icon-enter 0.3s ease-out;
-  }
-
-  @keyframes theme-icon-enter {
-    from {
-      opacity: 0;
-      transform: scale(0.5) rotate(-60deg);
-    }
-    to {
-      opacity: 1;
-      transform: scale(1) rotate(0deg);
-    }
-  }
 }

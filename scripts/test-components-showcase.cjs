@@ -35,7 +35,7 @@ const TARGETS = [
   ['comment-section', 'CommentSection', '.comment-editor-mount .ProseMirror'],
   ['footer', 'Footer', '[data-showcase-preview="footer"] footer'],
   ['frontend-layout', 'FrontendLayout', '[data-showcase-preview="frontend-layout"] main'],
-  ['header', 'Header', '[data-showcase-preview="header"] nav'],
+  ['header', 'Header', '[data-showcase-preview="header"] header'],
   ['post-content', 'PostContent', '[data-showcase-preview="post-content"] .post-content'],
   ['post-footer', 'PostFooter', '[data-showcase-preview="post-footer"] .post-footer'],
   ['post-header', 'PostHeader', '[data-showcase-preview="post-header"] .post-header'],
@@ -700,12 +700,11 @@ async function interactions(page, onlyModalResets = false) {
   await page.setViewportSize({ width: 390, height: 844 });
   await goto(page, '/about/components/header');
   const demoHeader = page.locator('[data-showcase-preview="header"]');
-  const menuButton = demoHeader.getByRole('button', { name: '打开导航菜单' });
+  const menuButton = demoHeader.getByRole('button', { name: '打开导航' });
   const controls = await menuButton.getAttribute('aria-controls');
   assert(controls && controls !== 'mobile-nav-menu');
   await menuButton.click();
-  assert.equal(await demoHeader.getByRole('button', { name: '关闭导航菜单' })
-    .getAttribute('aria-expanded'), 'true');
+  assert.equal(await menuButton.getAttribute('aria-expanded'), 'true');
   assert.equal(await page.locator(`#${controls}`).count(), 1);
   await page.setViewportSize({ width: 1440, height: 1000 });
   pass('sample Header mobile menu has its own ID and opens');

@@ -93,6 +93,7 @@ export const ICONS: readonly string[] = [
   'log-out',
   'settings',
   'mail',
+  'github',
   'at-sign',
   'database',
   'server',
@@ -101,6 +102,22 @@ export const ICONS: readonly string[] = [
   'chart-column',
   'activity',
 ];
+
+/**
+ * lucide-static 已移除品牌图标；这里补上 Lucide 早期版本的线条版（同为 ISC），
+ * 与站点其余图标同一笔触。
+ */
+export const CUSTOM_ICONS: Record<string, IconNode> = {
+  github: [
+    [
+      'path',
+      {
+        d: 'M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.4 5.4 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4',
+      },
+    ],
+    ['path', { d: 'M9 18c-4.51 2-5-2-7-2' }],
+  ],
+};
 
 /** `arrow-up-right` → `ArrowUpRight`。 */
 export function variantName(slug: string): string {
@@ -132,7 +149,8 @@ function rustString(value: string): string {
 }
 
 /** 生成 `src/components/ui/icons_data.rs` 的完整内容。 */
-export function iconsRust(nodes: Record<string, IconNode>, version: string): string {
+export function iconsRust(lucide: Record<string, IconNode>, version: string): string {
+  const nodes = { ...lucide, ...CUSTOM_ICONS };
   const missing = ICONS.filter((slug) => !nodes[slug]);
   if (missing.length > 0)
     throw new Error(`lucide-static ${version} 缺少图标：${missing.join(', ')}`);

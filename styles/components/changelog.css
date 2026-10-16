@@ -160,7 +160,7 @@
   @media (max-width: 1023px) {
     .changelog-version { scroll-margin-top: 11rem; }
     .changelog-layout { grid-template-columns: minmax(0, 1fr); gap: 1.25rem; }
-    .changelog-nav { top: 4.5rem; }
+    .changelog-nav { top: calc(var(--site-header-height) + 0.5rem); }
     .changelog-nav-panel { border-radius: 1.25rem; background: color-mix(in srgb, var(--color-paper-entry) 92%, transparent); backdrop-filter: blur(12px); }
     .changelog-nav-head { padding: 0.75rem 1rem 0.25rem; }
     .changelog-nav-scroll { max-height: none; overflow-x: auto; overflow-y: hidden; mask-image: linear-gradient(to right, var(--nav-fade-start), #000 16px, #000 calc(100% - 16px), var(--nav-fade-end)); }

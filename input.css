@@ -13,6 +13,7 @@
 @import "./styles/components/changelog.css";
 @import "./styles/components/controls.css";
 @import "./styles/components/ui.css";
+@import "./styles/components/shell.css";
 @import "./styles/pages/reading-responsive.css";
 @import "./styles/pages/collapsible.css";
 @import "./styles/pages/friends.css";

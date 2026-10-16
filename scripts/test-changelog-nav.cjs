@@ -97,7 +97,7 @@ async function main() {
       const landing = await page.evaluate(hash => {
         const card = document.getElementById(hash.slice(1)).getBoundingClientRect();
         const directory = document.querySelector('.changelog-nav').getBoundingClientRect();
-        const header = document.querySelector('header.sticky').getBoundingClientRect();
+        const header = document.querySelector('[data-vt-shell="frontend-header"]').getBoundingClientRect();
         const scroller = document.querySelector('.changelog-nav-scroll').getBoundingClientRect();
         const link = document.querySelector('.changelog-nav-link[aria-current]').getBoundingClientRect();
         return { top: card.top, below: innerWidth < 1024 ? directory.bottom : header.bottom,
@@ -121,8 +121,9 @@ async function main() {
       assert.equal(await page.locator('[data-nav-position]').textContent(), `${count} / ${count}`);
 
       const spaMarker = await page.evaluate(() => window.__changelogDocument);
-      if (mobile) await page.getByRole('button', { name: '打开导航菜单' }).click();
-      await page.locator('header a[href="/about"]:visible').first().click();
+      if (mobile) await page.getByRole('button', { name: '打开导航' }).click();
+      // 桌面在页头导航里，手机在底部抽屉里。
+      await page.locator('[data-vt-shell="frontend-header"] a[href="/about"]:visible, #mobile-nav-menu a[href="/about"]').first().click();
       await page.waitForURL(`${base}/about`);
       await page.locator('main a[href="/changelog"]').click();
       await page.waitForSelector('.changelog-nav[data-ready]');

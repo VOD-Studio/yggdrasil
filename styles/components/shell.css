@@ -1,0 +1,440 @@
+/* 页头高度：吸顶元素（更新日志目录等）据此留出位置。 */
+:root {
+  --site-header-height: 3.5rem;
+}
+
+@media (max-width: 767px) {
+  :root {
+    --site-header-height: 3.25rem;
+  }
+}
+
+@layer components {
+  /* ======== 前台页头 ========
+     56px；导航为 ghost 链接，当前项是浮起的胶囊（.nav-indicator，转场时在
+     栏目间滑动）。滚动后才出现发丝底线与模糊背景。 */
+  .site-header {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    width: 100%;
+    background-color: color-mix(in srgb, var(--color-surface-0) 82%, transparent);
+    backdrop-filter: blur(12px);
+    box-shadow: inset 0 -1px 0 var(--color-hairline);
+  }
+
+  /* 支持滚动时间线时，页面顶部透明无底线，滚出 24px 后渐显。 */
+  @supports (animation-timeline: scroll()) {
+    .site-header {
+      animation: site-header-scrolled linear both;
+      animation-timeline: scroll(root block);
+      animation-range: 0 24px;
+    }
+  }
+
+  @keyframes site-header-scrolled {
+    from {
+      background-color: transparent;
+      backdrop-filter: blur(0);
+      box-shadow: inset 0 -1px 0 transparent;
+    }
+  }
+
+  .site-header-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    height: var(--site-header-height);
+    margin-inline: auto;
+    padding-inline: 1.5rem;
+  }
+
+  .wordmark {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5625rem;
+    color: var(--color-fg);
+    font-size: 0.9375rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    text-decoration: none;
+    border-radius: 6px;
+  }
+
+  .wordmark-mark {
+    width: 7px;
+    height: 7px;
+    border-radius: 2px;
+    background-color: var(--color-clay);
+  }
+
+  .wordmark:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
+  }
+
+  .site-nav {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+
+  .nav-item {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    padding: 0.375rem 0.8125rem;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--color-fg-2);
+    font: inherit;
+    font-size: 0.875rem;
+    white-space: nowrap;
+    text-decoration: none;
+    cursor: pointer;
+    transition:
+      color 150ms var(--ease-out-expo),
+      background-color 150ms var(--ease-out-expo);
+  }
+
+  .nav-item:hover {
+    color: var(--color-fg);
+  }
+
+  .nav-item:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
+  }
+
+  .nav-item.nav-indicator {
+    background-color: var(--color-surface-2);
+    color: var(--color-fg);
+    box-shadow: 0 0 0 1px var(--color-hairline), var(--shadow-sm);
+  }
+
+  .dark .nav-item.nav-indicator {
+    background-color: var(--color-surface-3);
+  }
+
+  .site-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  /* 搜索入口：「搜索 ⌘K」小胶囊。 */
+  .search-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    height: 2rem;
+    padding: 0 0.375rem 0 0.625rem;
+    border: 0;
+    border-radius: 8px;
+    background-color: var(--color-ink-1);
+    color: var(--color-fg-3);
+    font: inherit;
+    font-size: 0.8125rem;
+    text-decoration: none;
+    cursor: pointer;
+    transition:
+      background-color 150ms var(--ease-out-expo),
+      color 150ms var(--ease-out-expo);
+  }
+
+  .search-trigger:hover {
+    background-color: var(--color-ink-2);
+    color: var(--color-fg-2);
+  }
+
+  .search-trigger:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
+  }
+
+  .search-trigger > kbd {
+    padding: 1px 6px;
+    border-radius: 5px;
+    background-color: var(--color-surface-2);
+    box-shadow: 0 0 0 1px var(--color-hairline);
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    color: var(--color-fg-3);
+  }
+
+  .search-trigger[aria-current="page"] {
+    background-color: var(--color-ink-2);
+    color: var(--color-fg);
+  }
+
+  /* 主题分段控件：浅色 / 深色 / 跟随系统。选中态由 <html data-theme-mode>
+     决定，规则内联在 SSR 输出里（theme.rs 的 THEME_SEGMENT_STYLE），首屏不等 WASM。 */
+  .theme-seg {
+    display: inline-flex;
+    padding: 2px;
+    border-radius: 999px;
+    background-color: var(--color-ink-1);
+  }
+
+  .theme-seg-item {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    min-width: 1.75rem;
+    height: 1.75rem;
+    padding: 0 0.4375rem;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--color-fg-3);
+    font: inherit;
+    font-size: 0.8125rem;
+    white-space: nowrap;
+    cursor: pointer;
+    transition:
+      background-color 200ms var(--ease-out-expo),
+      color 150ms var(--ease-out-expo),
+      box-shadow 200ms var(--ease-out-expo);
+  }
+
+  .theme-seg-item:hover {
+    color: var(--color-fg);
+  }
+
+  .theme-seg-item:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
+  }
+
+  /* 手机端的触发按钮：44px 触控目标。 */
+  .touch-icon {
+    display: none;
+    place-items: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--color-fg-2);
+    cursor: pointer;
+  }
+
+  .touch-icon:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
+  }
+
+  @media (max-width: 767px) {
+    .site-header-inner {
+      padding-inline: 1rem 0.5rem;
+    }
+
+    .site-nav,
+    .site-actions > .theme-seg,
+    .site-actions > .search-trigger {
+      display: none;
+    }
+
+    .touch-icon {
+      display: grid;
+    }
+  }
+
+  /* ======== 手机导航抽屉（底部面板） ======== */
+  html.sheet-open {
+    overflow: hidden;
+  }
+
+  .sheet-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    background-color: rgb(28 26 22 / 0.24);
+    animation: listbox-fade 200ms var(--ease-out-expo) both;
+  }
+
+  .dark .sheet-scrim {
+    background-color: rgb(0 0 0 / 0.55);
+  }
+
+  .sheet {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 61;
+    max-height: 85dvh;
+    overflow-y: auto;
+    padding: 0.5rem 1rem max(1.75rem, env(safe-area-inset-bottom));
+    border-radius: 20px 20px 0 0;
+    background-color: var(--color-popover);
+    box-shadow: 0 -1px 0 var(--color-hairline), 0 -12px 40px rgb(0 0 0 / 0.1);
+    animation: sheet-in var(--spring-heavy-duration) var(--ease-spring-heavy) both;
+    touch-action: pan-y;
+  }
+
+  .sheet[data-dragging="true"] {
+    animation: none;
+    transition: none;
+  }
+
+  .sheet[data-closing="true"] {
+    animation: sheet-out 200ms var(--ease-out-expo) both;
+  }
+
+  .sheet-scrim[data-closing="true"] {
+    animation: listbox-fade 200ms var(--ease-out-expo) reverse both;
+  }
+
+  .sheet-handle {
+    display: block;
+    width: 100%;
+    height: 1.5rem;
+    border: 0;
+    background: transparent;
+    cursor: grab;
+    touch-action: none;
+  }
+
+  .sheet-handle::before {
+    content: "";
+    display: block;
+    width: 2.25rem;
+    height: 4px;
+    margin: 0 auto;
+    border-radius: 999px;
+    background-color: var(--color-ink-2);
+  }
+
+  @keyframes sheet-in {
+    from {
+      transform: translateY(100%);
+    }
+  }
+
+  @keyframes sheet-out {
+    to {
+      transform: translateY(100%);
+    }
+  }
+
+  .sheet-nav-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    height: 3rem;
+    padding: 0 0.875rem;
+    border: 0;
+    border-radius: 12px;
+    background: transparent;
+    color: var(--color-fg-2);
+    font: inherit;
+    font-size: 1rem;
+    text-decoration: none;
+    cursor: pointer;
+  }
+
+  .sheet-nav-item[aria-current="page"] {
+    background-color: var(--color-ink-1);
+    color: var(--color-fg);
+    font-weight: 500;
+  }
+
+  .sheet-nav-item[aria-current="page"]::after {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: var(--color-clay);
+  }
+
+  .sheet-nav-item:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
+  }
+
+  .sheet-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.25rem 0.25rem 0;
+    font-size: 0.875rem;
+    color: var(--color-fg-2);
+  }
+
+  .sheet-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    padding: 1.125rem 0.25rem 0;
+    font-size: 0.8125rem;
+  }
+
+  .sheet-links a {
+    color: var(--color-fg-3);
+    text-decoration: none;
+  }
+
+  /* ======== 页脚 ======== */
+  .site-footer {
+    margin-top: auto;
+    box-shadow: inset 0 1px 0 var(--color-hairline);
+  }
+
+  .site-footer-inner {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem 1.5rem;
+    margin-inline: auto;
+    padding: 1.75rem 1.5rem 2.75rem;
+    font-size: 0.8125rem;
+    color: var(--color-fg-3);
+  }
+
+  .site-footer-links {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 1.25rem;
+  }
+
+  .site-footer a,
+  .site-footer button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--color-fg-3);
+    font: inherit;
+    text-decoration: none;
+    cursor: pointer;
+    transition: color 150ms var(--ease-out-expo);
+  }
+
+  .site-footer a:hover,
+  .site-footer button:hover {
+    color: var(--color-fg);
+  }
+
+  .site-footer a:focus-visible,
+  .site-footer button:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sheet,
+    .sheet[data-closing="true"] {
+      animation: listbox-fade 150ms linear both;
+    }
+  }
+}

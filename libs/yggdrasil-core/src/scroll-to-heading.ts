@@ -11,12 +11,14 @@
 /** 呼吸空间：标题顶部与 header 下沿之间留出的空白。 */
 const HEADING_OFFSET_PX = 16;
 
+/** 吸顶页头：前台为 `.site-header`，后台布局仍用 Tailwind 的 `sticky`。 */
+export const STICKY_HEADER_SELECTOR = 'header.site-header, header.sticky';
+
 /**
- * 动态测量 sticky header 高度。读 .md-content 最近的 sticky 祖先 header，
- * 避免硬编码 80px（响应式/主题变化时 header 高度可能变）。
+ * 动态测量 sticky header 高度，避免硬编码（响应式/主题变化时 header 高度可能变）。
  */
 function measureStickyHeaderHeight(): number {
-  const header = document.querySelector('header.sticky');
+  const header = document.querySelector(STICKY_HEADER_SELECTOR);
   return header ? header.getBoundingClientRect().height : 0;
 }
 

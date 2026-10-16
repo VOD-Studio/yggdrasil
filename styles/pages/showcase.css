@@ -408,47 +408,33 @@
 
 .showcase-card-preview :is([data-showcase-preview="header"], [data-showcase-preview="frontend-layout"]) header {
   position: static;
+  animation: none;
   backdrop-filter: none;
   background: transparent;
-  border-bottom: 1px solid var(--sc-line);
-  transition: none;
+  box-shadow: inset 0 -1px 0 var(--sc-line);
 }
 
-.showcase-card-preview :is([data-showcase-preview="header"], [data-showcase-preview="frontend-layout"]) header nav {
+.showcase-card-preview :is([data-showcase-preview="header"], [data-showcase-preview="frontend-layout"]) .site-header-inner {
   height: 2.75rem;
+  gap: 0.5rem;
   padding-inline: 0.65rem;
 }
 
-.showcase-card-preview :is([data-showcase-preview="header"], [data-showcase-preview="frontend-layout"]) header nav > :first-child {
-  font-size: 1.02rem;
-  line-height: 1.2;
-  font-weight: 800;
+.showcase-card-preview :is([data-showcase-preview="header"], [data-showcase-preview="frontend-layout"]) .wordmark {
+  font-size: 0.82rem;
 }
 
-.showcase-card-preview :is([data-showcase-preview="header"], [data-showcase-preview="frontend-layout"]) header nav ul {
-  gap: 0.15rem;
+.showcase-card-preview :is([data-showcase-preview="header"], [data-showcase-preview="frontend-layout"]) .site-nav {
+  gap: 0.1rem;
 }
 
-.showcase-card-preview :is([data-showcase-preview="header"], [data-showcase-preview="frontend-layout"]) header nav ul :is(a, button) {
-  padding: 0.18rem 0.38rem;
+.showcase-card-preview :is([data-showcase-preview="header"], [data-showcase-preview="frontend-layout"]) .nav-item {
+  padding: 0.2rem 0.5rem;
   font-size: 0.72rem;
-  border-radius: 0.38rem;
-  line-height: 1.25;
 }
 
-.showcase-card-preview :is([data-showcase-preview="header"], [data-showcase-preview="frontend-layout"]) header nav .nav-indicator {
-  inset-inline: 0.38rem;
-  top: calc(50% + 0.55rem);
-  height: 2px;
-}
-
-.showcase-card-preview :is([data-showcase-preview="header"], [data-showcase-preview="frontend-layout"]) header nav button svg {
-  width: 0.95rem;
-  height: 0.95rem;
-}
-
-.showcase-card-preview :is([data-showcase-preview="header"], [data-showcase-preview="frontend-layout"]) header nav button:has(svg) {
-  padding: 0.25rem;
+.showcase-card-preview :is([data-showcase-preview="header"], [data-showcase-preview="frontend-layout"]) .search-trigger > :not(svg) {
+  display: none;
 }
 
 .showcase-header-card-body {
@@ -586,10 +572,6 @@
 
 .showcase-mobile-phone-frame header nav button.md\:hidden {
   display: flex !important;
-}
-
-.showcase-mobile-phone-frame .mobile-nav-panel.md\:hidden {
-  display: grid !important;
 }
 
 .showcase-mobile-phone-frame header nav {

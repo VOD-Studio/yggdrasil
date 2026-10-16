@@ -8,22 +8,22 @@
 }
 
 html:not(.is-theme-transitioning)::view-transition-group(root) {
-  animation-duration: 240ms;
+  animation-duration: 200ms;
 }
 
 html:not(.is-theme-transitioning)::view-transition-old(root) {
-  animation: vt-fade-out 240ms ease both;
+  animation: vt-fade-out 200ms var(--ease-out-expo) both;
   mix-blend-mode: normal;
 }
 
 html:not(.is-theme-transitioning)::view-transition-new(root) {
-  animation: vt-fade-in 240ms ease both;
+  animation: vt-fade-in 200ms var(--ease-out-expo) both;
   mix-blend-mode: normal;
 }
 
 /* 正文单独捕获，页头保留点击能力，允许中途切换栏目或主题。 */
 html[data-vt-section] {
-  --vt-section-offset: 24px;
+  --vt-section-offset: 16px;
   view-transition-name: none;
 }
 
@@ -32,7 +32,7 @@ html[data-vt-section] main {
 }
 
 html[data-vt-section='backward'] {
-  --vt-section-offset: -24px;
+  --vt-section-offset: -16px;
 }
 
 html[data-vt-section]::view-transition {
@@ -55,11 +55,11 @@ html[data-vt-section]::view-transition-new(vt-section-content) {
 }
 
 html[data-vt-section]::view-transition-old(vt-section-content) {
-  animation: vt-section-out 160ms ease-out both;
+  animation: vt-section-out 140ms var(--ease-out-expo) both;
 }
 
 html[data-vt-section]::view-transition-new(vt-section-content) {
-  animation: vt-section-in 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: vt-section-in var(--spring-snappy-duration) var(--ease-spring-snappy) both;
 }
 
 @keyframes vt-section-out {
@@ -79,7 +79,8 @@ html[data-vt-section]::view-transition-new(vt-section-content) {
   }
 }
 
-/* 仅捕获桌面上唯一的当前栏目下划线，搜索图标也能接住它。 */
+/* 仅捕获桌面上唯一的当前栏目链接（胶囊连同文字），在栏目之间滑动；
+   新旧文字交叉淡入淡出，其余导航文字留在页头快照里不被遮挡。 */
 @media (min-width: 768px) {
   html[data-vt-section] .nav-indicator {
     view-transition-name: vt-nav-indicator;
@@ -87,46 +88,51 @@ html[data-vt-section]::view-transition-new(vt-section-content) {
 }
 
 html[data-vt-section]::view-transition-group(vt-nav-indicator) {
-  animation-duration: 300ms;
-  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  animation-duration: var(--spring-snappy-duration);
+  animation-timing-function: var(--ease-spring-snappy);
   z-index: 3;
 }
 
+html[data-vt-section]::view-transition-old(vt-nav-indicator),
+html[data-vt-section]::view-transition-new(vt-nav-indicator) {
+  height: 100%;
+  mix-blend-mode: normal;
+}
+
 html[data-vt-section]::view-transition-old(vt-nav-indicator) {
-  display: none;
+  animation: vt-fade-out 140ms var(--ease-out-expo) both;
 }
 
 html[data-vt-section]::view-transition-new(vt-nav-indicator) {
-  height: 100%;
-  animation: none;
+  animation: vt-fade-in var(--spring-snappy-duration) var(--ease-out-expo) both;
 }
 
 @media (max-width: 767px) {
   html[data-vt-section] {
-    --vt-section-offset: 12px;
+    --vt-section-offset: 8px;
   }
 
   html[data-vt-section='backward'] {
-    --vt-section-offset: -12px;
+    --vt-section-offset: -8px;
   }
 }
 
 /* 未匹配到目标的旧元素与 root 同步淡出，不延长降级过渡。 */
 html.is-route-transitioning::view-transition-group(vt-post-title),
 html.is-route-transitioning::view-transition-group(vt-post-cover) {
-  animation-duration: 240ms;
-  animation-timing-function: ease;
+  animation-duration: 200ms;
+  animation-timing-function: var(--ease-out-expo);
 }
 
 html.is-route-transitioning::view-transition-old(vt-post-title),
 html.is-route-transitioning::view-transition-old(vt-post-cover) {
-  animation: vt-fade-out 240ms ease both;
+  animation: vt-fade-out 200ms var(--ease-out-expo) both;
   mix-blend-mode: normal;
 }
 
 html.is-route-transitioning::view-transition-new(vt-post-title),
 html.is-route-transitioning::view-transition-new(vt-post-cover) {
-  animation: vt-fade-in 240ms ease both;
+  animation: vt-fade-in 200ms var(--ease-out-expo) both;
   mix-blend-mode: normal;
 }
 
@@ -137,8 +143,8 @@ html.is-route-transitioning.vt-shared-title::view-transition-new(vt-post-title),
 html.is-route-transitioning.vt-shared-cover::view-transition-group(vt-post-cover),
 html.is-route-transitioning.vt-shared-cover::view-transition-old(vt-post-cover),
 html.is-route-transitioning.vt-shared-cover::view-transition-new(vt-post-cover) {
-  animation-duration: 360ms;
-  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  animation-duration: var(--spring-snappy-duration);
+  animation-timing-function: var(--ease-spring-snappy);
 }
 
 html.is-route-transitioning::view-transition-old(vt-post-cover),
@@ -196,8 +202,8 @@ html.is-theme-transitioning::view-transition-old(root) {
 
 html.is-theme-transitioning::view-transition-new(root) {
   z-index: 2;
-  animation: tt-expand 400ms ease-out forwards;
-  background: var(--color-paper-theme);
+  animation: tt-expand 520ms var(--ease-out-expo) forwards;
+  background: var(--color-surface-0);
 }
 
 @keyframes tt-expand {

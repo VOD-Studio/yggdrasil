@@ -14,6 +14,7 @@
 //! 下游消费者（CodeMirror、SVG 图标判定）应读 `ResolvedTheme`（实际生效明暗），
 //! 而非 `Theme`（用户意图），这样 System 模式下系统偏好变化能自动传播。
 
+use crate::components::ui::{Icon, IconName};
 use dioxus::prelude::*;
 // InteractionLocation 提供 client_coordinates(),用于读取鼠标点击的视口坐标。
 // 该 trait 不在 dioxus::prelude(后者只 re-export events::*),需单独从 dioxus::html 引入。
@@ -49,15 +50,6 @@ pub enum Theme {
 }
 
 impl Theme {
-    /// 三态循环切换：Dark → Light → System → Dark。
-    pub fn cycle(&self) -> Self {
-        match self {
-            Theme::Dark => Theme::Light,
-            Theme::Light => Theme::System,
-            Theme::System => Theme::Dark,
-        }
-    }
-
     /// 解析为实际生效的明暗主题。
     ///
     /// `Light`/`Dark` 直接返回；`System` 根据 `system_dark`（当前系统是否深色）
@@ -287,120 +279,103 @@ const THEME_PRELOAD_SCRIPT: &str = r#"
 })();
 "#;
 
-// 图标显隐是首屏必需样式，随 SSR 输出，避免外部 CSS 旧缓存影响模式显示。
-const THEME_ICON_STYLE: &str = r#"
-.theme-toggle svg { display: none; }
-html[data-theme-mode="light"] .theme-toggle .theme-icon-light,
-html[data-theme-mode="dark"] .theme-toggle .theme-icon-dark,
-html[data-theme-mode="system"] .theme-toggle .theme-icon-system,
-html:not([data-theme-mode]) .theme-toggle .theme-icon-system { display: block; }
+// 分段控件的选中态是首屏必需样式，随 SSR 输出：由预载脚本写入的
+// data-theme-mode 决定，不等 WASM，也不受外部 CSS 旧缓存影响。
+const THEME_SEGMENT_STYLE: &str = r#"
+html[data-theme-mode="light"] .theme-seg [data-mode="light"],
+html[data-theme-mode="dark"] .theme-seg [data-mode="dark"],
+html[data-theme-mode="system"] .theme-seg [data-mode="system"],
+html:not([data-theme-mode]) .theme-seg [data-mode="system"] {
+    background-color: var(--color-surface-2);
+    color: var(--color-fg);
+    box-shadow: 0 0 0 1px var(--color-hairline), var(--shadow-sm);
+}
+html.dark[data-theme-mode="light"] .theme-seg [data-mode="light"],
+html.dark[data-theme-mode="dark"] .theme-seg [data-mode="dark"],
+html.dark[data-theme-mode="system"] .theme-seg [data-mode="system"],
+html.dark:not([data-theme-mode]) .theme-seg [data-mode="system"] {
+    background-color: var(--color-surface-3);
+}
 "#;
 
 /// 首屏主题预加载脚本组件。
 ///
-/// 在页面渲染前读取 localStorage / 系统偏好，设置 `dark` class 和控制图标的
-/// `data-theme-mode`，防止配色和图标在 hydration 前后错位。
+/// 在页面渲染前读取 localStorage / 系统偏好，设置 `dark` class 和控制分段
+/// 控件选中态的 `data-theme-mode`，防止配色和选中项在 hydration 前后错位。
 #[component]
 pub fn ThemePreload() -> Element {
     rsx! {
-        style { dangerous_inner_html: "{THEME_ICON_STYLE}" }
+        style { dangerous_inner_html: "{THEME_SEGMENT_STYLE}" }
         script { dangerous_inner_html: "{THEME_PRELOAD_SCRIPT}" }
     }
 }
 
-/// 主题切换按钮组件（三态循环：Dark → Light → System → Dark）。
+/// 主题切换：浅色 / 深色 / 跟随系统三段式分段控件。
 ///
-/// 三个图标使用固定 SSR 结构，由 `data-theme-mode` 决定哪个可见。
-/// 首屏无需等待 WASM；切换模式时通过 CSS 显示对应图标并播放进入动画。
+/// 选中态由 `<html data-theme-mode>` 经 [`THEME_SEGMENT_STYLE`] 决定，首屏无需
+/// 等待 WASM。点选后只有**实际明暗**（ResolvedTheme）翻转时才以点击点为圆心
+/// 做圆形扩散；明暗不变（如切到跟随系统且结果相同）时直接切换。
 ///
-/// 仅当**实际生效明暗**（ResolvedTheme）因切换而翻转时，才额外触发圆形展开
-/// VT 动画（颜色过渡）；明暗不变时（如 Light → System 且系统浅色）只换图标。
-///
+/// Props：
+/// - `labels`：显示文字（手机抽屉里用）；缺省只显示图标，悬停提示写明模式
 // evt 仅在 wasm32 用于取点击坐标,服务端构建剥离,故允许非 wasm 的 unused_variables。
 #[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))]
 #[component]
-pub fn ThemeToggle() -> Element {
+pub fn ThemeToggle(#[props(default)] labels: bool) -> Element {
     // theme 在 wasm 与 server 两侧都需要 mut（onclick 内 theme.set）。
     #[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut))]
     let mut theme = use_theme();
     // resolved 用于判断切换前后实际明暗是否翻转（决定是否触发 VT）。
     #[cfg(target_arch = "wasm32")]
     let resolved = use_resolved_theme();
-
+    let current = theme();
+    let modes = [
+        (Theme::Light, "light", IconName::Sun),
+        (Theme::Dark, "dark", IconName::Moon),
+        (Theme::System, "system", IconName::Monitor),
+    ];
     rsx! {
-        button {
-            class: "theme-toggle p-2 rounded-full cursor-pointer hover:text-paper-accent transition-colors duration-200 text-paper-secondary",
-            r#type: "button",
-            onclick: move |evt| {
-                let next = theme().cycle();
-                #[cfg(target_arch = "wasm32")]
-                {
-                    let prev_resolved = resolved();
-                    let new_resolved = next.resolve(read_system_dark());
-                    if prev_resolved != new_resolved {
-                        use wasm_bindgen::JsCast;
-                        // 实际明暗翻转 → 触发圆形展开 VT 动画（颜色过渡）。
-                        // JS 从 DOM 现状推导目标主题(不传 isDark),避免与 Signal 状态不同步。
-                        // 用 Reflect::get 取 window.__startThemeTransition 再 call2 调用,
-                        // 替代旧版 format!-into-eval 字符串拼贴(无注入面、与 bridge 风格一致)。
-                        let coords = evt.client_coordinates();
-                        let x = coords.x;
-                        let y = coords.y;
-                        let window = web_sys::window()
-                            .expect(
-                                "主题切换回调仅在 WASM 浏览器上下文执行：无 window",
-                            );
-                        let key = "__startThemeTransition".into();
-                        if let Ok(fn_val) = js_sys::Reflect::get(&window, &key) {
-                            if !fn_val.is_undefined() && !fn_val.is_null() {
-                                let fn_obj = fn_val.unchecked_into::<js_sys::Function>();
-                                let _ = fn_obj.call2(&window, &x.into(), &y.into());
+        div { class: "theme-seg", role: "radiogroup", aria_label: "外观",
+            for (mode , key , icon) in modes {
+                button {
+                    key: "{key}",
+                    class: "theme-seg-item",
+                    r#type: "button",
+                    role: "radio",
+                    "data-mode": key,
+                    aria_checked: "{current == mode}",
+                    aria_label: if labels { None } else { Some(mode_label(mode)) },
+                    title: if labels { "" } else { mode_label(mode) },
+                    onclick: move |evt| {
+                        if theme() == mode {
+                            return;
+                        }
+                        #[cfg(target_arch = "wasm32")]
+                        {
+                            let prev_resolved = resolved();
+                            let new_resolved = mode.resolve(read_system_dark());
+                            if prev_resolved != new_resolved {
+                                use wasm_bindgen::JsCast;
+                                // 实际明暗翻转 → 圆形扩散 VT。JS 从 DOM 现状推导目标主题。
+                                let coords = evt.client_coordinates();
+                                let window = web_sys::window()
+                                    .expect("主题切换回调仅在 WASM 浏览器上下文执行：无 window");
+                                let key = "__startThemeTransition".into();
+                                if let Ok(fn_val) = js_sys::Reflect::get(&window, &key) {
+                                    if !fn_val.is_undefined() && !fn_val.is_null() {
+                                        let fn_obj = fn_val.unchecked_into::<js_sys::Function>();
+                                        let _ = fn_obj.call2(&window, &coords.x.into(), &coords.y.into());
+                                    }
+                                }
                             }
                         }
+                        theme.set(mode);
+                    },
+                    Icon { name: icon, size: 14 }
+                    if labels {
+                        span { "{mode_label(mode)}" }
                     }
-                    theme.set(next);
                 }
-                #[cfg(not(target_arch = "wasm32"))]
-                {
-                    theme.set(next);
-                }
-            },
-            // 隐藏的 SVG 不参与无障碍名称计算，可见图标提供当前模式和提示。
-            svg {
-                class: "theme-icon-dark",
-                role: "img",
-                "aria-label": "主题切换（当前：{mode_label(Theme::Dark)}）",
-                xmlns: "http://www.w3.org/2000/svg",
-                height: "24px",
-                view_box: "0 -960 960 960",
-                width: "24px",
-                fill: "currentColor",
-                title { "当前：{mode_label(Theme::Dark)}（点击切换）" }
-                path { d: "M484-80q-84 0-157.5-32t-128-86.5Q144-253 112-326.5T80-484q0-146 93-257.5T410-880q-18 99 11 193.5T521-521q71 71 165.5 100T880-410q-26 144-138 237T484-80Zm0-80q88 0 163-44t118-121q-86-8-163-43.5T464-465q-61-61-97-138t-43-163q-77 43-120.5 118.5T160-484q0 135 94.5 229.5T484-160Zm-20-305Z" }
-            }
-            svg {
-                class: "theme-icon-light",
-                role: "img",
-                "aria-label": "主题切换（当前：{mode_label(Theme::Light)}）",
-                xmlns: "http://www.w3.org/2000/svg",
-                height: "24px",
-                view_box: "0 -960 960 960",
-                width: "24px",
-                fill: "currentColor",
-                title { "当前：{mode_label(Theme::Light)}（点击切换）" }
-                path { d: "M440-800v-120h80v120h-80Zm0 760v-120h80v120h-80Zm360-400v-80h120v80H800Zm-760 0v-80h120v80H40Zm708-252-56-56 70-72 58 58-72 70ZM198-140l-58-58 72-70 56 56-70 72Zm564 0-70-72 56-56 72 70-58 58ZM212-692l-72-70 58-58 70 72-56 56Zm98 382q-70-70-70-170t70-170q70-70 170-70t170 70q70 70 70 170t-70 170q-70 70-170 70t-170-70Zm283.5-56.5Q640-413 640-480t-46.5-113.5Q547-640 480-640t-113.5 46.5Q320-547 320-480t46.5 113.5Q413-320 480-320t113.5-46.5ZM480-480Z" }
-            }
-            svg {
-                class: "theme-icon-system",
-                role: "img",
-                "aria-label": "主题切换（当前：{mode_label(Theme::System)}）",
-                xmlns: "http://www.w3.org/2000/svg",
-                height: "24px",
-                view_box: "0 -960 960 960",
-                width: "24px",
-                fill: "currentColor",
-                title { "当前：{mode_label(Theme::System)}（点击切换）" }
-                path { d: "M40-120v-80h880v80H40Zm120-120q-33 0-56.5-23.5T80-320v-440q0-33 23.5-56.5T160-840h640q33 0 56.5 23.5T880-760v440q0 33-23.5 56.5T800-240H160Zm0-80h640v-440H160v440Zm0 0v-440 440Z" }
             }
         }
     }
@@ -418,22 +393,6 @@ fn mode_label(theme: Theme) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn cycle_rotates_three_states() {
-        // 三态循环：Dark → Light → System → Dark。
-        assert_eq!(Theme::Dark.cycle(), Theme::Light);
-        assert_eq!(Theme::Light.cycle(), Theme::System);
-        assert_eq!(Theme::System.cycle(), Theme::Dark);
-    }
-
-    #[test]
-    fn cycle_returns_to_origin_after_full_loop() {
-        // 走完一圈（三次）应回到起点。
-        assert_eq!(Theme::Light.cycle().cycle().cycle(), Theme::Light);
-        assert_eq!(Theme::Dark.cycle().cycle().cycle(), Theme::Dark);
-        assert_eq!(Theme::System.cycle().cycle().cycle(), Theme::System);
-    }
 
     #[test]
     fn resolve_light_and_dark_ignore_system() {

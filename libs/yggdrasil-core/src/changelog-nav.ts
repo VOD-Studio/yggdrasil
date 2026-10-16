@@ -1,5 +1,6 @@
 import { initAnchorClick } from './anchor-click';
 import { scrollToHash } from './hash-scroll';
+import { STICKY_HEADER_SELECTOR } from './scroll-to-heading';
 
 let disposeActive: (() => void) | undefined;
 
@@ -65,7 +66,7 @@ export function initChangelogNav(): void {
       '--nav-scroll-height',
       `${Math.max(40, window.innerHeight - Math.max(80, nav!.getBoundingClientRect().top) - 124)}px`,
     );
-    const header = document.querySelector('header.sticky');
+    const header = document.querySelector(STICKY_HEADER_SELECTOR);
     const horizontal = window.matchMedia('(max-width: 1023px)').matches;
     const directoryHeight = horizontal ? nav!.getBoundingClientRect().height + 8 : 0;
     const line = (header?.getBoundingClientRect().height ?? 64) + directoryHeight + 24;

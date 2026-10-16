@@ -70,14 +70,15 @@ fn route_skeleton(route: &Route) -> Element {
 pub fn FrontendLayout() -> Element {
     let route = use_route::<Route>();
     let nav_items = build_nav_items(route.clone());
-    // 首页与其它前台页面共用阅读宽度，导航和正文保持对齐。
+    // 前台页面共用 880px 的索引宽度（正文页在内部收窄到 680px），图鉴 1152px；
+    // 页头、正文与页脚同宽，左右边缘对齐。
     let max_width = if matches!(
         route,
         Route::ComponentShowcase {} | Route::ComponentDetail { .. }
     ) {
         "max-w-6xl"
     } else {
-        "max-w-4xl"
+        "max-w-[880px]"
     };
 
     rsx! {
@@ -91,7 +92,7 @@ pub fn FrontendLayout() -> Element {
                     ThemeToggle {}
                 },
             } },
-            footer: rsx! { Footer {} },
+            footer: rsx! { Footer { max_width } },
             main_content: rsx! {
                 SuspenseBoundary { fallback: move |_| route_skeleton(&route), Outlet::<Route> {} }
             },
@@ -105,11 +106,11 @@ pub(crate) fn FrontendShell(
     header: Element,
     main_content: Element,
     footer: Element,
-    #[props(default = "max-w-4xl")] max_width: &'static str,
+    #[props(default = "max-w-[880px]")] max_width: &'static str,
     #[props(default = "min-h-screen")] min_height: &'static str,
 ) -> Element {
     rsx! {
-        div { class: "{min_height} flex flex-col bg-paper-theme",
+        div { class: "{min_height} flex flex-col bg-surface-0",
             {header}
             main { class: "flex-1 w-full {max_width} mx-auto px-6 py-6 md:py-12 overflow-x-clip",
                 {main_content}
