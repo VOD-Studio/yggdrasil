@@ -224,3 +224,5 @@ export async function renderMermaidSvg(
     throw error;
   }
 }
+
+export * from './code-palette';

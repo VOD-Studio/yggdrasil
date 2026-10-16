@@ -46,7 +46,7 @@ async function main() {
   for (const file of ['Cargo.toml', 'Cargo.lock', 'build.rs', 'src/bin/generate_highlight_css.rs',
     'input.css', 'libs/package.json', 'libs/bun.lock', 'libs/bunfig.toml',
     'libs/tsconfig.base.json', 'libs/patches/example.patch',
-    'themes/Catppuccin Latte.tmTheme', 'themes/Catppuccin Mocha.tmTheme']) write(file);
+    'themes/Yggdrasil Light.tmTheme', 'themes/Yggdrasil Dark.tmTheme']) write(file);
   for (const name of packages) {
     write(`libs/${name}/package.json`);
     write(`libs/${name}/tsconfig.json`);
@@ -111,7 +111,7 @@ if (command === 'bun' && args[0] === 'install') {
   assert.ok(fs.existsSync(path.join(root, 'public/katex/fonts/example.woff2')));
   await edit('libs/bun.lock');
   assert.ok(!step(packages).includes('highlight'));
-  await edit('themes/Catppuccin Latte.tmTheme');
+  await edit('themes/Yggdrasil Light.tmTheme');
   assert.ok(step([]).includes('highlight'));
   fs.rmSync(path.join(root, 'libs/node_modules'), { recursive: true });
   step(packages);

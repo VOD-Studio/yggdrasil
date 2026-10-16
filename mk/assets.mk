@@ -75,7 +75,7 @@ $(addprefix $(DEV_ASSET_DIR)/,$(addsuffix .stamp,$(filter-out shared mermaid-ren
 dev-libs: $(addprefix $(DEV_ASSET_DIR)/,$(addsuffix .stamp,$(DEV_LIBS)))
 dev-assets-force:
 
-$(DEV_ASSET_DIR)/highlight.stamp: mk/assets.mk Cargo.toml Cargo.lock build.rs src/bin/generate_highlight_css.rs themes/Catppuccin\ Latte.tmTheme themes/Catppuccin\ Mocha.tmTheme
+$(DEV_ASSET_DIR)/highlight.stamp: mk/assets.mk Cargo.toml Cargo.lock build.rs src/bin/generate_highlight_css.rs themes/Yggdrasil\ Light.tmTheme themes/Yggdrasil\ Dark.tmTheme
 	@$(MAKE) --no-print-directory highlight-css
 	@mkdir -p $(DEV_ASSET_DIR)
 	@touch $@

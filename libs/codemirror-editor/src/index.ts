@@ -7,7 +7,7 @@ import type { ThemeName } from './themes';
  *
  * yggdrasil-core 在 VT 回调内(NEW 快照捕获前)同步 dispatch 此事件,
  * 让 CodeMirror 同步 reconfigure 主题——否则圆形展开扫过编辑器区域时
- * OLD/NEW 快照同色(背景由 catppuccin Extension 注入,不随 .dark 翻转),
+ * OLD/NEW 快照同色(背景由主题 Extension 注入,不随 .dark 翻转),
  * 看不到变化,动画结束后才瞬切。
  */
 

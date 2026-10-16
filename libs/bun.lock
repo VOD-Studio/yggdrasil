@@ -18,7 +18,6 @@
       "name": "@yggdrasil/codemirror-editor",
       "version": "1.0.0",
       "dependencies": {
-        "@catppuccin/codemirror": "^1.0.3",
         "@codemirror/autocomplete": "^6.20.3",
         "@codemirror/commands": "^6.11.1",
         "@codemirror/lang-go": "^6.0.1",
@@ -31,6 +30,7 @@
         "@codemirror/search": "^6.7.2",
         "@codemirror/state": "^6.7.6",
         "@codemirror/view": "^6.43.14",
+        "@lezer/highlight": "^1.2.3",
         "@replit/codemirror-vim": "^6.4.0",
         "@yggdrasil/shared": "workspace:*",
         "codemirror": "^6.0.2",
@@ -117,10 +117,6 @@
     "@biomejs/cli-win32-x64": ["@biomejs/cli-win32-x64@2.5.15", "", { "os": "win32", "cpu": "x64" }, "sha512-yAzh4UqEImV6Hcy0zjUqNfJAsUhoD64FBQCdTG8Md/Z2wQeVP/ZmJ3XRYAs1g8J9fjTFyl2fCtc5FB5til47+g=="],
 
     "@braintree/sanitize-url": ["@braintree/sanitize-url@7.1.2", "", {}, "sha512-jigsZK+sMF/cuiB7sERuo9V7N9jx+dhmHHnQyDSVdpZwVutaBu7WvNYqMDLSgFgfB30n452TP3vjDAvFC973mA=="],
-
-    "@catppuccin/codemirror": ["@catppuccin/codemirror@1.0.3", "", { "dependencies": { "@catppuccin/palette": "1.8.0", "@codemirror/language": "6.13.1", "@codemirror/state": "6.7.6", "@codemirror/view": "6.43.14", "@lezer/highlight": "1.2.3" } }, "sha512-P1ZCj4DZVLqr/TNz28m3aaF2Elrikpb8OOnzN0Vyf95Un4pTWTkCSvhbskbnJbnNJ87Rfvt3fXoaUj4o55X30Q=="],
-
-    "@catppuccin/palette": ["@catppuccin/palette@1.8.0", "", {}, "sha512-qXhwKiLzQomUygUJYB36YAFgs+dET5bIocfkiaFIatQF5Pwc7L112TlF9P8J5Oqs3x3XTjYSucG0ncHXSCuk7Q=="],
 
     "@chevrotain/cst-dts-gen": ["@chevrotain/cst-dts-gen@13.2.0", "", { "dependencies": { "@chevrotain/gast": "13.2.0", "@chevrotain/types": "13.2.0" } }, "sha512-bA9dvWlhAUcHkNwU+8w9yiUxJPlj/Lm3VqS7MD+NbIR/7LmpNLuK/AWNFdCo/T3SK5ND0/UHf3IJvl/Jn/i6yg=="],
 
