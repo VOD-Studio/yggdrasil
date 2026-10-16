@@ -9,7 +9,7 @@ use dioxus::prelude::*;
 
 #[cfg(feature = "server")]
 use super::helpers::{get_current_admin_user, row_to_post_full};
-use super::types::SinglePostResponse;
+use super::types::{PublicPostResponse, SinglePostResponse};
 #[cfg(feature = "server")]
 use crate::api::error::AppError;
 #[cfg(feature = "server")]
@@ -121,6 +121,15 @@ pub async fn get_post_by_slug(slug: String) -> Result<SinglePostResponse, Server
     {
         Ok(SinglePostResponse { post: None })
     }
+}
+
+/// 阅读页使用独立协议，避免新部署破坏已打开页面的旧客户端。
+#[server(GetPublicPostBySlug, "/api")]
+pub async fn get_public_post_by_slug(slug: String) -> Result<PublicPostResponse, ServerFnError> {
+    let response = get_post_by_slug(slug).await?;
+    Ok(PublicPostResponse {
+        post: response.post.map(Into::into),
+    })
 }
 
 /// 管理员按 slug 预览文章（含草稿），不缓存、不带上下篇导航。

@@ -35,7 +35,7 @@ pub use list::{get_posts_by_tag, list_published_posts};
 /// 根据 id 获取文章详情。
 /// 根据 slug 获取已发布文章详情（公开）。
 /// 按 slug 预览文章（管理员，含草稿）。
-pub use read::{get_post_by_id, get_post_by_slug, get_post_preview};
+pub use read::{get_post_by_id, get_post_by_slug, get_post_preview, get_public_post_by_slug};
 /// 重新渲染文章的 Markdown HTML 与目录。
 pub use rebuild::rebuild_content_html;
 /// 重新渲染指定文章的 Markdown HTML 与目录（单篇）。

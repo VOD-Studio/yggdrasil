@@ -2,7 +2,7 @@
 //!
 //! 对应路由 `/post/:slug`。
 //!
-//! 数据获取：通过 `use_server_future` 调用 `get_post_by_slug` server function，
+//! 数据获取：通过 `use_server_future` 调用 `get_public_post_by_slug` server function，
 //! 根据 URL 中的 slug 获取单篇文章详情（含正文 HTML、目录、封面及上下篇导航）。
 //!
 //! # 反应式取数的关键
@@ -21,7 +21,7 @@
 
 use dioxus::prelude::*;
 
-use crate::api::posts::{get_post_by_slug, SinglePostResponse};
+use crate::api::posts::{get_public_post_by_slug, PublicPostResponse};
 use crate::components::post::post_content::PostContent;
 use crate::components::post::post_cover::PostCover;
 use crate::components::post::post_footer::PostFooter;
@@ -44,12 +44,12 @@ pub fn PostDetail(slug: String) -> Element {
         // 组件卸载/路由切走的瞬间可能命中其它变体，退回用 prop 值兜底。
         _ => slug.clone(),
     });
-    let post = use_server_future(move || get_post_by_slug(current_slug()))?;
+    let post = use_server_future(move || get_public_post_by_slug(current_slug()))?;
 
     // 将结果映射为 Ok(post) 或 Err(ServerFnError) 用于错误边界捕获
     let post_data = post.read().as_ref().map(|r| match r {
-        Ok(SinglePostResponse { post: Some(post) }) => Ok(post.clone()),
-        Ok(SinglePostResponse { post: None }) => Err(ServerFnError::ServerError {
+        Ok(PublicPostResponse { post: Some(post) }) => Ok(post.clone().into_display_post()),
+        Ok(PublicPostResponse { post: None }) => Err(ServerFnError::ServerError {
             message: "not_found".to_string(),
             code: 404,
             details: None,
