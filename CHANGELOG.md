@@ -7,11 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-
-- **MCP 工具 schema**：零参数工具显式声明 `properties`，修复 OpenAI 兼容上游（如 MCA）因工具 schema 非法而拒绝整个请求的问题。
-
-## [0.23.2] - 2026-10-16
+## [0.23.2] - 2026-10-19
 
 ### Changed
 
@@ -27,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **SSR 缓存**：消除非 root 容器无法写入 `/app/static` 导致缓存静默失效的问题；写入后真正清除内存快照，并阻止旧世代的在途响应回填。
 - **后台状态**：修复备份刷新后旧错误残留，以及笔记类型切换时闪回骨架屏的问题。
 - **编辑器弹窗**：同步恢复编辑器焦点，避免快速重开可运行代码配置框时被旧的延迟焦点任务抢走键盘输入。
+- **MCP 工具 schema**：零参数工具显式声明 `properties`，修复 OpenAI 兼容上游（如 MCA）因工具 schema 非法而拒绝整个请求的问题。
+- **持续集成**：真实数据库回归固定在 GitHub-hosted runner 运行，修复 self-hosted runner 无法使用 sudo 安装 PostgreSQL 客户端而阻断发布的问题。
 
 ## [0.23.1] - 2026-10-12
 
