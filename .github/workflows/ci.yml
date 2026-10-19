@@ -366,7 +366,7 @@ jobs:
             || { echo "::error::未到达 DB 连接阶段，可能存在更早的配置 panic"; exit 1; }
           echo "smoke: 镜像可启动，初始化流程完整(无 Postgres 时 exit 1 属预期)"
 
-      # 对齐 scripts/xun.fish：tag 成 localhost/yggdrasil:latest 后导出（服务器 load 后即此名）。
+      # tag 成 localhost/yggdrasil:latest 后导出（服务器 load 后即此名）。
       - name: Save amd64 image artifact
         run: |
           docker tag yggdrasil:amd64 localhost/yggdrasil:latest
@@ -582,7 +582,7 @@ jobs:
           pattern: yggdrasil-*-image
           path: /tmp/img
 
-      # amd64 artifact 内 tag 为 localhost/yggdrasil:latest(对齐 xun.fish 的 load 名)，
+      # amd64 artifact 内 tag 为 localhost/yggdrasil:latest(服务器 load 后即此名)，
       # arm64 artifact 内 tag 为 yggdrasil:arm64。load 后统一 retag 成 yggdrasil:<arch>，
       # 便于后续 manifest create 引用。
       - name: Load and retag per-arch images
