@@ -351,7 +351,8 @@ fn build_router(options: ServerOptions) -> axum::Router {
             crate::middleware::add_cache_control,
         ))
         .layer(axum::middleware::from_fn(crate::api::csrf::csrf_middleware));
-    if let Some(layer) = crate::middleware::compression_layer_from_env() {
+    let compression = crate::middleware::compression_layer_from_env();
+    if let Some(layer) = compression.clone() {
         app_routes = app_routes.layer(layer);
     }
     let app_routes = app_routes.layer(TimeoutLayer::with_status_code(
@@ -379,12 +380,18 @@ fn build_router(options: ServerOptions) -> axum::Router {
         .route(
             "/uploads",
             axum::routing::get(|| async { StatusCode::NOT_FOUND }),
-        )
+        );
+
+    // Feed 含 20 篇全文（MB 级），反代 gzip_types 也不含其 MIME，必须由压缩层处理。
+    let mut feed_routes = axum::Router::new()
         .route("/feed.xml", axum::routing::get(crate::api::feed::rss_feed))
         .route(
             "/feed.json",
             axum::routing::get(crate::api::feed::json_feed),
         );
+    if let Some(layer) = compression {
+        feed_routes = feed_routes.layer(layer);
+    }
 
     let router = upload_route
         .merge(mcp_upload_route)
@@ -394,6 +401,7 @@ fn build_router(options: ServerOptions) -> axum::Router {
         .merge(logs_sse_route)
         .merge(app_routes)
         .merge(static_routes)
+        .merge(feed_routes)
         .merge(crate::mcp::router::mcp_route());
 
     if options.expose_version_headers {
