@@ -231,29 +231,15 @@ pub(crate) fn CommentSectionContent(
     let total_count = approved_count.map(|count| count + pending.len() as i64);
 
     rsx! {
-        div { class: "space-y-6",
-            // 标题栏：精致图标 + 评论区 + 数量徽章
-            div { class: "flex items-center justify-between",
-                div { class: "flex items-center gap-2.5",
-                    svg {
-                        class: "w-5 h-5 text-[var(--color-paper-accent)]",
-                        fill: "none",
-                        stroke: "currentColor",
-                        stroke_width: "2",
-                        view_box: "0 0 24 24",
-                        path {
-                            stroke_linecap: "round",
-                            stroke_linejoin: "round",
-                            d: "M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z",
-                        }
-                    }
-                    h2 { class: "text-lg font-bold text-paper-primary tracking-tight", "评论区" }
+        section { class: "comment-section", aria_labelledby: "comments-title",
+            div { class: "comment-section-head",
+                h2 { id: "comments-title",
+                    "评论"
                     if let Some(count) = total_count {
-                        span { class: "px-2 py-0.5 rounded-full text-xs font-semibold bg-[var(--color-paper-accent)]/15 text-[var(--color-paper-accent)]",
-                            "{count}"
-                        }
+                        span { class: "comment-count tabular-nums", "{count}" }
                     }
                 }
+                span { class: "comment-order", "按时间排序" }
             }
 
             // 真实的评论输入表单始终立即可见且可交互，避免 CLS
@@ -262,16 +248,8 @@ pub(crate) fn CommentSectionContent(
             // 根据数据状态渲染列表区、错误提示或骨架屏
             match comments {
                 Some(comments) => {
-                    let approved_count = comments.len();
-                    let pending_count = pending.len();
-                    let has_any = approved_count > 0 || pending_count > 0;
-                    if !has_any {
-                        rsx! {
-                            div { class: "text-center py-10 px-4 rounded-2xl bg-[var(--color-paper-entry)]/40 border border-dashed border-[var(--color-paper-border)]/60 my-4",
-                                p { class: "text-sm text-paper-secondary font-medium", "暂无评论" }
-                                p { class: "text-xs text-paper-tertiary mt-1", "成为第一个分享想法的人吧！" }
-                            }
-                        }
+                    if comments.is_empty() && pending.is_empty() {
+                        rsx! { p { class: "comment-empty", "还没有评论，来写下第一条吧。" } }
                     } else {
                         rsx! {
                             CommentList {
@@ -283,7 +261,7 @@ pub(crate) fn CommentSectionContent(
                     }
                 }
                 None if failed => rsx! {
-                    div { class: "text-center text-red-500 dark:text-red-400 py-8 text-sm", "评论加载失败，请刷新重试" }
+                    p { class: "comment-empty is-error", role: "alert", "评论暂时没能加载，刷新页面再试一次。" }
                 },
                 None => rsx! {
                     DelayedSkeleton { CommentListSkeleton {} }

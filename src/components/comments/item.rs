@@ -43,36 +43,25 @@ pub fn CommentItem(comment: PublicComment, post_id: i32) -> Element {
         0
     };
 
-    // 作者名展示为链接或普通文本
     let author_element = match &comment.author_url {
         Some(url) if !url.is_empty() => rsx! {
-            a {
-                href: "{url}",
-                rel: "nofollow noopener",
-                target: "_blank",
-                class: "font-semibold text-paper-primary hover:text-paper-accent transition-colors",
+            a { class: "comment-author", href: "{url}", rel: "nofollow noopener", target: "_blank",
                 "{comment.author_name}"
             }
         },
         _ => rsx! {
-            span { class: "font-semibold text-paper-primary", "{comment.author_name}" }
+            span { class: "comment-author", "{comment.author_name}" }
         },
     };
 
     let author_badge = if comment.is_author {
-        rsx! {
-            span { class: "inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-[var(--color-paper-accent)]/15 text-[var(--color-paper-accent)]",
-                "作者"
-            }
-        }
+        rsx! { span { class: "comment-badge", "作者" } }
     } else {
         rsx! {}
     };
 
     let timestamp = rsx! {
-        span {
-            class: "text-paper-tertiary",
-            title: "{comment.created_at_iso}",
+        time { class: "comment-time", datetime: "{comment.created_at_iso}", title: "{comment.created_at_iso}",
             "{comment.created_at}"
         }
     };
@@ -89,12 +78,13 @@ pub fn CommentItem(comment: PublicComment, post_id: i32) -> Element {
             content_html: comment.content_html.clone().unwrap_or_default(),
             content_extra_class: "md-content",
 
-            div { class: "flex items-center gap-3 mt-2",
-                if show_reply {
+            if show_reply {
+                div { class: "comment-actions",
                     button {
-                        class: "inline-flex items-center gap-1 text-xs font-medium text-paper-tertiary hover:text-paper-accent hover:bg-[var(--color-paper-entry)] px-2 py-1 rounded-md transition-all cursor-pointer",
-                        class: if is_replying { "text-[var(--color-paper-accent)] bg-[var(--color-paper-accent)]/10" } else { "" },
-                        aria_label: "回复 {comment.author_name} 的评论",
+                        class: "comment-reply",
+                        r#type: "button",
+                        aria_expanded: "{is_replying}",
+                        aria_label: if is_replying { "收起回复" } else { "回复 {comment.author_name} 的评论" },
                         onclick: move |_| {
                             if is_replying {
                                 active_reply.set(None);
@@ -102,29 +92,13 @@ pub fn CommentItem(comment: PublicComment, post_id: i32) -> Element {
                                 active_reply.set(Some(comment.id));
                             }
                         },
-                        svg {
-                            class: "w-3.5 h-3.5",
-                            fill: "none",
-                            stroke: "currentColor",
-                            stroke_width: "2",
-                            view_box: "0 0 24 24",
-                            path {
-                                stroke_linecap: "round",
-                                stroke_linejoin: "round",
-                                d: "M3 10h10a5 5 0 015 5v2m-15-7l4-4m-4 4l4 4",
-                            }
-                        }
-                        if is_replying {
-                            "取消回复"
-                        } else {
-                            "回复"
-                         }
+                        if is_replying { "收起回复" } else { "回复" }
                     }
                 }
             }
 
             div {
-                class: if is_replying { "mt-2 pt-1" } else { "hidden" },
+                class: if is_replying { "comment-reply-form" } else { "hidden" },
                 CommentForm {
                     post_id,
                     parent_id: Some(comment.id),

@@ -31,32 +31,25 @@ pub fn PendingCommentItem(comment: PendingComment, post_id: i32) -> Element {
     // 基于创建时间实时计算相对时间，避免"刚刚"永久显示。
     let relative_time = format_relative_time_iso(&comment.created_at);
 
-    // 作者名展示为链接或普通文本
     let author_element = match &comment.author_url {
         Some(url) if !url.is_empty() => rsx! {
-            a {
-                href: "{url}",
-                rel: "nofollow noopener",
-                target: "_blank",
-                class: "font-semibold text-paper-primary hover:text-paper-accent transition-colors",
+            a { class: "comment-author", href: "{url}", rel: "nofollow noopener", target: "_blank",
                 "{comment.author_name}"
             }
         },
         _ => rsx! {
-            span { class: "font-semibold text-paper-primary", "{comment.author_name}" }
+            span { class: "comment-author", "{comment.author_name}" }
         },
     };
 
     let status_badge = rsx! {
-        span { class: "inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20",
+        span { class: "comment-badge is-pending", title: "刚提交的评论只有你自己能看到，审核通过后对所有人显示。",
             "审核中"
         }
     };
 
     let timestamp = rsx! {
-        span {
-            class: "text-paper-tertiary",
-            title: "{comment.created_at}",
+        time { class: "comment-time", datetime: "{comment.created_at}", title: "{comment.created_at}",
             "{relative_time}"
         }
     };

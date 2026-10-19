@@ -27,6 +27,9 @@ use crate::components::ui::UserAvatar;
 /// - `content_html`：已渲染为安全 HTML 的评论正文
 /// - `content_extra_class`：正文容器附加 CSS 类（已审核评论需额外挂 `md-content`
 ///   以命中全局 Markdown 排版/代码高亮 CSS 作用域，缺省空串）
+///
+/// 样式见 `styles/components/comments.css`：顶层评论之间以发丝线分隔，回复左侧一条
+/// 细线并按 `--comment-indent` 缩进。
 /// - `children`：正文下方的附加区域（如已审核评论的回复按钮与回复表单）；
 ///   无需展示时传 `rsx! {}`
 #[component]
@@ -43,42 +46,35 @@ pub fn CommentCardShell(
     #[props(default)] content_extra_class: &'static str,
     children: Element,
 ) -> Element {
-    let is_child = depth > 0;
+    let mut class = String::from("comment");
+    if depth > 0 {
+        class.push_str(" is-child");
+    }
+    if muted {
+        class.push_str(" is-pending");
+    }
+    // 回复按层级缩进，五层后不再加深，深层回复不至于被挤到最右。
+    let style = (depth > 1).then(|| format!("--comment-indent: {};", depth.min(5) - 1));
 
     rsx! {
-        div {
-            class: "py-3.5 transition-colors",
-            class: if muted { "opacity-75 transition-opacity" } else { "" },
-            class: if is_child { "border-l-2 border-[var(--color-paper-border)]/50 pl-3.5 sm:pl-4.5 my-1" } else { "" },
-            style: if depth > 1 { format!("margin-left: {}px;", (depth.min(5) - 1) * 16) } else { String::new() },
-
-            div { class: "flex items-start gap-3",
-                UserAvatar {
-                    name: author_name,
-                    avatar_url: Some(avatar_url),
-                    class: "w-8 h-8 rounded-full shrink-0 object-cover ring-1 ring-[var(--color-paper-border)]/60 bg-[var(--color-paper-entry)] mt-0.5",
+        div { class, style,
+            UserAvatar {
+                name: author_name,
+                avatar_url: Some(avatar_url),
+                class: "comment-avatar",
+            }
+            div { class: "comment-main",
+                div { class: "comment-head",
+                    {author_element}
+                    {author_badge}
+                    {timestamp}
+                    {status_badge}
                 }
-
-                div { class: "flex-1 min-w-0",
-                    div { class: "flex items-center gap-2 text-xs mb-1 flex-wrap",
-                        {author_element}
-                        {author_badge}
-                        span { class: "text-paper-tertiary", "·" }
-                        {timestamp}
-                        {status_badge}
-                    }
-
-                    div {
-                        class: if content_extra_class.is_empty() {
-                            "prose prose-sm dark:prose-invert max-w-none text-paper-secondary leading-relaxed".to_string()
-                        } else {
-                            format!("prose prose-sm dark:prose-invert max-w-none text-paper-secondary {content_extra_class} leading-relaxed")
-                        },
-                        dangerous_inner_html: "{content_html}",
-                    }
-
-                    {children}
+                div {
+                    class: "comment-body {content_extra_class}",
+                    dangerous_inner_html: "{content_html}",
                 }
+                {children}
             }
         }
     }

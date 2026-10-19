@@ -656,10 +656,10 @@ async function interactions(page, onlyModalResets = false) {
 
   await goto(page, '/about/components/comment-form');
   const form = page.getByRole('form', { name: '发表评论' });
-  await form.getByPlaceholder('昵称 *').fill('图鉴访客');
-  await form.getByPlaceholder('邮箱 * (保密)').fill('showcase@example.test');
+  await form.getByPlaceholder('昵称', { exact: true }).fill('图鉴访客');
+  await form.getByPlaceholder('邮箱（不公开）').fill('showcase@example.test');
   await form.locator('.ProseMirror').fill('这是一条本地演示评论。');
-  await form.getByRole('button', { name: '发表评论' }).click();
+  await form.getByRole('button', { name: '发表', exact: true }).click();
   await page.getByText('已加入本地演示列表').waitFor();
   await page.getByText('这是一条本地演示评论').waitFor();
   await page.getByRole('button', { name: '↻ 恢复默认' }).click();
@@ -673,8 +673,8 @@ async function interactions(page, onlyModalResets = false) {
   await reply.getByRole('button', { name: '取消' }).click();
   await page.getByRole('button', { name: '回复 青禾 的评论' }).first().click();
   assert((await reply.locator('.ProseMirror').innerText()).includes('本地回复草稿'));
-  await reply.getByPlaceholder('昵称 *').fill('图鉴访客');
-  await reply.getByPlaceholder('邮箱 * (保密)').fill('showcase@example.test');
+  await reply.getByPlaceholder('昵称', { exact: true }).fill('图鉴访客');
+  await reply.getByPlaceholder('邮箱（不公开）').fill('showcase@example.test');
   await reply.getByRole('button', { name: '回复', exact: true }).click();
   await page.getByText('本地回复草稿').waitFor();
   pass('comment reply draft survives cancel and submits locally');

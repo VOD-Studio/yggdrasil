@@ -1,0 +1,338 @@
+@layer components {
+  /* ===== 评论区：Composer 表单、发丝线分隔的评论列表 ===== */
+  .comment-section-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .comment-section-head h2 {
+    margin: 0;
+    color: var(--color-fg);
+    font-size: 1.125rem;
+    font-weight: 600;
+  }
+
+  .comment-count {
+    margin-left: 0.5rem;
+    color: var(--color-fg-3);
+    font-weight: 400;
+  }
+
+  .comment-order {
+    color: var(--color-fg-3);
+    font-size: 0.8125rem;
+  }
+
+  .comment-section > .comment-form {
+    margin-top: 1rem;
+  }
+
+  .comment-empty {
+    margin: 1.25rem 0 0;
+    color: var(--color-fg-3);
+    font-size: 0.875rem;
+  }
+
+  .comment-empty.is-error {
+    color: var(--color-danger);
+  }
+
+  /* ---- 表单 ---- */
+  .comment-form.is-reply {
+    margin-top: 0.5rem;
+  }
+
+  /* ui.css 的 .composer 在后面导入，这里叠类提高特异性。 */
+  .composer.comment-composer {
+    display: block;
+    padding: 0;
+  }
+
+  .composer.comment-composer:focus-within {
+    box-shadow: var(--shadow-focus), var(--shadow-composer);
+  }
+
+  .comment-form.is-reply .composer.comment-composer {
+    border-radius: 14px;
+  }
+
+  .comment-identity {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.125rem 0;
+    color: var(--color-fg-3);
+    font-size: 0.8125rem;
+  }
+
+  .comment-identity strong {
+    color: var(--color-fg);
+    font-weight: 600;
+  }
+
+  .comment-identity-avatar {
+    width: 1.375rem;
+    height: 1.375rem;
+    border-radius: 50%;
+    font-size: 0.6875rem;
+  }
+
+  .comment-editor {
+    position: relative;
+  }
+
+  .comment-editor-mount {
+    min-height: 4.5rem;
+  }
+
+  .comment-editor-loading {
+    position: absolute;
+    top: 0.875rem;
+    left: 1.125rem;
+    color: var(--color-fg-3);
+    font-size: 0.9375rem;
+  }
+
+  .comment-fields {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding: 0 0.875rem;
+  }
+
+  .comment-field {
+    flex: 1 1 8rem;
+    min-width: 0;
+    height: 1.875rem;
+    padding: 0 0.625rem;
+    border: 0;
+    border-radius: 8px;
+    outline: 0;
+    background-color: var(--color-ink-1);
+    color: var(--color-fg);
+    font: inherit;
+    font-size: 0.8125rem;
+    transition: box-shadow 150ms var(--ease-out-expo);
+  }
+
+  .comment-field::placeholder {
+    color: var(--color-fg-3);
+  }
+
+  .comment-field:focus-visible {
+    box-shadow: 0 0 0 1px var(--color-ink-4);
+  }
+
+  .comment-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.5rem 0.625rem 0.625rem 0.5rem;
+  }
+
+  .comment-bar-start,
+  .comment-bar-end {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    min-width: 0;
+  }
+
+  .comment-hint {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    margin-left: 0.25rem;
+    color: var(--color-fg-3);
+    font-size: 0.75rem;
+  }
+
+  /* ---- 列表：顶层评论之间以发丝线分隔，回复左侧一条细线 ---- */
+  .comment-list {
+    margin-top: 1.25rem;
+  }
+
+  .comment {
+    display: flex;
+    gap: 0.75rem;
+    padding: 1rem 0;
+  }
+
+  .comment-list > .comment:not(.is-child) + .comment:not(.is-child),
+  .comment-list > .comment.is-child + .comment:not(.is-child) {
+    box-shadow: inset 0 1px 0 var(--color-hairline);
+  }
+
+  .comment.is-child {
+    gap: 0.625rem;
+    margin-left: calc(2.75rem + var(--comment-indent, 0) * 1rem);
+    margin-top: -0.25rem;
+    padding: 0.25rem 0 0.5rem 1rem;
+    box-shadow: inset 2px 0 0 var(--color-ink-2);
+  }
+
+  .comment.is-pending {
+    opacity: 0.75;
+  }
+
+  .comment-avatar {
+    flex-shrink: 0;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 50%;
+    background-color: var(--color-ink-2);
+    font-size: 0.8125rem;
+  }
+
+  .comment.is-child .comment-avatar {
+    width: 1.625rem;
+    height: 1.625rem;
+    font-size: 0.75rem;
+  }
+
+  .comment-main {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .comment-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.25rem 0.625rem;
+  }
+
+  .comment-author {
+    color: var(--color-fg);
+    font-size: 0.9375rem;
+    font-weight: 600;
+    text-decoration: none;
+  }
+
+  .comment.is-child .comment-author {
+    font-size: 0.875rem;
+  }
+
+  a.comment-author:hover {
+    color: var(--color-clay-text);
+  }
+
+  .comment-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0 0.4rem;
+    border-radius: 999px;
+    background-color: var(--color-ink-1);
+    color: var(--color-fg-2);
+    font-size: 0.6875rem;
+    line-height: 1.6;
+  }
+
+  .comment-badge.is-pending {
+    padding: 0 0.5rem;
+    background-color: var(--color-warning-soft);
+    color: var(--color-warning);
+  }
+
+  .comment-badge.is-pending::before {
+    content: "";
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background-color: currentColor;
+  }
+
+  .comment-time {
+    color: var(--color-fg-3);
+    font-size: 0.78125rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .comment-body {
+    margin-top: 0.25rem;
+    color: var(--color-fg-body);
+    font-size: 0.9375rem;
+    line-height: 1.75;
+  }
+
+  .comment.is-child .comment-body {
+    font-size: 0.90625rem;
+  }
+
+  .comment-body img {
+    max-width: min(100%, 20rem);
+    margin: 0.5em 0;
+  }
+
+  .comment-actions {
+    margin-top: 0.25rem;
+  }
+
+  .comment-reply {
+    padding: 0.25rem 0;
+    border: 0;
+    background: transparent;
+    color: var(--color-fg-3);
+    font: inherit;
+    font-size: 0.8125rem;
+    cursor: pointer;
+    transition: color 150ms var(--ease-out-expo);
+  }
+
+  .comment-reply:hover,
+  .comment-reply[aria-expanded="true"] {
+    color: var(--color-fg);
+  }
+
+  .comment-reply:focus-visible {
+    border-radius: 4px;
+    outline: none;
+    box-shadow: var(--shadow-focus);
+  }
+
+  .comment-reply-form {
+    margin-top: 0.25rem;
+  }
+
+  @media (max-width: 760px) {
+    .comment-hint-wide {
+      display: none;
+    }
+
+    .comment.is-child {
+      margin-left: calc(1.5rem + var(--comment-indent, 0) * 0.5rem);
+    }
+  }
+}
+
+/* tiptap 的样式表不分层，会压过 @layer components；这里提高特异性覆盖评论编辑器。 */
+.comment-composer .tiptap-editor--comment {
+  color: var(--color-fg);
+  font-size: 0.9375rem;
+  line-height: 1.7;
+}
+
+.comment-composer .tiptap-editor--comment .ProseMirror {
+  min-height: 4.5rem;
+  padding: 0.875rem 1.125rem 0.5rem;
+}
+
+.comment-composer .comment-editor-mount.is-reply .tiptap-editor--comment .ProseMirror {
+  min-height: 3.25rem;
+  padding: 0.625rem 0.875rem 0.25rem;
+}
+
+/* 完整版编辑器按 :has(br) 匹配的占位规则特异性更高，会盖住评论版的 data-placeholder。 */
+.comment-composer .tiptap-editor--comment .ProseMirror p.is-editor-empty:first-child::before,
+.comment-composer .tiptap-editor--comment .ProseMirror p:first-child:last-child:has(br.ProseMirror-trailingBreak:only-child)::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  color: var(--color-fg-3);
+  pointer-events: none;
+}

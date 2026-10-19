@@ -13,7 +13,9 @@ use crate::bridges::library::{library_ready, use_browser_library, LibraryLoadErr
 use crate::bridges::tiptap::{UploadErrorEntry, UploadsInFlight};
 use crate::components::comments::section::{CommentContext, CommentSource};
 use crate::components::forms::{AlertBox, FormInput};
-use crate::components::ui::{UserAvatar, BTN_PRIMARY_SM, SPINNER_SVG};
+use crate::components::ui::{
+    Button, ButtonSize, ButtonVariant, Icon, IconName, UserAvatar, SPINNER_SVG,
+};
 use crate::models::comment::PublicComment;
 use crate::utils::comment_storage::{self, AuthorInfo, PendingComment};
 #[cfg(target_arch = "wasm32")]
@@ -216,9 +218,9 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
         let opts = crate::bridges::tiptap::EditorOptions::new();
         opts.set_variant("comment");
         opts.set_placeholder(if is_reply {
-            "写下你的回复..."
+            "写下你的回复…"
         } else {
-            "写下你的想法..."
+            "写下你的想法…"
         });
         opts.set_on_update(&on_update);
         opts.set_on_ready(&on_ready);
@@ -413,7 +415,7 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
 
     rsx! {
         div {
-            class: if is_reply { "mt-3" } else { "" },
+            class: if is_reply { "comment-form is-reply" } else { "comment-form" },
             style: "{negative_margin}",
             role: "form",
             aria_label: if is_reply { "回复评论" } else { "发表评论" },
@@ -432,89 +434,38 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
             }
             LibraryLoadError { library: editor_library }
 
-            // 一体化聚焦卡片容器 (All-in-One Focus Card)
-            div { class: "rounded-2xl bg-[var(--color-paper-entry)] border border-[var(--color-paper-border)]/60 shadow-xs focus-within:border-[var(--color-paper-accent)]/60 focus-within:ring-2 focus-within:ring-[var(--color-paper-accent)]/20 transition-all duration-200 overflow-hidden",
-                // 头部区域：登录用户身份行或访客轻量三栏输入行
+            div { class: "composer comment-composer",
+                // 登录用户：身份行；访客的昵称、邮箱、网站放在编辑区下方。
                 if let Some(user) = viewer() {
                     {
                         let label = user.display_label().to_string();
                         let action = if is_reply { "回复" } else { "发表评论" };
                         rsx! {
-                            div { class: "flex items-center justify-between px-4 py-2.5 bg-[var(--color-paper-theme)]/40 border-b border-[var(--color-paper-border)]/40 text-xs text-paper-secondary",
-                                div { class: "flex items-center gap-2.5",
-                                    UserAvatar {
-                                        name: label.clone(),
-                                        avatar_url: user.avatar_url.clone(),
-                                        class: "w-6 h-6 rounded-full text-xs ring-1 ring-[var(--color-paper-border)]/60 shrink-0",
-                                    }
-                                    span { class: "text-paper-secondary",
-                                        "以 "
-                                        span { class: "font-semibold text-paper-primary", "{label}" }
-                                        " 的身份{action}"
-                                    }
-                                    span { class: "hidden sm:inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-[var(--color-paper-accent)]/15 text-[var(--color-paper-accent)]",
-                                        "已登录"
-                                    }
+                            div { class: "comment-identity",
+                                UserAvatar {
+                                    name: label.clone(),
+                                    avatar_url: user.avatar_url.clone(),
+                                    class: "comment-identity-avatar",
                                 }
-                                div { class: "flex items-center gap-1 text-paper-tertiary",
-                                    span { class: "hidden sm:inline text-[11px]", "Markdown 语法就绪" }
+                                span {
+                                    "以 "
+                                    strong { "{label}" }
+                                    " 的身份{action}"
                                 }
-                            }
-                        }
-                    }
-                } else {
-                    div { class: "grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-[var(--color-paper-border)]/40 bg-[var(--color-paper-theme)]/30 border-b border-[var(--color-paper-border)]/40",
-                        div { class: "relative",
-                            FormInput {
-                                id: Some(format!("comment-name-{id_suffix}")),
-                                r#type: "text",
-                                placeholder: "昵称 *",
-                                // FormInput 无 aria_label prop：借 title 承载原 aria-label 文案
-                                // （原生 placeholder 亦可作无障碍名回退）。
-                                title: Some("昵称"),
-                                value: author_name(),
-                                disabled: submitting(),
-                                class: Some("w-full px-3.5 py-2 bg-transparent text-sm text-paper-primary placeholder:text-paper-tertiary focus:outline-none focus:bg-[var(--color-paper-entry)]/60 transition-colors"),
-                                oninput: move |v| author_name.set(v),
-                            }
-                        }
-                        div { class: "relative",
-                            FormInput {
-                                id: Some(format!("comment-email-{id_suffix}")),
-                                r#type: "email",
-                                placeholder: "邮箱 * (保密)",
-                                title: Some("邮箱"),
-                                value: author_email(),
-                                disabled: submitting(),
-                                class: Some("w-full px-3.5 py-2 bg-transparent text-sm text-paper-primary placeholder:text-paper-tertiary focus:outline-none focus:bg-[var(--color-paper-entry)]/60 transition-colors"),
-                                oninput: move |v| author_email.set(v),
-                            }
-                        }
-                        div { class: "relative",
-                            FormInput {
-                                id: Some(format!("comment-url-{id_suffix}")),
-                                r#type: "url",
-                                placeholder: "网站 (https://，可选)",
-                                title: Some("网站"),
-                                value: author_url(),
-                                disabled: submitting(),
-                                class: Some("w-full px-3.5 py-2 bg-transparent text-sm text-paper-primary placeholder:text-paper-tertiary focus:outline-none focus:bg-[var(--color-paper-entry)]/60 transition-colors"),
-                                oninput: move |v| author_url.set(v),
                             }
                         }
                     }
                 }
 
-                // 编辑区 (Textarea)
                 // 编辑区（WYSIWYG：tiptap comment variant）。SSR 输出空容器，
                 // hydration 后由编辑器接管；min-height 与编辑器对齐避免 CLS。
-                div { class: "relative bg-transparent",
+                div { class: "comment-editor",
                     div {
                         id: "{editor_dom_id}",
-                        class: "comment-editor-mount min-h-[96px]",
+                        class: if is_reply { "comment-editor-mount is-reply" } else { "comment-editor-mount" },
                     }
                     if !library_ready(editor_library) {
-                        span { class: "absolute top-4 left-4 text-sm text-[var(--color-paper-tertiary)]", "正在加载编辑器…" }
+                        span { class: "comment-editor-loading", "正在加载编辑器…" }
                     }
                 }
 
@@ -528,103 +479,124 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
                         value: "{honeypot}",
                         oninput: move |e| honeypot.set(e.value()),
                     }
+                    div { class: "comment-fields",
+                        FormInput {
+                            id: Some(format!("comment-name-{id_suffix}")),
+                            r#type: "text",
+                            placeholder: "昵称",
+                            aria_label: Some("昵称（必填）"),
+                            value: author_name(),
+                            disabled: submitting(),
+                            class: Some("comment-field"),
+                            oninput: move |v| author_name.set(v),
+                        }
+                        FormInput {
+                            id: Some(format!("comment-email-{id_suffix}")),
+                            r#type: "email",
+                            placeholder: "邮箱（不公开）",
+                            aria_label: Some("邮箱（必填，不公开）"),
+                            value: author_email(),
+                            disabled: submitting(),
+                            class: Some("comment-field"),
+                            oninput: move |v| author_email.set(v),
+                        }
+                        FormInput {
+                            id: Some(format!("comment-url-{id_suffix}")),
+                            r#type: "url",
+                            placeholder: "网站（可选）",
+                            aria_label: Some("网站（可选）"),
+                            value: author_url(),
+                            disabled: submitting(),
+                            class: Some("comment-field"),
+                            oninput: move |v| author_url.set(v),
+                        }
+                    }
                 }
 
-                // 底部操作与快捷栏 (Action Toolbar)
-                div { class: "flex items-center justify-between px-3.5 py-2.5 bg-[var(--color-paper-theme)]/40 border-t border-[var(--color-paper-border)]/40 text-xs",
-                    // 左侧：图片上传（点击选择 / 直接粘贴图片到输入框）
-                    div { class: "flex items-center gap-1.5 text-paper-tertiary",
+                div { class: "comment-bar",
+                    // 左侧：图片上传（点击选择 / 直接粘贴图片到输入框）与提示
+                    div { class: "comment-bar-start",
                         // label + 隐藏 file input：点击天然触发文件选择对话框，无需 JS。
                         if matches!(ctx.source, CommentSource::Production) {
-                        label {
-                            r#for: "{image_input_dom_id}",
-                            class: "p-1.5 rounded-md hover:text-paper-primary hover:bg-[var(--color-paper-entry)] transition-colors cursor-pointer",
-                            title: "上传图片（也可直接粘贴到输入框）",
-                            aria_label: "上传图片",
-                            svg {
-                                class: "w-3.5 h-3.5",
-                                fill: "currentColor",
-                                view_box: "0 -960 960 960",
-                                path { d: "M180-120q-24 0-42-18t-18-42v-600q0-24 18-42t42-18h600q24 0 42 18t18 42v600q0 24-18 42t-42 18H180Zm0-60h600v-600H180v600Zm56-97h489L578-473 446-302l-93-127-117 152Zm-56 97v-600 600Z" }
+                            label {
+                                r#for: "{image_input_dom_id}",
+                                class: "btn btn-sm btn-icon btn-ghost",
+                                title: "上传图片（也可直接粘贴到输入框）",
+                                aria_label: "上传图片",
+                                Icon { name: IconName::Image, size: 16 }
                             }
-                        }
-                        input {
-                            id: "{image_input_dom_id}",
-                            class: "hidden",
-                            r#type: "file",
-                            accept: "image/jpeg,image/png,image/gif,image/webp",
-                            multiple: true,
-                            onchange: {
-                                // cfg 门控使 server 构建（无 editor_handle 绑定）闭包为空捕获。
-                                #[cfg(target_arch = "wasm32")]
-                                let input_dom_id = image_input_dom_id.clone();
-                                move |e| {
+                            input {
+                                id: "{image_input_dom_id}",
+                                class: "hidden",
+                                r#type: "file",
+                                accept: "image/jpeg,image/png,image/gif,image/webp",
+                                multiple: true,
+                                onchange: {
+                                    // cfg 门控使 server 构建（无 editor_handle 绑定）闭包为空捕获。
                                     #[cfg(target_arch = "wasm32")]
-                                    {
-                                        use dioxus::web::WebFileExt;
-                                        // 与粘贴/拖放同一条 coordinator 占位上传路径。
-                                        for f in e.files() {
-                                            if let Some(web_file) = f.get_web_file() {
-                                                if let Some(handle) = &*editor_handle.peek() {
-                                                    handle.instance().insert_uploading(web_file);
+                                    let input_dom_id = image_input_dom_id.clone();
+                                    move |e| {
+                                        #[cfg(target_arch = "wasm32")]
+                                        {
+                                            use dioxus::web::WebFileExt;
+                                            // 与粘贴/拖放同一条 coordinator 占位上传路径。
+                                            for f in e.files() {
+                                                if let Some(web_file) = f.get_web_file() {
+                                                    if let Some(handle) = &*editor_handle.peek() {
+                                                        handle.instance().insert_uploading(web_file);
+                                                    }
+                                                }
+                                            }
+                                            // 重置 value：连续选择同一文件也能再次触发 change。
+                                            if let Some(el) = web_sys::window()
+                                                .and_then(|w| w.document())
+                                                .and_then(|d| d.get_element_by_id(&input_dom_id))
+                                            {
+                                                use wasm_bindgen::JsCast;
+                                                if let Some(input) = el.dyn_ref::<web_sys::HtmlInputElement>() {
+                                                    input.set_value("");
                                                 }
                                             }
                                         }
-                                        // 重置 value：连续选择同一文件也能再次触发 change。
-                                        if let Some(el) = web_sys::window()
-                                            .and_then(|w| w.document())
-                                            .and_then(|d| d.get_element_by_id(&input_dom_id))
-                                        {
-                                            use wasm_bindgen::JsCast;
-                                            if let Some(input) = el.dyn_ref::<web_sys::HtmlInputElement>() {
-                                                input.set_value("");
-                                            }
-                                        }
                                     }
-                                }
-                            },
+                                },
+                            }
                         }
-                        }
-                        // 上传中指示（与后台 tiptap 的「上传中…」遮罩同文案）。
                         if uploads_in_flight().uploading > 0 {
-                            span { class: "inline-flex items-center gap-1.5 text-[11px] text-paper-secondary ml-1",
+                            span { class: "comment-hint",
                                 span { class: "inline-block", dangerous_inner_html: "{SPINNER_SVG}" }
                                 "图片上传中…"
+                            }
+                        } else {
+                            span { class: "comment-hint comment-hint-wide",
+                                if viewer().is_none() {
+                                    "支持 Markdown 与图片，审核后显示"
+                                } else {
+                                    "支持 Markdown 与图片 · ⌘↵ 发表"
+                                }
                             }
                         }
                     }
 
-                    // 右侧：快捷键提示 + 取消（若为回复）+ 提交按钮
-                    div { class: "flex items-center gap-2",
-                        span { class: "hidden sm:inline-block text-[11px] text-paper-tertiary font-mono mr-1", "Ctrl + ↵" }
+                    // 右侧：取消（若为回复）+ 提交按钮
+                    div { class: "comment-bar-end",
                         if is_reply {
                             button {
                                 r#type: "button",
-                                class: "px-3 py-1.5 text-xs text-paper-secondary hover:text-paper-primary hover:bg-[var(--color-paper-entry)] rounded-full transition-colors cursor-pointer",
+                                class: "btn btn-sm btn-ghost",
                                 onclick: move |_| active_reply.set(None),
                                 "取消"
                             }
                         }
-                        button {
-                            r#type: "button",
-                            class: "{BTN_PRIMARY_SM}",
-                            // 提交中或图片上传未完成（含失败态）均禁用：占位节点未落定前
-                            // 提交会丢图或残留 blob URL。
-                            class: if submitting() || uploads_in_flight().uploading > 0 || uploads_in_flight().error > 0 { "opacity-60 cursor-not-allowed pointer-events-none" } else { "" },
-                            disabled: !library_ready(editor_library) || submitting() || uploads_in_flight().uploading > 0 || uploads_in_flight().error > 0,
-                            onclick: move |_| {
-                                do_submit();
-                            },
-                            if submitting() {
-                                span { class: "inline-flex items-center gap-1.5",
-                                    span { class: "inline-block", dangerous_inner_html: "{SPINNER_SVG}" }
-                                    "提交中…"
-                                }
-                            } else if is_reply {
-                                "回复"
-                            } else {
-                                "发表评论"
-                            }
+                        // 提交中或图片上传未完成（含失败态）均禁用：占位节点未落定前
+                        // 提交会丢图或残留 blob URL。
+                        Button {
+                            variant: ButtonVariant::Primary,
+                            size: ButtonSize::Sm,
+                            loading: submitting(),
+                            disabled: !library_ready(editor_library) || uploads_in_flight().uploading > 0 || uploads_in_flight().error > 0,
+                            onclick: move |_| do_submit(),
+                            if is_reply { "回复" } else { "发表" }
                         }
                     }
                 }
