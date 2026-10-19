@@ -7,9 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.3] - 2026-10-19
+
 ### Changed
 
 - **前端体积**：组件图鉴数据与写作技能源码只嵌入服务端，改由水合数据或 server function 下发，WASM 减少约 110 KB（brotli 后约 13 KB）。
+- **动态压缩**：`COMPRESSION_ALGORITHMS` 压缩层统一使用质量 6，brotli 比 gzip-6 小 10–17%（tower-http 默认 brotli 4 仅小 2–4%）；生产推荐 `br, gzip`，`all` 会让 Chrome 协商到体积更大的 zstd。
+
+### Fixed
+
+- **订阅源压缩**：`/feed.xml` 与 `/feed.json` 挂到压缩层，修复含全文的 Feed（线上约 2.5 MB / 1.9 MB）未经任何压缩传输的问题。
 
 ## [0.23.2] - 2026-10-19
 
