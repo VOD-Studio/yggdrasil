@@ -6207,6 +6207,7 @@ dependencies = [
  "tokio",
  "tokio-postgres",
  "tokio-stream",
+ "tower",
  "tower-http 0.7.1",
  "tracing",
  "tracing-subscriber",

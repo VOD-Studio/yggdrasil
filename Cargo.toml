@@ -94,6 +94,8 @@ serde-wasm-bindgen = "0.6"
 [dev-dependencies]
 tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "fs", "time", "sync"] }
 serial_test = "4"
+# 中间件测试：直接驱动 axum Router。
+tower = { version = "0.5", features = ["util"] }
 
 # dev 构建只保留行表 debuginfo：默认 full debuginfo 对每个 crate（含全部依赖）
 # 都生成完整类型/局部变量信息，显著拖慢 rustc emit 与链接、撑大 target/。
