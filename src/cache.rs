@@ -306,6 +306,16 @@ static SUGGEST_CACHE: LazyLock<Cache<String, Vec<crate::api::posts::PostSuggesti
             .build()
     });
 
+/// 首页最新一篇目录预览缓存：单键，TTL 与文章列表一致，随文章列表一起失效。
+#[cfg(feature = "server")]
+static OUTLINE_CACHE: LazyLock<Cache<(), Option<crate::api::posts::PostOutline>>> =
+    LazyLock::new(|| {
+        Cache::builder()
+            .max_capacity(1)
+            .time_to_live(TTL_POST_LIST)
+            .build()
+    });
+
 // ============================================================================
 // 命中率统计（供系统状态面板展示）
 // ============================================================================
@@ -358,6 +368,8 @@ static SEARCH_STATS: CacheStats = CacheStats::new("搜索");
 #[cfg(feature = "server")]
 static SUGGEST_STATS: CacheStats = CacheStats::new("搜索建议");
 #[cfg(feature = "server")]
+static OUTLINE_STATS: CacheStats = CacheStats::new("最新目录");
+#[cfg(feature = "server")]
 static FEED_STATS: CacheStats = CacheStats::new("Feed");
 #[cfg(feature = "server")]
 static FRIEND_STATS: CacheStats = CacheStats::new("友链");
@@ -406,6 +418,7 @@ pub fn cache_stats() -> Vec<CacheStatSnapshot> {
         snap(&SESSION_STATS, SESSION_CACHE.entry_count()),
         snap(&SEARCH_STATS, SEARCH_CACHE.entry_count()),
         snap(&SUGGEST_STATS, SUGGEST_CACHE.entry_count()),
+        snap(&OUTLINE_STATS, OUTLINE_CACHE.entry_count()),
         snap(&FEED_STATS, FEED_CACHE.entry_count()),
         snap(&FRIEND_STATS, FRIEND_LINKS_CACHE.entry_count()),
         snap(&SITE_SETTINGS_STATS, SITE_SETTINGS_CACHE.entry_count()),
@@ -649,10 +662,11 @@ pub async fn set_feed(items: Vec<FeedItem>) {
 // 缓存失效
 // ============================================================================
 
-/// 清空所有文章分页列表缓存。
+/// 清空所有文章分页列表缓存，以及随列表失效的首页目录预览。
 #[cfg(feature = "server")]
 pub fn invalidate_post_lists() {
     POST_LIST_CACHE.invalidate_all();
+    OUTLINE_CACHE.invalidate_all();
 }
 
 /// 清空所有标签缓存。
@@ -873,6 +887,18 @@ pub async fn set_suggestions(query: &str, posts: Vec<crate::api::posts::PostSugg
 #[cfg(feature = "server")]
 pub fn invalidate_suggestions() {
     SUGGEST_CACHE.invalidate_all();
+}
+
+/// 读取首页最新一篇目录预览缓存。外层 `None` 表示未命中。
+#[cfg(feature = "server")]
+pub async fn get_latest_outline() -> Option<Option<crate::api::posts::PostOutline>> {
+    record_hit_miss!(OUTLINE_CACHE.get(&()).await, OUTLINE_STATS)
+}
+
+/// 写入首页最新一篇目录预览缓存。
+#[cfg(feature = "server")]
+pub async fn set_latest_outline(outline: Option<crate::api::posts::PostOutline>) {
+    OUTLINE_CACHE.insert((), outline).await;
 }
 
 /// 按文章主键失效评论列表缓存。

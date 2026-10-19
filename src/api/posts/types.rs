@@ -95,6 +95,22 @@ pub struct PostSuggestionResponse {
 #[cfg(feature = "server")]
 pub const SUGGESTION_LIMIT: i64 = 8;
 
+/// 首页「最新一篇」的目录预览：一级小节总数与前几个小节标题。
+#[cfg_attr(not(feature = "server"), allow(dead_code))]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PostOutline {
+    /// 对应文章的 slug；前台据此确认与列表首篇一致。
+    pub slug: String,
+    /// 一级小节总数。
+    pub total: u32,
+    /// 前 `OUTLINE_PREVIEW_LIMIT` 个小节标题（纯文本）。
+    pub headings: Vec<String>,
+}
+
+/// 目录预览列出的小节数。
+#[cfg(feature = "server")]
+pub const OUTLINE_PREVIEW_LIMIT: usize = 6;
+
 /// 文章统计响应。
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PostStatsResponse {

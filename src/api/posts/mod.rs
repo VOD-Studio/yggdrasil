@@ -9,6 +9,7 @@ mod create;
 mod delete;
 pub(crate) mod helpers;
 mod list;
+mod outline;
 mod read;
 mod rebuild;
 mod search;
@@ -33,6 +34,8 @@ pub use list::list_deleted_posts;
 pub use list::list_posts;
 /// 获取已发布文章分页列表。
 pub use list::{get_posts_by_tag, list_published_posts};
+/// 首页最新一篇的目录预览。
+pub use outline::latest_post_outline;
 /// 根据 id 获取文章详情。
 /// 根据 slug 获取已发布文章详情（公开）。
 /// 按 slug 预览文章（管理员，含草稿）。
