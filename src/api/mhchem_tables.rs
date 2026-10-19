@@ -853,7 +853,7 @@ fn machine_action(
         "bd" => bd_action(buf, m, type_),
         "oxidation" => oxidation_action(buf, type_),
         "tex-math" | "tex-math tight" => texmath_action(machine, buf, m, type_),
-        "9,9" => Some(num99_action(type_)),
+        "9,9" => num99_action(type_),
         "pu" => pu_action(buf, m, opt, type_),
         "pu-2" => pu2_action(buf, m, type_),
         "pu-9,9" => pu99_action(buf, type_),
@@ -1244,15 +1244,14 @@ fn texmath_action(machine: &str, buf: &mut Buffer, m: &MVal, type_: &str) -> Opt
     }
 }
 
-fn num99_action(type_: &str) -> Out {
-    if type_ == "comma" {
+/// 只接管 `comma`；`copy` 等交给通用动作，否则数字会被吞掉（H2O 丢下标）。
+fn num99_action(type_: &str) -> Option<Out> {
+    (type_ == "comma").then(|| {
         Out::One(Parsed::N(NodeData {
             type_: "commaDecimal".into(),
             ..Default::default()
         }))
-    } else {
-        Out::None
-    }
+    })
 }
 
 fn pu_action(buf: &mut Buffer, m: &MVal, opt: &Option<String>, type_: &str) -> Option<Out> {

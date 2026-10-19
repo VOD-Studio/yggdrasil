@@ -1278,9 +1278,27 @@ mod tests {
     }
 
     #[test]
+    fn ce_keeps_subscript_digits() {
+        // 与 mhchem.js 的输出一致；下标数字曾在 9,9 子状态机里被吞掉。
+        assert_eq!(
+            ce("H2O"),
+            r"{\mathrm{H}{\vphantom{A}}_{\smash[t]{2}}\mathrm{O}}"
+        );
+        assert!(ce("CO2").contains(r"_{\smash[t]{2}}"));
+    }
+
+    #[test]
     fn ce_reaction_has_arrow() {
         let tex = ce("2H2 + O2 -> 2H2O");
         assert!(tex.contains("rightarrow"), "应含反应箭头: {tex}");
+        assert!(tex.starts_with(r"{2\,\mathrm{H}"), "系数应保留: {tex}");
+        assert_eq!(tex.matches(r"_{\smash[t]{2}}").count(), 3, "{tex}");
+    }
+
+    #[test]
+    fn ce_keeps_decimal_numbers() {
+        let tex = ce("1.5 H2O");
+        assert!(tex.contains("1.5"), "小数系数应保留: {tex}");
     }
 
     #[test]
