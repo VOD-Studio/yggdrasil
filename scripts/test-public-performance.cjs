@@ -88,7 +88,9 @@ async function main() {
     const cached = warm[i]; assert(cached.headers.etag);
     const conditional = await read(bases[i], route, { headers: { 'If-None-Match': cached.headers.etag } });
     assert.equal(conditional.status, 304); assert.equal(conditional.body, '');
-    assert.equal((await read(bases[i], route, { headers: { Cookie: 'theme=light' } })).headers['x-ssr-cache'], 'BYPASS');
+    const authenticated = await read(bases[i], route, { headers: { Cookie: 'theme=light' } });
+    assert.equal(authenticated.headers['x-ssr-cache'], 'BYPASS');
+    assert.equal(authenticated.headers['cache-control'], 'private, no-store');
     assert.equal((await read(bases[i], route + '?preview=1')).headers['x-ssr-cache'], 'BYPASS');
     assert.equal((await read(bases[i], '/notes')).headers['cache-control'], 'no-store');
     assert.equal((await read(bases[i], '/admin')).status, 302);

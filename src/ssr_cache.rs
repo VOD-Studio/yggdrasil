@@ -155,11 +155,25 @@ pub async fn cache_public_html(
     req: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> Response {
+    let authenticated = req.headers().contains_key(header::COOKIE)
+        || req.headers().contains_key(header::AUTHORIZATION);
     if !HTML_CACHE.enabled || !cacheable_request(req.method(), req.uri(), req.headers()) {
         let mut response = next.run(req).await;
         response
             .headers_mut()
             .insert("x-ssr-cache", HeaderValue::from_static("BYPASS"));
+        if authenticated
+            && response
+                .headers()
+                .get(header::CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok())
+                .is_some_and(|v| v.starts_with("text/html"))
+        {
+            response.headers_mut().insert(
+                header::CACHE_CONTROL,
+                HeaderValue::from_static("private, no-store"),
+            );
+        }
         return response;
     }
     let path = req.uri().path().to_owned();
