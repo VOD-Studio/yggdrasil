@@ -1,7 +1,7 @@
 //! 写作技能的公开阅读页；复用文章渲染器及 MCP 配置生成器。
 use dioxus::prelude::*;
 
-use crate::api::writing_guide::{get_writing_guide, SKILL_SOURCE, SKILL_URL};
+use crate::api::writing_guide::{get_writing_guide, SKILL_URL};
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::skeletons::writing_guide_skeleton::WritingGuideSkeleton;
 use crate::router::Route;
@@ -50,7 +50,7 @@ pub fn WritingGuide() -> Element {
                     h1 { "让灵感生根，" br {} em { "让 Agent 懂得书写。" } }
                     p { class: "writing-lead", "一份写作技能，连接你的 AI 与这棵世界树。" br {} "从一段能运行的代码，到一张讲清思路的图。" }
                     div { class: "writing-actions",
-                        CopyButton { text: SKILL_SOURCE.to_string(), label: "复制 Skill 源码", primary: true }
+                        CopyButton { text: data.source.clone(), label: "复制 Skill 源码", primary: true }
                         a { class: "writing-download", href: SKILL_URL, download: "SKILL.md", "下载 SKILL.md ↓" }
                     }
                 }
@@ -133,7 +133,7 @@ pub fn WritingGuide() -> Element {
                 div { class: "md-content writing-content", dangerous_inner_html: data.html }
                 footer { class: "writing-document-footer",
                     p { "准备好了，就让下一篇文章在这里生长。" }
-                    CopyButton { text: SKILL_SOURCE.to_string(), label: "复制 Skill 源码", primary: true }
+                    CopyButton { text: data.source.clone(), label: "复制 Skill 源码", primary: true }
                 }
             }
         }

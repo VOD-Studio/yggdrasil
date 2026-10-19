@@ -4,7 +4,7 @@
 
 ## 数据与预览
 
-`src/pages/components_showcase_data.json` 为每个条目记录稳定 `slug`、分类、说明、状态、属性、源码和 `code` 用法。两个字段分别控制详情行为与代码区标题：
+`src/pages/components_showcase_data.json` 为每个条目记录稳定 `slug`、分类、说明、状态、属性、源码和 `code` 用法。数据只嵌入服务端：直接访问随 SSR 水合数据下发，站内跳转经 `get_showcase_data` 请求一次并在会话内缓存，不进入 WASM。两个字段分别控制详情行为与代码区标题：
 
 | 字段 | 取值 | 含义 |
 | --- | --- | --- |

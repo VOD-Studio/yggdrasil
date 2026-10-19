@@ -3,11 +3,14 @@
 
 use dioxus::prelude::*;
 
+// 源码只嵌入服务端二进制，经 server function 下发，避免每位访客的 WASM 都带上全文。
+#[cfg(feature = "server")]
 pub const SKILL_SOURCE: &str = include_str!("../../public/skills/yggdrasil-writing/SKILL.md");
 pub const SKILL_URL: &str = "/skills/yggdrasil-writing/SKILL.md";
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct WritingGuideData {
+    pub source: String,
     pub html: String,
     pub toc_html: String,
     pub configs: [String; 3],
@@ -41,6 +44,7 @@ pub async fn get_writing_guide() -> Result<WritingGuideData, ServerFnError> {
     };
     let configs = crate::mcp::config::generate_client_configs(&base_url, "YOUR_YGGDRASIL_TOKEN");
     Ok(WritingGuideData {
+        source: SKILL_SOURCE.to_string(),
         html: RENDERED.html.clone(),
         toc_html: RENDERED.toc_html.clone(),
         configs: [configs.codex_toml, configs.omp_json, configs.opencode_json],

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **前端体积**：组件图鉴数据与写作技能源码只嵌入服务端，改由水合数据或 server function 下发，WASM 减少约 110 KB（brotli 后约 13 KB）。
+
 ## [0.23.2] - 2026-10-19
 
 ### Changed

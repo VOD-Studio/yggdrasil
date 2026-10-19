@@ -56,7 +56,7 @@ const SENSITIVE = new Set([
   'checkpendingstatus', 'startExec'.toLowerCase(), 'startexecstream', 'getexecresult',
   'executesql', 'getdbschema',
 ]);
-const NORMAL_FRONTEND_READS = new Set(['getsitesettings']);
+const NORMAL_FRONTEND_READS = new Set(['getsitesettings', 'getshowcasedata']);
 const report = { base: BASE, artifactDir: ARTIFACTS, passed: [], apiRequests: [],
   blockedBusinessRequests: [], pageErrors: [], screenshots: [], limitations: [] };
 let stage = 'baseline';
