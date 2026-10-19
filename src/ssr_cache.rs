@@ -261,7 +261,10 @@ pub async fn cache_public_html(
                 None
             }
         }
-    });
+    })
+    // 压缩层等下游在流结束后可能再次 poll；unfold 对此会 panic，
+    // 而 release 配置为 panic=abort，会直接带走整个进程。
+    .fuse();
     Response::from_parts(parts, Body::from_stream(stream))
 }
 
