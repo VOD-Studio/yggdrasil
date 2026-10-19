@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.4] - 2026-10-20
+
+### Fixed
+
+- **SSR 缓存崩溃**：公开页 HTML 缓存的响应流结束后被压缩层再次 poll 时不再 panic；此前 release 的 `panic = "abort"` 会使进程反复退出，导致 nginx 间歇返回 502。
+
 ## [0.23.3] - 2026-10-19
 
 ### Changed
