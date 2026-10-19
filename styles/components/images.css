@@ -28,8 +28,8 @@
     aspect-ratio: var(--ar);
     /* 加载中灰底（占位图未加载完时） */
     background: var(--color-paper-code-bg);
-    border-radius: var(--radius-mini);
-    margin: 1em 0;
+    border-radius: 10px;
+    margin: 1.6em 0;
     cursor: zoom-in;
     transition: opacity 0.2s ease-out;
   }

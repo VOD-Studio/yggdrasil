@@ -1,9 +1,22 @@
 /**
- * 代码块 copy 按钮。
+ * 代码块复制按钮。
  *
- * 为 pre>code 注入一个 .copy-code 按钮,点击复制代码文本并回显 copied!。
- * 2 秒后还原文案。样式见 input.css 的 .copy-code 规则(全局 Tailwind 构建)。
+ * 为 pre>code 注入一个 .copy-code 图标按钮，点击复制代码文本；成功后换成对勾、
+ * 读屏名称改为「已复制」，2 秒后还原。样式见 styles/components/article.css。
  */
+
+const COPY_ICON =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>';
+const CHECK_ICON =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
+
+function setCopied(btn: HTMLButtonElement, copied: boolean): void {
+  btn.innerHTML = copied ? CHECK_ICON : COPY_ICON;
+  btn.setAttribute('aria-label', copied ? '已复制' : '复制代码');
+  btn.title = copied ? '已复制' : '复制';
+  if (copied) btn.dataset.copied = 'true';
+  else delete btn.dataset.copied;
+}
 
 function initCopyButtons(root: Element): void {
   const blocks = root.querySelectorAll('pre > code');
@@ -15,9 +28,9 @@ function initCopyButtons(root: Element): void {
     if (code.classList.contains('language-mermaid')) return;
 
     const btn = document.createElement('button');
+    btn.type = 'button';
     btn.className = 'copy-code';
-    btn.textContent = 'copy';
-    btn.setAttribute('aria-label', 'Copy code');
+    setCopied(btn, false);
 
     const codeText = code.textContent || '';
     btn.addEventListener('click', () => {
@@ -33,10 +46,8 @@ function initCopyButtons(root: Element): void {
         document.execCommand('copy');
         document.body.removeChild(ta);
       }
-      btn.textContent = 'copied!';
-      setTimeout(() => {
-        btn.textContent = 'copy';
-      }, 2000);
+      setCopied(btn, true);
+      setTimeout(() => setCopied(btn, false), 2000);
     });
 
     pre.appendChild(btn);
