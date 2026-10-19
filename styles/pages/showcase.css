@@ -275,14 +275,14 @@
 .showcase-card-preview .showcase-upload-demo .flex-1 > button svg { width: 1.25rem; height: 1.25rem; }
 .showcase-card-preview .showcase-upload-demo .flex-1 > button p:last-child { display: none; }
 .showcase-runner-demo { min-height: 185px; }
-.showcase-runner-demo .code-runner-editor { min-height: 105px; max-height: 115px; overflow: hidden; }
-.showcase-runner-demo .code-runner-editor .cm-editor { min-height: 105px; }
+.showcase-runner-demo .runner-editor { min-height: 105px; max-height: 115px; overflow: hidden; }
+.showcase-runner-demo .runner-editor .cm-editor { min-height: 105px; }
 .showcase-card-preview--code-runner { align-items: flex-start; }
 .showcase-card-preview--code-runner .showcase-runner-demo { max-height: 230px; overflow: hidden; }
-.showcase-card-preview--code-runner .code-runner-editor,
-.showcase-card-preview--code-runner .code-runner-editor .cm-editor { height: 76px; min-height: 76px; max-height: 76px; }
+.showcase-card-preview--code-runner .runner-editor,
+.showcase-card-preview--code-runner .runner-editor .cm-editor { height: 76px; min-height: 76px; max-height: 76px; }
 .showcase-card-preview--code-runner .showcase-runner-demo [id^="code-runner-output-"] { min-height: 68px; max-height: 68px; }
-.showcase-runner-detail .code-runner-editor, .showcase-runner-detail .code-runner-editor .cm-editor { min-height: 220px; max-height: 350px; }
+.showcase-runner-detail .runner-editor, .showcase-runner-detail .runner-editor .cm-editor { min-height: 220px; max-height: 350px; }
 .showcase-runner-demo > div > div { margin-top: 0; margin-bottom: 0; }
 
 .showcase-sql-demo { width: 100%; min-width: 0; }

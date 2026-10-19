@@ -391,6 +391,8 @@ fn run_in_container_with_cleanup_signal<'a>(
 /// 序列化后作为 SSE event data；`Done` 同时携带终态信息（退出码 / OOM / 超时 / 耗时）。
 #[derive(Clone, Debug)]
 pub enum OutputChunk {
+    /// 执行阶段：`queued`（等并发槽位）、`preparing`（拉起容器）、`running`（容器已启动）。
+    Stage(&'static str),
     /// stdout 块（容器逐块产出）。
     Stdout(String),
     /// stderr 块（容器逐块产出）。
@@ -484,6 +486,7 @@ pub async fn run_in_container_stream(
     docker
         .start_container(&container_id, None::<StartContainerOptions>)
         .await?;
+    let _ = tx.send(OutputChunk::Stage("running")).await;
 
     // 容器开始执行的时刻，用于计算 duration_ms（start_container 返回即视为起点）。
     let start_time = std::time::Instant::now();

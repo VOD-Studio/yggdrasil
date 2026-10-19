@@ -27,7 +27,7 @@ const TARGETS = [
   ['admin-layout', 'AdminLayout', '[data-showcase-preview="admin-layout"]'],
   ['asset-picker-modal', 'AssetPickerModal', '.showcase-picker-panel img'],
   ['asset-upload-modal', 'AssetUploadModal', '.showcase-upload-demo :text("封面.webp")'],
-  ['code-runner', 'CodeRunner', '.showcase-runner-demo .code-runner-editor .cm-editor'],
+  ['code-runner', 'CodeRunner', '.showcase-runner-demo .runner-editor .cm-editor'],
   ['comment-form', 'CommentForm', '.comment-editor-mount .ProseMirror'],
   ['comment-item', 'CommentItem', '.comment-list'],
   ['comment-list', 'CommentList', '.comment-list'],
@@ -640,10 +640,10 @@ async function interactions(page, onlyModalResets = false) {
   if (onlyModalResets) return;
 
   await goto(page, '/about/components/code-runner');
-  await page.getByRole('button', { name: '播放输出示例' }).click();
+  await page.getByRole('button', { name: '播放示例' }).click();
   await page.getByText('输出示例', { exact: true }).waitFor();
   await page.getByRole('button', { name: '错误输出' }).click();
-  await page.getByRole('button', { name: '播放输出示例' }).click();
+  await page.getByRole('button', { name: '播放示例' }).click();
   await page.getByRole('button', { name: '↻ 恢复默认' }).click();
   pass('runner sample output and reset');
 

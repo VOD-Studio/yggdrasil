@@ -114,6 +114,15 @@ fn spawn_exec_task(
     let lang_key = normalize_lang(&req.language);
     tokio::spawn(async move {
         let sem = &*RUNNER_SEMAPHORE;
+        // 流式路径把阶段推给前端；channel 有缓冲，SSE 连上前的阶段不会丢。
+        let report = |stage: &'static str| {
+            if let Some(tx) = &stream_tx {
+                let _ = tx.try_send(OutputChunk::Stage(stage));
+            }
+        };
+        if sem.available_permits() == 0 {
+            report("queued");
+        }
 
         // 排队等待可用容器槽
         let ticket = match tokio::time::timeout(
@@ -125,11 +134,22 @@ fn spawn_exec_task(
             Ok(Ok(t)) => t,
             _ => {
                 update_task_stage(&task_id, ExecStatus::Failed, "系统繁忙，排队超时");
+                // 流式路径同样要给出终态，否则前端只看到连接断开。
+                if let Some(tx) = &stream_tx {
+                    let _ = tx.try_send(OutputChunk::Done {
+                        exit_code: None,
+                        oom_killed: false,
+                        timed_out: false,
+                        duration_ms: 0,
+                        error: Some("系统繁忙，排队超时".to_string()),
+                    });
+                }
                 return;
             }
         };
 
         update_task_stage(&task_id, ExecStatus::Running, "启动容器");
+        report("preparing");
 
         let lang_def = match LANGUAGES.get(&lang_key) {
             Some(d) => d,

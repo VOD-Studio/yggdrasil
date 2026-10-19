@@ -20,11 +20,13 @@ use crate::utils::js::invoke_optional_global;
 enum ContentFragment {
     /// 原始 HTML 片段（含语法高亮等），直接以 `dangerous_inner_html` 渲染。
     Html(String),
-    /// 可运行代码块：语言、源码、可选资源覆盖。
+    /// 可运行代码块：语言、源码、可选资源覆盖，以及服务端高亮好的代码 HTML
+    /// （编辑器挂载前原样显示，SSR 与 hydration 输出一致）。
     Runnable {
         lang: String,
         source: String,
         overrides: Option<ResourceLimits>,
+        highlighted: String,
     },
 }
 
@@ -59,11 +61,13 @@ fn split_content_fragments(html: &str) -> Vec<ContentFragment> {
             .filter(|s| !s.is_empty())
             .and_then(|s| serde_json::from_str::<ResourceLimits>(&s).ok());
         let source = extract_attr(pre_block, "data-source").unwrap_or_default();
+        let highlighted = code_inner_html(pre_block).to_string();
 
         fragments.push(ContentFragment::Runnable {
             lang,
             source,
             overrides,
+            highlighted,
         });
     }
 
@@ -72,6 +76,19 @@ fn split_content_fragments(html: &str) -> Vec<ContentFragment> {
     }
 
     fragments
+}
+
+/// `<pre ...><code ...>内容</code></pre>` 中 `<code>` 的内部 HTML；结构不符时为空。
+fn code_inner_html(block: &str) -> &str {
+    let Some(code_start) = block.find("<code") else {
+        return "";
+    };
+    let after_tag = &block[code_start..];
+    let Some(open_end) = after_tag.find('>') else {
+        return "";
+    };
+    let inner = &after_tag[open_end + 1..];
+    inner.rfind("</code>").map_or("", |end| &inner[..end])
 }
 
 /// 从 HTML 片段中提取首个 `name="value"` 属性值，并解码 HTML 实体。
@@ -222,12 +239,13 @@ pub fn PostContent(
                         ContentFragment::Html(html) => rsx! {
                             div { key: "html-{i}", dangerous_inner_html: "{html}" }
                         },
-                        ContentFragment::Runnable { lang, source, overrides } => rsx! {
+                        ContentFragment::Runnable { lang, source, overrides, highlighted } => rsx! {
                             CodeRunner {
                                 key: "runner-{i}",
                                 source: source.clone(),
                                 language: lang.clone(),
                                 overrides: overrides.clone(),
+                                highlighted: Some(highlighted.clone()).filter(|h| !h.is_empty()),
                                 // i 是片段序列中的确定性索引（来自纯函数 split_content_fragments
                                 // 对同一 content_html 的解析），SSR 与 hydration 一致，用作容器
                                 // id 后缀保证 hydration 时 CodeMirror 能找到 SSR 渲染的容器。
@@ -263,10 +281,12 @@ mod tests {
                 lang,
                 source,
                 overrides,
+                highlighted,
             } => {
                 assert_eq!(lang, "python");
                 assert_eq!(source, "print('hi')");
                 assert!(overrides.is_none());
+                assert_eq!(highlighted, "print('hi')");
             }
             other => panic!("expected Runnable, got {other:?} (Html)"),
         }

@@ -1,14 +1,21 @@
 //! CodeMirror resources belong to the component scope.
 use crate::bridges::library::{library_ready, LibraryResource};
 use dioxus::prelude::*;
+/// 编辑器挂载与同步。返回编辑器句柄，供「还原」直接写回原文。
+///
+/// - `vim_mode`：Vim 开启时为当前模式（normal / insert / visual …），关闭时为 `None`；
+/// - `on_run`：⌘↵ / Ctrl↵ 在任何模式下运行。
+#[allow(clippy::too_many_arguments)]
 pub(super) fn use_editor(
     language: String,
     container_id: String,
     source_signal: Signal<String>,
     vim_enabled: Signal<bool>,
+    mut vim_mode: Signal<Option<String>>,
+    on_run: Callback<()>,
     mut editor_ready: Signal<bool>,
     editor_library: LibraryResource,
-) {
+) -> Signal<Option<crate::bridges::codemirror::EditorHandle>> {
     use crate::bridges::codemirror;
     use crate::theme::{use_resolved_theme, ResolvedTheme};
     use wasm_bindgen::closure::Closure;
@@ -37,9 +44,8 @@ pub(super) fn use_editor(
             move |v: String| sig.set(v)
         });
         let on_ready = Closure::new(|| {});
-        // CodeRunner 不使用 Ctrl+Enter 运行快捷键（它有自己的运行按钮），
-        // 但 EditorHandle 签名要求该闭包，传 no-op 满足生命周期。
-        let on_run_shortcut = Closure::new(|| {});
+        let on_run_shortcut = Closure::new(move || on_run.call(()));
+        let on_vim_mode_change = Closure::new(move |mode: String| vim_mode.set(Some(mode)));
 
         let theme_name = if resolved_theme() == ResolvedTheme::Dark {
             "dark"
@@ -55,9 +61,11 @@ pub(super) fn use_editor(
         opts.set_on_change(&on_change);
         opts.set_on_ready(&on_ready);
         opts.set_on_run_shortcut(&on_run_shortcut);
+        opts.set_on_vim_mode_change(&on_vim_mode_change);
 
         if let Ok(Some(inst)) = codemirror::get_module().create(&mount_container_id, &opts) {
-            let handle = codemirror::EditorHandle::new(inst, on_change, on_ready, on_run_shortcut);
+            let handle = codemirror::EditorHandle::new(inst, on_change, on_ready, on_run_shortcut)
+                .with_vim_mode(on_vim_mode_change);
             editor_handle.set(Some(handle));
             editor_ready.set(true);
         }
@@ -94,9 +102,12 @@ pub(super) fn use_editor(
         }
     });
 
-    // 监听 vim 模式切换并同步。
+    // 监听 vim 模式切换并同步；关闭时清掉状态条的模式。
     use_effect(move || {
         let enabled = vim_enabled();
+        if !enabled {
+            vim_mode.set(None);
+        }
         if let Some(h) = editor_handle.read().as_ref() {
             h.instance().set_vim(enabled);
         }
@@ -107,4 +118,6 @@ pub(super) fn use_editor(
         editor_handle.set(None);
         editor_ready.set(false);
     });
+
+    editor_handle
 }

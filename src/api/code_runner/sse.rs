@@ -49,6 +49,7 @@ pub async fn exec_stream(
 
     let stream = ReceiverStream::new(entry.rx).map(|chunk| {
         Ok::<_, Infallible>(match chunk {
+            OutputChunk::Stage(s) => Event::default().event("stage").data(s),
             OutputChunk::Stdout(s) => Event::default().event("stdout").data(s),
             OutputChunk::Stderr(s) => Event::default().event("stderr").data(s),
             OutputChunk::Done {

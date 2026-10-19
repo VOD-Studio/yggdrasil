@@ -240,9 +240,13 @@ pub fn render_markdown_enhanced(md: &str) -> RenderedContent {
                     in_codeblock = false;
                     continue;
                 }
-                // 使用 syntect 对代码块进行服务端语法高亮。
+                // 使用 syntect 对代码块进行服务端语法高亮。围栏信息可能带修饰
+                //（`python runnable {...}`），只取首个语言 token。
+                let highlight_lang = code_lang
+                    .as_deref()
+                    .and_then(|lang| lang.split_whitespace().next());
                 let highlighted =
-                    crate::highlight::server::highlight_code(&code_buffer, code_lang.as_deref());
+                    crate::highlight::server::highlight_code(&code_buffer, highlight_lang);
                 // 可运行代码块：在 <pre> 上挂 data-runnable / data-lang / data-overrides / data-source，
                 // 阅读者（post_content.rs）客户端扫描这些标记原地挂载 CodeRunner 组件。
                 // data-source 为 HTML 转义后的原始源码，供阅读器无损提取（避免反解高亮 HTML）。
@@ -1070,6 +1074,16 @@ mod tests {
         assert!(result.html.contains("<pre><code>"));
         assert!(!result.html.contains("class=\"language-"));
         assert!(result.html.contains("plain text"));
+    }
+
+    #[test]
+    fn render_markdown_runnable_block_is_highlighted() {
+        let result = render_markdown_enhanced("```python runnable\ndef f():\n    pass\n```");
+        assert!(
+            !result.html.contains("text plain"),
+            "可运行块应按语言高亮, got: {}",
+            result.html
+        );
     }
 
     #[test]

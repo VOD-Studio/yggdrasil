@@ -1,4 +1,7 @@
-use super::{state::RunState, RunnerExample};
+use super::{
+    state::{Outcome, Phase, RunState},
+    RunnerExample,
+};
 use crate::api::code_runner::ExecRequest;
 use dioxus::prelude::*;
 
@@ -19,14 +22,7 @@ impl Execution {
     pub fn show_example(mut self, example: &RunnerExample) {
         self.show_output.set(true);
         self.has_output.set(true);
-        self.state.set(if example.error.is_empty() {
-            RunState::Succeeded(example.status.clone())
-        } else {
-            RunState::Failed {
-                summary: example.status.clone(),
-                detail: example.error.clone(),
-            }
-        });
+        self.state.set(example_state(example));
         #[cfg(target_arch = "wasm32")]
         if let Some(handle) = self.terminal.read().as_ref() {
             handle
@@ -47,7 +43,7 @@ impl Execution {
             return;
         }
         self.clear();
-        self.state.set(RunState::Running("准备中...".into()));
+        self.state.set(RunState::Busy(Phase::Preparing));
         self.show_output.set(true);
         #[cfg(target_arch = "wasm32")]
         {
@@ -60,14 +56,7 @@ impl Execution {
 }
 
 pub(super) fn use_execution(example: Option<RunnerExample>) -> Execution {
-    let state = use_signal(|| match example.as_ref() {
-        Some(example) if example.error.is_empty() => RunState::Succeeded(example.status.clone()),
-        Some(example) => RunState::Failed {
-            summary: example.status.clone(),
-            detail: example.error.clone(),
-        },
-        None => RunState::Idle,
-    });
+    let state = use_signal(|| example.as_ref().map_or(RunState::Idle, example_state));
     let execution = Execution {
         state,
         show_output: use_signal(|| example.is_some()),
@@ -95,21 +84,25 @@ pub(super) fn use_execution(example: Option<RunnerExample>) -> Execution {
             let Some(request) = execution.pending.write().take() else {
                 return;
             };
-            execution.state.set(RunState::Running("提交中...".into()));
             // Dioxus cancels this task on unmount. The stream handle separately owns callbacks.
+            // 提交后保持「准备中」，排队与容器启动由流里的 stage 事件推进。
             spawn(async move {
                 match crate::api::code_runner::execute::start_exec_stream(request).await {
-                    Ok(id) => {
-                        execution.state.set(RunState::Running("运行中".into()));
-                        match super::stream::start(&id, execution) {
-                            Ok(stream) => execution.stream.set(Some(stream)),
-                            Err(_) => super::stream::poll_result(&id, execution).await,
-                        }
-                    }
-                    Err(error) => execution.state.set(RunState::failed(error)),
+                    Ok(id) => match super::stream::start(&id, execution) {
+                        Ok(stream) => execution.stream.set(Some(stream)),
+                        Err(_) => super::stream::poll_result(&id, execution).await,
+                    },
+                    Err(error) => execution.state.set(RunState::rejected(&error.to_string())),
                 }
             });
         });
     }
     execution
+}
+
+fn example_state(example: &RunnerExample) -> RunState {
+    RunState::Finished(Outcome::Example {
+        meta: example.status.clone(),
+        error: example.error.clone(),
+    })
 }

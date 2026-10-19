@@ -17,6 +17,21 @@ describe('CodeMirrorInstance', () => {
     document.body.appendChild(container);
   });
 
+  it('开启 Vim 时报告模式，热切换后仍能收到模式变化', () => {
+    const modes: string[] = [];
+    const opts = new EditorOptions();
+    opts.vim = true;
+    opts.onVimModeChange = (mode) => modes.push(mode);
+    const inst = new CodeMirrorInstance(container, opts);
+    expect(modes).toEqual(['normal']);
+    inst.setVim(true);
+    expect(modes).toEqual(['normal']);
+    inst.setVim(false);
+    inst.setVim(true);
+    expect(modes).toEqual(['normal', 'normal']);
+    inst.destroy();
+  });
+
   it('getValue/setValue 往返', () => {
     const inst = new CodeMirrorInstance(container, new EditorOptions());
     inst.setValue('SELECT 1');

@@ -11,6 +11,7 @@
 @import "./styles/components/post-footer.css";
 @import "./styles/components/post.css";
 @import "./styles/components/comments.css";
+@import "./styles/components/runner.css";
 @import "./styles/components/images.css";
 @import "./styles/components/changelog.css";
 @import "./styles/components/controls.css";
@@ -22,7 +23,6 @@
 @import "./styles/pages/friends.css";
 @import "./styles/pages/archives.css";
 @import "./styles/pages/navigation-motion.css";
-@import "./styles/pages/runner.css";
 @import "./styles/pages/about.css";
 @import "./styles/pages/search.css";
 @import "./styles/pages/home.css";

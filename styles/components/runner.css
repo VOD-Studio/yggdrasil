@@ -1,0 +1,393 @@
+@layer components {
+  /* ===== 可运行代码块 =====
+     12px 圆角发丝线外框；标题栏放语言、「可运行」、已修改 / 还原、状态与操作；
+     状态一律「圆点 + 文字」：中性（就绪、进行中、成功）、琥珀（资源受限）、红（出错）。 */
+  .runner {
+    margin: 1.6em 0;
+    overflow: hidden;
+    border-radius: var(--radius-code);
+    background-color: var(--color-surface-1);
+    box-shadow: 0 0 0 1px var(--color-hairline);
+    font-size: 0.9375rem;
+    line-height: 1.6;
+    transition: box-shadow 220ms var(--ease-out-expo);
+  }
+
+  .runner:has(.cm-editor.cm-focused) {
+    box-shadow: var(--shadow-focus);
+  }
+
+  .runner-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.625rem;
+    padding: 0.4375rem 0.5rem 0.4375rem 0.875rem;
+    box-shadow: inset 0 -1px 0 var(--color-hairline);
+  }
+
+  .runner-head-start,
+  .runner-head-end {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    min-width: 0;
+  }
+
+  .runner-head-end {
+    gap: 0.375rem;
+  }
+
+  .runner-lang {
+    color: var(--color-fg-3);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+  }
+
+  .runner-badge {
+    padding: 1px 0.5rem;
+    border-radius: 999px;
+    background-color: var(--color-clay-soft);
+    color: var(--color-clay-text);
+    font-size: 0.6875rem;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  .runner-dirty {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    color: var(--color-fg-2);
+    font-size: 0.75rem;
+    white-space: nowrap;
+    animation: runner-pop var(--spring-bouncy-duration) var(--ease-spring-bouncy) both;
+  }
+
+  .runner-dirty::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: var(--color-clay);
+  }
+
+  @keyframes runner-pop {
+    from {
+      opacity: 0;
+      transform: scale(0.9);
+    }
+  }
+
+  .runner-revert,
+  .runner-vim,
+  .runner-retry,
+  .runner-output-meta > button {
+    height: 1.5rem;
+    padding: 0 0.5rem;
+    border: 0;
+    border-radius: 6px;
+    background-color: var(--color-ink-1);
+    color: var(--color-fg-2);
+    font: inherit;
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition:
+      background-color 150ms var(--ease-out-expo),
+      color 150ms var(--ease-out-expo);
+  }
+
+  .runner-revert:hover,
+  .runner-vim:hover {
+    background-color: var(--color-ink-2);
+    color: var(--color-fg);
+  }
+
+  .runner-vim {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    height: 1.625rem;
+    padding: 0 0.5625rem;
+    background: transparent;
+    box-shadow: inset 0 0 0 1px var(--color-hairline);
+    color: var(--color-fg-3);
+    font-family: var(--font-mono);
+  }
+
+  .runner-vim::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: var(--color-ink-2);
+  }
+
+  .runner-vim[aria-pressed="true"] {
+    background-color: var(--color-clay-soft);
+    box-shadow: none;
+    color: var(--color-clay-text);
+  }
+
+  .runner-vim[aria-pressed="true"]::before {
+    background-color: var(--color-clay);
+  }
+
+  :is(.runner-revert, .runner-vim, .runner-retry, .runner-output-meta > button):focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
+  }
+
+  /* ---- 状态：圆点 + 文字 ---- */
+  .runner-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    margin-right: 0.25rem;
+    color: var(--color-fg-3);
+    font-size: 0.78125rem;
+    white-space: nowrap;
+  }
+
+  .runner-status::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: currentColor;
+  }
+
+  .runner-status.is-live {
+    color: var(--color-fg-2);
+  }
+
+  .runner-status.is-live::before {
+    animation: runner-pulse 1.2s ease-in-out infinite;
+  }
+
+  .runner[data-tone="warn"] .runner-status {
+    color: var(--color-warning);
+  }
+
+  .runner[data-tone="danger"] .runner-status {
+    color: var(--color-danger);
+  }
+
+  @keyframes runner-pulse {
+    50% {
+      opacity: 0.3;
+    }
+  }
+
+  .runner-narrow {
+    display: none;
+  }
+
+  /* ---- 编辑区：挂载前显示服务端高亮的代码，行号与编辑器对齐 ---- */
+  .runner-editor {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-height: 3.5rem;
+    max-height: 25rem;
+  }
+
+  .runner-placeholder {
+    font-family: var(--font-mono);
+    font-size: 0.84375rem;
+    line-height: 1.75;
+  }
+
+  /* 与 CodeMirror 对齐：行高 1.75、上下 0.75rem；行号栏 = 行号（至少 20px，左右 5px / 3px）
+     + 折叠栏（约 10px）；代码左缩进 6px。 */
+  .runner-placeholder {
+    display: flex;
+    height: calc(var(--runner-lines, 1) * 1.75em + 1.5rem);
+    overflow: hidden;
+    background-color: var(--color-surface-1);
+  }
+
+  .runner-placeholder pre {
+    margin: 0;
+    padding-block: 0.75rem;
+    background: none;
+    box-shadow: none;
+    font: inherit;
+    white-space: pre;
+  }
+
+  .runner-placeholder-gutter {
+    flex-shrink: 0;
+    box-sizing: content-box;
+    width: max(12px, calc(var(--runner-digits, 1) * 1ch));
+    padding: 0.75rem 13px 0.75rem 5px !important;
+    color: var(--color-fg-3);
+    text-align: right;
+    user-select: none;
+  }
+
+  .runner-placeholder-code {
+    flex: 1;
+    min-width: 0;
+    padding-left: 6px !important;
+    color: var(--color-fg);
+  }
+
+  .md-content .runner-placeholder-code code {
+    padding: 0;
+    font-size: inherit;
+    line-height: inherit;
+  }
+
+  /* ---- Vim 状态条 ---- */
+  .runner-vim-status {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.3125rem 0.75rem;
+    box-shadow: inset 0 1px 0 var(--color-hairline);
+    font-family: var(--font-mono);
+    font-size: 0.71875rem;
+  }
+
+  .runner-vim-mode {
+    color: var(--color-fg-2);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+  }
+
+  .runner-vim-status[data-mode="INSERT"] .runner-vim-mode {
+    color: var(--color-clay-text);
+  }
+
+  .runner-vim-status[data-mode="VISUAL"] .runner-vim-mode {
+    color: var(--color-fg);
+  }
+
+  .runner-vim-hint {
+    overflow: hidden;
+    color: var(--color-fg-3);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* ---- 输出区 ---- */
+  .runner-output {
+    box-shadow: inset 0 1px 0 var(--color-hairline);
+    animation: runner-drop var(--spring-snappy-duration) var(--ease-spring-snappy) both;
+  }
+
+  @keyframes runner-drop {
+    from {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+  }
+
+  .runner-output-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.4375rem 0.875rem;
+    color: var(--color-fg-3);
+    font-size: 0.75rem;
+  }
+
+  .runner-output-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    font-family: var(--font-mono);
+  }
+
+  .runner-output-meta > button {
+    font-family: var(--font-sans);
+  }
+
+  /* xterm 的 fit 插件按容器高度算行数，这里给定高度，更多输出在终端内滚动。 */
+  .runner-terminal {
+    position: relative;
+    height: 10rem;
+    padding: 0 0.5rem 0.5rem;
+    overflow: hidden;
+  }
+
+  .runner-terminal-skeleton {
+    position: absolute;
+    inset: 0 0.875rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.625rem;
+  }
+
+  .runner-note {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.5rem 0.875rem;
+    box-shadow: inset 0 1px 0 var(--color-hairline);
+    color: var(--color-fg-3);
+    font-size: 0.75rem;
+  }
+
+  .runner[data-tone="warn"] .runner-note {
+    color: var(--color-warning);
+  }
+
+  .runner[data-tone="danger"] .runner-note {
+    color: var(--color-danger);
+  }
+
+  .runner-retry {
+    flex-shrink: 0;
+    color: var(--color-fg);
+  }
+
+  /* 手机：代码区贴边；标题栏只留语言、状态与运行，其余收进「⋯」。 */
+  @media (max-width: 760px) {
+    .post-content .runner {
+      margin-inline: -1.5rem;
+      border-radius: 0;
+    }
+
+    .runner-wide,
+    .runner-badge,
+    .runner-dirty {
+      display: none;
+    }
+
+    .runner-narrow {
+      display: inline-flex;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .runner-status.is-live::before,
+    .runner-dirty,
+    .runner-output {
+      animation: none;
+    }
+  }
+}
+
+/* CodeMirror 运行时注入的主题样式不分层，会压过 @layer components；
+   这里写在层外，并比它的 `.ͼ1 .cm-content` 多一级特异性。 */
+.runner .runner-editor .cm-editor {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.runner .runner-editor .cm-scroller {
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: 0.84375rem;
+  line-height: 1.75;
+}
+
+.runner .runner-editor .cm-content {
+  padding-block: 0.75rem;
+}

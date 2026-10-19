@@ -34,7 +34,7 @@ import {
   lineNumbers,
   rectangularSelection,
 } from '@codemirror/view';
-import { vim } from '@replit/codemirror-vim';
+import { getCM, vim } from '@replit/codemirror-vim';
 import { type ThemeName, themeExtension } from './themes';
 
 /**
@@ -102,8 +102,10 @@ export class EditorOptions {
   value?: string;
   onChange?: (value: string) => void;
   onReady?: () => void;
-  /** Ctrl/Cmd + Enter 快捷键回调（SQL 控制台触发执行）。 */
+  /** Ctrl/Cmd + Enter 快捷键回调（SQL 控制台、可运行代码块触发执行）。 */
   onRunShortcut?: () => void;
+  /** Vim 模式变化回调：normal / insert / visual / replace；开启 Vim 时先报一次 normal。 */
+  onVimModeChange?: (mode: string) => void;
 }
 
 /**
@@ -158,6 +160,7 @@ export class CodeMirrorInstance {
   private themeCompartment = new Compartment();
   private languageCompartment = new Compartment();
   private vimCompartment = new Compartment();
+  private vimEnabled: boolean;
   private language: string;
   private schema: SqlSchema;
 
@@ -170,6 +173,7 @@ export class CodeMirrorInstance {
     const schema = options.schema ?? { tables: [] };
     this.schema = schema;
     this.language = options.language ?? 'sql';
+    this.vimEnabled = options.vim ?? false;
 
     this.view = new EditorView({
       state: EditorState.create({
@@ -208,7 +212,19 @@ export class CodeMirrorInstance {
       parent: container,
     });
 
+    this.onVimModeChange = options.onVimModeChange;
+    if (options.vim) this.watchVimMode();
     options.onReady?.();
+  }
+
+  private onVimModeChange?: (mode: string) => void;
+
+  /** 每次启用 Vim 都会新建插件实例，需要重新订阅模式事件。 */
+  private watchVimMode(): void {
+    const notify = this.onVimModeChange;
+    if (!notify) return;
+    getCM(this.view)?.on('vim-mode-change', (event: { mode: string }) => notify(event.mode));
+    notify('normal');
   }
 
   getValue(): string {
@@ -228,11 +244,15 @@ export class CodeMirrorInstance {
     });
   }
 
-  /** 热切换 Vim 模式，不重建实例（Compartment.reconfigure）。 */
+  /** 热切换 Vim 键位，不重建编辑器（Compartment.reconfigure）。 */
   setVim(v: boolean): void {
+    // 状态不变时跳过：重新配置会换一个 Vim 插件实例，丢掉当前模式与寄存器。
+    if (v === this.vimEnabled) return;
+    this.vimEnabled = v;
     this.view.dispatch({
       effects: this.vimCompartment.reconfigure(v ? [vim()] : []),
     });
+    if (v) this.watchVimMode();
   }
 
   /** 热切换语言（go/python/node/javascript/sql），不重建实例（Compartment.reconfigure）。 */

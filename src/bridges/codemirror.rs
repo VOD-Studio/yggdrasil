@@ -139,9 +139,13 @@ pub mod wasm {
         #[wasm_bindgen(method, setter, js_name = onReady)]
         pub fn set_on_ready(this: &EditorOptions, cb: &Closure<dyn FnMut()>);
 
-        /// Ctrl/Cmd + Enter 快捷键回调（SQL 控制台触发执行）。
+        /// Ctrl/Cmd + Enter 快捷键回调（SQL 控制台、可运行代码块触发执行）。
         #[wasm_bindgen(method, setter, js_name = onRunShortcut)]
         pub fn set_on_run_shortcut(this: &EditorOptions, cb: &Closure<dyn FnMut()>);
+
+        /// Vim 模式变化回调（normal / insert / visual / replace）。
+        #[wasm_bindgen(method, setter, js_name = onVimModeChange)]
+        pub fn set_on_vim_mode_change(this: &EditorOptions, cb: &Closure<dyn FnMut(String)>);
     }
 
     /// 编辑器实例句柄：持有 instance + 所有 Closure，Drop 时销毁实例并释放闭包。
@@ -153,6 +157,7 @@ pub mod wasm {
         _on_change: Closure<dyn FnMut(String)>,
         _on_ready: Closure<dyn FnMut()>,
         _on_run_shortcut: Closure<dyn FnMut()>,
+        _on_vim_mode_change: Option<Closure<dyn FnMut(String)>>,
     }
 
     impl EditorHandle {
@@ -170,7 +175,14 @@ pub mod wasm {
                 _on_change: on_change,
                 _on_ready: on_ready,
                 _on_run_shortcut: on_run_shortcut,
+                _on_vim_mode_change: None,
             }
+        }
+
+        /// 一并持有已注入 EditorOptions 的 Vim 模式回调。
+        pub fn with_vim_mode(mut self, on_vim_mode_change: Closure<dyn FnMut(String)>) -> Self {
+            self._on_vim_mode_change = Some(on_vim_mode_change);
+            self
         }
 
         /// 借用底层实例，供宿主调 getValue/setTheme/setSchema 等。
