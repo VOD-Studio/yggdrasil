@@ -95,17 +95,8 @@ pub struct Post {
 }
 
 /// 将时间戳格式化为展示用的 `YYYY-MM-DD` 字符串。
-///
-/// 此前 `Post::formatted_date` 与 `PostListItem::formatted_date` 各有一份逐字相同的实现。
 fn format_date(dt: DateTime<Utc>) -> String {
     dt.format("%Y-%m-%d").to_string()
-}
-
-impl Post {
-    /// 返回用于展示的文章日期：优先使用发布时间，否则回退到创建时间。
-    pub fn formatted_date(&self) -> String {
-        format_date(self.published_at.unwrap_or(self.created_at))
-    }
 }
 
 /// 文章列表项 DTO。
@@ -230,30 +221,6 @@ mod tests {
     use super::*;
     use chrono::{TimeZone, Utc};
 
-    fn sample_post() -> Post {
-        Post {
-            id: 1,
-            author_id: 1,
-            title: "Test".to_string(),
-            slug: "test".to_string(),
-            summary: None,
-            content_md: "content".to_string(),
-            content_html: None,
-            status: PostStatus::Draft,
-            published_at: None,
-            created_at: Utc.with_ymd_and_hms(2024, 1, 15, 10, 0, 0).unwrap(),
-            updated_at: Utc.with_ymd_and_hms(2024, 1, 15, 10, 0, 0).unwrap(),
-            deleted_at: None,
-            tags: vec![],
-            cover_image: None,
-            reading_time: 1,
-            word_count: 10,
-            toc_html: None,
-            prev_post: None,
-            next_post: None,
-        }
-    }
-
     fn sample_post_list_item() -> PostListItem {
         PostListItem {
             id: 1,
@@ -297,19 +264,6 @@ mod tests {
         for status in [PostStatus::Draft, PostStatus::Published] {
             assert_eq!(PostStatus::from_str(status.as_str()), Some(status.clone()));
         }
-    }
-
-    #[test]
-    fn formatted_date_uses_published_at_when_available() {
-        let mut post = sample_post();
-        post.published_at = Some(Utc.with_ymd_and_hms(2024, 6, 1, 12, 0, 0).unwrap());
-        assert_eq!(post.formatted_date(), "2024-06-01");
-    }
-
-    #[test]
-    fn formatted_date_falls_back_to_created_at() {
-        let post = sample_post();
-        assert_eq!(post.formatted_date(), "2024-01-15");
     }
 
     #[test]

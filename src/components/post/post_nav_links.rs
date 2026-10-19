@@ -5,6 +5,7 @@
 use dioxus::prelude::*;
 use dioxus::router::components::Link;
 
+use crate::components::ui::{Icon, IconName};
 use crate::models::post::PostNav;
 use crate::router::Route;
 
@@ -19,7 +20,7 @@ use crate::router::Route;
 ///   `src/pages/admin/preview.rs` 模块文档），整页加载可完全规避。
 /// - `sample`：图鉴使用不可导航的样例锚点，默认 false。
 ///
-/// 左右两侧分别渲染上一篇/下一篇链接；窄容器中纵向排列。
+/// 两张并排卡片，下一篇右对齐；窄容器中纵向排列。
 /// 无相邻文章时不渲染对应链接，两侧都缺失时不渲染导航。
 #[component]
 pub fn PostNavLinks(
@@ -51,49 +52,47 @@ pub fn PostNavLinks(
         )
     });
     rsx! {
-        nav { class: "paginav", aria_label: "相邻文章",
+        nav { class: "post-nav", aria_label: "上一篇与下一篇",
             if let (Some(prev_post), Some(prev_to)) = (prev, prev_to) {
                 if sample {
-                    a { class: "prev", href: "#", onclick: move |event| event.prevent_default(),
-                        span { class: "title",
-                            span { class: "post-nav-arrow", aria_hidden: "true", "←" }
-                            "上一篇"
-                        }
-                        span { class: "post-title-nav", "{prev_post.title}" }
+                    a { class: "post-nav-card prev", href: "#", onclick: move |event| event.prevent_default(),
+                        PostNavLabel { prev: true }
+                        span { class: "post-nav-title", "{prev_post.title}" }
                     }
                 } else {
-                    Link {
-                        class: "prev",
-                        to: prev_to,
-                        span { class: "title",
-                            span { class: "post-nav-arrow", aria_hidden: "true", "←" }
-                            "上一篇"
-                        }
-                        span { class: "post-title-nav", "{prev_post.title}" }
+                    Link { class: "post-nav-card prev", to: prev_to,
+                        PostNavLabel { prev: true }
+                        span { class: "post-nav-title", "{prev_post.title}" }
                     }
                 }
             }
-
             if let (Some(next_post), Some(next_to)) = (next, next_to) {
                 if sample {
-                    a { class: "next", href: "#", onclick: move |event| event.prevent_default(),
-                        span { class: "title",
-                            "下一篇"
-                            span { class: "post-nav-arrow", aria_hidden: "true", "→" }
-                        }
-                        span { class: "post-title-nav", "{next_post.title}" }
+                    a { class: "post-nav-card next", href: "#", onclick: move |event| event.prevent_default(),
+                        PostNavLabel { prev: false }
+                        span { class: "post-nav-title", "{next_post.title}" }
                     }
                 } else {
-                    Link {
-                        class: "next",
-                        to: next_to,
-                        span { class: "title",
-                            "下一篇"
-                            span { class: "post-nav-arrow", aria_hidden: "true", "→" }
-                        }
-                        span { class: "post-title-nav", "{next_post.title}" }
+                    Link { class: "post-nav-card next", to: next_to,
+                        PostNavLabel { prev: false }
+                        span { class: "post-nav-title", "{next_post.title}" }
                     }
                 }
+            }
+        }
+    }
+}
+
+#[component]
+fn PostNavLabel(prev: bool) -> Element {
+    rsx! {
+        span { class: "post-nav-label",
+            if prev {
+                Icon { name: IconName::ArrowLeft, size: 13 }
+                "上一篇"
+            } else {
+                "下一篇"
+                Icon { name: IconName::ArrowRight, size: 13 }
             }
         }
     }

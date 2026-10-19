@@ -1852,26 +1852,32 @@
       "slug": "breadcrumbs",
       "label": "面包屑",
       "group": "post",
-      "summary": "从首页定位当前文章，长标题自动省略。",
-      "states": "首页入口 · 当前文章 · 长标题省略",
-      "description": "在文章标题上方展示 Home → 当前文章，帮助读者确认位置并返回首页。路径保持单行，长标题按可用宽度省略，窄屏下仍保留首页入口。",
+      "summary": "文章标题上方的「文章 / 所在栏目」。",
+      "states": "文章入口 · 栏目 · 无标签",
+      "description": "「文章」回到首页，栏目取文章的第一个标签并链接到标签页；文章没有标签时只显示「文章」。",
       "props": [
         [
-          "title",
-          "String",
-          "必填",
-          "当前文章标题；超出宽度时单行省略，完整标题保留在提示与无障碍文本中。"
+          "tag",
+          "Option<String>",
+          "None",
+          "所在栏目，通常是文章的第一个标签。"
         ],
         [
           "full_reload",
           "bool",
           "false",
-          "Home 是否整页加载。后台文章预览（/admin/preview）中设为 true，避免跨布局的客户端导航。"
+          "链接是否整页加载。后台文章预览（/admin/preview）中设为 true，避免跨布局的客户端导航。"
+        ],
+        [
+          "sample",
+          "bool",
+          "false",
+          "图鉴中的非跳转样例链接；正式文章使用默认值。"
         ]
       ],
       "keys": [],
       "source": "src/components/post/breadcrumbs.rs",
-      "code": "use crate::components::post::breadcrumbs::Breadcrumbs;\n\nrsx! {\n    // 公开文章：Home 使用客户端导航\n    Breadcrumbs { title: \"让想法生根\".to_string() }\n\n    // 后台文章预览：Home 使用整页加载\n    Breadcrumbs {\n        title: post.title.clone(),\n        full_reload: true,\n    }\n}",
+      "code": "use crate::components::post::breadcrumbs::Breadcrumbs;\n\nrsx! {\n    Breadcrumbs { tag: post.tags.first().cloned() }\n}",
       "preview_mode": "static",
       "usage_kind": "rust"
     },
@@ -1936,9 +1942,9 @@
       "slug": "post-footer",
       "label": "文章页脚",
       "group": "post",
-      "summary": "展示标签及上一篇、下一篇文章。",
-      "states": "标签 · 相邻文章 · 静态样例",
-      "description": "图鉴使用同一文章页脚展示，样例链接留在本页；正式文章仍链接真实标签和相邻文章。",
+      "summary": "正文后的上一篇与下一篇。",
+      "states": "相邻文章 · 静态样例",
+      "description": "标签已移到文章页眉，页脚只放相邻文章；两侧都没有时不渲染。图鉴样例链接留在本页。",
       "props": [
         [
           "post",
@@ -1970,7 +1976,7 @@
       "slug": "post-header",
       "label": "文章页头",
       "group": "post",
-      "summary": "用面包屑、标题、摘要与阅读信息，开启一篇文章。",
+      "summary": "用面包屑、衬线标题、导语、阅读信息与标签，开启一篇文章。",
       "states": "已发布 · 草稿 · 无摘要",
       "description": "复用真实 PostHeader，以自然宽度展示文章的开场。下方同时呈现草稿标记、长标题换行与无摘要的布局，所有内容均为本地样例。",
       "props": [
@@ -2000,7 +2006,7 @@
       "group": "post",
       "summary": "发布日期、阅读时长与字数，清晰呈现文章的阅读信息。",
       "states": "真实组件 · 本地样例",
-      "description": "用日历、时钟和文档图标展示文章日期、预计阅读时长与字数。日期优先使用发布时间，未发布时回退到创建时间。每项信息保持完整，窄屏下自然换行；预览在文章标题和摘要下展示真实组件。",
+      "description": "一行展示文章日期、预计阅读时长与字数。日期用标题字体的旧式数字，优先使用发布时间，未发布时回退到创建时间；时长与字数用等宽数字，字数带千位分隔。窄屏下各项整体换行。",
       "props": [
         [
           "post",
@@ -2064,8 +2070,8 @@
       "label": "文章目录",
       "group": "post",
       "summary": "按标题层级导航文章章节。",
-      "states": "层级目录 · 展开/固定 · 当前章节 · 局部滚动",
-      "description": "目录和正文使用同一组固定章节。演示目录只观察、滚动自己的正文；正式文章保留视口滚动和地址栏 hash 行为。",
+      "states": "右侧吸顶 · 当前小节 · 阅读进度 · 窄屏悬浮条",
+      "description": "宽屏在正文右侧吸顶，当前小节以圆点标示，底部显示已读百分比；窄屏收成底部「目录 · 当前小节 · 百分比」悬浮条，点开后浮起（手机为底部抽屉），选中小节后收起。演示目录只观察、滚动自己的正文。",
       "props": [
         [
           "toc_html",
@@ -2076,7 +2082,7 @@
         [
           "title",
           "&'static str",
-          "Table of Contents",
+          "目录",
           "目录标题。"
         ],
         [

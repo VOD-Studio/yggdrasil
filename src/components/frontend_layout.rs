@@ -73,7 +73,7 @@ pub fn FrontendLayout() -> Element {
     let nav_items = build_nav_items(route.clone());
     let palette = use_search_palette_provider();
     // 前台页面共用 880px 的索引宽度（正文页在内部收窄到 680px），图鉴 1152px；
-    // 页头、正文与页脚同宽，左右边缘对齐。
+    // 页头、正文与页脚同宽，左右边缘对齐（文章页主区例外，见下）。
     let max_width = if matches!(
         route,
         Route::ComponentShowcase {} | Route::ComponentDetail { .. }
@@ -82,10 +82,16 @@ pub fn FrontendLayout() -> Element {
     } else {
         "max-w-[880px]"
     };
+    // 文章页正文仍是 680px，主区放宽到 1240px 给右侧目录留出位置；页头页脚保持索引宽度。
+    let main_width = if matches!(route, Route::PostDetail { .. }) {
+        "max-w-[1240px]"
+    } else {
+        max_width
+    };
 
     rsx! {
         FrontendShell {
-            max_width,
+            max_width: main_width,
             header: rsx! { Header {
                 max_width,
                 nav_items,

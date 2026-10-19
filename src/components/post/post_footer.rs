@@ -1,12 +1,9 @@
-//! 文章页脚组件。
-//! 展示文章标签与上一篇/下一篇导航。
+//! 文章页脚组件：正文后的发丝线与上一篇 / 下一篇。
 
 use dioxus::prelude::*;
-use dioxus::router::components::Link;
 
 use crate::components::post::post_nav_links::PostNavLinks;
 use crate::models::post::Post;
-use crate::router::Route;
 
 /// 文章页脚组件。
 ///
@@ -18,42 +15,19 @@ use crate::router::Route;
 ///   `src/pages/admin/preview.rs` 模块文档），整页加载可完全规避。
 /// - `sample`：图鉴展示非跳转的样例链接；正式文章默认 false。
 ///
-/// 展示内容包括：
-/// - 文章标签云，链接到对应标签详情页
-/// - 相邻文章导航（如有）
+/// 标签已移到页眉；没有相邻文章时不渲染。
 #[component]
 pub fn PostFooter(
     post: Post,
     #[props(default = false)] full_reload: bool,
     #[props(default = false)] sample: bool,
 ) -> Element {
-    let tag_to = |tag: &str| {
-        super::nav_target(
-            Route::TagDetail {
-                tag: tag.to_string(),
-            },
-            full_reload,
-        )
-    };
+    if post.prev_post.is_none() && post.next_post.is_none() {
+        return rsx! {};
+    }
     rsx! {
         footer { class: "post-footer",
-            if !post.tags.is_empty() {
-                ul { class: "post-tags", aria_label: "文章标签",
-                    for tag in &post.tags {
-                        li { key: "{tag}",
-                            if sample {
-                                a { href: "#", onclick: move |event| event.prevent_default(), "{tag}" }
-                            } else {
-                                Link { to: tag_to(tag), "{tag}" }
-                            }
-                        }
-                    }
-                }
-            }
-
-            if post.prev_post.is_some() || post.next_post.is_some() {
-                PostNavLinks { prev: post.prev_post, next: post.next_post, full_reload, sample }
-            }
+            PostNavLinks { prev: post.prev_post, next: post.next_post, full_reload, sample }
         }
     }
 }

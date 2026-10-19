@@ -3,7 +3,7 @@
  * happy-dom 无 IntersectionObserver，vi.stubGlobal 捕获回调手动注入。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { disposeTocSidebar, initTocSidebar } from './toc-sidebar';
+import { disposeTocSidebar, initTocSidebar, readingProgress } from './toc-sidebar';
 
 const disconnect = vi.fn();
 const observe = vi.fn();
@@ -35,6 +35,7 @@ function setupDom(): {
   linkB: HTMLAnchorElement;
 } {
   document.body.innerHTML = `
+    <div data-toc-root>
     <nav class="toc-sidebar">
       <div class="toc-sidebar-body">
         <ul>
@@ -43,6 +44,8 @@ function setupDom(): {
         </ul>
       </div>
     </nav>
+    <button><span data-toc-current></span><span data-toc-percent></span></button>
+    </div>
     <article class="post-content">
       <h2 id="a">章节 A</h2>
       <h2 id="b">章节 B</h2>
@@ -196,5 +199,44 @@ describe('initTocSidebar', () => {
 
     expect(() => initTocSidebar()).not.toThrow();
     expect(linkA.classList.contains('active')).toBe(true);
+  });
+});
+
+describe('当前小节与阅读进度', () => {
+  beforeEach(() => {
+    stubIo();
+  });
+  afterEach(() => {
+    initTocSidebar();
+    document.body.innerHTML = '';
+  });
+
+  it('激活项的文字同步到目录根内的当前小节标签', () => {
+    const { h2a, h2b } = setupDom();
+    mockTop(h2a, 500);
+    mockTop(h2b, 900);
+    initTocSidebar();
+    const current = document.querySelector('[data-toc-current]')!;
+    expect(current.textContent).toBe('');
+    intersectCallback!([{ target: h2b, isIntersecting: true }]);
+    expect(current.textContent).toBe('章节 B');
+  });
+
+  it('初始化即写入进度变量与百分比', () => {
+    setupDom();
+    initTocSidebar();
+    const root = document.querySelector<HTMLElement>('[data-toc-root]')!;
+    expect(root.style.getPropertyValue('--toc-progress')).not.toBe('');
+    expect(document.querySelector('[data-toc-percent]')!.textContent).toMatch(/^\d+%$/);
+  });
+
+  it('进度按正文相对视口顶线计算并夹在 0–1', () => {
+    expect(readingProgress(500, 2000, 800)).toBe(0);
+    expect(readingProgress(80, 2000, 800)).toBe(0);
+    expect(readingProgress(80 - 640, 2000, 800)).toBeCloseTo(0.5);
+    expect(readingProgress(-5000, 2000, 800)).toBe(1);
+    // 正文比视口还短：顶线越过正文顶部即读完。
+    expect(readingProgress(100, 300, 800)).toBe(0);
+    expect(readingProgress(60, 300, 800)).toBe(1);
   });
 });

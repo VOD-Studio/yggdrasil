@@ -94,37 +94,27 @@ fn PostHeaderPreview(detail: bool) -> Element {
 
 #[component]
 fn BreadcrumbsPreview(detail: bool) -> Element {
-    let title = "让想法生根";
-    let long_title = "在时间的缝隙里种下一些文字：从零开始构建 Rust 与 Dioxus 全栈博客的设计与实践";
-
     rsx! {
         div { class: "showcase-breadcrumb-demo", "data-showcase-preview": "breadcrumbs",
             article { class: "showcase-breadcrumb-context",
-                div { class: "showcase-breadcrumb-path", inert: "true",
-                    Breadcrumbs { title: title.to_string() }
+                div { class: "showcase-breadcrumb-path",
+                    Breadcrumbs { tag: Some("源码剖析".to_string()), sample: true }
                 }
                 div { class: "showcase-breadcrumb-copy",
-                    p { class: "showcase-breadcrumb-kicker", "随笔 / 设计" }
-                    h3 { "{title}" }
-                    p { class: "showcase-breadcrumb-summary", "把零散的念头，写成有迹可循的文字。" }
+                    h3 { "让时间成为电路的一部分" }
+                    p { class: "showcase-breadcrumb-summary", "「文章」回到首页，栏目取文章的第一个标签。" }
                 }
             }
             if detail {
                 div { class: "showcase-breadcrumb-examples",
                     section { class: "showcase-breadcrumb-example",
-                        h3 { "长标题" span { "单行省略" } }
-                        div { class: "showcase-breadcrumb-path", inert: "true",
-                            Breadcrumbs { title: long_title.to_string() }
-                        }
-                    }
-                    section { class: "showcase-breadcrumb-example",
-                        h3 { "窄屏" span { "≤ 280px" } }
-                        div { class: "showcase-breadcrumb-path showcase-breadcrumb-path--narrow", inert: "true",
-                            Breadcrumbs { title: long_title.to_string() }
+                        h3 { "没有标签" span { "只显示「文章」" } }
+                        div { class: "showcase-breadcrumb-path",
+                            Breadcrumbs { sample: true }
                         }
                     }
                 }
-                p { class: "showcase-breadcrumb-note", "保留首页入口，当前标题随可用宽度省略。" }
+                p { class: "showcase-breadcrumb-note", "样例链接停留在本页。" }
             }
         }
     }

@@ -1,6 +1,10 @@
 /**
  * 侧边目录 scroll-spy：IntersectionObserver「探测带」追踪当前阅读节。
  *
+ * 同时维护阅读进度：目录根（`[data-toc-root]`，没有时为 nav）上写 `--toc-progress`
+ * （0–1），并把百分比与当前小节名写进根内的 `[data-toc-percent]` / `[data-toc-current]`。
+ * 这两类元素在 Rust 端不渲染子节点，由这里独占文本。
+ *
  * 幂等重入：调用方用以 slug 为 key 的单元素列表强制 remount PostToc，
  * PostToc 的 use_effect 每次挂载重调本函数——入口先 dispose 上一次的
  * observer 与激活态，再重新扫描。
@@ -29,6 +33,12 @@ export function initTocSidebar(
   if (!body) return;
   const content = contentSelector ? document.querySelector<HTMLElement>(contentSelector) : null;
   const scrollRoot = scrollSelector ? document.querySelector<HTMLElement>(scrollSelector) : null;
+  const root = nav.closest<HTMLElement>('[data-toc-root]') ?? nav;
+  const stopProgress = trackProgress(
+    root,
+    content ?? document.querySelector<HTMLElement>('.post-content'),
+    scrollRoot,
+  );
 
   // 按文档序收集 (目录链接 → 标题元素) 对；href 是 #id，id 可能含 CJK，
   // getAttribute 返回原始字符，location.hash 才是百分号编码——这里 decodeURIComponent
@@ -43,7 +53,10 @@ export function initTocSidebar(
       : (document.getElementById(id) ?? document.getElementById(raw));
     if (el) items.push({ id: raw, el, link });
   }
-  if (items.length === 0) return;
+  if (items.length === 0) {
+    disposers.set(navSelector, stopProgress);
+    return;
+  }
 
   let activeLink: HTMLAnchorElement | null = null;
 
@@ -52,6 +65,9 @@ export function initTocSidebar(
     activeLink?.classList.remove('active');
     activeLink?.removeAttribute('aria-current');
     activeLink = link;
+    for (const label of root.querySelectorAll('[data-toc-current]')) {
+      label.textContent = link?.textContent?.trim() ?? '';
+    }
     if (link) {
       link.classList.add('active');
       link.setAttribute('aria-current', 'true');
@@ -80,7 +96,10 @@ export function initTocSidebar(
   setActive(pickAboveLine());
 
   if (typeof IntersectionObserver === 'undefined') {
-    disposers.set(navSelector, () => setActive(null));
+    disposers.set(navSelector, () => {
+      stopProgress();
+      setActive(null);
+    });
     return; // 旧环境：只留初始态
   }
 
@@ -111,6 +130,52 @@ export function initTocSidebar(
 
   disposers.set(navSelector, () => {
     io.disconnect();
+    stopProgress();
     setActive(null);
   });
+}
+
+/** 阅读进度：正文顶部到达视口顶线记 0，正文底部进入视口底部记 1。 */
+export function readingProgress(
+  contentTop: number,
+  contentHeight: number,
+  viewportHeight: number,
+  lineTop = 80,
+): number {
+  const range = contentHeight - (viewportHeight - lineTop);
+  if (range <= 0) return contentTop <= lineTop ? 1 : 0;
+  return Math.min(1, Math.max(0, (lineTop - contentTop) / range));
+}
+
+/** 跟随滚动更新进度；没有正文元素时按整页计算。返回清理函数。 */
+function trackProgress(
+  root: HTMLElement,
+  content: HTMLElement | null,
+  scrollRoot: HTMLElement | null,
+): () => void {
+  const target: EventTarget = scrollRoot ?? window;
+  let frame = 0;
+  const update = (): void => {
+    frame = 0;
+    const viewportTop = scrollRoot ? scrollRoot.getBoundingClientRect().top : 0;
+    const viewportHeight = scrollRoot ? scrollRoot.clientHeight : window.innerHeight;
+    const rect = (content ?? document.documentElement).getBoundingClientRect();
+    const value = readingProgress(rect.top - viewportTop, rect.height, viewportHeight);
+    root.style.setProperty('--toc-progress', value.toFixed(4));
+    const percent = `${Math.round(value * 100)}%`;
+    for (const label of root.querySelectorAll('[data-toc-percent]')) {
+      if (label.textContent !== percent) label.textContent = percent;
+    }
+  };
+  const schedule = (): void => {
+    if (!frame) frame = requestAnimationFrame(update);
+  };
+  update();
+  target.addEventListener('scroll', schedule, { passive: true });
+  window.addEventListener('resize', schedule, { passive: true });
+  return () => {
+    if (frame) cancelAnimationFrame(frame);
+    target.removeEventListener('scroll', schedule);
+    window.removeEventListener('resize', schedule);
+  };
 }

@@ -145,7 +145,7 @@ async function titleRoundTrip(page, selector = 'a[data-vt-post-link]', returnVia
   assert(forward?.oldNames.some(n => n.name === 'vt-post-title'), 'source title must be named');
   assert(forward?.newNames.some(n => n.name === 'vt-post-title'), 'destination title must be named');
   assert(!forward.readyError, `forward transition rejected: ${forward.readyError}`);
-  if (returnViaHome) await page.getByRole('link', { name: 'Home', exact: true }).click();
+  if (returnViaHome) await page.getByRole('link', { name: '文章', exact: true }).click();
   else await page.goBack();
   await ready(page, new URL(before.url).pathname);
   await page.waitForSelector(selector);
@@ -238,7 +238,7 @@ async function fallback({ name, ...options }) {
     await settle(state.page);
     await state.page.locator('a[data-vt-post-link]').first().click();
     await state.page.waitForSelector('[data-vt-detail]');
-    await state.page.getByRole('link', { name: 'Home', exact: true }).click();
+    await state.page.getByRole('link', { name: '文章', exact: true }).click();
     await ready(state.page, '/');
     assert.equal(await state.page.evaluate(() => __vtCalls.length), initial, `${name} Home return`);
     assert.deepEqual(state.errors, []);

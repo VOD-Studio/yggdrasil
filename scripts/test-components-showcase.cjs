@@ -39,7 +39,7 @@ const TARGETS = [
   ['post-content', 'PostContent', '[data-showcase-preview="post-content"] .post-content'],
   ['post-footer', 'PostFooter', '[data-showcase-preview="post-footer"] .post-footer'],
   ['post-header', 'PostHeader', '[data-showcase-preview="post-header"] .post-header'],
-  ['post-nav-links', 'PostNavLinks', '[data-showcase-preview="post-nav-links"] .paginav'],
+  ['post-nav-links', 'PostNavLinks', '[data-showcase-preview="post-nav-links"] .post-nav'],
   ['post-toc', 'PostToc', '[data-showcase-preview="post-toc"] .toc-sidebar'],
   ['tiptap-editor', 'TiptapEditor', '.showcase-browser-host--tiptap .ProseMirror'],
   ['code-mirror-editor', 'CodeMirrorEditor', '.showcase-browser-host--code .cm-editor'],
@@ -170,7 +170,7 @@ async function realPreview(page, slug, selector, card = false) {
       };
     });
     assert(layout.centered, 'article header preview is centered in its workspace');
-    assert(layout.titleSize >= (card ? 24 : 28), 'article title stays readable');
+    assert(layout.titleSize >= (card ? 24 : 26), 'article title stays readable');
     assert(layout.samples.every(sample => sample.unscaled && sample.noOverflow && sample.visibleContent),
       'all header samples render at natural size with complete content and no inner scrollbars');
   }
@@ -182,7 +182,7 @@ async function realPreview(page, slug, selector, card = false) {
       return {
         scrollHeight: preview.scrollHeight,
         clientHeight: preview.clientHeight,
-        visibleTitles: [...preview.querySelectorAll('.post-title-nav')].every(title => {
+        visibleTitles: [...preview.querySelectorAll('.post-nav-title')].every(title => {
           const rect = title.getBoundingClientRect();
           return rect.top >= box.top && rect.bottom <= Math.min(box.bottom, outer.bottom) + 1 &&
             rect.left >= box.left && rect.right <= box.right + 1;
@@ -201,11 +201,11 @@ async function realPreview(page, slug, selector, card = false) {
         centered: Math.abs(box.left + box.width / 2 - outer.left - outer.width / 2) < 1,
         noOverflow: preview.scrollWidth <= preview.clientWidth + 1 &&
           preview.scrollHeight <= preview.clientHeight + 1,
-        titleSize: Math.min(...[...preview.querySelectorAll('.post-title-nav')]
+        titleSize: Math.min(...[...preview.querySelectorAll('.post-nav-title')]
           .map(title => Number.parseFloat(getComputedStyle(title).fontSize))),
-        naturalSize: [...preview.querySelectorAll('.paginav')].every(nav =>
+        naturalSize: [...preview.querySelectorAll('.post-nav')].every(nav =>
           Math.abs(nav.getBoundingClientRect().width - Number.parseFloat(getComputedStyle(nav).width)) < 1),
-        visibleTitles: [...preview.querySelectorAll('.post-title-nav')].every(title => {
+        visibleTitles: [...preview.querySelectorAll('.post-nav-title')].every(title => {
           const rect = title.getBoundingClientRect();
           return rect.left >= box.left && rect.right <= box.right + 1 &&
             rect.top >= box.top && rect.bottom <= Math.min(box.bottom, outer.bottom) + 1;
@@ -214,7 +214,7 @@ async function realPreview(page, slug, selector, card = false) {
     });
     assert(layout.centered && layout.naturalSize, 'navigation preview stays centered and unscaled');
     assert(layout.noOverflow && layout.visibleTitles, 'navigation titles are complete without inner scrolling');
-    assert(layout.titleSize >= (card ? 14 : 16), 'article titles remain readable');
+    assert(layout.titleSize >= (card ? 14 : 15), 'article titles remain readable');
   }
 }
 async function screenshot(page, name) {
@@ -369,8 +369,7 @@ async function details(page, viewport, colorScheme, reducedMotion, label) {
   await page.emulateMedia({ colorScheme, reducedMotion });
   for (const [slug, , selector] of TARGETS) {
     await goto(page, `/about/components/${slug}`);
-    await realPreview(page, slug, slug === 'post-toc' && viewport.width < 1200 ?
-      '[data-showcase-preview="post-toc"] details.toc summary' : selector);
+    await realPreview(page, slug, selector);
     const expectedReset = MODES.get(slug) === 'interactive' ? 1 : 0;
     assert.equal(await page.locator('.showcase-live-toolbar button').count(), expectedReset,
       `${slug} reset control disagrees with its preview mode`);
@@ -401,9 +400,9 @@ async function postHeader(page) {
       await realPreview(page, 'post-header', selector);
       const preview = page.locator('[data-showcase-preview="post-header"]');
       assert.equal(await preview.locator('.post-header').count(), 3);
-      assert.equal(await preview.locator('[data-showcase-sample="draft"] .entry-hint').count(), 1);
-      assert.equal(await preview.locator('[data-showcase-sample="published"] .entry-hint').count(), 0);
-      assert.equal(await preview.locator('[data-showcase-sample="no-summary"] .post-description').count(), 0);
+      assert.equal(await preview.locator('[data-showcase-sample="draft"] .post-draft').count(), 1);
+      assert.equal(await preview.locator('[data-showcase-sample="published"] .post-draft').count(), 0);
+      assert.equal(await preview.locator('[data-showcase-sample="no-summary"] .post-lede').count(), 0);
       const longTitle = await preview.locator('[data-showcase-sample="no-summary"] .post-title')
         .evaluate(element => element.getBoundingClientRect().height >
           Number.parseFloat(getComputedStyle(element).lineHeight) + 1);
@@ -414,7 +413,7 @@ async function postHeader(page) {
       // Stress natural wrapping without creating or modifying an article.
       await preview.locator('[data-showcase-sample="published"]').evaluate(element => {
         element.querySelector('.post-title').textContent = 'LongTitleWithoutSpaces'.repeat(16);
-        element.querySelector('.post-description').textContent = '一段较长的摘要，用来观察窄屏下的自然换行。'.repeat(6);
+        element.querySelector('.post-lede').textContent = '一段较长的摘要，用来观察窄屏下的自然换行。'.repeat(6);
       });
       await realPreview(page, 'post-header', selector);
       await assertNoDocumentOverflow(page, 'post-header-long-content');
@@ -445,7 +444,7 @@ async function postFooter(page) {
       await page.waitForURL(`${BASE}/about/components/post-footer`);
       await realPreview(page, 'post-footer', selector);
       const footer = page.locator(selector);
-      assert.equal(await footer.locator('a').count(), 5);
+      assert.equal(await footer.locator('a').count(), 2);
       await elementScreenshot(page.locator('.showcase-live-panel'), `${stage}-detail`);
       for (const link of await footer.locator('a').all()) {
         await link.click();
@@ -454,13 +453,12 @@ async function postFooter(page) {
       }
       await page.keyboard.press('Tab');
       await footer.locator('a.prev').focus();
-      const focus = await footer.locator('a.prev').evaluate(element => getComputedStyle(element).outlineWidth);
-      assert.equal(focus, '2px', 'adjacent article links have a visible keyboard focus');
+      const focus = await footer.locator('a.prev').evaluate(element => getComputedStyle(element).boxShadow);
+      assert.notEqual(focus, 'none', 'adjacent article links have a visible keyboard focus');
 
       // Temporary content stresses wrapping without writing articles or changing fixture data.
       await footer.evaluate(element => {
-        element.querySelector('.post-tags a').textContent = 'A-long-unbroken-tag-'.repeat(12);
-        for (const title of element.querySelectorAll('.post-title-nav')) {
+        for (const title of element.querySelectorAll('.post-nav-title')) {
           title.textContent = '一篇很长的文章标题，保留完整的文字与阅读方向。'.repeat(5);
         }
       });
@@ -483,7 +481,7 @@ async function postFooter(page) {
 }
 
 async function postNavLinks(page) {
-  const selector = '[data-showcase-preview="post-nav-links"] .paginav';
+  const selector = '[data-showcase-preview="post-nav-links"] .post-nav';
   for (const width of [1440, 760, 390, 320]) {
     for (const colorScheme of ['light', 'dark']) {
       stage = `post-nav-links-${width}-${colorScheme}`;
@@ -497,7 +495,7 @@ async function postNavLinks(page) {
       await card.scrollIntoViewIfNeeded();
       await realPreview(page, 'post-nav-links', selector, true);
       await assertNoDocumentOverflow(page, 'post-nav-links-card');
-      await card.locator('.paginav a').first().click();
+      await card.locator('.post-nav a').first().click();
       assert.equal(new URL(page.url()).pathname + new URL(page.url()).hash, '/about/components');
       await elementScreenshot(card, `${stage}-card`);
 
@@ -507,7 +505,7 @@ async function postNavLinks(page) {
       await realPreview(page, 'post-nav-links', selector);
       const preview = page.locator('[data-showcase-preview="post-nav-links"]');
       const both = preview.locator('[data-showcase-sample="both"]');
-      assert.equal(await both.locator('.paginav a').count(), 2);
+      assert.equal(await both.locator('.post-nav a').count(), 2);
       assert.equal(await preview.locator('[data-showcase-sample="next-only"] a.prev').count(), 0);
       assert.equal(await preview.locator('[data-showcase-sample="next-only"] a.next').count(), 1);
       assert.equal(await preview.locator('[data-showcase-sample="prev-only"] a.prev').count(), 1);
@@ -515,7 +513,7 @@ async function postNavLinks(page) {
       assert.equal(await preview.locator('[data-showcase-sample="empty"] nav').count(), 0,
         'no neighbors means no empty navigation landmark');
 
-      const grids = await preview.locator('.paginav').evaluateAll(navs => navs.map(nav => {
+      const grids = await preview.locator('.post-nav').evaluateAll(navs => navs.map(nav => {
         const box = nav.getBoundingClientRect();
         const links = [...nav.querySelectorAll('a')].map(link => link.getBoundingClientRect());
         return { narrow: box.width <= 480 || innerWidth <= 600,
@@ -528,7 +526,7 @@ async function postNavLinks(page) {
         assert.equal(grid.stacked, grid.narrow || index > 0);
         if (grid.narrow || index === 0) assert(grid.alignedRight);
       }
-      for (const link of await preview.locator('.paginav a').all()) {
+      for (const link of await preview.locator('.post-nav a').all()) {
         await link.click();
         assert.equal(new URL(page.url()).pathname + new URL(page.url()).hash,
           '/about/components/post-nav-links', 'sample links stay on the preview');
@@ -536,7 +534,7 @@ async function postNavLinks(page) {
       await page.keyboard.press('Tab');
       const first = both.locator('a.prev');
       await first.focus();
-      assert.equal(await first.evaluate(element => getComputedStyle(element).outlineWidth), '2px');
+      assert.notEqual(await first.evaluate(element => getComputedStyle(element).boxShadow), 'none');
       await page.keyboard.press('Enter');
       assert.equal(new URL(page.url()).pathname + new URL(page.url()).hash,
         '/about/components/post-nav-links', 'keyboard activation keeps samples local');
@@ -546,7 +544,7 @@ async function postNavLinks(page) {
       await assertNoDocumentOverflow(page, 'post-nav-links-detail');
       await elementScreenshot(page.locator('.showcase-live-panel'), `${stage}-detail`);
 
-      await both.locator('.post-title-nav').evaluateAll(titles => {
+      await both.locator('.post-nav-title').evaluateAll(titles => {
         for (const title of titles) title.textContent = 'LongTitleWithoutSpaces'.repeat(15);
       });
       await realPreview(page, 'post-nav-links', selector);

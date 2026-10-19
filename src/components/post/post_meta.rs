@@ -11,33 +11,46 @@ use crate::models::post::Post;
 /// Props：
 /// - `post`：文章数据模型
 ///
-/// 日期优先使用发布时间，否则回退到创建时间；每项在窄屏下整体换行。
+/// 日期优先使用发布时间，否则回退到创建时间，用标题字体的旧式数字；阅读时长与字数
+/// 用等宽数字。窄屏下各项整体换行。
 #[component]
 pub fn PostMeta(post: Post) -> Element {
-    let date = post.formatted_date();
+    let at = post.published_at.unwrap_or(post.created_at);
+    let datetime = at.format("%Y-%m-%d").to_string();
+    let date = at.format("%Y.%m.%d").to_string();
+    let words = group_digits(post.word_count);
 
     rsx! {
-        div { class: "post-meta", role: "group", aria_label: "文章元信息",
-            span { class: "post-meta-item",
-                svg { view_box: "0 0 24 24", fill: "none", stroke: "currentColor", stroke_width: "1.6", stroke_linecap: "round", stroke_linejoin: "round", "aria-hidden": "true",
-                    rect { x: "3", y: "5", width: "18", height: "16", rx: "2" }
-                    path { d: "M16 3v4M8 3v4M3 11h18" }
-                }
-                time { datetime: date.clone(), "{date}" }
-            }
-            span { class: "post-meta-item",
-                svg { view_box: "0 0 24 24", fill: "none", stroke: "currentColor", stroke_width: "1.6", stroke_linecap: "round", stroke_linejoin: "round", "aria-hidden": "true",
-                    circle { cx: "12", cy: "12", r: "9" }
-                    path { d: "M12 7v5l3 2" }
-                }
-                span { strong { "{post.reading_time}" } " 分钟阅读" }
-            }
-            span { class: "post-meta-item",
-                svg { view_box: "0 0 24 24", fill: "none", stroke: "currentColor", stroke_width: "1.6", stroke_linecap: "round", stroke_linejoin: "round", "aria-hidden": "true",
-                    path { d: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8ZM14 2v6h6M8 13h8M8 17h5" }
-                }
-                span { strong { "{post.word_count}" } " 字" }
-            }
+        p { class: "post-meta", aria_label: "文章元信息",
+            time { class: "post-meta-date", datetime: "{datetime}", "{date}" }
+            span { class: "tabular-nums", "{post.reading_time} 分钟" }
+            span { class: "tabular-nums", "{words} 字" }
         }
+    }
+}
+
+/// 千位分隔：`4866` → `4,866`。
+pub(crate) fn group_digits(n: u32) -> String {
+    let digits = n.to_string();
+    let mut out = String::with_capacity(digits.len() + digits.len() / 3);
+    for (i, c) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::group_digits;
+
+    #[test]
+    fn groups_thousands() {
+        assert_eq!(group_digits(0), "0");
+        assert_eq!(group_digits(866), "866");
+        assert_eq!(group_digits(4866), "4,866");
+        assert_eq!(group_digits(1_234_567), "1,234,567");
     }
 }
