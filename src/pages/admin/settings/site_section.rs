@@ -1,7 +1,7 @@
-//! 站点公开配置分区（页脚 GitHub 链接）。
+//! 站点公开配置分区（页脚 GitHub 链接与首页标语）。
 //!
-//! 从原 `settings.rs` 提取的 GitHub 链接卡片。写入后服务端失效 moka 缓存与
-//! 全部公开页 SSR 缓存，前台下次访问立即生效。
+//! 两张卡片共用一个保存按钮。写入后服务端失效 moka 缓存与全部公开页 SSR 缓存，
+//! 前台下次访问立即生效。
 
 use dioxus::prelude::*;
 
@@ -12,7 +12,18 @@ use crate::components::forms::{FormInput, FormLabel};
 #[cfg(target_arch = "wasm32")]
 use crate::components::ui::{LoadingButton, ADMIN_CARD_CLASS};
 #[cfg(target_arch = "wasm32")]
-use crate::models::settings::SiteSettings;
+use crate::models::settings::{
+    SiteSettings, DEFAULT_HOME_INTRO, DEFAULT_HOME_SUBTITLE, DEFAULT_HOME_TITLE,
+};
+
+/// 比较草稿与已保存值时忽略首尾空白，与服务端规范化口径一致。
+#[cfg(target_arch = "wasm32")]
+fn same_settings(draft: &SiteSettings, saved: &SiteSettings) -> bool {
+    draft.github_url.trim() == saved.github_url
+        && draft.home_title.trim() == saved.home_title
+        && draft.home_subtitle.trim() == saved.home_subtitle
+        && draft.home_intro.trim() == saved.home_intro
+}
 
 /// 传递给各分区的 toast 回调类型：(消息, 是否错误)。
 type ToastCb = Callback<(String, bool)>;
@@ -24,7 +35,7 @@ pub fn SiteSection(toast: ToastCb) -> Element {
     #[cfg(target_arch = "wasm32")]
     {
         let mut saved: Signal<SiteSettings> = use_signal(SiteSettings::default);
-        let mut github_draft: Signal<String> = use_signal(String::new);
+        let mut draft: Signal<SiteSettings> = use_signal(SiteSettings::default);
         let loading = use_signal(|| true);
         let mut saving = use_signal(|| false);
         let mut just_saved = use_signal(|| false);
@@ -33,13 +44,13 @@ pub fn SiteSection(toast: ToastCb) -> Element {
             #[cfg(target_arch = "wasm32")]
             {
                 let mut saved = saved;
-                let mut github_draft = github_draft;
+                let mut draft = draft;
                 let mut loading = loading;
                 spawn(async move {
                     match get_site_settings().await {
                         Ok(s) => {
                             saved.set(s.clone());
-                            github_draft.set(s.github_url);
+                            draft.set(s);
                         }
                         Err(e) => toast.call((format!("加载失败：{e}"), true)),
                     }
@@ -48,7 +59,7 @@ pub fn SiteSection(toast: ToastCb) -> Element {
             }
         });
 
-        let dirty = use_memo(move || github_draft().trim() != saved().github_url);
+        let dirty = use_memo(move || !same_settings(&draft.read(), &saved.read()));
 
         rsx! {
             div { class: "space-y-6",
@@ -87,9 +98,9 @@ pub fn SiteSection(toast: ToastCb) -> Element {
                             id: Some("site-github-url".to_string()),
                             r#type: "url",
                             placeholder: "github.com/your/repo",
-                            value: github_draft(),
+                            value: draft.read().github_url.clone(),
                             oninput: move |v: String| {
-                                github_draft.set(v);
+                                draft.write().github_url = v;
                                 just_saved.set(false);
                             },
                         }
@@ -112,6 +123,69 @@ pub fn SiteSection(toast: ToastCb) -> Element {
                                     "{saved().github_url}"
                                 }
                             }
+                        }
+                    }
+
+                }
+
+                div { class: "{ADMIN_CARD_CLASS} p-6 md:p-8 flex flex-col gap-6",
+                    div {
+                        h2 { class: "text-xl font-bold text-[var(--color-paper-primary)]",
+                            "首页标语"
+                        }
+                        p { class: "text-sm text-[var(--color-paper-secondary)] mt-0.5",
+                            "首页开场的两行标题与简介。标题留空时两行都使用默认文案；只填第一行则只显示一行。"
+                        }
+                    }
+                    div { class: "flex flex-col gap-2 max-w-xl",
+                        FormLabel {
+                            label: "标题第一行",
+                            html_for: Some("site-home-title".to_string()),
+                        }
+                        FormInput {
+                            id: Some("site-home-title".to_string()),
+                            r#type: "text",
+                            placeholder: DEFAULT_HOME_TITLE,
+                            value: draft.read().home_title.clone(),
+                            oninput: move |v: String| {
+                                draft.write().home_title = v;
+                                just_saved.set(false);
+                            },
+                        }
+                    }
+                    div { class: "flex flex-col gap-2 max-w-xl",
+                        FormLabel {
+                            label: "标题第二行（浅色）",
+                            html_for: Some("site-home-subtitle".to_string()),
+                        }
+                        FormInput {
+                            id: Some("site-home-subtitle".to_string()),
+                            r#type: "text",
+                            placeholder: DEFAULT_HOME_SUBTITLE,
+                            value: draft.read().home_subtitle.clone(),
+                            oninput: move |v: String| {
+                                draft.write().home_subtitle = v;
+                                just_saved.set(false);
+                            },
+                        }
+                    }
+                    div { class: "flex flex-col gap-2 max-w-xl",
+                        FormLabel {
+                            label: "简介",
+                            html_for: Some("site-home-intro".to_string()),
+                        }
+                        FormInput {
+                            id: Some("site-home-intro".to_string()),
+                            r#type: "text",
+                            placeholder: DEFAULT_HOME_INTRO,
+                            value: draft.read().home_intro.clone(),
+                            oninput: move |v: String| {
+                                draft.write().home_intro = v;
+                                just_saved.set(false);
+                            },
+                        }
+                        p { class: "text-xs text-[var(--color-paper-secondary)]",
+                            "标题每行最多 40 字，简介最多 200 字；换行会合并为空格。"
                         }
                     }
 
@@ -144,13 +218,13 @@ pub fn SiteSection(toast: ToastCb) -> Element {
                             loading: saving(),
                             disabled: loading() || just_saved() || !dirty(),
                             onclick: move |_| {
-                                let url = github_draft().clone();
+                                let settings = draft();
                                 saving.set(true);
                                 spawn(async move {
-                                    match update_site_settings(url).await {
+                                    match update_site_settings(settings).await {
                                         Ok(s) => {
                                             saved.set(s.clone());
-                                            github_draft.set(s.github_url);
+                                            draft.set(s);
                                             just_saved.set(true);
                                             toast.call(("保存成功".to_string(), false));
                                         }

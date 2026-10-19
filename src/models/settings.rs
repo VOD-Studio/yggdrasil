@@ -203,24 +203,98 @@ pub const DEFAULT_SITE_GITHUB_URL: &str = "";
 /// GitHub 链接最大长度（字符），防止滥用。
 pub const MAX_SITE_GITHUB_URL_LEN: usize = 500;
 
+/// 首页标题第一行的默认文案。
+pub const DEFAULT_HOME_TITLE: &str = "慢慢读源码，";
+/// 首页标题第二行（次要色）的默认文案。
+pub const DEFAULT_HOME_SUBTITLE: &str = "认真写长文。";
+/// 首页简介的默认文案。
+pub const DEFAULT_HOME_INTRO: &str =
+    "Rust、Go 与前端工程的源码剖析和长文笔记。每一篇，都试着把一个实现讲清楚。";
+#[cfg(any(feature = "server", test))]
+/// 首页标题每行的最大长度（字符）。
+pub const MAX_HOME_TITLE_LEN: usize = 40;
+#[cfg(any(feature = "server", test))]
+/// 首页简介的最大长度（字符）。
+pub const MAX_HOME_INTRO_LEN: usize = 200;
+
 /// 站点公开配置（前台展示用，所有访客可见）。
 ///
-/// 目前仅包含页脚 GitHub 链接；后续可在此结构上扩展更多公开站点配置。
+/// 页脚 GitHub 链接与首页标语。标语字段存原值，空字符串表示使用默认文案，
+/// 前台通过 [`SiteSettings::home_tagline`] 取展示值。
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct SiteSettings {
     /// GitHub 仓库链接，空字符串表示不展示页脚图标。
     pub github_url: String,
+    /// 首页标题第一行。
+    #[serde(default)]
+    pub home_title: String,
+    /// 首页标题第二行（次要色）。
+    #[serde(default)]
+    pub home_subtitle: String,
+    /// 首页简介。
+    #[serde(default)]
+    pub home_intro: String,
 }
 
 impl Default for SiteSettings {
     fn default() -> Self {
         Self {
             github_url: DEFAULT_SITE_GITHUB_URL.to_string(),
+            home_title: String::new(),
+            home_subtitle: String::new(),
+            home_intro: String::new(),
         }
     }
 }
 
+/// 首页开场的展示文案。
+#[derive(Debug, Clone, PartialEq)]
+pub struct HomeTagline {
+    pub title: String,
+    /// 为空时只显示一行标题。
+    pub subtitle: String,
+    pub intro: String,
+}
+
 impl SiteSettings {
+    /// 首页标语的展示值。未配置标题时两行都用默认文案；配置了标题时第二行按原值，
+    /// 可以留空只显示一行。简介为空时用默认文案。
+    pub fn home_tagline(&self) -> HomeTagline {
+        let (title, subtitle) = if self.home_title.is_empty() {
+            (DEFAULT_HOME_TITLE, DEFAULT_HOME_SUBTITLE)
+        } else {
+            (self.home_title.as_str(), self.home_subtitle.as_str())
+        };
+        let intro = if self.home_intro.is_empty() {
+            DEFAULT_HOME_INTRO
+        } else {
+            &self.home_intro
+        };
+        HomeTagline {
+            title: title.to_string(),
+            subtitle: subtitle.to_string(),
+            intro: intro.to_string(),
+        }
+    }
+
+    #[cfg(any(feature = "server", test))]
+    /// 规范化全部字段，写入前调用。
+    pub fn normalized(&self) -> Self {
+        Self {
+            github_url: Self::normalize_github_url(&self.github_url),
+            home_title: Self::normalize_home_text(&self.home_title, MAX_HOME_TITLE_LEN),
+            home_subtitle: Self::normalize_home_text(&self.home_subtitle, MAX_HOME_TITLE_LEN),
+            home_intro: Self::normalize_home_text(&self.home_intro, MAX_HOME_INTRO_LEN),
+        }
+    }
+
+    #[cfg(any(feature = "server", test))]
+    /// 规范化首页标语文本：合并空白与换行为单个空格，再按字符数截断。
+    pub fn normalize_home_text(text: &str, max_chars: usize) -> String {
+        let joined = text.split_whitespace().collect::<Vec<_>>().join(" ");
+        joined.chars().take(max_chars).collect()
+    }
+
     #[cfg(any(feature = "server", test))]
     /// 规范化 GitHub 链接：trim、截断、补全 scheme。
     ///
@@ -955,6 +1029,44 @@ mod tests {
     fn site_settings_default_empty() {
         let s = SiteSettings::default();
         assert_eq!(s.github_url, "");
+    }
+
+    #[test]
+    fn home_tagline_defaults_when_unset() {
+        let tagline = SiteSettings::default().home_tagline();
+        assert_eq!(tagline.title, DEFAULT_HOME_TITLE);
+        assert_eq!(tagline.subtitle, DEFAULT_HOME_SUBTITLE);
+        assert_eq!(tagline.intro, DEFAULT_HOME_INTRO);
+    }
+
+    #[test]
+    fn home_tagline_keeps_empty_subtitle_with_custom_title() {
+        let settings = SiteSettings {
+            home_title: "写点什么".into(),
+            ..SiteSettings::default()
+        };
+        let tagline = settings.home_tagline();
+        assert_eq!(tagline.title, "写点什么");
+        assert_eq!(tagline.subtitle, "");
+        assert_eq!(tagline.intro, DEFAULT_HOME_INTRO);
+    }
+
+    #[test]
+    fn site_settings_accept_payload_without_home_fields() {
+        let settings: SiteSettings =
+            serde_json::from_str(r#"{"github_url":"https://github.com/x"}"#).unwrap();
+        assert_eq!(settings.home_title, "");
+    }
+
+    #[test]
+    fn normalize_home_text_collapses_whitespace_and_truncates() {
+        assert_eq!(
+            SiteSettings::normalize_home_text("  慢慢读，\n  认真写  ", 40),
+            "慢慢读， 认真写"
+        );
+        let long = "字".repeat(MAX_HOME_TITLE_LEN + 5);
+        let normalized = SiteSettings::normalize_home_text(&long, MAX_HOME_TITLE_LEN);
+        assert_eq!(normalized.chars().count(), MAX_HOME_TITLE_LEN);
     }
 
     #[test]

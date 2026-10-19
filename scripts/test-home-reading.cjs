@@ -16,7 +16,7 @@ async function ready(page) {
 
 async function startReading(page, reduced, keyboard = false) {
   await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
-  const link = page.locator('.home-reading-link');
+  const link = page.locator('.home-status-link');
   if (keyboard) await link.focus();
   const before = await page.evaluate(() => ({
     entry: window.__routeTransitions.entryId(),
@@ -114,7 +114,7 @@ async function startReading(page, reduced, keyboard = false) {
 
         // Return through the actual SPA links, without visiting an article to install anchors.
         await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
-        await page.locator('.home-text-link[href="/about"]').click();
+        await page.locator('.home-corner-link[href="/about"]').click();
         await page.waitForFunction(() => document.querySelector('[data-vt-route="/about"]')
           && !document.documentElement.classList.contains('is-route-transitioning'));
         await page.locator('header a[href="/"]').first().click();

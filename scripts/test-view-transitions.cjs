@@ -258,7 +258,8 @@ async function coverFixture(mode) {
   const state = await launch();
   const { page, browser } = state;
   try {
-    await page.route('**/api/list_published_posts*', async route => {
+    // 首页索引不显示封面；封面过渡在仍使用文章卡片的标签页上验证。
+    await page.route('**/api/get_posts_by_tag*', async route => {
       const response = await route.fetch();
       const data = await response.json();
       if (data.posts?.[0]) data.posts[0].cover_image = FIXTURE_IMAGE;
@@ -281,10 +282,9 @@ async function coverFixture(mode) {
       await route.fulfill({ status: 200, contentType: 'image/webp', path: FIXTURE_FILE });
     });
     await fresh(state);
-    // Remount the home resource so the source cover comes from a client response,
+    // Load the tag list on the client so the source cover comes from a client response,
     // avoiding edits to SSR hydration data or Dioxus-managed DOM.
-    await push(page, '/search');
-    await push(page, '/');
+    await push(page, TAG_PATH);
     const cover = page.locator('[data-vt-role="cover"]').first();
     await cover.scrollIntoViewIfNeeded();
     await page.waitForFunction(() => {
@@ -309,7 +309,7 @@ async function coverFixture(mode) {
     }
     if (mode === 'success') {
       await page.goBack();
-      await ready(page, '/');
+      await ready(page, TAG_PATH);
       const reverse = await page.evaluate(() => __vtCalls.at(-1));
       assert(reverse.newNames.some(n => n.name === 'vt-post-cover'));
       assert(!reverse.readyError);
