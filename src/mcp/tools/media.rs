@@ -232,7 +232,13 @@ pub struct AssetIdsParams {
     pub ids: Vec<String>,
 }
 
+/// `purge_orphan_assets` / `rebuild_assets_index` 的无参入参。
+///
+/// 显式补上 `properties: {}`：schemars 对零字段结构体只生成 `{"type":"object"}`，
+/// 而部分 OpenAI 兼容上游（如 MCA）要求对象 schema 必须带 `properties` 键，
+/// 否则整个请求会被判为非法工具 schema。
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[schemars(extend("properties" = {}))]
 pub struct EmptyMediaParams {}
 
 #[cfg(test)]

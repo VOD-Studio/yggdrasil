@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **MCP 工具 schema**：零参数工具显式声明 `properties`，修复 OpenAI 兼容上游（如 MCA）因工具 schema 非法而拒绝整个请求的问题。
+
 ## [0.23.2] - 2026-10-16
 
 ### Changed

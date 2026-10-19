@@ -23,7 +23,12 @@ use crate::api::settings::{load_trash_settings, save_trash_settings};
 use crate::db::pool::get_conn;
 
 /// `get_settings` 入参（无字段——预留扩展点，未来可按子域过滤）。
+///
+/// 显式补上 `properties: {}`：schemars 对零字段结构体只生成 `{"type":"object"}`，
+/// 而部分 OpenAI 兼容上游（如 MCA）要求对象 schema 必须带 `properties` 键，
+/// 否则整个请求会被判为非法工具 schema。
 #[derive(Debug, Deserialize, schemars::JsonSchema, Default)]
+#[schemars(extend("properties" = {}))]
 pub struct GetSettingsParams {}
 
 /// `update_settings` 入参：两项回收站配置。
