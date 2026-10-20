@@ -4,11 +4,10 @@
 //! 搜索与菜单按钮，菜单为底部抽屉（栏目、外观与次要链接）。样式见
 //! styles/components/shell.css。
 
-use dioxus::html::InteractionLocation;
 use dioxus::prelude::*;
 use dioxus::router::components::Link;
 
-use crate::components::ui::{Icon, IconName};
+use crate::components::ui::{use_sheet_close, BottomSheet, Icon, IconName};
 use crate::router::Route;
 use crate::theme::ThemeToggle;
 
@@ -26,23 +25,6 @@ pub struct NavItemConfig {
     pub label: &'static str,
     /// 当前是否处于激活状态。
     pub is_active: bool,
-}
-
-/// 抽屉关闭动画时长（ms），与 shell.css 的 `sheet-out` 一致。
-const SHEET_EXIT_MS: u32 = 200;
-/// 拖拽死区：手指移动超过 4px 才开始跟手，避免轻点误拖。
-const DRAG_DEAD_ZONE: f64 = 4.0;
-/// 向下拖过该距离松手即关闭。
-const DRAG_CLOSE_DISTANCE: f64 = 80.0;
-
-/// 拖拽位移：死区内为 0，向上拖不跟手（抽屉已贴底）。
-fn drag_offset(start_y: f64, current_y: f64) -> f64 {
-    let dy = current_y - start_y;
-    if dy <= DRAG_DEAD_ZONE {
-        0.0
-    } else {
-        dy - DRAG_DEAD_ZONE
-    }
 }
 
 /// 顶部导航栏组件。
@@ -165,10 +147,7 @@ fn NavItem(
     }
 }
 
-/// 手机导航抽屉：底部面板，含栏目、外观分段控件与次要链接。
-///
-/// 从底部以 heavy 弹簧升起；点遮罩、按 Esc、选中栏目或向下拖过 80px 关闭。
-/// 打开时聚焦当前栏目，关闭后焦点回到菜单按钮。
+/// 手机导航抽屉：底部面板，含栏目、外观分段控件与次要链接。选中栏目或链接后关闭。
 #[component]
 fn NavSheet(
     open: Signal<bool>,
@@ -177,145 +156,21 @@ fn NavSheet(
     nav_items: Vec<NavItemConfig>,
     on_demo_navigate: Option<EventHandler<&'static str>>,
 ) -> Element {
-    let mut open = open;
-    let mut closing = use_signal(|| false);
-    let mut drag_start = use_signal(|| None::<f64>);
-    let mut drag_dy = use_signal(|| 0.0_f64);
-    let mut was_open = use_signal(|| false);
-
-    // 打开后聚焦当前栏目（没有当前栏目时聚焦第一项），并锁住页面滚动。
-    use_effect(move || {
-        let is_open = open();
-        if is_open == *was_open.peek() {
-            return;
-        }
-        was_open.set(is_open);
-        #[cfg(target_arch = "wasm32")]
-        {
-            use wasm_bindgen::JsCast;
-            let Some(document) = web_sys::window().and_then(|w| w.document()) else {
-                return;
-            };
-            if let Some(html) = document.document_element() {
-                let _ = html.class_list().toggle_with_force("sheet-open", is_open);
-            }
-            if is_open {
-                let selector = format!("#{id} [aria-current='page'], #{id} .sheet-nav-item");
-                if let Some(el) = document
-                    .query_selector(&selector)
-                    .ok()
-                    .flatten()
-                    .and_then(|el| el.dyn_into::<web_sys::HtmlElement>().ok())
-                {
-                    let _ = el.focus();
-                }
-            }
-        }
-    });
-
-    let close = {
-        let trigger_id = trigger_id.clone();
-        move || {
-            if !open() || closing() {
-                return;
-            }
-            closing.set(true);
-            drag_start.set(None);
-            #[cfg(target_arch = "wasm32")]
-            {
-                use wasm_bindgen::JsCast;
-                if let Some(el) = web_sys::window()
-                    .and_then(|w| w.document())
-                    .and_then(|d| d.get_element_by_id(&trigger_id))
-                    .and_then(|el| el.dyn_into::<web_sys::HtmlElement>().ok())
-                {
-                    let _ = el.focus();
-                }
-            }
-            #[cfg(not(target_arch = "wasm32"))]
-            let _ = &trigger_id;
-            spawn(async move {
-                crate::utils::time::sleep_ms(SHEET_EXIT_MS).await;
-                open.set(false);
-                closing.set(false);
-                drag_dy.set(0.0);
-            });
-        }
-    };
-
-    if !open() {
-        return rsx! {};
-    }
-
-    let dy = drag_dy();
-    let dragging = drag_start().is_some();
-    let sheet_style = if dy > 0.0 {
-        format!("transform: translateY({dy}px);")
-    } else {
-        String::new()
-    };
-    let mut close_scrim = close.clone();
-    let mut close_key = close.clone();
-    let mut close_drag = close.clone();
-    let close_nav = close.clone();
-    let close_links = close;
-
     rsx! {
-        div {
-            class: "sheet-scrim",
-            "data-closing": closing().then_some("true"),
-            onclick: move |_| close_scrim(),
+        BottomSheet { open, id, trigger_id, label: "导航",
+            NavSheetBody { nav_items, on_demo_navigate }
         }
-        nav {
-            id,
-            class: "sheet",
-            role: "dialog",
-            aria_modal: "true",
-            aria_label: "导航",
-            "data-closing": closing().then_some("true"),
-            "data-dragging": dragging.then_some("true"),
-            style: "{sheet_style}",
-            onkeydown: move |e| {
-                if e.key() == Key::Escape {
-                    e.prevent_default();
-                    close_key();
-                }
-            },
-            button {
-                id: "{id}-handle",
-                class: "sheet-handle",
-                r#type: "button",
-                aria_label: "向下拖动或点按关闭",
-                onpointerdown: move |e| {
-                    drag_start.set(Some(e.client_coordinates().y));
-                    // 捕获指针：手指移出把手后仍能收到移动与抬起事件。
-                    #[cfg(target_arch = "wasm32")]
-                    if let Some(el) = web_sys::window()
-                        .and_then(|w| w.document())
-                        .and_then(|d| d.get_element_by_id(&format!("{id}-handle")))
-                    {
-                        let _ = el.set_pointer_capture(e.pointer_id());
-                    }
-                },
-                onpointermove: move |e| {
-                    if let Some(start) = drag_start() {
-                        drag_dy.set(drag_offset(start, e.client_coordinates().y));
-                    }
-                },
-                onpointerup: move |_| {
-                    let moved = drag_dy();
-                    drag_start.set(None);
-                    if moved > DRAG_CLOSE_DISTANCE || moved == 0.0 {
-                        close_drag();
-                    } else {
-                        drag_dy.set(0.0);
-                    }
-                },
-                onpointercancel: move |_| {
-                    drag_start.set(None);
-                    drag_dy.set(0.0);
-                },
-            }
+    }
+}
+
+#[component]
+fn NavSheetBody(
+    nav_items: Vec<NavItemConfig>,
+    on_demo_navigate: Option<EventHandler<&'static str>>,
+) -> Element {
+    let sheet = use_sheet_close();
+    rsx! {
+        nav { aria_label: "栏目",
             ul { class: "flex flex-col gap-0.5",
                 for item in nav_items {
                     li { key: "{item.label}",
@@ -324,38 +179,21 @@ fn NavSheet(
                             label: item.label,
                             is_active: item.is_active,
                             on_demo_navigate,
-                            on_navigate: {
-                                let mut close = close_nav.clone();
-                                move |_| close()
-                            },
+                            on_navigate: move |_| sheet.close(),
                         }
                     }
                 }
             }
-            div { class: "my-3 mx-1 h-px bg-hairline" }
-            div { class: "sheet-row",
-                span { "外观" }
-                ThemeToggle { labels: true }
-            }
-            div { class: "sheet-links",
-                a { href: "/feed.xml", "RSS" }
-                Link {
-                    to: Route::Changelog {},
-                    onclick: {
-                        let mut close = close_links.clone();
-                        move |_| close()
-                    },
-                    "更新日志"
-                }
-                Link {
-                    to: Route::WritingGuide {},
-                    onclick: {
-                        let mut close = close_links.clone();
-                        move |_| close()
-                    },
-                    "写作指南"
-                }
-            }
+        }
+        div { class: "my-3 mx-1 h-px bg-hairline" }
+        div { class: "sheet-row",
+            span { "外观" }
+            ThemeToggle { labels: true }
+        }
+        div { class: "sheet-links",
+            a { href: "/feed.xml", "RSS" }
+            Link { to: Route::Changelog {}, onclick: move |_| sheet.close(), "更新日志" }
+            Link { to: Route::WritingGuide {}, onclick: move |_| sheet.close(), "写作指南" }
         }
     }
 }
@@ -425,17 +263,5 @@ pub fn SearchIconLink(
             span { "搜索" }
             kbd { "⌘K" }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::drag_offset;
-
-    #[test]
-    fn drag_offset_ignores_small_moves_and_upward_drags() {
-        assert_eq!(drag_offset(100.0, 103.0), 0.0); // 死区内
-        assert_eq!(drag_offset(100.0, 90.0), 0.0); // 向上
-        assert_eq!(drag_offset(100.0, 150.0), 46.0); // 减去 4px 死区
     }
 }

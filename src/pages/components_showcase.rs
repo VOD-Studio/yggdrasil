@@ -929,6 +929,7 @@ fn preview_route(slug: &str) -> Option<PreviewRoute> {
         | "number-input"
         | "menu"
         | "toast"
+        | "bottom-sheet"
         | "breadcrumb"
         | "search-palette"
         | "empty-state"
@@ -1198,6 +1199,9 @@ fn LiveComponentPreview(
         },
         "ToastRegion" => rsx! {
             ToastDemo {}
+        },
+        "BottomSheet" => rsx! {
+            BottomSheetDemo {}
         },
         "Breadcrumb" => rsx! {
             crate::components::ui::Breadcrumb::<Route> {
@@ -1597,6 +1601,45 @@ fn ToastDemo() -> Element {
                 variant: crate::components::ui::ButtonVariant::Secondary,
                 onclick: move |_| toast.error("保存失败：网络连接中断，请稍后重试"),
                 "错误"
+            }
+        }
+    }
+}
+
+/// 图鉴里的抽屉只放演示用的按钮，选中后关闭，不跳转。
+#[component]
+fn BottomSheetDemo() -> Element {
+    let mut open = use_signal(|| false);
+    rsx! {
+        button {
+            id: "showcase-sheet-trigger",
+            class: "btn btn-secondary",
+            r#type: "button",
+            aria_haspopup: "dialog",
+            aria_expanded: "{open}",
+            aria_controls: "showcase-bottom-sheet",
+            onclick: move |_| open.set(true),
+            "打开抽屉"
+        }
+        crate::components::ui::BottomSheet {
+            open,
+            id: "showcase-bottom-sheet",
+            trigger_id: "showcase-sheet-trigger",
+            label: "演示抽屉",
+            BottomSheetDemoBody {}
+        }
+    }
+}
+
+#[component]
+fn BottomSheetDemoBody() -> Element {
+    let sheet = crate::components::ui::use_sheet_close();
+    rsx! {
+        ul { class: "flex flex-col gap-0.5",
+            for label in ["设计系统", "Dioxus 实践", "Rust 异步"] {
+                li { key: "{label}",
+                    button { class: "sheet-nav-item", r#type: "button", onclick: move |_| sheet.close(), "{label}" }
+                }
             }
         }
     }
