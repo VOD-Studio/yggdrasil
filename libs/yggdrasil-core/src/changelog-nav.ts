@@ -72,7 +72,8 @@ export function initChangelogNav(): void {
     const line = (header?.getBoundingClientRect().height ?? 64) + directoryHeight + 24;
     let index = 0;
     for (let i = 0; i < items.length; i++) {
-      if (items[i].card.getBoundingClientRect().top <= line) index = i;
+      // 滚动位置取整，标题停在阅读线下方不到 1px 时也算已到达。
+      if (items[i].card.getBoundingClientRect().top <= line + 1) index = i;
       else break;
     }
     if (window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 4) {

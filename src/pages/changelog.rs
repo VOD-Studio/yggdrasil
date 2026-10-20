@@ -9,19 +9,19 @@
 //! （该陷阱详见 `post_detail.rs` 头文档）。
 //!
 //! # 布局
-//! 双栏：左侧 sticky 版本导航（桌面端）+ 右侧版本卡片列表。
-//! 每个版本卡片内按分类（Added / Fixed / Security …）分组，每组带色标 badge。
-//! 配色遵循全站 Catppuccin 双强调色约束（详见 `changelog.rs` 模块文档）。
+//! 左侧 200px 版本目录卡片（独立滚动、两端渐隐、滑动胶囊标出当前版本、阅读位置），
+//! 小屏改为横向版本条；右侧按版本分节，每节按新增 / 改进 / 修复等分组。
+//! 目录的阅读跟随由 yggdrasil-core 的 `__initChangelogNav` 维护。
 
 use dioxus::prelude::*;
 
 use crate::api::changelog::{get_changelog, ChangeGroup, ChangelogData, VersionEntry};
 use crate::components::skeletons::changelog_skeleton::ChangelogSkeleton;
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
+use crate::components::ui::{Icon, IconName};
+use crate::router::Route;
 
 /// 更新日志页面组件，对应路由 `/changelog`。
-///
-/// 结构：页头 → 统计栏 → 双栏（版本导航 + 版本卡片列表）。
 #[component]
 pub fn Changelog() -> Element {
     let response = use_server_future(get_changelog)?;
@@ -46,39 +46,62 @@ pub fn Changelog() -> Element {
         .iter()
         .filter(|v| v.version != "Unreleased")
         .count();
-    let latest = versions.iter().find(|v| v.is_latest);
+    // 最早一个有日期的版本：「2026.06 起」。
+    let since = versions
+        .iter()
+        .rev()
+        .find_map(|v| v.date.as_deref())
+        .map(month_label);
 
     rsx! {
-        div { class: "animate-page-enter",
-            header { class: "page-header mb-6",
-                h1 { class: "text-4xl font-bold text-paper-primary tracking-tight",
-                    "更新日志"
-                }
-            }
-
-            // 统计栏：最新版本 + 版本总数。镜像 post-meta 的安静感。
-            div { class: "flex flex-wrap items-center gap-x-4 gap-y-1 mb-8 text-sm text-paper-tertiary",
-                if let Some(v) = latest {
-                    div { class: "flex items-center gap-1.5",
-                        span { class: "w-2 h-2 rounded-full bg-[var(--color-paper-accent)]" }
-                        span { "最新版本 " }
-                        span { class: "font-medium text-paper-primary", "v{v.version}" }
-                    }
-                }
-                span { "共 {total} 个版本" }
-            }
-
-            // 双栏布局
+        document::Title { "更新日志 · Yggdrasil" }
+        div { class: "changelog",
+            ChangelogHeader { total: Some(total), since }
             div { class: "changelog-layout",
-                // 有界侧栏 / 小屏横向版本条，共用 scroll-spy。
                 if versions.len() > 1 {
                     VersionNav { versions: versions.clone() }
                 }
-
-                // 版本卡片列表
-                div { class: "flex-1 min-w-0 space-y-6",
+                div { class: "changelog-releases",
                     for v in versions.iter() {
                         VersionCard { key: "{v.version}", version: v.clone() }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// 「2026-06-02」→「2026.06」。
+fn month_label(date: &str) -> String {
+    date.get(..7).unwrap_or(date).replace('-', ".")
+}
+
+/// 「2026-10-20」→「2026.10.20」。
+fn date_label(date: &str) -> String {
+    date.replace('-', ".")
+}
+
+/// 页头：返回关于、标题、说明与版本数。骨架屏复用，数据到达前后不跳动。
+#[component]
+pub fn ChangelogHeader(
+    #[props(default)] total: Option<usize>,
+    #[props(default)] since: Option<String>,
+) -> Element {
+    rsx! {
+        Link { class: "changelog-back", to: Route::About {},
+            Icon { name: IconName::ArrowLeft, size: 14 }
+            "关于"
+        }
+        header { class: "changelog-header page-enter",
+            div {
+                h1 { class: "changelog-title", "更新日志" }
+                p { class: "changelog-intro", "每个版本新增、改进和修复了什么。" }
+            }
+            if let Some(total) = total {
+                p { class: "changelog-count tabular-nums",
+                    "{total} 个版本"
+                    if let Some(since) = since {
+                        " · {since} 起"
                     }
                 }
             }
@@ -108,11 +131,11 @@ fn VersionNav(versions: Vec<VersionEntry>) -> Element {
     let progress = 1.0 / count as f64;
 
     rsx! {
-        nav { class: "changelog-nav", aria_label: "更新日志版本导航",
+        nav { class: "changelog-nav", aria_label: "版本目录",
             div { class: "changelog-nav-panel", style: "--nav-progress: {progress}",
                 div { class: "changelog-nav-head",
-                    span { "版本导航" }
-                    span { class: "changelog-nav-count", "{count}" }
+                    span { "版本" }
+                    span { class: "tabular-nums", "data-nav-position": "", "01 / {count:02}" }
                 }
                 div { class: "changelog-nav-scroll", tabindex: "0", aria_label: "滚动浏览所有版本",
                     div { class: "changelog-nav-items",
@@ -121,19 +144,13 @@ fn VersionNav(versions: Vec<VersionEntry>) -> Element {
                             VersionNavItem {
                                 key: "{v.version}",
                                 version: v.version.clone(),
+                                date: v.date.as_deref().map(|d| d.get(5..).unwrap_or(d).replace('-', ".")),
                                 active: index == 0,
-                                latest: v.is_latest,
                             }
                         }
                     }
                 }
-                div { class: "changelog-nav-foot", aria_hidden: "true",
-                    div { class: "changelog-nav-position",
-                        span { "阅读位置" }
-                        span { "data-nav-position": "", "01 / {count:02}" }
-                    }
-                    div { class: "changelog-nav-progress", span {} }
-                }
+                div { class: "changelog-nav-progress", aria_hidden: "true", span {} }
             }
         }
     }
@@ -141,25 +158,21 @@ fn VersionNav(versions: Vec<VersionEntry>) -> Element {
 
 /// 原生锚点链接，SSR 和未水合时也能导航。
 #[component]
-fn VersionNavItem(version: String, active: bool, latest: bool) -> Element {
+fn VersionNavItem(version: String, date: Option<String>, active: bool) -> Element {
     rsx! {
         a {
             href: "#v{version}",
             class: "changelog-nav-link",
             aria_current: active.then_some("location"),
-            span { class: "changelog-nav-dot", aria_hidden: "true" }
             span { class: "changelog-nav-label", "{version}" }
-            if latest {
-                span { class: "changelog-nav-latest", "最新" }
+            if let Some(date) = date {
+                span { class: "changelog-nav-date tabular-nums", "{date}" }
             }
         }
     }
 }
 
-/// 单个版本卡片。
-///
-/// 结构：版本头（版本号 + 最新标记 + 日期）→ intro（如有）→ 分类组列表。
-/// 每个分类组带色标 badge + 条目列表。
+/// 一个版本：等宽版本号、日期与「最新」，intro（如有），再按分类分组列出条目。
 #[component]
 fn VersionCard(version: VersionEntry) -> Element {
     let VersionEntry {
@@ -171,63 +184,49 @@ fn VersionCard(version: VersionEntry) -> Element {
     } = version;
 
     rsx! {
-        article {
-            id: "v{ver}",
-            class: "changelog-version rounded-[2rem] bg-[var(--color-paper-entry)] border border-transparent hover:border-[var(--color-paper-border)] transition-colors p-6 md:p-8",
-
-            // 版本头
-            div { class: "flex items-baseline gap-3",
-                h2 { class: "text-xl md:text-2xl font-bold text-paper-primary tracking-tight",
-                    "v{ver}"
+        section { id: "v{ver}", class: "changelog-version", aria_labelledby: "v{ver}-title",
+            div { class: "changelog-version-head",
+                h2 { id: "v{ver}-title", class: "changelog-version-title", "{ver}" }
+                if let Some(d) = &date {
+                    time { class: "changelog-version-date tabular-nums", datetime: "{d}", {date_label(d)} }
                 }
                 if is_latest {
-                    span { class: "changelog-badge changelog-badge--latest", "最新" }
-                }
-                if let Some(d) = &date {
-                    span { class: "text-sm text-paper-tertiary ml-auto", "{d}" }
+                    span { class: "badge badge-clay", "最新" }
                 }
             }
-
-            // intro（Unreleased 占位文字等）
             if !intro_html.is_empty() {
-                div {
-                    class: "md-content text-sm text-paper-secondary mt-2",
-                    dangerous_inner_html: "{intro_html}",
-                }
+                div { class: "changelog-intro-html", dangerous_inner_html: "{intro_html}" }
             }
-
-            // 分类组
-            if !groups.is_empty() {
-                div { class: "mt-4 space-y-5",
-                    for group in groups.iter() {
-                        ChangeGroupView { key: "{group.category:?}", group: group.clone() }
-                    }
-                }
+            for group in groups.iter() {
+                ChangeGroupView { key: "{group.category:?}", group: group.clone() }
             }
         }
     }
 }
 
-/// 单个分类组视图：badge + 条目列表。
+/// 单个分类组：分类小标签与条目列表。新增用陶土底，其余为中性灰。
 #[component]
 fn ChangeGroupView(group: ChangeGroup) -> Element {
     let ChangeGroup {
         category,
         items_html,
     } = group;
-    let badge_class = format!("changelog-badge changelog-badge--{}", category.css_class());
 
     rsx! {
-        div {
-            // badge 行
-            div { class: "mb-2",
-                span { class: "{badge_class}", "{category.label()}" }
-            }
-            // 条目列表（复用 md-content 内联格式 + changelog-items 列表样式覆盖）
-            div {
-                class: "md-content changelog-items",
-                dangerous_inner_html: "{items_html}",
-            }
+        div { class: "changelog-group",
+            h3 { class: "changelog-category", "data-category": category.css_class(), "{category.label()}" }
+            div { class: "changelog-items", dangerous_inner_html: "{items_html}" }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dates_use_dots() {
+        assert_eq!(month_label("2026-06-02"), "2026.06");
+        assert_eq!(date_label("2026-10-20"), "2026.10.20");
     }
 }

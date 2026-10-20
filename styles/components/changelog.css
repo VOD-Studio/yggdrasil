@@ -1,286 +1,369 @@
 @layer components {
-  /* ========== 更新日志页面 ==========
-     版本卡片 + 分类色标 badge + 条目列表样式。
-     配色遵循 Catppuccin 双强调色约束：accent(绿) = 新增/安全/最新，
-     accent-2(teal) = 修复，其余用中性色阶 + 透明度区分层级。 */
+  /* ========== 更新日志 ==========
+     左侧 200px 版本目录卡片（独立滚动、两端渐隐、滑动胶囊标出当前版本），
+     1023px 以下改为吸顶的横向版本条。断点与 yggdrasil-core 的 changelog-nav 一致。 */
+  .changelog { padding-top: 1.5rem; }
+
+  .changelog-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    border-radius: 4px;
+    color: var(--color-fg-3);
+    font-size: 0.8125rem;
+    text-decoration: none;
+    transition: color 150ms var(--ease-out-expo);
+  }
+
+  .changelog-back:hover { color: var(--color-fg); }
+
+  .changelog-back:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
+  }
+
+  .changelog-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 1rem 1.5rem;
+    margin-top: 0.875rem;
+  }
+
+  .changelog-title {
+    margin: 0;
+    color: var(--color-fg);
+    font-family: var(--font-serif);
+    font-size: 2.25rem;
+    font-weight: 500;
+    line-height: 1.3;
+  }
+
+  .changelog-intro {
+    margin: 0.625rem 0 0;
+    color: var(--color-fg-2);
+    font-size: 0.9375rem;
+  }
+
+  .changelog-count {
+    margin: 0;
+    color: var(--color-fg-3);
+    font-size: 0.8125rem;
+  }
 
   .changelog-layout {
     display: grid;
-    grid-template-columns: 12rem minmax(0, 1fr);
+    grid-template-columns: 200px minmax(0, 1fr);
     align-items: start;
-    gap: 2rem;
+    gap: 2.5rem;
+    margin-top: 2.5rem;
   }
 
-  .changelog-version { scroll-margin-top: 5rem; }
+  .changelog-releases { min-width: 0; }
 
+  /* ---- 版本目录 ---- */
   .changelog-nav {
     position: sticky;
-    top: 5rem;
-    min-width: 0;
+    top: 5.5rem;
     z-index: 20;
+    min-width: 0;
   }
 
   .changelog-nav-panel {
     overflow: hidden;
-    border: 1px solid color-mix(in srgb, var(--color-paper-border) 45%, transparent);
-    border-radius: 1.5rem;
-    background: color-mix(in srgb, var(--color-paper-entry) 75%, var(--color-paper-theme));
-    box-shadow: 0 8px 24px color-mix(in srgb, var(--color-paper-primary) 3%, transparent);
+    padding: 0.75rem 0 0;
+    border-radius: var(--radius-panel);
+    background-color: var(--color-surface-1);
+    box-shadow: 0 0 0 1px var(--color-hairline);
   }
 
   .changelog-nav-head {
     display: flex;
-    align-items: center;
     justify-content: space-between;
-    gap: 0.5rem;
-    padding: 1rem 1rem 0.75rem;
-    color: var(--color-paper-secondary);
+    padding: 0 1.125rem 0.5rem;
+    color: var(--color-fg-3);
     font-size: 0.75rem;
-    font-weight: 600;
-  }
-
-  .changelog-nav-count {
-    padding: 0.125rem 0.5rem;
-    border-radius: 999px;
-    background: color-mix(in srgb, var(--color-paper-secondary) 8%, transparent);
-    color: var(--color-paper-tertiary);
-    font-size: 0.625rem;
-    font-variant-numeric: tabular-nums;
   }
 
   .changelog-nav-scroll {
-    max-height: min(30rem, var(--nav-scroll-height, calc(100dvh - 22rem)));
+    max-height: min(26rem, var(--nav-scroll-height, calc(100dvh - 22rem)));
     min-height: 2.5rem;
     overflow-y: auto;
     overscroll-behavior: contain;
     scrollbar-width: thin;
-    scrollbar-color: color-mix(in srgb, var(--color-paper-border) 65%, transparent) transparent;
+    scrollbar-color: var(--color-ink-2) transparent;
     --nav-fade-start: #000;
     --nav-fade-end: #000;
-    mask-image: linear-gradient(to bottom, var(--nav-fade-start), #000 16px, #000 calc(100% - 16px), var(--nav-fade-end));
+    mask-image: linear-gradient(to bottom, var(--nav-fade-start), #000 24px, #000 calc(100% - 24px), var(--nav-fade-end));
   }
 
   .changelog-nav-scroll[data-overflow-start] { --nav-fade-start: transparent; }
   .changelog-nav-scroll[data-overflow-end] { --nav-fade-end: transparent; }
 
+  .changelog-nav-scroll:focus-visible {
+    outline: none;
+    box-shadow: inset var(--shadow-focus);
+  }
+
   .changelog-nav-items {
     position: relative;
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: 2px;
     padding: 0.5rem;
   }
 
+  /* 滑动胶囊：位置与宽度由脚本写入 --nav-active-*。 */
   .changelog-nav-indicator {
     position: absolute;
     top: 0.5rem;
     left: 0.5rem;
     width: var(--nav-active-width, calc(100% - 1rem));
-    height: 2.5rem;
-    border: 1px solid color-mix(in srgb, var(--color-paper-accent) 18%, transparent);
-    border-radius: 0.75rem;
-    background: linear-gradient(110deg, color-mix(in srgb, var(--color-paper-accent) 12%, transparent), color-mix(in srgb, var(--color-paper-accent) 5%, transparent));
+    height: 1.875rem;
+    border-radius: 7px;
+    background-color: var(--color-surface-2);
+    box-shadow: 0 0 0 1px var(--color-hairline), var(--shadow-sm);
     transform: translate(var(--nav-active-x, 0px), var(--nav-active-y, 0px));
     opacity: 0;
     pointer-events: none;
   }
 
+  .dark .changelog-nav-indicator { background-color: var(--color-surface-3); }
+
   .changelog-nav[data-ready] .changelog-nav-indicator {
     opacity: 1;
-    transition: transform 320ms cubic-bezier(0.22, 1, 0.36, 1), width 320ms cubic-bezier(0.22, 1, 0.36, 1);
+    transition:
+      transform 320ms var(--ease-out-expo),
+      width 320ms var(--ease-out-expo);
   }
 
   .changelog-nav-link {
     position: relative;
     display: flex;
+    flex-shrink: 0;
     align-items: center;
-    gap: 0.625rem;
-    height: 2.5rem;
-    flex-shrink: 0;
-    padding: 0 0.75rem;
-    border-radius: 0.75rem;
-    color: var(--color-paper-secondary);
-    font-size: 0.8125rem;
-    white-space: nowrap;
-    transition: color 180ms ease, background-color 180ms ease;
-  }
-
-  .changelog-nav-link:hover {
-    color: var(--color-paper-primary);
-    background: color-mix(in srgb, var(--color-paper-secondary) 6%, transparent);
-  }
-
-  .changelog-nav-link[aria-current] { color: var(--color-paper-accent); }
-  .changelog-nav:not([data-ready]) .changelog-nav-link[aria-current] {
-    background: color-mix(in srgb, var(--color-paper-accent) 10%, transparent);
-  }
-
-  .changelog-nav-dot {
-    width: 0.375rem;
-    height: 0.375rem;
-    flex-shrink: 0;
-    border-radius: 50%;
-    background: var(--color-paper-border);
-    transition: background-color 220ms ease, box-shadow 220ms ease, transform 220ms ease;
-  }
-
-  .changelog-nav-link[aria-current] .changelog-nav-dot {
-    background: var(--color-paper-accent);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-paper-accent) 12%, transparent);
-    transform: scale(1.15);
-  }
-
-  .changelog-nav-label { transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1); }
-  .changelog-nav-link:hover .changelog-nav-label { transform: translateX(2px); }
-  .changelog-nav-latest { margin-left: auto; font-size: 0.625rem; color: var(--color-paper-accent); }
-
-  .changelog-nav-link:focus-visible,
-  .changelog-nav-scroll:focus-visible {
-    outline: 2px solid var(--color-paper-accent);
-    outline-offset: -2px;
-  }
-
-  .changelog-nav-foot {
-    padding: 0.875rem 1rem 1rem;
-    border-top: 1px solid color-mix(in srgb, var(--color-paper-border) 25%, transparent);
-  }
-
-  .changelog-nav-position {
-    display: flex;
     justify-content: space-between;
-    margin-bottom: 0.625rem;
-    color: var(--color-paper-tertiary);
-    font-size: 0.625rem;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .changelog-nav-progress { height: 2px; border-radius: 2px; background: color-mix(in srgb, var(--color-paper-border) 40%, transparent); overflow: hidden; }
-  .changelog-nav-progress span { display: block; height: 100%; background: var(--color-paper-accent); transform: scaleX(var(--nav-progress, 0)); transform-origin: left; transition: transform 320ms ease; }
-
-  @media (max-width: 1023px) {
-    .changelog-version { scroll-margin-top: 11rem; }
-    .changelog-layout { grid-template-columns: minmax(0, 1fr); gap: 1.25rem; }
-    .changelog-nav { top: calc(var(--site-header-height) + 0.5rem); }
-    .changelog-nav-panel { border-radius: 1.25rem; background: color-mix(in srgb, var(--color-paper-entry) 92%, transparent); backdrop-filter: blur(12px); }
-    .changelog-nav-head { padding: 0.75rem 1rem 0.25rem; }
-    .changelog-nav-scroll { max-height: none; overflow-x: auto; overflow-y: hidden; mask-image: linear-gradient(to right, var(--nav-fade-start), #000 16px, #000 calc(100% - 16px), var(--nav-fade-end)); }
-    .changelog-nav-items { width: max-content; min-width: 100%; flex-direction: row; }
-    .changelog-nav-link { gap: 0.5rem; }
-    .changelog-nav-latest { margin-left: 0.125rem; }
-    .changelog-nav-foot { display: none; }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .changelog-nav *, .changelog-nav[data-ready] .changelog-nav-indicator { transition: none; }
-  }
-
-  .changelog-badge {
-    display: inline-flex;
-    align-items: center;
-    padding: 2px 10px;
-    border-radius: 9999px;
-    font-size: 12px;
-    font-weight: 600;
-    line-height: 1.5;
+    gap: 0.5rem;
+    height: 1.875rem;
+    padding: 0 0.5rem;
+    border-radius: 7px;
+    color: var(--color-fg-2);
+    font-size: 0.8125rem;
+    text-decoration: none;
     white-space: nowrap;
+    transition: color 150ms var(--ease-out-expo);
   }
 
-  .changelog-badge--added {
-    color: var(--color-paper-accent);
-    background: color-mix(in srgb, var(--color-paper-accent) 12%, transparent);
-  }
+  .changelog-nav-link:hover { color: var(--color-fg); }
 
-  .changelog-badge--fixed {
-    color: var(--color-paper-accent-2);
-    background: color-mix(
-      in srgb,
-      var(--color-paper-accent-2) 12%,
-      transparent
-    );
-  }
-
-  .changelog-badge--security {
-    color: var(--color-paper-accent);
-    background: color-mix(in srgb, var(--color-paper-accent) 15%, transparent);
-    font-weight: 700;
-  }
-
-  .changelog-badge--changed {
-    color: var(--color-paper-secondary);
-    background: color-mix(
-      in srgb,
-      var(--color-paper-secondary) 10%,
-      transparent
-    );
-  }
-
-  .changelog-badge--removed,
-  .changelog-badge--deprecated {
-    color: var(--color-paper-tertiary);
-    background: color-mix(
-      in srgb,
-      var(--color-paper-tertiary) 10%,
-      transparent
-    );
-  }
-
-  .changelog-badge--internal {
-    color: var(--color-paper-tertiary);
-    background: color-mix(in srgb, var(--color-paper-tertiary) 6%, transparent);
+  .changelog-nav-link[aria-current] {
+    color: var(--color-fg);
     font-weight: 500;
   }
 
-  .changelog-badge--latest {
-    color: var(--color-paper-accent);
-    background: color-mix(in srgb, var(--color-paper-accent) 12%, transparent);
+  /* 脚本接管前，当前项自己画浮起底色。 */
+  .changelog-nav:not([data-ready]) .changelog-nav-link[aria-current] {
+    background-color: var(--color-surface-2);
+    box-shadow: 0 0 0 1px var(--color-hairline), var(--shadow-sm);
   }
 
-  /* 条目列表：覆盖 md-content 的默认列表样式，用自定义小圆点。
-     嵌套子列表用更小更淡的点。 */
-  .changelog-items ul {
-    list-style: none;
-    padding-left: 0;
+  .changelog-nav-link:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
+  }
+
+  .changelog-nav-label { font-family: var(--font-mono); }
+
+  .changelog-nav-date {
+    color: var(--color-fg-3);
+    font-size: 0.75rem;
+    font-weight: 400;
+  }
+
+  .changelog-nav-progress {
+    height: 2px;
+    margin-top: 0.25rem;
+    overflow: hidden;
+    background-color: var(--color-ink-1);
+  }
+
+  .changelog-nav-progress span {
+    display: block;
+    height: 100%;
+    background-color: var(--color-clay);
+    transform: scaleX(var(--nav-progress, 0));
+    transform-origin: left;
+    transition: transform 320ms var(--ease-out-expo);
+  }
+
+  /* ---- 版本 ---- */
+  .changelog-version {
+    margin-bottom: 2.5rem;
+    padding-bottom: 2.5rem;
+    box-shadow: inset 0 -1px 0 var(--color-hairline);
+    scroll-margin-top: 5.5rem;
+  }
+
+  .changelog-version:last-child {
+    margin-bottom: 0;
+    box-shadow: none;
+  }
+
+  .changelog-version-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.75rem;
+  }
+
+  .changelog-version-title {
     margin: 0;
+    color: var(--color-fg);
+    font-family: var(--font-mono);
+    font-size: 1.375rem;
+    font-weight: 600;
   }
 
-  .changelog-items > ul > li {
+  .changelog-version-date {
+    color: var(--color-fg-3);
+    font-size: 0.8125rem;
+  }
+
+  .changelog-intro-html {
+    margin-top: 0.75rem;
+    color: var(--color-fg-2);
+    font-size: 0.9375rem;
+    line-height: 1.8;
+  }
+
+  .changelog-intro-html p { margin: 0; }
+
+  .changelog-group { margin-top: 1.375rem; }
+
+  .changelog-category {
+    display: inline-block;
+    margin: 0;
+    padding: 2px 10px;
+    border-radius: 999px;
+    background-color: var(--color-ink-1);
+    color: var(--color-fg-2);
+    font-size: 0.75rem;
+    font-weight: 500;
+  }
+
+  .changelog-category[data-category="added"] {
+    background-color: var(--color-clay-soft);
+    color: var(--color-clay-text);
+  }
+
+  .changelog-category[data-category="security"] {
+    background-color: var(--color-danger-soft);
+    color: var(--color-danger);
+  }
+
+  /* 条目：圆点列表，粗体引导词接正文。 */
+  .changelog-items {
+    margin-top: 0.75rem;
+    color: var(--color-fg-body);
+    font-size: 0.9375rem;
+    line-height: 1.8;
+  }
+
+  .changelog-items ul {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .changelog-items li {
     position: relative;
-    padding-left: 1.25rem;
-    margin: 0.5rem 0;
+    padding-left: 1.375rem;
   }
 
-  .changelog-items > ul > li::before {
+  .changelog-items li::before {
     content: "";
     position: absolute;
-    left: 0.3rem;
-    top: 0.65em;
+    top: 0.75em;
+    left: 0.25rem;
     width: 5px;
     height: 5px;
     border-radius: 50%;
-    background: var(--color-paper-tertiary);
-    flex-shrink: 0;
+    background-color: var(--color-fg-3);
   }
 
   .changelog-items li ul {
-    margin-top: 0.4rem;
+    gap: 0.375rem;
+    margin-top: 0.375rem;
+    font-size: 0.875rem;
   }
 
-  .changelog-items li ul > li {
-    position: relative;
-    padding-left: 1rem;
-    margin: 0.35rem 0;
-    font-size: 0.95em;
-  }
-
-  .changelog-items li ul > li::before {
-    content: "";
-    position: absolute;
-    left: 0.2rem;
-    top: 0.65em;
+  .changelog-items li li::before {
     width: 4px;
     height: 4px;
-    border-radius: 50%;
-    background: var(--color-paper-border);
+    background-color: var(--color-ink-4);
   }
 
+  .changelog-items strong {
+    color: var(--color-fg);
+    font-weight: 600;
+  }
+
+  .changelog-items code {
+    padding: 0.1em 0.38em;
+    border-radius: 5px;
+    background-color: var(--color-ink-1);
+    color: var(--color-fg);
+    font-family: var(--font-mono);
+    font-size: 0.86em;
+  }
+
+  .changelog-items a {
+    color: var(--color-clay-text);
+    text-underline-offset: 3px;
+  }
+
+  @media (max-width: 1023px) {
+    .changelog-layout {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 1.25rem;
+    }
+
+    .changelog-nav { top: calc(var(--site-header-height) + 0.5rem); }
+
+    .changelog-nav-panel {
+      padding-top: 0.5rem;
+      background-color: color-mix(in srgb, var(--color-surface-1) 92%, transparent);
+      backdrop-filter: blur(12px);
+    }
+
+    .changelog-nav-head { padding-bottom: 0; }
+
+    .changelog-nav-scroll {
+      max-height: none;
+      overflow-x: auto;
+      overflow-y: hidden;
+      mask-image: linear-gradient(to right, var(--nav-fade-start), #000 24px, #000 calc(100% - 24px), var(--nav-fade-end));
+    }
+
+    .changelog-nav-items {
+      flex-direction: row;
+      width: max-content;
+      min-width: 100%;
+    }
+
+    .changelog-version { scroll-margin-top: 11rem; }
+  }
+
+  @media (max-width: 760px) {
+    .changelog-title { font-size: 1.875rem; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .changelog-nav *,
+    .changelog-nav[data-ready] .changelog-nav-indicator { transition: none; }
+  }
 }
