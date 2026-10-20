@@ -4,8 +4,7 @@
   .animate-page-enter,
   .animate-row-enter,
   .page-enter,
-  .home-enter,
-  .about-hero-copy
+  .home-enter
 ):not(.animate-modal-panel-enter *, [role="dialog"] *, .animate-popover-enter *, .animate-select-enter *, .popover-panel *, .listbox *, .palette *),
 [data-vt-enter-handled]:is(.animate-page-enter, .page-enter) {
   animation-name: none;

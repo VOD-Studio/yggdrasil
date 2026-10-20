@@ -325,6 +325,26 @@ static SUGGEST_CACHE: LazyLock<Cache<String, Vec<crate::api::posts::PostSuggesti
             .build()
     });
 
+/// 关于页每年篇数缓存：单键，随文章列表一起失效。
+#[cfg(feature = "server")]
+static YEAR_COUNTS_CACHE: LazyLock<Cache<(), Vec<crate::api::posts::YearCount>>> =
+    LazyLock::new(|| {
+        Cache::builder()
+            .max_capacity(1)
+            .time_to_live(TTL_POST_LIST)
+            .build()
+    });
+
+#[cfg(feature = "server")]
+pub async fn get_year_counts() -> Option<Vec<crate::api::posts::YearCount>> {
+    YEAR_COUNTS_CACHE.get(&()).await
+}
+
+#[cfg(feature = "server")]
+pub async fn set_year_counts(counts: Vec<crate::api::posts::YearCount>) {
+    YEAR_COUNTS_CACHE.insert((), counts).await;
+}
+
 /// 首页最新一篇目录预览缓存：单键，TTL 与文章列表一致，随文章列表一起失效。
 #[cfg(feature = "server")]
 static OUTLINE_CACHE: LazyLock<Cache<(), Option<crate::api::posts::PostOutline>>> =
@@ -681,12 +701,13 @@ pub async fn set_feed(items: Vec<FeedItem>) {
 // 缓存失效
 // ============================================================================
 
-/// 清空所有文章分页列表缓存，以及随列表失效的首页目录预览。
+/// 清空所有文章分页列表缓存，以及随列表失效的首页目录预览与每年篇数。
 #[cfg(feature = "server")]
 pub fn invalidate_post_lists() {
     ARCHIVE_CACHE.invalidate_all();
     POST_LIST_CACHE.invalidate_all();
     OUTLINE_CACHE.invalidate_all();
+    YEAR_COUNTS_CACHE.invalidate_all();
 }
 
 /// 清空所有标签缓存。

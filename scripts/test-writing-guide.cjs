@@ -90,14 +90,14 @@ async function main() {
       await page.waitForFunction(expected => location.hash === expected, hash);
       assert(await page.locator(hash).isVisible());
       await page.locator('.writing-back').click();
-      await page.locator('.about-writing-card').waitFor();
-      await page.locator('.about-writing-card').focus();
+      await page.locator('.about-entry[href="/about/writing"]').waitFor();
+      await page.locator('.about-entry[href="/about/writing"]').focus();
       await page.keyboard.press('Enter');
       await page.locator('.writing-content').waitFor();
       await page.goBack();
-      await page.locator('.about-writing-card').waitFor();
+      await page.locator('.about-entry[href="/about/writing"]').waitFor();
       await page.waitForFunction(() => !document.documentElement.classList.contains('is-route-transitioning'));
-      await page.locator('.about-writing-card').screenshot({ path: path.join(output, `${variant.name}-entry.png`), animations: 'disabled' });
+      await page.locator('.about-entry[href="/about/writing"]').screenshot({ path: path.join(output, `${variant.name}-entry.png`), animations: 'disabled' });
       await page.goForward();
       await page.locator('.writing-content').waitFor();
       await page.waitForFunction(() => !document.documentElement.classList.contains('is-route-transitioning'));

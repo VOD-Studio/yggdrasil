@@ -295,6 +295,17 @@ pub async fn get_changelog() -> Result<ChangelogData, ServerFnError> {
     }
 }
 
+/// 最新发布的版本号与日期（不含 Unreleased），供关于页显示。
+#[server(LatestRelease, "/api")]
+pub async fn latest_release() -> Result<Option<(String, Option<String>)>, ServerFnError> {
+    let data = get_changelog().await?;
+    Ok(data
+        .versions
+        .into_iter()
+        .find(|v| v.version != "Unreleased")
+        .map(|v| (v.version, v.date)))
+}
+
 // ===========================================================================
 // 测试
 // ===========================================================================
