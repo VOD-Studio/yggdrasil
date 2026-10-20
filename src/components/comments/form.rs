@@ -21,6 +21,19 @@ use crate::utils::comment_storage::{self, AuthorInfo, PendingComment};
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::closure::Closure;
 
+#[cfg(target_arch = "wasm32")]
+struct EditorVisibility {
+    observer: web_sys::IntersectionObserver,
+    _callback: Closure<dyn FnMut(js_sys::Array, web_sys::IntersectionObserver)>,
+}
+
+#[cfg(target_arch = "wasm32")]
+impl Drop for EditorVisibility {
+    fn drop(&mut self) {
+        self.observer.disconnect();
+    }
+}
+
 /// 图鉴提交仅生成内存中的待审核项，复用正式列表的合并和渲染路径。
 fn local_pending_comment(
     approved: &[PublicComment],
@@ -96,8 +109,12 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
     let mut submitting = use_signal(|| false);
     let mut message = use_signal(|| Option::<(String, &'static str)>::None);
     let mut loaded = use_signal(|| false);
-    let editor_library = use_browser_library("tiptap", move || {
-        parent_id.is_none_or(|pid| active_reply() == Some(pid))
+    let mut editor_visible = use_signal(|| matches!(ctx.source, CommentSource::Local { .. }));
+    #[cfg(target_arch = "wasm32")]
+    let mut visibility_observer = use_signal(|| None::<EditorVisibility>);
+    let editor_library = use_browser_library("tiptap", move || match parent_id {
+        Some(pid) => active_reply() == Some(pid),
+        None => editor_visible(),
     });
     // 图片上传状态（tiptap coordinator 事件驱动，与后台 write.rs 同一类型）：
     // 进行中计数用于提交门控；失败条目由编辑器内错误态兜底（重试/移除）。
@@ -151,7 +168,7 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
     let mut editor_handle: Signal<Option<crate::bridges::tiptap::EditorHandle>> =
         use_signal(|| None);
 
-    // 挂载/销毁编辑器。顶层表单立即挂载；回复表单随 active_reply 激活挂载、
+    // 挂载/销毁编辑器。顶层表单接近视口时加载；回复表单随 active_reply 激活挂载、
     // 取消时销毁（容器 div 随 rsx 早退消失，JS 实例必须同步回收）。
     // content_md 在组件存活期内持久，重挂载时经 set_markdown 回填（取消不丢草稿）。
     #[cfg(target_arch = "wasm32")]
@@ -419,6 +436,37 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
             style: "{negative_margin}",
             role: "form",
             aria_label: if is_reply { "回复评论" } else { "发表评论" },
+            onfocusin: move |_| editor_visible.set(true),
+            onpointerdown: move |_| editor_visible.set(true),
+            onmounted: move |_event| {
+                #[cfg(target_arch = "wasm32")]
+                {
+                    use wasm_bindgen::JsCast;
+                    if is_reply || editor_visible() || visibility_observer.peek().is_some() { return; }
+                    let mounted = _event.data();
+                    let Some(element) = mounted.downcast::<web_sys::Element>() else {
+                        editor_visible.set(true);
+                        return;
+                    };
+                    let callback = Closure::<dyn FnMut(js_sys::Array, web_sys::IntersectionObserver)>::new(
+                        move |entries: js_sys::Array, observer: web_sys::IntersectionObserver| {
+                            if entries.iter().any(|entry| entry.dyn_into::<web_sys::IntersectionObserverEntry>().is_ok_and(|entry| entry.is_intersecting())) {
+                                observer.disconnect();
+                                editor_visible.set(true);
+                            }
+                        }
+                    );
+                    let options = web_sys::IntersectionObserverInit::new();
+                    options.set_root_margin("300px");
+                    match web_sys::IntersectionObserver::new_with_options(callback.as_ref().unchecked_ref(), &options) {
+                        Ok(observer) => {
+                            observer.observe(element);
+                            visibility_observer.set(Some(EditorVisibility { observer, _callback: callback }));
+                        }
+                        Err(_) => editor_visible.set(true),
+                    }
+                }
+            },
             // Ctrl/Cmd+Enter 提交：编辑器内按键事件冒泡到表单根（ProseMirror
             // 不消费 Mod-Enter），身份输入栏同样生效。
             onkeydown: move |e: KeyboardEvent| {

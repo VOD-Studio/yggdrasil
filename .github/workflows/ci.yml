@@ -119,25 +119,12 @@ jobs:
   #                clippy --all-targets 已编译全部 test targets，cargo test 复用其产物）
   #   lint-js    — Biome + TypeScript + Vitest（仅 Bun，不装 Rust）
   #   check-wasm — wasm32 check（独立 feature 集 web-only + 独立 triple，与 server 产物不相交）
+  #   test-db    — 真实 PostgreSQL 回归（固定 GitHub-hosted，见下方说明）
   # 两个 cargo job 用独立 cache key 后缀（-rust- / -wasm-），避免并行写同一 GHA cache key
   # 每次 push / PR 都严格执行检查，失败即阻断下游构建与发布。
   test:
     needs: select_runner
     runs-on: ${{ fromJSON(needs.select_runner.outputs.runner) }}
-    services:
-      postgres:
-        image: postgres:18-alpine
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: postgres
-        ports:
-          - 5432/tcp
-        options: >-
-          --health-cmd "pg_isready -U postgres -d postgres"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
     steps:
       # dtolnay/rust-toolchain：走 GitHub CDN，比 curl|sh 快 ~10-15s，含 clippy+rustfmt 组件。
       - uses: actions/checkout@v7
@@ -161,6 +148,33 @@ jobs:
       # clippy --all-targets 已编译全部 test targets，cargo test 复用其产物，串行最省编译。
       - name: Run tests
         run: cargo test --locked --all-features
+
+  # ── test-db：真实 PostgreSQL 回归固定在 GitHub-hosted runner ──
+  # 需要 sudo 安装与服务端主版本一致的 pg_dump/psql；self-hosted runner 以
+  # no-new-privileges 容器运行，sudo 不可用，因此不走 select_runner。
+  test-db:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432/tcp
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: rust-db
 
       - name: Install matching PostgreSQL client
         run: |
@@ -200,7 +214,7 @@ jobs:
         run: cd libs && bun run typecheck
 
       - name: Frontend tests
-        run: cd libs && bun run test
+        run: cd libs && bun run --sequential --filter '*' test
 
   check-wasm:
     needs: select_runner
@@ -276,6 +290,7 @@ jobs:
           make test-browser BROWSER_SUITE=slash
           make test-browser BROWSER_SUITE=showcase
           make test-browser BROWSER_SUITE=lightbox
+          bun scripts/test-public-performance.cjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -288,7 +303,7 @@ jobs:
   # cooker 层 cache-hit(秒级),cargo build 只编 app(~2min)。
   build-amd64:
     runs-on: ${{ fromJSON(needs.select_runner.outputs.runner) }}
-    needs: [select_runner, test, lint-js, check-wasm, browser]
+    needs: [select_runner, test, test-db, lint-js, check-wasm, browser]
     # 仅主干分支(main/master) push、tag 推送、手动触发时构建完整镜像。
     # 其他分支/PR 的 push 仅靠 test job(fmt/clippy/wasm32/单测)做门槛，
     # 省下完整 Docker 构建的 CI 分钟与 GHA 缓存配额(多分支并发会快速吃满 10GB)。
@@ -351,7 +366,7 @@ jobs:
             || { echo "::error::未到达 DB 连接阶段，可能存在更早的配置 panic"; exit 1; }
           echo "smoke: 镜像可启动，初始化流程完整(无 Postgres 时 exit 1 属预期)"
 
-      # 对齐 scripts/xun.fish：tag 成 localhost/yggdrasil:latest 后导出（服务器 load 后即此名）。
+      # tag 成 localhost/yggdrasil:latest 后导出（服务器 load 后即此名）。
       - name: Save amd64 image artifact
         run: |
           docker tag yggdrasil:amd64 localhost/yggdrasil:latest
@@ -436,7 +451,7 @@ jobs:
   # 比 QEMU 交叉编译快 4-8 倍。仅 tag 推送时运行（省 CI 分钟）。
   build-arm64:
     runs-on: ubuntu-24.04-arm
-    needs: [test, lint-js, check-wasm]
+    needs: [test, test-db, lint-js, check-wasm]
     if: >-
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/'))
       || github.event_name == 'workflow_dispatch'
@@ -567,7 +582,7 @@ jobs:
           pattern: yggdrasil-*-image
           path: /tmp/img
 
-      # amd64 artifact 内 tag 为 localhost/yggdrasil:latest(对齐 xun.fish 的 load 名)，
+      # amd64 artifact 内 tag 为 localhost/yggdrasil:latest(服务器 load 后即此名)，
       # arm64 artifact 内 tag 为 yggdrasil:arm64。load 后统一 retag 成 yggdrasil:<arch>，
       # 便于后续 manifest create 引用。
       - name: Load and retag per-arch images
@@ -623,7 +638,7 @@ jobs:
   # LANGUAGES 注册表硬编码的短名（runner-* 标签避免独立私有包无法匿名拉取）。
   publish-runners:
     runs-on: ubuntu-latest
-    needs: [test, lint-js, check-wasm]
+    needs: [test, test-db, lint-js, check-wasm]
     if: >-
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/'))
       || github.event_name == 'workflow_dispatch'

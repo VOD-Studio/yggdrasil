@@ -22,7 +22,7 @@ use tokio_postgres::{Config, NoTls};
 /// - LazyLock 闭包退化为不可达的防御性代码。
 ///
 /// 返回 `Err(String)` 而非 panic，调用方决定如何向用户报告错误。
-fn build_pg_config() -> Result<tokio_postgres::Config, String> {
+pub(crate) fn build_pg_config() -> Result<tokio_postgres::Config, String> {
     let db_url = std::env::var("DATABASE_URL")
         .map_err(|_| "DATABASE_URL environment variable not set".to_string())?;
     let mut pg_cfg = db_url

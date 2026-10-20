@@ -85,7 +85,6 @@ check-brotli:
 
 # ── release 构建 ───────────────────────────────────────────────
 build: check-build-tools ## 完整 release 构建（资源 + 文档 + dx build + 压缩）
-	@rm -rf static/
 	@$(MAKE) build-assets
 	@$(MAKE) doc
 	@$(DX) build --release --debug-symbols=false
@@ -140,8 +139,6 @@ precompress: check-brotli
 
 # ── 开发 ───────────────────────────────────────────────────────
 dev: dev-assets esbuild-cache wasm-bindgen-cache ## 启动开发服务器（增量构建资源 + dx serve）
-	@echo "Cleaning static/..."
-	@rm -rf static/
 	@echo "Starting dx serve..."
 	@SSR_CACHE_SECS=0 $(DX) serve --addr 0.0.0.0 --interactive false
 
@@ -227,6 +224,9 @@ clean: ## 清理构建产物与前端依赖
 	@rm -rf public/katex
 	@rm -rf public/mermaid
 	@rm -rf public/doc
-	@rm -rf static/
 	@rm -rf uploads/.cache
 	@rm -rf libs/node_modules libs/*/node_modules
+
+.PHONY: test-public-performance
+test-public-performance: regression-build ## 验证双机缓存、公开页精简数据、归档分页和评论延迟加载
+	@bun scripts/test-public-performance.cjs

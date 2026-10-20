@@ -42,3 +42,29 @@ impl ServerHandler for YggMcpServer {
     // get_info 由宏自动生成（name/version 来自宏的默认或属性）。
     // 这里不手写 get_info，让宏用默认 ServerInfo。
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// OpenAI 兼容上游（MCA 等）要求 object schema 必须带 `properties` 键。
+    /// 零字段参数结构体在 schemars 1.x 下默认只生成 `{"type":"object"}`，
+    /// 会让上游把整个请求判为非法工具 schema（流式路径甚至只回 502）。
+    #[test]
+    fn every_tool_schema_declares_object_properties() {
+        for tool in YggMcpServer::combined_router().list_all() {
+            let schema = serde_json::to_value(&tool.input_schema).unwrap();
+            assert_eq!(
+                schema.get("type").and_then(|t| t.as_str()),
+                Some("object"),
+                "tool `{}` should have an object input schema: {schema}",
+                tool.name
+            );
+            assert!(
+                schema.get("properties").is_some_and(|p| p.is_object()),
+                "tool `{}` input schema must declare `properties`: {schema}",
+                tool.name
+            );
+        }
+    }
+}

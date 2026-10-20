@@ -44,8 +44,10 @@ async function main() {
     pass('editing the block changes its existing runnable configuration');
     for (let i = 0; i < 4; i++) {
       await edit.click(); await modal.waitFor();
-      // The triggering Enter/click must finish before the intentionally deferred key listener.
-      await page.waitForTimeout(30);
+      // Flush the previous editor's deferred focus as well as the modal key listener.
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      assert(await modal.evaluate(element => element.contains(document.activeElement)),
+        'reopening retains keyboard focus inside the modal');
       await page.keyboard.press('Escape');
       await modal.waitFor({ state: 'detached' });
     }

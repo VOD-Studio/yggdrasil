@@ -89,19 +89,31 @@ pub(crate) fn parse_compression_algorithms(env: &str) -> Option<CompressionAlgor
 ///
 /// 因此无需在此处对图片响应做额外的 content-type 过滤。另：图片实际挂在
 /// `static_routes`（无中间件），根本不经此层，详见 startup.rs 路由 merge 处。
+///
+/// 已带 `Content-Encoding` 的响应（public 下预压缩的 `.br`）原样透传。
+/// 生产推荐 "br, gzip"：同等 q 值时 tower-http 按 zstd > br > gzip 选择，
+/// Chrome 会拿到 zstd，而 zstd-6 仍比 brotli-6 大 6–9%。
 pub(crate) fn compression_layer_from_env() -> Option<tower_http::compression::CompressionLayer> {
-    use tower_http::compression::CompressionLayer;
-
     let env = std::env::var("COMPRESSION_ALGORITHMS").unwrap_or_else(|_| "off".to_string());
-    let algorithms = parse_compression_algorithms(&env)?;
+    parse_compression_algorithms(&env).map(compression_layer)
+}
 
-    Some(
-        CompressionLayer::new()
-            .gzip(algorithms.gzip)
-            .br(algorithms.brotli)
-            .deflate(algorithms.deflate)
-            .zstd(algorithms.zstd),
-    )
+/// 动态压缩统一质量。tower-http 默认 brotli 4，只比 gzip-6 小 2–4%；
+/// 统一取 6 后 gzip 与反代 `gzip_comp_level 6` 相同，brotli 比 gzip-6 小
+/// 10–17%，2.5MB 的 feed 单次压缩仍在十几毫秒内。
+const COMPRESSION_QUALITY: i32 = 6;
+
+fn compression_layer(
+    algorithms: CompressionAlgorithms,
+) -> tower_http::compression::CompressionLayer {
+    use tower_http::compression::{CompressionLayer, CompressionLevel};
+
+    CompressionLayer::new()
+        .gzip(algorithms.gzip)
+        .br(algorithms.brotli)
+        .deflate(algorithms.deflate)
+        .zstd(algorithms.zstd)
+        .quality(CompressionLevel::Precise(COMPRESSION_QUALITY))
 }
 
 /// 根据请求路径和方法决定公开页面的 Cache-Control 头。
@@ -233,8 +245,7 @@ pub(crate) async fn admin_guard(
 }
 
 /// Axum 中间件：把当前 SSR 全局世代号注入请求扩展，并对 GET 请求的响应附加
-/// `X-SSR-Generation` 头。这是为未来 Dioxus 支持自定义 SSR 缓存键预留的钩子；
-/// 目前主要提供可观测性，不会实际失效 SSR 缓存。
+/// `X-SSR-Generation` 头。世代号同时保护应用 HTML 缓存，阻止失效前的在途响应回填。
 pub(crate) async fn ssr_generation_middleware(
     req: axum::extract::Request,
     next: axum::middleware::Next,
@@ -295,8 +306,12 @@ pub(crate) async fn version_headers_middleware(
 
 #[cfg(test)]
 mod tests {
-    use super::{cache_control_for_path, parse_compression_algorithms, CompressionAlgorithms};
-    use axum::http::Method;
+    use super::{
+        cache_control_for_path, compression_layer, parse_compression_algorithms,
+        CompressionAlgorithms,
+    };
+    use axum::http::{header, Method, Request};
+    use tower::ServiceExt;
 
     fn cache_value(path: &str, method: Method) -> Option<String> {
         cache_control_for_path(path, &method).map(|v| v.to_str().unwrap().to_string())
@@ -465,5 +480,49 @@ mod tests {
                 zstd: false,
             })
         );
+    }
+
+    /// 用给定 Accept-Encoding 请求挂了压缩层的 HTML 路由，返回响应编码。
+    async fn response_encoding(env: &str, accept_encoding: &str) -> Option<String> {
+        let html = "<article><p>压缩回归测试段落 compression regression.</p></article>".repeat(400);
+        let app = axum::Router::new()
+            .route(
+                "/",
+                axum::routing::get(move || async move { axum::response::Html(html) }),
+            )
+            .layer(compression_layer(
+                parse_compression_algorithms(env).unwrap(),
+            ));
+        let response = app
+            .oneshot(
+                Request::get("/")
+                    .header(header::ACCEPT_ENCODING, accept_encoding)
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        response
+            .headers()
+            .get(header::CONTENT_ENCODING)
+            .map(|v| v.to_str().unwrap().to_string())
+    }
+
+    #[tokio::test]
+    async fn recommended_compression_serves_brotli_to_chrome() {
+        let encoding = response_encoding("br, gzip", "gzip, deflate, br, zstd").await;
+        assert_eq!(encoding.as_deref(), Some("br"));
+    }
+
+    #[tokio::test]
+    async fn recommended_compression_falls_back_to_gzip() {
+        let encoding = response_encoding("br, gzip", "gzip").await;
+        assert_eq!(encoding.as_deref(), Some("gzip"));
+    }
+
+    #[tokio::test]
+    async fn all_compression_prefers_zstd_for_chrome() {
+        let encoding = response_encoding("all", "gzip, deflate, br, zstd").await;
+        assert_eq!(encoding.as_deref(), Some("zstd"));
     }
 }

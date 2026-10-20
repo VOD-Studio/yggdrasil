@@ -1,7 +1,10 @@
 //! 项目自写组件的公开图鉴与独立用法页。
 //!
 //! 目录、文案和属性说明来自本模块的静态数据；预览直接渲染项目里的组件。
+#[cfg(feature = "server")]
 use std::sync::LazyLock;
+#[cfg(not(feature = "server"))]
+use std::sync::OnceLock;
 
 use chrono::{DateTime, Utc};
 #[cfg(target_arch = "wasm32")]
@@ -9,7 +12,7 @@ use dioxus::html::{InteractionElementOffset, InteractionLocation};
 use dioxus::prelude::*;
 #[cfg(target_arch = "wasm32")]
 use dioxus::web::WebEventExt;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::JsCast;
 
@@ -29,13 +32,13 @@ pub struct ShowcaseFilters {
     pub return_to: Option<String>,
 }
 
-#[derive(Deserialize)]
-struct ShowcaseData {
+#[derive(Clone, Serialize, Deserialize)]
+pub(crate) struct ShowcaseData {
     groups: Vec<[String; 2]>,
     components: Vec<ComponentSpec>,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 struct ComponentSpec {
     name: String,
     slug: String,
@@ -52,14 +55,14 @@ struct ComponentSpec {
     usage_kind: UsageKind,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 enum PreviewMode {
     Interactive,
     Static,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 enum UsageKind {
     Rust,
@@ -68,13 +71,78 @@ enum UsageKind {
     Browser,
 }
 
+// 图鉴数据只嵌入服务端二进制；浏览器从水合数据或 server function 取得，不随 WASM 下发。
+#[cfg(feature = "server")]
 static SHOWCASE: LazyLock<ShowcaseData> = LazyLock::new(|| {
     serde_json::from_str(include_str!("components_showcase_data.json"))
         .expect("组件图鉴数据必须是有效 JSON")
 });
 
+#[cfg(not(feature = "server"))]
+static CLIENT_SHOWCASE: OnceLock<ShowcaseData> = OnceLock::new();
+
+/// 当前图鉴数据。
+#[cfg(feature = "server")]
+fn showcase() -> &'static ShowcaseData {
+    &SHOWCASE
+}
+
+/// 当前图鉴数据。客户端须先经 `ShowcaseDataGate` 加载。
+#[cfg(not(feature = "server"))]
+fn showcase() -> &'static ShowcaseData {
+    CLIENT_SHOWCASE
+        .get()
+        .expect("组件图鉴数据须先由 ShowcaseDataGate 加载")
+}
+
+#[server]
+pub(crate) async fn get_showcase_data() -> Result<ShowcaseData, ServerFnError> {
+    Ok(SHOWCASE.clone())
+}
+
+/// 客户端会话内只请求一次；首屏直接复用 SSR 水合数据。
+async fn load_showcase() -> Result<ShowcaseData, ServerFnError> {
+    #[cfg(not(feature = "server"))]
+    if let Some(data) = CLIENT_SHOWCASE.get() {
+        return Ok(data.clone());
+    }
+    get_showcase_data().await
+}
+
+/// 加载图鉴数据后再渲染子页面，使目录、详情与预览可同步读取 `showcase()`。
+#[component]
+fn ShowcaseDataGate(children: Element) -> Element {
+    let response = use_server_future(load_showcase)?;
+    match response.read().as_ref() {
+        Some(Ok(_data)) =>
+        {
+            #[cfg(not(feature = "server"))]
+            if CLIENT_SHOWCASE.get().is_none() {
+                let _ = CLIENT_SHOWCASE.set(_data.clone());
+            }
+        }
+        Some(Err(error)) => return Err(error.clone().into()),
+        None => return rsx! {},
+    }
+    children
+}
+
+#[component]
+pub fn ComponentShowcase() -> Element {
+    rsx! {
+        ShowcaseDataGate { ShowcaseGallery {} }
+    }
+}
+
+#[component]
+pub fn ComponentDetail(component: String) -> Element {
+    rsx! {
+        ShowcaseDataGate { ShowcaseDetail { component } }
+    }
+}
+
 fn group_label(group: &str) -> &str {
-    SHOWCASE
+    showcase()
         .groups
         .iter()
         .find(|item| item[0] == group)
@@ -300,7 +368,7 @@ fn AlertBoxDemo(
 }
 
 #[component]
-pub fn ComponentShowcase() -> Element {
+fn ShowcaseGallery() -> Element {
     let mut filters = use_context::<Signal<ShowcaseFilters>>();
 
     #[cfg(target_arch = "wasm32")]
@@ -323,7 +391,7 @@ pub fn ComponentShowcase() -> Element {
         state.category.as_str()
     };
     let query = state.search.trim().to_lowercase();
-    let shown: Vec<&ComponentSpec> = SHOWCASE
+    let shown: Vec<&ComponentSpec> = showcase()
         .components
         .iter()
         .filter(|spec| {
@@ -334,12 +402,12 @@ pub fn ComponentShowcase() -> Element {
         })
         .collect();
     let count = shown.len();
-    let interactive_count = SHOWCASE
+    let interactive_count = showcase()
         .components
         .iter()
         .filter(|spec| spec.preview_mode == PreviewMode::Interactive)
         .count();
-    let static_count = SHOWCASE.components.len() - interactive_count;
+    let static_count = showcase().components.len() - interactive_count;
 
     use_effect(move || {
         #[cfg(target_arch = "wasm32")]
@@ -367,7 +435,7 @@ pub fn ComponentShowcase() -> Element {
             header { class: "showcase-hero",
                 div {
                     p { class: "showcase-eyebrow", span { class: "showcase-dot" } "YGGDRASIL / INTERFACE ATLAS" }
-                    h1 { "组件图鉴" small { "↗ 01—{SHOWCASE.components.len()}" } }
+                    h1 { "组件图鉴" small { "↗ 01—{showcase().components.len()}" } }
                     p { class: "showcase-lead", "一枚按钮，一次勾选，一点恰好的回应。" br {} "这里收藏着，让 Yggdrasil 长成自己的界面细节。" }
                     div { class: "showcase-hero-meta",
                         span { "{interactive_count} 枚交互预览" }
@@ -394,13 +462,13 @@ pub fn ComponentShowcase() -> Element {
                         }
                     }
                     nav { class: "showcase-categories", aria_label: "组件分类",
-                        for group in SHOWCASE.groups.iter() {
+                        for group in showcase().groups.iter() {
                             {
                                 let id = group[0].clone();
                                 let label = group[1].clone();
                                 let selected = active_group == id;
-                                let amount = if id == "all" { SHOWCASE.components.len() } else {
-                                    SHOWCASE.components.iter().filter(|spec| spec.group == id).count()
+                                let amount = if id == "all" { showcase().components.len() } else {
+                                    showcase().components.iter().filter(|spec| spec.group == id).count()
                                 };
                                 rsx! {
                                     button {
@@ -482,7 +550,7 @@ pub fn ComponentShowcase() -> Element {
 }
 
 #[component]
-pub fn ComponentDetail(component: String) -> Element {
+fn ShowcaseDetail(component: String) -> Element {
     let mut filters = use_context::<Signal<ShowcaseFilters>>();
     let mut checked = use_signal(|| true);
     let mut danger = use_signal(|| false);
@@ -491,7 +559,7 @@ pub fn ComponentDetail(component: String) -> Element {
     let mut reset_generation = use_signal(|| 0_u32);
     #[allow(unused_mut)]
     let mut copied = use_signal(|| false);
-    let Some((index, spec)) = SHOWCASE
+    let Some((index, spec)) = showcase()
         .components
         .iter()
         .enumerate()
@@ -527,8 +595,8 @@ pub fn ComponentDetail(component: String) -> Element {
     } else {
         "showcase-live-workarea"
     };
-    let previous = index.checked_sub(1).map(|i| &SHOWCASE.components[i]);
-    let next = SHOWCASE.components.get(index + 1);
+    let previous = index.checked_sub(1).map(|i| &showcase().components[i]);
+    let next = showcase().components.get(index + 1);
 
     rsx! {
         document::Title { "{spec.label} {spec.name} · 组件图鉴 · Yggdrasil" }
@@ -544,10 +612,10 @@ pub fn ComponentDetail(component: String) -> Element {
                 aside { class: "showcase-detail-sidebar",
                     Link { class: "showcase-back", to: Route::ComponentShowcase {}, onclick: move |_| filters.write().return_to = Some(spec.slug.clone()), "← 返回组件图鉴" }
                     nav { aria_label: "组件目录",
-                        for group in SHOWCASE.groups.iter().skip(1) {
+                        for group in showcase().groups.iter().skip(1) {
                             section {
                                 h2 { "{group[1]}" }
-                                for item in SHOWCASE.components.iter().filter(|item| item.group == group[0]) {
+                                for item in showcase().components.iter().filter(|item| item.group == group[0]) {
                                     Link {
                                         key: "{item.slug}",
                                         class: if item.slug == spec.slug { "is-current" } else { "" },
@@ -567,7 +635,7 @@ pub fn ComponentDetail(component: String) -> Element {
                             aria_label: "切换组件",
                             value: "{spec.slug}",
                             onchange: move |event| { navigator().push(Route::ComponentDetail { component: event.value() }); },
-                            for item in SHOWCASE.components.iter() {
+                            for item in showcase().components.iter() {
                                 option { value: "{item.slug}", "{item.name} · {item.label}" }
                             }
                         }
@@ -788,7 +856,7 @@ fn ComponentPreview(
     #[props(default)] alert_variant: Option<Signal<String>>,
     #[props(default)] alert_message: Option<Signal<String>>,
 ) -> Element {
-    let spec = SHOWCASE
+    let spec = showcase()
         .components
         .iter()
         .find(|item| item.slug == slug)
@@ -1531,6 +1599,32 @@ mod tests {
     use super::*;
     use std::collections::HashSet;
     use std::path::Path;
+
+    #[test]
+    fn large_embedded_documents_stay_out_of_wasm() {
+        // 两份文档只供服务端渲染与 server function 下发，不能随 WASM 发给每位访客。
+        for (path, source, embed) in [
+            (
+                "components_showcase",
+                include_str!("components_showcase.rs"),
+                "static SHOWCASE: LazyLock",
+            ),
+            (
+                "api/writing_guide",
+                include_str!("../api/writing_guide.rs"),
+                "pub const SKILL_SOURCE",
+            ),
+        ] {
+            let before = source
+                .split_once(embed)
+                .unwrap_or_else(|| panic!("{path} should embed its document"))
+                .0;
+            assert!(
+                before.trim_end().ends_with("#[cfg(feature = \"server\")]"),
+                "{path} must gate its embedded document behind the server feature"
+            );
+        }
+    }
 
     fn public_component_names(dir: &Path, names: &mut HashSet<String>) {
         for entry in std::fs::read_dir(dir).expect("读取组件源码目录") {

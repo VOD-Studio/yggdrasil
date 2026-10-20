@@ -98,6 +98,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "028",
         include_str!("../../migrations/028_notebook_archive.sql"),
     ),
+    (
+        "029",
+        include_str!("../../migrations/029_content_cache_revision.sql"),
+    ),
     // 新增迁移在此追加，同时在 migrations/ 下创建对应 .sql 文件。
 ];
 

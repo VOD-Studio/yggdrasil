@@ -43,7 +43,14 @@ function mockEditor() {
     }),
     run: vi.fn(),
   };
-  return { editor: { ...lifecycle(), chain: vi.fn(() => chain) } as unknown as Editor, calls };
+  return {
+    editor: {
+      ...lifecycle(),
+      view: { focus: vi.fn() },
+      chain: vi.fn(() => chain),
+    } as unknown as Editor,
+    calls,
+  };
 }
 
 /**
@@ -68,6 +75,7 @@ function mockEditorWithView() {
     }),
   };
   const view = {
+    focus: vi.fn(),
     dispatch: vi.fn(() => {}),
   };
   const editor = {
@@ -168,6 +176,29 @@ describe('openRunnableModal', () => {
     await new Promise((r) => setTimeout(r, 0));
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     expect(calls).toHaveLength(0);
+    expect(document.querySelector('.tiptap-runnable-modal')).toBeNull();
+  });
+
+  it('快速关闭并重开后，旧编辑器的延迟 focus 不会抢走新弹框焦点', () => {
+    vi.useFakeTimers();
+    const { editor } = mockEditor();
+    const editorFocus = document.createElement('button');
+    document.body.appendChild(editorFocus);
+    const chain = editor.chain();
+    chain.focus = vi.fn(() => {
+      requestAnimationFrame(() => editorFocus.focus());
+      return chain;
+    });
+    editor.view.focus = vi.fn(() => editorFocus.focus());
+    openRunnableModal(editor);
+    document.querySelector<HTMLButtonElement>('.tiptap-runnable-actions .cancel')!.click();
+    openRunnableModal(editor);
+    vi.runAllTimers();
+    const modal = document.querySelector('.tiptap-runnable-modal')!;
+    expect(modal.contains(document.activeElement)).toBe(true);
+    document.activeElement!.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    );
     expect(document.querySelector('.tiptap-runnable-modal')).toBeNull();
   });
 

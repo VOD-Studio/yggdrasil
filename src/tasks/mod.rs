@@ -5,6 +5,9 @@
 /// 每天定时自动备份数据库与 uploads 素材，含自动轮转。
 #[cfg(feature = "server")]
 pub mod backup;
+/// 跨节点内容缓存失效通知与断线补偿。
+#[cfg(feature = "server")]
+pub mod cache_sync;
 /// 定时清理图片磁盘缓存，避免缓存目录无限增长。
 #[cfg(feature = "server")]
 pub mod image_cache_cleanup;

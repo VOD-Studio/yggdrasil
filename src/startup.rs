@@ -34,8 +34,7 @@ pub fn run() {
 
     run_database_bootstrap();
 
-    // 数据迁移已切换持久化公式 HTML；每个实例都清除旧渲染缓存，避免另一实例
-    // 已提交迁移或上次启动在提交后中断时，仍向新版 KaTeX CSS 发送旧 class。
+    // 启动与开发热重载时清除进程内 HTML 快照，避免保留旧版本渲染结果。
     crate::ssr_cache::invalidate_ssr_all_public();
     crate::ssr_cache::invalidate_ssr_route("/admin/preview");
 
@@ -48,7 +47,7 @@ pub fn run() {
     };
     tracing::info!(
         ssr_cache_secs = options.ssr_cache_secs,
-        "增量渲染缓存生效（写入后内容可见滞后的上界）；调小可缩短滞后，代价是 SSR 重渲染更频繁"
+        "匿名公开页 HTML 缓存：32 MiB 上限、写入通知失效、TTL 兜底"
     );
     tracing::info!(
         expose_version_headers = options.expose_version_headers,
@@ -228,6 +227,7 @@ fn spawn_background_tasks_once() {
     tokio::spawn(crate::tasks::session_cleanup::run_cleanup());
     tokio::spawn(crate::tasks::post_purge::run_purge());
     tokio::spawn(crate::tasks::backup::run_scheduler());
+    tokio::spawn(crate::tasks::cache_sync::run());
     tokio::spawn(crate::tasks::image_cache_cleanup::run_cleanup());
     tokio::spawn(crate::tasks::orphan_asset_purge::run_purge());
     tokio::spawn(crate::tasks::log_writer::run_writer());
@@ -243,10 +243,7 @@ fn build_router(options: ServerOptions) -> axum::Router {
 
     spawn_background_tasks_once();
 
-    let config = ServeConfig::builder().incremental(
-        dioxus::server::IncrementalRendererConfig::default()
-            .invalidate_after(Duration::from_secs(options.ssr_cache_secs)),
-    );
+    let config = ServeConfig::new();
 
     let upload_route = axum::Router::new()
         .route(
@@ -328,7 +325,7 @@ fn build_router(options: ServerOptions) -> axum::Router {
         )
         .layer(axum::middleware::from_fn(crate::api::csrf::csrf_middleware));
 
-    // 笔记可随时撤回公开。独立的无增量缓存 renderer 避免命中旧的内存/磁盘快照。
+    // 笔记可随时撤回公开；独立 renderer 与 HTML 缓存白名单共同保证其不缓存。
     let notes_routes = axum::Router::new()
         .route("/notes", axum::routing::get(dioxus::server::render_handler))
         .route(
@@ -345,13 +342,17 @@ fn build_router(options: ServerOptions) -> axum::Router {
 
     let mut app_routes = dioxus_app
         .layer(axum::middleware::from_fn(
+            crate::ssr_cache::cache_public_html,
+        ))
+        .layer(axum::middleware::from_fn(
             crate::middleware::ssr_generation_middleware,
         ))
         .layer(axum::middleware::from_fn(
             crate::middleware::add_cache_control,
         ))
         .layer(axum::middleware::from_fn(crate::api::csrf::csrf_middleware));
-    if let Some(layer) = crate::middleware::compression_layer_from_env() {
+    let compression = crate::middleware::compression_layer_from_env();
+    if let Some(layer) = compression.clone() {
         app_routes = app_routes.layer(layer);
     }
     let app_routes = app_routes.layer(TimeoutLayer::with_status_code(
@@ -379,12 +380,18 @@ fn build_router(options: ServerOptions) -> axum::Router {
         .route(
             "/uploads",
             axum::routing::get(|| async { StatusCode::NOT_FOUND }),
-        )
+        );
+
+    // Feed 含 20 篇全文（MB 级），反代 gzip_types 也不含其 MIME，必须由压缩层处理。
+    let mut feed_routes = axum::Router::new()
         .route("/feed.xml", axum::routing::get(crate::api::feed::rss_feed))
         .route(
             "/feed.json",
             axum::routing::get(crate::api::feed::json_feed),
         );
+    if let Some(layer) = compression {
+        feed_routes = feed_routes.layer(layer);
+    }
 
     let router = upload_route
         .merge(mcp_upload_route)
@@ -394,6 +401,7 @@ fn build_router(options: ServerOptions) -> axum::Router {
         .merge(logs_sse_route)
         .merge(app_routes)
         .merge(static_routes)
+        .merge(feed_routes)
         .merge(crate::mcp::router::mcp_route());
 
     if options.expose_version_headers {

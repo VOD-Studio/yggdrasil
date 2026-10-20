@@ -125,6 +125,12 @@ pub struct SinglePostResponse {
     pub post: Option<Post>,
 }
 
+/// 阅读页详情不携带原始 Markdown；完整响应保留给编辑、预览和旧客户端。
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PublicPostResponse {
+    pub post: Option<crate::models::public_post::PublicPost>,
+}
+
 /// Markdown 重建结果响应。
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct RebuildResult {

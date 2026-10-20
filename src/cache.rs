@@ -153,6 +153,25 @@ static POST_LIST_CACHE: LazyLock<PostListCache> = LazyLock::new(|| {
         .build()
 });
 
+#[cfg(feature = "server")]
+static ARCHIVE_CACHE: LazyLock<Cache<i32, crate::api::posts::ArchiveResponse>> =
+    LazyLock::new(|| {
+        Cache::builder()
+            .max_capacity(100)
+            .time_to_live(TTL_POST_LIST)
+            .build()
+    });
+
+#[cfg(feature = "server")]
+pub async fn get_archive(page: i32) -> Option<crate::api::posts::ArchiveResponse> {
+    ARCHIVE_CACHE.get(&page).await
+}
+
+#[cfg(feature = "server")]
+pub async fn set_archive(page: i32, response: crate::api::posts::ArchiveResponse) {
+    ARCHIVE_CACHE.insert(page, response).await;
+}
+
 /// 全局标签列表缓存实例，最大容量 50。
 #[cfg(feature = "server")]
 static TAG_LIST_CACHE: LazyLock<TagListCache> = LazyLock::new(|| {
@@ -665,6 +684,7 @@ pub async fn set_feed(items: Vec<FeedItem>) {
 /// 清空所有文章分页列表缓存，以及随列表失效的首页目录预览。
 #[cfg(feature = "server")]
 pub fn invalidate_post_lists() {
+    ARCHIVE_CACHE.invalidate_all();
     POST_LIST_CACHE.invalidate_all();
     OUTLINE_CACHE.invalidate_all();
 }
@@ -724,6 +744,18 @@ pub fn invalidate_all_post_caches() {
     invalidate_post_metadata();
     SINGLE_POST_CACHE.invalidate_all();
     TAG_POSTS_CACHE.invalidate_all();
+}
+
+/// 数据库内容版本变化时清除本节点的派生数据；不再向数据库发通知，避免回路。
+#[cfg(feature = "server")]
+pub fn invalidate_shared_content() {
+    invalidate_all_post_caches();
+    invalidate_all_comments();
+    invalidate_friend_links();
+    invalidate_site_settings();
+    invalidate_security_settings();
+    invalidate_image_cache_settings();
+    crate::ssr_cache::invalidate_ssr_all_public();
 }
 
 /// 清空 Feed 条目缓存。

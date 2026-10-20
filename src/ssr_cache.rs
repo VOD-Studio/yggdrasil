@@ -1,195 +1,387 @@
-//! SSR 增量渲染缓存失效。
+//! 有容量和 TTL 上限的匿名公开页 HTML 缓存。
 //!
-//! Dioxus 0.7 增量渲染器把每个路由的 SSR 结果落盘到 `static/<route>/index/<hash>.html`，
-//! 以请求 `path_and_query()` 作 key。它只暴露 `invalidate_after(ttl)` 一个失效手段，
-//! **没有按路由失效的公开 API**。本模块通过**物理删除缓存目录**绕过这个限制：
-//! 写路径（create/update/rebuild/delete）调用 [`invalidate_ssr_route`] 删掉对应路由的
-//! 缓存目录，下次请求触发重渲染。
-//!
-//! 全局世代号（`bump_global_generation`）保留作可观测性 + 未来就绪钩子，但不依赖它
-//! 实际失效缓存。
-//!
-//! 仅在启用 `server` feature 时编译。
-
+//! 不依赖 Dioxus 的磁盘 ISR：生产非 root 容器无须写 /app，写操作能真正失效内存。
+//! 透传响应流，在完整成功读完后保存；取消、超大响应和跨失效世代的响应不会回填。
 #![cfg(feature = "server")]
 
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::LazyLock;
+use std::sync::{LazyLock, Mutex};
+use std::time::{Duration, Instant};
 
-/// 全局 SSR 世代号。
-///
-/// 任何文章写入操作都会使其递增，从而让所有基于该全局世代的 SSR 缓存键在未来
-/// Dioxus 支持自定义缓存键时失效。
-static GLOBAL_GENERATION: LazyLock<AtomicU64> = LazyLock::new(AtomicU64::default);
+use axum::body::{Body, BodyDataStream};
+use axum::http::{header, HeaderMap, HeaderValue, Method, StatusCode, Uri};
+use axum::response::Response;
+use bytes::Bytes;
+use futures::StreamExt;
+use sha2::{Digest, Sha256};
 
-/// 注入到请求扩展中的当前 SSR 世代号。
-///
-/// 这是为未来 Dioxus 支持自定义 SSR 缓存键预留的钩子。当前 Dioxus 0.7 的渲染器
-/// 不会读取此扩展。
+const MAX_PAGE_BYTES: usize = 1024 * 1024;
+const MAX_CACHE_BYTES: u64 = 32 * 1024 * 1024;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SsrGeneration(pub u64);
 
-/// Dioxus 增量渲染器缓存落盘根目录（相对 CWD）。
-///
-/// 路由 `/post/foo` 的缓存为 `static/post/foo/index/<hash>.html`。
-/// 由 `IncrementalRendererConfig::default()` 决定，无公开 API 可读，故硬编码。
-const SSR_CACHE_ROOT: &str = "static";
+#[derive(Clone)]
+struct CachedPage {
+    body: Bytes,
+    headers: HeaderMap,
+    created: Instant,
+    etag: HeaderValue,
+    generation: u64,
+}
 
-/// 计算某路由的 SSR 缓存目录路径。
-///
-/// route 形如 `/post/markdown-syntax-test`（前导 `/` 可有可无）。返回
-/// `static/post/markdown-syntax-test`（不含 `index/`，删整目录更彻底）。
-/// 对路径段做安全清洗：禁止 `..` / 空段，避免越出 `static/` 根。
-fn route_cache_dir(route: &str) -> Option<PathBuf> {
-    let mut path = PathBuf::from(SSR_CACHE_ROOT);
-    for seg in route.trim_start_matches('/').split('/') {
-        if seg.is_empty() || seg == ".." || seg == "." {
-            continue;
+struct HtmlCache {
+    pages: moka::sync::Cache<String, CachedPage>,
+    generation: AtomicU64,
+    gate: Mutex<()>,
+    enabled: bool,
+}
+
+impl HtmlCache {
+    fn new(ttl: Duration, capacity: u64) -> Self {
+        Self {
+            pages: moka::sync::Cache::builder()
+                .max_capacity(capacity)
+                .weigher(|key: &String, page: &CachedPage| {
+                    (key.len() + page.body.len() + 1024) as u32
+                })
+                .time_to_live(ttl)
+                .build(),
+            generation: AtomicU64::new(0),
+            gate: Mutex::new(()),
+            enabled: !ttl.is_zero(),
         }
-        path.push(seg);
     }
-    if path.as_path() == std::path::Path::new(SSR_CACHE_ROOT) {
-        None // 根路由（"/"）无目录段；首页缓存由 invalidate_ssr_all_public 覆盖删除
-    } else {
-        Some(path)
+
+    fn generation(&self) -> u64 {
+        self.generation.load(Ordering::Acquire)
     }
-}
 
-/// 失效单一路由的 SSR 磁盘缓存。
-///
-/// 删除 `static/<route>/` 目录（含 `index/<hash>.html`）。文件不存在时静默。
-/// **IO 在当前线程同步执行**——删除一个空目录是纳秒级操作，不值得 spawn_blocking；
-/// 调用方已在事务提交后调用，无阻塞风险。
-pub fn invalidate_ssr_route(route: &str) {
-    let Some(dir) = route_cache_dir(route) else {
-        return;
-    };
-    match std::fs::remove_dir_all(&dir) {
-        Ok(()) => tracing::debug!(route = route, dir = %dir.display(), "SSR 路由缓存已删除"),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-        Err(e) => tracing::warn!(route = route, error = %e, "删除 SSR 路由缓存失败"),
+    fn invalidate(&self) -> u64 {
+        let _guard = self.gate.lock().unwrap_or_else(|e| e.into_inner());
+        let generation = self
+            .generation
+            .fetch_add(1, Ordering::AcqRel)
+            .wrapping_add(1);
+        self.pages.invalidate_all();
+        generation
     }
-}
 
-/// 失效某文章的 admin 预览路由 SSR 缓存。
-///
-/// 草稿编辑后预览需见最新内容。`invalidate_ssr_all_public` 显式跳过 `admin/`
-/// 目录（见 [`invalidate_ssr_all_public`] 注释），预览路由 (`/admin/preview/<slug>`)
-/// 不会被全量失效覆盖，故写入路径需定向调用本函数。
-pub fn invalidate_post_preview(slug: &str) {
-    invalidate_ssr_route(&format!("/admin/preview/{slug}"));
-}
+    fn get(&self, path: &str) -> Option<CachedPage> {
+        self.pages
+            .get(path)
+            .filter(|page| page.generation == self.generation())
+    }
 
-/// 失效所有公开页 SSR 缓存（删除 `static/` 下除 `.well-known`、`admin` 外的全部）。
-///
-/// 用于批量重建等影响面广的写入。保留 `.well-known`（浏览器/PWA 元数据，
-/// 与内容无关）和 `admin`（管理后台，写入者自己的视角无需刷新）。
-pub fn invalidate_ssr_all_public() {
-    let root = PathBuf::from(SSR_CACHE_ROOT);
-    let Ok(entries) = std::fs::read_dir(&root) else {
-        return; // 目录不存在（首次启动或已被清）
-    };
-    for entry in entries.flatten() {
-        let name = entry.file_name();
-        let name = name.to_string_lossy();
-        if name == ".well-known" || name == "admin" {
-            continue;
+    fn insert(&self, path: String, headers: HeaderMap, body: Vec<u8>, generation: u64) {
+        if !self.enabled || body.len() > MAX_PAGE_BYTES {
+            return;
         }
-        if let Err(e) = std::fs::remove_dir_all(entry.path()) {
-            if e.kind() != std::io::ErrorKind::NotFound {
-                tracing::warn!(entry = %name, error = %e, "删除 SSR 缓存条目失败");
+        let etag = HeaderValue::from_str(&format!("\"{}\"", hex::encode(Sha256::digest(&body))))
+            .expect("SHA256 is an ASCII entity tag");
+        let _guard = self.gate.lock().unwrap_or_else(|e| e.into_inner());
+        if generation != self.generation() {
+            return;
+        }
+        self.pages.insert(
+            path,
+            CachedPage {
+                body: body.into(),
+                headers,
+                etag,
+                generation,
+                created: Instant::now(),
+            },
+        );
+    }
+}
+
+static HTML_CACHE: LazyLock<HtmlCache> = LazyLock::new(|| {
+    HtmlCache::new(
+        Duration::from_secs(crate::utils::server::parse_ssr_cache_secs()),
+        MAX_CACHE_BYTES,
+    )
+});
+
+/// 采用白名单，查询参数、登录 Cookie、认证头和私有路由永远不进入共享 HTML 缓存。
+fn cacheable_request(method: &Method, uri: &Uri, headers: &HeaderMap) -> bool {
+    if method != Method::GET
+        || uri.query().is_some()
+        || headers.contains_key(header::COOKIE)
+        || headers.contains_key(header::AUTHORIZATION)
+        || uri.path().len() > 512
+    {
+        return false;
+    }
+    let path = uri.path();
+    matches!(
+        path,
+        "/" | "/archives" | "/friends" | "/about" | "/changelog"
+    ) || ["/post/", "/page/", "/tags/"].iter().any(|prefix| {
+        path.strip_prefix(prefix)
+            .is_some_and(|tail| !tail.is_empty() && !tail.contains('/'))
+    })
+}
+
+fn cacheable_response(response: &Response) -> bool {
+    let headers = response.headers();
+    response.status() == StatusCode::OK
+        && headers
+            .get(header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|v| v.starts_with("text/html"))
+        && !headers.contains_key(header::SET_COOKIE)
+        && !headers.contains_key(header::CONTENT_ENCODING)
+        && !headers.contains_key(header::VARY)
+        && !headers
+            .get(header::CACHE_CONTROL)
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|v| {
+                v.split(',')
+                    .any(|p| matches!(p.trim(), "private" | "no-store"))
+            })
+}
+
+struct CaptureBody {
+    input: BodyDataStream,
+    buffer: Option<Vec<u8>>,
+    path: String,
+    headers: HeaderMap,
+    generation: u64,
+}
+
+/// 在压缩层内侧缓存原始 HTML，保持 SSR 流式响应和现有静态资源预压缩行为。
+pub async fn cache_public_html(
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Response {
+    let authenticated = req.headers().contains_key(header::COOKIE)
+        || req.headers().contains_key(header::AUTHORIZATION);
+    if !HTML_CACHE.enabled || !cacheable_request(req.method(), req.uri(), req.headers()) {
+        let mut response = next.run(req).await;
+        response
+            .headers_mut()
+            .insert("x-ssr-cache", HeaderValue::from_static("BYPASS"));
+        if authenticated
+            && response
+                .headers()
+                .get(header::CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok())
+                .is_some_and(|v| v.starts_with("text/html"))
+        {
+            response.headers_mut().insert(
+                header::CACHE_CONTROL,
+                HeaderValue::from_static("private, no-store"),
+            );
+        }
+        return response;
+    }
+    let path = req.uri().path().to_owned();
+    if let Some(page) = HTML_CACHE.get(&path) {
+        let unchanged = req
+            .headers()
+            .get(header::IF_NONE_MATCH)
+            .and_then(|h| h.to_str().ok())
+            .is_some_and(|value| {
+                value.split(',').any(|tag| {
+                    let tag = tag.trim().strip_prefix("W/").unwrap_or(tag.trim());
+                    tag == "*" || tag == page.etag.to_str().unwrap_or("")
+                })
+            });
+        let mut response = Response::new(if unchanged {
+            Body::empty()
+        } else {
+            Body::from(page.body)
+        });
+        *response.headers_mut() = page.headers;
+        if unchanged {
+            *response.status_mut() = StatusCode::NOT_MODIFIED;
+        }
+        let headers = response.headers_mut();
+        headers.insert(header::ETAG, page.etag);
+        headers.insert(
+            header::AGE,
+            HeaderValue::from(page.created.elapsed().as_secs()),
+        );
+        headers.insert("x-ssr-cache", HeaderValue::from_static("HIT"));
+        headers.insert(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static("public, no-cache"),
+        );
+        return response;
+    }
+    let generation = HTML_CACHE.generation();
+    let mut response = next.run(req).await;
+    if !cacheable_response(&response) {
+        return response;
+    }
+    response
+        .headers_mut()
+        .insert("x-ssr-cache", HeaderValue::from_static("MISS"));
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("public, no-cache"),
+    );
+    let (parts, body) = response.into_parts();
+    let mut headers = parts.headers.clone();
+    for name in [
+        header::CONTENT_LENGTH,
+        header::TRANSFER_ENCODING,
+        header::AGE,
+    ] {
+        headers.remove(name);
+    }
+    let state = CaptureBody {
+        input: body.into_data_stream(),
+        buffer: Some(Vec::new()),
+        path,
+        headers,
+        generation,
+    };
+    let stream = futures::stream::unfold(state, |mut state| async move {
+        match state.input.next().await {
+            Some(Ok(chunk)) => {
+                if let Some(buffer) = state.buffer.as_mut() {
+                    if buffer.len() + chunk.len() <= MAX_PAGE_BYTES {
+                        buffer.extend_from_slice(&chunk);
+                    } else {
+                        state.buffer = None;
+                    }
+                }
+                Some((Ok::<_, axum::Error>(chunk), state))
+            }
+            Some(Err(error)) => {
+                state.buffer = None;
+                Some((Err(error), state))
+            }
+            None => {
+                if let Some(buffer) = state.buffer.take() {
+                    HTML_CACHE.insert(state.path, state.headers, buffer, state.generation);
+                }
+                None
             }
         }
-    }
-    tracing::debug!("已失效全部公开页 SSR 缓存");
+    })
+    // 压缩层等下游在流结束后可能再次 poll；unfold 对此会 panic，
+    // 而 release 配置为 panic=abort，会直接带走整个进程。
+    .fuse();
+    Response::from_parts(parts, Body::from_stream(stream))
 }
 
-/// 原子递增并返回新的全局世代号。
-///
-/// 仅作可观测性用途（注入 `X-SSR-Generation` 响应头）。实际 SSR 缓存失效由
-/// [`invalidate_ssr_route`] 物理删文件完成（首页由 [`invalidate_ssr_all_public`] 覆盖）。
+// 内容写入通常同时影响详情、列表、归档与相邻导航；小型缓存统一失效避免遗漏。
+pub fn invalidate_ssr_route(_route: &str) {
+    HTML_CACHE.invalidate();
+}
+pub fn invalidate_post_preview(_slug: &str) { /* 管理预览从不缓存。 */
+}
+pub fn invalidate_ssr_all_public() {
+    HTML_CACHE.invalidate();
+}
 pub fn bump_global_generation() -> u64 {
-    let new = GLOBAL_GENERATION
-        .fetch_add(1, Ordering::SeqCst)
-        .wrapping_add(1);
-    tracing::debug!(new_generation = new, "SSR 全局世代号已递增");
-    new
+    HTML_CACHE.invalidate()
 }
-
-/// 返回当前全局世代号。
 pub fn current_global_generation() -> u64 {
-    GLOBAL_GENERATION.load(Ordering::SeqCst)
+    HTML_CACHE.generation()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serial_test::serial;
 
     #[test]
-    #[serial]
-    fn global_generation_is_monotonic() {
-        let before = current_global_generation();
-        let g1 = bump_global_generation();
-        let g2 = bump_global_generation();
-        let current = current_global_generation();
-
-        assert!(g1 > before || g1 == 1);
-        assert!(g2 > g1);
-        assert_eq!(current, g2);
+    fn cache_excludes_auth_private_routes_and_query_strings() {
+        let mut headers = HeaderMap::new();
+        for path in [
+            "/admin",
+            "/login",
+            "/notes",
+            "/notes/example",
+            "/note-media/1",
+            "/api/test",
+            "/?page=1",
+            "/post/a?preview=1",
+        ] {
+            assert!(
+                !cacheable_request(&Method::GET, &path.parse().unwrap(), &headers),
+                "{path}"
+            );
+        }
+        assert!(cacheable_request(
+            &Method::GET,
+            &"/post/a".parse().unwrap(),
+            &headers
+        ));
+        headers.insert(header::COOKIE, HeaderValue::from_static("session=private"));
+        assert!(!cacheable_request(
+            &Method::GET,
+            &"/".parse().unwrap(),
+            &headers
+        ));
+        headers.clear();
+        headers.insert(
+            header::AUTHORIZATION,
+            HeaderValue::from_static("Bearer private"),
+        );
+        assert!(!cacheable_request(
+            &Method::GET,
+            &"/".parse().unwrap(),
+            &headers
+        ));
     }
 
     #[test]
-    fn route_cache_dir_rejects_traversal() {
-        // 路径穿越尝试不应越出 static/ 根。
-        let p = route_cache_dir("/post/../../../etc/passwd").unwrap();
-        let segs: Vec<_> = p.components().collect();
-        // .. 被过滤，只剩 static/post/etc/passwd
-        assert!(p.starts_with("static"));
-        assert!(!segs.iter().any(|c| c.as_os_str() == ".."));
+    fn invalidation_rejects_inflight_old_responses() {
+        let cache = HtmlCache::new(Duration::from_secs(60), MAX_CACHE_BYTES);
+        let generation = cache.generation();
+        cache.insert("/".into(), HeaderMap::new(), b"old".to_vec(), generation);
+        assert!(cache.get("/").is_some());
+        cache.invalidate();
+        cache.insert(
+            "/".into(),
+            HeaderMap::new(),
+            b"stale inflight".to_vec(),
+            generation,
+        );
+        assert!(cache.get("/").is_none());
+        cache.insert(
+            "/".into(),
+            HeaderMap::new(),
+            b"new".to_vec(),
+            cache.generation(),
+        );
+        assert_eq!(cache.get("/").unwrap().body.as_ref(), b"new");
     }
 
     #[test]
-    fn route_cache_dir_normalizes_leading_slash() {
-        let a = route_cache_dir("/post/foo").unwrap();
-        let b = route_cache_dir("post/foo").unwrap();
-        assert_eq!(a, b);
-        assert!(a.ends_with("post/foo"));
+    fn cached_pages_expire_and_oversize_pages_are_not_stored() {
+        let cache = HtmlCache::new(Duration::from_millis(20), MAX_CACHE_BYTES);
+        cache.insert("/".into(), HeaderMap::new(), b"html".to_vec(), 0);
+        assert!(cache.get("/").is_some());
+        std::thread::sleep(Duration::from_millis(40));
+        assert!(cache.get("/").is_none());
+        cache.insert(
+            "/large".into(),
+            HeaderMap::new(),
+            vec![0; MAX_PAGE_BYTES + 1],
+            0,
+        );
+        assert!(cache.get("/large").is_none());
     }
 
     #[test]
-    fn route_cache_dir_none_for_root() {
-        // 根路由 "/" 无目录段（首页缓存由 invalidate_ssr_all_public 覆盖）。
-        assert!(route_cache_dir("/").is_none());
-        assert!(route_cache_dir("").is_none());
-    }
-
-    #[test]
-    fn invalidate_ssr_route_deletes_dir() {
-        // 造一个假的缓存目录：static/__test_route/index/fake.html
-        let dir = route_cache_dir("/__test_route_xyz").unwrap();
-        std::fs::create_dir_all(dir.join("index")).unwrap();
-        std::fs::write(dir.join("index").join("fake.html"), "stale").unwrap();
-        assert!(dir.exists());
-
-        invalidate_ssr_route("/__test_route_xyz");
-
-        assert!(!dir.exists(), "删除后目录不应存在");
-    }
-
-    #[test]
-    fn invalidate_ssr_route_missing_is_noop() {
-        // 不存在的路由删除应静默成功（NotFound 不报错）。
-        invalidate_ssr_route("/__never_exists_xyz_123");
-    }
-
-    #[test]
-    fn invalidate_ssr_all_public_is_safe_on_missing_root() {
-        // static/ 根不存在时不应 panic（首次启动或已清空场景）。
-        // 不创建真实 static/ 目录，直接调用验证 NotFound 静默。
-        // （若真实环境已有 static/，本测试不会误删——read_dir 对每个条目单独删，
-        //  这里仅验证根缺失分支。）
-        invalidate_ssr_all_public();
+    fn sensitive_and_failed_responses_are_not_cached() {
+        let mut response = Response::builder()
+            .header(header::CONTENT_TYPE, "text/html")
+            .body(Body::empty())
+            .unwrap();
+        assert!(cacheable_response(&response));
+        response.headers_mut().insert(
+            header::SET_COOKIE,
+            HeaderValue::from_static("session=private"),
+        );
+        assert!(!cacheable_response(&response));
+        response.headers_mut().remove(header::SET_COOKIE);
+        *response.status_mut() = StatusCode::NOT_FOUND;
+        assert!(!cacheable_response(&response));
     }
 }

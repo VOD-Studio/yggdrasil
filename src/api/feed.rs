@@ -1,6 +1,6 @@
 //! RSS 2.0 与 JSON Feed 1.1 订阅端点。
 //!
-//! 提供两个无中间件的公开读端点，挂载在 `static_routes` 上：
+//! 提供两个公开读端点，挂载在 `feed_routes` 上（只套压缩层）：
 //! - `GET /feed.xml` — RSS 2.0（`application/rss+xml`）
 //! - `GET /feed.json` — JSON Feed 1.1（`application/feed+json`）
 //!

@@ -6164,7 +6164,7 @@ dependencies = [
 
 [[package]]
 name = "yggdrasil"
-version = "0.23.1"
+version = "0.23.4"
 dependencies = [
  "aes-gcm",
  "argon2",
@@ -6207,6 +6207,7 @@ dependencies = [
  "tokio",
  "tokio-postgres",
  "tokio-stream",
+ "tower",
  "tower-http 0.7.1",
  "tracing",
  "tracing-subscriber",
