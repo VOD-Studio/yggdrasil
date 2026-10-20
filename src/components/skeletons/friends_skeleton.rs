@@ -1,30 +1,23 @@
-//! 与友链页同尺寸的静态占位；由 DelayedSkeleton 统一控制加载提示。
+//! 与友链页同尺寸的占位：页头照常显示，名片与交换信息占位。
 
 use dioxus::prelude::*;
 
+use crate::components::skeletons::atoms::SkeletonBox;
+use crate::pages::friends::FriendsHeader;
+
 #[component]
-pub fn FriendsSkeleton(#[props(default = true)] with_header: bool) -> Element {
+pub fn FriendsSkeleton() -> Element {
     rsx! {
-        div { class: "friends-skeleton", role: "status", aria_label: "正在加载友链",
-            div { aria_hidden: "true",
-                if with_header {
-                    div { class: "friends-intro friends-skeleton-intro",
-                        div { class: "friends-skeleton-line w-40 h-3" }
-                        div { class: "friends-skeleton-line w-32 h-14" }
-                        div { class: "friends-skeleton-line w-64 max-w-full h-5" }
-                    }
-                }
-                div { class: "friends-section-heading",
-                    div { class: "friends-skeleton-line w-28 h-5" }
-                }
-                div { class: "friends-grid",
-                    for i in 0..4 {
-                        div { key: "{i}", class: "friend-card friends-skeleton-card",
-                            div { class: "friends-skeleton-line w-13 h-13 rounded-2xl" }
-                            div { class: "friends-skeleton-line w-36 h-5 mt-5" }
-                            div { class: "friends-skeleton-line w-full h-4 mt-3" }
-                            div { class: "friends-skeleton-line w-2/3 h-4 mt-2" }
-                            div { class: "friends-skeleton-line w-24 h-3 mt-auto" }
+        FriendsHeader {}
+        div { role: "status", aria_label: "正在加载友链",
+            div { class: "friends-grid", aria_hidden: "true",
+                for i in 0..4 {
+                    div { key: "{i}", class: "friend-card friend-card-skeleton",
+                        SkeletonBox { class: "h-11 w-11 shrink-0 rounded-xl" }
+                        div { class: "flex-1",
+                            SkeletonBox { class: "h-4 w-28" }
+                            SkeletonBox { class: "h-3 mt-2 w-24" }
+                            SkeletonBox { class: "h-3 mt-3 w-full" }
                         }
                     }
                 }

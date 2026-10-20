@@ -210,6 +210,11 @@ pub const DEFAULT_HOME_SUBTITLE: &str = "认真写长文。";
 /// 首页简介的默认文案。
 pub const DEFAULT_HOME_INTRO: &str =
     "Rust、Go 与前端工程的源码剖析和长文笔记。每一篇，都试着把一个实现讲清楚。";
+/// 站点简介的默认文案（友链页「交换友链」信息）。
+pub const DEFAULT_SITE_DESCRIPTION: &str = "Rust、Go 与前端工程的源码剖析和长文笔记。";
+#[cfg(any(feature = "server", test))]
+/// 站点简介的最大长度（字符）。
+pub const MAX_SITE_DESCRIPTION_LEN: usize = 120;
 #[cfg(any(feature = "server", test))]
 /// 首页标题每行的最大长度（字符）。
 pub const MAX_HOME_TITLE_LEN: usize = 40;
@@ -219,8 +224,8 @@ pub const MAX_HOME_INTRO_LEN: usize = 200;
 
 /// 站点公开配置（前台展示用，所有访客可见）。
 ///
-/// 页脚 GitHub 链接与首页标语。标语字段存原值，空字符串表示使用默认文案，
-/// 前台通过 [`SiteSettings::home_tagline`] 取展示值。
+/// 页脚 GitHub 链接、首页标语与站点简介。文案字段存原值，空字符串表示使用默认文案，
+/// 前台通过 [`SiteSettings::home_tagline`] 与 [`SiteSettings::description`] 取展示值。
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct SiteSettings {
     /// GitHub 仓库链接，空字符串表示不展示页脚图标。
@@ -234,6 +239,9 @@ pub struct SiteSettings {
     /// 首页简介。
     #[serde(default)]
     pub home_intro: String,
+    /// 站点简介：一句话介绍，用于友链交换信息。
+    #[serde(default)]
+    pub site_description: String,
 }
 
 impl Default for SiteSettings {
@@ -243,6 +251,7 @@ impl Default for SiteSettings {
             home_title: String::new(),
             home_subtitle: String::new(),
             home_intro: String::new(),
+            site_description: String::new(),
         }
     }
 }
@@ -277,6 +286,16 @@ impl SiteSettings {
         }
     }
 
+    /// 站点简介的展示值，未配置时用默认文案。
+    #[cfg(any(feature = "server", test))]
+    pub fn description(&self) -> &str {
+        if self.site_description.is_empty() {
+            DEFAULT_SITE_DESCRIPTION
+        } else {
+            &self.site_description
+        }
+    }
+
     #[cfg(any(feature = "server", test))]
     /// 规范化全部字段，写入前调用。
     pub fn normalized(&self) -> Self {
@@ -285,6 +304,10 @@ impl SiteSettings {
             home_title: Self::normalize_home_text(&self.home_title, MAX_HOME_TITLE_LEN),
             home_subtitle: Self::normalize_home_text(&self.home_subtitle, MAX_HOME_TITLE_LEN),
             home_intro: Self::normalize_home_text(&self.home_intro, MAX_HOME_INTRO_LEN),
+            site_description: Self::normalize_home_text(
+                &self.site_description,
+                MAX_SITE_DESCRIPTION_LEN,
+            ),
         }
     }
 
@@ -1049,6 +1072,24 @@ mod tests {
         assert_eq!(tagline.title, "写点什么");
         assert_eq!(tagline.subtitle, "");
         assert_eq!(tagline.intro, DEFAULT_HOME_INTRO);
+    }
+
+    #[test]
+    fn site_description_falls_back_and_is_normalized() {
+        assert_eq!(
+            SiteSettings::default().description(),
+            DEFAULT_SITE_DESCRIPTION
+        );
+        let settings = SiteSettings {
+            site_description: format!("  写长文\n{}", "字".repeat(200)),
+            ..SiteSettings::default()
+        }
+        .normalized();
+        assert!(settings.site_description.starts_with("写长文 字"));
+        assert_eq!(
+            settings.site_description.chars().count(),
+            MAX_SITE_DESCRIPTION_LEN
+        );
     }
 
     #[test]

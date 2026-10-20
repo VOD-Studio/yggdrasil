@@ -2436,20 +2436,20 @@
       "slug": "friends-skeleton",
       "label": "友链页骨架",
       "group": "page-loading",
-      "summary": "友链页骨架，在内容到来前保留页面轮廓。",
+      "summary": "友链页骨架：页头照常显示，名片位置先占好。",
       "states": "页面占位 · 动画",
       "description": "友链页骨架用于加载期间的页面布局轮廓。预览将调用项目现有的骨架屏组件。",
       "props": [
         [
-          "with_header",
-          "bool",
-          "由调用方提供",
-          "友链页骨架的 with_header 参数。"
+          "—",
+          "无",
+          "—",
+          "此组件不接收显式属性。"
         ]
       ],
       "keys": [],
       "source": "src/components/skeletons/friends_skeleton.rs",
-      "code": "pub fn FriendsSkeleton(#[props(default = true)] with_header: bool) -> Element",
+      "code": "pub fn FriendsSkeleton() -> Element",
       "preview_mode": "static",
       "usage_kind": "api"
     },

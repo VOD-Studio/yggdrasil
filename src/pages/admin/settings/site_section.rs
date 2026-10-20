@@ -1,4 +1,4 @@
-//! 站点公开配置分区（页脚 GitHub 链接与首页标语）。
+//! 站点公开配置分区（页脚 GitHub 链接、首页标语与站点简介）。
 //!
 //! 两张卡片共用一个保存按钮。写入后服务端失效 moka 缓存与全部公开页 SSR 缓存，
 //! 前台下次访问立即生效。
@@ -14,6 +14,7 @@ use crate::components::ui::{LoadingButton, ADMIN_CARD_CLASS};
 #[cfg(target_arch = "wasm32")]
 use crate::models::settings::{
     SiteSettings, DEFAULT_HOME_INTRO, DEFAULT_HOME_SUBTITLE, DEFAULT_HOME_TITLE,
+    DEFAULT_SITE_DESCRIPTION,
 };
 
 /// 比较草稿与已保存值时忽略首尾空白，与服务端规范化口径一致。
@@ -23,6 +24,7 @@ fn same_settings(draft: &SiteSettings, saved: &SiteSettings) -> bool {
         && draft.home_title.trim() == saved.home_title
         && draft.home_subtitle.trim() == saved.home_subtitle
         && draft.home_intro.trim() == saved.home_intro
+        && draft.site_description.trim() == saved.site_description
 }
 
 /// 传递给各分区的 toast 回调类型：(消息, 是否错误)。
@@ -186,6 +188,25 @@ pub fn SiteSection(toast: ToastCb) -> Element {
                         }
                         p { class: "text-xs text-[var(--color-paper-secondary)]",
                             "标题每行最多 40 字，简介最多 200 字；换行会合并为空格。"
+                        }
+                    }
+                    div { class: "flex flex-col gap-2 max-w-xl",
+                        FormLabel {
+                            label: "站点简介",
+                            html_for: Some("site-description".to_string()),
+                        }
+                        FormInput {
+                            id: Some("site-description".to_string()),
+                            r#type: "text",
+                            placeholder: DEFAULT_SITE_DESCRIPTION,
+                            value: draft.read().site_description.clone(),
+                            oninput: move |v: String| {
+                                draft.write().site_description = v;
+                                just_saved.set(false);
+                            },
+                        }
+                        p { class: "text-xs text-[var(--color-paper-secondary)]",
+                            "一句话介绍本站，显示在友链页的「交换友链」信息里，最多 120 字。"
                         }
                     }
 

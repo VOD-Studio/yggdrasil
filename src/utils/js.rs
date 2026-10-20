@@ -1,4 +1,4 @@
-//! WASM 端 JS 互操作小工具（调用 `window` 上的可选全局函数）。
+//! WASM 端 JS 互操作小工具（调用 `window` 上的可选全局函数、写剪贴板）。
 //!
 //! 仅在 `target_arch = "wasm32"` 下编译；服务端 SSR 路径不参与。
 
@@ -28,5 +28,23 @@ pub fn invoke_optional_global(
                 .unchecked_into::<js_sys::Function>()
                 .apply(window, &arr);
         }
+    }
+}
+
+/// 把文本写入剪贴板，成功返回 `true`。不支持 Clipboard API（如非安全上下文）或
+/// 被拒绝时返回 `false`，调用方据此提示手动复制。
+pub async fn copy_text(text: &str) -> bool {
+    use wasm_bindgen::JsCast;
+    let clipboard = web_sys::window().and_then(|window| {
+        js_sys::Reflect::get(window.navigator().as_ref(), &"clipboard".into())
+            .ok()?
+            .dyn_into::<web_sys::Clipboard>()
+            .ok()
+    });
+    match clipboard {
+        Some(clipboard) => wasm_bindgen_futures::JsFuture::from(clipboard.write_text(text))
+            .await
+            .is_ok(),
+        None => false,
     }
 }

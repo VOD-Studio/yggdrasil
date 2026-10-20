@@ -45,6 +45,7 @@ pub async fn get_site_settings() -> Result<SiteSettings, ServerFnError> {
                 "site_home_title" => settings.home_title = value,
                 "site_home_subtitle" => settings.home_subtitle = value,
                 "site_home_intro" => settings.home_intro = value,
+                "site_description" => settings.site_description = value,
                 _ => {}
             }
         }
@@ -58,22 +59,62 @@ pub async fn get_site_settings() -> Result<SiteSettings, ServerFnError> {
     }
 }
 
+/// 友链页「交换友链」展示的本站信息。
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct SiteCard {
+    pub name: String,
+    /// 站点地址（APP_BASE_URL）；未配置时为空，前台不显示地址与订阅。
+    pub url: String,
+    pub description: String,
+}
+
+impl SiteCard {
+    /// RSS 订阅地址。
+    pub fn feed_url(&self) -> String {
+        format!("{}/feed.xml", self.url)
+    }
+}
+
+/// 读取友链交换信息：站名、站点地址与简介。**公开接口**。
+///
+/// 地址只取「站点配置 → 安全」里的 APP_BASE_URL，不信任请求 Host。
+#[server(GetSiteCard, "/api")]
+pub async fn get_site_card() -> Result<SiteCard, ServerFnError> {
+    let settings = get_site_settings().await?;
+    #[cfg(feature = "server")]
+    let url = crate::api::settings::runtime_security_settings()
+        .await
+        .app_base_url
+        .trim()
+        .trim_end_matches('/')
+        .to_string();
+    #[cfg(not(feature = "server"))]
+    let url = String::new();
+    Ok(SiteCard {
+        name: "Yggdrasil".to_string(),
+        url,
+        description: settings.description().to_string(),
+    })
+}
+
 /// 站点公开配置在 settings 表中的键，顺序与 [`site_values`] 一致。
 #[cfg(feature = "server")]
-const SITE_KEYS: [&str; 4] = [
+const SITE_KEYS: [&str; 5] = [
     "site_github_url",
     "site_home_title",
     "site_home_subtitle",
     "site_home_intro",
+    "site_description",
 ];
 
 #[cfg(feature = "server")]
-fn site_values(settings: &SiteSettings) -> [&str; 4] {
+fn site_values(settings: &SiteSettings) -> [&str; 5] {
     [
         &settings.github_url,
         &settings.home_title,
         &settings.home_subtitle,
         &settings.home_intro,
+        &settings.site_description,
     ]
 }
 

@@ -36,7 +36,7 @@ fn route_skeleton(route: &Route) -> Element {
             TagDetailSkeleton { tag: tag.clone() }
         },
         Route::Friends {} => rsx! {
-            DelayedSkeleton { FriendsSkeleton {} }
+            DelayedSkeleton { div { class: "friends", FriendsSkeleton {} } }
         },
         Route::Search { .. } => rsx! {
             DelayedSkeleton { SearchSkeleton {} }
