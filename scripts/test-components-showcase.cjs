@@ -56,7 +56,9 @@ const SENSITIVE = new Set([
   'checkpendingstatus', 'startExec'.toLowerCase(), 'startexecstream', 'getexecresult',
   'executesql', 'getdbschema',
 ]);
-const NORMAL_FRONTEND_READS = new Set(['getsitesettings', 'getshowcasedata']);
+// 站内跳回 /about 时关于页自己的读取（直接访问时由 SSR 带下，不出现在基线里）。
+const NORMAL_FRONTEND_READS = new Set(['getsitesettings', 'getshowcasedata', 'postsperyear',
+  'listtags', 'latestrelease']);
 const report = { base: BASE, artifactDir: ARTIFACTS, passed: [], apiRequests: [],
   blockedBusinessRequests: [], pageErrors: [], screenshots: [], limitations: [] };
 let stage = 'baseline';
