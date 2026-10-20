@@ -468,7 +468,7 @@ async function admin() {
     const previousValues = await page.evaluate(id => __routeTransitions.entries.get(id)?.values.size, source.entry);
     assert(previousValues === undefined || previousValues === 0);
     console.log('PASS login-logout-clears-admin-history');
-    await page.getByRole('link', { name: '还没有账号？去注册' }).click();
+    await page.getByRole('link', { name: '去注册', exact: true }).click();
     await ready(page, '/register');
     console.log('PASS login-register-transition');
     assert.deepEqual(state.errors, []);

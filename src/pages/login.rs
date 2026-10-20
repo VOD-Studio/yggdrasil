@@ -1,40 +1,183 @@
-//! 登录页面
+//! 登录页面，以及登录 / 注册共用的外壳与输入框。
 //!
-//! 提供用户名/密码表单，前端校验通过后调用 `login` server function，
-//! 登录成功时跳转到管理后台首页。
+//! 页面居中一张 popover 级面板：上方文字标，下方「返回首页」。
+//! 登录成功跳转管理后台首页。
 
 use dioxus::prelude::*;
 use dioxus::router::components::Link;
 
 use crate::api::auth::{login, AuthResponse};
-use crate::components::forms::{AlertBox, FormInput, FormLabel, BUTTON_PRIMARY_CLASS};
+use crate::components::ui::{Button, ButtonSize, ButtonVariant, Icon, IconName};
 use crate::context::UserContext;
 use crate::router::Route;
+
+/// 登录与注册共用的外壳：文字标、居中面板、返回首页。
+#[component]
+pub(crate) fn AuthShell(
+    title: &'static str,
+    #[props(default)] subtitle: Option<&'static str>,
+    children: Element,
+    footer: Element,
+) -> Element {
+    rsx! {
+        div { class: "auth",
+            Link { class: "auth-wordmark", to: Route::Home {},
+                span { class: "wordmark-mark", aria_hidden: "true" }
+                "Yggdrasil"
+            }
+            main { class: "auth-panel page-enter", aria_labelledby: "auth-title",
+                h1 { id: "auth-title", class: "auth-title", "{title}" }
+                if let Some(subtitle) = subtitle {
+                    p { class: "auth-subtitle", "{subtitle}" }
+                }
+                {children}
+                p { class: "auth-switch", {footer} }
+            }
+            Link { class: "auth-home", to: Route::Home {},
+                Icon { name: IconName::ArrowLeft, size: 14 }
+                "返回首页"
+            }
+        }
+    }
+}
+
+/// 带标签、提示与错误的输入框。`error` 为 `Some` 时标红并朗读说明。
+#[component]
+pub(crate) fn AuthField(
+    id: &'static str,
+    label: &'static str,
+    #[props(default = "text")] r#type: &'static str,
+    #[props(default)] autocomplete: &'static str,
+    #[props(default)] hint: &'static str,
+    #[props(default)] error: Option<String>,
+    #[props(default)] disabled: bool,
+    value: String,
+    oninput: EventHandler<String>,
+    #[props(default)] onblur: Option<EventHandler<()>>,
+) -> Element {
+    let error_id = format!("{id}-error");
+    let invalid = error.is_some();
+    rsx! {
+        div { class: "auth-field",
+            label { class: "auth-label", r#for: id,
+                span { "{label}" }
+                if !hint.is_empty() {
+                    span { class: "auth-hint", "{hint}" }
+                }
+            }
+            div { class: "field auth-input",
+                input {
+                    id,
+                    r#type,
+                    autocomplete,
+                    value: "{value}",
+                    disabled,
+                    aria_invalid: invalid.then_some("true"),
+                    aria_describedby: invalid.then_some(error_id.clone()),
+                    oninput: move |e| oninput.call(e.value()),
+                    onblur: move |_| {
+                        if let Some(handler) = onblur {
+                            handler.call(());
+                        }
+                    },
+                }
+            }
+            if let Some(error) = error {
+                p { id: "{error_id}", class: "auth-error", "{error}" }
+            }
+        }
+    }
+}
+
+/// 密码框：右侧「显示密码」切换。
+#[component]
+pub(crate) fn PasswordField(
+    id: &'static str,
+    label: &'static str,
+    autocomplete: &'static str,
+    #[props(default)] hint: &'static str,
+    #[props(default)] error: Option<String>,
+    #[props(default)] disabled: bool,
+    value: String,
+    oninput: EventHandler<String>,
+    #[props(default)] onblur: Option<EventHandler<()>>,
+) -> Element {
+    let mut visible = use_signal(|| false);
+    let error_id = format!("{id}-error");
+    let invalid = error.is_some();
+    rsx! {
+        div { class: "auth-field",
+            label { class: "auth-label", r#for: id,
+                span { "{label}" }
+                if !hint.is_empty() {
+                    span { class: "auth-hint", "{hint}" }
+                }
+            }
+            div { class: "field auth-input has-action",
+                input {
+                    id,
+                    r#type: if visible() { "text" } else { "password" },
+                    autocomplete,
+                    value: "{value}",
+                    disabled,
+                    aria_invalid: invalid.then_some("true"),
+                    aria_describedby: invalid.then_some(error_id.clone()),
+                    oninput: move |e| oninput.call(e.value()),
+                    onblur: move |_| {
+                        if let Some(handler) = onblur {
+                            handler.call(());
+                        }
+                    },
+                }
+                button {
+                    r#type: "button",
+                    class: "auth-eye",
+                    aria_label: if visible() { "隐藏密码" } else { "显示密码" },
+                    aria_pressed: "{visible}",
+                    onclick: move |_| visible.toggle(),
+                    Icon { name: if visible() { IconName::EyeOff } else { IconName::Eye }, size: 16 }
+                }
+            }
+            if let Some(error) = error {
+                p { id: "{error_id}", class: "auth-error", "{error}" }
+            }
+        }
+    }
+}
+
+/// 表单级错误（服务端拒绝、网络失败）。
+#[component]
+pub(crate) fn AuthAlert(message: String) -> Element {
+    rsx! {
+        p { class: "alert auth-alert", role: "alert", "data-tone": "danger",
+            Icon { name: IconName::CircleAlert, size: 15 }
+            span { "{message}" }
+        }
+    }
+}
 
 /// 登录页面组件
 #[component]
 pub fn Login() -> Element {
-    // 表单输入状态
-    let mut username = use_signal(|| "".to_string());
-    let mut password = use_signal(|| "".to_string());
-    // 错误提示与加载状态
+    let mut username = use_signal(String::new);
+    let mut password = use_signal(String::new);
     let mut error = use_signal(|| None::<String>);
     let mut loading = use_signal(|| false);
     // 全局用户上下文，用于触发登录后的状态刷新
     let mut ctx: UserContext = use_context();
 
-    // 提交登录表单
-    let on_submit = Callback::new(move |_| {
+    let on_submit = move |event: FormEvent| {
+        event.prevent_default();
         if loading() {
+            return;
+        }
+        if username().trim().is_empty() || password().is_empty() {
+            error.set(Some("请填写用户名和密码。".to_string()));
             return;
         }
         error.set(None);
         loading.set(true);
-
-        let username_val = username();
-        let password_val = password();
-
-        // 在异步任务中调用 server function 登录
+        let (username_val, password_val) = (username(), password());
         spawn(async move {
             match login(username_val, password_val).await {
                 Ok(AuthResponse { success: true, .. }) => {
@@ -42,94 +185,49 @@ pub fn Login() -> Element {
                     ctx.checked.set(false);
                     let _ = dioxus::router::navigator().push(Route::Admin {});
                 }
-                Ok(AuthResponse {
-                    success: false,
-                    message,
-                    ..
-                }) => {
-                    error.set(Some(message));
-                }
-                Err(e) => {
-                    error.set(Some(format!("请求失败: {}", e)));
-                }
+                Ok(AuthResponse { message, .. }) => error.set(Some(message)),
+                Err(e) => error.set(Some(format!("请求失败：{e}"))),
             }
             loading.set(false);
         });
-    });
-
-    let is_loading = loading();
+    };
 
     rsx! {
-        div { class: "min-h-screen flex items-center justify-center bg-paper-theme",
-            div { class: "w-full max-w-md p-8 bg-paper-entry rounded-2xl border border-paper-border shadow-sm",
-                h1 { class: "text-2xl font-bold text-center text-paper-primary mb-6",
+        document::Title { "登录 · Yggdrasil" }
+        AuthShell {
+            title: "登录",
+            subtitle: "进入后台，管理文章、笔记与站点。",
+            footer: rsx! {
+                "还没有账号？"
+                Link { to: Route::Register {}, "去注册" }
+            },
+            form { class: "auth-form", onsubmit: on_submit,
+                AuthField {
+                    id: "login-username",
+                    label: "用户名或邮箱",
+                    autocomplete: "username",
+                    value: username(),
+                    disabled: loading(),
+                    oninput: move |v| username.set(v),
+                }
+                PasswordField {
+                    id: "login-password",
+                    label: "密码",
+                    autocomplete: "current-password",
+                    value: password(),
+                    disabled: loading(),
+                    oninput: move |v| password.set(v),
+                }
+                if let Some(message) = error() {
+                    AuthAlert { message }
+                }
+                Button {
+                    r#type: "submit",
+                    variant: ButtonVariant::Primary,
+                    size: ButtonSize::Lg,
+                    loading: loading(),
+                    class: "auth-submit",
                     "登录"
-                }
-
-                if let Some(err) = error() {
-                    AlertBox { message: err, variant: "error" }
-                }
-
-                div { class: "space-y-4",
-                    div {
-                        FormLabel {
-                            label: "用户名 / 邮箱",
-                            html_for: Some("login-username".to_string()),
-                        }
-                        FormInput {
-                            id: Some("login-username".to_string()),
-                            r#type: "text",
-                            placeholder: "用户名或邮箱",
-                            value: username(),
-                            disabled: is_loading,
-                            oninput: move |v: String| username.set(v),
-                            // 回车键触发提交
-                            onkeydown: Some(
-                                EventHandler::new(move |e: KeyboardEvent| {
-                                    if e.key() == Key::Enter {
-                                        on_submit(())
-                                    }
-                                }),
-                            ),
-                        }
-                    }
-                    div {
-                        FormLabel {
-                            label: "密码",
-                            html_for: Some("login-password".to_string()),
-                        }
-                        FormInput {
-                            id: Some("login-password".to_string()),
-                            r#type: "password",
-                            placeholder: "密码",
-                            value: password(),
-                            disabled: is_loading,
-                            oninput: move |v: String| password.set(v),
-                            onkeydown: Some(
-                                EventHandler::new(move |e: KeyboardEvent| {
-                                    if e.key() == Key::Enter {
-                                        on_submit(())
-                                    }
-                                }),
-                            ),
-                        }
-                    }
-                    button {
-                        class: "{BUTTON_PRIMARY_CLASS}",
-                        class: if is_loading { "opacity-60 cursor-not-allowed" },
-                        disabled: is_loading,
-                        onclick: move |_| on_submit(()),
-                        if is_loading {
-                            "登录中..."
-                        } else {
-                            "登录"
-                        }
-                    }
-                    Link {
-                        class: "block w-full py-2 px-4 text-center text-paper-secondary hover:text-paper-accent font-medium rounded-lg transition-all duration-200 cursor-pointer",
-                        to: Route::Register {},
-                        "还没有账号？去注册"
-                    }
                 }
             }
         }

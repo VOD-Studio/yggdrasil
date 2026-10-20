@@ -17,9 +17,6 @@ pub const INPUT_INLINE_CLASS: &str = "field flex-1 min-w-0";
 #[allow(dead_code)] // 文本域随页面重写逐步改用
 pub const TEXTAREA_CLASS: &str = "field field-textarea w-full";
 
-/// 整宽主按钮（登录、注册表单的提交）。
-pub const BUTTON_PRIMARY_CLASS: &str = "btn btn-lg btn-primary w-full";
-
 /// FormSelect 实例 id 计数器（跨泛型单例化全局唯一）。
 static FORM_SELECT_ID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
