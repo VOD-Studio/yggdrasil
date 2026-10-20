@@ -8,7 +8,7 @@ use dioxus::prelude::*;
 pub const SKILL_SOURCE: &str = include_str!("../../public/skills/yggdrasil-writing/SKILL.md");
 pub const SKILL_URL: &str = "/skills/yggdrasil-writing/SKILL.md";
 
-#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct WritingGuideData {
     pub source: String,
     pub html: String,

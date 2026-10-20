@@ -38,7 +38,7 @@ async function main() {
       await page.locator('.writing-content h2').first().waitFor();
       await page.waitForFunction(() => window.__routeTransitions?.entryId(), null, { timeout: 90000 });
       // A successful interactive config switch establishes that WASM hydration finished.
-      await page.getByRole('button', { name: 'OMP', exact: true }).click();
+      await page.getByRole('tab', { name: 'OMP', exact: true }).click();
       await page.waitForFunction(() => document.querySelector('.writing-config-meta > code')?.textContent.includes('.omp'));
       assert.equal(await page.locator('main h1').count(), 1);
       assert.equal(await page.locator('.writing-content table').count(), 1);
@@ -60,12 +60,12 @@ async function main() {
       await page.locator('.writing-install').evaluate(element => scrollTo({ top: scrollY + element.getBoundingClientRect().top - 100, behavior: 'instant' }));
       await page.locator('.writing-install').screenshot({ path: path.join(output, `${variant.name}-install.png`) });
 
-      const copySkill = page.getByRole('button', { name: /复制 Skill 源码/ }).first();
+      const copySkill = page.getByRole('button', { name: /复制全文/ }).first();
       await copySkill.click();
       await page.waitForFunction(() => document.querySelector('.writing-actions [role="status"]')?.textContent === '已复制');
       assert.equal(await page.evaluate(() => navigator.clipboard.readText()), source);
       for (const client of ['Codex', 'OMP', 'OpenCode']) {
-        await page.getByRole('button', { name: client, exact: true }).click();
+        await page.getByRole('tab', { name: client, exact: true }).click();
         const code = page.locator('.writing-config-code');
         await page.waitForFunction(name => document.querySelector('.writing-config-code')?.getAttribute('aria-label') === `${name} MCP 配置`, client);
         const config = await code.innerText();
@@ -78,13 +78,17 @@ async function main() {
         assert.equal(await page.evaluate(() => navigator.clipboard.readText()), config);
       }
       const downloadEvent = page.waitForEvent('download');
-      await page.getByRole('link', { name: '下载 SKILL.md ↓' }).click();
+      await page.getByRole('link', { name: '下载 SKILL.md' }).click();
       const download = await downloadEvent;
       assert.equal(download.suggestedFilename(), 'SKILL.md');
       assert.equal(await fs.readFile(await download.path(), 'utf8'), source);
 
-      await page.locator('.writing-toc summary').click();
-      const headingLink = page.getByRole('navigation', { name: '技能目录' }).getByRole('link', { name: '可运行代码块', exact: true });
+      await page.getByRole('button', { name: '展开全文' }).click();
+      assert.equal(await page.locator('.writing-content').getAttribute('data-expanded'), 'true');
+      // 窄屏隐藏侧栏目录；改用「先读全文」锚点验证同样的页内跳转。
+      const headingLink = variant.width < 760
+        ? page.getByRole('link', { name: '先读全文' })
+        : page.getByRole('navigation', { name: '技能目录' }).getByRole('link', { name: '可运行代码块', exact: true });
       const hash = await headingLink.getAttribute('href');
       await headingLink.click();
       await page.waitForFunction(expected => location.hash === expected, hash);
