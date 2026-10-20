@@ -248,10 +248,13 @@ fn ErrorLayout() -> Element {
                         if *code == 404 || message == "not_found" {
                             is_404 = true;
                         }
-                    } else { // Warning / Alert Icon in a soft red container
+                    } else {
+                        // 浏览器水合时错误从服务端数据反序列化而来，已不是 ServerFnError，
+                        // 只剩文本（如 "error running server function: not_found ..."）。
+                        // 这里判错会让客户端渲染另一套 fallback，与服务端 HTML 对不上。
                         let err_str = format!("{:?}", captured_error);
                         if err_str.contains("NotFound") || err_str.contains("404")
-                            || err_str.contains("not found")
+                            || err_str.contains("not found") || err_str.contains("not_found")
                         {
                             is_404 = true;
                         }
