@@ -266,22 +266,21 @@ async function catalog(page) {
 
   await page.waitForFunction(() => document.querySelector('.showcase-grid')?.classList.contains('is-masonry'));
   const layout = await page.evaluate(() => {
-    const box = slug => document.querySelector(`#showcase-${slug}`).getBoundingClientRect();
+    const cards = [...document.querySelectorAll('.showcase-grid > .showcase-card')]
+      .map(card => card.getBoundingClientRect());
     const preview = document.querySelector('#showcase-asset-picker-modal .showcase-card-preview');
     const panel = document.querySelector('#showcase-asset-picker-modal .showcase-picker-panel');
     return {
-      admin: { top: box('admin-layout').top, bottom: box('admin-layout').bottom },
-      picker: { top: box('asset-picker-modal').top, bottom: box('asset-picker-modal').bottom },
-      upload: { top: box('asset-upload-modal').top, left: box('asset-upload-modal').left },
-      runner: { top: box('code-runner').top, left: box('code-runner').left },
+      ordered: cards.every((box, index) => index === 0 || box.top >= cards[index - 1].top - 1),
+      columns: new Set(cards.map(box => Math.round(box.left))).size,
+      heights: new Set(cards.map(box => Math.round(box.height))).size,
       panelBottom: panel.getBoundingClientRect().bottom,
       previewBottom: preview.getBoundingClientRect().bottom,
     };
   });
-  assert.equal(layout.admin.top, layout.picker.top, 'adjacent cards keep catalog order');
-  assert(layout.picker.bottom > layout.admin.bottom, 'cards keep different natural heights');
-  assert(layout.upload.top < layout.runner.top, 'the next card fills the shorter column');
-  assert(layout.upload.left < layout.runner.left, 'card columns keep source order');
+  assert(layout.ordered, 'masonry keeps catalog order from top to bottom');
+  assert.equal(layout.columns, 2, 'catalog lays cards out in two columns');
+  assert(layout.heights > 1, 'cards keep different natural heights');
   assert(layout.panelBottom <= layout.previewBottom, 'asset picker actions are fully visible');
   pass('catalog uses ordered masonry and shows the full asset picker preview');
 
@@ -339,17 +338,38 @@ async function catalog(page) {
     'using a card preview should not open its detail page');
   pass('cards show a pointer without hijacking preview controls');
 
+  await page.locator('.showcase-search input').fill('');
+  const formIndex = CATALOG.groups.findIndex(([group]) => group === 'form');
+  await page.locator('.showcase-categories button').nth(formIndex).click();
+  const secondCard = page.locator('.showcase-card').nth(1);
+  const secondName = await secondCard.locator('.showcase-card-title code').textContent();
+  await secondCard.locator('.showcase-card-caption p').click();
+  assert.equal(new URL(page.url()).pathname, '/about/components',
+    'clicking a card on wide screens selects it instead of leaving the catalog');
+  await page.waitForFunction(name =>
+    document.querySelector('.showcase-inspector-title code')?.textContent === name, secondName);
+  assert.equal(await secondCard.evaluate(element => element.classList.contains('is-selected')), true);
+  visitId++;
+  await page.locator('.showcase-inspector').getByRole('link', { name: '打开详情页' }).click();
+  const secondSlug = CATALOG.components.find(component => component.name === secondName).slug;
+  await page.waitForURL(`${BASE}/about/components/${secondSlug}`);
+  visitId++;
+  await page.goBack();
+  await page.waitForURL(`${BASE}/about/components`);
+  await page.locator('.showcase-categories button').first().click();
+  pass('wide catalog selects cards into the inspector and links to the detail page');
+
   await page.locator('.showcase-search input').fill('TiptapEditor');
   const card = page.locator('#showcase-tiptap-editor');
   await card.scrollIntoViewIfNeeded();
   const y = await page.evaluate(() => scrollY);
   visitId++;
-  await card.locator('.showcase-card-caption p').click();
+  await card.locator('.showcase-card-title a').click();
   await page.waitForURL(`${BASE}/about/components/tiptap-editor`);
-  pass('clicking a card caption opens its detail page');
+  pass('clicking a card title opens its detail page');
   await realPreview(page, 'tiptap-editor', TARGETS.find(item => item[0] === 'tiptap-editor')[2]);
   visitId++;
-  await page.locator('.showcase-back').click();
+  await page.locator('.showcase-detail .breadcrumb').getByRole('link', { name: '组件图鉴' }).click();
   await page.waitForURL(`${BASE}/about/components`);
   await page.waitForTimeout(350);
   assert.equal(await page.locator('.showcase-search input').inputValue(), 'TiptapEditor');
@@ -373,7 +393,7 @@ async function details(page, viewport, colorScheme, reducedMotion, label) {
     await goto(page, `/about/components/${slug}`);
     await realPreview(page, slug, selector);
     const expectedReset = MODES.get(slug) === 'interactive' ? 1 : 0;
-    assert.equal(await page.locator('.showcase-live-toolbar button').count(), expectedReset,
+    assert.equal(await page.locator('.showcase-live-toolbar .showcase-reset').count(), expectedReset,
       `${slug} reset control disagrees with its preview mode`);
     await assertNoDocumentOverflow(page, slug);
     await screenshot(page, `${slug}-${label}`);
@@ -397,7 +417,7 @@ async function postHeader(page) {
       await elementScreenshot(card, `${stage}-card`);
 
       visitId++;
-      await card.locator('.showcase-card-caption p').click();
+      await card.locator('.showcase-card-title a').click();
       await page.waitForURL(`${BASE}/about/components/post-header`);
       await realPreview(page, 'post-header', selector);
       const preview = page.locator('[data-showcase-preview="post-header"]');
@@ -442,7 +462,7 @@ async function postFooter(page) {
       await elementScreenshot(card, `${stage}-card`);
 
       visitId++;
-      await card.locator('.showcase-card-caption p').click();
+      await card.locator('.showcase-card-title a').click();
       await page.waitForURL(`${BASE}/about/components/post-footer`);
       await realPreview(page, 'post-footer', selector);
       const footer = page.locator(selector);
@@ -502,7 +522,7 @@ async function postNavLinks(page) {
       await elementScreenshot(card, `${stage}-card`);
 
       visitId++;
-      await card.locator('.showcase-card-caption p').click();
+      await card.locator('.showcase-card-title a').click();
       await page.waitForURL(`${BASE}/about/components/post-nav-links`);
       await realPreview(page, 'post-nav-links', selector);
       const preview = page.locator('[data-showcase-preview="post-nav-links"]');
@@ -579,7 +599,7 @@ async function interactions(page, onlyModalResets = false) {
   await dialog.getByRole('button', { name: '插入 2 张图片' }).click();
   await dialog.waitFor({ state: 'hidden' });
   await page.locator('.showcase-demo-result').getByText('已确认').waitFor();
-  await page.locator('.showcase-live-toolbar button').click();
+  await page.locator('.showcase-reset').click();
   await page.locator('.showcase-demo-result').waitFor({ state: 'hidden' });
   await pickerTrigger.click();
   await page.getByRole('dialog').waitFor();
@@ -610,7 +630,7 @@ async function interactions(page, onlyModalResets = false) {
   await page.getByRole('button', { name: '代表状态' }).click();
   await page.getByRole('button', { name: '移除' }).click();
   assert.equal(await page.getByText('超大原图.png').count(), 0);
-  await page.locator('.showcase-live-toolbar button').click();
+  await page.locator('.showcase-reset').click();
   await page.getByText('超大原图.png').waitFor();
   const uploadTrigger = page.getByRole('button', { name: '打开上传弹窗' });
   await uploadTrigger.click();
@@ -646,7 +666,7 @@ async function interactions(page, onlyModalResets = false) {
   await page.getByText('输出示例', { exact: true }).waitFor();
   await page.getByRole('button', { name: '错误输出' }).click();
   await page.getByRole('button', { name: '播放示例' }).click();
-  await page.getByRole('button', { name: '↻ 恢复默认' }).click();
+  await page.locator('.showcase-reset').click();
   pass('runner sample output and reset');
 
   await goto(page, '/about/components/comment-list');
@@ -664,7 +684,7 @@ async function interactions(page, onlyModalResets = false) {
   await form.getByRole('button', { name: '发表', exact: true }).click();
   await page.getByText('已加入本地演示列表').waitFor();
   await page.getByText('这是一条本地演示评论').waitFor();
-  await page.getByRole('button', { name: '↻ 恢复默认' }).click();
+  await page.locator('.showcase-reset').click();
   assert.equal(await page.getByText('这是一条本地演示评论').count(), 0);
   pass('comment form local submit and reset');
 

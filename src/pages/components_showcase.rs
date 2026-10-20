@@ -17,6 +17,9 @@ use serde::{Deserialize, Serialize};
 use wasm_bindgen::JsCast;
 
 use crate::components::forms::FormInput;
+use crate::components::ui::{
+    button_class, Button, ButtonSize, ButtonVariant, FilterTabs, Icon, IconName,
+};
 use crate::models::post::{Post, PostListItem, PostStatus};
 use crate::router::Route;
 
@@ -29,6 +32,8 @@ mod layout_article_previews;
 pub struct ShowcaseFilters {
     pub category: String,
     pub search: String,
+    /// 宽屏详情栏当前展示的组件；`None` 时取筛选结果的第一项。
+    pub selected: Option<String>,
     pub return_to: Option<String>,
 }
 
@@ -137,7 +142,8 @@ pub fn ComponentShowcase() -> Element {
 #[component]
 pub fn ComponentDetail(component: String) -> Element {
     rsx! {
-        ShowcaseDataGate { ShowcaseDetail { component } }
+        // 按组件重建详情，切换相邻组件时预览状态、复制提示与目录高亮都回到初始值。
+        ShowcaseDataGate { ShowcaseDetail { key: "{component}", component } }
     }
 }
 
@@ -301,8 +307,9 @@ fn AlertBoxDemo(
     };
 
     rsx! {
-        div { class: if detail { "showcase-alert-demo showcase-alert-detail" } else { "showcase-alert-demo" },
-            div { class: "showcase-alert-switcher", role: "tablist", aria_label: "切换提示状态",
+        div { class: "showcase-alert-demo",
+            // 详情页由预览工具栏切换状态，这里只在目录卡片里给出切换按钮。
+            if !detail { div { class: "showcase-alert-switcher", role: "tablist", aria_label: "切换提示状态",
                 button {
                     r#type: "button",
                     class: if variant_str == "success" { "state-success" } else { "" },
@@ -336,7 +343,7 @@ fn AlertBoxDemo(
                     span { class: "dot dot-default" }
                     "普通"
                 }
-            }
+            } }
             div {
                 class: "showcase-alert-box-target",
                 role: "button",
@@ -360,11 +367,20 @@ fn AlertBoxDemo(
                     variant: variant_str,
                 }
             }
-            if detail {
-                p { class: "showcase-alert-hint", "点击上方状态切换不同视觉反馈；亦可直接点击提示框或在右侧调整文案" }
-            }
         }
     }
+}
+
+/// 宽屏时目录右侧有详情栏，点卡片只切换选中；窄屏没有详情栏，点卡片直接进入详情页。
+fn inspector_visible() -> bool {
+    #[cfg(target_arch = "wasm32")]
+    {
+        web_sys::window()
+            .and_then(|window| window.match_media("(min-width: 1101px)").ok().flatten())
+            .is_some_and(|query| query.matches())
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    false
 }
 
 #[component]
@@ -398,16 +414,23 @@ fn ShowcaseGallery() -> Element {
             (active_group == "all" || spec.group == active_group)
                 && (query.is_empty()
                     || spec.name.to_lowercase().contains(&query)
-                    || spec.label.to_lowercase().contains(&query))
+                    || spec.label.to_lowercase().contains(&query)
+                    || spec.summary.to_lowercase().contains(&query))
         })
         .collect();
-    let count = shown.len();
+    let total = showcase().components.len();
     let interactive_count = showcase()
         .components
         .iter()
         .filter(|spec| spec.preview_mode == PreviewMode::Interactive)
         .count();
-    let static_count = showcase().components.len() - interactive_count;
+    // 选中项被筛掉时，详情栏落到当前结果的第一项。
+    let selected = state
+        .selected
+        .as_deref()
+        .and_then(|slug| shown.iter().find(|spec| spec.slug == slug))
+        .or(shown.first())
+        .map(|spec| spec.slug.clone());
 
     use_effect(move || {
         #[cfg(target_arch = "wasm32")]
@@ -427,138 +450,253 @@ fn ShowcaseGallery() -> Element {
     rsx! {
         document::Title { "组件图鉴 · Yggdrasil" }
         article { class: "showcase showcase-gallery",
-            nav { class: "showcase-breadcrumb", aria_label: "面包屑",
-                Link { to: Route::About {}, "← 关于这里" }
-                span { aria_hidden: "true", "/" }
-                span { aria_current: "page", "组件图鉴" }
+            Link { class: "showcase-up", to: Route::About {},
+                Icon { name: IconName::ArrowLeft, size: 14 }
+                "关于"
             }
-            header { class: "showcase-hero",
+            header { class: "showcase-header page-enter",
                 div {
-                    p { class: "showcase-eyebrow", span { class: "showcase-dot" } "YGGDRASIL / INTERFACE ATLAS" }
-                    h1 { "组件图鉴" small { "↗ 01—{showcase().components.len()}" } }
-                    p { class: "showcase-lead", "一枚按钮，一次勾选，一点恰好的回应。" br {} "这里收藏着，让 Yggdrasil 长成自己的界面细节。" }
-                    div { class: "showcase-hero-meta",
-                        span { "{interactive_count} 枚交互预览" }
-                        span { "{static_count} 枚静态展示" }
-                        span { "可以触碰的设计" }
+                    h1 { class: "showcase-title", "组件图鉴" }
+                    p { class: "showcase-intro tabular-nums",
+                        "{total} 个组件，都来自正式页面，其中 {interactive_count} 个可以直接操作。"
                     }
                 }
-                ShowcaseStillLife {}
-            }
-            div { class: "showcase-intro-line",
-                p { "好的界面，藏在每一个小小的细节里。" }
-                a { href: "#showcase-collection", "开始翻阅 ↓" }
-            }
-            div { class: "showcase-catalog", id: "showcase-collection",
-                aside { class: "showcase-sidebar",
-                    p { class: "showcase-sidebar-label", "沿着目录，慢慢翻阅" }
-                    div { class: "showcase-search",
-                        FormInput {
-                            r#type: "search",
-                            aria_label: Some("搜索组件"),
-                            placeholder: "搜索组件…",
-                            value: state.search,
-                            oninput: move |event: String| filters.write().search = event,
-                        }
+                label { class: "showcase-search",
+                    Icon { name: IconName::Search, size: 15 }
+                    FormInput {
+                        class: Some("showcase-search-input"),
+                        r#type: "search",
+                        aria_label: Some("搜索组件"),
+                        placeholder: "组件名或用途",
+                        value: state.search,
+                        oninput: move |event: String| filters.write().search = event,
                     }
-                    nav { class: "showcase-categories", aria_label: "组件分类",
-                        for group in showcase().groups.iter() {
-                            {
-                                let id = group[0].clone();
-                                let label = group[1].clone();
-                                let selected = active_group == id;
-                                let amount = if id == "all" { showcase().components.len() } else {
-                                    showcase().components.iter().filter(|spec| spec.group == id).count()
-                                };
-                                rsx! {
-                                    button {
-                                        key: "{id}",
-                                        r#type: "button",
-                                        class: if selected { "is-active" } else { "" },
-                                        aria_pressed: "{selected}",
-                                        onclick: move |_| filters.write().category = id.clone(),
-                                        "{label}" small { "{amount:02}" }
-                                    }
-                                }
+                }
+            }
+            nav { class: "showcase-categories page-enter", style: "--enter-index: 1", aria_label: "组件分类",
+                for group in showcase().groups.iter() {
+                    {
+                        let id = group[0].clone();
+                        let pressed = active_group == id;
+                        let amount = if id == "all" {
+                            total
+                        } else {
+                            showcase().components.iter().filter(|spec| spec.group == id).count()
+                        };
+                        let label = if id == "all" { "全部" } else { group[1].as_str() };
+                        rsx! {
+                            button {
+                                key: "{id}",
+                                r#type: "button",
+                                class: if pressed { "chip is-active" } else { "chip" },
+                                aria_pressed: "{pressed}",
+                                onclick: move |_| filters.write().category = id.clone(),
+                                "{label}"
+                                span { class: "chip-count", "{amount}" }
                             }
                         }
                     }
-                    p { class: "showcase-sidebar-note", "设计，发生在使用之中。" br {} "试着勾选、切换或展开。" br {} "每个细节，都有自己的回应。" }
                 }
-                div { class: "showcase-collection",
-                    div { class: "showcase-collection-heading",
-                        h2 { "{group_label(active_group)}" }
-                        small { "{count:02} SPECIMENS" }
-                    }
-                    div { class: "showcase-grid",
-                        for spec in shown.iter() {
-                            {
-                                let slug = spec.slug.clone();
-                                let card_slug = slug.clone();
-                                rsx! {
-                                    article {
-                                        class: "showcase-card",
-                                        id: "showcase-{slug}",
-                                        key: "{slug}",
-                                        onclick: move |event: MouseEvent| {
-                                            #[cfg(not(target_arch = "wasm32"))]
-                                            let _ = event;
-                                            #[cfg(target_arch = "wasm32")]
-                                            {
-                                                let interactive = event.try_as_web_event()
-                                                    .and_then(|event| event.target())
-                                                    .and_then(|target| target.dyn_into::<web_sys::Element>().ok())
-                                                    .and_then(|element| element.closest(
-                                                        "a, button, input, select, textarea, label, summary, [contenteditable], [role=button], [role=tab], .cm-editor, .xterm"
-                                                    ).ok().flatten())
-                                                    .is_some();
-                                                if interactive {
-                                                    return;
-                                                }
+            }
+            div { class: "showcase-catalog page-enter", style: "--enter-index: 2",
+                div { class: "showcase-grid",
+                    for spec in shown.iter() {
+                        {
+                            let slug = spec.slug.clone();
+                            let card_slug = slug.clone();
+                            let is_selected = selected.as_deref() == Some(slug.as_str());
+                            rsx! {
+                                article {
+                                    class: if is_selected { "showcase-card is-selected" } else { "showcase-card" },
+                                    id: "showcase-{slug}",
+                                    key: "{slug}",
+                                    onclick: move |event: MouseEvent| {
+                                        #[cfg(not(target_arch = "wasm32"))]
+                                        let _ = event;
+                                        #[cfg(target_arch = "wasm32")]
+                                        {
+                                            let interactive = event.try_as_web_event()
+                                                .and_then(|event| event.target())
+                                                .and_then(|target| target.dyn_into::<web_sys::Element>().ok())
+                                                .and_then(|element| element.closest(
+                                                    "a, button, input, select, textarea, label, summary, [contenteditable], [role=button], [role=tab], .cm-editor, .xterm"
+                                                ).ok().flatten())
+                                                .is_some();
+                                            if interactive {
+                                                return;
                                             }
+                                        }
+                                        if inspector_visible() {
+                                            filters.write().selected = Some(card_slug.clone());
+                                        } else {
                                             navigator().push(Route::ComponentDetail { component: card_slug.clone() });
-                                        },
-                                        div { class: "showcase-card-preview showcase-card-preview--{slug}",
-                                            span { class: "showcase-card-index", "{spec.name.to_uppercase()} / {group_label(&spec.group)}" }
-                                            ComponentPreview { slug: slug.clone(), detail: false }
                                         }
-                                        div { class: "showcase-card-caption",
-                                            div { class: "showcase-card-title", h3 { "{spec.label}" } code { "{spec.name}" } }
-                                            p { "{spec.summary}" }
-                                            div { class: "showcase-card-foot",
-                                                span { "{spec.states}" }
-                                                Link { to: Route::ComponentDetail { component: slug.clone() }, "查看用法 ↗" }
+                                    },
+                                    div { class: "showcase-card-preview showcase-card-preview--{slug}",
+                                        ComponentPreview { slug: slug.clone(), detail: false }
+                                    }
+                                    div { class: "showcase-card-caption",
+                                        div { class: "showcase-card-title",
+                                            h3 {
+                                                Link { to: Route::ComponentDetail { component: slug.clone() }, "{spec.label}" }
                                             }
+                                            code { "{spec.name}" }
                                         }
+                                        p { "{spec.summary}" }
                                     }
                                 }
                             }
                         }
-                        if count == 0 {
-                            p { class: "showcase-no-results", "没有找到这个组件，换个名字试试。" }
-                        }
                     }
-                    div { class: "showcase-composition",
-                        div { h3 { "当枝叶，组成风景。" } p { "素材、文章、评论与编辑器，组成更完整的界面。" } }
-                        span { "素材选择 · 文章卡片 · 评论区 · 页面骨架" }
+                    if shown.is_empty() {
+                        p { class: "showcase-no-results", "没有找到这个组件，换个名字或用途试试。" }
+                    }
+                }
+                if let Some(slug) = selected {
+                    ShowcaseInspector { key: "{slug}", slug }
+                }
+            }
+        }
+    }
+}
+
+/// 目录右侧的详情栏：说明、状态、属性与用法，并给出详情页入口。
+#[component]
+fn ShowcaseInspector(slug: String) -> Element {
+    let spec = showcase()
+        .components
+        .iter()
+        .find(|item| item.slug == slug)
+        .expect("详情栏必须对应图鉴条目");
+    let tokens = highlight_snippet(&spec.code);
+
+    rsx! {
+        aside { class: "showcase-inspector", aria_label: "组件详情",
+            div { class: "showcase-inspector-head",
+                div { class: "showcase-inspector-title",
+                    h2 { "{spec.label}" }
+                    code { "{spec.name}" }
+                }
+                p { "{spec.description}" }
+                p { class: "showcase-inspector-states", "状态：{spec.states}" }
+            }
+            if !spec.props.is_empty() {
+                section { class: "showcase-inspector-section",
+                    h3 { "属性" }
+                    dl { class: "showcase-inspector-props",
+                        for (index, prop) in spec.props.iter().enumerate() {
+                            div { key: "{index}",
+                                dt {
+                                    code { "{prop[0]}" }
+                                    span { "{prop[1]}" }
+                                }
+                                dd { "{prop[3]}" }
+                            }
+                        }
                     }
                 }
             }
-            footer { class: "showcase-closing", em { "细节有回应，界面有温度。" } span { "YGGDRASIL · A COLLECTION OF SMALL DETAILS" } }
+            section { class: "showcase-inspector-section",
+                h3 { "用法" }
+                div { class: "showcase-code-panel",
+                    pre {
+                        code {
+                            for (index, token) in tokens.iter().enumerate() {
+                                span { key: "{index}", class: token.class.unwrap_or(""), "{token.text}" }
+                            }
+                        }
+                    }
+                }
+                p { class: "showcase-inspector-source", "{spec.source}" }
+            }
+            div { class: "showcase-inspector-foot",
+                Link {
+                    class: button_class(ButtonVariant::Secondary, ButtonSize::Sm),
+                    to: Route::ComponentDetail { component: spec.slug.clone() },
+                    "打开详情页"
+                    Icon { name: IconName::ArrowRight, size: 14 }
+                }
+            }
         }
+    }
+}
+
+/// 详情页的章节，与右侧目录一一对应。
+const DETAIL_SECTIONS: [(&str, &str); 4] = [
+    ("preview", "预览"),
+    ("props", "属性"),
+    ("keys", "键盘"),
+    ("usage", "用法"),
+];
+
+fn checkbox_state(checked: bool, danger: bool) -> &'static str {
+    if danger {
+        "danger"
+    } else if checked {
+        "checked"
+    } else {
+        "default"
     }
 }
 
 #[component]
 fn ShowcaseDetail(component: String) -> Element {
     let mut filters = use_context::<Signal<ShowcaseFilters>>();
-    let mut checked = use_signal(|| true);
+    let mut checked = use_signal(|| false);
     let mut danger = use_signal(|| false);
     let mut alert_variant = use_signal(|| "success".to_string());
-    let mut alert_message = use_signal(|| "已保存，新的想法正在生长。".to_string());
+    let mut alert_message = use_signal(|| alert_box_preset_message("success").to_string());
     let mut reset_generation = use_signal(|| 0_u32);
     #[allow(unused_mut)]
     let mut copied = use_signal(|| false);
+    #[allow(unused_mut)]
+    let mut active_section = use_signal(|| "preview");
+
+    // 目录高亮最后一个越过页头的章节；滚到底时高亮最后一节，短章节也能被选中。
+    #[cfg(target_arch = "wasm32")]
+    {
+        use crate::hooks::event_listener::use_event_listener;
+        use_event_listener(web_sys::window, "scroll", move || {
+            let Some(window) = web_sys::window() else {
+                return;
+            };
+            let Some(document) = window.document() else {
+                return;
+            };
+            let present: Vec<(&'static str, f64)> = DETAIL_SECTIONS
+                .iter()
+                .filter_map(|(id, _)| {
+                    document
+                        .get_element_by_id(id)
+                        .map(|element| (*id, element.get_bounding_client_rect().top()))
+                })
+                .collect();
+            let viewport = window
+                .inner_height()
+                .ok()
+                .and_then(|value| value.as_f64())
+                .unwrap_or(0.0);
+            let scrolled = window.scroll_y().unwrap_or(0.0);
+            let height = document
+                .document_element()
+                .map(|root| f64::from(root.scroll_height()))
+                .unwrap_or(0.0);
+            let current = if scrolled > 0.0 && viewport + scrolled >= height - 2.0 {
+                present.last().map(|(id, _)| *id)
+            } else {
+                present
+                    .iter()
+                    .rev()
+                    .find(|(_, top)| *top <= 120.0)
+                    .map(|(id, _)| *id)
+            }
+            .unwrap_or("preview");
+            if *active_section.peek() != current {
+                active_section.set(current);
+            }
+        });
+    }
+
     let Some((index, spec)) = showcase()
         .components
         .iter()
@@ -573,8 +711,13 @@ fn ShowcaseDetail(component: String) -> Element {
         return rsx! {
             document::Title { "组件未找到 · Yggdrasil" }
             div { class: "showcase showcase-missing",
-                h1 { "这枚组件尚未收录。" }
-                Link { to: Route::ComponentShowcase {}, "返回组件图鉴 →" }
+                h1 { "图鉴里没有这个组件" }
+                p { "地址可能写错了，或者组件已经改名。" }
+                Link {
+                    class: button_class(ButtonVariant::Secondary, ButtonSize::Md),
+                    to: Route::ComponentShowcase {},
+                    "返回组件图鉴"
+                }
             }
         };
     };
@@ -588,261 +731,267 @@ fn ShowcaseDetail(component: String) -> Element {
     #[cfg(target_arch = "wasm32")]
     let snippet_for_copy = snippet.clone();
     let highlighted_snippet = highlight_snippet(&snippet);
-    let workarea_class = if spec.preview_mode == PreviewMode::Static {
-        "showcase-live-workarea showcase-live-workarea-static"
-    } else if is_wide_preview(&spec.slug) {
-        "showcase-live-workarea showcase-live-workarea-wide"
-    } else {
-        "showcase-live-workarea"
+    let interactive = spec.preview_mode == PreviewMode::Interactive;
+    let stage_class = match (interactive, is_wide_preview(&spec.slug)) {
+        (false, true) => "showcase-live-preview is-static is-wide",
+        (false, false) => "showcase-live-preview is-static",
+        (true, true) => "showcase-live-preview is-wide",
+        (true, false) => "showcase-live-preview",
     };
+    let status = if spec.name == "Checkbox" {
+        Some(format!("checked: {} · danger: {}", checked(), danger()))
+    } else if spec.name == "AlertBox" {
+        Some(format!(
+            "variant: \"{}\" · message: \"{}\"",
+            alert_variant(),
+            alert_message()
+        ))
+    } else if is_local_demo(&spec.slug) {
+        Some("本地演示，内容不会保存".to_string())
+    } else {
+        None
+    };
+    let sections: Vec<(&str, &str)> = DETAIL_SECTIONS
+        .into_iter()
+        .filter(|(id, _)| *id != "keys" || !spec.keys.is_empty())
+        .collect();
     let previous = index.checked_sub(1).map(|i| &showcase().components[i]);
     let next = showcase().components.get(index + 1);
+    let gallery_slug = spec.slug.clone();
 
     rsx! {
         document::Title { "{spec.label} {spec.name} · 组件图鉴 · Yggdrasil" }
         article { class: "showcase showcase-detail",
-            nav { class: "showcase-breadcrumb", aria_label: "面包屑",
-                Link { to: Route::About {}, "关于这里" }
+            nav { class: "breadcrumb", aria_label: "面包屑",
+                Link { to: Route::About {}, "关于" }
                 span { aria_hidden: "true", "/" }
-                Link { to: Route::ComponentShowcase {}, onclick: move |_| filters.write().return_to = Some(component.clone()), "组件图鉴" }
+                Link {
+                    to: Route::ComponentShowcase {},
+                    onclick: move |_| {
+                        let mut filters = filters.write();
+                        filters.return_to = Some(gallery_slug.clone());
+                        filters.selected = Some(gallery_slug.clone());
+                    },
+                    "组件图鉴"
+                }
                 span { aria_hidden: "true", "/" }
                 span { aria_current: "page", "{spec.label}" }
             }
             div { class: "showcase-detail-layout",
-                aside { class: "showcase-detail-sidebar",
-                    Link { class: "showcase-back", to: Route::ComponentShowcase {}, onclick: move |_| filters.write().return_to = Some(spec.slug.clone()), "← 返回组件图鉴" }
-                    nav { aria_label: "组件目录",
-                        for group in showcase().groups.iter().skip(1) {
-                            section {
-                                h2 { "{group[1]}" }
-                                for item in showcase().components.iter().filter(|item| item.group == group[0]) {
-                                    Link {
-                                        key: "{item.slug}",
-                                        class: if item.slug == spec.slug { "is-current" } else { "" },
-                                        aria_current: if item.slug == spec.slug { "page" } else { "false" },
-                                        to: Route::ComponentDetail { component: item.slug.clone() },
-                                        "{item.name}"
+                div { class: "showcase-detail-main",
+                    header { class: "showcase-detail-header page-enter",
+                        div { class: "showcase-detail-title",
+                            h1 { "{spec.label}" }
+                            code { "{spec.name}" }
+                            span { class: "chip", "{group_label(&spec.group)}" }
+                        }
+                        p { class: "showcase-detail-lead", "{spec.description}" }
+                    }
+                    section {
+                        id: "preview",
+                        class: "showcase-live-panel page-enter",
+                        style: "--enter-index: 1",
+                        aria_labelledby: "showcase-preview-title",
+                        div { class: "showcase-live-toolbar",
+                            h2 { id: "showcase-preview-title", "预览" }
+                            div { class: "showcase-live-actions",
+                                if spec.name == "Checkbox" {
+                                    FilterTabs {
+                                        items: vec![("default", "默认"), ("checked", "已选"), ("danger", "危险态")],
+                                        active_value: checkbox_state(checked(), danger()).to_string(),
+                                        aria_label: Some("预览状态"),
+                                        class: "",
+                                        on_change: move |state: String| {
+                                            checked.set(state != "default");
+                                            danger.set(state == "danger");
+                                        },
+                                    }
+                                } else if spec.name == "AlertBox" {
+                                    FilterTabs {
+                                        items: vec![("success", "成功"), ("error", "错误"), ("default", "普通")],
+                                        active_value: alert_variant(),
+                                        aria_label: Some("预览状态"),
+                                        class: "",
+                                        on_change: move |variant: String| {
+                                            alert_message.set(alert_box_preset_message(&variant).to_string());
+                                            alert_variant.set(variant);
+                                        },
+                                    }
+                                }
+                                if interactive {
+                                    Button {
+                                        variant: ButtonVariant::Ghost,
+                                        size: ButtonSize::Sm,
+                                        icon: Some(IconName::RotateCcw),
+                                        class: "showcase-reset".to_string(),
+                                        onclick: move |_| {
+                                            checked.set(false);
+                                            danger.set(false);
+                                            alert_variant.set("success".to_string());
+                                            alert_message.set(alert_box_preset_message("success").to_string());
+                                            reset_generation.set(reset_generation().wrapping_add(1));
+                                        },
+                                        "恢复默认"
                                     }
                                 }
                             }
                         }
-                    }
-                }
-                div { class: "showcase-detail-content",
-                    label { class: "showcase-mobile-select",
-                        "组件目录"
-                        select {
-                            aria_label: "切换组件",
-                            value: "{spec.slug}",
-                            onchange: move |event| { navigator().push(Route::ComponentDetail { component: event.value() }); },
-                            for item in showcase().components.iter() {
-                                option { value: "{item.slug}", "{item.name} · {item.label}" }
-                            }
-                        }
-                    }
-                    header { class: "showcase-detail-heading",
-                        div {
-                            p { class: "showcase-eyebrow", span { class: "showcase-dot" } "{group_label(&spec.group)} / COMPONENT ATLAS" }
-                            h1 { "{spec.label}" code { "{spec.name}" } }
-                            p { "{spec.description}" }
-                        }
-                        span { class: "showcase-detail-number", aria_hidden: "true", "{index + 1:02}" }
-                    }
-                    nav { class: "showcase-detail-tabs", aria_label: "本页章节",
-                        a { href: "#preview", if spec.preview_mode == PreviewMode::Interactive { "交互预览" } else { "组件预览" } }
-                        a { href: "#usage", "用法" }
-                        a { href: "#properties", "属性" }
-                        if !spec.keys.is_empty() { a { href: "#keyboard", "操作方式" } }
-                    }
-                    section { class: "showcase-detail-section", id: "preview",
-                        div { class: "showcase-section-heading",
-                            h2 { if spec.preview_mode == PreviewMode::Interactive { "亲手试一试。" } else { "组件预览。" } }
-                            span { if spec.preview_mode == PreviewMode::Interactive { "01 / LIVE PREVIEW" } else { "01 / COMPONENT PREVIEW" } }
-                        }
-                        div { class: "showcase-live-panel",
-                            div { class: "showcase-live-toolbar", span { "● {spec.name}" }
-                                if spec.preview_mode == PreviewMode::Interactive {
-                                    button { r#type: "button", onclick: move |_| {
-                                        checked.set(true);
-                                        danger.set(false);
-                                        alert_variant.set("success".to_string());
-                                        alert_message.set(alert_box_preset_message("success").to_string());
-                                        reset_generation.set(reset_generation().wrapping_add(1));
-                                    }, "↻ 恢复默认" }
-                                }
-                            }
-                            div { class: "{workarea_class}",
-                                div { class: "showcase-live-preview",
-                                    for generation in std::iter::once(reset_generation()) {
-                                        div { key: "{spec.slug}-{generation}", class: "showcase-preview-instance",
-                                            ComponentPreview {
-                                                slug: spec.slug.clone(),
-                                                detail: true,
-                                                checked,
-                                                danger,
-                                                alert_variant,
-                                                alert_message,
-                                            }
-                                        }
+                        div { class: "{stage_class}",
+                            for generation in std::iter::once(reset_generation()) {
+                                div { key: "{spec.slug}-{generation}", class: "showcase-preview-instance",
+                                    ComponentPreview {
+                                        slug: spec.slug.clone(),
+                                        detail: true,
+                                        checked,
+                                        danger,
+                                        alert_variant,
+                                        alert_message,
                                     }
                                 }
-                                if spec.preview_mode == PreviewMode::Interactive { div { class: "showcase-live-controls",
-                                    if spec.name == "Checkbox" {
-                                        p { "PROPERTIES / 调整属性" }
-                                        div { class: "showcase-property-row", span { "checked" }
-                                            crate::components::forms::ToggleSwitch { checked: checked(), aria_label: Some("设置 checked".to_string()), ontoggle: move |_| checked.toggle() }
+                            }
+                        }
+                        if spec.name == "AlertBox" {
+                            label { class: "showcase-live-field",
+                                span { "message" }
+                                FormInput {
+                                    r#type: "text",
+                                    placeholder: "输入自定义提示文案…",
+                                    value: alert_message(),
+                                    oninput: move |value| alert_message.set(value),
+                                }
+                            }
+                        }
+                        if let Some(status) = status {
+                            div { class: "showcase-live-status", "{status}" }
+                        }
+                    }
+                    section { id: "props", class: "showcase-detail-section", aria_labelledby: "showcase-props-title",
+                        h2 { id: "showcase-props-title", "属性" }
+                        if spec.props.is_empty() {
+                            p { class: "showcase-detail-note", "这个组件不接收属性。" }
+                        } else {
+                            div { class: "showcase-props-wrap",
+                                table {
+                                    thead {
+                                        tr {
+                                            th { "名称" }
+                                            th { "类型" }
+                                            th { "默认值" }
+                                            th { "说明" }
                                         }
-                                        div { class: "showcase-property-row", span { "danger" }
-                                            crate::components::forms::ToggleSwitch { checked: danger(), aria_label: Some("设置 danger".to_string()), ontoggle: move |_| danger.toggle() }
-                                        }
-                                        small { "调整属性，看看细节如何回应。" }
-                                    } else if spec.name == "AlertBox" {
-                                        p { "PROPERTIES / 调整属性" }
-                                        div { class: "showcase-property-col",
-                                            span { class: "showcase-property-name", "variant" }
-                                            div { class: "showcase-alert-switcher showcase-control-switcher", role: "tablist", aria_label: "切换提示状态",
-                                                button {
-                                                    r#type: "button",
-                                                    class: if alert_variant() == "success" { "state-success" } else { "" },
-                                                    aria_pressed: "{alert_variant() == \"success\"}",
-                                                    onclick: move |_| {
-                                                        alert_variant.set("success".to_string());
-                                                        alert_message.set(alert_box_preset_message("success").to_string());
-                                                    },
-                                                    span { class: "dot dot-success" }
-                                                    "成功"
-                                                }
-                                                button {
-                                                    r#type: "button",
-                                                    class: if alert_variant() == "error" { "state-error" } else { "" },
-                                                    aria_pressed: "{alert_variant() == \"error\"}",
-                                                    onclick: move |_| {
-                                                        alert_variant.set("error".to_string());
-                                                        alert_message.set(alert_box_preset_message("error").to_string());
-                                                    },
-                                                    span { class: "dot dot-error" }
-                                                    "错误"
-                                                }
-                                                button {
-                                                    r#type: "button",
-                                                    class: if alert_variant() == "default" { "state-default" } else { "" },
-                                                    aria_pressed: "{alert_variant() == \"default\"}",
-                                                    onclick: move |_| {
-                                                        alert_variant.set("default".to_string());
-                                                        alert_message.set(alert_box_preset_message("default").to_string());
-                                                    },
-                                                    span { class: "dot dot-default" }
-                                                    "普通"
-                                                }
-                                            }
-                                        }
-                                        div { class: "showcase-property-col",
-                                            span { class: "showcase-property-name", "message" }
-                                            crate::components::forms::FormInput {
-                                                class: Some("w-full px-3 py-1.5 text-xs border border-paper-border rounded-xl bg-paper-entry text-paper-primary placeholder:text-paper-tertiary focus:outline-none focus:border-paper-accent focus:ring-1 focus:ring-paper-accent/30 transition-colors duration-200"),
-                                                r#type: "text",
-                                                placeholder: "输入自定义提示文案…",
-                                                value: alert_message(),
-                                                oninput: move |val| alert_message.set(val),
-                                            }
-                                        }
-                                        small { "切换状态或修改文案，观察视觉语义与下方用法代码的联动。" }
-                                    } else {
-                                        p { "STATES / 示例状态" }
-                                        div { class: "showcase-state-chips",
-                                            for state in spec.states.split(" · ") { span { "{state}" } }
-                                        }
-                                        small { if is_local_demo(&spec.slug) { "本地演示，内容不会保存。" } else { "在左侧预览中体验这枚组件。" } }
                                     }
-                                } }
-                            }
-                            div { class: "showcase-live-status", if spec.name == "Checkbox" { "checked: {checked()}　 danger: {danger()}" } else if spec.name == "AlertBox" { "variant: \"{alert_variant()}\"　 message: \"{alert_message()}\"" } else if spec.preview_mode == PreviewMode::Interactive { "INTERACTIVE SPECIMEN · 跟随全站主题" } else { "COMPONENT PREVIEW · 跟随全站主题" } }
-                        }
-                    }
-                    section { class: "showcase-detail-section", id: "usage",
-                        div { class: "showcase-section-heading", h2 { "用法" } span { "02 / USAGE" } }
-                        p { class: "showcase-description", if spec.usage_kind == UsageKind::Api { "下方列出组件接口；正式调用由所在页面提供数据与回调。" } else { "下方展示组件的调用方式。" } }
-                        div { class: "showcase-code-panel",
-                            div { class: "showcase-code-toolbar",
-                                span { match spec.usage_kind { UsageKind::Rust => "RUST · DIOXUS RSX", UsageKind::Api => "RUST · 组件接口", UsageKind::Router => "RUST · 路由配置", UsageKind::Browser => "TYPESCRIPT · 浏览器调用" } }
-                                button {
-                                    r#type: "button",
-                                    aria_label: "复制代码",
-                                    onclick: move |_| {
-                                        #[cfg(target_arch = "wasm32")]
-                                        let text = snippet_for_copy.clone();
-                                        #[cfg(target_arch = "wasm32")]
-                                        spawn(async move {
-                                            if let Some(window) = web_sys::window() {
-                                                let clipboard = window.navigator().clipboard();
-                                                if wasm_bindgen_futures::JsFuture::from(clipboard.write_text(&text)).await.is_ok() {
-                                                    copied.set(true);
+                                    tbody {
+                                        for (index, prop) in spec.props.iter().enumerate() {
+                                            tr { key: "{index}",
+                                                td { code { "{prop[0]}" } }
+                                                td { code { class: "showcase-prop-type", "{prop[1]}" } }
+                                                td {
+                                                    if prop[2] == "必填" {
+                                                        span { class: "showcase-prop-required", "必填" }
+                                                    } else {
+                                                        code { class: "showcase-prop-default", "{prop[2]}" }
+                                                    }
                                                 }
+                                                td { "{prop[3]}" }
                                             }
-                                        });
-                                    },
-                                    if copied() { "✓ 已复制" } else { "复制代码 ↗" }
-                                }
-                            }
-                            pre { code {
-                                for (token_index, token) in highlighted_snippet.iter().enumerate() {
-                                    span { key: "{token_index}", class: token.class.unwrap_or(""), "{token.text}" }
-                                }
-                            } }
-                        }
-                    }
-                    section { class: "showcase-detail-section", id: "properties",
-                        div { class: "showcase-section-heading", h2 { "主要属性" } span { "03 / PROPERTIES" } }
-                        div { class: "showcase-props-wrap",
-                            table { thead { tr { th { "属性 / 类型" } th { "默认值" } th { "说明" } } }
-                                tbody {
-                                    for prop in spec.props.iter() {
-                                        tr { td { code { "{prop[0]}" } small { "{prop[1]}" } } td { "{prop[2]}" } td { "{prop[3]}" } }
+                                        }
                                     }
                                 }
                             }
                         }
                     }
                     if !spec.keys.is_empty() {
-                        section { class: "showcase-detail-section", id: "keyboard",
-                            div { class: "showcase-section-heading", h2 { "操作方式" } span { "04 / INTERACTION" } }
-                            div { class: "showcase-key-guide",
-                                for item in spec.keys.iter() { span { kbd { "{item[0]}" } "{item[1]}" } }
+                        section { id: "keys", class: "showcase-detail-section", aria_labelledby: "showcase-keys-title",
+                            h2 { id: "showcase-keys-title", "键盘" }
+                            dl { class: "showcase-key-list",
+                                for (index, item) in spec.keys.iter().enumerate() {
+                                    div { key: "{index}",
+                                        dt { kbd { "{item[0]}" } }
+                                        dd { "{item[1]}" }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    section { id: "usage", class: "showcase-detail-section", aria_labelledby: "showcase-usage-title",
+                        div { class: "showcase-section-head",
+                            h2 { id: "showcase-usage-title", "用法" }
+                            code { class: "showcase-source", "{spec.source}" }
+                        }
+                        if spec.usage_kind == UsageKind::Api {
+                            p { class: "showcase-detail-note", "下方列出组件接口；正式调用由所在页面提供数据与回调。" }
+                        }
+                        figure { class: "showcase-code-panel",
+                            div { class: "showcase-code-toolbar",
+                                span {
+                                    match spec.usage_kind {
+                                        UsageKind::Rust => "Dioxus RSX",
+                                        UsageKind::Api => "Rust 接口",
+                                        UsageKind::Router => "路由配置",
+                                        UsageKind::Browser => "TypeScript",
+                                    }
+                                }
+                                Button {
+                                    variant: ButtonVariant::Ghost,
+                                    size: ButtonSize::Sm,
+                                    icon: Some(if copied() { IconName::Check } else { IconName::Copy }),
+                                    onclick: move |_| {
+                                        #[cfg(target_arch = "wasm32")]
+                                        {
+                                            let text = snippet_for_copy.clone();
+                                            spawn(async move {
+                                                if crate::utils::js::copy_text(&text).await {
+                                                    copied.set(true);
+                                                    crate::utils::time::sleep_ms(1600).await;
+                                                    copied.set(false);
+                                                }
+                                            });
+                                        }
+                                    },
+                                    if copied() { "已复制" } else { "复制" }
+                                }
+                            }
+                            pre {
+                                code {
+                                    for (token_index, token) in highlighted_snippet.iter().enumerate() {
+                                        span { key: "{token_index}", class: token.class.unwrap_or(""), "{token.text}" }
+                                    }
+                                }
                             }
                         }
                     }
                     nav { class: "showcase-neighbors", aria_label: "相邻组件",
                         if let Some(item) = previous {
-                            Link { to: Route::ComponentDetail { component: item.slug.clone() }, span { "←" } div { small { "上一枚组件" } strong { "{item.label} · {item.name}" } } }
-                        } else {
-                            Link { to: Route::ComponentShowcase {}, span { "←" } div { small { "全部收藏" } strong { "返回组件图鉴" } } }
+                            Link { to: Route::ComponentDetail { component: item.slug.clone() },
+                                span { class: "showcase-neighbor-hint", "← 上一个" }
+                                span { class: "showcase-neighbor-name", "{item.label} " code { "{item.name}" } }
+                            }
                         }
                         if let Some(item) = next {
-                            Link { to: Route::ComponentDetail { component: item.slug.clone() }, div { small { "下一枚组件" } strong { "{item.label} · {item.name}" } } span { "→" } }
-                        } else {
-                            Link { to: Route::ComponentShowcase {}, div { small { "继续翻阅" } strong { "返回组件图鉴" } } span { "→" } }
+                            Link { class: "is-next", to: Route::ComponentDetail { component: item.slug.clone() },
+                                span { class: "showcase-neighbor-hint", "下一个 →" }
+                                span { class: "showcase-neighbor-name", "{item.label} " code { "{item.name}" } }
+                            }
                         }
                     }
-                    footer { class: "showcase-detail-colophon", span { "YGGDRASIL · 每一个细节，都有回应。" } code { "{spec.source}" } }
+                }
+                aside { class: "showcase-toc", aria_label: "本页目录",
+                    p { class: "showcase-toc-label", "本页" }
+                    ol {
+                        for (id, label) in sections {
+                            li { key: "{id}",
+                                a {
+                                    href: "#{id}",
+                                    class: if active_section() == id { "is-active" } else { "" },
+                                    aria_current: (active_section() == id).then_some("location"),
+                                    "{label}"
+                                }
+                            }
+                        }
+                    }
+                    p { class: "showcase-toc-states", "状态：{spec.states}" }
                 }
             }
-        }
-    }
-}
-
-#[component]
-fn ShowcaseStillLife() -> Element {
-    rsx! {
-        div { class: "showcase-still-life", aria_hidden: "true",
-            div { class: "showcase-orbit" }
-            div { class: "showcase-specimen",
-                span { "A SMALL INTERACTION" }
-                strong { "让细节，轻轻生长。" }
-                div { "一点恰好的回应" i { class: "showcase-specimen-switch" } }
-            }
-            span { class: "showcase-float-mark", "✓ 刚刚好" }
-            span { class: "showcase-float-code", "Checkbox {{ checked: true }}" }
-            span { class: "showcase-life-caption", "FORM · FEEDBACK · FEELING" }
         }
     }
 }
