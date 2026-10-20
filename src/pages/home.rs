@@ -37,7 +37,13 @@ pub fn Home() -> Element {
 #[component]
 pub fn HomePage(page: i32) -> Element {
     let current_page = page.max(1);
+    let title = if current_page == 1 {
+        "Yggdrasil Blog".to_string()
+    } else {
+        format!("第 {current_page} 页 · Yggdrasil")
+    };
     rsx! {
+        document::Title { "{title}" }
         SuspenseBoundary {
             fallback: move |_| rsx! { DelayedSkeleton { HomeSkeleton { current_page } } },
             if current_page == 1 {

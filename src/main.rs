@@ -35,6 +35,9 @@ mod hooks;
 mod middleware;
 mod models;
 mod navigation;
+// og：分享图（og:image）渲染，字体随二进制嵌入，server-only。
+#[cfg(feature = "server")]
+mod og;
 // mcp：Model Context Protocol 服务器（/mcp Streamable HTTP，bearer token 鉴权）。
 // 仅 server feature 编译；WASM 前端不引用任何 mcp 符号。
 #[cfg(feature = "server")]

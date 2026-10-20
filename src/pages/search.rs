@@ -218,6 +218,7 @@ pub fn Search(#[props(default)] q: String) -> Element {
     let idle = !is_searching() && search_res().is_none();
 
     rsx! {
+        document::Title { "搜索 · Yggdrasil" }
         div { class: "search-page",
             h1 { class: "search-title page-enter", "搜索" }
             form {

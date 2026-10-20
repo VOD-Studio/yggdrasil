@@ -208,6 +208,8 @@ pub async fn update_security_settings(
         }
 
         invalidate_security_settings();
+        // 公开页的分享元信息含站点地址。
+        crate::ssr_cache::invalidate_ssr_all_public();
         tracing::info!(
             "Security settings updated: app_base_url={:?}, cookie_secure={}, proxy_count={}, max_sessions={}",
             app_base_url,

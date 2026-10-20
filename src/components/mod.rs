@@ -42,6 +42,8 @@ pub mod header;
 pub mod nav;
 /// 搜索面板（⌘K）
 pub mod search_palette;
+/// 分享元信息（description / Open Graph / Twitter 卡片）。
+pub mod share_meta;
 
 // ========= feature 层 — 绑定特定领域 (models / Route / api) =========
 // 按页面域划分；跨域复用前先考虑原子层。

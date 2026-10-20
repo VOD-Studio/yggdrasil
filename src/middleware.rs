@@ -267,6 +267,20 @@ pub(crate) async fn ssr_generation_middleware(
     response
 }
 
+/// Axum 中间件：把分享元信息所需的站点信息（地址、简介、站点图地址）放进 GET 请求
+/// 扩展，页面服务端渲染时由 `components::share_meta` 同步读取。位于 HTML 缓存内层，
+/// 缓存命中时不执行。
+pub(crate) async fn share_context_middleware(
+    mut req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    if req.method() == axum::http::Method::GET {
+        let ctx = crate::api::og::share_context().await;
+        req.extensions_mut().insert(ctx);
+    }
+    next.run(req).await
+}
+
 /// Axum 中间件：为所有响应附加 Server / X-Yggdrasil-Version / X-Yggdrasil-Git / X-Yggdrasil-Hash 头。
 /// 数据源与启动日志 `log_build_info()` 同源（`crate::build_info::BUILD_INFO`）。
 /// 受 `EXPOSE_VERSION_HEADERS` 控制——该开关在 `startup.rs` 决定是否挂载本层。

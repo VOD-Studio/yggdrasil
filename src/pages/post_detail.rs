@@ -27,6 +27,7 @@ use crate::components::post::post_cover::PostCover;
 use crate::components::post::post_footer::PostFooter;
 use crate::components::post::post_header::PostHeader;
 use crate::components::post::post_toc::PostToc;
+use crate::components::share_meta::PostShareMeta;
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::skeletons::post_detail_skeleton::PostDetailSkeleton;
 use crate::router::Route;
@@ -138,5 +139,7 @@ pub fn PostDetail(slug: String) -> Element {
                 }
             }
         }
+        document::Title { "{post.title} · Yggdrasil" }
+        PostShareMeta { post: post.clone() }
     }
 }

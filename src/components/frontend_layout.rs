@@ -9,6 +9,7 @@ use crate::components::footer::Footer;
 use crate::components::header::{Header, SearchIconLink};
 use crate::components::nav::build_nav_items;
 use crate::components::search_palette::{use_search_palette_provider, SearchPalette};
+use crate::components::share_meta::SiteShareMeta;
 use crate::components::skeletons::archive_skeleton::{ArchiveSkeleton, TagDetailSkeleton};
 use crate::components::skeletons::changelog_skeleton::ChangelogSkeleton;
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
@@ -81,12 +82,11 @@ pub fn FrontendLayout() -> Element {
     } else {
         "max-w-[880px]"
     };
+    // 文章页由 PostDetail 写自己的分享元信息，其余页面用站点的。
+    let is_post = matches!(route, Route::PostDetail { .. });
+    let path = route.to_string();
     // 文章页正文仍是 680px，主区放宽到 1240px 给右侧目录留出位置；页头页脚保持索引宽度。
-    let main_width = if matches!(route, Route::PostDetail { .. }) {
-        "max-w-[1240px]"
-    } else {
-        max_width
-    };
+    let main_width = if is_post { "max-w-[1240px]" } else { max_width };
 
     rsx! {
         FrontendShell {
@@ -101,6 +101,9 @@ pub fn FrontendLayout() -> Element {
             } },
             footer: rsx! { Footer { max_width } },
             main_content: rsx! {
+                if !is_post {
+                    SiteShareMeta { path }
+                }
                 SuspenseBoundary { fallback: move |_| route_skeleton(&route), Outlet::<Route> {} }
                 SearchPalette {}
             },

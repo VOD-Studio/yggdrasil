@@ -85,6 +85,7 @@ fn visible_tags<'a>(tags: &'a [Tag], current: Option<&str>, expanded: bool) -> V
 #[component]
 pub fn Archives() -> Element {
     rsx! {
+        document::Title { "归档 · Yggdrasil" }
         div { class: "archive",
             header { class: "archive-header page-enter",
                 h1 { class: "archive-title", "归档" }

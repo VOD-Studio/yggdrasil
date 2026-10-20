@@ -25,6 +25,8 @@ pub mod post;
 pub mod public_post;
 /// 回收站与站点配置模型。
 pub mod settings;
+/// 分享图的展示内容与图片地址版本号。
+pub mod share;
 /// SQL 补全用 schema 模型（`get_db_schema` server function 的返回值 DTO，
 /// 供 `bridges::codemirror` 消费做 SQL 补全）。
 pub mod sql_schema;

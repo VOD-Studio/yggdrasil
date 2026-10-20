@@ -13,6 +13,7 @@ use crate::models::friend_link::FriendLink;
 #[component]
 pub fn Friends() -> Element {
     rsx! {
+        document::Title { "友链 · Yggdrasil" }
         div { class: "friends",
             SuspenseBoundary {
                 fallback: |_| rsx! { DelayedSkeleton { FriendsSkeleton {} } },

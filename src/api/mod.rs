@@ -42,6 +42,8 @@ pub mod mcp_tokens;
 pub mod mhchem;
 /// 笔记、笔记本与知识库共用规则。
 pub mod notes;
+/// 分享图端点与分享元信息上下文（server-only）。
+pub mod og;
 /// 文章 CRUD 相关接口。
 pub mod posts;
 /// 个人信息（当前账号资料与密码）的 Dioxus server function。

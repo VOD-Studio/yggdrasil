@@ -15,6 +15,7 @@ use crate::router::Route;
 #[component]
 pub fn TagDetail(tag: String) -> Element {
     rsx! {
+        document::Title { "{tag} · 标签 · Yggdrasil" }
         div { class: "archive",
             TagIntro { tag: tag.clone() }
             // 单元素 keyed 列表使同路由变体切换时卸载旧请求；

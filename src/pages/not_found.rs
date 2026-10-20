@@ -42,6 +42,7 @@ pub fn NotFound(segments: Vec<String>) -> Element {
     let path = use_route::<Route>().to_string();
 
     rsx! {
+        document::Title { "页面不存在 · Yggdrasil" }
         div { class: "not-found page-enter",
             p { class: "not-found-code tabular-nums", "404" }
             h1 { class: "not-found-title", "这个页面不存在" }

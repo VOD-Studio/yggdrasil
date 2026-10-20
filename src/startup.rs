@@ -342,6 +342,9 @@ fn build_router(options: ServerOptions) -> axum::Router {
 
     let mut app_routes = dioxus_app
         .layer(axum::middleware::from_fn(
+            crate::middleware::share_context_middleware,
+        ))
+        .layer(axum::middleware::from_fn(
             crate::ssr_cache::cache_public_html,
         ))
         .layer(axum::middleware::from_fn(
@@ -370,6 +373,14 @@ fn build_router(options: ServerOptions) -> axum::Router {
         .route(
             "/tags",
             axum::routing::get(|| async { axum::response::Redirect::permanent("/archives") }),
+        )
+        .route(
+            "/og/site.png",
+            axum::routing::get(crate::api::og::site_image),
+        )
+        .route(
+            "/og/post/{file}",
+            axum::routing::get(crate::api::og::post_image),
         )
         .route("/healthz", axum::routing::get(crate::api::health::healthz))
         .route("/readyz", axum::routing::get(crate::api::health::readyz))
