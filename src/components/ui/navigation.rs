@@ -193,12 +193,14 @@ fn neighbor_tab<'a>(items: &[(&'a str, &'a str)], active: &str, delta: i32) -> O
 /// - `active_value`：当前选中的值
 /// - `on_change`：选项卡切换时的回调
 /// - `aria_label`：选项卡组的无障碍名称（可选）
+/// - `class`：外层容器类，默认留出下方 1.5rem 间距
 #[component]
 pub fn FilterTabs(
     items: Vec<(&'static str, &'static str)>,
     active_value: String,
     on_change: EventHandler<String>,
     #[props(default)] aria_label: Option<&'static str>,
+    #[props(default = "mb-6")] class: &'static str,
 ) -> Element {
     #[allow(unused_mut)]
     let mut thumb_style = use_signal(|| None::<String>);
@@ -238,7 +240,7 @@ pub fn FilterTabs(
     let active_for_keys = active_value.clone();
 
     rsx! {
-        div { class: "mb-6",
+        div { class,
             div {
                 class: "segmented",
                 role: "tablist",

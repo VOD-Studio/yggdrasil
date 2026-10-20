@@ -170,11 +170,11 @@ async function main() {
     await push(page, '/search');
     await page.locator('#article-search').fill(SEARCH_QUERY);
     await page.locator('#article-search').press('Enter');
-    await page.waitForSelector('.search-result-link');
-    const beforeTitles = await page.locator('.search-result-link h2').allTextContents();
-    console.log('PASS search-detail-back', JSON.stringify(await titleRoundTrip(page, '.search-result-link')));
+    await page.waitForSelector('a.search-result');
+    const beforeTitles = await page.locator('.search-result-title').allTextContents();
+    console.log('PASS search-detail-back', JSON.stringify(await titleRoundTrip(page, 'a.search-result')));
     assert.equal(await page.locator('#article-search').inputValue(), SEARCH_QUERY);
-    assert.deepEqual(await page.locator('.search-result-link h2').allTextContents(), beforeTitles);
+    assert.deepEqual(await page.locator('.search-result-title').allTextContents(), beforeTitles);
     console.log('PASS search-query-results-restored', beforeTitles.length);
     await push(page, TAG_PATH);
     assert.equal(await page.locator('.archive-tags .chip[aria-current="page"]').count(), 1);

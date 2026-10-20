@@ -117,13 +117,13 @@ fn page_route(path: &str) -> Route {
 }
 
 /// 忽略大小写的子串匹配，空查询视为匹配。
-fn contains_ci(text: &str, query: &str) -> bool {
+pub(crate) fn contains_ci(text: &str, query: &str) -> bool {
     let q = query.trim();
     q.is_empty() || text.to_lowercase().contains(&q.to_lowercase())
 }
 
 /// 按忽略大小写的命中切分文本，`true` 段需要高亮。按字符比较，中文与西文都适用。
-fn highlight(text: &str, query: &str) -> Vec<(String, bool)> {
+pub(crate) fn highlight(text: &str, query: &str) -> Vec<(String, bool)> {
     let q: Vec<char> = query.trim().to_lowercase().chars().collect();
     let chars: Vec<char> = text.chars().collect();
     if q.is_empty() {
@@ -156,7 +156,7 @@ fn highlight(text: &str, query: &str) -> Vec<(String, bool)> {
 
 /// 摘要片段：截取第一处命中前后 `radius` 个字，两端被截断时加省略号；
 /// 没有命中时取开头。
-fn snippet(text: &str, query: &str, radius: usize) -> String {
+pub(crate) fn snippet(text: &str, query: &str, radius: usize) -> String {
     let chars: Vec<char> = text.chars().collect();
     let q: Vec<char> = query.trim().to_lowercase().chars().collect();
     let lower: Vec<char> = chars
@@ -340,7 +340,7 @@ fn write_recents(recents: &[String]) {
 
 /// 按 id 聚焦元素（仅 wasm）。
 #[cfg(target_arch = "wasm32")]
-fn focus_by_id(element_id: &str) {
+pub(crate) fn focus_by_id(element_id: &str) {
     use wasm_bindgen::JsCast;
     if let Some(el) = web_sys::window()
         .and_then(|w| w.document())
