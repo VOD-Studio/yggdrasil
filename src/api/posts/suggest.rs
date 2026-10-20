@@ -171,3 +171,145 @@ mod tests {
             .unwrap();
     }
 }
+
+/// 404 页「也许你在找」：从地址里拆出的词。
+#[cfg_attr(not(feature = "server"), allow(dead_code))]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PathRecommendations {
+    /// 参与匹配的词（去掉了路由前缀、数字与过短的片段）。
+    pub words: Vec<String>,
+    pub posts: Vec<super::types::PostSuggestion>,
+}
+
+/// 404 推荐最多列出的文章数。
+#[cfg(feature = "server")]
+const PATH_RECOMMEND_LIMIT: i64 = 3;
+
+/// 地址里不代表内容的段：路由前缀与常见文件名。
+#[cfg(any(feature = "server", test))]
+const ROUTE_WORDS: [&str; 10] = [
+    "post", "posts", "page", "tags", "tag", "notes", "book", "about", "index", "html",
+];
+
+/// 把地址拆成用于匹配的词：按 `/ - _ .` 与空白切分，解码百分号编码，
+/// 去掉路由前缀、纯数字与不足两个字符的片段，最多保留 5 个、去重。
+#[cfg(any(feature = "server", test))]
+fn path_words(path: &str) -> Vec<String> {
+    let path = path.split(['?', '#']).next().unwrap_or_default();
+    let decoded = percent_decode(path);
+    let mut words: Vec<String> = Vec::new();
+    for word in decoded.split(|c: char| "/-_.".contains(c) || c.is_whitespace()) {
+        let word = word.trim().to_lowercase();
+        if word.chars().count() < 2
+            || word.chars().all(|c| c.is_ascii_digit())
+            || ROUTE_WORDS.contains(&word.as_str())
+            || words.contains(&word)
+        {
+            continue;
+        }
+        words.push(word);
+        if words.len() == 5 {
+            break;
+        }
+    }
+    words
+}
+
+/// 解码 `%XX`；不是合法 UTF-8 时退回原文。
+#[cfg(any(feature = "server", test))]
+fn percent_decode(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let Some(byte) = text
+                .get(i + 1..i + 3)
+                .and_then(|hex| u8::from_str_radix(hex, 16).ok())
+            {
+                out.push(byte);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8(out).unwrap_or_else(|_| text.to_string())
+}
+
+/// 按地址里的词匹配已发布文章的标题与 slug，命中词多的排前，最多 3 篇。
+/// 地址里没有可用的词时不查询。公开接口，结果不缓存（只在 404 时调用）。
+#[server(RecommendForPath, "/api")]
+pub async fn recommend_for_path(path: String) -> Result<PathRecommendations, ServerFnError> {
+    #[cfg(feature = "server")]
+    {
+        let words = path_words(&path);
+        if words.is_empty() {
+            return Ok(PathRecommendations {
+                words,
+                posts: Vec::new(),
+            });
+        }
+        let patterns: Vec<String> = words
+            .iter()
+            .map(|w| format!("%{}%", crate::utils::server::escape_like_pattern(w)))
+            .collect();
+        let client = get_conn().await.map_err(AppError::db_conn)?;
+        let rows = client
+            .query(
+                "SELECT p.slug, p.title, p.summary, p.published_at,
+                        COALESCE(array_agg(t.name ORDER BY t.name) FILTER (WHERE t.name IS NOT NULL), '{}') AS tags,
+                        (SELECT COUNT(*) FROM unnest($1::text[]) w
+                         WHERE p.title ILIKE w ESCAPE '\\' OR p.slug ILIKE w ESCAPE '\\') AS hits
+                 FROM posts p
+                 LEFT JOIN post_tags pt ON p.id = pt.post_id
+                 LEFT JOIN tags t ON pt.tag_id = t.id
+                 WHERE p.status = 'published' AND p.deleted_at IS NULL
+                   AND (p.title ILIKE ANY($1) OR p.slug ILIKE ANY($1))
+                 GROUP BY p.id
+                 ORDER BY hits DESC, p.published_at DESC NULLS LAST
+                 LIMIT $2",
+                &[&patterns, &PATH_RECOMMEND_LIMIT],
+            )
+            .await
+            .map_err(AppError::query)?;
+        let posts = rows
+            .iter()
+            .map(|r| PostSuggestion {
+                slug: r.get("slug"),
+                title: r.get("title"),
+                summary: r.get("summary"),
+                published_at: r.get("published_at"),
+                tags: r.get("tags"),
+            })
+            .collect();
+        Ok(PathRecommendations { words, posts })
+    }
+    #[cfg(not(feature = "server"))]
+    {
+        let _ = path;
+        Ok(PathRecommendations {
+            words: Vec::new(),
+            posts: Vec::new(),
+        })
+    }
+}
+
+#[cfg(test)]
+mod path_tests {
+    use super::path_words;
+
+    #[test]
+    fn path_words_drop_route_prefixes_numbers_and_short_bits() {
+        assert_eq!(path_words("/post/hesper-apple-1"), ["hesper", "apple"]);
+        assert_eq!(path_words("/page/2"), Vec::<String>::new());
+        assert_eq!(path_words("/tags/Rust?x=1"), ["rust"]);
+        assert_eq!(
+            path_words("/%E5%BC%82%E6%AD%A5-rust/rust"),
+            ["异步", "rust"]
+        );
+        assert_eq!(path_words("/a/b/c-d"), Vec::<String>::new());
+        assert_eq!(path_words("/one/two/three/four/five/six").len(), 5);
+    }
+}

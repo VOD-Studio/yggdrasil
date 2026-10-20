@@ -55,7 +55,7 @@ pub use stats::get_post_stats;
 #[cfg(feature = "server")]
 pub(crate) use suggest::query_suggestions;
 /// 搜索面板（⌘K）的文章建议。
-pub use suggest::suggest_posts;
+pub use suggest::{recommend_for_path, suggest_posts, PathRecommendations};
 /// 获取全部标签及其文章数量。
 pub use tags::list_tags;
 /// 恢复已删除文章。

@@ -3,15 +3,17 @@
 //! 对应路由 `/:..segments`。
 //!
 //! 当用户访问未匹配任何前端路由的 URL 时，Dioxus Router 会回退到该 404 页面。
-//! 该页面为静态展示页面，不发起任何 server function 调用。
+//! 一句话说明、写错的地址、返回首页 / 搜索，以及按地址里的词匹配到的「也许你在找」。
 
 use dioxus::prelude::*;
 
+use crate::api::posts::{recommend_for_path, PathRecommendations};
+use crate::components::ui::{Icon, IconName};
 use crate::router::Route;
 
 /// 404 页面组件，对应兜底路由 `/:..segments`。
 ///
-/// 展示大号的装饰性 404 数字、状态标签、错误说明以及返回首页的链接。
+/// 展示 404 标记、说明、当前地址、返回首页与搜索，以及推荐文章。
 ///
 /// # 两种命中路径
 /// 本组件在两种完全不同的机制下被渲染：
@@ -36,60 +38,93 @@ pub fn NotFound(segments: Vec<String>) -> Element {
             Some("Page Not Found".to_string()),
         );
     }
+    // 错误冒泡时路由仍是原页面（如 PostDetail），地址同样取当前路由。
+    let path = use_route::<Route>().to_string();
 
     rsx! {
-        div { class: "flex flex-col items-center justify-center text-center min-h-[50vh] md:min-h-[55vh] px-6",
-            // 巨大的装饰性 404，作为视觉锚点
-            div { class: "relative mb-2",
-                span { class: "text-[140px] md:text-[180px] font-bold leading-none tracking-tighter text-paper-tertiary/[0.08] dark:text-paper-tertiary/[0.06] select-none",
-                    "404"
+        div { class: "not-found page-enter",
+            p { class: "not-found-code tabular-nums", "404" }
+            h1 { class: "not-found-title", "这个页面不存在" }
+            p { class: "not-found-description", "地址可能写错了，或者页面已经移走。" }
+            p { class: "not-found-path", code { title: "{path}", "{path}" } }
+            div { class: "not-found-actions",
+                // 返回首页：先清除错误边界再导航（见组件顶部文档场景 2）。
+                button {
+                    r#type: "button",
+                    class: "btn btn-primary btn-lg",
+                    onclick: move |_| {
+                        if let Some(ctx) = try_consume_context::<ErrorContext>() {
+                            ctx.clear_errors();
+                        }
+                        let _ = dioxus::router::navigator().push(Route::Home {});
+                    },
+                    "返回首页"
+                }
+                // 错误冒泡时本页渲染在前台布局之外，取不到搜索面板，改为链接到搜索页。
+                Link {
+                    class: "btn btn-secondary btn-lg",
+                    to: Route::Search { q: String::new() },
+                    onclick: move |_| {
+                        if let Some(ctx) = try_consume_context::<ErrorContext>() {
+                            ctx.clear_errors();
+                        }
+                    },
+                    Icon { name: IconName::Search, size: 16 }
+                    "搜索"
                 }
             }
+            Recommendations { key: "{path}", path: path.clone() }
+        }
+    }
+}
 
-            // 状态标签
-            span { class: "text-sm font-medium tracking-[0.2em] uppercase text-paper-secondary mb-6",
-                "Page Not Found"
+/// 「也许你在找」：无命中或请求失败时整块不显示。
+///
+/// 只在浏览器里请求（effect 不在 SSR 中执行）：本组件也会渲染在错误边界的
+/// fallback 里，那里挂起服务端 future 会让水合数据与 DOM 对不上。
+/// 地址变化时由调用方以 `key` 重建本组件。
+#[component]
+fn Recommendations(path: String) -> Element {
+    let mut result = use_signal(|| None::<PathRecommendations>);
+    use_effect(move || {
+        let path = path.clone();
+        spawn(async move {
+            if let Ok(found) = recommend_for_path(path).await {
+                result.set(Some(found));
             }
-
-            // 分隔线
-            div { class: "w-12 h-px bg-paper-border mb-8" }
-
-            // 错误信息
-            h1 { class: "text-xl md:text-2xl font-medium text-paper-primary mb-3",
-                "页面未找到"
-            }
-            p { class: "text-sm md:text-base text-paper-secondary max-w-sm leading-relaxed mb-10",
-                "这个页面似乎走丢了，或者从未存在过。"
-            }
-
-            // 返回首页：用 onclick 先清除错误边界再导航。
-            // 直接用 Link 无法干预点击时机，故改为按钮 + 命令式导航。
-            // 详见组件顶部文档：场景 2（错误冒泡）下若不清除错误，
-            // ErrorBoundary 会一直渲染 fallback，路由切换后页面仍卡在本页。
-            button {
-                r#type: "button",
-                onclick: move |_| {
-                    if let Some(ctx) = try_consume_context::<ErrorContext>() {
-                        ctx.clear_errors();
+        });
+    });
+    let Some(found) = result() else {
+        return rsx! {};
+    };
+    if found.posts.is_empty() {
+        return rsx! {};
+    }
+    let words = found.words.join("」「");
+    rsx! {
+        section { class: "not-found-maybe", aria_labelledby: "not-found-maybe-title",
+            h2 { id: "not-found-maybe-title", class: "section-label", "也许你在找" }
+            ul {
+                for post in found.posts {
+                    li { key: "{post.slug}",
+                        // 错误冒泡场景下先清除错误边界，导航后才会渲染新页面。
+                        Link {
+                            class: "not-found-row",
+                            to: Route::PostDetail { slug: post.slug.clone() },
+                            onclick: move |_| {
+                                if let Some(ctx) = try_consume_context::<ErrorContext>() {
+                                    ctx.clear_errors();
+                                }
+                            },
+                            span { "{post.title}" }
+                            if let Some(at) = post.published_at {
+                                time { class: "tabular-nums", {at.format("%Y.%m.%d").to_string()} }
+                            }
+                        }
                     }
-                    let _ = dioxus::router::navigator().push(Route::Home {});
-                },
-                class: "group inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium text-paper-primary bg-paper-entry border border-paper-border rounded-lg hover:border-paper-secondary hover:bg-paper-border transition-all cursor-pointer",
-                svg {
-                    xmlns: "http://www.w3.org/2000/svg",
-                    width: "16",
-                    height: "16",
-                    view_box: "0 0 24 24",
-                    fill: "none",
-                    stroke: "currentColor",
-                    stroke_width: "2",
-                    stroke_linecap: "round",
-                    stroke_linejoin: "round",
-                    class: "transition-transform group-hover:-translate-x-0.5",
-                    path { d: "M19 12H5M12 19l-7-7 7-7" }
                 }
-                "返回首页"
             }
+            p { class: "not-found-note", "按地址里的词「{words}」匹配到的文章。" }
         }
     }
 }

@@ -1,4 +1,5 @@
-/* 全文搜索结果页：衬线页标题、Composer、排序分段控件与带命中高亮的结果行。 */
+/* 全文搜索结果页：衬线页标题、Composer、排序分段控件与带命中高亮的结果行。
+   404 页与搜索同属「找不到时去哪儿」，样式放在文件末尾。 */
 .search-title {
   margin: 0;
   padding-top: 1.5rem;
@@ -146,4 +147,92 @@ a.search-result:hover { background-color: var(--color-ink-1); }
 
 @media (max-width: 760px) {
   .search-title { font-size: 1.875rem; }
+}
+
+/* ======== 404：一句话、写错的地址、返回入口与推荐文章 ======== */
+.not-found {
+  max-width: 560px;
+  margin: 0 auto;
+  padding-top: 4.5rem;
+}
+.not-found-code {
+  margin: 0;
+  color: var(--color-fg-3);
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+}
+.not-found-title {
+  margin: 0.75rem 0 0;
+  color: var(--color-fg);
+  font-family: var(--font-serif);
+  font-size: 2.375rem;
+  font-weight: 500;
+  line-height: 1.3;
+}
+.not-found-description {
+  margin: 0.875rem 0 0;
+  color: var(--color-fg-2);
+  font-size: 1rem;
+  line-height: 1.8;
+}
+.not-found-path { margin: 1.125rem 0 0; }
+.not-found-path code {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 0.25rem 0.625rem;
+  border-radius: 6px;
+  background-color: var(--color-ink-1);
+  color: var(--color-fg-2);
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+.not-found-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 2rem;
+}
+.not-found-maybe { margin-top: 4rem; }
+.not-found-maybe .section-label { margin-bottom: 0.5rem; }
+.not-found-maybe ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.not-found-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 0 -0.625rem;
+  padding: 0.625rem;
+  border-radius: 8px;
+  color: var(--color-fg);
+  font-size: 0.9375rem;
+  text-decoration: none;
+  transition: background-color 150ms var(--ease-out-expo);
+}
+.not-found-row:hover { background-color: var(--color-ink-1); }
+.not-found-row:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+.not-found-row time {
+  flex-shrink: 0;
+  color: var(--color-fg-3);
+  font-size: 0.8125rem;
+}
+.not-found-note {
+  margin: 0.625rem 0 0;
+  color: var(--color-fg-3);
+  font-size: 0.78125rem;
+}
+
+@media (max-width: 760px) {
+  .not-found { padding-top: 2.5rem; }
+  .not-found-title { font-size: 1.875rem; }
 }
