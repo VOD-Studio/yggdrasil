@@ -1003,6 +1003,35 @@
     box-shadow: 0 0 0 1px var(--color-hairline), var(--shadow-sm);
   }
 
+  /* ---- 区块加载失败：只替换出错的区块，重试在原位完成 ---- */
+  .load-error {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1.25rem;
+    padding: 1.75rem;
+    border-radius: var(--radius-code);
+    background-color: var(--color-surface-1);
+    box-shadow: 0 0 0 1px var(--color-hairline);
+  }
+
+  .load-error-copy {
+    flex: 1;
+    min-width: 15rem;
+  }
+
+  .load-error h3 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+  }
+
+  .load-error p {
+    margin: 0.375rem 0 0;
+    color: var(--color-fg-2);
+    font-size: 0.875rem;
+  }
+
   /* ---- 骨架：柔和扫光，数据到达前占住真实布局 ---- */
   .skeleton {
     border-radius: 6px;

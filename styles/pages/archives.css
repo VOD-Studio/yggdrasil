@@ -1,300 +1,188 @@
-/* 归档标签索引：纸面色、浅绿光晕和细描边，与站点明暗主题共用语义色。 */
-.archive-tags {
-  --collapse-duration: 420ms;
-  margin-bottom: 2.25rem;
-  border-radius: 1.5rem;
-  border-color: color-mix(in srgb, var(--color-paper-border) 65%, transparent);
-  background:
-    radial-gradient(ellipse at top right, color-mix(in srgb, var(--color-paper-accent) 7%, transparent), transparent 65%),
-    color-mix(in srgb, var(--color-paper-entry) 55%, var(--color-paper-theme));
-  box-shadow: 0 4px 20px -16px color-mix(in srgb, var(--color-paper-primary) 25%, transparent);
-  transition: border-color 240ms ease, box-shadow 240ms ease;
+/* 归档与标签详情：衬线页标题、标签筛选、按年份分组的文章行。年份大字在宽屏吸附。 */
+.archive-header { padding-top: 1.5rem; }
+.archive-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin-bottom: 0.875rem;
+  color: var(--color-fg-3);
+  font-size: 0.8125rem;
+  text-decoration: none;
+  transition: color 150ms var(--ease-out-expo);
 }
-
-.archive-tags:focus-within {
-  border-color: color-mix(in srgb, var(--color-paper-accent) 60%, var(--color-paper-border));
+.archive-back:hover { color: var(--color-fg); }
+.archive-back:focus-visible {
+  border-radius: 4px;
+  outline: none;
+  box-shadow: var(--shadow-focus);
 }
-
-.archive-tags .collapsible-trigger {
-  gap: 1rem;
-  padding: 1.5rem;
-  border-radius: 1.5rem;
-}
-
-.archive-tags .collapsible-trigger:hover {
-  background: color-mix(in srgb, var(--color-paper-accent) 4%, transparent);
-}
-
-.archive-tags .collapsible-trigger:focus-visible {
-  outline: 2px solid var(--color-paper-accent);
-  outline-offset: -4px;
-}
-
-.archive-tags .collapsible-indicator {
-  width: 2.75rem;
-  height: 2.75rem;
-  border-radius: 1rem;
-  background: color-mix(in srgb, var(--color-paper-accent) 10%, var(--color-paper-theme));
-  color: var(--color-paper-accent);
-  transition: transform 240ms var(--collapse-ease), background-color 240ms ease;
-}
-
-.archive-tags .collapsible-indicator > div {
-  display: none;
-}
-
-.archive-tags .collapsible-indicator::before {
-  content: "#";
-  font-size: 1.6rem;
+.archive-title {
+  margin: 0;
+  color: var(--color-fg);
+  font-family: var(--font-serif);
+  font-size: 2.25rem;
   font-weight: 500;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
 }
-
-.archive-tags .collapsible-trigger:hover .collapsible-indicator {
-  transform: rotate(-8deg);
+.archive-title-hash { color: var(--color-fg-3); }
+.archive-summary {
+  margin: 0.625rem 0 0;
+  color: var(--color-fg-2);
+  font-size: 0.9375rem;
 }
+.skeleton.archive-summary { margin-top: 0.875rem; }
 
-.archive-tags .collapsible-trigger:active .collapsible-indicator {
-  transform: rotate(-8deg) scale(0.92);
+/* ---- 标签筛选 ---- */
+.archive-tags { margin-top: 2.25rem; }
+.archive-tags-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
 }
-
-.archive-tags .collapsible-title {
-  font-size: 1rem;
-  font-weight: 600;
-  letter-spacing: 0.025em;
+.archive-tags-title {
+  margin: 0;
+  color: var(--color-fg-3);
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.12em;
 }
-
-.archive-tags .collapsible-summary {
-  margin-top: 0.35rem;
-  white-space: normal;
-  line-height: 1.7;
+.archive-tags-toggle {
+  padding: 0.25rem 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-fg-2);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+  transition: color 150ms var(--ease-out-expo);
 }
-
-.archive-tags .collapsible-chevron {
-  width: 1.125rem;
-  height: 1.125rem;
-  transition:
-    rotate var(--collapse-duration) var(--collapse-ease),
-    transform var(--collapse-duration) var(--collapse-ease),
-    color 200ms ease;
+.archive-tags-toggle:hover { color: var(--color-fg); }
+.archive-tags-toggle:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
 }
-
-.archive-tags .collapsible-trigger:hover .collapsible-chevron {
-  color: var(--color-paper-accent);
-}
-
-.archive-tags-body {
-  margin-inline: 1.5rem;
-  padding-block: 1.25rem 1.5rem;
-  border-top: 1px solid color-mix(in srgb, var(--color-paper-border) 50%, transparent);
-}
-
 .archive-tags-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.625rem;
-  list-style: none;
+  gap: 0.375rem;
+}
+/* 当前标签：浮起样式，计数换成陶土色；再点一次回到全部归档。 */
+.archive-tags-list .chip.is-current {
+  background-color: var(--color-surface-2);
+  box-shadow: 0 0 0 1px var(--color-hairline), var(--shadow-sm);
+  color: var(--color-fg);
+  font-weight: 500;
+}
+.dark .archive-tags-list .chip.is-current { background-color: var(--color-surface-3); }
+.archive-tags-list .chip.is-current > .chip-count { color: var(--color-clay-text); }
+.archive-tags-list .chip.is-current:focus-visible { box-shadow: var(--shadow-focus); }
+
+/* ---- 年份分组 ---- */
+.archive-years { margin-top: 3rem; }
+.archive-year {
+  display: grid;
+  grid-template-columns: 7.5rem minmax(0, 1fr);
+  gap: 1.5rem;
+  padding: 1.75rem 0;
+  box-shadow: inset 0 1px 0 var(--color-hairline);
+}
+.archive-year-label {
+  position: sticky;
+  top: 5.5rem;
+  align-self: start;
+}
+.archive-year-number {
+  margin: 0;
+  color: var(--color-fg);
+  font-family: var(--font-serif);
+  font-size: 1.875rem;
+  font-weight: 500;
+  line-height: 1.1;
+  font-variant-numeric: oldstyle-nums;
+}
+.archive-year-count {
+  margin: 0.375rem 0 0;
+  color: var(--color-fg-3);
+  font-size: 0.8125rem;
+}
+.archive-rows {
   margin: 0;
   padding: 0;
+  list-style: none;
 }
-
-.archive-tags-list > li {
-  display: flex;
-  max-width: 100%;
-  min-width: 0;
-  opacity: 0;
-  transform: translateY(8px);
-  transition: opacity 180ms ease, transform 240ms var(--collapse-ease);
-}
-
-.archive-tags[data-open="true"] .archive-tags-list > li {
-  opacity: 1;
-  transform: translateY(0);
-  transition-duration: 280ms, 360ms;
-  transition-delay: var(--tag-delay, 0ms);
-}
-
-.archive-tag-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  min-height: 44px;
-  max-width: 100%;
-  padding: 0.5rem 0.625rem 0.5rem 0.875rem;
-  border: 1px solid color-mix(in srgb, var(--color-paper-border) 65%, transparent);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--color-paper-theme) 80%, transparent);
-  color: var(--color-paper-primary);
-  font-size: 0.875rem;
-  line-height: 1.4;
-  text-decoration: none;
-  transition:
-    transform 220ms var(--collapse-ease),
-    background-color 220ms ease,
-    border-color 220ms ease,
-    color 220ms ease,
-    box-shadow 220ms ease;
-}
-
-.archive-tag-mark {
-  color: var(--color-paper-accent);
-  opacity: 0.7;
-  transition: opacity 200ms ease;
-}
-
-.archive-tag-name {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.archive-tag-count {
-  flex-shrink: 0;
-  min-width: 1.5rem;
-  padding: 0.2rem 0.4rem;
-  border-radius: 999px;
-  background: var(--color-paper-entry);
-  color: var(--color-paper-secondary);
-  font-size: 0.6875rem;
-  font-variant-numeric: tabular-nums;
-  text-align: center;
-  transition: background-color 220ms ease, color 220ms ease;
-}
-
-.archive-tag-chip:is(:hover, :focus-visible) {
-  transform: translateY(-2px);
-  border-color: color-mix(in srgb, var(--color-paper-accent) 65%, var(--color-paper-border));
-  background: color-mix(in srgb, var(--color-paper-accent) 8%, var(--color-paper-theme));
-  color: var(--color-paper-accent);
-  box-shadow: 0 4px 10px -6px color-mix(in srgb, var(--color-paper-accent) 30%, transparent);
-}
-
-.archive-tag-chip:is(:hover, :focus-visible) .archive-tag-count {
-  background: color-mix(in srgb, var(--color-paper-accent) 14%, var(--color-paper-theme));
-  color: var(--color-paper-accent);
-}
-
-.archive-tag-chip:is(:hover, :focus-visible) .archive-tag-mark {
-  opacity: 1;
-}
-
-.archive-tag-chip:active {
-  transform: translateY(0) scale(0.96);
-}
-
-.archive-tag-chip:focus-visible,
-.archive-header-link:focus-visible,
-.archive-entry:focus-visible,
-.archive-year-nav a:focus-visible,
-.archive-tags-retry:focus-visible {
-  outline: 2px solid var(--color-paper-accent);
-  outline-offset: 3px;
-}
-
-/* 时间索引：年份留白、月份细线与日期字阶，不为每篇文章再套一层卡片。 */
-.archive-intro { padding-block: 0.5rem 2.25rem; }
-.archive-eyebrow {
-  display: flex;
-  align-items: center;
-  gap: 0.625rem;
-  color: var(--color-paper-secondary);
-  font-size: 10px;
-  letter-spacing: 0.16em;
-}
-.archive-eyebrow > span { width: 22px; height: 1px; background: var(--color-paper-accent); }
-.archive-intro-line { display: flex; align-items: end; justify-content: space-between; gap: 1.5rem; margin-top: 1.5rem; }
-.archive-intro h1 { font-size: clamp(2.75rem, 6vw, 3.5rem); font-weight: 650; line-height: 1.1; letter-spacing: -0.06em; }
-.archive-title-dot { color: var(--color-paper-accent); }
-.archive-intro-line > p { padding-bottom: 0.25rem; color: var(--color-paper-secondary); font-size: 0.8125rem; line-height: 1.8; }
-.archive-timeline { --archive-line: color-mix(in srgb, var(--color-paper-border) 55%, transparent); }
-.archive-timeline [id] { scroll-margin-top: 6rem; }
-.archive-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-block: 0.25rem 1.125rem; border-bottom: 1px solid var(--archive-line); }
-.archive-toolbar-title { display: flex; align-items: center; gap: 0.875rem; }
-.archive-toolbar h2 { font-size: 0.875rem; font-weight: 600; }
-.archive-total { padding: 0.25rem 0.625rem; border-radius: 6px; background: color-mix(in srgb, var(--color-paper-entry) 75%, transparent); color: var(--color-paper-secondary); font-size: 0.6875rem; }
-.archive-order { display: flex; align-items: center; gap: 0.5rem; color: var(--color-paper-secondary); font-size: 0.6875rem; }
-.archive-order > span { color: var(--color-paper-accent); }
-.archive-year-nav { display: flex; flex-wrap: wrap; gap: 0.5rem; padding-top: 1.25rem; }
-.archive-year-nav a { padding: 0.5rem 0.875rem; border: 1px solid var(--archive-line); border-radius: 8px; font: 0.75rem ui-monospace, monospace; transition: color 200ms, border-color 200ms; }
-.archive-year-nav a:hover { color: var(--color-paper-accent); border-color: currentColor; }
-.archive-year { display: grid; grid-template-columns: 156px minmax(0, 1fr); gap: 2.5rem; padding-top: 2.75rem; }
-.archive-year + .archive-year { margin-top: 2.75rem; border-top: 1px solid var(--archive-line); }
-.archive-year-sticky { position: sticky; top: 6rem; }
-.archive-year-kicker { color: var(--color-paper-secondary); font-size: 9px; letter-spacing: 0.16em; }
-.archive-year-number { margin-block: 0.375rem 0.625rem; font-family: var(--font-serif); font-size: 3.75rem; font-weight: 400; line-height: 1; letter-spacing: -0.06em; }
-.archive-year-summary { display: flex; align-items: center; gap: 0.5rem; color: var(--color-paper-secondary); font-size: 0.6875rem; }
-.archive-year-rule { display: block; width: 32px; height: 2px; margin-top: 1.5rem; background: color-mix(in srgb, var(--color-paper-accent) 65%, transparent); }
-.archive-header-link { border-radius: 4px; transition: color 220ms ease; }
-.archive-header-link:hover { color: var(--color-paper-accent); }
-.archive-months { min-width: 0; padding-left: 1.75rem; border-left: 1px solid var(--archive-line); }
-.archive-month { position: relative; padding-bottom: 2.25rem; }
-.archive-month:last-child { padding-bottom: 0; }
-.archive-month::before { content: ""; position: absolute; top: 0.75rem; left: calc(-1.75rem - 4px); width: 7px; height: 7px; border-radius: 50%; background: var(--color-paper-accent); box-shadow: 0 0 0 5px var(--color-paper-theme); }
-.archive-month-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-height: 32px; margin-bottom: 0.625rem; }
-.archive-month-header a { display: inline-flex; align-items: baseline; gap: 0.375rem; font-size: 0.8125rem; font-weight: 500; }
-.archive-month-number { font: 1.25rem ui-monospace, monospace; letter-spacing: -0.06em; }
-.archive-month-name { margin-left: 0.5rem; color: var(--color-paper-secondary); font-size: 9px; font-weight: 400; letter-spacing: 0.12em; text-transform: uppercase; }
-.archive-month-count { color: var(--color-paper-secondary); font-size: 10px; font-variant-numeric: tabular-nums; }
-.archive-posts { padding: 0; margin: 0; list-style: none; }
-.archive-posts > li { animation: row-enter 500ms var(--archive-delay, 0ms) cubic-bezier(0.22, 1, 0.36, 1) backwards; }
-.archive-posts > li + li { border-top: 1px solid color-mix(in srgb, var(--archive-line) 55%, transparent); }
 .archive-entry {
   display: grid;
-  grid-template-columns: 26px minmax(0, 1fr) 28px;
-  align-items: start;
-  gap: 0.875rem;
-  margin-inline: -0.75rem;
-  padding: 1.125rem 0.75rem;
-  border-radius: 10px;
-  color: var(--color-paper-primary);
-  transition: background-color 220ms ease;
+  grid-template-columns: 3.25rem minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 1rem;
+  margin: 0 -0.625rem;
+  padding: 0.5625rem 0.625rem;
+  border-radius: 8px;
+  color: inherit;
+  text-decoration: none;
+  transition: background-color 150ms var(--ease-out-expo);
 }
-.archive-date { padding-top: 0.25rem; color: var(--color-paper-secondary); font: 0.8125rem ui-monospace, monospace; line-height: 1.5; font-variant-numeric: tabular-nums; }
-.archive-entry-copy { min-width: 0; }
-.archive-entry-title { margin: 0; font-size: 0.9375rem; font-weight: 500; line-height: 1.7; overflow-wrap: anywhere; transition: color 220ms ease; }
-.archive-entry-meta { display: flex; align-items: baseline; flex-wrap: wrap; column-gap: 0.5rem; row-gap: 0.25rem; margin-top: 0.375rem; color: var(--color-paper-secondary); font-size: 10px; line-height: 1.6; }
-.archive-entry-topics { overflow-wrap: anywhere; }
-.archive-reading-time { white-space: nowrap; }
-.archive-entry-arrow { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; color: var(--color-paper-secondary); font-size: 1rem; opacity: 0.45; transition: color 220ms, background-color 220ms, opacity 220ms, transform 300ms cubic-bezier(0.22, 1, 0.36, 1); }
-.archive-entry:is(:hover, :focus-visible) { background: color-mix(in srgb, var(--color-paper-accent) 5%, var(--color-paper-theme)); }
-.archive-entry:is(:hover, :focus-visible) .archive-entry-title { color: var(--color-paper-accent); }
-.archive-entry:is(:hover, :focus-visible) .archive-entry-arrow { color: var(--color-paper-accent); background: color-mix(in srgb, var(--color-paper-accent) 10%, transparent); opacity: 1; transform: rotate(45deg); }
-.archive-colophon { display: flex; align-items: center; justify-content: center; gap: 0.75rem; margin-top: 3.25rem; padding-top: 1.75rem; border-top: 1px solid var(--archive-line); color: var(--color-paper-secondary); font-size: 0.6875rem; letter-spacing: 0.08em; }
-.archive-colophon > span { color: var(--color-paper-accent); font-size: 1.25rem; }
-.archive-state { padding: 3.5rem 1.25rem; text-align: center; }
-.archive-state h2 { font-size: 1.125rem; font-weight: 500; }
-.archive-state p { margin-block: 0.75rem 1.5rem; color: var(--color-paper-secondary); font-size: 0.875rem; }
-@media (max-width: 640px) {
-  .archive-intro { padding-block: 0.75rem 1.75rem; }
-  .archive-intro-line { align-items: start; flex-direction: column; gap: 1rem; margin-top: 1.125rem; }
-  .archive-year { grid-template-columns: minmax(0, 1fr); gap: 1.75rem; padding-top: 2rem; }
-  .archive-year-sticky { position: static; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.625rem 1rem; }
-  .archive-year-kicker { flex-basis: 100%; }
-  .archive-year-number { margin: 0; font-size: 3rem; }
-  .archive-year-rule { display: none; }
-  .archive-months { margin-left: 3px; padding-left: 1.125rem; }
-  .archive-month::before { left: calc(-1.125rem - 4px); }
-  .archive-month { padding-bottom: 1.75rem; }
-  .archive-entry { grid-template-columns: 22px minmax(0, 1fr) 22px; gap: 0.625rem; margin-inline: -0.5rem; padding-inline: 0.5rem; }
-  .archive-entry-arrow { width: 22px; height: 26px; }
-  .archive-month-name { font-size: 8px; }
+.archive-entry:hover { background-color: var(--color-ink-1); }
+.archive-entry:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
 }
-@media (prefers-reduced-motion: reduce) {
-  .archive-posts > li, .archive-skeleton .animate-pulse { animation: none; }
-  .archive-timeline a, .archive-entry-title, .archive-entry-arrow { transition: none; }
-  .archive-entry:is(:hover, :focus-visible) .archive-entry-arrow { transform: none; }
+.archive-entry-date {
+  color: var(--color-fg-3);
+  font-size: 0.8125rem;
+}
+.archive-entry-title {
+  color: var(--color-fg);
+  font-size: 0.9375rem;
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+.archive-entry-tags {
+  color: var(--color-fg-3);
+  font-size: 0.78125rem;
+  white-space: nowrap;
+}
+.archive-entry-skeleton {
+  grid-template-columns: 3.25rem minmax(0, 1fr);
+  align-items: center;
+  padding-block: 0.875rem;
+}
+.archive-entry-skeleton:hover { background-color: transparent; }
+
+.archive-more {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding-top: 1.5rem;
+}
+.archive-more-error {
+  margin: 0;
+  color: var(--color-danger);
+  font-size: 0.8125rem;
+}
+.archive-limit-note {
+  margin: 1.5rem 0 0;
+  color: var(--color-fg-3);
+  font-size: 0.8125rem;
 }
 
-.archive-tags-retry:active {
-  transform: scale(0.97);
-}
-
-@media (max-width: 480px) {
-  .archive-tags .collapsible-trigger {
+@media (max-width: 760px) {
+  .archive-title { font-size: 1.875rem; }
+  .archive-year {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.375rem;
+  }
+  .archive-year-label {
+    position: static;
+    display: flex;
+    align-items: baseline;
     gap: 0.75rem;
-    padding: 1.25rem;
   }
-
-  .archive-tags-body {
-    margin-inline: 1.25rem;
-    padding-block: 1rem 1.25rem;
-  }
+  .archive-year-count { margin: 0; }
+  .archive-entry { grid-template-columns: 3rem minmax(0, 1fr); }
+  .archive-entry-tags { display: none; }
 }

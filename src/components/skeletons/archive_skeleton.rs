@@ -1,50 +1,83 @@
-//! 归档页骨架屏
-//!
-//! 在归档数据加载期间展示标签索引与按年份/月份分组的文章列表占位。
+//! 归档与标签详情骨架屏：与真实版式逐块对齐（摘要行、标签区、年份分组）。
 
-use crate::components::skeletons::atoms::*;
-use crate::components::skeletons::tags_skeleton::TagsSkeleton;
 use dioxus::prelude::*;
 
-/// 归档页骨架屏组件。
-///
-/// 结构：可选标签索引 + 统计行 + 左侧年份 + 月份时间线。
-/// 页面内部的独立文章加载边界传 `include_tags: false`，避免重复标签卡片。
-/// 模拟 2 个年份，每个年份 2 个月，每个月 3 篇文章。
+use crate::components::skeletons::atoms::SkeletonBox;
+use crate::pages::tags::TagIntro;
+
+/// 标签占位的宽度，错落排布更像真实标签。
+const CHIP_WIDTHS: [&str; 10] = [
+    "width: 4.5rem",
+    "width: 3.5rem",
+    "width: 5.5rem",
+    "width: 4rem",
+    "width: 6rem",
+    "width: 3.75rem",
+    "width: 5rem",
+    "width: 4.25rem",
+    "width: 3.25rem",
+    "width: 5.25rem",
+];
+/// 文章行标题的宽度。
+const ROW_WIDTHS: [&str; 5] = [
+    "width: 72%",
+    "width: 58%",
+    "width: 80%",
+    "width: 64%",
+    "width: 50%",
+];
+
+/// 归档页整页占位：页标题之下的全部区块。
 #[component]
-pub fn ArchiveSkeleton(#[props(default = true)] include_tags: bool) -> Element {
+pub fn ArchiveSkeleton() -> Element {
     rsx! {
-        div { class: "archive-skeleton", role: "status", aria_label: "正在加载文章归档",
-            if include_tags {
-                TagsSkeleton {}
+        div { class: "archive",
+            header { class: "archive-header",
+                h1 { class: "archive-title", "归档" }
             }
-            div { class: "archive-timeline", aria_hidden: "true",
-                div { class: "archive-toolbar",
-                    SkeletonBox { class: "h-5 w-40 rounded" }
-                    SkeletonBox { class: "h-3 w-16 rounded" }
-                }
-                for y in 0..2 {
-                    div { key: "{y}", class: "archive-year",
-                        div { class: "archive-year-heading",
-                            SkeletonBox { class: "h-2 w-20 rounded mb-3" }
-                            SkeletonBox { class: "h-14 w-32 rounded mb-3" }
-                            SkeletonBox { class: "h-3 w-28 rounded" }
+            ArchiveBodySkeleton {}
+        }
+    }
+}
+
+/// 标签详情整页占位：开场照常显示，只有数据区占位。
+#[component]
+pub fn TagDetailSkeleton(tag: String) -> Element {
+    rsx! {
+        div { class: "archive",
+            TagIntro { tag }
+            ArchiveBodySkeleton {}
+        }
+    }
+}
+
+/// 摘要行、标签区与两个年份分组的占位。
+#[component]
+pub fn ArchiveBodySkeleton() -> Element {
+    rsx! {
+        div { role: "status", aria_label: "正在加载文章",
+            div { aria_hidden: "true",
+                SkeletonBox { class: "archive-summary h-4 w-60 max-w-full" }
+                div { class: "archive-tags",
+                    div { class: "archive-tags-head", SkeletonBox { class: "h-3 w-14" } }
+                    div { class: "archive-tags-list",
+                        for (i, width) in CHIP_WIDTHS.iter().enumerate() {
+                            SkeletonBox { key: "{i}", class: "h-7 rounded-full", style: *width }
                         }
-                        div { class: "archive-months",
-                            for m in 0..2 {
-                                div { key: "{m}", class: "archive-month",
-                                    div { class: "archive-month-header",
-                                        SkeletonBox { class: "h-5 w-32 rounded" }
-                                        SkeletonBox { class: "h-3 w-8 rounded" }
-                                    }
-                                    for e in 0..3 {
-                                        div { key: "{e}", class: "archive-entry",
-                                            SkeletonBox { class: "h-4 w-5 rounded mt-1" }
-                                            div {
-                                                SkeletonBox { class: "h-5 w-3/4 rounded mb-2" }
-                                                SkeletonBox { class: "h-3 w-28 rounded" }
-                                            }
-                                        }
+                    }
+                }
+                div { class: "archive-years",
+                    for y in 0..2 {
+                        div { key: "{y}", class: "archive-year",
+                            div { class: "archive-year-label",
+                                SkeletonBox { class: "h-8 w-20" }
+                                SkeletonBox { class: "h-3 w-10 mt-2" }
+                            }
+                            div { class: "archive-rows",
+                                for (i, width) in ROW_WIDTHS.iter().enumerate() {
+                                    div { key: "{i}", class: "archive-entry archive-entry-skeleton",
+                                        SkeletonBox { class: "h-3 w-10" }
+                                        SkeletonBox { class: "h-4", style: *width }
                                     }
                                 }
                             }

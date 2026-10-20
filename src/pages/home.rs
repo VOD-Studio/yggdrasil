@@ -15,9 +15,10 @@ use crate::api::settings::get_site_settings;
 use crate::components::empty_state::EmptyState;
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::skeletons::home_skeleton::HomeSkeleton;
-use crate::components::ui::{Button, ButtonVariant, Icon, IconName, Pagination};
+use crate::components::ui::{Icon, IconName, LoadError, Pagination};
 use crate::models::note::{Note, NoteFilter};
 use crate::models::post::{PostListItem, Tag};
+use crate::pages::archives::ranked_tags;
 use crate::router::Route;
 
 const POSTS_PER_PAGE: i32 = 10;
@@ -474,7 +475,7 @@ fn HomeCornerLink(to: Route, label: &'static str) -> Element {
     }
 }
 
-/// 区块加载失败卡片。重试在卡片内完成，成功后回填资源，不触发整页骨架。
+/// 文章区加载失败。重试在卡片内完成，成功后回填资源，不触发整页骨架。
 #[component]
 fn HomePostsError(current_page: i32, on_recovered: EventHandler<PostListResponse>) -> Element {
     let router = dioxus::router::router();
@@ -482,60 +483,30 @@ fn HomePostsError(current_page: i32, on_recovered: EventHandler<PostListResponse
     let mut retry_failed = use_signal(|| false);
 
     rsx! {
-        div { class: "home-error", role: "group", aria_labelledby: "home-error-title",
-            div { class: "home-error-copy",
-                h3 { id: "home-error-title", "文章暂时没能加载" }
-                p { role: "status", aria_live: "polite", aria_atomic: "true",
-                    if retry_failed() {
-                        "这次仍未加载成功，稍后再试一次吧。"
-                    } else {
-                        "网络或服务出了点问题，稍后再试一次。"
-                    }
-                    if retrying() {
-                        span { class: "sr-only", "正在重新加载文章，请稍候。" }
-                    }
-                }
-            }
-            Button {
-                variant: ButtonVariant::Secondary,
-                icon: IconName::RotateCw,
-                loading: retrying(),
-                class: "home-error-retry",
-                onclick: move |_| {
-                    if retrying() {
+        LoadError {
+            title: "文章暂时没能加载",
+            class: "home-error",
+            retrying: retrying(),
+            retry_failed: retry_failed(),
+            on_retry: move |_| {
+                retrying.set(true);
+                retry_failed.set(false);
+                let request_route = router.current::<Route>();
+                spawn(async move {
+                    let result = list_published_posts(current_page, POSTS_PER_PAGE).await;
+                    // Suspense 切换期间旧卡片可能尚未卸载，也不能回填另一条路由。
+                    if router.current::<Route>() != request_route {
                         return;
                     }
-                    retrying.set(true);
-                    retry_failed.set(false);
-                    let request_route = router.current::<Route>();
-                    spawn(async move {
-                        let result = list_published_posts(current_page, POSTS_PER_PAGE).await;
-                        // Suspense 切换期间旧卡片可能尚未卸载，也不能回填另一条路由。
-                        if router.current::<Route>() != request_route {
-                            return;
-                        }
-                        retrying.set(false);
-                        match result {
-                            Ok(response) => on_recovered.call(response),
-                            Err(_) => retry_failed.set(true),
-                        }
-                    });
-                },
-                "重新加载"
-            }
+                    retrying.set(false);
+                    match result {
+                        Ok(response) => on_recovered.call(response),
+                        Err(_) => retry_failed.set(true),
+                    }
+                });
+            },
         }
     }
-}
-
-/// 只保留有已发布文章的标签，按篇数降序、同数按名称排列。
-fn ranked_tags(mut tags: Vec<Tag>) -> Vec<Tag> {
-    tags.retain(|t| t.post_count > 0);
-    tags.sort_by(|a, b| {
-        b.post_count
-            .cmp(&a.post_count)
-            .then_with(|| a.name.cmp(&b.name))
-    });
-    tags
 }
 
 fn post_time(post: &PostListItem) -> DateTime<Utc> {
@@ -608,14 +579,6 @@ mod tests {
         }
     }
 
-    fn tag(id: i32, name: &str, post_count: i64) -> Tag {
-        Tag {
-            id,
-            name: name.into(),
-            post_count,
-        }
-    }
-
     #[test]
     fn groups_adjacent_posts_by_month() {
         let posts = [
@@ -628,18 +591,6 @@ mod tests {
         let labels: Vec<_> = groups.iter().map(|g| g.label.as_str()).collect();
         assert_eq!(labels, ["2026 · 10", "2026 · 09", "2025 · 09"]);
         assert_eq!(groups[1].posts.len(), 2);
-    }
-
-    #[test]
-    fn ranks_tags_by_count_and_drops_empty_ones() {
-        let ranked = ranked_tags(vec![
-            tag(1, "Go", 4),
-            tag(2, "Rust", 16),
-            tag(3, "草稿", 0),
-            tag(4, "CSS", 4),
-        ]);
-        let names: Vec<_> = ranked.iter().map(|t| t.name.as_str()).collect();
-        assert_eq!(names, ["Rust", "CSS", "Go"]);
     }
 
     #[test]

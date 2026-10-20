@@ -885,7 +885,7 @@
           "variant",
           "&'static str",
           "outline",
-          "archive、solid、outline 或 text。"
+          "solid、outline 或 text。"
         ],
         [
           "count",
@@ -1008,6 +1008,52 @@
       "keys": [],
       "source": "src/components/empty_state.rs",
       "code": "rsx! {\n    EmptyState {\n        title: \"这里，等待第一颗种子。\",\n        description: \"写下一个新的开始。\",\n    }\n}",
+      "preview_mode": "static",
+      "usage_kind": "rust"
+    },
+    {
+      "name": "LoadError",
+      "slug": "load-error",
+      "label": "区块加载失败",
+      "group": "display",
+      "summary": "一块内容没能到来，别的照常可读。",
+      "states": "失败 · 重试中 · 再次失败",
+      "description": "页面其余部分照常显示，只有出错的区块换成这张卡片；重试在原位完成，不整页刷新。重试中按钮转圈，再次失败时换一句说明。",
+      "props": [
+        [
+          "title",
+          "String",
+          "必填",
+          "说明哪块内容没能加载。"
+        ],
+        [
+          "retrying",
+          "bool",
+          "false",
+          "重试进行中：按钮转圈且不再响应点击。"
+        ],
+        [
+          "retry_failed",
+          "bool",
+          "false",
+          "上一次重试仍然失败。"
+        ],
+        [
+          "class",
+          "String",
+          "空字符串",
+          "追加类，用于外边距。"
+        ],
+        [
+          "on_retry",
+          "EventHandler<()>",
+          "必填",
+          "点击「重新加载」。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/ui/feedback.rs",
+      "code": "rsx! {\n    LoadError {\n        title: \"文章暂时没能加载\",\n        retrying: retrying(),\n        retry_failed: retry_failed(),\n        on_retry: move |_| retry(),\n    }\n}",
       "preview_mode": "static",
       "usage_kind": "rust"
     },
@@ -2181,20 +2227,20 @@
       "slug": "archive-skeleton",
       "label": "归档页骨架",
       "group": "page-loading",
-      "summary": "归档页骨架，在内容到来前保留页面轮廓。",
+      "summary": "归档页骨架，在内容到来前保留标签区与年份分组的轮廓。",
       "states": "页面占位 · 动画",
       "description": "归档页骨架用于加载期间的页面布局轮廓。预览将调用项目现有的骨架屏组件。",
       "props": [
         [
-          "include_tags",
-          "bool",
-          "由调用方提供",
-          "归档页骨架的 include_tags 参数。"
+          "—",
+          "无",
+          "—",
+          "此组件不接收显式属性。"
         ]
       ],
       "keys": [],
       "source": "src/components/skeletons/archive_skeleton.rs",
-      "code": "pub fn ArchiveSkeleton(#[props(default = true)] include_tags: bool) -> Element",
+      "code": "pub fn ArchiveSkeleton() -> Element",
       "preview_mode": "static",
       "usage_kind": "api"
     },
@@ -2733,13 +2779,13 @@
       "usage_kind": "api"
     },
     {
-      "name": "TagsSkeleton",
-      "slug": "tags-skeleton",
-      "label": "标签页骨架",
+      "name": "ArchiveBodySkeleton",
+      "slug": "archive-body-skeleton",
+      "label": "归档内容占位",
       "group": "page-loading",
-      "summary": "标签页骨架，在内容到来前保留页面轮廓。",
+      "summary": "归档与标签详情共用的内容占位：摘要行、标签区与年份分组。",
       "states": "页面占位 · 动画",
-      "description": "标签页骨架用于加载期间的页面布局轮廓。预览将调用项目现有的骨架屏组件。",
+      "description": "归档内容占位用于页内加载边界，与真实版式逐块对齐。预览将调用项目现有的骨架屏组件。",
       "props": [
         [
           "—",
@@ -2749,8 +2795,8 @@
         ]
       ],
       "keys": [],
-      "source": "src/components/skeletons/tags_skeleton.rs",
-      "code": "pub fn TagsSkeleton() -> Element",
+      "source": "src/components/skeletons/archive_skeleton.rs",
+      "code": "pub fn ArchiveBodySkeleton() -> Element",
       "preview_mode": "static",
       "usage_kind": "api"
     },
@@ -2759,7 +2805,7 @@
       "slug": "tag-detail-skeleton",
       "label": "标签详情骨架",
       "group": "page-loading",
-      "summary": "标签详情骨架，在内容到来前保留页面轮廓。",
+      "summary": "标签详情骨架：开场照常显示，只有文章区占位。",
       "states": "页面占位 · 动画",
       "description": "标签详情骨架用于加载期间的页面布局轮廓。预览将调用项目现有的骨架屏组件。",
       "props": [
@@ -2771,30 +2817,8 @@
         ]
       ],
       "keys": [],
-      "source": "src/components/skeletons/tags_skeleton.rs",
+      "source": "src/components/skeletons/archive_skeleton.rs",
       "code": "pub fn TagDetailSkeleton(tag: String) -> Element",
-      "preview_mode": "static",
-      "usage_kind": "api"
-    },
-    {
-      "name": "TagPostsLoading",
-      "slug": "tag-posts-loading",
-      "label": "标签文章占位",
-      "group": "page-loading",
-      "summary": "标签文章占位，在内容到来前保留页面轮廓。",
-      "states": "页面占位 · 动画",
-      "description": "标签文章占位用于加载期间的页面布局轮廓。预览将调用项目现有的骨架屏组件。",
-      "props": [
-        [
-          "—",
-          "无",
-          "—",
-          "此组件不接收显式属性。"
-        ]
-      ],
-      "keys": [],
-      "source": "src/components/skeletons/tags_skeleton.rs",
-      "code": "pub fn TagPostsLoading() -> Element",
       "preview_mode": "static",
       "usage_kind": "api"
     },

@@ -11,9 +11,3 @@ pub struct ArchivePost {
     pub reading_time: u32,
     pub tags: Vec<String>,
 }
-
-impl ArchivePost {
-    pub fn formatted_date(&self) -> String {
-        self.published_at.format("%Y-%m-%d").to_string()
-    }
-}

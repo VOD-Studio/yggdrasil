@@ -932,6 +932,7 @@ fn preview_route(slug: &str) -> Option<PreviewRoute> {
         | "breadcrumb"
         | "search-palette"
         | "empty-state"
+        | "load-error"
         | "skeleton-box"
         | "skeleton-card"
         | "skeleton-table"
@@ -963,9 +964,8 @@ fn preview_route(slug: &str) -> Option<PreviewRoute> {
         | "search-skeleton"
         | "settings-admin-skeleton"
         | "system-skeleton"
-        | "tags-skeleton"
+        | "archive-body-skeleton"
         | "tag-detail-skeleton"
-        | "tag-posts-loading"
         | "write-skeleton"
         | "writing-guide-skeleton" => PreviewRoute::Skeleton,
         "post-cover" | "post-card" => PreviewRoute::Scene,
@@ -1342,6 +1342,15 @@ fn LiveComponentPreview(
                 crate::components::empty_state::EmptyState { title: "这里，等待第一颗种子。", description: "写下一个新的开始。" }
             }
         },
+        "LoadError" => rsx! {
+            div { class: "w-full max-w-xl",
+                crate::components::ui::LoadError {
+                    title: "文章暂时没能加载",
+                    retrying: clicked(),
+                    on_retry: move |_| clicked.set(true),
+                }
+            }
+        },
         "SkeletonBox" => rsx! {
             div { class: "showcase-preview-stack showcase-skeleton-lines",
                 crate::components::skeletons::atoms::SkeletonBox { class: "h-3 w-52 rounded" }
@@ -1455,12 +1464,11 @@ fn PageSkeletonPreview(name: String) -> Element {
             rsx! { crate::components::skeletons::system_skeleton::SystemSkeleton {} }
         }
         "TagDetailSkeleton" => {
-            rsx! { crate::components::skeletons::tags_skeleton::TagDetailSkeleton { tag: "设计".to_string() } }
+            rsx! { crate::components::skeletons::archive_skeleton::TagDetailSkeleton { tag: "设计".to_string() } }
         }
-        "TagPostsLoading" => {
-            rsx! { div { class: "tag-page", crate::components::skeletons::tags_skeleton::TagPostsLoading {} } }
+        "ArchiveBodySkeleton" => {
+            rsx! { div { class: "archive", crate::components::skeletons::archive_skeleton::ArchiveBodySkeleton {} } }
         }
-        "TagsSkeleton" => rsx! { crate::components::skeletons::tags_skeleton::TagsSkeleton {} },
         "WriteSkeleton" => rsx! { crate::components::skeletons::write_skeleton::WriteSkeleton {} },
         "WritingGuideSkeleton" => {
             rsx! { crate::components::skeletons::writing_guide_skeleton::WritingGuideSkeleton {} }

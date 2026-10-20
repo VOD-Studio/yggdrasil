@@ -177,17 +177,18 @@ async function main() {
     assert.deepEqual(await page.locator('.search-result-link h2').allTextContents(), beforeTitles);
     console.log('PASS search-query-results-restored', beforeTitles.length);
     await push(page, TAG_PATH);
-    await page.getByRole('button', { name: '最早', exact: true }).click();
-    await page.waitForFunction(() => document.querySelector('.tag-sort')?.dataset.order === 'earliest');
-    console.log('PASS tag-detail-back', JSON.stringify(await titleRoundTrip(page)));
-    assert.equal(await page.locator('.tag-sort').getAttribute('data-order'), 'earliest');
-    console.log('PASS tag-order-restored');
+    assert.equal(await page.locator('.archive-tags .chip[aria-current="page"]').count(), 1);
+    console.log('PASS tag-detail-back', JSON.stringify(await titleRoundTrip(page, '.archive-entry')));
     await push(page, '/archives');
-    await page.locator('.archive-tags button.collapsible-trigger').click();
-    assert.equal(await page.locator('.archive-tags').getAttribute('data-open'), 'true');
-    await page.waitForTimeout(350);
+    // 标签多于 16 个时才有展开按钮；展开状态随历史记录恢复。
+    const toggle = page.locator('.archive-tags-toggle');
+    const canExpand = (await toggle.count()) > 0;
+    if (canExpand) {
+      await toggle.click();
+      assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
+    }
     console.log('PASS archive-detail-back', JSON.stringify(await titleRoundTrip(page, '.archive-entry')));
-    assert.equal(await page.locator('.archive-tags').getAttribute('data-open'), 'true');
+    if (canExpand) assert.equal(await page.locator('.archive-tags-toggle').getAttribute('aria-expanded'), 'true');
     console.log('PASS archive-open-restored');
     if (TOC_POST_PATH) await push(page, TOC_POST_PATH);
     else {
@@ -286,6 +287,11 @@ async function coverFixture(mode) {
     // avoiding edits to SSR hydration data or Dioxus-managed DOM.
     await push(page, TAG_PATH);
     const cover = page.locator('[data-vt-role="cover"]').first();
+    // v1.0 的归档与标签行不再显示封面；列表页没有封面时跳过共享封面检查。
+    if ((await cover.count()) === 0) {
+      console.log(`SKIP cover-${mode}: ${TAG_PATH} 没有带封面的文章行`);
+      return;
+    }
     await cover.scrollIntoViewIfNeeded();
     await page.waitForFunction(() => {
       const image = document.querySelector('[data-vt-role="cover"] .blur-img-full');

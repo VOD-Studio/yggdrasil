@@ -238,6 +238,12 @@
     animation: page-enter var(--spring-snappy-duration) var(--ease-spring-snappy) backwards;
   }
 
+  /* 页内分块进场：同一曲线，按 --enter-index 每项错开 40ms；调用方把序号封顶在 5。 */
+  .page-enter {
+    animation: page-enter var(--spring-snappy-duration) var(--ease-spring-snappy)
+      calc(var(--enter-index, 0) * 40ms) backwards;
+  }
+
   /* Popover / 确认框：spring-snappy 从 0.98 缩放淡入。 */
   @keyframes popover-enter {
     0% {

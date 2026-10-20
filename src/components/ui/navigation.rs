@@ -340,7 +340,7 @@ pub fn Breadcrumb<R: Routable + Clone + PartialEq + 'static>(items: Vec<Crumb<R>
     }
 }
 
-/// 标签芯片组件：统一归档索引、软底标签、卡片胶囊与文字链接的展示。
+/// 标签芯片组件：统一软底标签、卡片胶囊与文字链接的展示。
 ///
 /// 收敛原本散落在标签云与文章卡片（`post_card.rs` 描边胶囊）
 /// 的两套手写 `Link` 样式——两者都是跳转到 [`Route::TagDetail`] 的可点击标签，
@@ -349,8 +349,8 @@ pub fn Breadcrumb<R: Routable + Clone + PartialEq + 'static>(items: Vec<Crumb<R>
 /// Props：
 /// - `label`：标签名
 /// - `to`：跳转目标路由（泛型，调用方传入具体 `Route` 变体，原子层不绑定 app 路由类型）
-/// - `variant`：`"archive"`（归档标签索引）/ `"solid"`（软底）/ `"outline"`（卡片胶囊）/ `"text"`（紧凑文章流）
-/// - `count`：可选的文章计数，归档变体使用独立计数徽标，其余使用 `<sup>`
+/// - `variant`：`"solid"`（软底）/ `"outline"`（卡片胶囊）/ `"text"`（紧凑文章流）
+/// - `count`：可选的文章计数
 /// - `stop_propagation`：是否阻止点击冒泡（卡片内覆盖层链接场景需要，见 `PostCard`）
 #[component]
 pub fn TagChip<R: Routable + Clone + PartialEq + 'static>(
@@ -361,7 +361,6 @@ pub fn TagChip<R: Routable + Clone + PartialEq + 'static>(
     #[props(default)] stop_propagation: bool,
 ) -> Element {
     let class = match variant {
-        "archive" => "archive-tag-chip",
         "solid" => "chip chip-clay",
         "text" => "inline-flex items-center py-1 text-fg-2 hover:text-fg underline decoration-hairline underline-offset-4 hover:decoration-clay transition-colors focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-clay",
         _ => "chip",
@@ -375,18 +374,9 @@ pub fn TagChip<R: Routable + Clone + PartialEq + 'static>(
                     evt.stop_propagation();
                 }
             },
-            if variant == "archive" {
-                span { class: "archive-tag-mark", aria_hidden: "true", "#" }
-                span { class: "archive-tag-name", "{label}" }
-            } else {
-                "{label}"
-            }
+            "{label}"
             if let Some(c) = count {
-                if variant == "archive" {
-                    span { class: "archive-tag-count", aria_label: "{c} 篇文章", "{c}" }
-                } else {
-                    span { class: "chip-count", "{c}" }
-                }
+                span { class: "chip-count", "{c}" }
             }
         }
     }

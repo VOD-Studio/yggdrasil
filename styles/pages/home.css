@@ -304,20 +304,7 @@ a.home-row:is(:hover, :focus-visible) .home-row-arrow { opacity: 1; transform: n
 }
 
 /* ---- 区块加载失败 ---- */
-.home-error {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 1.25rem;
-  margin-top: 1.25rem;
-  padding: 1.75rem;
-  border-radius: var(--radius-code);
-  background-color: var(--color-surface-1);
-  box-shadow: 0 0 0 1px var(--color-hairline);
-}
-.home-error-copy { flex: 1; min-width: 15rem; }
-.home-error h3 { margin: 0; font-size: 1rem; font-weight: 600; }
-.home-error p { margin: 0.375rem 0 0; color: var(--color-fg-2); font-size: 0.875rem; }
+.home-error { margin-top: 1.25rem; }
 
 /* ---- 尾部三格 ---- */
 .home-corners {

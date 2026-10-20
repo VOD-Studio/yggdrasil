@@ -1,5 +1,5 @@
-//! 全站提示（Toast）：操作结果的短暂反馈，出现在屏幕底部居中。
-use super::controls::{ButtonSize, IconButton};
+//! 全站提示（Toast）：操作结果的短暂反馈，出现在屏幕底部居中；区块加载失败卡片。
+use super::controls::{Button, ButtonSize, ButtonVariant, IconButton};
 use super::icons::{Icon, IconName};
 use dioxus::prelude::*;
 
@@ -144,6 +144,47 @@ pub fn ToastRegion() -> Element {
                         onclick: move |_| toaster.dismiss(entry.id),
                     }
                 }
+            }
+        }
+    }
+}
+
+/// 区块加载失败卡片：页面其余部分照常显示，只有出错的区块换成它；重试在原位完成。
+///
+/// `retry_failed` 为再次失败后的文案；重试中按钮转圈并向读屏软件播报。
+#[component]
+pub fn LoadError(
+    #[props(into)] title: String,
+    #[props(default)] retrying: bool,
+    #[props(default)] retry_failed: bool,
+    #[props(default)] class: String,
+    on_retry: EventHandler<()>,
+) -> Element {
+    rsx! {
+        div { class: "load-error {class}", role: "group", aria_label: "{title}",
+            div { class: "load-error-copy",
+                h3 { "{title}" }
+                p { role: "status", aria_live: "polite", aria_atomic: "true",
+                    if retry_failed {
+                        "这次仍未加载成功，稍后再试一次吧。"
+                    } else {
+                        "网络或服务出了点问题，稍后再试一次。"
+                    }
+                    if retrying {
+                        span { class: "sr-only", "正在重新加载，请稍候。" }
+                    }
+                }
+            }
+            Button {
+                variant: ButtonVariant::Secondary,
+                icon: IconName::RotateCw,
+                loading: retrying,
+                onclick: move |_| {
+                    if !retrying {
+                        on_retry.call(());
+                    }
+                },
+                "重新加载"
             }
         }
     }

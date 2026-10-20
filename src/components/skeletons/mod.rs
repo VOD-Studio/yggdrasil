@@ -48,8 +48,6 @@ pub mod search_skeleton;
 pub mod settings_admin_skeleton;
 /// 后台系统管理骨架屏组件。
 pub mod system_skeleton;
-/// 标签页骨架屏组件。
-pub mod tags_skeleton;
 /// 编辑器页面骨架屏组件。
 pub mod write_skeleton;
 /// 写作指南页骨架屏组件。

@@ -1,365 +1,311 @@
-//! 归档页面模块。
+//! 归档与标签详情共用的索引页。
 //!
-//! 对应路由 `/archives`。
-//! 顶部标签索引复用可折叠卡片与 TagChip，独立加载，避免标签接口失败影响时间归档。
+//! `/archives`：衬线页标题、标签筛选（Chip）、按年份分组的文章行；年份大字吸附。
+//! `/tags/:tag`（见 `tags.rs`）沿用同一套标签区与年份分组，当前标签以浮起样式标示。
 //!
-//! 数据获取：首屏请求轻量归档分页，按需加载更早的文章，再按年月分组。
-//! 在 `wasm32` 目标下，server function 的函数体被替换为向服务端端点发起 HTTP POST 请求的客户端存根；
-//! 实际的数据库访问逻辑仅在 `feature = "server"` 启用时运行。
+//! 首屏请求轻量归档分页，按需加载更早的文章。标签接口失败时只隐藏标签区。
 
+use chrono::{DateTime, Datelike, Utc};
 use dioxus::prelude::*;
-use dioxus::router::components::Link;
 
 use crate::api::posts::{
     list_archive_posts, list_tags, ArchiveResponse, TagListResponse, ARCHIVE_PAGE_SIZE,
 };
 use crate::components::empty_state::EmptyState;
-use crate::components::skeletons::archive_skeleton::ArchiveSkeleton;
+use crate::components::skeletons::archive_skeleton::ArchiveBodySkeleton;
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
-use crate::components::skeletons::tags_skeleton::TagsSkeleton;
-use crate::components::ui::{CollapsibleSettingsCard, TagChip, BTN_OUTLINE};
-use crate::models::archive::ArchivePost;
+use crate::components::ui::{Button, ButtonVariant, LoadError};
+use crate::models::post::Tag;
 use crate::router::Route;
 
-/// 按年份分组的文章归档结构。
-#[derive(Clone, PartialEq)]
-struct YearGroup {
-    year: String,
-    months: Vec<MonthGroup>,
+/// 标签区默认显示的标签数，其余收进「全部 N 个」。
+const TAG_PREVIEW: usize = 16;
+/// 每行右侧最多列出的标签数。
+const ROW_TAGS: usize = 2;
+
+/// 年份分组里的一行。归档与标签详情的数据源不同，在这里统一形状。
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct IndexRow {
+    pub id: i32,
+    pub slug: String,
+    pub title: String,
+    pub date: DateTime<Utc>,
+    pub tags: Vec<String>,
 }
 
-/// 按月份分组的文章归档结构。
-#[derive(Clone, PartialEq)]
-struct MonthGroup {
-    month: String,
-    month_en: String,
-    posts: Vec<ArchivePost>,
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct YearGroup {
+    pub year: i32,
+    pub rows: Vec<IndexRow>,
 }
 
-/// 将文章列表按 `formatted_date()` 返回的 `YYYY-MM-DD` 格式进行年、月分组。
-///
-/// 返回的结果按原始文章顺序组织，调用前已按发布时间降序排列。
-fn group_posts(posts: &[ArchivePost]) -> Vec<YearGroup> {
-    let mut years: Vec<YearGroup> = vec![];
-
-    for post in posts {
-        let date_str = post.formatted_date();
-
-        // 将日期字符串拆分为 [年, 月, 日] 三部分。
-        let parts: Vec<&str> = date_str.split('-').collect();
-        if parts.len() != 3 {
-            continue;
+/// 列表已按时间降序；相邻同年的行归为一组。
+pub(crate) fn group_by_year(rows: &[IndexRow]) -> Vec<YearGroup> {
+    let mut groups: Vec<YearGroup> = Vec::new();
+    for row in rows {
+        let year = row.date.year();
+        match groups.last_mut() {
+            Some(group) if group.year == year => group.rows.push(row.clone()),
+            _ => groups.push(YearGroup {
+                year,
+                rows: vec![row.clone()],
+            }),
         }
-        let year = parts[0].to_string();
-        let month_num = parts[1];
-        // 将数字月份转换为英文月份名称，用于展示与锚点 id。
-        let month_en = match month_num {
-            "01" => "January",
-            "02" => "February",
-            "03" => "March",
-            "04" => "April",
-            "05" => "May",
-            "06" => "June",
-            "07" => "July",
-            "08" => "August",
-            "09" => "September",
-            "10" => "October",
-            "11" => "November",
-            "12" => "December",
-            _ => month_num,
-        };
+    }
+    groups
+}
 
-        // 尝试追加到当前年份与月份的组中；如果不匹配则新建分组。
-        if let Some(yg) = years.last_mut() {
-            if yg.year == year {
-                if let Some(mg) = yg.months.last_mut() {
-                    if mg.month_en == month_en {
-                        mg.posts.push(post.clone());
-                        continue;
-                    }
-                }
-                yg.months.push(MonthGroup {
-                    month: month_num.to_string(),
-                    month_en: month_en.to_string(),
-                    posts: vec![post.clone()],
-                });
-                continue;
+/// 只保留有已发布文章的标签，按篇数降序、同数按名称排列。
+pub(crate) fn ranked_tags(mut tags: Vec<Tag>) -> Vec<Tag> {
+    tags.retain(|t| t.post_count > 0);
+    tags.sort_by(|a, b| {
+        b.post_count
+            .cmp(&a.post_count)
+            .then_with(|| a.name.cmp(&b.name))
+    });
+    tags
+}
+
+/// 收起时显示的标签：前若干个；当前标签排在后面也要露出来。
+fn visible_tags<'a>(tags: &'a [Tag], current: Option<&str>, expanded: bool) -> Vec<&'a Tag> {
+    if expanded {
+        return tags.iter().collect();
+    }
+    let mut shown: Vec<&Tag> = tags.iter().take(TAG_PREVIEW).collect();
+    if let Some(current) = current {
+        if !shown.iter().any(|t| t.name == current) {
+            if let Some(tag) = tags.iter().find(|t| t.name == current) {
+                shown.push(tag);
             }
         }
-        years.push(YearGroup {
-            year,
-            months: vec![MonthGroup {
-                month: month_num.to_string(),
-                month_en: month_en.to_string(),
-                posts: vec![post.clone()],
-            }],
-        });
     }
-
-    years
+    shown
 }
 
-/// 归档页面组件，对应路由 `/archives`。
-///
-/// 渲染页面标题，并委托给 `ArchivesContent` 展示按年月分组的文章列表。
 #[component]
 pub fn Archives() -> Element {
     rsx! {
-        div { class: "archives-page animate-page-enter",
-            header { class: "archive-intro",
-                p { class: "archive-eyebrow", span { aria_hidden: "true" } "THE ARCHIVE / 时间的索引" }
-                div { class: "archive-intro-line",
-                    h1 { "归档" span { class: "archive-title-dot", "。" } }
-                    p { "把片刻写成文字，把文字留给时间。" }
-                }
+        div { class: "archive",
+            header { class: "archive-header page-enter",
+                h1 { class: "archive-title", "归档" }
             }
             SuspenseBoundary {
-                fallback: move |_| rsx! {
-                    div { "data-vt-list-pending": "true",
-                        DelayedSkeleton { TagsSkeleton {} }
-                    }
-                },
-                ArchiveTags {}
-            }
-            SuspenseBoundary {
-                fallback: move |_| rsx! { DelayedSkeleton { ArchiveSkeleton { include_tags: false } } },
-                ArchivesContent {}
+                fallback: move |_| rsx! { DelayedSkeleton { ArchiveBodySkeleton {} } },
+                ArchivesBody {}
             }
         }
     }
 }
 
-/// 标签云保持挂载，让收起也能完成高度与标签淡出动画。
 #[component]
-fn ArchiveTags() -> Element {
-    let entry_id = use_hook(crate::bridges::navigation::entry_id);
-    let mut tags_open =
-        use_signal(|| crate::bridges::navigation::read_state("archive-tags-open").unwrap_or(false));
-    use_effect(move || {
-        crate::bridges::navigation::write_state(&entry_id, "archive-tags-open", &tags_open());
-    });
-    let mut tags_res = use_server_future(list_tags)?;
-    let tags_data = tags_res.read();
-    let summary = match &*tags_data {
-        Some(Ok(TagListResponse { tags })) => {
-            format!("{} 个标签 · 选择一个话题，发现相关文章", tags.len())
-        }
-        Some(Err(_)) => "标签暂时未能加载，仍可浏览下方归档".to_string(),
-        None => "正在整理标签…".to_string(),
-    };
+fn ArchivesBody() -> Element {
+    // 两个请求并行发起再挂起。
+    let posts = use_server_future(move || list_archive_posts(1));
+    let tags = use_server_future(list_tags);
+    let mut posts = posts?;
+    let tags = tags?;
 
-    rsx! {
-        CollapsibleSettingsCard {
-            title: "标签索引",
-            summary,
-            enabled: true,
-            default_open: tags_open(),
-            on_toggle: move |_| tags_open.set(!tags_open()),
-            class: "archive-tags",
-            panel_id: "archive-tags-panel",
-            div { class: "archive-tags-body",
-                match &*tags_data {
-                    Some(Ok(TagListResponse { tags })) if !tags.is_empty() => rsx! {
-                        ul { class: "archive-tags-list", aria_label: "文章标签",
-                            for (index, tag) in tags.iter().enumerate() {
-                                li {
-                                    key: "{tag.id}",
-                                    style: "--tag-delay: {index.min(10) * 18}ms",
-                                    TagChip {
-                                        label: tag.name.clone(),
-                                        to: Route::TagDetail { tag: tag.name.clone() },
-                                        variant: "archive",
-                                        count: tag.post_count,
-                                    }
-                                }
-                            }
-                        }
-                    },
-                    Some(Ok(_)) => rsx! {
-                        p { class: "text-sm text-paper-secondary py-2", "还没有标签，先看看下方的文章吧。" }
-                    },
-                    Some(Err(_)) => rsx! {
-                        button {
-                            r#type: "button",
-                            class: "{BTN_OUTLINE} archive-tags-retry",
-                            onclick: move |_| tags_res.restart(),
-                            "重新加载标签"
-                        }
-                    },
-                    None => rsx! {
-                        p { class: "text-sm text-paper-secondary py-2", role: "status", "正在加载标签…" }
-                    },
-                }
-            }
-        }
-    }
-}
-
-/// 归档页面内容组件。
-///
-/// 通过 `use_server_future` 获取全部已发布文章，按年月分组后渲染；
-/// 加载中显示骨架屏，失败显示错误提示。
-#[component]
-fn ArchivesContent() -> Element {
-    let mut posts_res = use_server_future(move || list_archive_posts(1))?;
-    let mut older_posts = use_signal(Vec::<ArchivePost>::new);
+    let mut older = use_signal(Vec::<IndexRow>::new);
     let mut next_page = use_signal(|| 2_i32);
     let mut loading_more = use_signal(|| false);
-    let mut load_error = use_signal(|| false);
+    let mut load_more_failed = use_signal(|| false);
     let mut exhausted = use_signal(|| false);
+    let mut retrying = use_signal(|| false);
+    let mut retry_failed = use_signal(|| false);
 
-    let posts_data = posts_res.read();
-    match &*posts_data {
-        Some(Ok(ArchiveResponse { posts, total })) => {
-            if *total == 0 {
-                rsx! {
+    let tags = tag_list(&tags.read());
+    let listing = posts.read().as_ref().map(|r| r.as_ref().ok().cloned());
+
+    match listing {
+        Some(Some(ArchiveResponse {
+            posts: first,
+            total,
+        })) => {
+            let mut rows: Vec<IndexRow> = first.into_iter().map(archive_row).collect();
+            rows.extend(older.read().iter().cloned());
+            let has_more = !exhausted() && (rows.len() as i64) < total;
+            let summary = archive_summary(&rows, total, has_more);
+            rsx! {
+                p { class: "archive-summary tabular-nums page-enter", "{summary}" }
+                TagFilter { tags, current: None }
+                if total == 0 {
                     span { hidden: true, "data-vt-list": "true" }
-                    EmptyState {
-                        title: "还没有文章归档",
-                        description: "发布文章后，这里会自动按年月进行归档显示。",
-                    }
-                }
-            } else {
-                let mut displayed = posts.clone();
-                displayed.extend(older_posts.read().iter().cloned());
-                let has_more = !exhausted() && (displayed.len() as i64) < *total;
-                let grouped = group_posts(&displayed);
-                rsx! {
-                    section { class: "archive-timeline", "data-vt-list": "true", aria_labelledby: "archive-timeline-title",
-                        div { class: "archive-toolbar",
-                            div { class: "archive-toolbar-title",
-                                h2 { id: "archive-timeline-title", "时间归档" }
-                                span { class: "archive-total", "{total} 篇文章" }
-                            }
-                            span { class: "archive-order", "由近及远" span { aria_hidden: "true", "↓" } }
-                        }
-                        if grouped.len() > 1 {
-                            nav { class: "archive-year-nav", aria_label: "按年份跳转",
-                                for year_group in grouped.iter() {
-                                    a { key: "{year_group.year}", href: "#{year_group.year}", "{year_group.year}" }
-                                }
-                            }
-                        }
-                        for year_group in grouped.iter() {
-                            YearSection {
-                                key: "{year_group.year}",
-                                year_group: year_group.clone(),
-                            }
-                        }
-                        if has_more {
-                            div { class: "flex flex-col items-center gap-2 py-6",
-                                button {
-                                    r#type: "button", class: BTN_OUTLINE, disabled: loading_more(),
-                                    onclick: move |_| {
-                                        if loading_more() { return; }
-                                        loading_more.set(true);
-                                        load_error.set(false);
-                                        spawn(async move {
-                                            match list_archive_posts(next_page()).await {
-                                                Ok(response) => {
-                                                    exhausted.set(response.posts.len() < ARCHIVE_PAGE_SIZE);
-                                                    older_posts.write().extend(response.posts);
-                                                    next_page += 1;
-                                                }
-                                                Err(_) => load_error.set(true),
+                    EmptyState { title: "还没有文章", description: "发布文章后，这里会按年份排好。" }
+                } else {
+                    YearBlocks { rows, hide_tag: None }
+                    if has_more {
+                        div { class: "archive-more",
+                            Button {
+                                variant: ButtonVariant::Secondary,
+                                loading: loading_more(),
+                                onclick: move |_| {
+                                    loading_more.set(true);
+                                    load_more_failed.set(false);
+                                    spawn(async move {
+                                        match list_archive_posts(next_page()).await {
+                                            Ok(response) => {
+                                                exhausted.set(response.posts.len() < ARCHIVE_PAGE_SIZE);
+                                                older.write().extend(response.posts.into_iter().map(archive_row));
+                                                next_page += 1;
                                             }
-                                            loading_more.set(false);
-                                        });
-                                    },
-                                    if loading_more() { "正在加载…" } else { "加载更早的文章" }
-                                }
-                                if load_error() {
-                                    p { role: "alert", class: "text-sm text-red-500", "加载失败，请重试。" }
-                                }
+                                            Err(_) => load_more_failed.set(true),
+                                        }
+                                        loading_more.set(false);
+                                    });
+                                },
+                                "加载更早的文章"
                             }
-                        }
-                        footer { class: "archive-colophon",
-                            span { aria_hidden: "true", "✳" }
-                            p { "写下的，替我们记得。" }
+                            if load_more_failed() {
+                                p { class: "archive-more-error", role: "alert", "没能加载更早的文章，再试一次。" }
+                            }
                         }
                     }
                 }
             }
         }
-        Some(Err(_)) => {
-            rsx! {
-                div { class: "archive-state", "data-vt-list": "true", role: "alert",
-                    h2 { "暂时没能翻开归档" }
-                    p { "文章加载失败，请稍后再试。" }
+        Some(None) => rsx! {
+            TagFilter { tags, current: None }
+            div { class: "archive-years", "data-vt-list": "true",
+                LoadError {
+                    title: "归档暂时没能加载",
+                    retrying: retrying(),
+                    retry_failed: retry_failed(),
+                    on_retry: move |_| {
+                        retrying.set(true);
+                        retry_failed.set(false);
+                        spawn(async move {
+                            let result = list_archive_posts(1).await;
+                            retrying.set(false);
+                            match result {
+                                Ok(response) => posts.set(Some(Ok(response))),
+                                Err(_) => retry_failed.set(true),
+                            }
+                        });
+                    },
+                }
+            }
+        },
+        None => rsx! {},
+    }
+}
+
+fn archive_row(post: crate::models::archive::ArchivePost) -> IndexRow {
+    IndexRow {
+        id: post.id,
+        slug: post.slug,
+        title: post.title,
+        date: post.published_at,
+        tags: post.tags,
+    }
+}
+
+/// 「41 篇文章，写于 2020 — 2026。」；还有未加载的更早文章时不写起始年份。
+fn archive_summary(rows: &[IndexRow], total: i64, has_more: bool) -> String {
+    match (rows.first(), rows.last()) {
+        (Some(newest), Some(oldest)) if !has_more => {
+            let (from, to) = (oldest.date.year(), newest.date.year());
+            if from == to {
+                format!("{total} 篇文章，写于 {to}。")
+            } else {
+                format!("{total} 篇文章，写于 {from} — {to}。")
+            }
+        }
+        (Some(newest), _) => format!(
+            "{total} 篇文章，最近一篇写于 {}。",
+            newest.date.format("%Y.%m.%d")
+        ),
+        _ => "还没有文章。".to_string(),
+    }
+}
+
+/// 标签接口的结果：失败或未取到时为空，标签区随之隐藏。
+pub(crate) fn tag_list(data: &Option<Result<TagListResponse, ServerFnError>>) -> Vec<Tag> {
+    data.as_ref()
+        .and_then(|r| r.as_ref().ok())
+        .map(|r| ranked_tags(r.tags.clone()))
+        .unwrap_or_default()
+}
+
+/// 标签筛选区。点当前标签回到全部归档；展开状态随历史记录恢复。
+#[component]
+pub(crate) fn TagFilter(tags: Vec<Tag>, current: Option<String>) -> Element {
+    let entry_id = use_hook(crate::bridges::navigation::entry_id);
+    let mut expanded =
+        use_signal(|| crate::bridges::navigation::read_state("archive-tags-open").unwrap_or(false));
+    use_effect(move || {
+        crate::bridges::navigation::write_state(&entry_id, "archive-tags-open", &expanded());
+    });
+    if tags.is_empty() {
+        return rsx! {};
+    }
+    let shown = visible_tags(&tags, current.as_deref(), expanded());
+    let total = tags.len();
+
+    rsx! {
+        section { class: "archive-tags page-enter", aria_labelledby: "archive-tags-title",
+            div { class: "archive-tags-head",
+                h2 { id: "archive-tags-title", class: "archive-tags-title",
+                    "标签 "
+                    span { class: "tabular-nums", "{total}" }
+                }
+                if total > TAG_PREVIEW {
                     button {
                         r#type: "button",
-                        class: "{BTN_OUTLINE} archive-tags-retry",
-                        onclick: move |_| posts_res.restart(),
-                        "重新加载"
+                        class: "archive-tags-toggle",
+                        aria_expanded: "{expanded()}",
+                        onclick: move |_| expanded.toggle(),
+                        if expanded() { "收起" } else { "全部 {total} 个" }
                     }
                 }
             }
-        }
-        None => {
-            rsx! {
-                DelayedSkeleton { ArchiveSkeleton { include_tags: false } }
+            div { class: "archive-tags-list",
+                for tag in shown {
+                    if current.as_deref() == Some(tag.name.as_str()) {
+                        Link {
+                            key: "{tag.id}",
+                            class: "chip is-current",
+                            to: Route::Archives {},
+                            aria_current: "page",
+                            title: "回到全部归档",
+                            "{tag.name}"
+                            span { class: "chip-count", "{tag.post_count}" }
+                        }
+                    } else {
+                        Link {
+                            key: "{tag.id}",
+                            class: "chip",
+                            to: Route::TagDetail { tag: tag.name.clone() },
+                            "{tag.name}"
+                            span { class: "chip-count", "{tag.post_count}" }
+                        }
+                    }
+                }
             }
         }
     }
 }
 
-/// 单一年份归档区块组件，展示该年份下的所有月份分组。
+/// 按年份分组的文章行。`hide_tag` 为标签详情的当前标签，不在行尾重复列出。
 #[component]
-fn YearSection(year_group: YearGroup) -> Element {
-    let total = year_group
-        .months
-        .iter()
-        .map(|m| m.posts.len())
-        .sum::<usize>();
-
+pub(crate) fn YearBlocks(rows: Vec<IndexRow>, hide_tag: Option<String>) -> Element {
+    let groups = group_by_year(&rows);
     rsx! {
-        section { class: "archive-year", aria_labelledby: "{year_group.year}",
-            header { class: "archive-year-heading",
-                div { class: "archive-year-sticky",
-                    span { class: "archive-year-kicker", aria_hidden: "true", "YEAR / 年份" }
-                    h3 { class: "archive-year-number", id: "{year_group.year}",
-                        a { class: "archive-header-link", href: "#{year_group.year}", "{year_group.year}" }
+        section { class: "archive-years", "data-vt-list": "true", aria_label: "按年份",
+            for (index, group) in groups.into_iter().enumerate() {
+                div {
+                    key: "{group.year}",
+                    class: "archive-year page-enter",
+                    style: "--enter-index: {index.min(5)}",
+                    div { class: "archive-year-label",
+                        h2 { id: "y{group.year}", class: "archive-year-number", "{group.year}" }
+                        p { class: "archive-year-count tabular-nums", "{group.rows.len()} 篇" }
                     }
-                    p { class: "archive-year-summary", "{total} 篇文章" span { aria_hidden: "true", "·" } "{year_group.months.len()} 个月" }
-                    span { class: "archive-year-rule", aria_hidden: "true" }
-                }
-            }
-            div { class: "archive-months",
-                for month_group in year_group.months.iter() {
-                    MonthSection {
-                        key: "{month_group.month_en}",
-                        month_group: month_group.clone(),
-                        year: year_group.year.clone(),
-                    }
-                }
-            }
-        }
-    }
-}
-
-/// 单一月份归档区块组件，展示该月份下的文章条目。
-#[component]
-fn MonthSection(month_group: MonthGroup, year: String) -> Element {
-    let count = month_group.posts.len();
-
-    rsx! {
-        section { class: "archive-month", aria_labelledby: "{year}-{month_group.month_en}",
-            h4 {
-                class: "archive-month-header",
-                id: "{year}-{month_group.month_en}",
-                a {
-                    class: "archive-header-link",
-                    href: "#{year}-{month_group.month_en}",
-                    span { class: "archive-month-number", "{month_group.month}" }
-                    span { "月" }
-                    span { class: "archive-month-name", "{month_group.month_en}" }
-                }
-                span { class: "archive-month-count", "{count:02} 篇" }
-            }
-            ul { class: "archive-posts",
-                for (index, post) in month_group.posts.iter().enumerate() {
-                    li { key: "{post.id}", style: "--archive-delay: {index.min(6) * 35}ms",
-                        ArchiveEntry { post: post.clone() }
+                    ol { class: "archive-rows", aria_labelledby: "y{group.year}",
+                        for row in group.rows {
+                            li { key: "{row.id}",
+                                ArchiveRow { row: row.clone(), hide_tag: hide_tag.clone() }
+                            }
+                        }
                     }
                 }
             }
@@ -367,42 +313,110 @@ fn MonthSection(month_group: MonthGroup, year: String) -> Element {
     }
 }
 
-/// 整行使用原生链接，日期保留完整 datetime，标题在窄屏自然换行。
 #[component]
-fn ArchiveEntry(post: ArchivePost) -> Element {
-    let date_str = post.formatted_date();
-    let day = post.published_at.format("%d").to_string();
-    let topics = post
+fn ArchiveRow(row: IndexRow, hide_tag: Option<String>) -> Element {
+    let tags = row
         .tags
         .iter()
-        .take(2)
+        .filter(|t| Some(t.as_str()) != hide_tag.as_deref())
+        .take(ROW_TAGS)
         .cloned()
         .collect::<Vec<_>>()
-        .join(" / ");
-
+        .join(" · ");
+    let datetime = row.date.format("%Y-%m-%d").to_string();
     rsx! {
         Link {
             class: "archive-entry",
-            "data-vt-post-link": "{post.id}",
-            to: Route::PostDetail { slug: post.slug.clone() },
-            time { class: "archive-date", datetime: "{date_str}", title: "{date_str}", aria_label: "{date_str}", "{day}" }
-            div { class: "archive-entry-copy",
-                h5 { class: "archive-entry-title", "data-vt-post-id": "{post.id}", "data-vt-role": "title", "{post.title}" }
-                if !topics.is_empty() || post.reading_time > 0 {
-                    div { class: "archive-entry-meta",
-                        if !topics.is_empty() {
-                            span { class: "archive-entry-topics", "{topics}" }
-                        }
-                        if !topics.is_empty() && post.reading_time > 0 {
-                            span { aria_hidden: "true", "·" }
-                        }
-                        if post.reading_time > 0 {
-                            span { class: "archive-reading-time", "{post.reading_time} 分钟阅读" }
-                        }
-                    }
-                }
+            to: Route::PostDetail { slug: row.slug.clone() },
+            "data-vt-post-link": "{row.id}",
+            time { class: "archive-entry-date tabular-nums", datetime: "{datetime}",
+                {row.date.format("%m.%d").to_string()}
             }
-            span { class: "archive-entry-arrow", aria_hidden: "true", "↗" }
+            span { class: "archive-entry-title", "data-vt-post-id": "{row.id}", "data-vt-role": "title", "{row.title}" }
+            if !tags.is_empty() {
+                span { class: "archive-entry-tags", "{tags}" }
+            }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::TimeZone;
+
+    fn row(id: i32, y: i32, m: u32, d: u32) -> IndexRow {
+        IndexRow {
+            id,
+            slug: format!("post-{id}"),
+            title: format!("文章 {id}"),
+            date: Utc.with_ymd_and_hms(y, m, d, 8, 0, 0).unwrap(),
+            tags: Vec::new(),
+        }
+    }
+
+    fn tag(id: i32, name: &str, post_count: i64) -> Tag {
+        Tag {
+            id,
+            name: name.into(),
+            post_count,
+        }
+    }
+
+    #[test]
+    fn groups_adjacent_rows_by_year() {
+        let rows = [
+            row(1, 2026, 10, 15),
+            row(2, 2026, 1, 2),
+            row(3, 2024, 5, 22),
+        ];
+        let groups = group_by_year(&rows);
+        let years: Vec<_> = groups.iter().map(|g| (g.year, g.rows.len())).collect();
+        assert_eq!(years, [(2026, 2), (2024, 1)]);
+        assert!(group_by_year(&[]).is_empty());
+    }
+
+    #[test]
+    fn summary_names_the_year_range_only_when_everything_is_loaded() {
+        let rows = [row(1, 2026, 10, 15), row(2, 2020, 12, 11)];
+        assert_eq!(
+            archive_summary(&rows, 2, false),
+            "2 篇文章，写于 2020 — 2026。"
+        );
+        assert_eq!(
+            archive_summary(&rows, 150, true),
+            "150 篇文章，最近一篇写于 2026.10.15。"
+        );
+        assert_eq!(
+            archive_summary(&rows[..1], 1, false),
+            "1 篇文章，写于 2026。"
+        );
+        assert_eq!(archive_summary(&[], 0, false), "还没有文章。");
+    }
+
+    #[test]
+    fn ranks_tags_by_count_and_drops_empty_ones() {
+        let ranked = ranked_tags(vec![
+            tag(1, "Go", 4),
+            tag(2, "Rust", 16),
+            tag(3, "草稿", 0),
+            tag(4, "CSS", 4),
+        ]);
+        let names: Vec<_> = ranked.iter().map(|t| t.name.as_str()).collect();
+        assert_eq!(names, ["Rust", "CSS", "Go"]);
+    }
+
+    #[test]
+    fn collapsed_tags_still_show_the_current_one() {
+        let tags: Vec<Tag> = (0..20)
+            .map(|i| tag(i, &format!("t{i}"), 100 - i64::from(i)))
+            .collect();
+        let names = |shown: Vec<&Tag>| shown.iter().map(|t| t.name.clone()).collect::<Vec<_>>();
+        assert_eq!(visible_tags(&tags, None, false).len(), TAG_PREVIEW);
+        let shown = names(visible_tags(&tags, Some("t19"), false));
+        assert_eq!(shown.len(), TAG_PREVIEW + 1);
+        assert_eq!(shown.last().map(String::as_str), Some("t19"));
+        assert_eq!(visible_tags(&tags, Some("t3"), false).len(), TAG_PREVIEW);
+        assert_eq!(visible_tags(&tags, None, true).len(), 20);
     }
 }
