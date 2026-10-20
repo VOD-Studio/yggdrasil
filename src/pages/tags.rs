@@ -51,10 +51,9 @@ pub(crate) fn TagIntro(tag: String) -> Element {
 fn TagBody(tag: String) -> Element {
     // 父组件按标签 remount，因此闭包中的 tag 在此作用域内不会过期。
     let request_tag = tag.clone();
-    let posts = use_server_future(move || get_posts_by_tag(request_tag.clone()));
-    let tags = use_server_future(list_tags);
-    let mut posts = posts?;
-    let tags = tags?;
+    // SSR 只轮询正在挂起的任务，提前发出的第二个请求会丢失唤醒；逐个等待。
+    let mut posts = use_server_future(move || get_posts_by_tag(request_tag.clone()))?;
+    let tags = use_server_future(list_tags)?;
     let mut retrying = use_signal(|| false);
     let mut retry_failed = use_signal(|| false);
 

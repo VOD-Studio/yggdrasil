@@ -53,14 +53,13 @@ pub fn HomePage(page: i32) -> Element {
 /// 第 1 页。文章列表失败时只把文章区换成错误卡片，开场照常显示。
 #[component]
 fn HomeDesk() -> Element {
-    // 先建齐全部资源再挂起，避免逐个等待。
-    let posts = use_server_future(|| list_published_posts(1, POSTS_PER_PAGE));
-    let tags = use_server_future(list_tags);
-    let settings = use_server_future(get_site_settings);
-    let outline = use_server_future(latest_post_outline);
-    let notes = use_server_future(|| list_notes(NoteFilter::default()));
-    let mut posts = posts?;
-    let (tags, settings, outline, notes) = (tags?, settings?, outline?, notes?);
+    // SSR 只轮询正在挂起的任务：先建好再一起挂起时，后面的请求会丢失唤醒，
+    // 整页永远等不到结束。必须逐个创建、逐个等待。
+    let mut posts = use_server_future(|| list_published_posts(1, POSTS_PER_PAGE))?;
+    let tags = use_server_future(list_tags)?;
+    let settings = use_server_future(get_site_settings)?;
+    let outline = use_server_future(latest_post_outline)?;
+    let notes = use_server_future(|| list_notes(NoteFilter::default()))?;
 
     let tags = ranked_tags(
         tags.read()

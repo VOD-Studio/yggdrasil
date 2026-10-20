@@ -99,11 +99,9 @@ pub fn Archives() -> Element {
 
 #[component]
 fn ArchivesBody() -> Element {
-    // 两个请求并行发起再挂起。
-    let posts = use_server_future(move || list_archive_posts(1));
-    let tags = use_server_future(list_tags);
-    let mut posts = posts?;
-    let tags = tags?;
+    // SSR 只轮询正在挂起的任务，提前发出的第二个请求会丢失唤醒；逐个等待。
+    let mut posts = use_server_future(move || list_archive_posts(1))?;
+    let tags = use_server_future(list_tags)?;
 
     let mut older = use_signal(Vec::<IndexRow>::new);
     let mut next_page = use_signal(|| 2_i32);
