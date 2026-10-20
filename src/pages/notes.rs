@@ -1,215 +1,111 @@
-//! 数字花园的笔记入口：随记时间流、主题笔记和有序笔记本。
-use std::cell::RefCell;
-use std::cmp::Ordering;
-use std::rc::Rc;
-
-use crate::api::notes::{get_note, list_notebooks, list_notes};
-use crate::components::empty_state::EmptyState;
-use crate::components::post::{post_content::PostContent, post_toc::PostToc};
-use crate::models::note::*;
-use crate::router::Route;
+//! 笔记：列表 `/notes`、笔记本目录 `/notes/book/:id` 与阅读页 `/notes/:slug?book=`。
+//!
+//! 列表与阅读页共用 880px 容器内的「200px 左栏 + 内容」布局：列表页左栏是筛选，
+//! 阅读页左栏是所在笔记本的目录，进入阅读时布局不跳。
+use chrono::{DateTime, Datelike, NaiveDate, Utc};
 use dioxus::prelude::*;
 
-/// 笔记类型标签；其后的「笔记本」标签只切换到目录，不改变列表筛选。
-const KIND_TABS: [(Option<NoteKind>, &str); 3] = [
+use crate::api::notes::{get_note, get_note_context, list_notebooks, list_notes, note_stats};
+use crate::components::empty_state::{EmptyState, EmptyStateAction};
+use crate::components::post::post_content::PostContent;
+use crate::components::skeletons::atoms::SkeletonBox;
+use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
+use crate::components::ui::{
+    use_sheet_close, BottomSheet, Button, ButtonVariant, Icon, IconName, LoadError,
+};
+use crate::models::note::*;
+use crate::router::Route;
+use crate::utils::time::sleep_ms;
+
+/// 列表一页的条数，与服务端 `store::list` 一致。
+const PAGE_SIZE: i64 = 20;
+/// 筛选框输入停顿多久后查询。
+const FILTER_DEBOUNCE_MS: u32 = 300;
+/// 左栏常用标签数。
+const SIDE_TAGS: usize = 8;
+
+/// 笔记类型筛选：全部、随记、主题笔记。
+const KINDS: [(Option<NoteKind>, &str); 3] = [
     (None, "全部"),
     (Some(NoteKind::Moment), "随记"),
     (Some(NoteKind::Topic), "主题笔记"),
 ];
-const BOOKS_TAB: usize = KIND_TABS.len();
 
-fn kind_tab(kind: Option<NoteKind>) -> usize {
-    KIND_TABS.iter().position(|(k, _)| *k == kind).unwrap_or(0)
+fn note_time(note: &Note) -> DateTime<Utc> {
+    note.updated_at
 }
+
+/// 阅读页地址；有笔记本上下文时带上 `?book=`。
+fn note_route(slug: &str, book: Option<i32>) -> Route {
+    Route::NoteDetail {
+        slug: slug.to_string(),
+        book: book.map(|id| id.to_string()).unwrap_or_default(),
+    }
+}
+
+/// 按天分组的笔记流。列表已按时间降序；相邻同一天的笔记归为一组。
+#[derive(Clone, Debug, PartialEq)]
+struct DayGroup {
+    date: NaiveDate,
+    notes: Vec<Note>,
+}
+
+fn group_by_day(notes: &[Note]) -> Vec<DayGroup> {
+    let mut groups: Vec<DayGroup> = Vec::new();
+    for note in notes {
+        let date = note_time(note).date_naive();
+        match groups.last_mut() {
+            Some(group) if group.date == date => group.notes.push(note.clone()),
+            _ => groups.push(DayGroup {
+                date,
+                notes: vec![note.clone()],
+            }),
+        }
+    }
+    groups
+}
+
+/// 组标题旁的相对日期：今天、昨天、一周内的星期几；跨年时写年份。
+fn relative_day(date: NaiveDate, today: NaiveDate) -> String {
+    const WEEKDAYS: [&str; 7] = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
+    match (today - date).num_days() {
+        0 => "今天".to_string(),
+        1 => "昨天".to_string(),
+        2..=6 => WEEKDAYS[date.weekday().num_days_from_monday() as usize].to_string(),
+        _ if date.year() != today.year() => date.year().to_string(),
+        _ => String::new(),
+    }
+}
+
+/// 今天的日期只在浏览器挂载后取得：服务端渲染不写相对日期，避免水合不一致与缓存过期。
+fn use_today() -> Signal<Option<NaiveDate>> {
+    let mut today = use_signal(|| None::<NaiveDate>);
+    use_effect(move || {
+        let now = DateTime::<Utc>::from_timestamp_millis(crate::utils::time::now_millis());
+        today.set(now.map(|t| t.date_naive()));
+    });
+    today
+}
+
+fn notebook_title(books: &[Notebook], note: &Note) -> Option<(i32, String)> {
+    note.notebook_ids
+        .iter()
+        .find_map(|id| books.iter().find(|b| b.id == *id))
+        .map(|b| (b.id, b.title.clone()))
+}
+
+// ======================= 列表页 =======================
 
 #[component]
 pub fn Notes() -> Element {
     rsx! {
         document::Title { "笔记 · Yggdrasil" }
-        div { class: "notes-page",
-            header { class: "notes-hero",
-                div {
-                    p { class: "notes-eyebrow", "FIELD NOTES / 生长中的想法" }
-                    h1 { "随手记下，" span { "慢慢成形。" } }
-                    p { class: "notes-intro", "一些此刻的发现，一些反复琢磨的答案。" }
-                }
-                div { class: "notes-hero-mark", aria_hidden: "true",
-                    svg { view_box: "0 0 120 140", fill: "none", stroke: "currentColor", stroke_width: "1.3",
-                        path { d: "M58 130V38M58 100C26 104 13 85 14 63C40 61 58 74 58 100ZM59 77C88 77 103 56 101 32C74 35 58 48 59 77ZM58 48C43 37 42 20 52 8C66 20 72 36 58 48Z" }
-                        path { d: "M35 131H82M58 100L29 78M59 77L88 46", opacity: "0.5" }
-                    }
-                    span { "保持好奇 / KEEP GROWING" }
-                }
-            }
-            NoteGarden {}
-        }
-    }
-}
-
-#[component]
-fn NoteGarden() -> Element {
-    let entry_id = use_hook(crate::bridges::navigation::entry_id);
-    // 页码从 1 开始，标签切换写入的筛选才能与挂载时的预取筛选相等。
-    let initial = use_hook(|| {
-        let mut filter =
-            crate::bridges::navigation::read_state::<NoteFilter>("notes").unwrap_or_default();
-        filter.page = filter.page.max(1);
-        filter
-    });
-    let mut filter = use_signal(|| initial.clone());
-    let mut query = use_signal(|| initial.query.clone());
-    let mut books_only = use_signal(|| false);
-    use_effect(move || crate::bridges::navigation::write_state(&entry_id, "notes", &filter()));
-    // SSR 只轮询正在挂起的任务，预取须逐个等待；提前发出的第二个请求会丢失唤醒。
-    let books = use_server_future(list_notebooks)?;
-    let notes = use_note_page(filter)?;
-    let shown = notes.read();
-    let motion = use_hook(|| {
-        Rc::new(RefCell::new(PanelMotion::new(PanelView::Feed(
-            shown.filter.clone(),
-        ))))
-    });
-    let requested = filter();
-    let loading = shown.filter != requested;
-    // 笔记本目录无需请求，立即切换；回到笔记列表时等结果返回再整体替换，期间保留当前面板。
-    let view = if books_only() {
-        PanelView::Books
-    } else if loading {
-        motion.borrow().view.clone()
-    } else {
-        PanelView::Feed(shown.filter.clone())
-    };
-    let books_view = view == PanelView::Books;
-    let (swap, direction) = motion.borrow_mut().show(view);
-    let all_notes =
-        shown.filter.kind.is_none() && shown.filter.query.is_empty() && shown.filter.tag.is_empty();
-    let active_tab = if books_only() {
-        BOOKS_TAB
-    } else {
-        kind_tab(requested.kind)
-    };
-    rsx! {
-        form { class: "notes-search", onsubmit: move |ev| {
-            ev.prevent_default();
-            filter.with_mut(|f| { f.query=query(); f.page=1; });
-            books_only.set(false);
-        },
-            span { aria_hidden: "true", "⌕" }
-            input { r#type: "search", aria_label: "搜索笔记", placeholder: "寻找一个想法、关键词或标签…", value: "{query}", oninput: move |ev| query.set(ev.value()) }
-            button { r#type: "submit", "搜索" }
-        }
-        NoteTabs { active: active_tab, onselect: move |tab: usize| {
-            books_only.set(tab == BOOKS_TAB);
-            if let Some(&(kind, _)) = KIND_TABS.get(tab) {
-                let current = filter.peek().clone();
-                if current.kind != kind || current.page > 1 {
-                    filter.with_mut(|f| { f.kind = kind; f.page = 1; });
-                }
-            }
-        } }
-        div { class: "notes-panel", "data-swap": swap, "data-direction": direction, aria_busy: loading && !books_view,
-            if let Some(Ok(items)) = books.read().as_ref() {
-                if !items.is_empty() && (books_view || all_notes) {
-                    section { class: "notebook-section", aria_label: "笔记本",
-                        div { class: "notes-section-heading", h2 { "沿着一个主题" } span { "把零散的发现，放在一起。" } }
-                        div { class: "notebook-grid",
-                            for book in items.iter().take(if books_view {usize::MAX} else {4}) {
-                                NotebookCard { key: "{book.id}", book: book.clone() }
-                            }
-                        }
-                    }
-                } else if books_view {
-                    EmptyState { title: "笔记本正在生长", description: "整理好的主题会出现在这里。" }
-                }
-            }
-            if !books_view {
-                if !shown.filter.tag.is_empty() {
-                    button { class: "note-tag", onclick: move |_| filter.with_mut(|f| {f.tag.clear();f.page=1;}), "#{shown.filter.tag} ×" }
-                }
-                NoteFeed { filter, notes, on_tag: move |tag| filter.with_mut(|f| {f.tag=tag;f.page=1;}) }
+        div { class: "notes",
+            SuspenseBoundary {
+                fallback: move |_| rsx! { DelayedSkeleton { NotesPageSkeleton {} } },
+                NotesBody {}
             }
         }
-        p { class: "notes-colophon", "想法不必完整，也值得被记下。" }
-    }
-}
-
-/// 按钮下沿相对标签栏的位置，供独立下划线滑动。
-#[derive(Clone, Copy, PartialEq)]
-struct TabUnderline {
-    x: f64,
-    y: f64,
-    width: f64,
-}
-
-/// 笔记类型标签。SSR 与测量前由当前按钮自带下划线；水合后测量按钮位置，改由独立下划线在标签间滑动。
-#[component]
-fn NoteTabs(active: usize, onselect: EventHandler<usize>) -> Element {
-    let underline = use_signal(|| None::<TabUnderline>);
-    #[cfg(target_arch = "wasm32")]
-    let mut tabs = use_signal(|| None::<web_sys::Element>);
-    #[cfg(target_arch = "wasm32")]
-    use_effect(use_reactive((&active,), move |(active,)| {
-        if let Some(tabs) = tabs.read().as_ref() {
-            measure_underline(tabs, active, underline);
-        }
-    }));
-    let labels = KIND_TABS.iter().map(|(_, label)| *label).chain(["笔记本"]);
-    rsx! {
-        div { class: "notes-tabs", role: "group", aria_label: "笔记类型",
-            "data-ready": underline().is_some().then_some("true"),
-            onmounted: move |_event| {
-                #[cfg(target_arch = "wasm32")]
-                tabs.set(_event.data().downcast::<web_sys::Element>().cloned());
-            },
-            // 视口宽度跨过断点会改变间距，字体加载也会改变按钮宽度。
-            onresize: move |_| {
-                #[cfg(target_arch = "wasm32")]
-                if let Some(tabs) = tabs.peek().as_ref() {
-                    measure_underline(tabs, active, underline);
-                }
-            },
-            for (index, label) in labels.enumerate() {
-                button { r#type: "button", aria_pressed: index == active,
-                    class: if index == active { "active" } else { "" },
-                    onclick: move |_| onselect.call(index), "{label}"
-                }
-            }
-            if let Some(TabUnderline { x, y, width }) = underline() {
-                span { class: "notes-tab-indicator", aria_hidden: "true",
-                    style: "--tab-x: {x}px; --tab-y: {y}px; --tab-w: {width}px;"
-                }
-            }
-        }
-    }
-}
-
-/// 用视口坐标求按钮相对标签栏的位置，保留小数像素，与按钮自带下划线重合。
-#[cfg(target_arch = "wasm32")]
-fn measure_underline(
-    tabs: &web_sys::Element,
-    active: usize,
-    mut underline: Signal<Option<TabUnderline>>,
-) {
-    use wasm_bindgen::JsCast;
-    let Some(button) = tabs
-        .query_selector_all("button")
-        .ok()
-        .and_then(|buttons| buttons.item(active as u32))
-    else {
-        return;
-    };
-    let Some(button) = button.dyn_ref::<web_sys::Element>() else {
-        return;
-    };
-    let bar = tabs.get_bounding_client_rect();
-    let rect = button.get_bounding_client_rect();
-    let next = Some(TabUnderline {
-        x: rect.left() - bar.left(),
-        y: rect.bottom() - bar.top(),
-        width: rect.width(),
-    });
-    if *underline.peek() != next {
-        underline.set(next);
     }
 }
 
@@ -223,15 +119,19 @@ struct ShownNotes {
 /// 首屏随 SSR 预取挂载时的筛选；之后的切换在后台请求，结果返回前继续显示当前列表。
 /// 重新运行 `use_server_future` 会再次挂起回骨架屏，页面高度坍缩并带动滚动位置跳动。
 /// 回到挂载时的筛选直接复用预取结果。
-fn use_note_page(filter: Signal<NoteFilter>) -> Result<Memo<ShownNotes>, RenderError> {
+///
+/// 同时返回重试：重新请求当前显示失败的那一份。
+fn use_note_page(
+    filter: Signal<NoteFilter>,
+) -> Result<(Memo<ShownNotes>, Callback<()>), RenderError> {
     let first_filter = use_hook(|| filter.peek().clone());
-    let first = use_server_future({
+    let mut first = use_server_future({
         let first_filter = first_filter.clone();
         move || list_notes(first_filter.clone())
     })?;
     // 挂载时的筛选直接使用预取结果；其它筛选才请求，重新开始时取消上一个请求。
     // 闭包每次渲染都会被替换，不能在闭包里保存状态。
-    let next = use_resource({
+    let mut next = use_resource({
         let first_filter = first_filter.clone();
         move || {
             let wanted = filter();
@@ -245,280 +145,1043 @@ fn use_note_page(filter: Signal<NoteFilter>) -> Result<Memo<ShownNotes>, RenderE
             }
         }
     });
-    Ok(use_memo(move || match &*next.read() {
-        Some(Some((filter, result))) => ShownNotes {
-            filter: filter.clone(),
-            result: Some(result.clone()),
-        },
-        _ => ShownNotes {
-            filter: first_filter.clone(),
-            result: first.read().clone(),
-        },
-    }))
-}
-
-/// 面板实际显示的视图：笔记本目录，或某个筛选的笔记列表。
-#[derive(Clone, PartialEq)]
-enum PanelView {
-    Books,
-    Feed(NoteFilter),
-}
-
-impl PanelView {
-    /// 先比较标签顺序，再比较页码，决定进入方向。
-    fn position(&self) -> (usize, i32) {
-        match self {
-            Self::Books => (BOOKS_TAB, 1),
-            Self::Feed(filter) => (kind_tab(filter.kind), filter.page.max(1)),
+    let shown = use_memo({
+        let first_filter = first_filter.clone();
+        move || match &*next.read() {
+            Some(Some((filter, result))) => ShownNotes {
+                filter: filter.clone(),
+                result: Some(result.clone()),
+            },
+            _ => ShownNotes {
+                filter: first_filter.clone(),
+                result: first.read().clone(),
+            },
         }
-    }
-}
-
-/// 记录上一次显示的视图。内容替换时在同一次渲染中交替动画名，CSS 才会重播进入动效。
-struct PanelMotion {
-    view: PanelView,
-    swaps: u32,
-    direction: Ordering,
-}
-
-impl PanelMotion {
-    fn new(view: PanelView) -> Self {
-        Self {
-            view,
-            swaps: 0,
-            direction: Ordering::Equal,
-        }
-    }
-
-    /// 返回 `data-swap` 与 `data-direction`；首屏内容不播放进入动效。
-    fn show(&mut self, view: PanelView) -> (Option<&'static str>, &'static str) {
-        if view != self.view {
-            self.direction = view.position().cmp(&self.view.position());
-            self.swaps += 1;
-            self.view = view;
-        }
-        let swap = match self.swaps {
-            0 => None,
-            n if n % 2 == 1 => Some("odd"),
-            _ => Some("even"),
-        };
-        let direction = match self.direction {
-            Ordering::Greater => "forward",
-            Ordering::Less => "backward",
-            Ordering::Equal => "none",
-        };
-        (swap, direction)
-    }
-}
-
-#[component]
-fn NotebookCard(book: Notebook) -> Element {
-    rsx! {
-        Link { class: "notebook-card", to: Route::NotebookDetail { id: book.id },
-            span { class: "notebook-spine", aria_hidden: "true" }
-            div { class: "notebook-top", span { "NOTEBOOK" } span { "↗" } }
-            h3 { "{book.title}" }
-            p { "{book.description}" }
-            footer { span { "{book.note_count} 篇笔记" } span { "持续整理" } }
-        }
-    }
-}
-
-/// 渲染当前显示的结果；翻页基于显示中的页码，连续点击不会越过尚未返回的页面。
-#[component]
-fn NoteFeed(
-    mut filter: Signal<NoteFilter>,
-    notes: Memo<ShownNotes>,
-    on_tag: EventHandler<String>,
-) -> Element {
-    let shown = notes.read();
-    let ShownNotes {
-        filter: current,
-        result,
-    } = &*shown;
-    let page_no = current.page.max(1);
-    rsx! {
-        section { class: "note-feed", aria_label: "笔记列表",
-            div { class: "notes-section-heading", h2 { if !current.query.is_empty() { "搜索结果" } else if current.notebook_id.is_some() { "笔记目录" } else { "最近记录" } }
-                if let Some(Ok(page)) = result { span { "{page.total} 条记录" } }
-            }
-            match result {
-                Some(Ok(page)) if !page.notes.is_empty() => rsx! {
-                    for note in &page.notes { NoteEntry { key: "{note.id}-{note.version}", note: note.clone(), on_tag } }
-                    div { class: "notes-pagination",
-                        button { disabled: page_no<=1, onclick: move |_| filter.with_mut(|f| f.page=page_no-1), "← 上一页" }
-                        span { "第 {page_no} 页" }
-                        button { disabled: i64::from(page_no)*20>=page.total, onclick: move |_| filter.with_mut(|f| f.page=page_no+1), "下一页 →" }
-                    }
-                },
-                Some(Ok(_)) => rsx! { EmptyState { icon: crate::components::ui::IconName::SearchX, title: "这里还没有笔记", description: "换个关键词看看，或等下一次灵感落下。" } },
-                Some(Err(_)) => rsx! { p { role: "alert", "笔记暂时加载失败，请刷新重试。" } },
-                None => rsx! { NotesSkeleton {} },
-            }
-        }
-    }
-}
-
-#[component]
-fn NoteEntry(note: Note, on_tag: EventHandler<String>) -> Element {
-    let title = note.display_title();
-    rsx! {
-        article { class: "note-entry",
-            div { class: "note-date", time { datetime: note.updated_at.to_rfc3339(), {note.updated_at.format("%m.%d").to_string()} } span { {note.updated_at.format("%Y").to_string()} } }
-            div { class: "note-entry-body",
-                div { class: "note-entry-top", span { class: "note-kind", "{note.kind.label()}" }
-                    Link { class: "note-permalink", to: Route::NoteDetail { slug: note.slug.clone() }, aria_label: "阅读这条笔记", "↗" }
-                }
-                if !note.title.is_empty() { h3 { Link { to: Route::NoteDetail { slug: note.slug.clone() }, "{title}" } } }
-                if note.kind==NoteKind::Moment && !note.content_html.is_empty() {
-                    div { class: "note-moment-content", PostContent { content_html: note.content_html.clone() } }
-                } else {
-                    p { class: "note-summary", "{note.summary}" }
-                    Link { class: "note-read", to: Route::NoteDetail { slug: note.slug.clone() }, "继续阅读 →" }
-                }
-                div { class: "note-tags", for tag in note.tags { button { class: "note-tag", onclick: move |_| on_tag.call(tag.clone()), "#{tag}" } } }
-            }
-        }
-    }
-}
-
-#[component]
-pub fn NotebookDetail(id: i32) -> Element {
-    rsx! { for key in std::iter::once(id) { NotebookReader { key: "{key}", id: key } } }
-}
-
-#[component]
-fn NotebookReader(id: i32) -> Element {
-    let mut filter = use_signal(|| NoteFilter {
-        notebook_id: Some(id),
-        page: 1,
-        ..Default::default()
     });
+    let retry = use_callback(move |()| {
+        if *filter.peek() == first_filter {
+            first.restart();
+        } else {
+            next.restart();
+        }
+    });
+    Ok((shown, retry))
+}
+
+/// 「更早的记录」追加的页：属于哪个筛选、已加载到第几页。筛选变化后自然作废。
+#[derive(Clone, Default, PartialEq)]
+struct OlderPages {
+    filter: NoteFilter,
+    last_page: i32,
+    notes: Vec<Note>,
+}
+
+#[component]
+fn NotesBody() -> Element {
+    let entry_id = use_hook(crate::bridges::navigation::entry_id);
+    let initial = use_hook(|| {
+        let mut filter =
+            crate::bridges::navigation::read_state::<NoteFilter>("notes").unwrap_or_default();
+        filter.page = 1;
+        filter
+    });
+    let filter = use_signal(|| initial.clone());
+    use_effect(move || crate::bridges::navigation::write_state(&entry_id, "notes", &filter()));
+    // SSR 只轮询正在挂起的任务，预取须逐个等待；提前发出的第二个请求会丢失唤醒。
     let books = use_server_future(list_notebooks)?;
-    let notes = use_note_page(filter)?;
-    let shown = notes.read();
-    let motion = use_hook(|| {
-        Rc::new(RefCell::new(PanelMotion::new(PanelView::Feed(
-            shown.filter.clone(),
-        ))))
-    });
-    let loading = shown.filter != filter();
-    let (swap, direction) = motion
-        .borrow_mut()
-        .show(PanelView::Feed(shown.filter.clone()));
-    let book = books
+    let stats = use_server_future(note_stats)?;
+    let (notes, retry) = use_note_page(filter)?;
+
+    let books: Vec<Notebook> = books
         .read()
         .as_ref()
         .and_then(|r| r.as_ref().ok())
-        .and_then(|books| books.iter().find(|b| b.id == id))
-        .cloned();
-    let Some(book) = book else {
-        return rsx! { EmptyState {title:"笔记本不存在",description:"这个笔记本尚未公开，或已经被移除。"} };
+        .cloned()
+        .unwrap_or_default();
+    let stats: Option<NoteStats> = stats.read().as_ref().and_then(|r| r.as_ref().ok()).cloned();
+
+    rsx! {
+        header { class: "notes-header page-enter",
+            div {
+                h1 { class: "notes-title", "笔记" }
+                p { class: "notes-intro", "随手记下的发现，和反复琢磨后成形的主题。" }
+            }
+            if let Some(stats) = stats.as_ref() {
+                p { class: "notes-count tabular-nums",
+                    "{stats.total()} 条 · {books.len()} 个笔记本"
+                }
+            }
+        }
+        div { class: "notes-layout",
+            NotesSide { filter, books: books.clone(), stats }
+            NoteStream { filter, notes, books, on_retry: retry }
+        }
+    }
+}
+
+/// 左栏：筛选框、类型、笔记本与常用标签。窄屏只留筛选框与横排类型。
+#[component]
+fn NotesSide(
+    mut filter: Signal<NoteFilter>,
+    books: Vec<Notebook>,
+    stats: Option<NoteStats>,
+) -> Element {
+    let mut query = use_signal(|| filter.peek().query.clone());
+    let mut composing = use_signal(|| false);
+    let mut request = use_signal(|| 0_u64);
+    let mut apply_query = move || {
+        request += 1;
+        let id = request();
+        if composing() {
+            return;
+        }
+        spawn(async move {
+            sleep_ms(FILTER_DEBOUNCE_MS).await;
+            let q = query().trim().to_string();
+            if request() == id && filter.peek().query != q {
+                filter.with_mut(|f| f.query = q);
+            }
+        });
+    };
+    let current = filter();
+    let count = |kind: Option<NoteKind>| {
+        stats.as_ref().map(|s| match kind {
+            None => s.total(),
+            Some(NoteKind::Moment) => s.moments,
+            Some(NoteKind::Topic) => s.topics,
+        })
+    };
+    let tags = stats
+        .as_ref()
+        .map(|s| s.tags.iter().take(SIDE_TAGS).cloned().collect::<Vec<_>>())
+        .unwrap_or_default();
+
+    rsx! {
+        aside { class: "notes-side page-enter", style: "--enter-index: 1", aria_label: "笔记筛选",
+            form {
+                class: "notes-filter",
+                role: "search",
+                onsubmit: move |event| {
+                    event.prevent_default();
+                    request += 1;
+                    let q = query().trim().to_string();
+                    filter.with_mut(|f| f.query = q);
+                },
+                Icon { name: IconName::Search, size: 14 }
+                label { class: "sr-only", r#for: "notes-filter-input", "筛选笔记" }
+                input {
+                    id: "notes-filter-input",
+                    r#type: "search",
+                    placeholder: "筛选笔记",
+                    autocomplete: "off",
+                    maxlength: "200",
+                    value: "{query}",
+                    oninput: move |event| {
+                        query.set(event.value());
+                        apply_query();
+                    },
+                    oncompositionstart: move |_| composing.set(true),
+                    oncompositionend: move |_| {
+                        composing.set(false);
+                        apply_query();
+                    },
+                }
+            }
+            nav { class: "notes-side-group", aria_label: "笔记类型",
+                p { class: "notes-side-label", "类型" }
+                div { class: "notes-kinds",
+                    for (kind, label) in KINDS {
+                        button {
+                            key: "{label}",
+                            r#type: "button",
+                            class: "notes-side-item",
+                            aria_pressed: "{current.kind == kind}",
+                            onclick: move |_| {
+                                if filter.peek().kind != kind {
+                                    filter.with_mut(|f| f.kind = kind);
+                                }
+                            },
+                            span { "{label}" }
+                            if let Some(n) = count(kind) {
+                                span { class: "notes-side-count tabular-nums", "{n}" }
+                            }
+                        }
+                    }
+                }
+            }
+            if !books.is_empty() {
+                nav { class: "notes-side-group notes-side-extra", aria_label: "笔记本",
+                    p { class: "notes-side-label", "笔记本" }
+                    for book in books {
+                        Link {
+                            key: "{book.id}",
+                            class: "notes-side-item",
+                            to: Route::NotebookDetail { id: book.id },
+                            Icon { name: IconName::BookOpen, size: 15, class: "notes-side-icon" }
+                            span { class: "notes-side-text", "{book.title}" }
+                            span { class: "notes-side-count tabular-nums", "{book.note_count}" }
+                        }
+                    }
+                }
+            }
+            if !tags.is_empty() {
+                div { class: "notes-side-group notes-side-extra",
+                    p { class: "notes-side-label", id: "notes-tags-label", "标签" }
+                    div { class: "notes-side-tags", role: "group", aria_labelledby: "notes-tags-label",
+                        for (tag, n) in tags {
+                            button {
+                                key: "{tag}",
+                                r#type: "button",
+                                class: "chip",
+                                aria_pressed: "{current.tag == tag}",
+                                title: "{n} 条",
+                                onclick: {
+                                    let tag = tag.clone();
+                                    move |_| {
+                                        let next = if filter.peek().tag == tag { String::new() } else { tag.clone() };
+                                        filter.with_mut(|f| f.tag = next);
+                                    }
+                                },
+                                "{tag}"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// 按天分组的笔记流，底部「更早的记录」按页追加。
+#[component]
+fn NoteStream(
+    mut filter: Signal<NoteFilter>,
+    notes: Memo<ShownNotes>,
+    books: Vec<Notebook>,
+    on_retry: Callback<()>,
+) -> Element {
+    let today = use_today();
+    let mut older = use_signal(OlderPages::default);
+    let mut loading_more = use_signal(|| false);
+    let mut more_failed = use_signal(|| false);
+    let shown = notes.read().clone();
+    let loading = shown.filter != filter();
+    let filtered = !shown.filter.query.is_empty()
+        || shown.filter.kind.is_some()
+        || !shown.filter.tag.is_empty();
+
+    let body = match &shown.result {
+        Some(Ok(page)) => {
+            let mut all = page.notes.clone();
+            let extra = older.read();
+            if extra.filter == shown.filter {
+                all.extend(extra.notes.iter().cloned());
+            }
+            let loaded_pages = if extra.filter == shown.filter {
+                extra.last_page
+            } else {
+                1
+            };
+            let has_more = i64::from(loaded_pages) * PAGE_SIZE < page.total;
+            let groups = group_by_day(&all);
+            if all.is_empty() {
+                rsx! {
+                    if filtered {
+                        EmptyState {
+                            icon: IconName::SearchX,
+                            title: "没有找到相关笔记",
+                            description: "换个关键词或类型，或者清除筛选看看全部。",
+                            action: EmptyStateAction {
+                                label: "清除筛选".to_string(),
+                                onclick: Callback::new(move |_| filter.set(NoteFilter { page: 1, ..Default::default() })),
+                            },
+                        }
+                    } else {
+                        EmptyState { icon: IconName::NotebookPen, title: "还没有公开的笔记", description: "随手记下的发现会按天出现在这里。" }
+                    }
+                }
+            } else {
+                let base = shown.filter.clone();
+                rsx! {
+                    for group in groups {
+                        section { key: "{group.date}", class: "notes-day", aria_label: "{group.date}",
+                            div { class: "notes-day-head",
+                                time { class: "notes-day-date tabular-nums", datetime: "{group.date}",
+                                    {group.date.format("%m.%d").to_string()}
+                                }
+                                if let Some(today) = today() {
+                                    span { class: "notes-day-rel", {relative_day(group.date, today)} }
+                                }
+                            }
+                            for note in group.notes {
+                                if note.kind == NoteKind::Topic {
+                                    TopicCard {
+                                        key: "{note.id}-{note.version}",
+                                        book: notebook_title(&books, &note),
+                                        note,
+                                    }
+                                } else {
+                                    MomentEntry {
+                                        key: "{note.id}-{note.version}",
+                                        note,
+                                        active_tag: shown.filter.tag.clone(),
+                                        on_tag: move |tag: String| filter.with_mut(|f| f.tag = tag),
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if has_more {
+                        div { class: "notes-more",
+                            Button {
+                                variant: ButtonVariant::Secondary,
+                                loading: loading_more(),
+                                onclick: move |_| {
+                                    let base = base.clone();
+                                    let page = loaded_pages + 1;
+                                    loading_more.set(true);
+                                    more_failed.set(false);
+                                    spawn(async move {
+                                        let result = list_notes(NoteFilter { page, ..base.clone() }).await;
+                                        loading_more.set(false);
+                                        match result {
+                                            Ok(next) => older.with_mut(|o| {
+                                                if o.filter != base {
+                                                    *o = OlderPages { filter: base.clone(), last_page: 1, notes: Vec::new() };
+                                                }
+                                                o.last_page = page;
+                                                o.notes.extend(next.notes);
+                                            }),
+                                            Err(_) => more_failed.set(true),
+                                        }
+                                    });
+                                },
+                                "更早的记录"
+                            }
+                            if more_failed() {
+                                p { class: "notes-more-error", role: "alert", "没能加载更早的记录，再试一次。" }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Some(Err(_)) => rsx! {
+            LoadError {
+                title: "笔记暂时没能加载",
+                retrying: loading,
+                on_retry: move |_| on_retry.call(()),
+            }
+        },
+        None => rsx! { NotesStreamSkeleton {} },
+    };
+
+    rsx! {
+        section {
+            class: "notes-stream page-enter",
+            style: "--enter-index: 2",
+            aria_label: "笔记列表",
+            aria_busy: "{loading}",
+            {body}
+        }
+    }
+}
+
+/// 随记：无卡片，「时间 + 正文」两列；正文直接渲染，悬停时出现「链接」。
+#[component]
+fn MomentEntry(note: Note, active_tag: String, on_tag: EventHandler<String>) -> Element {
+    let time = note_time(&note).format("%H:%M").to_string();
+    let book = note.notebook_ids.first().copied();
+    rsx! {
+        article { class: "note-moment",
+            time { class: "note-moment-time tabular-nums", datetime: note_time(&note).to_rfc3339(), "{time}" }
+            div { class: "note-moment-main",
+                if !note.title.trim().is_empty() {
+                    h2 { class: "note-moment-title", "{note.title}" }
+                }
+                if note.content_html.is_empty() {
+                    p { class: "note-moment-summary", "{note.summary}" }
+                    Link { class: "note-moment-more", to: note_route(&note.slug, book), "继续阅读" }
+                } else {
+                    div { class: "note-moment-body", PostContent { content_html: note.content_html.clone() } }
+                }
+                div { class: "note-moment-foot",
+                    for tag in note.tags.iter().cloned() {
+                        button {
+                            key: "{tag}",
+                            r#type: "button",
+                            class: "note-moment-tag",
+                            aria_pressed: "{active_tag == tag}",
+                            onclick: move |_| on_tag.call(tag.clone()),
+                            "#{tag}"
+                        }
+                    }
+                    Link {
+                        class: "note-moment-link",
+                        to: note_route(&note.slug, book),
+                        aria_label: "打开这条随记",
+                        Icon { name: IconName::Link, size: 14 }
+                        "链接"
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// 主题笔记：浮起卡片，衬线标题、两行摘要与「N 节 · 更新于」。
+#[component]
+fn TopicCard(note: Note, book: Option<(i32, String)>) -> Element {
+    let updated = note_time(&note).format("%m.%d").to_string();
+    let meta = if note.sections > 0 {
+        format!("{} 节 · 更新于 {updated}", note.sections)
+    } else {
+        format!("更新于 {updated}")
     };
     rsx! {
-        document::Title { "{book.title} · 笔记本" }
-        Link { class: "note-read", to: Route::Notes {}, "← 全部笔记" }
-        header { class: "notes-hero notebook-heading", div {
-            p { class: "notes-eyebrow", "NOTEBOOK / 主题索引" }
-            h1 { "{book.title}" } p { class: "notes-intro", "{book.description}" }
-        } }
-        div { class: "notes-panel", "data-swap": swap, "data-direction": direction, aria_busy: loading,
-            if !shown.filter.tag.is_empty() {
-                button {class:"note-tag",onclick:move |_|filter.with_mut(|f|{f.tag.clear();f.page=1;}),"#{shown.filter.tag} ×"}
+        article { class: "note-topic",
+            div { class: "note-topic-top",
+                span { class: "badge", "主题笔记" }
+                if let Some((_, title)) = book.as_ref() {
+                    span { class: "note-topic-book",
+                        Icon { name: IconName::BookOpen, size: 13 }
+                        "{title}"
+                    }
+                }
             }
-            NoteFeed { filter, notes, on_tag: move |tag| filter.with_mut(|f| {f.tag=tag;f.page=1;}) }
+            h2 { class: "note-topic-title",
+                Link { class: "note-topic-link", to: note_route(&note.slug, book.as_ref().map(|(id, _)| *id)),
+                    {note.display_title()}
+                }
+            }
+            if !note.summary.trim().is_empty() {
+                p { class: "note-topic-summary", "{note.summary}" }
+            }
+            div { class: "note-topic-foot",
+                span { class: "tabular-nums", "{meta}" }
+                span { class: "note-topic-arrow", aria_hidden: "true", Icon { name: IconName::ArrowRight, size: 15 } }
+            }
         }
     }
 }
 
-#[component]
-pub fn NoteDetail(slug: String) -> Element {
-    rsx! { for key in std::iter::once(slug) { NoteReader { key: "{key}", slug: key } } }
-}
+// ======================= 笔记本目录 =======================
 
 #[component]
-fn NoteReader(slug: String) -> Element {
-    let note = use_server_future(move || get_note(slug.clone()))?;
-    let data = note.read();
-    match data.as_ref() {
-        Some(Ok(note)) => rsx! { NoteDocument { note: note.clone() } },
-        Some(Err(_)) => {
-            rsx! { EmptyState { title: "这条笔记暂时无法阅读", description: "笔记可能尚未公开、已撤回，或服务暂时不可用。" } }
-        }
-        None => rsx! { NotesSkeleton {} },
-    }
-}
-
-#[component]
-pub fn NoteDocument(note: Note, #[props(default)] preview: bool) -> Element {
-    let title = note.display_title();
+pub fn NotebookDetail(id: i32) -> Element {
     rsx! {
-        document::Title { "{title} · 笔记" }
-        article { class: "note-document post-single",
-            if !preview { Link { class: "note-read", to: Route::Notes {}, "← 回到笔记" } }
-            header { class: "note-document-header",
-                p { class: "notes-eyebrow", "{note.kind.label()} / FIELD NOTE" }
-                h1 { "{title}" }
-                p { class: "note-document-meta", {format!("更新于 {} · 版本 {}", note.updated_at.format("%Y-%m-%d"), note.version)} }
-                div { class: "note-tags", for tag in &note.tags { span { class: "note-tag", "#{tag}" } } }
+        for key in std::iter::once(id) {
+            div { key: "{key}", class: "notebook",
+                SuspenseBoundary {
+                    fallback: move |_| rsx! { DelayedSkeleton { NotebookSkeleton {} } },
+                    NotebookPage { id: key }
+                }
             }
-            if !note.toc_html.is_empty() { PostToc { toc_html: note.toc_html.clone(), title: "本篇目录" } }
-            PostContent { content_html: note.content_html.clone() }
-            footer { class: "notes-colophon", {format!("记录于 {} · 想法仍在生长。", note.created_at.format("%Y-%m-%d"))} }
         }
     }
 }
 
+#[component]
+fn NotebookPage(id: i32) -> Element {
+    let books = use_server_future(list_notebooks)?;
+    let mut notes = use_server_future(move || {
+        list_notes(NoteFilter {
+            notebook_id: Some(id),
+            page: 1,
+            ..Default::default()
+        })
+    })?;
+    let mut older = use_signal(Vec::<Note>::new);
+    let mut next_page = use_signal(|| 2_i32);
+    let mut loading_more = use_signal(|| false);
+
+    let books: Vec<Notebook> = books
+        .read()
+        .as_ref()
+        .and_then(|r| r.as_ref().ok())
+        .cloned()
+        .unwrap_or_default();
+    let Some(book) = books.iter().find(|b| b.id == id).cloned() else {
+        return rsx! {
+            document::Title { "笔记本不存在 · Yggdrasil" }
+            NotebookBack {}
+            EmptyState { icon: IconName::BookOpen, title: "笔记本不存在", description: "这个笔记本尚未公开、已归档，或已经被移除。" }
+        };
+    };
+    let others: Vec<Notebook> = books.iter().filter(|b| b.id != id).cloned().collect();
+    let page = notes.read().as_ref().and_then(|r| r.as_ref().ok()).cloned();
+
+    rsx! {
+        document::Title { "{book.title} · 笔记本" }
+        NotebookBack {}
+        header { class: "notebook-header page-enter",
+            p { class: "notebook-label",
+                Icon { name: IconName::BookOpen, size: 14 }
+                "笔记本"
+            }
+            h1 { class: "notebook-title", "{book.title}" }
+            if !book.description.trim().is_empty() {
+                p { class: "notebook-description", "{book.description}" }
+            }
+            p { class: "notebook-meta tabular-nums",
+                span { "{book.note_count} 篇" }
+                span { "按阅读顺序编排" }
+                span { "更新于 {book.updated_at.format(\"%m.%d\")}" }
+            }
+            if let Some(first) = page.as_ref().and_then(|p| p.notes.first()) {
+                Link {
+                    class: "btn btn-primary btn-lg notebook-start",
+                    to: note_route(&first.slug, Some(id)),
+                    "从第一篇读起"
+                    Icon { name: IconName::ArrowRight, size: 16 }
+                }
+            }
+        }
+        match page {
+            Some(page) if !page.notes.is_empty() => {
+                let mut all = page.notes.clone();
+                all.extend(older.read().iter().cloned());
+                let has_more = (all.len() as i64) < page.total;
+                rsx! {
+                    ol { class: "notebook-entries page-enter", style: "--enter-index: 1",
+                        for (index, note) in all.into_iter().enumerate() {
+                            li { key: "{note.id}",
+                                NotebookEntry { note, number: index + 1, book: id }
+                            }
+                        }
+                    }
+                    if has_more {
+                        div { class: "notes-more",
+                            Button {
+                                variant: ButtonVariant::Secondary,
+                                loading: loading_more(),
+                                onclick: move |_| {
+                                    loading_more.set(true);
+                                    spawn(async move {
+                                        let filter = NoteFilter { notebook_id: Some(id), page: next_page(), ..Default::default() };
+                                        if let Ok(next) = list_notes(filter).await {
+                                            older.write().extend(next.notes);
+                                            next_page += 1;
+                                        }
+                                        loading_more.set(false);
+                                    });
+                                },
+                                "加载更多"
+                            }
+                        }
+                    }
+                    p { class: "notebook-note", "只列出已发布的笔记。" }
+                }
+            }
+            Some(_) => rsx! {
+                EmptyState { icon: IconName::NotebookPen, title: "这个笔记本还是空的", description: "发布的笔记加入后会按顺序列在这里。" }
+            },
+            None => rsx! {
+                LoadError { title: "目录暂时没能加载", on_retry: move |_| notes.restart() }
+            },
+        }
+        if !others.is_empty() {
+            section { class: "notebook-others", aria_labelledby: "notebook-others-title",
+                h2 { id: "notebook-others-title", class: "section-label", "其他笔记本" }
+                div { class: "notebook-others-grid",
+                    for other in others {
+                        Link { key: "{other.id}", class: "notebook-other", to: Route::NotebookDetail { id: other.id },
+                            span { class: "notebook-other-title", "{other.title}" }
+                            span { class: "notebook-other-count tabular-nums", "{other.note_count} 篇" }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn NotebookBack() -> Element {
+    rsx! {
+        Link { class: "notes-back", to: Route::Notes {},
+            Icon { name: IconName::ArrowLeft, size: 14 }
+            "全部笔记"
+        }
+    }
+}
+
+#[component]
+fn NotebookEntry(note: Note, number: usize, book: i32) -> Element {
+    let updated = note_time(&note).format("%m.%d").to_string();
+    let meta = match note.kind {
+        NoteKind::Topic if note.sections > 0 => {
+            format!("主题笔记 · {} 节 · 更新于 {updated}", note.sections)
+        }
+        NoteKind::Topic => format!("主题笔记 · 更新于 {updated}"),
+        NoteKind::Moment => format!("随记 · {updated}"),
+    };
+    rsx! {
+        Link { class: "notebook-entry", to: note_route(&note.slug, Some(book)),
+            span { class: "notebook-entry-number tabular-nums", aria_hidden: "true", {format!("{number:02}")} }
+            span { class: "notebook-entry-main",
+                span { class: "notebook-entry-title", {note.display_title()} }
+                if !note.summary.trim().is_empty() && !note.title.trim().is_empty() {
+                    span { class: "notebook-entry-summary", "{note.summary}" }
+                }
+                span { class: "notebook-entry-meta tabular-nums", "{meta}" }
+            }
+            span { class: "notebook-entry-arrow", aria_hidden: "true", Icon { name: IconName::ArrowRight, size: 15 } }
+        }
+    }
+}
+
+// ======================= 阅读页 =======================
+
+/// 阅读页。`book` 来自 `?book=`，指明一条属于多个笔记本的笔记在哪本里读。
+#[component]
+pub fn NoteDetail(slug: String, #[props(default)] book: String) -> Element {
+    let book = book.parse::<i32>().ok();
+    rsx! {
+        for (key, slug) in std::iter::once((format!("{slug}|{book:?}"), slug)) {
+            div { key: "{key}", class: "notes",
+                SuspenseBoundary {
+                    fallback: move |_| rsx! { DelayedSkeleton { NoteReaderSkeleton {} } },
+                    NoteReader { slug, book }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn NoteReader(slug: String, book: Option<i32>) -> Element {
+    let note_slug = slug.clone();
+    let note = use_server_future(move || get_note(note_slug.clone()))?;
+    let context = use_server_future(move || get_note_context(slug.clone(), book))?;
+    let note = note.read().as_ref().map(|r| r.as_ref().ok().cloned());
+    // 上下文只影响左栏，失败时按不在任何笔记本中处理。
+    let context = context
+        .read()
+        .as_ref()
+        .and_then(|r| r.as_ref().ok())
+        .cloned()
+        .flatten();
+
+    match note {
+        Some(Some(note)) => rsx! {
+            div { class: "notes-layout note-reader",
+                NoteRail { note: note.clone(), context: context.clone() }
+                NoteDocument { note, context }
+            }
+        },
+        Some(None) => rsx! {
+            div { class: "note-missing",
+                NotebookBack {}
+                EmptyState {
+                    icon: IconName::NotebookPen,
+                    title: "这条笔记暂时无法阅读",
+                    description: "笔记可能尚未公开、已撤回，或服务暂时不可用。",
+                }
+            }
+        },
+        None => rsx! {},
+    }
+}
+
+/// 阅读页左栏：所在笔记本的目录，当前篇浮起并展开本篇小节；不在公开笔记本中时
+/// 只有返回链接与本篇小节。小节的当前位置由 yggdrasil-core 的目录 scroll-spy 标出。
+#[component]
+fn NoteRail(note: Note, context: Option<NoteContext>) -> Element {
+    rsx! {
+        aside { class: "notes-side note-rail", aria_label: "笔记本目录",
+            NotebookBack {}
+            if let Some(context) = context.as_ref() {
+                div { class: "note-rail-book",
+                    p { class: "notes-side-label", "笔记本" }
+                    Link { class: "note-rail-book-title", to: Route::NotebookDetail { id: context.notebook.id },
+                        "{context.notebook.title}"
+                    }
+                    if !context.notebook.description.trim().is_empty() {
+                        p { class: "note-rail-book-description", "{context.notebook.description}" }
+                    }
+                }
+                NotebookDirectory { context: context.clone(), current: note.slug.clone(), toc_html: note.toc_html.clone(), spy: true }
+            } else if !note.toc_html.is_empty() {
+                div { class: "note-rail-book",
+                    p { class: "notes-side-label", "本篇" }
+                }
+                NoteSections { toc_html: note.toc_html.clone(), spy: true }
+            }
+        }
+    }
+}
+
+/// 笔记本目录的编号列表；当前篇浮起，其下展开本篇小节。
+#[component]
+fn NotebookDirectory(
+    context: NoteContext,
+    current: String,
+    toc_html: String,
+    spy: bool,
+) -> Element {
+    let book = context.notebook.id;
+    rsx! {
+        ol { class: "note-directory",
+            for (index, item) in context.siblings.iter().enumerate() {
+                li { key: "{item.slug}",
+                    Link {
+                        class: "note-directory-item",
+                        to: note_route(&item.slug, Some(book)),
+                        aria_current: (item.slug == current).then_some("page"),
+                        span { class: "note-directory-number tabular-nums", aria_hidden: "true", {format!("{:02}", index + 1)} }
+                        span { "{item.title}" }
+                    }
+                    if item.slug == current && !toc_html.is_empty() {
+                        NoteSections { toc_html: toc_html.clone(), spy }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// 本篇小节（目录 HTML 的一级）。`spy` 为真时挂上 scroll-spy；抽屉里的副本不挂。
+#[component]
+fn NoteSections(toc_html: String, spy: bool) -> Element {
+    #[cfg(target_arch = "wasm32")]
+    use_effect(move || {
+        if let (true, Some(window)) = (spy, web_sys::window()) {
+            crate::utils::js::invoke_optional_global(
+                &window,
+                "__initTocSidebar",
+                &["#note-rail-toc".into(), "#note-content".into()],
+            );
+        }
+    });
+    #[cfg(target_arch = "wasm32")]
+    use_drop(move || {
+        if let (true, Some(window)) = (spy, web_sys::window()) {
+            crate::utils::js::invoke_optional_global(
+                &window,
+                "__disposeTocSidebar",
+                &["#note-rail-toc".into()],
+            );
+        }
+    });
+    rsx! {
+        nav {
+            id: spy.then_some("note-rail-toc"),
+            class: "note-sections",
+            aria_label: "本篇小节",
+            div { class: "toc-sidebar-body", dangerous_inner_html: "{toc_html}" }
+        }
+    }
+}
+
+/// 笔记正文：类型与篇序、衬线标题、时间与标签、正文，以及笔记本内的上一篇 / 下一篇。
+/// 后台编辑器的预览（`preview`）只显示正文部分。
+#[component]
+pub fn NoteDocument(
+    note: Note,
+    #[props(default)] preview: bool,
+    #[props(default)] context: Option<NoteContext>,
+) -> Element {
+    let title = note.display_title();
+    let created = note.created_at.format("%Y.%m.%d").to_string();
+    let updated = note.updated_at.format("%m.%d").to_string();
+    let book = context.as_ref().map(|c| c.notebook.id);
+    let mut sheet_open = use_signal(|| false);
+    rsx! {
+        if !preview {
+            document::Title { "{title} · 笔记" }
+        }
+        article { class: "note-document",
+            if !preview {
+                if let Some(context) = context.as_ref() {
+                    button {
+                        id: "note-directory-trigger",
+                        class: "note-mobile-entry",
+                        r#type: "button",
+                        aria_haspopup: "dialog",
+                        aria_expanded: "{sheet_open}",
+                        aria_controls: "note-directory-sheet",
+                        onclick: move |_| sheet_open.set(true),
+                        Icon { name: IconName::BookOpen, size: 15 }
+                        span { class: "tabular-nums", "{context.notebook.title} · 第 {context.position} / {context.total} 篇" }
+                        span { class: "note-mobile-entry-action", "目录" }
+                    }
+                } else if !note.toc_html.is_empty() {
+                    button {
+                        id: "note-directory-trigger",
+                        class: "note-mobile-entry",
+                        r#type: "button",
+                        aria_haspopup: "dialog",
+                        aria_expanded: "{sheet_open}",
+                        aria_controls: "note-directory-sheet",
+                        onclick: move |_| sheet_open.set(true),
+                        Icon { name: IconName::List, size: 15 }
+                        span { "本篇小节" }
+                        span { class: "note-mobile-entry-action", "目录" }
+                    }
+                }
+            }
+            div { class: "note-document-kicker",
+                span { class: "badge", "{note.kind.label()}" }
+                if let Some(context) = context.as_ref() {
+                    span { class: "tabular-nums", "第 {context.position} / {context.total} 篇" }
+                }
+            }
+            h1 { class: "note-document-title", "{title}" }
+            p { class: "note-document-meta tabular-nums",
+                span { "记录于 {created}" }
+                if note.updated_at.date_naive() != note.created_at.date_naive() {
+                    span { "更新于 {updated}" }
+                }
+                if note.sections > 0 {
+                    span { "{note.sections} 节" }
+                }
+            }
+            if !note.tags.is_empty() {
+                p { class: "note-document-tags",
+                    for tag in note.tags.iter() {
+                        span { key: "{tag}", "#{tag}" }
+                    }
+                }
+            }
+            div { id: "note-content", class: "note-document-body",
+                PostContent { content_html: note.content_html.clone() }
+            }
+            if let Some(context) = context.as_ref().filter(|c| c.prev.is_some() || c.next.is_some()) {
+                footer { class: "note-continue",
+                    p { class: "note-continue-label", "在《{context.notebook.title}》中继续" }
+                    nav { class: "note-continue-links", aria_label: "同一笔记本的上一篇与下一篇",
+                        if let Some(prev) = context.prev.as_ref() {
+                            Link { class: "note-continue-link", to: note_route(&prev.slug, book),
+                                span { class: "note-continue-dir tabular-nums", {format!("← {:02}", context.position - 1)} }
+                                span { class: "note-continue-title", "{prev.title}" }
+                            }
+                        } else {
+                            span {}
+                        }
+                        if let Some(next) = context.next.as_ref() {
+                            Link { class: "note-continue-link is-next", to: note_route(&next.slug, book),
+                                span { class: "note-continue-dir tabular-nums", {format!("{:02} →", context.position + 1)} }
+                                span { class: "note-continue-title", "{next.title}" }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if !preview {
+            BottomSheet {
+                open: sheet_open,
+                id: "note-directory-sheet",
+                trigger_id: "note-directory-trigger",
+                label: "笔记本目录",
+                NoteSheetBody { context, current: note.slug.clone(), toc_html: note.toc_html.clone() }
+            }
+        }
+    }
+}
+
+/// 手机抽屉里的目录：选中一篇或一个小节后收起。锚点点击会被全局处理拦下，收不到
+/// click，所以改听 pointerup 与 Enter。
+#[component]
+fn NoteSheetBody(context: Option<NoteContext>, current: String, toc_html: String) -> Element {
+    let sheet = use_sheet_close();
+    rsx! {
+        div {
+            class: "note-sheet",
+            onpointerup: move |_| sheet.close(),
+            onkeydown: move |event| {
+                if event.key() == Key::Enter {
+                    sheet.close();
+                }
+            },
+            if let Some(context) = context {
+                p { class: "note-sheet-title", "{context.notebook.title}" }
+                NotebookDirectory { context, current, toc_html, spy: false }
+            } else {
+                p { class: "note-sheet-title", "本篇小节" }
+                NoteSections { toc_html, spy: false }
+            }
+        }
+    }
+}
+
+// ======================= 骨架屏 =======================
+
+/// 通用笔记占位（后台笔记列表与编辑器也在用）。
 #[component]
 pub fn NotesSkeleton() -> Element {
-    rsx! { div { class: "notes-skeleton", role: "status", aria_label: "正在加载笔记",
-        for i in 0..3 { div { key: "{i}", class: "notes-skeleton-line" } }
-    } }
+    rsx! {
+        div { class: "notes-skeleton", role: "status", aria_label: "正在加载笔记",
+            for i in 0..3 {
+                SkeletonBox { key: "{i}", class: "h-20 w-full rounded-[10px]" }
+            }
+        }
+    }
+}
+
+#[component]
+fn NotesStreamSkeleton() -> Element {
+    rsx! {
+        div { class: "notes-stream-skeleton", aria_hidden: "true",
+            SkeletonBox { class: "h-3 w-24" }
+            for i in 0..2 {
+                div { key: "{i}", class: "note-moment",
+                    SkeletonBox { class: "h-3 w-10" }
+                    div {
+                        SkeletonBox { class: "h-4 w-full" }
+                        SkeletonBox { class: "h-4 mt-2 w-3/4" }
+                    }
+                }
+            }
+            SkeletonBox { class: "h-36 w-full rounded-[10px] mt-3" }
+        }
+    }
+}
+
+/// 列表页整页占位：页头、左栏与笔记流，与真实布局对齐。
+#[component]
+pub fn NotesPageSkeleton() -> Element {
+    rsx! {
+        div { class: "notes", role: "status", aria_label: "正在加载笔记",
+            div { class: "notes-header", aria_hidden: "true",
+                div {
+                    h1 { class: "notes-title", "笔记" }
+                    SkeletonBox { class: "h-4 mt-3 w-72 max-w-full" }
+                }
+            }
+            div { class: "notes-layout", aria_hidden: "true",
+                div { class: "notes-side",
+                    SkeletonBox { class: "h-[34px] w-full rounded-lg" }
+                    div { class: "notes-side-group",
+                        for i in 0..3 {
+                            SkeletonBox { key: "{i}", class: "h-8 w-full rounded-lg mt-1" }
+                        }
+                    }
+                }
+                div { class: "notes-stream", NotesStreamSkeleton {} }
+            }
+        }
+    }
+}
+
+#[component]
+fn NotebookSkeleton() -> Element {
+    rsx! {
+        div { role: "status", aria_label: "正在加载笔记本",
+            div { aria_hidden: "true",
+                SkeletonBox { class: "h-3 w-20" }
+                SkeletonBox { class: "h-9 mt-8 w-56" }
+                SkeletonBox { class: "h-4 mt-4 w-full" }
+                SkeletonBox { class: "h-10 mt-6 w-36 rounded-[10px]" }
+                div { class: "notebook-entries",
+                    for i in 0..4 {
+                        div { key: "{i}", class: "notebook-entry",
+                            SkeletonBox { class: "h-5 w-7" }
+                            div {
+                                SkeletonBox { class: "h-5 w-3/5" }
+                                SkeletonBox { class: "h-3 mt-3 w-full" }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// 阅读页占位：左栏目录与正文。
+#[component]
+pub fn NoteReaderSkeleton() -> Element {
+    rsx! {
+        div { class: "notes-layout note-reader", role: "status", aria_label: "正在加载笔记",
+            div { class: "notes-side note-rail", aria_hidden: "true",
+                SkeletonBox { class: "h-3 w-20" }
+                for i in 0..4 {
+                    SkeletonBox { key: "{i}", class: "h-7 w-full rounded-lg mt-2" }
+                }
+            }
+            div { class: "note-document", aria_hidden: "true",
+                SkeletonBox { class: "h-5 w-24 rounded-full" }
+                SkeletonBox { class: "h-9 mt-4 w-4/5" }
+                SkeletonBox { class: "h-3 mt-4 w-48" }
+                div { class: "flex flex-col gap-3 mt-10",
+                    for i in 0..6 {
+                        SkeletonBox { key: "{i}", class: "h-3.5 w-full" }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// 路由切换时的整页占位：按目标路由选择。
+#[component]
+pub fn NotesRouteSkeleton(route: Route) -> Element {
+    match route {
+        Route::NoteDetail { .. } => rsx! { div { class: "notes", NoteReaderSkeleton {} } },
+        Route::NotebookDetail { .. } => rsx! { div { class: "notebook", NotebookSkeleton {} } },
+        _ => rsx! { NotesPageSkeleton {} },
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::TimeZone;
 
-    fn feed(kind: Option<NoteKind>, page: i32) -> PanelView {
-        PanelView::Feed(NoteFilter {
-            kind,
-            page,
-            ..Default::default()
-        })
+    fn note(id: i32, day: u32, hour: u32) -> Note {
+        let at = Utc.with_ymd_and_hms(2026, 10, day, hour, 0, 0).unwrap();
+        Note {
+            id,
+            slug: format!("n{id}"),
+            version: 1,
+            kind: NoteKind::Moment,
+            title: String::new(),
+            content_md: String::new(),
+            content_html: String::new(),
+            toc_html: String::new(),
+            summary: String::new(),
+            tags: Vec::new(),
+            created_at: at,
+            updated_at: at,
+            published_at: Some(at),
+            published_version: None,
+            knowledge_version: None,
+            deleted_at: None,
+            notebook_ids: Vec::new(),
+            sections: 0,
+        }
     }
 
     #[test]
-    fn first_view_and_unchanged_views_do_not_replay_enter_motion() {
-        let mut motion = PanelMotion::new(feed(None, 0));
-        assert_eq!(motion.show(feed(None, 0)), (None, "none"));
-
-        assert_eq!(motion.show(PanelView::Books), (Some("odd"), "forward"));
-        // 后台请求期间保留同一视图，不应重复播放。
-        assert_eq!(motion.show(PanelView::Books), (Some("odd"), "forward"));
+    fn groups_adjacent_notes_by_day() {
+        let groups = group_by_day(&[note(1, 15, 16), note(2, 15, 9), note(3, 12, 21)]);
+        let shape: Vec<_> = groups
+            .iter()
+            .map(|g| (g.date.day(), g.notes.len()))
+            .collect();
+        assert_eq!(shape, [(15, 2), (12, 1)]);
     }
 
     #[test]
-    fn each_replacement_alternates_animation_and_follows_tab_order() {
-        let mut motion = PanelMotion::new(feed(Some(NoteKind::Topic), 1));
-        assert_eq!(
-            motion.show(feed(Some(NoteKind::Moment), 1)),
-            (Some("odd"), "backward")
-        );
-        assert_eq!(motion.show(PanelView::Books), (Some("even"), "forward"));
-        assert_eq!(motion.show(feed(None, 1)), (Some("odd"), "backward"));
+    fn relative_day_names_recent_days_and_other_years() {
+        let today = NaiveDate::from_ymd_opt(2026, 10, 15).unwrap();
+        let day = |y, m, d| NaiveDate::from_ymd_opt(y, m, d).unwrap();
+        assert_eq!(relative_day(day(2026, 10, 15), today), "今天");
+        assert_eq!(relative_day(day(2026, 10, 14), today), "昨天");
+        // 2026-10-11 是周日。
+        assert_eq!(relative_day(day(2026, 10, 11), today), "周日");
+        assert_eq!(relative_day(day(2026, 9, 1), today), "");
+        assert_eq!(relative_day(day(2025, 12, 31), today), "2025");
     }
 
     #[test]
-    fn pages_and_searches_within_a_tab_choose_direction_by_page() {
-        let mut motion = PanelMotion::new(feed(None, 0));
-        assert_eq!(motion.show(feed(None, 2)), (Some("odd"), "forward"));
-        assert_eq!(motion.show(feed(None, 1)), (Some("even"), "backward"));
-        let search = PanelView::Feed(NoteFilter {
-            query: "rust".into(),
-            page: 1,
-            ..Default::default()
-        });
-        assert_eq!(motion.show(search), (Some("odd"), "none"));
+    fn note_routes_carry_the_notebook_only_when_known() {
+        assert_eq!(note_route("a", Some(3)).to_string(), "/notes/a?book=3");
+        // 路由宏总会写出查询键；空值在阅读页按「未指明笔记本」处理。
+        assert_eq!(note_route("a", None).to_string(), "/notes/a?book=");
+        let parsed: Route = "/notes/a".parse().unwrap();
+        assert_eq!(parsed, note_route("a", None));
     }
 }

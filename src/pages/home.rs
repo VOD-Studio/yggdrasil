@@ -425,7 +425,7 @@ fn HomeCorners(notes: Vec<Note>, tags: Vec<Tag>) -> Element {
                     ul { class: "home-corner-notes",
                         for note in notes {
                             li { key: "{note.id}",
-                                Link { to: Route::NoteDetail { slug: note.slug.clone() },
+                                Link { to: Route::NoteDetail { slug: note.slug.clone(), book: String::new() },
                                     span { class: "home-corner-note-title", {note.display_title()} }
                                     time { class: "tabular-nums", {note.published_at.unwrap_or(note.updated_at).format("%m.%d").to_string()} }
                                 }

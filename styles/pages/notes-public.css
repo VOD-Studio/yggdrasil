@@ -1,0 +1,810 @@
+/* 前台笔记：列表、笔记本目录与阅读页。列表与阅读页共用「200px 左栏 + 内容」，
+   左栏位置不变，进入阅读时布局不跳。后台笔记样式见 notes.css。 */
+.notes,
+.notebook { padding-top: 1.5rem; }
+
+/* ---- 页头 ---- */
+.notes-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem 1.5rem;
+}
+.notes-title {
+  margin: 0;
+  color: var(--color-fg);
+  font-family: var(--font-serif);
+  font-size: 2.25rem;
+  font-weight: 500;
+  line-height: 1.3;
+}
+.notes-intro {
+  margin: 0.625rem 0 0;
+  color: var(--color-fg-2);
+  font-size: 0.9375rem;
+  line-height: 1.8;
+}
+.notes-count {
+  margin: 0;
+  color: var(--color-fg-3);
+  font-size: 0.8125rem;
+}
+
+/* ---- 左栏 + 内容 ---- */
+.notes-layout {
+  display: flex;
+  align-items: flex-start;
+  gap: 2.5rem;
+  margin-top: 2.5rem;
+}
+.notes-header + .notes-layout { margin-top: 2.5rem; }
+.note-reader { margin-top: 0; }
+.notes-side {
+  position: sticky;
+  top: 5.5rem;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1.375rem;
+  width: 200px;
+}
+.notes-stream,
+.note-document {
+  flex: 1;
+  min-width: 0;
+}
+.notes-filter {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: 34px;
+  padding: 0 0.625rem;
+  border-radius: 8px;
+  background-color: var(--color-surface-2);
+  box-shadow: 0 0 0 1px var(--color-hairline);
+  color: var(--color-fg-3);
+  transition: box-shadow 200ms var(--ease-out-expo);
+}
+.notes-filter:focus-within { box-shadow: var(--shadow-focus); }
+.notes-filter input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--color-fg);
+  font: inherit;
+  font-size: 0.8125rem;
+}
+.notes-filter input::placeholder { color: var(--color-fg-3); }
+.notes-filter input::-webkit-search-cancel-button { display: none; }
+.notes-side-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.notes-side-label {
+  margin: 0 0 0.375rem 0.625rem;
+  color: var(--color-fg-3);
+  font-size: 0.6875rem;
+  letter-spacing: 0.06em;
+}
+.notes-kinds {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.notes-side-item {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  min-height: 2rem;
+  padding: 0 0.625rem;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-fg-2);
+  font: inherit;
+  font-size: 0.875rem;
+  text-align: left;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 150ms var(--ease-out-expo),
+    color 150ms var(--ease-out-expo);
+}
+.notes-side-item:hover {
+  background-color: var(--color-ink-1);
+  color: var(--color-fg);
+}
+.notes-side-item:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+.notes-side-item[aria-pressed="true"] {
+  background-color: var(--color-surface-2);
+  box-shadow: 0 0 0 1px var(--color-hairline), var(--shadow-sm);
+  color: var(--color-fg);
+  font-weight: 500;
+}
+.dark .notes-side-item[aria-pressed="true"] { background-color: var(--color-surface-3); }
+.notes-side-item > span:first-child,
+.notes-side-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.notes-side-icon { flex-shrink: 0; color: var(--color-fg-3); }
+.notes-side-count {
+  color: var(--color-fg-3);
+  font-size: 0.75rem;
+  font-weight: 400;
+}
+.notes-side-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  padding-left: 0.25rem;
+}
+.notes-side-tags .chip {
+  height: 1.5rem;
+  padding: 0 0.625rem;
+  border: 0;
+  font: inherit;
+  font-size: 0.78125rem;
+  cursor: pointer;
+}
+.notes-side-tags .chip[aria-pressed="true"] {
+  background-color: var(--color-clay-soft);
+  color: var(--color-clay-text);
+}
+
+/* ---- 笔记流：按天分组 ---- */
+.notes-day { margin-bottom: 1.25rem; }
+.notes-day-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.25rem;
+  color: var(--color-fg-3);
+  font-size: 0.75rem;
+}
+.notes-day-head::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background-color: var(--color-hairline);
+}
+.notes-day-date { font-family: var(--font-mono); }
+.notes-day-rel:empty { display: none; }
+
+/* 随记：时间 + 正文两列，无卡片。 */
+.note-moment {
+  display: grid;
+  grid-template-columns: 3rem minmax(0, 1fr);
+  gap: 0.875rem;
+  padding: 0.875rem 0 0.25rem;
+  margin-bottom: 0.75rem;
+}
+.note-moment-time {
+  color: var(--color-fg-3);
+  font-size: 0.8125rem;
+  line-height: 1.85;
+}
+.note-moment-title {
+  margin: 0 0 0.25rem;
+  font-size: 0.96875rem;
+  font-weight: 600;
+  line-height: 1.7;
+}
+.note-moment-summary {
+  margin: 0;
+  color: var(--color-fg-body);
+  font-size: 0.96875rem;
+  line-height: 1.85;
+  overflow-wrap: anywhere;
+}
+.note-moment-more {
+  display: inline-block;
+  margin-top: 0.375rem;
+  color: var(--color-clay-text);
+  font-size: 0.8125rem;
+  text-decoration: none;
+}
+.note-moment-body .post-content {
+  margin: 0;
+  color: var(--color-fg-body);
+  font-size: 0.96875rem;
+  line-height: 1.85;
+}
+.note-moment-body .post-content > :first-child { margin-top: 0; }
+.note-moment-body .post-content > :last-child { margin-bottom: 0; }
+.note-moment-body .post-content img { max-height: 340px; object-fit: contain; }
+.note-moment-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.75rem;
+  margin-top: 0.5rem;
+  color: var(--color-fg-3);
+  font-size: 0.8125rem;
+}
+.note-moment-tag {
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-fg-3);
+  font: inherit;
+  cursor: pointer;
+  transition: color 150ms var(--ease-out-expo);
+}
+.note-moment-tag:hover,
+.note-moment-tag[aria-pressed="true"] { color: var(--color-clay-text); }
+.note-moment-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-left: auto;
+  border-radius: 4px;
+  color: var(--color-fg-3);
+  text-decoration: none;
+  opacity: 0;
+  transition:
+    opacity 150ms var(--ease-out-expo),
+    color 150ms var(--ease-out-expo);
+}
+.note-moment:hover .note-moment-link,
+.note-moment-link:focus-visible { opacity: 1; }
+.note-moment-link:hover { color: var(--color-fg); }
+:is(.note-moment-tag, .note-moment-link, .note-moment-more):focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+@media (hover: none) {
+  .note-moment-link { opacity: 1; }
+}
+
+/* 主题笔记：浮起卡片，整卡可点。 */
+.note-topic {
+  position: relative;
+  margin: 0.625rem 0 0.75rem;
+  padding: 1.25rem 1.375rem;
+  border-radius: var(--radius-panel);
+  background-color: var(--color-surface-2);
+  box-shadow: 0 0 0 1px var(--color-hairline), var(--shadow-sm);
+  transition: box-shadow 220ms var(--ease-out-expo);
+}
+.note-topic:has(.note-topic-link:hover) {
+  box-shadow: 0 0 0 1px var(--color-hairline), 0 8px 28px rgb(0 0 0 / 0.06);
+}
+.note-topic:has(.note-topic-link:focus-visible) { box-shadow: var(--shadow-focus); }
+.note-topic-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.625rem;
+  color: var(--color-fg-3);
+  font-size: 0.78125rem;
+}
+.note-topic-book {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+.note-topic-title {
+  margin: 0.75rem 0 0;
+  font-family: var(--font-serif);
+  font-size: 1.3125rem;
+  font-weight: 500;
+  line-height: 1.4;
+  text-wrap: balance;
+}
+.note-topic-link {
+  color: var(--color-fg);
+  text-decoration: none;
+}
+.note-topic-link:focus-visible { outline: none; }
+.note-topic-link::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+.note-topic-summary {
+  display: -webkit-box;
+  margin: 0.5rem 0 0;
+  overflow: hidden;
+  color: var(--color-fg-2);
+  font-size: 0.90625rem;
+  line-height: 1.8;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.note-topic-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 0.875rem;
+  color: var(--color-fg-3);
+  font-size: 0.8125rem;
+}
+.note-topic-arrow {
+  display: inline-flex;
+  color: var(--color-clay-text);
+  transition: transform var(--spring-bouncy-duration) var(--ease-spring-bouncy);
+}
+.note-topic:has(.note-topic-link:hover) .note-topic-arrow { transform: translateX(3px); }
+
+.notes-more {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding-top: 0.5rem;
+}
+.notes-more-error {
+  margin: 0;
+  color: var(--color-danger);
+  font-size: 0.8125rem;
+}
+.notes-stream[aria-busy="true"] {
+  opacity: 0.55;
+  transition: opacity 200ms var(--ease-out-expo) 150ms;
+}
+
+/* ---- 返回链接 ---- */
+.notes-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  border-radius: 4px;
+  color: var(--color-fg-3);
+  font-size: 0.8125rem;
+  text-decoration: none;
+  transition: color 150ms var(--ease-out-expo);
+}
+.notes-back:hover { color: var(--color-fg); }
+.notes-back:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
+/* ---- 笔记本目录页 ---- */
+.notebook {
+  max-width: 680px;
+  margin: 0 auto;
+}
+.notebook-header { margin-top: 1.375rem; }
+.notebook-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  color: var(--color-fg-3);
+  font-size: 0.78125rem;
+}
+.notebook-title {
+  margin: 0.5rem 0 0;
+  font-family: var(--font-serif);
+  font-size: 2.375rem;
+  font-weight: 500;
+  line-height: 1.3;
+}
+.notebook-description {
+  margin: 0.75rem 0 0;
+  color: var(--color-fg-2);
+  font-size: 1.03125rem;
+  line-height: 1.8;
+  text-wrap: pretty;
+}
+.notebook-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.875rem;
+  margin: 0.875rem 0 0;
+  color: var(--color-fg-3);
+  font-size: 0.8125rem;
+}
+.notebook-start { margin-top: 1.375rem; }
+.notebook-entries {
+  margin: 2.5rem 0 0;
+  padding: 0;
+  list-style: none;
+  box-shadow: inset 0 1px 0 var(--color-hairline);
+}
+.notebook-entries > li,
+.notebook-entries > .notebook-entry { box-shadow: inset 0 -1px 0 var(--color-hairline); }
+.notebook-entry {
+  display: grid;
+  grid-template-columns: 2.75rem minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 0.875rem;
+  margin: 0 -0.75rem;
+  padding: 1.125rem 0.75rem;
+  border-radius: 8px;
+  color: inherit;
+  text-decoration: none;
+  transition: background-color 150ms var(--ease-out-expo);
+}
+a.notebook-entry:hover { background-color: var(--color-ink-1); }
+.notebook-entry:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+.notebook-entry-number {
+  color: var(--color-fg-3);
+  font-family: var(--font-serif);
+  font-size: 1.375rem;
+}
+.notebook-entry-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.notebook-entry-title {
+  color: var(--color-fg);
+  font-family: var(--font-serif);
+  font-size: 1.1875rem;
+  font-weight: 500;
+  line-height: 1.45;
+}
+.notebook-entry-summary {
+  margin-top: 0.25rem;
+  color: var(--color-fg-2);
+  font-size: 0.875rem;
+  line-height: 1.7;
+}
+.notebook-entry-meta {
+  margin-top: 0.375rem;
+  color: var(--color-fg-3);
+  font-size: 0.78125rem;
+}
+.notebook-entry-arrow {
+  display: inline-flex;
+  color: var(--color-clay-text);
+  opacity: 0;
+  transform: translateX(-4px);
+  transition:
+    opacity 150ms var(--ease-out-expo),
+    transform var(--spring-bouncy-duration) var(--ease-spring-bouncy);
+}
+a.notebook-entry:hover .notebook-entry-arrow {
+  opacity: 1;
+  transform: none;
+}
+.notebook-note {
+  margin: 1.125rem 0 0;
+  color: var(--color-fg-3);
+  font-size: 0.78125rem;
+}
+.notebook-others { margin-top: 3.5rem; }
+.notebook-others .section-label { margin-bottom: 0.75rem; }
+.notebook-others-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.625rem;
+}
+.notebook-other {
+  display: flex;
+  flex-direction: column;
+  padding: 0.875rem 1rem;
+  border-radius: var(--radius-panel);
+  background-color: var(--color-surface-2);
+  box-shadow: 0 0 0 1px var(--color-hairline), var(--shadow-sm);
+  color: inherit;
+  text-decoration: none;
+  transition: box-shadow 220ms var(--ease-out-expo);
+}
+.notebook-other:hover { box-shadow: 0 0 0 1px var(--color-hairline), 0 8px 28px rgb(0 0 0 / 0.06); }
+.notebook-other:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+.notebook-other-title {
+  font-size: 0.90625rem;
+  font-weight: 600;
+}
+.notebook-other-count {
+  margin-top: 0.125rem;
+  color: var(--color-fg-3);
+  font-size: 0.78125rem;
+}
+
+/* ---- 阅读页：左栏是所在笔记本的目录 ---- */
+.note-rail { gap: 0; }
+.note-rail-book {
+  margin-top: 1.375rem;
+  padding: 0 0.625rem;
+}
+.note-rail-book .notes-side-label { margin: 0; }
+.note-rail-book-title {
+  display: block;
+  margin-top: 0.25rem;
+  border-radius: 4px;
+  color: var(--color-fg);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+.note-rail-book-title:hover { color: var(--color-clay-text); }
+.note-rail-book-title:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+.note-rail-book-description {
+  margin: 0.25rem 0 0;
+  color: var(--color-fg-3);
+  font-size: 0.8125rem;
+  line-height: 1.6;
+}
+.note-directory {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 1rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.note-directory-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  padding: 0.4375rem 0.625rem;
+  border-radius: 8px;
+  color: var(--color-fg-2);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  text-decoration: none;
+  transition:
+    background-color 150ms var(--ease-out-expo),
+    color 150ms var(--ease-out-expo);
+}
+.note-directory-item:hover {
+  background-color: var(--color-ink-1);
+  color: var(--color-fg);
+}
+.note-directory-item:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+.note-directory-item[aria-current="page"] {
+  background-color: var(--color-surface-2);
+  box-shadow: 0 0 0 1px var(--color-hairline), var(--shadow-sm);
+  color: var(--color-fg);
+  font-weight: 500;
+}
+.dark .note-directory-item[aria-current="page"] { background-color: var(--color-surface-3); }
+.note-directory-number {
+  padding-top: 2px;
+  color: var(--color-fg-3);
+  font-family: var(--font-mono);
+  font-size: 0.71875rem;
+  font-weight: 400;
+}
+/* 本篇小节：只显示一级，当前小节前有 Clay 圆点（scroll-spy 给链接加 .active）。 */
+.note-sections .toc-sidebar-body > ul,
+.note-sections .toc-sidebar-body > ul > li > ul { margin: 0; padding: 0; list-style: none; }
+.note-sections .toc-sidebar-body > ul {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4375rem;
+  margin: 0.375rem 0 0.5rem 1.9375rem;
+  padding-left: 0.75rem;
+  box-shadow: inset 1px 0 0 var(--color-hairline);
+}
+.note-rail > .note-sections .toc-sidebar-body > ul { margin-left: 0.625rem; }
+.note-sections .toc-sidebar-body { padding: 0; }
+.note-sections .toc-sidebar-body ul ul { display: none; }
+/* 覆盖文章目录（toc.css）的行样式：这里是紧凑的小节列表。 */
+.note-sections a,
+.note-sections a.active {
+  position: relative;
+  display: block;
+  min-height: 0;
+  padding: 0;
+  border-radius: 4px;
+  background-color: transparent;
+  font-weight: 400;
+  color: var(--color-fg-3);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  text-decoration: none;
+  transition: color 150ms var(--ease-out-expo);
+}
+.note-sections a:hover { color: var(--color-fg); }
+.note-sections a:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+.note-sections a::before {
+  content: "";
+  position: absolute;
+  margin: 0;
+  top: 0.55em;
+  left: -0.9375rem;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background-color: var(--color-clay);
+  opacity: 0;
+  transition: opacity 150ms var(--ease-out-expo);
+}
+/* 正在读的若是二级以下小节，圆点标在它所属的一级小节上。 */
+.note-sections .toc-sidebar-body > ul > li > a.active,
+.note-sections .toc-sidebar-body > ul > li:has(ul a.active) > a { color: var(--color-fg); }
+.note-sections .toc-sidebar-body > ul > li > a.active::before,
+.note-sections .toc-sidebar-body > ul > li:has(ul a.active) > a::before { opacity: 1; }
+
+/* ---- 阅读页正文 ---- */
+.note-document-kicker {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  color: var(--color-fg-3);
+  font-size: 0.78125rem;
+}
+.note-document-title {
+  margin: 0.875rem 0 0;
+  color: var(--color-fg);
+  font-family: var(--font-serif);
+  font-size: 2.125rem;
+  font-weight: 500;
+  line-height: 1.32;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+}
+.note-document-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem 0.875rem;
+  margin: 0.875rem 0 0;
+  color: var(--color-fg-3);
+  font-size: 0.8125rem;
+}
+.note-document-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 0.875rem 0 0;
+  color: var(--color-fg-3);
+  font-size: 0.8125rem;
+}
+.note-document-body {
+  margin-top: 2rem;
+  padding-top: 0.25rem;
+  box-shadow: inset 0 1px 0 var(--color-hairline);
+}
+.note-document-body > .post-content { margin-top: 1.75rem; }
+.note-continue {
+  margin-top: 3rem;
+  padding-top: 1.5rem;
+  box-shadow: inset 0 1px 0 var(--color-hairline);
+}
+.note-continue-label {
+  margin: 0 0 0.75rem;
+  color: var(--color-fg-3);
+  font-size: 0.78125rem;
+}
+.note-continue-links {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+.note-continue-link {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  padding: 1rem 1.125rem;
+  border-radius: var(--radius-panel);
+  background-color: var(--color-surface-1);
+  box-shadow: 0 0 0 1px var(--color-hairline);
+  text-decoration: none;
+  transition: background-color 150ms var(--ease-out-expo);
+}
+.note-continue-link:hover { background-color: var(--color-surface-2); }
+.note-continue-link:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+.note-continue-link.is-next {
+  grid-column: 2;
+  align-items: flex-end;
+  text-align: right;
+}
+.note-continue-dir {
+  color: var(--color-fg-3);
+  font-size: 0.75rem;
+}
+.note-continue-title {
+  color: var(--color-fg);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+/* 窄屏入口：「笔记本 · 第 n / m 篇　目录」，点开为底部抽屉。 */
+.note-mobile-entry {
+  display: none;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  margin-bottom: 1.25rem;
+  padding: 0.625rem 0.75rem;
+  border: 0;
+  border-radius: var(--radius-panel);
+  background-color: var(--color-surface-1);
+  box-shadow: 0 0 0 1px var(--color-hairline);
+  color: var(--color-fg-2);
+  font: inherit;
+  font-size: 0.8125rem;
+  text-align: left;
+  cursor: pointer;
+}
+.note-mobile-entry:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+.note-mobile-entry > span:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.note-mobile-entry-action { color: var(--color-fg); font-weight: 500; }
+.note-sheet { padding: 0 0.25rem 0.5rem; }
+.note-sheet-title {
+  margin: 0 0 0.5rem;
+  padding: 0 0.625rem;
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+.note-sheet .note-directory { margin-top: 0; }
+.note-sheet .note-directory-item { min-height: 2.75rem; align-items: center; }
+.note-sheet .note-sections .toc-sidebar-body > ul { margin-left: 0.625rem; }
+.note-sheet .note-sections a { padding-block: 0.5rem; }
+
+.note-missing { display: flex; flex-direction: column; gap: 1.5rem; }
+
+/* ---- 骨架 ---- */
+.notes-skeleton {
+  display: grid;
+  gap: 1.25rem;
+  padding: 2rem 0;
+}
+.notes-stream-skeleton { display: flex; flex-direction: column; }
+
+@media (max-width: 760px) {
+  .notes-title,
+  .note-document-title,
+  .notebook-title { font-size: 1.875rem; }
+  .notes-layout {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 1.25rem;
+  }
+  .notes-side {
+    position: static;
+    width: auto;
+  }
+  .notes-side-extra,
+  .notes-side-group > .notes-side-label,
+  .note-rail { display: none; }
+  .notes-kinds {
+    flex-direction: row;
+    overflow-x: auto;
+  }
+  .note-mobile-entry { display: flex; }
+  .notebook-others-grid { grid-template-columns: minmax(0, 1fr); }
+  .notebook-entry { grid-template-columns: 2.25rem minmax(0, 1fr); }
+  .notebook-entry-arrow { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .note-topic-arrow,
+  .notebook-entry-arrow { transition: opacity 150ms linear; }
+}

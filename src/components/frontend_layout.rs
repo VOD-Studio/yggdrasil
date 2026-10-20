@@ -24,7 +24,7 @@ use crate::theme::ThemeToggle;
 fn route_skeleton(route: &Route) -> Element {
     match route {
         Route::Notes {} | Route::NoteDetail { .. } | Route::NotebookDetail { .. } => rsx! {
-            DelayedSkeleton { crate::pages::notes::NotesSkeleton {} }
+            DelayedSkeleton { crate::pages::notes::NotesRouteSkeleton { route: route.clone() } }
         },
         Route::HomePage { page } => rsx! {
             DelayedSkeleton { HomeSkeleton { current_page: (*page).max(1) } }

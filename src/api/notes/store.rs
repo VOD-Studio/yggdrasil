@@ -38,6 +38,8 @@ impl Access {
 
 fn map_note(row: &tokio_postgres::Row, access: &Access) -> Note {
     let admin = matches!(access, Access::Owner(_));
+    let toc_html: String = row.get("toc_html");
+    let sections = crate::utils::toc::toc_sections(&toc_html, 0).total;
     Note {
         id: row.get("id"),
         slug: row.get("slug"),
@@ -50,7 +52,7 @@ fn map_note(row: &tokio_postgres::Row, access: &Access) -> Note {
         title: row.get("title"),
         content_md: row.get("content_md"),
         content_html: row.get("content_html"),
-        toc_html: row.get("toc_html"),
+        toc_html,
         summary: row.get("summary"),
         tags: row.get("tags"),
         created_at: row.get("created_at"),
@@ -68,6 +70,7 @@ fn map_note(row: &tokio_postgres::Row, access: &Access) -> Note {
         },
         deleted_at: if admin { row.get("deleted_at") } else { None },
         notebook_ids: row.get("notebook_ids"),
+        sections: u32::try_from(sections).unwrap_or(u32::MAX),
     }
 }
 
@@ -124,7 +127,8 @@ pub async fn list(access: Access, filter: NoteFilter) -> Result<NotePage, AppErr
         .get(0);
     let page = filter.page.clamp(1, 100_000);
     // 列表仅短随记携带 HTML；长文按需读取，避免每页传输完整知识库。
-    let columns = COLUMNS.replace("r.content_md, r.content_html, r.toc_html", "''::text AS content_md, CASE WHEN r.kind='moment' AND length(r.content_md)<=2000 THEN r.content_html ELSE '' END AS content_html, ''::text AS toc_html");
+    // 主题笔记读出目录只为数出「N 节」，下发前清空。
+    let columns = COLUMNS.replace("r.content_md, r.content_html, r.toc_html", "''::text AS content_md, CASE WHEN r.kind='moment' AND length(r.content_md)<=2000 THEN r.content_html ELSE '' END AS content_html, CASE WHEN r.kind='topic' THEN r.toc_html ELSE '' END AS toc_html");
     let sql = format!("SELECT {columns}, {BOOK_IDS} {predicate}
         ORDER BY CASE WHEN $6::int IS NOT NULL THEN (SELECT position FROM notebook_notes WHERE notebook_id=$6 AND note_id=n.id) END,
         CASE WHEN $4<>'' THEN word_similarity($4, r.search_text) END DESC,
@@ -134,9 +138,99 @@ pub async fn list(access: Access, filter: NoteFilter) -> Result<NotePage, AppErr
         .await
         .map_err(AppError::query)?
         .iter()
-        .map(|r| map_note(r, &access))
+        .map(|r| Note {
+            toc_html: String::new(),
+            ..map_note(r, &access)
+        })
         .collect();
     Ok(NotePage { notes, total })
+}
+
+/// 公开笔记的类型计数与常用标签（只看已发布的版本）。
+pub async fn stats(tag_limit: i64) -> Result<NoteStats, AppError> {
+    let client = get_conn().await.map_err(AppError::db_conn)?;
+    let counts = client
+        .query_one(
+            "SELECT COUNT(*) FILTER (WHERE r.kind='moment'), COUNT(*) FILTER (WHERE r.kind='topic')
+             FROM notes n JOIN note_revisions r ON r.note_id=n.id AND r.version=n.published_version
+             WHERE n.deleted_at IS NULL",
+            &[],
+        )
+        .await
+        .map_err(AppError::query)?;
+    let tags = client
+        .query(
+            "SELECT tag, COUNT(*) FROM notes n
+             JOIN note_revisions r ON r.note_id=n.id AND r.version=n.published_version,
+             unnest(r.tags) tag
+             WHERE n.deleted_at IS NULL GROUP BY tag ORDER BY COUNT(*) DESC, tag LIMIT $1",
+            &[&tag_limit],
+        )
+        .await
+        .map_err(AppError::query)?
+        .iter()
+        .map(|r| (r.get(0), r.get(1)))
+        .collect();
+    Ok(NoteStats {
+        moments: counts.get(0),
+        topics: counts.get(1),
+        tags,
+    })
+}
+
+/// 阅读页的笔记本上下文。只考虑公开且未归档的笔记本，同级只列已发布的笔记；
+/// 本篇未发布、不属于任何候选笔记本或无法确定笔记本时返回 `None`。
+pub async fn context(slug: &str, requested: Option<i32>) -> Result<Option<NoteContext>, AppError> {
+    let client = get_conn().await.map_err(AppError::db_conn)?;
+    let candidates: Vec<i32> = client
+        .query(
+            "SELECT b.id FROM notebooks b
+             JOIN notebook_notes bn ON bn.notebook_id=b.id JOIN notes n ON n.id=bn.note_id
+             WHERE n.slug=$1 AND n.deleted_at IS NULL AND n.published_version IS NOT NULL
+               AND b.is_public AND b.archived_at IS NULL
+             ORDER BY b.id",
+            &[&slug],
+        )
+        .await
+        .map_err(AppError::query)?
+        .iter()
+        .map(|r| r.get(0))
+        .collect();
+    let Some(book) = choose_notebook(&candidates, requested) else {
+        return Ok(None);
+    };
+    let siblings = client
+        .query(
+            "SELECT n.slug, r.kind, r.title, r.summary FROM notebook_notes bn
+             JOIN notes n ON n.id=bn.note_id
+             JOIN note_revisions r ON r.note_id=n.id AND r.version=n.published_version
+             WHERE bn.notebook_id=$1 AND n.deleted_at IS NULL
+             ORDER BY bn.position, n.id",
+            &[&book],
+        )
+        .await
+        .map_err(AppError::query)?
+        .iter()
+        .map(|r| {
+            let kind = if r.get::<_, &str>(1) == "topic" {
+                NoteKind::Topic
+            } else {
+                NoteKind::Moment
+            };
+            NoteLink {
+                slug: r.get(0),
+                title: display_title(kind, r.get(2), r.get(3)),
+            }
+        })
+        .collect();
+    let Some(notebook) = notebooks(Access::Public)
+        .await?
+        .into_iter()
+        .find(|b| b.id == book)
+    else {
+        return Ok(None);
+    };
+    Ok(NoteContext::locate(notebook, siblings, slug))
 }
 
 pub async fn get(
@@ -719,6 +813,100 @@ mod tests {
             let restored=notebooks(Access::Owner(1)).await.unwrap().into_iter().find(|b|b.id==public).unwrap();
             assert!(restored.archived_at.is_none());assert!(!restored.is_public,"restore requires explicit re-publication");
             assert_eq!(get(Access::Owner(1),Some(filtered.id),None,None).await.unwrap().notebook_ids,vec![public]);
+        });
+    }
+
+    #[test]
+    #[ignore = "requires disposable DATABASE_URL database ygg_notes_test"]
+    fn notes_database_context_workflow() {
+        crate::db::TEST_DATABASE_RUNTIME.block_on(async {
+            let _guard = crate::db::TEST_DATABASE_LOCK.lock().await;
+            let mut client = get_conn().await.unwrap();
+            let database: String = client
+                .query_one("SELECT current_database()", &[])
+                .await
+                .unwrap()
+                .get(0);
+            assert_eq!(
+                database, "ygg_notes_test",
+                "requires isolated test database"
+            );
+            crate::db::migrate::run_on_conn(&mut client).await.unwrap();
+            client
+                .batch_execute(
+                    "TRUNCATE users CASCADE;
+                INSERT INTO users(id,username,email,password_hash,role) VALUES
+                (1,'note-owner','note@test.invalid','unused','admin');",
+                )
+                .await
+                .unwrap();
+            for title in ["甲", "乙", "丙"] {
+                let input = NotebookInput {
+                    title: title.into(),
+                    is_public: true,
+                    ..Default::default()
+                };
+                save_notebook(1, input).await.unwrap();
+            }
+            let books = notebooks(Access::Owner(1)).await.unwrap();
+            let book = |title: &str| books.iter().find(|b| b.title == title).unwrap().id;
+            let (a, b, c) = (book("甲"), book("乙"), book("丙"));
+            let mut ids = Vec::new();
+            for (title, notebook_ids, publish) in [
+                ("第一篇", vec![a, b], true),
+                ("草稿", vec![a], false),
+                ("第二篇", vec![a, c], true),
+                ("第三篇", vec![a], true),
+            ] {
+                let draft = NoteDraft {
+                    title: title.into(),
+                    kind: NoteKind::Topic,
+                    content_md: format!("## 小节\n\n{title}"),
+                    notebook_ids,
+                    ..Default::default()
+                };
+                let note = save(1, draft, None).await.unwrap();
+                if publish {
+                    act(1, note.id, 1, NoteAction::Publish).await.unwrap();
+                }
+                ids.push(note);
+            }
+            reorder(1, a, ids.iter().map(|n| n.id).collect())
+                .await
+                .unwrap();
+            archive_notebook(1, c, true).await.unwrap();
+            let slug = |i: usize| ids[i].slug.clone();
+
+            // 属于两个公开笔记本又没指明时不猜；指明后用它。
+            assert!(context(&slug(0), None).await.unwrap().is_none());
+            let first = context(&slug(0), Some(a)).await.unwrap().unwrap();
+            assert_eq!(first.notebook.id, a);
+            let titles: Vec<_> = first.siblings.iter().map(|s| s.title.as_str()).collect();
+            assert_eq!(
+                titles,
+                ["第一篇", "第二篇", "第三篇"],
+                "unpublished siblings are excluded"
+            );
+            assert_eq!((first.position, first.total), (1, 3));
+            assert!(first.prev.is_none());
+            assert_eq!(first.next.as_ref().unwrap().slug, slug(2));
+            // 已归档的笔记本被忽略，只剩一个公开候选时用它。
+            let second = context(&slug(2), Some(c)).await.unwrap().unwrap();
+            assert_eq!(second.notebook.id, a);
+            let last = context(&slug(3), None).await.unwrap().unwrap();
+            assert_eq!(last.position, 3);
+            assert!(last.next.is_none());
+            assert_eq!(last.prev.as_ref().unwrap().slug, slug(2));
+            // 未发布的笔记没有上下文。
+            assert!(context(&slug(1), Some(a)).await.unwrap().is_none());
+
+            let listed = list(Access::Public, NoteFilter::default()).await.unwrap();
+            assert!(listed
+                .notes
+                .iter()
+                .all(|n| n.sections == 1 && n.toc_html.is_empty()));
+            let stats = stats(8).await.unwrap();
+            assert_eq!((stats.moments, stats.topics), (0, 3));
         });
     }
 }

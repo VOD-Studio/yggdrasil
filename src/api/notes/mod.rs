@@ -17,6 +17,20 @@ pub async fn get_note(slug: String) -> Result<Note, ServerFnError> {
     Ok(store::get(store::Access::Public, None, Some(slug), None).await?)
 }
 
+#[server(NoteStatsSummary, "/api")]
+pub async fn note_stats() -> Result<NoteStats, ServerFnError> {
+    Ok(store::stats(8).await?)
+}
+
+/// 阅读页的笔记本上下文；`book` 来自 `?book=`，无效时忽略。
+#[server(GetNoteContext, "/api")]
+pub async fn get_note_context(
+    slug: String,
+    book: Option<i32>,
+) -> Result<Option<NoteContext>, ServerFnError> {
+    Ok(store::context(&slug, book).await?)
+}
+
 #[server(ListNotebooks, "/api")]
 pub async fn list_notebooks() -> Result<Vec<Notebook>, ServerFnError> {
     Ok(store::notebooks(store::Access::Public).await?)

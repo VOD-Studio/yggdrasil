@@ -65,19 +65,27 @@ pub struct Note {
     pub knowledge_version: Option<i32>,
     pub deleted_at: Option<DateTime<Utc>>,
     pub notebook_ids: Vec<i32>,
+    /// 目录的一级小节数（服务端从 `toc_html` 解析）；列表不传 `toc_html` 时仍可显示「N 节」。
+    #[serde(default)]
+    pub sections: u32,
+}
+
+/// 没有标题的笔记（多为随记）取摘要前 48 字，摘要也为空时用类型名。
+pub fn display_title(kind: NoteKind, title: &str, summary: &str) -> String {
+    if title.trim().is_empty() {
+        if summary.trim().is_empty() {
+            kind.label().to_string()
+        } else {
+            summary.chars().take(48).collect()
+        }
+    } else {
+        title.to_string()
+    }
 }
 
 impl Note {
     pub fn display_title(&self) -> String {
-        if self.title.trim().is_empty() {
-            if self.summary.trim().is_empty() {
-                self.kind.label().to_string()
-            } else {
-                self.summary.chars().take(48).collect()
-            }
-        } else {
-            self.title.clone()
-        }
+        display_title(self.kind, &self.title, &self.summary)
     }
     pub fn draft(&self) -> NoteDraft {
         NoteDraft {
@@ -127,6 +135,65 @@ pub struct Notebook {
     pub updated_at: DateTime<Utc>,
 }
 
+/// 公开笔记的概况：笔记列表左栏的类型计数与常用标签。
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct NoteStats {
+    pub moments: i64,
+    pub topics: i64,
+    /// 按使用次数降序的 `(标签, 条数)`。
+    pub tags: Vec<(String, i64)>,
+}
+
+impl NoteStats {
+    pub fn total(&self) -> i64 {
+        self.moments + self.topics
+    }
+}
+
+/// 笔记本目录里的一篇。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NoteLink {
+    pub slug: String,
+    pub title: String,
+}
+
+/// 阅读页的笔记本上下文：所在笔记本、本篇序号（从 1 起）与同级已发布笔记。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NoteContext {
+    pub notebook: Notebook,
+    pub position: usize,
+    pub total: usize,
+    pub prev: Option<NoteLink>,
+    pub next: Option<NoteLink>,
+    pub siblings: Vec<NoteLink>,
+}
+
+#[cfg(any(feature = "server", test))]
+impl NoteContext {
+    /// 在有序的同级笔记里定位本篇；本篇不在其中时返回 `None`。
+    pub fn locate(notebook: Notebook, siblings: Vec<NoteLink>, slug: &str) -> Option<Self> {
+        let index = siblings.iter().position(|s| s.slug == slug)?;
+        Some(Self {
+            notebook,
+            position: index + 1,
+            total: siblings.len(),
+            prev: index.checked_sub(1).map(|i| siblings[i].clone()),
+            next: siblings.get(index + 1).cloned(),
+            siblings,
+        })
+    }
+}
+
+/// 阅读页的笔记本：`requested` 是公开候选之一时用它；否则只属于一个公开笔记本时用那一个。
+#[cfg(any(feature = "server", test))]
+pub fn choose_notebook(candidates: &[i32], requested: Option<i32>) -> Option<i32> {
+    match requested {
+        Some(id) if candidates.contains(&id) => Some(id),
+        _ if candidates.len() == 1 => Some(candidates[0]),
+        _ => None,
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct NotebookInput {
     pub id: Option<i32>,
@@ -151,4 +218,40 @@ pub enum NoteAction {
     ExcludeKnowledge,
     Trash,
     Restore,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn link(slug: &str) -> NoteLink {
+        NoteLink {
+            slug: slug.into(),
+            title: slug.to_uppercase(),
+        }
+    }
+
+    #[test]
+    fn requested_notebook_wins_only_when_it_is_a_public_candidate() {
+        assert_eq!(choose_notebook(&[3, 7], Some(7)), Some(7));
+        // 属于多个笔记本又没指明时，不猜。
+        assert_eq!(choose_notebook(&[3, 7], None), None);
+        // 指向不属于、非公开或已归档的笔记本时忽略参数。
+        assert_eq!(choose_notebook(&[3], Some(9)), Some(3));
+        assert_eq!(choose_notebook(&[3, 7], Some(9)), None);
+        assert_eq!(choose_notebook(&[], Some(3)), None);
+    }
+
+    #[test]
+    fn locate_gives_neighbours_and_leaves_the_ends_empty() {
+        let siblings = vec![link("a"), link("b"), link("c")];
+        let first = NoteContext::locate(Notebook::default(), siblings.clone(), "a").unwrap();
+        assert_eq!((first.position, first.total), (1, 3));
+        assert_eq!(first.prev, None);
+        assert_eq!(first.next, Some(link("b")));
+        let last = NoteContext::locate(Notebook::default(), siblings.clone(), "c").unwrap();
+        assert_eq!(last.prev, Some(link("b")));
+        assert_eq!(last.next, None);
+        assert!(NoteContext::locate(Notebook::default(), siblings, "draft").is_none());
+    }
 }

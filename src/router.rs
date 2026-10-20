@@ -52,8 +52,9 @@ pub enum Route {
             Notes {},
             #[route("/notes/book/:id")]
             NotebookDetail { id: i32 },
-            #[route("/notes/:slug")]
-            NoteDetail { slug: String },
+            /// 笔记阅读页；`?book=` 指明在哪个笔记本里读
+            #[route("/notes/:slug?:book")]
+            NoteDetail { slug: String, book: String },
             /// 文章归档与标签索引；兼容旧标签列表地址。
             #[redirect("/tags", || Route::Archives {})]
             #[route("/archives")]
