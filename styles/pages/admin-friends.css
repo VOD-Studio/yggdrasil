@@ -1,0 +1,273 @@
+/* ======== 后台友链 ========
+   结构见 src/pages/admin/friends.rs：左侧可拖动排序的列表，右侧添加 / 编辑表单。 */
+.admin-friends {
+  max-width: 68rem;
+}
+
+.admin-friends-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(18rem, 22rem);
+  gap: 1.5rem;
+  align-items: start;
+}
+
+.admin-friends-list-col {
+  min-width: 0;
+}
+
+.admin-friends-list {
+  margin: 0;
+  padding: 0;
+  overflow: clip;
+  list-style: none;
+}
+
+.admin-friends-list[aria-busy="true"] {
+  opacity: 0.75;
+}
+
+.admin-friend {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6875rem 0.75rem 0.6875rem 0.5rem;
+  box-shadow: inset 0 -1px 0 var(--color-hairline);
+  transition: background-color 150ms var(--ease-out-expo), opacity 150ms var(--ease-out-expo);
+}
+
+.admin-friend:last-child {
+  box-shadow: none;
+}
+
+.admin-friend:hover {
+  background-color: var(--color-ink-1);
+}
+
+.admin-friend[data-editing] {
+  background-color: color-mix(in srgb, var(--color-clay) 7%, transparent);
+}
+
+.admin-friend[data-dragging] {
+  opacity: 0.45;
+}
+
+/* 放下位置：顶边一条陶土线。 */
+.admin-friend[data-drop] {
+  box-shadow: inset 0 2px 0 var(--color-clay);
+}
+
+.admin-friend[data-paused] .admin-friend-avatar,
+.admin-friend[data-paused] .admin-friend-name > span:first-child {
+  opacity: 0.55;
+}
+
+.admin-friend-grip {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 1.5rem;
+  height: 2rem;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-fg-3);
+  cursor: grab;
+}
+
+.admin-friend-grip:hover {
+  background-color: var(--color-ink-1);
+  color: var(--color-fg-2);
+}
+
+.admin-friend-grip:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
+.admin-friend-avatar {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 2.125rem;
+  height: 2.125rem;
+  overflow: hidden;
+  border-radius: 10px;
+  background-color: var(--color-ink-2);
+  color: var(--color-fg-2);
+  font-weight: 600;
+}
+
+.admin-friend-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.admin-friend-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.admin-friend-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 500;
+}
+
+.admin-friend-tag {
+  padding: 0 0.4375rem;
+  border-radius: 999px;
+  background-color: var(--color-ink-1);
+  color: var(--color-fg-3);
+  font-size: 0.71875rem;
+  font-weight: 400;
+}
+
+.admin-friend-tag[data-tone="clay"] {
+  background-color: var(--color-clay-soft);
+  color: var(--color-clay-text);
+}
+
+.admin-friend-host {
+  display: block;
+  overflow: hidden;
+  color: var(--color-fg-3);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-friend-host:hover {
+  color: var(--color-clay-text);
+}
+
+.admin-friend-order {
+  color: var(--color-fg-3);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- 表单 ---- */
+.admin-friend-form {
+  position: sticky;
+  top: calc(var(--admin-topbar-h) + 0.5rem);
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+  padding: 1.125rem 1.25rem;
+  border-radius: var(--radius-panel);
+  background-color: var(--color-surface-1);
+  box-shadow: 0 0 0 1px var(--color-hairline);
+}
+
+.admin-friend-form-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 1.75rem;
+}
+
+.admin-friend-form-head h2 {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.admin-friend-label {
+  display: block;
+  margin-bottom: 0.375rem;
+  color: var(--color-fg-2);
+  font-size: 0.78125rem;
+}
+
+.admin-friend-form .field {
+  width: 100%;
+  background-color: var(--color-surface-2);
+}
+
+.admin-friend-form textarea {
+  resize: none;
+  line-height: 1.6;
+}
+
+.admin-friend-mono {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+}
+
+.admin-friend-avatar-row {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.admin-friend-avatar-row .admin-friend-avatar {
+  width: 2.25rem;
+  height: 2.25rem;
+}
+
+.admin-friend-avatar-row .field {
+  flex: 1;
+  min-width: 0;
+}
+
+.admin-friend-form-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.75rem;
+}
+
+.admin-friend-order-field {
+  width: 6rem;
+}
+
+.admin-friend-switch {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  height: 2.25rem;
+  font-size: 0.8125rem;
+}
+
+.admin-friend-error {
+  margin: -0.375rem 0 0;
+  color: var(--color-danger);
+  font-size: 0.75rem;
+}
+
+.admin-friend-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.admin-friend-actions > button[type="submit"] {
+  flex: 1;
+}
+
+.admin-friend-actions [data-danger] {
+  color: var(--color-danger);
+}
+
+@media (max-width: 960px) {
+  .admin-friends-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .admin-friend-form {
+    position: static;
+  }
+}
+
+@media (max-width: 767px) {
+  .admin-friend-order {
+    display: none;
+  }
+}

@@ -1,79 +1,52 @@
 //! 后台友链管理骨架屏
 //!
-//! 镜像后台 FriendsAdmin 页面的结构：Header（标题+描述）+ 表单卡片 + 列表卡片。
+//! 与友链页同一版式：标题行、左侧友链列表、右侧表单。
 
 use dioxus::prelude::*;
 
-use crate::components::skeletons::atoms::{SkeletonBox, SkeletonCard};
+use crate::components::skeletons::atoms::SkeletonBox;
 
-/// 后台友链列表卡片骨架屏组件（供 LinkList 组件内部加载态使用）。
+/// 友链列表骨架（列表加载中使用）。
 #[component]
 pub fn FriendsAdminListSkeleton() -> Element {
     rsx! {
-        SkeletonCard { class: Some("p-6 sm:p-8 space-y-6 shadow-xs"),
-            SkeletonBox { class: "h-6 w-32 rounded" }
-            div { class: "space-y-4 divide-y divide-[var(--color-paper-border)]/50",
-                for i in 0..4 {
-                    div { key: "{i}", class: "pt-4 flex items-center justify-between gap-4",
-                        div { class: "flex items-center gap-3.5 flex-1 min-w-0",
-                            SkeletonBox { class: "h-10 w-10 rounded-2xl shrink-0" }
-                            div { class: "space-y-1.5 flex-1 min-w-0",
-                                SkeletonBox { class: "h-4 w-32 rounded" }
-                                SkeletonBox { class: "h-3 w-48 rounded" }
-                            }
-                        }
-                        SkeletonBox { class: "h-8 w-24 rounded-lg" }
+        ol { class: "admin-panel admin-friends-list", aria_hidden: "true",
+            for i in 0..5 {
+                li { key: "{i}", class: "admin-friend",
+                    SkeletonBox { class: "h-4 w-3 rounded" }
+                    SkeletonBox { class: "h-[34px] w-[34px] rounded-[10px]" }
+                    div { class: "admin-friend-text",
+                        SkeletonBox { class: "h-4 w-32 rounded" }
+                        SkeletonBox { class: "h-3 w-40 rounded mt-1.5" }
                     }
+                    SkeletonBox { class: "h-3 w-6 rounded" }
                 }
             }
         }
     }
 }
 
-/// 后台友链管理全页骨架屏组件（供 AdminLayout 路由级 fallback 使用）。
+/// 友链管理全页骨架屏（AdminLayout 路由级 fallback）。
 #[component]
 pub fn FriendsAdminSkeleton() -> Element {
     rsx! {
-        div { class: "w-full max-w-7xl mx-auto space-y-8",
-            // 页头
-            div { class: "flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-[var(--color-paper-border)]/70",
-                div { class: "space-y-1.5",
-                    SkeletonBox { class: "h-9 w-36 rounded-lg" }
-                    SkeletonBox { class: "h-4 w-60 rounded" }
+        div { class: "admin-friends", aria_hidden: "true",
+            div { class: "admin-page-head",
+                div {
+                    SkeletonBox { class: "h-7 w-16 rounded-md" }
+                    SkeletonBox { class: "h-3.5 w-80 rounded mt-2" }
                 }
-                SkeletonBox { class: "h-9 w-28 rounded-full" }
+                SkeletonBox { class: "h-[34px] w-28 rounded-lg" }
             }
-
-            // 表单卡片占位
-            SkeletonCard { class: Some("p-6 sm:p-8 space-y-6 shadow-xs"),
-                SkeletonBox { class: "h-6 w-28 rounded" }
-                div { class: "grid grid-cols-1 md:grid-cols-2 gap-5",
-                    div { class: "space-y-2",
-                        SkeletonBox { class: "h-3.5 w-16 rounded" }
-                        SkeletonBox { class: "h-10 w-full rounded-2xl" }
-                    }
-                    div { class: "space-y-2",
-                        SkeletonBox { class: "h-3.5 w-20 rounded" }
-                        SkeletonBox { class: "h-10 w-full rounded-2xl" }
-                    }
-                    div { class: "space-y-2",
-                        SkeletonBox { class: "h-3.5 w-20 rounded" }
-                        SkeletonBox { class: "h-10 w-full rounded-2xl" }
-                    }
-                    div { class: "space-y-2",
-                        SkeletonBox { class: "h-3.5 w-24 rounded" }
-                        SkeletonBox { class: "h-10 w-full rounded-2xl" }
-                    }
-                    div { class: "space-y-2 md:col-span-2",
-                        SkeletonBox { class: "h-3.5 w-16 rounded" }
-                        SkeletonBox { class: "h-16 w-full rounded-2xl" }
-                    }
+            div { class: "admin-friends-grid",
+                div { class: "admin-friends-list-col", FriendsAdminListSkeleton {} }
+                div { class: "admin-friend-form",
+                    SkeletonBox { class: "h-5 w-20 rounded" }
+                    SkeletonBox { class: "h-9 w-full rounded-lg" }
+                    SkeletonBox { class: "h-9 w-full rounded-lg" }
+                    SkeletonBox { class: "h-20 w-full rounded-lg" }
                 }
-                SkeletonBox { class: "h-10 w-24 rounded-full" }
             }
-
-            // 友链列表卡片占位
-            FriendsAdminListSkeleton {}
         }
     }
 }
