@@ -17,6 +17,7 @@
 @import "./styles/components/controls.css";
 @import "./styles/components/ui.css";
 @import "./styles/components/shell.css";
+@import "./styles/components/admin.css";
 @import "./styles/components/palette.css";
 @import "./styles/pages/reading-responsive.css";
 @import "./styles/pages/collapsible.css";

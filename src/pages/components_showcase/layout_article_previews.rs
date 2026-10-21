@@ -2,6 +2,7 @@
 
 use dioxus::prelude::*;
 
+use crate::api::admin_stats::AdminNavCounts;
 use crate::components::admin_layout::{AdminShell, AdminSidebar};
 use crate::components::footer::FooterView;
 use crate::components::frontend_layout::FrontendShell;
@@ -15,6 +16,7 @@ use crate::components::post::post_meta::PostMeta;
 use crate::components::post::post_nav_links::PostNavLinks;
 use crate::components::post::post_toc::PostToc;
 use crate::components::skeletons::home_skeleton::HomeSkeleton;
+use crate::components::ui::Crumb;
 use crate::models::post::{PostNav, PostStatus};
 use crate::router::Route;
 use crate::theme::ThemeToggle;
@@ -122,100 +124,105 @@ fn BreadcrumbsPreview(detail: bool) -> Element {
 
 #[component]
 fn AdminLayoutPreview(detail: bool) -> Element {
-    let mut active = use_signal(|| "全部文章");
+    let mut active = use_signal(|| "文章");
     let mut status = use_signal(|| "侧栏操作只更新这份本地演示。");
 
     let active_name = active();
-    let (stat_1_label, stat_1_val, stat_2_label, stat_2_val) = match active_name {
-        "仪表盘" => ("总访客", "1,280", "今日阅读", "342"),
-        "写文章" => ("当前字数", "1,420", "自动保存", "2分钟前"),
-        "笔记" | "笔记本" => ("公开笔记", "24", "笔记本数", "05"),
-        "回收站" => ("待清理", "02", "保留期限", "30天"),
-        "评论管理" => ("待审核", "01", "累计评论", "156"),
-        "素材" => ("媒体文件", "48", "已占用", "12.8MB"),
-        "友链" => ("正常链接", "18", "待确认", "02"),
-        "个人信息" => ("账号角色", "管理员", "安全状态", "双重认证"),
-        "设置" | "系统" => ("系统状态", "正常", "运行时间", "14天"),
-        "日志" => ("今日日志", "84条", "错误告警", "0"),
-        _ => ("草稿", "03", "已发布", "12"),
+    let (summary, tiles) = match active_name {
+        "仪表盘" => (
+            "下午好，图鉴访客",
+            [("已发布", "41"), ("草稿", "2"), ("评论", "8")],
+        ),
+        "笔记" => (
+            "24 篇笔记 · 5 个笔记本",
+            [("公开", "18"), ("私密", "6"), ("知识库", "9")],
+        ),
+        "素材" => (
+            "37 张图片",
+            [("已引用", "22"), ("未引用", "15"), ("可清理", "0")],
+        ),
+        "评论" => (
+            "8 条 · 待审 2",
+            [("待审", "2"), ("已通过", "6"), ("垃圾", "0")],
+        ),
+        "个人资料" => (
+            "账号与密码",
+            [("角色", "管理员"), ("会话", "2"), ("头像", "已设置")],
+        ),
+        "文章" => (
+            "41 篇 · 草稿 2",
+            [("已发布", "39"), ("草稿", "2"), ("回收站", "1")],
+        ),
+        _ => (
+            "本地示例栏目",
+            [("状态", "正常"), ("运行", "14 天"), ("告警", "0")],
+        ),
+    };
+    let crumbs = match active_name {
+        "仪表盘" => vec![Crumb::current("概览")],
+        "个人资料" => vec![Crumb::text("账户"), Crumb::current("个人资料")],
+        label => {
+            let group = match label {
+                "友链" | "MCP 接入" | "设置" => "站点",
+                "系统状态" | "日志" | "代码运行器" => "系统",
+                _ => "内容",
+            };
+            vec![Crumb::text(group), Crumb::current(label)]
+        }
+    };
+    let counts = AdminNavCounts {
+        posts: 41,
+        assets: 37,
+        comments: 8,
+        pending_comments: 2,
+    };
+    let navigate = move |label: &'static str| {
+        active.set(label);
+        status.set("已切换本地示例栏目。");
+    };
+    let sidebar = |drawer: bool| {
+        rsx! {
+            AdminSidebar {
+                route: Route::Admin {},
+                user_name: Some("图鉴访客".to_string()),
+                avatar_url: None,
+                counts: Some(counts),
+                drawer,
+                demo_active: Some(active().to_string()),
+                on_demo_navigate: navigate,
+                on_logout: move |_| status.set("这里只演示退出按钮，不会退出当前账号。"),
+            }
+        }
     };
 
     rsx! {
         div { class: "showcase-admin-window", "data-showcase-preview": "admin-layout",
             AdminShell {
                 preview: true,
-                sidebar: rsx! { AdminSidebar {
-                    route: Route::Admin {},
-                    user_name: Some("图鉴访客".to_string()),
-                    avatar_url: None,
-                    demo_active: Some(active().to_string()),
-                    preview: true,
-                    on_demo_navigate: move |label| {
-                        active.set(label);
-                        status.set("已切换本地示例栏目。");
-                    },
-                    on_logout: move |_| status.set("这里只演示退出按钮，不会退出当前账号。"),
-                } },
+                sidebar: sidebar(false),
+                drawer: sidebar(true),
+                crumbs,
+                title: active_name,
+                on_demo_navigate: navigate,
                 content: rsx! {
-                    article { class: "showcase-admin-content flex flex-col h-full",
-                        div { class: "flex items-center justify-between",
-                            p { class: "text-xs font-mono text-paper-secondary tracking-wider", "ADMIN / LOCAL DEMO" }
-                            if detail {
-                                span { class: "text-xs px-2 py-0.5 rounded-full bg-[var(--color-paper-entry)] text-paper-secondary border border-[var(--color-paper-border)]", "本地演示" }
+                    div { class: "admin-page-head",
+                        div {
+                            h1 { "{active_name}" }
+                            p { "{summary}" }
+                        }
+                    }
+                    p { class: "showcase-admin-status", role: "status", "{status()}" }
+                    div { class: "showcase-admin-tiles",
+                        for (label, value) in tiles {
+                            div { key: "{label}", class: "admin-panel showcase-admin-tile",
+                                span { "{label}" }
+                                strong { "{value}" }
                             }
                         }
-                        h2 { class: "text-xl font-semibold mt-1.5 flex items-center gap-2", "{active()}" }
-                        p { class: "text-sm text-paper-secondary mt-1", "{status()}" }
-
-                        div { class: "mt-4 grid grid-cols-2 gap-3",
-                            div { class: "rounded-2xl bg-paper-entry p-3.5 border border-[var(--color-paper-border)]/50",
-                                small { class: "text-paper-secondary text-xs", "{stat_1_label}" }
-                                strong { class: "block text-lg mt-0.5 font-bold tracking-tight", "{stat_1_val}" }
-                            }
-                            div { class: "rounded-2xl bg-paper-entry p-3.5 border border-[var(--color-paper-border)]/50",
-                                small { class: "text-paper-secondary text-xs", "{stat_2_label}" }
-                                strong { class: "block text-lg mt-0.5 font-bold tracking-tight", "{stat_2_val}" }
-                            }
-                        }
-
-                        if !detail {
-                            div { class: "mt-2.5 rounded-lg bg-paper-entry/50 border border-[var(--color-paper-border)]/40 px-2.5 py-1.5 flex items-center justify-between text-xs",
-                                div { class: "flex items-center gap-1.5 min-w-0",
-                                    span { class: "w-1.5 h-1.5 rounded-full bg-emerald-500 flex-shrink-0" }
-                                    span { class: "truncate font-medium text-[11px]", "响应式设计实践" }
-                                }
-                                span { class: "text-paper-secondary text-[10px] font-mono flex-shrink-0 ml-1", "已发布" }
-                            }
-                        }
-
-                        if detail {
-                            div { class: "mt-5 flex-1 min-h-0 flex flex-col",
-                                p { class: "text-xs font-medium text-paper-secondary mb-2 tracking-wide", "示例内容列表" }
-                                div { class: "rounded-xl border border-[var(--color-paper-border)] divide-y divide-[var(--color-paper-border)] bg-paper-entry/40 overflow-hidden text-xs",
-                                    div { class: "px-3.5 py-2.5 flex items-center justify-between hover:bg-paper-entry/80 transition-colors",
-                                        div { class: "flex items-center gap-2 min-w-0",
-                                            span { class: "w-1.5 h-1.5 rounded-full bg-emerald-500 flex-shrink-0" }
-                                            span { class: "truncate font-medium", "Dioxus 0.7 响应式设计实践" }
-                                        }
-                                        span { class: "text-paper-secondary flex-shrink-0 ml-2 font-mono text-[11px]", "09-22" }
-                                    }
-                                    div { class: "px-3.5 py-2.5 flex items-center justify-between hover:bg-paper-entry/80 transition-colors",
-                                        div { class: "flex items-center gap-2 min-w-0",
-                                            span { class: "w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0" }
-                                            span { class: "truncate font-medium", "Rust 全栈博客架构与布局演进" }
-                                        }
-                                        span { class: "text-paper-secondary flex-shrink-0 ml-2 font-mono text-[11px]", "09-18" }
-                                    }
-                                    div { class: "px-3.5 py-2.5 flex items-center justify-between hover:bg-paper-entry/80 transition-colors",
-                                        div { class: "flex items-center gap-2 min-w-0",
-                                            span { class: "w-1.5 h-1.5 rounded-full bg-emerald-500 flex-shrink-0" }
-                                            span { class: "truncate font-medium", "Tailwind CSS v4 样式系统接入记录" }
-                                        }
-                                        span { class: "text-paper-secondary flex-shrink-0 ml-2 font-mono text-[11px]", "09-15" }
-                                    }
-                                }
-                                p { class: "text-xs text-paper-secondary mt-auto pt-3", "可展开内容管理或工具菜单，点击任意栏目查看联动状态。" }
-                            }
+                    }
+                    if detail {
+                        p { class: "showcase-admin-hint",
+                            "拖动侧栏右缘调整宽度，拖到最窄或点收起按钮变成图标栏；双击右缘恢复默认宽度。"
                         }
                     }
                 },

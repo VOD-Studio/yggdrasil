@@ -78,6 +78,7 @@ pub enum IconName {
     Users,
     Lock,
     KeyRound,
+    Plug,
     Shield,
     LogOut,
     Settings,
@@ -95,7 +96,7 @@ pub enum IconName {
 impl IconName {
     /// 全部图标，供图鉴与测试遍历。
     #[allow(dead_code)]
-    pub const ALL: [IconName; 85] = [
+    pub const ALL: [IconName; 86] = [
         IconName::Search,
         IconName::X,
         IconName::Menu,
@@ -169,6 +170,7 @@ impl IconName {
         IconName::Users,
         IconName::Lock,
         IconName::KeyRound,
+        IconName::Plug,
         IconName::Shield,
         IconName::LogOut,
         IconName::Settings,
@@ -259,6 +261,7 @@ impl IconName {
             IconName::Users => "users",
             IconName::Lock => "lock",
             IconName::KeyRound => "key-round",
+            IconName::Plug => "plug",
             IconName::Shield => "shield",
             IconName::LogOut => "log-out",
             IconName::Settings => "settings",
@@ -350,6 +353,7 @@ impl IconName {
             IconName::Users => "<path d=\"M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2\"/><path d=\"M16 3.128a4 4 0 0 1 0 7.744\"/><path d=\"M22 21v-2a4 4 0 0 0-3-3.87\"/><circle cx=\"9\" cy=\"7\" r=\"4\"/>",
             IconName::Lock => "<rect width=\"18\" height=\"11\" x=\"3\" y=\"11\" rx=\"2\" ry=\"2\"/><path d=\"M7 11V7a5 5 0 0 1 10 0v4\"/>",
             IconName::KeyRound => "<path d=\"M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z\"/><circle cx=\"16.5\" cy=\"7.5\" r=\".5\" fill=\"currentColor\"/>",
+            IconName::Plug => "<path d=\"M12 22v-5\"/><path d=\"M15 8V2\"/><path d=\"M17 8a1 1 0 0 1 1 1v4a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V9a1 1 0 0 1 1-1z\"/><path d=\"M9 8V2\"/>",
             IconName::Shield => "<path d=\"M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z\"/>",
             IconName::LogOut => "<path d=\"m16 17 5-5-5-5\"/><path d=\"M21 12H9\"/><path d=\"M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4\"/>",
             IconName::Settings => "<path d=\"M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915\"/><circle cx=\"12\" cy=\"12\" r=\"3\"/>",

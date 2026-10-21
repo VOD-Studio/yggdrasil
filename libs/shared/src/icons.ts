@@ -89,6 +89,7 @@ export const ICONS: readonly string[] = [
   'users',
   'lock',
   'key-round',
+  'plug',
   'shield',
   'log-out',
   'settings',

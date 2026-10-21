@@ -296,7 +296,8 @@ pub fn FilterTabs(
     }
 }
 
-/// 面包屑中的一级。`to` 为 `None` 表示当前页（不可点击，标 `aria-current`）。
+/// 面包屑中的一级。最后一级是当前页（不可点击，标 `aria-current`）；中间级 `to` 为
+/// `None` 时是不可点击的分组名（如后台的「内容」）。
 #[derive(Clone, PartialEq)]
 pub struct Crumb<R: Clone + PartialEq> {
     pub label: String,
@@ -317,6 +318,11 @@ impl<R: Clone + PartialEq> Crumb<R> {
             to: None,
         }
     }
+
+    /// 不可点击的中间级（分组名）。
+    pub fn text(label: impl Into<String>) -> Self {
+        Self::current(label)
+    }
 }
 
 /// 面包屑：`关于 / 组件图鉴 / 复选框`，最后一级为当前页并在过长时截断。
@@ -332,6 +338,9 @@ pub fn Breadcrumb<R: Routable + Clone + PartialEq + 'static>(items: Vec<Crumb<R>
                 match crumb.to {
                     Some(to) if i < last => rsx! {
                         Link { key: "{i}", to, "{crumb.label}" }
+                    },
+                    None if i < last => rsx! {
+                        span { key: "{i}", "{crumb.label}" }
                     },
                     _ => rsx! {
                         span { key: "{i}", aria_current: "page", "{crumb.label}" }

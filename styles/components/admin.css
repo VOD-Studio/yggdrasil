@@ -1,0 +1,678 @@
+/* ======== 后台外壳 ========
+   桌面应用式：左侧栏 surface-1（可收成 56px 图标栏、拖拽右缘调宽），主画布 surface-0，
+   顶栏是面包屑。768px 以下侧栏收进左侧抽屉。结构见 src/components/admin_layout.rs。
+
+   侧栏状态：外壳挂载后由根元素的 data-sidebar 与 --admin-sidebar-shown 决定；挂载前
+   由预载脚本写在 <html> 上的 data-admin-sidebar 与 --admin-sidebar-w 决定。下面的
+   「收起」规则都用同一组选择器：
+   :is(.admin-shell[data-sidebar="collapsed"], html[data-admin-sidebar="collapsed"] .admin-shell:not([data-sidebar])) */
+@layer components {
+  .admin-shell {
+    --admin-rail: 56px;
+    --admin-topbar-h: 3.5rem;
+    display: flex;
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+    background-color: var(--color-surface-0);
+    color: var(--color-fg);
+    font-size: 0.875rem;
+    line-height: 1.5;
+  }
+
+  .admin-shell[data-preview] {
+    height: 100%;
+  }
+
+  .admin-shell[data-resizing] {
+    cursor: col-resize;
+    user-select: none;
+  }
+
+  /* ---- 侧栏 ---- */
+  .admin-side-slot {
+    position: relative;
+    z-index: 30;
+    flex: none;
+    width: var(--admin-sidebar-shown, var(--admin-sidebar-w, 232px));
+    height: 100%;
+    transition: width var(--spring-heavy-duration) var(--ease-spring-heavy);
+  }
+
+  html[data-admin-sidebar="collapsed"] .admin-shell:not([data-sidebar]) .admin-side-slot {
+    width: var(--admin-rail);
+  }
+
+  .admin-shell[data-resizing] .admin-side-slot {
+    transition: none;
+  }
+
+  .admin-side {
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    height: 100%;
+    padding: 0.875rem 0.75rem;
+    overflow: hidden;
+    background-color: var(--color-surface-1);
+    box-shadow: inset -1px 0 0 var(--color-hairline);
+  }
+
+  .admin-side-head {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 2.25rem;
+    padding: 0.25rem 0 0.875rem 0.5rem;
+  }
+
+  .admin-side-head > .tooltip-wrap {
+    margin-left: auto;
+  }
+
+  .admin-side-text {
+    white-space: nowrap;
+  }
+
+  .admin-side-badge {
+    padding: 1px 7px;
+    border-radius: 999px;
+    background-color: var(--color-ink-1);
+    color: var(--color-fg-3);
+    font-size: 0.6875rem;
+  }
+
+  .admin-nav {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+    margin-inline: -0.25rem;
+    padding-inline: 0.25rem;
+    overflow-x: hidden;
+    overflow-y: auto;
+    scrollbar-width: thin;
+  }
+
+  .admin-nav-group {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .admin-nav-label {
+    margin: 1rem 0.625rem 0.375rem;
+    color: var(--color-fg-3);
+    font-size: 0.6875rem;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+  }
+
+  .admin-nav-item {
+    position: relative;
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 0.625rem;
+    height: 2.125rem;
+    padding: 0 0.625rem;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--color-fg-2);
+    font: inherit;
+    text-align: left;
+    text-decoration: none;
+    white-space: nowrap;
+    cursor: pointer;
+    transition:
+      color 150ms var(--ease-out-expo),
+      background-color 150ms var(--ease-out-expo),
+      box-shadow 150ms var(--ease-out-expo);
+  }
+
+  .admin-nav-item:hover {
+    background-color: var(--color-ink-1);
+    color: var(--color-fg);
+  }
+
+  .admin-nav-item:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
+  }
+
+  .admin-nav-item[aria-current="page"] {
+    background-color: var(--color-surface-2);
+    color: var(--color-fg);
+    font-weight: 500;
+    box-shadow: 0 0 0 1px var(--color-hairline), var(--shadow-sm);
+  }
+
+  .dark .admin-nav-item[aria-current="page"] {
+    background-color: var(--color-surface-3);
+  }
+
+  .admin-nav-dot {
+    flex: none;
+    width: 6px;
+    height: 6px;
+    border-radius: 2px;
+    background-color: var(--color-ink-2);
+    transition: background-color 150ms var(--ease-out-expo);
+  }
+
+  [aria-current="page"] > .admin-nav-dot {
+    background-color: var(--color-clay);
+  }
+
+  .admin-nav-icon {
+    display: none;
+    flex: none;
+  }
+
+  .admin-nav-text {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .admin-nav-count {
+    flex: none;
+    color: var(--color-fg-3);
+    font-size: 0.75rem;
+    font-variant-numeric: tabular-nums;
+    font-weight: 400;
+  }
+
+  .admin-nav-count-alert {
+    padding: 0 7px;
+    border-radius: 999px;
+    background-color: var(--color-clay-soft);
+    color: var(--color-clay-text);
+    line-height: 1.125rem;
+  }
+
+  .admin-side-foot {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-top: auto;
+    padding-top: 1rem;
+  }
+
+  .admin-side-theme {
+    padding-inline: 0.375rem;
+  }
+
+  .admin-user {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  .admin-user-link {
+    position: relative;
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: 0.625rem;
+    min-width: 0;
+    padding: 0.375rem 0.5rem;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    text-decoration: none;
+    cursor: pointer;
+    transition: background-color 150ms var(--ease-out-expo);
+  }
+
+  .admin-user-link:hover {
+    background-color: var(--color-ink-1);
+  }
+
+  .admin-user-link:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
+  }
+
+  .admin-user-link[aria-current="page"] {
+    background-color: var(--color-surface-2);
+    box-shadow: 0 0 0 1px var(--color-hairline), var(--shadow-sm);
+  }
+
+  .admin-user-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    line-height: 1.3;
+  }
+
+  .admin-user-name {
+    overflow: hidden;
+    font-weight: 500;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .admin-user-role {
+    color: var(--color-fg-3);
+    font-size: 0.75rem;
+  }
+
+  /* 右缘拖拽条：8px 命中区，悬停、聚焦与拖动时显示陶土细线。 */
+  .admin-resize {
+    position: absolute;
+    top: 0;
+    right: -4px;
+    bottom: 0;
+    z-index: 1;
+    width: 8px;
+    cursor: col-resize;
+    touch-action: none;
+  }
+
+  .admin-resize::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 3px;
+    width: 2px;
+    background-color: var(--color-clay);
+    opacity: 0;
+    transition: opacity 150ms var(--ease-out-expo);
+  }
+
+  .admin-resize:hover::after,
+  .admin-resize:focus-visible::after,
+  .admin-shell[data-resizing] .admin-resize::after {
+    opacity: 1;
+    transition-delay: 0ms;
+  }
+
+  .admin-resize:hover::after {
+    transition-delay: 150ms;
+  }
+
+  .admin-resize:focus-visible {
+    outline: none;
+  }
+
+  /* ---- 收起为图标栏 ---- */
+  :is(.admin-shell[data-sidebar="collapsed"], html[data-admin-sidebar="collapsed"] .admin-shell:not([data-sidebar]))
+    .admin-side {
+    padding-inline: 0.5rem;
+    overflow: visible;
+  }
+
+  :is(.admin-shell[data-sidebar="collapsed"], html[data-admin-sidebar="collapsed"] .admin-shell:not([data-sidebar]))
+    .admin-side-head {
+    flex-direction: column;
+    gap: 0.625rem;
+    padding: 0.25rem 0 0.625rem;
+  }
+
+  :is(.admin-shell[data-sidebar="collapsed"], html[data-admin-sidebar="collapsed"] .admin-shell:not([data-sidebar]))
+    .admin-side-head
+    > .tooltip-wrap {
+    margin-left: 0;
+  }
+
+  :is(.admin-shell[data-sidebar="collapsed"], html[data-admin-sidebar="collapsed"] .admin-shell:not([data-sidebar]))
+    :is(.admin-side-text, .admin-side-badge, .admin-nav-count, .admin-user-text, .admin-side-theme, .admin-nav-dot) {
+    display: none;
+  }
+
+  :is(.admin-shell[data-sidebar="collapsed"], html[data-admin-sidebar="collapsed"] .admin-shell:not([data-sidebar]))
+    .admin-nav {
+    overflow: visible;
+  }
+
+  /* 文字留给读屏，图标栏只显示图标。 */
+  :is(.admin-shell[data-sidebar="collapsed"], html[data-admin-sidebar="collapsed"] .admin-shell:not([data-sidebar]))
+    .admin-nav-text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  :is(.admin-shell[data-sidebar="collapsed"], html[data-admin-sidebar="collapsed"] .admin-shell:not([data-sidebar]))
+    .admin-nav-label {
+    height: 1px;
+    margin: 0.625rem 0.5rem;
+    overflow: hidden;
+    background-color: var(--color-hairline);
+    color: transparent;
+  }
+
+  :is(.admin-shell[data-sidebar="collapsed"], html[data-admin-sidebar="collapsed"] .admin-shell:not([data-sidebar]))
+    .admin-nav-item {
+    justify-content: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    margin-inline: auto;
+    padding: 0;
+  }
+
+  :is(.admin-shell[data-sidebar="collapsed"], html[data-admin-sidebar="collapsed"] .admin-shell:not([data-sidebar]))
+    .admin-nav-icon {
+    display: block;
+  }
+
+  /* 当前项在图标右上角补一个陶土小方点。 */
+  :is(.admin-shell[data-sidebar="collapsed"], html[data-admin-sidebar="collapsed"] .admin-shell:not([data-sidebar]))
+    [aria-current="page"]
+    > .admin-nav-dot {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    display: block;
+    width: 5px;
+    height: 5px;
+  }
+
+  :is(.admin-shell[data-sidebar="collapsed"], html[data-admin-sidebar="collapsed"] .admin-shell:not([data-sidebar]))
+    .admin-user {
+    flex-direction: column;
+  }
+
+  :is(.admin-shell[data-sidebar="collapsed"], html[data-admin-sidebar="collapsed"] .admin-shell:not([data-sidebar]))
+    .admin-user-link {
+    flex: none;
+    padding: 0.375rem;
+  }
+
+  /* 图标栏的名称提示：与 .tooltip 同样式，朝右展开。 */
+  :is(.admin-shell[data-sidebar="collapsed"], html[data-admin-sidebar="collapsed"] .admin-shell:not([data-sidebar]))
+    :is(.admin-nav-item, .admin-user-link)::after {
+    content: attr(data-tip);
+    position: absolute;
+    top: 50%;
+    left: calc(100% + 10px);
+    z-index: 50;
+    padding: 5px 9px;
+    border-radius: 7px;
+    background-color: var(--color-fg);
+    color: var(--color-surface-0);
+    font-size: 0.75rem;
+    font-weight: 500;
+    line-height: 1.4;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    translate: -4px -50%;
+    transition:
+      opacity 150ms var(--ease-out-expo),
+      translate 150ms var(--ease-out-expo);
+  }
+
+  :is(.admin-shell[data-sidebar="collapsed"], html[data-admin-sidebar="collapsed"] .admin-shell:not([data-sidebar]))
+    :is(.admin-nav-item, .admin-user-link):hover::after {
+    opacity: 1;
+    translate: 0 -50%;
+    transition-delay: 300ms;
+  }
+
+  :is(.admin-shell[data-sidebar="collapsed"], html[data-admin-sidebar="collapsed"] .admin-shell:not([data-sidebar]))
+    :is(.admin-nav-item, .admin-user-link):focus-visible::after {
+    opacity: 1;
+    translate: 0 -50%;
+  }
+
+  /* ---- 主画布与顶栏 ---- */
+  .admin-canvas {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  .admin-scroll {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  .admin-scroll-fixed {
+    overflow: hidden;
+  }
+
+  /* 滚动后才出现发丝底线与模糊背景。内容不足一屏时滚动时间线无效，保持透明；
+     不支持滚动时间线的浏览器始终显示底线。 */
+  .admin-topbar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 1rem;
+    height: var(--admin-topbar-h);
+    padding: 0 2rem;
+    background-color: color-mix(in srgb, var(--color-surface-0) 82%, transparent);
+    backdrop-filter: blur(12px);
+    box-shadow: inset 0 -1px 0 var(--color-hairline);
+  }
+
+  @supports (animation-timeline: scroll()) {
+    .admin-topbar {
+      background-color: transparent;
+      backdrop-filter: none;
+      box-shadow: none;
+      animation: admin-topbar-scrolled linear both;
+      animation-timeline: scroll(nearest block);
+      animation-range: 0 24px;
+    }
+  }
+
+  @keyframes admin-topbar-scrolled {
+    from {
+      background-color: transparent;
+      backdrop-filter: blur(0);
+      box-shadow: inset 0 -1px 0 transparent;
+    }
+
+    to {
+      background-color: color-mix(in srgb, var(--color-surface-0) 82%, transparent);
+      backdrop-filter: blur(12px);
+      box-shadow: inset 0 -1px 0 var(--color-hairline);
+    }
+  }
+
+  .admin-topbar-crumbs {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .admin-topbar-title {
+    display: none;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    font-size: 1rem;
+    font-weight: 600;
+    text-align: center;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .admin-topbar-actions {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .admin-main {
+    flex: 1;
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    padding: 0.5rem 2rem 3rem;
+  }
+
+  /* 写作、设置与日志在内容区内部自行滚动。 */
+  .admin-main-fill {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    padding: 0;
+  }
+
+  /* ---- 页面通用：标题行与面板 ---- */
+  .admin-page-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 0.75rem 1rem;
+    margin-bottom: 1.25rem;
+  }
+
+  .admin-page-head h1 {
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 600;
+    line-height: 1.3;
+  }
+
+  .admin-page-head p {
+    margin: 0.25rem 0 0;
+    color: var(--color-fg-3);
+    font-size: 0.8125rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .admin-page-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .admin-panel {
+    border-radius: var(--radius-panel);
+    background-color: var(--color-surface-2);
+    box-shadow: 0 0 0 1px var(--color-hairline), var(--shadow-sm);
+  }
+
+  /* ---- 手机：侧栏收进左侧抽屉，顶栏为菜单、标题与搜索 ---- */
+  @media (max-width: 767px) {
+    .admin-side-slot {
+      display: none;
+    }
+
+    .admin-topbar {
+      gap: 0.25rem;
+      height: 3.25rem;
+      padding: 0 0.5rem;
+    }
+
+    .admin-topbar-crumbs,
+    .admin-topbar-site {
+      display: none;
+    }
+
+    .admin-topbar-title {
+      display: block;
+    }
+
+    /* 菜单与右侧操作等宽，标题居中。 */
+    .admin-topbar-actions {
+      justify-content: flex-end;
+      min-width: 2.75rem;
+    }
+
+    .admin-main {
+      padding: 0.75rem 1rem 6rem;
+    }
+
+    .admin-main-fill {
+      padding: 0;
+    }
+
+    /* 顶栏已显示页面标题。 */
+    .admin-page-head h1 {
+      display: none;
+    }
+  }
+
+  /* ---- 左侧抽屉 ---- */
+  .side-sheet {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 61;
+    width: min(18.5rem, 86vw);
+    overflow-y: auto;
+    background-color: var(--color-surface-1);
+    box-shadow: 1px 0 0 var(--color-hairline), 12px 0 40px rgb(0 0 0 / 0.12);
+    animation: side-sheet-in var(--spring-heavy-duration) var(--ease-spring-heavy) both;
+    touch-action: pan-y;
+  }
+
+  .side-sheet[data-dragging="true"] {
+    animation: none;
+  }
+
+  .side-sheet[data-closing="true"] {
+    animation: side-sheet-out 200ms var(--ease-out-expo) both;
+  }
+
+  @keyframes side-sheet-in {
+    from {
+      transform: translateX(-100%);
+    }
+  }
+
+  @keyframes side-sheet-out {
+    to {
+      transform: translateX(-100%);
+    }
+  }
+
+  .admin-side-drawer {
+    min-height: 100%;
+    padding: 0.875rem 0.75rem max(1.25rem, env(safe-area-inset-bottom));
+    box-shadow: none;
+  }
+
+  .admin-side-drawer .admin-nav {
+    flex: none;
+    overflow: visible;
+  }
+
+  .admin-side-drawer .admin-nav-item {
+    height: 2.75rem;
+    border-radius: 10px;
+    font-size: 0.9375rem;
+  }
+
+  .admin-side-drawer .admin-nav-label {
+    font-size: 0.71875rem;
+  }
+
+  .admin-side-drawer .admin-side-foot {
+    padding-top: 1.5rem;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .admin-side-slot {
+      transition: none;
+    }
+
+    .side-sheet,
+    .side-sheet[data-closing="true"] {
+      animation: listbox-fade 150ms linear both;
+    }
+  }
+}

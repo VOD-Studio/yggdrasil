@@ -436,7 +436,7 @@ async function admin() {
     await push(page, '/admin/');
     await push(page, '/admin/posts');
     await page.waitForSelector('a[data-vt-post-link]');
-    await page.getByRole('button', { name: '草稿', exact: true }).click();
+    await page.getByRole('tab', { name: '草稿', exact: true }).click();
     const input = page.getByPlaceholder('搜索文章标题...');
     await input.fill('Browser');
     await input.press('Enter');
@@ -465,7 +465,7 @@ async function admin() {
     assert.equal(restored.search_input, 'Browser unsubmitted');
     assert(Math.abs(await page.evaluate(() => document.querySelector('[data-vt-scroll]').scrollTop) - source.scroll) < 5);
     console.log('PASS admin-preview-return-pagination-filters-scroll');
-    await page.getByRole('button', { name: '退出', exact: true }).click();
+    await page.getByRole('button', { name: '退出登录', exact: true }).click();
     await ready(page, '/login');
     const previousValues = await page.evaluate(id => __routeTransitions.entries.get(id)?.values.size, source.entry);
     assert(previousValues === undefined || previousValues === 0);

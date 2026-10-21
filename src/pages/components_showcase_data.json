@@ -1180,9 +1180,9 @@
       "slug": "admin-layout",
       "label": "后台布局",
       "group": "layout",
-      "summary": "后台侧栏、导航分组和内容卡片。",
-      "states": "侧栏 · 展开/收起 · 本地激活项 · 示例正文",
-      "description": "图鉴与正式后台共用 AdminSidebar 和 AdminShell；演示用户、栏目与退出按钮仅修改局部状态。正式 AdminLayout 仍处理认证守卫、路由内容、主题和注销。",
+      "summary": "后台侧栏、面包屑顶栏与主画布。",
+      "states": "侧栏 · 图标栏 · 拖拽调宽 · 数量与待审 · 本地激活项",
+      "description": "图鉴与正式后台共用 AdminSidebar 和 AdminShell；栏目、退出与收起只改本地状态，不读写宽度偏好。正式 AdminLayout 另外处理认证守卫、路由内容、侧栏数量和注销。",
       "props": [
         [
           "—",

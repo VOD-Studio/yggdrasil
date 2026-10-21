@@ -1,16 +1,18 @@
-//! 后台管理布局组件
+//! 后台布局：桌面应用式外壳。
 //!
-//! 提供全新设计的柔和/软扁平化风格的管理员专属后台布局。
-//! 采用圆角矩形、大空间距与友好的交互设计。
+//! 左侧栏（surface-1）按「内容 · 站点 · 系统」分组，文章、素材、评论右侧显示数量，
+//! 当前项为浮起的行与陶土小方点；侧栏可收成 56px 图标栏，拖拽右缘调宽，松手按
+//! heavy 弹簧吸附。主画布 surface-0，顶栏是面包屑与「查看前台」。760px 以下侧栏
+//! 收进左侧抽屉，顶栏为菜单、页面标题与搜索。样式见 styles/components/admin.css。
 
 use dioxus::prelude::*;
 use dioxus::router::components::Link;
 
+use crate::api::admin_stats::AdminNavCounts;
 use crate::api::auth::{get_current_user, logout};
 use crate::components::skeletons::admin_comments_skeleton::AdminCommentsSkeleton;
 use crate::components::skeletons::assets_skeleton::AssetsSkeleton;
 use crate::components::skeletons::dashboard_skeleton::AdminDashboardSkeleton;
-
 use crate::components::skeletons::friends_admin_skeleton::FriendsAdminSkeleton;
 use crate::components::skeletons::logs_skeleton::LogsSkeleton;
 use crate::components::skeletons::mcp_skeleton::McpSkeleton;
@@ -22,16 +24,342 @@ use crate::components::skeletons::runner_skeleton::RunnerSkeleton;
 use crate::components::skeletons::settings_admin_skeleton::SettingsAdminSkeleton;
 use crate::components::skeletons::system_skeleton::SystemSkeleton;
 use crate::components::skeletons::write_skeleton::WriteSkeleton;
-use crate::components::ui::UserAvatar;
+use crate::components::ui::{
+    Breadcrumb, Crumb, Icon, IconButton, IconName, SheetClose, SideSheet, UserAvatar,
+};
 use crate::context::UserContext;
 use crate::router::Route;
 use crate::theme::ThemeToggle;
+
+/// 侧栏默认宽度与可调范围（px）。
+const SIDEBAR_DEFAULT: f64 = 232.0;
+const SIDEBAR_MIN: f64 = 200.0;
+const SIDEBAR_MAX: f64 = 320.0;
+/// 图标栏宽度，与 admin.css 的 `--admin-rail` 一致。
+const SIDEBAR_RAIL: f64 = 56.0;
+/// 拖到这个宽度以下松手收成图标栏。
+const SIDEBAR_COLLAPSE_AT: f64 = 152.0;
+/// 方向键每次调整的宽度。
+const SIDEBAR_KEY_STEP: f64 = 16.0;
+/// 拖拽死区：移动不到 4px 算点按。
+const DRAG_DEAD_ZONE: f64 = 4.0;
+
+const SIDEBAR_WIDTH_KEY: &str = "yggdrasil-admin-sidebar-width";
+const SIDEBAR_COLLAPSED_KEY: &str = "yggdrasil-admin-sidebar-collapsed";
+
+/// 首屏恢复侧栏宽度与折叠状态，避免 WASM 接管前侧栏跳一下。外壳挂载后改由
+/// 根元素的 `data-sidebar` 与 `--admin-sidebar-w` 决定。
+const SIDEBAR_PRELOAD_SCRIPT: &str = r#"
+(function() {
+    try {
+        var html = document.documentElement;
+        var width = parseFloat(localStorage.getItem('yggdrasil-admin-sidebar-width'));
+        if (width >= 200 && width <= 320) html.style.setProperty('--admin-sidebar-w', width + 'px');
+        if (localStorage.getItem('yggdrasil-admin-sidebar-collapsed') === 'true') {
+            html.setAttribute('data-admin-sidebar', 'collapsed');
+        }
+    } catch (e) {}
+})();
+"#;
+
+/// 侧栏的宽度与折叠状态。`width` 是展开时的宽度，收起后保留，展开时恢复。
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct SidebarState {
+    width: f64,
+    collapsed: bool,
+}
+
+impl Default for SidebarState {
+    fn default() -> Self {
+        Self {
+            width: SIDEBAR_DEFAULT,
+            collapsed: false,
+        }
+    }
+}
+
+impl SidebarState {
+    /// 从存储的原始值恢复；越界或损坏的宽度回到默认值。
+    #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+    fn restore(width: Option<&str>, collapsed: Option<&str>) -> Self {
+        let width = width
+            .and_then(|w| w.parse::<f64>().ok())
+            .filter(|w| (SIDEBAR_MIN..=SIDEBAR_MAX).contains(w))
+            .unwrap_or(SIDEBAR_DEFAULT);
+        Self {
+            width,
+            collapsed: collapsed == Some("true"),
+        }
+    }
+
+    /// 松手吸附：拖到阈值以下收起；阈值与最小宽度之间回弹到最小宽度。
+    fn settle(self, dragged: f64) -> Self {
+        if dragged < SIDEBAR_COLLAPSE_AT {
+            Self {
+                collapsed: true,
+                ..self
+            }
+        } else {
+            Self {
+                width: dragged.clamp(SIDEBAR_MIN, SIDEBAR_MAX),
+                collapsed: false,
+            }
+        }
+    }
+
+    /// 方向键调宽：收起时向右展开；最小宽度再向左则收起。
+    fn nudge(self, delta: f64) -> Self {
+        match (self.collapsed, delta > 0.0) {
+            (true, true) => Self {
+                collapsed: false,
+                ..self
+            },
+            (true, false) => self,
+            (false, false) if self.width <= SIDEBAR_MIN => Self {
+                collapsed: true,
+                ..self
+            },
+            (false, _) => Self {
+                width: (self.width + delta).clamp(SIDEBAR_MIN, SIDEBAR_MAX),
+                collapsed: false,
+            },
+        }
+    }
+
+    /// 侧栏当前显示宽度。
+    fn shown(self) -> f64 {
+        if self.collapsed {
+            SIDEBAR_RAIL
+        } else {
+            self.width
+        }
+    }
+}
+
+/// 拖拽中的显示宽度：跟手，下限是图标栏宽度。
+fn dragged_width(start_width: f64, dx: f64) -> f64 {
+    (start_width + dx).clamp(SIDEBAR_RAIL, SIDEBAR_MAX)
+}
+
+#[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))]
+fn save_sidebar(state: SidebarState) {
+    #[cfg(target_arch = "wasm32")]
+    if let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
+        let _ = storage.set_item(SIDEBAR_WIDTH_KEY, &state.width.round().to_string());
+        let _ = storage.set_item(SIDEBAR_COLLAPSED_KEY, &state.collapsed.to_string());
+    }
+}
+
+fn load_sidebar() -> SidebarState {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let storage = web_sys::window().and_then(|w| w.local_storage().ok().flatten());
+        let read = |key: &str| {
+            storage
+                .as_ref()
+                .and_then(|s| s.get_item(key).ok().flatten())
+        };
+        SidebarState::restore(
+            read(SIDEBAR_WIDTH_KEY).as_deref(),
+            read(SIDEBAR_COLLAPSED_KEY).as_deref(),
+        )
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = (SIDEBAR_WIDTH_KEY, SIDEBAR_COLLAPSED_KEY);
+        SidebarState::default()
+    }
+}
+
+/// 侧栏中的一个栏目。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum AdminSection {
+    Dashboard,
+    Posts,
+    Notes,
+    Assets,
+    Comments,
+    Friends,
+    Mcp,
+    Settings,
+    System,
+    Logs,
+    Runner,
+}
+
+/// 侧栏分组：分组名与其中的栏目。
+const NAV_GROUPS: [(Option<&str>, &[AdminSection]); 4] = [
+    (None, &[AdminSection::Dashboard]),
+    (
+        Some("内容"),
+        &[
+            AdminSection::Posts,
+            AdminSection::Notes,
+            AdminSection::Assets,
+            AdminSection::Comments,
+        ],
+    ),
+    (
+        Some("站点"),
+        &[
+            AdminSection::Friends,
+            AdminSection::Mcp,
+            AdminSection::Settings,
+        ],
+    ),
+    (
+        Some("系统"),
+        &[
+            AdminSection::System,
+            AdminSection::Logs,
+            AdminSection::Runner,
+        ],
+    ),
+];
+
+impl AdminSection {
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            AdminSection::Dashboard => "仪表盘",
+            AdminSection::Posts => "文章",
+            AdminSection::Notes => "笔记",
+            AdminSection::Assets => "素材",
+            AdminSection::Comments => "评论",
+            AdminSection::Friends => "友链",
+            AdminSection::Mcp => "MCP 接入",
+            AdminSection::Settings => "设置",
+            AdminSection::System => "系统状态",
+            AdminSection::Logs => "日志",
+            AdminSection::Runner => "代码运行器",
+        }
+    }
+
+    pub(crate) fn icon(self) -> IconName {
+        match self {
+            AdminSection::Dashboard => IconName::LayoutDashboard,
+            AdminSection::Posts => IconName::FileText,
+            AdminSection::Notes => IconName::NotebookPen,
+            AdminSection::Assets => IconName::Image,
+            AdminSection::Comments => IconName::MessageSquare,
+            AdminSection::Friends => IconName::Link,
+            AdminSection::Mcp => IconName::Plug,
+            AdminSection::Settings => IconName::SlidersHorizontal,
+            AdminSection::System => IconName::Activity,
+            AdminSection::Logs => IconName::List,
+            AdminSection::Runner => IconName::Terminal,
+        }
+    }
+
+    pub(crate) fn route(self) -> Route {
+        match self {
+            AdminSection::Dashboard => Route::Admin {},
+            AdminSection::Posts => Route::Posts {},
+            AdminSection::Notes => Route::AdminNotes {},
+            AdminSection::Assets => Route::Assets {},
+            AdminSection::Comments => Route::AdminComments {},
+            AdminSection::Friends => Route::FriendsAdmin {},
+            AdminSection::Mcp => Route::Mcp {},
+            AdminSection::Settings => Route::SiteSettingsPage {},
+            AdminSection::System => Route::System {},
+            AdminSection::Logs => Route::Logs {},
+            AdminSection::Runner => Route::Runner {},
+        }
+    }
+
+    /// 路由所属栏目：写作、回收站与预览归「文章」，笔记本与笔记编辑归「笔记」。
+    /// 个人资料不在侧栏栏目里，由底部用户行标示。
+    pub(crate) fn of(route: &Route) -> Option<Self> {
+        Some(match route {
+            Route::Admin {} => AdminSection::Dashboard,
+            Route::Posts {}
+            | Route::PostsTrash {}
+            | Route::Write {}
+            | Route::WriteEdit { .. }
+            | Route::PostPreview { .. } => AdminSection::Posts,
+            Route::AdminNotes {}
+            | Route::AdminNotebooks {}
+            | Route::NewNote {}
+            | Route::EditNote { .. } => AdminSection::Notes,
+            Route::Assets {} => AdminSection::Assets,
+            Route::AdminComments {} | Route::AdminCommentsPage { .. } => AdminSection::Comments,
+            Route::FriendsAdmin {} => AdminSection::Friends,
+            Route::Mcp {} => AdminSection::Mcp,
+            Route::SiteSettingsPage {} => AdminSection::Settings,
+            Route::System {} => AdminSection::System,
+            Route::Logs {} => AdminSection::Logs,
+            Route::Runner {} => AdminSection::Runner,
+            _ => return None,
+        })
+    }
+
+    fn group(self) -> &'static str {
+        NAV_GROUPS
+            .iter()
+            .find(|(_, items)| items.contains(&self))
+            .and_then(|(group, _)| *group)
+            .unwrap_or("")
+    }
+}
+
+/// 顶栏面包屑与手机顶栏标题。子页面以所属栏目为上一级（可点击），栏目页以分组名
+/// 为上一级。
+pub(crate) fn admin_crumbs(route: &Route) -> (Vec<Crumb<Route>>, &'static str) {
+    let sub = |section: AdminSection, title: &'static str| {
+        (
+            vec![
+                Crumb::link(section.label(), section.route()),
+                Crumb::current(title),
+            ],
+            title,
+        )
+    };
+    match route {
+        Route::Admin {} => (vec![Crumb::current("概览")], "仪表盘"),
+        Route::PostsTrash {} => sub(AdminSection::Posts, "回收站"),
+        Route::Write {} => sub(AdminSection::Posts, "写文章"),
+        Route::WriteEdit { .. } => sub(AdminSection::Posts, "编辑文章"),
+        Route::PostPreview { .. } => sub(AdminSection::Posts, "预览"),
+        Route::AdminNotebooks {} => sub(AdminSection::Notes, "笔记本"),
+        Route::NewNote {} => sub(AdminSection::Notes, "新建笔记"),
+        Route::EditNote { .. } => sub(AdminSection::Notes, "编辑笔记"),
+        Route::Profile {} => (
+            vec![Crumb::text("账户"), Crumb::current("个人资料")],
+            "个人资料",
+        ),
+        other => match AdminSection::of(other) {
+            Some(section) => (
+                vec![
+                    Crumb::text(section.group()),
+                    Crumb::current(section.label()),
+                ],
+                section.label(),
+            ),
+            None => (vec![Crumb::current("后台")], "后台"),
+        },
+    }
+}
+
+/// 侧栏数量文字：评论有待审时显示待审数（陶土强调），否则显示总数。
+fn nav_count(section: AdminSection, counts: Option<AdminNavCounts>) -> Option<(String, bool)> {
+    let counts = counts?;
+    match section {
+        AdminSection::Posts => Some((counts.posts.to_string(), false)),
+        AdminSection::Assets => Some((counts.assets.to_string(), false)),
+        AdminSection::Comments if counts.pending_comments > 0 => {
+            Some((format!("{} 待审", counts.pending_comments), true))
+        }
+        AdminSection::Comments => Some((counts.comments.to_string(), false)),
+        _ => None,
+    }
+}
 
 #[component]
 pub fn AdminLayout() -> Element {
     let mut ctx: UserContext = use_context();
     let navigator = dioxus::router::navigator();
     let route = use_route::<Route>();
+    #[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut))]
+    let mut counts = use_signal(|| None::<AdminNavCounts>);
 
     use_effect(move || {
         if !(ctx.checked)() {
@@ -53,6 +381,23 @@ pub fn AdminLayout() -> Element {
         }
     });
 
+    let authenticated = matches!(((ctx.checked)(), (ctx.user)()), (true, Some(_)));
+    // 登录后与每次换页刷新侧栏数量：增删文章、素材或审核评论后回到列表即可看到新值。
+    use_effect(move || {
+        let _current = router().current::<Route>();
+        let signed_in = matches!(((ctx.checked)(), (ctx.user)()), (true, Some(_)));
+        #[cfg(target_arch = "wasm32")]
+        if signed_in {
+            spawn(async move {
+                if let Ok(next) = crate::api::admin_stats::get_admin_nav_counts().await {
+                    counts.set(Some(next));
+                }
+            });
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        let _ = signed_in;
+    });
+
     let is_write_route =
         matches!(route, Route::Write {}) || matches!(route, Route::WriteEdit { .. });
     // 写作、设置和日志页面在主内容区内部自行滚动。
@@ -60,24 +405,32 @@ pub fn AdminLayout() -> Element {
         || matches!(route, Route::SiteSettingsPage {})
         || matches!(route, Route::Logs {});
     let side_user = (ctx.user)();
-    let sidebar = rsx! {
-        AdminSidebar {
-            route: route.clone(),
-            user_name: side_user.as_ref().map(|user| user.display_label().to_string()),
-            avatar_url: side_user.as_ref().and_then(|user| user.avatar_url.clone()),
-            on_logout: move |_| {
-                spawn(async move {
-                    if logout().await.is_ok_and(|response| response.success) {
-                        crate::bridges::navigation::clear_admin_state();
-                    }
-                    ctx.user.set(None);
-                    ctx.checked.set(false);
-                    let _ = navigator.push(Route::Login {});
-                });
-            },
+    let on_logout = move |_| {
+        spawn(async move {
+            if logout().await.is_ok_and(|response| response.success) {
+                crate::bridges::navigation::clear_admin_state();
+            }
+            ctx.user.set(None);
+            ctx.checked.set(false);
+            let _ = navigator.push(Route::Login {});
+        });
+    };
+    let user_name = side_user
+        .as_ref()
+        .map(|user| user.display_label().to_string());
+    let avatar_url = side_user.as_ref().and_then(|user| user.avatar_url.clone());
+    let sidebar = |drawer: bool| {
+        rsx! {
+            AdminSidebar {
+                route: route.clone(),
+                user_name: user_name.clone(),
+                avatar_url: avatar_url.clone(),
+                counts: counts(),
+                on_logout,
+                drawer,
+            }
         }
     };
-    let authenticated = matches!(((ctx.checked)(), (ctx.user)()), (true, Some(_)));
     let skeleton_route = route.clone();
     let content = if authenticated {
         rsx! {
@@ -96,9 +449,13 @@ pub fn AdminLayout() -> Element {
             }
         }
     };
+    let (crumbs, title) = admin_crumbs(&route);
     rsx! {
         AdminShell {
-            sidebar,
+            sidebar: sidebar(false),
+            drawer: sidebar(true),
+            crumbs,
+            title,
             content,
             internal_scroll: internal_scroll_route,
             checking: !authenticated,
@@ -106,173 +463,420 @@ pub fn AdminLayout() -> Element {
     }
 }
 
-/// 认证和路由留在 AdminLayout，图鉴只向此壳传入固定内容。
+/// 后台外壳：侧栏、顶栏与主画布。认证和路由留在 AdminLayout，图鉴只向此壳传入
+/// 固定内容；`preview` 时不读写本地存储，也不参与页面转场与首屏恢复。
 #[component]
 pub(crate) fn AdminShell(
     sidebar: Element,
+    drawer: Element,
+    crumbs: Vec<Crumb<Route>>,
+    title: &'static str,
     content: Element,
     #[props(default)] internal_scroll: bool,
     #[props(default)] checking: bool,
     #[props(default)] preview: bool,
+    #[props(default)] on_demo_navigate: Option<EventHandler<&'static str>>,
 ) -> Element {
-    let root_class = if preview {
-        "showcase-admin-shell flex bg-[var(--color-paper-entry)] text-[var(--color-paper-primary)] font-sans w-full h-full overflow-hidden"
-    } else {
-        "min-h-dvh flex bg-[var(--color-paper-entry)] text-[var(--color-paper-primary)] font-sans"
+    // 挂载前为 None：首屏由预载脚本写在 <html> 上的状态决定，服务端与水合输出一致。
+    let mut state = use_signal(|| None::<SidebarState>);
+    let mut drag = use_signal(|| None::<(f64, f64, f64)>);
+    let mut drawer_open = use_signal(|| false);
+
+    use_effect(move || {
+        if !preview {
+            state.set(Some(load_sidebar()));
+        } else {
+            state.set(Some(SidebarState::default()));
+        }
+    });
+    let mut commit = move |next: SidebarState| {
+        state.set(Some(next));
+        if !preview {
+            save_sidebar(next);
+        }
     };
-    let height_class = if preview { "h-full" } else { "h-screen" };
-    let card_overflow = if internal_scroll || checking {
-        "overflow-hidden"
-    } else {
-        "overflow-y-auto"
+    use_context_provider(|| SidebarControl {
+        state,
+        toggle: Callback::new(move |()| {
+            let current = state.peek().unwrap_or_default();
+            let next = SidebarState {
+                collapsed: !current.collapsed,
+                ..current
+            };
+            state.set(Some(next));
+            if !preview {
+                save_sidebar(next);
+            }
+        }),
+    });
+
+    let current = state();
+    let live = drag().map(|(start_x, start_width, x)| dragged_width(start_width, x - start_x));
+    let shown = live.or(current.map(SidebarState::shown));
+    let data_sidebar = current.map(|s| if s.collapsed { "collapsed" } else { "expanded" });
+    let root_style = match (current, shown) {
+        (Some(s), Some(w)) => format!(
+            "--admin-sidebar-w: {}px; --admin-sidebar-shown: {w}px;",
+            s.width
+        ),
+        _ => String::new(),
     };
-    let main_class = if preview || internal_scroll {
-        "flex-1 w-full max-w-7xl mx-auto flex flex-col min-h-0"
+    let valuenow = shown.unwrap_or(SIDEBAR_DEFAULT).round();
+    let scroll_class = if internal_scroll || checking {
+        "admin-scroll admin-scroll-fixed"
     } else {
-        "flex-1 w-full max-w-7xl mx-auto px-6 py-12"
+        "admin-scroll"
     };
+    let main_class = if internal_scroll {
+        "admin-main admin-main-fill"
+    } else {
+        "admin-main"
+    };
+    let menu_id = if preview {
+        "showcase-admin-drawer"
+    } else {
+        "admin-nav-drawer"
+    };
+    let menu_trigger = format!("{menu_id}-trigger");
+
     rsx! {
-        div { class: "{root_class}",
-            {sidebar}
-            div { class: "flex-1 flex flex-col min-w-0 {height_class} p-2 md:p-4",
+        div {
+            class: "admin-shell",
+            "data-preview": preview.then_some("true"),
+            "data-sidebar": data_sidebar,
+            "data-resizing": drag().is_some().then_some("true"),
+            style: "{root_style}",
+            if !preview {
+                script { dangerous_inner_html: "{SIDEBAR_PRELOAD_SCRIPT}" }
+            }
+            div { class: "admin-side-slot",
+                {sidebar}
+                div {
+                    id: if preview { "showcase-admin-resize" } else { "admin-resize" },
+                    class: "admin-resize",
+                    role: "separator",
+                    tabindex: "0",
+                    aria_orientation: "vertical",
+                    aria_label: "调整侧栏宽度",
+                    aria_valuemin: "{SIDEBAR_RAIL}",
+                    aria_valuemax: "{SIDEBAR_MAX}",
+                    aria_valuenow: "{valuenow}",
+                    title: "拖动调整宽度，双击恢复默认",
+                    onpointerdown: move |e| {
+                        if e.trigger_button() != Some(dioxus::html::input_data::MouseButton::Primary) {
+                            return;
+                        }
+                        e.prevent_default();
+                        let x = e.client_coordinates().x;
+                        let start = state.peek().unwrap_or_default().shown();
+                        drag.set(Some((x, start, x)));
+                        #[cfg(target_arch = "wasm32")]
+                        {
+                            let id = if preview { "showcase-admin-resize" } else { "admin-resize" };
+                            if let Some(el) = web_sys::window()
+                                .and_then(|w| w.document())
+                                .and_then(|d| d.get_element_by_id(id))
+                            {
+                                let _ = el.set_pointer_capture(e.pointer_id());
+                            }
+                        }
+                    },
+                    onpointermove: move |e| {
+                        if let Some((start_x, start_width, _)) = drag() {
+                            drag.set(Some((start_x, start_width, e.client_coordinates().x)));
+                        }
+                    },
+                    onpointerup: move |_| {
+                        let Some((start_x, start_width, x)) = drag() else {
+                            return;
+                        };
+                        drag.set(None);
+                        if (x - start_x).abs() < DRAG_DEAD_ZONE {
+                            return;
+                        }
+                        let base = state.peek().unwrap_or_default();
+                        commit(base.settle(dragged_width(start_width, x - start_x)));
+                    },
+                    onpointercancel: move |_| drag.set(None),
+                    ondoubleclick: move |_| commit(SidebarState::default()),
+                    onkeydown: move |e| {
+                        let base = state.peek().unwrap_or_default();
+                        let next = match e.key() {
+                            Key::ArrowLeft => base.nudge(-SIDEBAR_KEY_STEP),
+                            Key::ArrowRight => base.nudge(SIDEBAR_KEY_STEP),
+                            Key::Enter => SidebarState { collapsed: !base.collapsed, ..base },
+                            _ => return,
+                        };
+                        e.prevent_default();
+                        commit(next);
+                    },
+                }
+            }
+            div { class: "admin-canvas",
                 div {
                     "data-vt-scroll": (!preview).then_some("admin-main"),
-                    class: "flex-1 min-h-0 bg-[var(--color-paper-theme)] rounded-[2rem] shadow-sm border border-[var(--color-paper-border)] {card_overflow} relative flex flex-col",
+                    class: "{scroll_class}",
+                    header { class: "admin-topbar",
+                        button {
+                            id: "{menu_trigger}",
+                            class: "admin-topbar-menu touch-icon",
+                            r#type: "button",
+                            aria_label: "打开后台导航",
+                            aria_haspopup: "dialog",
+                            aria_expanded: "{drawer_open()}",
+                            aria_controls: menu_id,
+                            onclick: move |_| drawer_open.set(true),
+                            Icon { name: IconName::Menu, size: 19 }
+                        }
+                        div { class: "admin-topbar-crumbs",
+                            if on_demo_navigate.is_some() {
+                                nav { class: "breadcrumb", aria_label: "面包屑",
+                                    for (i, crumb) in crumbs.iter().enumerate() {
+                                        if i > 0 {
+                                            span { aria_hidden: "true", "/" }
+                                        }
+                                        span {
+                                            aria_current: (i + 1 == crumbs.len()).then_some("page"),
+                                            "{crumb.label}"
+                                        }
+                                    }
+                                }
+                            } else {
+                                Breadcrumb::<Route> { items: crumbs.clone() }
+                            }
+                        }
+                        span { class: "admin-topbar-title", "{title}" }
+                        div { class: "admin-topbar-actions",
+                            if on_demo_navigate.is_none() {
+                                // admin→前台跨 layout，保留整页加载以避开 Dioxus 0.7.10 的卸载问题。
+                                a { class: "btn btn-sm btn-ghost admin-topbar-site", href: "/",
+                                    "查看前台"
+                                    Icon { name: IconName::ArrowUpRight, size: 14 }
+                                }
+                            }
+                        }
+                    }
                     main { class: "{main_class}", {content} }
                 }
             }
         }
+        SideSheet {
+            open: drawer_open,
+            id: menu_id,
+            trigger_id: menu_trigger.clone(),
+            label: "后台导航",
+            {drawer}
+        }
     }
 }
 
+/// 侧栏折叠状态与切换，由 [`AdminShell`] 提供给侧栏头部的收起按钮。
+#[derive(Clone, Copy)]
+struct SidebarControl {
+    state: Signal<Option<SidebarState>>,
+    toggle: Callback<()>,
+}
+
 /// 正式后台与图鉴共享侧栏结构；图鉴导航通过回调更新局部选中项。
+///
+/// Props：
+/// - `counts`：文章、素材、评论的数量；未加载时不显示
+/// - `drawer`：放在手机抽屉里（始终展开、点选后关闭抽屉、没有收起按钮）
+/// - `demo_active` / `on_demo_navigate`：图鉴用局部选中项与导航回调
 #[component]
 pub(crate) fn AdminSidebar(
     route: Route,
     user_name: Option<String>,
     avatar_url: Option<String>,
     on_logout: EventHandler<()>,
+    #[props(default)] counts: Option<AdminNavCounts>,
+    #[props(default)] drawer: bool,
     #[props(default)] demo_active: Option<String>,
     #[props(default)] on_demo_navigate: Option<EventHandler<&'static str>>,
-    #[props(default)] preview: bool,
 ) -> Element {
-    let nav_items_top = vec![(Route::Admin {}, "仪表盘"), (Route::Write {}, "写文章")];
-    let nav_items_bottom = vec![(Route::Assets {}, "素材"), (Route::FriendsAdmin {}, "友链")];
-    let is_write_route =
-        matches!(route, Route::Write {}) || matches!(route, Route::WriteEdit { .. });
-    let is_profile_route = demo_active
+    let control = try_use_context::<SidebarControl>();
+    let collapsed = !drawer
+        && control
+            .and_then(|c| (c.state)())
+            .is_some_and(|s| s.collapsed);
+    let sheet_close = try_use_context::<SheetClose>().filter(|_| drawer);
+    let active_section = match &demo_active {
+        Some(label) => NAV_GROUPS
+            .iter()
+            .flat_map(|(_, items)| items.iter().copied())
+            .find(|section| section.label() == label),
+        None => AdminSection::of(&route),
+    };
+    let profile_active = demo_active
         .as_deref()
-        .map_or(matches!(route, Route::Profile {}), |active| {
-            active == "个人信息"
+        .map_or(matches!(route, Route::Profile {}), |label| {
+            label == "个人资料"
         });
-    let chip_state_class = if is_profile_route {
-        "bg-[var(--color-paper-theme)] text-[var(--color-paper-primary)] shadow-sm border border-[var(--color-paper-border)]"
-    } else {
-        "text-[var(--color-paper-secondary)] hover:bg-[var(--color-paper-theme)]/50 hover:text-[var(--color-paper-primary)] border border-transparent"
+    let after_pick = move || {
+        if let Some(close) = sheet_close {
+            close.close();
+        }
     };
-    let aside_class = if preview {
-        "w-48 flex-shrink-0 flex flex-col h-full sticky top-0 p-3 bg-[var(--color-paper-entry)] overflow-hidden"
-    } else {
-        "w-48 flex-shrink-0 hidden md:flex flex-col h-screen sticky top-0 p-3 bg-[var(--color-paper-entry)]"
-    };
+    let preview = on_demo_navigate.is_some();
+    // 图标栏里按钮贴左缘，提示朝右展开以免被裁。
+    let toggle_align = if collapsed { "start" } else { "end" };
+
     rsx! {
-        aside { "data-vt-shell": (!preview).then_some("admin-sidebar"), class: "{aside_class}",
-            div { class: "mb-8 px-3 flex-shrink-0",
+        aside {
+            "data-vt-shell": (!drawer && !preview).then_some("admin-sidebar"),
+            class: if drawer { "admin-side admin-side-drawer" } else { "admin-side" },
+            aria_label: "后台导航",
+            div { class: "admin-side-head",
                 if let Some(on_navigate) = on_demo_navigate {
                     button {
-                        class: "font-extrabold text-2xl tracking-tight text-[var(--color-paper-primary)] hover:text-[var(--color-paper-accent)] transition-colors",
+                        class: "wordmark",
                         r#type: "button",
                         onclick: move |_| on_navigate.call("仪表盘"),
-                        "Yggdrasil."
+                        span { class: "wordmark-mark", aria_hidden: "true" }
+                        span { class: "admin-side-text", "Yggdrasil" }
                     }
                 } else {
                     // admin→前台跨 layout，保留整页加载以避开 Dioxus 0.7.10 的卸载问题。
-                    Link {
-                        class: "font-extrabold text-2xl tracking-tight text-[var(--color-paper-primary)] hover:text-[var(--color-paper-accent)] transition-colors",
-                        to: NavigationTarget::<Route>::External("/".to_string()),
-                        "Yggdrasil."
+                    a { class: "wordmark", href: "/", aria_label: "Yggdrasil 首页",
+                        span { class: "wordmark-mark", aria_hidden: "true" }
+                        span { class: "admin-side-text", "Yggdrasil" }
+                    }
+                }
+                span { class: "admin-side-badge admin-side-text", "后台" }
+                if drawer {
+                    IconButton {
+                        icon: IconName::X,
+                        label: "关闭导航",
+                        tooltip_align: "end",
+                        onclick: move |_| after_pick(),
+                    }
+                } else if let Some(control) = control {
+                    IconButton {
+                        icon: IconName::PanelLeft,
+                        label: if collapsed { "展开侧栏" } else { "收起侧栏" },
+                        pressed: Some(collapsed),
+                        class: "admin-side-toggle",
+                        tooltip_align: toggle_align,
+                        tooltip_placement: "bottom",
+                        onclick: move |_| control.toggle.call(()),
                     }
                 }
             }
-            nav { class: "flex-1 min-h-0 flex flex-col gap-2 overflow-y-auto overflow-x-hidden pr-0.5",
-                for (dest, label) in nav_items_top {
-                    {nav_item(&route, dest, label, is_write_route, demo_active.as_deref(), on_demo_navigate)}
-                }
-                ContentNavGroup { demo_active: demo_active.clone(), on_demo_navigate }
-                for (dest, label) in nav_items_bottom {
-                    {nav_item(&route, dest, label, is_write_route, demo_active.as_deref(), on_demo_navigate)}
-                }
-                ToolsNavGroup { demo_active: demo_active.clone(), on_demo_navigate }
-            }
-            div { class: "mt-auto pt-4 border-t border-[var(--color-paper-border)] flex flex-col gap-1 flex-shrink-0",
-                if let Some(name) = user_name {
-                    if let Some(on_navigate) = on_demo_navigate {
-                        button {
-                            class: "flex items-center gap-2.5 px-3 py-2 rounded-2xl text-sm font-medium transition-all {chip_state_class}",
-                            r#type: "button",
-                            onclick: move |_| on_navigate.call("个人信息"),
-                            UserAvatar {
-                                name: name.clone(),
-                                avatar_url: avatar_url.clone(),
-                                class: "w-7 h-7 rounded-full text-xs flex-shrink-0 border border-[var(--color-paper-border)]",
+            nav { class: "admin-nav", aria_label: "后台栏目",
+                for (group , items) in NAV_GROUPS {
+                    div { key: "{group.unwrap_or(\"\")}", class: "admin-nav-group",
+                        if let Some(group) = group {
+                            p { class: "admin-nav-label", "{group}" }
+                        }
+                        for section in items.iter().copied() {
+                            {
+                                let active = active_section == Some(section);
+                                let count = nav_count(section, counts);
+                                let body = rsx! {
+                                    span { class: "admin-nav-dot", aria_hidden: "true" }
+                                    Icon { name: section.icon(), size: 17, class: "admin-nav-icon" }
+                                    span { class: "admin-nav-text", "{section.label()}" }
+                                    if let Some((count, alert)) = count {
+                                        span {
+                                            class: if alert { "admin-nav-count admin-nav-count-alert" } else { "admin-nav-count" },
+                                            "{count}"
+                                        }
+                                    }
+                                };
+                                if let Some(on_navigate) = on_demo_navigate {
+                                    rsx! {
+                                        button {
+                                            key: "{section.label()}",
+                                            class: "admin-nav-item",
+                                            r#type: "button",
+                                            "data-tip": section.label(),
+                                            aria_current: active.then_some("page"),
+                                            onclick: move |_| {
+                                                on_navigate.call(section.label());
+                                                after_pick();
+                                            },
+                                            {body}
+                                        }
+                                    }
+                                } else {
+                                    rsx! {
+                                        Link {
+                                            key: "{section.label()}",
+                                            class: "admin-nav-item",
+                                            to: section.route(),
+                                            "data-tip": section.label(),
+                                            aria_current: active.then_some("page"),
+                                            onclick: move |_| after_pick(),
+                                            {body}
+                                        }
+                                    }
+                                }
                             }
-                            span { class: "truncate", "{name}" }
+                        }
+                    }
+                }
+            }
+            div { class: "admin-side-foot",
+                div { class: "admin-side-theme", ThemeToggle { labels: drawer } }
+                div { class: "admin-user",
+                    if let Some(name) = user_name {
+                        {
+                            let body = rsx! {
+                                UserAvatar {
+                                    name: name.clone(),
+                                    avatar_url: avatar_url.clone(),
+                                    class: "w-7 h-7 rounded-full text-xs flex-shrink-0",
+                                }
+                                span { class: "admin-user-text",
+                                    span { class: "admin-user-name", "{name}" }
+                                    span { class: "admin-user-role", "个人资料" }
+                                }
+                            };
+                            if let Some(on_navigate) = on_demo_navigate {
+                                rsx! {
+                                    button {
+                                        class: "admin-user-link",
+                                        r#type: "button",
+                                        "data-tip": "个人资料",
+                                        aria_current: profile_active.then_some("page"),
+                                        onclick: move |_| {
+                                            on_navigate.call("个人资料");
+                                            after_pick();
+                                        },
+                                        {body}
+                                    }
+                                }
+                            } else {
+                                rsx! {
+                                    Link {
+                                        class: "admin-user-link",
+                                        to: Route::Profile {},
+                                        "data-tip": "个人资料",
+                                        aria_current: profile_active.then_some("page"),
+                                        onclick: move |_| after_pick(),
+                                        {body}
+                                    }
+                                }
+                            }
                         }
                     } else {
-                        Link {
-                            class: "flex items-center gap-2.5 px-3 py-2 rounded-2xl text-sm font-medium transition-all {chip_state_class}",
-                            to: Route::Profile {},
-                            UserAvatar {
-                                name: name.clone(),
-                                avatar_url: avatar_url.clone(),
-                                class: "w-7 h-7 rounded-full text-xs flex-shrink-0 border border-[var(--color-paper-border)]",
+                        div { class: "admin-user-link", aria_hidden: "true",
+                            span { class: "w-7 h-7 rounded-full bg-ink-2 animate-pulse flex-shrink-0" }
+                            span { class: "admin-user-text",
+                                span { class: "h-3 w-16 rounded bg-ink-2 animate-pulse" }
                             }
-                            span { class: "truncate", "{name}" }
                         }
                     }
-                } else {
-                    div { class: "flex items-center gap-2.5 px-3 py-2",
-                        div { class: "w-7 h-7 rounded-full bg-[var(--color-paper-theme)] animate-pulse flex-shrink-0" }
-                        div { class: "h-3.5 w-16 rounded bg-[var(--color-paper-theme)] animate-pulse" }
-                    }
-                }
-                div { class: "flex items-center justify-between px-3",
-                    ThemeToggle {}
-                    button {
-                        class: "text-sm font-medium px-3 py-1.5 rounded-2xl bg-[var(--color-paper-theme)] border border-[var(--color-paper-border)] shadow-sm hover:shadow-md transition-all text-[var(--color-paper-secondary)] hover:text-red-500 cursor-pointer",
-                        r#type: "button",
+                    IconButton {
+                        icon: IconName::LogOut,
+                        label: "退出登录",
+                        size: crate::components::ui::ButtonSize::Sm,
+                        class: "admin-user-logout",
+                        tooltip_align: "end",
                         onclick: move |_| on_logout.call(()),
-                        "退出"
                     }
                 }
             }
-        }
-    }
-}
-
-fn nav_item(
-    route: &Route,
-    dest: Route,
-    label: &'static str,
-    is_write_route: bool,
-    demo_active: Option<&str>,
-    on_demo_navigate: Option<EventHandler<&'static str>>,
-) -> Element {
-    let is_active = demo_active.map_or(
-        *route == dest || (label == "写文章" && is_write_route),
-        |active| active == label,
-    );
-    let base_class = "flex items-center px-3 py-2.5 rounded-2xl text-sm font-medium transition-all";
-    let text_class = if is_active {
-        "bg-[var(--color-paper-theme)] text-[var(--color-paper-primary)] shadow-sm border border-[var(--color-paper-border)]"
-    } else {
-        "text-[var(--color-paper-secondary)] hover:bg-[var(--color-paper-theme)]/50 hover:text-[var(--color-paper-primary)] border border-transparent"
-    };
-    rsx! {
-        if let Some(on_navigate) = on_demo_navigate {
-            button { key: "{label}", class: "{base_class} {text_class}", r#type: "button", onclick: move |_| on_navigate.call(label), "{label}" }
-        } else {
-            Link { key: "{label}", class: "{base_class} {text_class}", to: dest, "{label}" }
         }
     }
 }
@@ -336,257 +940,102 @@ fn admin_route_skeleton(route: &Route) -> Element {
     }
 }
 
-/// 侧栏子菜单组的分类标识：内容管理组与工具组结构完全一致（父项整行点击
-/// 切换展开/收起，chevron 旋转 + grid-template-rows 0fr↔1fr 过渡动画，复用
-/// posts_trash.rs AutoPurgeSettings 的既有模式），仅路由集合与标签不同，故
-/// 抽成单一 NavGroup 组件、以枚举区分（而非函数指针 props：函数指针参与
-/// derive(PartialEq) 比较会触发 rustc 的
-/// `unpredictable_function_pointer_comparisons` lint）。
-#[derive(Clone, Copy, PartialEq)]
-enum NavGroupKind {
-    /// 「内容管理」：全部文章 / 回收站 / 评论管理。
-    Content,
-    /// 「工具」：设置 / 试运行 / MCP / 日志 / 系统（issue #26）。
-    Tools,
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-impl NavGroupKind {
-    fn label(self) -> &'static str {
-        match self {
-            NavGroupKind::Content => "内容管理",
-            NavGroupKind::Tools => "工具",
-        }
+    #[test]
+    fn sidebar_restore_rejects_out_of_range_width() {
+        let state = SidebarState::restore(Some("280"), Some("true"));
+        assert_eq!(state.width, 280.0);
+        assert!(state.collapsed);
+        assert_eq!(
+            SidebarState::restore(Some("40"), None).width,
+            SIDEBAR_DEFAULT
+        );
+        assert_eq!(
+            SidebarState::restore(Some("abc"), None).width,
+            SIDEBAR_DEFAULT
+        );
+        assert!(!SidebarState::restore(None, Some("1")).collapsed);
     }
 
-    /// 判断路由是否属于本组（回收站/评论分页路由一并归入内容管理组）。
-    fn contains(self, route: &Route) -> bool {
-        match self {
-            NavGroupKind::Content => matches!(
-                route,
-                Route::Posts {}
-                    | Route::AdminNotes {}
-                    | Route::AdminNotebooks {}
-                    | Route::NewNote {}
-                    | Route::EditNote { .. }
-                    | Route::PostsTrash {}
-                    | Route::AdminComments {}
-                    | Route::AdminCommentsPage { .. }
-            ),
-            NavGroupKind::Tools => matches!(
-                route,
-                Route::Runner {}
-                    | Route::Mcp {}
-                    | Route::System {}
-                    | Route::SiteSettingsPage {}
-                    | Route::Logs {}
-            ),
-        }
+    #[test]
+    fn sidebar_settle_snaps_to_rail_or_minimum() {
+        let base = SidebarState::default();
+        assert!(base.settle(120.0).collapsed);
+        // 收起时保留展开宽度，再展开回到原宽度。
+        assert_eq!(base.settle(120.0).width, SIDEBAR_DEFAULT);
+        let snapped = base.settle(170.0);
+        assert!(!snapped.collapsed);
+        assert_eq!(snapped.width, SIDEBAR_MIN);
+        assert_eq!(base.settle(400.0).width, SIDEBAR_MAX);
+        assert_eq!(base.settle(260.0).width, 260.0);
     }
-}
 
-/// 侧栏可折叠子菜单组的共享实现。`kind` 选择路由归属判定与标签，`items` 提供
-/// 子项列表（路由 / 标签 / 是否激活，由调用方基于当前路由预先算好）。
-///
-/// 当前路由落在组内时自动展开，保证激活子项始终可见；用户手动收起后，
-/// 仅当再次从组外导航进入组内路由时才重新展开——而非组内路由间导航
-/// （如评论分页）也强制重新展开。
-#[component]
-fn NavGroup(
-    kind: NavGroupKind,
-    items: Vec<(Route, &'static str, bool)>,
-    #[props(default)] on_demo_navigate: Option<EventHandler<&'static str>>,
-) -> Element {
-    let route = use_route::<Route>();
-    let group_active = if on_demo_navigate.is_some() {
-        items.iter().any(|(_, _, active)| *active)
-    } else {
-        kind.contains(&route)
-    };
-    let mut expanded = use_signal(|| group_active);
-    // 记录上一次 effect 运行时路由是否在组内，用于判断"从组外→组内"的跳变
-    // （而非"当前在组内"这一恒真条件），避免组内路由间导航（如评论分页）
-    // 反复触发强制展开——这才是本组件文档承诺的行为。
-    let mut was_in_group = use_signal(|| group_active);
-
-    // 闭包内读 router().current 建立 ReactiveContext 订阅（仓库约定 #5），
-    // 路由变化时本 effect 重跑。
-    use_effect(move || {
-        if on_demo_navigate.is_some() {
-            return;
-        }
-        let current = router().current::<Route>();
-        let now_in_group = kind.contains(&current);
-        let was = was_in_group();
-
-        if now_in_group && !was {
-            expanded.set(true);
-        }
-        if was != now_in_group {
-            was_in_group.set(now_in_group);
-        }
-    });
-
-    let chevron_rotate = if expanded() { "rotate-180" } else { "" };
-    // 父项样式：与顶层导航项同盒模型；组内路由激活时仅提为 primary 文字色，
-    // 不给自己加 pill（pill 高亮由激活子项承担，避免双层高亮竞争）。
-    let parent_text_class = if group_active {
-        "text-[var(--color-paper-primary)] border border-transparent"
-    } else {
-        "text-[var(--color-paper-secondary)] hover:bg-[var(--color-paper-theme)]/50 hover:text-[var(--color-paper-primary)] border border-transparent"
-    };
-    let label = kind.label();
-
-    rsx! {
-        div { class: "flex flex-col gap-1",
-            button {
-                class: "flex items-center justify-between w-full px-3 py-2.5 rounded-2xl text-sm font-medium transition-all cursor-pointer {parent_text_class}",
-                r#type: "button",
-                aria_expanded: expanded(),
-                onclick: move |_| expanded.set(!expanded()),
-                span { "{label}" }
-                svg {
-                    class: "w-4 h-4 transition-transform duration-200 flex-shrink-0 {chevron_rotate}",
-                    view_box: "0 0 24 24",
-                    fill: "none",
-                    stroke: "currentColor",
-                    stroke_width: "2",
-                    path {
-                        stroke_linecap: "round",
-                        stroke_linejoin: "round",
-                        d: "M19 9l-7 7-7-7",
-                    }
-                }
-            }
-            // 展开动画容器：与 AutoPurgeSettings 完全同款（grid 0fr↔1fr + 内层 overflow-hidden）。
-            div {
-                class: "grid transition-all duration-300 ease-in-out",
-                style: if expanded() { "grid-template-rows: 1fr; opacity: 1; pointer-events: auto;" } else { "grid-template-rows: 0fr; opacity: 0; pointer-events: none;" },
-                div { class: "overflow-hidden min-h-0",
-                    // 左侧竖线引导 + 缩进表示层级。
-                    div { class: "ml-3 pl-2.5 border-l border-[var(--color-paper-border)] flex flex-col gap-1",
-                        for (dest, item_label, active) in items {
-                            if let Some(on_navigate) = on_demo_navigate {
-                                button {
-                                    key: "{item_label}",
-                                    class: if active { "flex items-center px-2.5 py-1.5 rounded-xl text-sm font-medium transition-all bg-[var(--color-paper-theme)] text-[var(--color-paper-primary)] shadow-sm border border-[var(--color-paper-border)]" } else { "flex items-center px-2.5 py-1.5 rounded-xl text-sm font-medium transition-all text-[var(--color-paper-secondary)] hover:bg-[var(--color-paper-theme)]/50 hover:text-[var(--color-paper-primary)] border border-transparent" },
-                                    r#type: "button",
-                                    onclick: move |_| on_navigate.call(item_label),
-                                    "{item_label}"
-                                }
-                            } else {
-                                Link {
-                                    key: "{item_label}",
-                                    class: if active { "flex items-center px-2.5 py-1.5 rounded-xl text-sm font-medium transition-all bg-[var(--color-paper-theme)] text-[var(--color-paper-primary)] shadow-sm border border-[var(--color-paper-border)]" } else { "flex items-center px-2.5 py-1.5 rounded-xl text-sm font-medium transition-all text-[var(--color-paper-secondary)] hover:bg-[var(--color-paper-theme)]/50 hover:text-[var(--color-paper-primary)] border border-transparent" },
-                                    to: dest,
-                                    "{item_label}"
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+    #[test]
+    fn sidebar_nudge_collapses_below_minimum_and_expands_from_rail() {
+        let narrow = SidebarState {
+            width: SIDEBAR_MIN,
+            collapsed: false,
+        };
+        assert!(narrow.nudge(-SIDEBAR_KEY_STEP).collapsed);
+        let rail = SidebarState {
+            width: 240.0,
+            collapsed: true,
+        };
+        assert_eq!(rail.nudge(-SIDEBAR_KEY_STEP), rail);
+        let expanded = rail.nudge(SIDEBAR_KEY_STEP);
+        assert!(!expanded.collapsed);
+        assert_eq!(expanded.width, 240.0);
+        assert_eq!(expanded.nudge(SIDEBAR_KEY_STEP).width, 256.0);
     }
-}
 
-/// 「内容管理」子菜单组：全部文章 / 回收站 / 评论管理（issue #17）。NavGroup
-/// 的薄封装，只提供本组的子项列表。
-#[component]
-fn ContentNavGroup(
-    #[props(default)] demo_active: Option<String>,
-    #[props(default)] on_demo_navigate: Option<EventHandler<&'static str>>,
-) -> Element {
-    let route = use_route::<Route>();
-    let active = |label: &str, route_active: bool| {
-        demo_active
-            .as_ref()
-            .map_or(route_active, |name| name == label)
-    };
-    let items = vec![
-        (
-            Route::AdminNotes {},
-            "笔记",
-            active(
-                "笔记",
-                matches!(
-                    route,
-                    Route::AdminNotes {} | Route::NewNote {} | Route::EditNote { .. }
-                ),
-            ),
-        ),
-        (
-            Route::AdminNotebooks {},
-            "笔记本",
-            active("笔记本", matches!(route, Route::AdminNotebooks {})),
-        ),
-        (
-            Route::Posts {},
-            "全部文章",
-            active("全部文章", matches!(route, Route::Posts {})),
-        ),
-        (
-            Route::PostsTrash {},
-            "回收站",
-            active("回收站", matches!(route, Route::PostsTrash {})),
-        ),
-        (
-            Route::AdminComments {},
-            "评论管理",
-            active(
-                "评论管理",
-                matches!(
-                    route,
-                    Route::AdminComments {} | Route::AdminCommentsPage { .. }
-                ),
-            ),
-        ),
-    ];
-    rsx! {
-        NavGroup { kind: NavGroupKind::Content, items, on_demo_navigate }
+    #[test]
+    fn dragged_width_follows_pointer_within_rail_and_maximum() {
+        assert_eq!(dragged_width(232.0, -300.0), SIDEBAR_RAIL);
+        assert_eq!(dragged_width(232.0, 40.0), 272.0);
+        assert_eq!(dragged_width(232.0, 400.0), SIDEBAR_MAX);
     }
-}
 
-/// 「工具」子菜单组：设置 / 试运行 / MCP / 日志 / 系统（issue #26）。NavGroup
-/// 的薄封装，只提供本组的子项列表。
-#[component]
-fn ToolsNavGroup(
-    #[props(default)] demo_active: Option<String>,
-    #[props(default)] on_demo_navigate: Option<EventHandler<&'static str>>,
-) -> Element {
-    let route = use_route::<Route>();
-    let active = |label: &str, route_active: bool| {
-        demo_active
-            .as_ref()
-            .map_or(route_active, |name| name == label)
-    };
-    let items = vec![
-        (
-            Route::SiteSettingsPage {},
-            "设置",
-            active("设置", matches!(route, Route::SiteSettingsPage {})),
-        ),
-        (
-            Route::Runner {},
-            "试运行",
-            active("试运行", matches!(route, Route::Runner {})),
-        ),
-        (
-            Route::Mcp {},
-            "MCP",
-            active("MCP", matches!(route, Route::Mcp {})),
-        ),
-        (
-            Route::Logs {},
-            "日志",
-            active("日志", matches!(route, Route::Logs {})),
-        ),
-        (
-            Route::System {},
-            "系统",
-            active("系统", matches!(route, Route::System {})),
-        ),
-    ];
-    rsx! {
-        NavGroup { kind: NavGroupKind::Tools, items, on_demo_navigate }
+    #[test]
+    fn subpages_belong_to_their_section() {
+        assert_eq!(
+            AdminSection::of(&Route::PostsTrash {}),
+            Some(AdminSection::Posts)
+        );
+        assert_eq!(
+            AdminSection::of(&Route::EditNote { id: 1 }),
+            Some(AdminSection::Notes)
+        );
+        assert_eq!(AdminSection::of(&Route::Profile {}), None);
+        let (crumbs, title) = admin_crumbs(&Route::AdminNotebooks {});
+        assert_eq!(title, "笔记本");
+        assert_eq!(crumbs[0].to, Some(Route::AdminNotes {}));
+        let (crumbs, title) = admin_crumbs(&Route::Logs {});
+        assert_eq!(title, "日志");
+        assert_eq!(crumbs[0].label, "系统");
+        assert_eq!(crumbs[0].to, None);
+    }
+
+    #[test]
+    fn comment_count_prefers_pending() {
+        let mut counts = AdminNavCounts {
+            posts: 41,
+            assets: 37,
+            comments: 8,
+            pending_comments: 0,
+        };
+        assert_eq!(
+            nav_count(AdminSection::Comments, Some(counts)),
+            Some(("8".to_string(), false))
+        );
+        counts.pending_comments = 2;
+        assert_eq!(
+            nav_count(AdminSection::Comments, Some(counts)),
+            Some(("2 待审".to_string(), true))
+        );
+        assert_eq!(nav_count(AdminSection::Notes, Some(counts)), None);
+        assert_eq!(nav_count(AdminSection::Posts, None), None);
     }
 }

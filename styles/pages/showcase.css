@@ -500,49 +500,20 @@
 .showcase-card-preview--sql-result-table .showcase-sql-content table td { padding-top: .4rem; padding-bottom: .4rem; }
 .showcase-sql-window-foot { display: flex; align-items: center; justify-content: space-between; padding: .4rem .85rem; border-top: 1px solid var(--sc-line); background: color-mix(in srgb, var(--color-paper-theme) 25%, var(--color-paper-entry)); font-family: var(--sc-mono); font-size: .65rem; color: var(--color-paper-tertiary); }
 
+
+
+
 .showcase-admin-window { width: 100%; min-width: 0; height: 248px; overflow: hidden; border: 1px solid var(--sc-line); border-radius: 14px; }
-.showcase-admin-window .showcase-admin-shell { width: 100%; height: 100%; min-height: 0; overflow: hidden; }
-.showcase-admin-window .showcase-admin-content { min-width: 0; }
-.showcase-admin-window aside nav { scrollbar-width: thin; scrollbar-color: var(--sc-line) transparent; }
-.showcase-admin-window aside nav::-webkit-scrollbar { width: 3px; }
-.showcase-admin-window aside nav::-webkit-scrollbar-thumb { background: var(--sc-line); border-radius: 9999px; }
-
-.showcase-card-preview .showcase-admin-window { height: 248px; }
-.showcase-card-preview .showcase-admin-window aside { width: 8.2rem; padding: .45rem .4rem; font-size: .72rem; }
-.showcase-card-preview .showcase-admin-window aside > div:first-child { margin-bottom: .4rem; padding: 0 .25rem; }
-.showcase-card-preview .showcase-admin-window aside > div:first-child button { font-size: 1.05rem; line-height: 1.2; font-weight: 800; }
-.showcase-card-preview .showcase-admin-window aside nav { gap: .15rem; }
-.showcase-card-preview .showcase-admin-window aside nav :is(a, button) { padding: .26rem .45rem; font-size: .68rem; border-radius: .42rem; line-height: 1.25; }
-.showcase-card-preview .showcase-admin-window aside nav .ml-3 { margin-left: .35rem; padding-left: .3rem; gap: .1rem; }
-.showcase-card-preview .showcase-admin-window aside nav .ml-3 :is(a, button) { padding: .2rem .4rem; font-size: .64rem; border-radius: .38rem; }
-.showcase-card-preview .showcase-admin-window aside nav svg { width: .75rem; height: .75rem; }
-.showcase-card-preview .showcase-admin-window aside > div:last-child { margin-top: auto; padding-top: .3rem; gap: .15rem; }
-.showcase-card-preview .showcase-admin-window aside > div:last-child :is(button, a) { padding: .18rem .4rem; font-size: .64rem; border-radius: .4rem; }
-.showcase-card-preview .showcase-admin-window aside > div:last-child .w-7 { width: 1.25rem; height: 1.25rem; font-size: .62rem; }
-.showcase-card-preview .showcase-admin-window aside > div:last-child span { font-size: .64rem; }
-.showcase-card-preview .showcase-admin-window aside > div:last-child > div:last-child { padding: 0 .2rem; }
-.showcase-card-preview .showcase-admin-window aside > div:last-child > div:last-child button { padding: .14rem .4rem; font-size: .62rem; border-radius: .35rem; }
-.showcase-card-preview .showcase-admin-window aside > div:last-child svg { width: .75rem; height: .75rem; }
-
-.showcase-card-preview .showcase-admin-window .showcase-admin-shell > div:last-child { padding: .3rem; }
-.showcase-card-preview .showcase-admin-window .showcase-admin-shell > div:last-child > div { border-radius: .9rem; }
-.showcase-card-preview .showcase-admin-window main { padding: .55rem .7rem; }
-.showcase-card-preview .showcase-admin-window .showcase-admin-content p:first-child { font-size: .62rem; }
-.showcase-card-preview .showcase-admin-window .showcase-admin-content h2 { font-size: 1.05rem; margin-top: .2rem; line-height: 1.2; }
-.showcase-card-preview .showcase-admin-window .showcase-admin-content p:nth-of-type(2) { font-size: .68rem; margin-top: .15rem; line-height: 1.3; }
-.showcase-card-preview .showcase-admin-window .showcase-admin-content .grid { margin-top: .45rem; gap: .4rem; }
-.showcase-card-preview .showcase-admin-window .showcase-admin-content .grid > div { padding: .4rem .55rem; border-radius: .55rem; }
-.showcase-card-preview .showcase-admin-window .showcase-admin-content .grid small { font-size: .62rem; }
-.showcase-card-preview .showcase-admin-window .showcase-admin-content .grid strong { font-size: .95rem; line-height: 1.2; }
-
-.showcase-detail .showcase-admin-window { height: 580px; overflow: hidden; }
-.showcase-detail .showcase-admin-window .showcase-admin-shell { height: 100%; overflow: hidden; }
-.showcase-detail .showcase-admin-window aside { width: 13rem; padding: .85rem; }
-.showcase-detail .showcase-admin-window aside > div:first-child { margin-bottom: 1.35rem; }
-.showcase-detail .showcase-admin-window aside nav { gap: .35rem; }
-.showcase-detail .showcase-admin-window .showcase-admin-shell > div:last-child { padding: .85rem; }
-.showcase-detail .showcase-admin-window .showcase-admin-shell > div:last-child > div { border-radius: 1.5rem; }
-.showcase-detail .showcase-admin-window main { padding: 1.75rem; }
+/* 外壳按真实尺寸排版后整体缩小：zoom 下声明的高度同样缩放，400px × .62 ≈ 248px。 */
+.showcase-admin-window .admin-shell { height: 400px; zoom: .62; }
+.showcase-detail .showcase-admin-window { height: 580px; }
+.showcase-detail .showcase-admin-window .admin-shell { height: 682px; zoom: .85; }
+.showcase-admin-status { margin: 0 0 .75rem; color: var(--color-fg-2); font-size: .8125rem; }
+.showcase-admin-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; }
+.showcase-admin-tile { display: flex; flex-direction: column; gap: .25rem; padding: .875rem 1rem; }
+.showcase-admin-tile span { color: var(--color-fg-3); font-size: .8125rem; }
+.showcase-admin-tile strong { font-size: 1.5rem; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.showcase-admin-hint { margin-top: 1rem; color: var(--color-fg-3); font-size: .8125rem; }
 .showcase-layout-window, .showcase-article-window, .showcase-toc-window { width: 100%; min-width: 0; border: 1px solid var(--sc-line); border-radius: 14px; background: var(--color-paper-theme); overflow: auto; }
 .showcase-card-preview .showcase-layout-window, .showcase-card-preview .showcase-article-window { height: 182px; }
 .showcase-detail .showcase-layout-window { min-height: 310px; max-height: 620px; }
@@ -1140,11 +1111,6 @@ figure.showcase-code-panel pre {
   .showcase-live-preview.is-wide { min-height: 18.75rem; padding: 0.625rem; }
   .showcase-neighbors { grid-template-columns: minmax(0, 1fr); }
   .showcase-neighbors a.is-next { grid-column: auto; }
-  .showcase-detail .showcase-admin-window { height: 620px; }
-  .showcase-detail .showcase-admin-window .showcase-admin-shell { flex-direction: column; }
-  .showcase-detail .showcase-admin-window .showcase-admin-shell aside { position: static; width: 100%; height: auto; max-height: 180px; overflow-y: auto; flex-shrink: 0; }
-  .showcase-detail .showcase-admin-window .showcase-admin-shell > div { min-height: 0; flex: 1; height: auto; }
-  .showcase-detail .showcase-admin-window main { padding: 1rem; }
   .showcase-picker-toolbar { flex-wrap: wrap; }
   .showcase-picker-toolbar > :first-child { flex-basis: 100%; }
   .showcase-browser-preview--detail .showcase-browser-host { height: 280px; }
