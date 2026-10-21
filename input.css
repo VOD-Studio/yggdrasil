@@ -34,5 +34,6 @@
 @import "./styles/pages/showcase.css";
 @import "./styles/pages/admin-dashboard.css";
 @import "./styles/pages/admin-posts.css";
+@import "./styles/pages/admin-trash.css";
 
 @source "./src/**/*.{rs,html}";

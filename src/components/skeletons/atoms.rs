@@ -52,8 +52,6 @@ pub fn SkeletonCard(#[props(default)] class: Option<&'static str>, children: Ele
 pub enum SkeletonCellShape {
     /// 单个占位块，`SkeletonBox` 的 `class`。
     Single(&'static str),
-    /// 两行堆叠占位（如标题 + 副标题），依次为两行 `SkeletonBox` 的 `class`。
-    Stacked(&'static str, &'static str),
     /// 圆形头像占位 + 两行堆叠占位（如「用户」列：头像 + 昵称/邮箱）。
     AvatarStacked {
         avatar: &'static str,
@@ -105,12 +103,6 @@ pub fn SkeletonTable(columns: Vec<SkeletonTableColumn>, rows: usize) -> Element 
                                 match col.cell_shape {
                                     SkeletonCellShape::Single(w) => rsx! {
                                         SkeletonBox { class: w }
-                                    },
-                                    SkeletonCellShape::Stacked(w1, w2) => rsx! {
-                                        div { class: "space-y-1.5",
-                                            SkeletonBox { class: w1 }
-                                            SkeletonBox { class: w2 }
-                                        }
                                     },
                                     SkeletonCellShape::AvatarStacked { avatar, line1, line2 } => rsx! {
                                         div { class: "flex items-center gap-2.5",

@@ -1,92 +1,62 @@
 //! 后台回收站骨架屏
 //!
-//! 镜像后台 PostsTrash 页面的结构：Header（标题+副标题）+ 自动清理配置卡片 + 表格。
+//! 与回收站同一版式：标题行（说明、清空回收站）、表格与底栏分页。
 
 use dioxus::prelude::*;
 
-use crate::components::skeletons::atoms::{
-    SkeletonBox, SkeletonCard, SkeletonCellShape, SkeletonTable, SkeletonTableColumn,
-};
-/// 后台回收站表格骨架屏组件（供 PostsTrash 页面内部加载态使用）。
+use crate::components::skeletons::atoms::SkeletonBox;
+
+/// 回收站表格骨架屏（列表加载中使用）。
 #[component]
 pub fn PostsTrashTableSkeleton() -> Element {
-    let columns = vec![
-        SkeletonTableColumn {
-            header_class: "px-4 py-3.5 w-10 text-center",
-            header_box_class: "h-4 w-4 rounded mx-auto",
-            cell_class: "px-4 py-3.5 text-center",
-            cell_shape: SkeletonCellShape::Single("h-4 w-4 rounded mx-auto"),
-        },
-        SkeletonTableColumn {
-            header_class: "px-5 py-3.5",
-            header_box_class: "h-3 w-16",
-            cell_class: "px-5 py-3.5",
-            cell_shape: SkeletonCellShape::Stacked("h-4 w-1/3", "h-3 w-1/4"),
-        },
-        SkeletonTableColumn {
-            header_class: "px-4 py-3.5 w-24",
-            header_box_class: "h-3 w-14 mx-auto",
-            cell_class: "px-4 py-3.5",
-            cell_shape: SkeletonCellShape::Single("h-5 w-14 mx-auto rounded-full"),
-        },
-        SkeletonTableColumn {
-            header_class: "px-4 py-3.5 w-32",
-            header_box_class: "h-3 w-16",
-            cell_class: "px-4 py-3.5",
-            cell_shape: SkeletonCellShape::Single("h-4 w-20"),
-        },
-        SkeletonTableColumn {
-            header_class: "px-4 py-3.5 w-24",
-            header_box_class: "h-3 w-14 mx-auto",
-            cell_class: "px-4 py-3.5",
-            cell_shape: SkeletonCellShape::Single("h-5 w-14 mx-auto rounded-full"),
-        },
-        SkeletonTableColumn {
-            header_class: "px-5 py-3.5 w-36",
-            header_box_class: "h-3 w-16 ml-auto",
-            cell_class: "px-5 py-3.5",
-            cell_shape: SkeletonCellShape::Single("h-6 w-24 ml-auto rounded"),
-        },
-    ];
     rsx! {
-        SkeletonCard { class: Some("shadow-xs overflow-hidden"),
-            SkeletonTable { columns, rows: 8 }
+        div { class: "admin-panel admin-table-wrap", aria_hidden: "true",
+            table { class: "admin-table admin-trash-table",
+                thead {
+                    tr {
+                        th { class: "admin-table-check", SkeletonBox { class: "h-4 w-4 rounded" } }
+                        th { SkeletonBox { class: "h-3 w-10 rounded" } }
+                        th { SkeletonBox { class: "h-3 w-12 rounded" } }
+                        th { class: "admin-trash-deleted", SkeletonBox { class: "h-3 w-12 rounded" } }
+                        th { class: "admin-trash-left", SkeletonBox { class: "h-3 w-14 rounded" } }
+                        th { class: "admin-trash-actions" }
+                    }
+                }
+                tbody {
+                    for i in 0..6 {
+                        tr { key: "{i}",
+                            td { class: "admin-table-check", SkeletonBox { class: "h-4 w-4 rounded" } }
+                            td { class: "admin-trash-title",
+                                SkeletonBox { class: "h-4 w-3/4 rounded" }
+                                SkeletonBox { class: "h-3 w-1/3 rounded mt-1.5" }
+                            }
+                            td { class: "admin-trash-status", SkeletonBox { class: "h-3.5 w-14 rounded" } }
+                            td { class: "admin-trash-deleted", SkeletonBox { class: "h-3.5 w-20 rounded" } }
+                            td { class: "admin-trash-left", SkeletonBox { class: "h-1 w-full rounded-full" } }
+                            td { class: "admin-trash-actions", SkeletonBox { class: "h-[30px] w-20 rounded-md ml-auto" } }
+                        }
+                    }
+                }
+            }
         }
     }
 }
 
-/// 后台回收站全页骨架屏组件（供 AdminLayout 路由级 fallback 使用）。
+/// 回收站全页骨架屏（AdminLayout 路由级 fallback）。
 #[component]
 pub fn PostsTrashSkeleton() -> Element {
     rsx! {
-        div { class: "w-full max-w-7xl mx-auto space-y-6",
-            // 页头：标题与副标题 + 按钮
-            div { class: "flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-[var(--color-paper-border)]/70",
-                div { class: "space-y-1.5",
-                    SkeletonBox { class: "h-9 w-28 rounded-lg" }
-                    SkeletonBox { class: "h-4 w-60 rounded" }
+        div { class: "admin-trash", aria_hidden: "true",
+            div { class: "admin-page-head",
+                div {
+                    SkeletonBox { class: "h-7 w-20 rounded-md" }
+                    SkeletonBox { class: "h-3.5 w-80 max-w-full rounded mt-2" }
                 }
-                div { class: "flex items-center gap-3",
-                    SkeletonBox { class: "h-9 w-28 rounded-full" }
-                    SkeletonBox { class: "h-9 w-28 rounded-full" }
+                div { class: "admin-page-actions",
+                    SkeletonBox { class: "h-[34px] w-24 rounded-lg" }
                 }
             }
-
-            div { class: "space-y-6",
-                // 自动清理配置卡片占位
-                SkeletonCard { class: Some("p-6 space-y-4"),
-                    div { class: "flex justify-between items-center",
-                        div { class: "space-y-1",
-                            SkeletonBox { class: "h-5 w-32 rounded" }
-                            SkeletonBox { class: "h-3.5 w-64 rounded" }
-                        }
-                        SkeletonBox { class: "h-6 w-12 rounded-full" }
-                    }
-                }
-
-                // 回收站表格
-                PostsTrashTableSkeleton {}
-            }
+            PostsTrashTableSkeleton {}
         }
     }
 }

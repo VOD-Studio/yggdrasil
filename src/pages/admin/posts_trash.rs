@@ -1,723 +1,480 @@
-//! 回收站页面（`/admin/posts/trash` 独立路由，属侧边栏「内容管理」子菜单）。
+//! 文章回收站（`/admin/posts/trash`，面包屑「文章 / 回收站」）。
 //!
-//! 展示已软删除文章，支持恢复、彻底删除、批量操作、一键清空，
-//! 以及自动清理配置（启用开关 + 保留天数）。
-//! 数据加载与操作仅在 WASM 前端通过 Dioxus server functions 交互。
-//!
-#[allow(unused_imports)]
+//! 标题行（保留期说明、清空回收站）→ 表格（勾选、标题与 slug、原状态、删除日期、
+//! 自动清理剩余天数、恢复与彻底删除）与底栏分页。勾选后底部浮起批量操作条。
+//! 剩余天数由 `deleted_at` 与保留天数计算，5 天内以 Clay 强调；自动清理关闭时整列
+//! 不显示。彻底删除与清空都经危险确认对话框。自动清理的开关与天数在设置页修改。
+//! 数据仅在 WASM 前端通过 server function 加载。样式见 styles/pages/admin-trash.css。
+
 use std::collections::HashSet;
 
-use crate::router::Route;
 use dioxus::prelude::*;
 use dioxus::router::components::Link;
-// 操作类 server function 在 SSR 与 WASM 均需可见（spawn 闭包需类型检查），
-// 但部分仅用于 WASM 代码路径，SSR 下触发 unused imports，按项目惯例放行。
-#[allow(unused_imports)]
+
 use crate::api::posts::{
     batch_purge_posts, batch_restore_posts, empty_trash, list_deleted_posts, purge_post,
     restore_post, PostListResponse,
 };
-#[allow(unused_imports)]
-use crate::api::settings::{get_trash_settings, update_trash_settings};
-use crate::components::empty_state::EmptyState;
-use crate::components::forms::ToggleSwitch;
+use crate::components::empty_state::{EmptyState, EmptyStateAction};
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::skeletons::posts_trash_skeleton::PostsTrashTableSkeleton;
 use crate::components::ui::{
-    Checkbox, CollapsibleSettingsCard, LoadingButton, Pagination, Popover, BTN_DANGER_OUTLINE,
-    BTN_GHOST, BTN_ICON, BTN_SOLID_GREEN, BTN_SOLID_RED,
+    button_class, use_toast, ButtonSize, ButtonVariant, Checkbox, ConfirmDialog, IconButton,
+    IconName, LoadError, TablePager,
 };
 use crate::hooks::query::use_paginated;
-use crate::models::post::PostListItem;
+use crate::models::post::{PostListItem, PostStatus};
 use crate::models::settings::TrashSettings;
+use crate::router::Route;
+use crate::utils::time::{now_millis, to_local};
+
 /// 每页展示的回收站文章数量。
 const TRASH_PER_PAGE: i32 = 20;
+/// 剩余天数不超过它时以 Clay 强调。
+const URGENT_DAYS: i64 = 5;
+const DAY_MS: i64 = 86_400_000;
 
-/// 回收站页面：列表 + 批量操作 + 自动清理配置。
-///
-/// 独立路由 `/admin/posts/trash` 的页面组件（原 `posts.rs::Posts` 的回收站 tab
-/// 提升而来）。翻页用客户端 signal 驱动（`current_page` signal + `use_paginated`
-/// 闭包内读取建立依赖），不走路由参数。支持单条/批量恢复与彻底删除、一键清空，
-/// 以及内联自动清理配置。header 副标题的删除计数取自 `use_paginated` 的 `total`。
-#[allow(unused_mut, unused_variables)]
+/// 距自动清理还剩几天：向上取整，已到期为 0（后台任务每小时清理一次）。
+fn days_left(deleted_at_ms: i64, retention_days: i32, now_ms: i64) -> i64 {
+    let remaining = deleted_at_ms + retention_days as i64 * DAY_MS - now_ms;
+    if remaining <= 0 {
+        0
+    } else {
+        (remaining + DAY_MS - 1) / DAY_MS
+    }
+}
+
+/// 标题下的说明；配置未取到时不提保留天数。
+fn retention_note(settings: Option<&TrashSettings>) -> &'static str {
+    match settings {
+        Some(s) if s.auto_purge_enabled => "到期自动彻底删除。",
+        Some(_) => "自动清理已关闭，文章会一直保留到手动彻底删除。",
+        None => "可随时恢复或彻底删除。",
+    }
+}
+
+/// 等待确认的彻底删除。
+#[derive(Clone, PartialEq)]
+enum PurgeTarget {
+    One { id: i32, title: String },
+    Selected(Vec<i32>),
+    All(i64),
+}
+
+impl PurgeTarget {
+    fn title(&self) -> &'static str {
+        match self {
+            PurgeTarget::All(_) => "清空回收站？",
+            _ => "彻底删除文章？",
+        }
+    }
+
+    fn description(&self) -> String {
+        const REFS: &str = "被这些文章引用的素材会变为未引用。";
+        match self {
+            PurgeTarget::One { title, .. } => {
+                format!("《{title}》会被彻底删除，无法恢复。它引用的素材会变为未引用。")
+            }
+            PurgeTarget::Selected(ids) => {
+                format!("选中的 {} 篇文章会被彻底删除，无法恢复。{REFS}", ids.len())
+            }
+            PurgeTarget::All(n) => format!("{n} 篇文章会被彻底删除，无法恢复。{REFS}"),
+        }
+    }
+}
+
+/// 回收站页。
 #[component]
+#[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut, unused_variables))]
 pub fn PostsTrash() -> Element {
-    let current_page = use_signal(|| 1);
-    let mut selected_ids: Signal<HashSet<i32>> = use_signal(HashSet::new);
+    let toast = use_toast();
+    let navigator = use_navigator();
+    let mut current_page = use_signal(|| 1);
+    let mut selected = use_signal(HashSet::<i32>::new);
+    let mut busy = use_signal(HashSet::<i32>::new);
+    let mut batch_busy = use_signal(|| false);
+    let mut settings = use_signal(|| None::<TrashSettings>);
+    let mut confirm_open = use_signal(|| false);
+    let mut pending = use_signal(|| None::<PurgeTarget>);
+    let mut refresh = use_signal(|| 0_u32);
 
-    // 分页列表加载（loading / posts / total / error）由 use_paginated 统一管理。
-    // 闭包内读取 current_page（.with）建立 reactive 依赖，翻页时自动重新请求。
+    use_effect(move || {
+        #[cfg(target_arch = "wasm32")]
+        spawn(async move {
+            if let Ok(s) = crate::api::settings::get_trash_settings().await {
+                settings.set(Some(s));
+            }
+        });
+    });
+
     let paginated = use_paginated(
-        move || current_page.with(|p| *p),
+        move || {
+            let _ = refresh();
+            current_page.with(|p| *p)
+        },
         TRASH_PER_PAGE,
         |p, pp| async move {
             list_deleted_posts(p, pp)
                 .await
                 .map(|PostListResponse { posts, total }| (posts, total))
+                .map_err(|e| e.to_string())
         },
     );
-    let mut posts = paginated.items;
-    let mut total = paginated.total;
+    let posts = paginated.items;
+    let total = paginated.total;
     let loading = paginated.loading;
-    let mut error = paginated.error;
+    let error = paginated.error;
 
-    // 自动清理配置：由子组件 AutoPurgeSettings 写入（加载/保存），本组件读取
-    // retention_days 供 TrashRow 的「剩余天数」展示。
-    let mut settings: Signal<TrashSettings> = use_signal(TrashSettings::default);
+    // 操作后取消这些文章的勾选并重新请求；本页全部移走且不是第 1 页时退回上一页。
+    let mut settle = move |removed: &[i32]| {
+        selected.with_mut(|set| removed.iter().for_each(|id| _ = set.remove(id)));
+        let gone = posts
+            .peek()
+            .iter()
+            .filter(|p| removed.contains(&p.id))
+            .count();
+        if gone >= posts.peek().len() && *current_page.peek() > 1 {
+            current_page -= 1;
+        } else {
+            refresh += 1;
+        }
+    };
 
-    // 本地移除一篇文章（乐观更新）。
-    let mut remove_post = move |id: i32| {
-        posts.with_mut(|list| list.retain(|p| p.id != id));
-        total.with_mut(|t| *t = t.saturating_sub(1));
-        selected_ids.with_mut(|s| {
-            s.remove(&id);
+    let mut restore = move |ids: Vec<i32>| {
+        if ids.is_empty() {
+            return;
+        }
+        let single = ids.len() == 1;
+        if single {
+            busy.write().insert(ids[0]);
+        } else {
+            batch_busy.set(true);
+        }
+        spawn(async move {
+            let result = if single {
+                restore_post(ids[0]).await
+            } else {
+                batch_restore_posts(ids.clone()).await
+            };
+            match result {
+                Ok(res) if res.success => {
+                    toast.success(if single {
+                        "已恢复，文章回到原来的状态".to_string()
+                    } else {
+                        res.message
+                    });
+                    settle(&ids);
+                }
+                Ok(res) => toast.error(res.message),
+                Err(e) => toast.error(format!("恢复失败：{e}")),
+            }
+            if single {
+                busy.write().remove(&ids[0]);
+            } else {
+                batch_busy.set(false);
+            }
         });
     };
 
-    // 首次加载完成前不显示数量，避免「(0)」闪烁；翻页重载时 total 仍为上页值，计数保留。
-    let subtitle = if total() > 0 || !loading() {
-        format!("已删除文章 ({})", total())
-    } else {
-        "已删除文章".to_string()
+    let mut ask_purge = move |target: PurgeTarget| {
+        pending.set(Some(target));
+        confirm_open.set(true);
     };
 
-    rsx! {
-        div { class: "animate-page-enter w-full max-w-7xl mx-auto space-y-6",
-            // 页面页头：标题 + 副标题 + 返回列表与清空回收站入口
-            div { class: "flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-[var(--color-paper-border)]/70",
-                div {
-                    h1 { class: "text-3xl sm:text-4xl font-extrabold tracking-tight text-[var(--color-paper-primary)]",
-                        "回收站"
-                    }
-                    p { class: "text-sm text-[var(--color-paper-secondary)] mt-1.5",
-                        "{subtitle} · 可随时恢复或彻底删除"
+    let purge = move |_| {
+        let Some(target) = pending() else {
+            return;
+        };
+        spawn(async move {
+            let (result, removed) = match &target {
+                PurgeTarget::One { id, .. } => {
+                    busy.write().insert(*id);
+                    (purge_post(*id).await, vec![*id])
+                }
+                PurgeTarget::Selected(ids) => {
+                    batch_busy.set(true);
+                    (batch_purge_posts(ids.clone()).await, ids.clone())
+                }
+                PurgeTarget::All(_) => {
+                    batch_busy.set(true);
+                    (empty_trash().await, Vec::new())
+                }
+            };
+            match result {
+                Ok(res) if res.success => {
+                    toast.success(match &target {
+                        PurgeTarget::One { title, .. } => format!("已彻底删除《{title}》"),
+                        PurgeTarget::All(_) => "回收站已清空".to_string(),
+                        PurgeTarget::Selected(_) => res.message,
+                    });
+                    if matches!(target, PurgeTarget::All(_)) {
+                        selected.write().clear();
+                        current_page.set(1);
+                        refresh += 1;
+                    } else {
+                        settle(&removed);
                     }
                 }
-                div { class: "flex items-center gap-3",
-                    Link {
-                        class: "inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium text-[var(--color-paper-secondary)] hover:text-[var(--color-paper-primary)] hover:bg-[var(--color-paper-entry)] transition-colors cursor-pointer",
-                        to: Route::Posts {},
-                        svg {
-                            class: "w-4 h-4",
-                            xmlns: "http://www.w3.org/2000/svg",
-                            view_box: "0 0 24 24",
-                            fill: "none",
-                            stroke: "currentColor",
-                            stroke_width: "2",
-                            stroke_linecap: "round",
-                            stroke_linejoin: "round",
-                            path { d: "M19 12H5M12 19l-7-7 7-7" }
+                Ok(res) => toast.error(res.message),
+                Err(e) => toast.error(format!("彻底删除失败：{e}")),
+            }
+            if let PurgeTarget::One { id, .. } = target {
+                busy.write().remove(&id);
+            } else {
+                batch_busy.set(false);
+            }
+        });
+    };
+
+    let rows = posts();
+    let selection = selected();
+    let page_all = !rows.is_empty() && rows.iter().all(|p| selection.contains(&p.id));
+    let cfg = settings();
+    let retention = cfg
+        .as_ref()
+        .filter(|s| s.auto_purge_enabled)
+        .map(|s| s.retention_days);
+    let now = now_millis();
+    let confirm = pending();
+
+    rsx! {
+        div { class: "admin-trash",
+            div { class: "admin-page-head",
+                div {
+                    h1 { "回收站" }
+                    p {
+                        if let Some(days) = retention {
+                            "已删除的文章保留 {days} 天，"
                         }
-                        "全部文章"
-                    }
-                    if total() > 0 {
-                        button {
-                            class: "{BTN_DANGER_OUTLINE} inline-flex items-center gap-1.5",
-                            onclick: move |_| {
-                                #[cfg(target_arch = "wasm32")]
-                                {
-                                    if web_sys::window()
-                                        .and_then(|w| {
-                                            w.confirm_with_message(
-                                                    "确定要清空回收站吗？所有已删除文章将被彻底移除，此操作不可恢复。",
-                                                )
-                                                .ok()
-                                        })
-                                        .unwrap_or(false)
-                                    {
-                                        spawn(async move {
-                                            let _ = empty_trash().await;
-                                        });
-                                        posts.set(Vec::new());
-                                        total.set(0);
-                                        selected_ids.set(HashSet::new());
-                                    }
-                                }
-                            },
-                            svg {
-                                class: "w-4 h-4",
-                                xmlns: "http://www.w3.org/2000/svg",
-                                view_box: "0 0 24 24",
-                                fill: "none",
-                                stroke: "currentColor",
-                                stroke_width: "2",
-                                stroke_linecap: "round",
-                                stroke_linejoin: "round",
-                                polyline { points: "3 6 5 6 21 6" }
-                                path { d: "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" }
+                        "{retention_note(cfg.as_ref())}"
+                        if cfg.is_some() {
+                            Link { class: "admin-trash-settings", to: Route::SiteSettingsPage {},
+                                "可在设置中修改"
                             }
+                            "。"
+                        }
+                    }
+                }
+                if total() > 0 {
+                    div { class: "admin-page-actions",
+                        button {
+                            class: "{button_class(ButtonVariant::Outline, ButtonSize::Md)} admin-trash-empty",
+                            r#type: "button",
+                            disabled: batch_busy(),
+                            onclick: move |_| ask_purge(PurgeTarget::All(total())),
                             "清空回收站"
                         }
                     }
                 }
             }
 
-            div { class: "space-y-6",
-                // 自动清理配置卡片
-                AutoPurgeSettings { settings }
-
-                // 批量操作栏（浮动卡片风格）
-                if !selected_ids().is_empty() {
-                    div { class: "animate-row-enter flex flex-wrap items-center justify-between gap-3 p-3.5 bg-[var(--color-paper-entry)] rounded-2xl border border-[var(--color-paper-border)] shadow-xs",
-                        div { class: "flex items-center gap-2 text-sm font-medium text-[var(--color-paper-primary)]",
-                            span { class: "w-2 h-2 rounded-full bg-[var(--color-paper-accent)]" }
-                            span { "已选中 {selected_ids().len()} 篇文章" }
-                        }
-                        div { class: "flex items-center gap-2",
-                            button {
-                                class: "{BTN_SOLID_GREEN} inline-flex items-center gap-1.5",
-                                onclick: move |_| {
-                                    let ids: Vec<i32> = selected_ids().iter().copied().collect();
-                                    spawn(async move {
-                                        let _ = batch_restore_posts(ids).await;
-                                    });
-                                    for id in selected_ids() {
-                                        remove_post(id);
-                                    }
-                                    selected_ids.set(HashSet::new());
-                                },
-                                svg {
-                                    class: "w-3.5 h-3.5",
-                                    xmlns: "http://www.w3.org/2000/svg",
-                                    view_box: "0 0 24 24",
-                                    fill: "none",
-                                    stroke: "currentColor",
-                                    stroke_width: "2",
-                                    stroke_linecap: "round",
-                                    stroke_linejoin: "round",
-                                    polyline { points: "1 4 1 10 7 10" }
-                                    path { d: "M3.51 15a9 9 0 1 0 2.13-9.36L1 10" }
-                                }
-                                "批量恢复"
-                            }
-                            button {
-                                class: "{BTN_SOLID_RED} inline-flex items-center gap-1.5",
-                                onclick: move |_| {
-                                    #[cfg(target_arch = "wasm32")]
-                                    {
-                                        if web_sys::window()
-                                            .and_then(|w| {
-                                                w.confirm_with_message(
-                                                        "确定要彻底删除选中的文章吗？此操作不可恢复。",
-                                                    )
-                                                    .ok()
-                                            })
-                                            .unwrap_or(false)
-                                        {
-                                            let ids: Vec<i32> = selected_ids().iter().copied().collect();
-                                            spawn(async move {
-                                                let _ = batch_purge_posts(ids).await;
-                                            });
-                                            for id in selected_ids() {
-                                                remove_post(id);
-                                            }
-                                            selected_ids.set(HashSet::new());
-                                        }
-                                    }
-                                },
-                                svg {
-                                    class: "w-3.5 h-3.5",
-                                    xmlns: "http://www.w3.org/2000/svg",
-                                    view_box: "0 0 24 24",
-                                    fill: "none",
-                                    stroke: "currentColor",
-                                    stroke_width: "2",
-                                    stroke_linecap: "round",
-                                    stroke_linejoin: "round",
-                                    polyline { points: "3 6 5 6 21 6" }
-                                    path { d: "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" }
-                                }
-                                "批量彻底删除"
-                            }
-                            button {
-                                class: "{BTN_GHOST}",
-                                onclick: move |_| selected_ids.set(HashSet::new()),
-                                "取消"
-                            }
-                        }
+            if !loading() || error().is_some() {
+                span { hidden: true, "data-vt-list": "true" }
+            }
+            if error().is_some() {
+                LoadError { title: "回收站加载失败", on_retry: move |_| refresh += 1 }
+            } else if loading() && rows.is_empty() {
+                DelayedSkeleton { PostsTrashTableSkeleton {} }
+            } else if rows.is_empty() {
+                div { class: "admin-panel",
+                    EmptyState {
+                        icon: IconName::Trash,
+                        title: "回收站是空的",
+                        description: match retention {
+                            Some(days) => format!("删除的文章会在这里保留 {days} 天。"),
+                            None => "删除的文章会出现在这里，可随时恢复。".to_string(),
+                        },
+                        action: EmptyStateAction {
+                            label: "返回文章".to_string(),
+                            onclick: Callback::new(move |_| {
+                                navigator.push(Route::Posts {});
+                            }),
+                        },
                     }
                 }
-                // 主内容：错误 / 加载骨架 / 空态 / 列表
-                {
-                    if error().is_some() {
-                        rsx! {
-                            EmptyState {
-                                icon: crate::components::ui::IconName::CircleAlert,
-                                title: "加载失败",
-                                description: "获取回收站列表时发生错误，请稍后重试。",
-                            }
-                        }
-                    } else if loading() && posts().is_empty() {
-                        rsx! {
-                            DelayedSkeleton {
-                                PostsTrashTableSkeleton {}
-                            }
-                        }
-                    } else if posts().is_empty() {
-                        rsx! {
-                            EmptyState {
-                                title: "回收站为空",
-                                description: "当前没有被软删除的文章。",
-                            }
-                        }
-                    } else {
-                        let list = posts();
-                        let all_selected = list.iter().all(|p| selected_ids().contains(&p.id));
-                        let all_ids: Vec<i32> = list.iter().map(|p| p.id).collect();
-                        rsx! {
-                            div { class: "bg-[var(--color-paper-entry)]/40 rounded-2xl shadow-xs border border-[var(--color-paper-border)]/70 overflow-hidden",
-                                div { class: "overflow-x-auto overflow-y-hidden",
-                                    table { class: "w-full text-sm",
-                                        thead {
-                                            tr { class: "bg-[var(--color-paper-entry)]/80 border-b border-[var(--color-paper-border)]/70 text-left text-xs font-semibold uppercase tracking-wider text-[var(--color-paper-secondary)] select-none",
-                                                th { class: "px-4 py-3.5 w-10 text-center",
-                                                    Checkbox {
-                                                        checked: all_selected,
-                                                        onchange: move |_checked: bool| {
-                                                            let mut s = selected_ids();
-                                                            if all_selected {
-                                                                for id in &all_ids {
-                                                                    s.remove(id);
-                                                                }
-                                                            } else {
-                                                                for id in &all_ids {
-                                                                    s.insert(*id);
-                                                                }
-                                                            }
-                                                            selected_ids.set(s);
-                                                        },
+            } else {
+                div { class: "admin-panel admin-table-wrap", "aria-busy": loading().then_some("true"),
+                    table { class: "admin-table admin-trash-table",
+                        thead {
+                            tr {
+                                th { class: "admin-table-check",
+                                    Checkbox {
+                                        checked: page_all,
+                                        label: "选择本页全部文章".to_string(),
+                                        onchange: {
+                                            let ids: Vec<i32> = rows.iter().map(|p| p.id).collect();
+                                            move |checked: bool| {
+                                                let mut set = selected.write();
+                                                for id in &ids {
+                                                    if checked {
+                                                        set.insert(*id);
+                                                    } else {
+                                                        set.remove(id);
                                                     }
                                                 }
-                                                th { class: "px-5 py-3.5 font-semibold", "文章标题" }
-                                                th { class: "px-4 py-3.5 font-semibold whitespace-nowrap text-center", "原发布状态" }
-                                                th { class: "px-4 py-3.5 font-semibold w-32 whitespace-nowrap", "删除日期" }
-                                                th { class: "px-4 py-3.5 font-semibold w-24 text-center whitespace-nowrap",
-                                                    "剩余保留"
-                                                }
-                                                th { class: "px-5 py-3.5 font-semibold w-36 text-right whitespace-nowrap",
-                                                    "操作"
-                                                }
                                             }
+                                        },
+                                    }
+                                }
+                                th { "标题" }
+                                th { "原状态" }
+                                th { class: "admin-trash-deleted", "删除于" }
+                                if retention.is_some() {
+                                    th { class: "admin-trash-left", "自动清理" }
+                                }
+                                th { class: "admin-trash-actions", span { class: "sr-only", "操作" } }
+                            }
+                        }
+                        tbody {
+                            for post in rows.iter().cloned() {
+                                TrashRow {
+                                    key: "{post.id}",
+                                    selected: selection.contains(&post.id),
+                                    busy: busy().contains(&post.id) || batch_busy(),
+                                    left: retention.zip(post.deleted_at).map(|(days, at)| {
+                                        (days_left(at.timestamp_millis(), days, now), days)
+                                    }),
+                                    on_select: move |(id, checked): (i32, bool)| {
+                                        if checked {
+                                            selected.write().insert(id);
+                                        } else {
+                                            selected.write().remove(&id);
                                         }
-                                        tbody {
-                                            for (idx, post) in list.iter().enumerate() {
-                                                TrashRow {
-                                                    key: "{post.id}",
-                                                    post: post.clone(),
-                                                    retention_days: settings().retention_days,
-                                                    selected: selected_ids().contains(&post.id),
-                                                    stagger_index: idx as u32,
-                                                    on_select: {
-                                                        let id = post.id;
-                                                        move |checked: bool| {
-                                                            let mut s = selected_ids();
-                                                            if checked {
-                                                                s.insert(id);
-                                                            } else {
-                                                                s.remove(&id);
-                                                            }
-                                                            selected_ids.set(s);
-                                                        }
-                                                    },
-                                                    on_restore: {
-                                                        let id = post.id;
-                                                        move |_| {
-                                                            spawn(async move {
-                                                                let _ = restore_post(id).await;
-                                                            });
-                                                            remove_post(id);
-                                                        }
-                                                    },
-                                                    on_purge: {
-                                                        let id = post.id;
-                                                        move |_| {
-                                                            #[cfg(target_arch = "wasm32")]
-                                                            spawn(async move {
-                                                                let _ = purge_post(id).await;
-                                                            });
-                                                            remove_post(id);
-                                                        }
-                                                    },
-                                                }
-                                            }
-                                        }
-                                    }
+                                    },
+                                    on_restore: move |id| restore(vec![id]),
+                                    on_purge: move |(id, title)| ask_purge(PurgeTarget::One { id, title }),
+                                    post,
                                 }
                             }
-                            Pagination::<Route> {
-                                variant: "admin",
-                                current_page: current_page(),
-                                total: total(),
-                                per_page: TRASH_PER_PAGE,
-                                unit: "篇",
-                                on_prev: {
-                                    let mut page = current_page;
-                                    move |_| {
-                                        page.with_mut(|p| *p = (*p - 1).max(1));
-                                    }
-                                },
-                                on_next: {
-                                    let mut page = current_page;
-                                    move |_| {
-                                        page.with_mut(|p| *p += 1);
-                                    }
-                                },
-                                on_jump: {
-                                    let mut page = current_page;
-                                    move |p: i32| {
-                                        page.set(p);
-                                    }
-                                },
-                            }
                         }
                     }
-                }
-            }
-        }
-    }
-}
-
-/// 自动清理配置子组件：使用共享可折叠设置卡片。
-///
-/// 封装自动清理的全部状态：表单草稿（`settings_draft_*`）、保存态、已保存反馈，
-/// 以及派生的 `dirty`。面板折叠态与摘要外壳由 `CollapsibleSettingsCard` 统一管理。
-/// 配置加载与保存均在组件内部完成。`settings`（已保存的服务端配置）由父组件传入
-/// 双向绑定 signal：本组件加载/保存时写入，父组件读取 `retention_days` 供 TrashRow
-/// 的「剩余天数」。
-///
-/// 从 `PostsTrashPage` 抽取以降低 god component 复杂度（见 dioxus-render-purity skill）。
-#[component]
-#[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut, unused_variables))]
-fn AutoPurgeSettings(settings: Signal<TrashSettings>) -> Element {
-    let mut settings_draft_days: Signal<String> = use_signal(|| "30".to_string());
-    let mut settings_draft_enabled: Signal<bool> = use_signal(|| false);
-    let mut saving_settings: Signal<bool> = use_signal(|| false);
-    // 保存成功后的短暂反馈标记（用户再次编辑时清除）。
-    let mut just_saved: Signal<bool> = use_signal(|| false);
-
-    // 首次渲染加载服务端配置：本组件挂载即触发一次，无需 settings_loaded 守卫
-    //（父组件每次翻页重渲染的是列表 effect，本组件 effect 只在自身首次挂载跑）。
-    use_effect(move || {
-        #[cfg(target_arch = "wasm32")]
-        spawn(async move {
-            if let Ok(s) = get_trash_settings().await {
-                settings_draft_days.set(s.retention_days.to_string());
-                settings_draft_enabled.set(s.auto_purge_enabled);
-                settings.set(s);
-            }
-        });
-    });
-
-    // 草稿相对已保存配置是否存在差异：控制保存按钮可用性与“未保存”提示。
-    // 派生值用 use_memo：依赖信号不变时不重算（避免每次渲染重复 parse 字符串）。
-    let dirty = use_memo(move || {
-        settings_draft_enabled() != settings().auto_purge_enabled
-            || settings_draft_days()
-                .trim()
-                .parse::<i32>()
-                .ok()
-                .map(|d| d != settings().retention_days)
-                .unwrap_or(true)
-    });
-
-    rsx! {
-        CollapsibleSettingsCard {
-            title: "自动清理".to_string(),
-            summary: if settings().auto_purge_enabled { format!(
-                "已开启 · 超过 {} 天的文章将被自动删除",
-                settings().retention_days,
-            ) } else { "已关闭".to_string() },
-            enabled: settings().auto_purge_enabled,
-            on_toggle: move |_| just_saved.set(false),
-            div { class: "border-t border-paper-border p-5 space-y-6",
-                // 开关行：启用自动清理
-                div { class: "flex items-center justify-between gap-4",
-                    div { class: "min-w-0",
-                        div { class: "text-sm font-medium text-paper-primary", "启用自动清理" }
-                        div { class: "text-xs text-paper-secondary mt-1",
-                            "后台任务定期彻底删除超过保留期的文章"
-                        }
-                    }
-                    ToggleSwitch {
-                        checked: settings_draft_enabled(),
-                        ontoggle: move |_| {
-                            settings_draft_enabled.set(!settings_draft_enabled());
-                            just_saved.set(false);
-                        },
-                    }
-                }
-
-                // 保留天数行
-                div { class: "space-y-3",
-                    div { class: "min-w-0",
-                        div { class: "text-sm font-medium text-paper-primary", "保留天数" }
-                        div { class: "text-xs text-paper-secondary mt-1",
-                            "文章删除后保留的时长，到期后自动彻底清除（1–365）"
-                        }
-                    }
-                    // 数字输入 + 步进按钮 + 单位后缀
-                    div { class: "flex items-center gap-3",
-                        div { class: "flex items-center rounded-lg border border-paper-border bg-paper-entry overflow-hidden",
-                            // 减号
-                            button {
-                                class: "{BTN_ICON}",
-                                r#type: "button",
-                                aria_label: "减少保留天数",
-                                onclick: move |_| {
-                                    let cur: i32 = settings_draft_days().trim().parse().unwrap_or(30);
-                                    let next = cur.saturating_sub(1).max(1);
-                                    settings_draft_days.set(next.to_string());
-                                    just_saved.set(false);
-                                },
-                                "−"
-                            }
-                            // 数字输入（无边框，衔接步进按钮）
-                            input {
-                                r#type: "number",
-                                min: "1",
-                                max: "365",
-                                class: "w-14 h-9 px-1 text-center text-sm tabular-nums text-paper-primary bg-transparent border-0 focus:outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none",
-                                value: "{settings_draft_days()}",
-                                oninput: move |e| {
-                                    settings_draft_days.set(e.value());
-                                    just_saved.set(false);
-                                },
-                            }
-                            // 加号
-                            button {
-                                class: "{BTN_ICON}",
-                                r#type: "button",
-                                aria_label: "增加保留天数",
-                                onclick: move |_| {
-                                    let cur: i32 = settings_draft_days().trim().parse().unwrap_or(30);
-                                    let next = cur.saturating_add(1).min(365);
-                                    settings_draft_days.set(next.to_string());
-                                    just_saved.set(false);
-                                },
-                                "+"
-                            }
-                        }
-                        span { class: "text-xs text-paper-secondary", "天" }
-                    }
-                }
-
-                // 底部操作行：未保存提示 + 保存按钮
-                div { class: "flex items-center justify-between gap-4 pt-1",
-                    // 草稿状态提示
-                    if just_saved() {
-                        span { class: "inline-flex items-center gap-1.5 text-xs text-paper-accent",
-                            svg {
-                                class: "w-3.5 h-3.5",
-                                view_box: "0 0 24 24",
-                                fill: "none",
-                                stroke: "currentColor",
-                                stroke_width: "2.5",
-                                path {
-                                    stroke_linecap: "round",
-                                    stroke_linejoin: "round",
-                                    d: "M5 13l4 4L19 7",
-                                }
-                            }
-                            "已保存"
-                        }
-                    } else if dirty() {
-                        span { class: "text-xs text-paper-secondary", "有未保存的更改" }
-                    } else {
-                        span { class: "text-xs text-transparent select-none", "·" }
-                    }
-                    // 保存按钮：主题绿主操作，saving 态显示 spinner，just_saved/无改动禁用
-                    LoadingButton {
-                        label: "保存设置".to_string(),
-                        loading: saving_settings(),
-                        disabled: just_saved() || !dirty(),
-                        variant: "sm",
-                        onclick: move |_| {
-                            let days: i32 = settings_draft_days().parse().unwrap_or(30);
-                            let enabled = settings_draft_enabled();
-                            saving_settings.set(true);
-                            spawn(async move {
-                                if let Ok(s) = update_trash_settings(enabled, days).await {
-                                    settings.set(s);
-                                    just_saved.set(true);
-                                }
-                                saving_settings.set(false);
-                            });
+                    TablePager {
+                        page: current_page(),
+                        total: total(),
+                        per_page: TRASH_PER_PAGE,
+                        unit: "篇",
+                        on_change: move |page| {
+                            selected.write().clear();
+                            current_page.set(page);
                         },
                     }
                 }
             }
+
+            if !selection.is_empty() {
+                div { class: "batch-bar", role: "toolbar", aria_label: "批量操作",
+                    span { class: "batch-bar-count", "已选 {selection.len()} 篇" }
+                    button {
+                        class: button_class(ButtonVariant::Ghost, ButtonSize::Sm),
+                        r#type: "button",
+                        disabled: batch_busy(),
+                        onclick: move |_| restore(selected().into_iter().collect()),
+                        "批量恢复"
+                    }
+                    button {
+                        class: "{button_class(ButtonVariant::Ghost, ButtonSize::Sm)} batch-bar-danger",
+                        r#type: "button",
+                        disabled: batch_busy(),
+                        onclick: move |_| ask_purge(PurgeTarget::Selected(selected().into_iter().collect())),
+                        "彻底删除"
+                    }
+                    span { class: "batch-bar-sep", aria_hidden: "true" }
+                    IconButton {
+                        icon: IconName::X,
+                        label: "取消选择",
+                        size: ButtonSize::Sm,
+                        onclick: move |_| selected.write().clear(),
+                    }
+                }
+            }
+
+            ConfirmDialog {
+                visible: confirm_open,
+                title: confirm.as_ref().map_or("彻底删除文章？", PurgeTarget::title),
+                description: confirm.as_ref().map(PurgeTarget::description).unwrap_or_default(),
+                confirm_label: "彻底删除",
+                on_confirm: purge,
+            }
         }
     }
 }
 
-/// 计算剩余天数（保留期 - 已删除天数）。
-///
-/// 返回 (剩余天数, 是否已过期)。基于客户端时钟计算，轻微漂移可接受。
-fn remaining_days(post: &PostListItem, retention_days: i32) -> (i64, bool) {
-    #[cfg(target_arch = "wasm32")]
-    {
-        if let Some(deleted_at) = post.deleted_at {
-            let now_ms = js_sys::Date::now() as i64; // 毫秒
-            let deleted_ms = deleted_at.timestamp_millis();
-            let elapsed_days = (now_ms - deleted_ms) / 86_400_000;
-            let remaining = retention_days as i64 - elapsed_days;
-            (remaining, remaining <= 0)
-        } else {
-            (retention_days as i64, false)
-        }
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        let _ = post;
-        (retention_days as i64, false)
-    }
-}
-
-/// 回收站表格行组件。
+/// 表格的一行。`left` 为（剩余天数，保留天数），自动清理关闭时为 None。
 #[component]
 fn TrashRow(
     post: PostListItem,
-    retention_days: i32,
     selected: bool,
-    stagger_index: u32,
-    on_select: EventHandler<bool>,
-    on_restore: EventHandler,
-    on_purge: EventHandler,
+    busy: bool,
+    left: Option<(i64, i32)>,
+    on_select: EventHandler<(i32, bool)>,
+    on_restore: EventHandler<i32>,
+    on_purge: EventHandler<(i32, String)>,
 ) -> Element {
-    let (remaining, expired) = remaining_days(&post, retention_days);
-    // 彻底删除确认浮层：用触发按钮的视口坐标锚定，避免被表格 overflow 裁剪。
-    let mut purge_open = use_signal(|| false);
-    let mut anchor_x = use_signal(|| 0i32);
-    let mut anchor_y = use_signal(|| 0i32);
-    // 剩余天数徽章配色：>7 天中性，≤7 天鼠尾草绿(主题色)，≤0/过期琥珀色。
-    let badge_class = if expired {
-        "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
-    } else if remaining <= 7 {
-        "bg-paper-accent-soft text-paper-accent"
-    } else {
-        "bg-paper-tertiary text-paper-secondary"
-    };
-    let badge_text = if expired {
-        "待清理".to_string()
-    } else {
-        format!("{remaining}天")
-    };
-    let deleted_str = post
+    let published = post.status == PostStatus::Published;
+    let deleted = post
         .deleted_at
-        .map(|d| d.format("%Y-%m-%d").to_string())
-        .unwrap_or_else(|| "—".to_string());
-
+        .map(|d| to_local(d).format("%Y-%m-%d").to_string());
+    let id = post.id;
+    let title = post.title.clone();
     rsx! {
-        tr {
-            class: "animate-row-enter border-b border-[var(--color-paper-border)]/60 last:border-b-0 hover:bg-[var(--color-paper-accent-soft)]/30 transition-colors duration-150 group",
-            style: "animation-delay: {stagger_index * 35}ms",
-            td { class: "px-4 py-3.5 text-center",
+        tr { "data-selected": selected.then_some("true"), "aria-busy": busy.then_some("true"),
+            td { class: "admin-table-check",
                 Checkbox {
                     checked: selected,
-                    onchange: move |checked: bool| on_select.call(checked),
+                    label: format!("选择《{}》", post.title),
+                    onchange: move |checked| on_select.call((id, checked)),
                 }
             }
-            td { class: "px-5 py-3.5",
-                div { class: "flex flex-col gap-1",
-                    div { class: "font-semibold text-sm text-[var(--color-paper-primary)] leading-snug line-clamp-1",
-                        "{post.title}"
-                    }
-                    div { class: "flex items-center gap-2 text-xs",
-                        span { class: "font-mono text-[11px] text-[var(--color-paper-tertiary)]",
-                            "/post/{post.slug}"
-                        }
-                    }
+            td { class: "admin-trash-title",
+                span { class: "admin-trash-name", "{post.title}" }
+                span { class: "admin-posts-slug", "/{post.slug}" }
+            }
+            td { class: "admin-trash-status",
+                span { class: "status-dot", "data-tone": if published { "clay" } else { "muted" },
+                    "{post.status.label()}"
                 }
             }
-            td { class: "px-4 py-3.5 text-center whitespace-nowrap",
-                if post.status == crate::models::post::PostStatus::Published {
-                    span { class: "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20",
-                        span { class: "w-1.5 h-1.5 rounded-full bg-emerald-500" }
-                        "公开"
-                    }
+            td { class: "admin-trash-deleted",
+                if let Some(deleted) = deleted {
+                    time { "{deleted}" }
                 } else {
-                    span { class: "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20",
-                        span { class: "w-1.5 h-1.5 rounded-full bg-amber-500" }
-                        "草稿"
+                    span { class: "admin-table-muted", "—" }
+                }
+            }
+            if let Some((days, retention)) = left {
+                td { class: "admin-trash-left",
+                    div {
+                        class: "trash-left",
+                        "data-urgent": (days <= URGENT_DAYS).then_some("true"),
+                        span { class: "trash-left-track", aria_hidden: "true",
+                            span {
+                                class: "trash-left-bar",
+                                style: "width: {(days as f64 / retention.max(1) as f64 * 100.0).min(100.0):.0}%",
+                            }
+                        }
+                        span { class: "trash-left-label",
+                            if days == 0 { "即将清理" } else { "剩 {days} 天" }
+                        }
                     }
                 }
             }
-            td { class: "px-4 py-3.5 text-xs font-mono text-[var(--color-paper-secondary)] whitespace-nowrap",
-                "{deleted_str}"
-            }
-            td { class: "px-4 py-3.5 text-center whitespace-nowrap",
-                span { class: "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border {badge_class}",
-                    "{badge_text}"
-                }
-            }
-            td { class: "px-5 py-3.5 text-right whitespace-nowrap",
-                div { class: "flex justify-end items-center gap-2",
+            td { class: "admin-trash-actions",
+                div {
                     button {
-                        class: "inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors cursor-pointer",
-                        onclick: move |_| on_restore.call(()),
-                        svg {
-                            class: "w-3.5 h-3.5",
-                            xmlns: "http://www.w3.org/2000/svg",
-                            view_box: "0 0 24 24",
-                            fill: "none",
-                            stroke: "currentColor",
-                            stroke_width: "2",
-                            stroke_linecap: "round",
-                            stroke_linejoin: "round",
-                            polyline { points: "1 4 1 10 7 10" }
-                            path { d: "M3.51 15a9 9 0 1 0 2.13-9.36L1 10" }
-                        }
+                        class: button_class(ButtonVariant::Ghost, ButtonSize::Sm),
+                        r#type: "button",
+                        disabled: busy,
+                        onclick: move |_| on_restore.call(id),
                         "恢复"
                     }
-                    button {
-                        class: "inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors cursor-pointer",
-                        onclick: move |e| {
-                            let coordinates = e.client_coordinates();
-                            anchor_x.set(coordinates.x as i32);
-                            anchor_y.set(coordinates.y as i32);
-                            purge_open.set(true);
-                        },
-                        svg {
-                            class: "w-3.5 h-3.5",
-                            xmlns: "http://www.w3.org/2000/svg",
-                            view_box: "0 0 24 24",
-                            fill: "none",
-                            stroke: "currentColor",
-                            stroke_width: "2",
-                            stroke_linecap: "round",
-                            stroke_linejoin: "round",
-                            polyline { points: "3 6 5 6 21 6" }
-                            path { d: "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" }
-                        }
-                        "彻底删除"
-                    }
-                }
-            }
-            Popover {
-                open: purge_open(),
-                anchor_x: anchor_x(),
-                anchor_y: anchor_y(),
-                placement: "bottom",
-                align: "end",
-                on_close: move |_| purge_open.set(false),
-                div { class: "w-64 space-y-3",
-                    p { class: "text-sm text-paper-primary leading-relaxed",
-                        "彻底删除这篇文章？此操作不可恢复。"
-                    }
-                    div { class: "flex justify-end gap-2 pt-1",
-                        button {
-                            class: "{BTN_GHOST}",
-                            onclick: move |_| purge_open.set(false),
-                            "取消"
-                        }
-                        button {
-                            class: "{BTN_DANGER_OUTLINE}",
-                            onclick: move |_| {
-                                purge_open.set(false);
-                                on_purge.call(());
-                            },
-                            "确认删除"
-                        }
+                    IconButton {
+                        icon: IconName::Trash,
+                        label: "彻底删除",
+                        size: ButtonSize::Sm,
+                        disabled: busy,
+                        tooltip_align: "end",
+                        class: "admin-trash-purge",
+                        onclick: move |_| on_purge.call((id, title.clone())),
                     }
                 }
             }
@@ -727,22 +484,51 @@ fn TrashRow(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    const NOW: i64 = 1_760_000_000_000;
+
     #[test]
-    fn settings_pages_use_shared_collapsible_card() {
-        // 此处只检查页面复用；折叠动画由 input.css 管理。
-        for (page, source) in [
-            ("posts_trash", include_str!("posts_trash.rs")),
-            (
-                "system/backup/settings",
-                include_str!("system/backup/settings.rs"),
-            ),
-        ] {
-            // 排除测试自身，避免断言中的组件名让检查始终通过。
-            let page_code = source.split("#[cfg(test)]").next().unwrap();
-            assert!(
-                page_code.contains("CollapsibleSettingsCard {"),
-                "{page} should render the shared collapsible settings card"
-            );
-        }
+    fn days_left_rounds_up_partial_days() {
+        // 刚删除：整段保留期。
+        assert_eq!(days_left(NOW, 30, NOW), 30);
+        // 删除 1 小时：仍按 30 天显示。
+        assert_eq!(days_left(NOW - 3_600_000, 30, NOW), 30);
+        // 删除 25 天又 1 小时：还剩不到 5 天，显示 5。
+        assert_eq!(days_left(NOW - 25 * DAY_MS - 3_600_000, 30, NOW), 5);
+    }
+
+    #[test]
+    fn days_left_is_zero_once_expired() {
+        assert_eq!(days_left(NOW - 30 * DAY_MS, 30, NOW), 0);
+        assert_eq!(days_left(NOW - 40 * DAY_MS, 30, NOW), 0);
+    }
+
+    #[test]
+    fn retention_note_follows_auto_purge() {
+        let on = TrashSettings {
+            auto_purge_enabled: true,
+            retention_days: 30,
+        };
+        let off = TrashSettings {
+            auto_purge_enabled: false,
+            ..on.clone()
+        };
+        assert_eq!(retention_note(Some(&on)), "到期自动彻底删除。");
+        assert!(retention_note(Some(&off)).contains("已关闭"));
+        assert_eq!(retention_note(None), "可随时恢复或彻底删除。");
+    }
+
+    #[test]
+    fn purge_target_describes_scope() {
+        let one = PurgeTarget::One {
+            id: 1,
+            title: "标题".to_string(),
+        };
+        assert!(one.description().starts_with("《标题》"));
+        assert_eq!(PurgeTarget::All(4).title(), "清空回收站？");
+        assert!(PurgeTarget::Selected(vec![1, 2])
+            .description()
+            .starts_with("选中的 2 篇"));
     }
 }
