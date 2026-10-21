@@ -46,7 +46,7 @@ fn PostMetaPreview() -> Element {
             p { class: "showcase-post-meta-kicker", "设计手记" }
             h3 { class: "post-title", "{post.title}" }
             p { class: "post-description", "{post.summary.as_deref().unwrap_or_default()}" }
-            PostMeta { post }
+            PostMeta { post: crate::models::post::PostHeaderData::from(&post) }
         }
     }
 }
@@ -70,20 +70,20 @@ fn PostHeaderPreview(detail: bool) -> Element {
     rsx! {
         div { class: "showcase-post-header-demo", "data-showcase-preview": "post-header",
             article { class: "showcase-post-header-sheet", "data-showcase-sample": "published", inert: "true",
-                PostHeader { post }
+                PostHeader { post: crate::models::post::PostHeaderData::from(&post) }
             }
             if detail {
                 div { class: "showcase-post-header-examples",
                     section { class: "showcase-post-header-example",
                         h3 { "草稿" span { "标题旁显示草稿标记" } }
                         article { class: "showcase-post-header-sheet", "data-showcase-sample": "draft", inert: "true",
-                            PostHeader { post: draft }
+                            PostHeader { post: crate::models::post::PostHeaderData::from(&draft) }
                         }
                     }
                     section { class: "showcase-post-header-example",
                         h3 { "长标题 · 无摘要" span { "自然换行" } }
                         article { class: "showcase-post-header-sheet", "data-showcase-sample": "no-summary", inert: "true",
-                            PostHeader { post: without_summary }
+                            PostHeader { post: crate::models::post::PostHeaderData::from(&without_summary) }
                         }
                     }
                 }
@@ -1254,7 +1254,7 @@ fn PostFooterPreview(detail: bool) -> Element {
     });
     rsx! {
         div { class: "showcase-article-window", "data-showcase-preview": "post-footer",
-            PostFooter { post, sample: true }
+            PostFooter { post: crate::models::post::PostFooterData::from(&post), sample: true }
             if detail {
                 p { class: "showcase-post-footer-note", "样例标签和相邻文章不跳转。" }
             }

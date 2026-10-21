@@ -103,10 +103,63 @@ fn format_date(dt: DateTime<Utc>) -> String {
     dt.format("%Y-%m-%d").to_string()
 }
 
-impl Post {
-    /// 返回用于展示的文章日期：优先使用发布时间，否则回退到创建时间。
+// 展示日期格式化已迁至 PostHeaderData::formatted_date / PostListItem::formatted_date
+//（P4.2 页眉小型 props），Post 本体不再携带展示方法。
+
+/// 页眉展示所需的最小字段集（P4.2）。
+///
+/// [`crate::components::post::post_header::PostHeader`] 与
+/// [`crate::components::post::post_meta::PostMeta`] 只读取这些字段；以小型
+/// props 传递可避免为页眉复制/深比较完整正文（content_html 可能达数百 KB）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct PostHeaderData {
+    pub id: i32,
+    pub title: String,
+    pub status: PostStatus,
+    pub summary: Option<String>,
+    pub published_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub reading_time: u32,
+    pub word_count: u32,
+}
+
+impl From<&Post> for PostHeaderData {
+    fn from(post: &Post) -> Self {
+        Self {
+            id: post.id,
+            title: post.title.clone(),
+            status: post.status.clone(),
+            summary: post.summary.clone(),
+            published_at: post.published_at,
+            created_at: post.created_at,
+            reading_time: post.reading_time,
+            word_count: post.word_count,
+        }
+    }
+}
+
+impl PostHeaderData {
+    /// 与 [`Post::formatted_date`] 相同的展示日期规则。
     pub fn formatted_date(&self) -> String {
         format_date(self.published_at.unwrap_or(self.created_at))
+    }
+}
+
+/// 页脚展示所需的最小字段集（P4.2）：标签与前后篇导航。
+#[derive(Debug, Clone, PartialEq)]
+pub struct PostFooterData {
+    pub tags: Vec<String>,
+    pub prev_post: Option<PostNav>,
+    pub next_post: Option<PostNav>,
+}
+
+impl From<&Post> for PostFooterData {
+    fn from(post: &Post) -> Self {
+        Self {
+            tags: post.tags.clone(),
+            prev_post: post.prev_post.clone(),
+            next_post: post.next_post.clone(),
+        }
     }
 }
 
@@ -305,13 +358,13 @@ mod tests {
     fn formatted_date_uses_published_at_when_available() {
         let mut post = sample_post();
         post.published_at = Some(Utc.with_ymd_and_hms(2024, 6, 1, 12, 0, 0).unwrap());
-        assert_eq!(post.formatted_date(), "2024-06-01");
+        assert_eq!(PostHeaderData::from(&post).formatted_date(), "2024-06-01");
     }
 
     #[test]
     fn formatted_date_falls_back_to_created_at() {
         let post = sample_post();
-        assert_eq!(post.formatted_date(), "2024-01-15");
+        assert_eq!(PostHeaderData::from(&post).formatted_date(), "2024-01-15");
     }
 
     #[test]

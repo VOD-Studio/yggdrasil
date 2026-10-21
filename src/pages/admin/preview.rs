@@ -138,7 +138,7 @@ pub fn PostPreview(slug: String) -> Element {
                 }
             }
 
-            PostHeader { post: post.clone(), full_reload: true }
+            PostHeader { post: crate::models::post::PostHeaderData::from(&post), full_reload: true }
 
             // 如果文章设置了封面图，则渲染封面组件。
             if let Some(cover) = &post.cover_image {
@@ -161,7 +161,7 @@ pub fn PostPreview(slug: String) -> Element {
                     content_html: post.content_html.clone().unwrap_or_default(),
                 }
             }
-            PostFooter { post: post.clone(), full_reload: true }
+            PostFooter { post: crate::models::post::PostFooterData::from(&post), full_reload: true }
         }
     }
 }

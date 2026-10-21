@@ -6,12 +6,13 @@ use dioxus::prelude::*;
 
 use crate::components::post::breadcrumbs::Breadcrumbs;
 use crate::components::post::post_meta::PostMeta;
-use crate::models::post::{Post, PostStatus};
+use crate::models::post::{PostHeaderData, PostStatus};
 
 /// 文章页眉组件。
 ///
 /// Props：
-/// - `post`：文章数据模型
+/// - `post`：页眉展示所需的最小字段集（P4.2：不携带完整正文，调用方用
+///   `PostHeaderData::from(&post)` 构造）
 /// - `full_reload`：面包屑 Home 链接走整页加载（默认 false）。仅当渲染在
 ///   admin 布局内（`/admin/preview`）时传 true——跨 layout 分支的客户端
 ///   导航会触发 dioxus 0.7.10 的 suspense 卸载双重回收 bug（详见
@@ -23,7 +24,7 @@ use crate::models::post::{Post, PostStatus};
 /// - 文章摘要（如有）
 /// - 文章元信息
 #[component]
-pub fn PostHeader(post: Post, #[props(default = false)] full_reload: bool) -> Element {
+pub fn PostHeader(post: PostHeaderData, #[props(default = false)] full_reload: bool) -> Element {
     rsx! {
         header { class: "post-header",
             Breadcrumbs { title: post.title.clone(), full_reload }

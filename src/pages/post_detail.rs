@@ -29,6 +29,7 @@ use crate::components::post::post_header::PostHeader;
 use crate::components::post::post_toc::PostToc;
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::skeletons::post_detail_skeleton::PostDetailSkeleton;
+use crate::models::post::{PostFooterData, PostHeaderData};
 use crate::router::Route;
 
 /// 文章详情页面组件，对应路由 `/post/:slug`。
@@ -76,7 +77,8 @@ pub fn PostDetail(slug: String) -> Element {
 
     rsx! {
         article { class: "post-single max-w-none animate-page-enter", key: "{post.slug}", "data-vt-detail": "{post.id}",
-            PostHeader { post: post.clone() }
+            // P4.2：页眉/页脚只取小型字段集，避免每次渲染复制/深比较完整正文。
+            PostHeader { post: PostHeaderData::from(&post) }
 
             // 如果文章设置了封面图，则渲染封面组件。
             if let Some(cover) = &post.cover_image {
@@ -113,7 +115,7 @@ pub fn PostDetail(slug: String) -> Element {
                 }
             }
 
-            PostFooter { post: post.clone() }
+            PostFooter { post: PostFooterData::from(&post) }
 
             // 仅对已发布文章展示评论区域，使用 SuspenseBoundary 处理加载状态。
             if post.status == crate::models::post::PostStatus::Published {
