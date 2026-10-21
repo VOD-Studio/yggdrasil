@@ -1,31 +1,20 @@
-//! 后台「站点配置」页面（滚动联动分区布局）。
+//! 后台「设置」页面（`/admin/settings`）。
 //!
-//! 左侧分类导航 + 右侧滚动内容的布局（2026 admin UX 最佳实践），将全部站点级
-//! 配置集中到一处。分区按功能域组织：
+//! 左侧分区目录 + 右侧纵向堆叠的全部分区，按「站点、安全、上传、图片缓存、图片处理、
+//! 素材清理、回收站、自动备份、代码运行器、接口限流、启动配置」排列。全部分区常驻
+//! 挂载在同一个滚动容器里：
+//! - 点目录 → `scrollIntoView` 平滑滚动到分区，期间用「世代锁」抑制 scroll-spy，
+//!   避免途经分区依次闪过高亮；
+//! - 手动滚动 → scroll-spy（判定线法）同步目录高亮。
 //!
-//! - **站点**：页脚 GitHub 链接等公开配置（前台可见）
-//! - **安全**：CSRF 可信源、cookie Secure、代理层数、并发会话上限（即时生效）
-//! - **缓存**：图片磁盘缓存容量与保留策略（即时生效）
-//! - **素材清理**：无引用图片自动清理开关与保留天数（即时生效）
-//! - **备份**：自动备份调度与保留份数（即时生效，备份操作仍在 /admin/system）
-//! - **回收站**：自动清理开关与保留天数（即时生效）
-//! - **上传**：素材上传弹窗并发数（即时生效）
-//! - **系统**：只读展示启动时配置（数据库、日志、Docker 等，需重启生效）
-//!
-//! 与 tab 切换不同，全部分区**常驻挂载、纵向堆叠**在同一个滚动容器里：
-//! - 点击左侧导航 → 容器 `scroll-smooth` + `scrollIntoView` 平滑滚动到对应分区；
-//! - 手动滚动 → scroll-spy（复用 changelog.rs 的 getBoundingClientRect 判定线
-//!   模式）实时同步左侧高亮；
-//! - 点击触发的平滑滚动期间用「世代锁」抑制 spy，避免途经分区依次闪过高亮。
-//!
-//! 各分区拆分为独立子模块，状态完全独立、互不共享，全部挂载后各自存活。
-//!
-//! 仅 WASM 前端交互（照 mcp.rs / friends.rs 的 `#[cfg(target_arch = "wasm32")]`
-//! 门控模式）。
+//! 各分区各自读取与提交（见 `kit.rs`），改动由底部浮起的保存条统一保存：只提交有
+//! 改动的分区，「放弃」把全部草稿还原。需要重启才生效的分区在目录与卡片上标出。
+//! 样式见 styles/pages/admin-settings.css。
 
 mod backup_section;
 mod cache_section;
 mod image_section;
+mod kit;
 mod purge_section;
 mod ratelimit_section;
 mod runner_section;
@@ -40,6 +29,7 @@ use dioxus::prelude::*;
 use backup_section::BackupSection;
 use cache_section::CacheSection;
 use image_section::ImageSection;
+use kit::SettingsBus;
 use purge_section::AssetPurgeSection;
 use ratelimit_section::RateLimitSection;
 use runner_section::RunnerSection;
@@ -49,30 +39,32 @@ use system_section::SystemSection;
 use trash_section::TrashSection;
 use upload_section::UploadSection;
 
-/// 设置页面的分区枚举。
-#[derive(Clone, Copy, PartialEq, Debug)]
+use crate::components::ui::{button_class, use_toast, ButtonSize, ButtonVariant};
+
+/// 设置页面的分区枚举，顺序即页面与导航顺序。
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum SettingsSection {
-    /// 站点公开配置（页脚 GitHub 链接等）。
+    /// 站点公开配置（页脚链接、首页标语、站点简介）。
     Site,
     /// 安全配置（CSRF / cookie / 代理 / 会话）。
     Security,
-    /// 缓存配置（图片磁盘缓存）。
-    Cache,
-    /// 孤儿素材自动清理。
-    AssetPurge,
-    /// 限流配置（各接口速率限制）。
-    RateLimit,
-    /// 图片处理配置（WebP 编码 / 尺寸上限）。
-    Image,
-    /// 代码运行器配置（沙箱资源限制）。
-    Runner,
-    /// 自动备份调度。
-    Backup,
-    /// 回收站自动清理。
-    Trash,
     /// 素材上传并发。
     Upload,
-    /// 系统启动配置（只读）。
+    /// 图片磁盘缓存。
+    Cache,
+    /// 图片处理（WebP 编码 / 尺寸上限），重启生效。
+    Image,
+    /// 无引用素材自动清理。
+    AssetPurge,
+    /// 回收站自动清理。
+    Trash,
+    /// 自动备份调度。
+    Backup,
+    /// 代码运行器（沙箱资源限制），重启生效。
+    Runner,
+    /// 接口限流，重启生效。
+    RateLimit,
+    /// 启动配置（只读）。
     System,
 }
 
@@ -81,50 +73,44 @@ impl SettingsSection {
         match self {
             SettingsSection::Site => "site",
             SettingsSection::Security => "security",
-            SettingsSection::Cache => "cache",
-            SettingsSection::AssetPurge => "assetpurge",
-            SettingsSection::RateLimit => "ratelimit",
-            SettingsSection::Image => "image",
-            SettingsSection::Runner => "runner",
-            SettingsSection::Backup => "backup",
-            SettingsSection::Trash => "trash",
             SettingsSection::Upload => "upload",
+            SettingsSection::Cache => "cache",
+            SettingsSection::Image => "image",
+            SettingsSection::AssetPurge => "assetpurge",
+            SettingsSection::Trash => "trash",
+            SettingsSection::Backup => "backup",
+            SettingsSection::Runner => "runner",
+            SettingsSection::RateLimit => "ratelimit",
             SettingsSection::System => "system",
         }
     }
 
-    /// 分区显示名称。
+    /// 分区名称（导航与卡片标题）。
     fn label(&self) -> &'static str {
         match self {
             SettingsSection::Site => "站点",
             SettingsSection::Security => "安全",
-            SettingsSection::Cache => "缓存",
-            SettingsSection::AssetPurge => "素材清理",
-            SettingsSection::RateLimit => "限流",
-            SettingsSection::Image => "图片",
-            SettingsSection::Runner => "运行器",
-            SettingsSection::Backup => "备份",
-            SettingsSection::Trash => "回收站",
             SettingsSection::Upload => "上传",
-            SettingsSection::System => "系统",
+            SettingsSection::Cache => "图片缓存",
+            SettingsSection::Image => "图片处理",
+            SettingsSection::AssetPurge => "素材清理",
+            SettingsSection::Trash => "回收站",
+            SettingsSection::Backup => "自动备份",
+            SettingsSection::Runner => "代码运行器",
+            SettingsSection::RateLimit => "接口限流",
+            SettingsSection::System => "启动配置",
         }
     }
 
-    /// 分区图标（Feather 线框 SVG path d 属性）。
-    fn icon_path(&self) -> &'static str {
-        match self {
-            SettingsSection::Site => "M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z M9 22V12h6v10",
-            SettingsSection::Security => "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z",
-            SettingsSection::Cache => "M21 8v13H3V8 M1 3h22v5H1z M10 12h4",
-            SettingsSection::AssetPurge => "M21 15l-5-5L5 21 M18 21H3V3h18v9z M8.5 8.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0z M3 6h18",
-            SettingsSection::RateLimit => "M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2z M12 6v6l4 2",
-            SettingsSection::Image => "M21 15l-5-5L5 21 M18 21H3V3h18v9z M8.5 8.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0z",
-            SettingsSection::Runner => "M16 18l6-6-6-6 M8 6l-6 6 6 6",
-            SettingsSection::Backup => "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4 M7 10l5 5 5-5 M12 15V3",
-            SettingsSection::Trash => "M3 6h18 M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2 M10 11v6 M14 11v6",
-            SettingsSection::Upload => "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4 M17 8l-5-5-5 5 M12 3v12",
-            SettingsSection::System => "M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z M22 6l-10 7L2 6",
-        }
+    /// 修改后需要重启服务才生效。
+    fn needs_restart(&self) -> bool {
+        matches!(
+            self,
+            SettingsSection::Image
+                | SettingsSection::Runner
+                | SettingsSection::RateLimit
+                | SettingsSection::System
+        )
     }
 
     /// 所有分区，按导航顺序。
@@ -132,14 +118,14 @@ impl SettingsSection {
         [
             SettingsSection::Site,
             SettingsSection::Security,
-            SettingsSection::Cache,
-            SettingsSection::AssetPurge,
-            SettingsSection::RateLimit,
-            SettingsSection::Image,
-            SettingsSection::Runner,
-            SettingsSection::Backup,
-            SettingsSection::Trash,
             SettingsSection::Upload,
+            SettingsSection::Cache,
+            SettingsSection::Image,
+            SettingsSection::AssetPurge,
+            SettingsSection::Trash,
+            SettingsSection::Backup,
+            SettingsSection::Runner,
+            SettingsSection::RateLimit,
             SettingsSection::System,
         ]
     }
@@ -198,38 +184,38 @@ fn scroll_to_section(section: SettingsSection) {
     el.scroll_into_view();
 }
 
-/// 渲染单个分区组件。全部分区常驻挂载，各分区状态独立、互不共享。
-fn render_section(section: SettingsSection, toast: Callback<(String, bool)>) -> Element {
+/// 渲染单个分区组件。全部分区常驻挂载，各自读取与提交，经保存条统一保存。
+fn render_section(section: SettingsSection) -> Element {
     match section {
-        SettingsSection::Security => rsx! {
-            SecuritySection { toast }
-        },
-        SettingsSection::RateLimit => rsx! {
-            RateLimitSection { toast }
-        },
         SettingsSection::Site => rsx! {
-            SiteSection { toast }
+            SiteSection {}
         },
-        SettingsSection::Cache => rsx! {
-            CacheSection { toast }
-        },
-        SettingsSection::AssetPurge => rsx! {
-            AssetPurgeSection { toast }
-        },
-        SettingsSection::Backup => rsx! {
-            BackupSection { toast }
-        },
-        SettingsSection::Image => rsx! {
-            ImageSection { toast }
-        },
-        SettingsSection::Runner => rsx! {
-            RunnerSection { toast }
-        },
-        SettingsSection::Trash => rsx! {
-            TrashSection { toast }
+        SettingsSection::Security => rsx! {
+            SecuritySection {}
         },
         SettingsSection::Upload => rsx! {
-            UploadSection { toast }
+            UploadSection {}
+        },
+        SettingsSection::Cache => rsx! {
+            CacheSection {}
+        },
+        SettingsSection::Image => rsx! {
+            ImageSection {}
+        },
+        SettingsSection::AssetPurge => rsx! {
+            AssetPurgeSection {}
+        },
+        SettingsSection::Trash => rsx! {
+            TrashSection {}
+        },
+        SettingsSection::Backup => rsx! {
+            BackupSection {}
+        },
+        SettingsSection::Runner => rsx! {
+            RunnerSection {}
+        },
+        SettingsSection::RateLimit => rsx! {
+            RateLimitSection {}
         },
         SettingsSection::System => rsx! {
             SystemSection {}
@@ -237,147 +223,146 @@ fn render_section(section: SettingsSection, toast: Callback<(String, bool)>) -> 
     }
 }
 
-/// 管理后台站点配置页面（滚动联动分区布局）。
+/// 管理后台设置页面：左侧分区目录，右侧纵向堆叠全部分区，底部浮起保存条。
 ///
-/// 左侧分类导航 + 右侧纵向堆叠的全部分区。点击导航平滑滚动到对应分区；
-/// 手动滚动时 scroll-spy 同步左侧高亮（`active` 信号驱动）。
+/// 点目录平滑滚动到分区，手动滚动时 scroll-spy 同步目录高亮。各分区的改动由保存条
+/// 统一提交，只提交有改动的分区；需要重启的分区在目录与卡片上标出。
 #[component]
 pub fn SiteSettingsPage() -> Element {
+    let bus = use_context_provider(SettingsBus::new);
+    let toast = use_toast();
     let mut active = use_signal(|| SettingsSection::Site);
-    // scroll-spy 锁定：点击导航后的平滑滚动期间抑制 spy 改写 active，避免途经
-    // 分区依次闪过高亮。u32 为单调世代号，防止上一次点击的超时回调误清本次的锁。
-    // 仅 wasm 使用（server 目标下 onscroll/onclick 体内的 DOM 逻辑整体 cfg 掉）。
+    // scroll-spy 锁定：点击目录后的平滑滚动期间不让 spy 改写高亮，避免途经分区依次闪过。
+    // u32 为单调世代号，防止上一次点击的超时回调误清本次的锁。
     #[cfg(target_arch = "wasm32")]
     let mut spy_lock: Signal<Option<(SettingsSection, u32)>> = use_signal(|| None);
     #[cfg(target_arch = "wasm32")]
     let mut lock_gen: Signal<u32> = use_signal(|| 0);
-    let mut toast_state: Signal<Option<(String, bool)>> = use_signal(|| None);
-    let toast: Callback<(String, bool)> = Callback::new(move |m| toast_state.set(Some(m)));
-    // 展示信号：toast_state 驱动 is-open（展开/收起），display_* 保留最近一条消息，
-    // 使退出动画（收起+淡出）期间文本不闪。
-    let mut display_msg: Signal<String> = use_signal(String::new);
-    let mut display_err: Signal<bool> = use_signal(|| false);
-    // toast 出现时同步展示信号 + 启动 3 秒自动消失计时器。
+    // 一次保存涉及的分区：全部提交结束后据此报告结果。
+    let mut submitted = use_signal(|| None::<Vec<SettingsSection>>);
+
     use_effect(move || {
-        if let Some((msg, is_err)) = toast_state() {
-            display_msg.set(msg.clone());
-            display_err.set(is_err);
-            let key = msg.clone();
-            spawn(async move {
-                crate::utils::time::sleep_ms(3000).await;
-                // 仅当 toast 未被新消息覆盖时清除（避免误清后续 toast）
-                if toast_state().map(|(m, _)| m == key).unwrap_or(false) {
-                    toast_state.set(None);
-                }
+        let saving = (bus.saving)();
+        if !saving.is_empty() {
+            return;
+        }
+        let Some(done) = submitted() else {
+            return;
+        };
+        submitted.set(None);
+        if bus.failed.peek().is_empty() {
+            let restart = done.iter().any(SettingsSection::needs_restart);
+            toast.success(if restart {
+                "设置已保存，带「需重启」的部分在重启服务后生效"
+            } else {
+                "设置已保存"
             });
         }
     });
+
+    let dirty = (bus.dirty)();
+    let saving = !(bus.saving)().is_empty();
+    let failed = (bus.failed)();
+
     rsx! {
-        // flex-1 min-h-0 作为 main 的 flex 子项获得有界高度（AdminLayout 对 settings 路由
-        // 已切到 internal-scroll 变体：卡片 overflow-hidden、main 无 padding 纯 flex 容器），
-        // 故内边距 px-6 py-12 由本页自带。纯 flex 约束，不用百分比——百分比会被 main 的
-        // min-height:auto 循环撑大失效。页头固定，下方 flex-1 区域仅占剩余高度。
-        div { class: "animate-page-enter w-full flex-1 min-h-0 flex flex-col px-6 py-8 sm:py-12",
-            // 页头（固定，不随右侧内容滚动）
-            div { class: "flex-shrink-0 flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-[var(--color-paper-border)]/70 mb-6",
-                div {
-                    h1 { class: "text-3xl sm:text-4xl font-extrabold tracking-tight text-[var(--color-paper-primary)]",
-                        "站点配置"
+        div {
+            id: "settings-scroll",
+            class: "settings-page",
+            "data-vt-scroll": "admin-settings",
+            onscroll: move |_| {
+                #[cfg(target_arch = "wasm32")]
+                {
+                    let Some(current) = compute_visible_section() else {
+                        return;
+                    };
+                    if let Some((target, _)) = spy_lock() {
+                        if current == target {
+                            spy_lock.set(None);
+                        }
+                        return;
                     }
-                    p { class: "text-sm text-[var(--color-paper-secondary)] mt-1.5",
-                        "管理站点公开配置、安全策略与后台行为参数"
+                    if *active.peek() != current {
+                        active.set(current);
                     }
                 }
-            }
-
-            // 操作提示条（各分区共享；grid-rows 高度过渡 + 淡入淡出，3 秒自动消失）
-            div { class: if toast_state().is_some() { "ygg-toast is-open" } else { "ygg-toast" },
-                div { class: if display_err() { "ygg-toast-inner text-sm rounded-lg px-3 py-2 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300" } else { "ygg-toast-inner text-sm rounded-lg px-3 py-2 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300" },
-                    "{display_msg()}"
-                }
-            }
-
-            // 顶部横向分类导航栏（水平胶囊语言，消除双侧栏宽度不协调问题）
-            div { class: "flex-shrink-0 flex items-center gap-2 overflow-x-auto pb-3 mb-6 border-b border-[var(--color-paper-border)]/60 scrollbar-none select-none",
-                for (idx, &section) in SettingsSection::all().iter().enumerate() {
-                    {
-                        let is_active = active() == section;
-                        let label = section.label();
-                        let icon_path = section.icon_path();
-                        let base = "inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap cursor-pointer shrink-0 border";
-                        let color = if is_active {
-                            "bg-[var(--color-paper-accent)] text-[var(--color-paper-theme)] shadow-2xs border-transparent font-semibold"
-                        } else {
-                            "text-[var(--color-paper-secondary)] bg-[var(--color-paper-entry)]/80 hover:bg-[var(--color-paper-theme)] hover:text-[var(--color-paper-primary)] border-[var(--color-paper-border)]/70"
-                        };
-                        rsx! {
-                            button {
-                                key: "{section.as_str()}",
-                                class: "animate-row-enter {base} {color}",
-                                style: "animation-delay: {idx * 25}ms",
-                                onclick: move |_| {
-                                    active.set(section);
-                                    #[cfg(target_arch = "wasm32")]
-                                    {
-                                        let g = lock_gen().wrapping_add(1);
-                                        lock_gen.set(g);
-                                        spy_lock.set(Some((section, g)));
-                                        scroll_to_section(section);
-                                        spawn(async move {
-                                            crate::utils::time::sleep_ms(1200).await;
-                                            if matches!(spy_lock(), Some((_, gg)) if gg == g) {
-                                                spy_lock.set(None);
-                                            }
-                                        });
-                                    }
-                                },
-                                svg {
-                                    class: "w-3.5 h-3.5 flex-shrink-0",
-                                    view_box: "0 0 24 24",
-                                    fill: "none",
-                                    stroke: "currentColor",
-                                    stroke_width: "2",
-                                    stroke_linecap: "round",
-                                    stroke_linejoin: "round",
-                                    path { d: "{icon_path}" }
-                                }
-                                "{label}"
-                            }
-                        }
-                    }
-                }
-            }
-
-            // 内容区：全部分区常驻挂载、纵向堆叠在同一个滚动容器里
-            div {
-                id: "settings-scroll",
-                "data-vt-scroll": "admin-settings",
-                class: "flex-1 min-w-0 min-h-0 overflow-y-auto pb-8 rounded-2xl scroll-smooth",
-                onscroll: move |_| {
-                    #[cfg(target_arch = "wasm32")]
-                    {
-                        let Some(current) = compute_visible_section() else {
-                            return;
-                        };
-                        if let Some((target, _)) = spy_lock() {
-                            if current == target {
-                                spy_lock.set(None);
-                            }
-                            return;
-                        }
-                        if *active.peek() != current {
-                            active.set(current);
-                        }
-                    }
-                },
-                div { class: "flex flex-col gap-8 max-w-5xl mx-auto w-full",
-                    for (idx, &section) in SettingsSection::all().iter().enumerate() {
-                        section {
+            },
+            div { class: "settings-layout",
+                nav { class: "settings-nav", aria_label: "设置分区",
+                    for section in SettingsSection::all() {
+                        a {
                             key: "{section.as_str()}",
-                            id: "{section.dom_id()}",
-                            class: "scroll-mt-2 animate-section-enter",
-                            style: "animation-delay: {idx * 40}ms",
-                            {render_section(section, toast)}
+                            href: "#{section.dom_id()}",
+                            aria_current: (active() == section).then_some("true"),
+                            "data-dirty": dirty.contains(&section).then_some("true"),
+                            onclick: move |e| {
+                                e.prevent_default();
+                                active.set(section);
+                                #[cfg(target_arch = "wasm32")]
+                                {
+                                    let g = lock_gen().wrapping_add(1);
+                                    lock_gen.set(g);
+                                    spy_lock.set(Some((section, g)));
+                                    scroll_to_section(section);
+                                    spawn(async move {
+                                        crate::utils::time::sleep_ms(1200).await;
+                                        if matches!(spy_lock(), Some((_, gg)) if gg == g) {
+                                            spy_lock.set(None);
+                                        }
+                                    });
+                                }
+                            },
+                            span { "{section.label()}" }
+                            if section.needs_restart() {
+                                span { class: "settings-restart-dot", title: "修改后需重启" }
+                            }
+                        }
+                    }
+                }
+                div { class: "settings-main",
+                    div { class: "admin-page-head",
+                        div {
+                            h1 { "设置" }
+                            p {
+                                "大部分设置保存后立即生效；带 "
+                                span { class: "settings-restart-dot", aria_label: "需重启标记" }
+                                " 的分区需要重启服务。"
+                            }
+                        }
+                    }
+                    for section in SettingsSection::all() {
+                        div { key: "{section.as_str()}", class: "settings-slot",
+                            {render_section(section)}
+                        }
+                    }
+                    if !dirty.is_empty() || saving {
+                        div { class: "settings-savebar", role: "status",
+                            span { class: "settings-savebar-text",
+                                span { class: "settings-savebar-dot", aria_hidden: "true" }
+                                if saving {
+                                    "正在保存…"
+                                } else if !failed.is_empty() {
+                                    "{failed.len()} 个分区没有保存成功"
+                                } else {
+                                    "有未保存的更改 · {dirty.len()} 个分区"
+                                }
+                            }
+                            button {
+                                class: button_class(ButtonVariant::Ghost, ButtonSize::Sm),
+                                r#type: "button",
+                                disabled: saving,
+                                onclick: move |_| bus.reset_all(),
+                                "放弃"
+                            }
+                            button {
+                                class: button_class(ButtonVariant::Primary, ButtonSize::Sm),
+                                r#type: "button",
+                                disabled: saving,
+                                onclick: move |_| {
+                                    submitted.set(Some((bus.dirty)()));
+                                    bus.save_all();
+                                },
+                                if failed.is_empty() { "保存设置" } else { "重试" }
+                            }
                         }
                     }
                 }

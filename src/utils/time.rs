@@ -118,22 +118,28 @@ pub fn utc_hhmm_to_local(t: &str) -> String {
 }
 
 /// 浏览器本地 "HH:MM" → UTC "HH:MM"。空串/非法输入回退 "04:00"
-/// （服务端 normalize 会再兜底一次）。仅 wasm 端保存按钮调用。
-#[cfg(target_arch = "wasm32")]
+/// （服务端 normalize 会再兜底一次）。非 wasm32 原样返回（只有设置页保存时调用）。
 pub fn local_hhmm_to_utc(t: &str) -> String {
-    let mut parts = t.split(':');
-    let Some(h) = parts.next().and_then(|s| s.parse::<u32>().ok()) else {
-        return "04:00".to_string();
-    };
-    let Some(m) = parts.next().and_then(|s| s.parse::<u32>().ok()) else {
-        return "04:00".to_string();
-    };
-    let d = js_sys::Date::new_0();
-    d.set_hours(h);
-    d.set_minutes(m);
-    d.set_seconds(0);
-    d.set_milliseconds(0);
-    format!("{:02}:{:02}", d.get_utc_hours(), d.get_utc_minutes())
+    #[cfg(target_arch = "wasm32")]
+    {
+        let mut parts = t.split(':');
+        let Some(h) = parts.next().and_then(|s| s.parse::<u32>().ok()) else {
+            return "04:00".to_string();
+        };
+        let Some(m) = parts.next().and_then(|s| s.parse::<u32>().ok()) else {
+            return "04:00".to_string();
+        };
+        let d = js_sys::Date::new_0();
+        d.set_hours(h);
+        d.set_minutes(m);
+        d.set_seconds(0);
+        d.set_milliseconds(0);
+        format!("{:02}:{:02}", d.get_utc_hours(), d.get_utc_minutes())
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        t.to_string()
+    }
 }
 
 #[cfg(any(feature = "server", test))]

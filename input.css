@@ -42,5 +42,6 @@
 @import "./styles/pages/admin-comments.css";
 @import "./styles/pages/admin-friends.css";
 @import "./styles/pages/admin-profile.css";
+@import "./styles/pages/admin-settings.css";
 
 @source "./src/**/*.{rs,html}";
