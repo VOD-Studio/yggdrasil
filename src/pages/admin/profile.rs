@@ -1,519 +1,448 @@
-//! 后台「个人信息」页面（`/admin/profile`）。
+//! 后台「个人资料」页面（`/admin/profile`）。
 //!
-//! 管理当前登录账号的展示资料（显示名称 / 头像 / 邮箱）与登录密码；
-//! username 是唯一登录凭据，只读展示。
-//!
-//! 布局：单列居中卡片流（max-w-2xl）——身份卡（头像 + 展示名 + 角色徽章 +
-//! 注册时间）→「基本资料」卡 →「安全」卡。与站点设置页的 scroll-spy 分区
-//! 布局刻意不同：本页只有 2-3 个分区，纵向堆叠一次看完，无需左侧导航。
-//!
-//! 数据流（照 settings 分区的 wasm 门控模式，见 settings/mod.rs 模块文档）：
-//! - 挂载后 `use_effect` 一次性拉取 `get_profile` 并回填草稿信号
-//!   （一次性「种子」回填，草稿随后与已存值分叉，非派生状态）；
-//! - 保存成功后用响应里的 `PublicUser` 同步刷新 `UserContext`，
-//!   侧栏用户卡片即时更新，无需整页刷新；
-//! - 头像选择复用 `AssetPickerModal` 单选模式（上传新图 / 素材库选择同一弹窗）。
-//!
-//! 注意：`AssetPickerModal` 是 `position: fixed` 弹层，必须挂在
-//! `animate-page-enter` 动画树**之外**——CSS transform 会让 fixed 定位
-//! 以变换祖先为参照系而非视口（MCP 页已踩过，见 mcp.rs 修复记录）。
-//! 因此本页外层是无动画的布局 wrapper，动画类只加在内容列上。
+//! 三个分区纵向排列：个人信息（头像、只读用户名、显示名称、邮箱，改动后才能保存）、
+//! 修改密码（当前密码、新密码与强度条、确认）、退出登录。username 是唯一登录凭据，
+//! 只读展示。启用 ADMIN_* 环境变量时顶部提示重启后以环境变量为准。保存成功后用
+//! 响应里的 `PublicUser` 刷新 `UserContext`，侧栏即时更新。密码强度条只在浏览器端
+//! 提示，不改变服务端校验。样式见 styles/pages/admin-profile.css。
 
 use dioxus::prelude::*;
 
-#[cfg(target_arch = "wasm32")]
-use std::sync::Arc;
-
-#[cfg(target_arch = "wasm32")]
-use crate::api::profile::{change_password, get_profile, update_profile};
-#[cfg(target_arch = "wasm32")]
 use crate::components::assets::{AssetPickerModal, AssetSelection};
-#[cfg(target_arch = "wasm32")]
-use crate::components::forms::{FormInput, FormLabel};
-#[cfg(target_arch = "wasm32")]
 use crate::components::skeletons::profile_skeleton::ProfileSkeleton;
-#[cfg(target_arch = "wasm32")]
-use crate::components::ui::{LoadingButton, StatusBadge, UserAvatar, ADMIN_CARD_CLASS, BTN_GHOST};
-#[cfg(target_arch = "wasm32")]
-use crate::context::UserContext;
-#[cfg(target_arch = "wasm32")]
+use crate::components::ui::{
+    button_class, use_toast, ButtonSize, ButtonVariant, Icon, IconName, LoadError,
+};
 use crate::models::user::PublicUser;
 
-/// Material Symbols `photo_camera`（头像 hover 遮罩；`public/icons/` 有存档）。
-#[cfg(target_arch = "wasm32")]
-const ICON_CAMERA: &str = "M479.5-267q72.5 0 121.5-49t49-121.5q0-72.5-49-121T479.5-607q-72.5 0-121 48.5t-48.5 121q0 72.5 48.5 121.5t121 49Zm0-60q-47.5 0-78.5-31.5t-31-79q0-47.5 31-78.5t78.5-31q47.5 0 79 31t31.5 78.5q0 47.5-31.5 79t-79 31.5ZM140-120q-24 0-42-18t-18-42v-513q0-23 18-41.5t42-18.5h147l73-87h240l73 87h147q23 0 41.5 18.5T880-693v513q0 24-18.5 42T820-120H140Zm0-60h680v-513H645l-73-87H388l-73 87H140v513Zm340-257Z";
-/// Material Symbols `badge`（「基本资料」卡头图标；`public/icons/` 有存档）。
-#[cfg(target_arch = "wasm32")]
-const ICON_BADGE: &str = "M140-80q-24 0-42-18t-18-42v-480q0-24 18-42t42-18h250v-140q0-24 18-42t42-18h60q24 0 42 18t18 42v140h250q24 0 42 18t18 42v480q0 24-18 42t-42 18H140Zm0-60h680v-480H570v30q0 28-18 44t-42 16h-60q-24 0-42-16t-18-44v-30H140v480Zm92-107h239v-14q0-18-9-32t-23-19q-32-11-50-14.5t-35-3.5q-19 0-40.5 4.5T265-312q-15 5-24 19t-9 32v14Zm336-67h170v-50H568v50Zm-175.5-65.5Q408-395 408-418t-15.5-38.5Q377-472 354-472t-38.5 15.5Q300-441 300-418t15.5 38.5Q331-364 354-364t38.5-15.5ZM568-427h170v-50H568v50ZM450-590h60v-230h-60v230Zm30 210Z";
-/// Material Symbols `lock`（「安全」卡头图标；`public/icons/` 有存档）。
-#[cfg(target_arch = "wasm32")]
-const ICON_LOCK: &str = "M220-80q-24.75 0-42.37-17.63Q160-115.25 160-140v-434q0-24.75 17.63-42.38Q195.25-634 220-634h70v-96q0-78.85 55.61-134.42Q401.21-920 480.11-920q78.89 0 134.39 55.58Q670-808.85 670-730v96h70q24.75 0 42.38 17.62Q800-598.75 800-574v434q0 24.75-17.62 42.37Q764.75-80 740-80H220Zm0-60h520v-434H220v434Zm314.5-162.03Q557-324.06 557-355q0-30-22.67-54.5t-54.5-24.5q-31.83 0-54.33 24.5t-22.5 55q0 30.5 22.67 52.5t54.5 22q31.83 0 54.33-22.03ZM350-634h260v-96q0-54.17-37.88-92.08-37.88-37.92-92-37.92T388-822.08q-38 37.91-38 92.08v96ZM220-140v-434 434Z";
+/// 新密码最短字符数，与服务端校验一致。
+const MIN_PASSWORD: usize = 8;
 
-/// 卡头图标气泡（与 settings 分区卡头同一结构：圆形软底气泡 + 24px 图标）。
-#[cfg(target_arch = "wasm32")]
-fn icon_bubble(path: &'static str) -> Element {
+/// 密码强度 0–4：空、不足 8 位、8–11 位、12 位以上、12 位以上且含符号。
+fn password_level(pw: &str) -> u8 {
+    let len = pw.chars().count();
+    if len == 0 {
+        0
+    } else if len < MIN_PASSWORD {
+        1
+    } else if len < 12 {
+        2
+    } else if pw.chars().any(|c| !c.is_ascii_alphanumeric()) {
+        4
+    } else {
+        3
+    }
+}
+
+/// 强度条下方的说明。
+fn password_hint(pw: &str) -> String {
+    let len = pw.chars().count();
+    match password_level(pw) {
+        0 => format!("至少 {MIN_PASSWORD} 位。"),
+        1 => format!("还差 {} 位。", MIN_PASSWORD - len),
+        4 => "强度不错。".into(),
+        _ => "可以再长一些，或加入符号。".into(),
+    }
+}
+
+/// 后台个人资料页面。
+#[component]
+#[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut, unused_variables))]
+pub fn Profile() -> Element {
+    let mut user = use_signal(|| None::<PublicUser>);
+    let mut env_admin = use_signal(|| false);
+    let mut error = use_signal(|| false);
+    let mut reload = use_signal(|| 0_u32);
+    let actions: Option<crate::components::admin_layout::AdminActions> = try_consume_context();
+
+    use_effect(move || {
+        let _ = reload();
+        #[cfg(target_arch = "wasm32")]
+        spawn(async move {
+            match crate::api::profile::get_profile().await {
+                Ok(resp) => {
+                    env_admin.set(resp.admin_env_active);
+                    user.set(Some(resp.user));
+                    error.set(false);
+                }
+                Err(_) => error.set(true),
+            }
+        });
+    });
+
     rsx! {
-        span { class: "inline-flex items-center justify-center w-10 h-10 rounded-full bg-[var(--color-paper-theme)] text-[var(--color-paper-primary)] border border-[var(--color-paper-border)] flex-shrink-0",
-            svg {
-                xmlns: "http://www.w3.org/2000/svg",
-                height: "24px",
-                view_box: "0 -960 960 960",
-                width: "24px",
-                fill: "currentColor",
-                path { d: "{path}" }
+        div { class: "admin-profile",
+            div { class: "admin-page-head",
+                div {
+                    h1 { "个人资料" }
+                    p { "当前登录账号的展示资料与登录密码。" }
+                }
+            }
+            if env_admin() {
+                p { class: "admin-profile-note", role: "note",
+                    Icon { name: IconName::TriangleAlert, size: 16 }
+                    "已启用 ADMIN_* 环境变量：每次服务重启后，邮箱与密码会以环境变量为准。"
+                }
+            }
+            if error() {
+                LoadError { title: "个人资料加载失败", on_retry: move |_| reload += 1 }
+            } else if let Some(current) = user() {
+                InfoSection {
+                    key: "{current.id}",
+                    user: current,
+                    on_saved: move |u: PublicUser| user.set(Some(u)),
+                }
+                PasswordSection {}
+                section { class: "admin-profile-logout", aria_labelledby: "profile-out-h",
+                    div {
+                        h2 { id: "profile-out-h", "退出登录" }
+                        p { "只退出当前设备。" }
+                    }
+                    button {
+                        class: button_class(ButtonVariant::Outline, ButtonSize::Md),
+                        "data-danger": "true",
+                        r#type: "button",
+                        onclick: move |_| {
+                            if let Some(actions) = actions {
+                                actions.logout.call(());
+                            }
+                        },
+                        Icon { name: IconName::LogOut, size: 15 }
+                        "退出登录"
+                    }
+                }
+            } else {
+                ProfileSkeleton {}
             }
         }
     }
 }
 
-/// 后台个人信息页面组件。
+/// 个人信息：头像、用户名、显示名称、邮箱。
 #[component]
-pub fn Profile() -> Element {
+#[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut, unused_variables))]
+fn InfoSection(user: PublicUser, on_saved: EventHandler<PublicUser>) -> Element {
+    let toast = use_toast();
+    let base_display = user.display_name.clone().unwrap_or_default();
+    let base_email = user.email.clone();
+    let base_avatar = user.avatar_url.clone();
+    let mut display = use_signal(|| base_display.clone());
+    let mut email = use_signal(|| base_email.clone());
+    let mut avatar = use_signal(|| base_avatar.clone());
+    let mut saving = use_signal(|| false);
+    let mut picker = use_signal(|| false);
+    let mut uploading = use_signal(|| false);
+    let mut avatar_failed = use_signal(|| false);
     #[cfg(target_arch = "wasm32")]
-    {
-        let mut ctx: UserContext = use_context();
+    let mut ctx: crate::context::UserContext = use_context();
 
-        let mut loading = use_signal(|| true);
-        let mut saved: Signal<Option<PublicUser>> = use_signal(|| None);
-        let mut admin_env_active = use_signal(|| false);
+    let dirty =
+        display().trim() != base_display || email().trim() != base_email || avatar() != base_avatar;
+    let label = if display().trim().is_empty() {
+        user.username.clone()
+    } else {
+        display().trim().to_string()
+    };
+    let initial = label
+        .chars()
+        .next()
+        .map(|c| c.to_uppercase().to_string())
+        .unwrap_or_default();
 
-        // 基本资料草稿（一次性种子回填后为用户可编辑的独立状态）。
-        let mut email_draft = use_signal(String::new);
-        let mut display_name_draft = use_signal(String::new);
-        let mut avatar_draft: Signal<Option<String>> = use_signal(|| None);
-        let mut saving = use_signal(|| false);
-        let mut just_saved = use_signal(|| false);
-
-        // 安全卡草稿。
-        let mut current_pw = use_signal(String::new);
-        let mut new_pw = use_signal(String::new);
-        let mut confirm_pw = use_signal(String::new);
-        let mut changing = use_signal(|| false);
-
-        let mut picker_visible = use_signal(|| false);
-        let avatar_uploading = use_signal(|| false);
-
-        // toast：与 settings/mod.rs 同一实现（展示信号 + 3 秒自动消失）。
-        let mut toast_state: Signal<Option<(String, bool)>> = use_signal(|| None);
-        let mut display_msg: Signal<String> = use_signal(String::new);
-        let mut display_err: Signal<bool> = use_signal(|| false);
-
-        // 初始拉取并种子回填（合法的一次性 effect，见模块文档）。
-        use_effect(move || {
-            spawn(async move {
-                match get_profile().await {
-                    Ok(resp) => {
-                        email_draft.set(resp.user.email.clone());
-                        display_name_draft.set(resp.user.display_name.clone().unwrap_or_default());
-                        avatar_draft.set(resp.user.avatar_url.clone());
-                        admin_env_active.set(resp.admin_env_active);
-                        saved.set(Some(resp.user));
+    let save = move |e: FormEvent| {
+        e.prevent_default();
+        if saving() {
+            return;
+        }
+        saving.set(true);
+        let (mail, name, av) = (
+            email().trim().to_string(),
+            display().trim().to_string(),
+            avatar(),
+        );
+        spawn(async move {
+            #[cfg(target_arch = "wasm32")]
+            match crate::api::profile::update_profile(
+                mail,
+                Some(name).filter(|n| !n.is_empty()),
+                av,
+            )
+            .await
+            {
+                Ok(resp) if resp.success => {
+                    if let Some(u) = resp.user {
+                        ctx.user.set(Some(std::sync::Arc::new(u.clone())));
+                        on_saved.call(u);
                     }
-                    Err(e) => {
-                        toast_state.set(Some((format!("加载失败：{e}"), true)));
-                    }
+                    toast.success("资料已保存");
                 }
-                loading.set(false);
-            });
-        });
-
-        use_effect(move || {
-            if let Some((msg, is_err)) = toast_state() {
-                display_msg.set(msg.clone());
-                display_err.set(is_err);
-                let key = msg.clone();
-                spawn(async move {
-                    crate::utils::time::sleep_ms(3000).await;
-                    // 仅当 toast 未被新消息覆盖时清除（避免误清后续 toast）。
-                    if toast_state().map(|(m, _)| m == key).unwrap_or(false) {
-                        toast_state.set(None);
-                    }
-                });
+                Ok(resp) => toast.error(resp.message),
+                Err(e) => toast.error(format!("保存失败：{e}")),
             }
+            saving.set(false);
         });
-
-        // 脏检查：任一草稿与已存值不同（多字段比较，用 memo 收敛）。
-        let dirty = use_memo(move || {
-            let Some(s) = saved() else {
-                return false;
+    };
+    let upload = move |evt: FormEvent| {
+        #[cfg(target_arch = "wasm32")]
+        {
+            use dioxus::web::WebFileExt;
+            let Some(file) = evt
+                .files()
+                .into_iter()
+                .next()
+                .and_then(|f| f.get_web_file())
+            else {
+                return;
             };
-            email_draft().trim() != s.email
-                || display_name_draft().trim() != s.display_name.unwrap_or_default()
-                || avatar_draft() != s.avatar_url
-        });
-
-        rsx! {
-            // 外层布局 wrapper（无动画类）：fixed 弹层挂在动画树外，见模块文档。
-            div { class: "w-full max-w-2xl mx-auto",
-                div { class: "animate-page-enter flex flex-col gap-8",
-                    // 页头（与站点设置页同一排版）
-                    div { class: "pb-6 border-b border-[var(--color-paper-border)]",
-                        h1 { class: "text-4xl font-extrabold tracking-tight text-[var(--color-paper-primary)]",
-                            "个人信息"
-                        }
-                        p { class: "text-base text-[var(--color-paper-secondary)] mt-2",
-                            "管理当前登录账号的展示资料与登录密码"
-                        }
+            if let Err(msg) = crate::components::assets::upload_pool::validate_file(
+                &file.type_(),
+                file.size() as u64,
+            ) {
+                toast.error(msg);
+                return;
+            }
+            uploading.set(true);
+            spawn(async move {
+                match crate::bridges::tiptap::upload_image_file(file).await {
+                    Ok(url) => {
+                        avatar.set(Some(url));
+                        avatar_failed.set(false);
                     }
+                    Err(msg) => toast.error(format!("上传失败：{msg}")),
+                }
+                uploading.set(false);
+            });
+        }
+    };
 
-                    // 操作提示条（3 秒自动消失）
-                    div { class: if toast_state().is_some() { "ygg-toast is-open" } else { "ygg-toast" },
-                        div { class: if display_err() { "ygg-toast-inner text-sm rounded-lg px-3 py-2 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300" } else { "ygg-toast-inner text-sm rounded-lg px-3 py-2 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300" },
-                            "{display_msg()}"
-                        }
-                    }
-
-                    if loading() {
-                        div { class: "animate-pulse",
-                            ProfileSkeleton {}
-                        }
-                    } else if let Some(user) = saved() {
-                        {
-                            // 身份卡展示值：草稿优先（未保存的修改即时预览），
-                            // 纯派生，内联计算即可。
-                            let label = if display_name_draft().trim().is_empty() {
-                                user.username.clone()
-                            } else {
-                                display_name_draft().trim().to_string()
-                            };
-                            let created = user.created_at.format("%Y-%m-%d").to_string();
-                            rsx! {
-                                // 身份卡：头像 + 展示名 + 角色徽章 + 注册时间
-                                div { class: "{ADMIN_CARD_CLASS} p-6 md:p-8",
-                                    div { class: "flex flex-col sm:flex-row sm:items-center gap-6",
-                                        // 头像（点击打开素材选择弹窗；hover/focus 显示相机遮罩）
-                                        div { class: "relative group flex-shrink-0 self-center sm:self-start",
-                                            button {
-                                                class: "relative block w-24 h-24 rounded-full overflow-hidden border border-[var(--color-paper-border)] shadow-sm cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-paper-accent)]/40",
-                                                aria_label: "更换头像",
-                                                onclick: move |_| picker_visible.set(true),
-                                                UserAvatar {
-                                                    name: label.clone(),
-                                                    avatar_url: avatar_draft(),
-                                                    class: "w-24 h-24 rounded-full text-3xl",
-                                                }
-                                                span { class: "absolute inset-0 flex items-center justify-center bg-black/45 text-white opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity",
-                                                    svg {
-                                                        xmlns: "http://www.w3.org/2000/svg",
-                                                        height: "24px",
-                                                        view_box: "0 -960 960 960",
-                                                        width: "24px",
-                                                        fill: "currentColor",
-                                                        path { d: "{ICON_CAMERA}" }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        div { class: "flex-1 min-w-0 flex flex-col gap-1.5 text-center sm:text-left",
-                                            div { class: "flex items-center justify-center sm:justify-start gap-2.5 flex-wrap",
-                                                h2 { class: "text-2xl font-bold text-[var(--color-paper-primary)] truncate",
-                                                    "{label}"
-                                                }
-                                                StatusBadge {
-                                                    color_class: "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300",
-                                                    label: "管理员".to_string(),
-                                                }
-                                            }
-                                            p { class: "text-sm text-[var(--color-paper-secondary)] truncate",
-                                                "@{user.username}"
-                                            }
-                                            p { class: "text-xs text-[var(--color-paper-tertiary)]",
-                                                "注册于 {created}"
-                                            }
-                                            div { class: "flex items-center justify-center sm:justify-start gap-3 mt-1",
-                                                span { class: "text-xs text-[var(--color-paper-secondary)]",
-                                                    "点击头像可更换"
-                                                }
-                                                if avatar_draft().is_some() {
-                                                    button {
-                                                        class: "{BTN_GHOST}",
-                                                        onclick: move |_| {
-                                                            avatar_draft.set(None);
-                                                            just_saved.set(false);
-                                                        },
-                                                        "移除头像"
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // 基本资料卡
-                                div { class: "{ADMIN_CARD_CLASS} p-6 md:p-8 flex flex-col gap-6",
-                                    div { class: "flex items-center gap-3",
-                                        {icon_bubble(ICON_BADGE)}
-                                        div {
-                                            h2 { class: "text-xl font-bold text-[var(--color-paper-primary)]",
-                                                "基本资料"
-                                            }
-                                            p { class: "text-sm text-[var(--color-paper-secondary)] mt-0.5",
-                                                "展示在后台侧栏等位置；邮箱用于登录与找回会话。"
-                                            }
-                                        }
-                                    }
-
-                                    if admin_env_active() {
-                                        div { class: "rounded-xl border border-amber-300/60 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-300",
-                                            "检测到 ADMIN_* 环境变量已启用：每次服务重启后，邮箱与密码将以环境变量为准。"
-                                        }
-                                    }
-
-                                    div { class: "flex flex-col gap-2 max-w-xl",
-                                        FormLabel {
-                                            label: "用户名".to_string(),
-                                            html_for: Some("profile-username".to_string()),
-                                        }
-                                        FormInput {
-                                            id: Some("profile-username".to_string()),
-                                            r#type: "text",
-                                            placeholder: "",
-                                            value: user.username.clone(),
-                                            disabled: true,
-                                            oninput: move |_| {},
-                                        }
-                                        p { class: "text-xs text-[var(--color-paper-secondary)]",
-                                            "用户名是唯一登录凭据，不可修改。"
-                                        }
-                                    }
-
-                                    div { class: "flex flex-col gap-2 max-w-xl",
-                                        FormLabel {
-                                            label: "显示名称".to_string(),
-                                            html_for: Some("profile-display-name".to_string()),
-                                        }
-                                        FormInput {
-                                            id: Some("profile-display-name".to_string()),
-                                            r#type: "text",
-                                            placeholder: "留空则显示用户名",
-                                            value: display_name_draft(),
-                                            oninput: move |v: String| {
-                                                display_name_draft.set(v);
-                                                just_saved.set(false);
-                                            },
-                                        }
-                                    }
-
-                                    div { class: "flex flex-col gap-2 max-w-xl",
-                                        FormLabel {
-                                            label: "邮箱".to_string(),
-                                            html_for: Some("profile-email".to_string()),
-                                        }
-                                        FormInput {
-                                            id: Some("profile-email".to_string()),
-                                            r#type: "email",
-                                            placeholder: "name@example.com",
-                                            value: email_draft(),
-                                            oninput: move |v: String| {
-                                                email_draft.set(v);
-                                                just_saved.set(false);
-                                            },
-                                        }
-                                    }
-
-                                    div { class: "flex items-center justify-between gap-4 pt-1",
-                                        if just_saved() {
-                                            span { class: "inline-flex items-center gap-1.5 text-xs text-[var(--color-paper-accent)]",
-                                                svg {
-                                                    class: "w-3.5 h-3.5",
-                                                    view_box: "0 0 24 24",
-                                                    fill: "none",
-                                                    stroke: "currentColor",
-                                                    stroke_width: "2.5",
-                                                    path {
-                                                        stroke_linecap: "round",
-                                                        stroke_linejoin: "round",
-                                                        d: "M5 13l4 4L19 7",
-                                                    }
-                                                }
-                                                "已保存"
-                                            }
-                                        } else if dirty() {
-                                            span { class: "text-xs text-[var(--color-paper-secondary)]",
-                                                "有未保存的更改"
-                                            }
-                                        } else {
-                                            span { class: "text-xs text-transparent select-none", "·" }
-                                        }
-                                        LoadingButton {
-                                            label: "保存资料".to_string(),
-                                            loading: saving(),
-                                            disabled: !dirty() || just_saved() || avatar_uploading(),
-                                            onclick: move |_| {
-                                                let email = email_draft().trim().to_string();
-                                                let display_name = display_name_draft().trim().to_string();
-                                                let avatar = avatar_draft();
-                                                saving.set(true);
-                                                spawn(async move {
-                                                    match update_profile(
-                                                            email,
-                                                            Some(display_name),
-                                                            avatar,
-                                                        )
-                                                        .await
-                                                    {
-                                                        Ok(resp) if resp.success => {
-                                                            if let Some(u) = resp.user {
-                                                                // 用服务端归一化后的值回填草稿，并同步
-                                                                // 全局上下文（侧栏用户卡片即时更新）。
-                                                                email_draft.set(u.email.clone());
-                                                                display_name_draft
-                                                                    .set(u.display_name.clone().unwrap_or_default());
-                                                                avatar_draft.set(u.avatar_url.clone());
-                                                                ctx.user.set(Some(Arc::new(u.clone())));
-                                                                saved.set(Some(u));
-                                                            }
-                                                            just_saved.set(true);
-                                                            toast_state.set(Some((resp.message, false)));
-                                                        }
-                                                        Ok(resp) => {
-                                                            toast_state.set(Some((resp.message, true)));
-                                                        }
-                                                        Err(e) => {
-                                                            toast_state
-                                                                .set(Some((format!("保存失败：{e}"), true)));
-                                                        }
-                                                    }
-                                                    saving.set(false);
-                                                });
-                                            },
-                                        }
-                                    }
-                                }
-
-                                // 安全卡
-                                div { class: "{ADMIN_CARD_CLASS} p-6 md:p-8 flex flex-col gap-6",
-                                    div { class: "flex items-center gap-3",
-                                        {icon_bubble(ICON_LOCK)}
-                                        div {
-                                            h2 { class: "text-xl font-bold text-[var(--color-paper-primary)]",
-                                                "安全"
-                                            }
-                                            p { class: "text-sm text-[var(--color-paper-secondary)] mt-0.5",
-                                                "修改登录密码；需要验证当前密码。"
-                                            }
-                                        }
-                                    }
-
-                                    div { class: "flex flex-col gap-2 max-w-xl",
-                                        FormLabel {
-                                            label: "当前密码".to_string(),
-                                            html_for: Some("profile-current-pw".to_string()),
-                                        }
-                                        FormInput {
-                                            id: Some("profile-current-pw".to_string()),
-                                            r#type: "password",
-                                            placeholder: "输入当前密码",
-                                            value: current_pw(),
-                                            oninput: move |v: String| current_pw.set(v),
-                                        }
-                                    }
-
-                                    div { class: "grid sm:grid-cols-2 gap-4 max-w-xl",
-                                        div { class: "flex flex-col gap-2",
-                                            FormLabel {
-                                                label: "新密码".to_string(),
-                                                html_for: Some("profile-new-pw".to_string()),
-                                            }
-                                            FormInput {
-                                                id: Some("profile-new-pw".to_string()),
-                                                r#type: "password",
-                                                placeholder: "至少 8 位",
-                                                value: new_pw(),
-                                                oninput: move |v: String| new_pw.set(v),
-                                            }
-                                        }
-                                        div { class: "flex flex-col gap-2",
-                                            FormLabel {
-                                                label: "确认新密码".to_string(),
-                                                html_for: Some("profile-confirm-pw".to_string()),
-                                            }
-                                            FormInput {
-                                                id: Some("profile-confirm-pw".to_string()),
-                                                r#type: "password",
-                                                placeholder: "再次输入新密码",
-                                                value: confirm_pw(),
-                                                oninput: move |v: String| confirm_pw.set(v),
-                                            }
-                                        }
-                                    }
-
-                                    if !confirm_pw().is_empty() && new_pw() != confirm_pw() {
-                                        p { class: "text-xs text-red-500 dark:text-red-400",
-                                            "两次输入的新密码不一致。"
-                                        }
-                                    }
-
-                                    p { class: "text-xs text-[var(--color-paper-secondary)] max-w-xl",
-                                        if admin_env_active() {
-                                            "修改成功后，其他设备的登录会话将自动退出，本端保持登录；已启用 ADMIN_* 环境变量时，重启后密码以环境变量为准。"
-                                        } else {
-                                            "修改成功后，其他设备的登录会话将自动退出，本端保持登录。"
-                                        }
-                                    }
-
-                                    div { class: "flex justify-end pt-1",
-                                        LoadingButton {
-                                            label: "修改密码".to_string(),
-                                            loading: changing(),
-                                            disabled: current_pw().is_empty()
-                                                || new_pw().len() < 8
-                                                || new_pw() != confirm_pw(),
-                                            onclick: move |_| {
-                                                let current = current_pw();
-                                                let new = new_pw();
-                                                changing.set(true);
-                                                spawn(async move {
-                                                    match change_password(current, new).await {
-                                                        Ok(resp) if resp.success => {
-                                                            current_pw.set(String::new());
-                                                            new_pw.set(String::new());
-                                                            confirm_pw.set(String::new());
-                                                            toast_state.set(Some((resp.message, false)));
-                                                        }
-                                                        Ok(resp) => {
-                                                            toast_state.set(Some((resp.message, true)));
-                                                        }
-                                                        Err(e) => {
-                                                            toast_state
-                                                                .set(Some((format!("修改失败：{e}"), true)));
-                                                        }
-                                                    }
-                                                    changing.set(false);
-                                                });
-                                            },
-                                        }
-                                    }
-                                }
+    rsx! {
+        form { class: "admin-panel admin-profile-section", aria_labelledby: "profile-info-h", onsubmit: save,
+            div { class: "admin-profile-section-head",
+                h2 { id: "profile-info-h", "个人信息" }
+                p { "显示名称会出现在后台侧栏和文章署名；邮箱用于登录。" }
+            }
+            div { class: "admin-profile-rows",
+                div { class: "admin-profile-row",
+                    span { class: "admin-profile-label", "头像" }
+                    div { class: "admin-profile-avatar-row",
+                        span { class: "admin-profile-avatar", aria_hidden: "true",
+                            match avatar().filter(|_| !avatar_failed()) {
+                                Some(url) => rsx! {
+                                    img { src: "{url}", alt: "", onerror: move |_| avatar_failed.set(true) }
+                                },
+                                None => rsx! { "{initial}" },
                             }
                         }
-                    } else {
-                        div { class: "{ADMIN_CARD_CLASS} p-8 text-center text-sm text-[var(--color-paper-secondary)]",
-                            "加载失败，请刷新页面重试。"
+                        button {
+                            class: button_class(ButtonVariant::Secondary, ButtonSize::Sm),
+                            r#type: "button",
+                            onclick: move |_| picker.set(true),
+                            "从素材库选择"
+                        }
+                        label {
+                            class: "{button_class(ButtonVariant::Secondary, ButtonSize::Sm)} admin-profile-upload",
+                            "aria-disabled": uploading().then_some("true"),
+                            if uploading() { "上传中…" } else { "上传" }
+                            input {
+                                r#type: "file",
+                                class: "sr-only",
+                                accept: "image/jpeg,image/png,image/gif,image/webp",
+                                disabled: uploading(),
+                                onchange: upload,
+                            }
+                        }
+                        if avatar().is_some() {
+                            button {
+                                class: button_class(ButtonVariant::Ghost, ButtonSize::Sm),
+                                r#type: "button",
+                                onclick: move |_| avatar.set(None),
+                                "移除"
+                            }
                         }
                     }
                 }
+                div { class: "admin-profile-row",
+                    span { class: "admin-profile-label", "用户名" }
+                    div {
+                        div { class: "admin-profile-readonly", "{user.username}" }
+                        p { class: "admin-profile-hint", "用户名是唯一的登录凭据，不能修改。" }
+                    }
+                }
+                div { class: "admin-profile-row",
+                    label { class: "admin-profile-label", r#for: "profile-display", "显示名称" }
+                    input {
+                        id: "profile-display",
+                        class: "field",
+                        placeholder: "留空则显示用户名",
+                        maxlength: 50,
+                        value: "{display}",
+                        oninput: move |e| display.set(e.value()),
+                    }
+                }
+                div { class: "admin-profile-row",
+                    label { class: "admin-profile-label", r#for: "profile-email", "邮箱" }
+                    input {
+                        id: "profile-email",
+                        class: "field admin-profile-mono",
+                        r#type: "email",
+                        placeholder: "name@example.com",
+                        value: "{email}",
+                        oninput: move |e| email.set(e.value()),
+                    }
+                }
+            }
+            div { class: "admin-profile-foot",
+                button {
+                    class: button_class(ButtonVariant::Primary, ButtonSize::Md),
+                    r#type: "submit",
+                    disabled: !dirty || saving(),
+                    if saving() { "保存中…" } else { "保存" }
+                }
+            }
+        }
+        AssetPickerModal {
+            visible: picker,
+            cover_uploading: uploading,
+            title: "选择头像",
+            on_select: move |picks: Vec<AssetSelection>| {
+                if let Some(first) = picks.into_iter().next() {
+                    avatar.set(Some(first.url));
+                    avatar_failed.set(false);
+                }
+            },
+        }
+    }
+}
 
-                // 素材选择弹窗（单选）：fixed 定位，必须挂在动画树外（见模块文档）。
-                AssetPickerModal {
-                    visible: picker_visible,
-                    cover_uploading: avatar_uploading,
-                    title: "选择头像",
-                    on_select: move |picks: Vec<AssetSelection>| {
-                        // 单选模式：载荷恰含一个元素。
-                        if let Some(first) = picks.into_iter().next() {
-                            avatar_draft.set(Some(first.url));
-                            just_saved.set(false);
+/// 修改密码：当前密码、新密码（强度条）、确认新密码。
+#[component]
+#[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut, unused_variables))]
+fn PasswordSection() -> Element {
+    let toast = use_toast();
+    let mut current = use_signal(String::new);
+    let mut next = use_signal(String::new);
+    let mut confirm = use_signal(String::new);
+    let mut busy = use_signal(|| false);
+
+    let level = password_level(&next());
+    let mismatch = !confirm().is_empty() && confirm() != next();
+    let can_submit = !busy()
+        && !current().is_empty()
+        && next().chars().count() >= MIN_PASSWORD
+        && confirm() == next();
+
+    let submit = move |e: FormEvent| {
+        e.prevent_default();
+        if !can_submit {
+            return;
+        }
+        busy.set(true);
+        let (old, new) = (current(), next());
+        spawn(async move {
+            #[cfg(target_arch = "wasm32")]
+            match crate::api::profile::change_password(old, new).await {
+                Ok(resp) if resp.success => {
+                    current.set(String::new());
+                    next.set(String::new());
+                    confirm.set(String::new());
+                    toast.success("密码已修改，其他设备上的登录已退出");
+                }
+                Ok(resp) => toast.error(resp.message),
+                Err(e) => toast.error(format!("修改失败：{e}")),
+            }
+            busy.set(false);
+        });
+    };
+
+    rsx! {
+        form { class: "admin-panel admin-profile-section", aria_labelledby: "profile-pw-h", onsubmit: submit,
+            div { class: "admin-profile-section-head",
+                h2 { id: "profile-pw-h", "修改密码" }
+                p { "修改成功后，其他设备上的登录会自动退出，当前设备保持登录。" }
+            }
+            div { class: "admin-profile-rows",
+                div { class: "admin-profile-row",
+                    label { class: "admin-profile-label", r#for: "profile-pw0", "当前密码" }
+                    input {
+                        id: "profile-pw0",
+                        class: "field",
+                        r#type: "password",
+                        autocomplete: "current-password",
+                        value: "{current}",
+                        oninput: move |e| current.set(e.value()),
+                    }
+                }
+                div { class: "admin-profile-row",
+                    label { class: "admin-profile-label", r#for: "profile-pw1", "新密码" }
+                    div {
+                        input {
+                            id: "profile-pw1",
+                            class: "field",
+                            r#type: "password",
+                            autocomplete: "new-password",
+                            aria_describedby: "profile-pw1-hint",
+                            value: "{next}",
+                            oninput: move |e| next.set(e.value()),
                         }
-                    },
+                        div { class: "admin-profile-meter", "data-level": "{level}", aria_hidden: "true",
+                            for i in 1..=4u8 {
+                                span { key: "{i}", "data-on": (i <= level).then_some("true") }
+                            }
+                        }
+                        p { id: "profile-pw1-hint", class: "admin-profile-hint", "{password_hint(&next())}" }
+                    }
+                }
+                div { class: "admin-profile-row",
+                    label { class: "admin-profile-label", r#for: "profile-pw2", "确认新密码" }
+                    div {
+                        input {
+                            id: "profile-pw2",
+                            class: "field",
+                            r#type: "password",
+                            autocomplete: "new-password",
+                            "aria-invalid": mismatch.then_some("true"),
+                            value: "{confirm}",
+                            oninput: move |e| confirm.set(e.value()),
+                        }
+                        if mismatch {
+                            p { class: "admin-profile-hint", "data-error": "true", role: "alert",
+                                "两次输入的新密码不一致。"
+                            }
+                        }
+                    }
+                }
+            }
+            div { class: "admin-profile-foot",
+                button {
+                    class: button_class(ButtonVariant::Secondary, ButtonSize::Md),
+                    r#type: "submit",
+                    disabled: !can_submit,
+                    if busy() { "修改中…" } else { "修改密码" }
                 }
             }
         }
     }
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        rsx! {
-            div { class: "p-8 text-[var(--color-paper-secondary)]", "个人信息（前端渲染）" }
-        }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn password_level_grows_with_length_and_symbols() {
+        assert_eq!(password_level(""), 0);
+        assert_eq!(password_level("abc"), 1);
+        assert_eq!(password_level("abcdefgh"), 2);
+        assert_eq!(password_level("abcdefghijkl"), 3);
+        assert_eq!(password_level("abcdefghijk!"), 4);
+        // 中文按字符计。
+        assert_eq!(password_level("一二三四五六七八"), 2);
+    }
+
+    #[test]
+    fn password_hint_counts_missing_characters() {
+        assert_eq!(password_hint(""), "至少 8 位。");
+        assert_eq!(password_hint("abcde"), "还差 3 位。");
+        assert_eq!(password_hint("abcdefghijk!"), "强度不错。");
     }
 }

@@ -1,0 +1,214 @@
+/* ======== 后台个人资料 ========
+   结构见 src/pages/admin/profile.rs：个人信息、修改密码、退出登录。 */
+.admin-profile {
+  max-width: 47.5rem;
+}
+
+.admin-profile-note {
+  display: flex;
+  gap: 0.625rem;
+  margin: 0 0 1.25rem;
+  padding: 0.75rem 0.875rem;
+  border-radius: var(--radius-panel);
+  background-color: var(--color-warning-soft);
+  font-size: 0.84375rem;
+  line-height: 1.6;
+}
+
+.admin-profile-note > svg {
+  flex: none;
+  margin-top: 0.1875rem;
+  color: var(--color-warning);
+}
+
+.admin-profile-section + .admin-profile-section,
+.admin-profile-skeleton > * + * {
+  margin-top: 1rem;
+}
+
+.admin-profile-section-head {
+  padding: 1rem 1.25rem;
+  box-shadow: inset 0 -1px 0 var(--color-hairline);
+}
+
+.admin-profile-section-head h2 {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.admin-profile-section-head p {
+  margin: 0.125rem 0 0;
+  color: var(--color-fg-3);
+  font-size: 0.8125rem;
+}
+
+.admin-profile-rows {
+  padding: 0 1.25rem;
+}
+
+/* 标签在左、控件在右的两栏行。 */
+.admin-profile-row {
+  display: grid;
+  grid-template-columns: 8rem minmax(0, 1fr);
+  gap: 0.5rem 1.25rem;
+  align-items: start;
+  padding: 1rem 0;
+  box-shadow: inset 0 -1px 0 var(--color-hairline);
+}
+
+.admin-profile-row:last-child {
+  box-shadow: none;
+}
+
+.admin-profile-label {
+  padding-top: 0.5625rem;
+  color: var(--color-fg-2);
+  font-size: 0.84375rem;
+}
+
+.admin-profile-row .field {
+  width: 100%;
+  max-width: 26rem;
+}
+
+.admin-profile-mono {
+  font-family: var(--font-mono);
+  font-size: 0.84375rem;
+}
+
+.admin-profile-readonly {
+  display: flex;
+  align-items: center;
+  max-width: 26rem;
+  height: 2.375rem;
+  padding: 0 0.75rem;
+  border-radius: 9px;
+  background-color: var(--color-ink-1);
+  color: var(--color-fg-2);
+  font-family: var(--font-mono);
+  font-size: 0.84375rem;
+}
+
+.admin-profile-hint {
+  margin: 0.375rem 0 0;
+  color: var(--color-fg-3);
+  font-size: 0.78125rem;
+}
+
+.admin-profile-hint[data-error] {
+  color: var(--color-danger);
+}
+
+.admin-profile-avatar-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.625rem;
+}
+
+.admin-profile-avatar {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 3.5rem;
+  height: 3.5rem;
+  margin-right: 0.25rem;
+  overflow: hidden;
+  border-radius: 50%;
+  background-color: var(--color-ink-2);
+  color: var(--color-fg-2);
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.admin-profile-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.admin-profile-upload {
+  cursor: pointer;
+}
+
+.admin-profile-upload[aria-disabled="true"] {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.admin-profile-upload:has(input:focus-visible) {
+  box-shadow: var(--shadow-focus);
+}
+
+/* 强度条：四段，第一段红色表示太短，其余陶土色。 */
+.admin-profile-meter {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  max-width: 26rem;
+  margin-top: 0.5rem;
+}
+
+.admin-profile-meter span {
+  height: 4px;
+  border-radius: 999px;
+  background-color: var(--color-ink-2);
+  transition: background-color 150ms var(--ease-out-expo);
+}
+
+.admin-profile-meter span[data-on] {
+  background-color: var(--color-clay);
+}
+
+.admin-profile-meter[data-level="1"] span[data-on] {
+  background-color: var(--color-danger);
+}
+
+.admin-profile-foot {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0.75rem 1.25rem;
+  border-radius: 0 0 var(--radius-panel) var(--radius-panel);
+  background-color: var(--color-surface-1);
+  box-shadow: inset 0 1px 0 var(--color-hairline);
+}
+
+.admin-profile-logout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  padding: 1rem 1.25rem;
+  border-radius: var(--radius-panel);
+  background-color: var(--color-surface-1);
+  box-shadow: 0 0 0 1px var(--color-hairline);
+}
+
+.admin-profile-logout h2 {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.admin-profile-logout p {
+  margin: 0.125rem 0 0;
+  color: var(--color-fg-3);
+  font-size: 0.8125rem;
+}
+
+.admin-profile-logout [data-danger] {
+  color: var(--color-danger);
+}
+
+@media (max-width: 767px) {
+  .admin-profile-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .admin-profile-label {
+    padding-top: 0;
+  }
+}

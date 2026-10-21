@@ -423,6 +423,7 @@ pub fn AdminLayout() -> Element {
             let _ = navigator.push(Route::Login {});
         });
     });
+    use_context_provider(|| AdminActions { logout: on_logout });
     use_search_palette_provider();
     let user_name = side_user
         .as_ref()
@@ -474,6 +475,13 @@ pub fn AdminLayout() -> Element {
             AdminPalette { on_logout: move |_| on_logout.call(()) }
         }
     }
+}
+
+/// 后台页面共用的操作（如个人资料页的「退出登录」），由 AdminLayout 提供。
+#[derive(Clone, Copy)]
+pub(crate) struct AdminActions {
+    /// 退出当前设备并回到登录页。
+    pub logout: Callback<()>,
 }
 
 /// 后台外壳：侧栏、顶栏与主画布。认证和路由留在 AdminLayout，图鉴只向此壳传入

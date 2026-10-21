@@ -49,7 +49,7 @@ pub struct SessionUser {
 }
 
 /// 可公开的用户信息，从 User 转换而来，不含密码哈希。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PublicUser {
     /// 用户主键。
     pub id: i32,
