@@ -1,5 +1,6 @@
 /* ======== 写文章 ========
    结构见 src/pages/admin/write.rs：页头替代后台顶栏，正文居中，属性在右侧抽屉。
+   笔记编辑器（note_editor.rs）共用这套页头、正文与抽屉。
    Tiptap 内部的排版与配色在 P6 接入 token，这里只调整容器与占位提示。 */
 .admin-shell[data-focus="write"] .admin-topbar {
   display: none;

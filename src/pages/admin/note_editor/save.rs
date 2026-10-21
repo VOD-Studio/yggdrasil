@@ -1,4 +1,5 @@
 //! One serialized save pipeline for autosave, explicit actions and revision restoration.
+//! Explicit actions report through toasts; plain saves only update the header status.
 use super::state::{reconcile_save, EditorState, SaveState};
 use crate::api::notes::{act_on_note, get_owned_note, save_note};
 use crate::models::note::{Note, NoteAction, NoteDraft};
@@ -18,12 +19,18 @@ async fn save_snapshot(mut state: EditorState) -> Result<Note, ServerFnError> {
     Ok(note)
 }
 
-fn finish(mut state: EditorState, result: Result<Note, ServerFnError>, message: &str) -> bool {
+fn finish(
+    mut state: EditorState,
+    result: Result<Note, ServerFnError>,
+    message: Option<&str>,
+) -> bool {
     match result {
         Ok(note) => {
             state.saved.set(Some(note));
             state.save.set(SaveState::Idle);
-            state.status.set(message.into());
+            if let Some(message) = message {
+                state.toast.success(message);
+            }
             true
         }
         Err(error) => {
@@ -49,15 +56,14 @@ pub(super) async fn persist(state: EditorState, action: Option<NoteAction>) -> b
     finish(
         state,
         result,
-        match action {
-            Some(NoteAction::Publish) => "公开版本已更新",
-            Some(NoteAction::IncludeKnowledge) => "已收录当前版本",
-            Some(NoteAction::Unpublish) => "已撤回公开版本",
-            Some(NoteAction::ExcludeKnowledge) => "已移出知识库",
-            Some(NoteAction::Trash) => "已移入回收站",
-            Some(NoteAction::Restore) => "已恢复为草稿",
-            None => "草稿已保存",
-        },
+        action.map(|action| match action {
+            NoteAction::Publish => "公开版本已更新",
+            NoteAction::IncludeKnowledge => "已收录当前版本",
+            NoteAction::Unpublish => "已撤回公开版本",
+            NoteAction::ExcludeKnowledge => "已移出知识库",
+            NoteAction::Trash => "已移入回收站",
+            NoteAction::Restore => "已恢复为草稿",
+        }),
     )
 }
 
@@ -84,7 +90,7 @@ pub(super) async fn restore_revision(state: EditorState, version: i32) {
         save_snapshot(state).await
     }
     .await;
-    finish(state, result, "历史版本已恢复为新草稿");
+    finish(state, result, Some("历史版本已恢复为新草稿"));
 }
 
 pub(super) fn use_autosave(state: EditorState, recovery: Signal<Option<NoteDraft>>) {

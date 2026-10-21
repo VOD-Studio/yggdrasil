@@ -401,8 +401,11 @@ pub fn AdminLayout() -> Element {
         let _ = signed_in;
     });
 
-    let is_write_route =
-        matches!(route, Route::Write {}) || matches!(route, Route::WriteEdit { .. });
+    // 写文章与笔记编辑器自带页头。
+    let is_write_route = matches!(
+        route,
+        Route::Write {} | Route::WriteEdit { .. } | Route::NewNote {} | Route::EditNote { .. }
+    );
     // 写作、设置和日志页面在主内容区内部自行滚动。
     let internal_scroll_route = is_write_route
         || matches!(route, Route::SiteSettingsPage {})
@@ -926,16 +929,18 @@ fn admin_route_skeleton(route: &Route) -> Element {
         Route::Admin {} => rsx! {
             AdminDashboardSkeleton {}
         },
-        Route::Write {} | Route::WriteEdit { .. } => rsx! {
-            WriteSkeleton {}
-        },
+        Route::Write {} | Route::WriteEdit { .. } | Route::NewNote {} | Route::EditNote { .. } => {
+            rsx! {
+                WriteSkeleton {}
+            }
+        }
         Route::Posts {} => rsx! {
             PostsSkeleton {}
         },
         Route::AdminNotes {} => rsx! {
             AdminNotesSkeleton {}
         },
-        Route::AdminNotebooks {} | Route::NewNote {} | Route::EditNote { .. } => rsx! {
+        Route::AdminNotebooks {} => rsx! {
             crate::pages::notes::NotesSkeleton {}
         },
         Route::PostsTrash {} => rsx! {

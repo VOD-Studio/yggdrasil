@@ -1,6 +1,26 @@
 use dioxus::prelude::*;
 
-/// 富文本编辑与笔记专用的受保护图片上传。
+/// 把焦点放进正文编辑区。
+pub(super) fn focus_editor() {
+    #[cfg(target_arch = "wasm32")]
+    {
+        use wasm_bindgen::JsCast;
+        if let Some(el) = web_sys::window()
+            .and_then(|w| w.document())
+            .and_then(|d| {
+                d.query_selector("#note-tiptap [contenteditable]")
+                    .ok()
+                    .flatten()
+            })
+            .and_then(|el| el.dyn_into::<web_sys::HtmlElement>().ok())
+        {
+            let _ = el.focus();
+        }
+    }
+}
+
+/// 富文本编辑与笔记专用的受保护图片上传。素材库中的图片本来就是公开素材，
+/// 选择面板的标题写明这一点；私密图片在编辑器里上传。
 #[component]
 pub(super) fn NoteComposer(
     initial: String,
@@ -70,27 +90,53 @@ pub(super) fn NoteComposer(
             }
         });
         return rsx! {
-            div {class:"notes-editor-surface",
-                crate::bridges::library::LibraryLoadError {library}
-                if !ready() {p {role:"status","正在加载编辑器…"}}
-                if !error().is_empty() {p {class:"notes-error",role:"alert","{error}"}}
-                for item in errors() {p {class:"notes-error",key:"{item.id}","{item.message}"
-                    button {class:"note-read",onclick:move |_| {if let Some(handle)=editor.peek().as_ref(){handle.instance().remove_upload_by_upload_id(&item.id);}},"移除失败图片"}
-                }}
-                div {id:"note-tiptap"}
+            crate::bridges::library::LibraryLoadError { library }
+            if !error().is_empty() {
+                p { class: "write-notice", role: "alert", "{error}" }
             }
+            for item in errors() {
+                p { class: "write-notice", role: "alert", key: "{item.id}",
+                    span { "{item.message}" }
+                    button {
+                        class: "btn btn-sm btn-ghost",
+                        r#type: "button",
+                        onclick: move |_| {
+                            if let Some(handle) = editor.peek().as_ref() {
+                                handle.instance().remove_upload_by_upload_id(&item.id);
+                            }
+                        },
+                        "移除失败图片"
+                    }
+                }
+            }
+            if !ready() {
+                p { class: "note-editor-loading", role: "status", "正在加载编辑器…" }
+            }
+            div { id: "note-tiptap", class: "write-editor" }
             if pick() {
-                p {class:"notes-status","素材库中的图片原本就是公开素材。需要私密图片时，请在编辑器中上传。"}
-                crate::components::assets::AssetPickerModal {visible:pick,cover_uploading:picking_upload,title:"选择公开素材",multi:true,on_select:move |items:Vec<crate::components::assets::AssetSelection>| {
-                    if let Some(handle)=editor.peek().as_ref(){if let Ok(json)=serde_json::to_string(&items){handle.instance().insert_images_from_library(&json);}}
-                    pick.set(false);
-                }}
+                crate::components::assets::AssetPickerModal {
+                    visible: pick,
+                    cover_uploading: picking_upload,
+                    title: "选择公开素材",
+                    multi: true,
+                    on_select: move |items: Vec<crate::components::assets::AssetSelection>| {
+                        if let Some(handle) = editor.peek().as_ref() {
+                            if let Ok(json) = serde_json::to_string(&items) {
+                                handle.instance().insert_images_from_library(&json);
+                            }
+                        }
+                        pick.set(false);
+                    },
+                }
             }
         };
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
         let _ = (initial, on_change, uploading);
-        rsx! {div {class:"notes-editor-surface",p {role:"status","正在加载编辑器…"}}}
+        rsx! {
+            p { class: "note-editor-loading", role: "status", "正在加载编辑器…" }
+            div { id: "note-tiptap", class: "write-editor" }
+        }
     }
 }

@@ -13,9 +13,9 @@ const sql = statement => execFileSync('psql', ['-d', 'ygg_browser_test', '-At', 
 const note = () => JSON.parse(sql("SELECT row_to_json(n) FROM notes n ORDER BY id DESC LIMIT 1"));
 const title = id => sql(`SELECT r.title FROM note_revisions r JOIN notes n ON n.id=r.note_id AND n.version=r.version WHERE n.id=${id}`);
 const pass = name => { report.passed.push(name); console.log('PASS', name); };
+// 页头保存状态：已保存且没有新的修改。
 async function saved(page) {
-  await page.waitForFunction(() => [...document.querySelectorAll('.notes-status')].some(el =>
-    /草稿已保存|版本已更新|已收录当前版本|历史版本已恢复/.test(el.textContent) && !el.textContent.includes('未保存修改')));
+  await page.locator('.write-status[data-state="saved"]').waitFor();
 }
 async function main() {
   const browser = await chromium.launch({ headless: true });
@@ -74,10 +74,10 @@ async function main() {
     pass('failed save retains content and explicit retry persists it');
 
     await page.getByRole('button', { name: '发布到前台', exact: true }).click();
-    await page.getByText(/已公开 v/).waitFor();
+    await page.getByRole('button', { name: '更新公开版', exact: true }).waitFor();
     const published = note().published_version;
     await page.getByRole('button', { name: '收录当前版本', exact: true }).click();
-    await page.getByText(/当前收录：v/).waitFor();
+    await page.getByRole('button', { name: '移出', exact: true }).waitFor();
     const knowledge = note().knowledge_version;
     await page.getByLabel('笔记标题').fill('只修改工作稿');
     const modified = page.waitForResponse(r => endpoint(r.url()).startsWith('savenote') && r.ok());
@@ -86,8 +86,7 @@ async function main() {
     assert.equal(note().knowledge_version, knowledge);
     pass('autosave leaves public and knowledge snapshots unchanged');
 
-    await page.getByRole('button', { name: '历史版本', exact: true }).click();
-    const restore = page.getByRole('button', { name: new RegExp(`^v${initialVersion} ·`) });
+    const restore = page.getByRole('button', { name: `恢复 v${initialVersion}`, exact: true });
     await restore.waitFor();
     delayHistory = true;
     const fetching = page.waitForRequest(r => endpoint(r.url()).startsWith('getownednote'));

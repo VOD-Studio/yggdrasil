@@ -1,3 +1,4 @@
+use crate::components::ui::Toaster;
 use crate::models::note::{Note, NoteDraft};
 use dioxus::prelude::*;
 
@@ -14,12 +15,13 @@ pub(super) struct EditorState {
     pub saved: Signal<Option<Note>>,
     pub save: Signal<SaveState>,
     pub uploading: Signal<bool>,
-    pub status: Signal<String>,
+    /// 发布、收录、恢复等明确操作的结果用提示条告知；自动保存只改页头状态。
+    pub toast: Toaster,
     pub tags: Signal<String>,
     pub editor_epoch: Signal<u32>,
 }
 
-pub(super) fn use_editor_state(initial: Option<Note>) -> EditorState {
+pub(super) fn use_editor_state(initial: Option<Note>, toast: Toaster) -> EditorState {
     let draft = initial.as_ref().map(Note::draft).unwrap_or_default();
     let tags = draft.tags.join(", ");
     EditorState {
@@ -27,7 +29,7 @@ pub(super) fn use_editor_state(initial: Option<Note>) -> EditorState {
         saved: use_signal(|| initial),
         save: use_signal(|| SaveState::Idle),
         uploading: use_signal(|| false),
-        status: use_signal(|| "自动保存工作稿".to_string()),
+        toast,
         tags: use_signal(|| tags),
         editor_epoch: use_signal(|| 0),
     }
@@ -68,7 +70,6 @@ impl EditorState {
     }
     pub fn fail(mut self, message: impl ToString) {
         self.save.set(SaveState::Failed(message.to_string()));
-        self.status.set("保存未完成".into());
     }
     pub fn begin(mut self) -> bool {
         if self.busy() {
@@ -79,7 +80,6 @@ impl EditorState {
             return false;
         }
         self.save.set(SaveState::Saving);
-        self.status.set("正在保存…".into());
         true
     }
     pub fn restore_local(mut self, mut draft: NoteDraft) {
@@ -90,6 +90,77 @@ impl EditorState {
         self.tags.set(draft.tags.join(", "));
         self.draft.set(draft);
         self.editor_epoch += 1;
+    }
+}
+
+/// 页头保存状态：圆点 + 文字。`Failed` 整条可点重试。
+#[derive(Clone, Debug, PartialEq)]
+pub(super) enum SaveStatus {
+    /// 新笔记还没有内容。
+    Empty,
+    /// 等待选择是否恢复本地副本。
+    Recovering,
+    Saving,
+    Failed,
+    /// 有修改，停止输入后自动保存。
+    Dirty,
+    Saved {
+        version: i32,
+    },
+}
+
+impl SaveStatus {
+    pub fn of(
+        saving: bool,
+        failed: bool,
+        dirty: bool,
+        recovering: bool,
+        saved: Option<i32>,
+    ) -> Self {
+        if recovering {
+            Self::Recovering
+        } else if saving {
+            Self::Saving
+        } else if failed {
+            Self::Failed
+        } else if dirty {
+            Self::Dirty
+        } else if let Some(version) = saved {
+            Self::Saved { version }
+        } else {
+            Self::Empty
+        }
+    }
+
+    pub fn label(&self) -> String {
+        match self {
+            Self::Empty => "新笔记 · 尚未保存".into(),
+            Self::Recovering => "等待选择本地副本".into(),
+            Self::Saving => "正在保存…".into(),
+            Self::Failed => "保存失败 · 点此重试".into(),
+            Self::Dirty => "有未保存修改".into(),
+            Self::Saved { version } => format!("工作稿 v{version} · 已保存"),
+        }
+    }
+
+    /// 回归脚本按它等待保存完成。
+    pub fn key(&self) -> &'static str {
+        match self {
+            Self::Empty => "empty",
+            Self::Recovering => "recovering",
+            Self::Saving => "saving",
+            Self::Failed => "failed",
+            Self::Dirty => "dirty",
+            Self::Saved { .. } => "saved",
+        }
+    }
+
+    pub fn tone(&self) -> &'static str {
+        match self {
+            Self::Failed => "danger",
+            Self::Dirty | Self::Saving => "clay",
+            _ => "muted",
+        }
     }
 }
 
@@ -121,6 +192,31 @@ mod tests {
         assert_eq!(current.tags, ["new"]);
         assert_eq!(current.notebook_ids, [3]);
         assert_eq!((current.id, current.expected_version), (Some(4), Some(2)));
+    }
+    #[test]
+    fn save_status_prefers_recovery_then_saving_then_failure() {
+        assert_eq!(
+            SaveStatus::of(true, true, true, true, Some(3)),
+            SaveStatus::Recovering
+        );
+        assert_eq!(
+            SaveStatus::of(true, true, true, false, Some(3)),
+            SaveStatus::Saving
+        );
+        assert_eq!(
+            SaveStatus::of(false, true, true, false, Some(3)),
+            SaveStatus::Failed
+        );
+        assert_eq!(
+            SaveStatus::of(false, false, true, false, Some(3)),
+            SaveStatus::Dirty
+        );
+        let saved = SaveStatus::of(false, false, false, false, Some(3));
+        assert_eq!(saved.label(), "工作稿 v3 · 已保存");
+        assert_eq!(
+            SaveStatus::of(false, false, false, false, None),
+            SaveStatus::Empty
+        );
     }
     #[test]
     fn unchanged_save_accepts_server_normalization() {
