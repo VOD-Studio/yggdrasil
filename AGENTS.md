@@ -52,4 +52,4 @@ Use `type(scope): summary`, commonly with Chinese summaries, e.g. `fix(navigatio
 
 ## Security & Production Configuration
 
-Copy `.env.example` to `.env`; keep credentials untracked. Development Compose expects external PostgreSQL on `global-databases_default`. Production requires a TLS reverse proxy, `APP_BASE_URL`, `COOKIE_SECURE=true`, and an accurate `TRUSTED_PROXY_COUNT`.
+Copy `.env.example` to `.env`; keep credentials untracked. Development Compose expects external PostgreSQL on `global-databases_default`. Production requires a TLS reverse proxy, `APP_BASE_URL`, `COOKIE_SECURE=true`, and an accurate `TRUSTED_PROXY_COUNT`. During rolling deploys, optionally point `YGG_PREVIOUS_PUBLIC_DIR` at the previous release's `public/` so tabs still holding old HTML can load hashed assets the new release dropped (`docs/wasm-optimization-plan.md` §6.7); clear it once the retention window ends.
