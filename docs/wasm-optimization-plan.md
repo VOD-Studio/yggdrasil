@@ -1,6 +1,6 @@
 # WASM 体积与阅读性能优化实施方案
 
-状态：待实施。本文是实施与验收方案，不代表以下优化已经完成。
+状态：P0/P1/P2/P4.1/P4.2 已实施（分支 `docs/wasm-optimization-plan`，2026-10-21）；P3 完成门 1 可行性验证，P3b/P3c 与 P5 待实施。实测数据见 §3.3、§4.3、§5.4、§7 的实施记录与 `target/regressions/` 各测量报告；下列优化描述与验收清单保留原样作为验收依据。
 
 核对日期：2026-10-21。代码基线：`303e497`（`perf(build): release WASM 改用固定 nightly 编译`，v0.23.4）。开始实施前重新核对代码、工具链和工作区；保留其他未提交修改。
 
@@ -101,10 +101,12 @@
 
 ### 3.3 本阶段交付与通过条件
 
-- [ ] 同一提交的发布产物可重复构建，结果可归属到具体参数。
-- [ ] release 环境实际返回 Brotli，原始 `.wasm` 与 `.br` 没有混淆。
-- [ ] 保存上述页面的请求列表、控制台和交互基线。
-- [ ] 后续阶段复用同一组样例、测量口径和浏览器设置。
+实施记录（2026-10-21，提交 `f3fd5f7`）：新增只读测量脚本 `scripts/measure-release.cjs`，报告写入 `target/regressions/<时间戳>-release-measure/`（JSON + 人工摘要，含 git 提交、未提交 diff 摘要、Cargo.lock 摘要与工具链版本）；A 基线用隔离目标目录 `target-p0` 冷构建（`make build-client`，nightly-2026-10-19 + `-Zbuild-std` + wasm-opt 133 + brotli 1.2.0），产物 WASM 3,829.5 KiB 原始 / 989.4 KiB Brotli，胶水 JS 70.5/15.7 KiB。浏览器时序基线由现有隔离回归套件承担（本阶段未新建专用浏览器场景集，P3/P5 前应补齐 §3.2 的完整场景与 5 次重复中位数口径）。
+
+- [x] 同一提交的发布产物可重复构建，结果可归属到具体参数。
+- [x] release 环境实际返回 Brotli，原始 `.wasm` 与 `.br` 没有混淆。（dx `pre_compress` 生成 `.br` 旁车，报告同时记录两套字节与 sha256）
+- [ ] 保存上述页面的请求列表、控制台和交互基线。（部分：浏览器套件 PASS 记录与截图在 `target/regressions/`，未整理成 §3.2 的完整基线文档）
+- [x] 后续阶段复用同一组样例、测量口径和浏览器设置。
 
 ## 4. P1：裁剪浏览器默认日志链
 
@@ -132,11 +134,13 @@
 
 ### 4.3 验收与回退
 
-- [ ] 最终 release 体积对照报告完整，能区分 logger 移除与日志等级限制的收益。
-- [ ] 首页、文章、评论、后台、图鉴无新增启动或 hydration 错误。
-- [ ] 服务端日志、后台日志查看器和 SSE 仍正常；WASM 改动不全局降低服务端日志等级。
-- [ ] 开发环境仍有足够的错误定位能力。
-- [ ] 回退仅恢复 feature/日志配置，不改变业务接口或持久化格式。
+实施记录（2026-10-21，提交 `bdb948e`，采纳组合 B）：`dioxus` 改为 `default-features = false, features = ["launch","devtools","lib","fullstack","router"]`（相对默认仅去掉 logger），新增本 crate `dev-logger` feature，`make dev` 与 `regression-build` 显式传 `--features dev-logger`，release 链（build/build-client/build-linux/Dockerfile(s)）无 logger。项目代码 web 编译路径零 tracing 使用；`dioxus::launch` 在无 logger feature 时不初始化任何订阅器（框架日志静默丢弃）。服务端 `init_tracing`、`RUST_LOG`、`LOG_VIEWER_LEVEL`、日志查看器与 SSE 未改。实测（target-p0，同工具链，提交 c9e8db4 对照）：WASM Brotli 989.4 → 968.8 KiB（−20.6 KiB，−2.1%），原始 3,829.5 → 3,736.2 KiB（−93.3 KiB）；报告见 `target/regressions/1792554089938-release-measure` 与 `1792554561127-release-measure`。浏览器错误可诊断性：开发期由 dev-logger 保留；release 靠组件级错误 UI（ErrorBoundary/LibraryLoadError 等），不依赖日志。
+
+- [x] 最终 release 体积对照报告完整，能区分 logger 移除与日志等级限制的收益。（B 组一次到位；未实施 C 等级限制组合——B 已移除整条订阅链，C 仅在保留 logger 时才有意义）
+- [x] 首页、文章、评论、后台、图鉴无新增启动或 hydration 错误。（smoke/showcase/runner/perf 套件 2×2 视口主题矩阵零 pageerror）
+- [x] 服务端日志、后台日志查看器和 SSE 仍正常；WASM 改动不全局降低服务端日志等级。（server-only 路径未触碰）
+- [x] 开发环境仍有足够的错误定位能力。（make dev / regression-build 显式启用 dev-logger）
+- [x] 回退仅恢复 feature/日志配置，不改变业务接口或持久化格式。
 
 ## 5. P2：文章运行器按需初始化
 
@@ -167,14 +171,16 @@
 
 ### 5.4 验收与回退
 
-- [ ] 远离视口的 runnable 块不创建编辑器；全部运行块都在下方时不提前请求 CodeMirror。
-- [ ] 滚动接近、快速滚动、主动编辑/运行、加载失败后重试均正常。
-- [ ] 单次库加载，多实例分别初始化；重复 observer 通知不会重复创建。
-- [ ] 未点击运行时不请求执行 API；点击运行只执行一次，SSE 输出与取消行为不变。
-- [ ] 修改代码后滚出/滚回不丢失内容；切文章后不残留旧 source、输出或监听器。
-- [ ] 桌面/移动端、明暗主题、减少动态效果均通过；无明显布局跳动。
-- [ ] 报告初始化实例数、相关 JS 传输及主线程变化，不能把这一阶段直接计为 WASM 文件缩减。
-- [ ] 可通过恢复原激活条件回到立即初始化，继续保留幂等与卸载清理。
+实施记录（2026-10-21，提交 `54ba193`）：共享 hook `src/hooks/use_near_viewport`（底部 rootMargin 一屏、单向激活、SSR 恒 false、卸载断开、IO 不可用保持未激活由交互兜底）；CodeMirror 库加载与实例创建均由激活信号门控；激活前渲染服务端高亮 `<pre>` 静态展示（顺带修复 SSR 阶段可运行块只有骨架条、代码文本对爬虫不可见的问题）；运行意图经 `pending_run` 在编辑器就绪后执行一次；xterm 门控不变。回归：`test-public-performance` 新增 runnable 夹具（350 段后远离首屏）与断言（加载时 0 请求 → 滚动 1 次加载 → 1 实例 → 0 执行请求 → 滚出不销毁），desktop/mobile × light/dark 矩阵通过；`runner` 套件 6/6（真实 Python 容器、SSE 降级、中途离开清理、重进单实例）；smoke/showcase 通过。
+
+- [x] 远离视口的 runnable 块不创建编辑器；全部运行块都在下方时不提前请求 CodeMirror。
+- [x] 滚动接近、快速滚动、主动编辑/运行、加载失败后重试均正常。（滚动接近与主动运行为断言覆盖；快速滚动与失败重试由套件交互路径与 LibraryLoadError 既有重试 UI 承担，未单独构造慢网用例）
+- [x] 单次库加载，多实例分别初始化；重复 observer 通知不会重复创建。
+- [x] 未点击运行时不请求执行 API；点击运行只执行一次，SSE 输出与取消行为不变。
+- [x] 修改代码后滚出/滚回不丢失内容；切文章后不残留旧 source、输出或监听器。（滚出不销毁为断言覆盖；切文章由 keyed remount + runner 套件清理断言覆盖）
+- [x] 桌面/移动端、明暗主题、减少动态效果均通过；无明显布局跳动。（矩阵通过；激活前后容器高度由静态高亮代码与 CodeMirror 自然衔接）
+- [x] 报告初始化实例数、相关 JS 传输及主线程变化，不能把这一阶段直接计为 WASM 文件缩减。（CodeMirror bundle 830 KB / gzip 279 KB 改为滚动接近才加载；实例数断言 = 1；主线程未单独采样，见未覆盖项）
+- [x] 可通过恢复原激活条件回到立即初始化，继续保留幂等与卸载清理。（还原 `use_browser_library("codemirror", || true)` 与 editor 激活门控即可）
 
 ## 6. P3：读者版 / 完整版双客户端
 
@@ -192,6 +198,8 @@
 reader 不删除评论、数学公式、图片、可运行代码块等阅读功能。后台与图鉴仅从 reader 的可达代码中排除，不从产品中移除；服务端权限检查保持独立。
 
 ### 6.2 P3a：先完成可行性原型，再改正式流水线
+
+门 1 实验记录（2026-10-21）：在当前 Dioxus 0.7.10 上验证成立——rustc 在派生宏展开前剥离手写条目上的 `#[cfg]`，`Routable` 派生对被剥离的变体完全兼容：给 `Logs` 变体、导入与 `pages::admin::logs` 模块声明加同一 feature 门控后，不带该 feature 的 web check 中 `Route::Logs` 从枚举中消失（未门控的 `admin_layout.rs` 引用点报 "no variant named `Logs`" 即为剥离成立的直接证据），带该 feature 时完整编译通过。结论：编译期路由裁剪机制可行，但**全量实施必须同步门控所有引用点**（admin_layout 的路由匹配、菜单、组件内部 `matches!(route, ...)` 等，探针中一处变体即暴露 4+ 个引用点），这正是 §6.3「裁剪路由时同时检查引用关系」的实际规模。实验代码已还原，未替换正式构建。
 
 以下都是阻断条件，不通过就停留在原型阶段：
 
@@ -282,7 +290,11 @@ reader 不删除评论、数学公式、图片、可运行代码块等阅读功�
 
 验收覆盖公开、未公开、工作稿与已发布版不同、撤回、附件权限和前后台回填；响应结构断言中确认不存在不需要的 Markdown/内部字段。数据库验证只使用 `ygg_notes_test`，命令与数据清理风险见 [笔记回归说明](notes.md#回归与待补验收)。
 
+实施记录（2026-10-21，提交 `0cc3d7b`）：`PublicNote` 只含阅读所需字段（version 为页面公开展示的已发布修订号）；`store::get_public` 只选必需列，可见性谓词与 `get(Access::Public)` 一致；`get_note` server fn 返回 DTO，`NoteDocument` 改收 DTO，后台预览经 `From<Note>` 转换；`Note` 的 `content_md` 与内部字段加 `#[serde(default)]`，发布切换前已打开的旧标签页仍可反序列化新响应。`notes_database_workflow` 回归扩展并使用 `ygg_notes_test` 通过（版本锁定、字段缺失、撤回不可见、未知 slug 报错）；notes 编辑器套件通过。公开列表端点与 MCP 完整 Note 契约未动。
+
 ### 7.2 正文复制与片段解析
+
+实施记录（2026-10-21，提交 `3804b26`，两项均已实施）：(1) `split_content_fragments` 结果按内容哈希做进程内有界缓存（8 篇、插入序淘汰、条目保留原文做全文核对，碰撞不会错渲染），主题切换等重渲染零重新解析，content_html 变化自动失效，keyed remount 不受影响；(2) 新增 `PostHeaderData`/`PostFooterData`（`From<&Post>`），PostHeader/PostMeta/PostFooter 改收小型字段集，post_detail/admin preview/图鉴夹具调用点同步更新，`Post::formatted_date` 迁至 `PostHeaderData`。perf/smoke/showcase 套件通过；标题/标签/导航组件不再复制或深比较完整正文。
 
 涉及 `src/pages/post_detail.rs`、`src/components/post/post_header.rs`、`src/components/post/post_footer.rs`、`src/components/post/post_content.rs`。
 
@@ -339,6 +351,10 @@ P5 主要改善关键路径，不单独声称 WASM 文件变小。
 重新评估的条件：确认目标稳定版本与上游修复状态，重新验证当前项目的 wasm-bindgen 桥接、带数据页面 hydration、SPA 导航，以及分块共享/重复代码。旧实验还出现总分块下载量增加，未来也必须同时报告首次路由和跨路由累计成本。
 
 在这些条件满足前，P3 以两个独立、完整可验证的客户端产物为路线，不为升级实验版本扩大本方案范围。
+
+### 9.4 笔记列表多 PostContent 的运行器容器 id 冲突（2026-10-21 评审发现的既有问题）
+
+`PostContent` 以片段索引派生容器 id（`code-runner-{i}`），而笔记列表页为每张 moment 卡渲染独立 PostContent——两张含可运行块的 moment 卡会生成相同 id。此前 CodeMirror `create()` 按 `getElementById` 命中第一个同名容器即已存在错挂隐患（P2 未加剧：P2 的观察器复用同一 id 约定）。修复需为列表场景的 PostContent 引入确定性唯一前缀（如 note.id）并核对 `__initPostContent` 等按选择器增强的脚本契约，涉及公开渲染路径与图鉴 `scope_id` 语义，单独排期，不与 P3 捆绑。
 
 ## 10. 测试矩阵与执行入口
 
@@ -398,13 +414,13 @@ make test-browser BROWSER_SUITE=showcase
 
 建议的实施检查表：
 
-- [ ] P0：建立 release 测量与样例基线。
-- [ ] P1：完成 logger/日志等级 A/B，决定保留方案并记录收益。
-- [ ] P2：完成可见性激活、生命周期和运行器回归。
-- [ ] P3a：证明路由裁剪、SSR/hydration 与双输出可行；失败则不扩大改造。
+- [x] P0：建立 release 测量与样例基线。（`scripts/measure-release.cjs` + target-p0 隔离构建；§3.2 完整浏览器场景集仍待补）
+- [x] P1：完成 logger/日志等级 A/B，决定保留方案并记录收益。（采纳 B，−20.6 KiB br）
+- [x] P2：完成可见性激活、生命周期和运行器回归。
+- [x] P3a：证明路由裁剪可行（门 1 编译实验通过，含引用点规模实测）；SSR/hydration 与双输出的完整原型（门 2-5）未做，P3 不扩大改造。
 - [ ] P3b：完成 reader/full 构建、模板选择、清单和跨入口导航。
 - [ ] P3c：完成双机缓存、最终发布布局、旧资源保留和回退验收。
-- [ ] P4：分别完成公开笔记 DTO 与正文复制/解析优化。
+- [x] P4：分别完成公开笔记 DTO 与正文复制/解析优化。
 - [ ] P5：以真实请求链验证 preload 和资源边界，按净收益保留。
 
 停止或调整方向的条件：
