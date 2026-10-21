@@ -1,6 +1,6 @@
 # WASM 体积与阅读性能优化实施方案
 
-状态：P0/P1/P2/P4.1/P4.2 已实施（分支 `docs/wasm-optimization-plan`，2026-10-21）；P3 完成门 1 可行性验证，P3b/P3c 与 P5 待实施。实测数据见 §3.3、§4.3、§5.4、§7 的实施记录与 `target/regressions/` 各测量报告；下列优化描述与验收清单保留原样作为验收依据。
+状态：P0/P1/P2/P4.1/P4.2 已实施（分支 `docs/wasm-optimization-plan`，2026-10-21）；P3 的 P3a（门 1-5 可行性）与 P3b（构建、模板选择、清单、跨入口导航）已完成，P3c（双机缓存、滚动发布、旧资源保留与回退验收）与 P5 待实施。实测数据见 §3.3、§4.3、§5.4、§6 与 §7 的实施记录及 `target/regressions/` 各测量报告；下列优化描述与验收清单保留原样作为验收依据。
 
 核对日期：2026-10-21。代码基线：`303e497`（`perf(build): release WASM 改用固定 nightly 编译`，v0.23.4）。开始实施前重新核对代码、工具链和工作区；保留其他未提交修改。
 
@@ -210,6 +210,14 @@ reader 不删除评论、数学公式、图片、可运行代码块等阅读功�
 5. 证明两次客户端构建不会覆盖对方的生成 JS、WASM、HTML 模板或资产元数据，服务端再次构建不会把 reader/full 资源退回单份默认产物。
 6. 在保留全部阅读功能的前提下重新测量 reader；如果收益远低于旧裁剪实验，应定位残留引用再决定是否扩大改造。
 
+实施记录（2026-10-21，提交 `c97e0c0`/`12cc63c`/`2057bc3`）：门 2-5 全部通过。要点：
+
+- **门 2（共享路由定义）**：单一 `Route` 枚举按变体加 `#[cfg]`（admin 嵌套块 20 变体、登录/注册、图鉴 2 变体），reader 组合下枚举内不存在 full 变体。服务端路径分派 `router::is_reader_path` 基于完整枚举解析 + 穷尽 match（新增变体会使服务端编译失败，强制归类 reader/full），一致性测试锁定 14 个 reader 变体与 24 个 full 变体的分类与解析往返。
+- **门 3（服务端 bootstrap 与 hydration 一致）**：`startup.rs` 持有双 `FullstackState`——full 恒为 `public/index.html`，reader 为 `public/flavors/reader/index.html`（缺席回退完整应用模式）；公开 fallback 与独立笔记入口按路径选模板。dioxus-server 0.7.10 未公开 `IndexHtml`，reader 模板经启动期临时切换 `DIOXUS_PUBLIC_PATH` 注入、读毕还原。**实测踩中 hydration 失配**：服务端为 reader 路径渲染 full 组件树时，dioxus Link 在 SSR HTML 留下 `data-node-hydration="...,click:1"` 监听器标记，reader 客户端的无监听器模板与之失配崩溃——修复为跨产物入口（图鉴卡片、写作指南 MCP 链接）在两个 flavor 统一渲染普通 `<a>`（即 §6.6 第一版语义），修复后验收全站 hydration 零页面错误。
+- **门 4（原型场景）**：`scripts/test-dual-flavor.cjs`（自管一次性 PG + release server）覆盖首页、带服务端数据的文章、公开笔记、登录/后台重定向、图鉴的直达、hydration、SPA、跨入口整页导航与缓存 flavor 一致性，全部断言通过。
+- **门 5（双构建互不覆盖）**：dx 0.7.10 实测会把「default features − server」注入客户端构建，reader 开关因此必须是反向的 `client-reader` 累加 feature（不进 default；经 build.rs 发射 `ygg_client_reader` cfg，server 开启时不裁剪，`--all-features` 原生测试不受影响）。`make build` 顺序执行两次 `dx build @client` 并各自快照（`make snapshot-flavor`，快照前 restore-webp）；`scripts/build-release.cjs` 按 dx `.manifest.json` 的 add_hash 条目过滤陈旧哈希后合并——同路径不同内容硬失败，两 flavor 模板入口相同则拒绝发布。
+- 其余产物细节：发布清单 `public/release-manifest.json`（release_id、源码/锁文件摘要、每 flavor 模板入口、bootstrap 引用与全部哈希资产 sha256）；`make build` 末尾做静态闭包校验，服务端启动期二次校验（release 下模板缺失拒绝启动，reader 缺席回退完整应用模式）。dev 与 browser 回归命令零改动（default 即完整应用）。
+
 ### 6.3 编译期组织
 
 - 在 `Cargo.toml` 设计 reader/full 的明确 feature 或独立入口；名称在原型后确定。Cargo features 可累加，不能把两个正向 feature 当作天然互斥。
@@ -256,6 +264,8 @@ reader 不删除评论、数学公式、图片、可运行代码块等阅读功�
 
 部分后台/公开入口已采用整页导航，可复用其既有约定，但仍需核对所有 Header、Footer、管理入口与重定向，不能以已有两个例子代替全量覆盖。
 
+实施记录（2026-10-21）：reader→full 的全部入口（关于页图鉴卡片、写作指南 MCP 链接）已统一为普通 `<a>` 整页导航并集中维护；full→reader 保持 SPA（full 枚举完整、语义正确），未按本节第一版设想整页化——释放完整运行时留作 P3c 评估。
+
 ### 6.7 缓存、滚动发布与回退
 
 - 保持 `src/ssr_cache.rs` 与 `src/middleware.rs` 的认证绕过、ETag/304、失效通知、代际保护和中间件顺序。
@@ -275,6 +285,17 @@ reader 不删除评论、数学公式、图片、可运行代码块等阅读功�
 - [ ] 双机缓存、认证绕过、内容失效、ETag/304、旧资源兼容与回退通过。
 - [ ] reader 的实际 Brotli 大小相对 P0 有显著下降。建议目标为至少 35%，为旧实验约 47% 的潜力预留集成开销；这是方案目标，不是已实现值。
 - [ ] 同时报告 full 大小、两个产物合计、首次阅读以及“阅读后进入后台”的累计下载量，不以普通读者收益掩盖跨入口重复下载。
+
+实施记录（2026-10-21）：首次双产物 release 构建（nightly-2026-10-19 + `-Zbuild-std` + wasm-opt 133 + brotli 1.2.0；报告在 `target/regressions/1792563417362-release-measure` 与 `…-dual-flavor`）：
+
+| 产物 | 原始 | Brotli | 相对 P0 基线（989.4 KiB br） |
+| --- | --- | --- | --- |
+| full wasm | 3,758.5 KiB | 972.9 KiB | −1.7% |
+| reader wasm | 1,647.4 KiB | 495.6 KiB | **−49.9%** |
+| full 胶水 JS | 70.0 KiB | 15.6 KiB | — |
+| reader 胶水 JS | 63.8 KiB | 14.4 KiB | — |
+
+reader 降幅超过 ≥35% 的验收门槛，与 §2 旧裁剪实验约 47% 的潜力估计相符（骨架屏与图鉴预览子模块的额外门控贡献了余量）。「匿名阅读只加载 reader 入口」「图鉴和后台完整可用」「双机缓存命中不串味」已由 `scripts/test-dual-flavor.cjs` 断言覆盖并通过；「首次阅读/进入后台累计下载量」报告与「旧资源兼容窗口」属 P3c。已知噪音：dx release 构建在 immediate-abort 下 Routable 派生产生 8 处 `unreachable call` 警告（clippy 不触发、不失败构建），属上游派生代码与 panic 策略交互的既有现象。
 
 ## 7. P4：精简公开数据与正文运行时开销
 
@@ -417,8 +438,8 @@ make test-browser BROWSER_SUITE=showcase
 - [x] P0：建立 release 测量与样例基线。（`scripts/measure-release.cjs` + target-p0 隔离构建；§3.2 完整浏览器场景集仍待补）
 - [x] P1：完成 logger/日志等级 A/B，决定保留方案并记录收益。（采纳 B，−20.6 KiB br）
 - [x] P2：完成可见性激活、生命周期和运行器回归。
-- [x] P3a：证明路由裁剪可行（门 1 编译实验通过，含引用点规模实测）；SSR/hydration 与双输出的完整原型（门 2-5）未做，P3 不扩大改造。
-- [ ] P3b：完成 reader/full 构建、模板选择、清单和跨入口导航。
+- [x] P3a：证明路由裁剪可行（门 1-5 全部通过，见 §6.2/§6.5 实施记录；reader wasm 495.6 KiB br，较 P0 基线降 49.9%）。
+- [x] P3b：完成 reader/full 构建、模板选择、清单和跨入口导航（`make build` 端到端 + `scripts/test-dual-flavor.cjs` 全部断言通过；提交 `c97e0c0`、`12cc63c`、`2057bc3`）。
 - [ ] P3c：完成双机缓存、最终发布布局、旧资源保留和回退验收。
 - [x] P4：分别完成公开笔记 DTO 与正文复制/解析优化。
 - [ ] P5：以真实请求链验证 preload 和资源边界，按净收益保留。
