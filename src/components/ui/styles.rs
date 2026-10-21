@@ -26,13 +26,6 @@ pub const BADGE_BASE: &str = "badge";
 // `IconButton` 组件；这些常量供 `Link`、`label` 等非按钮元素与旧页面沿用，
 // 页面重写时逐步收敛。
 
-/// 批量通过、批量恢复：小号次要按钮。
-pub const BTN_SOLID_GREEN: &str = "btn btn-sm btn-secondary";
-/// 批量标为垃圾：小号次要按钮。
-pub const BTN_SOLID_AMBER: &str = "btn btn-sm btn-secondary";
-/// 批量删除、批量彻底删除：小号浅红按钮。
-pub const BTN_SOLID_RED: &str = "btn btn-sm btn-danger-soft";
-
 /// 表格行内的次要文字操作。
 #[allow(dead_code)]
 pub const BTN_TEXT_AMBER: &str = "btn btn-xs btn-ghost";

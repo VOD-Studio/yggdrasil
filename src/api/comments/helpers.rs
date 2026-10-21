@@ -114,6 +114,7 @@ pub fn row_to_admin_comment(row: &tokio_postgres::Row) -> AdminComment {
         post_title: row.get("post_title"),
         post_slug: row.get("post_slug"),
         parent_id: row.get("parent_id"),
+        reply_to: row.try_get("parent_author").ok().flatten(),
         depth: row.get("depth"),
         author_name,
         author_email: email.clone(),

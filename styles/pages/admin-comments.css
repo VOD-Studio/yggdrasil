@@ -1,0 +1,203 @@
+/* ======== 后台评论 ========
+   结构见 src/pages/admin/comments.rs：选项卡与评论流，回复在行内展开。 */
+.admin-comments {
+  max-width: 56rem;
+}
+
+.admin-comment {
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.875rem 1rem 0.75rem;
+  box-shadow: inset 0 -1px 0 var(--color-hairline);
+  transition: background-color 150ms var(--ease-out-expo);
+}
+
+.admin-comment:hover {
+  background-color: var(--color-ink-1);
+}
+
+.admin-comment[data-selected] {
+  background-color: color-mix(in srgb, var(--color-clay) 7%, transparent);
+}
+
+/* 回复缩进：与被回复的评论拉开层级。 */
+.admin-comment[data-reply] {
+  padding-left: 2.5rem;
+}
+
+.admin-comment > .ygg-cb {
+  margin-top: 0.375rem;
+}
+
+.admin-comment-avatar {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 1.875rem;
+  height: 1.875rem;
+  border-radius: 50%;
+  object-fit: cover;
+  background-color: var(--color-ink-2);
+  color: var(--color-fg-2);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.admin-comment-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.admin-comment-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.625rem;
+}
+
+.admin-comment-author {
+  font-weight: 600;
+}
+
+.admin-comment-site {
+  color: var(--color-fg-3);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+}
+
+.admin-comment-to {
+  color: var(--color-fg-3);
+  font-size: 0.78125rem;
+}
+
+.admin-comment-head time {
+  margin-left: auto;
+  color: var(--color-fg-3);
+  font-size: 0.78125rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-comment-text {
+  margin: 0.375rem 0 0;
+  font-size: 0.90625rem;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.admin-comment-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.admin-comment-images a {
+  display: block;
+  overflow: hidden;
+  border-radius: 8px;
+  box-shadow: inset 0 0 0 1px var(--color-hairline);
+}
+
+.admin-comment-images img {
+  display: block;
+  width: 7.5rem;
+  height: 7.5rem;
+  object-fit: cover;
+}
+
+.admin-comment-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.admin-comment-post {
+  max-width: 26rem;
+  overflow: hidden;
+  color: var(--color-fg-3);
+  font-size: 0.78125rem;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-comment-post:hover {
+  color: var(--color-clay-text);
+}
+
+.admin-comment-actions {
+  display: flex;
+  gap: 0.125rem;
+}
+
+.admin-comment-actions button {
+  color: var(--color-fg-2);
+}
+
+.admin-comment-actions button[data-danger] {
+  color: var(--color-danger);
+}
+
+.admin-comment-reply {
+  align-items: flex-end;
+  margin-top: 0.625rem;
+  padding: 0.375rem 0.375rem 0.375rem 0.875rem;
+  border-radius: 14px;
+}
+
+.admin-comment-reply .composer-input {
+  height: auto;
+  min-height: 2.5rem;
+  padding: 0.5rem 0;
+  resize: none;
+  field-sizing: content;
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+
+.admin-comment-reply .composer-send {
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 10px;
+}
+
+.admin-comment-reply .composer-send:disabled {
+  background-color: var(--color-ink-2);
+  color: var(--color-fg-3);
+  cursor: default;
+}
+
+.admin-comment-list[aria-busy="true"] .admin-comment {
+  opacity: 0.6;
+}
+
+@media (hover: hover) {
+  .admin-comment-actions {
+    opacity: 0;
+    transition: opacity 150ms var(--ease-out-expo);
+  }
+
+  .admin-comment:hover .admin-comment-actions,
+  .admin-comment:focus-within .admin-comment-actions {
+    opacity: 1;
+  }
+}
+
+@media (max-width: 767px) {
+  .admin-comment {
+    padding-inline: 0.75rem;
+  }
+
+  .admin-comment[data-reply] {
+    padding-left: 1.75rem;
+  }
+
+  .admin-comment-head time {
+    width: 100%;
+    margin-left: 0;
+  }
+}

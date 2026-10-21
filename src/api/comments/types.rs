@@ -83,8 +83,20 @@ pub struct CommentTreeResponse {
 pub struct AllCommentsResponse {
     /// 评论列表。
     pub comments: Vec<AdminComment>,
-    /// 总数。
+    /// 当前筛选下的总数（分页用）。
     pub total: i64,
+    /// 各状态的条数（选项卡数量）。
+    #[serde(default)]
+    pub counts: CommentCounts,
+}
+
+/// 各状态的评论条数；回收站按软删除计。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CommentCounts {
+    pub pending: i64,
+    pub approved: i64,
+    pub spam: i64,
+    pub trash: i64,
 }
 
 /// 批量更新状态响应。

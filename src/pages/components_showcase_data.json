@@ -2337,13 +2337,13 @@
       "usage_kind": "api"
     },
     {
-      "name": "AdminCommentsTableSkeleton",
-      "slug": "admin-comments-table-skeleton",
-      "label": "后台评论表格骨架",
+      "name": "AdminCommentsListSkeleton",
+      "slug": "admin-comments-list-skeleton",
+      "label": "后台评论列表骨架",
       "group": "page-loading",
-      "summary": "后台评论表格骨架，在内容到来前保留页面轮廓。",
+      "summary": "后台评论列表骨架，在内容到来前保留页面轮廓。",
       "states": "页面占位 · 动画",
-      "description": "后台评论表格骨架用于加载期间的页面布局轮廓。预览将调用项目现有的骨架屏组件。",
+      "description": "后台评论列表骨架用于加载期间的页面布局轮廓。预览将调用项目现有的骨架屏组件。",
       "props": [
         [
           "—",
@@ -2354,7 +2354,7 @@
       ],
       "keys": [],
       "source": "src/components/skeletons/admin_comments_skeleton.rs",
-      "code": "pub fn AdminCommentsTableSkeleton() -> Element",
+      "code": "pub fn AdminCommentsListSkeleton() -> Element",
       "preview_mode": "static",
       "usage_kind": "api"
     },

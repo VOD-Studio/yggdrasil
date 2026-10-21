@@ -249,3 +249,43 @@ pub async fn batch_update_comment_status(
     #[cfg(not(feature = "server"))]
     unreachable!()
 }
+
+/// 从回收站恢复评论：清除软删除并回到待审，由管理员重新决定是否通过。
+#[server(RestoreComments, "/api")]
+pub async fn restore_comments(ids: Vec<i64>) -> Result<BatchStatusResponse, ServerFnError> {
+    #[cfg(feature = "server")]
+    {
+        use crate::api::auth::get_current_admin_user;
+        use crate::api::error::AppError;
+        use crate::cache;
+        use crate::db::pool::get_conn;
+
+        let _admin = get_current_admin_user().await?;
+        let client = get_conn().await.map_err(AppError::db_conn)?;
+        let rows = client
+            .query(
+                "UPDATE comments SET deleted_at = NULL, status = 'pending' \
+                 WHERE id = ANY($1) AND deleted_at IS NOT NULL RETURNING post_id",
+                &[&ids],
+            )
+            .await
+            .map_err(AppError::query)?;
+        let mut post_ids: Vec<i32> = rows.iter().map(|r| r.get("post_id")).collect();
+        post_ids.sort_unstable();
+        post_ids.dedup();
+        cache::invalidate_pending_count().await;
+        for pid in post_ids {
+            cache::invalidate_comments_by_post(pid).await;
+        }
+        Ok(BatchStatusResponse {
+            success: true,
+            updated_count: rows.len() as i64,
+            message: format!("已恢复 {} 条评论，等待审核", rows.len()),
+        })
+    }
+    #[cfg(not(feature = "server"))]
+    {
+        let _ = ids;
+        unreachable!()
+    }
+}

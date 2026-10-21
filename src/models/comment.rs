@@ -82,6 +82,9 @@ pub struct AdminComment {
     pub post_slug: String,
     /// 父评论主键。
     pub parent_id: Option<i64>,
+    /// 被回复的评论作者（列表显示「回复 X」）。
+    #[serde(default)]
+    pub reply_to: Option<String>,
     /// 嵌套深度。
     pub depth: i32,
     /// 评论者名称。

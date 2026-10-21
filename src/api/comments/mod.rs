@@ -28,6 +28,8 @@ pub use types::*;
 pub use update::approve_comment;
 /// 批量更新评论状态。
 pub use update::batch_update_comment_status;
+/// 从回收站恢复评论（回到待审）。
+pub use update::restore_comments;
 /// 将指定评论标记为垃圾评论。
 pub use update::spam_comment;
 /// 将指定评论移入回收站。

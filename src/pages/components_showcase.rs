@@ -1091,7 +1091,7 @@ fn preview_route(slug: &str) -> Option<PreviewRoute> {
         | "skeleton-card"
         | "skeleton-table"
         | "delayed-skeleton" => PreviewRoute::Live,
-        "admin-comments-table-skeleton"
+        "admin-comments-list-skeleton"
         | "admin-comments-skeleton"
         | "archive-skeleton"
         | "assets-skeleton"
@@ -1574,8 +1574,8 @@ fn LiveComponentPreview(
 #[component]
 fn PageSkeletonPreview(name: String) -> Element {
     let skeleton = match name.as_str() {
-        "AdminCommentsTableSkeleton" => {
-            rsx! { crate::components::skeletons::admin_comments_skeleton::AdminCommentsTableSkeleton {} }
+        "AdminCommentsListSkeleton" => {
+            rsx! { crate::components::skeletons::admin_comments_skeleton::AdminCommentsListSkeleton {} }
         }
         "AdminCommentsSkeleton" => {
             rsx! { crate::components::skeletons::admin_comments_skeleton::AdminCommentsSkeleton {} }
