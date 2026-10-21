@@ -26,7 +26,6 @@ import {
   type ThemeName,
 } from '@yggdrasil/shared';
 import { attachOverlayTrigger } from './mermaid-overlay';
-import { onThemeChange } from './theme-transition';
 
 /** 文章正文容器选择器（与 post_content.rs 的 __initMermaid 调用一致）。 */
 const POST_CONTENT_SELECTOR = '.post-content';
@@ -218,7 +217,10 @@ function rerenderExistingBlocks(root: Element, theme: ThemeName): Promise<void> 
  * 顶层注册(IIFE 加载时),确保任何时刻主题切换都能命中。首次渲染前无已渲染块,
  * rerenderExistingBlocks 自然 no-op。
  */
-onThemeChange((isDark) => {
+// P5 §8.2：主题 registry 属于 core 入口，经全局桥接订阅（本 IIFE 若自持一份
+// registry，core 的 startThemeTransition 永远通知不到它）。core 阻塞加载、先于
+// 本脚本执行，桥接必然已定义；单测环境无 core 时退化为不订阅（该路径由浏览器回归覆盖）。
+window.__subscribeThemeChange?.((isDark) => {
   const root = document.querySelector(POST_CONTENT_SELECTOR);
   if (!root) return;
   return rerenderExistingBlocks(root, isDark ? 'dark' : 'light');

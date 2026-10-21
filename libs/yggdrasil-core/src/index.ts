@@ -1,50 +1,57 @@
-import type { ThemeName } from '@yggdrasil/shared';
 import { initAnchorClick } from './anchor-click';
 import { loadBrowserLibrary } from './browser-library';
-import { disposeChangelogNav, initChangelogNav } from './changelog-nav';
+import type { EnhanceCall } from './enhance-queue';
 import { scrollToHash } from './hash-scroll';
-import { initMermaid } from './mermaid';
 import { initPageReveal } from './page-entry';
-import { initPostContent } from './post-content';
 import { routeTransitions } from './route-transitions';
-import { disposeShowcaseMasonry, initShowcaseMasonry } from './showcase-masonry';
-import { applyResolvedTheme, startThemeTransition } from './theme-transition';
-import { disposeTocSidebar, initTocSidebar } from './toc-sidebar';
+import { applyResolvedTheme, onThemeChange, startThemeTransition } from './theme-transition';
 import './style.css';
 
+/**
+ * P5 §8.2 拆分边界：本入口只保留启动必需代码（导航、主题、锚点、pagereveal），
+ * 阻塞执行、不加 async。文章/图鉴/changelog 的增强函数在 `enhance.ts` 入口，
+ * 由页面组件按需以 `defer` 注入（SSR 直直接烤进 head，先于 hydration；
+ * SPA 首次注入为 async，由下方队列兜底到增强脚本加载完成）。
+ */
 declare global {
   interface Window {
     __loadBrowserLibrary: typeof loadBrowserLibrary;
-    __initPostContent: (selector: string) => void;
-    __initMermaid: (selector: string, theme: ThemeName) => Promise<void>;
     __initAnchorClick: () => void;
     __scrollToHash: () => void;
     __startThemeTransition: (x: number, y: number) => void;
     __applyResolvedTheme: (isDark: boolean) => void;
-    __initTocSidebar: typeof initTocSidebar;
-    __disposeTocSidebar: typeof disposeTocSidebar;
     __routeTransitions: typeof routeTransitions;
-    __initShowcaseMasonry: typeof initShowcaseMasonry;
-    __disposeShowcaseMasonry: typeof disposeShowcaseMasonry;
-    __initChangelogNav: typeof initChangelogNav;
-    __disposeChangelogNav: typeof disposeChangelogNav;
+    /** enhance 入口订阅 core 主题 registry 的桥接：两个 IIFE 各持一份 registry 会让
+     * mermaid 收不到通知，必须共用 core 这份。 */
+    __subscribeThemeChange: typeof onThemeChange;
+    /** 增强调用队列：目标函数未定义时由 invoke_optional_global 入队，flush 丢弃已可
+     * 执行的项。core 无条件建队，队列存在不代表本页会加载 enhance。 */
+    __pendingEnhanceCalls: EnhanceCall[];
+    __flushEnhanceCalls: () => void;
   }
 }
 
-window.__initPostContent = initPostContent;
 window.__loadBrowserLibrary = loadBrowserLibrary;
-window.__initMermaid = initMermaid;
 window.__initAnchorClick = initAnchorClick;
 window.__scrollToHash = scrollToHash;
 window.__startThemeTransition = startThemeTransition;
 window.__applyResolvedTheme = applyResolvedTheme;
-window.__initTocSidebar = initTocSidebar;
-window.__disposeTocSidebar = disposeTocSidebar;
 window.__routeTransitions = routeTransitions;
-window.__initShowcaseMasonry = initShowcaseMasonry;
-window.__disposeShowcaseMasonry = disposeShowcaseMasonry;
-window.__initChangelogNav = initChangelogNav;
-window.__disposeChangelogNav = disposeChangelogNav;
+window.__subscribeThemeChange = onThemeChange;
+
+// dev HTML 可能内联两次 IIFE：队列与 flush 都要求幂等（保留已入队项）。
+window.__pendingEnhanceCalls ??= [];
+window.__flushEnhanceCalls ??= () => {
+  const queue = window.__pendingEnhanceCalls;
+  if (!queue.length) return;
+  // 只执行已就绪的函数，其余保留在队里等对应脚本加载（各 IIFE 尾部都会 flush）。
+  window.__pendingEnhanceCalls = queue.filter((call) => {
+    const entry = (window as unknown as Record<string, unknown>)[call.name];
+    if (typeof entry !== 'function') return true;
+    (entry as (...args: unknown[]) => void)(...call.args);
+    return false;
+  });
+};
 
 // Same-page links also appear on the homepage, before any article is mounted.
 initAnchorClick();

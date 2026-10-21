@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && vite build && vite build --config vite.enhance.config.ts",
     "dev": "vite",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
