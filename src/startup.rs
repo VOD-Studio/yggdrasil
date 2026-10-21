@@ -251,6 +251,7 @@ fn build_flavor_states() -> FlavorStates {
                 "双产物模式：公开阅读路径使用 reader 客户端模板（{}），后台/登录/图鉴使用 full 模板",
                 READER_TEMPLATE_DIR
             );
+            init_cache_namespace("dual");
             FlavorStates {
                 reader: Some(reader),
                 full,
@@ -261,9 +262,42 @@ fn build_flavor_states() -> FlavorStates {
                 "完整应用模式：未发现 reader 客户端产物（public/{}/index.html），全部路由使用 full 模板",
                 READER_TEMPLATE_DIR
             );
+            init_cache_namespace("full");
             FlavorStates { reader: None, full }
         }
     }
+}
+
+/// 发布×flavor 命名空间（plan §6.7）：一个 SSR 缓存实例只服务一个组合，
+/// 组合变化即整表失效，杜绝缓存命中跨发布/跨 flavor「串味」。release 取
+/// 发布清单的 release_id；dev 无清单时回退构建信息（git describe 含 dirty 标记）。
+fn init_cache_namespace(mode: &str) {
+    let release = std::fs::read_to_string(dioxus_public_root().join("release-manifest.json"))
+        .ok()
+        .and_then(|json| serde_json::from_str::<serde_json::Value>(&json).ok())
+        .and_then(|value| {
+            value
+                .get("release_id")
+                .and_then(|v| v.as_str())
+                .map(str::to_owned)
+        })
+        .unwrap_or_else(|| crate::build_info::BUILD_INFO.git_describe.to_owned());
+    crate::ssr_cache::set_release_namespace(&format!("{mode}/{release}"));
+}
+
+/// 上一发布资源目录（plan §6.7 滚动发布的旧资源保留窗口）。配置了但不是
+/// 目录时仅告警停用——保留窗口是兜底增强，不能反过来阻止服务启动。
+fn previous_public_dir() -> Option<PathBuf> {
+    let dir = std::env::var_os("YGG_PREVIOUS_PUBLIC_DIR").filter(|v| !v.is_empty())?;
+    let dir = PathBuf::from(dir);
+    if !dir.is_dir() {
+        tracing::warn!(
+            dir = %dir.display(),
+            "YGG_PREVIOUS_PUBLIC_DIR 不是目录，旧发布资源保留窗口停用"
+        );
+        return None;
+    }
+    Some(dir)
 }
 
 /// 双客户端产物的 SSR 状态。
@@ -412,6 +446,24 @@ fn build_router(options: ServerOptions) -> axum::Router {
             }
         }))
         .with_state(FullstackState::headless());
+
+    // 旧发布资源保留窗口（plan §6.7）：滚动更新后，已打开标签页与缓存 HTML
+    // 仍引用上一发布的带 hash 资源；当前发布未收录时按 404 回退到
+    // YGG_PREVIOUS_PUBLIC_DIR，保留窗口覆盖部署、HTML 缓存、回滚与长开标签页。
+    let dioxus_app = match previous_public_dir() {
+        Some(previous_root) => {
+            tracing::info!(
+                dir = %previous_root.display(),
+                "旧发布资源保留窗口已启用（/assets、/wasm 缺失时回退）"
+            );
+            dioxus_app.layer(axum::middleware::from_fn(
+                move |req: axum::extract::Request, next: axum::middleware::Next| {
+                    crate::middleware::previous_release_assets(previous_root.clone(), req, next)
+                },
+            ))
+        }
+        None => dioxus_app,
+    };
 
     // 笔记可随时撤回公开；独立 renderer 与 HTML 缓存白名单共同保证其不缓存。
     let notes_routes = axum::Router::new()

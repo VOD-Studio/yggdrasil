@@ -304,14 +304,132 @@ pub(crate) async fn version_headers_middleware(
     response
 }
 
+/// 解析旧发布目录中可能命中的带 hash 资源。只放行 /assets/、/wasm/（dx 内容
+/// 寻址产物目录）；URI path 保持百分号编码原样映射，任何非常规组件（`..`、
+/// 根/父目录引用）都不是 Normal 分量，直接拒绝；文件不存在返回 None。
+fn previous_asset_file(previous_root: &std::path::Path, path: &str) -> Option<std::path::PathBuf> {
+    use std::path::Component;
+    use std::path::Path;
+
+    let rel = path.strip_prefix('/')?;
+    let top = rel.split('/').next()?;
+    if !matches!(top, "assets" | "wasm") {
+        return None;
+    }
+    let rel_path = Path::new(rel);
+    if rel_path
+        .components()
+        .any(|component| !matches!(component, Component::Normal(_)))
+    {
+        return None;
+    }
+    let file = previous_root.join(rel_path);
+    file.is_file().then_some(file)
+}
+
+/// Axum 中间件（由 startup.rs 按需挂载）：旧发布资源保留窗口（plan §6.7）。
+///
+/// 滚动更新后，已打开标签页与反代/浏览器缓存的旧 HTML 仍引用上一发布的带
+/// hash 资源；新发布未收录这些文件时（404），回退到 `YGG_PREVIOUS_PUBLIC_DIR`
+/// 同路径文件。语义：
+/// - 只拦截 /assets/、/wasm/ 的 GET 404，未命中保留原 404，不遮蔽当前发布
+///   的真实缺失；
+/// - 复用 ServeFile 的内容类型推断与 `.br` 旁车协商（release public 自带旁车，
+///   与 dioxus 静态服务的预压缩行为一致）；
+/// - 命中即 immutable（内容寻址）并带 `x-previous-release` 标记，外层
+///   add_cache_control 的 or_insert 不会覆盖。
+pub(crate) async fn previous_release_assets(
+    previous_root: std::path::PathBuf,
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    use tower::ServiceExt;
+
+    let is_get = req.method() == axum::http::Method::GET;
+    let fallback = if is_get {
+        previous_asset_file(&previous_root, req.uri().path())
+    } else {
+        None
+    };
+    let (parts, body) = req.into_parts();
+    let response = next
+        .run(axum::http::Request::from_parts(parts.clone(), body))
+        .await;
+    let Some(file) = fallback else {
+        return response;
+    };
+    if response.status() != axum::http::StatusCode::NOT_FOUND {
+        return response;
+    }
+    let request = {
+        let mut builder = axum::http::Request::builder()
+            .method(axum::http::Method::GET)
+            .uri(parts.uri.clone());
+        for (name, value) in parts.headers.iter() {
+            builder = builder.header(name, value);
+        }
+        match builder.body(axum::body::Body::empty()) {
+            Ok(request) => request,
+            Err(_) => return response,
+        }
+    };
+    let served = tower_http::services::ServeFile::new(&file)
+        .precompressed_br()
+        .oneshot(request)
+        .await;
+    match served {
+        Ok(asset) if asset.status() == axum::http::StatusCode::OK => {
+            let mut asset = asset.map(axum::body::Body::new);
+            let headers = asset.headers_mut();
+            headers.insert(
+                axum::http::header::CACHE_CONTROL,
+                axum::http::HeaderValue::from_static("public, max-age=31536000, immutable"),
+            );
+            headers.insert(
+                axum::http::HeaderName::from_static("x-previous-release"),
+                axum::http::HeaderValue::from_static("1"),
+            );
+            tracing::debug!(file = %file.display(), "旧发布资源经保留窗口返回");
+            asset
+        }
+        // 上一发布同样缺失或读取失败：保留当前发布的 404。
+        _ => response,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         cache_control_for_path, compression_layer, parse_compression_algorithms,
-        CompressionAlgorithms,
+        previous_asset_file, CompressionAlgorithms,
     };
     use axum::http::{header, Method, Request};
     use tower::ServiceExt;
+
+    #[test]
+    fn previous_asset_window_only_serves_hashed_dirs_inside_root() {
+        let root = std::env::temp_dir().join("ygg-prev-asset-test");
+        let assets = root.join("assets");
+        std::fs::create_dir_all(&assets).unwrap();
+        std::fs::write(assets.join("app-dxh123.js"), b"js").unwrap();
+        std::fs::create_dir_all(root.join("uploads")).unwrap();
+        std::fs::write(root.join("uploads").join("secret.txt"), b"secret").unwrap();
+
+        let get = |path: &str| previous_asset_file(&root, path);
+        assert_eq!(
+            get("/assets/app-dxh123.js"),
+            Some(assets.join("app-dxh123.js"))
+        );
+        // 缺失文件与目录外前缀一律 None；非 Normal 分量（含 %2e%2e 编码形态的
+        // 字面量不匹配文件名，../ 形态则被分量检查拒绝）。
+        assert_eq!(get("/assets/missing.js"), None);
+        assert_eq!(get("/assets/"), None);
+        assert_eq!(get("/uploads/secret.txt"), None);
+        assert_eq!(get("/api/posts"), None);
+        assert_eq!(get("/assets/../uploads/secret.txt"), None);
+        assert_eq!(get("/assets/%2e%2e/uploads/secret.txt"), None);
+        std::fs::remove_dir_all(&root).ok();
+    }
 
     fn cache_value(path: &str, method: Method) -> Option<String> {
         cache_control_for_path(path, &method).map(|v| v.to_str().unwrap().to_string())

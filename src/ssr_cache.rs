@@ -35,6 +35,8 @@ struct HtmlCache {
     generation: AtomicU64,
     gate: Mutex<()>,
     enabled: bool,
+    /// 当前缓存命名空间（release×flavor，plan §6.7）。空串 = 尚未初始化。
+    namespace: Mutex<String>,
 }
 
 impl HtmlCache {
@@ -50,6 +52,7 @@ impl HtmlCache {
             generation: AtomicU64::new(0),
             gate: Mutex::new(()),
             enabled: !ttl.is_zero(),
+            namespace: Mutex::new(String::new()),
         }
     }
 
@@ -65,6 +68,26 @@ impl HtmlCache {
             .wrapping_add(1);
         self.pages.invalidate_all();
         generation
+    }
+
+    /// 切换命名空间：内容不同则整表失效并推进世代，保证旧命名空间下的已缓存
+    /// 页面与在途回填都绝不返回给新命名空间（plan §6.7「release/flavor 纳入隔离」）。
+    /// 同一进程内一个缓存实例只服务一个 release×flavor 组合，切换只发生在
+    /// 启动/开发热重载重新组装路由时。返回是否真的发生了切换。
+    fn swap_namespace(&self, namespace: &str) -> bool {
+        let _guard = self.gate.lock().unwrap_or_else(|e| e.into_inner());
+        let mut current = self.namespace.lock().unwrap_or_else(|e| e.into_inner());
+        if *current == namespace {
+            return false;
+        }
+        *current = namespace.to_owned();
+        // 世代号与 invalidate() 同步推进；新值无需使用。
+        let _ = self
+            .generation
+            .fetch_add(1, Ordering::AcqRel)
+            .wrapping_add(1);
+        self.pages.invalidate_all();
+        true
     }
 
     fn get(&self, path: &str) -> Option<CachedPage> {
@@ -277,6 +300,13 @@ pub fn invalidate_post_preview(_slug: &str) { /* 管理预览从不缓存。 */
 pub fn invalidate_ssr_all_public() {
     HTML_CACHE.invalidate();
 }
+/// 设置发布×flavor 命名空间（plan §6.7），变化即整表失效。启动期与开发热重载
+/// 重组路由时调用；同一进程内 release/flavor 不变时是零成本空操作。
+pub fn set_release_namespace(namespace: &str) {
+    if HTML_CACHE.swap_namespace(namespace) {
+        tracing::info!(%namespace, "SSR 缓存命名空间切换，旧 release/flavor 页面已失效");
+    }
+}
 pub fn bump_global_generation() -> u64 {
     HTML_CACHE.invalidate()
 }
@@ -350,6 +380,44 @@ mod tests {
             cache.generation(),
         );
         assert_eq!(cache.get("/").unwrap().body.as_ref(), b"new");
+    }
+
+    #[test]
+    fn namespace_swap_isolates_release_and_flavor_variants() {
+        let cache = HtmlCache::new(Duration::from_secs(60), MAX_CACHE_BYTES);
+        let generation = cache.generation();
+        cache.insert(
+            "/post/a".into(),
+            HeaderMap::new(),
+            b"dual page".to_vec(),
+            generation,
+        );
+        assert!(cache.get("/post/a").is_some());
+
+        // 切换命名空间（dual → 完整应用回退）：旧页面不可见。
+        assert!(cache.swap_namespace("full/rel-2"));
+        assert!(cache.get("/post/a").is_none());
+        // 旧命名空间的在途回填同样被世代号拒绝。
+        cache.insert(
+            "/post/a".into(),
+            HeaderMap::new(),
+            b"stale dual page".to_vec(),
+            generation,
+        );
+        assert!(cache.get("/post/a").is_none());
+
+        // 新命名空间正常写入读取。
+        cache.insert(
+            "/post/a".into(),
+            HeaderMap::new(),
+            b"full page".to_vec(),
+            cache.generation(),
+        );
+        assert_eq!(cache.get("/post/a").unwrap().body.as_ref(), b"full page");
+
+        // 相同命名空间重复设置不失效（开发热重载零成本路径）。
+        assert!(!cache.swap_namespace("full/rel-2"));
+        assert_eq!(cache.get("/post/a").unwrap().body.as_ref(), b"full page");
     }
 
     #[test]
