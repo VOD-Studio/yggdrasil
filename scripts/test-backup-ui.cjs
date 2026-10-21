@@ -35,7 +35,7 @@ async function main() {
   const finished = () => page.waitForFunction(() => [...document.querySelectorAll('button')].some(b => b.textContent.trim() === '创建备份' && !b.disabled));
   try {
     await page.goto(base + '/admin/system');
-    await page.getByRole('button', { name: '备份恢复', exact: true }).click();
+    await page.getByRole('tab', { name: '备份', exact: true }).click();
     await create.waitFor();
     failCreate = true;
     await create.click();
@@ -88,10 +88,10 @@ async function main() {
 
     await create.click();
     const started = polls;
-    await page.getByRole('button', { name: '数据库状态', exact: true }).click();
+    await page.getByRole('tab', { name: '数据库', exact: true }).click();
     await page.waitForTimeout(2000);
     assert.equal(polls, started);
-    await page.getByRole('button', { name: '备份恢复', exact: true }).click();
+    await page.getByRole('tab', { name: '备份', exact: true }).click();
     await create.waitFor();
     await create.click();
     await page.getByText('100%', { exact: true }).waitFor(); await finished();

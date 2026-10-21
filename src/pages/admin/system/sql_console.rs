@@ -1,8 +1,8 @@
-//! SQL 控制台 tab。
+//! SQL 控制台 tab：CodeMirror 编辑器（SQL 高亮、补全、Vim）、执行选项与结果。
 
 use dioxus::prelude::*;
 
-use crate::components::ui::{Checkbox, LoadingButton};
+use crate::components::ui::{button_class, ButtonSize, ButtonVariant, Checkbox};
 
 /// SQL 控制台 tab：CodeMirror 编辑器（SQL 高亮/补全/Vim）+ 4 道护栏 + 结果表 + EXPLAIN。
 ///
@@ -20,7 +20,6 @@ pub(super) fn SqlConsoleTab() -> Element {
     #[cfg(target_arch = "wasm32")]
     use crate::bridges::codemirror;
     use crate::components::sql_result_table::SqlResultTable;
-    use crate::components::ui::ADMIN_TABLE_CLASS;
     // use_resolved_theme 两种构建都用：resolved() 在 wasm 块内消费，非 wasm 仅引用避免警告。
     use crate::theme::use_resolved_theme;
     #[cfg(target_arch = "wasm32")]
@@ -250,118 +249,63 @@ pub(super) fn SqlConsoleTab() -> Element {
     let explain = current_result.as_ref().and_then(|r| r.explain.clone());
 
     rsx! {
-        div { class: "space-y-5",
-            // 编辑器卡片：标题栏 + CodeMirror 一体化。
-            div { class: "rounded-2xl overflow-hidden border border-[var(--color-paper-border)] bg-[var(--color-paper-entry)]",
-                // 标题栏
-                div { class: "flex justify-between items-center px-4 py-2.5 border-b border-[var(--color-paper-border)] bg-[var(--color-paper-theme)]",
-                    div { class: "flex items-center gap-2",
-                        span { class: "w-2 h-2 rounded-full bg-[var(--color-paper-accent)]" }
-                        span { class: "font-mono text-sm font-semibold text-[var(--color-paper-primary)]",
-                            "SQL"
-                        }
-                    }
-                    span { class: "text-xs text-[var(--color-paper-tertiary)] font-mono",
-                        "⌘↵ 执行"
-                    }
+        section { class: "admin-panel sys-sql", aria_label: "SQL 编辑器",
+            LibraryLoadError { library: editor_library }
+            // CodeMirror 容器：flex 让 .cm-editor(flex:1) 填满高度，避免底部透出背景。
+            div { id: "sql-editor", class: "sys-sql-editor" }
+            div { class: "sys-sql-bar",
+                label { class: "sys-sql-option",
+                    Checkbox { checked: with_explain(), onchange: move |checked: bool| with_explain.set(checked) }
+                    "附带执行计划"
                 }
-                LibraryLoadError { library: editor_library }
-                // CodeMirror 容器：用 flex 让 .cm-editor(flex:1) 填满整个高度，
-                // 避免编辑器塌缩到内容高度、底部透出容器背景造成上下色差。
-                div {
-                    id: "sql-editor",
-                    style: "min-height: 280px; display: flex; flex-direction: column",
-                }
-            }
-
-            // 工具条：执行按钮 + 普通/危险选项分层
-            div { class: "flex flex-wrap items-center gap-x-4 gap-y-3",
-                LoadingButton {
-                    label: "执行".to_string(),
-                    loading: running(),
-                    disabled: !library_ready(editor_library),
-                    onclick: move |_| run_sql(),
-                }
-                // 普通选项
-                label { class: "flex items-center gap-1.5 text-sm text-[var(--color-paper-secondary)] cursor-pointer",
-                    Checkbox {
-                        checked: with_explain(),
-                        onchange: move |checked: bool| with_explain.set(checked),
-                    }
-                    "EXPLAIN"
-                }
-                label { class: "flex items-center gap-1.5 text-sm text-[var(--color-paper-secondary)] cursor-pointer",
-                    Checkbox {
-                        checked: allow_multi(),
-                        onchange: move |checked: bool| allow_multi.set(checked),
-                    }
+                label { class: "sys-sql-option",
+                    Checkbox { checked: allow_multi(), onchange: move |checked: bool| allow_multi.set(checked) }
                     "允许多语句"
                 }
-                // 危险选项：视觉分隔 + 红色语义
-                span { class: "w-px h-4 bg-[var(--color-paper-border)] mx-1" }
-                label { class: "flex items-center gap-1.5 text-sm text-red-600 dark:text-red-400 cursor-pointer",
-                    Checkbox {
-                        danger: true,
-                        checked: confirm_dangerous(),
-                        onchange: move |checked: bool| confirm_dangerous.set(checked),
-                    }
-                    "我了解后果（DROP/TRUNCATE/ALTER）"
+                label { class: "sys-sql-option", "data-danger": "true",
+                    Checkbox { danger: true, checked: confirm_dangerous(), onchange: move |checked: bool| confirm_dangerous.set(checked) }
+                    "我了解后果（DROP / TRUNCATE / ALTER）"
+                }
+                button {
+                    class: "{button_class(ButtonVariant::Primary, ButtonSize::Sm)} sys-sql-run",
+                    r#type: "button",
+                    disabled: running() || !library_ready(editor_library),
+                    onclick: move |_| run_sql(),
+                    if running() { "执行中…" } else { "执行" }
+                    kbd { class: "kbd", "⌘↵" }
                 }
             }
+        }
 
-            // 错误
-            if let Some(err) = current_error {
-                div { class: "bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-2xl p-3 text-sm text-red-700 dark:text-red-300",
-                    "{err}"
-                }
-            }
+        if let Some(err) = current_error {
+            p { class: "sys-error", role: "alert", "{err}" }
+        }
 
-            // 结果摘要（徽章式）
-            if current_result.is_some() {
-                div { class: "flex flex-wrap items-center gap-2",
-                    if !stmt_type.is_empty() {
-                        span { class: "inline-flex items-center px-2.5 py-1 rounded-full bg-[var(--color-paper-accent-soft)] text-[var(--color-paper-secondary)] text-xs font-medium",
-                            "{stmt_type}"
-                        }
+        if let Some(res) = &current_result {
+            section { class: "admin-panel sys-section sys-result",
+                div { class: "sys-section-head",
+                    h2 {
+                        if !stmt_type.is_empty() { "{stmt_type}" } else { "结果" }
                     }
-                    if affected > 0 {
-                        span { class: "inline-flex items-center px-2.5 py-1 rounded-full bg-[var(--color-paper-accent-soft)] text-[var(--color-paper-secondary)] text-xs font-medium",
-                            "影响 {affected} 行"
-                        }
-                    }
-                    span { class: "inline-flex items-center px-2.5 py-1 rounded-full bg-[var(--color-paper-accent-soft)] text-[var(--color-paper-secondary)] text-xs font-medium",
-                        "{elapsed}ms"
-                    }
-                    if truncated {
-                        span { class: "inline-flex items-center px-2.5 py-1 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 text-xs font-medium",
-                            "结果超过 500 行，已截断"
-                        }
+                    span {
+                        if !res.rows.is_empty() { "{res.rows.len()} 行 · " }
+                        if affected > 0 { "影响 {affected} 行 · " }
+                        "{elapsed} ms"
+                        if truncated { " · 超过 500 行，已截断" }
                     }
                 }
-            }
-
-            // 结果表格
-            if let Some(res) = &current_result {
                 if !res.rows.is_empty() {
                     SqlResultTable { result: res.clone() }
                 } else if res.statement_type.to_uppercase().contains("SELECT") {
-                    // 有结果但无行：SELECT 返回空集的友好提示
-                    div { class: "{ADMIN_TABLE_CLASS} px-4 py-8 text-center text-sm text-[var(--color-paper-tertiary)]",
-                        "查询成功，无返回行"
-                    }
+                    p { class: "sys-empty", "查询成功，没有返回行。" }
                 }
             }
+        }
 
-            // EXPLAIN 输出
-            if let Some(explain) = explain {
-                div { class: "{ADMIN_TABLE_CLASS}",
-                    div { class: "px-4 py-2 border-b border-paper-border text-sm font-medium text-paper-primary",
-                        "执行计划"
-                    }
-                    pre { class: "p-4 text-xs font-mono text-paper-secondary overflow-x-auto whitespace-pre m-0",
-                        "{explain}"
-                    }
-                }
+        if let Some(explain) = explain {
+            section { class: "admin-panel sys-section",
+                div { class: "sys-section-head", h2 { "执行计划" } }
+                pre { class: "sys-explain", "{explain}" }
             }
         }
     }

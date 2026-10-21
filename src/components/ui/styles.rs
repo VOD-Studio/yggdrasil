@@ -3,9 +3,6 @@
 // 样式常量
 // ===========================================================================
 
-/// 后台卡片：单层发丝线边框的白卡（`.panel`，12px 圆角）。
-pub const ADMIN_CARD_CLASS: &str = "panel";
-
 /// 后台表格容器：与卡片同外观，裁掉表格溢出的圆角。
 pub const ADMIN_TABLE_CLASS: &str = "panel overflow-hidden";
 
@@ -26,30 +23,11 @@ pub const BADGE_BASE: &str = "badge";
 // `IconButton` 组件；这些常量供 `Link`、`label` 等非按钮元素与旧页面沿用，
 // 页面重写时逐步收敛。
 
-/// 表格行内的次要文字操作。
-#[allow(dead_code)]
-pub const BTN_TEXT_AMBER: &str = "btn btn-xs btn-ghost";
-/// 表格行内的危险文字操作。
-#[allow(dead_code)]
-pub const BTN_TEXT_RED: &str = "btn btn-xs btn-ghost text-danger";
-
 /// 弱化按钮（弹窗「取消」等）：透明底，悬停浅灰底。
 pub const BTN_GHOST: &str = "btn btn-sm btn-ghost";
 
 /// 次要按钮：浅灰底。
 pub const BTN_SECONDARY: &str = "btn btn-secondary";
-
-/// 小号主操作按钮：工具栏场景（刷新 / 导出 / 创建备份）。
-pub const BTN_PRIMARY_SM: &str = "btn btn-sm btn-primary";
-
-/// 描边按钮：发丝线描边，透明底。
-pub const BTN_OUTLINE: &str = "btn btn-outline";
-
-/// 危险操作的弱化形式（清空回收站等）：浅红底红字。
-pub const BTN_DANGER_OUTLINE: &str = "btn btn-danger-soft";
-
-/// 方形图标按钮（步进 −/+ 等）。
-pub const BTN_ICON: &str = "btn btn-icon btn-ghost";
 
 // ===========================================================================
 // 组件

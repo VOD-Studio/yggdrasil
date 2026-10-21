@@ -1,5 +1,5 @@
 use super::task::BackupState;
-use crate::components::ui::BTN_OUTLINE;
+use crate::components::ui::{button_class, ButtonSize, ButtonVariant};
 use dioxus::prelude::*;
 
 #[component]
@@ -66,13 +66,13 @@ pub(super) fn ImportBackup(state: BackupState) -> Element {
     };
     rsx! {
         label {
-            class: "inline-flex cursor-pointer items-center justify-center {BTN_OUTLINE}",
-            class: if import_busy() || is_busy { "pointer-events-none opacity-60" } else { "" },
+            class: "{button_class(ButtonVariant::Secondary, ButtonSize::Sm)} sys-file-button",
+            "aria-disabled": (import_busy() || is_busy).then_some("true"),
             if import_busy() { "导入中…" } else { "导入备份" }
             input {
                 r#type: "file",
                 accept: ".sql",
-                class: "hidden",
+                class: "sr-only",
                 disabled: import_busy() || is_busy,
                 onchange: on_import,
             }

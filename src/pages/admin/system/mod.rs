@@ -1,8 +1,8 @@
-//! 后台系统管理页面（数据库 + 服务器状态 + SQL 控制台 + 导出 + 备份）。
+//! 后台「系统」页面：服务器、数据库、备份、SQL 控制台、导出五个 tab。
 //!
-//! 用顶部 tab 切换 5 个功能，tab 状态用 `use_signal`（不深链 / 不走分页路由）。
-//! 各 tab 拆分为独立子模块，状态完全独立、互不共享——切换 tab 时父组件用 `key`
-//! 强制卸载旧 tab 组件，其内部 signal 随之销毁。
+//! tab 状态用 `use_signal`（不深链 / 不走路由）。各 tab 拆为独立子模块、状态互不
+//! 共享，切换时以 key 重建，旧 tab 的轮询随之停止。本文件另提供各 tab 共用的指标
+//! 卡片、进度条与刷新控件。样式见 styles/pages/admin-system.css。
 
 mod backup;
 mod db_status;
@@ -17,116 +17,191 @@ use export::ExportTab;
 use server_status::ServerStatusTab;
 use sql_console::SqlConsoleTab;
 
-use crate::components::ui::FilterTabs;
+use crate::components::forms::{FormSelect, FORM_SELECT_COMPACT_CLASS};
+use crate::components::ui::{button_class, ButtonSize, ButtonVariant, FilterTabs, Icon, IconName};
 
-/// 系统管理的 5 个功能 tab。
+/// 系统页的五个 tab。
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum SystemTab {
-    /// 数据库运行状态（表/连接/死元组/迁移版本）。
-    DbStatus,
-    /// 服务器状态（应用内 + 主机层 CPU/内存/磁盘）。
+    /// 服务器状态（应用内 + 主机层 CPU / 内存 / 磁盘、缓存命中率）。
     ServerStatus,
+    /// 数据库运行状态（表、索引、连接、迁移版本）。
+    DbStatus,
+    /// 备份与恢复（pg_dump + 任务进度）。
+    Backup,
     /// SQL 控制台（全读写 + 护栏）。
     SqlConsole,
-    /// 数据导出（SQL/CSV 流式下载）。
+    /// 数据导出（SQL / CSV 流式下载）。
     Export,
-    /// 备份恢复（pg_dump + 任务进度）。
-    Backup,
 }
 
 impl SystemTab {
-    /// 变体 → 稳定字符串 key(用于与基于 String 的 `FilterTabs` 组件桥接)。
-    /// 改这些 key 会破坏潜在的持久化/调试场景,见 `from_str` 的反向映射。
+    /// 变体 → 稳定字符串 key（与基于 String 的 `FilterTabs` 桥接）。
     fn as_str(&self) -> &'static str {
         match self {
-            SystemTab::DbStatus => "db_status",
             SystemTab::ServerStatus => "server_status",
+            SystemTab::DbStatus => "db_status",
+            SystemTab::Backup => "backup",
             SystemTab::SqlConsole => "sql_console",
             SystemTab::Export => "export",
-            SystemTab::Backup => "backup",
         }
     }
 
-    /// 字符串 key → 变体。未知/空串返回 Err(调用方 fallback 到默认 tab)。
-    /// 与 `as_str` 严格对应;大小写敏感。
+    /// 字符串 key → 变体。未知 / 空串返回 Err（调用方回退到默认 tab）。
     fn from_str(s: &str) -> Result<SystemTab, &'static str> {
         match s {
-            "db_status" => Ok(SystemTab::DbStatus),
             "server_status" => Ok(SystemTab::ServerStatus),
+            "db_status" => Ok(SystemTab::DbStatus),
+            "backup" => Ok(SystemTab::Backup),
             "sql_console" => Ok(SystemTab::SqlConsole),
             "export" => Ok(SystemTab::Export),
-            "backup" => Ok(SystemTab::Backup),
             _ => Err("unknown tab key"),
         }
     }
 }
 
-/// 系统管理入口组件。
+/// 自动刷新间隔可选项（毫秒；None = 手动）。
+const REFRESH_OPTIONS: [(Option<u32>, &str); 5] = [
+    (None, "手动刷新"),
+    (Some(1_000), "每 1 秒"),
+    (Some(2_000), "每 2 秒"),
+    (Some(5_000), "每 5 秒"),
+    (Some(10_000), "每 10 秒"),
+];
+
+/// 按 `refresh_ms` 定时调用 `reload`。单一长生命周期循环，每轮读取最新间隔，
+/// 切换间隔不会叠加多个轮询。
+fn use_auto_refresh(refresh_ms: Signal<Option<u32>>, reload: Callback<()>) {
+    use_future(move || async move {
+        loop {
+            let ms = refresh_ms.peek().unwrap_or(0);
+            if ms == 0 {
+                crate::utils::time::sleep_ms(200).await;
+                continue;
+            }
+            crate::utils::time::sleep_ms(ms).await;
+            if refresh_ms.peek().is_some() {
+                reload.call(());
+            }
+        }
+    });
+}
+
+/// 刷新控件：自动刷新间隔与「立即刷新」。自动刷新时圆点呼吸。
+#[component]
+fn RefreshControl(
+    mut refresh_ms: Signal<Option<u32>>,
+    loading: bool,
+    on_refresh: EventHandler<()>,
+) -> Element {
+    rsx! {
+        div { class: "sys-refresh",
+            span { class: "sys-live", "data-on": refresh_ms().is_some().then_some("true"), aria_hidden: "true" }
+            FormSelect {
+                value: refresh_ms(),
+                options: REFRESH_OPTIONS.to_vec(),
+                trigger_class: FORM_SELECT_COMPACT_CLASS,
+                aria_label: "自动刷新",
+                onchange: move |v| refresh_ms.set(v),
+            }
+            button {
+                class: button_class(ButtonVariant::Ghost, ButtonSize::Sm),
+                r#type: "button",
+                disabled: loading,
+                onclick: move |_| on_refresh.call(()),
+                Icon { name: IconName::RefreshCw, size: 14 }
+                if loading { "刷新中…" } else { "立即刷新" }
+            }
+        }
+    }
+}
+
+/// 指标卡片：标签、数值、补充说明，可带进度条等子元素。
+#[component]
+fn Metric(
+    label: &'static str,
+    #[props(into)] value: String,
+    #[props(default)] meta: String,
+    #[props(default)] mono: bool,
+    #[props(default)] small: bool,
+    children: Element,
+) -> Element {
+    rsx! {
+        div { class: "admin-panel sys-metric",
+            span { class: "sys-metric-label", "{label}" }
+            span {
+                class: "sys-metric-value",
+                "data-mono": mono.then_some("true"),
+                "data-small": small.then_some("true"),
+                title: "{value}",
+                "{value}"
+            }
+            {children}
+            if !meta.is_empty() {
+                span { class: "sys-metric-meta", "{meta}" }
+            }
+        }
+    }
+}
+
+/// 占用条。超过 80% 时转为陶土色提醒；`calm` 的不提醒（命中率、占比）。
+#[component]
+fn Meter(pct: f64, #[props(default)] calm: bool) -> Element {
+    let pct = pct.clamp(0.0, 100.0);
+    rsx! {
+        span { class: "sys-meter", "data-warn": (!calm && pct >= 80.0).then_some("true"), aria_hidden: "true",
+            span { style: "width: {pct:.1}%" }
+        }
+    }
+}
+
+/// 系统页入口组件。
 #[component]
 pub fn System() -> Element {
-    // tab 状态：默认进第一个 tab（数据库状态）。用 signal 而非 URL query——
-    // tab 切换无需深链/书签，避免新增路由变体。
-    let mut active_tab = use_signal(|| SystemTab::DbStatus);
+    let mut active_tab = use_signal(|| SystemTab::ServerStatus);
 
     rsx! {
-        div { class: "animate-page-enter w-full max-w-7xl mx-auto space-y-6",
-            // 页面标题
-            div { class: "flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-[var(--color-paper-border)]/70 mb-6",
+        div { class: "admin-system",
+            div { class: "admin-page-head",
                 div {
-                    h1 { class: "text-3xl sm:text-4xl font-extrabold tracking-tight text-[var(--color-paper-primary)]",
-                        "系统面板"
-                    }
-                    p { class: "text-sm text-[var(--color-paper-secondary)] mt-1.5",
-                        "数据库健康状态、服务器性能指标与系统诊断中心"
-                    }
-                }
-                div { class: "flex items-center gap-2.5",
-                    div { class: "inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-mono bg-[var(--color-paper-entry)] text-[var(--color-paper-secondary)] border border-[var(--color-paper-border)]/70 shadow-2xs",
-                        span { class: "w-1.5 h-1.5 rounded-full bg-[var(--color-paper-accent)]" }
-                        span { "诊断引擎在线" }
-                    }
+                    h1 { "系统" }
+                    p { "服务器与数据库状态、备份恢复、SQL 控制台与数据导出。" }
                 }
             }
-            // 顶部 tab 切换栏:复用公共 FilterTabs 组件(String API,经 as_str/from_str 桥接枚举)。
-            // 视觉与评论页一致:平滑滑动指示条 + 选中文字 text-paper-primary。
             FilterTabs {
+                class: "sys-tabs",
+                aria_label: "系统分区",
                 items: vec![
-                    ("db_status", "数据库状态"),
-                    ("server_status", "服务器状态"),
+                    ("server_status", "服务器"),
+                    ("db_status", "数据库"),
+                    ("backup", "备份"),
                     ("sql_console", "SQL 控制台"),
-                    ("export", "数据导出"),
-                    ("backup", "备份恢复"),
+                    ("export", "导出"),
                 ],
                 active_value: active_tab().as_str().to_string(),
                 on_change: move |v: String| {
-                    // 未知 key fallback 到默认 tab,保证状态始终有效。
-                    active_tab.set(SystemTab::from_str(&v).unwrap_or(SystemTab::DbStatus));
+                    active_tab.set(SystemTab::from_str(&v).unwrap_or(SystemTab::ServerStatus));
                 },
             }
-
-            // tab 内容
-            // 经 std::iter::once 包一层 keyed remount：Dioxus 0.7 对非列表元素的裸 key
-            // 会忽略（见 post_detail.rs 头文档约定 #5、settings/mod.rs 同款修复）。
-            // once 让 active_tab() 变化时真正卸载/重建内层 div，既保证 hook slot
-            // 不复用（DelayedSkeleton 的 visible 信号不残留），又让 animate-section-enter
-            // 在每次切 tab 时重播。
+            // 经 std::iter::once 包一层 keyed remount：Dioxus 0.7 会忽略非列表元素上的裸
+            // key。切 tab 时真正卸载旧 tab，轮询与 hook 状态不残留。
             for tab_key in std::iter::once(active_tab().as_str()) {
-                div { key: "{tab_key}", class: "animate-section-enter",
+                div { key: "{tab_key}", class: "sys-tab",
                     match active_tab() {
+                        SystemTab::ServerStatus => rsx! {
+                            ServerStatusTab {}
+                        },
                         SystemTab::DbStatus => rsx! {
                             DbStatusTab {}
                         },
-                        SystemTab::ServerStatus => rsx! {
-                            ServerStatusTab {}
+                        SystemTab::Backup => rsx! {
+                            BackupTab {}
                         },
                         SystemTab::SqlConsole => rsx! {
                             SqlConsoleTab {}
                         },
                         SystemTab::Export => rsx! {
                             ExportTab {}
-                        },
-                        SystemTab::Backup => rsx! {
-                            BackupTab {}
                         },
                     }
                 }
