@@ -754,7 +754,8 @@
           "&'static str",
           "w-full max-w-lg",
           "面板宽度等布局样式。"
-        ]
+        ],
+        ["role", "&'static str", "dialog", "面板角色；危险确认传 alertdialog。"]
       ],
       "keys": [
         [
@@ -764,6 +765,31 @@
       ],
       "source": "src/components/ui.rs",
       "code": "let mut visible = use_signal(|| false);\nlet mut closing = use_signal(|| false);\nrsx! {\n    div {\n        button { onclick: move |_| visible.set(true), \"打开弹窗\" }\n        ModalShell {\n            visible,\n            closing,\n            title: \"留住一片灵感\",\n            h2 { \"留住一片灵感。\" }\n            button {\n                onclick: move |_| {\n                    closing.set(true);\n                    visible.set(false);\n                },\n                \"收好了\"\n            }\n        }\n    }\n}",
+      "preview_mode": "interactive",
+      "usage_kind": "rust"
+    },
+    {
+      "name": "ConfirmDialog",
+      "slug": "confirm-dialog",
+      "label": "危险确认",
+      "group": "overlay",
+      "summary": "不可撤回之前，再确认一次。",
+      "states": "打开 · 关闭",
+      "description": "危险操作的确认对话框（alertdialog），基于弹窗外壳：左侧 danger 图标、标题与说明，底栏「取消」与 danger 主按钮。点确认先关闭再回调，执行与结果提示由调用方负责。",
+      "props": [
+        ["visible", "Signal<bool>", "必填", "对话框显隐状态。"],
+        ["title", "&'static str", "必填", "标题，同时作为无障碍名称。"],
+        ["description", "String", "必填", "后果说明，如影响篇数与能否恢复。"],
+        ["confirm_label", "&'static str", "必填", "危险主按钮文字。"],
+        ["icon", "IconName", "Trash", "左侧图标。"],
+        ["on_confirm", "EventHandler<()>", "必填", "点确认后回调。"]
+      ],
+      "keys": [
+        ["Tab", "在取消与确认之间循环"],
+        ["Esc", "关闭，不执行"]
+      ],
+      "source": "src/components/ui/surfaces.rs",
+      "code": "let mut open = use_signal(|| false);\nrsx! {\n    button { onclick: move |_| open.set(true), \"清空回收站\" }\n    ConfirmDialog {\n        visible: open,\n        title: \"清空回收站？\",\n        description: \"3 篇文章会被彻底删除，无法恢复。\",\n        confirm_label: \"彻底删除\",\n        on_confirm: move |_| empty_trash(),\n    }\n}",
       "preview_mode": "interactive",
       "usage_kind": "rust"
     },

@@ -318,6 +318,7 @@ pub(crate) fn trap_tab(event: &web_sys::KeyboardEvent, title: &str) {
 ///
 /// - `visible` / `closing`：与调用方共享的显隐 / 关闭动画信号。
 /// - `title`：面板的 `aria-label`（不渲染可见标题——各调用方的标题栏自行渲染）。
+/// - `role`：面板角色，默认 `dialog`；危险确认传 `alertdialog`。
 /// - `overlay_padding`：遮罩内边距（响应式内边距因弹窗尺寸而异，默认 `"p-6"`）。
 /// - `panel_class`：在共享面板底座上追加的宽度等布局类（默认 `"w-full max-w-lg"`）。
 /// - `children`：面板内容（含调用方自己的标题栏、× 按钮等）。
@@ -326,6 +327,7 @@ pub fn ModalShell(
     mut visible: Signal<bool>,
     mut closing: Signal<bool>,
     title: &'static str,
+    #[props(default = "dialog")] role: &'static str,
     #[props(default = "p-6")] overlay_padding: &'static str,
     #[props(default = "w-full max-w-lg")] panel_class: &'static str,
     children: Element,
@@ -448,7 +450,7 @@ pub fn ModalShell(
             // 面板：阻止点击穿透到遮罩。
             div {
                 class: "{MODAL_PANEL_BASE} {panel_class}",
-                role: "dialog",
+                role,
                 tabindex: "-1",
                 "data-ygg-modal-panel": "true",
                 "data-ygg-modal-open": if visible() { "true" } else { "false" },
@@ -456,6 +458,61 @@ pub fn ModalShell(
                 aria_label: "{title}",
                 onclick: move |evt| evt.stop_propagation(),
                 {children}
+            }
+        }
+    }
+}
+
+/// 危险操作确认对话框（`alertdialog`）：左侧 danger 图标、标题与说明，底栏「取消」与
+/// danger 主按钮。点确认先关闭再回调 `on_confirm`，执行与结果提示由调用方负责。
+/// `title` 同时作为面板的无障碍名称，同一时刻打开的对话框标题不能重复。
+#[component]
+pub fn ConfirmDialog(
+    mut visible: Signal<bool>,
+    title: &'static str,
+    #[props(into)] description: String,
+    confirm_label: &'static str,
+    #[props(default = super::IconName::Trash)] icon: super::IconName,
+    on_confirm: EventHandler<()>,
+) -> Element {
+    use super::{button_class, ButtonSize, ButtonVariant, Icon};
+
+    let mut closing = use_signal(|| false);
+    let mut close = move || {
+        closing.set(true);
+        visible.set(false);
+    };
+    rsx! {
+        ModalShell {
+            visible,
+            closing,
+            title,
+            role: "alertdialog",
+            overlay_padding: "p-4",
+            panel_class: "confirm-dialog",
+            div { class: "confirm-dialog-body",
+                span { class: "confirm-dialog-icon", aria_hidden: "true", Icon { name: icon, size: 18 } }
+                div {
+                    h2 { "{title}" }
+                    p { "{description}" }
+                }
+            }
+            div { class: "confirm-dialog-actions",
+                button {
+                    class: button_class(ButtonVariant::Ghost, ButtonSize::Md),
+                    r#type: "button",
+                    onclick: move |_| close(),
+                    "取消"
+                }
+                button {
+                    class: button_class(ButtonVariant::Danger, ButtonSize::Md),
+                    r#type: "button",
+                    onclick: move |_| {
+                        close();
+                        on_confirm.call(());
+                    },
+                    "{confirm_label}"
+                }
             }
         }
     }

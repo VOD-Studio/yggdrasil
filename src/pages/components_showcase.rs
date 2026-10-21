@@ -1067,6 +1067,7 @@ fn preview_route(slug: &str) -> Option<PreviewRoute> {
         | "tooltip"
         | "popover"
         | "modal-shell"
+        | "confirm-dialog"
         | "alert-box"
         | "collapsible-settings-card"
         | "status-badge"
@@ -1198,6 +1199,7 @@ fn LiveComponentPreview(
     let mut popover_y = use_signal(|| 330i32);
     let mut modal_open = use_signal(|| false);
     let mut modal_closing = use_signal(|| false);
+    let mut confirm_open = use_signal(|| false);
     let mut filter = use_signal(|| false);
 
     match name.as_str() {
@@ -1458,6 +1460,18 @@ fn LiveComponentPreview(
                         p { "让内容拥有一点专注的空间。" }
                         button { class: "showcase-demo-button", onclick: move |_| { modal_closing.set(true); modal_open.set(false); }, "收好了" }
                     }
+                }
+            }
+        },
+        "ConfirmDialog" => rsx! {
+            div {
+                button { class: "showcase-demo-button secondary", onclick: move |_| confirm_open.set(true), "清空回收站" }
+                crate::components::ui::ConfirmDialog {
+                    visible: confirm_open,
+                    title: "清空回收站？",
+                    description: "3 篇文章会被彻底删除，无法恢复。被这些文章引用的素材会变为未引用。",
+                    confirm_label: "彻底删除",
+                    on_confirm: move |_| {},
                 }
             }
         },
