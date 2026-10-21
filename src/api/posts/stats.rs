@@ -26,65 +26,7 @@ pub async fn get_post_stats() -> Result<PostStatsResponse, ServerFnError> {
 
     #[cfg(feature = "server")]
     {
-        if let Some(cached) = crate::cache::get_post_stats().await {
-            return Ok(PostStatsResponse { stats: cached });
-        }
-
-        let client = get_conn().await.map_err(AppError::db_conn)?;
-
-        // 通过单次条件聚合查询同时统计总数、草稿数、已发布数与回收站数量。
-        let row = client
-            .query_one(
-                "SELECT
-                    COUNT(*) FILTER (WHERE deleted_at IS NULL) AS total,
-                    COUNT(*) FILTER (WHERE deleted_at IS NULL AND status = 'draft') AS drafts,
-                    COUNT(*) FILTER (WHERE deleted_at IS NULL AND status = 'published') AS published,
-                    COUNT(*) FILTER (WHERE deleted_at IS NOT NULL) AS trash,
-                    COUNT(*) FILTER (WHERE deleted_at IS NULL AND created_at > now() - interval '30 days') AS recent_30d
-                 FROM posts",
-                &[],
-            )
-            .await
-            .map_err(AppError::query)?;
-
-        let stats = PostStats {
-            total: row.get("total"),
-            drafts: row.get("drafts"),
-            published: row.get("published"),
-            trash: row.get("trash"),
-            recent_30d: row.get("recent_30d"),
-            activity_30d: Vec::new(),
-        };
-
-        // 近 30 个自然日的每日新建数：generate_series 补齐无文章的日（0），
-        // 恰好 30 行、按日升序，供 sparkline 直接消费。
-        let activity_rows = client
-            .query(
-                "SELECT gs.day::date AS day, COUNT(p.id) AS cnt
-                 FROM generate_series(
-                        (now() - interval '29 days')::date,
-                        now()::date,
-                        interval '1 day'
-                      ) AS gs(day)
-                 LEFT JOIN posts p
-                   ON p.created_at::date = gs.day::date
-                  AND p.deleted_at IS NULL
-                 GROUP BY gs.day
-                 ORDER BY gs.day",
-                &[],
-            )
-            .await
-            .map_err(AppError::query)?;
-        let activity_30d = activity_rows
-            .iter()
-            .map(|r| r.get::<_, i64>("cnt"))
-            .collect();
-
-        let stats = PostStats {
-            activity_30d,
-            ..stats
-        };
-        crate::cache::set_post_stats(stats.clone()).await;
+        let stats = load_post_stats().await?;
         Ok(PostStatsResponse { stats })
     }
 
@@ -101,4 +43,70 @@ pub async fn get_post_stats() -> Result<PostStatsResponse, ServerFnError> {
             },
         })
     }
+}
+
+/// 读取文章统计：优先命中缓存，未命中时查询并写回。侧栏数量与仪表盘共用。
+/// 调用方须先完成管理员鉴权。
+#[cfg(feature = "server")]
+pub(crate) async fn load_post_stats() -> Result<PostStats, AppError> {
+    if let Some(cached) = crate::cache::get_post_stats().await {
+        return Ok(cached);
+    }
+
+    let client = get_conn().await.map_err(AppError::db_conn)?;
+
+    // 通过单次条件聚合查询同时统计总数、草稿数、已发布数与回收站数量。
+    let row = client
+        .query_one(
+            "SELECT
+                COUNT(*) FILTER (WHERE deleted_at IS NULL) AS total,
+                COUNT(*) FILTER (WHERE deleted_at IS NULL AND status = 'draft') AS drafts,
+                COUNT(*) FILTER (WHERE deleted_at IS NULL AND status = 'published') AS published,
+                COUNT(*) FILTER (WHERE deleted_at IS NOT NULL) AS trash,
+                COUNT(*) FILTER (WHERE deleted_at IS NULL AND created_at > now() - interval '30 days') AS recent_30d
+             FROM posts",
+            &[],
+        )
+        .await
+        .map_err(AppError::query)?;
+
+    let stats = PostStats {
+        total: row.get("total"),
+        drafts: row.get("drafts"),
+        published: row.get("published"),
+        trash: row.get("trash"),
+        recent_30d: row.get("recent_30d"),
+        activity_30d: Vec::new(),
+    };
+
+    // 近 30 个自然日的每日新建数：generate_series 补齐无文章的日（0），
+    // 恰好 30 行、按日升序，供 sparkline 直接消费。
+    let activity_rows = client
+        .query(
+            "SELECT gs.day::date AS day, COUNT(p.id) AS cnt
+             FROM generate_series(
+                    (now() - interval '29 days')::date,
+                    now()::date,
+                    interval '1 day'
+                  ) AS gs(day)
+             LEFT JOIN posts p
+               ON p.created_at::date = gs.day::date
+              AND p.deleted_at IS NULL
+             GROUP BY gs.day
+             ORDER BY gs.day",
+            &[],
+        )
+        .await
+        .map_err(AppError::query)?;
+    let activity_30d = activity_rows
+        .iter()
+        .map(|r| r.get::<_, i64>("cnt"))
+        .collect();
+
+    let stats = PostStats {
+        activity_30d,
+        ..stats
+    };
+    crate::cache::set_post_stats(stats.clone()).await;
+    Ok(stats)
 }

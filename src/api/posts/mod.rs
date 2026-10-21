@@ -53,6 +53,8 @@ pub use search::search_posts;
 /// 获取文章统计信息。
 pub use stats::get_post_stats;
 #[cfg(feature = "server")]
+pub(crate) use stats::load_post_stats;
+#[cfg(feature = "server")]
 pub(crate) use suggest::query_suggestions;
 /// 搜索面板（⌘K）的文章建议。
 pub use suggest::{recommend_for_path, suggest_posts, PathRecommendations};

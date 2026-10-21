@@ -4,6 +4,8 @@
 //! - Dioxus server function（`#[server(Name, "/api")]`），如 `auth`、`posts`；
 //! - Axum 手动路由处理器，如 `upload`、`image`。
 
+/// 后台统计（侧栏数量）的 Dioxus server function。
+pub mod admin_stats;
 /// 素材管理（assets/asset_refs）的 Dioxus server function。
 pub mod assets;
 /// 认证相关的 Dioxus server function。
