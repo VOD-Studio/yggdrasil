@@ -176,11 +176,11 @@ precompress: check-brotli
 # ── 开发 ───────────────────────────────────────────────────────
 dev: dev-assets esbuild-cache wasm-bindgen-cache ## 启动开发服务器（增量构建资源 + dx serve）
 	@echo "Starting dx serve..."
-	@SSR_CACHE_SECS=0 $(DX) serve --addr 0.0.0.0 --interactive false
+	@SSR_CACHE_SECS=0 $(DX) serve --features dev-logger --addr 0.0.0.0 --interactive false
 
 .PHONY: regression-build test-databases test-browser
 regression-build: dev-assets esbuild-cache wasm-bindgen-cache ## 构建隔离浏览器回归使用的应用
-	@$(DX) build --platform web
+	@$(DX) build --platform web --features dev-logger
 	@$(MAKE) restore-webp
 
 test-databases: ## 在临时 PostgreSQL 中验证文章、笔记和备份，结束后清理
