@@ -45,5 +45,6 @@
 @import "./styles/pages/admin-mcp.css";
 @import "./styles/pages/admin-system.css";
 @import "./styles/pages/admin-logs.css";
+@import "./styles/pages/admin-runner.css";
 
 @source "./src/**/*.{rs,html}";

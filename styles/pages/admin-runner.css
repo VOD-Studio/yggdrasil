@@ -1,0 +1,91 @@
+/* ======== 后台代码运行器 ========
+   结构见 src/pages/admin/runner.rs：左侧语言分段与运行器，右侧资源上限与临时覆盖。
+   运行器本身的样式在 styles/components/runner.css。 */
+.admin-runner {
+  max-width: 72rem;
+}
+
+.runner-admin-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 17.5rem;
+  gap: 1.25rem;
+  align-items: start;
+}
+
+.runner-admin-main {
+  min-width: 0;
+}
+
+.runner-admin-langs {
+  margin-bottom: 0.75rem;
+}
+
+.runner-admin-runner {
+  min-width: 0;
+}
+
+.runner-admin-side {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem 1.125rem 1.125rem;
+}
+
+.runner-admin-side h2 {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.runner-admin-side dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.5rem 1rem;
+  margin: 0;
+  font-size: 0.8125rem;
+}
+
+.runner-admin-side dt {
+  color: var(--color-fg-3);
+}
+
+.runner-admin-side dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.runner-admin-label {
+  display: block;
+  margin-bottom: 0.375rem;
+  color: var(--color-fg-2);
+  font-size: 0.78125rem;
+}
+
+.runner-admin-side textarea {
+  width: 100%;
+  resize: vertical;
+  background-color: var(--color-surface-1);
+}
+
+.runner-admin-hint {
+  margin: 0.375rem 0 0;
+  color: var(--color-fg-3);
+  font-size: 0.75rem;
+  line-height: 1.6;
+}
+
+.runner-admin-hint[data-error] {
+  color: var(--color-danger);
+}
+
+.runner-admin-link {
+  color: var(--color-clay-text);
+  font-size: 0.78125rem;
+}
+
+@media (max-width: 960px) {
+  .runner-admin-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
