@@ -50,6 +50,9 @@ fn route_skeleton(route: &Route) -> Element {
         Route::WritingGuide {} => rsx! {
             DelayedSkeleton { WritingGuideSkeleton {} }
         },
+        // 图鉴路由仅存在于 full 客户端（plan §6.1）；match arm 整体门控，
+        // reader 构建中枚举里没有这两个变体。
+        #[cfg(not(ygg_client_reader))]
         Route::ComponentShowcase {} | Route::ComponentDetail { .. } => rsx! {
             div { class: "py-20", role: "status", "正在翻开组件图鉴…" }
         },
@@ -71,10 +74,8 @@ pub fn FrontendLayout() -> Element {
     let route = use_route::<Route>();
     let nav_items = build_nav_items(route.clone());
     // 首页与其它前台页面共用阅读宽度，导航和正文保持对齐。
-    let max_width = if matches!(
-        route,
-        Route::ComponentShowcase {} | Route::ComponentDetail { .. }
-    ) {
+    // 图鉴用宽版容器（图鉴变体仅 full 客户端存在，reader 恒为窄版）。
+    let max_width = if crate::router::route_is_showcase(&route) {
         "max-w-6xl"
     } else {
         "max-w-4xl"

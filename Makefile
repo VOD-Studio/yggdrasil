@@ -174,6 +174,9 @@ precompress: check-brotli
 		-print0 | xargs -0 -r brotli -q 11 -kf
 
 # ── 开发 ───────────────────────────────────────────────────────
+# 开发态即完整应用：dx 的客户端构建取「default features 减 server」再加 CLI
+# features（见 Cargo.toml [features] 注释），default 不含 client-reader，
+# 后台/图鉴照常编译；reader 产物只在 release 流水线显式构建（plan §6.3）。
 dev: dev-assets esbuild-cache wasm-bindgen-cache ## 启动开发服务器（增量构建资源 + dx serve）
 	@echo "Starting dx serve..."
 	@SSR_CACHE_SECS=0 $(DX) serve --features dev-logger --addr 0.0.0.0 --interactive false

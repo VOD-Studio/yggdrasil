@@ -24,8 +24,9 @@ Prefer the Makefile targets for development and release builds: they clear `RUST
 - `make test`: run Rust and frontend tests.
 - `make lint`: run Biome, TypeScript checks, Clippy for the native target, and rustfmt checks.
 - `make fmt`: format Rust (`cargo fmt`) and frontend files (`bun run format` in `libs/`); `make fix` additionally applies `cargo fix`.
-- `cargo check --locked --target wasm32-unknown-unknown --no-default-features --features web`: verify the browser target.
-- `cargo clippy --locked --target wasm32-unknown-unknown --no-default-features --features web -- -D warnings`: lint Rust for the browser target when changing WASM paths; native Clippy does not cover WASM-gated code.
+- `cargo check --locked --target wasm32-unknown-unknown --no-default-features --features web`: verify the browser target (full client).
+- `cargo check --locked --target wasm32-unknown-unknown --no-default-features --features web,client-reader`: verify the reader client (P3 dual-artifact split, `docs/wasm-optimization-plan.md` §6); admin/login/showcase routes are compiled out.
+- `cargo clippy --locked --target wasm32-unknown-unknown --no-default-features --features web -- -D warnings` (and the same with `,client-reader`): lint Rust for both real browser targets when changing WASM paths; native Clippy does not cover WASM-gated code.
 
 Docker fallbacks: `make docker-dev` (port 8080), `make docker-test`, `make docker-lint`, and `make docker-fmt`. Use `make docker-run CMD='<command>'` for other checks; `make docker-dev-down` stops development containers.
 

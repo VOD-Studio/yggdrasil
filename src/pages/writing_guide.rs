@@ -86,7 +86,11 @@ pub fn WritingGuide() -> Element {
                 }
                 div { class: "writing-steps",
                     div { span { "01" } h3 { "全局安装" } p { "将上方指令发给 Agent，或手动保存到" } code { "~/.agents/skills/yggdrasil-writing/SKILL.md" } p { "Codex、OMP 与 OpenCode 均支持此用户级目录。" } }
-                    div { span { "02" } h3 { "连接站点" } p { "将下方配置合并到客户端配置文件，并替换令牌占位符。" } Link { to: Route::Mcp {}, class: "writing-text-link", "管理 MCP 令牌 ↗" } }
+                    div { span { "02" } h3 { "连接站点" } p { "将下方配置合并到客户端配置文件，并替换令牌占位符。" }
+                        // 后台 MCP 管理页是 full 客户端专属路由（plan §6.6），
+                        // RSX 子元素不支持 #[cfg]，两种实现收敛到同名组件（文件末尾）。
+                        McpTokenLink {}
+                    }
                     div { span { "03" } h3 { "开始写作" } p { "让 Agent 使用 yggdrasil-writing，写一篇带可运行示例的文章，先保存为草稿。" } }
                 }
                 div { class: "writing-config",
@@ -182,5 +186,26 @@ fn CopyButton(text: String, label: &'static str, #[props(default)] primary: bool
                 }
             }
         }
+    }
+}
+
+/// 「管理 MCP 令牌 ↗」入口。后台 MCP 页是 full 客户端专属路由（plan §6.6）：
+/// - full：`Link` SPA 导航；
+/// - reader：普通 `<a href>`，点击整页加载 full 客户端模板（服务端按路径
+///   为 /admin/mcp 选择 full 模板；未登录由 admin_guard 302 到 /login）。
+#[cfg(not(ygg_client_reader))]
+#[component]
+fn McpTokenLink() -> Element {
+    rsx! {
+        Link { to: Route::Mcp {}, class: "writing-text-link", "管理 MCP 令牌 ↗" }
+    }
+}
+
+/// [`McpTokenLink`] 的 reader 实现：普通 `<a>` 文档导航。
+#[cfg(ygg_client_reader)]
+#[component]
+fn McpTokenLink() -> Element {
+    rsx! {
+        a { href: "/admin/mcp", class: "writing-text-link", "管理 MCP 令牌 ↗" }
     }
 }

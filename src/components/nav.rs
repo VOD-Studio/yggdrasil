@@ -43,13 +43,16 @@ pub fn build_nav_items(route: Route) -> Vec<NavItemConfig> {
         NavItemConfig {
             route: Route::About {},
             label: "关于",
-            is_active: matches!(
-                route,
-                Route::About {}
-                    | Route::WritingGuide {}
-                    | Route::ComponentShowcase {}
-                    | Route::ComponentDetail { .. }
-            ),
+            is_active: is_about_family(&route),
         },
     ]
+}
+
+/// 「关于」家族（关于 / 写作指南 / 组件图鉴）的高亮判定。
+///
+/// 图鉴变体仅存在于 full 客户端（plan §6.1）；reader 构建经
+/// [`crate::router::route_is_showcase`] 恒为 false。
+fn is_about_family(route: &Route) -> bool {
+    matches!(route, Route::About {} | Route::WritingGuide {})
+        || crate::router::route_is_showcase(route)
 }

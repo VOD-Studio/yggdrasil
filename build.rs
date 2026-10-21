@@ -14,6 +14,7 @@
 use std::process::Command;
 
 fn main() {
+    emit_reader_cfg();
     // 切换提交 / 分支后重新采集(读取 .git/HEAD 指向的新 ref)。
     println!("cargo:rerun-if-changed=.git/HEAD");
     // 工作区脏状态变化时 describe 的 --dirty 后缀也会变,重跑一次。
@@ -45,6 +46,24 @@ fn main() {
 /// 注入一个编译期环境变量。
 fn set_env(key: &str, value: String) {
     println!("cargo:rustc-env={key}={value}");
+}
+
+/// 发射 `ygg_client_reader` cfg：reader 客户端构建（`client-reader` feature
+/// 开且 `server` 关）为 true。src/ 内所有 reader/full 门控统一用这个单 token
+/// cfg（`#[cfg(ygg_client_reader)]` / `#[cfg(not(ygg_client_reader))]`），
+/// 而不是在各处展开 `all(feature = "client-reader", not(feature = "server"))`。
+///
+/// 「server 关」这一半保证原生构建（cargo test --all-features、--features
+/// server 的回归、dx serve 的服务端半边）永远保留完整路由——服务端要为
+/// full 客户端 SSR 后台/登录/图鉴（plan §6.5），不能被 reader 开关裁剪。
+fn emit_reader_cfg() {
+    // 登记自定义 cfg，避免 unexpected_cfgs 告警（Rust 1.80+ 的 check-cfg）。
+    println!("cargo:rustc-check-cfg=cfg(ygg_client_reader)");
+    let client_reader = std::env::var("CARGO_FEATURE_CLIENT_READER").is_ok();
+    let server = std::env::var("CARGO_FEATURE_SERVER").is_ok();
+    if client_reader && !server {
+        println!("cargo:rustc-cfg=ygg_client_reader");
+    }
 }
 
 /// 三级取值:`YGG_BUILD_<KEY>` 环境变量 → 本地 git 命令 → `"unknown"`。

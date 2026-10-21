@@ -6,12 +6,16 @@
 //!
 //! 与 `forms.rs`（表单控件）并列，本模块聚焦通用展示类原子。
 
+// 分页/状态徽章等控制原子：仅后台页面与图鉴预览使用（plan §6.1），
+// reader 客户端不编译。
+#[cfg(not(ygg_client_reader))]
 mod controls;
 mod display;
 mod navigation;
 mod styles;
 mod surfaces;
 
+#[cfg(not(ygg_client_reader))]
 pub use controls::*;
 pub use display::*;
 pub use navigation::*;

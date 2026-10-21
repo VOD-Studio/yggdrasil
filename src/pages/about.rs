@@ -125,29 +125,70 @@ pub fn About() -> Element {
                 span { class: "about-writing-action", "打开写作指南" span { aria_hidden: "true", "↗" } }
             }
 
-            Link { class: "showcase-entry about-enter", to: Route::ComponentShowcase {},
-                style: "--about-delay: 340ms",
-                div { class: "showcase-entry-copy",
-                    span { class: "about-index", "04 / CRAFT & DETAILS" }
-                    h2 { "界面的枝叶。" }
-                    p { "从一枚按钮，到一次温柔的回应。" br {} "看看组成这棵树的那些小细节。" }
-                    span { class: "showcase-entry-action", "打开组件图鉴" span { aria_hidden: "true", "→" } }
-                }
-                div { class: "showcase-entry-art", aria_hidden: "true",
-                    div { class: "showcase-entry-specimen",
-                        span { "YGGDRASIL / UI" }
-                        strong { "每个细节，都有回应。" }
-                        div { "让想法生根" i { class: "showcase-entry-switch" } }
-                    }
-                    span { class: "showcase-entry-mark", "✓ 已收藏" }
-                    span { class: "showcase-entry-code", "COMPONENT ATLAS · LIVE PREVIEW" }
-                }
-            }
+            // 图鉴是 full 客户端专属路由（plan §6.1/§6.6）：full 内 SPA 导航；
+            // reader 构建没有该变体，渲染普通 <a>，点击走真正的文档导航。
+            // RSX 子元素不支持 #[cfg]，两种实现收敛到同名组件（见文件末尾）。
+            ShowcaseEntry {}
 
             footer { class: "about-colophon about-enter", style: "--about-delay: 380ms",
                 span { class: "about-colophon-star", aria_hidden: "true", "✳" }
                 p { "生长未完，故事继续。" }
                 span { class: "about-colophon-name", "YGGDRASIL · A PLACE TO REMEMBER" }
+            }
+        }
+    }
+}
+
+/// 「打开组件图鉴」入口卡片。图鉴路由仅存在于 full 客户端：
+/// - full：`Link` SPA 导航；
+/// - reader：普通 `<a href>`，点击整页加载 full 客户端模板（服务端按路径
+///   为 /about/components 选择 full 模板），不经 reader 的 Router。
+#[cfg(not(ygg_client_reader))]
+#[component]
+fn ShowcaseEntry() -> Element {
+    rsx! {
+        Link { class: "showcase-entry about-enter", to: Route::ComponentShowcase {},
+            style: "--about-delay: 340ms",
+            div { class: "showcase-entry-copy",
+                span { class: "about-index", "04 / CRAFT & DETAILS" }
+                h2 { "界面的枝叶。" }
+                p { "从一枚按钮，到一次温柔的回应。" br {} "看看组成这棵树的那些小细节。" }
+                span { class: "showcase-entry-action", "打开组件图鉴" span { aria_hidden: "true", "→" } }
+            }
+            div { class: "showcase-entry-art", aria_hidden: "true",
+                div { class: "showcase-entry-specimen",
+                    span { "YGGDRASIL / UI" }
+                    strong { "每个细节，都有回应。" }
+                    div { "让想法生根" i { class: "showcase-entry-switch" } }
+                }
+                span { class: "showcase-entry-mark", "✓ 已收藏" }
+                span { class: "showcase-entry-code", "COMPONENT ATLAS · LIVE PREVIEW" }
+            }
+        }
+    }
+}
+
+/// [`ShowcaseEntry`] 的 reader 实现：普通 `<a>` 文档导航（plan §6.6）。
+#[cfg(ygg_client_reader)]
+#[component]
+fn ShowcaseEntry() -> Element {
+    rsx! {
+        a { class: "showcase-entry about-enter", href: "/about/components",
+            style: "--about-delay: 340ms",
+            div { class: "showcase-entry-copy",
+                span { class: "about-index", "04 / CRAFT & DETAILS" }
+                h2 { "界面的枝叶。" }
+                p { "从一枚按钮，到一次温柔的回应。" br {} "看看组成这棵树的那些小细节。" }
+                span { class: "showcase-entry-action", "打开组件图鉴" span { aria_hidden: "true", "→" } }
+            }
+            div { class: "showcase-entry-art", aria_hidden: "true",
+                div { class: "showcase-entry-specimen",
+                    span { "YGGDRASIL / UI" }
+                    strong { "每个细节，都有回应。" }
+                    div { "让想法生根" i { class: "showcase-entry-switch" } }
+                }
+                span { class: "showcase-entry-mark", "✓ 已收藏" }
+                span { class: "showcase-entry-code", "COMPONENT ATLAS · LIVE PREVIEW" }
             }
         }
     }

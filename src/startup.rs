@@ -4,16 +4,22 @@
 //! 配置、数据库自举、后台任务生命周期和路由组合。Dioxus 开发态会在
 //! 热重载时多次调用 router callback，因此后台任务启动必须具备进程级幂等性。
 
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::time::Duration;
 
 use dioxus::server::axum;
+use dioxus::server::{DioxusRouterExt, FullstackState, ServeConfig};
 
 const IMAGE_UPLOAD_MAX_BYTES: usize = 10 * 1024 * 1024;
 const IMAGE_UPLOAD_TIMEOUT: Duration = Duration::from_secs(300);
 const BACKUP_IMPORT_TIMEOUT: Duration = Duration::from_secs(600);
 const EXPORT_TIMEOUT: Duration = Duration::from_secs(120);
 const APP_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// reader 客户端模板目录（相对 public 根）。目录里的 index.html 由发布构建
+/// 从 reader 产物复制而来；full 模板始终是 public/index.html（dev 与发布一致）。
+const READER_TEMPLATE_DIR: &str = "flavors/reader";
 
 static BACKGROUND_TASKS_STARTED: OnceLock<()> = OnceLock::new();
 
@@ -236,14 +242,186 @@ fn spawn_background_tasks_once() {
     tokio::spawn(crate::api::code_runner::readiness::log_runner_readiness());
 }
 
+fn build_flavor_states() -> FlavorStates {
+    validate_public_templates();
+    let full = FullstackState::new(ServeConfig::new(), crate::router::AppRouter);
+    match load_reader_state() {
+        Some(reader) => {
+            tracing::info!(
+                "双产物模式：公开阅读路径使用 reader 客户端模板（{}），后台/登录/图鉴使用 full 模板",
+                READER_TEMPLATE_DIR
+            );
+            FlavorStates {
+                reader: Some(reader),
+                full,
+            }
+        }
+        None => {
+            tracing::info!(
+                "完整应用模式：未发现 reader 客户端产物（public/{}/index.html），全部路由使用 full 模板",
+                READER_TEMPLATE_DIR
+            );
+            FlavorStates { reader: None, full }
+        }
+    }
+}
+
+/// 双客户端产物的 SSR 状态。
+#[derive(Clone)]
+struct FlavorStates {
+    /// reader 模板；`None` = 完整应用回退模式（dev 单产物 / full-only 发布）。
+    reader: Option<FullstackState>,
+    full: FullstackState,
+}
+
+/// 复刻 dioxus-server 的 public 目录解析（env 优先，其次可执行文件旁的
+/// public/）。dioxus-server 0.7.10 的 `public_path()` 是 pub(crate)，无法
+/// 直接调用；这里保持同一优先级，保证模板查找与静态资源目录一致。
+fn dioxus_public_root() -> PathBuf {
+    if let Some(p) = std::env::var_os("DIOXUS_PUBLIC_PATH") {
+        if !p.is_empty() {
+            return PathBuf::from(p);
+        }
+    }
+    let mut dir = std::env::current_exe().unwrap_or_else(|e| {
+        panic!("无法定位可执行文件以推导 public 目录：{e}");
+    });
+    dir.pop();
+    dir.join("public")
+}
+
+/// 加载 reader 客户端模板，产出对应 [`FullstackState`]。
+///
+/// dioxus-server 0.7.10 未公开 `IndexHtml`（lib.rs 中 pub(crate)），
+/// `ServeConfig::with_index_html` 无法从外部构造；`ServeConfig::new()` 又只读
+/// public 根的 index.html。因此唯一的模板注入通道是 `DIOXUS_PUBLIC_PATH`：
+/// 启动期临时把它指向 `{public}/flavors/reader`，读完立即还原。切换只发生
+/// 在 build_router 的顺序执行段内，还原发生在注册静态资源之前，运行期不再
+/// 读取该变量。
+///
+/// - 目录/文件不存在（dev 单产物、full-only 发布）→ `None`，走完整应用模式。
+/// - 文件存在但读取/解析失败 → panic 明确失败，不静默降级（plan §6.5）。
+fn load_reader_state() -> Option<FullstackState> {
+    let public_root = dioxus_public_root();
+    let reader_dir = public_root.join(READER_TEMPLATE_DIR);
+    let reader_index = reader_dir.join("index.html");
+    if !reader_index.is_file() {
+        return None;
+    }
+
+    let html = std::fs::read_to_string(&reader_index).unwrap_or_else(|e| {
+        panic!(
+            "reader 客户端模板读取失败（{}）：{e}",
+            reader_index.display()
+        )
+    });
+    validate_template_assets(&public_root, "reader", &html);
+
+    let saved = std::env::var("DIOXUS_PUBLIC_PATH").ok();
+    std::env::set_var("DIOXUS_PUBLIC_PATH", &reader_dir);
+    let config = ServeConfig::new();
+    match saved {
+        Some(v) => std::env::set_var("DIOXUS_PUBLIC_PATH", v),
+        None => std::env::remove_var("DIOXUS_PUBLIC_PATH"),
+    }
+    Some(FullstackState::new(config, crate::router::AppRouter))
+}
+
+/// 校验 full 模板存在且其引用的 /assets/* 产物齐全（plan §6.5：缺失产物
+/// 明确失败，不静默拼出混合版本）。full 模板缺失仅在 release 拒绝启动；
+/// dev 保留 dioxus 既有的 ssr_only 回退（dx serve 冷启动时序需要）。
+fn validate_public_templates() {
+    let public_root = dioxus_public_root();
+    let full_index = public_root.join("index.html");
+    if !full_index.is_file() {
+        if cfg!(not(debug_assertions)) {
+            panic!(
+                "full 客户端模板缺失（{}）：发布目录不完整，拒绝启动",
+                full_index.display()
+            );
+        }
+        tracing::warn!("public/index.html 不存在，dev 下沿用 dioxus 的 ssr_only 回退");
+        return;
+    }
+    let html = std::fs::read_to_string(&full_index)
+        .unwrap_or_else(|e| panic!("full 客户端模板读取失败：{e}"));
+    validate_template_assets(&public_root, "full", &html);
+}
+
+/// 扫描模板里的 /assets/ 引用，确认文件在 public/assets/ 下真实存在。
+/// dx 生成的引用形如 /./assets/yggdrasil-dxh<hash>.js，引用缺失即产物闭包
+/// 断裂（陈旧模板、合并遗漏），启动期直接失败。
+fn validate_template_assets(public_root: &Path, flavor: &str, html: &str) {
+    let marker = "/assets/";
+    let mut missing: Vec<String> = Vec::new();
+    let mut cursor = 0usize;
+    while let Some(offset) = html[cursor..].find(marker) {
+        let start = cursor + offset + marker.len();
+        let end = html[start..]
+            .find(|c: char| c.is_ascii_whitespace() || matches!(c, '"' | '\'' | '>' | ')'))
+            .map_or(html.len(), |rel| start + rel);
+        let name = html[start..end].trim_start_matches("./");
+        if !name.is_empty() {
+            let asset = public_root.join("assets").join(name);
+            if !asset.is_file() {
+                missing.push(format!("/assets/{name}"));
+            }
+        }
+        cursor = end.max(start);
+    }
+    if !missing.is_empty() {
+        panic!("{flavor} 客户端模板引用的产物缺失：{missing:?}——发布资源闭包不完整，拒绝启动");
+    }
+}
+
 fn build_router(options: ServerOptions) -> axum::Router {
+    use axum::extract::Request;
     use axum::http::StatusCode;
-    use dioxus::server::{DioxusRouterExt, ServeConfig};
     use tower_http::timeout::TimeoutLayer;
 
     spawn_background_tasks_once();
 
-    let config = ServeConfig::new();
+    // 双客户端产物模板：full 恒在（public/index.html），reader 缺席时整体
+    // 回退「完整应用模式」（plan §6.5 允许的回退路径）。
+    let flavors = build_flavor_states();
+    // 独立笔记入口是公开阅读路径，固定使用 reader 模板（缺席则回退 full）。
+    let notes_state = flavors
+        .reader
+        .clone()
+        .unwrap_or_else(|| flavors.full.clone());
+
+    // 公开渲染 fallback：按路径固定选择 flavor（plan §6.5），不依赖登录态。
+    // 闭包自带两个 FullstackState——dioxus 0.7.10 的 render_handler 以
+    // State<FullstackState> 取模板，这里绕开 Router 单一 state 的限制；
+    // register_server_functions 需要 Router<FullstackState>，headless 只作
+    // 占位 state（文档示例同款用法，无 handler 消费它）。
+    let full_state = flavors.full.clone();
+    let reader_state = flavors.reader.clone();
+    let dioxus_app = axum::Router::<FullstackState>::new()
+        .register_server_functions()
+        .serve_static_assets()
+        .fallback(axum::routing::get(move |request: Request| {
+            let reader = reader_state.clone();
+            let full = full_state.clone();
+            async move {
+                let state = match (&reader, crate::router::is_reader_path(request.uri().path())) {
+                    (Some(reader), true) => reader.clone(),
+                    (None, _) | (Some(_), false) => full.clone(),
+                };
+                FullstackState::render_handler(axum::extract::State(state), request).await
+            }
+        }))
+        .with_state(FullstackState::headless());
+
+    // 笔记可随时撤回公开；独立 renderer 与 HTML 缓存白名单共同保证其不缓存。
+    let notes_routes = axum::Router::new()
+        .route("/notes", axum::routing::get(dioxus::server::render_handler))
+        .route(
+            "/notes/{*path}",
+            axum::routing::get(dioxus::server::render_handler),
+        )
+        .with_state(notes_state);
+    let dioxus_app = dioxus_app.merge(notes_routes);
 
     let upload_route = axum::Router::new()
         .route(
@@ -324,21 +502,6 @@ fn build_router(options: ServerOptions) -> axum::Router {
             axum::routing::get(crate::api::logs::sse::log_stream),
         )
         .layer(axum::middleware::from_fn(crate::api::csrf::csrf_middleware));
-
-    // 笔记可随时撤回公开；独立 renderer 与 HTML 缓存白名单共同保证其不缓存。
-    let notes_routes = axum::Router::new()
-        .route("/notes", axum::routing::get(dioxus::server::render_handler))
-        .route(
-            "/notes/{*path}",
-            axum::routing::get(dioxus::server::render_handler),
-        )
-        .with_state(dioxus::server::FullstackState::new(
-            ServeConfig::new(),
-            crate::router::AppRouter,
-        ));
-    let dioxus_app = axum::Router::new()
-        .serve_dioxus_application(config, crate::router::AppRouter)
-        .merge(notes_routes);
 
     let mut app_routes = dioxus_app
         .layer(axum::middleware::from_fn(

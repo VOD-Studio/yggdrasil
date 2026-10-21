@@ -31,6 +31,8 @@ pub mod skeletons;
 // ========= 布局层 (layouts) — 页面外壳与全局导航 =========
 
 /// 后台布局组件（侧栏 + 内容区 + admin 路由骨架屏切换）。
+/// full 客户端专属：被 Route 的 admin 嵌套块与图鉴预览引用，reader 不编译。
+#[cfg(not(ygg_client_reader))]
 pub mod admin_layout;
 /// 页脚与回到顶部按钮组件。
 pub mod footer;
@@ -44,7 +46,8 @@ pub mod nav;
 // ========= feature 层 — 绑定特定领域 (models / Route / api) =========
 // 按页面域划分；跨域复用前先考虑原子层。
 
-/// 素材选择与上传 modal 组件。
+/// 素材选择与上传 modal 组件。仅后台写作/素材/资料页与图鉴预览使用。
+#[cfg(not(ygg_client_reader))]
 pub mod assets;
 /// 代码运行器组件（可运行代码块 UI）。
 pub mod code_runner;
@@ -54,5 +57,6 @@ pub mod comments;
 pub mod post;
 /// 文章列表卡片组件。
 pub mod post_card;
-/// SQL 查询结果表格组件（SQL 控制台专用）。
+/// SQL 查询结果表格组件（后台 SQL 控制台专用）。
+#[cfg(not(ygg_client_reader))]
 pub mod sql_result_table;
