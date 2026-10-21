@@ -409,7 +409,9 @@ async function admin() {
     });
     await fresh(state);
     assert(wasmResponse, 'could not inspect the served WASM before login');
-    logoutEndpoint = (await wasmResponse.body()).toString('latin1').match(/\/api\/logout\d+/)?.[0];
+    // 开发构建的 WASM 很大，浏览器检查器会丢弃响应体；按同一地址重新请求。
+    const wasm = await context.request.get(wasmResponse.url());
+    logoutEndpoint = (await wasm.body()).toString('latin1').match(/\/api\/logout\d+/)?.[0];
     assert(logoutEndpoint, 'could not resolve the served logout endpoint before login');
     await push(page, '/login');
     await page.locator('#login-username').fill(process.env.VT_ADMIN_USERNAME);
