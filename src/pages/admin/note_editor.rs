@@ -96,7 +96,9 @@ fn NoteEditor(initial: Option<Note>) -> Element {
                 p {class:"notes-error","这条笔记在回收站中。恢复后可继续编辑，公开状态与知识库收录需要重新确认。"}
                 button {class:BTN_PRIMARY_SM,onclick:move |_|async move {persist(state,Some(NoteAction::Restore)).await;},"恢复笔记"}
             } else if preview() {
-                if let Some(note)=state.saved() {crate::pages::notes::NoteDocument {key:"{note.version}",note,preview:true}}
+                // 预览复用公开渲染路径：完整 Note 转为 PublicNote（编辑器的工作稿
+                // 版本号保留展示），显示字段不变，Markdown 不会进入公开渲染组件。
+                if let Some(note)=state.saved() {crate::pages::notes::NoteDocument {key:"{note.version}",note:crate::models::public_note::PublicNote::from(note.clone()),preview:true}}
             } else {
                 div {class:"notes-editor-grid",
                     div {class:"notes-editor-main",

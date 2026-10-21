@@ -1,6 +1,7 @@
 //! 笔记的浏览器入口。认证适配后，统一调用 store 的版本与发布规则。
 #![allow(clippy::unused_unit, deprecated)]
 use crate::models::note::*;
+use crate::models::public_note::PublicNote;
 use dioxus::prelude::*;
 #[cfg(feature = "server")]
 pub mod attachments;
@@ -13,8 +14,10 @@ pub async fn list_notes(filter: NoteFilter) -> Result<NotePage, ServerFnError> {
 }
 
 #[server(GetNote, "/api")]
-pub async fn get_note(slug: String) -> Result<Note, ServerFnError> {
-    Ok(store::get(store::Access::Public, None, Some(slug), None).await?)
+pub async fn get_note(slug: String) -> Result<PublicNote, ServerFnError> {
+    // 公开详情只返回阅读所需字段（P4.1）；编辑 Markdown 与内部版本号不出接口。
+    // 后台编辑与 MCP 继续走 get_owned_note / store::get 的完整 Note 契约。
+    Ok(store::get_public(&slug).await?)
 }
 
 #[server(ListNotebooks, "/api")]

@@ -2,6 +2,7 @@
 use crate::api::error::AppError;
 use crate::db::pool::get_conn;
 use crate::models::note::*;
+use crate::models::public_note::PublicNote;
 
 #[derive(Clone)]
 pub enum Access {
@@ -175,6 +176,45 @@ pub async fn get(
         .map_err(AppError::query)?
         .ok_or(AppError::NotFound("笔记不存在或无权访问"))?;
     Ok(map_note(&row, &access))
+}
+
+/// 公开详情查询：只选择已发布展示所需的列，不读取 `content_md` 与内部版本号
+/// （P4.1）。可见性语义与 `get(Access::Public, ..)` 完全一致——
+/// join `published_version`（未发布时无行）、`deleted_at IS NULL`；
+/// 该查询没有 owner/book 参数，与公开路径的调用形状一一对应，
+/// `notes_database_workflow` 回归断言两侧行为一致。
+pub async fn get_public(slug: &str) -> Result<PublicNote, AppError> {
+    let client = get_conn().await.map_err(AppError::db_conn)?;
+    let row = client
+        .query_opt(
+            "SELECT n.id, n.slug, r.version AS revision, r.kind, r.title, r.summary,
+                r.tags, r.content_html, r.toc_html,
+                r.created_at AS revision_at, n.created_at
+            FROM notes n
+            JOIN note_revisions r ON r.note_id=n.id AND r.version=n.published_version
+            WHERE n.slug=$1 AND n.deleted_at IS NULL",
+            &[&slug],
+        )
+        .await
+        .map_err(AppError::query)?
+        .ok_or(AppError::NotFound("笔记不存在或未公开"))?;
+    Ok(PublicNote {
+        id: row.get("id"),
+        slug: row.get("slug"),
+        version: row.get("revision"),
+        kind: if row.get::<_, String>("kind") == "topic" {
+            NoteKind::Topic
+        } else {
+            NoteKind::Moment
+        },
+        title: row.get("title"),
+        summary: row.get("summary"),
+        content_html: row.get("content_html"),
+        toc_html: row.get("toc_html"),
+        tags: row.get("tags"),
+        created_at: row.get("created_at"),
+        updated_at: row.get("revision_at"),
+    })
 }
 
 fn validate(draft: &mut NoteDraft) -> Result<(), AppError> {
@@ -553,6 +593,17 @@ mod tests {
             );
             assert_eq!(published.notebook_ids, vec![public]);
             assert!(published.knowledge_version.is_none());
+            // P4.1：公开详情 DTO 行为与 get(Access::Public) 一致（工作稿 v2 已存在
+            // 时仍固定服务已发布 v1），且响应不携带编辑 Markdown 与内部字段。
+            let public_note = get_public(note.slug.as_str()).await.unwrap();
+            assert_eq!(public_note.version, 1, "公开详情固定为已发布版本");
+            assert_eq!(public_note.content_html, published.content_html);
+            assert_eq!(public_note.updated_at, published.updated_at);
+            let public_payload = serde_json::to_value(&public_note).unwrap();
+            assert!(public_payload.get("content_md").is_none());
+            assert!(public_payload.get("knowledge_version").is_none());
+            assert!(public_payload.get("notebook_ids").is_none());
+            assert!(get_public("绝不存在的别名").await.is_err());
             let knowledge = Access::Knowledge {
                 owner_id: 1,
                 notebook_ids: Some(vec![private]),
@@ -618,6 +669,8 @@ mod tests {
             assert!(get(Access::Public, Some(note.id), None, None)
                 .await
                 .is_err());
+            // 撤回后公开详情 DTO 同步不可见。
+            assert!(get_public(note.slug.as_str()).await.is_err());
             assert!(get(knowledge.clone(), Some(note.id), None, None)
                 .await
                 .is_ok());

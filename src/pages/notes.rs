@@ -7,6 +7,7 @@ use crate::api::notes::{get_note, list_notebooks, list_notes};
 use crate::components::empty_state::EmptyState;
 use crate::components::post::{post_content::PostContent, post_toc::PostToc};
 use crate::models::note::*;
+use crate::models::public_note::PublicNote;
 use crate::router::Route;
 use dioxus::prelude::*;
 
@@ -450,7 +451,7 @@ fn NoteReader(slug: String) -> Element {
 }
 
 #[component]
-pub fn NoteDocument(note: Note, #[props(default)] preview: bool) -> Element {
+pub fn NoteDocument(note: PublicNote, #[props(default)] preview: bool) -> Element {
     let title = note.display_title();
     rsx! {
         document::Title { "{title} · 笔记" }

@@ -52,6 +52,10 @@ pub struct Note {
     pub version: i32,
     pub kind: NoteKind,
     pub title: String,
+    /// 编辑 Markdown。公开详情端点已改为只返回 [`super::public_note::PublicNote`]，
+    /// 不再传输本字段；`#[serde(default)]` 让发布切换前已打开的旧客户端标签页
+    /// 仍能反序列化新响应（缺失字段按默认值），避免跨部署的旧页报错。
+    #[serde(default)]
     pub content_md: String,
     pub content_html: String,
     pub toc_html: String,
@@ -61,9 +65,13 @@ pub struct Note {
     pub updated_at: DateTime<Utc>,
     pub published_at: Option<DateTime<Utc>>,
     /// 仅管理接口填充。公开接口不暴露工作稿或知识库版本。
+    #[serde(default)]
     pub published_version: Option<i32>,
+    #[serde(default)]
     pub knowledge_version: Option<i32>,
+    #[serde(default)]
     pub deleted_at: Option<DateTime<Utc>>,
+    #[serde(default)]
     pub notebook_ids: Vec<i32>,
 }
 
