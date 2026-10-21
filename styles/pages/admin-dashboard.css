@@ -1,0 +1,489 @@
+/* ======== 后台仪表盘 ========
+   四格数字 → 左栏柱图与近期文章，右栏最新评论与站点。结构见 src/pages/admin/dashboard.rs。 */
+.admin-dash {
+  max-width: 76rem;
+}
+
+.dash-tiles {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.dash-tile {
+  display: flex;
+  flex-direction: column;
+  padding: 1rem 1.125rem;
+  color: inherit;
+  text-decoration: none;
+  transition: box-shadow 220ms var(--ease-out-expo);
+}
+
+a.dash-tile:hover {
+  box-shadow: 0 0 0 1px var(--color-hairline), var(--shadow-md);
+}
+
+a.dash-tile:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
+.dash-tile-label {
+  color: var(--color-fg-3);
+  font-size: 0.8125rem;
+}
+
+.dash-tile-value {
+  margin-top: 0.375rem;
+  font-size: 1.875rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+.dash-tile-value-skeleton {
+  width: 3.5rem;
+  height: 2.0625rem;
+  margin-top: 0.375rem;
+  border-radius: 6px;
+}
+
+.dash-tile-meta {
+  margin-top: 0.5rem;
+  overflow: hidden;
+  color: var(--color-fg-3);
+  font-size: 0.78125rem;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dash-tile-meta-alert {
+  color: var(--color-clay-text);
+}
+
+.dash-tiles-error {
+  margin-top: 0.75rem;
+}
+
+.dash-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+  margin-top: 1rem;
+}
+
+.dash-col {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.dash-panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.dash-panel-head h2,
+.dash-site h2 {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.dash-panel-head > span {
+  color: var(--color-fg-3);
+  font-size: 0.78125rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.dash-panel-head-rule {
+  align-items: center;
+  padding: 0.875rem 1.25rem;
+  box-shadow: inset 0 -1px 0 var(--color-hairline);
+}
+
+.dash-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--color-fg-2);
+  font-size: 0.8125rem;
+  text-decoration: none;
+  border-radius: 6px;
+}
+
+.dash-more:hover {
+  color: var(--color-fg);
+}
+
+.dash-more:focus-visible,
+.dash-chip:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
+.dash-chip {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background-color: var(--color-ink-1);
+  color: var(--color-fg-2);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  text-decoration: none;
+}
+
+.dash-chip-alert {
+  background-color: var(--color-clay-soft);
+  color: var(--color-clay-text);
+}
+
+/* ---- 柱图：网格线 4 条，底线略深；柱顶 4px 圆角，零值为 2px 灰线 ---- */
+.dash-chart {
+  padding: 1.125rem 1.25rem 0.875rem;
+}
+
+.dash-chart-plot {
+  position: relative;
+  margin-top: 1.125rem;
+  padding-left: 1.5rem;
+}
+
+.dash-chart-grid {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: 7.5rem;
+  pointer-events: none;
+}
+
+.dash-chart-grid > span {
+  position: relative;
+  height: 1px;
+  background-color: var(--color-hairline);
+}
+
+/* 底线由柱列的内阴影画，这里只留刻度文字。 */
+.dash-chart-grid > span:last-child {
+  background-color: transparent;
+}
+
+.dash-chart-grid > span::before {
+  content: attr(data-value);
+  position: absolute;
+  top: -0.5rem;
+  left: -1.5rem;
+  width: 1.125rem;
+  color: var(--color-fg-3);
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1rem;
+  text-align: right;
+}
+
+.dash-chart-bars {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 2px;
+  align-items: end;
+  height: 7.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  box-shadow: inset 0 -1px 0 var(--color-ink-3);
+}
+
+.dash-chart-col {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  height: 100%;
+  border-radius: 4px;
+  cursor: default;
+}
+
+.dash-chart-col:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
+.dash-chart-bar {
+  display: block;
+  width: 100%;
+  max-width: 1.75rem;
+  min-height: 2px;
+  border-radius: 4px 4px 0 0;
+  background-color: color-mix(in srgb, var(--color-fg) 76%, transparent);
+  transition: opacity 150ms var(--ease-out-expo);
+}
+
+.dash-chart-bar-current {
+  background-color: var(--color-clay);
+}
+
+.dash-chart-bar-zero {
+  height: 2px;
+  border-radius: 0;
+  background-color: var(--color-ink-2);
+}
+
+.dash-chart-plot[data-hovering] .dash-chart-col:not([data-active]) .dash-chart-bar {
+  opacity: 0.45;
+}
+
+.dash-chart-tip {
+  position: absolute;
+  left: 50%;
+  z-index: 2;
+  padding: 5px 9px;
+  border-radius: 7px;
+  background-color: var(--color-popover);
+  box-shadow: var(--shadow-popover);
+  color: var(--color-fg);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+  translate: -50% 0;
+}
+
+/* 两端的提示朝内侧对齐，不被面板裁掉。 */
+.dash-chart-col:first-child .dash-chart-tip,
+.dash-chart-col:nth-child(2) .dash-chart-tip {
+  left: 0;
+  translate: 0 0;
+}
+
+.dash-chart-col:last-child .dash-chart-tip,
+.dash-chart-col:nth-last-child(2) .dash-chart-tip {
+  right: 0;
+  left: auto;
+  translate: 0 0;
+}
+
+.dash-chart-labels {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 2px;
+  margin-top: 0.5rem;
+  color: var(--color-fg-3);
+  font-size: 0.71875rem;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.dash-chart-skeleton {
+  height: 9.5rem;
+  margin-top: 1.125rem;
+  border-radius: 8px;
+}
+
+/* ---- 列表：近期文章与最新评论 ---- */
+.dash-list {
+  overflow: hidden;
+}
+
+.dash-list-body {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0.375rem 0.5rem;
+  list-style: none;
+}
+
+.dash-list .load-error {
+  margin: 0.75rem;
+}
+
+.dash-post-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 1rem;
+  align-items: center;
+  padding: 0.625rem 0.75rem;
+  border-radius: 8px;
+  color: inherit;
+  text-decoration: none;
+  transition: background-color 150ms var(--ease-out-expo);
+}
+
+.dash-post-row:hover,
+.dash-comment-row:hover {
+  background-color: var(--color-ink-1);
+}
+
+.dash-post-row:focus-visible,
+.dash-comment-row:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
+.dash-post-title {
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dash-post-date {
+  color: var(--color-fg-3);
+  font-size: 0.78125rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.dash-row-skeleton {
+  height: 1.25rem;
+  margin: 0.6875rem 0.75rem;
+  border-radius: 6px;
+}
+
+.dash-comment-row {
+  display: flex;
+  gap: 0.625rem;
+  padding: 0.625rem;
+  border-radius: 8px;
+  color: inherit;
+  text-decoration: none;
+  transition: background-color 150ms var(--ease-out-expo);
+}
+
+.dash-comment-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.dash-comment-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+}
+
+.dash-comment-author {
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dash-comment-pending {
+  color: var(--color-clay-text);
+  font-size: 0.75rem;
+}
+
+.dash-comment-meta time {
+  margin-left: auto;
+  color: var(--color-fg-3);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.dash-comment-text {
+  display: -webkit-box;
+  margin-top: 2px;
+  overflow: hidden;
+  font-size: 0.84375rem;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.dash-comment-post {
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--color-fg-3);
+  font-size: 0.75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dash-comment-skeleton {
+  height: 3.25rem;
+  margin: 0.375rem 0.625rem;
+  border-radius: 8px;
+}
+
+.dash-empty {
+  margin: 0;
+  padding: 1.5rem 1.25rem;
+  color: var(--color-fg-3);
+  font-size: 0.8125rem;
+}
+
+.dash-empty a {
+  margin-left: 0.25rem;
+  color: var(--color-clay-text);
+}
+
+/* ---- 站点 ---- */
+.dash-site {
+  padding: 1rem 1.125rem;
+}
+
+.dash-site dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.5rem 1rem;
+  margin: 0.625rem 0 0.75rem;
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.dash-site dt {
+  color: var(--color-fg-3);
+}
+
+.dash-site dd {
+  margin: 0;
+  color: var(--color-fg-2);
+}
+
+.dash-site dd a {
+  color: inherit;
+}
+
+.dash-inline-retry {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-clay-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+@media (max-width: 1100px) {
+  .dash-cols {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dash-tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 480px) {
+  .dash-post-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .dash-post-row .status-dot {
+    display: none;
+  }
+
+  .dash-chart-labels > span:nth-child(even) {
+    visibility: hidden;
+  }
+}

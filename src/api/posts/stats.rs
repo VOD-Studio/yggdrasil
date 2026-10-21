@@ -14,7 +14,7 @@ use crate::api::error::AppError;
 #[cfg(feature = "server")]
 use crate::db::pool::get_conn;
 #[cfg(feature = "server")]
-use crate::models::post::PostStats;
+use crate::models::post::{MonthCount, PostStats};
 
 /// 获取文章统计信息。
 ///
@@ -39,7 +39,7 @@ pub async fn get_post_stats() -> Result<PostStatsResponse, ServerFnError> {
                 published: 0,
                 trash: 0,
                 recent_30d: 0,
-                activity_30d: Vec::new(),
+                monthly_published: Vec::new(),
             },
         })
     }
@@ -76,35 +76,41 @@ pub(crate) async fn load_post_stats() -> Result<PostStats, AppError> {
         published: row.get("published"),
         trash: row.get("trash"),
         recent_30d: row.get("recent_30d"),
-        activity_30d: Vec::new(),
+        monthly_published: Vec::new(),
     };
 
-    // 近 30 个自然日的每日新建数：generate_series 补齐无文章的日（0），
-    // 恰好 30 行、按日升序，供 sparkline 直接消费。
-    let activity_rows = client
+    // 近 12 个月每月发布篇数：generate_series 补齐没有文章的月（0），
+    // 恰好 12 行、按月升序。
+    let month_rows = client
         .query(
-            "SELECT gs.day::date AS day, COUNT(p.id) AS cnt
+            "SELECT EXTRACT(YEAR FROM gs.m)::int AS year, EXTRACT(MONTH FROM gs.m)::int AS month,
+                    COUNT(p.id) AS cnt
              FROM generate_series(
-                    (now() - interval '29 days')::date,
-                    now()::date,
-                    interval '1 day'
-                  ) AS gs(day)
+                    date_trunc('month', now() AT TIME ZONE 'UTC') - interval '11 months',
+                    date_trunc('month', now() AT TIME ZONE 'UTC'),
+                    interval '1 month'
+                  ) AS gs(m)
              LEFT JOIN posts p
-               ON p.created_at::date = gs.day::date
+               ON p.status = 'published'
               AND p.deleted_at IS NULL
-             GROUP BY gs.day
-             ORDER BY gs.day",
+              AND date_trunc('month', p.published_at AT TIME ZONE 'UTC') = gs.m
+             GROUP BY gs.m
+             ORDER BY gs.m",
             &[],
         )
         .await
         .map_err(AppError::query)?;
-    let activity_30d = activity_rows
+    let monthly_published = month_rows
         .iter()
-        .map(|r| r.get::<_, i64>("cnt"))
+        .map(|r| MonthCount {
+            year: r.get("year"),
+            month: r.get::<_, i32>("month") as u32,
+            count: r.get("cnt"),
+        })
         .collect();
 
     let stats = PostStats {
-        activity_30d,
+        monthly_published,
         ..stats
     };
     crate::cache::set_post_stats(stats.clone()).await;

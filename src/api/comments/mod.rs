@@ -20,8 +20,6 @@ pub use check::check_pending_status;
 pub use create::create_comment;
 /// 获取全部评论分页列表。
 pub use list::get_all_comments;
-/// 获取待审核评论总数。
-pub use list::get_pending_count;
 /// 获取指定文章的已审核评论列表。
 pub use read::get_comments;
 /// 评论 API 的请求与响应数据结构。

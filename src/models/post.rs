@@ -140,19 +140,6 @@ impl PostListItem {
     pub fn formatted_date(&self) -> String {
         format_date(self.published_at.unwrap_or(self.created_at))
     }
-
-    /// 返回中文状态标签。
-    pub fn status_label(&self) -> &'static str {
-        self.status.label()
-    }
-
-    /// 返回状态文本在 light/dark 模式下的 Tailwind 颜色类。
-    pub fn status_class(&self) -> &'static str {
-        match self.status {
-            PostStatus::Published => "text-success",
-            PostStatus::Draft => "text-fg-3",
-        }
-    }
 }
 
 #[cfg(any(feature = "server", test))]
@@ -211,9 +198,18 @@ pub struct PostStats {
     pub trash: i64,
     /// 近 30 天新建文章数（不含软删除），供仪表盘趋势徽章展示真实增量。
     pub recent_30d: i64,
-    /// 近 30 个自然日每日新建文章数（旧 → 新，不含软删除，无文章的日为 0），
-    /// 供仪表盘 sparkline 使用。
-    pub activity_30d: Vec<i64>,
+    /// 近 12 个月（含本月）每月发布篇数，旧 → 新，无文章的月为 0；按 UTC 月份
+    /// 归入，供仪表盘「每月发布篇数」柱图使用。
+    pub monthly_published: Vec<MonthCount>,
+}
+
+/// 某个月的篇数。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MonthCount {
+    pub year: i32,
+    /// 1–12。
+    pub month: u32,
+    pub count: i64,
 }
 
 #[cfg(test)]
@@ -277,24 +273,6 @@ mod tests {
     fn post_list_item_formatted_date_falls_back_to_created_at() {
         let post = sample_post_list_item();
         assert_eq!(post.formatted_date(), "2024-01-15");
-    }
-
-    #[test]
-    fn post_list_item_status_label() {
-        let mut post = sample_post_list_item();
-        post.status = PostStatus::Published;
-        assert_eq!(post.status_label(), "已发布");
-        post.status = PostStatus::Draft;
-        assert_eq!(post.status_label(), "草稿");
-    }
-
-    #[test]
-    fn post_list_item_status_class_returns_non_empty() {
-        let mut post = sample_post_list_item();
-        post.status = PostStatus::Published;
-        assert_eq!(post.status_class(), "text-success");
-        post.status = PostStatus::Draft;
-        assert_eq!(post.status_class(), "text-fg-3");
     }
 
     #[test]

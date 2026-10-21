@@ -633,6 +633,41 @@
     box-shadow: 0 0 0 1px var(--color-hairline), var(--shadow-sm);
   }
 
+  /* 状态：圆点 + 文字。data-tone 取 clay / muted / success / warning / danger。 */
+  .status-dot {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4375rem;
+    color: var(--color-fg-2);
+    font-size: 0.8125rem;
+    white-space: nowrap;
+  }
+
+  .status-dot::before {
+    content: "";
+    flex: none;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: var(--color-ink-4);
+  }
+
+  .status-dot[data-tone="clay"]::before {
+    background-color: var(--color-clay);
+  }
+
+  .status-dot[data-tone="success"]::before {
+    background-color: var(--color-success);
+  }
+
+  .status-dot[data-tone="warning"]::before {
+    background-color: var(--color-warning);
+  }
+
+  .status-dot[data-tone="danger"]::before {
+    background-color: var(--color-danger);
+  }
+
   /* ---- 手机：侧栏收进左侧抽屉，顶栏为菜单、标题与搜索 ---- */
   @media (max-width: 767px) {
     .admin-side-slot {

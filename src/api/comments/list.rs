@@ -1,47 +1,10 @@
-//! 评论列表查询接口：后台管理用的全部评论列表与待审核计数。
+//! 评论列表查询接口：后台管理用的全部评论列表（待审计数见 `admin_stats`）。
 //!
 //! 所有接口均需管理员身份，Dioxus server function 注册在 `/api` 路径下。
 //! 仅在 `feature = "server"` 启用的服务端构建中查询数据库。
 
 use crate::api::comments::types::*;
 use dioxus::prelude::*;
-
-/// 获取待审核评论总数。
-///
-/// 优先从缓存读取，未命中时查询数据库并写入缓存。
-#[server(GetPendingCount, "/api")]
-pub async fn get_pending_count() -> Result<PendingCountResponse, ServerFnError> {
-    #[cfg(feature = "server")]
-    {
-        use crate::api::auth::get_current_admin_user;
-        use crate::api::error::AppError;
-        use crate::cache;
-        use crate::db::pool::get_conn;
-
-        let _admin = get_current_admin_user().await?;
-
-        if let Some(cached) = cache::get_pending_count().await {
-            return Ok(PendingCountResponse { count: cached });
-        }
-
-        let client = get_conn().await.map_err(AppError::db_conn)?;
-
-        let count: i64 = client
-            .query_one(
-                "SELECT COUNT(*) FROM comments WHERE status = 'pending' AND deleted_at IS NULL",
-                &[],
-            )
-            .await
-            .map_err(AppError::query)?
-            .get(0);
-
-        cache::set_pending_count(count).await;
-
-        Ok(PendingCountResponse { count })
-    }
-    #[cfg(not(feature = "server"))]
-    unreachable!()
-}
 
 /// 获取全部评论分页列表。
 ///

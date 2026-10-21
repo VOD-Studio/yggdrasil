@@ -87,13 +87,6 @@ pub struct AllCommentsResponse {
     pub total: i64,
 }
 
-/// 待审核评论计数响应。
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PendingCountResponse {
-    /// 待审核数量。
-    pub count: i64,
-}
-
 /// 批量更新状态响应。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BatchStatusResponse {

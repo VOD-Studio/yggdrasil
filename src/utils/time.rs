@@ -67,6 +67,27 @@ pub fn now_millis() -> i64 {
     }
 }
 
+/// 把 UTC 时间换到浏览器本地时区（按该时刻的偏移，跨夏令时也准确）。
+///
+/// 非 wasm32 按 UTC 返回：后台页面只在浏览器里渲染时间。
+pub fn to_local(dt: DateTime<chrono::Utc>) -> DateTime<chrono::FixedOffset> {
+    #[cfg(target_arch = "wasm32")]
+    let offset_secs = {
+        let date = js_sys::Date::new(&(dt.timestamp_millis() as f64).into());
+        -(date.get_timezone_offset() as i32) * 60
+    };
+    #[cfg(not(target_arch = "wasm32"))]
+    let offset_secs = 0;
+    let offset = chrono::FixedOffset::east_opt(offset_secs)
+        .unwrap_or_else(|| chrono::FixedOffset::east_opt(0).expect("zero offset"));
+    dt.with_timezone(&offset)
+}
+
+/// 浏览器本地的当前时间。
+pub fn local_now() -> DateTime<chrono::FixedOffset> {
+    to_local(DateTime::from_timestamp_millis(now_millis()).unwrap_or_else(chrono::Utc::now))
+}
+
 /// UTC "HH:MM" → 浏览器本地 "HH:MM"（按当天时区偏移换算）。
 ///
 /// 非 wasm32 原样返回（SSR 不渲染设置值，此分支不会出现在用户可见路径）。

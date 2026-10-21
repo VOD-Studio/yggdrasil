@@ -32,5 +32,6 @@
 @import "./styles/pages/notes.css";
 @import "./styles/pages/notes-public.css";
 @import "./styles/pages/showcase.css";
+@import "./styles/pages/admin-dashboard.css";
 
 @source "./src/**/*.{rs,html}";
