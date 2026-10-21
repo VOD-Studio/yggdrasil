@@ -943,6 +943,13 @@
     box-shadow: var(--shadow-focus);
   }
 
+  .segmented-count {
+    margin-left: -0.0625rem;
+    color: var(--color-fg-3);
+    font-weight: 400;
+    font-variant-numeric: tabular-nums;
+  }
+
   /* ---- 栏目小标签：12px、字距 0.12em、次要色，后接发丝线 ---- */
   .section-label {
     display: flex;

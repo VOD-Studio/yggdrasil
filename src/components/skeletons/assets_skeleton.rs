@@ -1,49 +1,55 @@
 //! 后台素材管理骨架屏
 //!
-//! 镜像后台 Assets 页面的结构：Header（标题+描述）+ 筛选/搜索工具栏 + 12 个网格缩略图卡片。
+//! 与素材页同一版式：标题行、引用状态选项卡与搜索排序、缩略图网格。
 
 use dioxus::prelude::*;
 
 use crate::components::skeletons::atoms::SkeletonBox;
 
-/// 后台素材管理骨架屏组件。
+/// 缩略图网格骨架（列表加载中使用）。
 #[component]
-pub fn AssetsSkeleton() -> Element {
+pub fn AssetsGridSkeleton() -> Element {
     rsx! {
-        div { class: "w-full max-w-7xl mx-auto space-y-6",
-            // 页头：标题 + 描述
-            div { class: "space-y-2 mb-8",
-                SkeletonBox { class: "h-9 w-36 rounded-lg" }
-                SkeletonBox { class: "h-4 w-72 rounded" }
-            }
-
-            // 顶栏：筛选 tabs + 搜索框 + 排序按钮
-            div { class: "flex flex-wrap items-end justify-between gap-4 mb-6",
-                // Tabs 占位
-                div { class: "flex gap-2 border-b border-paper-border pb-2",
-                    SkeletonBox { class: "h-8 w-16 rounded-full" }
-                    SkeletonBox { class: "h-8 w-20 rounded-full" }
-                    SkeletonBox { class: "h-8 w-20 rounded-full" }
-                }
-                // 右侧 搜索 + 排序 占位
-                div { class: "flex items-center gap-3 mb-6",
-                    SkeletonBox { class: "h-9 w-56 rounded-2xl" }
-                    SkeletonBox { class: "h-8 w-16 rounded-full" }
-                    SkeletonBox { class: "h-8 w-16 rounded-full" }
-                }
-            }
-
-            // 响应式缩略图网格
-            div { class: "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4",
-                for i in 0..12 {
-                    div { key: "{i}", class: "aspect-square rounded-2xl border border-paper-border bg-paper-entry overflow-hidden p-2 flex flex-col justify-between",
-                        SkeletonBox { class: "w-full flex-1 rounded-xl" }
-                        div { class: "mt-2 flex justify-between items-center",
-                            SkeletonBox { class: "h-3 w-20 rounded" }
-                            SkeletonBox { class: "h-3 w-10 rounded" }
+        ul { class: "asset-grid", aria_hidden: "true",
+            for i in 0..12 {
+                li { key: "{i}", class: "asset-tile",
+                    span { class: "asset-tile-open",
+                        SkeletonBox { class: "aspect-[4/3] w-full rounded-none" }
+                        span { class: "asset-tile-text",
+                            SkeletonBox { class: "h-3.5 w-3/4 rounded" }
+                            SkeletonBox { class: "h-3 w-1/2 rounded mt-1.5" }
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+/// 素材管理全页骨架屏（AdminLayout 路由级 fallback）。
+#[component]
+pub fn AssetsSkeleton() -> Element {
+    rsx! {
+        div { class: "admin-assets", aria_hidden: "true",
+            div { class: "admin-assets-main",
+                div { class: "admin-page-head",
+                    div {
+                        SkeletonBox { class: "h-7 w-20 rounded-md" }
+                        SkeletonBox { class: "h-3.5 w-64 rounded mt-2" }
+                    }
+                    div { class: "admin-page-actions",
+                        SkeletonBox { class: "h-[34px] w-[34px] rounded-lg" }
+                        SkeletonBox { class: "h-[34px] w-20 rounded-lg" }
+                    }
+                }
+                div { class: "admin-toolbar",
+                    SkeletonBox { class: "h-8 w-64 rounded-full" }
+                    div { class: "admin-toolbar-filters",
+                        SkeletonBox { class: "h-[30px] w-60 rounded-lg" }
+                        SkeletonBox { class: "h-[30px] w-24 rounded-lg" }
+                    }
+                }
+                AssetsGridSkeleton {}
             }
         }
     }

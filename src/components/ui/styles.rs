@@ -19,8 +19,6 @@ pub const SPINNER_SVG: &str = r#"<svg class="w-3.5 h-3.5" fill="none" viewBox="0
 /// `badge-warning` / `badge-danger`。
 #[allow(dead_code)]
 pub const BADGE_BASE: &str = "badge";
-/// 素材卡片上的等宽小徽章（格式、尺寸）。
-pub const MEDIA_BADGE_BASE: &str = "badge badge-mono";
 
 // --- 按钮 ---
 //

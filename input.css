@@ -37,5 +37,6 @@
 @import "./styles/pages/admin-write.css";
 @import "./styles/pages/admin-notes.css";
 @import "./styles/pages/admin-preview.css";
+@import "./styles/pages/admin-assets.css";
 
 @source "./src/**/*.{rs,html}";

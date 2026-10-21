@@ -1,151 +1,78 @@
-//! 素材管理页面。
+//! 素材管理（`/admin/assets`）。
 //!
-//! 网格浏览 `uploads/` 已登记图片：搜索（文件名/alt）、引用状态筛选
-//! （全部/引用中/未引用）、排序（最新/最大）、客户端分页。
-//! 「被 N 处引用」徽标可点击，弹出引用明细浮层（文章/评论/头像分组，
-//! 含跳转链接与草稿/回收站状态徽标）。
-//! 缩略图直接复用 `serve_image` 的动态处理（`?thumb=300x300`），零额外成本。
-//!
-//! 缩略图采用与前台正文图一致的 `.blur-img` 双层结构（`?w=20` 占位 + `data-src`
-//! 展示层），点击由全局注入的 `lightbox.js` 接管为灯箱预览（图集模式，当前页内
-//! 左右切换，灯箱加载原图 = `data-src` 去 query）。数据异步到达/刷新后由
-//! `use_effect` 调 `__initLightbox` 绑定；TS 端有 `data-lb-bound` 守卫，重复绑定幂等。
+//! 标题行（图片数、已引用、未引用、可清理；「⋯」菜单里重建索引与清理未引用，主操作
+//! 上传）→ 引用状态选项卡（带数量）、文件名 / 替代文本搜索与排序 → 缩略图网格与底栏
+//! 分页；右侧详情栏查看大图、文件信息、替代文本、引用来源，复制链接或删除（被引用的
+//! 禁止删除）。未引用的素材可勾选，底部浮起批量删除条。窄屏详情浮于网格上方。
+//! 缩略图走 `serve_image` 的动态缩放（`?thumb=300x300`）。样式见
+//! styles/pages/admin-assets.css。
 
 use dioxus::prelude::*;
-
-// server fn 仅在 WASM 前端调用（全部包在 cfg(wasm32) 块内），server SSR 只编译类型。
-use crate::api::assets::AssetListResponse;
-#[cfg(target_arch = "wasm32")]
-use crate::api::assets::{
-    batch_delete_assets, list_assets, purge_orphan_assets, rebuild_assets_index,
-};
-#[cfg(target_arch = "wasm32")]
-use crate::api::assets::{BatchDeleteAssetsResponse, PurgeOrphansResponse, RebuildAssetsResponse};
-use crate::components::assets::AssetUploadModal;
-use crate::components::empty_state::EmptyState;
-use crate::components::forms::FormInput;
-use crate::components::skeletons::assets_skeleton::AssetsSkeleton;
-use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
-use crate::components::ui::{FilterTabs, Pagination};
-#[cfg(target_arch = "wasm32")]
-use crate::models::asset::{AssetFilter, AssetSort};
-use crate::router::Route;
-use crate::utils::format_bytes;
-#[cfg(target_arch = "wasm32")]
-use crate::utils::js::invoke_optional_global;
 use std::collections::HashSet;
+
+use crate::api::assets::AssetListResponse;
+use crate::components::assets::AssetUploadModal;
+use crate::components::empty_state::{EmptyState, EmptyStateAction};
+use crate::components::forms::{FormSelect, FORM_SELECT_COMPACT_CLASS};
+use crate::components::skeletons::assets_skeleton::AssetsGridSkeleton;
+use crate::components::ui::{
+    button_class, use_toast, ButtonSize, ButtonVariant, ConfirmDialog, FilterTabs, Icon,
+    IconButton, IconName, LoadError, Menu, MenuItem, TablePager,
+};
+use crate::models::asset::{AssetFilter, AssetSort};
+use crate::utils::format_bytes;
 
 /// 每页素材数，与服务端 list.rs 的 PER_PAGE 对齐。
 const ASSETS_PER_PAGE: i32 = 60;
-
-/// 搜索输入防抖窗口：停顿该时长后才提交查询，避免逐键发请求。
-/// 仅在 wasm32 的防抖任务中引用，server 编译门控掉。
-#[cfg(target_arch = "wasm32")]
+/// 搜索输入停顿多久后提交（毫秒）。
 const SEARCH_DEBOUNCE_MS: u32 = 300;
-
-/// 操作横幅/批量条退出动画时长 ms，与 input.css 的 .animate-row-leave（200ms）一一对应；
-/// 退出动画放完后由 spawn 真正摘除节点（仅 wasm 端的延时任务引用，server 编译门控掉）。
+/// 详情栏常驻的最小视口宽度；更窄时只在点开素材后浮出。
 #[cfg(target_arch = "wasm32")]
-const BANNER_EXIT_MS: u32 = 200;
+const DETAIL_DOCK_MIN_WIDTH: f64 = 1100.0;
+
+fn parse_filter(value: &str) -> AssetFilter {
+    match value {
+        "used" => AssetFilter::Used,
+        "orphan" => AssetFilter::Orphan,
+        _ => AssetFilter::All,
+    }
+}
+
+/// 视口够宽时详情栏常驻，首屏自动选中第一张。
+#[cfg(target_arch = "wasm32")]
+fn detail_docked() -> bool {
+    web_sys::window()
+        .and_then(|w| w.inner_width().ok())
+        .and_then(|w| w.as_f64())
+        .is_some_and(|w| w >= DETAIL_DOCK_MIN_WIDTH)
+}
 
 /// 素材管理入口组件。
-// 交互逻辑全部 cfg(wasm32) 门控，server SSR 编译时一批绑定未使用，按 CoverUploader 惯例放行。
-#[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut, unused_variables))]
 #[component]
+#[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut, unused_variables))]
 pub fn Assets() -> Element {
-    // 筛选/搜索/排序/分页状态：全部客户端驱动（单路由 + signal，对齐「全部文章」模式）。
+    let toast = use_toast();
     let mut filter = use_signal(|| "all".to_string());
     let mut query = use_signal(String::new);
-    let mut sort = use_signal(|| "created".to_string());
-    let mut page = use_signal(|| 1_i32);
-
-    #[allow(unused_mut)]
-    let mut data: Signal<Option<AssetListResponse>> = use_signal(|| None);
-    #[allow(unused_mut)]
-    let mut loading: Signal<bool> = use_signal(|| true);
-    #[allow(unused_mut)]
-    let mut error: Signal<Option<String>> = use_signal(|| None);
-
-    // 操作结果横幅（删除/清理/alt 编辑的反馈）。
-    #[allow(unused_mut)]
-    let mut op_message: Signal<Option<String>> = use_signal(|| None);
-    // 操作横幅退出动画态：× 后置 true 播 .animate-row-leave，BANNER_EXIT_MS 后真正摘除。
-    #[allow(unused_mut)]
-    let mut op_closing = use_signal(|| false);
-    // 待二次确认的删除目标（素材 id）与一键清理确认态。
-    let confirm_delete: Signal<Option<String>> = use_signal(|| None);
-    let mut purge_confirm = use_signal(|| false);
-    // 重建索引进行中状态。
-    let mut rebuilding = use_signal(|| false);
-    // alt 内联编辑：目标素材 id + 输入框值。
-    let editing_alt: Signal<Option<String>> = use_signal(|| None);
-    let alt_input = use_signal(String::new);
-    // 重载触发器：操作成功后 +1 让 effect 重新请求。
-    let mut reload = use_signal(|| 0_i32);
-    // 已加载视图标识（filter|query|sort|page）：fetch 成功后更新，作为网格 key。
-    // 同视图内的 reload（删除/上传/alt/重建/清理）不改变它 → 走 keyed diff 不重播动画。
-    let mut loaded_view = use_signal(String::new);
-    // 多选：选中素材 id 集合 + 批量删除确认态。仅未引用素材可选（被引用的禁删，
-    // 与单删保护语义一致）；选择跨翻页/筛选保留，批量删除成功后整体清空。
-    let mut selected_ids: Signal<HashSet<String>> = use_signal(HashSet::new);
-    let mut batch_confirm = use_signal(|| false);
-    // 批量操作条退出动画态：选择清空后置 true 播 .animate-row-leave，延迟真正清空
-    // selected_ids，使退出动画期间内容不退化为"已选 0 张"（保持消失前最后一帧）。
-    let mut batch_closing = use_signal(|| false);
-    // 页内上传 modal 显隐。
-    let mut upload_open = use_signal(|| false);
-    // 引用明细浮层：打开的素材 id + 视口锚点坐标 + 水平对齐（点击时按视口宽度预算）。
-    let mut refs_popover: Signal<Option<(String, i32, i32, &'static str)>> = use_signal(|| None);
-    // —— 操作横幅与批量条的进出动画 ——
-    // 出现走 .animate-row-enter（挂载即播）；消失先置 closing=true 切到 .animate-row-leave，
-    // BANNER_EXIT_MS 后由 spawn 真正摘除。peek 门控：摘除前若被新消息/新选择覆盖（closing
-    // 已被重置为 false）则放弃摘除，避免覆盖掉用户刚触发的新内容。
-    // 三 helper 用 Callback（Copy，可在多处 onclick 中重复引用）；普通闭包因 Signal
-    // 的 set(&mut self) 而成为 FnMut、非 Copy，无法跨 move 处理器共享。
-    // show_op(String)：弹新消息（先重置 closing，取消上一条还在播的退出动画）。
-    let show_op = Callback::new(move |msg: String| {
-        op_closing.set(false);
-        op_message.set(Some(msg));
-    });
-    // dismiss_op(())：× 收起操作横幅（播退出动画，延迟摘除；peek 防覆盖）。
-    let dismiss_op = Callback::new(move |()| {
-        op_closing.set(true);
-        #[cfg(target_arch = "wasm32")]
-        spawn(async move {
-            crate::utils::time::sleep_ms(BANNER_EXIT_MS).await;
-            if *op_closing.peek() {
-                op_message.set(None);
-                op_closing.set(false);
-            }
-        });
-    });
-    // dismiss_batch(())：选择清空时收起批量条（延迟清空 selected_ids，使退出动画
-    // 期间内容不退化为"已选 0 张"；peek 防新选择覆盖刚发起的收起）。
-    let dismiss_batch = Callback::new(move |()| {
-        batch_closing.set(true);
-        #[cfg(target_arch = "wasm32")]
-        spawn(async move {
-            crate::utils::time::sleep_ms(BANNER_EXIT_MS).await;
-            if *batch_closing.peek() {
-                selected_ids.set(HashSet::new());
-                batch_confirm.set(false);
-                batch_closing.set(false);
-            }
-        });
-    });
-
-    // dismiss_refs(())：关闭引用明细浮层（遮罩/Escape/行内跳转共用）。
-    let dismiss_refs = Callback::new(move |()| {
-        refs_popover.set(None);
-    });
-    // 搜索防抖：query 是输入框原始值（受控绑定），debounced_query 才是请求参数。
-    // 停顿 300ms 无新输入才提交；每次击键重启本 effect 并新 spawn 一个延时任务，
-    // 旧任务醒来后用 peek 比对当前 query，已过期则静默丢弃。提交时连带重置页码——
-    // 若放在 oninput 里，page 变化会立刻用旧关键词抢发一次请求。
     let mut debounced_query = use_signal(String::new);
+    let mut sort = use_signal(|| AssetSort::CreatedDesc);
+    let mut page = use_signal(|| 1_i32);
+    let mut reload = use_signal(|| 0_u32);
+    let mut data = use_signal(|| None::<AssetListResponse>);
+    let mut loading = use_signal(|| true);
+    let mut error = use_signal(|| false);
+    // 详情栏里的素材与勾选（勾选跨翻页保留，删除成功后清空）。
+    let mut active = use_signal(|| None::<String>);
+    let mut checked = use_signal(HashSet::<String>::new);
+    let mut confirm_delete = use_signal(|| false);
+    let mut confirm_batch = use_signal(|| false);
+    let mut confirm_purge = use_signal(|| false);
+    let mut busy = use_signal(|| false);
+    let mut upload_open = use_signal(|| false);
+
+    // 搜索防抖：停顿后才提交，并回到第 1 页。
     use_effect(move || {
         let q = query();
-        #[cfg(target_arch = "wasm32")]
         spawn(async move {
             crate::utils::time::sleep_ms(SEARCH_DEBOUNCE_MS).await;
             if *query.peek() == q && *debounced_query.peek() != q {
@@ -155,425 +82,368 @@ pub fn Assets() -> Element {
         });
     });
 
-    // 数据加载：任一查询条件或 reload 变化时重新请求。筛选/搜索/排序变化时重置到第 1 页。
     use_effect(move || {
-        let f = filter();
+        let f = parse_filter(&filter());
         let q = debounced_query();
         let s = sort();
         let p = page();
         let _ = reload();
-
         #[cfg(target_arch = "wasm32")]
-        {
-            let filter_enum = match f.as_str() {
-                "used" => AssetFilter::Used,
-                "orphan" => AssetFilter::Orphan,
-                _ => AssetFilter::All,
-            };
-            let sort_enum = if s == "size" {
-                AssetSort::SizeDesc
-            } else {
-                AssetSort::CreatedDesc
-            };
-            // 视图 key 在 spawn 前构造（q 随后被 move 进 list_assets）。reload 故意不参与：
-            // 同视图重操作只 diff 网格，不重播入场动画。
-            let view_key = format!("{f}|{q}|{s}|{p}");
-            // 任何重新取数都关闭引用明细浮层（引用数据可能已变化）。
-            refs_popover.set(None);
-            spawn(async move {
-                loading.set(true);
-                error.set(None);
-                match list_assets(filter_enum, q, sort_enum, p).await {
-                    Ok(resp) => {
-                        // 先 key 后数据：即使两次 set 未被批处理，网格也只在最终
-                        // key 下挂载一次，不会 "" → 正式 key 二次挂载闪双动画。
-                        loaded_view.set(view_key);
-                        data.set(Some(resp));
+        spawn(async move {
+            loading.set(true);
+            match crate::api::assets::list_assets(f, q, s, p).await {
+                Ok(resp) => {
+                    // 详情里的素材不在本页时，宽屏换成第一张，窄屏收起。
+                    let keep = active
+                        .peek()
+                        .as_ref()
+                        .is_some_and(|id| resp.assets.iter().any(|a| &a.asset.id == id));
+                    if !keep {
+                        active.set(
+                            resp.assets
+                                .first()
+                                .filter(|_| detail_docked())
+                                .map(|a| a.asset.id.clone()),
+                        );
                     }
-                    Err(e) => error.set(Some(e.to_string())),
+                    data.set(Some(resp));
+                    error.set(false);
                 }
-                loading.set(false);
-            });
-        }
+                Err(_) => error.set(true),
+            }
+            loading.set(false);
+        });
     });
 
-    // 灯箱初始化：lightbox.js 由 Dioxus.toml 全局注入。网格随数据异步渲染，
-    // 需在数据到达（DOM 提交后）调 __initLightbox 绑定；筛选/翻页/刷新重建节点后
-    // 重跑此 effect 重新绑定。TS 端 data-lb-bound 守卫保证重复绑定幂等。
+    // 详情大图换了之后重新绑定灯箱（data-lb-bound 守卫保证幂等）。
     #[cfg(target_arch = "wasm32")]
     use_effect(move || {
-        // 订阅 data：取数/刷新后网格重渲染，effect 在 DOM 更新后运行。
-        if data.read().is_none() {
+        if active().is_none() {
             return;
         }
-        let window =
-            web_sys::window().expect("assets use_effect 仅在 WASM 浏览器上下文执行：无 window");
-        // 双保险契约（同 PostContent）：先设全局配置，lightbox.js 若尚未加载完，
-        // 其 IIFE 尾部读到配置自启动；已加载则下方直接调用兜底。
-        let selectors = js_sys::Array::of1(&".assets-lightbox".into());
-        let selectors_val = js_sys::Object::from(selectors).into();
-        let _ = js_sys::Reflect::set(&window, &"__lightboxSelectors".into(), &selectors_val);
-        invoke_optional_global(&window, "__initLightbox", &[selectors_val]);
+        spawn(async move {
+            crate::utils::time::sleep_ms(30).await;
+            if let Some(window) = web_sys::window() {
+                let selectors = js_sys::Array::of1(&".assets-lightbox".into());
+                let value: wasm_bindgen::JsValue = js_sys::Object::from(selectors).into();
+                let _ = js_sys::Reflect::set(&window, &"__lightboxSelectors".into(), &value);
+                crate::utils::js::invoke_optional_global(&window, "__initLightbox", &[value]);
+            }
+        });
     });
 
-    let resp = data.read();
-    let (assets, total, used_count, orphan_count, purgeable_count, purgeable_bytes) =
-        match resp.as_ref() {
-            Some(r) => (
-                r.assets.clone(),
-                r.total,
-                r.used_count,
-                r.orphan_count,
-                r.purgeable_count,
-                r.purgeable_bytes,
-            ),
-            None => (Vec::new(), 0, 0, 0, 0, 0),
-        };
-    let all_count = used_count + orphan_count;
-    drop(resp);
-
-    // Dioxus 格式化段不支持内联 if 块表达式，条件 class 提前算好。
-    let sort_btn_base = "text-xs font-mono tracking-widest uppercase cursor-pointer px-3 py-2 rounded-full border transition-colors";
-    let sort_active = "border-[var(--color-paper-primary)] text-[var(--color-paper-primary)]";
-    let sort_idle = "border-[var(--color-paper-border)] text-[var(--color-paper-secondary)] hover:text-[var(--color-paper-primary)]";
-    let sort_created_class = if sort() == "created" {
-        format!("{sort_btn_base} {sort_active}")
-    } else {
-        format!("{sort_btn_base} {sort_idle}")
+    let mut refresh = move || reload += 1;
+    let mut delete_one = move |id: String| {
+        busy.set(true);
+        spawn(async move {
+            match crate::api::assets::delete_asset(id.clone()).await {
+                Ok(res) if res.success => {
+                    toast.success(res.message);
+                    checked.write().remove(&id);
+                    active.set(None);
+                    refresh();
+                }
+                Ok(res) => toast.error(res.message),
+                Err(e) => toast.error(format!("删除失败：{e}")),
+            }
+            busy.set(false);
+        });
     };
-    let sort_size_class = if sort() == "size" {
-        format!("{sort_btn_base} {sort_active}")
-    } else {
-        format!("{sort_btn_base} {sort_idle}")
+    let mut delete_checked = move || {
+        let ids: Vec<String> = checked.peek().iter().cloned().collect();
+        busy.set(true);
+        spawn(async move {
+            match crate::api::assets::batch_delete_assets(ids).await {
+                Ok(res) => {
+                    let mut msg = res.message;
+                    if res.freed_bytes > 0 {
+                        msg.push_str(&format!("，释放 {}", format_bytes(res.freed_bytes)));
+                    }
+                    if res.failures > 0 {
+                        msg.push_str(&format!("（{} 项失败）", res.failures));
+                        toast.error(msg);
+                    } else {
+                        toast.success(msg);
+                    }
+                    checked.write().clear();
+                    refresh();
+                }
+                Err(e) => toast.error(format!("批量删除失败：{e}")),
+            }
+            busy.set(false);
+        });
+    };
+    let mut purge = move || {
+        busy.set(true);
+        spawn(async move {
+            match crate::api::assets::purge_orphan_assets().await {
+                Ok(res) => {
+                    let mut msg = format!(
+                        "已清理 {} 张未引用素材，释放 {}",
+                        res.deleted_count,
+                        format_bytes(res.freed_bytes)
+                    );
+                    if res.failures > 0 {
+                        msg.push_str(&format!("（{} 个文件删除失败）", res.failures));
+                    }
+                    toast.success(msg);
+                    refresh();
+                }
+                Err(e) => toast.error(format!("清理失败：{e}")),
+            }
+            busy.set(false);
+        });
+    };
+    let mut rebuild = move || {
+        busy.set(true);
+        spawn(async move {
+            match crate::api::assets::rebuild_assets_index().await {
+                Ok(res) => {
+                    toast.success(res.message);
+                    refresh();
+                }
+                Err(e) => toast.error(format!("重建失败：{e}")),
+            }
+            busy.set(false);
+        });
     };
 
-    // 多选派生值：本页可删（未引用）素材 id、是否已全选本页、是否有任何选择
-    // （驱动未选中卡片的勾选框常显）。全选/取消本页闭包各需一份 id 列表拷贝。
-    let page_orphan_ids: Vec<String> = assets
-        .iter()
-        .filter(|item| item.ref_count == 0)
-        .map(|item| item.asset.id.clone())
-        .collect();
-    let any_selected = !selected_ids().is_empty();
-    let all_page_selected =
-        !page_orphan_ids.is_empty() && page_orphan_ids.iter().all(|id| selected_ids().contains(id));
-    let page_orphan_ids_for_toggle = page_orphan_ids.clone();
-
-    let card_state = AssetCardState {
-        selected_ids,
-        batch_closing,
-        confirm_delete,
-        editing_alt,
-        alt_input,
-        refs_popover,
-        reload,
-        show_op,
-        dismiss_batch,
+    let resp = data.read().clone();
+    let (assets, total, used, orphan, purgeable, purgeable_bytes) = match resp.as_ref() {
+        Some(r) => (
+            r.assets.clone(),
+            r.total,
+            r.used_count,
+            r.orphan_count,
+            r.purgeable_count,
+            r.purgeable_bytes,
+        ),
+        None => (Vec::new(), 0, 0, 0, 0, 0),
     };
+    let summary = resp.as_ref().map(|_| {
+        let mut s = format!("{} 张图片 · 已引用 {used} · 未引用 {orphan}", used + orphan);
+        if purgeable > 0 {
+            s.push_str(&format!(" · 可清理 {purgeable}"));
+        }
+        s
+    });
+    let detail = active().and_then(|id| assets.iter().find(|a| a.asset.id == id).cloned());
+    let selection = checked();
+    let filtering = !debounced_query().is_empty();
+    let mut menu = vec![MenuItem::new("rebuild", "重建索引").icon(IconName::RefreshCw)];
+    let mut purge_item = MenuItem::new("purge", "清理未引用…")
+        .icon(IconName::Trash)
+        .danger()
+        .separated();
+    if purgeable == 0 {
+        purge_item = purge_item.disabled("没有上传满 7 天的未引用素材");
+    }
+    menu.push(purge_item);
 
     rsx! {
-        // min-h-full：AdminLayout 卡片是 flex 列滚动容器，main（flex-1）的高度为 definite，
-        // 故本根节点可解析百分比最小高度——内容不足一页时撑满 main 内容盒，
-        // 配合下方分页的 mt-auto wrapper 把分页条吸附到卡片底部。
-        div { class: "animate-page-enter min-h-full flex flex-col",
-            h1 { class: "animate-row-enter text-3xl font-extrabold tracking-tight mb-2",
-                "素材管理"
-            }
-            p {
-                class: "animate-row-enter text-sm text-[var(--color-paper-secondary)] mb-8",
-                style: "animation-delay: 60ms",
-                "管理文章编辑器上传的图片。共 {all_count} 张，引用中 {used_count} 张，未引用 {orphan_count} 张。"
-            }
-
-            // 顶栏：筛选 tabs + 搜索 + 排序
-            div {
-                class: "animate-row-enter flex flex-wrap items-end justify-between gap-4",
-                style: "animation-delay: 120ms",
-                FilterTabs {
-                    items: vec![("all", "全部"), ("used", "引用中"), ("orphan", "未引用")],
-                    active_value: filter(),
-                    on_change: move |v: String| {
-                        filter.set(v);
-                        page.set(1);
-                    },
-                }
-                // 右侧控件与 FilterTabs 同加 mb-6：items-end 对齐的是 margin box，
-                // 两者底边同落在 tabs 下划线处，到下方横幅/网格的距离均为 24px。
-                div { class: "flex items-center gap-3 mb-6",
-                    // 页内上传：主 CTA（实心 paper-primary，对齐 AssetPickerModal「上传新图」先例）。
-                    button {
-                        class: "text-xs font-medium cursor-pointer px-3 py-2 rounded-full bg-[var(--color-paper-primary)] text-[var(--color-paper-theme)] hover:opacity-80 transition-opacity",
-                        onclick: move |_| upload_open.set(true),
-                        "上传素材"
+        div { class: "admin-assets", "data-detail": detail.is_some().then_some("true"),
+            div { class: "admin-assets-main",
+                div { class: "admin-page-head",
+                    div {
+                        h1 { "素材" }
+                        p { if let Some(summary) = summary { "{summary}" } else { "\u{00a0}" } }
                     }
-                    // 重建索引：以磁盘为准全量自愈（存量回填/不一致修复）。
-                    button {
-                        class: "text-xs font-medium cursor-pointer px-3 py-2 rounded-full border border-[var(--color-paper-border)] text-[var(--color-paper-secondary)] hover:text-[var(--color-paper-primary)] hover:border-[var(--color-paper-primary)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
-                        disabled: rebuilding(),
-                        title: "扫描 uploads/ 全量文件，同步素材注册表与文章引用（幂等，可随时重跑）",
-                        onclick: move |_| {
-                            rebuilding.set(true);
-                            #[cfg(target_arch = "wasm32")]
-                            spawn(async move {
-                                match rebuild_assets_index().await {
-                                    Ok(RebuildAssetsResponse { message, .. }) => {
-                                        show_op(message);
-                                        reload.set(reload() + 1);
-                                    }
-                                    Err(e) => show_op(format!("重建失败：{e}")),
-                                }
-                                rebuilding.set(false);
-                            });
-                        },
-                        if rebuilding() {
-                            "重建中..."
-                        } else {
-                            "重建索引"
-                        }
-                    }
-                    FormInput {
-                        r#type: "search",
-                        placeholder: "搜索文件名 / alt",
-                        value: query(),
-                        class: "w-56 text-sm px-4 py-2 border border-paper-border rounded-2xl bg-paper-entry text-paper-primary placeholder:text-paper-tertiary focus:outline-none focus:border-paper-accent focus:ring-1 focus:ring-paper-accent/30 transition-colors",
-                        oninput: move |v: String| query.set(v),
-                    }
-                    button {
-                        class: "{sort_created_class}",
-                        onclick: move |_| {
-                            sort.set("created".to_string());
-                            page.set(1);
-                        },
-                        "最新"
-                    }
-                    button {
-                        class: "{sort_size_class}",
-                        onclick: move |_| {
-                            sort.set("size".to_string());
-                            page.set(1);
-                        },
-                        "最大"
-                    }
-                    // 一键清理孤儿：仅 7 天保护窗外的无引用素材；两步确认。
-                    if purgeable_count > 0 {
-                        if purge_confirm() {
-                            button {
-                                class: "text-xs font-medium cursor-pointer px-3 py-2 rounded-full bg-red-500 text-white hover:bg-red-600 transition-colors",
-                                onclick: move |_| {
-                                    purge_confirm.set(false);
-                                    #[cfg(target_arch = "wasm32")]
-                                    spawn(async move {
-                                        match purge_orphan_assets().await {
-                                            Ok(
-                                                PurgeOrphansResponse { deleted_count, freed_bytes, failures, .. },
-                                            ) => {
-                                                let mut msg = format!(
-                                                    "已清理 {} 张未引用素材，释放 {}",
-                                                    deleted_count,
-                                                    format_bytes(freed_bytes),
-                                                );
-                                                if failures > 0 {
-                                                    msg.push_str(
-                                                        &format!("（{} 个文件删除失败）", failures),
-                                                    );
-                                                }
-                                                show_op(msg);
-                                                reload.set(reload() + 1);
-                                            }
-                                            Err(e) => show_op(format!("清理失败：{e}")),
-                                        }
-                                    });
-                                },
-                                "确认清理 {purgeable_count} 张（{format_bytes(purgeable_bytes)}）"
-                            }
-                            button {
-                                class: "text-xs cursor-pointer px-3 py-2 rounded-full border border-[var(--color-paper-border)] text-[var(--color-paper-secondary)] hover:text-[var(--color-paper-primary)] transition-colors",
-                                onclick: move |_| purge_confirm.set(false),
-                                "取消"
-                            }
-                        } else {
-                            button {
-                                class: "text-xs font-medium cursor-pointer px-3 py-2 rounded-full border border-amber-500/50 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10 transition-colors",
-                                title: "仅清理无引用且上传超过 7 天的素材（保护未保存的草稿）",
-                                onclick: move |_| purge_confirm.set(true),
-                                "清理未引用（{purgeable_count} 张 · {format_bytes(purgeable_bytes)}）"
-                            }
-                        }
-                    }
-                }
-            }
-
-            // 操作结果横幅
-            if let Some(msg) = op_message() {
-                // mt-4 会与 FilterTabs 自带的 mb-6 叠加成大空洞；改用 mb-6 后
-                // 上方 = tabs 标准间距 24px，下方与网格 mt-2 塌陷同为 24px，对称。
-                div { class: "mb-6 flex items-center justify-between gap-4 rounded-2xl border border-[var(--color-paper-border)] bg-[var(--color-paper-entry)] px-4 py-3 text-sm text-[var(--color-paper-primary)] shadow-sm",
-                    class: if op_closing() { "animate-row-leave" } else { "animate-row-enter" },
-                    span { "{msg}" }
-                    button {
-                        class: "text-[var(--color-paper-tertiary)] hover:text-[var(--color-paper-primary)] cursor-pointer",
-                        onclick: move |_| dismiss_op(()),
-                        "×"
-                    }
-                }
-            }
-
-            // 多选批量操作条：出现即与操作横幅同槽位（顶栏与网格之间）。
-            if any_selected {
-                div { class: "mb-6 flex items-center gap-3 rounded-2xl border border-[var(--color-paper-border)] bg-[var(--color-paper-entry)] px-4 py-3 text-sm shadow-sm",
-                    class: if batch_closing() { "animate-row-leave" } else { "animate-row-enter" },
-                    span { class: "text-sm text-[var(--color-paper-secondary)]",
-                        "已选 {selected_ids().len()} 张"
-                    }
-                    button {
-                        class: "text-xs cursor-pointer text-[var(--color-paper-secondary)] hover:text-[var(--color-paper-primary)] transition-colors",
-                        onclick: move |_| {
-                            let mut s = selected_ids();
-                            if all_page_selected {
-                                for id in &page_orphan_ids_for_toggle {
-                                    s.remove(id);
-                                }
-                            } else {
-                                for id in &page_orphan_ids_for_toggle {
-                                    s.insert(id.clone());
-                                }
-                            }
-                            if s.is_empty() {
-                                // 取消本页正好清空 → 收起批量条（延迟清空播退出动画）
-                                dismiss_batch(());
-                            } else {
-                                batch_closing.set(false);
-                                selected_ids.set(s);
-                            }
-                        },
-                        if all_page_selected {
-                            "取消本页"
-                        } else {
-                            "全选本页"
-                        }
-                    }
-                    button {
-                        class: "text-xs cursor-pointer text-[var(--color-paper-secondary)] hover:text-[var(--color-paper-primary)] transition-colors",
-                        onclick: move |_| {
-                            batch_confirm.set(false);
-                            dismiss_batch(());
-                        },
-                        "清除"
-                    }
-                    div { class: "flex-1" }
-                    if batch_confirm() {
-                        button {
-                            class: "text-xs font-medium cursor-pointer px-3 py-2 rounded-full bg-red-500 text-white hover:bg-red-600 transition-colors",
-                            onclick: move |_| {
-                                batch_confirm.set(false);
-                                let ids: Vec<String> = selected_ids().iter().cloned().collect();
-                                #[cfg(target_arch = "wasm32")]
-                                spawn(async move {
-                                    match batch_delete_assets(ids).await {
-                                        Ok(resp) => {
-                                            let BatchDeleteAssetsResponse {
-                                                message,
-                                                freed_bytes,
-                                                failures,
-                                                deleted_count,
-                                                ..
-                                            } = resp;
-                                            let mut msg = message;
-                                            if freed_bytes > 0 {
-                                                msg.push_str(
-                                                    &format!("，释放 {}", format_bytes(freed_bytes)),
-                                                );
-                                            }
-                                            if failures > 0 {
-                                                msg.push_str(&format!("（{failures} 项失败）"));
-                                            }
-                                            show_op(msg);
-                                            if deleted_count > 0 {
-                                                reload.set(reload() + 1);
-                                                dismiss_batch(());
-                                            }
-                                        }
-                                        Err(e) => show_op(format!("批量删除失败：{e}")),
-                                    }
-                                });
+                    div { class: "admin-page-actions",
+                        Menu {
+                            label: if busy() { "处理中…" } else { "更多操作" },
+                            size: ButtonSize::Md,
+                            items: menu,
+                            on_select: move |id: &'static str| match id {
+                                "rebuild" => rebuild(),
+                                "purge" => confirm_purge.set(true),
+                                _ => {}
                             },
-                            "确认删除 {selected_ids().len()} 张"
                         }
                         button {
-                            class: "text-xs cursor-pointer px-3 py-2 rounded-full border border-[var(--color-paper-border)] text-[var(--color-paper-secondary)] hover:text-[var(--color-paper-primary)] transition-colors",
-                            onclick: move |_| batch_confirm.set(false),
-                            "取消"
+                            class: button_class(ButtonVariant::Primary, ButtonSize::Md),
+                            r#type: "button",
+                            onclick: move |_| upload_open.set(true),
+                            Icon { name: IconName::Upload, size: 15 }
+                            "上传"
                         }
-                    } else {
+                    }
+                }
+
+                div { class: "admin-toolbar",
+                    FilterTabs {
+                        class: "",
+                        aria_label: "引用状态",
+                        items: vec![("all", "全部"), ("used", "已引用"), ("orphan", "未引用")],
+                        counts: if resp.is_some() { vec![used + orphan, used, orphan] } else { Vec::new() },
+                        active_value: filter(),
+                        on_change: move |v: String| {
+                            filter.set(v);
+                            page.set(1);
+                        },
+                    }
+                    div { class: "admin-toolbar-filters",
+                        label { class: "field field-sm admin-filter-search",
+                            Icon { name: IconName::Search, size: 14 }
+                            span { class: "sr-only", "搜索素材" }
+                            input {
+                                r#type: "search",
+                                placeholder: "文件名或替代文本",
+                                value: "{query}",
+                                oninput: move |e| query.set(e.value()),
+                                onkeydown: move |e| {
+                                    if e.key() == Key::Escape && !query().is_empty() {
+                                        e.prevent_default();
+                                        query.set(String::new());
+                                    }
+                                },
+                            }
+                        }
+                        FormSelect {
+                            id: "admin-assets-sort",
+                            value: sort(),
+                            options: vec![(AssetSort::CreatedDesc, "最新上传"), (AssetSort::SizeDesc, "文件最大")],
+                            trigger_class: FORM_SELECT_COMPACT_CLASS,
+                            aria_label: "排序",
+                            onchange: move |v: AssetSort| {
+                                sort.set(v);
+                                page.set(1);
+                            },
+                        }
+                    }
+                }
+
+                if error() {
+                    LoadError { title: "素材加载失败", on_retry: move |_| refresh() }
+                } else if resp.is_none() {
+                    AssetsGridSkeleton {}
+                } else if assets.is_empty() {
+                    div { class: "admin-panel",
+                        if filtering {
+                            EmptyState {
+                                icon: IconName::SearchX,
+                                title: "没有符合条件的素材",
+                                description: "换个文件名或替代文本再试。",
+                                action: EmptyStateAction {
+                                    label: "清除搜索".to_string(),
+                                    onclick: Callback::new(move |_| query.set(String::new())),
+                                },
+                            }
+                        } else if filter() == "orphan" {
+                            EmptyState {
+                                icon: IconName::Image,
+                                title: "没有未引用的素材",
+                                description: "每张图片都有文章、笔记、评论或头像在用。",
+                            }
+                        } else {
+                            EmptyState {
+                                icon: IconName::Image,
+                                title: "还没有素材",
+                                description: "在编辑器里插入的图片，或在这里上传的图片，都会出现在这里。",
+                                action: EmptyStateAction {
+                                    label: "上传图片".to_string(),
+                                    onclick: Callback::new(move |_| upload_open.set(true)),
+                                },
+                            }
+                        }
+                    }
+                } else {
+                    ul { class: "asset-grid", "aria-busy": loading().then_some("true"),
+                        for item in assets.iter().cloned() {
+                            card::AssetTile {
+                                key: "{item.asset.id}",
+                                active: active().as_deref() == Some(item.asset.id.as_str()),
+                                checked: selection.contains(&item.asset.id),
+                                on_open: move |id| active.set(Some(id)),
+                                on_check: move |(id, on): (String, bool)| {
+                                    if on {
+                                        checked.write().insert(id);
+                                    } else {
+                                        checked.write().remove(&id);
+                                    }
+                                },
+                                asset: item,
+                            }
+                        }
+                    }
+                    div { class: "admin-panel asset-pager",
+                        TablePager {
+                            page: page(),
+                            total,
+                            per_page: ASSETS_PER_PAGE,
+                            unit: "张",
+                            on_change: move |p| page.set(p),
+                        }
+                    }
+                }
+
+                if !selection.is_empty() {
+                    div { class: "batch-bar", role: "toolbar", aria_label: "批量操作",
+                        span { class: "batch-bar-count", "已选 {selection.len()} 张" }
                         button {
-                            class: "text-xs font-medium cursor-pointer px-3 py-2 rounded-full border border-red-500/50 text-red-600 dark:text-red-400 hover:bg-red-500/10 transition-colors",
-                            onclick: move |_| batch_confirm.set(true),
+                            class: "{button_class(ButtonVariant::Ghost, ButtonSize::Sm)} batch-bar-danger",
+                            r#type: "button",
+                            disabled: busy(),
+                            onclick: move |_| confirm_batch.set(true),
                             "删除所选"
                         }
-                    }
-                }
-            }
-
-            // 内容区
-            if let Some(err) = error() {
-                div { class: "mt-8 text-sm text-red-500", "加载失败：{err}" }
-            } else if loading() && assets.is_empty() {
-                DelayedSkeleton { AssetsSkeleton {} }
-            } else if assets.is_empty() {
-                EmptyState {
-                    title: "暂无素材".to_string(),
-                    description: "在编辑器中上传图片后会自动出现在这里".to_string(),
-                }
-            } else {
-                // 网格：缩略图卡片（assets-lightbox 为 __initLightbox 的根选择器）。
-                // loaded_view 作 key 强制 remount：视图切换（tab/搜索/排序/翻页）后新数据
-                // 落地时整网重挂载、卡片重播阶梯入场；同视图内 reload（删除/上传/alt）
-                // key 不变，走普通 keyed diff 不重播。std::iter::once 先例见 post_detail.rs。
-                for view_key in std::iter::once(loaded_view()) {
-                    div {
-                        key: "{view_key}",
-                        class: "assets-lightbox grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4 mt-2",
-                        for (idx, asset) in assets.iter().enumerate() {
-                            AssetCard { key: "{asset.asset.id}", asset: asset.clone(), index: idx, state: card_state }
+                        span { class: "batch-bar-sep", aria_hidden: "true" }
+                        IconButton {
+                            icon: IconName::X,
+                            label: "取消选择",
+                            size: ButtonSize::Sm,
+                            onclick: move |_| checked.write().clear(),
                         }
                     }
                 }
+            }
 
-                // mt-auto 吸收上方自由空间：内容短时分页贴卡片底（main 的 py-12 保留 48px
-                // 底距）；内容超一页时 auto margin 为 0，分页跟在网格后随卡片滚动。
-                // wrapper 是 flex item 建立独立格式化上下文，Pagination nav 自带的 mt-6
-                // 不会穿透塌陷，24px 间距恒在。
-                div { class: "mt-auto",
-                    Pagination::<Route> {
-                        variant: "admin",
-                        current_page: page(),
-                        total,
-                        per_page: ASSETS_PER_PAGE,
-                        unit: "张",
-                        on_prev: move |_| page.set((page() - 1).max(1)),
-                        on_next: move |_| page.set(page() + 1),
-                        on_jump: move |p: i32| page.set(p),
+            if let Some(item) = detail.clone() {
+                div { class: "asset-detail-slot",
+                    references::AssetDetail {
+                        key: "{item.asset.id}",
+                        on_changed: move |_| refresh(),
+                        on_delete: move |_| confirm_delete.set(true),
+                        on_close: move |_| active.set(None),
+                        asset: item,
                     }
                 }
             }
 
-            if let Some((ref_id, anchor_x, anchor_y, pop_align)) = refs_popover() {
-                if let Some(asset) = assets.iter().find(|item| item.asset.id == ref_id) {
-                    AssetReferences { asset: asset.clone(), anchor_x, anchor_y, pop_align, on_close: dismiss_refs }
-                }
+            ConfirmDialog {
+                visible: confirm_delete,
+                title: "删除这张图片？",
+                description: format!(
+                    "「{}」会从素材库和磁盘上删除，无法恢复。",
+                    detail.as_ref().map(|d| d.asset.filename.clone()).unwrap_or_default()
+                ),
+                confirm_label: "删除",
+                on_confirm: move |_| {
+                    if let Some(id) = active() {
+                        delete_one(id);
+                    }
+                },
             }
-
-            // 页内上传 modal：始终挂载，visible 控制渲染；上传成功刷新网格
-            // （不重置页码/排序，按当前排序自然刷新——「最新」下新图在头部）。
-            AssetUploadModal {
-                visible: upload_open,
-                on_uploaded: move |_| reload.set(reload() + 1),
+            ConfirmDialog {
+                visible: confirm_batch,
+                title: "删除所选图片？",
+                description: format!("{} 张未引用的图片会从素材库和磁盘上删除，无法恢复。", selection.len()),
+                confirm_label: "删除",
+                on_confirm: move |_| delete_checked(),
             }
+            ConfirmDialog {
+                visible: confirm_purge,
+                title: "清理未引用的素材？",
+                description: format!(
+                    "{purgeable} 张上传满 7 天且没有任何引用的图片会被删除，释放 {}。上传不满 7 天的保留，以免误删还没保存的草稿里的图片。",
+                    format_bytes(purgeable_bytes)
+                ),
+                confirm_label: "清理",
+                on_confirm: move |_| purge(),
+            }
+            AssetUploadModal { visible: upload_open, on_uploaded: move |_| refresh() }
         }
     }
 }
 
 mod card;
 mod references;
-use card::{AssetCard, AssetCardState};
-use references::AssetReferences;

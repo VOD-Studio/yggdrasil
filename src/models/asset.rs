@@ -60,23 +60,6 @@ pub enum AssetRef {
     FriendAvatar { friend_id: i32, name: String },
 }
 
-impl AssetRef {
-    /// 一行可读描述（删除禁用 tooltip 等纯文本场景）。
-    pub fn describe(&self) -> String {
-        match self {
-            AssetRef::Note { title, .. } => format!("笔记《{title}》（含历史版本）"),
-            AssetRef::Post { title, .. } => format!("文章《{title}》"),
-            AssetRef::Comment {
-                author_name,
-                post_title,
-                ..
-            } => format!("评论（{author_name} 在《{post_title}》）"),
-            AssetRef::UserAvatar { label, .. } => format!("用户头像（{label}）"),
-            AssetRef::FriendAvatar { name, .. } => format!("友链头像（{name}）"),
-        }
-    }
-}
-
 /// 引用来源文章的可见性状态（决定后台链接走向与状态徽标）。
 ///
 /// asset_refs 含草稿与回收站文章：回收站引用同样阻止素材删除，
@@ -104,12 +87,12 @@ impl AssetRefPostStatus {
         }
     }
 
-    /// 状态徽标（label, 语气类）：已发布不显示徽标，返回 None；语气类配合 `.badge`。
-    pub fn badge(&self) -> Option<(&'static str, &'static str)> {
+    /// 来源文章的状态标注：已发布不标。
+    pub fn note(&self) -> Option<&'static str> {
         match self {
             Self::Published => None,
-            Self::Draft => Some(("草稿", "")),
-            Self::Trashed => Some(("回收站", "badge-danger")),
+            Self::Draft => Some("草稿"),
+            Self::Trashed => Some("回收站"),
         }
     }
 }
@@ -170,57 +153,10 @@ mod tests {
     }
 
     #[test]
-    fn ref_post_status_badge() {
-        assert_eq!(AssetRefPostStatus::Published.badge(), None);
-        assert_eq!(AssetRefPostStatus::Draft.badge().map(|b| b.0), Some("草稿"));
-        assert_eq!(
-            AssetRefPostStatus::Trashed.badge().map(|b| b.0),
-            Some("回收站")
-        );
-    }
-
-    #[test]
-    fn asset_ref_describe_covers_all_kinds() {
-        let status = AssetRefPostStatus::Published;
-        let cases = [
-            (
-                AssetRef::Post {
-                    post_id: 1,
-                    title: "标题".into(),
-                    slug: "s".into(),
-                    status,
-                },
-                "文章《标题》",
-            ),
-            (
-                AssetRef::Comment {
-                    comment_id: 1,
-                    author_name: "小明".into(),
-                    post_id: 1,
-                    post_title: "标题".into(),
-                    post_slug: "s".into(),
-                    post_status: status,
-                },
-                "评论（小明 在《标题》）",
-            ),
-            (
-                AssetRef::UserAvatar {
-                    user_id: 1,
-                    label: "xfy".into(),
-                },
-                "用户头像（xfy）",
-            ),
-            (
-                AssetRef::FriendAvatar {
-                    friend_id: 1,
-                    name: "某博客".into(),
-                },
-                "友链头像（某博客）",
-            ),
-        ];
-        for (r, want) in cases {
-            assert_eq!(r.describe(), want);
-        }
+    fn ref_post_status_note() {
+        assert_eq!(AssetRefPostStatus::Published.note(), None);
+        assert_eq!(AssetRefPostStatus::Draft.note(), Some("草稿"));
+        assert_eq!(AssetRefPostStatus::Trashed.note(), Some("回收站"));
     }
 
     #[test]

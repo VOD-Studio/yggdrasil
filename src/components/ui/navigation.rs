@@ -246,6 +246,7 @@ fn neighbor_tab<'a>(items: &[(&'a str, &'a str)], active: &str, delta: i32) -> O
 /// - `active_value`：当前选中的值
 /// - `on_change`：选项卡切换时的回调
 /// - `aria_label`：选项卡组的无障碍名称（可选）
+/// - `counts`：与 `items` 一一对应的数量，显示在标签后（可选，缺省不显示）
 /// - `class`：外层容器类，默认留出下方 1.5rem 间距
 #[component]
 pub fn FilterTabs(
@@ -253,6 +254,7 @@ pub fn FilterTabs(
     active_value: String,
     on_change: EventHandler<String>,
     #[props(default)] aria_label: Option<&'static str>,
+    #[props(default)] counts: Vec<i64>,
     #[props(default = "mb-6")] class: &'static str,
 ) -> Element {
     #[allow(unused_mut)]
@@ -281,12 +283,16 @@ pub fn FilterTabs(
             }
         });
     };
-    use_effect({
-        let active_value = active_value.clone();
-        move || {
-            update_thumb(active_value.clone());
-        }
-    });
+    // 选中项或数量变化（宽度随之变化）时重新测量滑块。
+    let count_key = counts
+        .iter()
+        .map(i64::to_string)
+        .collect::<Vec<_>>()
+        .join(",");
+    use_effect(use_reactive(
+        (&active_value, &count_key),
+        move |(active, _)| update_thumb(active),
+    ));
 
     let measured = thumb_style().is_some();
     let thumb = thumb_style().unwrap_or_else(|| "opacity: 0;".to_string());
@@ -326,7 +332,7 @@ pub fn FilterTabs(
                     }
                 },
                 span { class: "segmented-thumb", aria_hidden: "true", style: "{thumb}" }
-                for (value, label) in items {
+                for (index, (value, label)) in items.iter().enumerate() {
                     button {
                         id: "tab-{id_prefix}-{value}",
                         key: "{value}",
@@ -343,6 +349,9 @@ pub fn FilterTabs(
                             }
                         },
                         "{label}"
+                        if let Some(n) = counts.get(index) {
+                            span { class: "segmented-count", "{n}" }
+                        }
                     }
                 }
             }
