@@ -186,6 +186,10 @@ pub fn CodeRunner(
     }
     let run_example = example_output.clone();
     let run_language = language.clone();
+    // 库资源状态（渲染期读取即订阅）：Some(Err) 表示加载失败（含重试失败）。
+    // dioxus 0.7 的 Resource 重启不清空 value——激活后的重载期间 read() 停在
+    // Some(Ok(false))，完成变 Some(Ok(true))。据此区分「加载中」与「失败」。
+    let library_failed = matches!(&*editor_library.read(), Some(Err(_)));
     let run_code = move |_| {
         if running() {
             return;
@@ -240,8 +244,9 @@ pub fn CodeRunner(
                             dangerous_inner_html: SPINNER_SVG,
                         }
                         "{stage()}"
-                    } else if pending_run() && !editor_ready() {
-                        // 意图已保留：编辑器激活/加载期间明确显示加载状态。
+                    } else if pending_run() && !editor_ready() && !library_failed {
+                        // 意图已保留：编辑器激活/加载期间明确显示加载状态；
+                        // 库加载失败时不伪装加载态，由 LibraryLoadError 重试恢复。
                         span {
                             class: "inline-block w-3.5 h-3.5 text-[var(--color-paper-theme)]",
                             dangerous_inner_html: SPINNER_SVG,
@@ -260,11 +265,19 @@ pub fn CodeRunner(
                 // 编辑器挂载前的容器内容：
                 // - 未激活：渲染服务端高亮 HTML 静态展示（可读、可选择、布局稳定，
                 //   SSR 与 hydration 输出一致）。点击可提前激活，也是
-                //   IntersectionObserver 不可用时的交互兜底。
-                // - 已激活、库加载中：静态代码保留（避免高度跳动），右上角加载提示；
-                //   加载失败时静态代码仍在，LibraryLoadError 提供重试入口。
+                //   IntersectionObserver 不可用时的交互兜底；注入的 .copy-code
+                //   复制按钮已在 JS 侧 stopPropagation，复制不触发激活。
+                // - 已激活、库加载中（!library_failed）：静态代码保留（避免高度
+                //   跳动），右上角加载提示；加载失败时静态代码仍在，
+                //   LibraryLoadError 提供重试入口。
                 // 编辑器就绪后整个分支消失，vdom 移除静态节点（CodeMirror 追加
                 // 挂载，二者不冲突）。
+                //
+                // 边界：同实例原地内容更新（不经 keyed remount）不在支持范围内——
+                // 静态展示读最新 prop，而编辑器以挂载时的 source_signal 初始化
+                //（C4 语义：编辑器内容是唯一真源）。当前所有调用方的内容变化都
+                // 经 keyed remount（post_detail 按 slug、admin runner 按语言），
+                // 实例整体重建，不存在该分歧路径。
                 if !editor_ready() {
                     {
                         match &static_html {
@@ -288,7 +301,7 @@ pub fn CodeRunner(
                             },
                         }
                     }
-                    if activated() && editor_library.read().is_none() {
+                    if activated() && !library_failed {
                         div { class: "absolute top-2 right-2 z-10 flex items-center gap-1.5 px-2 py-1 rounded-full bg-[var(--color-paper-theme)]/85 border border-[var(--color-paper-border)] text-[10px] text-[var(--color-paper-secondary)]",
                             span {
                                 class: "inline-block w-3 h-3 text-[var(--color-paper-accent)]",

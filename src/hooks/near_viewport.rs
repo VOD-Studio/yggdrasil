@@ -13,6 +13,10 @@ use dioxus::prelude::*;
 ///
 /// 卸载安全：观察器与回调存放在 `use_hook` 的 Rc 里，`use_drop` 断开连接；
 /// 回调触发的信号写入发生在组件存活期内（相交即断开），不会有迟到回写。
+///
+/// 约束：effect 只订阅返回的可见性信号，`target_id` 变化不会重连观察器。
+/// 调用方必须保证 id 在组件实例存续期内稳定（当前 CodeRunner/post 容器均以
+/// 确定性索引派生 id 且内容变化经 keyed remount 重建实例）。
 #[allow(clippy::let_unit_value)]
 pub fn use_near_viewport(target_id: String, root_margin: &'static str) -> Signal<bool> {
     #[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut))]

@@ -20,7 +20,10 @@ function initCopyButtons(root: Element): void {
     btn.setAttribute('aria-label', 'Copy code');
 
     const codeText = code.textContent || '';
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', (event) => {
+      // 阻止冒泡：复制是叶子动作。可运行块的静态展示容器在 Dioxus 侧监听
+      // click 以激活编辑器，复制不应连带触发 CodeMirror 下载（复制 ≠ 编辑意图）。
+      event.stopPropagation();
       if (navigator.clipboard?.writeText) {
         navigator.clipboard.writeText(codeText);
       } else {
