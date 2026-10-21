@@ -218,8 +218,9 @@ pub fn FilterTabs(
                     .and_then(|d| d.get_element_by_id(&format!("tab-{id_prefix}-{active}")))
                     .and_then(|el| el.dyn_into::<web_sys::HtmlElement>().ok())
                 {
+                    // 显式写回不透明：样式字符串更新时，未测量时的 opacity 不会被移除。
                     thumb_style.set(Some(format!(
-                        "transform: translateX({}px); width: {}px;",
+                        "transform: translateX({}px); width: {}px; opacity: 1;",
                         el.offset_left(),
                         el.offset_width()
                     )));
