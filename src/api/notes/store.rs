@@ -181,8 +181,10 @@ pub async fn get(
 /// 公开详情查询：只选择已发布展示所需的列，不读取 `content_md` 与内部版本号
 /// （P4.1）。可见性语义与 `get(Access::Public, ..)` 完全一致——
 /// join `published_version`（未发布时无行）、`deleted_at IS NULL`；
-/// 该查询没有 owner/book 参数，与公开路径的调用形状一一对应，
-/// `notes_database_workflow` 回归断言两侧行为一致。
+/// 该查询没有 owner/book 参数，与公开路径的调用形状一一对应。
+/// 注意这里是公开可见性谓词的第二份实现（与 get() 平行）：调整任一侧的公开
+/// 可见性语义时必须同步另一侧，并重跑 `notes_database_workflow` 回归
+///（其中的 get_public/get(Access::Public) 平价断言锁定两侧一致）。
 pub async fn get_public(slug: &str) -> Result<PublicNote, AppError> {
     let client = get_conn().await.map_err(AppError::db_conn)?;
     let row = client

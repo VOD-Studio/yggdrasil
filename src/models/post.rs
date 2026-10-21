@@ -139,7 +139,7 @@ impl From<&Post> for PostHeaderData {
 }
 
 impl PostHeaderData {
-    /// 与 [`Post::formatted_date`] 相同的展示日期规则。
+    /// 与原 `Post::formatted_date` 相同的展示日期规则：优先发布时间，回退创建时间。
     pub fn formatted_date(&self) -> String {
         format_date(self.published_at.unwrap_or(self.created_at))
     }
