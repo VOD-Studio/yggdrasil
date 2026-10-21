@@ -80,6 +80,34 @@ const meta = {
 };
 
 // ── 产物扫描：assets/ 下 dx 生成的 wasm + 胶水 JS，public/ 下的库 bundle ──
+// dx 增量构建会让旧 hash 产物与本次并存；用 web/.manifest.json 的 assets 表
+// （bundled_path + add_hash）区分「当前构建」与历史残留，避免把旧 WASM 计入
+// 本次结果（方案 §3.1）。非 hash 文件（库 bundle 等）每次构建由 dx 重拷，
+// 恒为当前。
+function manifestOutputs() {
+  const manifestPath = path.join(dir, '..', '.manifest.json');
+  if (!fs.existsSync(manifestPath)) return null;
+  try {
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    const current = new Set();
+    for (const variants of Object.values(manifest.assets || {})) {
+      for (const variant of variants) {
+        if (variant.options?.add_hash) {
+          current.add(path.basename(variant.bundled_path));
+        }
+      }
+    }
+    return current;
+  } catch {
+    return null;
+  }
+}
+const currentOutputs = manifestOutputs();
+const isCurrent = (sub, name) => {
+  if (sub === 'assets' && currentOutputs) return currentOutputs.has(name);
+  return true; // 非 hash 文件由 dx 重拷覆盖
+};
+
 function scan(sub, filter) {
   const abs = path.join(dir, sub);
   if (!fs.existsSync(abs)) return [];
@@ -91,6 +119,7 @@ function scan(sub, filter) {
       const brFile = file + '.br';
       return {
         path: `${sub}/${name}`,
+        current: isCurrent(sub, name),
         bytes: bytes(file),
         sha256: sha256(file),
         brotliBytes: fs.existsSync(brFile) ? bytes(brFile) : null,
@@ -99,12 +128,41 @@ function scan(sub, filter) {
     });
 }
 
+// 递归收集 public/ 下除 dx assets/ 外的库 bundle（yggdrasil-core/codemirror/
+// tiptap/xterm/lightbox 等，含 .js 与 .css）。
+function scanBundles() {
+  const out = [];
+  const walk = (rel) => {
+    const abs = path.join(dir, rel);
+    for (const entry of fs.readdirSync(abs, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+      if (entry.name === 'assets' && rel === '.') continue;
+      const childRel = rel === '.' ? entry.name : `${rel}/${entry.name}`;
+      if (entry.isDirectory()) {
+        walk(childRel);
+      } else if (/\.(js|css)$/.test(entry.name) && !entry.name.endsWith('.map')) {
+        const file = path.join(dir, childRel);
+        const brFile = file + '.br';
+        out.push({
+          path: childRel,
+          current: true,
+          bytes: bytes(file),
+          sha256: sha256(file),
+          brotliBytes: fs.existsSync(brFile) ? bytes(brFile) : null,
+          brotliSha256: fs.existsSync(brFile) ? sha256(brFile) : null,
+        });
+      }
+    }
+  };
+  walk('.');
+  return out;
+}
+
 const report = {
-  meta,
+  meta: { ...meta, manifestOutputs: currentOutputs ? [...currentOutputs] : null },
   // dx 生成物：*_bg-*.wasm（wasm-bindgen 后 + wasm-opt -Oz）与同名入口胶水 JS
   clientAssets: scan('assets', (n) => /\.(wasm|js)$/.test(n)),
   // 仓库自带 bundle（yggdrasil-core / codemirror / tiptap / xterm / lightbox）
-  publicBundles: scan('.', (n) => n.endsWith('.js')),
+  publicBundles: scanBundles(),
 };
 
 // ── 输出 ─────────────────────────────────────────────────────────

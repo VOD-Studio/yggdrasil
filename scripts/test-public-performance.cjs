@@ -128,7 +128,9 @@ async function main() {
     const page = await context.newPage(); const editorRequests = []; const codemirrorRequests = []; const execRequests = []; const errors = [];
     page.on('request', request => { if (request.url().includes('/tiptap/editor.js')) editorRequests.push(request.url()); });
     page.on('request', request => { if (request.url().includes('/codemirror/editor.js')) codemirrorRequests.push(request.url()); });
-    page.on('request', request => { if (request.url().includes('/api/exec')) execRequests.push(request.url()); });
+    // 执行端点是 start_exec / start_exec_stream（SSE 只是其下游流阶段，单独
+    // 过滤 /api/exec 会漏掉真正的执行 POST）。
+    page.on('request', request => { if (/\/api\/(start_exec|exec)/.test(request.url())) execRequests.push(request.url()); });
     page.on('pageerror', error => errors.push(error.message));
     await page.goto(bases[0] + route);
     await page.waitForFunction(() => Boolean(window.__dx_mainWasm), {}, { timeout: 60000 });
