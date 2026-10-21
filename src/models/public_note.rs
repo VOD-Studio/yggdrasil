@@ -92,9 +92,18 @@ mod tests {
     #[test]
     fn public_note_omits_markdown_and_internal_fields() {
         let payload = serde_json::to_value(PublicNote::from(sample_note())).unwrap();
-        assert!(payload.get("content_md").is_none(), "公开 DTO 不得携带编辑 Markdown");
-        assert!(payload.get("published_version").is_none(), "工作稿版本不外发");
-        assert!(payload.get("knowledge_version").is_none(), "知识库版本不外发");
+        assert!(
+            payload.get("content_md").is_none(),
+            "公开 DTO 不得携带编辑 Markdown"
+        );
+        assert!(
+            payload.get("published_version").is_none(),
+            "工作稿版本不外发"
+        );
+        assert!(
+            payload.get("knowledge_version").is_none(),
+            "知识库版本不外发"
+        );
         assert!(payload.get("deleted_at").is_none());
         assert!(payload.get("notebook_ids").is_none(), "笔记本归属不外发");
         assert_eq!(payload["version"], 3);

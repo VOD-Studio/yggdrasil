@@ -21,10 +21,10 @@ pub mod mcp_token;
 pub mod note;
 /// 文章模型、文章状态、标签与统计信息。
 pub mod post;
-/// 公开阅读页的精简传输模型。
-pub mod public_post;
 /// 公开笔记详情的精简传输模型（不含编辑 Markdown 与内部版本号）。
 pub mod public_note;
+/// 公开阅读页的精简传输模型。
+pub mod public_post;
 /// 回收站与站点配置模型。
 pub mod settings;
 /// SQL 补全用 schema 模型（`get_db_schema` server function 的返回值 DTO，
