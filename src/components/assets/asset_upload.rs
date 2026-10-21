@@ -17,7 +17,9 @@
 
 use dioxus::prelude::*;
 
-use crate::components::ui::{ModalShell, BTN_ICON, EXIT_ANIM_MS, SPINNER_SVG};
+use crate::components::ui::{
+    button_class, ButtonSize, ButtonVariant, Icon, IconButton, IconName, ModalShell, EXIT_ANIM_MS,
+};
 
 #[cfg(target_arch = "wasm32")]
 use super::upload_pool::{enqueue_files, set_status, UploadPool};
@@ -171,25 +173,22 @@ pub fn AssetUploadModal(mut visible: Signal<bool>, on_uploaded: EventHandler<()>
             visible,
             closing,
             title: "上传素材",
+            panel_class: "asset-modal asset-uploader",
 
                 // 头部（照抄 AssetPickerModal 头部类）。
-                div { class: "flex items-center gap-3 px-6 py-4 border-b border-[var(--color-paper-border)]",
-                    h2 { class: "text-lg font-bold text-[var(--color-paper-primary)]",
-                        "上传素材"
-                    }
-                    div { class: "flex-1" }
-                    button {
-                        class: "{BTN_ICON} shrink-0 rounded-full",
-                        aria_label: "关闭",
+                div { class: "asset-modal-head",
+                    h2 { "上传素材" }
+                    IconButton {
+                        icon: IconName::X,
+                        label: "关闭",
+                        size: ButtonSize::Sm,
                         onclick: move |_| {
                             closing.set(true);
                             visible.set(false);
                         },
-                        "×"
                     }
                 }
 
-                // 主体：拖放区 + 逐文件状态列表。
                     UploadPanel {
                         items: items_snapshot,
                         on_retry: move |item_id: u64| {
@@ -222,8 +221,8 @@ pub fn AssetUploadModal(mut visible: Signal<bool>, on_uploaded: EventHandler<()>
                     // 拖放区 = label：点击天然触发隐藏 file input（同 CoverUploader），无需 JS。
                     // 内部内容包一层 pointer-events-none，防子元素进出触发 dragleave 高亮闪烁。
                     label {
-                        class: "flex flex-col items-center justify-center gap-2 px-6 py-10 border border-dashed rounded-2xl cursor-pointer transition-colors",
-                        class: if drag_active() { "border-[var(--color-paper-primary)] bg-[var(--color-paper-theme)]" } else { "border-[var(--color-paper-border)] bg-[var(--color-paper-theme)] hover:border-[var(--color-paper-primary)]" },
+                        class: "asset-drop",
+                        "data-drag": drag_active().then_some("true"),
                         // ondragover 必须 prevent_default，否则浏览器直接打开文件。
                         ondragover: move |evt| {
                             evt.prevent_default();
@@ -261,7 +260,7 @@ pub fn AssetUploadModal(mut visible: Signal<bool>, on_uploaded: EventHandler<()>
                             r#type: "file",
                             accept: "image/jpeg,image/png,image/gif,image/webp",
                             multiple: true,
-                            class: "hidden",
+                            class: "sr-only",
                             onchange: move |evt| {
                                 #[cfg(target_arch = "wasm32")]
                                 {
@@ -287,11 +286,65 @@ pub fn AssetUploadModal(mut visible: Signal<bool>, on_uploaded: EventHandler<()>
 
 
                 }
+                UploadFooter {
+                    items: items.read().clone(),
+                    on_done: move |_| {
+                        closing.set(true);
+                        visible.set(false);
+                    },
+                }
         }
     }
 }
 
-/// Visual panel shared by the upload controller and local demonstration.
+/// 底栏：完成、上传中与失败张数，「完成」关闭弹窗。
+#[component]
+fn UploadFooter(items: Vec<UploadItem>, on_done: EventHandler<()>) -> Element {
+    let done = items
+        .iter()
+        .filter(|i| i.status == UploadStatus::Done)
+        .count();
+    let busy = items
+        .iter()
+        .filter(|i| matches!(i.status, UploadStatus::Queued | UploadStatus::Uploading))
+        .count();
+    let failed = items
+        .iter()
+        .filter(|i| matches!(i.status, UploadStatus::Failed(_)))
+        .count();
+    let summary = upload_summary(done, busy, failed);
+    rsx! {
+        div { class: "asset-modal-foot",
+            span { role: "status", "{summary}" }
+            button {
+                class: button_class(ButtonVariant::Secondary, ButtonSize::Md),
+                r#type: "button",
+                onclick: move |_| on_done.call(()),
+                "完成"
+            }
+        }
+    }
+}
+
+/// 「1 张完成 · 1 张上传中 · 1 张失败」；没有文件时给出操作提示。
+fn upload_summary(done: usize, busy: usize, failed: usize) -> String {
+    let mut parts = Vec::new();
+    if done > 0 {
+        parts.push(format!("{done} 张完成"));
+    }
+    if busy > 0 {
+        parts.push(format!("{busy} 张上传中"));
+    }
+    if failed > 0 {
+        parts.push(format!("{failed} 张失败"));
+    }
+    if parts.is_empty() {
+        "可以一次选择多张，也可以直接粘贴".to_string()
+    } else {
+        parts.join(" · ")
+    }
+}
+
 #[component]
 pub(crate) fn UploadPanel(
     items: Vec<UploadItem>,
@@ -300,81 +353,90 @@ pub(crate) fn UploadPanel(
     children: Element,
 ) -> Element {
     rsx! {
-        div { class: "flex-1 overflow-y-auto p-6 flex flex-col gap-4",
+        div { class: "asset-modal-body asset-upload-body",
             {children}
             UploadRows { items, on_retry, on_remove }
         }
     }
 }
 
-/// Shared drop-zone artwork; the caller owns its file or local-sample action.
 #[component]
 pub(crate) fn UploadDropZoneContent(
     #[props(default = "拖拽图片到这里，或点击选择")] title: &'static str,
-    #[props(default = "支持 Ctrl/⌘+V 粘贴 · JPEG / PNG / GIF / WebP · 单张 ≤ 5MB")]
-    hint: &'static str,
+    #[props(default = "也可以粘贴 · JPEG / PNG / GIF / WebP · 单张不超过 5MB")] hint: &'static str,
 ) -> Element {
     rsx! {
-        div { class: "pointer-events-none flex flex-col items-center gap-2",
-            svg { class: "w-8 h-8 text-[var(--color-paper-tertiary)]", xmlns: "http://www.w3.org/2000/svg",
-                view_box: "0 0 24 24", fill: "none", stroke: "currentColor", stroke_width: "1.8",
-                stroke_linecap: "round", stroke_linejoin: "round",
-                path { d: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" }
-                polyline { points: "17 8 12 3 7 8" }
-                line { x1: "12", y1: "3", x2: "12", y2: "15" }
-            }
-            p { class: "text-sm font-medium text-[var(--color-paper-primary)]", "{title}" }
-            p { class: "text-xs text-[var(--color-paper-tertiary)]", "{hint}" }
+        span { class: "asset-drop-content",
+            Icon { name: IconName::Upload, size: 22 }
+            span { class: "asset-drop-title", "{title}" }
+            span { class: "asset-drop-hint", "{hint}" }
         }
     }
 }
 
-/// Shared file status list; production and showcase provide their own actions.
 #[component]
 pub(crate) fn UploadRows(
     items: Vec<UploadItem>,
     on_retry: EventHandler<u64>,
     on_remove: EventHandler<u64>,
 ) -> Element {
+    if items.is_empty() {
+        return rsx! {};
+    }
     rsx! {
-        div { class: "flex flex-col gap-2",
-            for (index, item) in items.iter().enumerate() {
+        ul { class: "asset-upload-rows",
+            for item in items.iter() {
                 {
                     let id = item.id;
-                    let status_key = match item.status {
-                        UploadStatus::Queued => "q",
-                        UploadStatus::Uploading => "u",
-                        UploadStatus::Done => "d",
-                        UploadStatus::Failed(_) => "f",
+                    let state = match item.status {
+                        UploadStatus::Queued => "queued",
+                        UploadStatus::Uploading => "uploading",
+                        UploadStatus::Done => "done",
+                        UploadStatus::Failed(_) => "failed",
                     };
                     rsx! {
-                        div { key: "{id}",
-                            class: "flex items-center gap-3 rounded-2xl border border-[var(--color-paper-border)] bg-[var(--color-paper-theme)] px-4 py-3",
-                            class: if item.removing { "animate-row-leave" } else { "animate-row-enter" },
-                            style: if item.removing { String::new() } else { format!("animation-delay:{}ms", index * 30) },
-                            div { class: "flex-1 min-w-0",
-                                p { class: "text-sm truncate text-[var(--color-paper-primary)]", title: "{item.name}", "{item.name}" }
-                                p { class: "text-xs font-mono text-[var(--color-paper-tertiary)]", "{item.size}" }
+                        li {
+                            key: "{id}",
+                            class: "asset-upload-row",
+                            "data-state": state,
+                            "data-removing": item.removing.then_some("true"),
+                            span { class: "asset-upload-thumb", aria_hidden: "true" }
+                            span { class: "asset-upload-text",
+                                span { class: "asset-upload-name", title: "{item.name}", "{item.name}" }
+                                match &item.status {
+                                    UploadStatus::Uploading => rsx! {
+                                        span { class: "asset-upload-bar", aria_hidden: "true", span {} }
+                                    },
+                                    UploadStatus::Failed(message) => rsx! {
+                                        span { class: "asset-upload-error", title: "{message}", "{message}" }
+                                    },
+                                    _ => rsx! {
+                                        span { class: "asset-upload-size", "{item.size}" }
+                                    },
+                                }
                             }
-                            for status_key in std::iter::once(status_key) {
-                                div { key: "{status_key}", class: "flex items-center gap-2 shrink-0 animate-status-pop",
-                                    match &item.status {
-                                        UploadStatus::Queued => rsx! { span { class: "text-xs text-[var(--color-paper-tertiary)] shrink-0", "等待中" } },
-                                        UploadStatus::Uploading => rsx! {
-                                            span { class: "flex items-center gap-1.5 text-xs text-[var(--color-paper-secondary)] shrink-0",
-                                                span { class: "inline-block w-3.5 h-3.5", dangerous_inner_html: SPINNER_SVG }
-                                                "上传中"
-                                            }
-                                        },
-                                        UploadStatus::Done => rsx! { span { class: "text-xs text-emerald-600 dark:text-emerald-400 shrink-0", "✓ 已上传" } },
-                                        UploadStatus::Failed(message) => rsx! {
-                                            span { class: "text-xs text-red-500 shrink-0 max-w-56 truncate", title: "{message}", "{message}" }
-                                            button { r#type: "button", class: "text-xs cursor-pointer text-[var(--color-paper-secondary)] hover:text-[var(--color-paper-primary)] shrink-0",
-                                                onclick: move |_| on_retry.call(id), "重试" }
-                                            button { r#type: "button", class: "text-xs cursor-pointer text-[var(--color-paper-tertiary)] hover:text-[var(--color-paper-primary)] transition-colors shrink-0",
-                                                aria_label: "移除", onclick: move |_| on_remove.call(id), "×" }
-                                        },
-                                    }
+                            span { class: "asset-upload-status",
+                                match &item.status {
+                                    UploadStatus::Queued => rsx! { "等待中" },
+                                    UploadStatus::Uploading => rsx! { "上传中" },
+                                    UploadStatus::Done => rsx! {
+                                        Icon { name: IconName::Check, size: 13 }
+                                        "已上传"
+                                    },
+                                    UploadStatus::Failed(_) => rsx! {
+                                        button {
+                                            class: button_class(ButtonVariant::Ghost, ButtonSize::Xs),
+                                            r#type: "button",
+                                            onclick: move |_| on_retry.call(id),
+                                            "重试"
+                                        }
+                                        IconButton {
+                                            icon: IconName::X,
+                                            label: "移除",
+                                            size: ButtonSize::Xs,
+                                            onclick: move |_| on_remove.call(id),
+                                        }
+                                    },
                                 }
                             }
                         }
@@ -382,5 +444,17 @@ pub(crate) fn UploadRows(
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::upload_summary;
+
+    #[test]
+    fn upload_summary_lists_only_nonzero_states() {
+        assert_eq!(upload_summary(1, 1, 1), "1 张完成 · 1 张上传中 · 1 张失败");
+        assert_eq!(upload_summary(3, 0, 0), "3 张完成");
+        assert_eq!(upload_summary(0, 0, 0), "可以一次选择多张，也可以直接粘贴");
     }
 }

@@ -8,9 +8,8 @@
 //! （多选模式下自动加入选中集——上传即意图）。
 //! 纯 Dioxus 组件，不触碰 Tiptap；数据加载仅在 WASM 前端发生。
 
-use crate::components::forms::{FormInput, INPUT_INLINE_CLASS};
 use crate::components::ui::{
-    ModalShell, Pagination, BTN_ICON, BTN_OUTLINE, BTN_PRIMARY, SPINNER_SVG,
+    button_class, ButtonSize, ButtonVariant, Icon, IconButton, IconName, ModalShell, TablePager,
 };
 use dioxus::prelude::*;
 
@@ -19,7 +18,6 @@ use crate::api::assets::list_assets;
 use crate::models::asset::AssetDto;
 #[cfg(target_arch = "wasm32")]
 use crate::models::asset::{AssetFilter, AssetSort};
-use crate::router::Route;
 
 /// 每页素材数，与素材管理页及服务端列表接口保持一致。
 const ASSETS_PER_PAGE: i32 = 60;
@@ -235,100 +233,103 @@ pub fn AssetPickerModal(
             closing,
             title,
             overlay_padding: "p-4 sm:p-6",
-            panel_class: "w-full max-w-3xl min-h-0",
+            panel_class: "asset-modal asset-picker",
 
-            // 头部：标题、搜索、上传与关闭按钮共享同一组内边距。
-            div { class: "flex flex-wrap items-center gap-3 border-b border-[var(--color-paper-border)] p-6",
-                    h2 { class: "shrink-0 text-lg font-bold text-[var(--color-paper-primary)]",
-                        "{title}"
-                    }
-                    FormInput {
+            div { class: "asset-modal-head",
+                h2 { "{title}" }
+                IconButton {
+                    icon: IconName::X,
+                    label: "关闭",
+                    size: ButtonSize::Sm,
+                    onclick: move |_| {
+                        closing.set(true);
+                        visible.set(false);
+                    },
+                }
+            }
+            div { class: "asset-modal-bar",
+                label { class: "field field-sm admin-filter-search asset-modal-search",
+                    Icon { name: IconName::Search, size: 14 }
+                    span { class: "sr-only", "搜索素材" }
+                    input {
                         r#type: "search",
-                        placeholder: "搜索文件名 / alt",
-                        value: query(),
-                        class: INPUT_INLINE_CLASS,
-                        oninput: move |v: String| query.set(v),
+                        placeholder: "文件名或替代文本",
+                        value: "{query}",
+                        oninput: move |e| query.set(e.value()),
                     }
-                    // 上传新图：成功后保留在当前网格，用户点击后才选中
-                    label {
-                        class: "inline-flex shrink-0 cursor-pointer items-center justify-center {BTN_PRIMARY}",
-                        class: if cover_uploading() { "pointer-events-none cursor-wait opacity-60" } else { "" },
-                        "上传新图"
-                        input {
-                            r#type: "file",
-                            accept: "image/jpeg,image/png,image/gif,image/webp",
-                            class: "hidden",
-                            disabled: cover_uploading(),
+                }
+                // 上传新图：成功后留在网格里，单选模式由用户再点一次确认。
+                label {
+                    class: "{button_class(ButtonVariant::Secondary, ButtonSize::Sm)} asset-modal-upload",
+                    "aria-disabled": cover_uploading().then_some("true"),
+                    Icon { name: IconName::Upload, size: 14 }
+                    if cover_uploading() { "上传中…" } else { "上传新图片" }
+                    input {
+                        r#type: "file",
+                        accept: "image/jpeg,image/png,image/gif,image/webp",
+                        class: "sr-only",
+                        disabled: cover_uploading(),
                             onchange: move |evt| {
-                                #[cfg(target_arch = "wasm32")]
-                                {
-                                    use dioxus::web::WebFileExt;
-                                    if cover_uploading() {
-                                        return;
-                                    }
-                                    if let Some(file) = evt.files().into_iter().next() {
+                            #[cfg(target_arch = "wasm32")]
+                            {
+                                use dioxus::web::WebFileExt;
+                                if cover_uploading() {
+                                    return;
+                                }
+                                if let Some(file) = evt.files().into_iter().next() {
                     if let Some(web_file) = file.get_web_file() {
                         // 与 AssetUploadModal 的 worker 池入队校验（upload_pool::validate_file）
                         // 同一份规则：不合格直接提示、不发请求——此前这里只靠 accept 属性
                         // （客户端可绕过）+ 服务端兜底校验，缺了与批量上传一致的客户端预检。
                         if let Err(msg) = crate::components::assets::upload_pool::validate_file(
-                            &web_file.type_(),
-                            web_file.size() as u64,
+                        &web_file.type_(),
+                        web_file.size() as u64,
                         ) {
-                            error.set(Some(msg));
+                        error.set(Some(msg));
                         } else {
-                            let preview_url =
-                                web_sys::Url::create_object_url_with_blob(&web_file).ok();
-                            uploading_preview.set(preview_url.clone());
-                            cover_uploading.set(true);
-                            error.set(None);
-                            spawn(async move {
-                                let result = crate::bridges::tiptap::upload_image_file(web_file)
-                                    .await;
-                                if let Some(preview_url) = preview_url.as_deref() {
-                                    let _ = web_sys::Url::revoke_object_url(preview_url);
-                                }
-                                match result {
-                                    Ok(url) => {
-                                        // 多选模式：上传即意图，新图直接进入选中集
-                                        // （URL 判重，网格刷新后同图不会重复选中）。
-                                        if multi {
-                                            toggle_selection(
-                                                &mut selected.write(),
-                                                AssetSelection {
-                                                    url: url.clone(),
-                                                    alt: None,
-                                                },
-                                            );
-                                        }
-                                        uploaded_url.set(Some(url));
-                                        uploading_preview.set(None);
-                                        cover_uploading.set(false);
+                        let preview_url =
+                            web_sys::Url::create_object_url_with_blob(&web_file).ok();
+                        uploading_preview.set(preview_url.clone());
+                        cover_uploading.set(true);
+                        error.set(None);
+                        spawn(async move {
+                            let result = crate::bridges::tiptap::upload_image_file(web_file)
+                                .await;
+                            if let Some(preview_url) = preview_url.as_deref() {
+                                let _ = web_sys::Url::revoke_object_url(preview_url);
+                            }
+                            match result {
+                                Ok(url) => {
+                                    // 多选模式：上传即意图，新图直接进入选中集
+                                    // （URL 判重，网格刷新后同图不会重复选中）。
+                                    if multi {
+                                        toggle_selection(
+                                            &mut selected.write(),
+                                            AssetSelection {
+                                                url: url.clone(),
+                                                alt: None,
+                                            },
+                                        );
                                     }
-                                    Err(msg) => {
-                                        error.set(Some(msg));
-                                        uploading_preview.set(None);
-                                        cover_uploading.set(false);
-                                    }
+                                    uploaded_url.set(Some(url));
+                                    uploading_preview.set(None);
+                                    cover_uploading.set(false);
                                 }
-                            });
+                                Err(msg) => {
+                                    error.set(Some(msg));
+                                    uploading_preview.set(None);
+                                    cover_uploading.set(false);
+                                }
+                            }
+                        });
                         }
                     }
-                                    }
                                 }
-                            },
-                        }
-                    }
-                    button {
-                        class: "{BTN_ICON} shrink-0 rounded-full",
-                        aria_label: "关闭",
-                        onclick: move |_| {
-                            closing.set(true);
-                            visible.set(false);
+                            }
                         },
-                        "×"
                     }
                 }
+            }
 
                 PickerGallery {
                     items: gallery_items.clone(),
@@ -345,41 +346,17 @@ pub fn AssetPickerModal(
                     },
                 }
                 if show_pagination {
-                    {
-                        let mut page_for_prev = page;
-                        let loading_for_prev = loading;
-                        let mut page_for_next = page;
-                        let loading_for_next = loading;
-                        let mut page_for_jump = page;
-                        let loading_for_jump = loading;
-                        rsx! {
-                            div { class: "shrink-0 px-6 py-3 shadow-[inset_0_1px_0_var(--color-paper-border)]",
-                                div { class: if loading_now { "pointer-events-none opacity-60" } else { "" },
-                                    Pagination::<Route> {
-                                        variant: "admin",
-                                        compact: true,
-                                        current_page,
-                                        total: total_assets,
-                                        per_page: ASSETS_PER_PAGE,
-                                        unit: "张",
-                                        on_prev: move |_| {
-                                            if !loading_for_prev() {
-                                                page_for_prev.with_mut(|p| *p = (*p - 1).max(1));
-                                            }
-                                        },
-                                        on_next: move |_| {
-                                            if !loading_for_next() {
-                                                page_for_next.with_mut(|p| *p += 1);
-                                            }
-                                        },
-                                        on_jump: move |next_page: i32| {
-                                            if !loading_for_jump() {
-                                                page_for_jump.set(next_page.max(1));
-                                            }
-                                        },
-                                    }
+                    div { class: "asset-modal-pager", "aria-busy": loading_now.then_some("true"),
+                        TablePager {
+                            page: current_page,
+                            total: total_assets,
+                            per_page: ASSETS_PER_PAGE,
+                            unit: "张",
+                            on_change: move |next: i32| {
+                                if !loading() {
+                                    page.set(next.max(1));
                                 }
-                            }
+                            },
                         }
                     }
                 }
@@ -409,65 +386,59 @@ pub(crate) fn PickerGallery(
     on_pick: EventHandler<Vec<AssetSelection>>,
 ) -> Element {
     rsx! {
-        div { class: "relative min-h-0 flex-1 overflow-y-auto p-6",
-            if loading && !items.is_empty() {
-                div { class: "pointer-events-none absolute inset-0 z-10 flex items-start justify-center bg-[var(--color-paper-theme)]/35 pt-6 backdrop-blur-[1px]",
-                    aria_live: "polite", aria_label: "正在加载素材",
-                    span { class: "inline-flex items-center gap-2 rounded-full bg-[var(--color-paper-entry)] px-3 py-1.5 text-xs text-[var(--color-paper-secondary)] shadow-sm",
-                        span { class: "inline-flex h-4 w-4", dangerous_inner_html: SPINNER_SVG }
-                        "加载中…"
-                    }
-                }
-            }
+        div { class: "asset-modal-body", "aria-busy": loading.then_some("true"),
             if let Some(error) = error {
-                div { class: "rounded-2xl bg-red-500/10 px-4 py-3 text-center text-sm text-red-600 dark:text-red-400", "加载失败：{error}" }
+                p { class: "asset-modal-error", role: "alert", "加载失败：{error}" }
             } else if loading && items.is_empty() && !uploading {
-                div { class: "px-4 py-16 text-center text-sm text-[var(--color-paper-secondary)]", "加载中..." }
+                p { class: "asset-modal-empty", role: "status", "正在读取素材…" }
             } else if items.is_empty() && !uploading {
-                div { class: "px-4 py-16 text-center text-sm text-[var(--color-paper-secondary)]", "素材库为空" }
+                p { class: "asset-modal-empty", "素材库还是空的，先上传一张图片。" }
             } else {
-                div { class: "grid grid-cols-3 gap-4 sm:grid-cols-4",
+                ul { class: "asset-pick-grid",
                     if uploading {
-                        div { class: "relative aspect-square overflow-hidden rounded-2xl border border-[var(--color-paper-accent)]/60 bg-[var(--color-paper-theme)] shadow-sm", aria_live: "polite", aria_label: "正在上传图片",
-                            if let Some(preview_url) = uploading_preview {
-                                img { class: "h-full w-full scale-110 object-cover blur-md opacity-60", src: "{preview_url}", alt: "正在上传" }
-                            } else {
-                                div { class: "absolute inset-0 animate-pulse bg-[var(--color-paper-code-bg)]" }
+                        li { class: "asset-pick", "data-uploading": "true", aria_live: "polite", aria_label: "正在上传图片",
+                            span { class: "asset-pick-thumb",
+                                if let Some(preview_url) = uploading_preview {
+                                    img { src: "{preview_url}", alt: "" }
+                                }
+                                span { class: "asset-pick-progress", "上传中" }
                             }
-                            div { class: "absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/30 backdrop-blur-[2px]",
-                                span { class: "inline-flex h-5 w-5 text-white", dangerous_inner_html: SPINNER_SVG }
-                                span { class: "text-xs font-medium text-white drop-shadow", "上传中" }
-                            }
+                            span { class: "asset-pick-name", "新图片" }
                         }
                     }
                     for item in items.iter() {
                         {
                             let selection = AssetSelection { url: item.url.clone(), alt: item.alt.clone() };
                             let order = if multi { selected.read().iter().position(|value| value.url == item.url) } else { None };
-                            let item_class = if order.is_some() {
-                                "border-2 border-[var(--color-paper-accent)] shadow-sm"
-                            } else if multi {
-                                "border-2 border-[var(--color-paper-border)] hover:border-[var(--color-paper-primary)]"
-                            } else {
-                                "border border-[var(--color-paper-border)] hover:border-[var(--color-paper-primary)]"
-                            };
                             rsx! {
-                                button {
-                                    key: "{item.url}",
-                                    class: "group relative aspect-square cursor-pointer overflow-hidden rounded-2xl bg-[var(--color-paper-theme)] transition-all hover:shadow-md {item_class}",
-                                    title: "{item.filename}",
-                                    aria_label: "{item.filename}",
-                                    onclick: move |_| {
-                                        if multi {
-                                            toggle_selection(&mut selected.write(), selection.clone());
-                                        } else {
-                                            on_pick.call(vec![selection.clone()]);
+                                li { key: "{item.url}",
+                                    button {
+                                        class: "asset-pick",
+                                        r#type: "button",
+                                        role: if multi { "checkbox" } else { "button" },
+                                        aria_checked: multi.then(|| order.is_some().to_string()),
+                                        "data-checked": order.is_some().then_some("true"),
+                                        title: "{item.filename}",
+                                        aria_label: "{item.filename}",
+                                        onclick: move |_| {
+                                            if multi {
+                                                toggle_selection(&mut selected.write(), selection.clone());
+                                            } else {
+                                                on_pick.call(vec![selection.clone()]);
+                                            }
+                                        },
+                                        span { class: "asset-pick-thumb",
+                                            img { src: "{item.thumbnail}", alt: "", loading: "lazy" }
+                                            if multi {
+                                                span { class: "asset-pick-order", aria_hidden: "true",
+                                                    if let Some(index) = order { "{index + 1}" }
+                                                }
+                                            }
+                                            if item.fresh {
+                                                span { class: "asset-pick-fresh", "刚上传" }
+                                            }
                                         }
-                                    },
-                                    img { class: "h-full w-full object-cover", src: "{item.thumbnail}", alt: item.alt.clone().unwrap_or_else(|| item.filename.clone()), loading: "lazy" }
-                                    if item.fresh { span { class: "absolute inset-x-2 bottom-2 rounded-full bg-black/55 px-2 py-1 text-center text-xs font-medium text-white backdrop-blur-sm", "刚上传" } }
-                                    if let Some(index) = order {
-                                        span { class: "absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-[var(--color-paper-accent)] text-xs font-bold text-[var(--color-paper-theme)] shadow", "{index + 1}" }
+                                        span { class: "asset-pick-name", "{item.filename}" }
                                     }
                                 }
                             }
@@ -486,14 +457,34 @@ pub(crate) fn PickerSelectionFooter(
 ) -> Element {
     let count = selected.read().len();
     rsx! {
-        div { class: "flex shrink-0 items-center justify-between gap-3 px-6 py-3 shadow-[inset_0_1px_0_var(--color-paper-border)]",
-            span { class: "text-sm text-[var(--color-paper-secondary)]", if count == 0 { "未选择图片" } else { "已选 {count} 张" } }
-            div { class: "flex items-center gap-2",
-                button { class: "{BTN_OUTLINE}", disabled: count == 0, onclick: move |_| selected.set(Vec::new()), "清空" }
-                button { class: "{BTN_PRIMARY}", disabled: count == 0, onclick: move |_| {
-                    let picks = selected();
-                    if !picks.is_empty() { on_pick.call(picks); }
-                }, "插入 {count} 张图片" }
+        div { class: "asset-modal-foot",
+            span {
+                if count == 0 {
+                    "可以多选，插入顺序与勾选顺序一致"
+                } else {
+                    "已选 {count} 张 · 按勾选顺序插入"
+                }
+            }
+            div { class: "asset-modal-foot-actions",
+                button {
+                    class: button_class(ButtonVariant::Ghost, ButtonSize::Md),
+                    r#type: "button",
+                    disabled: count == 0,
+                    onclick: move |_| selected.set(Vec::new()),
+                    "清空"
+                }
+                button {
+                    class: button_class(ButtonVariant::Primary, ButtonSize::Md),
+                    r#type: "button",
+                    disabled: count == 0,
+                    onclick: move |_| {
+                        let picks = selected();
+                        if !picks.is_empty() {
+                            on_pick.call(picks);
+                        }
+                    },
+                    if count == 0 { "插入" } else { "插入 {count} 张" }
+                }
             }
         }
     }

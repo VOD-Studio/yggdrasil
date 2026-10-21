@@ -19,6 +19,7 @@
 @import "./styles/components/shell.css";
 @import "./styles/components/admin.css";
 @import "./styles/components/palette.css";
+@import "./styles/components/asset-modals.css";
 @import "./styles/pages/reading-responsive.css";
 @import "./styles/pages/collapsible.css";
 @import "./styles/pages/friends.css";

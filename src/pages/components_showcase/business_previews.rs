@@ -9,10 +9,8 @@ use crate::components::assets::asset_upload::{
 use crate::components::assets::AssetSelection;
 use crate::components::code_runner::runner::RunnerExample;
 use crate::components::code_runner::CodeRunner;
-use crate::components::forms::{FormInput, INPUT_INLINE_CLASS};
 use crate::components::sql_result_table::SqlResultTable;
-use crate::components::ui::{ModalShell, Pagination};
-use crate::router::Route;
+use crate::components::ui::{Icon, IconName, ModalShell, TablePager};
 
 pub(super) fn preview(slug: &str, detail: bool) -> Option<Element> {
     Some(match slug {
@@ -145,14 +143,18 @@ fn PickerDemoContent(
     mut visible: Signal<bool>,
 ) -> Element {
     let (items, total) = picker_page(&query(), page());
-    let mut page_prev = page;
-    let mut page_next = page;
-    let mut page_jump = page;
     rsx! {
         div { class: "showcase-picker-panel",
             div { class: "showcase-picker-toolbar",
-                FormInput { r#type: "search", placeholder: "搜索文件名 / alt", value: query(), class: INPUT_INLINE_CLASS,
-                    oninput: move |value: String| { query.set(value); page.set(1); }
+                label { class: "field field-sm admin-filter-search asset-modal-search",
+                    Icon { name: IconName::Search, size: 14 }
+                    span { class: "sr-only", "搜索素材" }
+                    input {
+                        r#type: "search",
+                        placeholder: "文件名或替代文本",
+                        value: "{query}",
+                        oninput: move |e| { query.set(e.value()); page.set(1); },
+                    }
                 }
                 if detail {
                     div { class: "showcase-picker-mode-switch",
@@ -166,12 +168,9 @@ fn PickerDemoContent(
                 on_pick: move |picks: Vec<AssetSelection>| { confirmed.set(picks); visible.set(false); }
             }
             if total > 3 {
-                div { class: "showcase-picker-pagination shrink-0 shadow-[inset_0_1px_0_var(--color-paper-border)]",
-                    Pagination::<Route> { variant: "admin", compact: true, current_page: page(), total,
-                        per_page: 3, unit: "张",
-                        on_prev: move |_| page_prev.set((page_prev() - 1).max(1)),
-                        on_next: move |_| page_next.set((page_next() + 1).min(((total + 2) / 3) as i32)),
-                        on_jump: move |next: i32| page_jump.set(next.clamp(1, ((total + 2) / 3) as i32)),
+                div { class: "asset-modal-pager",
+                    TablePager { page: page(), total, per_page: 3, unit: "张",
+                        on_change: move |next: i32| page.set(next.clamp(1, ((total + 2) / 3) as i32)),
                     }
                 }
             }
@@ -200,7 +199,7 @@ fn UploadDemo(detail: bool) -> Element {
             }
             if !visible() { UploadDemoPanel { items, generation } }
             if detail {
-                ModalShell { visible, closing, title: "上传素材演示", panel_class: "w-full max-w-3xl min-h-0",
+                ModalShell { visible, closing, title: "上传素材演示", panel_class: "asset-modal asset-uploader",
                     div { class: "showcase-demo-actions", span { "素材上传 · 本地演示" }
                         button { r#type: "button", onclick: move |_| {
                             generation += 1;
@@ -259,7 +258,7 @@ fn UploadDemoPanel(mut items: Signal<Vec<UploadItem>>, generation: Signal<u64>) 
             },
             on_remove: move |id: u64| items.write().retain(|item| item.id != id),
             button { r#type: "button",
-                class: "flex w-full flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-[var(--color-paper-border)] bg-[var(--color-paper-theme)] px-6 py-8 cursor-pointer hover:border-[var(--color-paper-primary)]",
+                class: "asset-drop w-full border-0",
                 onclick: move |_| {
                     let next = items.read().iter().map(|item| item.id).max().unwrap_or(0) + 1;
                     items.write().push(UploadItem { id: next, name: format!("示例文件-{next}.webp"), size: "540 KB".to_string(), status: UploadStatus::Queued, removing: false });

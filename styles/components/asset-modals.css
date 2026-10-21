@@ -1,0 +1,438 @@
+/* ======== 素材弹窗：选择与上传 ========
+   结构见 src/components/assets/asset_picker.rs 与 asset_upload.rs，
+   写文章、笔记、头像与素材页共用。 */
+@layer components {
+  .asset-modal {
+    width: min(53.75rem, 100%);
+    height: min(47.5rem, 85dvh);
+    background-color: var(--color-popover);
+  }
+
+  .asset-uploader {
+    width: min(37.5rem, 100%);
+    height: auto;
+    max-height: 85dvh;
+  }
+
+  .asset-modal-head {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 1rem 1rem 0 1.125rem;
+  }
+
+  .asset-modal-head h2 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+  }
+
+  .asset-modal-bar {
+    display: flex;
+    flex: none;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.75rem 1.125rem;
+    box-shadow: inset 0 -1px 0 var(--color-hairline);
+  }
+
+  .asset-modal-search {
+    width: 15rem;
+    background-color: var(--color-surface-1);
+  }
+
+  .asset-modal-upload {
+    position: relative;
+    cursor: pointer;
+  }
+
+  .asset-modal-upload[aria-disabled="true"] {
+    cursor: wait;
+    opacity: 0.6;
+  }
+
+  .asset-modal-upload:has(input:focus-visible) {
+    box-shadow: var(--shadow-focus);
+  }
+
+  .asset-modal-body {
+    flex: 1;
+    min-height: 0;
+    padding: 1rem 1.125rem;
+    overflow-y: auto;
+  }
+
+  .asset-modal-body[aria-busy="true"] .asset-pick-grid {
+    opacity: 0.6;
+  }
+
+  .asset-modal-empty,
+  .asset-modal-error {
+    margin: 3rem 0;
+    color: var(--color-fg-3);
+    font-size: 0.875rem;
+    text-align: center;
+  }
+
+  .asset-modal-error {
+    color: var(--color-danger);
+  }
+
+  .asset-modal-pager {
+    flex: none;
+    box-shadow: inset 0 1px 0 var(--color-hairline);
+  }
+
+  .asset-modal-foot {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.75rem 1.125rem;
+    background-color: var(--color-surface-1);
+    box-shadow: inset 0 1px 0 var(--color-hairline);
+    color: var(--color-fg-2);
+    font-size: 0.8125rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .asset-modal-foot-actions {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  /* ---- 选择网格 ---- */
+  .asset-pick-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(8.75rem, 1fr));
+    gap: 0.625rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    transition: opacity 150ms var(--ease-out-expo);
+  }
+
+  .asset-pick {
+    display: block;
+    width: 100%;
+    padding: 0;
+    overflow: hidden;
+    border: 0;
+    border-radius: var(--radius-panel);
+    background-color: var(--color-surface-2);
+    box-shadow: 0 0 0 1px var(--color-hairline);
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: box-shadow 200ms var(--ease-out-expo);
+  }
+
+  .asset-pick:hover {
+    box-shadow: 0 0 0 1px var(--color-ink-3), var(--shadow-sm);
+  }
+
+  .asset-pick[data-checked] {
+    box-shadow: 0 0 0 2px var(--color-clay);
+  }
+
+  .asset-pick:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
+  }
+
+  .asset-pick-thumb {
+    position: relative;
+    display: block;
+    aspect-ratio: 4 / 3;
+    overflow: hidden;
+    background-color: var(--color-ink-1);
+    background-image: repeating-linear-gradient(
+      135deg,
+      transparent 0 9px,
+      var(--color-ink-1) 9px 10px
+    );
+  }
+
+  .asset-pick-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  /* 多选：右上角圆标，勾选后写上勾选顺序。 */
+  .asset-pick-order {
+    position: absolute;
+    top: 0.375rem;
+    right: 0.375rem;
+    display: grid;
+    place-items: center;
+    width: 1.375rem;
+    height: 1.375rem;
+    border-radius: 50%;
+    background-color: var(--color-surface-2);
+    box-shadow: inset 0 0 0 1.5px var(--color-ink-3);
+    color: transparent;
+    font-size: 0.75rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .asset-pick[data-checked] .asset-pick-order {
+    background-color: var(--color-clay-fill);
+    box-shadow: none;
+    color: var(--color-on-clay);
+    animation: asset-pick-pop var(--spring-bouncy-duration) var(--ease-spring-bouncy);
+  }
+
+  @keyframes asset-pick-pop {
+    from {
+      transform: scale(0.6);
+    }
+  }
+
+  .asset-pick-fresh {
+    position: absolute;
+    bottom: 0.375rem;
+    left: 0.375rem;
+    padding: 0 0.4375rem;
+    border-radius: 999px;
+    background-color: var(--color-clay-fill);
+    color: var(--color-on-clay);
+    font-size: 0.6875rem;
+  }
+
+  .asset-pick[data-uploading] .asset-pick-thumb img {
+    filter: blur(6px);
+    opacity: 0.6;
+  }
+
+  .asset-pick-progress {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    color: var(--color-fg-2);
+    font-size: 0.75rem;
+    animation: write-pulse 1.2s ease-in-out infinite;
+  }
+
+  .asset-pick-name {
+    display: block;
+    padding: 0.375rem 0.5rem;
+    overflow: hidden;
+    color: var(--color-fg-2);
+    font-size: 0.75rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* ---- 上传 ---- */
+  .asset-upload-body {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .asset-drop {
+    display: grid;
+    place-items: center;
+    min-height: 10rem;
+    padding: 1.5rem;
+    border-radius: 12px;
+    background-color: var(--color-surface-1);
+    box-shadow: inset 0 0 0 1.5px var(--color-ink-2);
+    cursor: pointer;
+    transition:
+      background-color 150ms var(--ease-out-expo),
+      box-shadow 150ms var(--ease-out-expo);
+  }
+
+  .asset-drop:hover {
+    box-shadow: inset 0 0 0 1.5px var(--color-ink-3);
+  }
+
+  .asset-drop[data-drag] {
+    background-color: var(--color-clay-soft);
+    box-shadow: inset 0 0 0 1.5px var(--color-clay);
+  }
+
+  .asset-drop:has(input:focus-visible) {
+    box-shadow: var(--shadow-focus);
+  }
+
+  .asset-drop-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.375rem;
+    color: var(--color-fg-3);
+    text-align: center;
+    pointer-events: none;
+  }
+
+  .asset-drop[data-drag] .asset-drop-content svg {
+    color: var(--color-clay-text);
+  }
+
+  .asset-drop-title {
+    color: var(--color-fg);
+    font-size: 0.90625rem;
+    font-weight: 500;
+  }
+
+  .asset-drop-hint {
+    font-size: 0.78125rem;
+  }
+
+  .asset-upload-rows {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    list-style: none;
+    border-radius: var(--radius-panel);
+    box-shadow: 0 0 0 1px var(--color-hairline);
+  }
+
+  .asset-upload-row {
+    display: grid;
+    grid-template-columns: 2.5rem minmax(0, 1fr) auto;
+    gap: 0.75rem;
+    align-items: center;
+    padding: 0.625rem 0.75rem;
+    box-shadow: inset 0 -1px 0 var(--color-hairline);
+    animation: asset-row-in var(--spring-snappy-duration) var(--ease-spring-snappy) both;
+  }
+
+  .asset-upload-row:last-child {
+    box-shadow: none;
+  }
+
+  .asset-upload-row[data-state="failed"] {
+    background-color: var(--color-danger-soft);
+  }
+
+  .asset-upload-row[data-removing] {
+    opacity: 0;
+    transition: opacity 180ms var(--ease-out-expo);
+  }
+
+  @keyframes asset-row-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+  }
+
+  .asset-upload-thumb {
+    width: 2.5rem;
+    height: 2rem;
+    border-radius: 6px;
+    background-color: var(--color-ink-1);
+    background-image: repeating-linear-gradient(
+      135deg,
+      transparent 0 6px,
+      var(--color-ink-1) 6px 7px
+    );
+  }
+
+  .asset-upload-text {
+    min-width: 0;
+  }
+
+  .asset-upload-name {
+    display: block;
+    overflow: hidden;
+    font-size: 0.84375rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .asset-upload-size,
+  .asset-upload-error {
+    display: block;
+    overflow: hidden;
+    color: var(--color-fg-3);
+    font-family: var(--font-mono);
+    font-size: 0.71875rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .asset-upload-error {
+    color: var(--color-danger);
+    font-family: inherit;
+    font-size: 0.75rem;
+  }
+
+  /* 上传中：一条来回滑动的进度线（服务端不回报进度）。 */
+  .asset-upload-bar {
+    display: block;
+    height: 3px;
+    margin-top: 0.375rem;
+    overflow: hidden;
+    border-radius: 999px;
+    background-color: var(--color-ink-1);
+  }
+
+  .asset-upload-bar span {
+    display: block;
+    width: 40%;
+    height: 100%;
+    border-radius: inherit;
+    background-color: var(--color-clay);
+    animation: asset-upload-indeterminate 1.1s ease-in-out infinite;
+  }
+
+  @keyframes asset-upload-indeterminate {
+    from {
+      transform: translateX(-100%);
+    }
+
+    to {
+      transform: translateX(250%);
+    }
+  }
+
+  .asset-upload-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    color: var(--color-fg-3);
+    font-size: 0.78125rem;
+    white-space: nowrap;
+  }
+
+  .asset-upload-row[data-state="done"] .asset-upload-status {
+    color: var(--color-fg-2);
+  }
+
+  @media (max-width: 767px) {
+    .asset-modal-search {
+      width: 100%;
+    }
+
+    .asset-pick-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .asset-pick[data-checked] .asset-pick-order,
+    .asset-upload-row,
+    .asset-pick-progress {
+      animation: none;
+    }
+
+    .asset-upload-bar span {
+      width: 100%;
+      animation: none;
+      opacity: 0.6;
+    }
+  }
+}

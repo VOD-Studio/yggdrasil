@@ -47,6 +47,7 @@ pub const BTN_GHOST: &str = "btn btn-sm btn-ghost";
 pub const BTN_SECONDARY: &str = "btn btn-secondary";
 
 /// 主操作按钮：陶土底（用于 `Link`、无 loading 态的静态按钮）。
+#[allow(dead_code)] // 余下用处只在 WASM 门控代码里，随页面重写删除
 pub const BTN_PRIMARY: &str = "btn btn-primary";
 
 /// 小号主操作按钮：工具栏场景（刷新 / 导出 / 创建备份）。

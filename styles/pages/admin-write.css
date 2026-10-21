@@ -353,7 +353,8 @@ button.write-status:focus-visible {
   overflow-y: auto;
   background-color: var(--color-surface-1);
   box-shadow: inset 1px 0 0 var(--color-hairline);
-  animation: write-drawer-in 300ms var(--ease-out-expo) both;
+  /* backwards：动画结束后不保留 transform，抽屉里的弹窗（素材库）才能按视口定位。 */
+  animation: write-drawer-in 300ms var(--ease-out-expo) backwards;
 }
 
 @keyframes write-drawer-in {
