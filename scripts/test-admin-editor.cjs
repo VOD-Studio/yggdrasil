@@ -52,13 +52,10 @@ async function screenshot(page, name) {
 async function settle(page) {
   await page.waitForFunction(() => !document.documentElement.classList.contains('is-route-transitioning'));
 }
+// 编辑器挂载、文章回填完成，页头保存状态为「已保存」。
 async function editorReady(page) {
   await page.locator('#tiptap-editor .ProseMirror').waitFor({ timeout: 90000 });
-  await page.getByRole('button', { name: '更新文章', exact: true }).waitFor();
-  await page.waitForFunction(() => {
-    const button = [...document.querySelectorAll('button')].find(el => el.textContent.trim() === '更新文章');
-    return button && !button.disabled;
-  });
+  await page.locator('.write-status', { hasText: '已保存' }).waitFor();
   await settle(page);
 }
 async function spa(page, route) {
@@ -169,31 +166,32 @@ async function main() {
     const fixture = (await (await read).json()).post;
     assert(fixture, 'test article must exist');
     await editorReady(page);
-    assert.equal(await page.getByPlaceholder('输入文章标题...').inputValue(), fixture.title);
-    assert.equal(await page.getByPlaceholder('自定义 URL，留空自动生成...').inputValue(), fixture.slug);
-    assert.equal(await page.getByPlaceholder('选填，留空将自动从正文提取...').inputValue(), fixture.summary || '');
+    assert.equal(await page.locator('#write-title').inputValue(), fixture.title);
+    assert.equal(await page.locator('#write-slug').inputValue(), fixture.slug);
+    assert.equal(await page.locator('#write-summary').inputValue(), fixture.summary || '');
     const markdown = await page.evaluate(() => window.TiptapEditor._instances.get('tiptap-editor').getMarkdown());
     assert.equal(markdown.trim(), fixture.content_md.trim(), 'loaded Markdown must reach the editor');
     assert.deepEqual(await editorCounts(page), { creates: 1, destroys: 0, active: 1 });
     await page.evaluate(() => { window.__originalEditor = window.TiptapEditor._instances.get('tiptap-editor'); });
     pass('edit route backfills real article metadata and Markdown once');
     await page.waitForFunction(() => {
-      const img = document.querySelector('.cover-preview img');
+      const img = document.querySelector('.write-cover img');
       return img?.complete && img.naturalWidth > 0;
     });
     await screenshot(page, 'light-editor-backfill');
 
     stage = 'editor-input';
-    await page.getByPlaceholder('输入文章标题...').fill(TITLE);
-    await page.getByPlaceholder('选填，留空将自动从正文提取...').fill('后台浏览器回归摘要');
-    await page.getByPlaceholder('输入标签，逗号或分号分隔...').fill('Rust，测试；表单');
-    await page.locator('.cover-preview').hover();
-    await page.locator('.cover-preview').getByRole('button', { name: '移除', exact: true }).click();
-    await page.getByText('输入链接', { exact: true }).click();
-    await page.getByPlaceholder('粘贴图片链接...').fill('/images/samples/paper-clay.webp');
+    const actions = page.locator('.write-cover-actions');
+    await page.locator('#write-title').fill(TITLE);
+    await page.locator('#write-summary').fill('后台浏览器回归摘要');
+    await page.locator('#write-tag-input').fill('Rust，测试；表单');
+    await page.locator('#write-tag-input').press('Enter');
+    await actions.getByRole('button', { name: '移除', exact: true }).click();
+    await actions.getByRole('button', { name: '输入链接', exact: true }).click();
+    await page.getByLabel('封面图片链接').fill('/images/samples/paper-clay.webp');
     await page.getByRole('button', { name: '确认', exact: true }).click();
     await page.waitForFunction(() => {
-      const img = document.querySelector('.cover-preview img');
+      const img = document.querySelector('.write-cover img');
       return img?.complete && img.naturalWidth > 0;
     });
     await page.locator('#tiptap-editor .ProseMirror').fill(BODY);
@@ -201,39 +199,42 @@ async function main() {
     assert(await page.evaluate(() => window.__originalEditor === window.TiptapEditor._instances.get('tiptap-editor')),
       'metadata/cover/body input must retain the existing editor handle');
     assert.deepEqual(await editorCounts(page), { creates: 1, destroys: 0, active: 1 });
-    assert.equal(await page.locator('.cover-preview .animate-pulse').count(), 0,
+    assert.equal(await page.locator('.write-cover-loading').count(), 0,
       'body changes must not restart the loaded cover preview');
+    await page.locator('.write-status', { hasText: '有未保存的修改' }).waitFor();
     pass('metadata, cover and body input retain editor and loaded cover');
 
     stage = 'cover-picker';
-    await page.locator('.cover-preview').hover();
-    await page.locator('.cover-preview').getByRole('button', { name: '素材库', exact: true }).click();
+    await actions.getByRole('button', { name: '素材库', exact: true }).click();
     const picker = page.getByRole('dialog', { name: '选择封面图' });
     await picker.waitFor();
     await picker.locator(`button:has(img[src^="${fixture.cover_image}"])`).click();
     await picker.waitFor({ state: 'hidden' });
-    assert.equal(await page.locator('.cover-preview img').getAttribute('data-src'), fixture.cover_image);
+    assert.equal(await page.locator('.write-cover img').getAttribute('data-src'), fixture.cover_image);
     assert.equal((await editorCounts(page)).creates, 1);
     pass('cover asset picker loads real assets and updates the form');
 
     stage = 'save-failure';
     saveFailures = 1;
     const attemptsBefore = saveAttempts;
-    await page.getByRole('button', { name: '更新文章', exact: true }).evaluate(button => {
+    await page.getByRole('button', { name: '存草稿', exact: true }).evaluate(button => {
       button.click(); button.click(); button.click();
     });
-    await page.getByText(/更新失败:/).waitFor();
+    await page.locator('.write-status[data-tone="danger"]').waitFor();
     assert.equal(saveAttempts - attemptsBefore, 1, 'rapid duplicate clicks must start one request');
-    assert.equal(await page.getByPlaceholder('输入文章标题...').inputValue(), TITLE);
+    assert.equal(await page.locator('#write-title').inputValue(), TITLE);
     assert(await page.evaluate(body => window.TiptapEditor._instances.get('tiptap-editor').getMarkdown().includes(body), BODY));
     await screenshot(page, 'light-save-failure');
     pass('failed save retains editable data and duplicate clicks issue one request');
 
     stage = 'save-success';
     const save = page.waitForResponse(response => isApi(response, 'updatepost'));
-    await page.getByRole('button', { name: '更新文章', exact: true }).click();
+    // 失败状态可点重试，按失败时的状态再保存一次。
+    await page.locator('button.write-status').click();
     assert.equal((await (await save).json()).success, true, 'retry must save to the disposable database');
-    await page.waitForURL(`${BASE}/admin/posts`);
+    await page.locator('.write-status', { hasText: '已保存' }).waitFor();
+    assert.equal(new URL(page.url()).pathname, EDIT_PATH, 'saving keeps the editor open');
+    await spa(page, '/admin/posts');
     await page.waitForFunction(() => window.TiptapEditor._instances.size === 0);
     assert.deepEqual(await editorCounts(page), { creates: 1, destroys: 1, active: 0 });
     const reread = page.waitForResponse(response => isApi(response, 'getpostbyid'));
@@ -246,7 +247,7 @@ async function main() {
     assert.equal(persisted.summary, '后台浏览器回归摘要');
     assert.equal(persisted.cover_image, fixture.cover_image);
     assert.deepEqual(await editorCounts(page), { creates: 2, destroys: 1, active: 1 });
-    await page.getByRole('link', { name: '文章列表', exact: true }).click();
+    await page.getByRole('link', { name: '返回文章列表', exact: true }).click();
     await page.waitForURL(`${BASE}/admin/posts`);
     await page.waitForFunction(() => window.TiptapEditor._instances.size === 0);
     assert.deepEqual(await editorCounts(page), { creates: 2, destroys: 2, active: 0 });
@@ -255,12 +256,12 @@ async function main() {
     stage = 'load-failure-retry';
     loadFailures = 1;
     await spa(page, EDIT_PATH);
-    await page.getByText(/加载失败:/).waitFor();
+    await page.getByRole('heading', { name: '文章加载失败', exact: true }).waitFor();
     assert.equal(await page.locator('#tiptap-editor .ProseMirror').count(), 0);
     await screenshot(page, 'light-load-failure');
-    await page.getByRole('button', { name: '重试', exact: true }).click();
+    await page.getByRole('button', { name: '重新加载', exact: true }).click();
     await editorReady(page);
-    assert.equal(await page.getByPlaceholder('输入文章标题...').inputValue(), TITLE);
+    assert.equal(await page.locator('#write-title').inputValue(), TITLE);
     pass('failed load presents retry and then initializes the real article');
 
     stage = 'mcp-copy';
@@ -324,27 +325,28 @@ async function main() {
       const { context, page } = await createContext(browser, variant);
       await page.goto(`${BASE}${EDIT_PATH}`, { waitUntil: 'domcontentloaded', timeout: 90000 });
       await editorReady(page);
-      assert.equal(await page.getByPlaceholder('输入文章标题...').inputValue(), TITLE);
+      assert.equal(await page.locator('#write-title').inputValue(), TITLE);
       report.layout.push(await page.evaluate(name => ({ name, width: innerWidth,
         documentWidth: document.documentElement.scrollWidth,
         editorWidth: document.querySelector('#tiptap-editor').getBoundingClientRect().width,
         dark: document.documentElement.classList.contains('dark') }), variant.name));
       assert.equal(report.layout.at(-1).dark, variant.scheme === 'dark', 'theme must match the browser preference');
+      assert(report.layout.at(-1).documentWidth <= report.layout.at(-1).width, 'no horizontal page scroll');
       await screenshot(page, `${variant.name}-editor`);
+      const drawer = page.locator('[data-vt-scroll="admin-write-settings"]');
       if (variant.name === 'mobile') {
         assert(report.layout.at(-1).editorWidth >= 180, 'narrow screens must start with a usable editor');
-        assert.equal(await page.locator('[data-vt-scroll="admin-write-settings"]').count(), 0);
-        await page.getByRole('button', { name: '文章设置', exact: true }).click();
-        await page.locator('[data-vt-scroll="admin-write-settings"]').waitFor();
-        await page.getByPlaceholder('选填，留空将自动从正文提取...').fill('侧栏状态检查');
+        assert.equal(await drawer.count(), 0, 'narrow screens start with the drawer closed');
+        await page.getByRole('button', { name: '属性', exact: true }).click();
+        await drawer.waitFor();
+        await page.locator('#write-summary').fill('侧栏状态检查');
         await page.waitForTimeout(100);
-        assert.equal(await page.locator('[data-vt-scroll="admin-write-settings"]').count(), 1,
-          'form changes must retain the user-selected sidebar state');
-        await page.getByPlaceholder('选填，留空将自动从正文提取...').fill('后台浏览器回归摘要');
+        assert.equal(await drawer.count(), 1, 'form changes must retain the user-selected drawer state');
+        await page.locator('#write-summary').fill('后台浏览器回归摘要');
         await screenshot(page, 'mobile-settings');
       }
-      await page.getByRole('button', { name: '收起设置', exact: true }).click();
-      await page.locator('[data-vt-scroll="admin-write-settings"]').waitFor({ state: 'hidden' });
+      await page.getByRole('button', { name: '收起属性', exact: true }).click();
+      await drawer.waitFor({ state: 'hidden' });
       await screenshot(page, `${variant.name}-focused-editor`);
       assert(await page.locator('#tiptap-editor').evaluate(el => el.getBoundingClientRect().width >= 180),
         'focused editor must retain usable width');

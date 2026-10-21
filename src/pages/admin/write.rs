@@ -169,7 +169,9 @@ fn WriteEditor(
 
     let submit = move |status: &'static str| save::submit(state, toast, status);
     let retry = move |_| {
-        if let SaveState::Failed { status, .. } = state.save.peek().clone() {
+        // 先取出再匹配：if-let 条件里的 peek() 借用会活到整个分支，submit 写入时冲突。
+        let current = state.save.peek().clone();
+        if let SaveState::Failed { status, .. } = current {
             save::submit(state, toast, status);
         }
     };
@@ -249,6 +251,8 @@ fn WriteEditor(
                         r#type: "button",
                         aria_pressed: "{drawer_open()}",
                         aria_controls: "write-drawer",
+                        // 窄屏只剩图标，名称由 aria-label 补出。
+                        aria_label: "属性",
                         onclick: move |_| drawer_open.toggle(),
                         Icon { name: IconName::PanelRight, size: 15 }
                         span { class: "write-hide-narrow", "属性" }
