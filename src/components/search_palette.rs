@@ -12,10 +12,11 @@ use crate::components::ui::{Icon, IconName};
 use crate::router::Route;
 use crate::theme::{choose_theme, use_resolved_theme, use_theme, ResolvedTheme, Theme};
 
-/// 打开搜索面板的句柄，由 `FrontendLayout` 提供。
+/// 打开 ⌘K 面板的句柄。前台布局挂搜索面板，后台布局挂命令面板（`admin_palette`），
+/// 两边的触发按钮与快捷键共用这个句柄。
 #[derive(Clone, Copy, PartialEq)]
 pub struct SearchPaletteHandle {
-    open: Signal<bool>,
+    pub(crate) open: Signal<bool>,
 }
 
 impl SearchPaletteHandle {
@@ -25,7 +26,7 @@ impl SearchPaletteHandle {
     }
 }
 
-/// 在前台布局中提供面板句柄。
+/// 在布局中提供面板句柄。
 pub fn use_search_palette_provider() -> SearchPaletteHandle {
     let open = use_signal(|| false);
     use_context_provider(|| SearchPaletteHandle { open })
@@ -338,6 +339,26 @@ fn write_recents(recents: &[String]) {
     }
 }
 
+/// 视口中心：从面板切换外观时，圆形扩散以此为圆心。
+pub(crate) fn viewport_center() -> (f64, f64) {
+    #[cfg(target_arch = "wasm32")]
+    {
+        web_sys::window()
+            .map(|w| {
+                let width = w.inner_width().ok().and_then(|v| v.as_f64()).unwrap_or(0.0);
+                let height = w
+                    .inner_height()
+                    .ok()
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0);
+                (width / 2.0, height / 2.0)
+            })
+            .unwrap_or((0.0, 0.0))
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    (0.0, 0.0)
+}
+
 /// 按 id 聚焦元素（仅 wasm）。
 #[cfg(target_arch = "wasm32")]
 pub(crate) fn focus_by_id(element_id: &str) {
@@ -353,7 +374,7 @@ pub(crate) fn focus_by_id(element_id: &str) {
 
 /// 全局 ⌘K / Ctrl+K：焦点在可编辑区域时不拦截。
 #[cfg(target_arch = "wasm32")]
-fn use_palette_shortcut(handle: SearchPaletteHandle, enabled: bool) {
+pub(crate) fn use_palette_shortcut(handle: SearchPaletteHandle, enabled: bool) {
     use std::cell::RefCell;
     use std::rc::Rc;
     use wasm_bindgen::JsCast;
@@ -561,21 +582,7 @@ pub fn SearchPalette(#[props(default = true)] shortcut: bool) -> Element {
             }
             Item::Theme { to, .. } => {
                 close();
-                #[cfg(target_arch = "wasm32")]
-                let origin = web_sys::window()
-                    .map(|w| {
-                        let width = w.inner_width().ok().and_then(|v| v.as_f64()).unwrap_or(0.0);
-                        let height = w
-                            .inner_height()
-                            .ok()
-                            .and_then(|v| v.as_f64())
-                            .unwrap_or(0.0);
-                        (width / 2.0, height / 2.0)
-                    })
-                    .unwrap_or((0.0, 0.0));
-                #[cfg(not(target_arch = "wasm32"))]
-                let origin = (0.0, 0.0);
-                choose_theme(theme, to, origin);
+                choose_theme(theme, to, viewport_center());
             }
             Item::Post(post) => {
                 let next = remember(&recents.peek().clone().unwrap_or_default(), &current);

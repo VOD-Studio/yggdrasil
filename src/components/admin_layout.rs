@@ -10,6 +10,8 @@ use dioxus::router::components::Link;
 
 use crate::api::admin_stats::AdminNavCounts;
 use crate::api::auth::{get_current_user, logout};
+use crate::components::admin_palette::AdminPalette;
+use crate::components::search_palette::{use_search_palette, use_search_palette_provider};
 use crate::components::skeletons::admin_comments_skeleton::AdminCommentsSkeleton;
 use crate::components::skeletons::assets_skeleton::AssetsSkeleton;
 use crate::components::skeletons::dashboard_skeleton::AdminDashboardSkeleton;
@@ -405,7 +407,7 @@ pub fn AdminLayout() -> Element {
         || matches!(route, Route::SiteSettingsPage {})
         || matches!(route, Route::Logs {});
     let side_user = (ctx.user)();
-    let on_logout = move |_| {
+    let on_logout = use_callback(move |()| {
         spawn(async move {
             if logout().await.is_ok_and(|response| response.success) {
                 crate::bridges::navigation::clear_admin_state();
@@ -414,7 +416,8 @@ pub fn AdminLayout() -> Element {
             ctx.checked.set(false);
             let _ = navigator.push(Route::Login {});
         });
-    };
+    });
+    use_search_palette_provider();
     let user_name = side_user
         .as_ref()
         .map(|user| user.display_label().to_string());
@@ -426,7 +429,7 @@ pub fn AdminLayout() -> Element {
                 user_name: user_name.clone(),
                 avatar_url: avatar_url.clone(),
                 counts: counts(),
-                on_logout,
+                on_logout: move |_| on_logout.call(()),
                 drawer,
             }
         }
@@ -459,6 +462,9 @@ pub fn AdminLayout() -> Element {
             content,
             internal_scroll: internal_scroll_route,
             checking: !authenticated,
+        }
+        if authenticated {
+            AdminPalette { on_logout: move |_| on_logout.call(()) }
         }
     }
 }
@@ -538,6 +544,8 @@ pub(crate) fn AdminShell(
         "admin-nav-drawer"
     };
     let menu_trigger = format!("{menu_id}-trigger");
+    // 图鉴里的外壳在前台布局中，那里的面板句柄属于前台搜索，不接。
+    let palette = use_search_palette().filter(|_| on_demo_navigate.is_none());
 
     rsx! {
         div {
@@ -647,6 +655,16 @@ pub(crate) fn AdminShell(
                         }
                         span { class: "admin-topbar-title", "{title}" }
                         div { class: "admin-topbar-actions",
+                            if let Some(palette) = palette {
+                                button {
+                                    class: "touch-icon",
+                                    r#type: "button",
+                                    aria_label: "搜索或执行命令",
+                                    aria_haspopup: "dialog",
+                                    onclick: move |_| palette.open(),
+                                    Icon { name: IconName::Search, size: 19 }
+                                }
+                            }
                             if on_demo_navigate.is_none() {
                                 // admin→前台跨 layout，保留整页加载以避开 Dioxus 0.7.10 的卸载问题。
                                 a { class: "btn btn-sm btn-ghost admin-topbar-site", href: "/",
@@ -718,6 +736,7 @@ pub(crate) fn AdminSidebar(
         }
     };
     let preview = on_demo_navigate.is_some();
+    let palette = use_search_palette().filter(|_| !preview);
     // 图标栏里按钮贴左缘，提示朝右展开以免被裁。
     let toggle_align = if collapsed { "start" } else { "end" };
 
@@ -760,6 +779,21 @@ pub(crate) fn AdminSidebar(
                         tooltip_placement: "bottom",
                         onclick: move |_| control.toggle.call(()),
                     }
+                }
+            }
+            if let Some(palette) = palette {
+                button {
+                    class: "admin-search",
+                    r#type: "button",
+                    aria_haspopup: "dialog",
+                    "data-tip": "搜索或执行命令 ⌘K",
+                    onclick: move |_| {
+                        after_pick();
+                        palette.open();
+                    },
+                    Icon { name: IconName::Search, size: 15 }
+                    span { class: "admin-search-text", "搜索或执行命令" }
+                    kbd { class: "admin-search-kbd", "⌘K" }
                 }
             }
             nav { class: "admin-nav", aria_label: "后台栏目",

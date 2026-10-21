@@ -32,6 +32,8 @@ pub mod skeletons;
 
 /// 后台布局组件（侧栏 + 内容区 + admin 路由骨架屏切换）。
 pub mod admin_layout;
+/// 后台命令面板（⌘K）。
+pub mod admin_palette;
 /// 页脚与回到顶部按钮组件。
 pub mod footer;
 /// 前台布局组件（header + footer + 路由骨架屏切换）。
