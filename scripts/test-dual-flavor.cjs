@@ -12,9 +12,16 @@
  *   1. 按路径固定选 flavor（plan §6.5）：reader/full/404 各路径的 HTML 引用
  *      正确客户端闭包，绝不串味（匿名页面不加载 full wasm）。
  *   2. HTML 缓存命中不改变 flavor（plan §6.7）：二次 GET 命中 x-ssr-cache，
- *      ETag/304 往返。
+ *      ETag/304 往返；带 hash 资源 immutable、可变 URL（模板/清单）不受一年
+ *      immutable 影响。
  *   3. 浏览器：reader 页 hydration、SPA 导航、跨入口整页导航进入图鉴（full），
- *      同一文档不并发启动两个 wasm 应用（plan §6.6）。
+ *      同一文档不并发启动两个 wasm 应用（plan §6.6）；输出「首次阅读 → 进入
+ *      后台」累计下载量报告（plan §6.8）。
+ *   4. 旧发布资源保留窗口（plan §6.7）：YGG_PREVIOUS_PUBLIC_DIR 指向上一发布
+ *      目录时，当前发布缺失的带 hash 资源按 404 回退（.br 协商、immutable），
+ *      不遮蔽当前发布真实缺失，也不遮蔽当前发布已有资源。
+ *   5. 完整应用回退模式（plan §6.7）：移除 reader 产物后服务端整体回退 full
+ *      模板，所有路径（含独立笔记入口）hydration 正常，后台守卫不变。
  *
  * 用法：bun scripts/test-dual-flavor.cjs
  *   RELEASE_BUILD=<dir>  指定发布布局（默认 target/dx/yggdrasil/release/web）
@@ -109,14 +116,25 @@ async function main() {
     IP: '127.0.0.1', PORT: String(appPort), APP_BASE_URL: base, COOKIE_SECURE: 'false',
     SSR_CACHE_SECS: '60', DIOXUS_ASSET_DIR: publicDir, MCP_TOKEN_ENC_KEY: '42'.repeat(32),
     ADMIN_USERNAME: '', ADMIN_PASSWORD: '', ADMIN_EMAIL: '' };
-  server = Bun.spawn([path.join(BUILD, 'server')], { cwd: runtime, env,
-    stdout: Bun.file(path.join(artifacts, 'server.log')), stderr: Bun.file(path.join(artifacts, 'server-error.log')) });
-  await waitFor(async () => {
-    if (server.exitCode !== null) {
-      throw new Error(`服务端启动即退出（缺失产物会明确失败，见 ${artifacts}/server-error.log）`);
-    }
-    return fetch(`${base}/readyz`).then((r) => r.ok).catch(() => false);
-  }, 'release site');
+  // 服务端（重）启动：kill 旧进程 → 以叠加 env 拉起 → readyz 就绪。
+  const startServer = async (label, extraEnv = {}) => {
+    if (server) { server.kill(); await server.exited; }
+    server = Bun.spawn([path.join(BUILD, 'server')], { cwd: runtime,
+      env: { ...env, ...extraEnv },
+      stdout: Bun.file(path.join(artifacts, `server-${label}.log`)),
+      stderr: Bun.file(path.join(artifacts, `server-${label}-error.log`)) });
+    await waitFor(async () => {
+      if (server.exitCode !== null) {
+        throw new Error(`服务端启动即退出（${label}；缺失产物会明确失败，见 ${artifacts}/server-${label}-error.log）`);
+      }
+      return fetch(`${base}/readyz`).then((r) => r.ok).catch(() => false);
+    }, `release site (${label})`);
+  };
+  const fetchBody = async (p, headers) => {
+    const res = await fetch(base + p, { headers });
+    return { res, body: await res.text() };
+  };
+  await startServer('boot');
   console.log(`发布布局已启动：${base}（flavor 模板：${Object.entries(manifest.flavors).map(([f, i]) => `${f}=${i.template}`).join(', ')}）`);
 
   const seed = path.join(runtime, 'fixture.sql');
@@ -174,6 +192,17 @@ async function main() {
       && [...bootstrapSet(body1)].every((r) => bootstrapSet(body2).has(r)));
     const notModified = await fetch(base + '/', { headers: { 'if-none-match': etag } });
     check('ETag/304 往返', notModified.status === 304, `status=${notModified.status}`);
+
+    // 缓存头边界（plan §6.7）：带 hash 的 JS/WASM immutable；可变 URL（模板、
+    // 发布清单）不得使用一年 immutable。
+    const assetCacheControl = (await fetch(base + readerWasmUrls[0])).headers.get('cache-control') || '';
+    check('带 hash 资源 immutable 或长 max-age',
+      /immutable/i.test(assetCacheControl) || /max-age=31536000/.test(assetCacheControl),
+      assetCacheControl);
+    for (const mutable of ['/', '/release-manifest.json']) {
+      const cc = (await fetch(base + mutable)).headers.get('cache-control') || '';
+      check(`可变 URL 不受一年 immutable 影响：${mutable}`, !/immutable/i.test(cc), cc);
+    }
   }
 
   // ── 3. 浏览器：hydration / SPA / 跨入口文档导航 ───────────────
@@ -191,6 +220,17 @@ async function main() {
   pageErrorsByLoad.push({ path: '/', errors: pageErrors.splice(0) });
   await page.waitForFunction(() => Boolean(window.__dx_mainWasm), {}, { timeout: 60000 });
   check('首页 hydration 完成（reader wasm 初始化）', true);
+  // 「首次阅读 → 进入后台」累计下载（plan §6.8）：必须在首次冷加载的首页文档上
+  // 采样——后续 goto 会换成新文档且 wasm 命中 HTTP 缓存（transferSize=0），
+  // 就不再是首次阅读的真实传输量。preload 与实例请求由浏览器去重计一次。
+  const downloadOf = () => page.evaluate(() => {
+    const rows = [...performance.getEntriesByType('navigation'), ...performance.getEntriesByType('resource')];
+    return {
+      bytes: rows.reduce((n, e) => n + (e.transferSize || 0), 0),
+      entries: rows.map((e) => ({ name: e.name, type: e.entryType, transferSize: e.transferSize, encodedBodySize: e.encodedBodySize })),
+    };
+  });
+  const readerDownload = await downloadOf();
   const readerWasmFetched = wasmRequests.slice();
   check('首页仅请求一次 reader wasm（preload 复用，绝不加载 full wasm）',
     readerWasmFetched.length === 1
@@ -224,10 +264,22 @@ async function main() {
   const showcaseText = await page.textContent('body');
   check('图鉴页内容渲染', /组件图鉴|COMPONENT/i.test(showcaseText || ''));
 
+  const fullDownload = await downloadOf();
+  const kib = (n) => `${(n / 1024).toFixed(1)} KiB`;
+  notes.push(`首次阅读（reader 文档）传输 ${kib(readerDownload.bytes)}；图鉴（full 文档）传输 ${kib(fullDownload.bytes)}；首次阅读→进入后台累计 ${kib(readerDownload.bytes + fullDownload.bytes)}`);
+  fs.writeFileSync(path.join(artifacts, 'first-read-then-admin-download.json'), JSON.stringify({
+    collected_at: new Date().toISOString(),
+    base,
+    reader_bytes: readerDownload.bytes,
+    showcase_full_bytes: fullDownload.bytes,
+    cumulative_bytes: readerDownload.bytes + fullDownload.bytes,
+    reader_entries: readerDownload.entries,
+    showcase_full_entries: fullDownload.entries,
+  }, null, 2) + '\n');
+
   check('无页面 JS 错误', pageErrors.length === 0 && pageErrorsByLoad.every((l) => l.errors.length === 0),
     [...pageErrors, ...pageErrorsByLoad.flatMap((l) => l.errors.map((e) => `[${l.path}] ${e}`))].slice(0, 3).join(' | '));
   notes.push(`wasm 请求序列：\n    ${wasmRequests.join('\n    ')}`);
-  await browser.close();
 
   // P5 测量复用本次隔离数据库与真实 release 服务，不另起开发构建。
   if (process.env.WASM_PRELOAD_AB === '1') {
@@ -236,6 +288,95 @@ async function main() {
         REGRESSION_ARTIFACT_DIR: path.join(artifacts, 'wasm-preload') },
     });
   }
+
+  // ── 4. 旧发布资源保留窗口（plan §6.7 滚动发布） ───────────────
+  console.log('\n[4] 旧发布资源保留窗口（YGG_PREVIOUS_PUBLIC_DIR）');
+  {
+    const previousPublic = path.join(runtime, 'previous-public');
+    fs.rmSync(previousPublic, { recursive: true, force: true });
+    fs.cpSync(publicDir, previousPublic, { recursive: true });
+    // 先以窗口模式启动（模板闭包校验在启动期完成），再模拟「新发布不再收录
+    // 旧 reader wasm」——对应已打开标签页仍持有旧 HTML 引用的场景。
+    await startServer('prev-window', { YGG_PREVIOUS_PUBLIC_DIR: previousPublic });
+    const oldWasm = readerWasmUrls[0];
+    const oldRel = oldWasm.replace(/^\//, '');
+    fs.rmSync(path.join(publicDir, oldRel));
+    fs.rmSync(path.join(publicDir, oldRel + '.br'), { force: true });
+
+    const res = await fetch(base + oldWasm);
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    const original = new Uint8Array(fs.readFileSync(path.join(previousPublic, oldRel)));
+    check('新发布缺失的旧 hash 资源 → 窗口回退 200（字节与上一发布一致）',
+      res.status === 200 && bytes.length === original.length && bytes.every((b, i) => b === original[i]),
+      `status=${res.status} bytes=${bytes.length}/${original.length}`);
+    check('回退响应带 x-previous-release 标记与 immutable',
+      res.headers.get('x-previous-release') === '1' && /immutable/i.test(res.headers.get('cache-control') || ''),
+      `x-previous-release=${res.headers.get('x-previous-release')} cc=${res.headers.get('cache-control')}`);
+    check('回退响应 MIME 正确（application/wasm）',
+      (res.headers.get('content-type') || '').includes('application/wasm'), String(res.headers.get('content-type')));
+
+    // .br 协商：客户端解压后与原文件一致，或显式回传 br 编码字节（MIME 不变）。
+    const brRes = await fetch(base + oldWasm, { headers: { 'accept-encoding': 'br' } });
+    const brBytes = new Uint8Array(await brRes.arrayBuffer());
+    const brRaw = new Uint8Array(fs.readFileSync(path.join(previousPublic, oldRel + '.br')));
+    const identity = brBytes.length === original.length && brBytes.every((b, i) => b === original[i]);
+    const encoded = brRes.headers.get('content-encoding') === 'br'
+      && brBytes.length === brRaw.length && brBytes.every((b, i) => b === brRaw[i]);
+    check('回退 .br 协商（解压后字节一致或显式 br 编码）', brRes.status === 200 && (identity || encoded),
+      `status=${brRes.status} ce=${brRes.headers.get('content-encoding')} bytes=${brBytes.length}`);
+
+    const fullRes = await fetch(base + fullWasmUrls[0]);
+    check('当前发布已有资源不经过窗口（无 x-previous-release 标记）',
+      fullRes.status === 200 && !fullRes.headers.get('x-previous-release'), `status=${fullRes.status}`);
+    const missing = await fetch(base + `/assets/truly-missing-${Date.now()}.js`);
+    check('两代发布都缺失时保留 404', missing.status === 404, `status=${missing.status}`);
+
+    // 还原 reader wasm（回退模式阶段仍需双产物布局）。
+    fs.copyFileSync(path.join(previousPublic, oldRel), path.join(publicDir, oldRel));
+    fs.copyFileSync(path.join(previousPublic, oldRel + '.br'), path.join(publicDir, oldRel + '.br'));
+  }
+
+  // ── 5. 完整应用回退模式（plan §6.7） ─────────────────────────
+  console.log('\n[5] 完整应用回退模式');
+  {
+    const flavorsDir = path.join(publicDir, 'flavors');
+    const hidden = path.join(runtime, 'flavors.hidden');
+    fs.renameSync(flavorsDir, hidden);
+    await startServer('full-fallback');
+    const log = fs.readFileSync(path.join(artifacts, 'server-full-fallback.log'), 'utf8');
+    check('启动日志声明完整应用模式', log.includes('完整应用模式'));
+    for (const p of ['/', '/post/dual-flavor-post', '/about/components', '/notes', '/search']) {
+      const { res, body } = await fetchBody(p);
+      const refs = bootstrapSet(body);
+      const readerOnly = [...refs].filter((r) => flavorRefs.reader.has(r) && !flavorRefs.full.has(r));
+      let preloadOk = true;
+      let preloadDetail = '';
+      try { verifyWasmPreload(body, fullWasmUrls[0]); } catch (error) { preloadOk = false; preloadDetail = error.message; }
+      check(`${p} → full 模板且 preload full wasm（${res.status}）`,
+        res.ok && refs.has(entryOf('full')) && readerOnly.length === 0 && preloadOk,
+        `status=${res.status} readerOnly=${readerOnly.join(', ')} preload=${preloadDetail}`);
+    }
+    {
+      const res = await fetch(base + '/admin', { redirect: 'manual' });
+      check('/admin 匿名 302 → /login（回退模式守卫不变）',
+        res.status === 302 && new URL(res.headers.get('location'), base).pathname === '/login',
+        `status=${res.status}`);
+    }
+    const fallbackPage = await browser.newPage();
+    const fallbackWasm = [];
+    fallbackPage.on('request', (req) => { if (req.url().endsWith('.wasm')) fallbackWasm.push(req.url()); });
+    const fallbackErrors = [];
+    fallbackPage.on('pageerror', (err) => fallbackErrors.push(err.stack || String(err)));
+    await fallbackPage.goto(base + '/', { waitUntil: 'domcontentloaded' });
+    await fallbackPage.waitForFunction(() => Boolean(window.__dx_mainWasm), {}, { timeout: 60000 });
+    check('回退模式首页 hydration（加载 full wasm）',
+      fallbackWasm.length >= 1 && fallbackWasm.every((u) => fullWasmUrls.includes(new URL(u).pathname)),
+      fallbackWasm.join(', '));
+    check('回退模式无页面 JS 错误', fallbackErrors.length === 0, fallbackErrors.slice(0, 3).join(' | '));
+    await fallbackPage.close();
+    fs.renameSync(hidden, flavorsDir);
+  }
+  await browser.close();
 
   console.log(`\n${notes.join('\n')}`);
   if (failures) {
