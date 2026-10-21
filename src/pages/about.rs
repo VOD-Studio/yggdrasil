@@ -125,9 +125,11 @@ pub fn About() -> Element {
                 span { class: "about-writing-action", "打开写作指南" span { aria_hidden: "true", "↗" } }
             }
 
-            // 图鉴是 full 客户端专属路由（plan §6.1/§6.6）：full 内 SPA 导航；
-            // reader 构建没有该变体，渲染普通 <a>，点击走真正的文档导航。
-            // RSX 子元素不支持 #[cfg]，两种实现收敛到同名组件（见文件末尾）。
+            // 图鉴是 full 客户端专属路由（plan §6.1/§6.6）：统一渲染普通 <a>，
+            // 点击走真正的文档导航。必须用 <a> 而非 Link：服务端为该路径选择
+            // reader 模板时，SSR 树与 reader 客户端必须逐节点一致——Link 会
+            // 在 SSR HTML 里留下 data-node-hydration 监听器标记，reader 客户端
+            // 的无监听器模板与之失配，hydration 直接崩溃（实测 2026-10-21）。
             ShowcaseEntry {}
 
             footer { class: "about-colophon about-enter", style: "--about-delay: 380ms",
@@ -139,37 +141,10 @@ pub fn About() -> Element {
     }
 }
 
-/// 「打开组件图鉴」入口卡片。图鉴路由仅存在于 full 客户端：
-/// - full：`Link` SPA 导航；
-/// - reader：普通 `<a href>`，点击整页加载 full 客户端模板（服务端按路径
-///   为 /about/components 选择 full 模板），不经 reader 的 Router。
-#[cfg(not(ygg_client_reader))]
-#[component]
-fn ShowcaseEntry() -> Element {
-    rsx! {
-        Link { class: "showcase-entry about-enter", to: Route::ComponentShowcase {},
-            style: "--about-delay: 340ms",
-            div { class: "showcase-entry-copy",
-                span { class: "about-index", "04 / CRAFT & DETAILS" }
-                h2 { "界面的枝叶。" }
-                p { "从一枚按钮，到一次温柔的回应。" br {} "看看组成这棵树的那些小细节。" }
-                span { class: "showcase-entry-action", "打开组件图鉴" span { aria_hidden: "true", "→" } }
-            }
-            div { class: "showcase-entry-art", aria_hidden: "true",
-                div { class: "showcase-entry-specimen",
-                    span { "YGGDRASIL / UI" }
-                    strong { "每个细节，都有回应。" }
-                    div { "让想法生根" i { class: "showcase-entry-switch" } }
-                }
-                span { class: "showcase-entry-mark", "✓ 已收藏" }
-                span { class: "showcase-entry-code", "COMPONENT ATLAS · LIVE PREVIEW" }
-            }
-        }
-    }
-}
-
-/// [`ShowcaseEntry`] 的 reader 实现：普通 `<a>` 文档导航（plan §6.6）。
-#[cfg(ygg_client_reader)]
+/// 「打开组件图鉴」入口卡片。图鉴路由仅存在于 full 客户端，两个 flavor 都
+/// 渲染普通 `<a href>`（plan §6.6 跨产物整页导航；同 admin 侧栏 External
+/// 的既有约定）。整页导航会让服务端按路径为 /about/components 选择 full
+/// 模板，由 full 客户端接管渲染。
 #[component]
 fn ShowcaseEntry() -> Element {
     rsx! {

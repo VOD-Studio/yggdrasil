@@ -189,20 +189,12 @@ fn CopyButton(text: String, label: &'static str, #[props(default)] primary: bool
     }
 }
 
-/// 「管理 MCP 令牌 ↗」入口。后台 MCP 页是 full 客户端专属路由（plan §6.6）：
-/// - full：`Link` SPA 导航；
-/// - reader：普通 `<a href>`，点击整页加载 full 客户端模板（服务端按路径
-///   为 /admin/mcp 选择 full 模板；未登录由 admin_guard 302 到 /login）。
-#[cfg(not(ygg_client_reader))]
-#[component]
-fn McpTokenLink() -> Element {
-    rsx! {
-        Link { to: Route::Mcp {}, class: "writing-text-link", "管理 MCP 令牌 ↗" }
-    }
-}
-
-/// [`McpTokenLink`] 的 reader 实现：普通 `<a>` 文档导航。
-#[cfg(ygg_client_reader)]
+/// 「管理 MCP 令牌 ↗」入口。后台 MCP 页是 full 客户端专属路由：统一渲染
+/// 普通 `<a href>`（plan §6.6 跨产物整页导航）。不能用 Link：服务端为
+/// /about/writing 选择 reader 模板时，Link 在 SSR HTML 里留下的
+/// data-node-hydration 监听器标记与 reader 客户端的无监听器模板失配，
+/// hydration 会崩溃（同 about.rs ShowcaseEntry 的实测教训）。未登录点击
+/// 由服务端 admin_guard 302 到 /login。
 #[component]
 fn McpTokenLink() -> Element {
     rsx! {
