@@ -585,6 +585,30 @@
       "usage_kind": "rust"
     },
     {
+      "name": "TablePager",
+      "slug": "table-pager",
+      "label": "表格分页",
+      "group": "action",
+      "summary": "表格底边的一行，告诉你看到了第几条。",
+      "states": "首页 · 中间页 · 末页 · 只有一页",
+      "description": "后台表格的底栏：左侧是「第 21–40 篇，共 57 篇」，右侧是上一页、当前页 / 总页数与下一页图标按钮，到头时按钮不可用。只有一页时只显示总数。",
+      "props": [
+        ["page", "i32", "必填", "当前页，从 1 开始；超出范围时按首页或末页显示。"],
+        ["total", "i64", "必填", "全部条数。"],
+        ["per_page", "i32", "必填", "每页条数，必须大于 0。"],
+        ["unit", "&'static str", "必填", "计数单位，如「篇」「条」。"],
+        ["on_change", "EventHandler<i32>", "必填", "翻到的页码。"]
+      ],
+      "keys": [
+        ["Tab", "在上一页与下一页之间移动"],
+        ["Enter / Space", "翻页"]
+      ],
+      "source": "src/components/ui/navigation.rs",
+      "code": "let mut page = use_signal(|| 1i32);\nrsx! {\n    TablePager {\n        page: page(),\n        total: 57,\n        per_page: 20,\n        unit: \"篇\",\n        on_change: move |p| page.set(p),\n    }\n}",
+      "preview_mode": "interactive",
+      "usage_kind": "rust"
+    },
+    {
       "name": "Tooltip",
       "slug": "tooltip",
       "label": "文字提示",

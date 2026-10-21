@@ -668,6 +668,219 @@
     background-color: var(--color-danger);
   }
 
+  /* ---- 列表页：工具栏、表格、底栏分页、批量操作条与浮动按钮 ---- */
+  .admin-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.875rem;
+  }
+
+  .admin-toolbar-filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  /* 带图标的搜索框：外层 label 用 .field 的外观，内层输入框无边框。 */
+  .admin-filter-search {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 15rem;
+    color: var(--color-fg-3);
+    cursor: text;
+  }
+
+  .admin-filter-search input {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    padding: 0;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: var(--color-fg);
+    font: inherit;
+  }
+
+  .admin-filter-search input::placeholder {
+    color: var(--color-fg-3);
+  }
+
+  .admin-filter-search input::-webkit-search-cancel-button {
+    display: none;
+  }
+
+  /* overflow: clip 保留圆角又不建立滚动容器，表头才能吸附在顶栏下方。 */
+  .admin-table-wrap {
+    overflow: clip;
+  }
+
+  .admin-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .admin-table th {
+    position: sticky;
+    top: var(--admin-topbar-h);
+    z-index: 2;
+    padding: 0.625rem 1rem;
+    background-color: var(--color-surface-2);
+    box-shadow: inset 0 -1px 0 var(--color-hairline);
+    color: var(--color-fg-3);
+    font-size: 0.75rem;
+    font-weight: 500;
+    text-align: left;
+    white-space: nowrap;
+  }
+
+  .admin-table td {
+    padding: 0.8125rem 1rem;
+    box-shadow: inset 0 -1px 0 var(--color-hairline);
+    vertical-align: middle;
+  }
+
+  .admin-table tbody tr {
+    transition: background-color 150ms var(--ease-out-expo);
+  }
+
+  .admin-table tbody tr:hover {
+    background-color: var(--color-ink-1);
+  }
+
+  .admin-table tbody tr[data-selected] {
+    background-color: color-mix(in srgb, var(--color-clay) 7%, transparent);
+  }
+
+  .admin-table tbody tr[aria-busy="true"] {
+    opacity: 0.55;
+  }
+
+  .admin-table .admin-table-check {
+    width: 1.25rem;
+    padding-right: 0.25rem;
+  }
+
+  .admin-table .admin-table-num {
+    text-align: right;
+  }
+
+  .admin-table .admin-table-actions {
+    width: 2.5rem;
+    padding-block: 0.25rem;
+    text-align: right;
+  }
+
+  .admin-table-muted {
+    color: var(--color-fg-3);
+  }
+
+  .table-pager {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    min-height: 3rem;
+    padding: 0.375rem 0.75rem 0.375rem 1rem;
+  }
+
+  .table-pager-range,
+  .table-pager-page {
+    color: var(--color-fg-3);
+    font-size: 0.8125rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .table-pager-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  .table-pager-page {
+    min-width: 3.5rem;
+    text-align: center;
+  }
+
+  /* 批量操作条：勾选后在内容区底部浮起，吸附在视口底边。 */
+  .batch-bar {
+    position: sticky;
+    bottom: 1.5rem;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    width: fit-content;
+    margin: 1rem auto 0;
+    padding: 0.3125rem 0.3125rem 0.3125rem 0.875rem;
+    border-radius: 12px;
+    background-color: var(--color-popover);
+    box-shadow: var(--shadow-popover);
+    white-space: nowrap;
+    animation: batch-bar-in var(--spring-snappy-duration) var(--ease-spring-snappy) both;
+  }
+
+  @keyframes batch-bar-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+  }
+
+  .batch-bar-count {
+    margin-right: 0.5rem;
+    font-size: 0.8125rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .batch-bar .batch-bar-danger {
+    color: var(--color-danger);
+  }
+
+  .batch-bar-sep {
+    width: 1px;
+    height: 1.125rem;
+    margin: 0 0.25rem;
+    background-color: var(--color-hairline);
+  }
+
+  /* 手机端主操作：右下角浮动按钮。 */
+  .admin-fab {
+    position: fixed;
+    right: 1.125rem;
+    bottom: max(1.75rem, env(safe-area-inset-bottom));
+    z-index: 30;
+    display: none;
+    align-items: center;
+    gap: 0.5rem;
+    height: 3.25rem;
+    padding: 0 1.25rem 0 1rem;
+    border-radius: 16px;
+    background-color: var(--color-clay-fill);
+    color: var(--color-on-clay);
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.18), 0 2px 6px rgb(0 0 0 / 0.1);
+    font-size: 0.9375rem;
+    font-weight: 500;
+    text-decoration: none;
+  }
+
+  .admin-fab:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .batch-bar {
+      animation: listbox-fade 150ms linear both;
+    }
+  }
+
   /* ---- 手机：侧栏收进左侧抽屉，顶栏为菜单、标题与搜索 ---- */
   @media (max-width: 767px) {
     .admin-side-slot {
@@ -706,6 +919,33 @@
     /* 顶栏已显示页面标题。 */
     .admin-page-head h1 {
       display: none;
+    }
+
+    .admin-fab {
+      display: inline-flex;
+    }
+
+    /* 手机端由浮动按钮承担的主操作。 */
+    .admin-hide-mobile {
+      display: none;
+    }
+
+    .admin-toolbar-filters,
+    .admin-filter-search {
+      width: 100%;
+    }
+
+    .admin-filter-search {
+      flex: 1;
+      width: auto;
+    }
+
+    .admin-table th {
+      top: 3.25rem;
+    }
+
+    .batch-bar {
+      bottom: 6rem;
     }
   }
 

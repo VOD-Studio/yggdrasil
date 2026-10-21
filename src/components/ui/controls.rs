@@ -198,6 +198,9 @@ pub fn Checkbox(
     checked: bool,
     onchange: EventHandler<bool>,
     #[props(default)] danger: bool,
+    /// 没有可见文字关联时的读屏名称，如表格行的「选择《标题》」。
+    #[props(default)]
+    label: Option<String>,
 ) -> Element {
     let wrap = if danger {
         "ygg-cb ygg-cb-danger"
@@ -209,6 +212,7 @@ pub fn Checkbox(
             input {
                 r#type: "checkbox",
                 checked,
+                aria_label: label,
                 onchange: move |e: Event<FormData>| onchange.call(e.checked()),
             }
             svg { class: "ygg-cb-mark", view_box: "0 0 16 16",

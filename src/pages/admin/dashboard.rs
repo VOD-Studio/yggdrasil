@@ -130,10 +130,12 @@ pub fn Admin() -> Element {
             if !matches!(*recent.peek(), Load::Ready(_)) {
                 recent.set(Load::Loading);
                 spawn(async move {
-                    recent.set(match crate::api::posts::list_posts(1, 5, None).await {
-                        Ok(res) => Load::Ready(res.posts),
-                        Err(_) => Load::Failed,
-                    });
+                    recent.set(
+                        match crate::api::posts::list_posts(1, 5, Default::default()).await {
+                            Ok(res) => Load::Ready(res.posts),
+                            Err(_) => Load::Failed,
+                        },
+                    );
                 });
             }
             if !matches!(*counts.peek(), Load::Ready(_)) {

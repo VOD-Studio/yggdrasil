@@ -362,6 +362,8 @@ pub(crate) async fn update(
 
 pub(crate) enum PostAction {
     Publish,
+    /// 转回草稿：保留首次发布时间，重新发布时沿用。
+    Unpublish,
     Trash,
     Delete,
     Purge,
@@ -376,7 +378,7 @@ pub(crate) async fn act(
     let mut client = get_conn().await.map_err(AppError::db_conn)?;
     let tx = client.transaction().await.map_err(AppError::tx)?;
     let condition = match action {
-        PostAction::Publish | PostAction::Trash => "AND deleted_at IS NULL",
+        PostAction::Publish | PostAction::Unpublish | PostAction::Trash => "AND deleted_at IS NULL",
         PostAction::Purge => "AND deleted_at IS NOT NULL",
         PostAction::Delete => "",
     };
@@ -386,6 +388,7 @@ pub(crate) async fn act(
     let tags = helpers::fetch_post_tags(&tx, post_id).await?;
     let sql = match action {
         PostAction::Publish => "UPDATE posts SET status='published', published_at=COALESCE(published_at, NOW()), updated_at=GREATEST(clock_timestamp(), updated_at + INTERVAL '1 microsecond') WHERE id=$1 RETURNING updated_at",
+        PostAction::Unpublish => "UPDATE posts SET status='draft', updated_at=GREATEST(clock_timestamp(), updated_at + INTERVAL '1 microsecond') WHERE id=$1 RETURNING updated_at",
         PostAction::Trash => "UPDATE posts SET deleted_at=NOW(), updated_at=GREATEST(clock_timestamp(), updated_at + INTERVAL '1 microsecond') WHERE id=$1 RETURNING updated_at",
         PostAction::Delete | PostAction::Purge => "DELETE FROM posts WHERE id=$1 RETURNING updated_at",
     };

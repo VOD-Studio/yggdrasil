@@ -1,96 +1,72 @@
-//! 后台文章管理列表骨架屏
+//! 后台文章列表骨架屏
 //!
-//! 镜像后台 Posts 页面的结构：Header（标题+按钮）+ 搜索栏 + 表格 + 分页栏。
+//! 与文章列表同一版式：标题行、状态选项卡与筛选、表格与底栏分页。
 
 use dioxus::prelude::*;
 
-use crate::components::skeletons::atoms::{
-    SkeletonBox, SkeletonCard, SkeletonCellShape, SkeletonTable, SkeletonTableColumn,
-};
-/// 后台文章管理表格骨架屏组件（供 AllPostsList 内部加载态使用）。
+use crate::components::skeletons::atoms::SkeletonBox;
+
+/// 文章表格骨架屏（列表加载中使用）。
 #[component]
 pub fn PostsTableSkeleton() -> Element {
-    let columns = vec![
-        SkeletonTableColumn {
-            header_class: "px-5 py-3.5",
-            header_box_class: "h-3 w-16",
-            cell_class: "px-5 py-3.5",
-            cell_shape: SkeletonCellShape::Stacked("h-4 w-2/3", "h-3 w-1/3"),
-        },
-        SkeletonTableColumn {
-            header_class: "px-4 py-3.5 w-24",
-            header_box_class: "h-3 w-10 mx-auto",
-            cell_class: "px-4 py-3.5",
-            cell_shape: SkeletonCellShape::Single("h-5 w-14 mx-auto rounded-full"),
-        },
-        SkeletonTableColumn {
-            header_class: "px-4 py-3.5 w-28 hidden md:table-cell",
-            header_box_class: "h-3 w-10",
-            cell_class: "px-4 py-3.5 hidden md:table-cell",
-            cell_shape: SkeletonCellShape::Single("h-4 w-16"),
-        },
-        SkeletonTableColumn {
-            header_class: "px-4 py-3.5 w-32",
-            header_box_class: "h-3 w-16",
-            cell_class: "px-4 py-3.5",
-            cell_shape: SkeletonCellShape::Single("h-4 w-24"),
-        },
-        SkeletonTableColumn {
-            header_class: "px-5 py-3.5 w-48",
-            header_box_class: "h-3 w-12 ml-auto",
-            cell_class: "px-5 py-3.5",
-            cell_shape: SkeletonCellShape::Single("h-6 w-32 ml-auto rounded"),
-        },
-    ];
     rsx! {
-        SkeletonCard { class: Some("shadow-xs overflow-hidden"),
-            SkeletonTable { columns, rows: 8 }
+        div { class: "admin-panel admin-table-wrap", aria_hidden: "true",
+            table { class: "admin-table admin-posts-table",
+                thead {
+                    tr {
+                        th { class: "admin-table-check", SkeletonBox { class: "h-4 w-4 rounded" } }
+                        th { SkeletonBox { class: "h-3 w-10 rounded" } }
+                        th { SkeletonBox { class: "h-3 w-10 rounded" } }
+                        th { class: "admin-posts-tags", SkeletonBox { class: "h-3 w-10 rounded" } }
+                        th { class: "admin-posts-words", SkeletonBox { class: "h-3 w-8 rounded ml-auto" } }
+                        th { SkeletonBox { class: "h-3 w-14 rounded" } }
+                        th { class: "admin-table-actions" }
+                    }
+                }
+                tbody {
+                    for i in 0..8 {
+                        tr { key: "{i}",
+                            td { class: "admin-table-check", SkeletonBox { class: "h-4 w-4 rounded" } }
+                            td { class: "admin-posts-title",
+                                SkeletonBox { class: "h-4 w-3/4 rounded" }
+                                SkeletonBox { class: "h-3 w-1/3 rounded mt-1.5" }
+                            }
+                            td { class: "admin-posts-status", SkeletonBox { class: "h-3.5 w-14 rounded" } }
+                            td { class: "admin-posts-tags", SkeletonBox { class: "h-3.5 w-20 rounded" } }
+                            td { class: "admin-posts-words", SkeletonBox { class: "h-3.5 w-10 rounded ml-auto" } }
+                            td { class: "admin-posts-date", SkeletonBox { class: "h-3.5 w-28 rounded" } }
+                            td { class: "admin-table-actions", SkeletonBox { class: "h-6 w-6 rounded-md ml-auto" } }
+                        }
+                    }
+                }
+            }
         }
     }
 }
 
-/// 后台文章管理全页骨架屏组件（供 AdminLayout 路由级 fallback 使用）。
+/// 文章列表全页骨架屏（AdminLayout 路由级 fallback）。
 #[component]
 pub fn PostsSkeleton() -> Element {
     rsx! {
-        div { class: "w-full max-w-7xl mx-auto space-y-6",
-            // 页头：标题 + 操作按钮
-            div { class: "flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-[var(--color-paper-border)]/70",
-                div { class: "space-y-1.5",
-                    SkeletonBox { class: "h-9 w-36 rounded-lg" }
-                    SkeletonBox { class: "h-4 w-56 rounded" }
+        div { class: "admin-posts", aria_hidden: "true",
+            div { class: "admin-page-head",
+                div {
+                    SkeletonBox { class: "h-7 w-20 rounded-md" }
+                    SkeletonBox { class: "h-3.5 w-44 rounded mt-2" }
                 }
-                div { class: "flex items-center gap-3",
-                    SkeletonBox { class: "h-9 w-24 rounded-full" }
-                    SkeletonBox { class: "h-9 w-24 rounded-full" }
-                    SkeletonBox { class: "h-9 w-28 rounded-full" }
+                div { class: "admin-page-actions",
+                    SkeletonBox { class: "h-[34px] w-[34px] rounded-lg" }
+                    SkeletonBox { class: "h-[34px] w-28 rounded-lg" }
                 }
             }
-
-            // 搜索/筛选工具栏
-            div { class: "flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4",
-                div { class: "flex gap-3",
-                    SkeletonBox { class: "h-8 w-16 rounded-full" }
-                    SkeletonBox { class: "h-8 w-20 rounded-full" }
-                    SkeletonBox { class: "h-8 w-16 rounded-full" }
-                }
-                div { class: "flex items-center gap-2",
-                    SkeletonBox { class: "h-9 w-72 rounded-2xl" }
-                    SkeletonBox { class: "h-9 w-16 rounded-full" }
+            div { class: "admin-toolbar",
+                SkeletonBox { class: "h-8 w-72 rounded-full" }
+                div { class: "admin-toolbar-filters",
+                    SkeletonBox { class: "h-[30px] w-60 rounded-lg" }
+                    SkeletonBox { class: "h-[30px] w-28 rounded-lg" }
                 }
             }
-
-            // 文章列表表格
             PostsTableSkeleton {}
-
-            // 分页栏
-            div { class: "flex justify-between items-center pt-4",
-                SkeletonBox { class: "h-4 w-32 rounded" }
-                div { class: "flex gap-2",
-                    SkeletonBox { class: "h-8 w-16 rounded-full" }
-                    SkeletonBox { class: "h-8 w-16 rounded-full" }
-                }
-            }
         }
     }
 }

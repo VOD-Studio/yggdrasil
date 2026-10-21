@@ -437,7 +437,7 @@ async function admin() {
     await push(page, '/admin/posts');
     await page.waitForSelector('a[data-vt-post-link]');
     await page.getByRole('tab', { name: '草稿', exact: true }).click();
-    const input = page.getByPlaceholder('搜索文章标题...');
+    const input = page.getByPlaceholder('按标题搜索');
     await input.fill('Browser');
     await input.press('Enter');
     await page.waitForTimeout(250);

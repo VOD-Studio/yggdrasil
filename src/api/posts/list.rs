@@ -9,7 +9,7 @@ use dioxus::prelude::*;
 
 #[cfg(feature = "server")]
 use super::helpers::{get_current_admin_user, row_to_post_list_item};
-use super::types::PostListResponse;
+use super::types::{AdminPostQuery, PostListResponse};
 #[cfg(feature = "server")]
 use crate::api::error::AppError;
 #[cfg(feature = "server")]
@@ -113,14 +113,14 @@ pub async fn list_published_posts(
     }
 }
 
-/// 获取管理员视角的全部文章列表（含草稿与已发布）。
+/// 获取后台文章列表（含草稿，不含回收站），按创建时间倒序。
 ///
-/// 需要 admin 权限；结果按创建时间降序，不走缓存。
+/// 需要 admin 权限；可按标题子串、发布状态与标签筛选，不走缓存。
 #[server(ListPosts, "/api")]
 pub async fn list_posts(
     page: i32,
     per_page: i32,
-    search: Option<String>,
+    query: AdminPostQuery,
 ) -> Result<PostListResponse, ServerFnError> {
     // 与公开接口保持一致的分页钳制，避免单次请求拉取过多记录。
     let (page, per_page) = clamp_pagination(page, per_page);
@@ -130,78 +130,63 @@ pub async fn list_posts(
     {
         let client = get_conn().await.map_err(AppError::db_conn)?;
 
-        // 归一化标题搜索词：trim 后为空则视为不搜索；限长 200 字符并转义 SQL
-        // LIKE 通配符（% / _ / \），避免用户输入导致模式错配或全表误匹配。
-        // 与 search.rs 的全文检索不同：管理后台需覆盖草稿，且仅按标题匹配。
-        let title_filter: Option<String> = search
+        // 标题搜索词：trim 后为空视为不搜索；限长 200 字符并转义 LIKE 通配符
+        // （% / _ / \），避免用户输入导致模式错配或全表误匹配。
+        let title_pattern: Option<String> = query
+            .search
             .as_deref()
             .map(str::trim)
             .filter(|s| !s.is_empty())
             .map(|s| {
                 let truncated: String = s.chars().take(200).collect();
-                crate::utils::server::escape_like_pattern(&truncated)
+                format!(
+                    "%{}%",
+                    crate::utils::server::escape_like_pattern(&truncated)
+                )
             });
+        let status: Option<&str> = query.status.as_ref().map(|s| s.as_str());
+        let tag: Option<&str> = query.tag.as_deref().filter(|t| !t.is_empty());
+
+        // 条件统一写成「参数为空则不筛选」，参数位置固定，免去拼接 SQL。
+        // posts 表对管理后台属低频访问、行数有限，ILIKE 全表扫可接受，靠 LIMIT 兜底。
+        const FILTER: &str = "p.deleted_at IS NULL
+            AND ($1::text IS NULL OR p.title ILIKE $1 ESCAPE '\\')
+            AND ($2::text IS NULL OR p.status = $2)
+            AND ($3::text IS NULL OR EXISTS (
+                SELECT 1 FROM post_tags fpt JOIN tags ft ON ft.id = fpt.tag_id
+                WHERE fpt.post_id = p.id AND ft.name = $3))";
+
+        let total: i64 = client
+            .query_one(
+                &format!("SELECT COUNT(*) FROM posts p WHERE {FILTER}"),
+                &[&title_pattern, &status, &tag],
+            )
+            .await
+            .map_err(AppError::query)?
+            .get(0);
 
         let offset = ((page - 1).max(0) as i64) * (per_page as i64);
         let limit = per_page as i64;
-
-        // 有搜索词时按 title ILIKE 子串匹配过滤（双侧 %），否则走原全量列表。
-        // posts 表对管理后台属低频访问、行数有限，ILIKE 全表扫可接受，靠 LIMIT 兜底。
-        let (total, rows) = if let Some(esc) = title_filter {
-            let pattern = format!("%{esc}%");
-            let total: i64 = client
-                .query_one(
-                    "SELECT COUNT(*) FROM posts WHERE deleted_at IS NULL AND title ILIKE $1 ESCAPE '\\'",
-                    &[&pattern],
-                )
-                .await
-                .map_err(AppError::query)?
-                .get(0);
-            let rows = client
-                .query(
+        let rows = client
+            .query(
+                &format!(
                     "SELECT
                         p.id, p.author_id, p.title, p.slug, p.summary, p.status,
                         p.published_at, p.created_at, p.updated_at, p.cover_image,
                         p.word_count, p.reading_time,
-                        COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{}') as tags
+                        COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{{}}') as tags
                      FROM posts p
                      LEFT JOIN post_tags pt ON p.id = pt.post_id
                      LEFT JOIN tags t ON pt.tag_id = t.id
-                     WHERE p.deleted_at IS NULL AND p.title ILIKE $3 ESCAPE '\\'
+                     WHERE {FILTER}
                      GROUP BY p.id
                      ORDER BY p.created_at DESC
-                     LIMIT $1 OFFSET $2",
-                    &[&limit, &offset, &pattern],
-                )
-                .await
-                .map_err(AppError::query)?;
-            (total, rows)
-        } else {
-            let total: i64 = client
-                .query_one("SELECT COUNT(*) FROM posts WHERE deleted_at IS NULL", &[])
-                .await
-                .map_err(AppError::query)?
-                .get(0);
-            let rows = client
-                .query(
-                    "SELECT
-                        p.id, p.author_id, p.title, p.slug, p.summary, p.status,
-                        p.published_at, p.created_at, p.updated_at, p.cover_image,
-                        p.word_count, p.reading_time,
-                        COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{}') as tags
-                     FROM posts p
-                     LEFT JOIN post_tags pt ON p.id = pt.post_id
-                     LEFT JOIN tags t ON pt.tag_id = t.id
-                     WHERE p.deleted_at IS NULL
-                     GROUP BY p.id
-                     ORDER BY p.created_at DESC
-                     LIMIT $1 OFFSET $2",
-                    &[&limit, &offset],
-                )
-                .await
-                .map_err(AppError::query)?;
-            (total, rows)
-        };
+                     LIMIT $4 OFFSET $5"
+                ),
+                &[&title_pattern, &status, &tag, &limit, &offset],
+            )
+            .await
+            .map_err(AppError::query)?;
 
         let posts: Vec<_> = rows.iter().map(row_to_post_list_item).collect();
 
@@ -210,6 +195,7 @@ pub async fn list_posts(
 
     #[cfg(not(feature = "server"))]
     {
+        let _ = query;
         Ok(PostListResponse {
             posts: Vec::new(),
             total: 0,

@@ -6,6 +6,7 @@
 #![allow(clippy::unused_unit, deprecated, unused_imports)]
 
 mod archive;
+mod batch;
 mod create;
 mod delete;
 pub(crate) mod helpers;
@@ -28,6 +29,8 @@ mod validation;
 pub use archive::{
     list_archive_posts, posts_per_year, ArchiveResponse, YearCount, ARCHIVE_PAGE_SIZE,
 };
+/// 后台列表批量操作（转为草稿、移到回收站）。
+pub use batch::batch_posts;
 /// 创建新文章。
 pub use create::create_post;
 /// 删除指定文章。

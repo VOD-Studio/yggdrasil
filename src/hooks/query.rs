@@ -40,7 +40,7 @@ pub struct PaginatedState<T> {
 ///     || current_page,
 ///     POSTS_PER_PAGE,
 ///     |p, pp| async move {
-///         list_posts(p, pp, None).await
+///         list_posts(p, pp, AdminPostQuery::default()).await
 ///             .map(|r| (r.posts, r.total))
 ///             .map_err(|e| e.to_string())
 ///     },

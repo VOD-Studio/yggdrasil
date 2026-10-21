@@ -1,6 +1,6 @@
 //! 文章 API 的请求与响应数据结构。
 
-use crate::models::post::{Post, PostListItem, PostStats, Tag};
+use crate::models::post::{Post, PostListItem, PostStats, PostStatus, Tag};
 
 /// 创建/更新/删除文章的统一响应结构。
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -13,6 +13,41 @@ pub struct CreatePostResponse {
     pub post_id: Option<i32>,
     /// 最终 slug，失败时为 None。
     pub slug: Option<String>,
+}
+
+/// 后台文章列表的筛选条件。各项为空表示不按该项筛选。
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AdminPostQuery {
+    /// 标题子串（不区分大小写）。
+    pub search: Option<String>,
+    /// 发布状态。
+    pub status: Option<PostStatus>,
+    /// 标签名（精确匹配）。
+    pub tag: Option<String>,
+}
+
+impl AdminPostQuery {
+    /// 只按标题搜索。
+    pub fn search(text: impl Into<String>) -> Self {
+        Self {
+            search: Some(text.into()),
+            ..Self::default()
+        }
+    }
+}
+
+/// 批量操作：转为草稿或移到回收站。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum BatchPostAction {
+    Unpublish,
+    Trash,
+}
+
+/// 批量操作结果：成功篇数与失败篇数。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct BatchPostResult {
+    pub done: usize,
+    pub failed: usize,
 }
 
 /// 这些构造器只在 server function body 内调用，WASM 端因 cfg gate 剥离了调用点，

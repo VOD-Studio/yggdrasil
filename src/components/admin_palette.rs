@@ -237,7 +237,12 @@ pub fn AdminPalette(on_logout: EventHandler<()>) -> Element {
                     show_progress.set(true);
                 }
             });
-            let res = crate::api::posts::list_posts(1, POST_LIMIT, Some(q.clone())).await;
+            let res = crate::api::posts::list_posts(
+                1,
+                POST_LIMIT,
+                crate::api::posts::AdminPostQuery::search(q.clone()),
+            )
+            .await;
             if seq() != id {
                 return;
             }

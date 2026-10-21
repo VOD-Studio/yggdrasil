@@ -169,6 +169,59 @@ pub fn Pagination<R: Routable + Clone + PartialEq + 'static>(
     }
 }
 
+/// 表格底栏分页：左侧「第 21–40 篇，共 57 篇」，右侧上一页、页码与下一页图标按钮。
+/// 只有一页时只显示总数。
+///
+/// Props：
+/// - `page`：当前页（从 1 开始）；`total`：总条数；`per_page`：每页条数
+/// - `unit`：计数单位，如「篇」「条」
+/// - `on_change`：翻到的页码
+#[component]
+pub fn TablePager(
+    page: i32,
+    total: i64,
+    per_page: i32,
+    unit: &'static str,
+    on_change: EventHandler<i32>,
+) -> Element {
+    let pages = ((total + per_page as i64 - 1) / per_page as i64).max(1) as i32;
+    let page = page.clamp(1, pages);
+    let first = (page as i64 - 1) * per_page as i64 + 1;
+    let last = (page as i64 * per_page as i64).min(total);
+    let range = if total == 0 {
+        format!("共 0 {unit}")
+    } else if pages == 1 {
+        format!("共 {total} {unit}")
+    } else {
+        format!("第 {first}–{last} {unit}，共 {total} {unit}")
+    };
+    rsx! {
+        nav { class: "table-pager", aria_label: "分页导航",
+            span { class: "table-pager-range", "{range}" }
+            if pages > 1 {
+                div { class: "table-pager-controls",
+                    super::controls::IconButton {
+                        icon: IconName::ChevronLeft,
+                        label: "上一页",
+                        size: super::controls::ButtonSize::Sm,
+                        disabled: page <= 1,
+                        onclick: move |_| on_change.call(page - 1),
+                    }
+                    span { class: "table-pager-page", aria_current: "page", "{page} / {pages}" }
+                    super::controls::IconButton {
+                        icon: IconName::ChevronRight,
+                        label: "下一页",
+                        size: super::controls::ButtonSize::Sm,
+                        tooltip_align: "end",
+                        disabled: page >= pages,
+                        onclick: move |_| on_change.call(page + 1),
+                    }
+                }
+            }
+        }
+    }
+}
+
 static TAB_GROUP_ID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 /// 在选项卡之间循环移动（←/→、Home/End 用）。

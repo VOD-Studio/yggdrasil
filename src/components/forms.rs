@@ -160,10 +160,10 @@ fn focus_by_id(element_id: &str) {
 /// - `trigger_class`：触发器外观（缺省全宽 `field`；工具栏传 [`FORM_SELECT_COMPACT_CLASS`]）
 /// - `aria_label`：触发器无障碍标签；可见文本不足以表意时传入
 #[component]
-pub fn FormSelect<T: Clone + PartialEq + 'static>(
+pub fn FormSelect<T: Clone + PartialEq + 'static, L: AsRef<str> + Clone + PartialEq + 'static>(
     id: Option<String>,
     value: T,
-    options: Vec<(T, &'static str)>,
+    options: Vec<(T, L)>,
     onchange: EventHandler<T>,
     #[props(default)] disabled_options: Vec<(T, &'static str)>,
     #[props(default)] trigger_class: Option<&'static str>,
@@ -174,7 +174,10 @@ pub fn FormSelect<T: Clone + PartialEq + 'static>(
 
     // 受控选中序号；value 不在 options 时兜底 0（与浏览器默认选中第一项一致）。
     let selected = options.iter().position(|(v, _)| *v == value).unwrap_or(0);
-    let selected_label = options.get(selected).map(|(_, l)| *l).unwrap_or_default();
+    let selected_label = options
+        .get(selected)
+        .map(|(_, l)| l.as_ref().to_string())
+        .unwrap_or_default();
     let len = options.len();
     let filterable = len > FILTER_THRESHOLD;
 
@@ -200,7 +203,7 @@ pub fn FormSelect<T: Clone + PartialEq + 'static>(
         .collect();
     let q = query();
     let visible: Vec<usize> = (0..len)
-        .filter(|&i| matches_query(options[i].1, &q))
+        .filter(|&i| matches_query(options[i].1.as_ref(), &q))
         .collect();
     let navigable: Vec<usize> = visible
         .iter()
@@ -208,14 +211,21 @@ pub fn FormSelect<T: Clone + PartialEq + 'static>(
         .filter(|&i| reasons[i].is_none())
         .collect();
     // 筛选框输入时用来重算首个可选项；渲染用的逐行数据。
-    let searchable: Vec<(&'static str, bool)> = options
+    let searchable: Vec<(String, bool)> = options
         .iter()
         .zip(&reasons)
-        .map(|((_, label), reason)| (*label, reason.is_none()))
+        .map(|((_, label), reason)| (label.as_ref().to_string(), reason.is_none()))
         .collect();
-    let rows: Vec<(usize, T, &'static str, Option<&'static str>)> = visible
+    let rows: Vec<(usize, T, String, Option<&'static str>)> = visible
         .iter()
-        .map(|&i| (i, options[i].0.clone(), options[i].1, reasons[i]))
+        .map(|&i| {
+            (
+                i,
+                options[i].0.clone(),
+                options[i].1.as_ref().to_string(),
+                reasons[i],
+            )
+        })
         .collect();
     let nothing_visible = rows.is_empty();
 
@@ -405,7 +415,7 @@ pub fn FormSelect<T: Clone + PartialEq + 'static>(
 #[component]
 fn SelectOption(
     id: String,
-    label: &'static str,
+    label: String,
     reason: Option<&'static str>,
     selected: bool,
     active: bool,

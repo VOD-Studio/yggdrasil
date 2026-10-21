@@ -1063,6 +1063,7 @@ fn preview_route(slug: &str) -> Option<PreviewRoute> {
         | "form-label"
         | "filter-tabs"
         | "pagination"
+        | "table-pager"
         | "tooltip"
         | "popover"
         | "modal-shell"
@@ -1382,6 +1383,14 @@ fn LiveComponentPreview(
                 on_prev: move |_| page.set((page() - 1).max(1)),
                 on_next: move |_| page.set((page() + 1).min(8)),
                 compact: true,
+            }
+        },
+        "TablePager" => rsx! {
+            div { class: "admin-panel w-full max-w-md",
+                crate::components::ui::TablePager {
+                    page: page(), total: 57, per_page: 20, unit: "篇",
+                    on_change: move |p| page.set(p),
+                }
             }
         },
         "Tooltip" => rsx! {
