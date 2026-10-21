@@ -8,6 +8,9 @@ pub(super) fn use_editor(
     vim_enabled: Signal<bool>,
     mut editor_ready: Signal<bool>,
     editor_library: LibraryResource,
+    // 激活门控（P2）：视口接近或用户主动交互后为 true。库加载与实例创建都被它
+    // 门控——这里是双保险的创建侧；读取它使 effect 在激活翻转时重跑。
+    activated: Signal<bool>,
 ) {
     use crate::bridges::codemirror;
     use crate::theme::{use_resolved_theme, ResolvedTheme};
@@ -19,13 +22,16 @@ pub(super) fn use_editor(
     // 这个 hook 必须在组件体顶层调用，不能放进 use_effect 闭包（dx check 会报）。
     let resolved_theme = use_resolved_theme();
 
-    // 首次挂载：构造 closure + options，create 后存进 editor_handle。
+    // 激活后首次挂载：构造 closure + options，create 后存进 editor_handle。
     // 用 resolved() 读取主题作为初始值（同时订阅，但主题切换由下方独立 effect 处理）。
     let mount_language = language;
     let mount_container_id = container_id;
     use_effect(move || {
         if editor_handle.read().is_some() {
             return; // 防重复 init
+        }
+        if !activated() {
+            return; // 未激活（视口未接近且无交互）：不创建实例
         }
         if !library_ready(editor_library) {
             return;

@@ -5,6 +5,13 @@
 //! 回写到内部 `source_signal`，`use_drop` 时销毁实例。范式镜像 SQL 控制台
 //!（`src/pages/admin/system.rs`）与 Tiptap 编辑器（`src/pages/admin/write.rs`）。
 //!
+//! 激活门控（P2）：挂载后并不立即加载 CodeMirror 或创建编辑器实例；容器接近
+//! 视口（约一屏提前量），或用户点击静态代码 / 运行按钮时，才触发库加载与实例
+//! 创建（`use_near_viewport` 单向激活，滚出视口不销毁）。激活前容器渲染服务端
+//! 高亮 HTML（`static_html`，可读、可选择、SSR 与 hydration 输出一致）；用户在
+//! 编辑器就绪前点击「运行」时保留意图（pending_run），就绪后自动执行一次。
+//! xterm 输出终端保持「输出出现后才加载」的既有门控，激活绝不触发代码执行。
+//!
 //! 输出渲染：WASM 端按 `output_container_id` 调用 `xterm::get_module().create(...)`
 //! 挂载 xterm.js 终端（输出专用，无 stdin），SSE stdout/stderr 事件实时写入。
 //! SSE 不可用时降级到轮询 get_exec_result，整段写入终端（writeAll）。
@@ -39,6 +46,8 @@ pub struct RunnerExample {
 /// - `source`：初始源码（首次挂载用于初始化编辑器；之后编辑器内容是唯一真源）。
 /// - `language`：语言标识（python / node 等）。
 /// - `overrides`：可选资源限制覆盖。
+/// - `static_html`：可选的服务端高亮 `<pre>` HTML。激活前的静态展示优先用它
+///   （保留语法高亮）；未提供时（如图鉴样例）退回纯文本源码展示。
 /// - `instance_id`：实例在父级片段序列中的索引，用作 CodeMirror 容器 id 后缀。
 ///   必须是 **SSR/hydration 确定性**的值（如父组件 `for (i, ..)` 的索引 `i`）——
 ///   Dioxus hydration 不传递 use_hook 状态，任何在 use_hook 内基于运行时状态
@@ -52,6 +61,7 @@ pub fn CodeRunner(
     language: String,
     overrides: Option<ResourceLimits>,
     instance_id: usize,
+    #[props(default)] static_html: Option<String>,
     #[props(default)] example_output: Option<RunnerExample>,
 ) -> Element {
     let execution = execution::use_execution(example_output.clone());
@@ -61,8 +71,7 @@ pub fn CodeRunner(
     let stage = use_memo(move || execution.state.read().stage().to_string());
     let exit_info = use_memo(move || execution.state.read().summary().to_string());
     let error_msg = use_memo(move || execution.state.read().error().to_string());
-    let editor_library = use_browser_library("codemirror", || true);
-    let terminal_library = use_browser_library("xterm", move || *show_output.read());
+
     // 编辑器内容的唯一真源；初始化为 prop 值。
     // C4 修复：删去 source_prop_signal。旧代码在 render body 里对它做镜像 .set()
     // （if source != *source_prop_signal.read() { .set(...) }），这是项目
@@ -79,9 +88,26 @@ pub fn CodeRunner(
     // xterm.js 输出终端容器 id：同样的确定性派生逻辑，SSR 与 hydration 一致。
     let output_container_id = format!("code-runner-output-{instance_id}");
 
+    // 激活门控：容器接近视口（底部提前约一屏，移动端可按体验再调）或用户主动
+    // 点击静态代码 / 运行按钮时置 true。单向激活，滚出视口不销毁已建实例；
+    // IntersectionObserver 不可用时保持 false，由上述交互入口兜底激活。
+    // SSR 端恒为 false：静态展示与 hydration 首帧结构一致，可见性只在
+    // hydration 后的 effect 里生效。
+    #[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut))]
+    let mut activated = crate::hooks::use_near_viewport(container_id.clone(), "0px 0px 100% 0px");
+
+    // CodeMirror 库只在激活后加载（use_resource 的 enabled 闭包响应式重评）；
+    // 多实例共享 JS 侧 pending-map 去重，仍只发一次脚本请求。
+    let editor_library = use_browser_library("codemirror", move || *activated.read());
+
+    // 用户在编辑器就绪前的运行意图；编辑器就绪后由下方 pending effect 自动执行一次。
+    let mut pending_run = use_signal(|| false);
+
+    let terminal_library = use_browser_library("xterm", move || *show_output.read());
+
     // 编辑器是否已挂载就绪。声明在 cfg 块外，使 SSR 端也能读取：
-    // SSR 与 hydration 完成前为 false → 容器内渲染骨架屏；CodeMirror 挂载后置 true
-    // → 骨架屏从 DOM 移除，露出真实编辑器。
+    // SSR 与 hydration 完成前为 false → 容器内渲染静态代码；CodeMirror 挂载后置 true
+    // → 静态代码从 DOM 移除，露出真实编辑器。
     let editor_ready = use_signal(|| false);
 
     // Vim 模式状态（通过 localStorage 持久化偏好，默认开启）
@@ -127,6 +153,7 @@ pub fn CodeRunner(
             vim_enabled,
             editor_ready,
             editor_library,
+            activated,
         );
         terminal::use_terminal(
             output_container_id.clone(),
@@ -135,11 +162,40 @@ pub fn CodeRunner(
             terminal_library,
             execution.terminal,
         );
+        // 编辑器就绪后兑现激活前的运行意图：先清标志再启动，保证只执行一次。
+        // 读取 running() 建立订阅并避免在已有执行未结束时重复启动；effect 只在
+        // editor_ready / pending_run / running 变化时重跑，重复通知不会重复执行。
+        let execution_for_pending = execution;
+        let language_for_pending = language.clone();
+        let overrides_for_pending = overrides.clone();
+        let example_for_pending = example_output.clone();
+        use_effect(move || {
+            if editor_ready() && pending_run() && !running() {
+                pending_run.set(false);
+                if let Some(example) = &example_for_pending {
+                    execution_for_pending.show_example(example);
+                } else {
+                    execution_for_pending.start(ExecRequest {
+                        language: language_for_pending.clone(),
+                        source: source_signal(),
+                        overrides: overrides_for_pending.clone(),
+                    });
+                }
+            }
+        });
     }
     let run_example = example_output.clone();
     let run_language = language.clone();
     let run_code = move |_| {
-        if running() || !editor_ready() {
+        if running() {
+            return;
+        }
+        if !editor_ready() {
+            // 用户操作早于编辑器就绪（未激活或库加载中）：保留意图并立即触发
+            // 激活，就绪后由 pending effect 自动执行一次，不静默丢弃点击、不
+            // 执行空代码或重复执行。
+            pending_run.set(true);
+            activated.set(true);
             return;
         }
         if let Some(example) = &run_example {
@@ -176,7 +232,7 @@ pub fn CodeRunner(
                 }
                 button {
                     class: format!("{BTN_PRIMARY_SM} gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"),
-                    disabled: running() || !editor_ready(),
+                    disabled: running(),
                     onclick: run_code,
                     if running() {
                         span {
@@ -184,6 +240,13 @@ pub fn CodeRunner(
                             dangerous_inner_html: SPINNER_SVG,
                         }
                         "{stage()}"
+                    } else if pending_run() && !editor_ready() {
+                        // 意图已保留：编辑器激活/加载期间明确显示加载状态。
+                        span {
+                            class: "inline-block w-3.5 h-3.5 text-[var(--color-paper-theme)]",
+                            dangerous_inner_html: SPINNER_SVG,
+                        }
+                        "编辑器加载中"
                     } else {
                         if example_output.is_some() { "播放输出示例" } else { "运行" }
                     }
@@ -194,17 +257,45 @@ pub fn CodeRunner(
                 id: "{container_id}",
                 class: "code-runner-editor font-mono text-sm relative",
 
-                // 骨架屏：CodeMirror 尚未挂载就绪时（SSR + hydration 完成前）显示。
-                // editor_ready 由挂载 effect 置 true 后，此处 if 分支消失，骨架屏从 DOM 移除。
-                // 用绝对定位覆盖在（始终存在的）容器上方，不影响 CodeMirror 的 getElementById 挂载。
+                // 编辑器挂载前的容器内容：
+                // - 未激活：渲染服务端高亮 HTML 静态展示（可读、可选择、布局稳定，
+                //   SSR 与 hydration 输出一致）。点击可提前激活，也是
+                //   IntersectionObserver 不可用时的交互兜底。
+                // - 已激活、库加载中：静态代码保留（避免高度跳动），右上角加载提示；
+                //   加载失败时静态代码仍在，LibraryLoadError 提供重试入口。
+                // 编辑器就绪后整个分支消失，vdom 移除静态节点（CodeMirror 追加
+                // 挂载，二者不冲突）。
                 if !editor_ready() {
-                    div { class: "absolute inset-0 flex flex-col justify-center gap-2.5 px-4 py-4 bg-[var(--color-paper-code-block)]",
-                        // 代码行占位条：递减宽度模拟代码缩进，贴合等宽字体语境。
-                        SkeletonBox { class: "h-3 rounded", style: Some("width: 90%") }
-                        SkeletonBox { class: "h-3 rounded", style: Some("width: 70%") }
-                        SkeletonBox { class: "h-3 rounded", style: Some("width: 55%") }
-                        SkeletonBox { class: "h-3 rounded", style: Some("width: 85%") }
-                        SkeletonBox { class: "h-3 rounded", style: Some("width: 40%") }
+                    {
+                        match &static_html {
+                            Some(html) => rsx! {
+                                div {
+                                    class: "code-runner-static min-h-0 overflow-auto cursor-pointer",
+                                    title: "点击启用编辑",
+                                    dangerous_inner_html: "{html}",
+                                    onclick: move |_| activated.set(true),
+                                }
+                            },
+                            // 图鉴等未提供静态 HTML 的调用方：退回纯文本源码展示
+                            //（rsx 文本自动转义）。
+                            None => rsx! {
+                                pre {
+                                    class: "code-runner-static min-h-0 overflow-auto cursor-pointer m-0 px-4 py-4",
+                                    title: "点击启用编辑",
+                                    onclick: move |_| activated.set(true),
+                                    "{source}",
+                                }
+                            },
+                        }
+                    }
+                    if activated() && editor_library.read().is_none() {
+                        div { class: "absolute top-2 right-2 z-10 flex items-center gap-1.5 px-2 py-1 rounded-full bg-[var(--color-paper-theme)]/85 border border-[var(--color-paper-border)] text-[10px] text-[var(--color-paper-secondary)]",
+                            span {
+                                class: "inline-block w-3 h-3 text-[var(--color-paper-accent)]",
+                                dangerous_inner_html: SPINNER_SVG,
+                            }
+                            "编辑器加载中…"
+                        }
                     }
                 }
             }

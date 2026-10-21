@@ -20,11 +20,13 @@ use crate::utils::js::invoke_optional_global;
 enum ContentFragment {
     /// 原始 HTML 片段（含语法高亮等），直接以 `dangerous_inner_html` 渲染。
     Html(String),
-    /// 可运行代码块：语言、源码、可选资源覆盖。
+    /// 可运行代码块：语言、源码、可选资源覆盖，以及服务端渲染的完整 `<pre>`
+    /// 高亮 HTML（供 CodeRunner 激活前静态展示，SSR 输出因此包含可读代码文本）。
     Runnable {
         lang: String,
         source: String,
         overrides: Option<ResourceLimits>,
+        static_html: String,
     },
 }
 
@@ -64,6 +66,9 @@ fn split_content_fragments(html: &str) -> Vec<ContentFragment> {
             lang,
             source,
             overrides,
+            // 保留服务端高亮 `<pre>` 原文：CodeRunner 激活前原样静态展示，
+            // 编辑器挂载后再由 vdom 移除（CodeMirror 是追加挂载，不冲突）。
+            static_html: pre_block.to_string(),
         });
     }
 
@@ -222,12 +227,13 @@ pub fn PostContent(
                         ContentFragment::Html(html) => rsx! {
                             div { key: "html-{i}", dangerous_inner_html: "{html}" }
                         },
-                        ContentFragment::Runnable { lang, source, overrides } => rsx! {
+                        ContentFragment::Runnable { lang, source, overrides, static_html } => rsx! {
                             CodeRunner {
                                 key: "runner-{i}",
                                 source: source.clone(),
                                 language: lang.clone(),
                                 overrides: overrides.clone(),
+                                static_html: static_html.clone(),
                                 // i 是片段序列中的确定性索引（来自纯函数 split_content_fragments
                                 // 对同一 content_html 的解析），SSR 与 hydration 一致，用作容器
                                 // id 后缀保证 hydration 时 CodeMirror 能找到 SSR 渲染的容器。
@@ -263,10 +269,15 @@ mod tests {
                 lang,
                 source,
                 overrides,
+                static_html,
             } => {
                 assert_eq!(lang, "python");
                 assert_eq!(source, "print('hi')");
                 assert!(overrides.is_none());
+                // 静态 HTML 保留完整 <pre> 原文（含高亮与标记），供激活前展示。
+                assert!(static_html.starts_with(r#"<pre data-runnable="true""#));
+                assert!(static_html.ends_with("</pre>"));
+                assert!(static_html.contains("language-python"));
             }
             other => panic!("expected Runnable, got {other:?} (Html)"),
         }
