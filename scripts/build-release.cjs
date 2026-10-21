@@ -24,7 +24,7 @@
  */
 import { createHash } from 'node:crypto';
 import { execSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync, rmSync, statSync, mkdirSync, writeFileSync, copyFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, renameSync, rmSync, statSync, mkdirSync, writeFileSync, copyFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { bootstrapRefs, preloadWasm, verifyWasmPreload, wasmBootstrap } from './release-bootstrap.cjs';
 
@@ -236,17 +236,22 @@ for (const snap of snapshots) {
 const sharedEntrypoints = bootstrapConflicts(flavorAssets);
 if (sharedEntrypoints.length) throw new Error(sharedEntrypoints.join('\n'));
 
-// 装配最终 public/
+// 装配最终 public/（plan §6.7「发布包原子地包含服务端、两套资源和清单」）：
+// 先写入同分区的临时目录，模板与清单就绪后两段 rename 原子换入——装配
+// 中途失败不会破坏既有发布目录，也绝不存在半成品 public 被部署出去。
 const outPublic = join(OUT, 'public');
-rmSync(outPublic, { recursive: true, force: true });
-mkdirSync(outPublic, { recursive: true });
+const stagingPublic = join(OUT, `.public.staging-${process.pid}`);
+const trashPublic = join(OUT, `.public.trash-${process.pid}`);
+rmSync(stagingPublic, { recursive: true, force: true });
+rmSync(trashPublic, { recursive: true, force: true });
+mkdirSync(stagingPublic, { recursive: true });
 for (const [rel, meta] of merged) {
-  const dest = join(outPublic, rel);
+  const dest = join(stagingPublic, rel);
   mkdirSync(join(dest, '..'), { recursive: true });
   copyFileSync(meta.srcFile, dest);
 }
 for (const snap of snapshots) {
-  const dest = join(outPublic, templateOf(snap.flavor));
+  const dest = join(stagingPublic, templateOf(snap.flavor));
   mkdirSync(join(dest, '..'), { recursive: true });
   writeFileSync(dest, templates.get(snap.flavor));
 }
@@ -276,7 +281,11 @@ const manifestOut = {
   },
   flavors: flavorsManifest,
 };
-writeFileSync(join(outPublic, 'release-manifest.json'), JSON.stringify(manifestOut, null, 2) + '\n');
+writeFileSync(join(stagingPublic, 'release-manifest.json'), JSON.stringify(manifestOut, null, 2) + '\n');
+
+if (existsSync(outPublic)) renameSync(outPublic, trashPublic);
+renameSync(stagingPublic, outPublic);
+rmSync(trashPublic, { recursive: true, force: true });
 
 const totalBytes = [...merged.values()].reduce((n, m) => n + m.bytes, 0);
 console.log(
