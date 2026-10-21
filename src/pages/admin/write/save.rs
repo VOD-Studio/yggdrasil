@@ -1,6 +1,7 @@
 //! Saving uses a captured form snapshot and one result path for create/update.
 use super::state::{PostDraft, SaveState, WriteEditorState};
 use crate::bridges::library::library_ready;
+use crate::components::ui::Toaster;
 use dioxus::prelude::*;
 
 #[derive(Debug, PartialEq)]
@@ -42,12 +43,18 @@ fn prepare(draft: &PostDraft, markdown: String) -> Result<PostSubmission, &'stat
     })
 }
 
-#[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))]
-pub(super) fn submit(state: WriteEditorState, post_id: Option<i32>) {
+/// 保存为给定状态（`draft` / `published`）。成功后留在本页：更新已保存基线与时间，
+/// 新文章换到编辑路由；失败时保留表单，状态指示可按原状态重试。
+#[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables, unused_mut))]
+pub(super) fn submit(state: WriteEditorState, toast: Toaster, status: &'static str) {
     let mut save = state.save;
     if save.peek().is_saving() || !state.phase.peek().is_ready() || !library_ready(state.library) {
         return;
     }
+    let fail = move |mut save: Signal<SaveState>, message: String| {
+        toast.error(message.clone());
+        save.set(SaveState::Failed { message, status });
+    };
     let uploads = state.uploads_in_flight.peek();
     let upload_error = if uploads.uploading > 0 {
         Some(format!(
@@ -68,11 +75,12 @@ pub(super) fn submit(state: WriteEditorState, post_id: Option<i32>) {
     };
     drop(uploads);
     if let Some(message) = upload_error {
-        save.set(SaveState::Failed(message));
+        fail(save, message);
         return;
     }
     // Snapshot before spawning; edits made during an in-flight request stay local.
-    let draft = state.form.peek().clone();
+    let mut draft = state.form.peek().clone();
+    draft.status = status.to_owned();
     #[cfg(target_arch = "wasm32")]
     {
         use crate::api::posts::{create_post, update_post, CreatePostResponse};
@@ -83,21 +91,23 @@ pub(super) fn submit(state: WriteEditorState, post_id: Option<i32>) {
             .as_ref()
             .map(|handle| handle.instance().get_markdown())
             .unwrap_or_else(|| draft.content.clone());
-        let submission = match prepare(&draft, markdown) {
+        let submission = match prepare(&draft, markdown.clone()) {
             Ok(submission) => submission,
             Err(message) => {
-                save.set(SaveState::Failed(message.into()));
+                fail(save, message.into());
                 return;
             }
         };
         save.set(SaveState::Saving);
+        let post_id = state.post_id;
+        let was_published = state.saved.peek().is_published();
         spawn(async move {
             let PostSubmission {
                 title,
                 slug,
                 summary,
-                markdown,
-                status,
+                markdown: body,
+                status: _,
                 tags,
                 cover_image,
             } = submission;
@@ -107,34 +117,77 @@ pub(super) fn submit(state: WriteEditorState, post_id: Option<i32>) {
                     title,
                     slug,
                     summary,
-                    markdown,
-                    status,
+                    body,
+                    status.to_owned(),
                     tags,
                     cover_image,
                 )
                 .await
             } else {
-                create_post(title, slug, summary, markdown, status, tags, cover_image).await
+                create_post(
+                    title,
+                    slug,
+                    summary,
+                    body,
+                    status.to_owned(),
+                    tags,
+                    cover_image,
+                )
+                .await
             };
             match result {
-                Ok(CreatePostResponse { success: true, .. }) => {
+                Ok(CreatePostResponse {
+                    success: true,
+                    post_id: new_id,
+                    slug,
+                    ..
+                }) => {
+                    let mut form = state.form;
+                    let mut saved = state.saved;
+                    let submitted_slug = draft.slug.clone();
+                    let submitted_content = draft.content.clone();
+                    let mut snapshot = draft;
+                    snapshot.content = markdown;
+                    if let Some(slug) = slug {
+                        snapshot.slug = slug;
+                    }
+                    // Only adopt server values for fields untouched since the snapshot.
+                    form.with_mut(|f| {
+                        if f.slug == submitted_slug {
+                            f.slug = snapshot.slug.clone();
+                        }
+                        if f.content == submitted_content {
+                            f.content = snapshot.content.clone();
+                        }
+                        f.status = status.to_owned();
+                    });
+                    saved.set(snapshot);
+                    let mut published_at = state.published_at;
+                    if status == "published" && published_at.peek().is_none() {
+                        published_at.set(Some(chrono::Utc::now()));
+                    }
+                    let mut saved_at = state.saved_at;
+                    saved_at.set(Some(
+                        crate::utils::time::local_now().format("%H:%M").to_string(),
+                    ));
                     save.set(SaveState::Idle);
-                    let _ = dioxus::router::navigator().push(crate::router::Route::Posts {});
+                    match (was_published, status == "published") {
+                        (false, true) => toast.success("已发布"),
+                        (true, false) => toast.success("已转为草稿"),
+                        _ => {}
+                    }
+                    if let (None, Some(id)) = (post_id, new_id) {
+                        let _ = dioxus::router::navigator()
+                            .replace(crate::router::Route::WriteEdit { id });
+                    }
                 }
-                Ok(CreatePostResponse { message, .. }) => save.set(SaveState::Failed(message)),
-                Err(error) => {
-                    let action = if post_id.is_some() {
-                        "更新"
-                    } else {
-                        "保存"
-                    };
-                    save.set(SaveState::Failed(format!("{action}失败: {error}")));
-                }
+                Ok(CreatePostResponse { message, .. }) => fail(save, message),
+                Err(error) => fail(save, format!("保存失败：{error}")),
             }
         });
     }
     #[cfg(not(target_arch = "wasm32"))]
-    save.set(SaveState::Failed("此页面需要 JavaScript 才能保存".into()));
+    fail(save, "此页面需要 JavaScript 才能保存".into());
 }
 
 #[cfg(test)]

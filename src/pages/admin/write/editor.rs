@@ -1,15 +1,31 @@
-//! Loading, initialization and cleanup of the article editor.
+//! Initialization and cleanup of the article editor. The post is loaded before this
+//! hook runs, so the form starts from server content and the local copy can compare
+//! against it.
 use super::state::{EditorPhase, PostDraft, SaveState, WriteEditorState};
 use crate::bridges::library::use_browser_library;
 use crate::bridges::tiptap::UploadsInFlight;
+use chrono::{DateTime, Utc};
 use dioxus::prelude::*;
+
+/// 正文为空时编辑器里的提示。
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+const PLACEHOLDER: &str = "开始写作，或输入 / 插入代码、图表、公式和图片";
 
 /// Owns Tiptap callbacks and its handle for exactly the lifetime of the write page.
 #[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut, unused_variables))]
-pub(super) fn use_write_editor(post_id: Option<i32>) -> WriteEditorState {
+pub(super) fn use_write_editor(
+    post_id: Option<i32>,
+    initial: PostDraft,
+    published_at: Option<DateTime<Utc>>,
+) -> WriteEditorState {
+    let baseline = initial.clone();
     let state = WriteEditorState {
-        form: use_signal(PostDraft::default),
-        phase: use_signal(|| EditorPhase::Loading),
+        post_id,
+        form: use_signal(move || initial),
+        saved: use_signal(move || baseline),
+        saved_at: use_signal(|| None),
+        published_at: use_signal(move || published_at),
+        phase: use_signal(|| EditorPhase::Initializing),
         save: use_signal(SaveState::default),
         library: use_browser_library("tiptap", || true),
         uploads_in_flight: use_signal(UploadsInFlight::default),
@@ -23,62 +39,28 @@ pub(super) fn use_write_editor(post_id: Option<i32>) -> WriteEditorState {
     };
     #[cfg(target_arch = "wasm32")]
     {
-        use crate::api::posts::{get_post_by_id, SinglePostResponse};
         use crate::bridges::library::library_ready;
         use crate::bridges::tiptap::{consume_upload_event, EditorHandle};
         use wasm_bindgen::closure::Closure;
 
         let mut form = state.form;
+        let mut saved = state.saved;
         let mut phase = state.phase;
         let mut editor = state.editor;
         let library = state.library;
         let reload = state.reload;
-        // Keep the loaded Markdown separately from the editable form. Form updates
-        // cannot race initialization or cause an editor instance to be recreated.
-        let mut initial_content = use_signal(|| None::<String>);
         let mut ready = use_signal(|| false);
-        use_effect(move || {
-            let generation = reload();
-            ready.set(false);
-            initial_content.set(None);
-            editor.set(None);
-            phase.set(EditorPhase::Loading);
-            if let Some(id) = post_id {
-                spawn(async move {
-                    let result = get_post_by_id(id).await;
-                    if *reload.peek() != generation {
-                        return;
-                    }
-                    match result {
-                        Ok(SinglePostResponse { post: Some(post) }) => {
-                            let draft = PostDraft::from(post);
-                            let markdown = draft.content.clone();
-                            form.set(draft);
-                            initial_content.set(Some(markdown));
-                            phase.set(EditorPhase::Initializing);
-                        }
-                        Ok(SinglePostResponse { post: None }) => {
-                            phase.set(EditorPhase::Failed("文章不存在".into()));
-                        }
-                        Err(error) => {
-                            phase.set(EditorPhase::Failed(format!("加载失败: {error}")));
-                        }
-                    }
-                });
-            } else {
-                // Retain a new article's form when retrying failed initialization.
-                initial_content.set(Some(form.peek().content.clone()));
-                phase.set(EditorPhase::Initializing);
-            }
-        });
         use_drop(move || editor.set(None));
         use_effect(move || {
-            let Some(markdown) = initial_content() else {
-                return;
-            };
-            if editor.peek().is_some() || !library_ready(library) {
+            let _ = reload();
+            if !library_ready(library) {
                 return;
             }
+            ready.set(false);
+            editor.set(None);
+            phase.set(EditorPhase::Initializing);
+            // Retrying keeps whatever was typed before the failure.
+            let markdown = form.peek().content.clone();
             let on_update = Closure::new(move |md: String| form.write().content = md);
             let on_ready = Closure::new(move || ready.set(true));
             let on_image_upload = crate::bridges::tiptap::make_upload_closure();
@@ -92,7 +74,7 @@ pub(super) fn use_write_editor(post_id: Option<i32>) -> WriteEditorState {
                 move || visible.set(true)
             });
             let options = crate::bridges::tiptap::EditorOptions::new();
-            options.set_placeholder("在此输入内容...");
+            options.set_placeholder(PLACEHOLDER);
             options.set_on_update(&on_update);
             options.set_on_ready(&on_ready);
             options.set_on_image_upload(&on_image_upload);
@@ -120,10 +102,23 @@ pub(super) fn use_write_editor(post_id: Option<i32>) -> WriteEditorState {
                 }
             }
         });
+        let mut baseline_done = use_signal(|| false);
         use_effect(move || {
-            if ready() {
-                phase.set(EditorPhase::Ready);
+            if !ready() {
+                return;
             }
+            // The editor normalizes Markdown on load; on the first ready adopt its
+            // form as the saved baseline so an untouched post does not read as
+            // modified. Nothing can be typed into the body before that.
+            if let Some(handle) = &*editor.peek() {
+                let markdown = handle.instance().get_markdown();
+                if !*baseline_done.peek() {
+                    baseline_done.set(true);
+                    saved.write().content = markdown.clone();
+                }
+                form.write().content = markdown;
+            }
+            phase.set(EditorPhase::Ready);
         });
     }
     #[cfg(not(target_arch = "wasm32"))]

@@ -1,0 +1,685 @@
+/* ======== 写文章 ========
+   结构见 src/pages/admin/write.rs：页头替代后台顶栏，正文居中，属性在右侧抽屉。
+   Tiptap 内部的排版与配色在 P6 接入 token，这里只调整容器与占位提示。 */
+.admin-shell[data-focus="write"] .admin-topbar {
+  display: none;
+}
+
+.write-page {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  background-color: var(--color-surface-0);
+}
+
+/* ---- 页头 ---- */
+.write-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  height: 3.5rem;
+  padding: 0 1rem 0 0.75rem;
+  box-shadow: inset 0 -1px 0 var(--color-hairline);
+}
+
+.write-head-left {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-width: 0;
+}
+
+.write-crumbs {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  color: var(--color-fg-3);
+  font-size: 0.8125rem;
+}
+
+.write-crumbs a {
+  color: inherit;
+  text-decoration: none;
+  border-radius: 4px;
+}
+
+.write-crumbs a:hover {
+  color: var(--color-fg);
+}
+
+.write-crumbs a:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
+.write-crumbs [aria-current] {
+  max-width: 20rem;
+  overflow: hidden;
+  color: var(--color-fg);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.write-head-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+/* 保存状态：圆点 + 文字；保存中圆点呼吸，失败时整条可点重试。 */
+.write-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: 1.875rem;
+  margin-right: 0.5rem;
+  padding: 0 0.5rem;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--color-fg-3);
+  font: inherit;
+  font-size: 0.78125rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+button.write-status {
+  cursor: pointer;
+}
+
+button.write-status:hover {
+  background-color: var(--color-ink-1);
+}
+
+button.write-status:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
+.write-status-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--color-fg-3);
+}
+
+.write-status[data-tone="clay"] .write-status-dot {
+  background-color: var(--color-clay);
+}
+
+.write-status[data-tone="danger"] {
+  color: var(--color-danger);
+}
+
+.write-status[data-tone="danger"] .write-status-dot {
+  background-color: var(--color-danger);
+}
+
+.write-status[data-pulse] .write-status-dot {
+  animation: write-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes write-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* ---- 本地副本恢复 ---- */
+.write-banner {
+  display: flex;
+  flex: none;
+  gap: 0.75rem;
+  width: min(45rem, calc(100% - 2rem));
+  margin: 0.875rem auto 0;
+  padding: 0.875rem 1rem;
+  border-radius: var(--radius-panel);
+  background-color: var(--color-warning-soft);
+  box-shadow: 0 0 0 1px var(--color-hairline);
+  animation: write-banner-in var(--spring-snappy-duration) var(--ease-spring-snappy) both;
+}
+
+.write-banner > svg {
+  flex: none;
+  margin-top: 0.125rem;
+  color: var(--color-warning);
+}
+
+.write-banner p {
+  margin: 0.25rem 0 0;
+  color: var(--color-fg-2);
+  font-size: 0.8125rem;
+  line-height: 1.7;
+}
+
+.write-banner .write-banner-title {
+  margin: 0;
+  color: var(--color-fg);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.write-banner-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.625rem;
+}
+
+@keyframes write-banner-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+
+/* ---- 正文 ---- */
+.write-body {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.write-main {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+}
+
+.write-doc {
+  max-width: 45rem;
+  margin: 0 auto;
+  padding: 3.5rem 2rem 7.5rem;
+}
+
+.write-title {
+  display: block;
+  width: 100%;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+  resize: none;
+  field-sizing: content;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--color-fg);
+  font-family: var(--font-serif);
+  font-size: 2.125rem;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.write-title::placeholder {
+  color: var(--color-fg-3);
+}
+
+.write-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem 0.875rem;
+  margin: 0.75rem 0 0;
+  color: var(--color-fg-3);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.write-meta-slug {
+  font-family: var(--font-mono);
+}
+
+.write-rule {
+  height: 1px;
+  margin: 1.75rem 0;
+  background-color: var(--color-hairline);
+}
+
+.write-editor-wrap[inert] {
+  opacity: 0.5;
+}
+
+.write-editor .tiptap-editor {
+  height: auto;
+  font-size: 1.03125rem;
+  line-height: 1.9;
+}
+
+.write-editor .tiptap-editor .ProseMirror {
+  min-height: 40vh;
+  padding: 0;
+  overflow: visible;
+}
+
+.write-editor-wrap[data-empty] .tiptap-editor .ProseMirror {
+  min-height: 3rem;
+}
+
+.write-editor
+  .tiptap-editor
+  .ProseMirror
+  p:first-child:last-child:has(br.ProseMirror-trailingBreak:only-child)::before {
+  content: "开始写作，或输入 / 插入代码、图表、公式和图片";
+  color: var(--color-fg-3);
+}
+
+.write-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: 0 0 1rem;
+  padding: 0.375rem 0.375rem 0.375rem 0.875rem;
+  border-radius: 8px;
+  background-color: var(--color-danger-soft);
+  color: var(--color-danger);
+  font-size: 0.8125rem;
+}
+
+/* 起步模板：新文章正文为空时出现在编辑区下方。 */
+.write-starters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.625rem;
+  margin-top: 1.5rem;
+}
+
+.write-starter {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.125rem;
+  padding: 0.75rem 0.875rem;
+  border: 0;
+  border-radius: var(--radius-panel);
+  background-color: var(--color-surface-2);
+  box-shadow: 0 0 0 1px var(--color-hairline), var(--shadow-sm);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: box-shadow 200ms var(--ease-out-expo);
+}
+
+.write-starter:hover {
+  box-shadow: 0 0 0 1px var(--color-ink-3), var(--shadow-sm);
+}
+
+.write-starter:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
+.write-starter-name {
+  color: var(--color-fg);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.write-starter-hint {
+  color: var(--color-fg-3);
+  font-size: 0.78125rem;
+}
+
+.write-starter-note {
+  margin: 0.875rem 0 0;
+  color: var(--color-fg-3);
+  font-size: 0.78125rem;
+}
+
+/* ---- 属性抽屉 ---- */
+.write-drawer-slot {
+  display: flex;
+  flex: none;
+  width: 20rem;
+  min-height: 0;
+}
+
+.write-drawer {
+  display: flex;
+  flex-direction: column;
+  gap: 1.375rem;
+  width: 100%;
+  padding: 1.125rem 1.25rem 2rem;
+  overflow-y: auto;
+  background-color: var(--color-surface-1);
+  box-shadow: inset 1px 0 0 var(--color-hairline);
+  animation: write-drawer-in 300ms var(--ease-out-expo) both;
+}
+
+@keyframes write-drawer-in {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+}
+
+.write-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.write-drawer-head h2 {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.write-prop-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.375rem;
+  color: var(--color-fg-2);
+  font-size: 0.78125rem;
+}
+
+.write-prop-hint {
+  color: var(--color-fg-3);
+}
+
+.write-drawer .field {
+  background-color: var(--color-surface-2);
+}
+
+.write-slug {
+  display: flex;
+  align-items: center;
+  padding: 0 0.625rem;
+  color: var(--color-fg-3);
+  font-family: var(--font-mono);
+  font-size: 0.78125rem;
+}
+
+.write-slug input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--color-fg);
+  font: inherit;
+}
+
+.write-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  height: auto;
+  min-height: 2.25rem;
+  padding: 0.375rem;
+}
+
+.write-tags input {
+  flex: 1;
+  min-width: 5rem;
+  height: 1.5rem;
+  padding: 0 0.25rem;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--color-fg);
+  font: inherit;
+  font-size: 0.78125rem;
+}
+
+.write-tags input::placeholder {
+  color: var(--color-fg-3);
+}
+
+.write-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  height: 1.5rem;
+  padding: 0 0.25rem 0 0.5625rem;
+  border-radius: 999px;
+  background-color: var(--color-ink-1);
+  font-size: 0.78125rem;
+}
+
+.write-tag button {
+  display: grid;
+  place-items: center;
+  width: 1.125rem;
+  height: 1.125rem;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--color-fg-3);
+  cursor: pointer;
+}
+
+.write-tag button:hover {
+  background-color: var(--color-ink-2);
+  color: var(--color-fg);
+}
+
+.write-tag button:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
+.write-summary {
+  width: 100%;
+  font-size: 0.8125rem;
+  line-height: 1.7;
+  resize: none;
+}
+
+/* 封面：21:9；空态斜纹底，拖入文件时换陶土环。 */
+.write-cover {
+  position: relative;
+  aspect-ratio: 21 / 9;
+  overflow: hidden;
+  border-radius: var(--radius-panel);
+  background-color: var(--color-surface-2);
+  box-shadow: inset 0 0 0 1px var(--color-hairline);
+}
+
+.write-cover[data-state="empty"] {
+  background-image: repeating-linear-gradient(
+    135deg,
+    transparent 0 9px,
+    var(--color-ink-1) 9px 10px
+  );
+}
+
+.write-cover[data-drag] {
+  box-shadow: inset 0 0 0 1.5px var(--color-clay);
+}
+
+.write-cover-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  border-radius: inherit;
+  color: var(--color-fg-3);
+  font-size: 0.78125rem;
+  cursor: pointer;
+}
+
+.write-cover-empty:hover {
+  color: var(--color-fg-2);
+}
+
+.write-cover-empty:focus-within {
+  box-shadow: var(--shadow-focus);
+}
+
+.write-cover img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  cursor: zoom-in;
+}
+
+.write-cover-note {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--color-fg-2);
+  font-size: 0.78125rem;
+}
+
+.write-cover[data-state="uploading"] .write-cover-note {
+  animation: write-pulse 1.2s ease-in-out infinite;
+}
+
+.write-cover-drop {
+  background-color: rgb(0 0 0 / 0.5);
+  color: #fff;
+}
+
+.write-cover-loading {
+  position: absolute;
+  inset: 0;
+  background-color: var(--color-ink-2);
+  animation: write-pulse 1.2s ease-in-out infinite;
+}
+
+.write-cover-actions,
+.write-cover-url {
+  display: flex;
+  gap: 0.375rem;
+  margin-top: 0.5rem;
+}
+
+.write-cover-actions > * {
+  flex: 1;
+}
+
+.write-cover-url input {
+  flex: 1;
+  min-width: 0;
+}
+
+.write-drawer-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: auto;
+  padding-top: 1rem;
+  box-shadow: inset 0 1px 0 var(--color-hairline);
+  color: var(--color-fg-3);
+  font-size: 0.78125rem;
+}
+
+.write-trash {
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-fg-2);
+  font: inherit;
+  cursor: pointer;
+}
+
+.write-trash:hover {
+  color: var(--color-danger);
+}
+
+.write-trash:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
+/* 编辑器初始化时盖住正文与抽屉，页头保持可用。 */
+.write-loading {
+  position: absolute;
+  inset: 3.5rem 0 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--color-surface-0);
+}
+
+.write-loading > .write-page > .write-head {
+  display: none;
+}
+
+.write-missing {
+  padding: 2rem;
+}
+
+/* 窄屏：抽屉浮在正文上方。 */
+@media (max-width: 1000px) {
+  .write-drawer-slot {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 4;
+    box-shadow: var(--shadow-popover);
+  }
+}
+
+@media (max-width: 767px) {
+  .write-head {
+    padding: 0 0.5rem;
+  }
+
+  .write-crumbs,
+  .write-hide-narrow {
+    display: none;
+  }
+
+  .write-status {
+    margin-right: 0;
+  }
+
+  .write-drawer-slot {
+    width: 100%;
+  }
+
+  .write-doc {
+    padding: 1.75rem 1rem 6rem;
+  }
+
+  .write-title {
+    font-size: 1.625rem;
+  }
+
+  .write-starters {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .write-status[data-pulse] .write-status-dot,
+  .write-cover[data-state="uploading"] .write-cover-note,
+  .write-cover-loading {
+    animation: none;
+  }
+
+  .write-banner,
+  .write-drawer {
+    animation: listbox-fade 150ms linear both;
+  }
+}
+
+/* 骨架里的抽屉只在宽屏占位，窄屏默认收起。 */
+@media (max-width: 1023px) {
+  .write-skeleton-drawer {
+    display: none;
+  }
+}

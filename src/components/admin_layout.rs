@@ -461,6 +461,7 @@ pub fn AdminLayout() -> Element {
             title,
             content,
             internal_scroll: internal_scroll_route,
+            focus_write: is_write_route,
             checking: !authenticated,
         }
         if authenticated {
@@ -479,6 +480,7 @@ pub(crate) fn AdminShell(
     title: &'static str,
     content: Element,
     #[props(default)] internal_scroll: bool,
+    #[props(default)] focus_write: bool,
     #[props(default)] checking: bool,
     #[props(default)] preview: bool,
     #[props(default)] on_demo_navigate: Option<EventHandler<&'static str>>,
@@ -551,6 +553,8 @@ pub(crate) fn AdminShell(
         div {
             class: "admin-shell",
             "data-preview": preview.then_some("true"),
+            // 写作页自带页头，隐藏后台顶栏。
+            "data-focus": focus_write.then_some("write"),
             "data-sidebar": data_sidebar,
             "data-resizing": drag().is_some().then_some("true"),
             style: "{root_style}",

@@ -13,6 +13,7 @@ export const ICONS: readonly string[] = [
   'x',
   'menu',
   'panel-left',
+  'panel-right',
   'house',
   'layout-dashboard',
   'ellipsis',
@@ -72,6 +73,7 @@ export const ICONS: readonly string[] = [
   'terminal',
   // 内容
   'file-text',
+  'file-x',
   'book-open',
   'notebook-pen',
   'message-square',

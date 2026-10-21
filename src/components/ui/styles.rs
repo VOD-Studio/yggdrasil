@@ -60,9 +60,6 @@ pub const BTN_OUTLINE: &str = "btn btn-outline";
 /// 危险操作的弱化形式（清空回收站等）：浅红底红字。
 pub const BTN_DANGER_OUTLINE: &str = "btn btn-danger-soft";
 
-/// 关闭图标按钮（× 关闭提示条）。
-pub const BTN_CLOSE_ICON: &str = "btn btn-xs btn-icon btn-ghost";
-
 /// 方形图标按钮（步进 −/+ 等）。
 pub const BTN_ICON: &str = "btn btn-icon btn-ghost";
 
