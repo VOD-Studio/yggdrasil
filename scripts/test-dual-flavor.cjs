@@ -141,10 +141,19 @@ async function main() {
   const fixtureHtml = process.env.WASM_PRELOAD_AB === '1'
     ? '<p>固定的公开长文章样例，用于比较相同内容下的首屏显示、资源请求与菜单交互。正文不含运行块或外部图片，不会发起执行、上传或鉴权请求。</p>'.repeat(200)
     : '<p>正文</p>';
-  fs.writeFileSync(seed, `INSERT INTO users(id,username,email,password_hash,role) VALUES(1,'regression','regression@test.invalid','unused','admin');
+  // notes.current_revision 是 DEFERRABLE 外键：notes 行必须与 note_revisions 同事务
+  // 插入，整体包 BEGIN/COMMIT（psql -f 默认逐语句自动提交，会让 notes 插入违约）。
+  fs.writeFileSync(seed, `BEGIN;
+    INSERT INTO users(id,username,email,password_hash,role) VALUES(1,'regression','regression@test.invalid','unused','admin');
     INSERT INTO posts(id,author_id,title,slug,summary,content_md,content_html,status,published_at,word_count,reading_time)
       VALUES(1,1,'双产物验收文章','dual-flavor-post','摘要','正文','${fixtureHtml}','published',NOW(),100,1);
-    SELECT setval('posts_id_seq',1); SELECT setval('users_id_seq',1);`);
+    SELECT setval('posts_id_seq',1); SELECT setval('users_id_seq',1);
+    INSERT INTO notes(id,owner_id,slug,version,published_version,published_at)
+      VALUES(1,1,'dual-flavor-note',1,1,NOW());
+    INSERT INTO note_revisions(note_id,version,kind,title,content_md,content_html)
+      VALUES(1,1,'moment','双产物验收笔记','正文','<p>正文</p>');
+    SELECT setval('notes_id_seq',1);
+    COMMIT;`);
   await run(['psql', '-v', 'ON_ERROR_STOP=1', '-d', 'ygg_dual_flavor_test', '-f', seed], { env: pg });
 
   // ── 1. 按路径选 flavor（HTTP 层） ─────────────────────────────
@@ -162,6 +171,39 @@ async function main() {
     check(`${p} → reader 模板（${expect404 ? '404' : '200'}）`, expect404 ? res.status === 404 : res.ok, `status=${res.status}`);
     check(`${p} 不含 full 专属入口`, wrong.length === 0, wrong.join(', '));
     if (!refs.has(entryOf('reader'))) check(`${p} 引用 reader 入口`, false, [...refs].join(', '));
+  }
+  // ── 1b. P5 §8.2 资源边界：增强脚本/灯箱按页面内容注入 ─────────
+  // 全局模板只保留启动核心（core.js）与首屏样式；正文/图鉴/changelog 页由
+  // 组件经 document::Script 声明注入（SSR 烤进 head 带 defer），纯导航页不注入。
+  console.log('\n[1b] P5 §8.2 增强脚本与灯箱按需注入');
+  const headOf = (html) => html.slice(0, html.indexOf('</head>'));
+  const hasTag = (head, url) => head.includes(`src="${url}"`) || head.includes(`href="${url}"`);
+  const deferTag = (head, url) =>
+    new RegExp(`<script src="${url.replace(/[?.]/g, (c) => `\\${c}`)}"[^>]*defer`).test(head);
+  const enhanceUrl = '/yggdrasil-core/yggdrasil-enhance.js?v=1';
+  const lightboxUrl = '/lightbox/lightbox.js?v=3';
+  const lightboxCss = '/lightbox/lightbox.css?v=2';
+  // changelog 只有版本导航（无正文图片）→ 只注入增强脚本，不注入灯箱。
+  const enhancePages = ['/post/dual-flavor-post', '/notes', '/changelog', '/about/components'];
+  const lightboxPages = ['/post/dual-flavor-post', '/notes', '/about/components'];
+  const barePages = ['/', '/archives', '/tags/x', '/search', '/about', '/friends', '/page/2'];
+  for (const p of enhancePages) {
+    const head = headOf((await fetchBody(p)).body);
+    check(`${p} 注入增强脚本（defer）`, deferTag(head, enhanceUrl), head.match(/enhance[^>]*/)?.[0] ?? '缺失');
+  }
+  for (const p of lightboxPages) {
+    const head = headOf((await fetchBody(p)).body);
+    check(`${p} 注入灯箱脚本与样式`, hasTag(head, lightboxUrl) && hasTag(head, lightboxCss));
+  }
+  for (const p of barePages) {
+    const head = headOf((await fetchBody(p)).body);
+    check(`${p} 不注入增强脚本与灯箱`, !hasTag(head, enhanceUrl) && !hasTag(head, lightboxUrl) && !hasTag(head, lightboxCss));
+  }
+  {
+    const globalHead = headOf((await fetchBody('/')).body);
+    check('全局仍保留启动核心 core.js（阻塞）', hasTag(globalHead, '/yggdrasil-core/yggdrasil-core.js?v=4'));
+    check('KaTeX/高亮样式保持全局（无闪烁拆分）',
+      hasTag(globalHead, '/highlight.css?v=2') && hasTag(globalHead, '/katex/katex.min.css?v=3'));
   }
   for (const p of fullPaths) {
     const res = await fetch(base + p);
