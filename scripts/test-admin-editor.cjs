@@ -26,7 +26,6 @@ fs.mkdirSync(ARTIFACTS, { recursive: true });
 const EDIT_PATH = `/admin/write/${POST_ID}`;
 const TITLE = '后台浏览器回归文章';
 const BODY = '后台编辑器回归正文，保存失败后仍保留这段内容。';
-const FAKE_TOKEN = 'ygg_browser_acceptance_fixture';
 const report = { base: BASE, postId: POST_ID, artifactDir: ARTIFACTS, passed: [], screenshots: [],
   requests: [], pageErrors: [], layout: [] };
 let stage = 'startup';
@@ -266,32 +265,33 @@ async function main() {
 
     stage = 'mcp-copy';
     await spa(page, '/admin/mcp');
-    await page.getByRole('heading', { name: 'MCP 服务器', exact: true }).waitFor();
-    await page.getByPlaceholder('ygg_xxxxxxxxxxxxxxxxxxxx').fill(FAKE_TOKEN);
-    const copy = page.locator('.mcp-copy-button-primary');
-    await page.waitForFunction(() => {
-      const button = document.querySelector('.mcp-copy-button-primary');
-      return button && !button.disabled && !button.textContent.includes('准备中');
-    });
-    await copy.click();
-    await page.waitForFunction(() => document.querySelector('.mcp-copy-button-primary')?.dataset.copied === 'true');
-    assert((await page.evaluate(() => navigator.clipboard.readText())).includes(FAKE_TOKEN));
+    await page.getByRole('heading', { name: 'MCP 接入', exact: true }).waitFor();
+    await page.getByRole('button', { name: '新建令牌', exact: true }).click();
+    await page.getByLabel('名称').fill('browser-regression');
+    await page.getByRole('button', { name: '创建令牌', exact: true }).click();
+    await page.getByRole('heading', { name: '令牌已创建', exact: true }).waitFor();
+    await page.getByRole('button', { name: '显示令牌', exact: true }).click();
+    const plaintext = await page.locator('#mcp-plaintext').inputValue();
+    assert.match(plaintext, /^ygg_/);
+    await page.locator('.mcp-snippet').waitFor();
+    await page.getByRole('button', { name: '复制一句话接入指令', exact: true }).click();
+    await page.getByText(/已复制接入指令/).waitFor();
+    assert((await page.evaluate(() => navigator.clipboard.readText())).includes(plaintext));
     await screenshot(page, 'light-mcp-config');
-    pass('MCP configuration is generated and actual clipboard copy reports success');
+    pass('MCP token creation shows plaintext, client configs and copies a real agent prompt');
 
     stage = 'assets-smoke';
     await spa(page, '/admin/assets');
-    await page.getByRole('heading', { name: '素材管理', exact: true }).waitFor();
-    await page.locator('.assets-lightbox').waitFor();
-    assert(await page.locator('.assets-lightbox img.blur-img-full').count() > 0);
-    await page.getByRole('button', { name: /被 \d+ 处引用/ }).first().click();
-    await page.getByText(/引用此素材 ·/).waitFor();
+    await page.getByRole('heading', { name: '素材', exact: true }).waitFor();
+    await page.locator('.asset-tile').first().waitFor();
+    await page.locator('.asset-tile-open').first().click();
+    await page.locator('.asset-detail').getByText('引用', { exact: true }).waitFor();
+    assert(await page.locator('.asset-detail .asset-ref').count() > 0);
+    assert(await page.locator('.asset-detail').getByRole('button', { name: '删除' }).isDisabled());
     await screenshot(page, 'light-assets-references');
-    await page.keyboard.press('Escape');
-    await page.getByText(/引用此素材 ·/).waitFor({ state: 'hidden' });
-    await page.getByRole('button', { name: '未引用', exact: true }).click();
-    await page.getByRole('heading', { name: '暂无素材', exact: true }).waitFor();
-    pass('asset cards, protected references and filter tabs render and respond');
+    await page.getByRole('tab', { name: /未引用/ }).click();
+    await page.getByRole('heading', { name: '没有未引用的素材', exact: true }).waitFor();
+    pass('asset grid, protected references and filter tabs render and respond');
 
     stage = 'logs-smoke';
     await spa(page, '/admin/logs');

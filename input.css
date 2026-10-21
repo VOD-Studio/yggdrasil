@@ -43,5 +43,6 @@
 @import "./styles/pages/admin-friends.css";
 @import "./styles/pages/admin-profile.css";
 @import "./styles/pages/admin-settings.css";
+@import "./styles/pages/admin-mcp.css";
 
 @source "./src/**/*.{rs,html}";

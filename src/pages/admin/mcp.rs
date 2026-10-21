@@ -1,198 +1,258 @@
-//! 管理后台「MCP 服务器」页面。
+//! 管理后台「MCP 接入」页面（`/admin/mcp`）。
 //!
-//! 管理员在此签发/查看/编辑权限/撤销为 AI 客户端（Codex / Claude Code / Cursor / Cline 等）准备的
-//! bearer 令牌，并复制对应的客户端配置片段。功能分三块：
-//! - 令牌列表：名称 / 作用域 / 创建时间 / 过期 / 最近使用 / 状态 + 撤销 / 重查按钮。
-//! - 新建令牌表单：名称 + 作用域下拉 + 有效期下拉；提交后一次性弹窗展示明文。
-//! - 客户端配置：选中令牌后展示各客户端可复制的配置片段 + CLI 命令。
+//! 为 Codex、Claude Code、Cursor、Cline、Oh-My-Pi、OpenCode 等 AI 客户端签发 bearer
+//! 令牌。页面分两块：
+//! - 一句话接入：选一个有效令牌，复制带服务地址与令牌的接入指令，粘贴给 Agent。
+//! - 已签发的令牌：文章权限、笔记授权、有效期与最近使用；可查看接入配置、编辑权限、
+//!   吊销（确认对话框）。
 //!
-//! 仅 WASM 前端交互，数据经 Dioxus server functions（`src/api/mcp_tokens.rs`）加载。
-//! 配置片段由服务端生成（`src/mcp/config.rs`，server-only 模块），经 `get_mcp_client_configs`
-//! server fn 返回——`APP_BASE_URL` 等环境变量只在服务端可读。
-//!
-//! 跨子组件状态（刷新触发、一次性明文弹窗、配置令牌）经一个共享 context 传递，
-//! 避免列表与表单组件各自维护互相不可见的信号。
+//! 「新建令牌」打开创建对话框；创建成功后进入令牌对话框：明文默认遮罩，可显示、
+//! 复制，并按客户端给出已填好地址与令牌的配置片段。配置由服务端生成
+//! （`get_mcp_client_configs`，`APP_BASE_URL` 只在服务端可读）。样式见
+//! styles/pages/admin-mcp.css。
+
+mod configs;
+mod token_editor;
+mod tokens;
 
 use dioxus::prelude::*;
 
-#[cfg(target_arch = "wasm32")]
-use crate::models::mcp_token::McpTokenSummary;
+use crate::components::ui::{button_class, use_toast, ButtonSize, ButtonVariant, Icon, IconName};
+use crate::models::mcp_token::{McpTokenSummary, TokenScope};
+use configs::{copy_agent_prompt, TokenDialog};
+use token_editor::{CreateTokenDialog, EditPermissionsDialog};
+use tokens::TokenTable;
 
-/// 跨子组件共享的页面状态：刷新代际、一次性明文弹窗、配置用令牌、操作提示。
-///
-/// `PartialEq` 由组件宏生成的 Props 结构体要求（`TokenRow` 以此为 prop）。
-/// `Signal<T>` 实现了 `PartialEq`（比较当前值），故派生可行。
-#[cfg(target_arch = "wasm32")]
-#[derive(Clone, Copy, PartialEq)]
-struct McpPageState {
-    /// 递增以触发令牌列表重新加载（创建/编辑/撤销后 +1）。
-    reload_gen: Signal<u32>,
-    /// 一次性明文弹窗：Some 时展示。
-    created_plaintext: Signal<Option<String>>,
-    /// 重查明文弹窗：(id, plaintext)。
-    revealed: Signal<Option<(String, String)>>,
-    /// 配置卡片使用的令牌明文。
-    config_token: Signal<Option<String>>,
-    /// 全局操作提示：(消息, 是否错误)。
-    toast: Signal<Option<(String, bool)>>,
-    editing: Signal<Option<McpTokenSummary>>,
+/// 文章权限的说明。
+pub(super) fn scope_desc(scope: TokenScope) -> &'static str {
+    match scope {
+        TokenScope::Read => "仅查询已发布文章",
+        TokenScope::Write => "read + 文章、评论、标签、媒体的增删改",
+        TokenScope::Admin => "write + 站点设置与代码运行器",
+    }
 }
 
-/// 管理后台 MCP 令牌管理页面。
+/// 笔记授权的一行描述。
+pub(super) fn notes_desc(token: &McpTokenSummary) -> String {
+    let n = &token.notes;
+    if !n.read {
+        return "未授权".into();
+    }
+    let what = if n.write { "读写草稿" } else { "只读" };
+    match &n.notebook_ids {
+        Some(ids) => format!("{what} · {} 个笔记本", ids.len()),
+        None => format!("{what} · 全部笔记本"),
+    }
+}
+
+/// 令牌当前可用：未吊销、未过期。
+pub(super) fn is_active(token: &McpTokenSummary) -> bool {
+    token.revoked_at.is_none() && token.expires_at.is_none_or(|e| e > chrono::Utc::now())
+}
+
+/// 令牌对话框里要展示的内容。
+#[derive(Clone, PartialEq)]
+pub(super) struct OpenToken {
+    pub summary: McpTokenSummary,
+    pub plaintext: String,
+    /// 刚创建（标题与提示不同）。
+    pub created: bool,
+}
+
+/// 管理后台 MCP 接入页面。
 #[component]
-#[allow(clippy::needless_pass_by_value)]
+#[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut, unused_variables))]
 pub fn Mcp() -> Element {
-    #[cfg(target_arch = "wasm32")]
-    {
-        let state = McpPageState {
-            reload_gen: use_signal(|| 0),
-            created_plaintext: use_signal(|| None),
-            revealed: use_signal(|| None),
-            config_token: use_signal(|| None),
-            toast: use_signal(|| None),
-            editing: use_signal(|| None),
-        };
-        use_context_provider(|| state);
+    let toast = use_toast();
+    let mut tokens = use_signal(|| None::<Vec<McpTokenSummary>>);
+    let mut failed = use_signal(|| false);
+    let mut reload = use_signal(|| 0_u32);
+    let mut creating = use_signal(|| false);
+    let mut editing = use_signal(|| None::<McpTokenSummary>);
+    let mut opened = use_signal(|| None::<OpenToken>);
+    let mut prompt_token = use_signal(|| None::<String>);
+    let mut copying = use_signal(|| false);
+    let mut copied = use_signal(|| false);
 
-        rsx! {
-            // 将弹窗放在进场动画容器之外，避免 transform 祖先改变 fixed 的定位参考系。
-            div { class: "w-full",
-                div { class: "animate-page-enter w-full max-w-7xl mx-auto space-y-8",
-                    div {
-                        class: "animate-row-enter",
-                        style: "animation-delay: 0ms",
-                        PageHeader {}
-                    }
-                    div {
-                        class: "animate-row-enter",
-                        style: "animation-delay: 60ms",
-                        TokenList {}
-                    }
-                    // FormSelect 面板为绝对定位；提高本区块层级，避免被后续 ConfigCard 覆盖。
-                    div {
-                        class: "animate-row-enter relative z-10",
-                        style: "animation-delay: 120ms",
-                        CreateTokenCard {}
-                    }
-                    div {
-                        class: "animate-row-enter",
-                        style: "animation-delay: 180ms",
-                        ConfigCard {}
-                    }
+    use_effect(move || {
+        let _ = reload();
+        spawn(async move {
+            match crate::api::mcp_tokens::list_mcp_tokens().await {
+                Ok(list) => {
+                    tokens.set(Some(list));
+                    failed.set(false);
                 }
-
-                if let Some(token) = (state.editing)() {
-                    EditTokenPermissionsModal { key: "{token.id}", token }
-                }
-                // 明文弹窗不放在 TokenList 的动画树内，确保 fixed 相对整个视口居中。
-                if let Some(plaintext) = (state.created_plaintext)() {
-                    PlaintextModal {
-                        title: "令牌已创建（请立即复制，可稍后重新查看）".to_string(),
-                        plaintext: plaintext.clone(),
-                        on_use_config: {
-                            let mut ct = state.config_token;
-                            let mut cp = state.created_plaintext;
-                            let mut toast = state.toast;
-                            move |_| {
-                                ct.set(Some(plaintext.clone()));
-                                cp.set(None);
-                                toast.set(Some(("已选为配置令牌".to_string(), false)));
-                            }
-                        },
-                        on_close: {
-                            let mut cp = state.created_plaintext;
-                            move |_| cp.set(None)
-                        },
-                    }
-                }
-                if let Some((_, plaintext)) = (state.revealed)() {
-                    PlaintextModal {
-                        title: "令牌明文".to_string(),
-                        plaintext: plaintext.clone(),
-                        on_use_config: {
-                            let mut ct = state.config_token;
-                            let mut rev = state.revealed;
-                            let mut toast = state.toast;
-                            move |_| {
-                                ct.set(Some(plaintext.clone()));
-                                rev.set(None);
-                                toast.set(Some(("已选为配置令牌".to_string(), false)));
-                            }
-                        },
-                        on_close: {
-                            let mut rev = state.revealed;
-                            move |_| rev.set(None)
-                        },
-                    }
-                }
+                Err(_) => failed.set(true),
             }
-        }
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        // server 构建下页面无前端交互；路由实际只在 WASM 渲染。
-        rsx! {
-            p { class: "text-paper-secondary", "此页面仅在浏览器中可用。" }
-            // server 构建下页面无前端交互；路由实际只在 WASM 渲染。
-        }
-    }
-}
+        });
+    });
 
-#[component]
-fn PageHeader() -> Element {
+    let active: Vec<McpTokenSummary> = tokens()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(is_active)
+        .collect();
+    // 一句话接入默认用最新的有效令牌。
+    let chosen = prompt_token()
+        .filter(|id| active.iter().any(|t| &t.id == id))
+        .or_else(|| active.first().map(|t| t.id.clone()));
+    let options: Vec<(String, String)> = active
+        .iter()
+        .map(|t| (t.id.clone(), t.name.clone()))
+        .collect();
+
+    let chosen_for_copy = chosen.clone();
+    let copy_prompt = move |_| {
+        let Some(id) = chosen_for_copy.clone() else {
+            return;
+        };
+        copying.set(true);
+        spawn(async move {
+            match copy_agent_prompt(id).await {
+                Ok(()) => {
+                    copied.set(true);
+                    toast.success("已复制接入指令，粘贴给 Agent 即可");
+                    crate::utils::time::sleep_ms(1600).await;
+                    copied.set(false);
+                }
+                Err(e) => toast.error(e),
+            }
+            copying.set(false);
+        });
+    };
+
     rsx! {
-        div { class: "flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-[var(--color-paper-border)]/70",
-            div {
-                h1 { class: "text-3xl sm:text-4xl font-extrabold tracking-tight text-[var(--color-paper-primary)]",
-                    "MCP 服务器"
+        div { class: "admin-mcp",
+            div { class: "admin-page-head",
+                div {
+                    h1 { "MCP 接入" }
+                    p { "为 Codex、Claude Code、Cursor、Cline、Oh-My-Pi、OpenCode 等 AI 客户端签发访问令牌。" }
                 }
-                p { class: "text-sm text-[var(--color-paper-secondary)] mt-1.5",
-                    "为 AI 客户端（Codex / Claude Code / Cursor / Cline / Oh-My-Pi / OpenCode）签发访问令牌并获取接入配置"
+                div { class: "admin-page-actions",
+                    button {
+                        class: button_class(ButtonVariant::Primary, ButtonSize::Md),
+                        r#type: "button",
+                        onclick: move |_| creating.set(true),
+                        Icon { name: IconName::Plus, size: 16 }
+                        "新建令牌"
+                    }
                 }
             }
-            div { class: "flex items-center gap-2.5",
-                div { class: "inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-mono bg-[var(--color-paper-entry)] text-[var(--color-paper-secondary)] border border-[var(--color-paper-border)]/70 shadow-2xs",
-                    span { class: "w-1.5 h-1.5 rounded-full bg-[var(--color-paper-accent)]" }
-                    span { "Endpoint: /mcp" }
+
+            section { class: "admin-panel mcp-oneline", aria_labelledby: "mcp-oneline-h",
+                div { class: "mcp-oneline-head",
+                    h2 { id: "mcp-oneline-h", "一句话接入" }
+                    span { "复制时自动附上服务地址和所选令牌" }
+                }
+                p { class: "mcp-oneline-text",
+                    "请为当前客户端接入 Yggdrasil MCP，保留已有配置，并验证连接与工具列表。"
+                }
+                div { class: "mcp-oneline-actions",
+                    if options.is_empty() {
+                        span { class: "mcp-muted", "还没有可用的令牌，先新建一个。" }
+                    } else {
+                        span { class: "mcp-muted", "使用令牌" }
+                        crate::components::forms::FormSelect {
+                            id: "mcp-prompt-token",
+                            value: chosen.clone().unwrap_or_default(),
+                            options,
+                            trigger_class: crate::components::forms::FORM_SELECT_COMPACT_CLASS,
+                            aria_label: "使用令牌",
+                            onchange: move |id: String| prompt_token.set(Some(id)),
+                        }
+                    }
+                    button {
+                        class: "{button_class(ButtonVariant::Primary, ButtonSize::Sm)} mcp-copy-prompt",
+                        r#type: "button",
+                        "data-copied": copied().then_some("true"),
+                        disabled: chosen.is_none() || copying(),
+                        onclick: copy_prompt,
+                        Icon { name: if copied() { IconName::Check } else { IconName::Copy }, size: 14 }
+                        if copied() { "已复制" } else if copying() { "准备中…" } else { "复制给 Agent" }
+                    }
                 }
             }
+
+            TokenTable {
+                tokens: tokens(),
+                failed: failed(),
+                on_retry: move |_| reload += 1,
+                on_open: move |t: OpenToken| opened.set(Some(t)),
+                on_edit: move |t: McpTokenSummary| editing.set(Some(t)),
+                on_changed: move |_| reload += 1,
+            }
+        }
+
+        if creating() {
+            CreateTokenDialog {
+                on_close: move |_| creating.set(false),
+                on_created: move |t: OpenToken| {
+                    creating.set(false);
+                    reload += 1;
+                    opened.set(Some(t));
+                },
+            }
+        }
+        if let Some(token) = editing() {
+            EditPermissionsDialog {
+                key: "{token.id}",
+                token,
+                on_close: move |_| editing.set(None),
+                on_saved: move |_| {
+                    editing.set(None);
+                    reload += 1;
+                },
+            }
+        }
+        if let Some(token) = opened() {
+            TokenDialog { key: "{token.summary.id}", token, on_close: move |_| opened.set(None) }
         }
     }
 }
 
-/// 全局操作提示条（读取共享 context 的 toast）。
-#[cfg(target_arch = "wasm32")]
-#[component]
-fn Toast() -> Element {
-    let state: McpPageState = use_context();
-    let toast = state.toast;
-    if let Some((msg, is_err)) = toast() {
-        let cls = if is_err {
-            "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300"
-        } else {
-            "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300"
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::mcp_token::NoteGrant;
+
+    fn token(notes: NoteGrant) -> McpTokenSummary {
+        McpTokenSummary {
+            id: "t".into(),
+            name: "t".into(),
+            scope: TokenScope::Read,
+            notes,
+            created_at: chrono::Utc::now(),
+            expires_at: None,
+            last_used_at: None,
+            revoked_at: None,
+        }
+    }
+
+    #[test]
+    fn notes_desc_summarizes_grant() {
+        assert_eq!(notes_desc(&token(NoteGrant::default())), "未授权");
+        let all = NoteGrant {
+            read: true,
+            write: false,
+            notebook_ids: None,
         };
-        rsx! {
-            div { class: "text-sm rounded-lg px-3 py-2 {cls}", "{msg}" }
-        }
-    } else {
-        rsx! {}
+        assert_eq!(notes_desc(&token(all)), "只读 · 全部笔记本");
+        let some = NoteGrant {
+            read: true,
+            write: true,
+            notebook_ids: Some(vec![1, 2]),
+        };
+        assert_eq!(notes_desc(&token(some)), "读写草稿 · 2 个笔记本");
+    }
+
+    #[test]
+    fn expired_or_revoked_tokens_are_inactive() {
+        let mut t = token(NoteGrant::default());
+        assert!(is_active(&t));
+        t.expires_at = Some(chrono::Utc::now() - chrono::Duration::hours(1));
+        assert!(!is_active(&t));
+        t.expires_at = None;
+        t.revoked_at = Some(chrono::Utc::now());
+        assert!(!is_active(&t));
     }
 }
-
-#[cfg(target_arch = "wasm32")]
-mod configs;
-#[cfg(target_arch = "wasm32")]
-mod plaintext;
-#[cfg(target_arch = "wasm32")]
-mod token_editor;
-#[cfg(target_arch = "wasm32")]
-mod tokens;
-#[cfg(target_arch = "wasm32")]
-use configs::ConfigCard;
-#[cfg(target_arch = "wasm32")]
-use plaintext::PlaintextModal;
-#[cfg(target_arch = "wasm32")]
-use token_editor::{CreateTokenCard, EditTokenPermissionsModal};
-#[cfg(target_arch = "wasm32")]
-use tokens::TokenList;

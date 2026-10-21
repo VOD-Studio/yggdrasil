@@ -1,0 +1,451 @@
+/* ======== 后台 MCP 接入 ========
+   结构见 src/pages/admin/mcp.rs 与 mcp/：一句话接入、令牌表格，新建 / 编辑 / 令牌三个对话框。 */
+.admin-mcp {
+  max-width: 60rem;
+}
+
+.mcp-muted {
+  margin: 0;
+  color: var(--color-fg-3);
+  font-size: 0.8125rem;
+}
+
+.mcp-error {
+  margin: 0.375rem 0 0;
+  color: var(--color-danger);
+  font-size: 0.78125rem;
+}
+
+/* ---- 一句话接入 ---- */
+.mcp-oneline {
+  padding: 1rem 1.25rem 1.125rem;
+}
+
+.mcp-oneline-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.25rem 0.75rem;
+}
+
+.mcp-oneline-head h2 {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.mcp-oneline-head span {
+  color: var(--color-fg-3);
+  font-size: 0.78125rem;
+}
+
+.mcp-oneline-text {
+  margin: 0.75rem 0 0;
+  padding: 0.75rem 0.875rem;
+  border-radius: 8px;
+  background-color: var(--color-surface-1);
+  box-shadow: inset 2px 0 0 var(--color-clay);
+  font-family: var(--font-serif);
+  font-size: 0.9375rem;
+  line-height: 1.7;
+}
+
+.mcp-oneline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.625rem;
+  margin-top: 0.875rem;
+}
+
+.mcp-copy-prompt {
+  margin-left: auto;
+}
+
+.mcp-copy-prompt[data-copied] {
+  background-color: var(--color-clay-soft);
+  color: var(--color-clay-text);
+}
+
+/* ---- 令牌表格 ---- */
+.mcp-tokens {
+  margin-top: 1.75rem;
+}
+
+.mcp-section-title {
+  margin: 0 0 0.75rem;
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.mcp-token-name {
+  font-weight: 500;
+}
+
+.mcp-token-sub {
+  margin-top: 2px;
+  color: var(--color-fg-3);
+  font-size: 0.75rem;
+}
+
+.mcp-table tr[data-inactive] .mcp-token-name,
+.mcp-table tr[data-inactive] .mcp-scope-pill {
+  opacity: 0.55;
+}
+
+.mcp-scope-pill {
+  display: inline-flex;
+  padding: 0 0.5rem;
+  border-radius: 999px;
+  background-color: var(--color-ink-1);
+  color: var(--color-fg-2);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+}
+
+.mcp-scope-pill[data-scope="admin"] {
+  background-color: var(--color-clay-soft);
+  color: var(--color-clay-text);
+}
+
+td.mcp-col-notes {
+  color: var(--color-fg-2);
+  font-size: 0.8125rem;
+}
+
+.mcp-skeleton-row {
+  display: flex;
+  gap: 2rem;
+  padding: 1rem;
+  box-shadow: inset 0 -1px 0 var(--color-hairline);
+}
+
+/* ---- 对话框 ---- */
+.mcp-dialog {
+  width: min(37.5rem, 100%);
+  background-color: var(--color-popover);
+}
+
+.mcp-token-dialog {
+  width: min(42.5rem, 100%);
+}
+
+.mcp-form {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.mcp-dialog-head {
+  display: flex;
+  flex: none;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 1.125rem 1rem 0.875rem 1.25rem;
+  box-shadow: inset 0 -1px 0 var(--color-hairline);
+}
+
+.mcp-dialog-head > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.mcp-dialog-head h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.mcp-dialog-head p {
+  margin: 0.125rem 0 0;
+  color: var(--color-fg-3);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.mcp-ok {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 50%;
+  background-color: var(--color-success-soft);
+  color: var(--color-success);
+  animation: mcp-ok-in var(--spring-gentle-duration) var(--ease-spring-gentle);
+}
+
+@keyframes mcp-ok-in {
+  from {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+}
+
+.mcp-dialog-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1.125rem;
+  min-height: 0;
+  padding: 1rem 1.25rem 1.25rem;
+  overflow-y: auto;
+}
+
+.mcp-dialog-foot {
+  display: flex;
+  flex: none;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  background-color: var(--color-surface-1);
+  box-shadow: inset 0 1px 0 var(--color-hairline);
+}
+
+.mcp-label {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 0.375rem;
+  color: var(--color-fg-2);
+  font-size: 0.8125rem;
+}
+
+.mcp-count {
+  color: var(--color-fg-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.mcp-dialog .field {
+  width: 100%;
+  background-color: var(--color-surface-2);
+}
+
+.mcp-fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.mcp-fieldset legend {
+  margin-bottom: 0.5rem;
+  padding: 0;
+  color: var(--color-fg-2);
+  font-size: 0.8125rem;
+}
+
+.mcp-fieldset > .mcp-muted {
+  margin-bottom: 0.5rem;
+  font-size: 0.78125rem;
+}
+
+.mcp-scopes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.mcp-scope {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+  padding: 0.625rem 0.75rem;
+  border: 0;
+  border-radius: var(--radius-panel);
+  background-color: var(--color-surface-2);
+  box-shadow: 0 0 0 1px var(--color-hairline);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: box-shadow 150ms var(--ease-out-expo);
+}
+
+.mcp-scope:hover {
+  box-shadow: 0 0 0 1px var(--color-ink-3);
+}
+
+.mcp-scope[aria-checked="true"] {
+  box-shadow: 0 0 0 2px var(--color-clay);
+}
+
+.mcp-scope:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
+.mcp-scope-key {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.mcp-scope-desc {
+  color: var(--color-fg-3);
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+
+.mcp-check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 1.875rem;
+  font-size: 0.84375rem;
+  cursor: pointer;
+}
+
+.mcp-books {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin: 0.375rem 0 0 1.75rem;
+}
+
+.mcp-lifetime .segmented {
+  flex-wrap: wrap;
+}
+
+/* 令牌明文 */
+.mcp-secret {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.mcp-secret .field {
+  flex: 1;
+  min-width: 0;
+}
+
+.mcp-warn {
+  display: flex;
+  gap: 0.5rem;
+  margin: 0.625rem 0 0;
+  padding: 0.625rem 0.75rem;
+  border-radius: 8px;
+  background-color: var(--color-warning-soft);
+  font-size: 0.78125rem;
+  line-height: 1.6;
+}
+
+.mcp-warn > svg {
+  flex: none;
+  margin-top: 0.1875rem;
+  color: var(--color-warning);
+}
+
+.mcp-configs-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.25rem 0.75rem;
+  margin-bottom: 0.625rem;
+}
+
+.mcp-configs-head h3 {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.mcp-configs-head span {
+  color: var(--color-fg-3);
+  font-size: 0.75rem;
+}
+
+.mcp-clients {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.mcp-clients button {
+  height: 1.75rem;
+  padding: 0 0.6875rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--color-hairline);
+  color: var(--color-fg-2);
+  font: inherit;
+  font-size: 0.78125rem;
+  cursor: pointer;
+}
+
+.mcp-clients button:hover {
+  background-color: var(--color-ink-1);
+}
+
+.mcp-clients button[aria-selected="true"] {
+  background-color: var(--color-ink-2);
+  box-shadow: none;
+  color: var(--color-fg);
+  font-weight: 500;
+}
+
+.mcp-clients button:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
+.mcp-snippet {
+  margin: 0.625rem 0 0;
+  overflow: hidden;
+  border-radius: var(--radius-code);
+  background-color: var(--color-surface-1);
+  box-shadow: 0 0 0 1px var(--color-hairline);
+}
+
+.mcp-snippet figcaption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.375rem 0.375rem 0.375rem 0.875rem;
+  box-shadow: inset 0 -1px 0 var(--color-hairline);
+  color: var(--color-fg-3);
+  font-family: var(--font-mono);
+  font-size: 0.71875rem;
+}
+
+.mcp-snippet .md-content pre {
+  max-height: 16rem;
+  margin: 0;
+  padding: 0.875rem 1rem;
+  overflow: auto;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  font-size: 0.78125rem;
+}
+
+@media (max-width: 767px) {
+  .mcp-scopes {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mcp-table .mcp-col-notes,
+  .mcp-table .mcp-col-used {
+    display: none;
+  }
+
+  .mcp-copy-prompt {
+    margin-left: 0;
+  }
+}
+
+@media (max-width: 1000px) {
+  .mcp-table .mcp-col-used {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mcp-ok {
+    animation: none;
+  }
+}

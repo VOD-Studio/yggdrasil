@@ -509,7 +509,6 @@ pub struct McpConfigSnippet {
     pub content_html: String,
 }
 
-#[cfg(any(target_arch = "wasm32", test))]
 impl McpConfigSnippet {
     /// 将原始配置作为 JSON 字符串嵌入一句话，保留 TOML 换行及特殊字符。
     pub fn agent_prompt(&self) -> String {
