@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * P3 双客户端产物合并与发布清单（plan §6.4/§6.5）。
+ * P3 双客户端产物合并与发布清单、P5 WASM preload（plan §6.4/§6.5/§8.1）。
  *
  * 输入：make snapshot-flavor 产出的两个 flavor 快照
  *   <assembly>/<flavor>/public/          —— 该 flavor dx 构建完成、restore-webp 之后的 public
@@ -25,7 +25,8 @@
 import { createHash } from 'node:crypto';
 import { execSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, rmSync, statSync, mkdirSync, writeFileSync, copyFileSync } from 'node:fs';
-import { basename, join, relative, resolve } from 'node:path';
+import { join, relative, resolve } from 'node:path';
+import { bootstrapRefs, preloadWasm, verifyWasmPreload, wasmBootstrap } from './release-bootstrap.cjs';
 
 const ROOT = resolve(import.meta.dir, '..');
 const args = process.argv.slice(2);
@@ -87,6 +88,19 @@ function manifestPaths(snapshotDir) {
   return paths;
 }
 
+function bootstrapConflicts(flavorRefs) {
+  const owners = new Map();
+  const problems = [];
+  for (const [flavor, refs] of Object.entries(flavorRefs)) {
+    for (const ref of refs) {
+      if (owners.has(ref)) {
+        problems.push(`flavor ${owners.get(ref)} 与 ${flavor} 的模板引用了同一入口 ${ref}——疑似两次构建产物相同`);
+      } else owners.set(ref, flavor);
+    }
+  }
+  return problems;
+}
+
 if (VERIFY) {
   // ── 校验模式：模板引用闭包 + 清单一致性 + .br 旁车 ──────────────
   const publicDir = join(OUT, 'public');
@@ -96,6 +110,20 @@ if (VERIFY) {
 
   for (const [flavor, info] of Object.entries(manifest.flavors)) {
     const html = readFileSync(join(publicDir, info.template), 'utf8');
+    try {
+      const refs = bootstrapRefs(html);
+      if (JSON.stringify(refs) !== JSON.stringify([...info.bootstrap_assets].sort())) {
+        throw new Error('模板入口引用与发布清单不一致');
+      }
+      const { wasm } = wasmBootstrap(html, (ref) => readFileSync(join(publicDir, ref), 'utf8'));
+      verifyWasmPreload(html, wasm);
+      const assets = new Set(info.assets.map((asset) => asset.path));
+      for (const ref of refs) {
+        if (!assets.has(ref)) throw new Error(`入口不属于本 flavor 资产闭包：${ref}`);
+      }
+    } catch (error) {
+      problems.push(`[${flavor}] ${error.message}`);
+    }
     for (const ref of info.bootstrap_assets) {
       if (!exists(ref.replace(/^\//, '').replace(/^\.\//, ''))) {
         problems.push(`[${flavor}] 模板 ${info.template} 引用的产物缺失：${ref}`);
@@ -103,24 +131,22 @@ if (VERIFY) {
     }
     for (const asset of info.assets) {
       if (!exists(asset.path)) problems.push(`[${flavor}] 清单资产缺失：${asset.path}`);
-      if (VERIFY && TEXT_EXT.has(asset.path.slice(asset.path.lastIndexOf('.'))) && !exists(asset.path + '.br')) {
+      else {
+        const content = readFileSync(join(publicDir, asset.path));
+        if (content.length !== asset.bytes || sha256(content) !== asset.sha256) {
+          problems.push(`[${flavor}] 清单资产摘要或大小不匹配：${asset.path}`);
+        }
+      }
+      if (TEXT_EXT.has(asset.path.slice(asset.path.lastIndexOf('.'))) && !exists(asset.path + '.br')) {
         problems.push(`[${flavor}] 文本资产缺 .br 旁车（先跑 precompress）：${asset.path}`);
       }
     }
   }
 
   // 两份模板不得引用同一份哈希 wasm/js（否则两个 flavor 加载了同一个客户端）。
-  const bootstrapOf = (flavor) => new Set(manifest.flavors[flavor].bootstrap_assets);
-  for (const a of FLAVORS) {
-    for (const b of FLAVORS) {
-      if (a >= b) continue;
-      for (const ref of bootstrapOf(a)) {
-        if (ref.startsWith('/assets/') && bootstrapOf(b).has(ref)) {
-          problems.push(`flavor ${a} 与 ${b} 的模板引用了同一入口 ${ref}——疑似两次构建产物相同`);
-        }
-      }
-    }
-  }
+  problems.push(...bootstrapConflicts(Object.fromEntries(
+    Object.entries(manifest.flavors).map(([flavor, info]) => [flavor, info.bootstrap_assets]),
+  )));
 
   if (problems.length) {
     console.error(`\n发布校验失败（${problems.length} 项）：`);
@@ -158,9 +184,9 @@ const flavorAssets = Object.fromEntries(FLAVORS.map((f) => [f, []]));
 
 for (const snap of snapshots) {
   for (const rel of walk(snap.dir)) {
-    // 模板本来就每 flavor 一份（full/reader 引用各自的入口产物），不走通用
-    // 合并：下面单独装配 index.html 与 flavors/reader/index.html。
-    if (rel === 'index.html') continue;
+    // 模板、模板旁车和发布清单均由最终装配重建，不继承上次发布残留。
+    if (/^(?:index\.html|release-manifest\.json)(?:\.br)?$/.test(rel)
+      || /^flavors\/[^/]+\/index\.html(?:\.br)?$/.test(rel)) continue;
     const top = rel.split('/')[0];
     if (HASHED_DIRS.has(top) && snap.manifest && !snap.manifest.has(rel)) {
       continue; // dx 清单未登记：上次构建的陈旧哈希产物
@@ -185,6 +211,31 @@ if (conflicts.length) {
   process.exit(1);
 }
 
+// P5：先从每个模板的真实 module 入口解析 WASM；失败时保留上次发布目录。
+const templateOf = (flavor) => (flavor === 'reader' ? 'flavors/reader/index.html' : 'index.html');
+const templates = new Map();
+for (const snap of snapshots) {
+  const readAsset = (ref) => {
+    const rel = ref.replace(/^\//, '');
+    if (!merged.get(rel)?.flavors.has(snap.flavor)) {
+      throw new Error(`[${snap.flavor}] 入口不属于本 flavor 的有效资产：${ref}`);
+    }
+    return readFileSync(join(snap.dir, rel), 'utf8');
+  };
+  const html = preloadWasm(readFileSync(join(snap.dir, 'index.html'), 'utf8'), readAsset);
+  const refs = bootstrapRefs(html);
+  for (const ref of refs) {
+    const rel = ref.replace(/^\//, '');
+    if (!merged.get(rel)?.flavors.has(snap.flavor)) {
+      throw new Error(`[${snap.flavor}] 模板引用的入口不属于本 flavor 的有效资产：${ref}`);
+    }
+  }
+  templates.set(snap.flavor, html);
+  flavorAssets[snap.flavor] = refs;
+}
+const sharedEntrypoints = bootstrapConflicts(flavorAssets);
+if (sharedEntrypoints.length) throw new Error(sharedEntrypoints.join('\n'));
+
 // 装配最终 public/
 const outPublic = join(OUT, 'public');
 rmSync(outPublic, { recursive: true, force: true });
@@ -194,34 +245,10 @@ for (const [rel, meta] of merged) {
   mkdirSync(join(dest, '..'), { recursive: true });
   copyFileSync(meta.srcFile, dest);
 }
-copyFileSync(join(snapshots[0].dir, 'index.html'), join(outPublic, 'index.html'));
-if (readerSnap) {
-  const readerTemplateDir = join(outPublic, 'flavors', 'reader');
-  mkdirSync(readerTemplateDir, { recursive: true });
-  copyFileSync(join(readerSnap.dir, 'index.html'), join(readerTemplateDir, 'index.html'));
-}
-
-// 从模板提取入口引用（/assets/*、/wasm/*），并按 flavor 归集资产清单。
-// dx 生成的引用形如 /./assets/yggdrasil-dxh<hash>.js，统一归一化为 /assets/...。
-const bootstrapRefs = (html) => {
-  const refs = new Set();
-  const re = /(?:src|href)\s*=\s*["'](\/(?:\.\/)?(?:assets|wasm)\/[^"']+)["']/g;
-  let m;
-  while ((m = re.exec(html)) !== null) refs.add('/' + m[1].replace(/^\/+/, '').replace(/^\.\//, ''));
-  return [...refs].sort();
-};
-const templateOf = (flavor) => (flavor === 'reader' ? 'flavors/reader/index.html' : 'index.html');
 for (const snap of snapshots) {
-  const html = readFileSync(join(snap.dir, 'index.html'), 'utf8');
-  const relSet = new Set(walk(snap.dir));
-  flavorAssets[snap.flavor] = bootstrapRefs(html).map((ref) => {
-    const rel = ref.replace(/^\//, '');
-    if (!relSet.has(rel)) {
-      console.error(`[${snap.flavor}] 模板引用的入口不在本 flavor 快照内：${ref}`);
-      process.exit(1);
-    }
-    return ref;
-  });
+  const dest = join(outPublic, templateOf(snap.flavor));
+  mkdirSync(join(dest, '..'), { recursive: true });
+  writeFileSync(dest, templates.get(snap.flavor));
 }
 
 const flavorsManifest = Object.fromEntries(

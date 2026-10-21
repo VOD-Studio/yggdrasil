@@ -232,9 +232,21 @@ test-browser: ## 隔离浏览器回归（先 regression-build；BROWSER_SUITE=sm
 	@bun scripts/regression.cjs $(BROWSER_SUITE)
 
 # ── 测试与代码质量 ─────────────────────────────────────────────
-test: ## 运行 Rust 与前端测试
+test: test-release-bootstrap ## 运行 Rust 与前端测试
 	@cargo test
 	@cd libs && bun run --filter '*' test
+
+.PHONY: test-release-bootstrap test-wasm-preload
+test-release-bootstrap: ## 验证双客户端模板、WASM preload 与发布清单
+	@bun test scripts/release-bootstrap.test.cjs
+	@bun scripts/test-wasm-preload.cjs --self-test
+
+test-wasm-preload: ## 真实 release 的 WASM preload 冷/热缓存 A/B（默认自管隔离环境）
+	@if [ -n "$(BASE_URL)" ]; then \
+		bun scripts/test-wasm-preload.cjs; \
+	else \
+		WASM_PRELOAD_AB=1 bun scripts/test-dual-flavor.cjs; \
+	fi
 
 # JS + Rust 一次性检查（不改动文件）。
 lint: ## Biome、TypeScript、Clippy、rustfmt 检查（只读）

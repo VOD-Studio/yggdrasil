@@ -18,12 +18,14 @@
  *
  * 用法：bun scripts/test-dual-flavor.cjs
  *   RELEASE_BUILD=<dir>  指定发布布局（默认 target/dx/yggdrasil/release/web）
+ *   WASM_PRELOAD_AB=1    在同一隔离服务上追加 P5 preload 冷/热缓存测量
  * 需要本机 docker 与 psql/pg_isready/createdb（自管一次性容器，结束后清理）。
  */
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const net = require('node:net');
+const { bootstrapRefs, verifyWasmPreload } = require('./release-bootstrap.cjs');
 const ROOT = path.resolve(__dirname, '..');
 const BUILD = path.resolve(process.env.RELEASE_BUILD || path.join(ROOT, 'target/dx/yggdrasil/release/web'));
 const artifacts = path.resolve(process.env.REGRESSION_ARTIFACT_DIR || path.join(ROOT, 'target/regressions', `${Date.now()}-dual-flavor`));
@@ -76,14 +78,7 @@ async function waitFor(check, description, attempts = 120) {
   }
   throw new Error(`Timed out waiting for ${description}; see ${artifacts}`);
 }
-/** 提取 HTML 里引用的客户端入口（assets/wasm 下的 src/href），归一化 /./ 前缀。 */
-function bootstrapRefs(html) {
-  const refs = new Set();
-  const re = /(?:src|href)\s*=\s*["'](\/(?:\.\/)?(?:assets|wasm)\/[^"']+)["']/g;
-  let m;
-  while ((m = re.exec(html)) !== null) refs.add('/' + m[1].replace(/^\/+/, '').replace(/^\.\//, ''));
-  return refs;
-}
+const bootstrapSet = (html) => new Set(bootstrapRefs(html));
 
 async function main() {
   const publicDir = path.join(BUILD, 'public');
@@ -125,9 +120,12 @@ async function main() {
   console.log(`发布布局已启动：${base}（flavor 模板：${Object.entries(manifest.flavors).map(([f, i]) => `${f}=${i.template}`).join(', ')}）`);
 
   const seed = path.join(runtime, 'fixture.sql');
+  const fixtureHtml = process.env.WASM_PRELOAD_AB === '1'
+    ? '<p>固定的公开长文章样例，用于比较相同内容下的首屏显示、资源请求与菜单交互。正文不含运行块或外部图片，不会发起执行、上传或鉴权请求。</p>'.repeat(200)
+    : '<p>正文</p>';
   fs.writeFileSync(seed, `INSERT INTO users(id,username,email,password_hash,role) VALUES(1,'regression','regression@test.invalid','unused','admin');
     INSERT INTO posts(id,author_id,title,slug,summary,content_md,content_html,status,published_at,word_count,reading_time)
-      VALUES(1,1,'双产物验收文章','dual-flavor-post','摘要','<p>正文</p>','<p>正文</p>','published',NOW(),100,1);
+      VALUES(1,1,'双产物验收文章','dual-flavor-post','摘要','正文','${fixtureHtml}','published',NOW(),100,1);
     SELECT setval('posts_id_seq',1); SELECT setval('users_id_seq',1);`);
   await run(['psql', '-v', 'ON_ERROR_STOP=1', '-d', 'ygg_dual_flavor_test', '-f', seed], { env: pg });
 
@@ -138,7 +136,9 @@ async function main() {
   const fullPaths = ['/about/components', '/about/components/checkbox', '/login', '/register'];
   for (const p of readerPaths) {
     const res = await fetch(base + p);
-    const refs = bootstrapRefs(await res.text());
+    const body = await res.text();
+    verifyWasmPreload(body, readerWasmUrls[0]);
+    const refs = bootstrapSet(body);
     const wrong = [...refs].filter((r) => flavorRefs.full.has(r) && !flavorRefs.reader.has(r));
     const expect404 = p === '/no/such/path';
     check(`${p} → reader 模板（${expect404 ? '404' : '200'}）`, expect404 ? res.status === 404 : res.ok, `status=${res.status}`);
@@ -147,7 +147,9 @@ async function main() {
   }
   for (const p of fullPaths) {
     const res = await fetch(base + p);
-    const refs = bootstrapRefs(await res.text());
+    const body = await res.text();
+    verifyWasmPreload(body, fullWasmUrls[0]);
+    const refs = bootstrapSet(body);
     const wrong = [...refs].filter((r) => flavorRefs.reader.has(r) && !flavorRefs.full.has(r));
     check(`${p} → full 模板（${res.status}）`, res.ok, `status=${res.status}`);
     check(`${p} 不含 reader 专属入口`, wrong.length === 0, wrong.join(', '));
@@ -168,8 +170,8 @@ async function main() {
     const second = await fetch(base + '/');
     const body2 = await second.text();
     check('二次请求命中缓存（x-ssr-cache: HIT）', second.headers.get('x-ssr-cache') === 'HIT', String(second.headers.get('x-ssr-cache')));
-    check('缓存命中返回同一 flavor 模板', bootstrapRefs(body1).size > 0 && bootstrapRefs(body2).size > 0
-      && [...bootstrapRefs(body1)].every((r) => bootstrapRefs(body2).has(r)));
+    check('缓存命中返回同一 flavor 模板', bootstrapSet(body1).size > 0 && bootstrapSet(body2).size > 0
+      && [...bootstrapSet(body1)].every((r) => bootstrapSet(body2).has(r)));
     const notModified = await fetch(base + '/', { headers: { 'if-none-match': etag } });
     check('ETag/304 往返', notModified.status === 304, `status=${notModified.status}`);
   }
@@ -190,8 +192,8 @@ async function main() {
   await page.waitForFunction(() => Boolean(window.__dx_mainWasm), {}, { timeout: 60000 });
   check('首页 hydration 完成（reader wasm 初始化）', true);
   const readerWasmFetched = wasmRequests.slice();
-  check('首页只拉取 reader wasm（绝不加载 full wasm）',
-    readerWasmFetched.length >= 1
+  check('首页仅请求一次 reader wasm（preload 复用，绝不加载 full wasm）',
+    readerWasmFetched.length === 1
     && readerWasmFetched.every((u) => {
       const p = new URL(u).pathname;
       return readerWasmUrls.includes(p) && !fullWasmUrls.includes(p);
@@ -217,7 +219,8 @@ async function main() {
   await page.waitForFunction(() => Boolean(window.__dx_mainWasm), {}, { timeout: 60000 });
   check('跨入口进入图鉴（full 模板）', page.url().endsWith('/about/components'));
   const newWasm = wasmRequests.slice(beforeNav);
-  check('跨入口重新拉取了 full wasm（整页导航释放 reader 运行时）', newWasm.length >= 1, newWasm.join(', '));
+  check('跨入口仅请求一次 full wasm（preload 复用，整页释放 reader 运行时）',
+    newWasm.length === 1 && fullWasmUrls.includes(new URL(newWasm[0]).pathname), newWasm.join(', '));
   const showcaseText = await page.textContent('body');
   check('图鉴页内容渲染', /组件图鉴|COMPONENT/i.test(showcaseText || ''));
 
@@ -225,6 +228,14 @@ async function main() {
     [...pageErrors, ...pageErrorsByLoad.flatMap((l) => l.errors.map((e) => `[${l.path}] ${e}`))].slice(0, 3).join(' | '));
   notes.push(`wasm 请求序列：\n    ${wasmRequests.join('\n    ')}`);
   await browser.close();
+
+  // P5 测量复用本次隔离数据库与真实 release 服务，不另起开发构建。
+  if (process.env.WASM_PRELOAD_AB === '1') {
+    await run([process.execPath, path.join(ROOT, 'scripts/test-wasm-preload.cjs')], {
+      env: { ...process.env, BASE_URL: base, RELEASE_BUILD: BUILD, SSR_CACHE_SECS: env.SSR_CACHE_SECS,
+        REGRESSION_ARTIFACT_DIR: path.join(artifacts, 'wasm-preload') },
+    });
+  }
 
   console.log(`\n${notes.join('\n')}`);
   if (failures) {

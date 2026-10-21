@@ -216,6 +216,9 @@ jobs:
       - name: Frontend tests
         run: cd libs && bun run --sequential --filter '*' test
 
+      - name: Release bootstrap tests
+        run: make test-release-bootstrap
+
   check-wasm:
     needs: select_runner
     runs-on: ${{ fromJSON(needs.select_runner.outputs.runner) }}
