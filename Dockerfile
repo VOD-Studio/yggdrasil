@@ -96,15 +96,21 @@ RUN if [ "$CN_MIRROR" = "true" ]; then \
             > /usr/local/cargo/config.toml; \
     fi
 
+# Release WASM is compiled with a pinned nightly (-Zbuild-std, panic=immediate-abort;
+# see WASM_NIGHTLY in the Makefile). Keep this ARG in sync with that variable.
+ARG WASM_NIGHTLY=nightly-2026-10-19
+
 # Add the targets used by Dioxus fullstack builds. Both musl targets are
 # installed; each buildx platform leg builds only its native one (see below).
+# The wasm32 target lives on the pinned nightly that builds the client.
 # RUSTUP_DIST_SERVER is exported inline (only rustup-download that needs it).
 RUN if [ "$CN_MIRROR" = "true" ]; then \
         export RUSTUP_DIST_SERVER="${RS_PROXY}" \
         && export RUSTUP_UPDATE_ROOT="${RS_PROXY}/rustup"; \
     fi \
-    && rustup target add wasm32-unknown-unknown \
-        x86_64-unknown-linux-musl aarch64-unknown-linux-musl
+    && rustup target add x86_64-unknown-linux-musl aarch64-unknown-linux-musl \
+    && rustup toolchain install "$WASM_NIGHTLY" --profile minimal \
+        --component rust-src --target wasm32-unknown-unknown
 
 # Install the Dioxus CLI from the official prebuilt binary (GitHub Releases),
 # NOT `cargo install` (which compiles dx-cli's huge dep tree from source — the
@@ -282,7 +288,7 @@ RUN make esbuild-cache wasm-bindgen-cache
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
     --mount=type=cache,target=/build/target,sharing=locked \
-    dx build @client --release --debug-symbols=false --wasm-js-cfg false && \
+    make build-client && \
     make restore-webp && \
     mkdir -p /build/dist/public && \
     cp -r /build/target/dx/yggdrasil/*/web/public/* /build/dist/public/

@@ -6,8 +6,8 @@
 #   mk/docker.mk    镜像构建、Docker 开发环境、lint/test/fmt 工具容器
 include mk/assets.mk mk/dx-cache.mk mk/docker.mk
 
-.PHONY: help build build-linux restore-webp precompress
-.PHONY: check-dev-tools check-build-tools check-brotli
+.PHONY: help build build-linux build-client wasm-toolchain restore-webp precompress
+.PHONY: check-dev-tools check-build-tools check-brotli check-wasm-toolchain
 .PHONY: dev test lint fmt fix doc doc-open clean
 
 # ── 配置 ───────────────────────────────────────────────────────
@@ -20,6 +20,21 @@ include mk/assets.mk mk/dx-cache.mk mk/docker.mk
 # 只对 dx 构建关闭 sccache；直接 cargo 的构建（test / lint / Dockerfile / CI）不受影响。
 # 所有本机 dx 调用（build / build-linux / dev）都经由 $(DX)。
 DX := RUSTC_WRAPPER= dx
+
+# release 构建用固定日期的 nightly（整次 dx 构建，含其附带的服务端构建）。
+# 以下两组参数只作用于 wasm 客户端：-Zbuild-std 以 optimize_for_size 重编 std，
+# -Cpanic=immediate-abort 去掉 panic 格式化与展开代码。2026-10-20 实测 brotli 后
+# 1,098 KB → 1,010 KB（−8%）。代价：wasm 内 panic 直接 trap，不再打印信息。
+# - build-std 经 @client --cargo-args 传入，服务端构建不受影响；
+# - rustflags 经 wasm32 专属的 CARGO_TARGET_*_RUSTFLAGS 传入（服务端仍 panic=unwind）。
+#   它会覆盖 .cargo/config.toml 的同名配置，因此需要重复 getrandom cfg。
+# dx serve、test、lint 与 CI 仍用 stable。升级 nightly 时同步两个 Dockerfile 的
+# ARG WASM_NIGHTLY。
+WASM_NIGHTLY := nightly-2026-10-19
+WASM_CARGO_ARGS := -Zbuild-std=std,panic_abort -Zbuild-std-features=optimize_for_size
+DX_NIGHTLY := RUSTUP_TOOLCHAIN=$(WASM_NIGHTLY) \
+	CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS='--cfg getrandom_backend="wasm_js" -Zunstable-options -Cpanic=immediate-abort' \
+	$(DX)
 
 # 裸 `make` 只列出 target，不触发任何构建。
 .DEFAULT_GOAL := help
@@ -70,7 +85,7 @@ check-dev-tools: ## 检查开发所需的宿主工具
 		exit 1; \
 	fi
 
-check-build-tools: check-dev-tools check-brotli ## 检查 release 构建所需的宿主工具
+check-build-tools: check-dev-tools check-brotli check-wasm-toolchain ## 检查 release 构建所需的宿主工具
 
 # 本地 release 构建在 dx 结束后要用宿主的 brotli CLI。
 # 在耗时构建之前先检查，缺包时直接给出安装提示。
@@ -83,17 +98,32 @@ check-brotli:
 		exit 1; \
 	fi
 
+# release 构建需要固定 nightly 及其 rust-src（build-std）、wasm32 target。
+check-wasm-toolchain:
+	@if ! rustup run $(WASM_NIGHTLY) rustc --print sysroot >/dev/null 2>&1 \
+		|| ! rustup component list --installed --toolchain $(WASM_NIGHTLY) 2>/dev/null | grep -q '^rust-src' \
+		|| ! rustup target list --installed --toolchain $(WASM_NIGHTLY) 2>/dev/null | grep -q '^wasm32-unknown-unknown$$'; then \
+		echo "error: $(WASM_NIGHTLY) with rust-src and wasm32-unknown-unknown is required for release WASM builds" >&2; \
+		echo "  Install: make wasm-toolchain" >&2; \
+		exit 1; \
+	fi
+
+wasm-toolchain: ## 安装 release 构建所需的固定 nightly 工具链
+	@rustup toolchain install $(WASM_NIGHTLY) --profile minimal \
+		--component rust-src --target wasm32-unknown-unknown
+
 # ── release 构建 ───────────────────────────────────────────────
 build: check-build-tools ## 完整 release 构建（资源 + 文档 + dx build + 压缩）
 	@$(MAKE) build-assets
 	@$(MAKE) doc
-	@$(DX) build --release --debug-symbols=false
+	@$(DX_NIGHTLY) build --release --debug-symbols=false \
+		@client --release --debug-symbols=false --cargo-args='$(WASM_CARGO_ARGS)'
 	@$(MAKE) restore-webp
 	@$(MAKE) precompress
 
 build-linux: check-build-tools ## 构建 Linux x86_64 musl 服务端 + 客户端
 	@$(MAKE) build-assets
-	@$(DX) build @client --release --debug-symbols=false --wasm-js-cfg false
+	@$(MAKE) build-client
 	@$(DX) build @server --release --debug-symbols=false --target x86_64-unknown-linux-musl --wasm-js-cfg false --features server
 	@$(MAKE) restore-webp
 	@$(MAKE) precompress
@@ -101,6 +131,12 @@ build-linux: check-build-tools ## 构建 Linux x86_64 musl 服务端 + 客户端
 	@echo "Linux build complete! The server binary is at target/dx/yggdrasil/release/web/server"
 	@echo "Remember to deploy it alongside the target/dx/yggdrasil/release/web/public directory."
 	@echo "When running the server, ensure DIOXUS_ASSET_DIR is set or the public directory is in CWD."
+
+# 构建 release wasm 客户端（固定 nightly，见 WASM_NIGHTLY）。build-linux 与两个
+# Dockerfile 共用；不含 restore-webp，由调用方在全部 dx build 结束后执行。
+build-client: check-wasm-toolchain
+	@$(DX_NIGHTLY) build @client --release --debug-symbols=false --wasm-js-cfg false \
+		--cargo-args='$(WASM_CARGO_ARGS)'
 
 # 兜底：dx build 0.7.10 会把 public/ 下的 .webp 重编码成 VP8L 无损静图
 # （动画帧被丢弃，静图体积反增 7-8 倍），与文档承诺的"原样拷贝"不符。

@@ -642,10 +642,15 @@ pub fn FormInput(
 ) -> Element {
     let base = class.unwrap_or(INPUT_CLASS);
     let mono_class = if mono { " font-mono" } else { "" };
+    let disabled_class = if disabled {
+        " opacity-60 cursor-not-allowed"
+    } else {
+        ""
+    };
     rsx! {
         input {
             id: id.unwrap_or_default(),
-            class: "{base}{mono_class}",
+            class: "{base}{mono_class}{disabled_class}",
             r#type: "{r#type}",
             placeholder: "{placeholder}",
             value: "{value}",
