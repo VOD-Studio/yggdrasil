@@ -259,7 +259,9 @@ async function coverFixture(mode) {
       if (data.posts?.[0]) data.posts[0].cover_image = FIXTURE_IMAGE;
       await route.fulfill({ response, json: data });
     });
-    await page.route('**/api/get_post_by_slug*', async route => {
+    // P4.2（91b08be）把详情数据源改为 get_public_post_by_slug，此处同步跟进；
+    // 旧模式匹配不到端点，封面夹具自那时起注入失效。
+    await page.route('**/api/get_public_post_by_slug*', async route => {
       const response = await route.fetch();
       const data = await response.json();
       assert(data.post, 'a published article is required for cover fixtures');
@@ -318,7 +320,9 @@ async function slowResponse() {
   const state = await launch();
   const { page, browser } = state;
   try {
-    await page.route('**/api/get_post_by_slug*', async route => {
+    // P4.2（91b08be）把详情数据源改为 get_public_post_by_slug，此处同步跟进；
+    // 旧模式匹配不到端点，封面夹具自那时起注入失效。
+    await page.route('**/api/get_public_post_by_slug*', async route => {
       await new Promise(resolve => setTimeout(resolve, 800));
       await route.continue();
     });

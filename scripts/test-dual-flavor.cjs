@@ -185,7 +185,9 @@ async function main() {
   const lightboxCss = '/lightbox/lightbox.css?v=2';
   // changelog 只有版本导航（无正文图片）→ 只注入增强脚本，不注入灯箱。
   const enhancePages = ['/post/dual-flavor-post', '/notes', '/changelog', '/about/components'];
-  const lightboxPages = ['/post/dual-flavor-post', '/notes', '/about/components'];
+  const lightboxPages = ['/post/dual-flavor-post', '/notes', '/about/components',
+    // detail 详情页不渲染 ShowcaseGallery，预览分派必须自带声明（§8.2 回归锚点）。
+    '/about/components/lightbox'];
   const barePages = ['/', '/archives', '/tags/x', '/search', '/about', '/friends', '/page/2'];
   for (const p of enhancePages) {
     const head = headOf((await fetchBody(p)).body);
