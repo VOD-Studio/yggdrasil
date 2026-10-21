@@ -23,9 +23,6 @@ pub const BADGE_BASE: &str = "badge";
 // `IconButton` 组件；这些常量供 `Link`、`label` 等非按钮元素与旧页面沿用，
 // 页面重写时逐步收敛。
 
-/// 弱化按钮（弹窗「取消」等）：透明底，悬停浅灰底。
-pub const BTN_GHOST: &str = "btn btn-sm btn-ghost";
-
 /// 次要按钮：浅灰底。
 pub const BTN_SECONDARY: &str = "btn btn-secondary";
 

@@ -21,7 +21,6 @@
 @import "./styles/components/palette.css";
 @import "./styles/components/asset-modals.css";
 @import "./styles/pages/reading-responsive.css";
-@import "./styles/pages/collapsible.css";
 @import "./styles/pages/friends.css";
 @import "./styles/pages/archives.css";
 @import "./styles/pages/navigation-motion.css";
@@ -45,5 +44,6 @@
 @import "./styles/pages/admin-settings.css";
 @import "./styles/pages/admin-mcp.css";
 @import "./styles/pages/admin-system.css";
+@import "./styles/pages/admin-logs.css";
 
 @source "./src/**/*.{rs,html}";

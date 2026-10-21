@@ -25,9 +25,6 @@
     animation: none;
   }
 
-  .collapsible-panel,
-  .collapsible-trigger,
-  .collapsible-chevron,
   .archive-tags,
   .archive-tags *,
   .archives-page .archive-entry,
@@ -36,7 +33,6 @@
     transition: none !important;
   }
 
-  .archive-tags .collapsible-indicator,
   .archive-tags-list > li,
   .archive-tag-chip,
   .archive-tags-retry {

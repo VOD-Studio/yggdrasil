@@ -9,10 +9,6 @@ use dioxus::prelude::*;
 /// 输入框基础类：浅底、发丝线环，聚焦陶土双环，`aria-invalid` 时红环。
 pub const INPUT_CLASS: &str = "field w-full";
 
-/// 内联输入框：与 [`INPUT_CLASS`] 同外观，用 `flex-1 min-w-0` 填充剩余宽度，
-/// 用于与按钮并排的场景（搜索栏、URL 输入栏等）。
-pub const INPUT_INLINE_CLASS: &str = "field flex-1 min-w-0";
-
 /// 多行输入框：随内容长高（`field-sizing: content`）。
 #[allow(dead_code)] // 文本域随页面重写逐步改用
 pub const TEXTAREA_CLASS: &str = "field field-textarea w-full";

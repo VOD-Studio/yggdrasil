@@ -828,67 +828,6 @@
       "usage_kind": "rust"
     },
     {
-      "name": "CollapsibleSettingsCard",
-      "slug": "collapsible-settings-card",
-      "label": "折叠卡片",
-      "group": "display",
-      "summary": "需要的时候，再展开一点细节。",
-      "states": "收起 · 展开",
-      "description": "将设置内容收进可展开的卡片，用标题、摘要和指示灯概括当前状态。",
-      "props": [
-        [
-          "title",
-          "String",
-          "必填",
-          "卡片标题。"
-        ],
-        [
-          "summary",
-          "String",
-          "必填",
-          "当前设置的简短摘要。"
-        ],
-        [
-          "enabled",
-          "bool",
-          "必填",
-          "状态指示灯是否使用强调色。"
-        ],
-        [
-          "children",
-          "Element",
-          "必填",
-          "展开后的内容。"
-        ],
-        [
-          "default_open",
-          "bool",
-          "false",
-          "首次挂载时是否展开。"
-        ],
-        [
-          "on_toggle",
-          "Option<EventHandler<()>>",
-          "None",
-          "展开状态变化的回调。"
-        ]
-      ],
-      "keys": [
-        [
-          "Tab",
-          "聚焦标题"
-        ],
-        [
-          "Space / Enter",
-          "展开或收起"
-        ]
-      ],
-      "source": "src/components/ui.rs",
-      "code": "rsx! {\n    CollapsibleSettingsCard {\n        title: \"自动备份\",\n        summary: \"每天 08:30 留下一份记录\",\n        enabled: true,\n        p { \"这里放置详细设置。\" }\n    }\n}",
-      "preview_mode": "interactive",
-      "usage_kind": "rust"
-    },
-    {
       "name": "StatusBadge",
       "slug": "status-badge",
       "label": "状态徽章",
@@ -2421,6 +2360,116 @@
       "keys": [],
       "source": "src/components/skeletons/assets_skeleton.rs",
       "code": "pub fn AssetsSkeleton() -> Element",
+      "preview_mode": "static",
+      "usage_kind": "api"
+    },
+    {
+      "name": "AssetsGridSkeleton",
+      "slug": "assets-grid-skeleton",
+      "label": "素材网格骨架",
+      "group": "page-loading",
+      "summary": "素材网格骨架，在内容到来前保留页面轮廓。",
+      "states": "页面占位 · 动画",
+      "description": "素材网格骨架用于加载期间的页面布局轮廓。预览将调用项目现有的骨架屏组件。",
+      "props": [
+        [
+          "—",
+          "无",
+          "—",
+          "此组件不接收显式属性。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/skeletons/assets_skeleton.rs",
+      "code": "pub fn AssetsGridSkeleton() -> Element",
+      "preview_mode": "static",
+      "usage_kind": "api"
+    },
+    {
+      "name": "AdminNotesSkeleton",
+      "slug": "admin-notes-skeleton",
+      "label": "笔记管理页骨架",
+      "group": "page-loading",
+      "summary": "笔记管理页骨架，在内容到来前保留页面轮廓。",
+      "states": "页面占位 · 动画",
+      "description": "笔记管理页骨架用于加载期间的页面布局轮廓。预览将调用项目现有的骨架屏组件。",
+      "props": [
+        [
+          "—",
+          "无",
+          "—",
+          "此组件不接收显式属性。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/skeletons/notes_admin_skeleton.rs",
+      "code": "pub fn AdminNotesSkeleton() -> Element",
+      "preview_mode": "static",
+      "usage_kind": "api"
+    },
+    {
+      "name": "NoteRowsSkeleton",
+      "slug": "note-rows-skeleton",
+      "label": "笔记行骨架",
+      "group": "page-loading",
+      "summary": "笔记行骨架，在内容到来前保留页面轮廓。",
+      "states": "页面占位 · 动画",
+      "description": "笔记行骨架用于加载期间的页面布局轮廓。预览将调用项目现有的骨架屏组件。",
+      "props": [
+        [
+          "—",
+          "无",
+          "—",
+          "此组件不接收显式属性。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/skeletons/notes_admin_skeleton.rs",
+      "code": "pub fn NoteRowsSkeleton() -> Element",
+      "preview_mode": "static",
+      "usage_kind": "api"
+    },
+    {
+      "name": "AdminNotebooksSkeleton",
+      "slug": "admin-notebooks-skeleton",
+      "label": "笔记本管理页骨架",
+      "group": "page-loading",
+      "summary": "笔记本管理页骨架，在内容到来前保留页面轮廓。",
+      "states": "页面占位 · 动画",
+      "description": "笔记本管理页骨架用于加载期间的页面布局轮廓。预览将调用项目现有的骨架屏组件。",
+      "props": [
+        [
+          "—",
+          "无",
+          "—",
+          "此组件不接收显式属性。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/skeletons/notes_admin_skeleton.rs",
+      "code": "pub fn AdminNotebooksSkeleton() -> Element",
+      "preview_mode": "static",
+      "usage_kind": "api"
+    },
+    {
+      "name": "NotebooksSkeleton",
+      "slug": "notebooks-skeleton",
+      "label": "笔记本列表与表单骨架",
+      "group": "page-loading",
+      "summary": "笔记本列表与表单骨架，在内容到来前保留页面轮廓。",
+      "states": "页面占位 · 动画",
+      "description": "笔记本列表与表单骨架用于加载期间的页面布局轮廓。预览将调用项目现有的骨架屏组件。",
+      "props": [
+        [
+          "—",
+          "无",
+          "—",
+          "此组件不接收显式属性。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/skeletons/notes_admin_skeleton.rs",
+      "code": "pub fn NotebooksSkeleton() -> Element",
       "preview_mode": "static",
       "usage_kind": "api"
     },

@@ -311,7 +311,6 @@
 .showcase-demo-modal-content { padding: 1.5rem; }
 .showcase-demo-modal-content h2 { font: 500 1.5rem var(--sc-serif); }
 .showcase-demo-modal-content p { margin: .7rem 0 1.3rem; color: var(--color-paper-secondary); }
-.showcase-collapse-content { padding: 1rem; font-size: .75rem; }
 .showcase-empty-preview { width: 100%; max-width: 22rem; }
 .showcase-empty-preview > .empty-state { margin: 0; }
 .showcase-card-preview .showcase-empty-preview .empty-state { padding: 1rem; }

@@ -1053,48 +1053,23 @@ enum PreviewRoute {
 
 fn preview_route(slug: &str) -> Option<PreviewRoute> {
     Some(match slug {
-        "checkbox"
-        | "toggle-switch"
-        | "form-select"
-        | "radio"
-        | "loading-button"
-        | "form-input"
-        | "time-picker"
-        | "form-label"
-        | "filter-tabs"
-        | "pagination"
-        | "table-pager"
-        | "tooltip"
-        | "popover"
-        | "modal-shell"
-        | "confirm-dialog"
-        | "alert-box"
-        | "collapsible-settings-card"
-        | "status-badge"
-        | "tag-chip"
-        | "user-avatar"
-        | "image-placeholder"
-        | "icon"
-        | "button"
-        | "icon-button"
-        | "number-input"
-        | "menu"
-        | "toast"
-        | "bottom-sheet"
-        | "side-sheet"
-        | "breadcrumb"
-        | "search-palette"
-        | "admin-palette"
-        | "empty-state"
-        | "load-error"
-        | "skeleton-box"
-        | "skeleton-card"
-        | "skeleton-table"
+        "checkbox" | "toggle-switch" | "form-select" | "radio" | "loading-button"
+        | "form-input" | "time-picker" | "form-label" | "filter-tabs" | "pagination"
+        | "table-pager" | "tooltip" | "popover" | "modal-shell" | "confirm-dialog"
+        | "alert-box" | "status-badge" | "tag-chip" | "user-avatar" | "image-placeholder"
+        | "icon" | "button" | "icon-button" | "number-input" | "menu" | "toast"
+        | "bottom-sheet" | "side-sheet" | "breadcrumb" | "search-palette" | "admin-palette"
+        | "empty-state" | "load-error" | "skeleton-box" | "skeleton-card" | "skeleton-table"
         | "delayed-skeleton" => PreviewRoute::Live,
         "admin-comments-list-skeleton"
         | "admin-comments-skeleton"
         | "archive-skeleton"
         | "assets-skeleton"
+        | "assets-grid-skeleton"
+        | "admin-notes-skeleton"
+        | "note-rows-skeleton"
+        | "admin-notebooks-skeleton"
+        | "notebooks-skeleton"
         | "changelog-skeleton"
         | "comment-list-skeleton"
         | "admin-dashboard-skeleton"
@@ -1482,12 +1457,6 @@ fn LiveComponentPreview(
                 alert_message,
             }
         },
-        "CollapsibleSettingsCard" => rsx! {
-            crate::components::ui::CollapsibleSettingsCard {
-                title: "自动备份", summary: "每天 08:30 留下一份记录", enabled: true,
-                div { class: "showcase-collapse-content", "这里放置详细设置。" }
-            }
-        },
         "StatusBadge" => rsx! {
             div { class: "showcase-preview-row",
                 crate::components::ui::StatusBadge { color_class: "badge-success", label: "已发布" }
@@ -1585,6 +1554,21 @@ fn PageSkeletonPreview(name: String) -> Element {
         }
         "AssetsSkeleton" => {
             rsx! { crate::components::skeletons::assets_skeleton::AssetsSkeleton {} }
+        }
+        "AssetsGridSkeleton" => {
+            rsx! { crate::components::skeletons::assets_skeleton::AssetsGridSkeleton {} }
+        }
+        "AdminNotesSkeleton" => {
+            rsx! { crate::components::skeletons::notes_admin_skeleton::AdminNotesSkeleton {} }
+        }
+        "NoteRowsSkeleton" => {
+            rsx! { crate::components::skeletons::notes_admin_skeleton::NoteRowsSkeleton {} }
+        }
+        "AdminNotebooksSkeleton" => {
+            rsx! { crate::components::skeletons::notes_admin_skeleton::AdminNotebooksSkeleton {} }
+        }
+        "NotebooksSkeleton" => {
+            rsx! { crate::components::skeletons::notes_admin_skeleton::NotebooksSkeleton {} }
         }
         "ChangelogSkeleton" => {
             rsx! { crate::components::skeletons::changelog_skeleton::ChangelogSkeleton {} }

@@ -1,9 +1,10 @@
-//! stream behavior of the log page.
+//! 日志页的日志流：历史加载、SSE 实时追加、向上翻页与滚动跟随。
 #[cfg(target_arch = "wasm32")]
 use crate::api::logs::get_logs;
 use crate::components::skeletons::{atoms::SkeletonBox, delayed_skeleton::DelayedSkeleton};
-use crate::components::ui::{BADGE_BASE, BTN_GHOST};
+use crate::components::ui::{button_class, ButtonSize, ButtonVariant};
 use crate::models::log::LogEntry;
+use crate::utils::time::to_local;
 use dioxus::prelude::*;
 /// 首屏历史加载条数。
 /// 以下常量与 LogRowKind 仅在 wasm32 门控块内构造（SSR 不加载数据），
@@ -195,19 +196,17 @@ pub(super) fn LogsStreamPane(
     let rows_snapshot = rows();
 
     rsx! {
-        div { class: "relative flex-1 min-h-0 flex flex-col bg-[var(--color-paper-entry)]/40 rounded-2xl border border-[var(--color-paper-border)]/70 shadow-xs overflow-hidden",
+        section { class: "admin-panel logs-pane", aria_label: "日志",
             // SSE 建连失败提示条（历史仍可用）
             if stream_error() {
-                div { class: "flex-shrink-0 px-4 py-2 text-xs text-amber-600 dark:text-amber-400 border-b border-[var(--color-paper-border)]/40 bg-amber-500/5",
-                    "实时流连接失败，仅显示历史快照"
-                }
+                p { class: "logs-banner", role: "status", "实时流连接失败，只显示历史快照。" }
             }
 
             // 日志滚动区（等宽字体行列表，新行自底部进入）
             div {
                 id: "{scroll_id}",
                 "data-vt-scroll": "admin-logs",
-                class: "flex-1 min-h-0 overflow-y-auto overscroll-contain py-1 font-mono text-xs leading-5",
+                class: "logs-scroll",
                 onscroll: move |_| {
                     #[cfg(target_arch = "wasm32")]
                     {
@@ -225,10 +224,10 @@ pub(super) fn LogsStreamPane(
 
                 // 向上翻页：加载更早（游标来自服务端 LogsPage.next_cursor）
                 if next_cursor().is_some() {
-                    div { class: "flex justify-center py-1.5 border-b border-[var(--color-paper-border)]/30 mb-1",
+                    div { class: "logs-older",
                         button {
                             r#type: "button",
-                            class: "{BTN_GHOST} font-sans",
+                            class: button_class(ButtonVariant::Ghost, ButtonSize::Xs),
                             disabled: loading_older(),
                             onclick: move |_| {
                                 #[cfg(target_arch = "wasm32")]
@@ -290,7 +289,7 @@ pub(super) fn LogsStreamPane(
                 // 首屏加载 / 错误 / 空态
                 if !initial_loaded() {
                     DelayedSkeleton {
-                        div { class: "px-3 py-2 space-y-2.5",
+                        div { class: "logs-skeleton",
                             SkeletonBox { class: "h-4 w-[88%] rounded" }
                             SkeletonBox { class: "h-4 w-[72%] rounded" }
                             SkeletonBox { class: "h-4 w-[81%] rounded" }
@@ -299,13 +298,9 @@ pub(super) fn LogsStreamPane(
                         }
                     }
                 } else if load_error() && rows_snapshot.is_empty() {
-                    div { class: "py-16 text-center text-sm font-sans text-red-500 dark:text-red-400",
-                        "历史日志加载失败，请调整筛选后重试"
-                    }
+                    p { class: "logs-empty", "data-error": "true", "历史日志加载失败，请调整筛选后重试。" }
                 } else if rows_snapshot.is_empty() {
-                    div { class: "py-16 text-center text-sm font-sans text-[var(--color-paper-tertiary)]",
-                        "当前筛选条件下暂无日志"
-                    }
+                    p { class: "logs-empty", "当前筛选条件下没有日志。" }
                 }
 
                 for row in rows_snapshot {
@@ -316,44 +311,25 @@ pub(super) fn LogsStreamPane(
                                 None => "…部分日志已跳过…".to_string(),
                             };
                             rsx! {
-                                div { key: "row-{key}", class: "flex items-center gap-3 px-3 py-1 select-none",
-                                    div { class: "flex-1 border-t border-dashed border-[var(--color-paper-border)]" }
-                                    span { class: "text-[11px] font-sans text-[var(--color-paper-tertiary)]",
-                                        "{gap_text}"
-                                    }
-                                    div { class: "flex-1 border-t border-dashed border-[var(--color-paper-border)]" }
-                                }
+                                div { key: "row-{key}", class: "logs-gap", "{gap_text}" }
                             }
                         }
                         LogRow { key, kind: LogRowKind::Entry(entry) } => {
-                            let badge = level_badge_class(&entry.level);
-                            let time_hms = entry.ts.format("%H:%M:%S").to_string();
-                            let time_full = entry.ts.to_rfc3339();
+                            let time_hms = to_local(entry.ts).format("%H:%M:%S%.3f").to_string();
+                            let time_full = to_local(entry.ts).to_rfc3339();
                             let target_name = entry.target.clone();
                             rsx! {
-                                div { key: "row-{key}", class: "flex items-baseline gap-3 px-3 py-1 hover:bg-[var(--color-paper-entry)]/70 transition-colors",
-                                    // 时间：HH:MM:SS，hover title 显示完整时间戳
-                                    span {
-                                        class: "flex-shrink-0 tabular-nums text-[var(--color-paper-tertiary)]",
-                                        title: "{time_full}",
-                                        "{time_hms}"
-                                    }
-                                    // 级别 badge（Catppuccin 语义色）
-                                    span { class: "{BADGE_BASE} {badge} w-16 justify-center flex-shrink-0",
-                                        "{entry.level}"
-                                    }
-                                    // target：弱化色，点击设为 target 筛选
+                                div { key: "row-{key}", class: "logs-row", "data-level": "{entry.level}",
+                                    time { title: "{time_full}", "{time_hms}" }
+                                    span { class: "logs-level", "{entry.level}" }
                                     button {
                                         r#type: "button",
-                                        class: "flex-shrink-0 max-w-40 truncate text-[var(--color-paper-tertiary)] hover:text-[var(--color-paper-accent)] transition-colors cursor-pointer text-left",
-                                        title: "按此 target 筛选",
+                                        class: "logs-target",
+                                        title: "只看这个 target",
                                         onclick: move |_| on_pick_target.call(target_name.clone()),
                                         "{entry.target}"
                                     }
-                                    // message：pre-wrap 全量展示（boring 方案，无展开交互）
-                                    span { class: "flex-1 min-w-0 whitespace-pre-wrap break-words text-[var(--color-paper-primary)]/90",
-                                        "{entry.message}"
-                                    }
+                                    span { class: "logs-message", "{entry.message}" }
                                 }
                             }
                         }
@@ -365,7 +341,7 @@ pub(super) fn LogsStreamPane(
             if !stick() {
                 button {
                     r#type: "button",
-                    class: "absolute bottom-3 right-3 z-10 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-[var(--color-paper-entry)] text-[var(--color-paper-secondary)] hover:text-[var(--color-paper-primary)] border border-[var(--color-paper-border)] shadow-md transition-all cursor-pointer",
+                    class: "logs-to-bottom",
                     onclick: move |_| {
                         #[cfg(target_arch = "wasm32")]
                         if let Some(el) = get_scroll_el(&scroll_id_for_back) {
@@ -377,18 +353,6 @@ pub(super) fn LogsStreamPane(
                 }
             }
         }
-    }
-}
-
-/// 级别 badge 配色（Catppuccin 语义色，沿用 StatusBadge 色板惯例）。
-fn level_badge_class(level: &str) -> &'static str {
-    match level {
-        "ERROR" => "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300",
-        "WARN" => "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
-        "INFO" => "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
-        "DEBUG" => "bg-[var(--color-paper-theme)] text-[var(--color-paper-secondary)]",
-        // TRACE 最弱化：无底色，仅三级文字色。
-        _ => "text-[var(--color-paper-tertiary)]",
     }
 }
 

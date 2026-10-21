@@ -1,0 +1,373 @@
+/* ======== 后台运行日志 ========
+   结构见 src/pages/admin/logs.rs 与 logs/：页面在主内容区内部滚动，标题行与筛选栏
+   固定，日志区占满剩余高度。 */
+.logs-page {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0.5rem 2rem 1.5rem;
+}
+
+.logs-head {
+  flex: none;
+}
+
+.logs-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-right: 0.25rem;
+  color: var(--color-fg-3);
+  font-size: 0.8125rem;
+}
+
+.logs-live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--color-ink-3);
+}
+
+.logs-live[data-on] .logs-live-dot {
+  background-color: var(--color-clay);
+  animation: logs-live 2.4s ease-in-out infinite;
+}
+
+@keyframes logs-live {
+  0%,
+  100% {
+    box-shadow: 0 0 0 3px var(--color-clay-soft);
+  }
+
+  50% {
+    box-shadow: 0 0 0 6px transparent;
+  }
+}
+
+/* ---- 清理策略面板 ---- */
+.logs-cleanup {
+  flex: none;
+  margin-bottom: 1rem;
+  padding: 0.875rem 1rem 1rem;
+  animation: write-banner-in var(--spring-snappy-duration) var(--ease-spring-snappy) both;
+}
+
+.logs-cleanup-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.logs-cleanup-head h2 {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.logs-cleanup-head p {
+  margin: 0.125rem 0 0;
+  color: var(--color-fg-3);
+  font-size: 0.78125rem;
+}
+
+.logs-cleanup-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin-top: 0.75rem;
+  font-size: 0.8125rem;
+}
+
+.logs-cleanup-fields > button {
+  margin-left: auto;
+}
+
+/* ---- 筛选栏 ---- */
+.logs-filters {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.625rem;
+  margin-bottom: 0.75rem;
+}
+
+.logs-levels {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.logs-level-toggle {
+  height: 1.875rem;
+  padding: 0 0.625rem;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-fg-3);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition:
+    background-color 150ms var(--ease-out-expo),
+    color 150ms var(--ease-out-expo);
+}
+
+.logs-level-toggle:hover {
+  color: var(--color-fg);
+}
+
+.logs-level-toggle[aria-pressed="true"] {
+  background-color: var(--color-ink-2);
+  box-shadow: inset 0 0 0 1px var(--color-hairline);
+  color: var(--color-fg);
+}
+
+.logs-level-toggle[aria-pressed="true"][data-level="WARN"] {
+  background-color: var(--color-warning-soft);
+  color: var(--color-warning);
+}
+
+.logs-level-toggle[aria-pressed="true"][data-level="ERROR"] {
+  background-color: var(--color-danger-soft);
+  color: var(--color-danger);
+}
+
+.logs-level-toggle:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
+.logs-search {
+  flex: 1;
+  min-width: 12rem;
+  max-width: 22rem;
+}
+
+.logs-follow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+  color: var(--color-fg-2);
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.logs-hint {
+  flex: none;
+  margin: -0.25rem 0 0.5rem;
+  color: var(--color-fg-3);
+  font-size: 0.75rem;
+}
+
+/* ---- 日志区 ---- */
+.logs-pane-slot {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.logs-pane {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.logs-banner {
+  flex: none;
+  margin: 0;
+  padding: 0.5rem 1rem;
+  background-color: var(--color-warning-soft);
+  box-shadow: inset 0 -1px 0 var(--color-hairline);
+  color: var(--color-warning);
+  font-size: 0.78125rem;
+}
+
+.logs-scroll {
+  flex: 1;
+  min-height: 0;
+  padding: 0.25rem 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  line-height: 1.6;
+}
+
+.logs-row {
+  display: grid;
+  grid-template-columns: 7.5rem 3.5rem minmax(0, 12rem) minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: baseline;
+  padding: 0.3125rem 1rem;
+  transition: background-color 120ms var(--ease-out-expo);
+}
+
+.logs-row:hover {
+  background-color: var(--color-ink-1);
+}
+
+.logs-row[data-level="ERROR"] {
+  background-color: color-mix(in srgb, var(--color-danger) 6%, transparent);
+}
+
+.logs-row time {
+  color: var(--color-fg-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.logs-level {
+  justify-self: start;
+  padding: 0 0.375rem;
+  border-radius: 5px;
+  background-color: var(--color-ink-1);
+  color: var(--color-fg-2);
+  font-size: 0.6875rem;
+}
+
+.logs-row[data-level="WARN"] .logs-level {
+  background-color: var(--color-warning-soft);
+  color: var(--color-warning);
+}
+
+.logs-row[data-level="ERROR"] .logs-level {
+  background-color: var(--color-danger-soft);
+  color: var(--color-danger);
+}
+
+.logs-row[data-level="DEBUG"] .logs-level,
+.logs-row[data-level="TRACE"] .logs-level {
+  background: none;
+  color: var(--color-fg-3);
+}
+
+.logs-target {
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-fg-3);
+  font: inherit;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.logs-target:hover {
+  color: var(--color-clay-text);
+}
+
+.logs-target:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
+.logs-message {
+  min-width: 0;
+  color: var(--color-fg);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.logs-gap {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.25rem 1rem;
+  color: var(--color-fg-3);
+  font-family: var(--font-sans);
+  font-size: 0.6875rem;
+}
+
+.logs-gap::before,
+.logs-gap::after {
+  content: "";
+  flex: 1;
+  border-top: 1px dashed var(--color-ink-3);
+}
+
+.logs-older {
+  display: flex;
+  justify-content: center;
+  padding: 0.25rem 0 0.5rem;
+  font-family: var(--font-sans);
+}
+
+.logs-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  padding: 0.5rem 1rem;
+}
+
+.logs-empty {
+  margin: 0;
+  padding: 4rem 1rem;
+  color: var(--color-fg-3);
+  font-family: var(--font-sans);
+  font-size: 0.8125rem;
+  text-align: center;
+}
+
+.logs-empty[data-error] {
+  color: var(--color-danger);
+}
+
+.logs-to-bottom {
+  position: absolute;
+  right: 0.75rem;
+  bottom: 0.75rem;
+  z-index: 2;
+  height: 2rem;
+  padding: 0 0.875rem;
+  border: 0;
+  border-radius: 999px;
+  background-color: var(--color-popover);
+  box-shadow: var(--shadow-popover);
+  color: var(--color-fg-2);
+  font: inherit;
+  font-size: 0.78125rem;
+  cursor: pointer;
+}
+
+.logs-to-bottom:hover {
+  color: var(--color-fg);
+}
+
+@media (max-width: 767px) {
+  .logs-page {
+    padding: 0.5rem 1rem 1rem;
+  }
+
+  .logs-follow {
+    margin-left: 0;
+  }
+
+  .logs-row {
+    grid-template-columns: auto auto minmax(0, 1fr);
+    gap: 0.25rem 0.5rem;
+  }
+
+  .logs-message {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .logs-live[data-on] .logs-live-dot {
+    animation: none;
+  }
+
+  .logs-cleanup {
+    animation: listbox-fade 150ms linear both;
+  }
+}
