@@ -6,16 +6,10 @@
 .note-tag { font-size: .65rem; color: var(--color-paper-secondary); background: var(--color-paper-entry); padding: .25rem .55rem; border-radius: 5px; }
 button.note-tag { cursor: pointer; }
 .note-read { display: inline-block; color: var(--color-paper-accent); font-size: .75rem; padding-top: .8rem; }
-.notes-pagination { display: flex; align-items: center; justify-content: space-between; gap: 1rem; border-top: 1px solid var(--color-paper-border); padding: 1.5rem 0; font-size: .75rem; }
-.notes-pagination button { cursor: pointer; padding: .4rem; }
-.notes-pagination button:disabled { opacity: .35; cursor: default; }
 .notes-admin-heading { display: flex; gap: 1rem; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; margin-bottom: 1.5rem; }
 .notes-admin-heading h1 { font-size: 1.8rem; font-weight: 700; }
 .notes-admin-heading p { color: var(--color-paper-secondary); font-size: .8rem; margin-top: .5rem; }
 .notes-admin-actions { display: flex; align-items: center; flex-wrap: wrap; gap: .6rem; }
-.notes-admin-filters { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 1.25rem; align-items: end; }
-.notes-admin-filter { min-width: 0; display: grid; gap: .5rem; }
-.notes-admin-filter > label { color: var(--color-paper-secondary); font-size: .8rem; font-weight: 600; }
 .notes-quick { padding: 1.2rem; border: 1px solid var(--color-paper-border); border-radius: 18px; margin-bottom: 1.8rem; background: var(--color-paper-entry); transition: border-color .2s ease, box-shadow .2s ease; }
 .notes-quick:focus-within { border-color: var(--color-paper-accent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-paper-accent) 30%, transparent); }
 .notes-quick textarea { width: 100%; resize: vertical; min-height: 96px; background: transparent; outline: none; font-size: .9rem; line-height: 1.8; }
@@ -104,7 +98,6 @@ button.note-tag { cursor: pointer; }
 @media (max-width: 700px) {
   .notes-editor-grid { grid-template-columns: 1fr; }
   .notes-editor-side { border-left: 0; border-top: 1px solid var(--color-paper-border); padding: 1.2rem 0 0; }
-  .notes-admin-filters { grid-template-columns: 1fr; }
   .notes-admin-row { align-items: stretch; flex-direction: column; gap: .9rem; }
   .notes-admin-row-description { white-space: normal; }
   .notes-admin-row-actions { justify-content: flex-start; border-top: 1px solid color-mix(in srgb, var(--color-paper-border) 70%, transparent); padding-top: .85rem; }

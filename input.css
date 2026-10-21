@@ -36,5 +36,6 @@
 @import "./styles/pages/admin-posts.css";
 @import "./styles/pages/admin-trash.css";
 @import "./styles/pages/admin-write.css";
+@import "./styles/pages/admin-notes.css";
 
 @source "./src/**/*.{rs,html}";

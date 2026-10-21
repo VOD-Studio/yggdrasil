@@ -1,0 +1,286 @@
+/* ======== 后台笔记 ========
+   笔记管理见 src/pages/admin/notes.rs；标题行、工具栏与分页的通用样式在 admin.css。 */
+.admin-notes {
+  max-width: 60rem;
+}
+
+/* ---- 快速记录 ---- */
+.admin-notes-quick {
+  padding: 0.875rem 0.875rem 0.625rem 1.125rem;
+  border-radius: var(--radius-composer);
+  background-color: var(--color-surface-3);
+  box-shadow: 0 0 0 1px var(--color-hairline), var(--shadow-composer);
+  transition: box-shadow 220ms var(--ease-out-expo);
+}
+
+.admin-notes-quick:focus-within {
+  box-shadow: var(--shadow-focus), var(--shadow-composer);
+}
+
+.admin-notes-quick-text {
+  display: block;
+  width: 100%;
+  min-height: 3.5rem;
+  max-height: 20rem;
+  padding: 0;
+  resize: none;
+  field-sizing: content;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--color-fg);
+  font: inherit;
+  font-size: 0.9375rem;
+  line-height: 1.7;
+}
+
+.admin-notes-quick-text::placeholder,
+.admin-notes-quick-tags::placeholder {
+  color: var(--color-fg-3);
+}
+
+.admin-notes-quick-text:disabled {
+  opacity: 0.5;
+}
+
+.admin-notes-quick-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.625rem;
+  margin-top: 0.375rem;
+}
+
+.admin-notes-quick-tags {
+  flex: 1;
+  min-width: 10rem;
+  height: 1.875rem;
+  padding: 0 0.625rem;
+  border: 0;
+  border-radius: 8px;
+  outline: 0;
+  background-color: var(--color-ink-1);
+  color: var(--color-fg);
+  font: inherit;
+  font-size: 0.8125rem;
+}
+
+.admin-notes-quick-tags:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--color-ink-3);
+}
+
+.admin-notes-quick-hint {
+  color: var(--color-fg-3);
+  font-size: 0.75rem;
+}
+
+.admin-notes-note {
+  margin: 0.625rem 0 0;
+  color: var(--color-fg-3);
+  font-size: 0.8125rem;
+}
+
+.admin-notes-note[role="alert"] {
+  color: var(--color-danger);
+}
+
+.admin-notes-note a {
+  margin-left: 0.5rem;
+  color: var(--color-clay-text);
+}
+
+/* 本地副本恢复提示：与写作页同为暖色提示条。 */
+.admin-notes-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin-bottom: 0.75rem;
+  padding: 0.625rem 0.75rem 0.625rem 0.875rem;
+  border-radius: var(--radius-panel);
+  background-color: var(--color-warning-soft);
+  box-shadow: 0 0 0 1px var(--color-hairline);
+  font-size: 0.8125rem;
+}
+
+.admin-notes-banner > svg {
+  color: var(--color-warning);
+}
+
+.admin-notes-banner p {
+  flex: 1;
+  margin: 0;
+}
+
+/* ---- 工具栏 ---- */
+.admin-notes-toolbar {
+  margin-top: 1.75rem;
+}
+
+.admin-notes-toolbar .admin-filter-search {
+  width: 13rem;
+}
+
+.admin-notes-toolbar button[aria-pressed="true"] {
+  color: var(--color-fg);
+}
+
+.admin-notes-trash-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  font-weight: 500;
+}
+
+.admin-notes-trash-title span {
+  color: var(--color-fg-3);
+  font-size: 0.8125rem;
+  font-weight: 400;
+}
+
+/* ---- 笔记行 ---- */
+.admin-notes-list {
+  overflow: clip;
+}
+
+.admin-notes-list ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.admin-notes-row {
+  display: grid;
+  grid-template-columns: 1.875rem minmax(0, 1fr) auto;
+  gap: 0.875rem;
+  align-items: start;
+  padding: 0.875rem 1rem;
+  box-shadow: inset 0 -1px 0 var(--color-hairline);
+  color: inherit;
+  text-decoration: none;
+  transition: background-color 150ms var(--ease-out-expo);
+}
+
+a.admin-notes-row:hover {
+  background-color: var(--color-ink-1);
+}
+
+a.admin-notes-row:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1.5px var(--color-clay);
+}
+
+.admin-notes-row[aria-busy="true"] {
+  opacity: 0.55;
+}
+
+.admin-notes-glyph {
+  display: grid;
+  place-items: center;
+  width: 1.875rem;
+  height: 1.875rem;
+  border-radius: 8px;
+  background-color: var(--color-ink-1);
+  color: var(--color-fg-3);
+  font-size: 0.75rem;
+}
+
+.admin-notes-main {
+  min-width: 0;
+}
+
+.admin-notes-title {
+  display: block;
+  overflow: hidden;
+  color: var(--color-fg);
+  font-size: 0.90625rem;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-notes-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem 0.625rem;
+  margin-top: 0.375rem;
+  color: var(--color-fg-3);
+  font-size: 0.78125rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-notes-meta .status-dot {
+  font-size: inherit;
+}
+
+/* 私密：空心圆点。 */
+.admin-notes-private {
+  color: var(--color-fg-3);
+}
+
+.admin-notes-private::before {
+  background-color: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--color-fg-3);
+}
+
+.admin-notes-ahead {
+  color: var(--color-clay-text);
+}
+
+.admin-notes-pill {
+  padding: 0 0.4375rem;
+  border-radius: 999px;
+  background-color: var(--color-ink-1);
+  color: var(--color-fg-2);
+}
+
+.admin-notes-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.375rem;
+  color: var(--color-fg-3);
+  font-size: 0.78125rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.admin-notes-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--color-fg-2);
+  opacity: 0;
+  transition: opacity 150ms var(--ease-out-expo);
+}
+
+a.admin-notes-row:hover .admin-notes-edit,
+a.admin-notes-row:focus-visible .admin-notes-edit {
+  opacity: 1;
+}
+
+@media (max-width: 767px) {
+  .admin-notes-toolbar .admin-filter-search {
+    width: 100%;
+  }
+
+  .admin-notes-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding-inline: 0.875rem;
+  }
+
+  .admin-notes-glyph {
+    display: none;
+  }
+
+  .admin-notes-title {
+    white-space: normal;
+  }
+
+  .admin-notes-edit {
+    display: none;
+  }
+}

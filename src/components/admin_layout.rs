@@ -18,6 +18,7 @@ use crate::components::skeletons::dashboard_skeleton::AdminDashboardSkeleton;
 use crate::components::skeletons::friends_admin_skeleton::FriendsAdminSkeleton;
 use crate::components::skeletons::logs_skeleton::LogsSkeleton;
 use crate::components::skeletons::mcp_skeleton::McpSkeleton;
+use crate::components::skeletons::notes_admin_skeleton::AdminNotesSkeleton;
 use crate::components::skeletons::post_preview_skeleton::PostPreviewSkeleton;
 use crate::components::skeletons::posts_skeleton::PostsSkeleton;
 use crate::components::skeletons::posts_trash_skeleton::PostsTrashSkeleton;
@@ -931,10 +932,10 @@ fn admin_route_skeleton(route: &Route) -> Element {
         Route::Posts {} => rsx! {
             PostsSkeleton {}
         },
-        Route::AdminNotes {}
-        | Route::AdminNotebooks {}
-        | Route::NewNote {}
-        | Route::EditNote { .. } => rsx! {
+        Route::AdminNotes {} => rsx! {
+            AdminNotesSkeleton {}
+        },
+        Route::AdminNotebooks {} | Route::NewNote {} | Route::EditNote { .. } => rsx! {
             crate::pages::notes::NotesSkeleton {}
         },
         Route::PostsTrash {} => rsx! {
