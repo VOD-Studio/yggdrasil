@@ -1,6 +1,6 @@
 # WASM 体积与阅读性能优化实施方案
 
-状态：P0/P1/P2/P4.1/P4.2/P5(preload) 已实施（分支 `docs/wasm-optimization-plan`，2026-10-21）；P3 的 P3a（门 1-5 可行性）、P3b（构建、模板选择、清单、跨入口导航）与 P3c（缓存命名空间隔离、发布装配原子化、旧资源保留窗口、完整应用回退验收）已完成，仅 §8.2（全局脚本与样式拆分）待实施。实测数据见 §3.3、§4.3、§5.4、§6、§7 与 §8.1 的实施记录及 `target/regressions/` 各测量报告；下列优化描述与验收清单保留原样作为验收依据。
+状态：P0–P5 全部实施完成（分支 `docs/wasm-optimization-plan`，2026-10-21）；P3 的 P3a（门 1-5 可行性）、P3b（构建、模板选择、清单、跨入口导航）与 P3c（缓存命名空间隔离、发布装配原子化、旧资源保留窗口、完整应用回退验收）已完成，§8.2（全局脚本与样式拆分）已完成（实施记录见下）。实测数据见 §3.3、§4.3、§5.4、§6、§7 与 §8.1 的实施记录及 `target/regressions/` 各测量报告；下列优化描述与验收清单保留原样作为验收依据。
 
 核对日期：2026-10-21。代码基线：`303e497`（`perf(build): release WASM 改用固定 nightly 编译`，v0.23.4）。开始实施前重新核对代码、工具链和工作区；保留其他未提交修改。
 
@@ -366,6 +366,12 @@ P4 两项独立提交和回退，不要求先合并成统一模型层重构。
 - KaTeX/高亮样式条件加载必须保证服务端已经输出的内容在首次绘制时可正确显示，不能以明显闪烁换取请求数减少。
 - 可变路径资源继续 revalidate；只有内容寻址/版本不可变的 URL 才使用 immutable。
 
+实施记录（2026-10-21）：拆分边界落定为 core（启动必需：route-transitions、theme-transition、anchor-click、page-entry、hash-scroll、browser-library；保持阻塞执行不加 async，`__routeTransitions` 适配器契约不变）与 `yggdrasil-enhance.js`（post-content、mermaid+overlay、toc-sidebar、changelog-nav、showcase-masonry）。带状态的 core 模块经 window 全局桥接供 enhance 消费（`__subscribeThemeChange` 主题 registry；changelog-nav 走 `__initAnchorClick`/`__scrollToHash`），避免双 IIFE 各持一份模块状态造成双监听或收不到通知。`lightbox.js/css` 移出全局阻塞注入，与增强脚本一起由组件经 `document::Script`/`Stylesheet` 按需声明（`src/components/enhance_assets.rs`：PostContent、PostToc、changelog VersionNav、图鉴 ShowcaseGallery 与 ComponentPreview 分派、评论区、后台素材页与封面预览；`document::Script` 按 src 去重）。SSR 直达烤进 head 带 defer，先于 WASM hydration；SPA 首次注入为 async，`invoke_optional_global` 对缺失函数写入 core 无条件建立的 `__pendingEnhanceCalls` 队列，enhance/lightbox IIFE 尾部 flush 补执行（只执行已就绪项，滞留项等价原静默跳过）。KaTeX/高亮样式保持全局加载：SPA 首跳代码页的条件加载会带来一次 revalidate RTT 的裸样式闪烁，plan 禁止以闪烁换请求数（本节第 4 条）；可变路径缓存维持 `no-cache` revalidate、内容寻址产物 immutable（第 5 条现状已合规，未引入新的内容寻址 URL）。
+
+实测（release，Brotli 字节）：全局阻塞路径 69,168 → 56,968（−12,200，−17.6%），head 阻塞请求 7 → 5；纯导航页（首页/归档/标签/搜索/友链/关于/写作指南）总传输等额下降；增强页（文章/笔记/changelog/图鉴）追加 defer 传输 13,639（非阻塞，不参与首屏竞争），总传输 +1,439（双 IIFE 重复打包共享无状态模块的开销）。core.js 11,118 → 6,155；enhance.js 5,595；lightbox.js 6,997 → 7,113（尾部 flush 钩子）。
+
+验收：`scripts/test-dual-flavor.cjs` 新增 [1b] 资源边界断言（全部通过：正文/笔记/changelog/图鉴页注入增强脚本与灯箱、图鉴 detail 页经预览分派自带声明、changelog 无正文图片不注入灯箱、纯导航页不注入、KaTeX/高亮保持全局；含公开 moment 夹具——`/notes` 有内容才注入正是按需语义；种子需同事务插入以过 `notes_current_revision` DEFERRABLE 外键）。`test-lightbox`、`test-components-showcase`、smoke、`test-changelog-nav`（6 配置）、`test-view-transitions`（19 项含 300ms 预算）全部通过。过程中发现并修复：① 图鉴 detail 页不渲染 ShowcaseGallery，预览统一从 `ComponentPreview` 分派口自带资源声明；② `lightbox` `initLazyLoad` 对已就位 src 重新赋值会重启加载、令路由协调器挂起的 `decode()` 以 EncodingError 拒绝（按需加载后首次 SPA 进文章页可能恰在 VT 窗口内初始化），改为「已有 src 即接管」并加单测钉住；③ `test-view-transitions.cjs` 封面夹具拦截的端点名自 P4.2（`91b08be` 改 `get_public_post_by_slug`）起失配、夹具失效，已跟进修正。未覆盖：真实源站 4 Mbps 下首跳 SPA 注入的排队画像（本地回环脚本下载 <10 ms，生产源站带宽更紧但 wasm preload 优先级更高）；仅 Chromium 回归，无 Safari/Firefox 实机。回退方式：恢复 `Dioxus.toml` 全局 script/style 列表并移除组件内 `enhance_assets` 声明即可回到全局注入，core/enhance 拆分保留无害。
+
 P5 主要改善关键路径，不单独声称 WASM 文件变小。
 
 ## 9. 后续候选与明确暂缓的方向
@@ -459,7 +465,7 @@ make test-browser BROWSER_SUITE=showcase
 - [x] P3b：完成 reader/full 构建、模板选择、清单和跨入口导航（`make build` 端到端 + `scripts/test-dual-flavor.cjs` 全部断言通过；提交 `c97e0c0`、`12cc63c`、`2057bc3`）。
 - [x] P3c：完成双机缓存、最终发布布局、旧资源保留和回退验收。（提交 `98e99af`/`cfc377f`/`f4bc6ed`：缓存 release×flavor 命名空间隔离、发布装配原子换入、`YGG_PREVIOUS_PUBLIC_DIR` 旧资源保留窗口、完整应用回退与累计下载量报告；记录与数据见 §6.6/§6.7/§6.8）
 - [x] P4：分别完成公开笔记 DTO 与正文复制/解析优化。
-- [x] P5：以真实请求链验证 preload 和资源边界，按净收益保留（§8.1 retain-candidate，提交见 §8.1 实施记录；§8.2 全局脚本与样式拆分仍待实施）。
+- [x] P5：以真实请求链验证 preload 和资源边界，按净收益保留（§8.1 retain-candidate；§8.2 拆分与按需注入完成，实施记录与数据见 §8.2）。
 
 停止或调整方向的条件：
 
