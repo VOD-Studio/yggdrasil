@@ -574,3 +574,335 @@ a.admin-notes-row:focus-visible .admin-notes-edit {
   p:first-child:last-child:has(br.ProseMirror-trailingBreak:only-child)::before {
   content: "从一个想法开始。输入 / 插入代码、图片、公式或引用…";
 }
+
+/* ======== 笔记本管理 ========
+   结构见 src/pages/admin/notes/notebooks.rs：左栏列表，右栏编辑。 */
+.admin-notebooks {
+  max-width: 64rem;
+}
+
+.admin-notebooks-grid {
+  display: grid;
+  grid-template-columns: minmax(15rem, 18.75rem) minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.admin-notebooks-list {
+  overflow: clip;
+}
+
+.admin-notebooks-tabs {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.5rem;
+  box-shadow: inset 0 -1px 0 var(--color-hairline);
+}
+
+.admin-notebooks-tabs button {
+  flex: 1;
+  height: 1.875rem;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--color-fg-2);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+  transition: background-color 150ms var(--ease-out-expo);
+}
+
+.admin-notebooks-tabs button:hover {
+  background-color: var(--color-ink-1);
+}
+
+.admin-notebooks-tabs button[aria-selected="true"] {
+  background-color: var(--color-ink-2);
+  color: var(--color-fg);
+  font-weight: 500;
+}
+
+.admin-notebooks-tabs button span {
+  margin-left: 0.3125rem;
+  color: var(--color-fg-3);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-notebooks-tabs button:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
+.admin-notebooks-list ul {
+  margin: 0;
+  padding: 0.375rem;
+  list-style: none;
+}
+
+.admin-notebook-item {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  width: 100%;
+  padding: 0.5rem 0.625rem;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 150ms var(--ease-out-expo);
+}
+
+.admin-notebook-item:hover,
+.admin-notebook-item[aria-pressed="true"] {
+  background-color: var(--color-ink-1);
+}
+
+.admin-notebook-item:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
+.admin-notebook-item-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.admin-notebook-item-title {
+  display: block;
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-notebook-item-meta {
+  display: block;
+  color: var(--color-fg-3);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-notebook-item-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--color-clay);
+}
+
+.admin-notebooks-empty {
+  margin: 0;
+  padding: 0.75rem 1rem 1rem;
+  color: var(--color-fg-3);
+  font-size: 0.8125rem;
+}
+
+/* ---- 右栏 ---- */
+.admin-notebook-blank {
+  display: grid;
+  place-items: center;
+  min-height: 12rem;
+  color: var(--color-fg-3);
+  font-size: 0.875rem;
+}
+
+.admin-notebook-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+  padding: 1.125rem 1.25rem;
+  box-shadow: inset 0 -1px 0 var(--color-hairline);
+}
+
+.admin-notebook-fields h2 {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.admin-notebook-fields .field {
+  width: 100%;
+  background-color: var(--color-surface-1);
+}
+
+.admin-notebook-fields textarea {
+  resize: none;
+  field-sizing: content;
+  min-height: 3.75rem;
+}
+
+.admin-notebook-label {
+  display: block;
+  margin-bottom: 0.375rem;
+  color: var(--color-fg-2);
+  font-size: 0.78125rem;
+}
+
+.admin-notebook-switch {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.admin-notebook-switch p {
+  margin: 0;
+  font-size: 0.84375rem;
+}
+
+.admin-notebook-switch .admin-notebook-hint,
+.admin-notebook-hint {
+  margin: 0;
+  color: var(--color-fg-3);
+  font-size: 0.78125rem;
+}
+
+.admin-notebook-order {
+  padding: 1rem 1.25rem;
+}
+
+.admin-notebook-order-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.25rem 0.75rem;
+  margin-bottom: 0.625rem;
+}
+
+.admin-notebook-order-head h3 {
+  margin: 0;
+  font-size: 0.84375rem;
+  font-weight: 600;
+}
+
+.admin-notebook-order-head span {
+  color: var(--color-fg-3);
+  font-size: 0.75rem;
+}
+
+/* 不裁切：上移下移按钮的提示要能浮出列表。 */
+.admin-notebook-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-radius: var(--radius-panel);
+  box-shadow: 0 0 0 1px var(--color-hairline);
+}
+
+.admin-notebook-rows li {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.5rem 0.5rem 0.5rem 0.75rem;
+  background-color: var(--color-surface-2);
+  box-shadow: inset 0 -1px 0 var(--color-hairline);
+  transition: background-color 400ms var(--ease-out-expo);
+}
+
+.admin-notebook-rows li:first-child {
+  border-radius: var(--radius-panel) var(--radius-panel) 0 0;
+}
+
+.admin-notebook-rows li:last-child {
+  border-radius: 0 0 var(--radius-panel) var(--radius-panel);
+  box-shadow: none;
+}
+
+.admin-notebook-rows li:only-child {
+  border-radius: var(--radius-panel);
+}
+
+.admin-notebook-rows li[data-moved] {
+  background-color: var(--color-clay-soft);
+  animation: notebook-row-moved var(--spring-snappy-duration) var(--ease-spring-snappy);
+}
+
+@keyframes notebook-row-moved {
+  from {
+    transform: scale(0.99);
+  }
+}
+
+.admin-notebook-row-n {
+  width: 1.375rem;
+  color: var(--color-fg-3);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+}
+
+.admin-notebook-row-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.admin-notebook-row-title {
+  display: block;
+  overflow: hidden;
+  font-size: 0.875rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-notebook-row-state {
+  display: block;
+  color: var(--color-fg-3);
+  font-size: 0.75rem;
+}
+
+.admin-notebook-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 1.25rem;
+  border-radius: 0 0 var(--radius-panel) var(--radius-panel);
+  background-color: var(--color-surface-1);
+  box-shadow: inset 0 1px 0 var(--color-hairline);
+}
+
+.admin-notebook-archive {
+  max-width: 26rem;
+}
+
+.admin-notebook-archive p {
+  margin: 0.125rem 0 0;
+  color: var(--color-fg-3);
+  font-size: 0.75rem;
+}
+
+.admin-notebook-link {
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-fg-2);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.admin-notebook-link:hover {
+  color: var(--color-fg);
+}
+
+.admin-notebook-link:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
+@media (max-width: 860px) {
+  .admin-notebooks-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-notebook-rows li[data-moved] {
+    animation: none;
+  }
+}

@@ -95,14 +95,25 @@ pub async fn archive_notebook(id: i32, archived: bool) -> Result<(), ServerFnErr
 }
 
 #[server(NotebookOrder, "/api")]
-pub async fn notebook_order(id: i32) -> Result<Vec<(i32, String)>, ServerFnError> {
+pub async fn notebook_order(id: i32) -> Result<Vec<NotebookEntry>, ServerFnError> {
     let user = crate::api::auth::get_current_admin_user().await?;
     let client = crate::db::pool::get_conn()
         .await
         .map_err(crate::api::error::AppError::db_conn)?;
-    let rows=client.query("SELECT n.id, CASE WHEN r.title='' THEN r.summary ELSE r.title END FROM notebook_notes bn
+    let rows=client.query("SELECT n.id, CASE WHEN r.title='' THEN r.summary ELSE r.title END,
+        n.published_version IS NOT NULL, n.version > COALESCE(n.published_version, n.version), n.deleted_at IS NOT NULL
+        FROM notebook_notes bn
         JOIN notebooks b ON b.id=bn.notebook_id JOIN notes n ON n.id=bn.note_id
         JOIN note_revisions r ON r.note_id=n.id AND r.version=n.version
         WHERE b.id=$1 AND b.owner_id=$2 ORDER BY bn.position,n.id", &[&id,&user.id]).await.map_err(crate::api::error::AppError::query)?;
-    Ok(rows.iter().map(|r| (r.get(0), r.get(1))).collect())
+    Ok(rows
+        .iter()
+        .map(|r| NotebookEntry {
+            id: r.get(0),
+            title: r.get(1),
+            published: r.get(2),
+            ahead: r.get(3),
+            trashed: r.get(4),
+        })
+        .collect())
 }

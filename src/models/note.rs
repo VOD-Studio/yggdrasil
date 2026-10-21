@@ -194,6 +194,30 @@ pub fn choose_notebook(candidates: &[i32], requested: Option<i32>) -> Option<i32
     }
 }
 
+/// 笔记本编排里的一篇：标题与访客能否看到。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NotebookEntry {
+    pub id: i32,
+    pub title: String,
+    /// 有公开版。
+    pub published: bool,
+    /// 工作稿比公开版新。
+    pub ahead: bool,
+    /// 在回收站里（仍占目录位置）。
+    pub trashed: bool,
+}
+
+impl NotebookEntry {
+    pub fn state_label(&self) -> &'static str {
+        match (self.trashed, self.published, self.ahead) {
+            (true, _, _) => "在回收站 · 访客不可见",
+            (false, true, true) => "已发布 · 有未发布修改",
+            (false, true, false) => "已发布",
+            (false, false, _) => "私密草稿 · 访客不可见",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct NotebookInput {
     pub id: Option<i32>,
@@ -229,6 +253,30 @@ mod tests {
             slug: slug.into(),
             title: slug.to_uppercase(),
         }
+    }
+
+    #[test]
+    fn notebook_entry_label_explains_visitor_visibility() {
+        let entry = |published, ahead, trashed| NotebookEntry {
+            id: 1,
+            title: String::new(),
+            published,
+            ahead,
+            trashed,
+        };
+        assert_eq!(
+            entry(true, true, false).state_label(),
+            "已发布 · 有未发布修改"
+        );
+        assert_eq!(entry(true, false, false).state_label(), "已发布");
+        assert_eq!(
+            entry(false, false, false).state_label(),
+            "私密草稿 · 访客不可见"
+        );
+        assert_eq!(
+            entry(true, false, true).state_label(),
+            "在回收站 · 访客不可见"
+        );
     }
 
     #[test]

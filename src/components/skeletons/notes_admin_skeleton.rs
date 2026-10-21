@@ -1,6 +1,7 @@
 //! 后台笔记骨架屏
 //!
-//! 与笔记管理同一版式：标题行、快速记录、类型选项卡与筛选、笔记行。
+//! 与笔记管理同一版式：标题行、快速记录、类型选项卡与筛选、笔记行；
+//! 笔记本管理为左栏列表与右栏表单。
 
 use dioxus::prelude::*;
 
@@ -51,6 +52,48 @@ pub fn AdminNotesSkeleton() -> Element {
                 }
             }
             NoteRowsSkeleton {}
+        }
+    }
+}
+
+/// 加载占位：左栏列表与右栏表单。
+#[component]
+pub fn NotebooksSkeleton() -> Element {
+    rsx! {
+        div { class: "admin-notebooks-grid", aria_hidden: "true",
+            div { class: "admin-panel admin-notebooks-list",
+                div { class: "admin-notebooks-tabs", SkeletonBox { class: "h-[30px] w-full rounded-lg" } }
+                for i in 0..4 {
+                    div { key: "{i}", class: "px-4 py-2.5",
+                        SkeletonBox { class: "h-4 w-3/4 rounded" }
+                        SkeletonBox { class: "h-3 w-1/3 rounded mt-1.5" }
+                    }
+                }
+            }
+            div { class: "admin-panel admin-notebook-editor",
+                div { class: "admin-notebook-fields",
+                    SkeletonBox { class: "h-5 w-24 rounded" }
+                    SkeletonBox { class: "h-9 w-full rounded-lg" }
+                    SkeletonBox { class: "h-16 w-full rounded-lg" }
+                }
+            }
+        }
+    }
+}
+
+/// 笔记本管理全页骨架屏（AdminLayout 路由级 fallback）。
+#[component]
+pub fn AdminNotebooksSkeleton() -> Element {
+    rsx! {
+        div { class: "admin-notebooks", aria_hidden: "true",
+            div { class: "admin-page-head",
+                div {
+                    SkeletonBox { class: "h-7 w-24 rounded-md" }
+                    SkeletonBox { class: "h-3.5 w-64 rounded mt-2" }
+                }
+                SkeletonBox { class: "h-[34px] w-28 rounded-lg" }
+            }
+            NotebooksSkeleton {}
         }
     }
 }
