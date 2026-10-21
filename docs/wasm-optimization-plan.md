@@ -1,6 +1,6 @@
 # WASM 体积与阅读性能优化实施方案
 
-状态：P0/P1/P2/P4.1/P4.2 已实施（分支 `docs/wasm-optimization-plan`，2026-10-21）；P3 的 P3a（门 1-5 可行性）与 P3b（构建、模板选择、清单、跨入口导航）已完成，P3c（双机缓存、滚动发布、旧资源保留与回退验收）与 P5 待实施。实测数据见 §3.3、§4.3、§5.4、§6 与 §7 的实施记录及 `target/regressions/` 各测量报告；下列优化描述与验收清单保留原样作为验收依据。
+状态：P0/P1/P2/P4.1/P4.2/P5(preload) 已实施（分支 `docs/wasm-optimization-plan`，2026-10-21）；P3 的 P3a（门 1-5 可行性）与 P3b（构建、模板选择、清单、跨入口导航）已完成，P3c（双机缓存、滚动发布、旧资源保留与回退验收）与 §8.2（全局脚本与样式拆分）待实施。实测数据见 §3.3、§4.3、§5.4、§6、§7 与 §8.1 的实施记录及 `target/regressions/` 各测量报告；下列优化描述与验收清单保留原样作为验收依据。
 
 核对日期：2026-10-21。代码基线：`303e497`（`perf(build): release WASM 改用固定 nightly 编译`，v0.23.4）。开始实施前重新核对代码、工具链和工作区；保留其他未提交修改。
 
@@ -339,6 +339,13 @@ P4 两项独立提交和回退，不要求先合并成统一模型层重构。
 4. 只预加载本页 flavor，不为公开页预加载 full。验证正确的 WASM MIME 和 Brotli 返回。
 5. 对比请求提前量、交互就绪、LCP 和其他关键资源竞争；若只抢占带宽却没有实际收益，撤回或调整优先级。
 
+实施记录（2026-10-21）：preload 改为发布装配期注入——`build-release.cjs` 经共享模块 `scripts/release-bootstrap.cjs` 从每个模板唯一 module 入口的 `module_or_path` 解析 WASM URL（不手写 hash，解析失败或两 flavor 入口重合时在覆盖旧发布前失败），在 head 开头插入 `as="fetch" type="application/wasm" crossorigin="anonymous"`（幂等，CORS 与 wasm-bindgen `fetch` 匹配）；`--verify` 核对 preload 的 URL/head 位置/属性与入口引用、flavor 资产闭包、清单摘要及 `.br` 旁车的一致性。单元测试 `scripts/release-bootstrap.test.cjs`（10 例，并入 `make test`/CI）；`test-dual-flavor.cjs` 增加「每文档仅一次对应 flavor WASM」断言（preload 被实例化请求复用、无 unused-preload 警告）。真实请求链 A/B（`make test-wasm-preload`，复用 `test-dual-flavor.cjs` 的隔离 release 环境；双 loopback 代理仅差 head preload、资产原始 Brotli 透传、不用 Playwright route；冷=全新 context、热=同 context 新文档；5 轮 × 3 页 × A/B × 交互/被动 × 冷/热 = 120 文档，4× CPU / 4 Mbps 限速，声明 `SSR_CACHE_SECS=60`；报告 `target/regressions/1792568229510-dual-flavor/wasm-preload/1792568233860-wasm-preload`）：
+
+- 零违规、零拦截请求；两臂上游 HTML 哈希、SSR 代际与缓存状态逐页一致。
+- 冷缓存配对中位数（基线−preload，正值为收益）：reader 首页 WASM 开始提前 342.7 ms（MAD 14.5）、菜单就绪提前 212.7 ms（MAD 12.8）；reader 文章 WASM 开始提前 590.0 ms（MAD 1.6）、菜单就绪中性（−3.8 ms，MAD 7.3，噪声内）；full 图鉴 WASM 开始提前 1 723.4 ms（MAD 26.1）、菜单就绪提前 217.5 ms。
+- 三页 LCP 一致回退 48–84 ms（带宽竞争的代价，门槛 max(100 ms, 5%) 内通过）；CLS 全程 0；热缓存 WASM transferSize=0 证实缓存复用、无双份下载。
+- 判定 retain-candidate（本地固定限速画像下的保留候选，非生产性能结论；methodology/limitations 见 report.json）。未覆盖：真实源站 TTFB/流式响应（两臂文档均经代理缓冲）、桌面/认证路径与 §8.2 拆分。回退方式：从模板移除注入的 preload link 重新装配，或以装配前快照回退。
+
 ### 8.2 全局脚本与样式
 
 `Dioxus.toml` 全局引入 core/lightbox 和多份样式；`src/navigation.rs` 的 history 连接依赖 core 全局对象。
@@ -442,7 +449,7 @@ make test-browser BROWSER_SUITE=showcase
 - [x] P3b：完成 reader/full 构建、模板选择、清单和跨入口导航（`make build` 端到端 + `scripts/test-dual-flavor.cjs` 全部断言通过；提交 `c97e0c0`、`12cc63c`、`2057bc3`）。
 - [ ] P3c：完成双机缓存、最终发布布局、旧资源保留和回退验收。
 - [x] P4：分别完成公开笔记 DTO 与正文复制/解析优化。
-- [ ] P5：以真实请求链验证 preload 和资源边界，按净收益保留。
+- [x] P5：以真实请求链验证 preload 和资源边界，按净收益保留（§8.1 retain-candidate，提交见 §8.1 实施记录；§8.2 全局脚本与样式拆分仍待实施）。
 
 停止或调整方向的条件：
 
