@@ -1979,6 +1979,53 @@
       "usage_kind": "rust"
     },
     {
+      "name": "SideSheet",
+      "slug": "side-sheet",
+      "label": "左侧抽屉",
+      "group": "overlay",
+      "summary": "从左边滑出，向左一推就收起。",
+      "states": "打开 · 拖拽 · 关闭",
+      "description": "手机上的后台导航。以 heavy 弹簧从左侧滑出；点遮罩、按 Esc 或向左拖过 80px 关闭，拖拽有 4px 死区，竖直拖动留给内容滚动。打开时聚焦当前项，没有时聚焦第一个链接或按钮；关闭后焦点回到触发按钮，期间锁住页面滚动。抽屉内的子组件用 use_sheet_close() 关闭它。",
+      "props": [
+        ["open", "Signal<bool>", "必填", "是否打开；关闭动画结束后才置为 false。"],
+        ["id", "String", "必填", "抽屉的 DOM id，供触发按钮的 aria-controls 引用。"],
+        ["trigger_id", "String", "必填", "触发按钮的 id，关闭后焦点回到这里。"],
+        ["label", "String", "必填", "对话框的无障碍名称。"],
+        ["children", "Element", "必填", "抽屉内容。"]
+      ],
+      "keys": [
+        ["Esc", "关闭抽屉"],
+        ["Tab", "在抽屉内容间移动"]
+      ],
+      "source": "src/components/ui/sheet.rs",
+      "code": "let mut open = use_signal(|| false);\nrsx! {\n    button { id: \"menu-trigger\", onclick: move |_| open.set(true), \"菜单\" }\n    SideSheet { open, id: \"menu-sheet\", trigger_id: \"menu-trigger\", label: \"后台导航\",\n        AdminNav {}\n    }\n}",
+      "preview_mode": "interactive",
+      "usage_kind": "rust"
+    },
+    {
+      "name": "AdminPalette",
+      "slug": "admin-palette",
+      "label": "后台命令面板",
+      "group": "overlay",
+      "summary": "按下 ⌘K，找文章、做操作、去别处。",
+      "states": "常用操作 · 分组结果 · 无结果 · 加载中",
+      "description": "后台布局里挂载一次，与前台搜索面板共用打开句柄、快捷键、高亮与样式。空查询列出常用操作与全部栏目；有查询时按「文章 · 操作 · 跳转」分组，文章来自后台列表接口（含草稿，按标题匹配，最多 6 篇），回车进入编辑。图鉴传入 demo：固定文章在浏览器内过滤，选中项只在预览里回显，不请求、不跳转。",
+      "props": [
+        ["on_logout", "EventHandler<()>", "必填", "「退出登录」命令，与侧栏退出按钮同一处理。"],
+        ["demo", "Option<AdminPaletteDemo>", "None", "演示数据：固定文章与选中回调，不请求接口、不注册全局快捷键。"]
+      ],
+      "keys": [
+        ["⌘K / Ctrl+K", "打开面板（焦点在编辑器里时留给编辑器）"],
+        ["↑ / ↓", "在结果间循环移动"],
+        ["↵", "执行当前项"],
+        ["Esc", "有内容时清空，再按一次关闭"]
+      ],
+      "source": "src/components/admin_palette.rs",
+      "code": "// 后台布局里提供句柄并挂载一次\nlet palette = use_search_palette_provider();\nrsx! {\n    button { onclick: move |_| palette.open(), \"搜索或执行命令\" }\n    AdminPalette { on_logout: move |_| logout() }\n}",
+      "preview_mode": "interactive",
+      "usage_kind": "rust"
+    },
+    {
       "name": "Breadcrumbs",
       "slug": "breadcrumbs",
       "label": "面包屑",

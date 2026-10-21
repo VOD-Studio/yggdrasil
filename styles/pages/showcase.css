@@ -8,7 +8,7 @@
   --sc-mono: var(--font-mono);
   padding: 1.5rem 0 1rem;
 }
-.showcase :is(a, button, select, input):not(.btn, .field, .field *, .switch, .select-trigger, .time-cell, .menu-item, .segmented-item, .chip, .breadcrumb a, .showcase-search-input):focus-visible {
+.showcase :is(a, button, select, input):not(.btn, .field, .field *, .switch, .select-trigger, .time-cell, .menu-item, .segmented-item, .chip, .breadcrumb a, .showcase-search-input, .palette-input):focus-visible {
   outline: 2px solid var(--color-clay);
   outline-offset: 2px;
 }

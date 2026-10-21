@@ -1080,8 +1080,10 @@ fn preview_route(slug: &str) -> Option<PreviewRoute> {
         | "menu"
         | "toast"
         | "bottom-sheet"
+        | "side-sheet"
         | "breadcrumb"
         | "search-palette"
+        | "admin-palette"
         | "empty-state"
         | "load-error"
         | "skeleton-box"
@@ -1364,6 +1366,12 @@ fn LiveComponentPreview(
         },
         "SearchPalette" => rsx! {
             SearchPaletteDemo {}
+        },
+        "SideSheet" => rsx! {
+            SideSheetDemo {}
+        },
+        "AdminPalette" => rsx! {
+            AdminPaletteDemo {}
         },
         "LoadingButton" => rsx! {
             div { class: "showcase-preview-row",
@@ -1785,6 +1793,82 @@ fn BottomSheetDemo() -> Element {
             trigger_id: "showcase-sheet-trigger",
             label: "演示抽屉",
             BottomSheetDemoBody {}
+        }
+    }
+}
+
+/// 左侧抽屉演示：内容与底部抽屉演示相同，选中后关闭。
+#[component]
+fn SideSheetDemo() -> Element {
+    let mut open = use_signal(|| false);
+    rsx! {
+        button {
+            id: "showcase-side-sheet-trigger",
+            class: "btn btn-secondary",
+            r#type: "button",
+            aria_haspopup: "dialog",
+            aria_expanded: "{open}",
+            aria_controls: "showcase-side-sheet",
+            onclick: move |_| open.set(true),
+            "打开左侧抽屉"
+        }
+        crate::components::ui::SideSheet {
+            open,
+            id: "showcase-side-sheet",
+            trigger_id: "showcase-side-sheet-trigger",
+            label: "演示抽屉",
+            div { class: "p-3", BottomSheetDemoBody {} }
+        }
+    }
+}
+
+/// 后台命令面板演示：固定文章在浏览器内过滤，选中项只在下方回显，不请求、不跳转。
+#[component]
+fn AdminPaletteDemo() -> Element {
+    let palette = crate::components::search_palette::use_search_palette_provider();
+    let mut picked = use_signal(String::new);
+    let base = sample_post();
+    let posts: Vec<PostListItem> = [
+        (1, "让想法生根", PostStatus::Published),
+        (2, "Dioxus 服务端渲染的水合细节", PostStatus::Draft),
+        (3, "用 Rust 写一个 6502 模拟器", PostStatus::Published),
+    ]
+    .into_iter()
+    .map(|(id, title, status)| PostListItem {
+        id,
+        author_id: 0,
+        title: title.to_string(),
+        slug: format!("showcase-{id}"),
+        summary: None,
+        published_at: (status == PostStatus::Published).then_some(base.created_at),
+        status,
+        created_at: base.created_at,
+        updated_at: base.created_at,
+        deleted_at: None,
+        tags: Vec::new(),
+        cover_image: None,
+        reading_time: 3,
+        word_count: 620,
+    })
+    .collect();
+    rsx! {
+        div { class: "showcase-preview-row flex-wrap",
+            crate::components::ui::Button {
+                variant: crate::components::ui::ButtonVariant::Secondary,
+                icon: crate::components::ui::IconName::Search,
+                onclick: move |_| palette.open(),
+                "打开命令面板"
+            }
+            if !picked().is_empty() {
+                p { class: "text-xs text-fg-3 font-mono", "on_pick: {picked}" }
+            }
+        }
+        crate::components::admin_palette::AdminPalette {
+            on_logout: move |_| {},
+            demo: crate::components::admin_palette::AdminPaletteDemo {
+                posts,
+                on_pick: EventHandler::new(move |title: String| picked.set(title)),
+            },
         }
     }
 }

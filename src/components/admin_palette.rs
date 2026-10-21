@@ -82,6 +82,14 @@ fn jump_targets() -> Vec<(&'static str, IconName, Route)> {
     targets
 }
 
+/// 图鉴演示用的固定数据：文章在浏览器内按标题过滤，选中项只把名称交给 `on_pick`，
+/// 不请求接口、不跳转，也不注册全局快捷键。
+#[derive(Clone, PartialEq)]
+pub struct AdminPaletteDemo {
+    pub posts: Vec<PostListItem>,
+    pub on_pick: EventHandler<String>,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 enum Item {
     Post(PostListItem),
@@ -97,6 +105,16 @@ enum Item {
 struct Group {
     label: &'static str,
     items: Vec<Item>,
+}
+
+impl Item {
+    fn title(&self) -> String {
+        match self {
+            Item::Post(post) => post.title.clone(),
+            Item::Action(action) => action.label().to_string(),
+            Item::Jump { label, .. } => label.to_string(),
+        }
+    }
 }
 
 /// 按查询组织面板内容。空查询：常用操作与全部栏目；有查询：命中的文章、操作与栏目。
@@ -154,12 +172,18 @@ fn build_groups(query: &str, posts: &[PostListItem], dark: bool) -> Vec<Group> {
 ///
 /// Props：
 /// - `on_logout`：「退出登录」命令，与侧栏退出按钮同一处理
+/// - `demo`：图鉴传入的固定数据，见 [`AdminPaletteDemo`]
 #[component]
-pub fn AdminPalette(on_logout: EventHandler<()>) -> Element {
+pub fn AdminPalette(
+    on_logout: EventHandler<()>,
+    #[props(default)] demo: Option<AdminPaletteDemo>,
+) -> Element {
     let handle = use_context::<SearchPaletteHandle>();
     let mut open = handle.open;
     #[cfg(target_arch = "wasm32")]
-    crate::components::search_palette::use_palette_shortcut(handle, true);
+    crate::components::search_palette::use_palette_shortcut(handle, demo.is_none());
+    let demo_pick = demo.as_ref().map(|d| d.on_pick);
+    let demo_posts = use_signal(|| demo.map(|d| d.posts));
 
     let mut query = use_signal(String::new);
     let mut active = use_signal(|| 0_usize);
@@ -230,6 +254,17 @@ pub fn AdminPalette(on_logout: EventHandler<()>) -> Element {
             if seq() != id || composing() {
                 return;
             }
+            if let Some(all) = &*demo_posts.peek() {
+                posts.set(
+                    all.iter()
+                        .filter(|p| contains_ci(&p.title, &q))
+                        .take(POST_LIMIT as usize)
+                        .cloned()
+                        .collect(),
+                );
+                posts_query.set(q);
+                return;
+            }
             loading.set(true);
             spawn(async move {
                 crate::utils::time::sleep_ms(PROGRESS_DELAY_MS).await;
@@ -274,6 +309,10 @@ pub fn AdminPalette(on_logout: EventHandler<()>) -> Element {
 
     let mut activate = move |item: Item| {
         close();
+        if let Some(pick) = demo_pick {
+            pick.call(item.title());
+            return;
+        }
         match item {
             Item::Post(post) => {
                 navigator.push(Route::WriteEdit { id: post.id });
