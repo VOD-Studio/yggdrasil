@@ -24,8 +24,12 @@ watch_path = ["src", "Cargo.toml"]
 # 资源版本用于绕开旧的一年 immutable 缓存；后续更新由 no-cache 条件请求校验。
 # dev 会继承此列表，勿在 web.resource.dev 再次声明。
 # 编辑器与终端由组件挂载时按需加载（yggdrasil-core/browser-library.ts）。
-style = ["/style.css?v=3", "/highlight.css?v=2", "/katex/katex.min.css?v=3", "/lightbox/lightbox.css?v=2", "/yggdrasil-core/yggdrasil-core.css?v=3"]
-script = ["/lightbox/lightbox.js?v=2", "/yggdrasil-core/yggdrasil-core.js?v=3"]
+# P5 §8.2：全局只保留启动必需脚本（core，阻塞，history 适配器契约）与首屏样式。
+# KaTeX/高亮样式保持全局：SPA 首跳到代码页的条件加载会有一次 revalidate RTT 的
+# 裸样式闪烁，plan 禁止用闪烁换请求数。增强脚本与灯箱由组件按需注入
+# （src/components/enhance_assets.rs），SSR 烤进 head 带 defer，先于 hydration。
+style = ["/style.css?v=3", "/highlight.css?v=2", "/katex/katex.min.css?v=3", "/yggdrasil-core/yggdrasil-core.css?v=3"]
+script = ["/yggdrasil-core/yggdrasil-core.js?v=4"]
 
 # Dioxus 0.7 要求 dev 字段存在；空列表表示没有额外的开发资源。
 [web.resource.dev]

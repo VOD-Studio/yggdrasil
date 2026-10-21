@@ -197,7 +197,8 @@ pub fn Assets() -> Element {
         }
     });
 
-    // 灯箱初始化：lightbox.js 由 Dioxus.toml 全局注入。网格随数据异步渲染，
+    // 灯箱初始化：P5 §8.2 起脚本按需注入（本页 rsx 声明 LightboxAssets）。
+    // 网格随数据异步渲染，
     // 需在数据到达（DOM 提交后）调 __initLightbox 绑定；筛选/翻页/刷新重建节点后
     // 重跑此 effect 重新绑定。TS 端 data-lb-bound 守卫保证重复绑定幂等。
     #[cfg(target_arch = "wasm32")]
@@ -272,6 +273,8 @@ pub fn Assets() -> Element {
     };
 
     rsx! {
+        // P5 §8.2：素材网格灯箱按需注入（脚本未就绪时迟到调用入队兜底）。
+        crate::components::enhance_assets::LightboxAssets {}
         // min-h-full：AdminLayout 卡片是 flex 列滚动容器，main（flex-1）的高度为 definite，
         // 故本根节点可解析百分比最小高度——内容不足一页时撑满 main 内容盒，
         // 配合下方分页的 mt-auto wrapper 把分页条吸附到卡片底部。

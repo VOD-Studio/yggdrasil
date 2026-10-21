@@ -478,6 +478,7 @@ mod tests {
             "/tiptap/editor.js",
             "/codemirror/editor.js",
             "/yggdrasil-core/yggdrasil-core.js",
+            "/yggdrasil-core/yggdrasil-enhance.js",
             "/mermaid/mermaid.js",
             "/wasm/app.wasm",
             "/wasm/app.js",

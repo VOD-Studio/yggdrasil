@@ -167,9 +167,9 @@ fn decode_html_entities(s: &str) -> String {
 /// 关键行为：
 /// - 把可运行代码块拆成 [`CodeRunner`] 组件穿插渲染，其余 HTML 片段照旧。
 /// - 在 `target_arch = "wasm32"` 环境下调用 `window.__initPostContent` 初始化代码块
-///   复制按钮（`yggdrasil-core.js` 已由 `Dioxus.toml` 全局注入）。
-///   灯箱（图片灯箱 + 懒加载）改由 `Dioxus.toml` 全局注入 `lightbox.js`，
-///   这里仅设置其初始化配置 `__lightboxSelectors` 并兜底调用。
+///   复制按钮；P5 §8.2 起正文增强在 `yggdrasil-enhance.js`、灯箱在 `lightbox.js`，
+///   均由本组件按需声明注入（见 [`crate::components::enhance_assets`]），
+///   这里仅设置初始化配置 `__lightboxSelectors` 并兜底调用。
 #[component]
 pub fn PostContent(
     content_html: String,
@@ -275,6 +275,10 @@ pub fn PostContent(
     });
 
     rsx! {
+        // P5 §8.2：正文增强与灯箱按需注入。SSR 直达烤进 head 带 defer，先于
+        // hydration；SPA 首跳脚本晚于 effect 时由增强调用队列兜底，按 src 去重。
+        crate::components::enhance_assets::EnhanceScript {}
+        crate::components::enhance_assets::LightboxAssets {}
         div { id: scope_id, "data-showcase-lightbox-owner": scope_id, class: "post-content md-content",
             for (i, fragment) in fragments.iter().enumerate() {
                 {

@@ -16,6 +16,9 @@
 
 /// 空状态组件（无数据时的插画配图 + 文案）。
 pub mod empty_state;
+/// P5 §8.2 增强脚本/灯箱资源的按需注入（document::Script/Stylesheet，按 src 去重）。
+/// `pub(crate)`：head 注入管线无可视预览，不进图鉴目录。
+pub(crate) mod enhance_assets;
 /// 表单控件（FormInput / FormSelect / AlertBox / …）与 INPUT class 常量。
 pub mod forms;
 /// 通用 UI 原子与全部 class 常量（卡片 / 按钮 / 徽章 / 分页 / spinner / checkbox）。

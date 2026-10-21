@@ -108,6 +108,9 @@ fn VersionNav(versions: Vec<VersionEntry>) -> Element {
     let progress = 1.0 / count as f64;
 
     rsx! {
+        // P5 §8.2：changelog 导航增强在 yggdrasil-enhance.js，按需注入。SSR 直达烤进
+        // head 带 defer，先于 hydration；SPA 首跳由增强调用队列兜底。
+        crate::components::enhance_assets::EnhanceScript {}
         nav { class: "changelog-nav", aria_label: "更新日志版本导航",
             div { class: "changelog-nav-panel", style: "--nav-progress: {progress}",
                 div { class: "changelog-nav-head",

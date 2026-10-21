@@ -74,6 +74,10 @@ pub fn PostToc(
     });
 
     rsx! {
+        // P5 §8.2：toc scroll-spy 增强在 yggdrasil-enhance.js，按需注入。SSR 直达烤进
+        // head 带 defer，先于 hydration；SPA 首跳由增强调用队列兜底，按 src 去重。
+        crate::components::enhance_assets::EnhanceScript {}
+
         // 移动端 / <1200px：顶部折叠块（CSS 在 ≥1200px 隐藏它）。
         details { class: "toc",
             summary { accesskey: "c", title: "(Alt + C)",

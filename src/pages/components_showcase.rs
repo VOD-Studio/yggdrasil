@@ -426,6 +426,10 @@ fn ShowcaseGallery() -> Element {
 
     rsx! {
         document::Title { "组件图鉴 · Yggdrasil" }
+        // P5 §8.2：图鉴 masonry 增强与灯箱预览按需注入（SSR 直达带 defer，先于
+        // hydration；SPA 首跳由增强调用队列兜底）。阅读器客户端不含图鉴路由。
+        crate::components::enhance_assets::EnhanceScript {}
+        crate::components::enhance_assets::LightboxAssets {}
         article { class: "showcase showcase-gallery",
             nav { class: "showcase-breadcrumb", aria_label: "面包屑",
                 Link { to: Route::About {}, "← 关于这里" }
