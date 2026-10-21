@@ -2,7 +2,7 @@
 //!
 //! 镜像 `/admin/preview/:slug`（[`crate::pages::admin::preview::PostPreview`]）的真实结构。
 //! 与公开文章详情页骨架屏（[`crate::components::skeletons::post_detail_skeleton::PostDetailSkeleton`]）的唯一差异：顶部多一组预览横幅占位
-//! （状态徽章 + 继续编辑 / 返回列表按钮），其余标题/摘要/元信息/封面/正文/页脚占位一致。
+//! （浮起的预览条），其余标题/摘要/元信息/封面/正文/页脚占位一致。
 //!
 //! 同时服务于两处加载态，保证视觉连续：
 //! - [`crate::components::admin_layout`] 登录态校验期（避免落入默认的仪表盘骨架屏）。
@@ -26,17 +26,9 @@ pub fn PostPreviewSkeleton() -> Element {
         // 无显式宽度则 shrink-to-fit 收缩变窄。w-full 强制撑满交叉轴，与真实文章
         // (直接挂 main block 下、自然满宽)几何对齐。其他后台骨架屏根节点同理用 w-full。
         article { class: "post-single w-full",
-            // 预览横幅占位：左侧「预览模式」文字 + 状态徽章，右侧继续编辑 / 返回列表两枚按钮。
-            // 类名与 preview.rs 真实横幅一致，确保占位与真实元素几何对齐。
-            div { class: "flex flex-wrap items-center justify-between gap-3 mb-6 p-3 rounded-2xl bg-[var(--color-paper-entry)] border border-[var(--color-paper-border)]",
-                div { class: "flex items-center gap-2",
-                    SkeletonBox { class: "h-4 w-16 rounded" }
-                    SkeletonBox { class: "h-5 w-14 rounded-full" }
-                }
-                div { class: "flex items-center gap-2",
-                    SkeletonBox { class: "h-9 w-24 rounded-full" }
-                    SkeletonBox { class: "h-9 w-20 rounded-full" }
-                }
+            // 预览条占位：与 preview.rs 的浮起预览条同位置、同高度。
+            div { class: "preview-bar-slot",
+                SkeletonBox { class: "h-11 w-[34rem] max-w-full rounded-xl" }
             }
 
             PostDetailBody {}

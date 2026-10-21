@@ -5,7 +5,9 @@
 //! 与公开详情页 [`crate::pages::post_detail::PostDetail`] 的关键差异：
 //! - 取数走 admin-only [`crate::api::posts::get_post_preview`]，不做 `status = 'published'` 过滤，
 //!   故草稿可预览；草稿绝不进公开缓存（`cache::get/set_post_by_slug`）。
-//! - 顶部渲染预览横幅（状态徽章 + 继续编辑 / 返回列表），便于从预览直达编辑。
+//! - 顶部浮起预览条（状态、桌面 / 手机宽度切换、返回编辑、草稿可直接发布），
+//!   手机档把正文放进 390px 画框。
+//! - 文末说明评论区在预览中隐藏。
 //! - 错误/未命中**就地渲染**（admin nest 内无 ErrorBoundary），不向错误边界上抛。
 //! - 不渲染评论区（草稿无评论）。
 //!
@@ -34,6 +36,7 @@
 use crate::api::posts::get_post_preview;
 #[cfg(target_arch = "wasm32")]
 use crate::api::posts::SinglePostResponse;
+use crate::components::empty_state::{EmptyState, EmptyStateAction};
 use crate::components::post::post_content::PostContent;
 use crate::components::post::post_cover::PostCover;
 use crate::components::post::post_footer::PostFooter;
@@ -41,8 +44,8 @@ use crate::components::post::post_header::PostHeader;
 use crate::components::post::post_toc::PostToc;
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::skeletons::post_preview_skeleton::PostPreviewSkeleton;
-use crate::components::ui::{BTN_OUTLINE, BTN_PRIMARY};
-use crate::models::post::Post;
+use crate::components::ui::{button_class, use_toast, ButtonSize, ButtonVariant, Icon, IconName};
+use crate::models::post::{Post, PostStatus};
 use crate::router::Route;
 use dioxus::prelude::*;
 use dioxus::router::components::Link;
@@ -60,6 +63,12 @@ pub fn PostPreview(slug: String) -> Element {
         _ => slug.clone(),
     });
 
+    let toast = use_toast();
+    let navigator = use_navigator();
+    let mut mobile = use_signal(|| false);
+    let mut publishing = use_signal(|| false);
+    // 发布后原地刷新状态。
+    let mut reload = use_signal(|| 0_u32);
     // 非挂起取数（见模块文档「取数不挂起」一节）：None=加载中；
     // Some(None)=未找到/失败；Some(Some(post))=成功。错误与未命中同视图。
     #[allow(unused_mut)]
@@ -70,6 +79,7 @@ pub fn PostPreview(slug: String) -> Element {
     // 仅订阅实际 slug 变化；Router 在 VT 提交前对旧路由的通知不能清空旧快照。
     use_effect(move || {
         let current_slug = requested_slug();
+        let _ = reload();
         // native 构建下 spawn 被编译掉；显式引用避免未用告警（dashboard 同款语义）。
         #[cfg(not(target_arch = "wasm32"))]
         let _ = &current_slug;
@@ -77,7 +87,9 @@ pub fn PostPreview(slug: String) -> Element {
         // 客户端水合后再拉取。
         #[cfg(target_arch = "wasm32")]
         {
-            post.set(None);
+            if loaded_slug.peek().as_str() != current_slug {
+                post.set(None);
+            }
             spawn(async move {
                 let resp = get_post_preview(current_slug.clone()).await;
                 // 竞态守卫：仅当结果返回时仍停留在本 slug 才写回，
@@ -107,61 +119,137 @@ pub fn PostPreview(slug: String) -> Element {
         }
         Some(None) => {
             return rsx! {
-                div { class: "flex flex-col items-center justify-center text-center py-20 px-4 animate-page-enter",
-                    p { class: "text-sm text-paper-secondary",
-                        "未找到该文章（可能已被删除）。"
+                div { class: "admin-panel",
+                    EmptyState {
+                        icon: IconName::FileX,
+                        title: "找不到这篇文章",
+                        description: "它可能已被移到回收站或彻底删除。",
+                        action: EmptyStateAction {
+                            label: "返回文章".to_string(),
+                            onclick: Callback::new(move |_| {
+                                navigator.push(Route::Posts {});
+                            }),
+                        },
                     }
-                    Link { class: "mt-6 {BTN_OUTLINE}", "data-vt-return": "true", to: Route::Posts {}, "返回文章列表" }
                 }
             };
         }
         Some(Some(post)) => post.clone(),
     };
 
+    let draft = post.status != PostStatus::Published;
+    let post_id = post.id;
+    let publish = move |_| {
+        if publishing() {
+            return;
+        }
+        publishing.set(true);
+        spawn(async move {
+            match crate::api::posts::batch_posts(
+                vec![post_id],
+                crate::api::posts::BatchPostAction::Publish,
+            )
+            .await
+            {
+                Ok(res) if res.done == 1 => {
+                    toast.success("已发布");
+                    reload += 1;
+                }
+                Ok(_) => toast.error("发布失败，请回到编辑页检查后重试"),
+                Err(e) => toast.error(format!("发布失败：{e}")),
+            }
+            publishing.set(false);
+        });
+    };
+
     rsx! {
-        article { class: "post-single animate-page-enter", key: "{post.slug}", "data-vt-detail": "{post.id}",
-            // 预览横幅：状态徽章 + 继续编辑 / 返回列表。
-            div { class: "flex flex-wrap items-center justify-between gap-3 mb-6 p-3 rounded-2xl bg-[var(--color-paper-entry)] border border-[var(--color-paper-border)]",
-                div { class: "flex items-center gap-2 text-sm text-paper-secondary",
-                    span { "预览模式" }
-                    span { class: "badge {post.status.badge_class()}",
-                        "{post.status.label()}"
+        div { class: "post-preview", "data-width": if mobile() { "mobile" } else { "desktop" },
+            div { class: "preview-bar-slot",
+                div { class: "preview-bar", role: "region", aria_label: "预览状态",
+                    span { class: "preview-bar-state",
+                        span { class: "preview-bar-dot", "data-draft": draft.then_some("true"), aria_hidden: "true" }
+                        strong { if draft { "草稿预览" } else { "文章预览" } }
+                        span { class: "preview-bar-hint",
+                            if draft {
+                                "仅管理员可见 · 显示最近一次保存的内容"
+                            } else {
+                                "已发布 · 显示最近一次保存的内容"
+                            }
+                        }
+                    }
+                    span { class: "preview-bar-sep", aria_hidden: "true" }
+                    div { class: "preview-bar-actions",
+                        div { class: "segmented preview-width", role: "radiogroup", aria_label: "预览宽度",
+                            for (value, label) in [(false, "桌面"), (true, "手机")] {
+                                button {
+                                    key: "{label}",
+                                    class: "segmented-item",
+                                    r#type: "button",
+                                    role: "radio",
+                                    aria_checked: "{mobile() == value}",
+                                    onclick: move |_| mobile.set(value),
+                                    "{label}"
+                                }
+                            }
+                        }
+                        Link {
+                            class: button_class(ButtonVariant::Ghost, ButtonSize::Sm),
+                            to: Route::WriteEdit { id: post.id },
+                            "返回编辑"
+                        }
+                        if draft {
+                            button {
+                                class: button_class(ButtonVariant::Primary, ButtonSize::Sm),
+                                r#type: "button",
+                                disabled: publishing(),
+                                onclick: publish,
+                                if publishing() { "发布中…" } else { "发布" }
+                            }
+                        } else {
+                            a {
+                                class: button_class(ButtonVariant::Ghost, ButtonSize::Sm),
+                                href: "/post/{post.slug}",
+                                target: "_blank",
+                                rel: "noopener",
+                                "查看文章"
+                                Icon { name: IconName::ArrowUpRight, size: 13 }
+                            }
+                        }
                     }
                 }
-                div { class: "flex items-center gap-2",
-                    Link {
-                        class: "{BTN_PRIMARY}",
-                        to: Route::WriteEdit { id: post.id },
-                        "继续编辑"
+            }
+
+            div { class: "preview-frame",
+                article { class: "post-single animate-page-enter", key: "{post.slug}", "data-vt-detail": "{post.id}",
+                    PostHeader { post: post.clone(), full_reload: true }
+
+                    // 如果文章设置了封面图，则渲染封面组件。
+                    if let Some(cover) = &post.cover_image {
+                        PostCover { src: cover.clone(), post_id: post.id }
                     }
-                    Link { class: "{BTN_OUTLINE}", "data-vt-return": "true", to: Route::Posts {}, "返回列表" }
+
+                    // 与公开详情页一致：按 slug 强制 remount，重新绑定新文章标题的 scroll-spy。
+                    if let Some(toc) = &post.toc_html {
+                        for toc_slug in std::iter::once(post.slug.clone()) {
+                            PostToc { key: "{toc_slug}", toc_html: toc.clone() }
+                        }
+                    }
+
+                    // 用单元素 keyed 列表包裹 PostContent，key 绑定 slug。
+                    // 与 post_detail.rs 同理：slug 变化时强制 remount，让正文内的脚本/
+                    // 编辑器随文章切换重新初始化（详见 post_detail.rs:95-115 注释）。
+                    for post_slug in std::iter::once(post.slug.clone()) {
+                        PostContent {
+                            key: "{post_slug}",
+                            content_html: post.content_html.clone().unwrap_or_default(),
+                        }
+                    }
+                    PostFooter { post: post.clone(), full_reload: true }
+                    p { class: "preview-note",
+                        "评论区在预览中隐藏。发布后读者看到的版式与这里一致。"
+                    }
                 }
             }
-
-            PostHeader { post: post.clone(), full_reload: true }
-
-            // 如果文章设置了封面图，则渲染封面组件。
-            if let Some(cover) = &post.cover_image {
-                PostCover { src: cover.clone(), post_id: post.id }
-            }
-
-            // 与公开详情页一致：按 slug 强制 remount，重新绑定新文章标题的 scroll-spy。
-            if let Some(toc) = &post.toc_html {
-                for toc_slug in std::iter::once(post.slug.clone()) {
-                    PostToc { key: "{toc_slug}", toc_html: toc.clone() }
-                }
-            }
-
-            // 用单元素 keyed 列表包裹 PostContent，key 绑定 slug。
-            // 与 post_detail.rs 同理：slug 变化时强制 remount，让正文内的脚本/
-            // 编辑器随文章切换重新初始化（详见 post_detail.rs:95-115 注释）。
-            for post_slug in std::iter::once(post.slug.clone()) {
-                PostContent {
-                    key: "{post_slug}",
-                    content_html: post.content_html.clone().unwrap_or_default(),
-                }
-            }
-            PostFooter { post: post.clone(), full_reload: true }
         }
     }
 }

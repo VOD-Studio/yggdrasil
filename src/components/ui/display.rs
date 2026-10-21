@@ -9,7 +9,7 @@ use dioxus::prelude::*;
 /// （如回收站剩余天数）的语气由动态逻辑决定，硬编码 variant 反而不够灵活。
 ///
 /// Props：
-/// - `color_class`：语气类（如 `post.status.badge_class()` 的返回值）
+/// - `color_class`：语气类（如 `badge-success`）
 /// - `label`：徽章文本
 #[component]
 pub fn StatusBadge(color_class: &'static str, label: String) -> Element {

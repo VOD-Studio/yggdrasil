@@ -277,6 +277,7 @@ fn PostsTable(on_changed: EventHandler<()>) -> Element {
             match batch_posts(ids, action).await {
                 Ok(res) => {
                     let verb = match action {
+                        BatchPostAction::Publish => "发布",
                         BatchPostAction::Unpublish => "转为草稿",
                         BatchPostAction::Trash => "移到回收站",
                     };

@@ -39,6 +39,8 @@ impl AdminPostQuery {
 /// 批量操作：转为草稿或移到回收站。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum BatchPostAction {
+    /// 发布（草稿预览的「发布」按钮）；沿用首次发布时间。
+    Publish,
     Unpublish,
     Trash,
 }

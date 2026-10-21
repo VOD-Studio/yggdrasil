@@ -1,0 +1,168 @@
+/* ======== 草稿预览 ========
+   结构见 src/pages/admin/preview.rs：顶部浮起预览条，正文与前台文章页同一套样式；
+   手机档把正文放进 390px 画框，并按前台 760px 以下的规则缩小标题与正文。 */
+.post-preview {
+  --preview-bar-gap: 0.75rem;
+}
+
+.preview-bar-slot {
+  position: sticky;
+  top: calc(var(--admin-topbar-h) + var(--preview-bar-gap));
+  z-index: 20;
+  display: flex;
+  justify-content: center;
+  margin-bottom: 2rem;
+  pointer-events: none;
+}
+
+.preview-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.875rem;
+  padding: 0.375rem 0.375rem 0.375rem 0.875rem;
+  border-radius: 12px;
+  background-color: var(--color-popover);
+  box-shadow: var(--shadow-popover);
+  pointer-events: auto;
+  animation: batch-bar-in var(--spring-snappy-duration) var(--ease-spring-snappy) both;
+}
+
+.preview-bar-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+}
+
+.preview-bar-state strong {
+  font-weight: 600;
+}
+
+.preview-bar-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--color-success);
+}
+
+.preview-bar-dot[data-draft] {
+  background-color: var(--color-clay);
+  box-shadow: 0 0 0 3px var(--color-clay-soft);
+}
+
+.preview-bar-hint {
+  color: var(--color-fg-3);
+}
+
+.preview-bar-sep {
+  width: 1px;
+  height: 1.125rem;
+  background-color: var(--color-hairline);
+}
+
+.preview-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.preview-width .segmented-item {
+  height: 1.75rem;
+  padding: 0 0.6875rem;
+  font-size: 0.78125rem;
+}
+
+.preview-width .segmented-item[aria-checked="true"] {
+  background-color: var(--color-surface-2);
+  box-shadow: 0 0 0 1px var(--color-hairline), var(--shadow-sm);
+  color: var(--color-fg);
+  font-weight: 500;
+}
+
+.dark .preview-width .segmented-item[aria-checked="true"] {
+  background-color: var(--color-surface-3);
+}
+
+.preview-frame {
+  max-width: 680px;
+  margin: 0 auto;
+}
+
+.preview-note {
+  margin: 2.5rem 0 0;
+  padding: 0.875rem 1rem;
+  border-radius: var(--radius-panel);
+  background-color: var(--color-surface-1);
+  box-shadow: 0 0 0 1px var(--color-hairline);
+  color: var(--color-fg-2);
+  font-size: 0.84375rem;
+}
+
+/* ---- 手机档：390px 画框 ---- */
+.post-preview[data-width="mobile"] .preview-frame {
+  width: 390px;
+  max-width: 100%;
+  margin-bottom: 2.5rem;
+  padding: 1.5rem 1.25rem 2.5rem;
+  box-sizing: border-box;
+  border-radius: 24px;
+  background-color: var(--color-surface-0);
+  box-shadow: 0 0 0 1px var(--color-hairline), 0 20px 60px rgb(0 0 0 / 0.12);
+}
+
+.post-preview[data-width="mobile"] .post-header {
+  padding-top: 0;
+}
+
+.post-preview[data-width="mobile"] .post-title {
+  font-size: 1.6875rem;
+  line-height: 1.35;
+}
+
+.post-preview[data-width="mobile"] .post-lede {
+  font-size: 1.0625rem;
+}
+
+.post-preview[data-width="mobile"] .post-content {
+  font-size: 1rem;
+  line-height: 1.85;
+}
+
+.post-preview[data-width="mobile"] .post-content pre {
+  margin-inline: -1.25rem;
+  border-radius: 0;
+}
+
+/* 目录在手机上是悬浮条，固定定位会逃出画框，预览里不显示。 */
+.post-preview[data-width="mobile"] .post-toc,
+.post-preview[data-width="mobile"] .toc-pill,
+.post-preview[data-width="mobile"] .toc-progress-line {
+  display: none;
+}
+
+.post-preview[data-width="mobile"] .post-nav {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (max-width: 767px) {
+  .preview-bar-hint,
+  .preview-bar-sep,
+  .preview-width {
+    display: none;
+  }
+
+  .post-preview[data-width="mobile"] .preview-frame {
+    width: auto;
+    padding: 0;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .preview-bar {
+    animation: listbox-fade 150ms linear both;
+  }
+}

@@ -1,4 +1,4 @@
-//! 后台文章列表的批量操作：转为草稿、移到回收站。
+//! 后台文章的批量操作：发布、转为草稿、移到回收站。
 //!
 //! 逐篇走文章写入业务（各自事务与缓存失效），返回成功与失败篇数；某一篇失败不影响其余。
 //! Dioxus server function，注册在 `/api` 路径下。
@@ -33,6 +33,7 @@ pub async fn batch_posts(
         let mut result = BatchPostResult { done: 0, failed: 0 };
         for id in ids {
             let action = match action {
+                BatchPostAction::Publish => PostAction::Publish,
                 BatchPostAction::Unpublish => PostAction::Unpublish,
                 BatchPostAction::Trash => PostAction::Trash,
             };
@@ -152,6 +153,20 @@ mod tests {
             row.get::<_, Option<chrono::DateTime<chrono::Utc>>>("published_at"),
             Some(first_published)
         );
+        // 发布草稿：补上首次发布时间。
+        let res = web_context()
+            .scope(batch_posts(vec![3], BatchPostAction::Publish))
+            .await
+            .unwrap();
+        assert_eq!(res, BatchPostResult { done: 1, failed: 0 });
+        let row = client
+            .query_one("SELECT status, published_at FROM posts WHERE id=3", &[])
+            .await
+            .unwrap();
+        assert_eq!(row.get::<_, String>("status"), "published");
+        assert!(row
+            .get::<_, Option<chrono::DateTime<chrono::Utc>>>("published_at")
+            .is_some());
         let res = web_context()
             .scope(batch_posts(vec![2, 3], BatchPostAction::Trash))
             .await

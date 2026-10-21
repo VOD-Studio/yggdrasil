@@ -32,14 +32,6 @@ impl PostStatus {
         }
     }
 
-    /// 状态徽章的语气类（配合 `.badge`）：已发布为成功色，草稿为中性。
-    pub fn badge_class(&self) -> &'static str {
-        match self {
-            PostStatus::Published => "badge-success",
-            PostStatus::Draft => "",
-        }
-    }
-
     /// 将字符串解析为 PostStatus，无法识别时返回 None。
     #[cfg(feature = "server")]
     pub fn from_str(s: &str) -> Option<Self> {
@@ -273,12 +265,6 @@ mod tests {
     fn post_list_item_formatted_date_falls_back_to_created_at() {
         let post = sample_post_list_item();
         assert_eq!(post.formatted_date(), "2024-01-15");
-    }
-
-    #[test]
-    fn post_status_badge_class_matches_status() {
-        assert_eq!(PostStatus::Published.badge_class(), "badge-success");
-        assert_eq!(PostStatus::Draft.badge_class(), "");
     }
 
     #[test]
