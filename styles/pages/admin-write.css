@@ -194,6 +194,8 @@ button.write-status:focus-visible {
   flex: 1;
   min-width: 0;
   overflow-y: auto;
+  /* 编辑器内的浮动按钮只在正文里叠放，窄屏抽屉才能盖住它们。 */
+  isolation: isolate;
 }
 
 .write-doc {
@@ -262,6 +264,24 @@ button.write-status:focus-visible {
 
 .write-editor-wrap[data-empty] .tiptap-editor .ProseMirror {
   min-height: 3rem;
+}
+
+/* 源码切换按钮贴正文右上角，首段给它让出位置。 */
+.write-editor .tiptap-toggle-btn {
+  top: 0;
+  right: 0;
+}
+
+.write-editor .tiptap-editor .ProseMirror > :first-child {
+  margin-right: 2.5rem;
+}
+
+/* 编辑器随内容增高，源码框不能绝对定位撑满（隐藏正文后高度为 0），改为随文本增高。 */
+.write-editor .tiptap-source-textarea {
+  position: static;
+  min-height: 40vh;
+  padding: 0 2.5rem 0 0;
+  field-sizing: content;
 }
 
 .write-editor
