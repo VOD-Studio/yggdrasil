@@ -1,5 +1,7 @@
 # 组件图鉴真实预览实施方案
 
+> **历史记录，勿按此文实施。** 本文是 2026-09 实施前的方案，部分内容已与代码不一致；当前维护规范见 [docs/components-showcase.md](components-showcase.md)。
+
 状态：本地实现与匿名浏览器验收完成（2026-09-23）；认证业务入口的真实写入/执行验收尚未完成。实施范围、检查和截图见 [实施记录](components-showcase-preview-report.md)。下文保留实施时的基线与验收方案。
 
 核对基线：2026-09-23，分支 `feat/components-showcase`，提交 `c168093`。执行前重新检查工作区和相关代码；保留他人的未提交修改。
@@ -262,9 +264,9 @@ Tiptap、CodeMirror、Xterm 复用 `src/bridges/library.rs` 的加载器和已�
 
 ### 8.2 浏览器验收脚本
 
-建议新增 `scripts/test-components-showcase.cjs`，沿用 `scripts/test-view-transitions.cjs` 的 Bun + Playwright 调用方式，不引入新的测试框架。脚本连接已经运行的站点，不隐式启动/停止服务、不创建真实业务记录。
+浏览器验收脚本已落地为 `scripts/test-components-showcase.cjs`（沿用 `scripts/test-view-transitions.cjs` 的 Bun + Playwright 调用方式），并已纳入 `scripts/regression.cjs` 的 `showcase` 套件（`make test-browser BROWSER_SUITE=showcase`）。脚本直接运行时连接已经运行的站点，不隐式启动/停止服务、不创建真实业务记录。
 
-建议环境变量：
+环境变量：
 
 - `SHOWCASE_BASE`：待验收站点的实际同源地址，例如 `http://127.0.0.1:8080`。
 - `PLAYWRIGHT_MODULE`、`CHROMIUM_PATH`：与已有脚本保持一致；本机已有模块和浏览器时可省略。

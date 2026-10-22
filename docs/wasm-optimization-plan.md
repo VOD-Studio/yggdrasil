@@ -74,7 +74,7 @@
 
 体积取值必须来自 wasm-bindgen、wasm-opt 和最终压缩之后的产物，不使用 `cargo` 中间 `.wasm` 代表线上包。也不能用 `cargo tree` 中某个 crate 的出现直接推断其保留体积；链接器可能消除未使用实现。
 
-建议新增一个独立的只读测量脚本，输出 JSON 和人工摘要，保存到 `target/regressions/` 下按实验命名的目录。该脚本尚未存在，本阶段再确定文件名与接口。双产物阶段扩展为逐 flavor 报告，不把目录内多个历史 WASM 简单相加。
+只读测量脚本已落地为 `scripts/measure-release.cjs`（用法：`bun scripts/measure-release.cjs --dir <release public 目录>`），输出 JSON 和人工摘要，保存到 `target/regressions/<时间戳>-release-measure/`；实施记录见下文。双产物阶段按逐 flavor 报告，不把目录内多个历史 WASM 简单相加。
 
 ### 3.2 浏览器测试场景
 
@@ -229,7 +229,7 @@ reader 不删除评论、数学公式、图片、可运行代码块等阅读功�
 
 ### 6.4 产物布局与构建顺序
 
-建议新增一份发布清单，记录 `release_id`、源码/锁文件摘要、每个 flavor 的模板入口、带 hash 的 JS/WASM 路径与摘要。文件名和格式由 P3a 确定，不把下面的逻辑关系当成现有文件布局。
+发布清单已落地为 release 输出目录中的 `public/release-manifest.json`（由 `scripts/build-release.cjs` 在 `make build` 末尾生成并校验），记录 `release_id`、源码/锁文件摘要、每个 flavor 的模板入口、带 hash 的 JS/WASM 路径与摘要；字段见 §6.2 实施记录。下面的步骤描述构建顺序的逻辑关系，不代表文件布局。
 
 1. 按现有流程构建共享静态资源与文档。
 2. 在隔离的输出目录构建 reader，保留它的模板及完整引用闭包。
