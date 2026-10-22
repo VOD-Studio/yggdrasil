@@ -122,7 +122,7 @@ fn article_html(prefix: &str, alternate: bool) -> String {
 <pre><code class="language-rust">let leaf = "Yggdrasil";
 println!("{{leaf}}");</code></pre>
 <h2 id="{prefix}-image">留下一张照片</h2>
-<p><img src="/images/samples/paper-clay.webp" alt="暖白纸面上的一轮陶土色圆" loading="lazy"></p>"#
+<p><img src="/images/samples/clay-circle.webp" alt="暖白纸面上的一轮陶土色圆" loading="lazy"></p>"#
     )
 }
 
@@ -147,7 +147,7 @@ fn PostContentPreview(detail: bool) -> Element {
         div { class: "showcase-article-window", "data-showcase-preview": "post-content",
             if detail {
                 button {
-                    class: "mb-4 text-sm text-paper-accent",
+                    class: "mb-4 text-sm text-clay-text",
                     r#type: "button",
                     onclick: move |_| alternate.toggle(),
                     "切换文章样例"

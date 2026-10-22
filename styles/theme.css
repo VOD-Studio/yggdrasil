@@ -74,29 +74,8 @@
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-press: cubic-bezier(0.2, 0, 0, 1);
 
-  /* ---- 过渡期桥接：旧 paper-* 指向新 token，P7 删除 ---- */
-  --color-paper-theme: var(--color-surface-0);
-  --color-paper-entry: var(--color-surface-2);
-  --color-paper-primary: var(--color-fg);
-  --color-paper-secondary: var(--color-fg-2);
-  --color-paper-tertiary: var(--color-fg-3);
-  --color-paper-content: var(--color-fg-body);
-  --color-paper-code-block: var(--color-surface-1);
-  --color-paper-code-bg: var(--color-ink-2);
-  --color-paper-border: var(--color-ink-3);
-  --color-paper-accent: var(--color-clay-text);
-  --color-paper-selection: rgb(217 119 87 / 0.22);
-  --color-paper-accent-soft: var(--color-clay-soft);
-  --color-paper-accent-2: var(--color-clay-text);
-  --color-paper-accent-2-soft: var(--color-clay-soft);
-
-  --radius-card: 16px;
-  --radius-paper: 12px;
-  --radius-mini: 8px;
-  --gap-paper: 24px;
-  --content-gap-paper: 20px;
-  --nav-width-paper: 1024px;
-  --main-width-paper: 720px;
+  /* 文本选区：品牌色半透明底。 */
+  --color-selection: rgb(217 119 87 / 0.22);
 }
 
 @layer base {
@@ -141,6 +120,6 @@
       inset 0 0 0 1px var(--color-surface-1), 0 0 0 1.5px var(--color-clay),
       0 0 8px 2px rgb(217 119 87 / 0.35);
 
-    --color-paper-selection: rgb(217 119 87 / 0.3);
+    --color-selection: rgb(217 119 87 / 0.3);
   }
 }

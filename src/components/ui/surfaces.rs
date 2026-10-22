@@ -10,7 +10,7 @@ const POPOVER_OVERLAY_CLASS: &str = "fixed inset-0 z-40";
 ///
 /// ## 定位策略
 ///
-/// 父容器常有 `overflow-hidden`(如 `ADMIN_TABLE_CLASS`),`position:absolute` 子节点
+/// 父容器常有 `overflow-hidden`(如表格面板),`position:absolute` 子节点
 /// 会被裁掉,故面板用 **`position:fixed`**,以触发点击的**视口坐标**(`MouseEvent::
 /// client_coordinates()`)作为锚点(参照 `theme.rs` 圆形展开动画的坐标用法)。无需
 /// `getBoundingClientRect`/`node_ref`。

@@ -188,7 +188,7 @@ async function main() {
     await page.locator('#write-tag-input').press('Enter');
     await actions.getByRole('button', { name: '移除', exact: true }).click();
     await actions.getByRole('button', { name: '输入链接', exact: true }).click();
-    await page.getByLabel('封面图片链接').fill('/images/samples/paper-clay.webp');
+    await page.getByLabel('封面图片链接').fill('/images/samples/clay-circle.webp');
     await page.getByRole('button', { name: '确认', exact: true }).click();
     await page.waitForFunction(() => {
       const img = document.querySelector('.write-cover img');

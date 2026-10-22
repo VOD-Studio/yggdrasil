@@ -26,7 +26,7 @@ const activeModals = new WeakMap<Editor, () => void>();
  * Esc / 遮罩点击 / 取消按钮 / × → 关闭不改动。
  * 控件对齐站点设计系统：自定义下拉（FormSelect）、INPUT_CLASS 契约输入框、
  * 全站 .ygg-cb 复选框（src/components/ui.rs Checkbox）、BTN_PRIMARY 契约主按钮；
- * 配色全部走 --color-paper-* token，亮暗主题自动切换。
+ * 配色全部走站点 token，亮暗主题自动切换。
  */
 export function openRunnableModal(editor: Editor, editPos?: number, currentInfo?: string): void {
   activeModals.get(editor)?.();

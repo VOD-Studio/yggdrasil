@@ -19,7 +19,7 @@
 //! - `.code` 是 syntect 的根作用域特殊类，只映射到 base 容器本身。
 //!
 //! 背景色策略：syntect 输出的 `background-color` 会被剥离，代码块背景统一由
-//! `styles/` 中的 `--color-paper-code-block` 变量提供（亮色浅、暗色深），
+//! `styles/` 中的 `--color-surface-1` 变量提供（亮色浅、暗色深），
 //! 避免 `.code` span 与外层 `pre` 双层背景叠加导致的边缘色差。
 
 use syntect::highlighting::ThemeSet;
@@ -109,7 +109,7 @@ fn minify_css(css: &str) -> String {
 /// 从 CSS 规则体中移除 `background-color` 声明。
 ///
 /// syntect 会为根作用域 `.code` 注入主题底色（如浅色 `#fafaf8`），这与
-/// 外层 `pre` 的 `--color-paper-code-block` 背景叠加会形成色差。这里只保留
+/// 外层 `pre` 的 `--color-surface-1` 背景叠加会形成色差。这里只保留
 /// 前景色相关声明，让背景由单一来源控制。
 fn strip_background_color(body: &str) -> String {
     body.split(';')
@@ -194,7 +194,7 @@ fn rewrite_rules(css: &str, base: &str, prefix: &str) -> String {
         }
 
         // 剥离 syntect 注入的 background-color，代码块背景改由
-        // `--color-paper-code-block` 变量统一提供（见 input.css）。
+        // `--color-surface-1` 变量统一提供（见 input.css）。
         let body = strip_background_color(body);
         if body.is_empty() {
             continue;

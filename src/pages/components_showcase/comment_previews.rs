@@ -139,7 +139,7 @@ fn CommentPreview(slug: String, detail: bool) -> Element {
     if !visible() {
         return rsx! {
             div {
-                class: "min-h-[190px] w-full rounded-xl border border-[var(--color-paper-border)] bg-[var(--color-paper-entry)]/40 p-4",
+                class: "min-h-[190px] w-full rounded-xl border border-ink-3 bg-surface-2/40 p-4",
                 onmounted: move |_event| {
                     #[cfg(target_arch = "wasm32")]
                     {
@@ -171,9 +171,9 @@ fn CommentPreview(slug: String, detail: bool) -> Element {
                         }
                     }
                 },
-                div { class: "flex items-center gap-2 text-xs text-paper-tertiary", span { class: "size-2 rounded-full bg-[var(--color-paper-accent)]/50" } "评论编辑器将在卡片出现时加载" }
-                div { class: "mt-4 h-9 rounded-lg bg-[var(--color-paper-theme)]/70" }
-                div { class: "mt-3 h-20 rounded-lg bg-[var(--color-paper-theme)]/70" }
+                div { class: "flex items-center gap-2 text-xs text-fg-3", span { class: "size-2 rounded-full bg-clay-text/50" } "评论编辑器将在卡片出现时加载" }
+                div { class: "mt-4 h-9 rounded-lg bg-surface-0/70" }
+                div { class: "mt-3 h-20 rounded-lg bg-surface-0/70" }
             }
         };
     }
@@ -208,24 +208,24 @@ fn CommentPreview(slug: String, detail: bool) -> Element {
     rsx! {
         div { class: "w-full min-w-0",
             if detail {
-                p { class: "mb-4 text-xs text-paper-tertiary", "本地演示，评论不会保存，也不会上传图片。" }
+                p { class: "mb-4 text-xs text-fg-3", "本地演示，评论不会保存，也不会上传图片。" }
                 if slug == "comment-section" {
                     div { class: "flex flex-wrap gap-2 mb-4",
                         button {
                             r#type: "button",
-                            class: "px-3 py-1.5 rounded-full border border-[var(--color-paper-border)] text-xs text-paper-secondary hover:text-paper-primary",
+                            class: "px-3 py-1.5 rounded-full border border-ink-3 text-xs text-fg-2 hover:text-fg",
                             onclick: move |_| { approved.set(Vec::new()); pending.set(Vec::new()); },
                             "空列表"
                         }
                         button {
                             r#type: "button",
-                            class: "px-3 py-1.5 rounded-full border border-[var(--color-paper-border)] text-xs text-paper-secondary hover:text-paper-primary",
+                            class: "px-3 py-1.5 rounded-full border border-ink-3 text-xs text-fg-2 hover:text-fg",
                             onclick: move |_| { approved.set(approved_sample()); pending.set(Vec::new()); },
                             "仅已审核"
                         }
                         button {
                             r#type: "button",
-                            class: "px-3 py-1.5 rounded-full border border-[var(--color-paper-border)] text-xs text-paper-secondary hover:text-paper-primary",
+                            class: "px-3 py-1.5 rounded-full border border-ink-3 text-xs text-fg-2 hover:text-fg",
                             onclick: move |_| { approved.set(sample.clone()); pending.set(vec![pending_sample()]); },
                             "评论与待审核"
                         }
@@ -288,7 +288,7 @@ fn CommentItemPreview(detail: bool) -> Element {
             created_at_iso: "2026-09-22T11:00:00Z".to_string(),
         };
         return rsx! {
-            div { class: "comment-list w-full min-w-0 divide-y divide-[var(--color-paper-border)]/40 px-1",
+            div { class: "comment-list w-full min-w-0 divide-y divide-ink-3/40 px-1",
                 CommentItem { comment: parent, post_id: 0 }
                 CommentItem { comment: reply, post_id: 0 }
             }
@@ -496,7 +496,7 @@ fn CommentItemPreview(detail: bool) -> Element {
 
     rsx! {
         div { class: "w-full min-w-0",
-            p { class: "mb-3 text-xs text-paper-tertiary", "本地演示，可切换不同形态体验 CommentItem 的回复表单联动、草稿保留与身份样式。" }
+            p { class: "mb-3 text-xs text-fg-3", "本地演示，可切换不同形态体验 CommentItem 的回复表单联动、草稿保留与身份样式。" }
             div { class: "flex flex-wrap items-center gap-2 mb-3",
                 for (mode_val, label) in [
                     (CommentItemMode::Standard, "标准回复链"),
@@ -508,9 +508,9 @@ fn CommentItemPreview(detail: bool) -> Element {
                         key: "{label}",
                         r#type: "button",
                         class: if mode() == mode_val {
-                            "px-3 py-1.5 rounded-full border border-[var(--color-paper-accent)] text-xs font-medium text-[var(--color-paper-accent)] bg-[var(--color-paper-accent)]/10 transition-colors cursor-pointer"
+                            "px-3 py-1.5 rounded-full border border-clay-text text-xs font-medium text-clay-text bg-clay-text/10 transition-colors cursor-pointer"
                         } else {
-                            "px-3 py-1.5 rounded-full border border-[var(--color-paper-border)] text-xs text-paper-secondary hover:text-paper-primary hover:border-[var(--color-paper-border)]/80 transition-colors cursor-pointer"
+                            "px-3 py-1.5 rounded-full border border-ink-3 text-xs text-fg-2 hover:text-fg hover:border-ink-3/80 transition-colors cursor-pointer"
                         },
                         aria_pressed: "{mode() == mode_val}",
                         onclick: move |_| {
@@ -525,7 +525,7 @@ fn CommentItemPreview(detail: bool) -> Element {
                     }
                 }
             }
-            p { class: "text-xs text-paper-secondary mb-4 leading-relaxed",
+            p { class: "text-xs text-fg-2 mb-4 leading-relaxed",
                 match mode() {
                     CommentItemMode::Standard => "标准嵌套链：展示博主顶层评论与嵌套子回复，点击“回复”可展开内嵌表单并输入草稿。",
                     CommentItemMode::ReplyDraft => "回复展开与草稿保留：展开内嵌 CommentForm 表单，表单自动通过负 margin 抵消嵌套缩进；取消回复再重新打开时保留草稿。",
@@ -533,8 +533,8 @@ fn CommentItemPreview(detail: bool) -> Element {
                     CommentItemMode::DeepNesting => "深层缩进与边界防护：展示 depth=1 至 depth=3 的递进缩进与引导线；当深度达到 depth >= 20 时，自动隐藏回复按钮防止无限嵌套破坏版面。",
                 }
             }
-            div { class: "rounded-2xl border border-[var(--color-paper-border)]/70 bg-[var(--color-paper-entry)]/30 p-4 sm:p-5 shadow-xs",
-                div { class: "comment-list space-y-0 divide-y divide-[var(--color-paper-border)]/40",
+            div { class: "rounded-2xl border border-ink-3/70 bg-surface-2/30 p-4 sm:p-5 shadow-xs",
+                div { class: "comment-list space-y-0 divide-y divide-ink-3/40",
                     {items}
                 }
             }
@@ -685,7 +685,7 @@ fn CommentListPreview(detail: bool) -> Element {
 
     rsx! {
         div { class: "w-full min-w-0",
-            p { class: "mb-3 text-xs text-paper-tertiary", "本地演示，可切换不同形态体验 CommentList 的树形合并、排序与孤儿容错。" }
+            p { class: "mb-3 text-xs text-fg-3", "本地演示，可切换不同形态体验 CommentList 的树形合并、排序与孤儿容错。" }
             div { class: "flex flex-wrap items-center gap-2 mb-3",
                 for (mode_val, label) in [
                     (CommentListMode::Merged, "评论与待审核"),
@@ -697,9 +697,9 @@ fn CommentListPreview(detail: bool) -> Element {
                         key: "{label}",
                         r#type: "button",
                         class: if mode() == mode_val {
-                            "px-3 py-1.5 rounded-full border border-[var(--color-paper-accent)] text-xs font-medium text-[var(--color-paper-accent)] bg-[var(--color-paper-accent)]/10 transition-colors cursor-pointer"
+                            "px-3 py-1.5 rounded-full border border-clay-text text-xs font-medium text-clay-text bg-clay-text/10 transition-colors cursor-pointer"
                         } else {
-                            "px-3 py-1.5 rounded-full border border-[var(--color-paper-border)] text-xs text-paper-secondary hover:text-paper-primary hover:border-[var(--color-paper-border)]/80 transition-colors cursor-pointer"
+                            "px-3 py-1.5 rounded-full border border-ink-3 text-xs text-fg-2 hover:text-fg hover:border-ink-3/80 transition-colors cursor-pointer"
                         },
                         aria_pressed: "{mode() == mode_val}",
                         onclick: move |_| {
@@ -709,7 +709,7 @@ fn CommentListPreview(detail: bool) -> Element {
                     }
                 }
             }
-            p { class: "text-xs text-paper-secondary mb-4 leading-relaxed",
+            p { class: "text-xs text-fg-2 mb-4 leading-relaxed",
                 match mode() {
                     CommentListMode::Merged => "评论与待审核：服务端已审核评论与本地待审核评论统一合并为树形结构；待审核评论展示为带呼吸指示灯的半透明卡片，按时间升序插入对应层级。",
                     CommentListMode::ApprovedOnly => "仅已审核：纯已审核评论树，展现多级回复的深度缩进、左侧引导线与完整回复交互。",
@@ -717,9 +717,9 @@ fn CommentListPreview(detail: bool) -> Element {
                     CommentListMode::ComplexTree => "多分支与孤儿容错：展示多个并行顶层主题、多级嵌套回复，以及父评论缺失时的孤儿评论容错恢复（自动升级为顶层展示）。",
                 }
             }
-            div { class: "rounded-2xl border border-[var(--color-paper-border)]/70 bg-[var(--color-paper-entry)]/30 p-4 sm:p-5 shadow-xs",
+            div { class: "rounded-2xl border border-ink-3/70 bg-surface-2/30 p-4 sm:p-5 shadow-xs",
                 if comments.is_empty() && pending.is_empty() {
-                    div { class: "text-center py-8 px-4 rounded-2xl border border-dashed border-[var(--color-paper-border)] text-paper-secondary",
+                    div { class: "text-center py-8 px-4 rounded-2xl border border-dashed border-ink-3 text-fg-2",
                         "暂无评论"
                     }
                 } else {
@@ -752,9 +752,9 @@ fn ShellReplyButton(
                 r#type: "button",
                 class: "inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-md transition-all cursor-pointer",
                 class: if is_active {
-                    "text-[var(--color-paper-accent)] bg-[var(--color-paper-accent)]/10"
+                    "text-clay-text bg-clay-text/10"
                 } else {
-                    "text-paper-tertiary hover:text-paper-accent hover:bg-[var(--color-paper-entry)]"
+                    "text-fg-3 hover:text-clay-text hover:bg-surface-2"
                 },
                 aria_label: "回复 {author_name}",
                 onclick: move |_| {
@@ -779,8 +779,8 @@ fn ShellReplyButton(
                 if is_active { "取消回复" } else { "回复" }
             }
             if is_active {
-                div { class: "mt-2.5 flex items-center gap-2 p-2.5 rounded-xl border border-[var(--color-paper-border)] bg-[var(--color-paper-entry)]/60 text-xs text-paper-secondary animate-in fade-in duration-200",
-                    span { class: "size-1.5 rounded-full bg-[var(--color-paper-accent)] shrink-0" }
+                div { class: "mt-2.5 flex items-center gap-2 p-2.5 rounded-xl border border-ink-3 bg-surface-2/60 text-xs text-fg-2 animate-in fade-in duration-200",
+                    span { class: "size-1.5 rounded-full bg-clay-text shrink-0" }
                     span { "children 插槽生效中：可挂载回复表单或快捷操作栏。" }
                 }
             }
@@ -802,12 +802,12 @@ fn CommentCardShellPreview(detail: bool) -> Element {
                                is_pending: bool,
                                html: &'static str| {
         let author_element = rsx! {
-            span { class: "font-medium text-paper-primary", "{author}" }
+            span { class: "font-medium text-fg", "{author}" }
         };
         let author_badge = if is_author {
             rsx! {
                 span {
-                    class: "px-1.5 py-0.5 rounded text-[10px] font-medium bg-[var(--color-paper-accent)]/10 text-[var(--color-paper-accent)]",
+                    class: "px-1.5 py-0.5 rounded text-[10px] font-medium bg-clay-text/10 text-clay-text",
                     "作者"
                 }
             }
@@ -815,7 +815,7 @@ fn CommentCardShellPreview(detail: bool) -> Element {
             rsx! {}
         };
         let timestamp = rsx! {
-            span { class: "text-paper-tertiary", "{time}" }
+            span { class: "text-fg-3", "{time}" }
         };
         let status_badge = if is_pending {
             rsx! {
@@ -889,7 +889,7 @@ fn CommentCardShellPreview(detail: bool) -> Element {
 
     if !detail {
         return rsx! {
-            div { class: "w-full min-w-0 divide-y divide-[var(--color-paper-border)]/40 px-1",
+            div { class: "w-full min-w-0 divide-y divide-ink-3/40 px-1",
                 {render_comment(1, 0, false, "青禾", true, "昨天 17:30", false, "<p>春天的第一片叶子，总会记得来时的风。</p>")}
                 {render_comment(2, 1, false, "阿木", false, "昨天 18:02", false, "<p>我也喜欢这句话，愿枝繁叶茂。</p>")}
             }
@@ -898,7 +898,7 @@ fn CommentCardShellPreview(detail: bool) -> Element {
 
     rsx! {
         div { class: "w-full min-w-0",
-            p { class: "mb-3 text-xs text-paper-tertiary", "本地演示，切换下方的形态标签可预览卡片骨架的不同状态与缩进效果。" }
+            p { class: "mb-3 text-xs text-fg-3", "本地演示，切换下方的形态标签可预览卡片骨架的不同状态与缩进效果。" }
             div { class: "flex flex-wrap items-center gap-2 mb-3",
                 for (mode_val, label) in [
                     (CardShellMode::All, "全部形态"),
@@ -911,9 +911,9 @@ fn CommentCardShellPreview(detail: bool) -> Element {
                         key: "{label}",
                         r#type: "button",
                         class: if mode() == mode_val {
-                            "px-3 py-1.5 rounded-full border border-[var(--color-paper-accent)] text-xs font-medium text-[var(--color-paper-accent)] bg-[var(--color-paper-accent)]/10 transition-colors cursor-pointer"
+                            "px-3 py-1.5 rounded-full border border-clay-text text-xs font-medium text-clay-text bg-clay-text/10 transition-colors cursor-pointer"
                         } else {
-                            "px-3 py-1.5 rounded-full border border-[var(--color-paper-border)] text-xs text-paper-secondary hover:text-paper-primary hover:border-[var(--color-paper-border)]/80 transition-colors cursor-pointer"
+                            "px-3 py-1.5 rounded-full border border-ink-3 text-xs text-fg-2 hover:text-fg hover:border-ink-3/80 transition-colors cursor-pointer"
                         },
                         aria_pressed: "{mode() == mode_val}",
                         onclick: move |_| {
@@ -923,7 +923,7 @@ fn CommentCardShellPreview(detail: bool) -> Element {
                     }
                 }
             }
-            p { class: "text-xs text-paper-secondary mb-4 leading-relaxed",
+            p { class: "text-xs text-fg-2 mb-4 leading-relaxed",
                 match mode() {
                     CardShellMode::All => "完整树形展示：包含顶层评论、一级嵌套引导线、二级阶梯缩进与待审核半透明状态。",
                     CardShellMode::TopLevel => "顶层评论（depth = 0）：无左侧边框与缩进，包含头像、作者徽章、绝对时间与回复操作。",
@@ -932,7 +932,7 @@ fn CommentCardShellPreview(detail: bool) -> Element {
                     CardShellMode::Pending => "待审核状态（muted = true）：整卡 opacity-75 淡化，配合'审核中'徽章与呼吸指示灯。",
                 }
             }
-            div { class: "rounded-2xl border border-[var(--color-paper-border)]/70 bg-[var(--color-paper-entry)]/30 p-4 sm:p-5 divide-y divide-[var(--color-paper-border)]/40 shadow-xs",
+            div { class: "rounded-2xl border border-ink-3/70 bg-surface-2/30 p-4 sm:p-5 divide-y divide-ink-3/40 shadow-xs",
                 {items}
             }
         }

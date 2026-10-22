@@ -1447,7 +1447,7 @@ fn LiveComponentPreview(
             crate::components::ui::ImagePlaceholder { class: "w-10 h-10 text-fg-3" }
         },
         "Icon" => rsx! {
-            div { class: "grid grid-cols-8 gap-3 text-paper-secondary",
+            div { class: "grid grid-cols-8 gap-3 text-fg-2",
                 for icon in crate::components::ui::IconName::ALL {
                     span { class: "grid place-items-center", title: icon.slug(),
                         crate::components::ui::Icon { name: icon, size: 18 }
@@ -1518,7 +1518,7 @@ fn SceneComponentPreview(name: String) -> Element {
     });
     let inner = match name.as_str() {
         "PostCover" => {
-            rsx! { crate::components::post::post_cover::PostCover { src: "/images/samples/paper-clay.webp".to_string() } }
+            rsx! { crate::components::post::post_cover::PostCover { src: "/images/samples/clay-circle.webp".to_string() } }
         }
         "SearchIconLink" => rsx! { crate::components::header::SearchIconLink {} },
         _ => panic!("场景组件缺少预览: {name}"),

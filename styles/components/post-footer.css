@@ -3,7 +3,7 @@
   .anchor {
     display: none;
     text-decoration: none;
-    color: var(--color-paper-secondary);
+    color: var(--color-fg-2);
   }
 
   .md-content h1:hover .anchor,
@@ -17,10 +17,10 @@
     font-weight: 500;
     user-select: none;
     text-decoration: none;
-    color: var(--color-paper-secondary);
+    color: var(--color-fg-2);
   }
 
   .anchor:hover {
-    color: var(--color-paper-primary) !important;
+    color: var(--color-fg) !important;
   }
 }

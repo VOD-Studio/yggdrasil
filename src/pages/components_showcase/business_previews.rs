@@ -24,7 +24,7 @@ pub(super) fn preview(slug: &str, detail: bool) -> Option<Element> {
 
 const IMAGES: [(&str, &str, &str); 5] = [
     (
-        "/images/samples/paper-clay.webp",
+        "/images/samples/clay-circle.webp",
         "纸面与陶土.webp",
         "暖白纸面上的一轮陶土色圆",
     ),

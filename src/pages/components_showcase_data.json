@@ -1244,7 +1244,7 @@
       ],
       "keys": [],
       "source": "src/components/comments/card.rs",
-      "code": "rsx! {\n    CommentCardShell {\n        depth: 0,\n        muted: false,\n        avatar_url: author_avatar.clone(),\n        author_name: author_name.clone(),\n        author_element: rsx! { span { class: \"font-medium text-paper-primary\", \"{author_name}\" } },\n        author_badge: rsx! { span { class: \"px-1.5 py-0.5 rounded text-[10px] bg-paper-accent/10 text-paper-accent\", \"作者\" } },\n        timestamp: rsx! { time { class: \"text-paper-tertiary\", \"昨天 17:30\" } },\n        status_badge: rsx! {},\n        content_html: \"<p>春天的第一片叶子，总会记得来时的风。</p>\".to_string(),\n        content_extra_class: \"md-content\",\n        div { class: \"flex items-center gap-3 mt-2\",\n            button { class: \"text-xs text-paper-tertiary hover:text-paper-accent cursor-pointer\", \"回复\" }\n        }\n    }\n}",
+      "code": "rsx! {\n    CommentCardShell {\n        depth: 0,\n        muted: false,\n        avatar_url: author_avatar.clone(),\n        author_name: author_name.clone(),\n        author_element: rsx! { span { class: \"font-medium text-fg\", \"{author_name}\" } },\n        author_badge: rsx! { span { class: \"px-1.5 py-0.5 rounded text-[10px] bg-clay-text/10 text-clay-text\", \"作者\" } },\n        timestamp: rsx! { time { class: \"text-fg-3\", \"昨天 17:30\" } },\n        status_badge: rsx! {},\n        content_html: \"<p>春天的第一片叶子，总会记得来时的风。</p>\".to_string(),\n        content_extra_class: \"md-content\",\n        div { class: \"flex items-center gap-3 mt-2\",\n            button { class: \"text-xs text-fg-3 hover:text-clay-text cursor-pointer\", \"回复\" }\n        }\n    }\n}",
       "preview_mode": "interactive",
       "usage_kind": "rust"
     },

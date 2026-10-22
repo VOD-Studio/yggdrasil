@@ -3,9 +3,6 @@
 // 样式常量
 // ===========================================================================
 
-/// 后台表格容器：与卡片同外观，裁掉表格溢出的圆角。
-pub const ADMIN_TABLE_CLASS: &str = "panel overflow-hidden";
-
 /// 行内加载 spinner：环形渐变 + 自旋动画，用 currentColor 继承文字色。
 ///
 /// 内联 SVG（含 `@keyframes`），通过 `dangerous_inner_html` 注入；尺寸由外层

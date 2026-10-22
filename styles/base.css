@@ -34,7 +34,7 @@
   }
 
   ::selection {
-    background-color: var(--color-paper-selection);
+    background-color: var(--color-selection);
   }
 
   @keyframes page-enter {
