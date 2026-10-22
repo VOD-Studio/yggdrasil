@@ -1,6 +1,6 @@
 //! 数据导出：Axum 流式路由（大文件不走 JSON 序列化）。
 //!
-//! 鉴权镜像 [`crate::api::upload`]：从 cookie 取 session，校验管理员。
+//! 鉴权走 [`crate::api::auth::require_admin_from_headers`]：从 cookie 取 session，校验管理员。
 //! 两种来源：按表导出（表名白名单）/ 按查询导出（强制只读，AST 校验）。
 //! 两种格式：CSV（COPY TO STDOUT 流式）/ SQL（逐行拼 INSERT）。
 
@@ -13,7 +13,6 @@ use axum::response::IntoResponse;
 use futures::StreamExt;
 use serde::Deserialize;
 
-use crate::auth::session::parse_session_token;
 use super::read_only::is_read_only_statement;
 
 #[derive(Deserialize)]
@@ -32,22 +31,9 @@ pub async fn export_data(
     Query(params): Query<ExportParams>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
     // 1. 鉴权：cookie → session → admin
-    let cookie_header = headers
-        .get("cookie")
-        .and_then(|h| h.to_str().ok())
-        .unwrap_or("");
-    let token = parse_session_token(cookie_header).map(str::to_string);
-    let token = match token {
-        Some(t) => t,
-        None => return Err((StatusCode::UNAUTHORIZED, "未登录".to_string())),
-    };
-    let user = match crate::api::auth::get_user_by_token(&token).await {
-        Ok(Some(u)) => u,
-        _ => return Err((StatusCode::UNAUTHORIZED, "会话已过期".to_string())),
-    };
-    if user.role != crate::models::user::UserRole::Admin {
-        return Err((StatusCode::FORBIDDEN, "权限不足".to_string()));
-    }
+    crate::api::auth::require_admin_from_headers(&headers)
+        .await
+        .map_err(|(status, msg)| (status, msg.to_string()))?;
 
     // 2. 解析来源 + 白名单/只读校验
     let include_columns = params.include_columns.unwrap_or(true);

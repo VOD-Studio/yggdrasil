@@ -62,21 +62,9 @@ pub async fn import_backup(
     }
 
     // 1. cookie session → admin（与 upload_image 同一校验链）。
-    let cookie_header = headers
-        .get("cookie")
-        .and_then(|h| h.to_str().ok())
-        .unwrap_or("");
-    let token = match crate::auth::session::parse_session_token(cookie_header) {
-        Some(t) => t,
-        None => return Err(upload_error(StatusCode::UNAUTHORIZED, "未登录")),
-    };
-    let user = match crate::api::auth::get_user_by_token(token).await {
-        Ok(Some(u)) => u,
-        _ => return Err(upload_error(StatusCode::UNAUTHORIZED, "会话已过期")),
-    };
-    if user.role != crate::models::user::UserRole::Admin {
-        return Err(upload_error(StatusCode::FORBIDDEN, "权限不足"));
-    }
+    let user = crate::api::auth::require_admin_from_headers(&headers)
+        .await
+        .map_err(|(status, msg)| upload_error(status, msg))?;
 
     let max_bytes = import_max_bytes();
 
@@ -226,22 +214,9 @@ pub async fn download_backup(
     use axum::http::{header, StatusCode};
 
     // 鉴权
-    let cookie_header = headers
-        .get("cookie")
-        .and_then(|h| h.to_str().ok())
-        .unwrap_or("");
-    let token = crate::auth::session::parse_session_token(cookie_header).map(str::to_string);
-    let token = match token {
-        Some(t) => t,
-        None => return Err((StatusCode::UNAUTHORIZED, "未登录".to_string())),
-    };
-    let user = match crate::api::auth::get_user_by_token(&token).await {
-        Ok(Some(u)) => u,
-        _ => return Err((StatusCode::UNAUTHORIZED, "会话已过期".to_string())),
-    };
-    if user.role != crate::models::user::UserRole::Admin {
-        return Err((StatusCode::FORBIDDEN, "权限不足".to_string()));
-    }
+    crate::api::auth::require_admin_from_headers(&headers)
+        .await
+        .map_err(|(status, msg)| (status, msg.to_string()))?;
 
     // 路径白名单
     if !is_valid_backup_filename(&filename) {

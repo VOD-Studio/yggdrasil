@@ -8,11 +8,12 @@ use axum::{
     Json,
 };
 
+/// 管理员会话的用户 id；未登录、会话失效与非 admin 一律视为无所有者。
 async fn owner(headers: &HeaderMap) -> Option<i32> {
-    let cookie = headers.get("cookie")?.to_str().ok()?;
-    let token = crate::auth::session::parse_session_token(cookie)?;
-    let user = crate::api::auth::get_user_by_token(token).await.ok()??;
-    (user.role == crate::models::user::UserRole::Admin).then_some(user.id)
+    crate::api::auth::require_admin_from_headers(headers)
+        .await
+        .ok()
+        .map(|user| user.id)
 }
 
 pub async fn upload(headers: HeaderMap, mut multipart: Multipart) -> Response {

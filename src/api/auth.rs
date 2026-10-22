@@ -679,6 +679,31 @@ pub(crate) async fn sync_admin_from_env(client: &tokio_postgres::Client) -> Resu
     Ok(())
 }
 
+#[cfg(feature = "server")]
+/// 原生 Axum 路由的 admin 前置校验：cookie → session → role。
+///
+/// 这些路由不经过 server fn 上下文，只能从请求头取 session。失败返回
+/// `(状态码, 消息)`：无会话 cookie 为 401「未登录」，会话无效或查询失败为
+/// 401「会话已过期」，非 admin 为 403「权限不足」。响应体格式由调用方决定。
+pub(crate) async fn require_admin_from_headers(
+    headers: &http::HeaderMap,
+) -> Result<SessionUser, (http::StatusCode, &'static str)> {
+    let cookie_header = headers
+        .get(http::header::COOKIE)
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("");
+    let token = session::parse_session_token(cookie_header)
+        .ok_or((http::StatusCode::UNAUTHORIZED, "未登录"))?;
+    let user = match get_user_by_token(token).await {
+        Ok(Some(user)) => user,
+        _ => return Err((http::StatusCode::UNAUTHORIZED, "会话已过期")),
+    };
+    if user.role != UserRole::Admin {
+        return Err((http::StatusCode::FORBIDDEN, "权限不足"));
+    }
+    Ok(user)
+}
+
 #[cfg(all(test, feature = "server"))]
 mod tests {
     use super::*;
@@ -872,6 +897,21 @@ mod tests {
                 assert_eq!(cfg.email, "admin@example.com");
                 assert_eq!(cfg.password, "  strong pass 123  ");
             },
+        );
+    }
+
+    #[tokio::test]
+    async fn require_admin_from_headers_rejects_missing_session_cookie() {
+        let mut headers = http::HeaderMap::new();
+        assert_eq!(
+            require_admin_from_headers(&headers).await.unwrap_err(),
+            (http::StatusCode::UNAUTHORIZED, "未登录")
+        );
+
+        headers.insert(http::header::COOKIE, HeaderValue::from_static("theme=dark"));
+        assert_eq!(
+            require_admin_from_headers(&headers).await.unwrap_err(),
+            (http::StatusCode::UNAUTHORIZED, "未登录")
         );
     }
 }

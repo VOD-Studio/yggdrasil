@@ -33,9 +33,6 @@ use serde_json::{json, Value};
 use std::net::SocketAddr;
 
 #[cfg(feature = "server")]
-use crate::auth::session::parse_session_token;
-
-#[cfg(feature = "server")]
 const ALLOWED_MIME_TYPES: &[&str] = &["image/jpeg", "image/png", "image/gif", "image/webp"];
 #[cfg(feature = "server")]
 use crate::utils::server::MAX_FILE_SIZE;
@@ -76,30 +73,10 @@ pub async fn upload_image(
         return Err(upload_error(StatusCode::TOO_MANY_REQUESTS, msg));
     }
 
-    // 1. Extract session from cookie
-    let cookie_header = headers
-        .get("cookie")
-        .and_then(|h| h.to_str().ok())
-        .unwrap_or("");
-
-    let token = match parse_session_token(cookie_header) {
-        Some(t) => t,
-        None => {
-            return Err(upload_error(StatusCode::UNAUTHORIZED, "未登录"));
-        }
-    };
-
-    // 2. Verify admin
-    let user = match crate::api::auth::get_user_by_token(token).await {
-        Ok(Some(u)) => u,
-        _ => {
-            return Err(upload_error(StatusCode::UNAUTHORIZED, "会话已过期"));
-        }
-    };
-
-    if user.role != crate::models::user::UserRole::Admin {
-        return Err(upload_error(StatusCode::FORBIDDEN, "权限不足"));
-    }
+    // 1-2. cookie session → admin
+    crate::api::auth::require_admin_from_headers(&headers)
+        .await
+        .map_err(|(status, msg)| upload_error(status, msg))?;
 
     // 3. Read multipart field
     let field = match multipart.next_field().await {

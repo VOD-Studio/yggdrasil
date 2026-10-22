@@ -1,6 +1,6 @@
 //! 运行日志实时流 SSE 端点：`GET /api/logs/stream?levels=ERROR,WARN&target=X&q=Y`。
 //!
-//! 鉴权镜像 [`crate::api::database::export`]：从 cookie 取 session，校验管理员。
+//! 鉴权走 [`crate::api::auth::require_admin_from_headers`]：从 cookie 取 session，校验管理员。
 //! 事件类型：
 //! - `log`：JSON [`LogEntry`]（实时事件尚未落库，`id` 恒为 0，不可用作游标）；
 //! - `gap`：broadcast 通道满导致本连接丢事件（`Lagged`），data 为丢失条数文本。
@@ -21,7 +21,6 @@ use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
 use tokio_stream::wrappers::BroadcastStream;
 
 use crate::api::logs::capture::{self, LogRecord};
-use crate::auth::session::parse_session_token;
 use crate::models::log::LogEntry;
 
 /// SSE 查询参数：`?levels=ERROR,WARN&target=X&q=Y`（全部可选）。
@@ -37,23 +36,10 @@ pub async fn log_stream(
     headers: HeaderMap,
     Query(q): Query<LogStreamQuery>,
 ) -> Result<Sse<impl futures::Stream<Item = Result<Event, Infallible>>>, (StatusCode, String)> {
-    // 鉴权：cookie → session → admin（镜像 export.rs）
-    let cookie_header = headers
-        .get("cookie")
-        .and_then(|h| h.to_str().ok())
-        .unwrap_or("");
-    let token = parse_session_token(cookie_header).map(str::to_string);
-    let token = match token {
-        Some(t) => t,
-        None => return Err((StatusCode::UNAUTHORIZED, "未登录".to_string())),
-    };
-    let user = match crate::api::auth::get_user_by_token(&token).await {
-        Ok(Some(u)) => u,
-        _ => return Err((StatusCode::UNAUTHORIZED, "会话已过期".to_string())),
-    };
-    if user.role != crate::models::user::UserRole::Admin {
-        return Err((StatusCode::FORBIDDEN, "权限不足".to_string()));
-    }
+    // 鉴权：cookie → session → admin
+    crate::api::auth::require_admin_from_headers(&headers)
+        .await
+        .map_err(|(status, msg)| (status, msg.to_string()))?;
 
     // levels：逗号分隔、trim 大写、白名单过滤（非法级别静默忽略——EventSource
     // 读不到 400 响应体，容错优于报错）；空 vec = 全部级别。
