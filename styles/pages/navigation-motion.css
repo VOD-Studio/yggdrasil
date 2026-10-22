@@ -42,13 +42,6 @@
   .archive-tags-skeleton .animate-pulse {
     animation: none;
   }
-  .post-card-editorial,
-  .post-card-editorial .post-card-cover-blur img {
-    transition: none;
-  }
-  .post-card-editorial:hover .post-card-cover-blur img {
-    transform: none;
-  }
 
 
   /* 关闭保留纯 opacity 淡出（安全动效），禁用位移过渡 */

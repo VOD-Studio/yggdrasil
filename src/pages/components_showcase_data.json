@@ -1934,34 +1934,6 @@
       "usage_kind": "rust"
     },
     {
-      "name": "PostCard",
-      "slug": "post-card",
-      "label": "文章卡片",
-      "group": "post",
-      "summary": "文章卡片，用于文章阅读与展示。",
-      "states": "真实组件 · 本地样例",
-      "description": "文章卡片使用固定的本地样例资料渲染项目里的真实组件。预览不会请求或修改业务数据；详情同时列出组件接口与源码位置。",
-      "props": [
-        [
-          "post",
-          "PostListItem",
-          "由调用方提供",
-          "文章卡片的 post 参数。"
-        ],
-        [
-          "compact",
-          "bool",
-          "由调用方提供",
-          "文章卡片的 compact 参数。"
-        ]
-      ],
-      "keys": [],
-      "source": "src/components/post_card.rs",
-      "code": "pub fn PostCard(post: PostListItem, #[props(default = false)] compact: bool) -> Element",
-      "preview_mode": "static",
-      "usage_kind": "api"
-    },
-    {
       "name": "SqlResultTable",
       "slug": "sql-result-table",
       "label": "SQL 结果表",

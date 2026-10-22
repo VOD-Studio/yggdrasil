@@ -1,26 +1,6 @@
 @layer components {
-  /* 卡片封面：blur-img 结构，固定 21:9 比例，hover 缩放。
-     双类选择器提升特异性，可靠覆盖 .blur-img 的 aspect-ratio: var(--ar)
-     （卡片不写 --ar，var(--ar) 解析为空会导致高度塌陷）。
-     21:9 与后台编辑器封面区统一比例，宽屏横幅式。 */
-  .blur-img.post-card-cover-blur {
-    margin: 0;
-    aspect-ratio: 21 / 9;
-  }
-  .post-card-cover-blur img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    transition: transform 0.3s ease-out;
-  }
-  .group:hover .post-card-cover-blur img {
-    transform: scale(1.05);
-  }
-
   /* ========== Blur-up 渐进图片加载 ==========
-     放在 @layer components 内，与 .blur-img.post-card-cover-blur 同层，
-     这样特异性能正常生效（layer 外规则会无条件覆盖 layer 内规则，
-     导致卡片的 aspect-ratio:4/3 败给全局 var(--ar)）。 */
+     放在 @layer components 内：layer 外规则会无条件覆盖 layer 内规则。 */
   .blur-img {
     position: relative;
     display: block;

@@ -1068,7 +1068,7 @@ fn preview_route(slug: &str) -> Option<PreviewRoute> {
         | "icon" | "button" | "icon-button" | "number-input" | "menu" | "toast"
         | "bottom-sheet" | "side-sheet" | "breadcrumb" | "search-palette" | "admin-palette"
         | "empty-state" | "load-error" => PreviewRoute::Live,
-        "post-cover" | "post-card" => PreviewRoute::Scene,
+        "post-cover" => PreviewRoute::Scene,
         "asset-picker-modal" | "asset-upload-modal" | "code-runner" | "sql-result-table" => {
             PreviewRoute::Business
         }
@@ -1516,28 +1516,7 @@ fn SceneComponentPreview(name: String) -> Element {
             crate::utils::js::invoke_optional_global(&window, "__initLightbox", &[selectors]);
         }
     });
-    let post = sample_post();
     let inner = match name.as_str() {
-        "PostCard" => rsx! {
-            crate::components::post_card::PostCard {
-                post: PostListItem {
-                    id: post.id,
-                    author_id: post.author_id,
-                    title: post.title.clone(),
-                    slug: post.slug.clone(),
-                    summary: post.summary.clone(),
-                    status: post.status.clone(),
-                    published_at: post.published_at,
-                    created_at: post.created_at,
-                    updated_at: post.updated_at,
-                    deleted_at: None,
-                    tags: post.tags.clone(),
-                    cover_image: None,
-                    reading_time: post.reading_time,
-                    word_count: post.word_count,
-                },
-            }
-        },
         "PostCover" => {
             rsx! { crate::components::post::post_cover::PostCover { src: "/images/samples/paper-clay.webp".to_string() } }
         }

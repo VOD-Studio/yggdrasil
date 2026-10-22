@@ -86,11 +86,6 @@ pub struct Post {
     pub next_post: Option<PostNav>,
 }
 
-/// 将时间戳格式化为展示用的 `YYYY-MM-DD` 字符串。
-fn format_date(dt: DateTime<Utc>) -> String {
-    dt.format("%Y-%m-%d").to_string()
-}
-
 /// 页眉展示所需的最小字段集（P4.2）。
 ///
 /// [`crate::components::post::post_header::PostHeader`] 与
@@ -177,13 +172,6 @@ pub struct PostListItem {
     pub word_count: u32,
 }
 
-impl PostListItem {
-    /// 返回用于展示的文章日期：优先使用发布时间，否则回退到创建时间。
-    pub fn formatted_date(&self) -> String {
-        format_date(self.published_at.unwrap_or(self.created_at))
-    }
-}
-
 #[cfg(any(feature = "server", test))]
 /// Feed 条目 DTO（RSS 2.0 / JSON Feed 共享）。
 ///
@@ -257,26 +245,6 @@ pub struct MonthCount {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::{TimeZone, Utc};
-
-    fn sample_post_list_item() -> PostListItem {
-        PostListItem {
-            id: 1,
-            author_id: 1,
-            title: "Test".to_string(),
-            slug: "test".to_string(),
-            summary: None,
-            status: PostStatus::Draft,
-            published_at: None,
-            created_at: Utc.with_ymd_and_hms(2024, 1, 15, 10, 0, 0).unwrap(),
-            updated_at: Utc.with_ymd_and_hms(2024, 1, 15, 10, 0, 0).unwrap(),
-            deleted_at: None,
-            tags: vec![],
-            cover_image: None,
-            reading_time: 1,
-            word_count: 10,
-        }
-    }
 
     #[test]
     #[cfg(feature = "server")]
@@ -302,19 +270,6 @@ mod tests {
         for status in [PostStatus::Draft, PostStatus::Published] {
             assert_eq!(PostStatus::from_str(status.as_str()), Some(status.clone()));
         }
-    }
-
-    #[test]
-    fn post_list_item_formatted_date_uses_published_at_when_available() {
-        let mut post = sample_post_list_item();
-        post.published_at = Some(Utc.with_ymd_and_hms(2024, 6, 1, 12, 0, 0).unwrap());
-        assert_eq!(post.formatted_date(), "2024-06-01");
-    }
-
-    #[test]
-    fn post_list_item_formatted_date_falls_back_to_created_at() {
-        let post = sample_post_list_item();
-        assert_eq!(post.formatted_date(), "2024-01-15");
     }
 
     #[test]

@@ -65,8 +65,6 @@ pub mod code_runner;
 pub mod comments;
 /// 文章详情页组件（标题 / 正文 / 目录 / 面包屑 / 相邻导航）。
 pub mod post;
-/// 文章列表卡片组件。
-pub mod post_card;
 /// SQL 查询结果表格组件（后台 SQL 控制台专用）。
 #[cfg(not(ygg_client_reader))]
 pub mod sql_result_table;

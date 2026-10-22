@@ -416,16 +416,14 @@ pub fn Breadcrumb<R: Routable + Clone + PartialEq + 'static>(items: Vec<Crumb<R>
 
 /// 标签芯片组件：统一软底标签、卡片胶囊与文字链接的展示。
 ///
-/// 收敛原本散落在标签云与文章卡片（`post_card.rs` 描边胶囊）
-/// 的两套手写 `Link` 样式——两者都是跳转到 [`Route::TagDetail`] 的可点击标签，
-/// 仅视觉变体不同，故合并为一个组件 + `variant` prop。
+/// 各处跳转到 [`Route::TagDetail`] 的可点击标签共用此组件，仅以 `variant` 区分视觉。
 ///
 /// Props：
 /// - `label`：标签名
 /// - `to`：跳转目标路由（泛型，调用方传入具体 `Route` 变体，原子层不绑定 app 路由类型）
 /// - `variant`：`"solid"`（软底）/ `"outline"`（卡片胶囊）/ `"text"`（紧凑文章流）
 /// - `count`：可选的文章计数
-/// - `stop_propagation`：是否阻止点击冒泡（卡片内覆盖层链接场景需要，见 `PostCard`）
+/// - `stop_propagation`：是否阻止点击冒泡（卡片内覆盖层链接场景需要）
 #[component]
 pub fn TagChip<R: Routable + Clone + PartialEq + 'static>(
     label: String,

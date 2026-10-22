@@ -29,8 +29,6 @@ pub mod logs_skeleton;
 /// 后台 MCP 服务骨架屏组件。
 pub mod mcp_skeleton;
 pub mod notes_admin_skeleton;
-/// 文章卡片骨架屏组件。
-pub mod post_card_skeleton;
 /// 文章详情页骨架屏组件。
 pub mod post_detail_skeleton;
 /// 草稿/文章预览页骨架屏组件。
