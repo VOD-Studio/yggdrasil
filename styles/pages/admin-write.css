@@ -199,9 +199,11 @@ button.write-status:focus-visible {
 }
 
 .write-doc {
+  /* 左右留白；源码切换按钮悬在右侧留白里，不占正文宽度。 */
+  --write-gutter: 2rem;
   max-width: 45rem;
   margin: 0 auto;
-  padding: 3.5rem 2rem 7.5rem;
+  padding: 3.5rem var(--write-gutter) 7.5rem;
 }
 
 .write-title {
@@ -266,21 +268,17 @@ button.write-status:focus-visible {
   min-height: 3rem;
 }
 
-/* 源码切换按钮贴正文右上角，首段给它让出位置。 */
+/* 源码切换按钮悬在正文右侧留白里，与首行齐平，不挤占任何一行的宽度。 */
 .write-editor .tiptap-toggle-btn {
   top: 0;
-  right: 0;
-}
-
-.write-editor .tiptap-editor .ProseMirror > :first-child {
-  margin-right: 2.5rem;
+  right: calc(-1 * var(--write-gutter));
 }
 
 /* 编辑器随内容增高，源码框不能绝对定位撑满（隐藏正文后高度为 0），改为随文本增高。 */
 .write-editor .tiptap-source-textarea {
   position: static;
   min-height: 40vh;
-  padding: 0 2.5rem 0 0;
+  padding: 0;
   field-sizing: content;
 }
 
@@ -674,7 +672,17 @@ button.write-status:focus-visible {
   }
 
   .write-doc {
-    padding: 1.75rem 1rem 6rem;
+    --write-gutter: 1rem;
+    padding: 1.75rem var(--write-gutter) 6rem;
+  }
+
+  /* 留白放不下按钮：在正文上方让出一行按钮高度，各行宽度仍然一致。 */
+  .write-editor .tiptap-editor {
+    padding-top: 2.25rem;
+  }
+
+  .write-editor .tiptap-toggle-btn {
+    right: 0;
   }
 
   .write-title {
