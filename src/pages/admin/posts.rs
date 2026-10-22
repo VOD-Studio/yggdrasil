@@ -22,8 +22,8 @@ use crate::components::forms::{FormSelect, FORM_SELECT_COMPACT_CLASS};
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::skeletons::posts_skeleton::PostsTableSkeleton;
 use crate::components::ui::{
-    button_class, use_toast, ButtonSize, ButtonVariant, Checkbox, FilterTabs, Icon, IconButton,
-    IconName, LoadError, Menu, MenuItem, StatusDot, TablePager,
+    button_class, use_toast, ButtonSize, ButtonVariant, Checkbox, Icon, IconButton, IconName,
+    LoadError, Menu, MenuItem, SegmentedControl, SegmentedItem, StatusDot, TablePager,
 };
 use crate::hooks::query::use_paginated;
 use crate::models::post::{PostListItem, PostStats, PostStatus};
@@ -363,11 +363,15 @@ fn PostsTable(on_changed: EventHandler<()>) -> Element {
             span { hidden: true, "data-vt-list": "true" }
         }
         div { class: "admin-toolbar",
-            FilterTabs {
-                class: "",
+            SegmentedControl {
                 aria_label: "文章状态",
-                items: vec![("all", "全部"), ("published", "已发布"), ("draft", "草稿"), ("trash", "回收站")],
-                active_value: status(),
+                items: vec![
+                    SegmentedItem::new("all".to_string(), "全部"),
+                    SegmentedItem::new("published".to_string(), "已发布"),
+                    SegmentedItem::new("draft".to_string(), "草稿"),
+                    SegmentedItem::new("trash".to_string(), "回收站"),
+                ],
+                value: status(),
                 on_change: move |value: String| {
                     if value == "trash" {
                         navigator.push(Route::PostsTrash {});

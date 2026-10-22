@@ -14,7 +14,9 @@
 //! 下游消费者（CodeMirror、SVG 图标判定）应读 `ResolvedTheme`（实际生效明暗），
 //! 而非 `Theme`（用户意图），这样 System 模式下系统偏好变化能自动传播。
 
-use crate::components::ui::{Icon, IconName};
+use crate::components::ui::{
+    IconName, SegmentedControl, SegmentedItem, SegmentedKind, SegmentedSize,
+};
 use dioxus::prelude::*;
 // InteractionLocation 提供 client_coordinates(),用于读取鼠标点击的视口坐标。
 // 该 trait 不在 dioxus::prelude(后者只 re-export events::*),需单独从 dioxus::html 引入。
@@ -118,7 +120,7 @@ fn detect_initial_theme() -> Theme {
 /// 系统偏好变化时更新 `system_dark`，派生的 `resolved` memo 自动重算，下游
 /// （CodeMirror 等）通过读取 `resolved` 即可实时跟随系统。
 ///
-/// `<html>` 的 `dark` class 不在此处管理。WASM 端由 `ThemeToggle` 的 onclick
+/// `<html>` 的 `dark` class 不在此处管理。WASM 端由 `ThemeToggle` 的 `on_change`
 /// 通过 `yggdrasil-core.js` 的圆形展开动画在 View Transition 回调里同步 toggle。
 /// 初始 class 由 `ThemePreload` 首屏脚本设置,避免闪烁。
 pub fn use_theme_provider() -> Signal<Theme> {
@@ -175,7 +177,7 @@ pub fn use_theme_provider() -> Signal<Theme> {
     // 纹丝不动。
     //
     // 仅在 System 模式（theme == System）且 resolved 实际翻转时触发：Light/Dark 显式
-    // 模式下 resolved 由 theme 决定，DOM 已由 ThemeToggle::onclick 全权处理，effect
+    // 模式下 resolved 由 theme 决定，DOM 已由 ThemeToggle 的 on_change 全权处理，effect
     // 不介入，避免与手动点击的 VT 动画重复触发。
     //
     // 采用无动画的瞬切（__applyResolvedTheme，设置语义）而非 VT 圆形展开：系统偏好
@@ -279,21 +281,26 @@ const THEME_PRELOAD_SCRIPT: &str = r#"
 })();
 "#;
 
-// 分段控件的选中态是首屏必需样式，随 SSR 输出：由预载脚本写入的
-// data-theme-mode 决定，不等 WASM，也不受外部 CSS 旧缓存影响。
+// 主题分段控件的首屏选中态是必需样式，随 SSR 输出：由预载脚本写入的
+// data-theme-mode 决定，不等 WASM，也不受外部 CSS 旧缓存影响。它不进 layer，
+// 优先级高于 ui.css 里「未测量时当前项浮起」的兜底规则：先取消 SSR 默认选中项
+// （System）的浮起，再按 data-theme-mode 浮起对应位置的按钮。
+// 按钮顺序与 ThemeToggle 的 items 顺序耦合：1 浅色、2 深色、3 跟随系统。
 const THEME_SEGMENT_STYLE: &str = r#"
-html[data-theme-mode="light"] .theme-seg [data-mode="light"],
-html[data-theme-mode="dark"] .theme-seg [data-mode="dark"],
-html[data-theme-mode="system"] .theme-seg [data-mode="system"],
-html:not([data-theme-mode]) .theme-seg [data-mode="system"] {
-    background-color: var(--color-surface-2);
-    color: var(--color-fg);
-    box-shadow: 0 0 0 1px var(--color-hairline), var(--shadow-sm);
+.theme-seg .segmented:not([data-ready]) > .segmented-item[data-active] {
+    background-color: transparent; box-shadow: none; color: var(--color-fg-2); font-weight: 400;
 }
-html.dark[data-theme-mode="light"] .theme-seg [data-mode="light"],
-html.dark[data-theme-mode="dark"] .theme-seg [data-mode="dark"],
-html.dark[data-theme-mode="system"] .theme-seg [data-mode="system"],
-html.dark:not([data-theme-mode]) .theme-seg [data-mode="system"] {
+html[data-theme-mode="light"] .theme-seg .segmented:not([data-ready]) > button:nth-of-type(1),
+html[data-theme-mode="dark"] .theme-seg .segmented:not([data-ready]) > button:nth-of-type(2),
+html[data-theme-mode="system"] .theme-seg .segmented:not([data-ready]) > button:nth-of-type(3),
+html:not([data-theme-mode]) .theme-seg .segmented:not([data-ready]) > button:nth-of-type(3) {
+    background-color: var(--color-surface-2); color: var(--color-fg); font-weight: 500;
+    box-shadow: 0 0 0 var(--hairline) var(--color-hairline), var(--shadow-sm);
+}
+html.dark[data-theme-mode="light"] .theme-seg .segmented:not([data-ready]) > button:nth-of-type(1),
+html.dark[data-theme-mode="dark"] .theme-seg .segmented:not([data-ready]) > button:nth-of-type(2),
+html.dark[data-theme-mode="system"] .theme-seg .segmented:not([data-ready]) > button:nth-of-type(3),
+html.dark:not([data-theme-mode]) .theme-seg .segmented:not([data-ready]) > button:nth-of-type(3) {
     background-color: var(--color-surface-3);
 }
 "#;
@@ -339,52 +346,49 @@ pub fn choose_theme(mut theme: Signal<Theme>, mode: Theme, origin: (f64, f64)) {
     theme.set(mode);
 }
 
-/// 主题切换：浅色 / 深色 / 跟随系统三段式分段控件。
+/// 主题切换：浅色 / 深色 / 跟随系统三段式分段控件，基于 [`SegmentedControl`]（Radio）。
 ///
-/// 选中态由 `<html data-theme-mode>` 经 [`THEME_SEGMENT_STYLE`] 决定，首屏无需
+/// 首屏选中态由 `<html data-theme-mode>` 经 [`THEME_SEGMENT_STYLE`] 决定，首屏无需
 /// 等待 WASM。点选后只有**实际明暗**（ResolvedTheme）翻转时才以点击点为圆心
-/// 做圆形扩散；明暗不变（如切到跟随系统且结果相同）时直接切换。
+/// 做圆形扩散；明暗不变（如切到跟随系统且结果相同）、或由键盘切换时取视口中心。
 ///
 /// Props：
-/// - `labels`：显示文字（手机抽屉里用）；缺省只显示图标，悬停提示写明模式
-// evt 仅在 wasm32 用于取点击坐标,服务端构建剥离,故允许非 wasm 的 unused_variables。
+/// - `icon_only`：只显示图标（页头固定窄位）；缺省由容器宽度决定是否显示文字
+// 坐标仅在 wasm32 记录，服务端构建剥离，故允许非 wasm 的 unused_variables。
 #[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))]
 #[component]
-pub fn ThemeToggle(#[props(default)] labels: bool) -> Element {
+pub fn ThemeToggle(#[props(default)] icon_only: bool) -> Element {
     let theme = use_theme();
-    let current = theme();
-    let modes = [
-        (Theme::Light, "light", IconName::Sun),
-        (Theme::Dark, "dark", IconName::Moon),
-        (Theme::System, "system", IconName::Monitor),
+    // 指针按下的位置：点击切换时作为圆形扩散的圆心；键盘切换没有，退回视口中心。
+    #[allow(unused_mut)]
+    let mut pointer = use_signal(|| None::<(f64, f64)>);
+    let items = vec![
+        SegmentedItem::new(Theme::Light, mode_label(Theme::Light)).icon(IconName::Sun),
+        SegmentedItem::new(Theme::Dark, mode_label(Theme::Dark)).icon(IconName::Moon),
+        SegmentedItem::new(Theme::System, mode_label(Theme::System)).icon(IconName::Monitor),
     ];
     rsx! {
-        div { class: "theme-seg", role: "radiogroup", aria_label: "外观",
-            for (mode , key , icon) in modes {
-                button {
-                    key: "{key}",
-                    class: "theme-seg-item",
-                    r#type: "button",
-                    role: "radio",
-                    "data-mode": key,
-                    aria_checked: "{current == mode}",
-                    aria_label: if labels { None } else { Some(mode_label(mode)) },
-                    title: if labels { "" } else { mode_label(mode) },
-                    onclick: move |evt| {
-                        #[cfg(target_arch = "wasm32")]
-                        let origin = {
-                            let coords = evt.client_coordinates();
-                            (coords.x, coords.y)
-                        };
-                        #[cfg(not(target_arch = "wasm32"))]
-                        let origin = (0.0, 0.0);
-                        choose_theme(theme, mode, origin);
-                    },
-                    Icon { name: icon, size: 14 }
-                    if labels {
-                        span { "{mode_label(mode)}" }
-                    }
+        div {
+            class: "theme-seg",
+            onpointerdown: move |_e| {
+                #[cfg(target_arch = "wasm32")]
+                {
+                    let coords = _e.client_coordinates();
+                    pointer.set(Some((coords.x, coords.y)));
                 }
+            },
+            SegmentedControl {
+                items,
+                value: theme(),
+                kind: SegmentedKind::Radio,
+                size: SegmentedSize::Sm,
+                aria_label: "外观",
+                icon_only,
+                on_change: move |mode: Theme| {
+                    let origin = pointer.peek().unwrap_or_else(crate::components::palette::viewport_center);
+                    choose_theme(theme, mode, origin);
+                    pointer.set(None);
+                },
             }
         }
     }

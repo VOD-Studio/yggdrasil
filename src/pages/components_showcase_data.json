@@ -495,49 +495,67 @@
       "usage_kind": "rust"
     },
     {
-      "name": "FilterTabs",
-      "slug": "filter-tabs",
-      "label": "筛选标签页",
+      "name": "SegmentedControl",
+      "slug": "segmented-control",
+      "label": "分段控件",
       "group": "action",
       "summary": "在不同视角之间，自然地切换。",
-      "states": "当前 · 切换",
-      "description": "分段控件：胶囊轨道里的一组选项，选中项是浮起的滑块，切换时以弹簧滑到新位置。",
+      "states": "当前 · 切换 · 窄宽只留图标",
+      "description": "胶囊轨道里的一组选项，当前项下是弹簧滑块，切换时滑到新位置。Tabs 与 Radio 两种语义：Tabs 用于切换视图、筛选，Radio 用于设置取值。选项带图标时，容器窄于 16rem 自动只留图标（文字仍供读屏）；icon_only 则固定只显示图标。",
       "props": [
         [
           "items",
-          "Vec<(&'static str, &'static str)>",
+          "Vec<SegmentedItem<T>>",
           "必填",
-          "选项的值与标签。"
+          "选项列表；SegmentedItem::new(value, label) 可链式 .icon(..)、.count(..)。"
         ],
         [
-          "active_value",
-          "String",
+          "value",
+          "T",
           "必填",
-          "当前选中的值。"
+          "当前选中的值；没有匹配项时没有当前项。"
         ],
         [
           "on_change",
-          "EventHandler<String>",
+          "EventHandler<T>",
           "必填",
-          "切换后返回新值。"
+          "切换后返回新值（点击与键盘都会触发）。"
         ],
         [
           "aria_label",
-          "Option<&'static str>",
-          "None",
-          "选项卡组的无障碍名称。"
+          "&'static str",
+          "必填",
+          "控件组的无障碍名称。"
         ],
         [
-          "counts",
-          "Vec<i64>",
-          "[]",
-          "与选项一一对应的数量，显示在标签后。"
+          "kind",
+          "SegmentedKind",
+          "Tabs",
+          "语义：Tabs（tablist / aria-selected）或 Radio（radiogroup / aria-checked）。"
+        ],
+        [
+          "size",
+          "SegmentedSize",
+          "Md",
+          "尺寸：Md 或 Sm。"
+        ],
+        [
+          "icon_only",
+          "bool",
+          "false",
+          "只显示图标，文字作为 aria-label 与 title。"
+        ],
+        [
+          "class",
+          "&'static str",
+          "\"\"",
+          "外层容器附加类（间距、页面变体）。"
         ]
       ],
       "keys": [
         [
           "← / →",
-          "切换到相邻选项"
+          "切换到相邻选项（首尾循环）"
         ],
         [
           "Home / End",
@@ -545,11 +563,11 @@
         ],
         [
           "Tab",
-          "进入或离开选项卡组"
+          "进入或离开控件组"
         ]
       ],
-      "source": "src/components/ui.rs",
-      "code": "let mut filter = use_signal(|| \"all\".to_string());\nrsx! {\n    FilterTabs {\n        items: vec![(\"all\", \"全部\"), (\"published\", \"已发布\")],\n        active_value: filter(),\n        on_change: move |value| filter.set(value),\n    }\n}",
+      "source": "src/components/ui/segmented.rs",
+      "code": "let mut mode = use_signal(|| \"light\".to_string());\nrsx! {\n    SegmentedControl {\n        items: vec![\n            SegmentedItem::new(\"light\".to_string(), \"浅色\").icon(IconName::Sun),\n            SegmentedItem::new(\"dark\".to_string(), \"深色\"),\n        ],\n        value: mode(),\n        kind: SegmentedKind::Radio,\n        aria_label: \"外观\",\n        on_change: move |value| mode.set(value),\n    }\n}",
       "preview_mode": "interactive",
       "usage_kind": "rust"
     },

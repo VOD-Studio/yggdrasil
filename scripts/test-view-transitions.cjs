@@ -212,7 +212,7 @@ async function main() {
       __routeTransitions.push('/about');
       // 点与当前明暗相反的一段，确保触发圆形扩散。
       const target = document.documentElement.classList.contains('dark') ? 'light' : 'dark';
-      document.querySelector(`[data-vt-shell="frontend-header"] .theme-seg [data-mode="${target}"]`).click();
+      document.querySelector(`[data-vt-shell="frontend-header"] .theme-seg [aria-label="${target === 'dark' ? '深色' : '浅色'}"]`).click();
     });
     await ready(page, '/about');
     console.log('PASS navigation-theme-race');

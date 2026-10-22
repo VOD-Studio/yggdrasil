@@ -17,8 +17,8 @@ use crate::components::empty_state::{EmptyState, EmptyStateAction};
 use crate::components::forms::{FormSelect, FORM_SELECT_COMPACT_CLASS};
 use crate::components::skeletons::notes_admin_skeleton::NoteRowsSkeleton;
 use crate::components::ui::{
-    button_class, use_toast, ButtonSize, ButtonVariant, FilterTabs, Icon, IconName, LoadError,
-    StatusDot, TablePager,
+    button_class, use_toast, ButtonSize, ButtonVariant, Icon, IconName, LoadError,
+    SegmentedControl, SegmentedItem, StatusDot, TablePager,
 };
 use crate::models::note::*;
 use crate::router::Route;
@@ -184,11 +184,14 @@ pub fn AdminNotes() -> Element {
                         span { "恢复后为私密草稿，公开与收录需要重新确认。" }
                     }
                 } else {
-                    FilterTabs {
-                        class: "",
+                    SegmentedControl {
                         aria_label: "笔记类型",
-                        items: vec![("all", "全部"), ("moment", "随记"), ("topic", "主题笔记")],
-                        active_value: kind_value(current.kind),
+                        items: vec![
+                            SegmentedItem::new("all".to_string(), "全部"),
+                            SegmentedItem::new("moment".to_string(), "随记"),
+                            SegmentedItem::new("topic".to_string(), "主题笔记"),
+                        ],
+                        value: kind_value(current.kind),
                         on_change: move |value: String| filter.with_mut(|f| {
                             f.kind = match value.as_str() {
                                 "moment" => Some(NoteKind::Moment),

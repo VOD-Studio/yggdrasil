@@ -5,6 +5,7 @@ use dioxus::prelude::*;
 use super::kit::{use_section, SettingRow, SettingsCard};
 use super::SettingsSection;
 use crate::api::settings::{get_upload_settings, update_upload_settings};
+use crate::components::ui::{SegmentedControl, SegmentedItem, SegmentedKind, SegmentedSize};
 use crate::models::settings::UploadSettings;
 
 async fn save(d: UploadSettings) -> Result<UploadSettings, ServerFnError> {
@@ -27,18 +28,14 @@ pub fn UploadSection() -> Element {
             SettingRow {
                 label: "并发数",
                 hint: "弹窗按并发数自动拉开张间间隔，聚合速率始终与上传限流对齐，不会触发 429。".to_string(),
-                div { class: "segmented settings-segmented", role: "radiogroup", aria_label: "上传并发数",
-                    for n in 1..=8 {
-                        button {
-                            key: "{n}",
-                            class: "segmented-item",
-                            r#type: "button",
-                            role: "radio",
-                            aria_checked: "{current == n}",
-                            onclick: move |_| draft.write().concurrency = n,
-                            "{n}"
-                        }
-                    }
+                SegmentedControl {
+                    items: (1..=8).map(|n| SegmentedItem::new(n, n.to_string())).collect::<Vec<_>>(),
+                    value: current,
+                    on_change: move |n| draft.write().concurrency = n,
+                    aria_label: "上传并发数",
+                    kind: SegmentedKind::Radio,
+                    size: SegmentedSize::Sm,
+                    class: "settings-segmented-square",
                 }
             }
         }

@@ -3,15 +3,18 @@
 use dioxus::prelude::*;
 
 use crate::components::forms::{FormInput, FormTextarea, ToggleSwitch};
-use crate::components::ui::{button_class, ButtonSize, ButtonVariant, Icon, IconName};
+use crate::components::ui::{
+    button_class, ButtonSize, ButtonVariant, Icon, IconName, SegmentedControl, SegmentedItem,
+    SegmentedKind, SegmentedSize,
+};
 
 /// 数据导出 tab：按表或按查询导出 CSV / SQL，走 Axum 流式下载。
 #[component]
 pub(super) fn ExportTab() -> Element {
-    let mode = use_signal(|| "table".to_string());
+    let mut mode = use_signal(|| "table".to_string());
     let mut table_name = use_signal(String::new);
     let mut query = use_signal(String::new);
-    let format = use_signal(|| "csv".to_string());
+    let mut format = use_signal(|| "csv".to_string());
     let mut include_columns = use_signal(|| true);
     let ready = if mode() == "table" {
         !table_name().trim().is_empty()
@@ -38,34 +41,20 @@ pub(super) fn ExportTab() -> Element {
             }
         }
     };
-    let segmented = |current: String,
-                     items: &'static [(&'static str, &'static str)],
-                     label: &'static str,
-                     mut target: Signal<String>| {
-        rsx! {
-            div { class: "segmented settings-segmented", role: "radiogroup", aria_label: label,
-                for (value, text) in items.iter().copied() {
-                    button {
-                        key: "{value}",
-                        class: "segmented-item",
-                        r#type: "button",
-                        role: "radio",
-                        aria_checked: "{current == value}",
-                        onclick: move |_| target.set(value.to_string()),
-                        "{text}"
-                    }
-                }
-            }
-        }
-    };
-
     rsx! {
         section { class: "admin-panel sys-export",
             div { class: "settings-rows",
                 div { class: "settings-row",
                     span { class: "settings-label", "方式" }
                     div { class: "settings-control",
-                        {segmented(mode(), &[("table", "按表"), ("query", "按查询")], "导出方式", mode)}
+                        SegmentedControl {
+                            items: vec![SegmentedItem::new("table".to_string(), "按表"), SegmentedItem::new("query".to_string(), "按查询")],
+                            value: mode(),
+                            on_change: move |v| mode.set(v),
+                            aria_label: "导出方式",
+                            kind: SegmentedKind::Radio,
+                            size: SegmentedSize::Sm,
+                        }
                     }
                 }
                 if mode() == "table" {
@@ -101,7 +90,14 @@ pub(super) fn ExportTab() -> Element {
                 div { class: "settings-row",
                     span { class: "settings-label", "格式" }
                     div { class: "settings-control",
-                        {segmented(format(), &[("csv", "CSV"), ("sql", "SQL")], "导出格式", format)}
+                        SegmentedControl {
+                            items: vec![SegmentedItem::new("csv".to_string(), "CSV"), SegmentedItem::new("sql".to_string(), "SQL")],
+                            value: format(),
+                            on_change: move |v| format.set(v),
+                            aria_label: "导出格式",
+                            kind: SegmentedKind::Radio,
+                            size: SegmentedSize::Sm,
+                        }
                         p { class: "settings-hint", "SQL 格式只含 INSERT 语句，不含表结构。" }
                     }
                 }

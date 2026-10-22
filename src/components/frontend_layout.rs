@@ -99,7 +99,7 @@ pub fn FrontendLayout() -> Element {
                 nav_items,
                 right_content: rsx! {
                     SearchIconLink { on_click: move |_| palette.open() }
-                    ThemeToggle {}
+                    ThemeToggle { icon_only: true }
                 },
             } },
             footer: rsx! { Footer { max_width } },

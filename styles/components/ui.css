@@ -893,8 +893,7 @@
 
   .segmented-thumb {
     position: absolute;
-    top: 2px;
-    bottom: 2px;
+    top: 0;
     left: 0;
     border-radius: 999px;
     background-color: var(--color-surface-2);
@@ -903,6 +902,7 @@
     transition:
       transform var(--spring-snappy-duration) var(--ease-spring-snappy),
       width var(--spring-snappy-duration) var(--ease-spring-snappy),
+      height var(--spring-snappy-duration) var(--ease-spring-snappy),
       opacity 150ms;
   }
 
@@ -933,7 +933,7 @@
     color: var(--color-fg);
   }
 
-  .segmented-item[aria-selected="true"] {
+  .segmented-item[data-active] {
     color: var(--color-fg);
     font-weight: 500;
   }
@@ -948,6 +948,40 @@
     color: var(--color-fg-3);
     font-weight: 400;
     font-variant-numeric: tabular-nums;
+  }
+
+  .segmented-sm .segmented-item {
+    height: 1.75rem;
+    padding: 0 0.75rem;
+    font-size: 0.78125rem;
+  }
+
+  .segmented-icon-only .segmented-item {
+    justify-content: center;
+    min-width: 1.75rem;
+    padding: 0 0.4375rem;
+  }
+
+  /* 带图标的分段控件：容器窄于 16rem 时只留图标，文字仍供读屏。 */
+  .segmented-adaptive {
+    container: segmented / inline-size;
+  }
+
+  @container segmented (max-width: 16rem) {
+    .segmented-item:has(.segmented-label) {
+      justify-content: center;
+      min-width: 1.75rem;
+      padding-inline: 0.4375rem;
+    }
+
+    .segmented-label {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
   }
 
   /* ---- 栏目小标签：12px、字距 0.12em、次要色，后接发丝线 ---- */
@@ -1120,7 +1154,7 @@
 
 @layer components {
   /* 滑块测量完成前，选中项直接画浮起底色，首屏不闪。 */
-  .segmented:not([data-ready]) > .segmented-item[aria-selected="true"] {
+  .segmented:not([data-ready]) > .segmented-item[data-active] {
     background-color: var(--color-surface-2);
     box-shadow: 0 0 0 var(--hairline) var(--color-hairline), var(--shadow-sm);
   }

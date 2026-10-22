@@ -11,8 +11,8 @@ use crate::components::code_runner::runner::RunnerExample;
 use crate::components::code_runner::CodeRunner;
 use crate::components::sql_result_table::SqlResultTable;
 use crate::components::ui::{
-    Button, ButtonSize, ButtonVariant, FilterTabs, Icon, IconButton, IconName, ModalShell,
-    TablePager,
+    Button, ButtonSize, ButtonVariant, Icon, IconButton, IconName, ModalShell, SegmentedControl,
+    SegmentedItem, TablePager,
 };
 
 pub(super) fn preview(slug: &str, detail: bool) -> Option<Element> {
@@ -187,12 +187,14 @@ fn PickerDemoContent(
                 }
             }
             if detail {
-                FilterTabs {
-                    items: vec![("single", "单选"), ("multi", "多选")],
-                    active_value: mode.to_string(),
+                SegmentedControl {
+                    items: vec![
+                        SegmentedItem::new("single".to_string(), "单选"),
+                        SegmentedItem::new("multi".to_string(), "多选"),
+                    ],
+                    value: mode.to_string(),
                     on_change: move |value: String| { multi.set(value == "multi"); selected.set(Vec::new()); },
                     aria_label: "选择方式",
-                    class: "",
                 }
             }
         }
@@ -380,12 +382,14 @@ fn RunnerDemo(detail: bool) -> Element {
         div { class: if detail { "showcase-runner-demo showcase-runner-detail" } else { "showcase-runner-demo" }, id: host_id,
             if detail {
                 div { class: "showcase-demo-bar",
-                    FilterTabs {
-                        items: vec![("ok", "正常输出"), ("error", "错误输出")],
-                        active_value: output_mode.to_string(),
+                    SegmentedControl {
+                        items: vec![
+                            SegmentedItem::new("ok".to_string(), "正常输出"),
+                            SegmentedItem::new("error".to_string(), "错误输出"),
+                        ],
+                        value: output_mode.to_string(),
                         on_change: move |value: String| failed.set(value == "error"),
                         aria_label: "输出示例",
-                        class: "",
                     }
                     span { "固定输出示例，与编辑后的代码无关；不会执行程序。" }
                 }
@@ -632,16 +636,19 @@ fn SqlTableDemo(detail: bool) -> Element {
         div { class: if detail { "showcase-sql-demo showcase-sql-detail" } else { "showcase-sql-demo" },
             if detail {
                 div { class: "showcase-demo-bar",
-                    FilterTabs {
-                        items: vec![("posts", "文章"), ("comments", "评论"), ("metrics", "系统指标")],
-                        active_value: active.to_string(),
+                    SegmentedControl {
+                        items: vec![
+                            SegmentedItem::new("posts".to_string(), "文章"),
+                            SegmentedItem::new("comments".to_string(), "评论"),
+                            SegmentedItem::new("metrics".to_string(), "系统指标"),
+                        ],
+                        value: active.to_string(),
                         on_change: move |value: String| preset.set(match value.as_str() {
                             "comments" => SqlPreset::Comments,
                             "metrics" => SqlPreset::Metrics,
                             _ => SqlPreset::Posts,
                         }),
                         aria_label: "示例查询",
-                        class: "",
                     }
                     span { "点击任意行展开完整字段。" }
                 }

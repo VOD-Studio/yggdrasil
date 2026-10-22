@@ -44,7 +44,10 @@ use crate::components::post::post_header::PostHeader;
 use crate::components::post::post_toc::PostToc;
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::skeletons::post_preview_skeleton::PostPreviewSkeleton;
-use crate::components::ui::{button_class, use_toast, ButtonSize, ButtonVariant, Icon, IconName};
+use crate::components::ui::{
+    button_class, use_toast, ButtonSize, ButtonVariant, Icon, IconName, SegmentedControl,
+    SegmentedItem, SegmentedKind, SegmentedSize,
+};
 use crate::models::post::{Post, PostStatus};
 use crate::router::Route;
 use crate::utils::error::failure_message;
@@ -180,18 +183,17 @@ pub fn PostPreview(slug: String) -> Element {
                     }
                     span { class: "preview-bar-sep", aria_hidden: "true" }
                     div { class: "preview-bar-actions",
-                        div { class: "segmented preview-width", role: "radiogroup", aria_label: "预览宽度",
-                            for (value, label) in [(false, "桌面"), (true, "手机")] {
-                                button {
-                                    key: "{label}",
-                                    class: "segmented-item",
-                                    r#type: "button",
-                                    role: "radio",
-                                    aria_checked: "{mobile() == value}",
-                                    onclick: move |_| mobile.set(value),
-                                    "{label}"
-                                }
-                            }
+                        SegmentedControl {
+                            items: vec![
+                                SegmentedItem::new(false, "桌面"),
+                                SegmentedItem::new(true, "手机"),
+                            ],
+                            value: mobile(),
+                            on_change: move |v| mobile.set(v),
+                            aria_label: "预览宽度",
+                            kind: SegmentedKind::Radio,
+                            size: SegmentedSize::Sm,
+                            class: "preview-viewport-switch",
                         }
                         Link {
                             class: button_class(ButtonVariant::Ghost, ButtonSize::Sm),

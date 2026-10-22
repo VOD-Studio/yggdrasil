@@ -154,7 +154,7 @@ fn NavSheetBody(nav_items: Vec<NavItemConfig>) -> Element {
         div { class: "my-3 mx-1 h-(--hairline) bg-hairline" }
         div { class: "sheet-row",
             span { "外观" }
-            ThemeToggle { labels: true }
+            ThemeToggle {}
         }
         div { class: "sheet-links",
             a { href: "/feed.xml", "RSS" }

@@ -816,7 +816,7 @@ pub(crate) fn AdminSidebar(
                 }
             }
             div { class: "admin-side-foot",
-                div { class: "admin-side-theme", ThemeToggle { labels: drawer } }
+                div { class: "admin-side-theme", ThemeToggle {} }
                 div { class: "admin-user",
                     if let Some(name) = user_name {
                         Link {

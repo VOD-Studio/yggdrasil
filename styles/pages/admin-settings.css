@@ -189,27 +189,16 @@
   font-size: 0.8125rem;
 }
 
-.settings-segmented .segmented-item[aria-checked="true"] {
-  background-color: var(--color-surface-2);
-  box-shadow: 0 0 0 var(--hairline) var(--color-hairline), var(--shadow-sm);
-  color: var(--color-fg);
-  font-weight: 500;
-}
-
-.dark .settings-segmented .segmented-item[aria-checked="true"] {
-  background-color: var(--color-surface-3);
-}
-
-.settings-segmented .segmented-item {
-  height: 1.75rem;
-  padding: 0 0.75rem;
-}
-
-.settings-segmented-square {
+.settings-segmented-square .segmented {
   border-radius: 8px;
 }
 
+.settings-segmented-square .segmented-thumb {
+  border-radius: 6px;
+}
+
 .settings-segmented-square .segmented-item {
+  justify-content: center;
   min-width: 1.875rem;
   padding: 0 0.5rem;
   border-radius: 6px;

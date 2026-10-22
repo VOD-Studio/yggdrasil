@@ -10,6 +10,7 @@ use crate::api::settings::{
     get_image_limit_settings, get_webp_settings, update_image_limit_settings, update_webp_settings,
 };
 use crate::components::forms::NumberInput;
+use crate::components::ui::{SegmentedControl, SegmentedItem, SegmentedKind, SegmentedSize};
 use crate::models::settings::{ImageLimitSettings, WebpSettings};
 
 /// WebP 编码与尺寸上限一起编辑、一起保存。
@@ -76,18 +77,14 @@ pub fn ImageSection() -> Element {
             SettingRow {
                 label: "编码方法",
                 hint: "越大压缩率越高、越慢。默认 2。".to_string(),
-                div { class: "segmented settings-segmented settings-segmented-square", role: "radiogroup", aria_label: "编码方法",
-                    for n in 0..=6u32 {
-                        button {
-                            key: "{n}",
-                            class: "segmented-item",
-                            r#type: "button",
-                            role: "radio",
-                            aria_checked: "{d.webp.method == n}",
-                            onclick: move |_| draft.write().webp.method = n,
-                            "{n}"
-                        }
-                    }
+                SegmentedControl {
+                    items: (0..=6u32).map(|n| SegmentedItem::new(n, n.to_string())).collect::<Vec<_>>(),
+                    value: d.webp.method,
+                    on_change: move |n| draft.write().webp.method = n,
+                    aria_label: "编码方法",
+                    kind: SegmentedKind::Radio,
+                    size: SegmentedSize::Sm,
+                    class: "settings-segmented-square",
                 }
             }
             SettingRow {

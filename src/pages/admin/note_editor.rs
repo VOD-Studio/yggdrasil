@@ -17,7 +17,8 @@ use crate::api::notes::get_owned_note;
 use crate::components::empty_state::{EmptyState, EmptyStateAction};
 use crate::components::skeletons::write_skeleton::WriteSkeleton;
 use crate::components::ui::{
-    button_class, use_toast, ButtonSize, ButtonVariant, FilterTabs, Icon, IconName, LoadError,
+    button_class, use_toast, ButtonSize, ButtonVariant, Icon, IconName, LoadError,
+    SegmentedControl, SegmentedItem,
 };
 use crate::models::note::*;
 use crate::router::Route;
@@ -281,11 +282,14 @@ fn NoteEditor(initial: Option<Note>) -> Element {
                                 }
                             }
                         } else {
-                            FilterTabs {
+                            SegmentedControl {
                                 class: "note-kind-tabs",
                                 aria_label: "笔记类型",
-                                items: vec![("moment", "随记"), ("topic", "主题笔记")],
-                                active_value: draft.kind.as_str().to_string(),
+                                items: vec![
+                                    SegmentedItem::new("moment".to_string(), "随记"),
+                                    SegmentedItem::new("topic".to_string(), "主题笔记"),
+                                ],
+                                value: draft.kind.as_str().to_string(),
                                 on_change: move |value: String| {
                                     if !locked {
                                         state.draft.with_mut(|d| {

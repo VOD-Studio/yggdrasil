@@ -4,6 +4,7 @@ use crate::api::mcp_tokens::{create_mcp_token, update_mcp_token_permissions, Tok
 use crate::components::forms::FormInput;
 use crate::components::ui::{
     button_class, use_toast, ButtonSize, ButtonVariant, Checkbox, IconButton, IconName, ModalShell,
+    SegmentedControl, SegmentedItem, SegmentedKind, SegmentedSize,
 };
 use crate::models::mcp_token::{validate_token_name, McpTokenSummary, NoteGrant, TokenScope};
 use crate::utils::error::failure_message;
@@ -268,18 +269,16 @@ pub(super) fn CreateTokenDialog(
                     GrantFields { draft, submitted: submitted() }
                     div { class: "mcp-lifetime",
                         span { class: "mcp-label", "有效期" }
-                        div { class: "segmented settings-segmented", role: "radiogroup", aria_label: "有效期",
-                            for (value, label) in LIFETIMES {
-                                button {
-                                    key: "{label}",
-                                    class: "segmented-item",
-                                    r#type: "button",
-                                    role: "radio",
-                                    aria_checked: "{lifetime() == value}",
-                                    onclick: move |_| lifetime.set(value),
-                                    "{label}"
-                                }
-                            }
+                        SegmentedControl {
+                            items: LIFETIMES
+                                .iter()
+                                .map(|(v, l)| SegmentedItem::new(*v, *l))
+                                .collect::<Vec<_>>(),
+                            value: lifetime(),
+                            on_change: move |v| lifetime.set(v),
+                            aria_label: "有效期",
+                            kind: SegmentedKind::Radio,
+                            size: SegmentedSize::Sm,
                         }
                     }
                 }

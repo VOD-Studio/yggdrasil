@@ -18,7 +18,8 @@ use wasm_bindgen::JsCast;
 
 use crate::components::forms::FormInput;
 use crate::components::ui::{
-    button_class, Button, ButtonSize, ButtonVariant, FilterTabs, Icon, IconName,
+    button_class, Button, ButtonSize, ButtonVariant, Icon, IconName, SegmentedControl,
+    SegmentedItem, SegmentedKind, SegmentedSize,
 };
 use crate::models::post::{Post, PostListItem, PostStatus};
 use crate::router::Route;
@@ -308,42 +309,22 @@ fn AlertBoxDemo(
 
     rsx! {
         div { class: "showcase-alert-demo",
-            // 详情页由预览工具栏切换状态，这里只在目录卡片里给出切换按钮。
-            if !detail { div { class: "showcase-alert-switcher", role: "tablist", aria_label: "切换提示状态",
-                button {
-                    r#type: "button",
-                    class: if variant_str == "success" { "state-success" } else { "" },
-                    aria_pressed: "{variant_str == \"success\"}",
-                    onclick: move |_| {
-                        alert_variant.set("success".to_string());
-                        alert_message.set(alert_box_preset_message("success").to_string());
+            // 详情页由预览工具栏切换状态，这里只在目录卡片里给出切换控件。
+            if !detail {
+                SegmentedControl {
+                    items: vec![
+                        SegmentedItem::new("success".to_string(), "成功"),
+                        SegmentedItem::new("error".to_string(), "错误"),
+                        SegmentedItem::new("default".to_string(), "普通"),
+                    ],
+                    value: variant_str.to_string(),
+                    aria_label: "切换提示状态",
+                    on_change: move |v: String| {
+                        alert_message.set(alert_box_preset_message(&v).to_string());
+                        alert_variant.set(v);
                     },
-                    span { class: "dot dot-success" }
-                    "成功"
                 }
-                button {
-                    r#type: "button",
-                    class: if variant_str == "error" { "state-error" } else { "" },
-                    aria_pressed: "{variant_str == \"error\"}",
-                    onclick: move |_| {
-                        alert_variant.set("error".to_string());
-                        alert_message.set(alert_box_preset_message("error").to_string());
-                    },
-                    span { class: "dot dot-error" }
-                    "错误"
-                }
-                button {
-                    r#type: "button",
-                    class: if variant_str == "default" { "state-default" } else { "" },
-                    aria_pressed: "{variant_str == \"default\"}",
-                    onclick: move |_| {
-                        alert_variant.set("default".to_string());
-                        alert_message.set(alert_box_preset_message("default").to_string());
-                    },
-                    span { class: "dot dot-default" }
-                    "普通"
-                }
-            } }
+            }
             div {
                 class: "showcase-alert-box-target",
                 role: "button",
@@ -800,22 +781,28 @@ fn ShowcaseDetail(component: String) -> Element {
                             h2 { id: "showcase-preview-title", "预览" }
                             div { class: "showcase-live-actions",
                                 if spec.name == "Checkbox" {
-                                    FilterTabs {
-                                        items: vec![("default", "默认"), ("checked", "已选"), ("danger", "危险态")],
-                                        active_value: checkbox_state(checked(), danger()).to_string(),
-                                        aria_label: Some("预览状态"),
-                                        class: "",
+                                    SegmentedControl {
+                                        items: vec![
+                                            SegmentedItem::new("default".to_string(), "默认"),
+                                            SegmentedItem::new("checked".to_string(), "已选"),
+                                            SegmentedItem::new("danger".to_string(), "危险态"),
+                                        ],
+                                        value: checkbox_state(checked(), danger()).to_string(),
+                                        aria_label: "预览状态",
                                         on_change: move |state: String| {
                                             checked.set(state != "default");
                                             danger.set(state == "danger");
                                         },
                                     }
                                 } else if spec.name == "AlertBox" {
-                                    FilterTabs {
-                                        items: vec![("success", "成功"), ("error", "错误"), ("default", "普通")],
-                                        active_value: alert_variant(),
-                                        aria_label: Some("预览状态"),
-                                        class: "",
+                                    SegmentedControl {
+                                        items: vec![
+                                            SegmentedItem::new("success".to_string(), "成功"),
+                                            SegmentedItem::new("error".to_string(), "错误"),
+                                            SegmentedItem::new("default".to_string(), "普通"),
+                                        ],
+                                        value: alert_variant(),
+                                        aria_label: "预览状态",
                                         on_change: move |variant: String| {
                                             alert_message.set(alert_box_preset_message(&variant).to_string());
                                             alert_variant.set(variant);
@@ -1062,7 +1049,7 @@ enum PreviewRoute {
 fn preview_route(slug: &str) -> Option<PreviewRoute> {
     Some(match slug {
         "checkbox" | "toggle-switch" | "form-select" | "radio" | "form-input" | "form-textarea"
-        | "time-picker" | "form-label" | "filter-tabs" | "pagination" | "table-pager"
+        | "time-picker" | "form-label" | "segmented-control" | "pagination" | "table-pager"
         | "tooltip" | "popover" | "modal-shell" | "confirm-dialog" | "alert-box"
         | "status-badge" | "status-dot" | "tag-chip" | "user-avatar" | "image-placeholder"
         | "icon" | "button" | "icon-button" | "number-input" | "menu" | "toast"
@@ -1106,6 +1093,15 @@ fn is_wide_preview(slug: &str) -> bool {
     )
 }
 
+/// 分段控件图鉴里的带图标示例项（浅色 / 深色 / 跟随系统），只改局部信号。
+fn segmented_mode_items() -> Vec<SegmentedItem<String>> {
+    vec![
+        SegmentedItem::new("light".to_string(), "浅色").icon(IconName::Sun),
+        SegmentedItem::new("dark".to_string(), "深色").icon(IconName::Moon),
+        SegmentedItem::new("system".to_string(), "跟随系统").icon(IconName::Monitor),
+    ]
+}
+
 #[component]
 fn LiveComponentPreview(
     name: String,
@@ -1130,6 +1126,7 @@ fn LiveComponentPreview(
     let mut input_value = use_signal(String::new);
     let mut textarea_value = use_signal(String::new);
     let mut tab_value = use_signal(|| "all".to_string());
+    let mut seg_mode = use_signal(|| "light".to_string());
     let mut page = use_signal(|| 1i32);
     let mut number_value = use_signal(|| 14i64);
     let mut clicked = use_signal(|| false);
@@ -1324,10 +1321,40 @@ fn LiveComponentPreview(
         "AdminPalette" => rsx! {
             AdminPaletteDemo {}
         },
-        "FilterTabs" => rsx! {
-            crate::components::ui::FilterTabs {
-                items: vec![("all", "全部"), ("published", "已发布"), ("draft", "草稿")],
-                active_value: tab_value(), on_change: move |value| tab_value.set(value),
+        "SegmentedControl" => rsx! {
+            div { class: "showcase-preview-stack w-full",
+                SegmentedControl {
+                    items: vec![
+                        SegmentedItem::new("all".to_string(), "全部"),
+                        SegmentedItem::new("published".to_string(), "已发布"),
+                        SegmentedItem::new("draft".to_string(), "草稿"),
+                    ],
+                    value: tab_value(),
+                    aria_label: "文章状态示例",
+                    on_change: move |value| tab_value.set(value),
+                }
+                if detail {
+                    div { class: "w-full",
+                        SegmentedControl {
+                            items: segmented_mode_items(),
+                            value: seg_mode(),
+                            kind: SegmentedKind::Radio,
+                            size: SegmentedSize::Sm,
+                            aria_label: "外观示例（宽）",
+                            on_change: move |value| seg_mode.set(value),
+                        }
+                    }
+                    div { style: "width: 11rem",
+                        SegmentedControl {
+                            items: segmented_mode_items(),
+                            value: seg_mode(),
+                            kind: SegmentedKind::Radio,
+                            size: SegmentedSize::Sm,
+                            aria_label: "外观示例（窄）",
+                            on_change: move |value| seg_mode.set(value),
+                        }
+                    }
+                }
             }
         },
         "Pagination" => rsx! {

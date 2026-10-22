@@ -15,8 +15,8 @@ use crate::api::comments::{AllCommentsResponse, CommentCounts};
 use crate::components::empty_state::EmptyState;
 use crate::components::skeletons::admin_comments_skeleton::AdminCommentsListSkeleton;
 use crate::components::ui::{
-    button_class, use_toast, ButtonSize, ButtonVariant, Checkbox, FilterTabs, IconButton, IconName,
-    LoadError, TablePager,
+    button_class, use_toast, ButtonSize, ButtonVariant, Checkbox, IconButton, IconName, LoadError,
+    SegmentedControl, SegmentedItem, TablePager,
 };
 use crate::models::comment::{AdminComment, CommentStatus};
 use crate::utils::error::failure_message;
@@ -180,6 +180,23 @@ pub fn AdminCommentsPage(page: i32) -> Element {
     let page_ids: Vec<i64> = rows.iter().map(|c| c.id).collect();
     let page_all = !page_ids.is_empty() && page_ids.iter().all(|id| selection.contains(id));
 
+    let status_items: Vec<SegmentedItem<String>> = [
+        ("pending", "待审", counts.pending),
+        ("approved", "已通过", counts.approved),
+        ("spam", "垃圾", counts.spam),
+        ("trash", "回收站", counts.trash),
+    ]
+    .into_iter()
+    .map(|(value, label, n)| {
+        let item = SegmentedItem::new(value.to_string(), label);
+        if resp.is_some() {
+            item.count(n)
+        } else {
+            item
+        }
+    })
+    .collect();
+
     rsx! {
         div { class: "admin-comments",
             AdminPageHead { title: "评论",
@@ -188,12 +205,10 @@ pub fn AdminCommentsPage(page: i32) -> Element {
                 }
             }
             div { class: "admin-toolbar",
-                FilterTabs {
-                    class: "",
+                SegmentedControl {
                     aria_label: "评论状态",
-                    items: vec![("pending", "待审"), ("approved", "已通过"), ("spam", "垃圾"), ("trash", "回收站")],
-                    counts: if resp.is_some() { vec![counts.pending, counts.approved, counts.spam, counts.trash] } else { Vec::new() },
-                    active_value: active.clone(),
+                    items: status_items,
+                    value: active.clone(),
                     on_change: move |value: String| {
                         selected.write().clear();
                         replying.set(None);

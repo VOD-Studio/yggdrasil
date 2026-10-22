@@ -12,7 +12,7 @@ use dioxus::prelude::*;
 
 use crate::components::code_runner::CodeRunner;
 use crate::components::forms::{FormLabel, FormTextarea};
-use crate::components::ui::{FilterTabs, StatusDot};
+use crate::components::ui::{SegmentedControl, SegmentedItem, StatusDot};
 use crate::infra::runner_config::ResourceLimits;
 use crate::router::Route;
 
@@ -78,11 +78,14 @@ pub fn Runner() -> Element {
             }
             div { class: "runner-admin-grid",
                 section { class: "runner-admin-main", aria_label: "编辑与输出",
-                    FilterTabs {
+                    SegmentedControl {
                         class: "runner-admin-langs",
                         aria_label: "语言",
-                        items: SUPPORTED_LANGS.to_vec(),
-                        active_value: lang(),
+                        items: SUPPORTED_LANGS
+                            .iter()
+                            .map(|(v, l)| SegmentedItem::new(v.to_string(), *l))
+                            .collect::<Vec<_>>(),
+                        value: lang(),
                         on_change: move |l: String| {
                             if l != lang() {
                                 source.set(default_source(&l));

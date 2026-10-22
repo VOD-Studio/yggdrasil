@@ -182,46 +182,6 @@
     color: var(--color-fg);
   }
 
-  /* 主题分段控件：浅色 / 深色 / 跟随系统。选中态由 <html data-theme-mode>
-     决定，规则内联在 SSR 输出里（theme.rs 的 THEME_SEGMENT_STYLE），首屏不等 WASM。 */
-  .theme-seg {
-    display: inline-flex;
-    padding: 2px;
-    border-radius: 999px;
-    background-color: var(--color-ink-1);
-  }
-
-  .theme-seg-item {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.375rem;
-    min-width: 1.75rem;
-    height: 1.75rem;
-    padding: 0 0.4375rem;
-    border: 0;
-    border-radius: 999px;
-    background: transparent;
-    color: var(--color-fg-3);
-    font: inherit;
-    font-size: 0.8125rem;
-    white-space: nowrap;
-    cursor: pointer;
-    transition:
-      background-color 200ms var(--ease-out-expo),
-      color 150ms var(--ease-out-expo),
-      box-shadow 200ms var(--ease-out-expo);
-  }
-
-  .theme-seg-item:hover {
-    color: var(--color-fg);
-  }
-
-  .theme-seg-item:focus-visible {
-    outline: none;
-    box-shadow: var(--shadow-focus);
-  }
-
   /* 手机端的触发按钮：44px 触控目标。 */
   .touch-icon {
     display: none;
@@ -377,6 +337,16 @@
     padding: 0.25rem 0.25rem 0;
     font-size: 0.875rem;
     color: var(--color-fg-2);
+  }
+
+  .sheet-row > .theme-seg {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .sheet-row .segmented-wrap {
+    display: flex;
+    justify-content: flex-end;
   }
 
   .sheet-links {

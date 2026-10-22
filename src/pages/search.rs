@@ -11,7 +11,7 @@ use crate::api::posts::{list_tags, search_posts, PostListResponse};
 use crate::components::palette::{contains_ci, highlight, snippet};
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::skeletons::search_skeleton::SearchSkeleton;
-use crate::components::ui::{FilterTabs, Icon, IconName, LoadError};
+use crate::components::ui::{Icon, IconName, LoadError, SegmentedControl, SegmentedItem};
 use crate::models::post::PostListItem;
 use crate::pages::archives::ranked_tags;
 use crate::router::Route;
@@ -328,9 +328,12 @@ pub fn Search(#[props(default)] q: String) -> Element {
                                 strong { "{res.posts.len()}" }
                                 if res.posts.len() >= RESULT_LIMIT { " 篇以上" } else { " 篇" }
                             }
-                            FilterTabs {
-                                items: vec![("relevance", "相关度"), ("latest", "最新")],
-                                active_value: order().value().to_string(),
+                            SegmentedControl {
+                                items: vec![
+                                    SegmentedItem::new("relevance".to_string(), "相关度"),
+                                    SegmentedItem::new("latest".to_string(), "最新"),
+                                ],
+                                value: order().value().to_string(),
                                 on_change: move |value: String| order.set(SortOrder::from_value(&value)),
                                 aria_label: "排序",
                                 class: "search-sort",

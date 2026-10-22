@@ -9,6 +9,7 @@ use super::kit::{use_section, SettingRow, SettingsCard, SwitchRow};
 use super::SettingsSection;
 use crate::api::settings::{get_security_settings, update_security_settings};
 use crate::components::forms::{FormInput, FormSelect, FORM_SELECT_COMPACT_CLASS};
+use crate::components::ui::{SegmentedControl, SegmentedItem, SegmentedKind, SegmentedSize};
 use crate::models::settings::SecuritySettings;
 
 async fn save(d: SecuritySettings) -> Result<SecuritySettings, ServerFnError> {
@@ -56,18 +57,14 @@ pub fn SecuritySection() -> Element {
             SettingRow {
                 label: "可信代理段数",
                 hint: "即 TRUSTED_PROXY_COUNT：X-Forwarded-For 中真实客户端 IP 右侧的段数，不等于代理层数。直连填 0；单层反代覆盖 XFF 并设置 X-Real-IP 时填 1；CDN + 源站反代填 1 而非 2。设大会允许伪造 IP 绕过限流。".to_string(),
-                div { class: "segmented settings-segmented", role: "radiogroup", aria_label: "可信代理段数",
-                    for n in 0..=3u32 {
-                        button {
-                            key: "{n}",
-                            class: "segmented-item",
-                            r#type: "button",
-                            role: "radio",
-                            aria_checked: "{d.trusted_proxy_count == n}",
-                            onclick: move |_| draft.write().trusted_proxy_count = n,
-                            "{n}"
-                        }
-                    }
+                SegmentedControl {
+                    items: (0..=3u32).map(|n| SegmentedItem::new(n, n.to_string())).collect::<Vec<_>>(),
+                    value: d.trusted_proxy_count,
+                    on_change: move |n| draft.write().trusted_proxy_count = n,
+                    aria_label: "可信代理段数",
+                    kind: SegmentedKind::Radio,
+                    size: SegmentedSize::Sm,
+                    class: "settings-segmented-square",
                 }
             }
             SettingRow {

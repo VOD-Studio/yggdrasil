@@ -5,7 +5,7 @@ use dioxus::prelude::*;
 use crate::api::writing_guide::{get_writing_guide, WritingGuideData, SKILL_URL};
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::skeletons::writing_guide_skeleton::WritingGuideSkeleton;
-use crate::components::ui::{FilterTabs, Icon, IconName};
+use crate::components::ui::{Icon, IconName, SegmentedControl, SegmentedItem};
 use crate::router::Route;
 
 /// 客户端：名称、配置文件位置与官方文档。顺序与 `WritingGuideData::configs` 一致。
@@ -154,10 +154,10 @@ fn ConnectStep(data: WritingGuideData) -> Element {
     let mut selected = use_signal(|| 0usize);
     let current = selected();
     let (client, config_path, docs_url) = CLIENTS[current];
-    let tabs: Vec<(&'static str, &'static str)> = CLIENTS
+    let tabs: Vec<SegmentedItem<String>> = CLIENTS
         .iter()
         .enumerate()
-        .map(|(i, (name, _, _))| (["0", "1", "2"][i], *name))
+        .map(|(i, (name, _, _))| SegmentedItem::new(i.to_string(), *name))
         .collect();
     rsx! {
         li { class: "writing-step",
@@ -176,9 +176,9 @@ fn ConnectStep(data: WritingGuideData) -> Element {
                 }
                 figure { class: "writing-config",
                     div { class: "writing-config-bar",
-                        FilterTabs {
+                        SegmentedControl {
                             items: tabs,
-                            active_value: current.to_string(),
+                            value: current.to_string(),
                             on_change: move |value: String| selected.set(value.parse().unwrap_or(0)),
                             aria_label: "Agent 客户端",
                             class: "writing-config-tabs",

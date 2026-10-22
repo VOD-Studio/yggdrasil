@@ -17,8 +17,8 @@ use crate::components::empty_state::{EmptyState, EmptyStateAction};
 use crate::components::forms::{FormSelect, FORM_SELECT_COMPACT_CLASS};
 use crate::components::skeletons::assets_skeleton::AssetsGridSkeleton;
 use crate::components::ui::{
-    button_class, use_toast, ButtonSize, ButtonVariant, ConfirmDialog, FilterTabs, Icon,
-    IconButton, IconName, LoadError, Menu, MenuItem, TablePager,
+    button_class, use_toast, ButtonSize, ButtonVariant, ConfirmDialog, Icon, IconButton, IconName,
+    LoadError, Menu, MenuItem, SegmentedControl, SegmentedItem, TablePager,
 };
 use crate::models::asset::{AssetFilter, AssetSort};
 use crate::utils::error::failure_message;
@@ -243,6 +243,22 @@ pub fn Assets() -> Element {
     }
     menu.push(purge_item);
 
+    let filter_items: Vec<SegmentedItem<String>> = [
+        ("all", "全部", used + orphan),
+        ("used", "已引用", used),
+        ("orphan", "未引用", orphan),
+    ]
+    .into_iter()
+    .map(|(value, label, n)| {
+        let item = SegmentedItem::new(value.to_string(), label);
+        if resp.is_some() {
+            item.count(n)
+        } else {
+            item
+        }
+    })
+    .collect();
+
     rsx! {
         // P5 §8.2：素材详情灯箱按需注入（脚本未就绪时迟到调用入队兜底）。
         crate::components::enhance_assets::LightboxAssets {}
@@ -275,12 +291,10 @@ pub fn Assets() -> Element {
                 }
 
                 div { class: "admin-toolbar",
-                    FilterTabs {
-                        class: "",
+                    SegmentedControl {
                         aria_label: "引用状态",
-                        items: vec![("all", "全部"), ("used", "已引用"), ("orphan", "未引用")],
-                        counts: if resp.is_some() { vec![used + orphan, used, orphan] } else { Vec::new() },
-                        active_value: filter(),
+                        items: filter_items,
+                        value: filter(),
                         on_change: move |v: String| {
                             filter.set(v);
                             page.set(1);

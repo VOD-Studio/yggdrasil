@@ -19,7 +19,9 @@ use sql_console::SqlConsoleTab;
 
 use crate::components::admin_layout::AdminPageHead;
 use crate::components::forms::{FormSelect, FORM_SELECT_COMPACT_CLASS};
-use crate::components::ui::{button_class, ButtonSize, ButtonVariant, FilterTabs, Icon, IconName};
+use crate::components::ui::{
+    button_class, ButtonSize, ButtonVariant, Icon, IconName, SegmentedControl, SegmentedItem,
+};
 
 /// 系统页的五个 tab。
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -37,7 +39,7 @@ enum SystemTab {
 }
 
 impl SystemTab {
-    /// 变体 → 稳定字符串 key（与基于 String 的 `FilterTabs` 桥接）。
+    /// 变体 → 稳定字符串 key（与基于 String 的 `SegmentedControl` 桥接）。
     fn as_str(&self) -> &'static str {
         match self {
             SystemTab::ServerStatus => "server_status",
@@ -164,17 +166,17 @@ pub fn System() -> Element {
     rsx! {
         div { class: "admin-system",
             AdminPageHead { title: "系统", "服务器与数据库状态、备份恢复、SQL 控制台与数据导出。" }
-            FilterTabs {
+            SegmentedControl {
                 class: "sys-tabs",
                 aria_label: "系统分区",
                 items: vec![
-                    ("server_status", "服务器"),
-                    ("db_status", "数据库"),
-                    ("backup", "备份"),
-                    ("sql_console", "SQL 控制台"),
-                    ("export", "导出"),
+                    SegmentedItem::new("server_status".to_string(), "服务器"),
+                    SegmentedItem::new("db_status".to_string(), "数据库"),
+                    SegmentedItem::new("backup".to_string(), "备份"),
+                    SegmentedItem::new("sql_console".to_string(), "SQL 控制台"),
+                    SegmentedItem::new("export".to_string(), "导出"),
                 ],
-                active_value: active_tab().as_str().to_string(),
+                value: active_tab().as_str().to_string(),
                 on_change: move |v: String| {
                     active_tab.set(SystemTab::from_str(&v).unwrap_or(SystemTab::ServerStatus));
                 },
