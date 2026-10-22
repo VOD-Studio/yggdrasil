@@ -8,6 +8,8 @@ import {
 } from './upload-coordinator';
 import { parseLibraryInsertItems } from './upload-image';
 import './style.css';
+import './code-highlight.css';
+import { icon } from './icons';
 
 /**
  * 编辑器选项。用 class 而非 interface，使其编译后保留运行时构造函数——
@@ -53,15 +55,12 @@ class EditorOptions {
 (window as unknown as Record<string, unknown>).EditorOptions = EditorOptions;
 
 /**
- * 源码模式切换按钮图标（Material Symbols，fill: currentColor 跟随主题）。
- * 源文件存档于 public/icons/code_24dp_*.svg 与 article_24dp_*.svg。
- * - code (`</>`)：富文本态下显示，提示切换到源码。
- * - article (文档)：源码态下显示，提示切换回富文本。
+ * 源码模式切换按钮图标（Lucide，stroke: currentColor 跟随主题）。
+ * - file-code：富文本态下显示，提示切换到源码。
+ * - file-text：源码态下显示，提示切换回富文本。
  */
-const CODE_ICON_SVG =
-  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" fill="currentColor" width="18" height="18"><path d="M320-242 80-482l242-242 43 43-199 199 197 197-43 43Zm318 2-43-43 199-199-197-197 43-43 240 240-242 242Z"/></svg>';
-const ARTICLE_ICON_SVG =
-  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" fill="currentColor" width="18" height="18"><path d="M277-279h275v-60H277v60Zm0-171h406v-60H277v60Zm0-171h406v-60H277v60Zm-97 501q-24 0-42-18t-18-42v-600q0-24 18-42t42-18h600q24 0 42 18t18 42v600q0 24-18 42t-42 18H180Zm0-60h600v-600H180v600Zm0-600v600-600Z"/></svg>';
+const CODE_ICON_SVG = icon('file-code', 18);
+const ARTICLE_ICON_SVG = icon('file-text', 18);
 
 class TiptapEditorInstance {
   private editor: Editor | null = null;

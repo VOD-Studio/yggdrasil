@@ -1,4 +1,5 @@
 import type { Editor, Range } from '@tiptap/core';
+import { icon } from '../icons';
 import { openRunnableModal } from './runnable-modal';
 
 export interface CommandItem {
@@ -60,7 +61,7 @@ export function buildSlashCommands(options: SlashCommandOptions): CommandItem[] 
     {
       title: '标题 1',
       description: '大标题',
-      icon: 'H1',
+      icon: icon('heading-1'),
       keywords: 'h1 heading 标题',
       command: ({ editor, range }) => {
         editor.chain().focus().deleteRange(range).setHeading({ level: 1 }).run();
@@ -69,7 +70,7 @@ export function buildSlashCommands(options: SlashCommandOptions): CommandItem[] 
     {
       title: '标题 2',
       description: '中标题',
-      icon: 'H2',
+      icon: icon('heading-2'),
       keywords: 'h2 heading 标题',
       command: ({ editor, range }) => {
         editor.chain().focus().deleteRange(range).setHeading({ level: 2 }).run();
@@ -78,7 +79,7 @@ export function buildSlashCommands(options: SlashCommandOptions): CommandItem[] 
     {
       title: '标题 3',
       description: '小标题',
-      icon: 'H3',
+      icon: icon('heading-3'),
       keywords: 'h3 heading 标题',
       command: ({ editor, range }) => {
         editor.chain().focus().deleteRange(range).setHeading({ level: 3 }).run();
@@ -87,7 +88,7 @@ export function buildSlashCommands(options: SlashCommandOptions): CommandItem[] 
     {
       title: '无序列表',
       description: '创建无序列表',
-      icon: '•',
+      icon: icon('list'),
       keywords: 'bullet list ul 列表',
       command: ({ editor, range }) => {
         editor.chain().focus().deleteRange(range).toggleBulletList().run();
@@ -96,7 +97,7 @@ export function buildSlashCommands(options: SlashCommandOptions): CommandItem[] 
     {
       title: '有序列表',
       description: '创建有序列表',
-      icon: '1.',
+      icon: icon('list-ordered'),
       keywords: 'ordered ol number list 列表',
       command: ({ editor, range }) => {
         editor.chain().focus().deleteRange(range).toggleOrderedList().run();
@@ -105,7 +106,7 @@ export function buildSlashCommands(options: SlashCommandOptions): CommandItem[] 
     {
       title: '任务列表',
       description: '创建任务列表',
-      icon: '☑',
+      icon: icon('list-checks'),
       keywords: 'task todo checklist 列表',
       command: ({ editor, range }) => {
         editor.chain().focus().deleteRange(range).toggleTaskList().run();
@@ -114,7 +115,7 @@ export function buildSlashCommands(options: SlashCommandOptions): CommandItem[] 
     {
       title: '引用',
       description: '插入引用块',
-      icon: '❝',
+      icon: icon('text-quote'),
       keywords: 'quote blockquote 引用',
       command: ({ editor, range }) => {
         editor.chain().focus().deleteRange(range).toggleBlockquote().run();
@@ -123,7 +124,7 @@ export function buildSlashCommands(options: SlashCommandOptions): CommandItem[] 
     {
       title: '代码块',
       description: '插入代码块',
-      icon: '<>',
+      icon: icon('code-xml'),
       keywords: 'code codeblock pre 代码',
       command: ({ editor, range }) => {
         editor.chain().focus().deleteRange(range).toggleCodeBlock().run();
@@ -132,7 +133,7 @@ export function buildSlashCommands(options: SlashCommandOptions): CommandItem[] 
     {
       title: '可运行代码块',
       description: '插入可被读者执行的代码块',
-      icon: '▶',
+      icon: icon('square-terminal'),
       keywords: 'code run runnable execute 代码 运行',
       command: ({ editor, range }) => {
         editor.chain().focus().deleteRange(range).run();
@@ -142,7 +143,7 @@ export function buildSlashCommands(options: SlashCommandOptions): CommandItem[] 
     {
       title: '分割线',
       description: '插入水平分割线',
-      icon: '—',
+      icon: icon('minus'),
       keywords: 'hr rule divider 分割',
       command: ({ editor, range }) => {
         editor.chain().focus().deleteRange(range).setHorizontalRule().run();
@@ -151,7 +152,7 @@ export function buildSlashCommands(options: SlashCommandOptions): CommandItem[] 
     {
       title: '表格',
       description: '插入 3×3 表格',
-      icon: '▦',
+      icon: icon('table'),
       keywords: 'table 表格',
       command: ({ editor, range }) => {
         editor
@@ -169,7 +170,7 @@ export function buildSlashCommands(options: SlashCommandOptions): CommandItem[] 
     COMMANDS.push({
       title: '上传图片',
       description: '从本地选择并上传图片',
-      icon: '📤',
+      icon: icon('image-up'),
       keywords: 'image upload 图片',
       command: ({ editor, range }) => {
         // 必须先删掉 /命令 文本，文件选择对话框会阻塞，关闭后 range 可能失效。
@@ -206,7 +207,7 @@ export function buildSlashCommands(options: SlashCommandOptions): CommandItem[] 
     COMMANDS.push({
       title: '素材库',
       description: '从素材库选择图片插入',
-      icon: '🗂',
+      icon: icon('images'),
       keywords: 'image library assets 素材 图片',
       command: ({ editor, range }) => {
         // 与「上传图片」同一约定：先删掉 /命令 文本（弹窗异步，关闭后 range 可能失效）。
@@ -222,7 +223,7 @@ export function buildSlashCommands(options: SlashCommandOptions): CommandItem[] 
     {
       title: '图片链接',
       description: '通过 URL 插入图片',
-      icon: '🖼',
+      icon: icon('image'),
       keywords: 'image url 图片',
       command: ({ editor, range }) => {
         const url = window.prompt('输入图片 URL');
@@ -234,7 +235,7 @@ export function buildSlashCommands(options: SlashCommandOptions): CommandItem[] 
     {
       title: '链接',
       description: '插入链接',
-      icon: '🔗',
+      icon: icon('link'),
       keywords: 'link url a href 链接',
       command: ({ editor, range }) => {
         const url = window.prompt('输入链接 URL');

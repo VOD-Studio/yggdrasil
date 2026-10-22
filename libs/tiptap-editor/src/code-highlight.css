@@ -1,0 +1,107 @@
+/* 由 libs/shared/scripts/generate-code-themes.ts 生成，勿手改；取色见 libs/shared/src/code-palette.ts。 */
+.tiptap-editor pre code .hljs-comment,
+.tiptap-editor pre code .hljs-quote {
+  color: #6b6b69;
+}
+.tiptap-editor pre code .hljs-keyword,
+.tiptap-editor pre code .hljs-selector-tag,
+.tiptap-editor pre code .hljs-name,
+.tiptap-editor pre code .hljs-section,
+.tiptap-editor pre code .hljs-meta .hljs-keyword {
+  color: #a3471c;
+}
+.tiptap-editor pre code .hljs-string,
+.tiptap-editor pre code .hljs-meta .hljs-string {
+  color: #7d6214;
+}
+.tiptap-editor pre code .hljs-number,
+.tiptap-editor pre code .hljs-literal,
+.tiptap-editor pre code .hljs-symbol,
+.tiptap-editor pre code .hljs-variable.language_ {
+  color: #8c3f7d;
+}
+.tiptap-editor pre code .hljs-title,
+.tiptap-editor pre code .hljs-title.function_,
+.tiptap-editor pre code .hljs-built_in,
+.tiptap-editor pre code .hljs-link {
+  color: #2d5b86;
+}
+.tiptap-editor pre code .hljs-type,
+.tiptap-editor pre code .hljs-title.class_,
+.tiptap-editor pre code .hljs-title.class_.inherited__,
+.tiptap-editor pre code .hljs-attr,
+.tiptap-editor pre code .hljs-attribute,
+.tiptap-editor pre code .hljs-params,
+.tiptap-editor pre code .hljs-selector-class,
+.tiptap-editor pre code .hljs-selector-id {
+  color: #356660;
+}
+.tiptap-editor pre code .hljs-punctuation,
+.tiptap-editor pre code .hljs-operator {
+  color: #5f5e5b;
+}
+.tiptap-editor pre code .hljs-regexp,
+.tiptap-editor pre code .hljs-char.escape_ {
+  color: #9a4520;
+}
+.tiptap-editor pre code .hljs-addition {
+  color: #2f6f4f;
+}
+.tiptap-editor pre code .hljs-deletion {
+  color: #b42318;
+}
+.dark .tiptap-editor pre code .hljs-comment,
+.dark .tiptap-editor pre code .hljs-quote {
+  color: #8b8984;
+}
+.dark .tiptap-editor pre code .hljs-keyword,
+.dark .tiptap-editor pre code .hljs-selector-tag,
+.dark .tiptap-editor pre code .hljs-name,
+.dark .tiptap-editor pre code .hljs-section,
+.dark .tiptap-editor pre code .hljs-meta .hljs-keyword {
+  color: #ec9a78;
+}
+.dark .tiptap-editor pre code .hljs-string,
+.dark .tiptap-editor pre code .hljs-meta .hljs-string {
+  color: #dcbc78;
+}
+.dark .tiptap-editor pre code .hljs-number,
+.dark .tiptap-editor pre code .hljs-literal,
+.dark .tiptap-editor pre code .hljs-symbol,
+.dark .tiptap-editor pre code .hljs-variable.language_ {
+  color: #d6a2cb;
+}
+.dark .tiptap-editor pre code .hljs-title,
+.dark .tiptap-editor pre code .hljs-title.function_,
+.dark .tiptap-editor pre code .hljs-built_in,
+.dark .tiptap-editor pre code .hljs-link {
+  color: #94b8dc;
+}
+.dark .tiptap-editor pre code .hljs-type,
+.dark .tiptap-editor pre code .hljs-title.class_,
+.dark .tiptap-editor pre code .hljs-title.class_.inherited__,
+.dark .tiptap-editor pre code .hljs-attr,
+.dark .tiptap-editor pre code .hljs-attribute,
+.dark .tiptap-editor pre code .hljs-params,
+.dark .tiptap-editor pre code .hljs-selector-class,
+.dark .tiptap-editor pre code .hljs-selector-id {
+  color: #8fc5bd;
+}
+.dark .tiptap-editor pre code .hljs-punctuation,
+.dark .tiptap-editor pre code .hljs-operator {
+  color: #a9a7a1;
+}
+.dark .tiptap-editor pre code .hljs-regexp,
+.dark .tiptap-editor pre code .hljs-char.escape_ {
+  color: #e8a87c;
+}
+.dark .tiptap-editor pre code .hljs-addition {
+  color: #8fcfae;
+}
+.dark .tiptap-editor pre code .hljs-deletion {
+  color: #f0a59c;
+}
+.tiptap-editor pre code .hljs-section,
+.tiptap-editor pre code .hljs-strong {
+  font-weight: 600;
+}

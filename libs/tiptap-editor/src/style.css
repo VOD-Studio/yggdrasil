@@ -1,15 +1,18 @@
-/* Tiptap Editor - Typora-inspired, theme-aware */
+/* Tiptap 编辑器：正文排版对齐文章页 .md-content（styles/components/article.css），
+   写的样子即读者看到的样子；浮层、弹窗与表单对齐站点的 listbox / dialog / field / btn
+   （styles/components/ui.css）。配色全部走 v1.0 token，明暗随 .dark 自动切换。
+   代码块语法色由 CODE_PALETTES 生成，见 code-highlight.css。
+   本表不分层：页面上的覆盖（admin-write.css、comments.css）靠更高的特异性。 */
 
 .tiptap-editor {
   position: relative;
   width: 100%;
   height: 100%;
-  font-family:
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  color: var(--color-fg-body);
+  font-family: var(--font-sans);
   font-size: 16px;
   line-height: 1.75;
-  /* Catppuccin Latte text */
-  color: #4c4f69;
+  overflow-wrap: anywhere;
   outline: none;
 }
 
@@ -25,245 +28,252 @@
   outline: none;
 }
 
-/* Placeholder - shown when document has only one empty paragraph */
+/* 占位：文档只有一个空段落时显示 */
 .tiptap-editor
   .ProseMirror
   p:first-child:last-child:has(br.ProseMirror-trailingBreak:only-child)::before {
   content: '在此输入内容...';
   float: left;
-  /* Latte overlay0 */
-  color: #9ca0b0;
-  pointer-events: none;
   height: 0;
+  color: var(--color-fg-3);
+  pointer-events: none;
 }
 
-/* Typography */
-.tiptap-editor h1 {
-  font-size: 2em;
-  font-weight: 700;
-  margin: 1.2em 0 0.6em;
-  line-height: 1.3;
-  /* Latte text */
-  color: #4c4f69;
-}
-
-.tiptap-editor h2 {
-  font-size: 1.5em;
-  font-weight: 600;
-  margin: 1em 0 0.5em;
-  line-height: 1.35;
-  color: #4c4f69;
-}
-
-.tiptap-editor h3 {
-  font-size: 1.25em;
-  font-weight: 600;
-  margin: 0.8em 0 0.4em;
-  color: #4c4f69;
-}
-
-.tiptap-editor p {
-  margin: 0.6em 0;
-}
-
-.tiptap-editor p:first-child {
+.tiptap-editor .ProseMirror > :first-child {
   margin-top: 0;
 }
 
-.tiptap-editor strong {
-  font-weight: 700;
-  color: #4c4f69;
+/* ---- 标题：h1–h3 衬线，h4 以下黑体 ---- */
+.tiptap-editor :is(h1, h2, h3, h4, h5, h6) {
+  color: var(--color-fg);
+  letter-spacing: 0;
+  text-wrap: balance;
 }
 
+.tiptap-editor :is(h1, h2, h3) {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.tiptap-editor h1 {
+  margin: 2.2em 0 0.8em;
+  font-size: 1.7em;
+}
+
+.tiptap-editor h2 {
+  margin: 2.2em 0 0.8em;
+  font-size: 1.5em;
+}
+
+.tiptap-editor h3 {
+  margin: 1.9em 0 0.6em;
+  font-size: 1.2em;
+}
+
+.tiptap-editor :is(h4, h5, h6) {
+  margin: 1.8em 0 0.5em;
+  font-size: 1em;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+/* ---- 段落与行内元素 ---- */
+.tiptap-editor p {
+  margin: 0 0 1.2em;
+}
+
+.tiptap-editor p:last-child {
+  margin-bottom: 0;
+}
+
+.tiptap-editor strong {
+  color: var(--color-fg);
+  font-weight: 600;
+}
+
+/* 不用中文斜体：强调改为字下着重号（与正文一致）。 */
 .tiptap-editor em {
-  font-style: italic;
+  font-style: normal;
+  text-emphasis: filled dot;
+  text-emphasis-position: under right;
+  text-emphasis-color: var(--color-clay);
 }
 
 .tiptap-editor s {
+  color: var(--color-fg-3);
   text-decoration: line-through;
-  opacity: 0.7;
 }
 
-.tiptap-editor code {
-  font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, monospace;
-  font-size: 0.875em;
-  /* Latte surface0 / red */
-  background: #ccd0da;
-  padding: 0.15em 0.4em;
-  border-radius: 3px;
-  color: #d20f39;
+.tiptap-editor :not(pre) > code {
+  padding: 0.14em 0.42em;
+  border-radius: 5px;
+  background-color: var(--color-ink-1);
+  color: var(--color-fg);
+  font-family: var(--font-mono);
+  font-size: 0.84em;
 }
 
-.tiptap-editor pre {
-  /* Latte crust */
-  background: #dce0e8;
-  border-radius: 6px;
-  padding: 16px;
-  overflow-x: auto;
-  margin: 1em 0;
+.tiptap-editor a {
+  color: var(--color-clay-text);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--color-clay) 40%, transparent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+  transition: text-decoration-color 150ms var(--ease-out-expo);
 }
 
-.tiptap-editor pre code {
-  background: none;
-  padding: 0;
-  color: #4c4f69;
-  font-size: 0.85em;
-  line-height: 1.6;
+.tiptap-editor a:hover {
+  text-decoration-color: currentColor;
 }
 
+.tiptap-editor a > code {
+  color: inherit;
+}
+
+/* ---- 引用：衬线、次要色、左侧陶土细线 ---- */
 .tiptap-editor blockquote {
-  /* Latte surface1 / subtext0 */
-  border-left: 4px solid #bcc0cc;
-  padding-left: 16px;
-  margin: 1em 0;
-  color: #6c6f85;
-  font-style: italic;
+  margin: 0 0 1.4em;
+  padding: 0.1em 0 0.1em 1.1em;
+  box-shadow: inset 2px 0 0 var(--color-clay);
+  color: var(--color-fg-2);
+  font-family: var(--font-serif);
+  font-size: 1.09em;
+  line-height: 1.8;
+}
+
+.tiptap-editor blockquote p {
+  margin-bottom: 0.6em;
+}
+
+.tiptap-editor blockquote p:last-child {
+  margin-bottom: 0;
+}
+
+/* ---- 列表 ---- */
+.tiptap-editor :is(ul, ol) {
+  margin: 0 0 1.2em;
+  padding-inline-start: 1.4em;
 }
 
 .tiptap-editor ul {
   list-style-type: disc;
-  margin: 0.6em 0;
-  padding-left: 2em;
 }
 
 .tiptap-editor ol {
   list-style-type: decimal;
-  margin: 0.6em 0;
-  padding-left: 2em;
 }
 
 .tiptap-editor li {
-  margin: 0.2em 0;
+  margin-top: 0.35em;
+}
+
+.tiptap-editor li::marker {
+  color: var(--color-fg-3);
+}
+
+.tiptap-editor li :is(ul, ol) {
+  margin-bottom: 0;
 }
 
 .tiptap-editor li > p {
-  margin: 0.2em 0;
+  margin: 0;
 }
 
 .tiptap-editor hr {
-  /* Latte surface1 */
-  border: none;
-  border-top: 1px solid #bcc0cc;
-  margin: 1.5em 0;
+  height: 1px;
+  margin: 2.5em 0;
+  border: 0;
+  background-color: var(--color-hairline);
 }
 
-/* Selection */
+.tiptap-editor hr.ProseMirror-selectednode {
+  background-color: var(--color-clay);
+}
+
+/* ---- 选区与光标 ---- */
 .tiptap-editor .ProseMirror ::selection {
-  background-color: var(--color-paper-selection);
+  background-color: color-mix(in srgb, var(--color-clay) 22%, transparent);
 }
 
-/* Cursor */
 .tiptap-editor .ProseMirror-focused .ProseMirror-gapcursor {
   display: none;
 }
 
-/* ========== Dark Theme (Catppuccin Mocha) ========== */
-
-.dark .tiptap-editor {
-  /* Mocha text */
-  color: #cdd6f4;
+/* ---- 表格：发丝线网格，表头弱色小字；选中格陶土浅底 ---- */
+.tiptap-editor .tableWrapper {
+  margin: 1.4em -1px;
+  padding: 1px;
+  overflow-x: auto;
 }
 
-.dark .tiptap-editor h1,
-.dark .tiptap-editor h2,
-.dark .tiptap-editor h3,
-.dark .tiptap-editor strong {
-  color: #cdd6f4;
-}
-
-.dark .tiptap-editor .ProseMirror p.is-editor-empty:first-child::before {
-  /* Mocha overlay0 */
-  color: #6c7086;
-}
-
-.dark .tiptap-editor code {
-  /* Mocha surface0 / red */
-  background: #313244;
-  color: #f38ba8;
-}
-
-.dark .tiptap-editor pre {
-  background: #313244;
-}
-
-.dark .tiptap-editor pre code {
-  color: #cdd6f4;
-}
-
-.dark .tiptap-editor blockquote {
-  /* Mocha surface1 / subtext0 */
-  border-left-color: #45475a;
-  color: #a6adc8;
-}
-
-.dark .tiptap-editor hr {
-  border-top-color: #45475a;
-}
-
-.dark .tiptap-editor a {
-  /* Mocha blue */
-  color: #89b4fa;
-}
-
-/* ========== Link ========== */
-.tiptap-editor a {
-  /* Latte blue */
-  color: #1e66f5;
-  text-decoration: none;
-}
-
-.tiptap-editor a:hover {
-  text-decoration: underline;
-}
-
-/* ========== Table ========== */
 .tiptap-editor table {
-  border-collapse: collapse;
-  table-layout: fixed;
   width: 100%;
-  margin: 1em 0;
   overflow: hidden;
-  /* Latte surface1 */
-  border: 1px solid #bcc0cc;
-  border-radius: 6px;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+  border-radius: 10px;
+  box-shadow: 0 0 0 1px var(--color-hairline);
+  font-size: 0.85em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
 }
 
-.tiptap-editor table td,
-.tiptap-editor table th {
-  min-width: 80px;
-  border: 1px solid #bcc0cc;
-  padding: 8px 12px;
+.tiptap-editor table :is(td, th) {
   position: relative;
-  vertical-align: top;
   box-sizing: border-box;
+  min-width: 80px;
+  padding: 0.7em 1em;
+  border-right: 1px solid var(--color-hairline);
+  border-bottom: 1px solid var(--color-hairline);
+  vertical-align: top;
+}
+
+.tiptap-editor table :is(td, th):last-child {
+  border-right: 0;
+}
+
+.tiptap-editor table tr:last-child td {
+  border-bottom: 0;
 }
 
 .tiptap-editor table th {
-  /* Latte crust */
-  background: #dce0e8;
-  font-weight: 600;
+  background-color: var(--color-surface-1);
+  color: var(--color-fg-3);
+  font-size: 0.93em;
+  font-weight: 500;
   text-align: left;
 }
 
+.tiptap-editor table td {
+  color: var(--color-fg-2);
+}
+
+.tiptap-editor table :is(td, th) > p {
+  margin: 0;
+}
+
 .tiptap-editor table .selectedCell {
-  /* Latte surface0 */
-  background: #ccd0da;
+  background-color: var(--color-clay-soft);
+}
+
+.tiptap-editor table .selectedCell::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-clay) 45%, transparent);
+  pointer-events: none;
 }
 
 .tiptap-editor table .column-resize-handle {
   position: absolute;
-  right: -2px;
   top: 0;
+  right: -2px;
   bottom: -2px;
-  width: 4px;
-  /* Latte blue */
-  background-color: #1e66f5;
+  width: 3px;
+  background-color: var(--color-clay);
   pointer-events: none;
-}
-
-.tiptap-editor .tableWrapper {
-  padding: 1rem 0;
-  overflow-x: auto;
 }
 
 .tiptap-editor .resize-cursor {
@@ -271,21 +281,27 @@
   cursor: col-resize;
 }
 
-/* ========== Slash Command ========== */
+/* ---- 斜杠命令：与下拉 listbox 同一浮层 ---- */
 .slash-command {
   position: fixed;
   z-index: 9999;
-  /* Latte mantle */
-  background: #e6e9ef;
-  border: 1px solid #bcc0cc;
-  border-radius: 8px;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
-  padding: 4px;
   min-width: 260px;
   max-height: 320px;
+  padding: 4px;
   overflow-y: auto;
-  font-family:
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  border-radius: 10px;
+  background-color: var(--color-popover);
+  box-shadow: var(--shadow-popover);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
+  animation: tiptap-popover-enter var(--spring-snappy-duration) var(--ease-spring-snappy) both;
+}
+
+@keyframes tiptap-popover-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
 }
 
 .slash-command-list {
@@ -297,31 +313,31 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 12px;
-  border-radius: 6px;
+  padding: 6px 8px;
+  border-radius: 7px;
   cursor: pointer;
-  transition: background 0.15s;
+  user-select: none;
 }
 
 .slash-command-item:hover,
 .slash-command-item.is-selected {
-  /* Latte surface0 */
-  background: #ccd0da;
+  background-color: var(--color-ink-1);
 }
 
 .slash-command-item-icon {
+  display: grid;
   flex-shrink: 0;
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #ccd0da;
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: 600;
-  /* Latte subtext1 */
-  color: #5c5f77;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background-color: var(--color-surface-1);
+  box-shadow: 0 0 0 1px var(--color-hairline);
+  color: var(--color-fg-2);
+}
+
+.slash-command-item.is-selected .slash-command-item-icon {
+  color: var(--color-clay-text);
 }
 
 .slash-command-item-text {
@@ -330,394 +346,310 @@
 }
 
 .slash-command-item-title {
-  font-size: 14px;
+  color: var(--color-fg);
+  font-size: 13.5px;
   font-weight: 500;
-  color: #4c4f69;
-  line-height: 1.3;
+  line-height: 1.35;
 }
 
 .slash-command-item-desc {
+  color: var(--color-fg-3);
   font-size: 12px;
-  /* Latte overlay0 */
-  color: #9ca0b0;
-  line-height: 1.3;
+  line-height: 1.35;
 }
 
 .slash-command-empty {
   padding: 12px 16px;
+  color: var(--color-fg-3);
   font-size: 13px;
-  /* Latte overlay0 */
-  color: #9ca0b0;
   text-align: center;
 }
 
-.dark .slash-command-empty {
-  /* Mocha overlay0 */
-  color: #6c7086;
-}
-
-/* ========== Task List (Enhanced) ========== */
+/* ---- 任务列表：陶土勾选框，与正文同款 ---- */
 .tiptap-editor ul[data-type='taskList'] {
-  list-style: none;
   padding-left: 0;
+  list-style: none;
 }
 
 .tiptap-editor ul[data-type='taskList'] li {
   display: flex;
-  align-items: center;
-  gap: 0.5em;
-  margin: 0.3em 0;
+  align-items: baseline;
+  gap: 0.55em;
 }
 
 .tiptap-editor ul[data-type='taskList'] li > label {
   flex-shrink: 0;
   cursor: pointer;
   user-select: none;
-  /* label 默认 inline,内部 checkbox 是 inline-block 会受 line-height 撑出
-     基线间距导致 checkbox 在 label 内偏上。用 flex 居中并清零行高,
-     让 checkbox 严格在 label 盒子中心。 */
-  display: flex;
-  align-items: center;
-  line-height: 0;
 }
 
 .tiptap-editor ul[data-type='taskList'] li > label input[type='checkbox'] {
-  appearance: none;
-  -webkit-appearance: none;
-  width: 1.15rem;
-  height: 1.15rem;
+  display: block;
+  flex-shrink: 0;
+  width: 1em;
+  height: 1em;
   margin: 0;
-  border: 1.5px solid #bcc0cc;
+  transform: translateY(0.14em);
+  border: 1.5px solid var(--color-ink-4);
   border-radius: 4px;
   background-color: transparent;
   background-position: center;
   background-repeat: no-repeat;
   background-size: 0;
   cursor: pointer;
-  flex-shrink: 0;
-  vertical-align: middle;
+  appearance: none;
   transition:
-    background-color 0.15s ease,
-    border-color 0.15s ease,
-    background-size 0.22s cubic-bezier(0.34, 1.56, 0.64, 1),
-    transform 0.12s ease;
+    background-color 150ms var(--ease-out-expo),
+    border-color 150ms var(--ease-out-expo),
+    background-size var(--spring-bouncy-duration) var(--ease-spring-bouncy);
 }
 
 .tiptap-editor ul[data-type='taskList'] li > label input[type='checkbox']:hover {
-  border-color: #40a02b;
-}
-
-.tiptap-editor ul[data-type='taskList'] li > label input[type='checkbox']:active {
-  transform: scale(0.9);
+  border-color: var(--color-clay);
 }
 
 .tiptap-editor ul[data-type='taskList'] li > label input[type='checkbox']:checked {
-  background-color: #40a02b;
-  border-color: #40a02b;
-  background-size: 0.78rem;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23ffffff' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 8.5l3 3 6-6.5'/%3E%3C/svg%3E");
+  border-color: var(--color-clay-fill);
+  background-color: var(--color-clay-fill);
+  background-size: 0.72em;
+  /* 亮色：陶土底 + 白对勾 */
+  background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2016%2016'%20fill='none'%20stroke='%23ffffff'%20stroke-width='2.2'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d='M3.5%208.5l3%203%206-6.5'/%3E%3C/svg%3E");
+}
+
+/* 暗色：浅陶土底上白对勾对比不足，改深色对勾（on-clay #1a0f0a） */
+.dark .tiptap-editor ul[data-type='taskList'] li > label input[type='checkbox']:checked {
+  background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2016%2016'%20fill='none'%20stroke='%231a0f0a'%20stroke-width='2.2'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d='M3.5%208.5l3%203%206-6.5'/%3E%3C/svg%3E");
 }
 
 .tiptap-editor ul[data-type='taskList'] li > label input[type='checkbox']:focus-visible {
-  outline: 2px solid #40a02b;
-  outline-offset: 1px;
-}
-.tiptap-editor ul[data-type='taskList'] li > div {
-  flex: 1;
+  outline: none;
+  box-shadow: var(--shadow-focus);
 }
 
-/* task list 项内的段落去掉上下 margin（.tiptap-editor p 默认 .6em 0），
-   否则 margin 会撑高 div，使 checkbox 与文本垂直中线错位、项间距过大。 */
+.tiptap-editor ul[data-type='taskList'] li > div {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 任务项内的段落去掉上下外边距，勾选框与首行文字对齐、项间距不被撑大。 */
 .tiptap-editor ul[data-type='taskList'] li > div > p {
   margin: 0;
 }
 
 .tiptap-editor ul[data-type='taskList'] li[data-checked='true'] > div {
+  color: var(--color-fg-3);
   text-decoration: line-through;
-  opacity: 0.6;
+  text-decoration-color: var(--color-ink-4);
 }
 
-/* ========== Image ========== */
+/* ---- 图片 ---- */
 .tiptap-editor img {
+  display: block;
   max-width: 100%;
   height: auto;
-  border-radius: 6px;
-  margin: 1em 0;
-  display: block;
+  margin: 1.6em 0;
+  border-radius: 10px;
 }
 
 .tiptap-editor img.ProseMirror-selectednode {
-  /* 主强调色 Latte green */
-  outline: 2px solid #40a02b;
-  border-radius: 6px;
+  outline: none;
+  box-shadow:
+    0 0 0 2px var(--color-surface-0),
+    0 0 0 3.5px var(--color-clay);
 }
 
-/* ========== Upload Image Placeholder NodeView ========== */
+/* ---- 上传占位：图片模糊，遮罩上显示进度或失败原因 ---- */
 .upload-image-container {
   position: relative;
   display: inline-block;
   max-width: 100%;
 }
+
 .upload-image-container img {
+  display: block;
   max-width: 100%;
   height: auto;
-  border-radius: 6px;
-  margin: 1em 0;
-  display: block;
-  /* blur/grayscale 出现与消失的过渡（上传中→成功/失败的 filter 切换） */
-  transition: filter 0.2s ease;
+  margin: 1.6em 0;
+  border-radius: 10px;
+  /* 上传中 → 成功 / 失败的 filter 切换 */
+  transition: filter 200ms var(--ease-out-expo);
 }
+
 .upload-image-container.is-error img {
   opacity: 0.5;
-  filter: grayscale(0.5);
+  filter: grayscale(0.6);
 }
-/* 上传中：图片高斯模糊，遮罩文字（spinner/"上传中…"）在独立 overlay 层不受影响 */
+
 .upload-image-container.is-uploading {
   overflow: hidden;
 }
+
 .upload-image-container.is-uploading img {
   filter: blur(8px);
 }
+
+/* 遮罩始终落在图片上，文字与按钮用固定的白色系，不随主题变化。 */
 .upload-image-overlay {
   position: absolute;
-  inset: 0;
+  inset: 1.6em 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  border-radius: 6px;
+  border-radius: 10px;
+  color: #fff;
+  font-family: var(--font-sans);
   pointer-events: none;
 }
+
+.upload-image-container.is-uploading .upload-image-overlay {
+  background-color: rgb(15 15 14 / 0.2);
+}
+
 .upload-image-container.is-error .upload-image-overlay {
-  background: rgba(0, 0, 0, 0.35);
+  background-color: rgb(15 15 14 / 0.55);
   pointer-events: auto;
 }
+
 .upload-spinner {
-  width: 28px;
-  height: 28px;
-  border: 3px solid rgba(255, 255, 255, 0.4);
+  width: 24px;
+  height: 24px;
+  border: 2px solid rgb(255 255 255 / 0.35);
   border-top-color: #fff;
   border-radius: 50%;
   animation: upload-spin 0.8s linear infinite;
 }
+
 @keyframes upload-spin {
   to {
     transform: rotate(360deg);
   }
 }
+
 .upload-overlay-text {
-  color: #fff;
   font-size: 13px;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  font-weight: 500;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.4);
 }
+
 .upload-error-icon {
+  display: grid;
+  place-items: center;
   color: #fff;
-  font-size: 22px;
   line-height: 1;
 }
+
 .upload-error-msg {
-  color: #fff;
+  max-width: 90%;
+  padding: 0 12px;
   font-size: 13px;
   text-align: center;
-  padding: 0 12px;
-  max-width: 90%;
   word-break: break-word;
 }
+
 .upload-error-actions {
   display: flex;
   gap: 8px;
 }
+
 .upload-btn {
-  padding: 3px 12px;
-  font-size: 12px;
-  border-radius: 4px;
-  border: 1px solid rgba(255, 255, 255, 0.6);
-  background: rgba(255, 255, 255, 0.15);
+  height: 26px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background-color: rgb(255 255 255 / 0.16);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.35);
   color: #fff;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
   cursor: pointer;
+  transition: background-color 150ms var(--ease-out-expo);
 }
+
 .upload-btn:hover {
-  background: rgba(255, 255, 255, 0.3);
+  background-color: rgb(255 255 255 / 0.28);
 }
+
+.upload-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
 .upload-btn-remove {
-  border-color: rgba(254, 202, 202, 0.7);
-  color: #fecaca;
+  color: #ffd9d4;
+  box-shadow: inset 0 0 0 1px rgb(255 190 180 / 0.5);
 }
+
 .upload-btn-remove:hover {
-  background: rgba(239, 68, 68, 0.3);
+  background-color: rgb(201 58 58 / 0.45);
 }
 
-/* ========== Dark Theme: Table (Mocha) ========== */
-.dark .tiptap-editor table {
-  /* Mocha surface1 */
-  border-color: #45475a;
-}
-
-.dark .tiptap-editor table td,
-.dark .tiptap-editor table th {
-  border-color: #45475a;
-  color: #cdd6f4;
-}
-
-.dark .tiptap-editor table th {
-  /* Mocha surface0 */
-  background: #313244;
-}
-
-.dark .tiptap-editor table .selectedCell {
-  background: rgba(30, 102, 245, 0.25);
-}
-
-/* ========== Dark Theme: Slash Command (Mocha) ========== */
-.dark .slash-command {
-  /* Mocha mantle */
-  background: #181825;
-  border-color: #45475a;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
-}
-
-.dark .slash-command-item:hover,
-.dark .slash-command-item.is-selected {
-  background: #313244;
-}
-
-.dark .slash-command-item-icon {
-  background: #313244;
-  color: #cdd6f4;
-}
-
-.dark .slash-command-item-title {
-  color: #cdd6f4;
-}
-
-.dark .slash-command-item-desc {
-  /* Mocha overlay0 */
-  color: #6c7086;
-}
-
-/* ========== Dark Theme: Image (Mocha) ========== */
-.dark .tiptap-editor img.ProseMirror-selectednode {
-  /* 主强调色 Mocha green */
-  outline-color: #a6e3a1;
-}
-.dark .upload-image-container.is-error img {
-  opacity: 0.45;
-}
-.dark .upload-btn {
-  border-color: rgba(200, 200, 200, 0.4);
-}
-.dark .upload-btn-remove {
-  border-color: rgba(239, 68, 68, 0.5);
-}
-
-/* ========== Dark Theme: Task List (Mocha) ========== */
-.dark .tiptap-editor ul[data-type='taskList'] li > label input[type='checkbox'] {
-  border-color: #45475a;
-}
-
-.dark .tiptap-editor ul[data-type='taskList'] li > label input[type='checkbox']:hover {
-  border-color: #a6e3a1;
-}
-
-.dark .tiptap-editor ul[data-type='taskList'] li > label input[type='checkbox']:checked {
-  background-color: #a6e3a1;
-  border-color: #a6e3a1;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%231e1e2e' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 8.5l3 3 6-6.5'/%3E%3C/svg%3E");
-}
-
-.dark .tiptap-editor ul[data-type='taskList'] li > label input[type='checkbox']:focus-visible {
-  outline: 2px solid #a6e3a1;
-}
-
-/* ========== Source Toggle Button ========== */
+/* ---- 源码切换按钮：幽灵图标按钮 ---- */
 .tiptap-toggle-btn {
   position: absolute;
   top: 12px;
   right: 12px;
   z-index: 10;
+  display: grid;
+  place-items: center;
   width: 30px;
   height: 30px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  border-radius: 6px;
-  /* Latte text 半透明底 */
-  background: rgba(76, 79, 105, 0.05);
-  color: #6c6f85;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background-color: transparent;
+  color: var(--color-fg-3);
   cursor: pointer;
-  opacity: 0.55;
   transition:
-    opacity 0.15s,
-    background 0.15s;
+    background-color 150ms var(--ease-out-expo),
+    color 150ms var(--ease-out-expo);
 }
 
-/* 切换按钮内联 SVG 图标（Material Symbols code / article）。
-   fill: currentColor 已在 SVG 上设置，继承按钮 color，跟随明暗主题。 */
 .tiptap-toggle-btn svg {
-  width: 18px;
-  height: 18px;
+  display: block;
 }
 
 .tiptap-toggle-btn:hover {
-  opacity: 1;
-  background: rgba(76, 79, 105, 0.1);
+  background-color: var(--color-ink-1);
+  color: var(--color-fg);
 }
 
-.dark .tiptap-toggle-btn {
-  /* Mocha text 半透明底 */
-  background: rgba(205, 214, 244, 0.06);
-  color: #6c7086;
+.tiptap-toggle-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
 }
 
-.dark .tiptap-toggle-btn:hover {
-  background: rgba(205, 214, 244, 0.12);
-}
-
-/* ========== Source Textarea ========== */
+/* ---- 源码模式文本框 ---- */
 .tiptap-source-textarea {
   position: absolute;
   inset: 0;
+  z-index: 5;
+  box-sizing: border-box;
   width: 100%;
   height: 100%;
   padding: 24px 32px;
-  box-sizing: border-box;
-  border: none;
+  border: 0;
   background: transparent;
-  /* Latte text */
-  color: #4c4f69;
-  font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, monospace;
+  color: var(--color-fg-body);
+  font-family: var(--font-mono);
   font-size: 14px;
-  line-height: 1.7;
+  line-height: 1.75;
   resize: none;
   outline: none;
   overflow-y: auto;
-  z-index: 5;
+  tab-size: 2;
 }
 
 .tiptap-source-textarea::placeholder {
-  /* Latte overlay0 */
-  color: #9ca0b0;
+  color: var(--color-fg-3);
 }
 
-.dark .tiptap-source-textarea {
-  /* Mocha text */
-  color: #cdd6f4;
-}
-
-.dark .tiptap-source-textarea::placeholder {
-  /* Mocha overlay0 */
-  color: #6c7086;
-}
-
-/* ========== Runnable Code Block Modal ========== */
-/* 视觉对齐站点设计系统，配色全部走 --color-paper-* token（亮暗主题自动切换，
-   无需 .dark 覆盖）：
-   - 卡片/头部/按钮对齐 admin 弹窗契约（src/pages/admin/mcp.rs PlaintextModal）；
-   - 输入框对齐 INPUT_CLASS、下拉对齐 FormSelect（src/components/forms.rs）；
-   - 复选框直接复用全站 .ygg-cb 结构（src/components/ui.rs Checkbox），本文件无需样式；
-   - 进出场动画复用全站 animate-modal-overlay-enter / animate-modal-panel-enter（input.css）。 */
+/* ---- 可运行代码块设置弹窗：与站点对话框同一套 ----
+   遮罩、面板、输入框、下拉与按钮分别对齐 ui.css 的 dialog-overlay / dialog-panel /
+   field / select-trigger + listbox / btn；复选框直接复用 .ygg-cb（controls.css）；
+   进出场复用 animate-modal-overlay-enter / animate-modal-panel-enter（base.css）。 */
 .tiptap-runnable-modal-mask {
   position: fixed;
   inset: 0;
@@ -726,96 +658,117 @@
   align-items: center;
   justify-content: center;
   padding: 16px;
-  background: rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(2px);
+  background-color: rgb(15 15 14 / 0.38);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+
+.dark .tiptap-runnable-modal-mask {
+  background-color: rgb(0 0 0 / 0.6);
 }
 
 .tiptap-runnable-modal {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 18px;
   width: 100%;
   max-width: 28rem;
-  padding: 28px;
-  background: var(--color-paper-theme);
-  color: var(--color-paper-primary);
-  border: 1px solid var(--color-paper-border);
-  border-radius: 24px;
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  max-height: 85dvh;
+  padding: 20px 22px 18px;
+  overflow-y: auto;
+  border-radius: var(--radius-dialog);
+  background-color: var(--color-surface-2);
+  box-shadow:
+    0 0 0 1px var(--color-hairline),
+    var(--shadow-lg);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
 }
 
 .tiptap-runnable-modal-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding-bottom: 12px;
-  border-bottom: 1px solid color-mix(in srgb, var(--color-paper-border) 60%, transparent);
+  gap: 12px;
 }
 
 .tiptap-runnable-modal-title {
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--color-paper-primary);
+  color: var(--color-fg);
+  font-size: 16px;
+  font-weight: 600;
 }
 
 .tiptap-runnable-modal-close {
-  padding: 4px;
-  border: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  margin: -4px -6px -4px 0;
+  padding: 0;
+  border: 0;
   border-radius: 8px;
-  background: transparent;
-  color: var(--color-paper-tertiary);
-  font-size: 16px;
-  line-height: 1;
+  background-color: transparent;
+  color: var(--color-fg-3);
   cursor: pointer;
   transition:
-    color 0.2s,
-    background-color 0.2s;
+    background-color 150ms var(--ease-out-expo),
+    color 150ms var(--ease-out-expo);
 }
 
 .tiptap-runnable-modal-close:hover {
-  color: var(--color-paper-primary);
-  background: var(--color-paper-entry);
+  background-color: var(--color-ink-1);
+  color: var(--color-fg);
 }
 
-/* 表单行：label 在上、控件在下（对齐 admin 表单的 flex-col gap-2 契约） */
+.tiptap-runnable-modal-close:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
 .tiptap-runnable-field {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .tiptap-runnable-label {
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--color-paper-secondary);
+  color: var(--color-fg-2);
+  font-size: 13px;
+  font-weight: 500;
 }
 
-/* 输入框：INPUT_CLASS 契约（rounded-2xl + entry 底 + focus accent 描边/ring） */
 .tiptap-runnable-input {
+  box-sizing: border-box;
   width: 100%;
-  padding: 8px 16px;
-  border: 1px solid var(--color-paper-border);
-  border-radius: 16px;
-  background: var(--color-paper-entry);
-  color: var(--color-paper-primary);
+  height: 36px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  background-color: var(--color-surface-1);
+  box-shadow: 0 0 0 1px var(--color-hairline);
+  color: var(--color-fg);
+  font: inherit;
   font-size: 14px;
-  font-family: inherit;
+  font-variant-numeric: tabular-nums;
   outline: none;
-  transition:
-    border-color 0.2s,
-    box-shadow 0.2s;
+  transition: box-shadow 200ms var(--ease-out-expo);
+}
+
+.tiptap-runnable-input::placeholder {
+  color: var(--color-fg-3);
+}
+
+.tiptap-runnable-input:hover:not(:focus) {
+  box-shadow: 0 0 0 1px var(--color-ink-3);
 }
 
 .tiptap-runnable-input:focus {
-  border-color: var(--color-paper-accent);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-paper-accent) 30%, transparent);
+  box-shadow: var(--shadow-focus);
 }
 
-/* 自定义下拉：FormSelect 契约（触发器 + 面板 + 遮罩）。
+/* 自定义下拉：触发器同 field + select-trigger，面板同 listbox。
    面板进出场复用全站 animate-select-enter（关键帧烘了 translateX(-50%)，故此处
-   水平居中同样用 transform: translateX(-50%)，不得叠加其他位移类）。 */
+   水平居中同样用 transform: translateX(-50%)，不得叠加其他位移）。 */
 .tiptap-select {
   position: relative;
 }
@@ -823,48 +776,53 @@
 .tiptap-select-trigger {
   position: relative;
   display: block;
+  box-sizing: border-box;
   width: 100%;
-  padding: 8px 40px 8px 16px;
-  border: 1px solid var(--color-paper-border);
-  border-radius: 16px;
-  background: var(--color-paper-entry);
-  color: var(--color-paper-primary);
-  font-size: 14px;
-  font-family: inherit;
-  text-align: left;
-  white-space: nowrap;
+  height: 36px;
+  padding: 0 36px 0 12px;
   overflow: hidden;
+  border: 0;
+  border-radius: 8px;
+  background-color: var(--color-surface-1);
+  box-shadow: 0 0 0 1px var(--color-hairline);
+  color: var(--color-fg);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
   text-overflow: ellipsis;
+  white-space: nowrap;
   cursor: pointer;
   user-select: none;
   outline: none;
-  transition:
-    border-color 0.2s,
-    box-shadow 0.2s;
+  transition: box-shadow 200ms var(--ease-out-expo);
 }
 
-.tiptap-select-trigger:focus-visible {
-  border-color: var(--color-paper-accent);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-paper-accent) 30%, transparent);
+.tiptap-select-trigger:hover {
+  box-shadow: 0 0 0 1px var(--color-ink-3);
+}
+
+.tiptap-select-trigger:focus-visible,
+.tiptap-select.open .tiptap-select-trigger {
+  box-shadow: var(--shadow-focus);
 }
 
 .tiptap-select-chevron {
   position: absolute;
-  right: 16px;
   top: 50%;
-  transform: translateY(-50%);
+  right: 10px;
   width: 16px;
   height: 16px;
-  color: var(--color-paper-secondary);
+  transform: translateY(-50%);
+  color: var(--color-fg-3);
   pointer-events: none;
-  transition: transform 0.2s;
+  transition: transform var(--spring-bouncy-duration) var(--ease-spring-bouncy);
 }
 
 .tiptap-select.open .tiptap-select-chevron {
   transform: translateY(-50%) rotate(180deg);
 }
 
-/* 打开时的透明遮罩：拦截外部点击关闭（z-40 < 面板 z-50） */
+/* 打开时的透明遮罩：拦截外部点击关闭（z 40 < 面板 50） */
 .tiptap-select-overlay {
   position: fixed;
   inset: 0;
@@ -873,27 +831,24 @@
 
 .tiptap-select-panel {
   position: absolute;
-  left: 50%;
   top: 100%;
-  transform: translateX(-50%);
+  left: 50%;
   z-index: 50;
   width: max-content;
   min-width: 100%;
   max-width: calc(100vw - 2rem);
   max-height: 240px;
-  overflow-y: auto;
   margin: 6px 0 0;
-  padding: 6px;
-  border: 1px solid var(--color-paper-border);
-  border-radius: 16px;
-  background: var(--color-paper-entry);
-  box-shadow:
-    0 10px 15px -3px rgba(0, 0, 0, 0.1),
-    0 4px 6px -4px rgba(0, 0, 0, 0.1);
+  padding: 4px;
+  overflow-y: auto;
+  transform: translateX(-50%);
+  border-radius: 10px;
+  background-color: var(--color-popover);
+  box-shadow: var(--shadow-popover);
   list-style: none;
 }
 
-/* 视口下方空间不足时向上展开（origin-bottom 让 enter 动画方向自然） */
+/* 视口下方空间不足时向上展开 */
 .tiptap-select-panel.flip {
   top: auto;
   bottom: 100%;
@@ -905,29 +860,25 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 10px 12px;
-  border-radius: 12px;
-  color: var(--color-paper-primary);
-  font-size: 14px;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 7px;
+  color: var(--color-fg);
+  font-size: 13.5px;
   cursor: pointer;
   user-select: none;
-  transition: background-color 0.15s;
 }
 
 .tiptap-select-option:hover,
 .tiptap-select-option.active {
-  background: var(--color-paper-accent-soft);
-}
-
-.tiptap-select-option.selected {
-  color: var(--color-paper-accent);
+  background-color: var(--color-ink-1);
 }
 
 .tiptap-select-check {
+  flex-shrink: 0;
   width: 16px;
   height: 16px;
-  flex-shrink: 0;
+  color: var(--color-clay-text);
   visibility: hidden;
 }
 
@@ -935,215 +886,142 @@
   visibility: visible;
 }
 
-/* 复选框行：盒子本体是全站 .ygg-cb（input.css），这里只排行内布局 */
+/* 复选框行：盒子本体是全站 .ygg-cb，这里只排行内布局 */
 .tiptap-runnable-check-row {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   width: fit-content;
+  color: var(--color-fg);
   font-size: 14px;
-  color: var(--color-paper-primary);
   cursor: pointer;
 }
 
-/* info string 预览：对齐 admin 弹窗 pre 契约（entry 底 + 圆角 + 等宽） */
+/* info string 预览：等宽、可整段选中复制 */
 .tiptap-runnable-preview {
-  padding: 16px;
-  border: 1px solid color-mix(in srgb, var(--color-paper-border) 60%, transparent);
-  border-radius: 16px;
-  background: var(--color-paper-entry);
-  color: var(--color-paper-primary);
-  font-family:
-    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
-    monospace;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background-color: var(--color-surface-1);
+  box-shadow: inset 0 0 0 1px var(--color-hairline);
+  color: var(--color-fg-2);
+  font-family: var(--font-mono);
   font-size: 12px;
-  line-height: 1.625;
+  line-height: 1.6;
   word-break: break-all;
   user-select: all;
 }
 
 .tiptap-runnable-actions {
   display: flex;
-  justify-content: flex-end;
   flex-wrap: wrap;
-  gap: 10px;
-  padding-top: 4px;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 2px;
 }
 
-.tiptap-runnable-actions button {
-  font-family: inherit;
-}
-
-/* 取消：ghost 文字按钮（对齐 admin 弹窗「关闭」契约） */
-.tiptap-runnable-actions .cancel {
-  padding: 6px 16px;
-  border: none;
-  border-radius: 9999px;
-  background: transparent;
-  color: var(--color-paper-secondary);
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition:
-    color 0.2s,
-    background-color 0.2s;
-}
-
-.tiptap-runnable-actions .cancel:hover {
-  color: var(--color-paper-primary);
-  background: var(--color-paper-entry);
-}
-
-/* 插入/保存：BTN_PRIMARY 契约（主题绿实心胶囊） */
-.tiptap-runnable-actions .insert {
+.tiptap-runnable-actions :is(.cancel, .insert) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 8px 20px;
-  border: none;
-  border-radius: 9999px;
-  background: var(--color-paper-accent);
-  color: var(--color-paper-theme);
-  font-size: 14px;
+  height: 34px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 13px;
   font-weight: 500;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  line-height: 1;
   cursor: pointer;
-  transition: all 0.2s;
+  transition:
+    background-color 150ms var(--ease-out-expo),
+    color 150ms var(--ease-out-expo),
+    box-shadow 200ms var(--ease-out-expo),
+    transform var(--spring-bouncy-duration) var(--ease-spring-bouncy);
 }
 
-.tiptap-runnable-actions .insert:hover {
-  filter: brightness(1.1);
+.tiptap-runnable-actions :is(.cancel, .insert):focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
 }
 
-.tiptap-runnable-actions .insert:active {
+.tiptap-runnable-actions :is(.cancel, .insert):active:not(:disabled) {
   transform: scale(0.98);
+  transition-duration: 80ms;
+  transition-timing-function: var(--ease-press);
+}
+
+/* 取消：同 btn-ghost */
+.tiptap-runnable-actions .cancel {
+  background-color: transparent;
+  color: var(--color-fg-2);
+}
+
+.tiptap-runnable-actions .cancel:hover {
+  background-color: var(--color-ink-1);
+  color: var(--color-fg);
+}
+
+/* 插入 / 保存：同 btn-primary */
+.tiptap-runnable-actions .insert {
+  background-color: var(--color-clay-fill);
+  color: var(--color-on-clay);
+}
+
+.tiptap-runnable-actions .insert:hover:not(:disabled) {
+  background-color: color-mix(in oklab, var(--color-clay-fill) 90%, var(--color-fg));
 }
 
 .tiptap-runnable-actions .insert:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
-/* ========== Code Block Syntax Highlighting (Catppuccin Latte) ========== */
-/* 色值取自 @catppuccin/highlightjs@1.0.1,与读者侧 public/highlight.css(syntect Catppuccin)同一 palette。
-   scope 到 .tiptap-editor pre code,避免污染全站 code 元素。
-   基础文字色/背景由现有 .tiptap-editor pre code 规则覆盖,未命中 token 回退到基础色。 */
-
-.tiptap-editor pre code .hljs-keyword {
-  color: #8839ef;
-}
-.tiptap-editor pre code .hljs-string,
-.tiptap-editor pre code .hljs-char.escape_ {
-  color: #40a02b;
-}
-.tiptap-editor pre code .hljs-comment {
-  color: #7c7f93;
-  font-style: italic;
-}
-.tiptap-editor pre code .hljs-number,
-.tiptap-editor pre code .hljs-literal {
-  color: #fe640b;
-}
-.tiptap-editor pre code .hljs-title,
-.tiptap-editor pre code .hljs-title.function_ {
-  color: #1e66f5;
-}
-.tiptap-editor pre code .hljs-type,
-.tiptap-editor pre code .hljs-title.class_ {
-  color: #df8e1d;
-}
-.tiptap-editor pre code .hljs-built_in,
-.tiptap-editor pre code .hljs-doctag {
-  color: #d20f39;
-}
-.tiptap-editor pre code .hljs-operator {
-  color: #04a5e5;
-}
-.tiptap-editor pre code .hljs-property,
-.tiptap-editor pre code .hljs-tag {
-  color: #179299;
-}
-.tiptap-editor pre code .hljs-regexp,
-.tiptap-editor pre code .hljs-meta {
-  color: #ea76cb;
-}
-.tiptap-editor pre code .hljs-variable,
-.tiptap-editor pre code .hljs-symbol {
-  color: #dd7878;
-}
-.tiptap-editor pre code .hljs-attr,
-.tiptap-editor pre code .hljs-attribute {
-  color: #1e66f5;
-}
-.tiptap-editor pre code .hljs-addition {
-  color: #40a02b;
-  background: rgba(64, 160, 43, 0.15);
-}
-.tiptap-editor pre code .hljs-deletion {
-  color: #d20f39;
-  background: rgba(210, 15, 57, 0.15);
+/* ---- 代码块：12px 圆角、发丝线外框，与正文代码块同底 ----
+   NodeView 里由 .tiptap-codeblock 承担外框，工具栏、源码、运行结果与图表预览
+   同处一张卡片；没有 NodeView 的 pre（如评论编辑器）自带同款外框。 */
+.tiptap-editor pre {
+  position: relative;
+  margin: 1.6em 0;
+  overflow-x: auto;
+  border-radius: var(--radius-code);
+  background-color: var(--color-surface-1);
+  box-shadow: inset 0 0 0 1px var(--color-hairline);
+  color: var(--color-fg-body);
 }
 
-/* ========== Dark Theme: Code Block Syntax Highlighting (Catppuccin Mocha) ========== */
-.dark .tiptap-editor pre code .hljs-keyword {
-  color: #cba6f7;
-}
-.dark .tiptap-editor pre code .hljs-string,
-.dark .tiptap-editor pre code .hljs-char.escape_ {
-  color: #a6e3a1;
-}
-.dark .tiptap-editor pre code .hljs-comment {
-  color: #9399b2;
-  font-style: italic;
-}
-.dark .tiptap-editor pre code .hljs-number,
-.dark .tiptap-editor pre code .hljs-literal {
-  color: #fab387;
-}
-.dark .tiptap-editor pre code .hljs-title,
-.dark .tiptap-editor pre code .hljs-title.function_ {
-  color: #89b4fa;
-}
-.dark .tiptap-editor pre code .hljs-type,
-.dark .tiptap-editor pre code .hljs-title.class_ {
-  color: #f9e2af;
-}
-.dark .tiptap-editor pre code .hljs-built_in,
-.dark .tiptap-editor pre code .hljs-doctag {
-  color: #f38ba8;
-}
-.dark .tiptap-editor pre code .hljs-operator {
-  color: #89dceb;
-}
-.dark .tiptap-editor pre code .hljs-property,
-.dark .tiptap-editor pre code .hljs-tag {
-  color: #94e2d5;
-}
-.dark .tiptap-editor pre code .hljs-regexp,
-.dark .tiptap-editor pre code .hljs-meta {
-  color: #f5c2e7;
-}
-.dark .tiptap-editor pre code .hljs-variable,
-.dark .tiptap-editor pre code .hljs-symbol {
-  color: #f2cdcd;
-}
-.dark .tiptap-editor pre code .hljs-attr,
-.dark .tiptap-editor pre code .hljs-attribute {
-  color: #89b4fa;
-}
-.dark .tiptap-editor pre code .hljs-addition {
-  color: #a6e3a1;
-  background: rgba(166, 227, 161, 0.15);
-}
-.dark .tiptap-editor pre code .hljs-deletion {
-  color: #f38ba8;
-  background: rgba(243, 139, 168, 0.15);
+.tiptap-editor pre code {
+  display: block;
+  padding: 1em 1.15em;
+  background: transparent;
+  color: inherit;
+  font-family: var(--font-mono);
+  font-size: 0.82em;
+  line-height: 1.75;
+  white-space: pre;
 }
 
-/* ========== Code Block NodeView (toolbar + result) ========== */
 .tiptap-codeblock {
   position: relative;
-  margin: 1em 0;
+  margin: 1.6em 0;
+  overflow: hidden;
+  border-radius: var(--radius-code);
+  background-color: var(--color-surface-1);
+  box-shadow: inset 0 0 0 1px var(--color-hairline);
+}
+
+.tiptap-codeblock > pre {
+  margin: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* 可运行代码块：左侧陶土细线标示（与引用同一语言），叠在外框之内。
+   code 的 class 只带语言名，按运行按钮是否存在来识别。 */
+.tiptap-codeblock:has(> .tiptap-codeblock-toolbar .tiptap-codeblock-run) {
+  box-shadow:
+    inset 2px 0 0 var(--color-clay),
+    inset 0 0 0 1px var(--color-hairline);
 }
 
 .tiptap-codeblock-toolbar {
@@ -1151,148 +1029,142 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 4px 12px;
-  /* Latte crust（与 pre 背景协调） */
-  background: #dce0e8;
-  border-radius: 6px 6px 0 0;
+  min-height: 36px;
+  padding: 4px 6px 4px 12px;
+  box-shadow: inset 0 -1px 0 var(--color-hairline);
+  font-family: var(--font-sans);
   font-size: 12px;
-  font-family:
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-}
-
-/* pre 默认全圆角；有 toolbar 时与 toolbar 合并顶部圆角 */
-.tiptap-codeblock > pre {
-  margin: 0;
-  border-radius: 6px;
-}
-
-.tiptap-codeblock.has-toolbar > pre {
-  border-radius: 0 0 6px 6px;
-}
-
-/* runnable 块绿条移到容器左侧（避免与 pre padding 冲突） */
-.tiptap-codeblock:has(code[class*='runnable']) {
-  border-left: 3px solid #40a02b;
-  padding-left: 0;
-}
-.tiptap-codeblock:has(code[class*='runnable']) > pre {
-  padding-left: 13px;
 }
 
 .tiptap-codeblock-lang {
-  /* Latte subtext0 */
-  color: #6c6f85;
-  font-weight: 500;
+  color: var(--color-fg-3);
+  font-family: var(--font-mono);
+  font-size: 12px;
   text-transform: lowercase;
 }
 
-/* runnable 块的语言标签可点击（触发编辑模态框） */
+/* 可运行块的语言标签可点，打开设置弹窗 */
 .tiptap-codeblock-lang-editable {
+  margin-left: -6px;
+  padding: 2px 6px;
+  border-radius: 6px;
   cursor: pointer;
-  padding: 1px 6px;
-  border-radius: 3px;
-}
-.tiptap-codeblock-lang-editable:hover {
-  /* Latte surface0 */
-  background: #ccd0da;
-  /* Catppuccin green，暗示可改 */
-  color: #40a02b;
-}
-.dark .tiptap-codeblock-lang-editable:hover {
-  /* Mocha surface0 / green */
-  background: #313244;
-  color: #a6e3a1;
+  transition:
+    background-color 150ms var(--ease-out-expo),
+    color 150ms var(--ease-out-expo);
 }
 
+.tiptap-codeblock-lang-editable:hover {
+  background-color: var(--color-ink-1);
+  color: var(--color-clay-text);
+}
+
+/* 运行：同 btn-primary 的 xs 尺寸 */
 .tiptap-codeblock-run {
-  border: none;
-  border-radius: 4px;
-  padding: 2px 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background-color: var(--color-clay-fill);
+  color: var(--color-on-clay);
+  font: inherit;
   font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
   cursor: pointer;
-  /* Catppuccin green */
-  background: #40a02b;
-  color: #fff;
+  transition: background-color 150ms var(--ease-out-expo);
 }
 
 .tiptap-codeblock-run:hover:not(:disabled) {
-  background: #3a8f26;
+  background-color: color-mix(in oklab, var(--color-clay-fill) 90%, var(--color-fg));
+}
+
+.tiptap-codeblock-run:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
 }
 
 .tiptap-codeblock-run:disabled {
-  opacity: 0.6;
+  opacity: 0.7;
   cursor: wait;
 }
 
+.tiptap-codeblock-run svg {
+  display: block;
+}
+
+.tiptap-codeblock-run.is-running svg {
+  animation: upload-spin 0.8s linear infinite;
+}
+
 .tiptap-codeblock-result {
-  margin-top: 4px;
-  padding: 8px 12px;
-  border-radius: 6px;
-  /* Latte surface0 */
-  background: #ccd0da;
-  font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, monospace;
-  font-size: 12px;
-  /* Latte text */
-  color: #4c4f69;
+  max-height: 300px;
+  padding: 10px 1.15em 12px;
+  overflow-y: auto;
+  box-shadow: inset 0 1px 0 var(--color-hairline);
+  color: var(--color-fg-2);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.65;
   white-space: pre-wrap;
   word-break: break-all;
-  max-height: 300px;
-  overflow-y: auto;
 }
 
-/* ========== Dark Theme: Code Block NodeView (Mocha) ========== */
-.dark .tiptap-codeblock-toolbar {
-  /* Mocha crust */
-  background: #11111b;
+/* ---- Mermaid 预览：挂在源码之后，源码仍可编辑 ---- */
+.tiptap-editor .tiptap-codeblock-mermaid-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 24px 16px;
+  overflow-x: auto;
+  background-color: var(--color-surface-2);
+  box-shadow: inset 0 1px 0 var(--color-hairline);
 }
 
-.dark .tiptap-codeblock:has(code[class*='runnable']) {
-  border-left-color: #a6e3a1;
+.tiptap-editor .tiptap-codeblock-mermaid-preview > svg {
+  max-width: 100%;
+  height: auto;
 }
 
-.dark .tiptap-codeblock-lang {
-  /* Mocha subtext0 */
-  color: #a6adc8;
+.tiptap-editor .tiptap-codeblock-mermaid-preview.mermaid-loading {
+  color: var(--color-fg-3);
+  font-size: 0.85em;
 }
 
-.dark .tiptap-codeblock-run {
-  /* Mocha green */
-  background: #a6e3a1;
-  /* Mocha base */
-  color: #1e1e2e;
+.tiptap-editor .tiptap-codeblock-mermaid-preview.mermaid-error {
+  justify-content: flex-start;
+  background-color: var(--color-danger-soft);
+  color: var(--color-danger);
+  font-size: 0.85em;
+  line-height: 1.5;
+  text-align: left;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
-.dark .tiptap-codeblock-run:hover:not(:disabled) {
-  background: #95d88f;
-}
-
-.dark .tiptap-codeblock-result {
-  /* Mocha surface0 */
-  background: #313244;
-  /* Mocha text */
-  color: #cdd6f4;
-}
-
-/* ========== Math Node (KaTeX preview) ========== */
-
+/* ---- 公式：点开编辑 TeX，失焦渲染 ---- */
 .tiptap-editor .math-node {
-  /* inline 公式随文,block 公式独占行;KaTeX 字体由全局 katex.min.css 提供。 */
+  /* inline 公式随文，block 公式独占行；KaTeX 字体由全局 katex.min.css 提供。 */
+  border-radius: 6px;
   cursor: pointer;
-  border-radius: 4px;
   transition:
-    background-color 0.15s ease,
-    box-shadow 0.15s ease;
+    background-color 150ms var(--ease-out-expo),
+    box-shadow 150ms var(--ease-out-expo);
 }
 
 .tiptap-editor .math-node:hover {
-  /* Latte surface0:轻底色提示「可交互」。 */
-  background-color: rgba(204, 208, 218, 0.4);
+  background-color: var(--color-ink-1);
 }
 
 .tiptap-editor .math-node-block {
   display: block;
-  margin: 0.75em 0;
+  margin: 1.4em 0;
   padding: 0.5em 0.75em;
+  overflow-x: auto;
   text-align: center;
 }
 
@@ -1306,150 +1178,128 @@
 }
 
 .tiptap-editor .math-node-error .math-node-render {
-  /* 坏 TeX:红色提示,对齐服务端 katex-error 的 #cc0000。 */
-  color: #d20f2f;
+  color: var(--color-danger);
+}
+
+/* 公式与脚注的编辑框：同 field 的多行样式 */
+.tiptap-editor :is(.math-node-edit, .footnote-definition-edit) {
+  box-sizing: border-box;
+  padding: 0.5em 0.75em;
+  border: 0;
+  border-radius: 8px;
+  background-color: var(--color-surface-1);
+  box-shadow: 0 0 0 1px var(--color-hairline);
+  color: var(--color-fg);
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  line-height: 1.6;
+  text-align: left;
+  resize: vertical;
+  outline: none;
+  transition: box-shadow 200ms var(--ease-out-expo);
+}
+
+.tiptap-editor :is(.math-node-edit, .footnote-definition-edit):focus {
+  box-shadow: var(--shadow-focus);
 }
 
 .tiptap-editor .math-node-edit {
   width: 100%;
   min-width: 200px;
-  font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', Menlo, Monaco, Consolas, monospace;
-  font-size: 0.9em;
-  line-height: 1.5;
-  padding: 0.5em 0.75em;
-  border: 1px solid #ccd0da;
-  border-radius: 6px;
-  /* Latte base */
-  background: #eff1f5;
-  /* Latte text */
-  color: #4c4f69;
-  resize: vertical;
-  outline: none;
 }
 
-.tiptap-editor .math-node-edit:focus {
-  /* Latte blue */
-  border-color: #1e66f5;
-  box-shadow: 0 0 0 2px rgba(30, 102, 245, 0.2);
-}
-
-/* ProseMirror 选中态:公式被选中时高亮。 */
 .tiptap-editor .ProseMirror-selectednode .math-node {
-  /* Latte blue 透明底。 */
-  background-color: rgba(30, 102, 245, 0.12);
-  box-shadow: 0 0 0 1px rgba(30, 102, 245, 0.4);
+  background-color: var(--color-clay-soft);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-clay) 45%, transparent);
 }
 
-/* Dark theme (Mocha) */
-.dark .tiptap-editor .math-node:hover {
-  background-color: rgba(49, 50, 68, 0.5);
-}
-
-.dark .tiptap-editor .math-node-error .math-node-render {
-  /* Mocha red */
-  color: #f38ba8;
-}
-
-.dark .tiptap-editor .math-node-edit {
-  /* Mocha surface0 */
-  border-color: #313244;
-  background: #181825;
-  /* Mocha text */
-  color: #cdd6f4;
-}
-
-.dark .tiptap-editor .math-node-edit:focus {
-  /* Mocha blue */
-  border-color: #89b4fa;
-  box-shadow: 0 0 0 2px rgba(137, 180, 250, 0.25);
-}
-
-.dark .tiptap-editor .ProseMirror-selectednode .math-node {
-  background-color: rgba(137, 180, 250, 0.15);
-  box-shadow: 0 0 0 1px rgba(137, 180, 250, 0.5);
-}
-
-/* ---- 脚注引用(inline 上标) ----
- * 视觉与文章页 input.css 的 .fn-ref 对齐:上标、accent 色、无下划线。
- * 编号文本由 FootnoteNumbering plugin 直接写入 .fn-ref-link。 */
+/* ---- 脚注：引用为陶土等宽上标；定义与正文文末同款，悬停提示可编辑 ---- */
 .tiptap-editor .fn-ref-node {
-  cursor: pointer;
   white-space: nowrap;
+  cursor: pointer;
 }
 
 .tiptap-editor .fn-ref-link {
+  padding: 0 0.15em;
+  color: var(--color-clay-text);
+  font-family: var(--font-mono);
   font-size: 0.75em;
   line-height: 0;
-  vertical-align: super;
-  /* Latte blue */
-  color: #1e66f5;
   text-decoration: none;
+  vertical-align: super;
   cursor: pointer;
-  padding: 0 0.05em;
 }
 
 .tiptap-editor .fn-ref-link:hover {
-  text-decoration: underline;
+  color: var(--color-clay-hover);
 }
 
 .tiptap-editor .ProseMirror-selectednode .fn-ref-node {
-  background-color: rgba(30, 102, 245, 0.12);
-  border-radius: 3px;
+  border-radius: 4px;
+  background-color: var(--color-clay-soft);
 }
 
 /* 双击预览浮层 */
 .tiptap-editor .fn-ref-preview {
   position: absolute;
   z-index: 10;
-  /* Latte base / text */
-  background: #eff1f5;
-  color: #4c4f69;
-  border: 1px solid #ccd0da;
-  border-radius: 6px;
-  padding: 0.4em 0.6em;
-  font-size: 0.85em;
-  line-height: 1.4;
   max-width: 280px;
-  white-space: normal;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   margin-top: 0.5em;
+  padding: 0.55em 0.75em;
+  border-radius: 10px;
+  background-color: var(--color-popover);
+  box-shadow: var(--shadow-popover);
+  color: var(--color-fg-2);
+  font-family: var(--font-sans);
+  font-size: 0.82em;
+  line-height: 1.6;
+  white-space: normal;
 }
 
-/* ---- 脚注定义(block 卡片) ----
- * 视觉与文章页 .footnote-definition 对齐:左边框、0.875em、可双击编辑。 */
 .tiptap-editor .footnote-definition {
   display: flex;
-  gap: 0.5em;
-  align-items: flex-start;
-  margin: 0.75em 0;
-  padding: 0.5em 0.75em;
-  /* Latte surface0 透明底 */
-  background-color: rgba(204, 208, 218, 0.25);
-  border-left: 0.2rem solid #1e66f5;
-  border-radius: 0 4px 4px 0;
-  font-size: 0.875em;
+  align-items: baseline;
+  gap: 0.6em;
+  margin: 0.4em -0.6em 0;
+  padding: 0.35em 0.6em;
+  border-radius: 8px;
+  color: var(--color-fg-2);
+  font-size: 0.82em;
+  line-height: 1.75;
   cursor: pointer;
-  transition: background-color 0.15s ease;
+  transition: background-color 150ms var(--ease-out-expo);
+}
+
+/* 第一条定义前加发丝线，与正文文末脚注区一致（绝对定位，不参与 flex 排布） */
+.tiptap-editor :not(.footnote-definition) + .footnote-definition {
+  position: relative;
+  margin-top: 2.4em;
+}
+
+.tiptap-editor :not(.footnote-definition) + .footnote-definition::before {
+  content: '';
+  position: absolute;
+  top: -1em;
+  right: 0.6em;
+  left: 0.6em;
+  height: 1px;
+  background-color: var(--color-hairline);
 }
 
 .tiptap-editor .footnote-definition:hover {
-  background-color: rgba(204, 208, 218, 0.45);
+  background-color: var(--color-ink-1);
 }
 
 .tiptap-editor .footnote-definition-label {
   flex-shrink: 0;
-  font-size: 0.75em;
-  line-height: 1.6;
-  vertical-align: super;
-  /* Latte blue */
-  color: #1e66f5;
-  font-weight: 600;
+  min-width: 1.4em;
+  color: var(--color-fg-3);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
 }
 
 .tiptap-editor .footnote-definition-content {
   flex: 1;
-  /* Latte text */
-  color: #4c4f69;
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -1460,140 +1310,15 @@
 
 .tiptap-editor .footnote-definition-edit {
   flex: 1;
-  font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', Menlo, Monaco, Consolas, monospace;
-  font-size: 0.9em;
-  line-height: 1.5;
-  padding: 0.4em 0.6em;
-  border: 1px solid #ccd0da;
-  border-radius: 6px;
-  background: #eff1f5;
-  color: #4c4f69;
-  resize: vertical;
-  outline: none;
 }
 
-.tiptap-editor .footnote-definition-edit:focus {
-  border-color: #1e66f5;
-  box-shadow: 0 0 0 2px rgba(30, 102, 245, 0.2);
+.tiptap-editor .ProseMirror-selectednode .footnote-definition,
+.tiptap-editor .footnote-definition.ProseMirror-selectednode {
+  background-color: var(--color-clay-soft);
 }
 
-.tiptap-editor .ProseMirror-selectednode .footnote-definition {
-  background-color: rgba(30, 102, 245, 0.12);
-  box-shadow: 0 0 0 1px rgba(30, 102, 245, 0.4);
-}
-
-/* Dark theme (Mocha) */
-.dark .tiptap-editor .fn-ref-link {
-  /* Mocha blue */
-  color: #89b4fa;
-}
-
-.dark .tiptap-editor .ProseMirror-selectednode .fn-ref-node {
-  background-color: rgba(137, 180, 250, 0.15);
-}
-
-.dark .tiptap-editor .fn-ref-preview {
-  background: #181825;
-  color: #cdd6f4;
-  border-color: #313244;
-}
-
-.dark .tiptap-editor .footnote-definition {
-  background-color: rgba(49, 50, 68, 0.3);
-  border-left-color: #89b4fa;
-}
-
-.dark .tiptap-editor .footnote-definition:hover {
-  background-color: rgba(49, 50, 68, 0.5);
-}
-
-.dark .tiptap-editor .footnote-definition-label {
-  color: #89b4fa;
-}
-
-.dark .tiptap-editor .footnote-definition-content {
-  color: #cdd6f4;
-}
-
-.dark .tiptap-editor .footnote-definition-edit {
-  border-color: #313244;
-  background: #181825;
-  color: #cdd6f4;
-}
-
-.dark .tiptap-editor .footnote-definition-edit:focus {
-  border-color: #89b4fa;
-  box-shadow: 0 0 0 2px rgba(137, 180, 250, 0.25);
-}
-
-.dark .tiptap-editor .ProseMirror-selectednode .footnote-definition {
-  background-color: rgba(137, 180, 250, 0.15);
-  box-shadow: 0 0 0 1px rgba(137, 180, 250, 0.5);
-}
-
-/* ---- mermaid 代码块预览区 ----
- * 视觉与前台 input.css 的 pre[data-mermaid-rendered] 对齐:flex 居中、
- * 横向滚动、SVG 等比缩放。预览区挂在源码 <pre> 之后,源码仍可编辑。 */
-.tiptap-editor .tiptap-codeblock-mermaid-preview {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  overflow-x: auto;
-  padding: 24px 16px;
-  /* Latte base 边框/底 */
-  border-top: 1px solid #ccd0da;
-  background: #eff1f5;
-  border-radius: 0 0 6px 6px;
-  min-height: 48px;
-}
-
-.tiptap-editor .tiptap-codeblock-mermaid-preview > svg {
-  max-width: 100%;
-  height: auto;
-}
-
-/* 加载中:弱色文字 */
-.tiptap-editor .tiptap-codeblock-mermaid-preview.mermaid-loading {
-  /* Latte subtext0 */
-  color: #6c6f85;
-  font-size: 0.875em;
-  font-style: italic;
-}
-
-/* 渲染失败:accent 色左边框(与前台 .mermaid-error 一致)+ 错误文字 */
-.tiptap-editor .tiptap-codeblock-mermaid-preview.mermaid-error {
-  justify-content: flex-start;
-  /* Latte red */
-  color: #d20f2f;
-  border-left: 0.2rem solid #d20f2f;
-  font-size: 0.85em;
-  line-height: 1.5;
-  white-space: pre-wrap;
-  word-break: break-word;
-  text-align: left;
-}
-
-/* Dark theme (Mocha) */
-.dark .tiptap-editor .tiptap-codeblock-mermaid-preview {
-  border-top-color: #313244;
-  background: #181825;
-}
-
-.dark .tiptap-editor .tiptap-codeblock-mermaid-preview.mermaid-loading {
-  /* Mocha subtext0 */
-  color: #a6adc8;
-}
-
-.dark .tiptap-editor .tiptap-codeblock-mermaid-preview.mermaid-error {
-  /* Mocha red */
-  color: #f38ba8;
-  border-left-color: #f38ba8;
-}
-
-/* ========== Comment Variant（评论区精简编辑器） ========== */
-
-/* 紧凑尺寸：高度随内容生长（full 是 height:100% 填满后台容器），
-   超过 max-height 内部滚动，避免长评论撑爆页面。 */
+/* ---- 评论精简版 ----
+   高度随内容生长，超过 max-height 内部滚动，避免长评论撑爆页面。 */
 .tiptap-editor--comment {
   height: auto;
   font-size: 14px;
@@ -1601,51 +1326,47 @@
 }
 
 .tiptap-editor--comment .ProseMirror {
-  padding: 12px 16px;
   min-height: 96px;
   max-height: 320px;
+  padding: 12px 16px;
   overflow-y: auto;
 }
 
-/* Placeholder 扩展输出（data-placeholder + is-editor-empty）。
-   full 变体走既有 CSS br 占位方案，勿动；这里只覆盖 comment。 */
+/* Placeholder 扩展输出（data-placeholder + is-editor-empty）；完整版走上面的 br 占位。 */
 .tiptap-editor--comment .ProseMirror p.is-editor-empty:first-child::before {
   content: attr(data-placeholder);
   float: left;
-  /* Latte overlay0 */
-  color: #9ca0b0;
-  pointer-events: none;
   height: 0;
-}
-
-.dark .tiptap-editor--comment .ProseMirror p.is-editor-empty:first-child::before {
-  /* Mocha overlay0 */
-  color: #6c7086;
+  color: var(--color-fg-3);
+  pointer-events: none;
 }
 
 /* 评论里段落间距收紧（长文排版参数对短评论太松）。 */
 .tiptap-editor--comment p {
-  margin: 0.35em 0;
+  margin: 0 0 0.5em;
 }
 
 .tiptap-editor--comment pre {
   margin: 0.6em 0;
-  padding: 12px;
+}
+
+.tiptap-editor--comment pre code {
+  padding: 0.75em 0.9em;
 }
 
 .tiptap-editor--comment blockquote {
   margin: 0.6em 0;
+  font-size: 1em;
 }
 
-/* ========== Comment Bubble Menu（选中浮出格式条） ========== */
-
+/* ---- 选中浮出的格式条：与悬浮提示同色的反色小条 ---- */
 .comment-bubble-menu {
   z-index: 60;
-  /* Latte crust 深色药丸（与后台 tooltip 同色系），暗色主题同构。 */
-  background: #292c3c;
-  border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
   padding: 3px;
+  border-radius: 9px;
+  background-color: var(--color-fg);
+  box-shadow: var(--shadow-lg);
+  color: var(--color-surface-0);
 }
 
 .comment-bubble-menu-row {
@@ -1660,23 +1381,30 @@
   justify-content: center;
   width: 28px;
   height: 28px;
-  border: none;
+  padding: 0;
+  border: 0;
   border-radius: 6px;
   background: transparent;
-  /* Mocha text（深色药丸上的浅色图标，明暗主题通用） */
-  color: #cdd6f4;
+  color: color-mix(in srgb, var(--color-surface-0) 78%, transparent);
   cursor: pointer;
-  transition: background 0.15s ease-out;
+  transition:
+    background-color 150ms var(--ease-out-expo),
+    color 150ms var(--ease-out-expo);
 }
 
 .comment-bubble-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background-color: color-mix(in srgb, var(--color-surface-0) 14%, transparent);
+  color: var(--color-surface-0);
 }
 
 .comment-bubble-btn.is-active {
-  /* Latte blue / Mocha blue 同色系强调 */
-  background: rgba(137, 180, 250, 0.35);
-  color: #89b4fa;
+  background-color: color-mix(in srgb, var(--color-clay) 32%, transparent);
+  color: var(--color-surface-0);
+}
+
+.comment-bubble-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 1.5px var(--color-clay);
 }
 
 .comment-bubble-menu-linkrow {
@@ -1688,20 +1416,36 @@
 
 .comment-bubble-link-input {
   width: 220px;
-  border: none;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.1);
-  color: #cdd6f4;
-  font-size: 13px;
   padding: 5px 8px;
+  border: 0;
+  border-radius: 6px;
+  background-color: color-mix(in srgb, var(--color-surface-0) 12%, transparent);
+  color: var(--color-surface-0);
+  font: inherit;
+  font-size: 13px;
   outline: none;
 }
 
 .comment-bubble-link-input::placeholder {
-  /* Mocha overlay0 */
-  color: #6c7086;
+  color: color-mix(in srgb, var(--color-surface-0) 55%, transparent);
 }
 
 .comment-bubble-link-input:focus {
-  background: rgba(255, 255, 255, 0.16);
+  background-color: color-mix(in srgb, var(--color-surface-0) 18%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .slash-command {
+    animation: none;
+  }
+
+  .tiptap-editor ul[data-type='taskList'] li > label input[type='checkbox'],
+  .tiptap-select-chevron,
+  .tiptap-runnable-actions :is(.cancel, .insert) {
+    transition: none;
+  }
+
+  .tiptap-codeblock-run.is-running svg {
+    animation-duration: 2s;
+  }
 }

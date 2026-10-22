@@ -3,6 +3,7 @@ import type { Node as PMNode } from '@tiptap/pm/model';
 import type { ViewMutationRecord } from '@tiptap/pm/view';
 import { THEME_CHANGE_EVENT } from '@yggdrasil/shared';
 import { extractLang, extractOverridesJson } from './highlight';
+import { icon } from './icons';
 import { getCurrentTheme, renderMermaid } from './mermaid';
 import { openRunnableModal } from './slash-command';
 
@@ -37,6 +38,14 @@ function isRunnable(node: PMNode): boolean {
  * 运行按钮仅 runnable 块显示；点击调 editor.storage.__onRunCode 回调
  * （由 index.ts 注入，转发到 Rust server function）。
  */
+/** 运行按钮：空闲为「▷ 运行」，运行中换成旋转圈与「运行中…」。 */
+function setRunLabel(btn: HTMLButtonElement, running: boolean): void {
+  btn.innerHTML = running
+    ? `${icon('loader-circle', 13)}<span>运行中…</span>`
+    : `${icon('play', 13)}<span>运行</span>`;
+  btn.classList.toggle('is-running', running);
+}
+
 export class CodeBlockNodeView {
   private node: PMNode;
   private editor: Editor;
@@ -314,7 +323,7 @@ export class CodeBlockNodeView {
     const btn = document.createElement('button');
     btn.classList.add('tiptap-codeblock-run');
     btn.type = 'button';
-    btn.textContent = '▶ 运行';
+    setRunLabel(btn, false);
     btn.setAttribute('contenteditable', 'false');
     btn.addEventListener('click', () => this.runCode());
     return btn;
@@ -340,7 +349,7 @@ export class CodeBlockNodeView {
 
     // 防重复点击
     this.runBtn.disabled = true;
-    this.runBtn.textContent = '运行中…';
+    setRunLabel(this.runBtn, true);
     this.ensureResultArea('运行中…');
 
     try {
@@ -355,7 +364,7 @@ export class CodeBlockNodeView {
       this.renderResult(`运行失败：${e instanceof Error ? e.message : String(e)}`);
     } finally {
       this.runBtn.disabled = false;
-      this.runBtn.textContent = '▶ 运行';
+      setRunLabel(this.runBtn, false);
     }
   }
 

@@ -1,5 +1,6 @@
 import { Image } from '@tiptap/extension-image';
 import type { Node as PMNode } from '@tiptap/pm/model';
+import { icon } from './icons';
 import { UPLOAD_COORDINATOR_STORAGE_KEY, type UploadCoordinator } from './upload-coordinator';
 
 /** NodeView 按钮点击 / destroy 回调注入接口。 */
@@ -113,7 +114,7 @@ export class UploadImageNodeView {
       this.container.classList.remove('is-uploading');
       const msg = this.node.attrs['data-error-msg'] || '上传失败';
       this.overlay.innerHTML =
-        '<div class="upload-error-icon">⚠</div>' +
+        `<div class="upload-error-icon">${icon('triangle-alert', 22)}</div>` +
         '<div class="upload-error-msg"></div>' +
         '<div class="upload-error-actions">' +
         '<button type="button" class="upload-btn upload-btn-retry">重试</button>' +

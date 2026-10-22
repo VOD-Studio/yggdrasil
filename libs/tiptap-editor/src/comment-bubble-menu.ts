@@ -16,29 +16,19 @@
  * - appendTo document.body + strategy 'fixed'：评论卡片有 overflow-hidden
  *   与页面入场 transform 动画，挂在编辑器父级会被裁剪/错位（与 MCP modal
  *   的 fixed-under-transform 教训一致）；
- * - 图标为 Material Symbols inline SVG（fill: currentColor 随主题），
- *   源文件存档于 public/icons/。
+ * - 图标为 Lucide 内联 SVG（stroke: currentColor 随主题），见 icons.ts。
  */
 
 import type { Editor } from '@tiptap/core';
 import { Extension } from '@tiptap/core';
 import { BubbleMenuPlugin } from '@tiptap/extension-bubble-menu';
+import { icon } from './icons';
 
-/** Material Symbols format_bold。 */
-const BOLD_ICON =
-  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" fill="currentColor" width="18" height="18"><path d="M275-200v-560h228q66 0 114.5 42T666-612q0 38-21 70t-56 49v6q43 14 69.5 50t26.5 81q0 68-52.5 112T510-200H275Zm86-76h144q38 0 66-25t28-63q0-37-28-62t-66-25H361v175Zm0-247h136q35 0 60.5-23t25.5-58q0-35-25.5-58.5T497-686H361v163Z"/></svg>';
-/** Material Symbols format_italic。 */
-const ITALIC_ICON =
-  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" fill="currentColor" width="18" height="18"><path d="M224-199v-80h134l139-409H338v-80h380v80H584L445-279h159v80H224Z"/></svg>';
-/** Material Symbols strikethrough_s。 */
-const STRIKE_ICON =
-  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" fill="currentColor" width="18" height="18"><path d="M504-160q-78 0-142-41.5T269-313l69-29q20 48 65 77t101 29q52 0 83-27t31-73q0-23-9.5-48.5T582-430h84q14 23 21 46t7 48q0 78-53 127t-137 49ZM80-490v-60h800v60H80Zm394-316q66 0 117 31t75 86l-69 31q-14-34-46.5-53T474-730q-49 0-79 24t-30 66q0 8 1 15t3 15h-74q-2-8-3-16t-1-16q0-73 51-118.5T474-806Z"/></svg>';
-/** Material Symbols code。 */
-const CODE_ICON =
-  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" fill="currentColor" width="18" height="18"><path d="M320-242 80-482l242-242 43 43-199 199 197 197-43 43Zm318 2-43-43 199-199-197-197 43-43 240 240-242 242Z"/></svg>';
-/** Material Symbols link。 */
-const LINK_ICON =
-  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" fill="currentColor" width="18" height="18"><path d="M450-280H280q-83 0-141.5-58.5T80-480q0-83 58.5-141.5T280-680h170v60H280q-58.33 0-99.17 40.76-40.83 40.77-40.83 99Q140-422 180.83-381q40.84 41 99.17 41h170v60ZM325-450v-60h310v60H325Zm185 170v-60h170q58.33 0 99.17-40.76 40.83-40.77 40.83-99Q820-538 779.17-579q-40.84-41-99.17-41H510v-60h170q83 0 141.5 58.5T880-480q0 83-58.5 141.5T680-280H510Z"/></svg>';
+const BOLD_ICON = icon('bold');
+const ITALIC_ICON = icon('italic');
+const STRIKE_ICON = icon('strikethrough');
+const CODE_ICON = icon('code');
+const LINK_ICON = icon('link');
 
 /** 行内格式按钮定义：mark 名 → toggle 命令与图标。 */
 const MARK_BUTTONS: ReadonlyArray<{
@@ -175,7 +165,7 @@ function buildMenuDom(editor: Editor): void {
   const confirm = document.createElement('button');
   confirm.type = 'button';
   confirm.className = 'comment-bubble-btn';
-  confirm.textContent = '↵';
+  confirm.innerHTML = icon('corner-down-left');
   confirm.title = '确认';
   linkRow.appendChild(input);
   linkRow.appendChild(confirm);

@@ -1,5 +1,6 @@
 import type { Editor } from '@tiptap/core';
 import { extractLang, extractOverridesJson } from '../highlight';
+import { icon } from '../icons';
 import { createLangSelect, SVG_NS } from './language-select';
 import {
   buildRunnableInfo,
@@ -70,7 +71,7 @@ export function openRunnableModal(editor: Editor, editPos?: number, currentInfo?
   const closeBtn = document.createElement('button');
   closeBtn.className = 'tiptap-runnable-modal-close';
   closeBtn.type = 'button';
-  closeBtn.textContent = '×';
+  closeBtn.innerHTML = icon('x');
   closeBtn.setAttribute('aria-label', '关闭');
   closeBtn.addEventListener('click', close);
   header.appendChild(title);

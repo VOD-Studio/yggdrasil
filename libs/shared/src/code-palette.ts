@@ -215,3 +215,50 @@ export function tmThemeFiles(): { file: string; content: string }[] {
     },
   ];
 }
+
+/**
+ * highlight.js（Tiptap 编辑器代码块经 lowlight 输出）的类名与语法角色对照，
+ * 与上面 TM_SCOPES 的归类一致：标签名算关键字、属性名与参数算类型、内建函数算函数。
+ * 未列出的类（变量、属性访问、meta 外壳）沿用代码块正文色。
+ */
+const HLJS_CLASSES: [keyof SyntaxPalette, string[]][] = [
+  ['comment', ['comment', 'quote']],
+  ['keyword', ['keyword', 'selector-tag', 'name', 'section', 'meta .hljs-keyword']],
+  ['string', ['string', 'meta .hljs-string']],
+  ['number', ['number', 'literal', 'symbol', 'variable.language_']],
+  ['function', ['title', 'title.function_', 'built_in', 'link']],
+  [
+    'type',
+    [
+      'type',
+      'title.class_',
+      'title.class_.inherited__',
+      'attr',
+      'attribute',
+      'params',
+      'selector-class',
+      'selector-id',
+    ],
+  ],
+  ['punctuation', ['punctuation', 'operator']],
+  ['regex', ['regexp', 'char.escape_']],
+  ['inserted', ['addition']],
+  ['deleted', ['deletion']],
+];
+
+/** 由 CODE_PALETTES 生成 Tiptap 代码块的 highlight.js 配色（浅色在前，深色挂 .dark）。 */
+export function hljsThemeCss(scope = '.tiptap-editor pre code'): string {
+  const block = (prefix: string, palette: SyntaxPalette): string =>
+    HLJS_CLASSES.map(([role, classes]) => {
+      const selectors = classes.map((c) => `${prefix}${scope} .hljs-${c}`).join(',\n');
+      return `${selectors} {\n  color: ${palette[role]};\n}`;
+    }).join('\n');
+  return `/* 由 libs/shared/scripts/generate-code-themes.ts 生成，勿手改；取色见 libs/shared/src/code-palette.ts。 */
+${block('', CODE_PALETTES.light.syntax)}
+${block('.dark ', CODE_PALETTES.dark.syntax)}
+${scope} .hljs-section,
+${scope} .hljs-strong {
+  font-weight: 600;
+}
+`;
+}
