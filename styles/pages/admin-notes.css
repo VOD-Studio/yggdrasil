@@ -735,13 +735,6 @@ a.admin-notes-row:focus-visible .admin-notes-edit {
   min-height: 3.75rem;
 }
 
-.admin-notebook-label {
-  display: block;
-  margin-bottom: 0.375rem;
-  color: var(--color-fg-2);
-  font-size: 0.78125rem;
-}
-
 .admin-notebook-switch {
   display: flex;
   align-items: flex-start;

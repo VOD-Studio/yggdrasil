@@ -9,7 +9,7 @@ use dioxus::prelude::*;
 
 use crate::components::assets::{AssetPickerModal, AssetSelection};
 use crate::components::empty_state::EmptyState;
-use crate::components::forms::ToggleSwitch;
+use crate::components::forms::{FormLabel, ToggleSwitch};
 use crate::components::skeletons::friends_admin_skeleton::FriendsAdminListSkeleton;
 use crate::components::ui::{
     button_class, use_toast, ButtonSize, ButtonVariant, ConfirmDialog, Icon, IconName, LoadError,
@@ -433,7 +433,7 @@ fn FriendForm(
                 }
             }
             div {
-                label { class: "admin-friend-label", r#for: "friend-name", "站点名称" }
+                FormLabel { label: "站点名称", html_for: "friend-name".to_string() }
                 input {
                     id: "friend-name",
                     class: "field",
@@ -444,7 +444,7 @@ fn FriendForm(
                 }
             }
             div {
-                label { class: "admin-friend-label", r#for: "friend-url", "链接" }
+                FormLabel { label: "链接", html_for: "friend-url".to_string() }
                 input {
                     id: "friend-url",
                     class: "field admin-friend-mono",
@@ -455,7 +455,7 @@ fn FriendForm(
                 }
             }
             div {
-                label { class: "admin-friend-label", r#for: "friend-avatar", "头像" }
+                FormLabel { label: "头像", html_for: "friend-avatar".to_string() }
                 div { class: "admin-friend-avatar-row",
                     span { class: "admin-friend-avatar", aria_hidden: "true",
                         if avatar().trim().is_empty() || avatar_failed() {
@@ -483,7 +483,7 @@ fn FriendForm(
                 }
             }
             div {
-                label { class: "admin-friend-label", r#for: "friend-desc", "简介" }
+                FormLabel { label: "简介", html_for: "friend-desc".to_string() }
                 textarea {
                     id: "friend-desc",
                     class: "field field-textarea",
@@ -496,7 +496,7 @@ fn FriendForm(
             }
             div { class: "admin-friend-form-row",
                 div { class: "admin-friend-order-field",
-                    label { class: "admin-friend-label", r#for: "friend-order", "排序值" }
+                    FormLabel { label: "排序值", html_for: "friend-order".to_string() }
                     input {
                         id: "friend-order",
                         class: "field admin-friend-mono",

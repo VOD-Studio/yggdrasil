@@ -6,7 +6,7 @@
 use super::client_request;
 use crate::api::notes::*;
 use crate::components::empty_state::{EmptyState, EmptyStateAction};
-use crate::components::forms::ToggleSwitch;
+use crate::components::forms::{FormLabel, ToggleSwitch};
 use crate::components::skeletons::notes_admin_skeleton::NotebooksSkeleton;
 use crate::components::ui::{
     button_class, use_toast, ButtonSize, ButtonVariant, ConfirmDialog, Icon, IconButton, IconName,
@@ -337,7 +337,7 @@ fn NotebookEditor(
             div { class: "admin-notebook-fields",
                 h2 { id: "notebook-editor-h", "{heading}" }
                 div {
-                    label { class: "admin-notebook-label", r#for: "notebook-title", "名称" }
+                    FormLabel { label: "名称", html_for: "notebook-title".to_string() }
                     input {
                         id: "notebook-title",
                         class: "field",
@@ -348,7 +348,7 @@ fn NotebookEditor(
                     }
                 }
                 div {
-                    label { class: "admin-notebook-label", r#for: "notebook-description", "简介" }
+                    FormLabel { label: "简介", html_for: "notebook-description".to_string() }
                     textarea {
                         id: "notebook-description",
                         class: "field field-textarea",

@@ -10,6 +10,7 @@
 use dioxus::prelude::*;
 
 use crate::components::code_runner::CodeRunner;
+use crate::components::forms::FormLabel;
 use crate::components::ui::{FilterTabs, StatusDot};
 use crate::infra::runner_config::ResourceLimits;
 use crate::router::Route;
@@ -116,7 +117,7 @@ pub fn Runner() -> Element {
                         p { class: "runner-admin-hint", "正在读取…" }
                     }
                     div {
-                        label { class: "runner-admin-label", r#for: "runner-overrides", "临时覆盖（JSON，可选）" }
+                        FormLabel { label: "临时覆盖（JSON，可选）", html_for: "runner-overrides".to_string() }
                         textarea {
                             id: "runner-overrides",
                             class: "field field-textarea settings-mono",

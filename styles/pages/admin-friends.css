@@ -180,13 +180,6 @@
   font-weight: 600;
 }
 
-.admin-friend-label {
-  display: block;
-  margin-bottom: 0.375rem;
-  color: var(--color-fg-2);
-  font-size: 0.78125rem;
-}
-
 .admin-friend-form .field {
   width: 100%;
   background-color: var(--color-surface-2);
