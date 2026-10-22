@@ -47,6 +47,7 @@ use crate::components::skeletons::post_preview_skeleton::PostPreviewSkeleton;
 use crate::components::ui::{button_class, use_toast, ButtonSize, ButtonVariant, Icon, IconName};
 use crate::models::post::{Post, PostStatus};
 use crate::router::Route;
+use crate::utils::error::failure_message;
 use dioxus::prelude::*;
 use dioxus::router::components::Link;
 
@@ -156,7 +157,7 @@ pub fn PostPreview(slug: String) -> Element {
                     reload += 1;
                 }
                 Ok(_) => toast.error("发布失败，请回到编辑页检查后重试"),
-                Err(e) => toast.error(format!("发布失败：{e}")),
+                Err(e) => toast.error(failure_message("发布失败", &e)),
             }
             publishing.set(false);
         });

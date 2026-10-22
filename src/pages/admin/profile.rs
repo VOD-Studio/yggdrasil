@@ -14,6 +14,8 @@ use crate::components::ui::{
     button_class, use_toast, ButtonSize, ButtonVariant, Icon, IconName, LoadError,
 };
 use crate::models::user::PublicUser;
+#[cfg(target_arch = "wasm32")]
+use crate::utils::error::failure_message;
 
 /// 新密码最短字符数，与服务端校验一致。
 const MIN_PASSWORD: usize = 8;
@@ -177,7 +179,7 @@ fn InfoSection(user: PublicUser, on_saved: EventHandler<PublicUser>) -> Element 
                     toast.success("资料已保存");
                 }
                 Ok(resp) => toast.error(resp.message),
-                Err(e) => toast.error(format!("保存失败：{e}")),
+                Err(e) => toast.error(failure_message("保存失败", &e)),
             }
             saving.set(false);
         });
@@ -348,7 +350,7 @@ fn PasswordSection() -> Element {
                     toast.success("密码已修改，其他设备上的登录已退出");
                 }
                 Ok(resp) => toast.error(resp.message),
-                Err(e) => toast.error(format!("修改失败：{e}")),
+                Err(e) => toast.error(failure_message("修改失败", &e)),
             }
             busy.set(false);
         });

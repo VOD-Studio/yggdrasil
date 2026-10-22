@@ -6,6 +6,7 @@ use crate::components::ui::{
 };
 use crate::models::asset::{AssetDto, AssetRef, AssetRefPostStatus};
 use crate::router::Route;
+use crate::utils::error::failure_message;
 use crate::utils::format_bytes;
 use dioxus::prelude::*;
 
@@ -122,7 +123,7 @@ pub(super) fn AssetDetail(
                     on_changed.call(());
                 }
                 Ok(res) => toast.error(res.message),
-                Err(e) => toast.error(format!("保存失败：{e}")),
+                Err(e) => toast.error(failure_message("保存失败", &e)),
             }
             saving.set(false);
         });

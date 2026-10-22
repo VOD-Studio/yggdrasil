@@ -28,6 +28,7 @@ use crate::components::ui::{
     Menu, MenuItem,
 };
 use crate::router::Route;
+use crate::utils::error::failure_message;
 use editor::use_write_editor;
 use metadata::MetadataPanel;
 use state::{PostDraft, SaveIndicator, SaveState};
@@ -186,7 +187,7 @@ fn WriteEditor(
                     navigator.push(Route::Posts {});
                 }
                 Ok(res) => toast.error(res.message),
-                Err(e) => toast.error(format!("移到回收站失败：{e}")),
+                Err(e) => toast.error(failure_message("移到回收站失败", &e)),
             }
         });
     };

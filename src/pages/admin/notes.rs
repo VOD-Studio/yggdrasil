@@ -21,6 +21,7 @@ use crate::components::ui::{
 };
 use crate::models::note::*;
 use crate::router::Route;
+use crate::utils::error::failure_message;
 use crate::utils::time::to_local;
 pub use notebooks::AdminNotebooks;
 
@@ -132,7 +133,7 @@ pub fn AdminNotes() -> Element {
                     toast.success(format!("已把「{}」恢复为草稿", note.display_title()));
                     response.restart();
                 }
-                Err(e) => toast.error(format!("恢复失败：{e}")),
+                Err(e) => toast.error(failure_message("恢复失败", &e)),
             }
             restoring.set(None);
         });
@@ -404,7 +405,7 @@ fn QuickNote(on_saved: EventHandler<()>) -> Element {
                         on_saved.call(());
                     }
                 }
-                Err(e) => toast.error(format!("保存失败：{e}")),
+                Err(e) => toast.error(failure_message("保存失败", &e)),
             }
         });
     };

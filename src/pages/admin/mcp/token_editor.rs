@@ -5,6 +5,7 @@ use crate::components::ui::{
     button_class, use_toast, ButtonSize, ButtonVariant, Checkbox, IconButton, IconName, ModalShell,
 };
 use crate::models::mcp_token::{validate_token_name, McpTokenSummary, NoteGrant, TokenScope};
+use crate::utils::error::failure_message;
 use dioxus::prelude::*;
 
 const SCOPES: [TokenScope; 3] = [TokenScope::Read, TokenScope::Write, TokenScope::Admin];
@@ -213,7 +214,7 @@ pub(super) fn CreateTokenDialog(
                     plaintext: resp.plaintext,
                     created: true,
                 }),
-                Err(e) => toast.error(format!("创建失败：{e}")),
+                Err(e) => toast.error(failure_message("创建失败", &e)),
             }
             busy.set(false);
         });
@@ -335,7 +336,7 @@ pub(super) fn EditPermissionsDialog(
                     toast.success("权限已更新，原令牌继续有效");
                     on_saved.call(());
                 }
-                Err(e) => toast.error(format!("保存失败：{e}")),
+                Err(e) => toast.error(failure_message("保存失败", &e)),
             }
             busy.set(false);
         });

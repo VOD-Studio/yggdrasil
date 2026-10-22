@@ -18,6 +18,7 @@ use crate::components::ui::{
     LoadError, TablePager,
 };
 use crate::models::comment::{AdminComment, CommentStatus};
+use crate::utils::error::failure_message;
 use crate::utils::time::to_local;
 
 /// 每页评论数，与服务端列表接口一致。
@@ -159,7 +160,7 @@ pub fn AdminCommentsPage(page: i32) -> Element {
                     refresh();
                 }
                 Ok(res) => toast.error(res.message),
-                Err(e) => toast.error(format!("操作失败：{e}")),
+                Err(e) => toast.error(failure_message("操作失败", &e)),
             }
             busy.set(false);
         });
@@ -490,7 +491,7 @@ fn ReplyComposer(
                     on_done.call(());
                 }
                 Ok(res) => toast.error(res.message),
-                Err(e) => toast.error(format!("回复失败：{e}")),
+                Err(e) => toast.error(failure_message("回复失败", &e)),
             }
             sending.set(false);
         });

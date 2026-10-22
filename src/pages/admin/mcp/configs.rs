@@ -4,6 +4,7 @@ use crate::api::mcp_tokens::{get_mcp_client_configs, reveal_mcp_token, McpClient
 use crate::components::ui::{
     button_class, use_toast, ButtonSize, ButtonVariant, Icon, IconButton, IconName, ModalShell,
 };
+use crate::utils::error::failure_message;
 use dioxus::prelude::*;
 
 /// 写入剪贴板；非浏览器目标或被拒绝时返回 `false`。
@@ -23,11 +24,11 @@ pub(super) async fn copy(text: &str) -> bool {
 pub(super) async fn copy_agent_prompt(id: String) -> Result<(), String> {
     let token = reveal_mcp_token(id)
         .await
-        .map_err(|e| format!("读取令牌失败：{e}"))?
+        .map_err(|e| failure_message("读取令牌失败", &e))?
         .ok_or("这个令牌已失效，请换一个或新建")?;
     let configs = get_mcp_client_configs(token)
         .await
-        .map_err(|e| format!("生成接入指令失败：{e}"))?;
+        .map_err(|e| failure_message("生成接入指令失败", &e))?;
     if copy(&configs.agent_prompt).await {
         Ok(())
     } else {
@@ -77,7 +78,7 @@ pub(super) fn TokenDialog(token: OpenToken, on_close: EventHandler<()>) -> Eleme
                 configs.set(Some(
                     get_mcp_client_configs(plaintext)
                         .await
-                        .map_err(|e| e.to_string()),
+                        .map_err(|e| failure_message("配置生成失败", &e)),
                 ));
             });
         }
@@ -198,7 +199,7 @@ pub(super) fn TokenDialog(token: OpenToken, on_close: EventHandler<()>) -> Eleme
                             p { class: "mcp-muted", role: "status", "正在生成配置…" }
                         },
                         Some(Err(e)) => rsx! {
-                            p { class: "mcp-error", role: "alert", "配置生成失败：{e}" }
+                            p { class: "mcp-error", role: "alert", "{e}" }
                         },
                         Some(Ok(c)) => {
                             let current = client().min(c.snippets.len().saturating_sub(1));

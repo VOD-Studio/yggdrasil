@@ -27,6 +27,7 @@ use crate::components::ui::{
 use crate::hooks::query::use_paginated;
 use crate::models::post::{PostListItem, PostStats, PostStatus};
 use crate::router::Route;
+use crate::utils::error::failure_message;
 use crate::utils::time::to_local;
 
 /// 每页展示的文章数量。
@@ -153,7 +154,7 @@ fn RebuildMenu() -> Element {
                         .unwrap_or_default()
                 )),
                 Ok(res) => toast.success(format!("已重建 {} 篇文章的渲染", res.rebuilt)),
-                Err(e) => toast.error(format!("重建失败：{e}")),
+                Err(e) => toast.error(failure_message("重建失败", &e)),
             }
             busy.set(false);
         });
@@ -290,7 +291,7 @@ fn PostsTable(on_changed: EventHandler<()>) -> Element {
                     reload();
                     on_changed.call(());
                 }
-                Err(e) => toast.error(format!("操作失败：{e}")),
+                Err(e) => toast.error(failure_message("操作失败", &e)),
             }
             batch_busy.set(false);
         });
@@ -324,7 +325,7 @@ fn PostsTable(on_changed: EventHandler<()>) -> Element {
                         toast.success(format!("已重建《{}》的渲染", post.title))
                     }
                     Ok(res) => toast.error(res.message),
-                    Err(e) => toast.error(format!("重建失败：{e}")),
+                    Err(e) => toast.error(failure_message("重建失败", &e)),
                 }
                 busy.write().remove(&post.id);
             });
@@ -341,7 +342,7 @@ fn PostsTable(on_changed: EventHandler<()>) -> Element {
                         on_changed.call(());
                     }
                     Ok(res) => toast.error(res.message),
-                    Err(e) => toast.error(format!("移到回收站失败：{e}")),
+                    Err(e) => toast.error(failure_message("移到回收站失败", &e)),
                 }
                 busy.write().remove(&post.id);
             });

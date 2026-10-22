@@ -20,6 +20,7 @@ use crate::components::ui::{
     IconButton, IconName, LoadError, Menu, MenuItem, TablePager,
 };
 use crate::models::asset::{AssetFilter, AssetSort};
+use crate::utils::error::failure_message;
 use crate::utils::format_bytes;
 
 /// 每页素材数，与服务端 list.rs 的 PER_PAGE 对齐。
@@ -145,7 +146,7 @@ pub fn Assets() -> Element {
                     refresh();
                 }
                 Ok(res) => toast.error(res.message),
-                Err(e) => toast.error(format!("删除失败：{e}")),
+                Err(e) => toast.error(failure_message("删除失败", &e)),
             }
             busy.set(false);
         });
@@ -169,7 +170,7 @@ pub fn Assets() -> Element {
                     checked.write().clear();
                     refresh();
                 }
-                Err(e) => toast.error(format!("批量删除失败：{e}")),
+                Err(e) => toast.error(failure_message("批量删除失败", &e)),
             }
             busy.set(false);
         });
@@ -190,7 +191,7 @@ pub fn Assets() -> Element {
                     toast.success(msg);
                     refresh();
                 }
-                Err(e) => toast.error(format!("清理失败：{e}")),
+                Err(e) => toast.error(failure_message("清理失败", &e)),
             }
             busy.set(false);
         });
@@ -203,7 +204,7 @@ pub fn Assets() -> Element {
                     toast.success(res.message);
                     refresh();
                 }
-                Err(e) => toast.error(format!("重建失败：{e}")),
+                Err(e) => toast.error(failure_message("重建失败", &e)),
             }
             busy.set(false);
         });

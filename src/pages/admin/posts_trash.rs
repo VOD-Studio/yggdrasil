@@ -26,6 +26,7 @@ use crate::hooks::query::use_paginated;
 use crate::models::post::{PostListItem, PostStatus};
 use crate::models::settings::TrashSettings;
 use crate::router::Route;
+use crate::utils::error::failure_message;
 use crate::utils::time::{now_millis, to_local};
 
 /// 每页展示的回收站文章数量。
@@ -166,7 +167,7 @@ pub fn PostsTrash() -> Element {
                     settle(&ids);
                 }
                 Ok(res) => toast.error(res.message),
-                Err(e) => toast.error(format!("恢复失败：{e}")),
+                Err(e) => toast.error(failure_message("恢复失败", &e)),
             }
             if single {
                 busy.write().remove(&ids[0]);
@@ -216,7 +217,7 @@ pub fn PostsTrash() -> Element {
                     }
                 }
                 Ok(res) => toast.error(res.message),
-                Err(e) => toast.error(format!("彻底删除失败：{e}")),
+                Err(e) => toast.error(failure_message("彻底删除失败", &e)),
             }
             if let PurgeTarget::One { id, .. } = target {
                 busy.write().remove(&id);

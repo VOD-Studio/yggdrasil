@@ -3,6 +3,7 @@ use crate::api::database::backup::{
     create_backup, delete_backup, list_backups, restore_backup, BackupInfo,
 };
 use crate::api::database::tasks::TaskProgress;
+use crate::utils::error::failure_message;
 use dioxus::prelude::*;
 
 #[derive(Clone, PartialEq)]
@@ -43,7 +44,9 @@ impl BackupState {
             self.loading.set(false);
             match result {
                 Ok(list) => self.backups.set(list),
-                Err(error) => self.error.set(Some(error.to_string())),
+                Err(error) => self
+                    .error
+                    .set(Some(failure_message("读取备份列表失败", &error))),
             }
         });
     }
@@ -56,6 +59,7 @@ impl BackupState {
         self.progress.set(None);
         self.error.set(None);
         spawn(async move {
+            let restoring = restore.is_some();
             let result = match restore {
                 Some(filename) => restore_backup(filename, true).await,
                 None => create_backup().await,
@@ -63,7 +67,12 @@ impl BackupState {
             match result {
                 Ok(id) => self.operation.set(Operation::Running(id)),
                 Err(error) => {
-                    self.error.set(Some(error.to_string()));
+                    let action = if restoring {
+                        "恢复失败"
+                    } else {
+                        "备份失败"
+                    };
+                    self.error.set(Some(failure_message(action, &error)));
                     self.operation.set(Operation::Idle);
                 }
             }
@@ -79,7 +88,7 @@ impl BackupState {
         spawn(async move {
             match delete_backup(filename).await {
                 Ok(()) => self.refresh(),
-                Err(error) => self.error.set(Some(error.to_string())),
+                Err(error) => self.error.set(Some(failure_message("删除失败", &error))),
             }
             self.operation.set(Operation::Idle);
         });
@@ -127,7 +136,7 @@ pub(super) fn use_backup_task() -> BackupState {
                         Err(error) => {
                             state
                                 .error
-                                .set(Some(format!("获取备份任务进度失败：{error}")));
+                                .set(Some(failure_message("获取备份进度失败", &error)));
                             state.operation.set(Operation::Idle);
                             return;
                         }

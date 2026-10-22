@@ -18,6 +18,8 @@ use crate::api::assets::list_assets;
 use crate::models::asset::AssetDto;
 #[cfg(target_arch = "wasm32")]
 use crate::models::asset::{AssetFilter, AssetSort};
+#[cfg(target_arch = "wasm32")]
+use crate::utils::error::failure_message;
 
 /// 每页素材数，与素材管理页及服务端列表接口保持一致。
 const ASSETS_PER_PAGE: i32 = 60;
@@ -208,7 +210,7 @@ pub fn AssetPickerModal(
                             total.set(resp.total);
                             error.set(None);
                         }
-                        Err(e) => error.set(Some(e.to_string())),
+                        Err(e) => error.set(Some(failure_message("素材加载失败", &e))),
                     }
                     if request_generation.get() == request_id {
                         loading.set(false);
@@ -285,7 +287,7 @@ pub fn AssetPickerModal(
                         &web_file.type_(),
                         web_file.size() as u64,
                         ) {
-                        error.set(Some(msg));
+                        error.set(Some(format!("上传失败：{msg}")));
                         } else {
                         let preview_url =
                             web_sys::Url::create_object_url_with_blob(&web_file).ok();
@@ -316,7 +318,7 @@ pub fn AssetPickerModal(
                                     cover_uploading.set(false);
                                 }
                                 Err(msg) => {
-                                    error.set(Some(msg));
+                                    error.set(Some(format!("上传失败：{msg}")));
                                     uploading_preview.set(None);
                                     cover_uploading.set(false);
                                 }
@@ -388,7 +390,7 @@ pub(crate) fn PickerGallery(
     rsx! {
         div { class: "asset-modal-body", "aria-busy": loading.then_some("true"),
             if let Some(error) = error {
-                p { class: "asset-modal-error", role: "alert", "加载失败：{error}" }
+                p { class: "asset-modal-error", role: "alert", "{error}" }
             } else if loading && items.is_empty() && !uploading {
                 p { class: "asset-modal-empty", role: "status", "正在读取素材…" }
             } else if items.is_empty() && !uploading {

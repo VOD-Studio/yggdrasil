@@ -3,6 +3,7 @@
 use super::state::{reconcile_save, EditorState, SaveState};
 use crate::api::notes::{act_on_note, get_owned_note, save_note};
 use crate::models::note::{Note, NoteAction, NoteDraft};
+use crate::utils::error::failure_message;
 use dioxus::prelude::*;
 
 async fn save_snapshot(mut state: EditorState) -> Result<Note, ServerFnError> {
@@ -23,6 +24,7 @@ fn finish(
     mut state: EditorState,
     result: Result<Note, ServerFnError>,
     message: Option<&str>,
+    failure: &str,
 ) -> bool {
     match result {
         Ok(note) => {
@@ -34,7 +36,7 @@ fn finish(
             true
         }
         Err(error) => {
-            state.fail(error);
+            state.fail(failure_message(failure, &error));
             false
         }
     }
@@ -64,6 +66,15 @@ pub(super) async fn persist(state: EditorState, action: Option<NoteAction>) -> b
             NoteAction::Trash => "已移入回收站",
             NoteAction::Restore => "已恢复为草稿",
         }),
+        match action {
+            None => "保存失败",
+            Some(NoteAction::Publish) => "发布失败",
+            Some(NoteAction::IncludeKnowledge) => "收录失败",
+            Some(NoteAction::Unpublish) => "撤回失败",
+            Some(NoteAction::ExcludeKnowledge) => "移出知识库失败",
+            Some(NoteAction::Trash) => "移入回收站失败",
+            Some(NoteAction::Restore) => "恢复失败",
+        },
     )
 }
 
@@ -90,7 +101,12 @@ pub(super) async fn restore_revision(state: EditorState, version: i32) {
         save_snapshot(state).await
     }
     .await;
-    finish(state, result, Some("历史版本已恢复为新草稿"));
+    finish(
+        state,
+        result,
+        Some("历史版本已恢复为新草稿"),
+        "恢复历史版本失败",
+    );
 }
 
 pub(super) fn use_autosave(state: EditorState, recovery: Signal<Option<NoteDraft>>) {

@@ -268,7 +268,11 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
                 web_sys::console::warn_1(&format!("评论编辑器容器未找到: #{editor_dom_id}").into());
             }
             Err(e) => {
-                message.set(Some((format!("编辑器初始化失败: {e:?}"), "error")));
+                web_sys::console::error_1(&e);
+                message.set(Some((
+                    "评论编辑器加载失败，请刷新页面重试".to_string(),
+                    "error",
+                )));
             }
         }
     });

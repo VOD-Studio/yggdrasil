@@ -35,26 +35,31 @@ pub async fn post_multipart_file(
     // fetch Promise → Future → 解析响应体
     let resp_val = wasm_bindgen_futures::JsFuture::from(promise)
         .await
-        .map_err(|e| format!("上传请求失败: {e:?}"))?;
+        .map_err(|_| "网络连接中断，请检查网络后重试".to_string())?;
     let resp: web_sys::Response = resp_val
         .dyn_into()
-        .map_err(|_| "上传响应类型异常".to_string())?;
+        .map_err(|_| "没有收到服务器的响应".to_string())?;
 
     // 读响应体文本（无论 2xx 与否，服务端都返回 JSON）
-    let text_promise = resp.text().map_err(|e| format!("读取响应失败: {e:?}"))?;
+    let text_promise = resp
+        .text()
+        .map_err(|_| "没有收到完整的服务器响应".to_string())?;
     let text_val = wasm_bindgen_futures::JsFuture::from(text_promise)
         .await
-        .map_err(|e| format!("读取响应失败: {e:?}"))?;
+        .map_err(|_| "没有收到完整的服务器响应".to_string())?;
     let text = text_val.as_string().unwrap_or_default();
     let data: serde_json::Value = serde_json::from_str(&text).unwrap_or(serde_json::Value::Null);
 
     if data["success"].as_bool() == Some(true) {
         Ok(data)
     } else {
-        // 失败：优先用服务端中文 error，兜底用状态码
+        // 失败：优先用服务端中文 error；没有 JSON 时多半是反向代理拦下的，按状态码说明。
         Err(data["error"]
             .as_str()
             .map(|s| s.to_string())
-            .unwrap_or_else(|| format!("上传失败: {}", resp.status())))
+            .unwrap_or_else(|| match resp.status() {
+                413 => "文件超过服务器允许的大小".to_string(),
+                status => format!("服务器返回了错误（HTTP {status}）"),
+            }))
     }
 }

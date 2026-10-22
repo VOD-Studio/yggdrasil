@@ -15,6 +15,7 @@ use crate::components::ui::{
     button_class, use_toast, ButtonSize, ButtonVariant, ConfirmDialog, Icon, IconName, LoadError,
 };
 use crate::models::friend_link::FriendLink;
+use crate::utils::error::failure_message;
 
 /// 排序值步长：给手动插队留出空位。
 const SORT_STEP: i32 = 10;
@@ -111,14 +112,14 @@ pub fn FriendsAdmin() -> Element {
                 )
                 .await
                 {
-                    failed = Some(e.to_string());
+                    failed = Some(e);
                     break;
                 }
             }
             match failed {
                 None => toast.success("顺序已保存"),
                 Some(e) => {
-                    toast.error(format!("顺序保存失败：{e}"));
+                    toast.error(failure_message("顺序保存失败", &e));
                     reload += 1;
                 }
             }
@@ -396,7 +397,7 @@ fn FriendForm(
                     });
                     on_saved.call(());
                 }
-                Err(e) => toast.error(format!("保存失败：{e}")),
+                Err(e) => toast.error(failure_message("保存失败", &e)),
             }
             busy.set(false);
         });
@@ -412,7 +413,7 @@ fn FriendForm(
                     toast.success("友链已删除");
                     on_saved.call(());
                 }
-                Err(e) => toast.error(format!("删除失败：{e}")),
+                Err(e) => toast.error(failure_message("删除失败", &e)),
             }
             busy.set(false);
         });

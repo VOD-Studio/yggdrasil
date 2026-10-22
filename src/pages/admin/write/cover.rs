@@ -55,7 +55,7 @@ pub(super) fn CoverUploader(
                     form.write().cover_image = url;
                 }
                 Err(msg) => {
-                    cover_error.set(Some(msg));
+                    cover_error.set(Some(format!("封面上传失败：{msg}")));
                 }
             }
             cover_uploading.set(false);

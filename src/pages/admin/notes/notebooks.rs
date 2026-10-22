@@ -13,6 +13,7 @@ use crate::components::ui::{
     LoadError,
 };
 use crate::models::note::*;
+use crate::utils::error::failure_message;
 use dioxus::prelude::*;
 
 /// 右栏正在编辑的对象。
@@ -292,7 +293,7 @@ fn NotebookEditor(
                     on_saved.call(());
                 }
                 Err(e) => {
-                    toast.error(format!("保存失败：{e}"));
+                    toast.error(failure_message("保存失败", &e));
                     order.restart();
                 }
             }
@@ -314,7 +315,7 @@ fn NotebookEditor(
                     });
                     on_saved.call(());
                 }
-                Err(e) => toast.error(format!("操作失败：{e}")),
+                Err(e) => toast.error(failure_message("操作失败", &e)),
             }
             busy.set(false);
         });

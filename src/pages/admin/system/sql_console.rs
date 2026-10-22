@@ -19,7 +19,10 @@ pub(super) fn SqlConsoleTab() -> Element {
     use crate::api::database::sql_console::{execute_sql, ExecuteSqlOpts};
     #[cfg(target_arch = "wasm32")]
     use crate::bridges::codemirror;
+    // SQL 报错本身就是原因（如解析失败），不再加「执行失败」前缀。
     use crate::components::sql_result_table::SqlResultTable;
+    #[cfg(target_arch = "wasm32")]
+    use crate::utils::error::error_reason;
     // use_resolved_theme 两种构建都用：resolved() 在 wasm 块内消费，非 wasm 仅引用避免警告。
     use crate::theme::use_resolved_theme;
     #[cfg(target_arch = "wasm32")]
@@ -88,7 +91,9 @@ pub(super) fn SqlConsoleTab() -> Element {
         spawn(async move {
             match execute_sql(sql, opts).await {
                 Ok(r) => result.set(Some(r)),
-                Err(e) => error.set(Some(e.to_string())),
+                Err(e) => error.set(Some(
+                    error_reason(&e).unwrap_or_else(|| "执行失败，请稍后再试".into()),
+                )),
             }
             running.set(false);
         });
@@ -220,7 +225,9 @@ pub(super) fn SqlConsoleTab() -> Element {
             spawn(async move {
                 match execute_sql(sql, opts).await {
                     Ok(r) => result.set(Some(r)),
-                    Err(e) => error.set(Some(e.to_string())),
+                    Err(e) => error.set(Some(
+                        error_reason(&e).unwrap_or_else(|| "执行失败，请稍后再试".into()),
+                    )),
                 }
                 running.set(false);
             });

@@ -5,6 +5,7 @@ use crate::components::ui::{
     button_class, use_toast, ButtonSize, ButtonVariant, IconButton, IconName,
 };
 use crate::models::log::LogSettings;
+use crate::utils::error::failure_message;
 use dioxus::prelude::*;
 
 #[component]
@@ -36,7 +37,7 @@ pub(super) fn CleanupPolicy(on_close: EventHandler<()>) -> Element {
                     saved.set(Some(s));
                     toast.success("清理策略已保存");
                 }
-                Err(e) => toast.error(format!("保存失败：{e}")),
+                Err(e) => toast.error(failure_message("保存失败", &e)),
             }
             saving.set(false);
         });

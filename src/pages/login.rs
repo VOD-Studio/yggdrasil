@@ -10,6 +10,7 @@ use crate::api::auth::{login, AuthResponse};
 use crate::components::ui::{Button, ButtonSize, ButtonVariant, Icon, IconName};
 use crate::context::UserContext;
 use crate::router::Route;
+use crate::utils::error::failure_message;
 
 /// 登录与注册共用的外壳：文字标、居中面板、返回首页。
 #[component]
@@ -186,7 +187,7 @@ pub fn Login() -> Element {
                     let _ = dioxus::router::navigator().push(Route::Admin {});
                 }
                 Ok(AuthResponse { message, .. }) => error.set(Some(message)),
-                Err(e) => error.set(Some(format!("请求失败：{e}"))),
+                Err(e) => error.set(Some(failure_message("登录失败", &e))),
             }
             loading.set(false);
         });

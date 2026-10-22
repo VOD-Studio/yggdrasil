@@ -11,6 +11,7 @@ use dioxus::prelude::*;
 
 use super::SettingsSection;
 use crate::components::ui::use_toast;
+use crate::utils::error::failure_message;
 
 /// 保存条与各分区之间的共享状态。
 #[derive(Clone, Copy, PartialEq)]
@@ -174,7 +175,10 @@ where
                     bus.finish(section, true);
                 }
                 Err(e) => {
-                    toast.error(format!("「{}」保存失败：{e}", section.label()));
+                    toast.error(failure_message(
+                        &format!("「{}」保存失败", section.label()),
+                        &e,
+                    ));
                     bus.finish(section, false);
                 }
             }

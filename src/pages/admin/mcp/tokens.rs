@@ -5,6 +5,7 @@ use crate::components::empty_state::EmptyState;
 use crate::components::skeletons::atoms::SkeletonBox;
 use crate::components::ui::{use_toast, ConfirmDialog, IconName, LoadError, Menu, MenuItem};
 use crate::models::mcp_token::McpTokenSummary;
+use crate::utils::error::failure_message;
 use crate::utils::time::to_local;
 use dioxus::prelude::*;
 
@@ -39,7 +40,7 @@ pub(super) fn TokenTable(
                     created: false,
                 }),
                 Ok(None) => toast.error("这个令牌已失效，无法查看"),
-                Err(e) => toast.error(format!("读取令牌失败：{e}")),
+                Err(e) => toast.error(failure_message("读取令牌失败", &e)),
             }
             busy.set(None);
         });
@@ -54,7 +55,7 @@ pub(super) fn TokenTable(
                     toast.success(format!("已吊销「{}」", token.name));
                     on_changed.call(());
                 }
-                Err(e) => toast.error(format!("吊销失败：{e}")),
+                Err(e) => toast.error(failure_message("吊销失败", &e)),
             }
         });
     };

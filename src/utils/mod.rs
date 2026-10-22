@@ -1,6 +1,7 @@
 //! 通用工具函数子模块。
 //!
 //! - `comment_storage`：评论草稿 localStorage 持久化（WASM 端）。
+//! - `error`：server function 错误转可读失败提示（两端通用）。
 //! - `html`：HTML 转义（两端通用）。
 //! - `js`：WASM 端调用 `window.__init*` 可选全局函数（仅 wasm32）。
 //! - `text`：Markdown / 纯文本处理（仅 `server` feature）。
@@ -10,6 +11,8 @@
 
 /// 评论草稿 localStorage 持久化（仅在 WASM 端实际读写）。
 pub mod comment_storage;
+/// server function 错误转可读失败提示（前端后端通用）。
+pub mod error;
 /// HTML 转义工具（前端后端通用）。
 pub mod html;
 /// WASM 端 JS 全局函数调用工具（仅 wasm32 编译）。

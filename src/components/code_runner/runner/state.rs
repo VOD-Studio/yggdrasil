@@ -164,12 +164,9 @@ impl RunState {
 
     /// 提交被服务端拒绝：限流消息单独归类，其余视为系统失败。
     #[cfg(any(target_arch = "wasm32", test))]
-    pub fn rejected(message: &str) -> Self {
-        let message = message
-            .rsplit_once(": ")
-            .map_or(message, |(_, text)| text)
-            .trim()
-            .to_string();
+    pub fn rejected(error: &dioxus::prelude::ServerFnError) -> Self {
+        let message = crate::utils::error::error_reason(error)
+            .unwrap_or_else(|| "运行服务暂时不可用，请稍后再试".to_string());
         if message.contains("频繁") || message.contains("次数已达上限") {
             Self::Finished(Outcome::RateLimited(message))
         } else {
@@ -295,11 +292,14 @@ mod tests {
 
     #[test]
     fn rejected_submission_separates_rate_limits() {
-        let limited = RunState::rejected("error running server function: 请求过于频繁，请稍后再试");
+        use dioxus::prelude::ServerFnError;
+        let limited = RunState::rejected(&ServerFnError::new("请求过于频繁，请稍后再试"));
         assert_eq!(limited.label(), "请求过频");
         assert_eq!(limited.note().as_deref(), Some("请求过于频繁，请稍后再试"));
         assert!(limited.retryable());
-        assert_eq!(RunState::rejected("源代码过大").label(), "系统失败");
+        let oversized = RunState::rejected(&ServerFnError::new("源代码过大"));
+        assert_eq!(oversized.label(), "系统失败");
+        assert_eq!(oversized.note().as_deref(), Some("源代码过大"));
     }
 
     #[test]

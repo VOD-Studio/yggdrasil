@@ -10,6 +10,7 @@ use crate::api::auth::{register, AuthResponse};
 use crate::components::ui::{Button, ButtonSize, ButtonVariant};
 use crate::pages::login::{AuthAlert, AuthField, AuthShell, PasswordField};
 use crate::router::Route;
+use crate::utils::error::failure_message;
 
 /// 用户名：3–50 字节，只含字母、数字与下划线（与服务端 `validate_username` 一致）。
 fn username_error(value: &str) -> Option<String> {
@@ -99,7 +100,7 @@ pub fn Register() -> Element {
             match register(u, e, p).await {
                 Ok(AuthResponse { success: true, .. }) => success.set(true),
                 Ok(AuthResponse { message, .. }) => error.set(Some(message)),
-                Err(e) => error.set(Some(format!("请求失败：{e}"))),
+                Err(e) => error.set(Some(failure_message("注册失败", &e))),
             }
             loading.set(false);
         });

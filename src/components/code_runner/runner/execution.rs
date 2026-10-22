@@ -92,7 +92,7 @@ pub(super) fn use_execution(example: Option<RunnerExample>) -> Execution {
                         Ok(stream) => execution.stream.set(Some(stream)),
                         Err(_) => super::stream::poll_result(&id, execution).await,
                     },
-                    Err(error) => execution.state.set(RunState::rejected(&error.to_string())),
+                    Err(error) => execution.state.set(RunState::rejected(&error)),
                 }
             });
         });

@@ -1,6 +1,7 @@
 use super::{save::restore_revision, state::EditorState};
 use crate::api::notes::note_history;
 use crate::pages::admin::notes::client_request;
+use crate::utils::error::failure_message;
 use crate::utils::time::to_local;
 use dioxus::prelude::*;
 
@@ -30,7 +31,7 @@ pub(super) fn HistoryPanel(state: EditorState, locked: bool) -> Element {
                     p { class: "note-side-hint", "保存后开始记录版本。" }
                 },
                 Some(Err(e)) => rsx! {
-                    p { class: "note-side-hint", role: "alert", "历史版本加载失败：{e}" }
+                    p { class: "note-side-hint", role: "alert", {failure_message("历史版本加载失败", e)} }
                 },
                 None => rsx! {
                     p { class: "note-side-hint", role: "status", "正在读取历史版本…" }

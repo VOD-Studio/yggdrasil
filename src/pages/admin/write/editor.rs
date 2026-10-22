@@ -98,7 +98,8 @@ pub(super) fn use_write_editor(
                 }
                 Ok(None) => phase.set(EditorPhase::Failed("编辑器容器未就绪".into())),
                 Err(error) => {
-                    phase.set(EditorPhase::Failed(format!("编辑器初始化错误: {error:?}")))
+                    web_sys::console::error_1(&error);
+                    phase.set(EditorPhase::Failed("编辑器加载失败，请刷新页面重试".into()))
                 }
             }
         });

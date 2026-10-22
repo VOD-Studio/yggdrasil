@@ -2,6 +2,8 @@
 use super::state::{PostDraft, SaveState, WriteEditorState};
 use crate::bridges::library::library_ready;
 use crate::components::ui::Toaster;
+#[cfg(target_arch = "wasm32")]
+use crate::utils::error::failure_message;
 use dioxus::prelude::*;
 
 #[derive(Debug, PartialEq)]
@@ -182,7 +184,7 @@ pub(super) fn submit(state: WriteEditorState, toast: Toaster, status: &'static s
                     }
                 }
                 Ok(CreatePostResponse { message, .. }) => fail(save, message),
-                Err(error) => fail(save, format!("保存失败：{error}")),
+                Err(error) => fail(save, failure_message("保存失败", &error)),
             }
         });
     }
