@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **MCP 标签工具**：`create_tag`/`rename_tag` 同时失效文章列表、标签页与 SSR 缓存，改名后公开页面立即更新。
 - **长度校验按字符计**：用户名、评论昵称与评论内容按字符数而非字节数校验，与提示一致（中文昵称不再只能写约 16 字）。
 - **设置上限**：图片磁盘缓存容量与保留时长、限流速率、运行器输出与源码字节数补齐上限钳制，极大值不再关掉限制。
+- **可信代理段数说明**：README、`.env.example` 与「后台设置 → 安全」面板改为说明 `TRUSTED_PROXY_COUNT` 是 X-Forwarded-For 中真实客户端 IP 右侧的段数，而非代理层数；面板该项更名为「可信代理段数」。CDN + 源站反代应填 1，按原说明填 2 会信任伪造的 XFF 段。
 - **素材库列表查询**：本页引用计数改由已取回的引用明细派生，不再为每行跑 5 个关联子查询；tabs 汇总改为每个素材只判定一次引用（原先同一判定每行算 4 遍）；`note_asset_refs` 补 `asset_id` 索引（迁移 030）。
 
 ### Internal

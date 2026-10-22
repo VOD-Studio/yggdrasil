@@ -1,4 +1,4 @@
-//! 安全分区：CSRF 可信来源、Cookie Secure、反向代理层数、并发会话上限。
+//! 安全分区：CSRF 可信来源、Cookie Secure、可信代理段数、并发会话上限。
 //!
 //! 保存后失效 moka 缓存，数秒内全链路生效（CSRF 校验、cookie 构造、真实 IP 提取、
 //! 登录会话淘汰都走 runtime accessor）。
@@ -54,9 +54,9 @@ pub fn SecuritySection() -> Element {
                 ontoggle: move |_| draft.with_mut(|d| d.cookie_secure = !d.cookie_secure),
             }
             SettingRow {
-                label: "反向代理层数",
-                hint: "即 TRUSTED_PROXY_COUNT，用于从 X-Forwarded-For 取真实 IP。设错会允许伪造 IP 绕过限流。".to_string(),
-                div { class: "segmented settings-segmented", role: "radiogroup", aria_label: "反向代理层数",
+                label: "可信代理段数",
+                hint: "即 TRUSTED_PROXY_COUNT：X-Forwarded-For 中真实客户端 IP 右侧的段数，不等于代理层数。直连填 0；单层反代覆盖 XFF 并设置 X-Real-IP 时填 1；CDN + 源站反代填 1 而非 2。设大会允许伪造 IP 绕过限流。".to_string(),
+                div { class: "segmented settings-segmented", role: "radiogroup", aria_label: "可信代理段数",
                     for n in 0..=3u32 {
                         button {
                             key: "{n}",
@@ -65,7 +65,7 @@ pub fn SecuritySection() -> Element {
                             role: "radio",
                             aria_checked: "{d.trusted_proxy_count == n}",
                             onclick: move |_| draft.write().trusted_proxy_count = n,
-                            "{n} 层"
+                            "{n}"
                         }
                     }
                 }

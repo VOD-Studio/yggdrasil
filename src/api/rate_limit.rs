@@ -2,7 +2,7 @@
 //!
 //! 提供 strict、upload、image、comment、comment_upload（双层）、code_exec（双层）
 //! 等限流器，支持从 `X-Forwarded-For` / `X-Real-IP` 中提取客户端 IP，
-//! 并可通过 `TRUSTED_PROXY_COUNT` 配置信任代理层数。
+//! 并可通过 `TRUSTED_PROXY_COUNT` 配置 XFF 中真实客户端 IP 右侧的可信段数。
 //!
 //! 当未配置可信代理时，Axum handler 可回退到 TCP 连接的对端地址；
 //! Dioxus server function 无法获取对端地址，会退回到 `"unknown"` key，
@@ -233,21 +233,23 @@ fn is_valid_ip(ip: &str) -> bool {
     ip.parse::<std::net::IpAddr>().is_ok()
 }
 
-/// 从 `X-Forwarded-For` 头按信任代理层数提取真实客户端 IP。
+/// 从 `X-Forwarded-For` 头按可信段数提取真实客户端 IP。
 ///
 /// # 伪造风险（务必正确配置 `TRUSTED_PROXY_COUNT`）
 ///
 /// XFF 头由客户端**可写**，本函数以 `parts[len-1-trusted_proxy_count]` 选取
-/// 「可信代理链最左侧之外」的地址。该取值**完全依赖 `TRUSTED_PROXY_COUNT` 与真实
-/// 代理跳数精确相等**，一旦不符即可被滥用：
+/// 从右数第 `trusted_proxy_count + 1` 段。每层代理追加的是自己的对端地址，最外层
+/// 代理追加的就是客户端本身，所以 `TRUSTED_PROXY_COUNT` 应等于 XFF 中**真实客户端
+/// IP 右侧的段数**，而不是代理层数（CDN + 源站反代两层都追加时取 1）。一旦不符即可被滥用：
 /// - **配得偏大**：会选中客户端伪造的地址——攻击者在请求里塞入多个伪 XFF 段，
 ///   使选中的「客户端 IP」落为其伪造值，从而绕过按 IP 的限流（每次伪造一个新 IP），
 ///   或令多个真实用户被错误归并到同一代理 IP 的桶里。
 /// - **配得偏小**：会选中某一跳中间代理的 IP，导致所有用户共享同一个限流桶。
 ///
-/// 因此生产部署**必须**由最外层反向代理覆盖/重写 XFF（而非原样转发客户端 XFF），
-/// 并令 `TRUSTED_PROXY_COUNT` 等于「客户端 → 服务端」之间的真实代理跳数。
-/// 详见 `AGENTS.md` 中 `TRUSTED_PROXY_COUNT` 的部署说明。
+/// 段数不足 `trusted_proxy_count + 1` 时返回 `None`，由调用方回退 `X-Real-IP`。
+/// 因此只有单层反代时，该代理须用 `$remote_addr` 覆盖 XFF（而非追加）并设置
+/// `X-Real-IP`，再配 1；追加模式下 1 会选中客户端伪造的段。源站还必须只接受上游
+/// 代理回源，否则直连源站同样可伪造。
 #[cfg(feature = "server")]
 fn ip_from_x_forwarded_for(value: &str, trusted_proxy_count: usize) -> Option<String> {
     // X-Forwarded-For 格式：client, proxy1, proxy2, ..., proxyN
@@ -321,7 +323,7 @@ fn get_client_ip_internal(
 }
 
 #[cfg(feature = "server")]
-/// 根据信任代理层数从请求头中提取客户端 IP，并校验 IP 合法性。
+/// 根据可信代理段数从请求头中提取客户端 IP，并校验 IP 合法性。
 ///
 /// 当未配置可信代理时，不会信任任何 `X-Forwarded-For` / `X-Real-IP` 头，
 /// 而是直接返回 `peer` 中的 TCP 对端地址（如果提供）。
@@ -332,7 +334,7 @@ pub async fn get_client_ip_with_peer(
     get_client_ip_internal(headers, trusted_proxy_count().await, peer)
 }
 #[cfg(feature = "server")]
-/// 使用「站点配置 → 安全」面板的代理层数提取客户端 IP。
+/// 使用「站点配置 → 安全」面板的可信代理段数提取客户端 IP。
 ///
 /// 适用于 Dioxus server function 等无法获取 `ConnectInfo` 的场景。
 /// 生产环境建议配合反向代理与设置面板的 TRUSTED_PROXY_COUNT 使用。

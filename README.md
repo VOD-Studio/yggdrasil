@@ -39,7 +39,7 @@ make build   # 发布构建
 
 - `APP_BASE_URL`：CSRF 可信来源
 - `COOKIE_SECURE=true`
-- `TRUSTED_PROXY_COUNT`：精确的反代跳数，错误值会让 XFF 伪造绕过限流
+- `TRUSTED_PROXY_COUNT`：X-Forwarded-For 中真实客户端 IP 右侧的段数，不等于代理层数。直连填 0；单层反代用 `$remote_addr` 覆盖 XFF 并设置 `X-Real-IP` 时填 1；CDN + 源站反代（都追加 XFF）填 1 而非 2。设大会信任伪造 IP 绕过限流；源站还须只接受上游代理回源，否则直连源站同样可伪造
 
 容器监听 `127.0.0.1:3000`，探针为 `/healthz`（存活）与 `/readyz`（就绪）。
 

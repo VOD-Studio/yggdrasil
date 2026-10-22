@@ -354,13 +354,13 @@ impl SiteSettings {
 pub const DEFAULT_APP_BASE_URL: &str = "";
 /// 默认不给会话 cookie 加 Secure 标志（本地 HTTP 开发需要）。
 pub const DEFAULT_COOKIE_SECURE: bool = false;
-/// 默认反向代理层数 0（直接对外服务）。
+/// 默认可信代理段数 0（直接对外服务，不解析代理头）。
 pub const DEFAULT_TRUSTED_PROXY_COUNT: u32 = 0;
 /// 默认每用户最大并发会话数 5。
 pub const DEFAULT_MAX_SESSIONS_PER_USER: u32 = 5;
 
-/// `TRUSTED_PROXY_COUNT` 上限。超过真实代理层数会信任客户端伪造的 IP，
-/// 导致限流被绕过；上限给一个宽松天花板防误填危险大值。
+/// `TRUSTED_PROXY_COUNT` 上限。超过 XFF 中真实客户端 IP 右侧的段数会信任客户端
+/// 伪造的 IP，导致限流被绕过；上限给一个宽松天花板防误填危险大值。
 #[cfg(feature = "server")]
 pub const MAX_TRUSTED_PROXY_COUNT: u32 = 10;
 /// `MAX_SESSIONS_PER_USER` 下限（至少允许 1 个会话）。
@@ -380,7 +380,7 @@ pub struct SecuritySettings {
     pub app_base_url: String,
     /// 是否给会话 cookie 加 Secure 标志（仅 HTTPS 下发送）。
     pub cookie_secure: bool,
-    /// 应用前方的反向代理层数，用于从 X-Forwarded-For 提取真实客户端 IP。
+    /// X-Forwarded-For 中真实客户端 IP 右侧的段数（不等于代理层数），用于提取真实客户端 IP。
     pub trusted_proxy_count: u32,
     /// 单用户最大并发会话数，超出按最旧优先淘汰。
     pub max_sessions_per_user: u32,
@@ -398,7 +398,7 @@ impl Default for SecuritySettings {
 }
 
 impl SecuritySettings {
-    /// 将代理层数钳制到合法范围 [0, MAX]。
+    /// 将可信代理段数钳制到合法范围 [0, MAX]。
     #[cfg(feature = "server")]
     pub fn clamp_trusted_proxy_count(n: u32) -> u32 {
         n.min(MAX_TRUSTED_PROXY_COUNT)
