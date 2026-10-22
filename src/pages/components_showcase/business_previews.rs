@@ -10,7 +10,10 @@ use crate::components::assets::AssetSelection;
 use crate::components::code_runner::runner::RunnerExample;
 use crate::components::code_runner::CodeRunner;
 use crate::components::sql_result_table::SqlResultTable;
-use crate::components::ui::{Icon, IconName, ModalShell, TablePager};
+use crate::components::ui::{
+    Button, ButtonSize, ButtonVariant, FilterTabs, Icon, IconButton, IconName, ModalShell,
+    TablePager,
+};
 
 pub(super) fn preview(slug: &str, detail: bool) -> Option<Element> {
     Some(match slug {
@@ -82,6 +85,27 @@ fn sample_selected() -> Vec<AssetSelection> {
         .collect()
 }
 
+/// 演示弹窗头部：与正式弹窗同为 `.asset-modal-head`，关闭前多一个「恢复默认」。
+#[component]
+fn DemoModalHead(
+    title: &'static str,
+    on_reset: EventHandler<()>,
+    on_close: EventHandler<()>,
+) -> Element {
+    rsx! {
+        div { class: "asset-modal-head",
+            h2 { "{title}" }
+            div { class: "flex items-center gap-1",
+                Button { variant: ButtonVariant::Ghost, size: ButtonSize::Sm, icon: IconName::RotateCcw,
+                    onclick: move |_| on_reset.call(()),
+                    "恢复默认"
+                }
+                IconButton { icon: IconName::X, label: "关闭", size: ButtonSize::Sm, onclick: move |_| on_close.call(()) }
+            }
+        }
+    }
+}
+
 #[component]
 fn PickerDemo(detail: bool) -> Element {
     let mut visible = use_signal(|| false);
@@ -100,18 +124,23 @@ fn PickerDemo(detail: bool) -> Element {
     rsx! {
         div { class: if detail { "showcase-picker-demo showcase-picker-detail" } else { "showcase-picker-demo" },
             if detail {
-                div { class: "showcase-demo-actions",
-                    button { r#type: "button", onclick: move |_| { selected.set(Vec::new()); page.set(1); visible.set(true); }, "打开素材选择弹窗" }
+                div { class: "showcase-demo-bar",
+                    Button { variant: ButtonVariant::Secondary, size: ButtonSize::Sm,
+                        onclick: move |_| { selected.set(Vec::new()); page.set(1); visible.set(true); },
+                        "打开素材选择弹窗"
+                    }
                     span { "本地演示，选择不会写入文章。" }
                 }
             }
             if !visible() {
-                PickerDemoContent { detail, selected, multi, query, page, confirmed, visible }
+                div { class: "showcase-picker-panel",
+                    PickerDemoContent { detail, selected, multi, query, page, confirmed, visible }
+                }
             }
             if detail {
-                ModalShell { visible, closing, title: "素材选择演示", panel_class: "w-full max-w-3xl min-h-0",
-                    div { class: "showcase-demo-actions", span { "素材选择 · 本地演示" }
-                        button { r#type: "button", onclick: move |_| {
+                ModalShell { visible, closing, title: "选择图片", overlay_padding: "p-4 sm:p-6", panel_class: "asset-modal asset-picker",
+                    DemoModalHead { title: "选择图片",
+                        on_reset: move |_| {
                             selected.set(sample_selected());
                             multi.set(true);
                             query.set(String::new());
@@ -119,8 +148,8 @@ fn PickerDemo(detail: bool) -> Element {
                             confirmed.set(Vec::new());
                             closing.set(true);
                             visible.set(false);
-                        }, "↻ 恢复默认" }
-                        button { r#type: "button", aria_label: "关闭", onclick: move |_| { closing.set(true); visible.set(false); }, "×" }
+                        },
+                        on_close: move |_| { closing.set(true); visible.set(false); },
                     }
                     PickerDemoContent { detail: true, selected, multi, query, page, confirmed, visible }
                 }
@@ -143,40 +172,43 @@ fn PickerDemoContent(
     mut visible: Signal<bool>,
 ) -> Element {
     let (items, total) = picker_page(&query(), page());
+    let mode = if multi() { "multi" } else { "single" };
+    // 不带外框：卡片预览外包 .showcase-picker-panel，弹窗里直接排进 .asset-modal。
     rsx! {
-        div { class: "showcase-picker-panel",
-            div { class: "showcase-picker-toolbar",
-                label { class: "field field-sm admin-filter-search asset-modal-search",
-                    Icon { name: IconName::Search, size: 14 }
-                    span { class: "sr-only", "搜索素材" }
-                    input {
-                        r#type: "search",
-                        placeholder: "文件名或替代文本",
-                        value: "{query}",
-                        oninput: move |e| { query.set(e.value()); page.set(1); },
-                    }
-                }
-                if detail {
-                    div { class: "showcase-picker-mode-switch",
-                        button { r#type: "button", aria_pressed: "{!multi()}", onclick: move |_| { multi.set(false); selected.set(Vec::new()); }, "单选" }
-                        button { r#type: "button", aria_pressed: "{multi()}", onclick: move |_| { multi.set(true); selected.set(Vec::new()); }, "多选" }
-                    }
+        div { class: "asset-modal-bar",
+            label { class: "field field-sm admin-filter-search asset-modal-search",
+                Icon { name: IconName::Search, size: 14 }
+                span { class: "sr-only", "搜索素材" }
+                input {
+                    r#type: "search",
+                    placeholder: "文件名或替代文本",
+                    value: "{query}",
+                    oninput: move |e| { query.set(e.value()); page.set(1); },
                 }
             }
-            PickerGallery { items, selected, multi: multi(), loading: false, uploading: false, error: None,
-                uploading_preview: None,
-                on_pick: move |picks: Vec<AssetSelection>| { confirmed.set(picks); visible.set(false); }
-            }
-            if total > 3 {
-                div { class: "asset-modal-pager",
-                    TablePager { page: page(), total, per_page: 3, unit: "张",
-                        on_change: move |next: i32| page.set(next.clamp(1, ((total + 2) / 3) as i32)),
-                    }
+            if detail {
+                FilterTabs {
+                    items: vec![("single", "单选"), ("multi", "多选")],
+                    active_value: mode.to_string(),
+                    on_change: move |value: String| { multi.set(value == "multi"); selected.set(Vec::new()); },
+                    aria_label: "选择方式",
+                    class: "",
                 }
             }
-            if multi() {
-                PickerSelectionFooter { selected, on_pick: move |picks: Vec<AssetSelection>| { confirmed.set(picks); visible.set(false); } }
+        }
+        PickerGallery { items, selected, multi: multi(), loading: false, uploading: false, error: None,
+            uploading_preview: None,
+            on_pick: move |picks: Vec<AssetSelection>| { confirmed.set(picks); visible.set(false); }
+        }
+        if total > 3 {
+            div { class: "asset-modal-pager",
+                TablePager { page: page(), total, per_page: 3, unit: "张",
+                    on_change: move |next: i32| page.set(next.clamp(1, ((total + 2) / 3) as i32)),
+                }
             }
+        }
+        if multi() {
+            PickerSelectionFooter { selected, on_pick: move |picks: Vec<AssetSelection>| { confirmed.set(picks); visible.set(false); } }
         }
     }
 }
@@ -190,24 +222,24 @@ fn UploadDemo(detail: bool) -> Element {
     rsx! {
         div { class: if detail { "showcase-upload-demo showcase-upload-detail" } else { "showcase-upload-demo" },
             if detail {
-                div { class: "showcase-demo-actions",
-                    button { r#type: "button", onclick: move |_| visible.set(true), "打开上传弹窗" }
-                    button { r#type: "button", onclick: move |_| { generation += 1; items.set(Vec::new()); }, "空状态" }
-                    button { r#type: "button", onclick: move |_| { generation += 1; items.set(sample_upload_items()); }, "代表状态" }
+                div { class: "showcase-demo-bar",
+                    Button { variant: ButtonVariant::Secondary, size: ButtonSize::Sm, onclick: move |_| visible.set(true), "打开上传弹窗" }
+                    Button { variant: ButtonVariant::Ghost, size: ButtonSize::Sm, onclick: move |_| { generation += 1; items.set(Vec::new()); }, "空状态" }
+                    Button { variant: ButtonVariant::Ghost, size: ButtonSize::Sm, onclick: move |_| { generation += 1; items.set(sample_upload_items()); }, "代表状态" }
                     span { "本地演示，示例文件不会上传。" }
                 }
             }
             if !visible() { UploadDemoPanel { items, generation } }
             if detail {
-                ModalShell { visible, closing, title: "上传素材演示", panel_class: "asset-modal asset-uploader",
-                    div { class: "showcase-demo-actions", span { "素材上传 · 本地演示" }
-                        button { r#type: "button", onclick: move |_| {
+                ModalShell { visible, closing, title: "上传素材", panel_class: "asset-modal asset-uploader",
+                    DemoModalHead { title: "上传素材",
+                        on_reset: move |_| {
                             generation += 1;
                             items.set(sample_upload_items());
                             closing.set(true);
                             visible.set(false);
-                        }, "↻ 恢复默认" }
-                        button { r#type: "button", aria_label: "关闭", onclick: move |_| { closing.set(true); visible.set(false); }, "×" }
+                        },
+                        on_close: move |_| { closing.set(true); visible.set(false); },
                     }
                     UploadDemoPanel { items, generation }
                 }
@@ -343,12 +375,18 @@ fn RunnerDemo(detail: bool) -> Element {
             error: String::new(),
         }
     };
+    let output_mode = if failed() { "error" } else { "ok" };
     rsx! {
         div { class: if detail { "showcase-runner-demo showcase-runner-detail" } else { "showcase-runner-demo" }, id: host_id,
             if detail {
-                div { class: "showcase-demo-actions",
-                    button { r#type: "button", aria_pressed: "{!failed()}", onclick: move |_| failed.set(false), "正常输出" }
-                    button { r#type: "button", aria_pressed: "{failed()}", onclick: move |_| failed.set(true), "错误输出" }
+                div { class: "showcase-demo-bar",
+                    FilterTabs {
+                        items: vec![("ok", "正常输出"), ("error", "错误输出")],
+                        active_value: output_mode.to_string(),
+                        on_change: move |value: String| failed.set(value == "error"),
+                        aria_label: "输出示例",
+                        class: "",
+                    }
                     span { "固定输出示例，与编辑后的代码无关；不会执行程序。" }
                 }
             }
@@ -584,60 +622,40 @@ fn sample_sql_result(preset: SqlPreset, detail: bool) -> (SqlResult, &'static st
 fn SqlTableDemo(detail: bool) -> Element {
     let mut preset = use_signal(|| SqlPreset::Posts);
     let (result, query_text, stats_text) = sample_sql_result(preset(), detail);
+    let active = match preset() {
+        SqlPreset::Posts => "posts",
+        SqlPreset::Comments => "comments",
+        SqlPreset::Metrics => "metrics",
+    };
 
     rsx! {
         div { class: if detail { "showcase-sql-demo showcase-sql-detail" } else { "showcase-sql-demo" },
             if detail {
-                div { class: "showcase-demo-actions",
-                    button {
-                        r#type: "button",
-                        aria_pressed: "{preset() == SqlPreset::Posts}",
-                        onclick: move |_| preset.set(SqlPreset::Posts),
-                        "文章数据 (posts)"
+                div { class: "showcase-demo-bar",
+                    FilterTabs {
+                        items: vec![("posts", "文章"), ("comments", "评论"), ("metrics", "系统指标")],
+                        active_value: active.to_string(),
+                        on_change: move |value: String| preset.set(match value.as_str() {
+                            "comments" => SqlPreset::Comments,
+                            "metrics" => SqlPreset::Metrics,
+                            _ => SqlPreset::Posts,
+                        }),
+                        aria_label: "示例查询",
+                        class: "",
                     }
-                    button {
-                        r#type: "button",
-                        aria_pressed: "{preset() == SqlPreset::Comments}",
-                        onclick: move |_| preset.set(SqlPreset::Comments),
-                        "评论数据 (comments)"
-                    }
-                    button {
-                        r#type: "button",
-                        aria_pressed: "{preset() == SqlPreset::Metrics}",
-                        onclick: move |_| preset.set(SqlPreset::Metrics),
-                        "系统指标 (metrics)"
-                    }
-                    span { "点击任意行展开跨列完整详情；布尔、数字、文本与 NULL 呈现差异化渲染。" }
+                    span { "点击任意行展开完整字段。" }
                 }
             }
-            div { class: "showcase-sql-window",
-                div { class: "showcase-sql-window-bar",
-                    div { class: "showcase-sql-window-dots",
-                        span { class: "dot-close" }
-                        span { class: "dot-min" }
-                        span { class: "dot-max" }
-                    }
-                    div { class: "showcase-sql-query-tag",
-                        span { class: "opacity-50 mr-1 select-none", "yggdrasil=#" }
-                        span { class: "truncate", "{query_text}" }
-                    }
-                    div { class: "showcase-sql-meta-badge",
-                        span { class: "badge-type", "SELECT" }
-                        span { class: "badge-stats", "{stats_text}" }
-                    }
+            // 与系统页 SQL 控制台的结果区同一结构。
+            section { class: "admin-panel sys-section sys-result",
+                div { class: "sys-section-head",
+                    code { class: "showcase-sql-query", "{query_text}" }
+                    span { "{stats_text}" }
                 }
-                div { class: "showcase-sql-content",
-                    div { key: "{preset() as usize}-{detail}",
-                        SqlResultTable {
-                            result,
-                            initial_expanded: if detail && preset() == SqlPreset::Posts { Some(0) } else { None },
-                        }
-                    }
-                }
-                if detail {
-                    div { class: "showcase-sql-window-foot",
-                        span { "PostgreSQL 16.2 · UTF-8" }
-                        span { "提示：点击左侧箭头或行内容展开 / 收起完整字段" }
+                div { key: "{preset() as usize}-{detail}",
+                    SqlResultTable {
+                        result,
+                        initial_expanded: if detail && preset() == SqlPreset::Posts { Some(0) } else { None },
                     }
                 }
             }
