@@ -75,15 +75,17 @@ fn normalize_display_name(input: Option<String>) -> Result<Option<String>, Strin
 
 #[cfg(feature = "server")]
 /// 归一化头像 URL：trim 后为空 → None；否则必须为 http(s) 链接或
-/// 安全的 `/uploads/` 素材路径（与友链头像同一规则），上限 512 字符。
+/// 安全的 `/uploads/` 素材路径（与友链头像共用 [`crate::api::friends::is_local_asset_url`]），
+/// 上限 512 字符。
 fn normalize_avatar_url(input: Option<String>) -> Result<Option<String>, String> {
+    use crate::api::friends::is_local_asset_url;
+
     let trimmed = input.unwrap_or_default().trim().to_string();
     if trimmed.is_empty() {
         return Ok(None);
     }
     let is_http_url = trimmed.starts_with("http://") || trimmed.starts_with("https://");
-    let is_uploads_path = trimmed.starts_with("/uploads/");
-    if !is_http_url && !is_uploads_path {
+    if !is_http_url && !is_local_asset_url(&trimmed) {
         return Err("头像必须为 http(s) 链接或 /uploads/ 素材路径".to_string());
     }
     if trimmed.chars().count() > 512 {
@@ -336,5 +338,24 @@ mod tests {
         // 超长拒绝。
         let over = format!("/uploads/{}", "a".repeat(512));
         assert!(normalize_avatar_url(Some(over)).is_err());
+    }
+
+    #[test]
+    fn avatar_url_rejects_unsafe_uploads_paths() {
+        for bad in [
+            "/uploads/../../x",
+            "/uploads/",
+            "/uploads//x",
+            "/uploads/a\0b",
+        ] {
+            assert!(
+                normalize_avatar_url(Some(bad.to_string())).is_err(),
+                "{bad:?} 应被拒绝"
+            );
+        }
+        assert_eq!(
+            normalize_avatar_url(Some(" /uploads/2026/08/a.webp ".to_string())),
+            Ok(Some("/uploads/2026/08/a.webp".to_string()))
+        );
     }
 }

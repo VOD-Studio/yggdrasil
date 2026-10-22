@@ -196,6 +196,17 @@ pub async fn delete_friend_link(id: i32) -> Result<(), ServerFnError> {
     unreachable!()
 }
 
+/// 是否为安全的本地素材路径：`/uploads/` 之后非空，且不含二次 `/` 开头、`..`、`\0`。
+///
+/// 友链头像与用户头像共用这条规则（见 `crate::api::profile`）。
+#[cfg(feature = "server")]
+pub(crate) fn is_local_asset_url(value: &str) -> bool {
+    let Some(path) = value.strip_prefix("/uploads/") else {
+        return false;
+    };
+    !path.is_empty() && !path.starts_with('/') && !path.contains("..") && !path.contains('\0')
+}
+
 /// 校验友链字段并返回归一化后的头像 URL。
 ///
 /// 规则（全部 `AppError::BadRequest`，消息原样透传给后台表单）：
@@ -205,14 +216,6 @@ pub async fn delete_friend_link(id: i32) -> Result<(), ServerFnError> {
 /// - `avatar_url`：`None` 或 trim 后为空 → 归一化为 `None`；否则必须为 http(s) 链接或
 ///   安全的 `/uploads/` 素材路径；
 /// - `description` trim 后 ≤ 200 字符。
-#[cfg(feature = "server")]
-fn is_local_asset_url(value: &str) -> bool {
-    let Some(path) = value.strip_prefix("/uploads/") else {
-        return false;
-    };
-    !path.is_empty() && !path.starts_with('/') && !path.contains("..") && !path.contains('\0')
-}
-
 #[cfg(feature = "server")]
 fn validate_link(
     name: &str,
