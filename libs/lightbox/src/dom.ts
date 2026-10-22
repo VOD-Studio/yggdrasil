@@ -58,6 +58,24 @@ function divider(): HTMLSpanElement {
   return el;
 }
 
+// 底部操作提示的一组「按键 + 动作」：{ key } 画成键帽，字符串是动作说明。
+type HintPart = string | { key: string };
+
+function hintItem(parts: HintPart[]): HTMLSpanElement {
+  const item = document.createElement('span');
+  item.className = 'lightbox-hint-item';
+  for (const part of parts) {
+    if (typeof part === 'string') {
+      item.append(part);
+      continue;
+    }
+    const kbd = document.createElement('kbd');
+    kbd.textContent = part.key;
+    item.appendChild(kbd);
+  }
+  return item;
+}
+
 export function createLightboxElements(
   altText: string,
   gallery: HTMLElement[],
@@ -222,15 +240,16 @@ export function createLightboxElements(
   const hint = document.createElement('p');
   hint.className = 'lightbox-hint';
   hint.setAttribute('aria-hidden', 'true');
-  hint.textContent = [
-    isGallery ? '← → 切换' : '',
-    'Ctrl / ⌘ + 滚轮或双击缩放',
-    '拖动平移',
-    'R 旋转',
-    'Esc 关闭',
-  ]
-    .filter(Boolean)
-    .join(' · ');
+  // Ctrl 与 ⌘ 都能滚轮缩放，提示只写本平台惯用的那个键。
+  const modKey = /Mac|iPhone|iPad|iPod/.test(navigator.platform) ? '⌘' : 'Ctrl';
+  const hintItems: HintPart[][] = [
+    ...(isGallery ? [[{ key: '←' }, { key: '→' }, '切换']] : []),
+    [{ key: modKey }, '+ 滚轮或双击缩放'],
+    ['拖动平移'],
+    [{ key: 'R' }, '旋转'],
+    [{ key: 'Esc' }, '关闭'],
+  ];
+  hint.append(...hintItems.map(hintItem));
   bottom.appendChild(hint);
 
   overlay.append(img, errorBox, topbar, bottom);

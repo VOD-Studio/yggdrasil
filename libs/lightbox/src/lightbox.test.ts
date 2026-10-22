@@ -837,7 +837,7 @@ describe('lightbox 黑盒行为', () => {
       expect(document.querySelector('.lightbox-thumbs')).toBeNull();
       const hint = document.querySelector('.lightbox-hint')!.textContent;
       expect(hint).not.toContain('切换');
-      expect(hint).toContain('R 旋转');
+      expect(hint).toContain('旋转');
     });
 
     it('Tab 在灯箱控件间循环，不落回背后的页面', () => {
