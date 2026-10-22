@@ -7,40 +7,19 @@
 /* ---- 快速记录 ---- */
 .admin-notes-quick {
   padding: 0.875rem 0.875rem 0.625rem 1.125rem;
-  border-radius: var(--radius-composer);
-  background-color: var(--color-surface-3);
-  box-shadow: 0 0 0 var(--hairline) var(--color-hairline), var(--shadow-composer);
-  transition: box-shadow 220ms var(--ease-out-expo);
 }
 
-.admin-notes-quick:focus-within {
-  box-shadow: var(--shadow-focus), var(--shadow-composer);
-}
-
-.admin-notes-quick-text {
+.admin-notes-quick .composer-input {
   display: block;
   width: 100%;
   min-height: 3.5rem;
-  max-height: 20rem;
   padding: 0;
-  resize: none;
-  field-sizing: content;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  color: var(--color-fg);
-  font: inherit;
   font-size: 0.9375rem;
   line-height: 1.7;
 }
 
-.admin-notes-quick-text::placeholder,
 .admin-notes-quick-tags::placeholder {
   color: var(--color-fg-3);
-}
-
-.admin-notes-quick-text:disabled {
-  opacity: 0.5;
 }
 
 .admin-notes-quick-foot {

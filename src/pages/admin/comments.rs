@@ -15,8 +15,9 @@ use crate::api::comments::{AllCommentsResponse, CommentCounts};
 use crate::components::empty_state::EmptyState;
 use crate::components::skeletons::admin_comments_skeleton::AdminCommentsListSkeleton;
 use crate::components::ui::{
-    button_class, use_toast, ButtonSize, ButtonVariant, Checkbox, IconButton, IconName, LoadError,
-    SegmentedControl, SegmentedItem, TablePager,
+    button_class, use_toast, ButtonSize, ButtonVariant, Checkbox, Composer, ComposerInput,
+    ComposerSend, ComposerSize, IconButton, IconName, LoadError, SegmentedControl, SegmentedItem,
+    TablePager,
 };
 use crate::models::comment::{AdminComment, CommentStatus};
 use crate::utils::error::failure_message;
@@ -506,30 +507,21 @@ fn ReplyComposer(
         });
     };
     rsx! {
-        div { class: "composer admin-comment-reply",
-            textarea {
-                class: "composer-input",
-                aria_label: "回复 {author}",
-                placeholder: "回复 {author}…（⌘↵ 发送）",
-                rows: "2",
+        Composer { size: ComposerSize::Sm, class: "admin-comment-reply",
+            ComposerInput {
+                multiline: true,
                 autofocus: true,
-                value: "{text}",
-                oninput: move |e| text.set(e.value()),
-                onkeydown: move |e| {
-                    let m = e.modifiers();
-                    if (m.meta() || m.ctrl()) && e.key() == Key::Enter {
-                        e.prevent_default();
-                        send();
-                    }
-                },
+                aria_label: format!("回复 {author}"),
+                placeholder: format!("回复 {author}…（⌘↵ 发送）"),
+                value: text(),
+                oninput: move |value: String| text.set(value),
+                on_submit: move |_| send(),
             }
-            button {
-                class: "composer-send",
-                r#type: "button",
-                aria_label: "发送回复",
+            ComposerSend {
+                label: "发送回复",
+                icon: IconName::Send,
                 disabled: sending() || text().trim().is_empty(),
                 onclick: move |_| send(),
-                crate::components::ui::Icon { name: IconName::Send, size: 16 }
             }
         }
     }

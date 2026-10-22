@@ -11,7 +11,10 @@ use crate::api::posts::{list_tags, search_posts, PostListResponse};
 use crate::components::palette::{contains_ci, highlight, snippet};
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::skeletons::search_skeleton::SearchSkeleton;
-use crate::components::ui::{Icon, IconName, LoadError, SegmentedControl, SegmentedItem};
+use crate::components::ui::{
+    Composer, ComposerInput, ComposerSend, Icon, IconName, LoadError, SegmentedControl,
+    SegmentedItem,
+};
 use crate::models::post::PostListItem;
 use crate::pages::archives::ranked_tags;
 use crate::router::Route;
@@ -222,7 +225,7 @@ pub fn Search(#[props(default)] q: String) -> Element {
         div { class: "search-page",
             h1 { class: "search-title page-enter", "搜索" }
             form {
-                class: "composer search-composer page-enter",
+                class: "search-composer page-enter",
                 style: "--enter-index: 1",
                 role: "search",
                 action: "/search",
@@ -231,68 +234,52 @@ pub fn Search(#[props(default)] q: String) -> Element {
                     event.prevent_default();
                     on_search(query());
                 },
-                Icon { name: IconName::Search, size: 18 }
-                label { class: "sr-only", r#for: "article-search", "搜索文章" }
-                input {
-                    id: "article-search",
-                    class: "composer-input",
-                    r#type: "search",
-                    name: "q",
-                    placeholder: "标题、摘要或标签…",
-                    autocomplete: "off",
-                    maxlength: "200",
-                    "enterkeyhint": "search",
-                    value: query(),
-                    onmounted: move |event| input_element.set(Some(event.data())),
-                    oninput: move |event| {
-                        let value = event.value();
-                        if value.is_empty() {
-                            clear_search();
-                        } else {
-                            query.set(value);
-                            schedule_search();
-                        }
-                    },
-                    oncompositionstart: move |_| {
-                        is_composing.set(true);
-                        schedule_search();
-                    },
-                    oncompositionend: move |_| {
-                        is_composing.set(false);
-                        schedule_search();
-                    },
-                    onkeydown: move |event| {
-                        if event.is_composing() || is_composing() {
-                            return;
-                        }
-                        match event.key() {
-                            Key::Escape => {
-                                event.prevent_default();
+                Composer {
+                    Icon { name: IconName::Search, size: 18 }
+                    label { class: "sr-only", r#for: "article-search", "搜索文章" }
+                    ComposerInput {
+                        id: "article-search".to_string(),
+                        search: true,
+                        maxlength: 200,
+                        placeholder: "标题、摘要或标签…",
+                        value: query(),
+                        onmounted: move |event: MountedEvent| input_element.set(Some(event.data())),
+                        oninput: move |value: String| {
+                            if value.is_empty() {
                                 clear_search();
+                            } else {
+                                query.set(value);
+                                schedule_search();
                             }
-                            Key::ArrowDown if search_res().as_ref().is_some_and(|r| r.as_ref().is_ok_and(|r| !r.posts.is_empty())) => {
-                                event.prevent_default();
-                                focus_result(0);
+                        },
+                        oncomposition: move |active| {
+                            is_composing.set(active);
+                            schedule_search();
+                        },
+                        onkeydown: move |event: KeyboardEvent| {
+                            match event.key() {
+                                Key::Escape => {
+                                    event.prevent_default();
+                                    clear_search();
+                                }
+                                Key::ArrowDown if search_res().as_ref().is_some_and(|r| r.as_ref().is_ok_and(|r| !r.posts.is_empty())) => {
+                                    event.prevent_default();
+                                    focus_result(0);
+                                }
+                                _ => {}
                             }
-                            _ => {}
-                        }
-                    },
-                }
-                if !query().is_empty() {
-                    button {
-                        class: "btn btn-xs btn-icon btn-ghost search-clear",
-                        r#type: "button",
-                        aria_label: "清空搜索",
-                        onclick: move |_| clear_search(),
-                        Icon { name: IconName::X, size: 14 }
+                        },
                     }
-                }
-                button {
-                    class: "composer-send",
-                    r#type: "submit",
-                    aria_label: "搜索",
-                    disabled: query().trim().is_empty(),
-                    Icon { name: IconName::ArrowRight, size: 17 }
+                    if !query().is_empty() {
+                        button {
+                            class: "btn btn-xs btn-icon btn-ghost search-clear",
+                            r#type: "button",
+                            aria_label: "清空搜索",
+                            onclick: move |_| clear_search(),
+                            Icon { name: IconName::X, size: 14 }
+                        }
+                    }
+                    ComposerSend { label: "搜索", disabled: query().trim().is_empty() }
                 }
             }
 

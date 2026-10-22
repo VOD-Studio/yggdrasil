@@ -13,7 +13,8 @@ use crate::bridges::tiptap::{UploadErrorEntry, UploadsInFlight};
 use crate::components::comments::section::{CommentContext, CommentSubmission};
 use crate::components::forms::{AlertBox, FormInput};
 use crate::components::ui::{
-    Button, ButtonSize, ButtonVariant, Icon, IconName, UserAvatar, SPINNER_SVG,
+    ime_composing, Button, ButtonSize, ButtonVariant, Composer, ComposerSize, Icon, IconName,
+    UserAvatar, SPINNER_SVG,
 };
 use crate::utils::comment_storage;
 #[cfg(target_arch = "wasm32")]
@@ -360,7 +361,10 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
             // Ctrl/Cmd+Enter 提交：编辑器内按键事件冒泡到表单根（ProseMirror
             // 不消费 Mod-Enter），身份输入栏同样生效。
             onkeydown: move |e: KeyboardEvent| {
-                if (e.modifiers().ctrl() || e.modifiers().meta()) && e.key() == Key::Enter {
+                if !ime_composing(false, &e)
+                    && (e.modifiers().ctrl() || e.modifiers().meta())
+                    && e.key() == Key::Enter
+                {
                     do_submit();
                 }
             },
@@ -372,7 +376,10 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
             }
             LibraryLoadError { library: editor_library }
 
-            div { class: "composer comment-composer",
+            Composer {
+                stacked: true,
+                size: if is_reply { ComposerSize::Sm } else { ComposerSize::Md },
+                class: "comment-composer",
                 // 登录用户：身份行；访客的昵称、邮箱、网站放在编辑区下方。
                 if let Some(user) = viewer() {
                     {

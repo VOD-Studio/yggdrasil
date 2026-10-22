@@ -16,7 +16,9 @@ use crate::components::empty_state::EmptyState;
 use crate::components::post::post_meta::group_digits;
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::skeletons::home_skeleton::HomeSkeleton;
-use crate::components::ui::{Icon, IconName, LoadError, Pagination};
+use crate::components::ui::{
+    Composer, ComposerInput, ComposerSend, Icon, IconName, LoadError, Pagination,
+};
 use crate::models::note::{Note, NoteFilter};
 use crate::models::post::{PostListItem, Tag};
 use crate::pages::archives::ranked_tags;
@@ -234,7 +236,7 @@ fn HomeSearch() -> Element {
     let mut query = use_signal(String::new);
     rsx! {
         form {
-            class: "composer home-search",
+            class: "home-search",
             role: "search",
             action: "/search",
             method: "get",
@@ -242,22 +244,18 @@ fn HomeSearch() -> Element {
                 evt.prevent_default();
                 navigator.push(Route::Search { q: query().trim().to_string() });
             },
-            label { class: "sr-only", r#for: "home-search-input", "搜索文章" }
-            Icon { name: IconName::Search, size: 18 }
-            input {
-                id: "home-search-input",
-                class: "composer-input",
-                r#type: "search",
-                name: "q",
-                placeholder: "搜索文章、标签，或一个念头…",
-                autocomplete: "off",
-                "enterkeyhint": "search",
-                value: "{query}",
-                oninput: move |evt| query.set(evt.value()),
-            }
-            kbd { class: "kbd home-search-kbd", aria_hidden: "true", "⌘K" }
-            button { class: "composer-send", r#type: "submit", aria_label: "搜索",
-                Icon { name: IconName::ArrowRight, size: 17 }
+            Composer {
+                label { class: "sr-only", r#for: "home-search-input", "搜索文章" }
+                Icon { name: IconName::Search, size: 18 }
+                ComposerInput {
+                    id: "home-search-input".to_string(),
+                    search: true,
+                    placeholder: "搜索文章、标签，或一个念头…",
+                    value: query(),
+                    oninput: move |value| query.set(value),
+                }
+                kbd { class: "kbd home-search-kbd", aria_hidden: "true", "⌘K" }
+                ComposerSend { label: "搜索" }
             }
         }
     }

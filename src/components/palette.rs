@@ -515,7 +515,7 @@ pub(crate) fn PaletteShell(
                     },
                     onkeydown: move |e| {
                         // 输入法组合期间（含 keyCode 229 的 Process 键）不处理任何按键。
-                        if composing() || e.data().is_composing() || e.key() == Key::Process {
+                        if crate::components::ui::ime_composing(composing(), &e) {
                             return;
                         }
                         match e.key() {

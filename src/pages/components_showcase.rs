@@ -18,8 +18,8 @@ use wasm_bindgen::JsCast;
 
 use crate::components::forms::FormInput;
 use crate::components::ui::{
-    button_class, Button, ButtonSize, ButtonVariant, Icon, IconName, SegmentedControl,
-    SegmentedItem, SegmentedKind, SegmentedSize,
+    button_class, Button, ButtonSize, ButtonVariant, Composer, ComposerInput, ComposerSend,
+    ComposerSize, Icon, IconName, SegmentedControl, SegmentedItem, SegmentedKind, SegmentedSize,
 };
 use crate::models::post::{Post, PostListItem, PostStatus};
 use crate::router::Route;
@@ -1054,7 +1054,9 @@ fn preview_route(slug: &str) -> Option<PreviewRoute> {
         | "status-badge" | "status-dot" | "tag-chip" | "user-avatar" | "image-placeholder"
         | "icon" | "button" | "icon-button" | "number-input" | "menu" | "toast"
         | "bottom-sheet" | "side-sheet" | "breadcrumb" | "search-palette" | "admin-palette"
-        | "empty-state" | "load-error" => PreviewRoute::Live,
+        | "empty-state" | "load-error" | "composer" | "composer-input" | "composer-send" => {
+            PreviewRoute::Live
+        }
         "post-cover" => PreviewRoute::Scene,
         "asset-picker-modal" | "asset-upload-modal" | "code-runner" | "sql-result-table" => {
             PreviewRoute::Business
@@ -1317,6 +1319,15 @@ fn LiveComponentPreview(
         },
         "SideSheet" => rsx! {
             SideSheetDemo {}
+        },
+        "Composer" => rsx! {
+            ComposerDemo {}
+        },
+        "ComposerInput" => rsx! {
+            ComposerInputDemo {}
+        },
+        "ComposerSend" => rsx! {
+            ComposerSendDemo {}
         },
         "AdminPalette" => rsx! {
             AdminPaletteDemo {}
@@ -1658,6 +1669,87 @@ fn SideSheetDemo() -> Element {
             trigger_id: "showcase-side-sheet-trigger",
             label: "演示抽屉",
             div { class: "p-3", BottomSheetDemoBody {} }
+        }
+    }
+}
+
+/// 输入栏演示：单行搜索式，提交后只在下方回显，不请求、不跳转。
+#[component]
+fn ComposerDemo() -> Element {
+    let mut query = use_signal(String::new);
+    let mut submitted = use_signal(String::new);
+    rsx! {
+        div { class: "showcase-preview-stack w-full max-w-md",
+            form {
+                role: "search",
+                onsubmit: move |event: FormEvent| {
+                    event.prevent_default();
+                    submitted.set(query().trim().to_string());
+                },
+                Composer {
+                    Icon { name: IconName::Search, size: 18 }
+                    ComposerInput {
+                        search: true,
+                        aria_label: "输入栏示例".to_string(),
+                        placeholder: "搜索文章、标签…",
+                        value: query(),
+                        oninput: move |value: String| query.set(value),
+                    }
+                    ComposerSend { label: "搜索" }
+                }
+            }
+            if !submitted().is_empty() {
+                p { class: "text-sm text-fg-2", role: "status", "已提交：{submitted}" }
+            }
+        }
+    }
+}
+
+/// 输入栏输入框演示：多行输入，⌘/Ctrl+Enter 把内容追加到下方的本地列表。
+#[component]
+fn ComposerInputDemo() -> Element {
+    let mut text = use_signal(String::new);
+    let mut entries = use_signal(Vec::<String>::new);
+    rsx! {
+        div { class: "showcase-preview-stack w-full max-w-md",
+            Composer { size: ComposerSize::Sm,
+                ComposerInput {
+                    multiline: true,
+                    aria_label: "多行输入示例".to_string(),
+                    placeholder: "写点什么…（⌘↵ 提交）",
+                    value: text(),
+                    oninput: move |value: String| text.set(value),
+                    on_submit: move |_| {
+                        let entry = text().trim().to_string();
+                        if !entry.is_empty() {
+                            entries.write().push(entry);
+                            text.set(String::new());
+                        }
+                    },
+                }
+            }
+            ul { class: "flex flex-col gap-1 text-sm text-fg-2", aria_label: "已提交内容",
+                for (index, entry) in entries().into_iter().enumerate() {
+                    li { key: "{index}", "{entry}" }
+                }
+            }
+        }
+    }
+}
+
+/// 发送键演示：可用与不可用并排，点击只在本地计数。
+#[component]
+fn ComposerSendDemo() -> Element {
+    let mut sent = use_signal(|| 0u32);
+    rsx! {
+        div { class: "showcase-preview-stack",
+            div { class: "showcase-preview-row",
+                ComposerSend { label: "发送", onclick: move |_| sent += 1 }
+                ComposerSend { label: "发送（不可用）", disabled: true }
+            }
+            if sent() > 0 {
+                p { class: "text-sm text-fg-2", role: "status", "已点击 {sent} 次" }
+            }
         }
     }
 }

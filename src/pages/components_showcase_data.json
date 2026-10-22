@@ -495,6 +495,213 @@
       "usage_kind": "rust"
     },
     {
+      "name": "Composer",
+      "slug": "composer",
+      "label": "输入栏",
+      "group": "form",
+      "summary": "一句话的入口，圆润、安静。",
+      "states": "单行 · 多行 · 聚焦",
+      "description": "圆角输入栏外壳：surface-3 底、发丝线与柔和投影，聚焦时出现陶土双环。里面放输入框与发送键；stacked 用于评论框、快速记录这类块级排列，Sm 为紧凑尺寸。",
+      "props": [
+        [
+          "size",
+          "ComposerSize",
+          "Md",
+          "尺寸：Md（20px 圆角）或 Sm（14px 圆角、紧凑内边距）。"
+        ],
+        [
+          "stacked",
+          "bool",
+          "false",
+          "块级排列：不做横排，也不加内边距。"
+        ],
+        [
+          "class",
+          "&'static str",
+          "\"\"",
+          "外层附加类。"
+        ],
+        [
+          "children",
+          "Element",
+          "必填",
+          "栏内内容：图标、输入框、发送键等。"
+        ]
+      ],
+      "keys": [
+        [
+          "Tab",
+          "在栏内的控件之间移动焦点"
+        ]
+      ],
+      "source": "src/components/ui/composer.rs",
+      "code": "let mut query = use_signal(String::new);\nrsx! {\n    form { action: \"/search\", method: \"get\",\n        Composer {\n            Icon { name: IconName::Search, size: 18 }\n            ComposerInput {\n                search: true,\n                placeholder: \"搜索文章…\",\n                value: query(),\n                oninput: move |value| query.set(value),\n            }\n            ComposerSend { label: \"搜索\" }\n        }\n    }\n}",
+      "preview_mode": "interactive",
+      "usage_kind": "rust"
+    },
+    {
+      "name": "ComposerInput",
+      "slug": "composer-input",
+      "label": "输入栏输入框",
+      "group": "form",
+      "summary": "单行或多行，输入法组合时不抢跑。",
+      "states": "单行 · 多行 · 输入法组合",
+      "description": "输入栏里的输入框：单行 input 或随内容长高的多行 textarea（field-sizing: content）。自带输入法守卫：组合输入、Process 键与 keyCode 229（Safari 确认候选的回车）期间既不提交也不转发按键。",
+      "props": [
+        [
+          "value",
+          "String",
+          "必填",
+          "当前文本，由父组件控制。"
+        ],
+        [
+          "oninput",
+          "EventHandler<String>",
+          "必填",
+          "文本变化时返回新值。"
+        ],
+        [
+          "placeholder",
+          "String",
+          "必填",
+          "占位文字。"
+        ],
+        [
+          "id",
+          "Option<String>",
+          "None",
+          "input 的 id，用于与 label 关联。"
+        ],
+        [
+          "aria_label",
+          "Option<String>",
+          "None",
+          "无障碍名称。"
+        ],
+        [
+          "multiline",
+          "bool",
+          "false",
+          "多行 textarea；否则单行 input。"
+        ],
+        [
+          "search",
+          "bool",
+          "false",
+          "单行搜索框：type=search、name=q、enterkeyhint=search，无脚本时随表单 GET 提交。"
+        ],
+        [
+          "maxlength",
+          "Option<u32>",
+          "None",
+          "最大字符数。"
+        ],
+        [
+          "autofocus",
+          "bool",
+          "false",
+          "挂载时聚焦。"
+        ],
+        [
+          "disabled",
+          "bool",
+          "false",
+          "禁用输入。"
+        ],
+        [
+          "on_submit",
+          "Option<EventHandler<()>>",
+          "None",
+          "多行：⌘/Ctrl+Enter 调用；单行：给了就由 Enter 调用并阻止默认，否则交给所在表单原生提交。"
+        ],
+        [
+          "onkeydown",
+          "Option<EventHandler<KeyboardEvent>>",
+          "None",
+          "调用方的其余按键（Escape、↓ 等）；输入法组合期间不转发。"
+        ],
+        [
+          "oncomposition",
+          "Option<EventHandler<bool>>",
+          "None",
+          "组合输入开始（true）/ 结束（false）。"
+        ],
+        [
+          "onmounted",
+          "Option<EventHandler<MountedEvent>>",
+          "None",
+          "挂载完成回调。"
+        ]
+      ],
+      "keys": [
+        [
+          "Enter",
+          "单行输入提交（给了 on_submit 时）"
+        ],
+        [
+          "⌘ / Ctrl + Enter",
+          "多行输入提交"
+        ],
+        [
+          "输入法组合中",
+          "不提交，也不转发按键"
+        ]
+      ],
+      "source": "src/components/ui/composer.rs",
+      "code": "let mut text = use_signal(String::new);\nrsx! {\n    Composer { size: ComposerSize::Sm,\n        ComposerInput {\n            multiline: true,\n            placeholder: \"写点什么…（⌘↵ 发送）\",\n            value: text(),\n            oninput: move |value| text.set(value),\n            on_submit: move |_| send(),\n        }\n        ComposerSend { label: \"发送\", onclick: move |_| send() }\n    }\n}",
+      "preview_mode": "interactive",
+      "usage_kind": "rust"
+    },
+    {
+      "name": "ComposerSend",
+      "slug": "composer-send",
+      "label": "发送键",
+      "group": "form",
+      "summary": "陶土色的一键送出。",
+      "states": "可用 · 不可用",
+      "description": "输入栏右侧的陶土色发送键。不给 onclick 时是 type=submit，随所在表单提交；disabled 时底色退为中性灰。",
+      "props": [
+        [
+          "label",
+          "&'static str",
+          "必填",
+          "无障碍名称（aria-label）。"
+        ],
+        [
+          "icon",
+          "IconName",
+          "ArrowRight",
+          "按钮图标。"
+        ],
+        [
+          "disabled",
+          "bool",
+          "false",
+          "不可用状态。"
+        ],
+        [
+          "onclick",
+          "Option<EventHandler<MouseEvent>>",
+          "None",
+          "点击回调；不给则为提交按钮。"
+        ]
+      ],
+      "keys": [
+        [
+          "Enter / Space",
+          "触发发送"
+        ],
+        [
+          "Tab",
+          "移动焦点"
+        ]
+      ],
+      "source": "src/components/ui/composer.rs",
+      "code": "ComposerSend {\n    label: \"发送回复\",\n    icon: IconName::Send,\n    disabled: text().trim().is_empty(),\n    onclick: move |_| send(),\n}",
+      "preview_mode": "interactive",
+      "usage_kind": "rust"
+    },
+    {
       "name": "SegmentedControl",
       "slug": "segmented-control",
       "label": "分段控件",

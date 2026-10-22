@@ -6,6 +6,7 @@
 //!
 //! 与 `forms.rs`（表单控件）并列，本模块聚焦通用展示类原子。
 
+mod composer;
 mod controls;
 mod display;
 mod feedback;
@@ -17,6 +18,7 @@ mod sheet;
 mod styles;
 mod surfaces;
 
+pub use composer::*;
 pub use controls::*;
 pub use display::*;
 pub use feedback::*;

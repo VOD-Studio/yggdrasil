@@ -17,8 +17,8 @@ use crate::components::empty_state::{EmptyState, EmptyStateAction};
 use crate::components::forms::{FormSelect, FORM_SELECT_COMPACT_CLASS};
 use crate::components::skeletons::notes_admin_skeleton::NoteRowsSkeleton;
 use crate::components::ui::{
-    button_class, use_toast, ButtonSize, ButtonVariant, Icon, IconName, LoadError,
-    SegmentedControl, SegmentedItem, StatusDot, TablePager,
+    button_class, use_toast, ButtonSize, ButtonVariant, Composer, ComposerInput, Icon, IconName,
+    LoadError, SegmentedControl, SegmentedItem, StatusDot, TablePager,
 };
 use crate::models::note::*;
 use crate::router::Route;
@@ -380,8 +380,7 @@ fn QuickNote(on_saved: EventHandler<()>) -> Element {
     let recovering = recovery().is_some();
     let empty = quick().trim().is_empty();
 
-    let submit = move |ev: FormEvent| {
-        ev.prevent_default();
+    let mut save = move || {
         if busy() || recovery().is_some() || quick().trim().is_empty() {
             return;
         }
@@ -434,47 +433,37 @@ fn QuickNote(on_saved: EventHandler<()>) -> Element {
                 }
             }
         }
-        form { class: "admin-notes-quick", onsubmit: submit,
-            textarea {
-                class: "admin-notes-quick-text",
-                aria_label: "快速记录",
-                rows: "2",
-                disabled: recovering,
-                placeholder: "有什么想记下的？一句话、一段代码，或一个刚发现的链接。",
-                value: "{quick}",
-                oninput: move |ev| quick.set(ev.value()),
-                onkeydown: move |e| {
-                    let m = e.modifiers();
-                    if (m.meta() || m.ctrl()) && e.key() == Key::Enter {
-                        e.prevent_default();
-                        #[cfg(target_arch = "wasm32")]
-                        if let Some(form) = web_sys::window()
-                            .and_then(|w| w.document())
-                            .and_then(|d| d.query_selector(".admin-notes-quick").ok().flatten())
-                        {
-                            use wasm_bindgen::JsCast;
-                            if let Ok(form) = form.dyn_into::<web_sys::HtmlFormElement>() {
-                                let _ = form.request_submit();
-                            }
-                        }
-                    }
-                },
-            }
-            div { class: "admin-notes-quick-foot",
-                input {
-                    class: "admin-notes-quick-tags",
-                    aria_label: "随记标签",
-                    placeholder: "标签：Rust, 排错, 读书",
+        form {
+            onsubmit: move |ev: FormEvent| {
+                ev.prevent_default();
+                save();
+            },
+            Composer { stacked: true, class: "admin-notes-quick",
+                ComposerInput {
+                    multiline: true,
+                    aria_label: "快速记录".to_string(),
                     disabled: recovering,
-                    value: "{tags}",
-                    oninput: move |ev| tags.set(ev.value()),
+                    placeholder: "有什么想记下的？一句话、一段代码，或一个刚发现的链接。",
+                    value: quick(),
+                    oninput: move |value: String| quick.set(value),
+                    on_submit: move |_| save(),
                 }
-                span { class: "admin-notes-quick-hint", "先存为私密草稿，稍后整理。" }
-                button {
-                    class: button_class(ButtonVariant::Primary, ButtonSize::Sm),
-                    r#type: "submit",
-                    disabled: busy() || recovering || empty,
-                    if busy() { "保存中…" } else { "记下" }
+                div { class: "admin-notes-quick-foot",
+                    input {
+                        class: "admin-notes-quick-tags",
+                        aria_label: "随记标签",
+                        placeholder: "标签：Rust, 排错, 读书",
+                        disabled: recovering,
+                        value: "{tags}",
+                        oninput: move |ev| tags.set(ev.value()),
+                    }
+                    span { class: "admin-notes-quick-hint", "先存为私密草稿，稍后整理。" }
+                    button {
+                        class: button_class(ButtonVariant::Primary, ButtonSize::Sm),
+                        r#type: "submit",
+                        disabled: busy() || recovering || empty,
+                        if busy() { "保存中…" } else { "记下" }
+                    }
                 }
             }
         }

@@ -44,20 +44,6 @@
     margin-top: 0.5rem;
   }
 
-  /* ui.css 的 .composer 在后面导入，这里叠类提高特异性。 */
-  .composer.comment-composer {
-    display: block;
-    padding: 0;
-  }
-
-  .composer.comment-composer:focus-within {
-    box-shadow: var(--shadow-focus), var(--shadow-composer);
-  }
-
-  .comment-form.is-reply .composer.comment-composer {
-    border-radius: 14px;
-  }
-
   .comment-identity {
     display: flex;
     align-items: center;
