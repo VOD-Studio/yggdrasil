@@ -75,19 +75,20 @@ pub fn FrontendLayout() -> Element {
     let route = use_route::<Route>();
     let nav_items = build_nav_items(route.clone());
     let palette = use_search_palette_provider();
-    // 前台页面共用 880px 的索引宽度（正文页在内部收窄到 680px），图鉴 1152px；
-    // 页头、正文与页脚同宽，左右边缘对齐（文章页主区例外，见下）。
-    // 图鉴变体仅 full 客户端存在，reader 恒为索引宽度。
-    let max_width = if crate::router::route_is_showcase(&route) {
-        "max-w-6xl"
-    } else {
-        "max-w-[880px]"
-    };
+    // 页头与页脚在所有前台页面统一为 880px 索引宽度，栏目切换时外壳不跳动。
+    // 主区按页面放宽：文章页 1240px（680px 正文 + 右侧目录），图鉴 1152px
+    // （仅 full 客户端存在，reader 恒为索引宽度），其余与页头同宽。
+    let max_width = "max-w-[880px]";
     // 文章页由 PostDetail 写自己的分享元信息，其余页面用站点的。
     let is_post = matches!(route, Route::PostDetail { .. });
     let path = route.to_string();
-    // 文章页正文仍是 680px，主区放宽到 1240px 给右侧目录留出位置；页头页脚保持索引宽度。
-    let main_width = if is_post { "max-w-[1240px]" } else { max_width };
+    let main_width = if is_post {
+        "max-w-[1240px]"
+    } else if crate::router::route_is_showcase(&route) {
+        "max-w-6xl"
+    } else {
+        max_width
+    };
 
     rsx! {
         FrontendShell {
