@@ -106,9 +106,11 @@ pub fn FrontendLayout() -> Element {
                     SiteShareMeta { path }
                 }
                 SuspenseBoundary { fallback: move |_| route_skeleton(&route), Outlet::<Route> {} }
-                SearchPalette {}
             },
         }
+        // 放在 main 外：栏目过渡只捕获 main，面板若在其中会被截进正文快照，
+        // 遮罩只盖住正文区并跟着正文一起滑入。
+        SearchPalette {}
     }
 }
 

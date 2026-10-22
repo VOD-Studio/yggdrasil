@@ -259,12 +259,9 @@ pub fn SearchIconLink(
             aria_current: is_active.then_some("page"),
             aria_label: "搜索",
             aria_keyshortcuts: "Meta+K Control+K",
-            onclick: move |e: MouseEvent| {
-                if let Some(ref handler) = on_click {
-                    e.prevent_default();
-                    handler.call(e);
-                }
-            },
+            // 传入 on_click 时只执行回调；Link 自身的 prevent_default 拦不住它内部的跳转。
+            onclick: on_click,
+            onclick_only: true,
             Icon { name: IconName::Search, size: 15 }
             span { "搜索" }
             kbd { "⌘K" }
