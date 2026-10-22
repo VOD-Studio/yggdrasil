@@ -1536,7 +1536,7 @@ fn SceneComponentPreview(name: String) -> Element {
 /// 搜索面板演示：自带句柄与面板实例，不注册全局快捷键，不影响页面上的正式面板。
 #[component]
 fn SearchPaletteDemo() -> Element {
-    let palette = crate::components::search_palette::use_search_palette_provider();
+    let palette = crate::components::palette::use_search_palette_provider();
     rsx! {
         div { class: "showcase-preview-row",
             crate::components::ui::Button {
@@ -1628,7 +1628,7 @@ fn SideSheetDemo() -> Element {
 /// 后台命令面板演示：固定文章在浏览器内过滤，选中项只在下方回显，不请求、不跳转。
 #[component]
 fn AdminPaletteDemo() -> Element {
-    let palette = crate::components::search_palette::use_search_palette_provider();
+    let palette = crate::components::palette::use_search_palette_provider();
     let mut picked = use_signal(String::new);
     let posts = use_hook(|| {
         let base = sample_post();
@@ -1672,7 +1672,7 @@ fn AdminPaletteDemo() -> Element {
             search: move |q: String| -> crate::components::admin_palette::PostSearch {
                 let hits = posts
                     .iter()
-                    .filter(|p| crate::components::search_palette::contains_ci(&p.title, &q))
+                    .filter(|p| crate::components::palette::contains_ci(&p.title, &q))
                     .cloned()
                     .collect();
                 Box::pin(std::future::ready(Some(hits)))

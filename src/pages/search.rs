@@ -8,7 +8,7 @@ use std::rc::Rc;
 use dioxus::prelude::*;
 
 use crate::api::posts::{list_tags, search_posts, PostListResponse};
-use crate::components::search_palette::{contains_ci, highlight, snippet};
+use crate::components::palette::{contains_ci, highlight, snippet};
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::skeletons::search_skeleton::SearchSkeleton;
 use crate::components::ui::{FilterTabs, Icon, IconName, LoadError};
@@ -389,7 +389,7 @@ fn focused_result() -> Option<usize> {
 
 fn focus_result(index: usize) {
     #[cfg(target_arch = "wasm32")]
-    crate::components::search_palette::focus_by_id(&result_id(index));
+    crate::components::palette::focus_by_id(&result_id(index));
     #[cfg(not(target_arch = "wasm32"))]
     let _ = index;
 }

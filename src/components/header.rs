@@ -44,7 +44,7 @@ pub fn Header(
 ) -> Element {
     let mut sheet_open = use_signal(|| false);
     let menu_button_id = format!("{MENU_ID}-trigger");
-    let palette = crate::components::search_palette::use_search_palette();
+    let palette = crate::components::palette::use_search_palette();
 
     rsx! {
         header { "data-vt-shell": "frontend-header", class: "site-header",

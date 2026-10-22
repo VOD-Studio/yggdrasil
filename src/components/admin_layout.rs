@@ -11,7 +11,7 @@ use dioxus::router::components::Link;
 use crate::api::admin_stats::AdminNavCounts;
 use crate::api::auth::{get_current_user, logout};
 use crate::components::admin_palette::AdminPalette;
-use crate::components::search_palette::{use_search_palette, use_search_palette_provider};
+use crate::components::palette::{use_search_palette, use_search_palette_provider};
 use crate::components::skeletons::admin_comments_skeleton::AdminCommentsSkeleton;
 use crate::components::skeletons::assets_skeleton::AssetsSkeleton;
 use crate::components::skeletons::dashboard_skeleton::AdminDashboardSkeleton;

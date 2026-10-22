@@ -1,6 +1,6 @@
 //! 后台命令面板（⌘K）：搜索文章、执行操作、跳转栏目。
 //!
-//! 与前台搜索面板共用打开句柄、全局快捷键、命中高亮与 palette.css 的样式；数据与
+//! 输入、防抖请求、键盘选择与对话框结构由 [crate::components::palette::PaletteShell] 提供；数据与
 //! 动作是后台自己的。空查询显示常用操作与全部栏目；有查询时按「文章 · 操作 · 跳转」
 //! 分组，文章来自后台列表接口（含草稿，按标题匹配，最多 6 篇），回车进入编辑。
 
@@ -10,19 +10,16 @@ use std::pin::Pin;
 use dioxus::prelude::*;
 
 use crate::components::admin_layout::AdminSection;
-use crate::components::search_palette::{
-    contains_ci, highlight, viewport_center, SearchPaletteHandle,
+use crate::components::palette::{
+    contains_ci, use_palette_state, viewport_center, PaletteEntry, PaletteGroup, PaletteShell,
 };
-use crate::components::ui::{Icon, IconName};
+use crate::components::ui::IconName;
 use crate::models::post::{PostListItem, PostStatus};
 use crate::router::Route;
 use crate::theme::{choose_theme, use_resolved_theme, use_theme, ResolvedTheme, Theme};
 
 /// 文章搜索结果的条数上限。
 const POST_LIMIT: i32 = 6;
-/// 输入防抖与进度点出现的延迟（毫秒），与前台面板一致。
-const DEBOUNCE_MS: u32 = 150;
-const PROGRESS_DELAY_MS: u32 = 300;
 
 /// 面板里的动作。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -166,15 +163,15 @@ fn build_groups(query: &str, posts: &[PostListItem], dark: bool) -> Vec<Group> {
     groups
 }
 
-/// 后台命令面板。挂在后台布局里一次，由 [`SearchPaletteHandle`] 打开。
+/// 后台命令面板。挂在后台布局里一次，由 [`crate::components::palette::SearchPaletteHandle`] 打开。
 ///
 /// Props：
 /// - `on_logout`：「退出登录」命令，与侧栏退出按钮同一处理
 #[component]
 pub fn AdminPalette(on_logout: EventHandler<()>) -> Element {
     #[cfg(target_arch = "wasm32")]
-    crate::components::search_palette::use_palette_shortcut(
-        use_context::<SearchPaletteHandle>(),
+    crate::components::palette::use_palette_shortcut(
+        use_context::<crate::components::palette::SearchPaletteHandle>(),
         true,
     );
     let theme = use_theme();
@@ -225,277 +222,9 @@ pub fn AdminPalette(on_logout: EventHandler<()>) -> Element {
     }
 }
 
-/// 命令面板视图：查询、分组、键盘与焦点；文章检索与条目执行由调用方提供。
-#[component]
-pub(crate) fn AdminPaletteView(
-    search: Callback<String, PostSearch>,
-    on_activate: EventHandler<Item>,
-) -> Element {
-    let handle = use_context::<SearchPaletteHandle>();
-    let mut open = handle.open;
-
-    let mut query = use_signal(String::new);
-    let mut active = use_signal(|| 0_usize);
-    let mut posts = use_signal(Vec::<PostListItem>::new);
-    let mut posts_query = use_signal(String::new);
-    let mut loading = use_signal(|| false);
-    let mut show_progress = use_signal(|| false);
-    let mut seq = use_signal(|| 0_u64);
-    let mut composing = use_signal(|| false);
-    let resolved = use_resolved_theme();
-    #[cfg(target_arch = "wasm32")]
-    let mut previous_focus = use_signal(|| None::<web_sys::HtmlElement>);
-
-    use_effect(move || {
-        if !open() {
-            return;
-        }
-        #[cfg(target_arch = "wasm32")]
-        {
-            use wasm_bindgen::JsCast;
-            previous_focus.set(
-                web_sys::window()
-                    .and_then(|w| w.document())
-                    .and_then(|d| d.active_element())
-                    .and_then(|el| el.dyn_into::<web_sys::HtmlElement>().ok()),
-            );
-        }
-        spawn(async move {
-            crate::utils::time::sleep_ms(0).await;
-            #[cfg(target_arch = "wasm32")]
-            crate::components::search_palette::focus_by_id("admin-palette-input");
-        });
-    });
-
-    let mut close = move || {
-        if !*open.peek() {
-            return;
-        }
-        seq += 1;
-        loading.set(false);
-        show_progress.set(false);
-        query.set(String::new());
-        active.set(0);
-        posts.set(Vec::new());
-        posts_query.set(String::new());
-        open.set(false);
-        #[cfg(target_arch = "wasm32")]
-        if let Some(el) = previous_focus.take() {
-            let _ = el.focus();
-        }
-    };
-
-    let mut schedule_fetch = move || {
-        seq += 1;
-        let id = seq();
-        let q = query.peek().trim().to_string();
-        if q.is_empty() {
-            posts.set(Vec::new());
-            posts_query.set(String::new());
-            loading.set(false);
-            show_progress.set(false);
-            return;
-        }
-        spawn(async move {
-            crate::utils::time::sleep_ms(DEBOUNCE_MS).await;
-            if seq() != id || composing() {
-                return;
-            }
-            loading.set(true);
-            spawn(async move {
-                crate::utils::time::sleep_ms(PROGRESS_DELAY_MS).await;
-                if seq() == id && loading() {
-                    show_progress.set(true);
-                }
-            });
-            let res = search.call(q.clone()).await;
-            if seq() != id {
-                return;
-            }
-            if let Some(found) = res {
-                posts.set(found);
-                posts_query.set(q);
-            }
-            loading.set(false);
-            show_progress.set(false);
-        });
-    };
-
-    if !open() {
-        return rsx! {};
-    }
-
-    let q = query();
-    let has_query = !q.trim().is_empty();
-    let groups = build_groups(&q, &posts(), resolved() == ResolvedTheme::Dark);
-    let flat: Vec<Item> = groups.iter().flat_map(|g| g.items.clone()).collect();
-    let total = flat.len();
-    let active_idx = if total == 0 {
-        0
-    } else {
-        active().min(total - 1)
-    };
-    let waiting_posts = has_query && posts_query() != q.trim() && loading();
-    let no_results = has_query && total == 0 && !waiting_posts;
-
-    let mut activate = move |item: Item| {
-        close();
-        on_activate.call(item);
-    };
-    let flat_for_keys = flat.clone();
-
-    rsx! {
-        div { class: "palette-scrim", onclick: move |_| close() }
-        div {
-            class: "palette",
-            role: "dialog",
-            aria_modal: "true",
-            aria_label: "命令面板",
-            "data-ygg-modal-panel": "true",
-            "data-ygg-modal-open": "true",
-            onkeydown: move |e| {
-                if e.key() == Key::Tab {
-                    #[cfg(target_arch = "wasm32")]
-                    {
-                        use dioxus::web::WebEventExt;
-                        crate::components::ui::trap_tab(&e.as_web_event(), "命令面板");
-                    }
-                }
-            },
-            div { class: "palette-input-row",
-                Icon { name: IconName::Search, size: 18, class: "palette-input-icon" }
-                input {
-                    id: "admin-palette-input",
-                    class: "palette-input",
-                    r#type: "text",
-                    role: "combobox",
-                    aria_label: "搜索文章或输入命令",
-                    aria_expanded: "true",
-                    aria_controls: "admin-palette-list",
-                    aria_activedescendant: (total > 0).then(|| format!("admin-palette-opt-{active_idx}")),
-                    aria_autocomplete: "list",
-                    autocomplete: "off",
-                    spellcheck: "false",
-                    enterkeyhint: "go",
-                    maxlength: "100",
-                    placeholder: "搜索文章，或输入命令…",
-                    value: "{q}",
-                    oninput: move |e| {
-                        query.set(e.value());
-                        active.set(0);
-                        if !composing() {
-                            schedule_fetch();
-                        }
-                    },
-                    oncompositionstart: move |_| composing.set(true),
-                    oncompositionend: move |_| {
-                        composing.set(false);
-                        schedule_fetch();
-                    },
-                    onkeydown: move |e| {
-                        if composing() || e.data().is_composing() || e.key() == Key::Process {
-                            return;
-                        }
-                        match e.key() {
-                            Key::ArrowDown | Key::ArrowUp => {
-                                e.prevent_default();
-                                if total > 0 {
-                                    let delta: i32 = if e.key() == Key::ArrowDown { 1 } else { -1 };
-                                    active.set((active_idx as i32 + delta).rem_euclid(total as i32) as usize);
-                                }
-                            }
-                            Key::Enter => {
-                                e.prevent_default();
-                                if let Some(item) = flat_for_keys.get(active_idx).cloned() {
-                                    activate(item);
-                                }
-                            }
-                            Key::Escape => {
-                                e.prevent_default();
-                                if query.peek().is_empty() {
-                                    close();
-                                } else {
-                                    query.set(String::new());
-                                    active.set(0);
-                                    schedule_fetch();
-                                }
-                            }
-                            _ => {}
-                        }
-                    },
-                }
-                if show_progress() {
-                    span { class: "palette-progress", role: "status", aria_label: "正在搜索",
-                        span {}
-                        span {}
-                        span {}
-                    }
-                }
-                button { class: "palette-esc", r#type: "button", onclick: move |_| close(), "Esc" }
-            }
-            div {
-                id: "admin-palette-list",
-                class: "palette-list",
-                role: "listbox",
-                aria_label: "命令与搜索结果",
-                {
-                    let mut index = 0_usize;
-                    rsx! {
-                        for group in groups {
-                            div { key: "{group.label}", role: "group", aria_label: group.label,
-                                p { class: "palette-group-label", "{group.label}" }
-                                for item in group.items {
-                                    {
-                                        let i = index;
-                                        index += 1;
-                                        let item_for_click = item.clone();
-                                        rsx! {
-                                            AdminPaletteRow {
-                                                key: "{i}",
-                                                index: i,
-                                                item,
-                                                query: q.clone(),
-                                                selected: i == active_idx,
-                                                on_hover: move |_| active.set(i),
-                                                on_pick: move |_| activate(item_for_click.clone()),
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                if no_results {
-                    div { class: "palette-empty",
-                        span { class: "empty-state-icon", Icon { name: IconName::SearchX, size: 18 } }
-                        p { class: "palette-empty-title", "没有找到「{q.trim()}」" }
-                        p { class: "palette-empty-hint", "文章标题、命令与栏目里都没有命中。" }
-                    }
-                }
-            }
-            div { class: "palette-footer",
-                div { class: "palette-hints",
-                    span { kbd { "↑" } kbd { "↓" } "选择" }
-                    span { kbd { "↵" } "执行" }
-                    span { kbd { "Esc" } "关闭" }
-                }
-            }
-        }
-    }
-}
-
-/// 面板中的一行：左侧图标块，中间标题，右侧元信息或 ↵ 键帽。
-#[component]
-fn AdminPaletteRow(
-    index: usize,
-    item: Item,
-    query: String,
-    selected: bool,
-    on_hover: EventHandler<()>,
-    on_pick: EventHandler<()>,
-) -> Element {
-    let (icon, title, meta) = match &item {
+/// 面板中的一行的展示内容。
+fn entry(item: &Item) -> PaletteEntry {
+    let (icon, title, meta) = match item {
         Item::Post(post) => (
             IconName::FileText,
             post.title.clone(),
@@ -510,36 +239,82 @@ fn AdminPaletteRow(
         Item::Action(action) => (action.icon(), action.label().to_string(), String::new()),
         Item::Jump { label, icon, .. } => (*icon, label.to_string(), "跳转".to_string()),
     };
+    PaletteEntry {
+        icon,
+        title,
+        summary: None,
+        meta,
+        mono_meta: false,
+        highlight_hits: true,
+    }
+}
+
+/// 命令面板视图：文章检索与条目执行由调用方提供，其余交给 [`PaletteShell`]。
+#[component]
+pub(crate) fn AdminPaletteView(
+    search: Callback<String, PostSearch>,
+    on_activate: EventHandler<Item>,
+) -> Element {
+    let palette = use_palette_state("admin-palette");
+    let open = palette.open;
+    let query = palette.query;
+
+    let mut posts = use_signal(Vec::<PostListItem>::new);
+    let mut posts_query = use_signal(String::new);
+    let resolved = use_resolved_theme();
+
+    let mut close = move || {
+        if palette.close() {
+            posts.set(Vec::new());
+            posts_query.set(String::new());
+        }
+    };
+
+    // 检索返回 `None` 时保留上一批结果。
+    let schedule_fetch =
+        move || palette.schedule_fetch(posts, posts_query, move |q| search.call(q));
+
+    if !open() {
+        return rsx! {};
+    }
+
+    let q = query();
+    let groups = build_groups(&q, &posts(), resolved() == ResolvedTheme::Dark);
+    let flat: Vec<Item> = groups.iter().flat_map(|g| g.items.clone()).collect();
+    let view: Vec<PaletteGroup> = groups
+        .iter()
+        .map(|g| PaletteGroup {
+            label: g.label,
+            entries: g.items.iter().map(entry).collect(),
+        })
+        .collect();
+
+    let mut activate = move |item: Item| {
+        close();
+        on_activate.call(item);
+    };
+
     rsx! {
-        div {
-            id: "admin-palette-opt-{index}",
-            class: "palette-option",
-            role: "option",
-            aria_selected: "{selected}",
-            onmousemove: move |_| {
-                if !selected {
-                    on_hover.call(());
+        PaletteShell {
+            state: palette,
+            label: "命令面板",
+            input_label: "搜索文章或输入命令",
+            placeholder: "搜索文章，或输入命令…",
+            list_label: "命令与搜索结果",
+            enter_hint: "执行",
+            empty_hint: "文章标题、命令与栏目里都没有命中。",
+            groups: view,
+            waiting: posts_query() != q.trim(),
+            on_query_change: move |_| schedule_fetch(),
+            on_pick: move |(index, _): (usize, bool)| {
+                if let Some(item) = flat.get(index).cloned() {
+                    activate(item);
                 }
             },
-            onmousedown: move |e| e.prevent_default(),
-            onclick: move |_| on_pick.call(()),
-            span { class: "palette-option-tile", Icon { name: icon, size: 15 } }
-            span { class: "palette-option-text",
-                span { class: "palette-option-title",
-                    for (text, hit) in highlight(&title, &query) {
-                        if hit {
-                            mark { "{text}" }
-                        } else {
-                            "{text}"
-                        }
-                    }
-                }
-            }
-            if selected {
-                kbd { class: "palette-enter", "↵" }
-            } else if !meta.is_empty() {
-                span { class: "palette-option-meta", "{meta}" }
-            }
+            on_close: move |_| close(),
+            toolbar: rsx! {},
+            empty_action: rsx! {},
+            footer_action: rsx! {},
         }
     }
 }

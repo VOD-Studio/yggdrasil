@@ -48,6 +48,8 @@ pub mod frontend_layout;
 pub mod header;
 /// 导航项生成组件。
 pub mod nav;
+/// ⌘K 面板公共部分：打开句柄、全局快捷键、文本匹配与面板外壳（前台搜索与后台命令面板共用）。
+pub mod palette;
 /// 搜索面板（⌘K）
 pub mod search_palette;
 /// 分享元信息（description / Open Graph / Twitter 卡片）。
