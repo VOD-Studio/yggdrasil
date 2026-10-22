@@ -20,10 +20,10 @@ use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::skeletons::posts_trash_skeleton::PostsTrashTableSkeleton;
 use crate::components::ui::{
     button_class, use_toast, ButtonSize, ButtonVariant, Checkbox, ConfirmDialog, IconButton,
-    IconName, LoadError, TablePager,
+    IconName, LoadError, StatusDot, TablePager,
 };
 use crate::hooks::query::use_paginated;
-use crate::models::post::{PostListItem, PostStatus};
+use crate::models::post::PostListItem;
 use crate::models::settings::TrashSettings;
 use crate::router::Route;
 use crate::utils::error::failure_message;
@@ -411,7 +411,6 @@ fn TrashRow(
     on_restore: EventHandler<i32>,
     on_purge: EventHandler<(i32, String)>,
 ) -> Element {
-    let published = post.status == PostStatus::Published;
     let deleted = post
         .deleted_at
         .map(|d| to_local(d).format("%Y-%m-%d").to_string());
@@ -431,9 +430,7 @@ fn TrashRow(
                 span { class: "admin-posts-slug", "/{post.slug}" }
             }
             td { class: "admin-trash-status",
-                span { class: "status-dot", "data-tone": if published { "clay" } else { "muted" },
-                    "{post.status.label()}"
-                }
+                StatusDot { label: post.status.label(), tone: post.status.tone() }
             }
             td { class: "admin-trash-deleted",
                 if let Some(deleted) = deleted {

@@ -11,10 +11,34 @@ use dioxus::prelude::*;
 /// Props：
 /// - `color_class`：语气类（如 `badge-success`）
 /// - `label`：徽章文本
+/// - `class`：附加类，用于所在位置的间距与对齐（如文章标题后的 `post-draft`），缺省为空
 #[component]
-pub fn StatusBadge(color_class: &'static str, label: String) -> Element {
+pub fn StatusBadge(
+    color_class: &'static str,
+    label: String,
+    #[props(default)] class: &'static str,
+) -> Element {
     rsx! {
-        span { class: "{BADGE_BASE} {color_class}", "{label}" }
+        span { class: "{BADGE_BASE} {color_class} {class}", "{label}" }
+    }
+}
+
+/// 状态圆点：6px 圆点 + 文字（`.status-dot`），后台列表与面板的状态标识。
+///
+/// 比 [`StatusBadge`] 安静，适合表格列和元信息行里反复出现的状态。
+///
+/// Props：
+/// - `label`：状态文字
+/// - `tone`：圆点语气，`clay` / `success` / `warning` / `danger`，缺省 `muted`（灰）
+/// - `class`：附加类，用于所在位置的变体（如笔记列表私密态的空心圆点），缺省为空
+#[component]
+pub fn StatusDot(
+    label: String,
+    #[props(default = "muted")] tone: &'static str,
+    #[props(default)] class: &'static str,
+) -> Element {
+    rsx! {
+        span { class: "status-dot {class}", "data-tone": tone, "{label}" }
     }
 }
 

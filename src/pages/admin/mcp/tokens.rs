@@ -3,7 +3,9 @@ use super::{is_active, notes_desc, OpenToken};
 use crate::api::mcp_tokens::{reveal_mcp_token, revoke_mcp_token};
 use crate::components::empty_state::EmptyState;
 use crate::components::skeletons::atoms::SkeletonBox;
-use crate::components::ui::{use_toast, ConfirmDialog, IconName, LoadError, Menu, MenuItem};
+use crate::components::ui::{
+    use_toast, ConfirmDialog, IconName, LoadError, Menu, MenuItem, StatusDot,
+};
 use crate::models::mcp_token::McpTokenSummary;
 use crate::utils::error::failure_message;
 use crate::utils::time::to_local;
@@ -119,7 +121,7 @@ pub(super) fn TokenTable(
                                                     div { class: "mcp-token-name", "{token.name}" }
                                                     div { class: "mcp-token-sub",
                                                         if let Some(state) = state {
-                                                            span { class: "status-dot", "data-tone": "muted", "{state}" }
+                                                            StatusDot { label: state }
                                                         } else {
                                                             "创建于 {date(Some(token.created_at), \"\")}"
                                                         }

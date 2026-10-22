@@ -7,6 +7,7 @@ use dioxus::router::components::Link;
 
 use crate::components::post::breadcrumbs::Breadcrumbs;
 use crate::components::post::post_meta::PostMeta;
+use crate::components::ui::StatusBadge;
 use crate::models::post::{PostHeaderData, PostStatus};
 use crate::router::Route;
 
@@ -33,7 +34,7 @@ pub fn PostHeader(
             h1 { class: "post-title", "data-vt-post-id": "{post.id}", "data-vt-role": "title",
                 "{post.title}"
                 if post.status == PostStatus::Draft {
-                    span { class: "badge badge-warning post-draft", "草稿" }
+                    StatusBadge { color_class: "badge-warning", label: "草稿", class: "post-draft" }
                 }
             }
             if let Some(summary) = summary {

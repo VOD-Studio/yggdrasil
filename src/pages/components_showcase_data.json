@@ -835,11 +835,51 @@
           "&'static str",
           "必填",
           "语气类：badge-success、badge-warning、badge-danger、badge-clay，空串为中性。"
+        ],
+        [
+          "class",
+          "&'static str",
+          "\"\"",
+          "附加类，用于所在位置的间距与对齐。"
         ]
       ],
       "keys": [],
-      "source": "src/components/ui.rs",
+      "source": "src/components/ui/display.rs",
       "code": "rsx! {\n    StatusBadge { color_class: \"badge-success\", label: \"已发布\" }\n}",
+      "preview_mode": "static",
+      "usage_kind": "rust"
+    },
+    {
+      "name": "StatusDot",
+      "slug": "status-dot",
+      "label": "状态圆点",
+      "group": "display",
+      "summary": "一颗小圆点，安静地说明此刻的状态。",
+      "states": "陶土 · 成功 · 警告 · 危险 · 灰",
+      "description": "圆点加文字，用在后台表格列、元信息行这类状态反复出现的位置；比状态徽章更安静。",
+      "props": [
+        [
+          "label",
+          "String",
+          "必填",
+          "状态文字。"
+        ],
+        [
+          "tone",
+          "&'static str",
+          "muted",
+          "圆点语气：clay、success、warning、danger，muted 为灰。"
+        ],
+        [
+          "class",
+          "&'static str",
+          "\"\"",
+          "附加类，用于所在位置的变体。"
+        ]
+      ],
+      "keys": [],
+      "source": "src/components/ui/display.rs",
+      "code": "rsx! {\n    StatusDot { label: post.status.label(), tone: post.status.tone() }\n}",
       "preview_mode": "static",
       "usage_kind": "rust"
     },

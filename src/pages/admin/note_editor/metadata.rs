@@ -1,7 +1,7 @@
 use super::{history::HistoryPanel, save::persist, state::EditorState};
 use crate::api::notes::owned_notebooks;
 use crate::components::ui::{
-    button_class, ButtonSize, ButtonVariant, ConfirmDialog, Icon, IconButton, IconName,
+    button_class, ButtonSize, ButtonVariant, ConfirmDialog, Icon, IconButton, IconName, StatusDot,
 };
 use crate::models::note::*;
 use crate::pages::admin::notes::{client_request, parse_tags};
@@ -25,6 +25,7 @@ pub(super) fn MetadataPanel(mut state: EditorState, open: Signal<bool>, locked: 
     let dirty = state.dirty();
     let work = saved.as_ref().map(|n| n.version);
     let published = saved.as_ref().and_then(|n| n.published_version);
+    let public_tone = if published.is_some() { "clay" } else { "muted" };
     let knowledge = saved.as_ref().and_then(|n| n.knowledge_version);
     // 有未保存修改时，操作会先保存出新版本，所以一致也允许点。
     let publish_same = !dirty && work.is_some() && published == work;
@@ -59,7 +60,7 @@ pub(super) fn MetadataPanel(mut state: EditorState, open: Signal<bool>, locked: 
                     }
                     li { "data-kind": "public",
                         div { class: "note-version-head",
-                            span { class: "status-dot", "data-tone": if published.is_some() { "clay" } else { "muted" }, "公开版" }
+                            StatusDot { label: "公开版", tone: public_tone }
                             if let Some(v) = published {
                                 span { class: "note-version-num", "v{v}" }
                             }

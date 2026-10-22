@@ -10,7 +10,7 @@
 use dioxus::prelude::*;
 
 use crate::components::code_runner::CodeRunner;
-use crate::components::ui::FilterTabs;
+use crate::components::ui::{FilterTabs, StatusDot};
 use crate::infra::runner_config::ResourceLimits;
 use crate::router::Route;
 /// 受支持的语言集合（与 LANGUAGES 注册表 / CODE_RUNNER_LANGUAGES 对齐）。
@@ -70,7 +70,7 @@ pub fn Runner() -> Element {
                     h1 { "代码运行器" }
                     p { "在沙箱里试运行代码，确认文章里可运行代码块的预期输出。" }
                 }
-                span { class: "status-dot", "data-tone": "success", "Docker 沙箱" }
+                StatusDot { label: "Docker 沙箱", tone: "success" }
             }
             div { class: "runner-admin-grid",
                 section { class: "runner-admin-main", aria_label: "编辑与输出",

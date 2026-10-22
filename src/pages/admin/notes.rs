@@ -17,7 +17,7 @@ use crate::components::forms::{FormSelect, FORM_SELECT_COMPACT_CLASS};
 use crate::components::skeletons::notes_admin_skeleton::NoteRowsSkeleton;
 use crate::components::ui::{
     button_class, use_toast, ButtonSize, ButtonVariant, FilterTabs, Icon, IconName, LoadError,
-    TablePager,
+    StatusDot, TablePager,
 };
 use crate::models::note::*;
 use crate::router::Route;
@@ -514,9 +514,9 @@ fn NoteRow(
     let meta = rsx! {
         span { class: "admin-notes-meta",
             if let Some(v) = note.published_version {
-                span { class: "status-dot", "data-tone": "clay", "公开 v{v}" }
+                StatusDot { label: "公开 v{v}", tone: "clay" }
             } else {
-                span { class: "status-dot admin-notes-private", "私密" }
+                StatusDot { label: "私密", class: "admin-notes-private" }
             }
             if ahead {
                 span { class: "admin-notes-ahead", "有未发布修改" }

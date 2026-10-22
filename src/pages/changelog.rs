@@ -18,7 +18,7 @@ use dioxus::prelude::*;
 use crate::api::changelog::{get_changelog, ChangeGroup, ChangelogData, VersionEntry};
 use crate::components::skeletons::changelog_skeleton::ChangelogSkeleton;
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
-use crate::components::ui::{Icon, IconName};
+use crate::components::ui::{Icon, IconName, StatusBadge};
 use crate::router::Route;
 
 /// 更新日志页面组件，对应路由 `/changelog`。
@@ -194,7 +194,7 @@ fn VersionCard(version: VersionEntry) -> Element {
                     time { class: "changelog-version-date tabular-nums", datetime: "{d}", {date_label(d)} }
                 }
                 if is_latest {
-                    span { class: "badge badge-clay", "最新" }
+                    StatusBadge { color_class: "badge-clay", label: "最新" }
                 }
             }
             if !intro_html.is_empty() {

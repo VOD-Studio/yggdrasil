@@ -22,7 +22,7 @@ use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::skeletons::posts_skeleton::PostsTableSkeleton;
 use crate::components::ui::{
     button_class, use_toast, ButtonSize, ButtonVariant, Checkbox, FilterTabs, Icon, IconButton,
-    IconName, LoadError, Menu, MenuItem, TablePager,
+    IconName, LoadError, Menu, MenuItem, StatusDot, TablePager,
 };
 use crate::hooks::query::use_paginated;
 use crate::models::post::{PostListItem, PostStats, PostStatus};
@@ -599,9 +599,7 @@ fn PostRow(
                 span { class: "admin-posts-slug", "/{post.slug}" }
             }
             td { class: "admin-posts-status",
-                span { class: "status-dot", "data-tone": if published { "clay" } else { "muted" },
-                    "{post.status.label()}"
-                }
+                StatusDot { label: post.status.label(), tone: post.status.tone() }
             }
             td { class: "admin-posts-tags",
                 if tags.is_empty() {

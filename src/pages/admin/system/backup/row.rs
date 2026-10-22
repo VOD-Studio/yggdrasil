@@ -1,4 +1,6 @@
-use crate::components::ui::{button_class, ButtonSize, ButtonVariant, ConfirmDialog, IconName};
+use crate::components::ui::{
+    button_class, ButtonSize, ButtonVariant, ConfirmDialog, IconName, StatusDot,
+};
 use crate::utils::format_bytes;
 use dioxus::prelude::*;
 
@@ -50,10 +52,10 @@ pub(super) fn BackupRow(props: BackupRowProps) -> Element {
         urlencode_dl(&props.info.filename)
     );
     let size_str = format_bytes(props.info.size_bytes as i64);
-    let origin_label = if props.info.origin == "auto" {
-        "自动"
+    let (origin_label, origin_tone) = if props.info.origin == "auto" {
+        ("自动", "clay")
     } else {
-        "手动"
+        ("手动", "muted")
     };
     let uploads_dl = props.info.uploads_filename.as_ref().map(|f| {
         (
@@ -68,7 +70,7 @@ pub(super) fn BackupRow(props: BackupRowProps) -> Element {
         tr {
             td { class: "sys-mono", "{props.info.filename}" }
             td {
-                span { class: "status-dot", "data-tone": if props.info.origin == "auto" { "clay" } else { "muted" }, "{origin_label}" }
+                StatusDot { label: origin_label, tone: origin_tone }
             }
             td { class: "admin-table-muted", "{props.info.mode}" }
             td { class: "admin-table-num",

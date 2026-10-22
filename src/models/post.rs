@@ -32,6 +32,14 @@ impl PostStatus {
         }
     }
 
+    /// 后台状态圆点的语气：已发布为陶土色，草稿为灰色（`StatusDot` 的 `tone`）。
+    pub fn tone(&self) -> &'static str {
+        match self {
+            PostStatus::Draft => "muted",
+            PostStatus::Published => "clay",
+        }
+    }
+
     /// 将字符串解析为 PostStatus，无法识别时返回 None。
     #[cfg(feature = "server")]
     pub fn from_str(s: &str) -> Option<Self> {

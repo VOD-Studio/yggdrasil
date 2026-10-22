@@ -12,10 +12,10 @@ use crate::api::admin_stats::AdminNavCounts;
 use crate::api::database::backup::BackupInfo;
 use crate::components::skeletons::atoms::SkeletonBox;
 use crate::components::ui::{
-    button_class, ButtonSize, ButtonVariant, Icon, IconName, LoadError, UserAvatar,
+    button_class, ButtonSize, ButtonVariant, Icon, IconName, LoadError, StatusDot, UserAvatar,
 };
 use crate::models::comment::{AdminComment, CommentStatus};
-use crate::models::post::{MonthCount, PostListItem, PostStats, PostStatus, Tag};
+use crate::models::post::{MonthCount, PostListItem, PostStats, Tag};
 use crate::router::Route;
 use crate::utils::time::{local_now, to_local};
 
@@ -431,14 +431,11 @@ fn RecentPosts(posts: Load<Vec<PostListItem>>, on_retry: EventHandler<()>) -> El
                                 let date = to_local(post.published_at.unwrap_or(post.created_at))
                                     .format("%m-%d %H:%M")
                                     .to_string();
-                                let published = post.status == PostStatus::Published;
                                 rsx! {
                                     li { key: "{post.id}",
                                         Link { class: "dash-post-row", to: Route::WriteEdit { id: post.id },
                                             span { class: "dash-post-title", "{post.title}" }
-                                            span { class: "status-dot", "data-tone": if published { "clay" } else { "muted" },
-                                                "{post.status.label()}"
-                                            }
+                                            StatusDot { label: post.status.label(), tone: post.status.tone() }
                                             time { class: "dash-post-date", "{date}" }
                                         }
                                     }

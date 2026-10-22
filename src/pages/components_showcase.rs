@@ -1064,10 +1064,10 @@ fn preview_route(slug: &str) -> Option<PreviewRoute> {
         "checkbox" | "toggle-switch" | "form-select" | "radio" | "loading-button"
         | "form-input" | "time-picker" | "form-label" | "filter-tabs" | "pagination"
         | "table-pager" | "tooltip" | "popover" | "modal-shell" | "confirm-dialog"
-        | "alert-box" | "status-badge" | "tag-chip" | "user-avatar" | "image-placeholder"
-        | "icon" | "button" | "icon-button" | "number-input" | "menu" | "toast"
-        | "bottom-sheet" | "side-sheet" | "breadcrumb" | "search-palette" | "admin-palette"
-        | "empty-state" | "load-error" => PreviewRoute::Live,
+        | "alert-box" | "status-badge" | "status-dot" | "tag-chip" | "user-avatar"
+        | "image-placeholder" | "icon" | "button" | "icon-button" | "number-input" | "menu"
+        | "toast" | "bottom-sheet" | "side-sheet" | "breadcrumb" | "search-palette"
+        | "admin-palette" | "empty-state" | "load-error" => PreviewRoute::Live,
         "post-cover" => PreviewRoute::Scene,
         "asset-picker-modal" | "asset-upload-modal" | "code-runner" | "sql-result-table" => {
             PreviewRoute::Business
@@ -1429,6 +1429,15 @@ fn LiveComponentPreview(
                 crate::components::ui::StatusBadge { color_class: "badge-warning", label: "待审核" }
                 crate::components::ui::StatusBadge { color_class: "badge-danger", label: "3 天后清除" }
                 crate::components::ui::StatusBadge { color_class: "badge-clay", label: "新" }
+            }
+        },
+        "StatusDot" => rsx! {
+            div { class: "showcase-preview-row",
+                crate::components::ui::StatusDot { label: "已发布", tone: "clay" }
+                crate::components::ui::StatusDot { label: "草稿" }
+                crate::components::ui::StatusDot { label: "Docker 沙箱", tone: "success" }
+                crate::components::ui::StatusDot { label: "即将过期", tone: "warning" }
+                crate::components::ui::StatusDot { label: "已吊销", tone: "danger" }
             }
         },
         "TagChip" => rsx! {
