@@ -20,6 +20,12 @@ type CleanupSignal = oneshot::Sender<bool>;
 type ContainerOutput = (Option<i64>, String, String, bool);
 type ContainerResult = Result<ContainerOutput, bollard::errors::Error>;
 
+/// 容器退出或被 kill 后，读取 attach 流剩余日志的最长等待时间。
+///
+/// 正常情况下流会在容器退出后立即结束；该上限只兜底 kill 失败等异常，
+/// 保证执行函数必然返回并释放信号量许可与 [`ContainerGuard`]。
+const LOG_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
+
 /// 共享的 Docker 客户端。
 ///
 /// `connect_with_unix` 会立即探测 socket 是否存在：缺失（未安装 / 未运行 Docker，
@@ -290,7 +296,11 @@ async fn run_in_container_inner(
         Ok(Some(Ok(exit_status))) => {
             exit_code = Some(exit_status.status_code);
         }
-        Ok(_) => {} // wait error
+        Ok(Some(Err(_))) | Ok(None) => {
+            // wait 出错或流提前结束：无法确认容器已退出，同样 kill，
+            // 避免容器继续运行导致下方日志流永不结束。
+            let _ = docker.kill_container(&container_id, None).await;
+        }
         Err(_) => {
             // timeout, kill container
             timed_out = true;
@@ -302,37 +312,47 @@ async fn run_in_container_inner(
     let mut stdout_buf = Vec::new();
     let mut stderr_buf = Vec::new();
 
-    while let Some(item) = stream.next().await {
-        match item {
-            Ok(chunk) => {
-                match chunk {
-                    LogOutput::StdOut { message } => {
-                        let remaining = (limits.output_bytes as usize)
-                            .saturating_sub(stdout_buf.len() + stderr_buf.len());
-                        if remaining > 0 {
-                            let to_add = message.len().min(remaining);
-                            stdout_buf.extend_from_slice(&message[..to_add]);
+    // 容器已退出或已被 kill，attach 流随后应结束；有界等待兜底 kill 失败等情况，
+    // 保证函数一定返回，调用方的信号量许可与 ContainerGuard 随之释放。
+    let drain_logs = async {
+        while let Some(item) = stream.next().await {
+            match item {
+                Ok(chunk) => {
+                    match chunk {
+                        LogOutput::StdOut { message } => {
+                            let remaining = (limits.output_bytes as usize)
+                                .saturating_sub(stdout_buf.len() + stderr_buf.len());
+                            if remaining > 0 {
+                                let to_add = message.len().min(remaining);
+                                stdout_buf.extend_from_slice(&message[..to_add]);
+                            }
                         }
-                    }
-                    LogOutput::StdErr { message } => {
-                        let remaining = (limits.output_bytes as usize)
-                            .saturating_sub(stdout_buf.len() + stderr_buf.len());
-                        if remaining > 0 {
-                            let to_add = message.len().min(remaining);
-                            stderr_buf.extend_from_slice(&message[..to_add]);
+                        LogOutput::StdErr { message } => {
+                            let remaining = (limits.output_bytes as usize)
+                                .saturating_sub(stdout_buf.len() + stderr_buf.len());
+                            if remaining > 0 {
+                                let to_add = message.len().min(remaining);
+                                stderr_buf.extend_from_slice(&message[..to_add]);
+                            }
                         }
+                        _ => {}
                     }
-                    _ => {}
+                    if stdout_buf.len() + stderr_buf.len() >= limits.output_bytes as usize {
+                        break;
+                    }
                 }
-                if stdout_buf.len() + stderr_buf.len() >= limits.output_bytes as usize {
+                Err(e) => {
+                    tracing::error!("Error reading container log stream: {:?}", e);
                     break;
                 }
             }
-            Err(e) => {
-                tracing::error!("Error reading container log stream: {:?}", e);
-                break;
-            }
         }
+    };
+    if timeout(LOG_DRAIN_TIMEOUT, drain_logs).await.is_err() {
+        tracing::warn!(
+            container_id = %container_id,
+            "容器日志流在等待结束后仍未关闭，放弃读取剩余日志"
+        );
     }
 
     // Check OOM status
