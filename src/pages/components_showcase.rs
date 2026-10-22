@@ -936,8 +936,7 @@ fn preview_route(slug: &str) -> Option<PreviewRoute> {
         "asset-picker-modal" | "asset-upload-modal" | "code-runner" | "sql-result-table" => {
             PreviewRoute::Business
         }
-        "breadcrumbs" | "search-icon-link" | "admin-layout" | "footer" | "frontend-layout"
-        | "header" | "post-header" | "post-meta" | "post-content" | "post-footer"
+        "breadcrumbs" | "post-header" | "post-meta" | "post-content" | "post-footer"
         | "post-nav-links" | "post-toc" => PreviewRoute::LayoutArticle,
         "comment-card-shell"
         | "comment-form"
@@ -953,15 +952,10 @@ fn preview_route(slug: &str) -> Option<PreviewRoute> {
 }
 
 fn is_local_demo(slug: &str) -> bool {
-    slug == "admin-layout"
-        || slug == "header"
-        || slug == "search-icon-link"
-        || slug == "frontend-layout"
-        || slug == "footer"
-        || matches!(
-            preview_route(slug),
-            Some(PreviewRoute::Business | PreviewRoute::Comment | PreviewRoute::Browser)
-        )
+    matches!(
+        preview_route(slug),
+        Some(PreviewRoute::Business | PreviewRoute::Comment | PreviewRoute::Browser)
+    )
 }
 
 fn is_wide_preview(slug: &str) -> bool {
@@ -1324,6 +1318,14 @@ mod tests {
         }
     }
 
+    const EXCLUDED_LAYOUT_COMPONENTS: [(&str, &str, &str); 5] = [
+        ("AdminLayout", "admin-layout", "admin_layout.rs"),
+        ("FrontendLayout", "frontend-layout", "frontend_layout.rs"),
+        ("Header", "header", "header.rs"),
+        ("Footer", "footer", "footer.rs"),
+        ("SearchIconLink", "search-icon-link", "header.rs"),
+    ];
+
     #[test]
     fn catalog_covers_public_components_and_has_unique_routes() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/components");
@@ -1336,7 +1338,12 @@ mod tests {
             .collect();
         let missing: Vec<_> = exported
             .iter()
-            .filter(|name| !catalog.contains(name.as_str()))
+            .filter(|name| {
+                !catalog.contains(name.as_str())
+                    && !EXCLUDED_LAYOUT_COMPONENTS
+                        .iter()
+                        .any(|(excluded, _, _)| name.as_str() == *excluded)
+            })
             .collect();
         assert!(missing.is_empty(), "图鉴缺少公开组件: {missing:?}");
 
@@ -1367,6 +1374,27 @@ mod tests {
                 "缺少真实预览分派: {}",
                 component.slug
             );
+        }
+    }
+
+    #[test]
+    fn catalog_excludes_layouts_but_keeps_production_components() {
+        assert!(SHOWCASE.groups.iter().all(|group| group[0] != "layout"));
+        assert!(SHOWCASE
+            .components
+            .iter()
+            .all(|item| item.group != "layout"));
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/components");
+        for (name, slug, file) in EXCLUDED_LAYOUT_COMPONENTS {
+            assert!(!SHOWCASE
+                .components
+                .iter()
+                .any(|item| item.name == name || item.slug == slug));
+            assert_eq!(preview_route(slug), None, "布局预览不应保留: {slug}");
+            assert!(layout_article_previews::preview(slug, false).is_none());
+            assert!(layout_article_previews::preview(slug, true).is_none());
+            let source = std::fs::read_to_string(root.join(file)).expect("正式布局组件必须保留");
+            assert!(source.contains(&format!("pub fn {name}(")));
         }
     }
 
