@@ -16,7 +16,8 @@ use crate::models::settings::RateLimitSettings;
 // 限流配置（重启生效）
 // ============================================================================
 //
-// 原本经环境变量在首次请求时经 LazyLock 读取（src/api/rate_limit.rs）。迁移到
+// 原本经环境变量在首次请求时经 LazyLock 读取（src/api/rate_limit.rs 与
+// src/mcp/auth.rs）。迁移到
 // settings 表后语义为 Tier B：env 首启播种 DB，之后面板值优先。由于限流器是
 // LazyLock 静态量，修改 DB 值需**重启进程**生效，不做运行时缓存失效。
 
@@ -118,6 +119,26 @@ pub(crate) async fn seed_rate_limit_from_env(
             R::clamp_burst,
         ),
         (
+            "RATE_LIMIT_MCP_PER_SEC",
+            "ratelimit_mcp_per_sec",
+            R::clamp_per_sec,
+        ),
+        (
+            "RATE_LIMIT_MCP_BURST",
+            "ratelimit_mcp_burst",
+            R::clamp_burst,
+        ),
+        (
+            "RATE_LIMIT_MCP_UPLOAD_PER_SEC",
+            "ratelimit_mcp_upload_per_sec",
+            R::clamp_per_sec,
+        ),
+        (
+            "RATE_LIMIT_MCP_UPLOAD_BURST",
+            "ratelimit_mcp_upload_burst",
+            R::clamp_burst,
+        ),
+        (
             "RATE_LIMIT_GC_INTERVAL_SECS",
             "ratelimit_gc_interval_secs",
             R::clamp_gc_interval,
@@ -138,7 +159,7 @@ pub(crate) async fn seed_rate_limit_from_env(
 
 /// 从 settings 表读取限流配置（缺键回退默认值）。
 /// 启动时由 startup.rs 调用，将结果写入 `config::RATE_LIMIT_CFG`，供 rate_limit.rs
-/// 的 LazyLock 在首次请求时读取。
+/// 与 mcp/auth.rs 的 LazyLock 在首次请求时读取。
 #[cfg(feature = "server")]
 pub(crate) async fn load_rate_limit_settings(
     client: &tokio_postgres::Client,
@@ -165,6 +186,10 @@ pub(crate) async fn load_rate_limit_settings(
             "ratelimit_code_exec_daily",
             "ratelimit_unknown_per_sec",
             "ratelimit_unknown_burst",
+            "ratelimit_mcp_per_sec",
+            "ratelimit_mcp_burst",
+            "ratelimit_mcp_upload_per_sec",
+            "ratelimit_mcp_upload_burst",
             "ratelimit_gc_interval_secs",
         ],
     )
@@ -258,6 +283,26 @@ pub(crate) async fn load_rate_limit_settings(
             m::DEFAULT_RATE_LIMIT_UNKNOWN_BURST,
             R::clamp_burst,
         ),
+        mcp_per_sec: read_clamped(
+            "ratelimit_mcp_per_sec",
+            m::DEFAULT_RATE_LIMIT_MCP_PER_SEC,
+            R::clamp_per_sec,
+        ),
+        mcp_burst: read_clamped(
+            "ratelimit_mcp_burst",
+            m::DEFAULT_RATE_LIMIT_MCP_BURST,
+            R::clamp_burst,
+        ),
+        mcp_upload_per_sec: read_clamped(
+            "ratelimit_mcp_upload_per_sec",
+            m::DEFAULT_RATE_LIMIT_MCP_UPLOAD_PER_SEC,
+            R::clamp_per_sec,
+        ),
+        mcp_upload_burst: read_clamped(
+            "ratelimit_mcp_upload_burst",
+            m::DEFAULT_RATE_LIMIT_MCP_UPLOAD_BURST,
+            R::clamp_burst,
+        ),
         gc_interval_secs: read_clamped(
             "ratelimit_gc_interval_secs",
             m::DEFAULT_RATE_LIMIT_GC_INTERVAL_SECS,
@@ -308,6 +353,10 @@ pub async fn update_rate_limit_settings(
     code_exec_daily: u32,
     unknown_per_sec: u32,
     unknown_burst: u32,
+    mcp_per_sec: u32,
+    mcp_burst: u32,
+    mcp_upload_per_sec: u32,
+    mcp_upload_burst: u32,
     gc_interval_secs: u32,
 ) -> Result<RateLimitSettings, ServerFnError> {
     let _user = get_current_admin_user().await?;
@@ -328,6 +377,10 @@ pub async fn update_rate_limit_settings(
     let code_exec_daily = RateLimitSettings::clamp_daily(code_exec_daily);
     let unknown_per_sec = RateLimitSettings::clamp_per_sec(unknown_per_sec);
     let unknown_burst = RateLimitSettings::clamp_burst(unknown_burst);
+    let mcp_per_sec = RateLimitSettings::clamp_per_sec(mcp_per_sec);
+    let mcp_burst = RateLimitSettings::clamp_burst(mcp_burst);
+    let mcp_upload_per_sec = RateLimitSettings::clamp_per_sec(mcp_upload_per_sec);
+    let mcp_upload_burst = RateLimitSettings::clamp_burst(mcp_upload_burst);
     let gc_interval_secs = RateLimitSettings::clamp_gc_interval(gc_interval_secs);
 
     #[cfg(feature = "server")]
@@ -360,6 +413,13 @@ pub async fn update_rate_limit_settings(
             ("ratelimit_code_exec_daily", code_exec_daily.to_string()),
             ("ratelimit_unknown_per_sec", unknown_per_sec.to_string()),
             ("ratelimit_unknown_burst", unknown_burst.to_string()),
+            ("ratelimit_mcp_per_sec", mcp_per_sec.to_string()),
+            ("ratelimit_mcp_burst", mcp_burst.to_string()),
+            (
+                "ratelimit_mcp_upload_per_sec",
+                mcp_upload_per_sec.to_string(),
+            ),
+            ("ratelimit_mcp_upload_burst", mcp_upload_burst.to_string()),
             ("ratelimit_gc_interval_secs", gc_interval_secs.to_string()),
         ] {
             super::upsert_setting(&**client, key, &value).await?;
@@ -367,7 +427,8 @@ pub async fn update_rate_limit_settings(
 
         tracing::info!(
             "Rate limit settings updated (需重启生效): strict={}/{}, upload={}/{}, \
-             image={}/{}, comment={}/{}, comment_upload={}/{}/{}, code_exec={}/{}/{}, unknown={}/{}, gc={}s",
+             image={}/{}, comment={}/{}, comment_upload={}/{}/{}, code_exec={}/{}/{}, unknown={}/{}, \
+             mcp={}/{}, mcp_upload={}/{}, gc={}s",
             strict_per_sec,
             strict_burst,
             upload_per_sec,
@@ -384,6 +445,10 @@ pub async fn update_rate_limit_settings(
             code_exec_daily,
             unknown_per_sec,
             unknown_burst,
+            mcp_per_sec,
+            mcp_burst,
+            mcp_upload_per_sec,
+            mcp_upload_burst,
             gc_interval_secs
         );
     }
@@ -405,6 +470,10 @@ pub async fn update_rate_limit_settings(
         code_exec_daily,
         unknown_per_sec,
         unknown_burst,
+        mcp_per_sec,
+        mcp_burst,
+        mcp_upload_per_sec,
+        mcp_upload_burst,
         gc_interval_secs,
     })
 }

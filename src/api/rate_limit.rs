@@ -27,7 +27,7 @@ use std::sync::Once;
 use std::time::Duration;
 
 #[cfg(feature = "server")]
-fn nz(val: u32) -> NonZeroU32 {
+pub(crate) fn nz(val: u32) -> NonZeroU32 {
     // val.max(1) 保证 ≥ 1，NonZeroU32::new 必然 Some；expect 说明该不变量。
     NonZeroU32::new(val.max(1)).expect("val.max(1) 保证非零，NonZeroU32::new 不可能失败")
 }

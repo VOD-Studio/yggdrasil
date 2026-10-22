@@ -533,11 +533,12 @@ impl AssetPurgeSettings {
 // ============================================================================
 //
 // 原本经环境变量在首次请求时经 LazyLock 读取（src/api/rate_limit.rs 的六个
-// IP 键控限流器与 GC 间隔）。迁移到 settings 表后语义为 Tier B：env 首启播种
+// IP 键控限流器与 GC 间隔、src/mcp/auth.rs 的两个 MCP token 键控限流器）。
+// 迁移到 settings 表后语义为 Tier B：env 首启播种
 // DB（ON CONFLICT DO NOTHING），之后面板写入的 DB 值优先。由于限流器是
 // LazyLock 静态量（首次请求构造即固化），修改 DB 值需**重启进程**生效，
 // 面板会标注「需重启生效」。启动时由 main.rs 将 DB 值加载进 config::RATE_LIMIT_CFG，
-// rate_limit.rs 的 LazyLock 改为从 config::rate_limit() 读取。
+// rate_limit.rs 与 mcp/auth.rs 的 LazyLock 改为从 config::rate_limit() 读取。
 
 /// 默认严格限流（注册/登录）：1 req/s，突发 5。
 pub const DEFAULT_RATE_LIMIT_STRICT_PER_SEC: u32 = 1;
@@ -565,6 +566,12 @@ pub const DEFAULT_RATE_LIMIT_CODE_EXEC_DAILY: u32 = 50;
 /// 默认 unknown 桶限流：30 req/s，突发 100。
 pub const DEFAULT_RATE_LIMIT_UNKNOWN_PER_SEC: u32 = 30;
 pub const DEFAULT_RATE_LIMIT_UNKNOWN_BURST: u32 = 100;
+/// 默认 MCP 请求限流（按 token_id）：10 req/s，突发 30。
+pub const DEFAULT_RATE_LIMIT_MCP_PER_SEC: u32 = 10;
+pub const DEFAULT_RATE_LIMIT_MCP_BURST: u32 = 30;
+/// 默认 MCP 上传限流（按 token_id，与 MCP 请求桶隔离）：2 req/s，突发 5。
+pub const DEFAULT_RATE_LIMIT_MCP_UPLOAD_PER_SEC: u32 = 2;
+pub const DEFAULT_RATE_LIMIT_MCP_UPLOAD_BURST: u32 = 5;
 /// 默认限流桶 GC 间隔：300 秒。
 pub const DEFAULT_RATE_LIMIT_GC_INTERVAL_SECS: u32 = 300;
 
@@ -584,7 +591,7 @@ pub const MIN_RATE_LIMIT_DAILY: u32 = 1;
 #[cfg(feature = "server")]
 pub const MIN_RATE_LIMIT_GC_INTERVAL_SECS: u32 = 1;
 
-/// 限流配置（多级 IP 键控限流器的速率/突发/日限额与 GC 间隔）。
+/// 限流配置（IP 键控限流器与 MCP token 键控限流器的速率/突发/日限额与 GC 间隔）。
 ///
 /// **重启生效层**：限流器是 LazyLock 静态量，首次请求时构造即固化；
 /// 修改 DB 值需重启进程才能生效。
@@ -622,6 +629,14 @@ pub struct RateLimitSettings {
     pub unknown_per_sec: u32,
     /// unknown 桶突发上限。
     pub unknown_burst: u32,
+    /// MCP 请求（按令牌）每秒请求数。
+    pub mcp_per_sec: u32,
+    /// MCP 请求（按令牌）突发上限。
+    pub mcp_burst: u32,
+    /// MCP 上传（按令牌）每秒请求数。
+    pub mcp_upload_per_sec: u32,
+    /// MCP 上传（按令牌）突发上限。
+    pub mcp_upload_burst: u32,
     /// 限流桶 GC 间隔（秒）。
     pub gc_interval_secs: u32,
 }
@@ -645,6 +660,10 @@ impl Default for RateLimitSettings {
             code_exec_daily: DEFAULT_RATE_LIMIT_CODE_EXEC_DAILY,
             unknown_per_sec: DEFAULT_RATE_LIMIT_UNKNOWN_PER_SEC,
             unknown_burst: DEFAULT_RATE_LIMIT_UNKNOWN_BURST,
+            mcp_per_sec: DEFAULT_RATE_LIMIT_MCP_PER_SEC,
+            mcp_burst: DEFAULT_RATE_LIMIT_MCP_BURST,
+            mcp_upload_per_sec: DEFAULT_RATE_LIMIT_MCP_UPLOAD_PER_SEC,
+            mcp_upload_burst: DEFAULT_RATE_LIMIT_MCP_UPLOAD_BURST,
             gc_interval_secs: DEFAULT_RATE_LIMIT_GC_INTERVAL_SECS,
         }
     }

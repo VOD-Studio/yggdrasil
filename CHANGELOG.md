@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **头像路径校验**：个人资料头像与友链头像共用同一安全谓词，拒绝 `..`、空路径、双斜杠与 NUL。
 - **URL 抓取 SSRF**：NAT64（`64:ff9b::/96`、`64:ff9b:1::/48`）与 6to4（`2002::/16`）内嵌的 IPv4 按 IPv4 规则校验，Teredo（`2001::/32`）直接拒绝。
 
+### Changed
+
+- **MCP 限流进后台**：MCP 请求与 MCP 传图两组按令牌计的限流并入「后台设置 → 接口限流」，修改后重启生效。`RATE_LIMIT_MCP_PER_SEC` / `_BURST` / `RATE_LIMIT_MCP_UPLOAD_PER_SEC` / `_BURST` 改为仅在对应设置键不存在时首启播种，与其他 `RATE_LIMIT_*` 一致；已部署实例升级后首次启动会把当前环境变量值写入数据库，之后不再被环境变量覆盖。
+
 ### Fixed
 
 - **图片灯箱拖动平移**：鼠标拖动在 fit 倍率下也能平移图片，不再触发下拉关闭；放大后仍小于视口的方向也可平移（只限制不移出视口，不再强制居中）；双击回 fit 时重新居中。触屏 fit 态仍保留竖直拖拽关闭。

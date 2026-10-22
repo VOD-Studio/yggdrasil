@@ -1,4 +1,4 @@
-//! 接口限流分区：各限流桶的每秒请求数与突发上限、日限额与回收间隔。
+//! 接口限流分区：各限流桶（含 MCP 令牌桶）的每秒请求数与突发上限、日限额与回收间隔。
 //!
 //! 写入数据库，下次启动生效（限流桶在首次请求时从启动配置构建）。
 
@@ -28,6 +28,10 @@ async fn save(d: RateLimitSettings) -> Result<RateLimitSettings, ServerFnError> 
         d.code_exec_daily,
         d.unknown_per_sec,
         d.unknown_burst,
+        d.mcp_per_sec,
+        d.mcp_burst,
+        d.mcp_upload_per_sec,
+        d.mcp_upload_burst,
         d.gc_interval_secs,
     )
     .await
@@ -41,7 +45,7 @@ type Bucket = (
     fn(&mut RateLimitSettings, u32, u32),
 );
 
-const BUCKETS: [Bucket; 7] = [
+const BUCKETS: [Bucket; 9] = [
     (
         "登录与注册",
         "strict",
@@ -105,6 +109,24 @@ const BUCKETS: [Bucket; 7] = [
             s.unknown_burst = b;
         },
     ),
+    (
+        "MCP 请求",
+        "mcp",
+        |s| (s.mcp_per_sec, s.mcp_burst),
+        |s, a, b| {
+            s.mcp_per_sec = a;
+            s.mcp_burst = b;
+        },
+    ),
+    (
+        "MCP 传图",
+        "mcp-upload",
+        |s| (s.mcp_upload_per_sec, s.mcp_upload_burst),
+        |s, a, b| {
+            s.mcp_upload_per_sec = a;
+            s.mcp_upload_burst = b;
+        },
+    ),
 ];
 
 /// 接口限流分区组件。
@@ -116,7 +138,7 @@ pub fn RateLimitSection() -> Element {
     rsx! {
         SettingsCard {
             section: SettingsSection::RateLimit,
-            description: "按 IP 计的令牌桶：每秒补充的请求数与可以一次用掉的突发上限。",
+            description: "按 IP 计的令牌桶（MCP 两项按令牌计）：每秒补充的请求数与可以一次用掉的突发上限。",
             ready: st.ready(),
             load_failed: (st.load_failed)(),
             failed: st.failed(),

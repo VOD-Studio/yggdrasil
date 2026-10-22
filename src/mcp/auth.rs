@@ -17,6 +17,7 @@ use axum::http::{HeaderMap, Request, StatusCode};
 use axum::middleware::Next;
 use axum::response::Response;
 
+use crate::api::rate_limit::nz;
 use crate::db::pool::get_conn;
 use crate::models::mcp_token::TokenScope;
 use crate::models::user::UserRole;
@@ -53,64 +54,32 @@ pub fn hash_token(token: &str) -> String {
     crate::utils::server::sha256_hex(token)
 }
 
-/// MCP 鉴权中间件：无 bearer 或 token 无效 → 401；否则注入 McpPrincipal。
-///
-/// 注意：这是 T1 的最小实现——每请求同步查库 + 同步更新 last_used_at。
-/// T6 会把 last_used_at 刷新改为节流（批量/惰性）以减负，鉴权查询本身保持同步
-/// （这是认证的必要代价，无法乐观）。
 /// MCP 限流：按 token 计数的 governor 桶（与 web 的 IP-keyed 限流隔离）。
 ///
 /// key 是 token_id（而非 user_id）：同一用户的多个令牌各自有独立配额，
-/// 避免一个泄露的高频令牌耗尽其它令牌的额度。阈值经
-/// RATE_LIMIT_MCP_PER_SEC / RATE_LIMIT_MCP_BURST 可调（默认 10/s, burst 30）。
+/// 避免一个泄露的高频令牌耗尽其它令牌的额度。阈值来自 settings 表
+/// `ratelimit_mcp_*`（后台设置 → 接口限流，重启生效；env `RATE_LIMIT_MCP_*`
+/// 仅在键缺失时首启播种）。键是已通过鉴权的 token_id，集合有界，无需 GC。
 static MCP_LIMITER: std::sync::LazyLock<governor::DefaultKeyedRateLimiter<String>> =
     std::sync::LazyLock::new(|| {
+        let c = crate::config::rate_limit();
         governor::RateLimiter::keyed(
-            governor::Quota::per_second(mcp_rate_per_sec()).allow_burst(mcp_rate_burst()),
+            governor::Quota::per_second(nz(c.mcp_per_sec)).allow_burst(nz(c.mcp_burst)),
         )
     });
 
-fn mcp_rate_per_sec() -> std::num::NonZeroU32 {
-    let v = std::env::var("RATE_LIMIT_MCP_PER_SEC")
-        .ok()
-        .and_then(|s| s.parse::<u32>().ok())
-        .unwrap_or(10);
-    std::num::NonZeroU32::new(v.max(1)).expect("v.max(1) 保证非零")
-}
-
-fn mcp_rate_burst() -> std::num::NonZeroU32 {
-    let v = std::env::var("RATE_LIMIT_MCP_BURST")
-        .ok()
-        .and_then(|s| s.parse::<u32>().ok())
-        .unwrap_or(30);
-    std::num::NonZeroU32::new(v.max(1)).expect("v.max(1) 保证非零")
-}
 /// MCP 上传专用限流（与 MCP_LIMITER 隔离）：上传是重操作（转码 + 落盘），
 /// 单独配额避免一个高频令牌的普通请求耗尽上传额度，反之亦然。
-/// 阈值经 RATE_LIMIT_MCP_UPLOAD_PER_SEC / _BURST 可调（默认 2/s, burst 5）。
+/// 阈值来自 settings 表 `ratelimit_mcp_upload_*`（后台设置 → 接口限流，重启生效；
+/// env `RATE_LIMIT_MCP_UPLOAD_*` 仅在键缺失时首启播种）。
 static MCP_UPLOAD_LIMITER: std::sync::LazyLock<governor::DefaultKeyedRateLimiter<String>> =
     std::sync::LazyLock::new(|| {
+        let c = crate::config::rate_limit();
         governor::RateLimiter::keyed(
-            governor::Quota::per_second(mcp_upload_rate_per_sec())
-                .allow_burst(mcp_upload_rate_burst()),
+            governor::Quota::per_second(nz(c.mcp_upload_per_sec))
+                .allow_burst(nz(c.mcp_upload_burst)),
         )
     });
-
-fn mcp_upload_rate_per_sec() -> std::num::NonZeroU32 {
-    let v = std::env::var("RATE_LIMIT_MCP_UPLOAD_PER_SEC")
-        .ok()
-        .and_then(|s| s.parse::<u32>().ok())
-        .unwrap_or(2);
-    std::num::NonZeroU32::new(v.max(1)).expect("v.max(1) 保证非零")
-}
-
-fn mcp_upload_rate_burst() -> std::num::NonZeroU32 {
-    let v = std::env::var("RATE_LIMIT_MCP_UPLOAD_BURST")
-        .ok()
-        .and_then(|s| s.parse::<u32>().ok())
-        .unwrap_or(5);
-    std::num::NonZeroU32::new(v.max(1)).expect("v.max(1) 保证非零")
-}
 
 /// bearer 端点专用：按 token_id 检查上传配额。超限返回 Err(脱敏消息)。
 pub(crate) fn check_mcp_upload_limit(token_id: &str) -> Result<(), &'static str> {
@@ -126,6 +95,11 @@ pub(crate) fn check_mcp_upload_limit(token_id: &str) -> Result<(), &'static str>
 /// 每次都写库。窗口外才刷新，窗口内跳过（best-effort，失败静默）。
 const LAST_USED_REFRESH_SECS: i64 = 60;
 
+/// MCP 鉴权中间件：无 bearer 或 token 无效 → 401；否则注入 McpPrincipal。
+///
+/// 注意：这是 T1 的最小实现——每请求同步查库 + 同步更新 last_used_at。
+/// T6 会把 last_used_at 刷新改为节流（批量/惰性）以减负，鉴权查询本身保持同步
+/// （这是认证的必要代价，无法乐观）。
 pub async fn mcp_auth_middleware(
     mut req: Request<Body>,
     next: Next,
