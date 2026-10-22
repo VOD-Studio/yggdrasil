@@ -30,16 +30,6 @@ pub(crate) const AVATAR_REF_CLAUSE: &str =
     "(EXISTS (SELECT 1 FROM users u WHERE u.avatar_url = '/uploads/' || a.path) \
      OR EXISTS (SELECT 1 FROM friend_links f WHERE f.avatar_url = '/uploads/' || a.path))";
 
-/// 列表页引用计数表达式，按每个文章/评论/头像使用次数累计。
-#[cfg(feature = "server")]
-pub(crate) const ASSET_REF_COUNT_EXPR: &str =
-    "((SELECT COUNT(*) FROM asset_refs r WHERE r.asset_id = a.id) + \
-      (SELECT COUNT(DISTINCT note_id) FROM note_asset_refs r WHERE r.asset_id = a.id) + \
-     (SELECT COUNT(*) FROM comments c WHERE c.deleted_at IS NULL \
-      AND c.content_html LIKE '%' || a.path || '%') + \
-     (SELECT COUNT(*) FROM users u WHERE u.avatar_url = '/uploads/' || a.path) + \
-     (SELECT COUNT(*) FROM friend_links f WHERE f.avatar_url = '/uploads/' || a.path))";
-
 /// 素材删除与孤儿清理。
 pub mod delete;
 /// 素材分页列表。

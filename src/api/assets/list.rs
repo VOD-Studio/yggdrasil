@@ -80,8 +80,7 @@ pub(crate) async fn list_assets_impl(
         AssetSort::SizeDesc => "a.size_bytes DESC, a.id",
     };
 
-    // 列表查询：ref_count 按文章、存活评论、用户头像和友链头像的使用次数累计，
-    // 与 Used/Orphan 筛选及汇总计数使用同一引用来源。
+    // 列表查询：ref_count 由下方本页引用明细在 Rust 侧派生，不在每行重复跑子查询。
     // const 不能取引用（内联后借临时值会垂悬），绑定到局部变量再进参数列表。
     let per_page = PER_PAGE;
     params.push(&per_page);
@@ -92,11 +91,9 @@ pub(crate) async fn list_assets_impl(
         .query(
             &format!(
                 "SELECT a.id AS id, a.path, a.filename, a.mime, a.size_bytes, \
-                        a.width, a.height, a.alt, a.created_at, \
-                        {ref_count} AS ref_count \
+                        a.width, a.height, a.alt, a.created_at \
                  FROM assets a {where_clause} \
-                 ORDER BY {order_clause} LIMIT ${limit_idx} OFFSET ${offset_idx}",
-                ref_count = super::ASSET_REF_COUNT_EXPR,
+                 ORDER BY {order_clause} LIMIT ${limit_idx} OFFSET ${offset_idx}"
             ),
             &params,
         )
@@ -114,17 +111,21 @@ pub(crate) async fn list_assets_impl(
 
     // 汇总计数：tabs 与「清理孤儿」按钮徽标。不受筛选/搜索影响，始终全局。
     // 孤儿 = 不存在任何文章、评论或头像引用（与 AssetFilter::Orphan 同语义）。
+    // MATERIALIZED 阻止规划器把 used 展开回各 FILTER，确保每个素材只判定一次。
     let summary = client
         .query_one(
             &format!(
-                "SELECT \
-                    COUNT(*) FILTER (WHERE {asset_ref}), \
-                    COUNT(*) FILTER (WHERE NOT {asset_ref}), \
-                    COUNT(*) FILTER (WHERE NOT {asset_ref} \
-                        AND a.created_at < NOW() - make_interval(days => $1)), \
-                    COALESCE(SUM(a.size_bytes) FILTER (WHERE NOT {asset_ref} \
-                        AND a.created_at < NOW() - make_interval(days => $1)), 0)::bigint \
-                 FROM assets a",
+                "WITH s AS MATERIALIZED ( \
+                    SELECT a.size_bytes, \
+                           a.created_at < NOW() - make_interval(days => $1) AS purge_due, \
+                           {asset_ref} AS used \
+                    FROM assets a) \
+                 SELECT \
+                    COUNT(*) FILTER (WHERE used), \
+                    COUNT(*) FILTER (WHERE NOT used), \
+                    COUNT(*) FILTER (WHERE NOT used AND purge_due), \
+                    COALESCE(SUM(size_bytes) FILTER (WHERE NOT used AND purge_due), 0)::bigint \
+                 FROM s",
                 asset_ref = super::ASSET_REF_CLAUSE
             ),
             &[&PURGE_GRACE_DAYS],
@@ -271,6 +272,7 @@ pub(crate) async fn list_assets_impl(
         .map(|row| {
             let id: String = row.get::<_, uuid::Uuid>("id").to_string();
             let refs = refs_map.remove(&id).unwrap_or_default();
+            let ref_count = refs.len() as i64;
             AssetDto {
                 asset: Asset {
                     id,
@@ -283,7 +285,7 @@ pub(crate) async fn list_assets_impl(
                     alt: row.get("alt"),
                     created_at: row.get("created_at"),
                 },
-                ref_count: row.get("ref_count"),
+                ref_count,
                 refs,
             }
         })

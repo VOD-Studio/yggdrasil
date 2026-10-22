@@ -102,6 +102,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "029",
         include_str!("../../migrations/029_content_cache_revision.sql"),
     ),
+    (
+        "030",
+        include_str!("../../migrations/030_note_asset_refs_asset_index.sql"),
+    ),
     // 新增迁移在此追加，同时在 migrations/ 下创建对应 .sql 文件。
 ];
 
