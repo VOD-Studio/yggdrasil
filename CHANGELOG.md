@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 收敛重复实现：HTML 转义、settings 单键 upsert、原生路由 admin 前置校验、评论内容哈希、`group_digits`、主题过渡探测；删除未使用的常量、组件、CSS 规则、`codemirror` 依赖与过时的 `dead_code` 豁免。
 - 测试改为调用生产函数：健康检查、上传转码；删除源码字符串断言测试；两个 TEMP 表数据库回归改读 `DATABASE_URL` 并写入测试文档；`scripts/test-dev-assets.cjs` 从 `mk/assets.mk` 读取输出清单；清理 FreeBSD 残留忽略规则。
 - 代码运行器流式执行超时只推送一个 `done` 事件（此前 runner 与调用方各推一个）；`run_in_container_stream` 去掉恒为 `false` 的 `timed_out` 返回值，与非流式路径统一为 4 元组。
+- `public/` 下的 `libs/` 构建产物（codemirror、lightbox、tiptap、xterm、yggdrasil-core）移出 git 索引，与 `.gitignore` 一致；构建产物一律不入库，由 `make build-libs`/`make dev-assets` 生成。
 
 ## [0.24.2] - 2026-10-22
 
