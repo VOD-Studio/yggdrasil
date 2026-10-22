@@ -123,10 +123,10 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    #[ignore = "requires YGGDRASIL_TEST_DATABASE_URL; uses only a connection-local temporary table"]
+    #[ignore = "requires DATABASE_URL; uses only a connection-local temporary table"]
     async fn trash_settings_database_roundtrip() {
-        let url = std::env::var("YGGDRASIL_TEST_DATABASE_URL")
-            .expect("set YGGDRASIL_TEST_DATABASE_URL to run this database test");
+        let url =
+            std::env::var("DATABASE_URL").expect("set DATABASE_URL to run this database test");
         let (client, connection) = tokio_postgres::connect(&url, tokio_postgres::NoTls)
             .await
             .unwrap();

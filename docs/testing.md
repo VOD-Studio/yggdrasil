@@ -75,6 +75,15 @@ DATABASE_URL=postgresql://postgres@127.0.0.1:55439/ygg_mcp_test \
 
 上述测试均会自动迁移；文章回归会重置用户及关联内容，上传回归会验证真实 HTTP 上传接口。
 
+`trash_settings_database_roundtrip`（回收站配置读写）与 `edit_permissions_preserves_token_and_enforces_ownership_and_validity`（MCP 令牌权限编辑）只在当前连接的 TEMP 表上运行，不迁移也不改动已有数据，`DATABASE_URL` 指向任意可连接的库即可：
+
+```sh
+DATABASE_URL=postgresql://postgres@127.0.0.1:5432/postgres \
+  cargo test --locked --all-features trash_settings_database_roundtrip -- --ignored
+DATABASE_URL=postgresql://postgres@127.0.0.1:5432/postgres \
+  cargo test --locked --all-features edit_permissions_preserves_token_and_enforces_ownership_and_validity -- --ignored
+```
+
 笔记数据库回归使用独立的 `ygg_notes_test`，命令见[笔记回归说明](notes.md#回归与待补验收)。备份恢复的独立数据库验收见[备份回归说明](backup-regressions.md)。
 
 ## 后台浏览器回归

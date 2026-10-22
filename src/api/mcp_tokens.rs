@@ -201,9 +201,9 @@ mod permission_tests {
     use super::*;
 
     #[tokio::test]
-    #[ignore = "requires YGGDRASIL_TEST_DATABASE_URL; uses connection-local temporary tables"]
+    #[ignore = "requires DATABASE_URL; uses connection-local temporary tables"]
     async fn edit_permissions_preserves_token_and_enforces_ownership_and_validity() {
-        let url = std::env::var("YGGDRASIL_TEST_DATABASE_URL").unwrap();
+        let url = std::env::var("DATABASE_URL").unwrap();
         let (client, connection) = tokio_postgres::connect(&url, tokio_postgres::NoTls)
             .await
             .unwrap();
