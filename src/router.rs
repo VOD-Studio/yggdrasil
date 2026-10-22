@@ -11,7 +11,9 @@ use std::sync::Arc;
 // full 客户端专属页面组件：reader 构建（无 client-full）随变体一起剥离。
 #[cfg(not(ygg_client_reader))]
 use crate::components::admin_layout::AdminLayout;
+use crate::components::empty_state::{EmptyState, EmptyStateAction};
 use crate::components::frontend_layout::FrontendLayout;
+use crate::components::ui::IconName;
 use crate::context::UserContext;
 use crate::pages::about::About;
 #[cfg(not(ygg_client_reader))]
@@ -307,74 +309,20 @@ fn ErrorLayout() -> Element {
                     }
                 } else {
                     rsx! {
-                        div { class: "flex flex-col items-center justify-center min-h-[50vh] md:min-h-[55vh] px-6 animate-page-enter",
-                            div { class: "w-full max-w-md bg-paper-entry border border-paper-border rounded-[2rem] p-8 md:p-10 shadow-sm hover:border-paper-secondary transition-all duration-300 flex flex-col items-center text-center",
-                                // Warning / Alert Icon in a soft red container
-                                div { class: "relative mb-6",
-                                    div { class: "w-16 h-16 bg-red-500/10 dark:bg-red-500/20 text-red-500 rounded-full flex items-center justify-center",
-                                        svg {
-                                            xmlns: "http://www.w3.org/2000/svg",
-                                            width: "28",
-                                            height: "28",
-                                            view_box: "0 0 24 24",
-                                            fill: "none",
-                                            stroke: "currentColor",
-                                            stroke_width: "2",
-                                            stroke_linecap: "round",
-                                            stroke_linejoin: "round",
-                                            circle { cx: "12", cy: "12", r: "10" }
-                                            line {
-                                                x1: "12",
-                                                y1: "8",
-                                                x2: "12",
-                                                y2: "12",
-                                            }
-                                            line {
-                                                x1: "12",
-                                                y1: "16",
-                                                x2: "12.01",
-                                                y2: "16",
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // Premium Typography
-                                h1 { class: "text-lg md:text-xl font-bold tracking-tight text-paper-primary mb-3",
-                                    "加载失败"
-                                }
-                                p { class: "text-sm text-paper-secondary leading-relaxed mb-8 max-w-[280px]",
-                                    "抱歉，加载页面时出现了一些错误，请稍后再试。"
-                                }
-
-                                // CTA: 清除错误边界后命令式导航回首页。
-                                // 必须用按钮而非 Link —— Link 无法在导航前清除错误，
-                                // 会导致 ErrorBoundary 卡在 fallback，页面不随路由切换更新。
-                                button {
-                                    r#type: "button",
-                                    onclick: {
-                                        let err_ctx = err_ctx.clone();
-                                        move |_| {
-                                            err_ctx.clear_errors();
-                                            let _ = dioxus::router::navigator().push(Route::Home {});
-                                        }
-                                    },
-                                    class: "group inline-flex items-center gap-2 px-6 py-2.5 text-sm font-medium text-paper-primary bg-paper-theme border border-paper-border rounded-full hover:border-paper-secondary hover:bg-paper-border transition-all duration-200 cursor-pointer shadow-sm active:scale-[0.98]",
-                                    svg {
-                                        xmlns: "http://www.w3.org/2000/svg",
-                                        width: "16",
-                                        height: "16",
-                                        view_box: "0 0 24 24",
-                                        fill: "none",
-                                        stroke: "currentColor",
-                                        stroke_width: "2",
-                                        stroke_linecap: "round",
-                                        stroke_linejoin: "round",
-                                        class: "transition-transform group-hover:-translate-x-0.5",
-                                        path { d: "M19 12H5M12 19l-7-7 7-7" }
-                                    }
-                                    "返回首页"
-                                }
+                        div { class: "flex min-h-[50vh] items-center justify-center px-6 md:min-h-[55vh] animate-page-enter",
+                            EmptyState {
+                                icon: IconName::CircleAlert,
+                                title: "页面加载失败",
+                                description: "网络或服务出了点问题，稍后再试一次。",
+                                // 清除错误边界后命令式导航回首页。不能用 Link：导航前
+                                // 无法清除错误，ErrorBoundary 会卡在 fallback，页面不随路由更新。
+                                action: EmptyStateAction {
+                                    label: "返回首页".to_string(),
+                                    onclick: Callback::new(move |_| {
+                                        err_ctx.clear_errors();
+                                        let _ = dioxus::router::navigator().push(Route::Home {});
+                                    }),
+                                },
                             }
                         }
                     }
