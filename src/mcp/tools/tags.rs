@@ -1,8 +1,8 @@
 //! MCP 写作用域工具：标签管理。
 //!
 //! `create_tag` 与 `rename_tag` 没有独立的 web 后台 server-fn（标签在文章
-//! 保存时由 `sync_tags` 隐式创建）。本模块直接操作 tags 表，并在写后失效
-//! 标签云缓存（`invalidate_all_tags`）。
+//! 保存时由 `sync_tags` 隐式创建）。本模块直接操作 tags 表，并在写后经
+//! `invalidate_for_tag_write` 失效文章/标签类缓存与公开页 SSR 缓存。
 //!
 //! 本模块仅 `feature = "server"` 编译。
 
@@ -56,7 +56,10 @@ impl crate::mcp::server::YggMcpServer {
             }
         };
 
-        cache::invalidate_all_tags();
+        // 同名标签已存在时数据未变，无需冲刷缓存。
+        if created {
+            cache::invalidate_for_tag_write();
+        }
 
         ok_json(TagResult {
             success: true,
@@ -112,7 +115,7 @@ impl crate::mcp::server::YggMcpServer {
             return Err(McpError::invalid_request("标签不存在", None));
         }
 
-        cache::invalidate_all_tags();
+        cache::invalidate_for_tag_write();
 
         ok_json(TagResult {
             success: true,

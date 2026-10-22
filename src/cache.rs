@@ -831,6 +831,18 @@ pub async fn invalidate_for_post_write(slugs: &[String], tags: &[String]) {
     crate::ssr_cache::bump_global_generation();
 }
 
+/// 标签写操作（创建/重命名）后的统一缓存失效序列。
+///
+/// 标签名会嵌在列表、单篇、标签下文章列表、搜索与 Feed 中，且重命名会让旧名
+/// 下的缓存键失效但新名键缺席，无法按 slug/标签精准定位，因此全量冲刷文章类缓存，
+/// 并刷新公开页 SSR 缓存、递增全局世代号。
+#[cfg(feature = "server")]
+pub fn invalidate_for_tag_write() {
+    invalidate_all_post_caches();
+    crate::ssr_cache::invalidate_ssr_all_public();
+    crate::ssr_cache::bump_global_generation();
+}
+
 /// 按文章主键读取评论列表缓存。
 #[cfg(feature = "server")]
 pub async fn get_comments_by_post(post_id: i32) -> Option<Vec<PublicComment>> {
@@ -1286,6 +1298,26 @@ mod tests {
         assert!(get_search_results("removed article").await.is_some());
         invalidate_all_post_caches();
         assert!(get_search_results("removed article").await.is_none());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn tag_write_invalidation_clears_lists_and_tag_posts() {
+        let key = CacheKey::PublishedPosts {
+            page: 998,
+            per_page: 98,
+        };
+        set_post_list(&key, vec![], 0).await;
+        set_posts_by_tag("renamed-tag", vec![], 0).await;
+        set_tag_list(vec![]).await;
+        let generation = crate::ssr_cache::current_global_generation();
+
+        invalidate_for_tag_write();
+
+        assert!(get_post_list(&key).await.is_none());
+        assert!(get_posts_by_tag("renamed-tag").await.is_none());
+        assert!(get_tag_list().await.is_none());
+        assert!(crate::ssr_cache::current_global_generation() > generation);
     }
 
     #[tokio::test]
