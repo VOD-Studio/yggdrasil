@@ -178,7 +178,7 @@ fn local_submit(
         );
         pending.write().push(comment);
         Box::pin(std::future::ready(Ok(
-            "已加入本地演示列表，内容不会保存".to_string(),
+            "已加入本地演示列表，内容不会保存".to_string()
         )))
     })
 }
