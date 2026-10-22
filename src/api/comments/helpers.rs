@@ -218,7 +218,6 @@ pub fn compute_content_hash(
     name: &str,
     content: &str,
 ) -> String {
-    use sha2::Digest;
     let input = format!(
         "{}:{}:{}:{}",
         post_id,
@@ -226,8 +225,7 @@ pub fn compute_content_hash(
         name.trim(),
         content.trim()
     );
-    let hash = sha2::Sha256::digest(input.as_bytes());
-    hex::encode(hash)
+    crate::utils::server::sha256_hex(&input)
 }
 
 #[cfg(all(test, feature = "server"))]
@@ -495,6 +493,15 @@ mod tests {
         let h = compute_content_hash(1, None, "Alice", "Hello");
         assert_eq!(h.len(), 64);
         assert!(h.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn compute_content_hash_matches_stored_format() {
+        // 锁定存量格式：sha256("{post_id}:{parent_id}:{name}:{content}") 小写 hex。
+        assert_eq!(
+            compute_content_hash(7, Some(42), "Alice", "hello"),
+            "13ffdf7edd453c9ec3f29ae6a1b000019c506fbd6115919313b368675c6a3c30"
+        );
     }
 
     #[test]
