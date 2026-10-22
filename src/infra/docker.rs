@@ -9,7 +9,7 @@ use tokio::time::timeout;
 
 use crate::infra::runner_config::{ResourceLimits, RUNNER_CONFIG};
 use bollard::container::LogOutput;
-use bollard::models::{ContainerCreateBody, HostConfig, ResourcesUlimits};
+use bollard::models::{ContainerCreateBody, ContainerWaitResponse, HostConfig, ResourcesUlimits};
 use bollard::query_parameters::{
     AttachContainerOptions, CreateContainerOptions, RemoveContainerOptions, StartContainerOptions,
     WaitContainerOptions,
@@ -25,6 +25,18 @@ type ContainerResult = Result<ContainerOutput, bollard::errors::Error>;
 /// 正常情况下流会在容器退出后立即结束；该上限只兜底 kill 失败等异常，
 /// 保证执行函数必然返回并释放信号量许可与 [`ContainerGuard`]。
 const LOG_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// 取 `wait_container` 单条结果里的退出码。
+///
+/// bollard 把非零退出码报成 `Err(DockerContainerWaitError { code, .. })`：容器已正常退出，
+/// 只是程序返回非零。其余错误才是真的拿不到退出码。
+fn wait_exit_code(item: Result<ContainerWaitResponse, bollard::errors::Error>) -> Option<i64> {
+    match item {
+        Ok(status) => Some(status.status_code),
+        Err(bollard::errors::Error::DockerContainerWaitError { code, .. }) => Some(code),
+        Err(_) => None,
+    }
+}
 
 /// 共享的 Docker 客户端。
 ///
@@ -293,13 +305,13 @@ async fn run_in_container_inner(
     let mut exit_code = None;
 
     match wait_res {
-        Ok(Some(Ok(exit_status))) => {
-            exit_code = Some(exit_status.status_code);
-        }
-        Ok(Some(Err(_))) | Ok(None) => {
-            // wait 出错或流提前结束：无法确认容器已退出，同样 kill，
-            // 避免容器继续运行导致下方日志流永不结束。
-            let _ = docker.kill_container(&container_id, None).await;
+        Ok(item) => {
+            exit_code = item.and_then(wait_exit_code);
+            if exit_code.is_none() {
+                // wait 出错或流提前结束：无法确认容器已退出，同样 kill，
+                // 避免容器继续运行导致下方日志流永不结束。
+                let _ = docker.kill_container(&container_id, None).await;
+            }
         }
         Err(_) => {
             // timeout, kill container
@@ -600,8 +612,7 @@ pub async fn run_in_container_stream(
     };
     let wait_with_timeout = async {
         match timeout(Duration::from_secs(limits.timeout_secs), wait_future).await {
-            Ok(Some(Ok(exit_status))) => Some(exit_status.status_code),
-            Ok(Some(Err(_))) | Ok(None) => None, // wait error or stream ended
+            Ok(item) => item.and_then(wait_exit_code), // None: wait error or stream ended
             Err(_) => {
                 // 超时，杀容器。kill 后 attach stream 会被 Docker 关闭，log_reader 自然结束。
                 timed_out = true;
@@ -659,14 +670,13 @@ pub async fn run_in_container_stream(
             // → 容器永久运行烧 CPU。与 wait_with_timeout 分支对称：带超时地等退出，超时则 kill。
             let mut wait_stream = docker.wait_container(&container_id, None::<WaitContainerOptions>);
             match timeout(Duration::from_secs(limits.timeout_secs), wait_stream.next()).await {
-                Ok(Some(Ok(status))) => exit_code = Some(status.status_code),
-                Ok(Some(Err(_))) | Ok(None) => {}
+                Ok(item) => exit_code = item.and_then(wait_exit_code),
                 Err(_) => {
                     // 超时：kill 后再等一次回收 exit_code（kill 后 wait 立即返回）。
                     timed_out = true;
                     let _ = docker.kill_container(&container_id, None).await;
-                    if let Some(Ok(status)) = wait_stream.next().await {
-                        exit_code = Some(status.status_code);
+                    if let Some(item) = wait_stream.next().await {
+                        exit_code = wait_exit_code(item);
                     }
                 }
             }
@@ -924,6 +934,56 @@ mod tests {
         assert_eq!(stdout, "hello");
         assert!(stderr.is_empty());
         assert!(!oom_killed);
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn nonzero_exit_code_is_reported_by_both_paths() {
+        if require_docker_with_image("alpine:latest").await.is_none() {
+            eprintln!("skip: Docker daemon 不可用或缺少 alpine:latest");
+            return;
+        }
+        let limits = ResourceLimits {
+            cpu_cores: 1.0,
+            memory_mb: 128,
+            timeout_secs: 5,
+            output_bytes: 1024,
+            allow_network: false,
+        };
+        let (exit_code, _, stderr, _) = run_in_container(
+            "alpine:latest",
+            "sh /code/main.sh",
+            "echo boom >&2; exit 3",
+            "sh",
+            limits.clone(),
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(exit_code, Some(3));
+        assert_eq!(stderr, "boom\n");
+
+        let (tx, mut rx) = tokio::sync::mpsc::channel(64);
+        let (exit_code, _, _, _, timed_out) = run_in_container_stream(
+            "alpine:latest",
+            "sh /code/main.sh",
+            "exit 3",
+            "sh",
+            limits,
+            None,
+            tx,
+        )
+        .await
+        .unwrap();
+        assert_eq!(exit_code, Some(3));
+        assert!(!timed_out);
+        let mut done_code = None;
+        while let Some(chunk) = rx.recv().await {
+            if let OutputChunk::Done { exit_code, .. } = chunk {
+                done_code = exit_code;
+            }
+        }
+        assert_eq!(done_code, Some(3));
     }
 
     #[tokio::test]
