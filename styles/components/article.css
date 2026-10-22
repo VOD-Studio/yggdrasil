@@ -14,12 +14,14 @@
     line-height: 1.9;
   }
 
-  /* ---- 宽块外扩：直属正文的代码块、运行器与表格向两侧各伸出 --post-inset ----
-     只匹配直属块，列表、引用与折叠块里的代码仍随文字缩进。手机上 --post-inset 为 0，
-     代码块与运行器改由下方媒体查询贴屏幕边缘，这里限定宽屏以免覆盖它。 */
+  /* ---- 宽块外扩：直属正文的代码块、运行器、表格与站内图片向两侧各伸出 --post-inset ----
+     只匹配直属块，列表、引用与折叠块里的代码和图片仍随文字缩进。站内图片是段落里的
+     块级 .blur-img（markdown.rs::wrap_images_with_blur），外链图保持行内原尺寸。
+     手机上 --post-inset 为 0，代码块与运行器改由下方媒体查询贴屏幕边缘，这里限定宽屏以免覆盖它。 */
   @media (min-width: 761px) {
     .post-content > div > pre,
-    .post-content > .runner {
+    .post-content > .runner,
+    .post-content > div > p > .blur-img {
       margin-inline: calc(-1 * var(--post-inset, 0px));
     }
 

@@ -1,7 +1,7 @@
 @layer components {
   /* ===== 文章页外壳：680px 文章栏，宽屏右侧留目录栏 =====
-     文字（页眉、段落、页脚、评论）在栏内左右各缩进 --post-inset，代码块、运行器、表格
-     与封面向两侧对称外扩回满栏（见 article.css「宽块外扩」）。 */
+     文字（页眉、段落、页脚、评论）在栏内左右各缩进 --post-inset，代码块、运行器、表格、
+     图片与封面向两侧对称外扩回满栏（见 article.css「宽块外扩」）。 */
   .post-layout {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 680px) minmax(0, 1fr);
