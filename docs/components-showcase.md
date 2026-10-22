@@ -13,14 +13,14 @@
 
 这两个字段都必填；原来的 `kind: reference` 不再控制预览或文案。
 
-`src/pages/components_showcase.rs` 按 `slug` 分派预览。简单组件、骨架和固定场景在主文件中；业务、布局与文章、评论、浏览器实例分别在 `src/pages/components_showcase/` 下。目录有条目而没有分派会使检查失败，不会退回通用示意卡。样式在 `input.css` 的 `showcase-*` 区块。
+`src/pages/components_showcase.rs` 按 `slug` 分派预览。简单组件和固定场景在主文件中；业务、布局与文章、评论、浏览器实例分别在 `src/pages/components_showcase/` 下。骨架屏组件仍用于业务页面的加载占位，但不收录到图鉴，也不提供独立详情预览。目录有条目而没有分派会使检查失败，不会退回通用示意卡。样式在 `styles/pages/showcase.css`。
 
 ## 增加组件
 
 1. 在 JSON 中添加完整条目，填写 `preview_mode` 与独立的 `usage_kind`。`code` 应展示实际调用；需要上下文的组件要说明上下文由谁提供。
 2. 在 `preview_route` 为新 `slug` 增加分派，并在对应预览模块渲染真实组件。需要权限、请求或持久化时，让正式入口保留业务控制，让图鉴传入固定数据及本地回调；两处共用展示代码。内部展示函数使用满足调用关系的最小可见性。
 3. 给目录卡片提供可辨认的初始结构；详情补齐代表状态和必要操作。使用确定的 DOM ID 与仓库内的静态素材，限定 DOM 查询和浮层作用域；目录中的重型浏览器实例进入可视范围后再挂载，并随预览卸载清理。
-4. 更新属性、说明与源码路径，运行下方检查。`catalog_covers_public_components_and_has_unique_routes` 会检查公开组件遗漏、重复路由和缺少预览分派。
+4. 更新属性、说明与源码路径，运行下方检查。`catalog_covers_public_components_and_has_unique_routes` 会检查公开组件遗漏（不含骨架屏）、重复路由和缺少预览分派；`catalog_excludes_skeletons_and_their_preview_routes` 确保骨架屏组件保留但不出现在图鉴中，且分类没有空项。
 
 ## 业务边界与验证
 
