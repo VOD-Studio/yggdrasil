@@ -22,6 +22,7 @@ use serde_json::{json, Map, Value};
 use crate::api::error::AppError;
 use crate::db::pool::get_conn;
 use crate::models::post::FeedItem;
+use crate::utils::html::escape_html;
 
 /// Feed channel 标题。站点无标题配置，与首页 `HomeInfo` 硬编码保持一致。
 const CHANNEL_TITLE: &str = "Yggdrasil";
@@ -44,25 +45,6 @@ const JSON_CONTENT_TYPE: &str = "application/feed+json; charset=utf-8";
 /// Feed 响应缓存头，与缓存层 TTL（600s）对齐。
 const FEED_CACHE_CONTROL: &str = "public, max-age=600";
 
-/// XML 文本转义：`& < > " '` 五个字符。
-///
-/// 全文 HTML 直接整体转义一次（而非 CDATA）：`&` 先行替换避免二次转义，
-/// 阅读器解析后得到与页面一致的 HTML 源码。
-fn escape_xml(input: &str) -> String {
-    let mut out = String::with_capacity(input.len());
-    for c in input.chars() {
-        match c {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            '"' => out.push_str("&quot;"),
-            '\'' => out.push_str("&apos;"),
-            _ => out.push(c),
-        }
-    }
-    out
-}
-
 /// 推导站点绝对 URL 基址（无尾部斜杠）。
 ///
 /// 仅信任「站点配置 → 安全」面板中的 APP_BASE_URL；绝不使用请求 Host
@@ -81,6 +63,10 @@ async fn site_base_url(_headers: &HeaderMap) -> String {
 }
 
 /// 渲染 RSS 2.0 文档。`now` 注入以便测试固定 `lastBuildDate`。
+///
+/// 文本字段经 [`escape_html`] 转义（`& < > " '`；`'` 输出数字字符引用 `&#x27;`，
+/// 在 XML 中与 `&apos;` 等价）。全文 HTML 直接整体转义一次（而非 CDATA），
+/// 阅读器解析后得到与页面一致的 HTML 源码。
 fn render_rss(base: &str, now: DateTime<Utc>, items: &[FeedItem]) -> String {
     let mut xml = String::with_capacity(4096 + items.len() * 512);
     xml.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
@@ -98,7 +84,7 @@ fn render_rss(base: &str, now: DateTime<Utc>, items: &[FeedItem]) -> String {
     xml.push_str("</lastBuildDate>");
     for item in items {
         xml.push_str("<item><title>");
-        xml.push_str(&escape_xml(&item.title));
+        xml.push_str(&escape_html(&item.title));
         xml.push_str("</title><link>");
         xml.push_str(base);
         xml.push_str("/post/");
@@ -112,16 +98,16 @@ fn render_rss(base: &str, now: DateTime<Utc>, items: &[FeedItem]) -> String {
         xml.push_str("</pubDate>");
         for tag in &item.tags {
             xml.push_str("<category>");
-            xml.push_str(&escape_xml(tag));
+            xml.push_str(&escape_html(tag));
             xml.push_str("</category>");
         }
         if let Some(html) = &item.content_html {
             xml.push_str("<description>");
-            xml.push_str(&escape_xml(html));
+            xml.push_str(&escape_html(html));
             xml.push_str("</description>");
         } else if let Some(summary) = &item.summary {
             xml.push_str("<description>");
-            xml.push_str(&escape_xml(summary));
+            xml.push_str(&escape_html(summary));
             xml.push_str("</description>");
         }
         xml.push_str("</item>");
@@ -304,13 +290,11 @@ mod tests {
     }
 
     #[test]
-    fn escape_xml_escapes_all_special_chars() {
-        assert_eq!(escape_xml("&<>\"'"), "&amp;&lt;&gt;&quot;&apos;");
-    }
-
-    #[test]
-    fn escape_xml_plain_text_unchanged() {
-        assert_eq!(escape_xml("plain text 123"), "plain text 123");
+    fn render_rss_escapes_apostrophe_as_numeric_reference() {
+        let mut item = fixture_item();
+        item.title = "It's <ok>".to_string();
+        let xml = render_rss("https://example.com", fixed_now(), &[item]);
+        assert!(xml.contains("<title>It&#x27;s &lt;ok&gt;</title>"));
     }
 
     #[test]

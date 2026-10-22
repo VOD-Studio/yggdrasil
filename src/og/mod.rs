@@ -17,6 +17,7 @@ use skrifa::prelude::{LocationRef, Size};
 use skrifa::{FontRef, MetadataProvider};
 
 use crate::models::share::PostShareCard;
+use crate::utils::html::escape_html;
 
 pub const WIDTH: u32 = 1200;
 pub const HEIGHT: u32 = 630;
@@ -239,7 +240,7 @@ fn text_block<'a>(
             style.size,
             style.letter_spacing,
             color(i),
-            escape_xml(line),
+            escape_html(line),
         ));
     }
     Ok(top + style.line_height * lines.len() as f32)
@@ -405,20 +406,6 @@ fn is_no_break_after(c: char) -> bool {
 fn is_cjk(c: char) -> bool {
     matches!(c as u32,
         0x2E80..=0x9FFF | 0xAC00..=0xD7AF | 0xF900..=0xFAFF | 0xFF00..=0xFFEF | 0x20000..=0x2FFFF)
-}
-
-fn escape_xml(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    for c in text.chars() {
-        match c {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            '"' => out.push_str("&quot;"),
-            _ => out.push(c),
-        }
-    }
-    out
 }
 
 fn rasterize(svg: &str) -> Result<Vec<u8>, OgError> {
