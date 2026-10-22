@@ -59,15 +59,8 @@ pub(super) fn use_terminal(
     // VT 动画期间跳过(同 CodeMirror 的 use_effect,见上方注释)。
     use_effect(move || {
         #[cfg(target_arch = "wasm32")]
-        {
-            let transitioning = web_sys::window()
-                .and_then(|w| w.document())
-                .and_then(|d| d.document_element())
-                .map(|el| el.class_list().contains("is-theme-transitioning"))
-                .unwrap_or(false);
-            if transitioning {
-                return;
-            }
+        if crate::utils::js::is_theme_transitioning() {
+            return;
         }
         if let Some(h) = term_handle.read().as_ref() {
             h.instance()

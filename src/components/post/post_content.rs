@@ -17,7 +17,7 @@ use dioxus::prelude::*;
 use crate::components::code_runner::CodeRunner;
 use crate::infra::runner_config::ResourceLimits;
 #[cfg(target_arch = "wasm32")]
-use crate::utils::js::invoke_optional_global;
+use crate::utils::js::{invoke_optional_global, is_theme_transitioning};
 
 /// 内容片段：普通 HTML 文本，或一个可运行代码块。
 #[derive(Clone, PartialEq, Debug)]
@@ -230,15 +230,9 @@ pub fn PostContent(
         // onThemeChange registry 同步触发 mermaid 重渲染(被 VT 等待,出现在 NEW 快照里)。
         // 但本 effect 在 theme.set(next) 后立即触发——早于 VT 回调的异步执行,会抢先改
         // 实时 DOM。VT 动画播的是伪元素快照,实时 DOM 改动会穿透伪元素,表现为「圆形
-        // 还没展开到流程图,流程图就瞬切」。is-theme-transitioning 期间跳过,让 VT 回调
-        // 内的 registry 重渲染负责;动画结束后此 effect 因 resolved 信号变化重跑(此时
-        // is-theme-transitioning 已移除),做幂等兜底。照搬 code_runner/runner.rs 的守卫。
-        let transitioning = window
-            .document()
-            .and_then(|d| d.document_element())
-            .map(|el| el.class_list().contains("is-theme-transitioning"))
-            .unwrap_or(false);
-        if !transitioning {
+        // 还没展开到流程图,流程图就瞬切」。主题过渡期间跳过,让 VT 回调内的 registry
+        // 重渲染负责;动画结束后此 effect 因 resolved 信号变化重跑,做幂等兜底。
+        if !is_theme_transitioning() {
             invoke_optional_global(
                 &window,
                 "__initMermaid",

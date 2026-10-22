@@ -83,20 +83,12 @@ pub(super) fn use_editor(
     // 通过 'yggdrasil:theme-change' 事件同步调了 setTheme(出现在 NEW 快照里)。
     // 但 use_effect 在 theme.set(next) 后立即触发——早于 VT 回调(异步),会直接改
     // 实时 DOM 的编辑器背景。VT 动画播的是伪元素快照,实时 DOM 改动会穿透伪元素,
-    // 表现为「圆形还没展开到代码块,代码块就整体瞬切」。is-theme-transitioning
-    // 期间跳过,让 VT 事件负责换肤;动画结束后此 effect 会因 resolved 信号变化重跑
-    // (此时 is-theme-transitioning 已移除),做一次幂等的兜底同步。
+    // 表现为「圆形还没展开到代码块,代码块就整体瞬切」。主题过渡期间跳过,让 VT
+    // 事件负责换肤;动画结束后此 effect 会因 resolved 信号变化重跑,做一次幂等的兜底同步。
     use_effect(move || {
         #[cfg(target_arch = "wasm32")]
-        {
-            let transitioning = web_sys::window()
-                .and_then(|w| w.document())
-                .and_then(|d| d.document_element())
-                .map(|el| el.class_list().contains("is-theme-transitioning"))
-                .unwrap_or(false);
-            if transitioning {
-                return;
-            }
+        if crate::utils::js::is_theme_transitioning() {
+            return;
         }
         if let Some(h) = editor_handle.read().as_ref() {
             h.instance()
