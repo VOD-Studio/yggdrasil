@@ -14,6 +14,7 @@ use futures::StreamExt;
 use serde::Deserialize;
 
 use crate::auth::session::parse_session_token;
+use super::read_only::is_read_only_statement;
 
 #[derive(Deserialize)]
 pub struct ExportParams {
@@ -86,11 +87,11 @@ fn parse_source(source: &str) -> Result<(String, String), (StatusCode, String)> 
         }
         Ok((format!("SELECT * FROM \"{}\"", t), t.to_string()))
     } else if let Some(query) = source.strip_prefix("query:") {
-        // 只读校验：sqlparser 解析后所有语句均为 Query/Explain
+        // 只读校验：sqlparser 解析后所有语句都必须是无副作用的查询或非 ANALYZE 的 EXPLAIN
         let dialect = sqlparser::dialect::PostgreSqlDialect {};
         let parsed = sqlparser::parser::Parser::parse_sql(&dialect, query)
             .map_err(|_| (StatusCode::BAD_REQUEST, "SQL 解析失败".to_string()))?;
-        if parsed.iter().any(|s| !is_read_only_ast(s)) {
+        if parsed.iter().any(|s| !is_read_only_statement(s)) {
             return Err((
                 StatusCode::BAD_REQUEST,
                 "导出查询必须是只读（SELECT/EXPLAIN）".to_string(),
@@ -110,13 +111,10 @@ fn is_simple_ident(s: &str) -> bool {
     !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
-/// 判断 AST 是否只读（SELECT/EXPLAIN）。
-fn is_read_only_ast(stmt: &sqlparser::ast::Statement) -> bool {
-    use sqlparser::ast::Statement;
-    matches!(stmt, Statement::Query(_) | Statement::Explain { .. })
-}
-
 /// CSV 导出：用 COPY ... TO STDOUT WITH CSV 流式（大表不 OOM）。
+///
+/// 流式响应在函数返回后才消费完，无法在同一连接上以事务包住整个 COPY，
+/// 这里只依赖 [`parse_source`] 的 AST 只读校验。
 async fn export_csv(
     source_sql: String,
     include_columns: bool,
@@ -144,12 +142,27 @@ async fn export_sql(
     include_columns: bool,
     table_name: String,
 ) -> Result<(Body, &'static str, String), (StatusCode, String)> {
-    let client = crate::db::pool::get_conn()
+    let mut client = crate::db::pool::get_conn()
         .await
         .map_err(|_| (StatusCode::SERVICE_UNAVAILABLE, "数据库不可用".to_string()))?;
 
-    let rows = client.query(&source_sql, &[]).await.map_err(|e| {
+    // 纵深防御：AST 校验之外再放进只读事务，查询里若混入写操作由数据库拒绝。
+    // 事务未提交即被丢弃时 tokio_postgres 会发送 ROLLBACK，连接归还池时不残留事务。
+    let tx = client
+        .build_transaction()
+        .read_only(true)
+        .start()
+        .await
+        .map_err(|e| {
+            tracing::error!("Export transaction failed: {}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, "查询失败".to_string())
+        })?;
+    let rows = tx.query(&source_sql, &[]).await.map_err(|e| {
         tracing::error!("Export query failed: {}", e);
+        (StatusCode::INTERNAL_SERVER_ERROR, "查询失败".to_string())
+    })?;
+    tx.rollback().await.map_err(|e| {
+        tracing::error!("Export transaction rollback failed: {}", e);
         (StatusCode::INTERNAL_SERVER_ERROR, "查询失败".to_string())
     })?;
 
@@ -345,6 +358,38 @@ mod tests {
                 msg.contains("只读") || msg.contains("解析失败"),
                 "{evil}: {msg}"
             );
+        }
+    }
+
+    #[test]
+    fn parse_query_source_rejects_explain_analyze_and_hidden_writes() {
+        // EXPLAIN ANALYZE 会真正执行内层语句；data-modifying CTE、SELECT INTO、
+        // 行锁子句外形都是 SELECT，但都有副作用。
+        for evil in [
+            "query:EXPLAIN ANALYZE DELETE FROM posts",
+            "query:EXPLAIN ANALYZE DELETE FROM posts WHERE id=1",
+            "query:EXPLAIN (ANALYZE) DELETE FROM posts WHERE id = 1",
+            "query:EXPLAIN (ANALYZE true) SELECT 1",
+            "query:EXPLAIN DELETE FROM posts WHERE id = 1",
+            "query:WITH d AS (DELETE FROM posts RETURNING *) SELECT * FROM d",
+            "query:SELECT * INTO t FROM posts",
+            "query:SELECT * FROM posts FOR UPDATE",
+        ] {
+            let (code, msg) = parse_source(evil).expect_err(evil);
+            assert_eq!(code, StatusCode::BAD_REQUEST, "{evil}");
+            assert!(msg.contains("只读"), "{evil}: {msg}");
+        }
+    }
+
+    #[test]
+    fn parse_query_source_accepts_plain_explain_options_and_ctes() {
+        for ok in [
+            "query:SELECT 1",
+            "query:EXPLAIN SELECT * FROM posts",
+            "query:EXPLAIN (FORMAT JSON) SELECT * FROM posts",
+            "query:WITH t AS (SELECT id FROM posts) SELECT * FROM t",
+        ] {
+            assert!(parse_source(ok).is_ok(), "{ok}");
         }
     }
 

@@ -8,6 +8,9 @@ pub mod backup;
 /// 数据导出 Axum 流式处理器（仅 server：纯 Axum 路由，无 WASM 消费者）。
 #[cfg(feature = "server")]
 pub mod export;
+/// SQL 只读判定（导出与 SQL 控制台共用，仅 server：依赖 sqlparser）。
+#[cfg(feature = "server")]
+pub(crate) mod read_only;
 /// SQL 补全用 schema 拉取。
 pub mod schema;
 /// SQL 控制台执行（全读写 + 4 护栏）。

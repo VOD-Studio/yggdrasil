@@ -18,6 +18,8 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "server")]
 use crate::api::auth::get_current_admin_user;
 #[cfg(feature = "server")]
+use crate::api::database::read_only::{executed_statements, is_read_only_statement};
+#[cfg(feature = "server")]
 use crate::api::error::AppError;
 #[cfg(feature = "server")]
 use crate::db::pool::get_conn;
@@ -113,11 +115,14 @@ enum GuardResult {
 }
 
 /// 护栏 1+2：sqlparser 解析后遍历 AST，检查高危语句与无 WHERE 的 UPDATE/DELETE。
+///
+/// 逐条检查语句本身及其内部会被执行的语句（`EXPLAIN ANALYZE` 内层、WITH 中的
+/// INSERT/UPDATE/DELETE），防止包一层就绕过护栏。
 #[cfg(feature = "server")]
 fn check_guards(asts: &[sqlparser::ast::Statement], confirm_dangerous: bool) -> GuardResult {
     use sqlparser::ast::{ObjectType, Statement};
 
-    for stmt in asts {
+    for stmt in asts.iter().flat_map(executed_statements) {
         match stmt {
             // 护栏 1（绝禁）：DROP SCHEMA 和 DROP DATABASE 永远禁止。
             // 这里在 AST 层结构性禁止，防 SQL 注释/空白绕过字符串预检。
@@ -186,32 +191,33 @@ fn statement_type_name(stmt: &sqlparser::ast::Statement) -> String {
     name.to_string()
 }
 
-/// 判断语句是否只读（SELECT/WITH...SELECT/EXPLAIN/SHOW 系列）。
+/// 判断语句是否只读（无副作用的查询 / 非 ANALYZE 的 EXPLAIN / SHOW 系列）。
+///
+/// 查询与 EXPLAIN 的判定与数据导出共用 [`is_read_only_statement`]：
+/// `EXPLAIN ANALYZE <DML>`、data-modifying CTE、`SELECT INTO`、行锁查询都算写。
 #[cfg(feature = "server")]
 fn is_read_only(stmt: &sqlparser::ast::Statement) -> bool {
     use sqlparser::ast::Statement;
-    matches!(
-        stmt,
-        // SELECT 与 WITH ... SELECT 均解析为 Query。
-        Statement::Query(_)
-            | Statement::Explain { .. }
+    is_read_only_statement(stmt)
+        || matches!(
+            stmt,
             // SHOW 系列只读取元数据/配置参数，不会写入业务表。
-            | Statement::ShowVariable { .. }
-            | Statement::ShowVariables { .. }
-            | Statement::ShowStatus { .. }
-            | Statement::ShowCreate { .. }
-            | Statement::ShowColumns { .. }
-            | Statement::ShowCatalogs { .. }
-            | Statement::ShowDatabases { .. }
-            | Statement::ShowProcessList { .. }
-            | Statement::ShowSchemas { .. }
-            | Statement::ShowCharset(_)
-            | Statement::ShowObjects(_)
-            | Statement::ShowTables { .. }
-            | Statement::ShowViews { .. }
-            | Statement::ShowFunctions { .. }
-            | Statement::ShowCollation { .. }
-    )
+            Statement::ShowVariable { .. }
+                | Statement::ShowVariables { .. }
+                | Statement::ShowStatus { .. }
+                | Statement::ShowCreate { .. }
+                | Statement::ShowColumns { .. }
+                | Statement::ShowCatalogs { .. }
+                | Statement::ShowDatabases { .. }
+                | Statement::ShowProcessList { .. }
+                | Statement::ShowSchemas { .. }
+                | Statement::ShowCharset(_)
+                | Statement::ShowObjects(_)
+                | Statement::ShowTables { .. }
+                | Statement::ShowViews { .. }
+                | Statement::ShowFunctions { .. }
+                | Statement::ShowCollation { .. }
+        )
 }
 
 /// 判断一组语句中是否含有写操作（非只读语句）。
@@ -776,6 +782,28 @@ mod tests {
         assert!(!is_read_only(&parse("INSERT INTO t (a) VALUES (1)")[0]));
     }
 
+    #[test]
+    fn is_read_only_keeps_show_statements_read_only() {
+        assert!(is_read_only(&parse("SHOW search_path")[0]));
+    }
+
+    #[test]
+    fn guard_forbids_unbounded_delete_hidden_behind_explain_analyze_or_cte() {
+        // EXPLAIN ANALYZE 与 data-modifying CTE 会真正执行内层 DML，
+        // 无 WHERE 护栏必须同样作用于内层语句。
+        for sql in [
+            "EXPLAIN ANALYZE DELETE FROM posts",
+            "EXPLAIN (ANALYZE) UPDATE posts SET title = 'x'",
+            "WITH d AS (DELETE FROM posts RETURNING *) SELECT * FROM d",
+            "WITH x AS (SELECT 1) DELETE FROM posts",
+        ] {
+            match check_guards(&parse(sql), true) {
+                GuardResult::Forbidden(msg) => assert!(msg.contains("WHERE"), "{sql}: {msg}"),
+                other => panic!("{sql} 应被 WHERE 护栏拦截, got {other:?}"),
+            }
+        }
+    }
+
     // ── writes_affect_cache（SQL 控制台兜底失效开关） ─────────────
     // 任何写语句（非只读）都应触发全量缓存失效，兜底绕过 server function 的直改 DB。
 
@@ -788,6 +816,10 @@ mod tests {
             "TRUNCATE posts",
             "ALTER TABLE posts ADD COLUMN x int",
             "DROP TABLE posts",
+            "EXPLAIN ANALYZE DELETE FROM posts WHERE id = 648",
+            "EXPLAIN (ANALYZE) UPDATE posts SET title = 'x' WHERE id = 648",
+            "WITH d AS (DELETE FROM posts WHERE id = 648 RETURNING *) SELECT * FROM d",
+            "SELECT * INTO posts_copy FROM posts",
         ] {
             assert!(
                 writes_affect_cache(&parse(sql)),
