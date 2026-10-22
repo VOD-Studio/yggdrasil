@@ -567,6 +567,9 @@ fn generate_toc_html(headings: &[(u8, String, String)]) -> String {
 ///
 /// 汉字转无声调拼音（每字成词，用 `-` 分隔），与 [`crate::api::slug::slugify`]
 /// 保持一致；ASCII 字母数字保留，其余字符作为词分隔。结果为空时回退 `heading`。
+///
+/// 与 `slugify` 有意不合并：这里保留非 ASCII 字母数字（如 `é`、假名）并做 Unicode
+/// 小写、`_` 视为分隔符、不截断；改动任一规则都会改变已发布文章的标题锚点。
 fn slugify_heading(text: &str) -> String {
     use pinyin::ToPinyin;
 
