@@ -130,22 +130,32 @@ pub(crate) async fn create(
     })
 }
 
-fn replacement(draft: PostDraft) -> Result<PostPatch, WriteError> {
+/// 完整更新：校验草稿并在事务外渲染正文，返回补丁与渲染结果。
+///
+/// 渲染直接使用草稿里已校验的正文与状态，避免事后从 `Option` 字段取回。
+async fn replacement(draft: PostDraft) -> Result<(PostPatch, helpers::RenderedFields), WriteError> {
     validation::title(&draft.title)?;
     validation::content(&draft.content_md)?;
     let slug = validation::base_slug(&draft.title, draft.slug.as_deref())?;
-    Ok(PostPatch {
+    // 与 PATCH 同规则（validate_patch）：由标题生成的 slug 同样须通过格式校验。
+    let trimmed_slug = slug.trim();
+    if !trimmed_slug.is_empty() {
+        validation::slug(trimmed_slug)?;
+    }
+    let cover = normalize_cover(draft.cover_image.as_deref());
+    let fields =
+        helpers::render_post_fields(&draft.content_md, &draft.status, cover.as_deref()).await?;
+    let patch = PostPatch {
         title: Some(draft.title),
         slug: Some(slug),
         summary: Some(draft.summary.unwrap_or_default()),
         content_md: Some(draft.content_md),
         status: Some(draft.status),
         tags: Some(draft.tags),
-        cover_image: normalize_cover(draft.cover_image.as_deref())
-            .map(FieldChange::Set)
-            .unwrap_or(FieldChange::Clear),
+        cover_image: cover.map(FieldChange::Set).unwrap_or(FieldChange::Clear),
         ..Default::default()
-    })
+    };
+    Ok((patch, fields))
 }
 
 fn validate_patch(p: &PostPatch) -> Result<(), WriteError> {
@@ -177,30 +187,17 @@ pub(crate) async fn update(
     post_id: i32,
     command: UpdatePost,
 ) -> Result<WriteOutcome, WriteError> {
-    let (p, align_created_at) = match command {
-        UpdatePost::Replace(draft) => (replacement(draft)?, false),
-        UpdatePost::Patch(patch) => (patch, true),
-    };
-    validate_patch(&p)?;
-    // 完整更新的正文与元信息已齐全，沿用浏览器接口在事务外渲染的行为。
-    // PATCH 的缺省字段需从锁定行读取，再决定最终状态与封面。
-    let prepared = if !align_created_at {
-        let cover = match &p.cover_image {
-            FieldChange::Set(value) => Some(value.as_str()),
-            FieldChange::Keep | FieldChange::Clear => None,
-        };
-        Some(
-            helpers::render_post_fields(
-                p.content_md
-                    .as_deref()
-                    .expect("replacement includes content"),
-                p.status.as_deref().expect("replacement includes status"),
-                cover,
-            )
-            .await?,
-        )
-    } else {
-        None
+    let (p, prepared, align_created_at) = match command {
+        // 完整更新的正文与元信息已齐全，沿用浏览器接口在事务外渲染的行为。
+        UpdatePost::Replace(draft) => {
+            let (p, fields) = replacement(draft).await?;
+            (p, Some(fields), false)
+        }
+        // PATCH 的缺省字段需从锁定行读取，再决定最终状态与封面。
+        UpdatePost::Patch(patch) => {
+            validate_patch(&patch)?;
+            (patch, None, true)
+        }
     };
     let mut client = get_conn().await.map_err(AppError::db_conn)?;
     let tx = client.transaction().await.map_err(AppError::tx)?;
