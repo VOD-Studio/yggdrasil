@@ -1021,6 +1021,12 @@ pub struct SystemInfo {
     pub migrate_startup_timeout_secs: u64,
     /// 系统信息采样间隔（秒）。
     pub sysinfo_sample_secs: f64,
+    /// 日志查看器（/admin/logs 入库）捕获级别过滤器。
+    pub log_viewer_level: String,
+    /// 备份导入单文件上限（MB）。
+    pub backup_import_max_mb: u64,
+    /// 上一发布的 public 目录（旧资源保留窗口）；未配置为空串。
+    pub previous_public_dir: String,
 }
 
 #[cfg(test)]

@@ -64,6 +64,12 @@ pub async fn get_system_info() -> Result<SystemInfo, ServerFnError> {
                 .ok()
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(0.5),
+            log_viewer_level: std::env::var("LOG_VIEWER_LEVEL")
+                .ok()
+                .filter(|v| !v.trim().is_empty())
+                .unwrap_or_else(|| "info".to_string()),
+            backup_import_max_mb: crate::api::database::backup::import_max_bytes() / (1024 * 1024),
+            previous_public_dir: std::env::var("YGG_PREVIOUS_PUBLIC_DIR").unwrap_or_default(),
         })
     }
 
@@ -81,6 +87,9 @@ pub async fn get_system_info() -> Result<SystemInfo, ServerFnError> {
             mcp_token_enc_key_set: false,
             migrate_startup_timeout_secs: 0,
             sysinfo_sample_secs: 0.0,
+            log_viewer_level: String::new(),
+            backup_import_max_mb: 0,
+            previous_public_dir: String::new(),
         })
     }
 }

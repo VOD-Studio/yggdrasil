@@ -83,6 +83,28 @@ fn rows(i: &SystemInfo) -> Vec<(&'static str, &'static str, String, &'static str
             format!("{} 秒", i.sysinfo_sample_secs),
             "采样循环启动时读取",
         ),
+        (
+            "日志查看器级别",
+            "LOG_VIEWER_LEVEL",
+            i.log_viewer_level.clone(),
+            "/admin/logs 入库级别，独立于 RUST_LOG",
+        ),
+        (
+            "备份导入上限",
+            "BACKUP_IMPORT_MAX_MB",
+            format!("{} MB", i.backup_import_max_mb),
+            "反代 body 上限需同步放大",
+        ),
+        (
+            "旧发布资源目录",
+            "YGG_PREVIOUS_PUBLIC_DIR",
+            if i.previous_public_dir.is_empty() {
+                "未设置".into()
+            } else {
+                i.previous_public_dir.clone()
+            },
+            "滚动发布时保留旧 hash 资源",
+        ),
     ]
 }
 
