@@ -198,14 +198,14 @@ pub(crate) async fn add_cache_control(
 /// - 只匹配 `/admin*`，其它路径（`/login`、公开页、`/api/*`）直接放行。
 /// - 复用 `get_user_by_token`：命中内存缓存 + 校验 `session_generation`
 ///   （封禁/降级后旧 session 立即失效），与客户端鉴权同一套语义。
-/// - DB 错误时 **fail-open**（放行进入 SSR）：避免数据库抖动把已登录的
+/// - 无 token、token 无效/过期/世代号不匹配、非管理员：302 跳转 `/login`。
+/// - 仅 DB 错误时 **fail-open**（放行进入 SSR）：避免数据库抖动把已登录的
 ///   管理员也踢到登录页；客户端 `AdminLayout` 仍有兜底校验。
 /// - `/admin` 与 `/login` 本就不进 `cache_control_for_path` 缓存，302 不会被缓存。
 pub(crate) async fn admin_guard(
     req: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> axum::response::Response {
-    use crate::models::user::UserRole;
     use axum::body::Body;
     use axum::http::{header, StatusCode};
     use axum::response::Response;
@@ -223,17 +223,16 @@ pub(crate) async fn admin_guard(
         .unwrap_or("");
     let token = crate::auth::session::parse_session_token(cookie);
 
-    let is_admin = match token {
-        Some(t) => match crate::api::auth::get_user_by_token(t).await {
-            Ok(Some(user)) => user.role == UserRole::Admin,
-            // Err（DB 抖动）/ Ok(None)（token 无效）：fail-open，交给客户端兜底。
-            _ => true,
-        },
-        // 无 token：明确未登录，拦截。
-        None => false,
+    let session = match token {
+        Some(t) => Some(
+            crate::api::auth::get_user_by_token(t)
+                .await
+                .map(|user| user.map(|u| u.role)),
+        ),
+        None => None,
     };
 
-    if is_admin {
+    if admin_guard_allows(session) {
         next.run(req).await
     } else {
         Response::builder()
@@ -241,6 +240,23 @@ pub(crate) async fn admin_guard(
             .header(header::LOCATION, "/login")
             .body(Body::empty())
             .expect("静态 302 重定向响应（合法 status + 固定 header + 空 body）必然构造成功")
+    }
+}
+
+/// [`admin_guard`] 的放行判定。
+///
+/// `session` 为 `None` 表示请求没有 session cookie；`Some(Ok(None))` 表示 token
+/// 无效、过期或世代号不匹配。只有查询出错（`Some(Err(_))`）才 fail-open。
+fn admin_guard_allows<E>(
+    session: Option<Result<Option<crate::models::user::UserRole>, E>>,
+) -> bool {
+    use crate::models::user::UserRole;
+    match session {
+        Some(Ok(Some(role))) => role == UserRole::Admin,
+        // DB 抖动：fail-open，交给客户端兜底。
+        Some(Err(_)) => true,
+        // 无 token / token 无效：明确未登录，拦截。
+        None | Some(Ok(None)) => false,
     }
 }
 
@@ -419,6 +435,22 @@ mod tests {
     };
     use axum::http::{header, Method, Request};
     use tower::ServiceExt;
+
+    #[test]
+    fn admin_guard_redirects_invalid_session_and_fails_open_only_on_db_error() {
+        use super::admin_guard_allows;
+        use crate::models::user::UserRole;
+
+        // 无 cookie、token 无效/过期/世代号不匹配、非管理员：拦截。
+        assert!(!admin_guard_allows::<()>(None));
+        assert!(!admin_guard_allows::<()>(Some(Ok(None))));
+        assert!(!admin_guard_allows::<()>(Some(Ok(Some(UserRole::Blocked)))));
+        // 有效管理员会话：放行。
+        assert!(admin_guard_allows::<()>(Some(Ok(Some(UserRole::Admin)))));
+        // 仅 DB 错误 fail-open。
+        let db_error: Result<Option<UserRole>, &str> = Err("db down");
+        assert!(admin_guard_allows(Some(db_error)));
+    }
 
     #[test]
     fn previous_asset_window_only_serves_hashed_dirs_inside_root() {
