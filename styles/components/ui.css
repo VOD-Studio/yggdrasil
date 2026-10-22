@@ -113,7 +113,7 @@
   .btn-outline {
     background-color: transparent;
     color: var(--color-fg);
-    box-shadow: inset 0 0 0 1px var(--color-hairline);
+    box-shadow: inset 0 0 0 var(--hairline) var(--color-hairline);
   }
 
   .btn-outline:hover:not(:disabled, [aria-disabled="true"]) {
@@ -199,7 +199,7 @@
     font: inherit;
     font-size: 0.875rem;
     line-height: 1.5;
-    box-shadow: 0 0 0 1px var(--color-hairline);
+    box-shadow: 0 0 0 var(--hairline) var(--color-hairline);
     transition:
       box-shadow 200ms var(--ease-out-expo),
       background-color 150ms var(--ease-out-expo);
@@ -343,7 +343,7 @@
     margin: -4px -4px 4px;
     padding: 4px;
     background-color: var(--color-popover);
-    box-shadow: inset 0 -1px 0 var(--color-hairline);
+    box-shadow: inset 0 calc(-1 * var(--hairline)) 0 var(--color-hairline);
   }
 
   .listbox-option {
@@ -439,7 +439,7 @@
     justify-content: space-between;
     margin-top: 8px;
     padding-top: 8px;
-    box-shadow: inset 0 1px 0 var(--color-hairline);
+    box-shadow: inset 0 var(--hairline) 0 var(--color-hairline);
     font-size: 0.75rem;
     color: var(--color-fg-3);
     font-variant-numeric: tabular-nums;
@@ -619,7 +619,7 @@
     border-radius: var(--radius-dialog);
     background-color: var(--color-surface-2);
     color: var(--color-fg);
-    box-shadow: 0 0 0 1px var(--color-hairline), var(--shadow-lg);
+    box-shadow: 0 0 0 var(--hairline) var(--color-hairline), var(--shadow-lg);
   }
 
   .dialog-panel:focus {
@@ -669,7 +669,7 @@
     gap: 0.5rem;
     padding: 0.75rem 1.125rem;
     background-color: var(--color-surface-1);
-    box-shadow: inset 0 1px 0 var(--color-hairline);
+    box-shadow: inset 0 var(--hairline) 0 var(--color-hairline);
   }
 
   /* ---- 悬浮提示 ----
@@ -898,7 +898,7 @@
     left: 0;
     border-radius: 999px;
     background-color: var(--color-surface-2);
-    box-shadow: 0 0 0 1px var(--color-hairline), var(--shadow-sm);
+    box-shadow: 0 0 0 var(--hairline) var(--color-hairline), var(--shadow-sm);
     pointer-events: none;
     transition:
       transform var(--spring-snappy-duration) var(--ease-spring-snappy),
@@ -966,7 +966,7 @@
   .section-label::after {
     content: "";
     flex: 1;
-    height: 1px;
+    height: var(--hairline);
     background-color: var(--color-hairline);
   }
 
@@ -991,7 +991,7 @@
     padding: 0.5rem 0.5rem 0.5rem 1.125rem;
     border-radius: var(--radius-composer);
     background-color: var(--color-surface-3);
-    box-shadow: 0 0 0 1px var(--color-hairline), var(--shadow-composer);
+    box-shadow: 0 0 0 var(--hairline) var(--color-hairline), var(--shadow-composer);
     color: var(--color-fg-3);
     transition: box-shadow 200ms var(--ease-out-expo);
   }
@@ -1053,7 +1053,7 @@
   .panel {
     border-radius: var(--radius-code);
     background-color: var(--color-surface-2);
-    box-shadow: 0 0 0 1px var(--color-hairline), var(--shadow-sm);
+    box-shadow: 0 0 0 var(--hairline) var(--color-hairline), var(--shadow-sm);
   }
 
   /* ---- 区块加载失败：只替换出错的区块，重试在原位完成 ---- */
@@ -1065,7 +1065,7 @@
     padding: 1.75rem;
     border-radius: var(--radius-code);
     background-color: var(--color-surface-1);
-    box-shadow: 0 0 0 1px var(--color-hairline);
+    box-shadow: 0 0 0 var(--hairline) var(--color-hairline);
   }
 
   .load-error-copy {
@@ -1122,7 +1122,7 @@
   /* 滑块测量完成前，选中项直接画浮起底色，首屏不闪。 */
   .segmented:not([data-ready]) > .segmented-item[aria-selected="true"] {
     background-color: var(--color-surface-2);
-    box-shadow: 0 0 0 1px var(--color-hairline), var(--shadow-sm);
+    box-shadow: 0 0 0 var(--hairline) var(--color-hairline), var(--shadow-sm);
   }
 }
 
@@ -1226,7 +1226,7 @@
   }
 
   .menu-separator {
-    height: 1px;
+    height: var(--hairline);
     margin: 4px 6px;
     background-color: var(--color-hairline);
   }

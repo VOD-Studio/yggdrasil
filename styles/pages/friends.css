@@ -43,12 +43,12 @@
   padding: 1.125rem;
   border-radius: var(--radius-panel);
   background-color: var(--color-surface-2);
-  box-shadow: 0 0 0 1px var(--color-hairline), var(--shadow-sm);
+  box-shadow: 0 0 0 var(--hairline) var(--color-hairline), var(--shadow-sm);
   color: inherit;
   text-decoration: none;
   transition: box-shadow 220ms var(--ease-out-expo);
 }
-a.friend-card:hover { box-shadow: 0 0 0 1px var(--color-hairline), 0 8px 28px rgb(0 0 0 / 0.06); }
+a.friend-card:hover { box-shadow: 0 0 0 var(--hairline) var(--color-hairline), 0 8px 28px rgb(0 0 0 / 0.06); }
 .friend-card:focus-visible {
   outline: none;
   box-shadow: var(--shadow-focus);
@@ -139,7 +139,7 @@ a.friend-card:focus-visible .friend-go {
   padding: 3.5rem 1.5rem;
   border-radius: var(--radius-panel);
   background-color: var(--color-surface-1);
-  box-shadow: 0 0 0 1px var(--color-hairline);
+  box-shadow: 0 0 0 var(--hairline) var(--color-hairline);
   text-align: center;
 }
 .friends-empty-icon {
@@ -169,7 +169,7 @@ a.friend-card:focus-visible .friend-go {
   padding: 1.625rem 1.75rem;
   border-radius: var(--radius-panel);
   background-color: var(--color-surface-1);
-  box-shadow: 0 0 0 1px var(--color-hairline);
+  box-shadow: 0 0 0 var(--hairline) var(--color-hairline);
 }
 .friends-swap-title {
   margin: 0;
@@ -195,7 +195,7 @@ a.friend-card:focus-visible .friend-go {
   padding: 0.625rem 0.5rem 0.625rem 0.875rem;
   border-radius: 8px;
   background-color: var(--color-surface-2);
-  box-shadow: 0 0 0 1px var(--color-hairline);
+  box-shadow: 0 0 0 var(--hairline) var(--color-hairline);
 }
 .friends-swap-row dt {
   flex-shrink: 0;

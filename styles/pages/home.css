@@ -83,11 +83,11 @@
   padding: 2rem;
   border-radius: var(--radius-panel);
   background-color: var(--color-surface-2);
-  box-shadow: 0 0 0 1px var(--color-hairline), var(--shadow-sm);
+  box-shadow: 0 0 0 var(--hairline) var(--color-hairline), var(--shadow-sm);
   transition: box-shadow 220ms var(--ease-out-expo);
 }
 .home-latest:has(.home-latest-link:hover) {
-  box-shadow: 0 0 0 1px var(--color-hairline), 0 8px 28px rgb(0 0 0 / 0.06);
+  box-shadow: 0 0 0 var(--hairline) var(--color-hairline), 0 8px 28px rgb(0 0 0 / 0.06);
 }
 .home-latest.is-single { grid-template-columns: minmax(0, 1fr); }
 .home-latest-main { display: flex; flex-direction: column; min-width: 0; }
@@ -155,7 +155,7 @@
 .home-latest-count { display: none; color: var(--color-fg-3); font-weight: 400; }
 .home-latest-outline {
   padding-left: 1.75rem;
-  box-shadow: inset 1px 0 0 var(--color-hairline);
+  box-shadow: inset var(--hairline) 0 0 var(--color-hairline);
 }
 .home-latest-outline-total {
   margin: 0 0 0.75rem;
@@ -240,7 +240,7 @@
 .home-month-label::after {
   content: "";
   flex: 1;
-  height: 1px;
+  height: var(--hairline);
   background-color: var(--color-hairline);
 }
 .home-month ul { margin: 0; padding: 0; list-style: none; }
@@ -317,7 +317,7 @@ a.home-row:is(:hover, :focus-visible) .home-row-arrow { opacity: 1; transform: n
   padding: 1.375rem;
   border-radius: var(--radius-panel);
   background-color: var(--color-surface-1);
-  box-shadow: 0 0 0 1px var(--color-hairline);
+  box-shadow: 0 0 0 var(--hairline) var(--color-hairline);
 }
 .home-corner-head {
   display: flex;

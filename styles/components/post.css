@@ -35,7 +35,7 @@
   .post-header {
     margin-bottom: 2rem;
     padding: 1rem 0 2.5rem;
-    border-bottom: 1px solid var(--color-hairline);
+    border-bottom: var(--hairline) solid var(--color-hairline);
   }
 
   .post-crumbs {
@@ -120,7 +120,7 @@
   .post-footer {
     margin-top: 3.5rem;
     padding-top: 2rem;
-    border-top: 1px solid var(--color-hairline);
+    border-top: var(--hairline) solid var(--color-hairline);
   }
 
   .post-nav {
@@ -137,7 +137,7 @@
     padding: 1.125rem 1.25rem;
     border-radius: var(--radius-panel);
     background-color: var(--color-surface-1);
-    box-shadow: 0 0 0 1px var(--color-hairline);
+    box-shadow: 0 0 0 var(--hairline) var(--color-hairline);
     text-decoration: none;
     transition:
       background-color 150ms var(--ease-out-expo),

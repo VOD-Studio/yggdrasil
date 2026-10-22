@@ -134,12 +134,12 @@
 .about-facts {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1px;
+  gap: var(--hairline);
   margin: 1.5rem 0 0;
   overflow: hidden;
   border-radius: var(--radius-panel);
   background-color: var(--color-hairline);
-  box-shadow: 0 0 0 1px var(--color-hairline);
+  box-shadow: 0 0 0 var(--hairline) var(--color-hairline);
 }
 .about-facts > div {
   padding: 0.875rem 1rem;
@@ -169,12 +169,12 @@
   padding: 1.125rem;
   border-radius: var(--radius-panel);
   background-color: var(--color-surface-2);
-  box-shadow: 0 0 0 1px var(--color-hairline), var(--shadow-sm);
+  box-shadow: 0 0 0 var(--hairline) var(--color-hairline), var(--shadow-sm);
   color: inherit;
   text-decoration: none;
   transition: box-shadow 220ms var(--ease-out-expo);
 }
-.about-entry:hover { box-shadow: 0 0 0 1px var(--color-hairline), 0 8px 28px rgb(0 0 0 / 0.06); }
+.about-entry:hover { box-shadow: 0 0 0 var(--hairline) var(--color-hairline), 0 8px 28px rgb(0 0 0 / 0.06); }
 .about-entry:focus-visible {
   outline: none;
   box-shadow: var(--shadow-focus);
@@ -211,7 +211,7 @@
   gap: 1rem;
   margin-top: 3rem;
   padding-top: 1.75rem;
-  box-shadow: inset 0 1px 0 var(--color-hairline);
+  box-shadow: inset 0 var(--hairline) 0 var(--color-hairline);
 }
 .about-subscribe h2 {
   margin: 0;

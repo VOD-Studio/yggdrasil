@@ -20,7 +20,7 @@
     width: 100%;
     background-color: color-mix(in srgb, var(--color-surface-0) 82%, transparent);
     backdrop-filter: blur(12px);
-    box-shadow: inset 0 -1px 0 var(--color-hairline);
+    box-shadow: inset 0 calc(-1 * var(--hairline)) 0 var(--color-hairline);
   }
 
   /* 支持滚动时间线时，页面顶部透明无底线，滚出 24px 后渐显。基础样式取顶部态：
@@ -40,7 +40,7 @@
     to {
       background-color: color-mix(in srgb, var(--color-surface-0) 82%, transparent);
       backdrop-filter: blur(12px);
-      box-shadow: inset 0 -1px 0 var(--color-hairline);
+      box-shadow: inset 0 calc(-1 * var(--hairline)) 0 var(--color-hairline);
     }
   }
 
@@ -124,7 +124,7 @@
     z-index: -1;
     border-radius: inherit;
     background-color: var(--color-surface-2);
-    box-shadow: 0 0 0 1px var(--color-hairline), var(--shadow-sm);
+    box-shadow: 0 0 0 var(--hairline) var(--color-hairline), var(--shadow-sm);
   }
 
   .dark .nav-indicator {
@@ -171,7 +171,7 @@
     padding: 1px 6px;
     border-radius: 5px;
     background-color: var(--color-surface-2);
-    box-shadow: 0 0 0 1px var(--color-hairline);
+    box-shadow: 0 0 0 var(--hairline) var(--color-hairline);
     font-family: var(--font-mono);
     font-size: 0.6875rem;
     color: var(--color-fg-3);
@@ -284,7 +284,7 @@
     padding: 0.5rem 1rem max(1.75rem, env(safe-area-inset-bottom));
     border-radius: 20px 20px 0 0;
     background-color: var(--color-popover);
-    box-shadow: 0 -1px 0 var(--color-hairline), 0 -12px 40px rgb(0 0 0 / 0.1);
+    box-shadow: 0 calc(-1 * var(--hairline)) 0 var(--color-hairline), 0 -12px 40px rgb(0 0 0 / 0.1);
     animation: sheet-in var(--spring-heavy-duration) var(--ease-spring-heavy) both;
     touch-action: pan-y;
   }
@@ -395,7 +395,7 @@
   /* ======== 页脚 ======== */
   .site-footer {
     margin-top: auto;
-    box-shadow: inset 0 1px 0 var(--color-hairline);
+    box-shadow: inset 0 var(--hairline) 0 var(--color-hairline);
   }
 
   .site-footer-inner {

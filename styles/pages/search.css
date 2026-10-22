@@ -55,7 +55,7 @@
   padding: 0;
   list-style: none;
 }
-.search-results > li { box-shadow: inset 0 -1px 0 var(--color-hairline); }
+.search-results > li { box-shadow: inset 0 calc(-1 * var(--hairline)) 0 var(--color-hairline); }
 .search-result {
   display: flex;
   flex-direction: column;
@@ -114,7 +114,7 @@ a.search-result:hover { background-color: var(--color-ink-1); }
 .search-result-tag.is-hit { border-radius: 999px; }
 .dark .search-result mark,
 .dark .search-result-tag.is-hit { background-color: rgb(217 119 87 / 0.28); }
-.search-result-skeleton { margin: 0; padding-inline: 0; box-shadow: inset 0 -1px 0 var(--color-hairline); }
+.search-result-skeleton { margin: 0; padding-inline: 0; box-shadow: inset 0 calc(-1 * var(--hairline)) 0 var(--color-hairline); }
 
 /* ---- 无结果 ---- */
 .search-empty {

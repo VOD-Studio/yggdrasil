@@ -24,7 +24,7 @@
   gap: 0.75rem;
   height: 3.5rem;
   padding: 0 1rem 0 0.75rem;
-  box-shadow: inset 0 -1px 0 var(--color-hairline);
+  box-shadow: inset 0 calc(-1 * var(--hairline)) 0 var(--color-hairline);
 }
 
 .write-head-left {
@@ -144,7 +144,7 @@ button.write-status:focus-visible {
   padding: 0.875rem 1rem;
   border-radius: var(--radius-panel);
   background-color: var(--color-warning-soft);
-  box-shadow: 0 0 0 1px var(--color-hairline);
+  box-shadow: 0 0 0 var(--hairline) var(--color-hairline);
   animation: write-banner-in var(--spring-snappy-duration) var(--ease-spring-snappy) both;
 }
 
@@ -243,7 +243,7 @@ button.write-status:focus-visible {
 }
 
 .write-rule {
-  height: 1px;
+  height: var(--hairline);
   margin: 1.75rem 0;
   background-color: var(--color-hairline);
 }
@@ -320,7 +320,7 @@ button.write-status:focus-visible {
   border: 0;
   border-radius: var(--radius-panel);
   background-color: var(--color-surface-2);
-  box-shadow: 0 0 0 1px var(--color-hairline), var(--shadow-sm);
+  box-shadow: 0 0 0 var(--hairline) var(--color-hairline), var(--shadow-sm);
   color: inherit;
   font: inherit;
   text-align: left;
@@ -370,7 +370,7 @@ button.write-status:focus-visible {
   padding: 1.125rem 1.25rem 2rem;
   overflow-y: auto;
   background-color: var(--color-surface-1);
-  box-shadow: inset 1px 0 0 var(--color-hairline);
+  box-shadow: inset var(--hairline) 0 0 var(--color-hairline);
   /* backwards：动画结束后不保留 transform，抽屉里的弹窗（素材库）才能按视口定位。 */
   animation: write-drawer-in 300ms var(--ease-out-expo) backwards;
 }
@@ -506,7 +506,7 @@ button.write-status:focus-visible {
   overflow: hidden;
   border-radius: var(--radius-panel);
   background-color: var(--color-surface-2);
-  box-shadow: inset 0 0 0 1px var(--color-hairline);
+  box-shadow: inset 0 0 0 var(--hairline) var(--color-hairline);
 }
 
 .write-cover[data-state="empty"] {
@@ -599,7 +599,7 @@ button.write-status:focus-visible {
   gap: 0.75rem;
   margin-top: auto;
   padding-top: 1rem;
-  box-shadow: inset 0 1px 0 var(--color-hairline);
+  box-shadow: inset 0 var(--hairline) 0 var(--color-hairline);
   color: var(--color-fg-3);
   font-size: 0.78125rem;
 }

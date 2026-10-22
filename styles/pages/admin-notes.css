@@ -9,7 +9,7 @@
   padding: 0.875rem 0.875rem 0.625rem 1.125rem;
   border-radius: var(--radius-composer);
   background-color: var(--color-surface-3);
-  box-shadow: 0 0 0 1px var(--color-hairline), var(--shadow-composer);
+  box-shadow: 0 0 0 var(--hairline) var(--color-hairline), var(--shadow-composer);
   transition: box-shadow 220ms var(--ease-out-expo);
 }
 
@@ -99,7 +99,7 @@
   padding: 0.625rem 0.75rem 0.625rem 0.875rem;
   border-radius: var(--radius-panel);
   background-color: var(--color-warning-soft);
-  box-shadow: 0 0 0 1px var(--color-hairline);
+  box-shadow: 0 0 0 var(--hairline) var(--color-hairline);
   font-size: 0.8125rem;
 }
 
@@ -157,7 +157,7 @@
   gap: 0.875rem;
   align-items: start;
   padding: 0.875rem 1rem;
-  box-shadow: inset 0 -1px 0 var(--color-hairline);
+  box-shadow: inset 0 calc(-1 * var(--hairline)) 0 var(--color-hairline);
   color: inherit;
   text-decoration: none;
   transition: background-color 150ms var(--ease-out-expo);
@@ -314,7 +314,7 @@ a.admin-notes-row:focus-visible .admin-notes-edit {
   padding: 0.75rem 0.875rem;
   border-radius: var(--radius-panel);
   background-color: var(--color-surface-1);
-  box-shadow: 0 0 0 1px var(--color-hairline);
+  box-shadow: 0 0 0 var(--hairline) var(--color-hairline);
   color: var(--color-fg-2);
   font-size: 0.8125rem;
 }
@@ -367,12 +367,12 @@ a.admin-notes-row:focus-visible .admin-notes-edit {
   list-style: none;
   border-radius: var(--radius-panel);
   background-color: var(--color-surface-2);
-  box-shadow: 0 0 0 1px var(--color-hairline), var(--shadow-sm);
+  box-shadow: 0 0 0 var(--hairline) var(--color-hairline), var(--shadow-sm);
 }
 
 .note-versions li {
   padding: 0.75rem 0.875rem;
-  box-shadow: inset 0 -1px 0 var(--color-hairline);
+  box-shadow: inset 0 calc(-1 * var(--hairline)) 0 var(--color-hairline);
 }
 
 .note-versions li:last-child {
@@ -447,7 +447,7 @@ a.admin-notes-row:focus-visible .admin-notes-edit {
 
 .note-book[aria-pressed="true"] {
   background-color: var(--color-surface-2);
-  box-shadow: 0 0 0 1px var(--color-hairline), var(--shadow-sm);
+  box-shadow: 0 0 0 var(--hairline) var(--color-hairline), var(--shadow-sm);
   color: var(--color-fg);
 }
 
@@ -596,7 +596,7 @@ a.admin-notes-row:focus-visible .admin-notes-edit {
   display: flex;
   gap: 0.25rem;
   padding: 0.5rem;
-  box-shadow: inset 0 -1px 0 var(--color-hairline);
+  box-shadow: inset 0 calc(-1 * var(--hairline)) 0 var(--color-hairline);
 }
 
 .admin-notebooks-tabs button {
@@ -715,7 +715,7 @@ a.admin-notes-row:focus-visible .admin-notes-edit {
   flex-direction: column;
   gap: 0.875rem;
   padding: 1.125rem 1.25rem;
-  box-shadow: inset 0 -1px 0 var(--color-hairline);
+  box-shadow: inset 0 calc(-1 * var(--hairline)) 0 var(--color-hairline);
 }
 
 .admin-notebook-fields h2 {
@@ -783,7 +783,7 @@ a.admin-notes-row:focus-visible .admin-notes-edit {
   padding: 0;
   list-style: none;
   border-radius: var(--radius-panel);
-  box-shadow: 0 0 0 1px var(--color-hairline);
+  box-shadow: 0 0 0 var(--hairline) var(--color-hairline);
 }
 
 .admin-notebook-rows li {
@@ -792,7 +792,7 @@ a.admin-notes-row:focus-visible .admin-notes-edit {
   gap: 0.625rem;
   padding: 0.5rem 0.5rem 0.5rem 0.75rem;
   background-color: var(--color-surface-2);
-  box-shadow: inset 0 -1px 0 var(--color-hairline);
+  box-shadow: inset 0 calc(-1 * var(--hairline)) 0 var(--color-hairline);
   transition: background-color 400ms var(--ease-out-expo);
 }
 
@@ -855,7 +855,7 @@ a.admin-notes-row:focus-visible .admin-notes-edit {
   padding: 0.75rem 1.25rem;
   border-radius: 0 0 var(--radius-panel) var(--radius-panel);
   background-color: var(--color-surface-1);
-  box-shadow: inset 0 1px 0 var(--color-hairline);
+  box-shadow: inset 0 var(--hairline) 0 var(--color-hairline);
 }
 
 .admin-notebook-archive {

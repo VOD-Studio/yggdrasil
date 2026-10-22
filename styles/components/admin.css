@@ -51,7 +51,7 @@
     padding: 0.875rem 0.75rem;
     overflow: hidden;
     background-color: var(--color-surface-1);
-    box-shadow: inset -1px 0 0 var(--color-hairline);
+    box-shadow: inset calc(-1 * var(--hairline)) 0 0 var(--color-hairline);
   }
 
   .admin-side-head {
@@ -123,7 +123,7 @@
     padding: 1px 6px;
     border-radius: 5px;
     background-color: var(--color-surface-2);
-    box-shadow: 0 0 0 1px var(--color-hairline);
+    box-shadow: 0 0 0 var(--hairline) var(--color-hairline);
     font-family: var(--font-mono);
     font-size: 0.6875rem;
   }
@@ -201,7 +201,7 @@
     background-color: var(--color-surface-2);
     color: var(--color-fg);
     font-weight: 500;
-    box-shadow: 0 0 0 1px var(--color-hairline), var(--shadow-sm);
+    box-shadow: 0 0 0 var(--hairline) var(--color-hairline), var(--shadow-sm);
   }
 
   .dark .admin-nav-item[aria-current="page"] {
@@ -297,7 +297,7 @@
 
   .admin-user-link[aria-current="page"] {
     background-color: var(--color-surface-2);
-    box-shadow: 0 0 0 1px var(--color-hairline), var(--shadow-sm);
+    box-shadow: 0 0 0 var(--hairline) var(--color-hairline), var(--shadow-sm);
   }
 
   .admin-user-text {
@@ -409,7 +409,7 @@
 
   :is(.admin-shell[data-sidebar="collapsed"], html[data-admin-sidebar="collapsed"] .admin-shell:not([data-sidebar]))
     .admin-nav-label {
-    height: 1px;
+    height: var(--hairline);
     margin: 0.625rem 0.5rem;
     overflow: hidden;
     background-color: var(--color-hairline);
@@ -525,7 +525,7 @@
     padding: 0 2rem;
     background-color: color-mix(in srgb, var(--color-surface-0) 82%, transparent);
     backdrop-filter: blur(12px);
-    box-shadow: inset 0 -1px 0 var(--color-hairline);
+    box-shadow: inset 0 calc(-1 * var(--hairline)) 0 var(--color-hairline);
   }
 
   @supports (animation-timeline: scroll()) {
@@ -549,7 +549,7 @@
     to {
       background-color: color-mix(in srgb, var(--color-surface-0) 82%, transparent);
       backdrop-filter: blur(12px);
-      box-shadow: inset 0 -1px 0 var(--color-hairline);
+      box-shadow: inset 0 calc(-1 * var(--hairline)) 0 var(--color-hairline);
     }
   }
 
@@ -627,7 +627,7 @@
   .admin-panel {
     border-radius: var(--radius-panel);
     background-color: var(--color-surface-2);
-    box-shadow: 0 0 0 1px var(--color-hairline), var(--shadow-sm);
+    box-shadow: 0 0 0 var(--hairline) var(--color-hairline), var(--shadow-sm);
   }
 
   /* 状态：圆点 + 文字。data-tone 取 clay / muted / success / warning / danger。 */
@@ -729,7 +729,7 @@
     z-index: 2;
     padding: 0.625rem 1rem;
     background-color: var(--color-surface-2);
-    box-shadow: inset 0 -1px 0 var(--color-hairline);
+    box-shadow: inset 0 calc(-1 * var(--hairline)) 0 var(--color-hairline);
     color: var(--color-fg-3);
     font-size: 0.75rem;
     font-weight: 500;
@@ -739,7 +739,7 @@
 
   .admin-table td {
     padding: 0.8125rem 1rem;
-    box-shadow: inset 0 -1px 0 var(--color-hairline);
+    box-shadow: inset 0 calc(-1 * var(--hairline)) 0 var(--color-hairline);
     vertical-align: middle;
   }
 
@@ -841,7 +841,7 @@
   }
 
   .batch-bar-sep {
-    width: 1px;
+    width: var(--hairline);
     height: 1.125rem;
     margin: 0 0.25rem;
     background-color: var(--color-hairline);
@@ -956,7 +956,7 @@
     width: min(18.5rem, 86vw);
     overflow-y: auto;
     background-color: var(--color-surface-1);
-    box-shadow: 1px 0 0 var(--color-hairline), 12px 0 40px rgb(0 0 0 / 0.12);
+    box-shadow: var(--hairline) 0 0 var(--color-hairline), 12px 0 40px rgb(0 0 0 / 0.12);
     animation: side-sheet-in var(--spring-heavy-duration) var(--ease-spring-heavy) both;
     touch-action: pan-y;
   }

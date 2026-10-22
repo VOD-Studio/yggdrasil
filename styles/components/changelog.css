@@ -75,7 +75,7 @@
     padding: 0.75rem 0 0;
     border-radius: var(--radius-panel);
     background-color: var(--color-surface-1);
-    box-shadow: 0 0 0 1px var(--color-hairline);
+    box-shadow: 0 0 0 var(--hairline) var(--color-hairline);
   }
 
   .changelog-nav-head {
@@ -123,7 +123,7 @@
     height: 1.875rem;
     border-radius: 7px;
     background-color: var(--color-surface-2);
-    box-shadow: 0 0 0 1px var(--color-hairline), var(--shadow-sm);
+    box-shadow: 0 0 0 var(--hairline) var(--color-hairline), var(--shadow-sm);
     transform: translate(var(--nav-active-x, 0px), var(--nav-active-y, 0px));
     opacity: 0;
     pointer-events: none;
@@ -165,7 +165,7 @@
   /* 脚本接管前，当前项自己画浮起底色。 */
   .changelog-nav:not([data-ready]) .changelog-nav-link[aria-current] {
     background-color: var(--color-surface-2);
-    box-shadow: 0 0 0 1px var(--color-hairline), var(--shadow-sm);
+    box-shadow: 0 0 0 var(--hairline) var(--color-hairline), var(--shadow-sm);
   }
 
   .changelog-nav-link:focus-visible {
@@ -201,7 +201,7 @@
   .changelog-version {
     margin-bottom: 2.5rem;
     padding-bottom: 2.5rem;
-    box-shadow: inset 0 -1px 0 var(--color-hairline);
+    box-shadow: inset 0 calc(-1 * var(--hairline)) 0 var(--color-hairline);
     scroll-margin-top: 5.5rem;
   }
 

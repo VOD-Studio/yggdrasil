@@ -43,8 +43,8 @@ function editorTheme(p: SyntaxPalette, dark: boolean): Extension {
       },
       '.cm-placeholder': { color: p.gutter },
       '.cm-panels': { backgroundColor: 'var(--color-surface-2)', color: 'var(--color-fg)' },
-      '.cm-panels.cm-panels-top': { borderBottom: '1px solid var(--color-hairline)' },
-      '.cm-panels.cm-panels-bottom': { borderTop: '1px solid var(--color-hairline)' },
+      '.cm-panels.cm-panels-top': { borderBottom: 'var(--hairline) solid var(--color-hairline)' },
+      '.cm-panels.cm-panels-bottom': { borderTop: 'var(--hairline) solid var(--color-hairline)' },
       '.cm-tooltip': {
         backgroundColor: 'var(--color-popover)',
         color: 'var(--color-fg)',

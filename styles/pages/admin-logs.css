@@ -121,7 +121,7 @@
 
 .logs-level-toggle[aria-pressed="true"] {
   background-color: var(--color-ink-2);
-  box-shadow: inset 0 0 0 1px var(--color-hairline);
+  box-shadow: inset 0 0 0 var(--hairline) var(--color-hairline);
   color: var(--color-fg);
 }
 
@@ -185,7 +185,7 @@
   margin: 0;
   padding: 0.5rem 1rem;
   background-color: var(--color-warning-soft);
-  box-shadow: inset 0 -1px 0 var(--color-hairline);
+  box-shadow: inset 0 calc(-1 * var(--hairline)) 0 var(--color-hairline);
   color: var(--color-warning);
   font-size: 0.78125rem;
 }
