@@ -24,7 +24,7 @@
 
 #![cfg(feature = "server")]
 
-use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, ToSocketAddrs};
 use std::time::Duration;
 
 use bytes::Bytes;
@@ -198,14 +198,35 @@ fn is_forbidden_ip(ip: &IpAddr) -> bool {
             if let Some(v4) = v6.to_ipv4() {
                 return is_forbidden_ip(&IpAddr::V4(v4));
             }
-            v6.is_multicast()   // ff00::/8
-            || {
-                let s = v6.segments();
-                (s[0] & 0xfe00) == 0xfc00 // ULA fc00::/7
-                || (s[0] & 0xffc0) == 0xfe80 // 链路本地 fe80::/10
+            // 过渡前缀内嵌的 IPv4 同样可能被网关转发到内网，展开后复用 IPv4 检查。
+            if let Some(v4) = transition_embedded_ipv4(v6) {
+                return is_forbidden_ip(&IpAddr::V4(v4));
             }
+            let s = v6.segments();
+            // Teredo 2001::/32 已弃用，内嵌地址经异或混淆且由中继决定走向，一律拒绝。
+            if s[0] == 0x2001 && s[1] == 0 {
+                return true;
+            }
+            v6.is_multicast()   // ff00::/8
+            || (s[0] & 0xfe00) == 0xfc00 // ULA fc00::/7
+            || (s[0] & 0xffc0) == 0xfe80 // 链路本地 fe80::/10
         }
     }
+}
+
+/// 提取 IPv6 过渡前缀内嵌的 IPv4 地址。
+///
+/// - NAT64 `64:ff9b::/96`（RFC 6052）与本地 NAT64 `64:ff9b:1::/48`（RFC 8215）：低 32 位；
+/// - 6to4 `2002::/16`（RFC 3056）：第 16-48 位。
+fn transition_embedded_ipv4(v6: &Ipv6Addr) -> Option<Ipv4Addr> {
+    let (hi, lo) = match v6.segments() {
+        [0x0064, 0xff9b, 0, 0, 0, 0, hi, lo] | [0x0064, 0xff9b, 0x0001, _, _, _, hi, lo] => {
+            (hi, lo)
+        }
+        [0x2002, hi, lo, ..] => (hi, lo),
+        _ => return None,
+    };
+    Some(Ipv4Addr::from((u32::from(hi) << 16) | u32::from(lo)))
 }
 
 #[cfg(all(test, feature = "server"))]
@@ -266,6 +287,30 @@ mod tests {
         assert!(is_forbidden_ip(&IpAddr::V6(
             "::ffff:10.0.0.1".parse().expect("valid mapped private")
         )));
+    }
+
+    #[test]
+    fn forbidden_ipv6_transition_prefixes_embedding_private_ipv4() {
+        for addr in [
+            "64:ff9b::7f00:1",     // NAT64 → 127.0.0.1
+            "64:ff9b::a9fe:a9fe",  // NAT64 → 169.254.169.254
+            "64:ff9b:1::a00:1",    // 本地 NAT64 → 10.0.0.1
+            "2002:7f00:1::",       // 6to4 → 127.0.0.1
+            "2002:c0a8:101::1",    // 6to4 → 192.168.1.1
+            "2001:0:4136:e378::1", // Teredo
+            "2001::1",             // Teredo
+        ] {
+            let ip: Ipv6Addr = addr.parse().unwrap();
+            assert!(is_forbidden_ip(&IpAddr::V6(ip)), "{addr} 应被拒绝");
+        }
+    }
+
+    #[test]
+    fn allowed_ipv6_transition_prefixes_embedding_public_ipv4() {
+        for addr in ["64:ff9b::808:808", "64:ff9b:1::101:101", "2002:808:808::1"] {
+            let ip: Ipv6Addr = addr.parse().unwrap();
+            assert!(!is_forbidden_ip(&IpAddr::V6(ip)), "{addr} 应放行");
+        }
     }
 
     #[test]
