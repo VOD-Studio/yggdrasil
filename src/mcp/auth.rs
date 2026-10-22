@@ -2,7 +2,8 @@
 //!
 //! 流程（每请求）：
 //! 1. axum `from_fn` 中间件 [`mcp_auth_middleware`] 解析 `Authorization: Bearer ygg_...`；
-//! 2. SHA-256 哈希后在 `mcp_tokens` 表常量查找未撤销、未过期的行；
+//! 2. SHA-256 哈希后在 `mcp_tokens` 表常量查找未撤销、未过期的行，并 JOIN `users`
+//!    要求持有人当前角色仍允许该作用域（见 [`role_can_hold_scope`]）；
 //! 3. 命中则把 [`McpPrincipal`] { user_id, scope, token_id } 注入 request.extensions，
 //!    并异步刷新 `last_used_at`；
 //! 4. 未命中/缺失 → 401（不区分原因，避免探测）。
@@ -18,6 +19,7 @@ use axum::response::Response;
 
 use crate::db::pool::get_conn;
 use crate::models::mcp_token::TokenScope;
+use crate::models::user::UserRole;
 
 /// Bearer token 前缀（明文形式以 `ygg_` 起头，便于人眼识别与日志脱敏）。
 pub const TOKEN_PREFIX: &str = "ygg_";
@@ -154,18 +156,31 @@ pub async fn mcp_auth_middleware(
     Ok(next.run(req).await)
 }
 
-/// 查库解析 token → 主体；未撤销、未过期才返回 Some。
+/// 令牌持有人的当前角色是否仍允许持有该作用域的令牌。
+///
+/// 与签发规则一致：只有管理员能签发令牌（任意作用域），被封禁的用户不能
+/// 持有任何令牌。账号被封禁或降级后，名下令牌在下一次请求时即失效，
+/// 不需要逐个手工吊销。
+pub(crate) fn role_can_hold_scope(role: &UserRole, scope: TokenScope) -> bool {
+    match (role, scope) {
+        (UserRole::Admin, TokenScope::Read | TokenScope::Write | TokenScope::Admin) => true,
+        (UserRole::Blocked, _) => false,
+    }
+}
+
+/// 查库解析 token → 主体；未撤销、未过期且持有人角色仍允许该作用域才返回 Some。
 pub(crate) async fn resolve_principal(token: &str) -> Option<McpPrincipal> {
     let hash = hash_token(token);
     let client = get_conn().await.ok()?;
-    // 一次查询取出 + 校验所有条件，并带出 last_used_at 供节流判断。
+    // 一次查询取出 + 校验所有条件（含持有人当前角色），并带出 last_used_at 供节流判断。
     let row = client
         .query_opt(
-            "SELECT id, user_id, scope, expires_at, revoked_at, last_used_at
-             FROM mcp_tokens
-             WHERE token_hash = $1
-               AND revoked_at IS NULL
-               AND (expires_at IS NULL OR expires_at > NOW())",
+            "SELECT t.id, t.user_id, t.scope, t.last_used_at, u.role
+             FROM mcp_tokens t
+             JOIN users u ON u.id = t.user_id
+             WHERE t.token_hash = $1
+               AND t.revoked_at IS NULL
+               AND (t.expires_at IS NULL OR t.expires_at > NOW())",
             &[&hash],
         )
         .await
@@ -175,7 +190,11 @@ pub(crate) async fn resolve_principal(token: &str) -> Option<McpPrincipal> {
     let user_id: i32 = row.get(1);
     let scope_str: &str = row.get(2);
     let scope = TokenScope::from_db(scope_str)?;
-    let last_used: Option<chrono::DateTime<chrono::Utc>> = row.get(5);
+    let last_used: Option<chrono::DateTime<chrono::Utc>> = row.get(3);
+    let role = UserRole::from_str(row.get(4))?;
+    if !role_can_hold_scope(&role, scope) {
+        return None;
+    }
 
     // 节流刷新 last_used_at：仅在 NULL 或距上次 ≥ 60s 时写库，避免高频请求每次 UPDATE。
     let needs_refresh = last_used
@@ -208,4 +227,23 @@ pub(crate) async fn resolve_bearer_principal(
     resolve_principal(&token)
         .await
         .ok_or(StatusCode::UNAUTHORIZED)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn admin_role_keeps_every_token_scope() {
+        for scope in [TokenScope::Read, TokenScope::Write, TokenScope::Admin] {
+            assert!(role_can_hold_scope(&UserRole::Admin, scope), "{scope:?}");
+        }
+    }
+
+    #[test]
+    fn blocked_role_loses_every_token_scope() {
+        for scope in [TokenScope::Read, TokenScope::Write, TokenScope::Admin] {
+            assert!(!role_can_hold_scope(&UserRole::Blocked, scope), "{scope:?}");
+        }
+    }
 }
