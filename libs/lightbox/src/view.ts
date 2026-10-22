@@ -3,9 +3,13 @@ import {
   baseViewGeometry,
   clampPanToViewport,
   clampScale,
+  type Inset,
   matIdentity,
   nextRotationDeg,
   type Rect,
+  SCALE_MAX,
+  SCALE_MIN,
+  stepZoomLevel,
   viewTransformCss,
   zoomAround,
 } from './geometry';
@@ -40,7 +44,23 @@ export function isErrorShown(s: LightboxState): boolean {
 export function baseGeometry(s: LightboxState): BaseViewGeometry {
   const natW = s.img.naturalWidth || 1;
   const natH = s.img.naturalHeight || 1;
-  return baseViewGeometry(natW, natH, s.view.deg, window.innerWidth, window.innerHeight);
+  return baseViewGeometry(natW, natH, s.view.deg, window.innerWidth, window.innerHeight, s.inset);
+}
+
+// 适配区域边距：上下取顶栏底边与底栏高度中较大的一侧（对称，图片仍绕视口中心
+// 适配），左右在宽屏让出导航箭头；都不低于缺省的 4% / 6%。窄屏箭头叠在图上。
+const CHROME_GAP = 16;
+export function measureInset(s: Pick<LightboxState, 'topbar' | 'bottom' | 'prevBtn'>): Inset {
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const top = s.topbar.getBoundingClientRect().bottom;
+  const bottomRect = s.bottom.getBoundingClientRect();
+  const bottom = bottomRect.height > 0 ? vh - bottomRect.top : 0;
+  const nav = s.prevBtn && vw >= 640 ? s.prevBtn.getBoundingClientRect().right : 0;
+  return {
+    x: Math.max(vw * 0.04, nav > 0 ? nav + CHROME_GAP : 0),
+    y: Math.max(vh * 0.06, top > 0 ? top + CHROME_GAP : 0, bottom > 0 ? bottom + CHROME_GAP : 0),
+  };
 }
 
 // 把 view 写到 DOM。animate=true 走 180ms ease-out（按钮/旋转/重置/回弹）；
@@ -78,6 +98,18 @@ export function applyView(s: LightboxState, animate: boolean): void {
   s.baseW = layoutW;
   s.baseH = layoutH;
   s.img.classList.toggle('is-zoomed', s.view.scale > 1);
+  syncZoomControls(s);
+}
+
+// 工具组的档位文字与两端禁用态跟随当前倍率。
+export function syncZoomControls(s: LightboxState): void {
+  const pct = `${Math.round(s.view.scale * 100)}%`;
+  if (s.zoomLevel.textContent !== pct) {
+    s.zoomLevel.textContent = pct;
+    s.zoomLevel.setAttribute('aria-label', `${pct}，重置视图`);
+  }
+  s.zoomOutBtn.disabled = s.view.scale <= SCALE_MIN + 1e-3;
+  s.zoomInBtn.disabled = s.view.scale >= SCALE_MAX - 1e-3;
 }
 
 // 首次操控前把布局盒从「飞行基准」（originRect 尺寸 + 非均匀 scale）归一到
@@ -93,24 +125,15 @@ export function ensureNormalized(s: LightboxState): void {
   void s.img.offsetHeight;
 }
 
-// 缩放倍率徽标：操控时短暂显示，600ms 后淡出。
-export function showBadge(s: LightboxState): void {
-  s.badge.textContent = `${Math.round(s.view.scale * 100)}%`;
-  s.badge.classList.add('is-visible');
-  s.scope.clearTimeout(s.badgeTimer);
-  s.badgeTimer = s.scope.timeout((): void => {
-    s.badge.classList.remove('is-visible');
-  }, 600);
-}
-
-// 工具栏空闲自动隐藏：任何指针活动唤醒，2.5s 无活动且不在工具栏上/手势中则淡出。
+// 顶栏、底栏与箭头空闲淡出：fit 态它们在图片之外，常驻；放大后图会铺到它们
+// 下面，2.5s 无指针活动且不在栏上、不在手势中时淡出，任何指针活动唤醒。
 export function pokeToolbar(s: LightboxState): void {
   if (s.closing) return;
-  s.toolbar.classList.remove('is-hidden');
+  s.overlay.classList.remove('is-idle');
   s.scope.clearTimeout(s.idleTimer);
   s.idleTimer = s.scope.timeout((): void => {
-    if (s.scope.disposed || s.toolbarHover || s.gesture) return;
-    s.toolbar.classList.add('is-hidden');
+    if (s.scope.disposed || s.chromeHover || s.gesture || s.view.scale <= 1) return;
+    s.overlay.classList.add('is-idle');
   }, 2500);
 }
 
@@ -128,14 +151,19 @@ export function zoomBy(
   s.view.user = zoomAround(s.view.user ?? matIdentity(), next / s.view.scale, px, py);
   s.view.scale = next;
   applyView(s, animate);
-  showBadge(s);
   pokeToolbar(s);
 }
 
-export function rotateCW(s: LightboxState): void {
+// 按钮与 +/- 键：走到相邻档位，锚定视口中心。
+export function stepZoom(s: LightboxState, dir: 1 | -1): void {
+  const goal = stepZoomLevel(s.view.scale, dir);
+  zoomBy(s, goal / s.view.scale, window.innerWidth / 2, window.innerHeight / 2, true);
+}
+
+export function rotate(s: LightboxState, dir: 1 | -1): void {
   if (!s?.target || s.closing || isErrorShown(s)) return;
   ensureNormalized(s);
-  s.view.deg = nextRotationDeg(s.view.deg);
+  s.view.deg = nextRotationDeg(s.view.deg, dir);
   // 旋转后保持倍率、绕视口中心重锚定、平移清零（避免旋转把图甩出视口）
   s.view.user = zoomAround(
     matIdentity(),
@@ -153,7 +181,6 @@ export function resetView(s: LightboxState, animate: boolean): void {
   // 归位取最近整圈：rotate 槽按累计角插值，450→360 只回摆 90°（而非 450°）。
   s.view = { deg: Math.round(s.view.deg / 360) * 360, scale: 1, user: null };
   applyView(s, animate);
-  showBadge(s);
   pokeToolbar(s);
 }
 

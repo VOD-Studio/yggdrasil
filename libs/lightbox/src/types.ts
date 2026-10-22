@@ -1,15 +1,24 @@
-import type { Mat, Rect } from './geometry';
+import type { Inset, Mat, Rect } from './geometry';
 import type { ResourceScope } from './resources';
 
 export interface LightboxElements {
   overlay: HTMLDivElement;
   img: HTMLImageElement;
   caption: HTMLElement;
-  counter: HTMLDivElement;
+  counter: HTMLSpanElement;
   errorBox: HTMLDivElement;
+  // 顶栏（计数 / 工具组 / 关闭）与底栏（图注 / 缩略条 / 键盘提示）：决定适配区域，
+  // 放大后空闲时一起淡出。
+  topbar: HTMLDivElement;
+  bottom: HTMLDivElement;
+  // 缩放与旋转工具组；错误态隐藏。
   toolbar: HTMLDivElement;
-  badge: HTMLDivElement;
+  zoomOutBtn: HTMLButtonElement;
+  zoomInBtn: HTMLButtonElement;
+  zoomLevel: HTMLButtonElement;
   downloadLink: HTMLAnchorElement;
+  thumbStrip: HTMLDivElement | null;
+  thumbs: HTMLButtonElement[];
   prevBtn: HTMLButtonElement | null;
   nextBtn: HTMLButtonElement | null;
 }
@@ -48,8 +57,9 @@ export interface LightboxState extends LightboxElements {
   pointers: Map<number, { x: number; y: number }>;
   gesture: GestureState | null;
   idleTimer: number | undefined;
-  badgeTimer: number | undefined;
-  toolbarHover: boolean;
+  chromeHover: boolean;
+  // 适配区域边距：打开、换图与视口变化时按顶栏 / 底栏实测重算，其余路径只读缓存。
+  inset: Inset;
   target?: Rect;
   baseW?: number;
   baseH?: number;
@@ -57,7 +67,8 @@ export interface LightboxState extends LightboxElements {
 
 export interface LightboxActions {
   zoomBy: (factor: number, x: number, y: number, animate: boolean) => void;
-  rotateCW: () => void;
+  stepZoom: (dir: 1 | -1) => void;
+  rotate: (dir: 1 | -1) => void;
   resetView: (animate: boolean) => void;
   close: (immediate: boolean) => void;
   gotoIndex: (index: number) => void;

@@ -1,5 +1,4 @@
 import {
-  BUTTON_ZOOM_STEP,
   clampScale,
   DOUBLE_CLICK_SCALE,
   DRAG_CLOSE_PX,
@@ -22,13 +21,35 @@ import {
   baseGeometry,
   ensureNormalized,
   isErrorShown,
+  measureInset,
   pokeToolbar,
   rectOf,
   resetView,
-  rotateCW,
-  showBadge,
+  rotate,
+  stepZoom,
   zoomBy,
 } from './view';
+
+// 模态对话框：Tab 在灯箱内可见、可用的控件间循环，不落回背后的页面。
+function trapFocus(overlay: HTMLElement, ev: KeyboardEvent): void {
+  const items = [...overlay.querySelectorAll<HTMLElement>('button:not(:disabled), a[href]')].filter(
+    (el) => el.checkVisibility?.({ checkOpacity: true, checkVisibilityCSS: true }) ?? true,
+  );
+  if (items.length === 0) return;
+  const first = items[0];
+  const last = items[items.length - 1];
+  const current = document.activeElement;
+  const inside = current instanceof HTMLElement && items.includes(current);
+  if (ev.shiftKey && (!inside || current === first)) {
+    ev.preventDefault();
+    last.focus();
+  } else if (!ev.shiftKey && (!inside || current === last)) {
+    ev.preventDefault();
+    first.focus();
+  }
+}
+
+const CHROME_SELECTOR = '.lightbox-topbar, .lightbox-bottom, .lightbox-nav';
 
 function onScrollClose(s: LightboxState, actions: LightboxActions): void {
   if (s.closing) return;
@@ -81,11 +102,13 @@ export function bindInteractions(s: LightboxState, actions: LightboxActions): ()
     if (ev.target === s.overlay) actions.close(false);
   });
 
-  // 触屏仍由图片指针手势处理，避免同时触发页面滚动关闭。
+  // 触屏仍由图片指针手势处理，避免同时触发页面滚动关闭。缩略条例外：
+  // 它横向滚动（touch-action: pan-x、overscroll-behavior: contain，不会带动页面）。
   scope.listen(
     s.overlay,
     'touchmove',
     (ev: TouchEvent): void => {
+      if (ev.target instanceof Element && ev.target.closest('.lightbox-thumbs')) return;
       ev.preventDefault();
     },
     { passive: false },
@@ -94,14 +117,20 @@ export function bindInteractions(s: LightboxState, actions: LightboxActions): ()
   scope.listen(window, 'scroll', () => onScrollClose(s, actions), { passive: true });
 
   // 普通滚轮保留页面滚动，驱动图片缩回原位；Ctrl/⌘ + 滚轮及触控板
-  // 捏合（ctrlKey）继续锚定光标缩放。工具栏上阻止滚动，避免误关。
+  // 捏合（ctrlKey）继续锚定光标缩放。顶栏、底栏与箭头上阻止滚动，避免误关；
+  // 缩略条把竖向滚轮折成横向滚动。
   scope.listen(
     s.overlay,
     'wheel',
     (ev: WheelEvent): void => {
       if (s.closing) return;
-      if (ev.target instanceof Element && ev.target.closest('.lightbox-toolbar')) {
+      const chrome = ev.target instanceof Element ? ev.target.closest(CHROME_SELECTOR) : null;
+      if (chrome) {
         ev.preventDefault();
+        if (s.thumbStrip && chrome === s.bottom && !ev.ctrlKey) {
+          s.thumbStrip.scrollLeft +=
+            Math.abs(ev.deltaX) > Math.abs(ev.deltaY) ? ev.deltaX : ev.deltaY;
+        }
         return;
       }
       if (!ev.ctrlKey && !ev.metaKey) return;
@@ -111,20 +140,26 @@ export function bindInteractions(s: LightboxState, actions: LightboxActions): ()
     { passive: false },
   );
 
-  // 双击：fit ↔ 2.5× 切换，锚定点击点
+  // 双击：fit ↔ 2.5× 切换（缩小态先回 fit），锚定点击点
   scope.listen(s.img, 'dblclick', (ev: MouseEvent): void => {
     if (!s?.target || isErrorShown(s)) return;
     ev.preventDefault();
-    const goal = s.view.scale > 1 ? 1 : DOUBLE_CLICK_SCALE;
+    const goal = Math.abs(s.view.scale - 1) > 1e-3 ? 1 : DOUBLE_CLICK_SCALE;
     zoomBy(s, goal / s.view.scale, ev.clientX, ev.clientY, true);
   });
 
-  // 键盘：Esc 关；图集 ←→ 切换；+/- 缩放；R 旋转；0 重置
+  // 键盘：Esc 关；图集 ←→ 切换；+/- 按档缩放；R / Shift+R 左右旋转；0 重置。
+  // 带 Ctrl/⌘/Alt 的组合键留给浏览器（如 ⌘R 刷新、Ctrl+加号缩放页面）。
   const keyHandler = (ev: KeyboardEvent): void => {
     if (ev.key === 'Escape') {
       actions.close(false);
       return;
     }
+    if (ev.key === 'Tab') {
+      trapFocus(s.overlay, ev);
+      return;
+    }
+    if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
     if (!s.isSingle && s.gallery.length > 1) {
       if (ev.key === 'ArrowLeft') {
         ev.preventDefault();
@@ -137,17 +172,15 @@ export function bindInteractions(s: LightboxState, actions: LightboxActions): ()
         return;
       }
     }
-    const cx = window.innerWidth / 2;
-    const cy = window.innerHeight / 2;
     if (ev.key === '+' || ev.key === '=') {
       ev.preventDefault();
-      zoomBy(s, BUTTON_ZOOM_STEP, cx, cy, true);
+      stepZoom(s, 1);
     } else if (ev.key === '-' || ev.key === '_') {
       ev.preventDefault();
-      zoomBy(s, 1 / BUTTON_ZOOM_STEP, cx, cy, true);
+      stepZoom(s, -1);
     } else if (ev.key === 'r' || ev.key === 'R') {
       ev.preventDefault();
-      rotateCW(s);
+      rotate(s, ev.shiftKey ? -1 : 1);
     } else if (ev.key === '0') {
       ev.preventDefault();
       resetView(s, true);
@@ -160,13 +193,14 @@ export function bindInteractions(s: LightboxState, actions: LightboxActions): ()
   const resizeHandler = (): void => {
     const st = s;
     if (!st?.target || st.closing) return;
+    st.inset = measureInset(st);
     if (st.normalized) {
       applyView(s, false);
       return;
     }
     const natW = st.img.naturalWidth || 1;
     const natH = st.img.naturalHeight || 1;
-    const target = fitCentered(natW, natH, window.innerWidth, window.innerHeight);
+    const target = fitCentered(natW, natH, window.innerWidth, window.innerHeight, st.inset);
     st.target = target;
     st.img.style.transition = 'none';
     st.img.style.transform = transformFor(target, st.baseW ?? target.w, st.baseH ?? target.h);
@@ -201,18 +235,27 @@ export function bindInteractions(s: LightboxState, actions: LightboxActions): ()
       ev.stopPropagation();
       actions.gotoIndex((s.index ?? 0) + 1);
     });
-  scope.listen(s.toolbar, 'pointerenter', () => {
-    s.toolbarHover = true;
-    pokeToolbar(s);
-  });
-  scope.listen(s.toolbar, 'pointerleave', () => {
-    s.toolbarHover = false;
-    pokeToolbar(s);
-  });
+  // 指针停在栏上时不淡出。顶栏、底栏本身不接收指针，只看可交互的子元素。
+  for (const el of [
+    s.toolbar,
+    s.topbar.querySelector('.lightbox-close'),
+    s.thumbStrip,
+    s.prevBtn,
+    s.nextBtn,
+  ]) {
+    if (!el) continue;
+    scope.listen(el, 'pointerenter', () => {
+      s.chromeHover = true;
+      pokeToolbar(s);
+    });
+    scope.listen(el, 'pointerleave', () => {
+      s.chromeHover = false;
+      pokeToolbar(s);
+    });
+  }
   return () => {
     scope.dispose();
     s.scope.clearTimeout(s.idleTimer);
-    s.scope.clearTimeout(s.badgeTimer);
     s.pointers.clear();
     s.gesture = null;
   };
@@ -282,7 +325,6 @@ function onPointerMove(s: LightboxState, ev: PointerEvent): void {
     );
     s.view.scale = next;
     applyView(s, false);
-    showBadge(s);
     return;
   }
   if (g.pointerId !== ev.pointerId) return;

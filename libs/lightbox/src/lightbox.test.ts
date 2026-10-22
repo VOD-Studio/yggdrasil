@@ -594,7 +594,7 @@ describe('lightbox 黑盒行为', () => {
       const lbImg = openAndSettle(makeGalleryImage('/uploads/y.webp?w=800', '图'));
       const probe = probeReflow(lbImg);
 
-      clickEl(document.querySelector('[aria-label="顺时针旋转 90 度"]')!);
+      clickEl(document.querySelector('[aria-label="向右旋转"]')!);
 
       expect(probe.reads).toBeGreaterThanOrEqual(1);
       expect(probe.transition).toBe('none');
@@ -615,7 +615,7 @@ describe('lightbox 黑盒行为', () => {
       vi.advanceTimersByTime(50);
       return lbImg;
     };
-    const rotateBtn = (): Element => document.querySelector('[aria-label="顺时针旋转 90 度"]')!;
+    const rotateBtn = (): Element => document.querySelector('[aria-label="向右旋转"]')!;
 
     it('旋转不交换布局盒 width/height（消灭无过渡的瞬时跳变）', () => {
       const lbImg = openAndSettle(makeGalleryImage('/uploads/z.webp?w=800', '图'));
@@ -648,7 +648,7 @@ describe('lightbox 黑盒行为', () => {
       clickEl(rotateBtn());
       clickEl(rotateBtn());
       expect(lbImg.style.transform).toContain('rotate(270deg)');
-      clickEl(document.querySelector('[aria-label="重置视图"]')!);
+      clickEl(document.querySelector('.lightbox-zoom-level')!);
       expect(lbImg.style.transform).toContain('rotate(360deg)');
       expect(lbImg.style.transform).toContain('scale(1)');
     });
@@ -738,6 +738,135 @@ describe('lightbox 黑盒行为', () => {
       vi.advanceTimersByTime(200);
       expect(getCounter()?.textContent).toBe('1 / 2');
       expect(lbImg.src).toContain('/uploads/a.webp');
+    });
+  });
+  describe('查看器工具组、缩略条与键盘提示', () => {
+    const openSettled = (images: HTMLElement[], at = 0): HTMLImageElement => {
+      mountRoot(images);
+      window.__initLightbox('.post-content');
+      clickEl(images[at]);
+      const lbImg = getLightboxImg()!;
+      stubNatural(lbImg, 800, 600);
+      lbImg.dispatchEvent(new Event('load'));
+      vi.advanceTimersByTime(50);
+      return lbImg;
+    };
+    const zoomLevel = (): HTMLButtonElement =>
+      document.querySelector<HTMLButtonElement>('.lightbox-zoom-level')!;
+    const button = (label: string): HTMLButtonElement =>
+      document.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`)!;
+    const keydown = (init: KeyboardEventInit): KeyboardEvent => {
+      const ev = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init });
+      document.dispatchEvent(ev);
+      return ev;
+    };
+
+    it('± 按钮在 50%–300% 六档间步进，到端点禁用，档位文字随之更新', () => {
+      openSettled([makeGalleryImage('/uploads/z1.webp', '图')]);
+      expect(zoomLevel().textContent).toBe('100%');
+      clickEl(button('缩小'));
+      expect(zoomLevel().textContent).toBe('75%');
+      clickEl(button('缩小'));
+      expect(zoomLevel().textContent).toBe('50%');
+      expect(button('缩小').disabled).toBe(true);
+      expect(zoomLevel().getAttribute('aria-label')).toBe('50%，重置视图');
+      for (let i = 0; i < 6; i++) pressKey('+');
+      expect(zoomLevel().textContent).toBe('300%');
+      expect(button('放大').disabled).toBe(true);
+      expect(button('缩小').disabled).toBe(false);
+    });
+
+    it('点档位文字回到 100% 并转正', () => {
+      const lbImg = openSettled([makeGalleryImage('/uploads/z2.webp', '图')]);
+      clickEl(button('放大'));
+      clickEl(button('向右旋转'));
+      clickEl(zoomLevel());
+      expect(zoomLevel().textContent).toBe('100%');
+      expect(lbImg.style.transform).toContain('rotate(0deg)');
+    });
+
+    it('Shift+R 与向左旋转按钮逆时针转 90°，R 顺时针', () => {
+      const lbImg = openSettled([makeGalleryImage('/uploads/z3.webp', '图')]);
+      keydown({ key: 'R', shiftKey: true });
+      expect(lbImg.style.transform).toContain('rotate(-90deg)');
+      clickEl(button('向左旋转'));
+      expect(lbImg.style.transform).toContain('rotate(-180deg)');
+      keydown({ key: 'r' });
+      expect(lbImg.style.transform).toContain('rotate(-90deg)');
+    });
+
+    it('带 Ctrl/⌘ 的组合键留给浏览器（⌘R 刷新、Ctrl+加号缩放页面）', () => {
+      openSettled([makeGalleryImage('/uploads/z4.webp', '图')]);
+      expect(keydown({ key: 'r', metaKey: true }).defaultPrevented).toBe(false);
+      expect(keydown({ key: '=', ctrlKey: true }).defaultPrevented).toBe(false);
+      expect(zoomLevel().textContent).toBe('100%');
+    });
+
+    it('图集渲染缩略条：复用正文地址、标出当前张，点缩略图切换', () => {
+      const images = [
+        makeGalleryImage('/uploads/t1.webp?w=800', '一'),
+        makeGalleryImage('/uploads/t2.webp?w=800', '二'),
+        makeGalleryImage('/uploads/t3.webp?w=800', '三'),
+      ];
+      openSettled(images, 1);
+      const thumbs = [...document.querySelectorAll<HTMLButtonElement>('.lightbox-thumb')];
+      expect(thumbs).toHaveLength(3);
+      expect(thumbs.map((t) => t.getAttribute('aria-current'))).toEqual([null, 'true', null]);
+      expect(thumbs[2].querySelector('img')?.getAttribute('src')).toBe('/uploads/t3.webp?w=800');
+      expect(thumbs[2].getAttribute('aria-label')).toBe('第 3 张');
+
+      clickEl(thumbs[2]);
+      vi.advanceTimersByTime(200);
+      expect(getCounter()?.textContent).toBe('3 / 3');
+      expect(thumbs.map((t) => t.getAttribute('aria-current'))).toEqual([null, null, 'true']);
+      // 点缩略图不关闭灯箱
+      expect(getOverlay()).not.toBeNull();
+    });
+
+    it('已知坏图的缩略图不发请求，只显示占位', () => {
+      const broken = makeGalleryImage('/uploads/bad.webp', '坏');
+      broken.classList.add('is-error');
+      openSettled([makeGalleryImage('/uploads/ok.webp', '好'), broken]);
+      const thumbs = document.querySelectorAll('.lightbox-thumb');
+      expect(thumbs[0].querySelector('img')).not.toBeNull();
+      expect(thumbs[1].querySelector('img')).toBeNull();
+    });
+
+    it('单张图不显示缩略条，键盘提示不含切换', () => {
+      openSettled([makeSingleImage('/uploads/cover.webp', '封面')]);
+      expect(document.querySelector('.lightbox-thumbs')).toBeNull();
+      const hint = document.querySelector('.lightbox-hint')!.textContent;
+      expect(hint).not.toContain('切换');
+      expect(hint).toContain('R 旋转');
+    });
+
+    it('Tab 在灯箱控件间循环，不落回背后的页面', () => {
+      openSettled([
+        makeGalleryImage('/uploads/f1.webp', '一'),
+        makeGalleryImage('/uploads/f2.webp', '二'),
+      ]);
+      const overlay = getOverlay()!;
+      const items = [...overlay.querySelectorAll<HTMLElement>('button:not(:disabled), a[href]')];
+      items[items.length - 1].focus();
+      expect(keydown({ key: 'Tab' }).defaultPrevented).toBe(true);
+      expect(document.activeElement).toBe(items[0]);
+      expect(keydown({ key: 'Tab', shiftKey: true }).defaultPrevented).toBe(true);
+      expect(document.activeElement).toBe(items[items.length - 1]);
+    });
+
+    it('fit 态栏位常驻，放大后空闲 2.5s 才淡出，指针活动唤醒', () => {
+      openSettled([
+        makeGalleryImage('/uploads/i1.webp', '一'),
+        makeGalleryImage('/uploads/i2.webp', '二'),
+      ]);
+      const overlay = getOverlay()!;
+      vi.advanceTimersByTime(3000);
+      expect(overlay.classList.contains('is-idle')).toBe(false);
+      clickEl(button('放大'));
+      vi.advanceTimersByTime(3000);
+      expect(overlay.classList.contains('is-idle')).toBe(true);
+      overlay.dispatchEvent(new PointerEvent('pointermove', { bubbles: true }));
+      expect(overlay.classList.contains('is-idle')).toBe(false);
     });
   });
 });

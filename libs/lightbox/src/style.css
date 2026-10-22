@@ -1,13 +1,45 @@
-/* ========== 统一灯箱（Medium 风格） ========== */
+/* ========== 图片查看器 ==========
+   不随站点明暗切换：查看器恒为暖调深底，文字与发丝线取深色 token 的同值。
+   clay 与字体读站点 token，缺省时回退到同值，图鉴之外的页面同样可用。 */
 .lightbox-overlay {
+  --lb-bg: rgb(14 13 12 / 0.94);
+  --lb-fg: #f2f1ee;
+  --lb-fg-2: #a9a7a1;
+  --lb-ink: rgb(255 255 255 / 0.08);
+  --lb-ink-2: rgb(255 255 255 / 0.14);
+  --lb-clay: var(--color-clay, #d97757);
+  --lb-chrome-pad: 16px;
   position: fixed;
   inset: 0;
   z-index: 50;
   /* overflow:hidden 裁剪超大的 absolute img，防止原图（可能数千 px）
      撑大文档可滚动区，否则会触发非预期的 scroll 事件。 */
   overflow: hidden;
-  background: rgba(0, 0, 0, 0.92);
+  background: var(--lb-bg);
+  color: var(--lb-fg);
+  font-family: var(
+    --font-sans,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    system-ui,
+    'PingFang SC',
+    'Noto Sans SC',
+    'Microsoft YaHei',
+    sans-serif
+  );
+  font-size: 14px;
   opacity: 1;
+}
+.lightbox-overlay:focus {
+  outline: none;
+}
+.lightbox-overlay :focus-visible {
+  outline: none;
+  box-shadow:
+    inset 0 0 0 1px #151514,
+    0 0 0 1.5px var(--lb-clay),
+    0 0 8px 2px rgb(217 119 87 / 0.35);
 }
 
 /* 灯箱图片：绝对定位，尺寸/位置由 JS 的 transform 控制。
@@ -16,7 +48,8 @@
    尺寸），确保布局尺寸确定，transform 只做视觉缩放，不改变占位。
    注意不可加 object-fit: contain：transformFor 的非均匀 scale 依赖「位图填满
    布局盒」这一前提才能恰好抵消失真（素材网格的缩略图容器恒为正方形，与原图
-   宽高比不同，contain 的 letterbox 会导致非均匀 scale 把图压扁）。 */
+   宽高比不同，contain 的 letterbox 会导致非均匀 scale 把图压扁）。
+   同理不加圆角与投影：它们按布局盒绘制，会随飞行动画的 scale 一起放大变形。 */
 .lightbox-img {
   position: absolute;
   left: 0;
@@ -42,57 +75,219 @@
   cursor: grabbing;
 }
 
-/* caption 给底部工具栏 + 缩放徽标让位（工具栏约 60px 高 + 徽标区）。 */
-.lightbox-caption {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 7rem;
-  text-align: center;
-  color: rgba(255, 255, 255, 0.85);
-  font-size: 0.95rem;
-  padding: 0 2rem;
+/* ---- 顶栏、底栏与箭头 ----
+   顶栏与底栏本身不接收指针：空白处的点击落到遮罩上照常关闭，只有按钮可点。
+   fit 态它们在图片适配区之外（measureInset）；放大后空闲 2.5s 一起淡出（is-idle）。 */
+.lightbox-topbar,
+.lightbox-bottom,
+.lightbox-nav {
+  transition: opacity 250ms ease-out;
+}
+.lightbox-overlay.is-idle :is(.lightbox-topbar, .lightbox-bottom, .lightbox-nav) {
+  opacity: 0;
   pointer-events: none;
-  z-index: 2;
+}
+.lightbox-overlay.is-idle :is(.lightbox-topbar, .lightbox-bottom) * {
+  pointer-events: none;
 }
 
-/* counter 移到右上：底部居中工具栏在窄屏会盖住右下角落。 */
-.lightbox-counter {
+.lightbox-topbar {
   position: fixed;
-  right: 1.5rem;
-  top: 1.5rem;
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 0.85rem;
-  z-index: 2;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 3;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 8px;
+  padding: max(14px, env(safe-area-inset-top)) var(--lb-chrome-pad) 14px;
+  pointer-events: none;
+}
+.lightbox-topbar > * {
+  pointer-events: auto;
+}
+
+.lightbox-counter {
+  grid-column: 1;
+  justify-self: start;
+  font-size: 13px;
+  color: var(--lb-fg-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.lightbox-toolbar {
+  grid-column: 2;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 12px;
+  background: var(--lb-ink);
+}
+
+.lightbox-divider {
+  width: 1px;
+  height: 20px;
+  margin: 0 4px;
+  background: var(--lb-ink-2);
+}
+
+.lightbox-tool,
+.lightbox-nav {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--lb-fg-2);
+  cursor: pointer;
+  transition:
+    background-color 150ms ease-out,
+    color 150ms ease-out;
+}
+.lightbox-tool:hover,
+.lightbox-nav:hover {
+  background: var(--lb-ink);
+  color: var(--lb-fg);
+}
+.lightbox-tool:disabled {
+  opacity: 0.3;
+  cursor: default;
+  background: transparent;
+  color: var(--lb-fg-2);
+}
+.lightbox-tool svg,
+.lightbox-nav svg {
+  display: block;
+}
+
+.lightbox-zoom-level {
+  min-width: 56px;
+  height: 40px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--lb-fg);
+  font-family: var(--font-mono, ui-monospace, 'SF Mono', Menlo, Consolas, monospace);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background-color 150ms ease-out;
+}
+.lightbox-zoom-level:hover {
+  background: var(--lb-ink);
+}
+
+.lightbox-close {
+  grid-column: 3;
+  justify-self: end;
 }
 
 .lightbox-nav {
   position: fixed;
   top: 50%;
-  transform: translateY(-50%);
-  background: transparent;
-  border: none;
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 3rem;
-  line-height: 1;
-  width: 3rem;
-  height: 5rem;
-  cursor: pointer;
-  z-index: 2;
-  border-radius: 0.5rem;
-  transition:
-    color 0.2s ease-out,
-    background 0.2s ease-out;
-}
-.lightbox-nav:hover {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.1);
+  margin-top: -20px;
+  z-index: 3;
+  background: var(--lb-ink);
 }
 .lightbox-prev {
-  left: 1rem;
+  left: var(--lb-chrome-pad);
 }
 .lightbox-next {
-  right: 1rem;
+  right: var(--lb-chrome-pad);
+}
+
+.lightbox-bottom {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 0 var(--lb-chrome-pad) max(20px, env(safe-area-inset-bottom));
+  pointer-events: none;
+}
+.lightbox-bottom > * {
+  pointer-events: auto;
+}
+
+/* 图注最多三行：过长的 alt 不应把适配区压得太矮。 */
+.lightbox-caption {
+  max-width: 640px;
+  margin: 0;
+  text-align: center;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--lb-fg);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+}
+
+/* 缩略条：长图集横向滚动，position:relative 让 offsetLeft 以条为基准居中当前张。
+   touch-action / overscroll-behavior 让横滑只滚条，不带动页面触发滚动关闭。 */
+.lightbox-thumbs {
+  position: relative;
+  display: flex;
+  gap: 8px;
+  max-width: min(100%, 640px);
+  padding: 3px;
+  overflow-x: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-x;
+  scrollbar-width: none;
+}
+.lightbox-thumbs::-webkit-scrollbar {
+  display: none;
+}
+
+.lightbox-thumb {
+  flex: none;
+  width: 56px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #2a2926
+    repeating-linear-gradient(135deg, transparent 0 6px, rgb(255 255 255 / 0.05) 6px 7px);
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.1);
+  opacity: 0.55;
+  cursor: pointer;
+  transition:
+    box-shadow 150ms ease-out,
+    opacity 150ms ease-out;
+}
+.lightbox-thumb:hover {
+  opacity: 0.85;
+}
+.lightbox-thumb[aria-current='true'] {
+  box-shadow: 0 0 0 2px var(--lb-clay);
+  opacity: 1;
+}
+.lightbox-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+}
+
+.lightbox-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--lb-fg-2);
+  text-align: center;
 }
 
 /* 错误态：原图加载失败（404/429/文件丢失）或点击已知坏图（is-error）时
@@ -106,111 +301,59 @@
   align-items: center;
   justify-content: center;
   gap: 0.75rem;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--lb-fg);
   text-align: center;
   padding: 0 2rem;
   pointer-events: none;
   z-index: 2;
 }
 .lightbox-error svg {
-  width: 3rem;
-  height: 3rem;
-  opacity: 0.6;
+  color: var(--lb-fg-2);
 }
 .lightbox-error p {
   margin: 0;
-  font-size: 0.95rem;
+  font-size: 14px;
 }
 .lightbox-error .lightbox-error-hint {
-  font-size: 0.8rem;
-  color: rgba(255, 255, 255, 0.5);
+  font-size: 12px;
+  color: var(--lb-fg-2);
 }
 
-/* ========== 查看器工具栏（毛玻璃胶囊） ==========
-   底部居中、拇指区可达；与站点浮动导航栏同一套毛玻璃语言。
-   空闲 2.5s 自动淡出（JS 加 .is-hidden），指针活动/悬停工具栏时保持可见。 */
-.lightbox-toolbar {
-  position: fixed;
-  left: 50%;
-  bottom: max(1.25rem, env(safe-area-inset-bottom));
-  transform: translateX(-50%);
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: 6px;
-  border-radius: 999px;
-  background: rgba(28, 28, 30, 0.55);
-  backdrop-filter: blur(16px) saturate(1.4);
-  -webkit-backdrop-filter: blur(16px) saturate(1.4);
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.1),
-    0 8px 24px rgba(0, 0, 0, 0.35);
-  z-index: 3;
-  transition: opacity 250ms ease-out;
-}
-.lightbox-toolbar.is-hidden {
-  opacity: 0;
-  pointer-events: none;
+/* 触屏：没有键盘与滚轮，提示行不显示；按钮放大到 44px 触控目标。 */
+@media (hover: none) {
+  .lightbox-hint {
+    display: none;
+  }
+  .lightbox-tool,
+  .lightbox-nav {
+    width: 44px;
+    height: 44px;
+  }
+  .lightbox-nav {
+    margin-top: -22px;
+  }
 }
 
-/* 48px 触控目标（2026 移动端可达性标准） */
-.lightbox-tool {
-  display: grid;
-  place-items: center;
-  width: 48px;
-  height: 48px;
-  padding: 0;
-  border: none;
-  border-radius: 50%;
-  background: transparent;
-  color: rgba(255, 255, 255, 0.85);
-  cursor: pointer;
-  transition:
-    background 150ms ease-out,
-    color 150ms ease-out;
-}
-.lightbox-tool:hover {
-  background: rgba(255, 255, 255, 0.14);
-  color: #fff;
-}
-.lightbox-tool:focus-visible {
-  outline: 2px solid rgba(255, 255, 255, 0.7);
-  outline-offset: 2px;
-}
-.lightbox-tool svg {
-  width: 24px;
-  height: 24px;
-}
-
-/* 缩放倍率徽标：操控时短暂浮现于工具栏上方，600ms 后淡出。 */
-.lightbox-zoom-badge {
-  position: fixed;
-  left: 50%;
-  bottom: calc(max(1.25rem, env(safe-area-inset-bottom)) + 4.25rem);
-  transform: translateX(-50%);
-  padding: 4px 12px;
-  border-radius: 999px;
-  background: rgba(28, 28, 30, 0.55);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.9);
-  font-size: 0.8rem;
-  font-variant-numeric: tabular-nums;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 300ms ease-out;
-  z-index: 3;
-}
-.lightbox-zoom-badge.is-visible {
-  opacity: 1;
-}
-
-/* 窄屏：caption 再压低一点、字号收紧，避免与工具栏/徽标叠字。 */
-@media (max-width: 640px) {
+/* 窄屏：工具组只留档位与旋转、下载（捏合缩放代替 ± 按钮），给计数与关闭让位；
+   箭头叠在图上，退到边缘。 */
+@media (max-width: 520px) {
+  .lightbox-overlay {
+    --lb-chrome-pad: 10px;
+  }
+  .lightbox-toolbar > .lightbox-tool:is(:first-child, :nth-child(3)),
+  .lightbox-toolbar > .lightbox-divider:first-of-type {
+    display: none;
+  }
   .lightbox-caption {
-    bottom: 6.5rem;
-    font-size: 0.875rem;
-    padding: 0 1rem;
+    font-size: 13px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lightbox-topbar,
+  .lightbox-bottom,
+  .lightbox-nav,
+  .lightbox-thumb {
+    transition: none;
   }
 }

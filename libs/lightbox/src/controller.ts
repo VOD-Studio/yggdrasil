@@ -15,11 +15,14 @@ import { ResourceScope } from './resources';
 import type { LightboxActions, LightboxState } from './types';
 import {
   baseGeometry,
+  measureInset,
   pokeToolbar,
   rectOf,
   resetScrollClose,
   resetView,
-  rotateCW,
+  rotate,
+  stepZoom,
+  syncZoomControls,
   updateDownloadLink,
   zoomBy,
 } from './view';
@@ -42,12 +45,13 @@ export function openLightbox(
   const isSingle = originNode.classList.contains('lightbox-single') || gallery.length === 0;
   const actions: LightboxActions = {
     zoomBy: (factor, x, y, animate) => zoomBy(s, factor, x, y, animate),
-    rotateCW: () => rotateCW(s),
+    stepZoom: (dir) => stepZoom(s, dir),
+    rotate: (dir) => rotate(s, dir),
     resetView: (animate) => resetView(s, animate),
     close,
     gotoIndex,
   };
-  const elements = createLightboxElements(altText, gallery.length, index, isSingle, actions);
+  const elements = createLightboxElements(altText, gallery, index, isSingle, actions);
   const { overlay, img } = elements;
   const s: LightboxState = {
     ...elements,
@@ -67,8 +71,8 @@ export function openLightbox(
     pointers: new Map(),
     gesture: null,
     idleTimer: undefined,
-    badgeTimer: undefined,
-    toolbarHover: false,
+    chromeHover: false,
+    inset: measureInset(elements),
   };
   let imageScope = new ResourceScope();
   let galleryTimer: number | undefined;
@@ -101,6 +105,8 @@ export function openLightbox(
     if (!s.closing) showErrorState(errorTextOf(s.originNode));
   });
   updateDownloadLink(s);
+  syncZoomControls(s);
+  syncThumbs();
   pokeToolbar(s);
 
   // 焦点移入灯箱
@@ -114,13 +120,14 @@ export function openLightbox(
     const naturalW = img.naturalWidth || img.clientWidth || 1;
     const naturalH = img.naturalHeight || img.clientHeight || 1;
     const originRect = rectOf(originNode);
+    s.inset = measureInset(s);
 
     // 基准 = originRect（文章里图片的实际尺寸）。
     // img 的布局尺寸固定为 originRect，transform 的 scale 相对它缩放：
     // 首帧（文章位置）scale=1，居中态 scale=target.w/originRect.w。
     // 这样无论 target 比 originRect 大或小，动画都是「从文章图原样连续缩放」，
     // 视觉上是原地展开，不会像「从外面飞来」。灯箱图尺寸恒为视口最大（fitCentered）。
-    const target = fitCentered(naturalW, naturalH, window.innerWidth, window.innerHeight);
+    const target = fitCentered(naturalW, naturalH, window.innerWidth, window.innerHeight, s.inset);
     const baseW = originRect.w;
     const baseH = originRect.h;
     // 存基准与目标，供关闭/滚动关闭复用同一对（保证 scale 连续）。
@@ -180,9 +187,8 @@ export function openLightbox(
     const text = s.errorBox.querySelector('.lightbox-error-text');
     if (text) text.textContent = message;
     s.errorBox.style.display = '';
-    // 错误态下图不可见，操控无意义：藏起工具栏与徽标
+    // 错误态下图不可见，操控无意义：藏起缩放旋转工具组（计数、关闭与缩略条保留）
     s.toolbar.style.display = 'none';
-    s.badge.classList.remove('is-visible');
   }
 
   // 从错误态恢复（图集切回可加载的图）：显示图、隐藏错误提示。
@@ -337,7 +343,14 @@ export function openLightbox(
         if (s.scope.disposed || s.closing || s.scrollClose) return;
         const naturalW = s.img.naturalWidth || 1;
         const naturalH = s.img.naturalHeight || 1;
-        const target = fitCentered(naturalW, naturalH, window.innerWidth, window.innerHeight);
+        s.inset = measureInset(s);
+        const target = fitCentered(
+          naturalW,
+          naturalH,
+          window.innerWidth,
+          window.innerHeight,
+          s.inset,
+        );
         s.target = target;
         s.baseW = target.w;
         s.baseH = target.h;
@@ -371,6 +384,8 @@ export function openLightbox(
       s.view = { deg: 0, scale: 1, user: null };
       s.normalized = false;
       s.img.classList.remove('is-zoomed');
+      syncZoomControls(s);
+      syncThumbs();
       updateDownloadLink(s);
       s.target = undefined;
       if (newNode.classList.contains('is-error')) {
@@ -383,6 +398,20 @@ export function openLightbox(
       }
     };
     galleryTimer = s.scope.timeout(swap, s.reduced ? 0 : 150);
+  }
+
+  // 缩略条：标出当前张并把它滚到条的中间。直接写 scrollLeft，不用
+  // scrollIntoView —— 后者可能连带滚动页面，触发滚动关闭。
+  function syncThumbs(): void {
+    if (!s.thumbStrip) return;
+    s.thumbs.forEach((btn, k) => {
+      if (k === s.index) btn.setAttribute('aria-current', 'true');
+      else btn.removeAttribute('aria-current');
+    });
+    const active = s.index === null ? undefined : s.thumbs[s.index];
+    if (!active) return;
+    const strip = s.thumbStrip;
+    strip.scrollLeft = active.offsetLeft - (strip.clientWidth - active.offsetWidth) / 2;
   }
 
   return {

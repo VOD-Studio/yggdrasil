@@ -42,11 +42,36 @@ async function close(page) {
   await page.waitForFunction(() => !document.querySelector('.lightbox-overlay'));
 }
 
+// Fit state keeps the picture inside the stage between the top bar, the bottom
+// caption/thumbnail strip and (on wide screens) the navigation arrows.
+async function assertFitClearsChrome(page) {
+  const boxes = await page.evaluate(() => {
+    const rect = (sel) => document.querySelector(sel)?.getBoundingClientRect().toJSON() ?? null;
+    return {
+      img: rect('.lightbox-img'),
+      top: rect('.lightbox-topbar'),
+      bottom: rect('.lightbox-bottom'),
+      prev: rect('.lightbox-prev'),
+      width: innerWidth,
+    };
+  });
+  assert.ok(boxes.img.top >= boxes.top.bottom - 0.5, 'image overlaps the top bar');
+  assert.ok(boxes.img.bottom <= boxes.bottom.top + 0.5, 'image overlaps the caption and thumbnails');
+  if (boxes.prev && boxes.width >= 640) {
+    assert.ok(boxes.img.left >= boxes.prev.right - 0.5, 'image overlaps the navigation arrow');
+  }
+}
+
 async function assertCenteredRotation(page, reduced) {
-  await page.getByRole('button', { name: '放大', exact: true }).click();
+  await assertFitClearsChrome(page);
+  // Narrow screens hide the ± buttons (pinch replaces them); the + key steps the same levels.
+  const zoomIn = page.getByRole('button', { name: '放大', exact: true });
+  if (await zoomIn.isVisible()) await zoomIn.click();
+  else await page.keyboard.press('+');
+  assert.equal(await page.locator('.lightbox-zoom-level').textContent(), '150%');
   await page.waitForTimeout(200);
   const centers = await page.evaluate(async () => {
-    document.querySelector('[aria-label="顺时针旋转 90 度"]').click();
+    document.querySelector('[aria-label="向右旋转"]').click();
     const samples = [];
     const started = performance.now();
     while (performance.now() - started < 220) {
@@ -65,7 +90,7 @@ async function assertCenteredRotation(page, reduced) {
     height: img.style.height,
   }));
   for (let step = 0; step < 4; step += 1) {
-    await page.getByRole('button', { name: '顺时针旋转 90 度', exact: true }).click();
+    await page.getByRole('button', { name: '向右旋转', exact: true }).click();
     await page.waitForTimeout(reduced ? 10 : 200);
   }
   assert.deepEqual(
@@ -91,6 +116,8 @@ async function assertGallery(page) {
   }));
   assert.equal(image.src, '/uploads/portrait.svg');
   assert.equal(image.alt, '竖图');
+  await assertFitClearsChrome(page);
+  assert.equal(await page.locator('.lightbox-thumb[aria-current="true"]').getAttribute('aria-label'), '第 2 张');
   assert.ok(Math.abs(image.width / image.height - 900 / 1600) < 0.001);
   assert.equal(await page.getByRole('link', { name: '下载原图' }).getAttribute('href'), '/uploads/portrait.svg');
   assert.equal(await page.getByRole('link', { name: '下载原图' }).getAttribute('download'), 'portrait.svg');
@@ -132,7 +159,7 @@ async function assertPinchAndDrag(page) {
   });
   await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   assert.equal(await page.locator('.lightbox-img.is-zoomed').count(), 1);
-  await page.getByRole('button', { name: '重置视图', exact: true }).click();
+  await page.locator('.lightbox-zoom-level').click();
   await page.waitForTimeout(200);
   await session.send('Input.dispatchTouchEvent', {
     type: 'touchStart',

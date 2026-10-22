@@ -1,37 +1,79 @@
-import { BUTTON_ZOOM_STEP } from './geometry';
+import { thumbnailSrc } from './images';
 import type { LightboxActions, LightboxElements } from './types';
 
-const ERROR_ICON_SVG =
-  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" fill="currentColor"><path d="M180-120q-24 0-42-18t-18-42v-600q0-24 18-42t42-18h600q24 0 42 18t18 42v600q0 24-18 42t-42 18H180Zm43-314 172-172 170 170 171-171 44 44v-217H180v303l43 43Zm-43 254h600v-298l-44-44-171 171-170-170-172 172-43-43v212Zm0 0v-298 60-362 600Z"/></svg>';
+// ---- 图标（Lucide，ISC；24 视口、1.6 线宽描边，与站点 Icon 组件同源）----
+const lucide = (body: string, size = 18): string =>
+  `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
 
-// ---- 工具栏图标（Material Symbols，标准 960 视口，fill=currentColor）----
-// 源档案：public/icons/{zoom_in,zoom_out,rotate_90_degrees_cw,fit_screen,download,close}_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg
-const ZOOM_IN_ICON_SVG =
-  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" fill="currentColor"><path d="M796-121 533-384q-30 26-69.96 40.5Q423.08-329 378-329q-108.16 0-183.08-75Q120-479 120-585t75-181q75-75 181.5-75t181 75Q632-691 632-584.85 632-542 618-502q-14 40-42 75l264 262-44 44ZM377-389q81.25 0 138.13-57.5Q572-504 572-585t-56.87-138.5Q458.25-781 377-781q-82.08 0-139.54 57.5Q180-666 180-585t57.46 138.5Q294.92-389 377-389Zm-31-85v-82h-82v-60h82v-81h60v81h81v60h-81v82h-60Z"/></svg>';
-const ZOOM_OUT_ICON_SVG =
-  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" fill="currentColor"><path d="M796-121 533-384q-30 26-70 40.5T378-329q-108 0-183-75t-75-181q0-106 75-181t182-75q106 0 180.5 75T632-585q0 43-14 83t-42 75l264 262-44 44ZM377-389q81 0 138-57.5T572-585q0-81-57-138.5T377-781q-82 0-139.5 57.5T180-585q0 81 57.5 138.5T377-389ZM275-556v-60h201v60H275Z"/></svg>';
-const ROTATE_ICON_SVG =
-  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" fill="currentColor"><path d="M436-80q-73 0-137.5-28.5t-113-77q-48.5-48.5-77-113T80-436q0-146 105-251t251-105h42l-84-84 44-44 158 158-158 158-44-44 84-84h-42q-122 0-209 87t-87 209q0 122 87 209t209 87q54 0 101-14t89-47l42 44q-47 40-108 58.5T436-80Zm262-140L476-442l222-222 222 222-222 222Zm0-82 136-136-136-136-136 136 136 136Zm0-136Z"/></svg>';
-const RESET_ICON_SVG =
-  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" fill="currentColor"><path d="M820-610v-130H690v-60h130q24 0 42 18t18 42v130h-60Zm-740 0v-130q0-24 18-42t42-18h130v60H140v130H80Zm610 450v-60h130v-130h60v130q0 24-18 42t-42 18H690Zm-550 0q-24 0-42-18t-18-42v-130h60v130h130v60H140Zm60-120v-400h560v400H200Zm60-60h440v-280H260v280Zm0 0v-280 280Z"/></svg>';
-const DOWNLOAD_ICON_SVG =
-  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" fill="currentColor"><path d="M480-313 287-506l43-43 120 120v-371h60v371l120-120 43 43-193 193ZM220-160q-24 0-42-18t-18-42v-143h60v143h520v-143h60v143q0 24-18 42t-42 18H220Z"/></svg>';
-const CLOSE_ICON_SVG =
-  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" fill="currentColor"><path d="m256-200-56-56 224-224-224-224 56-56 224 224 224-224 56 56-224 224 224 224-56 56-224-224-224 224Z"/></svg>';
+const ERROR_ICON_SVG = lucide(
+  '<line x1="2" x2="22" y1="2" y2="22"/><path d="M10.41 10.41a2 2 0 1 1-2.83-2.83"/><line x1="13.5" x2="6" y1="13.5" y2="21"/><line x1="18" x2="21" y1="12" y2="15"/><path d="M3.59 3.59A1.99 1.99 0 0 0 3 5v14a2 2 0 0 0 2 2h14c.55 0 1.052-.22 1.41-.59"/><path d="M21 15V5a2 2 0 0 0-2-2H9"/>',
+  40,
+);
+const ZOOM_IN_ICON_SVG = lucide(
+  '<circle cx="11" cy="11" r="8"/><line x1="21" x2="16.65" y1="21" y2="16.65"/><line x1="11" x2="11" y1="8" y2="14"/><line x1="8" x2="14" y1="11" y2="11"/>',
+);
+const ZOOM_OUT_ICON_SVG = lucide(
+  '<circle cx="11" cy="11" r="8"/><line x1="21" x2="16.65" y1="21" y2="16.65"/><line x1="8" x2="14" y1="11" y2="11"/>',
+);
+const ROTATE_CCW_ICON_SVG = lucide(
+  '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>',
+);
+const ROTATE_CW_ICON_SVG = lucide(
+  '<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>',
+);
+const DOWNLOAD_ICON_SVG = lucide(
+  '<path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/>',
+);
+const CLOSE_ICON_SVG = lucide('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>', 20);
+const PREV_ICON_SVG = lucide('<path d="m15 18-6-6 6-6"/>', 20);
+const NEXT_ICON_SVG = lucide('<path d="m9 18 6-6-6-6"/>', 20);
+
+// 按钮点击 stopPropagation：不冒泡到 overlay 触发关闭
+function makeButton(
+  className: string,
+  label: string,
+  html: string,
+  onClick: (() => void) | null,
+  shortcut?: string,
+): HTMLButtonElement {
+  const btn = document.createElement('button');
+  btn.className = className;
+  btn.setAttribute('type', 'button');
+  btn.setAttribute('aria-label', label);
+  if (shortcut) btn.title = `${label}（${shortcut}）`;
+  btn.innerHTML = html;
+  if (onClick) {
+    btn.addEventListener('click', (ev: MouseEvent): void => {
+      ev.stopPropagation();
+      onClick();
+    });
+  }
+  return btn;
+}
+
+function divider(): HTMLSpanElement {
+  const el = document.createElement('span');
+  el.className = 'lightbox-divider';
+  el.setAttribute('aria-hidden', 'true');
+  return el;
+}
 
 export function createLightboxElements(
   altText: string,
-  galleryLength: number,
+  gallery: HTMLElement[],
   index: number | null,
   isSingle: boolean,
   actions: LightboxActions,
 ): LightboxElements {
+  const galleryLength = gallery.length;
+  const isGallery = !isSingle && galleryLength > 1;
+
   // 建 DOM
   const overlay = document.createElement('div');
   overlay.className = 'lightbox-overlay';
   overlay.setAttribute('role', 'dialog');
   overlay.setAttribute('aria-modal', 'true');
-  overlay.setAttribute('aria-label', '图片预览');
+  overlay.setAttribute('aria-label', '图片查看器');
   overlay.setAttribute('tabindex', '-1');
   // 遮罩从 0 淡入：创建即隐藏，append 后立即启动淡入（见下方 rAF），
   // 与原图加载解耦。若加载期就保持 opacity:1，start() 为首帧硬切回 0 再
@@ -47,19 +89,6 @@ export function createLightboxElements(
   img.style.width = '0px';
   img.style.height = '0px';
 
-  const caption = document.createElement('figcaption');
-  caption.className = 'lightbox-caption';
-  caption.textContent = altText;
-  if (!altText) caption.style.display = 'none';
-
-  const counter = document.createElement('div');
-  counter.className = 'lightbox-counter';
-  if (isSingle || galleryLength === 0) {
-    counter.style.display = 'none';
-  } else {
-    counter.textContent = `${(index ?? 0) + 1} / ${galleryLength}`;
-  }
-
   // 错误态容器：原图加载失败或点击已知坏图（is-error）时显示原因，
   // 替代过去的立即 removeOverlay。pointer-events:none（CSS）让点击穿透到
   // overlay 照常触发关闭。
@@ -68,54 +97,46 @@ export function createLightboxElements(
   errorBox.style.display = 'none';
   errorBox.innerHTML = `${ERROR_ICON_SVG}<p class="lightbox-error-text"></p><p class="lightbox-error-hint">按 Esc 或点击背景关闭</p>`;
 
-  // 图集模式（>1 张）才加左右导航箭头；单张不显示。
-  let prevBtn: HTMLButtonElement | null = null;
-  let nextBtn: HTMLButtonElement | null = null;
-  if (!isSingle && galleryLength > 1) {
-    prevBtn = document.createElement('button');
-    prevBtn.className = 'lightbox-nav lightbox-prev';
-    prevBtn.setAttribute('type', 'button');
-    prevBtn.setAttribute('aria-label', '上一张');
-    prevBtn.textContent = '\u2039';
+  // ---- 顶栏：计数 / 工具组 / 关闭 ----
+  // 顶栏与底栏自身 pointer-events:none，空白处的点击落到 overlay 照常关闭。
+  const topbar = document.createElement('div');
+  topbar.className = 'lightbox-topbar';
 
-    nextBtn = document.createElement('button');
-    nextBtn.className = 'lightbox-nav lightbox-next';
-    nextBtn.setAttribute('type', 'button');
-    nextBtn.setAttribute('aria-label', '下一张');
-    nextBtn.textContent = '\u203a';
+  const counter = document.createElement('span');
+  counter.className = 'lightbox-counter';
+  if (isGallery) {
+    counter.textContent = `${(index ?? 0) + 1} / ${galleryLength}`;
+  } else {
+    counter.style.display = 'none';
   }
 
-  // ---- 查看器工具栏：毛玻璃胶囊（缩小/放大/旋转/重置/下载/关闭）----
   const toolbar = document.createElement('div');
   toolbar.className = 'lightbox-toolbar';
   toolbar.setAttribute('role', 'toolbar');
   toolbar.setAttribute('aria-label', '图片操作');
 
-  // 按钮点击 stopPropagation：不冒泡到 overlay 触发关闭
-  const makeTool = (aria: string, svg: string, onClick: () => void): HTMLButtonElement => {
-    const btn = document.createElement('button');
-    btn.className = 'lightbox-tool';
-    btn.setAttribute('type', 'button');
-    btn.setAttribute('aria-label', aria);
-    btn.innerHTML = svg;
-    btn.addEventListener('click', (ev: MouseEvent): void => {
-      ev.stopPropagation();
-      onClick();
-    });
-    return btn;
-  };
-  toolbar.appendChild(
-    makeTool('缩小', ZOOM_OUT_ICON_SVG, () => {
-      actions.zoomBy(1 / BUTTON_ZOOM_STEP, window.innerWidth / 2, window.innerHeight / 2, true);
-    }),
+  const zoomOutBtn = makeButton(
+    'lightbox-tool',
+    '缩小',
+    ZOOM_OUT_ICON_SVG,
+    () => actions.stepZoom(-1),
+    '-',
   );
-  toolbar.appendChild(
-    makeTool('放大', ZOOM_IN_ICON_SVG, () => {
-      actions.zoomBy(BUTTON_ZOOM_STEP, window.innerWidth / 2, window.innerHeight / 2, true);
-    }),
+  // 档位文字兼作重置：点一下回到 100% 并转正。名称随倍率更新（view.ts syncZoomControls）。
+  const zoomLevel = makeButton(
+    'lightbox-zoom-level',
+    '100%，重置视图',
+    '100%',
+    () => actions.resetView(true),
+    '0',
   );
-  toolbar.appendChild(makeTool('顺时针旋转 90 度', ROTATE_ICON_SVG, actions.rotateCW));
-  toolbar.appendChild(makeTool('重置视图', RESET_ICON_SVG, () => actions.resetView(true)));
+  const zoomInBtn = makeButton(
+    'lightbox-tool',
+    '放大',
+    ZOOM_IN_ICON_SVG,
+    () => actions.stepZoom(1),
+    '+',
+  );
 
   const downloadLink = document.createElement('a');
   downloadLink.className = 'lightbox-tool';
@@ -125,25 +146,94 @@ export function createLightboxElements(
   downloadLink.addEventListener('click', (ev: MouseEvent): void => {
     ev.stopPropagation();
   });
-  toolbar.appendChild(downloadLink);
 
-  toolbar.appendChild(
-    makeTool('关闭', CLOSE_ICON_SVG, () => {
-      actions.close(false);
-    }),
+  toolbar.append(
+    zoomOutBtn,
+    zoomLevel,
+    zoomInBtn,
+    divider(),
+    makeButton(
+      'lightbox-tool',
+      '向左旋转',
+      ROTATE_CCW_ICON_SVG,
+      () => actions.rotate(-1),
+      'Shift+R',
+    ),
+    makeButton('lightbox-tool', '向右旋转', ROTATE_CW_ICON_SVG, () => actions.rotate(1), 'R'),
+    divider(),
+    downloadLink,
   );
 
-  // 缩放倍率徽标（操控时短暂显示）
-  const badge = document.createElement('div');
-  badge.className = 'lightbox-zoom-badge';
-  badge.setAttribute('aria-hidden', 'true');
+  const closeBtn = makeButton(
+    'lightbox-tool lightbox-close',
+    '关闭',
+    CLOSE_ICON_SVG,
+    () => actions.close(false),
+    'Esc',
+  );
+  topbar.append(counter, toolbar, closeBtn);
 
-  overlay.appendChild(img);
-  overlay.appendChild(caption);
-  overlay.appendChild(counter);
-  overlay.appendChild(errorBox);
-  overlay.appendChild(toolbar);
-  overlay.appendChild(badge);
+  // 图集模式（>1 张）才加左右导航箭头；单张不显示。点击按当前序号切换，
+  // 在 interactions.ts 绑定。
+  let prevBtn: HTMLButtonElement | null = null;
+  let nextBtn: HTMLButtonElement | null = null;
+  if (isGallery) {
+    prevBtn = makeButton('lightbox-nav lightbox-prev', '上一张', PREV_ICON_SVG, null, '←');
+    nextBtn = makeButton('lightbox-nav lightbox-next', '下一张', NEXT_ICON_SVG, null, '→');
+  }
+
+  // ---- 底栏：图注 / 缩略条 / 键盘提示 ----
+  const bottom = document.createElement('div');
+  bottom.className = 'lightbox-bottom';
+
+  const caption = document.createElement('p');
+  caption.className = 'lightbox-caption';
+  caption.textContent = altText;
+  if (!altText) caption.style.display = 'none';
+  bottom.appendChild(caption);
+
+  let thumbStrip: HTMLDivElement | null = null;
+  const thumbs: HTMLButtonElement[] = [];
+  if (isGallery) {
+    thumbStrip = document.createElement('div');
+    thumbStrip.className = 'lightbox-thumbs';
+    thumbStrip.setAttribute('role', 'group');
+    thumbStrip.setAttribute('aria-label', '图片列表');
+    gallery.forEach((node, k) => {
+      const btn = makeButton('lightbox-thumb', `第 ${k + 1} 张`, '', () => actions.gotoIndex(k));
+      // 复用正文已请求过的地址（多数已在缓存）；懒加载，长图集只取可见的几张。
+      const src = thumbnailSrc(node);
+      if (src) {
+        const t = document.createElement('img');
+        t.src = src;
+        t.alt = '';
+        t.loading = 'lazy';
+        t.decoding = 'async';
+        t.draggable = false;
+        btn.appendChild(t);
+      }
+      if (k === index) btn.setAttribute('aria-current', 'true');
+      thumbs.push(btn);
+      thumbStrip?.appendChild(btn);
+    });
+    bottom.appendChild(thumbStrip);
+  }
+
+  const hint = document.createElement('p');
+  hint.className = 'lightbox-hint';
+  hint.setAttribute('aria-hidden', 'true');
+  hint.textContent = [
+    isGallery ? '← → 切换' : '',
+    'Ctrl / ⌘ + 滚轮或双击缩放',
+    '拖动平移',
+    'R 旋转',
+    'Esc 关闭',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  bottom.appendChild(hint);
+
+  overlay.append(img, errorBox, topbar, bottom);
   if (prevBtn) overlay.appendChild(prevBtn);
   if (nextBtn) overlay.appendChild(nextBtn);
   document.body.appendChild(overlay);
@@ -154,9 +244,15 @@ export function createLightboxElements(
     caption,
     counter,
     errorBox,
+    topbar,
+    bottom,
     toolbar,
-    badge,
+    zoomOutBtn,
+    zoomInBtn,
+    zoomLevel,
     downloadLink,
+    thumbStrip,
+    thumbs,
     prevBtn,
     nextBtn,
   };

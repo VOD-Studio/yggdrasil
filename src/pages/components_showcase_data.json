@@ -3184,8 +3184,8 @@
       "slug": "lightbox",
       "label": "图片灯箱",
       "group": "browser",
-      "summary": "支持缩放、旋转与关闭交互的图片灯箱。",
-      "states": "图集 · 缩放 · 旋转 · 切换 · 关闭",
+      "summary": "带缩放档位、左右旋转与缩略条的图片查看器。",
+      "states": "图集 · 缩放档位 · 左右旋转 · 缩略条 · 关闭",
       "description": "图鉴对仓库图片组成的局部图集初始化真实灯箱；离开时只关闭演示拥有的浮层，不接管站点其他图片。",
       "props": [
         [
@@ -3195,7 +3195,36 @@
           "局部图集容器选择器。"
         ]
       ],
-      "keys": [],
+      "keys": [
+        [
+          "← / →",
+          "切换上一张、下一张"
+        ],
+        [
+          "+ / -",
+          "在 50%–300% 六档间缩放"
+        ],
+        [
+          "Ctrl / ⌘ + 滚轮",
+          "以光标为中心连续缩放"
+        ],
+        [
+          "0",
+          "回到 100% 并转正"
+        ],
+        [
+          "R / Shift+R",
+          "向右、向左旋转 90°"
+        ],
+        [
+          "Tab",
+          "在查看器控件间循环"
+        ],
+        [
+          "Esc",
+          "关闭"
+        ]
+      ],
       "source": "libs/lightbox/src/index.ts",
       "code": "// #sample-gallery 中放置项目的 .blur-img 图片节点。\nwindow.__initLightbox('#sample-gallery');\n// 若该图集打开了灯箱，卸载时只关闭它的浮层。\nwindow.__closeLightboxFor('sample-gallery');",
       "preview_mode": "interactive",

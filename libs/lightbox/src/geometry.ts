@@ -5,11 +5,24 @@ export interface Rect {
   h: number;
 }
 
+// 适配区域的对称边距（px）：图片绕视口中心适配，上下取顶栏与底栏中较高的一侧，
+// 保证 fit 态不压住工具栏、图注与缩略条。缺省为视口的 4% / 6%。
+export interface Inset {
+  x: number;
+  y: number;
+}
+
 // 计算图片在视口居中、contain 适配后的目标 rect。
-// naturalW/H: 图片真实像素尺寸；vw/vh: 视口尺寸。
-export function fitCentered(naturalW: number, naturalH: number, vw: number, vh: number): Rect {
-  var maxW = vw * 0.92;
-  var maxH = vh * 0.88;
+// naturalW/H: 图片真实像素尺寸；vw/vh: 视口尺寸；inset: 适配区域边距。
+export function fitCentered(
+  naturalW: number,
+  naturalH: number,
+  vw: number,
+  vh: number,
+  inset?: Inset,
+): Rect {
+  var maxW = Math.max(1, vw - 2 * (inset ? inset.x : vw * 0.04));
+  var maxH = Math.max(1, vh - 2 * (inset ? inset.y : vh * 0.06));
   var scale = Math.min(maxW / naturalW, maxH / naturalH, 1);
   var w = naturalW * scale;
   var h = naturalH * scale;
@@ -130,9 +143,10 @@ export function panBy(user: Mat, dx: number, dy: number): Mat {
 
 // ---- 缩放档位 ----
 
-export const SCALE_MIN = 1; // 最小 = 适应窗口
-export const SCALE_MAX = 8; // 相对 fit 的最大倍率
-export const BUTTON_ZOOM_STEP = 1.5; // 工具栏 ± 按钮步进
+// 工具栏 ± 按钮与 +/- 键在这六档间步进；滚轮与捏合连续缩放，同样钳在两端之间。
+export const ZOOM_LEVELS: readonly number[] = [0.5, 0.75, 1, 1.5, 2, 3];
+export const SCALE_MIN = ZOOM_LEVELS[0]; // 相对 fit 的最小倍率
+export const SCALE_MAX = ZOOM_LEVELS[ZOOM_LEVELS.length - 1]; // 相对 fit 的最大倍率
 export const DOUBLE_CLICK_SCALE = 2.5; // 双击/双敲击放大的目标倍率
 export const SCROLL_CLOSE_PX = 120; // 页面滚动缩回原图的行程
 export const DRAG_CLOSE_PX = SCROLL_CLOSE_PX;
@@ -141,15 +155,23 @@ export function clampScale(s: number): number {
   return Math.min(SCALE_MAX, Math.max(SCALE_MIN, s));
 }
 
+// 从当前倍率走到相邻档位：dir=1 取第一个更大的档，dir=-1 取最后一个更小的档；
+// 捏合停在两档之间时也只走一步。已在端点时返回原值。
+export function stepZoomLevel(scale: number, dir: 1 | -1): number {
+  const eps = 1e-3;
+  if (dir > 0) return ZOOM_LEVELS.find((z) => z > scale + eps) ?? scale;
+  return [...ZOOM_LEVELS].reverse().find((z) => z < scale - eps) ?? scale;
+}
+
 // 归一化到 [0, 360)。几何计算（fit/宽高互换）只看等效角。
 export function normDeg(deg: number): number {
   return ((deg % 360) + 360) % 360;
 }
 
-// 累计旋转角步进（不取模）：CSS rotate() 按数值插值，270→360 才是顺时针 90°；
+// 累计旋转角步进（不取模，dir=-1 为逆时针）：CSS rotate() 按数值插值，270→360 才是顺时针 90°；
 // 若取模成 270→0，过渡会反向空转 270°。
-export function nextRotationDeg(deg: number): number {
-  return deg + 90;
+export function nextRotationDeg(deg: number, dir: 1 | -1 = 1): number {
+  return deg + 90 * dir;
 }
 
 // 旋转后的适配缩放：布局盒恒为未旋转 fit 尺寸（不随旋转交换），
@@ -161,10 +183,11 @@ export function rotationFitScale(
   rot: number,
   vw: number,
   vh: number,
+  inset?: Inset,
 ): number {
   if (normDeg(rot) % 180 === 0) return 1;
-  const base = fitCentered(naturalW, naturalH, vw, vh);
-  const fit = fitCentered(naturalH, naturalW, vw, vh);
+  const base = fitCentered(naturalW, naturalH, vw, vh, inset);
+  const fit = fitCentered(naturalH, naturalW, vw, vh, inset);
   return Math.min(fit.w / base.h, fit.h / base.w);
 }
 
@@ -187,12 +210,13 @@ export function baseViewGeometry(
   deg: number,
   vw: number,
   vh: number,
+  inset?: Inset,
 ): BaseViewGeometry {
   const rot = normDeg(deg);
-  const layout = fitCentered(naturalW, naturalH, vw, vh);
+  const layout = fitCentered(naturalW, naturalH, vw, vh, inset);
   const eff = effectiveDims(naturalW, naturalH, rot);
-  const fit = fitCentered(eff.w, eff.h, vw, vh);
-  const k = rotationFitScale(naturalW, naturalH, rot, vw, vh);
+  const fit = fitCentered(eff.w, eff.h, vw, vh, inset);
+  const k = rotationFitScale(naturalW, naturalH, rot, vw, vh, inset);
   const m0 = matMultiply(
     matTranslate(vw / 2, vh / 2),
     matMultiply(

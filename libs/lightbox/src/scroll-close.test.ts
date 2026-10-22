@@ -161,7 +161,7 @@ describe('滚动缩回页面原图', () => {
   it('放大并旋转多圈后从当前视图缩回，旋转角不变', () => {
     const { img, overlay } = openImage();
     overlay.querySelector<HTMLButtonElement>('[aria-label="放大"]')!.click();
-    const rotate = overlay.querySelector<HTMLButtonElement>('[aria-label="顺时针旋转 90 度"]')!;
+    const rotate = overlay.querySelector<HTMLButtonElement>('[aria-label="向右旋转"]')!;
     for (let i = 0; i < 5; i++) rotate.click();
     const start = img.style.transform;
     expect(start).toContain('rotate(450deg)');

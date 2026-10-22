@@ -198,3 +198,12 @@ export function collectImages(roots: Element[]): {
   }
   return { gallery, singles };
 }
+
+// 缩略条用的地址：沿用正文那张图已经请求过的地址（.blur-img 为 ?w=800 版本，
+// 外链为原 src），尽量命中缓存；缩略图阶段已确认损坏的节点返回空串，显示占位。
+export function thumbnailSrc(node: HTMLElement): string {
+  if (node.classList.contains('is-error')) return '';
+  const img = node instanceof HTMLImageElement ? node : node.querySelector('.blur-img-full');
+  if (!(img instanceof HTMLImageElement)) return '';
+  return img.getAttribute('src') || img.getAttribute('data-src') || '';
+}

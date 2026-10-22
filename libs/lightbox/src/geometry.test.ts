@@ -20,12 +20,23 @@ import {
   type Rect,
   SCALE_MAX,
   SCALE_MIN,
+  stepZoomLevel,
   transformFor,
   wheelZoomFactor,
   zoomAround,
 } from './geometry';
 
 describe('fitCentered', () => {
+  it('按顶栏与底栏的边距适配，不压住工具栏与缩略条', () => {
+    // 1440×900 视口，上下边距 150、左右 80：可用区 1280×600
+    const r = fitCentered(2000, 1000, 1440, 900, { x: 80, y: 150 });
+    expect(r.w).toBe(1200);
+    expect(r.h).toBe(600);
+    expect(r.y).toBe(150);
+    // 不放大小图
+    expect(fitCentered(400, 300, 1440, 900, { x: 80, y: 150 }).w).toBe(400);
+  });
+
   // 大图受 maxW=vw*0.92 / maxH=vh*0.88 约束,scale 取较小者
   it('宽图被视口宽度卡住(横向受限)', () => {
     // 2000x1000 in 1000x800: maxW=920, maxH=704
@@ -212,11 +223,28 @@ describe('缩放/旋转/平移手势数学', () => {
   });
 
   it('clampScale 钳到 [SCALE_MIN, SCALE_MAX]', () => {
-    expect(clampScale(0.5)).toBe(SCALE_MIN);
+    expect(clampScale(0.1)).toBe(SCALE_MIN);
     expect(clampScale(99)).toBe(SCALE_MAX);
     expect(clampScale(2)).toBe(2);
     expect(DOUBLE_CLICK_SCALE).toBeGreaterThan(SCALE_MIN);
     expect(DOUBLE_CLICK_SCALE).toBeLessThanOrEqual(SCALE_MAX);
+  });
+
+  it('缩放档位为 50%–300% 六档，按钮从任意倍率只走到相邻一档', () => {
+    expect([SCALE_MIN, SCALE_MAX]).toEqual([0.5, 3]);
+    expect(stepZoomLevel(1, 1)).toBe(1.5);
+    expect(stepZoomLevel(1, -1)).toBe(0.75);
+    // 捏合停在两档之间：放大到上一档、缩小到下一档
+    expect(stepZoomLevel(1.2, 1)).toBe(1.5);
+    expect(stepZoomLevel(1.2, -1)).toBe(1);
+    // 端点不再走
+    expect(stepZoomLevel(3, 1)).toBe(3);
+    expect(stepZoomLevel(0.5, -1)).toBe(0.5);
+  });
+
+  it('逆时针旋转同样累计不取模', () => {
+    expect(nextRotationDeg(0, -1)).toBe(-90);
+    expect(normDeg(nextRotationDeg(0, -1))).toBe(270);
   });
 
   it('nextRotationDeg 累计步进不取模，normDeg 归一到 [0,360)', () => {
