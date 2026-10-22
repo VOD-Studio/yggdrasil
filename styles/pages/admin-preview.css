@@ -111,6 +111,11 @@
   box-shadow: 0 0 0 1px var(--color-hairline), 0 20px 60px rgb(0 0 0 / 0.12);
 }
 
+/* 手机档文字占满画框，与前台 760px 以下一致。 */
+.post-preview[data-width="mobile"] .post-single {
+  --post-inset: 0px;
+}
+
 .post-preview[data-width="mobile"] .post-header {
   padding-top: 0;
 }

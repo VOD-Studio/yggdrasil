@@ -1,5 +1,7 @@
 @layer components {
-  /* ===== 文章页外壳：680px 正文栏，宽屏右侧留目录栏 ===== */
+  /* ===== 文章页外壳：680px 文章栏，宽屏右侧留目录栏 =====
+     文字（页眉、段落、页脚、评论）在栏内左右各缩进 --post-inset，代码块、运行器、表格
+     与封面向两侧对称外扩回满栏（见 article.css「宽块外扩」）。 */
   .post-layout {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 680px) minmax(0, 1fr);
@@ -22,9 +24,11 @@
   }
 
   .post-single {
+    --post-inset: 1.625rem;
     width: 100%;
     min-width: 0;
     margin: 0 auto;
+    padding-inline: var(--post-inset);
   }
 
   /* ---- 页眉 ---- */
@@ -192,10 +196,16 @@
   .post-skeleton-block {
     height: 11.25rem;
     margin-top: 1rem;
+    margin-inline: calc(-1 * var(--post-inset));
     border-radius: var(--radius-code);
   }
 
   @media (max-width: 760px) {
+    /* 手机文字占满栏宽，代码块另行贴到屏幕边缘（article.css / runner.css）。 */
+    .post-single {
+      --post-inset: 0px;
+    }
+
     .post-header {
       padding-top: 0;
     }

@@ -1,8 +1,8 @@
 @layer components {
   /* ===== 正文（.md-content）=====
      文章、笔记、评论、更新日志与写作指南共用。字号与间距用 em，随容器字号缩放；
-     文章正文（.post-content）把容器定为 16.5px / 1.9。段落类元素限 38em，
-     代码块、图片、表格与图表可撑满正文栏。 */
+     文章正文（.post-content）把容器定为 16.5px / 1.9。文字栏宽由文章外壳的
+     --post-inset 决定（post.css），代码块、运行器与表格对称外扩到满栏。 */
   .md-content {
     overflow-wrap: anywhere;
   }
@@ -14,8 +14,18 @@
     line-height: 1.9;
   }
 
-  .post-content > div > :is(p, ul, ol, blockquote, .footnote-definition) {
-    max-width: 38em;
+  /* ---- 宽块外扩：直属正文的代码块、运行器与表格向两侧各伸出 --post-inset ----
+     只匹配直属块，列表、引用与折叠块里的代码仍随文字缩进。手机上 --post-inset 为 0，
+     代码块与运行器改由下方媒体查询贴屏幕边缘，这里限定宽屏以免覆盖它。 */
+  @media (min-width: 761px) {
+    .post-content > div > pre,
+    .post-content > .runner {
+      margin-inline: calc(-1 * var(--post-inset, 0px));
+    }
+
+    .post-content > div > .table-wrap {
+      margin-inline: calc(-1px - var(--post-inset, 0px));
+    }
   }
 
   .md-content > div > :first-child,
@@ -569,9 +579,9 @@
     font-size: 0.75em;
   }
 
-  /* ---- 封面 ---- */
+  /* ---- 封面：与宽块同宽 ---- */
   .entry-cover {
-    margin: 0 0 2rem;
+    margin: 0 calc(-1 * var(--post-inset, 0px)) 2rem;
   }
 
   .entry-cover .blur-img {
