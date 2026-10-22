@@ -20,8 +20,13 @@ pub struct SearchPaletteHandle {
 }
 
 impl SearchPaletteHandle {
-    /// 打开面板。
+    /// 打开面板。栏目/主题过渡进行中时先跳到终态：浏览器把过渡快照画在顶层之上，
+    /// 面板会被新正文盖住；跳过只结束动画，导航与换色照常完成。
     pub fn open(mut self) {
+        #[cfg(target_arch = "wasm32")]
+        if let Some(window) = web_sys::window() {
+            crate::utils::js::invoke_optional_global(&window, "__skipViewTransition", &[]);
+        }
         self.open.set(true);
     }
 }

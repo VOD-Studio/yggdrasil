@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { RouteTransitions } from './route-transitions';
-import { beginTransition } from './view-transition-lifecycle';
+import { beginTransition, skipActiveAnimation } from './view-transition-lifecycle';
 
 function deferred() {
   let resolve!: () => void;
@@ -454,6 +454,21 @@ describe('section navigation', () => {
     await native[1].invoke();
     await finish();
     expect(document.documentElement.dataset.vtSection).toBeUndefined();
+  });
+
+  it('an overlay opened mid-animation skips it without dropping the navigation', async () => {
+    routes.push('/archives');
+    skipActiveAnimation();
+    expect(native[0].skip).toHaveBeenCalledOnce();
+    // A skipped native transition still runs its update callback.
+    await native[0].invoke();
+    expect(routes.currentRoute()).toBe('/archives');
+    expect(location.pathname).toBe('/archives');
+    await finish();
+    expect(document.documentElement.classList.contains('is-route-transitioning')).toBe(false);
+    expect(document.documentElement.dataset.vtSection).toBeUndefined();
+    skipActiveAnimation();
+    expect(native[0].skip).toHaveBeenCalledOnce();
   });
 });
 

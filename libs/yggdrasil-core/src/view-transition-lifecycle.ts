@@ -10,9 +10,19 @@ export interface TransitionOwner {
 
 interface ActiveOwner {
   cancel(nextKind: TransitionKind): void;
+  skipAnimation(): void;
 }
 
 let activeOwner: ActiveOwner | undefined;
+
+/**
+ * Jump the running native animation to its end state without cancelling its owner:
+ * the update callback and the finished cleanup still run. Overlays need this because
+ * the browser paints transition snapshots above the top layer, including modal dialogs.
+ */
+export function skipActiveAnimation(): void {
+  activeOwner?.skipAnimation();
+}
 
 /**
  * Cancel the old owner synchronously, before the next caller prepares snapshots.
@@ -47,6 +57,9 @@ export function beginTransition(kind: TransitionKind): TransitionOwner {
           // Cleanup failures must not prevent a newer owner from taking over.
         }
       }
+    },
+    skipAnimation() {
+      if (state === 'active' && transition) skip(transition);
     },
   };
   activeOwner = owner;
