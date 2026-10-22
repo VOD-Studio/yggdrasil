@@ -17,6 +17,7 @@ use export::ExportTab;
 use server_status::ServerStatusTab;
 use sql_console::SqlConsoleTab;
 
+use crate::components::admin_layout::AdminPageHead;
 use crate::components::forms::{FormSelect, FORM_SELECT_COMPACT_CLASS};
 use crate::components::ui::{button_class, ButtonSize, ButtonVariant, FilterTabs, Icon, IconName};
 
@@ -162,12 +163,7 @@ pub fn System() -> Element {
 
     rsx! {
         div { class: "admin-system",
-            div { class: "admin-page-head",
-                div {
-                    h1 { "系统" }
-                    p { "服务器与数据库状态、备份恢复、SQL 控制台与数据导出。" }
-                }
-            }
+            AdminPageHead { title: "系统", "服务器与数据库状态、备份恢复、SQL 控制台与数据导出。" }
             FilterTabs {
                 class: "sys-tabs",
                 aria_label: "系统分区",

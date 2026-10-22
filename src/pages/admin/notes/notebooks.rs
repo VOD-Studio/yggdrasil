@@ -5,6 +5,7 @@
 //! 只提交改动过的部分。样式见 styles/pages/admin-notes.css。
 use super::client_request;
 use crate::api::notes::*;
+use crate::components::admin_layout::AdminPageHead;
 use crate::components::empty_state::{EmptyState, EmptyStateAction};
 use crate::components::forms::{FormLabel, ToggleSwitch};
 use crate::components::skeletons::notes_admin_skeleton::NotebooksSkeleton;
@@ -84,12 +85,9 @@ pub fn AdminNotebooks() -> Element {
 
     rsx! {
         div { class: "admin-notebooks",
-            div { class: "admin-page-head",
-                div {
-                    h1 { "笔记本" }
-                    p { "把相关的记录放在一起，按你的思路排列。" }
-                }
-                div { class: "admin-page-actions",
+            AdminPageHead {
+                title: "笔记本",
+                actions: rsx! {
                     button {
                         class: button_class(ButtonVariant::Primary, ButtonSize::Md),
                         r#type: "button",
@@ -97,7 +95,8 @@ pub fn AdminNotebooks() -> Element {
                         Icon { name: IconName::Plus, size: 16 }
                         "新建笔记本"
                     }
-                }
+                },
+                "把相关的记录放在一起，按你的思路排列。"
             }
             match list {
                 None if matches!(books.read().as_ref(), Some(Err(_))) => rsx! {

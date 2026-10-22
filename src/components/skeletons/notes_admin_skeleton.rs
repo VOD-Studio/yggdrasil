@@ -5,7 +5,7 @@
 
 use dioxus::prelude::*;
 
-use crate::components::skeletons::atoms::SkeletonBox;
+use crate::components::skeletons::atoms::{AdminPageHeadSkeleton, SkeletonBox};
 
 /// 笔记行骨架（列表加载中使用）。
 #[component]
@@ -33,15 +33,13 @@ pub fn NoteRowsSkeleton() -> Element {
 pub fn AdminNotesSkeleton() -> Element {
     rsx! {
         div { class: "admin-notes", aria_hidden: "true",
-            div { class: "admin-page-head",
-                div {
-                    SkeletonBox { class: "h-7 w-20 rounded-md" }
-                    SkeletonBox { class: "h-3.5 w-64 rounded mt-2" }
-                }
-                div { class: "admin-page-actions",
+            AdminPageHeadSkeleton {
+                title_width: "w-20",
+                subtitle_width: "w-64",
+                actions: rsx! {
                     SkeletonBox { class: "h-[34px] w-24 rounded-lg" }
                     SkeletonBox { class: "h-[34px] w-24 rounded-lg" }
-                }
+                },
             }
             SkeletonBox { class: "h-[120px] w-full rounded-[20px]" }
             div { class: "admin-toolbar admin-notes-toolbar",
@@ -86,12 +84,12 @@ pub fn NotebooksSkeleton() -> Element {
 pub fn AdminNotebooksSkeleton() -> Element {
     rsx! {
         div { class: "admin-notebooks", aria_hidden: "true",
-            div { class: "admin-page-head",
-                div {
-                    SkeletonBox { class: "h-7 w-24 rounded-md" }
-                    SkeletonBox { class: "h-3.5 w-64 rounded mt-2" }
-                }
-                SkeletonBox { class: "h-[34px] w-28 rounded-lg" }
+            AdminPageHeadSkeleton {
+                title_width: "w-24",
+                subtitle_width: "w-64",
+                actions: rsx! {
+                    SkeletonBox { class: "h-[34px] w-28 rounded-lg" }
+                },
             }
             NotebooksSkeleton {}
         }

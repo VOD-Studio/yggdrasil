@@ -9,6 +9,7 @@
 
 use std::collections::HashSet;
 
+use crate::components::admin_layout::AdminPageHead;
 use dioxus::prelude::*;
 use dioxus::router::components::Link;
 
@@ -107,12 +108,9 @@ pub fn Posts() -> Element {
 
     rsx! {
         div { class: "admin-posts",
-            div { class: "admin-page-head",
-                div {
-                    h1 { "文章" }
-                    p { if let Some(summary) = summary { "{summary}" } else { "\u{00a0}" } }
-                }
-                div { class: "admin-page-actions",
+            AdminPageHead {
+                title: "文章",
+                actions: rsx! {
                     RebuildMenu {}
                     Link {
                         class: "{button_class(ButtonVariant::Primary, ButtonSize::Md)} admin-hide-mobile",
@@ -120,6 +118,9 @@ pub fn Posts() -> Element {
                         Icon { name: IconName::Plus, size: 16 }
                         "新建文章"
                     }
+                },
+                if let Some(summary) = summary {
+                    "{summary}"
                 }
             }
             PostsTable { on_changed: move |_| stats_version += 1 }

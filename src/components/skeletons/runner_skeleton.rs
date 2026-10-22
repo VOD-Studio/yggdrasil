@@ -4,18 +4,16 @@
 
 use dioxus::prelude::*;
 
-use crate::components::skeletons::atoms::SkeletonBox;
+use crate::components::skeletons::atoms::{AdminPageHeadSkeleton, SkeletonBox};
 
 /// 后台代码运行器骨架屏组件。
 #[component]
 pub fn RunnerSkeleton() -> Element {
     rsx! {
         div { class: "admin-runner", aria_hidden: "true",
-            div { class: "admin-page-head",
-                div {
-                    SkeletonBox { class: "h-7 w-28 rounded-md" }
-                    SkeletonBox { class: "h-3.5 w-72 rounded mt-2" }
-                }
+            AdminPageHeadSkeleton {
+                title_width: "w-28",
+                subtitle_width: "w-72",
             }
             div { class: "runner-admin-grid",
                 div {

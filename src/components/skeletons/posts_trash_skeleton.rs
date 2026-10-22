@@ -4,7 +4,7 @@
 
 use dioxus::prelude::*;
 
-use crate::components::skeletons::atoms::SkeletonBox;
+use crate::components::skeletons::atoms::{AdminPageHeadSkeleton, SkeletonBox};
 
 /// 回收站表格骨架屏（列表加载中使用）。
 #[component]
@@ -47,14 +47,12 @@ pub fn PostsTrashTableSkeleton() -> Element {
 pub fn PostsTrashSkeleton() -> Element {
     rsx! {
         div { class: "admin-trash", aria_hidden: "true",
-            div { class: "admin-page-head",
-                div {
-                    SkeletonBox { class: "h-7 w-20 rounded-md" }
-                    SkeletonBox { class: "h-3.5 w-80 max-w-full rounded mt-2" }
-                }
-                div { class: "admin-page-actions",
+            AdminPageHeadSkeleton {
+                title_width: "w-20",
+                subtitle_width: "w-80 max-w-full",
+                actions: rsx! {
                     SkeletonBox { class: "h-[34px] w-24 rounded-lg" }
-                }
+                },
             }
             PostsTrashTableSkeleton {}
         }

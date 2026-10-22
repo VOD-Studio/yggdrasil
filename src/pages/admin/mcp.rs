@@ -15,6 +15,7 @@ mod configs;
 mod token_editor;
 mod tokens;
 
+use crate::components::admin_layout::AdminPageHead;
 use dioxus::prelude::*;
 
 use crate::components::ui::{button_class, use_toast, ButtonSize, ButtonVariant, Icon, IconName};
@@ -123,12 +124,9 @@ pub fn Mcp() -> Element {
 
     rsx! {
         div { class: "admin-mcp",
-            div { class: "admin-page-head",
-                div {
-                    h1 { "MCP 接入" }
-                    p { "为 Codex、Claude Code、Cursor、Cline、Oh-My-Pi、OpenCode 等 AI 客户端签发访问令牌。" }
-                }
-                div { class: "admin-page-actions",
+            AdminPageHead {
+                title: "MCP 接入",
+                actions: rsx! {
                     button {
                         class: button_class(ButtonVariant::Primary, ButtonSize::Md),
                         r#type: "button",
@@ -136,7 +134,8 @@ pub fn Mcp() -> Element {
                         Icon { name: IconName::Plus, size: 16 }
                         "新建令牌"
                     }
-                }
+                },
+                "为 Codex、Claude Code、Cursor、Cline、Oh-My-Pi、OpenCode 等 AI 客户端签发访问令牌。"
             }
 
             section { class: "admin-panel mcp-oneline", aria_labelledby: "mcp-oneline-h",

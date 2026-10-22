@@ -4,19 +4,19 @@
 
 use dioxus::prelude::*;
 
-use crate::components::skeletons::atoms::SkeletonBox;
+use crate::components::skeletons::atoms::{AdminPageHeadSkeleton, SkeletonBox};
 
 /// 后台 MCP 接入骨架屏组件。
 #[component]
 pub fn McpSkeleton() -> Element {
     rsx! {
         div { class: "admin-mcp", aria_hidden: "true",
-            div { class: "admin-page-head",
-                div {
-                    SkeletonBox { class: "h-7 w-28 rounded-md" }
-                    SkeletonBox { class: "h-3.5 w-96 max-w-full rounded mt-2" }
-                }
-                SkeletonBox { class: "h-[34px] w-28 rounded-lg" }
+            AdminPageHeadSkeleton {
+                title_width: "w-28",
+                subtitle_width: "w-96 max-w-full",
+                actions: rsx! {
+                    SkeletonBox { class: "h-[34px] w-28 rounded-lg" }
+                },
             }
             div { class: "admin-panel mcp-oneline",
                 SkeletonBox { class: "h-4 w-24 rounded" }

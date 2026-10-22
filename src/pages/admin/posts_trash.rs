@@ -8,6 +8,7 @@
 
 use std::collections::HashSet;
 
+use crate::components::admin_layout::AdminPageHead;
 use dioxus::prelude::*;
 use dioxus::router::components::Link;
 
@@ -240,32 +241,27 @@ pub fn PostsTrash() -> Element {
 
     rsx! {
         div { class: "admin-trash",
-            div { class: "admin-page-head",
-                div {
-                    h1 { "回收站" }
-                    p {
-                        if let Some(days) = retention {
-                            "已删除的文章保留 {days} 天，"
-                        }
-                        "{retention_note(cfg.as_ref())}"
-                        if cfg.is_some() {
-                            Link { class: "admin-trash-settings", to: Route::SiteSettingsPage {},
-                                "可在设置中修改"
+            AdminPageHead {
+                title: "回收站",
+                actions: (total() > 0)
+                    .then(|| {
+                        rsx! {
+                            button {
+                                class: "{button_class(ButtonVariant::Outline, ButtonSize::Md)} admin-trash-empty",
+                                r#type: "button",
+                                disabled: batch_busy(),
+                                onclick: move |_| ask_purge(PurgeTarget::All(total())),
+                                "清空回收站"
                             }
-                            "。"
                         }
-                    }
+                    }),
+                if let Some(days) = retention {
+                    "已删除的文章保留 {days} 天，"
                 }
-                if total() > 0 {
-                    div { class: "admin-page-actions",
-                        button {
-                            class: "{button_class(ButtonVariant::Outline, ButtonSize::Md)} admin-trash-empty",
-                            r#type: "button",
-                            disabled: batch_busy(),
-                            onclick: move |_| ask_purge(PurgeTarget::All(total())),
-                            "清空回收站"
-                        }
-                    }
+                "{retention_note(cfg.as_ref())}"
+                if cfg.is_some() {
+                    Link { class: "admin-trash-settings", to: Route::SiteSettingsPage {}, "可在设置中修改" }
+                    "。"
                 }
             }
 

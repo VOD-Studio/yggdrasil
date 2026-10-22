@@ -5,22 +5,21 @@
 
 use dioxus::prelude::*;
 
-use crate::components::skeletons::atoms::SkeletonBox;
+use crate::components::skeletons::atoms::{AdminPageHeadSkeleton, SkeletonBox};
 
 /// 后台运行日志页骨架屏组件。
 #[component]
 pub fn LogsSkeleton() -> Element {
     rsx! {
         div { class: "logs-page", aria_hidden: "true",
-            div { class: "admin-page-head logs-head",
-                div {
-                    SkeletonBox { class: "h-7 w-28 rounded-md" }
-                    SkeletonBox { class: "h-3.5 w-64 rounded mt-2" }
-                }
-                div { class: "admin-page-actions",
+            AdminPageHeadSkeleton {
+                title_width: "w-28",
+                subtitle_width: "w-64",
+                class: "logs-head",
+                actions: rsx! {
                     SkeletonBox { class: "h-[34px] w-24 rounded-lg" }
                     SkeletonBox { class: "h-[34px] w-24 rounded-lg" }
-                }
+                },
             }
             div { class: "logs-filters",
                 SkeletonBox { class: "h-[30px] w-72 rounded-lg" }

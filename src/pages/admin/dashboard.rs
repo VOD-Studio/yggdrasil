@@ -5,6 +5,7 @@
 //! 重试」，不回退成 0。数据仅在 WASM 前端通过 server function 加载。样式见
 //! styles/pages/admin-dashboard.css。
 
+use crate::components::admin_layout::AdminPageHead;
 use dioxus::prelude::*;
 use dioxus::router::components::Link;
 
@@ -206,19 +207,17 @@ pub fn Admin() -> Element {
 
     rsx! {
         div { class: "admin-dash",
-            div { class: "admin-page-head",
-                div {
-                    h1 { "{greeting(chrono::Timelike::hour(&now))}，{name}" }
-                    p { "{summary}" }
-                }
-                div { class: "admin-page-actions",
+            AdminPageHead {
+                title: "{greeting(chrono::Timelike::hour(&now))}，{name}",
+                actions: rsx! {
                     Link { class: button_class(ButtonVariant::Primary, ButtonSize::Md), to: Route::Write {},
                         Icon { name: IconName::Plus, size: 16 }
                         "写文章"
                     }
                     Link { class: button_class(ButtonVariant::Secondary, ButtonSize::Md), to: Route::NewNote {}, "快速记录" }
                     Link { class: button_class(ButtonVariant::Secondary, ButtonSize::Md), to: Route::Assets {}, "上传素材" }
-                }
+                },
+                "{summary}"
             }
 
             StatTiles { stats: stats_now.clone(), counts: counts(), tags: tags(), on_retry: retry }

@@ -4,18 +4,16 @@
 
 use dioxus::prelude::*;
 
-use crate::components::skeletons::atoms::SkeletonBox;
+use crate::components::skeletons::atoms::{AdminPageHeadSkeleton, SkeletonBox};
 
 /// 后台系统骨架屏组件。
 #[component]
 pub fn SystemSkeleton() -> Element {
     rsx! {
         div { class: "admin-system", aria_hidden: "true",
-            div { class: "admin-page-head",
-                div {
-                    SkeletonBox { class: "h-7 w-16 rounded-md" }
-                    SkeletonBox { class: "h-3.5 w-80 rounded mt-2" }
-                }
+            AdminPageHeadSkeleton {
+                title_width: "w-16",
+                subtitle_width: "w-80",
             }
             SkeletonBox { class: "h-8 w-96 max-w-full rounded-full sys-tabs" }
             div { class: "sys-metrics",

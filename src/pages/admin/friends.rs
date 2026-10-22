@@ -5,6 +5,7 @@
 //! 编辑时可删除（确认对话框，物理删除）。写操作成功后服务端失效友链缓存与 `/friends`
 //! SSR 缓存。数据只在 WASM 前端读取。样式见 styles/pages/admin-friends.css。
 
+use crate::components::admin_layout::AdminPageHead;
 use dioxus::prelude::*;
 
 use crate::components::assets::{AssetPickerModal, AssetSelection};
@@ -136,12 +137,9 @@ pub fn FriendsAdmin() -> Element {
 
     rsx! {
         div { class: "admin-friends",
-            div { class: "admin-page-head",
-                div {
-                    h1 { "友链" }
-                    p { "维护前台 /friends 展示的友链。拖动把手，或在把手上按 ↑ / ↓ 调整顺序。" }
-                }
-                div { class: "admin-page-actions",
+            AdminPageHead {
+                title: "友链",
+                actions: rsx! {
                     a {
                         class: button_class(ButtonVariant::Ghost, ButtonSize::Md),
                         href: "/friends",
@@ -150,7 +148,8 @@ pub fn FriendsAdmin() -> Element {
                         "查看前台页面"
                         Icon { name: IconName::ArrowUpRight, size: 14 }
                     }
-                }
+                },
+                "维护前台 /friends 展示的友链。拖动把手，或在把手上按 ↑ / ↓ 调整顺序。"
             }
             div { class: "admin-friends-grid",
                 div { class: "admin-friends-list-col",

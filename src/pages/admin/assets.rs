@@ -7,6 +7,7 @@
 //! 缩略图走 `serve_image` 的动态缩放（`?thumb=300x300`）。样式见
 //! styles/pages/admin-assets.css。
 
+use crate::components::admin_layout::AdminPageHead;
 use dioxus::prelude::*;
 use std::collections::HashSet;
 
@@ -247,12 +248,9 @@ pub fn Assets() -> Element {
         crate::components::enhance_assets::LightboxAssets {}
         div { class: "admin-assets", "data-detail": detail.is_some().then_some("true"),
             div { class: "admin-assets-main",
-                div { class: "admin-page-head",
-                    div {
-                        h1 { "素材" }
-                        p { if let Some(summary) = summary { "{summary}" } else { "\u{00a0}" } }
-                    }
-                    div { class: "admin-page-actions",
+                AdminPageHead {
+                    title: "素材",
+                    actions: rsx! {
                         Menu {
                             label: if busy() { "处理中…" } else { "更多操作" },
                             size: ButtonSize::Md,
@@ -270,6 +268,9 @@ pub fn Assets() -> Element {
                             Icon { name: IconName::Upload, size: 15 }
                             "上传"
                         }
+                    },
+                    if let Some(summary) = summary {
+                        "{summary}"
                     }
                 }
 

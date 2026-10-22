@@ -4,7 +4,7 @@
 
 use dioxus::prelude::*;
 
-use crate::components::skeletons::atoms::SkeletonBox;
+use crate::components::skeletons::atoms::{AdminPageHeadSkeleton, SkeletonBox};
 
 /// 评论流骨架（列表加载中使用）。
 #[component]
@@ -31,11 +31,9 @@ pub fn AdminCommentsListSkeleton() -> Element {
 pub fn AdminCommentsSkeleton() -> Element {
     rsx! {
         div { class: "admin-comments", aria_hidden: "true",
-            div { class: "admin-page-head",
-                div {
-                    SkeletonBox { class: "h-7 w-20 rounded-md" }
-                    SkeletonBox { class: "h-3.5 w-28 rounded mt-2" }
-                }
+            AdminPageHeadSkeleton {
+                title_width: "w-20",
+                subtitle_width: "w-28",
             }
             div { class: "admin-toolbar",
                 SkeletonBox { class: "h-8 w-80 rounded-full" }

@@ -4,7 +4,7 @@
 
 use dioxus::prelude::*;
 
-use crate::components::skeletons::atoms::SkeletonBox;
+use crate::components::skeletons::atoms::{AdminPageHeadSkeleton, SkeletonBox};
 
 /// 友链列表骨架（列表加载中使用）。
 #[component]
@@ -31,12 +31,12 @@ pub fn FriendsAdminListSkeleton() -> Element {
 pub fn FriendsAdminSkeleton() -> Element {
     rsx! {
         div { class: "admin-friends", aria_hidden: "true",
-            div { class: "admin-page-head",
-                div {
-                    SkeletonBox { class: "h-7 w-16 rounded-md" }
-                    SkeletonBox { class: "h-3.5 w-80 rounded mt-2" }
-                }
-                SkeletonBox { class: "h-[34px] w-28 rounded-lg" }
+            AdminPageHeadSkeleton {
+                title_width: "w-16",
+                subtitle_width: "w-80",
+                actions: rsx! {
+                    SkeletonBox { class: "h-[34px] w-28 rounded-lg" }
+                },
             }
             div { class: "admin-friends-grid",
                 div { class: "admin-friends-list-col", FriendsAdminListSkeleton {} }

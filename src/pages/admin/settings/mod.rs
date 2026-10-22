@@ -24,6 +24,7 @@ mod system_section;
 mod trash_section;
 mod upload_section;
 
+use crate::components::admin_layout::AdminPageHead;
 use dioxus::prelude::*;
 
 use backup_section::BackupSection;
@@ -319,15 +320,10 @@ pub fn SiteSettingsPage() -> Element {
                     }
                 }
                 div { class: "settings-main",
-                    div { class: "admin-page-head",
-                        div {
-                            h1 { "设置" }
-                            p {
-                                "大部分设置保存后立即生效；带 "
-                                span { class: "settings-restart-dot", aria_label: "需重启标记" }
-                                " 的分区需要重启服务。"
-                            }
-                        }
+                    AdminPageHead { title: "设置",
+                        "大部分设置保存后立即生效；带 "
+                        span { class: "settings-restart-dot", aria_label: "需重启标记" }
+                        " 的分区需要重启服务。"
                     }
                     for section in SettingsSection::all() {
                         div { key: "{section.as_str()}", class: "settings-slot",

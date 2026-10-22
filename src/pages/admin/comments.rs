@@ -6,6 +6,7 @@
 //! 以管理员身份直接发表。勾选后底部浮起批量操作条。默认打开待审，没有待审时打开
 //! 已通过。数据仅在 WASM 前端读取。样式见 styles/pages/admin-comments.css。
 
+use crate::components::admin_layout::AdminPageHead;
 use std::collections::HashSet;
 
 use dioxus::prelude::*;
@@ -181,16 +182,9 @@ pub fn AdminCommentsPage(page: i32) -> Element {
 
     rsx! {
         div { class: "admin-comments",
-            div { class: "admin-page-head",
-                div {
-                    h1 { "评论" }
-                    p {
-                        if resp.is_some() {
-                            "{all_count} 条 · 待审 {counts.pending}"
-                        } else {
-                            "\u{00a0}"
-                        }
-                    }
+            AdminPageHead { title: "评论",
+                if resp.is_some() {
+                    "{all_count} 条 · 待审 {counts.pending}"
                 }
             }
             div { class: "admin-toolbar",

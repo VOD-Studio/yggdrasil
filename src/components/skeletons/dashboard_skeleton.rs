@@ -5,18 +5,16 @@
 
 use dioxus::prelude::*;
 
-use crate::components::skeletons::atoms::SkeletonBox;
+use crate::components::skeletons::atoms::{AdminPageHeadSkeleton, SkeletonBox};
 
 /// 仪表盘内容区骨架屏组件。
 #[component]
 pub fn AdminDashboardSkeleton() -> Element {
     rsx! {
         div { class: "admin-dash", aria_hidden: "true",
-            div { class: "admin-page-head",
-                div {
-                    SkeletonBox { class: "h-7 w-44 rounded-md" }
-                    SkeletonBox { class: "h-3.5 w-56 rounded mt-2" }
-                }
+            AdminPageHeadSkeleton {
+                title_width: "w-44",
+                subtitle_width: "w-56",
             }
             div { class: "dash-tiles",
                 for i in 0..4 {

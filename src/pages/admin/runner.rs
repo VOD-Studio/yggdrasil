@@ -7,6 +7,7 @@
 //! 左侧为语言分段与运行器，右侧为资源上限与临时覆盖。样式见
 //! styles/pages/admin-runner.css。
 
+use crate::components::admin_layout::AdminPageHead;
 use dioxus::prelude::*;
 
 use crate::components::code_runner::CodeRunner;
@@ -66,12 +67,12 @@ pub fn Runner() -> Element {
 
     rsx! {
         div { class: "admin-runner",
-            div { class: "admin-page-head",
-                div {
-                    h1 { "代码运行器" }
-                    p { "在沙箱里试运行代码，确认文章里可运行代码块的预期输出。" }
-                }
-                StatusDot { label: "Docker 沙箱", tone: "success" }
+            AdminPageHead {
+                title: "代码运行器",
+                actions: rsx! {
+                    StatusDot { label: "Docker 沙箱", tone: "success" }
+                },
+                "在沙箱里试运行代码，确认文章里可运行代码块的预期输出。"
             }
             div { class: "runner-admin-grid",
                 section { class: "runner-admin-main", aria_label: "编辑与输出",

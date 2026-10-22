@@ -6,6 +6,7 @@
 //! 响应里的 `PublicUser` 刷新 `UserContext`，侧栏即时更新。密码强度条只在浏览器端
 //! 提示，不改变服务端校验。样式见 styles/pages/admin-profile.css。
 
+use crate::components::admin_layout::AdminPageHead;
 use dioxus::prelude::*;
 
 use crate::components::assets::{AssetPickerModal, AssetSelection};
@@ -74,12 +75,7 @@ pub fn Profile() -> Element {
 
     rsx! {
         div { class: "admin-profile",
-            div { class: "admin-page-head",
-                div {
-                    h1 { "个人资料" }
-                    p { "当前登录账号的展示资料与登录密码。" }
-                }
-            }
+            AdminPageHead { title: "个人资料", "当前登录账号的展示资料与登录密码。" }
             if env_admin() {
                 p { class: "admin-profile-note", role: "note",
                     Icon { name: IconName::TriangleAlert, size: 16 }

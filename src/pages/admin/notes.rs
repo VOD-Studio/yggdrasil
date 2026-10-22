@@ -7,6 +7,7 @@
 //! 鉴权后读取。样式见 styles/pages/admin-notes.css。
 mod notebooks;
 
+use crate::components::admin_layout::AdminPageHead;
 use chrono::{DateTime, Datelike, FixedOffset};
 use dioxus::prelude::*;
 
@@ -155,12 +156,9 @@ pub fn AdminNotes() -> Element {
 
     rsx! {
         div { class: "admin-notes",
-            div { class: "admin-page-head",
-                div {
-                    h1 { "笔记" }
-                    p { "捕捉此刻的想法，也为长久的知识留一个位置。" }
-                }
-                div { class: "admin-page-actions",
+            AdminPageHead {
+                title: "笔记",
+                actions: rsx! {
                     Link {
                         class: button_class(ButtonVariant::Ghost, ButtonSize::Md),
                         to: Route::AdminNotebooks {},
@@ -172,7 +170,8 @@ pub fn AdminNotes() -> Element {
                         Icon { name: IconName::Plus, size: 16 }
                         "写笔记"
                     }
-                }
+                },
+                "捕捉此刻的想法，也为长久的知识留一个位置。"
             }
 
             QuickNote { on_saved: move |_| response.restart() }

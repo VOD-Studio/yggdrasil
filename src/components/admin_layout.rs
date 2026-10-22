@@ -484,6 +484,33 @@ pub(crate) struct AdminActions {
     pub logout: Callback<()>,
 }
 
+/// 后台页面标题行：左侧 h1 与副标题，右侧可选操作区。样式见 admin.css `.admin-page-head`。
+///
+/// - `title`：页面标题（手机宽度隐藏，顶栏已显示）
+/// - `class`：附加类，如日志页的 `logs-head`
+/// - `actions`：右侧内容，统一包进 `.admin-page-actions`
+/// - `children`：副标题内容；为空时 `p` 由 CSS `min-height: 1lh` 保留一行高度
+#[component]
+pub(crate) fn AdminPageHead(
+    title: String,
+    #[props(default)] class: Option<&'static str>,
+    #[props(default)] actions: Option<Element>,
+    children: Element,
+) -> Element {
+    let extra = class.unwrap_or_default();
+    rsx! {
+        div { class: "admin-page-head {extra}",
+            div {
+                h1 { "{title}" }
+                p { {children} }
+            }
+            if let Some(actions) = actions {
+                div { class: "admin-page-actions", {actions} }
+            }
+        }
+    }
+}
+
 /// 后台外壳：侧栏、顶栏与主画布。认证和路由留在 AdminLayout。
 #[component]
 pub(crate) fn AdminShell(

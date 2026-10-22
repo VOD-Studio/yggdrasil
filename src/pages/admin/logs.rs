@@ -7,6 +7,7 @@
 //!
 //! 页面在主内容区内部滚动：标题行与筛选栏固定，日志区占满剩余高度。导出按当前筛选
 //! 下载 .log 文件；清理策略在「⋯」展开的面板里。样式见 styles/pages/admin-logs.css。
+use crate::components::admin_layout::AdminPageHead;
 use dioxus::prelude::*;
 
 use crate::components::forms::{FormSelect, ToggleSwitch, FORM_SELECT_COMPACT_CLASS};
@@ -74,17 +75,10 @@ pub fn Logs() -> Element {
 
     rsx! {
         div { class: "logs-page",
-            div { class: "admin-page-head logs-head",
-                div {
-                    h1 { "运行日志" }
-                    p {
-                        "进程内结构化日志，历史查询加实时流。"
-                        if dropped() > 0 {
-                            "启动以来丢弃 {dropped()} 条。"
-                        }
-                    }
-                }
-                div { class: "admin-page-actions",
+            AdminPageHead {
+                title: "运行日志",
+                class: "logs-head",
+                actions: rsx! {
                     span { class: "logs-live", "data-on": connected().then_some("true"), role: "status",
                         span { class: "logs-live-dot", aria_hidden: "true" }
                         if connected() { "已连接" } else { "未连接" }
@@ -105,6 +99,10 @@ pub fn Logs() -> Element {
                         Icon { name: IconName::Download, size: 15 }
                         if exporting() { "导出中…" } else { "导出日志" }
                     }
+                },
+                "进程内结构化日志，历史查询加实时流。"
+                if dropped() > 0 {
+                    "启动以来丢弃 {dropped()} 条。"
                 }
             }
             if cleanup_open() {
