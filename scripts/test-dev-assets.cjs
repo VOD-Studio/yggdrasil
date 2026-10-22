@@ -9,15 +9,12 @@ const { spawnSync } = require('node:child_process');
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'yggdrasil-dev-assets-test-'));
 const packages = ['shared', 'codemirror-editor', 'lightbox', 'mermaid-renderer',
   'tiptap-editor', 'xterm-terminal', 'yggdrasil-core'];
-const outputs = {
-  'codemirror-editor': ['codemirror/editor.js', 'codemirror/editor.js.map'],
-  lightbox: ['lightbox/lightbox.js', 'lightbox/lightbox.js.map', 'lightbox/lightbox.css'],
-  'mermaid-renderer': ['mermaid/mermaid.js', 'mermaid/mermaid.js.map'],
-  'tiptap-editor': ['tiptap/editor.js', 'tiptap/editor.js.map', 'tiptap/editor.css'],
-  'xterm-terminal': ['xterm/terminal.js', 'xterm/terminal.js.map', 'xterm/terminal.css'],
-  'yggdrasil-core': ['yggdrasil-core/yggdrasil-core.js', 'yggdrasil-core/yggdrasil-core.js.map',
-    'yggdrasil-core/yggdrasil-core.css'],
-};
+// Mock builds write exactly the outputs Make checks, so new outputs cannot drift from mk/assets.mk.
+const outputs = Object.fromEntries([...fs.readFileSync(path.join(__dirname, '../mk/assets.mk'), 'utf8')
+  .matchAll(/^DEV_OUTPUTS_(\S+) := (.+)$/gm)].map(([, name, files]) => [name, files.trim().split(/\s+/)]));
+for (const name of packages.filter(name => name !== 'shared')) {
+  assert.ok(outputs[name]?.length, `mk/assets.mk has no DEV_OUTPUTS_${name}`);
+}
 function write(file, content = '') {
   const target = path.join(root, file);
   fs.mkdirSync(path.dirname(target), { recursive: true });
@@ -75,7 +72,7 @@ if (command === 'bun' && args[0] === 'install') {
   const name = path.basename(process.cwd());
   record('build ' + name);
   if (fs.existsSync(path.join(root, 'fail-' + name))) process.exit(1);
-  for (const file of outputs[name] || []) write('public/' + file);
+  for (const file of outputs[name] || []) write(file);
 } else if (command === 'cargo') {
   record('highlight'); write('public/highlight.css');
 } else if (command === 'tailwindcss') {
