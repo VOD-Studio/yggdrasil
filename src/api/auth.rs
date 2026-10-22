@@ -27,7 +27,8 @@ use crate::models::user::{SessionUser, UserRole};
 
 #[cfg(feature = "server")]
 fn validate_username(username: &str) -> Result<(), String> {
-    if username.len() < 3 || username.len() > 50 {
+    let len = username.chars().count();
+    if !(3..=50).contains(&len) {
         return Err("用户名长度必须在 3-50 字符之间".to_string());
     }
     if !username.chars().all(|c| c.is_alphanumeric() || c == '_') {
@@ -714,6 +715,16 @@ mod tests {
     #[test]
     fn validate_username_unicode() {
         assert!(validate_username("用户名").is_ok());
+    }
+
+    #[test]
+    fn validate_username_counts_chinese_chars_not_bytes() {
+        // 20 个汉字 = 60 字节，按字符计在 50 以内应通过。
+        assert!(validate_username(&"汉".repeat(20)).is_ok());
+        assert!(validate_username(&"汉".repeat(50)).is_ok());
+        assert!(validate_username(&"汉".repeat(51)).is_err());
+        // 2 个汉字 = 6 字节，按字符计不足 3 应拒绝。
+        assert!(validate_username("汉字").is_err());
     }
 
     #[test]

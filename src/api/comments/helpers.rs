@@ -145,7 +145,7 @@ pub fn validate_comment_name(name: &str) -> Result<(), String> {
     if trimmed.is_empty() {
         return Err("请输入昵称".to_string());
     }
-    if trimmed.len() > 50 {
+    if trimmed.chars().count() > 50 {
         return Err("昵称长度不能超过 50 个字符".to_string());
     }
     Ok(())
@@ -191,7 +191,7 @@ pub fn validate_comment_content(content: &str) -> Result<(), String> {
     if trimmed.is_empty() {
         return Err("请输入评论内容".to_string());
     }
-    if trimmed.len() > 10000 {
+    if trimmed.chars().count() > 10000 {
         return Err("评论内容不能超过 10000 个字符".to_string());
     }
     Ok(())
@@ -379,6 +379,14 @@ mod tests {
     }
 
     #[test]
+    fn validate_comment_name_counts_chinese_chars_not_bytes() {
+        // 20 个汉字 = 60 字节，按字符计应通过；51 个汉字超过 50 字符应拒绝。
+        assert!(validate_comment_name(&"昵".repeat(20)).is_ok());
+        assert!(validate_comment_name(&"昵".repeat(50)).is_ok());
+        assert!(validate_comment_name(&"昵".repeat(51)).is_err());
+    }
+
+    #[test]
     fn validate_comment_email_valid() {
         assert!(validate_comment_email("user@example.com").is_ok());
         assert!(validate_comment_email("a.b+c@domain.co").is_ok());
@@ -447,6 +455,13 @@ mod tests {
     #[test]
     fn validate_comment_content_too_long() {
         assert!(validate_comment_content(&"a".repeat(10001)).is_err());
+    }
+
+    #[test]
+    fn validate_comment_content_counts_chars_not_bytes() {
+        // 10000 个汉字 = 30000 字节，按字符计恰好在上限内。
+        assert!(validate_comment_content(&"评".repeat(10000)).is_ok());
+        assert!(validate_comment_content(&"评".repeat(10001)).is_err());
     }
 
     #[test]
