@@ -7,7 +7,7 @@
 #![allow(clippy::unused_unit, deprecated)]
 
 #[cfg(feature = "server")]
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 #[cfg(feature = "server")]
 use std::sync::LazyLock;
@@ -150,7 +150,7 @@ static COMMENT_ALLOWED_TAGS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| 
 #[cfg(feature = "server")]
 /// 判断 data URI 是否属于安全图片类型。
 ///
-/// D7：生产死代码——两处 SanitizerConfig（clean_html / clean_comment_html）均硬编码
+/// D7：生产死代码——两套策略（ARTICLE_CONFIG / COMMENT_CONFIG）经 `SanitizerConfig::with_attrs` 均硬编码
 /// `allow_data_uri: false`，本函数在请求路径上不可达（is_safe_url 提前短路）。
 /// 保留作为防御纵深：测试锁定\"即便 flag=true 也只放行图片类型、拒绝 data:text/html\"
 /// 的安全不变量。若未来需要内联 data URI，flag + 本函数已就绪。
@@ -212,11 +212,53 @@ fn is_safe_url(url: &str, allowed_schemes: &HashSet<&str>, allow_data_uri: bool)
 }
 
 #[cfg(feature = "server")]
+type TagAttrs = HashMap<&'static str, HashSet<&'static str>>;
+
+#[cfg(feature = "server")]
+/// 所有策略共用的 tag→attrs 基表；各策略的 `extra_tag_attrs` 在其上合并。
+static BASE_TAG_ATTRS: LazyLock<TagAttrs> = LazyLock::new(|| {
+    let base: [(&'static str, &[&'static str]); 18] = [
+        ("a", &["href", "hreflang"]),
+        ("bdo", &["dir"]),
+        ("blockquote", &["cite"]),
+        ("col", &["align", "char", "charoff", "span"]),
+        ("colgroup", &["align", "char", "charoff", "span"]),
+        ("del", &["cite", "datetime"]),
+        ("hr", &["align", "size", "width"]),
+        ("img", &["align", "alt", "height", "src", "width"]),
+        ("ins", &["cite", "datetime"]),
+        ("ol", &["start"]),
+        ("q", &["cite"]),
+        ("table", &["align", "char", "charoff", "summary"]),
+        ("tbody", &["align", "char", "charoff"]),
+        (
+            "td",
+            &["align", "char", "charoff", "colspan", "headers", "rowspan"],
+        ),
+        ("tfoot", &["align", "char", "charoff"]),
+        (
+            "th",
+            &[
+                "align", "char", "charoff", "colspan", "headers", "rowspan", "scope",
+            ],
+        ),
+        ("thead", &["align", "char", "charoff"]),
+        ("tr", &["align", "char", "charoff"]),
+    ];
+    base.into_iter()
+        .map(|(tag, attrs)| (tag, attrs.iter().copied().collect()))
+        .collect()
+});
+
+#[cfg(feature = "server")]
 /// HTML 消毒配置：白名单 tag/attribute、允许 URL scheme 与链接 rel。
+///
+/// 属性表在构造时与基表合并一次，配合下方 `static` 策略实例，
+/// 热路径上的 `sanitize()` 不再逐次重建集合。
 struct SanitizerConfig {
     allowed_tags: &'static HashSet<&'static str>,
-    extra_generic_attrs: Vec<&'static str>,
-    extra_tag_attrs: Vec<(&'static str, Vec<&'static str>)>,
+    generic_attrs: HashSet<&'static str>,
+    tag_attrs: TagAttrs,
     allowed_schemes: &'static HashSet<&'static str>,
     allow_data_uri: bool,
     link_rel: Option<&'static str>,
@@ -224,55 +266,44 @@ struct SanitizerConfig {
 }
 
 #[cfg(feature = "server")]
+impl SanitizerConfig {
+    /// 合并通用属性（固定含 `lang`、`title`）与 tag 专属属性到基表。
+    fn with_attrs(
+        allowed_tags: &'static HashSet<&'static str>,
+        extra_generic_attrs: &[&'static str],
+        extra_tag_attrs: &[(&'static str, &[&'static str])],
+        link_rel: &'static str,
+    ) -> Self {
+        let generic_attrs = extra_generic_attrs
+            .iter()
+            .copied()
+            .chain(["lang", "title"])
+            .collect();
+        let mut tag_attrs = BASE_TAG_ATTRS.clone();
+        for (tag, attrs) in extra_tag_attrs {
+            tag_attrs
+                .entry(*tag)
+                .or_default()
+                .extend(attrs.iter().copied());
+        }
+        Self {
+            allowed_tags,
+            generic_attrs,
+            tag_attrs,
+            allowed_schemes: &DEFAULT_ALLOWED_SCHEMES,
+            allow_data_uri: false,
+            link_rel: Some(link_rel),
+            remove_tags: &CLEAN_CONTENT_TAGS,
+        }
+    }
+}
+
+#[cfg(feature = "server")]
 fn sanitize(input: &str, config: &SanitizerConfig) -> String {
     let allowed_tags = config.allowed_tags;
     let remove_tags = config.remove_tags;
-    let generic_attrs: HashSet<&str> = config
-        .extra_generic_attrs
-        .iter()
-        .copied()
-        .chain(["lang", "title"])
-        .collect();
-    let tag_attrs_map: std::collections::HashMap<&str, HashSet<&str>> = {
-        let mut m = std::collections::HashMap::new();
-        let base = [
-            ("a", vec!["href", "hreflang"]),
-            ("bdo", vec!["dir"]),
-            ("blockquote", vec!["cite"]),
-            ("col", vec!["align", "char", "charoff", "span"]),
-            ("colgroup", vec!["align", "char", "charoff", "span"]),
-            ("del", vec!["cite", "datetime"]),
-            ("hr", vec!["align", "size", "width"]),
-            ("img", vec!["align", "alt", "height", "src", "width"]),
-            ("ins", vec!["cite", "datetime"]),
-            ("ol", vec!["start"]),
-            ("q", vec!["cite"]),
-            ("table", vec!["align", "char", "charoff", "summary"]),
-            ("tbody", vec!["align", "char", "charoff"]),
-            (
-                "td",
-                vec!["align", "char", "charoff", "colspan", "headers", "rowspan"],
-            ),
-            ("tfoot", vec!["align", "char", "charoff"]),
-            (
-                "th",
-                vec![
-                    "align", "char", "charoff", "colspan", "headers", "rowspan", "scope",
-                ],
-            ),
-            ("thead", vec!["align", "char", "charoff"]),
-            ("tr", vec!["align", "char", "charoff"]),
-        ];
-        for (tag, attrs) in &base {
-            m.insert(*tag, attrs.iter().copied().collect());
-        }
-        for (tag, attrs) in &config.extra_tag_attrs {
-            m.entry(tag)
-                .or_insert_with(HashSet::new)
-                .extend(attrs.iter().copied());
-        }
-        m
-    };
+    let generic_attrs = &config.generic_attrs;
+    let tag_attrs_map = &config.tag_attrs;
     let allowed_schemes = config.allowed_schemes;
     let allow_data_uri = config.allow_data_uri;
     let link_rel = config.link_rel;
@@ -368,11 +399,11 @@ fn sanitize(input: &str, config: &SanitizerConfig) -> String {
 }
 
 #[cfg(feature = "server")]
-/// 文章正文 HTML 清理：允许较完整的标签与 data URI，外链添加 `noopener noreferrer`。
-pub fn clean_html(input: &str) -> String {
-    let config = SanitizerConfig {
-        allowed_tags: &DEFAULT_ALLOWED_TAGS,
-        extra_generic_attrs: vec![
+/// 文章正文策略：允许较完整的标签，外链添加 `noopener noreferrer`。
+static ARTICLE_CONFIG: LazyLock<SanitizerConfig> = LazyLock::new(|| {
+    SanitizerConfig::with_attrs(
+        &DEFAULT_ALLOWED_TAGS,
+        &[
             "class",
             "aria-hidden",
             "aria-label",
@@ -382,27 +413,27 @@ pub fn clean_html(input: &str) -> String {
             "accesskey",
             "title",
         ],
-        extra_tag_attrs: vec![
-            ("a", vec!["class", "aria-hidden", "aria-label"]),
-            ("img", vec!["data-src", "class", "style"]),
+        &[
+            ("a", &["class", "aria-hidden", "aria-label"]),
+            ("img", &["data-src", "class", "style"]),
             // input 仅放行 checkbox 必备属性;type 的具体取值由 element_handler 强校验为 checkbox。
-            ("input", vec!["type", "checked", "disabled"]),
+            ("input", &["type", "checked", "disabled"]),
             // pre 上的可运行代码块标记：data-runnable / data-lang / data-overrides / data-source。
             // data-overrides / data-source 是 markdown 渲染时 HTML 转义后的内容（见 markdown.rs），不含未转义引号。
             (
                 "pre",
-                vec![
+                &[
                     "data-runnable",
                     "data-lang",
                     "data-overrides",
                     "data-source",
                 ],
             ),
-            ("span", vec!["class", "style"]),
+            ("span", &["class", "style"]),
             // KaTeX 数学公式 SSR 渲染生成的 SVG 矢量图 (根号 / 矩阵竖线 / 括号 / 箭头等) 必备属性
             (
                 "svg",
-                vec![
+                &[
                     "xmlns",
                     "width",
                     "height",
@@ -411,28 +442,24 @@ pub fn clean_html(input: &str) -> String {
                     "style",
                 ],
             ),
-            ("path", vec!["d"]),
-            ("h1", vec!["id", "class"]),
-            ("h2", vec!["id", "class"]),
-            ("h3", vec!["id", "class"]),
-            ("h4", vec!["id", "class"]),
-            ("h5", vec!["id", "class"]),
-            ("h6", vec!["id", "class"]),
+            ("path", &["d"]),
+            ("h1", &["id", "class"]),
+            ("h2", &["id", "class"]),
+            ("h3", &["id", "class"]),
+            ("h4", &["id", "class"]),
+            ("h5", &["id", "class"]),
+            ("h6", &["id", "class"]),
         ],
-        allowed_schemes: &DEFAULT_ALLOWED_SCHEMES,
-        allow_data_uri: false,
-        link_rel: Some("noopener noreferrer"),
-        remove_tags: &CLEAN_CONTENT_TAGS,
-    };
-    sanitize(input, &config)
-}
+        "noopener noreferrer",
+    )
+});
 
 #[cfg(feature = "server")]
-/// 评论 HTML 清理：移除折叠块，保留图片（src 受 URL 安全校验），禁用 data URI，外链添加 `nofollow noopener`。
-pub fn clean_comment_html(input: &str) -> String {
-    let config = SanitizerConfig {
-        allowed_tags: &COMMENT_ALLOWED_TAGS,
-        extra_generic_attrs: vec![
+/// 评论策略：移除折叠块，保留图片（src 受 URL 安全校验），外链添加 `nofollow noopener`。
+static COMMENT_CONFIG: LazyLock<SanitizerConfig> = LazyLock::new(|| {
+    SanitizerConfig::with_attrs(
+        &COMMENT_ALLOWED_TAGS,
+        &[
             "class",
             "title",
             "aria-hidden",
@@ -440,15 +467,15 @@ pub fn clean_comment_html(input: &str) -> String {
             "role",
             "accesskey",
         ],
-        extra_tag_attrs: vec![
-            ("a", vec!["class", "aria-hidden", "aria-label"]),
+        &[
+            ("a", &["class", "aria-hidden", "aria-label"]),
             // span 的 style：KaTeX 服务端渲染产出的内联 style（元素垂直对齐/定位）
-            // 需保留，否则公式排版错位。与文章正文路径（sanitizer.rs:382）对齐。
-            ("span", vec!["class", "style"]),
+            // 需保留，否则公式排版错位。与文章正文策略对齐。
+            ("span", &["class", "style"]),
             // KaTeX 数学公式 SSR 渲染生成的 SVG 矢量图 (根号 / 矩阵竖线 / 括号 / 箭头等) 必备属性
             (
                 "svg",
-                vec![
+                &[
                     "xmlns",
                     "width",
                     "height",
@@ -457,14 +484,22 @@ pub fn clean_comment_html(input: &str) -> String {
                     "style",
                 ],
             ),
-            ("path", vec!["d"]),
+            ("path", &["d"]),
         ],
-        allowed_schemes: &DEFAULT_ALLOWED_SCHEMES,
-        allow_data_uri: false,
-        link_rel: Some("nofollow noopener"),
-        remove_tags: &CLEAN_CONTENT_TAGS,
-    };
-    sanitize(input, &config)
+        "nofollow noopener",
+    )
+});
+
+#[cfg(feature = "server")]
+/// 文章正文 HTML 清理：允许较完整的标签，禁用 data URI，外链添加 `noopener noreferrer`。
+pub fn clean_html(input: &str) -> String {
+    sanitize(input, &ARTICLE_CONFIG)
+}
+
+#[cfg(feature = "server")]
+/// 评论 HTML 清理：移除折叠块，保留图片（src 受 URL 安全校验），禁用 data URI，外链添加 `nofollow noopener`。
+pub fn clean_comment_html(input: &str) -> String {
+    sanitize(input, &COMMENT_CONFIG)
 }
 
 #[cfg(all(test, feature = "server"))]
