@@ -21,20 +21,7 @@ pub fn Footer(#[props(default = "max-w-[880px]")] max_width: &'static str) -> El
         .map(|s| s.github_url.clone())
         .filter(|u| !u.is_empty());
     rsx! {
-        FooterView { github_url, max_width, on_top: move |_| scroll_to_top() }
-    }
-}
-
-/// 页脚共用展示；数据读取与滚动策略由调用方负责。
-#[component]
-pub(crate) fn FooterView(
-    github_url: Option<String>,
-    on_top: EventHandler<()>,
-    #[props(default = true)] page_shell: bool,
-    #[props(default = "max-w-[880px]")] max_width: &'static str,
-) -> Element {
-    rsx! {
-        footer { "data-vt-shell": page_shell.then_some("frontend-footer"), class: "site-footer",
+        footer { "data-vt-shell": "frontend-footer", class: "site-footer",
             div { class: "site-footer-inner {max_width}",
                 span { class: "tabular-nums", "© 2026 Yggdrasil" }
                 div { class: "site-footer-links",
@@ -52,7 +39,7 @@ pub(crate) fn FooterView(
                             Icon { name: IconName::Github, size: 16 }
                         }
                     }
-                    button { r#type: "button", onclick: move |_| on_top.call(()),
+                    button { r#type: "button", onclick: move |_| scroll_to_top(),
                         "回到顶部"
                         Icon { name: IconName::ArrowUp, size: 13 }
                     }

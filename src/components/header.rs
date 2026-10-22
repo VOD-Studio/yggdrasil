@@ -11,6 +11,9 @@ use crate::components::ui::{use_sheet_close, BottomSheet, Icon, IconName};
 use crate::router::Route;
 use crate::theme::ThemeToggle;
 
+/// 手机导航抽屉的 DOM ID；预载回归脚本按 `aria-controls` 定位菜单按钮。
+const MENU_ID: &str = "mobile-nav-menu";
+
 /// 导航项配置，用于描述 Header 中的一个链接。
 ///
 /// 字段：
@@ -33,38 +36,22 @@ pub struct NavItemConfig {
 /// - `nav_items`：导航项列表
 /// - `right_content`：右侧自定义内容（如搜索入口、主题切换）
 /// - `max_width`：内部导航的宽度类，需与正文 `max-w-*` 一致以保证左右边缘对齐
-/// - `menu_id`：手机抽屉的稳定 DOM ID；同页有多个 Header 时必须各不相同
-/// - `on_demo_navigate`：图鉴用局部导航回调；正式页面省略以保留 Link 行为
-/// - `page_shell`：图鉴实例设 false，避免被页面过渡系统识别为真实站点外壳
 #[component]
 pub fn Header(
     nav_items: Vec<NavItemConfig>,
     right_content: Element,
     #[props(default = "max-w-3xl")] max_width: &'static str,
-    #[props(default = "mobile-nav-menu")] menu_id: &'static str,
-    #[props(default)] on_demo_navigate: Option<EventHandler<&'static str>>,
-    #[props(default = true)] page_shell: bool,
 ) -> Element {
     let mut sheet_open = use_signal(|| false);
-    let menu_button_id = format!("{menu_id}-trigger");
+    let menu_button_id = format!("{MENU_ID}-trigger");
     let palette = crate::components::search_palette::use_search_palette();
 
     rsx! {
-        header { "data-vt-shell": page_shell.then_some("frontend-header"), class: "site-header",
+        header { "data-vt-shell": "frontend-header", class: "site-header",
             div { class: "site-header-inner {max_width}",
-                if let Some(on_navigate) = on_demo_navigate {
-                    button {
-                        class: "wordmark",
-                        r#type: "button",
-                        onclick: move |_| on_navigate.call("首页"),
-                        span { class: "wordmark-mark", aria_hidden: "true" }
-                        "Yggdrasil"
-                    }
-                } else {
-                    Link { class: "wordmark", to: Route::Home {},
-                        span { class: "wordmark-mark", aria_hidden: "true" }
-                        "Yggdrasil"
-                    }
+                Link { class: "wordmark", to: Route::Home {},
+                    span { class: "wordmark-mark", aria_hidden: "true" }
+                    "Yggdrasil"
                 }
                 nav { class: "site-nav", aria_label: "主导航",
                     for item in nav_items.iter().cloned() {
@@ -73,26 +60,23 @@ pub fn Header(
                             route: item.route,
                             label: item.label,
                             is_active: item.is_active,
-                            on_demo_navigate,
                         }
                     }
                 }
                 div { class: "site-actions",
                     {right_content}
-                    if on_demo_navigate.is_none() {
-                        if let Some(palette) = palette {
-                            button {
-                                class: "touch-icon",
-                                r#type: "button",
-                                aria_label: "搜索",
-                                aria_haspopup: "dialog",
-                                onclick: move |_| palette.open(),
-                                Icon { name: IconName::Search, size: 19 }
-                            }
-                        } else {
-                            Link { class: "touch-icon", to: Route::Search { q: String::new() }, aria_label: "搜索",
-                                Icon { name: IconName::Search, size: 19 }
-                            }
+                    if let Some(palette) = palette {
+                        button {
+                            class: "touch-icon",
+                            r#type: "button",
+                            aria_label: "搜索",
+                            aria_haspopup: "dialog",
+                            onclick: move |_| palette.open(),
+                            Icon { name: IconName::Search, size: 19 }
+                        }
+                    } else {
+                        Link { class: "touch-icon", to: Route::Search { q: String::new() }, aria_label: "搜索",
+                            Icon { name: IconName::Search, size: 19 }
                         }
                     }
                     button {
@@ -102,7 +86,7 @@ pub fn Header(
                         aria_label: "打开导航",
                         aria_haspopup: "dialog",
                         aria_expanded: "{sheet_open()}",
-                        aria_controls: menu_id,
+                        aria_controls: MENU_ID,
                         onclick: move |_| sheet_open.set(true),
                         Icon { name: IconName::Menu, size: 19 }
                     }
@@ -111,44 +95,25 @@ pub fn Header(
         }
         NavSheet {
             open: sheet_open,
-            id: menu_id,
+            id: MENU_ID,
             trigger_id: menu_button_id.clone(),
             nav_items,
-            on_demo_navigate,
         }
     }
 }
 
 /// 单个桌面导航项：当前项内含 `.nav-indicator` 胶囊（转场时只有胶囊在栏目间滑动，文字留在原位）。
 #[component]
-fn NavItem(
-    route: Route,
-    label: &'static str,
-    is_active: bool,
-    on_demo_navigate: Option<EventHandler<&'static str>>,
-) -> Element {
+fn NavItem(route: Route, label: &'static str, is_active: bool) -> Element {
     rsx! {
-        if let Some(on_navigate) = on_demo_navigate {
-            button {
-                class: "nav-item",
-                r#type: "button",
-                aria_current: is_active.then_some("page"),
-                onclick: move |_| on_navigate.call(label),
-                if is_active {
-                    span { class: "nav-indicator", aria_hidden: "true" }
-                }
-                "{label}"
+        Link {
+            class: "nav-item",
+            to: route,
+            aria_current: is_active.then_some("page"),
+            if is_active {
+                span { class: "nav-indicator", aria_hidden: "true" }
             }
-        } else {
-            Link {
-                class: "nav-item",
-                to: route,
-                aria_current: is_active.then_some("page"),
-                if is_active {
-                    span { class: "nav-indicator", aria_hidden: "true" }
-                }
-                "{label}"
-            }
+            "{label}"
         }
     }
 }
@@ -160,20 +125,16 @@ fn NavSheet(
     id: &'static str,
     trigger_id: String,
     nav_items: Vec<NavItemConfig>,
-    on_demo_navigate: Option<EventHandler<&'static str>>,
 ) -> Element {
     rsx! {
         BottomSheet { open, id, trigger_id, label: "导航",
-            NavSheetBody { nav_items, on_demo_navigate }
+            NavSheetBody { nav_items }
         }
     }
 }
 
 #[component]
-fn NavSheetBody(
-    nav_items: Vec<NavItemConfig>,
-    on_demo_navigate: Option<EventHandler<&'static str>>,
-) -> Element {
+fn NavSheetBody(nav_items: Vec<NavItemConfig>) -> Element {
     let sheet = use_sheet_close();
     rsx! {
         nav { aria_label: "栏目",
@@ -184,7 +145,6 @@ fn NavSheetBody(
                             route: item.route,
                             label: item.label,
                             is_active: item.is_active,
-                            on_demo_navigate,
                             on_navigate: move |_| sheet.close(),
                         }
                     }
@@ -210,29 +170,15 @@ fn SheetNavItem(
     route: Route,
     label: &'static str,
     is_active: bool,
-    on_demo_navigate: Option<EventHandler<&'static str>>,
     on_navigate: EventHandler<()>,
 ) -> Element {
     rsx! {
-        if let Some(demo_navigate) = on_demo_navigate {
-            button {
-                class: "sheet-nav-item",
-                r#type: "button",
-                aria_current: is_active.then_some("page"),
-                onclick: move |_| {
-                    demo_navigate.call(label);
-                    on_navigate.call(());
-                },
-                "{label}"
-            }
-        } else {
-            Link {
-                class: "sheet-nav-item",
-                to: route,
-                aria_current: is_active.then_some("page"),
-                onclick: move |_| on_navigate.call(()),
-                "{label}"
-            }
+        Link {
+            class: "sheet-nav-item",
+            to: route,
+            aria_current: is_active.then_some("page"),
+            onclick: move |_| on_navigate.call(()),
+            "{label}"
         }
     }
 }

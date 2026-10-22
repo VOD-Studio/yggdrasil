@@ -20,10 +20,6 @@
     line-height: 1.5;
   }
 
-  .admin-shell[data-preview] {
-    height: 100%;
-  }
-
   .admin-shell[data-resizing] {
     cursor: col-resize;
     user-select: none;

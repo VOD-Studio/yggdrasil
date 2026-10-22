@@ -484,8 +484,7 @@ pub(crate) struct AdminActions {
     pub logout: Callback<()>,
 }
 
-/// 后台外壳：侧栏、顶栏与主画布。认证和路由留在 AdminLayout，图鉴只向此壳传入
-/// 固定内容；`preview` 时不读写本地存储，也不参与页面转场与首屏恢复。
+/// 后台外壳：侧栏、顶栏与主画布。认证和路由留在 AdminLayout。
 #[component]
 pub(crate) fn AdminShell(
     sidebar: Element,
@@ -496,8 +495,6 @@ pub(crate) fn AdminShell(
     #[props(default)] internal_scroll: bool,
     #[props(default)] focus_write: bool,
     #[props(default)] checking: bool,
-    #[props(default)] preview: bool,
-    #[props(default)] on_demo_navigate: Option<EventHandler<&'static str>>,
 ) -> Element {
     // 挂载前为 None：首屏由预载脚本写在 <html> 上的状态决定，服务端与水合输出一致。
     let mut state = use_signal(|| None::<SidebarState>);
@@ -505,17 +502,11 @@ pub(crate) fn AdminShell(
     let mut drawer_open = use_signal(|| false);
 
     use_effect(move || {
-        if !preview {
-            state.set(Some(load_sidebar()));
-        } else {
-            state.set(Some(SidebarState::default()));
-        }
+        state.set(Some(load_sidebar()));
     });
     let mut commit = move |next: SidebarState| {
         state.set(Some(next));
-        if !preview {
-            save_sidebar(next);
-        }
+        save_sidebar(next);
     };
     use_context_provider(|| SidebarControl {
         state,
@@ -526,9 +517,7 @@ pub(crate) fn AdminShell(
                 ..current
             };
             state.set(Some(next));
-            if !preview {
-                save_sidebar(next);
-            }
+            save_sidebar(next);
         }),
     });
 
@@ -554,31 +543,23 @@ pub(crate) fn AdminShell(
     } else {
         "admin-main"
     };
-    let menu_id = if preview {
-        "showcase-admin-drawer"
-    } else {
-        "admin-nav-drawer"
-    };
+    let menu_id = "admin-nav-drawer";
     let menu_trigger = format!("{menu_id}-trigger");
-    // 图鉴里的外壳在前台布局中，那里的面板句柄属于前台搜索，不接。
-    let palette = use_search_palette().filter(|_| on_demo_navigate.is_none());
+    let palette = use_search_palette();
 
     rsx! {
         div {
             class: "admin-shell",
-            "data-preview": preview.then_some("true"),
             // 写作页自带页头，隐藏后台顶栏。
             "data-focus": focus_write.then_some("write"),
             "data-sidebar": data_sidebar,
             "data-resizing": drag().is_some().then_some("true"),
             style: "{root_style}",
-            if !preview {
-                script { dangerous_inner_html: "{SIDEBAR_PRELOAD_SCRIPT}" }
-            }
+            script { dangerous_inner_html: "{SIDEBAR_PRELOAD_SCRIPT}" }
             div { class: "admin-side-slot",
                 {sidebar}
                 div {
-                    id: if preview { "showcase-admin-resize" } else { "admin-resize" },
+                    id: "admin-resize",
                     class: "admin-resize",
                     role: "separator",
                     tabindex: "0",
@@ -598,10 +579,9 @@ pub(crate) fn AdminShell(
                         drag.set(Some((x, start, x)));
                         #[cfg(target_arch = "wasm32")]
                         {
-                            let id = if preview { "showcase-admin-resize" } else { "admin-resize" };
                             if let Some(el) = web_sys::window()
                                 .and_then(|w| w.document())
-                                .and_then(|d| d.get_element_by_id(id))
+                                .and_then(|d| d.get_element_by_id("admin-resize"))
                             {
                                 let _ = el.set_pointer_capture(e.pointer_id());
                             }
@@ -640,7 +620,7 @@ pub(crate) fn AdminShell(
             }
             div { class: "admin-canvas",
                 div {
-                    "data-vt-scroll": (!preview).then_some("admin-main"),
+                    "data-vt-scroll": "admin-main",
                     class: "{scroll_class}",
                     header { class: "admin-topbar",
                         button {
@@ -655,21 +635,7 @@ pub(crate) fn AdminShell(
                             Icon { name: IconName::Menu, size: 19 }
                         }
                         div { class: "admin-topbar-crumbs",
-                            if on_demo_navigate.is_some() {
-                                nav { class: "breadcrumb", aria_label: "面包屑",
-                                    for (i, crumb) in crumbs.iter().enumerate() {
-                                        if i > 0 {
-                                            span { aria_hidden: "true", "/" }
-                                        }
-                                        span {
-                                            aria_current: (i + 1 == crumbs.len()).then_some("page"),
-                                            "{crumb.label}"
-                                        }
-                                    }
-                                }
-                            } else {
-                                Breadcrumb::<Route> { items: crumbs.clone() }
-                            }
+                            Breadcrumb::<Route> { items: crumbs }
                         }
                         span { class: "admin-topbar-title", "{title}" }
                         div { class: "admin-topbar-actions",
@@ -683,12 +649,10 @@ pub(crate) fn AdminShell(
                                     Icon { name: IconName::Search, size: 19 }
                                 }
                             }
-                            if on_demo_navigate.is_none() {
-                                // admin→前台跨 layout，保留整页加载以避开 Dioxus 0.7.10 的卸载问题。
-                                a { class: "btn btn-sm btn-ghost admin-topbar-site", href: "/",
-                                    "查看前台"
-                                    Icon { name: IconName::ArrowUpRight, size: 14 }
-                                }
+                            // admin→前台跨 layout，保留整页加载以避开 Dioxus 0.7.10 的卸载问题。
+                            a { class: "btn btn-sm btn-ghost admin-topbar-site", href: "/",
+                                "查看前台"
+                                Icon { name: IconName::ArrowUpRight, size: 14 }
                             }
                         }
                     }
@@ -713,12 +677,11 @@ struct SidebarControl {
     toggle: Callback<()>,
 }
 
-/// 正式后台与图鉴共享侧栏结构；图鉴导航通过回调更新局部选中项。
+/// 后台侧栏：栏目导航、搜索入口、主题切换与用户区。
 ///
 /// Props：
 /// - `counts`：文章、素材、评论的数量；未加载时不显示
 /// - `drawer`：放在手机抽屉里（始终展开、点选后关闭抽屉、没有收起按钮）
-/// - `demo_active` / `on_demo_navigate`：图鉴用局部选中项与导航回调
 #[component]
 pub(crate) fn AdminSidebar(
     route: Route,
@@ -727,8 +690,6 @@ pub(crate) fn AdminSidebar(
     on_logout: EventHandler<()>,
     #[props(default)] counts: Option<AdminNavCounts>,
     #[props(default)] drawer: bool,
-    #[props(default)] demo_active: Option<String>,
-    #[props(default)] on_demo_navigate: Option<EventHandler<&'static str>>,
 ) -> Element {
     let control = try_use_context::<SidebarControl>();
     let collapsed = !drawer
@@ -736,48 +697,27 @@ pub(crate) fn AdminSidebar(
             .and_then(|c| (c.state)())
             .is_some_and(|s| s.collapsed);
     let sheet_close = try_use_context::<SheetClose>().filter(|_| drawer);
-    let active_section = match &demo_active {
-        Some(label) => NAV_GROUPS
-            .iter()
-            .flat_map(|(_, items)| items.iter().copied())
-            .find(|section| section.label() == label),
-        None => AdminSection::of(&route),
-    };
-    let profile_active = demo_active
-        .as_deref()
-        .map_or(matches!(route, Route::Profile {}), |label| {
-            label == "个人资料"
-        });
+    let active_section = AdminSection::of(&route);
+    let profile_active = matches!(route, Route::Profile {});
     let after_pick = move || {
         if let Some(close) = sheet_close {
             close.close();
         }
     };
-    let preview = on_demo_navigate.is_some();
-    let palette = use_search_palette().filter(|_| !preview);
+    let palette = use_search_palette();
     // 图标栏里按钮贴左缘，提示朝右展开以免被裁。
     let toggle_align = if collapsed { "start" } else { "end" };
 
     rsx! {
         aside {
-            "data-vt-shell": (!drawer && !preview).then_some("admin-sidebar"),
+            "data-vt-shell": (!drawer).then_some("admin-sidebar"),
             class: if drawer { "admin-side admin-side-drawer" } else { "admin-side" },
             aria_label: "后台导航",
             div { class: "admin-side-head",
-                if let Some(on_navigate) = on_demo_navigate {
-                    button {
-                        class: "wordmark",
-                        r#type: "button",
-                        onclick: move |_| on_navigate.call("仪表盘"),
-                        span { class: "wordmark-mark", aria_hidden: "true" }
-                        span { class: "admin-side-text", "Yggdrasil" }
-                    }
-                } else {
-                    // admin→前台跨 layout，保留整页加载以避开 Dioxus 0.7.10 的卸载问题。
-                    a { class: "wordmark", href: "/", aria_label: "Yggdrasil 首页",
-                        span { class: "wordmark-mark", aria_hidden: "true" }
-                        span { class: "admin-side-text", "Yggdrasil" }
-                    }
+                // admin→前台跨 layout，保留整页加载以避开 Dioxus 0.7.10 的卸载问题。
+                a { class: "wordmark", href: "/", aria_label: "Yggdrasil 首页",
+                    span { class: "wordmark-mark", aria_hidden: "true" }
+                    span { class: "admin-side-text", "Yggdrasil" }
                 }
                 span { class: "admin-side-badge admin-side-text", "后台" }
                 if drawer {
@@ -824,42 +764,22 @@ pub(crate) fn AdminSidebar(
                             {
                                 let active = active_section == Some(section);
                                 let count = nav_count(section, counts);
-                                let body = rsx! {
-                                    span { class: "admin-nav-dot", aria_hidden: "true" }
-                                    Icon { name: section.icon(), size: 17, class: "admin-nav-icon" }
-                                    span { class: "admin-nav-text", "{section.label()}" }
-                                    if let Some((count, alert)) = count {
-                                        span {
-                                            class: if alert { "admin-nav-count admin-nav-count-alert" } else { "admin-nav-count" },
-                                            "{count}"
-                                        }
-                                    }
-                                };
-                                if let Some(on_navigate) = on_demo_navigate {
-                                    rsx! {
-                                        button {
-                                            key: "{section.label()}",
-                                            class: "admin-nav-item",
-                                            r#type: "button",
-                                            "data-tip": section.label(),
-                                            aria_current: active.then_some("page"),
-                                            onclick: move |_| {
-                                                on_navigate.call(section.label());
-                                                after_pick();
-                                            },
-                                            {body}
-                                        }
-                                    }
-                                } else {
-                                    rsx! {
-                                        Link {
-                                            key: "{section.label()}",
-                                            class: "admin-nav-item",
-                                            to: section.route(),
-                                            "data-tip": section.label(),
-                                            aria_current: active.then_some("page"),
-                                            onclick: move |_| after_pick(),
-                                            {body}
+                                rsx! {
+                                    Link {
+                                        key: "{section.label()}",
+                                        class: "admin-nav-item",
+                                        to: section.route(),
+                                        "data-tip": section.label(),
+                                        aria_current: active.then_some("page"),
+                                        onclick: move |_| after_pick(),
+                                        span { class: "admin-nav-dot", aria_hidden: "true" }
+                                        Icon { name: section.icon(), size: 17, class: "admin-nav-icon" }
+                                        span { class: "admin-nav-text", "{section.label()}" }
+                                        if let Some((count, alert)) = count {
+                                            span {
+                                                class: if alert { "admin-nav-count admin-nav-count-alert" } else { "admin-nav-count" },
+                                                "{count}"
+                                            }
                                         }
                                     }
                                 }
@@ -872,43 +792,20 @@ pub(crate) fn AdminSidebar(
                 div { class: "admin-side-theme", ThemeToggle { labels: drawer } }
                 div { class: "admin-user",
                     if let Some(name) = user_name {
-                        {
-                            let body = rsx! {
-                                UserAvatar {
-                                    name: name.clone(),
-                                    avatar_url: avatar_url.clone(),
-                                    class: "w-7 h-7 rounded-full text-xs flex-shrink-0",
-                                }
-                                span { class: "admin-user-text",
-                                    span { class: "admin-user-name", "{name}" }
-                                    span { class: "admin-user-role", "个人资料" }
-                                }
-                            };
-                            if let Some(on_navigate) = on_demo_navigate {
-                                rsx! {
-                                    button {
-                                        class: "admin-user-link",
-                                        r#type: "button",
-                                        "data-tip": "个人资料",
-                                        aria_current: profile_active.then_some("page"),
-                                        onclick: move |_| {
-                                            on_navigate.call("个人资料");
-                                            after_pick();
-                                        },
-                                        {body}
-                                    }
-                                }
-                            } else {
-                                rsx! {
-                                    Link {
-                                        class: "admin-user-link",
-                                        to: Route::Profile {},
-                                        "data-tip": "个人资料",
-                                        aria_current: profile_active.then_some("page"),
-                                        onclick: move |_| after_pick(),
-                                        {body}
-                                    }
-                                }
+                        Link {
+                            class: "admin-user-link",
+                            to: Route::Profile {},
+                            "data-tip": "个人资料",
+                            aria_current: profile_active.then_some("page"),
+                            onclick: move |_| after_pick(),
+                            UserAvatar {
+                                name: name.clone(),
+                                avatar_url: avatar_url.clone(),
+                                class: "w-7 h-7 rounded-full text-xs flex-shrink-0",
+                            }
+                            span { class: "admin-user-text",
+                                span { class: "admin-user-name", "{name}" }
+                                span { class: "admin-user-role", "个人资料" }
                             }
                         }
                     } else {
