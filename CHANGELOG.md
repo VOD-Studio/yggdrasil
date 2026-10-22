@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 测试改为调用生产函数：健康检查、上传转码；删除源码字符串断言测试；两个 TEMP 表数据库回归改读 `DATABASE_URL` 并写入测试文档；`scripts/test-dev-assets.cjs` 从 `mk/assets.mk` 读取输出清单；清理 FreeBSD 残留忽略规则。
 - 代码运行器流式执行超时只推送一个 `done` 事件（此前 runner 与调用方各推一个）；`run_in_container_stream` 去掉恒为 `false` 的 `timed_out` 返回值，与非流式路径统一为 4 元组。
 - `public/` 下的 `libs/` 构建产物（codemirror、lightbox、tiptap、xterm、yggdrasil-core）移出 git 索引，与 `.gitignore` 一致；构建产物一律不入库，由 `make build-libs`/`make dev-assets` 生成。
+- 收拢组件：新增 `StatusDot`，后台 9 处手写 `.status-dot` 改用它；`StatusBadge` 增加 `class` 附加类，更新日志「最新」与文章标题「草稿」徽章改用它；友链、笔记本、代码运行器表单标签改用 `FormLabel` 并删除三份重复样式；删除仅展示页使用的旧接口 `LoadingButton` 与已无引用的骨架屏样式。
 
 ## [0.24.2] - 2026-10-22
 

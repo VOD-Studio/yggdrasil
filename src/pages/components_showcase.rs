@@ -1061,13 +1061,12 @@ enum PreviewRoute {
 
 fn preview_route(slug: &str) -> Option<PreviewRoute> {
     Some(match slug {
-        "checkbox" | "toggle-switch" | "form-select" | "radio" | "loading-button"
-        | "form-input" | "time-picker" | "form-label" | "filter-tabs" | "pagination"
-        | "table-pager" | "tooltip" | "popover" | "modal-shell" | "confirm-dialog"
-        | "alert-box" | "status-badge" | "status-dot" | "tag-chip" | "user-avatar"
-        | "image-placeholder" | "icon" | "button" | "icon-button" | "number-input" | "menu"
-        | "toast" | "bottom-sheet" | "side-sheet" | "breadcrumb" | "search-palette"
-        | "admin-palette" | "empty-state" | "load-error" => PreviewRoute::Live,
+        "checkbox" | "toggle-switch" | "form-select" | "radio" | "form-input" | "time-picker"
+        | "form-label" | "filter-tabs" | "pagination" | "table-pager" | "tooltip" | "popover"
+        | "modal-shell" | "confirm-dialog" | "alert-box" | "status-badge" | "status-dot"
+        | "tag-chip" | "user-avatar" | "image-placeholder" | "icon" | "button" | "icon-button"
+        | "number-input" | "menu" | "toast" | "bottom-sheet" | "side-sheet" | "breadcrumb"
+        | "search-palette" | "admin-palette" | "empty-state" | "load-error" => PreviewRoute::Live,
         "post-cover" => PreviewRoute::Scene,
         "asset-picker-modal" | "asset-upload-modal" | "code-runner" | "sql-result-table" => {
             PreviewRoute::Business
@@ -1314,12 +1313,6 @@ fn LiveComponentPreview(
         },
         "AdminPalette" => rsx! {
             AdminPaletteDemo {}
-        },
-        "LoadingButton" => rsx! {
-            div { class: "showcase-preview-row",
-                crate::components::ui::LoadingButton { label: if clicked() { "已保存" } else { "保存设置" }, loading: false, onclick: move |_| clicked.set(true) }
-                crate::components::ui::LoadingButton { label: "处理中", loading: true, onclick: move |_| {} }
-            }
         },
         "FilterTabs" => rsx! {
             crate::components::ui::FilterTabs {

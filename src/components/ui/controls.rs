@@ -147,38 +147,6 @@ pub fn IconButton(
     }
 }
 
-/// 主操作按钮，内置 loading 转圈（旧接口，内部用 `Button` 实现）。
-///
-/// Props：
-/// - `label`：文案（loading 时隐去，转圈占位，宽度不变）
-/// - `loading`：是否处于加载态
-/// - `disabled`：是否禁用（loading 优先级更高）
-/// - `variant`：`"primary"`（默认）或 `"sm"`（小号）
-/// - `onclick`：点击回调
-#[component]
-pub fn LoadingButton(
-    label: String,
-    loading: bool,
-    #[props(default = false)] disabled: bool,
-    #[props(default = "primary")] variant: &'static str,
-    onclick: EventHandler<()>,
-) -> Element {
-    let size = if variant == "sm" {
-        ButtonSize::Sm
-    } else {
-        ButtonSize::Md
-    };
-    rsx! {
-        Button {
-            size,
-            loading,
-            disabled,
-            onclick: move |_| onclick.call(()),
-            "{label}"
-        }
-    }
-}
-
 /// 带勾画动画的复选框：对勾 SVG 用 stroke-dashoffset 描边绘制 + scale 弹入。
 ///
 /// 原生 `<input type="checkbox">` 是替换元素，吃不到 `::after`/`::before`，

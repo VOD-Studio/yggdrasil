@@ -261,61 +261,6 @@
       "usage_kind": "rust"
     },
     {
-      "name": "LoadingButton",
-      "slug": "loading-button",
-      "label": "操作按钮",
-      "group": "action",
-      "summary": "等待，也可以是一段从容的体验。",
-      "states": "默认 · 加载 · 禁用",
-      "description": "在正常、加载与禁用之间切换，加载时保留按钮宽度，减少布局跳动。",
-      "props": [
-        [
-          "label",
-          "String",
-          "必填",
-          "按钮正常状态的文案。"
-        ],
-        [
-          "loading",
-          "bool",
-          "必填",
-          "显示加载指示并阻止重复操作。"
-        ],
-        [
-          "disabled",
-          "bool",
-          "false",
-          "设置禁用状态。"
-        ],
-        [
-          "variant",
-          "&'static str",
-          "primary",
-          "primary 或 sm。"
-        ],
-        [
-          "onclick",
-          "EventHandler<()>",
-          "必填",
-          "点击回调。"
-        ]
-      ],
-      "keys": [
-        [
-          "Tab",
-          "聚焦按钮"
-        ],
-        [
-          "Space / Enter",
-          "执行操作"
-        ]
-      ],
-      "source": "src/components/ui.rs",
-      "code": "let mut saved = use_signal(|| false);\nrsx! {\n    LoadingButton {\n        label: if saved() { \"已保存\" } else { \"保存设置\" },\n        loading: false,\n        onclick: move |_| saved.set(true),\n    }\n}",
-      "preview_mode": "interactive",
-      "usage_kind": "rust"
-    },
-    {
       "name": "FormInput",
       "slug": "form-input",
       "label": "输入框",
