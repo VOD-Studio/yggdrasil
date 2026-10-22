@@ -79,34 +79,6 @@ html[data-vt-section]::view-transition-new(vt-section-content) {
   }
 }
 
-/* 仅捕获桌面上唯一的当前栏目链接（胶囊连同文字），在栏目之间滑动；
-   新旧文字交叉淡入淡出，其余导航文字留在页头快照里不被遮挡。 */
-@media (min-width: 768px) {
-  html[data-vt-section] .nav-indicator {
-    view-transition-name: vt-nav-indicator;
-  }
-}
-
-html[data-vt-section]::view-transition-group(vt-nav-indicator) {
-  animation-duration: var(--spring-snappy-duration);
-  animation-timing-function: var(--ease-spring-snappy);
-  z-index: 3;
-}
-
-html[data-vt-section]::view-transition-old(vt-nav-indicator),
-html[data-vt-section]::view-transition-new(vt-nav-indicator) {
-  height: 100%;
-  mix-blend-mode: normal;
-}
-
-html[data-vt-section]::view-transition-old(vt-nav-indicator) {
-  animation: vt-fade-out 140ms var(--ease-out-expo) both;
-}
-
-html[data-vt-section]::view-transition-new(vt-nav-indicator) {
-  animation: vt-fade-in var(--spring-snappy-duration) var(--ease-out-expo) both;
-}
-
 @media (max-width: 767px) {
   html[data-vt-section] {
     --vt-section-offset: 8px;

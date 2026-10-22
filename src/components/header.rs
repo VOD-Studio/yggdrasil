@@ -119,7 +119,7 @@ pub fn Header(
     }
 }
 
-/// 单个桌面导航项：当前项带 `.nav-indicator`（浮起胶囊，转场时在栏目间滑动）。
+/// 单个桌面导航项：当前项内含 `.nav-indicator` 胶囊（转场时只有胶囊在栏目间滑动，文字留在原位）。
 #[component]
 fn NavItem(
     route: Route,
@@ -127,22 +127,28 @@ fn NavItem(
     is_active: bool,
     on_demo_navigate: Option<EventHandler<&'static str>>,
 ) -> Element {
-    let class = if is_active {
-        "nav-item nav-indicator"
-    } else {
-        "nav-item"
-    };
     rsx! {
         if let Some(on_navigate) = on_demo_navigate {
             button {
-                class,
+                class: "nav-item",
                 r#type: "button",
                 aria_current: is_active.then_some("page"),
                 onclick: move |_| on_navigate.call(label),
+                if is_active {
+                    span { class: "nav-indicator", aria_hidden: "true" }
+                }
                 "{label}"
             }
         } else {
-            Link { class, to: route, aria_current: is_active.then_some("page"), "{label}" }
+            Link {
+                class: "nav-item",
+                to: route,
+                aria_current: is_active.then_some("page"),
+                if is_active {
+                    span { class: "nav-indicator", aria_hidden: "true" }
+                }
+                "{label}"
+            }
         }
     }
 }

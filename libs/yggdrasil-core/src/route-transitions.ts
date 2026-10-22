@@ -43,6 +43,7 @@ interface Navigation {
   oldRoles: Set<string>;
   shell: boolean;
   sectionTop?: number;
+  pillFrom?: DOMRect;
   attempt?: () => void;
   release?: () => void;
   vt?: ViewTransition;
@@ -62,6 +63,8 @@ function sectionIndex(url: string): number {
   if (/^\/tags(?:\/|$)/.test(path)) return 2;
   return ['/', '/notes', '/archives', '/friends', '/about', '/search'].indexOf(path);
 }
+/** Desktop section pill; the mobile nav is hidden and measures zero width. */
+const NAV_PILL = '.site-nav .nav-indicator';
 function shell(url: string): string {
   const path = page(url).split('?')[0];
   return /^\/admin(?:\/|$)/.test(path)
@@ -452,6 +455,7 @@ export class RouteTransitions {
     if (fromSection >= 0 && toSection >= 0 && fromSection !== toSection) {
       document.documentElement.dataset.vtSection = toSection > fromSection ? 'forward' : 'backward';
       nav.sectionTop = document.querySelector('main')?.getBoundingClientRect().top;
+      nav.pillFrom = document.querySelector(NAV_PILL)?.getBoundingClientRect();
     }
     this.assignShell(nav);
     if (nav.post) {
@@ -471,7 +475,10 @@ export class RouteTransitions {
       });
       nav.vt = vt;
       owner.attach(vt);
-      void vt.ready.catch(() => {});
+      void vt.ready.then(
+        () => this.slidePill(nav),
+        () => {},
+      );
       void vt.updateCallbackDone?.catch(() => {});
       void vt.finished.then(
         () => this.finish(nav),
@@ -666,6 +673,28 @@ export class RouteTransitions {
   private name(nav: Navigation, element: HTMLElement, name: string): void {
     if (!nav.names.has(element)) nav.names.set(element, element.style.viewTransitionName);
     element.style.viewTransitionName = name;
+  }
+  // The pill slides in the live header: a captured snapshot would cover the nav text above it
+  // and block clicks that interrupt the animation.
+  private slidePill(nav: Navigation): void {
+    const from = nav.pillFrom;
+    const pill = document.querySelector<HTMLElement>(NAV_PILL);
+    if (nav.cancelled || this.navigation !== nav || !from?.width || !pill) return;
+    const to = pill.getBoundingClientRect();
+    if (!to.width || (from.left === to.left && from.right === to.right)) return;
+    const motion = getComputedStyle(document.documentElement);
+    // Minified CSS may serialize the token in seconds (`.41s`).
+    const duration = motion.getPropertyValue('--spring-snappy-duration').trim();
+    pill.animate(
+      [
+        { left: `${from.left - to.left}px`, right: `${to.right - from.right}px` },
+        { left: '0px', right: '0px' },
+      ],
+      {
+        duration: Number.parseFloat(duration) * (duration.endsWith('ms') ? 1 : 1000),
+        easing: motion.getPropertyValue('--ease-spring-snappy').trim(),
+      },
+    );
   }
   private assignShell(nav: Navigation): void {
     if (!nav.shell) return;
