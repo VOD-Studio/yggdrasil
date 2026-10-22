@@ -154,9 +154,9 @@ fn compute_visible_section() -> Option<SettingsSection> {
         return all.last().copied();
     }
 
-    // 判定线 = 容器顶部往下 40px（须大于分区的 scroll-mt-2=8px 落点余量）。
+    // 判定线 = 容器顶部往下 64px（须大于 .settings-card 的 scroll-margin-top：桌面 1rem、窄屏 3.5rem）。
     // 顶部已越过判定线的最后一个分区 = 当前阅读位置。
-    const THRESHOLD_PX: f64 = 40.0;
+    const THRESHOLD_PX: f64 = 64.0;
     let mut current: Option<SettingsSection> = None;
     for section in all {
         let Some(el) = document.get_element_by_id(&section.dom_id()) else {
@@ -288,7 +288,11 @@ pub fn SiteSettingsPage() -> Element {
                 }
             },
             div { class: "settings-layout",
-                nav { class: "settings-nav", aria_label: "设置分区",
+                // data-app-anchor：让全局 initAnchorClick 放行，下方 a 的 onclick 才能执行。
+                nav {
+                    class: "settings-nav",
+                    aria_label: "设置分区",
+                    "data-app-anchor": "true",
                     for section in SettingsSection::all() {
                         a {
                             key: "{section.as_str()}",

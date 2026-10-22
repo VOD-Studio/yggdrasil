@@ -113,6 +113,21 @@ describe('initAnchorClick', () => {
     expect(dioxusInterceptorCalled).toBe(false);
   });
 
+  it('data-app-anchor 内的锚点完全放行给组件自己的 click 处理', () => {
+    document.body.innerHTML = `
+      <nav data-app-anchor="true"><a href="#settings-sec-ratelimit">接口限流</a></nav>
+      <section id="settings-sec-ratelimit"></section>`;
+    const anchor = document.querySelector('a')!;
+    // 模拟组件 onclick 的 prevent_default；否则 happy-dom 的 HTMLAnchorElement.dispatchEvent
+    // 会在未阻止默认行为时 window.open(href, '_self') 改写 location，污染 hash 断言。
+    anchor.addEventListener('click', (event) => event.preventDefault());
+    const windowScroll = vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
+    anchor.click();
+    expect(windowScroll).not.toHaveBeenCalled();
+    expect(window.location.hash).toBe('');
+    expect(dioxusInterceptorCalled).toBe(true);
+  });
+
   it('目标元素不存在时放行，不阻止 Dioxus 原行为', () => {
     const anchor = document.createElement('a');
     anchor.setAttribute('href', '#no-such-heading');

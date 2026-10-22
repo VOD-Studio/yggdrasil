@@ -17,6 +17,8 @@
  * <a> 点击，stopPropagation 阻止事件到达 Dioxus 的委托监听器，自行滚动到标题
  * （scrollToHeading 手动扣除 header 高度）并用 history.replaceState 更新 URL hash
  * （不触发 popstate/hashchange，避免抖动）。
+ *
+ * 例外：带 data-app-anchor 祖先的链接不接管，由所在组件的 onclick 自行滚动。
  */
 
 import { scrollToHeading } from './scroll-to-heading';
@@ -48,6 +50,10 @@ export function initAnchorClick(): void {
       // 从点击点向上找最近的 <a>（点击可能落在 <a> 内的子元素上）。
       const anchor = target.closest('a');
       if (!anchor) return;
+
+      // 组件自行处理点击（Dioxus onclick + prevent_default）的锚点：完全放行，
+      // 不 stopPropagation，否则组件的 handler 收不到事件。
+      if (anchor.closest('[data-app-anchor]')) return;
 
       const href = anchor.getAttribute('href');
       // 只接管同页 hash 锚点：href 以 # 开头且非空（排除纯 "#" 和 "#top" 之外的真锚点）。
