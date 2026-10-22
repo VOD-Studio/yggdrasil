@@ -435,6 +435,12 @@ pub const MIN_IMAGE_DISK_CACHE_MAX_MB: u32 = 1;
 /// 缓存保留时长下限（小时）。
 #[cfg(feature = "server")]
 pub const MIN_IMAGE_DISK_CACHE_MAX_AGE_HOURS: u32 = 1;
+/// 磁盘缓存上限的上限（MB，1 TiB），与设置页输入框上限一致。
+#[cfg(feature = "server")]
+pub const MAX_IMAGE_DISK_CACHE_MAX_MB: u32 = 1_048_576;
+/// 缓存保留时长上限（小时，10 年），与设置页输入框上限一致。
+#[cfg(feature = "server")]
+pub const MAX_IMAGE_DISK_CACHE_MAX_AGE_HOURS: u32 = 87_600;
 
 /// 图片磁盘缓存配置（uploads/.cache/ 的容量与保留策略）。
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -455,16 +461,19 @@ impl Default for ImageCacheSettings {
 }
 
 impl ImageCacheSettings {
-    /// 将容量上限钳制到合法范围 [MIN, ∞)。
+    /// 将容量上限钳制到合法范围 [MIN, MAX]。
     #[cfg(feature = "server")]
     pub fn clamp_max_mb(n: u32) -> u32 {
-        n.max(MIN_IMAGE_DISK_CACHE_MAX_MB)
+        n.clamp(MIN_IMAGE_DISK_CACHE_MAX_MB, MAX_IMAGE_DISK_CACHE_MAX_MB)
     }
 
-    /// 将保留时长钳制到合法范围 [MIN, ∞)。
+    /// 将保留时长钳制到合法范围 [MIN, MAX]。
     #[cfg(feature = "server")]
     pub fn clamp_max_age_hours(n: u32) -> u32 {
-        n.max(MIN_IMAGE_DISK_CACHE_MAX_AGE_HOURS)
+        n.clamp(
+            MIN_IMAGE_DISK_CACHE_MAX_AGE_HOURS,
+            MAX_IMAGE_DISK_CACHE_MAX_AGE_HOURS,
+        )
     }
 }
 
@@ -562,6 +571,9 @@ pub const DEFAULT_RATE_LIMIT_GC_INTERVAL_SECS: u32 = 300;
 /// 所有 per_sec 字段下限：至少 1 req/s（NonZeroU32 不允许 0）。
 #[cfg(feature = "server")]
 pub const MIN_RATE_LIMIT_PER_SEC: u32 = 1;
+/// 所有 per_sec 字段上限（单 IP 每秒 1 万次已等同不限流），与设置页输入框上限一致。
+#[cfg(feature = "server")]
+pub const MAX_RATE_LIMIT_PER_SEC: u32 = 10_000;
 /// 所有 burst 字段下限：至少允许 1 次突发。
 #[cfg(feature = "server")]
 pub const MIN_RATE_LIMIT_BURST: u32 = 1;
@@ -639,10 +651,10 @@ impl Default for RateLimitSettings {
 }
 
 impl RateLimitSettings {
-    /// 将 per_sec 字段钳制到 [MIN_RATE_LIMIT_PER_SEC, ∞)。
+    /// 将 per_sec 字段钳制到 [MIN_RATE_LIMIT_PER_SEC, MAX_RATE_LIMIT_PER_SEC]。
     #[cfg(feature = "server")]
     pub fn clamp_per_sec(n: u32) -> u32 {
-        n.max(MIN_RATE_LIMIT_PER_SEC)
+        n.clamp(MIN_RATE_LIMIT_PER_SEC, MAX_RATE_LIMIT_PER_SEC)
     }
 
     /// 将 burst 字段钳制到 [MIN_RATE_LIMIT_BURST, ∞)。
@@ -839,6 +851,16 @@ pub const MAX_RUNNER_MAX_CPU_CORES: f64 = 64.0;
 /// 内存上限（MB）。
 #[cfg(feature = "server")]
 pub const MAX_RUNNER_MAX_MEMORY_MB: u32 = 65_536;
+/// 输出/源码字节上限的下限。
+#[cfg(feature = "server")]
+pub const MIN_RUNNER_MAX_BYTES: u64 = 1;
+/// 每任务最大输出上限（64 MiB），与设置页输入框上限（65536 KB）一致；
+/// 防止误填超大值等同关闭喂给容器的输出截断。
+#[cfg(feature = "server")]
+pub const MAX_RUNNER_MAX_OUTPUT_BYTES: u64 = 64 * 1024 * 1024;
+/// 每任务最大源码上限（64 MiB），与设置页输入框上限（65536 KB）一致。
+#[cfg(feature = "server")]
+pub const MAX_RUNNER_MAX_SOURCE_BYTES: u64 = 64 * 1024 * 1024;
 
 /// 代码运行器配置（资源限制与并发）。
 ///
@@ -912,16 +934,16 @@ impl RunnerSettings {
         n.max(MIN_RUNNER_MAX_TIMEOUT_SECS)
     }
 
-    /// 将输出上限钳制到合法范围 [1, ∞)。
+    /// 将输出上限钳制到合法范围 [MIN_RUNNER_MAX_BYTES, MAX_RUNNER_MAX_OUTPUT_BYTES]。
     #[cfg(feature = "server")]
     pub fn clamp_max_output_bytes(n: u64) -> u64 {
-        n.max(1)
+        n.clamp(MIN_RUNNER_MAX_BYTES, MAX_RUNNER_MAX_OUTPUT_BYTES)
     }
 
-    /// 将源码上限钳制到合法范围 [1, ∞)。
+    /// 将源码上限钳制到合法范围 [MIN_RUNNER_MAX_BYTES, MAX_RUNNER_MAX_SOURCE_BYTES]。
     #[cfg(feature = "server")]
     pub fn clamp_max_source_bytes(n: u64) -> u64 {
-        n.max(1)
+        n.clamp(MIN_RUNNER_MAX_BYTES, MAX_RUNNER_MAX_SOURCE_BYTES)
     }
 
     /// 将排队超时钳制到合法范围 [1, ∞)。
@@ -1342,6 +1364,22 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "server")]
+    fn image_cache_clamps_cap_huge_values() {
+        assert_eq!(
+            ImageCacheSettings::clamp_max_mb(u32::MAX),
+            MAX_IMAGE_DISK_CACHE_MAX_MB
+        );
+        assert_eq!(
+            ImageCacheSettings::clamp_max_age_hours(u32::MAX),
+            MAX_IMAGE_DISK_CACHE_MAX_AGE_HOURS
+        );
+        // 设置页可填的最大值不被截断。
+        assert_eq!(ImageCacheSettings::clamp_max_mb(1_048_576), 1_048_576);
+        assert_eq!(ImageCacheSettings::clamp_max_age_hours(87_600), 87_600);
+    }
+
+    #[test]
     fn rate_limit_default_values() {
         let s = RateLimitSettings::default();
         assert_eq!(s.strict_per_sec, 1);
@@ -1368,6 +1406,16 @@ mod tests {
     fn rate_limit_clamp_per_sec() {
         assert_eq!(RateLimitSettings::clamp_per_sec(0), MIN_RATE_LIMIT_PER_SEC);
         assert_eq!(RateLimitSettings::clamp_per_sec(5), 5);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn rate_limit_clamp_per_sec_caps_huge_values() {
+        assert_eq!(
+            RateLimitSettings::clamp_per_sec(u32::MAX),
+            MAX_RATE_LIMIT_PER_SEC
+        );
+        assert_eq!(RateLimitSettings::clamp_per_sec(10_000), 10_000);
     }
 
     #[test]
@@ -1542,6 +1590,36 @@ mod tests {
             MIN_RUNNER_MAX_TIMEOUT_SECS
         );
         assert_eq!(RunnerSettings::clamp_task_ttl_secs(0), 1);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn runner_clamp_byte_limits_cap_huge_values() {
+        assert_eq!(
+            RunnerSettings::clamp_max_output_bytes(u64::MAX),
+            MAX_RUNNER_MAX_OUTPUT_BYTES
+        );
+        assert_eq!(
+            RunnerSettings::clamp_max_source_bytes(u64::MAX),
+            MAX_RUNNER_MAX_SOURCE_BYTES
+        );
+        // 默认值与设置页可填的最大值（65536 KB）都不被截断。
+        assert_eq!(
+            RunnerSettings::clamp_max_output_bytes(DEFAULT_RUNNER_MAX_OUTPUT_BYTES),
+            DEFAULT_RUNNER_MAX_OUTPUT_BYTES
+        );
+        assert_eq!(
+            RunnerSettings::clamp_max_source_bytes(DEFAULT_RUNNER_MAX_SOURCE_BYTES),
+            DEFAULT_RUNNER_MAX_SOURCE_BYTES
+        );
+        assert_eq!(
+            RunnerSettings::clamp_max_output_bytes(65_536 * 1024),
+            65_536 * 1024
+        );
+        assert_eq!(
+            RunnerSettings::clamp_max_source_bytes(65_536 * 1024),
+            65_536 * 1024
+        );
     }
 
     #[test]
