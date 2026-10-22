@@ -39,7 +39,7 @@ async function main() {
     await create.waitFor();
     failCreate = true;
     await create.click();
-    await page.getByRole('alert').filter({ hasText: /Regression|503|error|Error/ }).waitFor();
+    await page.getByRole('alert').filter({ hasText: '备份失败' }).waitFor();
     await finished();
     pass('creation failure is visible and releases the operation lock');
 
@@ -77,7 +77,7 @@ async function main() {
 
     failPoll = true;
     await create.click();
-    await page.getByRole('alert').filter({ hasText: '获取备份任务进度失败' }).waitFor();
+    await page.getByRole('alert').filter({ hasText: '获取备份进度失败' }).waitFor();
     await finished();
     pass('poll failure is visible and permits subsequent operations');
     const refreshed = page.waitForResponse(r => endpoint(r.url()).startsWith('listbackups') && r.ok());
