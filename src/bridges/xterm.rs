@@ -71,7 +71,7 @@ pub mod wasm {
         #[wasm_bindgen(method, js_name = writeAll)]
         pub fn write_all(this: &TerminalInstance, stdout: &str, stderr: &str);
 
-        /// 热切换主题（Catppuccin Latte/Mocha）。
+        /// 热切换明暗主题。
         #[wasm_bindgen(method, js_name = setTheme)]
         pub fn set_theme(this: &TerminalInstance, theme: &str);
 
@@ -100,7 +100,7 @@ pub mod wasm {
         #[wasm_bindgen(constructor)]
         pub fn new() -> XtermOptions;
 
-        /// 主题：'light'（Catppuccin Latte）或 'dark'（Catppuccin Mocha）。
+        /// 主题：'light' 或 'dark'（配色取自 `CODE_PALETTES`）。
         #[wasm_bindgen(method, setter, js_name = theme)]
         pub fn set_theme(this: &XtermOptions, v: &str);
 

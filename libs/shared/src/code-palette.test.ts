@@ -49,7 +49,7 @@ describe('CODE_PALETTES', () => {
     });
   }
 
-  it('drops the Catppuccin green accent', () => {
+  it('does not reuse the retired green accent', () => {
     const all = JSON.stringify(CODE_PALETTES).toLowerCase();
     expect(all).not.toContain('#40a02b');
     expect(all).not.toContain('#a6e3a1');

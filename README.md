@@ -14,7 +14,7 @@
 - **代码沙箱**：文章内 `runnable` 代码块与 `/admin/runner` 在隔离 Docker 容器中运行 Python / Node / Go / Rust / Bun，SSE 实时回显。
 - **运维**：数据库状态、服务器监控、SQL 控制台、数据导出与 `pg_dump` 备份恢复。
 - **性能与安全**：增量 SSR 与 moka 多级缓存；Argon2、CSRF 防护、按 IP 限流。
-- **外观**：Catppuccin Latte / Mocha 双主题，响应式布局。
+- **外观**：陶土橙暖调明暗双主题，系统字体与 Lucide 图标，响应式布局。
 
 ## 技术栈
 

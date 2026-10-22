@@ -115,7 +115,7 @@ pub mod wasm {
         #[wasm_bindgen(method, setter, js_name = language)]
         pub fn set_language(this: &EditorOptions, v: &str);
 
-        /// 主题：'light'（Catppuccin Latte）或 'dark'（Catppuccin Mocha）。
+        /// 主题：'light' 或 'dark'（配色取自 `CODE_PALETTES`）。
         #[wasm_bindgen(method, setter, js_name = theme)]
         pub fn set_theme(this: &EditorOptions, v: &str);
 

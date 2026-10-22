@@ -14,8 +14,7 @@
 //! 3. 每个分类组的条目经 `render_markdown_enhanced` 渲染为 HTML 片段
 //!    （保留 `**bold**` / `` `code` `` / `[link]` 等内联格式 + sanitizer 清理）
 //!
-//! 分类色标映射遵循全站 Catppuccin 双强调色约束（accent 绿 / accent-2 teal），
-//! 不引入第三色——通过字号、字重、透明度区分层级。
+//! 分类标签默认中性灰，只有新增（clay）与安全（danger）着色，见 `changelog.css`。
 
 // 与 settings 等模块一致：Dioxus `#[server]` 宏触发 deprecated/unit 提示，按项目惯例放行。
 #![allow(clippy::unused_unit, deprecated)]
@@ -55,7 +54,7 @@ impl ChangeCategory {
         }
     }
 
-    /// CSS 修饰类名后缀（用于 `changelog-badge--{css_class}`）。
+    /// 分类标签的 `data-category` 取值。
     pub fn css_class(&self) -> &'static str {
         match self {
             Self::Added => "added",
