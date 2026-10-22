@@ -289,9 +289,14 @@ fix: ## cargo fix + Biome format + cargo fmt（写入文件）
 # ── 文档 ───────────────────────────────────────────────────────
 # 只编译当前 crate 的文档（--no-deps 跳过依赖，--document-private-items
 # 让纯 binary crate 的内部模块/私有项也进文档，否则页面基本是空的）。
-# RUSTDOCFLAGS 把 rustdoc 的 --default-theme=ayu 透传过去——cargo doc 本身
-# 无主题参数，但会把该环境变量转交给底层 rustdoc。注意它是默认值，浏览器
-# 若已记住上次的主题选择（localStorage）则不会被覆盖。
+#
+# 站点同款主题：源文件在 rustdoc-theme/。theme.css 经 Tailwind 编译后用
+# rustdoc -e 注入（落到文档根 theme.css），in-header.html 经 --html-in-header
+# 加载 theme-sync.js。不再设默认主题，由 theme-sync.js 同步博客主题
+# （localStorage['yggdrasil-theme']）；ayu 保留为可选的原版主题。
+# cargo 缓存不跟踪 -e 指向文件的内容，所以生成后再把 theme.css 和
+# theme-sync.js 复制一次到 target/doc。DOC_OUT 供 Dockerfile 指定输出目录。
+# 用绝对路径，避免依赖 rustdoc 运行时的 cwd。
 #
 # 生成后拷贝到 public/doc/，让文档随 Dioxus 静态目录发布。先清空旧目录再
 # 整体拷贝，避免删除模块后残留旧文件。rustdoc 内部用相对路径引用资源
@@ -302,15 +307,24 @@ fix: ## cargo fix + Biome format + cargo fmt（写入文件）
 # 返回 index.html。用 meta refresh + JS 跳转到真正的文档入口
 # yggdrasil/index.html，这样裸路径 /doc 也能直达文档，且不与 Dioxus 的
 # /doc/* 路由冲突（手动注册 /doc 会在 merge 时 panic）。
-doc: ## 生成 rustdoc 到 public/doc/
-	@RUSTDOCFLAGS="--default-theme=ayu" cargo doc --no-deps --document-private-items
-	@rm -rf public/doc
-	@cp -r target/doc public/doc
-	@printf '<!DOCTYPE html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=yggdrasil/index.html"><title>Redirecting…</title></head><body><script>location.replace("yggdrasil/index.html")</script></body></html>' > public/doc/index.html
+DOC_OUT ?= public/doc
+DOC_THEME_CSS := target/rustdoc-theme.css
+DOC_RUSTDOCFLAGS = -e $(CURDIR)/$(DOC_THEME_CSS) --html-in-header $(CURDIR)/rustdoc-theme/in-header.html
 
-# 同 doc，生成完自动用浏览器打开。
-doc-open: ## 生成 rustdoc 并用浏览器打开
-	@RUSTDOCFLAGS="--default-theme=ayu" cargo doc --no-deps --document-private-items --open
+doc: ## 生成 rustdoc（站点同款主题）到 public/doc/
+	@mkdir -p target
+	@tailwindcss -i rustdoc-theme/theme.css -o $(DOC_THEME_CSS) --minify
+	@RUSTDOCFLAGS="$(DOC_RUSTDOCFLAGS)" cargo doc --no-deps --document-private-items
+	@cp $(DOC_THEME_CSS) target/doc/theme.css
+	@cp rustdoc-theme/theme-sync.js target/doc/theme-sync.js
+	@rm -rf $(DOC_OUT)
+	@cp -r target/doc $(DOC_OUT)
+	@printf '<!DOCTYPE html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=yggdrasil/index.html"><title>Redirecting…</title></head><body><script>location.replace("yggdrasil/index.html")</script></body></html>' > $(DOC_OUT)/index.html
+
+# 同 doc，生成完自动用浏览器打开。flags 与 doc 相同，缓存是新的，只会打开
+# 页面，不会重新生成，也不会覆盖已复制的 theme.css。
+doc-open: doc ## 生成 rustdoc 并用浏览器打开
+	@RUSTDOCFLAGS="$(DOC_RUSTDOCFLAGS)" cargo doc --no-deps --document-private-items --open
 
 # ── 清理 ───────────────────────────────────────────────────────
 # public/{codemirror,lightbox,tiptap,xterm,yggdrasil-core} 里有被 git 跟踪的

@@ -270,11 +270,11 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     bun scripts/build-release.cjs --out /build/dist
 
 # Generate the project's rustdoc API docs and stage them under public/doc so
-# they are served at /doc on the live site. Mirrors `make doc` exactly:
-# --no-deps skips dependency docs, --document-private-items documents internal
-# / private items (this is effectively a single-crate binary — without it the
-# pages would be nearly empty), RUSTDOCFLAGS pins the ayu theme. The tiny
-# index.html redirects bare /doc to the real crate entry yggdrasil/.
+# they are served at /doc on the live site. Runs `make doc` (site-themed
+# rustdoc, see rustdoc-theme/) with DOC_OUT pointing at dist/public/doc.
+# It uses --no-deps and --document-private-items (this is effectively a
+# single-crate binary — without it the pages would be nearly empty) and writes
+# the tiny index.html that redirects bare /doc to the real crate entry yggdrasil/.
 # cargo doc uses the stage's host target (glibc, shipped by the base image),
 # not wasm32 — it compiles the server-feature dependency tree natively here,
 # independent of Stage B's musl server build.
@@ -283,10 +283,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
     --mount=type=cache,id=fe-target,target=/build/target,sharing=locked \
-    RUSTDOCFLAGS="--default-theme=ayu" cargo doc --no-deps --document-private-items && \
-    rm -rf dist/public/doc && \
-    cp -r target/doc dist/public/doc && \
-    printf '<!DOCTYPE html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=yggdrasil/index.html"><title>Redirecting…</title></head><body><script>location.replace("yggdrasil/index.html")</script></body></html>' > dist/public/doc/index.html
+    make doc DOC_OUT=dist/public/doc
 
 # Pre-compress all static text assets with brotli (.br sidecars). dx's
 # pre_compress only covers its hashed wasm/js bundle under assets/; but

@@ -1,0 +1,184 @@
+/* rustdoc 文档的站点同款主题。Makefile 的 doc target 用 Tailwind 编译后经
+   rustdoc -e 注入（落到文档根 theme.css）。只改写内置 light/dark，ayu 保持原版。
+   token 来自 styles/theme.css：:root[data-theme="dark"] 与 .dark 共用深色值。
+   第一行 import 不能删：它让 token 落进 @layer theme，深色块（@layer base）才能覆盖浅色。 */
+@import "tailwindcss/theme.css" layer(theme) theme(reference);
+@import "../styles/theme.css";
+
+/* 引用 token 的变量，随明暗自动切换。选择器特异度与 rustdoc 主题块同为 (0,2,0)，
+   本文件在 rustdoc.css 之后加载，故胜出。未列出的变量（图标 filter、徽章等）沿用 rustdoc。 */
+:root:is([data-theme="light"], [data-theme="dark"], :not([data-theme])) {
+  --font-family: var(--font-sans);
+  --font-family-code: var(--font-mono);
+  --code-block-border-radius: var(--radius-code);
+
+  --main-background-color: var(--color-surface-0);
+  --main-color: var(--color-fg-body);
+  --sidebar-background-color: var(--color-surface-1);
+  --sidebar-background-color-hover: var(--color-ink-1);
+  --sidebar-border-color: var(--color-hairline);
+  --sidebar-link-color: var(--color-fg-2);
+  --sidebar-current-link-background-color: var(--color-ink-1);
+  --code-block-background-color: var(--color-surface-1);
+  --codeblock-link-background: var(--color-ink-1);
+  --headings-border-bottom-color: var(--color-hairline);
+  --border-color: var(--color-ink-2);
+  --button-background-color: var(--color-surface-2);
+  --right-side-color: var(--color-fg-3);
+  --code-attribute-color: var(--color-fg-3);
+  --toggles-color: var(--color-fg-3);
+  --copy-path-button-color: var(--color-fg-3);
+  --code-example-button-color: var(--color-fg-3);
+  --code-example-button-hover-color: var(--color-fg-2);
+  --warning-border-color: var(--color-warning);
+  --link-color: var(--color-clay-text);
+  --mod-link-color: var(--color-clay-text);
+  --keyword-link-color: var(--color-clay-text);
+  --attribute-link-color: var(--color-clay-text);
+
+  --scrollbar-track-background-color: transparent;
+  --scrollbar-thumb-background-color: var(--color-ink-3);
+  --scrollbar-color: var(--color-ink-3) transparent;
+
+  --settings-input-color: var(--color-clay-fill);
+  --settings-input-border-color: var(--color-ink-4);
+  --settings-button-border-focus: var(--color-clay);
+  --search-input-focused-border-color: var(--color-clay);
+  --search-color: var(--color-fg);
+  --search-result-link-focus-background-color: var(--color-ink-1);
+  --search-result-border-color: var(--color-hairline);
+  --search-error-code-background-color: var(--color-danger-soft);
+  --search-results-alias-color: var(--color-fg);
+  --search-results-grey-color: var(--color-fg-3);
+  --search-tab-title-count-color: var(--color-fg-3);
+  --search-tab-button-not-selected-border-top-color: transparent;
+  --search-tab-button-not-selected-background: var(--color-ink-1);
+  --search-tab-button-selected-border-top-color: var(--color-clay);
+  --search-tab-button-selected-background: var(--color-surface-2);
+
+  --stab-background-color: var(--color-warning-soft);
+  --stab-code-color: var(--color-warning);
+  --src-line-numbers-span-color: var(--color-fg-3);
+  --src-line-number-highlighted-background-color: var(--color-clay-soft);
+  --target-background-color: var(--color-clay-soft);
+  --target-border-color: var(--color-clay);
+  --kbd-color: var(--color-fg);
+  --kbd-background: var(--color-surface-2);
+  --kbd-box-shadow-color: var(--color-ink-3);
+  --crate-search-hover-border: var(--color-ink-4);
+  --src-sidebar-background-selected: var(--color-ink-2);
+  --src-sidebar-background-hover: var(--color-ink-1);
+  --table-alt-row-background-color: var(--color-ink-1);
+  --scrape-example-code-wrapper-background-start: var(--color-surface-1);
+  --scrape-example-code-wrapper-background-end: transparent;
+  --sidebar-resizer-hover: var(--color-clay);
+  --sidebar-resizer-active: var(--color-clay-hover);
+}
+
+/* 语法与条目链接色：取自 libs/shared/src/code-palette.ts（CODE_PALETTES.light.syntax），改色时同步。 */
+:root:is([data-theme="light"], :not([data-theme])) {
+  --type-link-color: #356660;
+  --trait-link-color: #8c3f7d;
+  --assoc-item-link-color: #2d5b86;
+  --function-link-color: #2d5b86;
+  --macro-link-color: #a3471c;
+  --code-highlight-kw-color: #a3471c;
+  --code-highlight-kw-2-color: #a3471c;
+  --code-highlight-self-color: #a3471c;
+  --code-highlight-question-mark-color: #a3471c;
+  --code-highlight-lifetime-color: #8c3f7d;
+  --code-highlight-number-color: #8c3f7d;
+  --code-highlight-literal-color: #8c3f7d;
+  --code-highlight-string-color: #7d6214;
+  --code-highlight-prelude-color: #356660;
+  --code-highlight-prelude-val-color: #356660;
+  --code-highlight-macro-color: #2d5b86;
+  --code-highlight-attribute-color: #5f5e5b;
+  --code-highlight-comment-color: #6b6b69;
+  --code-highlight-doc-comment-color: #6b6b69;
+}
+
+/* 同上，取自 CODE_PALETTES.dark.syntax。 */
+:root[data-theme="dark"] {
+  --type-link-color: #8fc5bd;
+  --trait-link-color: #d6a2cb;
+  --assoc-item-link-color: #94b8dc;
+  --function-link-color: #94b8dc;
+  --macro-link-color: #ec9a78;
+  --code-highlight-kw-color: #ec9a78;
+  --code-highlight-kw-2-color: #ec9a78;
+  --code-highlight-self-color: #ec9a78;
+  --code-highlight-question-mark-color: #ec9a78;
+  --code-highlight-lifetime-color: #d6a2cb;
+  --code-highlight-number-color: #d6a2cb;
+  --code-highlight-literal-color: #d6a2cb;
+  --code-highlight-string-color: #dcbc78;
+  --code-highlight-prelude-color: #8fc5bd;
+  --code-highlight-prelude-val-color: #8fc5bd;
+  --code-highlight-macro-color: #94b8dc;
+  --code-highlight-attribute-color: #a9a7a1;
+  --code-highlight-comment-color: #8b8984;
+  --code-highlight-doc-comment-color: #8b8984;
+}
+
+/* 标题与博客正文一致：衬线、fg 色。签名（.code-header）不在此列，保持等宽。 */
+:root:is([data-theme="light"], [data-theme="dark"], :not([data-theme]))
+  :is(
+    .main-heading h1,
+    h2.section-header,
+    .top-doc .docblock > :is(h1, h2, h3, h4)
+  ) {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  color: var(--color-fg);
+}
+
+/* 行内代码不跟随代码块的 12px 圆角。 */
+:root:is([data-theme="light"], [data-theme="dark"], :not([data-theme]))
+  :is(.docblock, .item-table dd)
+  :not(pre)
+  > code {
+  border-radius: 4px;
+}
+
+/* 侧栏当前项：ghost 底 + 主文字色。 */
+:root:is([data-theme="light"], [data-theme="dark"], :not([data-theme]))
+  .sidebar
+  .current
+  a {
+  color: var(--color-fg);
+}
+
+/* 工具栏按钮：去掉 rustdoc 的悬停描边，改为 ghost 底。 */
+:root:is([data-theme="light"], [data-theme="dark"], :not([data-theme]))
+  :is(
+    #search-button > a,
+    .settings-menu > a,
+    .help-menu > a,
+    button#toggle-all-docs
+  ):is(:hover, :focus-visible) {
+  border-color: transparent;
+  background-color: var(--color-ink-1);
+}
+
+/* 搜索框：与首页搜索框同款胶囊。 */
+:root:is([data-theme="light"], [data-theme="dark"], :not([data-theme]))
+  .search-input {
+  border: 0;
+  border-radius: var(--radius-composer);
+  padding: 8px 16px;
+  background-color: var(--color-surface-2);
+  box-shadow:
+    0 0 0 var(--hairline) var(--color-ink-3),
+    var(--shadow-composer);
+}
+
+:root:is([data-theme="light"], [data-theme="dark"], :not([data-theme]))
+  .search-input:focus {
+  box-shadow: var(--shadow-focus);
+}
+
+:root:is([data-theme="light"], [data-theme="dark"], :not([data-theme]))
+  ::selection {
+  background-color: var(--color-selection);
+}

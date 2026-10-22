@@ -92,7 +92,9 @@
 }
 
 @layer base {
-  .dark {
+  .dark,
+  :root[data-theme="dark"] {
+    /* rustdoc 文档（rustdoc-theme/）以 data-theme="dark" 标记深色，共用这组深色值。 */
     /* 深色不是反色：表面与文字整体带一点暖调，surface-0 不用纯黑。 */
     --color-surface-0: #0f0f0e;
     --color-surface-1: #161615;
