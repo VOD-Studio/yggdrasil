@@ -446,10 +446,9 @@ pub(crate) async fn process_image_upload(
     //    chrono 的 DelayedFormat 实现 Display，可直接进 format!，省掉中间 String。
     let now = chrono::Utc::now();
     let date = now.format("%Y/%m/%d");
-    let uuid_str = uuid::Uuid::new_v4().to_string();
 
     let dir_path = format!("uploads/{}", date);
-    let file_name = format!("{}.{}.{}", now.format("%H%M%S"), uuid_str, final_ext);
+    let file_name = upload_file_name(now, uuid::Uuid::new_v4(), &final_ext);
     let file_path = format!("{}/{}", dir_path, file_name);
     let rel_path = format!("{}/{}", date, file_name);
     let final_mime = mime_for_ext(&final_ext);
@@ -496,6 +495,12 @@ pub(crate) async fn process_image_upload(
             Err(e)
         }
     }
+}
+
+/// 落盘文件名：`HHMMSS.<uuid>.<ext>`（UTC 时分秒 + 连字符 UUID，不含空格）。
+#[cfg(feature = "server")]
+fn upload_file_name(now: chrono::DateTime<chrono::Utc>, id: uuid::Uuid, ext: &str) -> String {
+    format!("{}.{}.{}", now.format("%H%M%S"), id, ext)
 }
 
 #[cfg(feature = "server")]
@@ -818,35 +823,91 @@ mod tests {
             .unwrap();
     }
 
-    #[test]
-    fn filename_format_no_spaces() {
-        let now_str = "120000";
-        let uuid = "abc-123";
-        let ext = "jpg";
-        let file_name = format!("{}.{}.{}", now_str, uuid, ext);
-        assert!(
-            !file_name.contains(' '),
-            "filename should not contain spaces: got '{}'",
-            file_name
-        );
+    fn encode_with(img: &image::DynamicImage, format: image::ImageFormat) -> Vec<u8> {
+        let mut out = std::io::Cursor::new(Vec::new());
+        img.write_to(&mut out, format).unwrap();
+        out.into_inner()
+    }
+
+    fn encode_jpeg(img: &image::DynamicImage, quality: u8) -> Vec<u8> {
+        let mut out = Vec::new();
+        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, quality)
+            .encode_image(img)
+            .unwrap();
+        out
+    }
+
+    /// 平滑渐变：有损 WebP 明显小于 PNG 与高质量 JPEG。
+    fn gradient_image() -> image::DynamicImage {
+        image::DynamicImage::ImageRgb8(image::RgbImage::from_fn(128, 128, |x, y| {
+            image::Rgb([(x * 2) as u8, (y * 2) as u8, (x + y) as u8])
+        }))
+    }
+
+    /// 确定性伪随机噪声：低质量 JPEG 很小，解码后重编码为 WebP 反而更大。
+    fn noise_image() -> image::DynamicImage {
+        let mut seed: u32 = 0x2545_f491;
+        image::DynamicImage::ImageRgb8(image::RgbImage::from_fn(64, 64, |_, _| {
+            let mut px = [0u8; 3];
+            for c in &mut px {
+                seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                *c = (seed >> 24) as u8;
+            }
+            image::Rgb(px)
+        }))
     }
 
     #[test]
-    fn should_use_webp_ext_for_non_gif() {
-        let ext = "jpg";
-        let mime = "image/jpeg";
-        let is_gif = mime == "image/gif";
-        let final_ext = if is_gif { ext } else { "webp" };
-        assert_eq!(final_ext, "webp");
+    fn transcode_keeps_gif_bytes_and_extension() {
+        let gif = encode_with(&gradient_image(), image::ImageFormat::Gif);
+        let (data, ext) = super::transcode_image_blocking(&gif, "image/gif", true, false);
+        assert_eq!(ext, "gif");
+        assert_eq!(data, gif);
     }
 
     #[test]
-    fn should_preserve_gif_ext() {
-        let ext = "gif";
-        let mime = "image/gif";
-        let is_gif = mime == "image/gif";
-        let final_ext = if is_gif { ext } else { "webp" };
-        assert_eq!(final_ext, "gif");
+    fn transcode_keeps_webp_input_unchanged() {
+        let webp = crate::infra::webp::encode(&gradient_image(), 85.0, 2).unwrap();
+        let (data, ext) = super::transcode_image_blocking(&webp, "image/webp", false, true);
+        assert_eq!(ext, "webp");
+        assert_eq!(data, webp);
+    }
+
+    #[test]
+    fn transcode_converts_png_to_webp_when_smaller() {
+        let png = encode_with(&gradient_image(), image::ImageFormat::Png);
+        let (data, ext) = super::transcode_image_blocking(&png, "image/png", false, false);
+        assert_eq!(ext, "webp");
+        assert!(data.len() < png.len());
+        assert_eq!(super::detect_mime(&data), Some("image/webp"));
+    }
+
+    #[test]
+    fn transcode_converts_jpeg_to_webp_when_smaller() {
+        let jpeg = encode_jpeg(&gradient_image(), 90);
+        let (data, ext) = super::transcode_image_blocking(&jpeg, "image/jpeg", false, false);
+        assert_eq!(ext, "webp");
+        assert!(data.len() < jpeg.len());
+        assert_eq!(super::detect_mime(&data), Some("image/webp"));
+    }
+
+    #[test]
+    fn transcode_keeps_jpeg_when_webp_would_be_larger() {
+        let jpeg = encode_jpeg(&noise_image(), 10);
+        let (data, ext) = super::transcode_image_blocking(&jpeg, "image/jpeg", false, false);
+        assert_eq!(ext, "jpg");
+        assert_eq!(data, jpeg);
+    }
+
+    #[test]
+    fn upload_file_name_joins_time_uuid_and_ext_without_spaces() {
+        let now = chrono::DateTime::parse_from_rfc3339("2026-10-22T08:09:10Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let id = uuid::Uuid::from_u128(0x0123_4567_89ab_cdef_0123_4567_89ab_cdef);
+        let name = super::upload_file_name(now, id, "webp");
+        assert_eq!(name, "080910.01234567-89ab-cdef-0123-456789abcdef.webp");
+        assert!(!name.contains(' '));
     }
 
     #[test]
