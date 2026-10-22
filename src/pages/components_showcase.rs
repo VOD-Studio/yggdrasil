@@ -1032,7 +1032,6 @@ fn ComponentPreview(
                     }
                 }
             }
-            PreviewRoute::Skeleton => rsx! { PageSkeletonPreview { name: spec.name.clone() } },
             PreviewRoute::Scene => rsx! { SceneComponentPreview { name: spec.name.clone() } },
             PreviewRoute::Business => {
                 business_previews::preview(&slug, detail).expect("业务预览必须实现")
@@ -1053,7 +1052,6 @@ fn ComponentPreview(
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PreviewRoute {
     Live,
-    Skeleton,
     Scene,
     Business,
     LayoutArticle,
@@ -1069,50 +1067,12 @@ fn preview_route(slug: &str) -> Option<PreviewRoute> {
         | "alert-box" | "status-badge" | "tag-chip" | "user-avatar" | "image-placeholder"
         | "icon" | "button" | "icon-button" | "number-input" | "menu" | "toast"
         | "bottom-sheet" | "side-sheet" | "breadcrumb" | "search-palette" | "admin-palette"
-        | "empty-state" | "load-error" | "skeleton-box" | "skeleton-card" | "skeleton-table"
-        | "delayed-skeleton" => PreviewRoute::Live,
-        "admin-comments-list-skeleton"
-        | "admin-comments-skeleton"
-        | "archive-skeleton"
-        | "assets-skeleton"
-        | "assets-grid-skeleton"
-        | "admin-notes-skeleton"
-        | "note-rows-skeleton"
-        | "admin-notebooks-skeleton"
-        | "notebooks-skeleton"
-        | "changelog-skeleton"
-        | "comment-list-skeleton"
-        | "admin-dashboard-skeleton"
-        | "friends-admin-list-skeleton"
-        | "friends-admin-skeleton"
-        | "friends-skeleton"
-        | "home-skeleton"
-        | "home-posts-skeleton"
-        | "logs-skeleton"
-        | "mcp-skeleton"
-        | "post-card-skeleton"
-        | "post-detail-body"
-        | "post-detail-skeleton"
-        | "post-preview-skeleton"
-        | "posts-table-skeleton"
-        | "posts-skeleton"
-        | "posts-trash-table-skeleton"
-        | "posts-trash-skeleton"
-        | "profile-skeleton"
-        | "runner-skeleton"
-        | "search-skeleton"
-        | "settings-admin-skeleton"
-        | "system-skeleton"
-        | "archive-body-skeleton"
-        | "tag-detail-skeleton"
-        | "write-skeleton"
-        | "writing-guide-skeleton" => PreviewRoute::Skeleton,
+        | "empty-state" | "load-error" => PreviewRoute::Live,
         "post-cover" | "post-card" => PreviewRoute::Scene,
         "asset-picker-modal" | "asset-upload-modal" | "code-runner" | "sql-result-table" => {
             PreviewRoute::Business
         }
-        "breadcrumbs" | "search-icon-link" | "admin-layout" | "footer" | "frontend-layout"
-        | "header" | "post-header" | "post-meta" | "post-content" | "post-footer"
+        "breadcrumbs" | "post-header" | "post-meta" | "post-content" | "post-footer"
         | "post-nav-links" | "post-toc" => PreviewRoute::LayoutArticle,
         "comment-card-shell"
         | "comment-form"
@@ -1128,15 +1088,10 @@ fn preview_route(slug: &str) -> Option<PreviewRoute> {
 }
 
 fn is_local_demo(slug: &str) -> bool {
-    slug == "admin-layout"
-        || slug == "header"
-        || slug == "search-icon-link"
-        || slug == "frontend-layout"
-        || slug == "footer"
-        || matches!(
-            preview_route(slug),
-            Some(PreviewRoute::Business | PreviewRoute::Comment | PreviewRoute::Browser)
-        )
+    matches!(
+        preview_route(slug),
+        Some(PreviewRoute::Business | PreviewRoute::Comment | PreviewRoute::Browser)
+    )
 }
 
 fn is_wide_preview(slug: &str) -> bool {
@@ -1514,149 +1469,8 @@ fn LiveComponentPreview(
                 }
             }
         },
-        "SkeletonBox" => rsx! {
-            div { class: "showcase-preview-stack showcase-skeleton-lines",
-                crate::components::skeletons::atoms::SkeletonBox { class: "h-3 w-52 rounded" }
-                crate::components::skeletons::atoms::SkeletonBox { class: "h-3 w-36 rounded" }
-                crate::components::skeletons::atoms::SkeletonBox { class: "h-3 w-44 rounded" }
-            }
-        },
-        "SkeletonCard" => rsx! {
-            crate::components::skeletons::atoms::SkeletonCard { class: Some("p-5 space-y-3 w-56"),
-                crate::components::skeletons::atoms::SkeletonBox { class: "w-9 h-9 rounded-full" }
-                crate::components::skeletons::atoms::SkeletonBox { class: "w-full h-3 rounded" }
-                crate::components::skeletons::atoms::SkeletonBox { class: "w-2/3 h-3 rounded" }
-            }
-        },
-        "SkeletonTable" => rsx! {
-            div { class: "showcase-table-preview",
-                crate::components::skeletons::atoms::SkeletonTable {
-                    columns: vec![
-                        crate::components::skeletons::atoms::SkeletonTableColumn { header_class: "px-3 py-2", header_box_class: "w-10 h-3 rounded", cell_class: "px-3 py-2", cell_shape: crate::components::skeletons::atoms::SkeletonCellShape::Single("w-12 h-3 rounded") },
-                        crate::components::skeletons::atoms::SkeletonTableColumn { header_class: "px-3 py-2", header_box_class: "w-20 h-3 rounded", cell_class: "px-3 py-2", cell_shape: crate::components::skeletons::atoms::SkeletonCellShape::Single("w-24 h-3 rounded") },
-                    ], rows: 2,
-                }
-            }
-        },
-        "DelayedSkeleton" => rsx! {
-            div { class: "showcase-preview-stack showcase-skeleton-lines",
-                crate::components::skeletons::delayed_skeleton::DelayedSkeleton {
-                    crate::components::skeletons::atoms::SkeletonBox { class: "h-3 w-48 rounded" }
-                }
-            }
-        },
         _ => panic!("基础组件缺少预览: {name}"),
     }
-}
-
-/// 页面骨架可以脱离数据源安全渲染，图鉴因此直接展示原组件。
-#[component]
-fn PageSkeletonPreview(name: String) -> Element {
-    let skeleton = match name.as_str() {
-        "AdminCommentsListSkeleton" => {
-            rsx! { crate::components::skeletons::admin_comments_skeleton::AdminCommentsListSkeleton {} }
-        }
-        "AdminCommentsSkeleton" => {
-            rsx! { crate::components::skeletons::admin_comments_skeleton::AdminCommentsSkeleton {} }
-        }
-        "ArchiveSkeleton" => {
-            rsx! { crate::components::skeletons::archive_skeleton::ArchiveSkeleton {} }
-        }
-        "AssetsSkeleton" => {
-            rsx! { crate::components::skeletons::assets_skeleton::AssetsSkeleton {} }
-        }
-        "AssetsGridSkeleton" => {
-            rsx! { crate::components::skeletons::assets_skeleton::AssetsGridSkeleton {} }
-        }
-        "AdminNotesSkeleton" => {
-            rsx! { crate::components::skeletons::notes_admin_skeleton::AdminNotesSkeleton {} }
-        }
-        "NoteRowsSkeleton" => {
-            rsx! { crate::components::skeletons::notes_admin_skeleton::NoteRowsSkeleton {} }
-        }
-        "AdminNotebooksSkeleton" => {
-            rsx! { crate::components::skeletons::notes_admin_skeleton::AdminNotebooksSkeleton {} }
-        }
-        "NotebooksSkeleton" => {
-            rsx! { crate::components::skeletons::notes_admin_skeleton::NotebooksSkeleton {} }
-        }
-        "ChangelogSkeleton" => {
-            rsx! { crate::components::skeletons::changelog_skeleton::ChangelogSkeleton {} }
-        }
-        "CommentListSkeleton" => {
-            rsx! { crate::components::skeletons::comment_skeleton::CommentListSkeleton {} }
-        }
-        "AdminDashboardSkeleton" => {
-            rsx! { crate::components::skeletons::dashboard_skeleton::AdminDashboardSkeleton {} }
-        }
-        "FriendsAdminListSkeleton" => {
-            rsx! { crate::components::skeletons::friends_admin_skeleton::FriendsAdminListSkeleton {} }
-        }
-        "FriendsAdminSkeleton" => {
-            rsx! { crate::components::skeletons::friends_admin_skeleton::FriendsAdminSkeleton {} }
-        }
-        "FriendsSkeleton" => {
-            rsx! { crate::components::skeletons::friends_skeleton::FriendsSkeleton {} }
-        }
-        "HomeSkeleton" => rsx! { crate::components::skeletons::home_skeleton::HomeSkeleton {} },
-        "HomePostsSkeleton" => {
-            rsx! { crate::components::skeletons::home_skeleton::HomePostsSkeleton { current_page: 1 } }
-        }
-        "LogsSkeleton" => rsx! { crate::components::skeletons::logs_skeleton::LogsSkeleton {} },
-        "McpSkeleton" => rsx! { crate::components::skeletons::mcp_skeleton::McpSkeleton {} },
-        "PostCardSkeleton" => {
-            rsx! { crate::components::skeletons::post_card_skeleton::PostCardSkeleton { has_cover: true } }
-        }
-        "PostDetailBody" => {
-            rsx! { crate::components::skeletons::post_detail_skeleton::PostDetailBody {} }
-        }
-        "PostDetailSkeleton" => {
-            rsx! { crate::components::skeletons::post_detail_skeleton::PostDetailSkeleton {} }
-        }
-        "PostPreviewSkeleton" => {
-            rsx! { crate::components::skeletons::post_preview_skeleton::PostPreviewSkeleton {} }
-        }
-        "PostsTrashTableSkeleton" => {
-            rsx! { crate::components::skeletons::posts_trash_skeleton::PostsTrashTableSkeleton {} }
-        }
-        "PostsTrashSkeleton" => {
-            rsx! { crate::components::skeletons::posts_trash_skeleton::PostsTrashSkeleton {} }
-        }
-        "PostsTableSkeleton" => {
-            rsx! { crate::components::skeletons::posts_skeleton::PostsTableSkeleton {} }
-        }
-        "PostsSkeleton" => rsx! { crate::components::skeletons::posts_skeleton::PostsSkeleton {} },
-        "ProfileSkeleton" => {
-            rsx! { crate::components::skeletons::profile_skeleton::ProfileSkeleton {} }
-        }
-        "RunnerSkeleton" => {
-            rsx! { crate::components::skeletons::runner_skeleton::RunnerSkeleton {} }
-        }
-        "SearchSkeleton" => {
-            rsx! { crate::components::skeletons::search_skeleton::SearchSkeleton {} }
-        }
-        "SettingsAdminSkeleton" => {
-            rsx! { crate::components::skeletons::settings_admin_skeleton::SettingsAdminSkeleton {} }
-        }
-        "SystemSkeleton" => {
-            rsx! { crate::components::skeletons::system_skeleton::SystemSkeleton {} }
-        }
-        "TagDetailSkeleton" => {
-            rsx! { crate::components::skeletons::archive_skeleton::TagDetailSkeleton { tag: "设计".to_string() } }
-        }
-        "ArchiveBodySkeleton" => {
-            rsx! { div { class: "archive", crate::components::skeletons::archive_skeleton::ArchiveBodySkeleton {} } }
-        }
-        "WriteSkeleton" => rsx! { crate::components::skeletons::write_skeleton::WriteSkeleton {} },
-        "WritingGuideSkeleton" => {
-            rsx! { crate::components::skeletons::writing_guide_skeleton::WritingGuideSkeleton {} }
-        }
-        _ => panic!("页面骨架缺少预览: {name}"),
-    };
-    rsx! { div { class: "showcase-skeleton-window",
-        div { class: "showcase-skeleton-window-bar", span {} span {} span {} }
-        div { class: "showcase-skeleton-scale", {skeleton} }
-    } }
 }
 
 fn sample_post() -> Post {
@@ -1931,6 +1745,10 @@ mod tests {
         for entry in std::fs::read_dir(dir).expect("读取组件源码目录") {
             let path = entry.expect("组件目录项").path();
             if path.is_dir() {
+                // 骨架屏保留在业务页面中，不收录到公开图鉴。
+                if path.file_name().is_some_and(|name| name == "skeletons") {
+                    continue;
+                }
                 public_component_names(&path, names);
             } else if path.extension().is_some_and(|extension| extension == "rs") {
                 let source = std::fs::read_to_string(&path).expect("读取组件源码");
@@ -1949,6 +1767,14 @@ mod tests {
         }
     }
 
+    const EXCLUDED_LAYOUT_COMPONENTS: [(&str, &str, &str); 5] = [
+        ("AdminLayout", "admin-layout", "admin_layout.rs"),
+        ("FrontendLayout", "frontend-layout", "frontend_layout.rs"),
+        ("Header", "header", "header.rs"),
+        ("Footer", "footer", "footer.rs"),
+        ("SearchIconLink", "search-icon-link", "header.rs"),
+    ];
+
     #[test]
     fn catalog_covers_public_components_and_has_unique_routes() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/components");
@@ -1961,7 +1787,12 @@ mod tests {
             .collect();
         let missing: Vec<_> = exported
             .iter()
-            .filter(|name| !catalog.contains(name.as_str()))
+            .filter(|name| {
+                !catalog.contains(name.as_str())
+                    && !EXCLUDED_LAYOUT_COMPONENTS
+                        .iter()
+                        .any(|(excluded, _, _)| name.as_str() == *excluded)
+            })
             .collect();
         assert!(missing.is_empty(), "图鉴缺少公开组件: {missing:?}");
 
@@ -1993,6 +1824,55 @@ mod tests {
                 component.slug
             );
         }
+    }
+
+    #[test]
+    fn catalog_excludes_layouts_but_keeps_production_components() {
+        assert!(SHOWCASE.groups.iter().all(|group| group[0] != "layout"));
+        assert!(SHOWCASE
+            .components
+            .iter()
+            .all(|item| item.group != "layout"));
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/components");
+        for (name, slug, file) in EXCLUDED_LAYOUT_COMPONENTS {
+            assert!(!SHOWCASE
+                .components
+                .iter()
+                .any(|item| item.name == name || item.slug == slug));
+            assert_eq!(preview_route(slug), None, "布局预览不应保留: {slug}");
+            assert!(layout_article_previews::preview(slug, false).is_none());
+            assert!(layout_article_previews::preview(slug, true).is_none());
+            let source = std::fs::read_to_string(root.join(file)).expect("正式布局组件必须保留");
+            assert!(source.contains(&format!("pub fn {name}(")));
+        }
+    }
+
+    #[test]
+    fn catalog_excludes_skeletons_and_their_preview_routes() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/components/skeletons");
+        let mut skeletons = HashSet::new();
+        public_component_names(&root, &mut skeletons);
+        assert!(!skeletons.is_empty(), "业务骨架屏组件必须保留");
+        for component in &SHOWCASE.components {
+            assert!(!skeletons.contains(&component.name));
+            assert!(!component.source.starts_with("src/components/skeletons/"));
+        }
+        for slug in [
+            "skeleton-box",
+            "skeleton-card",
+            "skeleton-table",
+            "delayed-skeleton",
+            "home-skeleton",
+            "post-detail-body",
+            "tag-posts-loading",
+        ] {
+            assert_eq!(preview_route(slug), None, "骨架屏预览不应保留: {slug}");
+        }
+        assert!(SHOWCASE.groups.iter().all(|group| group[0] == "all"
+            || SHOWCASE
+                .components
+                .iter()
+                .any(|item| item.group == group[0])));
     }
 
     #[test]

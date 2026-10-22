@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.1] - 2026-10-22
+
+### Fixed
+
+- **Docker 构建**:`.dockerignore` 放行 release 装配脚本 `build-release.cjs` 及其导入的 `release-bootstrap.cjs`,修复 P3b 把 flavor 装配移进容器执行后构建上下文缺文件报 Module not found 的问题;其余 `scripts/` 保持排除。
+- **构建入口**:补回 P3b 误删的 `make build-client` recipe。此前 `.PHONY` 保留了同名目标,make 会静默跳过无 recipe 的 phony 目标,导致 `build-linux` 与 Dockerfile / Dockerfile.cross 的首个客户端构建变成空操作,CI Docker 构建在 `snapshot-flavor` 处失败。
+
 ## [0.24.0] - 2026-10-21
 
 ### Added

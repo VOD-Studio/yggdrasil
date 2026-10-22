@@ -50,6 +50,10 @@ docker/
 docs/
 tests/
 scripts/
+# P3b 双 flavor 装配在容器内跑 build-release.cjs（随 build-release 导入
+# release-bootstrap），从 scripts/ 例外放行；其余 scripts 仍排除。
+!scripts/build-release.cjs
+!scripts/release-bootstrap.cjs
 
 # ---------------------------------------------------------------------------
 # Agent / IDE / CI tooling — never needed by the build.

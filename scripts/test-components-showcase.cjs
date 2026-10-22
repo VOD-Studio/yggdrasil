@@ -24,7 +24,6 @@ fs.mkdirSync(ARTIFACTS, { recursive: true });
 
 // These selectors describe actual shared UI, rather than the catalog metadata or title.
 const TARGETS = [
-  ['admin-layout', 'AdminLayout', '[data-showcase-preview="admin-layout"]'],
   ['asset-picker-modal', 'AssetPickerModal', '.showcase-picker-panel img'],
   ['asset-upload-modal', 'AssetUploadModal', '.showcase-upload-demo :text("封面.webp")'],
   ['code-runner', 'CodeRunner', '.showcase-runner-demo .runner-editor .cm-editor'],
@@ -33,9 +32,6 @@ const TARGETS = [
   ['comment-list', 'CommentList', '.comment-list'],
   ['pending-comment-item', 'PendingCommentItem', ':text("这条样例评论正在等待审核")'],
   ['comment-section', 'CommentSection', '.comment-editor-mount .ProseMirror'],
-  ['footer', 'Footer', '[data-showcase-preview="footer"] footer'],
-  ['frontend-layout', 'FrontendLayout', '[data-showcase-preview="frontend-layout"] main'],
-  ['header', 'Header', '[data-showcase-preview="header"] header'],
   ['post-content', 'PostContent', '[data-showcase-preview="post-content"] .post-content'],
   ['post-footer', 'PostFooter', '[data-showcase-preview="post-footer"] .post-footer'],
   ['post-header', 'PostHeader', '[data-showcase-preview="post-header"] .post-header'],
@@ -252,6 +248,14 @@ async function catalog(page) {
   pass('cold catalog keeps browser libraries deferred');
 
   assert.equal(await page.locator('.showcase-card').count(), CATALOG.components.length);
+  assert.equal(await page.locator('.showcase-categories button').filter({ hasText: '页面布局' }).count(), 0);
+  for (const slug of ['admin-layout', 'frontend-layout', 'header', 'footer', 'search-icon-link']) {
+    assert.equal(await page.locator(`#showcase-${slug}`).count(), 0,
+      `${slug} should not appear in the catalog`);
+    assert.equal(await page.locator(`a[href="/about/components/${slug}"]`).count(), 0,
+      `${slug} should not have a detail link`);
+  }
+  pass('page layout category and its five previews are absent');
   for (const component of CATALOG.components) {
     assert(['interactive', 'static'].includes(component.preview_mode),
       `${component.slug} has invalid preview mode`);
@@ -322,9 +326,9 @@ async function catalog(page) {
     await card.waitFor();
     await card.scrollIntoViewIfNeeded();
     await realPreview(page, slug, selector, true);
-    if (['asset-picker-modal', 'asset-upload-modal', 'admin-layout', 'code-runner',
+    if (['asset-picker-modal', 'asset-upload-modal', 'code-runner',
       'tiptap-editor', 'lightbox'].includes(slug)) await screenshot(page, `card-${slug}`);
-    if (['asset-picker-modal', 'asset-upload-modal', 'admin-layout', 'code-runner'].includes(slug)) {
+    if (['asset-picker-modal', 'asset-upload-modal', 'code-runner'].includes(slug)) {
       await elementScreenshot(card, `card-element-${slug}`);
     }
   }
@@ -385,6 +389,22 @@ async function catalog(page) {
   await page.waitForURL(`${BASE}/about/components`);
   pass('catalog search, scroll, back and forward state');
 }
+async function removedLayoutDetails(page) {
+  stage = 'removed-layout-details';
+  for (const slug of ['admin-layout', 'frontend-layout', 'header', 'footer', 'search-icon-link']) {
+    visitId++;
+    const response = await page.goto(`${BASE}/about/components/${slug}`, {
+      waitUntil: 'domcontentloaded', timeout: 90000,
+    });
+    assert.equal(response.status(), 404, `${slug} direct load should return 404`);
+    await page.locator('.showcase-missing').waitFor();
+    assert.equal(await page.locator('.showcase-detail').count(), 0);
+    await page.getByRole('link', { name: '返回组件图鉴' }).click();
+    await page.locator('.showcase-gallery').waitFor();
+  }
+  pass('removed layout details return 404 and link back to the catalog');
+}
+
 async function details(page, viewport, colorScheme, reducedMotion, label) {
   stage = `details-${label}`;
   await page.setViewportSize(viewport);
@@ -580,13 +600,6 @@ async function postNavLinks(page) {
 
 async function interactions(page, onlyModalResets = false) {
   stage = 'interactions';
-  await goto(page, '/about/components/admin-layout');
-  const admin = page.locator('[data-showcase-preview="admin-layout"]');
-  await admin.getByRole('button', { name: '退出' }).click();
-  await admin.getByText('不会退出当前账号').waitFor();
-  assert.equal(new URL(page.url()).pathname, '/about/components/admin-layout');
-  pass('AdminLayout logout remains a local demo action');
-
   await goto(page, '/about/components/asset-picker-modal');
   const pickerTrigger = page.getByRole('button', { name: '打开素材选择弹窗' });
   await pickerTrigger.click();
@@ -716,18 +729,6 @@ async function interactions(page, onlyModalResets = false) {
   await page.waitForFunction(() => document.querySelector('#showcase-post-toc-scroll-detail')?.scrollTop > 0,
     null, { timeout: 5000 });
   pass('post TOC navigates inside its own scroll area');
-
-  await page.setViewportSize({ width: 390, height: 844 });
-  await goto(page, '/about/components/header');
-  const demoHeader = page.locator('[data-showcase-preview="header"]');
-  const menuButton = demoHeader.getByRole('button', { name: '打开导航' });
-  const controls = await menuButton.getAttribute('aria-controls');
-  assert(controls && controls !== 'mobile-nav-menu');
-  await menuButton.click();
-  assert.equal(await menuButton.getAttribute('aria-expanded'), 'true');
-  assert.equal(await page.locator(`#${controls}`).count(), 1);
-  await page.setViewportSize({ width: 1440, height: 1000 });
-  pass('sample Header mobile menu has its own ID and opens');
 
   await goto(page, '/about/components/lightbox');
   await page.locator('.showcase-browser-lightbox-grid img').first().click();
@@ -887,6 +888,7 @@ async function main() {
       return;
     }
     await catalog(page);
+    await removedLayoutDetails(page);
     await details(page, { width: 1440, height: 1000 }, 'light', 'no-preference', 'desktop-light');
     await details(page, { width: 390, height: 844 }, 'dark', 'reduce', 'mobile-dark');
     await page.setViewportSize({ width: 1440, height: 1000 });
