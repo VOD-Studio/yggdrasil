@@ -102,33 +102,12 @@ pub async fn readyz() -> (StatusCode, Json<Value>) {
 mod tests {
     use super::*;
 
-    #[test]
-    fn healthz_returns_ok_status() {
-        // healthz 是无副作用的纯函数式响应，验证其 JSON 结构。
-        // 这里用同步方式构造期望值，避免引入 runtime（healthz 内部无 async 操作）。
-        let expected = json!({ "status": "ok" });
-        assert_eq!(expected["status"], "ok");
-    }
-
-    #[test]
-    fn readyz_pool_info_has_all_fields() {
-        // 验证 pool_info 的字段 schema 完整。
-        // 不直接引用 deadpool::Status（它是 deadpool-postgres 的传递依赖，
-        // 不在测试的可直接解析路径内），用字面量模拟字段值。
-        let size = 5usize;
-        let available = 3usize;
-        let max_size = 20usize;
-        let waiting = 0usize;
-        let pool_info = json!({
-            "size": size,
-            "available": available,
-            "max_size": max_size,
-            "waiting": waiting,
-        });
-        assert_eq!(pool_info["max_size"], 20);
-        assert_eq!(pool_info["size"], 5);
-        assert_eq!(pool_info["available"], 3);
-        assert_eq!(pool_info["waiting"], 0);
+    #[tokio::test]
+    async fn healthz_returns_exactly_ok_status_without_touching_db() {
+        // 契约：liveness 只回 `{"status":"ok"}`，不含 DB/连接池字段。
+        // healthz 不访问 DB_POOL，测试环境无需 DATABASE_URL。
+        let Json(body) = healthz().await;
+        assert_eq!(body, json!({ "status": "ok" }));
     }
 
     #[test]
