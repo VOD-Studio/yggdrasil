@@ -61,7 +61,8 @@ pub(super) fn CoverUploader(
             cover_uploading.set(false);
         });
     };
-    // 灯箱绑定 + 预览图加载占位：封面有图时点击放大查看（复用全局 lightbox.js）。
+    // 灯箱绑定 + 预览图加载占位：封面有图时点击放大查看（lightbox 按需注入，
+    // 见下方 rsx 的 LightboxAssets 声明）。
     // 订阅 cover_image：图片出现/更换后 effect 重跑，data-lb-bound 守卫保证幂等。
     // 新 src 待加载时置 cover_img_loaded=false，由 img onload 回填 true。
     #[cfg(target_arch = "wasm32")]
@@ -105,6 +106,8 @@ pub(super) fn CoverUploader(
     };
 
     rsx! {
+        // P5 §8.2：封面预览灯箱按需注入（脚本未就绪时迟到调用入队兜底）。
+        crate::components::enhance_assets::LightboxAssets {}
         // 封面区：21:9；空态斜纹底加「拖拽、粘贴或点击上传」，有图时显示预览（点击放大）。
         // 整个区域接收拖拽与粘贴；下方一行按钮放素材库、输入链接或更换、移除。
         div {

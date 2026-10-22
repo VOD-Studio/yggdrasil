@@ -104,17 +104,20 @@ const RECENT_LIMIT: usize = 5;
 const DEBOUNCE_MS: u32 = 150;
 const PROGRESS_DELAY_MS: u32 = 300;
 
-fn page_route(path: &str) -> Route {
-    match path {
+fn page_target(path: &str) -> NavigationTarget<Route> {
+    let route = match path {
         "/notes" => Route::Notes {},
         "/archives" => Route::Archives {},
         "/friends" => Route::Friends {},
         "/about" => Route::About {},
         "/about/writing" => Route::WritingGuide {},
         "/changelog" => Route::Changelog {},
-        "/about/components" => Route::ComponentShowcase {},
+        // 图鉴是 full 客户端专属路由（plan §6.1/§6.6）：reader 客户端没有该变体，
+        // 两个 flavor 统一整页导航，由服务端按路径选择 full 模板。
+        "/about/components" => return NavigationTarget::External(path.to_string()),
         _ => Route::Home {},
-    }
+    };
+    route.into()
 }
 
 /// 忽略大小写的子串匹配，空查询视为匹配。
@@ -606,7 +609,7 @@ pub fn SearchPalette(#[props(default = true)] shortcut: bool) -> Element {
             }
             Item::Page { path, .. } => {
                 close();
-                navigator.push(page_route(path));
+                navigator.push(page_target(path));
             }
         }
     };
@@ -1013,8 +1016,11 @@ mod tests {
     #[test]
     fn page_routes_cover_every_jump_target() {
         for (_, path) in PAGES {
-            let route = page_route(path);
-            assert_eq!(route.to_string(), path, "{path}");
+            let target = match page_target(path) {
+                NavigationTarget::Internal(route) => route.to_string(),
+                NavigationTarget::External(url) => url,
+            };
+            assert_eq!(target, *path, "{path}");
         }
     }
 }

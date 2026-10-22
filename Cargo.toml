@@ -1,6 +1,6 @@
 [package]
 name = "yggdrasil"
-version = "0.23.4"
+version = "0.24.0"
 edition = "2021"
 
 # 构建时工具二进制：用 syntect（server-only 依赖）生成 highlight.css。
@@ -11,7 +11,14 @@ name = "generate_highlight_css"
 required-features = ["server"]
 
 [dependencies]
-dioxus = { version = "0.7.10", features = ["fullstack", "router"] }
+# 浏览器默认日志链裁剪（P1）：dioxus 0.7.10 的 default features 是
+# ["launch", "devtools", "logger", "lib"]，其中 logger 拉入 dioxus-logger →
+# tracing-wasm → tracing-subscriber（含 env-filter → matchers/regex-automata），
+# 整条链只服务框架日志输出，且在 web-only 构建里没有其他引用者。这里显式补回
+# launch/devtools/lib，唯独去掉 logger：release WASM 不再链接日志订阅器。
+# 开发诊断（dx serve、浏览器回归）经本 crate 的 dev-logger feature 显式启用。
+# 注意 Cargo features 是累加的：--all-features 等组合会重新带回 logger，属预期。
+dioxus = { version = "0.7.10", default-features = false, features = ["launch", "devtools", "lib", "fullstack", "router"] }
 serde = { version = "1.0", features = ["derive"] }
 tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "fs", "io-util", "time", "sync"], optional = true }
 tokio-postgres = { version = "0.7", features = ["with-chrono-0_4", "with-uuid-1"], optional = true }
@@ -32,7 +39,10 @@ tracing-subscriber = { version = "0.3", optional = true }
 rand = { version = "0.10", optional = true }
 http = { version = "1", optional = true }
 axum = { version = "0.8", optional = true, features = ["multipart"] }
-tower-http = { version = "0.7", optional = true, features = ["compression-full", "timeout", "trace"] }
+# fs：上一发布资源保留窗口（YGG_PREVIOUS_PUBLIC_DIR）的 ServeFile .br 协商（plan §6.7）。
+tower-http = { version = "0.7", optional = true, features = ["compression-full", "timeout", "trace", "fs"] }
+# 保留窗口中间件用 ServiceExt::oneshot 调用 ServeFile（仅 server）。
+tower = { version = "0.5", features = ["util"], optional = true }
 
 serde_json = "1.0"
 sha2 = { version = "0.11", optional = true }
@@ -138,8 +148,28 @@ lto = "fat"
 strip = false
 
 [features]
+# default 是「完整应用」（plan §6.3：保持默认开发体验为完整应用）。
+# 两个 release 客户端产物按 plan §6.1 显式选择：
+#   - full 客户端：dx build @client（与现状命令完全一致）。
+#   - reader 客户端：dx build @client --features client-reader，后台/登录/注册/
+#     图鉴的客户端页面与 Route 变体整体剥离。
+# 注意 dx 0.7.10 会给客户端构建注入「default features 减 server」（实测捕获的
+# rustc 参数），因此 reader 开关必须是「不进 default 的累加 feature」，用
+# default 里放 full 开关的极性会把 full 强加给所有客户端构建。
+# client-reader 只在 wasm 目标下生效：与 server 同开（cargo test --all-features、
+# 原生构建）时 build.rs 不发射裁剪 cfg，服务端永远编译完整应用（plan §6.5）。
 default = ["web", "server"]
+# 开发期诊断：保留 dioxus 框架日志输出（dioxus-logger 订阅器）。
+# 不进 default——make dev 与 regression-build 显式传 --features dev-logger，
+# release 客户端（make build / build-client / Docker）保持无 logger。
+dev-logger = ["dioxus/logger"]
 web = ["dioxus/web"]
+# reader 客户端开关：剥离后台、登录/注册与组件图鉴的客户端页面
+# （src/pages/{admin,login,register,components_showcase}、components::
+# {admin_layout,assets,sql_result_table} 与对应 Route 变体，plan §6.1）。
+# 裁剪经由 build.rs 发射的 ygg_client_reader cfg（= 本 feature 开且 server 关），
+# #[cfg] 在 Routable 派生展开前生效（plan §6.2 门 1 实验）。
+client-reader = []
 server = [
     "dioxus/server",
     "dep:tokio",
@@ -161,6 +191,7 @@ server = [
     "dep:syntect",
     "dep:axum",
     "dep:tower-http",
+    "dep:tower",
     "dep:image",
     "dep:zenwebp",
     "dep:moka",

@@ -173,8 +173,9 @@ pub fn CommentSection(post_id: i32) -> Element {
     });
 
     // 灯箱绑定：评论图片（审核后渲染的 <img>）点击放大，与正文图一致。
-    // lightbox.js 由 Dioxus.toml 全局注入；评论列表随加载/刷新重建节点后重跑此
-    // effect 重新绑定，TS 端 data-lb-bound 守卫保证重复绑定幂等（同 assets.rs 模式）。
+    // P5 §8.2 起脚本按需注入（本组件声明，PostContent 已声明则按 src 去重）；
+    // 评论列表随加载/刷新重建节点后重跑此 effect 重新绑定，TS 端 data-lb-bound
+    // 守卫保证重复绑定幂等（同 assets.rs 模式）。
     #[cfg(target_arch = "wasm32")]
     use_effect(move || {
         // 订阅 comments_resource：数据落地（DOM 提交后）重绑。
@@ -215,7 +216,11 @@ pub fn CommentSection(post_id: i32) -> Element {
         None => (None, None, false),
     };
 
-    rsx! { CommentSectionContent { post_id, comments, approved_count, failed } }
+    rsx! {
+        // P5 §8.2：评论区图片灯箱按需注入（脚本未就绪时迟到调用入队兜底）。
+        crate::components::enhance_assets::LightboxAssets {}
+        CommentSectionContent { post_id, comments, approved_count, failed }
+    }
 }
 
 /// 正式文章和图鉴共同使用的评论区展示；数据获取与持久化由上层负责。

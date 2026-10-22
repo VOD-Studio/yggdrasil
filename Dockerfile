@@ -272,12 +272,15 @@ RUN make build-assets
 # ESBUILD_VERSION must match dx's pinned constant (0.27.3 in dx 0.7.10).
 ENV DX_HOME=/usr/local/dx
 RUN make esbuild-cache wasm-bindgen-cache
-# Build the client-side Dioxus WASM bundle. We use dx only for the client assets;
-# dx's linker wrapper is incompatible with a raw static linker, so the server
-# binary is built with plain cargo in the next step. The client build emits a
-# ready-to-serve public/ directory under target/dx/yggdrasil/*/web/public.
+# Build the client-side Dioxus WASM bundles. We use dx only for the client
+# assets; dx's linker wrapper is incompatible with a raw static linker, so the
+# server binary is built with plain cargo in the next step. Each flavor build
+# emits a ready-to-serve public/ directory under target/dx/yggdrasil/*/web/public;
+# make snapshot-flavor copies it aside so the two builds cannot clobber each
+# other, and scripts/build-release.cjs merges them into dist/public (full
+# index.html + flavors/reader/index.html + release-manifest.json, plan §6.4).
 # restore-webp overwrites dx's re-encoded VP8L .webp stills with the source
-# originals — keep in sync with make build-linux, which runs the same target.
+# originals after every dx build — keep in sync with make build-linux.
 # --mount 缓存 wasm32 的 cargo registry/git/target：dx build 内部跑
 # `cargo build --target wasm32-unknown-unknown`（不经 cargo-chef），改一行 .rs
 # 也会全量重下重编 ~400 个 wasm 依赖；mount 让它们跨 build 持久化。target
@@ -290,8 +293,11 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/build/target,sharing=locked \
     make build-client && \
     make restore-webp && \
-    mkdir -p /build/dist/public && \
-    cp -r /build/target/dx/yggdrasil/*/web/public/* /build/dist/public/
+    make snapshot-flavor FLAVOR=full && \
+    make build-client-reader && \
+    make restore-webp && \
+    make snapshot-flavor FLAVOR=reader && \
+    bun scripts/build-release.cjs --out /build/dist
 
 # Generate the project's rustdoc API docs and stage them under public/doc so
 # they are served at /doc on the live site. Mirrors `make doc` exactly:

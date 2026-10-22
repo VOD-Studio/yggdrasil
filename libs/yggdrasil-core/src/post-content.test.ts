@@ -3,7 +3,7 @@
  * 黑盒驱动:只通过 window.__initPostContent 入口。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import './index';
+import './enhance';
 
 describe('initPostContent', () => {
   beforeEach(() => {

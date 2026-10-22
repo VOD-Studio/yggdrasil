@@ -1,5 +1,3 @@
-import { initAnchorClick } from './anchor-click';
-import { scrollToHash } from './hash-scroll';
 import { STICKY_HEADER_SELECTOR } from './scroll-to-heading';
 
 let disposeActive: (() => void) | undefined;
@@ -22,8 +20,11 @@ export function initChangelogNav(): void {
     .filter((item): item is { link: HTMLAnchorElement; card: HTMLElement } => !!item.card);
   if (!items.length) return;
 
-  initAnchorClick();
-  if (items.some(({ link }) => link.hash === window.location.hash)) scrollToHash();
+  // P5 §8.2：anchor/scroll 能力属 core 启动入口，经全局桥接调用（import 会让本 IIFE
+  // 复制一份带模块级幂等位的实现，造成双监听）。core 阻塞加载必然先就绪；
+  // 单测环境无 core 时跳过（该集成路径由浏览器回归覆盖）。
+  window.__initAnchorClick?.();
+  if (items.some(({ link }) => link.hash === window.location.hash)) window.__scrollToHash?.();
 
   const position = nav.querySelector<HTMLElement>('[data-nav-position]');
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');

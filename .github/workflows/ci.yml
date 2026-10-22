@@ -216,6 +216,9 @@ jobs:
       - name: Frontend tests
         run: cd libs && bun run --sequential --filter '*' test
 
+      - name: Release bootstrap tests
+        run: make test-release-bootstrap
+
   check-wasm:
     needs: select_runner
     runs-on: ${{ fromJSON(needs.select_runner.outputs.runner) }}
@@ -235,14 +238,23 @@ jobs:
           prefix-key: wasm
 
       # wasm32 目标单独 check，覆盖 web 特性的编译（无需 dx，由 build 阶段容器内 dx 全量构建兜底）。
-      - name: WASM target check
+      # plan §6（reader/full 双客户端）：full 组合 = web；reader 组合额外开
+      # client-reader，验证后台/登录/图鉴裁剪后的浏览器目标仍完整编译。
+      - name: WASM target check (full)
         run: cargo check --locked --target wasm32-unknown-unknown --no-default-features --features web
+
+      - name: WASM target check (reader)
+        run: cargo check --locked --target wasm32-unknown-unknown --no-default-features --features web,client-reader
 
       # 单独跑 wasm32 target 的 clippy：test job 的 clippy 是原生 target，
       # #[cfg(target_arch = "wasm32")] 门控的代码（含 src/bridges 的 wasm 子模块）
       # 完全不会被那边编译到，等于从未被 clippy 检查过。这里补上。
-      - name: Clippy (wasm32, web feature)
+      # reader/full 两个真实客户端组合各自 lint（plan §6.3）。
+      - name: Clippy (wasm32 full)
         run: cargo clippy --locked --target wasm32-unknown-unknown --no-default-features --features web -- -D warnings
+
+      - name: Clippy (wasm32 reader)
+        run: cargo clippy --locked --target wasm32-unknown-unknown --no-default-features --features web,client-reader -- -D warnings
 
   browser:
     runs-on: ubuntu-latest

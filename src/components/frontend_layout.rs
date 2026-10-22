@@ -51,6 +51,9 @@ fn route_skeleton(route: &Route) -> Element {
         Route::WritingGuide {} => rsx! {
             DelayedSkeleton { WritingGuideSkeleton {} }
         },
+        // 图鉴路由仅存在于 full 客户端（plan §6.1）；match arm 整体门控，
+        // reader 构建中枚举里没有这两个变体。
+        #[cfg(not(ygg_client_reader))]
         Route::ComponentShowcase {} | Route::ComponentDetail { .. } => rsx! {
             div { class: "py-20", role: "status", "正在翻开组件图鉴…" }
         },
@@ -74,10 +77,8 @@ pub fn FrontendLayout() -> Element {
     let palette = use_search_palette_provider();
     // 前台页面共用 880px 的索引宽度（正文页在内部收窄到 680px），图鉴 1152px；
     // 页头、正文与页脚同宽，左右边缘对齐（文章页主区例外，见下）。
-    let max_width = if matches!(
-        route,
-        Route::ComponentShowcase {} | Route::ComponentDetail { .. }
-    ) {
+    // 图鉴变体仅 full 客户端存在，reader 恒为索引宽度。
+    let max_width = if crate::router::route_is_showcase(&route) {
         "max-w-6xl"
     } else {
         "max-w-[880px]"

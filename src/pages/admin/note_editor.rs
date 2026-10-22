@@ -271,8 +271,14 @@ fn NoteEditor(initial: Option<Note>) -> Element {
                             }
                         }
                         if preview() {
+                            // 预览复用公开渲染路径：完整 Note 转为 PublicNote（编辑器的工作稿
+                            // 版本号保留展示），显示字段不变，Markdown 不会进入公开渲染组件。
                             if let Some(note) = saved.clone() {
-                                crate::pages::notes::NoteDocument { key: "{note.version}", note, preview: true }
+                                crate::pages::notes::NoteDocument {
+                                    key: "{note.version}",
+                                    note: crate::models::public_note::PublicNote::from(note),
+                                    preview: true,
+                                }
                             }
                         } else {
                             FilterTabs {

@@ -115,19 +115,19 @@ fn AboutStats() -> Element {
         }
         section { class: "about-entries", aria_label: "更多",
             AboutEntry {
-                to: Route::WritingGuide {},
+                to: EntryTarget::Route(Route::WritingGuide {}),
                 title: "写作指南",
                 description: "把这里的写作方式交给你的 AI：SKILL.md、MCP 接入与正文语法。",
                 meta: "/about/writing".to_string(),
             }
             AboutEntry {
-                to: Route::ComponentShowcase {},
+                to: EntryTarget::Document("/about/components"),
                 title: "组件图鉴",
                 description: "组成这个站点的界面组件，每一个都能直接操作。",
                 meta: "/about/components".to_string(),
             }
             AboutEntry {
-                to: Route::Changelog {},
+                to: EntryTarget::Route(Route::Changelog {}),
                 title: "更新日志",
                 description: "每个版本改了什么、修了什么。",
                 meta: format!("最新 {version}"),
@@ -224,17 +224,40 @@ fn bar_height(count: i64, max: i64) -> f64 {
     (count as f64 / max as f64 * BAR_MAX_PX).max(2.0)
 }
 
+/// 入口卡片的去向。
+#[derive(Clone, PartialEq)]
+enum EntryTarget {
+    /// 前台路由，走客户端导航。
+    Route(Route),
+    /// full 客户端专属路由（如组件图鉴，plan §6.1/§6.6）：渲染普通 `<a href>`，
+    /// 点击走真正的文档导航，服务端按路径选择 full 模板。不能用 Link：服务端为
+    /// /about 选择 reader 模板时，Link 在 SSR HTML 里留下的 data-node-hydration
+    /// 监听器标记与 reader 客户端的无监听器模板失配，hydration 直接崩溃。
+    Document(&'static str),
+}
+
 #[component]
-fn AboutEntry(to: Route, title: &'static str, description: &'static str, meta: String) -> Element {
-    rsx! {
-        Link { class: "about-entry", to,
-            span { class: "about-entry-title",
-                "{title}"
-                span { class: "about-entry-arrow", aria_hidden: "true", Icon { name: IconName::ArrowRight, size: 15 } }
-            }
-            span { class: "about-entry-description", "{description}" }
-            span { class: "about-entry-meta tabular-nums", "{meta}" }
+fn AboutEntry(
+    to: EntryTarget,
+    title: &'static str,
+    description: &'static str,
+    meta: String,
+) -> Element {
+    let body = rsx! {
+        span { class: "about-entry-title",
+            "{title}"
+            span { class: "about-entry-arrow", aria_hidden: "true", Icon { name: IconName::ArrowRight, size: 15 } }
         }
+        span { class: "about-entry-description", "{description}" }
+        span { class: "about-entry-meta tabular-nums", "{meta}" }
+    };
+    match to {
+        EntryTarget::Route(to) => rsx! {
+            Link { class: "about-entry", to, {body} }
+        },
+        EntryTarget::Document(href) => rsx! {
+            a { class: "about-entry", href, {body} }
+        },
     }
 }
 

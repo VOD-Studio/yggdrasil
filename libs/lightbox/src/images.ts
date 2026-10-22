@@ -118,24 +118,32 @@ export function initLazyLoad(container: Element): void {
   }
   if (scope.disposed) return;
 
+  // src 已就位（路由协调器 prepareCover 在 VT 快照暂停期间先行换 src 解码、或
+  // 同页另一处已初始化）时不得重新赋值：对同值 src 赋值也会重启图片加载，令
+  // 协调器挂起的 decode() 以 EncodingError 拒绝，封面被标记失败、退出共享过渡
+  // （P5 §8.2 后 lightbox 改按需加载，首次 SPA 进文章页时本函数可能恰在 VT
+  // 窗口内运行）。上面挂好的 load/error 监听会接管既有加载的结果。
+  const adoptOrStart = (): void => {
+    if (!container.isConnected) {
+      cleanup();
+      return;
+    }
+    if (!fullImg.getAttribute('src')) fullImg.src = fullSrc;
+    io?.unobserve(container);
+  };
   if ('IntersectionObserver' in window) {
     io = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
           if (!entry.isIntersecting) continue;
-          if (!container.isConnected) {
-            cleanup();
-            return;
-          }
-          fullImg.src = fullSrc;
-          io?.unobserve(container);
+          adoptOrStart();
         }
       },
       { rootMargin: '200px' },
     );
     io.observe(container);
   } else {
-    fullImg.src = fullSrc;
+    adoptOrStart();
   }
 }
 

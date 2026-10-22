@@ -14,6 +14,7 @@ use crate::components::ui::{
     use_sheet_close, BottomSheet, Button, ButtonVariant, Icon, IconName, LoadError,
 };
 use crate::models::note::*;
+use crate::models::public_note::PublicNote;
 use crate::router::Route;
 use crate::utils::time::sleep_ms;
 
@@ -787,7 +788,7 @@ fn NoteReader(slug: String, book: Option<i32>) -> Element {
 /// 阅读页左栏：所在笔记本的目录，当前篇浮起并展开本篇小节；不在公开笔记本中时
 /// 只有返回链接与本篇小节。小节的当前位置由 yggdrasil-core 的目录 scroll-spy 标出。
 #[component]
-fn NoteRail(note: Note, context: Option<NoteContext>) -> Element {
+fn NoteRail(note: PublicNote, context: Option<NoteContext>) -> Element {
     rsx! {
         aside { class: "notes-side note-rail", aria_label: "笔记本目录",
             NotebookBack {}
@@ -865,6 +866,10 @@ fn NoteSections(toc_html: String, spy: bool) -> Element {
         }
     });
     rsx! {
+        // P5 §8.2：scroll-spy 增强在 yggdrasil-enhance.js，按需注入（按 src 去重）。
+        if spy {
+            crate::components::enhance_assets::EnhanceScript {}
+        }
         nav {
             id: spy.then_some("note-rail-toc"),
             class: "note-sections",
@@ -878,7 +883,7 @@ fn NoteSections(toc_html: String, spy: bool) -> Element {
 /// 后台编辑器的预览（`preview`）只显示正文部分。
 #[component]
 pub fn NoteDocument(
-    note: Note,
+    note: PublicNote,
     #[props(default)] preview: bool,
     #[props(default)] context: Option<NoteContext>,
 ) -> Element {

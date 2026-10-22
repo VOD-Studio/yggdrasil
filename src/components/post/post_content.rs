@@ -8,6 +8,10 @@
 //! [`crate::components::code_runner::CodeRunner`] 组件，使可运行块作为
 //! Dioxus vdom 内的一等元素渲染（而非手动篡改 DOM，避免 hydration 冲突）。
 
+use std::collections::VecDeque;
+use std::hash::{Hash, Hasher};
+use std::sync::{Arc, Mutex, OnceLock};
+
 use dioxus::prelude::*;
 
 use crate::components::code_runner::CodeRunner;
@@ -91,6 +95,61 @@ fn code_inner_html(block: &str) -> &str {
     inner.rfind("</code>").map_or("", |end| &inner[..end])
 }
 
+// ============================================================================
+// 片段解析缓存（P4.2）。
+//
+// 直接在 render 内调用 split_content_fragments 是纯函数、符合渲染纯净性，但
+// PostContent 会因主题切换（use_resolved_theme 订阅）等原因重渲染，每次都对
+// 整篇 content_html 重新扫描并分配全部片段字符串——长文 + 多运行块时是明显的
+// 主线程尖峰。这里按内容哈希做进程内有界缓存：
+// - 不用 use_memo：memo 只在闭包读取的 signal 变化时重算，content_html 是普通
+//   String prop，读取不建立订阅——memo 会永久缓存首次解析结果，上下篇切换时
+//   返回旧 fragments（见下方渲染处的历史注释）。
+// - 命中需通过全文相等核对（条目保留 Arc<str> 原文），哈希碰撞不会错渲染。
+// - 有界（8 篇，插入序淘汰）：服务端 SSR 渲染不同文章、浏览器切页都不会无界
+//   增长；keyed remount 语义不受影响（缓存只跳过解析，输出逐字节相同）。
+// ============================================================================
+const FRAGMENT_CACHE_CAP: usize = 8;
+
+struct FragmentCacheEntry {
+    content: Arc<str>,
+    fragments: Arc<Vec<ContentFragment>>,
+}
+
+fn fragment_cache() -> &'static Mutex<VecDeque<(u64, FragmentCacheEntry)>> {
+    static CACHE: OnceLock<Mutex<VecDeque<(u64, FragmentCacheEntry)>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(VecDeque::with_capacity(FRAGMENT_CACHE_CAP)))
+}
+
+/// 带内容缓存的片段解析：内容相同（含更新）时复用上次解析结果。
+fn split_content_fragments_cached(html: &str) -> Arc<Vec<ContentFragment>> {
+    let key = {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        html.hash(&mut hasher);
+        hasher.finish()
+    };
+    {
+        let cache = fragment_cache().lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((_, entry)) = cache
+            .iter()
+            .find(|(k, entry)| *k == key && &*entry.content == html)
+        {
+            return entry.fragments.clone();
+        }
+    }
+    let entry = FragmentCacheEntry {
+        content: Arc::from(html),
+        fragments: Arc::new(split_content_fragments(html)),
+    };
+    let fragments = entry.fragments.clone();
+    let mut cache = fragment_cache().lock().unwrap_or_else(|e| e.into_inner());
+    if cache.len() >= FRAGMENT_CACHE_CAP {
+        cache.pop_front();
+    }
+    cache.push_back((key, entry));
+    fragments
+}
+
 /// 从 HTML 片段中提取首个 `name="value"` 属性值，并解码 HTML 实体。
 /// 仅在单个 `<pre>` 块内查找，足够本场景使用。
 fn extract_attr(block: &str, name: &str) -> Option<String> {
@@ -120,23 +179,19 @@ fn decode_html_entities(s: &str) -> String {
 /// 关键行为：
 /// - 把可运行代码块拆成 [`CodeRunner`] 组件穿插渲染，其余 HTML 片段照旧。
 /// - 在 `target_arch = "wasm32"` 环境下调用 `window.__initPostContent` 初始化代码块
-///   复制按钮（`yggdrasil-core.js` 已由 `Dioxus.toml` 全局注入）。
-///   灯箱（图片灯箱 + 懒加载）改由 `Dioxus.toml` 全局注入 `lightbox.js`，
-///   这里仅设置其初始化配置 `__lightboxSelectors` 并兜底调用。
+///   复制按钮；P5 §8.2 起正文增强在 `yggdrasil-enhance.js`、灯箱在 `lightbox.js`，
+///   均由本组件按需声明注入（见 [`crate::components::enhance_assets`]），
+///   这里仅设置初始化配置 `__lightboxSelectors` 并兜底调用。
 #[component]
 pub fn PostContent(
     content_html: String,
     #[props(default)] scope_id: Option<&'static str>,
 ) -> Element {
-    // 直接在 render 内拆分片段（纯函数调用，符合渲染纯净性）。
-    //
-    // 不用 use_memo：memo 依赖 ReactiveContext 追踪闭包内读取的 signal 才会重算，
-    // 但 content_html 是普通 String prop，读取它不建立订阅——memo 会永久缓存首次
-    // 解析结果。当上下篇切换、content_html prop 变化时 memo 不重算，返回旧 fragments，
-    // 导致 dangerous_inner_html 收到旧 html、diff 判断属性未变 → 正文 DOM 不更新
-    // （表现为标题/描述更新了但正文停在旧文章）。split_content_fragments 是纯函数，
-    // 每次渲染重新解析开销可控。
-    let fragments = split_content_fragments(&content_html);
+    // 直接在 render 内解析片段：split_content_fragments_cached 是纯函数，结果
+    // 按内容哈希缓存（见上方说明），重复渲染零解析开销，且随 content_html 变化
+    // 自动失效——上下篇切换、同路由内容更新都能拿到新片段（keyed remount 与
+    // dangerous_inner_html diff 不受影响）。
+    let fragments = split_content_fragments_cached(&content_html);
 
     // mermaid 流程图主题需随当前生效主题（light/dark）切换。读 use_resolved_theme()
     // 建立订阅：主题变化时下方 use_effect 重跑，重调 __initMermaid 传入新 theme；
@@ -232,6 +287,10 @@ pub fn PostContent(
     });
 
     rsx! {
+        // P5 §8.2：正文增强与灯箱按需注入。SSR 直达烤进 head 带 defer，先于
+        // hydration；SPA 首跳脚本晚于 effect 时由增强调用队列兜底，按 src 去重。
+        crate::components::enhance_assets::EnhanceScript {}
+        crate::components::enhance_assets::LightboxAssets {}
         div { id: scope_id, "data-showcase-lightbox-owner": scope_id, class: "post-content md-content",
             for (i, fragment) in fragments.iter().enumerate() {
                 {
@@ -332,5 +391,20 @@ mod tests {
     fn decode_html_entities_roundtrip() {
         assert_eq!(decode_html_entities("print(&#x27;hi&#x27;)"), "print('hi')");
         assert_eq!(decode_html_entities("&quot;&lt;&gt;&amp;"), "\"<>&");
+    }
+
+    #[test]
+    fn fragment_cache_follows_content_changes() {
+        let a = split_content_fragments_cached("<p>alpha</p>");
+        let a2 = split_content_fragments_cached("<p>alpha</p>");
+        assert!(Arc::ptr_eq(&a, &a2), "相同内容应命中缓存复用同一解析结果");
+        let b = split_content_fragments_cached("<p>beta</p>");
+        assert!(!Arc::ptr_eq(&a, &b), "不同内容不得复用缓存");
+        // 超出容量后旧条目被淘汰；重新解析的输出与首次逐值一致。
+        for i in 0..(FRAGMENT_CACHE_CAP + 2) {
+            split_content_fragments_cached(&format!("<p>filler-{i}</p>"));
+        }
+        let a3 = split_content_fragments_cached("<p>alpha</p>");
+        assert_eq!(a3, a, "淘汰后重新解析输出应与首次一致");
     }
 }

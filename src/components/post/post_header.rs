@@ -7,13 +7,14 @@ use dioxus::router::components::Link;
 
 use crate::components::post::breadcrumbs::Breadcrumbs;
 use crate::components::post::post_meta::PostMeta;
-use crate::models::post::{Post, PostStatus};
+use crate::models::post::{PostHeaderData, PostStatus};
 use crate::router::Route;
 
 /// 文章页眉组件。
 ///
 /// Props：
-/// - `post`：文章数据模型
+/// - `post`：页眉展示所需的最小字段集（P4.2：不携带完整正文，调用方用
+///   `PostHeaderData::from(&post)` 构造）
 /// - `full_reload`：链接走整页加载（默认 false）。仅当渲染在 admin 布局内
 ///   （`/admin/preview`）时传 true——跨 layout 分支的客户端导航会触发
 ///   dioxus 0.7.10 的 suspense 卸载双重回收 bug（详见 `src/pages/admin/preview.rs`
@@ -21,7 +22,7 @@ use crate::router::Route;
 /// - `sample`：图鉴展示非跳转的样例链接；正式文章默认 false。
 #[component]
 pub fn PostHeader(
-    post: Post,
+    post: PostHeaderData,
     #[props(default = false)] full_reload: bool,
     #[props(default = false)] sample: bool,
 ) -> Element {

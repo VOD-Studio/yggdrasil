@@ -6,7 +6,7 @@
 #   mk/docker.mk    镜像构建、Docker 开发环境、lint/test/fmt 工具容器
 include mk/assets.mk mk/dx-cache.mk mk/docker.mk
 
-.PHONY: help build build-linux build-client wasm-toolchain restore-webp precompress
+.PHONY: help build build-linux build-client build-client-reader build-full-and-server snapshot-flavor wasm-toolchain restore-webp precompress
 .PHONY: check-dev-tools check-build-tools check-brotli check-wasm-toolchain
 .PHONY: dev test lint fmt fix doc doc-open clean
 
@@ -113,30 +113,68 @@ wasm-toolchain: ## 安装 release 构建所需的固定 nightly 工具链
 		--component rust-src --target wasm32-unknown-unknown
 
 # ── release 构建 ───────────────────────────────────────────────
-build: check-build-tools ## 完整 release 构建（资源 + 文档 + dx build + 压缩）
+# P3 双客户端流水线（plan §6.4）：共享资源 → 服务端 → full 客户端 → 快照 →
+# reader 客户端 → 快照 → 合并 + 发布清单 → Brotli → 校验。两次 dx 客户端构建
+# 顺序执行（不并发写同一输出目录），各自 restore-webp 后立即快照，快照里的
+# .webp 已还原；合并脚本从快照装配最终 public/，同路径不同内容直接失败。
+RELEASE_ASSEMBLY := target/release-assembly
+
+build: check-build-tools ## 完整 release 构建（资源 + 文档 + 双客户端 + 服务端 + 合并 + 压缩）
 	@$(MAKE) build-assets
 	@$(MAKE) doc
-	@$(DX_NIGHTLY) build --release --debug-symbols=false \
-		@client --release --debug-symbols=false --cargo-args='$(WASM_CARGO_ARGS)'
+	@$(MAKE) build-full-and-server
 	@$(MAKE) restore-webp
+	@$(MAKE) snapshot-flavor FLAVOR=full
+	@$(MAKE) build-client-reader
+	@$(MAKE) restore-webp
+	@$(MAKE) snapshot-flavor FLAVOR=reader
+	@bun scripts/build-release.cjs --out target/dx/yggdrasil/release/web
 	@$(MAKE) precompress
+	@bun scripts/build-release.cjs --verify --out target/dx/yggdrasil/release/web
 
-build-linux: check-build-tools ## 构建 Linux x86_64 musl 服务端 + 客户端
+build-linux: check-build-tools ## 构建 Linux x86_64 musl 服务端 + 双客户端
 	@$(MAKE) build-assets
 	@$(MAKE) build-client
-	@$(DX) build @server --release --debug-symbols=false --target x86_64-unknown-linux-musl --wasm-js-cfg false --features server
 	@$(MAKE) restore-webp
+	@$(MAKE) snapshot-flavor FLAVOR=full
+	@$(MAKE) build-client-reader
+	@$(MAKE) restore-webp
+	@$(MAKE) snapshot-flavor FLAVOR=reader
+	@$(DX) build @server --release --debug-symbols=false --target x86_64-unknown-linux-musl --wasm-js-cfg false --features server
+	@bun scripts/build-release.cjs --out target/dx/yggdrasil/release/web
 	@$(MAKE) precompress
+	@bun scripts/build-release.cjs --verify --out target/dx/yggdrasil/release/web
 	@echo ""
 	@echo "Linux build complete! The server binary is at target/dx/yggdrasil/release/web/server"
-	@echo "Remember to deploy it alongside the target/dx/yggdrasil/release/web/public directory."
+	@echo "Remember to deploy it alongside the target/dx/yggdrasil/release/web/public directory"
+	@echo "(contains full index.html, flavors/reader/index.html and release-manifest.json)."
 	@echo "When running the server, ensure DIOXUS_ASSET_DIR is set or the public directory is in CWD."
 
-# 构建 release wasm 客户端（固定 nightly，见 WASM_NIGHTLY）。build-linux 与两个
-# Dockerfile 共用；不含 restore-webp，由调用方在全部 dx build 结束后执行。
-build-client: check-wasm-toolchain
-	@$(DX_NIGHTLY) build @client --release --debug-symbols=false --wasm-js-cfg false \
+# full 客户端 + 服务端（宿主架构）：沿用原 make build 的组合命令形态——
+# dx 的 @server 选择器同样会刷新 wasm 半边，而服务端单独构建时拿不到
+# -Zbuild-std（wasm std 的 panic 策略与 immediate-abort 不匹配会报错），
+# 因此服务端由这段命令顺带产出，客户端特征与 build-client 一致。
+build-full-and-server: check-wasm-toolchain ## 构建 full 客户端与宿主架构服务端
+	@$(DX_NIGHTLY) build --release --debug-symbols=false \
+		@client --release --debug-symbols=false --wasm-js-cfg false \
 		--cargo-args='$(WASM_CARGO_ARGS)'
+
+# reader 客户端：client-reader 剥离后台/登录/注册/图鉴（plan §6.1）。
+# 潜在收益最大的产物，验收门槛见 plan §6.8（reader Brotli ≥35% 降幅）。
+build-client-reader: check-wasm-toolchain ## 构建 reader 客户端（公开阅读裁剪版）
+	@$(DX_NIGHTLY) build @client --release --debug-symbols=false --wasm-js-cfg false \
+		--features client-reader --cargo-args='$(WASM_CARGO_ARGS)'
+
+# 保存某个 flavor 的构建快照（public + dx 资产清单），供 build-release.cjs 合并。
+# 必须在本 flavor 的 restore-webp 之后调用，快照内 .webp 已还原。
+snapshot-flavor: ## 快照 dx 客户端产物（FLAVOR=full|reader）
+	@test -n "$(FLAVOR)" || (echo "用法：make snapshot-flavor FLAVOR=full|reader" >&2; exit 1)
+	@rm -rf $(RELEASE_ASSEMBLY)/$(FLAVOR)
+	@mkdir -p $(RELEASE_ASSEMBLY)/$(FLAVOR)
+	@cp -a target/dx/yggdrasil/release/web/public $(RELEASE_ASSEMBLY)/$(FLAVOR)/public
+	@if [ -f target/dx/yggdrasil/release/web/.manifest.json ]; then \
+		cp target/dx/yggdrasil/release/web/.manifest.json $(RELEASE_ASSEMBLY)/$(FLAVOR)/; \
+	fi
 
 # 兜底：dx build 0.7.10 会把 public/ 下的 .webp 重编码成 VP8L 无损静图
 # （动画帧被丢弃，静图体积反增 7-8 倍），与文档承诺的"原样拷贝"不符。
@@ -174,13 +212,16 @@ precompress: check-brotli
 		-print0 | xargs -0 -r brotli -q 11 -kf
 
 # ── 开发 ───────────────────────────────────────────────────────
+# 开发态即完整应用：dx 的客户端构建取「default features 减 server」再加 CLI
+# features（见 Cargo.toml [features] 注释），default 不含 client-reader，
+# 后台/图鉴照常编译；reader 产物只在 release 流水线显式构建（plan §6.3）。
 dev: dev-assets esbuild-cache wasm-bindgen-cache ## 启动开发服务器（增量构建资源 + dx serve）
 	@echo "Starting dx serve..."
-	@SSR_CACHE_SECS=0 $(DX) serve --addr 0.0.0.0 --interactive false
+	@SSR_CACHE_SECS=0 $(DX) serve --features dev-logger --addr 0.0.0.0 --interactive false
 
 .PHONY: regression-build test-databases test-browser
 regression-build: dev-assets esbuild-cache wasm-bindgen-cache ## 构建隔离浏览器回归使用的应用
-	@$(DX) build --platform web
+	@$(DX) build --platform web --features dev-logger
 	@$(MAKE) restore-webp
 
 test-databases: ## 在临时 PostgreSQL 中验证文章、笔记和备份，结束后清理
@@ -191,9 +232,21 @@ test-browser: ## 隔离浏览器回归（先 regression-build；BROWSER_SUITE=sm
 	@bun scripts/regression.cjs $(BROWSER_SUITE)
 
 # ── 测试与代码质量 ─────────────────────────────────────────────
-test: ## 运行 Rust 与前端测试
+test: test-release-bootstrap ## 运行 Rust 与前端测试
 	@cargo test
 	@cd libs && bun run --filter '*' test
+
+.PHONY: test-release-bootstrap test-wasm-preload
+test-release-bootstrap: ## 验证双客户端模板、WASM preload 与发布清单
+	@bun test scripts/release-bootstrap.test.cjs
+	@bun scripts/test-wasm-preload.cjs --self-test
+
+test-wasm-preload: ## 真实 release 的 WASM preload 冷/热缓存 A/B（默认自管隔离环境）
+	@if [ -n "$(BASE_URL)" ]; then \
+		bun scripts/test-wasm-preload.cjs; \
+	else \
+		WASM_PRELOAD_AB=1 bun scripts/test-dual-flavor.cjs; \
+	fi
 
 # JS + Rust 一次性检查（不改动文件）。
 lint: ## Biome、TypeScript、Clippy、rustfmt 检查（只读）

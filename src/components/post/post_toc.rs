@@ -93,6 +93,10 @@ pub fn PostToc(
     });
 
     rsx! {
+        // P5 §8.2：toc scroll-spy 增强在 yggdrasil-enhance.js，按需注入。SSR 直达烤进
+        // head 带 defer，先于 hydration；SPA 首跳由增强调用队列兜底，按 src 去重。
+        crate::components::enhance_assets::EnhanceScript {}
+
         div {
             class: if open() { "post-toc is-open" } else { "post-toc" },
             "data-toc-root": "true",

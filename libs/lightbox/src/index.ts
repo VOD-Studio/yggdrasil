@@ -7,6 +7,8 @@ declare global {
     __initLightbox: (selectors: string | string[]) => void;
     __closeLightboxFor: (owner: string) => void;
     __lightboxSelectors?: string[];
+    /** P5 §8.2：core 建立的增强调用队列 flush（yggdrasil-core 类型，此处可选）。 */
+    __flushEnhanceCalls?: () => void;
   }
 }
 
@@ -80,3 +82,8 @@ window.__closeLightboxFor = (owner: string): void => {
 if (Array.isArray(window.__lightboxSelectors)) {
   window.__initLightbox(window.__lightboxSelectors);
 }
+
+// P5 §8.2：本 IIFE 就绪后补执行队列里等待 __initLightbox 的迟到调用
+// （SPA 首次按需注入时 effect 先于脚本执行）。与上方自启动双保险并存，
+// data-lb-bound 守卫保证重复初始化幂等。
+window.__flushEnhanceCalls?.();

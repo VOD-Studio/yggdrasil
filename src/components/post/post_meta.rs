@@ -4,17 +4,17 @@
 
 use dioxus::prelude::*;
 
-use crate::models::post::Post;
+use crate::models::post::PostHeaderData;
 
 /// 文章元信息组件。
 ///
 /// Props：
-/// - `post`：文章数据模型
+/// - `post`：页眉展示所需的最小字段集（P4.2：不携带完整正文）
 ///
 /// 日期优先使用发布时间，否则回退到创建时间，用标题字体的旧式数字；阅读时长与字数
 /// 用等宽数字。窄屏下各项整体换行。
 #[component]
-pub fn PostMeta(post: Post) -> Element {
+pub fn PostMeta(post: PostHeaderData) -> Element {
     let at = post.published_at.unwrap_or(post.created_at);
     let datetime = at.format("%Y-%m-%d").to_string();
     let date = at.format("%Y.%m.%d").to_string();

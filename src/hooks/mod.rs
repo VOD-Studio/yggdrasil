@@ -12,5 +12,10 @@
 /// 通用 DOM 事件监听 Hook（add/remove_event_listener 生命周期封装）。
 pub mod event_listener;
 
+/// 元素接近视口的单向可见性激活 Hook（use_near_viewport）。
+pub mod near_viewport;
+
 /// 客户端数据加载 Hook（use_paginated）。
 pub mod query;
+
+pub use near_viewport::use_near_viewport;

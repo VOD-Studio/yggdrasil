@@ -79,7 +79,9 @@ async function main() {
     INSERT INTO posts(author_id,title,slug,summary,content_md,content_html,status,published_at,word_count,reading_time)
     SELECT 1,'归档文章 '||g,'perf-'||lpad(g::text,3,'0'),'无需发送到归档的摘要',
       repeat('NOT_FOR_PUBLIC_PAYLOAD ',2000),
-      CASE WHEN g=1 THEN repeat('<p>阅读页与评论懒加载回归正文。</p>',350) ELSE '<p>文章正文</p>' END,
+      CASE WHEN g=1 THEN repeat('<p>阅读页与评论懒加载回归正文。</p>',350)
+        || '<pre data-runnable="true" data-lang="python" data-source="print(&#x27;runner-lazy&#x27;)"><code class="language-python">print(&#x27;runner-lazy&#x27;)</code></pre>'
+      ELSE '<p>文章正文</p>' END,
       'published',NOW()-g*INTERVAL '1 minute',300,2 FROM generate_series(1,151) g;`);
   const route = '/post/perf-001';
   await until(async () => (await read(bases[0], route)).body.includes('归档文章 1'), 'Seed not visible');
@@ -123,13 +125,31 @@ async function main() {
   const browserResults = [];
   for (const mobile of [false, true]) for (const theme of ['light', 'dark']) {
     const context = await browser.newContext({ viewport: mobile ? { width: 390, height: 844 } : { width: 1440, height: 900 }, colorScheme: theme });
-    const page = await context.newPage(); const editorRequests = []; const errors = [];
+    const page = await context.newPage(); const editorRequests = []; const codemirrorRequests = []; const execRequests = []; const errors = [];
     page.on('request', request => { if (request.url().includes('/tiptap/editor.js')) editorRequests.push(request.url()); });
+    page.on('request', request => { if (request.url().includes('/codemirror/editor.js')) codemirrorRequests.push(request.url()); });
+    // 执行端点是 start_exec / start_exec_stream（SSE 只是其下游流阶段，单独
+    // 过滤 /api/exec 会漏掉真正的执行 POST）。
+    page.on('request', request => { if (/\/api\/(start_exec|exec)/.test(request.url())) execRequests.push(request.url()); });
     page.on('pageerror', error => errors.push(error.message));
     await page.goto(bases[0] + route);
     await page.waitForFunction(() => Boolean(window.__dx_mainWasm), {}, { timeout: 60000 });
     await page.waitForTimeout(500);
     assert.equal(editorRequests.length, 0, 'Offscreen comments must not download the editor');
+    assert.equal(codemirrorRequests.length, 0, 'Below-fold runnable blocks must not download CodeMirror');
+    // 未激活的可运行块渲染静态高亮代码（可读、SSR 输出一致），不显示编辑器。
+    assert.equal(await page.locator('.code-runner-static').count(), 1, 'Runnable block must render static code before activation');
+    assert.equal(await page.locator('.cm-editor').count(), 0, 'No CodeMirror instance before activation');
+    // 滚动接近（约一屏内）触发单向激活：一次库加载 + 一个编辑器实例；不触发执行请求。
+    await page.locator('.code-runner-static').scrollIntoViewIfNeeded();
+    await page.locator('#code-runner-1 .cm-editor').waitFor({ state: 'visible', timeout: 30000 });
+    assert.equal(codemirrorRequests.length, 1, 'CodeMirror must load exactly once on activation');
+    assert.equal(await page.evaluate(() => window.CodeMirrorEditor._instances.size), 1, 'Exactly one editor instance after activation');
+    assert.equal(execRequests.length, 0, 'Entering the viewport must never trigger code execution');
+    // 激活后滚出视口不销毁实例，内容不丢失。
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.waitForTimeout(300);
+    assert.equal(await page.evaluate(() => window.CodeMirrorEditor._instances.size), 1, 'Scrolling out must not destroy the activated editor');
     await page.screenshot({ path: path.join(artifacts, `${mobile ? 'mobile' : 'desktop'}-${theme}-article.png`) });
     await page.getByRole('form', { name: '发表评论', exact: true }).scrollIntoViewIfNeeded();
     const editor = page.locator('.comment-editor-mount .ProseMirror'); await editor.waitFor({ state: 'visible', timeout: 30000 });

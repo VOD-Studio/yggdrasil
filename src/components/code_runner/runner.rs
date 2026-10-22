@@ -2,12 +2,19 @@
 //!
 //! 标题栏：语言、「可运行」、改过后的「已修改 / 还原」、「圆点 + 文字」运行状态、
 //! Vim 开关、复制与运行（窄屏把 Vim、复制、还原收进「⋯」菜单）。编辑器挂载前显示
-//! 服务端高亮好的代码，挂载完成前运行按钮不可用。
+//! 服务端高亮好的代码。
 //!
 //! 编辑器挂载：组件在 WASM 端按自身 `container_id` 调用
 //! `codemirror::get_module().create(...)` 挂载 CodeMirror，`onChange`
 //! 回写到内部 `source_signal`，`use_drop` 时销毁实例。范式镜像 SQL 控制台
 //!（`src/pages/admin/system.rs`）与 Tiptap 编辑器（`src/pages/admin/write.rs`）。
+//!
+//! 激活门控（P2）：挂载后并不立即加载 CodeMirror 或创建编辑器实例；容器接近
+//! 视口（约一屏提前量），或用户点击静态代码 / 运行按钮时，才触发库加载与实例
+//! 创建（`use_near_viewport` 单向激活，滚出视口不销毁）。激活前容器渲染服务端
+//! 高亮占位（`highlighted`，SSR 与 hydration 输出一致）；用户在
+//! 编辑器就绪前点击「运行」时保留意图（pending_run），就绪后自动执行一次。
+//! xterm 输出终端保持「输出出现后才加载」的既有门控，激活绝不触发代码执行。
 //!
 //! 输出渲染：WASM 端按 `output_container_id` 调用 `xterm::get_module().create(...)`
 //! 挂载 xterm.js 终端（输出专用，无 stdin），SSE stdout/stderr 事件实时写入。
@@ -72,7 +79,6 @@ pub fn CodeRunner(
     let has_output = execution.has_output;
     let state = execution.state;
     let running = use_memo(move || state.read().is_running());
-    let editor_library = use_browser_library("codemirror", || true);
     let terminal_library = use_browser_library("xterm", move || *show_output.read());
     // 编辑器内容的唯一真源；初始化为 prop 值。
     let mut source_signal = use_signal(|| source.clone());
@@ -86,6 +92,20 @@ pub fn CodeRunner(
     // SSR 与 hydration 一致，hydration 时 create() 能找到 SSR 渲染的容器。
     let container_id = format!("code-runner-{instance_id}");
     let output_container_id = format!("code-runner-output-{instance_id}");
+
+    // 激活门控：容器接近视口（底部提前约一屏）或用户主动点击占位代码 / 运行按钮
+    // 时置 true。单向激活，滚出视口不销毁已建实例；IntersectionObserver 不可用时
+    // 保持 false，由上述交互入口兜底激活。SSR 端恒为 false：占位与 hydration 首帧
+    // 结构一致，可见性只在 hydration 后的 effect 里生效。
+    #[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut))]
+    let mut activated = crate::hooks::use_near_viewport(container_id.clone(), "0px 0px 100% 0px");
+
+    // CodeMirror 库只在激活后加载（use_resource 的 enabled 闭包响应式重评）；
+    // 多实例共享 JS 侧 pending-map 去重，仍只发一次脚本请求。
+    let editor_library = use_browser_library("codemirror", move || *activated.read());
+
+    // 用户在编辑器就绪前的运行意图；编辑器就绪后由下方 pending effect 自动执行一次。
+    let mut pending_run = use_signal(|| false);
 
     // 编辑器是否已挂载就绪：SSR 与 hydration 完成前为 false，显示高亮占位。
     let editor_ready = use_signal(|| false);
@@ -135,7 +155,15 @@ pub fn CodeRunner(
     let run_example = example_output.clone();
     let run_language = language.clone();
     let run = use_callback(move |_: ()| {
-        if running() || !editor_ready() {
+        if running() {
+            return;
+        }
+        if !editor_ready() {
+            // 用户操作早于编辑器就绪（未激活或库加载中）：保留意图并立即触发
+            // 激活，就绪后由 pending effect 自动执行一次，不静默丢弃点击、不
+            // 执行空代码或重复执行。
+            pending_run.set(true);
+            activated.set(true);
             return;
         }
         if let Some(example) = &run_example {
@@ -160,6 +188,7 @@ pub fn CodeRunner(
         run,
         editor_ready,
         editor_library,
+        activated,
     );
     #[cfg(target_arch = "wasm32")]
     terminal::use_terminal(
@@ -169,6 +198,22 @@ pub fn CodeRunner(
         terminal_library,
         execution.terminal,
     );
+    // 编辑器就绪后兑现激活前的运行意图：先清标志再启动，保证只执行一次。
+    // 读取 running() 建立订阅并避免在已有执行未结束时重复启动。
+    #[cfg(target_arch = "wasm32")]
+    use_effect(move || {
+        if editor_ready() && pending_run() && !running() {
+            pending_run.set(false);
+            run.call(());
+        }
+    });
+    // 库资源状态（渲染期读取即订阅）：Some(Err) 表示加载失败（含重试失败）。
+    // dioxus 0.7 的 Resource 重启不清空 value——激活后的重载期间 read() 停在
+    // Some(Ok(false))，完成变 Some(Ok(true))。据此区分「加载中」与「失败」。
+    let library_failed = matches!(&*editor_library.read(), Some(Err(_)));
+    // 意图已保留：编辑器激活/加载期间按钮显示加载态；库加载失败时不伪装加载，
+    // 由 LibraryLoadError 重试恢复。
+    let awaiting_editor = pending_run() && !editor_ready() && !library_failed;
 
     let revert_source = source.clone();
     let revert = use_callback(move |_: ()| {
@@ -293,8 +338,7 @@ pub fn CodeRunner(
                         variant: ButtonVariant::Primary,
                         size: ButtonSize::Sm,
                         icon: IconName::Play,
-                        loading: running(),
-                        disabled: !editor_ready(),
+                        loading: running() || awaiting_editor,
                         onclick: move |_| run.call(()),
                         "{run_label}"
                     }
@@ -306,10 +350,13 @@ pub fn CodeRunner(
                 class: "runner-editor",
                 // 挂载前显示服务端高亮好的代码，行号与编辑器对齐，挂载时不跳动。
                 // 用绝对定位覆盖在（始终存在的）容器上方，不影响 CodeMirror 的 getElementById 挂载。
+                // 点击占位提前激活编辑器，也是 IntersectionObserver 不可用时的交互兜底。
                 if !editor_ready() {
                     div {
                         class: "runner-placeholder",
                         aria_hidden: "true",
+                        title: "点击启用编辑",
+                        onclick: move |_| activated.set(true),
                         style: "--runner-lines: {line_count}; --runner-digits: {gutter_digits};",
                         pre { class: "runner-placeholder-gutter",
                             for n in 1..=line_count { "{n}\n" }

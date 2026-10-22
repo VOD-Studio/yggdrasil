@@ -516,6 +516,10 @@ pub mod wasm {
 /// 需要在 crate 根按名字引用。新增 `pub fn`/`pub type` 供外部按名调用时记得同步加进这里。
 #[cfg(target_arch = "wasm32")]
 pub use wasm::{
-    consume_upload_event, get_module, make_comment_upload_closure, make_run_code_closure,
-    make_upload_closure, upload_image_file, EditorHandle, EditorOptions, UploadEventJs,
+    consume_upload_event, get_module, make_comment_upload_closure, EditorHandle, EditorOptions,
+    UploadEventJs,
 };
+// 运行代码与图片上传闭包只有后台写作页（full 客户端专属）按名引用；
+// reader 客户端不导出，避免 unused_imports（plan §6.1）。
+#[cfg(all(target_arch = "wasm32", not(ygg_client_reader)))]
+pub use wasm::{make_run_code_closure, make_upload_closure, upload_image_file};

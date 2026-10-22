@@ -168,10 +168,8 @@ fn ConnectStep(data: WritingGuideData) -> Element {
             div { class: "writing-step-body writing-connect",
                 div { class: "writing-step-head",
                     h2 { class: "writing-step-title", "连接站点" }
-                    Link { class: "writing-link", to: Route::Mcp {},
-                        "管理 MCP 令牌"
-                        Icon { name: IconName::ArrowUpRight, size: 14 }
-                    }
+                    // 后台 MCP 管理页是 full 客户端专属路由（plan §6.6），见 McpTokenLink。
+                    McpTokenLink {}
                 }
                 p { class: "writing-step-description",
                     "选择客户端，把配置合并到它的配置文件，再把令牌占位符换成后台签发的令牌。"
@@ -293,6 +291,22 @@ fn CopyButton(text: String, label: &'static str, #[props(default)] primary: bool
                     None => "",
                 }
             }
+        }
+    }
+}
+
+/// 「管理 MCP 令牌」入口。后台 MCP 页是 full 客户端专属路由：统一渲染
+/// 普通 `<a href>`（plan §6.6 跨产物整页导航）。不能用 Link：服务端为
+/// /about/writing 选择 reader 模板时，Link 在 SSR HTML 里留下的
+/// data-node-hydration 监听器标记与 reader 客户端的无监听器模板失配，
+/// hydration 会崩溃（同 about.rs ShowcaseEntry 的实测教训）。未登录点击
+/// 由服务端 admin_guard 302 到 /login。
+#[component]
+fn McpTokenLink() -> Element {
+    rsx! {
+        a { href: "/admin/mcp", class: "writing-link",
+            "管理 MCP 令牌"
+            Icon { name: IconName::ArrowUpRight, size: 14 }
         }
     }
 }

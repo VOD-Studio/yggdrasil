@@ -12,6 +12,12 @@
 ///
 /// 用于调用各 IIFE 库暴露的 `window.__init*` 入口（lightbox / mermaid / 锚点拦截等），
 /// 这些库由 `Dioxus.toml` 全局 `<script src>` 注入，加载时机不保证早于调用点。
+///
+/// P5 §8.2：增强函数（`__initPostContent` 等）拆入 `yggdrasil-enhance.js` 按需加载后，
+/// SPA 首次导航时脚本可能晚于 effect 执行。目标函数未定义且 core 已建
+/// `__pendingEnhanceCalls` 队列时调用入队，增强脚本尾部 flush 补执行；队列不存在
+/// （core 未加载，理论不可达）保持原先的静默跳过。启动函数（core 提供）始终同步
+/// 可用，不走队列。
 pub fn invoke_optional_global(
     window: &web_sys::Window,
     name: &str,
@@ -27,6 +33,21 @@ pub fn invoke_optional_global(
             let _ = fn_val
                 .unchecked_into::<js_sys::Function>()
                 .apply(window, &arr);
+            return;
+        }
+    }
+    // 增强脚本尚未就绪：队列存在则入队（{name, args}），等对应 IIFE 尾部 flush。
+    if let Ok(queue) = js_sys::Reflect::get(window, &"__pendingEnhanceCalls".into()) {
+        if js_sys::Array::is_array(&queue) {
+            let queue: &js_sys::Array = queue.unchecked_ref();
+            let call = js_sys::Object::new();
+            let _ = js_sys::Reflect::set(&call, &"name".into(), &name.into());
+            let arr = js_sys::Array::new();
+            for a in args {
+                arr.push(a);
+            }
+            let _ = js_sys::Reflect::set(&call, &"args".into(), &arr.into());
+            let _ = queue.push(&call.into());
         }
     }
 }

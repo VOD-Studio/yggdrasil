@@ -115,7 +115,8 @@ pub fn Assets() -> Element {
         });
     });
 
-    // 详情大图换了之后重新绑定灯箱（data-lb-bound 守卫保证幂等）。
+    // 详情大图换了之后重新绑定灯箱（data-lb-bound 守卫保证幂等）。灯箱脚本
+    // P5 §8.2 起按需注入（本页 rsx 声明 LightboxAssets）。
     #[cfg(target_arch = "wasm32")]
     use_effect(move || {
         if active().is_none() {
@@ -241,6 +242,8 @@ pub fn Assets() -> Element {
     menu.push(purge_item);
 
     rsx! {
+        // P5 §8.2：素材详情灯箱按需注入（脚本未就绪时迟到调用入队兜底）。
+        crate::components::enhance_assets::LightboxAssets {}
         div { class: "admin-assets", "data-detail": detail.is_some().then_some("true"),
             div { class: "admin-assets-main",
                 div { class: "admin-page-head",

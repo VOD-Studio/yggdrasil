@@ -1,4 +1,6 @@
 /target
+# 独立的 release 测量目标目录（P0 基线与各阶段 A/B 构建复用，避免污染正式 target/）
+/target-p0
 /.cross-out
 /dist
 /.dioxus

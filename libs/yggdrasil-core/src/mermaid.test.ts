@@ -3,7 +3,7 @@
  * 黑盒驱动：通过 window.__initMermaid 入口，mock IntersectionObserver 与 mermaid bundle 加载。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import './index';
+import './enhance';
 import { _resetOverlay } from './mermaid-overlay';
 
 // mock IntersectionObserver：observe 时立即异步触发 isIntersecting 回调，模拟块进视口。

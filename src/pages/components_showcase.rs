@@ -449,6 +449,10 @@ fn ShowcaseGallery() -> Element {
 
     rsx! {
         document::Title { "组件图鉴 · Yggdrasil" }
+        // P5 §8.2：图鉴 masonry 增强与灯箱预览按需注入（SSR 直达带 defer，先于
+        // hydration；SPA 首跳由增强调用队列兜底）。阅读器客户端不含图鉴路由。
+        crate::components::enhance_assets::EnhanceScript {}
+        crate::components::enhance_assets::LightboxAssets {}
         article { class: "showcase showcase-gallery",
             Link { class: "showcase-up", to: Route::About {},
                 Icon { name: IconName::ArrowLeft, size: 14 }
@@ -1010,32 +1014,38 @@ fn ComponentPreview(
         .iter()
         .find(|item| item.slug == slug)
         .expect("预览必须对应图鉴条目");
-    match preview_route(&slug).expect("图鉴条目必须有专属预览分派") {
-        PreviewRoute::Live => {
-            rsx! {
-                LiveComponentPreview {
-                    name: spec.name.clone(),
-                    detail,
-                    checked,
-                    danger,
-                    alert_variant,
-                    alert_message,
+    // P5 §8.2：预览分派的公共入口统一声明增强/灯箱资源——detail 详情页不渲染
+    // ShowcaseGallery，全局注入移除后这里必须自带（按 src 去重，画廊页幂等）。
+    rsx! {
+        crate::components::enhance_assets::EnhanceScript {}
+        crate::components::enhance_assets::LightboxAssets {}
+        match preview_route(&slug).expect("图鉴条目必须有专属预览分派") {
+            PreviewRoute::Live => {
+                rsx! {
+                    LiveComponentPreview {
+                        name: spec.name.clone(),
+                        detail,
+                        checked,
+                        danger,
+                        alert_variant,
+                        alert_message,
+                    }
                 }
             }
-        }
-        PreviewRoute::Skeleton => rsx! { PageSkeletonPreview { name: spec.name.clone() } },
-        PreviewRoute::Scene => rsx! { SceneComponentPreview { name: spec.name.clone() } },
-        PreviewRoute::Business => {
-            business_previews::preview(&slug, detail).expect("业务预览必须实现")
-        }
-        PreviewRoute::LayoutArticle => {
-            layout_article_previews::preview(&slug, detail).expect("布局与文章预览必须实现")
-        }
-        PreviewRoute::Comment => {
-            comment_previews::preview(&slug, detail).expect("评论预览必须实现")
-        }
-        PreviewRoute::Browser => {
-            browser_previews::preview(&slug, detail).expect("浏览器预览必须实现")
+            PreviewRoute::Skeleton => rsx! { PageSkeletonPreview { name: spec.name.clone() } },
+            PreviewRoute::Scene => rsx! { SceneComponentPreview { name: spec.name.clone() } },
+            PreviewRoute::Business => {
+                business_previews::preview(&slug, detail).expect("业务预览必须实现")
+            }
+            PreviewRoute::LayoutArticle => {
+                layout_article_previews::preview(&slug, detail).expect("布局与文章预览必须实现")
+            }
+            PreviewRoute::Comment => {
+                comment_previews::preview(&slug, detail).expect("评论预览必须实现")
+            }
+            PreviewRoute::Browser => {
+                browser_previews::preview(&slug, detail).expect("浏览器预览必须实现")
+            }
         }
     }
 }

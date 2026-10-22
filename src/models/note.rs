@@ -52,6 +52,13 @@ pub struct Note {
     pub version: i32,
     pub kind: NoteKind,
     pub title: String,
+    /// 编辑 Markdown。公开详情端点已改为只返回 [`super::public_note::PublicNote`]，
+    /// 不再传输本字段。注意 `#[serde(default)]` 编译在本侧二进制里，保护的是
+    /// **新客户端读旧响应**（滚动部署中旧节点仍发全字段，缺字段才触发默认值）；
+    /// 发布切换前已打开的旧标签页（旧二进制、无默认值）反序列化新响应仍会报错，
+    /// 需刷新页面——这是公开响应结构变更的已知残留风险，与方案 §6.7 的
+    /// 「旧标签页跨部署兼容性单独评估」一致。
+    #[serde(default)]
     pub content_md: String,
     pub content_html: String,
     pub toc_html: String,
@@ -61,9 +68,13 @@ pub struct Note {
     pub updated_at: DateTime<Utc>,
     pub published_at: Option<DateTime<Utc>>,
     /// 仅管理接口填充。公开接口不暴露工作稿或知识库版本。
+    #[serde(default)]
     pub published_version: Option<i32>,
+    #[serde(default)]
     pub knowledge_version: Option<i32>,
+    #[serde(default)]
     pub deleted_at: Option<DateTime<Utc>>,
+    #[serde(default)]
     pub notebook_ids: Vec<i32>,
     /// 目录的一级小节数（服务端从 `toc_html` 解析）；列表不传 `toc_html` 时仍可显示「N 节」。
     #[serde(default)]

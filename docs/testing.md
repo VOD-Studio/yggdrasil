@@ -23,6 +23,30 @@ bun scripts/test-wasm-bindgen-metadata.cjs
 
 脚本使用临时项目，模拟 Dioxus 按 `wasm-release` 配置执行 LLVM 后处理，再调用与 `Cargo.lock` 一致的 wasm-bindgen；结束时清理临时项目。
 
+### 双客户端模板与 WASM preload
+
+```sh
+make test-release-bootstrap
+make build
+bun scripts/test-dual-flavor.cjs
+make test-wasm-preload
+```
+
+`test-release-bootstrap` 使用临时 fixture，覆盖准确入口解析、reader/full 隔离、陈旧哈希剔除、preload 的 URL/CORS/位置、最终模板与发布清单一致性，以及缺失资源时不覆盖旧发布目录；也包含在 `make test` 中。
+
+`test-dual-flavor.cjs` 使用一次性 PostgreSQL 容器与真实 release 布局，检查 reader/full/404、HTML 缓存与 ETag/304、带 hash 资源 immutable 与可变 URL 缓存边界、SPA 与跨入口导航、每次文档加载只请求一次对应 WASM、「首次阅读→进入后台」累计传输量报告、`YGG_PREVIOUS_PUBLIC_DIR` 旧发布资源保留窗口（回退字节、MIME/`.br` 协商、标记、不遮蔽当前发布），以及移除 reader 产物后的完整应用回退模式（全路径 full 模板、hydration、守卫不变）。`make test-wasm-preload` 复用同一隔离环境并追加 P5 专项 A/B；不会启动开发构建，也不会使用现有业务数据库。运行前需要 Docker、PostgreSQL 客户端及 `libs/` 中的 Playwright。
+
+专项脚本通过两个本地代理访问同一 release 服务：对照组只移除 HTML head 的 WASM preload，实验组保留；两组采用相同的 HTML 处理，资产原始字节及 Brotli/缓存头透传。不使用会禁用浏览器缓存的 Playwright route。首页、固定文章、full 图鉴分别至少测 5 次，区分冷/热缓存与无交互的首屏指标、真实菜单交互就绪代理指标。保存原始样本、中位数、网络/CPU/浏览器与服务端缓存配置、请求及缓存证据、LCP/CLS、控制台警告和截图。报告写入 `target/regressions/`；没有充分净收益证据时不能将结果称为通过性能验收。
+
+也可对已启动的**本地隔离 release 服务**测量（文章必须是固定 fixture，`SSR_CACHE_SECS` 应与服务端实际配置一致）：
+
+```sh
+BASE_URL=http://127.0.0.1:8080 SSR_CACHE_SECS=60 \
+  POST_PATH=/post/dual-flavor-post make test-wasm-preload
+```
+
+release 装配会在 head 开头注入 `as="fetch" type="application/wasm" crossorigin="anonymous"`，WASM URL 来自对应 module 入口的实际初始化参数，不硬编码 hash。清单从最终模板生成；`build-release.cjs --verify` 会核对 preload 和当前入口、flavor 资产闭包及清单。仅带内容哈希的资产沿用 immutable，固定路径资源的缓存策略不变。
+
 ## 数据库回归测试
 
 常规 `make test` 会跳过标记为 `#[ignore]` 的数据库回归。下列文章和上传回归仅允许使用已创建、名为 `ygg_mcp_test` 的一次性 PostgreSQL 数据库；按本机连接信息调整示例 URL：

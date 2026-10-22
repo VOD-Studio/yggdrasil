@@ -5488,8 +5488,14 @@ dependencies = [
  "bitflags",
  "bytes",
  "futures-core",
+ "futures-util",
  "http",
  "http-body",
+ "http-body-util",
+ "http-range-header",
+ "httpdate",
+ "mime",
+ "mime_guess",
  "percent-encoding",
  "pin-project-lite",
  "tokio",
@@ -6397,7 +6403,7 @@ dependencies = [
 
 [[package]]
 name = "yggdrasil"
-version = "0.23.4"
+version = "0.24.0"
 dependencies = [
  "aes-gcm",
  "argon2",
