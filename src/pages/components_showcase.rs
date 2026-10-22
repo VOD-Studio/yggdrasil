@@ -1321,11 +1321,11 @@ fn LiveComponentPreview(
             }
         },
         "Pagination" => rsx! {
-            crate::components::ui::Pagination::<Route> {
-                variant: "admin", current_page: page(), total: 80, per_page: 10, unit: "篇",
-                on_prev: move |_| page.set((page() - 1).max(1)),
-                on_next: move |_| page.set((page() + 1).min(8)),
-                compact: true,
+            div { class: "w-full max-w-md", inert: "true",
+                crate::components::ui::Pagination::<Route> {
+                    current_page: 2, total: 80, per_page: 10,
+                    prev_route: Route::Home {}, next_route: Route::HomePage { page: 3 },
+                }
             }
         },
         "TablePager" => rsx! {

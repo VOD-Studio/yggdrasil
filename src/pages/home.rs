@@ -378,10 +378,9 @@ fn HomeIndex(current_page: i32, posts: Vec<PostListItem>, total: i64) -> Element
                     }
                 }
                 Pagination {
-                    variant: "frontend", current_page, total, per_page: POSTS_PER_PAGE,
+                    current_page, total, per_page: POSTS_PER_PAGE,
                     prev_route: if current_page - 1 <= 1 { Route::Home {} } else { Route::HomePage { page: current_page - 1 } },
                     next_route: Route::HomePage { page: current_page + 1 },
-                    unit: "篇",
                 }
             }
         }

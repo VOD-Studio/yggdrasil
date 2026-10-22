@@ -468,8 +468,8 @@
       "label": "分页导航",
       "group": "action",
       "summary": "每一次翻页，都是一次继续。",
-      "states": "前台 · 后台 · 跳页",
-      "description": "为前后台列表提供一致的上一页、下一页与页码信息，按钮为小号描边样式，支持路由和回调两种方式。",
+      "states": "首页 · 中间页 · 末页",
+      "description": "前台文章列表的分页：上一页、下一页为小号描边按钮，中间是「当前 / 总」页码；首页不显示上一页，末页不显示下一页。翻页走路由。",
       "props": [
         [
           "current_page",
@@ -490,37 +490,31 @@
           "每页记录数，必须大于 0。"
         ],
         [
-          "variant",
-          "&'static str",
+          "prev_route",
+          "R: Routable",
           "必填",
-          "admin 或 frontend。"
+          "上一页的目标路由。"
         ],
         [
-          "unit",
-          "&'static str",
+          "next_route",
+          "R: Routable",
           "必填",
-          "数量单位，例如篇。"
-        ],
-        [
-          "on_jump",
-          "Option<EventHandler<i32>>",
-          "None",
-          "后台回调分页的跳页处理。"
+          "下一页的目标路由。"
         ]
       ],
       "keys": [
         [
           "Tab",
-          "选择翻页操作"
+          "在上一页与下一页之间移动"
         ],
         [
           "Enter",
-          "翻页或提交页码"
+          "翻页"
         ]
       ],
-      "source": "src/components/ui.rs",
-      "code": "let mut page = use_signal(|| 1i32);\nrsx! {\n    Pagination::<Route> {\n        variant: \"admin\",\n        current_page: page(),\n        total: 80,\n        per_page: 10,\n        unit: \"篇\",\n        on_prev: move |_| page.set((page() - 1).max(1)),\n        on_next: move |_| page.set((page() + 1).min(8)),\n    }\n}",
-      "preview_mode": "interactive",
+      "source": "src/components/ui/navigation.rs",
+      "code": "rsx! {\n    Pagination::<Route> {\n        current_page: 2,\n        total: 80,\n        per_page: 10,\n        prev_route: Route::Home {},\n        next_route: Route::HomePage { page: 3 },\n    }\n}",
+      "preview_mode": "static",
       "usage_kind": "rust"
     },
     {
