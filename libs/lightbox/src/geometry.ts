@@ -304,7 +304,8 @@ export function wheelZoomFactor(deltaY: number, deltaMode: number): number {
 }
 
 // 平移边界钳制：图大于视口的轴不允许露出黑边（图边贴视口边）；
-// 图小于视口的轴强制居中（缩回 fit 时自动归位）。返回修正后的 user 矩阵。
+// 图小于视口的轴可自由平移，但不允许移出视口（图边贴视口边为止）。
+// 返回修正后的 user 矩阵。
 export function clampPanToViewport(
   user: Mat,
   base: Mat,
@@ -323,20 +324,16 @@ export function clampPanToViewport(
   const minY = Math.min(p1.y, p2.y, p3.y, p4.y);
   const maxY = Math.max(p1.y, p2.y, p3.y, p4.y);
 
-  let dx = 0;
-  if (maxX - minX > vw) {
-    if (minX > 0) dx = -minX;
-    else if (maxX < vw) dx = vw - maxX;
-  } else {
-    dx = vw / 2 - (minX + maxX) / 2;
-  }
-  let dy = 0;
-  if (maxY - minY > vh) {
-    if (minY > 0) dy = -minY;
-    else if (maxY < vh) dy = vh - maxY;
-  } else {
-    dy = vh / 2 - (minY + maxY) / 2;
-  }
+  const dx = clampAxis(minX, maxX, vw);
+  const dy = clampAxis(minY, maxY, vh);
   if (dx === 0 && dy === 0) return user;
   return matMultiply(matTranslate(dx, dy), user);
+}
+
+// 单轴修正量：图比视口大时图边不得离开视口边（不露黑边）；图比视口小时
+// 图边不得越过视口边（不移出视口）。两种情形都把 [min, max] 推回合法区间。
+function clampAxis(min: number, max: number, size: number): number {
+  const lo = Math.min(0, size - (max - min));
+  const hi = Math.max(0, size - (max - min));
+  return Math.min(hi, Math.max(lo, min)) - min;
 }

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **图片灯箱拖动平移**：鼠标拖动在 fit 倍率下也能平移图片，不再触发下拉关闭；放大后仍小于视口的方向也可平移（只限制不移出视口，不再强制居中）；双击回 fit 时重新居中。触屏 fit 态仍保留竖直拖拽关闭。
+
 ## [0.24.2] - 2026-10-22
 
 ### Changed

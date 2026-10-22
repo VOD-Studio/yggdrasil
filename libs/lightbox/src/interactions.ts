@@ -140,12 +140,19 @@ export function bindInteractions(s: LightboxState, actions: LightboxActions): ()
     { passive: false },
   );
 
-  // 双击：fit ↔ 2.5× 切换（缩小态先回 fit），锚定点击点
+  // 双击：fit ↔ 2.5× 切换（缩小态先回 fit）。放大锚定点击点；回 fit 时平移清零
+  // 回到居中（平移钳制只防移出视口，不再自动居中）。
   scope.listen(s.img, 'dblclick', (ev: MouseEvent): void => {
     if (!s?.target || isErrorShown(s)) return;
     ev.preventDefault();
-    const goal = Math.abs(s.view.scale - 1) > 1e-3 ? 1 : DOUBLE_CLICK_SCALE;
-    zoomBy(s, goal / s.view.scale, ev.clientX, ev.clientY, true);
+    if (Math.abs(s.view.scale - 1) > 1e-3) {
+      s.view.scale = 1;
+      s.view.user = null;
+      applyView(s, true);
+      pokeToolbar(s);
+    } else {
+      zoomBy(s, DOUBLE_CLICK_SCALE, ev.clientX, ev.clientY, true);
+    }
   });
 
   // 键盘：Esc 关；图集 ←→ 切换；+/- 按档缩放；R / Shift+R 左右旋转；0 重置。
@@ -290,7 +297,9 @@ function onPointerDown(s: LightboxState, ev: PointerEvent): void {
   if (s.pointers.size > 2) return;
 
   ensureNormalized(s);
-  if (s.view.scale > 1) {
+  // 鼠标拖动任何倍率都平移（与底栏「拖动平移」提示一致）；触屏/触控笔在
+  // fit 及以下保留下拉关闭，放大后平移。
+  if (ev.pointerType === 'mouse' || s.view.scale > 1) {
     s.gesture = {
       mode: 'pan',
       pointerId: ev.pointerId,

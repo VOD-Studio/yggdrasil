@@ -174,6 +174,35 @@ async function assertPinchAndDrag(page) {
   await session.detach();
 }
 
+// Mouse drags pan at every scale, including axes where the image is still smaller than the
+// viewport (fit, or 150% of a landscape image vertically); the image stays where it was dropped.
+async function assertMousePan(page) {
+  await open(page);
+  const imgBox = () => page.locator('.lightbox-img').boundingBox();
+  const drag = async (dx, dy) => {
+    const b = await imgBox();
+    const x = b.x + b.width / 2;
+    const y = b.y + b.height / 2;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x + dx, y + dy, { steps: 8 });
+    await page.mouse.up();
+    await page.waitForTimeout(260);
+  };
+  const fit = await imgBox();
+  await drag(-60, 40);
+  const panned = await imgBox();
+  assert.ok(Math.abs(panned.x - (fit.x - 60)) < 1 && Math.abs(panned.y - (fit.y + 40)) < 1, 'fit drag should pan');
+  assert.equal(await page.locator('.lightbox-overlay').count(), 1, 'mouse drag must not close');
+  await page.keyboard.press('+');
+  await page.waitForTimeout(260);
+  const zoomed = await imgBox();
+  await drag(0, -12);
+  const zoomedPanned = await imgBox();
+  assert.ok(Math.abs(zoomedPanned.y - (zoomed.y - 12)) < 1, 'zoomed drag should pan an axis smaller than the viewport');
+  await close(page);
+}
+
 (async () => {
   const browser = await chromium.launch({
     headless: true,
@@ -218,6 +247,7 @@ async function assertPinchAndDrag(page) {
       await page.evaluate(() => scrollTo(0, 0));
       await assertSpaRefresh(page);
       if (options.hasTouch) await assertPinchAndDrag(page);
+      else await assertMousePan(page);
       // A fresh SPA opening immediately replaces a closing overlay.
       await open(page);
       await page.keyboard.press('Escape');
@@ -228,7 +258,7 @@ async function assertPinchAndDrag(page) {
       await page.evaluate(() => window.__closeLightboxFor('browser-fixture'));
       assert.equal(await page.locator('.lightbox-overlay').count(), 0);
       assert.deepEqual(errors, []);
-      console.log(`${name}: rotation, gallery, scroll, SPA lifecycle${options.hasTouch ? ', pinch and drag' : ''} passed`);
+      console.log(`${name}: rotation, gallery, scroll, SPA lifecycle${options.hasTouch ? ', pinch and drag' : ', mouse pan'} passed`);
       await context.close();
     }
   } finally {

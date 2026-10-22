@@ -283,11 +283,22 @@ describe('clampPanToViewport 平移边界', () => {
     expect(clampPanToViewport(user, m0, fit.w, fit.h, vw, vh)).toBe(user);
   });
 
-  it('图小于视口的轴：任何平移都被拉回居中', () => {
-    const clamped = clampPanToViewport(matTranslate(30, -15), m0, fit.w, fit.h, vw, vh);
-    const p = matApply(matMultiply(clamped, m0), 0, 0);
-    expect(p.x).toBeCloseTo(fit.x, 6);
-    expect(p.y).toBeCloseTo(fit.y, 6);
+  it('图小于视口的轴：视口内的平移原样保留', () => {
+    // 竖直 460 < 1000：上移 15 后上缘 255，仍在视口内
+    const user = matTranslate(0, -15);
+    expect(clampPanToViewport(user, m0, fit.w, fit.h, vw, vh)).toBe(user);
+  });
+
+  it('图小于视口的轴：拖出视口会被钳回图边贴视口边', () => {
+    // 竖直下拖 400 → 上缘 670、下缘 1130 > 1000，钳回下缘贴 1000；
+    // 上拖 400 → 上缘 -130，钳回 0
+    const down = matMultiply(
+      clampPanToViewport(matTranslate(0, 400), m0, fit.w, fit.h, vw, vh),
+      m0,
+    );
+    expect(matApply(down, 0, fit.h).y).toBeCloseTo(vh, 6);
+    const up = matMultiply(clampPanToViewport(matTranslate(0, -400), m0, fit.w, fit.h, vw, vh), m0);
+    expect(matApply(up, 0, 0).y).toBeCloseTo(0, 6);
   });
 
   it('放大后图宽超过视口：往右拖露出左黑边会被钳回图边贴视口边', () => {
