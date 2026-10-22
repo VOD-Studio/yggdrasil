@@ -12,11 +12,13 @@ const preload = new Function(script);
 beforeEach(() => {
   // 选中项的底色用可识别的具体值，便于从计算样式里判断哪一段被选中。
   document.head.innerHTML = `<style>:root { --color-surface-2: rgb(1, 2, 3); --color-surface-3: rgb(1, 2, 3); }${style}</style>`;
-  document.body.innerHTML = `<div class="theme-seg">
-    <button data-mode="light"></button>
-    <button data-mode="dark"></button>
-    <button data-mode="system"></button>
-  </div>`;
+  // 与 SegmentedControl 的 SSR 输出同构：未测量（无 data-ready），服务端默认当前项是「跟随系统」。
+  document.body.innerHTML = `<div class="theme-seg"><div class="segmented" role="radiogroup">
+    <span class="segmented-thumb"></span>
+    <button class="segmented-item" data-mode="light"></button>
+    <button class="segmented-item" data-mode="dark"></button>
+    <button class="segmented-item" data-mode="system" data-active="true"></button>
+  </div></div>`;
 });
 
 afterEach(() => {
