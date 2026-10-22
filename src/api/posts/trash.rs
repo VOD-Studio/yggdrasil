@@ -118,10 +118,10 @@ pub async fn batch_restore_posts(post_ids: Vec<i32>) -> Result<CreatePostRespons
         // 记录数较少时使用精准失效；否则回退到全量失效。
         let use_precise = post_ids.len() <= PRECISE_INVALIDATION_LIMIT;
 
-        // 逐条恢复，slug 冲突时自动加后缀；同时收集受影响的 slug 与标签。
+        // 逐条恢复，slug 冲突时自动加后缀；同时收集受影响的 slug 与文章 id。
         let mut restored = 0u64;
         let mut affected_slugs: Vec<String> = Vec::with_capacity(post_ids.len() * 2);
-        let mut affected_tags: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut affected_ids: Vec<i32> = Vec::with_capacity(post_ids.len());
 
         for id in &post_ids {
             let row = tx
@@ -135,13 +135,6 @@ pub async fn batch_restore_posts(post_ids: Vec<i32>) -> Result<CreatePostRespons
                 let current_slug: String = row.get("slug");
                 let new_slug = ensure_unique_slug(&tx, &current_slug, Some(*id)).await?;
 
-                if use_precise {
-                    let tags = super::helpers::fetch_post_tags(&tx, *id).await?;
-                    for tag in tags {
-                        affected_tags.insert(tag);
-                    }
-                }
-
                 let n = tx
                     .execute(
                         "UPDATE posts SET deleted_at = NULL, slug = $1 WHERE id = $2 AND deleted_at IS NOT NULL",
@@ -152,11 +145,19 @@ pub async fn batch_restore_posts(post_ids: Vec<i32>) -> Result<CreatePostRespons
                 restored += n;
 
                 if use_precise {
+                    affected_ids.push(*id);
                     affected_slugs.push(current_slug);
                     affected_slugs.push(new_slug);
                 }
             }
         }
+
+        // 恢复不改动标签关联，事务内一次查询取全部受影响文章的标签并集。
+        let affected_tags = if use_precise {
+            super::helpers::fetch_post_tags_batch(&tx, &affected_ids).await?
+        } else {
+            Vec::new()
+        };
 
         tx.commit().await.map_err(AppError::tx)?;
 
@@ -167,11 +168,7 @@ pub async fn batch_restore_posts(post_ids: Vec<i32>) -> Result<CreatePostRespons
                 .collect::<std::collections::HashSet<_>>()
                 .into_iter()
                 .collect();
-            crate::cache::invalidate_for_post_write(
-                &unique_slugs,
-                &affected_tags.into_iter().collect::<Vec<_>>(),
-            )
-            .await;
+            crate::cache::invalidate_for_post_write(&unique_slugs, &affected_tags).await;
         } else {
             // 影响集过大时回退到全量失效，避免大量串行缓存操作。
             crate::cache::invalidate_all_post_caches();
@@ -207,8 +204,8 @@ pub async fn batch_purge_posts(post_ids: Vec<i32>) -> Result<CreatePostResponse,
         // 记录数较少时锁定行并读取 slug 与标签，使用精准失效；否则回退到全量失效。
         let use_precise = post_ids.len() <= PRECISE_INVALIDATION_LIMIT;
         let (slugs, tags) = if use_precise {
-            let mut slugs = Vec::with_capacity(post_ids.len());
-            let mut tags_set: std::collections::HashSet<String> = std::collections::HashSet::new();
+            let mut slugs: Vec<String> = Vec::with_capacity(post_ids.len());
+            let mut ids = Vec::with_capacity(post_ids.len());
 
             for id in &post_ids {
                 let slug_row = tx
@@ -220,16 +217,15 @@ pub async fn batch_purge_posts(post_ids: Vec<i32>) -> Result<CreatePostResponse,
                     .map_err(AppError::query)?;
 
                 if let Some(slug_row) = slug_row {
-                    let slug: String = slug_row.get(0);
-                    let tags = super::helpers::fetch_post_tags(&tx, *id).await?;
-                    for tag in tags {
-                        tags_set.insert(tag);
-                    }
-                    slugs.push(slug);
+                    slugs.push(slug_row.get(0));
+                    ids.push(*id);
                 }
             }
 
-            (slugs, tags_set.into_iter().collect::<Vec<_>>())
+            // 必须在 DELETE 之前读取：post_tags 随文章 ON DELETE CASCADE 清除。
+            let tags = super::helpers::fetch_post_tags_batch(&tx, &ids).await?;
+
+            (slugs, tags)
         } else {
             (Vec::new(), Vec::new())
         };
