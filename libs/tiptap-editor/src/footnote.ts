@@ -21,7 +21,7 @@ import { Plugin, PluginKey } from '@tiptap/pm/state';
  * FootnoteNumbering 扩展在文档变化后重算 Map<label, number> 并写入
  * editor.storage.footnoteNumbering,NodeView 读取它绘制编号。
  *
- * 编号顺序与服务端 src/api/markdown.rs:74-116 的 fn_order 对齐:按
+ * 编号顺序与服务端 src/api/markdown/mod.rs 中 render_markdown_enhanced 的 fn_order 对齐:按
  * footnoteRef 在文档中首次出现顺序给唯一 label 分配 1, 2, 3…
  */
 

@@ -210,7 +210,7 @@ Markdown 源码中保留单个反斜杠；如果手写 JSON 参数，要按 JSON
 
 本技能根据 2026-09-16 的 Yggdrasil 源码核对。使用技能写作不要求访问仓库；更新技能或发现部署行为不一致时，在仓库中查阅：
 
-- `src/api/markdown.rs`、`src/api/sanitizer.rs`：正文语法、目录、HTML 与 URL 限制。
+- `src/api/markdown/`、`src/api/sanitizer.rs`：正文语法、目录、HTML 与 URL 限制。
 - `src/api/code_runner/languages.rs`、`src/infra/runner_config.rs`：运行语言、围栏参数和资源限制。
 - `src/components/code_runner/runner.rs`：阅读器运行交互。
 - `src/api/katex.rs`、`src/api/mhchem.rs`：公式与扩展宏。
