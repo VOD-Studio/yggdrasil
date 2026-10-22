@@ -57,4 +57,3 @@ docs/        专题文档
 
 - [更新日志](CHANGELOG.md)
 - [贡献者约定](AGENTS.md)
-- [MCP](docs/mcp.md) · [笔记](docs/notes.md) · [测试与回归](docs/testing.md)
