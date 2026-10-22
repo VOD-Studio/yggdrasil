@@ -277,20 +277,20 @@
         ],
         [
           "oninput",
-          "EventHandler<String>",
-          "必填",
+          "Option<EventHandler<String>>",
+          "无",
           "输入时返回新内容。"
         ],
         [
           "r#type",
           "&'static str",
-          "必填",
+          "text",
           "例如 text、email 或 password。"
         ],
         [
           "placeholder",
-          "&'static str",
-          "必填",
+          "Option<&'static str>",
+          "无",
           "空内容时的提示。"
         ],
         [
@@ -310,6 +310,30 @@
           "bool",
           "false",
           "使用等宽字体。"
+        ],
+        [
+          "maxlength",
+          "Option<i32>",
+          "无",
+          "最大字符数。"
+        ],
+        [
+          "required",
+          "bool",
+          "false",
+          "必填。"
+        ],
+        [
+          "readonly",
+          "bool",
+          "false",
+          "只读，可选中复制。"
+        ],
+        [
+          "autocomplete",
+          "Option<&'static str>",
+          "无",
+          "浏览器自动填充提示，如 new-password。"
         ]
       ],
       "keys": [
@@ -324,6 +348,73 @@
       ],
       "source": "src/components/forms.rs",
       "code": "let mut title = use_signal(String::new);\nrsx! {\n    FormInput {\n        r#type: \"text\",\n        placeholder: \"一个新的开始…\",\n        value: title(),\n        oninput: move |value| title.set(value),\n    }\n}",
+      "preview_mode": "interactive",
+      "usage_kind": "rust"
+    },
+    {
+      "name": "FormTextarea",
+      "slug": "form-textarea",
+      "label": "多行输入框",
+      "group": "form",
+      "summary": "容得下一段话。",
+      "states": "空 · 有内容 · 校验失败",
+      "description": "外观同输入框的多行版本，随内容长高；rows 是不支持自动长高时的初始行数。",
+      "props": [
+        [
+          "value",
+          "String",
+          "必填",
+          "当前内容。"
+        ],
+        [
+          "oninput",
+          "EventHandler<String>",
+          "必填",
+          "输入时返回新内容。"
+        ],
+        [
+          "rows",
+          "u32",
+          "3",
+          "初始行数。"
+        ],
+        [
+          "placeholder",
+          "Option<&'static str>",
+          "无",
+          "空内容时的提示。"
+        ],
+        [
+          "maxlength",
+          "Option<i32>",
+          "无",
+          "最大字符数。"
+        ],
+        [
+          "invalid",
+          "bool",
+          "false",
+          "校验未通过：红环并输出 aria-invalid。"
+        ],
+        [
+          "class",
+          "Option<&'static str>",
+          "field field-textarea",
+          "替换默认类。"
+        ]
+      ],
+      "keys": [
+        [
+          "Tab",
+          "移动焦点"
+        ],
+        [
+          "Enter",
+          "换行"
+        ]
+      ],
+      "source": "src/components/forms.rs",
+      "code": "let mut summary = use_signal(String::new);\nrsx! {\n    FormTextarea {\n        rows: 4,\n        placeholder: \"写下这篇文章想说的事…\",\n        value: summary(),\n        oninput: move |value| summary.set(value),\n    }\n}",
       "preview_mode": "interactive",
       "usage_kind": "rust"
     },

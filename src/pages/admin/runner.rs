@@ -11,10 +11,12 @@ use crate::components::admin_layout::AdminPageHead;
 use dioxus::prelude::*;
 
 use crate::components::code_runner::CodeRunner;
-use crate::components::forms::FormLabel;
+use crate::components::forms::{FormLabel, FormTextarea};
 use crate::components::ui::{FilterTabs, StatusDot};
 use crate::infra::runner_config::ResourceLimits;
 use crate::router::Route;
+
+const OVERRIDES_PLACEHOLDER: &str = "{\"timeout_secs\": 3}";
 /// 受支持的语言集合（与 LANGUAGES 注册表 / CODE_RUNNER_LANGUAGES 对齐）。
 const SUPPORTED_LANGS: &[(&str, &str)] = &[
     ("python", "Python"),
@@ -119,14 +121,14 @@ pub fn Runner() -> Element {
                     }
                     div {
                         FormLabel { label: "临时覆盖（JSON，可选）", html_for: "runner-overrides".to_string() }
-                        textarea {
+                        FormTextarea {
                             id: "runner-overrides",
                             class: "field field-textarea settings-mono",
-                            rows: "4",
-                            placeholder: "{{\"timeout_secs\": 3}}",
-                            "aria-invalid": (!override_error.is_empty()).then_some("true"),
-                            value: "{overrides_json}",
-                            oninput: move |e| overrides_json.set(e.value()),
+                            rows: 4,
+                            placeholder: OVERRIDES_PLACEHOLDER,
+                            invalid: !override_error.is_empty(),
+                            value: format!("{overrides_json}"),
+                            oninput: move |v: String| overrides_json.set(v),
                         }
                         if override_error.is_empty() {
                             p { class: "runner-admin-hint",

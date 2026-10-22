@@ -1061,12 +1061,13 @@ enum PreviewRoute {
 
 fn preview_route(slug: &str) -> Option<PreviewRoute> {
     Some(match slug {
-        "checkbox" | "toggle-switch" | "form-select" | "radio" | "form-input" | "time-picker"
-        | "form-label" | "filter-tabs" | "pagination" | "table-pager" | "tooltip" | "popover"
-        | "modal-shell" | "confirm-dialog" | "alert-box" | "status-badge" | "status-dot"
-        | "tag-chip" | "user-avatar" | "image-placeholder" | "icon" | "button" | "icon-button"
-        | "number-input" | "menu" | "toast" | "bottom-sheet" | "side-sheet" | "breadcrumb"
-        | "search-palette" | "admin-palette" | "empty-state" | "load-error" => PreviewRoute::Live,
+        "checkbox" | "toggle-switch" | "form-select" | "radio" | "form-input" | "form-textarea"
+        | "time-picker" | "form-label" | "filter-tabs" | "pagination" | "table-pager"
+        | "tooltip" | "popover" | "modal-shell" | "confirm-dialog" | "alert-box"
+        | "status-badge" | "status-dot" | "tag-chip" | "user-avatar" | "image-placeholder"
+        | "icon" | "button" | "icon-button" | "number-input" | "menu" | "toast"
+        | "bottom-sheet" | "side-sheet" | "breadcrumb" | "search-palette" | "admin-palette"
+        | "empty-state" | "load-error" => PreviewRoute::Live,
         "post-cover" => PreviewRoute::Scene,
         "asset-picker-modal" | "asset-upload-modal" | "code-runner" | "sql-result-table" => {
             PreviewRoute::Business
@@ -1127,6 +1128,7 @@ fn LiveComponentPreview(
     let mut select_value = use_signal(|| "leaf".to_string());
     let mut time_value = use_signal(|| "08:30".to_string());
     let mut input_value = use_signal(String::new);
+    let mut textarea_value = use_signal(String::new);
     let mut tab_value = use_signal(|| "all".to_string());
     let mut page = use_signal(|| 1i32);
     let mut number_value = use_signal(|| 14i64);
@@ -1221,6 +1223,14 @@ fn LiveComponentPreview(
                 placeholder: "一个新的开始…",
                 value: input_value(),
                 oninput: move |value| input_value.set(value),
+            }
+        },
+        "FormTextarea" => rsx! {
+            crate::components::forms::FormTextarea {
+                rows: 4,
+                placeholder: "写下这篇文章想说的事…",
+                value: textarea_value(),
+                oninput: move |value| textarea_value.set(value),
             }
         },
         "FormLabel" => rsx! {

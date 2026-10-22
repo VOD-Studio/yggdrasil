@@ -1,5 +1,6 @@
 use super::{history::HistoryPanel, save::persist, state::EditorState};
 use crate::api::notes::owned_notebooks;
+use crate::components::forms::FormInput;
 use crate::components::ui::{
     button_class, ButtonSize, ButtonVariant, ConfirmDialog, Icon, IconButton, IconName, StatusDot,
 };
@@ -182,15 +183,12 @@ pub(super) fn MetadataPanel(mut state: EditorState, open: Signal<bool>, locked: 
 
             section { class: "note-side-section",
                 label { class: "note-side-title", r#for: "note-tags", "标签" }
-                input {
-                    id: "note-tags",
-                    class: "field",
-                    r#type: "text",
+                FormInput {
+                    id: Some("note-tags".to_string()),
                     placeholder: "Rust, 排错, 读书",
                     disabled: locked,
-                    value: "{tags}",
-                    oninput: move |ev| {
-                        let value = ev.value();
+                    value: tags(),
+                    oninput: move |value: String| {
                         state.draft.with_mut(|d| d.tags = parse_tags(&value));
                         tags.set(value);
                     },

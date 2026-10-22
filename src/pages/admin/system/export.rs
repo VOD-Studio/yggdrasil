@@ -2,7 +2,7 @@
 
 use dioxus::prelude::*;
 
-use crate::components::forms::ToggleSwitch;
+use crate::components::forms::{FormInput, FormTextarea, ToggleSwitch};
 use crate::components::ui::{button_class, ButtonSize, ButtonVariant, Icon, IconName};
 
 /// 数据导出 tab：按表或按查询导出 CSV / SQL，走 Axum 流式下载。
@@ -72,12 +72,12 @@ pub(super) fn ExportTab() -> Element {
                     div { class: "settings-row",
                         label { class: "settings-label", r#for: "export-table", "表名" }
                         div { class: "settings-control",
-                            input {
-                                id: "export-table",
+                            FormInput {
+                                id: Some("export-table".to_string()),
                                 class: "field settings-mono",
                                 placeholder: "如 posts",
-                                value: "{table_name}",
-                                oninput: move |e| table_name.set(e.value()),
+                                value: table_name(),
+                                oninput: move |v: String| table_name.set(v),
                             }
                             p { class: "settings-hint", "只支持 public schema 下的用户表。" }
                         }
@@ -86,13 +86,13 @@ pub(super) fn ExportTab() -> Element {
                     div { class: "settings-row",
                         label { class: "settings-label", r#for: "export-query", "查询" }
                         div { class: "settings-control",
-                            textarea {
-                                id: "export-query",
+                            FormTextarea {
+                                id: Some("export-query".to_string()),
                                 class: "field field-textarea settings-mono",
-                                rows: "4",
+                                rows: 4u32,
                                 placeholder: "SELECT id, title FROM posts WHERE status = 'published'",
-                                value: "{query}",
-                                oninput: move |e| query.set(e.value()),
+                                value: query(),
+                                oninput: move |v: String| query.set(v),
                             }
                             p { class: "settings-hint", "只接受只读的 SELECT。" }
                         }

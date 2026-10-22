@@ -3,6 +3,7 @@ use super::state::PostDraft;
 #[cfg(target_arch = "wasm32")]
 use crate::bridges::tiptap::upload_image_file;
 use crate::components::assets::{AssetPickerModal, AssetSelection};
+use crate::components::forms::FormInput;
 use crate::components::ui::{button_class, ButtonSize, ButtonVariant};
 #[cfg(target_arch = "wasm32")]
 use crate::utils::js::invoke_optional_global;
@@ -195,14 +196,14 @@ pub(super) fn CoverUploader(
 
         if cover_url_mode() && !has_cover {
             div { class: "write-cover-url",
-                input {
+                FormInput {
                     class: "field field-sm",
                     r#type: "url",
                     aria_label: "封面图片链接",
                     placeholder: "粘贴图片链接",
-                    value: "{cover_url_input}",
-                    oninput: move |e| cover_url_input.set(e.value()),
-                    onkeydown: move |e| {
+                    value: cover_url_input(),
+                    oninput: move |v: String| cover_url_input.set(v),
+                    onkeydown: move |e: KeyboardEvent| {
                         if e.key() == Key::Enter && !e.data().is_composing() {
                             confirm_url();
                         } else if e.key() == Key::Escape {

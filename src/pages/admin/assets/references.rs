@@ -1,6 +1,7 @@
 //! 素材详情栏：大图（点击进灯箱）、文件信息、替代文本、引用来源、复制链接与删除。
 //! 被引用的素材禁止删除并写明引用数。
 use super::card::ref_kind;
+use crate::components::forms::FormInput;
 use crate::components::ui::{
     button_class, use_toast, ButtonSize, ButtonVariant, IconButton, IconName,
 };
@@ -182,16 +183,15 @@ pub(super) fn AssetDetail(
                         span { class: "asset-detail-warn", "未填写" }
                     }
                 }
-                input {
-                    id: "asset-alt",
-                    class: "field",
+                FormInput {
+                    id: Some("asset-alt".to_string()),
                     placeholder: "描述这张图片，供读屏与搜索使用",
                     maxlength: 500,
-                    value: "{alt}",
+                    value: alt(),
                     disabled: saving(),
-                    oninput: move |e| alt.set(e.value()),
+                    oninput: move |v: String| alt.set(v),
                     onblur: move |_| save_alt(()),
-                    onkeydown: move |e| {
+                    onkeydown: move |e: KeyboardEvent| {
                         if e.key() == Key::Enter && !e.data().is_composing() {
                             e.prevent_default();
                             save_alt(());

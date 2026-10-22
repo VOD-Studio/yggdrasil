@@ -9,6 +9,9 @@ use dioxus::prelude::*;
 /// 输入框基础类：浅底、发丝线环，聚焦陶土双环，`aria-invalid` 时红环。
 pub const INPUT_CLASS: &str = "field w-full";
 
+/// 多行输入框基础类：随内容长高（`.field-textarea`）。
+pub const TEXTAREA_CLASS: &str = "field field-textarea";
+
 /// FormSelect 实例 id 计数器（跨泛型单例化全局唯一）。
 static FORM_SELECT_ID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
@@ -614,25 +617,41 @@ pub fn TimePicker(id: Option<String>, value: String, onchange: EventHandler<Stri
 ///
 /// Props：
 /// - `id`：input 元素 id，用于与 label 关联
-/// - `r#type`：input 类型（如 `"text"`、`"email"`、`"password"`）
-/// - `placeholder`：占位提示文本
+/// - `r#type`：input 类型（缺省 `"text"`；如 `"email"`、`"password"`、`"number"`）
+/// - `placeholder`：占位提示文本（可选，不填则不输出属性）
 /// - `value`：当前值
 /// - `disabled`：是否禁用（可选，缺省 `false`）
 /// - `invalid`：是否校验未通过（红环，输出 `aria-invalid`）
-/// - `oninput`：输入事件回调，返回新的字符串值
-/// - `onkeydown`：可选的键盘事件回调
+/// - `required`：是否必填（缺省 `false`）
+/// - `readonly`：是否只读（缺省 `false`）
+/// - `autofocus`：挂载时是否自动聚焦（缺省 `false`）
+/// - `maxlength`：最大字符数（可选）
+/// - `autocomplete`：浏览器自动填充提示（可选，如 `"new-password"`）
+/// - `min` / `step`：number 类输入的下限与步进（可选）
+/// - `aria_describedby`：关联说明元素 id（可选）
+/// - `oninput`：输入事件回调，返回新的字符串值（可选；只读框不需要）
+/// - `onkeydown` / `onfocus` / `onblur`：可选的键盘与焦点事件回调
 /// - `class`：自定义 class（可选，缺省用 [`INPUT_CLASS`] 全宽表单款）。
-///   内联/固定宽度场景传 [`INPUT_INLINE_CLASS`] 或自定义类串，覆盖默认样式。
+///   内联/固定宽度场景传自定义类串，覆盖默认样式。
 /// - `mono`：是否使用等宽字体（代码片段、表名、JSON 等，缺省 `false`）
+/// - `inputmode` / `title` / `aria_label`：可选的原生属性
 #[component]
 pub fn FormInput(
     id: Option<String>,
-    r#type: &'static str,
-    placeholder: &'static str,
+    #[props(default = "text")] r#type: &'static str,
+    #[props(default)] placeholder: Option<&'static str>,
     value: String,
     #[props(default)] disabled: bool,
     #[props(default)] invalid: bool,
-    oninput: EventHandler<String>,
+    #[props(default)] required: bool,
+    #[props(default)] readonly: bool,
+    #[props(default)] autofocus: bool,
+    #[props(default)] maxlength: Option<i32>,
+    #[props(default)] autocomplete: Option<&'static str>,
+    #[props(default)] min: Option<&'static str>,
+    #[props(default)] step: Option<&'static str>,
+    #[props(default)] aria_describedby: Option<&'static str>,
+    #[props(default)] oninput: Option<EventHandler<String>>,
     #[props(default)] onkeydown: Option<EventHandler<KeyboardEvent>>,
     #[props(default)] onfocus: Option<EventHandler<FocusEvent>>,
     #[props(default)] onblur: Option<EventHandler<FocusEvent>>,
@@ -654,14 +673,26 @@ pub fn FormInput(
             id: id.unwrap_or_default(),
             class: "{base}{mono_class}{disabled_class}",
             r#type: "{r#type}",
-            placeholder: "{placeholder}",
+            placeholder,
             value: "{value}",
             disabled,
+            required,
+            readonly,
+            autofocus,
+            maxlength,
+            autocomplete,
+            min,
+            step,
+            aria_describedby,
             aria_invalid: invalid.then_some("true"),
             inputmode: inputmode.unwrap_or_default(),
             title: title.unwrap_or_default(),
             aria_label,
-            oninput: move |e| oninput.call(e.value()),
+            oninput: move |e| {
+                if let Some(handler) = &oninput {
+                    handler.call(e.value());
+                }
+            },
             onkeydown: move |e| {
                 if let Some(handler) = &onkeydown {
                     handler.call(e);
@@ -677,6 +708,33 @@ pub fn FormInput(
                     handler.call(e);
                 }
             },
+        }
+    }
+}
+
+/// 多行输入框：外观同 FormInput，`.field-textarea` 随内容长高，
+/// `rows` 是不支持 field-sizing 时的初始行数。
+#[component]
+pub fn FormTextarea(
+    id: Option<String>,
+    value: String,
+    #[props(default)] placeholder: Option<&'static str>,
+    #[props(default = 3)] rows: u32,
+    #[props(default)] maxlength: Option<i32>,
+    #[props(default)] invalid: bool,
+    oninput: EventHandler<String>,
+    #[props(default)] class: Option<&'static str>,
+) -> Element {
+    rsx! {
+        textarea {
+            id: id.unwrap_or_default(),
+            class: class.unwrap_or(TEXTAREA_CLASS),
+            rows,
+            maxlength,
+            placeholder,
+            value: "{value}",
+            aria_invalid: invalid.then_some("true"),
+            oninput: move |e| oninput.call(e.value()),
         }
     }
 }

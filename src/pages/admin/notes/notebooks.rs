@@ -7,7 +7,7 @@ use super::client_request;
 use crate::api::notes::*;
 use crate::components::admin_layout::AdminPageHead;
 use crate::components::empty_state::{EmptyState, EmptyStateAction};
-use crate::components::forms::{FormLabel, ToggleSwitch};
+use crate::components::forms::{FormInput, FormLabel, FormTextarea, ToggleSwitch};
 use crate::components::skeletons::notes_admin_skeleton::NotebooksSkeleton;
 use crate::components::ui::{
     button_class, use_toast, ButtonSize, ButtonVariant, ConfirmDialog, Icon, IconButton, IconName,
@@ -337,25 +337,23 @@ fn NotebookEditor(
                 h2 { id: "notebook-editor-h", "{heading}" }
                 div {
                     FormLabel { label: "名称", html_for: "notebook-title".to_string() }
-                    input {
+                    FormInput {
                         id: "notebook-title",
-                        class: "field",
                         maxlength: 100,
                         required: true,
-                        value: "{title}",
-                        oninput: move |ev| title.set(ev.value()),
+                        value: format!("{title}"),
+                        oninput: move |v: String| title.set(v),
                     }
                 }
                 div {
                     FormLabel { label: "简介", html_for: "notebook-description".to_string() }
-                    textarea {
+                    FormTextarea {
                         id: "notebook-description",
-                        class: "field field-textarea",
-                        rows: "2",
+                        rows: 2,
                         maxlength: 1000,
                         placeholder: "一两句话说明这本笔记写什么",
-                        value: "{description}",
-                        oninput: move |ev| description.set(ev.value()),
+                        value: format!("{description}"),
+                        oninput: move |v: String| description.set(v),
                     }
                 }
                 div { class: "admin-notebook-switch",

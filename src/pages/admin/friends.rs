@@ -10,7 +10,7 @@ use dioxus::prelude::*;
 
 use crate::components::assets::{AssetPickerModal, AssetSelection};
 use crate::components::empty_state::EmptyState;
-use crate::components::forms::{FormLabel, ToggleSwitch};
+use crate::components::forms::{FormInput, FormLabel, FormTextarea, ToggleSwitch};
 use crate::components::skeletons::friends_admin_skeleton::FriendsAdminListSkeleton;
 use crate::components::ui::{
     button_class, use_toast, ButtonSize, ButtonVariant, ConfirmDialog, Icon, IconName, LoadError,
@@ -433,24 +433,23 @@ fn FriendForm(
             }
             div {
                 FormLabel { label: "站点名称", html_for: "friend-name".to_string() }
-                input {
+                FormInput {
                     id: "friend-name",
-                    class: "field",
                     placeholder: "如：Rua Lab",
                     maxlength: 100,
-                    value: "{name}",
-                    oninput: move |e| name.set(e.value()),
+                    value: format!("{name}"),
+                    oninput: move |v: String| name.set(v),
                 }
             }
             div {
                 FormLabel { label: "链接", html_for: "friend-url".to_string() }
-                input {
+                FormInput {
                     id: "friend-url",
                     class: "field admin-friend-mono",
                     r#type: "url",
                     placeholder: "https://",
-                    value: "{url}",
-                    oninput: move |e| url.set(e.value()),
+                    value: format!("{url}"),
+                    oninput: move |v: String| url.set(v),
                 }
             }
             div {
@@ -463,13 +462,12 @@ fn FriendForm(
                             img { src: "{avatar}", alt: "", onerror: move |_| avatar_failed.set(true) }
                         }
                     }
-                    input {
+                    FormInput {
                         id: "friend-avatar",
-                        class: "field",
                         placeholder: "粘贴外链或从素材库选择",
-                        value: "{avatar}",
-                        oninput: move |e| {
-                            avatar.set(e.value());
+                        value: format!("{avatar}"),
+                        oninput: move |v: String| {
+                            avatar.set(v);
                             avatar_failed.set(false);
                         },
                     }
@@ -483,26 +481,25 @@ fn FriendForm(
             }
             div {
                 FormLabel { label: "简介", html_for: "friend-desc".to_string() }
-                textarea {
+                FormTextarea {
                     id: "friend-desc",
-                    class: "field field-textarea",
-                    rows: "3",
+                    rows: 3,
                     maxlength: 300,
                     placeholder: "一句话介绍对方站点",
-                    value: "{desc}",
-                    oninput: move |e| desc.set(e.value()),
+                    value: format!("{desc}"),
+                    oninput: move |v: String| desc.set(v),
                 }
             }
             div { class: "admin-friend-form-row",
                 div { class: "admin-friend-order-field",
                     FormLabel { label: "排序值", html_for: "friend-order".to_string() }
-                    input {
+                    FormInput {
                         id: "friend-order",
                         class: "field admin-friend-mono",
                         inputmode: "numeric",
-                        "aria-invalid": order_value.is_none().then_some("true"),
-                        value: "{order}",
-                        oninput: move |e| order.set(e.value()),
+                        invalid: order_value.is_none(),
+                        value: format!("{order}"),
+                        oninput: move |v: String| order.set(v),
                     }
                 }
                 div { class: "admin-friend-switch",

@@ -7,7 +7,7 @@ use dioxus::prelude::*;
 use super::kit::{use_section, SettingRow, SettingsCard, SwitchRow};
 use super::SettingsSection;
 use crate::api::settings::{get_runner_settings, update_runner_settings};
-use crate::components::forms::NumberInput;
+use crate::components::forms::{FormInput, NumberInput};
 use crate::models::settings::RunnerSettings;
 
 async fn save(d: RunnerSettings) -> Result<RunnerSettings, ServerFnError> {
@@ -62,15 +62,15 @@ pub fn RunnerSection() -> Element {
                 html_for: "runner-cpu".to_string(),
                 hint: "每个任务可用的 CPU 核数，可以是小数。".to_string(),
                 div { class: "settings-inline",
-                    input {
-                        id: "runner-cpu",
+                    FormInput {
+                        id: Some("runner-cpu".to_string()),
                         class: "field settings-number",
                         r#type: "number",
                         min: "0.1",
                         step: "0.1",
-                        value: "{d.max_cpu_cores:.1}",
-                        oninput: move |e| {
-                            if let Ok(v) = e.value().parse::<f64>() {
+                        value: format!("{:.1}", d.max_cpu_cores),
+                        oninput: move |v: String| {
+                            if let Ok(v) = v.parse::<f64>() {
                                 draft.write().max_cpu_cores = v;
                             }
                         },
@@ -157,13 +157,12 @@ pub fn RunnerSection() -> Element {
                 label: "语言白名单",
                 html_for: "runner-langs".to_string(),
                 hint: "逗号分隔，留空表示全部注册语言可用。".to_string(),
-                input {
-                    id: "runner-langs",
+                FormInput {
+                    id: Some("runner-langs".to_string()),
                     class: "field settings-mono",
                     placeholder: "python, node, rust",
-                    value: "{d.languages.clone().unwrap_or_default()}",
-                    oninput: move |e| {
-                        let v = e.value();
+                    value: d.languages.clone().unwrap_or_default(),
+                    oninput: move |v: String| {
                         draft.write().languages = (!v.trim().is_empty()).then_some(v);
                     },
                 }

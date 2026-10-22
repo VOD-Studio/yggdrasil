@@ -1,6 +1,7 @@
 //! 令牌对话框：明文（默认遮罩）、各客户端接入配置与一句话接入指令。
 use super::{notes_desc, OpenToken};
 use crate::api::mcp_tokens::{get_mcp_client_configs, reveal_mcp_token, McpClientConfigs};
+use crate::components::forms::FormInput;
 use crate::components::ui::{
     button_class, use_toast, ButtonSize, ButtonVariant, Icon, IconButton, IconName, ModalShell,
 };
@@ -163,11 +164,11 @@ pub(super) fn TokenDialog(token: OpenToken, on_close: EventHandler<()>) -> Eleme
                 div {
                     label { class: "mcp-label", r#for: "mcp-plaintext", "令牌明文" }
                     div { class: "mcp-secret",
-                        input {
-                            id: "mcp-plaintext",
+                        FormInput {
+                            id: Some("mcp-plaintext".to_string()),
                             class: "field settings-mono",
                             readonly: true,
-                            value: "{shown_text}",
+                            value: shown_text.to_string(),
                         }
                         IconButton {
                             icon: if shown() { IconName::EyeOff } else { IconName::Eye },

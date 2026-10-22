@@ -8,7 +8,7 @@ use dioxus::prelude::*;
 use super::kit::{use_section, SettingRow, SettingsCard, SwitchRow};
 use super::SettingsSection;
 use crate::api::settings::{get_security_settings, update_security_settings};
-use crate::components::forms::{FormSelect, FORM_SELECT_COMPACT_CLASS};
+use crate::components::forms::{FormInput, FormSelect, FORM_SELECT_COMPACT_CLASS};
 use crate::models::settings::SecuritySettings;
 
 async fn save(d: SecuritySettings) -> Result<SecuritySettings, ServerFnError> {
@@ -38,13 +38,13 @@ pub fn SecuritySection() -> Element {
                 label: "可信来源",
                 html_for: "sec-base-url".to_string(),
                 hint: "即 APP_BASE_URL，写请求的 CSRF 校验以它为准。留空时从 Host 头推导，生产环境建议显式设置。".to_string(),
-                input {
-                    id: "sec-base-url",
+                FormInput {
+                    id: Some("sec-base-url".to_string()),
                     class: "field settings-mono",
                     r#type: "url",
                     placeholder: "https://你的站点",
-                    value: "{d.app_base_url}",
-                    oninput: move |e| draft.write().app_base_url = e.value(),
+                    value: d.app_base_url.clone(),
+                    oninput: move |v: String| draft.write().app_base_url = v,
                 }
             }
             SwitchRow {

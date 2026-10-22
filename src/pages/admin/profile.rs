@@ -10,6 +10,7 @@ use crate::components::admin_layout::AdminPageHead;
 use dioxus::prelude::*;
 
 use crate::components::assets::{AssetPickerModal, AssetSelection};
+use crate::components::forms::FormInput;
 use crate::components::skeletons::profile_skeleton::ProfileSkeleton;
 use crate::components::ui::{
     button_class, use_toast, ButtonSize, ButtonVariant, Icon, IconName, LoadError,
@@ -268,24 +269,23 @@ fn InfoSection(user: PublicUser, on_saved: EventHandler<PublicUser>) -> Element 
                 }
                 div { class: "admin-profile-row",
                     label { class: "admin-profile-label", r#for: "profile-display", "显示名称" }
-                    input {
+                    FormInput {
                         id: "profile-display",
-                        class: "field",
                         placeholder: "留空则显示用户名",
                         maxlength: 50,
-                        value: "{display}",
-                        oninput: move |e| display.set(e.value()),
+                        value: format!("{display}"),
+                        oninput: move |v: String| display.set(v),
                     }
                 }
                 div { class: "admin-profile-row",
                     label { class: "admin-profile-label", r#for: "profile-email", "邮箱" }
-                    input {
+                    FormInput {
                         id: "profile-email",
                         class: "field admin-profile-mono",
                         r#type: "email",
                         placeholder: "name@example.com",
-                        value: "{email}",
-                        oninput: move |e| email.set(e.value()),
+                        value: format!("{email}"),
+                        oninput: move |v: String| email.set(v),
                     }
                 }
             }
@@ -361,26 +361,24 @@ fn PasswordSection() -> Element {
             div { class: "admin-profile-rows",
                 div { class: "admin-profile-row",
                     label { class: "admin-profile-label", r#for: "profile-pw0", "当前密码" }
-                    input {
+                    FormInput {
                         id: "profile-pw0",
-                        class: "field",
                         r#type: "password",
                         autocomplete: "current-password",
-                        value: "{current}",
-                        oninput: move |e| current.set(e.value()),
+                        value: format!("{current}"),
+                        oninput: move |v: String| current.set(v),
                     }
                 }
                 div { class: "admin-profile-row",
                     label { class: "admin-profile-label", r#for: "profile-pw1", "新密码" }
                     div {
-                        input {
+                        FormInput {
                             id: "profile-pw1",
-                            class: "field",
                             r#type: "password",
                             autocomplete: "new-password",
                             aria_describedby: "profile-pw1-hint",
-                            value: "{next}",
-                            oninput: move |e| next.set(e.value()),
+                            value: format!("{next}"),
+                            oninput: move |v: String| next.set(v),
                         }
                         div { class: "admin-profile-meter", "data-level": "{level}", aria_hidden: "true",
                             for i in 1..=4u8 {
@@ -393,14 +391,13 @@ fn PasswordSection() -> Element {
                 div { class: "admin-profile-row",
                     label { class: "admin-profile-label", r#for: "profile-pw2", "确认新密码" }
                     div {
-                        input {
+                        FormInput {
                             id: "profile-pw2",
-                            class: "field",
                             r#type: "password",
                             autocomplete: "new-password",
-                            "aria-invalid": mismatch.then_some("true"),
-                            value: "{confirm}",
-                            oninput: move |e| confirm.set(e.value()),
+                            invalid: mismatch,
+                            value: format!("{confirm}"),
+                            oninput: move |v: String| confirm.set(v),
                         }
                         if mismatch {
                             p { class: "admin-profile-hint", "data-error": "true", role: "alert",

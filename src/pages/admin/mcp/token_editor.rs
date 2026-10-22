@@ -1,6 +1,7 @@
 //! 新建令牌与编辑权限对话框，以及两者共用的笔记授权字段。
 use super::{scope_desc, OpenToken};
 use crate::api::mcp_tokens::{create_mcp_token, update_mcp_token_permissions, TokenLifetime};
+use crate::components::forms::FormInput;
 use crate::components::ui::{
     button_class, use_toast, ButtonSize, ButtonVariant, Checkbox, IconButton, IconName, ModalShell,
 };
@@ -249,14 +250,13 @@ pub(super) fn CreateTokenDialog(
                             span { "名称" }
                             span { class: "mcp-count", "{length} / 64" }
                         }
-                        input {
-                            id: "mcp-token-name",
-                            class: "field",
+                        FormInput {
+                            id: Some("mcp-token-name".to_string()),
                             placeholder: "如 claude-code-macbook",
                             autofocus: true,
-                            "aria-invalid": (submitted() && name_error.is_some()).then_some("true"),
-                            value: "{name}",
-                            oninput: move |e| name.set(e.value()),
+                            invalid: submitted() && name_error.is_some(),
+                            value: name(),
+                            oninput: move |v: String| name.set(v),
                         }
                         if submitted() {
                             if let Some(err) = name_error {

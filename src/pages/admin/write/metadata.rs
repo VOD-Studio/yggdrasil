@@ -1,5 +1,6 @@
 //! 文章属性抽屉：永久链接、标签、摘要、封面与字数；与正文编辑器共享表单。
 use super::{cover::CoverUploader, state::WriteEditorState};
+use crate::components::forms::FormTextarea;
 use crate::components::post::post_meta::group_digits;
 use crate::components::ui::{IconButton, IconName};
 use dioxus::prelude::*;
@@ -118,13 +119,13 @@ pub(super) fn MetadataPanel(
                     span { "摘要" }
                     span { class: "write-prop-hint tabular-nums", "{summary_len} 字" }
                 }
-                textarea {
-                    id: "write-summary",
+                FormTextarea {
+                    id: Some("write-summary".to_string()),
                     class: "field field-textarea write-summary",
-                    rows: "5",
+                    rows: 5u32,
                     placeholder: "选填，留空将从正文提取",
-                    value: "{form.read().summary}",
-                    oninput: move |e| form.write().summary = e.value(),
+                    value: form.read().summary.clone(),
+                    oninput: move |v: String| form.write().summary = v,
                 }
             }
 
