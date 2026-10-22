@@ -102,7 +102,7 @@ async fn check_rate_limit_for_user() -> Result<(), ServerFnError> {
 /// - `Some(tx)`：走 [`run_in_container_stream`]，逐 chunk 推给 SSE channel（流式路径）。
 ///
 /// 其余（并发槽获取、资源钳制、状态映射、超时/失败脱敏、日志前缀）两条路径完全一致。
-/// 两个 runner 返回元组仅末尾多一个 `_timed_out`，此处统一裁成 4 元组后续处理。
+/// 两个 runner 返回相同的 4 元组；超时都以 `Err(IOError { kind: TimedOut })` 上报。
 #[cfg(feature = "server")]
 fn spawn_exec_task(
     task_id: String,
@@ -170,19 +170,18 @@ fn spawn_exec_task(
         // 唯一的行为分叉：流式路径逐 chunk 推 SSE，非流式仅落终态 buffer。
         let stream_suffix = if stream_tx.is_some() { " (stream)" } else { "" };
         let res = match &stream_tx {
-            Some(tx) => run_in_container_stream(
-                &lang_def.image,
-                &lang_def.run_cmd,
-                &req.source,
-                &lang_def.extension,
-                final_limits,
-                lang_def.cache_volume.as_ref(),
-                tx.clone(),
-            )
-            .await
-            .map(|(exit_code, stdout, stderr, oom_killed, _)| {
-                (exit_code, stdout, stderr, oom_killed)
-            }),
+            Some(tx) => {
+                run_in_container_stream(
+                    &lang_def.image,
+                    &lang_def.run_cmd,
+                    &req.source,
+                    &lang_def.extension,
+                    final_limits,
+                    lang_def.cache_volume.as_ref(),
+                    tx.clone(),
+                )
+                .await
+            }
             None => {
                 run_in_container(
                     &lang_def.image,
@@ -223,10 +222,10 @@ fn spawn_exec_task(
                 tracing::error!(error = ?e, task_id = %task_id, "container execution failed{}", stream_suffix);
                 let (status, stderr_msg) = classify_runner_error(&e, &lang_def.image);
 
-                // 流式路径：run_in_container_stream 在 create_container 阶段就 Err 返回
-                // （镜像缺失 / daemon 不可达），此时 Done chunk 从未推送，SSE 流静默关闭，
-                // 前端只能显示笼统的「连接异常」。这里补推一个带 error 的 Done chunk，
-                // 让前端拿到可操作消息。send 失败（客户端已断开）则忽略——轮询兜底仍兜得住。
+                // 流式路径：run_in_container_stream 返回 Err 时（执行超时、镜像缺失、
+                // daemon 不可达等）从不推 Done chunk，这里补推唯一一个带 error 的 Done，
+                // 否则 SSE 流静默关闭，前端只能显示笼统的「连接异常」。
+                // send 失败（客户端已断开）则忽略——轮询兜底仍兜得住。
                 if let Some(tx) = &stream_tx {
                     let _ = tx
                         .send(OutputChunk::Done {

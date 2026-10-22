@@ -436,9 +436,9 @@ pub enum OutputChunk {
         oom_killed: bool,
         timed_out: bool,
         duration_ms: u64,
-        /// 系统级错误消息（镜像缺失 / daemon 不可达等）。正常执行时为 None；
-        /// 由 spawn_exec_task 的 Err 分支在容器拉起失败时推送，让前端 SSE
-        /// 能拿到可操作消息，而非笼统的「连接异常」。
+        /// 系统级错误消息（执行超时 / 镜像缺失 / daemon 不可达等）。正常执行时为 None；
+        /// 由 spawn_exec_task 的 Err 分支推送，让前端 SSE 能拿到可操作消息，
+        /// 而非笼统的「连接异常」。
         error: Option<String>,
     },
 }
@@ -450,9 +450,10 @@ pub enum OutputChunk {
 /// 1. 日志循环里每块 chunk 既 `tx.send` 推流，也 append 到本地 buffer。
 /// 2. 用 `tokio::select!` 在日志读取中并发等待 `tx` 关闭——客户端断开（SSE 关闭）
 ///    → `tx` 所有 Sender drop → `rx` 返回 None → 中止读取。
-/// 3. 终态推 `OutputChunk::Done` 后 return。
+/// 3. 仅在返回 `Ok` 时推终态 `OutputChunk::Done`；返回 `Err`（含执行超时）时不推，
+///    由调用方统一补推，保证每次执行恰好一个 `Done`。
 ///
-/// 返回完整 buffer（exit_code / stdout / stderr / oom / timed_out），供调用方写 EXEC_TASKS，
+/// 返回完整 buffer（exit_code / stdout / stderr / oom），供调用方写 EXEC_TASKS，
 /// 让轮询兜底路径（get_exec_result）也能拿到完整结果。
 pub async fn run_in_container_stream(
     image_name: &str,
@@ -462,7 +463,7 @@ pub async fn run_in_container_stream(
     limits: ResourceLimits,
     cache_volume: Option<&CacheVolume>,
     tx: tokio::sync::mpsc::Sender<OutputChunk>,
-) -> Result<(Option<i64>, String, String, bool, bool), bollard::errors::Error> {
+) -> Result<(Option<i64>, String, String, bool), bollard::errors::Error> {
     let docker = get_docker()?;
     let host_config = build_host_config(&limits, cache_volume);
 
@@ -683,12 +684,19 @@ pub async fn run_in_container_stream(
         }
     }
 
+    if timed_out {
+        return Err(bollard::errors::Error::IOError {
+            err: std::io::Error::new(std::io::ErrorKind::TimedOut, "Execution timed out"),
+        });
+    }
+
     // 检查 OOM 状态。
     let inspect = docker.inspect_container(&container_id, None).await;
     let oom_killed = inspect
         .ok()
         .and_then(|info| info.state.and_then(|s| s.oom_killed))
         .unwrap_or(false);
+
     // 推送终态 chunk（客户端已断开则跳过，send 必然失败）。
     let duration_ms = start_time.elapsed().as_millis() as u64;
     if !client_disconnected {
@@ -696,7 +704,7 @@ pub async fn run_in_container_stream(
             .send(OutputChunk::Done {
                 exit_code,
                 oom_killed,
-                timed_out,
+                timed_out: false,
                 duration_ms,
                 error: None,
             })
@@ -708,13 +716,7 @@ pub async fn run_in_container_stream(
     let stdout = String::from_utf8_lossy(&stdout_buf[..stdout_len]).into_owned();
     let stderr = String::from_utf8_lossy(&stderr_buf[..stderr_len]).into_owned();
 
-    if timed_out {
-        return Err(bollard::errors::Error::IOError {
-            err: std::io::Error::new(std::io::ErrorKind::TimedOut, "Execution timed out"),
-        });
-    }
-
-    Ok((exit_code, stdout, stderr, oom_killed, timed_out))
+    Ok((exit_code, stdout, stderr, oom_killed))
 }
 
 #[cfg(test)]
@@ -964,7 +966,7 @@ mod tests {
         assert_eq!(stderr, "boom\n");
 
         let (tx, mut rx) = tokio::sync::mpsc::channel(64);
-        let (exit_code, _, _, _, timed_out) = run_in_container_stream(
+        let (exit_code, _, _, _) = run_in_container_stream(
             "alpine:latest",
             "sh /code/main.sh",
             "exit 3",
@@ -976,7 +978,6 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(exit_code, Some(3));
-        assert!(!timed_out);
         let mut done_code = None;
         while let Some(chunk) = rx.recv().await {
             if let OutputChunk::Done { exit_code, .. } = chunk {
@@ -1009,6 +1010,39 @@ mod tests {
                 assert_eq!(err.kind(), std::io::ErrorKind::TimedOut);
             }
             _ => panic!("Expected IOError(TimedOut), got {:?}", err),
+        }
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn stream_timeout_returns_timed_out_without_done_chunk() {
+        if require_docker_with_image("alpine:latest").await.is_none() {
+            eprintln!("skip: Docker daemon 不可用或缺少 alpine:latest");
+            return;
+        }
+        let limits = ResourceLimits {
+            cpu_cores: 1.0,
+            memory_mb: 128,
+            timeout_secs: 1,
+            output_bytes: 1024,
+            allow_network: false,
+        };
+        let (tx, mut rx) = tokio::sync::mpsc::channel(64);
+        let res =
+            run_in_container_stream("alpine:latest", "sleep 10", "", "txt", limits, None, tx).await;
+
+        match res {
+            Err(bollard::errors::Error::IOError { err }) => {
+                assert_eq!(err.kind(), std::io::ErrorKind::TimedOut);
+            }
+            other => panic!("Expected IOError(TimedOut), got {:?}", other),
+        }
+        // 超时的 Done 由调用方补推；runner 自己推会让 SSE 收到两个 done。
+        while let Some(chunk) = rx.recv().await {
+            assert!(
+                !matches!(chunk, OutputChunk::Done { .. }),
+                "runner pushed Done on timeout"
+            );
         }
     }
 

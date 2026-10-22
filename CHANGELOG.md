@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 消毒白名单预构建为静态实例；回收站批量恢复与彻底删除改为一次批量查询标签；`replacement()` 返回已校验字段，去掉依赖非局部不变量的 `expect()`。
 - 收敛重复实现：HTML 转义、settings 单键 upsert、原生路由 admin 前置校验、评论内容哈希、`group_digits`、主题过渡探测；删除未使用的常量、组件、CSS 规则、`codemirror` 依赖与过时的 `dead_code` 豁免。
 - 测试改为调用生产函数：健康检查、上传转码；删除源码字符串断言测试；两个 TEMP 表数据库回归改读 `DATABASE_URL` 并写入测试文档；`scripts/test-dev-assets.cjs` 从 `mk/assets.mk` 读取输出清单；清理 FreeBSD 残留忽略规则。
+- 代码运行器流式执行超时只推送一个 `done` 事件（此前 runner 与调用方各推一个）；`run_in_container_stream` 去掉恒为 `false` 的 `timed_out` 返回值，与非流式路径统一为 4 元组。
 
 ## [0.24.2] - 2026-10-22
 
