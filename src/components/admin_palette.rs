@@ -4,6 +4,9 @@
 //! 动作是后台自己的。空查询显示常用操作与全部栏目；有查询时按「文章 · 操作 · 跳转」
 //! 分组，文章来自后台列表接口（含草稿，按标题匹配，最多 6 篇），回车进入编辑。
 
+use std::future::Future;
+use std::pin::Pin;
+
 use dioxus::prelude::*;
 
 use crate::components::admin_layout::AdminSection;
@@ -23,7 +26,7 @@ const PROGRESS_DELAY_MS: u32 = 300;
 
 /// 面板里的动作。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Action {
+pub(crate) enum Action {
     WritePost,
     NewNote,
     Upload,
@@ -82,16 +85,11 @@ fn jump_targets() -> Vec<(&'static str, IconName, Route)> {
     targets
 }
 
-/// 图鉴演示用的固定数据：文章在浏览器内按标题过滤，选中项只把名称交给 `on_pick`，
-/// 不请求接口、不跳转，也不注册全局快捷键。
-#[derive(Clone, PartialEq)]
-pub struct AdminPaletteDemo {
-    pub posts: Vec<PostListItem>,
-    pub on_pick: EventHandler<String>,
-}
+/// 文章检索结果；`None` 表示请求失败，面板保留上一批结果。
+pub(crate) type PostSearch = Pin<Box<dyn Future<Output = Option<Vec<PostListItem>>>>>;
 
 #[derive(Clone, Debug, PartialEq)]
-enum Item {
+pub(crate) enum Item {
     Post(PostListItem),
     Action(Action),
     Jump {
@@ -108,7 +106,7 @@ struct Group {
 }
 
 impl Item {
-    fn title(&self) -> String {
+    pub(crate) fn title(&self) -> String {
         match self {
             Item::Post(post) => post.title.clone(),
             Item::Action(action) => action.label().to_string(),
@@ -172,18 +170,69 @@ fn build_groups(query: &str, posts: &[PostListItem], dark: bool) -> Vec<Group> {
 ///
 /// Props：
 /// - `on_logout`：「退出登录」命令，与侧栏退出按钮同一处理
-/// - `demo`：图鉴传入的固定数据，见 [`AdminPaletteDemo`]
 #[component]
-pub fn AdminPalette(
-    on_logout: EventHandler<()>,
-    #[props(default)] demo: Option<AdminPaletteDemo>,
+pub fn AdminPalette(on_logout: EventHandler<()>) -> Element {
+    #[cfg(target_arch = "wasm32")]
+    crate::components::search_palette::use_palette_shortcut(
+        use_context::<SearchPaletteHandle>(),
+        true,
+    );
+    let theme = use_theme();
+    let navigator = use_navigator();
+    rsx! {
+        AdminPaletteView {
+            search: move |q: String| -> PostSearch {
+                Box::pin(async move {
+                    crate::api::posts::list_posts(
+                        1,
+                        POST_LIMIT,
+                        crate::api::posts::AdminPostQuery::search(q),
+                    )
+                    .await
+                    .ok()
+                    .map(|res| res.posts)
+                })
+            },
+            on_activate: move |item: Item| match item {
+                Item::Post(post) => {
+                    navigator.push(Route::WriteEdit { id: post.id });
+                }
+                Item::Jump { route, .. } => {
+                    navigator.push(route);
+                }
+                Item::Action(action) => match action {
+                    Action::WritePost => {
+                        navigator.push(Route::Write {});
+                    }
+                    Action::NewNote => {
+                        navigator.push(Route::NewNote {});
+                    }
+                    Action::Upload => {
+                        navigator.push(Route::Assets {});
+                    }
+                    Action::OpenSite => {
+                        // admin→前台跨 layout，保留整页加载。
+                        #[cfg(target_arch = "wasm32")]
+                        if let Some(window) = web_sys::window() {
+                            let _ = window.location().set_href("/");
+                        }
+                    }
+                    Action::Theme(to) => choose_theme(theme, to, viewport_center()),
+                    Action::Logout => on_logout.call(()),
+                },
+            },
+        }
+    }
+}
+
+/// 命令面板视图：查询、分组、键盘与焦点；文章检索与条目执行由调用方提供。
+#[component]
+pub(crate) fn AdminPaletteView(
+    search: Callback<String, PostSearch>,
+    on_activate: EventHandler<Item>,
 ) -> Element {
     let handle = use_context::<SearchPaletteHandle>();
     let mut open = handle.open;
-    #[cfg(target_arch = "wasm32")]
-    crate::components::search_palette::use_palette_shortcut(handle, demo.is_none());
-    let demo_pick = demo.as_ref().map(|d| d.on_pick);
-    let demo_posts = use_signal(|| demo.map(|d| d.posts));
 
     let mut query = use_signal(String::new);
     let mut active = use_signal(|| 0_usize);
@@ -193,9 +242,7 @@ pub fn AdminPalette(
     let mut show_progress = use_signal(|| false);
     let mut seq = use_signal(|| 0_u64);
     let mut composing = use_signal(|| false);
-    let theme = use_theme();
     let resolved = use_resolved_theme();
-    let navigator = use_navigator();
     #[cfg(target_arch = "wasm32")]
     let mut previous_focus = use_signal(|| None::<web_sys::HtmlElement>);
 
@@ -254,17 +301,6 @@ pub fn AdminPalette(
             if seq() != id || composing() {
                 return;
             }
-            if let Some(all) = &*demo_posts.peek() {
-                posts.set(
-                    all.iter()
-                        .filter(|p| contains_ci(&p.title, &q))
-                        .take(POST_LIMIT as usize)
-                        .cloned()
-                        .collect(),
-                );
-                posts_query.set(q);
-                return;
-            }
             loading.set(true);
             spawn(async move {
                 crate::utils::time::sleep_ms(PROGRESS_DELAY_MS).await;
@@ -272,17 +308,12 @@ pub fn AdminPalette(
                     show_progress.set(true);
                 }
             });
-            let res = crate::api::posts::list_posts(
-                1,
-                POST_LIMIT,
-                crate::api::posts::AdminPostQuery::search(q.clone()),
-            )
-            .await;
+            let res = search.call(q.clone()).await;
             if seq() != id {
                 return;
             }
-            if let Ok(res) = res {
-                posts.set(res.posts);
+            if let Some(found) = res {
+                posts.set(found);
                 posts_query.set(q);
             }
             loading.set(false);
@@ -309,38 +340,7 @@ pub fn AdminPalette(
 
     let mut activate = move |item: Item| {
         close();
-        if let Some(pick) = demo_pick {
-            pick.call(item.title());
-            return;
-        }
-        match item {
-            Item::Post(post) => {
-                navigator.push(Route::WriteEdit { id: post.id });
-            }
-            Item::Jump { route, .. } => {
-                navigator.push(route);
-            }
-            Item::Action(action) => match action {
-                Action::WritePost => {
-                    navigator.push(Route::Write {});
-                }
-                Action::NewNote => {
-                    navigator.push(Route::NewNote {});
-                }
-                Action::Upload => {
-                    navigator.push(Route::Assets {});
-                }
-                Action::OpenSite => {
-                    // admin→前台跨 layout，保留整页加载。
-                    #[cfg(target_arch = "wasm32")]
-                    if let Some(window) = web_sys::window() {
-                        let _ = window.location().set_href("/");
-                    }
-                }
-                Action::Theme(to) => choose_theme(theme, to, viewport_center()),
-                Action::Logout => on_logout.call(()),
-            },
-        }
+        on_activate.call(item);
     };
     let flat_for_keys = flat.clone();
 

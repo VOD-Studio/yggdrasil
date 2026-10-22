@@ -1630,30 +1630,32 @@ fn SideSheetDemo() -> Element {
 fn AdminPaletteDemo() -> Element {
     let palette = crate::components::search_palette::use_search_palette_provider();
     let mut picked = use_signal(String::new);
-    let base = sample_post();
-    let posts: Vec<PostListItem> = [
-        (1, "让想法生根", PostStatus::Published),
-        (2, "Dioxus 服务端渲染的水合细节", PostStatus::Draft),
-        (3, "用 Rust 写一个 6502 模拟器", PostStatus::Published),
-    ]
-    .into_iter()
-    .map(|(id, title, status)| PostListItem {
-        id,
-        author_id: 0,
-        title: title.to_string(),
-        slug: format!("showcase-{id}"),
-        summary: None,
-        published_at: (status == PostStatus::Published).then_some(base.created_at),
-        status,
-        created_at: base.created_at,
-        updated_at: base.created_at,
-        deleted_at: None,
-        tags: Vec::new(),
-        cover_image: None,
-        reading_time: 3,
-        word_count: 620,
-    })
-    .collect();
+    let posts = use_hook(|| {
+        let base = sample_post();
+        [
+            (1, "让想法生根", PostStatus::Published),
+            (2, "Dioxus 服务端渲染的水合细节", PostStatus::Draft),
+            (3, "用 Rust 写一个 6502 模拟器", PostStatus::Published),
+        ]
+        .into_iter()
+        .map(|(id, title, status)| PostListItem {
+            id,
+            author_id: 0,
+            title: title.to_string(),
+            slug: format!("showcase-{id}"),
+            summary: None,
+            published_at: (status == PostStatus::Published).then_some(base.created_at),
+            status,
+            created_at: base.created_at,
+            updated_at: base.created_at,
+            deleted_at: None,
+            tags: Vec::new(),
+            cover_image: None,
+            reading_time: 3,
+            word_count: 620,
+        })
+        .collect::<Vec<PostListItem>>()
+    });
     rsx! {
         div { class: "showcase-preview-row flex-wrap",
             crate::components::ui::Button {
@@ -1663,15 +1665,19 @@ fn AdminPaletteDemo() -> Element {
                 "打开命令面板"
             }
             if !picked().is_empty() {
-                p { class: "text-xs text-fg-3 font-mono", "on_pick: {picked}" }
+                p { class: "text-xs text-fg-3 font-mono", "on_activate: {picked}" }
             }
         }
-        crate::components::admin_palette::AdminPalette {
-            on_logout: move |_| {},
-            demo: crate::components::admin_palette::AdminPaletteDemo {
-                posts,
-                on_pick: EventHandler::new(move |title: String| picked.set(title)),
+        crate::components::admin_palette::AdminPaletteView {
+            search: move |q: String| -> crate::components::admin_palette::PostSearch {
+                let hits = posts
+                    .iter()
+                    .filter(|p| crate::components::search_palette::contains_ci(&p.title, &q))
+                    .cloned()
+                    .collect();
+                Box::pin(std::future::ready(Some(hits)))
             },
+            on_activate: move |item: crate::components::admin_palette::Item| picked.set(item.title()),
         }
     }
 }
