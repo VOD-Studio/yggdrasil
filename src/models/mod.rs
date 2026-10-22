@@ -14,7 +14,8 @@ pub mod friend_link;
 /// 运行日志查看器的共享 DTO。
 pub mod log;
 /// MCP 服务器访问令牌模型与作用域枚举。
-/// allow(dead_code)：T1 仅定义类型；T2 的 token 管理服务端函数才构造这些 DTO。
+/// allow(dead_code)：`McpToken` 的 `user_id`/`token_enc`/`token_hash` 在任何构建下都没有
+/// 读取方；WASM 构建里 `McpToken`、`TokenScope::from_db`/`grants` 也只有服务端调用方。
 #[allow(dead_code)]
 pub mod mcp_token;
 /// 随记、主题笔记、版本与笔记本。

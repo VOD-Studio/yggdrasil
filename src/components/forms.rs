@@ -9,10 +9,6 @@ use dioxus::prelude::*;
 /// 输入框基础类：浅底、发丝线环，聚焦陶土双环，`aria-invalid` 时红环。
 pub const INPUT_CLASS: &str = "field w-full";
 
-/// 多行输入框：随内容长高（`field-sizing: content`）。
-#[allow(dead_code)] // 文本域随页面重写逐步改用
-pub const TEXTAREA_CLASS: &str = "field field-textarea w-full";
-
 /// FormSelect 实例 id 计数器（跨泛型单例化全局唯一）。
 static FORM_SELECT_ID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 

@@ -79,12 +79,10 @@ impl Toaster {
         });
     }
 
-    #[allow(dead_code)] // 随页面重写逐步启用
     pub fn success(self, message: impl Into<String>) {
         self.show(ToastTone::Success, message);
     }
 
-    #[allow(dead_code)] // 随页面重写逐步启用
     pub fn error(self, message: impl Into<String>) {
         self.show(ToastTone::Danger, message);
     }
@@ -116,7 +114,6 @@ pub fn use_toast_provider() -> Toaster {
 }
 
 /// 取得发提示的句柄。
-#[allow(dead_code)] // 随页面重写逐步启用
 pub fn use_toast() -> Toaster {
     use_context::<Toaster>()
 }

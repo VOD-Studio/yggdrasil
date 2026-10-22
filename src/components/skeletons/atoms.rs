@@ -27,20 +27,3 @@ pub fn SkeletonBox(
         }
     }
 }
-
-/// 通用骨架卡片外壳：与真实卡片同为 `.panel`，供各页面骨架屏包裹内容占位
-/// （列表行、表格、日志区等），数据到达后外框不跳动。
-///
-/// Props：
-/// - `class`：追加类（内边距、间距、`overflow-hidden`、`shadow-xs` 等按调用方需要传入）
-/// - `children`：卡片内的占位内容
-#[component]
-pub fn SkeletonCard(#[props(default)] class: Option<&'static str>, children: Element) -> Element {
-    let extra = class.unwrap_or_default();
-    rsx! {
-        div {
-            class: "panel {extra}",
-            {children}
-        }
-    }
-}

@@ -13,6 +13,7 @@ use crate::api::posts::{
 };
 use crate::api::settings::get_site_settings;
 use crate::components::empty_state::EmptyState;
+use crate::components::post::post_meta::group_digits;
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::skeletons::home_skeleton::HomeSkeleton;
 use crate::components::ui::{Icon, IconName, LoadError, Pagination};
@@ -522,19 +523,6 @@ fn post_date(post: &PostListItem) -> String {
     post_time(post).format("%Y.%m.%d").to_string()
 }
 
-/// 千位分隔：`4866` → `4,866`。
-fn group_digits(n: u32) -> String {
-    let digits = n.to_string();
-    let mut out = String::with_capacity(digits.len() + digits.len() / 3);
-    for (i, c) in digits.chars().enumerate() {
-        if i > 0 && (digits.len() - i).is_multiple_of(3) {
-            out.push(',');
-        }
-        out.push(c);
-    }
-    out
-}
-
 #[derive(Debug, PartialEq)]
 struct MonthGroup {
     /// 「2026 · 10」。
@@ -596,13 +584,5 @@ mod tests {
         let labels: Vec<_> = groups.iter().map(|g| g.label.as_str()).collect();
         assert_eq!(labels, ["2026 · 10", "2026 · 09", "2025 · 09"]);
         assert_eq!(groups[1].posts.len(), 2);
-    }
-
-    #[test]
-    fn groups_thousands() {
-        assert_eq!(group_digits(0), "0");
-        assert_eq!(group_digits(866), "866");
-        assert_eq!(group_digits(4866), "4,866");
-        assert_eq!(group_digits(1_234_567), "1,234,567");
     }
 }

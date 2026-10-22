@@ -119,7 +119,7 @@ function mermaidVars(t: MermaidTones): MermaidThemeVariables {
 }
 
 /** 浅色:白色节点浮在 surface-1 上。 */
-export const MERMAID_LIGHT_VARS: MermaidThemeVariables = mermaidVars({
+const MERMAID_LIGHT_VARS: MermaidThemeVariables = mermaidVars({
   background: '#fafaf8',
   node: '#ffffff',
   nodeAlt: '#f5f5f3',
@@ -136,7 +136,7 @@ export const MERMAID_LIGHT_VARS: MermaidThemeVariables = mermaidVars({
 });
 
 /** 深色:暖调深灰节点,surface 色阶递进。 */
-export const MERMAID_DARK_VARS: MermaidThemeVariables = mermaidVars({
+const MERMAID_DARK_VARS: MermaidThemeVariables = mermaidVars({
   background: '#161615',
   node: '#20201e',
   nodeAlt: '#262624',

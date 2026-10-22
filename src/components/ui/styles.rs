@@ -11,7 +11,6 @@ pub const SPINNER_SVG: &str = r#"<svg class="w-3.5 h-3.5" fill="none" viewBox="0
 
 /// 徽章底座（`.badge`，中性色）；语气追加 `badge-clay` / `badge-success` /
 /// `badge-warning` / `badge-danger`。
-#[allow(dead_code)]
 pub const BADGE_BASE: &str = "badge";
 
 // --- 按钮 ---

@@ -1013,18 +1013,6 @@ fn NoteSheetBody(context: Option<NoteContext>, current: String, toc_html: String
 
 // ======================= 骨架屏 =======================
 
-/// 通用笔记占位（后台笔记列表与编辑器也在用）。
-#[component]
-pub fn NotesSkeleton() -> Element {
-    rsx! {
-        div { class: "notes-skeleton", role: "status", aria_label: "正在加载笔记",
-            for i in 0..3 {
-                SkeletonBox { key: "{i}", class: "h-20 w-full rounded-[10px]" }
-            }
-        }
-    }
-}
-
 #[component]
 fn NotesStreamSkeleton() -> Element {
     rsx! {

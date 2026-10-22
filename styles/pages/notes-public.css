@@ -771,11 +771,6 @@ a.notebook-entry:hover .notebook-entry-arrow {
 .note-missing { display: flex; flex-direction: column; gap: 1.5rem; }
 
 /* ---- 骨架 ---- */
-.notes-skeleton {
-  display: grid;
-  gap: 1.25rem;
-  padding: 2rem 0;
-}
 .notes-stream-skeleton { display: flex; flex-direction: column; }
 
 @media (max-width: 760px) {
