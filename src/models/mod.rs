@@ -17,6 +17,8 @@ pub mod log;
 /// allow(dead_code)：T1 仅定义类型；T2 的 token 管理服务端函数才构造这些 DTO。
 #[allow(dead_code)]
 pub mod mcp_token;
+/// 前台音乐播放器的公开配置。
+pub mod music_player;
 /// 随记、主题笔记、版本与笔记本。
 pub mod note;
 /// 文章模型、文章状态、标签与统计信息。

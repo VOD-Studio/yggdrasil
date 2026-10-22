@@ -7,16 +7,18 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'yggdrasil-dev-assets-test-'));
-const packages = ['shared', 'codemirror-editor', 'lightbox', 'mermaid-renderer',
+const packages = ['shared', 'codemirror-editor', 'lightbox', 'mermaid-renderer', 'music-player',
   'tiptap-editor', 'xterm-terminal', 'yggdrasil-core'];
 const outputs = {
   'codemirror-editor': ['codemirror/editor.js', 'codemirror/editor.js.map'],
   lightbox: ['lightbox/lightbox.js', 'lightbox/lightbox.js.map', 'lightbox/lightbox.css'],
   'mermaid-renderer': ['mermaid/mermaid.js', 'mermaid/mermaid.js.map'],
+  'music-player': ['music-player/player.js', 'music-player/player.js.map'],
   'tiptap-editor': ['tiptap/editor.js', 'tiptap/editor.js.map', 'tiptap/editor.css'],
   'xterm-terminal': ['xterm/terminal.js', 'xterm/terminal.js.map', 'xterm/terminal.css'],
   'yggdrasil-core': ['yggdrasil-core/yggdrasil-core.js', 'yggdrasil-core/yggdrasil-core.js.map',
-    'yggdrasil-core/yggdrasil-core.css'],
+    'yggdrasil-core/yggdrasil-core.css', 'yggdrasil-core/yggdrasil-enhance.js',
+    'yggdrasil-core/yggdrasil-enhance.js.map'],
 };
 function write(file, content = '') {
   const target = path.join(root, file);
@@ -92,6 +94,12 @@ if (command === 'bun' && args[0] === 'install') {
   step([]); // Imported CSS refreshes without rebuilding JavaScript packages.
   await edit('libs/tiptap-editor/src/index.ts');
   step(['tiptap-editor']);
+  await edit('libs/music-player/src/index.ts');
+  step(['music-player']);
+  for (const file of outputs['music-player']) {
+    fs.unlinkSync(path.join(root, 'public', file));
+    step(['music-player']);
+  }
   await edit('libs/shared/src/index.ts');
   step(packages.filter(name => name !== 'mermaid-renderer'));
   fs.unlinkSync(path.join(root, 'public/codemirror/editor.js'));

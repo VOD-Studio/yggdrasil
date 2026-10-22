@@ -97,6 +97,10 @@ pub fn FrontendLayout() -> Element {
                 SuspenseBoundary { fallback: move |_| route_skeleton(&route), Outlet::<Route> {} }
             },
         }
+        SuspenseBoundary {
+            fallback: |_| rsx! {},
+            crate::components::music_player::MusicPlayer {}
+        }
     }
 }
 
