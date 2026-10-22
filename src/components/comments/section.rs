@@ -3,15 +3,20 @@
 //! 管理单篇文章的评论上下文（回复目标、刷新触发器、待审核评论），
 //! 负责加载评论列表、轮询待审核评论状态并渲染表单与列表。
 
+use std::future::Future;
+use std::pin::Pin;
+
 use dioxus::prelude::*;
 
-use crate::api::comments::{check_pending_status, get_comments, CommentTreeResponse};
+use crate::api::comments::{
+    check_pending_status, create_comment, get_comments, CommentTreeResponse,
+};
 use crate::components::comments::form::CommentForm;
 use crate::components::comments::list::CommentList;
 use crate::components::skeletons::comment_skeleton::CommentListSkeleton;
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::models::comment::PublicComment;
-use crate::utils::comment_storage::{self, PendingComment};
+use crate::utils::comment_storage::{self, AuthorInfo, PendingComment};
 use crate::utils::time::sleep_ms;
 
 /// 待审核评论状态的轮询间隔（毫秒）。
@@ -38,18 +43,77 @@ pub struct CommentContext {
     pub pending_comments: Signal<Vec<PendingComment>>,
     /// 当前登录用户；`None` 表示匿名（或尚未完成探测）。
     pub current_user: Signal<Option<crate::models::user::PublicUser>>,
-    /// 正式评论走服务端；图鉴只更新当前预览的内存状态。
-    pub source: CommentSource,
-    /// 区分同页多个表单的 DOM ID，避免图鉴卡片与正式文章互相接管编辑器。
+    /// 提交评论；生产走服务端并写本地待审核，图鉴只写内存。返回给读者的提示：Ok 成功、Err 失败。
+    pub submit: Callback<CommentSubmission, CommentSubmitFuture>,
+    /// 是否允许评论插图上传；关闭时隐藏上传按钮，编辑器不接管粘贴/拖放上传。
+    pub image_upload: bool,
+    /// DOM ID 前缀，区分同页多个评论区的表单。
     pub id_scope: &'static str,
 }
 
-#[derive(Clone, Copy)]
-pub enum CommentSource {
-    Production,
-    Local {
-        approved: Signal<Vec<PublicComment>>,
-    },
+/// 表单交给 `CommentContext::submit` 的评论内容。
+pub struct CommentSubmission {
+    pub post_id: i32,
+    pub parent_id: Option<i64>,
+    /// 匿名访客；登录用户的身份由服务端从会话推导。
+    pub anonymous: bool,
+    pub author_name: String,
+    pub author_email: String,
+    pub author_url: String,
+    pub content_md: String,
+    pub honeypot: String,
+}
+
+/// 评论提交结果：Ok 为成功提示，Err 为失败提示。
+pub type CommentSubmitFuture = Pin<Box<dyn Future<Output = Result<String, String>>>>;
+
+/// 提交到服务端；匿名评论成功后保存作者信息并写入本地待审核列表。
+fn submit_to_server(
+    sub: CommentSubmission,
+    mut pending_comments: Signal<Vec<PendingComment>>,
+) -> CommentSubmitFuture {
+    Box::pin(async move {
+        let author_url = (!sub.author_url.trim().is_empty()).then(|| sub.author_url.clone());
+        let resp = create_comment(
+            sub.post_id,
+            sub.parent_id,
+            sub.author_name.clone(),
+            sub.author_email.clone(),
+            author_url.clone(),
+            sub.content_md.clone(),
+            sub.honeypot,
+        )
+        .await
+        .map_err(|_| "提交失败，请稍后重试".to_string())?;
+        if !resp.success {
+            return Err(resp.message);
+        }
+        // 登录评论直发 approved：不写本地待审核存储，列表刷新后即按正式状态展示。
+        if sub.anonymous {
+            comment_storage::save_author(&AuthorInfo {
+                name: sub.author_name.clone(),
+                email: sub.author_email,
+                url: sub.author_url,
+            });
+            if let Some(id) = resp.comment_id {
+                let now = chrono::Utc::now().to_rfc3339();
+                let pending = PendingComment {
+                    id,
+                    parent_id: sub.parent_id,
+                    depth: resp.depth.unwrap_or(0),
+                    author_name: sub.author_name,
+                    author_url,
+                    avatar_url: resp.avatar_url.unwrap_or_default(),
+                    content_md: sub.content_md,
+                    created_at: now.clone(),
+                    stored_at: now,
+                };
+                comment_storage::save_pending_comment(sub.post_id, pending.clone());
+                pending_comments.write().push(pending);
+            }
+        }
+        Ok(resp.message)
+    })
 }
 
 /// 评论区段组件。
@@ -64,13 +128,17 @@ pub enum CommentSource {
 /// - 空评论时展示提示文案
 #[component]
 pub fn CommentSection(post_id: i32) -> Element {
-    let mut ctx = use_context_provider(|| CommentContext {
-        active_reply: Signal::new(None),
-        refresh_trigger: Signal::new(false),
-        pending_comments: Signal::new(Vec::new()),
-        current_user: Signal::new(None),
-        source: CommentSource::Production,
-        id_scope: "post",
+    let mut ctx = use_context_provider(|| {
+        let pending_comments = Signal::new(Vec::new());
+        CommentContext {
+            active_reply: Signal::new(None),
+            refresh_trigger: Signal::new(false),
+            pending_comments,
+            current_user: Signal::new(None),
+            submit: Callback::new(move |sub| submit_to_server(sub, pending_comments)),
+            image_upload: true,
+            id_scope: "post",
+        }
     });
 
     // 挂载后从本地存储异步加载待审核评论以防 SSR Hydration Mismatch

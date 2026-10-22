@@ -7,7 +7,9 @@ use crate::components::comments::form::CommentForm;
 use crate::components::comments::item::CommentItem;
 use crate::components::comments::list::CommentList;
 use crate::components::comments::pending_item::PendingCommentItem;
-use crate::components::comments::section::{CommentContext, CommentSectionContent, CommentSource};
+use crate::components::comments::section::{
+    CommentContext, CommentSectionContent, CommentSubmission, CommentSubmitFuture,
+};
 use crate::models::comment::PublicComment;
 use crate::utils::comment_storage::PendingComment;
 
@@ -118,6 +120,69 @@ fn scope(slug: &str) -> &'static str {
     }
 }
 
+/// 图鉴提交仅生成内存中的待审核项，复用正式列表的合并和渲染路径。
+fn local_pending_comment(
+    approved: &[PublicComment],
+    existing: &[PendingComment],
+    parent_id: Option<i64>,
+    author_name: String,
+    author_url: String,
+    content_md: String,
+) -> PendingComment {
+    let parent_depth = parent_id.and_then(|id| {
+        approved
+            .iter()
+            .find(|comment| comment.id == id)
+            .map(|comment| comment.depth)
+            .or_else(|| {
+                existing
+                    .iter()
+                    .find(|comment| comment.id == id)
+                    .map(|comment| comment.depth)
+            })
+    });
+    let next_id = existing
+        .iter()
+        .map(|comment| comment.id)
+        .min()
+        .unwrap_or(0)
+        .min(0)
+        - 1;
+    let now = chrono::Utc::now().to_rfc3339();
+    PendingComment {
+        id: next_id,
+        parent_id,
+        depth: parent_depth.map_or(0, |depth| depth + 1),
+        author_name,
+        author_url: (!author_url.trim().is_empty()).then_some(author_url),
+        avatar_url: String::new(),
+        content_md,
+        created_at: now.clone(),
+        stored_at: now,
+    }
+}
+
+/// 图鉴提交：只写入当前预览的内存列表，不请求、不持久化。
+fn local_submit(
+    approved: Signal<Vec<PublicComment>>,
+    mut pending: Signal<Vec<PendingComment>>,
+) -> Callback<CommentSubmission, CommentSubmitFuture> {
+    Callback::new(move |s: CommentSubmission| -> CommentSubmitFuture {
+        let comment = local_pending_comment(
+            &approved.read(),
+            &pending.read(),
+            s.parent_id,
+            s.author_name,
+            s.author_url,
+            s.content_md,
+        );
+        pending.write().push(comment);
+        Box::pin(std::future::ready(Ok(
+            "已加入本地演示列表，内容不会保存".to_string(),
+        )))
+    })
+}
+
 #[component]
 fn CommentPreview(slug: String, detail: bool) -> Element {
     let defer_editor = !detail && matches!(slug.as_str(), "comment-form" | "comment-section");
@@ -125,16 +190,16 @@ fn CommentPreview(slug: String, detail: bool) -> Element {
     let mut visible = use_signal(|| !defer_editor);
     #[cfg(target_arch = "wasm32")]
     let mut observer: Signal<Option<VisibleObserver>> = use_signal(|| None);
-    let ctx = use_context_provider(|| {
-        let approved = Signal::new(initial_approved(&slug, detail));
-        CommentContext {
-            active_reply: Signal::new(None),
-            refresh_trigger: Signal::new(false),
-            pending_comments: Signal::new(initial_pending(&slug, detail)),
-            current_user: Signal::new(None),
-            source: CommentSource::Local { approved },
-            id_scope: scope(&slug),
-        }
+    let mut approved = use_signal(|| initial_approved(&slug, detail));
+    let pending_store = use_signal(|| initial_pending(&slug, detail));
+    let ctx = use_context_provider(|| CommentContext {
+        active_reply: Signal::new(None),
+        refresh_trigger: Signal::new(false),
+        pending_comments: pending_store,
+        current_user: Signal::new(None),
+        submit: local_submit(approved, pending_store),
+        image_upload: false,
+        id_scope: scope(&slug),
     });
     if !visible() {
         return rsx! {
@@ -177,9 +242,6 @@ fn CommentPreview(slug: String, detail: bool) -> Element {
             }
         };
     }
-    let CommentSource::Local { mut approved } = ctx.source else {
-        unreachable!("图鉴上下文只使用本地数据源")
-    };
     let mut pending = ctx.pending_comments;
     let sample = approved_sample();
     let visible = match slug.as_str() {
@@ -250,15 +312,15 @@ fn CommentItemPreview(detail: bool) -> Element {
     let mut mode = use_signal(|| CommentItemMode::Standard);
     let mut active_reply_sig = use_signal(|| None::<i64>);
     let approved_store = use_signal(Vec::<PublicComment>::new);
+    let pending_store = use_signal(Vec::<PendingComment>::new);
 
     let _ctx = use_context_provider(|| CommentContext {
         active_reply: active_reply_sig,
         refresh_trigger: Signal::new(false),
-        pending_comments: Signal::new(Vec::new()),
+        pending_comments: pending_store,
         current_user: Signal::new(None),
-        source: CommentSource::Local {
-            approved: approved_store,
-        },
+        submit: local_submit(approved_store, pending_store),
+        image_upload: false,
         id_scope: "showcase-comment-item",
     });
 
@@ -555,15 +617,15 @@ fn CommentListPreview(detail: bool) -> Element {
     let mut mode = use_signal(|| CommentListMode::Merged);
     let active_reply_sig = use_signal(|| None::<i64>);
     let approved_store = use_signal(Vec::<PublicComment>::new);
+    let pending_store = use_signal(Vec::<PendingComment>::new);
 
     let _ctx = use_context_provider(|| CommentContext {
         active_reply: active_reply_sig,
         refresh_trigger: Signal::new(false),
-        pending_comments: Signal::new(Vec::new()),
+        pending_comments: pending_store,
         current_user: Signal::new(None),
-        source: CommentSource::Local {
-            approved: approved_store,
-        },
+        submit: local_submit(approved_store, pending_store),
+        image_upload: false,
         id_scope: "showcase-comment-list",
     });
 
@@ -955,5 +1017,56 @@ mod tests {
         assert!(preview("comment-form", false).is_some());
         assert!(preview("comment-section", false).is_some());
         assert!(preview("unknown-slug", false).is_none());
+    }
+
+    #[test]
+    fn local_reply_uses_parent_depth_and_unique_negative_id() {
+        let parent = PendingComment {
+            id: -10,
+            parent_id: None,
+            depth: 1,
+            author_name: "样例".to_string(),
+            author_url: None,
+            avatar_url: String::new(),
+            content_md: "原评论".to_string(),
+            created_at: "2026-01-01T00:00:00Z".to_string(),
+            stored_at: "2026-01-01T00:00:00Z".to_string(),
+        };
+        let reply = local_pending_comment(
+            &[],
+            &[parent],
+            Some(-10),
+            "访客".to_string(),
+            String::new(),
+            "回复内容".to_string(),
+        );
+        assert_eq!(
+            (reply.id, reply.parent_id, reply.depth),
+            (-11, Some(-10), 2)
+        );
+        assert_eq!(reply.author_url, None);
+        assert_eq!(reply.content_md, "回复内容");
+
+        let approved = PublicComment {
+            id: 101,
+            parent_id: None,
+            depth: 0,
+            author_name: "作者".to_string(),
+            author_url: None,
+            avatar_url: String::new(),
+            is_author: true,
+            content_html: Some("<p>原评论</p>".to_string()),
+            created_at: "昨天".to_string(),
+            created_at_iso: "2026-01-01T00:00:00Z".to_string(),
+        };
+        let reply = local_pending_comment(
+            &[approved],
+            &[],
+            Some(101),
+            "访客".to_string(),
+            String::new(),
+            "回复".to_string(),
+        );
+        assert_eq!((reply.id, reply.parent_id, reply.depth), (-1, Some(101), 1));
     }
 }

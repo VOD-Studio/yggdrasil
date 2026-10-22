@@ -8,16 +8,14 @@
 
 use dioxus::prelude::*;
 
-use crate::api::comments::create_comment;
 use crate::bridges::library::{library_ready, use_browser_library, LibraryLoadError};
 use crate::bridges::tiptap::{UploadErrorEntry, UploadsInFlight};
-use crate::components::comments::section::{CommentContext, CommentSource};
+use crate::components::comments::section::{CommentContext, CommentSubmission};
 use crate::components::forms::{AlertBox, FormInput};
 use crate::components::ui::{
     Button, ButtonSize, ButtonVariant, Icon, IconName, UserAvatar, SPINNER_SVG,
 };
-use crate::models::comment::PublicComment;
-use crate::utils::comment_storage::{self, AuthorInfo, PendingComment};
+use crate::utils::comment_storage;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::closure::Closure;
 
@@ -34,48 +32,6 @@ impl Drop for EditorVisibility {
     }
 }
 
-/// 图鉴提交仅生成内存中的待审核项，复用正式列表的合并和渲染路径。
-fn local_pending_comment(
-    approved: &[PublicComment],
-    existing: &[PendingComment],
-    parent_id: Option<i64>,
-    author_name: String,
-    author_url: String,
-    content_md: String,
-) -> PendingComment {
-    let parent_depth = parent_id.and_then(|id| {
-        approved
-            .iter()
-            .find(|comment| comment.id == id)
-            .map(|comment| comment.depth)
-            .or_else(|| {
-                existing
-                    .iter()
-                    .find(|comment| comment.id == id)
-                    .map(|comment| comment.depth)
-            })
-    });
-    let next_id = existing
-        .iter()
-        .map(|comment| comment.id)
-        .min()
-        .unwrap_or(0)
-        .min(0)
-        - 1;
-    let now = chrono::Utc::now().to_rfc3339();
-    PendingComment {
-        id: next_id,
-        parent_id,
-        depth: parent_depth.map_or(0, |depth| depth + 1),
-        author_name,
-        author_url: (!author_url.trim().is_empty()).then_some(author_url),
-        avatar_url: String::new(),
-        content_md,
-        created_at: now.clone(),
-        stored_at: now,
-    }
-}
-
 /// 评论表单组件，用于顶层评论或回复评论。
 ///
 /// Props：
@@ -86,7 +42,7 @@ fn local_pending_comment(
 /// 关键事件：
 /// - 挂载时从本地存储恢复上次填写的作者信息
 /// - 提交时校验必填项与蜜罐字段
-/// - 提交成功后清空内容、保存作者信息、添加待审核评论并触发列表刷新
+/// - 提交交给 CommentContext::submit；成功后清空内容、关闭回复并触发列表刷新
 #[component]
 // 图片上传逻辑整体 cfg(target_arch = "wasm32") 门控：server 构建下
 // pending_uploads/upload_seq 的 mut、事件参数 e 均无实际用途。
@@ -95,21 +51,17 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
     let ctx: CommentContext = use_context();
     let mut active_reply = ctx.active_reply;
     let mut refresh_trigger = ctx.refresh_trigger;
-    let mut pending_comments = ctx.pending_comments;
     let viewer = ctx.current_user;
 
     let mut author_name = use_signal(String::new);
     let mut author_email = use_signal(String::new);
     let mut author_url = use_signal(String::new);
-    let mut content_md = use_signal(|| match ctx.source {
-        CommentSource::Production => String::new(),
-        CommentSource::Local { .. } => "这是一条只在当前预览中显示的评论。".to_string(),
-    });
+    let mut content_md = use_signal(String::new);
     let mut honeypot = use_signal(String::new);
     let mut submitting = use_signal(|| false);
     let mut message = use_signal(|| Option::<(String, &'static str)>::None);
     let mut loaded = use_signal(|| false);
-    let mut editor_visible = use_signal(|| matches!(ctx.source, CommentSource::Local { .. }));
+    let mut editor_visible = use_signal(|| false);
     #[cfg(target_arch = "wasm32")]
     let mut visibility_observer = use_signal(|| None::<EditorVisibility>);
     let editor_library = use_browser_library("tiptap", move || match parent_id {
@@ -127,12 +79,10 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
             return;
         }
         loaded.set(true);
-        if matches!(ctx.source, CommentSource::Production) {
-            if let Some(info) = comment_storage::load_author() {
-                author_name.set(info.name);
-                author_email.set(info.email);
-                author_url.set(info.url);
-            }
+        if let Some(info) = comment_storage::load_author() {
+            author_name.set(info.name);
+            author_email.set(info.email);
+            author_url.set(info.url);
         }
     });
 
@@ -146,11 +96,11 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
     let is_reply = parent_id.is_some();
 
     // 用于区分顶层表单与多个回复表单的 id 后缀，保证页面内 label/for 关联唯一。
-    let id_suffix = parent_id.map_or_else(|| "root".to_string(), |pid| pid.to_string());
-    let id_suffix = match ctx.source {
-        CommentSource::Production => id_suffix,
-        CommentSource::Local { .. } => format!("{}-{id_suffix}", ctx.id_scope),
-    };
+    let id_suffix = format!(
+        "{}-{}",
+        ctx.id_scope,
+        parent_id.map_or_else(|| "root".to_string(), |pid| pid.to_string())
+    );
     // 图片上传 file input 的 DOM id（label r#for 关联 + onchange 重置 value 共用）。
     let image_input_dom_id = format!("comment-image-{id_suffix}");
 
@@ -201,11 +151,12 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
             move |md: String| content_md.set(md)
         });
         let on_ready = Closure::new(|| {});
-        let on_image_upload = match ctx.source {
-            CommentSource::Production => crate::bridges::tiptap::make_comment_upload_closure(),
-            CommentSource::Local { .. } => Closure::new(|_file: web_sys::File| {
-                js_sys::Promise::reject(&"本地演示不上传图片".into())
-            }),
+        let on_image_upload = if ctx.image_upload {
+            crate::bridges::tiptap::make_comment_upload_closure()
+        } else {
+            Closure::new(|_file: web_sys::File| {
+                js_sys::Promise::reject(&"评论图片上传已关闭".into())
+            })
         };
         let on_upload_event = Closure::new({
             let mut message = message;
@@ -241,7 +192,7 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
         });
         opts.set_on_update(&on_update);
         opts.set_on_ready(&on_ready);
-        if matches!(ctx.source, CommentSource::Production) {
+        if ctx.image_upload {
             opts.set_on_image_upload(&on_image_upload);
         }
         opts.set_on_upload_event(&on_upload_event);
@@ -337,99 +288,34 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
         }
         submitting.set(true);
         message.set(None);
-        if let CommentSource::Local { approved } = ctx.source {
-            let pending = local_pending_comment(
-                &approved.read(),
-                &pending_comments.read(),
-                parent_id,
-                name,
-                url_val,
-                content,
-            );
-            pending_comments.write().push(pending);
-            content_md.set(String::new());
-            #[cfg(target_arch = "wasm32")]
-            if let Some(handle) = &*editor_handle.peek() {
-                handle.instance().set_markdown("");
-            }
-            submitting.set(false);
-            message.set(Some((
-                "已加入本地演示列表，内容不会保存".to_string(),
-                "success",
-            )));
-            if parent_id.is_some() {
-                active_reply.set(None);
-            }
-            return;
-        }
+        let request = ctx.submit.call(CommentSubmission {
+            post_id,
+            parent_id,
+            anonymous: is_anon,
+            author_name: name,
+            author_email: email,
+            author_url: url_val,
+            content_md: content,
+            honeypot: hp,
+        });
         spawn(async move {
-            let result = create_comment(
-                post_id,
-                parent_id,
-                name.clone(),
-                email.clone(),
-                if url_val.trim().is_empty() {
-                    None
-                } else {
-                    Some(url_val.clone())
-                },
-                content.clone(),
-                hp.clone(),
-            )
-            .await;
+            let result = request.await;
             submitting.set(false);
             match result {
-                Ok(resp) => {
-                    if resp.success {
-                        // 登录评论直发 approved：不写本地待审核
-                        // 存储，列表刷新后即按正式状态展示。
-                        if is_anon {
-                            comment_storage::save_author(&AuthorInfo {
-                                name: name.clone(),
-                                email: email.clone(),
-                                url: url_val.clone(),
-                            });
-                            if let Some(comment_id) = resp.comment_id {
-                                let avatar_url = resp.avatar_url.unwrap_or_default();
-                                let depth = resp.depth.unwrap_or(0);
-                                let now = chrono::Utc::now().to_rfc3339();
-                                let pending = PendingComment {
-                                    id: comment_id,
-                                    parent_id,
-                                    depth,
-                                    author_name: name.clone(),
-                                    author_url: if url_val.trim().is_empty() {
-                                        None
-                                    } else {
-                                        Some(url_val)
-                                    },
-                                    avatar_url,
-                                    content_md: content,
-                                    created_at: now.clone(),
-                                    stored_at: now,
-                                };
-                                comment_storage::save_pending_comment(post_id, pending.clone());
-                                pending_comments.write().push(pending);
-                            }
-                        }
-                        content_md.set(String::new());
-                        // 同步清空编辑器文档（onUpdate 会把空 markdown 回写 signal）。
-                        #[cfg(target_arch = "wasm32")]
-                        if let Some(handle) = &*editor_handle.peek() {
-                            handle.instance().set_markdown("");
-                        }
-                        message.set(Some((resp.message, "success")));
-                        if parent_id.is_some() {
-                            active_reply.set(None);
-                        }
-                        refresh_trigger.set(!refresh_trigger());
-                    } else {
-                        message.set(Some((resp.message, "error")));
+                Ok(msg) => {
+                    content_md.set(String::new());
+                    // 同步清空编辑器文档（onUpdate 会把空 markdown 回写 signal）。
+                    #[cfg(target_arch = "wasm32")]
+                    if let Some(handle) = &*editor_handle.peek() {
+                        handle.instance().set_markdown("");
                     }
+                    message.set(Some((msg, "success")));
+                    if parent_id.is_some() {
+                        active_reply.set(None);
+                    }
+                    refresh_trigger.set(!refresh_trigger());
                 }
-                Err(_) => {
-                    message.set(Some(("提交失败，请稍后重试".to_string(), "error")));
-                }
+                Err(msg) => message.set(Some((msg, "error"))),
             }
         });
     };
@@ -569,7 +455,7 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
                     // 左侧：图片上传（点击选择 / 直接粘贴图片到输入框）与提示
                     div { class: "comment-bar-start",
                         // label + 隐藏 file input：点击天然触发文件选择对话框，无需 JS。
-                        if matches!(ctx.source, CommentSource::Production) {
+                        if ctx.image_upload {
                             label {
                                 r#for: "{image_input_dom_id}",
                                 class: "btn btn-sm btn-icon btn-ghost",
@@ -654,61 +540,5 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
                 }
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn local_reply_uses_parent_depth_and_unique_negative_id() {
-        let parent = PendingComment {
-            id: -10,
-            parent_id: None,
-            depth: 1,
-            author_name: "样例".to_string(),
-            author_url: None,
-            avatar_url: String::new(),
-            content_md: "原评论".to_string(),
-            created_at: "2026-01-01T00:00:00Z".to_string(),
-            stored_at: "2026-01-01T00:00:00Z".to_string(),
-        };
-        let reply = local_pending_comment(
-            &[],
-            &[parent],
-            Some(-10),
-            "访客".to_string(),
-            String::new(),
-            "回复内容".to_string(),
-        );
-        assert_eq!(
-            (reply.id, reply.parent_id, reply.depth),
-            (-11, Some(-10), 2)
-        );
-        assert_eq!(reply.author_url, None);
-        assert_eq!(reply.content_md, "回复内容");
-
-        let approved = PublicComment {
-            id: 101,
-            parent_id: None,
-            depth: 0,
-            author_name: "作者".to_string(),
-            author_url: None,
-            avatar_url: String::new(),
-            is_author: true,
-            content_html: Some("<p>原评论</p>".to_string()),
-            created_at: "昨天".to_string(),
-            created_at_iso: "2026-01-01T00:00:00Z".to_string(),
-        };
-        let reply = local_pending_comment(
-            &[approved],
-            &[],
-            Some(101),
-            "访客".to_string(),
-            String::new(),
-            "回复".to_string(),
-        );
-        assert_eq!((reply.id, reply.parent_id, reply.depth), (-1, Some(101), 1));
     }
 }
