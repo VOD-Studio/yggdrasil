@@ -79,14 +79,7 @@ pub async fn update_upload_settings(concurrency: i32) -> Result<UploadSettings, 
     {
         let client = get_conn().await.map_err(AppError::db_conn)?;
 
-        client
-            .execute(
-                "INSERT INTO settings (key, value, updated_at) VALUES ('upload_concurrency', $1, NOW())
-                 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()",
-                &[&concurrency.to_string()],
-            )
-            .await
-            .map_err(AppError::query)?;
+        super::upsert_setting(&**client, "upload_concurrency", &concurrency.to_string()).await?;
 
         tracing::info!("Upload settings updated: concurrency={}", concurrency);
     }

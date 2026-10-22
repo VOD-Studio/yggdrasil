@@ -331,23 +331,14 @@ pub async fn update_log_settings(
     {
         let client = get_conn().await.map_err(AppError::db_conn)?;
 
-        client
-            .execute(
-                "INSERT INTO settings (key, value, updated_at) VALUES ('logs_retention_days', $1, NOW())
-                 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()",
-                &[&retention_days.to_string()],
-            )
-            .await
-            .map_err(AppError::query)?;
-
-        client
-            .execute(
-                "INSERT INTO settings (key, value, updated_at) VALUES ('logs_max_rows', $1, NOW())
-                 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()",
-                &[&max_rows.to_string()],
-            )
-            .await
-            .map_err(AppError::query)?;
+        crate::api::settings::upsert_setting(
+            &**client,
+            "logs_retention_days",
+            &retention_days.to_string(),
+        )
+        .await?;
+        crate::api::settings::upsert_setting(&**client, "logs_max_rows", &max_rows.to_string())
+            .await?;
 
         // target 在 capture 排除名单内：此日志只到控制台，不进查看器管道。
         tracing::info!(

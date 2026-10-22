@@ -52,23 +52,13 @@ pub(crate) async fn save_trash_settings(
 ) -> Result<TrashSettings, AppError> {
     let retention_days = TrashSettings::clamp_retention(retention_days);
 
-    client
-        .execute(
-            "INSERT INTO settings (key, value, updated_at) VALUES ('trash_auto_purge_enabled', $1, NOW())
-             ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()",
-            &[&auto_purge_enabled.to_string()],
-        )
-        .await
-        .map_err(AppError::query)?;
-
-    client
-        .execute(
-            "INSERT INTO settings (key, value, updated_at) VALUES ('trash_retention_days', $1, NOW())
-             ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()",
-            &[&retention_days.to_string()],
-        )
-        .await
-        .map_err(AppError::query)?;
+    super::upsert_setting(
+        client,
+        "trash_auto_purge_enabled",
+        &auto_purge_enabled.to_string(),
+    )
+    .await?;
+    super::upsert_setting(client, "trash_retention_days", &retention_days.to_string()).await?;
 
     Ok(TrashSettings {
         auto_purge_enabled,

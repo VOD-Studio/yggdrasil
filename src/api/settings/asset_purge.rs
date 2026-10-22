@@ -108,14 +108,7 @@ pub async fn update_asset_purge_settings(
             ("asset_orphan_purge_enabled", auto_purge_enabled.to_string()),
             ("asset_orphan_retention_days", retention_days.to_string()),
         ] {
-            client
-                .execute(
-                    "INSERT INTO settings (key, value, updated_at) VALUES ($1, $2, NOW())
-                     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()",
-                    &[&key, &value],
-                )
-                .await
-                .map_err(AppError::query)?;
+            super::upsert_setting(&**client, key, &value).await?;
         }
 
         tracing::info!(

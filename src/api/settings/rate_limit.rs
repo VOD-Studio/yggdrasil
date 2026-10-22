@@ -362,14 +362,7 @@ pub async fn update_rate_limit_settings(
             ("ratelimit_unknown_burst", unknown_burst.to_string()),
             ("ratelimit_gc_interval_secs", gc_interval_secs.to_string()),
         ] {
-            client
-                .execute(
-                    "INSERT INTO settings (key, value, updated_at) VALUES ($1, $2, NOW())
-                     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()",
-                    &[&key, &value],
-                )
-                .await
-                .map_err(AppError::query)?;
+            super::upsert_setting(&**client, key, &value).await?;
         }
 
         tracing::info!(

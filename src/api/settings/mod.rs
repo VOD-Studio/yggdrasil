@@ -80,6 +80,28 @@ pub(crate) async fn insert_env_seeds(
     Ok(())
 }
 
+/// 写入（或覆盖）单个 settings 键，同时刷新 `updated_at`。
+///
+/// 面板保存、调度结果落库等处共用这一条 upsert。接受 `tokio_postgres` 的
+/// `GenericClient`，连接与事务都能调用：deadpool 连接传 `&**client`，
+/// deadpool 事务传 `&*tx`。多键写入由调用方逐键调用，事务边界由调用方决定。
+#[cfg(feature = "server")]
+pub(crate) async fn upsert_setting(
+    client: &(impl tokio_postgres::GenericClient + Sync),
+    key: &str,
+    value: &str,
+) -> Result<(), AppError> {
+    client
+        .execute(
+            "INSERT INTO settings (key, value, updated_at) VALUES ($1, $2, NOW())
+             ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()",
+            &[&key, &value],
+        )
+        .await
+        .map_err(AppError::query)?;
+    Ok(())
+}
+
 /// Load a settings group with one indexed query.
 #[cfg(feature = "server")]
 pub(crate) async fn load_setting_values(

@@ -133,13 +133,7 @@ pub async fn update_site_settings(settings: SiteSettings) -> Result<SiteSettings
         let mut client = get_conn().await.map_err(AppError::db_conn)?;
         let tx = client.transaction().await.map_err(AppError::tx)?;
         for (key, value) in SITE_KEYS.iter().zip(site_values(&settings)) {
-            tx.execute(
-                "INSERT INTO settings (key, value, updated_at) VALUES ($1, $2, NOW())
-                 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()",
-                &[key, &value],
-            )
-            .await
-            .map_err(AppError::query)?;
+            super::upsert_setting(&*tx, key, value).await?;
         }
         tx.commit().await.map_err(AppError::tx)?;
 

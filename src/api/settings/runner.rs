@@ -265,14 +265,7 @@ pub async fn update_runner_settings(
             ("runner_task_ttl_secs", task_ttl_secs.to_string()),
             ("runner_languages", lang_str),
         ] {
-            client
-                .execute(
-                    "INSERT INTO settings (key, value, updated_at) VALUES ($1, $2, NOW())
-                     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()",
-                    &[&key, &value],
-                )
-                .await
-                .map_err(AppError::query)?;
+            super::upsert_setting(&**client, key, &value).await?;
         }
 
         tracing::info!(

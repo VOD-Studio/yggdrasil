@@ -115,14 +115,7 @@ pub async fn update_webp_settings(
             ("webp_quality", quality.to_string()),
             ("webp_method", method.to_string()),
         ] {
-            client
-                .execute(
-                    "INSERT INTO settings (key, value, updated_at) VALUES ($1, $2, NOW())
-                     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()",
-                    &[&key, &value],
-                )
-                .await
-                .map_err(AppError::query)?;
+            super::upsert_setting(&**client, key, &value).await?;
         }
 
         tracing::info!(

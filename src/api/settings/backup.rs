@@ -111,14 +111,7 @@ pub(crate) async fn save_last_backup_run(
         ),
     ];
     for (key, value) in pairs {
-        client
-            .execute(
-                "INSERT INTO settings (key, value, updated_at) VALUES ($1, $2, NOW())
-                 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()",
-                &[&key, &value],
-            )
-            .await
-            .map_err(AppError::query)?;
+        super::upsert_setting(client, key, &value).await?;
     }
     Ok(())
 }
@@ -234,14 +227,7 @@ pub async fn update_backup_settings(
             ("backup_include_uploads", include_uploads.to_string()),
         ];
         for (key, value) in pairs {
-            client
-                .execute(
-                    "INSERT INTO settings (key, value, updated_at) VALUES ($1, $2, NOW())
-                     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()",
-                    &[&key, &value],
-                )
-                .await
-                .map_err(AppError::query)?;
+            super::upsert_setting(&**client, key, &value).await?;
         }
         tracing::info!(
             "Backup settings updated: auto_enabled={}, time_utc={}, retention={}, include_uploads={}",
