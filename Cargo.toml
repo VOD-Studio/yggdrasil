@@ -59,7 +59,7 @@ governor = { version = "0.10", optional = true }
 sysinfo = { version = "0.39", optional = true }
 sqlparser = { version = "0.63", optional = true }
 dashmap = { version = "6.2", optional = true }
-# 中文标题 → 拼音 slug（纯 Rust、零依赖，安全交叉编译到 musl/FreeBSD）。
+# 中文标题 → 拼音 slug（纯 Rust、零依赖，安全交叉编译到 musl）。
 pinyin = { version = "0.11", optional = true }
 md-5 = { version = "0.11", optional = true }
 futures = { version = "0.3", optional = true }

@@ -40,15 +40,12 @@ backups/*
 # ---------------------------------------------------------------------------
 # Machine-local / unrelated directories — not build inputs.
 #   others/            — vendored reference blog (DansBlog)
-#   .freebsd-sysroot/  — FreeBSD cross-compile sysroot (local-only)
 #   docker/            — runner image sources, built separately
-#   docs/ tests/ scripts/ — docs & standalone scripts, not compiled in
+#   docs/ scripts/     — docs & standalone scripts, not compiled in
 # ---------------------------------------------------------------------------
 others/
-.freebsd-sysroot/
 docker/
 docs/
-tests/
 scripts/
 # P3b 双 flavor 装配在容器内跑 build-release.cjs（随 build-release 导入
 # release-bootstrap），从 scripts/ 例外放行；其余 scripts 仍排除。

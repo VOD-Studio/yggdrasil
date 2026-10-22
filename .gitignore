@@ -36,8 +36,5 @@ profile.json.gz
 # Git worktrees
 .worktrees/
 
-# FreeBSD cross-compile sysroot (extracted from base.txz, machine-local)
-.freebsd-sysroot/
-
 .zcode/
 .idea/
