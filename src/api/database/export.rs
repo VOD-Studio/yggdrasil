@@ -25,7 +25,10 @@ pub struct ExportParams {
     pub include_columns: Option<bool>,
 }
 
-/// POST/GET /api/database/export —— 流式导出。
+/// GET /api/database/export —— 流式导出。
+///
+/// 前端用 `window.open` 触发下载，因此保持 GET；路由挂
+/// [`crate::api::csrf::same_origin_read_middleware`] 拒绝跨站触发。
 pub async fn export_data(
     headers: HeaderMap,
     Query(params): Query<ExportParams>,

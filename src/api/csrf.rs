@@ -3,8 +3,9 @@
 //! SameSite=Lax 只在顶级 GET 导航时自动带 cookie，对跨站 POST 不带 cookie，
 //! 挡住了大部分经典 CSRF。但存在两个 Lax 覆盖不到的盲区：
 //! 1. 登录 CSRF（攻击者诱导受害者登录攻击者账号，Lax 不阻止「设置」cookie）；
-//! 2. 未来若出现 GET 化写接口，Lax 会在顶级 GET 导航时带 cookie。
-//! 因此对所有写请求叠加 Origin 校验作为纵深防御。
+//! 2. 顶级 GET 导航时 Lax 会带 cookie，GET 下载类接口（数据导出）可被跨站触发。
+//! 因此对所有写请求叠加 Origin 校验作为纵深防御；GET 下载类接口另挂
+//! [`same_origin_read_middleware`]。
 //! 仅在 `feature = "server"` 时编译。
 
 #[cfg(feature = "server")]
@@ -119,6 +120,27 @@ fn origin_matches(trusted: Option<&str>, incoming: Option<&str>) -> bool {
     matches!((trusted, incoming), (Some(t), Some(o)) if t == o)
 }
 
+/// 从 Fetch Metadata 判断请求是否由本站页面发起。
+///
+/// 浏览器的顶级 GET 导航（`window.open`、`<a href>`）不带 `Origin`，只能靠
+/// `Sec-Fetch-Site`：仅 `same-origin` 可信；`same-site` 包含兄弟子域，`cross-site`
+/// 是跨站，`none` 是地址栏/书签直开，本站 UI 不会产生，一律拒绝。
+/// 返回 None 表示请求不带该头（旧浏览器或非浏览器客户端）。
+#[cfg(feature = "server")]
+fn fetch_site_is_same_origin(headers: &HeaderMap) -> Option<bool> {
+    headers
+        .get("sec-fetch-site")
+        .map(|v| v.as_bytes() == b"same-origin")
+}
+
+#[cfg(feature = "server")]
+fn forbidden() -> axum::response::Response {
+    axum::response::Response::builder()
+        .status(axum::http::StatusCode::FORBIDDEN)
+        .body(axum::body::Body::empty())
+        .expect("static forbidden response is always valid")
+}
+
 /// CSRF 校验中间件。
 ///
 /// 对写方法校验请求来源等于本站；不匹配返回 403。GET/OPTIONS 等放行。
@@ -134,11 +156,31 @@ pub async fn csrf_middleware(
         let incoming = extract_origin(&headers);
         let ok = origin_matches(trusted.as_deref(), incoming.as_deref());
         if !ok {
-            return axum::response::Response::builder()
-                .status(axum::http::StatusCode::FORBIDDEN)
-                .body(axum::body::Body::empty())
-                .expect("static forbidden response is always valid");
+            return forbidden();
         }
+    }
+    next.run(req).await
+}
+
+/// GET 下载类接口的同源校验中间件：拒绝跨站触发的顶级导航。
+///
+/// 优先看 `Sec-Fetch-Site`；不带该头时回退到与写请求相同的 Origin/Referer 校验，
+/// 来源缺失同样拒绝。只挂在需要的路由上，不影响普通页面 GET。
+#[cfg(feature = "server")]
+pub async fn same_origin_read_middleware(
+    req: Request<axum::body::Body>,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    let ok = match fetch_site_is_same_origin(req.headers()) {
+        Some(same_origin) => same_origin,
+        None => {
+            let headers = req.headers().clone();
+            let trusted = trusted_origin(&headers).await;
+            origin_matches(trusted.as_deref(), extract_origin(&headers).as_deref())
+        }
+    };
+    if !ok {
+        return forbidden();
     }
     next.run(req).await
 }
@@ -248,6 +290,20 @@ mod tests {
             Some("https://example.com"),
             Some("https://evil.example")
         ));
+    }
+
+    #[test]
+    fn fetch_site_trusts_only_same_origin() {
+        let with = |value: &'static str| {
+            let mut headers = HeaderMap::new();
+            headers.insert("sec-fetch-site", HeaderValue::from_static(value));
+            fetch_site_is_same_origin(&headers)
+        };
+        assert_eq!(with("same-origin"), Some(true));
+        // same-site 含兄弟子域；none 为地址栏直开，本站 UI 不会产生。
+        assert_eq!(with("same-site"), Some(false));
+        assert_eq!(with("cross-site"), Some(false));
+        assert_eq!(with("none"), Some(false));
     }
 
     // ── APP_BASE_URL 启动告警 ──────────────────────────────────────

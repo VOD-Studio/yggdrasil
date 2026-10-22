@@ -529,7 +529,9 @@ fn build_router(options: ServerOptions) -> axum::Router {
     let export_route = axum::Router::new()
         .route(
             "/api/database/export",
-            axum::routing::get(crate::api::database::export::export_data),
+            axum::routing::get(crate::api::database::export::export_data).layer(
+                axum::middleware::from_fn(crate::api::csrf::same_origin_read_middleware),
+            ),
         )
         .route(
             "/api/database/backups/{filename}",

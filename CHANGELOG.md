@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - **数据导出只读校验**：`/api/database/export` 的 `query:` 来源拒绝 `EXPLAIN ANALYZE`（含 `EXPLAIN (ANALYZE)` 写法）、data-modifying CTE、`SELECT INTO` 与行锁子句；SQL 格式导出放进只读事务执行。此前一次跨站 GET 即可让管理员浏览器执行任意 DML。SQL 控制台的读写分类改用同一判定，这类语句改走写路径（受 WHERE 护栏约束并触发缓存失效）。
+- **数据导出拒绝跨站触发**：`/api/database/export` 仍为 GET 下载，但只接受 `Sec-Fetch-Site: same-origin`；不带该头的客户端回退到 Origin/Referer 本站校验，来源缺失返回 403。
 - **MCP 令牌随账号状态失效**：bearer 鉴权每次校验持有人当前角色，账号被封禁后其名下令牌（含 `/api/mcp/upload`）立即失效，无需逐个吊销。
 - **后台路由守卫**：会话失效、过期或代际不匹配的 cookie 访问 `/admin` 改为跳转登录页，仅数据库错误时放行。
 - **头像路径校验**：个人资料头像与友链头像共用同一安全谓词，拒绝 `..`、空路径、双斜杠与 NUL。
