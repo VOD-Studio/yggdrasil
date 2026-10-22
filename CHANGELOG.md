@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.2] - 2026-10-22
+
+### Changed
+
+- **组件图鉴**：移除骨架屏展示条目、页面布局分类及其独立详情预览，清理对应预览代码与样式；骨架屏和页面布局组件仍保留在正式业务页面中使用。同步更新目录完整性检查、浏览器回归断言及图鉴维护文档。
+
 ## [0.24.1] - 2026-10-22
 
 ### Fixed
