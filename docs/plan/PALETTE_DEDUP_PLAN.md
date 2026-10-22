@@ -2,7 +2,9 @@
 
 ## Context
 
-前台搜索面板 `SearchPalette`（`src/components/search_palette.rs:438-931`）和后台命令面板 `AdminPalette`（`src/components/admin_palette.rs:177-545`）的大部分代码逐行重复：signal 集合、打开时记录焦点并聚焦输入框、关闭复位、防抖 + seq 请求、scrim/dialog/`data-ygg-modal-panel`/`trap_tab`、输入行键位、进度点、分组列表渲染、行组件、空结果和页脚结构（`docs/code-audit-2026-10-22.md:99` 记录了这一问题）。两边真正不同的只有数据源、条目、动作和文案。
+前台搜索面板 `SearchPalette`（`src/components/search_palette.rs:438-931`）和后台命令面板视图 `AdminPaletteView`（`src/components/admin_palette.rs:229-546`，含 `AdminPaletteRow`）的大部分代码逐行重复：signal 集合、打开时记录焦点并聚焦输入框、关闭复位、防抖 + seq 请求、scrim/dialog/`data-ygg-modal-panel`/`trap_tab`、输入行键位、进度点、分组列表渲染、行组件、空结果和页脚结构（`docs/code-audit-2026-10-22.md:99` 记录了这一问题）。两边真正不同的只有数据源、条目、动作和文案。
+
+后台面板已拆成两层（提交 `939c592`）：生产入口 `AdminPalette`（`:174-227`）只负责注册 ⌘K、提供文章检索回调 `search` 和条目执行回调 `on_activate`；视图 `AdminPaletteView` 负责其余全部。图鉴 `components_showcase.rs` 的 `AdminPaletteDemo` 直接渲染视图，传入浏览器内过滤的 `search` 和回显用的 `on_activate`，不注册快捷键。本计划只去重视图层，入口和图鉴的回调保持不变。
 
 目标：把公共部分抽到新模块 `src/components/palette.rs`，两个面板只保留各自的数据、条目映射、选中动作和插槽内容。**用户可见行为、DOM id、class、ARIA 和文案保持不变。**
 
@@ -17,8 +19,8 @@
    - `use_search_palette_provider`、`use_search_palette`（第 34-43 行）
    - `contains_ci`、`highlight`、`snippet`（第 128-192 行），保持 `pub(crate)`
    - `viewport_center`、`focus_by_id`（第 350-381 行），保持 `pub(crate)`
-   - `use_palette_shortcut`（第 383-431 行），**改为私有 `fn`**，因为以后只有本模块的 `use_palette_state` 调用它
-   - `DEBOUNCE_MS = 150`、`PROGRESS_DELAY_MS = 300`，改为本模块私有常量；同时删除 `admin_palette.rs:20-22` 中重复的两份常量
+   - `use_palette_shortcut`（第 383-431 行），**保持 `pub(crate)`**。快捷键由各面板的生产入口自己注册：前台 `SearchPalette` 按 `shortcut` prop 注册，后台 `AdminPalette` 固定注册；`AdminPaletteView` 和图鉴都不注册，所以它不能并入 `use_palette_state`
+   - `DEBOUNCE_MS = 150`、`PROGRESS_DELAY_MS = 300`，改为本模块私有常量；同时删除 `admin_palette.rs:23-25` 中重复的两份常量
 2. 将 `search_palette.rs` 测试中的 `highlight_marks_every_case_insensitive_hit` 和 `snippet_centers_on_the_first_hit_with_ellipses`（第 947-971 行）原样移到 `palette.rs` 末尾的 `#[cfg(test)] mod tests { use super::*; … }`。
 3. 在 `src/components/mod.rs` 的布局层中，于 `pub mod nav;` 之后、`/// 搜索面板（⌘K）` 之前加入以下内容。这里**不加** `cfg` 门控，因为 reader 客户端的 `SearchPalette` 也会用到：
    ```rust
@@ -28,10 +30,10 @@
 4. 迁移调用方路径，属于干净切换，不做 re-export：
    - `src/components/admin_layout.rs:14`：`search_palette::{use_search_palette, use_search_palette_provider}` 改为 `palette::{…}`
    - `src/components/frontend_layout.rs:11`：拆成 `use crate::components::palette::use_search_palette_provider;` 和 `use crate::components::search_palette::SearchPalette;`
-   - `src/components/header.rs:50`：`crate::components::search_palette::use_search_palette()` 改为 `crate::components::palette::use_search_palette()`
-   - `src/pages/components_showcase.rs:1539` 和 `:1631`：`search_palette::use_search_palette_provider()` 改为 `palette::use_search_palette_provider()`。`:1549` 的 `search_palette::SearchPalette` 保持不变
+   - `src/components/header.rs:47`：`crate::components::search_palette::use_search_palette()` 改为 `crate::components::palette::use_search_palette()`
+   - `src/pages/components_showcase.rs:1539` 和 `:1631`：`search_palette::use_search_palette_provider()` 改为 `palette::use_search_palette_provider()`；`:1675` 的 `search_palette::contains_ci` 改为 `palette::contains_ci`。`:1549` 的 `search_palette::SearchPalette` 保持不变
    - `src/pages/search.rs:11`：`search_palette::{contains_ci, highlight, snippet}` 改为 `palette::{…}`；`:392` 中的 `search_palette::focus_by_id` 改为 `palette::focus_by_id`
-   - `admin_palette.rs:10-12`、`:184`、`:219` 的旧路径会在第 3 步重写时一起处理
+   - `admin_palette.rs:13-15`（imports）、`:176`（`use_palette_shortcut`）、`:266`（`focus_by_id`）的旧路径会在第 3 步重写时一起处理
    - 验收：`grep -rn "search_palette::" src` 只命中 `SearchPalette` 组件的两处用法，即 `frontend_layout.rs` 和 `components_showcase.rs:1549`
 
 ### 2. 在 `palette.rs` 中新增面板状态、外壳和行组件
@@ -58,8 +60,8 @@ pub(crate) struct PaletteState {
 }
 ```
 
-- `pub(crate) fn use_palette_state(id_prefix: &'static str, shortcut: bool) -> PaletteState`
-  - 依次调用 `use_context::<SearchPaletteHandle>()`。wasm 下调用 `use_palette_shortcut(handle, shortcut)`；非 wasm 下写 `let _ = shortcut;`。然后用 `use_signal` 逐个创建各个字段，`open` 取 `handle.open`。
+- `pub(crate) fn use_palette_state(id_prefix: &'static str) -> PaletteState`
+  - 先调用 `use_context::<SearchPaletteHandle>()`，然后用 `use_signal` 逐个创建各个字段，`open` 取 `handle.open`。这里不注册快捷键，见第 1 步。
   - 定义一个 `use_effect`：如果 `(state.open)()` 为 false，直接 return。在 wasm 下，把 `document.active_element()` 转成 `HtmlElement` 后存入 `previous_focus`，写法与 `search_palette.rs:469-478` 相同。随后 `spawn` 一个任务，先执行 `crate::utils::time::sleep_ms(0).await`，再调用 `state.focus_input()`。
 - `impl PaletteState`：
   - `pub(crate) fn focus_input(self)`：只在 wasm 下执行 `focus_by_id(&format!("{}-input", self.id_prefix))`。
@@ -167,7 +169,15 @@ pub(crate) struct PaletteState {
   - `highlight_hits` 只在 Recent 和 Theme 上为 false。除 Post 外，`summary` 都是 `None`。
 - `SearchPalette`：
   - 函数签名不变。
-  - 先写 `let palette = use_palette_state("palette", shortcut);`，再按需绑定 `palette.open`、`palette.query`、`palette.active`。只给确实需要 `.set` 的 signal 加 `mut`，否则 clippy 会报 `unused_mut`。
+  - 先注册快捷键并创建状态。快捷键调用用完整路径写在 cfg 块里，避免 native 构建出现 `unused_imports`：
+    ```rust
+    #[cfg(target_arch = "wasm32")]
+    crate::components::palette::use_palette_shortcut(use_context::<crate::components::palette::SearchPaletteHandle>(), shortcut);
+    #[cfg(not(target_arch = "wasm32"))]
+    let _ = shortcut;
+    let palette = use_palette_state("palette");
+    ```
+    然后按需绑定 `palette.open`、`palette.query`、`palette.active`。只给确实需要 `.set` 的 signal 加 `mut`，否则 clippy 会报 `unused_mut`。
   - 保留 `scope`、`posts`、`posts_query`、`tags`、`recents`、`theme`、`resolved`、`navigator`。
   - 保留一个 `use_effect`，只负责 `recents.set(read_recents())`，以及在 tags 为空时首次加载标签（`list_tags`，并过滤掉 `post_count > 0` 以外的标签）。焦点相关逻辑已经移到 `use_palette_state`。
   - `close` 写成 `move || { if palette.close() { scope.set(Scope::All); posts.set(Vec::new()); posts_query.set(String::new()); } }`。
@@ -182,29 +192,34 @@ pub(crate) struct PaletteState {
     ```
 - 模块文档第 6 行后补一句：`公共状态、输入与对话框结构见 [crate::components::palette]。`
 
-**`admin_palette.rs`**：保留 `POST_LIMIT`、`Action`、`jump_targets`、`AdminPaletteDemo`、`Item`、`Group`、`Item::title`、`build_groups` 及测试。删除 `AdminPaletteRow` 和重复常量。
+**`admin_palette.rs`**：保留 `POST_LIMIT`、`Action`、`jump_targets`、`PostSearch`、`Item`、`Group`、`Item::title`、`build_groups` 及测试。删除 `AdminPaletteRow` 和重复常量。
 
-- imports 改为：`crate::components::palette::{contains_ci, use_palette_state, viewport_center, PaletteEntry, PaletteGroup, PaletteShell}`、`crate::components::ui::IconName`。`Icon` 组件已经不用，删除它的导入。
+- imports 改为：`crate::components::palette::{contains_ci, use_palette_state, viewport_center, PaletteEntry, PaletteGroup, PaletteShell}`、`crate::components::ui::IconName`。`Icon` 和 `highlight` 已经不用，删除它们的导入。`SearchPaletteHandle` 也不再导入：入口只在 wasm cfg 块里用到它，改写完整路径。
 - 新增 `fn entry(item: &Item) -> PaletteEntry`，搬运 `AdminPaletteRow` 的 `match`：
   - Post：图标 `FileText`；meta 在草稿状态下为 `"草稿"`，否则为 `%Y.%m.%d`。
   - Action：`icon()` 和 `label()`；meta 为空串。
   - Jump：使用自带的 icon 和 label；meta 为 `"跳转"`。
   - 所有条目都使用 `summary: None, mono_meta: false, highlight_hits: true`。
-- `AdminPalette`：
-  - 函数签名不变。
-  - 写 `let palette = use_palette_state("admin-palette", demo.is_none());`。
-  - 保留 `demo_pick`、`demo_posts`、`posts`、`posts_query`、`theme`、`resolved`、`navigator`。
+- `AdminPalette`（生产入口）：
+  - 函数签名和函数体都不变，`search` 与 `on_activate` 两个闭包原样保留。
+  - 只把快捷键调用改为 `crate::components::palette::use_palette_shortcut(use_context::<crate::components::palette::SearchPaletteHandle>(), true);`，仍放在 `#[cfg(target_arch = "wasm32")]` 下。
+  - 文档注释中的 `` [`SearchPaletteHandle`] `` 改为 `` [`crate::components::palette::SearchPaletteHandle`] ``。
+- `AdminPaletteView`（视图）：
+  - 函数签名不变：`search: Callback<String, PostSearch>, on_activate: EventHandler<Item>`。
+  - 写 `let palette = use_palette_state("admin-palette");`。
+  - 保留 `posts`、`posts_query`、`resolved`。
   - `close` 写成 `move || { if palette.close() { posts.set(Vec::new()); posts_query.set(String::new()); } }`。
-  - `schedule_fetch` 写成 `move || palette.schedule_fetch(posts, posts_query, move |q| async move { … })`。在 async 块里，先单独写一条语句计算 `let demo_hits = demo_posts.peek().as_ref().map(|all| all.iter().filter(|p| contains_ci(&p.title, &q)).take(POST_LIMIT as usize).cloned().collect::<Vec<_>>());`，这样 peek guard 不会跨过 `.await`。如果 `demo_hits.is_some()`，返回 `demo_hits`；否则执行 `list_posts(1, POST_LIMIT, AdminPostQuery::search(q)).await.ok().map(|res| res.posts)`。
-  - 图鉴演示改走同一条请求路径后，`loading` 会在同一次 poll 内先置 true、再置 false，不会产生可见差异。这一点可以接受。
+  - `schedule_fetch` 写成 `move || palette.schedule_fetch(posts, posts_query, move |q| search.call(q))`。`search.call(q)` 返回的 `PostSearch` 就是 `Output = Option<Vec<PostListItem>>` 的 future，直接满足 `Fut`；返回 `None` 时保留上一批结果，与现状一致。
+  - 图鉴的 `search` 返回 `std::future::ready(..)`，`loading` 会在同一次 poll 内先置 true、再置 false，不会产生可见差异，与现状相同。
   - `if !open() { return rsx! {}; }` 保留。生成 `groups`、`flat` 和 `view` 的方式与前台相同。
-  - `activate(item)` 保持原样，包括开头的 `close()` 和 demo 分支。
+  - `activate(item)` 保持原样：先 `close()`，再 `on_activate.call(item)`。
   - 渲染以下组件：
     ```
     PaletteShell { state: palette, label: "命令面板", input_label: "搜索文章或输入命令", placeholder: "搜索文章，或输入命令…", list_label: "命令与搜索结果", enter_hint: "执行", empty_hint: "文章标题、命令与栏目里都没有命中。", groups: view, waiting: posts_query() != q.trim(), on_query_change: move |_| schedule_fetch(), on_pick: move |(index, _): (usize, bool)| { if let Some(item) = flat.get(index).cloned() { activate(item); } }, on_close: move |_| close(), toolbar: rsx! {}, empty_action: rsx! {}, footer_action: rsx! {} }
     ```
     `clearable` 使用默认值 false，与后台当前没有清除按钮的行为一致。
 - 模块文档第 3 行改为：`输入、防抖请求、键盘选择与对话框结构由 [crate::components::palette::PaletteShell] 提供；数据与`，第 4 行开头保持“动作是后台自己的。”，语义上续接上一行。
+- 图鉴 `AdminPaletteDemo` 除第 1 步的 `contains_ci` 路径外不需要改动。
 
 ### 4. 提交
 
@@ -218,8 +233,8 @@ git commit -m "refactor(palette): 前台搜索与后台命令面板共用面板�
 ## Critical files & anchors
 
 - `src/components/search_palette.rs:438-931`：前台面板主体和 `PaletteRow`。外壳 rsx 以这里为模板，因为它比后台多出清除按钮和插槽位置。
-- `src/components/admin_palette.rs:177-545`：后台面板主体。需要特别注意的差异包括 demo 分支、Enter 不区分 new_tab、没有清除按钮，以及 id 前缀为 `admin-palette`。
-- `src/pages/components_showcase.rs:1725-1778`：图鉴覆盖测试会扫描所有 `pub fn 大写名`。新组件必须写成 `pub(crate)`。
+- `src/components/admin_palette.rs:174-546`：后台入口 `AdminPalette`（`:174-227`）与视图 `AdminPaletteView`、`AdminPaletteRow`（`:229-546`）。需要特别注意的差异：入口负责快捷键、检索和执行，视图不注册快捷键；Enter 不区分 new_tab；没有清除按钮；id 前缀为 `admin-palette`。
+- `src/pages/components_showcase.rs:1766`：`catalog_covers_public_components_and_has_unique_routes` 会扫描所有 `pub fn 大写名`。新组件必须写成 `pub(crate)`。
 - `src/components/mod.rs:34-54`：布局层模块声明。`palette` 不能加 reader 门控。
 
 ## Verification
@@ -245,14 +260,14 @@ git commit -m "refactor(palette): 前台搜索与后台命令面板共用面板�
      - 点击“标签”范围后，焦点回到 `#palette-input`。
      - 按 Escape 后输入被清空；再按一次 Escape，面板关闭，焦点回到打开前的元素。
      - 输入 `zzzzqq` 并等待约 500ms，出现“没有找到「zzzzqq」”和“在全文中搜索”按钮；点击后跳到 `/search?q=zzzzqq`。
-   - 后台：用 `.env` 中的管理员账号登录，进入 `/admin`。
+   - 后台：进入 `/admin`。`.env` 里没有管理员密码，可以临时往 `sessions` 表插入一行会话：`user_id = 1`，`token_hash` 取 UUID token 的 `sha256_hex`，`expires_at` 设为短窗口，`user_agent` 写明用途。然后把 Cookie `session=<token>` 设到 `http://localhost:8080`。用完删除这一行。
      - 按 Meta+K 后，焦点在 `#admin-palette-input`，页面上不存在“清除输入”按钮。
      - 输入“写”后，“操作”组包含“写文章”。
      - 按 Enter 后跳到 `/admin/write`，面板关闭。
    - 图鉴 `/about/components/admin-palette`：
-     - 点击“打开命令面板”，输入 `Rust` 后出现“用 Rust 写一个 6502 模拟器”。
-     - 按 Enter 后出现文本 `on_pick: 用 Rust 写一个 6502 模拟器`。
-     - 期间没有发往文章列表 server fn 的网络请求。
+     - 点击“打开命令面板”，输入 `Rust` 后，“文章”组只有“用 Rust 写一个 6502 模拟器”。
+     - 按 Enter 后面板关闭，出现文本 `on_activate: 用 Rust 写一个 6502 模拟器`，地址仍是 `/about/components/admin-palette`。
+     - 期间没有发往文章列表 server fn（`list_posts`）的网络请求。
    - 用完后关闭测试 tab；如果为了登录创建了临时会话，也一并清理。
 
 ## Assumptions & contingencies
