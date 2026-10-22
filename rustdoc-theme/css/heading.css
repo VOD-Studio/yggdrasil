@@ -1,0 +1,165 @@
+/* 标题区：面包屑、类型徽标、元信息行、工具栏、crate 首页。 */
+
+:root body.rustdoc .main-heading {
+  margin-bottom: 2rem;
+  padding-bottom: 0;
+  border: 0;
+}
+
+/* 面包屑 */
+:root body.rustdoc .rustdoc-breadcrumbs {
+  font-size: 0;
+}
+:root body.rustdoc .rustdoc-breadcrumbs a {
+  font-size: 0.8125rem;
+  color: var(--color-fg-3);
+}
+:root body.rustdoc .rustdoc-breadcrumbs a:hover {
+  color: var(--color-fg);
+}
+:root body.rustdoc .rustdoc-breadcrumbs a:not(:first-of-type)::before {
+  content: "/";
+  display: inline-block;
+  margin: 0 0.4375rem;
+  color: var(--color-ink-4);
+}
+
+/* h1：其他页面（all.html、设置、帮助、源码） */
+:root body.rustdoc .main-heading h1 {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: 1.75rem;
+  color: var(--color-fg);
+}
+
+/* 类型徽标 */
+:root body.rustdoc:is(.crate, .mod:not(.crate):not(.sys), .struct, .enum, .fn, .constant, .static, .type, .macro, .trait, .union) .main-heading h1 {
+  font-size: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+:root body.rustdoc:is(.crate, .mod:not(.crate):not(.sys), .struct, .enum, .fn, .constant, .static, .type, .macro, .trait, .union) .main-heading h1 > span {
+  font-size: 2.25rem;
+  line-height: 1.25;
+  color: var(--color-fg);
+}
+:root body.rustdoc:is(.crate, .mod:not(.crate):not(.sys), .struct, .enum, .fn, .constant, .static, .type, .macro, .trait, .union) .main-heading h1::before {
+  display: block;
+  width: fit-content;
+  margin-bottom: 0.75rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: 999px;
+  font: 500 0.6875rem/1.6 var(--font-sans);
+  letter-spacing: 0.04em;
+  color: var(--color-clay-text);
+  box-shadow: 0 0 0 var(--hairline) color-mix(in srgb, var(--color-clay) 45%, transparent);
+}
+:root body.rustdoc.crate .main-heading h1::before { content: "Crate"; }
+:root body.rustdoc.mod:not(.crate):not(.sys) .main-heading h1::before { content: "模块"; }
+:root body.rustdoc.struct .main-heading h1::before { content: "结构体"; }
+:root body.rustdoc.enum .main-heading h1::before { content: "枚举"; }
+:root body.rustdoc.fn .main-heading h1::before { content: "函数"; }
+:root body.rustdoc.constant .main-heading h1::before { content: "常量"; }
+:root body.rustdoc.static .main-heading h1::before { content: "静态变量"; }
+:root body.rustdoc.type .main-heading h1::before { content: "类型别名"; }
+:root body.rustdoc.macro .main-heading h1::before { content: "宏"; }
+:root body.rustdoc.trait .main-heading h1::before { content: "Trait"; }
+:root body.rustdoc.union .main-heading h1::before { content: "联合体"; }
+
+:root body.rustdoc .main-heading h1 #copy-path {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  font-size: 0; /* rustdoc 用 0 号字隐藏按钮文字，只留图标 */
+  vertical-align: middle;
+}
+:root body.rustdoc .main-heading h1 #copy-path:hover {
+  background: var(--color-ink-1);
+}
+
+/* 元信息行 */
+:root body.rustdoc .sub-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+  color: var(--color-fg-3);
+}
+:root body.rustdoc .sub-heading .doc-src-meta {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+}
+:root body.rustdoc .sub-heading .doc-src-meta + a.src::before {
+  content: "·";
+  margin-right: 0.5rem;
+  color: var(--color-ink-4);
+}
+:root body.rustdoc a.src {
+  color: var(--color-fg-3);
+}
+:root body.rustdoc a.src:hover {
+  color: var(--color-clay-text);
+}
+
+/* 工具栏：不能隐藏或移动，弹层创建在其内部。 */
+:root body.rustdoc .main-heading rustdoc-toolbar {
+  gap: 2px;
+  min-height: 0;
+  margin: 0;
+  align-self: start;
+}
+:root body.rustdoc .main-heading rustdoc-toolbar #search-button {
+  display: none;
+}
+:root body.rustdoc .main-heading rustdoc-toolbar span.label {
+  display: none;
+}
+:root body.rustdoc .main-heading rustdoc-toolbar :is(.settings-menu > a, .help-menu > a, #toggle-all-docs) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+}
+:root body.rustdoc .main-heading rustdoc-toolbar :is(.settings-menu > a, .help-menu > a, #toggle-all-docs):is(:hover, :focus-visible) {
+  background: var(--color-ink-1);
+}
+:root body.rustdoc .main-heading rustdoc-toolbar :is(.settings-menu > a, .help-menu > a, #toggle-all-docs):focus-visible {
+  box-shadow: var(--shadow-focus);
+}
+
+/* crate 首页 */
+:root body.rustdoc.crate .main-heading h1 > span {
+  font-size: 2.75rem;
+}
+:root body.rustdoc.crate .main-heading .doc-hero-meta {
+  grid-area: main-heading-breadcrumbs;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 1rem;
+  font-size: 0.8125rem;
+  color: var(--color-fg-3);
+}
+:root body.rustdoc.crate .main-heading .doc-hero-meta::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-clay);
+}
+:root body.rustdoc.crate .top-doc .docblock > p:first-child {
+  font-size: 1.125rem;
+  color: var(--color-fg-2);
+}

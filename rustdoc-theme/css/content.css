@@ -1,0 +1,365 @@
+/* 正文块：章节标题、条目表、声明、字段/变体、impl 卡片、Trait chip、更多实现、all.html。
+   面向 rustdoc 元素的规则不进 layer，选择器以 :root 开头。 */
+
+/* ---- 章节标题 ---- */
+:root #main-content h2.section-header {
+  margin: 3rem 0 1rem;
+  padding: 0 0 0.625rem;
+  border: 0;
+  border-bottom: var(--hairline) solid var(--color-hairline);
+  color: var(--color-fg);
+  font-family: var(--font-serif);
+  font-size: 1.375rem;
+  font-weight: 500;
+}
+
+:root #main-content h2.section-header .doc-count,
+:root #main-content .doc-module-group h3 .doc-count {
+  margin-left: 0.5rem;
+  color: var(--color-fg-3);
+  font-family: var(--font-sans);
+  font-size: 0.8125rem;
+  font-weight: 400;
+}
+
+/* ---- 条目表 ---- */
+:root #main-content .item-table {
+  display: grid;
+  grid-template-columns: minmax(9rem, max-content) minmax(0, 1fr);
+  column-gap: 0;
+  margin: 0 -0.75rem;
+}
+
+:root #main-content .item-table > :is(dt, dd) {
+  margin: 0;
+  padding: 0.625rem 0.75rem;
+  border-top: var(--hairline) solid var(--color-hairline);
+}
+
+:root #main-content .item-table > :is(dt, dd):nth-child(-n + 2) {
+  border-top: 0;
+}
+
+:root #main-content .item-table > dt {
+  border-radius: 8px 0 0 8px;
+}
+
+:root #main-content .item-table > dd {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  /* 下边距用透明 border 而不是 padding：overflow 在 padding 边界裁切，
+     padding-bottom 会露出被 line-clamp 截掉的第 3 行上半截。背景默认画到 border-box，悬停底色不受影响。 */
+  padding-bottom: 0;
+  border-bottom: 0.625rem solid transparent;
+  border-radius: 0 8px 8px 0;
+  color: var(--color-fg-2);
+  font-size: 0.875rem;
+}
+
+:root #main-content .item-table > dt > a {
+  color: var(--color-fg);
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+}
+
+:root #main-content .item-table > dt:hover,
+:root #main-content .item-table > dt:hover + dd,
+:root #main-content .item-table > dt:has(+ dd:hover),
+:root #main-content .item-table > dd:hover {
+  background: var(--color-ink-1);
+}
+
+@media (max-width: 700px) {
+  :root #main-content .item-table {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  :root #main-content .item-table > :is(dt, dd) {
+    grid-column: 1;
+  }
+
+  :root #main-content .item-table > dd {
+    padding-top: 0;
+    border-top: 0;
+    border-radius: 0 0 8px 8px;
+  }
+
+  :root #main-content .item-table > dt {
+    border-radius: 8px 8px 0 0;
+  }
+
+  :root #main-content .item-table > dt:hover + dd,
+  :root #main-content .item-table > dt:has(+ dd:hover) {
+    background: var(--color-ink-1);
+  }
+}
+
+/* ---- 可见性标记：只给 pub 项画徽标，受限项隐藏 rustdoc 的锁图标 ---- */
+:root #main-content .item-table > dt > span[title="Restricted Visibility"] {
+  display: none;
+}
+
+:root #main-content .item-table > dt:not(:has(> span[title="Restricted Visibility"])) > a::after {
+  content: "pub";
+  margin-left: 0.5rem;
+  padding: 0 0.375rem;
+  border-radius: 999px;
+  background: var(--color-success-soft);
+  color: var(--color-success);
+  font: 500 0.625rem/1.6 var(--font-mono);
+  vertical-align: 0.125rem;
+}
+
+/* ---- crate 模块分组 ---- */
+:root #main-content .doc-module-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr));
+  gap: 1rem;
+}
+
+:root #main-content .doc-module-group {
+  padding: 1rem 1.25rem 0.5rem;
+  border-radius: var(--radius-panel);
+  background: var(--color-surface-2);
+  box-shadow: 0 0 0 var(--hairline) var(--color-hairline), var(--shadow-sm);
+}
+
+:root #main-content .doc-module-group h3 {
+  margin: 0 0 0.25rem;
+  padding: 0;
+  border: 0;
+  color: var(--color-fg-3);
+  font-family: var(--font-sans);
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+:root #main-content .doc-module-group .item-table {
+  grid-template-columns: minmax(0, 1fr);
+  margin: 0;
+}
+
+/* rustdoc 把 dd 固定在第 2 列（grid-column-start:2），单列分组里要放回第 1 列。 */
+:root #main-content .doc-module-group .item-table > :is(dt, dd) {
+  grid-column: 1;
+}
+
+:root #main-content .doc-module-group .item-table > dt {
+  padding: 0.375rem 0 0;
+  border-top: 0;
+  border-radius: 0;
+}
+
+:root #main-content .doc-module-group .item-table > dd {
+  padding: 0 0 0.375rem;
+  border-top: 0;
+  border-bottom: 0;
+  border-radius: 0;
+  color: var(--color-fg-3);
+  font-size: 0.8125rem;
+  /* 单行截断：-webkit-line-clamp:1 会在 padding 区露出第二行的上半截，改用 ellipsis。 */
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+:root #main-content .doc-module-group .item-table > dd code {
+  white-space: nowrap;
+}
+
+:root #main-content .doc-module-group .item-table > :is(dt, dd):hover,
+:root #main-content .doc-module-group .item-table > dt:hover + dd,
+:root #main-content .doc-module-group .item-table > dt:has(+ dd:hover) {
+  background: transparent;
+}
+
+/* ---- 声明块 ---- */
+:root #main-content pre.item-decl {
+  padding: 1rem 1.25rem;
+  border-radius: var(--radius-code);
+  background: var(--color-surface-1);
+  box-shadow: inset 0 0 0 var(--hairline) var(--color-hairline);
+  font-size: 0.875rem;
+  line-height: 1.7;
+}
+
+/* ---- 字段与变体 ---- */
+:root #main-content > span.structfield,
+:root #main-content .variants > section.variant {
+  display: block;
+  margin: 0;
+  padding: 0.625rem 0;
+  border-top: var(--hairline) solid var(--color-hairline);
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+}
+
+:root #main-content > span.structfield + .docblock,
+:root #main-content .variants > section.variant + .docblock {
+  margin: -0.25rem 0 0.5rem;
+  padding: 0;
+  color: var(--color-fg-2);
+  font-size: 0.875rem;
+}
+
+/* ---- impl 卡片 ---- */
+:root #main-content :is(#implementations-list, #blanket-implementations-list) > details.implementors-toggle,
+:root #main-content #trait-implementations-list > details[open] {
+  margin: 0 0 0.75rem;
+  padding: 0.875rem 1.25rem;
+  border-radius: var(--radius-panel);
+  background: var(--color-surface-2);
+  box-shadow: 0 0 0 var(--hairline) var(--color-hairline), var(--shadow-sm);
+}
+
+:root #main-content :is(#implementations-list, #blanket-implementations-list, #trait-implementations-list) > details summary h3.code-header {
+  color: var(--color-fg-3);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+:root #main-content .impl-items h4.code-header {
+  color: var(--color-fg);
+  font-size: 0.875rem;
+}
+
+:root #main-content .impl-items .docblock {
+  color: var(--color-fg-2);
+  font-size: 0.9375rem;
+}
+
+:root #main-content :is(#implementations-list, #blanket-implementations-list, #trait-implementations-list) a.src.rightside {
+  opacity: 0;
+}
+
+:root #main-content :is(#implementations-list, #blanket-implementations-list, #trait-implementations-list) section:is(:hover, :focus-within) a.src.rightside {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  :root #main-content :is(#implementations-list, #blanket-implementations-list, #trait-implementations-list) a.src.rightside {
+    opacity: 1;
+  }
+}
+
+/* ---- Trait chip ---- */
+:root #main-content :is(#trait-implementations-list, #synthetic-implementations-list) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+
+:root #main-content :is(#trait-implementations-list, #synthetic-implementations-list) > details:not([open]) > summary {
+  display: block;
+  margin: 0;
+  padding: 0;
+}
+
+:root #main-content :is(#trait-implementations-list, #synthetic-implementations-list) > details:not([open]) > summary::before {
+  display: none;
+}
+
+:root #main-content :is(#trait-implementations-list, #synthetic-implementations-list) > section.impl,
+:root #main-content :is(#trait-implementations-list, #synthetic-implementations-list) > details:not([open]) > summary > section.impl {
+  display: inline-flex;
+  margin: 0;
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+  background: var(--color-surface-2);
+  box-shadow: 0 0 0 var(--hairline) var(--color-hairline);
+  color: var(--color-fg-2);
+  font: 0.8125rem var(--font-mono);
+  cursor: pointer;
+}
+
+:root #main-content :is(#trait-implementations-list, #synthetic-implementations-list) > section.impl {
+  cursor: default;
+}
+
+:root #main-content :is(#trait-implementations-list, #synthetic-implementations-list) > details:not([open]) > summary > section.impl > *,
+:root #main-content :is(#trait-implementations-list, #synthetic-implementations-list) > section.impl > * {
+  display: none;
+}
+
+:root #main-content :is(#trait-implementations-list, #synthetic-implementations-list) > details:not([open]) > summary > section.impl::after,
+:root #main-content :is(#trait-implementations-list, #synthetic-implementations-list) > section.impl::after {
+  content: attr(data-short);
+}
+
+:root #main-content :is(#trait-implementations-list, #synthetic-implementations-list) > details[open] {
+  flex-basis: 100%;
+}
+
+/* ---- 更多实现 ---- */
+:root #main-content details.doc-more-impls {
+  margin-top: 3rem;
+  interpolate-size: allow-keywords;
+}
+
+:root #main-content details.doc-more-impls > summary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 0.75rem;
+  border-radius: 8px;
+  color: var(--color-fg-2);
+  font-size: 0.875rem;
+  list-style: none;
+  cursor: pointer;
+}
+
+:root #main-content details.doc-more-impls > summary::-webkit-details-marker {
+  display: none;
+}
+
+:root #main-content details.doc-more-impls > summary:hover {
+  background: var(--color-ink-1);
+}
+
+:root #main-content details.doc-more-impls .doc-more-chevron {
+  transition: transform var(--spring-snappy-duration) var(--ease-spring-snappy);
+}
+
+:root #main-content details.doc-more-impls[open] > summary .doc-more-chevron {
+  transform: rotate(90deg);
+}
+
+:root #main-content details.doc-more-impls::details-content {
+  block-size: 0;
+  overflow: clip;
+  transition:
+    block-size var(--spring-snappy-duration) var(--ease-spring-snappy),
+    content-visibility var(--spring-snappy-duration) allow-discrete;
+}
+
+:root #main-content details.doc-more-impls[open]::details-content {
+  block-size: auto;
+}
+
+:root #main-content details.doc-more-impls[data-instant]::details-content {
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root #main-content details.doc-more-impls .doc-more-chevron,
+  :root #main-content details.doc-more-impls::details-content {
+    transition: none;
+  }
+}
+
+/* ---- all.html ---- */
+:root ul.all-items {
+  columns: 3 14rem;
+  padding: 0;
+  list-style: none;
+  font: 0.8125rem var(--font-mono);
+}
+
+:root #main-content h3:has(+ ul.all-items) {
+  font-family: var(--font-serif);
+  font-size: 1.125rem;
+}

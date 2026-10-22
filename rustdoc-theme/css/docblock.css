@@ -1,0 +1,155 @@
+/* 文档正文：移植 styles/components/article.css 的 .md-content 规则到 rustdoc 的 .docblock。
+   搜索页的说明（#search 内）不在此列。面向 rustdoc 元素，不进 layer。 */
+
+:root #main-content .docblock {
+  color: var(--color-fg-body);
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+
+:root #main-content .top-doc .docblock {
+  font-size: 1rem;
+}
+
+/* ---- 标题 ---- */
+:root #main-content .docblock :is(h1, h2, h3, h4) {
+  margin: 2em 0 0.75em;
+  padding: 0;
+  border: 0;
+  color: var(--color-fg);
+  font-family: var(--font-serif);
+  font-weight: 500;
+  line-height: 1.4;
+  letter-spacing: 0;
+}
+
+:root #main-content .docblock h1 {
+  font-size: 1.5em;
+}
+
+:root #main-content .docblock h2 {
+  font-size: 1.35em;
+}
+
+:root #main-content .docblock h3 {
+  font-size: 1.15em;
+}
+
+:root #main-content .docblock h4 {
+  font-size: 1em;
+}
+
+:root #main-content .docblock > :first-child {
+  margin-top: 0;
+}
+
+/* ---- 段落与行内元素 ---- */
+:root #main-content .docblock p {
+  margin: 0 0 1em;
+}
+
+:root #main-content .docblock p:last-child {
+  margin-bottom: 0;
+}
+
+:root #main-content .docblock a:not(.anchor) {
+  color: var(--color-clay-text);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--color-clay) 40%, transparent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+}
+
+:root #main-content .docblock a:not(.anchor):hover {
+  text-decoration-color: currentColor;
+}
+
+:root #main-content .docblock strong {
+  color: var(--color-fg);
+  font-weight: 600;
+}
+
+/* 不用中文斜体：强调改为字下着重号。 */
+:root #main-content .docblock em {
+  font-style: normal;
+  text-emphasis: filled dot;
+  text-emphasis-position: under right;
+  text-emphasis-color: var(--color-clay);
+}
+
+:root #main-content .docblock :not(pre) > code {
+  padding: 0.14em 0.42em;
+  border-radius: 5px;
+  background: var(--color-ink-1);
+  color: var(--color-fg);
+  font-family: var(--font-mono);
+  font-size: 0.84em;
+}
+
+:root #main-content .docblock a > code {
+  color: inherit;
+}
+
+/* ---- 引用 ---- */
+:root #main-content .docblock blockquote {
+  margin: 0 0 1.2em;
+  padding: 0.1em 0 0.1em 1.1em;
+  border: 0;
+  box-shadow: inset 2px 0 0 var(--color-clay);
+  color: var(--color-fg-2);
+  font-family: var(--font-serif);
+}
+
+/* ---- 列表 ---- */
+:root #main-content .docblock :is(ul, ol) {
+  margin: 0 0 1em;
+  padding-left: 1.4em;
+}
+
+:root #main-content .docblock li + li {
+  margin-top: 0.25em;
+}
+
+:root #main-content .docblock li::marker {
+  color: var(--color-fg-3);
+}
+
+/* ---- 表格 ---- */
+:root #main-content .docblock table {
+  border-collapse: separate;
+  border-spacing: 0;
+  border-radius: 10px;
+  box-shadow: 0 0 0 var(--hairline) var(--color-hairline);
+  font-size: 0.875em;
+}
+
+:root #main-content .docblock th {
+  background: var(--color-surface-1);
+  color: var(--color-fg-3);
+  font-weight: 500;
+}
+
+:root #main-content .docblock :is(th, td) {
+  padding: 0.6em 0.9em;
+  border: 0;
+  border-bottom: var(--hairline) solid var(--color-hairline);
+}
+
+/* ---- 代码块 ---- */
+:root #main-content .docblock .example-wrap > pre {
+  padding: 1em 1.15em;
+  border-radius: var(--radius-code);
+  background: var(--color-surface-1);
+  box-shadow: inset 0 0 0 var(--hairline) var(--color-hairline);
+  font-size: 0.82em;
+  line-height: 1.75;
+}
+
+/* ---- 警告块 ---- */
+:root #main-content .docblock > .warning {
+  padding: 0.75rem 1rem;
+  border: 0;
+  border-radius: 10px;
+  background: var(--color-warning-soft);
+  color: var(--color-fg-body);
+}

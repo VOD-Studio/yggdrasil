@@ -1,0 +1,158 @@
+/* 搜索框、结果页、设置/帮助弹层。 */
+
+/* 搜索框：与首页搜索框同款胶囊。 */
+:root:is([data-theme="light"], [data-theme="dark"], :not([data-theme]))
+  .search-input {
+  border: 0;
+  border-radius: var(--radius-composer);
+  padding: 8px 16px;
+  background-color: var(--color-surface-2);
+  box-shadow:
+    0 0 0 var(--hairline) var(--color-ink-3),
+    var(--shadow-composer);
+}
+
+:root:is([data-theme="light"], [data-theme="dark"], :not([data-theme]))
+  .search-input:focus {
+  box-shadow: var(--shadow-focus);
+}
+
+/* 页签 */
+:root body.rustdoc #search-tabs {
+  display: inline-flex;
+  gap: 0;
+  margin: 1rem 0;
+  padding: 2px;
+  border-radius: 999px;
+  background: var(--color-ink-1);
+}
+
+:root body.rustdoc #search-tabs > button {
+  height: 2rem;
+  margin: 0;
+  padding: 0 0.875rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-fg-2);
+  font-family: var(--font-sans);
+  font-size: 0.8125rem;
+}
+
+:root body.rustdoc #search-tabs > button.selected {
+  background: var(--color-surface-2);
+  color: var(--color-fg);
+  font-weight: 500;
+  box-shadow:
+    0 0 0 var(--hairline) var(--color-hairline),
+    var(--shadow-sm);
+}
+
+:root.dark body.rustdoc #search-tabs > button.selected {
+  background: var(--color-surface-3);
+}
+
+:root body.rustdoc #search-tabs > button .count {
+  color: var(--color-fg-3);
+}
+
+/* 结果行 */
+:root body.rustdoc .search-results > a {
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr);
+  column-gap: 1rem;
+  row-gap: 0.125rem;
+  padding: 0.625rem 0.75rem;
+  border: 0;
+  border-radius: 8px;
+}
+
+:root body.rustdoc .search-results > a .result-name {
+  display: contents;
+}
+
+:root body.rustdoc .search-results > a .typename {
+  grid-column: 1;
+  grid-row: 1;
+  color: var(--color-fg-3);
+  font-size: 0.75rem;
+}
+
+:root body.rustdoc .search-results > a .path {
+  grid-column: 2;
+  grid-row: 1;
+  color: var(--color-fg-3);
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+}
+
+:root body.rustdoc .search-results > a .path > span:last-child {
+  color: var(--color-fg);
+  font-weight: 600;
+}
+
+:root body.rustdoc .search-results > a .desc {
+  grid-column: 2;
+  grid-row: 2;
+  margin: 0;
+  padding: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  color: var(--color-fg-2);
+  font-size: 0.8125rem;
+}
+
+:root body.rustdoc .search-results > a:is(:hover, :focus) {
+  background: var(--color-ink-1);
+  box-shadow: inset 2px 0 0 var(--color-clay);
+  outline: none;
+}
+
+/* 切换器 */
+:root body.rustdoc .search-switcher {
+  color: var(--color-fg-3);
+  font-size: 0.8125rem;
+}
+
+:root body.rustdoc #crate-search {
+  border: 0;
+  border-radius: 8px;
+  box-shadow: 0 0 0 var(--hairline) var(--color-hairline);
+}
+
+/* 弹层：设置与帮助。主题与侧栏相关设置由顶栏接管，故隐藏。 */
+:root .popover {
+  border: 0;
+  border-radius: var(--radius-dialog);
+  padding: 1rem;
+  background: var(--color-popover);
+  box-shadow: var(--shadow-popover);
+}
+
+:root #settings input {
+  accent-color: var(--color-clay-fill);
+}
+
+:root #settings :is(#theme, #preferred-light-theme, #preferred-dark-theme),
+:root
+  #settings
+  .setting-line:has(
+    :is(#hide-sidebar, #hide-toc, #hide-modnav, #sans-serif-fonts)
+  ) {
+  display: none;
+}
+
+/* 页签文字不换行（「返回类型」在窄容器里会折成两行）。 */
+:root body.rustdoc #search-tabs {
+  flex-wrap: nowrap;
+  width: max-content;
+  max-width: 100%;
+}
+
+:root body.rustdoc #search-tabs > button {
+  flex: none;
+  white-space: nowrap;
+}

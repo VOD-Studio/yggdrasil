@@ -290,13 +290,19 @@ fix: ## cargo fix + Biome format + cargo fmt（写入文件）
 # 只编译当前 crate 的文档（--no-deps 跳过依赖，--document-private-items
 # 让纯 binary crate 的内部模块/私有项也进文档，否则页面基本是空的）。
 #
-# 站点同款主题：源文件在 rustdoc-theme/。theme.css 经 Tailwind 编译后用
-# rustdoc -e 注入（落到文档根 theme.css），in-header.html 经 --html-in-header
-# 加载 theme-sync.js。不再设默认主题，由 theme-sync.js 同步博客主题
-# （localStorage['yggdrasil-theme']）；ayu 保留为可选的原版主题。
-# cargo 缓存不跟踪 -e 指向文件的内容，所以生成后再把 theme.css 和
-# theme-sync.js 复制一次到 target/doc。DOC_OUT 供 Dockerfile 指定输出目录。
-# 用绝对路径，避免依赖 rustdoc 运行时的 cwd。
+# 站点化主题：源文件在 rustdoc-theme/。
+#   - theme.css（只放 import，模块在 css/）经 Tailwind 编译后用 rustdoc -e 注入
+#     （落到文档根 theme.css）。
+#   - 三个 HTML 片段：in-header.html（<head> 末尾，加载 doc-boot.js 同步主题）、
+#     before-content.html（站点顶栏）、after-content.html（页脚、手机抽屉、
+#     doc-shell.js）。rustdoc 的 --html-* 不改 rustdoc 自身的 HTML。
+#   - 两个 JS：doc-boot.js 不打包直接拷贝；js/index.js 由 bun 打成 IIFE
+#     （页面里是 /doc/doc-shell.js）。
+# 片段按内容 cksum 命名目录（DOC_FRAGMENT_DIR）：片段一变，RUSTDOCFLAGS 就变，
+# cargo 会重新生成 HTML。而 cargo 不跟踪 -e 指向文件的内容，所以生成后再把
+# theme.css 和两个 JS 复制一次到 target/doc。不设默认主题：主题只由站点顶栏
+# 三档（浅色/深色/跟随系统）切换，由 doc-boot.js 写入 rustdoc 的存储键，不再提供 ayu。
+# DOC_OUT 供 Dockerfile 指定输出目录。用绝对路径，避免依赖 rustdoc 运行时的 cwd。
 #
 # 生成后拷贝到 public/doc/，让文档随 Dioxus 静态目录发布。先清空旧目录再
 # 整体拷贝，避免删除模块后残留旧文件。rustdoc 内部用相对路径引用资源
@@ -309,14 +315,23 @@ fix: ## cargo fix + Biome format + cargo fmt（写入文件）
 # /doc/* 路由冲突（手动注册 /doc 会在 merge 时 panic）。
 DOC_OUT ?= public/doc
 DOC_THEME_CSS := target/rustdoc-theme.css
-DOC_RUSTDOCFLAGS = -e $(CURDIR)/$(DOC_THEME_CSS) --html-in-header $(CURDIR)/rustdoc-theme/in-header.html
+DOC_SHELL_JS := target/rustdoc-doc-shell.js
+DOC_FRAGMENTS := rustdoc-theme/in-header.html rustdoc-theme/before-content.html rustdoc-theme/after-content.html
+DOC_FRAGMENT_DIR = target/rustdoc-fragments/$(shell cat $(DOC_FRAGMENTS) | cksum | cut -d ' ' -f 1)
+DOC_RUSTDOCFLAGS = -e $(CURDIR)/$(DOC_THEME_CSS) \
+	--html-in-header $(CURDIR)/$(DOC_FRAGMENT_DIR)/in-header.html \
+	--html-before-content $(CURDIR)/$(DOC_FRAGMENT_DIR)/before-content.html \
+	--html-after-content $(CURDIR)/$(DOC_FRAGMENT_DIR)/after-content.html
 
 doc: ## 生成 rustdoc（站点同款主题）到 public/doc/
-	@mkdir -p target
+	@mkdir -p target $(DOC_FRAGMENT_DIR)
+	@cp $(DOC_FRAGMENTS) $(DOC_FRAGMENT_DIR)/
 	@tailwindcss -i rustdoc-theme/theme.css -o $(DOC_THEME_CSS) --minify
+	@bun build rustdoc-theme/js/index.js --outfile $(DOC_SHELL_JS) --format=iife --target=browser --minify
 	@RUSTDOCFLAGS="$(DOC_RUSTDOCFLAGS)" cargo doc --no-deps --document-private-items
 	@cp $(DOC_THEME_CSS) target/doc/theme.css
-	@cp rustdoc-theme/theme-sync.js target/doc/theme-sync.js
+	@cp rustdoc-theme/doc-boot.js target/doc/doc-boot.js
+	@cp $(DOC_SHELL_JS) target/doc/doc-shell.js
 	@rm -rf $(DOC_OUT)
 	@cp -r target/doc $(DOC_OUT)
 	@printf '<!DOCTYPE html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=yggdrasil/index.html"><title>Redirecting…</title></head><body><script>location.replace("yggdrasil/index.html")</script></body></html>' > $(DOC_OUT)/index.html

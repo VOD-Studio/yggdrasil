@@ -22,6 +22,9 @@
 //! `styles/` 中的 `--color-surface-1` 变量提供（亮色浅、暗色深），
 //! 避免 `.code` span 与外层 `pre` 双层背景叠加导致的边缘色差。
 
+// rustdoc 输出站点图标，/favicon.svg 由 router 提供。
+#![doc(html_favicon_url = "/favicon.svg")]
+
 use syntect::highlighting::ThemeSet;
 use syntect::html::{css_for_theme_with_class_style, ClassStyle};
 

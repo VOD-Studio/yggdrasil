@@ -1,0 +1,73 @@
+/* 右栏「本页」目录：结构由 js/toc.js 生成，样式来自 styles/components/toc.css。 */
+
+/* scroll-spy 只在标题进入顶部探测带（视口顶 80px 到 30%）时切换。末尾几节很短时页面滚不到
+   那么靠下，目录就不会跟到最后几项，所以有目录的页面在正文后留出 70dvh 的滚动余量。 */
+:root body.rustdoc > main:has(.post-layout) {
+  padding-bottom: 70dvh;
+}
+
+@media (min-width: 1100px) {
+  :root body.rustdoc .width-limiter.post-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 13.75rem;
+    column-gap: 3rem;
+    align-items: start;
+    max-width: none;
+  }
+
+  /* 搜索时目录被隐藏，别再给它留一列。 */
+  :root body.rustdoc .width-limiter.post-layout:has(> #main-content.hidden) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  :root .width-limiter.post-layout > :is(#main-content, #alternative-display) {
+    grid-column: 1;
+  }
+
+  :root .width-limiter.post-layout > .post-toc {
+    grid-column: 2;
+    grid-row: 1;
+    margin-top: 0;
+  }
+}
+
+/* 搜索时隐藏目录和悬浮条。 */
+:root .width-limiter:has(> #main-content.hidden) > .post-toc {
+  display: none;
+}
+
+@layer doc {
+  .toc-sidebar-close {
+    place-items: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    padding: 0;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--color-fg-3);
+    cursor: pointer;
+    transition:
+      background-color 150ms,
+      color 150ms;
+  }
+
+  .toc-sidebar-close:hover {
+    background: var(--color-ink-1);
+    color: var(--color-fg);
+  }
+
+  .toc-sidebar-close:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
+  }
+}
+
+@layer doc {
+  /* 抽屉形态（<1100px）才显示关闭按钮；右栏吸顶形态由 styles/components/toc.css 隐藏它。 */
+  @media (max-width: 1099.98px) {
+    .toc-sidebar-close {
+      display: inline-grid;
+    }
+  }
+}

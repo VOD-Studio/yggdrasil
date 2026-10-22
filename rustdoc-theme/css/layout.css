@@ -1,0 +1,119 @@
+/* 页面网格：顶栏 / 左栏 / 正文 / 页脚。规则面向 rustdoc 元素，不进 layer。 */
+:root body.rustdoc {
+  --doc-sidebar-width: 15rem;
+  --doc-main-max: 64rem;
+}
+
+:root [id] {
+  scroll-margin-top: calc(var(--site-header-height) + 1rem);
+}
+
+:root body.rustdoc .width-limiter {
+  max-width: 46rem;
+  margin: 0;
+}
+
+@media (min-width: 701px) {
+  :root body.rustdoc {
+    display: grid;
+    grid-template-columns:
+      minmax(1.5rem, 1fr) var(--doc-sidebar-width) minmax(0, var(--doc-main-max))
+      minmax(1.5rem, 1fr);
+    grid-template-rows: auto 1fr auto;
+    grid-template-areas:
+      "header header header header"
+      ". sidebar main ."
+      "footer footer footer footer";
+    min-height: 100dvh;
+  }
+
+  :root body.rustdoc > .site-header {
+    grid-area: header;
+  }
+
+  :root body.rustdoc > nav.sidebar {
+    grid-area: sidebar;
+    position: sticky;
+    top: var(--site-header-height);
+    height: calc(100dvh - var(--site-header-height));
+    width: auto;
+    border-right: 0;
+    background: transparent;
+    padding: 2rem 1.25rem 2rem 0;
+    overflow-y: auto;
+  }
+
+  :root body.rustdoc > main {
+    grid-area: main;
+    padding: 2.5rem 0 4rem 3rem;
+  }
+
+  :root body.rustdoc > .site-footer {
+    grid-area: footer;
+  }
+
+  :root body.rustdoc > :is(.sidebar-resizer, rustdoc-topbar) {
+    display: none;
+  }
+
+  /* 源码页：左栏是文件树，默认收起。 */
+  :root body.rustdoc.src {
+    grid-template-columns:
+      minmax(1.5rem, 1fr) auto minmax(0, 79rem)
+      minmax(1.5rem, 1fr);
+  }
+
+  :root html:not(.src-sidebar-expanded) .src .sidebar {
+    display: none;
+  }
+
+  :root html.src-sidebar-expanded .src .sidebar {
+    width: 17.5rem;
+  }
+
+  :root html.src-sidebar-expanded body.rustdoc.src > main {
+    padding-left: 2rem;
+  }
+
+  :root html:not(.src-sidebar-expanded) body.rustdoc.src > main {
+    padding-left: 0;
+  }
+}
+
+@media (max-width: 700px) {
+  :root html {
+    --topbar-height: var(--site-header-height);
+  }
+
+  :root body.rustdoc {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "header" "main" "footer";
+    grid-template-rows: auto 1fr auto;
+    min-height: 100dvh;
+  }
+
+  :root body.rustdoc > .site-header {
+    grid-area: header;
+  }
+
+  :root body.rustdoc > main {
+    grid-area: main;
+    padding: 1.5rem 1rem 3rem;
+  }
+
+  :root body.rustdoc > .site-footer {
+    grid-area: footer;
+  }
+
+  /* 侧栏保持 rustdoc 的固定抽屉形态，只改外观；顶栏被站点顶栏取代。 */
+  :root body.rustdoc > rustdoc-topbar {
+    display: none;
+  }
+
+  :root body.rustdoc > nav.sidebar {
+    top: var(--site-header-height);
+    background: var(--color-surface-0);
+    padding: 1.25rem 1rem;
+  }
+}

@@ -11,6 +11,8 @@
 // 不可达项从 wasm 产物中剔除，本 allow 只压掉 lint 噪音。
 // full 构建与默认构建不受影响，死代码告警照常生效。
 #![cfg_attr(ygg_client_reader, allow(dead_code))]
+// rustdoc 输出站点图标，/favicon.svg 由 router 提供。
+#![doc(html_favicon_url = "/favicon.svg")]
 
 // 全局内存分配器：mimalloc。
 // 多线程高频小对象分配场景下吞吐显著优于系统 malloc，且对全静态 musl 链接友好。
