@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-10-23
+
+v1.0 全站重设计：陶土橙单一品牌色、系统字体与衬线标题、Lucide 图标、弹簧动效与暖调代码配色，前台与后台全部页面按新设计重写。
+
 ### Security
 
 - **数据导出只读校验**：`/api/database/export` 的 `query:` 来源拒绝 `EXPLAIN ANALYZE`（含 `EXPLAIN (ANALYZE)` 写法）、data-modifying CTE、`SELECT INTO` 与行锁子句；SQL 格式导出放进只读事务执行。此前一次跨站 GET 即可让管理员浏览器执行任意 DML。SQL 控制台的读写分类改用同一判定，这类语句改走写路径（受 WHERE 护栏约束并触发缓存失效）。
@@ -16,9 +20,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **头像路径校验**：个人资料头像与友链头像共用同一安全谓词，拒绝 `..`、空路径、双斜杠与 NUL。
 - **URL 抓取 SSRF**：NAT64（`64:ff9b::/96`、`64:ff9b:1::/48`）与 6to4（`2002::/16`）内嵌的 IPv4 按 IPv4 规则校验，Teredo（`2001::/32`）直接拒绝。
 
+### Added
+
+- **⌘K 面板**：前台搜索（文章建议接口、最近搜索、范围标签）与后台命令面板。
+- **首页书桌**：最新一篇目录预览、按月索引、可配置标语。
+- **笔记阅读上下文**：笔记本目录、上一篇/下一篇、`?book=`，以及笔记本目录页。
+- **分享图与网站图标**：`/og/site.png`、`/og/post/{slug}.png`，明暗 SVG 图标与 manifest。
+- **细节补全**：404 推荐文章、交换友链信息、关于页统计、仪表盘发布节奏、侧栏数量、回收站剩余天数、设置统一保存条、笔记版本面板、密码强度条、新建文章起步模板、草稿预览宽度切换、灯箱缩略条与缩放档位、MCP 令牌接入配置。
+- **组件原语**：`SegmentedControl`（窄宽只留图标）与 `Composer` 输入栏族（`Composer`、`ComposerInput`、`ComposerSend`），组件图鉴同步收录。
+
 ### Changed
 
 - **MCP 限流进后台**：MCP 请求与 MCP 传图两组按令牌计的限流并入「后台设置 → 接口限流」，修改后重启生效。`RATE_LIMIT_MCP_PER_SEC` / `_BURST` / `RATE_LIMIT_MCP_UPLOAD_PER_SEC` / `_BURST` 改为仅在对应设置键不存在时首启播种，与其他 `RATE_LIMIT_*` 一致；已部署实例升级后首次启动会把当前环境变量值写入数据库，之后不再被环境变量覆盖。
+- **全站重设计**：设计 token、系统字体栈、深色模式重新调色、页面转场改用 snappy 弹簧与 out-expo 曲线。
+- **后台改为桌面应用式外壳**：可折叠、可拖宽的侧栏，面包屑，表格发丝线分隔。
+- **发丝线**：2 倍及以上高分屏为 0.5px，其余为 1px（`--hairline`）。
+- **搜索面板**：关闭时 120ms 淡出，手机全屏时输入框旁为「取消」。
+- **后台失败提示**：改为可读文案，不再拼接 server function 原始错误。
+
+### Removed
+
+- Catppuccin 主题、`paper-*` 样式与桥接层、线条小狗插画、Material 图标、`PostCard`、`FilterTabs`（由 `SegmentedControl` 取代）、`SproutPlaceholder`（更名为 `ImagePlaceholder`）。
 
 ### Fixed
 
