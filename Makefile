@@ -150,6 +150,14 @@ build-linux: check-build-tools ## 构建 Linux x86_64 musl 服务端 + 双客户
 	@echo "(contains full index.html, flavors/reader/index.html and release-manifest.json)."
 	@echo "When running the server, ensure DIOXUS_ASSET_DIR is set or the public directory is in CWD."
 
+# full 客户端（不产服务端）：build-linux 与 Dockerfile / Dockerfile.cross 的服务端
+# 由各自后续步骤按目标三元组单独构建。注意不要删 recipe 而 .PHONY 留名——make
+# 会静默跳过无 recipe 的 phony 目标（"Nothing to be done"），直到 snapshot-flavor
+# 才报 public 缺失（P3b 2057bc3 的 CI 事故）。
+build-client: check-wasm-toolchain ## 构建 full 客户端
+	@$(DX_NIGHTLY) build @client --release --debug-symbols=false --wasm-js-cfg false \
+		--cargo-args='$(WASM_CARGO_ARGS)'
+
 # full 客户端 + 服务端（宿主架构）：沿用原 make build 的组合命令形态——
 # dx 的 @server 选择器同样会刷新 wasm 半边，而服务端单独构建时拿不到
 # -Zbuild-std（wasm std 的 panic 策略与 immediate-abort 不匹配会报错），
