@@ -7,18 +7,18 @@
 
 ## 0. 基线（实测通过项）
 
-| 检查 | 命令 | 结果 |
-|---|---|---|
-| Clippy | `cargo clippy --all-features --all-targets --locked -- -D warnings` | exit 0，0 warning（无 `[lints]` / crate 级 `allow` 屏蔽） |
-| 格式 | `cargo fmt --all -- --check` | 0 diff |
-| 前端 lint / 类型 | `bun run lint`、`bun run typecheck`（`libs/`） | Biome 141 文件通过；7 个包 tsc 通过 |
-| Rust 测试 | `cargo test --locked --all-features` | 992 通过，11 ignored，0 失败 |
-| 前端测试 | `bun run test`（`libs/`） | 全包通过（core 189 / tiptap 203 / lightbox 109 …） |
-| 遗留标记 | `grep -rn "TODO\|FIXME\|XXX\|todo!\|unimplemented!" src` | 0 |
-| panic 面 | 非测试路径 `unwrap/expect` 146 处 / 87k 行 | 抽查均为 LazyLock 正则、`NonZeroU32` 不变量、静态 HeaderValue 等有注释的不可失败点 |
-| 依赖卫生 | 逐个 direct/optional dep 在 `src/**` + `build.rs` grep | 0 个未引用 crate；重名 crate（`fancy-regex`、`moka`+`dashmap`、`zenwebp`+`image`、`resvg`+`skrifa`）均为有意选择 |
-| 分层 | `grep "use crate::db::" src/pages src/components` | 0 处；`mcp` 复用 `api`，无反向依赖 |
-| 迁移 | `migrations/*.sql` vs `src/db/migrate.rs` `MIGRATIONS` | 29 个全部注册、升序、无重复，另有 3 条测试守护 |
+| 检查             | 命令                                                                | 结果                                                                                                             |
+| ---------------- | ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Clippy           | `cargo clippy --all-features --all-targets --locked -- -D warnings` | exit 0，0 warning（无 `[lints]` / crate 级 `allow` 屏蔽）                                                        |
+| 格式             | `cargo fmt --all -- --check`                                        | 0 diff                                                                                                           |
+| 前端 lint / 类型 | `bun run lint`、`bun run typecheck`（`libs/`）                      | Biome 141 文件通过；7 个包 tsc 通过                                                                              |
+| Rust 测试        | `cargo test --locked --all-features`                                | 992 通过，11 ignored，0 失败                                                                                     |
+| 前端测试         | `bun run test`（`libs/`）                                           | 全包通过（core 189 / tiptap 203 / lightbox 109 …）                                                               |
+| 遗留标记         | `grep -rn "TODO\|FIXME\|XXX\|todo!\|unimplemented!" src`            | 0                                                                                                                |
+| panic 面         | 非测试路径 `unwrap/expect` 146 处 / 87k 行                          | 抽查均为 LazyLock 正则、`NonZeroU32` 不变量、静态 HeaderValue 等有注释的不可失败点                               |
+| 依赖卫生         | 逐个 direct/optional dep 在 `src/**` + `build.rs` grep              | 0 个未引用 crate；重名 crate（`fancy-regex`、`moka`+`dashmap`、`zenwebp`+`image`、`resvg`+`skrifa`）均为有意选择 |
+| 分层             | `grep "use crate::db::" src/pages src/components`                   | 0 处；`mcp` 复用 `api`，无反向依赖                                                                               |
+| 迁移             | `migrations/*.sql` vs `src/db/migrate.rs` `MIGRATIONS`              | 29 个全部注册、升序、无重复，另有 3 条测试守护                                                                   |
 
 结论：底子好于同规模项目，问题集中在**授权/只读判定的边界条件**、**复制粘贴样板**、**自证式测试**三类。
 
@@ -66,32 +66,32 @@
 
 ## 2. 性能与一致性（中优先）
 
-| 位置 | 问题 |
-|---|---|
-| `src/api/markdown.rs:50-414` | `render_markdown_enhanced` 单函数 365 行、约 7 项职责（两步事件收集、TOC、标题/代码块/数学/脚注分支、runnable fence 的 `data-*`、mermaid 特例、表格 flush、后处理）。建议拆 `MarkdownRenderer` 结构体，runnable fence 移入 `code_runner` |
-| `src/api/sanitizer.rs:227-268` | `sanitize()` 每次调用重建 `HashSet<&str>` + 18 项 tag→attrs `HashMap`；该路径是 markdown/评论渲染热路径。基表应提为 `static LazyLock<...>`，仅每次合并 `extra_tag_attrs` |
-| `src/api/posts/trash.rs:139,224` | `batch_restore_posts` / `batch_purge_posts` 在事务内逐 id 调用 `fetch_post_tags`（最多 50 次往返）；`helpers::fetch_post_tags_batch`（`posts/helpers.rs:226`）已存在且被 `empty_trash`（`trash.rs:296`）使用 |
-| `src/mcp/tools/tags.rs:59,115` | `create_tag` / `rename_tag` 只 `invalidate_all_tags()`，漏 `POST_LIST_CACHE` / `TAG_POSTS_CACHE` 与 SSR 层；对照 `cache.rs:820-832` 的 `invalidate_for_post_write`。改标签名后 `/archives` 与标签页最长 60/120s 仍出旧 HTML |
-| `src/api/image.rs:828-842`（调用点 `src/components/post/post_cover.rs:29`） | 同步 `std::fs` 读在 SSR 渲染任务内直接调用；其他 markdown 调用点都包了 `spawn_blocking`（`posts/helpers.rs:331`、`comments/create.rs:184`） |
-| `src/cache.rs:874-876` | `normalize_search_key` 截断到 200 字符，长查询前缀相同即串缓存（低频，注明即可） |
-| `src/api/auth.rs:30-33`、`src/api/comments/helpers.rs:145-152,189-195` | 用字节长度校验却报"字符"：纯中文昵称实际只允许 ~16 字符，提示写 50。`friends.rs:238-242`、`profile.rs:87-90`、`notes/store.rs:321,510` 用的是 `chars().count()`，应统一 |
-| `src/api/posts/service.rs:193-197` | 两处 `expect()` 依赖非局部不变量（`replacement()` 总填 content/status），release 下 `panic=abort` 会整进程退出；应让 `replacement()` 一并返回已校验字段 |
+| 位置                                                                        | 问题                                                                                                                                                                                                                                     |
+| --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/api/markdown.rs:50-414`                                                | `render_markdown_enhanced` 单函数 365 行、约 7 项职责（两步事件收集、TOC、标题/代码块/数学/脚注分支、runnable fence 的 `data-*`、mermaid 特例、表格 flush、后处理）。建议拆 `MarkdownRenderer` 结构体，runnable fence 移入 `code_runner` |
+| `src/api/sanitizer.rs:227-268`                                              | `sanitize()` 每次调用重建 `HashSet<&str>` + 18 项 tag→attrs `HashMap`；该路径是 markdown/评论渲染热路径。基表应提为 `static LazyLock<...>`，仅每次合并 `extra_tag_attrs`                                                                 |
+| `src/api/posts/trash.rs:139,224`                                            | `batch_restore_posts` / `batch_purge_posts` 在事务内逐 id 调用 `fetch_post_tags`（最多 50 次往返）；`helpers::fetch_post_tags_batch`（`posts/helpers.rs:226`）已存在且被 `empty_trash`（`trash.rs:296`）使用                             |
+| `src/mcp/tools/tags.rs:59,115`                                              | `create_tag` / `rename_tag` 只 `invalidate_all_tags()`，漏 `POST_LIST_CACHE` / `TAG_POSTS_CACHE` 与 SSR 层；对照 `cache.rs:820-832` 的 `invalidate_for_post_write`。改标签名后 `/archives` 与标签页最长 60/120s 仍出旧 HTML              |
+| `src/api/image.rs:828-842`（调用点 `src/components/post/post_cover.rs:29`） | 同步 `std::fs` 读在 SSR 渲染任务内直接调用；其他 markdown 调用点都包了 `spawn_blocking`（`posts/helpers.rs:331`、`comments/create.rs:184`）                                                                                              |
+| `src/cache.rs:874-876`                                                      | `normalize_search_key` 截断到 200 字符，长查询前缀相同即串缓存（低频，注明即可）                                                                                                                                                         |
+| `src/api/auth.rs:30-33`、`src/api/comments/helpers.rs:145-152,189-195`      | 用字节长度校验却报"字符"：纯中文昵称实际只允许 ~16 字符，提示写 50。`friends.rs:238-242`、`profile.rs:87-90`、`notes/store.rs:321,510` 用的是 `chars().count()`，应统一                                                                  |
+| `src/api/posts/service.rs:193-197`                                          | 两处 `expect()` 依赖非局部不变量（`replacement()` 总填 content/status），release 下 `panic=abort` 会整进程退出；应让 `replacement()` 一并返回已校验字段                                                                                  |
 
 ## 3. 冗余与死代码（可安全清理）
 
-| 项 | 证据 | 规模 |
-|---|---|---|
-| admin 前置校验（cookie→session→role→401/403） | `api/database/export.rs:32-49` 与 `api/logs/sse.rs:41-56` 字节级相同（后者注释自承"镜像 export.rs"）；另 `database/backup/transfer.rs:64-79,229-244`、`api/upload.rs:84-102`、`api/notes/attachments.rs:12-16` | 6 份 |
-| `INSERT INTO settings … ON CONFLICT (key) DO UPDATE` | `api/settings/{asset_purge.rs:112,backup.rs:115,238,image_cache.rs:158,image_limit.rs:150,rate_limit.rs:366,runner.rs:269,security.rs:201,site.rs:136,trash.rs:56,65,upload.rs:83,webp.rs:119}` + `api/logs/mod.rs:336`；`settings/mod.rs:68-72` 已有批量 `UNNEST` 版本 | 15 处 |
-| 手写转义 | `api/feed.rs:51`、`og/mod.rs:410` vs 权威 `utils/html.rs:16`（该模块注释自称"已统一两份 `escape_html`"） | 3 份 |
-| `slugify`（拼音 + 连字符合并） | `api/markdown.rs:570` 与 `api/slug.rs:24`，单测亦成对重复（`markdown.rs:899-933` ≈ `slug.rs:162-262`） | 2 份 |
-| `group_digits` 逐字相同 | `components/post/post_meta.rs:33`（已 `pub(crate)`，被 `pages/admin/write/metadata.rs:3` 复用）与 `pages/home.rs:526` | 2 份 |
-| `is_simple_ident`（**语义不同**：export 版接受 `9db`） | `db/pool.rs:354`（要求首字符 `[A-Za-z_]`）vs `api/database/export.rs:109`；两套单测 | 2 份 |
-| `compute_content_hash` 内联 sha256 | `api/comments/helpers.rs:217-231` vs `utils/server.rs:12 sha256_hex` | — |
-| 仅 showcase 可达的组件 | `ui/controls.rs:159 LoadingButton`、`:230 Radio`、`ui/surfaces.rs:44 Popover`、`ui/display.rs:15 StatusBadge`、`forms.rs:814 FormLabel` 只被 `components_showcase.rs` 引用；`skeletons/atoms.rs:38 SkeletonCard`、`pages/notes.rs:1018 NotesSkeleton` 零引用 | 7 个 |
-| 死常量 / 死导出 | `forms.rs:14 TEXTAREA_CLASS`（全仓 1 命中=定义行）、`libs/shared/src/index.ts:122,139 MERMAID_{LIGHT,DARK}_VARS`、`styles/pages/reading-responsive.css:2 @keyframes fadeIn`、`libs/music-player/`（空目录，不在 `mk/assets.mk:54 DEV_LIBS`） | 4 项 |
-| 陈旧 `#[allow(dead_code)]` | `ui/feedback.rs:82,87,119` 注释"随页面重写逐步启用"，实际 `use_toast()` 在 23 个文件使用；`ui/styles.rs:14 BADGE_BASE` 被 `display.rs:3,17` 使用；`models/mod.rs:18` 的 `mcp_token` 被 13 文件引用 | 5 处 |
-| 单用户常量 | `ui/styles.rs:24 BTN_SECONDARY` 仅 `empty_state.rs:34` 使用；另有 ~18 处硬编码 `"btn btn-*"` 绕过 `ui/controls.rs:67 button_class()` | — |
+| 项                                                     | 证据                                                                                                                                                                                                                                                                    | 规模  |
+| ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- |
+| admin 前置校验（cookie→session→role→401/403）          | `api/database/export.rs:32-49` 与 `api/logs/sse.rs:41-56` 字节级相同（后者注释自承"镜像 export.rs"）；另 `database/backup/transfer.rs:64-79,229-244`、`api/upload.rs:84-102`、`api/notes/attachments.rs:12-16`                                                          | 6 份  |
+| `INSERT INTO settings … ON CONFLICT (key) DO UPDATE`   | `api/settings/{asset_purge.rs:112,backup.rs:115,238,image_cache.rs:158,image_limit.rs:150,rate_limit.rs:366,runner.rs:269,security.rs:201,site.rs:136,trash.rs:56,65,upload.rs:83,webp.rs:119}` + `api/logs/mod.rs:336`；`settings/mod.rs:68-72` 已有批量 `UNNEST` 版本 | 15 处 |
+| 手写转义                                               | `api/feed.rs:51`、`og/mod.rs:410` vs 权威 `utils/html.rs:16`（该模块注释自称"已统一两份 `escape_html`"）                                                                                                                                                                | 3 份  |
+| `slugify`（拼音 + 连字符合并）                         | `api/markdown.rs:570` 与 `api/slug.rs:24`，单测亦成对重复（`markdown.rs:899-933` ≈ `slug.rs:162-262`）                                                                                                                                                                  | 2 份  |
+| `group_digits` 逐字相同                                | `components/post/post_meta.rs:33`（已 `pub(crate)`，被 `pages/admin/write/metadata.rs:3` 复用）与 `pages/home.rs:526`                                                                                                                                                   | 2 份  |
+| `is_simple_ident`（**语义不同**：export 版接受 `9db`） | `db/pool.rs:354`（要求首字符 `[A-Za-z_]`）vs `api/database/export.rs:109`；两套单测                                                                                                                                                                                     | 2 份  |
+| `compute_content_hash` 内联 sha256                     | `api/comments/helpers.rs:217-231` vs `utils/server.rs:12 sha256_hex`                                                                                                                                                                                                    | —     |
+| 仅 showcase 可达的组件                                 | `ui/controls.rs:159 LoadingButton`、`:230 Radio`、`ui/surfaces.rs:44 Popover`、`ui/display.rs:15 StatusBadge`、`forms.rs:814 FormLabel` 只被 `components_showcase.rs` 引用；`skeletons/atoms.rs:38 SkeletonCard`、`pages/notes.rs:1018 NotesSkeleton` 零引用            | 7 个  |
+| 死常量 / 死导出                                        | `forms.rs:14 TEXTAREA_CLASS`（全仓 1 命中=定义行）、`libs/shared/src/index.ts:122,139 MERMAID_{LIGHT,DARK}_VARS`、`styles/pages/reading-responsive.css:2 @keyframes fadeIn`、`libs/music-player/`（空目录，不在 `mk/assets.mk:54 DEV_LIBS`）                            | 4 项  |
+| 陈旧 `#[allow(dead_code)]`                             | `ui/feedback.rs:82,87,119` 注释"随页面重写逐步启用"，实际 `use_toast()` 在 23 个文件使用；`ui/styles.rs:14 BADGE_BASE` 被 `display.rs:3,17` 使用；`models/mod.rs:18` 的 `mcp_token` 被 13 文件引用                                                                      | 5 处  |
+| 单用户常量                                             | `ui/styles.rs:24 BTN_SECONDARY` 仅 `empty_state.rs:34` 使用；另有 ~18 处硬编码 `"btn btn-*"` 绕过 `ui/controls.rs:67 button_class()`                                                                                                                                    | —     |
 
 单路审计（未逐条复核）补充：
 
