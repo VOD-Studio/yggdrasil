@@ -812,7 +812,7 @@ fn ShellReplyButton(
         div { class: "mt-2",
             button {
                 r#type: "button",
-                class: "inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-md transition-all cursor-pointer",
+                class: "inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-md transition-colors cursor-pointer",
                 class: if is_active {
                     "text-clay-text bg-clay-text/10"
                 } else {

@@ -354,13 +354,13 @@ pub fn SearchPalette(#[props(default = true)] shortcut: bool) -> Element {
         }
     });
 
-    let mut close = move || {
-        // 下次打开从空白开始（显示最近搜索与跳转）。
-        if palette.close() {
+    let close = move || {
+        // 淡出结束后复位，下次打开从空白开始（显示最近搜索与跳转）。
+        palette.close(move || {
             scope.set(Scope::All);
             posts.set(Vec::new());
             posts_query.set(String::new());
-        }
+        });
     };
 
     let schedule_fetch = move || {
@@ -370,7 +370,7 @@ pub fn SearchPalette(#[props(default = true)] shortcut: bool) -> Element {
         })
     };
 
-    if !open() {
+    if !palette.visible() {
         return rsx! {};
     }
 

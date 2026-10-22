@@ -9,6 +9,8 @@ use crate::components::ui::{Icon, IconName};
 /// 输入防抖与进度点出现的延迟（毫秒）。
 const DEBOUNCE_MS: u32 = 150;
 const PROGRESS_DELAY_MS: u32 = 300;
+/// 关闭淡出时长（毫秒），与 `palette.css` 的 `palette-out` 时长一致。
+const EXIT_MS: u32 = 120;
 
 /// 打开 ⌘K 面板的句柄。前台布局挂搜索面板，后台布局挂命令面板（`admin_palette`），
 /// 两边的触发按钮与快捷键共用这个句柄。
@@ -200,6 +202,8 @@ pub(crate) struct PaletteState {
     show_progress: Signal<bool>,
     composing: Signal<bool>,
     seq: Signal<u64>,
+    /// 已关闭但仍在淡出：面板继续渲染，输入与结果保持原样，淡出结束后复位。
+    closing: Signal<bool>,
     /// DOM id 前缀：输入框 `{prefix}-input`、列表 `{prefix}-list`、选项 `{prefix}-opt-{i}`。
     id_prefix: &'static str,
     /// 打开前的焦点，关闭后还回去。
@@ -219,6 +223,7 @@ pub(crate) fn use_palette_state(id_prefix: &'static str) -> PaletteState {
         show_progress: use_signal(|| false),
         composing: use_signal(|| false),
         seq: use_signal(|| 0_u64),
+        closing: use_signal(|| false),
         id_prefix,
         #[cfg(target_arch = "wasm32")]
         previous_focus: use_signal(|| None::<web_sys::HtmlElement>),
@@ -228,6 +233,8 @@ pub(crate) fn use_palette_state(id_prefix: &'static str) -> PaletteState {
         if !(state.open)() {
             return;
         }
+        let mut closing = state.closing;
+        closing.set(false);
         #[cfg(target_arch = "wasm32")]
         {
             use wasm_bindgen::JsCast;
@@ -254,23 +261,38 @@ impl PaletteState {
         focus_by_id(&format!("{}-input", self.id_prefix));
     }
 
-    /// 关闭面板：丢弃未完成的请求与防抖，复位输入并把焦点还给打开前的元素。
-    /// 已关闭时返回 `false`；返回 `true` 时面板继续复位自己的状态。
-    pub(crate) fn close(mut self) -> bool {
+    /// 面板是否在屏上：打开，或正在淡出（关闭后保留 `EXIT_MS`，输入与结果原样不动）。
+    pub(crate) fn visible(self) -> bool {
+        (self.open)() || (self.closing)()
+    }
+
+    /// 关闭面板：丢弃未完成的请求与防抖，立即把焦点还给打开前的元素，面板淡出
+    /// `EXIT_MS` 后复位输入，并调用 `reset` 让调用方复位自己的状态。已关闭时什么都不做；
+    /// 淡出期间又被打开则保留上一次输入，不复位。
+    pub(crate) fn close(mut self, reset: impl FnOnce() + 'static) {
         if !*self.open.peek() {
-            return false;
+            return;
         }
         self.seq += 1;
         self.loading.set(false);
         self.show_progress.set(false);
-        self.query.set(String::new());
-        self.active.set(0);
         self.open.set(false);
+        self.closing.set(true);
         #[cfg(target_arch = "wasm32")]
         if let Some(el) = self.previous_focus.take() {
             let _ = el.focus();
         }
-        true
+        spawn(async move {
+            crate::utils::time::sleep_ms(EXIT_MS).await;
+            if *self.open.peek() {
+                return;
+            }
+            let mut state = self;
+            state.query.set(String::new());
+            state.active.set(0);
+            reset();
+            state.closing.set(false);
+        });
     }
 
     /// 防抖后请求远端结果。空查询直接清空；`fetch` 返回 `None`（失败或被限流）时
@@ -446,6 +468,7 @@ pub(crate) fn PaletteShell(
     let mut active = state.active;
     let mut composing = state.composing;
     let prefix = state.id_prefix;
+    let closing = !(state.open)();
 
     let q = query();
     let has_query = !q.trim().is_empty();
@@ -465,15 +488,19 @@ pub(crate) fn PaletteShell(
     };
 
     rsx! {
-        div { class: "palette-scrim", onclick: move |_| on_close.call(()) }
         div {
-            class: "palette",
+            class: if closing { "palette-scrim is-closing" } else { "palette-scrim" },
+            onclick: move |_| on_close.call(()),
+        }
+        div {
+            class: if closing { "palette is-closing" } else { "palette" },
             role: "dialog",
             aria_modal: "true",
             aria_label: label,
             // 复用弹窗的焦点锁定（Tab 只在面板内循环）。
             "data-ygg-modal-panel": "true",
-            "data-ygg-modal-open": "true",
+            "data-ygg-modal-open": if closing { "false" } else { "true" },
+            inert: closing.then_some("true"),
             onkeydown: move |e| {
                 if e.key() == Key::Tab {
                     #[cfg(target_arch = "wasm32")]
@@ -568,7 +595,8 @@ pub(crate) fn PaletteShell(
                     class: "palette-esc",
                     r#type: "button",
                     onclick: move |_| on_close.call(()),
-                    "Esc"
+                    span { class: "palette-esc-key", "Esc" }
+                    span { class: "palette-esc-cancel", "取消" }
                 }
             }
             {toolbar}

@@ -86,6 +86,22 @@
     box-shadow: var(--shadow-focus);
   }
 
+  .palette-esc-cancel {
+    display: none;
+  }
+
+  .palette-scrim.is-closing,
+  .palette.is-closing {
+    animation: palette-out 120ms var(--ease-out-expo) both;
+    pointer-events: none;
+  }
+
+  @keyframes palette-out {
+    to {
+      opacity: 0;
+    }
+  }
+
   /* 请求超过 300ms 才出现的细进度点。 */
   .palette-progress {
     display: inline-flex;
@@ -359,6 +375,23 @@
       height: 100dvh;
       max-height: none;
       border-radius: 0;
+    }
+
+    .palette-esc {
+      height: 2.75rem;
+      padding: 0 0.25rem;
+      background: transparent;
+      color: var(--color-clay-text);
+      font-family: inherit;
+      font-size: 0.9375rem;
+    }
+
+    .palette-esc-key {
+      display: none;
+    }
+
+    .palette-esc-cancel {
+      display: inline;
     }
 
     .palette-hints {

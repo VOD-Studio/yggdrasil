@@ -256,25 +256,24 @@ pub(crate) fn AdminPaletteView(
     on_activate: EventHandler<Item>,
 ) -> Element {
     let palette = use_palette_state("admin-palette");
-    let open = palette.open;
     let query = palette.query;
 
     let mut posts = use_signal(Vec::<PostListItem>::new);
     let mut posts_query = use_signal(String::new);
     let resolved = use_resolved_theme();
 
-    let mut close = move || {
-        if palette.close() {
+    let close = move || {
+        palette.close(move || {
             posts.set(Vec::new());
             posts_query.set(String::new());
-        }
+        });
     };
 
     // 检索返回 `None` 时保留上一批结果。
     let schedule_fetch =
         move || palette.schedule_fetch(posts, posts_query, move |q| search.call(q));
 
-    if !open() {
+    if !palette.visible() {
         return rsx! {};
     }
 
@@ -289,7 +288,7 @@ pub(crate) fn AdminPaletteView(
         })
         .collect();
 
-    let mut activate = move |item: Item| {
+    let activate = move |item: Item| {
         close();
         on_activate.call(item);
     };
