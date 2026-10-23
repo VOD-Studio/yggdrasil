@@ -125,7 +125,7 @@ build: check-build-tools ## 完整 release 构建（资源 + 文档 + 双客户�
 	@$(MAKE) build-full-and-server
 	@$(MAKE) restore-webp
 	@$(MAKE) snapshot-flavor FLAVOR=full
-	@$(MAKE) build-client-reader
+	@$(MAKE) build-client-reader CLIENT_SERVER_ARGS='$(RELEASE_SERVER_ARGS)'
 	@$(MAKE) restore-webp
 	@$(MAKE) snapshot-flavor FLAVOR=reader
 	@bun scripts/build-release.cjs --out target/dx/yggdrasil/release/web
@@ -150,12 +150,21 @@ build-linux: check-build-tools ## 构建 Linux x86_64 musl 服务端 + 双客户
 	@echo "(contains full index.html, flavors/reader/index.html and release-manifest.json)."
 	@echo "When running the server, ensure DIOXUS_ASSET_DIR is set or the public directory is in CWD."
 
-# full 客户端（不产服务端）：build-linux 与 Dockerfile / Dockerfile.cross 的服务端
-# 由各自后续步骤按目标三元组单独构建。注意不要删 recipe 而 .PHONY 留名——make
-# 会静默跳过无 recipe 的 phony 目标（"Nothing to be done"），直到 snapshot-flavor
-# 才报 public 缺失（P3b 2057bc3 的 CI 事故）。
+# 只构建客户端的 target 仍会附带构建一次宿主架构服务端：Cargo.toml 的 dioxus 依赖
+# 直接开了 fullstack，dx 0.7.10 的 into_targets 据此必建服务端（--fullstack false
+# 关不掉），且只用 @client 之前的共享参数（缺省即 dev profile）。CLIENT_SERVER_ARGS
+# 就是这组共享参数：缺省为空，产出一次 dev 服务端（两个客户端 target 参数相同，
+# 第二次直接复用）；make build 传入 RELEASE_SERVER_ARGS，与 build-full-and-server
+# 的服务端参数一致，cargo 判定 fresh，不再另编一份 dev 服务端。
+RELEASE_SERVER_ARGS := --release --debug-symbols=false
+CLIENT_SERVER_ARGS ?=
+
+# full 客户端：build-linux 与 Dockerfile / Dockerfile.cross 的服务端由各自后续
+# 步骤按目标三元组单独构建，附带的宿主服务端不会被使用。注意不要删 recipe 而
+# .PHONY 留名——make 会静默跳过无 recipe 的 phony 目标（"Nothing to be done"），
+# 直到 snapshot-flavor 才报 public 缺失（P3b 2057bc3 的 CI 事故）。
 build-client: check-wasm-toolchain ## 构建 full 客户端
-	@$(DX_NIGHTLY) build @client --release --debug-symbols=false --wasm-js-cfg false \
+	@$(DX_NIGHTLY) build $(CLIENT_SERVER_ARGS) @client --release --debug-symbols=false --wasm-js-cfg false \
 		--cargo-args='$(WASM_CARGO_ARGS)'
 
 # full 客户端 + 服务端（宿主架构）：沿用原 make build 的组合命令形态——
@@ -163,14 +172,14 @@ build-client: check-wasm-toolchain ## 构建 full 客户端
 # -Zbuild-std（wasm std 的 panic 策略与 immediate-abort 不匹配会报错），
 # 因此服务端由这段命令顺带产出，客户端特征与 build-client 一致。
 build-full-and-server: check-wasm-toolchain ## 构建 full 客户端与宿主架构服务端
-	@$(DX_NIGHTLY) build --release --debug-symbols=false \
+	@$(DX_NIGHTLY) build $(RELEASE_SERVER_ARGS) \
 		@client --release --debug-symbols=false --wasm-js-cfg false \
 		--cargo-args='$(WASM_CARGO_ARGS)'
 
 # reader 客户端：client-reader 剥离后台/登录/注册/图鉴（plan §6.1）。
 # 潜在收益最大的产物，验收门槛见 plan §6.8（reader Brotli ≥35% 降幅）。
 build-client-reader: check-wasm-toolchain ## 构建 reader 客户端（公开阅读裁剪版）
-	@$(DX_NIGHTLY) build @client --release --debug-symbols=false --wasm-js-cfg false \
+	@$(DX_NIGHTLY) build $(CLIENT_SERVER_ARGS) @client --release --debug-symbols=false --wasm-js-cfg false \
 		--features client-reader --cargo-args='$(WASM_CARGO_ARGS)'
 
 # 保存某个 flavor 的构建快照（public + dx 资产清单），供 build-release.cjs 合并。

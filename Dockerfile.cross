@@ -252,7 +252,9 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
 # ESBUILD_VERSION must match dx's pinned constant (0.27.3 in dx 0.7.10).
 ENV DX_HOME=/usr/local/dx
 RUN make esbuild-cache wasm-bindgen-cache
-# Build the client-side Dioxus WASM bundles. dx builds only the client assets.
+# Build the client-side Dioxus WASM bundles. dx also builds a throwaway host
+# server alongside (fullstack is always on; see Makefile CLIENT_SERVER_ARGS);
+# the shipped musl server comes from the server stage.
 # Each flavor build emits a ready-to-serve public/ directory under
 # target/dx/yggdrasil/*/web/public; snapshot + merge keeps the two flavors from
 # clobbering each other (plan §6.4).
