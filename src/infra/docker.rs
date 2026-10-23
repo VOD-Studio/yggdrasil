@@ -613,7 +613,14 @@ pub async fn run_in_container_stream(
     };
     let wait_with_timeout = async {
         match timeout(Duration::from_secs(limits.timeout_secs), wait_future).await {
-            Ok(item) => item.and_then(wait_exit_code), // None: wait error or stream ended
+            Ok(item) => {
+                let code = item.and_then(wait_exit_code);
+                if code.is_none() {
+                    // wait 出错或流提前结束：无法确认容器已退出，kill 以免下方日志流永不结束。
+                    let _ = docker.kill_container(&container_id, None).await;
+                }
+                code
+            }
             Err(_) => {
                 // 超时，杀容器。kill 后 attach stream 会被 Docker 关闭，log_reader 自然结束。
                 timed_out = true;
@@ -629,38 +636,48 @@ pub async fn run_in_container_stream(
     tokio::select! {
         status = wait_with_timeout => {
             exit_code = status;
-            // 容器已退出，但 attach stream 可能还有缓冲的尾部日志。
-            // 继续读完日志流（非阻塞：stream 即将返回 None）。
-            while let Some(item) = stream.next().await {
-                if let Ok(chunk) = item {
-                    match chunk {
-                        LogOutput::StdOut { message } => {
-                            let remaining = limit_bytes.saturating_sub(stdout_buf.len() + stderr_buf.len());
-                            let to_add = message.len().min(remaining);
-                            if to_add > 0 {
-                                let slice = &message[..to_add];
-                                stdout_buf.extend_from_slice(slice);
-                                if !client_disconnected {
-                                    let text = String::from_utf8_lossy(slice).into_owned();
-                                    let _ = tx.send(OutputChunk::Stdout(text)).await;
+            // 容器已退出（或已被 kill），attach stream 可能还有缓冲的尾部日志。
+            // 有界等待兜底 kill 失败等异常，保证函数必然返回并释放信号量许可与 ContainerGuard。
+            let drain = async {
+                while let Some(item) = stream.next().await {
+                    if let Ok(chunk) = item {
+                        match chunk {
+                            LogOutput::StdOut { message } => {
+                                let remaining =
+                                    limit_bytes.saturating_sub(stdout_buf.len() + stderr_buf.len());
+                                let to_add = message.len().min(remaining);
+                                if to_add > 0 {
+                                    let slice = &message[..to_add];
+                                    stdout_buf.extend_from_slice(slice);
+                                    if !client_disconnected {
+                                        let text = String::from_utf8_lossy(slice).into_owned();
+                                        let _ = tx.send(OutputChunk::Stdout(text)).await;
+                                    }
                                 }
                             }
-                        }
-                        LogOutput::StdErr { message } => {
-                            let remaining = limit_bytes.saturating_sub(stdout_buf.len() + stderr_buf.len());
-                            let to_add = message.len().min(remaining);
-                            if to_add > 0 {
-                                let slice = &message[..to_add];
-                                stderr_buf.extend_from_slice(slice);
-                                if !client_disconnected {
-                                    let text = String::from_utf8_lossy(slice).into_owned();
-                                    let _ = tx.send(OutputChunk::Stderr(text)).await;
+                            LogOutput::StdErr { message } => {
+                                let remaining =
+                                    limit_bytes.saturating_sub(stdout_buf.len() + stderr_buf.len());
+                                let to_add = message.len().min(remaining);
+                                if to_add > 0 {
+                                    let slice = &message[..to_add];
+                                    stderr_buf.extend_from_slice(slice);
+                                    if !client_disconnected {
+                                        let text = String::from_utf8_lossy(slice).into_owned();
+                                        let _ = tx.send(OutputChunk::Stderr(text)).await;
+                                    }
                                 }
                             }
+                            _ => {}
                         }
-                        _ => {}
                     }
                 }
+            };
+            if timeout(LOG_DRAIN_TIMEOUT, drain).await.is_err() {
+                tracing::warn!(
+                    container_id = %container_id,
+                    "容器日志流在等待结束后仍未关闭，放弃读取剩余日志"
+                );
             }
         }
         _ = log_reader => {
