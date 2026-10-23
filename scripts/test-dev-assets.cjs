@@ -7,7 +7,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'yggdrasil-dev-assets-test-'));
-const packages = ['shared', 'codemirror-editor', 'lightbox', 'mermaid-renderer',
+const packages = ['shared', 'codemirror-editor', 'lightbox', 'mermaid-renderer', 'music-player',
   'tiptap-editor', 'xterm-terminal', 'yggdrasil-core'];
 // Mock builds write exactly the outputs Make checks, so new outputs cannot drift from mk/assets.mk.
 const outputs = Object.fromEntries([...fs.readFileSync(path.join(__dirname, '../mk/assets.mk'), 'utf8')
@@ -89,6 +89,12 @@ if (command === 'bun' && args[0] === 'install') {
   step([]); // Imported CSS refreshes without rebuilding JavaScript packages.
   await edit('libs/tiptap-editor/src/index.ts');
   step(['tiptap-editor']);
+  await edit('libs/music-player/src/index.ts');
+  step(['music-player']);
+  for (const file of outputs['music-player']) {
+    fs.unlinkSync(path.join(root, file));
+    step(['music-player']);
+  }
   await edit('libs/shared/src/index.ts');
   step(packages.filter(name => name !== 'mermaid-renderer'));
   fs.unlinkSync(path.join(root, 'public/codemirror/editor.js'));

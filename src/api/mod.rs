@@ -42,6 +42,8 @@ pub mod mcp_tokens;
 /// mhchem 化学公式转译器（\ce/\pu → LaTeX，server-only）。
 #[cfg(feature = "server")]
 pub mod mhchem;
+/// 前台音乐播放器的公开启动配置。
+pub mod music_player;
 /// 笔记、笔记本与知识库共用规则。
 pub mod notes;
 /// 分享图端点与分享元信息上下文（server-only）。

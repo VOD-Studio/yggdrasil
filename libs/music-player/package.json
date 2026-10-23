@@ -1,0 +1,14 @@
+{
+  "name": "@yggdrasil/music-player",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@violetjs/kite-player": "0.3.0"
+  }
+}
