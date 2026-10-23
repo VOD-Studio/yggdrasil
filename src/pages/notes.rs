@@ -584,7 +584,7 @@ pub fn NotebookDetail(id: i32) -> Element {
 
 #[component]
 fn NotebookPage(id: i32) -> Element {
-    let books = use_server_future(list_notebooks)?;
+    let mut books = use_server_future(list_notebooks)?;
     let mut notes = use_server_future(move || {
         list_notes(NoteFilter {
             notebook_id: Some(id),
@@ -595,7 +595,16 @@ fn NotebookPage(id: i32) -> Element {
     let mut older = use_signal(Vec::<Note>::new);
     let mut next_page = use_signal(|| 2_i32);
     let mut loading_more = use_signal(|| false);
+    let mut more_failed = use_signal(|| false);
 
+    // 目录请求失败时如实提示并可重试，不误报「笔记本不存在」。
+    if matches!(books.read().as_ref(), Some(Err(_))) {
+        return rsx! {
+            document::Title { "笔记本暂时没能加载 · Yggdrasil" }
+            NotebookBack {}
+            LoadError { title: "笔记本暂时没能加载", on_retry: move |_| books.restart() }
+        };
+    }
     let books: Vec<Notebook> = books
         .read()
         .as_ref()
@@ -658,16 +667,23 @@ fn NotebookPage(id: i32) -> Element {
                                 loading: loading_more(),
                                 onclick: move |_| {
                                     loading_more.set(true);
+                                    more_failed.set(false);
                                     spawn(async move {
                                         let filter = NoteFilter { notebook_id: Some(id), page: next_page(), ..Default::default() };
-                                        if let Ok(next) = list_notes(filter).await {
-                                            older.write().extend(next.notes);
-                                            next_page += 1;
+                                        match list_notes(filter).await {
+                                            Ok(next) => {
+                                                older.write().extend(next.notes);
+                                                next_page += 1;
+                                            }
+                                            Err(_) => more_failed.set(true),
                                         }
                                         loading_more.set(false);
                                     });
                                 },
                                 "加载更多"
+                            }
+                            if more_failed() {
+                                p { class: "notes-more-error", role: "alert", "没能加载更多笔记，再试一次。" }
                             }
                         }
                     }
