@@ -36,7 +36,7 @@ description: 在 Yggdrasil 仓库中新增或修改前台、后台界面，调�
 - 对话框用 `ModalShell`：它负责锁定焦点、Esc 关闭和焦点归还。危险确认用 `ConfirmDialog`（`alertdialog`）。
 - 任何文本输入的键盘处理都先过 `composer.rs::ime_composing`，组合输入期间不响应回车、方向键和 Esc。
 - 抽屉复用 `BottomSheet` / `SideSheet`（4px 死区、80px 关闭阈值、heavy 弹簧），不要另写拖拽逻辑。
-- 手机触控目标不小于 44px；布局在 767px（外壳）和 760px（正文）两处切换，改动时两处都要检查。
+- 手机触控目标不小于 44px；手机布局统一在 767px 切换（与 Tailwind `md:` 一致）。
 - 用户可见的错误必须是可读中文，不能直接拼接 server function 错误。
 - 加载态：用骨架时结构要与真实布局对齐，并经过 `DelayedSkeleton`（200ms 内不显示）。
 
