@@ -77,6 +77,7 @@ pub fn Mcp() -> Element {
 
     use_effect(move || {
         let _ = reload();
+        #[cfg(target_arch = "wasm32")]
         spawn(async move {
             match crate::api::mcp_tokens::list_mcp_tokens().await {
                 Ok(list) => {

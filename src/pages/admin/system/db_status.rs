@@ -29,7 +29,10 @@ pub(super) fn DbStatusTab() -> Element {
             loading.set(false);
         });
     });
-    use_hook(move || reload.call(()));
+    use_hook(move || {
+        #[cfg(target_arch = "wasm32")]
+        reload.call(());
+    });
     super::use_auto_refresh(refresh_ms, reload);
 
     let current = status();

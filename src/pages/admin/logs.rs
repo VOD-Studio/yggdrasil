@@ -35,6 +35,7 @@ pub fn Logs() -> Element {
     // target 候选：挂载后拉取一次（服务端缓存 60s）。
     let mut targets: Signal<Vec<String>> = use_signal(Vec::new);
     use_hook(move || {
+        #[cfg(target_arch = "wasm32")]
         spawn(async move {
             if let Ok(list) = crate::api::logs::get_log_targets().await {
                 targets.set(list);

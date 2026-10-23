@@ -48,6 +48,7 @@ pub fn Runner() -> Element {
     let mut overrides_json = use_signal(String::new);
     let mut limits = use_signal(|| None::<crate::models::settings::RunnerSettings>);
     use_hook(move || {
+        #[cfg(target_arch = "wasm32")]
         spawn(async move {
             if let Ok(s) = crate::api::settings::get_runner_settings().await {
                 limits.set(Some(s));

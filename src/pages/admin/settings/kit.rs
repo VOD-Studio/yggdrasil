@@ -136,6 +136,7 @@ impl<T: Clone + PartialEq + 'static> SectionState<T> {
 }
 
 /// 读取一次已存值并登记到保存条。`save` 提交草稿并返回服务端规范化后的值。
+#[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut, unused_variables))]
 pub(super) fn use_section<T, L, LF, S, SF>(
     section: SettingsSection,
     load: L,
@@ -154,6 +155,7 @@ where
     let mut saved = use_signal(|| None::<T>);
     let mut load_failed = use_signal(|| false);
     use_hook(move || {
+        #[cfg(target_arch = "wasm32")]
         spawn(async move {
             match load().await {
                 Ok(value) => {
