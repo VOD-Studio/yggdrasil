@@ -60,6 +60,9 @@ where
     let mut items = use_signal(Vec::new);
     let mut total = use_signal(|| 0_i64);
     let mut error: Signal<Option<String>> = use_signal(|| None);
+    // 请求代际：快速翻页/切筛选时，只有最后一次请求的响应能落地。
+    #[cfg(target_arch = "wasm32")]
+    let generation = use_hook(|| std::rc::Rc::new(std::cell::Cell::new(0_u64)));
 
     use_effect(move || {
         let p = page();
@@ -68,8 +71,16 @@ where
         #[cfg(target_arch = "wasm32")]
         {
             let f = fetch;
+            let generation = generation.clone();
+            let id = generation.get().wrapping_add(1);
+            generation.set(id);
             spawn(async move {
-                match f(p, per_page).await {
+                let result = f(p, per_page).await;
+                // 过期响应直接丢弃，不写任何 signal（含 loading）。
+                if generation.get() != id {
+                    return;
+                }
+                match result {
                     Ok((list, t)) => {
                         items.set(list);
                         total.set(t);
