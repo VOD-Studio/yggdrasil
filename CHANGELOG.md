@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **音乐部署路由**：Kite 公开服务改用 nginx-proxy 原生 `VIRTUAL_PATH` 声明 `/player/v1/`，避免手工追加的音乐路径被 Violet 的独立部署覆盖；请求头配置保存在独立的按路径配置文件中。
+
 ## [0.25.0] - 2026-10-23
 
 ### Added

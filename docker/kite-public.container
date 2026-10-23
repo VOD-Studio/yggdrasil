@@ -9,6 +9,7 @@ Pull=never
 ContainerName=kite-public
 Network=nginx-proxy
 NetworkAlias=kite-public
+ExposeHostPort=3723
 User=65532
 Group=65532
 Secret=kite-auth-token,target=kite-auth-token,uid=65532,mode=0400
@@ -21,6 +22,9 @@ Environment=KITE_PUBLIC_PLAYLISTS=3778678
 Environment=KITE_PUBLIC_ORIGINS=https://rua.plus
 Environment=KITE_PUBLIC_SIGNING_KEY_FILE=/run/secrets/public-signing-key
 Environment=KITE_PUBLIC_TRUST_PROXY=true
+Environment=VIRTUAL_HOST=xunrua.top
+Environment=VIRTUAL_PORT=3723
+Environment=VIRTUAL_PATH=/player/v1/
 ReadOnly=true
 DropCapability=all
 NoNewPrivileges=true

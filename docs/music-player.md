@@ -114,25 +114,33 @@ systemctl start kite-public.service
 
 ### HTTPS 反代
 
-`xun` 的 `/root/docker/nginx-proxy/vhost.d/xunrua.top` 增加以下独立路径，
-不修改其他站点路由；DNS resolver 是该机现有 Podman `nginx-proxy` 网络的网关：
+由 Quadlet 的容器环境声明路径，nginx-proxy 自动生成并在容器重建时更新 upstream：
 
-```nginx
-location ^~ /player/v1/ {
-    resolver 10.89.0.1 valid=30s ipv6=off;
-    set $kite_public http://kite-public:3723;
-    proxy_pass $kite_public;
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $remote_addr;
-    proxy_set_header X-Forwarded-Proto $scheme;
-}
+```dotenv
+VIRTUAL_HOST=xunrua.top
+VIRTUAL_PORT=3723
+VIRTUAL_PATH=/player/v1/
 ```
 
-变量 upstream 配合 DNS 重解析，避免公开容器重建换 IP 后继续访问旧地址。
+不设置 `VIRTUAL_DEST`，保留 Kite 原生 `/player/v1/` 路径。不要把该 location 手工追加到
+`vhost.d/xunrua.top`：这个文件由 Violet 的部署事务管理，下一次部署会完整覆盖。
+公开服务声明独立路径后，Violet 的根路径仍由原容器提供，无需修改 Violet 部署源码。
+
+该路径的请求头配置单独保存在
+`/root/docker/nginx-proxy/vhost.d/xunrua.top_f39a135e2178d060f52ceb3a88f6a1559e840251_location`；
+文件名中的 hash 是 `/player/v1/`（无换行）的 SHA-1：
+
+```nginx
+proxy_set_header Host $host;
+proxy_set_header X-Real-IP $remote_addr;
+proxy_set_header X-Forwarded-For $remote_addr;
+proxy_set_header X-Forwarded-Proto $scheme;
+```
+
 覆盖而非追加访客传入的 `X-Forwarded-For`，让公开服务只信任这层代理记录的来源。
-修改后先 `docker exec nginx-proxy nginx -t`，成功再执行
-`docker exec nginx-proxy nginx -s reload`。
+这个独立文件不属于 Violet 的代理配置快照，部署 Violet 不会移除它。
+容器启动/停止由 nginx-proxy 自动重新生成配置；修改上述请求头文件时，先
+`docker exec nginx-proxy nginx -t`，成功再执行 `docker exec nginx-proxy nginx -s reload`。
 
 上线验收包括：带 `Origin: https://rua.plus` 的 info 与歌单请求返回 200，
 响应含匹配的 `Access-Control-Allow-Origin`；其他 Origin 返回 403，
