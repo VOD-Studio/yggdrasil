@@ -125,7 +125,14 @@ async fn export_csv(
     Ok((body, "text/csv; charset=utf-8", "export.csv".to_string()))
 }
 
+/// 单个响应块的字节上限；缓冲达到后即推给客户端。
+const SQL_EXPORT_CHUNK_BYTES: usize = 64 * 1024;
+
 /// SQL 导出：逐行拼 INSERT（纯数据，不含 DDL）。
+///
+/// 流式读取：行在只读事务中逐批产出、按块推送，大表不再整表进内存。与 CSV 相同，
+/// 慢消费者可能触发 `statement_timeout` 导致下载被截断；客户端中途断开时任务结束，
+/// 事务随之丢弃并回滚。
 async fn export_sql(
     source_sql: String,
     include_columns: bool,
@@ -135,50 +142,95 @@ async fn export_sql(
         .await
         .map_err(|_| (StatusCode::SERVICE_UNAVAILABLE, "数据库不可用".to_string()))?;
 
-    // 纵深防御：AST 校验之外再放进只读事务，查询里若混入写操作由数据库拒绝。
-    // 事务未提交即被丢弃时 tokio_postgres 会发送 ROLLBACK，连接归还池时不残留事务。
-    let tx = client
-        .build_transaction()
-        .read_only(true)
-        .start()
-        .await
-        .map_err(|e| {
-            tracing::error!("Export transaction failed: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, "查询失败".to_string())
-        })?;
-    let rows = tx.query(&source_sql, &[]).await.map_err(|e| {
-        tracing::error!("Export query failed: {}", e);
-        (StatusCode::INTERNAL_SERVER_ERROR, "查询失败".to_string())
-    })?;
-    tx.rollback().await.map_err(|e| {
-        tracing::error!("Export transaction rollback failed: {}", e);
-        (StatusCode::INTERNAL_SERVER_ERROR, "查询失败".to_string())
-    })?;
+    // 事务与行流都借用连接，必须在同一个任务里；任务起步结果经 oneshot 回报，
+    // 这样查询失败仍能在产生响应前返回 500。
+    let (ready_tx, ready_rx) = tokio::sync::oneshot::channel::<Result<(), ()>>();
+    let (tx_chunks, rx_chunks) =
+        tokio::sync::mpsc::channel::<Result<axum::body::Bytes, std::io::Error>>(8);
 
-    let columns: Vec<String> = rows
-        .first()
-        .map(|r| r.columns().iter().map(|c| c.name().to_string()).collect())
-        .unwrap_or_default();
+    tokio::spawn(async move {
+        // 纵深防御：AST 校验之外再放进只读事务，查询里若混入写操作由数据库拒绝。
+        // 事务未提交即被丢弃时 tokio_postgres 会发送 ROLLBACK，连接归还池时不残留事务。
+        let tx = match client.build_transaction().read_only(true).start().await {
+            Ok(tx) => tx,
+            Err(e) => {
+                tracing::error!("Export transaction failed: {}", e);
+                let _ = ready_tx.send(Err(()));
+                return;
+            }
+        };
+        let rows = match tx
+            .query_raw(
+                source_sql.as_str(),
+                std::iter::empty::<&(dyn tokio_postgres::types::ToSql + Sync)>(),
+            )
+            .await
+        {
+            Ok(rows) => rows,
+            Err(e) => {
+                tracing::error!("Export query failed: {}", e);
+                let _ = ready_tx.send(Err(()));
+                return;
+            }
+        };
+        let _ = ready_tx.send(Ok(()));
 
-    let mut out = String::new();
-    out.push_str("-- Yggdrasil 数据导出（仅数据，不含 schema）\n");
-    let col_clause = if include_columns && !columns.is_empty() {
-        format!("({})", columns.join(", "))
-    } else {
-        String::new()
-    };
+        let mut rows = std::pin::pin!(rows);
+        let mut buf = String::from("-- Yggdrasil 数据导出（仅数据，不含 schema）\n");
+        let mut col_clause: Option<String> = None;
+        while let Some(row) = rows.next().await {
+            let r = match row {
+                Ok(r) => r,
+                Err(e) => {
+                    // 与 CSV 中途出错一样截断下载。
+                    tracing::error!("Export row failed: {e}");
+                    let _ = tx_chunks.send(Err(std::io::Error::other("查询失败"))).await;
+                    return;
+                }
+            };
+            // 列名取自首行；include_columns 关闭或无列时不带列清单。
+            let col_clause = col_clause.get_or_insert_with(|| {
+                if include_columns && !r.columns().is_empty() {
+                    let names: Vec<&str> = r.columns().iter().map(|c| c.name()).collect();
+                    format!("({})", names.join(", "))
+                } else {
+                    String::new()
+                }
+            });
+            let vals: Vec<String> = (0..r.len()).map(|i| sql_quote_cell(&r, i)).collect();
+            buf.push_str(&format!(
+                "INSERT INTO {} {} VALUES ({});\n",
+                table_name,
+                col_clause,
+                vals.join(", ")
+            ));
+            if buf.len() >= SQL_EXPORT_CHUNK_BYTES {
+                let chunk = axum::body::Bytes::from(std::mem::take(&mut buf));
+                // 客户端断开：直接结束，事务随 drop 回滚。
+                if tx_chunks.send(Ok(chunk)).await.is_err() {
+                    return;
+                }
+            }
+        }
+        if !buf.is_empty()
+            && tx_chunks
+                .send(Ok(axum::body::Bytes::from(buf)))
+                .await
+                .is_err()
+        {
+            return;
+        }
+        if let Err(e) = tx.rollback().await {
+            tracing::error!("Export transaction rollback failed: {e}");
+        }
+    });
 
-    for r in &rows {
-        let vals: Vec<String> = (0..r.len()).map(|i| sql_quote_cell(r, i)).collect();
-        out.push_str(&format!(
-            "INSERT INTO {} {} VALUES ({});\n",
-            table_name,
-            col_clause,
-            vals.join(", ")
-        ));
+    match ready_rx.await {
+        Ok(Ok(())) => {}
+        _ => return Err((StatusCode::INTERNAL_SERVER_ERROR, "查询失败".to_string())),
     }
 
-    let body = Body::from(out);
+    let body = Body::from_stream(tokio_stream::wrappers::ReceiverStream::new(rx_chunks));
     Ok((
         body,
         "application/sql; charset=utf-8",
