@@ -12,13 +12,23 @@
   gap: 1.5rem;
 }
 .about-mascot {
+  display: grid;
   flex: none;
   width: 7rem;
   height: 7rem;
+}
+.about-mascot-img {
+  grid-area: 1 / 1;
+  width: 100%;
+  height: 100%;
   object-fit: contain;
   image-rendering: pixelated;
   user-select: none;
 }
+/* 悬停图常驻 DOM（已预载），仅切换可见性，避免首次悬停时闪烁。 */
+.about-mascot-hover { opacity: 0; }
+.about-mascot:hover .about-mascot-hover { opacity: 1; }
+.about-mascot:hover .about-mascot-img:not(.about-mascot-hover) { opacity: 0; }
 .about-title {
   margin: 0;
   color: var(--color-fg);

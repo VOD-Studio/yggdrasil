@@ -26,13 +26,24 @@ pub fn About() -> Element {
         article { class: "about",
             div { class: "about-head page-enter",
                 h1 { class: "about-title", "关于" }
-                img {
-                    class: "about-mascot",
-                    src: "/images/about/claude-girl.webp",
-                    alt: "橙色长发的像素风女孩，双手捧着一只橙色小动物",
-                    width: "256",
-                    height: "256",
-                    decoding: "async",
+                span { class: "about-mascot",
+                    img {
+                        class: "about-mascot-img",
+                        src: "/images/about/claude-girl.webp",
+                        alt: "橙色长发的像素风女孩，双手捧着一只橙色小动物",
+                        width: "256",
+                        height: "256",
+                        decoding: "async",
+                    }
+                    img {
+                        class: "about-mascot-img about-mascot-hover",
+                        src: "/images/about/claude-girl-hover.webp",
+                        alt: "",
+                        aria_hidden: "true",
+                        width: "256",
+                        height: "256",
+                        decoding: "async",
+                    }
                 }
             }
             div { class: "about-prose page-enter", style: "--enter-index: 1",
