@@ -549,10 +549,15 @@ pub async fn get_mcp_client_configs(token: String) -> Result<McpClientConfigs, S
         use crate::highlight::server::highlight_code;
 
         let _admin = get_current_admin_user().await?;
-        let c = crate::mcp::config::generate_client_configs(
-            &crate::mcp::config::base_url_from_env(),
-            &token,
-        );
+        let base_url = crate::api::settings::runtime_security_settings()
+            .await
+            .app_base_url;
+        let base_url = if base_url.trim().is_empty() {
+            crate::mcp::config::base_url_from_env()
+        } else {
+            base_url
+        };
+        let c = crate::mcp::config::generate_client_configs(&base_url, &token);
         // (标题, 内容, 语言)：按客户端配置格式选择语法高亮。
         let entries: [(&str, String, &str); 8] = [
             (
