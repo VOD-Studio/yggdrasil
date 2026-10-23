@@ -2,25 +2,28 @@
 #
 # 模块：
 #   mk/assets.mk    生成资源：libs、高亮/KaTeX CSS、Tailwind；release 全量 + dev 增量
-#   mk/dx-cache.mk  预置 dx 的 esbuild / wasm-bindgen 工具缓存
 #   mk/docker.mk    镜像构建、Docker 开发环境、lint/test/fmt 工具容器
-include mk/assets.mk mk/dx-cache.mk mk/docker.mk
+include mk/assets.mk mk/docker.mk
 
-.PHONY: help build build-linux build-client build-client-reader build-full-and-server snapshot-flavor wasm-toolchain restore-webp precompress
+.PHONY: help build build-linux build-frontend wasm-toolchain precompress
 .PHONY: check-dev-tools check-build-tools check-brotli check-wasm-toolchain
 .PHONY: dev test lint fmt fix doc doc-open clean
 
 # ── 配置 ───────────────────────────────────────────────────────
 # release 构建用固定日期的 nightly（前端 WASM 构建）。
-# 以下两组参数只作用于 wasm 客户端：-Zbuild-std 以 optimize_for_size 重编 std，
+# 以下两组参数只作用于 wasm 前端：-Zbuild-std 以 optimize_for_size 重编 std，
 # -Cpanic=immediate-abort 去掉 panic 格式化与展开代码。2026-10-20 实测 brotli 后
 # 1,098 KB → 1,010 KB（−8%）。代价：wasm 内 panic 直接 trap，不再打印信息。
 # - rustflags 经 wasm32 专属的 CARGO_TARGET_*_RUSTFLAGS 传入（服务端仍 panic=unwind）。
 #   它会覆盖 .cargo/config.toml 的同名配置，因此需要重复 getrandom cfg。
+# - RUSTUP_TOOLCHAIN 让 cargo-leptos 及其调用的 cargo 都走 nightly；
+#   --lib-cargo-args 只把 build-std 传给 wasm 的 lib 构建。
 # dev、test、lint 与 CI 仍用 stable。升级 nightly 时同步两个 Dockerfile 的
 # ARG WASM_NIGHTLY。
 WASM_NIGHTLY := nightly-2026-10-19
-WASM_CARGO_ARGS := -Zbuild-std=std,panic_abort -Zbuild-std-features=optimize_for_size
+RELEASE_OUT ?= target/release-dist
+LEPTOS_WASM_ENV := RUSTUP_TOOLCHAIN=$(WASM_NIGHTLY) CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS='--cfg getrandom_backend="wasm_js" -Zunstable-options -Cpanic=immediate-abort'
+LEPTOS_WASM_ARGS := --lib-cargo-args=-Zbuild-std=std,panic_abort --lib-cargo-args=-Zbuild-std-features=optimize_for_size
 
 # 裸 `make` 只列出 target，不触发任何构建。
 .DEFAULT_GOAL := help
@@ -40,13 +43,8 @@ check-dev-tools: ## 检查开发所需的宿主工具
 		missing=1; \
 	fi; \
 	if ! command -v rustup >/dev/null 2>&1; then \
-		echo "error: rustup is required to check LLVM tools" >&2; \
+		echo "error: rustup is required" >&2; \
 		echo "  Install: https://rustup.rs" >&2; \
-		missing=1; \
-	elif ! rustup component list --installed 2>/dev/null | grep -Eq '^llvm-tools(-preview)?-'; then \
-		echo "error: llvm-tools component is required for the active Rust toolchain" >&2; \
-		toolchain=$$(rustup show active-toolchain 2>/dev/null | cut -d ' ' -f 1); \
-		echo "  Install: rustup component add llvm-tools --toolchain $${toolchain:-stable}" >&2; \
 		missing=1; \
 	fi; \
 	if ! command -v cargo-leptos >/dev/null 2>&1 || ! cargo leptos --version 2>/dev/null | grep -q '0\.3\.11'; then \
@@ -72,7 +70,7 @@ check-dev-tools: ## 检查开发所需的宿主工具
 
 check-build-tools: check-dev-tools check-brotli check-wasm-toolchain ## 检查 release 构建所需的宿主工具
 
-# 本地 release 构建在 dx 结束后要用宿主的 brotli CLI。
+# 本地 release 构建在前端构建后要用宿主的 brotli CLI。
 # 在耗时构建之前先检查，缺包时直接给出安装提示。
 check-brotli:
 	@if command -v brotli >/dev/null 2>&1; then \
@@ -98,116 +96,36 @@ wasm-toolchain: ## 安装 release 构建所需的固定 nightly 工具链
 		--component rust-src --target wasm32-unknown-unknown
 
 # ── release 构建 ───────────────────────────────────────────────
-# P3 双客户端流水线（plan §6.4）：共享资源 → 服务端 → full 客户端 → 快照 →
-# reader 客户端 → 快照 → 合并 + 发布清单 → Brotli → 校验。两次 dx 客户端构建
-# 顺序执行（不并发写同一输出目录），各自 restore-webp 后立即快照，快照里的
-# .webp 已还原；合并脚本从快照装配最终 public/，同路径不同内容直接失败。
-RELEASE_ASSEMBLY := target/release-assembly
+# 流水线：共享资源 → 文档 → cargo-leptos 前端（分包 wasm/js/css → target/site）
+# → 服务端 → build-release.cjs 装配 $(RELEASE_OUT) → Brotli → 校验。
+# 前端用固定 nightly + build-std + immediate-abort；服务端用 stable。
 
-build: check-build-tools ## 完整 release 构建（资源 + 文档 + 双客户端 + 服务端 + 合并 + 压缩）
-	@$(MAKE) build-assets
-	@$(MAKE) doc
-	@$(MAKE) build-full-and-server
-	@$(MAKE) restore-webp
-	@$(MAKE) snapshot-flavor FLAVOR=full
-	@$(MAKE) build-client-reader CLIENT_SERVER_ARGS='$(RELEASE_SERVER_ARGS)'
-	@$(MAKE) restore-webp
-	@$(MAKE) snapshot-flavor FLAVOR=reader
-	@bun scripts/build-release.cjs --out target/dx/yggdrasil/release/web
-	@$(MAKE) precompress
-	@bun scripts/build-release.cjs --verify --out target/dx/yggdrasil/release/web
+build-frontend: check-wasm-toolchain ## 构建分包前端（wasm/js/css → target/site）
+	@$(LEPTOS_WASM_ENV) cargo leptos build --release --split --frontend-only $(LEPTOS_WASM_ARGS)
 
-build-linux: check-build-tools ## 构建 Linux x86_64 musl 服务端 + 双客户端
-	@$(MAKE) build-assets
-	@$(MAKE) build-client
-	@$(MAKE) restore-webp
-	@$(MAKE) snapshot-flavor FLAVOR=full
-	@$(MAKE) build-client-reader
-	@$(MAKE) restore-webp
-	@$(MAKE) snapshot-flavor FLAVOR=reader
-	@$(DX) build @server --release --debug-symbols=false --target x86_64-unknown-linux-musl --wasm-js-cfg false --features server
-	@bun scripts/build-release.cjs --out target/dx/yggdrasil/release/web
+build: check-build-tools build-assets doc build-frontend ## 完整 release 构建（资源 + 文档 + 分包前端 + 服务端 + 装配 + 压缩）
+	@cargo build --release --locked --bin yggdrasil
+	@bun scripts/build-release.cjs --out $(RELEASE_OUT) --server target/release/yggdrasil
 	@$(MAKE) precompress
-	@bun scripts/build-release.cjs --verify --out target/dx/yggdrasil/release/web
+	@bun scripts/build-release.cjs --verify --out $(RELEASE_OUT)
+
+build-linux: check-build-tools build-assets doc build-frontend ## 构建 Linux x86_64 musl 服务端 + 分包前端
+	@cargo build --release --locked --bin yggdrasil --target x86_64-unknown-linux-musl
+	@bun scripts/build-release.cjs --out $(RELEASE_OUT) --server target/x86_64-unknown-linux-musl/release/yggdrasil
+	@$(MAKE) precompress
+	@bun scripts/build-release.cjs --verify --out $(RELEASE_OUT)
 	@echo ""
-	@echo "Linux build complete! The server binary is at target/dx/yggdrasil/release/web/server"
-	@echo "Remember to deploy it alongside the target/dx/yggdrasil/release/web/public directory"
-	@echo "(contains full index.html, flavors/reader/index.html and release-manifest.json)."
-	@echo "When running the server, ensure DIOXUS_ASSET_DIR is set or the public directory is in CWD."
+	@echo "Linux build complete! The server binary is at $(RELEASE_OUT)/server"
+	@echo "Remember to deploy it alongside $(RELEASE_OUT)/hash.txt and the $(RELEASE_OUT)/public directory"
+	@echo "(contains pkg/, release-manifest.json and the static assets)."
+	@echo "At runtime hash.txt must sit next to the server binary; public/ is located via"
+	@echo "LEPTOS_SITE_ROOT or a public/ directory next to the executable."
 
-# 只构建客户端的 target 仍会附带构建一次宿主架构服务端：Cargo.toml 的 dioxus 依赖
-# 直接开了 fullstack，dx 0.7.10 的 into_targets 据此必建服务端（--fullstack false
-# 关不掉），且只用 @client 之前的共享参数（缺省即 dev profile）。CLIENT_SERVER_ARGS
-# 就是这组共享参数：缺省为空，产出一次 dev 服务端（两个客户端 target 参数相同，
-# 第二次直接复用）；make build 传入 RELEASE_SERVER_ARGS，与 build-full-and-server
-# 的服务端参数一致，cargo 判定 fresh，不再另编一份 dev 服务端。
-RELEASE_SERVER_ARGS := --release --debug-symbols=false
-CLIENT_SERVER_ARGS ?=
-
-# full 客户端：build-linux 与 Dockerfile / Dockerfile.cross 的服务端由各自后续
-# 步骤按目标三元组单独构建，附带的宿主服务端不会被使用。注意不要删 recipe 而
-# .PHONY 留名——make 会静默跳过无 recipe 的 phony 目标（"Nothing to be done"），
-# 直到 snapshot-flavor 才报 public 缺失（P3b 2057bc3 的 CI 事故）。
-build-client: check-wasm-toolchain ## 构建 full 客户端
-	@$(DX_NIGHTLY) build $(CLIENT_SERVER_ARGS) @client --release --debug-symbols=false --wasm-js-cfg false \
-		--cargo-args='$(WASM_CARGO_ARGS)'
-
-# full 客户端 + 服务端（宿主架构）：沿用原 make build 的组合命令形态——
-# dx 的 @server 选择器同样会刷新 wasm 半边，而服务端单独构建时拿不到
-# -Zbuild-std（wasm std 的 panic 策略与 immediate-abort 不匹配会报错），
-# 因此服务端由这段命令顺带产出，客户端特征与 build-client 一致。
-build-full-and-server: check-wasm-toolchain ## 构建 full 客户端与宿主架构服务端
-	@$(DX_NIGHTLY) build $(RELEASE_SERVER_ARGS) \
-		@client --release --debug-symbols=false --wasm-js-cfg false \
-		--cargo-args='$(WASM_CARGO_ARGS)'
-
-# reader 客户端：client-reader 剥离后台/登录/注册/图鉴（plan §6.1）。
-# 潜在收益最大的产物，验收门槛见 plan §6.8（reader Brotli ≥35% 降幅）。
-build-client-reader: check-wasm-toolchain ## 构建 reader 客户端（公开阅读裁剪版）
-	@$(DX_NIGHTLY) build $(CLIENT_SERVER_ARGS) @client --release --debug-symbols=false --wasm-js-cfg false \
-		--features client-reader --cargo-args='$(WASM_CARGO_ARGS)'
-
-# 保存某个 flavor 的构建快照（public + dx 资产清单），供 build-release.cjs 合并。
-# 必须在本 flavor 的 restore-webp 之后调用，快照内 .webp 已还原。
-snapshot-flavor: ## 快照 dx 客户端产物（FLAVOR=full|reader）
-	@test -n "$(FLAVOR)" || (echo "用法：make snapshot-flavor FLAVOR=full|reader" >&2; exit 1)
-	@rm -rf $(RELEASE_ASSEMBLY)/$(FLAVOR)
-	@mkdir -p $(RELEASE_ASSEMBLY)/$(FLAVOR)
-	@cp -a target/dx/yggdrasil/release/web/public $(RELEASE_ASSEMBLY)/$(FLAVOR)/public
-	@if [ -f target/dx/yggdrasil/release/web/.manifest.json ]; then \
-		cp target/dx/yggdrasil/release/web/.manifest.json $(RELEASE_ASSEMBLY)/$(FLAVOR)/; \
-	fi
-
-# 兜底：dx build 0.7.10 会把 public/ 下的 .webp 重编码成 VP8L 无损静图
-# （动画帧被丢弃，静图体积反增 7-8 倍），与文档承诺的"原样拷贝"不符。
-# SVG/ICO 等其他格式不受影响，故只需覆盖 .webp。
-# 遍历所有 dx 产物目录（release/debug），用源 public/ 的同名文件覆盖回去。
-# 仅覆盖产物中已存在的 .webp，不引入源里新增但 dx 未生成的文件。
-# 参考：https://dioxuslabs.com/learn/0.7/essentials/ui/assets/
-# 复验记录：2026-10-09 在 dx 0.7.10 上重新验证，release 构建的 22 个 .webp 全部被
-# 改写（体积 7-8 倍），其中 2 个 79 帧的动画 webp 被丢帧成静图；本 target 跑完后与源
-# 文件逐字节一致。升级 dx 后复验方法：清空 target/dx/yggdrasil/release/web/public，
-# 重新 dx build，再用 cmp 比对产物与 public/ 下同名 .webp，全部一致才可移除。
-# 上游修复后可移除此 target 及 build/build-linux 里的调用（Dockerfile 也有调用）。
-restore-webp: ## 把被 dx 重编码的 .webp 还原为源文件
-	@find target/dx -type d -path "*/web/public" 2>/dev/null | while read prod; do \
-		find "$$prod" -type f -name "*.webp" 2>/dev/null | while read p; do \
-			rel=$${p#$$prod/}; \
-			src="public/$$rel"; \
-			if [ -f "$$src" ]; then \
-				cp "$$src" "$$p"; \
-			else \
-				echo "restore-webp: 源缺失，跳过 $$rel"; \
-			fi; \
-		done; \
-	done
-
-# 用 brotli 预压缩静态文本资源（生成 .br 旁路文件）。dioxus-server 对 public
-# 下每个叶子文件都注册了 ServeFile::precompressed_br()，请求带
-# Accept-Encoding: br 时自动命中 .br。只压文本格式；字体/图片本身已压缩。
-# dx 的 pre_compress 已覆盖 assets/。
+# 用 brotli 预压缩静态文本资源（生成 .br 旁路文件）。site_fallback 的 ServeDir
+# 开启了 precompressed_br，请求带 Accept-Encoding: br 时自动命中 .br。只压文本
+# 格式；字体/图片本身已压缩，pkg 下的 .d.ts 不被浏览器请求也不压。
 precompress: check-brotli
-	@find target/dx/yggdrasil/release/web/public -type f \
+	@find $(RELEASE_OUT)/public -type f \
 		\( -name '*.js' -o -name '*.css' -o -name '*.wasm' \
 		   -o -name '*.svg' -o -name '*.html' -o -name '*.json' -o -name '*.xml' \) \
 		-not -name '*.br' \
@@ -235,21 +153,13 @@ test-browser: ## 隔离浏览器回归（先 regression-build；BROWSER_SUITE=sm
 	@bun scripts/regression.cjs $(BROWSER_SUITE)
 
 # ── 测试与代码质量 ─────────────────────────────────────────────
-test: test-release-bootstrap ## 运行 Rust 与前端测试
+test: ## 运行 Rust 与前端测试
 	@cargo test
 	@cd libs && bun run --filter '*' test
 
-.PHONY: test-release-bootstrap test-wasm-preload
-test-release-bootstrap: ## 验证双客户端模板、WASM preload 与发布清单
-	@bun test scripts/release-bootstrap.test.cjs
-	@bun scripts/test-wasm-preload.cjs --self-test
-
-test-wasm-preload: ## 真实 release 的 WASM preload 冷/热缓存 A/B（默认自管隔离环境）
-	@if [ -n "$(BASE_URL)" ]; then \
-		bun scripts/test-wasm-preload.cjs; \
-	else \
-		WASM_PRELOAD_AB=1 bun scripts/test-dual-flavor.cjs; \
-	fi
+.PHONY: test-release-split
+test-release-split: build ## 对真实 release 产物做分包、水合、缓存与体积门槛验收
+	@bun scripts/test-release-split.cjs
 
 # JS + Rust 一次性检查（不改动文件）。
 lint: ## Biome、TypeScript、Clippy、rustfmt 检查（只读）
@@ -295,15 +205,14 @@ fix: ## cargo fix + Biome format + cargo fmt（写入文件）
 # 三档（浅色/深色/跟随系统）切换，由 doc-boot.js 写入 rustdoc 的存储键，不再提供 ayu。
 # DOC_OUT 供 Dockerfile 指定输出目录。用绝对路径，避免依赖 rustdoc 运行时的 cwd。
 #
-# 生成后拷贝到 public/doc/，让文档随 Dioxus 静态目录发布。先清空旧目录再
-# 整体拷贝，避免删除模块后残留旧文件。rustdoc 内部用相对路径引用资源
-# （如 ../../static.files/），原样挂载不会断链。
+# `/doc` 由 `site_fallback` 的 ServeDir 从站点根（`public/` 经 cargo-leptos 拷入
+# target/site）提供；生成后拷贝到 public/doc/，先清空旧目录再整体拷贝，避免删除
+# 模块后残留旧文件。rustdoc 内部用相对路径引用资源（如 ../../static.files/），
+# 原样挂载不会断链。
 #
-# 额外生成 public/doc/index.html 重定向页：Dioxus 在 dev 用
-# nest_service("/doc", ServeDir) 托管该目录，ServeDir 访问目录根时默认
-# 返回 index.html。用 meta refresh + JS 跳转到真正的文档入口
-# yggdrasil/index.html，这样裸路径 /doc 也能直达文档，且不与 Dioxus 的
-# /doc/* 路由冲突（手动注册 /doc 会在 merge 时 panic）。
+# 额外生成 public/doc/index.html 重定向页：ServeDir 访问目录根时默认返回
+# index.html。用 meta refresh + JS 跳转到真正的文档入口 yggdrasil/index.html，
+# 这样裸路径 /doc 也能直达文档。
 DOC_OUT ?= public/doc
 DOC_THEME_CSS := target/rustdoc-theme.css
 DOC_SHELL_JS := target/rustdoc-doc-shell.js
@@ -319,7 +228,7 @@ doc: ## 生成 rustdoc（站点同款主题）到 public/doc/
 	@cp $(DOC_FRAGMENTS) $(DOC_FRAGMENT_DIR)/
 	@tailwindcss -i rustdoc-theme/theme.css -o $(DOC_THEME_CSS) --minify
 	@bun build rustdoc-theme/js/index.js --outfile $(DOC_SHELL_JS) --format=iife --target=browser --minify
-	@RUSTDOCFLAGS="$(DOC_RUSTDOCFLAGS)" cargo doc --no-deps --document-private-items
+	@RUSTDOCFLAGS="$(DOC_RUSTDOCFLAGS)" cargo doc --lib --no-deps --document-private-items
 	@cp $(DOC_THEME_CSS) target/doc/theme.css
 	@cp rustdoc-theme/doc-boot.js target/doc/doc-boot.js
 	@cp $(DOC_SHELL_JS) target/doc/doc-shell.js
@@ -330,7 +239,7 @@ doc: ## 生成 rustdoc（站点同款主题）到 public/doc/
 # 同 doc，生成完自动用浏览器打开。flags 与 doc 相同，缓存是新的，只会打开
 # 页面，不会重新生成，也不会覆盖已复制的 theme.css。
 doc-open: doc ## 生成 rustdoc 并用浏览器打开
-	@RUSTDOCFLAGS="$(DOC_RUSTDOCFLAGS)" cargo doc --no-deps --document-private-items --open
+	@RUSTDOCFLAGS="$(DOC_RUSTDOCFLAGS)" cargo doc --lib --no-deps --document-private-items --open
 
 # ── 清理 ───────────────────────────────────────────────────────
 # public/{codemirror,lightbox,tiptap,xterm,yggdrasil-core} 里有被 git 跟踪的

@@ -126,7 +126,7 @@ jobs:
   #   test       — fmt + clippy + cargo test（clippy 只做 check（rmeta），不产出可链接产物，
   #                cargo test 仍需编译；三步放同一 job 是为共享依赖缓存与 target/）
   #   lint-js    — Biome + TypeScript + Vitest（仅 Bun，不装 Rust）
-  #   check-wasm — wasm32 check（独立 feature 集 web-only + 独立 triple，与 server 产物不相交）
+  #   check-wasm — wasm32 check（hydrate feature + 独立 triple，与 server 产物不相交）
   #   test-db    — 真实 PostgreSQL 回归（固定 GitHub-hosted，见下方说明）
   # 两个 cargo job 用独立 cache key 后缀（-rust- / -wasm-），避免并行写同一 GHA cache key
   # 每次 push / PR 都严格执行检查，失败即阻断下游构建与发布。
@@ -153,12 +153,12 @@ jobs:
       - name: Check formatting
         run: cargo fmt -- --check
 
-      - name: Clippy (all targets, all features)
-        run: cargo clippy --locked --all-targets --all-features -- -D warnings
+      - name: Clippy (all targets)
+        run: cargo clippy --locked --all-targets -- -D warnings
 
       # clippy 只做 check（rmeta），不产出可链接产物，cargo test 仍需编译；三步放同一 job 是为共享依赖缓存与 target/。
       - name: Run tests
-        run: cargo test --locked --all-features
+        run: cargo test --locked
 
   # ── test-db：真实 PostgreSQL 回归固定在 GitHub-hosted runner ──
   # 需要 sudo 安装与服务端主版本一致的 pg_dump/psql；self-hosted runner 以
@@ -232,9 +232,6 @@ jobs:
       - name: Frontend tests
         run: cd libs && bun run --sequential --filter '*' test
 
-      - name: Release bootstrap tests
-        run: make test-release-bootstrap
-
   check-wasm:
     needs: select_runner
     runs-on: ${{ fromJSON(needs.select_runner.outputs.runner) }}
@@ -256,16 +253,11 @@ jobs:
           prefix-key: wasm
           save-if: ${{ github.ref == 'refs/heads/master' }}
 
-      # wasm32 clippy 同时完成编译检查，覆盖 full / reader 两个客户端组合
-      # （reader = web,client-reader，验证后台/登录/图鉴裁剪后的浏览器目标仍完整编译；
-      # 无需 dx，由 build 阶段容器内 dx 全量构建兜底）。test job 的 clippy 是原生 target，
-      # #[cfg(target_arch = "wasm32")] 门控的代码（含 src/bridges 的 wasm 子模块）
-      # 完全不会被那边编译到，所以这里单独 lint。
-      - name: Clippy (wasm32 full)
-        run: cargo clippy --locked --target wasm32-unknown-unknown --no-default-features --features web -- -D warnings
-
-      - name: Clippy (wasm32 reader)
-        run: cargo clippy --locked --target wasm32-unknown-unknown --no-default-features --features web,client-reader -- -D warnings
+      # 浏览器目标的 clippy 同时完成编译检查（hydrate feature，无 server）。test job 的
+      # clippy 是原生 target，#[cfg(target_arch = "wasm32")] 门控的代码（含 src/bridges
+      # 的 wasm 子模块）完全不会被那边编译到，所以这里单独 lint。
+      - name: Clippy (wasm32 hydrate)
+        run: cargo clippy --locked --target wasm32-unknown-unknown --no-default-features --features hydrate -- -D warnings
 
   audit:
     runs-on: ubuntu-latest
@@ -303,7 +295,6 @@ jobs:
         with:
           toolchain: stable
           targets: wasm32-unknown-unknown
-          components: llvm-tools-preview
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           prefix-key: browser
@@ -311,11 +302,11 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version-file: libs/package.json
+      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2
+        with:
+          tool: cargo-leptos@0.3.11
       - name: Install browser build tools
         run: |
-          curl -fsSL --retry 3 https://github.com/DioxusLabs/dioxus/releases/download/v0.7.10/dx-x86_64-unknown-linux-gnu.tar.gz -o /tmp/dx.tar.gz
-          echo '4363e4ed2a3f1eb7f4d38d2d59aed59ce43271c44c16b425e92c89a64761fbe7  /tmp/dx.tar.gz' | sha256sum -c -
-          sudo tar -xzf /tmp/dx.tar.gz -C /usr/local/bin
           sudo curl -fsSL --retry 3 https://github.com/tailwindlabs/tailwindcss/releases/download/v4.3.3/tailwindcss-linux-x64 -o /usr/local/bin/tailwindcss
           sudo chmod +x /usr/local/bin/tailwindcss
           sudo apt-get update
@@ -349,13 +340,61 @@ jobs:
           name: browser-regressions
           path: target/regressions/
 
+  # ── release-split：真实 release 产物验收（分包、水合、SSR 缓存、滚动发布兜底、体积门槛）──
+  # make build 走与 Docker 相同的流水线（固定 nightly + build-std + cargo-leptos --split），
+  # test-release-split.cjs 再起临时 PostgreSQL 与 release 服务端做 Playwright 断言。
+  # PR 也跑：体积门槛与分包粒度只有真实 release 构建才能验证。
+  release-split:
+    needs: [select_runner]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+      - name: Install pinned nightly for the release WASM build
+        run: make wasm-toolchain
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          prefix-key: release-split
+          save-if: ${{ github.ref == 'refs/heads/master' }}
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version-file: libs/package.json
+      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2
+        with:
+          tool: cargo-leptos@0.3.11
+      - name: Install release build tools
+        run: |
+          sudo curl -fsSL --retry 3 https://github.com/tailwindlabs/tailwindcss/releases/download/v4.3.3/tailwindcss-linux-x64 -o /usr/local/bin/tailwindcss
+          sudo chmod +x /usr/local/bin/tailwindcss
+          sudo apt-get update
+          sudo apt-get install -y postgresql-common brotli
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y postgresql-client-18
+          echo /usr/lib/postgresql/18/bin >> "$GITHUB_PATH"
+          cd libs
+          bun install --frozen-lockfile
+          bun run playwright install --with-deps chromium
+      - name: Release build
+        run: make build
+      - name: Release split acceptance
+        run: bun scripts/test-release-split.cjs
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: release-split-regressions
+          path: target/regressions/
+
   # ── build-amd64：Docker in-container 全量构建（libs/WASM/rustdoc/静态 musl server）──
   # GitHub x86_64 runner，原生 Dockerfile（非 Dockerfile.cross），宿主仅需 Docker。
   # PR 之外的每次运行都跑（= 编译验证）。用 cargo-chef + GHA 层缓存：依赖不变时
   # cooker 层 cache-hit(秒级),cargo build 只编 app(~2min)。
   build-amd64:
     runs-on: ${{ fromJSON(needs.select_runner.outputs.runner) }}
-    needs: [select_runner, test, test-db, lint-js, check-wasm, browser, audit, lint-workflows]
+    needs: [select_runner, test, test-db, lint-js, check-wasm, browser, release-split, audit, lint-workflows]
     timeout-minutes: 60
     # PR 不构建完整镜像，仅靠检查 job 做门槛，省下 CI 分钟与 GHA 缓存配额。
     # master push、tag、任意分支手动触发都构建（= 编译验证）；

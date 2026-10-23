@@ -11,14 +11,13 @@
 # ---------------------------------------------------------------------------
 target/
 dist/
-.dioxus/
 static/
 node_modules/
 libs/node_modules/
 libs/*/node_modules/
 
 # Generated assets under public/ are rebuilt by the Dockerfile
-# (build-libs → highlight-css → tailwindcss → dx build). Keep the source
+# (build-libs → highlight-css → tailwindcss → cargo leptos build). Keep the source
 # runtime assets (favicon.ico, icons/, images/) but drop generated ones.
 public/style.css
 public/highlight.css
@@ -47,10 +46,8 @@ others/
 docker/
 docs/
 scripts/
-# P3b 双 flavor 装配在容器内跑 build-release.cjs（随 build-release 导入
-# release-bootstrap），从 scripts/ 例外放行；其余 scripts 仍排除。
+# 发布装配与校验在容器内跑 build-release.cjs，从 scripts/ 例外放行；其余 scripts 仍排除。
 !scripts/build-release.cjs
-!scripts/release-bootstrap.cjs
 
 # ---------------------------------------------------------------------------
 # Agent / IDE / CI tooling — never needed by the build.
