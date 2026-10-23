@@ -1,0 +1,98 @@
+[package]
+name = "ygg_leptos_spike"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+# 原型验证：Leptos 0.8.22 + 路由级 WASM 分割（cargo leptos --split）。
+# 独立 workspace，不进入主 crate 的构建、测试与 CI。
+
+[workspace]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+leptos = { version = "=0.8.22" }
+leptos_router = { version = "0.8" }
+leptos_meta = { version = "0.8" }
+leptos_axum = { version = "0.8", optional = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "2"
+wasm-bindgen = "0.2"
+console_error_panic_hook = "0.1"
+
+axum = { version = "0.8", optional = true }
+tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "fs", "time", "sync"], optional = true }
+tokio-postgres = { version = "0.7", features = ["with-chrono-0_4"], optional = true }
+deadpool-postgres = { version = "0.14", optional = true }
+tower = { version = "0.5", features = ["util"], optional = true }
+tower-http = { version = "0.7", features = ["fs"], optional = true }
+http = { version = "1", optional = true }
+sha2 = { version = "0.11", optional = true }
+hex = { version = "0.4", optional = true }
+futures = { version = "0.3", optional = true }
+bytes = { version = "1", optional = true }
+moka = { version = "0.12", features = ["sync"], optional = true }
+http-body-util = { version = "0.1", optional = true }
+md-5 = { version = "0.11", optional = true }
+pulldown-cmark = { version = "0.13", optional = true, default-features = false, features = ["html"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+web-sys = { version = "0.3", features = ["Document", "Window", "Storage", "Element", "HtmlElement", "DomTokenList", "MediaQueryList", "Node", "NodeList", "DomRect", "EventTarget", "KeyboardEvent", "MouseEvent", "HtmlInputElement", "HtmlTextAreaElement", "IntersectionObserver", "IntersectionObserverEntry", "IntersectionObserverInit", "ScrollToOptions", "ScrollBehavior", "Location", "History", "console", "File", "FileList", "Blob", "FormData", "Request", "RequestInit", "RequestCredentials", "Response"] }
+js-sys = "0.3"
+wasm-bindgen-futures = "0.4"
+
+[features]
+hydrate = ["leptos/hydrate"]
+ssr = [
+    "leptos/ssr",
+    "leptos_meta/ssr",
+    "leptos_router/ssr",
+    "dep:leptos_axum",
+    "dep:axum",
+    "dep:tokio",
+    "dep:tokio-postgres",
+    "dep:deadpool-postgres",
+    "dep:tower",
+    "dep:tower-http",
+    "dep:http",
+    "dep:sha2",
+    "dep:hex",
+    "dep:futures",
+    "dep:bytes",
+    "dep:http-body-util",
+    "dep:moka",
+    "dep:md-5",
+    "dep:pulldown-cmark",
+]
+
+# 与主 crate [profile.wasm-release] 保持一致，体积对比才公平。
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = "thin"
+
+[profile.wasm-release]
+inherits = "release"
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = false
+
+[package.metadata.leptos]
+output-name = "ygg_spike"
+site-root = "target/site"
+site-pkg-dir = "pkg"
+site-addr = "127.0.0.1:3100"
+reload-port = 3101
+hash-files = true
+env = "DEV"
+bin-features = ["ssr"]
+bin-default-features = false
+lib-features = ["hydrate"]
+lib-default-features = false
+lib-profile-release = "wasm-release"
