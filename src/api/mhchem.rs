@@ -14,6 +14,9 @@
 //!   syntect 间接引入，此处显式声明）。
 //! - `findObserveGroups` 花括号配对扫描 → `find_observe_groups`。
 //! - 状态机转移表 → `build_transitions` 展开（对应 `_mhchemCreateTransitions`）。
+//! - texify 输出采用 KaTeX `contrib/mhchem` 的改编（服务端用 katex-rs，不是 MathJax）：
+//!   `\rlap`/`\llap` → `\mathrlap`/`\mathllap`；`\raise`/`\lower` → `\raisebox`；
+//!   反应箭头改用可伸缩箭头 `\x…`；`\tripledash` 由 katex.rs 的宏提供。
 //!
 //! 公开 API：[`ce`](crate::api::mhchem::ce) / [`pu`](crate::api::mhchem::pu)。任意内部异常都回退为原样输出（绝不 panic，与
 //! katex.rs 的容错哲学一致）。
@@ -989,11 +992,11 @@ fn texify_go2(buf: &NodeData) -> String {
                 res.push_str("\\mkern-1.5mu");
                 res.push_str("{\\vphantom{A}}");
                 res.push_str(&format!(
-                    "^{{\\smash[t]{{\\vphantom{{2}}}}\\llap{{{}}}}}",
+                    "^{{\\smash[t]{{\\vphantom{{2}}}}\\mathllap{{{}}}}}",
                     b
                 ));
                 res.push_str(&format!(
-                    "_{{\\vphantom{{2}}\\llap{{\\smash[t]{{{}}}}}}}",
+                    "_{{\\vphantom{{2}}\\mathllap{{\\smash[t]{{{}}}}}}}",
                     p
                 ));
             }
@@ -1114,32 +1117,16 @@ fn texify_go2(buf: &NodeData) -> String {
         "arrow" => {
             let rd = buf.rd.as_ref().map(field_str).unwrap_or_default();
             let rq = buf.rq.as_ref().map(field_str).unwrap_or_default();
-            let r = buf.r.as_deref().unwrap_or("");
-            let mut arrow = get_arrow(r).to_string();
-            if !rd.is_empty() || !rq.is_empty() {
-                if matches!(r, "<=>" | "<=>>" | "<<=>" | "<-->") {
-                    arrow = format!("\\long{}", arrow);
-                    if !rd.is_empty() {
-                        arrow = format!("\\overset{{{}}}{{{}}}", rd, arrow);
-                    }
-                    if !rq.is_empty() {
-                        arrow = if r == "<-->" {
-                            format!("\\underset{{\\lower2mu{{{}}}}}{{{}}}", rq, arrow)
-                        } else {
-                            format!("\\underset{{\\lower6mu{{{}}}}}{{{}}}", rq, arrow)
-                        };
-                    }
-                    arrow = format!(" {{}}\\mathrel{{{}}}{{}} ", arrow);
-                } else {
-                    if !rq.is_empty() {
-                        arrow.push_str(&format!("[{{{}}}]", rq));
-                    }
-                    arrow.push_str(&format!("{{{}}}", rd));
-                    arrow = format!(" {{}}\\mathrel{{\\x{}}}{{}} ", arrow);
-                }
-            } else {
-                arrow = format!(" {{}}\\mathrel{{\\long{}}}{{}} ", arrow);
+            let mut arrow = String::from("\\x");
+            arrow.push_str(get_arrow(buf.r.as_deref().unwrap_or("")));
+            if !rq.is_empty() {
+                arrow.push_str("[{");
+                arrow.push_str(&rq);
+                arrow.push_str("}]");
             }
+            arrow.push('{');
+            arrow.push_str(&rd);
+            arrow.push('}');
             arrow
         }
         "operator" => get_operator(buf.kind_.as_deref().unwrap_or("")),
@@ -1186,10 +1173,10 @@ fn get_arrow(a: &str) -> &'static str {
         "->" | "\u{2192}" | "\u{27F6}" => "rightarrow",
         "<-" => "leftarrow",
         "<->" => "leftrightarrow",
-        "<-->" => "leftrightarrows",
+        "<-->" => "rightleftarrows",
         "<=>" | "\u{21CC}" => "rightleftharpoons",
-        "<=>>" => "Rightleftharpoons",
-        "<<=>" => "Leftrightharpoons",
+        "<=>>" => "rightequilibrium",
+        "<<=>" => "leftequilibrium",
         _ => "rightarrow",
     }
 }
@@ -1200,9 +1187,15 @@ fn get_bond(a: &str) -> String {
         "=" | "2" => "{=}".to_string(),
         "#" | "3" => "{\\equiv}".to_string(),
         "~" => "{\\tripledash}".to_string(),
-        "~-" => "{\\rlap{\\lower.1em{-}}\\raise.1em{\\tripledash}}".to_string(),
-        "~=" | "~--" => "{\\rlap{\\lower.2em{-}}\\rlap{\\raise.2em{\\tripledash}}-}".to_string(),
-        "-~-" => "{\\rlap{\\lower.2em{-}}\\rlap{\\raise.2em{-}}\\tripledash}".to_string(),
+        "~-" => "{\\mathrlap{\\raisebox{-.1em}{$-$}}\\raisebox{.1em}{$\\tripledash$}}".to_string(),
+        "~=" | "~--" => {
+            "{\\mathrlap{\\raisebox{-.2em}{$-$}}\\mathrlap{\\raisebox{.2em}{$\\tripledash$}}-}"
+                .to_string()
+        }
+        "-~-" => {
+            "{\\mathrlap{\\raisebox{-.2em}{$-$}}\\mathrlap{\\raisebox{.2em}{$-$}}\\tripledash}"
+                .to_string()
+        }
         "..." => "{{\\cdot}{\\cdot}{\\cdot}}".to_string(),
         "...." => "{{\\cdot}{\\cdot}{\\cdot}{\\cdot}}".to_string(),
         "->" => "{\\rightarrow}".to_string(),

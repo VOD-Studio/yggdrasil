@@ -77,10 +77,20 @@ fn physics_macros() -> &'static [(&'static str, MacroDefinition)] {
     ]
 }
 
-/// 把物理宏表注入到给定 `Settings` 的宏表（覆盖同名内置宏）。
-fn inject_physics_macros(settings: &mut Settings) {
+/// mhchem 键（`\bond{~}` 等）引用的宏，定义取自 KaTeX `contrib/mhchem`。
+fn mhchem_macros() -> &'static [(&'static str, MacroDefinition)] {
+    &[(
+        r"\tripledash",
+        MacroDefinition::StaticStr(
+            r"{\vphantom{-}\raisebox{2.56mu}{$\mkern2mu\tiny\text{-}\mkern1mu\text{-}\mkern1mu\text{-}\mkern2mu$}}",
+        ),
+    )]
+}
+
+/// 把物理宏表与 mhchem 辅助宏注入到给定 `Settings` 的宏表（覆盖同名内置宏）。
+fn inject_macros(settings: &mut Settings) {
     let mut map = settings.macros.borrow_mut();
-    for (name, def) in physics_macros() {
+    for (name, def) in physics_macros().iter().chain(mhchem_macros()) {
         map.insert((*name).to_string(), def.clone());
     }
 }
@@ -93,7 +103,7 @@ fn inline_settings() -> Settings {
         throw_on_error: false,
         ..Settings::default()
     };
-    inject_physics_macros(&mut s);
+    inject_macros(&mut s);
     s
 }
 
@@ -105,7 +115,7 @@ fn display_settings() -> Settings {
         throw_on_error: false,
         ..Settings::default()
     };
-    inject_physics_macros(&mut s);
+    inject_macros(&mut s);
     s
 }
 
@@ -541,6 +551,33 @@ mod tests {
             !html.contains("katex-error"),
             "络离子公式应正确渲染而非红字, got: {html}"
         );
+    }
+
+    #[test]
+    fn mhchem_arrows_and_bonds_do_not_render_red() {
+        // MathJax 专有命令（\longrightleftharpoons、\raise、\tripledash 等）在 katex-rs
+        // 下会变成红色 color node（不带 katex-error），必须单独断言 #cc0000。
+        for input in [
+            r"\ce{CO2 + H2O <=> H2CO3}",
+            r"\ce{A <--> B}",
+            r"\ce{A <=>> B}",
+            r"\ce{A <<=> B}",
+            r"\ce{A <-> B}",
+            r"\ce{A <- B}",
+            r"\ce{A ->[H2O][\Delta] B}",
+            r"\ce{A <=>[k_1][k_2] B}",
+            r"\ce{A\bond{~}B}",
+            r"\ce{A\bond{~-}B}",
+            r"\ce{A\bond{~=}B}",
+            r"\ce{A\bond{-~-}B}",
+            r"\ce{^{227}_{90}Th}",
+        ] {
+            let html = render_display(input);
+            assert!(
+                !html.contains("#cc0000"),
+                "{input} 不应渲染为红字, got: {html}"
+            );
+        }
     }
 
     #[test]
