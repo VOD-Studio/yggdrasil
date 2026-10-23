@@ -1,6 +1,6 @@
 /**
- * 代码配色的单一来源：文章高亮（经 tmTheme 生成 highlight.css）、CodeMirror、
- * xterm 与 Mermaid 都从这里取色。
+ * 代码配色的单一来源：文章高亮（经 tmTheme 生成 highlight.css）、CodeMirror
+ * 与 xterm 都从这里取色。Mermaid 图表用界面 token 配色，见 index.ts 的 mermaidThemeVarsFor。
  *
  * 暖调、低饱和，与陶土橙品牌色同一温度。所有语法色在代码块底色（浅色
  * surface-0/1、深色 surface-1/3）上的对比度不低于 4.5:1，见 code-palette.test.ts。
