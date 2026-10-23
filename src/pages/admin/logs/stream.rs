@@ -79,7 +79,7 @@ pub(super) fn LogsStreamPane(
 
     // —— WASM-only 生命周期：挂载拉历史 + 连 SSE；卸载 close EventSource ——
     #[cfg(target_arch = "wasm32")]
-    let es_slot: std::rc::Rc<std::cell::RefCell<Option<web_sys::EventSource>>> =
+    let es_slot: std::rc::Rc<std::cell::RefCell<Option<LogStreamHandle>>> =
         use_hook(|| std::rc::Rc::new(std::cell::RefCell::new(None)));
     #[cfg(target_arch = "wasm32")]
     let row_key: std::rc::Rc<std::cell::Cell<u64>> =
@@ -144,10 +144,9 @@ pub(super) fn LogsStreamPane(
     #[cfg(target_arch = "wasm32")]
     {
         let es_slot_for_drop = es_slot.clone();
+        // 句柄 Drop 负责关闭连接并释放闭包。
         use_drop(move || {
-            if let Some(es) = es_slot_for_drop.borrow_mut().take() {
-                es.close();
-            }
+            es_slot_for_drop.borrow_mut().take();
         });
     }
 
@@ -356,6 +355,23 @@ pub(super) fn LogsStreamPane(
     }
 }
 
+/// SSE 连接与回调闭包同生共死：drop 时关闭连接，闭包字段随之释放回调表槽位。
+#[cfg(target_arch = "wasm32")]
+struct LogStreamHandle {
+    es: web_sys::EventSource,
+    _on_open: wasm_bindgen::closure::Closure<dyn FnMut(web_sys::Event)>,
+    _on_log: wasm_bindgen::closure::Closure<dyn FnMut(web_sys::MessageEvent)>,
+    _on_gap: wasm_bindgen::closure::Closure<dyn FnMut(web_sys::MessageEvent)>,
+    _on_error: wasm_bindgen::closure::Closure<dyn FnMut(web_sys::Event)>,
+}
+
+#[cfg(target_arch = "wasm32")]
+impl Drop for LogStreamHandle {
+    fn drop(&mut self) {
+        self.es.close();
+    }
+}
+
 /// 分配客户端单调行 key（SSE 实时行 id 恒 0，不能用作渲染 key）。
 #[cfg(target_arch = "wasm32")]
 fn next_row_key(counter: &std::cell::Cell<u64>) -> u64 {
@@ -375,14 +391,14 @@ fn get_scroll_el(id: &str) -> Option<web_sys::Element> {
 /// `log` 事件（JSON LogEntry，id 恒 0）追加到列表尾部；`gap` 事件
 /// （broadcast lagged）插入分隔提示行；`open`/`error` 维护连接状态点。
 /// 浏览器在 `error` 后自动重连（重连丢段由服务端 `gap` 通知），
-/// 故 error 只标记断开、不 close。EventSource 存入 `es_slot`，
-/// 由组件 `use_drop` 统一 close。
+/// 故 error 只标记断开、不 close。连接与回调闭包存入 `es_slot` 的 `LogStreamHandle`，
+/// 组件卸载或重连替换时 drop 句柄即关闭连接并释放闭包。
 #[cfg(target_arch = "wasm32")]
 fn open_log_stream(
     levels: &[String],
     target: &Option<String>,
     query: &str,
-    es_slot: std::rc::Rc<std::cell::RefCell<Option<web_sys::EventSource>>>,
+    es_slot: std::rc::Rc<std::cell::RefCell<Option<LogStreamHandle>>>,
     rows: Signal<Vec<LogRow>>,
     row_key: std::rc::Rc<std::cell::Cell<u64>>,
     connected: Signal<bool>,
@@ -403,14 +419,19 @@ fn open_log_stream(
         url.push_str(&String::from(js_sys::encode_uri_component(query)));
     }
     let es = EventSource::new(&url)?;
+    // 注册失败的早退路径也要关闭半接线的连接。
+    let close_on_err = |e: wasm_bindgen::JsValue| {
+        es.close();
+        e
+    };
 
     // open → 已连接
     let mut connected_for_open = connected;
     let on_open = Closure::<dyn FnMut(web_sys::Event)>::new(move |_| {
         connected_for_open.set(true);
     });
-    es.add_event_listener_with_callback("open", on_open.as_ref().unchecked_ref())?;
-    on_open.forget();
+    es.add_event_listener_with_callback("open", on_open.as_ref().unchecked_ref())
+        .map_err(close_on_err)?;
 
     // log 事件 → 追加（实时行 id 恒 0：到达即追加，不去重、不作游标）
     let mut rows_for_log = rows;
@@ -431,8 +452,8 @@ fn open_log_stream(
             }
         }
     });
-    es.add_event_listener_with_callback("log", on_log.as_ref().unchecked_ref())?;
-    on_log.forget();
+    es.add_event_listener_with_callback("log", on_log.as_ref().unchecked_ref())
+        .map_err(close_on_err)?;
 
     // gap 事件 → 分隔提示行（broadcast lagged；data 为文本 "missed N log events"）
     let mut rows_for_gap = rows;
@@ -450,17 +471,23 @@ fn open_log_stream(
             });
         });
     });
-    es.add_event_listener_with_callback("gap", on_gap.as_ref().unchecked_ref())?;
-    on_gap.forget();
+    es.add_event_listener_with_callback("gap", on_gap.as_ref().unchecked_ref())
+        .map_err(close_on_err)?;
 
     // error → 标记断开（浏览器自动重连，open 时恢复）
     let mut connected_for_error = connected;
     let on_error = Closure::<dyn FnMut(web_sys::Event)>::new(move |_| {
         connected_for_error.set(false);
     });
-    es.add_event_listener_with_callback("error", on_error.as_ref().unchecked_ref())?;
-    on_error.forget();
+    es.add_event_listener_with_callback("error", on_error.as_ref().unchecked_ref())
+        .map_err(close_on_err)?;
 
-    *es_slot.borrow_mut() = Some(es);
+    *es_slot.borrow_mut() = Some(LogStreamHandle {
+        es,
+        _on_open: on_open,
+        _on_log: on_log,
+        _on_gap: on_gap,
+        _on_error: on_error,
+    });
     Ok(())
 }
