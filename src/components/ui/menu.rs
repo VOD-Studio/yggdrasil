@@ -94,6 +94,43 @@ fn focus_by_id(element_id: &str) {
     }
 }
 
+/// 测量触发器视口位置，返回 fixed 面板的内联定位样式与实际展开方向（仅 wasm）。
+///
+/// 菜单挂在 `overflow: clip` 的表格面板里时，绝对定位会被裁掉，故面板用 fixed，
+/// 锚点取触发器矩形；默认向下的菜单在下方放不下时翻到上方。
+#[cfg(target_arch = "wasm32")]
+fn measure_panel(
+    trigger_id: &str,
+    item_count: usize,
+    placement: &'static str,
+    align: &'static str,
+) -> Option<(String, &'static str)> {
+    let document = web_sys::window()?.document()?;
+    let rect = document
+        .get_element_by_id(trigger_id)?
+        .get_bounding_client_rect();
+    let root = document.document_element()?;
+    let (width, height) = (root.client_width() as f64, root.client_height() as f64);
+    let placement = if placement == "bottom"
+        && crate::components::forms::measure_flip(trigger_id, item_count)
+    {
+        "top"
+    } else {
+        placement
+    };
+    let vertical = if placement == "top" {
+        format!("bottom: {}px;", height - rect.top() + 6.0)
+    } else {
+        format!("top: {}px;", rect.bottom() + 6.0)
+    };
+    let horizontal = if align == "start" {
+        format!("left: {}px;", rect.left())
+    } else {
+        format!("right: {}px;", width - rect.right())
+    };
+    Some((format!("{vertical} {horizontal}"), placement))
+}
+
 /// 图标按钮触发的操作菜单。
 ///
 /// - 打开后焦点落在第一个可用项；↑/↓ 在可用项间循环（roving focus），Home/End 跳首尾；
@@ -120,6 +157,9 @@ pub fn Menu(
     let trigger_id = format!("menu-{menu_id}-trigger");
     let panel_id = format!("menu-{menu_id}");
     let mut open = use_signal(|| false);
+    // 打开时测得的 fixed 定位与实际方向；SSR 与首帧回退到声明的 placement。
+    #[allow(unused_mut)]
+    let mut panel_pos = use_signal(|| None::<(String, &'static str)>);
     let mut focused = use_signal(|| None::<usize>);
 
     // 打开或键盘移动后，把焦点放到当前项上。
@@ -133,6 +173,7 @@ pub fn Menu(
     let mut close = move |return_focus: bool| {
         open.set(false);
         focused.set(None);
+        panel_pos.set(None);
         #[cfg(target_arch = "wasm32")]
         if return_focus {
             focus_by_id(&format!("menu-{menu_id}-trigger"));
@@ -145,6 +186,23 @@ pub fn Menu(
     let items_for_keys = items.clone();
     let placement = if placement == "top" { "top" } else { "bottom" };
     let align = if align == "start" { "start" } else { "end" };
+    let item_count = items.len();
+    // 展开前测量触发器矩形，得到 fixed 面板的定位（仅 wasm；SSR 无 DOM）。
+    let mut measure = move || {
+        #[cfg(target_arch = "wasm32")]
+        panel_pos.set(measure_panel(
+            &format!("menu-{menu_id}-trigger"),
+            item_count,
+            placement,
+            align,
+        ));
+        #[cfg(not(target_arch = "wasm32"))]
+        let _ = (menu_id, item_count, &mut panel_pos);
+    };
+    let (panel_style, placement) = match panel_pos() {
+        Some((style, actual)) => (style, actual),
+        None => (String::new(), placement),
+    };
     // 提示与菜单分处触发器两侧，互不遮挡。
     let tooltip_placement = if placement == "top" { "bottom" } else { "top" };
     let trigger_class = button_class(ButtonVariant::Ghost, size);
@@ -165,6 +223,7 @@ pub fn Menu(
                         if open() {
                             close(false);
                         } else {
+                            measure();
                             open.set(true);
                             focused.set(step_enabled(&items_for_open, None, 1));
                         }
@@ -175,6 +234,7 @@ pub fn Menu(
                             if !open() && (e.key() == Key::ArrowDown || e.key() == Key::ArrowUp) {
                                 e.prevent_default();
                                 let delta = if e.key() == Key::ArrowUp { -1 } else { 1 };
+                                measure();
                                 open.set(true);
                                 focused.set(step_enabled(&items, None, delta));
                             }
@@ -184,7 +244,12 @@ pub fn Menu(
                 }
             }
             if open() {
-                div { class: "fixed inset-0 z-40", onclick: move |_| close(false) }
+                div {
+                    class: "fixed inset-0 z-40",
+                    onclick: move |_| close(false),
+                    // fixed 面板不随页面滚动，滚轮一动就收起，避免与触发器脱节。
+                    onwheel: move |_| close(false),
+                }
                 div {
                     id: "{panel_id}",
                     class: "menu",
@@ -192,6 +257,7 @@ pub fn Menu(
                     aria_labelledby: "{trigger_id}",
                     "data-placement": placement,
                     "data-align": align,
+                    style: "{panel_style}",
                     onkeydown: move |e: KeyboardEvent| {
                         let key = e.key();
                         if key == Key::ArrowDown || key == Key::ArrowUp {

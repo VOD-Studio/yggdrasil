@@ -1215,12 +1215,13 @@
 @layer components {
   /* ---- 菜单：「⋯」等触发的操作列表 ---- */
   .menu-wrap {
-    position: relative;
     display: inline-flex;
   }
 
+  /* fixed：表格面板等父级 overflow:clip 会裁掉绝对定位的面板。
+     top/bottom/left/right 由 Menu 打开时按触发器矩形内联写入。 */
   .menu {
-    position: absolute;
+    position: fixed;
     z-index: 50;
     min-width: 11rem;
     padding: 4px;
@@ -1230,22 +1231,20 @@
     animation: listbox-enter var(--spring-snappy-duration) var(--ease-spring-snappy) both;
   }
 
-  .menu[data-placement="bottom"] {
-    top: calc(100% + 6px);
-  }
-
-  .menu[data-placement="top"] {
-    bottom: calc(100% + 6px);
-  }
-
   .menu[data-align="start"] {
-    left: 0;
     transform-origin: top left;
   }
 
   .menu[data-align="end"] {
-    right: 0;
     transform-origin: top right;
+  }
+
+  .menu[data-placement="top"][data-align="start"] {
+    transform-origin: bottom left;
+  }
+
+  .menu[data-placement="top"][data-align="end"] {
+    transform-origin: bottom right;
   }
 
   .menu-item {

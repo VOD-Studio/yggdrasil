@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **表格行「⋯」菜单被裁切**：操作菜单改用 `position: fixed`，按触发器矩形定位，不再被表格面板的 `overflow: clip` 截掉下半截；下方放不下时自动向上展开，滚轮滚动时收起。
+
 ### Changed
 
 - **文档站点化**：`/doc`（rustdoc）换成与博客一致的顶栏、页脚与手机抽屉，导航新增「文档」；主题只由顶栏三档（浅色/深色/跟随系统）切换，不再提供 ayu。左栏只做模块导航并带筛选框，右栏为「本页」目录与阅读进度；标题区、条目表、字段、impl 卡片、Trait chip、文档正文、搜索结果与源码页全部重排，界面文字改为中文。crate 首页按「界面 / 服务端 / 共享 / 其他」分组。
