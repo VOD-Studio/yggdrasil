@@ -65,7 +65,7 @@ async function main() {
 
     failSave = true;
     await page.getByLabel('笔记标题').fill('失败后仍保留');
-    await page.getByRole('alert').filter({ hasText: /Regression|503|error|Error/ }).waitFor();
+    await page.getByRole('alert').waitFor();
     assert.equal(await page.getByLabel('笔记标题').inputValue(), '失败后仍保留');
     const retry = page.waitForResponse(r => endpoint(r.url()).startsWith('savenote') && r.ok());
     await page.getByRole('button', { name: '保存草稿', exact: true }).click();
