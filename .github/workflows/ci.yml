@@ -1,31 +1,38 @@
 name: CI
 
 # 流水线（2026 runner fallback + 原生多 runner 构建，零 QEMU）：
-# - 受信任的默认分支 push、tag 和手动触发：x64 检查/amd64 构建优先尝试组织 self-hosted；
+# - 触发范围：pull_request、master push、v* tag、手动触发；其余分支 push 不触发（靠 PR 检查）。
+# - 受信任的 master push、tag 和 master 上的手动触发：x64 检查/amd64 构建优先尝试组织 self-hosted；
 #   runner 不可用、API 无权限或 runner group 未允许公开仓库时自动回退 ubuntu-latest。
 #   仓库变量 CI_RUNNER_MODE 可手动控制（Settings → Secrets and variables → Actions → Variables）：
 #     auto（默认/未设置）按上述探测；github 强制 GitHub-hosted；self-hosted 跳过探测直接用组织 runner。
-#     无论取值，PR 和非默认分支 push 都不会使用 self-hosted。
-# - pull_request 和非默认分支 push 始终使用 GitHub-hosted runner：本仓库公开，避免不受信任代码污染持久 runner。
+#     无论取值，PR 和非 master 的手动触发都不会使用 self-hosted。
+# - pull_request 和非 master 的手动触发始终使用 GitHub-hosted runner：本仓库公开，避免不受信任代码污染持久 runner。
 # - release/publish/deploy 保持 GitHub-hosted：这些 job 使用写权限或部署密钥，不把 secrets 带到持久 runner。
 # - arm64 构建保持 ubuntu-24.04-arm（组织 runner-1 是 X64，不能替代）。
-# - 每次 push（任意分支/tag）和 PR：跑 test（单测+lint）→ build-amd64
-# - 仅 push 新 tag（v*）或手动触发时：
-#     publish-amd64-ghcr（build-amd64 后立即发布部署专用 amd64 tag）→ deploy-xun
-#     build-arm64（原生 ubuntu-24.04-arm runner）→ release + publish-ghcr（多架构归档）
-#     deploy-rua 与 publish-amd64-ghcr 完成后并行部署（受 RUA_DEPLOY_ENABLED 门控）
+# - tag 推送：检查 → build-amd64 → publish-amd64-ghcr + publish-runners → deploy-gate → deploy-xun/deploy-rua；
+#   同时 build-arm64 → release + publish-ghcr。
+# - master 上的 dispatch：检查 → build-amd64 → publish-amd64-ghcr + publish-runners → deploy
+#   （不发 Release，不更新 latest 多架构清单）。
+# - 非 master 的 dispatch：只跑检查和 build-amd64。
+# - PR：只跑检查，不构建镜像。
 on:
   push:
+    branches: [master]
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
 
-# 同 ref 后一次推送取消前一次（tag 与分支互不影响，各自的 group）。
+# tag 和 dispatch 的运行永不被取消；dispatch 与 master push 分到不同组，互不取消。
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref_type == 'branch') }}
 
 jobs:
   # ── runner selection：仅在 hosted runner 上查询，避免 self-hosted 离线时 job 排队 ──
@@ -38,6 +45,7 @@ jobs:
       actions: read
       contents: read
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       runner: ${{ steps.choose.outputs.runner }}
     steps:
@@ -115,8 +123,8 @@ jobs:
   # ── 检查阶段：拆成 3 个并行 job（按工具链与产物共享切分）──
   # 原 test job 串行跑 fmt/clippy/wasm/biome/test。cargo 对 target/ 持排他锁，同 job 内
   # 并行无效；真正并行只能拆 job（多 runner）。按「能否真正并行 / 是否共享产物」切分：
-  #   test       — fmt + clippy + cargo test（Rust，三者共享 target/debug 编译：
-  #                clippy --all-targets 已编译全部 test targets，cargo test 复用其产物）
+  #   test       — fmt + clippy + cargo test（clippy 只做 check（rmeta），不产出可链接产物，
+  #                cargo test 仍需编译；三步放同一 job 是为共享依赖缓存与 target/）
   #   lint-js    — Biome + TypeScript + Vitest（仅 Bun，不装 Rust）
   #   check-wasm — wasm32 check（独立 feature 集 web-only + 独立 triple，与 server 产物不相交）
   #   test-db    — 真实 PostgreSQL 回归（固定 GitHub-hosted，见下方说明）
@@ -125,19 +133,22 @@ jobs:
   test:
     needs: select_runner
     runs-on: ${{ fromJSON(needs.select_runner.outputs.runner) }}
+    timeout-minutes: 45
     steps:
       # dtolnay/rust-toolchain：走 GitHub CDN，比 curl|sh 快 ~10-15s，含 clippy+rustfmt 组件。
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
+          toolchain: stable
           components: clippy, rustfmt
 
       # Swatinem/rust-cache：cache key 自动含 rustc 版本 + Cargo.lock hash，
       # 防止 toolchain 升级后命中过期缓存（旧手动方案会命中 → 全量重编）。
-      # prefix 区分 test（host target）与 check-wasm（wasm32 target），避免缓存互踩。
-      - uses: Swatinem/rust-cache@v2
+      # prefix 区分 test（host target）与 check-wasm（wasm32 target），避免缓存互踩。仅 master 写缓存，PR/tag 只读。
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           prefix-key: rust
+          save-if: ${{ github.ref == 'refs/heads/master' }}
 
       - name: Check formatting
         run: cargo fmt -- --check
@@ -145,7 +156,7 @@ jobs:
       - name: Clippy (all targets, all features)
         run: cargo clippy --locked --all-targets --all-features -- -D warnings
 
-      # clippy --all-targets 已编译全部 test targets，cargo test 复用其产物，串行最省编译。
+      # clippy 只做 check（rmeta），不产出可链接产物，cargo test 仍需编译；三步放同一 job 是为共享依赖缓存与 target/。
       - name: Run tests
         run: cargo test --locked --all-features
 
@@ -154,6 +165,7 @@ jobs:
   # no-new-privileges 容器运行，sudo 不可用，因此不走 select_runner。
   test-db:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     services:
       postgres:
         image: postgres:18-alpine
@@ -169,12 +181,15 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           prefix-key: rust-db
+          save-if: ${{ github.ref == 'refs/heads/master' }}
 
       - name: Install matching PostgreSQL client
         run: |
@@ -187,7 +202,7 @@ jobs:
       - name: Article, notes and backup database regressions
         env:
           PGHOST: 127.0.0.1
-          PGPORT: ${{ job.services.postgres.ports[5432] }}
+          PGPORT: ${{ job.services.postgres.ports['5432'] }}
           PGUSER: postgres
           PGPASSWORD: postgres
         run: bash scripts/test-databases.sh
@@ -195,12 +210,13 @@ jobs:
   lint-js:
     needs: select_runner
     runs-on: ${{ fromJSON(needs.select_runner.outputs.runner) }}
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       # 版本取自 libs/package.json 的 packageManager 字段（bun@x.y.z），与本地、Docker 保持一致。
       - name: Install Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version-file: libs/package.json
 
@@ -222,53 +238,72 @@ jobs:
   check-wasm:
     needs: select_runner
     runs-on: ${{ fromJSON(needs.select_runner.outputs.runner) }}
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       # dtolnay/rust-toolchain：走 GitHub CDN，比 curl|sh 快 ~10-15s。
       # CI runner 在美国/欧洲，不配 rsproxy（国内镜像从国外访问反而更慢）。
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
+          toolchain: stable
           targets: wasm32-unknown-unknown
           components: clippy
 
-      # Swatinem/rust-cache：prefix 与 test job（host target）隔离。
-      - uses: Swatinem/rust-cache@v2
+      # Swatinem/rust-cache：prefix 与 test job（host target）隔离；仅 master 写缓存，PR/tag 只读。
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           prefix-key: wasm
+          save-if: ${{ github.ref == 'refs/heads/master' }}
 
-      # wasm32 目标单独 check，覆盖 web 特性的编译（无需 dx，由 build 阶段容器内 dx 全量构建兜底）。
-      # plan §6（reader/full 双客户端）：full 组合 = web；reader 组合额外开
-      # client-reader，验证后台/登录/图鉴裁剪后的浏览器目标仍完整编译。
-      - name: WASM target check (full)
-        run: cargo check --locked --target wasm32-unknown-unknown --no-default-features --features web
-
-      - name: WASM target check (reader)
-        run: cargo check --locked --target wasm32-unknown-unknown --no-default-features --features web,client-reader
-
-      # 单独跑 wasm32 target 的 clippy：test job 的 clippy 是原生 target，
+      # wasm32 clippy 同时完成编译检查，覆盖 full / reader 两个客户端组合
+      # （reader = web,client-reader，验证后台/登录/图鉴裁剪后的浏览器目标仍完整编译；
+      # 无需 dx，由 build 阶段容器内 dx 全量构建兜底）。test job 的 clippy 是原生 target，
       # #[cfg(target_arch = "wasm32")] 门控的代码（含 src/bridges 的 wasm 子模块）
-      # 完全不会被那边编译到，等于从未被 clippy 检查过。这里补上。
-      # reader/full 两个真实客户端组合各自 lint（plan §6.3）。
+      # 完全不会被那边编译到，所以这里单独 lint。
       - name: Clippy (wasm32 full)
         run: cargo clippy --locked --target wasm32-unknown-unknown --no-default-features --features web -- -D warnings
 
       - name: Clippy (wasm32 reader)
         run: cargo clippy --locked --target wasm32-unknown-unknown --no-default-features --features web,client-reader -- -D warnings
 
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2
+        with:
+          tool: cargo-deny@0.20.2
+      - name: cargo deny (advisories, sources)
+        run: cargo deny check advisories sources
+
+  lint-workflows:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2
+        with:
+          tool: actionlint@1.7.12
+      - name: actionlint
+        run: actionlint -color
+
   browser:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
+          toolchain: stable
           targets: wasm32-unknown-unknown
           components: llvm-tools-preview
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           prefix-key: browser
-      - uses: oven-sh/setup-bun@v2
+          save-if: ${{ github.ref == 'refs/heads/master' }}
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version-file: libs/package.json
       - name: Install browser build tools
@@ -303,7 +338,7 @@ jobs:
           make test-browser BROWSER_SUITE=showcase
           make test-browser BROWSER_SUITE=lightbox
           bun scripts/test-public-performance.cjs
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
           name: browser-regressions
@@ -311,26 +346,21 @@ jobs:
 
   # ── build-amd64：Docker in-container 全量构建（libs/WASM/rustdoc/静态 musl server）──
   # GitHub x86_64 runner，原生 Dockerfile（非 Dockerfile.cross），宿主仅需 Docker。
-  # 每次推送都跑（= 编译验证）。用 cargo-chef + GHA 层缓存：依赖不变时
+  # PR 之外的每次运行都跑（= 编译验证）。用 cargo-chef + GHA 层缓存：依赖不变时
   # cooker 层 cache-hit(秒级),cargo build 只编 app(~2min)。
   build-amd64:
     runs-on: ${{ fromJSON(needs.select_runner.outputs.runner) }}
-    needs: [select_runner, test, test-db, lint-js, check-wasm, browser]
-    # 仅主干分支(main/master) push、tag 推送、手动触发时构建完整镜像。
-    # 其他分支/PR 的 push 仅靠 test job(fmt/clippy/wasm32/单测)做门槛，
-    # 省下完整 Docker 构建的 CI 分钟与 GHA 缓存配额(多分支并发会快速吃满 10GB)。
-    # tag/手动时此 job 是 release/publish-ghcr/publish-amd64-ghcr/deploy 的必需前置，一定运行。
-    if: >-
-      github.event_name == 'workflow_dispatch'
-      || (github.event_name == 'push'
-          && (startsWith(github.ref, 'refs/tags/')
-              || github.ref == 'refs/heads/main'
-              || github.ref == 'refs/heads/master'))
+    needs: [select_runner, test, test-db, lint-js, check-wasm, browser, audit, lint-workflows]
+    timeout-minutes: 60
+    # PR 不构建完整镜像，仅靠检查 job 做门槛，省下 CI 分钟与 GHA 缓存配额。
+    # master push、tag、任意分支手动触发都构建（= 编译验证）；
+    # tag/master 手动触发时此 job 是 release/publish/deploy 的必需前置，一定运行。
+    if: github.event_name != 'pull_request'
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
 
       # 直调 docker buildx（不走 make docker-amd64）以加 GHA 层缓存。
       # cache-to/from type=gha：BuildKit 层经 GitHub Actions cache 服务跨 run 持久化。
@@ -365,7 +395,7 @@ jobs:
         run: |
           docker run -d --name smoke -e MIGRATE_STARTUP_TIMEOUT_SECS=2 yggdrasil:amd64
           # 轮询容器退出(已设 2s 超时，最多再等 10s 兜底网络/调度延迟)
-          for i in $(seq 1 10); do
+          for _ in $(seq 1 10); do
             [ "$(docker inspect -f '{{.State.Status}}' smoke 2>/dev/null)" = "exited" ] && break
             sleep 1
           done
@@ -387,7 +417,7 @@ jobs:
           ls -lh /tmp/out/yggdrasil-amd64.tar.gz
 
       - name: Upload amd64 image artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: yggdrasil-amd64-image
           path: /tmp/out/yggdrasil-amd64.tar.gz
@@ -409,7 +439,7 @@ jobs:
 
       - name: Upload musl binary artifact
         if: startsWith(github.ref, 'refs/tags/')
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: yggdrasil-x86_64-musl
           path: /tmp/musl/yggdrasil-x86_64-musl.tar.gz
@@ -421,15 +451,18 @@ jobs:
   # 专属 tag，避免后续 publish-ghcr 更新 latest 多架构 manifest 时产生竞态。
   publish-amd64-ghcr:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: [build-amd64]
     if: >-
-      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/'))
-      || github.event_name == 'workflow_dispatch'
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
+      || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master')
     permissions:
       packages: write
+      attestations: write
+      id-token: write
     steps:
       - name: Download amd64 image artifact
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: yggdrasil-amd64-image
           path: /tmp/img
@@ -438,24 +471,34 @@ jobs:
         run: docker load --input /tmp/img/yggdrasil-amd64.tar.gz
 
       - name: Login to GHCR
-        uses: docker/login-action@v4
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Push amd64 deployment tag
+        id: push
         env:
           OWNER: ${{ github.repository_owner }}
         run: |
           OWNER="$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')"
           IMAGE="ghcr.io/${OWNER}/yggdrasil"
-          SHA="$(echo '${{ github.sha }}' | cut -c1-7)"
+          SHA="${GITHUB_SHA::7}"
           TAG="sha-${SHA}-amd64"
           docker tag localhost/yggdrasil:latest "${IMAGE}:${TAG}"
           docker image inspect "${IMAGE}:${TAG}" --format '{{.Architecture}}' | grep -qx amd64
           docker push "${IMAGE}:${TAG}"
           echo "==> pushed ${IMAGE}:${TAG} (amd64 deployment image)"
+          digest="$(docker image inspect "${IMAGE}:${TAG}" --format '{{index .RepoDigests 0}}')"
+          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "digest=${digest#*@}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ steps.push.outputs.image }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
 
   # ── build-arm64：原生 ARM64 runner 构建（2026 最佳实践，零 QEMU）──
   # ubuntu-24.04-arm 是 GitHub 免费提供的原生 ARM64 runner（4 vCPU）。
@@ -463,15 +506,14 @@ jobs:
   # 比 QEMU 交叉编译快 4-8 倍。仅 tag 推送时运行（省 CI 分钟）。
   build-arm64:
     runs-on: ubuntu-24.04-arm
-    needs: [test, test-db, lint-js, check-wasm]
-    if: >-
-      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/'))
-      || github.event_name == 'workflow_dispatch'
+    needs: [test, test-db, lint-js, check-wasm, browser, audit, lint-workflows]
+    timeout-minutes: 60
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
 
       # 直接调 docker buildx（无 make docker-arm64 target），原生 Dockerfile 原生编译。
       # git 信息透传与 Makefile 的 GIT_BUILD_ARGS 一致。
@@ -495,6 +537,24 @@ jobs:
           echo "image arch: $arch"
           [ "$arch" = "arm64" ] || { echo "expected arm64"; exit 1; }
 
+      # 镜像启动冒烟测试（同 build-amd64）：arm64 runner 原生执行，不需要 QEMU。
+      - name: Smoke test (container boot)
+        run: |
+          docker run -d --name smoke -e MIGRATE_STARTUP_TIMEOUT_SECS=2 yggdrasil:arm64
+          # 轮询容器退出(已设 2s 超时，最多再等 10s 兜底网络/调度延迟)
+          for _ in $(seq 1 10); do
+            [ "$(docker inspect -f '{{.State.Status}}' smoke 2>/dev/null)" = "exited" ] && break
+            sleep 1
+          done
+          docker logs smoke 2>&1 | tee /tmp/smoke.log
+          echo "container exit code: $(docker inspect -f '{{.State.ExitCode}}' smoke)"
+          docker rm -f smoke >/dev/null
+          grep -q "running database migrations" /tmp/smoke.log \
+            || { echo "::error::启动横幅缺失，二进制可能无法启动或架构不匹配"; exit 1; }
+          grep -q "failed to ensure target database exists" /tmp/smoke.log \
+            || { echo "::error::未到达 DB 连接阶段，可能存在更早的配置 panic"; exit 1; }
+          echo "smoke: 镜像可启动，初始化流程完整(无 Postgres 时 exit 1 属预期)"
+
       - name: Save arm64 image artifact
         run: |
           mkdir -p /tmp/out
@@ -502,7 +562,7 @@ jobs:
           ls -lh /tmp/out/yggdrasil-arm64.tar.gz
 
       - name: Upload arm64 image artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: yggdrasil-arm64-image
           path: /tmp/out/yggdrasil-arm64.tar.gz
@@ -514,17 +574,18 @@ jobs:
   # body 取 CHANGELOG.md 对应版本段，与手动创建的 release 格式一致。
   release:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: [build-amd64, build-arm64]
-    if: >-
-      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/'))
-      || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write
+      attestations: write
+      id-token: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           path: /tmp/assets
 
@@ -537,6 +598,7 @@ jobs:
           cp /tmp/assets/yggdrasil-x86_64-musl/yggdrasil-x86_64-musl.tar.gz /tmp/release/
           echo "=== release assets ==="
           ls -lh /tmp/release/
+          (cd /tmp/release && sha256sum yggdrasil-*.tar.gz > SHA256SUMS && cat SHA256SUMS)
 
       # 从 CHANGELOG.md 提取对应版本段（## [x.y.z] ... 下一个 ## 之前）作为 release body。
       - name: Extract changelog section
@@ -555,6 +617,10 @@ jobs:
           echo "--- body preview ---"
           head -5 /tmp/release-body.md
 
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: /tmp/release/yggdrasil-*.tar.gz
+
       # 幂等：同 tag 重跑（tag 重发/rerun）时 Release 已存在则跳过创建，
       # 不让「already exists」把发版作业打红——产物已在，无需重复上传。
       - name: Create GitHub Release
@@ -571,25 +637,26 @@ jobs:
             --notes-file /tmp/release-body.md \
             /tmp/release/yggdrasil-amd64.tar.gz \
             /tmp/release/yggdrasil-arm64.tar.gz \
-            /tmp/release/yggdrasil-x86_64-musl.tar.gz
+            /tmp/release/yggdrasil-x86_64-musl.tar.gz \
+            /tmp/release/SHA256SUMS
 
   # ── publish-ghcr：合并 amd64 + arm64 为多架构 manifest 推 GHCR（归档）──
-  # 每次 tag 或手动触发归档一个多架构 manifest，tag 命名 latest(最新) / vX.Y.Z(git tag) /
+  # 每次 tag 归档一个多架构 manifest，tag 命名 latest(最新) / vX.Y.Z(git tag) /
   # sha-xxxxxxx(可追溯某次构建)。部署不等待本 job，而使用 publish-amd64-ghcr
   # 已发布的 commit 专属 amd64 tag；本 job 仅负责多架构镜像归档。
-  # 流程：下载两个单架构 artifact → load → retag → push 单架构(带 sha 后缀) →
-  # docker manifest create 合并(从 registry 引用) → push manifest list。
+  # buildx imagetools create 合并(从 registry 引用，同时打全部 tag) 并附加来源证明。
   publish-ghcr:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: [build-amd64, build-arm64]
-    if: >-
-      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/'))
-      || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     permissions:
       packages: write
+      attestations: write
+      id-token: write
     steps:
       - name: Download image artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           pattern: yggdrasil-*-image
           path: /tmp/img
@@ -611,34 +678,39 @@ jobs:
           docker image inspect yggdrasil:arm64 --format 'yggdrasil:arm64 -> {{.Architecture}}'
 
       - name: Login to GHCR
-        uses: docker/login-action@v4
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       # GHCR 镜像名必须全小写(owner DefectingCat → defectingcat)，否则 push 被拒。
-      # 推送顺序：先 push 两个单架构(sha 后缀唯一可追溯) → manifest create 合并 → push。
+      # 推送顺序：先 push 两个单架构(sha 后缀唯一可追溯) → imagetools create 合并并打全部 tag。
       - name: Push multi-arch manifest to GHCR
+        id: push
         env:
           OWNER: ${{ github.repository_owner }}
-          DOCKER_CLI_EXPERIMENTAL: enabled
         run: |
           OWNER="$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')"
           IMAGE="ghcr.io/${OWNER}/yggdrasil"
-          SHA="$(echo '${{ github.sha }}' | cut -c1-7)"
+          SHA="${GITHUB_SHA::7}"
           docker tag yggdrasil:amd64 "${IMAGE}:sha-${SHA}-amd64"
           docker tag yggdrasil:arm64 "${IMAGE}:sha-${SHA}-arm64"
           docker push "${IMAGE}:sha-${SHA}-amd64"
           docker push "${IMAGE}:sha-${SHA}-arm64"
-          TAGS="latest sha-${SHA}"
-          [ "${GITHUB_REF_TYPE}" = "tag" ] && TAGS="${TAGS} ${GITHUB_REF_NAME}"
-          for t in $TAGS; do
-            docker manifest create "${IMAGE}:${t}" \
-              "${IMAGE}:sha-${SHA}-amd64" "${IMAGE}:sha-${SHA}-arm64"
-            docker manifest push "${IMAGE}:${t}"
-            echo "==> pushed ${IMAGE}:${t}"
-          done
+          docker buildx imagetools create \
+            -t "${IMAGE}:latest" -t "${IMAGE}:sha-${SHA}" -t "${IMAGE}:${GITHUB_REF_NAME}" \
+            "${IMAGE}:sha-${SHA}-amd64" "${IMAGE}:sha-${SHA}-arm64"
+          digest="$(docker buildx imagetools inspect "${IMAGE}:${GITHUB_REF_NAME}" --format '{{json .Manifest}}' | jq -r .digest)"
+          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+          echo "==> pushed ${IMAGE}:{latest,sha-${SHA},${GITHUB_REF_NAME}} (${digest})"
+
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ steps.push.outputs.image }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
 
   # ── publish-runners：构建 6 个 Code Runner 沙箱镜像推 GHCR（归档）──
   # runner 与宿主架构强绑定(代码执行环境)，xun 是 x86_64，故只构建/推 amd64。
@@ -650,21 +722,23 @@ jobs:
   # LANGUAGES 注册表硬编码的短名（runner-* 标签避免独立私有包无法匿名拉取）。
   publish-runners:
     runs-on: ubuntu-latest
-    needs: [test, test-db, lint-js, check-wasm]
+    timeout-minutes: 45
+    needs: [test, test-db, lint-js, check-wasm, browser, audit, lint-workflows]
     if: >-
-      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/'))
-      || github.event_name == 'workflow_dispatch'
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
+      || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master')
     permissions:
+      contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           # 需要 tag 历史做与前一个 tag 的 docker/ diff；浅克隆拿不到祖先 tag。
           fetch-depth: 0
 
       # 变更检测前先登录 GHCR：即使 docker/ 未变，也要验证 runner manifest 是否仍存在。
       - name: Login to GHCR
-        uses: docker/login-action@v4
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -716,7 +790,7 @@ jobs:
         run: |
           OWNER="$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')"
           IMAGE="ghcr.io/${OWNER}/yggdrasil"
-          SHA="$(echo '${{ github.sha }}' | cut -c1-7)"
+          SHA="${GITHUB_SHA::7}"
           docker build --platform linux/amd64 -t yggdrasil-runner-base docker/runner-base
           for img in base python node go rust bun; do
             [ "$img" != "base" ] && docker build --platform linux/amd64 -t "yggdrasil-runner-${img}" "docker/runner-${img}"
@@ -729,18 +803,52 @@ jobs:
             echo "==> pushed ${IMAGE}:runner-${img} (+ sha/tag aliases)"
           done
 
+  # ── deploy-gate：防止旧 tag 的部署晚于新 tag 完成并覆盖线上版本 ──
+  # tag 不是最新的 v* 时输出 deploy=false，deploy-xun/deploy-rua 随之跳过；
+  # master 上的手动触发不受此限制。
+  deploy-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [publish-amd64-ghcr, publish-runners]
+    if: >-
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
+      || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master')
+    outputs:
+      deploy: ${{ steps.gate.outputs.deploy }}
+    steps:
+      - name: Skip superseded tag
+        id: gate
+        run: |
+          if [[ "$GITHUB_REF_TYPE" != tag ]]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          latest="$(git ls-remote --tags --refs "https://github.com/${GITHUB_REPOSITORY}.git" 'refs/tags/v*' \
+            | sed 's#.*refs/tags/##' | sort -V | tail -n1)"
+          [[ -n "$latest" ]] || { echo "::error::无法列出远端 v* tag"; exit 1; }
+          if [[ "$latest" == "$GITHUB_REF_NAME" ]]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::${GITHUB_REF_NAME} 已被 ${latest} 取代，跳过部署"
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+          fi
+
   # ── deploy-xun：从 GHCR 拉取 amd64 镜像后滚动重启（pull-based）──
-  # 仅 push 新 tag（v*）或手动触发时运行（分支推送/PR 不部署）。
+  # 仅 push 新 tag（v*）或 master 上手动触发时运行，且需通过 deploy-gate（分支推送/PR 不部署）。
   # 主应用由 publish-amd64-ghcr 提供当前 commit 的 amd64-only tag；runner 由
   # publish-runners 推入同一个公开 yggdrasil 包的 runner-* 标签。部署前必须确认每个
   # runner 已成功拉取或远端已有可用旧 tag；缺失时阻断 app 重启，避免 CI 绿但运行时报 404。
   # deploy-xun 与 deploy-rua 是独立 job，均在 amd64 镜像发布完成后启动，因此两台并行部署。
   deploy-xun:
     runs-on: ubuntu-latest
-    needs: [publish-amd64-ghcr, publish-runners]
-    if: >-
-      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/'))
-      || github.event_name == 'workflow_dispatch'
+    timeout-minutes: 20
+    needs: [deploy-gate, publish-amd64-ghcr, publish-runners]
+    if: needs.deploy-gate.outputs.deploy == 'true'
+    environment:
+      name: production
+    concurrency:
+      group: deploy-xun
+      cancel-in-progress: false
     steps:
       - name: Configure SSH
         env:
@@ -761,17 +869,14 @@ jobs:
           chmod 600 ~/.ssh/config
           printf '%s\n' "$XUN_SSH_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          if [ -n "$XUN_KNOWN_HOSTS" ]; then
-            printf '%s\n' "$XUN_KNOWN_HOSTS" > ~/.ssh/known_hosts
-          else
-            echo "::warning::XUN_KNOWN_HOSTS 未设置，改用 ssh-keyscan（TOFU，建议改为 pin 指纹）"
-            ssh-keyscan -H "$XUN_HOST" >> ~/.ssh/known_hosts 2>/dev/null
-          fi
+          : "${XUN_KNOWN_HOSTS:?secret XUN_KNOWN_HOSTS 未设置（拒绝 TOFU）}"
+          printf '%s\n' "$XUN_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 644 ~/.ssh/known_hosts
 
       # quoted heredoc 经 ssh 'bash -s' 送入 xun，REG/部署目录/镜像 tag 作为位置参数传入，
       # 绕开 xun 的 fish 默认 shell 与嵌套引号转义问题。
       - name: Pull images from GHCR and restart app
+        id: deploy
         env:
           XUN_USER: ${{ secrets.XUN_USER }}
           XUN_HOST: ${{ secrets.XUN_HOST }}
@@ -783,12 +888,18 @@ jobs:
           port="${XUN_PORT:-29888}"
           dir="${XUN_DEPLOY_DIR:-/root/docker/yggdrasil}"
           owner="$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')"
-          app_tag="sha-$(echo '${{ github.sha }}' | cut -c1-7)-amd64"
+          app_tag="sha-${GITHUB_SHA::7}-amd64"
           ssh -p "$port" -o BatchMode=yes "${XUN_USER}@${XUN_HOST}" 'bash -s' "ghcr.io/${owner}" "${dir}" "${app_tag}" <<'REMOTE'
           set -euo pipefail
           REG="$1"
           DIR="$2"
           APP_TAG="$3"
+
+          # 拉取之前记录当前运行镜像，任何失败点都能据此回滚到本次部署前的版本。
+          cd "$DIR"
+          prev_id="$(docker inspect yggdrasil-app --format '{{.Image}}' 2>/dev/null || true)"
+          printf '%s\n' "$prev_id" > .previous-app-image
+          echo "==> previous app image: ${prev_id:-<none>}"
 
           # 带重试的拉取：xun(中国)访问 ghcr.io 偶发超时。
           pull_retry() {
@@ -833,7 +944,6 @@ jobs:
           fi
 
           echo "==> [3/3] force recreate app (postgres 与数据卷不动)"
-          cd "$DIR"
           docker compose --env-file .env up -d --no-deps --force-recreate app
           expected_id="$(docker image inspect "$REG/yggdrasil:$APP_TAG" --format '{{.Id}}')"
           running_id="$(docker inspect yggdrasil-app --format '{{.Image}}')"
@@ -848,6 +958,7 @@ jobs:
 
       # 轮询内部健康端点（经 nginx-proxy 容器访问 app:3000），最多等约 60s。
       - name: Health check
+        id: health
         env:
           XUN_USER: ${{ secrets.XUN_USER }}
           XUN_HOST: ${{ secrets.XUN_HOST }}
@@ -873,19 +984,57 @@ jobs:
           [ "$ok" = "1" ] || { echo "::error::app /readyz 未就绪或运行版本不是 $expected_hash"; exit 1; }
           ssh -p "$port" -o BatchMode=yes "${XUN_USER}@${XUN_HOST}" \
             'docker ps --filter name=yggdrasil --format "{{.Names}}\t{{.Status}}"'
+
+      # 部署或健康检查失败时切回部署前记录的镜像。回滚成功后 job 仍为失败，部署失败保持可见。
+      # 回滚只切换镜像，不会回退已经应用的数据库迁移：旧二进制会跳过库里已存在的新版本，
+      # 能在新 schema 上启动，但业务兼容性是尽力而为；迁移与旧代码不兼容时只能人工处理。
+      - name: Roll back on failure
+        if: failure() && steps.deploy.outcome != 'skipped'
+        env:
+          XUN_USER: ${{ secrets.XUN_USER }}
+          XUN_HOST: ${{ secrets.XUN_HOST }}
+          XUN_PORT: ${{ secrets.XUN_PORT }}
+          XUN_DEPLOY_DIR: ${{ secrets.XUN_DEPLOY_DIR }}
+        run: |
+          port="${XUN_PORT:-29888}"
+          dir="${XUN_DEPLOY_DIR:-/root/docker/yggdrasil}"
+          ssh -p "$port" -o BatchMode=yes "${XUN_USER}@${XUN_HOST}" 'bash -s' "$dir" <<'REMOTE'
+          set -euo pipefail
+          cd "$1"
+          prev="$(cat .previous-app-image 2>/dev/null || true)"
+          running="$(docker inspect yggdrasil-app --format '{{.Image}}' 2>/dev/null || true)"
+          [[ -n "$prev" ]] || { echo "::error::无上一版本镜像记录，无法回滚"; exit 1; }
+          if [[ "${prev#sha256:}" == "${running#sha256:}" ]]; then
+            echo "运行中即为上一版本镜像，无需回滚"; exit 0
+          fi
+          docker image inspect "$prev" >/dev/null 2>&1 || { echo "::error::上一版本镜像 $prev 已不存在"; exit 1; }
+          docker tag "$prev" localhost/yggdrasil:latest
+          docker compose --env-file .env up -d --no-deps --force-recreate app
+          for i in $(seq 1 12); do
+            if docker exec nginx-proxy curl -fsS -o /dev/null http://yggdrasil-app:3000/readyz; then
+              echo "::warning::已回滚到 $prev"; exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::回滚到 $prev 后 /readyz 仍未就绪"; exit 1
+          REMOTE
+
   # ── deploy-rua：与 deploy-xun 并行拉取 amd64 主应用并滚动重启 ──
   # rua 参与负载均衡，需与 xun 一样准备 runner 镜像；app 经 pg-tunnel 连 xun PG。
   # 受 repo 变量 RUA_DEPLOY_ENABLED=true 门控；未设则跳过。rua 失败 best-effort，
   # 不阻断 xun 主部署和发版作业。主应用使用 publish-amd64-ghcr 发布的 commit tag。
   # 所需 secrets：RUA_SSH_KEY / RUA_HOST / RUA_USER（启用后）、RUA_PORT（默认 29888）、
-  # RUA_DEPLOY_DIR（默认 /root/docker/yggdrasil）、RUA_KNOWN_HOSTS（可选 pin 指纹）。
+  # RUA_DEPLOY_DIR（默认 /root/docker/yggdrasil）、RUA_KNOWN_HOSTS（必填，拒绝 TOFU）。
   deploy-rua:
     runs-on: ubuntu-latest
-    needs: [publish-amd64-ghcr, publish-runners]
-    if: >-
-      vars.RUA_DEPLOY_ENABLED == 'true'
-      && ((github.event_name == 'push' && startsWith(github.ref, 'refs/tags/'))
-      || github.event_name == 'workflow_dispatch')
+    timeout-minutes: 20
+    needs: [deploy-gate, publish-amd64-ghcr, publish-runners]
+    if: vars.RUA_DEPLOY_ENABLED == 'true' && needs.deploy-gate.outputs.deploy == 'true'
+    environment:
+      name: production
+    concurrency:
+      group: deploy-rua
+      cancel-in-progress: false
     steps:
       - name: Configure SSH (rua replica)
         env:
@@ -898,17 +1047,14 @@ jobs:
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
           printf '%s\n' "$RUA_SSH_KEY" > ~/.ssh/id_ed25519_rua
           chmod 600 ~/.ssh/id_ed25519_rua
-          if [ -n "$RUA_KNOWN_HOSTS" ]; then
-            printf '%s\n' "$RUA_KNOWN_HOSTS" > ~/.ssh/known_hosts
-          else
-            echo "::warning::RUA_KNOWN_HOSTS 未设置，改用 ssh-keyscan（TOFU，建议改为 pin 指纹）"
-            ssh-keyscan -H "$RUA_HOST" >> ~/.ssh/known_hosts 2>/dev/null
-          fi
+          : "${RUA_KNOWN_HOSTS:?secret RUA_KNOWN_HOSTS 未设置（拒绝 TOFU）}"
+          printf '%s\n' "$RUA_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 644 ~/.ssh/known_hosts
 
       # 同 xun：quoted heredoc 经 ssh 'bash -s' 送入 rua，REG/部署目录/镜像 tag 作为位置参数传入。
       # 远端用 podman（rua 是 rootful Podman，非 Docker daemon）。
       - name: Pull app and runner images to rua replica and restart
+        id: deploy
         continue-on-error: true
         env:
           RUA_USER: ${{ secrets.RUA_USER }}
@@ -921,13 +1067,19 @@ jobs:
           port="${RUA_PORT:-29888}"
           dir="${RUA_DEPLOY_DIR:-/root/docker/yggdrasil}"
           owner="$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')"
-          app_tag="sha-$(echo '${{ github.sha }}' | cut -c1-7)-amd64"
+          app_tag="sha-${GITHUB_SHA::7}-amd64"
           ssh -p "$port" -i ~/.ssh/id_ed25519_rua -o BatchMode=yes \
             "${RUA_USER}@${RUA_HOST}" 'bash -s' "ghcr.io/${owner}" "${dir}" "${app_tag}" <<'REMOTE'
           set -euo pipefail
           REG="$1"
           DIR="$2"
           APP_TAG="$3"
+
+          # 拉取之前记录当前运行镜像，任何失败点都能据此回滚到本次部署前的版本。
+          cd "$DIR"
+          prev_id="$(podman inspect yggdrasil-app --format '{{.Image}}' 2>/dev/null || true)"
+          printf '%s\n' "$prev_id" > .previous-app-image
+          echo "==> previous app image: ${prev_id:-<none>}"
 
           pull_retry() {
             local img="$1" i
@@ -969,7 +1121,6 @@ jobs:
           fi
 
           echo "==> [rua] force recreate app (pg-tunnel / pg-standby 不动)"
-          cd "$DIR"
           podman compose --env-file .env up -d --no-deps --force-recreate app
           expected_id="$(podman image inspect "$REG/yggdrasil:$APP_TAG" --format '{{.Id}}')"
           running_id="$(podman inspect yggdrasil-app --format '{{.Image}}')"
@@ -983,6 +1134,7 @@ jobs:
 
       # rua 健康检查（经 nginx-proxy 容器访问 app:3000），最多等约 60s；best-effort。
       - name: Health check (rua replica)
+        id: health
         continue-on-error: true
         env:
           RUA_USER: ${{ secrets.RUA_USER }}
@@ -1009,3 +1161,37 @@ jobs:
           [ "$ok" = "1" ] || { echo "::warning::rua /readyz 未就绪或运行版本不是 $expected_hash（DR 副本，不阻断作业）"; exit 1; }
           ssh -p "$port" -i ~/.ssh/id_ed25519_rua -o BatchMode=yes "${RUA_USER}@${RUA_HOST}" \
             'podman ps --filter name=yggdrasil --format "{{.Names}}\t{{.Status}}"'
+
+      # 与 deploy-xun 同样回滚到部署前镜像（回滚不回退数据库迁移）。deploy/health 两步带
+      # continue-on-error，failure() 不会为真，因此改用 outcome 判断；本步骤同样 best-effort。
+      - name: Roll back on failure (rua replica)
+        if: steps.deploy.outcome == 'failure' || steps.health.outcome == 'failure'
+        continue-on-error: true
+        env:
+          RUA_USER: ${{ secrets.RUA_USER }}
+          RUA_HOST: ${{ secrets.RUA_HOST }}
+          RUA_PORT: ${{ secrets.RUA_PORT }}
+          RUA_DEPLOY_DIR: ${{ secrets.RUA_DEPLOY_DIR }}
+        run: |
+          port="${RUA_PORT:-29888}"
+          dir="${RUA_DEPLOY_DIR:-/root/docker/yggdrasil}"
+          ssh -p "$port" -i ~/.ssh/id_ed25519_rua -o BatchMode=yes "${RUA_USER}@${RUA_HOST}" 'bash -s' "$dir" <<'REMOTE'
+          set -euo pipefail
+          cd "$1"
+          prev="$(cat .previous-app-image 2>/dev/null || true)"
+          running="$(podman inspect yggdrasil-app --format '{{.Image}}' 2>/dev/null || true)"
+          [[ -n "$prev" ]] || { echo "::error::无上一版本镜像记录，无法回滚"; exit 1; }
+          if [[ "${prev#sha256:}" == "${running#sha256:}" ]]; then
+            echo "运行中即为上一版本镜像，无需回滚"; exit 0
+          fi
+          podman image inspect "$prev" >/dev/null 2>&1 || { echo "::error::上一版本镜像 $prev 已不存在"; exit 1; }
+          podman tag "$prev" localhost/yggdrasil:latest
+          podman compose --env-file .env up -d --no-deps --force-recreate app
+          for i in $(seq 1 12); do
+            if podman exec nginx-proxy curl -fsS -o /dev/null http://yggdrasil-app:3000/readyz; then
+              echo "::warning::已回滚到 $prev"; exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::回滚到 $prev 后 /readyz 仍未就绪"; exit 1
+          REMOTE

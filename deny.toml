@@ -1,0 +1,22 @@
+# CI audit job：cargo deny check advisories sources
+[graph]
+all-features = true
+
+[advisories]
+# 存量告警：本次引入审计门禁时不升级依赖，只登记现状；新增告警会使 CI 失败。
+ignore = [
+  { id = "RUSTSEC-2024-0320", reason = "存量依赖，yaml-rust 待随 syntect 升级移除" },
+  { id = "RUSTSEC-2024-0436", reason = "存量依赖，paste 待随依赖升级移除" },
+  { id = "RUSTSEC-2025-0141", reason = "存量依赖，bincode 待随依赖升级移除" },
+  { id = "RUSTSEC-2026-0346", reason = "存量依赖，rustls 待随依赖升级移除" },
+  { id = "RUSTSEC-2026-0347", reason = "存量依赖，rustls 待随依赖升级移除" },
+  { id = "RUSTSEC-2026-0348", reason = "存量依赖，rustls 待随依赖升级移除" },
+  { id = "RUSTSEC-2026-0349", reason = "存量依赖，rustls 待随依赖升级移除" },
+  { id = "RUSTSEC-2026-0381", reason = "存量依赖，webpki-roots 待随依赖升级移除" },
+  { id = "RUSTSEC-2026-0382", reason = "存量依赖，rustls-webpki 待随依赖升级移除" },
+  { id = "RUSTSEC-2026-0383", reason = "存量依赖，webpki-root-certs 待随依赖升级移除" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
