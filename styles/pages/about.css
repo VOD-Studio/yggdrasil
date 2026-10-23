@@ -5,6 +5,20 @@
   padding-top: 2rem;
   --about-bar: color-mix(in oklab, var(--color-fg) 32%, transparent);
 }
+.about-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+}
+.about-mascot {
+  flex: none;
+  width: 7rem;
+  height: 7rem;
+  object-fit: contain;
+  image-rendering: pixelated;
+  user-select: none;
+}
 .about-title {
   margin: 0;
   color: var(--color-fg);

@@ -24,7 +24,17 @@ pub fn About() -> Element {
     rsx! {
         document::Title { "关于 · Yggdrasil" }
         article { class: "about",
-            h1 { class: "about-title page-enter", "关于" }
+            div { class: "about-head page-enter",
+                h1 { class: "about-title", "关于" }
+                img {
+                    class: "about-mascot",
+                    src: "/images/about/claude-girl.webp",
+                    alt: "橙色长发的像素风女孩，双手捧着一只橙色小动物",
+                    width: "256",
+                    height: "256",
+                    decoding: "async",
+                }
+            }
             div { class: "about-prose page-enter", style: "--enter-index: 1",
                 p {
                     "这里是 xfy 的个人站点。大多数文章在拆解一个具体的实现：一台 6502 的时钟、"
