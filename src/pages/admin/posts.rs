@@ -144,18 +144,47 @@ fn RebuildMenu() -> Element {
         }
         busy.set(true);
         spawn(async move {
-            match rebuild_content_html(rebuild_all).await {
-                Ok(res) if res.failed > 0 => toast.error(format!(
-                    "已重建 {} 篇，失败 {} 篇{}",
-                    res.rebuilt,
-                    res.failed,
-                    res.errors
-                        .first()
+            // 服务端每批只处理一部分，按 next_after_id 游标续传直到处理完。
+            let mut after_id = 0_i32;
+            let mut rebuilt = 0_u64;
+            let mut failed = 0_u64;
+            let mut first_error: Option<String> = None;
+            let mut interrupted = None;
+            loop {
+                match rebuild_content_html(rebuild_all, after_id).await {
+                    Ok(res) => {
+                        rebuilt += res.rebuilt;
+                        failed += res.failed;
+                        if first_error.is_none() {
+                            first_error = res.errors.into_iter().next();
+                        }
+                        match res.next_after_id {
+                            Some(next) => after_id = next,
+                            None => break,
+                        }
+                    }
+                    Err(e) => {
+                        interrupted = Some(e);
+                        break;
+                    }
+                }
+            }
+            if let Some(e) = interrupted {
+                let prefix = if rebuilt > 0 {
+                    format!("已重建 {rebuilt} 篇后中断")
+                } else {
+                    "重建失败".to_string()
+                };
+                toast.error(failure_message(&prefix, &e));
+            } else if failed > 0 {
+                toast.error(format!(
+                    "已重建 {rebuilt} 篇，失败 {failed} 篇{}",
+                    first_error
                         .map(|e| format!("：{e}"))
                         .unwrap_or_default()
-                )),
-                Ok(res) => toast.success(format!("已重建 {} 篇文章的渲染", res.rebuilt)),
-                Err(e) => toast.error(failure_message("重建失败", &e)),
+                ));
+            } else {
+                toast.success(format!("已重建 {rebuilt} 篇文章的渲染"));
             }
             busy.set(false);
         });

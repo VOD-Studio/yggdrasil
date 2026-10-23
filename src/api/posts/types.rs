@@ -177,6 +177,8 @@ pub struct RebuildResult {
     pub failed: u64,
     /// 失败信息摘要（最多 5 条）。
     pub errors: Vec<String>,
+    /// 本批已满时为最后处理的 id，前端以此续传；None 表示已处理完。
+    pub next_after_id: Option<i32>,
 }
 
 /// 浏览器协议适配：业务拒绝保留 success=false，内部错误使用统一脱敏转换。

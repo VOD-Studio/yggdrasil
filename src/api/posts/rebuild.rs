@@ -15,52 +15,55 @@ use crate::api::posts::{CreatePostResponse, RebuildResult};
 #[cfg(feature = "server")]
 use crate::db::pool::get_conn;
 
-/// 单次重建批处理数量上限。
+/// 单次重建批处理数量。每批 100 篇，保证单次调用在 30 s 请求超时内完成。
 #[cfg(feature = "server")]
-const REBUILD_BATCH_LIMIT: i64 = 500;
+const REBUILD_BATCH_LIMIT: i64 = 100;
 /// 返回给前端展示的最大错误条数。
 #[cfg(feature = "server")]
 const MAX_DISPLAY_ERRORS: usize = 5;
 
-/// 批量重建文章 content_html 与 toc_html。
+/// 批量重建文章 content_html 与 toc_html（单批，客户端按游标续传）。
 ///
 /// 当 `rebuild_all` 为 true 时重建所有未删除文章；否则仅重建 content_html 为空的文章。
-/// 单批最多处理 500 条，渲染异常或写入失败会被捕获并汇总。
+/// 只处理 `id > after_id` 的前 [`REBUILD_BATCH_LIMIT`] 篇；批满时 `next_after_id` 给出续传游标，
+/// 为 None 表示已处理完。渲染在事务外进行，写回用 `updated_at` 乐观校验：渲染期间被编辑的文章
+/// 其写路径已自行渲染，这里跳过。渲染异常或写入失败会被捕获并汇总。
 #[server(RebuildContentHtml, "/api")]
-pub async fn rebuild_content_html(rebuild_all: bool) -> Result<RebuildResult, ServerFnError> {
+pub async fn rebuild_content_html(
+    rebuild_all: bool,
+    after_id: i32,
+) -> Result<RebuildResult, ServerFnError> {
     let _user = get_current_admin_user().await?;
 
     #[cfg(feature = "server")]
     {
-        let mut client = get_conn().await.map_err(AppError::db_conn)?;
+        let client = get_conn().await.map_err(AppError::db_conn)?;
 
-        // 根据参数构造 WHERE 条件，限制单次处理数量。
-        // SELECT 在事务内并加 FOR UPDATE，锁住待处理行直到 UPDATE 完成，避免
-        // 并发编辑造成非可重复读（review 发现）：事务外读到的 content_md 可能在
-        // UPDATE 前被并发请求修改，导致用旧内容覆盖新内容。
-        let query = if rebuild_all {
-            format!(
-                "SELECT id, content_md FROM posts WHERE deleted_at IS NULL ORDER BY id LIMIT {REBUILD_BATCH_LIMIT} FOR UPDATE"
-            )
+        // 两种模式都必须按游标分页：渲染失败的行 content_html 仍为 NULL，无游标会被反复选中。
+        let missing_only = if rebuild_all {
+            ""
         } else {
-            format!(
-                "SELECT id, content_md FROM posts WHERE deleted_at IS NULL AND content_html IS NULL ORDER BY id LIMIT {REBUILD_BATCH_LIMIT} FOR UPDATE"
-            )
+            "AND content_html IS NULL"
         };
+        let query = format!(
+            "SELECT id, content_md, updated_at FROM posts \
+             WHERE deleted_at IS NULL {missing_only} AND id > $1 ORDER BY id LIMIT {REBUILD_BATCH_LIMIT}"
+        );
 
         let mut rebuilt: u64 = 0;
         let mut failed: u64 = 0;
         let mut errors: Vec<String> = Vec::new();
+        let mut aborted = false;
 
-        // 整批 SELECT + UPDATE 纳入单事务：中途断连或写入失败整批回滚，避免产生
-        // 「部分文章已重建」的中间态（M5）；FOR UPDATE 锁住的行随事务结束释放。
-        let tx = client.transaction().await.map_err(AppError::query)?;
-
-        let rows = tx.query(&query, &[]).await.map_err(AppError::query)?;
+        let rows = client
+            .query(&query, &[&after_id])
+            .await
+            .map_err(AppError::query)?;
 
         for row in &rows {
             let id: i32 = row.get(0);
             let content_md: String = row.get(1);
+            let updated_at: chrono::DateTime<chrono::Utc> = row.get(2);
 
             // Markdown 渲染 + 度量派生收敛到 helper（R4）。
             let (content_html, toc_html, word_count, reading_time) =
@@ -75,41 +78,41 @@ pub async fn rebuild_content_html(rebuild_all: bool) -> Result<RebuildResult, Se
                     }
                 };
 
-            match tx
+            match client
                 .execute(
-                    "UPDATE posts SET content_html = $1, toc_html = $2, word_count = $3, reading_time = $4 WHERE id = $5",
+                    "UPDATE posts SET content_html = $1, toc_html = $2, word_count = $3, reading_time = $4 \
+                     WHERE id = $5 AND updated_at = $6 AND deleted_at IS NULL",
                     &[
                         &content_html,
                         &toc_html,
                         &word_count,
                         &reading_time,
                         &id,
+                        &updated_at,
                     ],
                 )
                 .await
             {
-                Ok(_) => {
-                    rebuilt += 1;
-                }
+                Ok(1) => rebuilt += 1,
+                // 渲染期间文章被编辑或删除：其写路径已自行渲染，跳过不计数。
+                Ok(_) => {}
                 Err(e) => {
-                    // 事务内任一写入失败会使事务进入 abort 状态，后续写入都会失败；
-                    // 此时整批回滚，保证不产生中间态。
                     failed += 1;
                     if errors.len() < MAX_DISPLAY_ERRORS {
-                        errors.push(format!("文章 #{id}: DB 写入失败（整批将回滚）"));
+                        errors.push(format!("文章 #{id}: DB 写入失败，已中止"));
                     }
-                    tracing::error!("rebuild UPDATE 失败，整批回滚: {:?}", e);
-                    tx.rollback().await.ok();
-                    return Ok(RebuildResult {
-                        rebuilt: 0,
-                        failed,
-                        errors,
-                    });
+                    tracing::error!("rebuild UPDATE 失败，中止本批: {:?}", e);
+                    aborted = true;
+                    break;
                 }
             }
         }
 
-        tx.commit().await.map_err(AppError::query)?;
+        let next_after_id = if !aborted && rows.len() as i64 == REBUILD_BATCH_LIMIT {
+            rows.last().map(|r| r.get::<_, i32>(0))
+        } else {
+            None
+        };
 
         // 重建会修改 word_count / reading_time 等列表项字段，批量影响列表、标签云、
         // 标签文章及单篇缓存；这里使用全量失效作为务实的回退策略。
@@ -125,15 +128,18 @@ pub async fn rebuild_content_html(rebuild_all: bool) -> Result<RebuildResult, Se
             rebuilt,
             failed,
             errors,
+            next_after_id,
         })
     }
 
     #[cfg(not(feature = "server"))]
     {
+        let _ = (rebuild_all, after_id);
         Ok(RebuildResult {
             rebuilt: 0,
             failed: 0,
             errors: vec![],
+            next_after_id: None,
         })
     }
 }
