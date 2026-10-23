@@ -117,6 +117,8 @@ fn WriteEditor(
     let (mut recovery, cache_failed) =
         use_draft_protection(slot, form, move || state.dirty() || state.busy());
     let mut drawer_open = use_signal(|| true);
+    // 只有点「属性」打开时才播滑入动画；首屏、换页与编辑器挂载时直接出现。
+    let mut drawer_animate = use_signal(|| false);
     // 首屏与 SSR 一致，水合后窄屏默认收起属性抽屉。
     #[cfg(target_arch = "wasm32")]
     use_effect(move || {
@@ -254,7 +256,10 @@ fn WriteEditor(
                         aria_controls: "write-drawer",
                         // 窄屏只剩图标，名称由 aria-label 补出。
                         aria_label: "属性",
-                        onclick: move |_| drawer_open.toggle(),
+                        onclick: move |_| {
+                            drawer_animate.set(true);
+                            drawer_open.toggle();
+                        },
                         Icon { name: IconName::PanelRight, size: 15 }
                         span { class: "write-hide-narrow", "属性" }
                     }
@@ -438,7 +443,10 @@ fn WriteEditor(
                     }
                 }
                 if drawer_open() {
-                    div { id: "write-drawer", class: "write-drawer-slot",
+                    div {
+                        id: "write-drawer",
+                        class: "write-drawer-slot",
+                        "data-enter": drawer_animate().then_some("true"),
                         MetadataPanel { state, open: drawer_open, on_trash: move_to_trash }
                     }
                 }

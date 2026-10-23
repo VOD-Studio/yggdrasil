@@ -371,6 +371,11 @@ button.write-status:focus-visible {
   overflow-y: auto;
   background-color: var(--color-surface-1);
   box-shadow: inset var(--hairline) 0 0 var(--color-hairline);
+}
+
+/* 只在用户点「属性」/「设置」打开时滑入；首屏、骨架与编辑器挂载都不播，
+   否则换页进入编辑页时骨架与真实抽屉会连播几次入场，看起来在闪。 */
+.write-drawer-slot[data-enter] > .write-drawer {
   /* backwards：动画结束后不保留 transform，抽屉里的弹窗（素材库）才能按视口定位。 */
   animation: write-drawer-in 300ms var(--ease-out-expo) backwards;
 }
@@ -702,7 +707,7 @@ button.write-status:focus-visible {
   }
 
   .write-banner,
-  .write-drawer {
+  .write-drawer-slot[data-enter] > .write-drawer {
     animation: listbox-fade 150ms linear both;
   }
 }
