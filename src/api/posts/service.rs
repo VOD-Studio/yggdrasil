@@ -216,10 +216,22 @@ pub(crate) async fn update(
             let (p, fields) = replacement(draft).await?;
             (p, Some(fields), false)
         }
-        // PATCH 的缺省字段需从锁定行读取，再决定最终状态与封面。
+        // PATCH 缺省字段（状态、封面）需从锁定行读取；渲染只依赖正文，与 Replace 一样在加锁前完成。
+        // 版本冲突仍由下方 FOR UPDATE 行上的 expected_updated_at 判定。
         UpdatePost::Patch(patch) => {
             validate_patch(&patch)?;
-            (patch, None, true)
+            let prepared = match &patch.content_md {
+                Some(md) => Some(
+                    helpers::render_post_fields(
+                        md,
+                        patch.status.as_deref().unwrap_or("draft"),
+                        None,
+                    )
+                    .await?,
+                ),
+                None => None,
+            };
+            (patch, prepared, true)
         }
     };
     let mut client = get_conn().await.map_err(AppError::db_conn)?;
@@ -250,18 +262,7 @@ pub(crate) async fn update(
         FieldChange::Set(value) => normalize_cover(Some(value)),
         FieldChange::Clear => None,
     };
-    let rendered = match (&p.content_md, prepared) {
-        (_, Some(fields)) => Some(fields),
-        (Some(md), None) => Some(
-            helpers::render_post_fields(
-                md,
-                p.status.as_deref().unwrap_or(&old_status),
-                effective_cover.as_deref(),
-            )
-            .await?,
-        ),
-        (None, None) => None,
-    };
+    let rendered = prepared;
     // 空摘要只在同时提供正文时重新提取；单独传空摘要沿用已有 PATCH 行为。
     let summary = match (&p.summary, &rendered) {
         (Some(s), fields) if s.trim().is_empty() => fields.as_ref().map(|f| f.auto_summary.clone()),
