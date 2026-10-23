@@ -179,9 +179,7 @@ fn RebuildMenu() -> Element {
             } else if failed > 0 {
                 toast.error(format!(
                     "已重建 {rebuilt} 篇，失败 {failed} 篇{}",
-                    first_error
-                        .map(|e| format!("：{e}"))
-                        .unwrap_or_default()
+                    first_error.map(|e| format!("：{e}")).unwrap_or_default()
                 ));
             } else {
                 toast.success(format!("已重建 {rebuilt} 篇文章的渲染"));
