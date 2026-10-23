@@ -672,7 +672,7 @@ pub fn FormInput(
         input {
             id: id.unwrap_or_default(),
             class: "{base}{mono_class}{disabled_class}",
-            r#type: "{r#type}",
+            r#type,
             placeholder,
             value: "{value}",
             disabled,
