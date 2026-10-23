@@ -470,6 +470,94 @@ describe('section navigation', () => {
     skipActiveAnimation();
     expect(native[0].skip).toHaveBeenCalledOnce();
   });
+
+  describe('nav pill', () => {
+    const header = (current?: string) => {
+      const link = (href: string, label: string) =>
+        `<a class="nav-item" href="${href}">${label}${
+          href === current ? '<span class="nav-indicator"></span>' : ''
+        }</a>`;
+      return `<header data-vt-shell="frontend-header"><nav class="site-nav">${link('/', '首页')}${link('/about', '关于')}</nav></header><main>Section</main>`;
+    };
+    const paintHeader = (current?: string, route = routes.currentRoute()): void => {
+      paint(header(current), route);
+      const pill = document.querySelector('.nav-indicator');
+      if (pill)
+        vi.spyOn(pill, 'getBoundingClientRect').mockReturnValue(new DOMRect(600, 12, 64, 30));
+    };
+    const withAnimate = async (
+      body: (animate: Mock, done: ReturnType<typeof deferred>) => Promise<void>,
+    ) => {
+      const original = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'animate');
+      const done = deferred();
+      const animate = vi.fn(() => ({ finished: done.promise }) as unknown as Animation);
+      Object.defineProperty(HTMLElement.prototype, 'animate', {
+        configurable: true,
+        writable: true,
+        value: animate,
+      });
+      try {
+        await body(animate, done);
+      } finally {
+        if (original) Object.defineProperty(HTMLElement.prototype, 'animate', original);
+        else delete (HTMLElement.prototype as unknown as { animate?: unknown }).animate;
+      }
+    };
+    // Settle on /about with the pill on its link.
+    const settleOnAbout = async (): Promise<void> => {
+      routes.push('/about');
+      await native[native.length - 1].invoke();
+      await finish();
+      paintHeader('/about');
+    };
+    const navigateTo = async (route: string, html: string): Promise<void> => {
+      autoRender = false;
+      routes.push(route);
+      const update = native[native.length - 1].invoke();
+      paint(html);
+      const pill = document.querySelector('.nav-indicator');
+      if (pill)
+        vi.spyOn(pill, 'getBoundingClientRect').mockReturnValue(new DOMRect(600, 12, 64, 30));
+      routes.rendered(routes.navigationId(), routes.currentRoute());
+      await update;
+      await flush();
+    };
+
+    it('fades out in place of the old link when entering /search', async () => {
+      await withAnimate(async (animate, done) => {
+        await settleOnAbout();
+        await navigateTo('/search', header());
+        expect(animate).toHaveBeenCalledOnce();
+        expect(animate.mock.calls[0][0]).toEqual([{ opacity: 1 }, { opacity: 0 }]);
+        expect(
+          document.querySelector('.site-nav a[href="/about"] .nav-indicator[aria-hidden="true"]'),
+        ).not.toBeNull();
+        done.resolve();
+        await flush();
+        expect(document.querySelector('.nav-indicator')).toBeNull();
+      });
+    });
+
+    it('fades in on the new link when leaving /search', async () => {
+      await withAnimate(async (animate) => {
+        routes.push('/search');
+        await native[native.length - 1].invoke();
+        await finish();
+        await navigateTo('/', header('/'));
+        expect(animate).toHaveBeenCalledOnce();
+        expect(animate.mock.calls[0][0]).toEqual([{ opacity: 0 }, { opacity: 1 }]);
+        expect(animate.mock.contexts[0]).toBe(document.querySelector('.nav-indicator'));
+      });
+    });
+
+    it('leaves the pill alone for navigation outside the sections', async () => {
+      await withAnimate(async (animate) => {
+        await settleOnAbout();
+        await navigateTo('/changelog', header('/about'));
+        expect(animate).not.toHaveBeenCalled();
+      });
+    });
+  });
 });
 
 describe('shared article snapshots', () => {

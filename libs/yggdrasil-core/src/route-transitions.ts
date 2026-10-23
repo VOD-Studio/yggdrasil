@@ -43,7 +43,8 @@ interface Navigation {
   oldRoles: Set<string>;
   shell: boolean;
   sectionTop?: number;
-  pillFrom?: DOMRect;
+  /** Section transitions only: the desktop pill before the update and its nav link. */
+  pill?: { from?: DOMRect; href?: string };
   attempt?: () => void;
   release?: () => void;
   vt?: ViewTransition;
@@ -65,6 +66,11 @@ function sectionIndex(url: string): number {
 }
 /** Desktop section pill; the mobile nav is hidden and measures zero width. */
 const NAV_PILL = '.site-nav .nav-indicator';
+/** Minified CSS may serialize time tokens in seconds (`.41s`). */
+function cssTime(value: string): number {
+  const time = value.trim();
+  return Number.parseFloat(time) * (time.endsWith('ms') ? 1 : 1000);
+}
 function shell(url: string): string {
   const path = page(url).split('?')[0];
   return /^\/admin(?:\/|$)/.test(path)
@@ -455,7 +461,11 @@ export class RouteTransitions {
     if (fromSection >= 0 && toSection >= 0 && fromSection !== toSection) {
       document.documentElement.dataset.vtSection = toSection > fromSection ? 'forward' : 'backward';
       nav.sectionTop = document.querySelector('main')?.getBoundingClientRect().top;
-      nav.pillFrom = document.querySelector(NAV_PILL)?.getBoundingClientRect();
+      const pill = document.querySelector<HTMLElement>(NAV_PILL);
+      nav.pill = {
+        from: pill?.getBoundingClientRect(),
+        href: pill?.closest('.nav-item')?.getAttribute('href') ?? undefined,
+      };
     }
     this.assignShell(nav);
     if (nav.post) {
@@ -677,24 +687,57 @@ export class RouteTransitions {
   // The pill slides in the live header: a captured snapshot would cover the nav text above it
   // and block clicks that interrupt the animation.
   private slidePill(nav: Navigation): void {
-    const from = nav.pillFrom;
+    const state = nav.pill;
+    if (!state || nav.cancelled || this.navigation !== nav) return;
     const pill = document.querySelector<HTMLElement>(NAV_PILL);
-    if (nav.cancelled || this.navigation !== nav || !from?.width || !pill) return;
-    const to = pill.getBoundingClientRect();
-    if (!to.width || (from.left === to.left && from.right === to.right)) return;
     const motion = getComputedStyle(document.documentElement);
-    // Minified CSS may serialize the token in seconds (`.41s`).
-    const duration = motion.getPropertyValue('--spring-snappy-duration').trim();
+    // The destination has no pill (entering /search): fade out the old one.
+    if (!pill) {
+      if (state.from?.width) this.fadeOutPill(state.href, motion);
+      return;
+    }
+    const to = pill.getBoundingClientRect();
+    if (!to.width) return;
+    // The source had no pill element (leaving /search): fade the new one in place. A mobile
+    // pill exists with zero width, so `from` is defined and the check above already returned.
+    if (!state.from) {
+      pill.animate([{ opacity: 0 }, { opacity: 1 }], {
+        duration: cssTime(motion.getPropertyValue('--spring-snappy-duration')),
+        easing: motion.getPropertyValue('--ease-spring-snappy').trim(),
+      });
+      return;
+    }
+    const from = state.from;
+    if (!from.width || (from.left === to.left && from.right === to.right)) return;
     pill.animate(
       [
         { left: `${from.left - to.left}px`, right: `${to.right - from.right}px` },
         { left: '0px', right: '0px' },
       ],
       {
-        duration: Number.parseFloat(duration) * (duration.endsWith('ms') ? 1 : 1000),
+        duration: cssTime(motion.getPropertyValue('--spring-snappy-duration')),
         easing: motion.getPropertyValue('--ease-spring-snappy').trim(),
       },
     );
+  }
+  // The old pill is gone after the update; fade a temporary copy inside the old live link.
+  private fadeOutPill(href: string | undefined, motion: CSSStyleDeclaration): void {
+    const item = [...document.querySelectorAll<HTMLElement>('.site-nav .nav-item')].find(
+      (link) => link.getAttribute('href') === href,
+    );
+    if (!item || item.querySelector('.nav-indicator')) return;
+    const ghost = document.createElement('span');
+    ghost.className = 'nav-indicator';
+    ghost.setAttribute('aria-hidden', 'true');
+    item.append(ghost);
+    const remove = () => ghost.remove();
+    void ghost
+      .animate([{ opacity: 1 }, { opacity: 0 }], {
+        duration: 140,
+        easing: motion.getPropertyValue('--ease-out-expo').trim(),
+        fill: 'forwards',
+      })
+      .finished.then(remove, remove);
   }
   private assignShell(nav: Navigation): void {
     if (!nav.shell) return;
