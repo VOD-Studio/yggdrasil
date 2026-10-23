@@ -170,7 +170,7 @@
   font-size: 0.8125rem;
 }
 
-@media (max-width: 760px) {
+@media (max-width: 767px) {
   .archive-title { font-size: 1.875rem; }
   .archive-year {
     grid-template-columns: minmax(0, 1fr);

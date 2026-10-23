@@ -86,7 +86,7 @@ async function main() {
       await page.getByRole('button', { name: '展开全文' }).click();
       assert.equal(await page.locator('.writing-content').getAttribute('data-expanded'), 'true');
       // 窄屏隐藏侧栏目录；改用「先读全文」锚点验证同样的页内跳转。
-      const headingLink = variant.width < 760
+      const headingLink = variant.width < 768
         ? page.getByRole('link', { name: '先读全文' })
         : page.getByRole('navigation', { name: '技能目录' }).getByRole('link', { name: '可运行代码块', exact: true });
       const hash = await headingLink.getAttribute('href');

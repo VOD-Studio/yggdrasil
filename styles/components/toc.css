@@ -1,7 +1,7 @@
 @layer components {
   /* ===== 文章目录 =====
      默认是浮层形态：底部悬浮条「目录 · 当前小节 · 百分比」，点开后目录浮起
-     （760px 以下为底部抽屉）。宽屏且位于 .post-layout 内时改为正文右侧的吸顶目录，
+     （767px 以下为底部抽屉）。宽屏且位于 .post-layout 内时改为正文右侧的吸顶目录，
      见文末覆盖。进度 --toc-progress（0–1）由 yggdrasil-core 写在 .post-toc 上。 */
   .post-toc {
     display: contents;
@@ -249,7 +249,7 @@
   }
 
   /* 手机：悬浮条撑满两侧，目录从底部抽出，页头下方一条 2px 阅读进度线。 */
-  @media (max-width: 760px) {
+  @media (max-width: 767px) {
     .toc-progress-line {
       position: fixed;
       z-index: 39;

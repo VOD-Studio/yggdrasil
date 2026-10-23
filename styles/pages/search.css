@@ -145,7 +145,7 @@ a.search-result:hover { background-color: var(--color-ink-1); }
   font-size: 0.875rem;
 }
 
-@media (max-width: 760px) {
+@media (max-width: 767px) {
   .search-title { font-size: 1.875rem; }
 }
 
@@ -232,7 +232,7 @@ a.search-result:hover { background-color: var(--color-ink-1); }
   font-size: 0.78125rem;
 }
 
-@media (max-width: 760px) {
+@media (max-width: 767px) {
   .not-found { padding-top: 2.5rem; }
   .not-found-title { font-size: 1.875rem; }
 }

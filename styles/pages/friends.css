@@ -252,7 +252,7 @@ a.friend-card:focus-visible .friend-go {
   color: var(--color-danger);
 }
 
-@media (max-width: 760px) {
+@media (max-width: 767px) {
   .friends-title { font-size: 1.875rem; }
   .friends-grid,
   .friends-swap-grid { grid-template-columns: minmax(0, 1fr); }

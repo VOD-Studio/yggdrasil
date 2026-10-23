@@ -358,7 +358,7 @@
     .changelog-version { scroll-margin-top: 11rem; }
   }
 
-  @media (max-width: 760px) {
+  @media (max-width: 767px) {
     .changelog-title { font-size: 1.875rem; }
   }
 

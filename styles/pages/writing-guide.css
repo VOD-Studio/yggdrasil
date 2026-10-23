@@ -336,7 +336,7 @@
   margin-top: -0.5rem;
 }
 
-@media (max-width: 760px) {
+@media (max-width: 767px) {
   .writing-title { font-size: 1.875rem; }
   .writing-feature-grid { grid-template-columns: minmax(0, 1fr); }
   .writing-skill-layout {

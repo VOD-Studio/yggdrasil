@@ -348,7 +348,7 @@
   }
 
   /* 手机：代码区贴边；标题栏只留语言、状态与运行，其余收进「⋯」。 */
-  @media (max-width: 760px) {
+  @media (max-width: 767px) {
     .post-content .runner {
       margin-inline: -1.5rem;
       border-radius: 0;

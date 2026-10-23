@@ -285,7 +285,7 @@
     margin-top: 0.25rem;
   }
 
-  @media (max-width: 760px) {
+  @media (max-width: 767px) {
     .comment-hint-wide {
       display: none;
     }

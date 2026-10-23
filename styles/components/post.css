@@ -200,7 +200,7 @@
     border-radius: var(--radius-code);
   }
 
-  @media (max-width: 760px) {
+  @media (max-width: 767px) {
     /* 手机文字占满栏宽，代码块另行贴到屏幕边缘（article.css / runner.css）。 */
     .post-single {
       --post-inset: 0px;

@@ -228,7 +228,7 @@
   gap: 0.5rem;
 }
 
-@media (max-width: 760px) {
+@media (max-width: 767px) {
   .about-title { font-size: 1.875rem; }
   .about-prose { font-size: 1.0625rem; }
   .about-facts,

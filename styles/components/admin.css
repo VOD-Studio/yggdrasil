@@ -1,6 +1,6 @@
 /* ======== 后台外壳 ========
    桌面应用式：左侧栏 surface-1（可收成 56px 图标栏、拖拽右缘调宽），主画布 surface-0，
-   顶栏是面包屑。768px 以下侧栏收进左侧抽屉。结构见 src/components/admin_layout.rs。
+   顶栏是面包屑。767px 以下侧栏收进左侧抽屉。结构见 src/components/admin_layout.rs。
 
    侧栏状态：外壳挂载后由根元素的 data-sidebar 与 --admin-sidebar-shown 决定；挂载前
    由预载脚本写在 <html> 上的 data-admin-sidebar 与 --admin-sidebar-w 决定。下面的

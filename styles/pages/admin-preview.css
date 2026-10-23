@@ -1,6 +1,6 @@
 /* ======== 草稿预览 ========
    结构见 src/pages/admin/preview.rs：顶部浮起预览条，正文与前台文章页同一套样式；
-   手机档把正文放进 390px 画框，并按前台 760px 以下的规则缩小标题与正文。 */
+   手机档把正文放进 390px 画框，并按前台 767px 以下的规则缩小标题与正文。 */
 .post-preview {
   --preview-bar-gap: 0.75rem;
 }
@@ -94,7 +94,7 @@
   box-shadow: 0 0 0 var(--hairline) var(--color-hairline), 0 20px 60px rgb(0 0 0 / 0.12);
 }
 
-/* 手机档文字占满画框，与前台 760px 以下一致。 */
+/* 手机档文字占满画框，与前台 767px 以下一致。 */
 .post-preview[data-width="mobile"] .post-single {
   --post-inset: 0px;
 }
