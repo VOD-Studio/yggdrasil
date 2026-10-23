@@ -49,4 +49,9 @@ mod tests {
             "| a   | b   |\n| --- | --- |\n| 1   | 2   |"
         ));
     }
+
+    #[test]
+    fn escaped_intraword_delimiters_are_not_lossy() {
+        assert!(renders_identically("H~2~O 与 x^2^", "H\\~2\\~O 与 x^2\\^"));
+    }
 }

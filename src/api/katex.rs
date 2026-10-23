@@ -218,6 +218,7 @@ pub fn render_inline(tex: &str) -> String {
     KATEX_CTX.with(|ctx| {
         INLINE_SETTINGS.with(|settings| {
             katex::render_to_string(ctx, &tex, settings)
+                .map(|html| sort_svg_attributes(&html))
                 .unwrap_or_else(|_| crate::utils::html::escape_html(&tex))
         })
     })
@@ -232,9 +233,61 @@ pub fn render_display(tex: &str) -> String {
     KATEX_CTX.with(|ctx| {
         DISPLAY_SETTINGS.with(|settings| {
             katex::render_to_string(ctx, &tex, settings)
+                .map(|html| sort_svg_attributes(&html))
                 .unwrap_or_else(|_| crate::utils::html::escape_html(&tex))
         })
     })
+}
+
+/// 把 `<svg>` / `<path>` 开标签的属性按名称排序。
+///
+/// `katex-rs` 用 `HashMap` 存 SVG 属性，同一公式两次渲染的属性顺序不同（实测同一
+/// 输入 10 次中 9 次不同）。顺序不影响显示，但会让「同一正文渲染结果逐字相同」的
+/// 前提失效——富文本往返守卫（`posts::roundtrip`）靠比较渲染 HTML 判断有损，
+/// 含根号 / 矩阵竖线等 SVG 的正文因此永远被误判为有损。KaTeX 产出的这两种标签的
+/// 属性值是不含 `>` 与 `"` 的双引号字符串，可以直接扫描。
+fn sort_svg_attributes(html: &str) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    while let Some(start) = ["<svg ", "<path "]
+        .iter()
+        .filter_map(|tag| rest.find(tag))
+        .min()
+    {
+        let Some(end) = rest[start..].find('>').map(|i| start + i) else {
+            break;
+        };
+        let tag_end = rest[start + 1..].find(' ').map_or(end, |i| start + 1 + i);
+        let (self_closing, attrs_end) = if rest[..end].ends_with('/') {
+            (true, end - 1)
+        } else {
+            (false, end)
+        };
+        let mut attrs: Vec<&str> = Vec::new();
+        let mut cursor = tag_end;
+        let attr_src = &rest[..attrs_end];
+        while let Some(eq) = attr_src[cursor..].find("=\"").map(|i| cursor + i) {
+            let value_start = eq + 2;
+            let Some(value_end) = attr_src[value_start..].find('"').map(|i| value_start + i) else {
+                break;
+            };
+            attrs.push(attr_src[cursor..=value_end].trim_start());
+            cursor = value_end + 1;
+        }
+        attrs.sort_unstable();
+        out.push_str(&rest[..tag_end]);
+        for attr in attrs {
+            out.push(' ');
+            out.push_str(attr);
+        }
+        if self_closing {
+            out.push('/');
+        }
+        out.push('>');
+        rest = &rest[end + 1..];
+    }
+    out.push_str(rest);
+    out
 }
 
 #[cfg(test)]
@@ -487,6 +540,25 @@ mod tests {
         assert!(
             !html.contains("katex-error"),
             "络离子公式应正确渲染而非红字, got: {html}"
+        );
+    }
+
+    #[test]
+    fn svg_formulas_render_deterministically() {
+        // 根号带 <svg>/<path>；katex-rs 的 HashMap 属性顺序曾让同一输入每次渲染都不同。
+        let first = render_display(r"\sqrt{\pi} + \sqrt{\frac{a}{b}}");
+        assert!(first.contains("<svg"), "应含 svg, got: {first}");
+        for _ in 0..20 {
+            assert_eq!(first, render_display(r"\sqrt{\pi} + \sqrt{\frac{a}{b}}"));
+        }
+    }
+
+    #[test]
+    fn sort_svg_attributes_orders_names_and_keeps_rest() {
+        let html = r#"<span class="a"><svg xmlns="x" width="1em" height="2em"><path d="M0 0 L1 1"/></svg></span>"#;
+        assert_eq!(
+            sort_svg_attributes(html),
+            r#"<span class="a"><svg height="2em" width="1em" xmlns="x"><path d="M0 0 L1 1"/></svg></span>"#
         );
     }
 }
