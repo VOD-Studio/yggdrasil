@@ -20,6 +20,9 @@ pub use check::check_pending_status;
 pub use create::create_comment;
 /// 获取全部评论分页列表。
 pub use list::get_all_comments;
+/// 后台评论分页列表（不鉴权，供 web 与 MCP 入口共用）。
+#[cfg(feature = "server")]
+pub(crate) use list::list_admin_comments_impl;
 /// 获取指定文章的已审核评论列表。
 pub use read::get_comments;
 /// 评论 API 的请求与响应数据结构。
@@ -34,3 +37,6 @@ pub use update::restore_comments;
 pub use update::spam_comment;
 /// 将指定评论移入回收站。
 pub use update::trash_comment;
+/// 评论审核通过/垃圾/回收站（不鉴权，供 web 与 MCP 入口共用）。
+#[cfg(feature = "server")]
+pub(crate) use update::{approve_comment_impl, spam_comment_impl, trash_comment_impl};

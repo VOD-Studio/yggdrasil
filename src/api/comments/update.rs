@@ -15,58 +15,14 @@ pub async fn approve_comment(id: i64) -> Result<CommentResponse, ServerFnError> 
     #[cfg(feature = "server")]
     {
         use crate::api::auth::get_current_admin_user;
-        use crate::api::error::AppError;
-        use crate::cache;
-        use crate::db::pool::get_conn;
 
         let _admin = get_current_admin_user().await?;
-
-        let client = get_conn().await.map_err(AppError::db_conn)?;
-
-        let row = client
-            .query_opt(
-                "SELECT post_id, status FROM comments WHERE id = $1 AND deleted_at IS NULL",
-                &[&id],
-            )
-            .await
-            .map_err(AppError::query)?;
-
-        let post_id: i32 = match row {
-            Some(r) => r.get("post_id"),
-            None => {
-                return Ok(CommentResponse::error(
-                    "not_found",
-                    "评论不存在".to_string(),
-                ));
-            }
-        };
-
-        // 直接通过目标评论并记录通过时间。
-        client
-            .execute(
-                "UPDATE comments SET status = 'approved', approved_at = NOW() WHERE id = $1",
-                &[&id],
-            )
-            .await
-            .map_err(AppError::query)?;
-
-        // 递归向上查找所有 pending 父评论并同步通过，避免子评论可见但父评论被隐藏。
-        client
-            .execute(
-                "WITH RECURSIVE ancestors AS ( \
-                     SELECT parent_id FROM comments WHERE id = $1 \
-                     UNION ALL \
-                     SELECT c.parent_id FROM comments c JOIN ancestors a ON c.id = a.parent_id WHERE a.parent_id IS NOT NULL \
-                 ) \
-                 UPDATE comments SET status = 'approved', approved_at = NOW() \
-                 WHERE id IN (SELECT parent_id FROM ancestors WHERE parent_id IS NOT NULL) AND status = 'pending'",
-                &[&id],
-            )
-            .await
-            .map_err(AppError::query)?;
-
-        cache::invalidate_comments_by_post(post_id).await;
-        cache::invalidate_pending_count().await;
+        if !approve_comment_impl(id).await? {
+            return Ok(CommentResponse::error(
+                "not_found",
+                "评论不存在".to_string(),
+            ));
+        }
 
         Ok(CommentResponse::ok("已通过".to_string()))
     }
@@ -82,39 +38,9 @@ pub async fn spam_comment(id: i64) -> Result<CommentResponse, ServerFnError> {
     #[cfg(feature = "server")]
     {
         use crate::api::auth::get_current_admin_user;
-        use crate::api::error::AppError;
-        use crate::cache;
-        use crate::db::pool::get_conn;
 
         let _admin = get_current_admin_user().await?;
-
-        let client = get_conn().await.map_err(AppError::db_conn)?;
-
-        let row = client
-            .query_opt(
-                "SELECT post_id, status FROM comments WHERE id = $1 AND deleted_at IS NULL",
-                &[&id],
-            )
-            .await
-            .map_err(AppError::query)?;
-
-        if let Some(r) = row {
-            let post_id: i32 = r.get("post_id");
-            let old_status: String = r.get("status");
-
-            client
-                .execute(
-                    "UPDATE comments SET status = 'spam' WHERE id = $1 AND deleted_at IS NULL",
-                    &[&id],
-                )
-                .await
-                .map_err(AppError::query)?;
-
-            if old_status == "approved" {
-                cache::invalidate_comments_by_post(post_id).await;
-            }
-            cache::invalidate_pending_count().await;
-        }
+        spam_comment_impl(id).await?;
 
         Ok(CommentResponse::ok("已标记为垃圾".to_string()))
     }
@@ -130,36 +56,9 @@ pub async fn trash_comment(id: i64) -> Result<CommentResponse, ServerFnError> {
     #[cfg(feature = "server")]
     {
         use crate::api::auth::get_current_admin_user;
-        use crate::api::error::AppError;
-        use crate::cache;
-        use crate::db::pool::get_conn;
 
         let _admin = get_current_admin_user().await?;
-
-        let client = get_conn().await.map_err(AppError::db_conn)?;
-
-        let row = client
-            .query_opt(
-                "SELECT post_id FROM comments WHERE id = $1 AND deleted_at IS NULL",
-                &[&id],
-            )
-            .await
-            .map_err(AppError::query)?;
-
-        if let Some(r) = row {
-            let post_id: i32 = r.get("post_id");
-
-            client
-                .execute(
-                    "UPDATE comments SET status = 'trash', deleted_at = NOW() WHERE id = $1",
-                    &[&id],
-                )
-                .await
-                .map_err(AppError::query)?;
-
-            cache::invalidate_comments_by_post(post_id).await;
-            cache::invalidate_pending_count().await;
-        }
+        trash_comment_impl(id).await?;
 
         Ok(CommentResponse::ok("已删除".to_string()))
     }
@@ -288,4 +187,134 @@ pub async fn restore_comments(ids: Vec<i64>) -> Result<BatchStatusResponse, Serv
         let _ = ids;
         unreachable!()
     }
+}
+
+/// 通过评论并递归通过其 pending 祖先；评论不存在返回 `Ok(false)`。
+///
+/// 不做鉴权：调用方（web server fn 与 MCP 工具）各自鉴权。缓存失效在此完成。
+#[cfg(feature = "server")]
+pub(crate) async fn approve_comment_impl(id: i64) -> Result<bool, crate::api::error::AppError> {
+    use crate::api::error::AppError;
+    use crate::cache;
+    use crate::db::pool::get_conn;
+
+    let client = get_conn().await.map_err(AppError::db_conn)?;
+
+    let row = client
+        .query_opt(
+            "SELECT post_id FROM comments WHERE id = $1 AND deleted_at IS NULL",
+            &[&id],
+        )
+        .await
+        .map_err(AppError::query)?;
+
+    let post_id: i32 = match row {
+        Some(r) => r.get("post_id"),
+        None => return Ok(false),
+    };
+
+    // 直接通过目标评论并记录通过时间。
+    client
+        .execute(
+            "UPDATE comments SET status = 'approved', approved_at = NOW() WHERE id = $1",
+            &[&id],
+        )
+        .await
+        .map_err(AppError::query)?;
+
+    // 递归向上查找所有 pending 父评论并同步通过，避免子评论可见但父评论被隐藏。
+    client
+        .execute(
+            "WITH RECURSIVE ancestors AS ( \
+                 SELECT parent_id FROM comments WHERE id = $1 \
+                 UNION ALL \
+                 SELECT c.parent_id FROM comments c JOIN ancestors a ON c.id = a.parent_id WHERE a.parent_id IS NOT NULL \
+             ) \
+             UPDATE comments SET status = 'approved', approved_at = NOW() \
+             WHERE id IN (SELECT parent_id FROM ancestors WHERE parent_id IS NOT NULL) AND status = 'pending'",
+            &[&id],
+        )
+        .await
+        .map_err(AppError::query)?;
+
+    cache::invalidate_comments_by_post(post_id).await;
+    cache::invalidate_pending_count().await;
+    Ok(true)
+}
+
+/// 将评论标记为垃圾；评论不存在返回 `Ok(false)`。仅旧状态为 approved 时失效评论缓存。
+///
+/// 不做鉴权：调用方各自鉴权。
+#[cfg(feature = "server")]
+pub(crate) async fn spam_comment_impl(id: i64) -> Result<bool, crate::api::error::AppError> {
+    use crate::api::error::AppError;
+    use crate::cache;
+    use crate::db::pool::get_conn;
+
+    let client = get_conn().await.map_err(AppError::db_conn)?;
+
+    let row = client
+        .query_opt(
+            "SELECT post_id, status FROM comments WHERE id = $1 AND deleted_at IS NULL",
+            &[&id],
+        )
+        .await
+        .map_err(AppError::query)?;
+
+    let Some(r) = row else {
+        return Ok(false);
+    };
+    let post_id: i32 = r.get("post_id");
+    let old_status: String = r.get("status");
+
+    client
+        .execute(
+            "UPDATE comments SET status = 'spam' WHERE id = $1 AND deleted_at IS NULL",
+            &[&id],
+        )
+        .await
+        .map_err(AppError::query)?;
+
+    if old_status == "approved" {
+        cache::invalidate_comments_by_post(post_id).await;
+    }
+    cache::invalidate_pending_count().await;
+    Ok(true)
+}
+
+/// 将评论移入回收站（软删除）；评论不存在返回 `Ok(false)`。
+///
+/// 不做鉴权：调用方各自鉴权。
+#[cfg(feature = "server")]
+pub(crate) async fn trash_comment_impl(id: i64) -> Result<bool, crate::api::error::AppError> {
+    use crate::api::error::AppError;
+    use crate::cache;
+    use crate::db::pool::get_conn;
+
+    let client = get_conn().await.map_err(AppError::db_conn)?;
+
+    let row = client
+        .query_opt(
+            "SELECT post_id FROM comments WHERE id = $1 AND deleted_at IS NULL",
+            &[&id],
+        )
+        .await
+        .map_err(AppError::query)?;
+
+    let Some(r) = row else {
+        return Ok(false);
+    };
+    let post_id: i32 = r.get("post_id");
+
+    client
+        .execute(
+            "UPDATE comments SET status = 'trash', deleted_at = NOW() WHERE id = $1",
+            &[&id],
+        )
+        .await
+        .map_err(AppError::query)?;
+
+    cache::invalidate_comments_by_post(post_id).await;
+    cache::invalidate_pending_count().await;
+    Ok(true)
 }
