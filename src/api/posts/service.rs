@@ -83,6 +83,13 @@ pub(crate) async fn create(
     validation::title(&draft.title)?;
     validation::content(&draft.content_md)?;
     let base_slug = validation::base_slug(&draft.title, draft.slug.as_deref())?;
+    if let Some(s) = &draft.summary {
+        validation::summary(s)?;
+    }
+    if let Some(c) = &draft.cover_image {
+        validation::cover(c)?;
+    }
+    validation::tags(&draft.tags)?;
     let fields = helpers::render_post_fields(
         &draft.content_md,
         &draft.status,
@@ -142,6 +149,13 @@ async fn replacement(draft: PostDraft) -> Result<(PostPatch, helpers::RenderedFi
     if !trimmed_slug.is_empty() {
         validation::slug(trimmed_slug)?;
     }
+    if let Some(s) = &draft.summary {
+        validation::summary(s)?;
+    }
+    if let Some(c) = &draft.cover_image {
+        validation::cover(c)?;
+    }
+    validation::tags(&draft.tags)?;
     let cover = normalize_cover(draft.cover_image.as_deref());
     let fields =
         helpers::render_post_fields(&draft.content_md, &draft.status, cover.as_deref()).await?;
@@ -178,6 +192,15 @@ fn validate_patch(p: &PostPatch) -> Result<(), WriteError> {
     }
     if let Some(slug) = p.slug.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
         validation::slug(slug)?;
+    }
+    if let Some(s) = &p.summary {
+        validation::summary(s)?;
+    }
+    if let FieldChange::Set(c) = &p.cover_image {
+        validation::cover(c)?;
+    }
+    if let Some(t) = &p.tags {
+        validation::tags(t)?;
     }
     Ok(())
 }

@@ -26,6 +26,11 @@ async fn post_write_service_database_impl() {
         .get(0);
     assert_eq!(database, "ygg_mcp_test", "requires isolated test database");
     crate::db::migrate::run_on_conn(&mut client).await.unwrap();
+    // 清理上次中途失败可能残留的临时约束。
+    client
+        .batch_execute("ALTER TABLE tags DROP CONSTRAINT IF EXISTS ygg_test_reject_tag;")
+        .await
+        .unwrap();
     client
         .batch_execute(
             "TRUNCATE users RESTART IDENTITY CASCADE;
@@ -255,8 +260,8 @@ async fn post_write_service_database_impl() {
         .unwrap()
         .is_empty());
 
-    // A database failure after the article UPDATE rolls back article, tags, and asset refs.
-    let failure = web_context()
+    // 超长标签在写库前被校验拒绝，不触及数据库。
+    let rejected = web_context()
         .scope(crate::api::posts::update_post(
             web_id,
             "不应落库".into(),
@@ -267,7 +272,36 @@ async fn post_write_service_database_impl() {
             vec!["x".repeat(300)],
             None,
         ))
+        .await
+        .unwrap();
+    assert!(!rejected.success);
+    assert_eq!(rejected.message, "单个标签过长（上限 50 字符）");
+
+    // A database failure after the article UPDATE rolls back article, tags, and asset refs.
+    // 用临时约束让标签写入失败（文章 UPDATE 已执行之后），验证整个事务回滚。
+    client
+        .batch_execute(
+            "ALTER TABLE tags DROP CONSTRAINT IF EXISTS ygg_test_reject_tag;
+             ALTER TABLE tags ADD CONSTRAINT ygg_test_reject_tag CHECK (name <> 'reject-me') NOT VALID;",
+        )
+        .await
+        .unwrap();
+    let failure = web_context()
+        .scope(crate::api::posts::update_post(
+            web_id,
+            "不应落库".into(),
+            Some("web-shared".into()),
+            None,
+            "新正文".into(),
+            "draft".into(),
+            vec!["reject-me".into()],
+            None,
+        ))
         .await;
+    client
+        .batch_execute("ALTER TABLE tags DROP CONSTRAINT ygg_test_reject_tag;")
+        .await
+        .unwrap();
     assert!(failure.is_err());
     let row = client
         .query_one(
