@@ -18,6 +18,8 @@ pub(super) fn use_editor(
     // 激活门控（P2）：视口接近或用户主动交互后为 true。库加载与实例创建都被它
     // 门控——这里是双保险的创建侧；读取它使 effect 在激活翻转时重跑。
     activated: Signal<bool>,
+    mut editor_failed: Signal<bool>,
+    mount_retry: Signal<u32>,
 ) -> Signal<Option<crate::bridges::codemirror::EditorHandle>> {
     use crate::bridges::codemirror;
     use crate::theme::{use_resolved_theme, ResolvedTheme};
@@ -34,6 +36,7 @@ pub(super) fn use_editor(
     let mount_language = language;
     let mount_container_id = container_id;
     use_effect(move || {
+        let _ = mount_retry(); // 订阅：点重试即重跑
         if editor_handle.read().is_some() {
             return; // 防重复 init
         }
@@ -69,11 +72,20 @@ pub(super) fn use_editor(
         opts.set_on_run_shortcut(&on_run_shortcut);
         opts.set_on_vim_mode_change(&on_vim_mode_change);
 
-        if let Ok(Some(inst)) = codemirror::get_module().create(&mount_container_id, &opts) {
-            let handle = codemirror::EditorHandle::new(inst, on_change, on_ready, on_run_shortcut)
-                .with_vim_mode(on_vim_mode_change);
-            editor_handle.set(Some(handle));
-            editor_ready.set(true);
+        match codemirror::get_module().create(&mount_container_id, &opts) {
+            Ok(Some(inst)) => {
+                let handle =
+                    codemirror::EditorHandle::new(inst, on_change, on_ready, on_run_shortcut)
+                        .with_vim_mode(on_vim_mode_change);
+                editor_handle.set(Some(handle));
+                editor_ready.set(true);
+                editor_failed.set(false);
+            }
+            Ok(None) => editor_failed.set(true),
+            Err(error) => {
+                web_sys::console::error_1(&error);
+                editor_failed.set(true);
+            }
         }
     });
 

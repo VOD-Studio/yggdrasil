@@ -9,6 +9,8 @@ pub(super) fn use_terminal(
     show_output: Signal<bool>,
     terminal_library: LibraryResource,
     mut term_handle: Signal<Option<TerminalHandle>>,
+    mut terminal_failed: Signal<bool>,
+    mount_retry: Signal<u32>,
 ) {
     use crate::bridges::xterm;
     use crate::theme::{use_resolved_theme, ResolvedTheme};
@@ -24,6 +26,7 @@ pub(super) fn use_terminal(
     let mount_container_id = output_container_id;
     let mount_example = example_output;
     use_effect(move || {
+        let _ = mount_retry(); // 订阅：点重试即重跑
         if term_handle.read().is_some() {
             return; // 防重复 init
         }
@@ -46,12 +49,20 @@ pub(super) fn use_terminal(
         opts.set_font_size(13);
         opts.set_on_ready(&on_ready);
 
-        if let Ok(Some(inst)) = xterm::get_module().create(&mount_container_id, &opts) {
-            if let Some(example) = &mount_example {
-                inst.write_all(&example.stdout, &example.stderr);
+        match xterm::get_module().create(&mount_container_id, &opts) {
+            Ok(Some(inst)) => {
+                if let Some(example) = &mount_example {
+                    inst.write_all(&example.stdout, &example.stderr);
+                }
+                let handle = xterm::TerminalHandle::new(inst, on_ready);
+                term_handle.set(Some(handle));
+                terminal_failed.set(false);
             }
-            let handle = xterm::TerminalHandle::new(inst, on_ready);
-            term_handle.set(Some(handle));
+            Ok(None) => terminal_failed.set(true),
+            Err(error) => {
+                web_sys::console::error_1(&error);
+                terminal_failed.set(true);
+            }
         }
     });
 

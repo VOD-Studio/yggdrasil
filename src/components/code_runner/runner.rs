@@ -109,6 +109,11 @@ pub fn CodeRunner(
 
     // 编辑器是否已挂载就绪：SSR 与 hydration 完成前为 false，显示高亮占位。
     let editor_ready = use_signal(|| false);
+    // 编辑器/终端实例创建失败（库已加载但 create 报错或返回空）：提示并允许重试。
+    let mut editor_failed = use_signal(|| false);
+    let mut terminal_failed = use_signal(|| false);
+    // 点「重试」自增，两个挂载 effect 订阅它而重跑；已有句柄的那个在 is_some() 处早退。
+    let mut mount_retry = use_signal(|| 0_u32);
     let vim_mode: Signal<Option<String>> = use_signal(|| None);
 
     // Vim 偏好存在本机，默认开启；没有偏好时，触屏设备默认关闭。
@@ -189,6 +194,8 @@ pub fn CodeRunner(
         editor_ready,
         editor_library,
         activated,
+        editor_failed,
+        mount_retry,
     );
     #[cfg(target_arch = "wasm32")]
     terminal::use_terminal(
@@ -197,6 +204,8 @@ pub fn CodeRunner(
         show_output,
         terminal_library,
         execution.terminal,
+        terminal_failed,
+        mount_retry,
     );
     // 编辑器就绪后兑现激活前的运行意图：先清标志再启动，保证只执行一次。
     // 读取 running() 建立订阅并避免在已有执行未结束时重复启动。
@@ -213,7 +222,7 @@ pub fn CodeRunner(
     let library_failed = matches!(&*editor_library.read(), Some(Err(_)));
     // 意图已保留：编辑器激活/加载期间按钮显示加载态；库加载失败时不伪装加载，
     // 由 LibraryLoadError 重试恢复。
-    let awaiting_editor = pending_run() && !editor_ready() && !library_failed;
+    let awaiting_editor = pending_run() && !editor_ready() && !library_failed && !editor_failed();
 
     let revert_source = source.clone();
     let revert = use_callback(move |_: ()| {
@@ -345,6 +354,20 @@ pub fn CodeRunner(
                 }
             }
             LibraryLoadError { library: editor_library }
+            if editor_failed() {
+                div { role: "alert", class: "flex items-center gap-3 p-3 text-sm text-red-500 dark:text-red-400",
+                    span { "编辑器初始化失败。" }
+                    button {
+                        r#type: "button",
+                        class: "underline underline-offset-4",
+                        onclick: move |_| {
+                            editor_failed.set(false);
+                            mount_retry += 1;
+                        },
+                        "重试"
+                    }
+                }
+            }
             div {
                 id: "{container_id}",
                 class: "runner-editor",
@@ -375,6 +398,20 @@ pub fn CodeRunner(
             if show_output() {
                 div { class: "runner-output",
                     LibraryLoadError { library: terminal_library }
+                    if terminal_failed() {
+                        div { role: "alert", class: "flex items-center gap-3 p-3 text-sm text-red-500 dark:text-red-400",
+                            span { "终端初始化失败。" }
+                            button {
+                                r#type: "button",
+                                class: "underline underline-offset-4",
+                                onclick: move |_| {
+                                    terminal_failed.set(false);
+                                    mount_retry += 1;
+                                },
+                                "重试"
+                            }
+                        }
+                    }
                     div { class: "runner-output-head",
                         span { "{output_label}" }
                         div { class: "runner-output-meta",
