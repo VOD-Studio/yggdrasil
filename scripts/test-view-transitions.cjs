@@ -401,18 +401,9 @@ async function admin() {
       }
       await route.fulfill({ response, json: data });
     });
-    // Read the generated path from the same WASM the browser loaded. Resolve it
-    // before login so a changed server-function hash cannot strand a test session.
-    let wasmResponse;
-    page.on('response', response => {
-      if (new URL(response.url()).pathname.endsWith('.wasm')) wasmResponse = response;
-    });
+    // server fn 地址不再带哈希后缀，退出登录端点固定。
+    logoutEndpoint = '/api/logout';
     await fresh(state);
-    assert(wasmResponse, 'could not inspect the served WASM before login');
-    // 开发构建的 WASM 很大，浏览器检查器会丢弃响应体；按同一地址重新请求。
-    const wasm = await context.request.get(wasmResponse.url());
-    logoutEndpoint = (await wasm.body()).toString('latin1').match(/\/api\/logout\d+/)?.[0];
-    assert(logoutEndpoint, 'could not resolve the served logout endpoint before login');
     await push(page, '/login');
     await page.locator('#login-username').fill(process.env.VT_ADMIN_USERNAME);
     await page.locator('#login-password').fill(process.env.VT_ADMIN_PASSWORD);

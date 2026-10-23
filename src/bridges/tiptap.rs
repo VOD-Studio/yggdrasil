@@ -4,11 +4,17 @@
 //! 替代旧版 `js_sys::eval` 字符串拼贴 + window 全局变量通信。
 //!
 //! wasm-bindgen extern 与 `EditorHandle`、上传 closure 等**仅在 WASM 前端**编译
-//! （server 构建无 `window`）；共享的纯数据类型 `UploadsInFlight`/`UploadErrorEntry`
-//! 在两端都编译，供 `write.rs` 在 rsx 中渲染上传状态。
+//! （服务端构建无 `window`）；共享的纯数据类型 `UploadsInFlight`/`UploadErrorEntry`
+//! 在两端都编译，供 `write.rs` 在视图中渲染上传状态。
+//!
+//! 用法（Leptos）：挂载点是带稳定 `id` 的元素，`get_module().create(id, &opts)`
+//! 按 id 查找容器；`EditorHandle` 含 JS 引用（非 `Send + Sync`），须放进
+//! `StoredValue::new_local`/`RwSignal::new_local`，`on_cleanup` 里 `take` 出来
+//! 丢弃即触发 `Drop` → `destroy`。上传状态用 `RwSignal<UploadsInFlight>` /
+//! `RwSignal<Vec<UploadErrorEntry>>` 传给 [`consume_upload_event`]。
 
 /// 当前编辑器内进行中的上传计数（来自 onUploadEvent 的 counts 快照）。
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, PartialEq)]
 pub struct UploadsInFlight {
     pub uploading: u32,
     pub error: u32,
@@ -29,8 +35,7 @@ pub struct UploadErrorEntry {
 #[cfg(target_arch = "wasm32")]
 pub mod wasm {
     use super::{UploadErrorEntry, UploadsInFlight};
-    // WritableExt 提供 .write()（Signal 在 Copy 语义下不需要 mut 绑定）。
-    use dioxus::prelude::WritableExt;
+    use leptos::prelude::{RwSignal, Set, Update};
     use wasm_bindgen::prelude::*;
     use wasm_bindgen::JsCast;
 
@@ -338,27 +343,29 @@ pub mod wasm {
     /// 不再额外维护 seen_error_ids，避免两份状态需手动同步。
     pub fn consume_upload_event(
         ev: &UploadEventJs,
-        mut uploads_in_flight: dioxus::prelude::Signal<UploadsInFlight>,
-        mut upload_errors: dioxus::prelude::Signal<Vec<UploadErrorEntry>>,
+        uploads_in_flight: RwSignal<UploadsInFlight>,
+        upload_errors: RwSignal<Vec<UploadErrorEntry>>,
     ) {
         let id = ev.upload_id();
         match ev.kind().as_str() {
             "error" => {
                 let msg = ev.error_msg().unwrap_or_else(|| "上传失败".to_string());
+                let file_name = ev.file_name();
                 // 已存在同 id（重试后再失败）：原地更新消息；否则追加。
-                let mut errors = upload_errors.write();
-                if let Some(entry) = errors.iter_mut().find(|e| e.id == id) {
-                    entry.message = msg;
-                } else {
-                    errors.push(UploadErrorEntry {
-                        id: id.clone(),
-                        file_name: ev.file_name(),
-                        message: msg,
-                    });
-                }
+                upload_errors.update(|errors| {
+                    if let Some(entry) = errors.iter_mut().find(|e| e.id == id) {
+                        entry.message = msg;
+                    } else {
+                        errors.push(UploadErrorEntry {
+                            id: id.clone(),
+                            file_name,
+                            message: msg,
+                        });
+                    }
+                });
             }
             "success" | "removed" => {
-                upload_errors.write().retain(|e| e.id != id);
+                upload_errors.update(|errors| errors.retain(|e| e.id != id));
             }
             _ => {}
         }
@@ -400,6 +407,7 @@ pub mod wasm {
         upload_file_to("/api/upload", file).await
     }
 
+    /// 笔记图片上传（POST /api/notes/upload，需 admin 会话）。
     pub async fn upload_note_image_file(file: web_sys::File) -> Result<String, String> {
         upload_file_to("/api/notes/upload", file).await
     }
@@ -520,7 +528,11 @@ pub mod wasm {
                         }
                         Err(js_sys::Error::new("轮询超时，请重试").into())
                     }
-                    Err(e) => Err(js_sys::Error::new(&e.to_string()).into()),
+                    Err(e) => Err(js_sys::Error::new(&crate::utils::error::failure_message(
+                        "运行失败",
+                        &e,
+                    ))
+                    .into()),
                 }
             })
         })
@@ -537,30 +549,31 @@ pub mod wasm {
                     crate::api::posts::check_markdown_roundtrip(original, roundtrip)
                         .await
                         .map(JsValue::from_bool)
-                        .map_err(|e| js_sys::Error::new(&e.to_string()).into())
+                        .map_err(|e| {
+                            js_sys::Error::new(&crate::utils::error::failure_message(
+                                "往返检查失败",
+                                &e,
+                            ))
+                            .into()
+                        })
                 })
             },
         )
     }
 }
 
-/// 将 WASM 子模块中的桥接类型与函数重导出到 crate 根，供 `write.rs` 直接引用。
-/// server 构建剥离该子模块，故此重导出仅对 WASM 前端生效。
+/// 将 WASM 子模块中的桥接类型与函数重导出到 crate 根，供写作页等调用方直接引用。
+/// 服务端构建剥离该子模块，故此重导出仅对 WASM 前端生效。
 ///
 /// 故意手工列名单，而非像 `codemirror`/`xterm` 那样 `pub use wasm::*;`：只导出调用方
 /// 需要按名字写出来的项（如 `on_upload_event` 闭包签名里的 `UploadEventJs`）。
 /// `TiptapEditorModule`/`EditorInstance`/`UploadCountsJs`/`RunCodeOptsJs`/
-/// `upload_comment_image_file` 故意不导出——它们全部只经方法链（`get_module().create(...)`、
-/// `handle.instance().xxx()`）或模块内部（`make_comment_upload_closure`）使用，调用方从不
-/// 需要在 crate 根按名字引用。新增 `pub fn`/`pub type` 供外部按名调用时记得同步加进这里。
+/// `upload_comment_image_file`/`upload_note_image_file` 不在此导出——它们要么只经方法链
+/// （`get_module().create(...)`、`handle.instance().xxx()`）使用，要么经完整路径
+/// `tiptap::wasm::xxx` 引用。新增 `pub fn`/`pub type` 供外部按名调用时记得同步加进这里。
 #[cfg(target_arch = "wasm32")]
 pub use wasm::{
-    consume_upload_event, get_module, make_comment_upload_closure, EditorHandle, EditorOptions,
+    consume_upload_event, get_module, make_comment_upload_closure, make_roundtrip_check_closure,
+    make_run_code_closure, make_upload_closure, upload_image_file, EditorHandle, EditorOptions,
     UploadEventJs,
-};
-// 运行代码与图片上传闭包只有后台写作页（full 客户端专属）按名引用；
-// reader 客户端不导出，避免 unused_imports（plan §6.1）。
-#[cfg(all(target_arch = "wasm32", not(ygg_client_reader)))]
-pub use wasm::{
-    make_roundtrip_check_closure, make_run_code_closure, make_upload_closure, upload_image_file,
 };

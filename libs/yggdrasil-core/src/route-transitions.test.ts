@@ -55,17 +55,28 @@ function render(html = destination): void {
   routes.rendered(routes.navigationId(), routes.currentRoute());
 }
 
-function click(route: string, options: { post?: string; returning?: boolean } = {}): void {
+/** 模拟站内链接点击：协调器在 document 冒泡阶段自己接管并发起 push。 */
+function click(
+  route: string,
+  options: {
+    post?: string;
+    returning?: boolean;
+    rel?: string;
+    target?: string;
+    prevented?: boolean;
+  } = {},
+): MouseEvent {
   const anchor = document.createElement('a');
   anchor.href = route;
   if (options.post) anchor.dataset.vtPostLink = options.post;
   if (options.returning) anchor.dataset.vtReturn = 'true';
-  anchor.addEventListener('click', (event) => {
-    event.preventDefault();
-    routes.push(route);
-  });
+  if (options.rel) anchor.rel = options.rel;
+  if (options.target) anchor.target = options.target;
+  if (options.prevented) anchor.addEventListener('click', (event) => event.preventDefault());
   document.body.append(anchor);
-  anchor.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }));
+  const event = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
+  anchor.dispatchEvent(event);
+  return event;
 }
 
 async function flush(): Promise<void> {
@@ -561,18 +572,11 @@ describe('section navigation', () => {
 });
 
 describe('shared article snapshots', () => {
-  it('capture intent survives a microtask before the delegated navigation handler', async () => {
+  it('intercepts a bubbling in-site link click, prevents the default and pushes', async () => {
     render(`<main data-vt-list>${post()}</main>`);
     destination = `<main data-vt-detail>${post()}</main>`;
-    const anchor = document.createElement('a');
-    anchor.href = '/post/article';
-    anchor.dataset.vtPostLink = '42';
-    anchor.addEventListener('click', (event) => {
-      event.preventDefault();
-      queueMicrotask(() => routes.push('/post/article'));
-    });
-    document.body.append(anchor);
-    anchor.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    const event = click('/post/article', { post: '42' });
+    expect(event.defaultPrevented).toBe(true);
     await flush();
     expect(native).toHaveLength(1);
     expect(
@@ -584,21 +588,39 @@ describe('shared article snapshots', () => {
     ).toBe('vt-post-title');
   });
 
-  it('unconsumed click intent expires before a later unrelated programmatic navigation', async () => {
-    render(`<main data-vt-list>${post()}</main>`);
-    destination = `<main data-vt-detail>${post()}</main>`;
-    const anchor = document.createElement('a');
-    anchor.href = '/post/article';
-    anchor.dataset.vtPostLink = '42';
-    anchor.addEventListener('click', (event) => event.preventDefault());
-    document.body.append(anchor);
-    anchor.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-    await vi.advanceTimersByTimeAsync(1);
-    routes.push('/post/article');
-    expect(
-      document.querySelector<HTMLElement>('[data-vt-role="title"]')!.style.viewTransitionName,
-    ).toBe('');
-    await native[0].invoke();
+  it('lets external, native-path, targeted and already-handled clicks through', async () => {
+    // window 上最后一个监听器：记录协调器是否已接管，并取消 happy-dom 的真实跳转。
+    const seen: boolean[] = [];
+    const record = (event: MouseEvent) => {
+      seen.push(event.defaultPrevented);
+      event.preventDefault();
+    };
+    window.addEventListener('click', record);
+    const cases = [
+      { route: '/about', rel: 'external' },
+      { route: '/feed.xml' },
+      { route: '/api/anything' },
+      { route: '/uploads/a.png' },
+      { route: '/about', target: '_blank' },
+      { route: '/about', prevented: true },
+    ];
+    for (const options of cases) click(options.route, options);
+    window.removeEventListener('click', record);
+    // 只有已被组件 preventDefault 的点击在到达 window 时仍是 defaultPrevented；其余未被协调器接管。
+    expect(seen).toEqual(cases.map((options) => options.prevented === true));
+    await flush();
+    expect(native).toHaveLength(0);
+  });
+
+  it('listens for popstate in the capture phase and stops it from reaching other listeners', () => {
+    const bubbling = vi.fn();
+    window.addEventListener('popstate', bubbling);
+    const event = new PopStateEvent('popstate', { cancelable: true });
+    const stop = vi.spyOn(event, 'stopImmediatePropagation');
+    window.dispatchEvent(event);
+    window.removeEventListener('popstate', bubbling);
+    expect(stop).toHaveBeenCalled();
+    expect(bubbling).not.toHaveBeenCalled();
   });
 
   it('matches title and loaded cover, then restores prior inline names', async () => {

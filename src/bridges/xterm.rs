@@ -8,6 +8,11 @@
 //!
 //! WASM-only：所有 extern 与 handle 都在 `#[cfg(target_arch = "wasm32")] mod wasm` 内，
 //! server 构建整体剥离。无跨目标共享数据（纯渲染层）。
+//!
+//! 用法（Leptos）：挂载点是带稳定 `id` 的元素，先用 `use_browser_library("xterm", ..)` 等库就绪，
+//! 再在 `Effect` 内构造 `XtermOptions` 并 `get_module().create(id, &opts)`；`TerminalHandle` 含 JS 引用
+//! （非 `Send + Sync`），放进 `StoredValue::new_local`/`RwSignal::new_local`，`on_cleanup` 里 `take`
+//! 出来丢弃即触发 `Drop` → `destroy`。
 
 #[cfg(target_arch = "wasm32")]
 pub mod wasm {

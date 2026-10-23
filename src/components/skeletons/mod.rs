@@ -28,7 +28,10 @@ pub mod home_skeleton;
 pub mod logs_skeleton;
 /// 后台 MCP 服务骨架屏组件。
 pub mod mcp_skeleton;
+/// 后台笔记与笔记本管理骨架屏组件。
 pub mod notes_admin_skeleton;
+/// 前台笔记列表 / 笔记本 / 单篇笔记骨架屏与路由级占位组件。
+pub mod notes_route_skeleton;
 /// 文章详情页骨架屏组件。
 pub mod post_detail_skeleton;
 /// 草稿/文章预览页骨架屏组件。

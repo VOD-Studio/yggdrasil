@@ -2,9 +2,14 @@
 //!
 //! 提供登录、注册、评论等页面共享的输入框、下拉、时间、数字、开关与提示条。
 //! 外观定义在 styles/components/ui.css（`.field`、`.listbox`、`.switch`、`.alert`）。
+//!
+//! 约定（Leptos）：随状态变化的 props 一律是 `Signal<T>` / `MaybeProp<T>`，可直接传
+//! 常量、信号或 `move ||` 闭包；受控值写作 `value=信号` + `oninput`/`onchange` 回调
+//! （回调里由调用方写回信号）。`id` 等可选字符串是 `MaybeProp<String>`，`id="x"` 即可。
 
 use crate::components::ui::{Icon, IconName};
-use dioxus::prelude::*;
+use leptos::ev::{FocusEvent, KeyboardEvent, MouseEvent};
+use leptos::prelude::*;
 
 /// 输入框基础类：浅底、发丝线环，聚焦陶土双环，`aria-invalid` 时红环。
 pub const INPUT_CLASS: &str = "field w-full";
@@ -12,7 +17,7 @@ pub const INPUT_CLASS: &str = "field w-full";
 /// 多行输入框基础类：随内容长高（`.field-textarea`）。
 pub const TEXTAREA_CLASS: &str = "field field-textarea";
 
-/// FormSelect 实例 id 计数器（跨泛型单例化全局唯一）。
+/// FormSelect / TimePicker / NumberInput 实例序号计数器（跨泛型单例化全局唯一）。
 static FORM_SELECT_ID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 /// FormSelect 紧凑触发器：工具栏内联小下拉（自动刷新、导出格式等）。
@@ -20,6 +25,21 @@ pub const FORM_SELECT_COMPACT_CLASS: &str = "field field-sm w-auto";
 
 /// 选项多于该数量时，下拉面板顶部出现筛选框。
 const FILTER_THRESHOLD: usize = 8;
+
+/// 分配实例序号，用于拼接未显式传 `id` 时的元素 id（`form-select-N` 等）。
+///
+/// 序号在挂载后（Effect）才分配：全局计数器在服务端是进程级的，直接写进 SSR HTML
+/// 会与水合后的客户端计数不一致，导致 `get_element_by_id` 找不到元素。因此服务端
+/// 与水合首帧都是 `None`，对应的 id 属性随之缺省；弹层都在用户交互后才出现，届时序号已就绪。
+fn use_instance_prefix() -> Signal<Option<usize>> {
+    let prefix = RwSignal::new(None::<usize>);
+    Effect::new(move |_| {
+        prefix.set(Some(
+            FORM_SELECT_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst),
+        ));
+    });
+    prefix.into()
+}
 
 /// 面板应向上展开的条件：视口下方空间不足，且上方空间比下方更宽余。
 ///
@@ -143,266 +163,319 @@ fn focus_by_id(element_id: &str) {
 ///   Enter/Space 选中、Esc 关闭、Home/End 跳首尾、Tab 关闭并自然流转焦点）；
 /// - 选项多于 8 个时面板顶部出现筛选框，打开即聚焦，键盘规则相同，Esc 把焦点还给触发器；
 /// - `disabled_options` 中的项保留但变淡，并在下方写明原因，键盘与点击都跳过；
-/// - 透明遮罩拦截外部点击关闭；选项 `onmousedown` 阻止默认行为，点击不夺走焦点；
+/// - 透明遮罩拦截外部点击关闭；选项 `mousedown` 阻止默认行为，点击不夺走焦点；
 /// - 泛型值绑定：`onchange` 直接回传选中项的 `T`，无需字符串反查。
 ///
+/// 触发器与选项的内部 `id`（`form-select-N-opt-I` 等）在挂载后由客户端计数分配，
+/// 原因见 `use_instance_prefix`；需要与 label 关联时显式传 `id`。
+///
 /// Props：
-/// - `id`：触发器 id，用于与 label 关联（缺省用内部计数器生成）
-/// - `value`：当前选中项（受控）
-/// - `options`：可选项 `(值, 标签)` 列表
+/// - `id`：触发器 id，用于与 label 关联（缺省挂载后用内部计数器生成）
+/// - `value`：当前选中项（受控，可传信号）
+/// - `options`：可选项 `(值, 标签)` 列表（`Vec` 或返回它的闭包 / 信号）
 /// - `disabled_options`：不可用的项及原因 `(值, 原因)`
 /// - `onchange`：选中变化回调，回传新选中项的值
 /// - `trigger_class`：触发器外观（缺省全宽 `field`；工具栏传 [`FORM_SELECT_COMPACT_CLASS`]）
 /// - `aria_label`：触发器无障碍标签；可见文本不足以表意时传入
+///
+/// `value` / `onchange` 的类型参数要能从 `options` 或 `onchange` 闭包的参数类型推断；
+/// 传裸信号且闭包参数无标注时，给闭包写类型（`move |v: Foo| ..`）。
 #[component]
-pub fn FormSelect<T: Clone + PartialEq + 'static, L: AsRef<str> + Clone + PartialEq + 'static>(
-    id: Option<String>,
-    value: T,
-    options: Vec<(T, L)>,
-    onchange: EventHandler<T>,
-    #[props(default)] disabled_options: Vec<(T, &'static str)>,
-    #[props(default)] trigger_class: Option<&'static str>,
-    #[props(default)] aria_label: Option<&'static str>,
-) -> Element {
-    let trigger_cls = trigger_class.unwrap_or("field");
-    let id_prefix = use_hook(|| FORM_SELECT_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst));
+pub fn FormSelect<T, L>(
+    #[prop(optional, into)] id: MaybeProp<String>,
+    #[prop(into)] value: Signal<T>,
+    #[prop(into)] options: Signal<Vec<(T, L)>>,
+    #[prop(into)] onchange: Callback<T>,
+    #[prop(optional, into)] disabled_options: Signal<Vec<(T, &'static str)>>,
+    #[prop(optional)] trigger_class: Option<&'static str>,
+    #[prop(optional)] aria_label: Option<&'static str>,
+) -> impl IntoView
+where
+    T: Clone + PartialEq + Send + Sync + 'static,
+    L: AsRef<str> + Send + Sync + 'static,
+{
+    let trigger_cls = format!("select-trigger {}", trigger_class.unwrap_or("field"));
+    let prefix = use_instance_prefix();
+    let trigger_id = Signal::derive(move || {
+        id.get()
+            .or_else(|| prefix.get().map(|n| format!("form-select-{n}")))
+    });
+    let filter_id = move || prefix.get().map(|n| format!("form-select-{n}-filter"));
+    let option_id = move |i: usize| {
+        prefix
+            .get()
+            .map(|n| format!("form-select-{n}-opt-{i}"))
+            .unwrap_or_default()
+    };
 
     // 受控选中序号；value 不在 options 时兜底 0（与浏览器默认选中第一项一致）。
-    let selected = options.iter().position(|(v, _)| *v == value).unwrap_or(0);
-    let selected_label = options
-        .get(selected)
-        .map(|(_, l)| l.as_ref().to_string())
-        .unwrap_or_default();
-    let len = options.len();
-    let filterable = len > FILTER_THRESHOLD;
+    let selected = Memo::new(move |_| {
+        let current = value.get();
+        options.with(|o| o.iter().position(|(v, _)| *v == current).unwrap_or(0))
+    });
+    let len = Memo::new(move |_| options.with(Vec::len));
+    let filterable = Memo::new(move |_| len.get() > FILTER_THRESHOLD);
 
-    let mut open = use_signal(|| false);
-    let mut active = use_signal(|| selected);
-    let mut query = use_signal(String::new);
-    // flip_up 的 set 均在 wasm 门控语句内（宿主构建下只读）。
-    #[allow(unused_mut)]
-    let mut flip_up = use_signal(|| false);
-
-    let trigger_id = id.unwrap_or_else(|| format!("form-select-{id_prefix}"));
-    let filter_id = format!("form-select-{id_prefix}-filter");
+    let open = RwSignal::new(false);
+    let active = RwSignal::new(selected.get_untracked());
+    let query = RwSignal::new(String::new());
+    let flip_up = RwSignal::new(false);
 
     // 每项的禁用原因；与 options 一一对应。
-    let reasons: Vec<Option<&'static str>> = options
-        .iter()
-        .map(|(v, _)| {
-            disabled_options
-                .iter()
-                .find(|(d, _)| d == v)
-                .map(|(_, reason)| *reason)
+    let reasons = Memo::new(move |_| {
+        options.with(|o| {
+            disabled_options.with(|d| {
+                o.iter()
+                    .map(|(v, _)| d.iter().find(|(x, _)| x == v).map(|(_, reason)| *reason))
+                    .collect::<Vec<Option<&'static str>>>()
+            })
         })
-        .collect();
-    let q = query();
-    let visible: Vec<usize> = (0..len)
-        .filter(|&i| matches_query(options[i].1.as_ref(), &q))
-        .collect();
-    let navigable: Vec<usize> = visible
-        .iter()
-        .copied()
-        .filter(|&i| reasons[i].is_none())
-        .collect();
-    // 筛选框输入时用来重算首个可选项；渲染用的逐行数据。
-    let searchable: Vec<(String, bool)> = options
-        .iter()
-        .zip(&reasons)
-        .map(|((_, label), reason)| (label.as_ref().to_string(), reason.is_none()))
-        .collect();
-    let rows: Vec<(usize, T, String, Option<&'static str>)> = visible
-        .iter()
-        .map(|&i| {
-            (
-                i,
-                options[i].0.clone(),
-                options[i].1.as_ref().to_string(),
-                reasons[i],
-            )
+    });
+    let visible = Memo::new(move |_| {
+        let q = query.get();
+        options.with(|o| {
+            (0..o.len())
+                .filter(|&i| matches_query(o[i].1.as_ref(), &q))
+                .collect::<Vec<usize>>()
         })
-        .collect();
-    let nothing_visible = rows.is_empty();
+    });
+    let navigable = Memo::new(move |_| {
+        reasons.with(|r| {
+            visible.with(|v| {
+                v.iter()
+                    .copied()
+                    .filter(|&i| r[i].is_none())
+                    .collect::<Vec<usize>>()
+            })
+        })
+    });
 
     // 打开或键盘导航时，把高亮项滚入面板可视区；带筛选框时打开即聚焦筛选框。
-    #[cfg(target_arch = "wasm32")]
-    let filter_id_effect = filter_id.clone();
-    use_effect(move || {
-        if open() {
+    Effect::new(move |_| {
+        if open.get() {
+            let _idx = active.get();
             #[cfg(target_arch = "wasm32")]
             {
-                let idx = active();
-                scroll_option_into_view(&format!("form-select-{id_prefix}-opt-{idx}"));
-                if filterable {
-                    focus_by_id(&filter_id_effect);
+                scroll_option_into_view(&option_id(_idx));
+                if filterable.get_untracked() {
+                    if let Some(filter) = filter_id() {
+                        focus_by_id(&filter);
+                    }
                 }
             }
         }
     });
 
-    let open_panel = {
+    let focus_trigger = move || {
         #[cfg(target_arch = "wasm32")]
-        let trigger_id = trigger_id.clone();
-        move || {
-            #[cfg(target_arch = "wasm32")]
-            flip_up.set(measure_flip(&trigger_id, len.min(FILTER_THRESHOLD + 1)));
-            query.set(String::new());
-            active.set(selected);
-            open.set(true);
+        if let Some(trigger) = trigger_id.get_untracked() {
+            focus_by_id(&trigger);
         }
     };
 
-    // 面板打开后的键盘处理；触发器与筛选框共用。返回 true 表示已处理。
-    let options_for_keys = options.clone();
-    let navigable_for_keys = navigable.clone();
-    #[cfg(target_arch = "wasm32")]
-    let trigger_id_keys = trigger_id.clone();
-    let mut handle_open_key = move |e: &KeyboardEvent| {
+    let open_panel = move || {
+        #[cfg(target_arch = "wasm32")]
+        if let Some(trigger) = trigger_id.get_untracked() {
+            flip_up.set(measure_flip(
+                &trigger,
+                len.get_untracked().min(FILTER_THRESHOLD + 1),
+            ));
+        }
+        query.set(String::new());
+        active.set(selected.get_untracked());
+        open.set(true);
+    };
+
+    // 选中第 i 项：关闭面板、回调、焦点还给触发器。
+    let pick = move |i: usize| {
+        open.set(false);
+        if let Some(v) = options.with_untracked(|o| o.get(i).map(|(v, _)| v.clone())) {
+            onchange.run(v);
+        }
+        focus_trigger();
+    };
+
+    // 面板打开后的键盘处理；触发器与筛选框共用。
+    let handle_open_key = move |e: &KeyboardEvent| {
         let key = e.key();
-        let is_space = matches!(&key, Key::Character(s) if s == " ");
-        if key == Key::ArrowDown || key == Key::ArrowUp {
-            e.prevent_default();
-            let delta = if key == Key::ArrowDown { 1 } else { -1 };
-            if let Some(next) = step_active(&navigable_for_keys, active(), delta) {
-                active.set(next);
-            }
-        } else if key == Key::Home {
-            e.prevent_default();
-            if let Some(&first) = navigable_for_keys.first() {
-                active.set(first);
-            }
-        } else if key == Key::End {
-            e.prevent_default();
-            if let Some(&last) = navigable_for_keys.last() {
-                active.set(last);
-            }
-        } else if key == Key::Enter || (is_space && !filterable) {
-            e.prevent_default();
-            if navigable_for_keys.contains(&active()) {
-                open.set(false);
-                if let Some((v, _)) = options_for_keys.get(active()) {
-                    onchange.call(v.clone());
+        match key.as_str() {
+            "ArrowDown" | "ArrowUp" => {
+                e.prevent_default();
+                let delta = if key == "ArrowDown" { 1 } else { -1 };
+                if let Some(next) =
+                    navigable.with_untracked(|n| step_active(n, active.get_untracked(), delta))
+                {
+                    active.set(next);
                 }
-                #[cfg(target_arch = "wasm32")]
-                focus_by_id(&trigger_id_keys);
             }
-        } else if key == Key::Escape {
-            e.prevent_default();
-            open.set(false);
-            #[cfg(target_arch = "wasm32")]
-            focus_by_id(&trigger_id_keys);
-        } else if key == Key::Tab {
-            open.set(false);
+            "Home" => {
+                e.prevent_default();
+                if let Some(first) = navigable.with_untracked(|n| n.first().copied()) {
+                    active.set(first);
+                }
+            }
+            "End" => {
+                e.prevent_default();
+                if let Some(last) = navigable.with_untracked(|n| n.last().copied()) {
+                    active.set(last);
+                }
+            }
+            "Enter" | " " if key == "Enter" || !filterable.get_untracked() => {
+                e.prevent_default();
+                let current = active.get_untracked();
+                if navigable.with_untracked(|n| n.contains(&current)) {
+                    pick(current);
+                }
+            }
+            "Escape" => {
+                e.prevent_default();
+                open.set(false);
+                focus_trigger();
+            }
+            "Tab" => open.set(false),
+            _ => {}
         }
     };
-    let mut handle_filter_key = handle_open_key.clone();
 
-    let active_idx = active();
-    let placement = if flip_up() { "top" } else { "bottom" };
-    let active_descendant =
-        (open() && !filterable).then(|| format!("form-select-{id_prefix}-opt-{}", active()));
-    // wasm 下闭包捕获了 trigger_id（String），不是 Copy；宿主构建下是 Copy。
-    #[allow(clippy::clone_on_copy)]
-    let mut open_from_click = open_panel.clone();
-    let mut open_from_key = open_panel;
-
-    rsx! {
-        div { class: "relative",
-            button {
-                id: "{trigger_id}",
-                r#type: "button",
-                class: "select-trigger {trigger_cls}",
-                aria_haspopup: "listbox",
-                aria_expanded: "{open()}",
-                aria_activedescendant: active_descendant,
-                aria_label,
-                onclick: move |_| {
+    view! {
+        <div class="relative">
+            <button
+                id=move || trigger_id.get()
+                type="button"
+                class=trigger_cls
+                aria-haspopup="listbox"
+                aria-expanded=move || open.get().to_string()
+                aria-activedescendant=move || {
+                    (open.get() && !filterable.get()).then(|| option_id(active.get()))
+                }
+                aria-label=aria_label
+                on:click=move |_| {
                     // 打开态下触发器被透明遮罩盖住，点击落在遮罩上即关闭；
                     // 这里只需处理「未开 → 开」。
-                    if !open() {
-                        open_from_click();
+                    if !open.get_untracked() {
+                        open_panel();
                     }
-                },
-                onkeydown: move |e| {
-                    if open() {
+                }
+                on:keydown=move |e: KeyboardEvent| {
+                    if open.get_untracked() {
                         handle_open_key(&e);
                         return;
                     }
-                    let key = e.key();
-                    let is_space = matches!(&key, Key::Character(s) if s == " ");
-                    if key == Key::ArrowDown || key == Key::ArrowUp || key == Key::Enter || is_space {
+                    if matches!(e.key().as_str(), "ArrowDown" | "ArrowUp" | "Enter" | " ") {
                         e.prevent_default();
-                        open_from_key();
-                    }
-                },
-                span { class: "select-value", "{selected_label}" }
-                Icon { name: IconName::ChevronDown, size: 15, class: "select-chevron" }
-            }
-
-            if open() {
-                // 透明遮罩：拦截外部点击（点遮罩即关），z-40 < 面板 z-50。
-                div { class: "fixed inset-0 z-40", onclick: move |_| open.set(false) }
-                ul {
-                    class: "listbox",
-                    "data-placement": placement,
-                    role: "listbox",
-                    aria_labelledby: "{trigger_id}",
-                    if filterable {
-                        li { class: "listbox-filter", role: "presentation",
-                            input {
-                                id: "{filter_id}",
-                                class: "field field-sm w-full",
-                                r#type: "text",
-                                placeholder: "筛选",
-                                autocomplete: "off",
-                                value: "{q}",
-                                aria_label: "筛选选项",
-                                aria_activedescendant: format!("form-select-{id_prefix}-opt-{active_idx}"),
-                                oninput: move |e| {
-                                    let text = e.value();
-                                    if let Some(first) = searchable
-                                        .iter()
-                                        .position(|(label, enabled)| *enabled && matches_query(label, &text))
-                                    {
-                                        active.set(first);
-                                    }
-                                    query.set(text);
-                                },
-                                onkeydown: move |e| handle_filter_key(&e),
-                            }
-                        }
-                    }
-                    if nothing_visible {
-                        li { class: "listbox-empty", role: "presentation", "没有匹配的选项" }
-                    }
-                    for (i, value, label, reason) in rows {
-                        SelectOption {
-                            key: "{i}",
-                            id: format!("form-select-{id_prefix}-opt-{i}"),
-                            label,
-                            reason,
-                            selected: i == selected,
-                            active: i == active_idx,
-                            on_hover: move |_| {
-                                if reason.is_none() {
-                                    active.set(i);
-                                }
-                            },
-                            on_pick: {
-                                #[cfg(target_arch = "wasm32")]
-                                let trigger_id = trigger_id.clone();
-                                move |_| {
-                                    open.set(false);
-                                    onchange.call(value.clone());
-                                    #[cfg(target_arch = "wasm32")]
-                                    focus_by_id(&trigger_id);
-                                }
-                            },
-                        }
+                        open_panel();
                     }
                 }
-            }
-        }
+            >
+                <span class="select-value">
+                    {move || {
+                        options.with(|o| {
+                            o.get(selected.get())
+                                .map(|(_, label)| label.as_ref().to_string())
+                                .unwrap_or_default()
+                        })
+                    }}
+                </span>
+                <Icon name=IconName::ChevronDown size=15 class="select-chevron"/>
+            </button>
+
+            {move || {
+                open.get()
+                    .then(|| {
+                        view! {
+                            // 透明遮罩：拦截外部点击（点遮罩即关），z-40 < 面板 z-50。
+                            <div class="fixed inset-0 z-40" on:click=move |_| open.set(false)></div>
+                            <ul
+                                class="listbox"
+                                data-placement=move || if flip_up.get() { "top" } else { "bottom" }
+                                role="listbox"
+                                aria-labelledby=move || trigger_id.get()
+                            >
+                                {move || {
+                                    filterable
+                                        .get()
+                                        .then(|| {
+                                            view! {
+                                                <li class="listbox-filter" role="presentation">
+                                                    <input
+                                                        id=filter_id
+                                                        class="field field-sm w-full"
+                                                        type="text"
+                                                        placeholder="筛选"
+                                                        autocomplete="off"
+                                                        prop:value=move || query.get()
+                                                        aria-label="筛选选项"
+                                                        aria-activedescendant=move || option_id(active.get())
+                                                        on:input=move |e| {
+                                                            let text = event_target_value(&e);
+                                                            let first = options
+                                                                .with_untracked(|o| {
+                                                                    reasons
+                                                                        .with_untracked(|r| {
+                                                                            o.iter()
+                                                                                .zip(r)
+                                                                                .position(|((_, label), reason)| {
+                                                                                    reason.is_none() && matches_query(label.as_ref(), &text)
+                                                                                })
+                                                                        })
+                                                                });
+                                                            if let Some(first) = first {
+                                                                active.set(first);
+                                                            }
+                                                            query.set(text);
+                                                        }
+                                                        on:keydown=move |e: KeyboardEvent| handle_open_key(&e)
+                                                    />
+                                                </li>
+                                            }
+                                        })
+                                }}
+                                {move || {
+                                    visible
+                                        .with(Vec::is_empty)
+                                        .then(|| {
+                                            view! {
+                                                <li class="listbox-empty" role="presentation">
+                                                    "没有匹配的选项"
+                                                </li>
+                                            }
+                                        })
+                                }}
+                                {move || {
+                                    visible
+                                        .get()
+                                        .into_iter()
+                                        .map(|i| {
+                                            let label = options
+                                                .with(|o| {
+                                                    o.get(i)
+                                                        .map(|(_, l)| l.as_ref().to_string())
+                                                        .unwrap_or_default()
+                                                });
+                                            let reason = reasons.with(|r| r.get(i).copied().flatten());
+                                            view! {
+                                                <SelectOption
+                                                    id=option_id(i)
+                                                    label=label
+                                                    reason=reason
+                                                    selected=Signal::derive(move || selected.get() == i)
+                                                    active=Signal::derive(move || active.get() == i)
+                                                    on_hover=move |_| {
+                                                        if reason.is_none() {
+                                                            active.set(i);
+                                                        }
+                                                    }
+                                                    on_pick=move |_| pick(i)
+                                                />
+                                            }
+                                        })
+                                        .collect_view()
+                                }}
+                            </ul>
+                        }
+                    })
+            }}
+        </div>
     }
 }
 
@@ -412,37 +485,36 @@ fn SelectOption(
     id: String,
     label: String,
     reason: Option<&'static str>,
-    selected: bool,
-    active: bool,
-    on_hover: EventHandler<()>,
-    on_pick: EventHandler<()>,
-) -> Element {
-    rsx! {
-        li {
-            id,
-            class: "listbox-option",
-            role: "option",
-            aria_selected: "{selected}",
-            aria_disabled: reason.is_some().then_some("true"),
-            "data-active": "{active}",
+    #[prop(into)] selected: Signal<bool>,
+    #[prop(into)] active: Signal<bool>,
+    #[prop(into)] on_hover: Callback<()>,
+    #[prop(into)] on_pick: Callback<()>,
+) -> impl IntoView {
+    view! {
+        <li
+            id=id
+            class="listbox-option"
+            role="option"
+            aria-selected=move || selected.get().to_string()
+            aria-disabled=reason.is_some().then_some("true")
+            data-active=move || active.get().to_string()
             // 阻止 mousedown 默认行为：点击选项不夺走焦点。
-            onmousedown: move |e| e.prevent_default(),
-            onmouseenter: move |_| on_hover.call(()),
-            onclick: move |_| {
+            on:mousedown=move |e: MouseEvent| e.prevent_default()
+            on:mouseenter=move |_| on_hover.run(())
+            on:click=move |_| {
                 if reason.is_none() {
-                    on_pick.call(());
-                }
-            },
-            span { class: "min-w-0 flex-1",
-                span { class: "block truncate", "{label}" }
-                if let Some(reason) = reason {
-                    span { class: "listbox-option-hint", "{reason}" }
+                    on_pick.run(());
                 }
             }
-            if selected {
-                Icon { name: IconName::Check, size: 14, class: "listbox-check" }
-            }
-        }
+        >
+            <span class="min-w-0 flex-1">
+                <span class="block truncate">{label}</span>
+                {reason.map(|reason| view! { <span class="listbox-option-hint">{reason}</span> })}
+            </span>
+            {move || {
+                selected.get().then(|| view! { <Icon name=IconName::Check size=14 class="listbox-check"/> })
+            }}
+        </li>
     }
 }
 
@@ -471,145 +543,178 @@ fn parse_hhmm(value: &str) -> (u8, u8) {
 /// Esc 或点外部关闭，焦点回到触发器；列内 ↑↓ 逐格调整。
 ///
 /// Props：
-/// - `id`：触发器 id，用于与 label 关联（缺省用内部计数器生成）
+/// - `id`：触发器 id，用于与 label 关联（缺省挂载后用内部计数器生成）
 /// - `value`：当前值 "HH:MM"（受控；非法值回退显示 00:00，不 panic）
 /// - `onchange`：选中变化回调，回传组合后的 "HH:MM"
 #[component]
-pub fn TimePicker(id: Option<String>, value: String, onchange: EventHandler<String>) -> Element {
-    let id_prefix = use_hook(|| FORM_SELECT_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst));
-    let trigger_id = id.unwrap_or_else(|| format!("time-picker-{id_prefix}"));
-    let (hour, minute) = parse_hhmm(&value);
-    let text = format!("{hour:02}:{minute:02}");
-    let mut open = use_signal(|| false);
+pub fn TimePicker(
+    #[prop(optional, into)] id: MaybeProp<String>,
+    #[prop(into)] value: Signal<String>,
+    #[prop(into)] onchange: Callback<String>,
+) -> impl IntoView {
+    let prefix = use_instance_prefix();
+    let trigger_id = Signal::derive(move || {
+        id.get()
+            .or_else(|| prefix.get().map(|n| format!("time-picker-{n}")))
+    });
+    let parsed = Memo::new(move |_| parse_hhmm(&value.get()));
+    let hour = Memo::new(move |_| parsed.get().0);
+    let minute = Memo::new(move |_| parsed.get().1);
+    let text = move || format!("{:02}:{:02}", hour.get(), minute.get());
+    let open = RwSignal::new(false);
 
     // 打开时把当前小时、分钟滚到列中间（避开上下渐隐）。
-    use_effect(move || {
-        if open() {
+    Effect::new(move |_| {
+        if open.get() {
             #[cfg(target_arch = "wasm32")]
-            {
-                scroll_into_center(&format!("time-picker-{id_prefix}-h"));
-                scroll_into_center(&format!("time-picker-{id_prefix}-m"));
+            if let Some(n) = prefix.get_untracked() {
+                scroll_into_center(&format!("time-picker-{n}-h"));
+                scroll_into_center(&format!("time-picker-{n}-m"));
             }
         }
     });
 
-    // UTC 换算依赖浏览器时区，仅在客户端打开浮层后显示。
-    #[cfg(target_arch = "wasm32")]
-    let utc = Some(crate::utils::time::local_hhmm_to_utc(&text));
-    #[cfg(not(target_arch = "wasm32"))]
-    let utc: Option<String> = None;
+    // UTC 换算依赖浏览器时区，仅在客户端（打开浮层后）显示。
+    let utc = move || {
+        cfg!(target_arch = "wasm32").then(|| crate::utils::time::local_hhmm_to_utc(&text()))
+    };
 
-    #[cfg(target_arch = "wasm32")]
-    let trigger_for_close = trigger_id.clone();
     let close = move || {
         open.set(false);
         #[cfg(target_arch = "wasm32")]
-        focus_by_id(&trigger_for_close);
-    };
-    // 同上：wasm 下捕获 String，宿主构建下是 Copy。
-    #[allow(clippy::clone_on_copy)]
-    let mut close_key = close.clone();
-    let mut close_done = close;
-
-    rsx! {
-        div { class: "relative inline-block",
-            button {
-                id: "{trigger_id}",
-                r#type: "button",
-                class: "select-trigger field w-40",
-                aria_haspopup: "dialog",
-                aria_expanded: "{open()}",
-                onclick: move |_| open.set(true),
-                span { class: "font-mono tabular-nums", "{text}" }
-                span { class: "text-xs text-fg-3", "本地时间" }
-            }
-            if open() {
-                div { class: "fixed inset-0 z-40", onclick: move |_| open.set(false) }
-                div {
-                    class: "listbox time-panel",
-                    "data-placement": "bottom",
-                    role: "dialog",
-                    aria_label: "选择时间",
-                    onkeydown: move |e| {
-                        if e.key() == Key::Escape {
-                            e.prevent_default();
-                            close_key();
-                        }
-                    },
-                    div { class: "time-columns",
-                        div {
-                            class: "time-column",
-                            role: "listbox",
-                            aria_label: "小时",
-                            onkeydown: move |e| {
-                                let delta = match e.key() {
-                                    Key::ArrowDown => 1,
-                                    Key::ArrowUp => -1,
-                                    _ => return,
-                                };
-                                e.prevent_default();
-                                let h = wrap_index(hour as usize, delta, 24);
-                                onchange.call(format!("{h:02}:{minute:02}"));
-                            },
-                            for h in 0..24u8 {
-                                button {
-                                    key: "{h}",
-                                    id: if h == hour { format!("time-picker-{id_prefix}-h") } else { String::new() },
-                                    class: "time-cell",
-                                    r#type: "button",
-                                    role: "option",
-                                    aria_selected: "{h == hour}",
-                                    tabindex: if h == hour { "0" } else { "-1" },
-                                    onclick: move |_| onchange.call(format!("{h:02}:{minute:02}")),
-                                    "{h:02}"
-                                }
-                            }
-                        }
-                        div {
-                            class: "time-column",
-                            role: "listbox",
-                            aria_label: "分钟",
-                            onkeydown: move |e| {
-                                let delta = match e.key() {
-                                    Key::ArrowDown => 1,
-                                    Key::ArrowUp => -1,
-                                    _ => return,
-                                };
-                                e.prevent_default();
-                                let m = wrap_index(minute as usize, delta, 60);
-                                onchange.call(format!("{hour:02}:{m:02}"));
-                            },
-                            for m in 0..60u8 {
-                                button {
-                                    key: "{m}",
-                                    id: if m == minute { format!("time-picker-{id_prefix}-m") } else { String::new() },
-                                    class: "time-cell",
-                                    r#type: "button",
-                                    role: "option",
-                                    aria_selected: "{m == minute}",
-                                    tabindex: if m == minute { "0" } else { "-1" },
-                                    onclick: move |_| onchange.call(format!("{hour:02}:{m:02}")),
-                                    "{m:02}"
-                                }
-                            }
-                        }
-                    }
-                    div { class: "time-footer",
-                        span {
-                            if let Some(utc) = utc {
-                                "UTC {utc}"
-                            }
-                        }
-                        button {
-                            class: "btn btn-xs btn-primary",
-                            r#type: "button",
-                            onclick: move |_| close_done(),
-                            "确定"
-                        }
-                    }
-                }
-            }
+        if let Some(trigger) = trigger_id.get_untracked() {
+            focus_by_id(&trigger);
         }
+    };
+
+    let hour_id = move |h: u8| {
+        (h == hour.get())
+            .then(|| prefix.get().map(|n| format!("time-picker-{n}-h")))
+            .flatten()
+    };
+    let minute_id = move |m: u8| {
+        (m == minute.get())
+            .then(|| prefix.get().map(|n| format!("time-picker-{n}-m")))
+            .flatten()
+    };
+
+    view! {
+        <div class="relative inline-block">
+            <button
+                id=move || trigger_id.get()
+                type="button"
+                class="select-trigger field w-40"
+                aria-haspopup="dialog"
+                aria-expanded=move || open.get().to_string()
+                on:click=move |_| open.set(true)
+            >
+                <span class="font-mono tabular-nums">{text}</span>
+                <span class="text-xs text-fg-3">"本地时间"</span>
+            </button>
+            {move || {
+                open.get()
+                    .then(|| {
+                        view! {
+                            <div class="fixed inset-0 z-40" on:click=move |_| open.set(false)></div>
+                            <div
+                                class="listbox time-panel"
+                                data-placement="bottom"
+                                role="dialog"
+                                aria-label="选择时间"
+                                on:keydown=move |e: KeyboardEvent| {
+                                    if e.key() == "Escape" {
+                                        e.prevent_default();
+                                        close();
+                                    }
+                                }
+                            >
+                                <div class="time-columns">
+                                    <div
+                                        class="time-column"
+                                        role="listbox"
+                                        aria-label="小时"
+                                        on:keydown=move |e: KeyboardEvent| {
+                                            let delta = match e.key().as_str() {
+                                                "ArrowDown" => 1,
+                                                "ArrowUp" => -1,
+                                                _ => return,
+                                            };
+                                            e.prevent_default();
+                                            let h = wrap_index(hour.get_untracked() as usize, delta, 24);
+                                            onchange.run(format!("{h:02}:{:02}", minute.get_untracked()));
+                                        }
+                                    >
+                                        {(0..24u8)
+                                            .map(|h| {
+                                                view! {
+                                                    <button
+                                                        id=move || hour_id(h)
+                                                        class="time-cell"
+                                                        type="button"
+                                                        role="option"
+                                                        aria-selected=move || (h == hour.get()).to_string()
+                                                        tabindex=move || if h == hour.get() { "0" } else { "-1" }
+                                                        on:click=move |_| {
+                                                            onchange.run(format!("{h:02}:{:02}", minute.get_untracked()))
+                                                        }
+                                                    >
+                                                        {format!("{h:02}")}
+                                                    </button>
+                                                }
+                                            })
+                                            .collect_view()}
+                                    </div>
+                                    <div
+                                        class="time-column"
+                                        role="listbox"
+                                        aria-label="分钟"
+                                        on:keydown=move |e: KeyboardEvent| {
+                                            let delta = match e.key().as_str() {
+                                                "ArrowDown" => 1,
+                                                "ArrowUp" => -1,
+                                                _ => return,
+                                            };
+                                            e.prevent_default();
+                                            let m = wrap_index(minute.get_untracked() as usize, delta, 60);
+                                            onchange.run(format!("{:02}:{m:02}", hour.get_untracked()));
+                                        }
+                                    >
+                                        {(0..60u8)
+                                            .map(|m| {
+                                                view! {
+                                                    <button
+                                                        id=move || minute_id(m)
+                                                        class="time-cell"
+                                                        type="button"
+                                                        role="option"
+                                                        aria-selected=move || (m == minute.get()).to_string()
+                                                        tabindex=move || if m == minute.get() { "0" } else { "-1" }
+                                                        on:click=move |_| {
+                                                            onchange.run(format!("{:02}:{m:02}", hour.get_untracked()))
+                                                        }
+                                                    >
+                                                        {format!("{m:02}")}
+                                                    </button>
+                                                }
+                                            })
+                                            .collect_view()}
+                                    </div>
+                                </div>
+                                <div class="time-footer">
+                                    <span>{move || utc().map(|utc| format!("UTC {utc}"))}</span>
+                                    <button
+                                        class="btn btn-xs btn-primary"
+                                        type="button"
+                                        on:click=move |_| close()
+                                    >
+                                        "确定"
+                                    </button>
+                                </div>
+                            </div>
+                        }
+                    })
+            }}
+        </div>
     }
 }
 
@@ -619,7 +724,7 @@ pub fn TimePicker(id: Option<String>, value: String, onchange: EventHandler<Stri
 /// - `id`：input 元素 id，用于与 label 关联
 /// - `r#type`：input 类型（缺省 `"text"`；如 `"email"`、`"password"`、`"number"`）
 /// - `placeholder`：占位提示文本（可选，不填则不输出属性）
-/// - `value`：当前值
+/// - `value`：当前值（受控，传信号或 `move ||` 闭包）
 /// - `disabled`：是否禁用（可选，缺省 `false`）
 /// - `invalid`：是否校验未通过（红环，输出 `aria-invalid`）
 /// - `required`：是否必填（缺省 `false`）
@@ -637,78 +742,82 @@ pub fn TimePicker(id: Option<String>, value: String, onchange: EventHandler<Stri
 /// - `inputmode` / `title` / `aria_label`：可选的原生属性
 #[component]
 pub fn FormInput(
-    id: Option<String>,
-    #[props(default = "text")] r#type: &'static str,
-    #[props(default)] placeholder: Option<&'static str>,
-    value: String,
-    #[props(default)] disabled: bool,
-    #[props(default)] invalid: bool,
-    #[props(default)] required: bool,
-    #[props(default)] readonly: bool,
-    #[props(default)] autofocus: bool,
-    #[props(default)] maxlength: Option<i32>,
-    #[props(default)] autocomplete: Option<&'static str>,
-    #[props(default)] min: Option<&'static str>,
-    #[props(default)] step: Option<&'static str>,
-    #[props(default)] aria_describedby: Option<&'static str>,
-    #[props(default)] oninput: Option<EventHandler<String>>,
-    #[props(default)] onkeydown: Option<EventHandler<KeyboardEvent>>,
-    #[props(default)] onfocus: Option<EventHandler<FocusEvent>>,
-    #[props(default)] onblur: Option<EventHandler<FocusEvent>>,
-    #[props(default)] class: Option<&'static str>,
-    #[props(default)] mono: bool,
-    #[props(default)] inputmode: Option<&'static str>,
-    #[props(default)] title: Option<&'static str>,
-    #[props(default)] aria_label: Option<&'static str>,
-) -> Element {
+    #[prop(optional, into)] id: MaybeProp<String>,
+    #[prop(default = "text")] r#type: &'static str,
+    #[prop(optional)] placeholder: Option<&'static str>,
+    #[prop(into)] value: Signal<String>,
+    #[prop(optional, into)] disabled: Signal<bool>,
+    #[prop(optional, into)] invalid: Signal<bool>,
+    #[prop(optional)] required: bool,
+    #[prop(optional)] readonly: bool,
+    #[prop(optional)] autofocus: bool,
+    #[prop(optional)] maxlength: Option<i32>,
+    #[prop(optional)] autocomplete: Option<&'static str>,
+    #[prop(optional)] min: Option<&'static str>,
+    #[prop(optional)] step: Option<&'static str>,
+    #[prop(optional)] aria_describedby: Option<&'static str>,
+    #[prop(optional, into)] oninput: Option<Callback<String>>,
+    #[prop(optional, into)] onkeydown: Option<Callback<KeyboardEvent>>,
+    #[prop(optional, into)] onfocus: Option<Callback<FocusEvent>>,
+    #[prop(optional, into)] onblur: Option<Callback<FocusEvent>>,
+    #[prop(optional)] class: Option<&'static str>,
+    #[prop(optional)] mono: bool,
+    #[prop(optional)] inputmode: Option<&'static str>,
+    #[prop(optional)] title: Option<&'static str>,
+    #[prop(optional)] aria_label: Option<&'static str>,
+) -> impl IntoView {
     let base = class.unwrap_or(INPUT_CLASS);
     let mono_class = if mono { " font-mono" } else { "" };
-    let disabled_class = if disabled {
-        " opacity-60 cursor-not-allowed"
-    } else {
-        ""
+    let class = move || {
+        let disabled_class = if disabled.get() {
+            " opacity-60 cursor-not-allowed"
+        } else {
+            ""
+        };
+        format!("{base}{mono_class}{disabled_class}")
     };
-    rsx! {
-        input {
-            id: id.unwrap_or_default(),
-            class: "{base}{mono_class}{disabled_class}",
-            r#type,
-            placeholder,
-            value: "{value}",
-            disabled,
-            required,
-            readonly,
-            autofocus,
-            maxlength,
-            autocomplete,
-            min,
-            step,
-            aria_describedby,
-            aria_invalid: invalid.then_some("true"),
-            inputmode: inputmode.unwrap_or_default(),
-            title: title.unwrap_or_default(),
-            aria_label,
-            oninput: move |e| {
-                if let Some(handler) = &oninput {
-                    handler.call(e.value());
+    view! {
+        <input
+            id=move || id.get()
+            class=class
+            type=r#type
+            placeholder=placeholder
+            value=value.get_untracked()
+            prop:value=move || value.get()
+            disabled=move || disabled.get()
+            required=required
+            readonly=readonly
+            autofocus=autofocus
+            maxlength=maxlength.map(|n| n.to_string())
+            autocomplete=autocomplete
+            min=min
+            step=step
+            aria-describedby=aria_describedby
+            aria-invalid=move || invalid.get().then_some("true")
+            inputmode=inputmode
+            title=title
+            aria-label=aria_label
+            on:input=move |e| {
+                if let Some(handler) = oninput {
+                    handler.run(event_target_value(&e));
                 }
-            },
-            onkeydown: move |e| {
-                if let Some(handler) = &onkeydown {
-                    handler.call(e);
+            }
+            on:keydown=move |e| {
+                if let Some(handler) = onkeydown {
+                    handler.run(e);
                 }
-            },
-            onfocus: move |e| {
-                if let Some(handler) = &onfocus {
-                    handler.call(e);
+            }
+            on:focus=move |e| {
+                if let Some(handler) = onfocus {
+                    handler.run(e);
                 }
-            },
-            onblur: move |e| {
-                if let Some(handler) = &onblur {
-                    handler.call(e);
+            }
+            on:blur=move |e| {
+                if let Some(handler) = onblur {
+                    handler.run(e);
                 }
-            },
-        }
+            }
+        />
     }
 }
 
@@ -716,26 +825,28 @@ pub fn FormInput(
 /// `rows` 是不支持 field-sizing 时的初始行数。
 #[component]
 pub fn FormTextarea(
-    id: Option<String>,
-    value: String,
-    #[props(default)] placeholder: Option<&'static str>,
-    #[props(default = 3)] rows: u32,
-    #[props(default)] maxlength: Option<i32>,
-    #[props(default)] invalid: bool,
-    oninput: EventHandler<String>,
-    #[props(default)] class: Option<&'static str>,
-) -> Element {
-    rsx! {
-        textarea {
-            id: id.unwrap_or_default(),
-            class: class.unwrap_or(TEXTAREA_CLASS),
-            rows,
-            maxlength,
-            placeholder,
-            value: "{value}",
-            aria_invalid: invalid.then_some("true"),
-            oninput: move |e| oninput.call(e.value()),
-        }
+    #[prop(optional, into)] id: MaybeProp<String>,
+    #[prop(into)] value: Signal<String>,
+    #[prop(optional)] placeholder: Option<&'static str>,
+    #[prop(default = 3)] rows: u32,
+    #[prop(optional)] maxlength: Option<i32>,
+    #[prop(optional, into)] invalid: Signal<bool>,
+    #[prop(into)] oninput: Callback<String>,
+    #[prop(optional)] class: Option<&'static str>,
+) -> impl IntoView {
+    view! {
+        <textarea
+            id=move || id.get()
+            class=class.unwrap_or(TEXTAREA_CLASS)
+            rows=rows
+            maxlength=maxlength.map(|n| n.to_string())
+            placeholder=placeholder
+            prop:value=move || value.get()
+            aria-invalid=move || invalid.get().then_some("true")
+            on:input=move |e| oninput.run(event_target_value(&e))
+        >
+            {value.get_untracked()}
+        </textarea>
     }
 }
 
@@ -745,109 +856,127 @@ pub fn FormTextarea(
 /// 越界或非数字时显示红环与范围说明，不改动父组件的值。
 ///
 /// Props：
-/// - `id`：input id，用于与 label 关联
-/// - `value`：当前值（受控）
+/// - `id`：input id，用于与 label 关联（缺省挂载后用内部计数器生成）
+/// - `value`：当前值（受控，可传信号）
 /// - `min` / `max`：允许范围（含端点）
 /// - `step`：步进，缺省 1
 /// - `unit`：单位，如「天」「次/分钟」
 /// - `hint`：范围内时显示的说明（可选）
+/// - `aria_label`：没有可见标签时的无障碍名称（可选）
 /// - `onchange`：合法新值回调
 #[component]
 pub fn NumberInput(
-    id: Option<String>,
-    value: i64,
+    #[prop(optional, into)] id: MaybeProp<String>,
+    #[prop(into)] value: Signal<i64>,
     min: i64,
     max: i64,
-    #[props(default = 1)] step: i64,
-    #[props(default)] unit: Option<&'static str>,
-    #[props(default)] hint: Option<String>,
-    #[props(default)] aria_label: Option<&'static str>,
-    onchange: EventHandler<i64>,
-) -> Element {
-    let id_prefix = use_hook(|| FORM_SELECT_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst));
-    let input_id = id.unwrap_or_else(|| format!("number-input-{id_prefix}"));
-    let help_id = format!("{input_id}-help");
-    let mut draft = use_signal(|| value.to_string());
+    #[prop(default = 1)] step: i64,
+    #[prop(optional)] unit: Option<&'static str>,
+    #[prop(optional, into)] hint: MaybeProp<String>,
+    #[prop(optional)] aria_label: Option<&'static str>,
+    #[prop(into)] onchange: Callback<i64>,
+) -> impl IntoView {
+    let prefix = use_instance_prefix();
+    let input_id = Signal::derive(move || {
+        id.get()
+            .or_else(|| prefix.get().map(|n| format!("number-input-{n}")))
+    });
+    let help_id = Signal::derive(move || input_id.get().map(|id| format!("{id}-help")));
+    let draft = RwSignal::new(value.get_untracked().to_string());
     // 父组件改值（外部重置、保存回填）时同步草稿。
-    let mut last_value = use_signal(|| value);
-    if *last_value.peek() != value {
-        last_value.set(value);
-        draft.set(value.to_string());
-    }
+    Effect::new(move |previous: Option<i64>| {
+        let current = value.get();
+        if previous.is_some_and(|p| p != current) {
+            draft.set(current.to_string());
+        }
+        current
+    });
 
-    let parsed = parse_in_range(&draft(), min, max);
-    let invalid = parsed.is_none();
-    let current = parsed.unwrap_or(value);
-    let help = if invalid {
-        Some(format!("超出范围：请输入 {min} 到 {max} 之间的整数。"))
-    } else {
-        hint
+    let parsed = Memo::new(move |_| parse_in_range(&draft.get(), min, max));
+    let invalid = move || parsed.get().is_none();
+    let current = move || parsed.get().unwrap_or_else(|| value.get());
+    let help = move || {
+        if invalid() {
+            Some(format!("超出范围：请输入 {min} 到 {max} 之间的整数。"))
+        } else {
+            hint.get()
+        }
     };
-    let described_by = help.as_ref().map(|_| help_id.clone());
-    let mut set = move |next: i64| {
+    let at_min = move || current() <= min;
+    let at_max = move || current() >= max;
+    let set = move |next: i64| {
         let next = next.clamp(min, max);
         draft.set(next.to_string());
-        onchange.call(next);
+        onchange.run(next);
     };
-    let mut set_dec = set;
 
-    rsx! {
-        div {
-            div { class: "field number-field",
-                button {
-                    class: "btn btn-sm btn-icon btn-ghost",
-                    r#type: "button",
-                    aria_label: "减少",
-                    disabled: current <= min,
-                    onclick: move |_| set_dec(current - step),
-                    Icon { name: IconName::Minus, size: 14 }
-                }
-                input {
-                    id: "{input_id}",
-                    r#type: "text",
-                    inputmode: "numeric",
-                    value: "{draft}",
-                    aria_label,
-                    aria_invalid: invalid.then_some("true"),
-                    aria_describedby: described_by,
-                    oninput: move |e| {
-                        let text: String = e.value().chars().filter(|c| c.is_ascii_digit() || *c == '-').collect();
+    view! {
+        <div>
+            <div class="field number-field">
+                <button
+                    class="btn btn-sm btn-icon btn-ghost"
+                    type="button"
+                    aria-label="减少"
+                    disabled=at_min
+                    on:click=move |_| set(current() - step)
+                >
+                    <Icon name=IconName::Minus size=14/>
+                </button>
+                <input
+                    id=move || input_id.get()
+                    type="text"
+                    inputmode="numeric"
+                    value=draft.get_untracked()
+                    prop:value=move || draft.get()
+                    aria-label=aria_label
+                    aria-invalid=move || invalid().then_some("true")
+                    aria-describedby=move || help().and_then(|_| help_id.get())
+                    on:input=move |e| {
+                        let text: String = event_target_value(&e)
+                            .chars()
+                            .filter(|c| c.is_ascii_digit() || *c == '-')
+                            .collect();
                         if let Some(v) = parse_in_range(&text, min, max) {
-                            onchange.call(v);
+                            onchange.run(v);
                         }
                         draft.set(text);
-                    },
-                    onkeydown: move |e| {
-                        let delta = match e.key() {
-                            Key::ArrowUp => step,
-                            Key::ArrowDown => -step,
+                    }
+                    on:keydown=move |e: KeyboardEvent| {
+                        let delta = match e.key().as_str() {
+                            "ArrowUp" => step,
+                            "ArrowDown" => -step,
                             _ => return,
                         };
                         e.prevent_default();
-                        set(current + delta);
-                    },
-                }
-                if let Some(unit) = unit {
-                    span { class: "number-unit", "{unit}" }
-                }
-                button {
-                    class: "btn btn-sm btn-icon btn-ghost",
-                    r#type: "button",
-                    aria_label: "增加",
-                    disabled: current >= max,
-                    onclick: move |_| set(current + step),
-                    Icon { name: IconName::Plus, size: 14 }
-                }
-            }
-            if let Some(help) = help {
-                p {
-                    id: "{help_id}",
-                    class: "field-hint",
-                    "data-tone": if invalid { "danger" } else { "" },
-                    "{help}"
-                }
-            }
-        }
+                        set(current() + delta);
+                    }
+                />
+                {unit.map(|unit| view! { <span class="number-unit">{unit}</span> })}
+                <button
+                    class="btn btn-sm btn-icon btn-ghost"
+                    type="button"
+                    aria-label="增加"
+                    disabled=at_max
+                    on:click=move |_| set(current() + step)
+                >
+                    <Icon name=IconName::Plus size=14/>
+                </button>
+            </div>
+            {move || {
+                help()
+                    .map(|help| {
+                        view! {
+                            <p
+                                id=move || help_id.get()
+                                class="field-hint"
+                                data-tone=move || if invalid() { "danger" } else { "" }
+                            >
+                                {help}
+                            </p>
+                        }
+                    })
+            }}
+        </div>
     }
 }
 
@@ -865,9 +994,14 @@ fn parse_in_range(text: &str, min: i64, max: i64) -> Option<i64> {
 /// - `label`：标签文本
 /// - `html_for`：关联的 input id
 #[component]
-pub fn FormLabel(label: String, html_for: Option<String>) -> Element {
-    rsx! {
-        label { class: "field-label", r#for: html_for.unwrap_or_default(), "{label}" }
+pub fn FormLabel(
+    #[prop(into)] label: Signal<String>,
+    #[prop(optional, into)] html_for: MaybeProp<String>,
+) -> impl IntoView {
+    view! {
+        <label class="field-label" for=move || html_for.get()>
+            {move || label.get()}
+        </label>
     }
 }
 
@@ -877,17 +1011,29 @@ pub fn FormLabel(label: String, html_for: Option<String>) -> Element {
 /// - `message`：提示文本
 /// - `variant`：`"error"`、`"success"`，其他值为中性说明
 #[component]
-pub fn AlertBox(message: String, variant: &'static str) -> Element {
-    let (tone, icon, role) = match variant {
-        "error" => ("danger", IconName::CircleAlert, "alert"),
-        "success" => ("success", IconName::CircleCheck, "status"),
-        _ => ("", IconName::Info, "status"),
+pub fn AlertBox(
+    #[prop(into)] message: Signal<String>,
+    #[prop(into)] variant: Signal<&'static str>,
+) -> impl IntoView {
+    let tone = move || match variant.get() {
+        "error" => "danger",
+        "success" => "success",
+        _ => "",
     };
-    rsx! {
-        div { class: "alert mb-4", "data-tone": tone, role,
-            Icon { name: icon, size: 16 }
-            span { "{message}" }
-        }
+    let role = move || match variant.get() {
+        "error" => "alert",
+        _ => "status",
+    };
+    let icon = move || match variant.get() {
+        "error" => IconName::CircleAlert,
+        "success" => IconName::CircleCheck,
+        _ => IconName::Info,
+    };
+    view! {
+        <div class="alert mb-4" data-tone=tone role=role>
+            {move || view! { <Icon name=icon() size=16/> }}
+            <span>{move || message.get()}</span>
+        </div>
     }
 }
 
@@ -897,33 +1043,36 @@ pub fn AlertBox(message: String, variant: &'static str) -> Element {
 /// accessibility：`role="switch"` + `aria-checked`，键盘焦点陶土双环。
 ///
 /// Props：
-/// - `checked`：当前开关状态
+/// - `checked`：当前开关状态（可传信号）
 /// - `ontoggle`：点击切换回调（父组件在回调内翻转 signal 并触发副作用）
 /// - `aria_label`：没有可见标签时的无障碍名称
+/// - `disabled`：是否禁用（缺省 `false`）
 #[component]
 pub fn ToggleSwitch(
-    checked: bool,
-    ontoggle: Callback<()>,
-    #[props(default)] aria_label: Option<String>,
-    #[props(default)] disabled: bool,
-) -> Element {
-    rsx! {
-        button {
-            r#type: "button",
-            role: "switch",
-            class: "switch",
-            aria_label: aria_label.unwrap_or_default(),
-            aria_checked: "{checked}",
-            disabled,
-            onclick: move |_| ontoggle.call(()),
-            span { class: "switch-thumb" }
-        }
+    #[prop(into)] checked: Signal<bool>,
+    #[prop(into)] ontoggle: Callback<()>,
+    #[prop(optional, into)] aria_label: MaybeProp<String>,
+    #[prop(optional, into)] disabled: Signal<bool>,
+) -> impl IntoView {
+    view! {
+        <button
+            type="button"
+            role="switch"
+            class="switch"
+            aria-label=move || aria_label.get()
+            aria-checked=move || checked.get().to_string()
+            disabled=move || disabled.get()
+            on:click=move |_| ontoggle.run(())
+        >
+            <span class="switch-thumb"></span>
+        </button>
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{matches_query, parse_hhmm, parse_in_range, should_flip, step_active, wrap_index};
+    use super::*;
+    use leptos::reactive::owner::Owner;
 
     #[test]
     fn parse_hhmm_valid_values() {
@@ -995,5 +1144,229 @@ mod tests {
         assert_eq!(parse_in_range("120", 1, 90), None);
         assert_eq!(parse_in_range("", 1, 90), None);
         assert_eq!(parse_in_range("-", 1, 90), None);
+    }
+
+    // ---- SSR 渲染（Leptos）：覆盖各组件在常见传参写法下的静态结构 ----
+
+    fn render<V: IntoView + 'static>(build: impl FnOnce() -> V) -> String {
+        Owner::new().with(|| build().to_html())
+    }
+
+    #[test]
+    fn form_input_renders_attributes_and_state_classes() {
+        let html = render(|| {
+            view! {
+                <FormInput
+                    id="login-name"
+                    r#type="email"
+                    placeholder="邮箱"
+                    value="a@b.c"
+                    invalid=true
+                    disabled=true
+                    mono=true
+                    maxlength=64
+                    autocomplete="off"
+                    oninput=move |_: String| {}
+                />
+            }
+        });
+        assert!(html.contains("id=\"login-name\""), "{html}");
+        assert!(html.contains("type=\"email\""), "{html}");
+        assert!(html.contains("placeholder=\"邮箱\""), "{html}");
+        assert!(html.contains("value=\"a@b.c\""), "{html}");
+        assert!(html.contains("aria-invalid=\"true\""), "{html}");
+        assert!(html.contains("maxlength=\"64\""), "{html}");
+        assert!(
+            html.contains("field w-full font-mono opacity-60 cursor-not-allowed"),
+            "{html}"
+        );
+        assert!(html.contains("disabled"), "{html}");
+    }
+
+    #[test]
+    fn form_input_omits_unset_optional_attributes() {
+        let html = render(|| {
+            let value = RwSignal::new(String::new());
+            view! { <FormInput value=value/> }
+        });
+        assert!(!html.contains("id="), "{html}");
+        assert!(!html.contains("aria-invalid"), "{html}");
+        assert!(!html.contains("inputmode"), "{html}");
+        assert!(!html.contains("title"), "{html}");
+        assert!(html.contains("class=\"field w-full\""), "{html}");
+    }
+
+    #[test]
+    fn form_textarea_renders_initial_text_and_rows() {
+        let html = render(|| {
+            view! {
+                <FormTextarea id="bio" value="第一行" rows=5 invalid=true oninput=move |_: String| {}/>
+            }
+        });
+        assert!(html.contains("<textarea"), "{html}");
+        assert!(html.contains("rows=\"5\""), "{html}");
+        assert!(html.contains("field field-textarea"), "{html}");
+        assert!(html.contains("aria-invalid=\"true\""), "{html}");
+        assert!(html.contains("第一行</textarea>"), "{html}");
+    }
+
+    #[test]
+    fn alert_box_maps_variant_to_tone_role_and_icon() {
+        let error = render(|| view! { <AlertBox message="出错了" variant="error"/> });
+        assert!(error.contains("data-tone=\"danger\""), "{error}");
+        assert!(error.contains("role=\"alert\""), "{error}");
+        assert!(error.contains("lucide-circle-alert"), "{error}");
+        assert!(error.contains("出错了"), "{error}");
+
+        let success = render(|| view! { <AlertBox message="成功" variant="success"/> });
+        assert!(success.contains("data-tone=\"success\""), "{success}");
+        assert!(success.contains("role=\"status\""), "{success}");
+
+        let info = render(|| view! { <AlertBox message="提示" variant="info"/> });
+        assert!(info.contains("data-tone=\"\""), "{info}");
+        assert!(info.contains("lucide-info"), "{info}");
+    }
+
+    #[test]
+    fn toggle_switch_exposes_switch_semantics() {
+        let html = render(|| {
+            let checked = RwSignal::new(true);
+            view! { <ToggleSwitch checked=checked aria_label="启用缓存" ontoggle=move |_| {}/> }
+        });
+        assert!(html.contains("role=\"switch\""), "{html}");
+        assert!(html.contains("aria-checked=\"true\""), "{html}");
+        assert!(html.contains("aria-label=\"启用缓存\""), "{html}");
+        assert!(html.contains("switch-thumb"), "{html}");
+    }
+
+    #[test]
+    fn form_label_associates_with_input() {
+        let html = render(|| view! { <FormLabel label="用户名" html_for="login-name"/> });
+        assert!(html.contains("class=\"field-label\""), "{html}");
+        assert!(html.contains("for=\"login-name\""), "{html}");
+        assert!(html.contains("用户名"), "{html}");
+    }
+
+    #[test]
+    fn form_select_closed_renders_only_trigger_with_selected_label() {
+        let html = render(|| {
+            let sort = RwSignal::new(2_u8);
+            view! {
+                <FormSelect
+                    id="sort"
+                    value=sort
+                    options=vec![(1_u8, "最新上传"), (2, "文件最大")]
+                    trigger_class=FORM_SELECT_COMPACT_CLASS
+                    aria_label="排序"
+                    onchange=move |v: u8| sort.set(v)
+                />
+            }
+        });
+        assert!(html.contains("id=\"sort\""), "{html}");
+        assert!(html.contains("aria-haspopup=\"listbox\""), "{html}");
+        assert!(html.contains("aria-expanded=\"false\""), "{html}");
+        assert!(html.contains("aria-label=\"排序\""), "{html}");
+        assert!(
+            html.contains("select-trigger field field-sm w-auto"),
+            "{html}"
+        );
+        assert!(html.contains("文件最大"), "{html}");
+        assert!(!html.contains("role=\"listbox\""), "{html}");
+        assert!(!html.contains("最新上传"), "{html}");
+    }
+
+    #[test]
+    fn form_select_falls_back_to_first_option_for_unknown_value() {
+        let html = render(|| {
+            view! {
+                <FormSelect
+                    value=Signal::derive(|| "zzz".to_string())
+                    options=vec![("a".to_string(), "甲".to_string()), ("b".to_string(), "乙".to_string())]
+                    onchange=move |_: String| {}
+                />
+            }
+        });
+        assert!(html.contains("甲"), "{html}");
+    }
+
+    /// 页面里常见的 FormSelect 传参写法都要能编译并推断出类型参数。
+    #[test]
+    fn form_select_accepts_common_call_shapes() {
+        const REFRESH: [(u32, &str); 2] = [(0, "关闭"), (5000, "5 秒")];
+        let html = render(|| {
+            let refresh = RwSignal::new(5000_u32);
+            let tag = RwSignal::new("rust".to_string());
+            let published = RwSignal::new(None::<bool>);
+            let tags = RwSignal::new(vec![
+                ("all".to_string(), "全部".to_string()),
+                ("rust".to_string(), "Rust".to_string()),
+            ]);
+            view! {
+                // 信号值 + 常量表 + 无标注闭包参数
+                <FormSelect value=refresh options=REFRESH.to_vec() onchange=move |v| refresh.set(v)/>
+                // 闭包值 + 响应式选项 + 标注参数
+                <FormSelect
+                    value=move || tag.get()
+                    options=move || tags.get()
+                    onchange=move |v: String| tag.set(v)
+                />
+                // Option 值 + 内联字面量选项
+                <FormSelect
+                    value=published
+                    options=vec![(None, "公开状态"), (Some(true), "已公开"), (Some(false), "私密")]
+                    onchange={move |v: Option<bool>| published.set(v)}
+                />
+                // 整数字面量值 + 禁用项
+                <FormSelect
+                    value=3_u32
+                    options=vec![(1, "1"), (3, "3")]
+                    disabled_options=vec![(1, "需要先重建索引")]
+                    onchange=move |_: u32| {}
+                />
+            }
+        });
+        assert!(html.contains("5 秒"), "{html}");
+        assert!(html.contains("Rust"), "{html}");
+        assert!(html.contains("公开状态"), "{html}");
+    }
+
+    #[test]
+    fn time_picker_closed_shows_normalized_time() {
+        let html = render(|| {
+            view! {
+                <TimePicker id="backup-time" value="4:05" onchange=move |_: String| {}/>
+            }
+        });
+        // "4:05" 可解析为 (4, 5)，补零后显示。
+        assert!(html.contains("04:05"), "{html}");
+        assert!(html.contains("本地时间"), "{html}");
+        assert!(html.contains("aria-haspopup=\"dialog\""), "{html}");
+        assert!(!html.contains("time-panel"), "{html}");
+    }
+
+    #[test]
+    fn number_input_renders_unit_and_range_error() {
+        let ok = render(|| {
+            view! {
+                <NumberInput id="days" value=30_i64 min=1 max=90 unit="天" hint="保留天数" onchange=move |_: i64| {}/>
+            }
+        });
+        assert!(ok.contains("number-unit"), "{ok}");
+        assert!(ok.contains("天"), "{ok}");
+        assert!(ok.contains("保留天数"), "{ok}");
+        assert!(ok.contains("aria-describedby=\"days-help\""), "{ok}");
+        assert!(ok.contains("data-tone=\"\""), "{ok}");
+
+        let bad = render(|| {
+            view! {
+                <NumberInput id="days" value=120_i64 min=1 max=90 onchange=move |_: i64| {}/>
+            }
+        });
+        assert!(bad.contains("data-tone=\"danger\""), "{bad}");
+        assert!(bad.contains("aria-invalid=\"true\""), "{bad}");
+        assert!(
+            bad.contains("超出范围：请输入 1 到 90 之间的整数。"),
+            "{bad}"
+        );
     }
 }

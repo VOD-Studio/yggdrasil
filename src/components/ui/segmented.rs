@@ -1,9 +1,6 @@
 //! 分段控件：胶囊轨道 + 弹簧滑块。
 use super::icons::{Icon, IconName};
-use dioxus::prelude::*;
-use std::sync::atomic::{AtomicUsize, Ordering};
-
-static SEGMENTED_ID: AtomicUsize = AtomicUsize::new(0);
+use leptos::prelude::*;
 
 /// 分段控件的一项：值、文字，可选图标与数量。
 #[derive(Clone, PartialEq)]
@@ -68,8 +65,9 @@ fn neighbor_index(len: usize, current: Option<usize>, delta: i32) -> Option<usiz
 /// 画浮起底色，首屏不闪。
 ///
 /// Props：
-/// - `items`：选项列表，见 [`SegmentedItem`]
-/// - `value`：当前值；没有匹配项时没有当前项
+/// - `items`：选项列表，见 [`SegmentedItem`]；既可传 `Vec`，也可传信号或闭包（数量变化时
+///   选项按序号原地更新、不重建按钮，焦点不丢）
+/// - `value`：当前值（值、信号或闭包）；没有匹配项时没有当前项
 /// - `on_change`：切换时的回调
 /// - `aria_label`：控件组的无障碍名称
 /// - `kind`：语义，Tabs（默认）或 Radio，见 [`SegmentedKind`]
@@ -79,36 +77,40 @@ fn neighbor_index(len: usize, current: Option<usize>, delta: i32) -> Option<usiz
 ///
 /// 带图标且未设 `icon_only` 时，容器窄于 16rem 自动只留图标（文字仍供读屏）。
 /// 容器对宽度有尺寸包含，放进 flex 行时调用方必须给它宽度。
+///
+/// 选项按钮不再带 `seg-N-i` 形式的 `id`：该序号来自全局计数器，服务端（进程级）与
+/// 水合后的客户端计数不一致；焦点移动改为按序号在轨道内查询 `.segmented-item`。
 #[component]
-pub fn SegmentedControl<T: Clone + PartialEq + 'static>(
-    items: Vec<SegmentedItem<T>>,
-    value: T,
-    on_change: EventHandler<T>,
-    aria_label: &'static str,
-    #[props(default)] kind: SegmentedKind,
-    #[props(default)] size: SegmentedSize,
-    #[props(default)] icon_only: bool,
-    #[props(default)] class: &'static str,
-) -> Element {
-    let group = use_hook(|| SEGMENTED_ID.fetch_add(1, Ordering::SeqCst));
-    #[allow(unused_mut)]
-    let mut thumb_style = use_signal(|| None::<String>);
-    #[cfg(target_arch = "wasm32")]
-    let track = use_signal(|| None::<web_sys::Element>);
+pub fn SegmentedControl<T>(
+    #[prop(into)] items: Signal<Vec<SegmentedItem<T>>>,
+    #[prop(into)] value: Signal<T>,
+    #[prop(into)] on_change: Callback<T>,
+    #[prop(into)] aria_label: String,
+    #[prop(optional)] kind: SegmentedKind,
+    #[prop(optional)] size: SegmentedSize,
+    #[prop(optional)] icon_only: bool,
+    #[prop(optional, into)] class: String,
+) -> impl IntoView
+where
+    T: Clone + PartialEq + Send + Sync + 'static,
+{
+    let thumb_style = RwSignal::new(None::<String>);
+    let track = NodeRef::<leptos::html::Div>::new();
 
-    let active_index = items.iter().position(|item| item.value == value);
-    // 选中项或数量变化（宽度随之变化）时重新测量滑块。
-    let count_key = items
-        .iter()
-        .map(|item| item.count.map(|n| n.to_string()).unwrap_or_default())
-        .collect::<Vec<_>>()
-        .join(",");
+    let len = Memo::new(move |_| items.with(|items| items.len()));
+    let active_index = Memo::new(move |_| {
+        value.with(|v| items.with(|items| items.iter().position(|item| &item.value == v)))
+    });
+    // 数量变化会改变按钮宽度，需要重新测量滑块。
+    let count_key = Memo::new(move |_| {
+        items.with(|items| items.iter().map(|item| item.count).collect::<Vec<_>>())
+    });
 
     // 测量当前项的位置与尺寸；轨道被隐藏（宽度为 0）或没有当前项时回到未测量态。
     #[cfg(target_arch = "wasm32")]
     let measure = move || {
         use wasm_bindgen::JsCast;
-        let style = track.peek().as_ref().and_then(|el| {
+        let style = track.get_untracked().and_then(|el| {
             let active = el
                 .query_selector("[data-active]")
                 .ok()
@@ -126,162 +128,169 @@ pub fn SegmentedControl<T: Clone + PartialEq + 'static>(
                 )
             })
         });
-        if *thumb_style.peek() != style {
-            let mut thumb_style = thumb_style;
+        if thumb_style.get_untracked() != style {
             thumb_style.set(style);
         }
     };
 
     // 轨道尺寸变化（容器查询切换文字显隐、从隐藏变为显示）时重新测量。
     #[cfg(target_arch = "wasm32")]
-    let observer = {
-        use std::cell::RefCell;
-        use std::rc::Rc;
-        type Observer = Rc<
-            RefCell<
-                Option<(
-                    web_sys::ResizeObserver,
-                    wasm_bindgen::prelude::Closure<dyn FnMut()>,
-                )>,
-            >,
-        >;
-        let observer: Observer = use_hook(|| Rc::new(RefCell::new(None)));
-        let for_drop = observer.clone();
-        use_drop(move || {
-            if let Some((observer, _closure)) = for_drop.borrow_mut().take() {
-                observer.disconnect();
+    {
+        use wasm_bindgen::prelude::Closure;
+        use wasm_bindgen::JsCast;
+        type ObserverSlot = Option<(web_sys::ResizeObserver, Closure<dyn FnMut()>)>;
+        let observer: StoredValue<ObserverSlot, LocalStorage> = StoredValue::new_local(None);
+        Effect::new(move |_| {
+            let Some(el) = track.get() else { return };
+            if observer.with_value(|o| o.is_some()) {
+                return;
+            }
+            let closure = Closure::wrap(Box::new(measure) as Box<dyn FnMut()>);
+            if let Ok(ro) = web_sys::ResizeObserver::new(closure.as_ref().unchecked_ref()) {
+                ro.observe(&el);
+                observer.set_value(Some((ro, closure)));
+            }
+            measure();
+        });
+        on_cleanup(move || {
+            if let Some(Some((ro, _closure))) = observer.try_update_value(|o| o.take()) {
+                ro.disconnect();
             }
         });
-        observer
+    }
+
+    // 选中项或数量变化（宽度随之变化）时重新测量滑块。
+    Effect::new(move |_| {
+        active_index.track();
+        count_key.track();
+        #[cfg(target_arch = "wasm32")]
+        leptos::task::spawn_local(async move {
+            crate::utils::time::sleep_ms(30).await;
+            measure();
+        });
+    });
+
+    let is_tabs = kind == SegmentedKind::Tabs;
+    let wrap_class = move || {
+        let adaptive =
+            !icon_only && items.with(|items| items.iter().any(|item| item.icon.is_some()));
+        format!(
+            "segmented-wrap{}{}{} {class}",
+            if size == SegmentedSize::Sm {
+                " segmented-sm"
+            } else {
+                ""
+            },
+            if icon_only {
+                " segmented-icon-only"
+            } else {
+                ""
+            },
+            if adaptive { " segmented-adaptive" } else { "" },
+        )
     };
 
-    use_effect(use_reactive((&active_index, &count_key), move |_| {
-        spawn(async move {
+    let on_keydown = move |e: leptos::ev::KeyboardEvent| {
+        let len = len.get_untracked();
+        let current = active_index.get_untracked();
+        let next = match e.key().as_str() {
+            "ArrowRight" => neighbor_index(len, current, 1),
+            "ArrowLeft" => neighbor_index(len, current, -1),
+            "Home" => (len > 0).then_some(0),
+            "End" => len.checked_sub(1),
+            _ => None,
+        };
+        if let Some(next) = next {
+            e.prevent_default();
+            if let Some(value) =
+                items.with_untracked(|items| items.get(next).map(|item| item.value.clone()))
+            {
+                on_change.run(value);
+            }
+            // 焦点随选中项移动：按序号取轨道里的第 next 个选项。
             #[cfg(target_arch = "wasm32")]
             {
-                crate::utils::time::sleep_ms(30).await;
-                measure();
-            }
-        });
-    }));
-
-    let measured = thumb_style().is_some();
-    let thumb = thumb_style().unwrap_or_else(|| "opacity: 0;".to_string());
-    let is_tabs = kind == SegmentedKind::Tabs;
-    let adaptive = !icon_only && items.iter().any(|item| item.icon.is_some());
-    let wrap_class = format!(
-        "segmented-wrap{}{}{} {class}",
-        if size == SegmentedSize::Sm {
-            " segmented-sm"
-        } else {
-            ""
-        },
-        if icon_only {
-            " segmented-icon-only"
-        } else {
-            ""
-        },
-        if adaptive { " segmented-adaptive" } else { "" },
-    );
-    let items_for_keys = items.clone();
-    let value_for_keys = value.clone();
-
-    rsx! {
-        div { class: "{wrap_class}",
-            div {
-                class: "segmented",
-                role: if is_tabs { "tablist" } else { "radiogroup" },
-                aria_label,
-                "data-ready": measured.then_some("true"),
-                onmounted: move |_e| {
-                    #[cfg(target_arch = "wasm32")]
-                    {
-                        use dioxus::web::WebEventExt;
-                        use wasm_bindgen::JsCast;
-                        let Some(el) = _e.try_as_web_event() else { return };
-                        let mut track = track;
-                        track.set(Some(el.clone()));
-                        if observer.borrow().is_none() {
-                            let closure = wasm_bindgen::prelude::Closure::wrap(
-                                Box::new(measure) as Box<dyn FnMut()>,
-                            );
-                            if let Ok(ro) = web_sys::ResizeObserver::new(closure.as_ref().unchecked_ref()) {
-                                ro.observe(&el);
-                                *observer.borrow_mut() = Some((ro, closure));
-                            }
-                        }
-                        measure();
-                    }
-                },
-                onkeydown: move |e| {
-                    let len = items_for_keys.len();
-                    let current = items_for_keys.iter().position(|item| item.value == value_for_keys);
-                    let next = match e.key() {
-                        Key::ArrowRight => neighbor_index(len, current, 1),
-                        Key::ArrowLeft => neighbor_index(len, current, -1),
-                        Key::Home => (len > 0).then_some(0),
-                        Key::End => len.checked_sub(1),
-                        _ => None,
-                    };
-                    if let Some(next) = next {
-                        e.prevent_default();
-                        on_change.call(items_for_keys[next].value.clone());
-                        #[cfg(target_arch = "wasm32")]
-                        {
-                            use wasm_bindgen::JsCast;
-                            if let Some(el) = web_sys::window()
-                                .and_then(|w| w.document())
-                                .and_then(|d| d.get_element_by_id(&format!("seg-{group}-{next}")))
-                                .and_then(|el| el.dyn_into::<web_sys::HtmlElement>().ok())
-                            {
-                                let _ = el.focus();
-                            }
-                        }
-                    }
-                },
-                span { class: "segmented-thumb", aria_hidden: "true", style: "{thumb}" }
-                for (index, item) in items.iter().enumerate() {
-                    {
-                        let active = active_index == Some(index);
-                        let state = active.to_string();
-                        rsx! {
-                            button {
-                                id: "seg-{group}-{index}",
-                                key: "{index}",
-                                r#type: "button",
-                                class: "segmented-item",
-                                role: if is_tabs { "tab" } else { "radio" },
-                                aria_selected: is_tabs.then(|| state.clone()),
-                                aria_checked: (!is_tabs).then(|| state.clone()),
-                                "data-active": active.then_some("true"),
-                                tabindex: if active { "0" } else { "-1" },
-                                aria_label: icon_only.then(|| item.label.clone()),
-                                title: icon_only.then(|| item.label.clone()),
-                                onclick: {
-                                    let v = item.value.clone();
-                                    move |_| on_change.call(v.clone())
-                                },
-                                if let Some(icon) = item.icon {
-                                    Icon { name: icon, size: 14 }
-                                }
-                                if !icon_only {
-                                    span { class: "segmented-label", "{item.label}" }
-                                }
-                                if let Some(n) = item.count {
-                                    span { class: "segmented-count", "{n}" }
-                                }
-                            }
-                        }
-                    }
+                use wasm_bindgen::JsCast;
+                if let Some(el) = track
+                    .get_untracked()
+                    .and_then(|t| t.query_selector_all(".segmented-item").ok())
+                    .and_then(|list| list.get(next as u32))
+                    .and_then(|node| node.dyn_into::<web_sys::HtmlElement>().ok())
+                {
+                    let _ = el.focus();
                 }
             }
         }
+    };
+
+    view! {
+        <div class=wrap_class>
+            <div
+                node_ref=track
+                class="segmented"
+                role=if is_tabs { "tablist" } else { "radiogroup" }
+                aria-label=aria_label
+                data-ready=move || thumb_style.with(|s| s.is_some()).then_some("true")
+                on:keydown=on_keydown
+            >
+                <span
+                    class="segmented-thumb"
+                    aria-hidden="true"
+                    style=move || thumb_style.get().unwrap_or_else(|| "opacity: 0;".to_string())
+                ></span>
+                <For
+                    each=move || 0..len.get()
+                    key=|index| *index
+                    children=move |index| {
+                        let active = move || active_index.get() == Some(index);
+                        let label = move || {
+                            items
+                                .with(|items| items.get(index).map(|item| item.label.clone()))
+                                .unwrap_or_default()
+                        };
+                        let icon = move || {
+                            items.with(|items| items.get(index).and_then(|item| item.icon))
+                        };
+                        let count = move || {
+                            items.with(|items| items.get(index).and_then(|item| item.count))
+                        };
+                        view! {
+                            <button
+                                type="button"
+                                class="segmented-item"
+                                role=if is_tabs { "tab" } else { "radio" }
+                                aria-selected=move || is_tabs.then(|| active().to_string())
+                                aria-checked=move || (!is_tabs).then(|| active().to_string())
+                                data-active=move || active().then_some("true")
+                                tabindex=move || if active() { "0" } else { "-1" }
+                                aria-label=move || icon_only.then(label)
+                                title=move || icon_only.then(label)
+                                on:click=move |_| {
+                                    if let Some(value) = items
+                                        .with_untracked(|items| {
+                                            items.get(index).map(|item| item.value.clone())
+                                        })
+                                    {
+                                        on_change.run(value);
+                                    }
+                                }
+                            >
+                                {move || icon().map(|icon| view! { <Icon name=icon size=14/> })}
+                                {(!icon_only)
+                                    .then(|| view! { <span class="segmented-label">{label}</span> })}
+                                {move || count().map(|n| view! { <span class="segmented-count">{n}</span> })}
+                            </button>
+                        }
+                    }
+                />
+            </div>
+        </div>
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::neighbor_index;
+    use super::*;
 
     #[test]
     fn neighbor_index_wraps_in_both_directions() {
@@ -291,5 +300,27 @@ mod tests {
         // 没有当前项时从第 0 项起算
         assert_eq!(neighbor_index(3, None, 1), Some(1));
         assert_eq!(neighbor_index(0, None, 1), None);
+    }
+
+    #[test]
+    fn renders_tablist_with_active_item_and_counts() {
+        let html = Owner::new().with(|| {
+            view! {
+                <SegmentedControl
+                    items=vec![
+                        SegmentedItem::new("a".to_string(), "全部").count(3),
+                        SegmentedItem::new("b".to_string(), "已发布"),
+                    ]
+                    value="b".to_string()
+                    on_change=|_| {}
+                    aria_label="筛选"
+                />
+            }
+            .to_html()
+        });
+        assert!(html.contains("role=\"tablist\""), "{html}");
+        assert!(html.contains("aria-label=\"筛选\""), "{html}");
+        assert_eq!(html.matches("data-active=\"true\"").count(), 1, "{html}");
+        assert!(html.contains("segmented-count"), "{html}");
     }
 }

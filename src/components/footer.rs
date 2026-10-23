@@ -2,50 +2,63 @@
 //!
 //! 单行：© · RSS · 更新日志 · 写作指南 · 构建说明 · GitHub（站点设置配置时显示）
 //! · 回到顶部。样式见 styles/components/shell.css。
+
+use leptos::prelude::*;
+
 use crate::api::settings::get_site_settings;
 use crate::components::ui::{Icon, IconName};
-use crate::router::Route;
-use dioxus::prelude::*;
-use dioxus::router::components::Link;
+use crate::routes::Route;
 
 /// 页脚组件：读取站点设置中的 GitHub 链接。
+///
+/// Props：
+/// - `max_width`：内部内容的宽度类，需与页头、正文一致以保证左右边缘对齐
 #[component]
-pub fn Footer(#[props(default = "max-w-[880px]")] max_width: &'static str) -> Element {
-    // 读取站点公开配置（页脚 GitHub 链接）。公开接口，SSR 与 WASM 均可调用；
-    // 服务端有 moka 缓存兜底，解析极快。`?` 在 pending 时向上抛 Suspense。
-    let settings_res = use_server_future(get_site_settings)?;
-    let github_url: Option<String> = settings_res
-        .read()
-        .as_ref()
-        .and_then(|r| r.as_ref().ok())
-        .map(|s| s.github_url.clone())
-        .filter(|u| !u.is_empty());
-    rsx! {
-        footer { "data-vt-shell": "frontend-footer", class: "site-footer",
-            div { class: "site-footer-inner {max_width}",
-                span { class: "tabular-nums", "© 2026 Yggdrasil" }
-                div { class: "site-footer-links",
-                    a { href: "/feed.xml", "RSS" }
-                    Link { to: Route::Changelog {}, "更新日志" }
-                    Link { to: Route::WritingGuide {}, "写作指南" }
-                    span { "由 Rust 与 Dioxus 构建" }
-                    if let Some(url) = github_url.as_ref() {
-                        a {
-                            href: "{url}",
-                            target: "_blank",
-                            rel: "noopener noreferrer",
-                            aria_label: "GitHub",
-                            title: "GitHub",
-                            Icon { name: IconName::Github, size: 16 }
-                        }
-                    }
-                    button { r#type: "button", onclick: move |_| scroll_to_top(),
+pub fn Footer(#[prop(default = "max-w-[880px]")] max_width: &'static str) -> impl IntoView {
+    // 读取站点公开配置（页脚 GitHub 链接）。公开接口，SSR 时解析并随页面序列化，
+    // 水合直接复用；服务端有 moka 缓存兜底，解析极快。Resource 只在 `<Suspense>` 内读取，
+    // 且 Suspense 只包住 GitHub 图标，页脚其余部分不等待数据。
+    let settings_res = Resource::new(|| (), |_| get_site_settings());
+
+    view! {
+        <footer data-vt-shell="frontend-footer" class="site-footer">
+            <div class=format!("site-footer-inner {max_width}")>
+                <span class="tabular-nums">"© 2026 Yggdrasil"</span>
+                <div class="site-footer-links">
+                    // rel="external"：让路由协调器放行，整页加载 RSS。
+                    <a href="/feed.xml" rel="external">
+                        "RSS"
+                    </a>
+                    <a href=Route::Changelog.to_string()>"更新日志"</a>
+                    <a href=Route::WritingGuide.to_string()>"写作指南"</a>
+                    <span>"由 Rust 与 Leptos 构建"</span>
+                    <Suspense>
+                        {move || Suspend::new(async move {
+                            let github_url = settings_res
+                                .await
+                                .ok()
+                                .map(|s| s.github_url)
+                                .filter(|u| !u.is_empty());
+                            github_url.map(|url| view! {
+                                <a
+                                    href=url
+                                    target="_blank"
+                                    rel="external noopener noreferrer"
+                                    aria-label="GitHub"
+                                    title="GitHub"
+                                >
+                                    <Icon name=IconName::Github size=16/>
+                                </a>
+                            })
+                        })}
+                    </Suspense>
+                    <button type="button" on:click=move |_| scroll_to_top()>
                         "回到顶部"
-                        Icon { name: IconName::ArrowUp, size: 13 }
-                    }
-                }
-            }
-        }
+                        <Icon name=IconName::ArrowUp size=13/>
+                    </button>
+                </div>
+            </div>
+        </footer>
     }
 }
 

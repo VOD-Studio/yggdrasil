@@ -1,6 +1,85 @@
 //! 浏览器导航协调器桥接；历史记录中的页面状态只保存在当前文档内存中。
+//!
+//! 协调器是 `window.__routeTransitions`（`libs/yggdrasil-core/src/route-transitions.ts`），
+//! 它拥有 history 与视图过渡；这里是它的 Rust 封装。`push/replace/back/forward/external`
+//! 返回协调器是否存在（`false` 时调用方自行回退到浏览器原生导航），服务端恒为 `false`。
 
 use serde::{de::DeserializeOwned, Serialize};
+
+/// 请求站内跳转（视图过渡后写入 history）。协调器缺失返回 `false`。
+pub fn push(route: &str) -> bool {
+    #[cfg(target_arch = "wasm32")]
+    if let Some(module) = wasm::get_module() {
+        module.push(route);
+        return true;
+    }
+    let _ = route;
+    false
+}
+
+/// 请求站内替换跳转。协调器缺失返回 `false`。
+pub fn replace(route: &str) -> bool {
+    #[cfg(target_arch = "wasm32")]
+    if let Some(module) = wasm::get_module() {
+        module.replace(route);
+        return true;
+    }
+    let _ = route;
+    false
+}
+
+/// 历史记录后退。协调器缺失返回 `false`。
+pub fn back() -> bool {
+    #[cfg(target_arch = "wasm32")]
+    if let Some(module) = wasm::get_module() {
+        module.back();
+        return true;
+    }
+    false
+}
+
+/// 历史记录前进。协调器缺失返回 `false`。
+pub fn forward() -> bool {
+    #[cfg(target_arch = "wasm32")]
+    if let Some(module) = wasm::get_module() {
+        module.forward();
+        return true;
+    }
+    false
+}
+
+/// 整页跳转到站外或非 SPA 地址。协调器缺失或跳转失败返回 `false`。
+pub fn external(url: &str) -> bool {
+    #[cfg(target_arch = "wasm32")]
+    if let Some(module) = wasm::get_module() {
+        return module.external(url);
+    }
+    let _ = url;
+    false
+}
+
+/// 连接协调器：之后它每次发布新路由都会调用 `notify`。协调器缺失或连接失败返回 `false`。
+///
+/// JS 持有 `notify` 的函数引用；调用方必须保持 `Closure` 存活到 [`disconnect`] 之后。
+#[cfg(target_arch = "wasm32")]
+pub fn connect(notify: &wasm_bindgen::prelude::Closure<dyn FnMut()>) -> bool {
+    let Some(module) = wasm::get_module() else {
+        return false;
+    };
+    if module.connect(notify, None).is_err() {
+        let _ = module.disconnect();
+        return false;
+    }
+    true
+}
+
+/// 断开协调器，释放它持有的事件监听与历史记录状态。
+#[cfg(target_arch = "wasm32")]
+pub fn disconnect() {
+    if let Some(module) = wasm::get_module() {
+        let _ = module.disconnect();
+    }
+}
 
 /// 读取当前历史记录保存的页面状态。SSR 和资源加载失败时没有客户端状态。
 pub fn read_state<T: DeserializeOwned>(key: &str) -> Option<T> {

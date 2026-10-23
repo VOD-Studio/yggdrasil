@@ -216,14 +216,16 @@ precompress: check-brotli
 # ── 开发 ───────────────────────────────────────────────────────
 # cargo-leptos watch：服务端（server feature）与浏览器 WASM（hydrate feature）
 # 各自增量构建并热重载，配置见 Cargo.toml 的 [package.metadata.leptos]。
-dev: dev-assets ## 启动开发服务器（增量构建资源 + cargo leptos watch）
+# 必须带 --split：`Lazy`/`#[lazy]` 路由会让 wasm-bindgen 产物导入占位模块
+# `__wasm_split_placeholder__`，只有分包后处理才会解析它，不分包的 WASM 无法加载。
+dev: dev-assets ## 启动开发服务器（增量构建资源 + cargo leptos watch --split）
 	@echo "Starting cargo leptos watch..."
-	@SSR_CACHE_SECS=0 IP=0.0.0.0 cargo leptos watch
+	@SSR_CACHE_SECS=0 IP=0.0.0.0 cargo leptos watch --split
 
 .PHONY: regression-build test-databases test-browser
-# debug 构建、不分包：产物在 target/debug/yggdrasil（服务端 + hash.txt）与 target/site（站点资源 + pkg）。
+# debug 构建、分包（原因见 dev 目标）：产物在 target/debug/yggdrasil（服务端 + hash.txt）与 target/site（站点资源 + pkg）。
 regression-build: dev-assets ## 构建隔离浏览器回归使用的应用
-	@cargo leptos build
+	@cargo leptos build --split
 
 test-databases: ## 在临时 PostgreSQL 中验证文章、笔记和备份，结束后清理
 	@bun scripts/regression.cjs database

@@ -1,7 +1,8 @@
 //! Badges, avatars, placeholders and CSS tooltips.
 use super::icons::{Icon, IconName};
 use super::styles::BADGE_BASE;
-use dioxus::prelude::*;
+use leptos::prelude::*;
+
 /// 状态徽章组件。
 ///
 /// 外层固定 `.badge`，语气类由调用方传入（`badge-success`、`badge-warning` 等，
@@ -14,12 +15,14 @@ use dioxus::prelude::*;
 /// - `class`：附加类，用于所在位置的间距与对齐（如文章标题后的 `post-draft`），缺省为空
 #[component]
 pub fn StatusBadge(
-    color_class: &'static str,
-    label: String,
-    #[props(default)] class: &'static str,
-) -> Element {
-    rsx! {
-        span { class: "{BADGE_BASE} {color_class} {class}", "{label}" }
+    #[prop(into)] color_class: Signal<String>,
+    #[prop(into)] label: Signal<String>,
+    #[prop(optional, into)] class: Signal<String>,
+) -> impl IntoView {
+    view! {
+        <span class=move || {
+            format!("{BADGE_BASE} {} {}", color_class.get(), class.get())
+        }>{move || label.get()}</span>
     }
 }
 
@@ -33,21 +36,27 @@ pub fn StatusBadge(
 /// - `class`：附加类，用于所在位置的变体（如笔记列表私密态的空心圆点），缺省为空
 #[component]
 pub fn StatusDot(
-    label: String,
-    #[props(default = "muted")] tone: &'static str,
-    #[props(default)] class: &'static str,
-) -> Element {
-    rsx! {
-        span { class: "status-dot {class}", "data-tone": tone, "{label}" }
+    #[prop(into)] label: Signal<String>,
+    #[prop(optional, into)] tone: Signal<String>,
+    #[prop(optional, into)] class: Signal<String>,
+) -> impl IntoView {
+    view! {
+        <span
+            class=move || format!("status-dot {}", class.get())
+            data-tone=move || {
+                let tone = tone.get();
+                if tone.is_empty() { "muted".to_string() } else { tone }
+            }
+        >
+            {move || label.get()}
+        </span>
     }
 }
 
 /// 封面与头像加载失败时的图片占位：Lucide `image-off` 图标，尺寸与颜色由 `class` 控制。
 #[component]
-pub fn ImagePlaceholder(class: &'static str) -> Element {
-    rsx! {
-        Icon { name: IconName::ImageOff, size: 24, class }
-    }
+pub fn ImagePlaceholder(#[prop(into)] class: String) -> impl IntoView {
+    view! { <Icon name=IconName::ImageOff size=24 class=class/> }
 }
 
 /// 用户头像：加载失败显示图片占位，无图回退展示名首字符（陶土浅底）。
@@ -62,56 +71,67 @@ pub fn ImagePlaceholder(class: &'static str) -> Element {
 /// - `avatar_url`：头像 URL；`None` 或空白串时渲染首字符兜底
 /// - `class`：尺寸与形状类；组件内补 `object-cover`（图片）/ flex 居中（首字符）
 #[component]
-pub fn UserAvatar(name: String, avatar_url: Option<String>, class: &'static str) -> Element {
+pub fn UserAvatar(
+    #[prop(into)] name: Signal<String>,
+    #[prop(into)] avatar_url: Signal<Option<String>>,
+    #[prop(into)] class: String,
+) -> impl IntoView {
     // 按 URL 记录失败，更换头像后仍可重新加载。
-    let mut failed_url = use_signal(|| None::<String>);
-    let initial = name
-        .chars()
-        .next()
-        .map(|c| c.to_uppercase().collect::<String>())
-        .unwrap_or_else(|| "?".to_string());
-    match avatar_url.filter(|u| !u.trim().is_empty()) {
-        Some(url) if failed_url.read().as_ref() == Some(&url) => rsx! {
-            span {
-                class: "{class} flex items-center justify-center bg-ink-1 text-fg-3",
-                role: "img",
-                aria_label: "{name} 的头像",
-                ImagePlaceholder { class: "w-1/2 h-1/2" }
-            }
-        },
-        Some(url) => {
-            #[cfg(target_arch = "wasm32")]
-            let url_for_mount = url.clone();
-            rsx! {
-                img {
-                    class: "{class} object-cover",
-                    src: "{url}",
-                    alt: "{name} 的头像",
-                    loading: "lazy",
-                    decoding: "async",
-                    onerror: move |_| failed_url.set(Some(url.clone())),
-                    // SSR 图片可能在 hydration 前已失败，挂载时补查完成状态。
-                    onmounted: move |_event| {
-                        #[cfg(target_arch = "wasm32")]
-                        {
-                            use wasm_bindgen::JsCast;
-                            if let Some(img) = _event.data().downcast::<web_sys::Element>()
-                                .and_then(|element| element.dyn_ref::<web_sys::HtmlImageElement>())
-                            {
-                                if img.complete() && img.natural_width() == 0 {
-                                    failed_url.set(Some(url_for_mount.clone()));
-                                }
-                            }
-                        }
-                    },
-                }
+    let failed_url = RwSignal::new(None::<String>);
+    let img_ref = NodeRef::<leptos::html::Img>::new();
+    let current_url = move || avatar_url.get().filter(|u| !u.trim().is_empty());
+
+    // SSR 图片可能在 hydration 前已失败，挂载时补查完成状态。
+    Effect::new(move |_| {
+        if let (Some(img), Some(url)) = (img_ref.get(), current_url()) {
+            if img.complete() && img.natural_width() == 0 {
+                failed_url.set(Some(url));
             }
         }
-        None => rsx! {
-            span { class: "{class} flex items-center justify-center bg-clay-soft text-clay-text font-semibold select-none",
-                "{initial}"
+    });
+
+    move || {
+        let name = name.get();
+        match current_url() {
+            Some(url) if failed_url.read().as_ref() == Some(&url) => view! {
+                <span
+                    class=format!("{class} flex items-center justify-center bg-ink-1 text-fg-3")
+                    role="img"
+                    aria-label=format!("{name} 的头像")
+                >
+                    <ImagePlaceholder class="w-1/2 h-1/2"/>
+                </span>
             }
-        },
+            .into_any(),
+            Some(url) => {
+                let failed = url.clone();
+                view! {
+                    <img
+                        node_ref=img_ref
+                        class=format!("{class} object-cover")
+                        src=url
+                        alt=format!("{name} 的头像")
+                        loading="lazy"
+                        decoding="async"
+                        on:error=move |_| failed_url.set(Some(failed.clone()))
+                    />
+                }
+                .into_any()
+            }
+            None => {
+                let initial = name
+                    .chars()
+                    .next()
+                    .map(|c| c.to_uppercase().collect::<String>())
+                    .unwrap_or_else(|| "?".to_string());
+                view! {
+                    <span class=format!(
+                        "{class} flex items-center justify-center bg-clay-soft text-clay-text font-semibold select-none",
+                    )>{initial}</span>
+                }
+                .into_any()
+            }
+        }
     }
 }
 
@@ -128,48 +148,48 @@ pub fn UserAvatar(name: String, avatar_url: Option<String>, class: &'static str)
 ///   避免居中气泡被 `overflow-hidden` 裁掉
 #[component]
 pub fn Tooltip(
-    tip: String,
-    children: Element,
-    #[props(default)] shortcut: Option<&'static str>,
-    #[props(default = "top")] placement: &'static str,
-    #[props(default = "center")] align: &'static str,
-) -> Element {
-    let placement = if placement == "bottom" {
-        "bottom"
-    } else {
-        "top"
+    #[prop(into)] tip: Signal<String>,
+    children: Children,
+    #[prop(optional, into)] shortcut: MaybeProp<&'static str>,
+    #[prop(default = "top".into(), into)] placement: Signal<String>,
+    #[prop(default = "center".into(), into)] align: Signal<String>,
+) -> impl IntoView {
+    let placement = move || {
+        if placement.get() == "bottom" {
+            "bottom"
+        } else {
+            "top"
+        }
     };
-    let align = match align {
+    let align = move || match align.get().as_str() {
         "start" => "start",
         "end" => "end",
         _ => "center",
     };
-    rsx! {
-        span { class: "tooltip-wrap",
-            {children}
-            span {
-                class: "tooltip",
-                role: "tooltip",
-                "data-placement": placement,
-                "data-align": align,
-                "{tip}"
-                if let Some(shortcut) = shortcut {
-                    kbd { "{shortcut}" }
-                }
-            }
-        }
+    view! {
+        <span class="tooltip-wrap">
+            {children()}
+            <span class="tooltip" role="tooltip" data-placement=placement data-align=align>
+                {move || tip.get()}
+                {move || shortcut.get().map(|shortcut| view! { <kbd>{shortcut}</kbd> })}
+            </span>
+        </span>
     }
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn tooltip_renders_shortcut_and_normalizes_position() {
-        let html = dioxus::ssr::render_element(rsx! {
-            Tooltip { tip: "搜索", shortcut: "⌘K", placement: "left", align: "middle",
-                button { "?" }
+        let html = Owner::new().with(|| {
+            view! {
+                <Tooltip tip="搜索" shortcut="⌘K" placement="left" align="middle">
+                    <button>"?"</button>
+                </Tooltip>
             }
+            .to_html()
         });
         assert!(html.contains("role=\"tooltip\""), "{html}");
         assert!(html.contains("<kbd>⌘K</kbd>"), "{html}");

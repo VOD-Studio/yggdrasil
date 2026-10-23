@@ -1,4 +1,7 @@
-/** Browser history adapter for Dioxus. Only the VT update callback publishes a new route. */
+/**
+ * 浏览器 history 与视图过渡协调器。JS 拥有 history：只有视图过渡的 update 回调才发布新路由，
+ * Rust 侧（Leptos）通过 `connect` 的 notify 回调读取地址栏并渲染。
+ */
 import { prefersReducedMotion } from '@yggdrasil/shared';
 import {
   captureScroll,
@@ -27,6 +30,18 @@ interface LinkIntent {
   post?: string;
   returning: boolean;
 }
+
+/** 这些路径由服务端直接处理，不是 SPA 路由，点击交给浏览器原生导航。 */
+const NATIVE_PREFIXES = [
+  '/api/',
+  '/doc/',
+  '/uploads/',
+  '/og/',
+  '/pkg/',
+  '/note-media/',
+  '/feed.',
+  '/mcp',
+];
 interface Navigation {
   id: number;
   entry: Entry;
@@ -117,7 +132,6 @@ export class RouteTransitions {
   private active: Entry | undefined;
   private navigation: Navigation | undefined;
   private intent: LinkIntent | undefined;
-  private intentTimer: number | undefined;
   private hydrated = false;
   private restoreCleanup: (() => void) | undefined;
   private restoring = false;
@@ -139,9 +153,10 @@ export class RouteTransitions {
     this.writeHistory(this.active, 'replace');
     this.oldRestoration = history.scrollRestoration;
     history.scrollRestoration = 'manual';
-    window.addEventListener('popstate', this.onPop);
+    window.addEventListener('popstate', this.onPop, true);
     window.addEventListener('hashchange', this.onHash);
-    window.addEventListener('click', this.onClick, true);
+    // 冒泡阶段：晚于元素自身的 Leptos 处理器（可 preventDefault），早于挂在 window 上的链接拦截。
+    document.addEventListener('click', this.onClick);
     window.addEventListener('pagehide', this.onPageHide);
   }
 
@@ -149,10 +164,9 @@ export class RouteTransitions {
     this.navigation?.owner.finish();
     if (this.navigation) this.cancel(this.navigation);
     this.restoreCleanup?.();
-    clearTimeout(this.intentTimer);
-    window.removeEventListener('popstate', this.onPop);
+    window.removeEventListener('popstate', this.onPop, true);
     window.removeEventListener('hashchange', this.onHash);
-    window.removeEventListener('click', this.onClick, true);
+    document.removeEventListener('click', this.onClick);
     window.removeEventListener('pagehide', this.onPageHide);
     history.scrollRestoration = this.oldRestoration;
     this.notify = undefined;
@@ -215,7 +229,7 @@ export class RouteTransitions {
     this.request(route, 'replace');
   };
 
-  /** Called after Dioxus flushes the layout's actual DOM, including fallback/error branches. */
+  /** Called after Leptos flushes the layout's actual DOM, including fallback/error branches. */
   rendered = (id: number, route: string): void => {
     if (page(route) !== page(this.displayed) || id !== this.sequence) return;
     this.hydrated = true;
@@ -271,31 +285,29 @@ export class RouteTransitions {
   }
 
   private onClick = (event: MouseEvent): void => {
-    clearTimeout(this.intentTimer);
-    this.intent = undefined;
+    if (!this.notify || !this.active) return;
+    if (event.defaultPrevented) return;
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey)
       return;
     const anchor =
       event.target instanceof Element ? event.target.closest<HTMLAnchorElement>('a[href]') : null;
     if (
       !anchor ||
-      anchor.target === '_blank' ||
+      (anchor.target !== '' && anchor.target !== '_self') ||
       anchor.hasAttribute('download') ||
-      anchor.origin !== location.origin
+      anchor.relList.contains('external') ||
+      anchor.origin !== location.origin ||
+      NATIVE_PREFIXES.some((prefix) => anchor.pathname.startsWith(prefix))
     )
       return;
+    event.preventDefault();
     const url = anchor.pathname.slice(this.prefix.length) + anchor.search + anchor.hash;
-    const intent = {
+    this.intent = {
       url,
       post: anchor.dataset.vtPostLink,
       returning: anchor.dataset.vtReturn === 'true',
     };
-    this.intent = intent;
-    // Native event dispatch can run a microtask checkpoint between capture and
-    // Dioxus's delegated listener. Keep the intent through the entire event task.
-    this.intentTimer = window.setTimeout(() => {
-      if (this.intent === intent) this.intent = undefined;
-    }, 0);
+    this.request(url, 'push');
   };
   private onPageHide = (): void => {
     if (this.active) this.active.scroll = captureScroll();
@@ -307,7 +319,9 @@ export class RouteTransitions {
     if (this.locationRoute() === this.displayed) return;
     if (!this.navigation || this.navigation.cancelled || this.navigation.committed) this.syncHash();
   };
-  private onPop = (): void => {
+  private onPop = (event: PopStateEvent): void => {
+    // 捕获阶段先于 Leptos 的 popstate 监听：阻止它绕过视图过渡直接改 URL。
+    event.stopImmediatePropagation();
     const route = this.locationRoute();
     const position = this.historyPosition();
     if (this.rollingBack) {
@@ -356,7 +370,6 @@ export class RouteTransitions {
     }
     const intent = this.intent?.url === target ? this.intent : undefined;
     this.intent = undefined;
-    clearTimeout(this.intentTimer);
     if (!this.canLeave(target)) return;
     const origin = this.active.origin;
     const source =
