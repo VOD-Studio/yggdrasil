@@ -86,7 +86,8 @@ pub fn CodeRunner(
     let dirty = use_memo(move || *source_signal.read() != original);
     // 最近一次运行用的是不是改过的代码，决定输出区标题。
     let mut ran_modified = use_signal(|| false);
-    let mut copied = use_signal(|| false);
+    // 复制结果：Some(true) 已复制，Some(false) 失败（如非安全上下文），None 默认。
+    let mut copied = use_signal(|| None::<bool>);
 
     // CodeMirror 与 xterm 容器 id：由确定性 prop 派生（不进 use_hook），
     // SSR 与 hydration 一致，hydration 时 create() 能找到 SSR 渲染的容器。
@@ -234,17 +235,15 @@ pub fn CodeRunner(
     });
     let mut copy = move || {
         #[cfg(target_arch = "wasm32")]
-        if let Some(window) = web_sys::window() {
-            let _ = window
-                .navigator()
-                .clipboard()
-                .write_text(&source_signal.peek());
+        {
+            let text = source_signal.peek().clone();
+            spawn(async move {
+                let ok = crate::utils::js::copy_text(&text).await;
+                copied.set(Some(ok));
+                crate::utils::time::sleep_ms(2000).await;
+                copied.set(None);
+            });
         }
-        copied.set(true);
-        spawn(async move {
-            crate::utils::time::sleep_ms(2000).await;
-            copied.set(false);
-        });
     };
 
     let run_state = state.read().clone();
@@ -270,15 +269,12 @@ pub fn CodeRunner(
     };
     let note = run_state.note();
     let retryable = run_state.retryable();
-    let mut menu_items = vec![MenuItem::new(
-        "copy",
-        if copied() {
-            "已复制"
-        } else {
-            "复制代码"
-        },
-    )
-    .icon(IconName::Copy)];
+    let copy_label = match copied() {
+        Some(true) => "已复制",
+        Some(false) => "复制失败",
+        None => "复制代码",
+    };
+    let mut menu_items = vec![MenuItem::new("copy", copy_label).icon(IconName::Copy)];
     if dirty() {
         menu_items.push(MenuItem::new("revert", "还原").icon(IconName::RotateCcw));
     }
@@ -321,13 +317,13 @@ pub fn CodeRunner(
                         "Vim"
                     }
                     span { class: "runner-wide",
-                        Tooltip { tip: if copied() { "已复制" } else { "复制代码" },
+                        Tooltip { tip: copy_label,
                             button {
                                 class: "btn btn-sm btn-icon btn-ghost",
                                 r#type: "button",
-                                aria_label: if copied() { "已复制" } else { "复制代码" },
+                                aria_label: copy_label,
                                 onclick: move |_| copy(),
-                                Icon { name: if copied() { IconName::Check } else { IconName::Copy }, size: 15 }
+                                Icon { name: if copied() == Some(true) { IconName::Check } else { IconName::Copy }, size: 15 }
                             }
                         }
                     }
