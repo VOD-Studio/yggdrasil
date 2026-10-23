@@ -151,8 +151,8 @@ pub fn Popover(
     }
 }
 
-/// 弹窗关闭/元素退出动画统一时长（ms），与 input.css 里 `.modal-panel` / `.animate-row-leave`
-/// 等退出过渡动画时长一一对应；调用方需要在动画播放完毕后再真正卸载/摘除元素时复用本常量。
+/// 弹窗关闭/元素退出动画统一时长（ms），与 base.css 的 .modal-overlay / .modal-panel 关闭过渡对应；
+/// 调用方需要在动画播放完毕后再真正卸载/摘除元素时复用本常量。
 pub const EXIT_ANIM_MS: u32 = 200;
 
 /// 弹窗遮罩基础类（不含内边距——不同弹窗尺寸的响应式内边距不同，经 `overlay_padding` 传入）。

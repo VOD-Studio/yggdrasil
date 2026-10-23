@@ -12,12 +12,8 @@
   .animate-popover-enter,
   .animate-popover-enter-edge,
   .animate-select-enter,
-  .animate-row-enter,
   .animate-modal-overlay-enter,
-  .animate-modal-panel-enter,
-  .animate-row-leave,
-  .animate-section-enter,
-  .animate-status-pop {
+  .animate-modal-panel-enter {
     animation: none;
   }
 

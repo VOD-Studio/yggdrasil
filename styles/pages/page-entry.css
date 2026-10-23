@@ -2,14 +2,9 @@
    保留 spinner、浮层、展开/收起、状态变更及 hover 的交互动画。 */
 [data-vt-enter-handled] :is(
   .animate-page-enter,
-  .animate-row-enter,
   .page-enter,
   .home-enter
 ):not(.animate-modal-panel-enter *, [role="dialog"] *, .animate-popover-enter *, .animate-select-enter *, .popover-panel *, .listbox *, .palette *),
 [data-vt-enter-handled]:is(.animate-page-enter, .page-enter) {
-  animation-name: none;
-}
-
-[data-vt-entry-captured] {
   animation-name: none;
 }

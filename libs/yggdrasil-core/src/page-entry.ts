@@ -1,12 +1,8 @@
 import { prefersReducedMotion } from '@yggdrasil/shared';
 
-/** Keep this mount static after native snapshots, without disabling later keyed panels. */
+/** Keep this mount's entrance animations static after native snapshots. */
 export function markPageEntryHandled(wrapper: HTMLElement): void {
   wrapper.setAttribute('data-vt-enter-handled', 'true');
-  for (const element of wrapper.querySelectorAll('.animate-section-enter')) {
-    if (element.closest('[role="dialog"], .animate-modal-panel-enter')) continue;
-    element.setAttribute('data-vt-entry-captured', 'true');
-  }
 }
 
 /** Register before first paint; WASM history hydration can follow pagereveal. */

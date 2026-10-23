@@ -52,7 +52,7 @@ pub(crate) struct UploadItem {
     /// 入队时已用 `format_bytes` 格式化好的可读大小。
     pub(crate) size: String,
     pub(crate) status: UploadStatus,
-    /// 用户点了 ×：先播退出动画（animate-row-leave），EXIT_ANIM_MS 后真正摘除。
+    /// 用户点了 ×：先播退出过渡（asset-modals.css 的 .asset-upload-row[data-removing]），EXIT_ANIM_MS 后真正摘除。
     pub(crate) removing: bool,
 }
 

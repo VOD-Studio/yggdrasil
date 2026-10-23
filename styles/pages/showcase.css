@@ -388,7 +388,6 @@
 .showcase-picker-detail { max-width: 680px; margin-inline: auto; }
 .showcase-upload-demo { display: flex; flex-direction: column; max-height: 100%; overflow: auto; }
 .showcase-upload-demo > .flex-1 { min-height: 0; }
-.showcase-upload-demo .animate-row-enter { animation-duration: .2s; }
 .showcase-card-preview .showcase-upload-demo .flex-1 { padding: .6rem; gap: .4rem; }
 .showcase-card-preview .showcase-upload-demo .flex-1 > button { padding: .4rem; }
 .showcase-card-preview .showcase-upload-demo .flex-1 > button svg { width: 1.25rem; height: 1.25rem; }

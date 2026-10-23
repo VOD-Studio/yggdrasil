@@ -115,42 +115,6 @@
     animation: select-enter var(--spring-snappy-duration) var(--ease-spring-snappy) both;
   }
 
-  /* 列表行进场（与 page-enter 同为 8px 位移加淡入，供 admin 列表逐行 stagger 使用，
-     配合内联 style="animation-delay: Nms" 与 both fill-mode 实现阶梯入场） */
-  @keyframes row-enter {
-    0% {
-      opacity: 0;
-      transform: translateY(8px);
-    }
-    100% {
-      opacity: 1;
-      transform: none;
-    }
-  }
-
-  .animate-row-enter {
-    animation: row-enter var(--spring-snappy-duration) var(--ease-spring-snappy) both;
-  }
-
-  /* 分区面板切换入场（纯位移无缩放，供设置页/标签页等子视图 keyed remount
-     时播放；仅 transform+opacity） */
-  @keyframes section-enter {
-    0% {
-      opacity: 0;
-      transform: translateY(8px);
-    }
-    100% {
-      opacity: 1;
-      transform: none;
-    }
-  }
-
-  .animate-section-enter {
-    /* backwards fill：与 page-enter 同理——终态即元素自然值，
-       避免 forwards 的 identity-matrix 残留成 fixed 后代 containing block。 */
-    animation: section-enter var(--spring-snappy-duration) var(--ease-spring-snappy) backwards;
-  }
-
   /* 弹窗开合动画（进入走 keyframes 挂载即播：遮罩 150ms 淡入，面板 8px 下落加
      0.98 缩放；关闭走 .is-closing + transition，可逆——重开时平滑反向）。 */
   @keyframes modal-overlay-enter {
@@ -190,30 +154,6 @@
   .modal-overlay.is-closing .modal-panel {
     opacity: 0;
     transform: translateY(8px) scale(0.97);
-  }
-
-  /* 上传列表行移除（× 后先播退出动画，200ms 后由 Rust 侧摘除节点） */
-  @keyframes row-leave {
-    to {
-      opacity: 0;
-      transform: translateY(-4px) scale(0.98);
-    }
-  }
-
-  .animate-row-leave {
-    animation: row-leave 200ms cubic-bezier(0.22, 1, 0.36, 1) both;
-  }
-
-  /* 上传状态指示切换（等待中→上传中→已上传/失败）：keyed 重挂载触发 pop */
-  @keyframes status-pop {
-    from {
-      opacity: 0;
-      transform: scale(0.7);
-    }
-  }
-
-  .animate-status-pop {
-    animation: status-pop 200ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
   }
 
   /* Minimalist custom scrollbars */
