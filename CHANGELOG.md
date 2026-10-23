@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-10-23
+
+### Added
+
+- **前台音乐播放**：新增仅在前台布局挂载的全局音乐播放器，通过公开启动配置与按需加载的 Web Components 接入 Kite；支持切页续播、主题同步、刷新恢复队列与进度，离开前台时暂停，默认不自动播放。
+- **双机部署**：提供独立的 Kite 公开服务 Quadlet，复用现有 HTTPS 域名的 `/player/v1/` 反代路径；公开服务与管理实例隔离，两台博客使用同一公开地址与歌单白名单。
+
 ### Changed
 
 - **全局音乐播放器**：将 `@violetjs/kite-player` 从 `0.1.0` 升级并锁定到 `0.3.0`，沿用按需加载的 Web Components 接入，获得音质切换、试听标记、无封面占位及新版展开/歌词交互；新增浏览器回归覆盖音质切换不中断进度及刷新后偏好恢复，保留前台切页续播、主题同步与退出暂停行为。

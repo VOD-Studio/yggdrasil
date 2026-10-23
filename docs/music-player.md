@@ -72,6 +72,72 @@ KITE_PUBLIC_ORIGINS=https://blog.example.com
 4. 在浏览器手动点击播放，验证播放链接跳转、歌词、暂停和播放进度；不要将短时播放
    URL 固化到数据库或部署配置。
 
+## rua.plus 双机部署
+
+`xun` 与 `rua` 都服务 `https://rua.plus`，因此公开服务只允许这个 Origin；
+不需要把两台服务器 IP 加进 CORS。浏览器直连 `https://xunrua.top/player/v1/`，
+博客服务本身不转发音频请求，也不需要跨机连接 Kite 管理端口。
+
+两机的 `/root/docker/yggdrasil/.env` 使用相同配置：
+
+```dotenv
+KITE_PLAYER_API_URL=https://xunrua.top
+KITE_PLAYER_PLAYLISTS=3778678
+```
+
+同时将前文的两个环境变量加入各自 `docker-compose.yml` 的 `services.app.environment`。
+CI 发布时会重建两台 app；手动应用时，`xun` 使用 `docker compose`，`rua` 使用
+`podman compose`，均在该部署目录执行
+`--env-file .env up -d --no-deps --force-recreate app`，不重启数据库。
+
+### 独立 Kite 公开服务
+
+`docker/kite-public.container` 是部署在 `xun` 的 rootful Podman Quadlet，
+安装到 `/etc/containers/systemd/kite-public.container`，由 `kite-public.service`
+管理。它复用已存在的 `kite-auth-token` secret，签名密钥单独保存为
+`kite-public-signing-key` secret；首次安装前创建，不能提交密钥内容：
+
+```sh
+openssl rand -hex 32 | podman secret create kite-public-signing-key -
+systemctl daemon-reload
+systemctl start kite-public.service
+```
+
+服务固定使用已部署并验证过的 Kite v0.8.0 镜像 digest，只在 `nginx-proxy` 网络提供
+3723，不发布宿主机端口；管理监听绑定容器回环。`WantedBy=multi-user.target`
+由 Quadlet 在开机时生成启动依赖，无需对生成的 service 执行 `systemctl enable`。
+没有配置服务账号，当前按匿名权限播放；歌单中不可播放的付费曲目仍受上游限制。
+
+该实例不属于 Kite 原有管理实例的自动部署事务。升级公开服务时，先验证目标镜像，
+更新 Quadlet 的 `Image=` digest 并在宿主拉取，再执行 `systemctl daemon-reload`
+和 `systemctl restart kite-public.service`，重新验证歌单、播放、CORS 与白名单。
+
+### HTTPS 反代
+
+`xun` 的 `/root/docker/nginx-proxy/vhost.d/xunrua.top` 增加以下独立路径，
+不修改其他站点路由；DNS resolver 是该机现有 Podman `nginx-proxy` 网络的网关：
+
+```nginx
+location ^~ /player/v1/ {
+    resolver 10.89.0.1 valid=30s ipv6=off;
+    set $kite_public http://kite-public:3723;
+    proxy_pass $kite_public;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+变量 upstream 配合 DNS 重解析，避免公开容器重建换 IP 后继续访问旧地址。
+覆盖而非追加访客传入的 `X-Forwarded-For`，让公开服务只信任这层代理记录的来源。
+修改后先 `docker exec nginx-proxy nginx -t`，成功再执行
+`docker exec nginx-proxy nginx -s reload`。
+
+上线验收包括：带 `Origin: https://rua.plus` 的 info 与歌单请求返回 200，
+响应含匹配的 `Access-Control-Allow-Origin`；其他 Origin 返回 403，
+白名单外歌单返回 404；在实际博客页面手动播放并确认进度增长与歌词载入。
+
 ## 构建与验证
 
 ```sh
