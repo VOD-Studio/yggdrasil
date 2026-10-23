@@ -6,6 +6,8 @@
 
 在线实例：<https://rua.plus>
 
+![Yggdrasil 首页](docs/images/screenshot-home.png)
+
 ## 特性
 
 - **写作**：Tiptap 富文本编辑器，支持脚注、任务列表、数学公式与 Mermaid；服务端以 pulldown-cmark、syntect、KaTeX 渲染。
