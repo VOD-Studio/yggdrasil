@@ -3,18 +3,11 @@
 all-features = true
 
 [advisories]
-# 存量告警：本次引入审计门禁时不升级依赖，只登记现状；新增告警会使 CI 失败。
+# 仅余无人维护告警：上游均已是最新版本，无可升级路径，需等上游替换依赖。
 ignore = [
-  { id = "RUSTSEC-2024-0320", reason = "存量依赖，yaml-rust 待随 syntect 升级移除" },
-  { id = "RUSTSEC-2024-0436", reason = "存量依赖，paste 待随依赖升级移除" },
-  { id = "RUSTSEC-2025-0141", reason = "存量依赖，bincode 待随依赖升级移除" },
-  { id = "RUSTSEC-2026-0346", reason = "存量依赖，rustls 待随依赖升级移除" },
-  { id = "RUSTSEC-2026-0347", reason = "存量依赖，rustls 待随依赖升级移除" },
-  { id = "RUSTSEC-2026-0348", reason = "存量依赖，rustls 待随依赖升级移除" },
-  { id = "RUSTSEC-2026-0349", reason = "存量依赖，rustls 待随依赖升级移除" },
-  { id = "RUSTSEC-2026-0381", reason = "存量依赖，webpki-roots 待随依赖升级移除" },
-  { id = "RUSTSEC-2026-0382", reason = "存量依赖，rustls-webpki 待随依赖升级移除" },
-  { id = "RUSTSEC-2026-0383", reason = "存量依赖，webpki-root-certs 待随依赖升级移除" },
+  { id = "RUSTSEC-2024-0320", reason = "yaml-rust 由 syntect 5.3.0（最新版）的 yaml-load 引入；src/highlight.rs 用 SyntaxDefinition::load_from_str 加载自定义语法，必须保留" },
+  { id = "RUSTSEC-2025-0141", reason = "bincode 1.x 由 syntect 5.3.0（最新版）的 dump-load 引入，内置语法集依赖它，待 syntect 替换" },
+  { id = "RUSTSEC-2024-0436", reason = "paste 由 zenwebp 0.4.4 → garb 引入；zenwebp 0.4.5 已被作者 yank，待上游发布新版" },
 ]
 
 [sources]
