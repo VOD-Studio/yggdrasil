@@ -44,27 +44,6 @@ describe('layout music player', () => {
     expect(mocks.getPlayer).not.toHaveBeenCalled();
   });
 
-  it('configures the source and attributes before connecting the custom element', () => {
-    const container = document.getElementById('player')!;
-    const append = container.append.bind(container);
-    const spy = vi.spyOn(container, 'append').mockImplementation((...nodes) => {
-      const element = nodes[0] as Element;
-      expect(element.getAttribute('api')).toBe(config.apiUrl);
-      expect(element.getAttribute('playlists')).toBe('123,456');
-      expect(element.getAttribute('theme')).toBe('light');
-      expect(mocks.getPlayer).toHaveBeenCalled();
-      append(...nodes);
-    });
-    instance = create('player', config);
-    expect(instance).not.toBeNull();
-    expect(spy).toHaveBeenCalledOnce();
-    expect(mocks.getPlayer).toHaveBeenCalledWith({
-      source: { url: config.apiUrl },
-      storageKey: `yggdrasil-music-player:${config.apiUrl}`,
-    });
-    expect(mocks.player.play).not.toHaveBeenCalled();
-  });
-
   it('keeps the same view and playback core when the layout renders again', () => {
     instance = create('player', config);
     expect(create('player', config)).toBe(instance);

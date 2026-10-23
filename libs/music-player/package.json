@@ -9,6 +9,6 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@violetjs/kite-player": "0.1.0"
+    "@violetjs/kite-player": "0.3.0"
   }
 }

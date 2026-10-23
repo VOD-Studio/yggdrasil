@@ -13,7 +13,7 @@ const cover = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w
 const track = {
   id: '1', title: '播放器回归曲目', artists: [{ id: '2', name: '本地测试' }],
   album: { id: '3', name: '回归歌单', cover }, durationMs: 45000,
-  access: 'free', playable: true, stream: '/tone.wav', lyrics: '/lyrics',
+  access: 'free', playable: true, stream: '/tone.wav', lyrics: '/lyrics', quality: 'hires',
 };
 const playlist = { id: '123', name: '本地歌单', cover, trackCount: 1, tracks: [track] };
 const lyrics = {
@@ -49,7 +49,7 @@ async function setup(context, requests) {
     const url = new URL(request.url());
     assert.equal(url.origin, origin, 'fixture must not send external requests');
     assert.equal(request.headers().authorization, undefined, 'no management credentials');
-    requests.push(url.pathname);
+    requests.push(url.pathname + url.search);
     const json = (body) => route.fulfill({ json: body });
     switch (url.pathname) {
       case '/': case '/next':
@@ -103,7 +103,7 @@ async function setup(context, requests) {
           await page.goto(origin);
           await page.waitForFunction(() => window.__kitePlayer?.state.current?.id === '1');
           assert.equal(await page.evaluate(() => window.__kitePlayer.state.playing), false);
-          assert.equal(requests.includes('/tone.wav'), false, 'initial load must not autoplay');
+          assert.equal(requests.some((p) => p.startsWith('/tone.wav')), false, 'initial load must not autoplay');
           await page.getByRole('button', { name: '播放', exact: true }).click();
           await page.waitForFunction(() => window.__kitePlayer.state.playing && window.__kitePlayer.state.time > 0.1);
           await page.locator('#navigate').click();
@@ -123,8 +123,21 @@ async function setup(context, requests) {
               .filter((animation) => animation.effect.getTiming().iterations !== Infinity);
             await Promise.all(animations.map((animation) => animation.finished.catch(() => {})));
           });
+          await page.getByRole('button', { name: '封面', exact: true }).click();
+          await page.evaluate(() => window.__kitePlayer.seek(5));
+          await page.getByRole('button', { name: 'Hi-Res:已开启,点按切换', exact: true }).click();
+          await page.waitForFunction(() => !window.__kitePlayer.state.highQuality
+            && window.__kitePlayer.state.playing && window.__kitePlayer.currentTime() >= 5);
+          assert.ok(requests.includes('/tone.wav?quality=standard'), 'quality toggle requests standard audio');
+          await page.getByRole('button', { name: 'Hi-Res:已关闭,点按切换', exact: true }).waitFor();
           if (mobile) assert.equal(await page.evaluate(() => document.documentElement.style.overflow), 'hidden');
           if (process.env.MUSIC_PLAYER_ARTIFACT_DIR) {
+            await page.evaluate(async () => {
+              const elements = document.querySelector('kite-player').shadowRoot.querySelectorAll('*');
+              const animations = [...elements].flatMap((element) => element.getAnimations())
+                .filter((animation) => animation.effect.getTiming().iterations !== Infinity);
+              await Promise.all(animations.map((animation) => animation.finished.catch(() => {})));
+            });
             fs.mkdirSync(process.env.MUSIC_PLAYER_ARTIFACT_DIR, { recursive: true });
             await page.screenshot({ path: path.join(process.env.MUSIC_PLAYER_ARTIFACT_DIR, `${name}.png`) });
           }
@@ -146,9 +159,10 @@ async function setup(context, requests) {
           await page.waitForFunction(() => window.__kitePlayer?.state.current?.id === '1');
           assert.equal(await page.evaluate(() => window.__kitePlayer.state.playing), false);
           assert.equal(await page.evaluate(() => window.__kitePlayer.state.mode), 'sequence');
+          assert.equal(await page.evaluate(() => window.__kitePlayer.state.highQuality), false, 'reload preserves quality preference');
           assert.ok(await page.evaluate(() => window.__kitePlayer.state.time >= 3), 'reload restores playback position');
           assert.deepEqual(errors, [], `${name}: browser errors`);
-          console.log(`PASS ${name}: no autoplay, playback, SPA, theme, teardown, re-entry, reload`);
+          console.log(`PASS ${name}: no autoplay, playback, SPA, theme, quality switch, teardown, re-entry, reload`);
         } finally {
           await context.close();
         }

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **全局音乐播放器**：将 `@violetjs/kite-player` 从 `0.1.0` 升级并锁定到 `0.3.0`，沿用按需加载的 Web Components 接入，获得音质切换、试听标记、无封面占位及新版展开/歌词交互；新增浏览器回归覆盖音质切换不中断进度及刷新后偏好恢复，保留前台切页续播、主题同步与退出暂停行为。
+
 ## [0.24.2] - 2026-10-22
 
 ### Changed

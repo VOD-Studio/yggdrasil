@@ -1,6 +1,6 @@
 # 前台全局音乐播放器
 
-Yggdrasil 使用 `@violetjs/kite-player` 的 Web Components 入口，不引入 React。
+Yggdrasil 使用精确锁定的 `@violetjs/kite-player@0.3.0` Web Components 入口，不引入 React。
 播放器仅挂载在 `FrontendLayout`，位于页面路由与路由加载边界之外：前台 SPA
 切页保持播放；进入后台、登录等非前台布局时暂停并移除界面。返回前台可手动继续，
 不会自动播放。整页刷新会恢复队列和进度，但同样不会自动播放。
@@ -91,6 +91,14 @@ browser-library loader 按需加载，不并入全站启动包。
 
 主题跟随页面实际生效的 `html.dark`，不独立追随操作系统；通过 `--kite-*` 变量映射
 本站语义颜色和字体。切主题不会重新创建播放器。
+
+`0.3.0` 的音质标签沿用官方组件：服务端返回 `Track.quality` 为 `exhigh`、`lossless`
+或 `hires` 时展示，点击可切换高音质与标准音质，保留当前播放进度并记住偏好。
+公开流地址须支持 `quality=standard` 参数；没有音质字段的旧服务仍按原有方式播放，
+不显示标签。试听曲目的 `trial` 标记和无封面占位也由官方组件处理。
+
+该版本发布未满 24 小时时，通过 `libs/bunfig.toml` 中的按包名豁免安装；工作区与
+`bun.lock` 均锁定 `0.3.0`，其他依赖仍遵守原有发布冷却策略。
 
 布局卸载时移除组件、解除主题观察并暂停共享核心；不会调用 Kite 的 `destroy()`，
 因为其 `getPlayer()` 保留单例引用，销毁后再次进入前台会拿到已销毁的核心。
