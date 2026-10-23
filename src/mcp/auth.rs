@@ -108,6 +108,11 @@ pub async fn mcp_auth_middleware(
         Some(t) => t,
         None => return Err(StatusCode::UNAUTHORIZED),
     };
+    // 解析令牌要查库：先按 IP 限流，伪造令牌洪泛不再无节制占用连接池。
+    let ip = crate::api::rate_limit::get_client_ip(req.headers()).await;
+    if crate::api::rate_limit::check_mcp_preauth_limit(&ip).is_err() {
+        return Err(StatusCode::TOO_MANY_REQUESTS);
+    }
     let principal = resolve_principal(&token)
         .await
         .ok_or(StatusCode::UNAUTHORIZED)?;

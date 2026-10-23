@@ -112,6 +112,12 @@ static SUGGEST_LIMITER: LazyLock<DefaultKeyedRateLimiter<String>> =
     LazyLock::new(|| RateLimiter::keyed(Quota::per_second(nz(10)).allow_burst(nz(30))));
 
 #[cfg(feature = "server")]
+/// MCP bearer 解析前的每 IP 限流：解析要查库，伪造令牌洪泛先在这里拦下。每 IP 每秒 30 次、
+/// 突发 100 次，高于单令牌配额（10/30），同一出口 IP 的多个 agent 不受影响。额度固定。
+static MCP_PREAUTH_LIMITER: LazyLock<DefaultKeyedRateLimiter<String>> =
+    LazyLock::new(|| RateLimiter::keyed(Quota::per_second(nz(30)).allow_burst(nz(100))));
+
+#[cfg(feature = "server")]
 /// 当无法识别真实客户端 IP（"unknown"）时使用的宽松限流桶。
 ///
 /// TRUSTED_PROXY_COUNT=0（默认）时，Dioxus server function 拿不到 TCP 对端地址，
@@ -138,7 +144,7 @@ fn limiter_gc_interval() -> Duration {
 
 /// 启动后台限流桶 GC 任务（全进程仅生效一次）。
 ///
-/// 十个 IP 键控限流器均为独立的 `DefaultKeyedRateLimiter`，没有集中状态表，故采用
+/// 十一个 IP 键控限流器均为独立的 `DefaultKeyedRateLimiter`，没有集中状态表，故采用
 /// 惰性启动：首个请求到达任一 `check_*` 时，经 `Once` 派生一个常驻 tokio 任务，按
 /// [`limiter_gc_interval`] 周期对全部限流器调用 `retain_recent`，回收长时间未命中的
 /// 键。这直接缓解 IP 轮换攻击下的内存膨胀——攻击者不断换 IP 制造新键，GC 周期性剔除
@@ -167,6 +173,7 @@ fn ensure_limiter_gc() {
                 CODE_EXEC_DAILY_LIMITER.retain_recent();
                 UNKNOWN_BUCKET_LIMITER.retain_recent();
                 SUGGEST_LIMITER.retain_recent();
+                MCP_PREAUTH_LIMITER.retain_recent();
             }
         });
     });
@@ -377,6 +384,16 @@ pub fn check_suggest_limit(ip: &str) -> Result<(), String> {
         .check_key(&ip.to_string())
         .map(|_| ())
         .map_err(|_| "搜索过于频繁，请稍后再试".to_string())
+}
+
+#[cfg(feature = "server")]
+/// MCP 令牌解析前的每 IP 限流；"unknown" 作为普通键，不与 strict/unknown 桶共享额度。
+pub fn check_mcp_preauth_limit(ip: &str) -> Result<(), &'static str> {
+    ensure_limiter_gc();
+    MCP_PREAUTH_LIMITER
+        .check_key(&ip.to_string())
+        .map(|_| ())
+        .map_err(|_| "请求过于频繁，请稍后再试")
 }
 
 #[cfg(feature = "server")]
@@ -605,6 +622,26 @@ mod tests {
         assert!(
             allowed <= 6,
             "strict burst is 5, allowed should be <= 6, got {allowed}"
+        );
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn check_mcp_preauth_blocks_after_burst() {
+        // MCP 预鉴权桶（30 rps, burst 100）：唯一 IP 连发 200 次，最终必被拒，放行数不超过突发额度。
+        let unique_ip = "198.51.100.77";
+        let mut allowed = 0;
+        let mut blocked = false;
+        for _ in 0..200 {
+            match super::check_mcp_preauth_limit(unique_ip) {
+                Ok(()) => allowed += 1,
+                Err(_) => blocked = true,
+            }
+        }
+        assert!(blocked, "MCP 预鉴权桶应在突发后限流");
+        assert!(
+            allowed <= 101,
+            "突发额度为 100，放行数应 <= 101，实际 {allowed}"
         );
     }
 

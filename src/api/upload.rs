@@ -223,6 +223,12 @@ fn mcp_upload_error<T: serde::Serialize>(status: StatusCode, msg: T) -> Response
 /// `/uploads/...` URL。
 #[cfg(feature = "server")]
 pub async fn mcp_upload_image(headers: HeaderMap, mut multipart: Multipart) -> Response {
+    // 0. 解析 bearer 要查库：先按 IP 限流，伪造令牌洪泛在此拦下。
+    let ip = crate::api::rate_limit::get_client_ip(&headers).await;
+    if let Err(msg) = crate::api::rate_limit::check_mcp_preauth_limit(&ip) {
+        return mcp_upload_error(StatusCode::TOO_MANY_REQUESTS, msg);
+    }
+
     // 1. bearer → principal（含 scope 校验：media 需要 write）。
     let principal = match crate::mcp::auth::resolve_bearer_principal(&headers).await {
         Ok(p) => p,
