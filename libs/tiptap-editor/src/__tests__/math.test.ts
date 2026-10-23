@@ -206,4 +206,10 @@ describe('数学公式节点 - 边界情况', () => {
     expect(blocks.map((b) => b.latex)).toEqual(['\\sum_{i=1}^{n} i', '\\lim x']);
     expect(editor.getMarkdown()).toContain('用 `$$...$$`，独占');
   });
+
+  it('编辑器预览支持 mhchem 与服务端物理宏表', () => {
+    editor.commands.setContent('$\\ce{H2O}$ $\\RR$ $\\dv{f}{x}$', { contentType: 'markdown' });
+    expect(editor.view.dom.querySelectorAll('.katex').length).toBeGreaterThan(0);
+    expect(editor.view.dom.querySelectorAll('.katex-error').length).toBe(0);
+  });
 });

@@ -2,6 +2,7 @@ import type { Editor } from '@tiptap/core';
 import { mergeAttributes, Node, nodeInputRule } from '@tiptap/core';
 import type { Node as PMNode } from '@tiptap/pm/model';
 import katex from 'katex';
+import 'katex/contrib/mhchem';
 
 /**
  * 数学公式节点(inline `$...$` 与 block `$$...$$`)。
@@ -19,6 +20,32 @@ import katex from 'katex';
  * NodeView 内用客户端 katex.renderToString 渲染预览(类 Notion/Typora)。
  * KaTeX CSS(/katex/katex.min.css)已由 Dioxus.toml 全局注入,字体就绪。
  */
+
+/**
+ * 物理宏表，逐条对应服务端 `src/api/katex.rs::physics_macros`（修改时两边保持同步）。
+ * `\qty(...)` 圆括号形式服务端靠预处理兜底，这里与服务端一样只注册花括号形式。
+ */
+const PHYSICS_MACROS: Record<string, string> = {
+  '\\RR': '\\mathbb{R}',
+  '\\ZZ': '\\mathbb{Z}',
+  '\\NN': '\\mathbb{N}',
+  '\\QQ': '\\mathbb{Q}',
+  '\\CC': '\\mathbb{C}',
+  '\\dd': '\\mathrm{d}#1',
+  '\\dv': '\\frac{\\mathrm{d}#1}{\\mathrm{d}#2}',
+  '\\pdv': '\\frac{\\partial #1}{\\partial #2}',
+  '\\grad': '\\nabla',
+  '\\divg': '\\nabla \\cdot',
+  '\\curl': '\\nabla \\times',
+  '\\bra': '\\langle #1 |',
+  '\\ket': '| #1 \\rangle',
+  '\\braket': '\\langle #1 | #2 \\rangle',
+  '\\expval': '\\langle #1 \\rangle',
+  '\\abs': '\\left| #1 \\right|',
+  '\\norm': '\\left\\| #1 \\right\\|',
+  '\\vu': '\\hat{\\vec{#1}}',
+  '\\qty': '\\left( #1 \\right)',
+};
 
 // ---- tokenizer 正则 ----
 // inline `$...$`:单行、非贪婪、内部不含 $ 与换行。
@@ -116,6 +143,8 @@ class MathNodeView {
         displayMode: this.displayMode,
         throwOnError: false,
         output: 'html',
+        // KaTeX 会写入 macros 对象，每次传新拷贝。
+        macros: { ...PHYSICS_MACROS },
       });
       this.renderEl.innerHTML = html;
       this.container.classList.remove('math-node-error');
@@ -284,6 +313,8 @@ export const DisplayMath = Node.create({
           return v == null || v === '' ? {} : { 'data-latex': v };
         },
       },
+      // 源码写法：`$$\n…\n$$`（多行）或 `$$…$$`（单行）；新建节点用文档推荐的多行写法。
+      multiline: { default: true, rendered: false },
     };
   },
 
@@ -309,11 +340,23 @@ export const DisplayMath = Node.create({
       // 跨行非贪婪;闭合 $$ 后允许换行。
       const m = /^ {0,3}\$\$([\s\S]+?)\$\$[ \t]*(?:\n|$)/.exec(src);
       if (!m) return undefined;
-      return { type: 'mathBlock', raw: m[0], text: m[1].trim() };
+      return {
+        type: 'mathBlock',
+        raw: m[0],
+        text: m[1].trim(),
+        multiline: /^[ \t]*\n/.test(m[1]),
+      };
     },
   },
-  parseMarkdown: (token, helpers) => helpers.createNode('mathBlock', { latex: token.text || '' }),
-  renderMarkdown: (node) => `$$${node.attrs?.latex ?? ''}$$`,
+  parseMarkdown: (token, helpers) =>
+    helpers.createNode('mathBlock', {
+      latex: token.text || '',
+      multiline: token.multiline === true,
+    }),
+  renderMarkdown: (node) => {
+    const latex: string = node.attrs?.latex ?? '';
+    return node.attrs?.multiline && latex !== '' ? `$$\n${latex}\n$$` : `$$${latex}$$`;
+  },
 
   addNodeView() {
     return ({ node, editor, getPos }) =>

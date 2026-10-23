@@ -211,6 +211,71 @@
   color: var(--color-danger);
 }
 
+/* ---- 折叠块：<details>（编辑器内常显正文；与前台 article.css 的折叠块同款外观） ---- */
+.tiptap-editor .tiptap-details {
+  margin: 1.4em 0;
+  border-radius: 10px;
+  background-color: var(--color-surface-2);
+  box-shadow: 0 0 0 var(--hairline) var(--color-hairline);
+}
+
+.tiptap-editor .tiptap-details-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.7em;
+  padding: 0.75em 1em;
+  color: var(--color-fg);
+  font-size: 0.91em;
+  font-weight: 500;
+}
+
+.tiptap-editor .tiptap-details-summary::before {
+  content: '';
+  flex-shrink: 0;
+  width: 0.42em;
+  height: 0.42em;
+  margin-inline: 0.15em 0.1em;
+  border-right: 1.5px solid var(--color-fg-3);
+  border-bottom: 1.5px solid var(--color-fg-3);
+  transform: rotate(45deg);
+}
+
+.tiptap-editor .tiptap-details > :not(.tiptap-details-summary) {
+  padding-inline: 2.45em 1em;
+  color: var(--color-fg-2);
+  font-size: 0.91em;
+}
+
+.tiptap-editor .tiptap-details > :last-child {
+  margin-bottom: 0;
+  padding-bottom: 0.9em;
+}
+
+/* ---- 原始 HTML / 链接定义 / 实体：源码逐字保留的原子节点 ---- */
+.tiptap-editor .tiptap-raw-html {
+  padding: 0.05em 0.35em;
+  border-radius: 5px;
+  box-shadow: inset 0 0 0 var(--hairline) var(--color-hairline);
+  color: var(--color-fg-3);
+  font-family: var(--font-mono);
+  font-size: 0.8em;
+}
+
+.tiptap-editor .tiptap-link-def {
+  margin: 0.4em 0;
+  color: var(--color-fg-3);
+  font-family: var(--font-mono);
+  font-size: 0.84em;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.tiptap-editor .ProseMirror-selectednode.tiptap-raw-html,
+.tiptap-editor .ProseMirror-selectednode.tiptap-link-def,
+.tiptap-editor .ProseMirror-selectednode.tiptap-entity {
+  background-color: var(--color-clay-soft);
+}
+
 /* ---- 列表 ---- */
 .tiptap-editor :is(ul, ol) {
   margin: 0 0 1.2em;

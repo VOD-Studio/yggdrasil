@@ -20,6 +20,14 @@
  * | FileHandler         | ✔    | ✔       | 粘贴/拖放图片 → coordinator |
  * | Placeholder         | —    | ✔       | full 用 CSS br 方案（勿动，防回归） |
  * | CommentBubbleMenu   | —    | ✔       | 评论唯一格式 UI（选中浮出） |
+ * | Details/DetailsSummary | ✔ | —       | `<details>/<summary>` 折叠块 |
+ * | LinkDefinition/ReferenceLink | ✔ | — | 参考式链接 `[t][label]` 与定义行；comment 用内置 link |
+ * | HtmlEntity          | ✔    | —       | `&copy;` 等实体原子节点 |
+ * | RawInlineHtml/Subscript/Superscript/Kbd/HtmlMark/Abbr | ✔ | — | 行内 HTML 与 `~x~` `^x^` |
+ * | LooseBulletList/LooseOrderedList/LooseListItem | ✔ | — | 松散列表与编号列表往返 |
+ *
+ * full 的 Markdown 使用独立 marked 实例（marked-instance.ts）：关裸链接、单 `~` 交给下标；
+ * comment 继续用 @tiptap/markdown 默认的全局实例。
  */
 
 import type { AnyExtension } from '@tiptap/core';
@@ -34,9 +42,15 @@ import { CodeBlockBackspaceFix } from './code-block-backspace-fix';
 import { CodeBlockNodeView } from './code-block-view';
 import { CommentBubbleMenu } from './comment-bubble-menu';
 import { DefinitionDescription, DefinitionList, DefinitionTerm } from './definition-list';
+import { Details, DetailsSummary } from './details';
 import { FootnoteDef, FootnoteNumbering, FootnoteRef } from './footnote';
 import { GfmAlert } from './gfm-alert';
 import { lowlight } from './highlight';
+import { HtmlEntity } from './html-entity';
+import { Abbr, HtmlMark, Kbd, RawInlineHtml, Subscript, Superscript } from './inline-html';
+import { LinkDefinition, ReferenceLink } from './link-reference';
+import { LooseBulletList, LooseListItem, LooseOrderedList } from './list-markdown';
+import { createArticleMarked } from './marked-instance';
 import { DisplayMath, InlineMath } from './math';
 import { SlashCommand } from './slash-command';
 import { TaskInputRule } from './task-input-rule';
@@ -57,6 +71,14 @@ export interface BuildExtensionsParams {
   getCoordinator: () => UploadCoordinator | null;
 }
 
+/** 两个变体共用的链接配置（full 经 ReferenceLink，comment 经 StarterKit 内置 link）。 */
+const LINK_OPTIONS = {
+  openOnClick: false,
+  autolink: true,
+  linkOnPaste: true,
+  HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' },
+};
+
 /** 按变体装配扩展数组。数组顺序敏感：数学/脚注/提示块/定义列表节点必须在 Markdown 之后注册。 */
 export function buildExtensions(params: BuildExtensionsParams): AnyExtension[] {
   const isComment = params.variant === 'comment';
@@ -65,18 +87,19 @@ export function buildExtensions(params: BuildExtensionsParams): AnyExtension[] {
     StarterKit.configure({
       // 评论无标题层级（服务端渲染器会把标题转 <strong>）与分割线；
       // 用条件展开而非 undefined 赋值，避免 configure 深合并吞掉默认值。
+      // full 用 ReferenceLink 与 Loose* 列表替换 StarterKit 内置的 link / 列表。
       ...(isComment
-        ? { heading: false as const, horizontalRule: false as const }
-        : { heading: { levels: [1, 2, 3, 4, 5, 6] as const } }),
-      link: {
-        openOnClick: false,
-        autolink: true,
-        linkOnPaste: true,
-        HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' },
-      },
+        ? { heading: false as const, horizontalRule: false as const, link: LINK_OPTIONS }
+        : {
+            heading: { levels: [1, 2, 3, 4, 5, 6] as const },
+            link: false as const,
+            bulletList: false as const,
+            orderedList: false as const,
+            listItem: false as const,
+          }),
       codeBlock: false,
     }),
-    Markdown,
+    isComment ? Markdown : Markdown.configure({ marked: createArticleMarked() }),
     // 数学公式节点必须在 Markdown 之后注册（MarkdownManager 在 onBeforeCreate
     // 收集 markdown spec；见 math.ts 注释）。
     InlineMath,
@@ -93,6 +116,20 @@ export function buildExtensions(params: BuildExtensionsParams): AnyExtension[] {
       DefinitionList,
       DefinitionTerm,
       DefinitionDescription,
+      Details,
+      DetailsSummary,
+      LinkDefinition,
+      HtmlEntity,
+      RawInlineHtml,
+      Subscript,
+      Superscript,
+      Kbd,
+      HtmlMark,
+      Abbr,
+      ReferenceLink.configure(LINK_OPTIONS),
+      LooseBulletList,
+      LooseOrderedList,
+      LooseListItem,
     );
   }
 

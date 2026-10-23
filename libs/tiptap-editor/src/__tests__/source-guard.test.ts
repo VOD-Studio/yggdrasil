@@ -11,7 +11,7 @@ import TiptapEditor from '../index';
 type Options = NonNullable<Parameters<typeof TiptapEditor.create>[1]>;
 type Instance = NonNullable<ReturnType<typeof TiptapEditor.create>>;
 
-const LOSSY = 'H ~2~ O';
+const LOSSY = '<div>块级 HTML</div>';
 let inst: Instance | null = null;
 
 function mount(checkRoundtrip?: (a: string, b: string) => Promise<boolean>): Instance {
