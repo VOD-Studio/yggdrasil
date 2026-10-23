@@ -133,15 +133,15 @@ async function main() {
     page.on('request', request => { if (/\/api\/(start_exec|exec)/.test(request.url())) execRequests.push(request.url()); });
     page.on('pageerror', error => errors.push(error.message));
     await page.goto(bases[0] + route);
-    await page.waitForFunction(() => Boolean(window.__dx_mainWasm), {}, { timeout: 60000 });
+    await page.waitForFunction(() => window.__routeTransitions?.entryId(), null, { timeout: 60000 });
     await page.waitForTimeout(500);
     assert.equal(editorRequests.length, 0, 'Offscreen comments must not download the editor');
     assert.equal(codemirrorRequests.length, 0, 'Below-fold runnable blocks must not download CodeMirror');
     // 未激活的可运行块渲染静态高亮代码（可读、SSR 输出一致），不显示编辑器。
-    assert.equal(await page.locator('.code-runner-static').count(), 1, 'Runnable block must render static code before activation');
+    assert.equal((await page.locator('#code-runner-1 pre code').textContent()).trim(), "print('runner-lazy')", 'Runnable source must be readable before activation');
     assert.equal(await page.locator('.cm-editor').count(), 0, 'No CodeMirror instance before activation');
     // 滚动接近（约一屏内）触发单向激活：一次库加载 + 一个编辑器实例；不触发执行请求。
-    await page.locator('.code-runner-static').scrollIntoViewIfNeeded();
+    await page.locator('#code-runner-1').scrollIntoViewIfNeeded();
     await page.locator('#code-runner-1 .cm-editor').waitFor({ state: 'visible', timeout: 30000 });
     assert.equal(codemirrorRequests.length, 1, 'CodeMirror must load exactly once on activation');
     assert.equal(await page.evaluate(() => window.CodeMirrorEditor._instances.size), 1, 'Exactly one editor instance after activation');
@@ -156,7 +156,7 @@ async function main() {
     await editor.fill('评论草稿懒加载成功'); assert.equal(editorRequests.length, 1);
     await page.screenshot({ path: path.join(artifacts, `${mobile ? 'mobile' : 'desktop'}-${theme}-comments.png`) });
     await page.goto(bases[0] + '/archives');
-    await page.waitForFunction(() => Boolean(window.__dx_mainWasm), {}, { timeout: 60000 });
+    await page.waitForFunction(() => window.__routeTransitions?.entryId(), null, { timeout: 60000 });
     assert.equal(await page.locator('.archive-entry').count(), 100);
     await page.getByRole('button', { name: '加载更早的文章' }).click();
     await page.waitForFunction(() => document.querySelectorAll('.archive-entry').length === 151);
