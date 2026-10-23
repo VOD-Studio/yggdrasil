@@ -57,7 +57,9 @@ async function main() {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
     await page.screenshot({ path: path.join(artifacts, 'runnable-modal-mobile-dark.png'), fullPage: true });
+    page.once('dialog', dialog => dialog.accept());
     await page.evaluate(() => window.__routeTransitions.push('/admin/posts'));
+    await page.waitForURL('**/admin/posts');
     await modal.waitFor({ state: 'detached' });
     await page.waitForFunction(() => window.TiptapEditor._instances.size === 0);
     await page.keyboard.press('Escape');
