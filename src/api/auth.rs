@@ -300,8 +300,10 @@ pub async fn login(username: String, password: String) -> Result<AuthResponse, S
         .map_err(AppError::query)?;
     }
 
+    // 签发时快照当前世代号（users 行已被 FOR UPDATE 锁定，读到的即提交时的值）。
     tx.execute(
-        "INSERT INTO sessions (user_id, token_hash, user_agent, expires_at) VALUES ($1, $2, $3, $4)",
+        "INSERT INTO sessions (user_id, token_hash, user_agent, expires_at, generation)
+         SELECT id, $2, $3, $4, session_generation FROM users WHERE id = $1",
         &[&user_id, &token_hash, &None::<String>, &expires_at],
     )
     .await
@@ -381,8 +383,9 @@ pub struct CurrentUserResponse {
 /// 根据会话 token 查询对应用户（不含密码哈希，供会话缓存使用）。
 ///
 /// 优先命中内存缓存，避免每次请求都执行完整用户查询；未命中时回查数据库并回填缓存。
-/// 缓存命中后仍按 token 校验 `sessions.expires_at`、用户角色与世代号，
-/// 确保过期、撤销或被封禁的会话不会在 TTL 内继续有效。
+/// 缓存命中与未命中两条路径都校验 `sessions.expires_at`、用户角色，以及
+/// `sessions.generation`（签发快照）与 `users.session_generation`（当前值）是否一致，
+/// 确保过期、撤销、改密或被封禁的会话不会继续有效。
 pub async fn get_user_by_token(token: &str) -> Result<Option<SessionUser>, ServerFnError> {
     let token_hash = session::hash_token(token);
 
@@ -395,7 +398,8 @@ pub async fn get_user_by_token(token: &str) -> Result<Option<SessionUser>, Serve
                 "SELECT u.session_generation, u.role
                  FROM sessions s
                  JOIN users u ON s.user_id = u.id
-                 WHERE s.token_hash = $1 AND s.expires_at > NOW()",
+                 WHERE s.token_hash = $1 AND s.expires_at > NOW()
+                   AND s.generation = u.session_generation",
                 &[&token_hash],
             )
             .await
@@ -425,7 +429,8 @@ pub async fn get_user_by_token(token: &str) -> Result<Option<SessionUser>, Serve
             "SELECT u.id, u.username, u.email, u.display_name, u.avatar_url, u.role, u.created_at, u.session_generation
              FROM sessions s
              JOIN users u ON s.user_id = u.id
-             WHERE s.token_hash = $1 AND s.expires_at > NOW()",
+             WHERE s.token_hash = $1 AND s.expires_at > NOW()
+               AND s.generation = u.session_generation",
             &[&token_hash],
         )
         .await
@@ -630,7 +635,8 @@ pub(crate) async fn sync_admin_from_env(client: &tokio_postgres::Client) -> Resu
     .map_err(|_| AppError::Internal("初始管理员密码校验任务失败"))?
     .unwrap_or(false);
     if !same_password {
-        // 凭据变更 → bump session_generation，旧会话全部失效，需用新密码重新登录。
+        // 凭据变更 → bump session_generation；sessions.generation 快照不再匹配，
+        // 旧会话（含缓存命中路径）立即失效，需用新密码重新登录。
         client
             .execute(
                 "UPDATE users SET password_hash = $1, session_generation = session_generation + 1

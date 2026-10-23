@@ -274,6 +274,13 @@ pub async fn change_password(
             .await
             .map_err(AppError::query)?
             .get(0);
+        // 当前会话的世代快照同步到新值，其余会话直接删除。
+        tx.execute(
+            "UPDATE sessions SET generation = $3 WHERE user_id = $1 AND token_hash = $2",
+            &[&user.id, &token_hash, &new_generation],
+        )
+        .await
+        .map_err(AppError::query)?;
         tx.execute(
             "DELETE FROM sessions WHERE user_id = $1 AND token_hash <> $2",
             &[&user.id, &token_hash],

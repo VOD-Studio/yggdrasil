@@ -29,7 +29,7 @@ Yggdrasil is a self-hosted blog + CMS + notes/knowledge base: Rust 2021, Dioxus 
 - `src/pages/`, `src/components/` (`ui/` primitives), `src/hooks/`, `src/bridges/` (JS interop), `src/context.rs` (`UserContext`), `src/theme.rs`, `src/navigation.rs`.
 - `src/tasks/`: background jobs (purges, backups, cache sync, sysinfo); `src/infra/`: Docker runner, WebP.
 - `libs/`: Bun workspace — `@yggdrasil/{shared, core, tiptap-editor, codemirror-editor, lightbox, xterm-terminal, mermaid-renderer}`. `shared` is inlined at compile time; packages never import each other at runtime. See `libs/CONTEXT.md`.
-- `migrations/`: `NNN_description.sql` (latest `030_note_asset_refs_asset_index.sql`).
+- `migrations/`: `NNN_description.sql` (latest `031_session_generation_snapshot.sql`).
 - `styles/` + `input.css`: Tailwind v4 CSS-first (no tailwind config file); import order matters.
 - `scripts/`: Bun `.cjs` browser regressions, release assembly (`build-release.cjs`, `release-bootstrap.cjs`, `measure-release.cjs`), `test-databases.sh`, asset generators.
 - `docker/`: deployment compose files and code-runner images (`docker/build-runners.sh`).

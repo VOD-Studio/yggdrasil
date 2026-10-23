@@ -106,6 +106,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "030",
         include_str!("../../migrations/030_note_asset_refs_asset_index.sql"),
     ),
+    (
+        "031",
+        include_str!("../../migrations/031_session_generation_snapshot.sql"),
+    ),
     // 新增迁移在此追加，同时在 migrations/ 下创建对应 .sql 文件。
 ];
 

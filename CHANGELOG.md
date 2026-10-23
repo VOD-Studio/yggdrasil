@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **改密 / `ADMIN_PASSWORD` 轮换后旧会话仍有效**：此前只有缓存命中路径比对会话世代，缓存被逐出后的下一次请求会重新放行并回填，被盗 cookie 最长 30 天有效。迁移 031 给 `sessions` 加 `generation` 快照列（登录时写入），两条校验路径都要求其等于 `users.session_generation`；存量会话按当前世代回填。
+
 ### Fixed
 
 - **后台编辑器载入文章后内容错位**：块级公式 `$$` 只在行首起算，行内代码里的 `$$` 不再把后面所有公式配对错位、吞掉整节；脚注定义同样只认行首，引用前不再被换行切断，并支持空行后缩进的多段脚注；H4–H6 不再显示成 H1。
