@@ -168,7 +168,7 @@ fn TiptapPreview(detail: bool) -> Element {
             opts.set_on_run_code(&on_run);
             match tiptap::get_module().create(&mount_id, &opts) {
                 Ok(Some(instance)) => {
-                    instance.set_markdown(TIPTAP_SAMPLE);
+                    let _ = instance.set_markdown(TIPTAP_SAMPLE);
                     handle.set(Some(EditorHandle::new(
                         instance,
                         on_update,

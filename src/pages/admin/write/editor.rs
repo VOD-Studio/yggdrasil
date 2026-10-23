@@ -62,7 +62,7 @@ pub(super) fn use_write_editor(
             // Retrying keeps whatever was typed before the failure.
             let markdown = form.peek().content.clone();
             let on_update = Closure::new(move |md: String| form.write().content = md);
-            let on_ready = Closure::new(move || ready.set(true));
+            let on_check_roundtrip = crate::bridges::tiptap::make_roundtrip_check_closure();
             let on_image_upload = crate::bridges::tiptap::make_upload_closure();
             let on_upload_event =
                 Closure::new(move |event: crate::bridges::tiptap::UploadEventJs| {
@@ -76,25 +76,34 @@ pub(super) fn use_write_editor(
             let options = crate::bridges::tiptap::EditorOptions::new();
             options.set_placeholder(PLACEHOLDER);
             options.set_on_update(&on_update);
-            options.set_on_ready(&on_ready);
             options.set_on_image_upload(&on_image_upload);
             options.set_on_upload_event(&on_upload_event);
             options.set_on_run_code(&on_run_code);
             options.set_on_pick_from_library(&on_pick_from_library);
+            options.set_check_roundtrip(&on_check_roundtrip);
             match crate::bridges::tiptap::get_module().create("tiptap-editor", &options) {
                 Ok(Some(instance)) => {
-                    if !markdown.is_empty() {
-                        instance.set_markdown(&markdown);
-                    }
-                    editor.set(Some(EditorHandle::new(
-                        instance,
-                        on_update,
-                        on_image_upload,
-                        on_ready,
-                        on_upload_event,
-                        on_run_code,
-                        on_pick_from_library,
-                    )));
+                    let settled = (!markdown.is_empty()).then(|| instance.set_markdown(&markdown));
+                    editor.set(Some(
+                        EditorHandle::new(
+                            instance,
+                            on_update,
+                            on_image_upload,
+                            // 写作页的就绪以 setMarkdown 往返检查结束为准，不监听 onReady
+                            Closure::new(|| {}),
+                            on_upload_event,
+                            on_run_code,
+                            on_pick_from_library,
+                        )
+                        .with_roundtrip_check(on_check_roundtrip),
+                    ));
+                    // 往返检查结束、视图模式确定后才就绪：此前骨架屏遮挡，保存不可用。
+                    spawn(async move {
+                        if let Some(settled) = settled {
+                            let _ = wasm_bindgen_futures::JsFuture::from(settled).await;
+                        }
+                        ready.set(true);
+                    });
                 }
                 Ok(None) => phase.set(EditorPhase::Failed("编辑器容器未就绪".into())),
                 Err(error) => {

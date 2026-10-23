@@ -14,6 +14,7 @@ mod list;
 mod outline;
 mod read;
 mod rebuild;
+mod roundtrip;
 mod search;
 #[cfg(feature = "server")]
 pub(crate) mod service;
@@ -51,6 +52,8 @@ pub use read::{get_post_by_id, get_post_by_slug, get_post_preview, get_public_po
 pub use rebuild::rebuild_content_html;
 /// 重新渲染指定文章的 Markdown HTML 与目录（单篇）。
 pub use rebuild::rebuild_post_content_html;
+/// 富文本编辑器往返渲染一致性检查。
+pub use roundtrip::check_markdown_roundtrip;
 /// 全文搜索已发布文章。
 pub use search::search_posts;
 /// 获取文章统计信息。

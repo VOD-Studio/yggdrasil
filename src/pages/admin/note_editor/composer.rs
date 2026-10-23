@@ -75,7 +75,7 @@ pub(super) fn NoteComposer(
             opts.set_on_pick_from_library(&picker);
             match tiptap::get_module().create("note-tiptap", &opts) {
                 Ok(Some(inst)) => {
-                    inst.set_markdown(&initial);
+                    let _ = inst.set_markdown(&initial);
                     editor.set(Some(EditorHandle::new(
                         inst,
                         update,

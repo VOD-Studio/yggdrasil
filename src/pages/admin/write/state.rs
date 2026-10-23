@@ -228,7 +228,7 @@ impl WriteEditorState {
     pub fn set_content(mut self, markdown: &str) {
         #[cfg(target_arch = "wasm32")]
         if let Some(handle) = &*self.editor.peek() {
-            handle.instance().set_markdown(markdown);
+            let _ = handle.instance().set_markdown(markdown);
         }
         self.form.write().content = markdown.to_owned();
     }

@@ -83,8 +83,11 @@ pub mod wasm {
         pub fn get_markdown(this: &EditorInstance) -> String;
 
         /// 用 Markdown 内容回填编辑器（emitUpdate: false，不触发 onUpdate）。
+        ///
+        /// 注入 `checkRoundtrip` 时，Promise 在视图模式确定（往返检查结束）后 resolve；
+        /// 未注入时同步完成，Promise 可直接丢弃。
         #[wasm_bindgen(method, js_name = setMarkdown)]
-        pub fn set_markdown(this: &EditorInstance, content: &str);
+        pub fn set_markdown(this: &EditorInstance, content: &str) -> js_sys::Promise;
 
         /// 按 uploadId 删除上传节点（revoke blob + 删 pending）。供宿主"×关闭"调用。
         #[wasm_bindgen(method, js_name = removeUploadByUploadId)]
@@ -159,6 +162,14 @@ pub mod wasm {
         /// Rust 侧打开 AssetPickerModal，确认后由 insertImagesFromLibrary 回填。
         #[wasm_bindgen(method, setter, js_name = onPickFromLibrary)]
         pub fn set_on_pick_from_library(this: &EditorOptions, cb: &Closure<dyn FnMut()>);
+
+        /// JS 侧 checkRoundtrip: (original, roundtrip) => Promise<boolean>。
+        /// 由写作页注入；`true` 表示服务端渲染一致。未注入时不做守卫。
+        #[wasm_bindgen(method, setter, js_name = checkRoundtrip)]
+        pub fn set_check_roundtrip(
+            this: &EditorOptions,
+            cb: &Closure<dyn Fn(String, String) -> js_sys::Promise>,
+        );
     }
 
     // —— 上传事件（JS UploadEvent 的 Rust 映射）——
@@ -241,6 +252,7 @@ pub mod wasm {
         _on_upload_event: Closure<dyn FnMut(UploadEventJs)>,
         _on_run_code: Closure<dyn Fn(RunCodeOptsJs) -> js_sys::Promise>,
         _on_pick_from_library: Closure<dyn FnMut()>,
+        _on_check_roundtrip: Option<Closure<dyn Fn(String, String) -> js_sys::Promise>>,
     }
 
     impl EditorHandle {
@@ -266,12 +278,22 @@ pub mod wasm {
                 _on_upload_event: on_upload_event,
                 _on_run_code: on_run_code,
                 _on_pick_from_library: on_pick_from_library,
+                _on_check_roundtrip: None,
             }
         }
 
         /// 访问底层编辑器实例（调 getMarkdown/setMarkdown/destroy 等）。
         pub fn instance(&self) -> &EditorInstance {
             &self.instance
+        }
+
+        /// 注入往返守卫 closure，使其与编辑器实例同生共死。
+        pub fn with_roundtrip_check(
+            mut self,
+            cb: Closure<dyn Fn(String, String) -> js_sys::Promise>,
+        ) -> Self {
+            self._on_check_roundtrip = Some(cb);
+            self
         }
 
         /// 评论编辑器用构造：只传入 comment variant 实际使用的 4 个 closure。
@@ -503,6 +525,23 @@ pub mod wasm {
             })
         })
     }
+
+    /// 创建「往返守卫」closure：把原文与富文本往返后的 Markdown 交给服务端比较渲染结果。
+    ///
+    /// 签名 `(String, String) -> Promise<bool>` 对应 JS `checkRoundtrip`；
+    /// 失败时 reject，JS 端按有损处理。
+    pub fn make_roundtrip_check_closure() -> Closure<dyn Fn(String, String) -> js_sys::Promise> {
+        Closure::new(
+            move |original: String, roundtrip: String| -> js_sys::Promise {
+                wasm_bindgen_futures::future_to_promise(async move {
+                    crate::api::posts::check_markdown_roundtrip(original, roundtrip)
+                        .await
+                        .map(JsValue::from_bool)
+                        .map_err(|e| js_sys::Error::new(&e.to_string()).into())
+                })
+            },
+        )
+    }
 }
 
 /// 将 WASM 子模块中的桥接类型与函数重导出到 crate 根，供 `write.rs` 直接引用。
@@ -522,4 +561,6 @@ pub use wasm::{
 // 运行代码与图片上传闭包只有后台写作页（full 客户端专属）按名引用；
 // reader 客户端不导出，避免 unused_imports（plan §6.1）。
 #[cfg(all(target_arch = "wasm32", not(ygg_client_reader)))]
-pub use wasm::{make_run_code_closure, make_upload_closure, upload_image_file};
+pub use wasm::{
+    make_roundtrip_check_closure, make_run_code_closure, make_upload_closure, upload_image_file,
+};

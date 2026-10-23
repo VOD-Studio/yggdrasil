@@ -205,7 +205,7 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
                 // signal 持久）。顶层表单为空字符串时 no-op。
                 let draft = content_md.peek().clone();
                 if !draft.is_empty() {
-                    inst.set_markdown(&draft);
+                    let _ = inst.set_markdown(&draft);
                 }
                 let handle = crate::bridges::tiptap::EditorHandle::new_comment(
                     inst,
@@ -308,7 +308,7 @@ pub fn CommentForm(post_id: i32, parent_id: Option<i64>, parent_indent: Option<i
                     // 同步清空编辑器文档（onUpdate 会把空 markdown 回写 signal）。
                     #[cfg(target_arch = "wasm32")]
                     if let Some(handle) = &*editor_handle.peek() {
-                        handle.instance().set_markdown("");
+                        let _ = handle.instance().set_markdown("");
                     }
                     message.set(Some((msg, "success")));
                     if parent_id.is_some() {
