@@ -74,7 +74,7 @@ fn top_tag(tags: &[Tag]) -> Option<&Tag> {
         .max_by(|a, b| a.post_count.cmp(&b.post_count).then(b.name.cmp(&a.name)))
 }
 
-/// 评论正文的一行预览：去掉图片与常见 Markdown 记号，只有图片的评论显示「[图片]」。
+/// 评论正文的一行预览：去掉图片与常见 Markdown 记号，只有图片的评论显示「\[图片\]」。
 fn comment_preview(md: &str) -> String {
     let mut text = String::new();
     let mut rest = md;

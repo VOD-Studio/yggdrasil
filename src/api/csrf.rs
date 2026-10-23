@@ -5,7 +5,7 @@
 //! 1. 登录 CSRF（攻击者诱导受害者登录攻击者账号，Lax 不阻止「设置」cookie）；
 //! 2. 顶级 GET 导航时 Lax 会带 cookie，GET 下载类接口（数据导出）可被跨站触发。
 //! 因此对所有写请求叠加 Origin 校验作为纵深防御；GET 下载类接口另挂
-//! [`same_origin_read_middleware`]。
+//! [`crate::api::csrf::same_origin_read_middleware`]。
 //! 仅在 `feature = "server"` 时编译。
 
 #[cfg(feature = "server")]

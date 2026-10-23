@@ -212,7 +212,7 @@ pub(crate) struct PaletteState {
 }
 
 /// 创建面板状态：打开时记下原焦点并聚焦输入框。全局快捷键由各面板的生产入口
-/// 自己用 [`use_palette_shortcut`] 注册，这里不注册。
+/// 自己用 `use_palette_shortcut`（wasm32 专属，非 wasm 构建无此项）注册，这里不注册。
 pub(crate) fn use_palette_state(id_prefix: &'static str) -> PaletteState {
     let handle = use_context::<SearchPaletteHandle>();
     let state = PaletteState {

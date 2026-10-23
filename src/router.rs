@@ -186,7 +186,7 @@ pub fn is_reader_path(path: &str) -> bool {
 /// reader 客户端保留的路由集合（plan §6.1 表格的代码化）。
 ///
 /// 必须保持穷尽 match：reader/full 的归属关系以本函数为唯一事实来源，
-/// [`flavor_tests::reader_full_classification_is_locked`] 负责锁定行为。
+/// `flavor_tests::reader_full_classification_is_locked`（`#[cfg(test)]`，不进文档）负责锁定行为。
 #[cfg(feature = "server")]
 fn route_is_reader(route: &Route) -> bool {
     match route {

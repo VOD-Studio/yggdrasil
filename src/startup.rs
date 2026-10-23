@@ -383,7 +383,7 @@ fn validate_public_templates() {
 }
 
 /// 扫描模板里的 /assets/ 引用，确认文件在 public/assets/ 下真实存在。
-/// dx 生成的引用形如 /./assets/yggdrasil-dxh<hash>.js，引用缺失即产物闭包
+/// dx 生成的引用形如 `/./assets/yggdrasil-dxh<hash>.js`，引用缺失即产物闭包
 /// 断裂（陈旧模板、合并遗漏），启动期直接失败。
 fn validate_template_assets(public_root: &Path, flavor: &str, html: &str) {
     let marker = "/assets/";
