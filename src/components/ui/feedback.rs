@@ -55,6 +55,8 @@ const LEAVE_MS: u32 = 180;
 pub struct Toaster {
     entries: Signal<Vec<ToastEntry>>,
     next_id: Signal<u64>,
+    /// 提供者所在 scope；计时任务挂在这里，调用页卸载也不取消。
+    scope: dioxus::core::ScopeId,
 }
 
 impl Toaster {
@@ -73,7 +75,7 @@ impl Toaster {
             let overflow = list.len().saturating_sub(MAX_TOASTS);
             list.drain(..overflow);
         });
-        spawn(async move {
+        self.spawn_timer(async move {
             crate::utils::time::sleep_ms(tone.duration_ms()).await;
             self.dismiss(id);
         });
@@ -87,6 +89,13 @@ impl Toaster {
         self.show(ToastTone::Danger, message);
     }
 
+    /// 计时任务挂在提供者 scope：提示后立即导航（调用页卸载）也不会取消自动消失。
+    fn spawn_timer(self, fut: impl std::future::Future<Output = ()> + 'static) {
+        dioxus::core::Runtime::current().in_scope(self.scope, move || {
+            spawn(fut);
+        });
+    }
+
     /// 先播退出动画，再从列表移除。
     fn dismiss(self, id: u64) {
         let mut entries = self.entries;
@@ -98,7 +107,7 @@ impl Toaster {
             }
         });
         if found {
-            spawn(async move {
+            self.spawn_timer(async move {
                 crate::utils::time::sleep_ms(LEAVE_MS).await;
                 entries.with_mut(|list| list.retain(|e| e.id != id));
             });
@@ -110,7 +119,14 @@ impl Toaster {
 pub fn use_toast_provider() -> Toaster {
     let entries = use_signal(Vec::new);
     let next_id = use_signal(|| 0_u64);
-    use_context_provider(|| Toaster { entries, next_id })
+    let scope = dioxus::core::Runtime::current()
+        .try_current_scope_id()
+        .unwrap_or(dioxus::core::ScopeId::ROOT);
+    use_context_provider(|| Toaster {
+        entries,
+        next_id,
+        scope,
+    })
 }
 
 /// 取得发提示的句柄。
