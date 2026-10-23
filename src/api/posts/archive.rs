@@ -1,5 +1,5 @@
 //! 固定大小的公开归档分页，与首页列表的 50 条上限独立。
-use dioxus::prelude::*;
+use leptos::prelude::*;
 
 use crate::models::archive::ArchivePost;
 
@@ -11,7 +11,7 @@ pub struct ArchiveResponse {
     pub total: i64,
 }
 
-#[server(ListArchivePosts, "/api")]
+#[server(ListArchivePosts, endpoint = "list_archive_posts", input = leptos::server_fn::codec::Json)]
 pub async fn list_archive_posts(page: i32) -> Result<ArchiveResponse, ServerFnError> {
     #[cfg(feature = "server")]
     {
@@ -73,7 +73,7 @@ pub struct YearCount {
 
 /// 每年发布的篇数，按年份升序；中间没有文章的年份补 0。关于页的柱状图使用，
 /// 在服务端聚合并随文章列表缓存一起失效。
-#[server(PostsPerYear, "/api")]
+#[server(PostsPerYear, endpoint = "posts_per_year", input = leptos::server_fn::codec::Json)]
 pub async fn posts_per_year() -> Result<Vec<YearCount>, ServerFnError> {
     #[cfg(feature = "server")]
     {

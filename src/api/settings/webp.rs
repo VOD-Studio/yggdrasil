@@ -1,8 +1,8 @@
-// 与 posts 模块一致：Dioxus `#[server]` 宏触发 deprecated/unit/too_many_arguments
+// 与 posts 模块一致：Leptos `#[server]` 宏触发 deprecated/unit/too_many_arguments
 // 提示，按项目惯例放行（限流/运行器等配置项天然参数多）。
 #![allow(clippy::unused_unit, deprecated, clippy::too_many_arguments)]
 
-use dioxus::prelude::*;
+use leptos::prelude::*;
 
 #[cfg(feature = "server")]
 use crate::api::auth::get_current_admin_user;
@@ -74,7 +74,7 @@ pub(crate) async fn load_webp_settings(
 }
 
 /// 读取 WebP 配置（面板用）。
-#[server(GetWebpSettings, "/api")]
+#[server(GetWebpSettings, endpoint = "get_webp_settings", input = leptos::server_fn::codec::Json)]
 pub async fn get_webp_settings() -> Result<WebpSettings, ServerFnError> {
     let _user = get_current_admin_user().await?;
 
@@ -83,7 +83,7 @@ pub async fn get_webp_settings() -> Result<WebpSettings, ServerFnError> {
         let client = get_conn().await.map_err(AppError::db_conn)?;
         let s = load_webp_settings(&client)
             .await
-            .map_err(ServerFnError::from)?;
+            .map_err(<ServerFnError>::from)?;
         Ok(s)
     }
 
@@ -97,7 +97,7 @@ pub async fn get_webp_settings() -> Result<WebpSettings, ServerFnError> {
 ///
 /// 字段会被 clamp 后写入 DB。由于配置烘焙进 LazyLock 静态量，修改后需**重启进程**
 /// 生效——不做运行时缓存失效。
-#[server(UpdateWebpSettings, "/api")]
+#[server(UpdateWebpSettings, endpoint = "update_webp_settings", input = leptos::server_fn::codec::Json)]
 pub async fn update_webp_settings(
     quality: f32,
     method: u32,

@@ -1,6 +1,6 @@
 //! 文章模块：提供文章的 CRUD、列表、搜索、标签聚合与统计等 server function。
 //!
-//! 所有 Dioxus server function 均注册在 `/api` 路径下，供前端与服务端调用。
+//! 所有 Leptos server function 均注册在 `/api` 路径下，供前端与服务端调用。
 //! 仅在 `feature = "server"` 启用的服务端构建中执行数据库操作与缓存失效。
 
 #![allow(clippy::unused_unit, deprecated, unused_imports)]

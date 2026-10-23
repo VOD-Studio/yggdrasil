@@ -1,10 +1,10 @@
 //! 文章统计接口。
 //!
 //! 返回文章总数、草稿数、已发布数与回收站（软删除）数量，供管理后台仪表盘与
-//! 文章列表页使用，结果缓存。Dioxus server function，注册在 `/api` 路径下。
+//! 文章列表页使用，结果缓存。Leptos server function，注册在 `/api` 路径下。
 //! 仅在 `feature = "server"` 启用的服务端构建中查询数据库。
 
-use dioxus::prelude::*;
+use leptos::prelude::*;
 
 #[cfg(feature = "server")]
 use super::helpers::get_current_admin_user;
@@ -20,7 +20,7 @@ use crate::models::post::{MonthCount, PostStats};
 ///
 /// 需要 admin 权限；优先命中缓存，未命中时通过单次条件聚合查询同时统计
 /// 未删除文章总数、草稿数、已发布数与回收站（软删除）数量。
-#[server(GetPostStats, "/api")]
+#[server(GetPostStats, endpoint = "get_post_stats", input = leptos::server_fn::codec::Json)]
 pub async fn get_post_stats() -> Result<PostStatsResponse, ServerFnError> {
     let _user = get_current_admin_user().await?;
 

@@ -186,7 +186,7 @@ pub struct RebuildResult {
 pub(super) fn write_response(
     result: Result<super::service::WriteOutcome, super::service::WriteError>,
     message: &str,
-) -> Result<CreatePostResponse, dioxus::prelude::ServerFnError> {
+) -> Result<CreatePostResponse, leptos::prelude::ServerFnError> {
     use super::service::WriteError;
     match result {
         Ok(value) => Ok(CreatePostResponse::ok(message, value.post_id, value.slug)),

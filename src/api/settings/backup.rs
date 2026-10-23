@@ -1,8 +1,8 @@
-// 与 posts 模块一致：Dioxus `#[server]` 宏触发 deprecated/unit/too_many_arguments
+// 与 posts 模块一致：Leptos `#[server]` 宏触发 deprecated/unit/too_many_arguments
 // 提示，按项目惯例放行（限流/运行器等配置项天然参数多）。
 #![allow(clippy::unused_unit, deprecated, clippy::too_many_arguments)]
 
-use dioxus::prelude::*;
+use leptos::prelude::*;
 
 #[cfg(feature = "server")]
 use crate::api::auth::get_current_admin_user;
@@ -181,7 +181,7 @@ async fn load_backup_settings_view(
 }
 
 /// 读取自动备份配置（面板用）。
-#[server(GetBackupSettings, "/api")]
+#[server(GetBackupSettings, endpoint = "get_backup_settings", input = leptos::server_fn::codec::Json)]
 pub async fn get_backup_settings() -> Result<BackupSettingsView, ServerFnError> {
     let _user = get_current_admin_user().await?;
 
@@ -205,7 +205,7 @@ pub async fn get_backup_settings() -> Result<BackupSettingsView, ServerFnError> 
 ///
 /// time_utc 会被规范化（非法回退默认），retention_count 会被 clamp。
 /// 写入后唤醒调度任务立即重排，无需等待下一次 tick。
-#[server(UpdateBackupSettings, "/api")]
+#[server(UpdateBackupSettings, endpoint = "update_backup_settings", input = leptos::server_fn::codec::Json)]
 pub async fn update_backup_settings(
     auto_enabled: bool,
     time_utc: String,

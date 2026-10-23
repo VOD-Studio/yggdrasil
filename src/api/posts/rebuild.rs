@@ -2,10 +2,10 @@
 //!
 //! 用于数据迁移或修复：遍历符合条件的文章，将 Markdown 重新渲染为 HTML，
 //! 并更新 content_html 与 toc_html 字段。
-//! Dioxus server function，注册在 `/api` 路径下。
+//! Leptos server function，注册在 `/api` 路径下。
 //! 仅在 `feature = "server"` 启用的服务端构建中执行数据库更新。
 
-use dioxus::prelude::*;
+use leptos::prelude::*;
 
 #[cfg(feature = "server")]
 use super::helpers::{get_current_admin_user, render_post_fields_minimal};
@@ -28,7 +28,7 @@ const MAX_DISPLAY_ERRORS: usize = 5;
 /// 只处理 `id > after_id` 的前 [`REBUILD_BATCH_LIMIT`] 篇；批满时 `next_after_id` 给出续传游标，
 /// 为 None 表示已处理完。渲染在事务外进行，写回用 `updated_at` 乐观校验：渲染期间被编辑的文章
 /// 其写路径已自行渲染，这里跳过。渲染异常或写入失败会被捕获并汇总。
-#[server(RebuildContentHtml, "/api")]
+#[server(RebuildContentHtml, endpoint = "rebuild_content_html", input = leptos::server_fn::codec::Json)]
 pub async fn rebuild_content_html(
     rebuild_all: bool,
     after_id: i32,
@@ -149,7 +149,7 @@ pub async fn rebuild_content_html(
 /// 从数据库读取 content_md（`FOR UPDATE` 锁行，避免并发编辑产生非可重复读），
 /// 在阻塞线程池渲染 HTML，并更新 content_html / toc_html / word_count / reading_time。
 /// 仅 admin 可调用；成功后按影响范围失效文章列表、slug 单篇与搜索缓存。
-#[server(RebuildPostContentHtml, "/api")]
+#[server(RebuildPostContentHtml, endpoint = "rebuild_post_content_html", input = leptos::server_fn::codec::Json)]
 pub async fn rebuild_post_content_html(post_id: i32) -> Result<CreatePostResponse, ServerFnError> {
     let _user = get_current_admin_user().await?;
 

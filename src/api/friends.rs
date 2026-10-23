@@ -1,4 +1,4 @@
-//! 友链管理：Dioxus server functions。
+//! 友链管理：Leptos server functions。
 //!
 //! 前台 `/friends` 读取可见友链（`list_friend_links`，走 moka 缓存 + SSR 缓存失效，
 //! 与文章/标签同架构）；后台 `/admin/friends` 做完整 CRUD。
@@ -9,7 +9,7 @@
 
 #![allow(clippy::unused_unit, deprecated)]
 
-use dioxus::prelude::*;
+use leptos::prelude::*;
 
 use crate::models::friend_link::FriendLink;
 
@@ -19,7 +19,7 @@ use crate::api::error::AppError;
 /// 前台友链列表（仅活跃，按 sort_order 升序）。
 ///
 /// 缓存命中直返；未命中查询 `friend_links` 活跃行后写缓存。公开接口，无需登录。
-#[server(ListFriendLinks, "/api")]
+#[server(ListFriendLinks, endpoint = "list_friend_links", input = leptos::server_fn::codec::Json)]
 pub async fn list_friend_links() -> Result<Vec<FriendLink>, ServerFnError> {
     #[cfg(feature = "server")]
     {
@@ -51,7 +51,7 @@ pub async fn list_friend_links() -> Result<Vec<FriendLink>, ServerFnError> {
 }
 
 /// 后台友链列表（含停用项，按 sort_order 升序）。仅 admin。
-#[server(ListAllFriendLinks, "/api")]
+#[server(ListAllFriendLinks, endpoint = "list_all_friend_links", input = leptos::server_fn::codec::Json)]
 pub async fn list_all_friend_links() -> Result<Vec<FriendLink>, ServerFnError> {
     #[cfg(feature = "server")]
     {
@@ -81,7 +81,7 @@ pub async fn list_all_friend_links() -> Result<Vec<FriendLink>, ServerFnError> {
 ///
 /// 校验通过后 `INSERT ... RETURNING *`，并失效友链 moka 缓存 + `/friends` SSR 缓存
 /// + 递增全局世代号，保证前台下次访问立即看到新卡片。
-#[server(CreateFriendLink, "/api")]
+#[server(CreateFriendLink, endpoint = "create_friend_link", input = leptos::server_fn::codec::Json)]
 pub async fn create_friend_link(
     name: String,
     url: String,
@@ -121,7 +121,7 @@ pub async fn create_friend_link(
 /// 更新友链（含启用状态）。仅 admin。
 ///
 /// 行不存在返回 `AppError::NotFound`；成功后同样失效缓存与 SSR。
-#[server(UpdateFriendLink, "/api")]
+#[server(UpdateFriendLink, endpoint = "update_friend_link", input = leptos::server_fn::codec::Json)]
 pub async fn update_friend_link(
     id: i32,
     name: String,
@@ -175,7 +175,7 @@ pub async fn update_friend_link(
 /// 删除友链（物理删除）。仅 admin。
 ///
 /// id 不存在时静默成功（幂等删除），成功后失效缓存与 SSR。
-#[server(DeleteFriendLink, "/api")]
+#[server(DeleteFriendLink, endpoint = "delete_friend_link", input = leptos::server_fn::codec::Json)]
 pub async fn delete_friend_link(id: i32) -> Result<(), ServerFnError> {
     #[cfg(feature = "server")]
     {

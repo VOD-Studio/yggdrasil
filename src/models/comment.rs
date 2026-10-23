@@ -23,6 +23,8 @@ pub enum CommentStatus {
 impl CommentStatus {
     /// 将数据库或 API 中的状态字符串解析为 CommentStatus，未知值默认回退到 Pending。
     #[cfg(feature = "server")]
+    // 返回值不是 Result（未知值回退/None），不能实现 std::str::FromStr。
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Self {
         match s {
             "approved" => Self::Approved,

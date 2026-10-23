@@ -1,4 +1,4 @@
-//! MCP 访问令牌管理：Dioxus server functions。
+//! MCP 访问令牌管理：Leptos server functions。
 //!
 //! 管理员在后台 `/admin/mcp` 签发/查看/编辑权限/撤销为 AI 客户端（Claude Code / Cursor /
 //! Cline）准备的 bearer 令牌。明文 token 仅在签发与「重新查看」时返回给管理员，
@@ -10,7 +10,7 @@
 
 #![allow(clippy::unused_unit, deprecated)]
 
-use dioxus::prelude::*;
+use leptos::prelude::*;
 
 #[cfg(feature = "server")]
 use crate::models::mcp_token::McpToken;
@@ -54,7 +54,7 @@ impl TokenLifetime {
 ///
 /// 生成明文 `ygg_<32 hex>`，AES-GCM 加密后存密文 + SHA-256 哈希；明文随响应一次性
 /// 返回给管理员（后续可经 [`reveal_mcp_token`] 重新查看）。仅 admin。
-#[server(CreateMcpToken, "/api")]
+#[server(CreateMcpToken, endpoint = "create_mcp_token", input = leptos::server_fn::codec::Json)]
 pub async fn create_mcp_token(
     name: String,
     scope: TokenScope,
@@ -119,7 +119,7 @@ pub async fn create_mcp_token(
 }
 
 /// 修改本人名下有效令牌的权限，不轮换密钥，也不修改有效期。
-#[server(UpdateMcpTokenPermissions, "/api")]
+#[server(UpdateMcpTokenPermissions, endpoint = "update_mcp_token_permissions", input = leptos::server_fn::codec::Json)]
 pub async fn update_mcp_token_permissions(
     id: String,
     scope: TokenScope,
@@ -355,7 +355,7 @@ mod permission_tests {
 /// 列出当前管理员名下的全部令牌（不含任何密钥材料，仅展示用元数据）。
 ///
 /// 按 `created_at DESC` 排序，最近签发的在前。仅 admin。
-#[server(ListMcpTokens, "/api")]
+#[server(ListMcpTokens, endpoint = "list_mcp_tokens", input = leptos::server_fn::codec::Json)]
 pub async fn list_mcp_tokens() -> Result<Vec<McpTokenSummary>, ServerFnError> {
     #[cfg(feature = "server")]
     {
@@ -392,7 +392,7 @@ pub async fn list_mcp_tokens() -> Result<Vec<McpTokenSummary>, ServerFnError> {
 ///
 /// 找不到令牌、或令牌不属于当前管理员 → 返回 `None`（不区分原因，避免探测）。
 /// 仅 admin。
-#[server(RevealMcpToken, "/api")]
+#[server(RevealMcpToken, endpoint = "reveal_mcp_token", input = leptos::server_fn::codec::Json)]
 pub async fn reveal_mcp_token(id: String) -> Result<Option<String>, ServerFnError> {
     #[cfg(feature = "server")]
     {
@@ -432,7 +432,7 @@ pub async fn reveal_mcp_token(id: String) -> Result<Option<String>, ServerFnErro
 /// 撤销令牌（软删除：置 `revoked_at = now()`，行保留以备审计）。
 ///
 /// 找不到或非本人令牌 → 静默无操作（不报错，避免探测）。仅 admin。
-#[server(RevokeMcpToken, "/api")]
+#[server(RevokeMcpToken, endpoint = "revoke_mcp_token", input = leptos::server_fn::codec::Json)]
 pub async fn revoke_mcp_token(id: String) -> Result<(), ServerFnError> {
     #[cfg(feature = "server")]
     {
@@ -541,7 +541,7 @@ pub struct McpClientConfigs {
 ///
 /// 配置生成与高亮均在服务端完成（`crate::mcp::config` / `crate::highlight` 均为
 /// server-only），返回给前端展示。`APP_BASE_URL` 环境变量也只在服务端读取。仅 admin。
-#[server(GetMcpClientConfigs, "/api")]
+#[server(GetMcpClientConfigs, endpoint = "get_mcp_client_configs", input = leptos::server_fn::codec::Json)]
 pub async fn get_mcp_client_configs(token: String) -> Result<McpClientConfigs, ServerFnError> {
     #[cfg(feature = "server")]
     {

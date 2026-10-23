@@ -1,12 +1,12 @@
 //! 后台统计接口：侧栏导航项右侧的数量。
 //!
 //! 文章数读文章统计缓存，待审评论数读待审计数缓存；素材与评论总数是两次
-//! 计数查询，侧栏每次换页刷新一次。Dioxus server function，注册在 `/api` 路径下。
+//! 计数查询，侧栏每次换页刷新一次。Leptos server function，注册在 `/api` 路径下。
 
-// 与 settings 等模块一致：Dioxus `#[server]` 宏触发 deprecated/unit 提示，按项目惯例放行。
+// 与 settings 等模块一致：Leptos `#[server]` 宏触发 deprecated/unit 提示，按项目惯例放行。
 #![allow(clippy::unused_unit, deprecated)]
 
-use dioxus::prelude::*;
+use leptos::prelude::*;
 use serde::{Deserialize, Serialize};
 
 /// 侧栏数量。
@@ -23,7 +23,7 @@ pub struct AdminNavCounts {
 }
 
 /// 获取侧栏数量。需要 admin 权限。
-#[server(GetAdminNavCounts, "/api")]
+#[server(GetAdminNavCounts, endpoint = "get_admin_nav_counts", input = leptos::server_fn::codec::Json)]
 pub async fn get_admin_nav_counts() -> Result<AdminNavCounts, ServerFnError> {
     #[cfg(feature = "server")]
     {

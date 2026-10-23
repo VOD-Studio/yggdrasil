@@ -2,7 +2,7 @@
 
 //! SQL 补全用 schema 拉取（供 CodeMirror lang-sql 表/列补全）。
 
-use dioxus::prelude::*;
+use leptos::prelude::*;
 
 // admin 鉴权 + DB 查询仅在 server 构建里被 server function 体引用。
 #[cfg(feature = "server")]
@@ -18,7 +18,7 @@ use crate::models::sql_schema::SqlSchema;
 use crate::models::sql_schema::SqlTable;
 
 /// 拉取数据库 schema（表名 + 列名），供 CodeMirror SQL 补全。
-#[server(GetDbSchema, "/api")]
+#[server(GetDbSchema, endpoint = "get_db_schema", input = leptos::server_fn::codec::Json)]
 pub async fn get_db_schema() -> Result<SqlSchema, ServerFnError> {
     let _user = get_current_admin_user().await?;
 

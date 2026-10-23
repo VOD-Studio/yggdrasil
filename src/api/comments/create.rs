@@ -4,18 +4,18 @@
 //! 匿名评论默认进入 pending 状态等待审核；**登录用户**（有效会话）发表的评论
 //! 以账号身份直发 approved——身份字段取自 users 表（显示名回退用户名），
 //! 跳过昵称/邮箱/网址校验与蜜罐，记录 `user_id` 供读取侧 JOIN 实时展示。
-//! Dioxus server function，注册在 `/api` 路径下。
+//! Leptos server function，注册在 `/api` 路径下。
 //! 仅在 `feature = "server"` 启用的服务端构建中写入数据库。
 
 use crate::api::comments::types::*;
-use dioxus::prelude::*;
+use leptos::prelude::*;
 
 /// 创建一条新评论。
 ///
 /// 对作者昵称、邮箱、网址与内容进行基础校验；
 /// 若目标文章未发布或父评论未通过审核，则拒绝提交；
 /// 成功后将评论置为 pending，并清空相关缓存。
-#[server(CreateComment, "/api")]
+#[server(CreateComment, endpoint = "create_comment", input = leptos::server_fn::codec::Json)]
 pub async fn create_comment(
     post_id: i32,
     parent_id: Option<i64>,
@@ -37,9 +37,8 @@ pub async fn create_comment(
         use crate::cache;
         use crate::db::pool::get_conn;
 
-        // 从 FullstackContext 获取客户端 IP，并进行评论频率限流。
-        if let Some(ctx) = dioxus::fullstack::FullstackContext::current() {
-            let headers = ctx.parts_mut().headers.clone();
+        // 从请求上下文获取客户端 IP，并进行评论频率限流。
+        if let Some(headers) = crate::request_ctx::request_headers() {
             let ip = crate::api::rate_limit::get_client_ip(&headers).await;
             if let Err(msg) = crate::api::rate_limit::check_comment_limit(&ip) {
                 return Ok(CommentResponse::error("rate_limited", msg));
@@ -49,7 +48,9 @@ pub async fn create_comment(
         // 登录用户识别：有效会话 → 以账号身份发表（直发 approved）；
         // 匿名/会话失效 → 原审核流程。会话校验失败不报错，按匿名兜底。
         let session_user = match get_session_from_ctx() {
-            Some(token) => get_user_by_token(&token).await.map_err(AppError::query)?,
+            Some(token) => get_user_by_token(&token)
+                .await
+                .map_err(|e| AppError::query(std::io::Error::other(e.to_string())))?,
             None => None,
         };
 
@@ -191,22 +192,17 @@ pub async fn create_comment(
             .as_ref()
             .map(|u| crate::utils::html::escape_html(u.trim()))
             .filter(|u| !u.is_empty());
-        let ip_address = if let Some(ctx) = dioxus::fullstack::FullstackContext::current() {
-            let headers = ctx.parts_mut().headers.clone();
-            Some(crate::api::rate_limit::get_client_ip(&headers).await)
-        } else {
-            None
+        let request_headers = crate::request_ctx::request_headers();
+        let ip_address = match &request_headers {
+            Some(headers) => Some(crate::api::rate_limit::get_client_ip(headers).await),
+            None => None,
         };
-        let user_agent = if let Some(ctx) = dioxus::fullstack::FullstackContext::current() {
-            let parts = ctx.parts_mut();
-            parts
-                .headers
+        let user_agent = request_headers.as_ref().and_then(|headers| {
+            headers
                 .get("user-agent")
                 .and_then(|v| v.to_str().ok())
                 .map(|s| s.to_string())
-        } else {
-            None
-        };
+        });
 
         // 查重与插入在同一事务内，并用 advisory lock 串行化相同内容的并发提交（M4）。
         // 仅靠普通 SELECT+事务在 Read Committed 下无法阻止并发重复（两个事务都看不到

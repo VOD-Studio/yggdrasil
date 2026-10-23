@@ -11,10 +11,10 @@
 //! 调用），但所有 server-only 的 `use` 与全局静态量都单独 gate，使 WASM 侧仅保留
 //! 函数签名（body 被 server 宏剥离）。与 posts 模块的约定一致。
 
-// 与 posts / settings 模块一致：Dioxus `#[server]` 宏触发 deprecated/unit 提示，按项目惯例放行。
+// 与 posts / settings 模块一致：Leptos `#[server]` 宏触发 deprecated/unit 提示，按项目惯例放行。
 #![allow(clippy::unused_unit, deprecated)]
 
-use dioxus::prelude::*;
+use leptos::prelude::*;
 
 // 共享数据类型在函数签名中出现，双目标可见，不 gate。
 use crate::api::code_runner::{ExecRequest, ExecTask};
@@ -50,14 +50,11 @@ use tokio::sync::Semaphore;
 pub static RUNNER_SEMAPHORE: LazyLock<Arc<Semaphore>> =
     LazyLock::new(|| Arc::new(Semaphore::new(RUNNER_CONFIG.max_concurrent)));
 
-/// 从 FullstackContext 提取客户端 IP（无上下文时退回 "unknown"）。
+/// 从请求上下文提取客户端 IP（无上下文时退回 "unknown"）。
 #[cfg(feature = "server")]
 async fn client_ip() -> String {
-    match dioxus::fullstack::FullstackContext::current() {
-        Some(ctx) => {
-            let headers = ctx.parts_mut().headers.clone();
-            get_client_ip(&headers).await
-        }
+    match crate::request_ctx::request_headers() {
+        Some(headers) => get_client_ip(&headers).await,
         None => "unknown".to_string(),
     }
 }
@@ -297,7 +294,7 @@ fn classify_runner_error(e: &bollard::errors::Error, image: &str) -> (ExecStatus
 ///
 /// admin 角色跳过速率限制（便于作者在沙箱调试），但仍受并发槽、
 /// 资源钳制与源码大小校验约束。
-#[server(StartExec, "/api")]
+#[server(StartExec, endpoint = "start_exec", input = leptos::server_fn::codec::Json)]
 pub async fn start_exec(req: ExecRequest) -> Result<String, ServerFnError> {
     check_rate_limit_for_user().await?;
     validate_exec_request(&req)?;
@@ -325,7 +322,7 @@ pub async fn start_exec(req: ExecRequest) -> Result<String, ServerFnError> {
 /// 后台 spawn 与 `start_exec` 并行写两处：
 /// - `run_in_container_stream` 推 chunk 到 SSE（流式路径）
 /// - `update_task_result` 写 `EXEC_TASKS`（轮询兜底路径，SSE 不可用或 Tiptap 编辑器用）
-#[server(StartExecStream, "/api")]
+#[server(StartExecStream, endpoint = "start_exec_stream", input = leptos::server_fn::codec::Json)]
 pub async fn start_exec_stream(req: ExecRequest) -> Result<String, ServerFnError> {
     check_rate_limit_for_user().await?;
     validate_exec_request(&req)?;
@@ -353,7 +350,7 @@ pub async fn start_exec_stream(req: ExecRequest) -> Result<String, ServerFnError
 }
 
 /// 查询任务执行结果（前端轮询）。
-#[server(GetExecResult, "/api")]
+#[server(GetExecResult, endpoint = "get_exec_result", input = leptos::server_fn::codec::Json)]
 pub async fn get_exec_result(task_id: String) -> Result<ExecTask, ServerFnError> {
     if let Some(task) = EXEC_TASKS.get(&task_id) {
         Ok(task.clone())

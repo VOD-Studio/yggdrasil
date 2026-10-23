@@ -1,8 +1,8 @@
-// 与 posts 模块一致：Dioxus `#[server]` 宏触发 deprecated/unit/too_many_arguments
+// 与 posts 模块一致：Leptos `#[server]` 宏触发 deprecated/unit/too_many_arguments
 // 提示，按项目惯例放行（限流/运行器等配置项天然参数多）。
 #![allow(clippy::unused_unit, deprecated, clippy::too_many_arguments)]
 
-use dioxus::prelude::*;
+use leptos::prelude::*;
 
 #[cfg(feature = "server")]
 use crate::api::auth::get_current_admin_user;
@@ -145,7 +145,7 @@ pub(crate) async fn runtime_security_settings() -> crate::models::settings::Secu
 }
 
 /// 读取安全配置（面板用）。
-#[server(GetSecuritySettings, "/api")]
+#[server(GetSecuritySettings, endpoint = "get_security_settings", input = leptos::server_fn::codec::Json)]
 pub async fn get_security_settings() -> Result<SecuritySettings, ServerFnError> {
     let _user = get_current_admin_user().await?;
 
@@ -154,7 +154,7 @@ pub async fn get_security_settings() -> Result<SecuritySettings, ServerFnError> 
         let client = get_conn().await.map_err(AppError::db_conn)?;
         let s = load_security_settings(&client)
             .await
-            .map_err(ServerFnError::from)?;
+            .map_err(<ServerFnError>::from)?;
         crate::cache::set_security_settings(s.clone()).await;
         Ok(s)
     }
@@ -168,7 +168,7 @@ pub async fn get_security_settings() -> Result<SecuritySettings, ServerFnError> 
 /// 更新安全配置。
 ///
 /// 所有字段会被规范化/clamp 后写入。写入后失效 moka 缓存，数秒内全链路生效。
-#[server(UpdateSecuritySettings, "/api")]
+#[server(UpdateSecuritySettings, endpoint = "update_security_settings", input = leptos::server_fn::codec::Json)]
 pub async fn update_security_settings(
     app_base_url: String,
     cookie_secure: bool,

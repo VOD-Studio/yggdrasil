@@ -1,7 +1,7 @@
 //! 分享元信息：`description`、Open Graph 与 Twitter 卡片。
 //!
 //! 只有服务端渲染的 HTML 会被社交平台读取。站点地址、简介与站点图地址由中间件放进
-//! 请求扩展（[`crate::components::share_meta::ShareContext`]），服务端渲染时同步读取，
+//! 请求扩展（[`crate::models::share::ShareContext`]），服务端渲染时同步读取，
 //! 不另发请求；浏览器端取不到，
 //! 用空值渲染同样数量的标签，保持与服务端一致的 head 元素顺序（水合按顺序对齐）。
 //!
@@ -10,18 +10,7 @@
 use dioxus::prelude::*;
 
 use crate::models::post::Post;
-use crate::models::share::PostShareCard;
-
-/// 写分享元信息所需的站点信息。
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct ShareContext {
-    /// APP_BASE_URL，无尾斜杠；未配置时为空，地址退回站内相对路径。
-    pub base_url: String,
-    /// 站点简介，页面没有自己的描述时使用。
-    pub description: String,
-    /// 站点分享图的站内地址（带版本号）。
-    pub site_image: String,
-}
+use crate::models::share::{PostShareCard, ShareContext};
 
 fn use_share_context() -> ShareContext {
     use_hook(|| {

@@ -9,9 +9,9 @@ for database in ygg_mcp_test ygg_notes_test ygg_backup_test; do
   createdb "$database"
 done
 export DATABASE_URL="postgresql://${PGUSER}:${PGPASSWORD}@${PGHOST}:${PGPORT}/ygg_mcp_test"
-cargo test --locked --all-features private_post_workflow_database -- --ignored
-cargo test --locked --all-features post_write_service_database -- --ignored
+cargo test --locked private_post_workflow_database -- --ignored
+cargo test --locked post_write_service_database -- --ignored
 export DATABASE_URL="postgresql://${PGUSER}:${PGPASSWORD}@${PGHOST}:${PGPORT}/ygg_notes_test"
-cargo test --locked --all-features notes_database_ -- --ignored
+cargo test --locked notes_database_ -- --ignored
 export YGG_BACKUP_TEST_DATABASE_URL="postgresql://${PGUSER}:${PGPASSWORD}@${PGHOST}:${PGPORT}/ygg_backup_test"
-cargo test --locked --all-features backup_round_trip_and_failed_restore_rolls_back_database -- --ignored
+cargo test --locked backup_round_trip_and_failed_restore_rolls_back_database -- --ignored

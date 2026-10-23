@@ -1,8 +1,8 @@
-// 与 posts 模块一致：Dioxus `#[server]` 宏触发 deprecated/unit/too_many_arguments
+// 与 posts 模块一致：Leptos `#[server]` 宏触发 deprecated/unit/too_many_arguments
 // 提示，按项目惯例放行（限流/运行器等配置项天然参数多）。
 #![allow(clippy::unused_unit, deprecated, clippy::too_many_arguments)]
 
-use dioxus::prelude::*;
+use leptos::prelude::*;
 
 #[cfg(feature = "server")]
 use crate::api::auth::get_current_admin_user;
@@ -201,7 +201,7 @@ pub(crate) async fn load_runner_settings(
 }
 
 /// 读取代码运行器配置（面板用）。
-#[server(GetRunnerSettings, "/api")]
+#[server(GetRunnerSettings, endpoint = "get_runner_settings", input = leptos::server_fn::codec::Json)]
 pub async fn get_runner_settings() -> Result<RunnerSettings, ServerFnError> {
     let _user = get_current_admin_user().await?;
 
@@ -210,7 +210,7 @@ pub async fn get_runner_settings() -> Result<RunnerSettings, ServerFnError> {
         let client = get_conn().await.map_err(AppError::db_conn)?;
         let s = load_runner_settings(&client)
             .await
-            .map_err(ServerFnError::from)?;
+            .map_err(<ServerFnError>::from)?;
         Ok(s)
     }
 
@@ -223,7 +223,7 @@ pub async fn get_runner_settings() -> Result<RunnerSettings, ServerFnError> {
 /// 更新代码运行器配置。
 ///
 /// 字段会被 clamp / 规范化后写入 DB。配置烘焙进 LazyLock，修改后需**重启进程**生效。
-#[server(UpdateRunnerSettings, "/api")]
+#[server(UpdateRunnerSettings, endpoint = "update_runner_settings", input = leptos::server_fn::codec::Json)]
 pub async fn update_runner_settings(
     allow_network: bool,
     max_concurrent: u32,

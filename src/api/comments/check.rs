@@ -3,7 +3,7 @@
 //! 用于前端轮询刚刚提交的评论是否已通过审核，支持传入多个 id。
 //! 仅在 `feature = "server"` 启用的服务端构建中查询数据库。
 
-use dioxus::prelude::*;
+use leptos::prelude::*;
 
 /// 单个评论的待审核状态结果。
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -17,8 +17,8 @@ pub struct PendingStatusItem {
 /// 查询一组评论的当前审核状态。
 ///
 /// 如果某 id 不存在，则返回状态 `"gone"`。
-/// Dioxus server function，注册在 `/api` 路径下。
-#[server(CheckPendingStatus, "/api")]
+/// Leptos server function，注册在 `/api` 路径下。
+#[server(CheckPendingStatus, endpoint = "check_pending_status", input = leptos::server_fn::codec::Json)]
 pub async fn check_pending_status(ids: Vec<i64>) -> Result<Vec<PendingStatusItem>, ServerFnError> {
     // 仅在服务端构建中执行 SQL 查询。
     #[cfg(feature = "server")]
@@ -38,8 +38,7 @@ pub async fn check_pending_status(ids: Vec<i64>) -> Result<Vec<PendingStatusItem
         // 限流防高速遍历枚举评论状态（L3）。本接口供访客轮询自己刚提交的评论
         // 审核状态，故不加 admin 鉴权；但 strict 限流（对 unknown IP 降级宽松桶）
         // 足以阻止批量枚举。
-        if let Some(ctx) = dioxus::fullstack::FullstackContext::current() {
-            let headers = ctx.parts_mut().headers.clone();
+        if let Some(headers) = crate::request_ctx::request_headers() {
             let ip = crate::api::rate_limit::get_client_ip(&headers).await;
             if let Err(_msg) = crate::api::rate_limit::check_strict_limit(&ip) {
                 return Err(ServerFnError::new("请求过于频繁，请稍后再试"));

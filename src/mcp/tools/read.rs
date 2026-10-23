@@ -8,7 +8,7 @@
 //!
 //! 本模块只声明工具路由；`server.rs`（Main 装配）把 `read_router()` 合并进
 //! 复合 `ServerHandler`。SQL 与 `src/api/posts/{search,read,tags}.rs` 的
-//! server-fn 一致，但不复用后者（它们走 cookie 鉴权的 FullstackContext），
+//! server-fn 一致，但不复用后者（它们走 cookie 鉴权的请求上下文），
 //! 这里直接走 `crate::db::pool::get_conn()`。
 
 use rmcp::handler::server::tool::Extension;

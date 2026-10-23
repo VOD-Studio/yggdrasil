@@ -1,13 +1,13 @@
 use super::*;
 use crate::mcp::{auth::McpPrincipal, server::YggMcpServer};
 
-fn web_context() -> dioxus::fullstack::FullstackContext {
+fn web_context() -> http::request::Parts {
     let (parts, _) = http::Request::builder()
         .header("cookie", "session=post-write-regression")
         .body(())
         .unwrap()
         .into_parts();
-    dioxus::fullstack::FullstackContext::new(parts)
+    parts
 }
 
 #[test]
@@ -48,8 +48,9 @@ async fn post_write_service_database_impl() {
     client.execute("INSERT INTO assets(id,path,filename,mime,size_bytes,width,height) VALUES($1,$2,'fixture.webp','image/webp',1,1,1)", &[&asset_id,&asset_path]).await.unwrap();
 
     // The browser and MCP adapters produce the same normalized article fields.
-    let web = web_context()
-        .scope(crate::api::posts::create_post(
+    let web = crate::request_ctx::scope_with_request(
+        web_context(),
+        crate::api::posts::create_post(
             "  共同标题  ".into(),
             Some("web-shared".into()),
             Some("  摘要  ".into()),
@@ -57,9 +58,10 @@ async fn post_write_service_database_impl() {
             "draft".into(),
             vec![" tag ".into(), "tag".into()],
             Some(cover.clone()),
-        ))
-        .await
-        .unwrap();
+        ),
+    )
+    .await
+    .unwrap();
     assert!(web.success);
     let web_id = web.post_id.unwrap();
     let mcp = result_json(
@@ -107,8 +109,9 @@ async fn post_write_service_database_impl() {
 
     // Both entry points reject blank updates before any persistent change.
     for (title, content) in [(" ", "正文"), ("标题", " \n")] {
-        let rejected = web_context()
-            .scope(crate::api::posts::update_post(
+        let rejected = crate::request_ctx::scope_with_request(
+            web_context(),
+            crate::api::posts::update_post(
                 web_id,
                 title.into(),
                 Some("web-shared".into()),
@@ -117,9 +120,10 @@ async fn post_write_service_database_impl() {
                 "draft".into(),
                 vec![],
                 None,
-            ))
-            .await
-            .unwrap();
+            ),
+        )
+        .await
+        .unwrap();
         assert!(!rejected.success);
         let p: UpdatePostParams = serde_json::from_value(
             serde_json::json!({"post_id":mcp_id,"title":title,"content_md":content}),
@@ -261,8 +265,9 @@ async fn post_write_service_database_impl() {
         .is_empty());
 
     // 超长标签在写库前被校验拒绝，不触及数据库。
-    let rejected = web_context()
-        .scope(crate::api::posts::update_post(
+    let rejected = crate::request_ctx::scope_with_request(
+        web_context(),
+        crate::api::posts::update_post(
             web_id,
             "不应落库".into(),
             Some("web-shared".into()),
@@ -271,9 +276,10 @@ async fn post_write_service_database_impl() {
             "draft".into(),
             vec!["x".repeat(300)],
             None,
-        ))
-        .await
-        .unwrap();
+        ),
+    )
+    .await
+    .unwrap();
     assert!(!rejected.success);
     assert_eq!(rejected.message, "单个标签过长（上限 50 字符）");
 
@@ -286,8 +292,9 @@ async fn post_write_service_database_impl() {
         )
         .await
         .unwrap();
-    let failure = web_context()
-        .scope(crate::api::posts::update_post(
+    let failure = crate::request_ctx::scope_with_request(
+        web_context(),
+        crate::api::posts::update_post(
             web_id,
             "不应落库".into(),
             Some("web-shared".into()),
@@ -296,8 +303,9 @@ async fn post_write_service_database_impl() {
             "draft".into(),
             vec!["reject-me".into()],
             None,
-        ))
-        .await;
+        ),
+    )
+    .await;
     client
         .batch_execute("ALTER TABLE tags DROP CONSTRAINT ygg_test_reject_tag;")
         .await
@@ -333,8 +341,9 @@ async fn post_write_service_database_impl() {
 
     // Successful complete replacement regenerates slug/summary, clears nullable fields
     // and preserves publication/creation dates for an already published article.
-    let published = web_context()
-        .scope(crate::api::posts::update_post(
+    let published = crate::request_ctx::scope_with_request(
+        web_context(),
+        crate::api::posts::update_post(
             web_id,
             "共同标题".into(),
             Some("web-shared".into()),
@@ -343,9 +352,10 @@ async fn post_write_service_database_impl() {
             "published".into(),
             vec!["tag".into()],
             Some(cover),
-        ))
-        .await
-        .unwrap();
+        ),
+    )
+    .await
+    .unwrap();
     assert!(published.success);
     let before = client
         .query_one(
@@ -356,8 +366,9 @@ async fn post_write_service_database_impl() {
         .unwrap();
     crate::cache::set_post_by_slug("web-shared", None).await;
     crate::cache::set_posts_by_tag("tag", vec![], 0).await;
-    let replaced = web_context()
-        .scope(crate::api::posts::update_post(
+    let replaced = crate::request_ctx::scope_with_request(
+        web_context(),
+        crate::api::posts::update_post(
             web_id,
             "新完整标题".into(),
             None,
@@ -366,9 +377,10 @@ async fn post_write_service_database_impl() {
             "published".into(),
             vec![],
             None,
-        ))
-        .await
-        .unwrap();
+        ),
+    )
+    .await
+    .unwrap();
     assert!(replaced.success);
     assert_eq!(replaced.slug.as_deref(), Some("xin-wan-zheng-biao-ti"));
     let after = client
@@ -431,8 +443,9 @@ async fn post_write_service_database_impl() {
     )
     .await
     .is_err());
-    let denied = web_context()
-        .scope(crate::api::posts::update_post(
+    let denied = crate::request_ctx::scope_with_request(
+        web_context(),
+        crate::api::posts::update_post(
             foreign.post_id,
             "越权".into(),
             None,
@@ -441,9 +454,10 @@ async fn post_write_service_database_impl() {
             "draft".into(),
             vec![],
             None,
-        ))
-        .await
-        .unwrap();
+        ),
+    )
+    .await
+    .unwrap();
     assert!(!denied.success);
     let denied: UpdatePostParams =
         serde_json::from_value(serde_json::json!({"post_id":foreign.post_id,"title":"越权"}))

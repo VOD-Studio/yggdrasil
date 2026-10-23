@@ -11,7 +11,7 @@ use rmcp::{schemars, tool, tool_router, ErrorData as McpError};
 use serde::Deserialize;
 
 fn failure(error: crate::api::error::AppError) -> McpError {
-    let error: dioxus::prelude::ServerFnError = error.into();
+    let error: leptos::prelude::ServerFnError = error.into();
     McpError::invalid_request(error.to_string(), None)
 }
 

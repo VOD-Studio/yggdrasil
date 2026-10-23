@@ -1,15 +1,15 @@
 //! 前端评论读取接口：已审核评论列表。
 //!
-//! 结果按文章 id 缓存，Dioxus server function 注册在 `/api` 路径下。
+//! 结果按文章 id 缓存，Leptos server function 注册在 `/api` 路径下。
 //! 仅在 `feature = "server"` 启用的服务端构建中查询数据库。
 
 use crate::api::comments::types::*;
-use dioxus::prelude::*;
+use leptos::prelude::*;
 
 /// 获取指定文章的已审核评论列表。
 ///
 /// 优先命中缓存；按 id 升序返回，便于前端构建嵌套树。
-#[server(GetComments, "/api")]
+#[server(GetComments, endpoint = "get_comments", input = leptos::server_fn::codec::Json)]
 pub async fn get_comments(post_id: i32) -> Result<CommentTreeResponse, ServerFnError> {
     #[cfg(feature = "server")]
     {

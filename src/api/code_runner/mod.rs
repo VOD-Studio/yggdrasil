@@ -4,7 +4,7 @@
 //! - [`mod@code_runner`] 本文件：双目标（server / wasm）共享的可序列化数据结构。
 //! - `progress`：内存任务缓冲表（DashMap + GC），server-only。
 //! - `languages`：语言注册表与围栏代码块 info 解析，server-only。
-//! - `execute`：Dioxus server function（StartExec / GetExecResult），server-only。
+//! - `execute`：Leptos server function（StartExec / GetExecResult），server-only。
 //!
 //! 为避免 WASM 构建引入 server 依赖，数据结构在模块顶层无 cfg 门禁定义，
 //! 而引用的 `ResourceLimits` 同样位于无门禁的 [`crate::infra::runner_config`]。

@@ -1,25 +1,23 @@
 //! 服务端启动流程与 Axum 路由组装。
 //!
-//! `main.rs` 只保留目标选择与全局分配器；本模块负责服务端启动期的
-//! 配置、数据库自举、后台任务生命周期和路由组合。Dioxus 开发态会在
-//! 热重载时多次调用 router callback，因此后台任务启动必须具备进程级幂等性。
+//! `main.rs` 只保留全局分配器与入口调用；本模块负责服务端启动期的
+//! 配置、数据库自举、后台任务生命周期和路由组合。路由装配可能被重复调用
+//! （例如测试），因此后台任务启动必须具备进程级幂等性。
 
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::time::Duration;
 
-use dioxus::server::axum;
-use dioxus::server::{DioxusRouterExt, FullstackState, ServeConfig};
+use axum::extract::{Request, State};
+use axum::response::{IntoResponse, Response};
+use leptos::config::{Env, LeptosOptions};
+use leptos_axum::LeptosRoutes;
 
 const IMAGE_UPLOAD_MAX_BYTES: usize = 10 * 1024 * 1024;
 const IMAGE_UPLOAD_TIMEOUT: Duration = Duration::from_secs(300);
 const BACKUP_IMPORT_TIMEOUT: Duration = Duration::from_secs(600);
 const EXPORT_TIMEOUT: Duration = Duration::from_secs(120);
 const APP_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
-
-/// reader 客户端模板目录（相对 public 根）。目录里的 index.html 由发布构建
-/// 从 reader 产物复制而来；full 模板始终是 public/index.html（dev 与发布一致）。
-const READER_TEMPLATE_DIR: &str = "flavors/reader";
 
 static BACKGROUND_TASKS_STARTED: OnceLock<()> = OnceLock::new();
 
@@ -167,50 +165,64 @@ fn run_database_bootstrap() {
 }
 
 fn serve_application(options: ServerOptions) -> ! {
-    #[cfg(debug_assertions)]
+    let runtime = match tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
     {
-        // 开发态继续使用 Dioxus serve 以保留 devtools/hot reload。这里只做
-        // best-effort 预检；真实 listener 仍由 Dioxus 绑定。
-        let addr = dioxus::cli_config::fullstack_address_or_localhost();
-        if let Err(error) = std::net::TcpListener::bind(addr) {
-            fatal_bind_error(addr, error);
+        Ok(runtime) => runtime,
+        Err(error) => {
+            tracing::error!(%error, "failed to build server runtime");
+            eprintln!("ERROR: failed to build server runtime: {error}");
+            std::process::exit(1);
         }
-        dioxus::server::serve(move || async move { Ok(build_router(options)) });
-    }
+    };
 
-    #[cfg(not(debug_assertions))]
-    {
-        let runtime = match tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-        {
-            Ok(runtime) => runtime,
-            Err(error) => {
-                tracing::error!(%error, "failed to build server runtime");
-                eprintln!("ERROR: failed to build server runtime: {error}");
-                std::process::exit(1);
-            }
+    let result = runtime.block_on(async move {
+        let addr = server_addr();
+        let listener = match tokio::net::TcpListener::bind(addr).await {
+            Ok(listener) => listener,
+            Err(error) => fatal_bind_error(addr, error),
         };
+        // 路由装配会启动后台任务（tokio::spawn），必须在 runtime 内执行。
+        let router = build_router(options);
+        tracing::info!("server listening on {addr}");
+        axum::serve(listener, router.into_make_service())
+            .with_graceful_shutdown(shutdown_signal())
+            .await
+    });
 
-        let result = runtime.block_on(async move {
-            let addr = dioxus::cli_config::fullstack_address_or_localhost();
-            let listener = match tokio::net::TcpListener::bind(addr).await {
-                Ok(listener) => listener,
-                Err(error) => fatal_bind_error(addr, error),
-            };
-            tracing::info!("server listening on {addr}");
-            axum::serve(listener, build_router(options).into_make_service()).await
-        });
-
-        match result {
-            Ok(()) => std::process::exit(0),
-            Err(error) => {
-                tracing::error!(%error, "server stopped unexpectedly");
-                eprintln!("ERROR: server stopped unexpectedly: {error}");
-                std::process::exit(1);
-            }
+    match result {
+        Ok(()) => std::process::exit(0),
+        Err(error) => {
+            tracing::error!(%error, "server stopped unexpectedly");
+            eprintln!("ERROR: server stopped unexpectedly: {error}");
+            std::process::exit(1);
         }
     }
+}
+
+/// 等待 Ctrl-C 或 SIGTERM，触发优雅退出。
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        let _ = tokio::signal::ctrl_c().await;
+    };
+    #[cfg(unix)]
+    let terminate = async {
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut signal) => {
+                signal.recv().await;
+            }
+            Err(_) => std::future::pending::<()>().await,
+        }
+    };
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
+    tracing::info!("收到退出信号，开始优雅关闭");
 }
 
 fn fatal_bind_error(addr: std::net::SocketAddr, error: impl std::fmt::Display) -> ! {
@@ -242,37 +254,12 @@ fn spawn_background_tasks_once() {
     tokio::spawn(crate::api::code_runner::readiness::log_runner_readiness());
 }
 
-fn build_flavor_states() -> FlavorStates {
-    validate_public_templates();
-    let full = FullstackState::new(ServeConfig::new(), crate::router::AppRouter);
-    match load_reader_state() {
-        Some(reader) => {
-            tracing::info!(
-                "双产物模式：公开阅读路径使用 reader 客户端模板（{}），后台/登录/图鉴使用 full 模板",
-                READER_TEMPLATE_DIR
-            );
-            init_cache_namespace("dual");
-            FlavorStates {
-                reader: Some(reader),
-                full,
-            }
-        }
-        None => {
-            tracing::info!(
-                "完整应用模式：未发现 reader 客户端产物（public/{}/index.html），全部路由使用 full 模板",
-                READER_TEMPLATE_DIR
-            );
-            init_cache_namespace("full");
-            FlavorStates { reader: None, full }
-        }
-    }
-}
-
-/// 发布×flavor 命名空间（plan §6.7）：一个 SSR 缓存实例只服务一个组合，
-/// 组合变化即整表失效，杜绝缓存命中跨发布/跨 flavor「串味」。release 取
-/// 发布清单的 release_id；dev 无清单时回退构建信息（git describe 含 dirty 标记）。
+/// 发布命名空间（plan §6.7）：一个 SSR 缓存实例只服务一个发布，
+/// 发布变化即整表失效，杜绝缓存命中跨发布「串味」。release 取
+/// 发布清单（`<site_root>/release-manifest.json`）的 release_id；
+/// dev 无清单时回退构建信息（git describe 含 dirty 标记）。
 fn init_cache_namespace(mode: &str) {
-    let release = std::fs::read_to_string(dioxus_public_root().join("release-manifest.json"))
+    let release = std::fs::read_to_string(site_root().join("release-manifest.json"))
         .ok()
         .and_then(|json| serde_json::from_str::<serde_json::Value>(&json).ok())
         .and_then(|value| {
@@ -300,180 +287,197 @@ fn previous_public_dir() -> Option<PathBuf> {
     Some(dir)
 }
 
-/// 双客户端产物的 SSR 状态。
-#[derive(Clone)]
-struct FlavorStates {
-    /// reader 模板；`None` = 完整应用回退模式（dev 单产物 / full-only 发布）。
-    reader: Option<FullstackState>,
-    full: FullstackState,
+/// 站点根目录（`public/` 资源与 `pkg/` 前端产物所在）。
+///
+/// `LEPTOS_SITE_ROOT` 非空则用它（cargo-leptos 在 watch/serve 时自动设置，
+/// Docker 镜像显式设置）；否则是可执行文件旁的 `public/`。
+fn site_root() -> PathBuf {
+    match std::env::var_os("LEPTOS_SITE_ROOT").filter(|v| !v.is_empty()) {
+        Some(root) => PathBuf::from(root),
+        None => exe_dir().join("public"),
+    }
 }
 
-/// 复刻 dioxus-server 的 public 目录解析（env 优先，其次可执行文件旁的
-/// public/）。dioxus-server 0.7.10 的 `public_path()` 是 pub(crate)，无法
-/// 直接调用；这里保持同一优先级，保证模板查找与静态资源目录一致。
-fn dioxus_public_root() -> PathBuf {
-    if let Some(p) = std::env::var_os("DIOXUS_PUBLIC_PATH") {
-        if !p.is_empty() {
-            return PathBuf::from(p);
-        }
-    }
+/// 可执行文件所在目录；`hash.txt` 与它同目录。
+fn exe_dir() -> PathBuf {
     let mut dir = std::env::current_exe().unwrap_or_else(|e| {
-        panic!("无法定位可执行文件以推导 public 目录：{e}");
+        panic!("无法定位可执行文件以推导站点目录：{e}");
     });
     dir.pop();
-    dir.join("public")
+    dir
 }
 
-/// 加载 reader 客户端模板，产出对应 [`FullstackState`]。
-///
-/// dioxus-server 0.7.10 未公开 `IndexHtml`（lib.rs 中 pub(crate)），
-/// `ServeConfig::with_index_html` 无法从外部构造；`ServeConfig::new()` 又只读
-/// public 根的 index.html。因此唯一的模板注入通道是 `DIOXUS_PUBLIC_PATH`：
-/// 启动期临时把它指向 `{public}/flavors/reader`，读完立即还原。切换只发生
-/// 在 build_router 的顺序执行段内，还原发生在注册静态资源之前，运行期不再
-/// 读取该变量。
-///
-/// - 目录/文件不存在（dev 单产物、full-only 发布）→ `None`，走完整应用模式。
-/// - 文件存在但读取/解析失败 → panic 明确失败，不静默降级（plan §6.5）。
-fn load_reader_state() -> Option<FullstackState> {
-    let public_root = dioxus_public_root();
-    let reader_dir = public_root.join(READER_TEMPLATE_DIR);
-    let reader_index = reader_dir.join("index.html");
-    if !reader_index.is_file() {
-        return None;
+/// 监听地址：`IP`（默认 127.0.0.1）+ `PORT`（默认 8080）。解析失败直接退出。
+fn server_addr() -> std::net::SocketAddr {
+    fn env_or(key: &str, default: &str) -> String {
+        std::env::var(key)
+            .ok()
+            .filter(|v| !v.is_empty())
+            .unwrap_or_else(|| default.to_string())
     }
 
-    let html = std::fs::read_to_string(&reader_index).unwrap_or_else(|e| {
+    let ip = env_or("IP", "127.0.0.1");
+    let port = env_or("PORT", "8080");
+    let ip = ip.parse::<std::net::IpAddr>().unwrap_or_else(|error| {
+        eprintln!("ERROR: IP 环境变量 {ip:?} 不是有效的 IP 地址：{error}");
+        std::process::exit(1);
+    });
+    let port = port.parse::<u16>().unwrap_or_else(|error| {
+        eprintln!("ERROR: PORT 环境变量 {port:?} 不是有效的端口号：{error}");
+        std::process::exit(1);
+    });
+    std::net::SocketAddr::new(ip, port)
+}
+
+/// Leptos 运行配置，与 `Cargo.toml` 的 `[package.metadata.leptos]` 保持一致。
+fn leptos_options() -> LeptosOptions {
+    LeptosOptions::builder()
+        .output_name("yggdrasil")
+        .site_root(site_root().to_string_lossy().into_owned())
+        .site_pkg_dir("pkg")
+        .site_addr(server_addr())
+        .reload_port(3001)
+        .hash_files(true)
+        .env(if cfg!(debug_assertions) {
+            Env::DEV
+        } else {
+            Env::PROD
+        })
+        .build()
+}
+
+/// 校验前端产物与服务端二进制配套：`hash.txt`（与可执行文件同目录）指向的
+/// 脚本、WASM 与分包清单必须在 `<site_root>/pkg/` 下真实存在，缺失即拒绝启动，
+/// 不静默拼出混合版本。debug 与 release 都执行。
+fn validate_site_assets(options: &LeptosOptions) {
+    let hash_path = exe_dir().join("hash.txt");
+    let hashes = std::fs::read_to_string(&hash_path).unwrap_or_else(|_| {
         panic!(
-            "reader 客户端模板读取失败（{}）：{e}",
-            reader_index.display()
+            "hash.txt 缺失（{}）：前端产物与服务端二进制不配套，拒绝启动",
+            hash_path.display()
         )
     });
-    validate_template_assets(&public_root, "reader", &html);
 
-    let saved = std::env::var("DIOXUS_PUBLIC_PATH").ok();
-    std::env::set_var("DIOXUS_PUBLIC_PATH", &reader_dir);
-    let config = ServeConfig::new();
-    match saved {
-        Some(v) => std::env::set_var("DIOXUS_PUBLIC_PATH", v),
-        None => std::env::remove_var("DIOXUS_PUBLIC_PATH"),
-    }
-    Some(FullstackState::new(config, crate::router::AppRouter))
-}
-
-/// 校验 full 模板存在且其引用的 /assets/* 产物齐全（plan §6.5：缺失产物
-/// 明确失败，不静默拼出混合版本）。full 模板缺失仅在 release 拒绝启动；
-/// dev 保留 dioxus 既有的 ssr_only 回退（dx serve 冷启动时序需要）。
-fn validate_public_templates() {
-    let public_root = dioxus_public_root();
-    let full_index = public_root.join("index.html");
-    if !full_index.is_file() {
-        if cfg!(not(debug_assertions)) {
-            panic!(
-                "full 客户端模板缺失（{}）：发布目录不完整，拒绝启动",
-                full_index.display()
-            );
-        }
-        tracing::warn!("public/index.html 不存在，dev 下沿用 dioxus 的 ssr_only 回退");
-        return;
-    }
-    let html = std::fs::read_to_string(&full_index)
-        .unwrap_or_else(|e| panic!("full 客户端模板读取失败：{e}"));
-    validate_template_assets(&public_root, "full", &html);
-}
-
-/// 扫描模板里的 /assets/ 引用，确认文件在 public/assets/ 下真实存在。
-/// dx 生成的引用形如 `/./assets/yggdrasil-dxh<hash>.js`，引用缺失即产物闭包
-/// 断裂（陈旧模板、合并遗漏），启动期直接失败。
-fn validate_template_assets(public_root: &Path, flavor: &str, html: &str) {
-    let marker = "/assets/";
-    let mut missing: Vec<String> = Vec::new();
-    let mut cursor = 0usize;
-    while let Some(offset) = html[cursor..].find(marker) {
-        let start = cursor + offset + marker.len();
-        let end = html[start..]
-            .find(|c: char| c.is_ascii_whitespace() || matches!(c, '"' | '\'' | '>' | ')'))
-            .map_or(html.len(), |rel| start + rel);
-        let name = html[start..end].trim_start_matches("./");
-        if !name.is_empty() {
-            let asset = public_root.join("assets").join(name);
-            if !asset.is_file() {
-                missing.push(format!("/assets/{name}"));
+    let (mut js, mut wasm, mut manifest) = (None, None, None);
+    for line in hashes.lines() {
+        if let Some((key, value)) = line.trim().split_once(':') {
+            let value = value.trim().to_string();
+            match key.trim() {
+                "js" => js = Some(value),
+                "wasm" => wasm = Some(value),
+                "manifest" => manifest = Some(value),
+                _ => {}
             }
         }
-        cursor = end.max(start);
+    }
+
+    let pkg = Path::new(options.site_root.as_ref()).join(options.site_pkg_dir.as_ref());
+    let name = options.output_name.as_ref();
+    let mut missing: Vec<String> = Vec::new();
+    match js {
+        Some(hash) => {
+            let file = pkg.join(format!("{name}.{hash}.js"));
+            if !file.is_file() {
+                missing.push(file.display().to_string());
+            }
+        }
+        None => missing.push(format!("{}（缺少 js 行）", hash_path.display())),
+    }
+    match wasm {
+        Some(hash) => {
+            let file = pkg.join(format!("{name}.{hash}.wasm"));
+            if !file.is_file() {
+                missing.push(file.display().to_string());
+            }
+        }
+        None => missing.push(format!("{}（缺少 wasm 行）", hash_path.display())),
+    }
+    if let Some(hash) = manifest {
+        let file = pkg.join(format!("__wasm_split_manifest.{hash}.json"));
+        if !file.is_file() {
+            missing.push(file.display().to_string());
+        }
     }
     if !missing.is_empty() {
-        panic!("{flavor} 客户端模板引用的产物缺失：{missing:?}——发布资源闭包不完整，拒绝启动");
+        panic!("前端产物缺失：{missing:?}——前端产物与服务端二进制不配套，拒绝启动");
     }
+}
+
+/// 未匹配任何路由的请求：先查站点目录里的静态文件（带 `.br` 预压缩协商），
+/// 其余交给 Leptos 渲染（未知页面由 `NotFound` 设置 404）。`/pkg/` 下缺失的文件
+/// 直接返回空 404，不渲染页面。
+async fn site_fallback(State(options): State<LeptosOptions>, req: Request) -> Response {
+    use axum::http::{Method, StatusCode};
+    use tower::ServiceExt;
+
+    if req.method() != Method::GET && req.method() != Method::HEAD {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+
+    let mut static_request = axum::http::Request::builder()
+        .method(req.method())
+        .uri(req.uri().clone());
+    for (name, value) in req.headers() {
+        static_request = static_request.header(name, value);
+    }
+    if let Ok(static_request) = static_request.body(axum::body::Body::empty()) {
+        let served = tower_http::services::ServeDir::new(site_root())
+            .append_index_html_on_directories(false)
+            .precompressed_br()
+            .oneshot(static_request)
+            .await;
+        // ServeDir 的错误类型是 Infallible，解构不会失败。
+        let Ok(asset) = served;
+        if asset.status() != StatusCode::NOT_FOUND {
+            return asset.map(axum::body::Body::new);
+        }
+    }
+
+    if req.uri().path().starts_with("/pkg/") {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+
+    leptos_axum::render_app_async(move || crate::app::shell(options.clone()))(req).await
 }
 
 fn build_router(options: ServerOptions) -> axum::Router {
-    use axum::extract::Request;
     use axum::http::StatusCode;
     use tower_http::timeout::TimeoutLayer;
 
+    let leptos_opts = leptos_options();
+    validate_site_assets(&leptos_opts);
+    init_cache_namespace("leptos");
+
     spawn_background_tasks_once();
 
-    // 双客户端产物模板：full 恒在（public/index.html），reader 缺席时整体
-    // 回退「完整应用模式」（plan §6.5 允许的回退路径）。
-    let flavors = build_flavor_states();
-    // 独立笔记入口是公开阅读路径，固定使用 reader 模板（缺席则回退 full）。
-    let notes_state = flavors
-        .reader
-        .clone()
-        .unwrap_or_else(|| flavors.full.clone());
-
-    // 公开渲染 fallback：按路径固定选择 flavor（plan §6.5），不依赖登录态。
-    // 闭包自带两个 FullstackState——dioxus 0.7.10 的 render_handler 以
-    // State<FullstackState> 取模板，这里绕开 Router 单一 state 的限制；
-    // register_server_functions 需要 Router<FullstackState>，headless 只作
-    // 占位 state（文档示例同款用法，无 handler 消费它）。
-    let full_state = flavors.full.clone();
-    let reader_state = flavors.reader.clone();
-    let dioxus_app = axum::Router::<FullstackState>::new()
-        .register_server_functions()
-        .serve_static_assets()
-        .fallback(axum::routing::get(move |request: Request| {
-            let reader = reader_state.clone();
-            let full = full_state.clone();
-            async move {
-                let state = match (&reader, crate::router::is_reader_path(request.uri().path())) {
-                    (Some(reader), true) => reader.clone(),
-                    (None, _) | (Some(_), false) => full.clone(),
-                };
-                FullstackState::render_handler(axum::extract::State(state), request).await
-            }
-        }))
-        .with_state(FullstackState::headless());
+    // 前台与后台页面由 Leptos 渲染；server fn 随 `leptos_routes` 自动注册到 /api/<名称>。
+    // 未匹配的路径（静态资源、未知页面）交给 `site_fallback`。
+    let routes = leptos_axum::generate_route_list(crate::app::App);
+    let leptos_app = axum::Router::new()
+        .leptos_routes(&leptos_opts, routes, {
+            let leptos_opts = leptos_opts.clone();
+            move || crate::app::shell(leptos_opts.clone())
+        })
+        .fallback(site_fallback)
+        .with_state(leptos_opts.clone());
 
     // 旧发布资源保留窗口（plan §6.7）：滚动更新后，已打开标签页与缓存 HTML
-    // 仍引用上一发布的带 hash 资源；当前发布未收录时按 404 回退到
-    // YGG_PREVIOUS_PUBLIC_DIR，保留窗口覆盖部署、HTML 缓存、回滚与长开标签页。
-    let dioxus_app = match previous_public_dir() {
+    // 仍引用上一发布的带 hash 资源（含按路由懒加载的 WASM 分包）；当前发布未收录时
+    // 按 404 回退到 YGG_PREVIOUS_PUBLIC_DIR，保留窗口覆盖部署、HTML 缓存、回滚与长开标签页。
+    let leptos_app = match previous_public_dir() {
         Some(previous_root) => {
             tracing::info!(
                 dir = %previous_root.display(),
-                "旧发布资源保留窗口已启用（/assets、/wasm 缺失时回退）"
+                "旧发布资源保留窗口已启用（/pkg 缺失时回退）"
             );
-            dioxus_app.layer(axum::middleware::from_fn(
+            leptos_app.layer(axum::middleware::from_fn(
                 move |req: axum::extract::Request, next: axum::middleware::Next| {
                     crate::middleware::previous_release_assets(previous_root.clone(), req, next)
                 },
             ))
         }
-        None => dioxus_app,
+        None => leptos_app,
     };
-
-    // 笔记可随时撤回公开；独立 renderer 与 HTML 缓存白名单共同保证其不缓存。
-    let notes_routes = axum::Router::new()
-        .route("/notes", axum::routing::get(dioxus::server::render_handler))
-        .route(
-            "/notes/{*path}",
-            axum::routing::get(dioxus::server::render_handler),
-        )
-        .with_state(notes_state);
-    let dioxus_app = dioxus_app.merge(notes_routes);
 
     let upload_route = axum::Router::new()
         .route(
@@ -557,7 +561,7 @@ fn build_router(options: ServerOptions) -> axum::Router {
         )
         .layer(axum::middleware::from_fn(crate::api::csrf::csrf_middleware));
 
-    let mut app_routes = dioxus_app
+    let mut app_routes = leptos_app
         .layer(axum::middleware::from_fn(
             crate::middleware::share_context_middleware,
         ))
@@ -586,7 +590,7 @@ fn build_router(options: ServerOptions) -> axum::Router {
             "/note-media/{id}",
             axum::routing::get(crate::api::notes::attachments::read),
         )
-        // 旧收藏链接直接返回永久重定向，客户端导航由 Route 的 redirect 同步兼容。
+        // 旧收藏链接直接返回永久重定向；Leptos 路由表不注册 /tags（同一路径注册两次会让 merge panic）。
         .route(
             "/tags",
             axum::routing::get(|| async { axum::response::Redirect::permanent("/archives") }),

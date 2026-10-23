@@ -1,10 +1,10 @@
 //! 标签列表接口。
 //!
 //! 返回所有标签及其关联的已发布文章数量，用于标签云与侧边栏。
-//! Dioxus server function，注册在 `/api` 路径下。
+//! Leptos server function，注册在 `/api` 路径下。
 //! 仅在 `feature = "server"` 启用的服务端构建中查询数据库。
 
-use dioxus::prelude::*;
+use leptos::prelude::*;
 
 use super::types::TagListResponse;
 #[cfg(feature = "server")]
@@ -17,7 +17,7 @@ use crate::models::post::Tag;
 /// 获取全部标签列表。
 ///
 /// 优先命中缓存；未命中时聚合每个标签关联的已发布文章数量，并按标签名升序排列。
-#[server(ListTags, "/api")]
+#[server(ListTags, endpoint = "list_tags", input = leptos::server_fn::codec::Json)]
 pub async fn list_tags() -> Result<TagListResponse, ServerFnError> {
     #[cfg(feature = "server")]
     {

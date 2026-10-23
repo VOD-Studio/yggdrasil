@@ -18,9 +18,8 @@ use axum::http::{header, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use bytes::Bytes;
 
-use crate::components::share_meta::ShareContext;
 use crate::models::settings::{SiteSettings, DEFAULT_HOME_SUBTITLE, DEFAULT_HOME_TITLE};
-use crate::models::share::{site_image_path, PostShareCard, SEPARATOR};
+use crate::models::share::{site_image_path, PostShareCard, ShareContext, SEPARATOR};
 use crate::og::{render_post, render_site, OgError, SiteShareCard};
 
 /// 内容版本化的地址可以缓存久一些；回退图很快就该重试。

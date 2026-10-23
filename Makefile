@@ -11,30 +11,16 @@ include mk/assets.mk mk/dx-cache.mk mk/docker.mk
 .PHONY: dev test lint fmt fix doc doc-open clean
 
 # ── 配置 ───────────────────────────────────────────────────────
-# sccache × dx 兼容：
-# dx build / dx serve 构建时把自己设为 RUSTC_WORKSPACE_WRAPPER 拦截 workspace
-# crate 的 rustc 调用（资产捕获）。若宿主 ~/.cargo/config.toml 配了
-# [build] rustc-wrapper（如 sccache），cargo 会组合出 `sccache dx rustc …`：
-# sccache 把 dx 当编译器探测，探测必然失败（"Compiler not supported"）→ dx 报错。
-# 空 RUSTC_WRAPPER env 覆盖 config（env 优先于 config，空值 = 无 wrapper），
-# 只对 dx 构建关闭 sccache；直接 cargo 的构建（test / lint / Dockerfile / CI）不受影响。
-# 所有本机 dx 调用（build / build-linux / dev）都经由 $(DX)。
-DX := RUSTC_WRAPPER= dx
-
-# release 构建用固定日期的 nightly（整次 dx 构建，含其附带的服务端构建）。
+# release 构建用固定日期的 nightly（前端 WASM 构建）。
 # 以下两组参数只作用于 wasm 客户端：-Zbuild-std 以 optimize_for_size 重编 std，
 # -Cpanic=immediate-abort 去掉 panic 格式化与展开代码。2026-10-20 实测 brotli 后
 # 1,098 KB → 1,010 KB（−8%）。代价：wasm 内 panic 直接 trap，不再打印信息。
-# - build-std 经 @client --cargo-args 传入，服务端构建不受影响；
 # - rustflags 经 wasm32 专属的 CARGO_TARGET_*_RUSTFLAGS 传入（服务端仍 panic=unwind）。
 #   它会覆盖 .cargo/config.toml 的同名配置，因此需要重复 getrandom cfg。
-# dx serve、test、lint 与 CI 仍用 stable。升级 nightly 时同步两个 Dockerfile 的
+# dev、test、lint 与 CI 仍用 stable。升级 nightly 时同步两个 Dockerfile 的
 # ARG WASM_NIGHTLY。
 WASM_NIGHTLY := nightly-2026-10-19
 WASM_CARGO_ARGS := -Zbuild-std=std,panic_abort -Zbuild-std-features=optimize_for_size
-DX_NIGHTLY := RUSTUP_TOOLCHAIN=$(WASM_NIGHTLY) \
-	CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS='--cfg getrandom_backend="wasm_js" -Zunstable-options -Cpanic=immediate-abort' \
-	$(DX)
 
 # 裸 `make` 只列出 target，不触发任何构建。
 .DEFAULT_GOAL := help
@@ -63,10 +49,9 @@ check-dev-tools: ## 检查开发所需的宿主工具
 		echo "  Install: rustup component add llvm-tools --toolchain $${toolchain:-stable}" >&2; \
 		missing=1; \
 	fi; \
-	if ! command -v dx >/dev/null 2>&1; then \
-		echo "error: dx CLI (Dioxus CLI 0.7.10) is required" >&2; \
-		echo "  Install: cargo install dioxus-cli --version 0.7.10" >&2; \
-		echo "  Prebuilt binary: https://github.com/DioxusLabs/dioxus/releases/tag/v0.7.10" >&2; \
+	if ! command -v cargo-leptos >/dev/null 2>&1 || ! cargo leptos --version 2>/dev/null | grep -q '0\.3\.11'; then \
+		echo "error: cargo-leptos 0.3.11 is required" >&2; \
+		echo "  Install: cargo install cargo-leptos --version 0.3.11 --locked" >&2; \
 		missing=1; \
 	fi; \
 	if ! command -v tailwindcss >/dev/null 2>&1; then \
@@ -229,17 +214,16 @@ precompress: check-brotli
 		-print0 | xargs -0 -r brotli -q 11 -kf
 
 # ── 开发 ───────────────────────────────────────────────────────
-# 开发态即完整应用：dx 的客户端构建取「default features 减 server」再加 CLI
-# features（见 Cargo.toml [features] 注释），default 不含 client-reader，
-# 后台/图鉴照常编译；reader 产物只在 release 流水线显式构建（plan §6.3）。
-dev: dev-assets esbuild-cache wasm-bindgen-cache ## 启动开发服务器（增量构建资源 + dx serve）
-	@echo "Starting dx serve..."
-	@SSR_CACHE_SECS=0 $(DX) serve --features dev-logger --addr 0.0.0.0 --interactive false
+# cargo-leptos watch：服务端（server feature）与浏览器 WASM（hydrate feature）
+# 各自增量构建并热重载，配置见 Cargo.toml 的 [package.metadata.leptos]。
+dev: dev-assets ## 启动开发服务器（增量构建资源 + cargo leptos watch）
+	@echo "Starting cargo leptos watch..."
+	@SSR_CACHE_SECS=0 IP=0.0.0.0 cargo leptos watch
 
 .PHONY: regression-build test-databases test-browser
-regression-build: dev-assets esbuild-cache wasm-bindgen-cache ## 构建隔离浏览器回归使用的应用
-	@$(DX) build --platform web --features dev-logger
-	@$(MAKE) restore-webp
+# debug 构建、不分包：产物在 target/debug/yggdrasil（服务端 + hash.txt）与 target/site（站点资源 + pkg）。
+regression-build: dev-assets ## 构建隔离浏览器回归使用的应用
+	@cargo leptos build
 
 test-databases: ## 在临时 PostgreSQL 中验证文章、笔记和备份，结束后清理
 	@bun scripts/regression.cjs database
@@ -269,19 +253,15 @@ test-wasm-preload: ## 真实 release 的 WASM preload 冷/热缓存 A/B（默认
 lint: ## Biome、TypeScript、Clippy、rustfmt 检查（只读）
 	@echo "==> Biome check (libs)"
 	@cd libs && bun run biome check . && bun run typecheck
-	@echo "==> Cargo clippy (Rust)"
-	@cargo clippy --all-targets --all-features -- -D warnings
+	@echo "==> Cargo clippy (Rust, server)"
+	@cargo clippy --all-targets -- -D warnings
+	@echo "==> Cargo clippy (Rust, wasm32 hydrate)"
+	@cargo clippy --target wasm32-unknown-unknown --no-default-features --features hydrate -- -D warnings
 	@echo "==> Cargo fmt check (Rust)"
 	@cargo fmt -- --check
 
 # JS + Rust 格式化（直接写入文件）。
-# 故意不含 dx fmt：dioxus-autofmt 0.7.10（dx 0.7.10）会改写 rsx! 事件闭包内
-# 的 Rust，插入重复行 / 悬空片段（如 `&web_file, ).ok();`）使代码无法编译
-# （DioxusLabs/dioxus#5682、#3007）。此前的注释搬运/删除问题已让 docker-fmt
-# 排除 dx fmt；现在它更进一步破坏编译，故从格式化/自动修复流水线移除。
-# lint / CI 均不校验 dx fmt 输出，移除无回归。需要 RSX 格式化时手动 `dx fmt`
-# 并务必 git diff 复核，必要时 checkout 被破坏的文件。
-# fix、docker-fmt、docker-fix 都经由本 target，同样不含 dx fmt。
+# fix、docker-fmt、docker-fix 都经由本 target。
 fmt: ## Biome format + cargo fmt（写入文件）
 	@echo "==> Biome format (libs, 写入文件)"
 	@cd libs && bun run format

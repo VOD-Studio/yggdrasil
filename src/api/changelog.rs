@@ -16,10 +16,10 @@
 //!
 //! 分类标签默认中性灰，只有新增（clay）与安全（danger）着色，见 `changelog.css`。
 
-// 与 settings 等模块一致：Dioxus `#[server]` 宏触发 deprecated/unit 提示，按项目惯例放行。
+// 与 settings 等模块一致：Leptos `#[server]` 宏触发 deprecated/unit 提示，按项目惯例放行。
 #![allow(clippy::unused_unit, deprecated)]
 
-use dioxus::prelude::*;
+use leptos::prelude::*;
 
 // ===========================================================================
 // 数据结构（双 target 共享：server 序列化 → WASM 反序列化渲染）
@@ -276,7 +276,7 @@ fn render_section(md: &str) -> String {
 /// 获取结构化的更新日志数据。
 ///
 /// 公开接口；首次调用解析 + 渲染后永久缓存，之后均为一次 `LazyLock` 读取 + clone。
-#[server(GetChangelog, "/api")]
+#[server(GetChangelog, endpoint = "get_changelog", input = leptos::server_fn::codec::Json)]
 pub async fn get_changelog() -> Result<ChangelogData, ServerFnError> {
     #[cfg(feature = "server")]
     {
@@ -295,7 +295,7 @@ pub async fn get_changelog() -> Result<ChangelogData, ServerFnError> {
 }
 
 /// 最新发布的版本号与日期（不含 Unreleased），供关于页显示。
-#[server(LatestRelease, "/api")]
+#[server(LatestRelease, endpoint = "latest_release", input = leptos::server_fn::codec::Json)]
 pub async fn latest_release() -> Result<Option<(String, Option<String>)>, ServerFnError> {
     let data = get_changelog().await?;
     Ok(data

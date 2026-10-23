@@ -2,12 +2,12 @@
 //!
 //! 校验标题、内容与 slug，生成唯一 slug 并渲染 Markdown，
 //! 在事务中写入 posts 表并同步标签关联，最后失效相关缓存。
-//! Dioxus server function，注册在 `/api` 路径下。
+//! Leptos server function，注册在 `/api` 路径下。
 //! 仅在 `feature = "server"` 启用的服务端构建中写入数据库。
 
 #![allow(clippy::too_many_arguments)]
 
-use dioxus::prelude::*;
+use leptos::prelude::*;
 
 #[cfg(feature = "server")]
 use super::helpers::get_current_admin_user;
@@ -19,7 +19,7 @@ use super::{service, types::write_response};
 ///
 /// 校验标题与内容非空、slug 格式合法；未提供 slug 时从标题自动生成。
 /// 首次发布时填充 published_at，并同步标签与缓存失效。
-#[server(CreatePost, "/api")]
+#[server(CreatePost, endpoint = "create_post", input = leptos::server_fn::codec::Json)]
 pub async fn create_post(
     title: String,
     slug: Option<String>,

@@ -2,9 +2,9 @@
 //!
 //! 按引用状态（全部/引用中/孤儿）筛选、按文件名/alt 搜索、按时间或大小排序。
 //! 同时返回各筛选维度计数与可清理孤儿统计，供 tabs 与「清理孤儿」按钮展示。
-//! Dioxus server function，注册在 `/api` 路径下，仅 admin 可用。
+//! Leptos server function，注册在 `/api` 路径下，仅 admin 可用。
 
-use dioxus::prelude::*;
+use leptos::prelude::*;
 
 use super::types::AssetListResponse;
 use crate::models::asset::{AssetFilter, AssetSort};
@@ -19,7 +19,7 @@ const PER_PAGE: i64 = 60;
 pub(crate) const PURGE_GRACE_DAYS: i32 = 7;
 
 /// 获取素材分页列表。
-#[server(ListAssets, "/api")]
+#[server(ListAssets, endpoint = "list_assets", input = leptos::server_fn::codec::Json)]
 pub async fn list_assets(
     filter: AssetFilter,
     query: String,

@@ -1,6 +1,6 @@
 //! 运行日志查看器接口。
 //!
-//! - 本文件：5 个 Dioxus server function（查询 / 导出 / target 列表 / 设置读写），
+//! - 本文件：5 个 Leptos server function（查询 / 导出 / target 列表 / 设置读写），
 //!   双目标编译，DB 逻辑 gate 在 `#[cfg(feature = "server")]` 块内。
 //! - [`crate::api::logs::capture`]：进程内 tracing Layer（日志捕获 mpsc/broadcast），server-only。
 //! - [`crate::api::logs::sse`]：`GET /api/logs/stream` 实时流 axum handler，server-only。
@@ -8,10 +8,10 @@
 //! 数据源：logs 表（迁移 025），由 [`crate::tasks::log_writer`] 批量写入、
 //! [`crate::tasks::log_purge`] 按保留策略裁剪。
 
-// 与 settings 模块一致：Dioxus `#[server]` 宏触发 deprecated/unit 提示，按项目惯例放行。
+// 与 settings 模块一致：Leptos `#[server]` 宏触发 deprecated/unit 提示，按项目惯例放行。
 #![allow(clippy::unused_unit, deprecated)]
 
-use dioxus::prelude::*;
+use leptos::prelude::*;
 
 #[cfg(feature = "server")]
 use crate::api::auth::get_current_admin_user;
@@ -116,7 +116,7 @@ fn where_clause(conditions: &[String]) -> String {
 /// - `query`：message 子串匹配（参数化 ILIKE）；
 /// - `before_id`：游标（`WHERE id < before_id`），None = 从最新开始；
 /// - `limit`：clamp 到 1..=500。
-#[server(GetLogs, "/api")]
+#[server(GetLogs, endpoint = "get_logs", input = leptos::server_fn::codec::Json)]
 pub async fn get_logs(
     levels: Vec<String>,
     target: Option<String>,
@@ -190,7 +190,7 @@ pub async fn get_logs(
 /// 导出运行日志为纯文本（每行 `[RFC3339] LEVEL target: message`）。
 ///
 /// 与 `get_logs` 同一筛选语义，按 id ASC（时间正序），上限 10000 行。
-#[server(ExportLogs, "/api")]
+#[server(ExportLogs, endpoint = "export_logs", input = leptos::server_fn::codec::Json)]
 pub async fn export_logs(
     levels: Vec<String>,
     target: Option<String>,
@@ -246,7 +246,7 @@ pub async fn export_logs(
 /// 日志 target 去重列表（前端筛选项）。
 ///
 /// 走 moka 缓存（60s TTL）：DISTINCT 全表扫在日志表上不值得每开页面跑一次。
-#[server(GetLogTargets, "/api")]
+#[server(GetLogTargets, endpoint = "get_log_targets", input = leptos::server_fn::codec::Json)]
 pub async fn get_log_targets() -> Result<Vec<String>, ServerFnError> {
     let _user = get_current_admin_user().await?;
 
@@ -274,7 +274,7 @@ pub async fn get_log_targets() -> Result<Vec<String>, ServerFnError> {
 /// 读取日志查看器配置。
 ///
 /// settings 表缺失键时回退到默认值，保证向后兼容（trash 模式，不做 env 播种）。
-#[server(GetLogSettings, "/api")]
+#[server(GetLogSettings, endpoint = "get_log_settings", input = leptos::server_fn::codec::Json)]
 pub async fn get_log_settings() -> Result<LogSettings, ServerFnError> {
     let _user = get_current_admin_user().await?;
 
@@ -317,7 +317,7 @@ pub async fn get_log_settings() -> Result<LogSettings, ServerFnError> {
 /// 更新日志查看器配置。
 ///
 /// 两个值都会被 clamp 到合法范围后写入。
-#[server(UpdateLogSettings, "/api")]
+#[server(UpdateLogSettings, endpoint = "update_log_settings", input = leptos::server_fn::codec::Json)]
 pub async fn update_log_settings(
     retention_days: i32,
     max_rows: i32,

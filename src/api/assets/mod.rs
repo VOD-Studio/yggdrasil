@@ -2,8 +2,8 @@
 //!
 //! 管理 `uploads/` 图片的注册表（assets 表）与引用关系（asset_refs 表）：
 //! 分页列表、删除保护、孤儿清理、全量重建索引。
-//! 全部为 Dioxus server function，仅 admin 可用。
-// 与 posts / comments 模块一致：Dioxus `#[server]` 宏触发 deprecated/unit 提示，按项目惯例放行。
+//! 全部为 Leptos server function，仅 admin 可用。
+// 与 posts / comments 模块一致：Leptos `#[server]` 宏触发 deprecated/unit 提示，按项目惯例放行。
 #![allow(clippy::unused_unit, deprecated, unused_imports)]
 
 /// 素材引用判定 SQL 片段（表别名固定为 `a`，即 assets）。

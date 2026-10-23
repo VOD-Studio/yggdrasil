@@ -1,16 +1,16 @@
 //! API 层根模块。
 //!
 //! 按职责划分子模块，包含两类接口：
-//! - Dioxus server function（`#[server(Name, "/api")]`），如 `auth`、`posts`；
+//! - Leptos server function（`#[server(endpoint = "name", ..)]`，URL 为 `/api/<name>`），如 `auth`、`posts`；
 //! - Axum 手动路由处理器，如 `upload`、`image`。
 
-/// 后台统计（侧栏数量）的 Dioxus server function。
+/// 后台统计（侧栏数量）的 Leptos server function。
 pub mod admin_stats;
-/// 素材管理（assets/asset_refs）的 Dioxus server function。
+/// 素材管理（assets/asset_refs）的 Leptos server function。
 pub mod assets;
-/// 认证相关的 Dioxus server function。
+/// 认证相关的 Leptos server function。
 pub mod auth;
-/// 更新日志（内嵌 CHANGELOG.md 渲染）的 Dioxus server function。
+/// 更新日志（内嵌 CHANGELOG.md 渲染）的 Leptos server function。
 pub mod changelog;
 /// 代码运行接口与数据结构。
 pub mod code_runner;
@@ -24,7 +24,7 @@ pub mod database;
 pub mod error;
 /// RSS 2.0 与 JSON Feed 1.1 订阅端点（server-only）。
 pub mod feed;
-/// 友链 CRUD 与前台列表的 Dioxus server function。
+/// 友链 CRUD 与前台列表的 Leptos server function。
 pub mod friends;
 /// 健康检查端点（liveness / readiness）。
 pub mod health;
@@ -37,7 +37,7 @@ pub mod katex;
 pub mod logs;
 /// Markdown 渲染与 HTML 清理。
 pub mod markdown;
-/// MCP 访问令牌管理（签发 / 列表 / 重查 / 撤销）的 Dioxus server function。
+/// MCP 访问令牌管理（签发 / 列表 / 重查 / 撤销）的 Leptos server function。
 pub mod mcp_tokens;
 /// mhchem 化学公式转译器（\ce/\pu → LaTeX，server-only）。
 #[cfg(feature = "server")]
@@ -48,7 +48,7 @@ pub mod notes;
 pub mod og;
 /// 文章 CRUD 相关接口。
 pub mod posts;
-/// 个人信息（当前账号资料与密码）的 Dioxus server function。
+/// 个人信息（当前账号资料与密码）的 Leptos server function。
 pub mod profile;
 /// 限流工具。
 pub mod rate_limit;

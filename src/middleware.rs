@@ -116,6 +116,22 @@ fn compression_layer(
         .quality(CompressionLevel::Precise(COMPRESSION_QUALITY))
 }
 
+/// `/pkg/` 下的文件名是否形如 `<name>.<22 位 [A-Za-z0-9_-]>.<扩展名>`（cargo-leptos 的内容哈希命名）。
+fn is_hashed_pkg_file(path: &str) -> bool {
+    let Some(file_name) = path.rsplit('/').next() else {
+        return false;
+    };
+    let parts: Vec<&str> = file_name.split('.').collect();
+    if parts.len() < 3 || parts[0].is_empty() || parts[parts.len() - 1].is_empty() {
+        return false;
+    }
+    let hash = parts[parts.len() - 2];
+    hash.len() == 22
+        && hash
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+}
+
 /// 根据请求路径和方法决定公开页面的 Cache-Control 头。
 /// 返回 None 表示不添加缓存头（保留现有行为或避免覆盖）。
 pub(crate) fn cache_control_for_path(
@@ -148,14 +164,18 @@ pub(crate) fn cache_control_for_path(
         return None;
     }
 
+    // /pkg/ 下 cargo-leptos 产物：文件名带内容哈希（`<name>.<22 位哈希>.<扩展名>`）的永不变化，
+    // 可长期缓存；其余（固定文件名）随部署变化。
+    if path.starts_with("/pkg/") {
+        return Some(HeaderValue::from_static(if is_hashed_pkg_file(path) {
+            "public, max-age=31536000, immutable"
+        } else {
+            "public, no-cache"
+        }));
+    }
+
     // 固定路径的脚本、样式和 WASM 会随部署变化，允许存储但每次使用前须校验。
-    // Dioxus 已为真正带内容哈希的资源设置 immutable；中间件不会覆盖该响应头。
-    if path.starts_with("/_dioxus/")
-        || path.starts_with("/wasm/")
-        || path.ends_with(".wasm")
-        || path.ends_with(".js")
-        || path.ends_with(".css")
-    {
+    if path.ends_with(".wasm") || path.ends_with(".js") || path.ends_with(".css") {
         return Some(HeaderValue::from_static("public, no-cache"));
     }
 
@@ -284,7 +304,7 @@ pub(crate) async fn ssr_generation_middleware(
 }
 
 /// Axum 中间件：把分享元信息所需的站点信息（地址、简介、站点图地址）放进 GET 请求
-/// 扩展，页面服务端渲染时由 `components::share_meta` 同步读取。位于 HTML 缓存内层，
+/// 扩展，页面服务端渲染时由 `components::share_meta` 同步读取（类型见 [`crate::models::share::ShareContext`]）。位于 HTML 缓存内层，
 /// 缓存命中时不执行。
 pub(crate) async fn share_context_middleware(
     mut req: axum::extract::Request,
@@ -334,7 +354,7 @@ pub(crate) async fn version_headers_middleware(
     response
 }
 
-/// 解析旧发布目录中可能命中的带 hash 资源。只放行 /assets/、/wasm/（dx 内容
+/// 解析旧发布目录中可能命中的带 hash 资源。只放行 /pkg/（cargo-leptos 内容
 /// 寻址产物目录）；URI path 保持百分号编码原样映射，任何非常规组件（`..`、
 /// 根/父目录引用）都不是 Normal 分量，直接拒绝；文件不存在返回 None。
 fn previous_asset_file(previous_root: &std::path::Path, path: &str) -> Option<std::path::PathBuf> {
@@ -343,7 +363,7 @@ fn previous_asset_file(previous_root: &std::path::Path, path: &str) -> Option<st
 
     let rel = path.strip_prefix('/')?;
     let top = rel.split('/').next()?;
-    if !matches!(top, "assets" | "wasm") {
+    if top != "pkg" {
         return None;
     }
     let rel_path = Path::new(rel);
@@ -360,12 +380,12 @@ fn previous_asset_file(previous_root: &std::path::Path, path: &str) -> Option<st
 /// Axum 中间件（由 startup.rs 按需挂载）：旧发布资源保留窗口（plan §6.7）。
 ///
 /// 滚动更新后，已打开标签页与反代/浏览器缓存的旧 HTML 仍引用上一发布的带
-/// hash 资源；新发布未收录这些文件时（404），回退到 `YGG_PREVIOUS_PUBLIC_DIR`
-/// 同路径文件。语义：
-/// - 只拦截 /assets/、/wasm/ 的 GET 404，未命中保留原 404，不遮蔽当前发布
+/// hash 资源（含按路由懒加载的 WASM 分包）；新发布未收录这些文件时（404），
+/// 回退到 `YGG_PREVIOUS_PUBLIC_DIR` 同路径文件。语义：
+/// - 只拦截 /pkg/ 的 GET 404，未命中保留原 404，不遮蔽当前发布
 ///   的真实缺失；
 /// - 复用 ServeFile 的内容类型推断与 `.br` 旁车协商（release public 自带旁车，
-///   与 dioxus 静态服务的预压缩行为一致）；
+///   与静态资源服务的预压缩行为一致）；
 /// - 命中即 immutable（内容寻址）并带 `x-previous-release` 标记，外层
 ///   add_cache_control 的 or_insert 不会覆盖。
 pub(crate) async fn previous_release_assets(
@@ -455,25 +475,33 @@ mod tests {
     #[test]
     fn previous_asset_window_only_serves_hashed_dirs_inside_root() {
         let root = std::env::temp_dir().join("ygg-prev-asset-test");
-        let assets = root.join("assets");
-        std::fs::create_dir_all(&assets).unwrap();
-        std::fs::write(assets.join("app-dxh123.js"), b"js").unwrap();
+        let pkg = root.join("pkg");
+        std::fs::create_dir_all(&pkg).unwrap();
+        std::fs::write(
+            pkg.join("legacy_chunk.AbCdEfGhIjKlMnOpQrStUv.wasm"),
+            b"wasm",
+        )
+        .unwrap();
         std::fs::create_dir_all(root.join("uploads")).unwrap();
         std::fs::write(root.join("uploads").join("secret.txt"), b"secret").unwrap();
 
         let get = |path: &str| previous_asset_file(&root, path);
         assert_eq!(
-            get("/assets/app-dxh123.js"),
-            Some(assets.join("app-dxh123.js"))
+            get("/pkg/legacy_chunk.AbCdEfGhIjKlMnOpQrStUv.wasm"),
+            Some(pkg.join("legacy_chunk.AbCdEfGhIjKlMnOpQrStUv.wasm"))
         );
         // 缺失文件与目录外前缀一律 None；非 Normal 分量（含 %2e%2e 编码形态的
         // 字面量不匹配文件名，../ 形态则被分量检查拒绝）。
-        assert_eq!(get("/assets/missing.js"), None);
-        assert_eq!(get("/assets/"), None);
+        assert_eq!(get("/pkg/missing.js"), None);
+        assert_eq!(get("/pkg/"), None);
+        assert_eq!(
+            get("/assets/legacy_chunk.AbCdEfGhIjKlMnOpQrStUv.wasm"),
+            None
+        );
         assert_eq!(get("/uploads/secret.txt"), None);
         assert_eq!(get("/api/posts"), None);
-        assert_eq!(get("/assets/../uploads/secret.txt"), None);
-        assert_eq!(get("/assets/%2e%2e/uploads/secret.txt"), None);
+        assert_eq!(get("/pkg/../uploads/secret.txt"), None);
+        assert_eq!(get("/pkg/%2e%2e/uploads/secret.txt"), None);
         std::fs::remove_dir_all(&root).ok();
     }
 
@@ -526,9 +554,8 @@ mod tests {
             "/yggdrasil-core/yggdrasil-core.js",
             "/yggdrasil-core/yggdrasil-enhance.js",
             "/mermaid/mermaid.js",
-            "/wasm/app.wasm",
-            "/wasm/app.js",
-            "/_dioxus/assets/main.js",
+            "/pkg/yggdrasil.wasm",
+            "/pkg/yggdrasil.js",
         ] {
             for method in [Method::GET, Method::HEAD] {
                 assert_eq!(
@@ -537,6 +564,36 @@ mod tests {
                     "{path}"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn hashed_pkg_assets_are_immutable() {
+        for path in [
+            "/pkg/yggdrasil.AbCdEfGhIjKlMnOpQrStUv.wasm",
+            "/pkg/yggdrasil.AbCdEfGhIjKlMnOpQrStUv.js",
+            "/pkg/home_route_view.A-_dEfGhIjKlMnOpQrStU0.wasm",
+        ] {
+            for method in [Method::GET, Method::HEAD] {
+                assert_eq!(
+                    cache_value(path, method).as_deref(),
+                    Some("public, max-age=31536000, immutable"),
+                    "{path}"
+                );
+            }
+        }
+        // 哈希长度不对或缺少哈希段的 /pkg/ 文件仍需校验。
+        for path in [
+            "/pkg/yggdrasil.short.wasm",
+            "/pkg/yggdrasil.AbCdEfGhIjKlMnOpQrStUvX.wasm",
+            "/pkg/yggdrasil.AbCdEfGhIjKlMnOpQrSt!v.wasm",
+            "/pkg/yggdrasil.json",
+        ] {
+            assert_eq!(
+                cache_value(path, Method::GET).as_deref(),
+                Some("public, no-cache"),
+                "{path}"
+            );
         }
     }
 
