@@ -296,13 +296,18 @@ export const DisplayMath = Node.create({
   },
 
   markdownTokenName: 'mathBlock',
+  // start 用于切断段落:必须只认行首 `$$`。若返回行中间位置(如行内代码 `$$...$$` 里的 $$),
+  // marked 会在该处切断段落并把后续 $$ 当成块级公式起点,之后所有 $$ 配对错位、吞掉整节内容。
   markdownTokenizer: {
     name: 'mathBlock',
     level: 'block',
-    start: (src: string) => src.indexOf('$$'),
+    start: (src: string) => {
+      const m = /(^|\n) {0,3}\$\$/.exec(src);
+      return m ? m.index + m[1].length : -1;
+    },
     tokenize: (src: string) => {
       // 跨行非贪婪;闭合 $$ 后允许换行。
-      const m = /^\$\$([\s\S]+?)\$\$(?:\n|$)/.exec(src);
+      const m = /^ {0,3}\$\$([\s\S]+?)\$\$[ \t]*(?:\n|$)/.exec(src);
       if (!m) return undefined;
       return { type: 'mathBlock', raw: m[0], text: m[1].trim() };
     },

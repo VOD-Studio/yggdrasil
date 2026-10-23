@@ -9,6 +9,8 @@
  * | Markdown            | ✔    | ✔       | getMarkdown 进出都靠它 |
  * | InlineMath/DisplayMath | ✔ | ✔       | 评论渲染器支持 $..$，输入规则给 WYSIWYG |
  * | Footnote*           | ✔    | —       | 评论用脚注无意义 |
+ * | GfmAlert            | ✔    | —       | `> [!NOTE]` 等 GFM 提示块 |
+ * | DefinitionList*     | ✔    | —       | `术语\n: 定义` 定义列表 |
  * | CodeBlockLowlight   | ✔+NV | ✔       | comment 去掉 NodeView（无运行/无 mermaid 预览） |
  * | CodeBlockBackspaceFix | ✔  | ✔       | |
  * | TableKit            | ✔    | —       | 评论框表格 UI 过重 |
@@ -31,7 +33,9 @@ import StarterKit from '@tiptap/starter-kit';
 import { CodeBlockBackspaceFix } from './code-block-backspace-fix';
 import { CodeBlockNodeView } from './code-block-view';
 import { CommentBubbleMenu } from './comment-bubble-menu';
+import { DefinitionDescription, DefinitionList, DefinitionTerm } from './definition-list';
 import { FootnoteDef, FootnoteNumbering, FootnoteRef } from './footnote';
+import { GfmAlert } from './gfm-alert';
 import { lowlight } from './highlight';
 import { DisplayMath, InlineMath } from './math';
 import { SlashCommand } from './slash-command';
@@ -53,7 +57,7 @@ export interface BuildExtensionsParams {
   getCoordinator: () => UploadCoordinator | null;
 }
 
-/** 按变体装配扩展数组。数组顺序敏感：数学/脚注节点必须在 Markdown 之后注册。 */
+/** 按变体装配扩展数组。数组顺序敏感：数学/脚注/提示块/定义列表节点必须在 Markdown 之后注册。 */
 export function buildExtensions(params: BuildExtensionsParams): AnyExtension[] {
   const isComment = params.variant === 'comment';
 
@@ -63,7 +67,7 @@ export function buildExtensions(params: BuildExtensionsParams): AnyExtension[] {
       // 用条件展开而非 undefined 赋值，避免 configure 深合并吞掉默认值。
       ...(isComment
         ? { heading: false as const, horizontalRule: false as const }
-        : { heading: { levels: [1, 2, 3] as const } }),
+        : { heading: { levels: [1, 2, 3, 4, 5, 6] as const } }),
       link: {
         openOnClick: false,
         autolink: true,
@@ -79,9 +83,17 @@ export function buildExtensions(params: BuildExtensionsParams): AnyExtension[] {
     DisplayMath,
   ];
 
-  // 脚注仅 full（同样依赖 markdown spec 收集时机，须在 Markdown 之后）。
+  // 脚注/提示块/定义列表仅 full（同样依赖 markdown spec 收集时机，须在 Markdown 之后）。
   if (!isComment) {
-    extensions.push(FootnoteRef, FootnoteDef, FootnoteNumbering);
+    extensions.push(
+      FootnoteRef,
+      FootnoteDef,
+      FootnoteNumbering,
+      GfmAlert,
+      DefinitionList,
+      DefinitionTerm,
+      DefinitionDescription,
+    );
   }
 
   // 代码块：full 带 NodeView（语言选择/mermaid 预览/运行按钮），comment 纯高亮。

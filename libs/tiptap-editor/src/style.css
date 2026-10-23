@@ -78,6 +78,11 @@
   line-height: 1.5;
 }
 
+.tiptap-editor :is(h5, h6) {
+  color: var(--color-fg-2);
+  font-size: 0.9em;
+}
+
 /* ---- 段落与行内元素 ---- */
 .tiptap-editor p {
   margin: 0 0 1.2em;
@@ -148,6 +153,62 @@
 
 .tiptap-editor blockquote p:last-child {
   margin-bottom: 0;
+}
+
+/* ---- 提示块：> [!NOTE] 等 GFM 告示（与前台 article.css 一致） ---- */
+.tiptap-editor blockquote[class^='markdown-alert-'] {
+  padding: 0.75em 1em;
+  border-radius: 10px;
+  background-color: var(--color-ink-1);
+  box-shadow: none;
+  color: var(--color-fg);
+  font-family: var(--font-sans);
+  font-size: 0.91em;
+  line-height: 1.75;
+}
+
+.tiptap-editor blockquote[class^='markdown-alert-']::before {
+  content: '说明';
+  display: block;
+  margin-bottom: 0.15em;
+  color: var(--color-fg-2);
+  font-weight: 600;
+}
+
+.tiptap-editor blockquote.markdown-alert-tip {
+  background-color: var(--color-success-soft);
+}
+
+.tiptap-editor blockquote.markdown-alert-tip::before {
+  content: '提示';
+  color: var(--color-success);
+}
+
+.tiptap-editor blockquote.markdown-alert-important {
+  background-color: var(--color-clay-soft);
+}
+
+.tiptap-editor blockquote.markdown-alert-important::before {
+  content: '重要';
+  color: var(--color-clay-text);
+}
+
+.tiptap-editor blockquote.markdown-alert-warning {
+  background-color: var(--color-warning-soft);
+}
+
+.tiptap-editor blockquote.markdown-alert-warning::before {
+  content: '注意';
+  color: var(--color-warning);
+}
+
+.tiptap-editor blockquote.markdown-alert-caution {
+  background-color: var(--color-danger-soft);
+}
+
+.tiptap-editor blockquote.markdown-alert-caution::before {
+  content: '警告';
+  color: var(--color-danger);
 }
 
 /* ---- 列表 ---- */
@@ -436,12 +497,6 @@
   margin: 0;
 }
 
-.tiptap-editor ul[data-type='taskList'] li[data-checked='true'] > div {
-  color: var(--color-fg-3);
-  text-decoration: line-through;
-  text-decoration-color: var(--color-ink-4);
-}
-
 /* ---- 图片 ---- */
 .tiptap-editor img {
   display: block;
@@ -619,6 +674,19 @@
 .tiptap-toggle-btn:focus-visible {
   outline: none;
   box-shadow: var(--shadow-focus);
+}
+
+/* 源码锁定提示：富文本往返会改动原文时显示 */
+.tiptap-source-lock {
+  position: relative;
+  z-index: 6;
+  margin: 0 0 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  background-color: var(--color-warning-soft);
+  color: var(--color-fg-2);
+  font-size: 0.8125rem;
+  line-height: 1.6;
 }
 
 /* ---- 源码模式文本框 ---- */

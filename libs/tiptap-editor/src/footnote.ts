@@ -32,9 +32,10 @@ const FOOTNOTE_REF_REGEX = /^\[\^([^\]\n]+)\](?!:)/;
 // input rule:行内输入 `[^label]` 后空格/标点触发(仿 InlineMath 的行尾锚定)。
 // 要求 `[^` 前是空白或行首,避免误吞普通文本里的 `[`。
 const FOOTNOTE_REF_INPUT_REGEX = /(?:^|\s)\[\^([^\]\n\\]+)\](?:[\s。，、；：！？.,;:!?]|$)$/;
-// block `[^label]: 内容` 定义首行 + 后续缩进续行(4 空格或 tab)。
+// block `[^label]: 内容` 定义首行 + 后续缩进续行(4 空格或 tab);续行之间允许夹空行(多段脚注)。
 // 续行收集规则与服务端 pulldown-cmark GFM 模式一致。
-const FOOTNOTE_DEF_REGEX = /^\[\^([^\]\n]+)\]:[ \t]*(.*)\n?((?:[ \t]+[^\n]*(?:\n|$))*)/;
+const FOOTNOTE_DEF_REGEX =
+  /^\[\^([^\]\n]+)\]:[ \t]*(.*)\n?((?:(?:[ \t]*\n)*[ \t]+\S[^\n]*(?:\n|$))*)/;
 
 /** storage 里存放的编号表,NodeView 读取它绘制编号。 */
 export interface FootnoteNumberingStorage {
@@ -409,7 +410,11 @@ export const FootnoteDef = Node.create({
   markdownTokenizer: {
     name: 'footnoteDef',
     level: 'block',
-    start: (src: string) => src.indexOf('[^'),
+    start: (src: string) => {
+      // 只认行首:行中间的 `[^` 是脚注引用,不能切断段落。
+      const m = /(^|\n)\[\^[^\]\n]+\]:/.exec(src);
+      return m ? m.index + m[1].length : -1;
+    },
     tokenize: (src: string) => {
       const m = FOOTNOTE_DEF_REGEX.exec(src);
       if (!m) return undefined;

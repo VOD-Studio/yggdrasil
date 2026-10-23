@@ -172,4 +172,16 @@ describe('脚注编号 - 实时分配', () => {
     });
     expect(getDefinitions(editor).get('1')).toBe('定义内容');
   });
+  it('多段脚注定义保持为一个 footnoteDef,引用前不被换行切断', () => {
+    editor.commands.setContent('文末[^a]。\n\n[^a]: 第一段。\n    续行。\n\n    第二段。\n', {
+      contentType: 'markdown',
+    });
+    const defs = collectNodes(editor, 'footnoteDef');
+    expect(defs).toHaveLength(1);
+    expect(defs[0].content).toBe('第一段。\n续行。\n\n第二段。');
+    expect(collectNodes(editor, 'codeBlock')).toHaveLength(0);
+    const md = editor.getMarkdown();
+    expect(md).toContain('文末[^a]。');
+    expect(md).toContain('\n\n    第二段。');
+  });
 });

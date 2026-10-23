@@ -132,3 +132,20 @@ describe('TiptapEditor.create 全路径挂载', () => {
     container.remove();
   });
 });
+
+describe('full 变体标题层级', () => {
+  it('H4–H6 保持原级别渲染，不回退成 H1', () => {
+    const el = document.createElement('div');
+    document.body.appendChild(el);
+    const editor = new Editor({
+      element: el,
+      extensions: buildExtensions({ ...base, variant: 'full' }),
+    });
+    editor.commands.setContent('#### 四\n\n##### 五\n\n###### 六', { contentType: 'markdown' });
+    const html = editor.getHTML();
+    expect(html).toContain('<h4>');
+    expect(html).toContain('<h5>');
+    expect(html).toContain('<h6>');
+    editor.destroy();
+  });
+});

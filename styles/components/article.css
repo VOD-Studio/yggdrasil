@@ -243,10 +243,17 @@
   /* 任务列表：pulldown-cmark 输出裸 <li><input type="checkbox">，用 :has() 识别。 */
   .md-content li:has(> input[type="checkbox"]) {
     display: flex;
+    flex-wrap: wrap;
     align-items: baseline;
-    gap: 0.55em;
+    gap: 0 0.55em;
     margin-left: -1.4em;
     list-style: none;
+  }
+
+  /* 嵌套列表换到下一行，从父项文字处缩进，与编辑器任务列表一致 */
+  .md-content li:has(> input[type="checkbox"]) > :is(ul, ol) {
+    flex-basis: calc(100% - 1.55em);
+    margin-left: 1.55em;
   }
 
   .md-content li > input[type="checkbox"] {

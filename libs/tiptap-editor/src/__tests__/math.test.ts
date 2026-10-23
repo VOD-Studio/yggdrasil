@@ -198,4 +198,12 @@ describe('数学公式节点 - 边界情况', () => {
     const md = editor.getMarkdown();
     expect(md).toContain(badTex);
   });
+  it('行内代码里的 $$ 不会被当成块级公式起点', () => {
+    const src =
+      '块级公式用 `$$...$$`，独占一行居中：\n\n$$\n\\sum_{i=1}^{n} i\n$$\n\n$$\n\\lim x\n$$';
+    editor.commands.setContent(src, { contentType: 'markdown' });
+    const blocks = collectMathNodes(editor).filter((n) => n.type === 'mathBlock');
+    expect(blocks.map((b) => b.latex)).toEqual(['\\sum_{i=1}^{n} i', '\\lim x']);
+    expect(editor.getMarkdown()).toContain('用 `$$...$$`，独占');
+  });
 });
