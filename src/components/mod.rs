@@ -46,8 +46,6 @@ pub mod footer;
 pub mod frontend_layout;
 /// 顶部导航栏组件。
 pub mod header;
-/// 前台布局级全局音乐播放器（配置为空时不加载）。
-pub(crate) mod music_player;
 /// 导航项生成组件。
 pub mod nav;
 /// ⌘K 面板公共部分：打开句柄、全局快捷键、文本匹配与面板外壳（前台搜索与后台命令面板共用）。

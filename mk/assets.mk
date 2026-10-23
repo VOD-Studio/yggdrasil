@@ -50,14 +50,13 @@ css-watch: ## 监听并持续生成 Tailwind CSS
 # stamp 写在成功构建之后。src 目录也参与依赖，文件新增/删除同样会使缓存失效。
 DEV_ASSET_DIR := target/dev-assets
 DEV_ASSET_JOBS ?= 4
-DEV_LIBS := shared codemirror-editor lightbox mermaid-renderer music-player tiptap-editor xterm-terminal yggdrasil-core
+DEV_LIBS := shared codemirror-editor lightbox mermaid-renderer tiptap-editor xterm-terminal yggdrasil-core
 DEV_COMMON_INPUTS := mk/assets.mk libs/package.json libs/bun.lock libs/bunfig.toml libs/tsconfig.base.json $(wildcard libs/patches/*) libs/patches $(wildcard libs/node_modules/.bun)
 dev_lib_inputs = libs/$(1) $(shell find libs/$(1)/src -type f -o -type d) $(wildcard libs/$(1)/*config*.ts) libs/$(1)/tsconfig.json libs/$(1)/package.json
 
 DEV_OUTPUTS_codemirror-editor := public/codemirror/editor.js public/codemirror/editor.js.map
 DEV_OUTPUTS_lightbox := public/lightbox/lightbox.js public/lightbox/lightbox.js.map public/lightbox/lightbox.css
 DEV_OUTPUTS_mermaid-renderer := public/mermaid/mermaid.js public/mermaid/mermaid.js.map
-DEV_OUTPUTS_music-player := public/music-player/player.js public/music-player/player.js.map
 DEV_OUTPUTS_tiptap-editor := public/tiptap/editor.js public/tiptap/editor.js.map public/tiptap/editor.css
 DEV_OUTPUTS_xterm-terminal := public/xterm/terminal.js public/xterm/terminal.js.map public/xterm/terminal.css
 DEV_OUTPUTS_yggdrasil-core := public/yggdrasil-core/yggdrasil-core.js public/yggdrasil-core/yggdrasil-core.js.map public/yggdrasil-core/yggdrasil-core.css public/yggdrasil-core/yggdrasil-enhance.js public/yggdrasil-core/yggdrasil-enhance.js.map

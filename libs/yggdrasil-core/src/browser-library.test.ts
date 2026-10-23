@@ -17,12 +17,7 @@ beforeEach(async () => {
 afterEach(() => {
   vi.restoreAllMocks();
   document.head.innerHTML = '';
-  for (const name of [
-    'TiptapEditor',
-    'CodeMirrorEditor',
-    'XtermTerminal',
-    'YggdrasilMusicPlayer',
-  ]) {
+  for (const name of ['TiptapEditor', 'CodeMirrorEditor', 'XtermTerminal']) {
     Reflect.deleteProperty(window, name);
   }
 });
@@ -56,19 +51,6 @@ describe('浏览器库按需加载', () => {
     expect(document.querySelector('script')?.getAttribute('src')).toBe('/codemirror/editor.js?v=3');
     expect(document.querySelector('link')).toBeNull();
     Reflect.set(window, 'CodeMirrorEditor', {});
-    document.querySelector('script')!.dispatchEvent(new Event('load'));
-    await work;
-  });
-
-  it('音乐播放器独立按需加载，不额外加载编辑器、终端或 CSS', async () => {
-    const work = load('music-player');
-    expect(load('music-player')).toBe(work);
-    expect(document.querySelectorAll('script')).toHaveLength(1);
-    expect(document.querySelector('script')?.getAttribute('src')).toBe(
-      '/music-player/player.js?v=1',
-    );
-    expect(document.querySelector('link')).toBeNull();
-    Reflect.set(window, 'YggdrasilMusicPlayer', {});
     document.querySelector('script')!.dispatchEvent(new Event('load'));
     await work;
   });

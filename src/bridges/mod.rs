@@ -10,8 +10,6 @@
 pub mod codemirror;
 /// 浏览器库的按需加载与错误重试。
 pub mod library;
-/// 前台音乐播放器的布局生命周期桥接。
-pub mod music_player;
 /// 页面过渡与按历史记录保存的客户端状态。
 pub mod navigation;
 /// Tiptap 富文本编辑器桥接：共享类型（UploadsInFlight/UploadErrorEntry）两端都编译；

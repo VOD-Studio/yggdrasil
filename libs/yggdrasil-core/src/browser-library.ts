@@ -6,7 +6,6 @@ const libraries = {
     style: '/tiptap/editor.css?v=3',
   },
   codemirror: { global: 'CodeMirrorEditor', script: '/codemirror/editor.js?v=3' },
-  'music-player': { global: 'YggdrasilMusicPlayer', script: '/music-player/player.js?v=1' },
   xterm: {
     global: 'XtermTerminal',
     script: '/xterm/terminal.js?v=2',
