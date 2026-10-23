@@ -27,26 +27,26 @@ const CLIENTS: [(&str, &str, &str); 3] = [
     ),
 ];
 
-/// 正文能用的功能：标题、说明与最小写法。
+/// 正文支持的功能：标题、说明与最小写法。
 const FEATURES: [(&str, &str, &str); 4] = [
     (
         "可运行代码",
-        "围栏语言名后加 runnable，读者可以在页面里直接运行。",
+        "围栏语言名后加 runnable，阅读页提供运行按钮。",
         "```python runnable\nprint(sum([2, 4, 6]))\n```",
     ),
     (
         "Mermaid 图表",
-        "流程图、时序图与关系图直接写成代码，跟随明暗主题。",
+        "流程图、时序图与关系图以代码形式书写，跟随明暗主题。",
         "```mermaid\nflowchart LR\n  草稿 --> 审阅 --> 发布\n```",
     ),
     (
         "数学与化学公式",
-        "行内与独立公式用 KaTeX 排版，化学式用 \\ce{}。",
+        "行内与独立公式使用 KaTeX 排版，化学式使用 \\ce{}。",
         "$$E = mc^2$$\n\n$\\ce{2H2 + O2 -> 2H2O}$",
     ),
     (
         "脚注、表格与折叠",
-        "补充说明放进脚注，长输出收进折叠内容。",
+        "支持脚注、表格、任务列表与折叠内容。",
         "适用条件见脚注[^note]。\n\n[^note]: 输入在计算期间不变。",
     ),
 ];
@@ -79,13 +79,13 @@ pub fn WritingGuide() -> Element {
                         h2 { class: "writing-step-title", "开始写作" }
                         p { class: "writing-step-description", "AI 只会保存草稿，发布仍由你在后台确认。可以这样开头：" }
                         blockquote { class: "writing-example",
-                            "让 Agent 使用 yggdrasil-writing，写一篇带可运行示例的文章，先保存为草稿。"
+                            "让 Agent 使用 yggdrasil-writing，写一篇文章，先保存为草稿。"
                         }
                     }
                 }
             }
             section { class: "writing-features", aria_labelledby: "writing-features-title",
-                h2 { id: "writing-features-title", class: "writing-section-title", "正文能用的功能" }
+                h2 { id: "writing-features-title", class: "writing-section-title", "正文支持的功能" }
                 div { class: "writing-feature-grid",
                     for (title, description, code) in FEATURES {
                         div { key: "{title}", class: "writing-feature",
