@@ -3,7 +3,7 @@
 //! 在文章详情页渲染封面大图，使用 blur-up 双层结构与 lightbox.js 灯箱。
 //! 封面为单张（data-single），不参与正文图集切换。
 
-use dioxus::prelude::*;
+use leptos::prelude::*;
 
 /// 文章封面组件。
 ///
@@ -15,7 +15,10 @@ use dioxus::prelude::*;
 /// 由 `lightbox.js` 接管点击放大（原地缩放飞出 + 原图展示）。
 /// 服务端读取真实尺寸写入 `--ar`，确保占位期间维持正确宽高比。
 #[component]
-pub fn PostCover(src: String, #[props(default)] post_id: Option<i32>) -> Element {
+pub fn PostCover(
+    #[prop(into)] src: String,
+    #[prop(optional, into)] post_id: MaybeProp<i32>,
+) -> impl IntoView {
     // SSR 时读真实尺寸算 --ar；WASM 端不读（HTML 已在 SSR 写入）。
     let ar_style = {
         #[cfg_attr(not(feature = "server"), allow(unused_mut))]
@@ -46,25 +49,18 @@ pub fn PostCover(src: String, #[props(default)] post_id: Option<i32>) -> Element
     } else {
         format!("{}?w=1200", src)
     };
+    let post_id = post_id.get_untracked();
 
-    rsx! {
-        figure { class: "entry-cover",
-            "data-vt-post-id": post_id.map(|id| id.to_string()),
-            "data-vt-role": post_id.map(|_| "cover"),
-            span {
-                class: "blur-img entry-cover-blur lightbox-single",
-                style: "{ar_style}",
-                img {
-                    class: "blur-img-placeholder",
-                    src: "{placeholder_src}",
-                    alt: "封面图片",
-                }
-                img {
-                    class: "blur-img-full",
-                    "data-src": "{full_src}",
-                    alt: "封面图片",
-                }
-            }
-        }
+    view! {
+        <figure
+            class="entry-cover"
+            data-vt-post-id=post_id.map(|id| id.to_string())
+            data-vt-role=post_id.map(|_| "cover")
+        >
+            <span class="blur-img entry-cover-blur lightbox-single" style=ar_style>
+                <img class="blur-img-placeholder" src=placeholder_src alt="封面图片"/>
+                <img class="blur-img-full" data-src=full_src alt="封面图片"/>
+            </span>
+        </figure>
     }
 }

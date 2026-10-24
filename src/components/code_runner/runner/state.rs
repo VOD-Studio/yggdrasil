@@ -164,7 +164,7 @@ impl RunState {
 
     /// 提交被服务端拒绝：限流消息单独归类，其余视为系统失败。
     #[cfg(any(target_arch = "wasm32", test))]
-    pub fn rejected(error: &dioxus::prelude::ServerFnError) -> Self {
+    pub fn rejected(error: &leptos::prelude::ServerFnError) -> Self {
         let message = crate::utils::error::error_reason(error)
             .unwrap_or_else(|| "运行服务暂时不可用，请稍后再试".to_string());
         if message.contains("频繁") || message.contains("次数已达上限") {
@@ -292,7 +292,7 @@ mod tests {
 
     #[test]
     fn rejected_submission_separates_rate_limits() {
-        use dioxus::prelude::ServerFnError;
+        use leptos::prelude::ServerFnError;
         let limited = RunState::rejected(&ServerFnError::new("请求过于频繁，请稍后再试"));
         assert_eq!(limited.label(), "请求过频");
         assert_eq!(limited.note().as_deref(), Some("请求过于频繁，请稍后再试"));
