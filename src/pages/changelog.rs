@@ -1,6 +1,7 @@
 //! 更新日志页面模块。
 //!
-//! 对应路由 `/changelog`（`SsrMode::InOrder`）。
+//! 对应路由 `/changelog`（`SsrMode::Async`：增强脚本声明位于 `<Suspense>` 内，InOrder 流式
+//! 输出开始后无法再写入 `<head>`，直达访问会丢失 `yggdrasil-enhance.js`）。
 //!
 //! 数据获取：`LazyRoute::data` 创建 `Resource` 调用 `get_changelog` server function，
 //! 取回编译期内嵌 CHANGELOG.md 的**结构化解析结果**（版本 → 分类 → 条目 HTML）。

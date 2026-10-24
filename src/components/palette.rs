@@ -456,7 +456,7 @@ fn PaletteRow(
 /// - `on_pick`：选中条目，参数 `(扁平序号, 是否按住 ⌘/Ctrl)`
 /// - `on_close`：点击遮罩、Esc 按钮或空输入时按 Escape
 #[component]
-pub fn PaletteShell(
+pub(crate) fn PaletteShell(
     state: PaletteState,
     label: &'static str,
     input_label: &'static str,

@@ -177,7 +177,7 @@ pub fn App() -> impl IntoView {
                         <Route
                             path=path!("about/components")
                             view={Lazy::<ShowcaseRoute>::new()}
-                            ssr=SsrMode::InOrder
+                            ssr=SsrMode::Async
                         />
                         <Route
                             path=path!("about/components/:component")
@@ -192,7 +192,7 @@ pub fn App() -> impl IntoView {
                         <Route
                             path=path!("changelog")
                             view={Lazy::<ChangelogRoute>::new()}
-                            ssr=SsrMode::InOrder
+                            ssr=SsrMode::Async
                         />
                     </ParentRoute>
                     <ParentRoute path=path!("admin") view={Lazy::<AdminShellRoute>::new()}>

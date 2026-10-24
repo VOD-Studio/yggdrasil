@@ -255,7 +255,7 @@ pub fn FrontendLayout(#[prop(optional)] children: Option<ChildrenFn>) -> impl In
 /// - `max_width`：主区宽度类（可随路径变化）
 /// - `min_height`：最外层容器的最小高度类
 #[component]
-pub fn FrontendShell(
+pub(crate) fn FrontendShell(
     #[prop(into)] header: ViewFn,
     #[prop(into)] main_content: ViewFn,
     #[prop(into)] footer: ViewFn,

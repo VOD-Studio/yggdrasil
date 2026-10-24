@@ -672,7 +672,9 @@ mod tests {
         Owner::new().with(|| {
             let html = view! { <LightboxPreview detail=true/> }.to_html();
             assert!(
-                html.contains(r#"data-showcase-lightbox-owner="showcase-browser-lightbox-gallery-detail""#),
+                html.contains(
+                    r#"data-showcase-lightbox-owner="showcase-browser-lightbox-gallery-detail""#
+                ),
                 "{html}"
             );
             assert!(html.contains("点击图片打开灯箱"), "{html}");

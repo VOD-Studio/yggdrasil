@@ -337,7 +337,9 @@ fn alert_box_snippet(variant: &str, message: &str) -> String {
 fn highlighted_view(code: &str) -> impl IntoView {
     highlight_snippet(code)
         .into_iter()
-        .map(|token| view! { <span class=token.class.unwrap_or("")>{token.text.to_string()}</span> })
+        .map(
+            |token| view! { <span class=token.class.unwrap_or("")>{token.text.to_string()}</span> },
+        )
         .collect_view()
 }
 
@@ -1236,8 +1238,9 @@ fn ComponentPreview(
                 />
             }
             .into_any(),
-            _ => view! { <live_previews::LiveComponentPreview name=name detail=detail/> }
-                .into_any(),
+            _ => {
+                view! { <live_previews::LiveComponentPreview name=name detail=detail/> }.into_any()
+            }
         },
         PreviewRoute::Scene => {
             view! { <live_previews::SceneComponentPreview name=name/> }.into_any()
