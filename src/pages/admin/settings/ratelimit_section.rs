@@ -2,7 +2,7 @@
 //!
 //! 写入数据库，下次启动生效（限流桶在首次请求时从启动配置构建）。
 
-use dioxus::prelude::*;
+use leptos::prelude::*;
 
 use super::kit::{use_section, SettingRow, SettingsCard};
 use super::SettingsSection;
@@ -131,89 +131,86 @@ const BUCKETS: [Bucket; 9] = [
 
 /// 接口限流分区组件。
 #[component]
-pub fn RateLimitSection() -> Element {
+pub fn RateLimitSection() -> impl IntoView {
     let st = use_section(SettingsSection::RateLimit, get_rate_limit_settings, save);
-    let mut draft = st.draft;
-    let d = draft();
-    rsx! {
-        SettingsCard {
-            section: SettingsSection::RateLimit,
-            description: "按 IP 计的令牌桶（MCP 两项按令牌计）：每秒补充的请求数与可以一次用掉的突发上限。",
-            ready: st.ready(),
-            load_failed: (st.load_failed)(),
-            failed: st.failed(),
-            for (label, key, get, set) in BUCKETS {
-                {
-                    let (per_sec, burst) = get(&d);
-                    rsx! {
-                        SettingRow { key: "{key}", label,
-                            div { class: "settings-pair",
-                                NumberInput {
-                                    id: "rl-{key}-rate",
-                                    value: per_sec as i64,
-                                    min: 1,
-                                    max: 10_000,
-                                    unit: "次/秒",
-                                    onchange: move |v: i64| draft.with_mut(|s| {
-                                        let (_, b) = get(s);
-                                        set(s, v as u32, b);
-                                    }),
-                                }
-                                NumberInput {
-                                    id: "rl-{key}-burst",
-                                    value: burst as i64,
-                                    min: 1,
-                                    max: 10_000,
-                                    unit: "突发",
-                                    onchange: move |v: i64| draft.with_mut(|s| {
-                                        let (a, _) = get(s);
-                                        set(s, a, v as u32);
-                                    }),
-                                }
-                            }
-                        }
+    view! {
+        <SettingsCard
+            section=SettingsSection::RateLimit
+            description="按 IP 计的令牌桶（MCP 两项按令牌计）：每秒补充的请求数与可以一次用掉的突发上限。"
+            ready=st.ready()
+            load_failed=st.load_failed()
+            failed=st.failed()
+        >
+            {BUCKETS
+                .into_iter()
+                .map(|(label, key, get, set)| {
+                    view! {
+                        <SettingRow label=label>
+                            <div class="settings-pair">
+                                <NumberInput
+                                    id=format!("rl-{key}-rate")
+                                    value=st.field(move |d| i64::from(get(d).0))
+                                    min=1
+                                    max=10_000
+                                    unit="次/秒"
+                                    onchange=move |v: i64| {
+                                        st.edit(|s| {
+                                            let (_, b) = get(s);
+                                            set(s, v as u32, b);
+                                        })
+                                    }
+                                />
+                                <NumberInput
+                                    id=format!("rl-{key}-burst")
+                                    value=st.field(move |d| i64::from(get(d).1))
+                                    min=1
+                                    max=10_000
+                                    unit="突发"
+                                    onchange=move |v: i64| {
+                                        st.edit(|s| {
+                                            let (a, _) = get(s);
+                                            set(s, a, v as u32);
+                                        })
+                                    }
+                                />
+                            </div>
+                        </SettingRow>
                     }
-                }
-            }
-            SettingRow {
-                label: "评论传图日限额",
-                html_for: "rl-comment-upload-daily".to_string(),
-                NumberInput {
-                    id: "rl-comment-upload-daily",
-                    value: d.comment_upload_daily as i64,
-                    min: 1,
-                    max: 100_000,
-                    unit: "次/天",
-                    hint: "评论区允许匿名传图，日限额是防止磁盘被占满的关键防线。".to_string(),
-                    onchange: move |v: i64| draft.write().comment_upload_daily = v as u32,
-                }
-            }
-            SettingRow {
-                label: "运行代码日限额",
-                html_for: "rl-code-exec-daily".to_string(),
-                NumberInput {
-                    id: "rl-code-exec-daily",
-                    value: d.code_exec_daily as i64,
-                    min: 1,
-                    max: 100_000,
-                    unit: "次/天",
-                    onchange: move |v: i64| draft.write().code_exec_daily = v as u32,
-                }
-            }
-            SettingRow {
-                label: "回收间隔",
-                html_for: "rl-gc".to_string(),
-                NumberInput {
-                    id: "rl-gc",
-                    value: d.gc_interval_secs as i64,
-                    min: 10,
-                    max: 86_400,
-                    step: 60,
-                    unit: "秒",
-                    hint: "定期清掉不活跃 IP 的限流桶，释放内存。".to_string(),
-                    onchange: move |v: i64| draft.write().gc_interval_secs = v as u32,
-                }
-            }
-        }
+                })
+                .collect_view()}
+            <SettingRow label="评论传图日限额" html_for="rl-comment-upload-daily">
+                <NumberInput
+                    id="rl-comment-upload-daily"
+                    value=st.field(|d| i64::from(d.comment_upload_daily))
+                    min=1
+                    max=100_000
+                    unit="次/天"
+                    hint="评论区允许匿名传图，日限额是防止磁盘被占满的关键防线。"
+                    onchange=move |v: i64| st.edit(|d| d.comment_upload_daily = v as u32)
+                />
+            </SettingRow>
+            <SettingRow label="运行代码日限额" html_for="rl-code-exec-daily">
+                <NumberInput
+                    id="rl-code-exec-daily"
+                    value=st.field(|d| i64::from(d.code_exec_daily))
+                    min=1
+                    max=100_000
+                    unit="次/天"
+                    onchange=move |v: i64| st.edit(|d| d.code_exec_daily = v as u32)
+                />
+            </SettingRow>
+            <SettingRow label="回收间隔" html_for="rl-gc">
+                <NumberInput
+                    id="rl-gc"
+                    value=st.field(|d| i64::from(d.gc_interval_secs))
+                    min=10
+                    max=86_400
+                    step=60
+                    unit="秒"
+                    hint="定期清掉不活跃 IP 的限流桶，释放内存。"
+                    onchange=move |v: i64| st.edit(|d| d.gc_interval_secs = v as u32)
+                />
+            </SettingRow>
+        </SettingsCard>
     }
 }
