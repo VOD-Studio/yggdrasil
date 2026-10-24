@@ -110,7 +110,11 @@ where
     #[cfg(target_arch = "wasm32")]
     let measure = move || {
         use wasm_bindgen::JsCast;
-        let style = track.get_untracked().and_then(|el| {
+        // 延迟测量与 ResizeObserver 回调可能晚于组件卸载：信号已释放时直接放弃。
+        let Some(track_el) = track.try_get_untracked() else {
+            return;
+        };
+        let style = track_el.and_then(|el| {
             let active = el
                 .query_selector("[data-active]")
                 .ok()
@@ -128,8 +132,11 @@ where
                 )
             })
         });
-        if thumb_style.get_untracked() != style {
-            thumb_style.set(style);
+        if thumb_style
+            .try_get_untracked()
+            .is_some_and(|current| current != style)
+        {
+            thumb_style.try_set(style);
         }
     };
 
@@ -161,8 +168,7 @@ where
 
     // 选中项或数量变化（宽度随之变化）时重新测量滑块。
     Effect::new(move |_| {
-        active_index.track();
-        count_key.track();
+        let _ = (active_index.get(), count_key.get());
         #[cfg(target_arch = "wasm32")]
         leptos::task::spawn_local(async move {
             crate::utils::time::sleep_ms(30).await;

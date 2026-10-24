@@ -240,7 +240,7 @@ pub fn Logs() -> impl IntoView {
             // 筛选变更 → 重建：卸载旧面板（close EventSource）→ 挂载新面板。
             // 只订阅 filter_key，面板参数一律按挂载时刻的快照读取。
             {move || {
-                filter_key.track();
+                let _ = filter_key.get();
                 let levels: Vec<String> = levels
                     .with_untracked(|l| l.iter().map(|s| s.to_string()).collect());
                 let target = target.get_untracked();

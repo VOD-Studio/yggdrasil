@@ -555,7 +555,7 @@ pub fn AdminLayout() -> impl IntoView {
     let skeleton = move || {
         view! {
             <div class="flex-1 min-h-0 flex flex-col animate-pulse">
-                {admin_route_skeleton(page.get())}
+                {move || admin_route_skeleton(page.get())}
             </div>
         }
     };
@@ -623,40 +623,30 @@ pub struct AdminActions {
     pub logout: Callback<()>,
 }
 
-// 页面迁移期间尚无调用方：模块级 allow 压住 props 结构体的 dead_code，页面合入后连同
-// 模块包装与下面的 re-export allow 一并删除。
-#[allow(dead_code)]
-mod page_head {
-    use leptos::prelude::*;
-
-    /// 后台页面标题行：左侧 h1 与副标题，右侧可选操作区。样式见 admin.css `.admin-page-head`。
-    ///
-    /// - `title`：页面标题（手机宽度隐藏，顶栏已显示）
-    /// - `class`：附加类，如日志页的 `logs-head`
-    /// - `actions`：右侧内容（传闭包），统一包进 `.admin-page-actions`
-    /// - `children`：副标题内容；为空时 `p` 由 CSS `min-height: 1lh` 保留一行高度
-    #[component]
-    pub(crate) fn AdminPageHead(
-        #[prop(into)] title: Signal<String>,
-        #[prop(optional)] class: Option<&'static str>,
-        #[prop(optional, into)] actions: Option<ViewFn>,
-        #[prop(optional)] children: Option<Children>,
-    ) -> impl IntoView {
-        let extra = class.unwrap_or_default();
-        view! {
-            <div class=format!("admin-page-head {extra}")>
-                <div>
-                    <h1>{move || title.get()}</h1>
-                    <p>{children.map(|children| children())}</p>
-                </div>
-                {actions.map(|actions| view! { <div class="admin-page-actions">{actions.run()}</div> })}
+/// 后台页面标题行：左侧 h1 与副标题，右侧可选操作区。样式见 admin.css `.admin-page-head`。
+///
+/// - `title`：页面标题（手机宽度隐藏，顶栏已显示）
+/// - `class`：附加类，如日志页的 `logs-head`
+/// - `actions`：右侧内容（传闭包），统一包进 `.admin-page-actions`
+/// - `children`：副标题内容；为空时 `p` 由 CSS `min-height: 1lh` 保留一行高度
+#[component]
+pub(crate) fn AdminPageHead(
+    #[prop(into)] title: Signal<String>,
+    #[prop(optional)] class: Option<&'static str>,
+    #[prop(optional, into)] actions: Option<ViewFn>,
+    #[prop(optional)] children: Option<Children>,
+) -> impl IntoView {
+    let extra = class.unwrap_or_default();
+    view! {
+        <div class=format!("admin-page-head {extra}")>
+            <div>
+                <h1>{move || title.get()}</h1>
+                <p>{children.map(|children| children())}</p>
             </div>
-        }
+            {actions.map(|actions| view! { <div class="admin-page-actions">{actions.run()}</div> })}
+        </div>
     }
 }
-
-#[allow(unused_imports)]
-pub(crate) use page_head::AdminPageHead;
 
 /// 后台外壳：侧栏、顶栏与主画布。认证和路由留在 [`AdminLayout`]。
 ///
