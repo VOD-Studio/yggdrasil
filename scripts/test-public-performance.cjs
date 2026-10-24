@@ -59,7 +59,7 @@ async function main() {
   pg = { ...process.env, PGHOST: '127.0.0.1', PGPORT: port, PGUSER: 'postgres', PGPASSWORD: 'regression' };
   await until(async () => {
     try { await command(['pg_isready'], { env: pg }); return true; } catch { return false; }
-  }, 'Database not ready');
+  }, 'Database not ready', 120000);
   const bases = [];
   for (let i = 0; i < 2; i++) {
     const appPort = await freePort(); const base = `http://127.0.0.1:${appPort}`; bases.push(base);
