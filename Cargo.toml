@@ -148,7 +148,7 @@ strip = false
 
 [features]
 # 默认即服务端；浏览器 WASM 由 cargo-leptos 以 `--no-default-features --features hydrate` 构建。
-# server 与 hydrate 互斥，禁止同时开启（不要使用 --all-features）。
+# server 与 hydrate 互斥，禁止同时开启（构建时不要启用全部 feature）。
 default = ["server"]
 hydrate = ["leptos/hydrate"]
 server = [
