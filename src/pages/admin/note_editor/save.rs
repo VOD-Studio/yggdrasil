@@ -1,42 +1,57 @@
 //! One serialized save pipeline for autosave, explicit actions and revision restoration.
 //! Explicit actions report through toasts; plain saves only update the header status.
+//!
+//! 异步续写全部走 `try_*`：离开笔记（编辑器卸载）后迟到的响应不会写入任何状态，也不弹提示。
 use super::state::{reconcile_save, EditorState, SaveState};
 use crate::api::notes::{act_on_note, get_owned_note, save_note};
-use crate::models::note::{Note, NoteAction, NoteDraft};
+use crate::models::note::{Note, NoteAction};
 use crate::utils::error::failure_message;
-use dioxus::prelude::*;
+use leptos::prelude::*;
+use leptos::task::spawn_local;
 
-async fn save_snapshot(mut state: EditorState) -> Result<Note, ServerFnError> {
-    let snapshot = state.draft();
-    let note = if state.dirty() || state.saved().is_none() {
-        save_note(snapshot.clone()).await?
-    } else {
-        state.saved().expect("saved note was checked")
+/// 编辑器已卸载：流水线中途放弃，结果由 [`finish`] 丢弃。
+fn closed() -> ServerFnError {
+    ServerFnError::new("编辑器已关闭")
+}
+
+async fn save_snapshot(state: EditorState) -> Result<Note, ServerFnError> {
+    let snapshot = state.draft_now().ok_or_else(closed)?;
+    let saved = state.saved_now().ok_or_else(closed)?;
+    let dirty = state.dirty_now().ok_or_else(closed)?;
+    let note = match saved {
+        Some(note) if !dirty => note,
+        _ => save_note(snapshot.clone()).await?,
     };
     state
         .draft
-        .with_mut(|current| reconcile_save(current, &snapshot, note.draft()));
-    state.saved.set(Some(note.clone()));
+        .try_update(|current| reconcile_save(current, &snapshot, note.draft()))
+        .ok_or_else(closed)?;
+    state.saved.try_set(Some(note.clone()));
     Ok(note)
 }
 
 fn finish(
-    mut state: EditorState,
+    state: EditorState,
     result: Result<Note, ServerFnError>,
     message: Option<&str>,
     failure: &str,
 ) -> bool {
     match result {
         Ok(note) => {
-            state.saved.set(Some(note));
-            state.save.set(SaveState::Idle);
+            if state.saved.try_set(Some(note)).is_some() {
+                return false;
+            }
+            let _ = state.save.try_set(SaveState::Idle);
             if let Some(message) = message {
                 state.toast.success(message);
             }
             true
         }
         Err(error) => {
-            state.fail(failure_message(failure, &error));
+            // 编辑器已卸载时 `try_set` 失败，什么也不会发生。
+            if state.save.try_get_untracked().is_some() {
+                state.fail(failure_message(failure, &error));
+            }
             false
         }
     }
@@ -84,15 +99,15 @@ pub(super) async fn restore_revision(state: EditorState, version: i32) {
     }
     let result = async {
         let note = save_snapshot(state).await?;
-        if state.dirty() {
+        if state.dirty_now().ok_or_else(closed)? {
             return Err(ServerFnError::new(
                 "保存期间有新的编辑，已保留当前内容，请再次选择历史版本",
             ));
         }
-        let before_fetch = state.draft();
+        let before_fetch = state.draft_now().ok_or_else(closed)?;
         let old = get_owned_note(note.id, Some(version)).await?;
         // The user can keep typing while history loads. Never replace those edits.
-        if state.draft() != before_fetch {
+        if state.draft_now().as_ref() != Some(&before_fetch) {
             return Err(ServerFnError::new(
                 "恢复期间有新的编辑，已保留当前内容，请再次选择历史版本",
             ));
@@ -109,42 +124,47 @@ pub(super) async fn restore_revision(state: EditorState, version: i32) {
     );
 }
 
-pub(super) fn use_autosave(state: EditorState, recovery: Signal<Option<NoteDraft>>) {
-    #[cfg(target_arch = "wasm32")]
-    {
-        let pending =
-            use_hook(|| std::rc::Rc::new(std::cell::RefCell::new(None::<dioxus::core::Task>)));
-        use_effect(move || {
-            if let Some(task) = pending.borrow_mut().take() {
-                task.cancel();
-            }
-            let snapshot = state.draft();
-            if state.busy()
-                || (state.uploading)()
-                || !state.error().is_empty()
-                || recovery().is_some()
-                || !state.dirty()
-            {
+/// 工作稿停止输入后自动保存。每次状态变化都会让之前排队的保存失效（世代号），
+/// 已经发出的请求不受影响。
+pub(super) fn use_autosave(
+    state: EditorState,
+    recovery: RwSignal<Option<crate::models::note::NoteDraft>>,
+) {
+    let generation = StoredValue::new(0_u64);
+    Effect::new(move |_| {
+        // 逐项求值，不让 `||` 短路漏掉追踪；`draft` 本身也要追踪：每次输入都重新计时。
+        let busy = state.busy();
+        let uploading = state.uploading.get();
+        let failed = !state.error().is_empty();
+        let recovering = recovery.with(Option::is_some);
+        let dirty = state.dirty();
+        state.draft.track();
+        let blocked = busy || uploading || failed || recovering || !dirty;
+        let Some(token) = generation.try_update_value(|g| {
+            *g += 1;
+            *g
+        }) else {
+            return;
+        };
+        if blocked {
+            return;
+        }
+        spawn_local(async move {
+            crate::utils::time::sleep_ms(1200).await;
+            if generation.try_get_value() != Some(token) {
                 return;
             }
-            *pending.borrow_mut() = Some(spawn(async move {
-                crate::utils::time::sleep_ms(1200).await;
-                if state.draft() == snapshot
-                    && !state.busy()
-                    && !(state.uploading)()
-                    && state.error().is_empty()
-                    && recovery().is_none()
-                    && state.dirty()
-                {
-                    // Separate debounce from the request: a state update must not cancel
-                    // an in-flight save. Both tasks remain owned by this component scope.
-                    spawn(async move {
-                        persist(state, None).await;
-                    });
-                }
-            }));
+            let still_due = state.draft_now().is_some()
+                && !state.busy_now()
+                && !state.uploading.try_get_untracked().unwrap_or(true)
+                && !state.error_now()
+                && recovery
+                    .try_with_untracked(Option::is_none)
+                    .unwrap_or(false)
+                && state.dirty_now().unwrap_or(false);
+            if still_due {
+                persist(state, None).await;
+            }
         });
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    let _ = (state, recovery);
+    });
 }

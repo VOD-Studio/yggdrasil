@@ -1,6 +1,6 @@
 use crate::components::ui::Toaster;
 use crate::models::note::{Note, NoteDraft};
-use dioxus::prelude::*;
+use leptos::prelude::*;
 
 #[derive(Clone, Debug, PartialEq)]
 pub(super) enum SaveState {
@@ -9,29 +9,31 @@ pub(super) enum SaveState {
     Failed(String),
 }
 
-#[derive(Clone, Copy, PartialEq)]
+/// 编辑器的全部可变状态。字段是 `Copy` 的信号句柄；编辑器卸载后异步回调里的写入
+/// 一律走 `try_*`，迟到的响应因此不会落进下一个编辑器。
+#[derive(Clone, Copy)]
 pub(super) struct EditorState {
-    pub draft: Signal<NoteDraft>,
-    pub saved: Signal<Option<Note>>,
-    pub save: Signal<SaveState>,
-    pub uploading: Signal<bool>,
+    pub draft: RwSignal<NoteDraft>,
+    pub saved: RwSignal<Option<Note>>,
+    pub save: RwSignal<SaveState>,
+    pub uploading: RwSignal<bool>,
     /// 发布、收录、恢复等明确操作的结果用提示条告知；自动保存只改页头状态。
     pub toast: Toaster,
-    pub tags: Signal<String>,
-    pub editor_epoch: Signal<u32>,
+    pub tags: RwSignal<String>,
+    pub editor_epoch: RwSignal<u32>,
 }
 
 pub(super) fn use_editor_state(initial: Option<Note>, toast: Toaster) -> EditorState {
     let draft = initial.as_ref().map(Note::draft).unwrap_or_default();
     let tags = draft.tags.join(", ");
     EditorState {
-        draft: use_signal(|| draft),
-        saved: use_signal(|| initial),
-        save: use_signal(|| SaveState::Idle),
-        uploading: use_signal(|| false),
+        draft: RwSignal::new(draft),
+        saved: RwSignal::new(initial),
+        save: RwSignal::new(SaveState::Idle),
+        uploading: RwSignal::new(false),
         toast,
-        tags: use_signal(|| tags),
-        editor_epoch: use_signal(|| 0),
+        tags: RwSignal::new(tags),
+        editor_epoch: RwSignal::new(0),
     }
 }
 
@@ -45,51 +47,83 @@ pub(super) fn reconcile_save(current: &mut NoteDraft, submitted: &NoteDraft, sav
     }
 }
 
+/// 工作稿相对已保存版本是否有改动；新笔记只要有标题或正文就算有改动。
+fn is_dirty(saved: &Option<Note>, draft: &NoteDraft) -> bool {
+    match saved {
+        Some(note) => note.draft() != *draft,
+        None => !draft.content_md.is_empty() || !draft.title.is_empty(),
+    }
+}
+
 impl EditorState {
+    /// 响应式读取，供视图、memo 与 effect 使用。
     pub fn dirty(self) -> bool {
-        self.saved()
-            .map(|n| n.draft() != self.draft())
-            .unwrap_or_else(|| {
-                !self.draft().content_md.is_empty() || !self.draft().title.is_empty()
-            })
-    }
-    pub fn saved(self) -> Option<Note> {
-        (self.saved)()
-    }
-    pub fn draft(self) -> NoteDraft {
-        (self.draft)()
+        self.saved
+            .with(|saved| self.draft.with(|draft| is_dirty(saved, draft)))
     }
     pub fn busy(self) -> bool {
-        matches!(&*self.save.read(), SaveState::Saving)
+        self.save.with(|save| matches!(save, SaveState::Saving))
     }
     pub fn error(self) -> String {
-        match &*self.save.read() {
+        self.save.with(|save| match save {
             SaveState::Failed(error) => error.clone(),
             _ => String::new(),
-        }
+        })
     }
-    pub fn fail(mut self, message: impl ToString) {
-        self.save.set(SaveState::Failed(message.to_string()));
+
+    /// 以下为异步路径用的非响应式读取：编辑器已卸载时返回 `None`。
+    pub fn dirty_now(self) -> Option<bool> {
+        self.saved
+            .try_with_untracked(|saved| {
+                self.draft
+                    .try_with_untracked(|draft| is_dirty(saved, draft))
+            })
+            .flatten()
     }
-    pub fn begin(mut self) -> bool {
-        if self.busy() {
+    pub fn saved_now(self) -> Option<Option<Note>> {
+        self.saved.try_get_untracked()
+    }
+    pub fn draft_now(self) -> Option<NoteDraft> {
+        self.draft.try_get_untracked()
+    }
+    pub fn busy_now(self) -> bool {
+        self.save
+            .try_with_untracked(|save| matches!(save, SaveState::Saving))
+            .unwrap_or(false)
+    }
+    pub fn error_now(self) -> bool {
+        self.save
+            .try_with_untracked(|save| matches!(save, SaveState::Failed(_)))
+            .unwrap_or(false)
+    }
+
+    pub fn fail(self, message: impl ToString) {
+        let _ = self.save.try_set(SaveState::Failed(message.to_string()));
+    }
+    pub fn begin(self) -> bool {
+        if self
+            .save
+            .with_untracked(|save| matches!(save, SaveState::Saving))
+        {
             return false;
         }
-        if (self.uploading)() {
+        if self.uploading.get_untracked() {
             self.fail("请先等待图片上传完成，或移除失败的图片");
             return false;
         }
         self.save.set(SaveState::Saving);
         true
     }
-    pub fn restore_local(mut self, mut draft: NoteDraft) {
-        if let Some(saved) = self.saved() {
+    pub fn restore_local(self, mut draft: NoteDraft) {
+        if let Some(Some(saved)) = self.saved_now() {
             draft.id = Some(saved.id);
             draft.expected_version = Some(saved.version);
         }
-        self.tags.set(draft.tags.join(", "));
-        self.draft.set(draft);
-        self.editor_epoch += 1;
+        let _ = self.tags.try_set(draft.tags.join(", "));
+        let _ = self.draft.try_set(draft);
+        let _ = self
+            .editor_epoch
+            .try_update(|epoch| *epoch = epoch.wrapping_add(1));
     }
 }
 
