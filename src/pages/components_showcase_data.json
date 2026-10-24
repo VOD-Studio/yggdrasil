@@ -53,19 +53,19 @@
       "props": [
         [
           "checked",
-          "bool",
+          "Signal<bool>",
           "必填",
           "当前是否选中，由父组件控制。"
         ],
         [
           "onchange",
-          "EventHandler<bool>",
+          "Callback<bool>",
           "必填",
           "选择发生变化时，返回新的布尔值。"
         ],
         [
           "danger",
-          "bool",
+          "Signal<bool>",
           "false",
           "使用红色强调，适合需要谨慎确认的操作。"
         ]
@@ -81,7 +81,7 @@
         ]
       ],
       "source": "src/components/ui.rs",
-      "code": "let mut checked = use_signal(|| false);\n\nrsx! {\n    Checkbox {\n        checked: checked(),\n        onchange: move |v| checked.set(v),\n    }\n}",
+      "code": "let checked = RwSignal::new(false);\n\nview! {\n    <Checkbox\n        checked=checked\n        onchange=move |value: bool| checked.set(value)\n    />\n}",
       "preview_mode": "interactive",
       "usage_kind": "rust"
     },
@@ -96,7 +96,7 @@
       "props": [
         [
           "checked",
-          "bool",
+          "Signal<bool>",
           "必填",
           "当前开关状态。"
         ],
@@ -108,13 +108,13 @@
         ],
         [
           "aria_label",
-          "Option<String>",
+          "MaybeProp<String>",
           "None",
           "开关的无障碍名称。"
         ],
         [
           "disabled",
-          "bool",
+          "Signal<bool>",
           "false",
           "禁用。"
         ]
@@ -130,7 +130,7 @@
         ]
       ],
       "source": "src/components/forms.rs",
-      "code": "let mut enabled = use_signal(|| true);\nrsx! {\n    ToggleSwitch {\n        checked: enabled(),\n        aria_label: Some(\"接收更新\".to_string()),\n        ontoggle: move |_| enabled.toggle(),\n    }\n}",
+      "code": "let enabled = RwSignal::new(true);\n\nview! {\n    <ToggleSwitch\n        checked=enabled\n        aria_label=\"\\u63A5\\u6536\\u66F4\\u65B0\"\n        ontoggle=move |()| enabled.update(|on| *on = !*on)\n    />\n}",
       "preview_mode": "interactive",
       "usage_kind": "rust"
     },
@@ -145,31 +145,31 @@
       "props": [
         [
           "value",
-          "T",
+          "Signal<T>",
           "必填",
           "当前选中的值。"
         ],
         [
           "options",
-          "Vec<(T, &'static str)>",
+          "Signal<Vec<(T, L)>>",
           "必填",
           "选项值与显示文本。"
         ],
         [
           "disabled_options",
-          "Vec<(T, &'static str)>",
+          "Signal<Vec<(T, &'static str)>>",
           "空",
           "不可用的项及原因，变淡并写明原因，键盘与点击都跳过。"
         ],
         [
           "onchange",
-          "EventHandler<T>",
+          "Callback<T>",
           "必填",
           "返回选择的新值。"
         ],
         [
           "id",
-          "Option<String>",
+          "MaybeProp<String>",
           "自动生成",
           "关联表单标签。"
         ],
@@ -201,7 +201,7 @@
         ]
       ],
       "source": "src/components/forms.rs",
-      "code": "let mut topic = use_signal(|| \"all\".to_string());\nrsx! {\n    FormSelect {\n        value: topic(),\n        options: vec![(\"all\".to_string(), \"全部\"), (\"design\".to_string(), \"设计\")],\n        onchange: move |value| topic.set(value),\n    }\n}",
+      "code": "let topic = RwSignal::new(\"all\".to_string());\n\nview! {\n    <FormSelect\n        value=topic\n        options=vec![(\"all\".to_string(), \"\\u5168\\u90E8\"), (\"design\".to_string(), \"\\u8BBE\\u8BA1\")]\n        onchange=move |value: String| topic.set(value)\n    />\n}",
       "preview_mode": "interactive",
       "usage_kind": "rust"
     },
@@ -228,19 +228,19 @@
         ],
         [
           "checked",
-          "bool",
+          "Signal<bool>",
           "必填",
           "是否选中当前选项。"
         ],
         [
           "onchange",
-          "EventHandler<String>",
+          "Callback<String>",
           "必填",
           "返回被选中选项的值。"
         ],
         [
           "disabled",
-          "bool",
+          "Signal<bool>",
           "false",
           "禁止选择此项。"
         ]
@@ -256,7 +256,7 @@
         ]
       ],
       "source": "src/components/ui.rs",
-      "code": "let mut visibility = use_signal(|| \"public\".to_string());\nrsx! {\n    label {\n        Radio {\n            name: \"visibility\",\n            value: \"public\",\n            checked: visibility() == \"public\",\n            onchange: move |value| visibility.set(value),\n        }\n        \"公开分享\"\n    }\n}",
+      "code": "let visibility = RwSignal::new(\"public\".to_string());\n\nview! {\n    <label>\n        <Radio\n            name=\"visibility\"\n            value=\"public\"\n            checked=move || visibility.get() == \"public\"\n            onchange=move |value: String| visibility.set(value)\n        />\n        \"\\u516C\\u5F00\\u5206\\u4EAB\"\n    </label>\n}",
       "preview_mode": "interactive",
       "usage_kind": "rust"
     },
@@ -271,13 +271,13 @@
       "props": [
         [
           "value",
-          "String",
+          "Signal<String>",
           "必填",
           "当前输入内容。"
         ],
         [
           "oninput",
-          "Option<EventHandler<String>>",
+          "Option<Callback<String>>",
           "无",
           "输入时返回新内容。"
         ],
@@ -295,13 +295,13 @@
         ],
         [
           "disabled",
-          "bool",
+          "Signal<bool>",
           "false",
           "禁止编辑。"
         ],
         [
           "invalid",
-          "bool",
+          "Signal<bool>",
           "false",
           "校验未通过：红环并输出 aria-invalid。"
         ],
@@ -347,7 +347,7 @@
         ]
       ],
       "source": "src/components/forms.rs",
-      "code": "let mut title = use_signal(String::new);\nrsx! {\n    FormInput {\n        r#type: \"text\",\n        placeholder: \"一个新的开始…\",\n        value: title(),\n        oninput: move |value| title.set(value),\n    }\n}",
+      "code": "let title = RwSignal::new(String::new());\n\nview! {\n    <FormInput\n        r#type=\"text\"\n        placeholder=\"\\u4E00\\u4E2A\\u65B0\\u7684\\u5F00\\u59CB\\u2026\"\n        value=title\n        oninput=move |value: String| title.set(value)\n    />\n}",
       "preview_mode": "interactive",
       "usage_kind": "rust"
     },
@@ -362,13 +362,13 @@
       "props": [
         [
           "value",
-          "String",
+          "Signal<String>",
           "必填",
           "当前内容。"
         ],
         [
           "oninput",
-          "EventHandler<String>",
+          "Callback<String>",
           "必填",
           "输入时返回新内容。"
         ],
@@ -392,7 +392,7 @@
         ],
         [
           "invalid",
-          "bool",
+          "Signal<bool>",
           "false",
           "校验未通过：红环并输出 aria-invalid。"
         ],
@@ -414,7 +414,7 @@
         ]
       ],
       "source": "src/components/forms.rs",
-      "code": "let mut summary = use_signal(String::new);\nrsx! {\n    FormTextarea {\n        rows: 4,\n        placeholder: \"写下这篇文章想说的事…\",\n        value: summary(),\n        oninput: move |value| summary.set(value),\n    }\n}",
+      "code": "let summary = RwSignal::new(String::new());\n\nview! {\n    <FormTextarea\n        rows=4\n        placeholder=\"\\u5199\\u4E0B\\u8FD9\\u7BC7\\u6587\\u7AE0\\u60F3\\u8BF4\\u7684\\u4E8B\\u2026\"\n        value=summary\n        oninput=move |value: String| summary.set(value)\n    />\n}",
       "preview_mode": "interactive",
       "usage_kind": "rust"
     },
@@ -429,19 +429,19 @@
       "props": [
         [
           "value",
-          "String",
+          "Signal<String>",
           "必填",
           "HH:MM 格式的当前值。"
         ],
         [
           "onchange",
-          "EventHandler<String>",
+          "Callback<String>",
           "必填",
           "时间改变时返回新的 HH:MM。"
         ],
         [
           "id",
-          "Option<String>",
+          "MaybeProp<String>",
           "自动生成",
           "触发器的标签关联 ID。"
         ]
@@ -457,7 +457,7 @@
         ]
       ],
       "source": "src/components/forms.rs",
-      "code": "let mut time = use_signal(|| \"08:30\".to_string());\nrsx! {\n    TimePicker {\n        value: time(),\n        onchange: move |value| time.set(value),\n    }\n}",
+      "code": "let time = RwSignal::new(\"08:30\".to_string());\n\nview! {\n    <TimePicker\n        value=time\n        onchange=move |value: String| time.set(value)\n    />\n}",
       "preview_mode": "interactive",
       "usage_kind": "rust"
     },
@@ -472,13 +472,13 @@
       "props": [
         [
           "label",
-          "String",
+          "Signal<String>",
           "必填",
           "标签显示的文本。"
         ],
         [
           "html_for",
-          "Option<String>",
+          "MaybeProp<String>",
           "None",
           "关联 input 的 id。"
         ]
@@ -490,7 +490,7 @@
         ]
       ],
       "source": "src/components/forms.rs",
-      "code": "let mut title = use_signal(String::new);\nrsx! {\n    div {\n        FormLabel {\n            label: \"文章标题\",\n            html_for: Some(\"post-title\".to_string()),\n        }\n        FormInput {\n            id: Some(\"post-title\".to_string()),\n            r#type: \"text\",\n            placeholder: \"点击标签也能聚焦这里\",\n            value: title(),\n            oninput: move |value| title.set(value),\n        }\n    }\n}",
+      "code": "let title = RwSignal::new(String::new());\n\nview! {\n    <div>\n        <FormLabel label=\"\\u6587\\u7AE0\\u6807\\u9898\" html_for=\"post-title\"/>\n        <FormInput\n            id=\"post-title\"\n            r#type=\"text\"\n            placeholder=\"\\u70B9\\u51FB\\u6807\\u7B7E\\u4E5F\\u80FD\\u805A\\u7126\\u8FD9\\u91CC\"\n            value=title\n            oninput=move |value: String| title.set(value)\n        />\n    </div>\n}",
       "preview_mode": "interactive",
       "usage_kind": "rust"
     },
@@ -517,13 +517,13 @@
         ],
         [
           "class",
-          "&'static str",
+          "String",
           "\"\"",
           "外层附加类。"
         ],
         [
           "children",
-          "Element",
+          "Children",
           "必填",
           "栏内内容：图标、输入框、发送键等。"
         ]
@@ -535,7 +535,7 @@
         ]
       ],
       "source": "src/components/ui/composer.rs",
-      "code": "let mut query = use_signal(String::new);\nrsx! {\n    form { action: \"/search\", method: \"get\",\n        Composer {\n            Icon { name: IconName::Search, size: 18 }\n            ComposerInput {\n                search: true,\n                placeholder: \"搜索文章…\",\n                value: query(),\n                oninput: move |value| query.set(value),\n            }\n            ComposerSend { label: \"搜索\" }\n        }\n    }\n}",
+      "code": "let query = RwSignal::new(String::new());\n\nview! {\n    <form action=\"/search\" method=\"get\">\n        <Composer>\n            <Icon name=IconName::Search size=18/>\n            <ComposerInput\n                search=true\n                placeholder=\"\\u641C\\u7D22\\u6587\\u7AE0\\u2026\"\n                value=query\n                oninput=move |value: String| query.set(value)\n            />\n            <ComposerSend label=\"\\u641C\\u7D22\"/>\n        </Composer>\n    </form>\n}",
       "preview_mode": "interactive",
       "usage_kind": "rust"
     },
@@ -550,13 +550,13 @@
       "props": [
         [
           "value",
-          "String",
+          "Signal<String>",
           "必填",
           "当前文本，由父组件控制。"
         ],
         [
           "oninput",
-          "EventHandler<String>",
+          "Callback<String>",
           "必填",
           "文本变化时返回新值。"
         ],
@@ -604,33 +604,39 @@
         ],
         [
           "disabled",
-          "bool",
+          "Signal<bool>",
           "false",
           "禁用输入。"
         ],
         [
           "on_submit",
-          "Option<EventHandler<()>>",
+          "Option<Callback<()>>",
           "None",
           "多行：⌘/Ctrl+Enter 调用；单行：给了就由 Enter 调用并阻止默认，否则交给所在表单原生提交。"
         ],
         [
           "onkeydown",
-          "Option<EventHandler<KeyboardEvent>>",
+          "Option<Callback<KeyboardEvent>>",
           "None",
           "调用方的其余按键（Escape、↓ 等）；输入法组合期间不转发。"
         ],
         [
           "oncomposition",
-          "Option<EventHandler<bool>>",
+          "Option<Callback<bool>>",
           "None",
           "组合输入开始（true）/ 结束（false）。"
         ],
         [
-          "onmounted",
-          "Option<EventHandler<MountedEvent>>",
+          "input_ref",
+          "Option<NodeRef<html::Input>>",
           "None",
-          "挂载完成回调。"
+          "单行模式下 input 元素的引用，供调用方聚焦或测量。"
+        ],
+        [
+          "textarea_ref",
+          "Option<NodeRef<html::Textarea>>",
+          "None",
+          "多行模式下 textarea 元素的引用，供调用方聚焦或测量。"
         ]
       ],
       "keys": [
@@ -648,7 +654,7 @@
         ]
       ],
       "source": "src/components/ui/composer.rs",
-      "code": "let mut text = use_signal(String::new);\nrsx! {\n    Composer { size: ComposerSize::Sm,\n        ComposerInput {\n            multiline: true,\n            placeholder: \"写点什么…（⌘↵ 发送）\",\n            value: text(),\n            oninput: move |value| text.set(value),\n            on_submit: move |_| send(),\n        }\n        ComposerSend { label: \"发送\", onclick: move |_| send() }\n    }\n}",
+      "code": "let text = RwSignal::new(String::new());\n\nview! {\n    <Composer size=ComposerSize::Sm>\n        <ComposerInput\n            multiline=true\n            placeholder=\"\\u5199\\u70B9\\u4EC0\\u4E48\\u2026\\uFF08\\u2318\\u21B5 \\u53D1\\u9001\\uFF09\"\n            value=text\n            oninput=move |value: String| text.set(value)\n            on_submit=move |()| send()\n        />\n        <ComposerSend label=\"\\u53D1\\u9001\" onclick=move |_| send()/>\n    </Composer>\n}",
       "preview_mode": "interactive",
       "usage_kind": "rust"
     },
@@ -663,7 +669,7 @@
       "props": [
         [
           "label",
-          "&'static str",
+          "Signal<String>",
           "必填",
           "无障碍名称（aria-label）。"
         ],
@@ -675,13 +681,13 @@
         ],
         [
           "disabled",
-          "bool",
+          "Signal<bool>",
           "false",
           "不可用状态。"
         ],
         [
           "onclick",
-          "Option<EventHandler<MouseEvent>>",
+          "Option<Callback<MouseEvent>>",
           "None",
           "点击回调；不给则为提交按钮。"
         ]
@@ -697,7 +703,7 @@
         ]
       ],
       "source": "src/components/ui/composer.rs",
-      "code": "ComposerSend {\n    label: \"发送回复\",\n    icon: IconName::Send,\n    disabled: text().trim().is_empty(),\n    onclick: move |_| send(),\n}",
+      "code": "view! {\n    <ComposerSend\n        label=\"\\u53D1\\u9001\\u56DE\\u590D\"\n        icon=IconName::Send\n        disabled=move || text.get().trim().is_empty()\n        onclick=move |_| send()\n    />\n}",
       "preview_mode": "interactive",
       "usage_kind": "rust"
     },
@@ -712,25 +718,25 @@
       "props": [
         [
           "items",
-          "Vec<SegmentedItem<T>>",
+          "Signal<Vec<SegmentedItem<T>>>",
           "必填",
           "选项列表；SegmentedItem::new(value, label) 可链式 .icon(..)、.count(..)。"
         ],
         [
           "value",
-          "T",
+          "Signal<T>",
           "必填",
           "当前选中的值；没有匹配项时没有当前项。"
         ],
         [
           "on_change",
-          "EventHandler<T>",
+          "Callback<T>",
           "必填",
           "切换后返回新值（点击与键盘都会触发）。"
         ],
         [
           "aria_label",
-          "&'static str",
+          "String",
           "必填",
           "控件组的无障碍名称。"
         ],
@@ -754,7 +760,7 @@
         ],
         [
           "class",
-          "&'static str",
+          "String",
           "\"\"",
           "外层容器附加类（间距、页面变体）。"
         ]
@@ -774,7 +780,7 @@
         ]
       ],
       "source": "src/components/ui/segmented.rs",
-      "code": "let mut mode = use_signal(|| \"light\".to_string());\nrsx! {\n    SegmentedControl {\n        items: vec![\n            SegmentedItem::new(\"light\".to_string(), \"浅色\").icon(IconName::Sun),\n            SegmentedItem::new(\"dark\".to_string(), \"深色\"),\n        ],\n        value: mode(),\n        kind: SegmentedKind::Radio,\n        aria_label: \"外观\",\n        on_change: move |value| mode.set(value),\n    }\n}",
+      "code": "let mode = RwSignal::new(\"light\".to_string());\n\nview! {\n    <SegmentedControl\n        items=vec![\n            SegmentedItem::new(\"light\".to_string(), \"\\u6D45\\u8272\").icon(IconName::Sun),\n            SegmentedItem::new(\"dark\".to_string(), \"\\u6DF1\\u8272\"),\n        ]\n        value=mode\n        kind=SegmentedKind::Radio\n        aria_label=\"\\u5916\\u89C2\"\n        on_change=move |value: String| mode.set(value)\n    />\n}",
       "preview_mode": "interactive",
       "usage_kind": "rust"
     },
@@ -789,13 +795,13 @@
       "props": [
         [
           "current_page",
-          "i32",
+          "Signal<i32>",
           "必填",
           "当前页码，从 1 开始。"
         ],
         [
           "total",
-          "i64",
+          "Signal<i64>",
           "必填",
           "全部记录数。"
         ],
@@ -807,15 +813,15 @@
         ],
         [
           "prev_route",
-          "R: Routable",
+          "Signal<String>",
           "必填",
-          "上一页的目标路由。"
+          "上一页的目标路径，用 Route::..to_string() 生成。"
         ],
         [
           "next_route",
-          "R: Routable",
+          "Signal<String>",
           "必填",
-          "下一页的目标路由。"
+          "下一页的目标路径，用 Route::..to_string() 生成。"
         ]
       ],
       "keys": [
@@ -829,7 +835,7 @@
         ]
       ],
       "source": "src/components/ui/navigation.rs",
-      "code": "rsx! {\n    Pagination::<Route> {\n        current_page: 2,\n        total: 80,\n        per_page: 10,\n        prev_route: Route::Home {},\n        next_route: Route::HomePage { page: 3 },\n    }\n}",
+      "code": "let prev_route = Route::Home.to_string();\nlet next_route = Route::HomePage { page: 3 }.to_string();\n\nview! {\n    <Pagination\n        current_page=2\n        total=80_i64\n        per_page=10\n        prev_route=prev_route\n        next_route=next_route\n    />\n}",
       "preview_mode": "static",
       "usage_kind": "rust"
     },
@@ -842,18 +848,18 @@
       "states": "首页 · 中间页 · 末页 · 只有一页",
       "description": "后台表格的底栏：左侧是「第 21–40 篇，共 57 篇」，右侧是上一页、当前页 / 总页数与下一页图标按钮，到头时按钮不可用。只有一页时只显示总数。",
       "props": [
-        ["page", "i32", "必填", "当前页，从 1 开始；超出范围时按首页或末页显示。"],
-        ["total", "i64", "必填", "全部条数。"],
+        ["page", "Signal<i32>", "必填", "当前页，从 1 开始；超出范围时按首页或末页显示。"],
+        ["total", "Signal<i64>", "必填", "全部条数。"],
         ["per_page", "i32", "必填", "每页条数，必须大于 0。"],
-        ["unit", "&'static str", "必填", "计数单位，如「篇」「条」。"],
-        ["on_change", "EventHandler<i32>", "必填", "翻到的页码。"]
+        ["unit", "String", "必填", "计数单位，如「篇」「条」。"],
+        ["on_change", "Callback<i32>", "必填", "翻到的页码。"]
       ],
       "keys": [
         ["Tab", "在上一页与下一页之间移动"],
         ["Enter / Space", "翻页"]
       ],
       "source": "src/components/ui/navigation.rs",
-      "code": "let mut page = use_signal(|| 1i32);\nrsx! {\n    TablePager {\n        page: page(),\n        total: 57,\n        per_page: 20,\n        unit: \"篇\",\n        on_change: move |p| page.set(p),\n    }\n}",
+      "code": "let page = RwSignal::new(1_i32);\n\nview! {\n    <TablePager\n        page=page\n        total=57_i64\n        per_page=20\n        unit=\"\\u7BC7\"\n        on_change=move |p: i32| page.set(p)\n    />\n}",
       "preview_mode": "interactive",
       "usage_kind": "rust"
     },
@@ -868,31 +874,31 @@
       "props": [
         [
           "tip",
-          "String",
+          "Signal<String>",
           "必填",
           "提示内容。"
         ],
         [
           "shortcut",
-          "Option<&'static str>",
+          "MaybeProp<&'static str>",
           "None",
           "快捷键，显示在提示文字右侧。"
         ],
         [
           "children",
-          "Element",
+          "Children",
           "必填",
           "触发提示的元素。"
         ],
         [
           "placement",
-          "&'static str",
+          "Signal<String>",
           "top",
           "top 或 bottom。"
         ],
         [
           "align",
-          "&'static str",
+          "Signal<String>",
           "center",
           "center、start 或 end。"
         ]
@@ -904,7 +910,7 @@
         ]
       ],
       "source": "src/components/ui.rs",
-      "code": "rsx! {\n    Tooltip { tip: \"搜索\", shortcut: \"⌘K\",\n        button { aria_label: \"搜索\", Icon { name: IconName::Search } }\n    }\n}",
+      "code": "view! {\n    <Tooltip tip=\"\\u641C\\u7D22\" shortcut=\"\\u2318K\">\n        <button aria-label=\"\\u641C\\u7D22\">\n            <Icon name=IconName::Search/>\n        </button>\n    </Tooltip>\n}",
       "preview_mode": "interactive",
       "usage_kind": "rust"
     },
@@ -919,37 +925,37 @@
       "props": [
         [
           "open",
-          "bool",
+          "Signal<bool>",
           "必填",
           "是否显示面板。"
         ],
         [
           "anchor_x / anchor_y",
-          "i32",
+          "Signal<i32>",
           "必填",
           "视口内的锚点坐标。"
         ],
         [
           "children",
-          "Element",
+          "ChildrenFn",
           "必填",
           "浮层内容。"
         ],
         [
           "on_close",
-          "EventHandler<()>",
+          "Callback<()>",
           "必填",
           "请求关闭浮层。"
         ],
         [
           "placement",
-          "&'static str",
+          "String",
           "top",
           "top 或 bottom。"
         ],
         [
           "align",
-          "&'static str",
+          "String",
           "center",
           "center、start 或 end。"
         ]
@@ -961,7 +967,7 @@
         ]
       ],
       "source": "src/components/ui.rs",
-      "code": "let mut open = use_signal(|| false);\nlet mut anchor_x = use_signal(|| 0i32);\nlet mut anchor_y = use_signal(|| 0i32);\nrsx! {\n    div {\n        button {\n            onclick: move |event: MouseEvent| {\n                #[cfg(target_arch = \"wasm32\")]\n                {\n                    use dioxus::html::InteractionLocation;\n                    let point = event.client_coordinates();\n                    anchor_x.set(point.x as i32);\n                    anchor_y.set(point.y as i32);\n                }\n                open.set(true);\n            },\n            \"打开浮层\"\n        }\n        Popover {\n            open: open(),\n            anchor_x: anchor_x(),\n            anchor_y: anchor_y(),\n            on_close: move |_| open.set(false),\n            p { \"保留这片灵感？\" }\n        }\n    }\n}",
+      "code": "let open = RwSignal::new(false);\nlet anchor_x = RwSignal::new(0_i32);\nlet anchor_y = RwSignal::new(0_i32);\n\nview! {\n    <div>\n        <button on:click=move |event: leptos::ev::MouseEvent| {\n            anchor_x.set(event.client_x());\n            anchor_y.set(event.client_y());\n            open.set(true);\n        }>\"\\u6253\\u5F00\\u6D6E\\u5C42\"</button>\n        <Popover\n            open=open\n            anchor_x=anchor_x\n            anchor_y=anchor_y\n            on_close=move |_| open.set(false)\n        >\n            <p>\"\\u4FDD\\u7559\\u8FD9\\u7247\\u7075\\u611F\\uFF1F\"</p>\n        </Popover>\n    </div>\n}",
       "preview_mode": "interactive",
       "usage_kind": "rust"
     },
@@ -976,35 +982,40 @@
       "props": [
         [
           "visible",
-          "Signal<bool>",
+          "RwSignal<bool>",
           "必填",
           "弹窗显隐状态。"
         ],
         [
           "closing",
-          "Signal<bool>",
+          "RwSignal<bool>",
           "必填",
           "共享关闭动画状态。"
         ],
         [
           "title",
-          "&'static str",
+          "String",
           "必填",
           "弹窗无障碍名称。"
         ],
         [
           "children",
-          "Element",
+          "ChildrenFn",
           "必填",
           "弹窗内部内容。"
         ],
         [
           "panel_class",
-          "&'static str",
+          "String",
           "w-full max-w-lg",
           "面板宽度等布局样式。"
         ],
-        ["role", "&'static str", "dialog", "面板角色；危险确认传 alertdialog。"]
+        [
+          "role",
+          "String",
+          "dialog",
+          "面板角色；危险确认传 alertdialog。"
+        ]
       ],
       "keys": [
         [
@@ -1013,7 +1024,7 @@
         ]
       ],
       "source": "src/components/ui.rs",
-      "code": "let mut visible = use_signal(|| false);\nlet mut closing = use_signal(|| false);\nrsx! {\n    div {\n        button { onclick: move |_| visible.set(true), \"打开弹窗\" }\n        ModalShell {\n            visible,\n            closing,\n            title: \"留住一片灵感\",\n            h2 { \"留住一片灵感。\" }\n            button {\n                onclick: move |_| {\n                    closing.set(true);\n                    visible.set(false);\n                },\n                \"收好了\"\n            }\n        }\n    }\n}",
+      "code": "let visible = RwSignal::new(false);\nlet closing = RwSignal::new(false);\n\nview! {\n    <div>\n        <button on:click=move |_| visible.set(true)>\"\\u6253\\u5F00\\u5F39\\u7A97\"</button>\n        <ModalShell visible=visible closing=closing title=\"\\u7559\\u4F4F\\u4E00\\u7247\\u7075\\u611F\">\n            <h2>\"\\u7559\\u4F4F\\u4E00\\u7247\\u7075\\u611F\\u3002\"</h2>\n            <button on:click=move |_| {\n                closing.set(true);\n                visible.set(false);\n            }>\"\\u6536\\u597D\\u4E86\"</button>\n        </ModalShell>\n    </div>\n}",
       "preview_mode": "interactive",
       "usage_kind": "rust"
     },
@@ -1026,19 +1037,19 @@
       "states": "打开 · 关闭",
       "description": "危险操作的确认对话框（alertdialog），基于弹窗外壳：左侧 danger 图标、标题与说明，底栏「取消」与 danger 主按钮。点确认先关闭再回调，执行与结果提示由调用方负责。",
       "props": [
-        ["visible", "Signal<bool>", "必填", "对话框显隐状态。"],
-        ["title", "&'static str", "必填", "标题，同时作为无障碍名称。"],
-        ["description", "String", "必填", "后果说明，如影响篇数与能否恢复。"],
-        ["confirm_label", "&'static str", "必填", "危险主按钮文字。"],
+        ["visible", "RwSignal<bool>", "必填", "对话框显隐状态。"],
+        ["title", "String", "必填", "标题，同时作为无障碍名称。"],
+        ["description", "Signal<String>", "必填", "后果说明，如影响篇数与能否恢复。"],
+        ["confirm_label", "String", "必填", "危险主按钮文字。"],
         ["icon", "IconName", "Trash", "左侧图标。"],
-        ["on_confirm", "EventHandler<()>", "必填", "点确认后回调。"]
+        ["on_confirm", "Callback<()>", "必填", "点确认后回调。"]
       ],
       "keys": [
         ["Tab", "在取消与确认之间循环"],
         ["Esc", "关闭，不执行"]
       ],
       "source": "src/components/ui/surfaces.rs",
-      "code": "let mut open = use_signal(|| false);\nrsx! {\n    button { onclick: move |_| open.set(true), \"清空回收站\" }\n    ConfirmDialog {\n        visible: open,\n        title: \"清空回收站？\",\n        description: \"3 篇文章会被彻底删除，无法恢复。\",\n        confirm_label: \"彻底删除\",\n        on_confirm: move |_| empty_trash(),\n    }\n}",
+      "code": "let open = RwSignal::new(false);\n\nview! {\n    <button on:click=move |_| open.set(true)>\"\\u6E05\\u7A7A\\u56DE\\u6536\\u7AD9\"</button>\n    <ConfirmDialog\n        visible=open\n        title=\"\\u6E05\\u7A7A\\u56DE\\u6536\\u7AD9\\uFF1F\"\n        description=\"3 \\u7BC7\\u6587\\u7AE0\\u4F1A\\u88AB\\u5F7B\\u5E95\\u5220\\u9664\\uFF0C\\u65E0\\u6CD5\\u6062\\u590D\\u3002\"\n        confirm_label=\"\\u5F7B\\u5E95\\u5220\\u9664\"\n        on_confirm=move |_| empty_trash()\n    />\n}",
       "preview_mode": "interactive",
       "usage_kind": "rust"
     },
@@ -1053,20 +1064,20 @@
       "props": [
         [
           "message",
-          "String",
+          "Signal<String>",
           "必填",
           "需要显示的消息。"
         ],
         [
           "variant",
-          "&'static str",
+          "Signal<&'static str>",
           "必填",
           "error、success 或默认普通样式。"
         ]
       ],
       "keys": [],
       "source": "src/components/forms.rs",
-      "code": "rsx! {\n    AlertBox {\n        message: \"已保存，新的想法正在生长。\",\n        variant: \"success\",\n    }\n}",
+      "code": "view! {\n    <AlertBox\n        message=\"\\u5DF2\\u4FDD\\u5B58\\uFF0C\\u65B0\\u7684\\u60F3\\u6CD5\\u6B63\\u5728\\u751F\\u957F\\u3002\"\n        variant=\"success\"\n    />\n}",
       "preview_mode": "interactive",
       "usage_kind": "rust"
     },
@@ -1081,26 +1092,26 @@
       "props": [
         [
           "label",
-          "String",
+          "Signal<String>",
           "必填",
           "徽章文字。"
         ],
         [
           "color_class",
-          "&'static str",
+          "Signal<String>",
           "必填",
           "语气类：badge-success、badge-warning、badge-danger、badge-clay，空串为中性。"
         ],
         [
           "class",
-          "&'static str",
+          "Signal<String>",
           "\"\"",
           "附加类，用于所在位置的间距与对齐。"
         ]
       ],
       "keys": [],
       "source": "src/components/ui/display.rs",
-      "code": "rsx! {\n    StatusBadge { color_class: \"badge-success\", label: \"已发布\" }\n}",
+      "code": "view! {\n    <StatusBadge color_class=\"badge-success\" label=\"\\u5DF2\\u53D1\\u5E03\"/>\n}",
       "preview_mode": "static",
       "usage_kind": "rust"
     },
@@ -1115,26 +1126,26 @@
       "props": [
         [
           "label",
-          "String",
+          "Signal<String>",
           "必填",
           "状态文字。"
         ],
         [
           "tone",
-          "&'static str",
+          "Signal<String>",
           "muted",
           "圆点语气：clay、success、warning、danger，muted 为灰。"
         ],
         [
           "class",
-          "&'static str",
+          "Signal<String>",
           "\"\"",
           "附加类，用于所在位置的变体。"
         ]
       ],
       "keys": [],
       "source": "src/components/ui/display.rs",
-      "code": "rsx! {\n    StatusDot { label: post.status.label(), tone: post.status.tone() }\n}",
+      "code": "view! {\n    <StatusDot label=post.status.label() tone=post.status.tone()/>\n}",
       "preview_mode": "static",
       "usage_kind": "rust"
     },
@@ -1155,13 +1166,13 @@
         ],
         [
           "to",
-          "R: Routable",
+          "String",
           "必填",
-          "点击后的目标路由。"
+          "点击后的目标路径，用 Route::..to_string() 生成。"
         ],
         [
           "variant",
-          "&'static str",
+          "String",
           "outline",
           "solid、outline 或 text。"
         ],
@@ -1189,7 +1200,7 @@
         ]
       ],
       "source": "src/components/ui.rs",
-      "code": "rsx! {\n    TagChip {\n        label: \"设计\",\n        to: Route::TagDetail { tag: \"设计\".to_string() },\n        variant: \"outline\",\n        count: 12,\n    }\n}",
+      "code": "let to = Route::TagDetail { tag: \"\\u8BBE\\u8BA1\".to_string() }.to_string();\n\nview! {\n    <TagChip label=\"\\u8BBE\\u8BA1\" to=to variant=\"outline\" count=12/>\n}",
       "preview_mode": "interactive",
       "usage_kind": "rust"
     },
@@ -1204,26 +1215,26 @@
       "props": [
         [
           "name",
-          "String",
+          "Signal<String>",
           "必填",
           "显示名与图片替代文本。"
         ],
         [
           "avatar_url",
-          "Option<String>",
-          "None",
-          "头像图片地址。"
+          "Signal<Option<String>>",
+          "必填",
+          "头像图片地址；没有头像时传 None。"
         ],
         [
           "class",
-          "&'static str",
+          "String",
           "必填",
           "尺寸、形状与字号。"
         ]
       ],
       "keys": [],
       "source": "src/components/ui.rs",
-      "code": "rsx! {\n    UserAvatar {\n        name: \"叶子\",\n        avatar_url: None,\n        class: \"w-10 h-10 rounded-full text-sm\",\n    }\n}",
+      "code": "view! {\n    <UserAvatar\n        name=\"\\u53F6\\u5B50\"\n        avatar_url=None::<String>\n        class=\"w-10 h-10 rounded-full text-sm\"\n    />\n}",
       "preview_mode": "static",
       "usage_kind": "rust"
     },
@@ -1238,14 +1249,14 @@
       "props": [
         [
           "class",
-          "&'static str",
+          "String",
           "必填",
           "图标的尺寸与颜色样式。"
         ]
       ],
       "keys": [],
       "source": "src/components/ui/display.rs",
-      "code": "rsx! {\n    ImagePlaceholder { class: \"w-8 h-8 text-fg-3\" }\n}",
+      "code": "view! {\n    <ImagePlaceholder class=\"w-8 h-8 text-fg-3\"/>\n}",
       "preview_mode": "static",
       "usage_kind": "rust"
     },
@@ -1285,7 +1296,7 @@
       ],
       "keys": [],
       "source": "src/components/empty_state.rs",
-      "code": "rsx! {\n    EmptyState {\n        title: \"这里，等待第一颗种子。\",\n        description: \"写下一个新的开始。\",\n    }\n}",
+      "code": "view! {\n    <EmptyState\n        title=\"\\u8FD9\\u91CC\\uFF0C\\u7B49\\u5F85\\u7B2C\\u4E00\\u9897\\u79CD\\u5B50\\u3002\"\n        description=\"\\u5199\\u4E0B\\u4E00\\u4E2A\\u65B0\\u7684\\u5F00\\u59CB\\u3002\"\n    />\n}",
       "preview_mode": "static",
       "usage_kind": "rust"
     },
@@ -1300,38 +1311,38 @@
       "props": [
         [
           "title",
-          "String",
+          "Signal<String>",
           "必填",
           "说明哪块内容没能加载。"
         ],
         [
           "retrying",
-          "bool",
+          "Signal<bool>",
           "false",
           "重试进行中：按钮转圈且不再响应点击。"
         ],
         [
           "retry_failed",
-          "bool",
+          "Signal<bool>",
           "false",
           "上一次重试仍然失败。"
         ],
         [
           "class",
-          "String",
+          "Signal<String>",
           "空字符串",
           "追加类，用于外边距。"
         ],
         [
           "on_retry",
-          "EventHandler<()>",
+          "Callback<()>",
           "必填",
           "点击「重新加载」。"
         ]
       ],
       "keys": [],
       "source": "src/components/ui/feedback.rs",
-      "code": "rsx! {\n    LoadError {\n        title: \"文章暂时没能加载\",\n        retrying: retrying(),\n        retry_failed: retry_failed(),\n        on_retry: move |_| retry(),\n    }\n}",
+      "code": "let retrying = RwSignal::new(false);\nlet retry_failed = RwSignal::new(false);\n\nview! {\n    <LoadError\n        title=\"\\u6587\\u7AE0\\u6682\\u65F6\\u6CA1\\u80FD\\u52A0\\u8F7D\"\n        retrying=retrying\n        retry_failed=retry_failed\n        on_retry=move |_| retry()\n    />\n}",
       "preview_mode": "static",
       "usage_kind": "rust"
     },
@@ -1346,38 +1357,38 @@
       "props": [
         [
           "visible",
-          "Signal<bool>",
+          "RwSignal<bool>",
           "由调用方提供",
           "素材选择弹窗的 visible 参数。"
         ],
         [
           "on_select",
-          "EventHandler<Vec<AssetSelection>>",
+          "Callback<Vec<AssetSelection>>",
           "由调用方提供",
           "素材选择弹窗的 on_select 参数。"
         ],
         [
           "cover_uploading",
-          "Signal<bool>",
+          "RwSignal<bool>",
           "由调用方提供",
           "素材选择弹窗的 cover_uploading 参数。"
         ],
         [
           "title",
-          "&'static str",
-          "由调用方提供",
+          "String",
+          "选择封面图",
           "素材选择弹窗的 title 参数。"
         ],
         [
           "multi",
           "bool",
-          "由调用方提供",
+          "false",
           "素材选择弹窗的 multi 参数。"
         ]
       ],
       "keys": [],
       "source": "src/components/assets/asset_picker.rs",
-      "code": "let mut visible = use_signal(|| false);\nlet uploading = use_signal(|| false);\nlet mut picked = use_signal(Vec::<AssetSelection>::new);\nrsx! {\n    button { onclick: move |_| visible.set(true), \"从素材库选择\" }\n    AssetPickerModal {\n        visible,\n        cover_uploading: uploading,\n        title: \"选择文章图片\",\n        multi: true,\n        on_select: move |items: Vec<AssetSelection>| picked.set(items),\n    }\n}",
+      "code": "let visible = RwSignal::new(false);\nlet uploading = RwSignal::new(false);\nlet picked = RwSignal::new(Vec::<AssetSelection>::new());\n\nview! {\n    <button on:click=move |_| visible.set(true)>\"\\u4ECE\\u7D20\\u6750\\u5E93\\u9009\\u62E9\"</button>\n    <AssetPickerModal\n        visible=visible\n        cover_uploading=uploading\n        title=\"\\u9009\\u62E9\\u6587\\u7AE0\\u56FE\\u7247\"\n        multi=true\n        on_select=move |items: Vec<AssetSelection>| picked.set(items)\n    />\n}",
       "preview_mode": "interactive",
       "usage_kind": "rust"
     },
@@ -1392,20 +1403,20 @@
       "props": [
         [
           "visible",
-          "Signal<bool>",
+          "RwSignal<bool>",
           "由调用方提供",
           "素材上传弹窗的 visible 参数。"
         ],
         [
           "on_uploaded",
-          "EventHandler<()>",
+          "Callback<()>",
           "由调用方提供",
           "素材上传弹窗的 on_uploaded 参数。"
         ]
       ],
       "keys": [],
       "source": "src/components/assets/asset_upload.rs",
-      "code": "let mut visible = use_signal(|| false);\nlet mut refresh = use_signal(|| 0_u32);\nrsx! {\n    button { onclick: move |_| visible.set(true), \"上传素材\" }\n    AssetUploadModal {\n        visible,\n        on_uploaded: move |_| refresh.set(refresh().wrapping_add(1)),\n    }\n    // 素材列表订阅 refresh，在成功回调后重新读取。\n}",
+      "code": "let visible = RwSignal::new(false);\nlet refresh = RwSignal::new(0_u32);\n\nview! {\n    <button on:click=move |_| visible.set(true)>\"\\u4E0A\\u4F20\\u7D20\\u6750\"</button>\n    <AssetUploadModal\n        visible=visible\n        on_uploaded=move |()| refresh.update(|n| *n = n.wrapping_add(1))\n    />\n    // \\u7D20\\u6750\\u5217\\u8868\\u8BA2\\u9605 refresh\\uFF0C\\u5728\\u6210\\u529F\\u56DE\\u8C03\\u540E\\u91CD\\u65B0\\u8BFB\\u53D6\\u3002\n}",
       "preview_mode": "interactive",
       "usage_kind": "rust"
     },
@@ -1432,7 +1443,7 @@
         ],
         [
           "overrides",
-          "Option<ResourceLimits>",
+          "MaybeProp<ResourceLimits>",
           "None",
           "正式执行任务的资源覆盖。"
         ],
@@ -1444,20 +1455,20 @@
         ],
         [
           "highlighted",
-          "Option<String>",
+          "MaybeProp<String>",
           "None",
           "服务端高亮好的代码 HTML，编辑器挂载前显示；缺省时显示纯文本源码。"
         ],
         [
           "example_output",
-          "Option<RunnerExample>",
+          "MaybeProp<RunnerExample>",
           "None",
           "仅本地展示使用的固定输出；正式入口不传。"
         ]
       ],
       "keys": [],
       "source": "src/components/code_runner/runner.rs",
-      "code": "rsx! {\n    CodeRunner {\n        source: \"print('Hello, Yggdrasil')\\n\".to_string(),\n        language: \"python\".to_string(),\n        overrides: None,\n        instance_id: 0, // 同一页面上稳定且唯一\n    }\n}",
+      "code": "view! {\n    <CodeRunner\n        source=\"print('Hello, Yggdrasil')\\n\"\n        language=\"python\"\n        instance_id=0 // \\u540C\\u4E00\\u9875\\u9762\\u4E0A\\u7A33\\u5B9A\\u4E14\\u552F\\u4E00\n    />\n}",
       "preview_mode": "interactive",
       "usage_kind": "rust"
     },
@@ -1473,7 +1484,7 @@
         [
           "depth",
           "i32",
-          "0",
+          "由调用方提供",
           "归一化后的嵌套深度。depth > 0 显示左侧引导线，depth > 1 产生 margin-left 阶梯缩进。"
         ],
         [
@@ -1485,7 +1496,7 @@
         [
           "avatar_url",
           "String",
-          "String::new()",
+          "由调用方提供",
           "作者头像图片 URL，为空时由 UserAvatar 显示首字缩略图。"
         ],
         [
@@ -1496,27 +1507,27 @@
         ],
         [
           "author_element",
-          "Element",
+          "AnyView",
           "由调用方提供",
           "作者名展示节点，可为纯文本或指向主页的超链接。"
         ],
         [
           "author_badge",
-          "Element",
-          "rsx! {}",
-          "作者名右侧的身份徽章（如博主专属'作者'徽章）。"
+          "AnyView",
+          "由调用方提供",
+          "作者名右侧的身份徽章（如博主专属'作者'徽章）；没有时传 ().into_any()。"
         ],
         [
           "timestamp",
-          "Element",
+          "AnyView",
           "由调用方提供",
           "时间展示节点（如绝对时间或实时相对时间）。"
         ],
         [
           "status_badge",
-          "Element",
-          "rsx! {}",
-          "时间右侧的状态徽章（如待审核评论的'审核中'徽章）。"
+          "AnyView",
+          "由调用方提供",
+          "时间右侧的状态徽章（如待审核评论的'审核中'徽章）；没有时传 ().into_any()。"
         ],
         [
           "content_html",
@@ -1532,14 +1543,14 @@
         ],
         [
           "children",
-          "Element",
-          "rsx! {}",
+          "Option<Children>",
+          "None",
           "正文下方的附加操作区（如回复按钮或回复编辑器容器）。"
         ]
       ],
       "keys": [],
       "source": "src/components/comments/card.rs",
-      "code": "rsx! {\n    CommentCardShell {\n        depth: 0,\n        muted: false,\n        avatar_url: author_avatar.clone(),\n        author_name: author_name.clone(),\n        author_element: rsx! { span { class: \"font-medium text-fg\", \"{author_name}\" } },\n        author_badge: rsx! { span { class: \"px-1.5 py-0.5 rounded text-[10px] bg-clay-text/10 text-clay-text\", \"作者\" } },\n        timestamp: rsx! { time { class: \"text-fg-3\", \"昨天 17:30\" } },\n        status_badge: rsx! {},\n        content_html: \"<p>春天的第一片叶子，总会记得来时的风。</p>\".to_string(),\n        content_extra_class: \"md-content\",\n        div { class: \"flex items-center gap-3 mt-2\",\n            button { class: \"text-xs text-fg-3 hover:text-clay-text cursor-pointer\", \"回复\" }\n        }\n    }\n}",
+      "code": "let author_element = view! { <span class=\"font-medium text-fg\">{author_name.clone()}</span> }.into_any();\nlet author_badge = view! {\n    <span class=\"px-1.5 py-0.5 rounded text-[10px] bg-clay-text/10 text-clay-text\">\"\\u4F5C\\u8005\"</span>\n}\n.into_any();\nlet timestamp = view! { <time class=\"text-fg-3\">\"\\u6628\\u5929 17:30\"</time> }.into_any();\n\nview! {\n    <CommentCardShell\n        depth=0\n        muted=false\n        avatar_url=author_avatar.clone()\n        author_name=author_name.clone()\n        author_element=author_element\n        author_badge=author_badge\n        timestamp=timestamp\n        status_badge=().into_any()\n        content_html=\"<p>\\u6625\\u5929\\u7684\\u7B2C\\u4E00\\u7247\\u53F6\\u5B50\\uFF0C\\u603B\\u4F1A\\u8BB0\\u5F97\\u6765\\u65F6\\u7684\\u98CE\\u3002</p>\"\n        content_extra_class=\"md-content\"\n    >\n        <div class=\"flex items-center gap-3 mt-2\">\n            <button class=\"text-xs text-fg-3 hover:text-clay-text cursor-pointer\">\"\\u56DE\\u590D\"</button>\n        </div>\n    </CommentCardShell>\n}",
       "preview_mode": "interactive",
       "usage_kind": "rust"
     },
@@ -1561,19 +1572,19 @@
         [
           "parent_id",
           "Option<i64>",
-          "None",
+          "必填（可传 None）",
           "None 发表顶层评论；Some(id) 回复指定评论。"
         ],
         [
           "parent_indent",
           "Option<i32>",
-          "None",
+          "必填（可传 None）",
           "回复时抵消父评论缩进的像素值。"
         ]
       ],
       "keys": [],
       "source": "src/components/comments/form.rs",
-      "code": "// 位于 CommentSection 提供的 CommentContext 中\nrsx! {\n    CommentForm { post_id, parent_id: None, parent_indent: None }\n}",
+      "code": "// \\u4F4D\\u4E8E CommentSection \\u63D0\\u4F9B\\u7684 CommentContext \\u4E2D\nview! {\n    <CommentForm post_id=post_id parent_id=None parent_indent=None/>\n}",
       "preview_mode": "interactive",
       "usage_kind": "rust"
     },
@@ -1601,7 +1612,7 @@
       ],
       "keys": [],
       "source": "src/components/comments/item.rs",
-      "code": "// 位于 CommentContext 作用域中\nrsx! {\n    CommentItem {\n        comment: PublicComment {\n            id: 101,\n            parent_id: None,\n            depth: 0,\n            author_name: \"青禾\".to_string(),\n            author_url: None,\n            avatar_url: String::new(),\n            is_author: true,\n            content_html: Some(\"<p>春天的第一片叶子，总会记得来时的风。</p>\".to_string()),\n            created_at: \"昨天 17:30\".to_string(),\n            created_at_iso: \"2026-09-22T10:00:00Z\".to_string(),\n        },\n        post_id: 1,\n    }\n}",
+      "code": "// \\u4F4D\\u4E8E CommentContext \\u4F5C\\u7528\\u57DF\\u4E2D\nlet comment = PublicComment {\n    id: 101,\n    parent_id: None,\n    depth: 0,\n    author_name: \"\\u9752\\u79BE\".to_string(),\n    author_url: None,\n    avatar_url: String::new(),\n    is_author: true,\n    content_html: Some(\"<p>\\u6625\\u5929\\u7684\\u7B2C\\u4E00\\u7247\\u53F6\\u5B50\\uFF0C\\u603B\\u4F1A\\u8BB0\\u5F97\\u6765\\u65F6\\u7684\\u98CE\\u3002</p>\".to_string()),\n    created_at: \"\\u6628\\u5929 17:30\".to_string(),\n    created_at_iso: \"2026-09-22T10:00:00Z\".to_string(),\n};\n\nview! {\n    <CommentItem comment=comment post_id=1/>\n}",
       "preview_mode": "interactive",
       "usage_kind": "rust"
     },
@@ -1616,13 +1627,13 @@
       "props": [
         [
           "comments",
-          "Vec<PublicComment>",
+          "Signal<Vec<PublicComment>>",
           "由调用方提供",
           "服务端返回的已审核评论列表。"
         ],
         [
           "pending",
-          "Vec<PendingComment>",
+          "Signal<Vec<PendingComment>>",
           "由调用方提供",
           "本地存储的待审核评论列表，与已审核评论混合组装为树形展示。"
         ],
@@ -1635,7 +1646,7 @@
       ],
       "keys": [],
       "source": "src/components/comments/list.rs",
-      "code": "// 位于 CommentContext 作用域中\nrsx! {\n    CommentList {\n        comments: approved_comments,\n        pending: pending_comments,\n        post_id: 1,\n    }\n}",
+      "code": "// \\u4F4D\\u4E8E CommentContext \\u4F5C\\u7528\\u57DF\\u4E2D\nview! {\n    <CommentList\n        comments=approved_comments\n        pending=pending_comments\n        post_id=1\n    />\n}",
       "preview_mode": "interactive",
       "usage_kind": "rust"
     },
@@ -1663,7 +1674,7 @@
       ],
       "keys": [],
       "source": "src/components/comments/pending_item.rs",
-      "code": "rsx! {\n    PendingCommentItem { comment: pending.clone(), post_id }\n}",
+      "code": "view! {\n    <PendingCommentItem comment=pending.clone() post_id=post_id/>\n}",
       "preview_mode": "static",
       "usage_kind": "rust"
     },
@@ -1685,7 +1696,7 @@
       ],
       "keys": [],
       "source": "src/components/comments/section.rs",
-      "code": "// 文章详情页中，传入当前文章 ID\nrsx! {\n    CommentSection { post_id: post.id }\n}",
+      "code": "// \\u6587\\u7AE0\\u8BE6\\u60C5\\u9875\\u4E2D\\uFF0C\\u4F20\\u5165\\u5F53\\u524D\\u6587\\u7AE0 ID\nview! {\n    <CommentSection post_id=post.id/>\n}",
       "preview_mode": "interactive",
       "usage_kind": "rust"
     },
@@ -1705,7 +1716,7 @@
       ],
       "keys": [],
       "source": "src/components/ui/icons.rs",
-      "code": "rsx! {\n    Icon { name: IconName::Search }\n    Icon { name: IconName::X, size: 20, label: \"关闭\".to_string() }\n}",
+      "code": "view! {\n    <Icon name=IconName::Search/>\n    <Icon name=IconName::X size=20 label=\"\\u5173\\u95ED\"/>\n}",
       "preview_mode": "static",
       "usage_kind": "rust"
     },
@@ -1718,20 +1729,20 @@
       "states": "五种样式 · 四种尺寸 · 加载 · 禁用",
       "description": "陶土底的主按钮一屏只放一个；次要、描边与透明按钮承担其余操作，红色只留给删除。按下时缩到 0.98 并以弹簧回弹；加载时文字隐去、转圈居中，按钮宽度不变。",
       "props": [
-        ["variant", "ButtonVariant", "Primary", "Primary / Secondary / Ghost / Outline / Danger / DangerSoft。"],
+        ["variant", "Signal<ButtonVariant>", "Primary", "Primary / Secondary / Ghost / Outline / Danger / DangerSoft。"],
         ["size", "ButtonSize", "Md", "Xs 26px、Sm 30px、Md 34px、Lg 40px。"],
-        ["icon", "Option<IconName>", "None", "文字前的图标。"],
-        ["loading", "bool", "false", "加载中：不响应点击，标 aria-busy。"],
-        ["disabled", "bool", "false", "禁用。"],
+        ["icon", "MaybeProp<IconName>", "None", "文字前的图标。"],
+        ["loading", "Signal<bool>", "false", "加载中：不响应点击，标 aria-busy。"],
+        ["disabled", "Signal<bool>", "false", "禁用。"],
         ["type", "&'static str", "\"button\"", "表单内提交时传 \"submit\"。"],
-        ["class", "String", "空", "附加类名。"],
-        ["onclick", "Option<EventHandler<MouseEvent>>", "None", "点击回调。"]
+        ["class", "Signal<String>", "空", "附加类名。"],
+        ["onclick", "Option<Callback<MouseEvent>>", "None", "点击回调。"]
       ],
       "keys": [
         ["Enter / Space", "触发按钮。"]
       ],
       "source": "src/components/ui/controls.rs",
-      "code": "rsx! {\n    Button { onclick: move |_| publish(), \"发布文章\" }\n    Button { variant: ButtonVariant::Secondary, icon: IconName::Save, \"保存草稿\" }\n    Button { variant: ButtonVariant::Danger, loading: deleting(), \"永久删除\" }\n}",
+      "code": "let deleting = RwSignal::new(false);\n\nview! {\n    <Button onclick=move |_| publish()>\"\\u53D1\\u5E03\\u6587\\u7AE0\"</Button>\n    <Button variant=ButtonVariant::Secondary icon=IconName::Save>\"\\u4FDD\\u5B58\\u8349\\u7A3F\"</Button>\n    <Button variant=ButtonVariant::Danger loading=deleting>\"\\u6C38\\u4E45\\u5220\\u9664\"</Button>\n}",
       "preview_mode": "interactive",
       "usage_kind": "rust"
     },
@@ -1744,23 +1755,23 @@
       "states": "透明 · 次要 · 按下 · 禁用",
       "description": "只有图标的方形按钮，默认透明底。label 必填，作为读屏名称并显示为悬浮提示；切换类按钮可传 pressed 表示开合状态。",
       "props": [
-        ["icon", "IconName", "必填", "图标。"],
-        ["label", "String", "必填", "读屏名称与悬浮提示。"],
-        ["variant", "ButtonVariant", "Ghost", "按钮样式。"],
+        ["icon", "Signal<IconName>", "必填", "图标。"],
+        ["label", "Signal<String>", "必填", "读屏名称与悬浮提示。"],
+        ["variant", "Signal<ButtonVariant>", "Ghost", "按钮样式。"],
         ["size", "ButtonSize", "Md", "尺寸，按钮为正方形。"],
-        ["pressed", "Option<bool>", "None", "切换按钮的按下状态，输出 aria-pressed。"],
-        ["shortcut", "Option<&'static str>", "None", "快捷键，显示在悬浮提示里。"],
-        ["tooltip_placement", "&'static str", "\"top\"", "提示出现在上方或下方。"],
-        ["tooltip_align", "&'static str", "\"center\"", "贴边时让提示朝内侧对齐。"],
-        ["disabled", "bool", "false", "禁用。"],
-        ["class", "String", "空", "附加类名。"],
-        ["onclick", "Option<EventHandler<MouseEvent>>", "None", "点击回调。"]
+        ["pressed", "Signal<Option<bool>>", "None", "切换按钮的按下状态，输出 aria-pressed。"],
+        ["shortcut", "MaybeProp<&'static str>", "None", "快捷键，显示在悬浮提示里。"],
+        ["tooltip_placement", "Signal<String>", "\"top\"", "提示出现在上方或下方。"],
+        ["tooltip_align", "Signal<String>", "\"center\"", "贴边时让提示朝内侧对齐。"],
+        ["disabled", "Signal<bool>", "false", "禁用。"],
+        ["class", "Signal<String>", "空", "附加类名。"],
+        ["onclick", "Option<Callback<MouseEvent>>", "None", "点击回调。"]
       ],
       "keys": [
         ["Enter / Space", "触发按钮。"]
       ],
       "source": "src/components/ui/controls.rs",
-      "code": "rsx! {\n    IconButton { icon: IconName::Copy, label: \"复制链接\", onclick: move |_| copy() }\n}",
+      "code": "view! {\n    <IconButton icon=IconName::Copy label=\"\\u590D\\u5236\\u94FE\\u63A5\" onclick=move |_| copy()/>\n}",
       "preview_mode": "interactive",
       "usage_kind": "rust"
     },
@@ -1773,19 +1784,19 @@
       "states": "范围内 · 越界 · 到达边界",
       "description": "接口限流、保留天数等设置都用它。单位写在框内右侧，两侧步进；超出范围时边框和说明一起变红，只有范围内的整数才回传。",
       "props": [
-        ["value", "i64", "必填", "当前值，由父组件控制。"],
+        ["value", "Signal<i64>", "必填", "当前值，由父组件控制。"],
         ["min", "i64", "必填", "最小值（含）。"],
         ["max", "i64", "必填", "最大值（含）。"],
         ["step", "i64", "1", "步进与方向键的增量。"],
         ["unit", "Option<&'static str>", "None", "单位，写在框内右侧。"],
-        ["hint", "Option<String>", "None", "范围内时显示的说明。"],
-        ["onchange", "EventHandler<i64>", "必填", "合法新值回调。"]
+        ["hint", "MaybeProp<String>", "None", "范围内时显示的说明。"],
+        ["onchange", "Callback<i64>", "必填", "合法新值回调。"]
       ],
       "keys": [
         ["↑ / ↓", "按步进增减。"]
       ],
       "source": "src/components/forms.rs",
-      "code": "rsx! {\n    NumberInput {\n        value: days(), min: 1, max: 90, unit: \"天\",\n        hint: \"超过保留期的日志由后台任务自动清理。\".to_string(),\n        onchange: move |v| days.set(v),\n    }\n}",
+      "code": "let days = RwSignal::new(30_i64);\n\nview! {\n    <NumberInput\n        value=days\n        min=1\n        max=90\n        unit=\"\\u5929\"\n        hint=\"\\u8D85\\u8FC7\\u4FDD\\u7559\\u671F\\u7684\\u65E5\\u5FD7\\u7531\\u540E\\u53F0\\u4EFB\\u52A1\\u81EA\\u52A8\\u6E05\\u7406\\u3002\"\n        onchange=move |v: i64| days.set(v)\n    />\n}",
       "preview_mode": "interactive",
       "usage_kind": "rust"
     },
@@ -1799,12 +1810,12 @@
       "description": "「⋯」等图标按钮触发的一列操作。打开后焦点落在第一项，↑/↓ 在可用项间移动，回车选中，Esc 关闭并把焦点还给触发按钮；删除类操作用红色，不可用项变淡并写明原因。手机上替代只在悬停时出现的操作。",
       "props": [
         ["label", "String", "必填", "触发按钮的读屏名称与悬浮提示。"],
-        ["items", "Vec<MenuItem>", "必填", "菜单项，用 MenuItem::new(id, 标签) 构造，可链式加 icon、danger、disabled、shortcut、separated。"],
-        ["on_select", "EventHandler<&'static str>", "必填", "选中某项时回传其 id。"],
+        ["items", "Signal<Vec<MenuItem>>", "必填", "菜单项，用 MenuItem::new(id, 标签) 构造，可链式加 icon、danger、disabled、shortcut、separated。"],
+        ["on_select", "Callback<&'static str>", "必填", "选中某项时回传其 id。"],
         ["icon", "IconName", "Ellipsis", "触发按钮图标。"],
         ["size", "ButtonSize", "Sm", "触发按钮尺寸。"],
-        ["placement", "&'static str", "\"bottom\"", "菜单在下方或上方展开。"],
-        ["align", "&'static str", "\"end\"", "右对齐（end）或左对齐（start）。"]
+        ["placement", "String", "\"bottom\"", "菜单在下方或上方展开。"],
+        ["align", "String", "\"end\"", "右对齐（end）或左对齐（start）。"]
       ],
       "keys": [
         ["↓ / ↑", "打开菜单，或在可用项间移动"],
@@ -1813,7 +1824,7 @@
         ["Esc", "关闭并回到触发按钮"]
       ],
       "source": "src/components/ui/menu.rs",
-      "code": "rsx! {\n    Menu {\n        label: \"更多操作\",\n        items: vec![\n            MenuItem::new(\"edit\", \"编辑\").icon(IconName::Pencil),\n            MenuItem::new(\"copy\", \"复制链接\").icon(IconName::Link),\n            MenuItem::new(\"trash\", \"移入回收站\").icon(IconName::Trash).danger().separated(),\n        ],\n        on_select: move |id| handle(id),\n    }\n}",
+      "code": "view! {\n    <Menu\n        label=\"\\u66F4\\u591A\\u64CD\\u4F5C\"\n        items=vec![\n            MenuItem::new(\"edit\", \"\\u7F16\\u8F91\").icon(IconName::Pencil),\n            MenuItem::new(\"copy\", \"\\u590D\\u5236\\u94FE\\u63A5\").icon(IconName::Link),\n            MenuItem::new(\"trash\", \"\\u79FB\\u5165\\u56DE\\u6536\\u7AD9\").icon(IconName::Trash).danger().separated(),\n        ]\n        on_select=move |id: &'static str| handle(id)\n    />\n}",
       "preview_mode": "interactive",
       "usage_kind": "rust"
     },
@@ -1830,7 +1841,7 @@
         ["Tab", "聚焦提示上的关闭按钮"]
       ],
       "source": "src/components/ui/feedback.rs",
-      "code": "let toast = use_toast();\nrsx! {\n    button { onclick: move |_| toast.success(\"已保存\"), \"保存\" }\n}",
+      "code": "let toast = use_toast();\n\nview! {\n    <button on:click=move |_| toast.success(\"\\u5DF2\\u4FDD\\u5B58\")>\"\\u4FDD\\u5B58\"</button>\n}",
       "preview_mode": "interactive",
       "usage_kind": "rust"
     },
@@ -1845,7 +1856,7 @@
       "props": [
         [
           "open",
-          "Signal<bool>",
+          "RwSignal<bool>",
           "必填",
           "是否打开；关闭动画结束后才置为 false。"
         ],
@@ -1869,7 +1880,7 @@
         ],
         [
           "children",
-          "Element",
+          "ChildrenFn",
           "必填",
           "抽屉内容。"
         ]
@@ -1885,7 +1896,7 @@
         ]
       ],
       "source": "src/components/ui/sheet.rs",
-      "code": "let mut open = use_signal(|| false);\nrsx! {\n    button { id: \"toc-trigger\", onclick: move |_| open.set(true), \"目录\" }\n    BottomSheet { open, id: \"toc-sheet\", trigger_id: \"toc-trigger\", label: \"目录\",\n        TocLinks {}\n    }\n}",
+      "code": "let open = RwSignal::new(false);\n\nview! {\n    <button id=\"toc-trigger\" on:click=move |_| open.set(true)>\"\\u76EE\\u5F55\"</button>\n    <BottomSheet open=open id=\"toc-sheet\" trigger_id=\"toc-trigger\" label=\"\\u76EE\\u5F55\">\n        <TocLinks/>\n    </BottomSheet>\n}",
       "preview_mode": "interactive",
       "usage_kind": "rust"
     },
@@ -1898,13 +1909,13 @@
       "states": "链接 · 当前页 · 截断",
       "description": "用斜线分隔的层级路径。前几级是链接，最后一级是当前页，过长时截断。",
       "props": [
-        ["items", "Vec<Crumb<R>>", "必填", "层级列表，用 Crumb::link(标签, 路由) 与 Crumb::current(标签) 构造。"]
+        ["items", "Signal<Vec<Crumb>>", "必填", "层级列表，用 Crumb::link(标签, 路由) 与 Crumb::current(标签) 构造。"]
       ],
       "keys": [
         ["Tab", "在链接之间移动"]
       ],
       "source": "src/components/ui/navigation.rs",
-      "code": "rsx! {\n    Breadcrumb::<Route> {\n        items: vec![\n            Crumb::link(\"关于\", Route::About {}),\n            Crumb::link(\"组件图鉴\", Route::ComponentShowcase {}),\n            Crumb::current(\"复选框\"),\n        ],\n    }\n}",
+      "code": "view! {\n    <Breadcrumb items=vec![\n        Crumb::link(\"\\u5173\\u4E8E\", Route::About),\n        Crumb::link(\"\\u7EC4\\u4EF6\\u56FE\\u9274\", Route::ComponentShowcase),\n        Crumb::current(\"\\u590D\\u9009\\u6846\"),\n    ]/>\n}",
       "preview_mode": "static",
       "usage_kind": "rust"
     },
@@ -1926,7 +1937,7 @@
         ["Esc", "有内容时清空，再按一次关闭"]
       ],
       "source": "src/components/search_palette.rs",
-      "code": "// 前台布局里提供句柄并挂载一次\nlet palette = use_search_palette_provider();\nrsx! {\n    SearchIconLink { on_click: move |_| palette.open() }\n    SearchPalette {}\n}",
+      "code": "// \\u524D\\u53F0\\u5E03\\u5C40\\u91CC\\u63D0\\u4F9B\\u53E5\\u67C4\\u5E76\\u6302\\u8F7D\\u4E00\\u6B21\nlet palette = use_search_palette_provider();\n\nview! {\n    <SearchIconLink on_click=move |_: leptos::ev::MouseEvent| palette.open()/>\n    <SearchPalette/>\n}",
       "preview_mode": "interactive",
       "usage_kind": "rust"
     },
@@ -1939,18 +1950,18 @@
       "states": "打开 · 拖拽 · 关闭",
       "description": "手机上的后台导航。以 heavy 弹簧从左侧滑出；点遮罩、按 Esc 或向左拖过 80px 关闭，拖拽有 4px 死区，竖直拖动留给内容滚动。打开时聚焦当前项，没有时聚焦第一个链接或按钮；关闭后焦点回到触发按钮，期间锁住页面滚动。抽屉内的子组件用 use_sheet_close() 关闭它。",
       "props": [
-        ["open", "Signal<bool>", "必填", "是否打开；关闭动画结束后才置为 false。"],
+        ["open", "RwSignal<bool>", "必填", "是否打开；关闭动画结束后才置为 false。"],
         ["id", "String", "必填", "抽屉的 DOM id，供触发按钮的 aria-controls 引用。"],
         ["trigger_id", "String", "必填", "触发按钮的 id，关闭后焦点回到这里。"],
         ["label", "String", "必填", "对话框的无障碍名称。"],
-        ["children", "Element", "必填", "抽屉内容。"]
+        ["children", "ChildrenFn", "必填", "抽屉内容。"]
       ],
       "keys": [
         ["Esc", "关闭抽屉"],
         ["Tab", "在抽屉内容间移动"]
       ],
       "source": "src/components/ui/sheet.rs",
-      "code": "let mut open = use_signal(|| false);\nrsx! {\n    button { id: \"menu-trigger\", onclick: move |_| open.set(true), \"菜单\" }\n    SideSheet { open, id: \"menu-sheet\", trigger_id: \"menu-trigger\", label: \"后台导航\",\n        AdminNav {}\n    }\n}",
+      "code": "let open = RwSignal::new(false);\n\nview! {\n    <button id=\"menu-trigger\" on:click=move |_| open.set(true)>\"\\u83DC\\u5355\"</button>\n    <SideSheet open=open id=\"menu-sheet\" trigger_id=\"menu-trigger\" label=\"\\u540E\\u53F0\\u5BFC\\u822A\">\n        <AdminNav/>\n    </SideSheet>\n}",
       "preview_mode": "interactive",
       "usage_kind": "rust"
     },
@@ -1963,7 +1974,7 @@
       "states": "常用操作 · 分组结果 · 无结果 · 加载中",
       "description": "后台布局里挂载一次，与前台搜索面板共用打开句柄、快捷键、高亮与样式。空查询列出常用操作与全部栏目；有查询时按「文章 · 操作 · 跳转」分组，文章来自后台列表接口（含草稿，按标题匹配，最多 6 篇），回车进入编辑。图鉴直接渲染同一面板视图 AdminPaletteView：固定文章在浏览器内过滤，选中项只在预览里回显，不请求、不跳转，也不注册全局快捷键。",
       "props": [
-        ["on_logout", "EventHandler<()>", "必填", "「退出登录」命令，与侧栏退出按钮同一处理。"]
+        ["on_logout", "Callback<()>", "必填", "「退出登录」命令，与侧栏退出按钮同一处理。"]
       ],
       "keys": [
         ["⌘K / Ctrl+K", "打开面板（焦点在编辑器里时留给编辑器）"],
@@ -1972,7 +1983,7 @@
         ["Esc", "有内容时清空，再按一次关闭"]
       ],
       "source": "src/components/admin_palette.rs",
-      "code": "// 后台布局里提供句柄并挂载一次\nlet palette = use_search_palette_provider();\nrsx! {\n    button { onclick: move |_| palette.open(), \"搜索或执行命令\" }\n    AdminPalette { on_logout: move |_| logout() }\n}",
+      "code": "// \\u540E\\u53F0\\u5E03\\u5C40\\u91CC\\u63D0\\u4F9B\\u53E5\\u67C4\\u5E76\\u6302\\u8F7D\\u4E00\\u6B21\nlet palette = use_search_palette_provider();\n\nview! {\n    <button on:click=move |_| palette.open()>\"\\u641C\\u7D22\\u6216\\u6267\\u884C\\u547D\\u4EE4\"</button>\n    <AdminPalette on_logout=move |_| logout()/>\n}",
       "preview_mode": "interactive",
       "usage_kind": "rust"
     },
@@ -1987,15 +1998,9 @@
       "props": [
         [
           "tag",
-          "Option<String>",
+          "MaybeProp<String>",
           "None",
           "所在栏目，通常是文章的第一个标签。"
-        ],
-        [
-          "full_reload",
-          "bool",
-          "false",
-          "链接是否整页加载。后台文章预览（/admin/preview）中设为 true，避免跨布局的客户端导航。"
         ],
         [
           "sample",
@@ -2006,7 +2011,7 @@
       ],
       "keys": [],
       "source": "src/components/post/breadcrumbs.rs",
-      "code": "use crate::components::post::breadcrumbs::Breadcrumbs;\n\nrsx! {\n    Breadcrumbs { tag: post.tags.first().cloned() }\n}",
+      "code": "use crate::components::post::breadcrumbs::Breadcrumbs;\n\nview! {\n    <Breadcrumbs tag=post.tags.first().cloned()/>\n}",
       "preview_mode": "static",
       "usage_kind": "rust"
     },
@@ -2034,7 +2039,7 @@
       ],
       "keys": [],
       "source": "src/components/post/post_content.rs",
-      "code": "for post_slug in std::iter::once(post.slug.clone()) {\n    PostContent {\n        key: \"{post_slug}\",\n        content_html: post.content_html.clone().unwrap_or_default(),\n    }\n}",
+      "code": "let content_html = post.content_html.clone().unwrap_or_default();\n\n// \\u7EC4\\u4EF6\\u53EA\\u5728\\u9996\\u6B21\\u8FD0\\u884C\\u65F6\\u8BFB\\u53D6 content_html\\uFF1B\\u5207\\u6362\\u6587\\u7AE0\\u65F6\\u7531\\u8DEF\\u7531\\u6309 slug \\u91CD\\u5EFA\\u672C\\u7EC4\\u4EF6\\u3002\nview! {\n    <PostContent content_html=content_html/>\n}",
       "preview_mode": "interactive",
       "usage_kind": "rust"
     },
@@ -2051,18 +2056,18 @@
           "src",
           "String",
           "由调用方提供",
-          "文章封面的 src 参数。"
+          "封面原图 URL。"
         ],
         [
           "post_id",
-          "Option<i32>",
+          "MaybeProp<i32>",
           "None",
-          "文章封面的 post_id 参数。"
+          "参与文章共享过渡的文章 ID，可省略。"
         ]
       ],
       "keys": [],
       "source": "src/components/post/post_cover.rs",
-      "code": "pub fn PostCover(src: String, #[props(default)] post_id: Option<i32>) -> Element",
+      "code": "pub fn PostCover(#[prop(into)] src: String, #[prop(optional, into)] post_id: MaybeProp<i32>) -> impl IntoView",
       "preview_mode": "static",
       "usage_kind": "api"
     },
@@ -2077,15 +2082,9 @@
       "props": [
         [
           "post",
-          "Post",
+          "PostFooterData",
           "由调用方提供",
-          "文章页脚的 post 参数。"
-        ],
-        [
-          "full_reload",
-          "bool",
-          "false",
-          "后台预览跨布局跳转时设为 true。"
+          "页脚所需的最小字段集（前后篇导航），用 PostFooterData::from(&post) 构造。"
         ],
         [
           "sample",
@@ -2096,7 +2095,7 @@
       ],
       "keys": [],
       "source": "src/components/post/post_footer.rs",
-      "code": "PostFooter { post: post.clone() } // 后台预览可传 full_reload: true",
+      "code": "let footer = PostFooterData::from(&post);\n\nview! {\n    <PostFooter post=footer/>\n}",
       "preview_mode": "static",
       "usage_kind": "rust"
     },
@@ -2111,20 +2110,20 @@
       "props": [
         [
           "post",
-          "Post",
+          "PostHeaderData",
           "由调用方提供",
-          "文章数据，包含标题、可选摘要、发布状态、日期、阅读时长与字数。"
+          "页眉所需的最小字段集（标题、可选摘要、发布状态、标签、日期、阅读时长与字数），用 PostHeaderData::from(&post) 构造。"
         ],
         [
-          "full_reload",
+          "sample",
           "bool",
           "false",
-          "面包屑首页链接是否整页加载；仅后台预览跨布局导航时设为 true。"
+          "图鉴中的非跳转样例链接；正式文章使用默认值。"
         ]
       ],
       "keys": [],
       "source": "src/components/post/post_header.rs",
-      "code": "rsx! {\n    PostHeader { post: post.clone() }\n}",
+      "code": "let header = PostHeaderData::from(&post);\n\nview! {\n    <PostHeader post=header/>\n}",
       "preview_mode": "static",
       "usage_kind": "rust"
     },
@@ -2139,14 +2138,14 @@
       "props": [
         [
           "post",
-          "Post",
+          "PostHeaderData",
           "由调用方提供",
           "读取发布时间（缺省时回退到创建时间）、reading_time 与 word_count。"
         ]
       ],
       "keys": [],
       "source": "src/components/post/post_meta.rs",
-      "code": "rsx! {\n    PostMeta { post: post.clone() }\n}",
+      "code": "view! {\n    <PostMeta post=PostHeaderData::from(&post)/>\n}",
       "preview_mode": "static",
       "usage_kind": "rust"
     },
@@ -2162,20 +2161,14 @@
         [
           "prev",
           "Option<PostNav>",
-          "None",
+          "必填（可传 None）",
           "上一篇文章的标题与 slug；None 时不显示该入口。"
         ],
         [
           "next",
           "Option<PostNav>",
-          "None",
+          "必填（可传 None）",
           "下一篇文章的标题与 slug；None 时不显示该入口。"
-        ],
-        [
-          "full_reload",
-          "bool",
-          "false",
-          "使用整页加载，适用于后台文章预览跨布局跳转。"
         ],
         [
           "sample",
@@ -2189,7 +2182,7 @@
         ["Enter", "打开聚焦的文章；本页样例不跳转。"]
       ],
       "source": "src/components/post/post_nav_links.rs",
-      "code": "PostNavLinks {\n    prev: Some(PostNav {\n        title: \"一片叶子\".to_string(),\n        slug: \"a-leaf\".to_string(),\n    }),\n    next: Some(PostNav {\n        title: \"下一圈年轮\".to_string(),\n        slug: \"next-ring\".to_string(),\n    }),\n}",
+      "code": "let prev = Some(PostNav {\n    title: \"\\u4E00\\u7247\\u53F6\\u5B50\".to_string(),\n    slug: \"a-leaf\".to_string(),\n});\nlet next = Some(PostNav {\n    title: \"\\u4E0B\\u4E00\\u5708\\u5E74\\u8F6E\".to_string(),\n    slug: \"next-ring\".to_string(),\n});\n\nview! {\n    <PostNavLinks prev=prev next=next/>\n}",
       "preview_mode": "static",
       "usage_kind": "rust"
     },
@@ -2223,7 +2216,7 @@
       ],
       "keys": [],
       "source": "src/components/post/post_toc.rs",
-      "code": "if let Some(toc) = post.toc_html.clone() {\n    PostToc { toc_html: toc, title: \"文章目录\" }\n}",
+      "code": "let toc = post.toc_html.clone();\n\nview! {\n    {toc.map(|toc| view! { <PostToc toc_html=toc title=\"\\u6587\\u7AE0\\u76EE\\u5F55\"/> })}\n}",
       "preview_mode": "interactive",
       "usage_kind": "rust"
     },
@@ -2237,15 +2230,21 @@
       "description": "SQL 结果表按单元格类型优雅渲染布尔徽章、等宽数字、文本与 NULL 值，支持点击任意行展开跨列完整详情；可切换预设查询观察不同数据结构。",
       "props": [
         [
-          "props",
-          "SqlResultTableProps",
+          "result",
+          "SqlResult",
           "由调用方提供",
-          "SQL 结果表的 props 参数，包含 result (SqlResult) 与可选的 initial_expanded。"
+          "后端返回的结果集（列名与每格的 JSON 值）。"
+        ],
+        [
+          "initial_expanded",
+          "MaybeProp<usize>",
+          "None",
+          "初始展开的行索引；缺省全部收起。"
         ]
       ],
       "keys": [],
       "source": "src/components/sql_result_table.rs",
-      "code": "rsx! {\n    SqlResultTable {\n        result: sql_result,\n    }\n}",
+      "code": "view! {\n    <SqlResultTable result=sql_result/>\n}",
       "preview_mode": "interactive",
       "usage_kind": "rust"
     },
