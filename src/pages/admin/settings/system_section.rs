@@ -3,7 +3,8 @@
 //! 数据库连接、日志级别、Docker 等值保留在环境变量里，这里只展示；密钥类只显示
 //! 是否已设置。
 
-use dioxus::prelude::*;
+use leptos::prelude::*;
+use leptos::task::spawn_local;
 
 use super::kit::SettingsCard;
 use super::SettingsSection;
@@ -110,39 +111,55 @@ fn rows(i: &SystemInfo) -> Vec<(&'static str, &'static str, String, &'static str
 
 /// 启动配置分区组件。
 #[component]
-pub fn SystemSection() -> Element {
-    let mut info = use_signal(|| None::<SystemInfo>);
-    let mut failed = use_signal(|| false);
-    use_hook(move || {
-        spawn(async move {
+pub fn SystemSection() -> impl IntoView {
+    let info = RwSignal::new(None::<SystemInfo>);
+    let failed = RwSignal::new(false);
+    // Effect 只在浏览器里运行：服务端渲染不请求。
+    Effect::new(move |loaded: Option<()>| {
+        if loaded.is_some() {
+            return;
+        }
+        spawn_local(async move {
             match get_system_info().await {
                 Ok(i) => info.set(Some(i)),
                 Err(_) => failed.set(true),
             }
         });
     });
-    rsx! {
-        SettingsCard {
-            section: SettingsSection::System,
-            description: "进程启动时读取的环境变量，这里只展示；修改后需重启服务。",
-            ready: info.read().is_some(),
-            load_failed: failed(),
-            if let Some(i) = info() {
-                dl { class: "settings-readonly",
-                    for (label, env, value, hint) in rows(&i) {
-                        div { key: "{env}", class: "settings-readonly-row",
-                            dt {
-                                span { "{label}" }
-                                code { "{env}" }
-                            }
-                            dd {
-                                span { class: "settings-mono", "{value}" }
-                                small { "{hint}" }
-                            }
+    let ready = Signal::derive(move || info.with(|i| i.is_some()));
+    view! {
+        <SettingsCard
+            section=SettingsSection::System
+            description="进程启动时读取的环境变量，这里只展示；修改后需重启服务。"
+            ready=ready
+            load_failed=failed
+        >
+            {move || {
+                info.get()
+                    .map(|i| {
+                        view! {
+                            <dl class="settings-readonly">
+                                {rows(&i)
+                                    .into_iter()
+                                    .map(|(label, env, value, hint)| {
+                                        view! {
+                                            <div class="settings-readonly-row">
+                                                <dt>
+                                                    <span>{label}</span>
+                                                    <code>{env}</code>
+                                                </dt>
+                                                <dd>
+                                                    <span class="settings-mono">{value}</span>
+                                                    <small>{hint}</small>
+                                                </dd>
+                                            </div>
+                                        }
+                                    })
+                                    .collect_view()}
+                            </dl>
                         }
-                    }
-                }
-            }
-        }
+                    })
+            }}
+        </SettingsCard>
     }
 }
