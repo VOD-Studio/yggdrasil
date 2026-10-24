@@ -6,26 +6,23 @@
 //! 底部确认栏按勾选顺序批量回填。
 //! 内嵌「上传新图」入口（复用 `upload_image_file`），上传成功后留在网格中供用户选择
 //! （多选模式下自动加入选中集——上传即意图）。
-//! 纯 Dioxus 组件，不触碰 Tiptap；数据加载仅在 WASM 前端发生。
+//! 纯 Leptos 组件，不触碰 Tiptap；数据加载仅在浏览器端（Effect）发生。
 
+use std::time::Duration;
+
+use leptos::prelude::*;
+
+use crate::api::assets::list_assets;
 use crate::components::ui::{
     button_class, ButtonSize, ButtonVariant, Icon, IconButton, IconName, ModalShell, TablePager,
 };
-use dioxus::prelude::*;
-
-#[cfg(target_arch = "wasm32")]
-use crate::api::assets::list_assets;
-use crate::models::asset::AssetDto;
-#[cfg(target_arch = "wasm32")]
-use crate::models::asset::{AssetFilter, AssetSort};
-#[cfg(target_arch = "wasm32")]
+use crate::models::asset::{AssetDto, AssetFilter, AssetSort};
 use crate::utils::error::failure_message;
 
 /// 每页素材数，与素材管理页及服务端列表接口保持一致。
 const ASSETS_PER_PAGE: i32 = 60;
 /// 搜索输入防抖窗口，复用素材管理页的请求节流约定。
-#[cfg(target_arch = "wasm32")]
-const SEARCH_DEBOUNCE_MS: u32 = 300;
+const SEARCH_DEBOUNCE_MS: u64 = 300;
 
 /// 素材选中载荷：`on_select` 的回传单元。
 ///
@@ -43,7 +40,7 @@ pub struct AssetSelection {
 
 /// Grid data shared by the authenticated picker and the local showcase.
 #[derive(Clone, PartialEq)]
-pub(crate) struct PickerAsset {
+pub struct PickerAsset {
     pub(crate) url: String,
     pub(crate) thumbnail: String,
     pub(crate) filename: String,
@@ -101,405 +98,557 @@ fn toggle_selection(selected: &mut Vec<AssetSelection>, item: AssetSelection) {
 /// - `title`：modal 标题；封面场景缺省为「选择封面图」，头像/正文场景各自传入。
 /// - `multi`：多选模式（正文插图）。网格项变为勾选切换，底部确认栏批量回填。
 #[component]
-#[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut, unused_variables))]
+#[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))]
 pub fn AssetPickerModal(
-    mut visible: Signal<bool>,
-    on_select: EventHandler<Vec<AssetSelection>>,
-    cover_uploading: Signal<bool>,
-    #[props(default = "选择封面图")] title: &'static str,
-    #[props(default)] multi: bool,
-) -> Element {
-    #[allow(unused_mut)]
-    let mut assets: Signal<Vec<AssetDto>> = use_signal(Vec::new);
-    #[allow(unused_mut)]
-    let mut loading = use_signal(|| false);
-    let mut query = use_signal(String::new);
-    #[allow(unused_mut)]
-    let mut debounced_query = use_signal(String::new);
-    #[allow(unused_mut)]
-    let mut error = use_signal(|| None::<String>);
-    let mut page = use_signal(|| 1_i32);
-    #[allow(unused_mut)]
-    let mut total = use_signal(|| 0_i64);
+    visible: RwSignal<bool>,
+    #[prop(into)] on_select: Callback<Vec<AssetSelection>>,
+    cover_uploading: RwSignal<bool>,
+    #[prop(default = "选择封面图".to_string(), into)] title: String,
+    #[prop(optional)] multi: bool,
+) -> impl IntoView {
+    let assets = RwSignal::new(Vec::<AssetDto>::new());
+    let loading = RwSignal::new(false);
+    let query = RwSignal::new(String::new());
+    let debounced_query = RwSignal::new(String::new());
+    let error = RwSignal::new(None::<String>);
+    let page = RwSignal::new(1_i32);
+    let total = RwSignal::new(0_i64);
     // 上传中的本地对象 URL 只用于当前 modal 预览，上传结束立即释放。
-    let mut uploading_preview = use_signal(|| None::<String>);
+    let uploading_preview = RwSignal::new(None::<String>);
     // 关闭时保留 DOM 播放淡出；动画结束后再卸载，避免弹窗瞬间消失。
-    let mut closing = use_signal(|| false);
-    let mut opened = use_signal(|| false);
+    let closing = RwSignal::new(false);
+    let opened = RwSignal::new(false);
     // 上传完成后先把新图留在弹窗网格中，用户点击后才真正应用头像。
-    let mut uploaded_url = use_signal(|| None::<String>);
+    let uploaded_url = RwSignal::new(None::<String>);
     // 多选模式的选中集：按勾选顺序排列，跨页/搜索/上传保留；每次打开时重置。
     // 以 URL 判重（见 toggle_selection）。单选模式不使用。
-    let mut selected: Signal<Vec<AssetSelection>> = use_signal(Vec::new);
+    let selected = RwSignal::new(Vec::<AssetSelection>::new());
 
-    #[cfg(target_arch = "wasm32")]
-    let request_generation = use_hook(|| std::rc::Rc::new(std::cell::Cell::new(0_u64)));
+    // 请求代际：任何新输入 / 翻页 / 关闭都会递增，旧响应据此丢弃。
+    let generation = StoredValue::new(0_u64);
+    let bump_generation = move || {
+        generation
+            .try_update_value(|g| {
+                *g = g.wrapping_add(1);
+                *g
+            })
+            .unwrap_or(0)
+    };
+    let current_generation = move || generation.try_get_value().unwrap_or(0);
+    // 防抖定时器句柄：新输入前清除旧的，卸载时清除。
+    let debounce_timer = StoredValue::new(None::<TimeoutHandle>);
 
-    #[cfg(target_arch = "wasm32")]
-    let request_generation_for_close = request_generation.clone();
-    use_effect(move || {
-        if visible() {
+    Effect::new(move |_| {
+        if visible.get() {
             opened.set(true);
             uploaded_url.set(None);
             // 每次打开都是一次全新的选择会话（取消或确认后关闭均不留旧勾选）。
             selected.set(Vec::new());
-        } else if *opened.peek() {
-            #[cfg(target_arch = "wasm32")]
-            request_generation_for_close.set(request_generation_for_close.get().wrapping_add(1));
+        } else if opened.get_untracked() {
+            bump_generation();
             page.set(1);
         }
     });
 
     // 搜索防抖：保留输入框原值，停顿 300ms 后才提交查询并回到第 1 页。
     // 每次新输入都会递增请求代际，立即丢弃尚未返回的旧查询结果。
-    #[cfg(target_arch = "wasm32")]
-    let request_generation_for_debounce = request_generation.clone();
-    use_effect(move || {
-        let q = query();
-        #[cfg(target_arch = "wasm32")]
-        {
-            request_generation_for_debounce
-                .set(request_generation_for_debounce.get().wrapping_add(1));
-            spawn(async move {
-                crate::utils::time::sleep_ms(SEARCH_DEBOUNCE_MS).await;
-                if *query.peek() == q {
-                    if *debounced_query.peek() != q {
-                        debounced_query.set(q);
+    Effect::new(move |_| {
+        let q = query.get();
+        bump_generation();
+        if let Some(Some(old)) = debounce_timer.try_update_value(Option::take) {
+            old.clear();
+        }
+        let handle = set_timeout_with_handle(
+            move || {
+                if query.try_get_untracked().as_deref() == Some(q.as_str()) {
+                    if debounced_query.try_get_untracked().as_deref() != Some(q.as_str()) {
+                        let _ = debounced_query.try_set(q);
                     }
-                    page.set(1);
+                    let _ = page.try_set(1);
                 }
-            });
+            },
+            Duration::from_millis(SEARCH_DEBOUNCE_MS),
+        );
+        if let Ok(handle) = handle {
+            debounce_timer.set_value(Some(handle));
         }
     });
 
     // 打开、搜索词或页码变化时加载当前页；请求代际保证只有最后一次响应能落地。
-    #[cfg(target_arch = "wasm32")]
-    let request_generation_for_load = request_generation.clone();
-    use_effect(move || {
-        let open = visible();
-        let q = debounced_query();
-        let requested_page = page();
-        if open {
-            #[cfg(target_arch = "wasm32")]
-            {
-                let request_generation = request_generation_for_load.clone();
-                let request_id = request_generation.get().wrapping_add(1);
-                request_generation.set(request_id);
-                spawn(async move {
-                    if request_generation.get() != request_id {
-                        return;
-                    }
-                    loading.set(true);
-                    error.set(None);
-                    let result =
-                        list_assets(AssetFilter::All, q, AssetSort::CreatedDesc, requested_page)
-                            .await;
-                    if request_generation.get() != request_id {
-                        return;
-                    }
-                    match result {
-                        Ok(resp) => {
-                            let last_page = ((resp.total + ASSETS_PER_PAGE as i64 - 1)
-                                / ASSETS_PER_PAGE as i64)
-                                .max(1) as i32;
-                            if resp.assets.is_empty() && requested_page > last_page {
-                                page.set(last_page);
-                                return;
-                            }
-                            assets.set(resp.assets);
-                            total.set(resp.total);
-                            error.set(None);
-                        }
-                        Err(e) => error.set(Some(failure_message("素材加载失败", &e))),
-                    }
-                    if request_generation.get() == request_id {
-                        loading.set(false);
-                    }
-                });
+    Effect::new(move |_| {
+        let open = visible.get();
+        let q = debounced_query.get();
+        let requested_page = page.get();
+        if !open {
+            return;
+        }
+        let request_id = bump_generation();
+        leptos::task::spawn_local(async move {
+            if current_generation() != request_id {
+                return;
             }
+            let _ = loading.try_set(true);
+            let _ = error.try_set(None);
+            let result =
+                list_assets(AssetFilter::All, q, AssetSort::CreatedDesc, requested_page).await;
+            if current_generation() != request_id {
+                return;
+            }
+            match result {
+                Ok(resp) => {
+                    let last_page = ((resp.total + ASSETS_PER_PAGE as i64 - 1)
+                        / ASSETS_PER_PAGE as i64)
+                        .max(1) as i32;
+                    if resp.assets.is_empty() && requested_page > last_page {
+                        let _ = page.try_set(last_page);
+                        return;
+                    }
+                    let _ = assets.try_set(resp.assets);
+                    let _ = total.try_set(resp.total);
+                    let _ = error.try_set(None);
+                }
+                Err(e) => {
+                    let _ = error.try_set(Some(failure_message("素材加载失败", &e)));
+                }
+            }
+            if current_generation() == request_id {
+                let _ = loading.try_set(false);
+            }
+        });
+    });
+
+    // 卸载：丢弃在途请求结果、清防抖定时器、释放尚未回收的预览对象 URL。
+    on_cleanup(move || {
+        bump_generation();
+        if let Some(Some(timer)) = debounce_timer.try_update_value(Option::take) {
+            timer.clear();
+        }
+        #[cfg(target_arch = "wasm32")]
+        if let Some(Some(preview_url)) = uploading_preview.try_get_untracked() {
+            let _ = web_sys::Url::revoke_object_url(&preview_url);
         }
     });
 
-    let current_page = page();
-    let total_assets = total();
-    let loading_now = loading();
-    let show_pagination = total_assets > ASSETS_PER_PAGE as i64;
-    let mut gallery_items: Vec<PickerAsset> = assets.read().iter().map(PickerAsset::from).collect();
-    if let Some(url) = uploaded_url() {
-        prepend_uploaded_asset(&mut gallery_items, url);
-    }
-
-    rsx! {
-        ModalShell {
-            visible,
-            closing,
-            title,
-            overlay_padding: "p-4 sm:p-6",
-            panel_class: "asset-modal asset-picker",
-
-            div { class: "asset-modal-head",
-                h2 { "{title}" }
-                IconButton {
-                    icon: IconName::X,
-                    label: "关闭",
-                    size: ButtonSize::Sm,
-                    onclick: move |_| {
-                        closing.set(true);
-                        visible.set(false);
-                    },
-                }
-            }
-            div { class: "asset-modal-bar",
-                label { class: "field field-sm admin-filter-search asset-modal-search",
-                    Icon { name: IconName::Search, size: 14 }
-                    span { class: "sr-only", "搜索素材" }
-                    input {
-                        r#type: "search",
-                        placeholder: "文件名或替代文本",
-                        value: "{query}",
-                        oninput: move |e| query.set(e.value()),
-                    }
-                }
-                // 上传新图：成功后留在网格里，单选模式由用户再点一次确认。
-                label {
-                    class: "{button_class(ButtonVariant::Secondary, ButtonSize::Sm)} asset-modal-upload",
-                    "aria-disabled": cover_uploading().then_some("true"),
-                    Icon { name: IconName::Upload, size: 14 }
-                    if cover_uploading() { "上传中…" } else { "上传新图片" }
-                    input {
-                        r#type: "file",
-                        accept: "image/jpeg,image/png,image/gif,image/webp",
-                        class: "sr-only",
-                        disabled: cover_uploading(),
-                            onchange: move |evt| {
-                            #[cfg(target_arch = "wasm32")]
-                            {
-                                use dioxus::web::WebFileExt;
-                                if cover_uploading() {
-                                    return;
-                                }
-                                if let Some(file) = evt.files().into_iter().next() {
-                    if let Some(web_file) = file.get_web_file() {
-                        // 与 AssetUploadModal 的 worker 池入队校验（upload_pool::validate_file）
-                        // 同一份规则：不合格直接提示、不发请求——此前这里只靠 accept 属性
-                        // （客户端可绕过）+ 服务端兜底校验，缺了与批量上传一致的客户端预检。
-                        if let Err(msg) = crate::components::assets::upload_pool::validate_file(
-                        &web_file.type_(),
-                        web_file.size() as u64,
-                        ) {
-                        error.set(Some(format!("上传失败：{msg}")));
-                        } else {
-                        let preview_url =
-                            web_sys::Url::create_object_url_with_blob(&web_file).ok();
-                        uploading_preview.set(preview_url.clone());
-                        cover_uploading.set(true);
-                        error.set(None);
-                        spawn(async move {
-                            let result = crate::bridges::tiptap::upload_image_file(web_file)
-                                .await;
-                            if let Some(preview_url) = preview_url.as_deref() {
-                                let _ = web_sys::Url::revoke_object_url(preview_url);
-                            }
-                            match result {
-                                Ok(url) => {
-                                    // 多选模式：上传即意图，新图直接进入选中集
-                                    // （URL 判重，网格刷新后同图不会重复选中）。
-                                    if multi {
-                                        toggle_selection(
-                                            &mut selected.write(),
-                                            AssetSelection {
-                                                url: url.clone(),
-                                                alt: None,
-                                            },
-                                        );
-                                    }
-                                    uploaded_url.set(Some(url));
-                                    uploading_preview.set(None);
-                                    cover_uploading.set(false);
-                                }
-                                Err(msg) => {
-                                    error.set(Some(format!("上传失败：{msg}")));
-                                    uploading_preview.set(None);
-                                    cover_uploading.set(false);
-                                }
-                            }
-                        });
-                        }
-                    }
-                                }
-                            }
-                        },
-                    }
-                }
-            }
-
-                PickerGallery {
-                    items: gallery_items.clone(),
-                    selected,
-                    multi,
-                    loading: loading_now,
-                    uploading: cover_uploading(),
-                    error: error(),
-                    uploading_preview: uploading_preview(),
-                    on_pick: move |picks| {
-                        on_select.call(picks);
-                        closing.set(true);
-                        visible.set(false);
-                    },
-                }
-                if show_pagination {
-                    div { class: "asset-modal-pager", "aria-busy": loading_now.then_some("true"),
-                        TablePager {
-                            page: current_page,
-                            total: total_assets,
-                            per_page: ASSETS_PER_PAGE,
-                            unit: "张",
-                            on_change: move |next: i32| {
-                                if !loading() {
-                                    page.set(next.max(1));
-                                }
-                            },
-                        }
-                    }
-                }
-
-                if multi {
-                    PickerSelectionFooter { selected, on_pick: move |picks| {
-                        on_select.call(picks);
-                        closing.set(true);
-                        visible.set(false);
-                    } }
-                }
-
+    let show_pagination = move || total.get() > ASSETS_PER_PAGE as i64;
+    let gallery_items = Memo::new(move |_| {
+        let mut items: Vec<PickerAsset> =
+            assets.with(|list| list.iter().map(PickerAsset::from).collect());
+        if let Some(url) = uploaded_url.get() {
+            prepend_uploaded_asset(&mut items, url);
         }
+        items
+    });
+
+    let close = move || {
+        closing.set(true);
+        visible.set(false);
+    };
+    let pick_and_close = move |picks: Vec<AssetSelection>| {
+        on_select.run(picks);
+        close();
+    };
+
+    view! {
+        <ModalShell
+            visible=visible
+            closing=closing
+            title=title.clone()
+            overlay_padding="p-4 sm:p-6"
+            panel_class="asset-modal asset-picker"
+        >
+            <div class="asset-modal-head">
+                <h2>{title.clone()}</h2>
+                <IconButton
+                    icon=IconName::X
+                    label="关闭"
+                    size=ButtonSize::Sm
+                    onclick=move |_| close()
+                />
+            </div>
+            <div class="asset-modal-bar">
+                <label class="field field-sm admin-filter-search asset-modal-search">
+                    <Icon name=IconName::Search size=14/>
+                    <span class="sr-only">"搜索素材"</span>
+                    <input
+                        type="search"
+                        placeholder="文件名或替代文本"
+                        prop:value=move || query.get()
+                        on:input=move |e| query.set(event_target_value(&e))
+                    />
+                </label>
+                // 上传新图：成功后留在网格里，单选模式由用户再点一次确认。
+                <label
+                    class=format!(
+                        "{} asset-modal-upload",
+                        button_class(ButtonVariant::Secondary, ButtonSize::Sm),
+                    )
+                    aria-disabled=move || cover_uploading.get().then_some("true")
+                >
+                    <Icon name=IconName::Upload size=14/>
+                    {move || if cover_uploading.get() { "上传中…" } else { "上传新图片" }}
+                    <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/gif,image/webp"
+                        class="sr-only"
+                        disabled=move || cover_uploading.get()
+                        on:change=move |evt| {
+                            #[cfg(target_arch = "wasm32")]
+                            start_inline_upload(
+                                &evt,
+                                multi,
+                                cover_uploading,
+                                uploading_preview,
+                                uploaded_url,
+                                selected,
+                                error,
+                            );
+                            #[cfg(not(target_arch = "wasm32"))]
+                            let _ = evt;
+                        }
+                    />
+                </label>
+            </div>
+
+            <PickerGallery
+                items=gallery_items
+                selected=selected
+                multi=multi
+                loading=loading
+                uploading=cover_uploading
+                error=error
+                uploading_preview=uploading_preview
+                on_pick=pick_and_close
+            />
+            <Show when=show_pagination>
+                <div
+                    class="asset-modal-pager"
+                    aria-busy=move || loading.get().then_some("true")
+                >
+                    <TablePager
+                        page=page
+                        total=total
+                        per_page=ASSETS_PER_PAGE
+                        unit="张"
+                        on_change=move |next: i32| {
+                            if !loading.get_untracked() {
+                                page.set(next.max(1));
+                            }
+                        }
+                    />
+                </div>
+            </Show>
+
+            <Show when=move || multi>
+                <PickerSelectionFooter selected=selected on_pick=pick_and_close/>
+            </Show>
+        </ModalShell>
     }
+}
+
+/// 选择文件后的内嵌上传：预检 → 预览 → 上传 → 回填网格。仅浏览器端。
+#[cfg(target_arch = "wasm32")]
+fn start_inline_upload(
+    evt: &web_sys::Event,
+    multi: bool,
+    cover_uploading: RwSignal<bool>,
+    uploading_preview: RwSignal<Option<String>>,
+    uploaded_url: RwSignal<Option<String>>,
+    selected: RwSignal<Vec<AssetSelection>>,
+    error: RwSignal<Option<String>>,
+) {
+    if cover_uploading.get_untracked() {
+        return;
+    }
+    let Some(web_file) = event_target::<web_sys::HtmlInputElement>(evt)
+        .files()
+        .and_then(|list| list.item(0))
+    else {
+        return;
+    };
+    // 与 AssetUploadModal 的 worker 池入队校验（upload_pool::validate_file）同一份规则：
+    // 不合格直接提示、不发请求，补上与批量上传一致的客户端预检。
+    if let Err(msg) = super::upload_pool::validate_file(&web_file.type_(), web_file.size() as u64) {
+        error.set(Some(format!("上传失败：{msg}")));
+        return;
+    }
+    let preview_url = web_sys::Url::create_object_url_with_blob(&web_file).ok();
+    uploading_preview.set(preview_url.clone());
+    cover_uploading.set(true);
+    error.set(None);
+    leptos::task::spawn_local(async move {
+        let result = crate::bridges::tiptap::upload_image_file(web_file).await;
+        if let Some(preview_url) = preview_url.as_deref() {
+            let _ = web_sys::Url::revoke_object_url(preview_url);
+        }
+        match result {
+            Ok(url) => {
+                // 多选模式：上传即意图，新图直接进入选中集
+                // （URL 判重，网格刷新后同图不会重复选中）。
+                if multi {
+                    let _ = selected.try_update(|list| {
+                        toggle_selection(
+                            list,
+                            AssetSelection {
+                                url: url.clone(),
+                                alt: None,
+                            },
+                        )
+                    });
+                }
+                let _ = uploaded_url.try_set(Some(url));
+                let _ = uploading_preview.try_set(None);
+                let _ = cover_uploading.try_set(false);
+            }
+            Err(msg) => {
+                let _ = error.try_set(Some(format!("上传失败：{msg}")));
+                let _ = uploading_preview.try_set(None);
+                let _ = cover_uploading.try_set(false);
+            }
+        }
+    });
 }
 
 /// The actual picker grid is shared; callers provide already loaded display rows.
 #[component]
 pub(crate) fn PickerGallery(
-    items: Vec<PickerAsset>,
-    mut selected: Signal<Vec<AssetSelection>>,
+    #[prop(into)] items: Signal<Vec<PickerAsset>>,
+    selected: RwSignal<Vec<AssetSelection>>,
     multi: bool,
-    loading: bool,
-    uploading: bool,
-    error: Option<String>,
-    uploading_preview: Option<String>,
-    on_pick: EventHandler<Vec<AssetSelection>>,
-) -> Element {
-    rsx! {
-        div { class: "asset-modal-body", "aria-busy": loading.then_some("true"),
-            if let Some(error) = error {
-                p { class: "asset-modal-error", role: "alert", "{error}" }
-            } else if loading && items.is_empty() && !uploading {
-                p { class: "asset-modal-empty", role: "status", "正在读取素材…" }
-            } else if items.is_empty() && !uploading {
-                p { class: "asset-modal-empty", "素材库还是空的，先上传一张图片。" }
-            } else {
-                ul { class: "asset-pick-grid",
-                    if uploading {
-                        li { class: "asset-pick", "data-uploading": "true", aria_live: "polite", aria_label: "正在上传图片",
-                            span { class: "asset-pick-thumb",
-                                if let Some(preview_url) = uploading_preview {
-                                    img { src: "{preview_url}", alt: "" }
-                                }
-                                span { class: "asset-pick-progress", "上传中" }
-                            }
-                            span { class: "asset-pick-name", "新图片" }
-                        }
+    #[prop(into)] loading: Signal<bool>,
+    #[prop(into)] uploading: Signal<bool>,
+    #[prop(into)] error: Signal<Option<String>>,
+    #[prop(into)] uploading_preview: Signal<Option<String>>,
+    #[prop(into)] on_pick: Callback<Vec<AssetSelection>>,
+) -> impl IntoView {
+    // 分支判别量用 Memo 去重：只有错误 / 读取中 / 空 / 网格切换时才重建主体，
+    // 网格内部的增删与勾选由各自的响应式绑定原地更新。
+    let branch = Memo::new(move |_| {
+        let empty = items.with(Vec::is_empty);
+        if error.with(Option::is_some) {
+            0
+        } else if loading.get() && empty && !uploading.get() {
+            1
+        } else if empty && !uploading.get() {
+            2
+        } else {
+            3
+        }
+    });
+    view! {
+        <div class="asset-modal-body" aria-busy=move || loading.get().then_some("true")>
+            {move || match branch.get() {
+                0 => {
+                    view! {
+                        <p class="asset-modal-error" role="alert">
+                            {move || error.get().unwrap_or_default()}
+                        </p>
                     }
-                    for item in items.iter() {
-                        {
-                            let selection = AssetSelection { url: item.url.clone(), alt: item.alt.clone() };
-                            let order = if multi { selected.read().iter().position(|value| value.url == item.url) } else { None };
-                            rsx! {
-                                li { key: "{item.url}",
-                                    button {
-                                        class: "asset-pick",
-                                        r#type: "button",
-                                        role: if multi { "checkbox" } else { "button" },
-                                        aria_checked: multi.then(|| order.is_some().to_string()),
-                                        "data-checked": order.is_some().then_some("true"),
-                                        title: "{item.filename}",
-                                        aria_label: "{item.filename}",
-                                        onclick: move |_| {
-                                            if multi {
-                                                toggle_selection(&mut selected.write(), selection.clone());
-                                            } else {
-                                                on_pick.call(vec![selection.clone()]);
-                                            }
-                                        },
-                                        span { class: "asset-pick-thumb",
-                                            img { src: "{item.thumbnail}", alt: "", loading: "lazy" }
-                                            if multi {
-                                                span { class: "asset-pick-order", aria_hidden: "true",
-                                                    if let Some(index) = order { "{index + 1}" }
-                                                }
-                                            }
-                                            if item.fresh {
-                                                span { class: "asset-pick-fresh", "刚上传" }
-                                            }
+                        .into_any()
+                }
+                1 => {
+                    view! {
+                        <p class="asset-modal-empty" role="status">
+                            "正在读取素材…"
+                        </p>
+                    }
+                        .into_any()
+                }
+                2 => {
+                    view! { <p class="asset-modal-empty">"素材库还是空的，先上传一张图片。"</p> }
+                        .into_any()
+                }
+                _ => {
+                    view! {
+                        <ul class="asset-pick-grid">
+                            {move || {
+                                uploading
+                                    .get()
+                                    .then(|| {
+                                        view! {
+                                            <li
+                                                class="asset-pick"
+                                                data-uploading="true"
+                                                aria-live="polite"
+                                                aria-label="正在上传图片"
+                                            >
+                                                <span class="asset-pick-thumb">
+                                                    {move || {
+                                                        uploading_preview
+                                                            .get()
+                                                            .map(|preview_url| {
+                                                                view! { <img src=preview_url alt=""/> }
+                                                            })
+                                                    }} <span class="asset-pick-progress">"上传中"</span>
+                                                </span>
+                                                <span class="asset-pick-name">"新图片"</span>
+                                            </li>
                                         }
-                                        span { class: "asset-pick-name", "{item.filename}" }
+                                    })
+                            }}
+                            <For
+                                each=move || items.get()
+                                key=|item| {
+                                    (
+                                        item.url.clone(),
+                                        item.thumbnail.clone(),
+                                        item.filename.clone(),
+                                        item.alt.clone(),
+                                        item.fresh,
+                                    )
+                                }
+                                children=move |item| {
+                                    view! {
+                                        <PickerItem
+                                            item=item
+                                            selected=selected
+                                            multi=multi
+                                            on_pick=on_pick
+                                        />
                                     }
                                 }
-                            }
-                        }
+                            />
+                        </ul>
                     }
+                        .into_any()
                 }
-            }
-        }
+            }}
+        </div>
     }
 }
 
+/// 网格中的单个素材：单选点击即回填，多选点击切换勾选并显示勾选序号。
 #[component]
-pub(crate) fn PickerSelectionFooter(
-    mut selected: Signal<Vec<AssetSelection>>,
-    on_pick: EventHandler<Vec<AssetSelection>>,
-) -> Element {
-    let count = selected.read().len();
-    rsx! {
-        div { class: "asset-modal-foot",
-            span {
-                if count == 0 {
-                    "可以多选，插入顺序与勾选顺序一致"
-                } else {
-                    "已选 {count} 张 · 按勾选顺序插入"
-                }
-            }
-            div { class: "asset-modal-foot-actions",
-                button {
-                    class: button_class(ButtonVariant::Ghost, ButtonSize::Md),
-                    r#type: "button",
-                    disabled: count == 0,
-                    onclick: move |_| selected.set(Vec::new()),
-                    "清空"
-                }
-                button {
-                    class: button_class(ButtonVariant::Primary, ButtonSize::Md),
-                    r#type: "button",
-                    disabled: count == 0,
-                    onclick: move |_| {
-                        let picks = selected();
-                        if !picks.is_empty() {
-                            on_pick.call(picks);
-                        }
-                    },
-                    if count == 0 { "插入" } else { "插入 {count} 张" }
-                }
+fn PickerItem(
+    item: PickerAsset,
+    selected: RwSignal<Vec<AssetSelection>>,
+    multi: bool,
+    on_pick: Callback<Vec<AssetSelection>>,
+) -> impl IntoView {
+    let PickerAsset {
+        url,
+        thumbnail,
+        filename,
+        alt,
+        fresh,
+    } = item;
+    let selection = AssetSelection {
+        url: url.clone(),
+        alt,
+    };
+    let order = {
+        let url = url.clone();
+        move || {
+            if multi {
+                selected.with(|list| list.iter().position(|value| value.url == url))
+            } else {
+                None
             }
         }
+    };
+    let order_for_checked = order.clone();
+    let order_for_aria = order.clone();
+    let title_attr = filename.clone();
+    let aria_label = filename.clone();
+    view! {
+        <li>
+            <button
+                class="asset-pick"
+                type="button"
+                role=if multi { "checkbox" } else { "button" }
+                aria-checked=move || multi.then(|| order_for_aria().is_some().to_string())
+                data-checked=move || order_for_checked().is_some().then_some("true")
+                title=title_attr
+                aria-label=aria_label
+                on:click=move |_| {
+                    if multi {
+                        selected.update(|list| toggle_selection(list, selection.clone()));
+                    } else {
+                        on_pick.run(vec![selection.clone()]);
+                    }
+                }
+            >
+                <span class="asset-pick-thumb">
+                    <img src=thumbnail alt="" loading="lazy"/>
+                    {multi
+                        .then(|| {
+                            view! {
+                                <span class="asset-pick-order" aria-hidden="true">
+                                    {move || order().map(|index| (index + 1).to_string())}
+                                </span>
+                            }
+                        })} {fresh.then(|| view! { <span class="asset-pick-fresh">"刚上传"</span> })}
+                </span>
+                <span class="asset-pick-name">{filename}</span>
+            </button>
+        </li>
+    }
+}
+
+/// 多选模式底栏：已选计数、清空与确认插入。
+#[component]
+pub(crate) fn PickerSelectionFooter(
+    selected: RwSignal<Vec<AssetSelection>>,
+    #[prop(into)] on_pick: Callback<Vec<AssetSelection>>,
+) -> impl IntoView {
+    let count = move || selected.with(Vec::len);
+    view! {
+        <div class="asset-modal-foot">
+            <span>
+                {move || {
+                    match count() {
+                        0 => "可以多选，插入顺序与勾选顺序一致".to_string(),
+                        n => format!("已选 {n} 张 · 按勾选顺序插入"),
+                    }
+                }}
+            </span>
+            <div class="asset-modal-foot-actions">
+                <button
+                    class=button_class(ButtonVariant::Ghost, ButtonSize::Md)
+                    type="button"
+                    disabled=move || count() == 0
+                    on:click=move |_| selected.set(Vec::new())
+                >
+                    "清空"
+                </button>
+                <button
+                    class=button_class(ButtonVariant::Primary, ButtonSize::Md)
+                    type="button"
+                    disabled=move || count() == 0
+                    on:click=move |_| {
+                        let picks = selected.get_untracked();
+                        if !picks.is_empty() {
+                            on_pick.run(picks);
+                        }
+                    }
+                >
+                    {move || match count() {
+                        0 => "插入".to_string(),
+                        n => format!("插入 {n} 张"),
+                    }}
+                </button>
+            </div>
+        </div>
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{prepend_uploaded_asset, toggle_selection, AssetSelection, PickerAsset};
+    use super::*;
 
     fn sel(url: &str) -> AssetSelection {
         AssetSelection {
             url: url.to_string(),
             alt: None,
+        }
+    }
+
+    fn picker_asset(url: &str, filename: &str) -> PickerAsset {
+        PickerAsset {
+            url: url.to_string(),
+            thumbnail: format!("{url}?thumb=300x300"),
+            filename: filename.to_string(),
+            alt: Some("封面".to_string()),
+            fresh: false,
         }
     }
 
@@ -540,13 +689,7 @@ mod tests {
 
     #[test]
     fn uploaded_asset_does_not_duplicate_a_loaded_grid_url() {
-        let mut items = vec![PickerAsset {
-            url: "/uploads/a.webp".to_string(),
-            thumbnail: "/uploads/a.webp?thumb=300x300".to_string(),
-            filename: "a.webp".to_string(),
-            alt: Some("封面".to_string()),
-            fresh: false,
-        }];
+        let mut items = vec![picker_asset("/uploads/a.webp", "a.webp")];
         prepend_uploaded_asset(&mut items, "/uploads/a.webp".to_string());
         assert_eq!(items.len(), 1);
         prepend_uploaded_asset(&mut items, "/uploads/b.webp".to_string());
@@ -575,5 +718,85 @@ mod tests {
             json,
             r#"[{"src":"/uploads/a.webp","alt":"封面"},{"src":"/uploads/b.webp"}]"#
         );
+    }
+
+    fn render_gallery(multi: bool, selected: Vec<AssetSelection>) -> String {
+        Owner::new().with(|| {
+            let items = RwSignal::new(vec![
+                picker_asset("/uploads/a.webp", "a.webp"),
+                PickerAsset {
+                    fresh: true,
+                    ..picker_asset("/uploads/b.webp", "新上传图片")
+                },
+            ]);
+            let selected = RwSignal::new(selected);
+            view! {
+                <PickerGallery
+                    items=items
+                    selected=selected
+                    multi=multi
+                    loading=false
+                    uploading=false
+                    error={None::<String>}
+                    uploading_preview={None::<String>}
+                    on_pick=Callback::new(|_| {})
+                />
+            }
+            .to_html()
+        })
+    }
+
+    #[test]
+    fn single_gallery_renders_button_role_and_fresh_badge() {
+        let html = render_gallery(false, Vec::new());
+        assert!(html.contains("role=\"button\""), "{html}");
+        assert!(html.contains("asset-pick-fresh"), "{html}");
+        assert!(!html.contains("asset-pick-order"), "{html}");
+    }
+
+    #[test]
+    fn multi_gallery_marks_checked_items_with_order() {
+        let html = render_gallery(true, vec![sel("/uploads/b.webp")]);
+        assert!(html.contains("role=\"checkbox\""), "{html}");
+        assert_eq!(html.matches("data-checked=\"true\"").count(), 1, "{html}");
+        assert!(html.contains("aria-checked=\"true\""), "{html}");
+        assert!(html.contains("aria-checked=\"false\""), "{html}");
+    }
+
+    #[test]
+    fn gallery_shows_empty_and_error_states() {
+        let html = Owner::new().with(|| {
+            view! {
+                <PickerGallery
+                    items={Vec::<PickerAsset>::new()}
+                    selected=RwSignal::new(Vec::new())
+                    multi=false
+                    loading=false
+                    uploading=false
+                    error={None::<String>}
+                    uploading_preview={None::<String>}
+                    on_pick=Callback::new(|_| {})
+                />
+            }
+            .to_html()
+        });
+        assert!(html.contains("素材库还是空的"), "{html}");
+        let html = Owner::new().with(|| {
+            view! {
+                <PickerGallery
+                    items={Vec::<PickerAsset>::new()}
+                    selected=RwSignal::new(Vec::new())
+                    multi=false
+                    loading=false
+                    uploading=false
+                    error=Some("素材加载失败，请稍后再试".to_string())
+                    uploading_preview={None::<String>}
+                    on_pick=Callback::new(|_| {})
+                />
+            }
+            .to_html()
+        });
+        assert!(html.contains("role=\"alert\""), "{html}");
+        assert!(html.contains("素材加载失败"), "{html}");
     }
 }
