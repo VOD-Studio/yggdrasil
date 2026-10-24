@@ -2,7 +2,7 @@
 //!
 //! 将已审核评论与待审核评论合并成一棵树并按时间排序渲染。
 
-use dioxus::prelude::*;
+use leptos::prelude::*;
 
 use crate::components::comments::item::CommentItem;
 use crate::components::comments::pending_item::PendingCommentItem;
@@ -10,10 +10,21 @@ use crate::models::comment::PublicComment;
 use crate::utils::comment_storage::PendingComment;
 
 /// 合并后的评论节点，可能是已审核或待审核评论。
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 enum MergedComment {
     Approved(PublicComment),
     Pending(PendingComment),
+}
+
+impl MergedComment {
+    /// 列表行 key：（是否待审核, 评论 id）。待审核占位转为正式评论时 id 不变，
+    /// 带上类别才能让该行重建为 `CommentItem`。
+    fn key(&self) -> (bool, i64) {
+        match self {
+            MergedComment::Approved(c) => (false, c.id),
+            MergedComment::Pending(c) => (true, c.id),
+        }
+    }
 }
 
 /// 合并两类评论并构建成树形结构。
@@ -105,28 +116,31 @@ fn merge_and_treeify(
 /// - `pending`：待审核评论列表
 /// - `post_id`：所属文章 ID
 ///
-/// 根据两类评论构建合并树，依次渲染为 `CommentItem` 或 `PendingCommentItem`。
+/// 根据两类评论构建合并树，依次渲染为 `CommentItem` 或 `PendingCommentItem`；
+/// 按 key 复用行，刷新列表时已展开的回复表单与草稿不丢失。
 #[component]
 pub fn CommentList(
-    comments: Vec<PublicComment>,
-    pending: Vec<PendingComment>,
+    #[prop(into)] comments: Signal<Vec<PublicComment>>,
+    #[prop(into)] pending: Signal<Vec<PendingComment>>,
     post_id: i32,
-) -> Element {
-    let merged = merge_and_treeify(comments, pending);
+) -> impl IntoView {
+    let merged = Memo::new(move |_| merge_and_treeify(comments.get(), pending.get()));
 
-    rsx! {
+    view! {
         // comment-list：评论区灯箱（__initLightbox）的根选择器，绑定在 section.rs。
-        div { class: "comment-list",
-            for item in merged {
-                match item {
-                    MergedComment::Approved(comment) => rsx! {
-                        CommentItem { key: "{comment.id}", comment, post_id }
-                    },
-                    MergedComment::Pending(comment) => rsx! {
-                        PendingCommentItem { key: "{comment.id}", comment, post_id }
-                    },
+        <div class="comment-list">
+            <For
+                each=move || merged.get()
+                key=|item: &MergedComment| item.key()
+                children=move |item: MergedComment| match item {
+                    MergedComment::Approved(comment) => {
+                        view! { <CommentItem comment=comment post_id=post_id/> }.into_any()
+                    }
+                    MergedComment::Pending(comment) => {
+                        view! { <PendingCommentItem comment=comment post_id=post_id/> }.into_any()
+                    }
                 }
-            }
-        }
+            />
+        </div>
     }
 }

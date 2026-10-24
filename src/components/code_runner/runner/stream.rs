@@ -3,11 +3,16 @@ use super::{
     execution::Execution,
     state::{DonePayload, Outcome, Phase, RunState},
 };
-use dioxus::prelude::{ReadableExt, WritableExt};
+use crate::bridges::xterm::TerminalHandle;
+use leptos::prelude::*;
 use wasm_bindgen::{closure::Closure, JsCast, JsValue};
 use web_sys::{Event, EventSource, MessageEvent};
 
 type Listener = (&'static str, Closure<dyn FnMut(Event)>);
+
+/// 终端句柄的本地存储（JS 句柄不是 `Send`，只能放 `StoredValue::new_local`）。
+pub(super) type TerminalSlot = StoredValue<Option<TerminalHandle>, LocalStorage>;
+
 pub(super) struct StreamHandle {
     source: EventSource,
     listeners: Vec<Listener>,
@@ -36,13 +41,26 @@ impl Drop for StreamHandle {
     }
 }
 
-pub(super) fn start(id: &str, mut execution: Execution) -> Result<StreamHandle, JsValue> {
+/// 在终端（若已挂载）上执行一次操作；组件已卸载时静默跳过。
+fn with_terminal(terminal: TerminalSlot, f: impl FnOnce(&TerminalHandle)) {
+    let _ = terminal.try_with_value(|handle| {
+        if let Some(handle) = handle.as_ref() {
+            f(handle);
+        }
+    });
+}
+
+pub(super) fn start(
+    id: &str,
+    execution: Execution,
+    terminal: TerminalSlot,
+) -> Result<StreamHandle, JsValue> {
     let mut handle = StreamHandle {
         source: EventSource::new(&format!("/api/exec/stream?task_id={id}"))?,
         listeners: Vec::new(),
     };
     handle.listen("stage", move |event| {
-        if !execution.state.peek().is_running() {
+        if !execution.is_running_untracked() {
             return;
         }
         let phase = match event
@@ -54,35 +72,39 @@ pub(super) fn start(id: &str, mut execution: Execution) -> Result<StreamHandle, 
             Some("preparing") => Phase::Preparing,
             _ => Phase::Running,
         };
-        execution.state.set(RunState::Busy(phase));
+        let _ = execution.state.try_set(RunState::Busy(phase));
     })?;
     for channel in ["stdout", "stderr"] {
         handle.listen(channel, move |event| {
-            if !execution.state.peek().is_running() {
+            if !execution.is_running_untracked() {
                 return;
             }
             if let Some(text) = event
                 .dyn_ref::<MessageEvent>()
                 .and_then(|e| e.data().as_string())
             {
-                if let Some(terminal) = execution.terminal.read().as_ref() {
+                with_terminal(terminal, |terminal| {
                     if channel == "stdout" {
                         terminal.instance().write_stdout(&text);
                     } else {
                         terminal.instance().write_stderr(&text);
                     }
-                }
-                execution.has_output.set(true);
+                });
+                let _ = execution.has_output.try_set(true);
                 // 输出先于 stage 事件到达时也算已在运行。
-                if *execution.state.peek() != RunState::Busy(Phase::Running) {
-                    execution.state.set(RunState::Busy(Phase::Running));
+                if execution
+                    .state
+                    .try_with_untracked(|state| *state != RunState::Busy(Phase::Running))
+                    .unwrap_or(false)
+                {
+                    let _ = execution.state.try_set(RunState::Busy(Phase::Running));
                 }
             }
         })?;
     }
     let source = handle.source.clone();
     handle.listen("done", move |event| {
-        if !execution.state.peek().is_running() {
+        if !execution.is_running_untracked() {
             return;
         }
         let outcome = event
@@ -93,63 +115,68 @@ pub(super) fn start(id: &str, mut execution: Execution) -> Result<StreamHandle, 
             .unwrap_or_else(|| {
                 RunState::Finished(Outcome::SystemFailed("运行结果格式异常，请重试".into()))
             });
-        execution.has_output.set(true);
-        execution.state.set(outcome);
+        let _ = execution.has_output.try_set(true);
+        let _ = execution.state.try_set(outcome);
         source.close();
     })?;
     let source = handle.source.clone();
     handle.listen("error", move |_| {
-        if execution.state.peek().is_running() {
-            execution
+        if execution.is_running_untracked() {
+            let _ = execution
                 .state
-                .set(RunState::Finished(Outcome::Disconnected));
+                .try_set(RunState::Finished(Outcome::Disconnected));
         }
         source.close();
     })?;
     Ok(handle)
 }
 
-pub(super) async fn poll_result(id: &str, mut execution: Execution) {
+pub(super) async fn poll_result(id: &str, execution: Execution, terminal: TerminalSlot) {
     use crate::api::code_runner::{execute::get_exec_result, ExecStatus};
     for _ in 0..240 {
         crate::utils::time::sleep_ms(500).await;
+        // 组件已卸载（信号已释放）就停止轮询。
+        if execution.state.try_with_untracked(|_| ()).is_none() {
+            return;
+        }
         match get_exec_result(id.to_string()).await {
             Ok(task) if matches!(task.status, ExecStatus::Queued | ExecStatus::Running) => {
-                execution
-                    .state
-                    .set(RunState::Busy(if task.status == ExecStatus::Queued {
-                        Phase::Queued
-                    } else {
-                        Phase::Running
-                    }));
+                let _ =
+                    execution
+                        .state
+                        .try_set(RunState::Busy(if task.status == ExecStatus::Queued {
+                            Phase::Queued
+                        } else {
+                            Phase::Running
+                        }));
             }
             Ok(task) => {
                 if let Some(result) = task.result {
-                    if let Some(terminal) = execution.terminal.read().as_ref() {
+                    with_terminal(terminal, |terminal| {
                         terminal
                             .instance()
                             .write_all(&result.stdout, &result.stderr);
-                    }
-                    execution.has_output.set(true);
-                    execution.state.set(RunState::result(&result));
+                    });
+                    let _ = execution.has_output.try_set(true);
+                    let _ = execution.state.try_set(RunState::result(&result));
                 } else {
-                    execution
+                    let _ = execution
                         .state
-                        .set(RunState::Finished(Outcome::SystemFailed(
+                        .try_set(RunState::Finished(Outcome::SystemFailed(
                             "运行结果缺失，请重试".into(),
                         )));
                 }
                 return;
             }
             Err(_) => {
-                execution
+                let _ = execution
                     .state
-                    .set(RunState::Finished(Outcome::Disconnected));
+                    .try_set(RunState::Finished(Outcome::Disconnected));
                 return;
             }
         }
     }
-    execution
+    let _ = execution
         .state
-        .set(RunState::Finished(Outcome::Disconnected));
+        .try_set(RunState::Finished(Outcome::Disconnected));
 }

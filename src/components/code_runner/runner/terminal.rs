@@ -1,36 +1,41 @@
 //! Terminal resources belong to the component scope.
-use super::RunnerExample;
+use super::{
+    execution::{Execution, TerminalCommand},
+    stream::TerminalSlot,
+    RunnerExample,
+};
 use crate::bridges::library::{library_ready, LibraryResource};
-use crate::bridges::xterm::TerminalHandle;
-use dioxus::prelude::*;
+use crate::theme::ResolvedTheme;
+use leptos::prelude::*;
+
+/// 终端挂载与同步。`terminal_ready` 在终端创建成功后置 `true`，
+/// 供执行 Effect 等待（终端句柄本身不是响应式的）。
+#[allow(clippy::too_many_arguments)]
 pub(super) fn use_terminal(
     output_container_id: String,
     example_output: Option<RunnerExample>,
-    show_output: Signal<bool>,
+    execution: Execution,
     terminal_library: LibraryResource,
-    mut term_handle: Signal<Option<TerminalHandle>>,
-    mut terminal_failed: Signal<bool>,
-    mount_retry: Signal<u32>,
+    term_handle: TerminalSlot,
+    terminal_ready: RwSignal<bool>,
+    terminal_failed: RwSignal<bool>,
+    mount_retry: RwSignal<u32>,
+    resolved_theme: Memo<ResolvedTheme>,
 ) {
     use crate::bridges::xterm;
-    use crate::theme::{use_resolved_theme, ResolvedTheme};
     use wasm_bindgen::closure::Closure;
 
-    // 在 cfg 块顶层（渲染路径）取主题 memo，move 进下方 effect 闭包；闭包内只
-    // 调用 memo（resolved_theme()）读值——调用 memo 本身不是 hook。
-    let resolved_theme = use_resolved_theme();
+    let show_output = execution.show_output;
 
     // 首次挂载：构造 onReady 闭包 + XtermOptions，create 后存进 term_handle。
     // 订阅 show_output：输出区在 show_output 变 true（用户点运行）后才渲染进 DOM，
-    // 容器此前不存在；读 show_output 建立订阅，使其变 true 时重跑本 effect 完成挂载。
-    let mount_container_id = output_container_id;
-    let mount_example = example_output;
-    use_effect(move || {
-        let _ = mount_retry(); // 订阅：点重试即重跑
-        if term_handle.read().is_some() {
+    // 容器此前不存在；读 show_output 建立订阅，使其变 true 时重跑本 Effect 完成挂载。
+    Effect::new(move |_| {
+        mount_retry.track(); // 订阅：点重试即重跑
+        if term_handle.with_value(|handle| handle.is_some()) {
             return; // 防重复 init
         }
-        if !show_output() {
+        if !show_output.get() {
             return; // 输出区未显示，容器不在 DOM，等 show_output 变 true 再挂载
         }
         if !library_ready(terminal_library) {
@@ -38,7 +43,7 @@ pub(super) fn use_terminal(
         }
 
         let on_ready = Closure::new(|| {});
-        let theme_name = if resolved_theme() == ResolvedTheme::Dark {
+        let theme_name = if resolved_theme.get_untracked() == ResolvedTheme::Dark {
             "dark"
         } else {
             "light"
@@ -49,13 +54,14 @@ pub(super) fn use_terminal(
         opts.set_font_size(13);
         opts.set_on_ready(&on_ready);
 
-        match xterm::get_module().create(&mount_container_id, &opts) {
+        match xterm::get_module().create(&output_container_id, &opts) {
             Ok(Some(inst)) => {
-                if let Some(example) = &mount_example {
+                if let Some(example) = &example_output {
                     inst.write_all(&example.stdout, &example.stderr);
                 }
                 let handle = xterm::TerminalHandle::new(inst, on_ready);
-                term_handle.set(Some(handle));
+                term_handle.set_value(Some(handle));
+                terminal_ready.set(true);
                 terminal_failed.set(false);
             }
             Ok(None) => terminal_failed.set(true),
@@ -66,25 +72,44 @@ pub(super) fn use_terminal(
         }
     });
 
+    // 外壳发来的命令（清空 / 写入示例输出）。终端未挂载时丢弃：示例在挂载时已按
+    // `example_output` 写入，清空则无内容可清。
+    Effect::new(move |_| {
+        let Some(command) = execution.terminal_command.get() else {
+            return;
+        };
+        let _ = execution.terminal_command.try_set(None);
+        term_handle.with_value(|handle| {
+            if let Some(handle) = handle.as_ref() {
+                match &command {
+                    TerminalCommand::Clear => handle.instance().clear(),
+                    TerminalCommand::WriteAll { stdout, stderr } => {
+                        handle.instance().write_all(stdout, stderr)
+                    }
+                }
+            }
+        });
+    });
+
     // 主题切换时同步终端主题。
-    // VT 动画期间跳过(同 CodeMirror 的 use_effect,见上方注释)。
-    use_effect(move || {
-        #[cfg(target_arch = "wasm32")]
+    // VT 动画期间跳过：主题过渡的视图过渡回调负责换肤，动画结束后本 Effect 因 resolved
+    // 信号变化重跑，做一次幂等兜底。
+    Effect::new(move |_| {
+        let dark = resolved_theme.get() == ResolvedTheme::Dark;
         if crate::utils::js::is_theme_transitioning() {
             return;
         }
-        if let Some(h) = term_handle.read().as_ref() {
-            h.instance()
-                .set_theme(if resolved_theme() == ResolvedTheme::Dark {
-                    "dark"
-                } else {
-                    "light"
-                });
-        }
+        term_handle.with_value(|handle| {
+            if let Some(handle) = handle.as_ref() {
+                handle
+                    .instance()
+                    .set_theme(if dark { "dark" } else { "light" });
+            }
+        });
     });
 
     // 组件卸载时销毁终端（TerminalHandle::drop → instance.destroy）。
-    use_drop(move || {
-        term_handle.set(None);
+    on_cleanup(move || {
+        let _ = term_handle.try_set_value(None);
     });
 }
