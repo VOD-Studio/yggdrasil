@@ -18,7 +18,7 @@ import 'katex/contrib/mhchem';
  * (源码 MarkdownManager.ts:1116-1182:有 handler 的节点不走 escape 路径)。
  *
  * NodeView 内用客户端 katex.renderToString 渲染预览(类 Notion/Typora)。
- * KaTeX CSS(/katex/katex.min.css)已由 Dioxus.toml 全局注入,字体就绪。
+ * KaTeX CSS(/katex/katex.min.css)已由应用 shell（src/app.rs）全局注入,字体就绪。
  */
 
 /**

@@ -3,7 +3,7 @@ import { defineConfig } from 'vite';
 
 // mermaid 独立 IIFE bundle：~1MB，不打进 yggdrasil-core（避免拖累每篇文章首屏）。
 // 由 yggdrasil-core 的 mermaid.ts 在 IntersectionObserver 视口可见时动态 import。
-// 输出到 public/mermaid/mermaid.js，dx build 会作为静态资源拷贝。
+// 输出到 public/mermaid/mermaid.js，cargo-leptos 会随 assets-dir 拷进站点根。
 export default defineConfig({
   build: {
     outDir: resolve(import.meta.dirname, '../../public/mermaid'),

@@ -9,8 +9,7 @@
 # The build is split into TWO native-arm64 builder stages because the two
 # toolchains it needs cannot live in one base image:
 #
-#   Stage A (frontend, rust:1.99-trixie / glibc)  — the prebuilt `dx` CLI is a
-#     glibc binary needing GLIBC_2.39, so it only runs on Trixie (glibc 2.41).
+#   Stage A (frontend, rust:1.99-trixie / glibc)  — cargo-leptos + nightly wasm32.
 #     Builds the WASM client + JS libs + syntax/katex/tailwind CSS.
 #
 #   Stage B (server, rust:1.99-alpine3.22 / musl) — the ONLY reliable zig
@@ -30,9 +29,7 @@
 # -----------------------------------------------------------------------------
 # Stage A: frontend assets (glibc Trixie, native arm64)
 # -----------------------------------------------------------------------------
-# Trixie (Debian 13, glibc 2.41) — required because the prebuilt `dx` v0.7.10
-# binary (aarch64/x86_64-unknown-linux-gnu) needs GLIBC_2.39; Bookworm only
-# ships 2.36, so `dx --version` fails with "version `GLIBC_2.39' not found".
+# Trixie (Debian 13, glibc 2.41).
 FROM --platform=$BUILDPLATFORM rust:1.99-trixie AS frontend
 
 # Master switch for Chinese mirrors.
@@ -43,8 +40,7 @@ FROM --platform=$BUILDPLATFORM rust:1.99-trixie AS frontend
 #     gh-proxy for GitHub Releases). Pass via: --build-arg CN_MIRROR=true
 # Individual mirror URLs are still ARG-overridable for custom mirrors.
 ARG CN_MIRROR=false
-# Exported as ENV so `make esbuild-cache` / `make wasm-bindgen-cache` (called
-# from RUN below) can read it via $$CN_MIRROR in their shell recipes.
+# Exported as ENV so build recipes (make) can read $CN_MIRROR when needed.
 ENV CN_MIRROR=${CN_MIRROR}
 
 # Mirror URLs used WHEN CN_MIRROR=true (Chinese mirrors; left unused when
@@ -52,7 +48,7 @@ ENV CN_MIRROR=${CN_MIRROR}
 #   - Debian apt          -> TUNA (Tsinghua)
 #   - Rust + crates.io    -> rsproxy (ByteDance)
 #   - Bun + npm packages   -> npmmirror (Alibaba)
-#   - GitHub Releases     -> gh-proxy (dx, tailwindcss)
+#   - GitHub Releases     -> gh-proxy (tailwindcss)
 ARG DEBIAN_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/debian
 ARG DEBIAN_SECURITY_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/debian-security
 ARG NPM_REGISTRY=https://registry.npmmirror.com
@@ -72,12 +68,6 @@ RUN if [ "$CN_MIRROR" = "true" ]; then \
 #   - build-essential: AWS-LC's non-FIPS C build for native highlight-css;
 #     it does not require OpenSSL, CMake or Go.
 #   - cmake/clang/nasm/libssl-dev: libwebp (zenwebp), ring, syntect
-#   - binaryen: provides `wasm-opt` on PATH so dx's release client build
-#     uses the local binary instead of fetching one from GitHub Releases.
-#     dx's internal wasm-opt download ignores GH_PROXY (only the explicit
-#     curl calls for dx/tailwindcss honor it), so without this the build
-#     hangs ~80 min then fails with "stream error received: unspecific
-#     protocol error detected" trying to fetch wasm-opt mid-build.
 #   - curl/gnupg/ca-certificates: download tooling
 # (musl-tools / the x86_64 musl target are NOT needed here — the server
 # binary is built in Stage B now; this stage only emits the WASM client.)
@@ -89,7 +79,6 @@ RUN apt-get update \
         nasm \
         pkg-config \
         libssl-dev \
-        binaryen \
         brotli \
         ca-certificates \
         curl \
@@ -99,7 +88,7 @@ RUN apt-get update \
 
 # --- Bun ---
 # 官方 npm 包 @oven/bun-linux-<arch> 的 tgz 内只有单文件二进制，无需 Node.js 和 unzip。
-# CN_MIRROR=true: 走 npmmirror；CN_MIRROR=false: 走 registry.npmjs.org（与 make esbuild-cache 同源）。
+# CN_MIRROR=true: 走 npmmirror；CN_MIRROR=false: 走 registry.npmjs.org。
 ARG BUN_VERSION=1.4.2
 RUN ARCH="$(dpkg --print-architecture)" \
     && case "$ARCH" in \
@@ -145,37 +134,8 @@ RUN if [ "$CN_MIRROR" = "true" ]; then \
     && rustup toolchain install "$WASM_NIGHTLY" --profile minimal \
         --component rust-src --target wasm32-unknown-unknown
 
-# Install the Dioxus CLI from the official prebuilt binary (GitHub Releases),
-# NOT `cargo install` (which compiles dx-cli's huge dep tree from source — the
-# slowest single Docker step). The release tag v0.7.10 matches the crate version
-# we previously pinned. The prebuilt dx is a glibc (linux-gnu) binary requiring
-# GLIBC_2.39 — that's why the builder stage above uses Trixie (glibc 2.41), not
-# Bookworm (glibc 2.36). dx runs only in this builder stage (to emit the WASM
-# client bundle); it never enters the static-musl runtime image. Each buildx
-# platform leg downloads only its native arch; the sha256 pins the exact
-# artifact (supply-chain integrity, verified against the release's .sha256
-# sidecar).
-ARG DX_VERSION=0.7.10
-# The 32 MB dx tarball sits on github.com releases; from China it downloads at
-# ~300 KB/s and the connection is frequently reset mid-transfer with
-# "curl: (56) ... unexpected eof while reading" — the same flaky-upstream
-# problem the mirror rewrites above solve for apt/crates/npm. --retry with
-# --retry-all-errors (curl 7.71+, Trixie ships 8.x) covers SSL/EOF resets, and
-# --continue-at - resumes the partial file instead of restarting from zero on
-# each retry. The sha256 pin still catches a corrupted/partial download.
-RUN ARCH="$(dpkg --print-architecture)" \
-    && case "$ARCH" in \
-        amd64) DX_TRIPLET=x86_64-unknown-linux-gnu  DX_SHA256=4363e4ed2a3f1eb7f4d38d2d59aed59ce43271c44c16b425e92c89a64761fbe7 ;; \
-        arm64) DX_TRIPLET=aarch64-unknown-linux-gnu DX_SHA256=8f1a17d3218700ffbe15e6540d936a178b2556fc801121a31082e3ba4ab9ef55 ;; \
-        *) echo "unsupported arch: $ARCH" >&2; exit 1 ;; \
-    esac \
-    && if [ "$CN_MIRROR" = "true" ]; then GH_PX="${GH_PROXY}"; else GH_PX=""; fi \
-    && DX_URL="${GH_PX:+${GH_PX}/}https://github.com/DioxusLabs/dioxus/releases/download/v${DX_VERSION}/dx-${DX_TRIPLET}.tar.gz" \
-    && curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors --retry-connrefused --continue-at - "${DX_URL}" -o /tmp/dx.tar.gz \
-    && echo "${DX_SHA256}  /tmp/dx.tar.gz" | sha256sum -c - \
-    && tar -xzf /tmp/dx.tar.gz -C /usr/local/bin \
-    && rm /tmp/dx.tar.gz \
-    && dx --version
+# --- cargo-leptos: 前端构建（wasm-bindgen、分包、CSS）。独立层，便于缓存。 ---
+RUN cargo install cargo-leptos --version 0.3.11 --locked
 
 # --- Tailwind CSS v4: the standalone binary is distributed via GitHub
 # Releases (~106 MB). ---
@@ -237,7 +197,7 @@ COPY . .
 # pipeline cannot drift (katex-css was once missing here, which left math
 # rendering as bare spans without KaTeX fonts).
 # cache mount: highlight-css (cargo run --bin) 首次编译整棵 server-feature
-# native 依赖;dx build (wasm32) 与 cargo doc (native) 复用同一 fe-target 卷
+# native 依赖;cargo-leptos 前端构建 (wasm32) 与 cargo doc (native) 复用同一 fe-target 卷
 # (wasm32/host 子目录互不干扰)。registry/git 跨 stage 共享(crate 源码架构无关)。
 # server stage 用独立 srv-target id,与 frontend 产物隔离(musl≠glibc)。
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
@@ -245,31 +205,17 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,id=fe-target,target=/build/target,sharing=locked \
     make build-assets
 
-# Pre-populate dx's esbuild tool cache from the Chinese npm mirror.
-# dx hardcodes registry.npmjs.org for esbuild (packages/cli/src/esbuild.rs:62) —
-# neither NPM_CONFIG_REGISTRY nor .npmrc affects it. Pre-caching from npmmirror
-# makes the path.exists() check at esbuild.rs:25 short-circuit the download.
-# ESBUILD_VERSION must match dx's pinned constant (0.27.3 in dx 0.7.10).
-ENV DX_HOME=/usr/local/dx
-RUN make esbuild-cache wasm-bindgen-cache
-# Build the client-side Dioxus WASM bundles. dx also builds a throwaway host
-# server alongside (fullstack is always on; see Makefile CLIENT_SERVER_ARGS);
-# the shipped musl server comes from the server stage.
-# Each flavor build emits a ready-to-serve public/ directory under
-# target/dx/yggdrasil/*/web/public; snapshot + merge keeps the two flavors from
-# clobbering each other (plan §6.4).
-# restore-webp overwrites dx's re-encoded VP8L .webp stills with the source
-# originals after every dx build — keep in sync with make build-linux.
+# 用 cargo-leptos 构建分包前端（wasm/js/css → target/site，hash.txt → target/release）。
+# make build-frontend 使用固定 nightly + build-std（见 Makefile 的 LEPTOS_WASM_ENV）。
+# 发布的 musl 服务端由 server stage 构建。cache mount（fe-target）只在本 RUN 期间存在，
+# 因此 hash.txt 在同一 RUN 内先拷到 /build/hash.txt，再由 build-release.cjs 把
+# target/site 与 hash.txt 装配进 /build/dist。
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
     --mount=type=cache,id=fe-target,target=/build/target,sharing=locked \
-    make build-client && \
-    make restore-webp && \
-    make snapshot-flavor FLAVOR=full && \
-    make build-client-reader && \
-    make restore-webp && \
-    make snapshot-flavor FLAVOR=reader && \
-    bun scripts/build-release.cjs --out /build/dist
+    make build-frontend && \
+    cp target/release/hash.txt /build/hash.txt && \
+    bun scripts/build-release.cjs --out /build/dist --hash /build/hash.txt
 
 # Generate the project's rustdoc API docs and stage them under public/doc so
 # they are served at /doc on the live site. Runs `make doc` (site-themed
@@ -287,19 +233,18 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,id=fe-target,target=/build/target,sharing=locked \
     make doc DOC_OUT=dist/public/doc
 
-# Pre-compress all static text assets with brotli (.br sidecars). dx's
-# pre_compress only covers its hashed wasm/js bundle under assets/; but
-# dioxus-server registers ServeFile::precompressed_br() for every public leaf
-# — tower_http serves <file>.br on Accept-Encoding: br, falls back to raw
-# (open_file_with_fallback). So .br sidecars in the same directory are all
-# that's needed: no runtime code change. Text formats only; fonts/images are
-# already compressed and would not shrink. assets/*.wasm|js are harmlessly
-# re-compressed (brotli is deterministic, same q-11 as dx).
+# Pre-compress all static text assets with brotli (.br sidecars).
+# site_fallback 的 ServeDir 开启了 precompressed_br：带 Accept-Encoding: br 的请求
+# 命中同目录的 <file>.br，否则回退原文件，运行时无需额外代码。Text formats only;
+# fonts/images are already compressed and would not shrink.
 RUN find /build/dist/public -type f \
         \( -name '*.js' -o -name '*.css' -o -name '*.wasm' \
            -o -name '*.svg' -o -name '*.html' -o -name '*.json' -o -name '*.xml' \) \
         -not -name '*.br' \
         -print0 | xargs -0 -r brotli -q 11 -kf
+
+# 校验发布产物：清单摘要、hash.txt 指向的产物、分包清单闭包与 .br 旁车。
+RUN bun scripts/build-release.cjs --verify --out /build/dist
 
 
 # -----------------------------------------------------------------------------
@@ -356,10 +301,7 @@ RUN if [ "$CN_MIRROR" = "true" ]; then \
 # linker (which does not exist here). Pure-Rust crate; builds cleanly on musl.
 RUN cargo install cargo-zigbuild --version 0.23.0 --locked
 
-# Same git build-args as Stage A (build.rs reads them via env, and the server
-# fn hash key is fixed by SERVER_FN_OVERRIDE_KEY in the project .cargo/config.toml
-# — identical on both stages, so the /api/<fn><suffix> paths match between the
-# server binary and the WASM client).
+# Same git build-args as Stage A (build.rs reads them via env).
 ARG YGG_BUILD_GIT_DESCRIBE=""
 ARG YGG_BUILD_GIT_HASH=""
 ARG YGG_BUILD_GIT_COMMIT_DATE=""
@@ -379,8 +321,7 @@ COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
     --mount=type=cache,id=srv-target,target=/build/target,sharing=locked \
-    cargo zigbuild --release --target x86_64-unknown-linux-musl \
-        --no-default-features --features server \
+    cargo zigbuild --release --locked --target x86_64-unknown-linux-musl --bin yggdrasil \
     && cp target/x86_64-unknown-linux-musl/release/yggdrasil /build/server
 
 
@@ -402,13 +343,15 @@ WORKDIR /app
 # Copy the static x86_64 musl server binary and the bundled public assets.
 COPY --from=server --chown=65534:65534 /build/server /app/server
 COPY --from=frontend --chown=65534:65534 /build/dist/public /app/public
+# 服务端启动时从可执行文件同目录读取 hash.txt，校验前端产物与二进制配套。
+COPY --from=frontend --chown=65534:65534 /build/dist/hash.txt /app/hash.txt
 COPY --from=frontend --chown=65534:65534 /build/uploads /app/uploads
 COPY --from=frontend --chown=65534:65534 /build/backups /app/backups
 
 # The app checks for DATABASE_URL on startup even though this image is intended
 # to run without a real database. A placeholder is enough to let the server boot.
 ENV DATABASE_URL=postgres://postgres:postgres@localhost:5432/yggdrasil
-ENV DIOXUS_PUBLIC_PATH=/app/public
+ENV LEPTOS_SITE_ROOT=/app/public
 ENV IP=0.0.0.0
 ENV PORT=3000
 ENV RUST_LOG=info

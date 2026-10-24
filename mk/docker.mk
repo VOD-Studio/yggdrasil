@@ -57,7 +57,7 @@ docker-multiarch: ## 构建多架构镜像并推送（IMAGE=... PLATFORMS=...）
 	@docker buildx build --platform $(PLATFORMS) $(GIT_BUILD_ARGS) $(CN_BUILD_ARGS) -t $(IMAGE) --push .
 
 # ── Docker 开发环境 ────────────────────────────────────────────
-# 使用 Dockerfile.dev + docker-compose.dev.yml 在容器内运行 dx serve；源码同步、
+# 使用 Dockerfile.dev + docker-compose.dev.yml 在容器内运行 cargo leptos watch；源码同步、
 # 网络和数据库见 docker-compose.dev.yml 头部。
 # 首次启动需编译 Rust 依赖（~10 分钟），后续启动约 10 秒（cargo target 缓存）。
 # up --build 后前台跑 compose watch；Ctrl+C 只停 watch，容器继续后台跑。
@@ -80,7 +80,7 @@ TOOLS_COMPOSE := docker compose -f docker-compose.tools.yml
 # 在工具容器内先冻结 lockfile 安装前端依赖，再于 /build 执行 `make <target>`。
 tools_make = $(TOOLS_COMPOSE) run --rm tools bash -c 'cd libs && bun install --frozen-lockfile >/dev/null && cd /build && make $(1)'
 
-# 一次性运行任意命令（例：make docker-run CMD='cargo build --features server'）。
+# 一次性运行任意命令（例：make docker-run CMD='cargo build'）。
 docker-run: ## 在工具容器内运行任意命令（CMD='...'）
 	@$(TOOLS_COMPOSE) run --rm tools bash -c '$(CMD)'
 
@@ -90,17 +90,17 @@ docker-lint: ## 容器内运行 make lint
 
 # 仅 clippy（最常用的编译期检查，不需要 bun）。
 docker-clippy: ## 容器内只运行 clippy
-	@$(TOOLS_COMPOSE) run --rm tools cargo clippy --all-targets --all-features -- -D warnings
+	@$(TOOLS_COMPOSE) run --rm tools cargo clippy --all-targets -- -D warnings
 
-# 最快编译校验：cargo check --all-features（不跑 clippy lint、不跑测试）。
-docker-check: ## 容器内运行 cargo check --all-features
-	@$(TOOLS_COMPOSE) run --rm tools cargo check --all-features
+# 最快编译校验：cargo check（不跑 clippy lint、不跑测试）。
+docker-check: ## 容器内运行 cargo check
+	@$(TOOLS_COMPOSE) run --rm tools cargo check
 
-# 格式化（写入文件，回流宿主）：委托 make fmt，不含 dx fmt（原因见 fmt）。
+# 格式化（写入文件，回流宿主）：委托 make fmt。
 docker-fmt: ## 容器内运行 make fmt（写回宿主）
 	@$(call tools_make,fmt)
 
-# fix（写入文件，回流宿主）：委托 make fix，同样不含 dx fmt。
+# fix（写入文件，回流宿主）：委托 make fix。
 docker-fix: ## 容器内运行 make fix（写回宿主）
 	@$(call tools_make,fix)
 
