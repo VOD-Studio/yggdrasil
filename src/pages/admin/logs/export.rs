@@ -1,6 +1,6 @@
-//! export behavior of the log page.
+//! 日志导出：把文本内容保存为浏览器下载文件（仅浏览器端使用）。
 
-#[cfg(target_arch = "wasm32")]
+/// 以 `filename` 为文件名触发一次文本下载。
 pub(super) fn download_text_file(filename: &str, content: &str) {
     use wasm_bindgen::JsCast;
 
@@ -27,8 +27,7 @@ pub(super) fn download_text_file(filename: &str, content: &str) {
     let _ = web_sys::Url::revoke_object_url(&url);
 }
 
-/// 导出文件名：`yggdrasil-logs-<YYYY-MM-DD>.log`（浏览器本地日期）。
-#[cfg(target_arch = "wasm32")]
+/// 导出文件名：`yggdrasil-logs-<YYYY-MM-DD>.log`（`YYYY-MM-DD` 取自浏览器 ISO 时间串，UTC 日期）。
 pub(super) fn log_export_filename() -> String {
     let iso: String = js_sys::Date::new_0().to_iso_string().into();
     let date = iso.get(..10).unwrap_or("unknown-date");
