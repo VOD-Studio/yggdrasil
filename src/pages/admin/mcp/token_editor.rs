@@ -7,8 +7,11 @@ use crate::components::ui::{
     SegmentedControl, SegmentedItem, SegmentedKind, SegmentedSize,
 };
 use crate::models::mcp_token::{validate_token_name, McpTokenSummary, NoteGrant, TokenScope};
+use crate::models::note::Notebook;
 use crate::utils::error::failure_message;
-use dioxus::prelude::*;
+use leptos::ev::SubmitEvent;
+use leptos::prelude::*;
+use leptos::task::spawn_local;
 
 const SCOPES: [TokenScope; 3] = [TokenScope::Read, TokenScope::Write, TokenScope::Admin];
 const LIFETIMES: [(TokenLifetime, &str); 5] = [
@@ -20,371 +23,425 @@ const LIFETIMES: [(TokenLifetime, &str); 5] = [
 ];
 
 /// 关闭时先播退出动画，再通知父组件卸载。
-fn use_close_after_exit(visible: Signal<bool>, on_close: EventHandler<()>) {
-    use_effect(move || {
-        if !visible() {
-            spawn(async move {
+pub(super) fn use_close_after_exit(visible: RwSignal<bool>, on_close: Callback<()>) {
+    Effect::new(move |_| {
+        if !visible.get() {
+            spawn_local(async move {
                 crate::utils::time::sleep_ms(crate::components::ui::EXIT_ANIM_MS).await;
-                on_close.call(());
+                let _ = on_close.try_run(());
             });
         }
     });
 }
 
 /// 笔记授权草稿。
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy)]
 struct GrantDraft {
-    read: Signal<bool>,
-    write: Signal<bool>,
-    restricted: Signal<bool>,
-    books: Signal<Vec<i32>>,
+    read: RwSignal<bool>,
+    write: RwSignal<bool>,
+    restricted: RwSignal<bool>,
+    books: RwSignal<Vec<i32>>,
 }
 
 impl GrantDraft {
     fn new(grant: &NoteGrant) -> Self {
         Self {
-            read: Signal::new(grant.read),
-            write: Signal::new(grant.write),
-            restricted: Signal::new(grant.notebook_ids.is_some()),
-            books: Signal::new(grant.notebook_ids.clone().unwrap_or_default()),
+            read: RwSignal::new(grant.read),
+            write: RwSignal::new(grant.write),
+            restricted: RwSignal::new(grant.notebook_ids.is_some()),
+            books: RwSignal::new(grant.notebook_ids.clone().unwrap_or_default()),
         }
     }
 
-    /// 限定笔记本却一个也没选。
+    /// 限定笔记本却一个也没选（读取响应式状态，可在闭包里追踪）。
     fn missing_books(&self) -> bool {
-        (self.read)() && (self.restricted)() && (self.books)().is_empty()
+        self.read.get() && self.restricted.get() && self.books.with(Vec::is_empty)
     }
 
     fn grant(&self) -> NoteGrant {
-        let read = (self.read)();
+        let read = self.read.get_untracked();
         NoteGrant {
             read,
-            write: read && (self.write)(),
-            notebook_ids: (read && (self.restricted)()).then(|| (self.books)()),
+            write: read && self.write.get_untracked(),
+            notebook_ids: (read && self.restricted.get_untracked())
+                .then(|| self.books.get_untracked()),
         }
     }
 }
 
 /// 文章权限：三张单选卡片。
 #[component]
-fn ScopeCards(mut scope: Signal<TokenScope>) -> Element {
-    rsx! {
-        fieldset { class: "mcp-fieldset",
-            legend { "文章权限" }
-            div { class: "mcp-scopes", role: "radiogroup", aria_label: "文章权限",
-                for s in SCOPES {
-                    button {
-                        key: "{s.as_str()}",
-                        class: "mcp-scope",
-                        r#type: "button",
-                        role: "radio",
-                        aria_checked: "{scope() == s}",
-                        onclick: move |_| scope.set(s),
-                        span { class: "mcp-scope-key", "{s.as_str()}" }
-                        span { class: "mcp-scope-desc", "{scope_desc(s)}" }
-                    }
-                }
-            }
-        }
+fn ScopeCards(scope: RwSignal<TokenScope>) -> impl IntoView {
+    view! {
+        <fieldset class="mcp-fieldset">
+            <legend>"文章权限"</legend>
+            <div class="mcp-scopes" role="radiogroup" aria-label="文章权限">
+                {SCOPES
+                    .into_iter()
+                    .map(|s| {
+                        view! {
+                            <button
+                                class="mcp-scope"
+                                type="button"
+                                role="radio"
+                                aria-checked=move || (scope.get() == s).to_string()
+                                on:click=move |_| scope.set(s)
+                            >
+                                <span class="mcp-scope-key">{s.as_str()}</span>
+                                <span class="mcp-scope-desc">{scope_desc(s)}</span>
+                            </button>
+                        }
+                    })
+                    .collect_view()}
+            </div>
+        </fieldset>
     }
 }
 
 /// 笔记授权：读取、写入草稿，可限定笔记本。
 #[component]
-fn GrantFields(draft: GrantDraft, submitted: bool) -> Element {
+fn GrantFields(draft: GrantDraft, #[prop(into)] submitted: Signal<bool>) -> impl IntoView {
     let GrantDraft {
-        mut read,
-        mut write,
-        mut restricted,
-        mut books,
+        read,
+        write,
+        restricted,
+        books,
     } = draft;
-    let notebooks = use_resource(|| {
-        crate::pages::admin::notes::client_request(crate::api::notes::owned_notebooks())
+    // 对话框只在浏览器里打开：笔记本只在客户端请求（私人数据不进 SSR 缓存）。
+    // 不用 Resource：它会被外层 Suspense 计入挂起。`None` = 读取中。
+    let notebooks = RwSignal::new(None::<Result<Vec<Notebook>, ()>>);
+    Effect::new(move |_| {
+        spawn_local(async move {
+            let result = crate::api::notes::owned_notebooks().await.map_err(|_| ());
+            let _ = notebooks.try_set(Some(result));
+        });
     });
-    let missing = draft.missing_books();
-    rsx! {
-        fieldset { class: "mcp-fieldset",
-            legend { "笔记授权" }
-            p { class: "mcp-muted", "与文章权限独立。写入只生成工作稿，不会自动发布。" }
-            label { class: "mcp-check",
-                Checkbox {
-                    checked: read(),
-                    onchange: move |v: bool| {
+
+    view! {
+        <fieldset class="mcp-fieldset">
+            <legend>"笔记授权"</legend>
+            <p class="mcp-muted">"与文章权限独立。写入只生成工作稿，不会自动发布。"</p>
+            <label class="mcp-check">
+                <Checkbox
+                    checked=read
+                    onchange=move |v: bool| {
                         read.set(v);
                         if !v {
                             write.set(false);
                         }
-                    },
-                }
+                    }
+                />
                 "读取我的知识库"
-            }
-            label { class: "mcp-check",
-                Checkbox {
-                    checked: write(),
-                    onchange: move |v: bool| {
+            </label>
+            <label class="mcp-check">
+                <Checkbox
+                    checked=write
+                    onchange=move |v: bool| {
                         write.set(v);
                         if v {
                             read.set(true);
                         }
-                    },
-                }
+                    }
+                />
                 "允许创建和修改笔记草稿"
-            }
-            if read() {
-                label { class: "mcp-check",
-                    Checkbox { checked: restricted(), onchange: move |v| restricted.set(v) }
-                    "只授权指定的笔记本"
-                }
-                if restricted() {
-                    div { class: "mcp-books", role: "group", aria_label: "授权的笔记本",
-                        match notebooks.read().as_ref() {
-                            Some(Ok(items)) if items.is_empty() => rsx! {
-                                span { class: "mcp-muted", "还没有笔记本。" }
-                            },
-                            Some(Ok(items)) => rsx! {
-                                for book in items.iter().cloned() {
-                                    button {
-                                        key: "{book.id}",
-                                        class: "note-book",
-                                        r#type: "button",
-                                        aria_pressed: "{books().contains(&book.id)}",
-                                        onclick: move |_| books.with_mut(|ids| {
-                                            if let Some(i) = ids.iter().position(|x| *x == book.id) {
-                                                ids.remove(i);
-                                            } else {
-                                                ids.push(book.id);
-                                            }
-                                        }),
-                                        "{book.title}"
-                                    }
-                                }
-                            },
-                            Some(Err(_)) => rsx! {
-                                span { class: "mcp-error", "笔记本加载失败。" }
-                            },
-                            None => rsx! {
-                                span { class: "mcp-muted", "正在读取笔记本…" }
-                            },
+            </label>
+            {move || {
+                read.get()
+                    .then(|| {
+                        view! {
+                            <label class="mcp-check">
+                                <Checkbox
+                                    checked=restricted
+                                    onchange=move |v: bool| restricted.set(v)
+                                />
+                                "只授权指定的笔记本"
+                            </label>
+                            {move || {
+                                restricted
+                                    .get()
+                                    .then(|| {
+                                        view! {
+                                            <div class="mcp-books" role="group" aria-label="授权的笔记本">
+                                                {move || match notebooks.get() {
+                                                    Some(Ok(items)) if items.is_empty() => {
+                                                        view! { <span class="mcp-muted">"还没有笔记本。"</span> }
+                                                            .into_any()
+                                                    }
+                                                    Some(Ok(items)) => {
+                                                        items
+                                                            .into_iter()
+                                                            .map(|book| {
+                                                                let id = book.id;
+                                                                view! {
+                                                                    <button
+                                                                        class="note-book"
+                                                                        type="button"
+                                                                        aria-pressed=move || {
+                                                                            books.with(|ids| ids.contains(&id)).to_string()
+                                                                        }
+                                                                        on:click=move |_| {
+                                                                            books
+                                                                                .update(|ids| {
+                                                                                    if let Some(i) = ids.iter().position(|x| *x == id) {
+                                                                                        ids.remove(i);
+                                                                                    } else {
+                                                                                        ids.push(id);
+                                                                                    }
+                                                                                })
+                                                                        }
+                                                                    >
+                                                                        {book.title}
+                                                                    </button>
+                                                                }
+                                                            })
+                                                            .collect_view()
+                                                            .into_any()
+                                                    }
+                                                    Some(Err(())) => {
+                                                        view! { <span class="mcp-error">"笔记本加载失败。"</span> }
+                                                            .into_any()
+                                                    }
+                                                    None => {
+                                                        view! { <span class="mcp-muted">"正在读取笔记本…"</span> }
+                                                            .into_any()
+                                                    }
+                                                }}
+                                            </div>
+                                            {move || {
+                                                (submitted.get() && draft.missing_books())
+                                                    .then(|| {
+                                                        view! {
+                                                            <p class="mcp-error" role="alert">
+                                                                "请至少选择一个笔记本。"
+                                                            </p>
+                                                        }
+                                                    })
+                                            }}
+                                        }
+                                    })
+                            }}
                         }
-                    }
-                    if submitted && missing {
-                        p { class: "mcp-error", role: "alert", "请至少选择一个笔记本。" }
-                    }
-                }
-            }
-        }
+                    })
+            }}
+        </fieldset>
     }
 }
 
 /// 新建令牌对话框。创建成功后把明文交给令牌对话框。
 #[component]
-#[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut, unused_variables))]
 pub(super) fn CreateTokenDialog(
-    on_close: EventHandler<()>,
-    on_created: EventHandler<OpenToken>,
-) -> Element {
+    #[prop(into)] on_close: Callback<()>,
+    #[prop(into)] on_created: Callback<OpenToken>,
+) -> impl IntoView {
     let toast = use_toast();
-    let mut visible = use_signal(|| true);
-    let mut closing = use_signal(|| false);
-    let mut name = use_signal(String::new);
-    let scope = use_signal(|| TokenScope::Read);
-    let mut lifetime = use_signal(|| TokenLifetime::Days30);
-    let draft = use_hook(|| GrantDraft::new(&NoteGrant::default()));
-    let mut submitted = use_signal(|| false);
-    let mut busy = use_signal(|| false);
+    let visible = RwSignal::new(true);
+    let closing = RwSignal::new(false);
+    let name = RwSignal::new(String::new());
+    let scope = RwSignal::new(TokenScope::Read);
+    let lifetime = RwSignal::new(TokenLifetime::Days30);
+    let draft = GrantDraft::new(&NoteGrant::default());
+    let submitted = RwSignal::new(false);
+    let busy = RwSignal::new(false);
     use_close_after_exit(visible, on_close);
 
-    let name_error = validate_token_name(&name()).err();
-    let length = name().trim().chars().count();
-    let submit = move |e: FormEvent| {
+    let lifetime_items: Vec<SegmentedItem<TokenLifetime>> = LIFETIMES
+        .iter()
+        .map(|(v, l)| SegmentedItem::new(*v, *l))
+        .collect();
+    let name_error = move || name.with(|n| validate_token_name(n).err());
+    let length = move || name.with(|n| n.trim().chars().count());
+    let close = move || {
+        closing.set(true);
+        visible.set(false);
+    };
+    let submit = move |e: SubmitEvent| {
         e.prevent_default();
         submitted.set(true);
-        if busy() || validate_token_name(&name()).is_err() || draft.missing_books() {
+        if busy.get_untracked() || name_error().is_some() || draft.missing_books() {
             return;
         }
         busy.set(true);
         let (n, sc, lt, grant) = (
-            name().trim().to_string(),
-            scope(),
-            lifetime(),
+            name.get_untracked().trim().to_string(),
+            scope.get_untracked(),
+            lifetime.get_untracked(),
             draft.grant(),
         );
-        spawn(async move {
+        spawn_local(async move {
             match create_mcp_token(n, sc, lt, Some(grant)).await {
-                Ok(resp) => on_created.call(OpenToken {
-                    summary: resp.summary,
-                    plaintext: resp.plaintext,
-                    created: true,
-                }),
+                Ok(resp) => {
+                    let _ = on_created.try_run(OpenToken {
+                        summary: resp.summary,
+                        plaintext: resp.plaintext,
+                        created: true,
+                    });
+                }
                 Err(e) => toast.error(failure_message("创建失败", &e)),
             }
-            busy.set(false);
+            let _ = busy.try_set(false);
         });
     };
 
-    rsx! {
-        ModalShell {
-            visible,
-            closing,
-            title: "新建令牌",
-            overlay_padding: "p-4",
-            panel_class: "mcp-dialog",
-            form { class: "mcp-form", onsubmit: submit,
-                div { class: "mcp-dialog-head",
-                    div {
-                        h2 { "新建令牌" }
-                        p { "创建后会显示令牌明文，之后也可以在列表里重新查看。" }
-                    }
-                    IconButton {
-                        icon: IconName::X,
-                        label: "关闭",
-                        size: ButtonSize::Sm,
-                        onclick: move |_| {
-                            closing.set(true);
-                            visible.set(false);
-                        },
-                    }
-                }
-                div { class: "mcp-dialog-body",
-                    div {
-                        label { class: "mcp-label", r#for: "mcp-token-name",
-                            span { "名称" }
-                            span { class: "mcp-count", "{length} / 64" }
-                        }
-                        FormInput {
-                            id: Some("mcp-token-name".to_string()),
-                            placeholder: "如 claude-code-macbook",
-                            autofocus: true,
-                            invalid: submitted() && name_error.is_some(),
-                            value: name(),
-                            oninput: move |v: String| name.set(v),
-                        }
-                        if submitted() {
-                            if let Some(err) = name_error {
-                                p { class: "mcp-error", role: "alert", "{err}" }
-                            }
-                        }
-                    }
-                    ScopeCards { scope }
-                    GrantFields { draft, submitted: submitted() }
-                    div { class: "mcp-lifetime",
-                        span { class: "mcp-label", "有效期" }
-                        SegmentedControl {
-                            items: LIFETIMES
-                                .iter()
-                                .map(|(v, l)| SegmentedItem::new(*v, *l))
-                                .collect::<Vec<_>>(),
-                            value: lifetime(),
-                            on_change: move |v| lifetime.set(v),
-                            aria_label: "有效期",
-                            kind: SegmentedKind::Radio,
-                            size: SegmentedSize::Sm,
-                        }
-                    }
-                }
-                div { class: "mcp-dialog-foot",
-                    button {
-                        class: button_class(ButtonVariant::Ghost, ButtonSize::Md),
-                        r#type: "button",
-                        onclick: move |_| {
-                            closing.set(true);
-                            visible.set(false);
-                        },
+    view! {
+        <ModalShell
+            visible=visible
+            closing=closing
+            title="新建令牌"
+            overlay_padding="p-4"
+            panel_class="mcp-dialog"
+        >
+            <form class="mcp-form" on:submit=submit>
+                <div class="mcp-dialog-head">
+                    <div>
+                        <h2>"新建令牌"</h2>
+                        <p>"创建后会显示令牌明文，之后也可以在列表里重新查看。"</p>
+                    </div>
+                    <IconButton
+                        icon=IconName::X
+                        label="关闭"
+                        size=ButtonSize::Sm
+                        onclick=move |_| close()
+                    />
+                </div>
+                <div class="mcp-dialog-body">
+                    <div>
+                        <label class="mcp-label" for="mcp-token-name">
+                            <span>"名称"</span>
+                            <span class="mcp-count">{move || format!("{} / 64", length())}</span>
+                        </label>
+                        <FormInput
+                            id="mcp-token-name".to_string()
+                            placeholder="如 claude-code-macbook"
+                            autofocus=true
+                            invalid=move || submitted.get() && name_error().is_some()
+                            value=name
+                            oninput=move |v: String| name.set(v)
+                        />
+                        {move || {
+                            submitted
+                                .get()
+                                .then(name_error)
+                                .flatten()
+                                .map(|err| view! { <p class="mcp-error" role="alert">{err}</p> })
+                        }}
+                    </div>
+                    <ScopeCards scope=scope/>
+                    <GrantFields draft=draft submitted=submitted/>
+                    <div class="mcp-lifetime">
+                        <span class="mcp-label">"有效期"</span>
+                        <SegmentedControl
+                            items=lifetime_items.clone()
+                            value=lifetime
+                            on_change=move |v: TokenLifetime| lifetime.set(v)
+                            aria_label="有效期"
+                            kind=SegmentedKind::Radio
+                            size=SegmentedSize::Sm
+                        />
+                    </div>
+                </div>
+                <div class="mcp-dialog-foot">
+                    <button
+                        class=button_class(ButtonVariant::Ghost, ButtonSize::Md)
+                        type="button"
+                        on:click=move |_| close()
+                    >
                         "取消"
-                    }
-                    button {
-                        class: button_class(ButtonVariant::Primary, ButtonSize::Md),
-                        r#type: "submit",
-                        disabled: busy() || name().trim().is_empty(),
-                        if busy() { "创建中…" } else { "创建令牌" }
-                    }
-                }
-            }
-        }
+                    </button>
+                    <button
+                        class=button_class(ButtonVariant::Primary, ButtonSize::Md)
+                        type="submit"
+                        disabled=move || busy.get() || name.with(|n| n.trim().is_empty())
+                    >
+                        {move || if busy.get() { "创建中…" } else { "创建令牌" }}
+                    </button>
+                </div>
+            </form>
+        </ModalShell>
     }
 }
 
 /// 编辑令牌权限：不轮换密钥、不改有效期。
 #[component]
-#[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut, unused_variables))]
 pub(super) fn EditPermissionsDialog(
     token: McpTokenSummary,
-    on_close: EventHandler<()>,
-    on_saved: EventHandler<()>,
-) -> Element {
+    #[prop(into)] on_close: Callback<()>,
+    #[prop(into)] on_saved: Callback<()>,
+) -> impl IntoView {
     let toast = use_toast();
-    let mut visible = use_signal(|| true);
-    let mut closing = use_signal(|| false);
-    let scope = use_signal(|| token.scope);
-    let draft = use_hook(|| GrantDraft::new(&token.notes));
-    let mut submitted = use_signal(|| false);
-    let mut busy = use_signal(|| false);
+    let visible = RwSignal::new(true);
+    let closing = RwSignal::new(false);
+    let scope = RwSignal::new(token.scope);
+    let draft = GrantDraft::new(&token.notes);
+    let submitted = RwSignal::new(false);
+    let busy = RwSignal::new(false);
     use_close_after_exit(visible, on_close);
-    let id = token.id.clone();
-    let save = move |e: FormEvent| {
+    let id = StoredValue::new(token.id.clone());
+    let subtitle = format!("「{}」继续使用原来的密钥与有效期。", token.name);
+    let close = move || {
+        closing.set(true);
+        visible.set(false);
+    };
+    let save = move |e: SubmitEvent| {
         e.prevent_default();
         submitted.set(true);
-        if busy() || draft.missing_books() {
+        if busy.get_untracked() || draft.missing_books() {
             return;
         }
         busy.set(true);
-        let (id, sc, grant) = (id.clone(), scope(), draft.grant());
-        spawn(async move {
+        let (id, sc, grant) = (id.get_value(), scope.get_untracked(), draft.grant());
+        spawn_local(async move {
             match update_mcp_token_permissions(id, sc, grant).await {
                 Ok(()) => {
                     toast.success("权限已更新，原令牌继续有效");
-                    on_saved.call(());
+                    let _ = on_saved.try_run(());
                 }
                 Err(e) => toast.error(failure_message("保存失败", &e)),
             }
-            busy.set(false);
+            let _ = busy.try_set(false);
         });
     };
-    rsx! {
-        ModalShell {
-            visible,
-            closing,
-            title: "编辑令牌权限",
-            overlay_padding: "p-4",
-            panel_class: "mcp-dialog",
-            form { class: "mcp-form", onsubmit: save,
-                div { class: "mcp-dialog-head",
-                    div {
-                        h2 { "编辑令牌权限" }
-                        p { "「{token.name}」继续使用原来的密钥与有效期。" }
-                    }
-                    IconButton {
-                        icon: IconName::X,
-                        label: "关闭",
-                        size: ButtonSize::Sm,
-                        onclick: move |_| {
-                            closing.set(true);
-                            visible.set(false);
-                        },
-                    }
-                }
-                div { class: "mcp-dialog-body",
-                    ScopeCards { scope }
-                    GrantFields { draft, submitted: submitted() }
-                }
-                div { class: "mcp-dialog-foot",
-                    button {
-                        class: button_class(ButtonVariant::Ghost, ButtonSize::Md),
-                        r#type: "button",
-                        onclick: move |_| {
-                            closing.set(true);
-                            visible.set(false);
-                        },
+    view! {
+        <ModalShell
+            visible=visible
+            closing=closing
+            title="编辑令牌权限"
+            overlay_padding="p-4"
+            panel_class="mcp-dialog"
+        >
+            <form class="mcp-form" on:submit=save>
+                <div class="mcp-dialog-head">
+                    <div>
+                        <h2>"编辑令牌权限"</h2>
+                        <p>{subtitle.clone()}</p>
+                    </div>
+                    <IconButton
+                        icon=IconName::X
+                        label="关闭"
+                        size=ButtonSize::Sm
+                        onclick=move |_| close()
+                    />
+                </div>
+                <div class="mcp-dialog-body">
+                    <ScopeCards scope=scope/>
+                    <GrantFields draft=draft submitted=submitted/>
+                </div>
+                <div class="mcp-dialog-foot">
+                    <button
+                        class=button_class(ButtonVariant::Ghost, ButtonSize::Md)
+                        type="button"
+                        on:click=move |_| close()
+                    >
                         "取消"
-                    }
-                    button {
-                        class: button_class(ButtonVariant::Primary, ButtonSize::Md),
-                        r#type: "submit",
-                        disabled: busy(),
-                        if busy() { "保存中…" } else { "保存权限" }
-                    }
-                }
-            }
-        }
+                    </button>
+                    <button
+                        class=button_class(ButtonVariant::Primary, ButtonSize::Md)
+                        type="submit"
+                        disabled=move || busy.get()
+                    >
+                        {move || if busy.get() { "保存中…" } else { "保存权限" }}
+                    </button>
+                </div>
+            </form>
+        </ModalShell>
     }
 }
