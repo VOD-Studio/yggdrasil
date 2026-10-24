@@ -1,10 +1,9 @@
 //! Saving uses a captured form snapshot and one result path for create/update.
 use super::state::{PostDraft, SaveState, WriteEditorState};
-use crate::bridges::library::library_ready;
 use crate::components::ui::Toaster;
 #[cfg(target_arch = "wasm32")]
 use crate::utils::error::failure_message;
-use dioxus::prelude::*;
+use leptos::prelude::*;
 
 #[derive(Debug, PartialEq)]
 #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
@@ -47,17 +46,20 @@ fn prepare(draft: &PostDraft, markdown: String) -> Result<PostSubmission, &'stat
 
 /// 保存为给定状态（`draft` / `published`）。成功后留在本页：更新已保存基线与时间，
 /// 新文章换到编辑路由；失败时保留表单，状态指示可按原状态重试。
-#[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables, unused_mut))]
+#[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))]
 pub(super) fn submit(state: WriteEditorState, toast: Toaster, status: &'static str) {
-    let mut save = state.save;
-    if save.peek().is_saving() || !state.phase.peek().is_ready() || !library_ready(state.library) {
+    let save = state.save;
+    if save.with_untracked(SaveState::is_saving)
+        || !state.phase.with_untracked(|phase| phase.is_ready())
+        || !state.library.ready_untracked()
+    {
         return;
     }
-    let fail = move |mut save: Signal<SaveState>, message: String| {
+    let fail = move |message: String| {
         toast.error(message.clone());
         save.set(SaveState::Failed { message, status });
     };
-    let uploads = state.uploads_in_flight.peek();
+    let uploads = state.uploads_in_flight.get_untracked();
     let upload_error = if uploads.uploading > 0 {
         Some(format!(
             "有 {} 张图片正在上传，请等待完成后再保存",
@@ -68,42 +70,38 @@ pub(super) fn submit(state: WriteEditorState, toast: Toaster, status: &'static s
             "有 {} 张图片上传失败，请移除或重试后再保存",
             uploads.error
         ))
-    } else if *state.cover_uploading.peek() {
+    } else if state.cover_uploading.get_untracked() {
         Some("封面图正在上传，请等待完成后再保存".into())
-    } else if *state.body_picker_uploading.peek() {
+    } else if state.body_picker_uploading.get_untracked() {
         Some("图片正在上传，请等待完成后再保存".into())
     } else {
         None
     };
-    drop(uploads);
     if let Some(message) = upload_error {
-        fail(save, message);
+        fail(message);
         return;
     }
-    // Snapshot before spawning; edits made during an in-flight request stay local.
-    let mut draft = state.form.peek().clone();
+    // 先快照再发请求；请求期间的新编辑只留在本地。
+    let mut draft = state.form.get_untracked();
     draft.status = status.to_owned();
     #[cfg(target_arch = "wasm32")]
     {
         use crate::api::posts::{create_post, update_post, CreatePostResponse};
-        use dioxus::prelude::spawn;
         let markdown = state
             .editor
-            .peek()
-            .as_ref()
-            .map(|handle| handle.instance().get_markdown())
+            .with_value(|handle| handle.as_ref().map(|h| h.instance().get_markdown()))
             .unwrap_or_else(|| draft.content.clone());
         let submission = match prepare(&draft, markdown.clone()) {
             Ok(submission) => submission,
             Err(message) => {
-                fail(save, message.into());
+                fail(message.into());
                 return;
             }
         };
         save.set(SaveState::Saving);
         let post_id = state.post_id;
-        let was_published = state.saved.peek().is_published();
-        spawn(async move {
+        let was_published = state.saved.with_untracked(PostDraft::is_published);
+        leptos::task::spawn_local(async move {
             let PostSubmission {
                 title,
                 slug,
@@ -137,6 +135,10 @@ pub(super) fn submit(state: WriteEditorState, toast: Toaster, status: &'static s
                 )
                 .await
             };
+            // 请求期间用户可能已离开页面：所有者销毁后信号写入一律丢弃。
+            if save.try_get_untracked().is_none() {
+                return;
+            }
             match result {
                 Ok(CreatePostResponse {
                     success: true,
@@ -144,8 +146,6 @@ pub(super) fn submit(state: WriteEditorState, toast: Toaster, status: &'static s
                     slug,
                     ..
                 }) => {
-                    let mut form = state.form;
-                    let mut saved = state.saved;
                     let submitted_slug = draft.slug.clone();
                     let submitted_content = draft.content.clone();
                     let mut snapshot = draft;
@@ -153,8 +153,8 @@ pub(super) fn submit(state: WriteEditorState, toast: Toaster, status: &'static s
                     if let Some(slug) = slug {
                         snapshot.slug = slug;
                     }
-                    // Only adopt server values for fields untouched since the snapshot.
-                    form.with_mut(|f| {
+                    // 只对快照之后没改过的字段采纳服务端值。
+                    state.form.update(|f| {
                         if f.slug == submitted_slug {
                             f.slug = snapshot.slug.clone();
                         }
@@ -163,13 +163,11 @@ pub(super) fn submit(state: WriteEditorState, toast: Toaster, status: &'static s
                         }
                         f.status = status.to_owned();
                     });
-                    saved.set(snapshot);
-                    let mut published_at = state.published_at;
-                    if status == "published" && published_at.peek().is_none() {
-                        published_at.set(Some(chrono::Utc::now()));
+                    state.saved.set(snapshot);
+                    if status == "published" && state.published_at.get_untracked().is_none() {
+                        state.published_at.set(Some(chrono::Utc::now()));
                     }
-                    let mut saved_at = state.saved_at;
-                    saved_at.set(Some(
+                    state.saved_at.set(Some(
                         crate::utils::time::local_now().format("%H:%M").to_string(),
                     ));
                     save.set(SaveState::Idle);
@@ -179,17 +177,18 @@ pub(super) fn submit(state: WriteEditorState, toast: Toaster, status: &'static s
                         _ => {}
                     }
                     if let (None, Some(id)) = (post_id, new_id) {
-                        let _ = dioxus::router::navigator()
-                            .replace(crate::router::Route::WriteEdit { id });
+                        crate::navigation::replace(
+                            &crate::routes::Route::WriteEdit { id }.to_string(),
+                        );
                     }
                 }
-                Ok(CreatePostResponse { message, .. }) => fail(save, message),
-                Err(error) => fail(save, failure_message("保存失败", &error)),
+                Ok(CreatePostResponse { message, .. }) => fail(message),
+                Err(error) => fail(failure_message("保存失败", &error)),
             }
         });
     }
     #[cfg(not(target_arch = "wasm32"))]
-    fail(save, "此页面需要 JavaScript 才能保存".into());
+    fail("此页面需要 JavaScript 才能保存".into());
 }
 
 #[cfg(test)]

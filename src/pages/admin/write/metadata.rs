@@ -1,9 +1,12 @@
 //! 文章属性抽屉：永久链接、标签、摘要、封面与字数；与正文编辑器共享表单。
-use super::{cover::CoverUploader, state::WriteEditorState};
+use super::{
+    cover::CoverUploader,
+    state::{PostDraft, WriteEditorState},
+};
 use crate::components::forms::FormTextarea;
 use crate::components::post::post_meta::group_digits;
-use crate::components::ui::{IconButton, IconName};
-use dioxus::prelude::*;
+use crate::components::ui::{ButtonSize, Icon, IconButton, IconName};
+use leptos::prelude::*;
 
 /// 正文字数（不计空白）与约略阅读分钟数。
 pub(super) fn word_stats(markdown: &str) -> (usize, usize) {
@@ -14,141 +17,152 @@ pub(super) fn word_stats(markdown: &str) -> (usize, usize) {
 #[component]
 pub(super) fn MetadataPanel(
     state: WriteEditorState,
-    mut open: Signal<bool>,
-    on_trash: EventHandler<()>,
-) -> Element {
-    let mut form = state.form;
-    let mut tag_input = use_signal(String::new);
-    let tags = use_memo(move || form.read().parsed_tags());
-    let summary_len = use_memo(move || form.read().summary.chars().count());
-    let (words, minutes) = word_stats(&form.read().content);
-    let mut commit_tag = move || {
-        let pending = tag_input.peek().clone();
+    open: RwSignal<bool>,
+    #[prop(into)] on_trash: Callback<()>,
+) -> impl IntoView {
+    let form = state.form;
+    let tag_input = RwSignal::new(String::new());
+    let tags = Memo::new(move |_| form.with(PostDraft::parsed_tags));
+    let summary_len = Memo::new(move |_| form.with(|f| f.summary.chars().count()));
+    let stats = Memo::new(move |_| form.with(|f| word_stats(&f.content)));
+    let commit_tag = move || {
+        let pending = tag_input.get_untracked();
         if !pending.trim().is_empty() {
-            form.write().add_tags(&pending);
+            form.update(|f| f.add_tags(&pending));
         }
         tag_input.set(String::new());
     };
 
-    rsx! {
-        aside { class: "write-drawer", "data-vt-scroll": "admin-write-settings", aria_label: "文章属性",
-            div { class: "write-drawer-head",
-                h2 { "文章属性" }
-                IconButton {
-                    icon: IconName::X,
-                    label: "收起属性",
-                    size: crate::components::ui::ButtonSize::Sm,
-                    tooltip_align: "end",
-                    onclick: move |_| open.set(false),
-                }
-            }
+    view! {
+        <aside class="write-drawer" data-vt-scroll="admin-write-settings" aria-label="文章属性">
+            <div class="write-drawer-head">
+                <h2>"文章属性"</h2>
+                <IconButton
+                    icon=IconName::X
+                    label="收起属性"
+                    size=ButtonSize::Sm
+                    tooltip_align="end"
+                    onclick=move |_| open.set(false)
+                />
+            </div>
 
-            div { class: "write-prop",
-                label { class: "write-prop-label", r#for: "write-slug",
-                    span { "永久链接" }
-                    span { class: "write-prop-hint", "留空自动生成" }
-                }
-                div { class: "field write-slug",
-                    span { aria_hidden: "true", "/post/" }
-                    input {
-                        id: "write-slug",
-                        r#type: "text",
-                        spellcheck: "false",
-                        autocomplete: "off",
-                        value: "{form.read().slug}",
-                        oninput: move |e| form.write().slug = e.value(),
-                    }
-                }
-            }
+            <div class="write-prop">
+                <label class="write-prop-label" for="write-slug">
+                    <span>"永久链接"</span>
+                    <span class="write-prop-hint">"留空自动生成"</span>
+                </label>
+                <div class="field write-slug">
+                    <span aria-hidden="true">"/post/"</span>
+                    <input
+                        id="write-slug"
+                        type="text"
+                        spellcheck="false"
+                        autocomplete="off"
+                        value=form.with_untracked(|f| f.slug.clone())
+                        prop:value=move || form.with(|f| f.slug.clone())
+                        on:input=move |e| {
+                            let value = event_target_value(&e);
+                            form.update(|f| f.slug = value);
+                        }
+                    />
+                </div>
+            </div>
 
-            div { class: "write-prop",
-                label { class: "write-prop-label", r#for: "write-tag-input",
-                    span { "标签" }
-                    span { class: "write-prop-hint", "回车或逗号添加" }
-                }
-                div { class: "field write-tags",
-                    for tag in tags() {
-                        span { key: "{tag}", class: "write-tag",
-                            "{tag}"
-                            button {
-                                r#type: "button",
-                                aria_label: "移除标签 {tag}",
-                                onclick: {
+            <div class="write-prop">
+                <label class="write-prop-label" for="write-tag-input">
+                    <span>"标签"</span>
+                    <span class="write-prop-hint">"回车或逗号添加"</span>
+                </label>
+                <div class="field write-tags">
+                    <For each=move || tags.get() key=|tag| tag.clone() let:tag>
+                        <span class="write-tag">
+                            {tag.clone()}
+                            <button
+                                type="button"
+                                aria-label=format!("移除标签 {tag}")
+                                on:click={
                                     let tag = tag.clone();
-                                    move |_| form.write().remove_tag(&tag)
-                                },
-                                crate::components::ui::Icon { name: IconName::X, size: 11 }
+                                    move |_| form.update(|f| f.remove_tag(&tag))
+                                }
+                            >
+                                <Icon name=IconName::X size=11/>
+                            </button>
+                        </span>
+                    </For>
+                    <input
+                        id="write-tag-input"
+                        type="text"
+                        placeholder=move || if tags.with(Vec::is_empty) { "添加标签…" } else { "" }
+                        prop:value=move || tag_input.get()
+                        on:input=move |e| {
+                            let value = event_target_value(&e);
+                            // 输入或粘贴里带分隔符时直接拆成标签。
+                            let split = value.contains([',', '，', ';', '；']);
+                            tag_input.set(value);
+                            if split {
+                                commit_tag();
                             }
                         }
-                    }
-                    input {
-                        id: "write-tag-input",
-                        r#type: "text",
-                        placeholder: if tags().is_empty() { "添加标签…" } else { "" },
-                        value: "{tag_input}",
-                        oninput: move |e| {
-                            let value = e.value();
-                            // 输入或粘贴里带分隔符时直接拆成标签。
-                            if value.contains([',', '，', ';', '；']) {
-                                tag_input.set(value);
-                                commit_tag();
-                            } else {
-                                tag_input.set(value);
-                            }
-                        },
-                        onkeydown: move |e| {
-                            if e.data().is_composing() {
+                        on:keydown=move |e| {
+                            if e.is_composing() {
                                 return;
                             }
-                            if e.key() == Key::Enter {
+                            if e.key() == "Enter" {
                                 e.prevent_default();
                                 commit_tag();
-                            } else if e.key() == Key::Backspace && tag_input.peek().is_empty() {
-                                if let Some(last) = tags.peek().last().cloned() {
-                                    form.write().remove_tag(&last);
+                            } else if e.key() == "Backspace" && tag_input.with_untracked(String::is_empty) {
+                                if let Some(last) = tags.with_untracked(|t| t.last().cloned()) {
+                                    form.update(|f| f.remove_tag(&last));
                                 }
                             }
-                        },
-                        onblur: move |_| commit_tag(),
-                    }
-                }
-            }
+                        }
+                        on:blur=move |_| commit_tag()
+                    />
+                </div>
+            </div>
 
-            div { class: "write-prop",
-                label { class: "write-prop-label", r#for: "write-summary",
-                    span { "摘要" }
-                    span { class: "write-prop-hint tabular-nums", "{summary_len} 字" }
-                }
-                FormTextarea {
-                    id: Some("write-summary".to_string()),
-                    class: "field field-textarea write-summary",
-                    rows: 5u32,
-                    placeholder: "选填，留空将从正文提取",
-                    value: form.read().summary.clone(),
-                    oninput: move |v: String| form.write().summary = v,
-                }
-            }
+            <div class="write-prop">
+                <label class="write-prop-label" for="write-summary">
+                    <span>"摘要"</span>
+                    <span class="write-prop-hint tabular-nums">{move || summary_len.get()} " 字"</span>
+                </label>
+                <FormTextarea
+                    id="write-summary"
+                    class="field field-textarea write-summary"
+                    rows=5u32
+                    placeholder="选填，留空将从正文提取"
+                    value=Signal::derive(move || form.with(|f| f.summary.clone()))
+                    oninput=move |v: String| form.update(|f| f.summary = v)
+                />
+            </div>
 
-            div { class: "write-prop",
-                div { class: "write-prop-label",
-                    span { "封面" }
-                    span { class: "write-prop-hint", "推荐 21:9" }
-                }
-                CoverUploader { form, cover_uploading: state.cover_uploading }
-            }
+            <div class="write-prop">
+                <div class="write-prop-label">
+                    <span>"封面"</span>
+                    <span class="write-prop-hint">"推荐 21:9"</span>
+                </div>
+                <CoverUploader form cover_uploading=state.cover_uploading/>
+            </div>
 
-            div { class: "write-drawer-foot",
-                span { class: "tabular-nums", "{group_digits(words as u32)} 字 · 约 {minutes} 分钟" }
-                if state.post_id.is_some() {
-                    button {
-                        class: "write-trash",
-                        r#type: "button",
-                        onclick: move |_| on_trash.call(()),
-                        "移到回收站"
-                    }
-                }
-            }
-        }
+            <div class="write-drawer-foot">
+                <span class="tabular-nums">
+                    {move || {
+                        let (words, minutes) = stats.get();
+                        format!("{} 字 · 约 {minutes} 分钟", group_digits(words as u32))
+                    }}
+                </span>
+                {state
+                    .post_id
+                    .is_some()
+                    .then(|| {
+                        view! {
+                            <button class="write-trash" type="button" on:click=move |_| on_trash.run(())>
+                                "移到回收站"
+                            </button>
+                        }
+                    })}
+            </div>
+        </aside>
     }
 }
 
