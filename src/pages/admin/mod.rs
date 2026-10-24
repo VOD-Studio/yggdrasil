@@ -1,11 +1,12 @@
-// MIGRATION_STUB
 //! 管理后台页面模块。
 //!
-//! `AdminShellRoute` 是 `/admin` 的懒加载父路由，视图渲染后台外壳并包住子路由出口。
+//! `AdminShellRoute` 是 `/admin` 的懒加载父路由，视图渲染后台外壳（`AdminLayout`），
+//! 子路由出口 `<Outlet/>` 在外壳内部。
 
 use leptos::prelude::*;
-use leptos_router::components::Outlet;
 use leptos_router::{lazy_route, LazyRoute};
+
+use crate::components::admin_layout::AdminLayout;
 
 pub mod assets;
 pub mod comments;
@@ -34,6 +35,6 @@ impl LazyRoute for AdminShellRoute {
     }
 
     fn view(_this: Self) -> AnyView {
-        view! { <Outlet/> }.into_any()
+        view! { <AdminLayout/> }.into_any()
     }
 }
