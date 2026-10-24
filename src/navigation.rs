@@ -157,19 +157,24 @@ pub fn RouteMarker(is_routing: ReadSignal<bool>, children: Children) -> impl Int
         if is_routing.get() {
             return;
         }
-        request_animation_frame(move || {
-            // URL 已变、路由器还没来得及把 is_routing 置真的窗口内放弃本次通知。
-            if is_routing.get_untracked() {
-                return;
-            }
-            let Some(element) = marker.get_untracked() else {
-                return;
-            };
-            let id = crate::bridges::navigation::navigation_id();
-            let _ = element.set_attribute("data-vt-route", &route);
-            let _ = element.set_attribute("data-vt-navigation", &id.to_string());
-            crate::bridges::navigation::rendered(id, &route);
-        });
+        // 不用 requestAnimationFrame：视图过渡进行时浏览器暂停渲染，rAF 要等过渡回调结束才触发，
+        // 而协调器正等着这次通知来结束回调（互相等待，只能靠超时兜底）。定时器不受影响。
+        set_timeout(
+            move || {
+                // URL 已变、路由器还没来得及把 is_routing 置真的窗口内放弃本次通知。
+                if is_routing.get_untracked() {
+                    return;
+                }
+                let Some(element) = marker.get_untracked() else {
+                    return;
+                };
+                let id = crate::bridges::navigation::navigation_id();
+                let _ = element.set_attribute("data-vt-route", &route);
+                let _ = element.set_attribute("data-vt-navigation", &id.to_string());
+                crate::bridges::navigation::rendered(id, &route);
+            },
+            std::time::Duration::ZERO,
+        );
     });
     #[cfg(not(feature = "hydrate"))]
     let _ = is_routing;

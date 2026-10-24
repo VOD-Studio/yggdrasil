@@ -68,7 +68,7 @@ pub fn shell(options: LeptosOptions) -> impl IntoView {
                 <link rel="stylesheet" href="/highlight.css?v=2"/>
                 <link rel="stylesheet" href="/katex/katex.min.css?v=3"/>
                 <link rel="stylesheet" href="/yggdrasil-core/yggdrasil-core.css?v=3"/>
-                <script src="/yggdrasil-core/yggdrasil-core.js?v=4"></script>
+                <script src="/yggdrasil-core/yggdrasil-core.js?v=5"></script>
                 <ThemePreload/>
                 <AutoReload options=options.clone()/>
                 <HydrationScripts options/>
@@ -92,13 +92,23 @@ pub fn App() -> impl IntoView {
     // 路由器是否正在切换：RouteMarker 据此避开切换中的无效通知。
     let (is_routing, set_is_routing) = signal(false);
 
-    // 水合完成标记：浏览器回归脚本与性能测试等待它出现。
+    // 水合完成标记：浏览器回归脚本与性能测试等待它出现。必须等整棵树（含懒加载路由
+    // 分包）水合完毕才置位——Effect 本身在路由分包加载前就会运行，那时点击会丢失。
     #[cfg(feature = "hydrate")]
-    Effect::new(|_| {
-        if let Some(root) = document().document_element() {
-            let _ = root.set_attribute("data-hydrated", "true");
-        }
-    });
+    {
+        let shared = Owner::current_shared_context();
+        Effect::new(move |_| {
+            let shared = shared.clone();
+            leptos::task::spawn_local(async move {
+                while shared.as_ref().is_some_and(|sc| sc.during_hydration()) {
+                    crate::utils::time::sleep_ms(10).await;
+                }
+                if let Some(root) = document().document_element() {
+                    let _ = root.set_attribute("data-hydrated", "true");
+                }
+            });
+        });
+    }
 
     view! {
         <Title text="Yggdrasil Blog"/>

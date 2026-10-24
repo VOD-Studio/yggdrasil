@@ -623,6 +623,18 @@ describe('shared article snapshots', () => {
     expect(bubbling).not.toHaveBeenCalled();
   });
 
+  it('intercepts popstate ahead of listeners that register after construction, and yields when disconnected', () => {
+    // Leptos 的 popstate 监听在脚本加载之后才注册；window 上按注册顺序触发，协调器必须更早。
+    const late = vi.fn();
+    window.addEventListener('popstate', late);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+    expect(late).not.toHaveBeenCalled();
+    routes.disconnect();
+    window.dispatchEvent(new PopStateEvent('popstate'));
+    expect(late).toHaveBeenCalledTimes(1);
+    window.removeEventListener('popstate', late);
+  });
+
   it('matches title and loaded cover, then restores prior inline names', async () => {
     render(`<main data-vt-list>${post('42', true)}</main>`);
     const source = document.querySelector<HTMLElement>('[data-vt-role="title"]')!;

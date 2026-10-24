@@ -140,6 +140,13 @@ export class RouteTransitions {
   private guardSequence = 0;
   private rollingBack = false;
 
+  constructor() {
+    // 必须在 Leptos 之前注册：window 上的监听按注册顺序触发（捕获/冒泡不分先后），
+    // Leptos 的 BrowserUrl 在水合时才挂上自己的 popstate 监听，晚于脚本加载。
+    // 未连接时 onPop 直接放行，由 Leptos 自己处理。
+    window.addEventListener('popstate', this.onPop, true);
+  }
+
   connect(notify: () => void, prefix: string | null): void {
     if (this.notify) {
       this.notify = notify;
@@ -153,7 +160,7 @@ export class RouteTransitions {
     this.writeHistory(this.active, 'replace');
     this.oldRestoration = history.scrollRestoration;
     history.scrollRestoration = 'manual';
-    window.addEventListener('popstate', this.onPop, true);
+    // popstate 监听在构造时已注册（见 constructor）。
     window.addEventListener('hashchange', this.onHash);
     // 冒泡阶段：晚于元素自身的 Leptos 处理器（可 preventDefault），早于挂在 window 上的链接拦截。
     document.addEventListener('click', this.onClick);
@@ -164,7 +171,6 @@ export class RouteTransitions {
     this.navigation?.owner.finish();
     if (this.navigation) this.cancel(this.navigation);
     this.restoreCleanup?.();
-    window.removeEventListener('popstate', this.onPop, true);
     window.removeEventListener('hashchange', this.onHash);
     document.removeEventListener('click', this.onClick);
     window.removeEventListener('pagehide', this.onPageHide);
@@ -320,7 +326,9 @@ export class RouteTransitions {
     if (!this.navigation || this.navigation.cancelled || this.navigation.committed) this.syncHash();
   };
   private onPop = (event: PopStateEvent): void => {
-    // 捕获阶段先于 Leptos 的 popstate 监听：阻止它绕过视图过渡直接改 URL。
+    // 未连接（水合前、断开后）放行，由 Leptos 自己处理；连接后在 Leptos 之前拦下，
+    // 阻止它绕过视图过渡直接改 URL。
+    if (!this.notify || !this.active) return;
     event.stopImmediatePropagation();
     const route = this.locationRoute();
     const position = this.historyPosition();

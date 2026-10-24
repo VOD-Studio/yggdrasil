@@ -128,7 +128,7 @@ impl LazyRoute for HomeRoute {
         view! {
             <Title text=title/>
             <Suspense fallback=move || {
-                let current_page = page.get().unwrap_or(1);
+                let current_page = page.get_untracked().unwrap_or(1);
                 view! {
                     <DelayedSkeleton>
                         <HomeSkeleton current_page=current_page/>
