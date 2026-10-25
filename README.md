@@ -2,7 +2,7 @@
 
 ![CI](https://github.com/DefectingCat/yggdrasil/actions/workflows/ci.yml/badge.svg)
 
-基于 Dioxus 0.7 的全栈博客与内容管理系统。一套 Rust 代码，同时编译为浏览器端 WASM 与原生 Axum 服务端。
+基于 Leptos 0.8 的全栈博客与内容管理系统。一套 Rust 代码，同时编译为浏览器端 WASM（路由级分包）与原生 Axum 服务端。
 
 在线实例：<https://rua.plus>
 
@@ -20,11 +20,11 @@
 
 ## 技术栈
 
-Dioxus 0.7 · Axum · PostgreSQL · Tailwind CSS v4 · Bun workspace（Tiptap / CodeMirror / xterm.js / Mermaid）· bollard
+Leptos 0.8 · cargo-leptos · Axum · PostgreSQL · Tailwind CSS v4 · Bun workspace（Tiptap / CodeMirror / xterm.js / Mermaid）· bollard
 
 ## 快速开始
 
-准备 Rust（含 `llvm-tools`）、Dioxus CLI 0.7.10、Tailwind CSS v4 CLI 与 Bun，复制 `.env.example` 为 `.env`，然后：
+准备 Rust、cargo-leptos 0.3.11（`cargo install cargo-leptos --version 0.3.11 --locked`）、Tailwind CSS v4 standalone CLI 与 Bun，复制 `.env.example` 为 `.env`，然后：
 
 ```sh
 make dev     # 增量构建前端资源并启动开发服务

@@ -74,7 +74,7 @@ bun scripts/test-components-showcase.cjs   # 图鉴预览（SHOWCASE_BASE、SHOW
 
 在浏览器里实际查看：桌面与 390px 手机宽度、浅色与深色、减少动态效果。改了导航或转场时，按 `scripts/README-view-transitions.md` 验证直接加载与 SPA 导航，运行 `bun scripts/test-view-transitions.cjs`（`VT_BASE` 必须与 `APP_BASE_URL` 同源）。无头浏览器里导航成功不代表跨文档动画成功，后者需要在普通窗口中人工确认。
 
-改了全局样式或脚本，递增 `Dioxus.toml` 里的 `?v=N`。不要运行项目级 `dx fmt`。
+改了全局样式或脚本，递增 `src/app.rs` 里 `shell()` 的 `?v=N`。
 
 ## 8. 收尾
 
