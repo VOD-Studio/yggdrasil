@@ -116,6 +116,9 @@ fn compression_layer(
         .quality(CompressionLevel::Precise(COMPRESSION_QUALITY))
 }
 
+/// 前端入口文件前缀（`[package.metadata.leptos] output-name = "yggdrasil"`）。
+const PKG_ENTRY_PREFIX: &str = "/pkg/yggdrasil.";
+
 /// `/pkg/` 下的文件名是否形如 `<name>.<22 位 [A-Za-z0-9_-]>.<扩展名>`（cargo-leptos 的内容哈希命名）。
 fn is_hashed_pkg_file(path: &str) -> bool {
     let Some(file_name) = path.rsplit('/').next() else {
@@ -166,8 +169,14 @@ pub(crate) fn cache_control_for_path(
 
     // /pkg/ 下 cargo-leptos 产物：文件名带内容哈希（`<name>.<22 位哈希>.<扩展名>`）的永不变化，
     // 可长期缓存；其余（固定文件名）随部署变化。
+    //
+    // 例外是入口 `yggdrasil.<哈希>.{js,wasm}`：cargo-leptos 先按内容算哈希改名，之后才把
+    // 分包加载器 `__wasm_split.<哈希>.js` 的文件名写进这两个文件。只改了懒加载代码的发布
+    // 会换掉加载器文件名，入口文件名却不变；若入口 immutable，回访浏览器会一直用旧入口去
+    // 请求已删除的旧加载器，整页无法水合。入口每次校验（304），分包与加载器本身仍 immutable。
     if path.starts_with("/pkg/") {
-        return Some(HeaderValue::from_static(if is_hashed_pkg_file(path) {
+        let immutable = is_hashed_pkg_file(path) && !path.starts_with(PKG_ENTRY_PREFIX);
+        return Some(HeaderValue::from_static(if immutable {
             "public, max-age=31536000, immutable"
         } else {
             "public, no-cache"
@@ -570,9 +579,9 @@ mod tests {
     #[test]
     fn hashed_pkg_assets_are_immutable() {
         for path in [
-            "/pkg/yggdrasil.AbCdEfGhIjKlMnOpQrStUv.wasm",
-            "/pkg/yggdrasil.AbCdEfGhIjKlMnOpQrStUv.js",
-            "/pkg/home_route_view.A-_dEfGhIjKlMnOpQrStU0.wasm",
+            "/pkg/__wasm_split.AbCdEfGhIjKlMnOpQrStUv.js",
+            "/pkg/chunk_12.AbCdEfGhIjKlMnOpQrStUv.wasm",
+            "/pkg/split___home_route_view_42.A-_dEfGhIjKlMnOpQrStU0.wasm",
         ] {
             for method in [Method::GET, Method::HEAD] {
                 assert_eq!(
@@ -582,12 +591,15 @@ mod tests {
                 );
             }
         }
-        // 哈希长度不对或缺少哈希段的 /pkg/ 文件仍需校验。
+        // 入口文件名不随内嵌的加载器文件名变化，必须校验；哈希长度不对或缺少哈希段的
+        // /pkg/ 文件同样需要校验。
         for path in [
-            "/pkg/yggdrasil.short.wasm",
-            "/pkg/yggdrasil.AbCdEfGhIjKlMnOpQrStUvX.wasm",
-            "/pkg/yggdrasil.AbCdEfGhIjKlMnOpQrSt!v.wasm",
-            "/pkg/yggdrasil.json",
+            "/pkg/yggdrasil.AbCdEfGhIjKlMnOpQrStUv.wasm",
+            "/pkg/yggdrasil.AbCdEfGhIjKlMnOpQrStUv.js",
+            "/pkg/chunk_12.short.wasm",
+            "/pkg/chunk_12.AbCdEfGhIjKlMnOpQrStUvX.wasm",
+            "/pkg/chunk_12.AbCdEfGhIjKlMnOpQrSt!v.wasm",
+            "/pkg/__wasm_split_manifest.json",
         ] {
             assert_eq!(
                 cache_value(path, Method::GET).as_deref(),
