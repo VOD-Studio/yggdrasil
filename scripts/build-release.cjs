@@ -14,6 +14,12 @@
  * 装配先写入 <out>/.staging-<pid>，完成后逐项 rename 换入 <out>；装配中途失败
  * 不会破坏既有发布目录。<site> 顶层若存在 index.html，说明混入了旧 dx 产物，直接失败。
  *
+ * 装配时剥掉 pkg/ 下每个 .wasm 的 `producers` / `target_features` 自定义段（运行时不读）。
+ * --split 产出上千个小分包，每个都带这两段约 180 B，一条路由要拉几百个分包，首屏 Brotli
+ * 因此多出约 40 KB。不能交给 wasm-opt 的 --strip-* 做：只含这两段的空分包会被剥成 8 字节，
+ * cargo-leptos 0.3.11 随后改写分包加载器引用时对短于文件名的 .wasm 下标越界而崩溃。
+ * 剥离是确定性的，cargo-leptos 给出的内容哈希文件名仍与内容一一对应。
+ *
  * 用法：
  *   bun scripts/build-release.cjs --out target/release-dist --server target/release/yggdrasil
  *   bun scripts/build-release.cjs --verify --out target/release-dist
@@ -58,6 +64,43 @@ const BR_EXT = new Set(['.js', '.wasm', '.json', '.css']);
 
 const sha256 = (buf) => createHash('sha256').update(buf).digest('hex');
 const extOf = (name) => name.slice(name.lastIndexOf('.'));
+
+/** 运行时不需要、却会随每个分包重复下载的 wasm 自定义段。 */
+const STRIP_CUSTOM_SECTIONS = new Set(['producers', 'target_features']);
+
+/** 读 LEB128 无符号整数，返回 [值, 下一个偏移]。 */
+function readUleb(buf, offset) {
+  let value = 0;
+  let shift = 0;
+  for (;;) {
+    const byte = buf[offset++];
+    value += (byte & 0x7f) * 2 ** shift;
+    if (byte < 0x80) return [value, offset];
+    shift += 7;
+  }
+}
+
+/** 去掉 STRIP_CUSTOM_SECTIONS 中的自定义段；其余段原样保留、顺序不变。 */
+function stripCustomSections(buf) {
+  if (buf.length < 8 || buf.readUInt32LE(0) !== 0x6d736100) throw new Error('不是 wasm 模块');
+  const kept = [buf.subarray(0, 8)];
+  let offset = 8;
+  while (offset < buf.length) {
+    const start = offset;
+    const id = buf[offset];
+    const [size, contentStart] = readUleb(buf, offset + 1);
+    const end = contentStart + size;
+    if (end > buf.length) throw new Error('wasm 段长度越界');
+    let drop = false;
+    if (id === 0) {
+      const [nameLen, nameStart] = readUleb(buf, contentStart);
+      drop = STRIP_CUSTOM_SECTIONS.has(buf.toString('utf8', nameStart, nameStart + nameLen));
+    }
+    if (!drop) kept.push(buf.subarray(start, end));
+    offset = end;
+  }
+  return Buffer.concat(kept);
+}
 
 function walk(dir, base = dir, acc = []) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -218,6 +261,16 @@ try {
   }
 
   const pkgDir = join(stagingPublic, 'pkg');
+  let strippedBytes = 0;
+  for (const rel of walk(pkgDir).filter((r) => r.endsWith('.wasm'))) {
+    const file = join(pkgDir, rel);
+    const buf = readFileSync(file);
+    const out = stripCustomSections(buf);
+    if (out.length !== buf.length) {
+      writeFileSync(file, out);
+      strippedBytes += buf.length - out.length;
+    }
+  }
   const assets = walk(pkgDir)
     .filter((rel) => !rel.endsWith('.br'))
     .map((rel) => {
@@ -252,7 +305,8 @@ try {
     renameSync(next, current);
   }
   console.log(
-    `发布装配完成：${assets.length} 个 pkg 资产 → ${relative(ROOT, join(OUT, 'public'))}\n` +
+    `发布装配完成：${assets.length} 个 pkg 资产 → ${relative(ROOT, join(OUT, 'public'))}` +
+      `（剥离 wasm 自定义段 ${strippedBytes} B）\n` +
       `  hash.txt${SERVER ? '、server' : ''} 已就位；清单 release-manifest.json (${manifestOut.release_id})`,
   );
 } finally {

@@ -19,6 +19,7 @@ use crate::components::ui::{
     SegmentedItem,
 };
 use crate::context::ShowcaseFilters;
+use crate::hooks::ssr_resource::{route_data, PageJson, RouteData};
 use crate::pages::not_found::PageLoadFailed;
 use crate::routes::Route;
 
@@ -100,21 +101,20 @@ pub(crate) async fn get_showcase_data() -> Result<ShowcaseData, ServerFnError> {
     Ok(SHOWCASE.clone())
 }
 
-/// 客户端会话内只请求一次；首屏直接复用 SSR 水合数据。
-async fn load_showcase() -> Result<ShowcaseData, ServerFnError> {
+/// 客户端会话内只请求一次；首屏直接复用 SSR 水合数据。取数函数随分包加载，
+/// 见 `hooks::ssr_resource`。
+#[leptos::lazy]
+async fn fetch_showcase() -> PageJson<ShowcaseData> {
     #[cfg(not(feature = "server"))]
     if let Some(data) = CLIENT_SHOWCASE.get() {
-        return Ok(data.clone());
+        return PageJson::new(Ok(data.clone()));
     }
-    get_showcase_data().await
+    PageJson::new(get_showcase_data().await)
 }
 
 /// 加载图鉴数据后再渲染子页面，使目录、详情与预览可同步读取 `showcase()`。
 #[component]
-fn ShowcaseDataGate(
-    data: Resource<Result<ShowcaseData, ServerFnError>>,
-    children: ChildrenFn,
-) -> impl IntoView {
+fn ShowcaseDataGate(data: RouteData<ShowcaseData>, children: ChildrenFn) -> impl IntoView {
     view! {
         <Suspense fallback=|| ()>
             {move || {
@@ -138,14 +138,14 @@ fn ShowcaseDataGate(
 
 /// 组件图鉴目录路由，对应 `/about/components`。
 pub struct ShowcaseRoute {
-    data: Resource<Result<ShowcaseData, ServerFnError>>,
+    data: RouteData<ShowcaseData>,
 }
 
 #[lazy_route]
 impl LazyRoute for ShowcaseRoute {
     fn data() -> Self {
         Self {
-            data: Resource::new(|| (), |_| load_showcase()),
+            data: route_data(|| (), |_| fetch_showcase()),
         }
     }
 
@@ -161,14 +161,14 @@ impl LazyRoute for ShowcaseRoute {
 
 /// 单枚组件详情路由，对应 `/about/components/:component`。
 pub struct ShowcaseDetailRoute {
-    data: Resource<Result<ShowcaseData, ServerFnError>>,
+    data: RouteData<ShowcaseData>,
 }
 
 #[lazy_route]
 impl LazyRoute for ShowcaseDetailRoute {
     fn data() -> Self {
         Self {
-            data: Resource::new(|| (), |_| load_showcase()),
+            data: route_data(|| (), |_| fetch_showcase()),
         }
     }
 

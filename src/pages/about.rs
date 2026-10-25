@@ -1,17 +1,19 @@
 //! 关于页：单栏编辑排版。站点简介、常写标签条形图、每年篇数柱状图、技术栈与版本、
-//! 入口卡片与订阅。统计全部来自已缓存的公开接口，在 `LazyRoute::data` 里一次创建。
+//! 入口卡片与订阅。统计全部来自已缓存的公开接口，在 `LazyRoute::data` 里一次创建
+//! （`hooks::ssr_resource::route_data`）。
 
 use leptos::prelude::*;
 use leptos_meta::Title;
 use leptos_router::{lazy_route, LazyRoute};
 
 use crate::api::changelog::latest_release;
-use crate::api::posts::{list_tags, posts_per_year, TagListResponse, YearCount};
+use crate::api::posts::{posts_per_year, TagListResponse, YearCount};
 use crate::components::skeletons::atoms::SkeletonBox;
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::ui::{Icon, IconName};
+use crate::hooks::ssr_resource::{route_data, PageJson, RouteData};
 use crate::models::post::Tag;
-use crate::pages::archives::ranked_tags;
+use crate::pages::archives::{fetch_tags, ranked_tags};
 use crate::routes::Route;
 
 /// 条形图列出的标签数。
@@ -26,18 +28,28 @@ type Release = Option<(String, Option<String>)>;
 
 /// 关于页路由，对应 `/about`（`SsrMode::InOrder`）。
 pub struct AboutRoute {
-    years: Resource<Result<Vec<YearCount>, ServerFnError>>,
-    tags: Resource<Result<TagListResponse, ServerFnError>>,
-    release: Resource<Result<Release, ServerFnError>>,
+    years: RouteData<Vec<YearCount>>,
+    tags: RouteData<TagListResponse>,
+    release: RouteData<Release>,
+}
+
+#[leptos::lazy]
+async fn fetch_years() -> PageJson<Vec<YearCount>> {
+    PageJson::new(posts_per_year().await)
+}
+
+#[leptos::lazy]
+async fn fetch_release() -> PageJson<Release> {
+    PageJson::new(latest_release().await)
 }
 
 #[lazy_route]
 impl LazyRoute for AboutRoute {
     fn data() -> Self {
         Self {
-            years: Resource::new(|| (), |_| posts_per_year()),
-            tags: Resource::new(|| (), |_| list_tags()),
-            release: Resource::new(|| (), |_| latest_release()),
+            years: route_data(|| (), |_| fetch_years()),
+            tags: route_data(|| (), |_| fetch_tags()),
+            release: route_data(|| (), |_| fetch_release()),
         }
     }
 

@@ -25,6 +25,7 @@ use crate::components::skeletons::home_skeleton::HomeSkeleton;
 use crate::components::ui::{
     Composer, ComposerInput, ComposerSend, Icon, IconName, LoadError, Pagination,
 };
+use crate::hooks::ssr_resource::{route_data, PageJson, RouteData};
 use crate::models::note::{Note, NoteFilter, NotePage};
 use crate::models::post::{PostListItem, Tag};
 use crate::models::settings::{HomeTagline, SiteSettings};
@@ -47,11 +48,54 @@ const RECENT_NOTES: usize = 4;
 pub struct HomeRoute {
     /// 页码（至少为 1）；`page` 参数不是整数时为 `None`，渲染 404。
     page: Memo<Option<i32>>,
-    posts: Resource<Result<PostListResponse, ServerFnError>>,
-    tags: Resource<Result<Option<TagListResponse>, ServerFnError>>,
-    settings: Resource<Result<Option<SiteSettings>, ServerFnError>>,
-    outline: Resource<Result<Option<PostOutline>, ServerFnError>>,
-    notes: Resource<Result<Option<NotePage>, ServerFnError>>,
+    posts: RouteData<PostListResponse>,
+    tags: RouteData<Option<TagListResponse>>,
+    settings: RouteData<Option<SiteSettings>>,
+    outline: RouteData<Option<PostOutline>>,
+    notes: RouteData<Option<NotePage>>,
+}
+
+// 取数函数随分包加载，见 `hooks::ssr_resource`。`first` 为 false（第 2 页起）时直接返回 None。
+
+#[leptos::lazy]
+async fn fetch_posts(page: i32) -> PageJson<PostListResponse> {
+    PageJson::new(list_published_posts(page, POSTS_PER_PAGE).await)
+}
+
+#[leptos::lazy]
+async fn fetch_home_tags(first: bool) -> PageJson<Option<TagListResponse>> {
+    PageJson::new(if first {
+        list_tags().await.map(Some)
+    } else {
+        Ok(None)
+    })
+}
+
+#[leptos::lazy]
+async fn fetch_settings(first: bool) -> PageJson<Option<SiteSettings>> {
+    PageJson::new(if first {
+        get_site_settings().await.map(Some)
+    } else {
+        Ok(None)
+    })
+}
+
+#[leptos::lazy]
+async fn fetch_outline(first: bool) -> PageJson<Option<PostOutline>> {
+    PageJson::new(if first {
+        latest_post_outline().await
+    } else {
+        Ok(None)
+    })
+}
+
+#[leptos::lazy]
+async fn fetch_notes(first: bool) -> PageJson<Option<NotePage>> {
+    PageJson::new(if first {
+        list_notes(NoteFilter::default()).await.map(Some)
+    } else {
+        Ok(None)
+    })
 }
 
 #[lazy_route]
@@ -65,50 +109,11 @@ impl LazyRoute for HomeRoute {
         let is_first = Memo::new(move |_| page.get() == Some(1));
         Self {
             page,
-            posts: Resource::new(
-                move || page.get().unwrap_or(1),
-                |page| list_published_posts(page, POSTS_PER_PAGE),
-            ),
-            tags: Resource::new(
-                move || is_first.get(),
-                |first| async move {
-                    if first {
-                        list_tags().await.map(Some)
-                    } else {
-                        Ok(None)
-                    }
-                },
-            ),
-            settings: Resource::new(
-                move || is_first.get(),
-                |first| async move {
-                    if first {
-                        get_site_settings().await.map(Some)
-                    } else {
-                        Ok(None)
-                    }
-                },
-            ),
-            outline: Resource::new(
-                move || is_first.get(),
-                |first| async move {
-                    if first {
-                        latest_post_outline().await
-                    } else {
-                        Ok(None)
-                    }
-                },
-            ),
-            notes: Resource::new(
-                move || is_first.get(),
-                |first| async move {
-                    if first {
-                        list_notes(NoteFilter::default()).await.map(Some)
-                    } else {
-                        Ok(None)
-                    }
-                },
-            ),
+            posts: route_data(move || page.get().unwrap_or(1), fetch_posts),
+            tags: route_data(move || is_first.get(), fetch_home_tags),
+            settings: route_data(move || is_first.get(), fetch_settings),
+            outline: route_data(move || is_first.get(), fetch_outline),
+            notes: route_data(move || is_first.get(), fetch_notes),
         }
     }
 

@@ -791,6 +791,8 @@ mod tests {
             }
             .to_html()
         });
+        // erase_components 下 SSR 在动态文本后输出 `<!>` 水合标记；断言只看内容与属性。
+        let html = html.replace("<!>", "");
         assert!(html.contains("role=\"dialog\""), "{html}");
         assert!(html.contains("data-ygg-modal-open=\"true\""), "{html}");
         assert!(html.contains("id=\"palette-input\""), "{html}");

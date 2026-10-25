@@ -206,7 +206,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     && cargo chef prepare --recipe-path recipe.json \
     && export CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc \
     && export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc \
-    && export RUSTFLAGS="-C target-feature=+crt-static -C relocation-model=static" \
+    && export RUSTFLAGS="-C target-feature=+crt-static -C relocation-model=static --cfg erase_components" \
     && cargo chef cook --release --locked --target "$MUSL_TARGET" --recipe-path recipe.json
 # 不再 cook host(dev) target: 下方 cargo doc 用 --no-deps(不编依赖),host cook 无服务对象;
 # 且 cargo-chef 0.1.77 在 host cook 的 skeleton 模式下对 archmage-macros 等 proc-macro
@@ -282,7 +282,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     esac \
     && export CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc \
     && export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc \
-    && export RUSTFLAGS="-C target-feature=+crt-static -C relocation-model=static" \
+    && export RUSTFLAGS="-C target-feature=+crt-static -C relocation-model=static --cfg erase_components" \
     && cargo build --release --locked --target "$MUSL_TARGET" --bin yggdrasil
 
 # Ensure the uploads/backups directories exist for runtime. backups/ holds DB

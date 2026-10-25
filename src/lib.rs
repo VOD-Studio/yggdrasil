@@ -55,3 +55,15 @@ pub mod utils;
 pub fn hydrate() {
     leptos::mount::hydrate_lazy(crate::app::App);
 }
+
+/// `--split` 的数据段腾挪余量。
+///
+/// wasm-split 会把只被某个分包引用的只读数据（页面文案、class 名、fixture 字符串）从主包的
+/// `.rodata` 挪进那个分包；但重新排布后每个分包的数据要按段对齐，总长度若超过输入 `.rodata`
+/// 哪怕几百字节，工具就放弃腾挪、把整段留在主包（实测超出 735 B，主包因此多背约 95 KB
+/// brotli 的后台/图鉴文案）。这个静态量保留在 `.rodata` 里却没有任何代码引用，不会被输出到
+/// 任何模块，等于给重新排布留出 16 KiB 余量。删掉它，`make test-release-split` 的体积门槛
+/// 会失败。
+#[cfg(feature = "hydrate")]
+#[used]
+static SPLIT_DATA_SLACK: [u8; 16384] = [0xA5; 16384];

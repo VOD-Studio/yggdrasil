@@ -32,13 +32,20 @@ use crate::components::post::post_toc::PostToc;
 use crate::components::share_meta::PostShareMeta;
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::skeletons::post_detail_skeleton::PostDetailSkeleton;
+use crate::hooks::ssr_resource::{route_data, PageJson, RouteData};
 use crate::models::post::{Post, PostFooterData, PostHeaderData, PostStatus};
 use crate::pages::not_found::{NotFound, PageLoadFailed};
 use crate::utils::error::is_not_found;
 
 /// 文章详情路由，对应 `/post/:slug`。
 pub struct PostRoute {
-    post: Resource<Result<PublicPostResponse, ServerFnError>>,
+    post: RouteData<PublicPostResponse>,
+}
+
+/// 取数函数随分包加载，见 `hooks::ssr_resource`。
+#[leptos::lazy]
+async fn fetch_post(slug: String) -> PageJson<PublicPostResponse> {
+    PageJson::new(get_public_post_by_slug(slug).await)
 }
 
 #[lazy_route]
@@ -47,7 +54,7 @@ impl LazyRoute for PostRoute {
         let params = use_params_map();
         let slug = Memo::new(move |_| params.read().get("slug").unwrap_or_default());
         Self {
-            post: Resource::new(move || slug.get(), get_public_post_by_slug),
+            post: route_data(move || slug.get(), fetch_post),
         }
     }
 

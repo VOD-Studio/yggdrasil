@@ -7,6 +7,7 @@ use leptos::prelude::*;
 
 use crate::api::settings::get_site_settings;
 use crate::components::ui::{Icon, IconName};
+use crate::hooks::ssr_resource::ssr_resource;
 use crate::routes::Route;
 
 /// 页脚组件：读取站点设置中的 GitHub 链接。
@@ -16,9 +17,9 @@ use crate::routes::Route;
 #[component]
 pub fn Footer(#[prop(default = "max-w-[880px]")] max_width: &'static str) -> impl IntoView {
     // 读取站点公开配置（页脚 GitHub 链接）。公开接口，SSR 时解析并随页面序列化，
-    // 水合直接复用；服务端有 moka 缓存兜底，解析极快。Resource 只在 `<Suspense>` 内读取，
+    // 水合直接复用；服务端有 moka 缓存兜底，解析极快。资源只在 `<Suspense>` 内读取，
     // 且 Suspense 只包住 GitHub 图标，页脚其余部分不等待数据。
-    let settings_res = Resource::new(|| (), |_| get_site_settings());
+    let settings_res = ssr_resource(|| (), |_| get_site_settings());
 
     view! {
         <footer data-vt-shell="frontend-footer" class="site-footer">

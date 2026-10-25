@@ -47,7 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **文档站点化**：`/doc`（rustdoc）换成与博客一致的顶栏、页脚与手机抽屉，导航新增「文档」；主题只由顶栏三档（浅色/深色/跟随系统）切换，不再提供 ayu。左栏只做模块导航并带筛选框，右栏为「本页」目录与阅读进度；标题区、条目表、字段、impl 卡片、Trait chip、文档正文、搜索结果与源码页全部重排，界面文字改为中文。crate 首页按「界面 / 服务端 / 共享 / 其他」分组。
 - **前端框架迁移到 Leptos 0.8**：Dioxus 0.7 整体替换为 Leptos 0.8.22 + cargo-leptos（`--split` 路由级 WASM 分包），删除 reader / full 双 flavor：前台、后台、登录与组件图鉴全部是懒加载路由，每条公开路由首屏 Brotli WASM 不超过原 reader 产物体积。站内导航仍由 `yggdrasil-core` 持有 history 与视图过渡。
 - **接口地址不再带哈希后缀**：server function 由 `/api/<name><哈希>` 变为 `/api/<name>`，发布切换瞬间仍开着的旧标签页需要刷新。
-- **发布产物**：前端静态产物位于 `public/pkg/`，服务端启动时校验同目录 `hash.txt` 与 `pkg/` 文件配套；`YGG_PREVIOUS_PUBLIC_DIR` 回退 `/pkg/` 下已删除的分包。`DIOXUS_PUBLIC_PATH` 改为 `LEPTOS_SITE_ROOT`。
+- **发布产物**：前端静态产物位于 `public/pkg/`，服务端启动时校验同目录 `hash.txt` 与 `pkg/` 文件配套；`YGG_PREVIOUS_PUBLIC_DIR` 回退 `/pkg/` 下已删除的分包。`DIOXUS_PUBLIC_PATH` 改为 `LEPTOS_SITE_ROOT`。分包与加载器长期缓存，入口 `yggdrasil.<哈希>.{js,wasm}` 每次向服务器校验：入口文件名不随其中引用的加载器变化，长期缓存会让回访浏览器在发布后用旧入口加载已删除的分包。
 
 ## [1.0.0] - 2026-10-23
 

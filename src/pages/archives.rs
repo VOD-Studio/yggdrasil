@@ -17,6 +17,7 @@ use crate::components::empty_state::EmptyState;
 use crate::components::skeletons::archive_skeleton::ArchiveBodySkeleton;
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::ui::{Button, ButtonVariant, LoadError};
+use crate::hooks::ssr_resource::{route_data, PageJson, RouteData};
 use crate::models::post::Tag;
 use crate::routes::Route;
 
@@ -86,16 +87,27 @@ fn visible_tags<'a>(tags: &'a [Tag], current: Option<&str>, expanded: bool) -> V
 
 /// 归档路由，对应 `/archives`（`SsrMode::InOrder`）。
 pub struct ArchivesRoute {
-    posts: Resource<Result<ArchiveResponse, ServerFnError>>,
-    tags: Resource<Result<TagListResponse, ServerFnError>>,
+    posts: RouteData<ArchiveResponse>,
+    tags: RouteData<TagListResponse>,
+}
+
+#[leptos::lazy]
+async fn fetch_archive() -> PageJson<ArchiveResponse> {
+    PageJson::new(list_archive_posts(1).await)
+}
+
+/// 全部标签；归档、标签详情与关于页共用（取数函数随分包加载，见 `hooks::ssr_resource`）。
+#[leptos::lazy]
+pub(crate) async fn fetch_tags() -> PageJson<TagListResponse> {
+    PageJson::new(list_tags().await)
 }
 
 #[lazy_route]
 impl LazyRoute for ArchivesRoute {
     fn data() -> Self {
         Self {
-            posts: Resource::new(|| (), |_| list_archive_posts(1)),
-            tags: Resource::new(|| (), |_| list_tags()),
+            posts: route_data(|| (), |_| fetch_archive()),
+            tags: route_data(|| (), |_| fetch_tags()),
         }
     }
 

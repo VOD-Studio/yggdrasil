@@ -6,21 +6,27 @@ use leptos_meta::Title;
 use leptos_router::hooks::use_params_map;
 use leptos_router::{lazy_route, LazyRoute};
 
-use crate::api::posts::{get_posts_by_tag, list_tags, PostListResponse, TagListResponse};
+use crate::api::posts::{get_posts_by_tag, PostListResponse, TagListResponse};
 use crate::components::empty_state::EmptyState;
 use crate::components::skeletons::archive_skeleton::ArchiveBodySkeleton;
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::ui::{Icon, IconName, LoadError};
+use crate::hooks::ssr_resource::{route_data, PageJson, RouteData};
 use crate::models::post::PostListItem;
-use crate::pages::archives::{tag_list, IndexRow, TagFilter, YearBlocks};
+use crate::pages::archives::{fetch_tags, tag_list, IndexRow, TagFilter, YearBlocks};
 use crate::routes::Route;
 
 /// 标签详情路由，对应 `/tags/:tag`（`SsrMode::Async`：`<Title>` 随标签而定，
 /// 且需要在流式输出前确定响应头）。
 pub struct TagRoute {
     tag: Memo<String>,
-    posts: Resource<Result<PostListResponse, ServerFnError>>,
-    tags: Resource<Result<TagListResponse, ServerFnError>>,
+    posts: RouteData<PostListResponse>,
+    tags: RouteData<TagListResponse>,
+}
+
+#[leptos::lazy]
+async fn fetch_tag_posts(tag: String) -> PageJson<PostListResponse> {
+    PageJson::new(get_posts_by_tag(tag).await)
 }
 
 #[lazy_route]
@@ -30,8 +36,8 @@ impl LazyRoute for TagRoute {
         let tag = Memo::new(move |_| params.read().get("tag").unwrap_or_default());
         Self {
             tag,
-            posts: Resource::new(move || tag.get(), get_posts_by_tag),
-            tags: Resource::new(|| (), |_| list_tags()),
+            posts: route_data(move || tag.get(), fetch_tag_posts),
+            tags: route_data(|| (), |_| fetch_tags()),
         }
     }
 

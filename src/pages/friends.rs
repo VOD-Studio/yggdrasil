@@ -9,6 +9,7 @@ use crate::api::settings::{get_site_card, SiteCard};
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::skeletons::friends_skeleton::FriendsSkeleton;
 use crate::components::ui::{Icon, IconName, LoadError};
+use crate::hooks::ssr_resource::{route_data, PageJson, RouteData};
 use crate::models::friend_link::FriendLink;
 
 /// 友链路由，对应 `/friends`（`SsrMode::InOrder`）。
@@ -16,16 +17,26 @@ use crate::models::friend_link::FriendLink;
 /// 友链列表与站点名片都在 `data()` 里创建；列表失败只让列表区块显示重试卡片，
 /// 名片失败则直接不显示「交换友链」，页面其余部分照常。
 pub struct FriendsRoute {
-    links: Resource<Result<Vec<FriendLink>, ServerFnError>>,
-    card: Resource<Result<SiteCard, ServerFnError>>,
+    links: RouteData<Vec<FriendLink>>,
+    card: RouteData<SiteCard>,
+}
+
+#[leptos::lazy]
+async fn fetch_links() -> PageJson<Vec<FriendLink>> {
+    PageJson::new(list_friend_links().await)
+}
+
+#[leptos::lazy]
+async fn fetch_card() -> PageJson<SiteCard> {
+    PageJson::new(get_site_card().await)
 }
 
 #[lazy_route]
 impl LazyRoute for FriendsRoute {
     fn data() -> Self {
         Self {
-            links: Resource::new(|| (), |_| list_friend_links()),
-            card: Resource::new(|| (), |_| get_site_card()),
+            links: route_data(|| (), |_| fetch_links()),
+            card: route_data(|| (), |_| fetch_card()),
         }
     }
 

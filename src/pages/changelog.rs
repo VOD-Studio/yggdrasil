@@ -20,20 +20,26 @@ use crate::api::changelog::{get_changelog, ChangeGroup, ChangelogData, VersionEn
 use crate::components::skeletons::changelog_skeleton::ChangelogSkeleton;
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::ui::{Icon, IconName, StatusBadge};
+use crate::hooks::ssr_resource::{route_data, PageJson, RouteData};
 use crate::pages::not_found::{NotFound, PageLoadFailed};
 use crate::routes::Route;
 use crate::utils::error::is_not_found;
 
 /// 更新日志路由，对应 `/changelog`。
 pub struct ChangelogRoute {
-    changelog: Resource<Result<ChangelogData, ServerFnError>>,
+    changelog: RouteData<ChangelogData>,
+}
+
+#[leptos::lazy]
+async fn fetch_changelog() -> PageJson<ChangelogData> {
+    PageJson::new(get_changelog().await)
 }
 
 #[lazy_route]
 impl LazyRoute for ChangelogRoute {
     fn data() -> Self {
         Self {
-            changelog: Resource::new(|| (), |_| get_changelog()),
+            changelog: route_data(|| (), |_| fetch_changelog()),
         }
     }
 

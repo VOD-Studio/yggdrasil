@@ -25,6 +25,7 @@ use crate::components::skeletons::notes_route_skeleton::{
 use crate::components::ui::{
     use_sheet_close, BottomSheet, Button, ButtonVariant, Icon, IconName, LoadError,
 };
+use crate::hooks::ssr_resource::{route_data, PageJson, RouteData};
 use crate::models::note::*;
 use crate::models::public_note::PublicNote;
 use crate::pages::not_found::{NotFound, PageLoadFailed};
@@ -131,18 +132,36 @@ fn first_filter() -> NoteFilter {
 
 /// 笔记列表路由，对应 `/notes`。
 pub struct NotesRoute {
-    books: Resource<Result<Vec<Notebook>, ServerFnError>>,
-    stats: Resource<Result<NoteStats, ServerFnError>>,
-    first: Resource<Result<NotePage, ServerFnError>>,
+    books: RouteData<Vec<Notebook>>,
+    stats: RouteData<NoteStats>,
+    first: RouteData<NotePage>,
+}
+
+// 取数函数随分包加载，见 `hooks::ssr_resource`。
+
+/// 公开笔记本目录；列表页与笔记本页共用。
+#[leptos::lazy]
+async fn fetch_notebooks() -> PageJson<Vec<Notebook>> {
+    PageJson::new(list_notebooks().await)
+}
+
+#[leptos::lazy]
+async fn fetch_note_stats() -> PageJson<NoteStats> {
+    PageJson::new(note_stats().await)
+}
+
+#[leptos::lazy]
+async fn fetch_note_page(filter: NoteFilter) -> PageJson<NotePage> {
+    PageJson::new(list_notes(filter).await)
 }
 
 #[lazy_route]
 impl LazyRoute for NotesRoute {
     fn data() -> Self {
         Self {
-            books: Resource::new(|| (), |_| list_notebooks()),
-            stats: Resource::new(|| (), |_| note_stats()),
-            first: Resource::new(|| (), |_| list_notes(first_filter())),
+            books: route_data(|| (), |_| fetch_notebooks()),
+            stats: route_data(|| (), |_| fetch_note_stats()),
+            first: route_data(|| (), |_| fetch_note_page(first_filter())),
         }
     }
 
@@ -825,8 +844,8 @@ fn TopicCard(note: Note, book: Option<(i32, String)>) -> impl IntoView {
 /// 笔记本目录路由，对应 `/notes/book/:id`。
 pub struct NotebookRoute {
     id: Memo<Option<i32>>,
-    books: Resource<Result<Vec<Notebook>, ServerFnError>>,
-    notes: Resource<Result<NotePage, ServerFnError>>,
+    books: RouteData<Vec<Notebook>>,
+    notes: RouteData<NotePage>,
 }
 
 #[lazy_route]
@@ -841,16 +860,15 @@ impl LazyRoute for NotebookRoute {
         });
         Self {
             id,
-            books: Resource::new(move || id.get(), |_| list_notebooks()),
-            notes: Resource::new(
+            books: route_data(move || id.get(), |_| fetch_notebooks()),
+            notes: route_data(
                 move || id.get(),
-                |id| async move {
-                    list_notes(NoteFilter {
+                |id| {
+                    fetch_note_page(NoteFilter {
                         notebook_id: id,
                         page: 1,
                         ..Default::default()
                     })
-                    .await
                 },
             ),
         }
@@ -1183,8 +1201,18 @@ fn NotebookEntry(note: Note, number: usize, book: i32) -> impl IntoView {
 /// 笔记阅读路由，对应 `/notes/:slug`。`book` 来自 `?book=`，指明一条属于多个笔记本的
 /// 笔记在哪本里读；无法解析时按未指明处理。
 pub struct NoteRoute {
-    note: Resource<Result<PublicNote, ServerFnError>>,
-    context: Resource<Result<Option<NoteContext>, ServerFnError>>,
+    note: RouteData<PublicNote>,
+    context: RouteData<Option<NoteContext>>,
+}
+
+#[leptos::lazy]
+async fn fetch_note(slug: String) -> PageJson<PublicNote> {
+    PageJson::new(get_note(slug).await)
+}
+
+#[leptos::lazy]
+async fn fetch_note_context(slug: String, book: Option<i32>) -> PageJson<Option<NoteContext>> {
+    PageJson::new(get_note_context(slug, book).await)
 }
 
 #[lazy_route]
@@ -1200,10 +1228,10 @@ impl LazyRoute for NoteRoute {
                 .and_then(|book| book.parse::<i32>().ok())
         });
         Self {
-            note: Resource::new(move || slug.get(), get_note),
-            context: Resource::new(
+            note: route_data(move || slug.get(), fetch_note),
+            context: route_data(
                 move || (slug.get(), book.get()),
-                |(slug, book)| get_note_context(slug, book),
+                |(slug, book)| fetch_note_context(slug, book),
             ),
         }
     }

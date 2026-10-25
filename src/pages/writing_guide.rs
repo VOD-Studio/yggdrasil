@@ -8,6 +8,7 @@ use crate::api::writing_guide::{get_writing_guide, WritingGuideData, SKILL_URL};
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::skeletons::writing_guide_skeleton::WritingGuideSkeleton;
 use crate::components::ui::{Icon, IconName, SegmentedControl, SegmentedItem};
+use crate::hooks::ssr_resource::{route_data, PageJson, RouteData};
 use crate::pages::not_found::{NotFound, PageLoadFailed};
 use crate::routes::Route;
 use crate::utils::error::is_not_found;
@@ -57,14 +58,19 @@ const FEATURES: [(&str, &str, &str); 4] = [
 
 /// 写作指南路由，对应 `/about/writing`。
 pub struct WritingGuideRoute {
-    guide: Resource<Result<WritingGuideData, ServerFnError>>,
+    guide: RouteData<WritingGuideData>,
+}
+
+#[leptos::lazy]
+async fn fetch_guide() -> PageJson<WritingGuideData> {
+    PageJson::new(get_writing_guide().await)
 }
 
 #[lazy_route]
 impl LazyRoute for WritingGuideRoute {
     fn data() -> Self {
         Self {
-            guide: Resource::new(|| (), |_| get_writing_guide()),
+            guide: route_data(|| (), |_| fetch_guide()),
         }
     }
 

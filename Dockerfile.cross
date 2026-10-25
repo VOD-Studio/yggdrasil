@@ -318,9 +318,12 @@ COPY . .
 # Docker itself.
 # cargo zigbuild 交叉编译 server 到 x86_64-musl。srv-target cache id 独立于
 # frontend 的 fe-target(产物架构不同,混用会让 cargo 困惑)。registry/git 共享。
+# erase_components 必须与前端 WASM 一致（见 .cargo/config.toml），这里显式给出，
+# 不依赖 zigbuild 对 [build] rustflags 的合并方式。
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
     --mount=type=cache,id=srv-target,target=/build/target,sharing=locked \
+    RUSTFLAGS="--cfg erase_components" \
     cargo zigbuild --release --locked --target x86_64-unknown-linux-musl --bin yggdrasil \
     && cp target/x86_64-unknown-linux-musl/release/yggdrasil /build/server
 

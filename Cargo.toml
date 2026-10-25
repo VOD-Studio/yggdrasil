@@ -216,3 +216,7 @@ bin-default-features = false
 lib-features = ["hydrate"]
 lib-default-features = false
 lib-profile-release = "wasm-release"
+# 体积：release WASM 也启用 erase_components（组件返回值擦除为 AnyView，避免深层视图类型
+# 逐个单态化），主包 brotli 约 -100 KB。服务端由 .cargo/config.toml 的 [build] rustflags
+# 打开同一开关；两端必须一致，否则水合结构对不上、页面停在未水合状态。
+always-erase-components = true
