@@ -144,7 +144,9 @@ async function titleRoundTrip(page, selector = 'a[data-vt-post-link]', returnVia
   const forward = await page.evaluate(i => __vtCalls[i], before.count);
   assert(forward?.oldNames.some(n => n.name === 'vt-post-title'), 'source title must be named');
   assert(forward?.newNames.some(n => n.name === 'vt-post-title'), 'destination title must be named');
-  assert(!forward.readyError, `forward transition rejected: ${forward.readyError}`);
+  // 首次进入文章页时分包冷加载会超出 300ms 预算：协调器跳过空过渡，由 chunk 场景覆盖。
+  const late = forward.readyError === 'AbortError' && forward.updateDoneAt - forward.started >= 250;
+  assert(late || !forward.readyError, `forward transition rejected: ${forward.readyError}`);
   if (returnViaHome) await page.getByRole('link', { name: '文章', exact: true }).click();
   else await page.goBack();
   await ready(page, new URL(before.url).pathname);
@@ -349,6 +351,83 @@ async function slowResponse() {
   } finally { await browser.close(); }
 }
 
+// 目标页分包超出 300ms 预算：协调器跳过空过渡，旧正文淡出，新页进场且不重播。
+async function delayWasm(page, ms) {
+  await page.route('**/pkg/**', async route => {
+    if (!route.request().url().split('?')[0].endsWith('.wasm')) return route.continue();
+    await new Promise(resolve => setTimeout(resolve, ms));
+    await route.continue().catch(() => {});
+  });
+}
+async function chunkLate() {
+  const state = await launch();
+  const { page, browser } = state;
+  try {
+    await fresh(state);
+    await delayWasm(page, 1200);
+    await page.evaluate(() => {
+      const frames = window.__vtFrames = [];
+      const sample = () => {
+        const main = document.querySelector('main');
+        const style = main && getComputedStyle(main);
+        frames.push({
+          pending: document.documentElement.classList.contains('is-route-pending'),
+          opacity: style ? Number(style.opacity) : null,
+          events: style?.pointerEvents,
+          detail: Boolean(document.querySelector('[data-vt-detail]')),
+        });
+        requestAnimationFrame(sample);
+      };
+      requestAnimationFrame(sample);
+    });
+    const calls = await page.evaluate(() => __vtCalls.length);
+    await page.locator('a[data-vt-post-link]').first().click();
+    await page.waitForSelector('[data-vt-detail]', { timeout: 30000 });
+    await settle(page);
+    const result = await page.evaluate(count => ({
+      calls: __vtCalls.slice(count), total: __vtCalls.length, frames: __vtFrames,
+      pending: document.documentElement.classList.contains('is-route-pending'),
+      opacity: Number(getComputedStyle(document.querySelector('main')).opacity),
+      handled: Boolean(document.querySelector('[data-vt-enter-handled]')),
+    }), calls);
+    const [call] = result.calls;
+    assert.equal(result.calls.length, 1, 'late chunk must start exactly one transition');
+    assert(call.updateDoneAt - call.started < 450, 'wait budget exceeded');
+    assert.equal(call.readyError, 'AbortError', 'empty transition must be skipped');
+    const detail = result.frames.findIndex(frame => frame.detail);
+    assert(detail > 0, 'detail frame not sampled');
+    assert(result.frames[detail - 1].opacity <= 0.05, `old body must be gone before the new page: ${result.frames[detail - 1].opacity}`);
+    assert(result.frames.some(frame => frame.pending && frame.events === 'none'), 'old body must stop taking pointer events while fading');
+    assert.equal(result.pending, false, 'pending class must be cleared');
+    assert.equal(result.opacity, 1, 'new page must be visible');
+    assert.equal(result.total, calls + 1, 'entry must not replay');
+    assert.equal(result.handled, false, 'entry animation must stay enabled');
+    assert.deepEqual(state.errors, []);
+    console.log('PASS chunk-late-fade-out');
+  } finally { await browser.close(); }
+
+  const back = await launch();
+  try {
+    await fresh(back);
+    await delayWasm(back.page, 1200);
+    await back.page.evaluate(() => window.__routeTransitions.push('/changelog'));
+    await back.page.waitForFunction(() => document.documentElement.classList.contains('is-route-pending'));
+    await back.page.waitForTimeout(600);
+    await back.page.goBack();
+    await back.page.waitForFunction(() => !document.documentElement.classList.contains('is-route-pending'), null, { timeout: 30000 });
+    await settle(back.page);
+    await back.page.waitForTimeout(2500);
+    const end = await back.page.evaluate(() => ({
+      path: location.pathname, route: window.__routeTransitions.currentRoute(),
+      opacity: Number(getComputedStyle(document.querySelector('main')).opacity),
+      home: Boolean(document.querySelector('a[data-vt-post-link]')),
+    }));
+    assert.deepEqual(end, { path: '/', route: '/', opacity: 1, home: true });
+    // 挂起中后退时 Leptos 路由器会 panic（unreachable）；无挂起逻辑的基线同样出现，页面随后恢复，故只验证恢复结果。
+    console.log('PASS chunk-late-back-restores-page');
+  } finally { await back.browser.close(); }
+}
+
 async function ensureLoggedOut(context, logoutEndpoint) {
   // Use the context cookie jar even when login succeeded but routing or rendering
   // failed. A DOM click cannot reliably clean up that case.
@@ -482,5 +561,6 @@ if (require.main === module) (async () => {
     for (const outcome of ['success', 'failure', 'slow']) await coverFixture(outcome);
   }
   if (mode === 'all' || mode === 'slow') await slowResponse();
+  if (mode === 'all' || mode === 'chunk') await chunkLate();
   if (mode === 'all' || mode === 'admin') await admin();
 })().catch(error => { console.error(error.message); process.exitCode = 1; });

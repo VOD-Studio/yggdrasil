@@ -13,6 +13,7 @@ import { markPageEntryHandled } from './page-entry';
 import { beginTransition, type TransitionOwner } from './view-transition-lifecycle';
 
 const WAIT_MS = 300;
+const PENDING_CLASS = 'is-route-pending';
 const STATE_KEY = '__yggdrasilNavigation';
 const POSITION_KEY = '__yggdrasilPosition';
 const MAX_ENTRIES = 40;
@@ -52,6 +53,8 @@ interface Navigation {
   deadline: number;
   committed: boolean;
   rendered: boolean;
+  /** 等待到期时目标页仍未提交：已跳过 VT，旧正文淡出，等迟到的 rendered 收尾。 */
+  late: boolean;
   cancelled: boolean;
   owner: TransitionOwner;
   names: Map<HTMLElement, string>;
@@ -174,6 +177,7 @@ export class RouteTransitions {
     this.restoreCleanup?.();
     window.removeEventListener('hashchange', this.onHash);
     window.removeEventListener('pagehide', this.onPageHide);
+    this.clearPending();
     history.scrollRestoration = this.oldRestoration;
     this.notify = undefined;
     this.navigation = undefined;
@@ -240,7 +244,9 @@ export class RouteTransitions {
     const nav = this.navigation;
     if (!nav?.committed || nav.id !== id) return;
     nav.rendered = true;
+    this.clearPending();
     this.correctScroll(nav);
+    if (nav.late) this.slidePill(nav);
     if (nav.cancelled) this.startScrollRestoration(nav);
     nav.attempt?.();
   };
@@ -319,6 +325,7 @@ export class RouteTransitions {
   };
   private onPageHide = (): void => {
     if (this.active) this.active.scroll = captureScroll();
+    this.clearPending();
     this.restoreCleanup?.();
     if (this.navigation) this.cancel(this.navigation);
   };
@@ -450,6 +457,7 @@ export class RouteTransitions {
       deadline: performance.now() + WAIT_MS,
       committed: false,
       rendered: false,
+      late: false,
       cancelled: false,
       owner,
       names: new Map(),
@@ -633,7 +641,15 @@ export class RouteTransitions {
         complete();
       };
       nav.release = release;
-      const timer = window.setTimeout(complete, Math.max(0, nav.deadline - performance.now()));
+      const expire = () => {
+        if (!nav.cancelled && !nav.rendered) {
+          this.defer(nav);
+          release();
+          return;
+        }
+        complete();
+      };
+      const timer = window.setTimeout(expire, Math.max(0, nav.deadline - performance.now()));
       // Observe DOM commits and image readiness, without relying on rAF while VT pauses rendering.
       observer.observe(document.body, {
         childList: true,
@@ -643,6 +659,17 @@ export class RouteTransitions {
       });
       nav.attempt();
     });
+  }
+
+  private defer(nav: Navigation): void {
+    nav.late = true;
+    document.documentElement.classList.add(PENDING_CLASS);
+    // 新快照只会是旧页面：跳过动画，恢复实时渲染，让旧正文按 CSS 淡出。
+    nav.vt?.skipTransition();
+  }
+
+  private clearPending(): void {
+    document.documentElement.classList.remove(PENDING_CLASS);
   }
 
   private wrapper(nav: Navigation): HTMLElement | null {

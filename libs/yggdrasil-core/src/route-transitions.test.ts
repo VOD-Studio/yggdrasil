@@ -273,6 +273,8 @@ describe('route publication and rendering', () => {
     render();
     await update;
     expect(native[0].updated).toBe(true);
+    expect(native[0].skip).not.toHaveBeenCalled();
+    expect(document.documentElement.classList.contains('is-route-pending')).toBe(false);
   });
 
   it('counts the 300ms budget from navigation start, including snapshot scheduling', async () => {
@@ -286,6 +288,57 @@ describe('route publication and rendering', () => {
     await update;
     expect(native[0].updated).toBe(true);
     expect(performance.now()).toBe(300);
+  });
+
+  describe('destination chunk arrives after the budget', () => {
+    const pending = () => document.documentElement.classList.contains('is-route-pending');
+    const suspend = async (route = '/about'): Promise<void> => {
+      autoRender = false;
+      routes.push(route);
+      const update = native[native.length - 1].invoke();
+      await vi.advanceTimersByTimeAsync(300);
+      await update;
+    };
+
+    it('skips the empty transition and fades the old page until the late render', async () => {
+      await suspend();
+      expect(native[0].skip).toHaveBeenCalledOnce();
+      expect(native[0].updated).toBe(true);
+      expect(pending()).toBe(true);
+      await finish(0);
+      expect(document.documentElement.classList.contains('is-route-transitioning')).toBe(false);
+      expect(pending()).toBe(true);
+      render();
+      expect(pending()).toBe(false);
+      expect(document.querySelector('[data-vt-enter-handled]')).toBeNull();
+      expect(document.startViewTransition).toHaveBeenCalledOnce();
+    });
+
+    it('keeps fading across a newer navigation and clears before its snapshot', async () => {
+      await suspend();
+      await finish(0);
+      autoRender = false;
+      routes.push('/');
+      const update = native[1].invoke();
+      await flush();
+      expect(pending()).toBe(true);
+      render();
+      expect(pending()).toBe(false);
+      await update;
+      expect(native[1].skip).not.toHaveBeenCalled();
+    });
+
+    it('is cleared by pagehide', async () => {
+      await suspend();
+      window.dispatchEvent(new Event('pagehide'));
+      expect(pending()).toBe(false);
+    });
+
+    it('is cleared by disconnect', async () => {
+      await suspend();
+      routes.disconnect();
+      expect(pending()).toBe(false);
+    });
   });
 
   it('a late cancelled callback cannot commit or clean a newer navigation', async () => {
@@ -566,6 +619,27 @@ describe('section navigation', () => {
         await settleOnAbout();
         await navigateTo('/changelog', header('/about'));
         expect(animate).not.toHaveBeenCalled();
+      });
+    });
+
+    it('slides from the old section when the destination renders late', async () => {
+      await withAnimate(async (animate) => {
+        await settleOnAbout();
+        autoRender = false;
+        routes.push('/');
+        const update = native[native.length - 1].invoke();
+        await vi.advanceTimersByTimeAsync(300);
+        await update;
+        expect(animate).not.toHaveBeenCalled();
+        paint(header('/'));
+        const pill = document.querySelector('.nav-indicator')!;
+        vi.spyOn(pill, 'getBoundingClientRect').mockReturnValue(new DOMRect(500, 12, 64, 30));
+        routes.rendered(routes.navigationId(), routes.currentRoute());
+        expect(animate).toHaveBeenCalledOnce();
+        expect(animate.mock.calls[0][0]).toEqual([
+          { left: '100px', right: '-100px' },
+          { left: '0px', right: '0px' },
+        ]);
       });
     });
   });

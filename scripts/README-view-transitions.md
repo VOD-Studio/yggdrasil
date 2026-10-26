@@ -43,7 +43,8 @@ bun scripts/test-view-transitions.cjs
 
 - `VT_BASE` 默认 `http://127.0.0.1:8080`，必须与站点配置的 `APP_BASE_URL` 同源；用 `localhost` 替代 `127.0.0.1` 可能触发 CSRF 403。
 - 公开页面检查需要已有已发布文章、搜索结果，以及至少两篇文章的标签。`VT_SEARCH_QUERY` 默认 `Rust`，`VT_TAG_PATH` 默认 `/tags/Rust`，可按当前数据调整。目录 hash 检查默认使用归档首篇文章；若该文章没有目录，可用 `VT_TOC_POST_PATH=/post/<slug>` 指向一篇有目录的已发布文章。
-- 可传单个场景参数：`public`、`reduced`、`unsupported`、`mobile`、`cover`、`slow`、`admin`。`VT_DEBUG=1` 输出原生过渡的快照名称与时间。
+- 可传单个场景参数：`public`、`reduced`、`unsupported`、`mobile`、`cover`、`slow`、`chunk`、`admin`。`VT_DEBUG=1` 输出原生过渡的快照名称与时间。
+- `chunk` 场景把 `/pkg/**` 的 `.wasm` 请求延迟 1200ms，模拟目标页分包超出 300ms 预算：协调器应跳过空过渡（`readyError === 'AbortError'`），旧正文淡出（`html.is-route-pending`，期间 `pointer-events: none`）后新页进场，且不重播动画；另检查挂起中后退回当前页后页面可见、类已撤销。分包冷加载时接口慢同样会挂起路由（路由器等到数据到达才换页），因此 `slow` 场景在冷分包下走的也是这条路径；标题共享过渡的断言只在目标页按时渲染时要求 `readyError` 为空。挂起中后退会触发 Leptos 路由器 panic（`unreachable`），基线同样如此，`chunk` 场景不对此断言。
 - 可选的 `VT_ADMIN_USERNAME`、`VT_ADMIN_PASSWORD` 启用登录、后台分页／筛选／内层滚动恢复、预览返回与退出检查。凭据只从环境读取，不提交注册表单。脚本在登录前从浏览器加载的 WASM 解析退出接口，结束时直接检查并撤销测试 Cookie 对应的会话；即使登录后的页面导航失败，也会请求退出并验证成功，清理失败会明确报错。
 
 封面和后台分页用浏览器请求拦截生成临时响应；封面使用仓库图片，正文替换为简短占位，以单独验证动画和网络等待。测试不创建、修改或删除文章，不把临时数据写入数据库。搜索、标签和归档的主流程使用真实站点响应。

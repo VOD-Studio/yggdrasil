@@ -152,6 +152,13 @@ html.is-route-transitioning::view-transition-new(vt-admin-sidebar) {
   }
 }
 
+/* 目标页分包超出 300ms 等待预算仍未就绪：协调器跳过空过渡，旧正文淡出，
+   新页面挂载时撤销，由页面自身进场动画接上。只匹配最外层 main。 */
+html.is-route-pending main:not(main main) {
+  animation: vt-fade-out 140ms var(--ease-out-expo) forwards;
+  pointer-events: none;
+}
+
 @keyframes vt-fade-in {
   from {
     opacity: 0;
