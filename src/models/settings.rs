@@ -411,10 +411,21 @@ impl SecuritySettings {
     }
 
     #[cfg(any(feature = "server", test))]
-    /// 规范化 APP_BASE_URL：trim；空串保留为空串（表示未配置）。
-    /// 不在此补 scheme——CSRF 校验需要精确的 origin，补全反而可能失配。
-    pub fn normalize_app_base_url(url: &str) -> String {
-        url.trim().to_string()
+    /// 规范化并校验 APP_BASE_URL：trim 后为空表示未配置（返回空串）；否则必须以
+    /// `http://` 或 `https://` 开头且带主机名，不合法返回 None。
+    /// 不替用户补 scheme：CSRF 按完整 origin 比对，猜错协议同样会拒绝所有写请求。
+    pub fn parse_app_base_url(url: &str) -> Option<String> {
+        let url = url.trim();
+        if url.is_empty() {
+            return Some(String::new());
+        }
+        let rest = url
+            .strip_prefix("https://")
+            .or_else(|| url.strip_prefix("http://"))?;
+        let host = rest.split(['/', '?', '#']).next().unwrap_or_default();
+        let valid =
+            !host.is_empty() && !host.starts_with(':') && !rest.chars().any(char::is_whitespace);
+        valid.then(|| url.to_string())
     }
 }
 
@@ -1350,13 +1361,22 @@ mod tests {
     }
 
     #[test]
-    fn security_normalize_app_base_url_trims() {
+    fn security_parse_app_base_url_requires_http_scheme_and_host() {
+        let parse = SecuritySettings::parse_app_base_url;
+        assert_eq!(parse("  https://x.com ").as_deref(), Some("https://x.com"));
         assert_eq!(
-            SecuritySettings::normalize_app_base_url("  https://x.com "),
-            "https://x.com"
+            parse("http://localhost:8080/").as_deref(),
+            Some("http://localhost:8080/")
         );
-        assert_eq!(SecuritySettings::normalize_app_base_url(""), "");
-        assert_eq!(SecuritySettings::normalize_app_base_url("   "), "");
+        // 空串表示未配置。
+        assert_eq!(parse("").as_deref(), Some(""));
+        assert_eq!(parse("   ").as_deref(), Some(""));
+        // 缺协议的值永远不等于浏览器发来的 Origin，会拒绝全部写请求（含登录）。
+        assert_eq!(parse("localhost:8080"), None);
+        assert_eq!(parse("ftp://x.com"), None);
+        assert_eq!(parse("https://"), None);
+        assert_eq!(parse("https://:8080"), None);
+        assert_eq!(parse("https://x .com"), None);
     }
 
     // ── ImageCacheSettings ───────────────────────────────────────

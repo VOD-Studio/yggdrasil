@@ -32,9 +32,12 @@ pub(crate) async fn seed_security_settings_from_env(
     let mut seeds: Vec<(&'static str, String)> = Vec::new();
 
     if let Ok(v) = std::env::var("APP_BASE_URL") {
-        let url = crate::models::settings::SecuritySettings::normalize_app_base_url(&v);
-        if !url.is_empty() {
-            seeds.push(("security_app_base_url", url));
+        match crate::models::settings::SecuritySettings::parse_app_base_url(&v) {
+            Some(url) if !url.is_empty() => seeds.push(("security_app_base_url", url)),
+            Some(_) => {}
+            None => tracing::warn!(
+                "APP_BASE_URL={v:?} 非法（期望 http(s)://主机[:端口]，如 https://example.com），跳过"
+            ),
         }
     }
     if let Ok(v) = std::env::var("COOKIE_SECURE") {
@@ -84,9 +87,16 @@ pub(crate) async fn load_security_settings(
     )
     .await?;
 
+    // 不合法的旧值（如缺协议的 `localhost:8080`）按未配置处理：它不可能等于任何
+    // Origin，照用会拒绝全部写请求，连登录都无法完成，只能直接改库恢复。
     let app_base_url = values
         .get("security_app_base_url")
-        .map(|v| crate::models::settings::SecuritySettings::normalize_app_base_url(v))
+        .map(|v| {
+            crate::models::settings::SecuritySettings::parse_app_base_url(v).unwrap_or_else(|| {
+                tracing::warn!("站点地址 {v:?} 不合法（缺少 http:// 或 https://），按未配置处理");
+                String::new()
+            })
+        })
         .unwrap_or_default();
     let cookie_secure = values
         .get("security_cookie_secure")
@@ -167,7 +177,8 @@ pub async fn get_security_settings() -> Result<SecuritySettings, ServerFnError> 
 
 /// 更新安全配置。
 ///
-/// 所有字段会被规范化/clamp 后写入。写入后失效 moka 缓存，数秒内全链路生效。
+/// 所有字段会被规范化/clamp 后写入；站点地址缺少 http(s) 协议或主机时拒绝保存。
+/// 写入后失效 moka 缓存，数秒内全链路生效。
 #[server(UpdateSecuritySettings, endpoint = "update_security_settings", input = leptos::server_fn::codec::Json)]
 pub async fn update_security_settings(
     app_base_url: String,
@@ -177,7 +188,12 @@ pub async fn update_security_settings(
 ) -> Result<SecuritySettings, ServerFnError> {
     let _user = get_current_admin_user().await?;
 
-    let app_base_url = SecuritySettings::normalize_app_base_url(&app_base_url);
+    let app_base_url = SecuritySettings::parse_app_base_url(&app_base_url).ok_or_else(|| {
+        AppError::BadRequest(
+            "站点地址需以 http:// 或 https:// 开头，例如 https://example.com；留空则按请求主机校验"
+                .to_string(),
+        )
+    })?;
     let trusted_proxy_count = SecuritySettings::clamp_trusted_proxy_count(trusted_proxy_count);
     let max_sessions_per_user = SecuritySettings::clamp_max_sessions(max_sessions_per_user);
 

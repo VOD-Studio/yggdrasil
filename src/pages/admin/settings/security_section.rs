@@ -50,7 +50,7 @@ pub fn SecuritySection() -> impl IntoView {
             <SettingRow
                 label="可信来源"
                 html_for="sec-base-url"
-                hint="即 APP_BASE_URL，写请求的 CSRF 校验以它为准。留空时从 Host 头推导，生产环境建议显式设置。"
+                hint="即 APP_BASE_URL，须带 http:// 或 https://，写请求的 CSRF 校验以它为准。留空时只要求来源主机与请求 Host 一致，生产环境建议显式设置。"
             >
                 <FormInput
                     id="sec-base-url"
