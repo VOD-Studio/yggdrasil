@@ -8,6 +8,8 @@
 //! `Effect` / 事件处理里的 `spawn_local` 写镜像信号，不再触碰 `Resource`，
 //! 否则外层 `Suspense` 会把整页退回骨架屏。
 
+use std::future::Future;
+
 use chrono::{DateTime, Datelike, NaiveDate, Utc};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
@@ -25,7 +27,7 @@ use crate::components::skeletons::notes_route_skeleton::{
 use crate::components::ui::{
     use_sheet_close, BottomSheet, Button, ButtonVariant, Icon, IconName, LoadError,
 };
-use crate::hooks::ssr_resource::{route_data, PageJson, RouteData};
+use crate::hooks::ssr_resource::{prefetch_route_data, route_data, unit, PageJson, RouteData};
 use crate::models::note::*;
 use crate::models::public_note::PublicNote;
 use crate::pages::not_found::{NotFound, PageLoadFailed};
@@ -155,13 +157,18 @@ async fn fetch_note_page(filter: NoteFilter) -> PageJson<NotePage> {
     PageJson::new(list_notes(filter).await)
 }
 
+/// 列表页首屏数据；无参，便于 `unit` 包成可作预取键的取数函数。
+fn first_note_page() -> impl Future<Output = PageJson<NotePage>> + Send + 'static {
+    fetch_note_page(first_filter())
+}
+
 #[lazy_route]
 impl LazyRoute for NotesRoute {
     fn data() -> Self {
         Self {
-            books: route_data(|| (), |_| fetch_notebooks()),
-            stats: route_data(|| (), |_| fetch_note_stats()),
-            first: route_data(|| (), |_| fetch_note_page(first_filter())),
+            books: route_data(|| (), unit(fetch_notebooks)),
+            stats: route_data(|| (), unit(fetch_note_stats)),
+            first: route_data(|| (), unit(first_note_page)),
         }
     }
 
@@ -192,6 +199,15 @@ impl LazyRoute for NotesRoute {
             </div>
         }
         .into_any()
+    }
+}
+
+impl NotesRoute {
+    /// 悬停预取：与 `data()` 相同的取数函数与 source。
+    pub fn prefetch_data() {
+        prefetch_route_data((), unit(fetch_notebooks));
+        prefetch_route_data((), unit(fetch_note_stats));
+        prefetch_route_data((), unit(first_note_page));
     }
 }
 
@@ -848,29 +864,36 @@ pub struct NotebookRoute {
     notes: RouteData<NotePage>,
 }
 
+/// 笔记本 id 参数：非数字为 `None`（渲染 404）。`data()` 与悬停预取共用。
+fn notebook_id(raw: Option<&str>) -> Option<i32> {
+    raw.and_then(|id| id.parse::<i32>().ok())
+}
+
+/// 笔记本目录页的笔记本列表；source 是笔记本 id，仅用于与 `notes` 共用刷新节奏。
+fn notebook_books(
+    _id: Option<i32>,
+) -> impl Future<Output = PageJson<Vec<Notebook>>> + Send + 'static {
+    fetch_notebooks()
+}
+
+/// 笔记本目录页的第一页笔记。
+fn notebook_notes(id: Option<i32>) -> impl Future<Output = PageJson<NotePage>> + Send + 'static {
+    fetch_note_page(NoteFilter {
+        notebook_id: id,
+        page: 1,
+        ..Default::default()
+    })
+}
+
 #[lazy_route]
 impl LazyRoute for NotebookRoute {
     fn data() -> Self {
         let params = use_params_map();
-        let id = Memo::new(move |_| {
-            params
-                .read()
-                .get("id")
-                .and_then(|id| id.parse::<i32>().ok())
-        });
+        let id = Memo::new(move |_| notebook_id(params.read().get("id").as_deref()));
         Self {
             id,
-            books: route_data(move || id.get(), |_| fetch_notebooks()),
-            notes: route_data(
-                move || id.get(),
-                |id| {
-                    fetch_note_page(NoteFilter {
-                        notebook_id: id,
-                        page: 1,
-                        ..Default::default()
-                    })
-                },
-            ),
+            books: route_data(move || id.get(), notebook_books),
+            notes: route_data(move || id.get(), notebook_notes),
         }
     }
 
@@ -904,6 +927,15 @@ impl LazyRoute for NotebookRoute {
             </Suspense>
         }
         .into_any()
+    }
+}
+
+impl NotebookRoute {
+    /// 悬停预取：与 `data()` 相同的取数函数与 source；`id` 是路由参数原文。
+    pub fn prefetch_data(id: &str) {
+        let id = notebook_id(Some(id));
+        prefetch_route_data(id, notebook_books);
+        prefetch_route_data(id, notebook_notes);
     }
 }
 
@@ -1215,24 +1247,28 @@ async fn fetch_note_context(slug: String, book: Option<i32>) -> PageJson<Option<
     PageJson::new(get_note_context(slug, book).await)
 }
 
+/// `?book=` 参数：非数字按没有处理。`data()` 与悬停预取共用。
+fn book_param(raw: Option<&str>) -> Option<i32> {
+    raw.and_then(|book| book.parse::<i32>().ok())
+}
+
+/// 笔记所在笔记本的上下文。
+fn note_context(
+    (slug, book): (String, Option<i32>),
+) -> impl Future<Output = PageJson<Option<NoteContext>>> + Send + 'static {
+    fetch_note_context(slug, book)
+}
+
 #[lazy_route]
 impl LazyRoute for NoteRoute {
     fn data() -> Self {
         let params = use_params_map();
         let query = use_query_map();
         let slug = Memo::new(move |_| params.read().get("slug").unwrap_or_default());
-        let book = Memo::new(move |_| {
-            query
-                .read()
-                .get("book")
-                .and_then(|book| book.parse::<i32>().ok())
-        });
+        let book = Memo::new(move |_| book_param(query.read().get("book").as_deref()));
         Self {
             note: route_data(move || slug.get(), fetch_note),
-            context: route_data(
-                move || (slug.get(), book.get()),
-                |(slug, book)| fetch_note_context(slug, book),
-            ),
+            context: route_data(move || (slug.get(), book.get()), note_context),
         }
     }
 
@@ -1271,6 +1307,14 @@ impl LazyRoute for NoteRoute {
             </Suspense>
         }
         .into_any()
+    }
+}
+
+impl NoteRoute {
+    /// 悬停预取：与 `data()` 相同的取数函数与 source；`book` 是 `?book=` 原文。
+    pub fn prefetch_data(slug: String, book: Option<&str>) {
+        prefetch_route_data(slug.clone(), fetch_note);
+        prefetch_route_data((slug, book_param(book)), note_context);
     }
 }
 

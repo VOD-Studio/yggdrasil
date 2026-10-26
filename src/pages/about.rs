@@ -11,7 +11,7 @@ use crate::api::posts::{posts_per_year, TagListResponse, YearCount};
 use crate::components::skeletons::atoms::SkeletonBox;
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::ui::{Icon, IconName};
-use crate::hooks::ssr_resource::{route_data, PageJson, RouteData};
+use crate::hooks::ssr_resource::{prefetch_route_data, route_data, unit, PageJson, RouteData};
 use crate::models::post::Tag;
 use crate::pages::archives::{fetch_tags, ranked_tags};
 use crate::routes::Route;
@@ -47,9 +47,9 @@ async fn fetch_release() -> PageJson<Release> {
 impl LazyRoute for AboutRoute {
     fn data() -> Self {
         Self {
-            years: route_data(|| (), |_| fetch_years()),
-            tags: route_data(|| (), |_| fetch_tags()),
-            release: route_data(|| (), |_| fetch_release()),
+            years: route_data(|| (), unit(fetch_years)),
+            tags: route_data(|| (), unit(fetch_tags)),
+            release: route_data(|| (), unit(fetch_release)),
         }
     }
 
@@ -111,6 +111,15 @@ impl LazyRoute for AboutRoute {
             </article>
         }
         .into_any()
+    }
+}
+
+impl AboutRoute {
+    /// 悬停预取：与 `data()` 相同的取数函数与 source。
+    pub fn prefetch_data() {
+        prefetch_route_data((), unit(fetch_years));
+        prefetch_route_data((), unit(fetch_tags));
+        prefetch_route_data((), unit(fetch_release));
     }
 }
 

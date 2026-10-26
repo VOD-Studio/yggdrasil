@@ -8,7 +8,7 @@ use crate::api::writing_guide::{get_writing_guide, WritingGuideData, SKILL_URL};
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::skeletons::writing_guide_skeleton::WritingGuideSkeleton;
 use crate::components::ui::{Icon, IconName, SegmentedControl, SegmentedItem};
-use crate::hooks::ssr_resource::{route_data, PageJson, RouteData};
+use crate::hooks::ssr_resource::{prefetch_route_data, route_data, unit, PageJson, RouteData};
 use crate::pages::not_found::{NotFound, PageLoadFailed};
 use crate::routes::Route;
 use crate::utils::error::is_not_found;
@@ -70,7 +70,7 @@ async fn fetch_guide() -> PageJson<WritingGuideData> {
 impl LazyRoute for WritingGuideRoute {
     fn data() -> Self {
         Self {
-            guide: route_data(|| (), |_| fetch_guide()),
+            guide: route_data(|| (), unit(fetch_guide)),
         }
     }
 
@@ -94,6 +94,13 @@ impl LazyRoute for WritingGuideRoute {
             </Suspense>
         }
         .into_any()
+    }
+}
+
+impl WritingGuideRoute {
+    /// 悬停预取：与 `data()` 相同的取数函数与 source。
+    pub fn prefetch_data() {
+        prefetch_route_data((), unit(fetch_guide));
     }
 }
 

@@ -9,7 +9,7 @@ use crate::api::settings::{get_site_card, SiteCard};
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::skeletons::friends_skeleton::FriendsSkeleton;
 use crate::components::ui::{Icon, IconName, LoadError};
-use crate::hooks::ssr_resource::{route_data, PageJson, RouteData};
+use crate::hooks::ssr_resource::{prefetch_route_data, route_data, unit, PageJson, RouteData};
 use crate::models::friend_link::FriendLink;
 
 /// 友链路由，对应 `/friends`（`SsrMode::InOrder`）。
@@ -35,8 +35,8 @@ async fn fetch_card() -> PageJson<SiteCard> {
 impl LazyRoute for FriendsRoute {
     fn data() -> Self {
         Self {
-            links: route_data(|| (), |_| fetch_links()),
-            card: route_data(|| (), |_| fetch_card()),
+            links: route_data(|| (), unit(fetch_links)),
+            card: route_data(|| (), unit(fetch_card)),
         }
     }
 
@@ -62,6 +62,14 @@ impl LazyRoute for FriendsRoute {
             </div>
         }
         .into_any()
+    }
+}
+
+impl FriendsRoute {
+    /// 悬停预取：与 `data()` 相同的取数函数与 source。
+    pub fn prefetch_data() {
+        prefetch_route_data((), unit(fetch_links));
+        prefetch_route_data((), unit(fetch_card));
     }
 }
 

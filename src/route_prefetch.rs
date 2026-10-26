@@ -138,14 +138,14 @@ pub fn match_route(route: &str) -> Option<RouteTarget> {
     })
 }
 
-/// 预取目标路由：总是预取视图分包；`with_data` 时再预取页面数据（第 2 步接入）。
+/// 预取目标路由：总是预取视图分包；`with_data` 时再预取页面数据。
 /// `is_admin` 为假时跳过 `/admin*`：访客悬停后台链接不下载后台分包。
 pub fn prefetch(route: &str, with_data: bool, is_admin: bool) {
     #[cfg(target_arch = "wasm32")]
-    {
-        let _ = with_data;
-        if let Some(target) = match_route(route) {
-            wasm::preload(target, is_admin);
+    if let Some(target) = match_route(route) {
+        wasm::preload(&target, is_admin);
+        if with_data {
+            wasm::prefetch_data(target);
         }
     }
     #[cfg(not(target_arch = "wasm32"))]
@@ -190,7 +190,7 @@ mod wasm {
     use leptos_router::LazyRoute;
 
     /// 预取视图分包。`preload()` 失败不缓存，下次悬停或点击仍会重试。
-    pub(super) fn preload(target: RouteTarget, is_admin: bool) {
+    pub(super) fn preload(target: &RouteTarget, is_admin: bool) {
         match target {
             RouteTarget::Home { .. } => spawn_local(HomeRoute::preload()),
             RouteTarget::Notes => spawn_local(NotesRoute::preload()),
@@ -233,6 +233,30 @@ mod wasm {
                 }
             }
             RouteTarget::Admin(_) => {}
+        }
+    }
+
+    /// 预取页面数据。不预取：`Search`（无路由数据）、`Showcase*`（客户端已有缓存）、
+    /// `Login`/`Register`、全部 `Admin(..)`（后台数据依赖会话且常被写操作改动）。
+    pub(super) fn prefetch_data(target: RouteTarget) {
+        match target {
+            RouteTarget::Home { page } => HomeRoute::prefetch_data(page.as_deref()),
+            RouteTarget::Notes => NotesRoute::prefetch_data(),
+            RouteTarget::Notebook { id } => NotebookRoute::prefetch_data(&id),
+            RouteTarget::Note { slug, book } => NoteRoute::prefetch_data(slug, book.as_deref()),
+            RouteTarget::Archives => ArchivesRoute::prefetch_data(),
+            RouteTarget::Tag { tag } => TagRoute::prefetch_data(tag),
+            RouteTarget::Post { slug } => PostRoute::prefetch_data(slug),
+            RouteTarget::About => AboutRoute::prefetch_data(),
+            RouteTarget::Friends => FriendsRoute::prefetch_data(),
+            RouteTarget::Changelog => ChangelogRoute::prefetch_data(),
+            RouteTarget::WritingGuide => WritingGuideRoute::prefetch_data(),
+            RouteTarget::Search
+            | RouteTarget::Showcase
+            | RouteTarget::ShowcaseDetail
+            | RouteTarget::Login
+            | RouteTarget::Register
+            | RouteTarget::Admin(_) => {}
         }
     }
 }

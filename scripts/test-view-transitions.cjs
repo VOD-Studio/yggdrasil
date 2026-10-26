@@ -351,21 +351,36 @@ async function slowResponse() {
   } finally { await browser.close(); }
 }
 
-// 悬停即预取目标路由分包（与页面数据）：点击时命中，不再等待下载。
+// 悬停即预取目标路由分包与页面数据：点击时命中缓存，赶上 300ms 等待窗口且不重复请求。
 async function prefetch() {
   const state = await launch();
   const { page, browser } = state;
   try {
     await fresh(state);
+    const apiRequests = [];
+    page.on('request', r => { if (r.url().includes('/api/get_public_post_by_slug')) apiRequests.push(r.url()); });
+    await page.route('**/api/get_public_post_by_slug*', async route => {
+      await new Promise(resolve => setTimeout(resolve, 800));
+      await route.continue();
+    });
     const link = page.locator('a[data-vt-post-link]').first();
     await link.evaluate(e => e.scrollIntoView({ block: 'center', behavior: 'instant' }));
     const chunk = page.waitForResponse(r => /split___post_route_view_.*\.wasm/.test(r.url()));
+    const data = page.waitForResponse(r => r.url().includes('/api/get_public_post_by_slug'));
     await link.hover();
-    await chunk; // 悬停即下载文章视图分包
+    await Promise.all([chunk, data]); // 悬停即拿到分包与数据
+    const before = await page.evaluate(() => __vtCalls.length);
     await link.click();
+    await page.waitForFunction(i => __vtCalls[i]?.updateDoneAt, before);
+    const early = await page.evaluate(i => ({
+      trace: __vtCalls[i], detail: Boolean(document.querySelector('[data-vt-detail]')),
+    }), before);
+    assert(early.detail, '预取命中后应在等待窗口内渲染详情');
+    assert(early.trace.newNames.some(n => n.name === 'vt-post-title'), '共享标题过渡应保留');
+    assert.equal(apiRequests.length, 1, '点击后不应再次请求文章数据');
     await page.waitForSelector('[data-vt-detail]');
     assert.deepEqual(state.errors, []);
-    console.log('PASS hover-prefetch-chunk');
+    console.log('PASS hover-prefetch-chunk-and-data');
   } finally { await browser.close(); }
 }
 

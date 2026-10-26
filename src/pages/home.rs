@@ -25,7 +25,7 @@ use crate::components::skeletons::home_skeleton::HomeSkeleton;
 use crate::components::ui::{
     Composer, ComposerInput, ComposerSend, Icon, IconName, LoadError, Pagination,
 };
-use crate::hooks::ssr_resource::{route_data, PageJson, RouteData};
+use crate::hooks::ssr_resource::{prefetch_route_data, route_data, PageJson, RouteData};
 use crate::models::note::{Note, NoteFilter, NotePage};
 use crate::models::post::{PostListItem, Tag};
 use crate::models::settings::{HomeTagline, SiteSettings};
@@ -98,14 +98,20 @@ async fn fetch_notes(first: bool) -> PageJson<Option<NotePage>> {
     })
 }
 
+/// 页码参数 → 页码：缺省为第 1 页；非数字为 `None`（渲染 404）；小于 1 钳到 1。
+/// `data()` 与悬停预取共用，保证两边算出同一个 source。
+fn page_param(raw: Option<&str>) -> Option<i32> {
+    match raw {
+        None => Some(1),
+        Some(page) => page.parse::<i32>().ok().map(|page| page.max(1)),
+    }
+}
+
 #[lazy_route]
 impl LazyRoute for HomeRoute {
     fn data() -> Self {
         let params = use_params_map();
-        let page = Memo::new(move |_| match params.read().get("page") {
-            None => Some(1),
-            Some(page) => page.parse::<i32>().ok().map(|page| page.max(1)),
-        });
+        let page = Memo::new(move |_| page_param(params.read().get("page").as_deref()));
         let is_first = Memo::new(move |_| page.get() == Some(1));
         Self {
             page,
@@ -188,6 +194,19 @@ impl LazyRoute for HomeRoute {
             </Suspense>
         }
         .into_any()
+    }
+}
+
+impl HomeRoute {
+    /// 悬停预取：与 `data()` 相同的取数函数与 source；`page` 是路由参数原文（`/` 为 `None`）。
+    pub fn prefetch_data(page: Option<&str>) {
+        let page = page_param(page);
+        let first = page == Some(1);
+        prefetch_route_data(page.unwrap_or(1), fetch_posts);
+        prefetch_route_data(first, fetch_home_tags);
+        prefetch_route_data(first, fetch_settings);
+        prefetch_route_data(first, fetch_outline);
+        prefetch_route_data(first, fetch_notes);
     }
 }
 

@@ -20,7 +20,7 @@ use crate::api::changelog::{get_changelog, ChangeGroup, ChangelogData, VersionEn
 use crate::components::skeletons::changelog_skeleton::ChangelogSkeleton;
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::ui::{Icon, IconName, StatusBadge};
-use crate::hooks::ssr_resource::{route_data, PageJson, RouteData};
+use crate::hooks::ssr_resource::{prefetch_route_data, route_data, unit, PageJson, RouteData};
 use crate::pages::not_found::{NotFound, PageLoadFailed};
 use crate::routes::Route;
 use crate::utils::error::is_not_found;
@@ -39,7 +39,7 @@ async fn fetch_changelog() -> PageJson<ChangelogData> {
 impl LazyRoute for ChangelogRoute {
     fn data() -> Self {
         Self {
-            changelog: route_data(|| (), |_| fetch_changelog()),
+            changelog: route_data(|| (), unit(fetch_changelog)),
         }
     }
 
@@ -65,6 +65,13 @@ impl LazyRoute for ChangelogRoute {
             </Suspense>
         }
         .into_any()
+    }
+}
+
+impl ChangelogRoute {
+    /// 悬停预取：与 `data()` 相同的取数函数与 source。
+    pub fn prefetch_data() {
+        prefetch_route_data((), unit(fetch_changelog));
     }
 }
 

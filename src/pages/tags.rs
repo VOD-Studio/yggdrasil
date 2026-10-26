@@ -11,7 +11,7 @@ use crate::components::empty_state::EmptyState;
 use crate::components::skeletons::archive_skeleton::ArchiveBodySkeleton;
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::ui::{Icon, IconName, LoadError};
-use crate::hooks::ssr_resource::{route_data, PageJson, RouteData};
+use crate::hooks::ssr_resource::{prefetch_route_data, route_data, unit, PageJson, RouteData};
 use crate::models::post::PostListItem;
 use crate::pages::archives::{fetch_tags, tag_list, IndexRow, TagFilter, YearBlocks};
 use crate::routes::Route;
@@ -37,7 +37,7 @@ impl LazyRoute for TagRoute {
         Self {
             tag,
             posts: route_data(move || tag.get(), fetch_tag_posts),
-            tags: route_data(|| (), |_| fetch_tags()),
+            tags: route_data(|| (), unit(fetch_tags)),
         }
     }
 
@@ -73,6 +73,14 @@ impl LazyRoute for TagRoute {
             }
         })
         .into_any()
+    }
+}
+
+impl TagRoute {
+    /// 悬停预取：与 `data()` 相同的取数函数与 source。
+    pub fn prefetch_data(tag: String) {
+        prefetch_route_data(tag, fetch_tag_posts);
+        prefetch_route_data((), unit(fetch_tags));
     }
 }
 

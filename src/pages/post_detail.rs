@@ -32,7 +32,7 @@ use crate::components::post::post_toc::PostToc;
 use crate::components::share_meta::PostShareMeta;
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::skeletons::post_detail_skeleton::PostDetailSkeleton;
-use crate::hooks::ssr_resource::{route_data, PageJson, RouteData};
+use crate::hooks::ssr_resource::{prefetch_route_data, route_data, PageJson, RouteData};
 use crate::models::post::{Post, PostFooterData, PostHeaderData, PostStatus};
 use crate::pages::not_found::{NotFound, PageLoadFailed};
 use crate::utils::error::is_not_found;
@@ -83,6 +83,13 @@ impl LazyRoute for PostRoute {
             </Suspense>
         }
         .into_any()
+    }
+}
+
+impl PostRoute {
+    /// 悬停预取：与 `data()` 相同的取数函数与 source。
+    pub fn prefetch_data(slug: String) {
+        prefetch_route_data(slug, fetch_post);
     }
 }
 
