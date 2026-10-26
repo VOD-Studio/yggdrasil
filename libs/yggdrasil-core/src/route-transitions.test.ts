@@ -612,6 +612,32 @@ describe('shared article snapshots', () => {
     expect(native).toHaveLength(0);
   });
 
+  it('hands in-site link clicks to native navigation, away from window listeners, until connected', () => {
+    // Leptos 的链接拦截挂在 window 上且在水合时就生效；未连接时它若接管，路由器会在水合中途换页。
+    routes.disconnect();
+    const pending = new RouteTransitions();
+    // 注册晚于协调器的 document 监听：记录协调器是否已接管，并取消 happy-dom 的真实跳转。
+    const prevented: boolean[] = [];
+    const cancel = (event: MouseEvent) => {
+      prevented.push(event.defaultPrevented);
+      event.preventDefault();
+    };
+    const reachedWindow = vi.fn();
+    document.addEventListener('click', cancel);
+    window.addEventListener('click', reachedWindow);
+    click('/archives');
+    expect(prevented).toEqual([false]);
+    expect(reachedWindow).not.toHaveBeenCalled();
+    expect(notify).not.toHaveBeenCalled();
+    // 连接后照常接管。
+    pending.connect(notify, null);
+    click('/archives');
+    document.removeEventListener('click', cancel);
+    window.removeEventListener('click', reachedWindow);
+    expect(prevented).toEqual([false, true]);
+    pending.disconnect();
+  });
+
   it('listens for popstate in the capture phase and stops it from reaching other listeners', () => {
     const bubbling = vi.fn();
     window.addEventListener('popstate', bubbling);

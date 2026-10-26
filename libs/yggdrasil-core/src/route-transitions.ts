@@ -132,7 +132,6 @@ export class RouteTransitions {
   private active: Entry | undefined;
   private navigation: Navigation | undefined;
   private intent: LinkIntent | undefined;
-  private hydrated = false;
   private restoreCleanup: (() => void) | undefined;
   private restoring = false;
   private oldRestoration: ScrollRestoration = 'auto';
@@ -141,10 +140,14 @@ export class RouteTransitions {
   private rollingBack = false;
 
   constructor() {
-    // 必须在 Leptos 之前注册：window 上的监听按注册顺序触发（捕获/冒泡不分先后），
-    // Leptos 的 BrowserUrl 在水合时才挂上自己的 popstate 监听，晚于脚本加载。
+    // 两个监听都必须早于 Leptos 生效：Leptos 的 BrowserUrl 在水合时就在 window 上挂了
+    // popstate 与链接点击监听，而 Rust 要等整棵树水合完毕才 connect。
+    // popstate：window 上的监听按注册顺序触发（捕获/冒泡不分先后），只能在脚本加载时注册；
     // 未连接时 onPop 直接放行，由 Leptos 自己处理。
     window.addEventListener('popstate', this.onPop, true);
+    // click：document 冒泡阶段晚于元素自身的 Leptos 处理器（可 preventDefault），早于 window；
+    // 未连接时 onClick 截住冒泡、交给浏览器整页跳转，避免路由器在水合中途换页。
+    document.addEventListener('click', this.onClick);
   }
 
   connect(notify: () => void, prefix: string | null): void {
@@ -160,10 +163,8 @@ export class RouteTransitions {
     this.writeHistory(this.active, 'replace');
     this.oldRestoration = history.scrollRestoration;
     history.scrollRestoration = 'manual';
-    // popstate 监听在构造时已注册（见 constructor）。
+    // popstate 与 click 监听在构造时已注册（见 constructor）。
     window.addEventListener('hashchange', this.onHash);
-    // 冒泡阶段：晚于元素自身的 Leptos 处理器（可 preventDefault），早于挂在 window 上的链接拦截。
-    document.addEventListener('click', this.onClick);
     window.addEventListener('pagehide', this.onPageHide);
   }
 
@@ -172,11 +173,9 @@ export class RouteTransitions {
     if (this.navigation) this.cancel(this.navigation);
     this.restoreCleanup?.();
     window.removeEventListener('hashchange', this.onHash);
-    document.removeEventListener('click', this.onClick);
     window.removeEventListener('pagehide', this.onPageHide);
     history.scrollRestoration = this.oldRestoration;
     this.notify = undefined;
-    this.hydrated = false;
     this.navigation = undefined;
     this.entries.clear();
     this.active = undefined;
@@ -238,7 +237,6 @@ export class RouteTransitions {
   /** Called after Leptos flushes the layout's actual DOM, including fallback/error branches. */
   rendered = (id: number, route: string): void => {
     if (page(route) !== page(this.displayed) || id !== this.sequence) return;
-    this.hydrated = true;
     const nav = this.navigation;
     if (!nav?.committed || nav.id !== id) return;
     nav.rendered = true;
@@ -291,7 +289,6 @@ export class RouteTransitions {
   }
 
   private onClick = (event: MouseEvent): void => {
-    if (!this.notify || !this.active) return;
     if (event.defaultPrevented) return;
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey)
       return;
@@ -306,6 +303,11 @@ export class RouteTransitions {
       NATIVE_PREFIXES.some((prefix) => anchor.pathname.startsWith(prefix))
     )
       return;
+    if (!this.notify || !this.active) {
+      // 未连接（水合中、断开后）：不让冒泡到 window 上 Leptos 的链接拦截，浏览器整页跳转。
+      event.stopPropagation();
+      return;
+    }
     event.preventDefault();
     const url = anchor.pathname.slice(this.prefix.length) + anchor.search + anchor.hash;
     this.intent = {
@@ -466,7 +468,6 @@ export class RouteTransitions {
     });
     window.dispatchEvent(new Event('yggdrasil:navigation-start'));
     const animate =
-      this.hydrated &&
       page(entry.url) !== page(this.displayed) &&
       typeof document.startViewTransition === 'function' &&
       !prefersReducedMotion();

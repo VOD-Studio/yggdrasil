@@ -21,7 +21,7 @@ use std::sync::atomic::AtomicBool;
 #[cfg(target_arch = "wasm32")]
 use std::sync::atomic::Ordering;
 
-/// 协调器是否已连接（仅浏览器端 `NavigationBridge` 水合后置真）。
+/// 协调器是否已连接（仅浏览器端 `NavigationBridge` 在整棵树水合完毕后置真）。
 #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 static CONNECTED: AtomicBool = AtomicBool::new(false);
 
@@ -98,7 +98,12 @@ pub fn external(url: &str) {
 
 /// 连接 JS 协调器；放在 `<Router>` 内、`<Routes>` 前，不渲染 DOM。
 ///
-/// 水合后只执行一次：协调器每次发布新路由（视图过渡的 update 回调里）都会通知这里，
+/// 整棵树（含懒加载路由分包）水合完毕后才连接，并随即在 `<html>` 上置 `data-hydrated`
+/// （浏览器回归脚本与性能测试等它出现再操作）。水合期间路由器换页会让后续节点对不上
+/// SSR 输出，水合 panic 后整个 WASM 失效、站内链接全部点不动；未连接时协调器把站内
+/// 链接点击交还浏览器整页跳转（见 `route-transitions.ts` 的 `onClick`）。
+///
+/// 连接后协调器每次发布新路由（视图过渡的 update 回调里）都会通知这里，
 /// 这里读取已被 JS 写好的地址栏并设置 `BrowserUrl` 的 URL 信号，路由器随即渲染新页面。
 #[component]
 pub fn NavigationBridge() -> impl IntoView {
@@ -108,21 +113,36 @@ pub fn NavigationBridge() -> impl IntoView {
         use wasm_bindgen::prelude::Closure;
 
         let browser_url = use_context::<BrowserUrl>();
+        let shared = Owner::current_shared_context();
         // JS 持有函数引用：闭包必须活到 disconnect 之后，存进本地存储并在卸载时释放。
         let notify = StoredValue::new_local(None::<Closure<dyn FnMut()>>);
         Effect::new(move |_| {
-            let Some(browser_url) = browser_url.clone() else {
-                return;
-            };
-            let closure = Closure::wrap(Box::new(move || {
-                if let Ok(url) = BrowserUrl::current() {
-                    browser_url.as_url().set(url);
+            let browser_url = browser_url.clone();
+            let shared = shared.clone();
+            leptos::task::spawn_local(async move {
+                // Effect 在懒加载路由分包水合前就会运行，必须等 during_hydration 回落。
+                while shared.as_ref().is_some_and(|sc| sc.during_hydration()) {
+                    crate::utils::time::sleep_ms(10).await;
                 }
-            }) as Box<dyn FnMut()>);
-            if crate::bridges::navigation::connect(&closure) {
-                CONNECTED.store(true, Ordering::Release);
-                notify.set_value(Some(closure));
-            }
+                // 等待期间组件已卸载：不再连接。
+                if notify.try_with_value(|_| ()).is_none() {
+                    return;
+                }
+                if let Some(browser_url) = browser_url {
+                    let closure = Closure::wrap(Box::new(move || {
+                        if let Ok(url) = BrowserUrl::current() {
+                            browser_url.as_url().set(url);
+                        }
+                    }) as Box<dyn FnMut()>);
+                    if crate::bridges::navigation::connect(&closure) {
+                        CONNECTED.store(true, Ordering::Release);
+                        notify.set_value(Some(closure));
+                    }
+                }
+                if let Some(root) = document().document_element() {
+                    let _ = root.set_attribute("data-hydrated", "true");
+                }
+            });
         });
         on_cleanup(move || {
             if CONNECTED.swap(false, Ordering::AcqRel) {
