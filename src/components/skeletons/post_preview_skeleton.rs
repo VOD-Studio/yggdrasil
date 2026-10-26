@@ -20,18 +20,22 @@ use leptos::prelude::*;
 /// [`PostDetailSkeleton`]: crate::components::skeletons::post_detail_skeleton::PostDetailSkeleton
 #[component]
 pub fn PostPreviewSkeleton() -> impl IntoView {
+    // 结构与 preview.rs 一致：post-preview > 预览条 + preview-frame(max-width 680) > article。
+    // 之前骨架直接把 article 铺满后台主画布，比真实正文宽得多，加载完成时宽度突变。
     // w-full：admin_layout 登录校验期会把骨架屏挂进 div.flex.flex-col 包裹层，
-    // 此时 article 作为 flex item，其 margin:auto(来自 .post-single)会禁用 stretch、
-    // 无显式宽度则 shrink-to-fit 收缩变窄。w-full 强制撑满交叉轴，与真实文章
-    // (直接挂 main block 下、自然满宽)几何对齐。其他后台骨架屏根节点同理用 w-full。
+    // 无显式宽度时 flex item 会按内容收缩；其他后台骨架屏根节点同理用 w-full。
     view! {
-        <article class="post-single w-full">
+        <div class="post-preview w-full">
             // 预览条占位：与 preview.rs 的浮起预览条同位置、同高度。
             <div class="preview-bar-slot">
                 <SkeletonBox class="h-11 w-[34rem] max-w-full rounded-xl"/>
             </div>
 
-            <PostDetailBody/>
-        </article>
+            <div class="preview-frame">
+                <article class="post-single">
+                    <PostDetailBody/>
+                </article>
+            </div>
+        </div>
     }
 }
