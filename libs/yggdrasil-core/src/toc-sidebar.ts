@@ -147,12 +147,26 @@ export function readingProgress(
   return Math.min(1, Math.max(0, (lineTop - contentTop) / range));
 }
 
-/** 跟随滚动更新进度；没有正文元素时按整页计算。返回清理函数。 */
+/** 最近的可滚动祖先（overflow-y 为 auto/scroll/overlay）；没有时为 null，表示窗口滚动。 */
+function findScrollParent(el: HTMLElement | null): HTMLElement | null {
+  for (let node = el?.parentElement ?? null; node; node = node.parentElement) {
+    if (node === document.body || node === document.documentElement) return null;
+    if (/^(auto|scroll|overlay)$/.test(getComputedStyle(node).overflowY)) return node;
+  }
+  return null;
+}
+
+/**
+ * 跟随滚动更新进度；没有正文元素时按整页计算。返回清理函数。
+ * 未指定滚动容器时取正文最近的可滚动祖先：后台预览在 `.admin-scroll` 内滚动，
+ * 只听窗口会让进度停在初始值。
+ */
 function trackProgress(
   root: HTMLElement,
   content: HTMLElement | null,
-  scrollRoot: HTMLElement | null,
+  explicitScrollRoot: HTMLElement | null,
 ): () => void {
+  const scrollRoot = explicitScrollRoot ?? findScrollParent(content);
   const target: EventTarget = scrollRoot ?? window;
   let frame = 0;
   const update = (): void => {

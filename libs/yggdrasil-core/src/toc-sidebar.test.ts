@@ -230,6 +230,33 @@ describe('当前小节与阅读进度', () => {
     expect(document.querySelector('[data-toc-percent]')!.textContent).toMatch(/^\d+%$/);
   });
 
+  it('正文在内部滚动容器里时，进度跟随容器滚动而非窗口', () => {
+    const { h2a } = setupDom();
+    const content = document.querySelector<HTMLElement>('.post-content')!;
+    const scroller = document.createElement('div');
+    scroller.style.overflowY = 'auto';
+    content.replaceWith(scroller);
+    scroller.append(content);
+    Object.defineProperty(scroller, 'clientHeight', { value: 800 });
+    const rect = (top: number, height: number): DOMRect =>
+      ({ top, height, bottom: top + height }) as DOMRect;
+    scroller.getBoundingClientRect = () => rect(0, 800);
+    let contentTop = 80;
+    content.getBoundingClientRect = () => rect(contentTop, 2000);
+    mockTop(h2a, 500);
+    vi.stubGlobal('requestAnimationFrame', (cb: () => void) => {
+      cb();
+      return 1;
+    });
+
+    initTocSidebar();
+    const label = document.querySelector('[data-toc-percent]')!;
+    expect(label.textContent).toBe('0%');
+    contentTop = 80 - 640;
+    scroller.dispatchEvent(new Event('scroll'));
+    expect(label.textContent).toBe('50%');
+  });
+
   it('进度按正文相对视口顶线计算并夹在 0–1', () => {
     expect(readingProgress(500, 2000, 800)).toBe(0);
     expect(readingProgress(80, 2000, 800)).toBe(0);
