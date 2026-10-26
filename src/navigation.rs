@@ -5,7 +5,9 @@
 //! 写入 history，然后通知 Rust；Leptos 的 `BrowserUrl` 只负责“读 URL → 渲染”。
 //!
 //! - [`NavigationBridge`]：连接协调器，收到通知后把地址栏 URL 写入 `BrowserUrl` 的 URL 信号。
-//! - [`RouteMarker`]：包住路由出口，路由内容提交到 DOM 后通知协调器“已渲染”。
+//! - [`RouteMarker`]：包住路由出口，路由内容提交到 DOM 后通知协调器“已渲染”，并提供
+//!   [`use_rendered_route`] 所需的“已提交路由”。
+//! - [`RouteProgress`]：路由切换较慢时在页面顶端显示进度条。
 //! - [`push`] / [`replace`] / [`back`] / [`forward`] / [`external`]：程序化导航的唯一入口，
 //!   **禁止**使用 `leptos_router::hooks::use_navigate` 与 `<A>`。
 //!
@@ -139,23 +141,85 @@ fn route_key(pathname: &str, search: &str) -> String {
     }
 }
 
+/// 一条路由地址：路径（不含查询串）与查询串（不含 `?`）。
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RenderedRoute {
+    pub pathname: String,
+    pub search: String,
+}
+
+impl RenderedRoute {
+    /// 路径加查询串，如 `/search?q=rust`。
+    pub fn key(&self) -> String {
+        route_key(&self.pathname, &self.search)
+    }
+}
+
+/// 已提交到 DOM 的路由，由 [`RouteMarker`] 提供。
+#[derive(Clone, Copy)]
+struct CommittedRoute(ReadSignal<RenderedRoute>);
+
+/// 布局外壳应跟随的路由：当前显示在页面上的那一个，而不是地址栏。
+///
+/// 懒加载路由切换时，地址栏先变，路由器在新页面的分包与数据就绪前继续显示旧页面；
+/// 外壳（导航激活项、主区宽度等）若直接读 `use_location()`，会先切到新页面的样子，
+/// 把旧页面套进错误的版式。这里返回的值在新页面提交到 DOM 后才更新。
+///
+/// 组件首次计算取地址栏：在路由切换中新建的布局本身就属于即将显示的新页面。
+/// 须在 [`RouteMarker`] 内使用。
+pub fn use_rendered_route() -> Memo<RenderedRoute> {
+    let location = use_location();
+    let CommittedRoute(committed) = expect_context::<CommittedRoute>();
+    Memo::new(move |previous: Option<&RenderedRoute>| {
+        let committed = committed.get();
+        if previous.is_some() {
+            committed
+        } else {
+            RenderedRoute {
+                pathname: location.pathname.get_untracked(),
+                search: location.search.get_untracked(),
+            }
+        }
+    })
+}
+
 /// 路由出口外壳：渲染 `data-vt-route`/`data-vt-navigation` 标记，并在路由内容提交后通知协调器。
 ///
 /// 标记用 `set_attribute` 直接写入（不经响应式绑定），保证调用 `rendered` 时 DOM 已带正确值；
 /// `is_routing` 为真（路由器正在切换）时不通知，回落后由 Effect 重新触发。
+/// 同一时机更新 [`use_rendered_route`] 读取的已提交路由。
 #[component]
 pub fn RouteMarker(is_routing: ReadSignal<bool>, children: Children) -> impl IntoView {
     let location = use_location();
     let pathname = location.pathname;
     let search = location.search;
-    let first_route = route_key(&pathname.get_untracked(), &search.get_untracked());
+    let first_route = RenderedRoute {
+        pathname: pathname.get_untracked(),
+        search: search.get_untracked(),
+    };
+    let first_key = first_route.key();
+    let committed = RwSignal::new(first_route);
+    provide_context(CommittedRoute(committed.read_only()));
     let marker = NodeRef::<html::Div>::new();
 
     #[cfg(feature = "hydrate")]
-    Effect::new(move |_| {
-        let route = route_key(&pathname.get(), &search.get());
+    Effect::new(move |was_routing: Option<bool>| {
+        let route = RenderedRoute {
+            pathname: pathname.get(),
+            search: search.get(),
+        };
         if is_routing.get() {
-            return;
+            return true;
+        }
+        let commit = move |route: &RenderedRoute| {
+            if committed.with_untracked(|current| current != route) {
+                committed.set(route.clone());
+            }
+        };
+        // 路由器刚把新页面挂进 DOM：在同一轮微任务里同步外壳，赶在浏览器绘制之前，
+        // 不让新页面以旧版式露出一帧。
+        if was_routing == Some(true) {
+            commit(&route);
         }
         // 不用 requestAnimationFrame：视图过渡进行时浏览器暂停渲染，rAF 要等过渡回调结束才触发，
         // 而协调器正等着这次通知来结束回调（互相等待，只能靠超时兜底）。定时器不受影响。
@@ -165,16 +229,20 @@ pub fn RouteMarker(is_routing: ReadSignal<bool>, children: Children) -> impl Int
                 if is_routing.get_untracked() {
                     return;
                 }
+                // 不经路由器切换的地址变化（仅查询串变化、未匹配路由）在这里提交。
+                commit(&route);
                 let Some(element) = marker.get_untracked() else {
                     return;
                 };
+                let key = route.key();
                 let id = crate::bridges::navigation::navigation_id();
-                let _ = element.set_attribute("data-vt-route", &route);
+                let _ = element.set_attribute("data-vt-route", &key);
                 let _ = element.set_attribute("data-vt-navigation", &id.to_string());
-                crate::bridges::navigation::rendered(id, &route);
+                crate::bridges::navigation::rendered(id, &key);
             },
             std::time::Duration::ZERO,
         );
+        false
     });
     #[cfg(not(feature = "hydrate"))]
     let _ = is_routing;
@@ -182,11 +250,54 @@ pub fn RouteMarker(is_routing: ReadSignal<bool>, children: Children) -> impl Int
     view! {
         <div
             style="display: contents"
-            data-vt-route=first_route
+            data-vt-route=first_key
             data-vt-navigation="0"
             node_ref=marker
         >
             {children()}
+        </div>
+    }
+}
+
+/// 路由切换超过这个时长仍未完成才显示进度条；与协调器的视图过渡等待时长（`WAIT_MS`）一致，
+/// 过渡期间浏览器暂停渲染，早于它显示也看不到。
+#[cfg(feature = "hydrate")]
+const ROUTE_PROGRESS_DELAY: std::time::Duration = std::time::Duration::from_millis(300);
+
+/// 路由切换进度条：新页面的分包或数据加载较慢时，在页面顶端显示一条往复滑动的细线，
+/// 表明点击已生效。快速切换（不超过 300ms）不显示。
+#[component]
+pub fn RouteProgress(is_routing: ReadSignal<bool>) -> impl IntoView {
+    let active = RwSignal::new(false);
+
+    #[cfg(feature = "hydrate")]
+    {
+        // 每次切换换一个世代号，过期的计时器不再点亮进度条。
+        let generation = StoredValue::new(0_u64);
+        Effect::new(move |_| {
+            let routing = is_routing.get();
+            generation.update_value(|g| *g += 1);
+            if !routing {
+                active.set(false);
+                return;
+            }
+            let id = generation.get_value();
+            set_timeout(
+                move || {
+                    if generation.get_value() == id && is_routing.get_untracked() {
+                        active.set(true);
+                    }
+                },
+                ROUTE_PROGRESS_DELAY,
+            );
+        });
+    }
+    #[cfg(not(feature = "hydrate"))]
+    let _ = is_routing;
+
+    view! {
+        <div class="route-progress" data-active=move || active.get().then_some("") aria-hidden="true">
+            <span></span>
         </div>
     }
 }

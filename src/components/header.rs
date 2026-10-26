@@ -11,7 +11,6 @@
 use leptos::children::ViewFn;
 use leptos::ev::MouseEvent;
 use leptos::prelude::*;
-use leptos_router::hooks::use_location;
 
 use crate::components::ui::{use_sheet_close, BottomSheet, Icon, IconName};
 use crate::routes::Route;
@@ -249,10 +248,11 @@ pub fn SearchIconLink(
     on_click: Option<Callback<MouseEvent>>,
 ) -> impl IntoView {
     // 显式覆盖时不读路由，组件可脱离 Router 使用（图鉴演示、测试）。
-    let pathname = active.is_none().then(|| use_location().pathname);
-    let is_active = move || match (active, pathname) {
+    // 与导航激活项一样跟随已显示的页面，不跟地址栏。
+    let route = active.is_none().then(crate::navigation::use_rendered_route);
+    let is_active = move || match (active, route) {
         (Some(active), _) => active,
-        (None, Some(pathname)) => pathname.with(|p| p.trim_end_matches('/') == "/search"),
+        (None, Some(route)) => route.with(|r| r.pathname.trim_end_matches('/') == "/search"),
         (None, None) => false,
     };
     view! {

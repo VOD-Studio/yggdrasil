@@ -15,7 +15,7 @@ use leptos_router::{path, Lazy, SsrMode};
 use crate::components::frontend_layout::FrontendLayout;
 use crate::components::ui::{provide_toaster, ToastRegion};
 use crate::context::{ShowcaseFilters, UserContext};
-use crate::navigation::{NavigationBridge, RouteMarker};
+use crate::navigation::{NavigationBridge, RouteMarker, RouteProgress};
 use crate::pages::about::AboutRoute;
 use crate::pages::admin::assets::AssetsRoute;
 use crate::pages::admin::comments::AdminCommentsRoute;
@@ -64,7 +64,7 @@ pub fn shell(options: LeptosOptions) -> impl IntoView {
                 <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48"/>
                 <link rel="apple-touch-icon" href="/apple-touch-icon.png"/>
                 <link rel="manifest" href="/manifest.webmanifest"/>
-                <link rel="stylesheet" href="/style.css?v=5"/>
+                <link rel="stylesheet" href="/style.css?v=6"/>
                 <link rel="stylesheet" href="/highlight.css?v=2"/>
                 <link rel="stylesheet" href="/katex/katex.min.css?v=3"/>
                 <link rel="stylesheet" href="/yggdrasil-core/yggdrasil-core.css?v=3"/>
@@ -89,7 +89,7 @@ pub fn App() -> impl IntoView {
     provide_context(UserContext::new());
     provide_context(RwSignal::new(ShowcaseFilters::default()));
     provide_toaster();
-    // 路由器是否正在切换：RouteMarker 据此避开切换中的无效通知。
+    // 路由器是否正在切换：RouteMarker 据此避开切换中的无效通知，RouteProgress 据此显示进度条。
     let (is_routing, set_is_routing) = signal(false);
 
     // 水合完成标记：浏览器回归脚本与性能测试等待它出现。必须等整棵树（含懒加载路由
@@ -225,6 +225,7 @@ pub fn App() -> impl IntoView {
                 </Routes>
             </RouteMarker>
         </Router>
+        <RouteProgress is_routing/>
         <ToastRegion/>
     }
 }

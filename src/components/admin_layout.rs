@@ -6,8 +6,8 @@
 //! 收进左侧抽屉，顶栏为菜单、页面标题与搜索。样式见 styles/components/admin.css。
 //!
 //! 外壳在懒加载的父路由 `/admin` 里只构建一次（Leptos 组件体只运行一次），切换后台页面时
-//! 侧栏与顶栏保持同一批 DOM 节点；随路由变化的部分（激活栏目、面包屑、骨架屏）都从
-//! `use_location()` 的路径派生。
+//! 侧栏与顶栏保持同一批 DOM 节点；随路由变化的部分（激活栏目、面包屑、画布滚动方式）
+//! 跟随当前显示的页面（`use_rendered_route`），骨架屏按地址栏指向的目标页选择。
 
 use std::sync::Arc;
 
@@ -232,7 +232,7 @@ pub enum AdminPage {
 }
 
 impl AdminPage {
-    /// 按路径（`use_location().pathname`，不含查询串）分类；末尾斜杠忽略。
+    /// 按路径（不含查询串）分类；末尾斜杠忽略。
     pub fn from_path(path: &str) -> Self {
         let path = path.trim_end_matches('/');
         let Some(rest) = path.strip_prefix("/admin") else {
@@ -471,8 +471,12 @@ fn nav_count(section: AdminSection, counts: Option<AdminNavCounts>) -> Option<(S
 #[component]
 pub fn AdminLayout() -> impl IntoView {
     let ctx = expect_context::<UserContext>();
-    let pathname = use_location().pathname;
+    // 懒加载子路由切换期间旧页面仍在：外壳跟随已显示的页面，骨架屏占位目标页。
+    let route = crate::navigation::use_rendered_route();
+    let pathname = Memo::new(move |_| route.read().pathname.clone());
     let page = Memo::new(move |_| AdminPage::from_path(&pathname.read()));
+    let target_path = use_location().pathname;
+    let target_page = Memo::new(move |_| AdminPage::from_path(&target_path.read()));
     let counts = RwSignal::new(None::<AdminNavCounts>);
 
     // 进入后台时校验一次会话（水合后才会执行）；未登录或请求失败回登录页。
@@ -555,7 +559,7 @@ pub fn AdminLayout() -> impl IntoView {
     let skeleton = move || {
         view! {
             <div class="flex-1 min-h-0 flex flex-col animate-pulse">
-                {move || admin_route_skeleton(page.get())}
+                {move || admin_route_skeleton(target_page.get())}
             </div>
         }
     };

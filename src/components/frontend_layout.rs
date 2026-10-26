@@ -4,7 +4,8 @@
 //! 并为不同路由在 Suspense 中展示对应的骨架屏。
 //!
 //! 布局在主包里只构建一次（Leptos 组件体只运行一次），随路由变化的部分
-//! （导航激活项、主区宽度、站点分享信息、骨架屏）都从 `use_location()` 派生。
+//! （导航激活项、主区宽度、站点分享信息）跟随当前显示的页面
+//! （[`use_rendered_route`]），骨架屏按地址栏指向的目标页选择。
 
 use leptos::children::{ChildrenFn, ViewFn};
 use leptos::error::Errors;
@@ -27,6 +28,7 @@ use crate::components::skeletons::notes_route_skeleton::NotesRouteSkeleton;
 use crate::components::skeletons::post_detail_skeleton::PostDetailSkeleton;
 use crate::components::skeletons::search_skeleton::SearchSkeleton;
 use crate::components::skeletons::writing_guide_skeleton::WritingGuideSkeleton;
+use crate::navigation::use_rendered_route;
 use crate::pages::not_found::{NotFound, PageLoadFailed};
 use crate::routes::{is_post_path, is_showcase_path};
 use crate::theme::ThemeToggle;
@@ -171,16 +173,19 @@ fn route_error_fallback(errors: ArcRwSignal<Errors>) -> impl IntoView {
 /// - `children`：显式传入的页面内容（未匹配路由的 404 兜底用）；缺省渲染嵌套路由的 `<Outlet/>`
 #[component]
 pub fn FrontendLayout(#[prop(optional)] children: Option<ChildrenFn>) -> impl IntoView {
-    let location = use_location();
-    let pathname = location.pathname;
-    let search = location.search;
-    let nav_items = Memo::new(move |_| build_nav_items(&pathname.get()));
+    // 骨架屏占位的是正在加载的目标页，按地址栏选。
+    let target_path = use_location().pathname;
+    // 其余随路由变化的部分跟随已显示的页面：懒加载路由切换期间旧页面仍在，
+    // 外壳提前换成新页面的宽度或导航会把旧页面套进错误的版式。
+    let route = use_rendered_route();
+    let pathname = Memo::new(move |_| route.read().pathname.clone());
+    let nav_items = Memo::new(move |_| build_nav_items(&pathname.read()));
     let palette = use_search_palette_provider();
     // 页头与页脚在所有前台页面统一为 880px 索引宽度，栏目切换时外壳不跳动。
     // 主区按页面放宽：文章页 1240px（680px 正文 + 右侧目录），图鉴 1152px，其余与页头同宽。
     let max_width = "max-w-[880px]";
     // 文章页由 PostDetail 写自己的分享元信息，其余页面用站点的。
-    let is_post = Memo::new(move |_| is_post_path(&pathname.get()));
+    let is_post = Memo::new(move |_| is_post_path(&pathname.read()));
     let main_width = Signal::derive(move || {
         pathname.with(|path| {
             if is_post_path(path) {
@@ -193,15 +198,7 @@ pub fn FrontendLayout(#[prop(optional)] children: Option<ChildrenFn>) -> impl In
         })
     });
     // 分享元信息里的页面地址：路径加查询串。
-    let share_path = Memo::new(move |_| {
-        let path = pathname.get();
-        let search = search.get();
-        if search.is_empty() {
-            path
-        } else {
-            format!("{path}?{search}")
-        }
-    });
+    let share_path = Memo::new(move |_| route.read().key());
 
     view! {
         <FrontendShell
@@ -231,7 +228,7 @@ pub fn FrontendLayout(#[prop(optional)] children: Option<ChildrenFn>) -> impl In
                     </Show>
                     // 页面自己的 Suspense 先接住数据读取；这里兜底未被包住的资源读取。
                     // 错误边界在内层：路由内容出错时仍保留页头页脚与骨架屏逻辑。
-                    <Suspense fallback=move || route_skeleton(&pathname.get_untracked())>
+                    <Suspense fallback=move || route_skeleton(&target_path.get_untracked())>
                         <ErrorBoundary fallback=route_error_fallback>
                             {match children {
                                 Some(children) => children().into_any(),

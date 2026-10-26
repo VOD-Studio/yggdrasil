@@ -32,7 +32,7 @@ fn use_share_context() -> ShareContext {
 
 /// 除文章页外的前台页面：站点描述与站点分享图。
 ///
-/// 前台布局常驻，`path` 随导航变化，故为响应式（传 `use_location().pathname` 即可）。
+/// 前台布局常驻，`path` 随导航变化，故为响应式（传当前显示页面的路径加查询串）。
 #[component]
 pub(crate) fn SiteShareMeta(#[prop(into)] path: Signal<String>) -> impl IntoView {
     let ctx = use_share_context();
