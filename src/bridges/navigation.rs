@@ -58,15 +58,19 @@ pub fn external(url: &str) -> bool {
     false
 }
 
-/// 连接协调器：之后它每次发布新路由都会调用 `notify`。协调器缺失或连接失败返回 `false`。
+/// 连接协调器：之后它每次发布新路由都会调用 `notify`；悬停、聚焦、触屏按下站内链接时
+/// 调用 `prefetch(route, with_data)`。协调器缺失或连接失败返回 `false`。
 ///
-/// JS 持有 `notify` 的函数引用；调用方必须保持 `Closure` 存活到 [`disconnect`] 之后。
+/// JS 同时持有两个闭包的函数引用；调用方必须保持两个 `Closure` 存活到 [`disconnect`] 之后。
 #[cfg(target_arch = "wasm32")]
-pub fn connect(notify: &wasm_bindgen::prelude::Closure<dyn FnMut()>) -> bool {
+pub fn connect(
+    notify: &wasm_bindgen::prelude::Closure<dyn FnMut()>,
+    prefetch: &wasm_bindgen::prelude::Closure<dyn FnMut(String, bool)>,
+) -> bool {
     let Some(module) = wasm::get_module() else {
         return false;
     };
-    if module.connect(notify, None).is_err() {
+    if module.connect(notify, None, prefetch).is_err() {
         let _ = module.disconnect();
         return false;
     }
@@ -155,6 +159,7 @@ pub mod wasm {
             this: &NavigationModule,
             notify: &Closure<dyn FnMut()>,
             prefix: Option<&str>,
+            prefetch: &Closure<dyn FnMut(String, bool)>,
         ) -> Result<(), JsValue>;
 
         #[wasm_bindgen(method, catch)]

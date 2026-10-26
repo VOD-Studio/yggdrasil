@@ -351,6 +351,24 @@ async function slowResponse() {
   } finally { await browser.close(); }
 }
 
+// 悬停即预取目标路由分包（与页面数据）：点击时命中，不再等待下载。
+async function prefetch() {
+  const state = await launch();
+  const { page, browser } = state;
+  try {
+    await fresh(state);
+    const link = page.locator('a[data-vt-post-link]').first();
+    await link.evaluate(e => e.scrollIntoView({ block: 'center', behavior: 'instant' }));
+    const chunk = page.waitForResponse(r => /split___post_route_view_.*\.wasm/.test(r.url()));
+    await link.hover();
+    await chunk; // 悬停即下载文章视图分包
+    await link.click();
+    await page.waitForSelector('[data-vt-detail]');
+    assert.deepEqual(state.errors, []);
+    console.log('PASS hover-prefetch-chunk');
+  } finally { await browser.close(); }
+}
+
 // 目标页分包超出 300ms 预算：协调器跳过空过渡，旧正文淡出，新页进场且不重播。
 async function delayWasm(page, ms) {
   await page.route('**/pkg/**', async route => {
@@ -563,4 +581,5 @@ if (require.main === module) (async () => {
   if (mode === 'all' || mode === 'slow') await slowResponse();
   if (mode === 'all' || mode === 'chunk') await chunkLate();
   if (mode === 'all' || mode === 'admin') await admin();
+  if (mode === 'all' || mode === 'prefetch') await prefetch();
 })().catch(error => { console.error(error.message); process.exitCode = 1; });

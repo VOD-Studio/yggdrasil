@@ -13,6 +13,10 @@ import { markPageEntryHandled } from './page-entry';
 import { beginTransition, type TransitionOwner } from './view-transition-lifecycle';
 
 const WAIT_MS = 300;
+/** 鼠标停留多久算“有意点击”（instant.page 的默认值）。 */
+const HOVER_INTENT_MS = 65;
+/** 同一地址两次预取的最小间隔，挡住指针抖动；数据新鲜度由 Rust 缓存自己判断。 */
+const PREFETCH_THROTTLE_MS = 2000;
 const PENDING_CLASS = 'is-route-pending';
 const STATE_KEY = '__yggdrasilNavigation';
 const POSITION_KEY = '__yggdrasilPosition';
@@ -75,6 +79,16 @@ interface Navigation {
 function page(url: string): string {
   return url.split('#')[0];
 }
+
+/** 省流量模式或 2G 网络下不预取。TS 的 DOM lib 没有 `navigator.connection`，用局部类型。 */
+function constrainedNetwork(): boolean {
+  // Network Information API 不在 TS 的 DOM lib 里，且并非所有浏览器都有：按可选字段声明。
+  const nav: Navigator & { connection?: { saveData?: boolean; effectiveType?: string } } =
+    navigator;
+  const connection = nav.connection;
+  return connection?.saveData === true || /2g$/.test(connection?.effectiveType ?? '');
+}
+
 function sectionIndex(url: string): number {
   const path = page(url).split('?')[0];
   if (/^\/page\/\d+$/.test(path)) return 0;
@@ -141,6 +155,10 @@ export class RouteTransitions {
   private leaveGuard: { id: number; check: () => boolean } | undefined;
   private guardSequence = 0;
   private rollingBack = false;
+  private prefetch: ((route: string, withData: boolean) => void) | undefined;
+  private prefetched = new Map<string, number>(); // 预取地址（不含哈希）→ 上次时间
+  private intentTimer: number | undefined;
+  private intentAnchor: HTMLAnchorElement | undefined;
 
   constructor() {
     // 两个监听都必须早于 Leptos 生效：Leptos 的 BrowserUrl 在水合时就在 window 上挂了
@@ -153,7 +171,12 @@ export class RouteTransitions {
     document.addEventListener('click', this.onClick);
   }
 
-  connect(notify: () => void, prefix: string | null): void {
+  connect(
+    notify: () => void,
+    prefix: string | null,
+    prefetch?: (route: string, withData: boolean) => void,
+  ): void {
+    this.prefetch = prefetch;
     if (this.notify) {
       this.notify = notify;
       return;
@@ -169,6 +192,11 @@ export class RouteTransitions {
     // popstate 与 click 监听在构造时已注册（见 constructor）。
     window.addEventListener('hashchange', this.onHash);
     window.addEventListener('pagehide', this.onPageHide);
+    document.addEventListener('pointerover', this.onPointerOver, { passive: true });
+    document.addEventListener('pointerout', this.onPointerOut, { passive: true });
+    document.addEventListener('focusin', this.onFocusIn);
+    document.addEventListener('focusout', this.onPointerOut);
+    document.addEventListener('touchstart', this.onTouchStart, { capture: true, passive: true });
   }
 
   disconnect(): void {
@@ -177,6 +205,14 @@ export class RouteTransitions {
     this.restoreCleanup?.();
     window.removeEventListener('hashchange', this.onHash);
     window.removeEventListener('pagehide', this.onPageHide);
+    document.removeEventListener('pointerover', this.onPointerOver);
+    document.removeEventListener('pointerout', this.onPointerOut);
+    document.removeEventListener('focusin', this.onFocusIn);
+    document.removeEventListener('focusout', this.onPointerOut);
+    document.removeEventListener('touchstart', this.onTouchStart, { capture: true });
+    this.cancelIntent();
+    this.prefetch = undefined;
+    this.prefetched.clear();
     this.clearPending();
     history.scrollRestoration = this.oldRestoration;
     this.notify = undefined;
@@ -298,8 +334,31 @@ export class RouteTransitions {
     if (event.defaultPrevented) return;
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey)
       return;
-    const anchor =
-      event.target instanceof Element ? event.target.closest<HTMLAnchorElement>('a[href]') : null;
+    const routable = this.routableAnchor(event.target);
+    if (!routable) return;
+    const { anchor } = routable;
+    if (!this.notify || !this.active) {
+      // 未连接（水合中、断开后）：不让冒泡到 window 上 Leptos 的链接拦截，浏览器整页跳转。
+      event.stopPropagation();
+      return;
+    }
+    // 点击已经开始导航：不能等到点击后才预取，否则资源已发出请求，预取条目没人消费。
+    this.cancelIntent();
+    event.preventDefault();
+    const url = routable.url;
+    this.intent = {
+      url,
+      post: anchor.dataset.vtPostLink,
+      returning: anchor.dataset.vtReturn === 'true',
+    };
+    this.request(url, 'push');
+  };
+
+  /** 站内 SPA 链接 → 去掉前缀的“路径 + 查询 + 哈希”；不该由协调器接管的返回 undefined。 */
+  private routableAnchor(
+    target: EventTarget | null,
+  ): { anchor: HTMLAnchorElement; url: string } | undefined {
+    const anchor = target instanceof Element ? target.closest<HTMLAnchorElement>('a[href]') : null;
     if (
       !anchor ||
       (anchor.target !== '' && anchor.target !== '_self') ||
@@ -308,21 +367,61 @@ export class RouteTransitions {
       anchor.origin !== location.origin ||
       NATIVE_PREFIXES.some((prefix) => anchor.pathname.startsWith(prefix))
     )
-      return;
-    if (!this.notify || !this.active) {
-      // 未连接（水合中、断开后）：不让冒泡到 window 上 Leptos 的链接拦截，浏览器整页跳转。
-      event.stopPropagation();
-      return;
-    }
-    event.preventDefault();
-    const url = anchor.pathname.slice(this.prefix.length) + anchor.search + anchor.hash;
-    this.intent = {
-      url,
-      post: anchor.dataset.vtPostLink,
-      returning: anchor.dataset.vtReturn === 'true',
-    };
-    this.request(url, 'push');
+      return undefined;
+    return { anchor, url: anchor.pathname.slice(this.prefix.length) + anchor.search + anchor.hash };
+  }
+
+  private cancelIntent(): void {
+    clearTimeout(this.intentTimer);
+    this.intentTimer = undefined;
+    this.intentAnchor = undefined;
+  }
+
+  /** 悬停/聚焦：停留 HOVER_INTENT_MS 后才预取；同一链接的子元素会反复触发，直接忽略。 */
+  private beginIntent(target: EventTarget | null): void {
+    const routable = this.routableAnchor(target);
+    if (!routable || routable.anchor === this.intentAnchor) return;
+    this.cancelIntent();
+    this.intentAnchor = routable.anchor;
+    this.intentTimer = window.setTimeout(() => {
+      this.intentTimer = undefined;
+      this.requestPrefetch(routable.url, true);
+    }, HOVER_INTENT_MS);
+  }
+
+  private onPointerOver = (event: PointerEvent): void => {
+    // 触屏交给 touchstart。
+    if (event.pointerType !== 'mouse' && event.pointerType !== 'pen') return;
+    this.beginIntent(event.target);
   };
+  private onPointerOut = (event: PointerEvent | FocusEvent): void => {
+    const related = event.relatedTarget;
+    if (related instanceof Node && this.intentAnchor?.contains(related)) return;
+    this.cancelIntent();
+  };
+  private onFocusIn = (event: FocusEvent): void => {
+    this.beginIntent(event.target);
+  };
+  private onTouchStart = (event: TouchEvent): void => {
+    // 按下到抬起约 100ms，就是用这段时间。
+    const routable = this.routableAnchor(event.target);
+    if (routable) this.requestPrefetch(routable.url, true);
+  };
+
+  private requestPrefetch(url: string, withData: boolean): void {
+    if (!this.prefetch || !this.active || constrainedNetwork()) return;
+    const target = page(url);
+    if (target === page(this.displayed)) return; // 当前页（含页内锚点）不预取
+    const now = performance.now();
+    if (now - (this.prefetched.get(target) ?? -Infinity) < PREFETCH_THROTTLE_MS) return;
+    if (this.prefetched.size > 200) this.prefetched.clear();
+    this.prefetched.set(target, now);
+    try {
+      this.prefetch(target, withData);
+    } catch {
+      // 预取失败不能影响导航；Rust 回调出错时这里吞掉。
+    }
+  }
   private onPageHide = (): void => {
     if (this.active) this.active.scroll = captureScroll();
     this.clearPending();

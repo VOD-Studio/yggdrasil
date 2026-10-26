@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **改密 / `ADMIN_PASSWORD` 轮换后旧会话仍有效**：此前只有缓存命中路径比对会话世代，缓存被逐出后的下一次请求会重新放行并回填，被盗 cookie 最长 30 天有效。迁移 031 给 `sessions` 加 `generation` 快照列（登录时写入），两条校验路径都要求其等于 `users.session_generation`；存量会话按当前世代回填。
 
+### Added
+
+- **链接悬停预取**：鼠标停留、键盘聚焦或触屏按下站内链接时提前下载目标页面的 WASM 分包，点击后不再等分包下载；省流量模式与 2G 网络下不预取。
+
 ### Fixed
 
 - **懒加载页面切换偶发闪白**：目标页分包超过 300ms 时，旧正文先淡出再由新页淡入，不再从满屏内容一帧变空。

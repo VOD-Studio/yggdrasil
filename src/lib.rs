@@ -39,6 +39,7 @@ pub mod navigation;
 pub mod og;
 pub mod pages;
 pub mod request_ctx;
+pub mod route_prefetch;
 pub mod routes;
 // ssr_cache 仅在 server feature 启用时编译；保存 SSR 世代号失效状态。
 #[cfg(feature = "server")]

@@ -993,3 +993,148 @@ describe('entry scroll and private state', () => {
     expect(routes.readState('search')).toBe('{"query":"public"}');
   });
 });
+
+describe('link prefetch', () => {
+  let prefetch: Mock<(route: string, withData: boolean) => void>;
+
+  beforeEach(() => {
+    routes.disconnect();
+    prefetch = vi.fn();
+    routes.connect(notify, null, prefetch);
+    render('<main data-vt-list>Source</main>');
+  });
+
+  function link(href: string, options: { rel?: string } = {}): HTMLAnchorElement {
+    const anchor = document.createElement('a');
+    anchor.href = href;
+    if (options.rel) anchor.rel = options.rel;
+    anchor.innerHTML = '<span>title</span>';
+    document.body.append(anchor);
+    return anchor;
+  }
+
+  function pointer(type: string, target: Element, init: { pointerType?: string; to?: Node } = {}) {
+    const event = new MouseEvent(type, {
+      bubbles: true,
+      relatedTarget: init.to ?? null,
+    });
+    Object.defineProperty(event, 'pointerType', { value: init.pointerType ?? 'mouse' });
+    target.dispatchEvent(event);
+  }
+
+  function setConnection(value: { saveData?: boolean; effectiveType?: string } | undefined) {
+    Object.defineProperty(navigator, 'connection', { configurable: true, value });
+  }
+
+  afterEach(() => {
+    delete (navigator as unknown as { connection?: unknown }).connection;
+  });
+
+  it('prefetches after the hover intent delay with the route and data flag', () => {
+    pointer('pointerover', link('/post/a'));
+    vi.advanceTimersByTime(64);
+    expect(prefetch).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(prefetch).toHaveBeenCalledExactlyOnceWith('/post/a', true);
+  });
+
+  it('cancels when the pointer leaves the link but keeps going inside it', () => {
+    const left = link('/post/a');
+    pointer('pointerover', left);
+    pointer('pointerout', left, { to: document.body });
+    vi.advanceTimersByTime(100);
+    expect(prefetch).not.toHaveBeenCalled();
+
+    const inside = link('/post/b');
+    pointer('pointerover', inside);
+    pointer('pointerout', inside, { to: inside.querySelector('span')! });
+    vi.advanceTimersByTime(100);
+    expect(prefetch).toHaveBeenCalledExactlyOnceWith('/post/b', true);
+  });
+
+  it('does not prefetch when a click follows the hover', () => {
+    const anchor = link('/post/a');
+    pointer('pointerover', anchor);
+    anchor.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }));
+    vi.advanceTimersByTime(200);
+    expect(prefetch).not.toHaveBeenCalled();
+    expect(native).toHaveLength(1);
+  });
+
+  it('prefetches on touchstart immediately and ignores touch pointerover', () => {
+    pointer('pointerover', link('/post/a'), { pointerType: 'touch' });
+    vi.advanceTimersByTime(200);
+    expect(prefetch).not.toHaveBeenCalled();
+    link('/post/b').dispatchEvent(new Event('touchstart', { bubbles: true }));
+    expect(prefetch).toHaveBeenCalledExactlyOnceWith('/post/b', true);
+  });
+
+  it('prefetches on keyboard focus after the intent delay', () => {
+    link('/post/a').dispatchEvent(new Event('focusin', { bubbles: true }));
+    vi.advanceTimersByTime(65);
+    expect(prefetch).toHaveBeenCalledExactlyOnceWith('/post/a', true);
+  });
+
+  it('skips external, native, cross-origin and current-page links', () => {
+    for (const anchor of [
+      link('/post/a', { rel: 'external' }),
+      link('/api/x'),
+      link('https://example.org/post/a'),
+      link('/#h'),
+    ]) {
+      pointer('pointerover', anchor);
+      vi.advanceTimersByTime(100);
+      pointer('pointerout', anchor, { to: document.body });
+    }
+    expect(prefetch).not.toHaveBeenCalled();
+  });
+
+  it('throttles per page for two seconds regardless of the hash', () => {
+    const hover = (href: string) => {
+      const anchor = link(href);
+      pointer('pointerover', anchor);
+      vi.advanceTimersByTime(65);
+      pointer('pointerout', anchor, { to: document.body });
+    };
+    hover('/post/a');
+    hover('/post/a#x');
+    expect(prefetch).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(2000);
+    hover('/post/a');
+    expect(prefetch).toHaveBeenCalledTimes(2);
+    expect(prefetch).toHaveBeenLastCalledWith('/post/a', true);
+  });
+
+  it('is disabled by save-data and 2g connections', () => {
+    setConnection({ saveData: true });
+    link('/post/a').dispatchEvent(new Event('touchstart', { bubbles: true }));
+    setConnection({ effectiveType: '2g' });
+    link('/post/b').dispatchEvent(new Event('touchstart', { bubbles: true }));
+    expect(prefetch).not.toHaveBeenCalled();
+    setConnection({ effectiveType: '4g' });
+    link('/post/c').dispatchEvent(new Event('touchstart', { bubbles: true }));
+    expect(prefetch).toHaveBeenCalledExactlyOnceWith('/post/c', true);
+  });
+
+  it('swallows prefetch errors and still navigates', async () => {
+    prefetch.mockImplementation(() => {
+      throw new Error('boom');
+    });
+    const anchor = link('/post/a');
+    expect(() => anchor.dispatchEvent(new Event('touchstart', { bubbles: true }))).not.toThrow();
+    anchor.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }));
+    expect(native).toHaveLength(1);
+    await native[0].invoke();
+    await finish();
+    expect(routes.currentRoute()).toBe('/post/a');
+  });
+
+  it('stops prefetching after disconnect', () => {
+    const anchor = link('/post/a');
+    routes.disconnect();
+    pointer('pointerover', anchor);
+    anchor.dispatchEvent(new Event('touchstart', { bubbles: true }));
+    vi.advanceTimersByTime(200);
+    expect(prefetch).not.toHaveBeenCalled();
+  });
+});

@@ -11,6 +11,9 @@
 //! - [`push`] / [`replace`] / [`back`] / [`forward`] / [`external`]：程序化导航的唯一入口，
 //!   **禁止**使用 `leptos_router::hooks::use_navigate` 与 `<A>`。
 //!
+//! 悬停、聚焦、触屏按下站内链接时，协调器回调 `NavigationBridge` 交给它的预取闭包，
+//! 由 [`crate::route_prefetch`] 提前下载目标页面的分包。
+//!
 //! 站内链接一律是普通 `<a href>`；指向非 SPA 路由的链接（`/feed.xml`、`/doc/...`、
 //! `/uploads/...` 等）必须带 `rel="external"`（或 `download`/`target`）。
 
@@ -109,6 +112,8 @@ pub fn external(url: &str) {
 pub fn NavigationBridge() -> impl IntoView {
     #[cfg(feature = "hydrate")]
     {
+        use crate::context::UserContext;
+        use crate::models::user::UserRole;
         use leptos_router::location::{BrowserUrl, LocationProvider};
         use wasm_bindgen::prelude::Closure;
 
@@ -116,6 +121,8 @@ pub fn NavigationBridge() -> impl IntoView {
         let shared = Owner::current_shared_context();
         // JS 持有函数引用：闭包必须活到 disconnect 之后，存进本地存储并在卸载时释放。
         let notify = StoredValue::new_local(None::<Closure<dyn FnMut()>>);
+        let prefetch = StoredValue::new_local(None::<Closure<dyn FnMut(String, bool)>>);
+        let user = use_context::<UserContext>();
         Effect::new(move |_| {
             let browser_url = browser_url.clone();
             let shared = shared.clone();
@@ -134,9 +141,21 @@ pub fn NavigationBridge() -> impl IntoView {
                             browser_url.as_url().set(url);
                         }
                     }) as Box<dyn FnMut()>);
-                    if crate::bridges::navigation::connect(&closure) {
+                    let prefetch_closure =
+                        Closure::wrap(Box::new(move |route: String, with_data: bool| {
+                            let is_admin = user.is_some_and(|ctx| {
+                                ctx.user
+                                    .try_with_untracked(|u| {
+                                        u.as_ref().is_some_and(|u| u.role == UserRole::Admin)
+                                    })
+                                    .unwrap_or(false)
+                            });
+                            crate::route_prefetch::prefetch(&route, with_data, is_admin);
+                        }) as Box<dyn FnMut(String, bool)>);
+                    if crate::bridges::navigation::connect(&closure, &prefetch_closure) {
                         CONNECTED.store(true, Ordering::Release);
                         notify.set_value(Some(closure));
+                        prefetch.set_value(Some(prefetch_closure));
                     }
                 }
                 if let Some(root) = document().document_element() {

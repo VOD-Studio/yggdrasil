@@ -68,7 +68,7 @@ pub fn shell(options: LeptosOptions) -> impl IntoView {
                 <link rel="stylesheet" href="/highlight.css?v=2"/>
                 <link rel="stylesheet" href="/katex/katex.min.css?v=3"/>
                 <link rel="stylesheet" href="/yggdrasil-core/yggdrasil-core.css?v=4"/>
-                <script src="/yggdrasil-core/yggdrasil-core.js?v=7"></script>
+                <script src="/yggdrasil-core/yggdrasil-core.js?v=8"></script>
                 <ThemePreload/>
                 <AutoReload options=options.clone()/>
                 <HydrationScripts options/>
@@ -92,6 +92,7 @@ pub fn App() -> impl IntoView {
     // 路由器是否正在切换：RouteMarker 据此避开切换中的无效通知，RouteProgress 据此显示进度条。
     let (is_routing, set_is_routing) = signal(false);
 
+    // 悬停预取的路由匹配表在 `route_prefetch::match_route`，改路由表时同步修改。
     view! {
         <Title text="Yggdrasil Blog"/>
         <Router set_is_routing>
