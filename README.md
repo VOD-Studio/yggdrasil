@@ -35,6 +35,10 @@ make build   # 发布构建
 
 直接运行 `make` 可列出全部目标；缺少本地工具时可用 `make docker-dev`。
 
+发布前先运行 `make wasm-toolchain` 安装固定的 WASM nightly 工具链；`make -j4 build` 可并行准备资源与文档，完成后再构建前端、服务端并装配校验。发布时按 `libs/bun.lock` 冻结安装前端依赖，依赖变更需先更新锁文件。
+
+`make clean` 会删除编译产物、生成的浏览器资源和前端依赖，保留受版本控制的静态资源与上传原文件。
+
 ## 生产部署
 
 必须前置反向代理（nginx / Caddy）终结 TLS，并配置：

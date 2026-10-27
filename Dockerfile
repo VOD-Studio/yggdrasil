@@ -241,27 +241,14 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     cp target/release/hash.txt /build/hash.txt && \
     bun scripts/build-release.cjs --out /build/dist --hash /build/hash.txt
 
-# Generate the project's rustdoc API docs and stage them under public/doc so
-# they are served at /doc on the live site. Runs `make doc` (site-themed
-# rustdoc, see rustdoc-theme/) with DOC_OUT pointing at dist/public/doc.
-# It uses --no-deps and --document-private-items (this is effectively a
-# single-crate binary — without it the pages would be nearly empty) and writes
-# the tiny index.html that redirects bare /doc to the real crate entry yggdrasil/.
-# NOTE: .dockerignore excludes host-side public/doc/, so this RUN is the ONLY
-# channel that puts the docs into the image — without it /doc is a 404 online.
+# 生成带站点主题的 lib crate 文档，包含私有项，并提供 /doc 入口重定向。
+# .dockerignore 排除了宿主 public/doc/；这里直接写入装配后的发布目录。
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
     make doc DOC_OUT=dist/public/doc
 
-# Pre-compress all static text assets with brotli (.br sidecars).
-# site_fallback 的 ServeDir 开启了 precompressed_br：带 Accept-Encoding: br 的请求
-# 命中同目录的 <file>.br，否则回退原文件，运行时无需额外代码。Text formats only;
-# fonts/images are already compressed and would not shrink.
-RUN find /build/dist/public -type f \
-        \( -name '*.js' -o -name '*.css' -o -name '*.wasm' \
-           -o -name '*.svg' -o -name '*.html' -o -name '*.json' -o -name '*.xml' \) \
-        -not -name '*.br' \
-        -print0 | xargs -0 -r brotli -q 11 -kf
+# 与本地发布共用预压缩规则；查找或压缩失败时立即终止构建。
+RUN make precompress RELEASE_OUT=/build/dist
 
 # 校验发布产物：清单摘要、hash.txt 指向的产物、分包清单闭包与 .br 旁车。
 RUN bun scripts/build-release.cjs --verify --out /build/dist

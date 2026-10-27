@@ -12,8 +12,8 @@ include mk/assets.mk mk/docker.mk
 # ── 配置 ───────────────────────────────────────────────────────
 # release 构建用固定日期的 nightly（前端 WASM 构建）。
 # 以下两组参数只作用于 wasm 前端：-Zbuild-std 以 optimize_for_size 重编 std，
-# -Cpanic=immediate-abort 去掉 panic 格式化与展开代码。2026-10-20 实测 brotli 后
-# 1,098 KB → 1,010 KB（−8%）。代价：wasm 内 panic 直接 trap，不再打印信息。
+# -Cpanic=immediate-abort 减少 panic 处理代码；代价是 wasm 内 panic 直接 trap，
+# 不再打印诊断信息。
 # - rustflags 经 wasm32 专属的 CARGO_TARGET_*_RUSTFLAGS 传入（服务端仍 panic=unwind）。
 #   它会覆盖 .cargo/config.toml 的同名配置，因此需要重复 getrandom cfg。
 # - RUSTUP_TOOLCHAIN 让 cargo-leptos 及其调用的 cargo 都走 nightly；
@@ -96,40 +96,35 @@ wasm-toolchain: ## 安装 release 构建所需的固定 nightly 工具链
 		--component rust-src --target wasm32-unknown-unknown
 
 # ── release 构建 ───────────────────────────────────────────────
-# 流水线：共享资源 → 文档 → cargo-leptos 前端（分包 wasm/js/css → target/site）
-# → 服务端 → build-release.cjs 装配 $(RELEASE_OUT) → Brotli → 校验。
+# 流水线：工具检查 → 共享资源与文档 → 分包前端 → 服务端 → 装配 → Brotli → 校验。
+# 资源与文档可并行；配方中的递归 make 等它们全部成功后才开始前端，兼容 make -j。
 # 前端用固定 nightly + build-std + immediate-abort；服务端用 stable。
 
 build-frontend: check-wasm-toolchain ## 构建分包前端（wasm/js/css → target/site）
 	@$(LEPTOS_WASM_ENV) cargo leptos build --release --split --frontend-only $(LEPTOS_WASM_ARGS)
 
-build: check-build-tools build-assets doc build-frontend ## 完整 release 构建（资源 + 文档 + 分包前端 + 服务端 + 装配 + 压缩）
-	@cargo build --release --locked --bin yggdrasil
-	@bun scripts/build-release.cjs --out $(RELEASE_OUT) --server target/release/yggdrasil
+build: RELEASE_SERVER := target/release/yggdrasil
+build-linux: RELEASE_SERVER := target/x86_64-unknown-linux-musl/release/yggdrasil
+build-linux: RELEASE_SERVER_ARGS := --target x86_64-unknown-linux-musl
+build: ## 完整 release 构建（资源 + 文档 + 分包前端 + 服务端 + 装配 + 压缩）
+build-linux: ## 构建 Linux x86_64 musl 服务端 + 分包前端
+build build-linux: check-build-tools
+	@$(MAKE) build-assets doc
+	@$(MAKE) build-frontend
+	@cargo build --release --locked --bin yggdrasil $(RELEASE_SERVER_ARGS)
+	@bun scripts/build-release.cjs --out "$(RELEASE_OUT)" --server "$(RELEASE_SERVER)"
 	@$(MAKE) precompress
-	@bun scripts/build-release.cjs --verify --out $(RELEASE_OUT)
-
-build-linux: check-build-tools build-assets doc build-frontend ## 构建 Linux x86_64 musl 服务端 + 分包前端
-	@cargo build --release --locked --bin yggdrasil --target x86_64-unknown-linux-musl
-	@bun scripts/build-release.cjs --out $(RELEASE_OUT) --server target/x86_64-unknown-linux-musl/release/yggdrasil
-	@$(MAKE) precompress
-	@bun scripts/build-release.cjs --verify --out $(RELEASE_OUT)
-	@echo ""
-	@echo "Linux build complete! The server binary is at $(RELEASE_OUT)/server"
-	@echo "Remember to deploy it alongside $(RELEASE_OUT)/hash.txt and the $(RELEASE_OUT)/public directory"
-	@echo "(contains pkg/, release-manifest.json and the static assets)."
-	@echo "At runtime hash.txt must sit next to the server binary; public/ is located via"
-	@echo "LEPTOS_SITE_ROOT or a public/ directory next to the executable."
+	@bun scripts/build-release.cjs --verify --out "$(RELEASE_OUT)"
+	@echo "发布目录：$(RELEASE_OUT)；部署时请保留 server、hash.txt 与 public/ 的配套关系。"
 
 # 用 brotli 预压缩静态文本资源（生成 .br 旁路文件）。site_fallback 的 ServeDir
 # 开启了 precompressed_br，请求带 Accept-Encoding: br 时自动命中 .br。只压文本
 # 格式；字体/图片本身已压缩，pkg 下的 .d.ts 不被浏览器请求也不压。
 precompress: check-brotli
-	@find $(RELEASE_OUT)/public -type f \
+	@find "$(RELEASE_OUT)/public" -type f \
 		\( -name '*.js' -o -name '*.css' -o -name '*.wasm' \
 		   -o -name '*.svg' -o -name '*.html' -o -name '*.json' -o -name '*.xml' \) \
-		-not -name '*.br' \
-		-print0 | xargs -0 -r brotli -q 11 -kf
+		-exec brotli -q 11 -kf {} +
 
 # ── 开发 ───────────────────────────────────────────────────────
 # cargo-leptos watch：服务端（server feature）与浏览器 WASM（hydrate feature）
@@ -188,8 +183,7 @@ fix: ## cargo fix + Biome format + cargo fmt（写入文件）
 	@$(MAKE) --no-print-directory fmt
 
 # ── 文档 ───────────────────────────────────────────────────────
-# 只编译当前 crate 的文档（--no-deps 跳过依赖，--document-private-items
-# 让纯 binary crate 的内部模块/私有项也进文档，否则页面基本是空的）。
+# 只生成当前 lib crate 的文档（--no-deps），并包含内部模块与私有项。
 #
 # 站点化主题：源文件在 rustdoc-theme/。
 #   - theme.css（只放 import，模块在 css/）经 Tailwind 编译后用 rustdoc -e 注入
@@ -242,14 +236,12 @@ doc-open: doc ## 生成 rustdoc 并用浏览器打开
 	@RUSTDOCFLAGS="$(DOC_RUSTDOCFLAGS)" cargo doc --lib --no-deps --document-private-items --open
 
 # ── 清理 ───────────────────────────────────────────────────────
-# public/{codemirror,lightbox,tiptap,xterm,yggdrasil-core} 里有被 git 跟踪的
-# bundle，故不在此整目录清理；其余生成物（含 libs 的 node_modules）会被删除。
+# 只删除已知生成目录；public/ 下的图标、图片等受版本控制的资源必须保留。
 clean: ## 清理构建产物与前端依赖
 	@cargo clean
 	@rm -f public/style.css public/highlight.css
-	@rm -rf public/katex
-	@rm -rf public/mermaid
-	@rm -rf public/doc
+	@rm -rf public/katex public/doc public/codemirror public/lightbox public/mermaid \
+		public/tiptap public/xterm public/yggdrasil-core
 	@rm -rf uploads/.cache
 	@rm -rf libs/node_modules libs/*/node_modules
 

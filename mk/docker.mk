@@ -7,8 +7,8 @@
 # Docker 镜像构建。两个 Dockerfile 对应两种场景（构建细节见各自文件头部）：
 #
 #   Dockerfile        目标架构 == 宿主架构时用，容器内原生构建（如 x86 Linux 构建 amd64）。
-#   Dockerfile.cross  目标架构 != 宿主架构时用（如 Apple Silicon 构建 amd64），
-#                     全程在容器内原生编译，无 QEMU / Rosetta / 宿主工具链，只需 Docker。
+#   Dockerfile.cross  Apple Silicon 等非 x86_64 宿主构建 amd64 时用，
+#                     容器内通过 cargo-zigbuild 交叉编译服务端，无需 QEMU 或宿主工具链。
 #
 #   make docker              只构建本机架构，加载到本地 daemon（用于测试）
 #   make docker-amd64        x86_64 镜像；按宿主架构自动选 Dockerfile
@@ -74,8 +74,8 @@ docker-dev-shell: ## 进入开发容器的 shell
 	@docker compose -f docker-compose.dev.yml exec dev bash
 
 # ── Docker 工具容器（lint / test / fix / check）──────────────────
-# lint/fmt/fix/test/check 一律在容器内跑，避开本机 EDR 对构建链二进制的拦截；
-# bind mount 让 fmt/fix 的改动回流宿主。原因与卷策略见 docker-compose.tools.yml。
+# 工具容器提供隔离的 lint/fmt/fix/test/check 环境；bind mount 将修改写回宿主。
+# 依赖与编译缓存使用独立命名卷，避免混用宿主产物，见 docker-compose.tools.yml。
 TOOLS_COMPOSE := docker compose -f docker-compose.tools.yml
 # 在工具容器内先冻结 lockfile 安装前端依赖，再于 /build 执行 `make <target>`。
 tools_make = $(TOOLS_COMPOSE) run --rm tools bash -c 'cd libs && bun install --frozen-lockfile >/dev/null && cd /build && make $(1)'
