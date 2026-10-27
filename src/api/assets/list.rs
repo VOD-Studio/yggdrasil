@@ -4,6 +4,7 @@
 //! 同时返回各筛选维度计数与可清理孤儿统计，供 tabs 与「清理孤儿」按钮展示。
 //! Leptos server function，注册在 `/api` 路径下，仅 admin 可用。
 
+use crate::api::error::ApiError;
 use leptos::prelude::*;
 
 use super::types::AssetListResponse;
@@ -25,7 +26,7 @@ pub async fn list_assets(
     query: String,
     sort: AssetSort,
     page: i32,
-) -> Result<AssetListResponse, ServerFnError> {
+) -> Result<AssetListResponse, ApiError> {
     crate::api::auth::get_current_admin_user().await?;
     list_assets_impl(filter, query, sort, page).await
 }
@@ -37,7 +38,7 @@ pub(crate) async fn list_assets_impl(
     query: String,
     sort: AssetSort,
     page: i32,
-) -> Result<AssetListResponse, ServerFnError> {
+) -> Result<AssetListResponse, ApiError> {
     use crate::api::error::AppError;
     use crate::db::pool::get_conn;
     use crate::models::asset::{Asset, AssetDto, AssetRef, AssetRefPostStatus};

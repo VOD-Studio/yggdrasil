@@ -3,6 +3,7 @@
 //! 逐篇走文章写入业务（各自事务与缓存失效），返回成功与失败篇数；某一篇失败不影响其余。
 //! Leptos server function，注册在 `/api` 路径下。
 
+use crate::api::error::ApiError;
 use leptos::prelude::*;
 
 #[cfg(feature = "server")]
@@ -18,14 +19,14 @@ const MAX_BATCH: usize = 200;
 pub async fn batch_posts(
     post_ids: Vec<i32>,
     action: BatchPostAction,
-) -> Result<BatchPostResult, ServerFnError> {
+) -> Result<BatchPostResult, ApiError> {
     #[cfg(feature = "server")]
     {
         use super::service::{act, PostAction};
 
         let _user = get_current_admin_user().await?;
         if post_ids.len() > MAX_BATCH {
-            return Err(ServerFnError::new(format!("一次最多操作 {MAX_BATCH} 篇")));
+            return Err(ApiError::BadRequest(format!("一次最多操作 {MAX_BATCH} 篇")));
         }
         let mut ids = post_ids;
         ids.sort_unstable();

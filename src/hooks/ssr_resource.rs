@@ -2,13 +2,13 @@
 //!
 //! # 路由数据：[`route_data`][crate::hooks::ssr_resource::route_data]
 //! 懒加载路由的 `LazyRoute::data()` 编译进主包（SSR 会多次执行 `view()`，资源只能在
-//! `data()` 里建）。若在那里直接建 `Resource<Result<T, ServerFnError>>`，每个路由的数据
+//! `data()` 里建）。若在那里直接建 `Resource<Result<T, ApiError>>`，每个路由的数据
 //! 类型、反序列化代码与 server fn 客户端都会进主包，所有页面首屏一起付费。
 //!
 //! [`route_data`][crate::hooks::ssr_resource::route_data] 把资源的值类型擦除成 JSON 文本（[`RawJson`][crate::hooks::ssr_resource::RawJson]，所有路由共用同一份
 //! `Resource` 实例化），取数函数由调用方写成 `#[leptos::lazy]` 函数、返回 [`PageJson<T>`][crate::hooks::ssr_resource::PageJson]：
 //! 服务端直接调用并编码，客户端首次取数时才加载它所在的分包。`view()` 里
-//! `data.await` 得到 `Result<T, ServerFnError>`，解码代码随视图分包加载。
+//! `data.await` 得到 `Result<T, ApiError>`，解码代码随视图分包加载。
 //!
 //! ```ignore
 //! #[leptos::lazy]
@@ -46,6 +46,8 @@ use std::any::TypeId;
 use leptos::prelude::*;
 use leptos::server::codee::{Decoder, Encoder};
 use serde::{de::DeserializeOwned, Serialize};
+
+use crate::api::error::ApiError;
 
 /// `Resource` 的 JSON 编解码器：编码 `serde_json::to_string`，解码 `serde_json::from_slice`。
 pub struct JsonSliceCodec;
@@ -85,7 +87,7 @@ where
     Resource::new_with_options(source, fetcher, false)
 }
 
-/// `Result<T, ServerFnError>` 的 JSON 文本：路由数据资源的统一值类型。
+/// `Result<T, ApiError>` 的 JSON 文本：路由数据资源的统一值类型。
 #[derive(Clone, Debug, PartialEq)]
 pub struct RawJson(String);
 
@@ -110,7 +112,7 @@ impl Decoder<RawJson> for RawJsonCodec {
     }
 }
 
-/// 路由取数函数（`#[leptos::lazy]`）的返回值：已编码的 `Result<T, ServerFnError>`。
+/// 路由取数函数（`#[leptos::lazy]`）的返回值：已编码的 `Result<T, ApiError>`。
 pub struct PageJson<T> {
     raw: RawJson,
     _type: PhantomData<fn() -> T>,
@@ -118,11 +120,12 @@ pub struct PageJson<T> {
 
 impl<T: Serialize> PageJson<T> {
     /// 编码取数结果。
-    pub fn new(result: Result<T, ServerFnError>) -> Self {
+    pub fn new(result: Result<T, ApiError>) -> Self {
         let text = serde_json::to_string(&result).unwrap_or_else(|err| {
-            let failed: Result<(), ServerFnError> =
-                Err(ServerFnError::Serialization(err.to_string()));
-            serde_json::to_string(&failed).expect("ServerFnError 可序列化")
+            let failed: Result<(), ApiError> = Err(ApiError::Framework(
+                ServerFnError::Serialization(err.to_string()),
+            ));
+            serde_json::to_string(&failed).expect("ApiError 可序列化")
         });
         Self {
             raw: RawJson(text),
@@ -146,7 +149,7 @@ impl<T> Clone for RouteData<T> {
 impl<T> Copy for RouteData<T> {}
 
 impl<T: DeserializeOwned + Send + 'static> IntoFuture for RouteData<T> {
-    type Output = Result<T, ServerFnError>;
+    type Output = Result<T, ApiError>;
     type IntoFuture = Pin<Box<dyn Future<Output = Self::Output> + Send>>;
 
     fn into_future(self) -> Self::IntoFuture {
@@ -155,9 +158,12 @@ impl<T: DeserializeOwned + Send + 'static> IntoFuture for RouteData<T> {
     }
 }
 
-fn decode_page_json<T: DeserializeOwned>(raw: &RawJson) -> Result<T, ServerFnError> {
-    serde_json::from_slice::<Result<T, ServerFnError>>(raw.0.as_bytes())
-        .unwrap_or_else(|err| Err(ServerFnError::Deserialization(err.to_string())))
+fn decode_page_json<T: DeserializeOwned>(raw: &RawJson) -> Result<T, ApiError> {
+    serde_json::from_slice::<Result<T, ApiError>>(raw.0.as_bytes()).unwrap_or_else(|err| {
+        Err(ApiError::Framework(ServerFnError::Deserialization(
+            err.to_string(),
+        )))
+    })
 }
 
 /// 把无参取数函数包成 `Fn(())`，与 `route_data(|| (), unit(f))` 搭配。
@@ -417,7 +423,7 @@ mod prefetch {
     }
 
     /// 错误结果的判定不反序列化具体类型，用编码格式：`PageJson::new` 编码的是
-    /// `Result<T, ServerFnError>`，外部标签格式，错误一定以 `{"Err"` 开头。
+    /// `Result<T, ApiError>`，外部标签格式，错误一定以 `{"Err"` 开头。
     pub(super) fn is_err_json(raw: &RawJson) -> bool {
         raw.0.starts_with("{\"Err\"")
     }
@@ -465,13 +471,10 @@ mod tests {
             }
         );
 
-        let missing = through_resource(PageJson::new(Err(ServerFnError::ServerError(format!(
-            "{}文章不存在",
-            crate::api::error::NOT_FOUND_PREFIX
-        )))));
-        assert!(is_not_found(
-            &decode_page_json::<Sample>(&missing).unwrap_err()
-        ));
+        let missing = through_resource(PageJson::new(Err(ApiError::NotFound("文章不存在".into()))));
+        let error = decode_page_json::<Sample>(&missing).unwrap_err();
+        assert!(matches!(&error, ApiError::NotFound(message) if message == "文章不存在"));
+        assert!(is_not_found(&error));
     }
 
     /// 编码的类型与解码期望不符时给出反序列化错误，而不是 panic。
@@ -480,7 +483,7 @@ mod tests {
         let page = PageJson::new(Ok("not a sample".to_string()));
         assert!(matches!(
             decode_page_json::<Sample>(&page.raw),
-            Err(ServerFnError::Deserialization(_))
+            Err(ApiError::Framework(ServerFnError::Deserialization(_)))
         ));
     }
 
@@ -585,7 +588,7 @@ mod tests {
             let mut waiter = store.take(KEY(), &1, 0.0).unwrap();
             let id2 = store.begin(KEY(), 2, 0.0).unwrap();
             let mut early = store.take(KEY(), &2, 0.0).unwrap();
-            let failure = PageJson::<u8>::new(Err(ServerFnError::new("x"))).raw;
+            let failure = PageJson::<u8>::new(Err(ApiError::Internal("失败".into()))).raw;
             store.complete(id, failure.clone(), 1.0);
             assert_eq!(poll(&mut waiter), Poll::Ready(failure.clone()));
             store.complete(id2, failure.clone(), 1.0);
@@ -597,7 +600,7 @@ mod tests {
             let id3 = store.begin(KEY(), 3, 0.0).unwrap();
             store.complete(
                 id3,
-                PageJson::<u8>::new(Err(ServerFnError::new("y"))).raw,
+                PageJson::<u8>::new(Err(ApiError::Internal("失败".into()))).raw,
                 1.0,
             );
             assert!(store.take(KEY(), &3, 2.0).is_none());
@@ -628,7 +631,7 @@ mod tests {
         #[test]
         fn error_encoding_is_recognised() {
             assert!(is_err_json(
-                &PageJson::<u8>::new(Err(ServerFnError::new("x"))).raw
+                &PageJson::<u8>::new(Err(ApiError::Internal("失败".into()))).raw
             ));
             assert!(!is_err_json(&PageJson::new(Ok(1u8)).raw));
         }

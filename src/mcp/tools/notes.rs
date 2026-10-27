@@ -1,5 +1,6 @@
 //! 笔记知识库。新增授权与旧文章作用域正交；写工具只更新工作稿。
 use super::common::{ok_json, require_scope};
+use crate::api::error::ApiError;
 use crate::api::notes::store::{self, Access};
 use crate::models::{
     mcp_token::{NoteGrant, TokenScope},
@@ -11,7 +12,7 @@ use rmcp::{schemars, tool, tool_router, ErrorData as McpError};
 use serde::Deserialize;
 
 fn failure(error: crate::api::error::AppError) -> McpError {
-    let error: leptos::prelude::ServerFnError = error.into();
+    let error: ApiError = error.into();
     McpError::invalid_request(error.to_string(), None)
 }
 

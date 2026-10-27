@@ -39,7 +39,7 @@ impl<T: Send + Sync + 'static> Copy for PaginatedState<T> {}
 ///   （变化时自动重新加载）。
 /// - `per_page`：每页条数。
 /// - `fetch`：接收 `(page, per_page)`，返回 `Future<Output = Result<(Vec<T>, i64), E>>`。
-///   `E: Display` 用于把错误写入 `error` 信号；`ServerFnError` 请先经
+///   `E: Display` 用于把错误写入 `error` 信号；`ApiError` 请先经
 ///   `crate::utils::error::failure_message` 映射成可读文案（UI 不得直接展示
 ///   `err.to_string()`）。`fetch` 在 Effect 内**同步**调用（返回 Future 之前的部分），
 ///   因此构造请求参数时读取的信号（筛选条件等）同样被追踪；`async` 块内的读取不追踪。

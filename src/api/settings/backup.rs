@@ -2,6 +2,7 @@
 // 提示，按项目惯例放行（限流/运行器等配置项天然参数多）。
 #![allow(clippy::unused_unit, deprecated, clippy::too_many_arguments)]
 
+use crate::api::error::ApiError;
 use leptos::prelude::*;
 
 #[cfg(feature = "server")]
@@ -182,7 +183,7 @@ async fn load_backup_settings_view(
 
 /// 读取自动备份配置（面板用）。
 #[server(GetBackupSettings, endpoint = "get_backup_settings", input = leptos::server_fn::codec::Json)]
-pub async fn get_backup_settings() -> Result<BackupSettingsView, ServerFnError> {
+pub async fn get_backup_settings() -> Result<BackupSettingsView, ApiError> {
     let _user = get_current_admin_user().await?;
 
     #[cfg(feature = "server")]
@@ -211,7 +212,7 @@ pub async fn update_backup_settings(
     time_utc: String,
     retention_count: i32,
     include_uploads: bool,
-) -> Result<BackupSettingsView, ServerFnError> {
+) -> Result<BackupSettingsView, ApiError> {
     let _user = get_current_admin_user().await?;
 
     let time_utc = BackupSettings::normalize_time_utc(&time_utc);

@@ -8,6 +8,7 @@
 //! 仅在 `feature = "server"` 启用的服务端构建中写入数据库。
 
 use crate::api::comments::types::*;
+use crate::api::error::ApiError;
 use leptos::prelude::*;
 
 /// 创建一条新评论。
@@ -24,7 +25,7 @@ pub async fn create_comment(
     author_url: Option<String>,
     content_md: String,
     honeypot: String,
-) -> Result<CommentResponse, ServerFnError> {
+) -> Result<CommentResponse, ApiError> {
     #[cfg(feature = "server")]
     {
         use crate::api::auth::get_user_by_token;
@@ -48,9 +49,7 @@ pub async fn create_comment(
         // 登录用户识别：有效会话 → 以账号身份发表（直发 approved）；
         // 匿名/会话失效 → 原审核流程。会话校验失败不报错，按匿名兜底。
         let session_user = match get_session_from_ctx() {
-            Some(token) => get_user_by_token(&token)
-                .await
-                .map_err(|e| AppError::query(std::io::Error::other(e.to_string())))?,
+            Some(token) => get_user_by_token(&token).await?,
             None => None,
         };
 

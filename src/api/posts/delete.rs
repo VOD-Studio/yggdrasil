@@ -5,6 +5,7 @@
 //! Leptos server function，注册在 `/api` 路径下。
 //! 仅在 `feature = "server"` 启用的服务端构建中执行删除与缓存失效。
 
+use crate::api::error::ApiError;
 use leptos::prelude::*;
 
 #[cfg(feature = "server")]
@@ -18,7 +19,7 @@ use super::{service, types::write_response};
 /// 仅 admin 可调用；通过设置 deleted_at 实现软删除，
 /// 成功后按影响范围失效文章列表、标签云、统计、slug 及相关标签文章缓存。
 #[server(DeletePost, endpoint = "delete_post", input = leptos::server_fn::codec::Json)]
-pub async fn delete_post(post_id: i32) -> Result<CreatePostResponse, ServerFnError> {
+pub async fn delete_post(post_id: i32) -> Result<CreatePostResponse, ApiError> {
     let _user = get_current_admin_user().await?;
     write_response(
         service::act(post_id, None, service::PostAction::Trash).await,

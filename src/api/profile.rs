@@ -13,6 +13,7 @@
 
 #![allow(clippy::unused_unit, deprecated)]
 
+use crate::api::error::ApiError;
 use leptos::prelude::*;
 
 #[cfg(feature = "server")]
@@ -98,7 +99,7 @@ fn normalize_avatar_url(input: Option<String>) -> Result<Option<String>, String>
 ///
 /// Leptos server function，注册在 `/api` 路径下。
 #[server(GetProfile, endpoint = "get_profile", input = leptos::server_fn::codec::Json)]
-pub async fn get_profile() -> Result<GetProfileResponse, ServerFnError> {
+pub async fn get_profile() -> Result<GetProfileResponse, ApiError> {
     #[cfg(feature = "server")]
     {
         let user = get_current_admin_user().await?;
@@ -121,7 +122,7 @@ pub async fn update_profile(
     email: String,
     display_name: Option<String>,
     avatar_url: Option<String>,
-) -> Result<UpdateProfileResponse, ServerFnError> {
+) -> Result<UpdateProfileResponse, ApiError> {
     #[cfg(feature = "server")]
     {
         let fail = |message: String| UpdateProfileResponse {
@@ -203,7 +204,7 @@ pub async fn update_profile(
 pub async fn change_password(
     current_password: String,
     new_password: String,
-) -> Result<ChangePasswordResponse, ServerFnError> {
+) -> Result<ChangePasswordResponse, ApiError> {
     #[cfg(feature = "server")]
     {
         // Argon2 校验是高价操作，与登录/注册同挂严格限流。

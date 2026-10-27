@@ -23,6 +23,7 @@ use percent_encoding::{utf8_percent_encode, AsciiSet, NON_ALPHANUMERIC};
 use server_status::ServerStatusTab;
 use sql_console::SqlConsoleTab;
 
+use crate::api::error::ApiError;
 use crate::components::admin_layout::AdminPageHead;
 use crate::components::forms::{FormSelect, FORM_SELECT_COMPACT_CLASS};
 use crate::components::ui::{
@@ -142,7 +143,7 @@ fn use_polled_status<T, F, Fut>(fetch: F, initial_refresh: Option<u32>) -> Polle
 where
     T: Send + Sync + 'static,
     F: Fn() -> Fut + Send + Sync + 'static,
-    Fut: Future<Output = Result<T, ServerFnError>> + 'static,
+    Fut: Future<Output = Result<T, ApiError>> + 'static,
 {
     let status = RwSignal::new(None::<T>);
     let loading = RwSignal::new(true);

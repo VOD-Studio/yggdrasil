@@ -1,5 +1,6 @@
 //! 富文本编辑器往返守卫：比较原文与编辑器往返后的 Markdown 渲染结果。
 
+use crate::api::error::ApiError;
 use leptos::prelude::*;
 
 #[cfg(feature = "server")]
@@ -12,7 +13,7 @@ use crate::api::error::AppError;
 pub async fn check_markdown_roundtrip(
     original: String,
     roundtrip: String,
-) -> Result<bool, ServerFnError> {
+) -> Result<bool, ApiError> {
     let _user = get_current_admin_user().await?;
     #[cfg(feature = "server")]
     {

@@ -13,6 +13,7 @@ use leptos_router::hooks::use_params_map;
 use leptos_router::{lazy_route, LazyRoute};
 use serde::{Deserialize, Serialize};
 
+use crate::api::error::ApiError;
 use crate::components::forms::FormInput;
 use crate::components::ui::{
     button_class, Button, ButtonSize, ButtonVariant, Icon, IconName, SegmentedControl,
@@ -97,7 +98,7 @@ fn showcase() -> &'static ShowcaseData {
 }
 
 #[server(endpoint = "get_showcase_data", input = leptos::server_fn::codec::Json)]
-pub(crate) async fn get_showcase_data() -> Result<ShowcaseData, ServerFnError> {
+pub(crate) async fn get_showcase_data() -> Result<ShowcaseData, ApiError> {
     Ok(SHOWCASE.clone())
 }
 

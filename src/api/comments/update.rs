@@ -5,13 +5,14 @@
 //! 仅在 `feature = "server"` 启用的服务端构建中写入数据库。
 
 use crate::api::comments::types::*;
+use crate::api::error::ApiError;
 use leptos::prelude::*;
 
 /// 通过指定评论。
 ///
 /// 同时递归将该评论的所有 pending 父评论一并通过，确保嵌套链可见。
 #[server(ApproveComment, endpoint = "approve_comment", input = leptos::server_fn::codec::Json)]
-pub async fn approve_comment(id: i64) -> Result<CommentResponse, ServerFnError> {
+pub async fn approve_comment(id: i64) -> Result<CommentResponse, ApiError> {
     #[cfg(feature = "server")]
     {
         use crate::api::auth::get_current_admin_user;
@@ -34,7 +35,7 @@ pub async fn approve_comment(id: i64) -> Result<CommentResponse, ServerFnError> 
 ///
 /// 若原状态为 approved，则需要清空该文章相关缓存。
 #[server(SpamComment, endpoint = "spam_comment", input = leptos::server_fn::codec::Json)]
-pub async fn spam_comment(id: i64) -> Result<CommentResponse, ServerFnError> {
+pub async fn spam_comment(id: i64) -> Result<CommentResponse, ApiError> {
     #[cfg(feature = "server")]
     {
         use crate::api::auth::get_current_admin_user;
@@ -52,7 +53,7 @@ pub async fn spam_comment(id: i64) -> Result<CommentResponse, ServerFnError> {
 ///
 /// 软删除会设置 deleted_at 与状态为 trash，并清空相关缓存。
 #[server(TrashComment, endpoint = "trash_comment", input = leptos::server_fn::codec::Json)]
-pub async fn trash_comment(id: i64) -> Result<CommentResponse, ServerFnError> {
+pub async fn trash_comment(id: i64) -> Result<CommentResponse, ApiError> {
     #[cfg(feature = "server")]
     {
         use crate::api::auth::get_current_admin_user;
@@ -74,7 +75,7 @@ pub async fn trash_comment(id: i64) -> Result<CommentResponse, ServerFnError> {
 pub async fn batch_update_comment_status(
     ids: Vec<i64>,
     status: String,
-) -> Result<BatchStatusResponse, ServerFnError> {
+) -> Result<BatchStatusResponse, ApiError> {
     #[cfg(feature = "server")]
     {
         use crate::api::auth::get_current_admin_user;
@@ -151,7 +152,7 @@ pub async fn batch_update_comment_status(
 
 /// 从回收站恢复评论：清除软删除并回到待审，由管理员重新决定是否通过。
 #[server(RestoreComments, endpoint = "restore_comments", input = leptos::server_fn::codec::Json)]
-pub async fn restore_comments(ids: Vec<i64>) -> Result<BatchStatusResponse, ServerFnError> {
+pub async fn restore_comments(ids: Vec<i64>) -> Result<BatchStatusResponse, ApiError> {
     #[cfg(feature = "server")]
     {
         use crate::api::auth::get_current_admin_user;

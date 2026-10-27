@@ -13,6 +13,7 @@ use leptos::prelude::*;
 use leptos_router::components::Outlet;
 use leptos_router::hooks::use_location;
 
+use crate::api::error::ApiError;
 use crate::components::footer::Footer;
 use crate::components::header::{Header, SearchIconLink};
 use crate::components::nav::build_nav_items;
@@ -33,7 +34,7 @@ use crate::pages::not_found::{NotFound, PageLoadFailed};
 use crate::route_prefetch::{match_route, RouteTarget};
 use crate::routes::{is_post_path, is_showcase_path};
 use crate::theme::ThemeToggle;
-use crate::utils::error::is_not_found_text;
+use crate::utils::error::is_not_found;
 
 /// 路径对应的骨架屏种类。
 ///
@@ -163,17 +164,15 @@ fn main_width_class(path: &str) -> &'static str {
     }
 }
 
-/// 路由内容渲染出错时的兜底：错误文本表示“不存在”则显示 404，其余显示“页面加载失败”。
+/// 路由内容渲染出错时按错误类型兜底，不解析展示文本。
 fn route_error_fallback(errors: ArcRwSignal<Errors>) -> impl IntoView {
     move || {
-        let text = errors.with(|errors| {
+        let missing = errors.with(|errors| {
             errors
                 .iter()
-                .map(|(_, error)| error.to_string())
-                .collect::<Vec<_>>()
-                .join("\n")
+                .any(|(_, error)| error.downcast_ref::<ApiError>().is_some_and(is_not_found))
         });
-        if is_not_found_text(&text) {
+        if missing {
             view! { <NotFound/> }.into_any()
         } else {
             view! { <PageLoadFailed/> }.into_any()
@@ -302,6 +301,29 @@ pub(crate) fn FrontendShell(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn error_boundary_does_not_turn_message_text_into_a_404() {
+        for (error, missing) in [
+            (ApiError::NotFound("文章不存在".into()), true),
+            (ApiError::BadRequest("not_found:业务拒绝".into()), false),
+            (ApiError::Internal("not_found".into()), false),
+        ] {
+            let html = Owner::new().with(|| {
+                provide_context(leptos_router::location::RequestUrl::new("/"));
+                view! {
+                    <leptos_router::components::Router>
+                        <ErrorBoundary fallback=route_error_fallback>
+                            {Err::<(), _>(error)}
+                        </ErrorBoundary>
+                    </leptos_router::components::Router>
+                }
+                .to_html()
+            });
+            assert_eq!(html.contains("这个页面不存在"), missing);
+            assert_eq!(html.contains("页面加载失败"), !missing);
+        }
+    }
 
     #[test]
     fn skeleton_kind_matches_base_route_mapping() {

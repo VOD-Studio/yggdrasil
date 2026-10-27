@@ -3,6 +3,7 @@
 //! 用于前端轮询刚刚提交的评论是否已通过审核，支持传入多个 id。
 //! 仅在 `feature = "server"` 启用的服务端构建中查询数据库。
 
+use crate::api::error::ApiError;
 use leptos::prelude::*;
 
 /// 单个评论的待审核状态结果。
@@ -19,7 +20,7 @@ pub struct PendingStatusItem {
 /// 如果某 id 不存在，则返回状态 `"gone"`。
 /// Leptos server function，注册在 `/api` 路径下。
 #[server(CheckPendingStatus, endpoint = "check_pending_status", input = leptos::server_fn::codec::Json)]
-pub async fn check_pending_status(ids: Vec<i64>) -> Result<Vec<PendingStatusItem>, ServerFnError> {
+pub async fn check_pending_status(ids: Vec<i64>) -> Result<Vec<PendingStatusItem>, ApiError> {
     // 仅在服务端构建中执行 SQL 查询。
     #[cfg(feature = "server")]
     {
@@ -41,7 +42,7 @@ pub async fn check_pending_status(ids: Vec<i64>) -> Result<Vec<PendingStatusItem
         if let Some(headers) = crate::request_ctx::request_headers() {
             let ip = crate::api::rate_limit::get_client_ip(&headers).await;
             if let Err(_msg) = crate::api::rate_limit::check_strict_limit(&ip) {
-                return Err(ServerFnError::new("请求过于频繁，请稍后再试"));
+                return Err(ApiError::BadRequest("请求过于频繁，请稍后再试".into()));
             }
         }
 

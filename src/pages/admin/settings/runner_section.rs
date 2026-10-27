@@ -6,11 +6,12 @@ use leptos::prelude::*;
 
 use super::kit::{use_section, SettingRow, SettingsCard, SwitchRow};
 use super::SettingsSection;
+use crate::api::error::ApiError;
 use crate::api::settings::{get_runner_settings, update_runner_settings};
 use crate::components::forms::{FormInput, NumberInput};
 use crate::models::settings::RunnerSettings;
 
-async fn save(d: RunnerSettings) -> Result<RunnerSettings, ServerFnError> {
+async fn save(d: RunnerSettings) -> Result<RunnerSettings, ApiError> {
     update_runner_settings(
         d.allow_network,
         d.max_concurrent,

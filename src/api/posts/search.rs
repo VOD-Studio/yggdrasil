@@ -7,6 +7,7 @@
 //! Leptos server function，注册在 `/api` 路径下。
 //! 仅在 `feature = "server"` 启用的服务端构建中查询数据库。
 
+use crate::api::error::ApiError;
 use leptos::prelude::*;
 
 #[cfg(feature = "server")]
@@ -24,7 +25,7 @@ use crate::db::pool::get_conn;
 /// 空查询直接返回空结果；非空查询使用 `word_similarity` 计算相关度，
 /// 并限制返回 50 条记录。结果写入短 TTL 内存缓存以减轻 DB 压力。
 #[server(SearchPosts, endpoint = "search_posts", input = leptos::server_fn::codec::Json)]
-pub async fn search_posts(query: String) -> Result<PostListResponse, ServerFnError> {
+pub async fn search_posts(query: String) -> Result<PostListResponse, ApiError> {
     #[cfg(feature = "server")]
     {
         use crate::api::rate_limit;

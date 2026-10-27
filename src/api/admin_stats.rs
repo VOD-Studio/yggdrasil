@@ -6,6 +6,7 @@
 // 与 settings 等模块一致：Leptos `#[server]` 宏触发 deprecated/unit 提示，按项目惯例放行。
 #![allow(clippy::unused_unit, deprecated)]
 
+use crate::api::error::ApiError;
 use leptos::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -24,7 +25,7 @@ pub struct AdminNavCounts {
 
 /// 获取侧栏数量。需要 admin 权限。
 #[server(GetAdminNavCounts, endpoint = "get_admin_nav_counts", input = leptos::server_fn::codec::Json)]
-pub async fn get_admin_nav_counts() -> Result<AdminNavCounts, ServerFnError> {
+pub async fn get_admin_nav_counts() -> Result<AdminNavCounts, ApiError> {
     #[cfg(feature = "server")]
     {
         use crate::api::error::AppError;

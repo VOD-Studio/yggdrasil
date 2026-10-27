@@ -7,12 +7,13 @@ use leptos::prelude::*;
 
 use super::kit::{use_section, SettingRow, SettingsCard, SwitchRow};
 use super::SettingsSection;
+use crate::api::error::ApiError;
 use crate::api::settings::{get_security_settings, update_security_settings};
 use crate::components::forms::{FormInput, FormSelect, FORM_SELECT_COMPACT_CLASS};
 use crate::components::ui::{SegmentedControl, SegmentedItem, SegmentedKind, SegmentedSize};
 use crate::models::settings::SecuritySettings;
 
-async fn save(d: SecuritySettings) -> Result<SecuritySettings, ServerFnError> {
+async fn save(d: SecuritySettings) -> Result<SecuritySettings, ApiError> {
     update_security_settings(
         d.app_base_url,
         d.cookie_secure,

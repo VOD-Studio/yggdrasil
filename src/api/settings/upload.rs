@@ -2,6 +2,7 @@
 // 提示，按项目惯例放行（限流/运行器等配置项天然参数多）。
 #![allow(clippy::unused_unit, deprecated, clippy::too_many_arguments)]
 
+use crate::api::error::ApiError;
 use leptos::prelude::*;
 
 #[cfg(feature = "server")]
@@ -42,7 +43,7 @@ pub(crate) async fn seed_upload_settings_from_env(
 ///
 /// settings 表缺失键时回退到默认值，保证向后兼容。
 #[server(GetUploadSettings, endpoint = "get_upload_settings", input = leptos::server_fn::codec::Json)]
-pub async fn get_upload_settings() -> Result<UploadSettings, ServerFnError> {
+pub async fn get_upload_settings() -> Result<UploadSettings, ApiError> {
     let _user = get_current_admin_user().await?;
 
     #[cfg(feature = "server")]
@@ -70,7 +71,7 @@ pub async fn get_upload_settings() -> Result<UploadSettings, ServerFnError> {
 ///
 /// concurrency 会被 clamp 到合法范围后写入。
 #[server(UpdateUploadSettings, endpoint = "update_upload_settings", input = leptos::server_fn::codec::Json)]
-pub async fn update_upload_settings(concurrency: i32) -> Result<UploadSettings, ServerFnError> {
+pub async fn update_upload_settings(concurrency: i32) -> Result<UploadSettings, ApiError> {
     let _user = get_current_admin_user().await?;
 
     let concurrency = UploadSettings::clamp_concurrency(concurrency);

@@ -11,6 +11,7 @@
 // 与 settings 模块一致：Leptos `#[server]` 宏触发 deprecated/unit 提示，按项目惯例放行。
 #![allow(clippy::unused_unit, deprecated)]
 
+use crate::api::error::ApiError;
 use leptos::prelude::*;
 
 #[cfg(feature = "server")]
@@ -123,7 +124,7 @@ pub async fn get_logs(
     query: Option<String>,
     before_id: Option<i64>,
     limit: i32,
-) -> Result<LogsPage, ServerFnError> {
+) -> Result<LogsPage, ApiError> {
     let _user = get_current_admin_user().await?;
 
     #[cfg(feature = "server")]
@@ -195,7 +196,7 @@ pub async fn export_logs(
     levels: Vec<String>,
     target: Option<String>,
     query: Option<String>,
-) -> Result<String, ServerFnError> {
+) -> Result<String, ApiError> {
     let _user = get_current_admin_user().await?;
 
     #[cfg(feature = "server")]
@@ -247,7 +248,7 @@ pub async fn export_logs(
 ///
 /// 走 moka 缓存（60s TTL）：DISTINCT 全表扫在日志表上不值得每开页面跑一次。
 #[server(GetLogTargets, endpoint = "get_log_targets", input = leptos::server_fn::codec::Json)]
-pub async fn get_log_targets() -> Result<Vec<String>, ServerFnError> {
+pub async fn get_log_targets() -> Result<Vec<String>, ApiError> {
     let _user = get_current_admin_user().await?;
 
     #[cfg(feature = "server")]
@@ -275,7 +276,7 @@ pub async fn get_log_targets() -> Result<Vec<String>, ServerFnError> {
 ///
 /// settings 表缺失键时回退到默认值，保证向后兼容（trash 模式，不做 env 播种）。
 #[server(GetLogSettings, endpoint = "get_log_settings", input = leptos::server_fn::codec::Json)]
-pub async fn get_log_settings() -> Result<LogSettings, ServerFnError> {
+pub async fn get_log_settings() -> Result<LogSettings, ApiError> {
     let _user = get_current_admin_user().await?;
 
     #[cfg(feature = "server")]
@@ -321,7 +322,7 @@ pub async fn get_log_settings() -> Result<LogSettings, ServerFnError> {
 pub async fn update_log_settings(
     retention_days: i32,
     max_rows: i32,
-) -> Result<LogSettings, ServerFnError> {
+) -> Result<LogSettings, ApiError> {
     let _user = get_current_admin_user().await?;
 
     let retention_days = LogSettings::clamp_retention(retention_days);

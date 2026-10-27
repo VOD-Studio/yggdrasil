@@ -6,6 +6,7 @@ use leptos::prelude::*;
 
 use super::kit::{use_section, SettingRow, SettingsCard};
 use super::SettingsSection;
+use crate::api::error::ApiError;
 use crate::api::settings::{
     get_image_limit_settings, get_webp_settings, update_image_limit_settings, update_webp_settings,
 };
@@ -20,14 +21,14 @@ struct ImageDraft {
     limit: ImageLimitSettings,
 }
 
-async fn load() -> Result<ImageDraft, ServerFnError> {
+async fn load() -> Result<ImageDraft, ApiError> {
     Ok(ImageDraft {
         webp: get_webp_settings().await?,
         limit: get_image_limit_settings().await?,
     })
 }
 
-async fn save(d: ImageDraft) -> Result<ImageDraft, ServerFnError> {
+async fn save(d: ImageDraft) -> Result<ImageDraft, ApiError> {
     Ok(ImageDraft {
         webp: update_webp_settings(d.webp.quality, d.webp.method).await?,
         limit: update_image_limit_settings(

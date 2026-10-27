@@ -5,6 +5,7 @@
 //! Leptos server function，注册在 `/api` 路径下。
 //! 仅在 `feature = "server"` 启用的服务端构建中执行数据库操作。
 
+use crate::api::error::ApiError;
 use leptos::prelude::*;
 
 #[cfg(feature = "server")]
@@ -26,7 +27,7 @@ const PRECISE_INVALIDATION_LIMIT: usize = 50;
 ///
 /// 若该文章原始 slug 已被其他未删除文章占用，自动追加数字后缀。
 #[server(RestorePost, endpoint = "restore_post", input = leptos::server_fn::codec::Json)]
-pub async fn restore_post(post_id: i32) -> Result<CreatePostResponse, ServerFnError> {
+pub async fn restore_post(post_id: i32) -> Result<CreatePostResponse, ApiError> {
     let _user = get_current_admin_user().await?;
 
     restore_post_impl(post_id, None).await
@@ -37,7 +38,7 @@ pub async fn restore_post(post_id: i32) -> Result<CreatePostResponse, ServerFnEr
 pub(crate) async fn restore_post_impl(
     post_id: i32,
     author_id: Option<i32>,
-) -> Result<CreatePostResponse, ServerFnError> {
+) -> Result<CreatePostResponse, ApiError> {
     let mut client = get_conn().await.map_err(AppError::db_conn)?;
     let tx = client.transaction().await.map_err(AppError::tx)?;
 
@@ -92,7 +93,7 @@ pub(crate) async fn restore_post_impl(
 /// 注意：仅删除数据库记录，不删除已上传的图片文件。
 /// post_tags 关联因外键 ON DELETE CASCADE 自动清理。
 #[server(PurgePost, endpoint = "purge_post", input = leptos::server_fn::codec::Json)]
-pub async fn purge_post(post_id: i32) -> Result<CreatePostResponse, ServerFnError> {
+pub async fn purge_post(post_id: i32) -> Result<CreatePostResponse, ApiError> {
     let _user = get_current_admin_user().await?;
 
     super::types::write_response(
@@ -103,7 +104,7 @@ pub async fn purge_post(post_id: i32) -> Result<CreatePostResponse, ServerFnErro
 
 /// 批量恢复文章。
 #[server(BatchRestorePosts, endpoint = "batch_restore_posts", input = leptos::server_fn::codec::Json)]
-pub async fn batch_restore_posts(post_ids: Vec<i32>) -> Result<CreatePostResponse, ServerFnError> {
+pub async fn batch_restore_posts(post_ids: Vec<i32>) -> Result<CreatePostResponse, ApiError> {
     let _user = get_current_admin_user().await?;
 
     #[cfg(feature = "server")]
@@ -188,7 +189,7 @@ pub async fn batch_restore_posts(post_ids: Vec<i32>) -> Result<CreatePostRespons
 
 /// 批量彻底删除文章。
 #[server(BatchPurgePosts, endpoint = "batch_purge_posts", input = leptos::server_fn::codec::Json)]
-pub async fn batch_purge_posts(post_ids: Vec<i32>) -> Result<CreatePostResponse, ServerFnError> {
+pub async fn batch_purge_posts(post_ids: Vec<i32>) -> Result<CreatePostResponse, ApiError> {
     let _user = get_current_admin_user().await?;
 
     #[cfg(feature = "server")]
@@ -265,7 +266,7 @@ pub async fn batch_purge_posts(post_ids: Vec<i32>) -> Result<CreatePostResponse,
 
 /// 清空回收站：彻底删除所有已软删除的文章。
 #[server(EmptyTrash, endpoint = "empty_trash", input = leptos::server_fn::codec::Json)]
-pub async fn empty_trash() -> Result<CreatePostResponse, ServerFnError> {
+pub async fn empty_trash() -> Result<CreatePostResponse, ApiError> {
     let _user = get_current_admin_user().await?;
 
     #[cfg(feature = "server")]

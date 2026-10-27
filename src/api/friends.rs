@@ -9,6 +9,7 @@
 
 #![allow(clippy::unused_unit, deprecated)]
 
+use crate::api::error::ApiError;
 use leptos::prelude::*;
 
 use crate::models::friend_link::FriendLink;
@@ -20,7 +21,7 @@ use crate::api::error::AppError;
 ///
 /// 缓存命中直返；未命中查询 `friend_links` 活跃行后写缓存。公开接口，无需登录。
 #[server(ListFriendLinks, endpoint = "list_friend_links", input = leptos::server_fn::codec::Json)]
-pub async fn list_friend_links() -> Result<Vec<FriendLink>, ServerFnError> {
+pub async fn list_friend_links() -> Result<Vec<FriendLink>, ApiError> {
     #[cfg(feature = "server")]
     {
         use crate::api::error::AppError;
@@ -52,7 +53,7 @@ pub async fn list_friend_links() -> Result<Vec<FriendLink>, ServerFnError> {
 
 /// 后台友链列表（含停用项，按 sort_order 升序）。仅 admin。
 #[server(ListAllFriendLinks, endpoint = "list_all_friend_links", input = leptos::server_fn::codec::Json)]
-pub async fn list_all_friend_links() -> Result<Vec<FriendLink>, ServerFnError> {
+pub async fn list_all_friend_links() -> Result<Vec<FriendLink>, ApiError> {
     #[cfg(feature = "server")]
     {
         use crate::api::auth::get_current_admin_user;
@@ -88,7 +89,7 @@ pub async fn create_friend_link(
     avatar_url: Option<String>,
     description: String,
     sort_order: i32,
-) -> Result<FriendLink, ServerFnError> {
+) -> Result<FriendLink, ApiError> {
     #[cfg(feature = "server")]
     {
         use crate::api::auth::get_current_admin_user;
@@ -130,7 +131,7 @@ pub async fn update_friend_link(
     description: String,
     sort_order: i32,
     is_active: bool,
-) -> Result<FriendLink, ServerFnError> {
+) -> Result<FriendLink, ApiError> {
     #[cfg(feature = "server")]
     {
         use crate::api::auth::get_current_admin_user;
@@ -176,7 +177,7 @@ pub async fn update_friend_link(
 ///
 /// id 不存在时静默成功（幂等删除），成功后失效缓存与 SSR。
 #[server(DeleteFriendLink, endpoint = "delete_friend_link", input = leptos::server_fn::codec::Json)]
-pub async fn delete_friend_link(id: i32) -> Result<(), ServerFnError> {
+pub async fn delete_friend_link(id: i32) -> Result<(), ApiError> {
     #[cfg(feature = "server")]
     {
         use crate::api::auth::get_current_admin_user;

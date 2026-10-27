@@ -4,6 +4,7 @@
 //! Leptos server function，注册在 `/api` 路径下。
 //! 仅在 `feature = "server"` 启用的服务端构建中查询数据库。
 
+use crate::api::error::ApiError;
 use leptos::prelude::*;
 
 use super::types::TagListResponse;
@@ -18,7 +19,7 @@ use crate::models::post::Tag;
 ///
 /// 优先命中缓存；未命中时聚合每个标签关联的已发布文章数量，并按标签名升序排列。
 #[server(ListTags, endpoint = "list_tags", input = leptos::server_fn::codec::Json)]
-pub async fn list_tags() -> Result<TagListResponse, ServerFnError> {
+pub async fn list_tags() -> Result<TagListResponse, ApiError> {
     #[cfg(feature = "server")]
     {
         if let Some(cached) = crate::cache::get_tag_list().await {

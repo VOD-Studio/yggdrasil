@@ -9,6 +9,7 @@
 
 #![allow(clippy::unused_unit, deprecated)]
 
+use crate::api::error::ApiError;
 #[cfg(feature = "server")]
 use http::header::{HeaderValue, SET_COOKIE};
 use leptos::prelude::*;
@@ -82,7 +83,7 @@ pub async fn register(
     username: String,
     email: String,
     password: String,
-) -> Result<AuthResponse, ServerFnError> {
+) -> Result<AuthResponse, ApiError> {
     // 服务端构建时先进行严格限流检查。
     #[cfg(feature = "server")]
     {
@@ -179,7 +180,7 @@ pub async fn register(
 /// 同一用户活跃会话数超过 `MAX_SESSIONS_PER_USER` 时删除最早会话。
 /// Leptos server function，注册在 `/api` 路径下。
 #[server(Login, endpoint = "login", input = leptos::server_fn::codec::Json)]
-pub async fn login(username: String, password: String) -> Result<AuthResponse, ServerFnError> {
+pub async fn login(username: String, password: String) -> Result<AuthResponse, ApiError> {
     // 服务端构建时先进行严格限流检查。
     #[cfg(feature = "server")]
     {
@@ -333,7 +334,7 @@ pub async fn login(username: String, password: String) -> Result<AuthResponse, S
 /// 清空客户端 session Cookie，并删除数据库中对应会话记录。
 /// Leptos server function，注册在 `/api` 路径下。
 #[server(Logout, endpoint = "logout", input = leptos::server_fn::codec::Json)]
-pub async fn logout() -> Result<AuthResponse, ServerFnError> {
+pub async fn logout() -> Result<AuthResponse, ApiError> {
     let token = get_session_from_ctx();
 
     let client = get_conn().await.map_err(AppError::db_conn)?;
@@ -380,7 +381,7 @@ pub struct CurrentUserResponse {
 /// 缓存命中与未命中两条路径都校验 `sessions.expires_at`、用户角色，以及
 /// `sessions.generation`（签发快照）与 `users.session_generation`（当前值）是否一致，
 /// 确保过期、撤销、改密或被封禁的会话不会继续有效。
-pub async fn get_user_by_token(token: &str) -> Result<Option<SessionUser>, ServerFnError> {
+pub async fn get_user_by_token(token: &str) -> Result<Option<SessionUser>, ApiError> {
     let token_hash = session::hash_token(token);
 
     if let Some(cached) = crate::cache::get_session_user(&token_hash).await {
@@ -462,7 +463,7 @@ pub async fn get_user_by_token(token: &str) -> Result<Option<SessionUser>, Serve
 ///
 /// Leptos server function，注册在 `/api` 路径下。
 #[server(GetCurrentUser, endpoint = "get_current_user", input = leptos::server_fn::codec::Json)]
-pub async fn get_current_user() -> Result<CurrentUserResponse, ServerFnError> {
+pub async fn get_current_user() -> Result<CurrentUserResponse, ApiError> {
     let token = match get_session_from_ctx() {
         Some(t) => t,
         None => return Ok(CurrentUserResponse { user: None }),
@@ -477,16 +478,15 @@ pub async fn get_current_user() -> Result<CurrentUserResponse, ServerFnError> {
 /// 获取当前登录用户并要求其为 admin，否则返回 401/403。
 ///
 /// 供其它服务端接口内部调用。
-pub async fn get_current_admin_user() -> Result<SessionUser, AppError> {
-    let token = get_session_from_ctx().ok_or(AppError::Unauthorized("未登录"))?;
+pub async fn get_current_admin_user() -> Result<SessionUser, ApiError> {
+    let token = get_session_from_ctx().ok_or_else(|| ApiError::Unauthorized("未登录".into()))?;
 
     let session_user = get_user_by_token(&token)
-        .await
-        .map_err(|e| AppError::query(std::io::Error::other(e.to_string())))?
-        .ok_or(AppError::Unauthorized("会话已过期"))?;
+        .await?
+        .ok_or_else(|| ApiError::Unauthorized("会话已过期".into()))?;
 
     if session_user.role != UserRole::Admin {
-        return Err(AppError::Forbidden("权限不足"));
+        return Err(ApiError::Forbidden("权限不足".into()));
     }
 
     Ok(session_user)

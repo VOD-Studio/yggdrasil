@@ -2,6 +2,7 @@
 // 提示，按项目惯例放行（限流/运行器等配置项天然参数多）。
 #![allow(clippy::unused_unit, deprecated, clippy::too_many_arguments)]
 
+use crate::api::error::ApiError;
 use leptos::prelude::*;
 
 #[cfg(feature = "server")]
@@ -100,7 +101,7 @@ pub(crate) async fn load_image_limit_settings(
 
 /// 读取图片尺寸限制配置（面板用）。
 #[server(GetImageLimitSettings, endpoint = "get_image_limit_settings", input = leptos::server_fn::codec::Json)]
-pub async fn get_image_limit_settings() -> Result<ImageLimitSettings, ServerFnError> {
+pub async fn get_image_limit_settings() -> Result<ImageLimitSettings, ApiError> {
     let _user = get_current_admin_user().await?;
 
     #[cfg(feature = "server")]
@@ -108,7 +109,7 @@ pub async fn get_image_limit_settings() -> Result<ImageLimitSettings, ServerFnEr
         let client = get_conn().await.map_err(AppError::db_conn)?;
         let s = load_image_limit_settings(&client)
             .await
-            .map_err(<ServerFnError>::from)?;
+            .map_err(<ApiError>::from)?;
         Ok(s)
     }
 
@@ -126,7 +127,7 @@ pub async fn update_image_limit_settings(
     max_dimension: u32,
     max_pixels: u64,
     dimensions_cache_ttl_secs: u64,
-) -> Result<ImageLimitSettings, ServerFnError> {
+) -> Result<ImageLimitSettings, ApiError> {
     let _user = get_current_admin_user().await?;
 
     let max_dimension = ImageLimitSettings::clamp_max_dimension(max_dimension);

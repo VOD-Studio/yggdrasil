@@ -17,6 +17,7 @@ use leptos_meta::Title;
 use leptos_router::hooks::{use_params_map, use_query_map};
 use leptos_router::{lazy_route, LazyRoute};
 
+use crate::api::error::ApiError;
 use crate::api::notes::{get_note, get_note_context, list_notebooks, list_notes, note_stats};
 use crate::components::empty_state::{EmptyState, EmptyStateAction};
 use crate::components::post::post_content::PostContent;
@@ -215,7 +216,7 @@ impl NotesRoute {
 #[derive(Clone)]
 struct ShownNotes {
     filter: NoteFilter,
-    result: Result<NotePage, ServerFnError>,
+    result: Result<NotePage, ApiError>,
 }
 
 /// 首屏随 SSR 预取挂载；之后的筛选切换在后台请求，结果返回前继续显示当前列表。
@@ -225,7 +226,7 @@ struct ShownNotes {
 /// 返回当前显示的列表、重试回调与「重试中」标志。
 fn use_note_page(
     filter: RwSignal<NoteFilter>,
-    first: Result<NotePage, ServerFnError>,
+    first: Result<NotePage, ApiError>,
 ) -> (RwSignal<ShownNotes>, Callback<()>, RwSignal<bool>) {
     let first_filter = first_filter();
     let shown = RwSignal::new(ShownNotes {
@@ -294,7 +295,7 @@ struct OlderPages {
 fn NotesBody(
     books: Vec<Notebook>,
     stats: Option<NoteStats>,
-    first: Result<NotePage, ServerFnError>,
+    first: Result<NotePage, ApiError>,
 ) -> impl IntoView {
     let entry_id = crate::bridges::navigation::entry_id();
     // 首帧与服务端一致用默认筛选；历史记录里保存的筛选在挂载后恢复。
@@ -944,8 +945,8 @@ impl NotebookRoute {
 #[component]
 fn NotebookPage(
     id: i32,
-    books: Result<Vec<Notebook>, ServerFnError>,
-    notes: Result<NotePage, ServerFnError>,
+    books: Result<Vec<Notebook>, ApiError>,
+    notes: Result<NotePage, ApiError>,
 ) -> impl IntoView {
     let books = RwSignal::new(books);
     let notes = RwSignal::new(notes);
@@ -994,7 +995,7 @@ fn NotebookContent(
     id: i32,
     book: Notebook,
     others: Vec<Notebook>,
-    notes: RwSignal<Result<NotePage, ServerFnError>>,
+    notes: RwSignal<Result<NotePage, ApiError>>,
 ) -> impl IntoView {
     let older = RwSignal::new(Vec::<Note>::new());
     let next_page = RwSignal::new(2_i32);

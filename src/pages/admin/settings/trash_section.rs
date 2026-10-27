@@ -6,11 +6,12 @@ use leptos::prelude::*;
 
 use super::kit::{use_section, SettingRow, SettingsCard, SwitchRow};
 use super::SettingsSection;
+use crate::api::error::ApiError;
 use crate::api::settings::{get_trash_settings, update_trash_settings};
 use crate::components::forms::NumberInput;
 use crate::models::settings::TrashSettings;
 
-async fn save(d: TrashSettings) -> Result<TrashSettings, ServerFnError> {
+async fn save(d: TrashSettings) -> Result<TrashSettings, ApiError> {
     update_trash_settings(d.auto_purge_enabled, d.retention_days).await
 }
 

@@ -10,6 +10,7 @@
 
 #![allow(clippy::unused_unit, deprecated)]
 
+use crate::api::error::ApiError;
 use leptos::prelude::*;
 
 #[cfg(feature = "server")]
@@ -60,7 +61,7 @@ pub async fn create_mcp_token(
     scope: TokenScope,
     lifetime: TokenLifetime,
     notes: Option<crate::models::mcp_token::NoteGrant>,
-) -> Result<CreateTokenResponse, ServerFnError> {
+) -> Result<CreateTokenResponse, ApiError> {
     #[cfg(feature = "server")]
     {
         use crate::api::auth::get_current_admin_user;
@@ -124,7 +125,7 @@ pub async fn update_mcp_token_permissions(
     id: String,
     scope: TokenScope,
     notes: NoteGrant,
-) -> Result<(), ServerFnError> {
+) -> Result<(), ApiError> {
     let admin = crate::api::auth::get_current_admin_user().await?;
     let client = crate::db::pool::get_conn()
         .await
@@ -356,7 +357,7 @@ mod permission_tests {
 ///
 /// 按 `created_at DESC` 排序，最近签发的在前。仅 admin。
 #[server(ListMcpTokens, endpoint = "list_mcp_tokens", input = leptos::server_fn::codec::Json)]
-pub async fn list_mcp_tokens() -> Result<Vec<McpTokenSummary>, ServerFnError> {
+pub async fn list_mcp_tokens() -> Result<Vec<McpTokenSummary>, ApiError> {
     #[cfg(feature = "server")]
     {
         use crate::api::auth::get_current_admin_user;
@@ -393,7 +394,7 @@ pub async fn list_mcp_tokens() -> Result<Vec<McpTokenSummary>, ServerFnError> {
 /// 找不到令牌、或令牌不属于当前管理员 → 返回 `None`（不区分原因，避免探测）。
 /// 仅 admin。
 #[server(RevealMcpToken, endpoint = "reveal_mcp_token", input = leptos::server_fn::codec::Json)]
-pub async fn reveal_mcp_token(id: String) -> Result<Option<String>, ServerFnError> {
+pub async fn reveal_mcp_token(id: String) -> Result<Option<String>, ApiError> {
     #[cfg(feature = "server")]
     {
         use crate::api::auth::get_current_admin_user;
@@ -433,7 +434,7 @@ pub async fn reveal_mcp_token(id: String) -> Result<Option<String>, ServerFnErro
 ///
 /// 找不到或非本人令牌 → 静默无操作（不报错，避免探测）。仅 admin。
 #[server(RevokeMcpToken, endpoint = "revoke_mcp_token", input = leptos::server_fn::codec::Json)]
-pub async fn revoke_mcp_token(id: String) -> Result<(), ServerFnError> {
+pub async fn revoke_mcp_token(id: String) -> Result<(), ApiError> {
     #[cfg(feature = "server")]
     {
         use crate::api::auth::get_current_admin_user;
@@ -542,7 +543,7 @@ pub struct McpClientConfigs {
 /// 配置生成与高亮均在服务端完成（`crate::mcp::config` / `crate::highlight` 均为
 /// server-only），返回给前端展示。`APP_BASE_URL` 环境变量也只在服务端读取。仅 admin。
 #[server(GetMcpClientConfigs, endpoint = "get_mcp_client_configs", input = leptos::server_fn::codec::Json)]
-pub async fn get_mcp_client_configs(token: String) -> Result<McpClientConfigs, ServerFnError> {
+pub async fn get_mcp_client_configs(token: String) -> Result<McpClientConfigs, ApiError> {
     #[cfg(feature = "server")]
     {
         use crate::api::auth::get_current_admin_user;

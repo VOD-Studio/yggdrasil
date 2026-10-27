@@ -4,6 +4,7 @@
 //! 仅在 `feature = "server"` 启用的服务端构建中查询数据库。
 
 use crate::api::comments::types::*;
+use crate::api::error::ApiError;
 use leptos::prelude::*;
 
 /// 获取全部评论分页列表。
@@ -14,7 +15,7 @@ use leptos::prelude::*;
 pub async fn get_all_comments(
     page: i32,
     status: Option<String>,
-) -> Result<AllCommentsResponse, ServerFnError> {
+) -> Result<AllCommentsResponse, ApiError> {
     #[cfg(feature = "server")]
     {
         use crate::api::auth::get_current_admin_user;

@@ -2,6 +2,7 @@
 // 提示，按项目惯例放行（限流/运行器等配置项天然参数多）。
 #![allow(clippy::unused_unit, deprecated, clippy::too_many_arguments)]
 
+use crate::api::error::ApiError;
 use leptos::prelude::*;
 
 #[cfg(feature = "server")]
@@ -16,7 +17,7 @@ use crate::models::settings::SystemInfo;
 ///
 /// 这些值在进程启动时读取，不可运行时修改。密钥类仅展示是否已设置。
 #[server(GetSystemInfo, endpoint = "get_system_info", input = leptos::server_fn::codec::Json)]
-pub async fn get_system_info() -> Result<SystemInfo, ServerFnError> {
+pub async fn get_system_info() -> Result<SystemInfo, ApiError> {
     let _user = get_current_admin_user().await?;
 
     #[cfg(feature = "server")]

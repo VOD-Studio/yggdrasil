@@ -10,6 +10,7 @@ use leptos::prelude::*;
 use leptos_meta::Title;
 use leptos_router::{lazy_route, LazyRoute};
 
+use crate::api::error::ApiError;
 use crate::api::posts::{
     list_archive_posts, list_tags, ArchiveResponse, TagListResponse, ARCHIVE_PAGE_SIZE,
 };
@@ -310,7 +311,7 @@ fn archive_summary(rows: &[IndexRow], total: i64, has_more: bool) -> String {
 }
 
 /// 标签接口的结果：失败时为空，标签区随之隐藏。
-pub(crate) fn tag_list(data: Result<TagListResponse, ServerFnError>) -> Vec<Tag> {
+pub(crate) fn tag_list(data: Result<TagListResponse, ApiError>) -> Vec<Tag> {
     data.map(|r| ranked_tags(r.tags)).unwrap_or_default()
 }
 

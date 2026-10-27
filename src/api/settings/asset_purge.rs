@@ -2,6 +2,7 @@
 // 提示，按项目惯例放行（限流/运行器等配置项天然参数多）。
 #![allow(clippy::unused_unit, deprecated, clippy::too_many_arguments)]
 
+use crate::api::error::ApiError;
 use leptos::prelude::*;
 
 #[cfg(feature = "server")]
@@ -54,7 +55,7 @@ pub(crate) async fn seed_asset_purge_settings_from_env(
 ///
 /// settings 表缺失键时回退到默认值，保证向后兼容。
 #[server(GetAssetPurgeSettings, endpoint = "get_asset_purge_settings", input = leptos::server_fn::codec::Json)]
-pub async fn get_asset_purge_settings() -> Result<AssetPurgeSettings, ServerFnError> {
+pub async fn get_asset_purge_settings() -> Result<AssetPurgeSettings, ApiError> {
     let _user = get_current_admin_user().await?;
 
     #[cfg(feature = "server")]
@@ -95,7 +96,7 @@ pub async fn get_asset_purge_settings() -> Result<AssetPurgeSettings, ServerFnEr
 pub async fn update_asset_purge_settings(
     auto_purge_enabled: bool,
     retention_days: i32,
-) -> Result<AssetPurgeSettings, ServerFnError> {
+) -> Result<AssetPurgeSettings, ApiError> {
     let _user = get_current_admin_user().await?;
 
     let retention_days = AssetPurgeSettings::clamp_retention(retention_days);

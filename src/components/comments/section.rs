@@ -12,6 +12,7 @@ use leptos::task::spawn_local;
 use crate::api::comments::{
     check_pending_status, create_comment, get_comments, CommentTreeResponse,
 };
+use crate::api::error::ApiError;
 use crate::components::comments::form::CommentForm;
 use crate::components::comments::list::CommentList;
 use crate::components::enhance_assets::LightboxAssets;
@@ -229,7 +230,7 @@ pub fn CommentSection(post_id: i32) -> impl IntoView {
     // 不用 LocalResource：Resource 读取会登记到外层 <Suspense>，每次刷新都让 Suspense
     // 退回 fallback、把整段评论区（含正在输入的编辑器）移出再插回 DOM。这里由 Effect
     // 直接写镜像信号；刷新期间保留旧数据，这样列表不会在刷新时闪回骨架屏。
-    let comments_resource: RwSignal<Option<Result<CommentTreeResponse, ServerFnError>>> =
+    let comments_resource: RwSignal<Option<Result<CommentTreeResponse, ApiError>>> =
         RwSignal::new(None);
     let fetch_generation = StoredValue::new(0u64);
     Effect::new(move |_| {

@@ -1,5 +1,6 @@
 //! 笔记的浏览器入口。认证适配后，统一调用 store 的版本与发布规则。
 #![allow(clippy::unused_unit, deprecated)]
+use crate::api::error::ApiError;
 use crate::models::note::*;
 use crate::models::public_note::PublicNote;
 use leptos::prelude::*;
@@ -9,19 +10,19 @@ pub mod attachments;
 pub mod store;
 
 #[server(ListNotes, endpoint = "list_notes", input = leptos::server_fn::codec::Json)]
-pub async fn list_notes(filter: NoteFilter) -> Result<NotePage, ServerFnError> {
+pub async fn list_notes(filter: NoteFilter) -> Result<NotePage, ApiError> {
     Ok(store::list(store::Access::Public, filter).await?)
 }
 
 #[server(GetNote, endpoint = "get_note", input = leptos::server_fn::codec::Json)]
-pub async fn get_note(slug: String) -> Result<PublicNote, ServerFnError> {
+pub async fn get_note(slug: String) -> Result<PublicNote, ApiError> {
     // 公开详情只返回阅读所需字段（P4.1）；编辑 Markdown 与内部版本号不出接口。
     // 后台编辑与 MCP 继续走 get_owned_note / store::get 的完整 Note 契约。
     Ok(store::get_public(&slug).await?)
 }
 
 #[server(NoteStatsSummary, endpoint = "note_stats", input = leptos::server_fn::codec::Json)]
-pub async fn note_stats() -> Result<NoteStats, ServerFnError> {
+pub async fn note_stats() -> Result<NoteStats, ApiError> {
     Ok(store::stats(8).await?)
 }
 
@@ -30,29 +31,29 @@ pub async fn note_stats() -> Result<NoteStats, ServerFnError> {
 pub async fn get_note_context(
     slug: String,
     book: Option<i32>,
-) -> Result<Option<NoteContext>, ServerFnError> {
+) -> Result<Option<NoteContext>, ApiError> {
     Ok(store::context(&slug, book).await?)
 }
 
 #[server(ListNotebooks, endpoint = "list_notebooks", input = leptos::server_fn::codec::Json)]
-pub async fn list_notebooks() -> Result<Vec<Notebook>, ServerFnError> {
+pub async fn list_notebooks() -> Result<Vec<Notebook>, ApiError> {
     Ok(store::notebooks(store::Access::Public).await?)
 }
 
 #[server(ListOwnedNotes, endpoint = "list_owned_notes", input = leptos::server_fn::codec::Json)]
-pub async fn list_owned_notes(filter: NoteFilter) -> Result<NotePage, ServerFnError> {
+pub async fn list_owned_notes(filter: NoteFilter) -> Result<NotePage, ApiError> {
     let user = crate::api::auth::get_current_admin_user().await?;
     Ok(store::list(store::Access::Owner(user.id), filter).await?)
 }
 
 #[server(GetOwnedNote, endpoint = "get_owned_note", input = leptos::server_fn::codec::Json)]
-pub async fn get_owned_note(id: i32, version: Option<i32>) -> Result<Note, ServerFnError> {
+pub async fn get_owned_note(id: i32, version: Option<i32>) -> Result<Note, ApiError> {
     let user = crate::api::auth::get_current_admin_user().await?;
     Ok(store::get(store::Access::Owner(user.id), Some(id), None, version).await?)
 }
 
 #[server(SaveNote, endpoint = "save_note", input = leptos::server_fn::codec::Json)]
-pub async fn save_note(draft: NoteDraft) -> Result<Note, ServerFnError> {
+pub async fn save_note(draft: NoteDraft) -> Result<Note, ApiError> {
     let user = crate::api::auth::get_current_admin_user().await?;
     Ok(store::save(user.id, draft, None).await?)
 }
@@ -62,43 +63,43 @@ pub async fn act_on_note(
     id: i32,
     expected_version: i32,
     action: NoteAction,
-) -> Result<Note, ServerFnError> {
+) -> Result<Note, ApiError> {
     let user = crate::api::auth::get_current_admin_user().await?;
     Ok(store::act(user.id, id, expected_version, action).await?)
 }
 
 #[server(NoteHistory, endpoint = "note_history", input = leptos::server_fn::codec::Json)]
-pub async fn note_history(id: i32) -> Result<Vec<NoteRevision>, ServerFnError> {
+pub async fn note_history(id: i32) -> Result<Vec<NoteRevision>, ApiError> {
     let user = crate::api::auth::get_current_admin_user().await?;
     Ok(store::history(user.id, id).await?)
 }
 
 #[server(OwnedNotebooks, endpoint = "owned_notebooks", input = leptos::server_fn::codec::Json)]
-pub async fn owned_notebooks() -> Result<Vec<Notebook>, ServerFnError> {
+pub async fn owned_notebooks() -> Result<Vec<Notebook>, ApiError> {
     let user = crate::api::auth::get_current_admin_user().await?;
     Ok(store::notebooks(store::Access::Owner(user.id)).await?)
 }
 
 #[server(SaveNotebook, endpoint = "save_notebook", input = leptos::server_fn::codec::Json)]
-pub async fn save_notebook(input: NotebookInput) -> Result<(), ServerFnError> {
+pub async fn save_notebook(input: NotebookInput) -> Result<(), ApiError> {
     let user = crate::api::auth::get_current_admin_user().await?;
     Ok(store::save_notebook(user.id, input).await?)
 }
 
 #[server(ReorderNotebook, endpoint = "reorder_notebook", input = leptos::server_fn::codec::Json)]
-pub async fn reorder_notebook(id: i32, note_ids: Vec<i32>) -> Result<(), ServerFnError> {
+pub async fn reorder_notebook(id: i32, note_ids: Vec<i32>) -> Result<(), ApiError> {
     let user = crate::api::auth::get_current_admin_user().await?;
     Ok(store::reorder(user.id, id, note_ids).await?)
 }
 
 #[server(ArchiveNotebook, endpoint = "archive_notebook", input = leptos::server_fn::codec::Json)]
-pub async fn archive_notebook(id: i32, archived: bool) -> Result<(), ServerFnError> {
+pub async fn archive_notebook(id: i32, archived: bool) -> Result<(), ApiError> {
     let user = crate::api::auth::get_current_admin_user().await?;
     Ok(store::archive_notebook(user.id, id, archived).await?)
 }
 
 #[server(NotebookOrder, endpoint = "notebook_order", input = leptos::server_fn::codec::Json)]
-pub async fn notebook_order(id: i32) -> Result<Vec<NotebookEntry>, ServerFnError> {
+pub async fn notebook_order(id: i32) -> Result<Vec<NotebookEntry>, ApiError> {
     let user = crate::api::auth::get_current_admin_user().await?;
     let client = crate::db::pool::get_conn()
         .await

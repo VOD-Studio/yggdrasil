@@ -11,6 +11,7 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 
 use super::SettingsSection;
+use crate::api::error::ApiError;
 use crate::components::ui::use_toast;
 use crate::utils::error::failure_message;
 
@@ -175,9 +176,9 @@ pub(super) fn use_section<T, L, LF, S, SF>(
 where
     T: Clone + PartialEq + Default + Send + Sync + 'static,
     L: FnOnce() -> LF + 'static,
-    LF: Future<Output = Result<T, ServerFnError>> + 'static,
+    LF: Future<Output = Result<T, ApiError>> + 'static,
     S: Fn(T) -> SF + Copy + Send + Sync + 'static,
-    SF: Future<Output = Result<T, ServerFnError>> + 'static,
+    SF: Future<Output = Result<T, ApiError>> + 'static,
 {
     let toast = use_toast();
     let bus = expect_context::<SettingsBus>();

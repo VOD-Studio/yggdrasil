@@ -11,6 +11,7 @@
 //!
 //! 默认禁止多语句（`allow_multi` 放开）。
 
+use crate::api::error::ApiError;
 use leptos::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -288,7 +289,7 @@ fn col_to_json(row: &tokio_postgres::Row, idx: usize) -> serde_json::Value {
 
 /// 执行 SQL（全读写，管理员）。护栏见模块文档。
 #[server(ExecuteSql, endpoint = "execute_sql", input = leptos::server_fn::codec::Json)]
-pub async fn execute_sql(sql: String, opts: ExecuteSqlOpts) -> Result<SqlResult, ServerFnError> {
+pub async fn execute_sql(sql: String, opts: ExecuteSqlOpts) -> Result<SqlResult, ApiError> {
     let _user = get_current_admin_user().await?;
 
     #[cfg(feature = "server")]
@@ -385,7 +386,7 @@ async fn execute_one(
     stmt_sql: &str,
     with_explain: bool,
     start: impl Fn() -> std::time::Instant + Copy,
-) -> Result<SqlResult, ServerFnError> {
+) -> Result<SqlResult, ApiError> {
     let statement_type = statement_type_name(stmt);
     let read_only = is_read_only(stmt);
 

@@ -17,6 +17,7 @@ use leptos_meta::Title;
 use leptos_router::hooks::use_query_map;
 use leptos_router::{lazy_route, LazyRoute};
 
+use crate::api::error::ApiError;
 use crate::api::posts::{list_tags, search_posts, PostListResponse};
 use crate::components::palette::{contains_ci, highlight, snippet};
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
@@ -65,7 +66,7 @@ impl SortOrder {
 }
 
 /// 搜索结果：成功的响应，或失败。
-type SearchResult = Result<PostListResponse, ServerFnError>;
+type SearchResult = Result<PostListResponse, ApiError>;
 
 /// Only settled responses are persisted; request IDs and pending work belong to
 /// the mounted page and must never be revived by browser Back.
@@ -82,7 +83,7 @@ struct SearchHistoryState {
 impl SearchHistoryState {
     fn result(&self) -> Option<SearchResult> {
         if self.failed {
-            Some(Err(ServerFnError::new("搜索暂时未能完成，请重试")))
+            Some(Err(ApiError::Internal("搜索暂时未能完成，请重试".into())))
         } else {
             self.response.clone().map(Ok)
         }

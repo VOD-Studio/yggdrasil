@@ -2,6 +2,7 @@
 // 提示，按项目惯例放行（限流/运行器等配置项天然参数多）。
 #![allow(clippy::unused_unit, deprecated, clippy::too_many_arguments)]
 
+use crate::api::error::ApiError;
 use leptos::prelude::*;
 
 #[cfg(feature = "server")]
@@ -70,7 +71,7 @@ pub(crate) async fn save_trash_settings(
 ///
 /// settings 表缺失键时回退到默认值，保证向后兼容。
 #[server(GetTrashSettings, endpoint = "get_trash_settings", input = leptos::server_fn::codec::Json)]
-pub async fn get_trash_settings() -> Result<TrashSettings, ServerFnError> {
+pub async fn get_trash_settings() -> Result<TrashSettings, ApiError> {
     let _user = get_current_admin_user().await?;
 
     #[cfg(feature = "server")]
@@ -92,7 +93,7 @@ pub async fn get_trash_settings() -> Result<TrashSettings, ServerFnError> {
 pub async fn update_trash_settings(
     auto_purge_enabled: bool,
     retention_days: i32,
-) -> Result<TrashSettings, ServerFnError> {
+) -> Result<TrashSettings, ApiError> {
     let _user = get_current_admin_user().await?;
 
     #[cfg(feature = "server")]

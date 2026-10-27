@@ -5,6 +5,7 @@
 //! Leptos server function，注册在 `/api` 路径下。
 //! 仅在 `feature = "server"` 启用的服务端构建中执行数据库更新。
 
+use crate::api::error::ApiError;
 use leptos::prelude::*;
 
 #[cfg(feature = "server")]
@@ -32,7 +33,7 @@ const MAX_DISPLAY_ERRORS: usize = 5;
 pub async fn rebuild_content_html(
     rebuild_all: bool,
     after_id: i32,
-) -> Result<RebuildResult, ServerFnError> {
+) -> Result<RebuildResult, ApiError> {
     let _user = get_current_admin_user().await?;
 
     #[cfg(feature = "server")]
@@ -150,7 +151,7 @@ pub async fn rebuild_content_html(
 /// 在阻塞线程池渲染 HTML，并更新 content_html / toc_html / word_count / reading_time。
 /// 仅 admin 可调用；成功后按影响范围失效文章列表、slug 单篇与搜索缓存。
 #[server(RebuildPostContentHtml, endpoint = "rebuild_post_content_html", input = leptos::server_fn::codec::Json)]
-pub async fn rebuild_post_content_html(post_id: i32) -> Result<CreatePostResponse, ServerFnError> {
+pub async fn rebuild_post_content_html(post_id: i32) -> Result<CreatePostResponse, ApiError> {
     let _user = get_current_admin_user().await?;
 
     #[cfg(feature = "server")]

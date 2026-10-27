@@ -1,6 +1,7 @@
 //! 公开写作指南。源码与下载共用 public 中的文件，不读取令牌或用户数据。
 #![allow(clippy::unused_unit, deprecated)]
 
+use crate::api::error::ApiError;
 use leptos::prelude::*;
 
 // 源码只嵌入服务端二进制，经 server function 下发，避免每位访客的 WASM 都带上全文。
@@ -31,7 +32,7 @@ fn render_guide() -> crate::api::markdown::RenderedContent {
 }
 
 #[server(endpoint = "get_writing_guide", input = leptos::server_fn::codec::Json)]
-pub async fn get_writing_guide() -> Result<WritingGuideData, ServerFnError> {
+pub async fn get_writing_guide() -> Result<WritingGuideData, ApiError> {
     static RENDERED: std::sync::LazyLock<crate::api::markdown::RenderedContent> =
         std::sync::LazyLock::new(render_guide);
     let base_url = crate::api::settings::runtime_security_settings()

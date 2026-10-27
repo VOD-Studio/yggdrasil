@@ -3,6 +3,7 @@
 //!
 //! 异步续写全部走 `try_*`：离开笔记（编辑器卸载）后迟到的响应不会写入任何状态，也不弹提示。
 use super::state::{reconcile_save, EditorState, SaveState};
+use crate::api::error::ApiError;
 use crate::api::notes::{act_on_note, get_owned_note, save_note};
 use crate::models::note::{Note, NoteAction};
 use crate::utils::error::failure_message;
@@ -10,11 +11,11 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 
 /// 编辑器已卸载：流水线中途放弃，结果由 [`finish`] 丢弃。
-fn closed() -> ServerFnError {
-    ServerFnError::new("编辑器已关闭")
+fn closed() -> ApiError {
+    ApiError::Internal("编辑器已关闭".into())
 }
 
-async fn save_snapshot(state: EditorState) -> Result<Note, ServerFnError> {
+async fn save_snapshot(state: EditorState) -> Result<Note, ApiError> {
     let snapshot = state.draft_now().ok_or_else(closed)?;
     let saved = state.saved_now().ok_or_else(closed)?;
     let dirty = state.dirty_now().ok_or_else(closed)?;
@@ -32,7 +33,7 @@ async fn save_snapshot(state: EditorState) -> Result<Note, ServerFnError> {
 
 fn finish(
     state: EditorState,
-    result: Result<Note, ServerFnError>,
+    result: Result<Note, ApiError>,
     message: Option<&str>,
     failure: &str,
 ) -> bool {
@@ -100,16 +101,16 @@ pub(super) async fn restore_revision(state: EditorState, version: i32) {
     let result = async {
         let note = save_snapshot(state).await?;
         if state.dirty_now().ok_or_else(closed)? {
-            return Err(ServerFnError::new(
-                "保存期间有新的编辑，已保留当前内容，请再次选择历史版本",
+            return Err(ApiError::BadRequest(
+                "保存期间有新的编辑，已保留当前内容，请再次选择历史版本".into(),
             ));
         }
         let before_fetch = state.draft_now().ok_or_else(closed)?;
         let old = get_owned_note(note.id, Some(version)).await?;
         // The user can keep typing while history loads. Never replace those edits.
         if state.draft_now().as_ref() != Some(&before_fetch) {
-            return Err(ServerFnError::new(
-                "恢复期间有新的编辑，已保留当前内容，请再次选择历史版本",
+            return Err(ApiError::BadRequest(
+                "恢复期间有新的编辑，已保留当前内容，请再次选择历史版本".into(),
             ));
         }
         state.restore_local(old.draft());

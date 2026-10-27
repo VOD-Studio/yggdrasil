@@ -18,7 +18,7 @@ use rmcp::{schemars, tool, tool_router, ErrorData as McpError};
 use super::common::require_admin;
 use serde::Deserialize;
 
-use crate::api::error::AppError;
+use crate::api::error::{ApiError, AppError};
 use crate::api::settings::{load_trash_settings, save_trash_settings};
 use crate::db::pool::get_conn;
 
@@ -56,7 +56,7 @@ impl crate::mcp::server::YggMcpServer {
             load_trash_settings(&client).await
         }
         .await
-        .map_err(|e| McpError::internal_error(format!("settings read failed: {e:?}"), None))?;
+        .map_err(|e| McpError::internal_error(ApiError::from(e).to_string(), None))?;
 
         let text = serde_json::to_string_pretty(&settings)
             .map_err(|e| McpError::internal_error(format!("encode failed: {e}"), None))?;
@@ -84,7 +84,7 @@ impl crate::mcp::server::YggMcpServer {
             save_trash_settings(&client, auto_purge_enabled, retention_days).await
         }
         .await
-        .map_err(|e| McpError::internal_error(format!("settings write failed: {e:?}"), None))?;
+        .map_err(|e| McpError::internal_error(ApiError::from(e).to_string(), None))?;
 
         tracing::info!(
             "MCP: trash settings updated: auto_purge={}, retention_days={}",

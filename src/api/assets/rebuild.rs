@@ -8,6 +8,7 @@
 //! 幂等：重跑结果相同（技术字段无变化时 updated 为 0，alt 与 filename 不被覆盖）。
 //! 幂等性由「手动触发」语义承载，非常态路径。Leptos server function，仅 admin 可用。
 
+use crate::api::error::ApiError;
 use leptos::prelude::*;
 
 use super::types::RebuildAssetsResponse;
@@ -89,14 +90,14 @@ fn walk_images(
 
 /// 全量重建素材索引。
 #[server(RebuildAssetsIndex, endpoint = "rebuild_assets_index", input = leptos::server_fn::codec::Json)]
-pub async fn rebuild_assets_index() -> Result<RebuildAssetsResponse, ServerFnError> {
+pub async fn rebuild_assets_index() -> Result<RebuildAssetsResponse, ApiError> {
     crate::api::auth::get_current_admin_user().await?;
     rebuild_assets_index_impl().await
 }
 
 /// 共享素材操作；调用方须先完成管理员鉴权。
 #[cfg(feature = "server")]
-pub(crate) async fn rebuild_assets_index_impl() -> Result<RebuildAssetsResponse, ServerFnError> {
+pub(crate) async fn rebuild_assets_index_impl() -> Result<RebuildAssetsResponse, ApiError> {
     use crate::api::error::AppError;
     use crate::db::pool::get_conn;
 

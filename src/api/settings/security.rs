@@ -2,6 +2,7 @@
 // 提示，按项目惯例放行（限流/运行器等配置项天然参数多）。
 #![allow(clippy::unused_unit, deprecated, clippy::too_many_arguments)]
 
+use crate::api::error::ApiError;
 use leptos::prelude::*;
 
 #[cfg(feature = "server")]
@@ -156,7 +157,7 @@ pub(crate) async fn runtime_security_settings() -> crate::models::settings::Secu
 
 /// 读取安全配置（面板用）。
 #[server(GetSecuritySettings, endpoint = "get_security_settings", input = leptos::server_fn::codec::Json)]
-pub async fn get_security_settings() -> Result<SecuritySettings, ServerFnError> {
+pub async fn get_security_settings() -> Result<SecuritySettings, ApiError> {
     let _user = get_current_admin_user().await?;
 
     #[cfg(feature = "server")]
@@ -164,7 +165,7 @@ pub async fn get_security_settings() -> Result<SecuritySettings, ServerFnError> 
         let client = get_conn().await.map_err(AppError::db_conn)?;
         let s = load_security_settings(&client)
             .await
-            .map_err(<ServerFnError>::from)?;
+            .map_err(<ApiError>::from)?;
         crate::cache::set_security_settings(s.clone()).await;
         Ok(s)
     }
@@ -185,7 +186,7 @@ pub async fn update_security_settings(
     cookie_secure: bool,
     trusted_proxy_count: u32,
     max_sessions_per_user: u32,
-) -> Result<SecuritySettings, ServerFnError> {
+) -> Result<SecuritySettings, ApiError> {
     let _user = get_current_admin_user().await?;
 
     let app_base_url = SecuritySettings::parse_app_base_url(&app_base_url).ok_or_else(|| {

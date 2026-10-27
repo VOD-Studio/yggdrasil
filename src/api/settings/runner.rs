@@ -2,6 +2,7 @@
 // 提示，按项目惯例放行（限流/运行器等配置项天然参数多）。
 #![allow(clippy::unused_unit, deprecated, clippy::too_many_arguments)]
 
+use crate::api::error::ApiError;
 use leptos::prelude::*;
 
 #[cfg(feature = "server")]
@@ -202,7 +203,7 @@ pub(crate) async fn load_runner_settings(
 
 /// 读取代码运行器配置（面板用）。
 #[server(GetRunnerSettings, endpoint = "get_runner_settings", input = leptos::server_fn::codec::Json)]
-pub async fn get_runner_settings() -> Result<RunnerSettings, ServerFnError> {
+pub async fn get_runner_settings() -> Result<RunnerSettings, ApiError> {
     let _user = get_current_admin_user().await?;
 
     #[cfg(feature = "server")]
@@ -210,7 +211,7 @@ pub async fn get_runner_settings() -> Result<RunnerSettings, ServerFnError> {
         let client = get_conn().await.map_err(AppError::db_conn)?;
         let s = load_runner_settings(&client)
             .await
-            .map_err(<ServerFnError>::from)?;
+            .map_err(<ApiError>::from)?;
         Ok(s)
     }
 
@@ -235,7 +236,7 @@ pub async fn update_runner_settings(
     queue_timeout_secs: u32,
     task_ttl_secs: u32,
     languages: Option<String>,
-) -> Result<RunnerSettings, ServerFnError> {
+) -> Result<RunnerSettings, ApiError> {
     let _user = get_current_admin_user().await?;
 
     let max_concurrent = RunnerSettings::clamp_max_concurrent(max_concurrent);

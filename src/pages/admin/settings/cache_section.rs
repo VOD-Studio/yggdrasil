@@ -6,11 +6,12 @@ use leptos::prelude::*;
 
 use super::kit::{use_section, SettingRow, SettingsCard};
 use super::SettingsSection;
+use crate::api::error::ApiError;
 use crate::api::settings::{get_image_cache_settings, update_image_cache_settings};
 use crate::components::forms::NumberInput;
 use crate::models::settings::ImageCacheSettings;
 
-async fn save(d: ImageCacheSettings) -> Result<ImageCacheSettings, ServerFnError> {
+async fn save(d: ImageCacheSettings) -> Result<ImageCacheSettings, ApiError> {
     update_image_cache_settings(d.disk_cache_max_mb, d.disk_cache_max_age_hours).await
 }
 

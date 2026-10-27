@@ -6,11 +6,12 @@ use leptos::prelude::*;
 
 use super::kit::{use_section, SettingRow, SettingsCard};
 use super::SettingsSection;
+use crate::api::error::ApiError;
 use crate::api::settings::{get_rate_limit_settings, update_rate_limit_settings};
 use crate::components::forms::NumberInput;
 use crate::models::settings::RateLimitSettings;
 
-async fn save(d: RateLimitSettings) -> Result<RateLimitSettings, ServerFnError> {
+async fn save(d: RateLimitSettings) -> Result<RateLimitSettings, ApiError> {
     update_rate_limit_settings(
         d.strict_per_sec,
         d.strict_burst,

@@ -5,13 +5,14 @@
 //! 无引用且超过 7 天保护窗的素材（保护未保存草稿的引用）。
 //! Leptos server function，注册在 `/api` 路径下，仅 admin 可用。
 
+use crate::api::error::ApiError;
 use leptos::prelude::*;
 
 use super::types::{AssetOpResponse, BatchDeleteAssetsResponse, PurgeOrphansResponse};
 
 /// 更新素材 alt（管理性备注，不回写已有文章 HTML）。
 #[server(UpdateAssetAlt, endpoint = "update_asset_alt", input = leptos::server_fn::codec::Json)]
-pub async fn update_asset_alt(id: String, alt: String) -> Result<AssetOpResponse, ServerFnError> {
+pub async fn update_asset_alt(id: String, alt: String) -> Result<AssetOpResponse, ApiError> {
     crate::api::auth::get_current_admin_user().await?;
     update_asset_alt_impl(id, alt).await
 }
@@ -21,7 +22,7 @@ pub async fn update_asset_alt(id: String, alt: String) -> Result<AssetOpResponse
 pub(crate) async fn update_asset_alt_impl(
     id: String,
     alt: String,
-) -> Result<AssetOpResponse, ServerFnError> {
+) -> Result<AssetOpResponse, ApiError> {
     use crate::api::error::AppError;
     use crate::db::pool::get_conn;
 
@@ -53,14 +54,14 @@ pub(crate) async fn update_asset_alt_impl(
 /// 引用中 → `Ok(success:false)` + 引用文章列表（业务拒绝不走 Err）；
 /// 孤儿 → 物理删除文件、DB 行（refs 级联）与派生缓存。
 #[server(DeleteAsset, endpoint = "delete_asset", input = leptos::server_fn::codec::Json)]
-pub async fn delete_asset(id: String) -> Result<AssetOpResponse, ServerFnError> {
+pub async fn delete_asset(id: String) -> Result<AssetOpResponse, ApiError> {
     crate::api::auth::get_current_admin_user().await?;
     delete_asset_impl(id).await
 }
 
 /// 共享素材操作；调用方须先完成管理员鉴权。
 #[cfg(feature = "server")]
-pub(crate) async fn delete_asset_impl(id: String) -> Result<AssetOpResponse, ServerFnError> {
+pub(crate) async fn delete_asset_impl(id: String) -> Result<AssetOpResponse, ApiError> {
     use crate::api::error::AppError;
     use crate::db::pool::get_conn;
     use crate::models::asset::{AssetRef, AssetRefPostStatus};
@@ -187,9 +188,7 @@ pub(crate) async fn delete_asset_impl(id: String) -> Result<AssetOpResponse, Ser
 /// （文件 + DB 行 + 派生缓存）。非法 id 计入失败，不存在的 id 静默忽略。
 /// 返回删除/跳过/失败统计，供批量操作条展示。
 #[server(BatchDeleteAssets, endpoint = "batch_delete_assets", input = leptos::server_fn::codec::Json)]
-pub async fn batch_delete_assets(
-    ids: Vec<String>,
-) -> Result<BatchDeleteAssetsResponse, ServerFnError> {
+pub async fn batch_delete_assets(ids: Vec<String>) -> Result<BatchDeleteAssetsResponse, ApiError> {
     crate::api::auth::get_current_admin_user().await?;
     batch_delete_assets_impl(ids).await
 }
@@ -198,7 +197,7 @@ pub async fn batch_delete_assets(
 #[cfg(feature = "server")]
 pub(crate) async fn batch_delete_assets_impl(
     ids: Vec<String>,
-) -> Result<BatchDeleteAssetsResponse, ServerFnError> {
+) -> Result<BatchDeleteAssetsResponse, ApiError> {
     use crate::api::error::AppError;
     use crate::db::pool::get_conn;
 
@@ -295,14 +294,14 @@ pub(crate) async fn batch_delete_assets_impl(
 /// 逐项删文件（容忍单项失败），最后批量删 DB 行。
 /// 返回清理数量、释放字节数与文件删除失败数。
 #[server(PurgeOrphanAssets, endpoint = "purge_orphan_assets", input = leptos::server_fn::codec::Json)]
-pub async fn purge_orphan_assets() -> Result<PurgeOrphansResponse, ServerFnError> {
+pub async fn purge_orphan_assets() -> Result<PurgeOrphansResponse, ApiError> {
     crate::api::auth::get_current_admin_user().await?;
     purge_orphan_assets_impl().await
 }
 
 /// 共享素材操作；调用方须先完成管理员鉴权。
 #[cfg(feature = "server")]
-pub(crate) async fn purge_orphan_assets_impl() -> Result<PurgeOrphansResponse, ServerFnError> {
+pub(crate) async fn purge_orphan_assets_impl() -> Result<PurgeOrphansResponse, ApiError> {
     use crate::api::error::AppError;
     use crate::db::pool::get_conn;
 

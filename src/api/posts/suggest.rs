@@ -5,6 +5,7 @@
 //! （见 `rate_limit::check_suggest_limit`），结果写入短 TTL 缓存，并随文章写操作失效。
 //! Leptos server function，注册在 `/api` 路径下。
 
+use crate::api::error::ApiError;
 use leptos::prelude::*;
 
 use super::types::PostSuggestionResponse;
@@ -72,7 +73,7 @@ pub(crate) async fn query_suggestions(
 ///
 /// 空查询或超长查询返回空结果；被限流时同样返回空，让面板保留上一次结果。
 #[server(SuggestPosts, endpoint = "suggest_posts", input = leptos::server_fn::codec::Json)]
-pub async fn suggest_posts(query: String) -> Result<PostSuggestionResponse, ServerFnError> {
+pub async fn suggest_posts(query: String) -> Result<PostSuggestionResponse, ApiError> {
     #[cfg(feature = "server")]
     {
         use crate::api::rate_limit;
@@ -240,7 +241,7 @@ fn percent_decode(text: &str) -> String {
 /// 按地址里的词匹配已发布文章的标题与 slug，命中词多的排前，最多 3 篇。
 /// 地址里没有可用的词时不查询。公开接口，结果不缓存（只在 404 时调用）。
 #[server(RecommendForPath, endpoint = "recommend_for_path", input = leptos::server_fn::codec::Json)]
-pub async fn recommend_for_path(path: String) -> Result<PathRecommendations, ServerFnError> {
+pub async fn recommend_for_path(path: String) -> Result<PathRecommendations, ApiError> {
     #[cfg(feature = "server")]
     {
         let words = path_words(&path);

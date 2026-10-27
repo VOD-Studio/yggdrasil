@@ -7,11 +7,12 @@ use leptos::prelude::*;
 
 use super::kit::{use_section, SettingRow, SettingsCard, SwitchRow};
 use super::SettingsSection;
+use crate::api::error::ApiError;
 use crate::api::settings::{get_asset_purge_settings, update_asset_purge_settings};
 use crate::components::forms::NumberInput;
 use crate::models::settings::AssetPurgeSettings;
 
-async fn save(d: AssetPurgeSettings) -> Result<AssetPurgeSettings, ServerFnError> {
+async fn save(d: AssetPurgeSettings) -> Result<AssetPurgeSettings, ApiError> {
     update_asset_purge_settings(d.auto_purge_enabled, d.retention_days).await
 }
 

@@ -5,6 +5,7 @@
 //! 应用内：DB 连接池、moka 缓存命中率、活跃会话数、进程运行时间。
 //! 主机层：sysinfo 后台采样快照（CPU/内存/磁盘/load），由 [`crate::tasks::sysinfo_sampler`] 维护。
 
+use crate::api::error::ApiError;
 use leptos::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -53,7 +54,7 @@ static STARTED_AT: std::sync::LazyLock<std::time::Instant> =
 
 /// 获取服务器状态（只读，管理员）。
 #[server(GetServerStatus, endpoint = "get_server_status", input = leptos::server_fn::codec::Json)]
-pub async fn get_server_status() -> Result<ServerStatus, ServerFnError> {
+pub async fn get_server_status() -> Result<ServerStatus, ApiError> {
     let _user = get_current_admin_user().await?;
 
     #[cfg(feature = "server")]

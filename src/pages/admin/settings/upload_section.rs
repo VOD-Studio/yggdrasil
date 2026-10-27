@@ -4,11 +4,12 @@ use leptos::prelude::*;
 
 use super::kit::{use_section, SettingRow, SettingsCard};
 use super::SettingsSection;
+use crate::api::error::ApiError;
 use crate::api::settings::{get_upload_settings, update_upload_settings};
 use crate::components::ui::{SegmentedControl, SegmentedItem, SegmentedKind, SegmentedSize};
 use crate::models::settings::UploadSettings;
 
-async fn save(d: UploadSettings) -> Result<UploadSettings, ServerFnError> {
+async fn save(d: UploadSettings) -> Result<UploadSettings, ApiError> {
     update_upload_settings(d.concurrency).await
 }
 

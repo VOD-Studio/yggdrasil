@@ -19,6 +19,7 @@
 // 与 settings 等模块一致：Leptos `#[server]` 宏触发 deprecated/unit 提示，按项目惯例放行。
 #![allow(clippy::unused_unit, deprecated)]
 
+use crate::api::error::ApiError;
 use leptos::prelude::*;
 
 // ===========================================================================
@@ -277,7 +278,7 @@ fn render_section(md: &str) -> String {
 ///
 /// 公开接口；首次调用解析 + 渲染后永久缓存，之后均为一次 `LazyLock` 读取 + clone。
 #[server(GetChangelog, endpoint = "get_changelog", input = leptos::server_fn::codec::Json)]
-pub async fn get_changelog() -> Result<ChangelogData, ServerFnError> {
+pub async fn get_changelog() -> Result<ChangelogData, ApiError> {
     #[cfg(feature = "server")]
     {
         let data = tokio::task::spawn_blocking(|| CHANGELOG_PARSED.clone())
@@ -296,7 +297,7 @@ pub async fn get_changelog() -> Result<ChangelogData, ServerFnError> {
 
 /// 最新发布的版本号与日期（不含 Unreleased），供关于页显示。
 #[server(LatestRelease, endpoint = "latest_release", input = leptos::server_fn::codec::Json)]
-pub async fn latest_release() -> Result<Option<(String, Option<String>)>, ServerFnError> {
+pub async fn latest_release() -> Result<Option<(String, Option<String>)>, ApiError> {
     let data = get_changelog().await?;
     Ok(data
         .versions

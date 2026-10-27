@@ -4,6 +4,7 @@
 //! Markdown。结果随文章列表缓存一起失效。
 //! Leptos server function，注册在 `/api` 路径下。
 
+use crate::api::error::ApiError;
 use leptos::prelude::*;
 
 use super::types::PostOutline;
@@ -19,7 +20,7 @@ use crate::db::pool::get_conn;
 /// 排序与 `list_published_posts` 一致，前台再用 slug 核对首篇，防止两次读取之间
 /// 有新文章发布造成错配。
 #[server(LatestPostOutline, endpoint = "latest_post_outline", input = leptos::server_fn::codec::Json)]
-pub async fn latest_post_outline() -> Result<Option<PostOutline>, ServerFnError> {
+pub async fn latest_post_outline() -> Result<Option<PostOutline>, ApiError> {
     #[cfg(feature = "server")]
     {
         if let Some(cached) = crate::cache::get_latest_outline().await {

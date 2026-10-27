@@ -7,6 +7,7 @@
 
 #![allow(clippy::too_many_arguments)]
 
+use crate::api::error::ApiError;
 use leptos::prelude::*;
 
 #[cfg(feature = "server")]
@@ -29,7 +30,7 @@ pub async fn update_post(
     status: String,
     tags: Vec<String>,
     cover_image: Option<String>,
-) -> Result<CreatePostResponse, ServerFnError> {
+) -> Result<CreatePostResponse, ApiError> {
     let user = get_current_admin_user().await?;
     let draft = service::PostDraft {
         title,

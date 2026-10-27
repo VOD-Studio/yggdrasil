@@ -2,6 +2,7 @@
 // 提示，按项目惯例放行（限流/运行器等配置项天然参数多）。
 #![allow(clippy::unused_unit, deprecated, clippy::too_many_arguments)]
 
+use crate::api::error::ApiError;
 use leptos::prelude::*;
 
 #[cfg(feature = "server")]
@@ -112,7 +113,7 @@ pub(crate) async fn runtime_image_cache_settings() -> crate::models::settings::I
 
 /// 读取图片磁盘缓存配置（面板用）。
 #[server(GetImageCacheSettings, endpoint = "get_image_cache_settings", input = leptos::server_fn::codec::Json)]
-pub async fn get_image_cache_settings() -> Result<ImageCacheSettings, ServerFnError> {
+pub async fn get_image_cache_settings() -> Result<ImageCacheSettings, ApiError> {
     let _user = get_current_admin_user().await?;
 
     #[cfg(feature = "server")]
@@ -120,7 +121,7 @@ pub async fn get_image_cache_settings() -> Result<ImageCacheSettings, ServerFnEr
         let client = get_conn().await.map_err(AppError::db_conn)?;
         let s = load_image_cache_settings(&client)
             .await
-            .map_err(<ServerFnError>::from)?;
+            .map_err(<ApiError>::from)?;
         crate::cache::set_image_cache_settings(s.clone()).await;
         Ok(s)
     }
@@ -136,7 +137,7 @@ pub async fn get_image_cache_settings() -> Result<ImageCacheSettings, ServerFnEr
 pub async fn update_image_cache_settings(
     disk_cache_max_mb: u32,
     disk_cache_max_age_hours: u32,
-) -> Result<ImageCacheSettings, ServerFnError> {
+) -> Result<ImageCacheSettings, ApiError> {
     let _user = get_current_admin_user().await?;
 
     let disk_cache_max_mb = ImageCacheSettings::clamp_max_mb(disk_cache_max_mb);

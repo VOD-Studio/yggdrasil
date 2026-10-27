@@ -37,6 +37,7 @@ mod restore;
 #[cfg(feature = "server")]
 mod transfer;
 
+use crate::api::error::ApiError;
 use leptos::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -108,7 +109,7 @@ pub(crate) struct BackupRunOutcome {
 
 /// 发起备份，立即返回 task_id，后台任务执行。
 #[server(CreateBackup, endpoint = "create_backup", input = leptos::server_fn::codec::Json)]
-pub async fn create_backup() -> Result<String, ServerFnError> {
+pub async fn create_backup() -> Result<String, ApiError> {
     let _user = get_current_admin_user().await?;
 
     #[cfg(feature = "server")]
@@ -130,7 +131,7 @@ pub async fn create_backup() -> Result<String, ServerFnError> {
 
 /// 发起恢复：校验签名 + 路径穿越防护 + 二次确认，立即返回 task_id。
 #[server(RestoreBackup, endpoint = "restore_backup", input = leptos::server_fn::codec::Json)]
-pub async fn restore_backup(filename: String, confirm: bool) -> Result<String, ServerFnError> {
+pub async fn restore_backup(filename: String, confirm: bool) -> Result<String, ApiError> {
     let _user = get_current_admin_user().await?;
 
     // 全部校验都在 server cfg 块内：confirm/regex/backup_path/std::fs 都是 server-only。
@@ -176,7 +177,7 @@ pub async fn restore_backup(filename: String, confirm: bool) -> Result<String, S
 
 /// 列出 SQL 备份，并附带配对 uploads 归档的元信息。
 #[server(ListBackups, endpoint = "list_backups", input = leptos::server_fn::codec::Json)]
-pub async fn list_backups() -> Result<Vec<BackupInfo>, ServerFnError> {
+pub async fn list_backups() -> Result<Vec<BackupInfo>, ApiError> {
     let _user = get_current_admin_user().await?;
     #[cfg(feature = "server")]
     {
@@ -190,7 +191,7 @@ pub async fn list_backups() -> Result<Vec<BackupInfo>, ServerFnError> {
 
 /// 管理员删除备份文件，并清理配对的 uploads 归档。
 #[server(DeleteBackup, endpoint = "delete_backup", input = leptos::server_fn::codec::Json)]
-pub async fn delete_backup(filename: String) -> Result<(), ServerFnError> {
+pub async fn delete_backup(filename: String) -> Result<(), ApiError> {
     let _user = get_current_admin_user().await?;
     #[cfg(feature = "server")]
     {

@@ -3,6 +3,7 @@
 //! 左栏：使用中 / 已归档选项卡与笔记本列表；右栏：选中笔记本的名称、简介、公开开关、
 //! 目录顺序（上移下移）与归档，或新建笔记本的表单。名称、简介、公开与顺序一起保存，
 //! 只提交改动过的部分。数据只在浏览器鉴权后读取。样式见 styles/pages/admin-notes.css。
+use crate::api::error::ApiError;
 use crate::api::notes::*;
 use crate::components::admin_layout::AdminPageHead;
 use crate::components::empty_state::{EmptyState, EmptyStateAction};
@@ -427,7 +428,7 @@ fn NotebookEditor(
             is_public: public.get_untracked(),
         };
         spawn_local(async move {
-            let mut result: Result<(), ServerFnError> = Ok(());
+            let mut result: Result<(), ApiError> = Ok(());
             if meta_dirty || id.is_none() {
                 result = save_notebook(input).await;
             }

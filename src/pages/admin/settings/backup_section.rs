@@ -7,6 +7,7 @@ use leptos::prelude::*;
 
 use super::kit::{use_section, SettingRow, SettingsCard, SwitchRow};
 use super::SettingsSection;
+use crate::api::error::ApiError;
 use crate::api::settings::{get_backup_settings, update_backup_settings};
 use crate::components::forms::{NumberInput, TimePicker};
 use crate::models::settings::BackupSettings;
@@ -18,11 +19,11 @@ fn to_local(mut s: BackupSettings) -> BackupSettings {
     s
 }
 
-async fn load() -> Result<BackupSettings, ServerFnError> {
+async fn load() -> Result<BackupSettings, ApiError> {
     get_backup_settings().await.map(|v| to_local(v.settings))
 }
 
-async fn save(d: BackupSettings) -> Result<BackupSettings, ServerFnError> {
+async fn save(d: BackupSettings) -> Result<BackupSettings, ApiError> {
     update_backup_settings(
         d.auto_enabled,
         local_hhmm_to_utc(&d.time_utc),
