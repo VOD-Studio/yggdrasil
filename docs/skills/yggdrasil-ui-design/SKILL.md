@@ -66,8 +66,8 @@ description: 在 Yggdrasil 仓库中新增或修改前台、后台界面，调�
 make css                                   # 改了 input.css 或 styles/**
 cd libs/shared && bun run test             # 改了 spring / palette / icons 源
 cd libs/yggdrasil-core && bun run test     # 改了转场、目录、滚动相关代码
-cargo clippy --locked --all-targets --all-features -- -D warnings
-cargo check --locked --target wasm32-unknown-unknown --no-default-features --features web
+cargo clippy --locked --all-targets -- -D warnings
+cargo check --locked --target wasm32-unknown-unknown --no-default-features --features hydrate
 cargo test --locked components_showcase    # 增删公开组件
 bun scripts/test-components-showcase.cjs   # 图鉴预览（SHOWCASE_BASE、SHOWCASE_ONLY）
 ```
