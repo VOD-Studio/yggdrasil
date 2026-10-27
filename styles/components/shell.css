@@ -54,6 +54,11 @@
     padding-inline: 1.5rem;
   }
 
+  /* 路由挂起骨架贴在页头下方，与主区上内边距（py-6）一致。 */
+  .site-route-pending {
+    --route-pending-top: calc(var(--site-header-height) + 1.5rem);
+  }
+
   .wordmark {
     display: inline-flex;
     align-items: center;

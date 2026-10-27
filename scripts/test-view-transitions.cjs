@@ -400,13 +400,23 @@ async function chunkLate() {
     await delayWasm(page, 1200);
     await page.evaluate(() => {
       const frames = window.__vtFrames = [];
+      const inView = el => {
+        if (el.getClientRects().length === 0) return false;
+        const rect = el.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.top < innerHeight;
+      };
       const sample = () => {
         const main = document.querySelector('main');
-        const style = main && getComputedStyle(main);
+        // 路由挂起时旧正文是 main 中非 .route-pending 的直接子元素，骨架槽位是 .route-pending。
+        const old = main ? Array.from(main.children).filter(el => !el.classList.contains('route-pending')) : [];
+        const slotEl = main?.querySelector(':scope > .route-pending');
+        const slotStyle = slotEl && getComputedStyle(slotEl);
         frames.push({
           pending: document.documentElement.classList.contains('is-route-pending'),
-          opacity: style ? Number(style.opacity) : null,
-          events: style?.pointerEvents,
+          old: old.length ? Math.max(...old.map(el => Number(getComputedStyle(el).opacity))) : null,
+          events: old.length ? getComputedStyle(old[0]).pointerEvents : null,
+          slot: slotStyle ? { display: slotStyle.display !== 'none', opacity: Number(slotStyle.opacity) } : null,
+          skeletonInView: Array.from(document.querySelectorAll('main .skeleton')).some(inView),
           detail: Boolean(document.querySelector('[data-vt-detail]')),
         });
         requestAnimationFrame(sample);
@@ -421,6 +431,8 @@ async function chunkLate() {
       calls: __vtCalls.slice(count), total: __vtCalls.length, frames: __vtFrames,
       pending: document.documentElement.classList.contains('is-route-pending'),
       opacity: Number(getComputedStyle(document.querySelector('main')).opacity),
+      slots: document.querySelectorAll('main > .route-pending').length,
+      bodyOpacity: Math.min(...Array.from(document.querySelectorAll('main > :not(.route-pending)'), el => Number(getComputedStyle(el).opacity))),
       handled: Boolean(document.querySelector('[data-vt-enter-handled]')),
     }), calls);
     const [call] = result.calls;
@@ -429,18 +441,63 @@ async function chunkLate() {
     assert.equal(call.readyError, 'AbortError', 'empty transition must be skipped');
     const detail = result.frames.findIndex(frame => frame.detail);
     assert(detail > 0, 'detail frame not sampled');
-    assert(result.frames[detail - 1].opacity <= 0.05, `old body must be gone before the new page: ${result.frames[detail - 1].opacity}`);
+    const shown = result.frames.findIndex(frame => frame.pending && frame.slot?.display && frame.slot.opacity === 1 && frame.skeletonInView);
+    assert(shown >= 0 && shown < detail, 'route skeleton must appear in the viewport before the new page');
+    assert(result.frames.slice(shown, detail).filter(frame => frame.pending && frame.slot?.display).every(frame => frame.old <= 0.05),
+      'old body must be gone while the route skeleton is shown');
     assert(result.frames.some(frame => frame.pending && frame.events === 'none'), 'old body must stop taking pointer events while fading');
+    // 从骨架出现到新页面正文出现之间不能有空白帧：覆盖分包未到与分包已到、数据未到两段。
+    const blank = result.frames.slice(shown, detail).findIndex(frame => !frame.skeletonInView);
+    assert.equal(blank, -1, `blank frame ${blank} between the route skeleton and the page: ${JSON.stringify(result.frames.slice(shown + blank - 1, shown + blank + 2))}`);
     assert.equal(result.pending, false, 'pending class must be cleared');
+    assert.equal(result.slots, 0, 'route skeleton slot must be removed after commit');
     assert.equal(result.opacity, 1, 'new page must be visible');
+    assert.equal(result.bodyOpacity, 1, 'new page body must be visible');
     assert.equal(result.total, calls + 1, 'entry must not replay');
     assert.equal(result.handled, false, 'entry animation must stay enabled');
     assert.deepEqual(state.errors, []);
     console.log('PASS chunk-late-fade-out');
   } finally { await browser.close(); }
 
+  await chunkLateScrolled();
   await chunkInterrupted('back');
   await chunkInterrupted('push');
+}
+
+// 旧页面已滚到页底时，路由骨架仍须在视口内（sticky 槽位贴在页头下方）。
+async function chunkLateScrolled() {
+  const state = await launch();
+  const { page, browser } = state;
+  try {
+    await fresh(state);
+    await delayWasm(page, 1200);
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    await page.evaluate(() => window.__routeTransitions.push('/changelog'));
+    await page.waitForFunction(() => document.documentElement.classList.contains('is-route-pending'));
+    await page.waitForTimeout(200);
+    const slot = await page.evaluate(() => {
+      const el = document.querySelector('main > .route-pending');
+      const inView = node => {
+        if (node.getClientRects().length === 0) return false;
+        const rect = node.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.top < innerHeight;
+      };
+      return {
+        top: el?.getBoundingClientRect().top,
+        innerHeight,
+        display: el && getComputedStyle(el).display,
+        skeletonInView: Array.from(document.querySelectorAll('main .skeleton')).some(inView),
+      };
+    });
+    assert.notEqual(slot.display, 'none', 'route skeleton slot must be displayed');
+    assert(slot.top >= 0 && slot.top <= slot.innerHeight / 2, `route skeleton slot must stay near the viewport top: ${slot.top}`);
+    assert(slot.skeletonInView, 'route skeleton must be visible after the old page was scrolled down');
+    await page.waitForFunction(() => document.querySelector('main h1')?.textContent === '更新日志', null, { timeout: 30000 });
+    await settle(page);
+    await page.waitForFunction(() => !document.documentElement.classList.contains('is-route-pending'));
+    assert.deepEqual(state.errors, []);
+    console.log('PASS chunk-late-skeleton-in-view');
+  } finally { await browser.close(); }
 }
 
 // 用请求屏障保证导航发生在目标视图分包尚未加载时，不能靠固定延迟碰运气。
@@ -472,6 +529,7 @@ async function chunkInterrupted(kind) {
     const recoveredRoute = kind === 'back' ? '/' : '/archives';
     await ready(page, recoveredRoute);
     await page.waitForFunction(() => !document.documentElement.classList.contains('is-route-pending'));
+    assert.equal(await page.locator('main > .route-pending').count(), 0, `${kind}: route skeleton slot must be removed after recovery`);
 
     // 中断后才释放旧请求，迟到的分包不能覆盖当前页或破坏下一次导航。
     const response = page.waitForResponse(chunk);

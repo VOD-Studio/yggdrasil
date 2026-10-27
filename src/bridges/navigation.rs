@@ -145,6 +145,23 @@ pub fn rendered(id: u32, route: &str) {
     let _ = (id, route);
 }
 
+/// 协调器是否处于分包迟到的挂起状态（`<html>` 带 `is-route-pending`）。服务端恒为 `false`。
+///
+/// 迟到的新页面挂载后，组件 Effect（微任务）先于 `RouteMarker` 用 `set_timeout(0)`
+/// 触发的 [`rendered`] 运行，协调器在 `rendered` 里才撤类，所以 Effect 内读到的仍为 `true`。
+pub fn route_pending() -> bool {
+    #[cfg(target_arch = "wasm32")]
+    {
+        leptos::prelude::document()
+            .document_element()
+            .is_some_and(|root| root.class_list().contains("is-route-pending"))
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        false
+    }
+}
+
 #[cfg(target_arch = "wasm32")]
 pub mod wasm {
     use wasm_bindgen::{prelude::*, JsCast};

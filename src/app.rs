@@ -67,7 +67,7 @@ pub fn shell(options: LeptosOptions) -> impl IntoView {
                 <link rel="stylesheet" href="/style.css?v=6"/>
                 <link rel="stylesheet" href="/highlight.css?v=2"/>
                 <link rel="stylesheet" href="/katex/katex.min.css?v=3"/>
-                <link rel="stylesheet" href="/yggdrasil-core/yggdrasil-core.css?v=4"/>
+                <link rel="stylesheet" href="/yggdrasil-core/yggdrasil-core.css?v=5"/>
                 <script src="/yggdrasil-core/yggdrasil-core.js?v=9"></script>
                 <ThemePreload/>
                 <AutoReload options=options.clone()/>

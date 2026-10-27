@@ -30,6 +30,7 @@ use crate::components::skeletons::search_skeleton::SearchSkeleton;
 use crate::components::skeletons::writing_guide_skeleton::WritingGuideSkeleton;
 use crate::navigation::use_rendered_route;
 use crate::pages::not_found::{NotFound, PageLoadFailed};
+use crate::route_prefetch::{match_route, RouteTarget};
 use crate::routes::{is_post_path, is_showcase_path};
 use crate::theme::ThemeToggle;
 use crate::utils::error::is_not_found_text;
@@ -101,48 +102,53 @@ fn skeleton_kind(path: &str) -> SkeletonKind {
     }
 }
 
-/// 根据当前前台路径选择对应的骨架屏组件。
-fn route_skeleton(path: &str) -> AnyView {
+/// 路径对应的骨架屏，立即渲染。
+fn skeleton_view(path: &str) -> AnyView {
     match skeleton_kind(path) {
-        SkeletonKind::Notes => {
-            let path = path.to_string();
-            view! { <DelayedSkeleton><NotesRouteSkeleton path=path.clone()/></DelayedSkeleton> }
-                .into_any()
-        }
-        SkeletonKind::HomePage(page) => {
-            view! { <DelayedSkeleton><HomeSkeleton current_page=page/></DelayedSkeleton> }
-                .into_any()
-        }
-        SkeletonKind::Archives => {
-            view! { <DelayedSkeleton><ArchiveSkeleton/></DelayedSkeleton> }.into_any()
-        }
+        SkeletonKind::Notes => view! { <NotesRouteSkeleton path=path.to_string()/> }.into_any(),
+        SkeletonKind::HomePage(page) => view! { <HomeSkeleton current_page=page/> }.into_any(),
+        SkeletonKind::Archives => view! { <ArchiveSkeleton/> }.into_any(),
         SkeletonKind::TagDetail(tag) => view! { <TagDetailSkeleton tag=tag/> }.into_any(),
         SkeletonKind::Friends => view! {
-            <DelayedSkeleton>
-                <div class="friends">
-                    <FriendsSkeleton/>
-                </div>
-            </DelayedSkeleton>
+            <div class="friends">
+                <FriendsSkeleton/>
+            </div>
         }
         .into_any(),
-        SkeletonKind::Search => {
-            view! { <DelayedSkeleton><SearchSkeleton/></DelayedSkeleton> }.into_any()
-        }
-        SkeletonKind::PostDetail => {
-            view! { <DelayedSkeleton><PostDetailSkeleton/></DelayedSkeleton> }.into_any()
-        }
-        SkeletonKind::Changelog => {
-            view! { <DelayedSkeleton><ChangelogSkeleton/></DelayedSkeleton> }.into_any()
-        }
-        SkeletonKind::WritingGuide => {
-            view! { <DelayedSkeleton><WritingGuideSkeleton/></DelayedSkeleton> }.into_any()
-        }
+        SkeletonKind::Search => view! { <SearchSkeleton/> }.into_any(),
+        SkeletonKind::PostDetail => view! { <PostDetailSkeleton/> }.into_any(),
+        SkeletonKind::Changelog => view! { <ChangelogSkeleton/> }.into_any(),
+        SkeletonKind::WritingGuide => view! { <WritingGuideSkeleton/> }.into_any(),
         SkeletonKind::Showcase => {
             view! { <div class="py-20" role="status">"正在翻开组件图鉴…"</div> }.into_any()
         }
-        SkeletonKind::Fallback => {
-            view! { <DelayedSkeleton><HomeSkeleton/></DelayedSkeleton> }.into_any()
-        }
+        SkeletonKind::Fallback => view! { <HomeSkeleton/> }.into_any(),
+    }
+}
+
+/// 布局 Suspense 兜底：标签页与图鉴立即显示，其余延迟 200ms（见 `DelayedSkeleton`）。
+fn route_skeleton(path: &str) -> AnyView {
+    if matches!(
+        skeleton_kind(path),
+        SkeletonKind::TagDetail(_) | SkeletonKind::Showcase
+    ) {
+        return skeleton_view(path);
+    }
+    let path = path.to_string();
+    view! { <DelayedSkeleton>{skeleton_view(&path)}</DelayedSkeleton> }.into_any()
+}
+
+/// 懒加载分包挂起期间要占位的前台目标路径。
+///
+/// 地址栏已变、路由器仍显示旧页面时返回目标路径。目标不是前台页面（后台、登录、注册由别的
+/// 外壳渲染；未匹配路径同步渲染 404，不会挂起）时返回 `None`，旧 `main` 整块淡出。
+fn pending_target(target: &str, rendered: &str) -> Option<String> {
+    if target == rendered {
+        return None;
+    }
+    match match_route(target)? {
+        RouteTarget::Login | RouteTarget::Register | RouteTarget::Admin(_) => None,
+        _ => Some(target.to_string()),
     }
 }
 
@@ -166,8 +172,10 @@ fn route_error_fallback(errors: ArcRwSignal<Errors>) -> impl IntoView {
 
 /// 前台整体布局组件。
 ///
-/// 负责渲染 Header（含前台导航与主题切换）、主内容区与 Footer，
-/// 并在路由内容加载过程中显示与路由匹配的骨架屏。
+/// 负责渲染 Header（含前台导航与主题切换）、主内容区与 Footer。
+/// 骨架屏分两处：懒加载分包挂起时（路由器仍显示旧页面）由 `main` 顶部的 `.route-pending`
+/// 槽位占位目标页骨架，显隐跟随协调器的 `is-route-pending`；页面挂载后的数据读取由
+/// Suspense 兜底显示。
 ///
 /// Props：
 /// - `children`：显式传入的页面内容（未匹配路由的 404 兜底用）；缺省渲染嵌套路由的 `<Outlet/>`
@@ -199,6 +207,8 @@ pub fn FrontendLayout(#[prop(optional)] children: Option<ChildrenFn>) -> impl In
     });
     // 分享元信息里的页面地址：路径加查询串。
     let share_path = Memo::new(move |_| route.read().key());
+    // 分包迟到时在 main 顶部占位目标页骨架；显隐由 CSS 跟随协调器的 is-route-pending。
+    let pending = Memo::new(move |_| pending_target(&target_path.read(), &pathname.read()));
 
     view! {
         <FrontendShell
@@ -223,10 +233,17 @@ pub fn FrontendLayout(#[prop(optional)] children: Option<ChildrenFn>) -> impl In
             main_content=move || {
                 let children = children.clone();
                 view! {
+                    // 分包迟到时在 main 顶部占位目标页骨架；显隐由 CSS 跟随协调器的 is-route-pending。
+                    <Show when=move || pending.read().is_some()>
+                        <div class="route-pending site-route-pending" aria-hidden="true">
+                            {move || pending.get().map(|path| skeleton_view(&path))}
+                        </div>
+                    </Show>
                     <Show when=move || !is_post.get()>
                         <SiteShareMeta path=share_path/>
                     </Show>
                     // 页面自己的 Suspense 先接住数据读取；这里兜底未被包住的资源读取。
+                    // 懒加载分包未到时路由器保留旧页面、不会走到这里，由上方 .route-pending 占位。
                     // 错误边界在内层：路由内容出错时仍保留页头页脚与骨架屏逻辑。
                     <Suspense fallback=move || route_skeleton(&target_path.get_untracked())>
                         <ErrorBoundary fallback=route_error_fallback>
@@ -315,6 +332,24 @@ mod tests {
         assert_eq!(skeleton_kind("/about"), SkeletonKind::Fallback);
         assert_eq!(skeleton_kind("/page/abc"), SkeletonKind::Fallback);
         assert_eq!(skeleton_kind("/no-such-page"), SkeletonKind::Fallback);
+    }
+
+    #[test]
+    fn pending_target_only_covers_frontend_routes() {
+        assert_eq!(pending_target("/archives", "/archives"), None);
+        assert_eq!(
+            pending_target("/archives", "/"),
+            Some("/archives".to_string())
+        );
+        assert_eq!(
+            pending_target("/post/hello", "/"),
+            Some("/post/hello".to_string())
+        );
+        assert_eq!(pending_target("/admin", "/"), None);
+        assert_eq!(pending_target("/admin/logs", "/"), None);
+        assert_eq!(pending_target("/login", "/"), None);
+        assert_eq!(pending_target("/register", "/"), None);
+        assert_eq!(pending_target("/no/such/page", "/"), None);
     }
 
     #[test]

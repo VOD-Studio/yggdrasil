@@ -152,11 +152,36 @@ html.is-route-transitioning::view-transition-new(vt-admin-sidebar) {
   }
 }
 
-/* 目标页分包超出 300ms 等待预算仍未就绪：协调器跳过空过渡，旧正文淡出，
-   新页面挂载时撤销，由页面自身进场动画接上。只匹配最外层 main。 */
-html.is-route-pending main:not(main main) {
+/* 目标页分包超出 300ms 等待预算仍未就绪：协调器跳过空过渡并加 is-route-pending，
+   新页面提交后撤销。只匹配最外层 main。
+   外壳在 main 里放了 .route-pending（目标页骨架）时：旧正文淡出、骨架淡入并贴在视口顶部；
+   没放（跨外壳、登录页、目标即当前页）时整块 main 淡出。 */
+.route-pending {
+  display: none;
+}
+
+html.is-route-pending main:not(main main):not(:has(> .route-pending)),
+html.is-route-pending main:not(main main):has(> .route-pending) > :not(.route-pending) {
   animation: vt-fade-out 140ms var(--ease-out-expo) forwards;
   pointer-events: none;
+}
+
+/* 骨架向下溢出：滚到页底时不盖住页脚。clip 不建立滚动容器，sticky 仍相对视口。 */
+html.is-route-pending main:not(main main):has(> .route-pending) {
+  overflow: clip;
+}
+
+/* 高度为 0 的 sticky 槽位：不改变旧正文布局，内容盖在其上；
+   未滚动时停在正文起点，滚动后贴在 --route-pending-top（由外壳设置）。 */
+html.is-route-pending main:not(main main) > .route-pending {
+  display: block;
+  position: sticky;
+  top: var(--route-pending-top, 0px);
+  z-index: 1;
+  flex: none;
+  height: 0;
+  pointer-events: none;
+  animation: vt-fade-in 140ms var(--ease-out-expo) both;
 }
 
 @keyframes vt-fade-in {
