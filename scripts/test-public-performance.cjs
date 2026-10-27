@@ -139,10 +139,10 @@ async function main() {
     assert.equal(editorRequests.length, 0, 'Offscreen comments must not download the editor');
     assert.equal(codemirrorRequests.length, 0, 'Below-fold runnable blocks must not download CodeMirror');
     // 未激活的可运行块渲染静态高亮代码（可读、SSR 输出一致），不显示编辑器。
-    assert.equal(await page.locator('.code-runner-static').count(), 1, 'Runnable block must render static code before activation');
+    assert.equal((await page.locator('#code-runner-1 pre code').textContent()).trim(), "print('runner-lazy')", 'Runnable source must be readable before activation');
     assert.equal(await page.locator('.cm-editor').count(), 0, 'No CodeMirror instance before activation');
     // 滚动接近（约一屏内）触发单向激活：一次库加载 + 一个编辑器实例；不触发执行请求。
-    await page.locator('.code-runner-static').scrollIntoViewIfNeeded();
+    await page.locator('#code-runner-1').scrollIntoViewIfNeeded();
     await page.locator('#code-runner-1 .cm-editor').waitFor({ state: 'visible', timeout: 30000 });
     assert.equal(codemirrorRequests.length, 1, 'CodeMirror must load exactly once on activation');
     assert.equal(await page.evaluate(() => window.CodeMirrorEditor._instances.size), 1, 'Exactly one editor instance after activation');

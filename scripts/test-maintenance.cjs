@@ -23,7 +23,7 @@ async function main() {
       for (const route of ['/', '/archives', '/friends', '/about', '/search', '/writing-guide', '/notes', '/admin/notes', '/admin/notebooks', '/admin/system', '/admin/runner']) {
         await page.goto(base + route);
         await page.waitForFunction(() => window.__routeTransitions?.push, null, { timeout: 60000 });
-        await page.locator('h1').first().waitFor({ timeout: 60000 });
+        await page.getByRole('main').first().waitFor({ timeout: 60000 });
         if (route === '/admin/notes') await page.getByLabel('快速记录').waitFor();
         if (route === '/admin/runner') await page.locator('.cm-editor').waitFor({ timeout: 60000 });
         await page.waitForFunction(() => !document.documentElement.classList.contains('is-route-transitioning'));
