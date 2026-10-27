@@ -13,6 +13,7 @@ use leptos_router::components::{ParentRoute, Route, Router, Routes};
 use leptos_router::{path, Lazy, SsrMode};
 
 use crate::components::frontend_layout::FrontendLayout;
+use crate::components::share_meta::provide_share_context;
 use crate::components::ui::{provide_toaster, ToastRegion};
 use crate::context::{ShowcaseFilters, UserContext};
 use crate::navigation::{NavigationBridge, RouteMarker, RouteProgress};
@@ -85,6 +86,7 @@ pub fn shell(options: LeptosOptions) -> impl IntoView {
 #[component]
 pub fn App() -> impl IntoView {
     provide_meta_context();
+    provide_share_context();
     provide_theme();
     provide_context(UserContext::new());
     provide_context(RwSignal::new(ShowcaseFilters::default()));

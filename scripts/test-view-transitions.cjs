@@ -5,6 +5,7 @@
  *
  * PLAYWRIGHT_MODULE=/path/to/playwright CHROMIUM_PATH=/usr/bin/chromium \
  *   bun scripts/test-view-transitions.cjs
+ *   bun scripts/test-view-transitions.cjs share
  * Optional: VT_BASE, VT_SEARCH_QUERY, VT_TAG_PATH, VT_TOC_POST_PATH, VT_DEBUG=1.
  * Supply VT_ADMIN_USERNAME and VT_ADMIN_PASSWORD to include login/preview/logout.
  */
@@ -257,6 +258,41 @@ async function mobile() {
     assert.deepEqual(state.errors, []);
   } finally { await state.browser.close(); }
 }
+
+const SHARE_META = ['name="description"', 'property="og:description"', 'property="og:type"', 'property="og:url"', 'property="og:image"'];
+async function headMeta(page) {
+  return page.evaluate(selectors => Object.fromEntries(selectors.map(sel => [
+    sel, Array.from(document.head.querySelectorAll(`meta[${sel}]`), n => n.getAttribute('content')),
+  ])), SHARE_META);
+}
+async function shareMeta() {
+  const state = await launch();
+  const { page, browser } = state;
+  try {
+    await fresh(state);
+    const home = await headMeta(page);
+    for (const selector of SHARE_META) assert.equal(home[selector].length, 1, `home must have exactly one ${selector}`);
+    assert(home['property="og:image"'][0], 'site og:image must be non-empty');
+    const documentId = await page.evaluate(() => __vtDocument);
+    const link = page.locator('a[data-vt-post-link]').first();
+    const href = await link.getAttribute('href');
+    await link.click();
+    await ready(page, href);
+    await page.waitForSelector('[data-vt-detail]');
+    const postSpa = await headMeta(page);
+    await page.getByRole('link', { name: '文章', exact: true }).click();
+    await ready(page, '/');
+    assert.equal(await page.evaluate(() => __vtDocument), documentId, 'share metadata roundtrip must retain document');
+    assert.deepEqual(await headMeta(page), home, 'home head after SPA return must match direct load');
+    await page.goto(`${BASE}${href}`, { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('[data-vt-detail]');
+    for (const selector of SHARE_META) assert.equal(postSpa[selector].length, 1, `post must have exactly one ${selector}`);
+    assert.deepEqual(postSpa, await headMeta(page), 'post head after SPA navigation must match direct load');
+    assert.deepEqual(state.errors, []);
+    console.log('PASS share-meta-spa', JSON.stringify({ href, ogUrl: postSpa['property="og:url"'] }));
+  } finally { await browser.close(); }
+}
+
 async function coverFixture(mode) {
   const state = await launch();
   const { page, browser } = state;
@@ -740,6 +776,7 @@ if (require.main === module) (async () => {
   if (mode === 'all' || mode === 'reduced') await fallback({ name: 'reduced-motion', reducedMotion: 'reduce' });
   if (mode === 'all' || mode === 'unsupported') await fallback({ name: 'unsupported-browser', unsupported: true });
   if (mode === 'all' || mode === 'mobile') await mobile();
+  if (mode === 'all' || mode === 'share') await shareMeta();
   if (mode === 'all' || mode === 'cover') {
     for (const outcome of ['success', 'failure', 'slow']) await coverFixture(outcome);
   }

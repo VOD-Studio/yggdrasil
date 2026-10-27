@@ -1,15 +1,11 @@
 //! 分享元信息：`description`、Open Graph 与 Twitter 卡片。
 //!
-//! 只有服务端渲染的 HTML 会被社交平台读取。站点地址、简介与站点图地址由中间件放进
-//! 请求扩展（[`crate::models::share::ShareContext`]），服务端渲染时同步读取，
-//! 不另发请求；浏览器端取不到，
-//! 用空值渲染同样数量的标签，保持与服务端一致的 head 元素顺序（水合按顺序对齐）。
+//! 只有服务端渲染的 HTML 会被社交平台读取，但客户端导航后挂载的标签也要与直达页面一致。
+//! 站点信息由中间件放进请求扩展（[`crate::models::share::ShareContext`]），
+//! 再由 [`provide_share_context`](crate::components::share_meta::provide_share_context) 在 App 根部经 `SharedValue` 序列化，浏览器水合时读回。
+//! 标签顺序固定，以便水合按顺序对齐。
 //!
 //! 组件只写 `<head>`、没有可见内容，不进组件图鉴，故为 `pub(crate)`。
-
-// `PostShareMeta` 的调用方 pages/post_detail 在 Phase 3 移植，在此之前无调用方
-// （props 结构体的字段会报 never read，item 级 allow 盖不住宏生成的结构体）；落地后删除本 allow。
-#![allow(dead_code)]
 
 use leptos::prelude::*;
 use leptos::text_prop::TextProp;
@@ -18,8 +14,13 @@ use leptos_meta::Meta;
 use crate::models::post::Post;
 use crate::models::share::{PostShareCard, ShareContext};
 
-/// 读取当前请求的分享上下文；浏览器端与缺少中间件时返回空值。
-fn use_share_context() -> ShareContext {
+/// 应用根组件调用一次：服务端从请求扩展读取分享上下文并序列化进页面，浏览器水合时读回同一份值。
+/// 必须在水合期间创建（App 根部）：水合结束后才创建的 `SharedValue` 会在浏览器端重新求值，只能得到空值。
+pub(crate) fn provide_share_context() {
+    provide_context(SharedValue::new(share_context_from_request).into_inner());
+}
+
+fn share_context_from_request() -> ShareContext {
     #[cfg(feature = "server")]
     {
         crate::request_ctx::request_extension::<ShareContext>().unwrap_or_default()
@@ -28,6 +29,11 @@ fn use_share_context() -> ShareContext {
     {
         ShareContext::default()
     }
+}
+
+/// 读取分享上下文；没有上下文时（组件单测）返回空值。
+fn use_share_context() -> ShareContext {
+    use_context::<ShareContext>().unwrap_or_default()
 }
 
 /// 除文章页外的前台页面：站点描述与站点分享图。
