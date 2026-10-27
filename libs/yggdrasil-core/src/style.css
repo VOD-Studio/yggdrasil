@@ -166,9 +166,10 @@ html.is-route-pending main:not(main main):has(> .route-pending) > :not(.route-pe
   pointer-events: none;
 }
 
-/* 骨架向下溢出：滚到页底时不盖住页脚。clip 不建立滚动容器，sticky 仍相对视口。 */
+/* 骨架向下溢出：滚到页底时不盖住页脚。clip 不建立滚动容器，sticky 仍相对视口。
+   外壳可经 --route-pending-overflow 放开横向（骨架比 main 宽时），自行负责横向裁剪。 */
 html.is-route-pending main:not(main main):has(> .route-pending) {
-  overflow: clip;
+  overflow: var(--route-pending-overflow, clip);
 }
 
 /* 高度为 0 的 sticky 槽位：不改变旧正文布局，内容盖在其上；

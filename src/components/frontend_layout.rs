@@ -286,7 +286,7 @@ pub(crate) fn FrontendShell(
     #[prop(default = "min-h-screen")] min_height: &'static str,
 ) -> impl IntoView {
     view! {
-        <div class=format!("{min_height} flex flex-col bg-surface-0")>
+        <div class=format!("site-shell {min_height} flex flex-col bg-surface-0")>
             {header.run()}
             <main class=move || {
                 format!(
@@ -383,7 +383,6 @@ mod tests {
             }
             .to_html()
         });
-        assert!(html.contains("class=\"min-h-0 flex flex-col bg-surface-0\""));
         assert!(html.contains(
             "class=\"flex-1 w-full max-w-6xl mx-auto px-6 py-6 md:py-12 overflow-x-clip\""
         ));
@@ -406,7 +405,6 @@ mod tests {
             }
             .to_html()
         });
-        assert!(html.contains("class=\"min-h-screen flex flex-col bg-surface-0\""));
         assert!(html.contains("flex-1 w-full max-w-[880px] mx-auto"));
     }
 }

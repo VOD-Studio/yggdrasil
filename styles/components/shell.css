@@ -55,14 +55,26 @@
   }
 
   /* 路由挂起骨架贴在页头下方，与主区上内边距（py-6）一致。
-     槽位在 main 的内容区里：向两侧各伸出 main 的内边距回到 main 外框，再以中心对齐、
-     由目标页的 max-w 类封顶，内边距与 main 相同，骨架内容区即目标页内容区。 */
+     main 的宽度跟随已显示的页面，目标页可能更宽（880px 页面切到 1152px 图鉴）：槽位按外壳宽度
+     （挂起期间外壳是尺寸查询容器）以 main 中心居中、由目标页的 max-w 类封顶，内边距与 main
+     相同，骨架内容区即目标页内容区。 */
   .site-route-pending {
     --route-pending-top: calc(var(--site-header-height) + 1.5rem);
-    width: calc(100% + 3rem);
+    width: 100cqw;
     margin-left: 50%;
     translate: -50% 0;
     padding-inline: 1.5rem;
+  }
+
+  /* 骨架伸出 main 时不被 main 横向裁掉：main 挂起期间只裁纵向（不盖页脚），
+     横向裁剪上移到外壳，旧正文的横向溢出仍不会撑出页面横向滚动。 */
+  .site-shell {
+    --route-pending-overflow: visible clip;
+  }
+
+  html.is-route-pending .site-shell:has(> main > .route-pending) {
+    container-type: inline-size;
+    overflow-x: clip;
   }
 
   .wordmark {
