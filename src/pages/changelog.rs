@@ -10,6 +10,7 @@
 //! # 布局
 //! 左侧 200px 版本目录卡片（独立滚动、两端渐隐、滑动胶囊标出当前版本、阅读位置），
 //! 小屏改为横向版本条；右侧按版本分节，每节按新增 / 改进 / 修复等分组。
+//! 不展示 `## [Unreleased]`：部署即发版，解析结果里没有这一节。
 //! 目录的阅读跟随由 yggdrasil-core 的 `__initChangelogNav` 维护。
 
 use leptos::prelude::*;
@@ -77,10 +78,7 @@ impl ChangelogRoute {
 
 #[component]
 fn Changelog(versions: Vec<VersionEntry>) -> impl IntoView {
-    let total = versions
-        .iter()
-        .filter(|v| v.version != "Unreleased")
-        .count();
+    let total = versions.len();
     // 最早一个有日期的版本：「2026.06 起」。
     let since = versions
         .iter()

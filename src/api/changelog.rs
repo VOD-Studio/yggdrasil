@@ -15,6 +15,7 @@
 //!    （保留 `**bold**` / `` `code` `` / `[link]` 等内联格式 + sanitizer 清理）
 //!
 //! 分类标签默认中性灰，只有新增（clay）与安全（danger）着色，见 `changelog.css`。
+//! `## [Unreleased]` 不进入页面数据：部署即发版，未发布段落只留在仓库文件里。
 
 // 与 settings 等模块一致：Leptos `#[server]` 宏触发 deprecated/unit 提示，按项目惯例放行。
 #![allow(clippy::unused_unit, deprecated)]
@@ -95,13 +96,13 @@ pub struct ChangeGroup {
 /// 单个版本条目。
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct VersionEntry {
-    /// 版本号（如 `"0.8.3"`）或 `"Unreleased"`。
+    /// 版本号（如 `"0.8.3"`）。`## [Unreleased]` 在解析时丢弃，不会出现在这里。
     pub version: String,
-    /// 发布日期（ISO 格式 `"2026-08-03"`），Unreleased 版本为 None。
+    /// 发布日期（ISO 格式 `"2026-08-03"`）；标题未写日期时为 None。
     pub date: Option<String>,
-    /// 是否为最新正式版（第一个非 Unreleased 的版本）。
+    /// 是否为最新已发布版本（列表中的第一个）。
     pub is_latest: bool,
-    /// 版本下不属于任何 `###` 分类的正文 HTML（如 Unreleased 的占位文字）。
+    /// 版本下不属于任何 `###` 分类的正文 HTML（如版本导语）。
     pub intro_html: String,
     /// 按分类分组的变更条目。
     pub groups: Vec<ChangeGroup>,
@@ -185,6 +186,9 @@ fn parse_changelog(full_md: &str) -> ChangelogData {
     flush_category(&mut current, &mut current_cat);
     flush_version(&mut current, &mut raw_versions);
 
+    // 部署即发版，页面不展示未发布段落（内容仍留在 CHANGELOG.md）。
+    raw_versions.retain(|v| v.version != "Unreleased");
+
     // 将原始 Markdown 渲染为 HTML，转换为最终 VersionEntry。
     let mut versions: Vec<VersionEntry> = raw_versions
         .into_iter()
@@ -204,12 +208,8 @@ fn parse_changelog(full_md: &str) -> ChangelogData {
         })
         .collect();
 
-    // 第一个非 Unreleased 版本标记为最新。
-    for v in versions.iter_mut() {
-        if v.version != "Unreleased" {
-            v.is_latest = true;
-            break;
-        }
+    if let Some(latest) = versions.first_mut() {
+        latest.is_latest = true;
     }
 
     ChangelogData { versions }
@@ -295,14 +295,14 @@ pub async fn get_changelog() -> Result<ChangelogData, ApiError> {
     }
 }
 
-/// 最新发布的版本号与日期（不含 Unreleased），供关于页显示。
+/// 最新已发布版本的版本号与日期，供关于页显示。
 #[server(LatestRelease, endpoint = "latest_release", input = leptos::server_fn::codec::Json)]
 pub async fn latest_release() -> Result<Option<(String, Option<String>)>, ApiError> {
     let data = get_changelog().await?;
     Ok(data
         .versions
         .into_iter()
-        .find(|v| v.version != "Unreleased")
+        .next()
         .map(|v| (v.version, v.date)))
 }
 
@@ -361,6 +361,10 @@ mod tests {
 
 _暂无未发布改动。_
 
+### Added
+
+- 不应出现在页面数据里。
+
 ## [0.1.0] - 2026-01-01
 
 ### Added
@@ -373,24 +377,18 @@ _暂无未发布改动。_
 - 修复 X。
 ";
         let data = parse_changelog(md);
-        assert_eq!(data.versions.len(), 2, "应解析出 2 个版本");
-
-        // Unreleased 版本
-        let unreleased = &data.versions[0];
-        assert_eq!(unreleased.version, "Unreleased");
-        assert!(unreleased.date.is_none());
-        assert!(!unreleased.is_latest, "Unreleased 不是最新版");
+        assert_eq!(data.versions.len(), 1, "Unreleased 不应进入页面数据");
         assert!(
-            unreleased.intro_html.contains("暂无"),
-            "intro 应包含占位文字"
+            data.versions.iter().all(|v| v.version != "Unreleased"
+                && !v.intro_html.contains("暂无")
+                && v.groups.iter().all(|g| !g.items_html.contains("不应出现"))),
+            "Unreleased 的导语和条目都不应出现"
         );
-        assert!(unreleased.groups.is_empty(), "Unreleased 无分类组");
 
-        // 0.1.0 版本
-        let v010 = &data.versions[1];
+        let v010 = &data.versions[0];
         assert_eq!(v010.version, "0.1.0");
         assert_eq!(v010.date.as_deref(), Some("2026-01-01"));
-        assert!(v010.is_latest, "第一个正式版应标记为最新");
+        assert!(v010.is_latest, "第一个已发布版本应标记为最新");
         assert_eq!(v010.groups.len(), 2, "应有 Added + Fixed 两个组");
 
         // Added 组
@@ -462,13 +460,12 @@ _暂无未发布改动。_
         assert_eq!(latest_count, 1, "应恰好有一个版本标记为最新");
         // 每个正式版至少有一个组或有 intro
         for v in &data.versions {
-            if v.version != "Unreleased" {
-                assert!(
-                    !v.groups.is_empty() || !v.intro_html.is_empty(),
-                    "版本 {} 应有内容",
-                    v.version
-                );
-            }
+            assert_ne!(v.version, "Unreleased", "页面数据不应包含 Unreleased");
+            assert!(
+                !v.groups.is_empty() || !v.intro_html.is_empty(),
+                "版本 {} 应有内容",
+                v.version
+            );
         }
         // preamble 应被剥离
         for v in &data.versions {
