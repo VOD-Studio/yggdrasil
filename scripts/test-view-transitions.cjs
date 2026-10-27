@@ -587,6 +587,43 @@ async function ensureLoggedOut(context, logoutEndpoint) {
     'test-session cleanup did not expire the session cookie');
 }
 
+// 后台子页面分包迟到：顶栏下方出现后台骨架，分包到达后撤销。
+async function adminChunkLate(page) {
+  // 登录后 URL 先于后台外壳提交：等外壳与仪表盘挂载，否则推送发生在登录页上。
+  await page.waitForSelector('.admin-shell main .admin-dash');
+  await settle(page);
+  const chunk = /\/pkg\/split___logs_route_view_.*\.wasm(?:\?|$)/;
+  await page.route(chunk, async route => {
+    await new Promise(resolve => setTimeout(resolve, 1200));
+    await route.continue().catch(() => {});
+  });
+  try {
+    await page.evaluate(() => window.__routeTransitions.push('/admin/logs'));
+    await page.waitForFunction(() => document.documentElement.classList.contains('is-route-pending'));
+    await page.waitForTimeout(200);
+    const slot = await page.evaluate(() => {
+      const el = document.querySelector('main > .admin-route-pending');
+      const inView = node => {
+        if (node.getClientRects().length === 0) return false;
+        const rect = node.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.top < innerHeight;
+      };
+      return {
+        display: el && getComputedStyle(el).display,
+        skeletonInView: Array.from(document.querySelectorAll('main .admin-route-pending .skeleton')).some(inView),
+      };
+    });
+    assert(slot.display && slot.display !== 'none', 'admin route skeleton slot must be displayed');
+    assert(slot.skeletonInView, 'admin route skeleton must be visible in the viewport');
+    await ready(page, '/admin/logs');
+    await page.waitForFunction(() => !document.documentElement.classList.contains('is-route-pending'));
+    assert.equal(await page.locator('main > .route-pending').count(), 0, 'admin route skeleton slot must be removed after commit');
+    console.log('PASS admin-chunk-late-skeleton');
+  } finally {
+    await page.unroute(chunk);
+  }
+}
+
 async function admin() {
   if (!process.env.VT_ADMIN_USERNAME || !process.env.VT_ADMIN_PASSWORD) {
     console.log('SKIP admin (set VT_ADMIN_USERNAME and VT_ADMIN_PASSWORD to include session checks)');
@@ -632,6 +669,7 @@ async function admin() {
     await page.getByRole('button', { name: '登录', exact: true }).click();
     await page.waitForURL(/\/admin\/?$/);
     await settle(page);
+    await adminChunkLate(page);
     await push(page, '/admin/posts');
     await page.waitForSelector('a[data-vt-post-link]');
     const published = seed.find(post => post.status === 'Published');

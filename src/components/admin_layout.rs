@@ -465,7 +465,8 @@ fn nav_count(section: AdminSection, counts: Option<AdminNavCounts>) -> Option<(S
 
 /// 后台布局：校验登录态，提供侧栏/操作上下文，渲染外壳与嵌套路由出口。
 ///
-/// 登录态校验期与路由挂起期沿用同一布局内的页面骨架屏；校验未通过时
+/// 登录态校验期沿用同一布局内的页面骨架屏；懒加载子路由分包挂起时由 `main` 顶部的
+/// `.route-pending` 槽位占位目标页骨架，显隐跟随协调器的 `is-route-pending`；校验未通过时
 /// `navigation::replace("/login")`。作为 `/admin` 懒加载父路由的视图使用，
 /// 子路由内容由 `<Outlet/>` 渲染。
 #[component]
@@ -477,6 +478,7 @@ pub fn AdminLayout() -> impl IntoView {
     let page = Memo::new(move |_| AdminPage::from_path(&pathname.read()));
     let target_path = use_location().pathname;
     let target_page = Memo::new(move |_| AdminPage::from_path(&target_path.read()));
+    let pending = Memo::new(move |_| admin_pending(&target_path.read(), &pathname.read()));
     let counts = RwSignal::new(None::<AdminNavCounts>);
 
     // 进入后台时校验一次会话（水合后才会执行）；未登录或请求失败回登录页。
@@ -555,7 +557,7 @@ pub fn AdminLayout() -> impl IntoView {
             .and_then(|user| user.avatar_url.clone())
     });
 
-    // 路由挂起或登录态校验期的页面骨架。
+    // 登录态校验期与分包挂起槽位共用的页面骨架。
     let skeleton = move || {
         view! {
             <div class="flex-1 min-h-0 flex flex-col animate-pulse">
@@ -567,7 +569,13 @@ pub fn AdminLayout() -> impl IntoView {
         move || {
             if signed_in.get() {
                 view! {
-                    // 路由挂起时沿用同一布局内的页面骨架。
+                    // 分包迟到时在 main 顶部占位目标页骨架；显隐由 CSS 跟随协调器的 is-route-pending。
+                    <Show when=move || pending.get()>
+                        <div class="route-pending admin-route-pending" aria-hidden="true">
+                            {skeleton()}
+                        </div>
+                    </Show>
+                    // 兜底子页面未被自身 Suspense 包住的资源读取；分包未到时由上方槽位占位。
                     <Suspense fallback=skeleton>
                         <Outlet/>
                     </Suspense>
@@ -1061,6 +1069,15 @@ pub(crate) fn AdminSidebar(
     }
 }
 
+/// 懒加载子路由挂起期间，目标是否为需要后台骨架占位的后台页面。
+fn admin_pending(target: &str, rendered: &str) -> bool {
+    target != rendered
+        && matches!(
+            crate::route_prefetch::match_route(target),
+            Some(crate::route_prefetch::RouteTarget::Admin(_))
+        )
+}
+
 /// 根据当前后台页面，渲染对应的专属骨架屏。
 fn admin_route_skeleton(page: AdminPage) -> AnyView {
     match page {
@@ -1223,6 +1240,14 @@ mod tests {
         let (crumbs, title) = admin_crumbs(AdminPage::Other);
         assert_eq!(title, "后台");
         assert_eq!(crumbs.len(), 1);
+    }
+
+    #[test]
+    fn admin_pending_only_covers_admin_routes() {
+        assert!(admin_pending("/admin/logs", "/admin"));
+        assert!(!admin_pending("/admin", "/admin"));
+        assert!(!admin_pending("/", "/admin"));
+        assert!(!admin_pending("/login", "/admin"));
     }
 
     #[test]
