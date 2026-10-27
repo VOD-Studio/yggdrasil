@@ -55,9 +55,11 @@ pub(super) fn SqlConsoleTab() -> impl IntoView {
         StoredValue::new_local(None);
 
     // 执行 SQL 的核心逻辑：执行按钮与 Ctrl/Cmd+Enter 快捷键共用。闭包只捕获 Copy 的
-    // 信号，本身也是 Copy，每次调用读取最新值。
+    // 信号，本身也是 Copy，每次调用读取最新值。入口的 `running` 检查负责防止快捷键
+    // 在执行中重入（按钮禁用只挡得住点击）。
     let run_sql = move || {
-        if !editor_library.ready_untracked() {
+        // 执行中直接忽略：按钮禁用挡不住 Ctrl/Cmd+Enter，重入检查放在共用入口。
+        if running.get_untracked() || !editor_library.ready_untracked() {
             return;
         }
         running.set(true);
