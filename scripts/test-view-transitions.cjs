@@ -439,26 +439,78 @@ async function chunkLate() {
     console.log('PASS chunk-late-fade-out');
   } finally { await browser.close(); }
 
-  const back = await launch();
+  await chunkInterrupted('back');
+  await chunkInterrupted('push');
+}
+
+// 用请求屏障保证导航发生在目标视图分包尚未加载时，不能靠固定延迟碰运气。
+async function chunkInterrupted(kind) {
+  const state = await launch();
+  const { page, browser } = state;
+  let release;
+  const blocked = new Promise(resolve => { release = resolve; });
+  const chunk = /\/pkg\/split___changelog_route_view_.*\.wasm(?:\?|$)/;
   try {
-    await fresh(back);
-    await delayWasm(back.page, 1200);
-    await back.page.evaluate(() => window.__routeTransitions.push('/changelog'));
-    await back.page.waitForFunction(() => document.documentElement.classList.contains('is-route-pending'));
-    await back.page.waitForTimeout(600);
-    await back.page.goBack();
-    await back.page.waitForFunction(() => !document.documentElement.classList.contains('is-route-pending'), null, { timeout: 30000 });
-    await settle(back.page);
-    await back.page.waitForTimeout(2500);
-    const end = await back.page.evaluate(() => ({
-      path: location.pathname, route: window.__routeTransitions.currentRoute(),
-      opacity: Number(getComputedStyle(document.querySelector('main')).opacity),
-      home: Boolean(document.querySelector('a[data-vt-post-link]')),
+    await fresh(state);
+    await page.waitForSelector('html[data-hydrated]');
+    const original = await page.evaluate(() => ({
+      document: __vtDocument,
+      heading: document.querySelector('main h1')?.textContent,
     }));
-    assert.deepEqual(end, { path: '/', route: '/', opacity: 1, home: true });
-    // 挂起中后退时 Leptos 路由器会 panic（unreachable）；无挂起逻辑的基线同样出现，页面随后恢复，故只验证恢复结果。
-    console.log('PASS chunk-late-back-restores-page');
-  } finally { await back.browser.close(); }
+    await page.route(chunk, async route => {
+      await blocked;
+      await route.continue();
+    });
+    const requested = page.waitForRequest(chunk);
+    await page.evaluate(() => window.__routeTransitions.push('/changelog'));
+    await requested;
+    await page.waitForFunction(() => document.documentElement.classList.contains('is-route-pending'));
+    assert.equal(await page.locator('[data-vt-route]').getAttribute('data-vt-route'), '/', 'blocked destination must not replace the home DOM');
+
+    if (kind === 'back') await page.goBack();
+    else await page.locator('.site-nav a[href="/archives"]').click();
+    const recoveredRoute = kind === 'back' ? '/' : '/archives';
+    await ready(page, recoveredRoute);
+    await page.waitForFunction(() => !document.documentElement.classList.contains('is-route-pending'));
+
+    // 中断后才释放旧请求，迟到的分包不能覆盖当前页或破坏下一次导航。
+    const response = page.waitForResponse(chunk);
+    release();
+    const loaded = await response;
+    assert(loaded.ok(), 'blocked chunk must eventually load');
+    assert.equal(await loaded.finished(), null, 'blocked chunk response must complete');
+    await page.waitForLoadState('networkidle');
+    assert.deepEqual(state.errors, [], `${kind}: interrupted navigation must not panic`);
+    assert.deepEqual(state.consoleErrors, [], `${kind}: interrupted navigation must not log errors`);
+    assert.equal(await page.locator('[data-vt-route]').getAttribute('data-vt-route'), recoveredRoute, 'late chunk must not commit the cancelled route');
+    assert.equal(await page.locator('main h1').textContent(), kind === 'back' ? original.heading : '归档');
+    assert.equal(await page.locator('main').evaluate(main => Number(getComputedStyle(main).opacity)), 1, 'recovered page must be visible');
+
+    // 真实点击并检查正文与文档身份，防止 URL 改变或整页刷新掩盖 WASM 已失效。
+    if (kind === 'push') {
+      await page.locator('.site-nav a[href="/"]').click();
+      await ready(page, '/');
+      assert.equal(await page.locator('main h1').textContent(), original.heading);
+    }
+    await page.locator('.site-nav a[href="/archives"]').click();
+    await ready(page, '/archives');
+    await page.waitForFunction(() => !document.documentElement.classList.contains('is-route-pending'));
+    assert.equal(await page.locator('main h1').textContent(), '归档');
+    const end = await page.evaluate(() => ({
+      path: location.pathname,
+      route: window.__routeTransitions.currentRoute(),
+      opacity: Number(getComputedStyle(document.querySelector('main')).opacity),
+      document: __vtDocument,
+    }));
+    assert.deepEqual(end, { path: '/archives', route: '/archives', opacity: 1, document: original.document });
+    assert.deepEqual(state.errors, [], `${kind}: subsequent navigation must not panic`);
+    assert.deepEqual(state.consoleErrors, [], `${kind}: subsequent navigation must not log errors`);
+    console.log(`PASS chunk-late-${kind}-keeps-spa-alive`);
+  } finally {
+    release();
+    try { await page.unrouteAll({ behavior: 'wait' }); }
+    finally { await browser.close(); }
+  }
 }
 
 async function ensureLoggedOut(context, logoutEndpoint) {
