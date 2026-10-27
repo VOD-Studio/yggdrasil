@@ -153,11 +153,77 @@ async function createContext(browser, variant) {
   return { context, page };
 }
 
+// 会话查询失败不得当作未登录；验证成功前不挂载编辑器或发出文章请求。
+async function verifyAuth(browser) {
+  for (const scenario of [
+    { name: 'service-error', viewport: { width: 1440, height: 1000 }, anonymous: false },
+    { name: 'network-error', viewport: { width: 390, height: 844 }, anonymous: true },
+  ]) {
+    stage = `auth-${scenario.name}`;
+    const { context, page } = await createContext(browser, { ...scenario, scheme: 'light' });
+    let attempts = 0;
+    let releaseRetry;
+    let retryStarted;
+    const pendingRetry = new Promise(resolve => { releaseRetry = resolve; });
+    const startedRetry = new Promise(resolve => { retryStarted = resolve; });
+    await page.route('**/api/get_current_user', async route => {
+      attempts++;
+      if (attempts === 1) {
+        if (scenario.name === 'network-error') return route.abort('failed');
+        return route.fulfill({ status: 503, contentType: 'text/html',
+          body: '<h1>503 Service Unavailable</h1>' });
+      }
+      retryStarted();
+      await pendingRetry;
+      if (scenario.anonymous) {
+        return route.fulfill({ contentType: 'application/json', body: '{"user":null}' });
+      }
+      return route.continue();
+    });
+    try {
+      await page.goto(`${BASE}${EDIT_PATH}`, { waitUntil: 'domcontentloaded', timeout: 90000 });
+      const failure = page.getByRole('group', { name: '登录状态验证失败', exact: true });
+      await failure.waitFor({ timeout: 90000 });
+      await settle(page);
+      assert.equal(page.url(), `${BASE}${EDIT_PATH}`, 'lookup errors must retain the admin URL');
+      assert.equal(await page.locator('#write-title').count(), 0);
+      assert(!report.requests.some(request => request.stage === stage &&
+        ['get_post_by_id', 'get_admin_nav_counts'].includes(request.path.split('/').pop())),
+        'unverified sessions must not start admin data requests');
+      await screenshot(page, stage);
+      const retry = failure.getByRole('button', { name: '重新加载', exact: true });
+      await retry.evaluate(button => { button.click(); button.click(); button.click(); });
+      await startedRetry;
+      assert.equal(attempts, 2, 'duplicate retry clicks must issue only one request');
+      assert(await retry.isDisabled(), 'retry must be disabled while the lookup is pending');
+      assert.equal(await page.locator('#write-title').count(), 0);
+      releaseRetry();
+      if (scenario.anonymous) {
+        await page.waitForURL(`${BASE}/login`);
+        await page.locator('#login-username').waitFor();
+        pass('network failure stays in admin; explicit anonymous retry redirects to login');
+      } else {
+        await editorReady(page);
+        assert.equal(page.url(), `${BASE}${EDIT_PATH}`);
+        assert.equal(await failure.count(), 0);
+        await spa(page, '/admin/posts');
+        await page.getByRole('heading', { name: '文章', exact: true }).waitFor();
+        assert.equal(attempts, 2, 'successful verification must be reused within the admin layout');
+        pass('service failure blocks admin data; one retry restores the real session and navigation');
+      }
+    } finally {
+      releaseRetry();
+      await context.close();
+    }
+  }
+}
+
 async function main() {
   const browser = await chromium.launch({ headless: true,
     ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}),
     args: ['--no-sandbox'] });
   try {
+    await verifyAuth(browser);
     const { context, page } = await createContext(browser, {
       viewport: { width: 1440, height: 1000 }, scheme: 'light' });
     stage = 'editor-backfill';

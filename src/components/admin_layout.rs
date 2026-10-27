@@ -38,7 +38,8 @@ use crate::components::skeletons::settings_admin_skeleton::SettingsAdminSkeleton
 use crate::components::skeletons::system_skeleton::SystemSkeleton;
 use crate::components::skeletons::write_skeleton::WriteSkeleton;
 use crate::components::ui::{
-    Breadcrumb, ButtonSize, Crumb, Icon, IconButton, IconName, SheetClose, SideSheet, UserAvatar,
+    Breadcrumb, ButtonSize, Crumb, Icon, IconButton, IconName, LoadError, SheetClose, SideSheet,
+    UserAvatar,
 };
 use crate::context::UserContext;
 use crate::routes::Route;
@@ -466,9 +467,9 @@ fn nav_count(section: AdminSection, counts: Option<AdminNavCounts>) -> Option<(S
 /// 后台布局：校验登录态，提供侧栏/操作上下文，渲染外壳与嵌套路由出口。
 ///
 /// 登录态校验期沿用同一布局内的页面骨架屏；懒加载子路由分包挂起时由 `main` 顶部的
-/// `.route-pending` 槽位占位目标页骨架，显隐跟随协调器的 `is-route-pending`；校验未通过时
-/// `navigation::replace("/login")`。作为 `/admin` 懒加载父路由的视图使用，
-/// 子路由内容由 `<Outlet/>` 渲染。
+/// `.route-pending` 槽位占位目标页骨架，显隐跟随协调器的 `is-route-pending`；明确未登录时
+/// `navigation::replace("/login")`，验证请求失败则留在原位重试，不渲染子页面。
+/// 作为 `/admin` 懒加载父路由的视图使用，子路由内容由 `<Outlet/>` 渲染。
 #[component]
 pub fn AdminLayout() -> impl IntoView {
     let ctx = expect_context::<UserContext>();
@@ -481,25 +482,34 @@ pub fn AdminLayout() -> impl IntoView {
     let pending = Memo::new(move |_| admin_pending(&target_path.read(), &pathname.read()));
     let counts = RwSignal::new(None::<AdminNavCounts>);
 
-    // 进入后台时校验一次会话（水合后才会执行）；未登录或请求失败回登录页。
+    let auth_failed = RwSignal::new(false);
+    let auth_retrying = RwSignal::new(false);
+    let auth_reload = RwSignal::new(0_u32);
+
+    // 进入后台与重试时校验会话；只有明确未登录才跳转，服务错误不记为已校验。
     Effect::new(move |_| {
+        auth_reload.track();
         if ctx.checked.get_untracked() {
             return;
         }
-        ctx.checked.set(true);
+        auth_retrying.set(true);
         spawn_local(async move {
-            let signed_in = match get_current_user().await {
-                Ok(response) => match response.user {
-                    Some(user) => {
-                        let _ = ctx.user.try_set(Some(Arc::new(user)));
-                        true
+            let response = get_current_user().await;
+            // 离开后台后丢弃迟到响应，避免覆盖后续登录状态或触发跳转。
+            if auth_retrying.try_get_untracked().is_none() {
+                return;
+            }
+            auth_retrying.set(false);
+            match response {
+                Ok(response) => {
+                    let signed_in = response.user.is_some();
+                    ctx.user.set(response.user.map(Arc::new));
+                    ctx.checked.set(true);
+                    if !signed_in {
+                        crate::navigation::replace("/login");
                     }
-                    None => false,
-                },
-                Err(_) => false,
-            };
-            if !signed_in {
-                crate::navigation::replace("/login");
+                }
+                Err(_) => auth_failed.set(true),
             }
         });
     });
@@ -579,6 +589,18 @@ pub fn AdminLayout() -> impl IntoView {
                     <Suspense fallback=skeleton>
                         <Outlet/>
                     </Suspense>
+                }
+                .into_any()
+            } else if auth_failed.get() {
+                view! {
+                    <LoadError
+                        title="登录状态验证失败"
+                        retrying=auth_retrying
+                        on_retry=move |()| {
+                            auth_retrying.set(true);
+                            auth_reload.update(|n| *n = n.wrapping_add(1));
+                        }
+                    />
                 }
                 .into_any()
             } else {
