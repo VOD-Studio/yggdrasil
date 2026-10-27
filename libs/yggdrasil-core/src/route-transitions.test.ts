@@ -1138,3 +1138,151 @@ describe('link prefetch', () => {
     expect(prefetch).not.toHaveBeenCalled();
   });
 });
+
+describe('viewport prefetch on touch devices', () => {
+  class FakeObserver {
+    static instances: FakeObserver[] = [];
+    observed = new Set<Element>();
+    disconnected = false;
+    constructor(
+      private callback: (entries: Partial<IntersectionObserverEntry>[]) => void,
+      readonly options?: IntersectionObserverInit,
+    ) {
+      FakeObserver.instances.push(this);
+    }
+    observe(element: Element) {
+      this.observed.add(element);
+    }
+    unobserve(element: Element) {
+      this.observed.delete(element);
+    }
+    disconnect() {
+      this.disconnected = true;
+    }
+    reveal(...elements: Element[]) {
+      this.callback(elements.map((target) => ({ target, isIntersecting: true })));
+    }
+  }
+
+  let prefetch: Mock<(route: string, withData: boolean) => void>;
+
+  function link(href: string): HTMLAnchorElement {
+    const anchor = document.createElement('a');
+    anchor.href = href;
+    document.body.append(anchor);
+    return anchor;
+  }
+
+  function connect(hoverNone: boolean) {
+    vi.mocked(window.matchMedia).mockImplementation(
+      (query) => ({ matches: hoverNone && query === '(hover: none)' }) as MediaQueryList,
+    );
+    routes.disconnect();
+    routes.connect(notify, null, prefetch);
+  }
+
+  const observer = () => FakeObserver.instances[FakeObserver.instances.length - 1];
+
+  beforeEach(() => {
+    FakeObserver.instances = [];
+    prefetch = vi.fn();
+    vi.stubGlobal('IntersectionObserver', FakeObserver);
+    // 空闲回调换成 setTimeout(0)，便于用假定时器推进。
+    vi.stubGlobal('requestIdleCallback', (callback: () => void) => setTimeout(callback, 0));
+    vi.stubGlobal('cancelIdleCallback', (handle: number) => clearTimeout(handle));
+  });
+
+  it('prefetches code only, once per page, when a link reaches the viewport', () => {
+    const anchor = link('/post/a');
+    const again = link('/post/a#x');
+    connect(true);
+    vi.advanceTimersByTime(300);
+    expect(observer().options).toEqual({ rootMargin: '200px' });
+    expect(observer().observed).toEqual(new Set([anchor, again]));
+
+    observer().reveal(anchor);
+    vi.advanceTimersByTime(0);
+    expect(prefetch).toHaveBeenCalledExactlyOnceWith('/post/a', false);
+
+    vi.advanceTimersByTime(2000);
+    observer().reveal(again);
+    vi.advanceTimersByTime(0);
+    expect(prefetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('handles at most four addresses per idle slot', () => {
+    const anchors = ['a', 'b', 'c', 'd', 'e'].map((slug) => link(`/post/${slug}`));
+    connect(true);
+    vi.advanceTimersByTime(300);
+    observer().reveal(...anchors);
+    vi.advanceTimersByTime(0);
+    expect(prefetch).toHaveBeenCalledTimes(4);
+    vi.advanceTimersByTime(1);
+    expect(prefetch).toHaveBeenCalledTimes(5);
+    expect(prefetch).toHaveBeenLastCalledWith('/post/e', false);
+  });
+
+  it('does not let a viewport prefetch suppress the data prefetch from a touch', () => {
+    const anchor = link('/post/a');
+    connect(true);
+    vi.advanceTimersByTime(300);
+    observer().reveal(anchor);
+    vi.advanceTimersByTime(0);
+    anchor.dispatchEvent(new Event('touchstart', { bubbles: true }));
+    expect(prefetch.mock.calls).toEqual([
+      ['/post/a', false],
+      ['/post/a', true],
+    ]);
+  });
+
+  it('skips the current page and respects save-data', () => {
+    const here = link('/#top');
+    const there = link('/post/a');
+    connect(true);
+    vi.advanceTimersByTime(300);
+    Object.defineProperty(navigator, 'connection', {
+      configurable: true,
+      value: { saveData: true },
+    });
+    try {
+      observer().reveal(here, there);
+      vi.advanceTimersByTime(0);
+    } finally {
+      delete (navigator as unknown as { connection?: unknown }).connection;
+    }
+    expect(prefetch).not.toHaveBeenCalled();
+    observer().reveal(here);
+    vi.advanceTimersByTime(0);
+    expect(prefetch).not.toHaveBeenCalled();
+  });
+
+  it('does not create an observer without hover: none', () => {
+    link('/post/a');
+    connect(false);
+    vi.advanceTimersByTime(300);
+    expect(FakeObserver.instances).toHaveLength(0);
+  });
+
+  it('picks up links inserted later after the scan debounce', async () => {
+    connect(true);
+    vi.advanceTimersByTime(300);
+    const late = link('/post/late');
+    await Promise.resolve();
+    vi.advanceTimersByTime(299);
+    expect(observer().observed.has(late)).toBe(false);
+    vi.advanceTimersByTime(1);
+    expect(observer().observed.has(late)).toBe(true);
+  });
+
+  it('disconnects both observers and drops queued work', () => {
+    const anchor = link('/post/a');
+    connect(true);
+    vi.advanceTimersByTime(300);
+    const current = observer();
+    current.reveal(anchor);
+    routes.disconnect();
+    vi.advanceTimersByTime(5000);
+    expect(current.disconnected).toBe(true);
+    expect(prefetch).not.toHaveBeenCalled();
+  });
+});

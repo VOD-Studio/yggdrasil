@@ -17,6 +17,10 @@ const WAIT_MS = 300;
 const HOVER_INTENT_MS = 65;
 /** 同一地址两次预取的最小间隔，挡住指针抖动；数据新鲜度由 Rust 缓存自己判断。 */
 const PREFETCH_THROTTLE_MS = 2000;
+/** 触屏设备视口预取：每次空闲最多处理的地址数、重新扫描链接的防抖、已预取集合的上限。 */
+const VIEWPORT_BATCH = 4;
+const VIEWPORT_SCAN_MS = 300;
+const VIEWPORT_MEMORY = 500;
 const PENDING_CLASS = 'is-route-pending';
 const STATE_KEY = '__yggdrasilNavigation';
 const POSITION_KEY = '__yggdrasilPosition';
@@ -159,6 +163,13 @@ export class RouteTransitions {
   private prefetched = new Map<string, number>(); // 预取地址（不含哈希）→ 上次时间
   private intentTimer: number | undefined;
   private intentAnchor: HTMLAnchorElement | undefined;
+  private viewportObserver: IntersectionObserver | undefined;
+  private mutationObserver: MutationObserver | undefined;
+  private observedAnchors = new WeakSet<HTMLAnchorElement>();
+  private viewportQueue: string[] = [];
+  private viewportCodePrefetched = new Set<string>();
+  private scanTimer: number | undefined;
+  private cancelIdle: (() => void) | undefined;
 
   constructor() {
     // 两个监听都必须早于 Leptos 生效：Leptos 的 BrowserUrl 在水合时就在 window 上挂了
@@ -197,6 +208,7 @@ export class RouteTransitions {
     document.addEventListener('focusin', this.onFocusIn);
     document.addEventListener('focusout', this.onPointerOut);
     document.addEventListener('touchstart', this.onTouchStart, { capture: true, passive: true });
+    this.startViewportPrefetch();
   }
 
   disconnect(): void {
@@ -213,6 +225,7 @@ export class RouteTransitions {
     this.cancelIntent();
     this.prefetch = undefined;
     this.prefetched.clear();
+    this.stopViewportPrefetch();
     this.clearPending();
     history.scrollRestoration = this.oldRestoration;
     this.notify = undefined;
@@ -412,15 +425,105 @@ export class RouteTransitions {
     if (!this.prefetch || !this.active || constrainedNetwork()) return;
     const target = page(url);
     if (target === page(this.displayed)) return; // 当前页（含页内锚点）不预取
+    // 只预取分包的请求单独节流：触屏按下随后还要预取数据，不能被视口预取挡住。
+    const key = withData ? target : `${target}\0code`;
     const now = performance.now();
-    if (now - (this.prefetched.get(target) ?? -Infinity) < PREFETCH_THROTTLE_MS) return;
+    if (now - (this.prefetched.get(key) ?? -Infinity) < PREFETCH_THROTTLE_MS) return;
     if (this.prefetched.size > 200) this.prefetched.clear();
-    this.prefetched.set(target, now);
+    this.prefetched.set(key, now);
     try {
       this.prefetch(target, withData);
     } catch {
       // 预取失败不能影响导航；Rust 回调出错时这里吞掉。
     }
+  }
+
+  /** 没有悬停能力的设备：链接进入视口（外扩 200px）后在空闲期预取分包，不预取数据。 */
+  private startViewportPrefetch(): void {
+    if (typeof IntersectionObserver !== 'function' || !window.matchMedia('(hover: none)').matches)
+      return;
+    this.viewportObserver = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          this.viewportObserver?.unobserve(entry.target);
+          const routable = this.routableAnchor(entry.target);
+          if (!routable) continue;
+          const target = page(routable.url);
+          if (this.viewportCodePrefetched.has(target) || this.viewportQueue.includes(target))
+            continue;
+          this.viewportQueue.push(target);
+        }
+        this.scheduleFlush();
+      },
+      { rootMargin: '200px' },
+    );
+    // Suspense 内容晚到、“加载更多”追加的链接也要覆盖。
+    this.mutationObserver = new MutationObserver(() => this.scheduleScan());
+    this.mutationObserver.observe(document.body, { childList: true, subtree: true });
+    this.scheduleScan();
+  }
+
+  private stopViewportPrefetch(): void {
+    this.viewportObserver?.disconnect();
+    this.mutationObserver?.disconnect();
+    this.viewportObserver = undefined;
+    this.mutationObserver = undefined;
+    clearTimeout(this.scanTimer);
+    this.scanTimer = undefined;
+    this.cancelIdle?.();
+    this.cancelIdle = undefined;
+    this.observedAnchors = new WeakSet();
+    this.viewportQueue = [];
+    this.viewportCodePrefetched.clear();
+  }
+
+  private scheduleScan(): void {
+    if (!this.viewportObserver) return;
+    clearTimeout(this.scanTimer);
+    this.scanTimer = window.setTimeout(() => {
+      this.scanTimer = undefined;
+      this.scanAnchors();
+    }, VIEWPORT_SCAN_MS);
+  }
+
+  private scanAnchors(): void {
+    const observer = this.viewportObserver;
+    if (!observer) return;
+    for (const anchor of document.querySelectorAll<HTMLAnchorElement>('a[href]')) {
+      if (this.observedAnchors.has(anchor) || !this.routableAnchor(anchor)) continue;
+      this.observedAnchors.add(anchor);
+      observer.observe(anchor);
+    }
+  }
+
+  private scheduleFlush(): void {
+    if (this.cancelIdle || this.viewportQueue.length === 0) return;
+    const run = () => {
+      this.cancelIdle = undefined;
+      this.flushViewport();
+    };
+    if (typeof window.requestIdleCallback === 'function') {
+      const handle = window.requestIdleCallback(run, { timeout: 2000 });
+      this.cancelIdle = () => window.cancelIdleCallback(handle);
+    } else {
+      const handle = window.setTimeout(run, 200);
+      this.cancelIdle = () => clearTimeout(handle);
+    }
+  }
+
+  private flushViewport(): void {
+    if (constrainedNetwork()) {
+      this.viewportQueue = [];
+      return;
+    }
+    if (this.viewportCodePrefetched.size > VIEWPORT_MEMORY) this.viewportCodePrefetched.clear();
+    for (const target of this.viewportQueue.splice(0, VIEWPORT_BATCH)) {
+      if (target === page(this.displayed)) continue;
+      this.viewportCodePrefetched.add(target);
+      this.requestPrefetch(target, false);
+    }
+    this.scheduleFlush();
   }
   private onPageHide = (): void => {
     if (this.active) this.active.scroll = captureScroll();
@@ -948,6 +1051,7 @@ export class RouteTransitions {
     this.cleanNames(nav);
     document.documentElement.classList.remove('is-route-transitioning');
     nav.owner.finish();
+    this.scheduleScan();
   }
 }
 
