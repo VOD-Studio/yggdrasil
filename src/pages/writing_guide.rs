@@ -77,6 +77,7 @@ impl LazyRoute for WritingGuideRoute {
     fn view(this: Self) -> AnyView {
         let guide = this.guide;
         view! {
+            <Title text="写作指南 · Yggdrasil"/>
             <Suspense fallback=|| {
                 view! {
                     <DelayedSkeleton>
@@ -122,7 +123,6 @@ fn WritingGuide(data: WritingGuideData) -> impl IntoView {
         .collect_view();
 
     view! {
-        <Title text="写作指南 · Yggdrasil"/>
         <article class="writing-page">
             <WritingHeader/>
             <ol class="writing-steps page-enter" style="--enter-index: 1">

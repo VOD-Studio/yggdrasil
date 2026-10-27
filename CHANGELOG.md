@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **写作指南直达标题错误**：`/about/writing` 的页面标题移到数据挂起边界之外，流式 SSR 首个响应即带「写作指南 · Yggdrasil」，不再保留全站默认标题。
 - **客户端切页丢失分享信息**：站点分享上下文由应用根组件随 SSR 页面传给浏览器；从文章页返回首页、或客户端进入文章页后，描述、Open Graph 地址与分享图保持和直达页面一致，不再变为空串或相对地址。
 - **SQL 控制台执行中按快捷键重复提交**：执行按钮在运行时禁用，但 Ctrl/Cmd+Enter 仍会调用同一个执行入口，发出并发的 `execute_sql` 请求：最先返回的请求把按钮提前复位，写操作还可能被重复执行。现在入口检查是否正在执行，执行中按快捷键直接忽略，写操作确认弹窗也只出现一次。
 - **Server function 错误失去类型**：统一使用 JSON 编码的 `ApiError`，区分未认证、无权限、资源不存在、业务拒绝、服务不可用与内部故障；网络和编解码错误保留框架类别。数据库连接、SQL 与事务细节继续只记服务端日志，SSR 资源往返不丢错误类型，页面与 ErrorBoundary 不再按 `not_found` 文本判断 404。错误载荷协议已切换，部署后旧标签页需刷新；HTTP 状态仍沿用 Leptos server function 的错误响应约定，应用类别读取 `code` 字段。
