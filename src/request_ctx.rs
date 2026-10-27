@@ -36,7 +36,8 @@ pub fn append_response_header(name: http::HeaderName, value: http::HeaderValue) 
 
 /// 设置响应状态码。服务端写入 `ResponseOptions`，浏览器端空操作。
 ///
-/// 只有在响应头尚未发出时有效：`SsrMode::Async` 路由可以改状态，流式输出开始后无效。
+/// 只在首个响应块发出前有效：leptos 取到首块后才写入状态与响应头。`SsrMode::Async` 等全部数据后
+/// 才出首块；流式路由里，首个未就绪的 Suspense 之前同步渲染的组件仍可改状态。
 pub fn set_status(code: u16) {
     #[cfg(feature = "server")]
     if let Some(options) = leptos::prelude::use_context::<leptos_axum::ResponseOptions>() {

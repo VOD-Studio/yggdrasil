@@ -16,7 +16,9 @@ use crate::components::ui::{Icon, IconName};
 /// 404 页面组件。
 ///
 /// 展示 404 标记、说明、当前地址、返回首页与搜索，以及推荐文章。渲染时把响应状态置为 404
-/// （仅 `SsrMode::Async` 路由与未匹配路由的响应头尚可修改，其余模式见迁移方案“假设与预案”）。
+/// （需在首个响应块发出前渲染：`SsrMode::Async` 路由与未匹配路由总是满足；流式路由只有在渲染
+/// NotFound 的分支之前不 await 任何数据时才满足。依赖服务端数据判定 404 的页面必须用
+/// `SsrMode::Async`。）
 #[component]
 pub fn NotFound() -> impl IntoView {
     crate::request_ctx::set_status(404);

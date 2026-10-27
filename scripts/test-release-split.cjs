@@ -195,6 +195,14 @@ async function main() {
     const missing = await fetch(`${base}/post/no-such`);
     await missing.text();
     check('3 未知文章返回 404', missing.status === 404, `status=${missing.status}`);
+    const badPage = await fetch(`${base}/page/abc`);
+    const badPageBody = await badPage.text();
+    check('3 非法页码返回 404 且不带文章数据', badPage.status === 404 && !badPageBody.includes('\\"posts\\":['),
+      `status=${badPage.status}`);
+    const badPageAgain = await fetch(`${base}/page/abc`);
+    await badPageAgain.text();
+    check('3 非法页码不进 SSR 缓存', badPageAgain.status === 404 && badPageAgain.headers.get('x-ssr-cache') !== 'HIT',
+      `status=${badPageAgain.status} x-ssr-cache=${badPageAgain.headers.get('x-ssr-cache')}`);
     const second = await fetch(`${base}/post/split-a`);
     await second.text();
     check('3 第二次请求命中 SSR 缓存', second.headers.get('x-ssr-cache') === 'HIT', `x-ssr-cache=${second.headers.get('x-ssr-cache')}`);

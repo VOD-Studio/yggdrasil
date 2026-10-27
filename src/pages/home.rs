@@ -42,13 +42,14 @@ const TAG_CLOUD: usize = 10;
 const RECENT_NOTES: usize = 4;
 
 /// 首页路由，对应 `/` 与 `/page/:page`（无 `page` 参数视为第 1 页，`SsrMode::InOrder`）。
+/// 非法页码在首个响应块之前渲染 NotFound，状态码为 404；此时文章 source 为 None，不取数据。
 ///
 /// 文章列表随页码重取；其余四个数据源只有第 1 页用到，翻到后面的页码时 source 为
 /// `false`，fetcher 直接返回 `None`，不再发请求。
 pub struct HomeRoute {
     /// 页码（至少为 1）；`page` 参数不是整数时为 `None`，渲染 404。
     page: Memo<Option<i32>>,
-    posts: RouteData<PostListResponse>,
+    posts: RouteData<Option<PostListResponse>>,
     tags: RouteData<Option<TagListResponse>>,
     settings: RouteData<Option<SiteSettings>>,
     outline: RouteData<Option<PostOutline>>,
@@ -58,8 +59,11 @@ pub struct HomeRoute {
 // 取数函数随分包加载，见 `hooks::ssr_resource`。`first` 为 false（第 2 页起）时直接返回 None。
 
 #[leptos::lazy]
-async fn fetch_posts(page: i32) -> PageJson<PostListResponse> {
-    PageJson::new(list_published_posts(page, POSTS_PER_PAGE).await)
+async fn fetch_posts(page: Option<i32>) -> PageJson<Option<PostListResponse>> {
+    PageJson::new(match page {
+        Some(page) => list_published_posts(page, POSTS_PER_PAGE).await.map(Some),
+        None => Ok(None),
+    })
 }
 
 #[leptos::lazy]
@@ -115,7 +119,7 @@ impl LazyRoute for HomeRoute {
         let is_first = Memo::new(move |_| page.get() == Some(1));
         Self {
             page,
-            posts: route_data(move || page.get().unwrap_or(1), fetch_posts),
+            posts: route_data(move || page.get(), fetch_posts),
             tags: route_data(move || is_first.get(), fetch_home_tags),
             settings: route_data(move || is_first.get(), fetch_settings),
             outline: route_data(move || is_first.get(), fetch_outline),
@@ -150,10 +154,12 @@ impl LazyRoute for HomeRoute {
                     let current_page = page.get();
                     Suspend::new(async move {
                         match current_page {
+                            // 不得在此分支之前 await：InOrder 流式响应取到首块后才写状态，
+                            // NotFound 必须同步渲染，404 才生效。
                             None => view! { <NotFound/> }.into_any(),
                             Some(1) => {
                                 // 文章列表失败只把文章区换成错误卡片；其余数据失败退回空值。
-                                let posts = posts.await.ok();
+                                let posts = posts.await.ok().flatten();
                                 let tags = ranked_tags(
                                     tags.await.ok().flatten().map(|r| r.tags).unwrap_or_default(),
                                 );
@@ -184,7 +190,7 @@ impl LazyRoute for HomeRoute {
                                     .into_any()
                             }
                             Some(current_page) => {
-                                let posts = posts.await.ok();
+                                let posts = posts.await.ok().flatten();
                                 view! { <HomeArchive current_page=current_page posts=posts/> }
                                     .into_any()
                             }
@@ -202,7 +208,7 @@ impl HomeRoute {
     pub fn prefetch_data(page: Option<&str>) {
         let page = page_param(page);
         let first = page == Some(1);
-        prefetch_route_data(page.unwrap_or(1), fetch_posts);
+        prefetch_route_data(page, fetch_posts);
         prefetch_route_data(first, fetch_home_tags);
         prefetch_route_data(first, fetch_settings);
         prefetch_route_data(first, fetch_outline);
