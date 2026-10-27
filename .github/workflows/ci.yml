@@ -378,8 +378,10 @@ jobs:
           cd libs
           bun install --frozen-lockfile
           bun run playwright install --with-deps chromium
-      - name: Release build
-        run: make build
+      - name: Build diagnostic gate regressions
+        run: bun test scripts/check-build.test.cjs
+      - name: Release build (no warnings or errors)
+        run: bun scripts/check-build.cjs
       - name: Release split acceptance
         run: bun scripts/test-release-split.cjs
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
@@ -387,6 +389,11 @@ jobs:
         with:
           name: release-split-regressions
           path: target/regressions/
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: release-build-log
+          path: target/build.log
 
   # ── build-amd64：Docker in-container 全量构建（libs/WASM/rustdoc/静态 musl server）──
   # GitHub x86_64 runner，原生 Dockerfile（非 Dockerfile.cross），宿主仅需 Docker。
