@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 // 检查完整发布流水线；保留原始输出，不能只依赖各工具的退出码。
 import { spawn } from 'node:child_process';
-import { closeSync, mkdirSync, openSync, readFileSync, writeSync } from 'node:fs';
+import { closeSync, mkdirSync, openSync, writeSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
 
@@ -21,16 +21,20 @@ if (import.meta.main) {
     cwd: root,
     stdio: ['inherit', 'pipe', 'pipe'],
   });
+  const diagnostics = [];
   for (const [source, destination] of [[child.stdout, process.stdout], [child.stderr, process.stderr]]) {
+    // 分别识别两条流，避免交错写入把跨 chunk 的诊断词拆散。
+    const chunks = [];
     source.on('data', chunk => {
+      chunks.push(chunk);
       writeSync(log, chunk);
       destination.write(chunk);
     });
+    source.on('end', () => diagnostics.push(...buildDiagnostics(Buffer.concat(chunks).toString('utf8'))));
   }
   child.on('error', error => console.error(`无法启动 make build：${error.message}`));
   child.on('close', (code, signal) => {
     closeSync(log);
-    const diagnostics = buildDiagnostics(readFileSync(logPath, 'utf8'));
     if (diagnostics.length) {
       console.error(`发布构建出现 ${diagnostics.length} 行告警或错误，完整日志：${logPath}`);
       for (const line of diagnostics) console.error(line);

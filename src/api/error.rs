@@ -1,7 +1,8 @@
 //! 应用内部错误与 server function 的公开错误契约。
 //!
-//! [`AppError`] 保留服务端上下文，只有脱敏后的 [`ApiError`] 可以跨越网络或 SSR
-//! 资源边界。业务类别由枚举标签传输，消息只用于展示，不能参与错误分类。
+//! [`AppError`](crate::api::error::AppError) 保留服务端上下文，只有脱敏后的
+//! [`ApiError`](crate::api::error::ApiError) 可以跨越网络或 SSR 资源边界。
+//! 业务类别由枚举标签传输，消息只用于展示，不能参与错误分类。
 
 use leptos::prelude::ServerFnError;
 use leptos::server_fn::{

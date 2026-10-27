@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { buildDiagnostics } from './check-build.cjs';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 describe('发布构建诊断门禁', () => {
   test.each([
@@ -28,4 +31,37 @@ describe('发布构建诊断门禁', () => {
       'Finished release profile [optimized]',
     ].join('\r\n'))).toEqual([]);
   });
+});
+
+test.each([
+  ['双流交错且诊断跨 chunk', `
+    process.stderr.write('war');
+    setTimeout(() => {
+      console.log('normal output');
+      setTimeout(() => process.stderr.write('ning: split diagnostic\\n'), 30);
+    }, 30);
+  `, 1],
+  ['无诊断但构建失败', "console.log('compile stopped'); process.exit(23);", 1],
+  ['正常构建', "console.log('Finished release profile');", 0],
+])('命令退出状态：%s', (name, source, exitCode) => {
+  const root = mkdtempSync(join(tmpdir(), 'ygg-build-gate-'));
+  try {
+    mkdirSync(join(root, 'scripts'));
+    mkdirSync(join(root, 'bin'));
+    copyFileSync(join(import.meta.dir, 'check-build.cjs'), join(root, 'scripts/check-build.cjs'));
+    writeFileSync(join(root, 'bin/make'), `#!${Bun.which('bun')}\n${source}`, { mode: 0o755 });
+    const result = Bun.spawnSync(['bun', join(root, 'scripts/check-build.cjs')], {
+      env: { ...process.env, PATH: `${join(root, 'bin')}:${process.env.PATH}` },
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    expect(result.exitCode).toBe(exitCode);
+    if (name === '双流交错且诊断跨 chunk') {
+      expect(result.stderr.toString()).toContain('warning: split diagnostic');
+    } else if (exitCode === 1) {
+      expect(readFileSync(join(root, 'target/build.log'), 'utf8')).toBe('compile stopped\n');
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

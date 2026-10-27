@@ -1,6 +1,6 @@
 //! 将类型化的 API 错误整理成给人看的失败提示。
 //!
-//! 消息只用于展示，错误分类仅检查 [`ApiError`] 的枚举变体。
+//! 消息只用于展示，错误分类仅检查 [`ApiError`](crate::api::error::ApiError) 的枚举变体。
 //! 框架错误可能带原始响应或内部细节，不能直接展示。
 
 use leptos::prelude::ServerFnError;
