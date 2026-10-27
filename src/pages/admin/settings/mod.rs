@@ -276,9 +276,15 @@ pub fn SiteSettingsPage() -> impl IntoView {
                             scroll_to_section(section);
                             leptos::task::spawn_local(async move {
                                 crate::utils::time::sleep_ms(1200).await;
-                                if matches!(spy_lock.get_untracked(), Some((_, gg)) if gg == g) {
-                                    spy_lock.set(None);
-                                }
+                                // 计时期间页面可能已卸载（信号已释放）：maybe_update 此时静默跳过，
+                                // 只有世代号仍匹配才清锁，未改动时不通知订阅者。
+                                spy_lock.maybe_update(|lock| {
+                                    let expired = matches!(lock, Some((_, gg)) if *gg == g);
+                                    if expired {
+                                        *lock = None;
+                                    }
+                                    expired
+                                });
                             });
                         }
                     }
