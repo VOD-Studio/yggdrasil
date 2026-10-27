@@ -239,7 +239,7 @@ pub fn FrontendLayout(#[prop(optional)] children: Option<ChildrenFn>) -> impl In
                         <div
                             class=move || {
                                 format!(
-                                    "route-pending site-route-pending mx-auto w-full px-6 {}",
+                                    "route-pending site-route-pending {}",
                                     pending.read().as_deref().map_or("", main_width_class),
                                 )
                             }

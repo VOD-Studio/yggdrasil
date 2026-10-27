@@ -54,9 +54,15 @@
     padding-inline: 1.5rem;
   }
 
-  /* 路由挂起骨架贴在页头下方，与主区上内边距（py-6）一致。 */
+  /* 路由挂起骨架贴在页头下方，与主区上内边距（py-6）一致。
+     槽位在 main 的内容区里：向两侧各伸出 main 的内边距回到 main 外框，再以中心对齐、
+     由目标页的 max-w 类封顶，内边距与 main 相同，骨架内容区即目标页内容区。 */
   .site-route-pending {
     --route-pending-top: calc(var(--site-header-height) + 1.5rem);
+    width: calc(100% + 3rem);
+    margin-left: 50%;
+    translate: -50% 0;
+    padding-inline: 1.5rem;
   }
 
   .wordmark {
