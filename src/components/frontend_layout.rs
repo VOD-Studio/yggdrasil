@@ -152,6 +152,17 @@ fn pending_target(target: &str, rendered: &str) -> Option<String> {
     }
 }
 
+/// 路径对应的主区宽度类：文章页 1240px（680px 正文 + 右侧目录），图鉴 1152px，其余与页头同宽。
+fn main_width_class(path: &str) -> &'static str {
+    if is_post_path(path) {
+        "max-w-[1240px]"
+    } else if is_showcase_path(path) {
+        "max-w-6xl"
+    } else {
+        "max-w-[880px]"
+    }
+}
+
 /// 路由内容渲染出错时的兜底：错误文本表示“不存在”则显示 404，其余显示“页面加载失败”。
 fn route_error_fallback(errors: ArcRwSignal<Errors>) -> impl IntoView {
     move || {
@@ -194,17 +205,7 @@ pub fn FrontendLayout(#[prop(optional)] children: Option<ChildrenFn>) -> impl In
     let max_width = "max-w-[880px]";
     // 文章页由 PostDetail 写自己的分享元信息，其余页面用站点的。
     let is_post = Memo::new(move |_| is_post_path(&pathname.read()));
-    let main_width = Signal::derive(move || {
-        pathname.with(|path| {
-            if is_post_path(path) {
-                "max-w-[1240px]"
-            } else if is_showcase_path(path) {
-                "max-w-6xl"
-            } else {
-                max_width
-            }
-        })
-    });
+    let main_width = Signal::derive(move || pathname.with(|path| main_width_class(path)));
     // 分享元信息里的页面地址：路径加查询串。
     let share_path = Memo::new(move |_| route.read().key());
     // 分包迟到时在 main 顶部占位目标页骨架；显隐由 CSS 跟随协调器的 is-route-pending。
@@ -235,7 +236,15 @@ pub fn FrontendLayout(#[prop(optional)] children: Option<ChildrenFn>) -> impl In
                 view! {
                     // 分包迟到时在 main 顶部占位目标页骨架；显隐由 CSS 跟随协调器的 is-route-pending。
                     <Show when=move || pending.read().is_some()>
-                        <div class="route-pending site-route-pending" aria-hidden="true">
+                        <div
+                            class=move || {
+                                format!(
+                                    "route-pending site-route-pending mx-auto w-full px-6 {}",
+                                    pending.read().as_deref().map_or("", main_width_class),
+                                )
+                            }
+                            aria-hidden="true"
+                        >
                             {move || pending.get().map(|path| skeleton_view(&path))}
                         </div>
                     </Show>
@@ -332,6 +341,14 @@ mod tests {
         assert_eq!(skeleton_kind("/about"), SkeletonKind::Fallback);
         assert_eq!(skeleton_kind("/page/abc"), SkeletonKind::Fallback);
         assert_eq!(skeleton_kind("/no-such-page"), SkeletonKind::Fallback);
+    }
+
+    #[test]
+    fn main_width_follows_page_kind() {
+        assert_eq!(main_width_class("/post/hello"), "max-w-[1240px]");
+        assert_eq!(main_width_class("/about/components/button"), "max-w-6xl");
+        assert_eq!(main_width_class("/"), "max-w-[880px]");
+        assert_eq!(main_width_class("/archives"), "max-w-[880px]");
     }
 
     #[test]
