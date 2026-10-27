@@ -54,7 +54,7 @@ RUN apt-get update \
 # --- Bun ---
 # 官方 npm 包 @oven/bun-linux-<arch> 的 tgz 内只有单文件二进制，无需 Node.js 和 unzip。
 # CN_MIRROR=true: 走 npmmirror；CN_MIRROR=false: 走 registry.npmjs.org。
-ARG BUN_VERSION=1.4.2
+ARG BUN_VERSION=1.4.4
 RUN ARCH="$(dpkg --print-architecture)" \
     && case "$ARCH" in \
         amd64)  BUN_ARCH=x64     ;; \
