@@ -209,7 +209,6 @@ assets-dir = "public"
 site-addr = "127.0.0.1:8080"
 reload-port = 3001
 hash-files = true
-env = "DEV"
 bin-target = "yggdrasil"
 bin-features = ["server"]
 bin-default-features = false

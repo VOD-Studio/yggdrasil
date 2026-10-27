@@ -6,9 +6,9 @@
 //! 样式见 styles/components/palette.css；行为细节见 docs/v1.0-重设计方案.md「搜索面板」。
 //! 公共状态、输入与对话框结构见 [crate::components::palette]。
 //!
-//! 分包：[`SearchPalette`] 外壳（打开状态、快捷键、最近搜索与标签的预取）留在主包；
+//! 分包：[`SearchPalette`][crate::components::search_palette::SearchPalette] 外壳（打开状态、快捷键、最近搜索与标签的预取）留在主包；
 //! 面板主体（分组构建、条目映射、选中动作与 `PaletteShell` 视图）在
-//! [`search_palette_body`]（`#[leptos::lazy]`）里，首次打开面板时才加载分包。
+//! `search_palette_body`（`#[leptos::lazy]`）里，首次打开面板时才加载分包。
 
 use leptos::prelude::*;
 

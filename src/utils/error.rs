@@ -2,7 +2,7 @@
 //!
 //! `ServerFnError` 的 `Display` 带英文前缀，不能直接拼进界面；
 //! 服务端消息（`AppError` 转换而来）本身已是可读中文，取出来即可。
-//! UI 一律经 [`failure_message`] / [`error_reason`] 展示错误，不直接展示 `err.to_string()`。
+//! UI 一律经 [`failure_message`][crate::utils::error::failure_message] / [`error_reason`][crate::utils::error::error_reason] 展示错误，不直接展示 `err.to_string()`。
 
 use leptos::prelude::ServerFnError;
 

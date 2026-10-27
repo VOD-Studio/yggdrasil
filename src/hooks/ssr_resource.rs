@@ -1,12 +1,12 @@
 //! SSR 数据资源。
 //!
-//! # 路由数据：[`route_data`]
+//! # 路由数据：[`route_data`][crate::hooks::ssr_resource::route_data]
 //! 懒加载路由的 `LazyRoute::data()` 编译进主包（SSR 会多次执行 `view()`，资源只能在
 //! `data()` 里建）。若在那里直接建 `Resource<Result<T, ServerFnError>>`，每个路由的数据
 //! 类型、反序列化代码与 server fn 客户端都会进主包，所有页面首屏一起付费。
 //!
-//! [`route_data`] 把资源的值类型擦除成 JSON 文本（[`RawJson`]，所有路由共用同一份
-//! `Resource` 实例化），取数函数由调用方写成 `#[leptos::lazy]` 函数、返回 [`PageJson<T>`]：
+//! [`route_data`][crate::hooks::ssr_resource::route_data] 把资源的值类型擦除成 JSON 文本（[`RawJson`][crate::hooks::ssr_resource::RawJson]，所有路由共用同一份
+//! `Resource` 实例化），取数函数由调用方写成 `#[leptos::lazy]` 函数、返回 [`PageJson<T>`][crate::hooks::ssr_resource::PageJson]：
 //! 服务端直接调用并编码，客户端首次取数时才加载它所在的分包。`view()` 里
 //! `data.await` 得到 `Result<T, ServerFnError>`，解码代码随视图分包加载。
 //!
@@ -19,20 +19,20 @@
 //! // view():  match post.await { Ok(..) => .., Err(..) => .. }
 //! ```
 //!
-//! # 悬停预取：[`prefetch_route_data`]
+//! # 悬停预取：[`prefetch_route_data`][crate::hooks::ssr_resource::prefetch_route_data]
 //! 悬停、聚焦、触屏按下站内链接时，`route_prefetch` 调用各路由的 `prefetch_data` 提前请求
-//! 页面数据，结果存进浏览器端的小缓存；之后导航到该页，[`route_data`] 的取数闭包先查缓存，
+//! 页面数据，结果存进浏览器端的小缓存；之后导航到该页，[`route_data`][crate::hooks::ssr_resource::route_data] 的取数闭包先查缓存，
 //! 命中就直接复用进行中或已完成的请求。
 //!
-//! - **键** = 取数函数的类型（`TypeId::of::<F>()`）+ `source` 的值。具名函数项与 [`unit`]
+//! - **键** = 取数函数的类型（`TypeId::of::<F>()`）+ `source` 的值。具名函数项与 [`unit()`][crate::hooks::ssr_resource::unit]
 //!   返回的闭包类型都是唯一的，`data()` 与预取两边传同一个函数就是同一个键；闭包字面量
 //!   每处类型都不同，**永远不会命中**，只是不预取，不会取错数据。
 //! - **一次性**：命中即取走。完成后保留 10 秒，过期丢弃；进行中的请求不按 TTL 过期。
 //! - **出错不缓存**：错误结果只交给已经在等的消费者，之后的导航重新请求。
 //! - 只用于不依赖会话的公开数据；服务端不保留任何跨请求状态（非 wasm 为空操作）。
 //!
-//! # 主包内的数据：[`ssr_resource`]
-//! 页脚等主包组件自己的数据仍是普通资源；[`JsonSliceCodec`] 让水合解码与 server fn 共用
+//! # 主包内的数据：[`ssr_resource`][crate::hooks::ssr_resource::ssr_resource]
+//! 页脚等主包组件自己的数据仍是普通资源；[`JsonSliceCodec`][crate::hooks::ssr_resource::JsonSliceCodec] 让水合解码与 server fn 共用
 //! `serde_json::from_slice` 的实例化（默认 `JsonSerdeCodec` 用 `from_str`，同一类型会多出
 //! 一份 `StrRead` 反序列化代码）。
 
@@ -174,7 +174,7 @@ where
 /// 函数，主包里只留下这一份与数据类型无关的资源代码。
 ///
 /// 悬停预取按 `fetcher` 的类型加 `source` 的值查缓存：公开页面传具名函数项，
-/// 无参函数用 [`unit`] 包装；闭包字面量不会命中预取（见模块文档）。
+/// 无参函数用 [`unit()`] 包装；闭包字面量不会命中预取（见模块文档）。
 #[track_caller]
 pub fn route_data<S, T, F, Fut>(
     source: impl Fn() -> S + Send + Sync + 'static,

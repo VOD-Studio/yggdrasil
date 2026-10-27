@@ -11,7 +11,7 @@
 //! 按 id 查找容器；`EditorHandle` 含 JS 引用（非 `Send + Sync`），须放进
 //! `StoredValue::new_local`/`RwSignal::new_local`，`on_cleanup` 里 `take` 出来
 //! 丢弃即触发 `Drop` → `destroy`。上传状态用 `RwSignal<UploadsInFlight>` /
-//! `RwSignal<Vec<UploadErrorEntry>>` 传给 [`consume_upload_event`]。
+//! `RwSignal<Vec<UploadErrorEntry>>` 传给 wasm 模块的 `consume_upload_event`。
 
 /// 当前编辑器内进行中的上传计数（来自 onUploadEvent 的 counts 快照）。
 #[derive(Clone, Copy, Default, PartialEq)]

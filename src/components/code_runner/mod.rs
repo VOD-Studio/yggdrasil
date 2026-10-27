@@ -5,7 +5,7 @@
 //! `get_exec_result`）取回结果直到终态。
 //!
 //! CodeMirror 编辑器实例由组件在 WASM 端按容器 id 挂载，激活后的编辑器、终端与执行逻辑
-//! 位于分包函数 [`runner::CodeRunner`] 所在模块的 `code_runner_body` 中；静态代码块与
+//! 位于分包函数 [`CodeRunner`][crate::components::code_runner::CodeRunner] 所在模块的 `code_runner_body` 中；静态代码块与
 //! 激活判断留在调用方所在的包。
 
 pub mod runner;

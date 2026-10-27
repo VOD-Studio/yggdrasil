@@ -212,10 +212,14 @@ DOC_THEME_CSS := target/rustdoc-theme.css
 DOC_SHELL_JS := target/rustdoc-doc-shell.js
 DOC_FRAGMENTS := rustdoc-theme/in-header.html rustdoc-theme/before-content.html rustdoc-theme/after-content.html
 DOC_FRAGMENT_DIR = target/rustdoc-fragments/$(shell cat $(DOC_FRAGMENTS) | cksum | cut -d ' ' -f 1)
+# 文档始终带 --document-private-items（私有项与公共项一起渲染），公共项文档链接
+# 私有实现项（server fn 内部常量、私有工具函数等）是预期行为，放行该 lint；
+# 断链与歧义链接仍然告警。
 DOC_RUSTDOCFLAGS = -e $(CURDIR)/$(DOC_THEME_CSS) \
 	--html-in-header $(CURDIR)/$(DOC_FRAGMENT_DIR)/in-header.html \
 	--html-before-content $(CURDIR)/$(DOC_FRAGMENT_DIR)/before-content.html \
-	--html-after-content $(CURDIR)/$(DOC_FRAGMENT_DIR)/after-content.html
+	--html-after-content $(CURDIR)/$(DOC_FRAGMENT_DIR)/after-content.html \
+	-A rustdoc::private_intra_doc_links
 
 doc: ## 生成 rustdoc（站点同款主题）到 public/doc/
 	@mkdir -p target $(DOC_FRAGMENT_DIR)

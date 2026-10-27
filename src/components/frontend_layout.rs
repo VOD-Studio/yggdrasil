@@ -5,7 +5,7 @@
 //!
 //! 布局在主包里只构建一次（Leptos 组件体只运行一次），随路由变化的部分
 //! （导航激活项、主区宽度、站点分享信息）跟随当前显示的页面
-//! （[`use_rendered_route`]），骨架屏按地址栏指向的目标页选择。
+//! （[`use_rendered_route`][crate::navigation::use_rendered_route]），骨架屏按地址栏指向的目标页选择。
 
 use leptos::children::{ChildrenFn, ViewFn};
 use leptos::error::Errors;
