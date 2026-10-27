@@ -680,7 +680,8 @@ async function admin() {
     await publishedLink.click();
     await ready(page, preview);
     await page.waitForSelector(`[data-vt-detail="${published.id}"]`);
-    await page.locator('a[data-vt-return]').filter({ hasText: '返回列表' }).click();
+    // 预览改版后没有「返回列表」链接：回列表走后退，恢复由历史条目完成。
+    await page.goBack();
     await ready(page, '/admin/posts');
     console.log('PASS published-admin-article-preview-return');
     paginationFixture = true;
@@ -706,7 +707,8 @@ async function admin() {
     await link.click();
     await ready(page, href);
     await page.waitForSelector('[data-vt-detail]');
-    await page.locator('a[data-vt-return]').filter({ hasText: '返回列表' }).click();
+    // 同上：改版后的预览页没有回列表链接，用后退触发列表状态恢复。
+    await page.goBack();
     await ready(page, '/admin/posts');
     await page.waitForSelector('a[data-vt-post-link]');
     const restored = await page.evaluate(() => JSON.parse(__routeTransitions.readState('admin-posts')));
