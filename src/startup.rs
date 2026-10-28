@@ -11,6 +11,7 @@ use std::time::Duration;
 
 use axum::extract::{Request, State};
 use axum::response::{IntoResponse, Response};
+use axum::serve::ListenerExt;
 use leptos::config::{Env, LeptosOptions};
 use leptos_axum::LeptosRoutes;
 
@@ -187,6 +188,13 @@ fn serve_application(options: ServerOptions) -> ! {
             Ok(listener) => listener,
             Err(error) => fatal_bind_error(addr, error),
         };
+        // 关闭 Nagle：hyper 分两次写响应头与包体，开着 Nagle 时第二次写要等对端 ACK，
+        // 而反向代理的 keepalive 连接上对端会延迟 ACK 40 ms，复用连接的每个响应都慢 40 ms。
+        let listener = listener.tap_io(|tcp| {
+            if let Err(error) = tcp.set_nodelay(true) {
+                tracing::debug!(%error, "failed to set TCP_NODELAY");
+            }
+        });
         // 路由装配会启动后台任务（tokio::spawn），必须在 runtime 内执行。
         let router = build_router(options);
         tracing::info!("server listening on {addr}");
@@ -310,7 +318,7 @@ fn previous_public_dir() -> Option<PathBuf> {
 ///
 /// `LEPTOS_SITE_ROOT` 非空则用它（cargo-leptos 在 watch/serve 时自动设置，
 /// Docker 镜像显式设置）；否则是可执行文件旁的 `public/`。
-fn site_root() -> PathBuf {
+pub(crate) fn site_root() -> PathBuf {
     match std::env::var_os("LEPTOS_SITE_ROOT").filter(|v| !v.is_empty()) {
         Some(root) => PathBuf::from(root),
         None => exe_dir().join("public"),
