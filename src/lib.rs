@@ -44,6 +44,9 @@ pub mod routes;
 // ssr_cache 仅在 server feature 启用时编译；保存 SSR 世代号失效状态。
 #[cfg(feature = "server")]
 pub mod ssr_cache;
+// shutdown：SIGTERM 后通知长连接收尾，server-only。
+#[cfg(feature = "server")]
+pub mod shutdown;
 #[cfg(feature = "server")]
 pub mod startup;
 pub mod tasks;

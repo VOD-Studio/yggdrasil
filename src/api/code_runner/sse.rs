@@ -71,6 +71,8 @@ pub async fn exec_stream(
         })
     });
 
+    // 进程退出时不等容器跑完，主动结束响应，避免拖住优雅关闭。
+    let stream = stream.take_until(crate::shutdown::requested());
     Ok(Sse::new(stream).keep_alive(
         KeepAlive::new()
             .interval(Duration::from_secs(15))

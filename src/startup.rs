@@ -4,6 +4,7 @@
 //! 配置、数据库自举、后台任务生命周期和路由组合。路由装配可能被重复调用
 //! （例如测试），因此后台任务启动必须具备进程级幂等性。
 
+use std::future::IntoFuture;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::time::Duration;
@@ -18,6 +19,9 @@ const IMAGE_UPLOAD_TIMEOUT: Duration = Duration::from_secs(300);
 const BACKUP_IMPORT_TIMEOUT: Duration = Duration::from_secs(600);
 const EXPORT_TIMEOUT: Duration = Duration::from_secs(120);
 const APP_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+/// 收到退出信号后等待在途请求结束的上限；须小于容器停止超时（podman 默认 10 秒），
+/// 否则仍会被 SIGKILL。
+const SHUTDOWN_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
 
 static BACKGROUND_TASKS_STARTED: OnceLock<()> = OnceLock::new();
 
@@ -186,9 +190,23 @@ fn serve_application(options: ServerOptions) -> ! {
         // 路由装配会启动后台任务（tokio::spawn），必须在 runtime 内执行。
         let router = build_router(options);
         tracing::info!("server listening on {addr}");
-        axum::serve(listener, router.into_make_service())
+        let server = axum::serve(listener, router.into_make_service())
             .with_graceful_shutdown(shutdown_signal())
-            .await
+            .into_future();
+        let drain_deadline = async {
+            crate::shutdown::requested().await;
+            tokio::time::sleep(SHUTDOWN_DRAIN_TIMEOUT).await;
+        };
+        tokio::select! {
+            result = server => result,
+            () = drain_deadline => {
+                tracing::warn!(
+                    "在途请求 {} 秒内未结束，放弃等待并退出",
+                    SHUTDOWN_DRAIN_TIMEOUT.as_secs()
+                );
+                Ok(())
+            }
+        }
     });
 
     match result {
@@ -223,6 +241,7 @@ async fn shutdown_signal() {
         _ = terminate => {},
     }
     tracing::info!("收到退出信号，开始优雅关闭");
+    crate::shutdown::trigger();
 }
 
 fn fatal_bind_error(addr: std::net::SocketAddr, error: impl std::fmt::Display) -> ! {

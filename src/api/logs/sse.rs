@@ -93,6 +93,8 @@ pub async fn log_stream(
         )
     });
 
+    // 退出时主动结束，否则这条永不结束的响应会拖住优雅关闭。
+    let stream = stream.take_until(crate::shutdown::requested());
     Ok(Sse::new(stream).keep_alive(
         KeepAlive::new()
             .interval(Duration::from_secs(15))
