@@ -889,7 +889,9 @@ jobs:
   # 主应用由 publish-amd64-ghcr 提供当前 commit 的 amd64-only tag；runner 由
   # publish-runners 推入同一个公开 yggdrasil 包的 runner-* 标签。部署前必须确认每个
   # runner 已成功拉取或远端已有可用旧 tag；缺失时阻断 app 重启，避免 CI 绿但运行时报 404。
-  # deploy-xun 与 deploy-rua 是独立 job，均在 amd64 镜像发布完成后启动，因此两台并行部署。
+  # 两台按部署目录下的 ROLE 文件（primary|standby，缺省 primary）区分角色：primary 拉镜像后
+  # 重建 app 并做健康检查；standby 只预拉并打 tag，不启动 app（热备库只读，app 启动迁移会
+  # 直接退出），故障切换脚本改写 ROLE 并启动 app。deploy-rua 排在 deploy-xun 之后。
   deploy-xun:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -924,6 +926,25 @@ jobs:
           printf '%s\n' "$XUN_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 644 ~/.ssh/known_hosts
 
+      - name: Detect node role
+        id: role
+        env:
+          XUN_USER: ${{ secrets.XUN_USER }}
+          XUN_HOST: ${{ secrets.XUN_HOST }}
+          XUN_PORT: ${{ secrets.XUN_PORT }}
+          XUN_DEPLOY_DIR: ${{ secrets.XUN_DEPLOY_DIR }}
+        run: |
+          : "${XUN_USER:?secret XUN_USER 未设置}"
+          port="${XUN_PORT:-29888}"
+          dir="${XUN_DEPLOY_DIR:-/root/docker/yggdrasil}"
+          role="$(ssh -p "$port" -o BatchMode=yes "${XUN_USER}@${XUN_HOST}" 'bash -s' "$dir" \
+            <<<'cat "$1/ROLE" 2>/dev/null || echo primary' | tr -d '[:space:]')"
+          case "$role" in
+            primary|standby) echo "xun role: $role" ;;
+            *) echo "::error::xun ROLE 无效：${role:-<空>}"; exit 1 ;;
+          esac
+          echo "role=$role" >> "$GITHUB_OUTPUT"
+
       # quoted heredoc 经 ssh 'bash -s' 送入 xun，REG/部署目录/镜像 tag 作为位置参数传入，
       # 绕开 xun 的 fish 默认 shell 与嵌套引号转义问题。
       - name: Pull images from GHCR and restart app
@@ -934,23 +955,28 @@ jobs:
           XUN_PORT: ${{ secrets.XUN_PORT }}
           XUN_DEPLOY_DIR: ${{ secrets.XUN_DEPLOY_DIR }}
           OWNER: ${{ github.repository_owner }}
+          ROLE: ${{ steps.role.outputs.role }}
         run: |
           : "${XUN_USER:?secret XUN_USER 未设置}"
           port="${XUN_PORT:-29888}"
           dir="${XUN_DEPLOY_DIR:-/root/docker/yggdrasil}"
           owner="$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')"
           app_tag="sha-${GITHUB_SHA::7}-amd64"
-          ssh -p "$port" -o BatchMode=yes "${XUN_USER}@${XUN_HOST}" 'bash -s' "ghcr.io/${owner}" "${dir}" "${app_tag}" <<'REMOTE'
+          ssh -p "$port" -o BatchMode=yes "${XUN_USER}@${XUN_HOST}" 'bash -s' "ghcr.io/${owner}" "${dir}" "${app_tag}" "${ROLE}" <<'REMOTE'
           set -euo pipefail
           REG="$1"
           DIR="$2"
           APP_TAG="$3"
+          ROLE="$4"
 
           # 拉取之前记录当前运行镜像，任何失败点都能据此回滚到本次部署前的版本。
+          # standby 没有运行中的 app，保留原记录。
           cd "$DIR"
-          prev_id="$(docker inspect yggdrasil-app --format '{{.Image}}' 2>/dev/null || true)"
-          printf '%s\n' "$prev_id" > .previous-app-image
-          echo "==> previous app image: ${prev_id:-<none>}"
+          if [[ "$ROLE" == primary ]]; then
+            prev_id="$(docker inspect yggdrasil-app --format '{{.Image}}' 2>/dev/null || true)"
+            printf '%s\n' "$prev_id" > .previous-app-image
+            echo "==> previous app image: ${prev_id:-<none>}"
+          fi
 
           # 带重试的拉取：xun(中国)访问 ghcr.io 偶发超时。
           pull_retry() {
@@ -994,6 +1020,11 @@ jobs:
             exit 1
           fi
 
+          if [[ "$ROLE" != primary ]]; then
+            echo "==> standby：镜像已预拉，不启动 app"
+            exit 0
+          fi
+
           echo "==> [3/3] force recreate app (postgres 与数据卷不动)"
           docker compose --env-file .env up -d --no-deps --force-recreate app
           expected_id="$(docker image inspect "$REG/yggdrasil:$APP_TAG" --format '{{.Id}}')"
@@ -1010,6 +1041,7 @@ jobs:
       # 轮询内部健康端点（经 nginx-proxy 容器访问 app:3000），最多等约 60s。
       - name: Health check
         id: health
+        if: steps.role.outputs.role == 'primary'
         env:
           XUN_USER: ${{ secrets.XUN_USER }}
           XUN_HOST: ${{ secrets.XUN_HOST }}
@@ -1040,7 +1072,7 @@ jobs:
       # 回滚只切换镜像，不会回退已经应用的数据库迁移：旧二进制会跳过库里已存在的新版本，
       # 能在新 schema 上启动，但业务兼容性是尽力而为；迁移与旧代码不兼容时只能人工处理。
       - name: Roll back on failure
-        if: failure() && steps.deploy.outcome != 'skipped'
+        if: failure() && steps.deploy.outcome != 'skipped' && steps.role.outputs.role == 'primary'
         env:
           XUN_USER: ${{ secrets.XUN_USER }}
           XUN_HOST: ${{ secrets.XUN_HOST }}
@@ -1070,17 +1102,24 @@ jobs:
           echo "::error::回滚到 $prev 后 /readyz 仍未就绪"; exit 1
           REMOTE
 
-  # ── deploy-rua：与 deploy-xun 并行拉取 amd64 主应用并滚动重启 ──
-  # rua 参与负载均衡，需与 xun 一样准备 runner 镜像；app 经 pg-tunnel 连 xun PG。
+  # ── deploy-rua：deploy-xun 结束后按 ROLE 部署 rua ──
+  # 平时 rua 是 standby：只在 deploy-xun 成功后预拉 app 与 runner 镜像，使故障切换时启动的
+  # 版本与 xun 运行中的一致；xun 失败回滚时保留旧镜像。rua 为 primary（已故障切换）时不看
+  # deploy-xun 结果，照常重建 app 并做健康检查。
   # 受 repo 变量 RUA_DEPLOY_ENABLED=true 门控；未设则跳过。rua 失败 best-effort，
-  # 不阻断 xun 主部署和发版作业。主应用使用 publish-amd64-ghcr 发布的 commit tag。
+  # 不阻断发版作业。主应用使用 publish-amd64-ghcr 发布的 commit tag。
   # 所需 secrets：RUA_SSH_KEY / RUA_HOST / RUA_USER（启用后）、RUA_PORT（默认 29888）、
   # RUA_DEPLOY_DIR（默认 /root/docker/yggdrasil）、RUA_KNOWN_HOSTS（必填，拒绝 TOFU）。
   deploy-rua:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    needs: [deploy-gate, publish-amd64-ghcr, publish-runners]
-    if: vars.RUA_DEPLOY_ENABLED == 'true' && needs.deploy-gate.outputs.deploy == 'true'
+    needs: [deploy-gate, publish-amd64-ghcr, publish-runners, deploy-xun]
+    if: >-
+      !cancelled()
+      && vars.RUA_DEPLOY_ENABLED == 'true'
+      && needs.deploy-gate.outputs.deploy == 'true'
+      && needs.publish-amd64-ghcr.result == 'success'
+      && needs.publish-runners.result == 'success'
     environment:
       name: production
     concurrency:
@@ -1102,10 +1141,29 @@ jobs:
           printf '%s\n' "$RUA_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 644 ~/.ssh/known_hosts
 
-      # 同 xun：quoted heredoc 经 ssh 'bash -s' 送入 rua，REG/部署目录/镜像 tag 作为位置参数传入。
-      # 远端用 podman（rua 是 rootful Podman，非 Docker daemon）。
-      - name: Pull app and runner images to rua replica and restart
+      - name: Detect node role (rua)
+        id: role
+        env:
+          RUA_USER: ${{ secrets.RUA_USER }}
+          RUA_HOST: ${{ secrets.RUA_HOST }}
+          RUA_PORT: ${{ secrets.RUA_PORT }}
+          RUA_DEPLOY_DIR: ${{ secrets.RUA_DEPLOY_DIR }}
+        run: |
+          : "${RUA_USER:?secret RUA_USER 未设置}"
+          port="${RUA_PORT:-29888}"
+          dir="${RUA_DEPLOY_DIR:-/root/docker/yggdrasil}"
+          role="$(ssh -p "$port" -i ~/.ssh/id_ed25519_rua -o BatchMode=yes "${RUA_USER}@${RUA_HOST}" \
+            'bash -s' "$dir" <<<'cat "$1/ROLE" 2>/dev/null || echo primary' | tr -d '[:space:]')"
+          case "$role" in
+            primary|standby) echo "rua role: $role" ;;
+            *) echo "::error::rua ROLE 无效：${role:-<空>}"; exit 1 ;;
+          esac
+          echo "role=$role" >> "$GITHUB_OUTPUT"
+
+      # 远端用 podman（rua 是 rootful Podman，非 Docker daemon）。standby 只在 xun 部署成功后预拉镜像。
+      - name: Pull app and runner images to rua and restart if primary
         id: deploy
+        if: steps.role.outputs.role == 'primary' || needs.deploy-xun.result == 'success'
         continue-on-error: true
         env:
           RUA_USER: ${{ secrets.RUA_USER }}
@@ -1113,6 +1171,7 @@ jobs:
           RUA_PORT: ${{ secrets.RUA_PORT }}
           RUA_DEPLOY_DIR: ${{ secrets.RUA_DEPLOY_DIR }}
           OWNER: ${{ github.repository_owner }}
+          ROLE: ${{ steps.role.outputs.role }}
         run: |
           : "${RUA_USER:?secret RUA_USER 未设置}"
           port="${RUA_PORT:-29888}"
@@ -1120,17 +1179,21 @@ jobs:
           owner="$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')"
           app_tag="sha-${GITHUB_SHA::7}-amd64"
           ssh -p "$port" -i ~/.ssh/id_ed25519_rua -o BatchMode=yes \
-            "${RUA_USER}@${RUA_HOST}" 'bash -s' "ghcr.io/${owner}" "${dir}" "${app_tag}" <<'REMOTE'
+            "${RUA_USER}@${RUA_HOST}" 'bash -s' "ghcr.io/${owner}" "${dir}" "${app_tag}" "${ROLE}" <<'REMOTE'
           set -euo pipefail
           REG="$1"
           DIR="$2"
           APP_TAG="$3"
+          ROLE="$4"
 
           # 拉取之前记录当前运行镜像，任何失败点都能据此回滚到本次部署前的版本。
+          # standby 没有运行中的 app，保留原记录。
           cd "$DIR"
-          prev_id="$(podman inspect yggdrasil-app --format '{{.Image}}' 2>/dev/null || true)"
-          printf '%s\n' "$prev_id" > .previous-app-image
-          echo "==> previous app image: ${prev_id:-<none>}"
+          if [[ "$ROLE" == primary ]]; then
+            prev_id="$(podman inspect yggdrasil-app --format '{{.Image}}' 2>/dev/null || true)"
+            printf '%s\n' "$prev_id" > .previous-app-image
+            echo "==> previous app image: ${prev_id:-<none>}"
+          fi
 
           pull_retry() {
             local img="$1" i
@@ -1171,7 +1234,12 @@ jobs:
             exit 1
           fi
 
-          echo "==> [rua] force recreate app (pg-tunnel / pg-standby 不动)"
+          if [[ "$ROLE" != primary ]]; then
+            echo "==> [rua] standby：镜像已预拉，不启动 app"
+            exit 0
+          fi
+
+          echo "==> [rua] force recreate app"
           podman compose --env-file .env up -d --no-deps --force-recreate app
           expected_id="$(podman image inspect "$REG/yggdrasil:$APP_TAG" --format '{{.Id}}')"
           running_id="$(podman inspect yggdrasil-app --format '{{.Image}}')"
@@ -1184,8 +1252,9 @@ jobs:
           REMOTE
 
       # rua 健康检查（经 nginx-proxy 容器访问 app:3000），最多等约 60s；best-effort。
-      - name: Health check (rua replica)
+      - name: Health check (rua)
         id: health
+        if: steps.role.outputs.role == 'primary'
         continue-on-error: true
         env:
           RUA_USER: ${{ secrets.RUA_USER }}
@@ -1209,14 +1278,14 @@ jobs:
             fi
             sleep 5
           done
-          [ "$ok" = "1" ] || { echo "::warning::rua /readyz 未就绪或运行版本不是 $expected_hash（DR 副本，不阻断作业）"; exit 1; }
+          [ "$ok" = "1" ] || { echo "::warning::rua /readyz 未就绪或运行版本不是 $expected_hash（不阻断作业）"; exit 1; }
           ssh -p "$port" -i ~/.ssh/id_ed25519_rua -o BatchMode=yes "${RUA_USER}@${RUA_HOST}" \
             'podman ps --filter name=yggdrasil --format "{{.Names}}\t{{.Status}}"'
 
       # 与 deploy-xun 同样回滚到部署前镜像（回滚不回退数据库迁移）。deploy/health 两步带
       # continue-on-error，failure() 不会为真，因此改用 outcome 判断；本步骤同样 best-effort。
-      - name: Roll back on failure (rua replica)
-        if: steps.deploy.outcome == 'failure' || steps.health.outcome == 'failure'
+      - name: Roll back on failure (rua)
+        if: steps.role.outputs.role == 'primary' && (steps.deploy.outcome == 'failure' || steps.health.outcome == 'failure')
         continue-on-error: true
         env:
           RUA_USER: ${{ secrets.RUA_USER }}

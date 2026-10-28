@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **CI 双机改为主备部署**：xun、rua 按部署目录下的 `ROLE` 文件（`primary`/`standby`，缺省 `primary`）区分角色。primary 照旧重建 app、健康检查与失败回滚；standby 只预拉 app 与 runner 镜像，不启动 app（热备库只读，app 启动迁移会直接退出）。deploy-rua 改为在 deploy-xun 之后运行：standby 仅在 xun 部署成功后预拉，使故障切换时启动的版本与 xun 一致；rua 已切为 primary 时不受 xun 结果影响。
+
 ## [1.1.0] - 2026-10-28
 
 前端框架由 Dioxus 迁移到 Leptos 0.8，启用路由级 WASM 分包与链接悬停预取；部署后仍开着的旧标签页需刷新（接口地址与错误载荷协议已变）。
