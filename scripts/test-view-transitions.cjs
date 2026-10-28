@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /**
  * Native Chromium regression checks against a running, populated development site.
- * No content is written. Cover and slow-response cases use isolated browser fixtures.
+ * 不写入站点内容；慢响应和后台场景使用浏览器隔离的临时响应。
  *
  * PLAYWRIGHT_MODULE=/path/to/playwright CHROMIUM_PATH=/usr/bin/chromium \
  *   bun scripts/test-view-transitions.cjs
@@ -10,14 +10,11 @@
  * Supply VT_ADMIN_USERNAME and VT_ADMIN_PASSWORD to include login/preview/logout.
  */
 const assert = require('node:assert/strict');
-const path = require('node:path');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const BASE = (process.env.VT_BASE || 'http://127.0.0.1:8080').replace(/\/$/, '');
 const SEARCH_QUERY = process.env.VT_SEARCH_QUERY || 'Rust';
 const TAG_PATH = process.env.VT_TAG_PATH || '/tags/Rust';
 const TOC_POST_PATH = process.env.VT_TOC_POST_PATH;
-const FIXTURE_IMAGE = '/images/samples/clay-circle.webp';
-const FIXTURE_FILE = path.join(__dirname, '../public', FIXTURE_IMAGE);
 
 async function launch(options = {}) {
   const browser = await chromium.launch({
@@ -290,76 +287,6 @@ async function shareMeta() {
     assert.deepEqual(postSpa, await headMeta(page), 'post head after SPA navigation must match direct load');
     assert.deepEqual(state.errors, []);
     console.log('PASS share-meta-spa', JSON.stringify({ href, ogUrl: postSpa['property="og:url"'] }));
-  } finally { await browser.close(); }
-}
-
-async function coverFixture(mode) {
-  const state = await launch();
-  const { page, browser } = state;
-  try {
-    // 首页索引不显示封面；封面过渡在仍使用文章卡片的标签页上验证。
-    await page.route('**/api/get_posts_by_tag*', async route => {
-      const response = await route.fetch();
-      const data = await response.json();
-      if (data.posts?.[0]) data.posts[0].cover_image = FIXTURE_IMAGE;
-      await route.fulfill({ response, json: data });
-    });
-    await page.route('**/api/get_public_post_by_slug*', async route => {
-      const response = await route.fetch();
-      const data = await response.json();
-      assert(data.post, 'a published article is required for cover fixtures');
-      data.post.cover_image = FIXTURE_IMAGE;
-      data.post.content_html = '<p style="min-height:1000px">Browser-only lightweight article fixture.</p>';
-      data.post.toc_html = null;
-      await route.fulfill({ response, json: data });
-    });
-    await page.route(`**${FIXTURE_IMAGE}?**`, async route => {
-      if (new URL(route.request().url()).searchParams.get('w') === '1200') {
-        if (mode === 'failure') return route.fulfill({ status: 404, body: '' });
-        if (mode === 'slow') await new Promise(resolve => setTimeout(resolve, 800));
-      }
-      await route.fulfill({ status: 200, contentType: 'image/webp', path: FIXTURE_FILE });
-    });
-    await fresh(state);
-    // Load the tag list on the client so the source cover comes from a client response,
-    // avoiding edits to SSR hydration data or Dioxus-managed DOM.
-    await push(page, TAG_PATH);
-    const cover = page.locator('[data-vt-role="cover"]').first();
-    // v1.0 的归档与标签行不再显示封面；列表页没有封面时跳过共享封面检查。
-    if ((await cover.count()) === 0) {
-      console.log(`SKIP cover-${mode}: ${TAG_PATH} 没有带封面的文章行`);
-      return;
-    }
-    await cover.scrollIntoViewIfNeeded();
-    await page.waitForFunction(() => {
-      const image = document.querySelector('[data-vt-role="cover"] .blur-img-full');
-      return image?.complete && image.naturalWidth > 0;
-    });
-    const id = await cover.getAttribute('data-vt-post-id');
-    const link = page.locator(`a[data-vt-post-link="${id}"]`);
-    const href = await link.getAttribute('href');
-    const count = await page.evaluate(() => __vtCalls.length);
-    await link.click();
-    await ready(page, href);
-    const forward = await page.evaluate(index => __vtCalls[index], count);
-    assert(forward.oldNames.some(n => n.name === 'vt-post-cover'));
-    assert(forward.newNames.some(n => n.name === 'vt-post-title'));
-    assert.equal(forward.newNames.some(n => n.name === 'vt-post-cover'), mode === 'success');
-    assert(!forward.readyError, 'cover transition must not be rejected');
-    if (mode === 'slow') {
-      assert(forward.updateDoneAt - forward.started < 450, 'slow image exceeds wait budget');
-      await page.waitForTimeout(900);
-      assert.equal(await page.evaluate(() => __vtCalls.length), count + 1, 'late image must not replay');
-    }
-    if (mode === 'success') {
-      await page.goBack();
-      await ready(page, TAG_PATH);
-      const reverse = await page.evaluate(() => __vtCalls.at(-1));
-      assert(reverse.newNames.some(n => n.name === 'vt-post-cover'));
-      assert(!reverse.readyError);
-    }
-    assert.deepEqual(state.errors, []);
-    console.log(`PASS cover-${mode}`);
   } finally { await browser.close(); }
 }
 
@@ -772,14 +699,13 @@ async function admin() {
 module.exports = { launch, fresh, ensureLoggedOut };
 if (require.main === module) (async () => {
   const mode = process.argv[2] || 'all';
+  assert(['all', 'public', 'reduced', 'unsupported', 'mobile', 'share', 'slow', 'chunk', 'admin', 'prefetch'].includes(mode),
+    `未知场景：${mode}`);
   if (mode === 'all' || mode === 'public') await main();
   if (mode === 'all' || mode === 'reduced') await fallback({ name: 'reduced-motion', reducedMotion: 'reduce' });
   if (mode === 'all' || mode === 'unsupported') await fallback({ name: 'unsupported-browser', unsupported: true });
   if (mode === 'all' || mode === 'mobile') await mobile();
   if (mode === 'all' || mode === 'share') await shareMeta();
-  if (mode === 'all' || mode === 'cover') {
-    for (const outcome of ['success', 'failure', 'slow']) await coverFixture(outcome);
-  }
   if (mode === 'all' || mode === 'slow') await slowResponse();
   if (mode === 'all' || mode === 'chunk') await chunkLate();
   if (mode === 'all' || mode === 'admin') await admin();

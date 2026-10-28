@@ -20,10 +20,14 @@ async function main() {
       page.on('pageerror', e => report.errors.push(e.message));
       page.on('request', r => { if (r.url().startsWith(base)) report.requests.push(r.url().slice(base.length)); });
       await page.route('https://fonts.googleapis.com/**', r => r.fulfill({ body: '' }));
-      for (const route of ['/', '/archives', '/friends', '/about', '/search', '/writing-guide', '/notes', '/admin/notes', '/admin/notebooks', '/admin/system', '/admin/runner']) {
-        await page.goto(base + route);
-        await page.waitForFunction(() => window.__routeTransitions?.push, null, { timeout: 60000 });
+      for (const route of ['/', '/archives', '/friends', '/about', '/search', '/about/writing', '/notes', '/admin/notes', '/admin/notebooks', '/admin/system', '/admin/runner']) {
+        const response = await page.goto(base + route);
+        assert.equal(response?.status(), 200, `${route} 应返回 200`);
+        assert.equal(new URL(page.url()).pathname, route, `${route} 不应重定向`);
+        await page.locator('html[data-hydrated="true"]').waitFor({ state: 'attached', timeout: 60000 });
+        await page.locator(`[data-vt-route="${route}"]`).waitFor({ state: 'attached', timeout: 60000 });
         await page.getByRole('main').first().waitFor({ timeout: 60000 });
+        if (route === '/about/writing') await page.getByRole('heading', { name: '写作指南', exact: true }).waitFor();
         if (route === '/admin/notes') await page.getByLabel('快速记录').waitFor();
         if (route === '/admin/runner') await page.locator('.cm-editor').waitFor({ timeout: 60000 });
         await page.waitForFunction(() => !document.documentElement.classList.contains('is-route-transitioning'));
