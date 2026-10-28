@@ -1,0 +1,62 @@
+#!/bin/bash
+# EdgeOne 回源鉴权：EdgeOne 回源时带 X-Ygg-Origin-Auth: <密钥>，rua.plus 虚拟主机校验该头。
+# 其它站点共用这两台的 80/443，不能按 IP 封端口，所以用共享密钥头；/readyz、/healthz 放行。
+# 密钥从 /root/.ygg-origin-auth 读取，每行一个，任一匹配即放行（轮换时新旧并存，不中断）。
+#   ygg-origin-auth observe  # 只观测：响应头 X-Ygg-Origin-Auth 显示 ok/missing，不拦截
+#   ygg-origin-auth enforce  # 拦截：缺少或错误的请求返回 403
+#   ygg-origin-auth off      # 移除校验
+set -euo pipefail
+MODE="${1:-}"
+SECRETS_FILE=/root/.ygg-origin-auth
+secrets=()
+if podman inspect nginx-proxy --format '{{range .Mounts}}{{.Source}} {{end}}' | grep -q /root/docker/nginx-proxy/vhost.d; then
+  VH=/root/docker/nginx-proxy/vhost.d/rua.plus
+else
+  VH=/var/lib/containers/storage/volumes/nginx-proxy_vhost/_data/rua.plus
+fi
+BEGIN='# >>> ygg-origin-auth'
+END='# <<< ygg-origin-auth'
+
+case "$MODE" in
+  observe|enforce)
+    mapfile -t secrets < <(grep -v '^[[:space:]]*$' "$SECRETS_FILE")
+    (( ${#secrets[@]} > 0 )) || { echo "$SECRETS_FILE 没有密钥" >&2; exit 1; }
+    for s in "${secrets[@]}"; do
+      [[ "$s" =~ ^[0-9a-f]{48}$ ]] || { echo "$SECRETS_FILE 中有非 48 位 hex 的行" >&2; exit 1; }
+    done
+    ;;
+  off) ;;
+  *) sed -n '2,7p' "$0"; exit 1 ;;
+esac
+
+backup="$VH.bak-$(date +%Y%m%d%H%M%S)"
+cp -a "$VH" "$backup"
+sed -i "/^$BEGIN/,/^$END/d" "$VH"
+
+if [[ "$MODE" != off ]]; then
+  {
+    echo "$BEGIN"
+    echo 'set $ygg_origin_auth missing;'
+    for s in "${secrets[@]}"; do
+      echo "if (\$http_x_ygg_origin_auth = \"$s\") { set \$ygg_origin_auth ok; }"
+    done
+    if [[ "$MODE" == observe ]]; then
+      echo 'add_header X-Ygg-Origin-Auth $ygg_origin_auth always;'
+    else
+      echo 'if ($uri ~ ^/(readyz|healthz)$) { set $ygg_origin_auth ok; }'
+      echo 'if ($ygg_origin_auth != ok) { return 403; }'
+    fi
+    echo "$END"
+  } >> "$VH"
+fi
+if ! out="$(podman exec nginx-proxy nginx -t 2>&1)"; then
+  cp -a "$backup" "$VH"
+  printf '%s\n' "$out" | grep -v ssl_stapling >&2
+  echo "nginx -t 失败，已恢复 $VH" >&2
+  exit 1
+fi
+if ! out="$(podman exec nginx-proxy nginx -s reload 2>&1)"; then
+  printf '%s\n' "$out" | grep -v ssl_stapling >&2
+  exit 1
+fi
+echo "$MODE 已生效（${#secrets[@]} 个密钥）：$VH"

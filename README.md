@@ -53,6 +53,8 @@ CI 的 release-split 阶段通过 `bun scripts/check-build.ts` 执行完整 `mak
 
 容器监听 `127.0.0.1:3000`，探针为 `/healthz`（存活）与 `/readyz`（就绪）。
 
+生产环境 xun / rua 双机主备（流复制热备、单向文件同步、EdgeOne 回源鉴权、故障切换与回切）见 [docs/双机主备](docs/双机主备/README.md)。
+
 ## 目录
 
 ```

@@ -1,0 +1,95 @@
+# Yggdrasil 生产部署 compose
+# 复用现有 nginx-proxy + acme-companion 做前置反代(自动 HTTPS)
+# 独立 Postgres 容器,与 mimo-blog 的 blog-postgres 完全隔离
+#
+# 启动: docker compose --env-file .env up -d
+# 镜像由本地 buildx 构建 x86 后导入(localhost/yggdrasil:latest)
+# Code Runner 沙箱镜像(yggdrasil-runner-*)也已导入,挂载 podman socket 调度
+
+services:
+  postgres:
+    image: docker.io/library/postgres:16-alpine
+    container_name: yggdrasil-postgres
+    restart: always
+    # 端口不对外暴露,仅内部网络访问
+    expose:
+      - "5432"
+    ports:
+      - "127.0.0.1:5432:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - backend
+
+  app:
+    # localhost/ 前缀: podman 本地镜像(与 mimo-blog 约定一致)
+    image: localhost/yggdrasil:latest
+    container_name: yggdrasil-app
+    restart: always
+    # 端口不对外暴露,通过 nginx-proxy 反向代理
+    expose:
+      - "3000"
+    environment:
+      # 连接内部 Postgres(用服务名 postgres 解析)
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      # 生产三件套(AGENTS.md 要求)
+      APP_BASE_URL: https://${VIRTUAL_HOST}
+      KITE_PLAYER_API_URL: ${KITE_PLAYER_API_URL:-}
+      KITE_PLAYER_PLAYLISTS: ${KITE_PLAYER_PLAYLISTS:-}
+      COOKIE_SECURE: "true"
+      TRUSTED_PROXY_COUNT: "1"
+      # 动态响应 brotli/gzip（质量 6）；预压缩 .br 静态资源不受影响
+      COMPRESSION_ALGORITHMS: "br, gzip"
+      RUST_LOG: info
+      # MCP 令牌加密密钥（AES-GCM-256，hex 32 字节）
+      MCP_TOKEN_ENC_KEY: ${MCP_TOKEN_ENC_KEY}
+      # Code Runner: bollard 通过容器内 /var/run/docker.sock 连 podman
+      DOCKER_SOCKET_PATH: /var/run/docker.sock
+      CODE_RUNNER_ALLOW_NETWORK: "false"
+      # 3.6G/4C 服务器,收紧沙箱资源避免压垮宿主
+      CODE_RUNNER_MAX_CONCURRENT: "2"
+      CODE_RUNNER_MAX_CPU_CORES: "1.0"
+      CODE_RUNNER_MAX_MEMORY_MB: "512"
+      # nginx-proxy docker-gen 自动发现(触发 vhost 生成)。不签 Let's Encrypt：EdgeOne 回源
+      # HTTPS 不校验源站证书，nginx-proxy 使用 certs 目录下的自签 rua.plus.crt/.key（10 年期）。
+      VIRTUAL_HOST: ${VIRTUAL_HOST}
+      VIRTUAL_PORT: ${VIRTUAL_PORT}
+    volumes:
+      # 持久化上传文件与备份
+      - uploads_data:/app/uploads
+      - backups_data:/app/backups
+      # Code Runner 沙箱调度需要访问 podman socket(rootful, /run/podman/podman.sock)
+      # 映射到容器内 /var/run/docker.sock 匹配 DOCKER_SOCKET_PATH
+      - /run/podman/podman.sock:/var/run/docker.sock
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - backend
+      - proxy
+
+volumes:
+  postgres_data:
+    name: yggdrasil_postgres_data
+  uploads_data:
+    name: yggdrasil_uploads_data
+  backups_data:
+    name: yggdrasil_backups_data
+
+networks:
+  backend:
+    name: yggdrasil_network
+  proxy:
+    # 复用 mimo-blog 同款前置代理网络(nginx-proxy 容器在此网络)
+    name: nginx-proxy
+    external: true

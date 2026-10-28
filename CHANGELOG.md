@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **双机主备运维文档**：`docs/双机主备/` 记录生产 xun / rua 的拓扑、为什么只能主备不能双活、日常检查、故障切换、回切、重建热备与回源密钥轮换，并收录两台服务器实际安装的 compose、systemd 单元与 `ygg-failover`、`ygg-rebuild-standby`、`ygg-standby-sync`、`ygg-origin-auth` 脚本（不含 IP 与密钥）。
+
 ### Changed
 
 - **CI 双机改为主备部署**：xun、rua 按部署目录下的 `ROLE` 文件（`primary`/`standby`，缺省 `primary`）区分角色。primary 照旧重建 app、健康检查与失败回滚；standby 只预拉 app 与 runner 镜像，不启动 app（热备库只读，app 启动迁移会直接退出）。deploy-rua 改为在 deploy-xun 之后运行：standby 仅在 xun 部署成功后预拉，使故障切换时启动的版本与 xun 一致；rua 已切为 primary 时不受 xun 结果影响。

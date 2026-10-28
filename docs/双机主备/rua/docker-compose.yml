@@ -1,0 +1,78 @@
+# Yggdrasil rua 节点 — 冷备 app + PG 热备
+# 平时只运行 pg-standby（经 pg-tunnel 从 xun 流式复制，只读）；app 属于 failover profile，
+# 不随 `podman compose up -d` 启动。故障切换由 /usr/local/sbin/ygg-failover 执行：
+# pg_promote → .env 写入 COMPOSE_PROFILES=failover → 启动 app（连本机已提升的库）。
+# 角色见同目录 ROLE（standby|primary），CI 据此决定只预拉镜像还是重建 app。
+services:
+  app:
+    image: localhost/yggdrasil:latest
+    container_name: yggdrasil-app
+    restart: always
+    profiles: ["failover"]
+    expose:
+      - "3000"
+    depends_on:
+      pg-standby:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@pg-standby:5432/${POSTGRES_DB}
+      APP_BASE_URL: https://${VIRTUAL_HOST}
+      KITE_PLAYER_API_URL: ${KITE_PLAYER_API_URL:-}
+      KITE_PLAYER_PLAYLISTS: ${KITE_PLAYER_PLAYLISTS:-}
+      COOKIE_SECURE: "true"
+      TRUSTED_PROXY_COUNT: "1"
+      # 动态响应 brotli/gzip（质量 6）；预压缩 .br 静态资源不受影响
+      COMPRESSION_ALGORITHMS: "br, gzip"
+      RUST_LOG: info
+      MCP_TOKEN_ENC_KEY: ${MCP_TOKEN_ENC_KEY}
+      DOCKER_SOCKET_PATH: /var/run/docker.sock
+      CODE_RUNNER_ALLOW_NETWORK: "false"
+      CODE_RUNNER_MAX_CONCURRENT: "1"
+      CODE_RUNNER_MAX_CPU_CORES: "1.0"
+      CODE_RUNNER_MAX_MEMORY_MB: "512"
+      VIRTUAL_HOST: ${VIRTUAL_HOST}
+      VIRTUAL_PORT: ${VIRTUAL_PORT}
+      # 不签 Let's Encrypt：EdgeOne 回源 HTTPS 不校验源站证书，nginx-proxy 使用
+      # certs 目录下的自签 rua.plus.crt/.key（10 年期）。
+    volumes:
+      - uploads_data:/app/uploads
+      - backups_data:/app/backups
+      - /run/podman/podman.sock:/var/run/docker.sock
+    networks:
+      - backend
+      - proxy
+
+  pg-standby:
+    image: docker.io/library/postgres:16-alpine
+    container_name: yggdrasil-pgstandby
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgstandby_data:/var/lib/postgresql/data
+    expose:
+      - "5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - backend
+
+volumes:
+  uploads_data:
+    name: yggdrasil_uploads_data
+  backups_data:
+    name: yggdrasil_backups_data
+  pgstandby_data:
+    name: yggdrasil_pgstandby_data
+
+networks:
+  backend:
+    name: yggdrasil_network
+  proxy:
+    name: nginx-proxy
+    external: true

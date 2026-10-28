@@ -1,0 +1,8 @@
+[Unit]
+Description=Yggdrasil one-way sync of uploads/backups to rua standby
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/ygg-standby-sync

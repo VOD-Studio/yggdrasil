@@ -1,0 +1,67 @@
+#!/bin/bash
+# 从 xun 主库重建 rua 热备（回切后、或热备损坏/落后过多时使用）。
+#
+# 用法：ygg-rebuild-standby --yes
+#   前提：xun 是 primary 且经 pg-tunnel 可达。脚本会删除 rua 上的 app 容器、
+#   把 ROLE 改回 standby、移除 COMPOSE_PROFILES，旧数据目录改名保留（确认无误后手动删除）。
+#   复制账号密码取自旧数据目录的 primary_conninfo；旧目录不可用时通过环境变量 REPL_PASSWORD 提供。
+set -euo pipefail
+
+DIR=/root/docker/yggdrasil
+PG=yggdrasil-pgstandby
+IMAGE=docker.io/library/postgres:16-alpine
+NET=yggdrasil_network
+VOLUME=yggdrasil_pgstandby_data
+DATA=/var/lib/containers/storage/volumes/$VOLUME/_data
+SLOT=rua_standby
+PRIMARY="host=10.89.0.1 port=15432 user=replicator"
+
+[[ "${1:-}" == --yes ]] || { sed -n '2,8p' "$0"; exit 1; }
+cd "$DIR"
+
+if [[ -z "${REPL_PASSWORD:-}" ]]; then
+  REPL_PASSWORD="$(grep -oP "primary_conninfo = '.*?\bpassword=\K[^ ']+" "$DATA/postgresql.auto.conf" 2>/dev/null || true)"
+fi
+[[ -n "$REPL_PASSWORD" ]] || { echo "取不到复制账号密码，设置 REPL_PASSWORD 后重试" >&2; exit 1; }
+CONN="$PRIMARY password=$REPL_PASSWORD"
+
+primary_sql() {
+  podman run --rm --network "$NET" -e PGCONNECT_TIMEOUT=5 "$IMAGE" \
+    psql -d "$CONN dbname=postgres" -Atc "$1"
+}
+
+echo "==> 启动 pg-tunnel 并确认 xun 是可写主库"
+systemctl enable --now pg-tunnel.service
+sleep 3
+[[ "$(primary_sql 'select pg_is_in_recovery()')" == f ]] || { echo "xun 不是可写主库，中止" >&2; exit 1; }
+
+echo "==> 移除 app 容器，ROLE=standby"
+echo standby > ROLE
+sed -i '/^COMPOSE_PROFILES=/d' .env
+podman rm -f yggdrasil-app >/dev/null 2>&1 || true
+
+echo "==> 停止热备并在主库删除旧复制槽"
+podman stop "$PG" >/dev/null
+primary_sql "select pg_drop_replication_slot(slot_name) from pg_replication_slots where slot_name = '$SLOT' and not active" >/dev/null
+
+backup="$DATA.old-$(date +%Y%m%d%H%M%S)"
+echo "==> 旧数据目录改名为 $backup"
+mv "$DATA" "$backup"
+install -d -m 700 -o 70 -g 70 "$DATA"
+
+echo "==> pg_basebackup（建槽 $SLOT，写入 standby.signal 与 primary_conninfo）"
+podman run --rm --network "$NET" --user 70:70 -v "$VOLUME:/var/lib/postgresql/data" "$IMAGE" \
+  pg_basebackup -d "$CONN" -D /var/lib/postgresql/data -R -X stream -C -S "$SLOT"
+
+echo "==> 启动热备并确认流复制"
+podman start "$PG" >/dev/null
+for _ in $(seq 1 30); do
+  status="$(podman exec "$PG" sh -c 'psql -U "$POSTGRES_USER" -d postgres -Atc "select status from pg_stat_wal_receiver"' 2>/dev/null || true)"
+  if [[ "$status" == streaming ]]; then
+    echo "完成：rua 热备已从 xun 流复制。旧数据目录确认无用后删除：rm -rf $backup"
+    exit 0
+  fi
+  sleep 2
+done
+echo "60s 内未进入 streaming，查看：podman logs --tail 50 $PG" >&2
+exit 1

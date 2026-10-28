@@ -1,0 +1,26 @@
+#!/bin/bash
+# 单向同步 xun(primary) → rua(standby)。
+#   uploads：镜像同步（--delete），排除缩略图缓存与 rsync 残留临时文件。
+#   backups：只增不删，rua 端由 ygg-backup-prune.timer 按天数清理，保留比 xun 更长的历史。
+# rua 的 authorized_keys 用 rrsync 把两把专用 key 分别限定在各自目录、只写。
+# 本机 ROLE 不是 primary 时直接退出（故障切换后不会反向覆盖新主库的文件）。
+set -euo pipefail
+
+ROLE_FILE=/root/docker/yggdrasil/ROLE
+VOL=/var/lib/containers/storage/volumes
+REMOTE=root@api.rua.plus
+SSH="ssh -4 -p 29888 -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=yes"
+
+[[ "$(cat "$ROLE_FILE" 2>/dev/null)" == primary ]] || { echo "ROLE 不是 primary，跳过"; exit 0; }
+
+exec 9>/run/ygg-standby-sync.lock
+flock -n 9 || { echo "上一次同步仍在运行，跳过"; exit 0; }
+
+rsync -a --numeric-ids --delete --delay-updates --timeout=120 \
+  --exclude='.cache/' --exclude='.~tmp~/' --exclude='.*.??????' \
+  -e "$SSH -i /root/.ssh/id_ygg_sync_uploads" \
+  "$VOL/yggdrasil_uploads_data/_data/" "$REMOTE:"
+
+rsync -a --numeric-ids --timeout=300 --exclude='.*' \
+  -e "$SSH -i /root/.ssh/id_ygg_sync_backups" \
+  "$VOL/yggdrasil_backups_data/_data/" "$REMOTE:"

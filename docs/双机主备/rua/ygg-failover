@@ -1,0 +1,68 @@
+#!/bin/bash
+# 故障切换：把 rua 从 standby 提升为 primary 并启动 app。
+#
+# 用法：ygg-failover [--force]
+#   默认先经 pg-tunnel 探测 xun 主库：xun 仍可写时拒绝执行，避免两个主库同时接受写入。
+#   xun 整机不可达时探测自然失败，直接切换；xun 还活着但需要切走时，先在 xun 上
+#   停掉 yggdrasil-app 与 yggdrasil-postgres，或确认 xun 不会再接收流量后加 --force。
+#
+# 完成后：EdgeOne 源站组把 rua 源站权重改 100、xun 源站改 0。xun 恢复后按 RUNBOOK.md「回切」处理，
+# 不要直接启动 xun 上的 app 或 postgres。
+set -euo pipefail
+
+DIR=/root/docker/yggdrasil
+PG=yggdrasil-pgstandby
+UPLOADS=/var/lib/containers/storage/volumes/yggdrasil_uploads_data/_data
+
+cd "$DIR"
+[[ "$(cat ROLE 2>/dev/null)" == standby ]] || { echo "ROLE 不是 standby，拒绝执行" >&2; exit 1; }
+
+psql_local() { podman exec "$PG" sh -c 'psql -U "$POSTGRES_USER" -d postgres -Atc "$1"' _ "$1"; }
+
+[[ "$(psql_local 'select pg_is_in_recovery()')" == t ]] || { echo "本机库已不是热备，拒绝执行" >&2; exit 1; }
+
+if [[ "${1:-}" != --force ]]; then
+  echo "==> 探测 xun 主库（经 pg-tunnel，5s 超时）"
+  if xun_recovery="$(podman exec "$PG" sh -c \
+      'PGPASSWORD="$POSTGRES_PASSWORD" PGCONNECT_TIMEOUT=5 psql -h 10.89.0.1 -p 15432 -U "$POSTGRES_USER" -d postgres -Atc "select pg_is_in_recovery()"' \
+      2>/dev/null)" && [[ "$xun_recovery" == f ]]; then
+    echo "xun 主库仍在线可写，拒绝切换。先停掉 xun 的 app 与 postgres，或确认 xun 不再接收流量后加 --force。" >&2
+    exit 2
+  fi
+  echo "    xun 主库不可达"
+fi
+
+echo "==> 切换前复制状态（最后回放时间 / LSN）"
+psql_local "select coalesce((now() - pg_last_xact_replay_timestamp())::text, 'n/a'), pg_last_wal_replay_lsn()"
+
+echo "==> 停止 pg-tunnel"
+systemctl disable --now pg-tunnel.service
+
+echo "==> pg_promote"
+[[ "$(psql_local 'select pg_promote(true, 60)')" == t ]] || { echo "pg_promote 失败" >&2; exit 1; }
+[[ "$(psql_local 'select pg_is_in_recovery()')" == f ]] || { echo "提升后仍处于 recovery" >&2; exit 1; }
+
+echo "==> 清理 rsync 残留临时文件"
+find "$UPLOADS" \( -name '.*.??????' -type f -o -name '.~tmp~' -type d \) -prune -exec rm -rf {} +
+
+echo "==> 启用 failover profile 并标记 ROLE=primary"
+if grep -q '^COMPOSE_PROFILES=' .env; then
+  sed -i 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=failover/' .env
+else
+  printf 'COMPOSE_PROFILES=failover\n' >> .env
+fi
+echo primary > ROLE
+
+echo "==> 启动 app"
+podman compose --env-file .env up -d --no-deps app
+
+echo "==> 等待 /readyz（最多 120s）"
+for _ in $(seq 1 24); do
+  if podman exec nginx-proxy curl -fsS -o /dev/null http://yggdrasil-app:3000/readyz 2>/dev/null; then
+    echo "完成：rua 已是 primary，app 就绪。下一步：EdgeOne 源站组把 rua 源站权重改 100、xun 源站改 0。"
+    exit 0
+  fi
+  sleep 5
+done
+echo "app /readyz 未就绪，查看：podman logs --tail 100 yggdrasil-app" >&2
+exit 1

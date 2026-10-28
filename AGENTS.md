@@ -35,7 +35,7 @@ Yggdrasil is a self-hosted blog + CMS + notes/knowledge base: Rust 2021, Leptos 
 - `styles/` + `input.css`: Tailwind v4 CSS-first (no tailwind config file); import order matters.
 - `scripts/`: Bun TypeScript browser regressions, release assembly (`build-release.ts`, `test-release-split.ts`), `test-databases.sh`, asset generators.
 - `docker/`: deployment compose files and code-runner images (`docker/build-runners.sh`).
-- `docs/`: design/plan notes (`v1.0-重设计方案.md`, `plan/`, `backup-regressions.md`, `code-audit-2026-10-22.md`).
+- `docs/`: design/plan notes (`v1.0-重设计方案.md`, `plan/`, `backup-regressions.md`, `code-audit-2026-10-22.md`); `docs/双机主备/` is the production xun/rua primary–standby runbook plus the exact compose files, systemd units and scripts installed on the hosts (edit there first, then copy to the servers).
 
 ## Development Commands
 

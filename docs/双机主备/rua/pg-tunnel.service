@@ -1,0 +1,13 @@
+[Unit]
+Description=SSH tunnel rua->xun for PostgreSQL (15432->xun:5432)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/ssh -N -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes -L 10.89.0.1:15432:127.0.0.1:5432 xun-pg
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

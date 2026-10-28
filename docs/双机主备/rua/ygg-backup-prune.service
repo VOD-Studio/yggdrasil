@@ -1,0 +1,6 @@
+[Unit]
+Description=Prune Yggdrasil backups older than 30 days on rua
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/find /var/lib/containers/storage/volumes/yggdrasil_backups_data/_data -maxdepth 1 -type f -name auto_* -mtime +30 -print -delete
