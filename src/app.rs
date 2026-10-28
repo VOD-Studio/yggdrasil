@@ -113,10 +113,12 @@ pub fn App() -> impl IntoView {
                             view={Lazy::<HomeRoute>::new()}
                             ssr=SsrMode::InOrder
                         />
+                        // 非法页码要回 404：前台页面都在 FrontendLayout 的 Suspense 里，InOrder 下
+                        // 状态码能否赶上首块取决于线程调度，只有 Async 等全部渲染完才写状态。
                         <Route
                             path=path!("page/:page")
                             view={Lazy::<HomeRoute>::new()}
-                            ssr=SsrMode::InOrder
+                            ssr=SsrMode::Async
                         />
                         <Route
                             path=path!("notes")

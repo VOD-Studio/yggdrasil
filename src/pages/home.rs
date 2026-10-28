@@ -41,8 +41,8 @@ const TAG_CLOUD: usize = 10;
 /// 尾部「最近笔记」数。
 const RECENT_NOTES: usize = 4;
 
-/// 首页路由，对应 `/` 与 `/page/:page`（无 `page` 参数视为第 1 页，`SsrMode::InOrder`）。
-/// 非法页码在首个响应块之前渲染 NotFound，状态码为 404；此时文章 source 为 None，不取数据。
+/// 首页路由，对应 `/`（`SsrMode::InOrder`）与 `/page/:page`（`SsrMode::Async`，无 `page` 参数视为
+/// 第 1 页）。非法页码渲染 NotFound，状态码为 404；此时文章 source 为 None，不取数据。
 ///
 /// 文章列表随页码重取；其余四个数据源只有第 1 页用到，翻到后面的页码时 source 为
 /// `false`，fetcher 直接返回 `None`，不再发请求。
@@ -136,12 +136,17 @@ impl LazyRoute for HomeRoute {
             outline,
             notes,
         } = this;
-        let title = move || match page.get().unwrap_or(1) {
-            1 => "Yggdrasil Blog".to_string(),
-            current_page => format!("第 {current_page} 页 · Yggdrasil"),
+        // 标题传 String 而非读 `page` 的闭包：leptos_meta 在注入 <head> 时才求值，Async 模式下
+        // 这时 data() 的 owner 可能已释放，闭包读 Memo 会 panic。换页时由外层闭包重建 Title。
+        let title = move || {
+            let title = match page.get().unwrap_or(1) {
+                1 => "Yggdrasil Blog".to_string(),
+                current_page => format!("第 {current_page} 页 · Yggdrasil"),
+            };
+            view! { <Title text=title/> }
         };
         view! {
-            <Title text=title/>
+            {title}
             <Suspense fallback=move || {
                 let current_page = page.get_untracked().unwrap_or(1);
                 view! {
@@ -154,8 +159,7 @@ impl LazyRoute for HomeRoute {
                     let current_page = page.get();
                     Suspend::new(async move {
                         match current_page {
-                            // 不得在此分支之前 await：InOrder 流式响应取到首块后才写状态，
-                            // NotFound 必须同步渲染，404 才生效。
+                            // 非法页码只在 `/page/:page`（Async）出现，状态码在渲染完成后才写入。
                             None => view! { <NotFound/> }.into_any(),
                             Some(1) => {
                                 // 文章列表失败只把文章区换成错误卡片；其余数据失败退回空值。
