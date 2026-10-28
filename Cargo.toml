@@ -1,6 +1,6 @@
 [package]
 name = "yggdrasil"
-version = "1.1.0"
+version = "1.1.1"
 edition = "2021"
 
 # 库目标：lib.rs 承载全部模块，cargo-leptos 以 cdylib 构建浏览器 WASM，服务端二进制以 rlib 链接。

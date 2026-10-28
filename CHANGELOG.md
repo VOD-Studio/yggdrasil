@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-10-28
+
+生产环境改为 xun 主、rua 热备的双机主备部署：CI 按节点角色部署，补齐运维文档与线上脚本。v1.1.0 的发版流水线中途取消、未部署，本版本一并上线 v1.1.0 的全部改动。
+
 ### Added
 
 - **双机主备运维文档**：`docs/双机主备/` 记录生产 xun / rua 的拓扑、为什么只能主备不能双活、日常检查、故障切换、回切、重建热备与回源密钥轮换，并收录两台服务器实际安装的 compose、systemd 单元与 `ygg-failover`、`ygg-rebuild-standby`、`ygg-standby-sync`、`ygg-origin-auth` 脚本（不含 IP 与密钥）。
@@ -14,6 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **CI 双机改为主备部署**：xun、rua 按部署目录下的 `ROLE` 文件（`primary`/`standby`，缺省 `primary`）区分角色。primary 照旧重建 app、健康检查与失败回滚；standby 只预拉 app 与 runner 镜像，不启动 app（热备库只读，app 启动迁移会直接退出）。deploy-rua 改为在 deploy-xun 之后运行：standby 仅在 xun 部署成功后预拉，使故障切换时启动的版本与 xun 一致；rua 已切为 primary 时不受 xun 结果影响。
+
+### Fixed
+
+- **停止服务不再被强制杀掉**：收到 SIGTERM 后，后台实时日志与代码运行的 SSE 长连接立即结束，不再拖住优雅关闭；其余在途请求最多再等 5 秒。此前只要还有一条 SSE 连接没断，进程就会一直等到容器 10 秒停止超时被 SIGKILL，每次部署和主备切换都多等 10 秒。
+- **非法页码稳定返回 404**：`/page/abc` 这类非数字页码此前约 2% 的请求返回 200，且这个 200 会被 SSR 缓存 60 秒。原因是前台页面都包在布局的 Suspense 里，流式渲染时 404 能否赶在首个响应块之前写入取决于线程调度。`/page/:page` 改为等渲染完成再输出（首页 `/` 仍流式输出），首页标题也改为在渲染时定值，避免注入 `<head>` 时读到已释放的页码。
 
 ## [1.1.0] - 2026-10-28
 
