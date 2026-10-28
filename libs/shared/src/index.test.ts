@@ -1,5 +1,11 @@
-import { describe, expect, it } from 'vitest';
-import { prefersReducedMotion, THEME_CHANGE_EVENT, type ThemeName } from './index';
+import { afterEach, describe, expect, it } from 'vitest';
+import {
+  ASSET_VERSIONS_ID,
+  assetUrl,
+  prefersReducedMotion,
+  THEME_CHANGE_EVENT,
+  type ThemeName,
+} from './index';
 
 describe('@yggdrasil/shared', () => {
   it('THEME_CHANGE_EVENT 是固定字符串', () => {
@@ -15,5 +21,33 @@ describe('@yggdrasil/shared', () => {
   it('ThemeName 类型仅接受 light/dark（编译期约束）', () => {
     const t: ThemeName = 'light';
     expect(['light', 'dark']).toContain(t);
+  });
+});
+
+describe('assetUrl', () => {
+  const versions = (text: string) => {
+    const element = document.createElement('script');
+    element.type = 'application/json';
+    element.id = ASSET_VERSIONS_ID;
+    element.textContent = text;
+    document.head.append(element);
+  };
+
+  afterEach(() => {
+    document.getElementById(ASSET_VERSIONS_ID)?.remove();
+  });
+
+  it('按服务端下发的版本表给地址加版本号', () => {
+    versions('{"/mermaid/mermaid.js":"0123abcd"}');
+    expect(assetUrl('/mermaid/mermaid.js')).toBe('/mermaid/mermaid.js?v=0123abcd');
+  });
+
+  it.each([
+    ['没有版本表', null],
+    ['表里没有该资源', '{"/style.css":"1"}'],
+    ['版本表损坏', '{'],
+  ])('%s时原样返回地址', (_, text) => {
+    if (text !== null) versions(text);
+    expect(assetUrl('/mermaid/mermaid.js')).toBe('/mermaid/mermaid.js');
   });
 });

@@ -47,11 +47,17 @@ describe('浏览器库按需加载', () => {
   });
 
   it('CodeMirror 不依赖独立 CSS，也不会带入 Tiptap 或终端', async () => {
+    document.head.insertAdjacentHTML(
+      'beforeend',
+      '<script type="application/json" id="ygg-asset-versions">{"/codemirror/editor.js":"c0de"}</script>',
+    );
     const work = load('codemirror');
-    expect(document.querySelector('script')?.getAttribute('src')).toBe('/codemirror/editor.js?v=3');
+    expect(document.querySelector('script[src]')?.getAttribute('src')).toBe(
+      '/codemirror/editor.js?v=c0de',
+    );
     expect(document.querySelector('link')).toBeNull();
     Reflect.set(window, 'CodeMirrorEditor', {});
-    document.querySelector('script')!.dispatchEvent(new Event('load'));
+    document.querySelector('script[src]')!.dispatchEvent(new Event('load'));
     await work;
   });
 
@@ -78,7 +84,7 @@ describe('浏览器库按需加载', () => {
     expect(document.head.childElementCount).toBe(0);
     const retry = load('xterm');
     expect(document.querySelector('script')).toBeNull();
-    expect(document.querySelector('link')?.getAttribute('href')).toBe('/xterm/terminal.css?v=2');
+    expect(document.querySelector('link')?.getAttribute('href')).toBe('/xterm/terminal.css');
     document.querySelector('link')!.dispatchEvent(new Event('load'));
     await retry;
   });

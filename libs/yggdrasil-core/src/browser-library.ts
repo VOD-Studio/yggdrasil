@@ -1,15 +1,20 @@
-/** 编辑器/终端仅由对应组件请求；同页多个实例共享资源，失败后允许重试。 */
+import { assetUrl } from '@yggdrasil/shared';
+
+/**
+ * 编辑器/终端仅由对应组件请求；同页多个实例共享资源，失败后允许重试。
+ * 地址的版本号由服务端按内容生成（`assetUrl`），这几个路径须列在 `src/static_assets.rs` 的 `ALL`。
+ */
 const libraries = {
   tiptap: {
     global: 'TiptapEditor',
-    script: '/tiptap/editor.js?v=3',
-    style: '/tiptap/editor.css?v=3',
+    script: '/tiptap/editor.js',
+    style: '/tiptap/editor.css',
   },
-  codemirror: { global: 'CodeMirrorEditor', script: '/codemirror/editor.js?v=3' },
+  codemirror: { global: 'CodeMirrorEditor', script: '/codemirror/editor.js' },
   xterm: {
     global: 'XtermTerminal',
-    script: '/xterm/terminal.js?v=2',
-    style: '/xterm/terminal.css?v=2',
+    script: '/xterm/terminal.js',
+    style: '/xterm/terminal.css',
   },
 } as const;
 
@@ -29,7 +34,7 @@ export function loadBrowserLibrary(name: BrowserLibrary): Promise<void> {
       return;
     }
     const element = document.createElement('script');
-    element.src = library.script;
+    element.src = assetUrl(library.script);
     element.onload = () => {
       if (Reflect.get(window, library.global)) resolve();
       else reject(new Error(`${library.global} unavailable after loading`));
@@ -45,7 +50,7 @@ export function loadBrowserLibrary(name: BrowserLibrary): Promise<void> {
     }
     const element = document.createElement('link');
     element.rel = 'stylesheet';
-    element.href = library.style;
+    element.href = assetUrl(library.style);
     element.onload = () => resolve();
     element.onerror = () => reject(new Error(`Failed to load ${library.style}`));
     elements.push(element);

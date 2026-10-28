@@ -16,9 +16,9 @@ const RELEASE_OUT = path.resolve(ROOT, process.env.RELEASE_OUT || 'target/releas
 const SITE = path.join(RELEASE_OUT, 'public');
 const SERVER_BIN = path.join(RELEASE_OUT, 'server');
 const SIZE_LIMIT = 594603;
-// 合并补丁版 wasm-split 下公开路由直开约 20–70 个 .wasm，原版 120–380 个；超出说明构建
-// 用了未打补丁的 cargo-leptos（见 Makefile 的 CARGO_LEPTOS_INSTALL）。
-const WASM_FILE_LIMIT = 150;
+// 公开路由直开约 10–26 个 .wasm（WASM_SPLIT_CHUNK_LOAD_COST=8192）；合并代价退回补丁默认的
+// 1024 时 20–70 个，未打补丁的 cargo-leptos 120–380 个（见 Makefile）。
+const WASM_FILE_LIMIT = 40;
 const SIZE_ROUTES = [
   '/',
   '/post/split-a',
@@ -305,17 +305,19 @@ async function main() {
       '3 文章 SSR：200 且 <head> 含文章标题',
       first.status === 200 && /<title>[^<]*拆分验收 A/.test(head),
     );
-    // 分包 preload 会和 CSS 抢带宽（docs/首屏性能实测-2026-10-28.md）：只保留主包本身的
-    // preload 与加载器的 modulepreload。首页 SSR 期间调用了懒加载取数函数，以前会展开数百条。
+    // 只为当前路由预载视图分包（app::HydrationScriptsWithPreload）：不展开 SSR 期间调用过的
+    // 取数函数分包（以前首页会展开数百条，与 CSS 抢带宽，见 docs/首屏性能实测-2026-10-28.md）。
     const homeBody = await (await fetch(`${base}/`)).text();
-    for (const [route, routeHead] of [
-      ['/', homeBody.slice(0, homeBody.indexOf('</head>'))],
-      ['/post/split-a', head],
+    for (const [route, routeHead, view] of [
+      ['/', homeBody.slice(0, homeBody.indexOf('</head>')), 'split___home_route_view_'],
+      ['/post/split-a', head, 'split___post_route_view_'],
     ]) {
       const wasmPreloads = routeHead.match(/<link[^>]*type="application\/wasm"[^>]*>/g) ?? [];
       check(
-        `3 ${route} 头部只 preload 主包 wasm，不展开分包`,
-        wasmPreloads.length === 1 && wasmPreloads[0].includes(mainWasm),
+        `3 ${route} 头部预载主包与本路由视图分包，不含取数函数分包`,
+        wasmPreloads.some((l) => l.includes(mainWasm)) &&
+          wasmPreloads.some((l) => l.includes(`/pkg/${view}`)) &&
+          !wasmPreloads.some((l) => l.includes('/pkg/split_fetch_')),
         `${wasmPreloads.length} 条`,
       );
       check(
@@ -332,6 +334,35 @@ async function main() {
         `status=${r.status} cache-control=${r.headers.get('cache-control')}`,
       );
     }
+    // 固定路径的样式与脚本带内容版本号（static_assets）：当前版本 immutable，旧版本号仍要校验。
+    const style = homeBody.match(
+      /<link rel="stylesheet" href="(\/style\.css\?v=[0-9a-f]{16})"/,
+    )?.[1];
+    const styleCurrent = style ? await fetch(`${base}${style}`) : undefined;
+    await styleCurrent?.arrayBuffer();
+    check(
+      '3 版本化样式为 immutable',
+      styleCurrent?.status === 200 &&
+        (styleCurrent.headers.get('cache-control') || '').includes('immutable'),
+      `${style ?? '首页没有带版本号的 /style.css'} cache-control=${styleCurrent?.headers.get('cache-control')}`,
+    );
+    const styleStale = await fetch(`${base}/style.css?v=0000000000000000`);
+    await styleStale.arrayBuffer();
+    check(
+      '3 旧版本号的样式每次校验',
+      styleStale.headers.get('cache-control') === 'public, no-cache',
+      `cache-control=${styleStale.headers.get('cache-control')}`,
+    );
+    const versions = homeBody.match(
+      /<script[^>]*id="ygg-asset-versions"[^>]*>([^<]*)<\/script>/,
+    )?.[1];
+    check(
+      '3 版本表含按需加载的浏览器库',
+      !!versions &&
+        '/mermaid/mermaid.js' in JSON.parse(versions) &&
+        '/tiptap/editor.js' in JSON.parse(versions),
+      versions ?? '缺少版本表',
+    );
     const missing = await fetch(`${base}/post/no-such`);
     await missing.text();
     check('3 未知文章返回 404', missing.status === 404, `status=${missing.status}`);
@@ -417,6 +448,22 @@ async function main() {
       await page.goto(`${base}${route}`);
       await hydrated(page);
       const files = [...new Set(log.wasm)].sort();
+      // 水合要的分包都在头部预载，不用等主包实例化后再多等一轮；预载与加载器的 fetch 凭据
+      // 模式一致时浏览器复用预载响应，每个 .wasm 只请求一次。
+      const preloaded = await page.$$eval('link[rel="preload"][type="application/wasm"]', (links) =>
+        links.map((l) => new URL((l as HTMLLinkElement).href).pathname),
+      );
+      const notPreloaded = files.filter((f) => !preloaded.includes(f));
+      check(
+        `6 ${route} 水合所需 .wasm 都已预载`,
+        notPreloaded.length === 0,
+        notPreloaded.length ? `未预载 ${names(notPreloaded)}` : `${preloaded.length} 条`,
+      );
+      check(
+        `6 ${route} 预载被复用，每个 .wasm 只请求一次`,
+        log.wasm.length === files.length,
+        `${log.wasm.length} 次请求 / ${files.length} 个文件`,
+      );
       let brotli = 0;
       for (const file of files) {
         const br = path.join(SITE, `${file}.br`);

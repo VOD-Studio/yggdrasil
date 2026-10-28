@@ -171,13 +171,31 @@ declare global {
   }
 }
 
+/** 服务端下发的资源版本表元素 id，与 `src/static_assets.rs` 的 `VERSIONS_ELEMENT_ID` 一致。 */
+export const ASSET_VERSIONS_ID = 'ygg-asset-versions';
+
+/**
+ * 带内容版本号的资源地址：`/mermaid/mermaid.js` → `/mermaid/mermaid.js?v=<摘要>`。
+ * 版本号由服务端按文件内容生成，带版本号的地址可被浏览器与 CDN 长期缓存；
+ * 表里没有（或页面不是服务端渲染的）时原样返回，服务端对不带版本号的地址要求每次校验。
+ */
+export function assetUrl(path: string): string {
+  const text = document.getElementById(ASSET_VERSIONS_ID)?.textContent;
+  let version: unknown;
+  try {
+    version = text ? (JSON.parse(text) as Record<string, unknown>)[path] : undefined;
+  } catch {
+    version = undefined;
+  }
+  return typeof version === 'string' ? `${path}?v=${version}` : path;
+}
+
 /** 按需加载独立 bundle，同页并发共用一次请求，失败后允许重试。 */
 export function loadMermaidRenderer(): Promise<MermaidApi> {
   if (window.MermaidRenderer) return Promise.resolve(window.MermaidRenderer);
   if (!window.__yggdrasilMermaidPromise) {
     const script = document.createElement('script');
-    // 与站点其它固定路径资源一起绕过旧的一年 immutable 缓存。
-    script.src = '/mermaid/mermaid.js?v=3';
+    script.src = assetUrl('/mermaid/mermaid.js');
     window.__yggdrasilMermaidPromise = new Promise<MermaidApi>((resolve, reject) => {
       script.onload = () => {
         if (window.MermaidRenderer) resolve(window.MermaidRenderer);

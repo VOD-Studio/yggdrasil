@@ -135,13 +135,14 @@ fn is_hashed_pkg_file(path: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
 }
 
-/// 根据请求路径和方法决定公开页面的 Cache-Control 头。
+/// 根据请求路径、查询串和方法决定公开页面的 Cache-Control 头。
 /// 返回 None 表示不添加缓存头（保留现有行为或避免覆盖）。
 ///
 /// `entry_content_addressed`：hash.txt 是否带 `entry: content-addressed`（见
 /// `scripts/build-release.ts` 的 contentAddressEntries），决定入口文件能否 immutable。
 pub(crate) fn cache_control_for_path(
     path: &str,
+    query: Option<&str>,
     method: &axum::http::Method,
     entry_content_addressed: bool,
 ) -> Option<axum::http::HeaderValue> {
@@ -188,9 +189,16 @@ pub(crate) fn cache_control_for_path(
         }));
     }
 
-    // 固定路径的脚本、样式和 WASM 会随部署变化，允许存储但每次使用前须校验。
+    // 固定路径的脚本、样式和 WASM 会随部署变化。`?v=` 等于当前内容版本号的地址
+    // （`static_assets::url` 生成）内容不会再变，可长期缓存；其余每次使用前须校验。
     if path.ends_with(".wasm") || path.ends_with(".js") || path.ends_with(".css") {
-        return Some(HeaderValue::from_static("public, no-cache"));
+        return Some(HeaderValue::from_static(
+            if crate::static_assets::is_current(path, query) {
+                "public, max-age=31536000, immutable"
+            } else {
+                "public, no-cache"
+            },
+        ));
     }
 
     // 公开页面：5 分钟新鲜期，过期后 1 小时内可提供过期内容并后台重新验证
@@ -208,7 +216,12 @@ pub(crate) async fn add_cache_control(
     use axum::http::header;
 
     let path = req.uri().path().to_string();
-    let cache_value = cache_control_for_path(&path, req.method(), entry_content_addressed);
+    let cache_value = cache_control_for_path(
+        &path,
+        req.uri().query(),
+        req.method(),
+        entry_content_addressed,
+    );
 
     let mut response = next.run(req).await;
 
@@ -521,7 +534,7 @@ mod tests {
     }
 
     fn cache_value(path: &str, method: Method) -> Option<String> {
-        cache_control_for_path(path, &method, false).map(|v| v.to_str().unwrap().to_string())
+        cache_control_for_path(path, None, &method, false).map(|v| v.to_str().unwrap().to_string())
     }
 
     #[test]
@@ -583,6 +596,40 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
+    fn only_current_asset_version_is_immutable() {
+        let root = std::env::temp_dir().join(format!("ygg-cache-control-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("yggdrasil-core")).unwrap();
+        std::fs::write(root.join("yggdrasil-core/yggdrasil-core.js"), "1").unwrap();
+        let previous = std::env::var_os("LEPTOS_SITE_ROOT");
+        std::env::set_var("LEPTOS_SITE_ROOT", &root);
+
+        let path = crate::static_assets::CORE_JS;
+        let url = crate::static_assets::url(path);
+        let (_, current) = url.split_once('?').unwrap();
+        let value = |query: Option<&str>| {
+            cache_control_for_path(path, query, &Method::GET, false)
+                .map(|v| v.to_str().unwrap().to_owned())
+        };
+        assert_eq!(
+            value(Some(current)).as_deref(),
+            Some("public, max-age=31536000, immutable")
+        );
+        // 滚动发布期间旧页面带着旧版本号来请求，拿到的是新内容，不能以旧地址长期缓存。
+        assert_eq!(
+            value(Some("v=0123456789abcdef")).as_deref(),
+            Some("public, no-cache")
+        );
+        assert_eq!(value(None).as_deref(), Some("public, no-cache"));
+
+        match previous {
+            Some(value) => std::env::set_var("LEPTOS_SITE_ROOT", value),
+            None => std::env::remove_var("LEPTOS_SITE_ROOT"),
+        }
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
     fn hashed_pkg_assets_are_immutable() {
         for path in [
             "/pkg/__wasm_split.AbCdEfGhIjKlMnOpQrStUv.js",
@@ -618,7 +665,8 @@ mod tests {
     #[test]
     fn content_addressed_entries_are_immutable() {
         let value = |path: &str| {
-            cache_control_for_path(path, &Method::GET, true).map(|v| v.to_str().unwrap().to_owned())
+            cache_control_for_path(path, None, &Method::GET, true)
+                .map(|v| v.to_str().unwrap().to_owned())
         };
         for path in [
             "/pkg/yggdrasil.AbCdEfGhIjKlMnOpQrStUv.wasm",

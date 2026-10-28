@@ -138,6 +138,52 @@ pub fn match_route(route: &str) -> Option<RouteTarget> {
     })
 }
 
+/// 直开该页面时水合要加载的路由视图分包名：`Lazy::<XxxRoute>` 的视图函数在分包清单里
+/// 叫 `__xxx_route_view_<哈希>`，这里给出其中的 `xxx`（后台页面先是外壳，再是子页面）。
+/// SSR 据此只为当前路由预载分包，见 `app::HydrationScriptsWithPreload`；漏改只会少预载。
+#[cfg(feature = "server")]
+pub fn route_view_names(target: &RouteTarget) -> &'static [&'static str] {
+    match target {
+        RouteTarget::Home { .. } => &["home"],
+        RouteTarget::Notes => &["notes"],
+        RouteTarget::Notebook { .. } => &["notebook"],
+        RouteTarget::Note { .. } => &["note"],
+        RouteTarget::Archives => &["archives"],
+        RouteTarget::Tag { .. } => &["tag"],
+        RouteTarget::Post { .. } => &["post"],
+        RouteTarget::Search => &["search"],
+        RouteTarget::About => &["about"],
+        RouteTarget::WritingGuide => &["writing_guide"],
+        RouteTarget::Showcase => &["showcase"],
+        RouteTarget::ShowcaseDetail => &["showcase_detail"],
+        RouteTarget::Friends => &["friends"],
+        RouteTarget::Changelog => &["changelog"],
+        RouteTarget::Login => &["login"],
+        RouteTarget::Register => &["register"],
+        RouteTarget::Admin(page) => match page {
+            AdminPage::Dashboard => &["admin_shell", "dashboard"],
+            AdminPage::Write => &["admin_shell", "write"],
+            AdminPage::WriteEdit => &["admin_shell", "write_edit"],
+            AdminPage::Preview => &["admin_shell", "preview"],
+            AdminPage::Posts => &["admin_shell", "posts"],
+            AdminPage::PostsTrash => &["admin_shell", "posts_trash"],
+            AdminPage::Notes => &["admin_shell", "admin_notes"],
+            AdminPage::NewNote => &["admin_shell", "new_note"],
+            AdminPage::EditNote => &["admin_shell", "edit_note"],
+            AdminPage::Notebooks => &["admin_shell", "notebooks"],
+            AdminPage::Assets => &["admin_shell", "assets"],
+            AdminPage::Friends => &["admin_shell", "friends_admin"],
+            AdminPage::Comments => &["admin_shell", "admin_comments"],
+            AdminPage::System => &["admin_shell", "system"],
+            AdminPage::Runner => &["admin_shell", "runner"],
+            AdminPage::Mcp => &["admin_shell", "mcp"],
+            AdminPage::Logs => &["admin_shell", "logs"],
+            AdminPage::Settings => &["admin_shell", "settings"],
+            AdminPage::Profile => &["admin_shell", "profile"],
+        },
+    }
+}
+
 /// 预取目标路由：总是预取视图分包；`with_data` 时再预取页面数据。
 /// `is_admin` 为假时跳过 `/admin*`：访客悬停后台链接不下载后台分包。
 pub fn prefetch(route: &str, with_data: bool, is_admin: bool) {

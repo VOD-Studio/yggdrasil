@@ -49,6 +49,8 @@ pub mod ssr_cache;
 pub mod shutdown;
 #[cfg(feature = "server")]
 pub mod startup;
+// static_assets：public/ 下固定路径资源的内容版本号，两端共用。
+pub mod static_assets;
 pub mod tasks;
 pub mod theme;
 pub mod utils;

@@ -35,6 +35,12 @@ CARGO_LEPTOS_INSTALL := cargo install cargo-leptos --version 0.3.11 --locked \
 	--config 'patch.crates-io.wasm_split_cli_support.git="https://github.com/VOD-Studio/wasm-split-prototype"' \
 	--config 'patch.crates-io.wasm_split_cli_support.rev="$(WASM_SPLIT_REV)"'
 
+# 合并补丁的「一次分包加载折合多少字节」（未压缩），补丁默认 1024。线上 EdgeOne 对同一客户端的
+# 并发请求大致逐个处理，每个约 2–3 ms，按常见带宽折合几 KB；首页 60 个分包整批要排 120–200 ms。
+# 实测 1024/4096/8192/16384 下首页 60/29/21/14 个、文章页 70/34/26/18 个分包，Brotli 总量
+# 变化在 ±5% 内，8192 在快慢网络之间折中（docs/首屏性能实测-2026-10-28.md「分包合并代价」）。
+WASM_SPLIT_CHUNK_LOAD_COST ?= 8192
+
 # 裸 `make` 只列出 target，不触发任何构建。
 .DEFAULT_GOAL := help
 
@@ -123,7 +129,7 @@ install-cargo-leptos: ## 安装带分包合并补丁的 cargo-leptos 0.3.11
 # 前端用固定 nightly + build-std + immediate-abort；服务端用 stable。
 
 build-frontend: check-wasm-toolchain check-chunk-merge ## 构建分包前端（wasm/js/css → target/site）
-	@$(LEPTOS_WASM_ENV) cargo leptos build --release --split --frontend-only $(LEPTOS_WASM_ARGS)
+	@$(LEPTOS_WASM_ENV) WASM_SPLIT_CHUNK_LOAD_COST=$(WASM_SPLIT_CHUNK_LOAD_COST) cargo leptos build --release --split --frontend-only $(LEPTOS_WASM_ARGS)
 
 build: RELEASE_SERVER := target/release/yggdrasil
 build-linux: RELEASE_SERVER := target/x86_64-unknown-linux-musl/release/yggdrasil
