@@ -3,7 +3,20 @@
 //! 图片地址带 `?v=`：内容变化时版本号随之改变，社交平台与 CDN 不会继续用旧图。
 //! 版本号按展示文字计算，两端用同一实现，结果一致。
 
+use serde::{Deserialize, Serialize};
+
 use super::post::Post;
+
+/// 写分享元信息所需的站点信息，由中间件放进请求扩展；应用根组件经 `SharedValue` 序列化进页面，浏览器水合时读回。
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ShareContext {
+    /// APP_BASE_URL，无尾斜杠；未配置时为空，地址退回站内相对路径。
+    pub base_url: String,
+    /// 站点简介，页面没有自己的描述时使用。
+    pub description: String,
+    /// 站点分享图的站内地址（带版本号）。
+    pub site_image: String,
+}
 
 /// 文章分享图上的文字。
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

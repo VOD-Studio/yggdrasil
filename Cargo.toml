@@ -3,24 +3,27 @@ name = "yggdrasil"
 version = "1.0.1"
 edition = "2021"
 
+# 库目标：lib.rs 承载全部模块，cargo-leptos 以 cdylib 构建浏览器 WASM，服务端二进制以 rlib 链接。
+# doctest 关闭：大量中文文档注释里的代码块不是可编译示例。
+[lib]
+crate-type = ["cdylib", "rlib"]
+doctest = false
+
 # 构建时工具二进制：用 syntect（server-only 依赖）生成 highlight.css。
-# 仅在启用 server feature 时编译——WASM 前端构建（--no-default-features --features web）
+# 仅在启用 server feature 时编译——WASM 前端构建（--no-default-features --features hydrate）
 # 不会拉入 syntect，此二进制若也参与编译会因找不到 syntect 报错。
 [[bin]]
 name = "generate_highlight_css"
 required-features = ["server"]
 
 [dependencies]
-# 浏览器默认日志链裁剪（P1）：dioxus 0.7.10 的 default features 是
-# ["launch", "devtools", "logger", "lib"]，其中 logger 拉入 dioxus-logger →
-# tracing-wasm → tracing-subscriber（含 env-filter → matchers/regex-automata），
-# 整条链只服务框架日志输出，且在 web-only 构建里没有其他引用者。这里显式补回
-# launch/devtools/lib，唯独去掉 logger：release WASM 不再链接日志订阅器。
-# 开发诊断（dx serve、浏览器回归）经本 crate 的 dev-logger feature 显式启用。
-# 注意 Cargo features 是累加的：--all-features 等组合会重新带回 logger，属预期。
-dioxus = { version = "0.7.10", default-features = false, features = ["launch", "devtools", "lib", "fullstack", "router"] }
+leptos = { version = "=0.8.22" }
+leptos_router = { version = "=0.8.17" }
+leptos_meta = { version = "=0.8.7" }
+leptos_axum = { version = "=0.8.10", optional = true }
+percent-encoding = "2"
 serde = { version = "1.0", features = ["derive"] }
-tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "fs", "io-util", "time", "sync"], optional = true }
+tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "fs", "io-util", "time", "sync", "signal"], optional = true }
 tokio-postgres = { version = "0.7", features = ["with-chrono-0_4", "with-uuid-1"], optional = true }
 deadpool-postgres = { version = "0.14", optional = true }
 argon2 = { version = "0.6", optional = true }
@@ -34,7 +37,7 @@ fancy-regex = { version = "0.19", optional = true }
 pulldown-cmark = { version = "0.13", optional = true }
 dotenvy = { version = "0.15", optional = true }
 tracing = { version = "0.1", optional = true, features = ["release_max_level_info"] }
-tracing-subscriber = { version = "0.3", optional = true }
+tracing-subscriber = { version = "0.3", optional = true, features = ["env-filter"] }
 
 rand = { version = "0.10", optional = true }
 http = { version = "1", optional = true }
@@ -99,7 +102,7 @@ resvg = { version = "0.48", optional = true, default-features = false, features 
 skrifa = { version = "0.44", optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-web-sys = { version = "0.3", features = ["Document", "Window", "Storage", "Element", "HtmlElement", "DomTokenList", "MediaQueryList", "HtmlImageElement", "MouseEvent", "KeyboardEvent", "Node", "NodeList", "DomRect", "EventTarget", "Navigator", "Clipboard", "File", "FileList", "FormData", "Request", "RequestInit", "Response", "Headers", "ClipboardEvent", "DataTransfer", "HtmlInputElement", "EventSource", "MessageEvent", "Blob", "BlobPropertyBag", "Url", "HtmlAnchorElement", "IntersectionObserver", "IntersectionObserverEntry", "IntersectionObserverInit", "ResizeObserver"] }
+web-sys = { version = "0.3", features = ["Document", "Window", "Storage", "Element", "HtmlElement", "DomTokenList", "MediaQueryList", "HtmlImageElement", "MouseEvent", "KeyboardEvent", "Node", "NodeList", "DomRect", "EventTarget", "Navigator", "Clipboard", "File", "FileList", "FormData", "Request", "RequestInit", "Response", "Headers", "ClipboardEvent", "DataTransfer", "HtmlInputElement", "EventSource", "MessageEvent", "Blob", "BlobPropertyBag", "Url", "HtmlAnchorElement", "IntersectionObserver", "IntersectionObserverEntry", "IntersectionObserverInit", "ResizeObserver", "HtmlTextAreaElement", "ScrollToOptions", "ScrollBehavior", "Location", "History", "console", "RequestCredentials", "ScrollIntoViewOptions", "ScrollLogicalPosition", "DragEvent"] }
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
@@ -115,8 +118,8 @@ tower = { version = "0.5", features = ["util"] }
 # dev 构建只保留行表 debuginfo：默认 full debuginfo 对每个 crate（含全部依赖）
 # 都生成完整类型/局部变量信息，显著拖慢 rustc emit 与链接、撑大 target/。
 # line-tables-only 砍掉这些（backtrace 行号保留），对生成代码零影响——
-# 运行时性能不变，gdb/lldb 里看不到局部变量是唯一代价。dx serve 每次热重载
-# 都要重链接 server 与 wasm 两个 dev 产物，此处收益是每次重编的固定开销。
+# 运行时性能不变，gdb/lldb 里看不到局部变量是唯一代价；
+# 开发期每次重编都要重链接 server 与 wasm 两个产物，此处收益是每次重编的固定开销。
 [profile.dev]
 debug = "line-tables-only"
 
@@ -131,16 +134,12 @@ strip = "symbols"
 # systemd/k8s 拉起。这是 Dioxus 官方 optimizing 指南推荐的 WASM 瘦身项。
 panic = "abort"
 
-# WASM 前端专用 release profile（dx 的 web release 构建固定使用 `wasm-release`
-# profile 名，见 dioxus-cli 0.7.10 platform.rs::profile_name）。显式声明后 dx 会
-# 跳过它对未声明 profile 的临时注入（request.rs::profile_args 仅在 Cargo.toml
-# 缺少该 profile 时才注入 opt-level="s"），从而拿回 rustc 侧优化级别的控制权：
-# - opt-level="z"：比 dx 默认注入的 "s" 更激进的体积优化（禁用循环展开等）。
-#   博客前端对极致运行时性能不敏感，体积优先。
+# WASM 前端专用 release profile：cargo-leptos 的 `lib-profile-release` 使用它
+# （见 [package.metadata.leptos]）。
+# - opt-level="z"：体积优先，博客前端对极致运行时性能不敏感。
 # - 其余项（lto/codegen-units/panic=abort）继承 release。
-# dx 编译时强制 strip=false，但提取资产后会再按此 profile 调用 llvm-objcopy。
-# LLVM 23 的 --strip-all 会删除 wasm-bindgen 元数据，故这里显式禁止提前剥离；
-# 最终体积优化交给 wasm-bindgen 后的 wasm-opt -Oz。
+# strip=false：提前剥离（--strip-all）会删除 wasm-bindgen 元数据，
+# 最终体积优化交给 wasm-bindgen 之后的 wasm-opt -Oz。
 [profile.wasm-release]
 inherits = "release"
 opt-level = "z"
@@ -148,30 +147,15 @@ lto = "fat"
 strip = false
 
 [features]
-# default 是「完整应用」（plan §6.3：保持默认开发体验为完整应用）。
-# 两个 release 客户端产物按 plan §6.1 显式选择：
-#   - full 客户端：dx build @client（与现状命令完全一致）。
-#   - reader 客户端：dx build @client --features client-reader，后台/登录/注册/
-#     图鉴的客户端页面与 Route 变体整体剥离。
-# 注意 dx 0.7.10 会给客户端构建注入「default features 减 server」（实测捕获的
-# rustc 参数），因此 reader 开关必须是「不进 default 的累加 feature」，用
-# default 里放 full 开关的极性会把 full 强加给所有客户端构建。
-# client-reader 只在 wasm 目标下生效：与 server 同开（cargo test --all-features、
-# 原生构建）时 build.rs 不发射裁剪 cfg，服务端永远编译完整应用（plan §6.5）。
-default = ["web", "server"]
-# 开发期诊断：保留 dioxus 框架日志输出（dioxus-logger 订阅器）。
-# 不进 default——make dev 与 regression-build 显式传 --features dev-logger，
-# release 客户端（make build / build-client / Docker）保持无 logger。
-dev-logger = ["dioxus/logger"]
-web = ["dioxus/web"]
-# reader 客户端开关：剥离后台、登录/注册与组件图鉴的客户端页面
-# （src/pages/{admin,login,register,components_showcase}、components::
-# {admin_layout,assets,sql_result_table} 与对应 Route 变体，plan §6.1）。
-# 裁剪经由 build.rs 发射的 ygg_client_reader cfg（= 本 feature 开且 server 关），
-# #[cfg] 在 Routable 派生展开前生效（plan §6.2 门 1 实验）。
-client-reader = []
+# 默认即服务端；浏览器 WASM 由 cargo-leptos 以 `--no-default-features --features hydrate` 构建。
+# server 与 hydrate 互斥，禁止同时开启（构建时不要启用全部 feature）。
+default = ["server"]
+hydrate = ["leptos/hydrate"]
 server = [
-    "dioxus/server",
+    "leptos/ssr",
+    "leptos_meta/ssr",
+    "leptos_router/ssr",
+    "dep:leptos_axum",
     "dep:tokio",
     "dep:tokio-postgres",
     "dep:deadpool-postgres",
@@ -215,3 +199,23 @@ server = [
     "dep:skrifa",
     "dep:aes-gcm",
 ]
+
+# cargo-leptos 配置：服务端二进制用 server feature，浏览器 WASM 用 hydrate feature。
+[package.metadata.leptos]
+output-name = "yggdrasil"
+site-root = "target/site"
+site-pkg-dir = "pkg"
+assets-dir = "public"
+site-addr = "127.0.0.1:8080"
+reload-port = 3001
+hash-files = true
+bin-target = "yggdrasil"
+bin-features = ["server"]
+bin-default-features = false
+lib-features = ["hydrate"]
+lib-default-features = false
+lib-profile-release = "wasm-release"
+# 体积：release WASM 也启用 erase_components（组件返回值擦除为 AnyView，避免深层视图类型
+# 逐个单态化），主包 brotli 约 -100 KB。服务端由 .cargo/config.toml 的 [build] rustflags
+# 打开同一开关；两端必须一致，否则水合结构对不上、页面停在未水合状态。
+always-erase-components = true

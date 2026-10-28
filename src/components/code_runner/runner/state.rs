@@ -2,6 +2,8 @@
 //! 色调、输出区的说明，以及是否在输出区给出重试按钮。
 #[cfg(any(target_arch = "wasm32", test))]
 use crate::api::code_runner::{ExecResult, ExecStatus};
+#[cfg(any(target_arch = "wasm32", test))]
+use crate::api::error::ApiError;
 
 /// 进行中的阶段。排队与运行只在浏览器端由流事件构造。
 #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
@@ -164,7 +166,7 @@ impl RunState {
 
     /// 提交被服务端拒绝：限流消息单独归类，其余视为系统失败。
     #[cfg(any(target_arch = "wasm32", test))]
-    pub fn rejected(error: &dioxus::prelude::ServerFnError) -> Self {
+    pub fn rejected(error: &ApiError) -> Self {
         let message = crate::utils::error::error_reason(error)
             .unwrap_or_else(|| "运行服务暂时不可用，请稍后再试".to_string());
         if message.contains("频繁") || message.contains("次数已达上限") {
@@ -292,12 +294,11 @@ mod tests {
 
     #[test]
     fn rejected_submission_separates_rate_limits() {
-        use dioxus::prelude::ServerFnError;
-        let limited = RunState::rejected(&ServerFnError::new("请求过于频繁，请稍后再试"));
+        let limited = RunState::rejected(&ApiError::BadRequest("请求过于频繁，请稍后再试".into()));
         assert_eq!(limited.label(), "请求过频");
         assert_eq!(limited.note().as_deref(), Some("请求过于频繁，请稍后再试"));
         assert!(limited.retryable());
-        let oversized = RunState::rejected(&ServerFnError::new("源代码过大"));
+        let oversized = RunState::rejected(&ApiError::BadRequest("源代码过大".into()));
         assert_eq!(oversized.label(), "系统失败");
         assert_eq!(oversized.note().as_deref(), Some("源代码过大"));
     }

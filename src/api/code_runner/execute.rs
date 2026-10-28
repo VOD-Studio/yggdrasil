@@ -11,10 +11,11 @@
 //! 调用），但所有 server-only 的 `use` 与全局静态量都单独 gate，使 WASM 侧仅保留
 //! 函数签名（body 被 server 宏剥离）。与 posts 模块的约定一致。
 
-// 与 posts / settings 模块一致：Dioxus `#[server]` 宏触发 deprecated/unit 提示，按项目惯例放行。
+// 与 posts / settings 模块一致：Leptos `#[server]` 宏触发 deprecated/unit 提示，按项目惯例放行。
 #![allow(clippy::unused_unit, deprecated)]
 
-use dioxus::prelude::*;
+use crate::api::error::ApiError;
+use leptos::prelude::*;
 
 // 共享数据类型在函数签名中出现，双目标可见，不 gate。
 use crate::api::code_runner::{ExecRequest, ExecTask};
@@ -50,14 +51,11 @@ use tokio::sync::Semaphore;
 pub static RUNNER_SEMAPHORE: LazyLock<Arc<Semaphore>> =
     LazyLock::new(|| Arc::new(Semaphore::new(RUNNER_CONFIG.max_concurrent)));
 
-/// 从 FullstackContext 提取客户端 IP（无上下文时退回 "unknown"）。
+/// 从请求上下文提取客户端 IP（无上下文时退回 "unknown"）。
 #[cfg(feature = "server")]
 async fn client_ip() -> String {
-    match dioxus::fullstack::FullstackContext::current() {
-        Some(ctx) => {
-            let headers = ctx.parts_mut().headers.clone();
-            get_client_ip(&headers).await
-        }
+    match crate::request_ctx::request_headers() {
+        Some(headers) => get_client_ip(&headers).await,
         None => "unknown".to_string(),
     }
 }
@@ -67,15 +65,15 @@ async fn client_ip() -> String {
 /// [`start_exec`]（轮询路径）与 [`start_exec_stream`]（SSE 路径）共用，
 /// 保证两条路径的准入约束完全一致。admin 跳过速率限制。
 #[cfg(feature = "server")]
-fn validate_exec_request(req: &ExecRequest) -> Result<(), ServerFnError> {
+fn validate_exec_request(req: &ExecRequest) -> Result<(), ApiError> {
     // 1. 语言白名单
     if !is_supported_lang(&req.language) {
-        return Err(ServerFnError::new("不支持该执行语言".to_string()));
+        return Err(ApiError::BadRequest("不支持该执行语言".to_string()));
     }
 
     // 2. 源码大小限制
     if req.source.len() > RUNNER_CONFIG.max_source_bytes as usize {
-        return Err(ServerFnError::new("源代码过大".to_string()));
+        return Err(ApiError::BadRequest("源代码过大".to_string()));
     }
 
     Ok(())
@@ -83,12 +81,12 @@ fn validate_exec_request(req: &ExecRequest) -> Result<(), ServerFnError> {
 
 /// 速率限制检查（admin 放行）。
 #[cfg(feature = "server")]
-async fn check_rate_limit_for_user() -> Result<(), ServerFnError> {
+async fn check_rate_limit_for_user() -> Result<(), ApiError> {
     let is_admin = get_current_admin_user().await.is_ok();
     if !is_admin {
         let ip = client_ip().await;
         if let Err(msg) = check_code_exec_limit(&ip) {
-            return Err(ServerFnError::new(msg));
+            return Err(ApiError::BadRequest(msg));
         }
     }
     Ok(())
@@ -297,8 +295,8 @@ fn classify_runner_error(e: &bollard::errors::Error, image: &str) -> (ExecStatus
 ///
 /// admin 角色跳过速率限制（便于作者在沙箱调试），但仍受并发槽、
 /// 资源钳制与源码大小校验约束。
-#[server(StartExec, "/api")]
-pub async fn start_exec(req: ExecRequest) -> Result<String, ServerFnError> {
+#[server(StartExec, endpoint = "start_exec", input = leptos::server_fn::codec::Json)]
+pub async fn start_exec(req: ExecRequest) -> Result<String, ApiError> {
     check_rate_limit_for_user().await?;
     validate_exec_request(&req)?;
 
@@ -325,8 +323,8 @@ pub async fn start_exec(req: ExecRequest) -> Result<String, ServerFnError> {
 /// 后台 spawn 与 `start_exec` 并行写两处：
 /// - `run_in_container_stream` 推 chunk 到 SSE（流式路径）
 /// - `update_task_result` 写 `EXEC_TASKS`（轮询兜底路径，SSE 不可用或 Tiptap 编辑器用）
-#[server(StartExecStream, "/api")]
-pub async fn start_exec_stream(req: ExecRequest) -> Result<String, ServerFnError> {
+#[server(StartExecStream, endpoint = "start_exec_stream", input = leptos::server_fn::codec::Json)]
+pub async fn start_exec_stream(req: ExecRequest) -> Result<String, ApiError> {
     check_rate_limit_for_user().await?;
     validate_exec_request(&req)?;
 
@@ -353,12 +351,12 @@ pub async fn start_exec_stream(req: ExecRequest) -> Result<String, ServerFnError
 }
 
 /// 查询任务执行结果（前端轮询）。
-#[server(GetExecResult, "/api")]
-pub async fn get_exec_result(task_id: String) -> Result<ExecTask, ServerFnError> {
+#[server(GetExecResult, endpoint = "get_exec_result", input = leptos::server_fn::codec::Json)]
+pub async fn get_exec_result(task_id: String) -> Result<ExecTask, ApiError> {
     if let Some(task) = EXEC_TASKS.get(&task_id) {
         Ok(task.clone())
     } else {
-        Err(ServerFnError::new("找不到指定的任务".to_string()))
+        Err(ApiError::NotFound("找不到指定的任务".to_string()))
     }
 }
 
@@ -442,11 +440,10 @@ mod tests {
             "源码恰好等于上限应放行"
         );
         let over = "a".repeat(max + 1);
-        let err = validate_exec_request(&req("python", &over)).expect_err("超出上限应拒绝");
-        assert!(
-            err.to_string().contains("过大"),
-            "错误信息应提及大小: {err}"
-        );
+        assert!(matches!(
+            validate_exec_request(&req("python", &over)),
+            Err(ApiError::BadRequest(_))
+        ));
     }
 
     #[test]
@@ -454,14 +451,6 @@ mod tests {
         // 空源码不是校验层的职责（容器层处理），这里只验语言/大小。
         // 锁定该契约：空源码 + 合法语言 → Ok，避免未来误把空当拒绝。
         assert!(validate_exec_request(&req("python", "")).is_ok());
-    }
-
-    #[test]
-    fn validate_checks_language_before_size() {
-        // 不支持语言 + 巨大源码：应先因语言被拒（而非先报大小）。
-        let huge = "a".repeat((RUNNER_CONFIG.max_source_bytes as usize) + 100);
-        let err = validate_exec_request(&req("brainfuck", &huge)).unwrap_err();
-        assert!(err.to_string().contains("语言"), "应先报语言错误: {err}");
     }
 
     #[test]

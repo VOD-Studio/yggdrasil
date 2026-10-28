@@ -1,17 +1,18 @@
 //! 评论审核状态更新接口：通过、垃圾、删除与批量更新。
 //!
-//! 所有接口均需管理员身份，Dioxus server function 注册在 `/api` 路径下。
+//! 所有接口均需管理员身份，Leptos server function 注册在 `/api` 路径下。
 //! 状态变更后需要清空文章评论缓存、计数缓存与待审核计数缓存。
 //! 仅在 `feature = "server"` 启用的服务端构建中写入数据库。
 
 use crate::api::comments::types::*;
-use dioxus::prelude::*;
+use crate::api::error::ApiError;
+use leptos::prelude::*;
 
 /// 通过指定评论。
 ///
 /// 同时递归将该评论的所有 pending 父评论一并通过，确保嵌套链可见。
-#[server(ApproveComment, "/api")]
-pub async fn approve_comment(id: i64) -> Result<CommentResponse, ServerFnError> {
+#[server(ApproveComment, endpoint = "approve_comment", input = leptos::server_fn::codec::Json)]
+pub async fn approve_comment(id: i64) -> Result<CommentResponse, ApiError> {
     #[cfg(feature = "server")]
     {
         use crate::api::auth::get_current_admin_user;
@@ -33,8 +34,8 @@ pub async fn approve_comment(id: i64) -> Result<CommentResponse, ServerFnError> 
 /// 将指定评论标记为垃圾评论。
 ///
 /// 若原状态为 approved，则需要清空该文章相关缓存。
-#[server(SpamComment, "/api")]
-pub async fn spam_comment(id: i64) -> Result<CommentResponse, ServerFnError> {
+#[server(SpamComment, endpoint = "spam_comment", input = leptos::server_fn::codec::Json)]
+pub async fn spam_comment(id: i64) -> Result<CommentResponse, ApiError> {
     #[cfg(feature = "server")]
     {
         use crate::api::auth::get_current_admin_user;
@@ -51,8 +52,8 @@ pub async fn spam_comment(id: i64) -> Result<CommentResponse, ServerFnError> {
 /// 将指定评论移入回收站（软删除）。
 ///
 /// 软删除会设置 deleted_at 与状态为 trash，并清空相关缓存。
-#[server(TrashComment, "/api")]
-pub async fn trash_comment(id: i64) -> Result<CommentResponse, ServerFnError> {
+#[server(TrashComment, endpoint = "trash_comment", input = leptos::server_fn::codec::Json)]
+pub async fn trash_comment(id: i64) -> Result<CommentResponse, ApiError> {
     #[cfg(feature = "server")]
     {
         use crate::api::auth::get_current_admin_user;
@@ -70,11 +71,11 @@ pub async fn trash_comment(id: i64) -> Result<CommentResponse, ServerFnError> {
 ///
 /// 仅接受 approved / spam / trash 三种状态；trash 会软删除并设置 deleted_at，
 /// approved 会设置 approved_at。
-#[server(BatchUpdateCommentStatus, "/api")]
+#[server(BatchUpdateCommentStatus, endpoint = "batch_update_comment_status", input = leptos::server_fn::codec::Json)]
 pub async fn batch_update_comment_status(
     ids: Vec<i64>,
     status: String,
-) -> Result<BatchStatusResponse, ServerFnError> {
+) -> Result<BatchStatusResponse, ApiError> {
     #[cfg(feature = "server")]
     {
         use crate::api::auth::get_current_admin_user;
@@ -150,8 +151,8 @@ pub async fn batch_update_comment_status(
 }
 
 /// 从回收站恢复评论：清除软删除并回到待审，由管理员重新决定是否通过。
-#[server(RestoreComments, "/api")]
-pub async fn restore_comments(ids: Vec<i64>) -> Result<BatchStatusResponse, ServerFnError> {
+#[server(RestoreComments, endpoint = "restore_comments", input = leptos::server_fn::codec::Json)]
+pub async fn restore_comments(ids: Vec<i64>) -> Result<BatchStatusResponse, ApiError> {
     #[cfg(feature = "server")]
     {
         use crate::api::auth::get_current_admin_user;

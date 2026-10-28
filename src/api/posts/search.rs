@@ -4,10 +4,11 @@
 //! trigram GIN 索引（gin_trgm_ops，见 migrations/019）加速；<3 字符的查询 trigram 不足，
 //! 可能退回顺序扫，靠 LIMIT 50 与搜索限流兜底。结果按 pg_trgm 的 `word_similarity`
 //! 相似度与发布时间降序返回最多 50 篇已发布文章。
-//! Dioxus server function，注册在 `/api` 路径下。
+//! Leptos server function，注册在 `/api` 路径下。
 //! 仅在 `feature = "server"` 启用的服务端构建中查询数据库。
 
-use dioxus::prelude::*;
+use crate::api::error::ApiError;
+use leptos::prelude::*;
 
 #[cfg(feature = "server")]
 use super::helpers::row_to_post_list_item;
@@ -23,15 +24,14 @@ use crate::db::pool::get_conn;
 ///
 /// 空查询直接返回空结果；非空查询使用 `word_similarity` 计算相关度，
 /// 并限制返回 50 条记录。结果写入短 TTL 内存缓存以减轻 DB 压力。
-#[server(SearchPosts, "/api")]
-pub async fn search_posts(query: String) -> Result<PostListResponse, ServerFnError> {
+#[server(SearchPosts, endpoint = "search_posts", input = leptos::server_fn::codec::Json)]
+pub async fn search_posts(query: String) -> Result<PostListResponse, ApiError> {
     #[cfg(feature = "server")]
     {
         use crate::api::rate_limit;
 
         // 对搜索接口进行严格限流，防止滥用 expensive 查询。
-        if let Some(ctx) = dioxus::fullstack::FullstackContext::current() {
-            let headers = ctx.parts_mut().headers.clone();
+        if let Some(headers) = crate::request_ctx::request_headers() {
             let ip = rate_limit::get_client_ip(&headers).await;
             if let Err(_msg) = rate_limit::check_strict_limit(&ip) {
                 return Ok(PostListResponse {

@@ -1,8 +1,9 @@
-// 与 posts 模块一致：Dioxus `#[server]` 宏触发 deprecated/unit/too_many_arguments
+// 与 posts 模块一致：Leptos `#[server]` 宏触发 deprecated/unit/too_many_arguments
 // 提示，按项目惯例放行（限流/运行器等配置项天然参数多）。
 #![allow(clippy::unused_unit, deprecated, clippy::too_many_arguments)]
 
-use dioxus::prelude::*;
+use crate::api::error::ApiError;
+use leptos::prelude::*;
 
 #[cfg(feature = "server")]
 use crate::api::auth::get_current_admin_user;
@@ -53,8 +54,8 @@ pub(crate) async fn seed_asset_purge_settings_from_env(
 /// 读取孤儿素材清理配置（面板用）。
 ///
 /// settings 表缺失键时回退到默认值，保证向后兼容。
-#[server(GetAssetPurgeSettings, "/api")]
-pub async fn get_asset_purge_settings() -> Result<AssetPurgeSettings, ServerFnError> {
+#[server(GetAssetPurgeSettings, endpoint = "get_asset_purge_settings", input = leptos::server_fn::codec::Json)]
+pub async fn get_asset_purge_settings() -> Result<AssetPurgeSettings, ApiError> {
     let _user = get_current_admin_user().await?;
 
     #[cfg(feature = "server")]
@@ -91,11 +92,11 @@ pub async fn get_asset_purge_settings() -> Result<AssetPurgeSettings, ServerFnEr
 ///
 /// retention_days 会被 clamp 到合法范围后写入。清理任务每天 tick 时读取
 /// 最新值，无需重启。
-#[server(UpdateAssetPurgeSettings, "/api")]
+#[server(UpdateAssetPurgeSettings, endpoint = "update_asset_purge_settings", input = leptos::server_fn::codec::Json)]
 pub async fn update_asset_purge_settings(
     auto_purge_enabled: bool,
     retention_days: i32,
-) -> Result<AssetPurgeSettings, ServerFnError> {
+) -> Result<AssetPurgeSettings, ApiError> {
     let _user = get_current_admin_user().await?;
 
     let retention_days = AssetPurgeSettings::clamp_retention(retention_days);

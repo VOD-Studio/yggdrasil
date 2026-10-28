@@ -1,23 +1,13 @@
-# Dioxus 0.7.10 的 #[server(Fn, "/api")] 宏在 URL 末尾追加一个去冲突数字后缀:
-#   xxh64( <key> + ":" + module_path!(), 0 )
-# 默认 <key> = CARGO_MANIFEST_DIR（编译时 crate 绝对路径）。不同构建环境路径不同会算出不同后缀。
-#
-# 本项目三条构建路径各自的 CARGO_MANIFEST_DIR:
-#   - make dev / make build    ：server 与 wasm 同在宿主仓库目录编译，路径一致。
-#   - Dockerfile.cross         ：两个 builder stage 均以 WORKDIR /build 编译
-#                                （Stage A glibc Trixie 编 wasm，Stage B Alpine-zig 交叉编 server），
-#                                同容器内路径一致；全程无 QEMU、无宿主 cross 工具链（cross 已废弃）。
-# 各路径内部自洽，但相互之间 CARGO_MANIFEST_DIR 不同 → 后缀会漂移。
-#
-# 宏内置逃生舱：编译时若设置了 SERVER_FN_OVERRIDE_KEY，则用它替代 CARGO_MANIFEST_DIR 作为
-# hash key（见 dioxus-fullstack-macro src/lib.rs:392）。[env] 让 cargo 把该变量注入 rustc，
-# server 与 wasm 两次编译读到同一个值，后缀在所有环境下恒定一致。即便各路径内部已自洽，
-# 保留该 key 仍是确定性兜底：后缀与环境解耦，日志里 /api/<fn><后缀> 与浏览器请求在任意机器一致。
-[env]
-SERVER_FN_OVERRIDE_KEY = "yggdrasil"
-# Workaround for Dioxus 0.7.10 leaking the wasm_js getrandom backend cfg
-# into the server build. We disable DX's automatic flag in the Makefile
-# and set it only for the wasm32 target here.
+# 服务端（及所有主机目标构建）以 erase_components 编译：组件返回值擦除为 AnyView。
+# 浏览器 WASM 由 cargo-leptos 的 `always-erase-components` 打开同一开关（见 Cargo.toml
+# [package.metadata.leptos]）。两端必须一致：擦除与否会改变 SSR 输出的水合结构，
+# 只擦一端时页面停在未水合状态且没有任何报错。
+# 注意：设置了 RUSTFLAGS 环境变量的构建会忽略这里（Dockerfile / Dockerfile.cross 的服务端构建已显式带上）。
+[build]
+rustflags = ["--cfg", "erase_components"]
+
+# wasm32 目标的 getrandom 后端：浏览器环境必须使用 wasm_js 后端，
+# 且只能为 wasm32 目标设置，不能泄漏到服务端构建。
 [target.wasm32-unknown-unknown]
 rustflags = ["--cfg", "getrandom_backend=\"wasm_js\""]
 

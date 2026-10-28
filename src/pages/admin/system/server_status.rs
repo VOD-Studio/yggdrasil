@@ -1,9 +1,13 @@
 //! 服务器 tab：应用与主机指标卡片（运行时间、CPU、内存、磁盘、负载、连接池、会话、
 //! 宿主系统）与内存缓存命中率表。主机层由后台 500ms 采样，前端轮询只读快照，
 //! 自动刷新可选 1s / 2s / 5s / 10s。
-use dioxus::prelude::*;
+//!
+//! 指标卡片与占用条的文本、宽度直接绑定到状态信号：刷新时节点原地更新，占用条的
+//! `width` 过渡动画得以保留。缓存表按整行内容做 key，数值变化时重建该行。
+use leptos::prelude::*;
 
-use super::{Meter, Metric, RefreshControl};
+use super::{use_polled_status, Meter, Metric, PolledStatus, RefreshControl};
+use crate::api::database::system_status::{get_server_status, ServerStatus};
 use crate::components::skeletons::atoms::SkeletonBox;
 use crate::components::ui::LoadError;
 use crate::utils::format_bytes;
@@ -33,111 +37,162 @@ fn percent(part: f64, whole: f64) -> f64 {
     }
 }
 
+fn mem_pct(s: &ServerStatus) -> f64 {
+    percent(s.host.used_memory as f64, s.host.total_memory as f64)
+}
+
+fn disk_pct(s: &ServerStatus) -> f64 {
+    let used = s.host.disk_total.saturating_sub(s.host.disk_available);
+    percent(used as f64, s.host.disk_total as f64)
+}
+
+fn pool_pct(s: &ServerStatus) -> f64 {
+    percent(s.pool_size as f64, s.pool_max_size as f64)
+}
+
 /// 服务器 tab。
 #[component]
-#[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut, unused_variables))]
-pub(super) fn ServerStatusTab() -> Element {
-    use crate::api::database::system_status::{get_server_status, ServerStatus};
-    let mut status = use_signal(|| None::<ServerStatus>);
-    let mut loading = use_signal(|| true);
-    let mut failed = use_signal(|| false);
-    let refresh_ms: Signal<Option<u32>> = use_signal(|| Some(10_000));
-    let reload = use_callback(move |()| {
-        loading.set(true);
-        spawn(async move {
-            match get_server_status().await {
-                Ok(s) => {
-                    status.set(Some(s));
-                    failed.set(false);
-                }
-                Err(_) => failed.set(true),
-            }
-            loading.set(false);
-        });
-    });
-    use_hook(move || {
-        #[cfg(target_arch = "wasm32")]
-        reload.call(());
-    });
-    super::use_auto_refresh(refresh_ms, reload);
+pub(super) fn ServerStatusTab() -> impl IntoView {
+    let PolledStatus {
+        status,
+        loading,
+        failed,
+        refresh_ms,
+        reload,
+    } = use_polled_status(get_server_status, Some(10_000));
+    let ready = Memo::new(move |_| status.with(Option::is_some));
+    let show_error = Memo::new(move |_| failed.get() && !ready.get());
 
-    let current = status();
-    rsx! {
-        RefreshControl { refresh_ms, loading: loading(), on_refresh: move |_| reload.call(()) }
-        if failed() && current.is_none() {
-            LoadError { title: "服务器状态加载失败", on_retry: move |_| reload.call(()) }
-        } else if let Some(s) = current {
-            {
-                let h = &s.host;
-                let mem_pct = percent(h.used_memory as f64, h.total_memory as f64);
-                let disk_used = h.disk_total.saturating_sub(h.disk_available);
-                let disk_pct = percent(disk_used as f64, h.disk_total as f64);
-                let pool_pct = percent(s.pool_size as f64, s.pool_max_size as f64);
-                rsx! {
-                    div { class: "sys-metrics",
-                        Metric { label: "运行时间", value: format_uptime(s.uptime_secs), meta: format!("主机已运行 {}", format_uptime(h.uptime_secs)) }
-                        Metric { label: "应用 CPU", value: format!("{:.1}%", h.cpu_usage),
-                            Meter { pct: h.cpu_usage as f64 }
-                        }
-                        Metric { label: "内存", value: format_bytes(h.used_memory as i64), meta: format!("共 {}", format_bytes(h.total_memory as i64)),
-                            Meter { pct: mem_pct }
-                        }
-                        Metric { label: "磁盘", value: format!("{disk_pct:.0}%"), meta: format!("剩余 {}", format_bytes(h.disk_available as i64)),
-                            Meter { pct: disk_pct }
-                        }
-                        Metric { label: "平均负载", value: format!("{:.2}", h.load_avg_1), meta: "1 分钟".to_string() }
-                        Metric { label: "数据库连接池", value: format!("{} / {}", s.pool_size, s.pool_max_size), meta: format!("空闲 {} · 等待 {}", s.pool_available, s.pool_waiting),
-                            Meter { pct: pool_pct }
-                        }
-                        Metric { label: "活跃会话", value: s.active_sessions.to_string(), meta: "未过期的登录".to_string() }
-                        Metric { label: "宿主系统", value: h.os_name.clone(), meta: h.kernel_version.clone(), small: true }
-                    }
-                    section { class: "admin-panel sys-section", aria_labelledby: "sys-cache-h",
-                        div { class: "sys-section-head",
-                            h2 { id: "sys-cache-h", "内存缓存" }
-                        }
-                        div { class: "sys-table-scroll",
-                            table { class: "admin-table",
-                                thead {
-                                    tr {
-                                        th { "缓存" }
-                                        th { class: "admin-table-num", "条目" }
-                                        th { class: "admin-table-num", "命中" }
-                                        th { class: "admin-table-num", "未命中" }
-                                        th { "命中率" }
-                                    }
+    view! {
+        <RefreshControl refresh_ms loading on_refresh=move |_| reload.run(())/>
+        {move || {
+            if show_error.get() {
+                view! {
+                    <LoadError title="服务器状态加载失败" on_retry=move |_| reload.run(())/>
+                }
+                    .into_any()
+            } else if ready.get() {
+                view! { <ServerStatusBody status/> }.into_any()
+            } else {
+                view! {
+                    <div class="sys-metrics" aria-hidden="true">
+                        {(0..8)
+                            .map(|_| {
+                                view! {
+                                    <div class="admin-panel sys-metric">
+                                        <SkeletonBox class="h-3 w-16 rounded"/>
+                                        <SkeletonBox class="h-6 w-24 rounded mt-2"/>
+                                    </div>
                                 }
-                                tbody {
-                                    for c in s.caches.iter() {
-                                        tr { key: "{c.name}",
-                                            td { class: "sys-mono", "{c.name}" }
-                                            td { class: "admin-table-num", "{c.entry_count}" }
-                                            td { class: "admin-table-num", "{c.hits}" }
-                                            td { class: "admin-table-num", "{c.misses}" }
-                                            td {
-                                                div { class: "sys-rate",
-                                                    Meter { pct: c.hit_rate * 100.0, calm: true }
-                                                    span { {format!("{:.0}%", c.hit_rate * 100.0)} }
-                                                }
-                                            }
-                                        }
-                                    }
+                            })
+                            .collect_view()}
+                    </div>
+                }
+                    .into_any()
+            }
+        }}
+    }
+}
+
+/// 指标卡片与缓存表：只在已有数据后渲染，字段绑定到 `status`。
+#[component]
+fn ServerStatusBody(status: RwSignal<Option<ServerStatus>>) -> impl IntoView {
+    let text = move |f: fn(&ServerStatus) -> String| {
+        Signal::derive(move || status.with(|s| s.as_ref().map(f).unwrap_or_default()))
+    };
+    let pct = move |f: fn(&ServerStatus) -> f64| {
+        Signal::derive(move || status.with(|s| s.as_ref().map(f).unwrap_or_default()))
+    };
+    let caches = move || status.with(|s| s.as_ref().map(|s| s.caches.clone()).unwrap_or_default());
+
+    view! {
+        <div class="sys-metrics">
+            <Metric
+                label="运行时间"
+                value=text(|s| format_uptime(s.uptime_secs))
+                meta=text(|s| format!("主机已运行 {}", format_uptime(s.host.uptime_secs)))
+            />
+            <Metric label="应用 CPU" value=text(|s| format!("{:.1}%", s.host.cpu_usage))>
+                <Meter pct=pct(|s| s.host.cpu_usage as f64)/>
+            </Metric>
+            <Metric
+                label="内存"
+                value=text(|s| format_bytes(s.host.used_memory as i64))
+                meta=text(|s| format!("共 {}", format_bytes(s.host.total_memory as i64)))
+            >
+                <Meter pct=pct(mem_pct)/>
+            </Metric>
+            <Metric
+                label="磁盘"
+                value=text(|s| format!("{:.0}%", disk_pct(s)))
+                meta=text(|s| format!("剩余 {}", format_bytes(s.host.disk_available as i64)))
+            >
+                <Meter pct=pct(disk_pct)/>
+            </Metric>
+            <Metric
+                label="平均负载"
+                value=text(|s| format!("{:.2}", s.host.load_avg_1))
+                meta="1 分钟"
+            />
+            <Metric
+                label="数据库连接池"
+                value=text(|s| format!("{} / {}", s.pool_size, s.pool_max_size))
+                meta=text(|s| format!("空闲 {} · 等待 {}", s.pool_available, s.pool_waiting))
+            >
+                <Meter pct=pct(pool_pct)/>
+            </Metric>
+            <Metric
+                label="活跃会话"
+                value=text(|s| s.active_sessions.to_string())
+                meta="未过期的登录"
+            />
+            <Metric
+                label="宿主系统"
+                value=text(|s| s.host.os_name.clone())
+                meta=text(|s| s.host.kernel_version.clone())
+                small=true
+            />
+        </div>
+        <section class="admin-panel sys-section" aria-labelledby="sys-cache-h">
+            <div class="sys-section-head">
+                <h2 id="sys-cache-h">"内存缓存"</h2>
+            </div>
+            <div class="sys-table-scroll">
+                <table class="admin-table">
+                    <thead>
+                        <tr>
+                            <th>"缓存"</th>
+                            <th class="admin-table-num">"条目"</th>
+                            <th class="admin-table-num">"命中"</th>
+                            <th class="admin-table-num">"未命中"</th>
+                            <th>"命中率"</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <For
+                            each=caches
+                            key=|c| (c.name.clone(), c.entry_count, c.hits, c.misses, c.hit_rate.to_bits())
+                            children=|c| {
+                                view! {
+                                    <tr>
+                                        <td class="sys-mono">{c.name.clone()}</td>
+                                        <td class="admin-table-num">{c.entry_count}</td>
+                                        <td class="admin-table-num">{c.hits}</td>
+                                        <td class="admin-table-num">{c.misses}</td>
+                                        <td>
+                                            <div class="sys-rate">
+                                                <Meter pct=c.hit_rate * 100.0 calm=true/>
+                                                <span>{format!("{:.0}%", c.hit_rate * 100.0)}</span>
+                                            </div>
+                                        </td>
+                                    </tr>
                                 }
                             }
-                        }
-                    }
-                }
-            }
-        } else {
-            div { class: "sys-metrics", aria_hidden: "true",
-                for i in 0..8 {
-                    div { key: "{i}", class: "admin-panel sys-metric",
-                        SkeletonBox { class: "h-3 w-16 rounded" }
-                        SkeletonBox { class: "h-6 w-24 rounded mt-2" }
-                    }
-                }
-            }
-        }
+                        />
+                    </tbody>
+                </table>
+            </div>
+        </section>
     }
 }
 

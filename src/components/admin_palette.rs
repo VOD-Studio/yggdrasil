@@ -7,15 +7,16 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use dioxus::prelude::*;
+use leptos::prelude::*;
 
 use crate::components::admin_layout::AdminSection;
 use crate::components::palette::{
-    contains_ci, use_palette_state, viewport_center, PaletteEntry, PaletteGroup, PaletteShell,
+    contains_ci, use_palette_shortcut, use_palette_state, viewport_center, PaletteEntry,
+    PaletteGroup, PaletteShell, SearchPaletteHandle,
 };
 use crate::components::ui::IconName;
 use crate::models::post::{PostListItem, PostStatus};
-use crate::router::Route;
+use crate::routes::Route;
 use crate::theme::{choose_theme, use_resolved_theme, use_theme, ResolvedTheme, Theme};
 
 /// 文章搜索结果的条数上限。
@@ -23,7 +24,7 @@ const POST_LIMIT: i32 = 6;
 
 /// 面板里的动作。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Action {
+pub enum Action {
     WritePost,
     NewNote,
     Upload,
@@ -76,17 +77,17 @@ fn jump_targets() -> Vec<(&'static str, IconName, Route)> {
     .into_iter()
     .map(|section| (section.label(), section.icon(), section.route()))
     .collect();
-    targets.push(("回收站", IconName::Trash, Route::PostsTrash {}));
-    targets.push(("笔记本", IconName::BookOpen, Route::AdminNotebooks {}));
-    targets.push(("个人资料", IconName::User, Route::Profile {}));
+    targets.push(("回收站", IconName::Trash, Route::PostsTrash));
+    targets.push(("笔记本", IconName::BookOpen, Route::AdminNotebooks));
+    targets.push(("个人资料", IconName::User, Route::Profile));
     targets
 }
 
 /// 文章检索结果；`None` 表示请求失败，面板保留上一批结果。
-pub(crate) type PostSearch = Pin<Box<dyn Future<Output = Option<Vec<PostListItem>>>>>;
+pub type PostSearch = Pin<Box<dyn Future<Output = Option<Vec<PostListItem>>>>>;
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) enum Item {
+pub enum Item {
     Post(PostListItem),
     Action(Action),
     Jump {
@@ -103,7 +104,7 @@ struct Group {
 }
 
 impl Item {
-    pub(crate) fn title(&self) -> String {
+    pub fn title(&self) -> String {
         match self {
             Item::Post(post) => post.title.clone(),
             Item::Action(action) => action.label().to_string(),
@@ -168,58 +169,36 @@ fn build_groups(query: &str, posts: &[PostListItem], dark: bool) -> Vec<Group> {
 /// Props：
 /// - `on_logout`：「退出登录」命令，与侧栏退出按钮同一处理
 #[component]
-pub fn AdminPalette(on_logout: EventHandler<()>) -> Element {
-    #[cfg(target_arch = "wasm32")]
-    crate::components::palette::use_palette_shortcut(
-        use_context::<crate::components::palette::SearchPaletteHandle>(),
-        true,
-    );
+pub fn AdminPalette(#[prop(into)] on_logout: Callback<()>) -> impl IntoView {
+    use_palette_shortcut(expect_context::<SearchPaletteHandle>(), true);
     let theme = use_theme();
-    let navigator = use_navigator();
-    rsx! {
-        AdminPaletteView {
-            search: move |q: String| -> PostSearch {
-                Box::pin(async move {
-                    crate::api::posts::list_posts(
-                        1,
-                        POST_LIMIT,
-                        crate::api::posts::AdminPostQuery::search(q),
-                    )
-                    .await
-                    .ok()
-                    .map(|res| res.posts)
-                })
-            },
-            on_activate: move |item: Item| match item {
-                Item::Post(post) => {
-                    navigator.push(Route::WriteEdit { id: post.id });
-                }
-                Item::Jump { route, .. } => {
-                    navigator.push(route);
-                }
-                Item::Action(action) => match action {
-                    Action::WritePost => {
-                        navigator.push(Route::Write {});
-                    }
-                    Action::NewNote => {
-                        navigator.push(Route::NewNote {});
-                    }
-                    Action::Upload => {
-                        navigator.push(Route::Assets {});
-                    }
-                    Action::OpenSite => {
-                        // admin→前台跨 layout，保留整页加载。
-                        #[cfg(target_arch = "wasm32")]
-                        if let Some(window) = web_sys::window() {
-                            let _ = window.location().set_href("/");
-                        }
-                    }
-                    Action::Theme(to) => choose_theme(theme, to, viewport_center()),
-                    Action::Logout => on_logout.call(()),
-                },
-            },
+    let search = Callback::new(|q: String| -> PostSearch {
+        Box::pin(async move {
+            crate::api::posts::list_posts(
+                1,
+                POST_LIMIT,
+                crate::api::posts::AdminPostQuery::search(q),
+            )
+            .await
+            .ok()
+            .map(|res| res.posts)
+        })
+    });
+    let on_activate = Callback::new(move |item: Item| match item {
+        Item::Post(post) => {
+            crate::navigation::push(&Route::WriteEdit { id: post.id }.to_string());
         }
-    }
+        Item::Jump { route, .. } => crate::navigation::push(&route.to_string()),
+        Item::Action(action) => match action {
+            Action::WritePost => crate::navigation::push(&Route::Write.to_string()),
+            Action::NewNote => crate::navigation::push(&Route::NewNote.to_string()),
+            Action::Upload => crate::navigation::push(&Route::Assets.to_string()),
+            Action::OpenSite => crate::navigation::push(&Route::Home.to_string()),
+            Action::Theme(to) => choose_theme(theme, to, viewport_center()),
+            Action::Logout => on_logout.run(()),
+        },
+    });
+    view! { <AdminPaletteView search=search on_activate=on_activate/> }
 }
 
 /// 面板中的一行的展示内容。
@@ -250,71 +229,81 @@ fn entry(item: &Item) -> PaletteEntry {
 }
 
 /// 命令面板视图：文章检索与条目执行由调用方提供，其余交给 [`PaletteShell`]。
+///
+/// Props：
+/// - `search`：按标题检索文章，返回 `None` 表示失败（面板保留上一批结果）
+/// - `on_activate`：选中条目；面板先关闭再回调
 #[component]
 pub(crate) fn AdminPaletteView(
-    search: Callback<String, PostSearch>,
-    on_activate: EventHandler<Item>,
-) -> Element {
+    #[prop(into)] search: Callback<String, PostSearch>,
+    #[prop(into)] on_activate: Callback<Item>,
+) -> impl IntoView {
     let palette = use_palette_state("admin-palette");
     let query = palette.query;
 
-    let mut posts = use_signal(Vec::<PostListItem>::new);
-    let mut posts_query = use_signal(String::new);
+    let posts = RwSignal::new(Vec::<PostListItem>::new());
+    let posts_query = RwSignal::new(String::new());
     let resolved = use_resolved_theme();
+    // 只在「是否在屏上」翻转时重建面板：关闭淡出期间 `open` 与 `closing` 先后变化，
+    // 直接读 `palette.visible()` 会让面板在淡出开始时被重建，动画丢失。
+    let visible = Memo::new(move |_| palette.visible());
 
     let close = move || {
         palette.close(move || {
-            posts.set(Vec::new());
-            posts_query.set(String::new());
+            let _ = posts.try_set(Vec::new());
+            let _ = posts_query.try_set(String::new());
         });
     };
 
     // 检索返回 `None` 时保留上一批结果。
-    let schedule_fetch =
-        move || palette.schedule_fetch(posts, posts_query, move |q| search.call(q));
+    let schedule_fetch = move || palette.schedule_fetch(posts, posts_query, move |q| search.run(q));
 
-    if !palette.visible() {
-        return rsx! {};
-    }
-
-    let q = query();
-    let groups = build_groups(&q, &posts(), resolved() == ResolvedTheme::Dark);
-    let flat: Vec<Item> = groups.iter().flat_map(|g| g.items.clone()).collect();
-    let view: Vec<PaletteGroup> = groups
-        .iter()
-        .map(|g| PaletteGroup {
-            label: g.label,
-            entries: g.items.iter().map(entry).collect(),
+    let groups = Memo::new(move |_| {
+        let q = query.get();
+        let dark = resolved.get() == ResolvedTheme::Dark;
+        posts.with(|posts| build_groups(&q, posts, dark))
+    });
+    let view_groups = Signal::derive(move || {
+        groups.with(|groups| {
+            groups
+                .iter()
+                .map(|g| PaletteGroup {
+                    label: g.label,
+                    entries: g.items.iter().map(entry).collect(),
+                })
+                .collect::<Vec<_>>()
         })
-        .collect();
+    });
+    let waiting = Signal::derive(move || posts_query.read().as_str() != query.read().trim());
 
-    let activate = move |item: Item| {
-        close();
-        on_activate.call(item);
-    };
-
-    rsx! {
-        PaletteShell {
-            state: palette,
-            label: "命令面板",
-            input_label: "搜索文章或输入命令",
-            placeholder: "搜索文章，或输入命令…",
-            list_label: "命令与搜索结果",
-            enter_hint: "执行",
-            empty_hint: "文章标题、命令与栏目里都没有命中。",
-            groups: view,
-            waiting: posts_query() != q.trim(),
-            on_query_change: move |_| schedule_fetch(),
-            on_pick: move |(index, _): (usize, bool)| {
-                if let Some(item) = flat.get(index).cloned() {
-                    activate(item);
-                }
-            },
-            on_close: move |_| close(),
-            toolbar: rsx! {},
-            empty_action: rsx! {},
-            footer_action: rsx! {},
-        }
+    move || {
+        visible.get().then(|| {
+            view! {
+                <PaletteShell
+                    state=palette
+                    label="命令面板"
+                    input_label="搜索文章或输入命令"
+                    placeholder="搜索文章，或输入命令…"
+                    list_label="命令与搜索结果"
+                    enter_hint="执行"
+                    empty_hint="文章标题、命令与栏目里都没有命中。"
+                    groups=view_groups
+                    waiting=waiting
+                    on_query_change=move |_| schedule_fetch()
+                    on_pick=move |(index, _): (usize, bool)| {
+                        let item = groups
+                            .with_untracked(|groups| {
+                                groups.iter().flat_map(|g| g.items.iter()).nth(index).cloned()
+                            });
+                        if let Some(item) = item {
+                            close();
+                            on_activate.run(item);
+                        }
+                    }
+                    on_close=move |_| close()
+                />
+            }
+        })
     }
 }
 

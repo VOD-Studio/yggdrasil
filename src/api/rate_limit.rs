@@ -5,7 +5,7 @@
 //! 并可通过 `TRUSTED_PROXY_COUNT` 配置 XFF 中真实客户端 IP 右侧的可信段数。
 //!
 //! 当未配置可信代理时，Axum handler 可回退到 TCP 连接的对端地址；
-//! Dioxus server function 无法获取对端地址，会退回到 `"unknown"` key，
+//! Leptos server function 无法获取对端地址，会退回到 `"unknown"` key，
 //! 此时所有请求共享一个限流桶。生产环境应在反向代理后部署并正确配置
 //! `TRUSTED_PROXY_COUNT`。
 //!
@@ -120,7 +120,7 @@ static MCP_PREAUTH_LIMITER: LazyLock<DefaultKeyedRateLimiter<String>> =
 #[cfg(feature = "server")]
 /// 当无法识别真实客户端 IP（"unknown"）时使用的宽松限流桶。
 ///
-/// TRUSTED_PROXY_COUNT=0（默认）时，Dioxus server function 拿不到 TCP 对端地址，
+/// TRUSTED_PROXY_COUNT=0（默认）时，Leptos server function 拿不到 TCP 对端地址，
 /// get_client_ip 会返回 "unknown"，导致所有匿名请求共享同一个严格桶
 /// （1 req/s, burst 5），正常用户的高频请求被误杀。此桶阈值更高，
 /// 可通过 settings 表的 ratelimit_unknown_* 配置项调整（重启生效）。
@@ -343,7 +343,7 @@ pub async fn get_client_ip_with_peer(
 #[cfg(feature = "server")]
 /// 使用「站点配置 → 安全」面板的可信代理段数提取客户端 IP。
 ///
-/// 适用于 Dioxus server function 等无法获取 `ConnectInfo` 的场景。
+/// 适用于 Leptos server function 等无法获取 `ConnectInfo` 的场景。
 /// 生产环境建议配合反向代理与设置面板的 TRUSTED_PROXY_COUNT 使用。
 pub async fn get_client_ip(headers: &http::HeaderMap) -> String {
     get_client_ip_internal(headers, trusted_proxy_count().await, None)
@@ -353,7 +353,7 @@ pub async fn get_client_ip(headers: &http::HeaderMap) -> String {
 /// 检查严格限流（注册、登录等敏感接口）。
 ///
 /// 当 IP 为 "unknown"（无法识别真实客户端，通常是 TRUSTED_PROXY_COUNT=0
-/// 且调用方为 Dioxus server function 时）改用宽松桶，避免所有匿名请求共享
+/// 且调用方为 Leptos server function 时）改用宽松桶，避免所有匿名请求共享
 /// 严格桶导致正常用户被误杀。生产环境配好 TRUSTED_PROXY_COUNT 后走真实 IP，
 /// 始终命中严格桶。
 pub fn check_strict_limit(ip: &str) -> Result<(), String> {

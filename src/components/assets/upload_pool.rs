@@ -1,4 +1,4 @@
-//! 上传引擎内部状态机：与 UI 完全解耦的纯逻辑（无 `rsx!` / 无 Dioxus 组件），
+//! 上传引擎内部状态机：与 UI 完全解耦的纯逻辑（无 `view!` / 无组件），
 //! 供 [`crate::components::assets::AssetUploadModal`] 组合使用。
 //!
 //! 三条入口（点击选择 / 拖拽 / 粘贴）收敛到同一个 `enqueue_files`：拿到的
@@ -9,14 +9,15 @@
 //! `500ms × 当前并发数`——N 路并行时聚合速率恒 ≤ 2/s，与默认上传限流桶
 //! （`RATE_LIMIT_UPLOAD_PER_SEC=2` / `BURST=15`）对齐：N=1 时与旧顺序版逐张 500ms
 //! 完全一致，N 调大也不触发 429。上传管线与文章编辑器完全同源
-//! （`upload_image_file` → `POST /api/upload`）。
+//! （`upload_image_file` → `utils::web_upload::post_multipart_file` → `POST /api/upload`）。
 //!
-//! 注：worker 池共享状态用 `Rc<UploadPool>` 而非裸 Cell/RefCell——`use_hook` 每次渲染
-//! 都会 clone 存储值（dioxus-core `use_hook_inner` 走 `.cloned()`），裸结构会被按值
-//! 拷贝，各入口闭包拿到互不同步的副本导致 id 冲突与队列分裂；Rc 克隆共享同一实例。
+//! 注：worker 池共享状态用 `Rc<UploadPool>`：各入口闭包与 worker 克隆的都是 Rc，
+//! 共享同一份队列与句柄表。含 `web_sys::File` 的池不是 `Send + Sync`，由组件放进
+//! `StoredValue::new_local` 持有，并在 `on_cleanup` 里调用 `UploadPool::dispose`
+//! 释放文件句柄、清空队列并让在跑的 worker 退出。
 
 #[cfg(target_arch = "wasm32")]
-use dioxus::prelude::*;
+use leptos::prelude::*;
 
 #[cfg(target_arch = "wasm32")]
 use crate::bridges::tiptap::upload_image_file;
@@ -34,7 +35,7 @@ const ALLOWED_MIME: &[&str] = &["image/jpeg", "image/png", "image/gif", "image/w
 // 变体仅在 WASM 端构造，server SSR 只匹配渲染，非 wasm 构建放行 dead_code。
 #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 #[derive(Clone, PartialEq)]
-pub(crate) enum UploadStatus {
+pub enum UploadStatus {
     Queued,
     Uploading,
     Done,
@@ -46,7 +47,7 @@ pub(crate) enum UploadStatus {
 // 同 UploadStatus：实例仅在 WASM 端构造。
 #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 #[derive(Clone, PartialEq)]
-pub(crate) struct UploadItem {
+pub struct UploadItem {
     pub(crate) id: u64,
     pub(crate) name: String,
     /// 入队时已用 `format_bytes` 格式化好的可读大小。
@@ -64,8 +65,8 @@ struct BatchCtx {
 }
 
 /// Worker 池共享状态：id 分配、重试句柄表、待传队列、在跑 worker 数。
-/// `use_hook` 持 `Rc<UploadPool>`：渲染期 clone 的是 Rc（共享同一实例），各入口闭包
-/// 与 worker 看到的永远是同一份队列/句柄表。字段私有——UI 层只经下方方法访问，
+/// 组件持 `Rc<UploadPool>`（`StoredValue::new_local`）：各入口闭包与 worker 看到的
+/// 永远是同一份队列/句柄表。字段私有——UI 层只经下方方法访问，
 /// 不直接触碰 files/queue 等内部表示。
 #[cfg(target_arch = "wasm32")]
 pub(crate) struct UploadPool {
@@ -73,6 +74,8 @@ pub(crate) struct UploadPool {
     files: std::cell::RefCell<Vec<(u64, web_sys::File)>>,
     queue: std::cell::RefCell<std::collections::VecDeque<(u64, std::rc::Rc<BatchCtx>)>>,
     active_workers: std::cell::Cell<u32>,
+    /// 组件卸载后置位：worker 不再取新任务，也不再回调父组件。
+    closed: std::cell::Cell<bool>,
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -83,7 +86,15 @@ impl UploadPool {
             files: std::cell::RefCell::new(Vec::new()),
             queue: std::cell::RefCell::new(std::collections::VecDeque::new()),
             active_workers: std::cell::Cell::new(0),
+            closed: std::cell::Cell::new(false),
         }
+    }
+
+    /// 组件卸载时调用：释放全部文件句柄、清空待传队列，在跑的 worker 在当前张结束后退出。
+    pub(crate) fn dispose(&self) {
+        self.closed.set(true);
+        self.files.borrow_mut().clear();
+        self.queue.borrow_mut().clear();
     }
 
     /// 取回指定 id 的文件句柄克隆（供 UI 层「重试」重新读取原始文件；不移除句柄表条目）。
@@ -117,12 +128,17 @@ pub(crate) fn validate_file(mime: &str, size: u64) -> Result<(), String> {
 }
 
 /// 更新单条状态：write guard 在函数内立即释放，绝不跨 await 持有。
+///
+/// 返回 `false` 表示信号已随组件销毁（异步任务在卸载后醒来时不得再写，否则 panic）。
 #[cfg(target_arch = "wasm32")]
-pub(crate) fn set_status(items: &mut Signal<Vec<UploadItem>>, id: u64, status: UploadStatus) {
-    let mut guard = items.write();
-    if let Some(it) = guard.iter_mut().find(|it| it.id == id) {
-        it.status = status;
-    }
+pub(crate) fn set_status(items: RwSignal<Vec<UploadItem>>, id: u64, status: UploadStatus) -> bool {
+    items
+        .try_update(|list| {
+            if let Some(it) = list.iter_mut().find(|it| it.id == id) {
+                it.status = status;
+            }
+        })
+        .is_some()
 }
 
 /// 单个 worker 的消费循环：队列空即退出并归还名额。
@@ -132,12 +148,16 @@ pub(crate) fn set_status(items: &mut Signal<Vec<UploadItem>>, id: u64, status: U
 /// N=1 时与旧顺序版逐张 500ms 完全一致，N 调大也不会触发 429。
 #[cfg(target_arch = "wasm32")]
 async fn worker_loop(
-    mut items: Signal<Vec<UploadItem>>,
+    items: RwSignal<Vec<UploadItem>>,
     pool: std::rc::Rc<UploadPool>,
-    concurrency: Signal<i32>,
-    on_uploaded: EventHandler<()>,
+    concurrency: RwSignal<i32>,
+    on_uploaded: Callback<()>,
 ) {
+    // 组件卸载后（信号已销毁 / 池已 dispose）所有写入与回调都必须停止。
     loop {
+        if pool.closed.get() {
+            break;
+        }
         // borrow 不出块，guard 不跨 await。
         let next = pool.queue.borrow_mut().pop_front();
         let Some((id, batch)) = next else { break };
@@ -145,42 +165,53 @@ async fn worker_loop(
         // 其他成功项的 on_uploaded 无法触发）。
         let file = pool.find_file(id);
         if let Some(file) = file {
-            set_status(&mut items, id, UploadStatus::Uploading);
-            match upload_image_file(file).await {
+            if !set_status(items, id, UploadStatus::Uploading) {
+                break;
+            }
+            let alive = match upload_image_file(file).await {
                 Ok(_) => {
-                    set_status(&mut items, id, UploadStatus::Done);
                     batch.any_done.set(true);
+                    set_status(items, id, UploadStatus::Done)
                 }
-                Err(msg) => set_status(&mut items, id, UploadStatus::Failed(msg)),
+                Err(msg) => set_status(items, id, UploadStatus::Failed(msg)),
+            };
+            if !alive || pool.closed.get() {
+                break;
             }
         }
         // 本批最后一条收尾且 ≥1 成功 → 回调一次（父组件刷新网格）。
         let remaining = batch.remaining.get() - 1;
         batch.remaining.set(remaining);
         if remaining == 0 && batch.any_done.get() {
-            on_uploaded.call(());
+            on_uploaded.run(());
         }
         // 队列未空则停顿压速率；停顿随并发数线性放大（见 fn doc），live 读取
         // 让面板改动即时生效。clamp(1, 32) 纯防御：服务端已钳到 1–8，
         // 此处只防异常值导致 500*n 溢出或路径级长停。
         if !pool.queue.borrow().is_empty() {
-            let n = (*concurrency.peek()).clamp(1, 32) as u32;
-            crate::utils::time::sleep_ms(500 * n).await;
+            let Some(n) = concurrency.try_get_untracked() else {
+                break;
+            };
+            crate::utils::time::sleep_ms(500 * n.clamp(1, 32) as u32).await;
         }
     }
-    pool.active_workers.set(pool.active_workers.get() - 1);
+    pool.active_workers
+        .set(pool.active_workers.get().saturating_sub(1));
 }
 
 /// 三入口收敛点：校验入队 + 按需补足 worker。仅 WASM 端存在（`web_sys::File` /
-/// `spawn` / `upload_image_file` 都是 WASM-only 符号）。
+/// `spawn_local` / `upload_image_file` 都是 WASM-only 符号）。
 #[cfg(target_arch = "wasm32")]
 pub(crate) fn enqueue_files(
-    mut items: Signal<Vec<UploadItem>>,
+    items: RwSignal<Vec<UploadItem>>,
     pool: std::rc::Rc<UploadPool>,
-    concurrency: Signal<i32>,
-    on_uploaded: EventHandler<()>,
+    concurrency: RwSignal<i32>,
+    on_uploaded: Callback<()>,
     new_files: Vec<web_sys::File>,
 ) {
+    if pool.closed.get() {
+        return;
+    }
     // 1) 校验入队：不合格直接记 Failed（不发请求）；合格记 Queued 并留存句柄供重试。
     let mut valid_ids = Vec::new();
     for file in new_files {
@@ -200,7 +231,7 @@ pub(crate) fn enqueue_files(
                 Err(msg) => UploadStatus::Failed(msg),
             },
         };
-        items.write().push(item);
+        items.update(|list| list.push(item));
     }
     if valid_ids.is_empty() {
         return;
@@ -219,10 +250,10 @@ pub(crate) fn enqueue_files(
         }
     }
     // clamp 上界与 worker_loop 的停顿同款防御（正常值 1–8）。
-    let target = (*concurrency.peek()).clamp(1, 32) as u32;
+    let target = concurrency.get_untracked().clamp(1, 32) as u32;
     while pool.active_workers.get() < target && !pool.queue.borrow().is_empty() {
         pool.active_workers.set(pool.active_workers.get() + 1);
-        spawn(worker_loop(items, pool.clone(), concurrency, on_uploaded));
+        leptos::task::spawn_local(worker_loop(items, pool.clone(), concurrency, on_uploaded));
     }
 }
 

@@ -5,16 +5,20 @@
 //! 跳转；有查询时按「文章 · 标签 · 跳转」分组，命中词用 `<mark>` 标出。
 //! 样式见 styles/components/palette.css；行为细节见 docs/v1.0-重设计方案.md「搜索面板」。
 //! 公共状态、输入与对话框结构见 [crate::components::palette]。
+//!
+//! 分包：[`SearchPalette`][crate::components::search_palette::SearchPalette] 外壳（打开状态、快捷键、最近搜索与标签的预取）留在主包；
+//! 面板主体（分组构建、条目映射、选中动作与 `PaletteShell` 视图）在
+//! `search_palette_body`（`#[leptos::lazy]`）里，首次打开面板时才加载分包。
 
-use dioxus::prelude::*;
+use leptos::prelude::*;
 
 use crate::api::posts::{list_tags, suggest_posts, PostSuggestion};
 use crate::components::palette::{
-    contains_ci, snippet, use_palette_state, viewport_center, PaletteEntry, PaletteGroup,
-    PaletteShell,
+    contains_ci, snippet, use_palette_shortcut, use_palette_state, viewport_center, PaletteEntry,
+    PaletteGroup, PaletteShell, PaletteState, SearchPaletteHandle,
 };
 use crate::components::ui::{Icon, IconName};
-use crate::router::Route;
+use crate::routes::Route;
 use crate::theme::{choose_theme, use_resolved_theme, use_theme, ResolvedTheme, Theme};
 
 /// 搜索范围。
@@ -81,20 +85,19 @@ const PAGES: [(&str, &str); 8] = [
 const RECENT_KEY: &str = "yggdrasil-search-recent";
 const RECENT_LIMIT: usize = 5;
 
-fn page_target(path: &str) -> NavigationTarget<Route> {
+/// 跳转页面的站内地址（`PAGES` 里的路径对应的 `Route`）。
+fn page_href(path: &str) -> String {
     let route = match path {
-        "/notes" => Route::Notes {},
-        "/archives" => Route::Archives {},
-        "/friends" => Route::Friends {},
-        "/about" => Route::About {},
-        "/about/writing" => Route::WritingGuide {},
-        "/changelog" => Route::Changelog {},
-        // 图鉴是 full 客户端专属路由（plan §6.1/§6.6）：reader 客户端没有该变体，
-        // 两个 flavor 统一整页导航，由服务端按路径选择 full 模板。
-        "/about/components" => return NavigationTarget::External(path.to_string()),
-        _ => Route::Home {},
+        "/notes" => Route::Notes,
+        "/archives" => Route::Archives,
+        "/friends" => Route::Friends,
+        "/about" => Route::About,
+        "/about/writing" => Route::WritingGuide,
+        "/changelog" => Route::Changelog,
+        "/about/components" => Route::ComponentShowcase,
+        _ => Route::Home,
     };
-    route.into()
+    route.to_string()
 }
 
 /// 各组的条数上限：全部范围下文章 5、标签 3、跳转 3；单一范围 8。
@@ -306,53 +309,47 @@ fn entry(item: &Item, query: &str) -> PaletteEntry {
     }
 }
 
-/// 搜索面板。挂在前台布局里一次，由 [`SearchPaletteHandle`] 打开。
-///
-/// Props：
-/// - `shortcut`：是否注册全局 ⌘K / Ctrl+K（图鉴演示实例关闭，避免与正式面板同时打开）
-#[component]
-pub fn SearchPalette(#[props(default = true)] shortcut: bool) -> Element {
+/// 在新标签页打开站内地址（仅 wasm）。
+#[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))]
+fn open_in_new_tab(href: &str) {
     #[cfg(target_arch = "wasm32")]
-    crate::components::palette::use_palette_shortcut(
-        use_context::<crate::components::palette::SearchPaletteHandle>(),
-        shortcut,
-    );
-    #[cfg(not(target_arch = "wasm32"))]
-    let _ = shortcut;
-    let palette = use_palette_state("palette");
-    let open = palette.open;
-    let mut query = palette.query;
-    let mut active = palette.active;
+    if let Some(window) = web_sys::window() {
+        let _ = window.open_with_url_and_target(href, "_blank");
+    }
+}
 
-    let mut scope = use_signal(|| Scope::All);
-    let mut posts = use_signal(Vec::<PostSuggestion>::new);
-    let mut posts_query = use_signal(String::new);
-    let mut tags = use_signal(|| None::<Vec<(String, i64)>>);
-    let mut recents = use_signal(|| None::<Vec<String>>);
-    let theme = use_theme();
-    let resolved = use_resolved_theme();
-    let navigator = use_navigator();
+/// 外壳与分包主体共享的面板数据信号（全部是 `Copy` 句柄）。
+#[derive(Clone, Copy)]
+struct SearchData {
+    scope: RwSignal<Scope>,
+    posts: RwSignal<Vec<PostSuggestion>>,
+    /// `posts` 对应的查询。
+    posts_query: RwSignal<String>,
+    /// 全部标签（名称、已发布文章数）；尚未加载为 `None`。
+    tags: RwSignal<Option<Vec<(String, i64)>>>,
+    /// 最近搜索；存储不可用为 `None`。
+    recents: RwSignal<Option<Vec<String>>>,
+}
 
-    // 打开：读最近搜索、首次加载标签。
-    use_effect(move || {
-        if !open() {
-            return;
-        }
-        recents.set(read_recents());
-        if tags.peek().is_none() {
-            spawn(async move {
-                if let Ok(res) = list_tags().await {
-                    tags.set(Some(
-                        res.tags
-                            .into_iter()
-                            .filter(|t| t.post_count > 0)
-                            .map(|t| (t.name, t.post_count))
-                            .collect(),
-                    ));
-                }
-            });
-        }
-    });
+/// 面板主体：分组、条目、选中动作与对话框视图。分包函数，首次调用时加载分包。
+///
+/// 参数全部是 `Copy` 句柄，由 [`SearchPalette`] 外壳在打开时传入。
+#[leptos::lazy]
+fn search_palette_body(
+    palette: PaletteState,
+    data: SearchData,
+    theme: RwSignal<Theme>,
+    resolved: Memo<ResolvedTheme>,
+) -> AnyView {
+    let SearchData {
+        scope,
+        posts,
+        posts_query,
+        tags,
+        recents,
+    } = data;
+    let query = palette.query;
+    let active = palette.active;
 
     let close = move || {
         // 淡出结束后复位，下次打开从空白开始（显示最近搜索与跳转）。
@@ -370,33 +367,48 @@ pub fn SearchPalette(#[props(default = true)] shortcut: bool) -> Element {
         })
     };
 
-    if !palette.visible() {
-        return rsx! {};
-    }
-
-    let q = query();
-    let has_query = !q.trim().is_empty();
+    let has_query = move || !query.read().trim().is_empty();
     // 建议结果属于更早的查询时仍先显示（加载中保留上一次结果）。
-    let tag_list = tags().unwrap_or_default();
-    let groups = build_groups(
-        &q,
-        scope(),
-        &posts(),
-        &tag_list,
-        recents().as_deref(),
-        resolved() == ResolvedTheme::Dark,
-    );
-    let flat: Vec<Item> = groups.iter().flat_map(|g| g.items.clone()).collect();
-    let view: Vec<PaletteGroup> = groups
-        .iter()
-        .map(|g| PaletteGroup {
-            label: g.label,
-            entries: g.items.iter().map(|item| entry(item, &q)).collect(),
+    let groups = Memo::new(move |_| {
+        let q = query.get();
+        let scope = scope.get();
+        let dark = resolved.get() == ResolvedTheme::Dark;
+        posts.with(|posts| {
+            tags.with(|tags| {
+                recents.with(|recents| {
+                    build_groups(
+                        &q,
+                        scope,
+                        posts,
+                        tags.as_deref().unwrap_or_default(),
+                        recents.as_deref(),
+                        dark,
+                    )
+                })
+            })
         })
-        .collect();
+    });
+    let view_groups = Signal::derive(move || {
+        let q = query.get();
+        groups.with(|groups| {
+            groups
+                .iter()
+                .map(|g| PaletteGroup {
+                    label: g.label,
+                    entries: g.items.iter().map(|item| entry(item, &q)).collect(),
+                })
+                .collect::<Vec<_>>()
+        })
+    });
+    let waiting = Signal::derive(move || posts_query.read().as_str() != query.read().trim());
 
-    let mut activate = move |item: Item, new_tab: bool| {
-        let current = query.peek().clone();
+    let remember_query = move |current: &str| {
+        let next = recents.with_untracked(|r| remember(r.as_deref().unwrap_or_default(), current));
+        write_recents(&next);
+    };
+
+    let activate = move |item: Item, new_tab: bool| {
+        let current = query.get_untracked();
         match item {
             Item::Recent(term) => {
                 query.set(term);
@@ -408,104 +420,194 @@ pub fn SearchPalette(#[props(default = true)] shortcut: bool) -> Element {
                 choose_theme(theme, to, viewport_center());
             }
             Item::Post(post) => {
-                let next = remember(&recents.peek().clone().unwrap_or_default(), &current);
-                write_recents(&next);
+                remember_query(&current);
                 close();
+                let href = Route::PostDetail { slug: post.slug }.to_string();
                 if new_tab {
-                    #[cfg(target_arch = "wasm32")]
-                    if let Some(window) = web_sys::window() {
-                        let _ = window
-                            .open_with_url_and_target(&format!("/post/{}", post.slug), "_blank");
-                    }
+                    open_in_new_tab(&href);
                 } else {
-                    navigator.push(Route::PostDetail { slug: post.slug });
+                    crate::navigation::push(&href);
                 }
             }
             Item::Tag { name, .. } => {
-                let next = remember(&recents.peek().clone().unwrap_or_default(), &current);
-                write_recents(&next);
+                remember_query(&current);
                 close();
-                navigator.push(Route::TagDetail { tag: name });
+                crate::navigation::push(&Route::TagDetail { tag: name }.to_string());
             }
             Item::Page { path, .. } => {
                 close();
-                navigator.push(page_target(path));
+                crate::navigation::push(&page_href(path));
             }
         }
     };
-    let empty_query = q.trim().to_string();
-    let footer_query = empty_query.clone();
 
-    rsx! {
-        PaletteShell {
-            state: palette,
-            label: "搜索",
-            input_label: "搜索文章、标签或页面",
-            placeholder: "搜索文章、标签，或跳转到页面…",
-            list_label: "搜索结果",
-            enter_hint: "打开",
-            empty_hint: "标题、摘要与标签里都没有命中，试试更短的关键词，或去全文搜索。",
-            groups: view,
-            waiting: posts_query() != q.trim(),
-            clearable: true,
-            on_query_change: move |_| schedule_fetch(),
-            on_pick: move |(index, new_tab): (usize, bool)| {
-                if let Some(item) = flat.get(index).cloned() {
+    let full_text_search = move || {
+        let q = query.get_untracked().trim().to_string();
+        close();
+        crate::navigation::push(&Route::Search { q }.to_string());
+    };
+
+    view! {
+        <PaletteShell
+            state=palette
+            label="搜索"
+            input_label="搜索文章、标签或页面"
+            placeholder="搜索文章、标签，或跳转到页面…"
+            list_label="搜索结果"
+            enter_hint="打开"
+            empty_hint="标题、摘要与标签里都没有命中，试试更短的关键词，或去全文搜索。"
+            groups=view_groups
+            waiting=waiting
+            clearable=true
+            on_query_change=move |_| schedule_fetch()
+            on_pick=move |(index, new_tab): (usize, bool)| {
+                let item = groups
+                    .with_untracked(|gs| gs.iter().flat_map(|g| g.items.iter()).nth(index).cloned());
+                if let Some(item) = item {
                     activate(item, new_tab);
                 }
-            },
-            on_close: move |_| close(),
-            toolbar: rsx! {
-                div { class: "palette-scopes", role: "tablist", aria_label: "搜索范围",
-                    for s in Scope::ALL {
-                        button {
-                            key: "{s.label()}",
-                            class: "palette-scope",
-                            r#type: "button",
-                            role: "tab",
-                            aria_selected: "{scope() == s}",
-                            onclick: move |_| {
-                                scope.set(s);
-                                active.set(0);
-                                palette.focus_input();
-                            },
-                            "{s.label()}"
-                            if has_query {
-                                span { class: "palette-scope-count",
-                                    "{scope_count(s, &q, &posts(), &tag_list)}"
+            }
+            on_close=move |_| close()
+            toolbar=move || {
+                view! {
+                    <div class="palette-scopes" role="tablist" aria-label="搜索范围">
+                        {Scope::ALL
+                            .into_iter()
+                            .map(|s| {
+                                view! {
+                                    <button
+                                        class="palette-scope"
+                                        type="button"
+                                        role="tab"
+                                        aria-selected=move || (scope.get() == s).to_string()
+                                        on:click=move |_| {
+                                            scope.set(s);
+                                            active.set(0);
+                                            palette.focus_input();
+                                        }
+                                    >
+                                        {s.label()}
+                                        {move || {
+                                            has_query()
+                                                .then(|| {
+                                                    view! {
+                                                        <span class="palette-scope-count">
+                                                            {move || {
+                                                                let q = query.get();
+                                                                posts
+                                                                    .with(|posts| {
+                                                                        tags.with(|tags| {
+                                                                            scope_count(
+                                                                                s,
+                                                                                &q,
+                                                                                posts,
+                                                                                tags.as_deref().unwrap_or_default(),
+                                                                            )
+                                                                        })
+                                                                    })
+                                                            }}
+                                                        </span>
+                                                    }
+                                                })
+                                        }}
+                                    </button>
                                 }
+                            })
+                            .collect_view()}
+                    </div>
+                }
+            }
+            empty_action=move || {
+                view! {
+                    <button
+                        class="btn btn-sm btn-secondary mt-4"
+                        type="button"
+                        on:click=move |_| full_text_search()
+                    >
+                        "在全文中搜索"
+                        <Icon name=IconName::ArrowRight size=14/>
+                    </button>
+                }
+            }
+            footer_action=move || {
+                // ViewFn 只渲染一次：用内层闭包让按钮随查询词出现/消失。
+                move || {
+                    has_query()
+                        .then(|| {
+                            view! {
+                                <button
+                                    class="palette-full-text"
+                                    type="button"
+                                    on:click=move |_| full_text_search()
+                                >
+                                    {move || format!("全文搜索「{}」", query.read().trim())}
+                                    <Icon name=IconName::ArrowRight size=13/>
+                                </button>
                             }
-                        }
-                    }
+                        })
                 }
-            },
-            empty_action: rsx! {
-                button {
-                    class: "btn btn-sm btn-secondary mt-4",
-                    r#type: "button",
-                    onclick: move |_| {
-                        close();
-                        navigator.push(Route::Search { q: empty_query.clone() });
-                    },
-                    "在全文中搜索"
-                    Icon { name: IconName::ArrowRight, size: 14 }
-                }
-            },
-            footer_action: rsx! {
-                if has_query {
-                    button {
-                        class: "palette-full-text",
-                        r#type: "button",
-                        onclick: move |_| {
-                            close();
-                            navigator.push(Route::Search { q: footer_query.clone() });
-                        },
-                        "全文搜索「{q.trim()}」"
-                        Icon { name: IconName::ArrowRight, size: 13 }
-                    }
-                }
-            },
+            }
+        />
+    }
+    .into_any()
+}
+
+/// 搜索面板。挂在前台布局里一次，由 [`SearchPaletteHandle`] 打开。
+///
+/// 外壳只维护打开状态、最近搜索与标签预取；面板内容首次打开时才从分包加载
+/// （[`search_palette_body`]），关闭淡出结束后卸载。
+///
+/// Props：
+/// - `shortcut`：是否注册全局 ⌘K / Ctrl+K（图鉴演示实例关闭，避免与正式面板同时打开）
+#[component]
+pub fn SearchPalette(#[prop(default = true)] shortcut: bool) -> impl IntoView {
+    use_palette_shortcut(expect_context::<SearchPaletteHandle>(), shortcut);
+    let palette = use_palette_state("palette");
+    let open = palette.open;
+
+    let data = SearchData {
+        scope: RwSignal::new(Scope::All),
+        posts: RwSignal::new(Vec::new()),
+        posts_query: RwSignal::new(String::new()),
+        tags: RwSignal::new(None),
+        recents: RwSignal::new(None),
+    };
+    let theme = use_theme();
+    let resolved = use_resolved_theme();
+
+    // 打开：读最近搜索、首次加载标签。
+    Effect::new(move |_| {
+        if !open.get() {
+            return;
         }
+        data.recents.set(read_recents());
+        if data.tags.read_untracked().is_none() {
+            leptos::task::spawn_local(async move {
+                if let Ok(res) = list_tags().await {
+                    let _ = data.tags.try_set(Some(
+                        res.tags
+                            .into_iter()
+                            .filter(|t| t.post_count > 0)
+                            .map(|t| (t.name, t.post_count))
+                            .collect(),
+                    ));
+                }
+            });
+        }
+    });
+
+    view! {
+        <Suspense fallback=|| ()>
+            {move || {
+                palette
+                    .visible()
+                    .then(|| {
+                        Suspend::new(async move {
+                            search_palette_body(palette, data, theme, resolved).await
+                        })
+                    })
+            }}
+        </Suspense>
     }
 }
 
@@ -574,11 +676,7 @@ mod tests {
     #[test]
     fn page_routes_cover_every_jump_target() {
         for (_, path) in PAGES {
-            let target = match page_target(path) {
-                NavigationTarget::Internal(route) => route.to_string(),
-                NavigationTarget::External(url) => url,
-            };
-            assert_eq!(target, *path, "{path}");
+            assert_eq!(page_href(path), *path, "{path}");
         }
     }
 }

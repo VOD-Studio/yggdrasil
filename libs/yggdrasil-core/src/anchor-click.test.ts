@@ -5,22 +5,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import './index';
 
-// 模拟 Dioxus 委托监听器:挂在 document 的 bubble 阶段 click，模拟 handleClickNavigate
+// 模拟路由器监听器:挂在 document 的 bubble 阶段 click
 // 会被触发时的副作用（preventDefault + 整页跳转）。测试用它验证拦截器确实阻止了冒泡。
-let dioxusInterceptorCalled = false;
+let routerInterceptorCalled = false;
 
 describe('initAnchorClick', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
     history.replaceState(null, '', '#');
     vi.restoreAllMocks();
-    dioxusInterceptorCalled = false;
-    // 模拟 Dioxus 在 document bubble 阶段的 click 委托监听器。
+    routerInterceptorCalled = false;
+    // 模拟 Leptos 路由器在冒泡阶段的 click 监听器。
     // 拦截器在 window capture 阶段 stopPropagation 后，这个监听器不应被触发。
     document.addEventListener(
       'click',
       () => {
-        dioxusInterceptorCalled = true;
+        routerInterceptorCalled = true;
       },
       false,
     );
@@ -41,14 +41,14 @@ describe('initAnchorClick', () => {
     arrow.click();
     expect(scroll).toHaveBeenCalledExactlyOnceWith({ top: 0, behavior: 'smooth' });
     expect(window.location.hash).toBe('#home-posts');
-    expect(dioxusInterceptorCalled).toBe(false);
+    expect(routerInterceptorCalled).toBe(false);
 
     // 回到首屏后再次点击：hash 没变也必须启动新的滚动。
     scroll.mockClear();
     arrow.click();
     expect(scroll).toHaveBeenCalledExactlyOnceWith({ top: 0, behavior: 'smooth' });
     expect(sync).toHaveBeenCalledOnce();
-    expect(dioxusInterceptorCalled).toBe(false);
+    expect(routerInterceptorCalled).toBe(false);
   });
 
   it('减少动态效果时开始阅读立即到达列表', () => {
@@ -61,10 +61,10 @@ describe('initAnchorClick', () => {
     document.querySelector<HTMLAnchorElement>('a')!.click();
 
     expect(scroll).toHaveBeenCalledExactlyOnceWith({ top: 0, behavior: 'instant' });
-    expect(dioxusInterceptorCalled).toBe(false);
+    expect(routerInterceptorCalled).toBe(false);
   });
 
-  it('点击 hash 锚点滚动到目标并阻止 Dioxus 委托监听器', () => {
+  it('点击 hash 锚点滚动到目标并阻止 路由器监听器', () => {
     const heading = document.createElement('h2');
     heading.id = 'ru-men-zhi-nan';
     document.body.appendChild(heading);
@@ -77,8 +77,8 @@ describe('initAnchorClick', () => {
     anchor.click();
 
     expect(spy).toHaveBeenCalled();
-    // 关键:Dioxus 委托监听器未被触发 → handleClickNavigate/browser_open 不会执行。
-    expect(dioxusInterceptorCalled).toBe(false);
+    // 关键:路由器监听器未被触发，hash 锚点不会被当作路由请求。
+    expect(routerInterceptorCalled).toBe(false);
   });
 
   it('点击后 URL hash 更新为锚点 id（不触发整页刷新）', () => {
@@ -110,7 +110,7 @@ describe('initAnchorClick', () => {
     expect(scroll).toHaveBeenCalledOnce();
     expect(windowScroll).not.toHaveBeenCalled();
     expect(window.location.hash).toBe('');
-    expect(dioxusInterceptorCalled).toBe(false);
+    expect(routerInterceptorCalled).toBe(false);
   });
 
   it('data-app-anchor 内的锚点完全放行给组件自己的 click 处理', () => {
@@ -125,18 +125,18 @@ describe('initAnchorClick', () => {
     anchor.click();
     expect(windowScroll).not.toHaveBeenCalled();
     expect(window.location.hash).toBe('');
-    expect(dioxusInterceptorCalled).toBe(true);
+    expect(routerInterceptorCalled).toBe(true);
   });
 
-  it('目标元素不存在时放行，不阻止 Dioxus 原行为', () => {
+  it('目标元素不存在时放行，不阻止路由器原行为', () => {
     const anchor = document.createElement('a');
     anchor.setAttribute('href', '#no-such-heading');
     document.body.appendChild(anchor);
 
     anchor.click();
 
-    // 目标不存在:拦截器不接管，事件继续冒泡到 Dioxus 监听器。
-    expect(dioxusInterceptorCalled).toBe(true);
+    // 目标不存在:拦截器不接管，事件继续冒泡到路由器监听器。
+    expect(routerInterceptorCalled).toBe(true);
   });
 
   it('锚点替换保留导航记录及其它 history state', () => {
@@ -155,7 +155,7 @@ describe('initAnchorClick', () => {
 
     anchor.click();
 
-    expect(dioxusInterceptorCalled).toBe(true);
+    expect(routerInterceptorCalled).toBe(true);
   });
 
   it('带修饰键的点击不拦截（新窗口等交给浏览器）', () => {
@@ -174,7 +174,7 @@ describe('initAnchorClick', () => {
     anchor.dispatchEvent(event);
 
     expect(spy).not.toHaveBeenCalled();
-    expect(dioxusInterceptorCalled).toBe(true);
+    expect(routerInterceptorCalled).toBe(true);
   });
 
   it('重复调用 initAnchorClick 幂等，不会重复注册监听器', () => {

@@ -2,7 +2,7 @@
 //!
 //! 全站统一 1.5 线宽、`currentColor` 描边，颜色随文字。图标数据由
 //! `libs/shared/scripts/generate-icons.ts` 生成到 `icons_data.rs`。
-use dioxus::prelude::*;
+use leptos::prelude::*;
 
 #[path = "icons_data.rs"]
 mod data;
@@ -12,49 +12,53 @@ pub use data::IconName;
 /// 内联 SVG 图标。
 ///
 /// - 默认装饰性（`aria-hidden`）；传 `label` 时作为独立图形朗读（`role="img"`）。
-/// - `size` 为像素边长，默认 16；行内图标可加 `class: "icon-inline"` 做 -0.125em 光学对齐。
+/// - `size` 为像素边长，默认 16；行内图标可加 `class="icon-inline"` 做 -0.125em 光学对齐。
 #[component]
 pub fn Icon(
     name: IconName,
-    #[props(default = 16)] size: u32,
-    #[props(default)] class: String,
-    #[props(default)] label: Option<String>,
-) -> Element {
+    #[prop(default = 16)] size: u32,
+    #[prop(optional, into)] class: String,
+    #[prop(optional, into)] label: Option<String>,
+) -> impl IntoView {
     let body = name.body();
     let slug = name.slug();
+    let class = format!("lucide lucide-{slug} shrink-0 {class}");
+    let size = size.to_string();
     match label {
-        Some(label) => rsx! {
-            svg {
-                class: "lucide lucide-{slug} shrink-0 {class}",
-                width: "{size}",
-                height: "{size}",
-                view_box: "0 0 24 24",
-                fill: "none",
-                stroke: "currentColor",
-                stroke_width: "1.5",
-                stroke_linecap: "round",
-                stroke_linejoin: "round",
-                role: "img",
-                "aria-label": "{label}",
-                dangerous_inner_html: body,
-            }
-        },
-        None => rsx! {
-            svg {
-                class: "lucide lucide-{slug} shrink-0 {class}",
-                width: "{size}",
-                height: "{size}",
-                view_box: "0 0 24 24",
-                fill: "none",
-                stroke: "currentColor",
-                stroke_width: "1.5",
-                stroke_linecap: "round",
-                stroke_linejoin: "round",
-                "aria-hidden": "true",
-                "focusable": "false",
-                dangerous_inner_html: body,
-            }
-        },
+        Some(label) => view! {
+            <svg
+                class=class
+                width=size.clone()
+                height=size
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                role="img"
+                aria-label=label
+                inner_html=body
+            ></svg>
+        }
+        .into_any(),
+        None => view! {
+            <svg
+                class=class
+                width=size.clone()
+                height=size
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+                focusable="false"
+                inner_html=body
+            ></svg>
+        }
+        .into_any(),
     }
 }
 
@@ -82,9 +86,7 @@ mod tests {
 
     #[test]
     fn decorative_icons_are_hidden_from_assistive_tech() {
-        let html = dioxus::ssr::render_element(rsx! {
-            Icon { name: IconName::Search }
-        });
+        let html = Owner::new().with(|| view! { <Icon name=IconName::Search/> }.to_html());
         assert!(html.contains("aria-hidden=\"true\""), "{html}");
         assert!(html.contains("stroke-width=\"1.5\""), "{html}");
         assert!(html.contains("lucide-search"), "{html}");
@@ -93,9 +95,8 @@ mod tests {
 
     #[test]
     fn labelled_icons_are_announced() {
-        let html = dioxus::ssr::render_element(rsx! {
-            Icon { name: IconName::X, size: 20, label: "关闭".to_string() }
-        });
+        let html =
+            Owner::new().with(|| view! { <Icon name=IconName::X size=20 label="关闭"/> }.to_html());
         assert!(html.contains("role=\"img\""), "{html}");
         assert!(html.contains("aria-label=\"关闭\""), "{html}");
         assert!(html.contains("width=\"20\""), "{html}");

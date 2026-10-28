@@ -1,6 +1,7 @@
 //! 富文本编辑器往返守卫：比较原文与编辑器往返后的 Markdown 渲染结果。
 
-use dioxus::prelude::*;
+use crate::api::error::ApiError;
+use leptos::prelude::*;
 
 #[cfg(feature = "server")]
 use super::helpers::get_current_admin_user;
@@ -8,11 +9,11 @@ use super::helpers::get_current_admin_user;
 use crate::api::error::AppError;
 
 /// 富文本编辑器载入正文后比较原文与往返 Markdown：两者渲染出的 HTML 完全相同才返回 true。
-#[server(CheckMarkdownRoundtrip, "/api")]
+#[server(CheckMarkdownRoundtrip, endpoint = "check_markdown_roundtrip", input = leptos::server_fn::codec::Json)]
 pub async fn check_markdown_roundtrip(
     original: String,
     roundtrip: String,
-) -> Result<bool, ServerFnError> {
+) -> Result<bool, ApiError> {
     let _user = get_current_admin_user().await?;
     #[cfg(feature = "server")]
     {

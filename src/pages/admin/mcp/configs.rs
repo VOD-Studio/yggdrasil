@@ -1,4 +1,5 @@
 //! 令牌对话框：明文（默认遮罩）、各客户端接入配置与一句话接入指令。
+use super::token_editor::use_close_after_exit;
 use super::{notes_desc, OpenToken};
 use crate::api::mcp_tokens::{get_mcp_client_configs, reveal_mcp_token, McpClientConfigs};
 use crate::components::forms::FormInput;
@@ -6,7 +7,9 @@ use crate::components::ui::{
     button_class, use_toast, ButtonSize, ButtonVariant, Icon, IconButton, IconName, ModalShell,
 };
 use crate::utils::error::failure_message;
-use dioxus::prelude::*;
+use leptos::prelude::*;
+use leptos::task::spawn_local;
+use std::sync::Arc;
 
 /// 写入剪贴板；非浏览器目标或被拒绝时返回 `false`。
 pub(super) async fn copy(text: &str) -> bool {
@@ -63,36 +66,27 @@ fn mask(token: &str) -> String {
 
 /// 令牌对话框。刚创建时标题为「令牌已创建」，从列表打开时为「接入配置」。
 #[component]
-#[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut, unused_variables))]
-pub(super) fn TokenDialog(token: OpenToken, on_close: EventHandler<()>) -> Element {
+pub(super) fn TokenDialog(token: OpenToken, #[prop(into)] on_close: Callback<()>) -> impl IntoView {
     let toast = use_toast();
-    let mut visible = use_signal(|| true);
-    let mut closing = use_signal(|| false);
-    let mut shown = use_signal(|| false);
-    let mut client = use_signal(|| 0_usize);
-    let mut configs = use_signal(|| None::<Result<McpClientConfigs, String>>);
-    let plaintext = token.plaintext.clone();
-    use_hook({
-        let plaintext = plaintext.clone();
-        move || {
-            spawn(async move {
-                configs.set(Some(
-                    get_mcp_client_configs(plaintext)
-                        .await
-                        .map_err(|e| failure_message("配置生成失败", &e)),
-                ));
-            });
-        }
-    });
+    let visible = RwSignal::new(true);
+    let closing = RwSignal::new(false);
+    let shown = RwSignal::new(false);
+    let client = RwSignal::new(0_usize);
+    let configs = RwSignal::new(None::<Result<Arc<McpClientConfigs>, String>>);
+    let plaintext = StoredValue::new(token.plaintext.clone());
+    {
+        let plaintext = token.plaintext.clone();
+        spawn_local(async move {
+            let result = get_mcp_client_configs(plaintext)
+                .await
+                .map(Arc::new)
+                .map_err(|e| failure_message("配置生成失败", &e));
+            let _ = configs.try_set(Some(result));
+        });
+    }
     // 播完退出动画再卸载。
-    use_effect(move || {
-        if !visible() {
-            spawn(async move {
-                crate::utils::time::sleep_ms(crate::components::ui::EXIT_ANIM_MS).await;
-                on_close.call(());
-            });
-        }
-    });
+    use_close_after_exit(visible, on_close);
+
     let summary = &token.summary;
     let expiry = summary.expires_at.map_or("永不过期".to_string(), |e| {
         crate::utils::time::to_local(e)
@@ -105,13 +99,14 @@ pub(super) fn TokenDialog(token: OpenToken, on_close: EventHandler<()>) -> Eleme
         summary.scope.as_str(),
         notes_desc(summary)
     );
-    let title = if token.created {
+    let created = token.created;
+    let title = if created {
         "令牌已创建"
     } else {
         "接入配置"
     };
     let copy_flash = move |text: String, what: &'static str| {
-        spawn(async move {
+        spawn_local(async move {
             if copy(&text).await {
                 toast.success(format!("已复制{what}"));
             } else {
@@ -119,162 +114,192 @@ pub(super) fn TokenDialog(token: OpenToken, on_close: EventHandler<()>) -> Eleme
             }
         });
     };
-    let shown_text = if shown() {
-        plaintext.clone()
-    } else {
-        mask(&plaintext)
+    let close = move || {
+        closing.set(true);
+        visible.set(false);
     };
-    let loaded = configs();
-    let ready = matches!(loaded, Some(Ok(_)));
+    let shown_text = Signal::derive(move || {
+        plaintext.with_value(|p| if shown.get() { p.clone() } else { mask(p) })
+    });
+    let ready = move || configs.with(|c| matches!(c, Some(Ok(_))));
     // 一句话指令跟随当前选中的客户端。
-    let selected_prompt = match &loaded {
-        Some(Ok(c)) => c
-            .snippets
-            .get(client().min(c.snippets.len().saturating_sub(1)))
-            .map(|s| s.agent_prompt()),
-        _ => None,
+    let selected_prompt = move || {
+        configs.with(|c| match c {
+            Some(Ok(c)) => c
+                .snippets
+                .get(client.get().min(c.snippets.len().saturating_sub(1)))
+                .map(|s| s.agent_prompt()),
+            _ => None,
+        })
     };
 
-    rsx! {
-        ModalShell {
-            visible,
-            closing,
-            title,
-            overlay_padding: "p-4",
-            panel_class: "mcp-dialog mcp-token-dialog",
-            div { class: "mcp-dialog-head",
-                if token.created {
-                    span { class: "mcp-ok", aria_hidden: "true", Icon { name: IconName::Check, size: 18 } }
-                }
-                div {
-                    h2 { "{title}" }
-                    p { "{line}" }
-                }
-                IconButton {
-                    icon: IconName::X,
-                    label: "关闭",
-                    size: ButtonSize::Sm,
-                    onclick: move |_| {
-                        closing.set(true);
-                        visible.set(false);
-                    },
-                }
-            }
-            div { class: "mcp-dialog-body",
-                div {
-                    label { class: "mcp-label", r#for: "mcp-plaintext", "令牌明文" }
-                    div { class: "mcp-secret",
-                        FormInput {
-                            id: Some("mcp-plaintext".to_string()),
-                            class: "field settings-mono",
-                            readonly: true,
-                            value: shown_text.to_string(),
+    view! {
+        <ModalShell
+            visible=visible
+            closing=closing
+            title=title
+            overlay_padding="p-4"
+            panel_class="mcp-dialog mcp-token-dialog"
+        >
+            <div class="mcp-dialog-head">
+                {created
+                    .then(|| {
+                        view! {
+                            <span class="mcp-ok" aria-hidden="true">
+                                <Icon name=IconName::Check size=18/>
+                            </span>
                         }
-                        IconButton {
-                            icon: if shown() { IconName::EyeOff } else { IconName::Eye },
-                            label: if shown() { "隐藏令牌" } else { "显示令牌" },
-                            onclick: move |_| shown.toggle(),
-                        }
-                        button {
-                            class: button_class(ButtonVariant::Primary, ButtonSize::Md),
-                            r#type: "button",
-                            onclick: {
-                                let p = plaintext.clone();
-                                move |_| copy_flash(p.clone(), "令牌")
-                            },
+                    })}
+                <div>
+                    <h2>{title}</h2>
+                    <p>{line.clone()}</p>
+                </div>
+                <IconButton
+                    icon=IconName::X
+                    label="关闭"
+                    size=ButtonSize::Sm
+                    onclick=move |_| close()
+                />
+            </div>
+            <div class="mcp-dialog-body">
+                <div>
+                    <label class="mcp-label" for="mcp-plaintext">
+                        "令牌明文"
+                    </label>
+                    <div class="mcp-secret">
+                        <FormInput
+                            id="mcp-plaintext".to_string()
+                            class="field settings-mono"
+                            readonly=true
+                            value=shown_text
+                        />
+                        <IconButton
+                            icon=Signal::derive(move || {
+                                if shown.get() { IconName::EyeOff } else { IconName::Eye }
+                            })
+                            label=Signal::derive(move || {
+                                if shown.get() { "隐藏令牌" } else { "显示令牌" }.to_string()
+                            })
+                            onclick=move |_| shown.update(|s| *s = !*s)
+                        />
+                        <button
+                            class=button_class(ButtonVariant::Primary, ButtonSize::Md)
+                            type="button"
+                            on:click=move |_| copy_flash(plaintext.get_value(), "令牌")
+                        >
                             "复制令牌"
+                        </button>
+                    </div>
+                    <p class="mcp-warn">
+                        <Icon name=IconName::TriangleAlert size=14/>
+                        <span>
+                            "只写入本地客户端配置，不要提交到 Git 或贴进对话。之后可以在列表里重新查看。"
+                        </span>
+                    </p>
+                </div>
+                <div class="mcp-configs">
+                    <div class="mcp-configs-head">
+                        <h3>"接入配置"</h3>
+                        <span>"已自动填入服务地址和这个令牌"</span>
+                    </div>
+                    {move || match configs.get() {
+                        None => {
+                            view! { <p class="mcp-muted" role="status">"正在生成配置…"</p> }
+                                .into_any()
                         }
-                    }
-                    p { class: "mcp-warn",
-                        Icon { name: IconName::TriangleAlert, size: 14 }
-                        span { "只写入本地客户端配置，不要提交到 Git 或贴进对话。之后可以在列表里重新查看。" }
-                    }
-                }
-                div { class: "mcp-configs",
-                    div { class: "mcp-configs-head",
-                        h3 { "接入配置" }
-                        span { "已自动填入服务地址和这个令牌" }
-                    }
-                    match loaded {
-                        None => rsx! {
-                            p { class: "mcp-muted", role: "status", "正在生成配置…" }
-                        },
-                        Some(Err(e)) => rsx! {
-                            p { class: "mcp-error", role: "alert", "{e}" }
-                        },
+                        Some(Err(e)) => view! { <p class="mcp-error" role="alert">{e}</p> }.into_any(),
                         Some(Ok(c)) => {
-                            let current = client().min(c.snippets.len().saturating_sub(1));
-                            let snippet = c.snippets.get(current).cloned();
-                            rsx! {
-                                div { class: "mcp-clients", role: "tablist", aria_label: "客户端",
-                                    for (i, s) in c.snippets.iter().enumerate() {
-                                        button {
-                                            key: "{i}",
-                                            r#type: "button",
-                                            role: "tab",
-                                            aria_selected: "{i == current}",
-                                            onclick: move |_| client.set(i),
-                                            "{split_title(&s.title).0}"
-                                        }
+                            let count = c.snippets.len();
+                            let current = move || client.get().min(count.saturating_sub(1));
+                            let tabs = c
+                                .snippets
+                                .iter()
+                                .enumerate()
+                                .map(|(i, s)| {
+                                    view! {
+                                        <button
+                                            type="button"
+                                            role="tab"
+                                            aria-selected=move || (i == current()).to_string()
+                                            on:click=move |_| client.set(i)
+                                        >
+                                            {split_title(&s.title).0}
+                                        </button>
                                     }
-                                }
-                                if let Some(s) = snippet {
-                                    figure { class: "mcp-snippet", role: "tabpanel",
-                                        figcaption {
-                                            span { "{split_title(&s.title).1}" }
-                                            button {
-                                                class: button_class(ButtonVariant::Ghost, ButtonSize::Xs),
-                                                r#type: "button",
-                                                onclick: {
-                                                    let text = s.content.clone();
-                                                    move |_| copy_flash(text.clone(), "配置")
-                                                },
-                                                Icon { name: IconName::Copy, size: 13 }
-                                                "复制配置"
+                                })
+                                .collect_view();
+                            view! {
+                                <div class="mcp-clients" role="tablist" aria-label="客户端">
+                                    {tabs}
+                                </div>
+                                {move || {
+                                    c.snippets
+                                        .get(current())
+                                        .cloned()
+                                        .map(|s| {
+                                            let text = s.content.clone();
+                                            let html = s.content_html.clone();
+                                            view! {
+                                                <figure class="mcp-snippet" role="tabpanel">
+                                                    <figcaption>
+                                                        <span>{split_title(&s.title).1}</span>
+                                                        <button
+                                                            class=button_class(
+                                                                ButtonVariant::Ghost,
+                                                                ButtonSize::Xs,
+                                                            )
+                                                            type="button"
+                                                            on:click=move |_| copy_flash(text.clone(), "配置")
+                                                        >
+                                                            <Icon name=IconName::Copy size=13/>
+                                                            "复制配置"
+                                                        </button>
+                                                    </figcaption>
+                                                    <div class="md-content">
+                                                        // 与明文框一致：未点「显示」时配置里的令牌也遮罩，复制仍是完整配置。
+                                                        <pre>
+                                                            <code inner_html=move || {
+                                                                if shown.get() {
+                                                                    html.clone()
+                                                                } else {
+                                                                    plaintext
+                                                                        .with_value(|p| html.replace(p.as_str(), &mask(p)))
+                                                                }
+                                                            }></code>
+                                                        </pre>
+                                                    </div>
+                                                </figure>
                                             }
-                                        }
-                                        div { class: "md-content",
-                                            // 与明文框一致：未点「显示」时配置里的令牌也遮罩，复制仍是完整配置。
-                                            pre {
-                                                code {
-                                                    dangerous_inner_html: if shown() {
-                                                        s.content_html.clone()
-                                                    } else {
-                                                        s.content_html.replace(&plaintext, &mask(&plaintext))
-                                                    },
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
+                                        })
+                                }}
                             }
+                                .into_any()
                         }
-                    }
-                }
-            }
-            div { class: "mcp-dialog-foot",
-                button {
-                    class: button_class(ButtonVariant::Ghost, ButtonSize::Md),
-                    r#type: "button",
-                    disabled: !ready,
-                    onclick: move |_| {
-                        if let Some(prompt) = selected_prompt.clone() {
+                    }}
+                </div>
+            </div>
+            <div class="mcp-dialog-foot">
+                <button
+                    class=button_class(ButtonVariant::Ghost, ButtonSize::Md)
+                    type="button"
+                    disabled=move || !ready()
+                    on:click=move |_| {
+                        if let Some(prompt) = selected_prompt() {
                             copy_flash(prompt, "接入指令，粘贴给 Agent 即可");
                         }
-                    },
+                    }
+                >
                     "复制一句话接入指令"
-                }
-                button {
-                    class: button_class(ButtonVariant::Secondary, ButtonSize::Md),
-                    r#type: "button",
-                    onclick: move |_| {
-                        closing.set(true);
-                        visible.set(false);
-                    },
+                </button>
+                <button
+                    class=button_class(ButtonVariant::Secondary, ButtonSize::Md)
+                    type="button"
+                    on:click=move |_| close()
+                >
                     "完成"
-                }
-            }
-        }
+                </button>
+            </div>
+        </ModalShell>
     }
 }
 

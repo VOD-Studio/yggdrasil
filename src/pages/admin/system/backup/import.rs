@@ -1,53 +1,42 @@
 use super::task::BackupState;
 use crate::components::ui::{button_class, ButtonSize, ButtonVariant};
-use dioxus::prelude::*;
+use leptos::prelude::*;
+
+/// 客户端预检的导入体积上限（服务端仍兜底）。
+#[cfg(target_arch = "wasm32")]
+const IMPORT_MAX_BYTES_CLIENT: u64 = 512 * 1024 * 1024;
 
 #[component]
-#[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut, unused_variables))]
-pub(super) fn ImportBackup(state: BackupState) -> Element {
-    #[cfg(target_arch = "wasm32")]
-    use dioxus::web::{WebEventExt, WebFileExt};
-    #[cfg(target_arch = "wasm32")]
-    use wasm_bindgen::JsCast;
-    let mut import_busy = state.importing;
-    let mut error = state.error;
-    let is_busy = state.busy();
-    let on_import = move |evt: FormEvent| {
+pub(super) fn ImportBackup(state: BackupState) -> impl IntoView {
+    let import_busy = state.importing;
+    let is_busy = move || state.busy();
+    let on_import = move |evt| {
         #[cfg(target_arch = "wasm32")]
         {
-            if state.busy() {
+            if state.busy_untracked() {
                 return;
             }
-            let Some(file) = evt.files().into_iter().next() else {
-                return;
-            };
-            let Some(web_file) = file.get_web_file() else {
+            let input = event_target::<web_sys::HtmlInputElement>(&evt);
+            let Some(web_file) = input.files().and_then(|files| files.get(0)) else {
                 return;
             };
             // 重置 input value，允许重选同一文件再次触发 change。
-            if let Some(input) = evt
-                .try_as_web_event()
-                .and_then(|e| e.target())
-                .and_then(|t| t.dyn_into::<web_sys::HtmlInputElement>().ok())
-            {
-                input.set_value("");
-            }
+            input.set_value("");
             // 客户端预检（服务端仍兜底）：.sql 后缀 + 体积上限。
             if !web_file.name().ends_with(".sql") {
-                error.set(Some("仅接受 .sql 备份文件".to_string()));
+                state.error.set(Some("仅接受 .sql 备份文件".to_string()));
                 return;
             }
             if web_file.size() as u64 > IMPORT_MAX_BYTES_CLIENT {
-                error.set(Some(format!(
+                state.error.set(Some(format!(
                     "文件超过导入上限（{}MB）",
                     IMPORT_MAX_BYTES_CLIENT / 1024 / 1024
                 )));
                 return;
             }
             import_busy.set(true);
-            error.set(None);
-            let state = state;
-            spawn(async move {
+            state.error.set(None);
+            leptos::task::spawn_local(async move {
                 match crate::utils::web_upload::post_multipart_file(
                     "/api/database/backups/import",
                     "file",
@@ -55,29 +44,31 @@ pub(super) fn ImportBackup(state: BackupState) -> Element {
                 )
                 .await
                 {
-                    Ok(_) => {
-                        state.refresh();
+                    Ok(_) => state.refresh(),
+                    Err(msg) => {
+                        let _ = state.error.try_set(Some(msg));
                     }
-                    Err(msg) => error.set(Some(msg)),
                 }
-                import_busy.set(false);
+                let _ = import_busy.try_set(false);
             });
         }
+        #[cfg(not(target_arch = "wasm32"))]
+        let _ = evt;
     };
-    rsx! {
-        label {
-            class: "{button_class(ButtonVariant::Secondary, ButtonSize::Sm)} sys-file-button",
-            "aria-disabled": (import_busy() || is_busy).then_some("true"),
-            if import_busy() { "导入中…" } else { "导入备份" }
-            input {
-                r#type: "file",
-                accept: ".sql",
-                class: "sr-only",
-                disabled: import_busy() || is_busy,
-                onchange: on_import,
-            }
-        }
+
+    view! {
+        <label
+            class=format!("{} sys-file-button", button_class(ButtonVariant::Secondary, ButtonSize::Sm))
+            aria-disabled=move || (import_busy.get() || is_busy()).then_some("true")
+        >
+            {move || if import_busy.get() { "导入中…" } else { "导入备份" }}
+            <input
+                type="file"
+                accept=".sql"
+                class="sr-only"
+                disabled=move || import_busy.get() || is_busy()
+                on:change=on_import
+            />
+        </label>
     }
 }
-#[cfg(target_arch = "wasm32")]
-const IMPORT_MAX_BYTES_CLIENT: u64 = 512 * 1024 * 1024;

@@ -10,19 +10,40 @@
 //! 复制，并按客户端给出已填好地址与令牌的配置片段。配置由服务端生成
 //! （`get_mcp_client_configs`，`APP_BASE_URL` 只在服务端可读）。样式见
 //! styles/pages/admin-mcp.css。
+//!
+//! 令牌列表只在浏览器里请求（`Effect` + `spawn_local` 写镜像信号，带世代号防竞态）：
+//! 列表会刷新，且位于外层 `<Suspense>` 内，不能用 `Resource`。
 
 mod configs;
 mod token_editor;
 mod tokens;
 
-use crate::components::admin_layout::AdminPageHead;
-use dioxus::prelude::*;
+use leptos::prelude::*;
+use leptos::task::spawn_local;
+use leptos_router::{lazy_route, LazyRoute};
 
+use crate::api::mcp_tokens::list_mcp_tokens;
+use crate::components::admin_layout::AdminPageHead;
+use crate::components::forms::{FormSelect, FORM_SELECT_COMPACT_CLASS};
 use crate::components::ui::{button_class, use_toast, ButtonSize, ButtonVariant, Icon, IconName};
 use crate::models::mcp_token::{McpTokenSummary, TokenScope};
 use configs::{copy_agent_prompt, TokenDialog};
 use token_editor::{CreateTokenDialog, EditPermissionsDialog};
 use tokens::TokenTable;
+
+/// `/admin/mcp` 的懒加载路由。令牌数据只在客户端请求，`data()` 无需创建资源。
+pub struct McpRoute;
+
+#[lazy_route]
+impl LazyRoute for McpRoute {
+    fn data() -> Self {
+        Self
+    }
+
+    fn view(_this: Self) -> AnyView {
+        view! { <Mcp/> }.into_any()
+    }
+}
 
 /// 文章权限的说明。
 pub(super) fn scope_desc(scope: TokenScope) -> &'static str {
@@ -62,151 +83,222 @@ pub(super) struct OpenToken {
 
 /// 管理后台 MCP 接入页面。
 #[component]
-#[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut, unused_variables))]
-pub fn Mcp() -> Element {
+pub fn Mcp() -> impl IntoView {
     let toast = use_toast();
-    let mut tokens = use_signal(|| None::<Vec<McpTokenSummary>>);
-    let mut failed = use_signal(|| false);
-    let mut reload = use_signal(|| 0_u32);
-    let mut creating = use_signal(|| false);
-    let mut editing = use_signal(|| None::<McpTokenSummary>);
-    let mut opened = use_signal(|| None::<OpenToken>);
-    let mut prompt_token = use_signal(|| None::<String>);
-    let mut copying = use_signal(|| false);
-    let mut copied = use_signal(|| false);
+    let tokens = RwSignal::new(None::<Vec<McpTokenSummary>>);
+    let failed = RwSignal::new(false);
+    let reload = RwSignal::new(0_u32);
+    let creating = RwSignal::new(false);
+    let editing = RwSignal::new(None::<McpTokenSummary>);
+    let opened = RwSignal::new(None::<OpenToken>);
+    let prompt_token = RwSignal::new(None::<String>);
+    let copying = RwSignal::new(false);
+    let copied = RwSignal::new(false);
 
-    use_effect(move || {
-        let _ = reload();
-        #[cfg(target_arch = "wasm32")]
-        spawn(async move {
-            match crate::api::mcp_tokens::list_mcp_tokens().await {
+    // `reload` 变化时重新取列表；刷新期间保留旧数据。仅客户端执行（Effect 不在 SSR 运行）。
+    let fetch_generation = StoredValue::new(0_u64);
+    Effect::new(move |_| {
+        reload.track();
+        let Some(current) = fetch_generation.try_update_value(|g| {
+            *g += 1;
+            *g
+        }) else {
+            return;
+        };
+        spawn_local(async move {
+            let result = list_mcp_tokens().await;
+            if fetch_generation.try_get_value() != Some(current) {
+                return;
+            }
+            match result {
                 Ok(list) => {
-                    tokens.set(Some(list));
-                    failed.set(false);
+                    let _ = tokens.try_set(Some(list));
+                    let _ = failed.try_set(false);
                 }
-                Err(_) => failed.set(true),
+                Err(_) => {
+                    let _ = failed.try_set(true);
+                }
             }
         });
     });
 
-    let active: Vec<McpTokenSummary> = tokens()
-        .unwrap_or_default()
-        .into_iter()
-        .filter(is_active)
-        .collect();
+    let active = Memo::new(move |_| {
+        tokens.with(|list| {
+            list.iter()
+                .flatten()
+                .filter(|t| is_active(t))
+                .cloned()
+                .collect::<Vec<McpTokenSummary>>()
+        })
+    });
     // 一句话接入默认用最新的有效令牌。
-    let chosen = prompt_token()
-        .filter(|id| active.iter().any(|t| &t.id == id))
-        .or_else(|| active.first().map(|t| t.id.clone()));
-    let options: Vec<(String, String)> = active
-        .iter()
-        .map(|t| (t.id.clone(), t.name.clone()))
-        .collect();
+    let chosen = Memo::new(move |_| {
+        active.with(|active| {
+            prompt_token
+                .get()
+                .filter(|id| active.iter().any(|t| &t.id == id))
+                .or_else(|| active.first().map(|t| t.id.clone()))
+        })
+    });
+    let options = Signal::derive(move || {
+        active.with(|active| {
+            active
+                .iter()
+                .map(|t| (t.id.clone(), t.name.clone()))
+                .collect::<Vec<(String, String)>>()
+        })
+    });
 
-    let chosen_for_copy = chosen.clone();
+    // 仅在“有无可用令牌”切换时重建下拉，避免选项变化时收起已展开的面板。
+    let has_options = Memo::new(move |_| !options.with(Vec::is_empty));
+
     let copy_prompt = move |_| {
-        let Some(id) = chosen_for_copy.clone() else {
+        let Some(id) = chosen.get_untracked() else {
             return;
         };
         copying.set(true);
-        spawn(async move {
+        spawn_local(async move {
             match copy_agent_prompt(id).await {
                 Ok(()) => {
-                    copied.set(true);
+                    let _ = copied.try_set(true);
                     toast.success("已复制接入指令，粘贴给 Agent 即可");
                     crate::utils::time::sleep_ms(1600).await;
-                    copied.set(false);
+                    let _ = copied.try_set(false);
                 }
                 Err(e) => toast.error(e),
             }
-            copying.set(false);
+            let _ = copying.try_set(false);
         });
     };
 
-    rsx! {
-        div { class: "admin-mcp",
-            AdminPageHead {
-                title: "MCP 接入",
-                actions: rsx! {
-                    button {
-                        class: button_class(ButtonVariant::Primary, ButtonSize::Md),
-                        r#type: "button",
-                        onclick: move |_| creating.set(true),
-                        Icon { name: IconName::Plus, size: 16 }
-                        "新建令牌"
+    view! {
+        <div class="admin-mcp">
+            <AdminPageHead
+                title="MCP 接入"
+                actions=move || {
+                    view! {
+                        <button
+                            class=button_class(ButtonVariant::Primary, ButtonSize::Md)
+                            type="button"
+                            on:click=move |_| creating.set(true)
+                        >
+                            <Icon name=IconName::Plus size=16/>
+                            "新建令牌"
+                        </button>
                     }
-                },
+                }
+            >
                 "为 Codex、Claude Code、Cursor、Cline、Oh-My-Pi、OpenCode 等 AI 客户端签发访问令牌。"
-            }
+            </AdminPageHead>
 
-            section { class: "admin-panel mcp-oneline", aria_labelledby: "mcp-oneline-h",
-                div { class: "mcp-oneline-head",
-                    h2 { id: "mcp-oneline-h", "一句话接入" }
-                    span { "复制时自动附上服务地址和所选令牌" }
-                }
-                p { class: "mcp-oneline-text",
+            <section class="admin-panel mcp-oneline" aria-labelledby="mcp-oneline-h">
+                <div class="mcp-oneline-head">
+                    <h2 id="mcp-oneline-h">"一句话接入"</h2>
+                    <span>"复制时自动附上服务地址和所选令牌"</span>
+                </div>
+                <p class="mcp-oneline-text">
                     "请为当前客户端接入 Yggdrasil MCP，保留已有配置，并验证连接与工具列表。"
-                }
-                div { class: "mcp-oneline-actions",
-                    if options.is_empty() {
-                        span { class: "mcp-muted", "还没有可用的令牌，先新建一个。" }
-                    } else {
-                        span { class: "mcp-muted", "使用令牌" }
-                        crate::components::forms::FormSelect {
-                            id: "mcp-prompt-token",
-                            value: chosen.clone().unwrap_or_default(),
-                            options,
-                            trigger_class: crate::components::forms::FORM_SELECT_COMPACT_CLASS,
-                            aria_label: "使用令牌",
-                            onchange: move |id: String| prompt_token.set(Some(id)),
+                </p>
+                <div class="mcp-oneline-actions">
+                    {move || {
+                        if !has_options.get() {
+                            view! { <span class="mcp-muted">"还没有可用的令牌，先新建一个。"</span> }
+                                .into_any()
+                        } else {
+                            view! {
+                                <span class="mcp-muted">"使用令牌"</span>
+                                <FormSelect
+                                    id="mcp-prompt-token"
+                                    value=Signal::derive(move || chosen.get().unwrap_or_default())
+                                    options=options
+                                    trigger_class=FORM_SELECT_COMPACT_CLASS
+                                    aria_label="使用令牌"
+                                    onchange=move |id: String| prompt_token.set(Some(id))
+                                />
+                            }
+                                .into_any()
                         }
-                    }
-                    button {
-                        class: "{button_class(ButtonVariant::Primary, ButtonSize::Sm)} mcp-copy-prompt",
-                        r#type: "button",
-                        "data-copied": copied().then_some("true"),
-                        disabled: chosen.is_none() || copying(),
-                        onclick: copy_prompt,
-                        Icon { name: if copied() { IconName::Check } else { IconName::Copy }, size: 14 }
-                        if copied() { "已复制" } else if copying() { "准备中…" } else { "复制给 Agent" }
-                    }
-                }
-            }
+                    }}
+                    <button
+                        class=format!(
+                            "{} mcp-copy-prompt",
+                            button_class(ButtonVariant::Primary, ButtonSize::Sm),
+                        )
+                        type="button"
+                        data-copied=move || copied.get().then_some("true")
+                        disabled=move || chosen.get().is_none() || copying.get()
+                        on:click=copy_prompt
+                    >
+                        {move || {
+                            view! {
+                                <Icon
+                                    name=if copied.get() { IconName::Check } else { IconName::Copy }
+                                    size=14
+                                />
+                            }
+                        }}
+                        {move || {
+                            if copied.get() {
+                                "已复制"
+                            } else if copying.get() {
+                                "准备中…"
+                            } else {
+                                "复制给 Agent"
+                            }
+                        }}
+                    </button>
+                </div>
+            </section>
 
-            TokenTable {
-                tokens: tokens(),
-                failed: failed(),
-                on_retry: move |_| reload += 1,
-                on_open: move |t: OpenToken| opened.set(Some(t)),
-                on_edit: move |t: McpTokenSummary| editing.set(Some(t)),
-                on_changed: move |_| reload += 1,
-            }
-        }
+            <TokenTable
+                tokens=tokens
+                failed=failed
+                on_retry=move |_| reload.update(|n| *n += 1)
+                on_open=move |t: OpenToken| opened.set(Some(t))
+                on_edit=move |t: McpTokenSummary| editing.set(Some(t))
+                on_changed=move |_| reload.update(|n| *n += 1)
+            />
+        </div>
 
-        if creating() {
-            CreateTokenDialog {
-                on_close: move |_| creating.set(false),
-                on_created: move |t: OpenToken| {
-                    creating.set(false);
-                    reload += 1;
-                    opened.set(Some(t));
-                },
-            }
-        }
-        if let Some(token) = editing() {
-            EditPermissionsDialog {
-                key: "{token.id}",
-                token,
-                on_close: move |_| editing.set(None),
-                on_saved: move |_| {
-                    editing.set(None);
-                    reload += 1;
-                },
-            }
-        }
-        if let Some(token) = opened() {
-            TokenDialog { key: "{token.summary.id}", token, on_close: move |_| opened.set(None) }
-        }
+        {move || {
+            creating
+                .get()
+                .then(|| {
+                    view! {
+                        <CreateTokenDialog
+                            on_close=move |_| creating.set(false)
+                            on_created=move |t: OpenToken| {
+                                creating.set(false);
+                                reload.update(|n| *n += 1);
+                                opened.set(Some(t));
+                            }
+                        />
+                    }
+                })
+        }}
+        {move || {
+            editing
+                .get()
+                .map(|token| {
+                    view! {
+                        <EditPermissionsDialog
+                            token=token
+                            on_close=move |_| editing.set(None)
+                            on_saved=move |_| {
+                                editing.set(None);
+                                reload.update(|n| *n += 1);
+                            }
+                        />
+                    }
+                })
+        }}
+        {move || {
+            opened
+                .get()
+                .map(|token| {
+                    view! { <TokenDialog token=token on_close=move |_| opened.set(None)/> }
+                })
+        }}
     }
 }
 

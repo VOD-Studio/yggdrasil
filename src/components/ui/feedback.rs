@@ -1,7 +1,8 @@
 //! 全站提示（Toast）：操作结果的短暂反馈，出现在屏幕底部居中；区块加载失败卡片。
 use super::controls::{Button, ButtonSize, ButtonVariant, IconButton};
 use super::icons::{Icon, IconName};
-use dioxus::prelude::*;
+use leptos::prelude::*;
+use std::time::Duration;
 
 /// 提示的语气。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -51,34 +52,42 @@ const MAX_TOASTS: usize = 3;
 const LEAVE_MS: u32 = 180;
 
 /// 发提示的句柄，经 [`use_toast`] 取得。
+///
+/// 两个信号都创建在应用根 owner 上；计时器用普通 `set_timeout` 直接操作它们，
+/// 调用页卸载（例如提示后立即导航）也不会取消自动消失。
 #[derive(Clone, Copy, PartialEq)]
 pub struct Toaster {
-    entries: Signal<Vec<ToastEntry>>,
-    next_id: Signal<u64>,
-    /// 提供者所在 scope；计时任务挂在这里，调用页卸载也不取消。
-    scope: dioxus::core::ScopeId,
+    entries: RwSignal<Vec<ToastEntry>>,
+    next_id: RwSignal<u64>,
 }
 
 impl Toaster {
+    fn new() -> Self {
+        Self {
+            entries: RwSignal::new(Vec::new()),
+            next_id: RwSignal::new(0),
+        }
+    }
+
     /// 显示一条提示，到时自动消失。
-    pub fn show(mut self, tone: ToastTone, message: impl Into<String>) {
-        let id = *self.next_id.peek();
+    pub fn show(self, tone: ToastTone, message: impl Into<String>) {
+        let id = self.next_id.get_untracked();
         self.next_id.set(id + 1);
-        let mut entries = self.entries;
-        entries.with_mut(|list| {
+        let message = message.into();
+        self.entries.update(|list| {
             list.push(ToastEntry {
                 id,
                 tone,
-                message: message.into(),
+                message,
                 leaving: false,
             });
             let overflow = list.len().saturating_sub(MAX_TOASTS);
             list.drain(..overflow);
         });
-        self.spawn_timer(async move {
-            crate::utils::time::sleep_ms(tone.duration_ms()).await;
-            self.dismiss(id);
-        });
+        set_timeout(
+            move || self.dismiss(id),
+            Duration::from_millis(u64::from(tone.duration_ms())),
+        );
     }
 
     pub fn success(self, message: impl Into<String>) {
@@ -89,76 +98,74 @@ impl Toaster {
         self.show(ToastTone::Danger, message);
     }
 
-    /// 计时任务挂在提供者 scope：提示后立即导航（调用页卸载）也不会取消自动消失。
-    fn spawn_timer(self, fut: impl std::future::Future<Output = ()> + 'static) {
-        dioxus::core::Runtime::current().in_scope(self.scope, move || {
-            spawn(fut);
-        });
-    }
-
     /// 先播退出动画，再从列表移除。
     fn dismiss(self, id: u64) {
-        let mut entries = self.entries;
         let mut found = false;
-        entries.with_mut(|list| {
+        self.entries.update(|list| {
             if let Some(entry) = list.iter_mut().find(|e| e.id == id && !e.leaving) {
                 entry.leaving = true;
                 found = true;
             }
         });
         if found {
-            self.spawn_timer(async move {
-                crate::utils::time::sleep_ms(LEAVE_MS).await;
-                entries.with_mut(|list| list.retain(|e| e.id != id));
-            });
+            let entries = self.entries;
+            set_timeout(
+                move || entries.update(|list| list.retain(|e| e.id != id)),
+                Duration::from_millis(u64::from(LEAVE_MS)),
+            );
         }
     }
 }
 
-/// 在应用根部提供提示上下文（`AppRouter` 调用一次）。
-pub fn use_toast_provider() -> Toaster {
-    let entries = use_signal(Vec::new);
-    let next_id = use_signal(|| 0_u64);
-    let scope = dioxus::core::Runtime::current()
-        .try_current_scope_id()
-        .unwrap_or(dioxus::core::ScopeId::ROOT);
-    use_context_provider(|| Toaster {
-        entries,
-        next_id,
-        scope,
-    })
+/// 在应用根部提供提示上下文（`App` 调用一次）。
+pub fn provide_toaster() -> Toaster {
+    let toaster = Toaster::new();
+    provide_context(toaster);
+    toaster
 }
 
 /// 取得发提示的句柄。
 pub fn use_toast() -> Toaster {
-    use_context::<Toaster>()
+    expect_context::<Toaster>()
 }
 
 /// 提示显示区：固定在屏幕底部居中，`aria-live` 让读屏软件播报新提示。
 #[component]
-pub fn ToastRegion() -> Element {
-    let toaster = use_context::<Toaster>();
+pub fn ToastRegion() -> impl IntoView {
+    let toaster = use_toast();
     let entries = toaster.entries;
-    rsx! {
-        div { class: "toast-region", role: "region", aria_label: "通知", aria_live: "polite",
-            for entry in entries() {
-                div {
-                    key: "{entry.id}",
-                    class: "toast",
-                    role: if entry.tone == ToastTone::Danger { "alert" } else { "status" },
-                    "data-tone": entry.tone.attr(),
-                    "data-leaving": entry.leaving.then_some("true"),
-                    span { class: "toast-icon", Icon { name: entry.tone.icon(), size: 16 } }
-                    span { class: "min-w-0 flex-1", "{entry.message}" }
-                    IconButton {
-                        icon: IconName::X,
-                        label: "关闭提示",
-                        size: ButtonSize::Xs,
-                        onclick: move |_| toaster.dismiss(entry.id),
+    view! {
+        <div class="toast-region" role="region" aria-label="通知" aria-live="polite">
+            <For
+                each=move || entries.get()
+                key=|entry| entry.id
+                children=move |entry| {
+                    let id = entry.id;
+                    let leaving = move || {
+                        entries.with(|list| list.iter().any(|e| e.id == id && e.leaving))
+                    };
+                    view! {
+                        <div
+                            class="toast"
+                            role=if entry.tone == ToastTone::Danger { "alert" } else { "status" }
+                            data-tone=entry.tone.attr()
+                            data-leaving=move || leaving().then_some("true")
+                        >
+                            <span class="toast-icon">
+                                <Icon name=entry.tone.icon() size=16/>
+                            </span>
+                            <span class="min-w-0 flex-1">{entry.message}</span>
+                            <IconButton
+                                icon=IconName::X
+                                label="关闭提示"
+                                size=ButtonSize::Xs
+                                onclick=move |_| toaster.dismiss(id)
+                            />
+                        </div>
                     }
                 }
-            }
-        }
+            />
+        </div>
     }
 }
 
@@ -167,39 +174,46 @@ pub fn ToastRegion() -> Element {
 /// `retry_failed` 为再次失败后的文案；重试中按钮转圈并向读屏软件播报。
 #[component]
 pub fn LoadError(
-    #[props(into)] title: String,
-    #[props(default)] retrying: bool,
-    #[props(default)] retry_failed: bool,
-    #[props(default)] class: String,
-    on_retry: EventHandler<()>,
-) -> Element {
-    rsx! {
-        div { class: "load-error {class}", role: "group", aria_label: "{title}",
-            div { class: "load-error-copy",
-                h3 { "{title}" }
-                p { role: "status", aria_live: "polite", aria_atomic: "true",
-                    if retry_failed {
-                        "这次仍未加载成功，稍后再试一次吧。"
-                    } else {
-                        "网络或服务出了点问题，稍后再试一次。"
-                    }
-                    if retrying {
-                        span { class: "sr-only", "正在重新加载，请稍候。" }
+    #[prop(into)] title: Signal<String>,
+    #[prop(optional, into)] retrying: Signal<bool>,
+    #[prop(optional, into)] retry_failed: Signal<bool>,
+    #[prop(optional, into)] class: Signal<String>,
+    #[prop(into)] on_retry: Callback<()>,
+) -> impl IntoView {
+    view! {
+        <div
+            class=move || format!("load-error {}", class.get())
+            role="group"
+            aria-label=move || title.get()
+        >
+            <div class="load-error-copy">
+                <h3>{move || title.get()}</h3>
+                <p role="status" aria-live="polite" aria-atomic="true">
+                    {move || {
+                        if retry_failed.get() {
+                            "这次仍未加载成功，稍后再试一次吧。"
+                        } else {
+                            "网络或服务出了点问题，稍后再试一次。"
+                        }
+                    }}
+                    <Show when=move || retrying.get()>
+                        <span class="sr-only">"正在重新加载，请稍候。"</span>
+                    </Show>
+                </p>
+            </div>
+            <Button
+                variant=ButtonVariant::Secondary
+                icon=IconName::RotateCw
+                loading=retrying
+                onclick=move |_| {
+                    if !retrying.get_untracked() {
+                        on_retry.run(());
                     }
                 }
-            }
-            Button {
-                variant: ButtonVariant::Secondary,
-                icon: IconName::RotateCw,
-                loading: retrying,
-                onclick: move |_| {
-                    if !retrying {
-                        on_retry.call(());
-                    }
-                },
+            >
                 "重新加载"
-            }
-        }
+            </Button>
+        </div>
     }
 }
 
@@ -212,5 +226,35 @@ mod tests {
         assert!(ToastTone::Danger.duration_ms() > ToastTone::Success.duration_ms());
         assert_eq!(ToastTone::Success.icon(), IconName::CircleCheck);
         assert_eq!(ToastTone::Danger.attr(), "danger");
+    }
+
+    #[test]
+    fn toaster_keeps_at_most_max_toasts() {
+        Owner::new().with(|| {
+            let toaster = Toaster::new();
+            for n in 0..5 {
+                toaster.entries.update(|list| {
+                    list.push(ToastEntry {
+                        id: n,
+                        tone: ToastTone::Info,
+                        message: n.to_string(),
+                        leaving: false,
+                    });
+                    let overflow = list.len().saturating_sub(MAX_TOASTS);
+                    list.drain(..overflow);
+                });
+            }
+            assert_eq!(toaster.entries.get_untracked().len(), MAX_TOASTS);
+        });
+    }
+
+    #[test]
+    fn toast_region_renders_aria_container() {
+        let html = Owner::new().with(|| {
+            provide_toaster();
+            view! { <ToastRegion/> }.to_html()
+        });
+        assert!(html.contains("class=\"toast-region\""), "{html}");
+        assert!(html.contains("aria-live=\"polite\""), "{html}");
     }
 }

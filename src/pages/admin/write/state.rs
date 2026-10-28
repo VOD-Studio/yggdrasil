@@ -1,7 +1,7 @@
 //! Form data, the saved baseline and the editor lifecycle. Readiness has one state, so
 //! a failed initialization cannot leave the page trapped under the loading skeleton.
 use chrono::{DateTime, Utc};
-use dioxus::prelude::*;
+use leptos::prelude::*;
 
 use crate::bridges::library::LibraryResource;
 use crate::bridges::tiptap::{UploadErrorEntry, UploadsInFlight};
@@ -183,54 +183,59 @@ impl SaveIndicator {
     }
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy)]
 pub(super) struct WriteEditorState {
     /// 编辑中的文章；新文章为 None，首次保存后换到编辑路由。
     pub post_id: Option<i32>,
-    pub form: Signal<PostDraft>,
+    pub form: RwSignal<PostDraft>,
     /// 最近一次与服务端一致的内容，form 与它不同即有未保存修改。
-    pub saved: Signal<PostDraft>,
-    pub saved_at: Signal<Option<String>>,
-    pub published_at: Signal<Option<DateTime<Utc>>>,
-    pub phase: Signal<EditorPhase>,
-    pub save: Signal<SaveState>,
+    pub saved: RwSignal<PostDraft>,
+    pub saved_at: RwSignal<Option<String>>,
+    pub published_at: RwSignal<Option<DateTime<Utc>>>,
+    pub phase: RwSignal<EditorPhase>,
+    pub save: RwSignal<SaveState>,
     pub library: LibraryResource,
-    pub uploads_in_flight: Signal<UploadsInFlight>,
-    pub upload_errors: Signal<Vec<UploadErrorEntry>>,
-    pub cover_uploading: Signal<bool>,
-    pub body_picker_visible: Signal<bool>,
-    pub body_picker_uploading: Signal<bool>,
-    pub(super) reload: Signal<u32>,
+    pub uploads_in_flight: RwSignal<UploadsInFlight>,
+    pub upload_errors: RwSignal<Vec<UploadErrorEntry>>,
+    pub cover_uploading: RwSignal<bool>,
+    pub body_picker_visible: RwSignal<bool>,
+    pub body_picker_uploading: RwSignal<bool>,
+    pub(super) reload: RwSignal<u32>,
+    /// 编辑器句柄持有 JS 实例与回调，不是 `Send + Sync`，只能放本地存储；
+    /// 随页面所有者销毁时 drop，触发 JS 端 destroy。
     #[cfg(target_arch = "wasm32")]
-    pub editor: Signal<Option<crate::bridges::tiptap::EditorHandle>>,
+    pub editor: StoredValue<Option<crate::bridges::tiptap::EditorHandle>, LocalStorage>,
 }
 
 impl WriteEditorState {
-    pub fn retry(mut self) {
-        self.reload += 1;
+    pub fn retry(self) {
+        self.reload.update(|n| *n += 1);
     }
 
+    /// 非响应式读取与否取决于调用处：在 Effect/视图闭包里调用即订阅。
     pub fn dirty(self) -> bool {
-        *self.form.read() != *self.saved.read()
+        self.form
+            .with(|form| self.saved.with(|saved| form != saved))
     }
 
     /// 保存或上传尚未完成，此时离开会丢内容。
     pub fn busy(self) -> bool {
-        let uploads = self.uploads_in_flight.read();
-        self.save.read().is_saving()
-            || uploads.uploading > 0
-            || (self.cover_uploading)()
-            || (self.body_picker_uploading)()
+        self.save.with(SaveState::is_saving)
+            || self.uploads_in_flight.with(|u| u.uploading > 0)
+            || self.cover_uploading.get()
+            || self.body_picker_uploading.get()
     }
 
     /// 把正文换成给定 Markdown（起步模板、恢复本地副本）。
     #[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))]
-    pub fn set_content(mut self, markdown: &str) {
+    pub fn set_content(self, markdown: &str) {
         #[cfg(target_arch = "wasm32")]
-        if let Some(handle) = &*self.editor.peek() {
-            let _ = handle.instance().set_markdown(markdown);
-        }
-        self.form.write().content = markdown.to_owned();
+        self.editor.with_value(|handle| {
+            if let Some(handle) = handle {
+                let _ = handle.instance().set_markdown(markdown);
+            }
+        });
+        self.form.update(|form| form.content = markdown.to_owned());
     }
 }
 
@@ -244,10 +249,10 @@ mod tests {
             tags: "Rust, 架构".into(),
             ..PostDraft::default()
         };
-        draft.add_tags("架构，Dioxus；");
-        assert_eq!(draft.tags, "Rust, 架构, Dioxus");
+        draft.add_tags("架构，Leptos；");
+        assert_eq!(draft.tags, "Rust, 架构, Leptos");
         draft.remove_tag("架构");
-        assert_eq!(draft.parsed_tags(), ["Rust", "Dioxus"]);
+        assert_eq!(draft.parsed_tags(), ["Rust", "Leptos"]);
     }
 
     #[test]

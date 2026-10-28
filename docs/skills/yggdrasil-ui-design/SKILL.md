@@ -66,15 +66,15 @@ description: 在 Yggdrasil 仓库中新增或修改前台、后台界面，调�
 make css                                   # 改了 input.css 或 styles/**
 cd libs/shared && bun run test             # 改了 spring / palette / icons 源
 cd libs/yggdrasil-core && bun run test     # 改了转场、目录、滚动相关代码
-cargo clippy --locked --all-targets --all-features -- -D warnings
-cargo check --locked --target wasm32-unknown-unknown --no-default-features --features web
+cargo clippy --locked --all-targets -- -D warnings
+cargo check --locked --target wasm32-unknown-unknown --no-default-features --features hydrate
 cargo test --locked components_showcase    # 增删公开组件
 bun scripts/test-components-showcase.cjs   # 图鉴预览（SHOWCASE_BASE、SHOWCASE_ONLY）
 ```
 
 在浏览器里实际查看：桌面与 390px 手机宽度、浅色与深色、减少动态效果。改了导航或转场时，按 `scripts/README-view-transitions.md` 验证直接加载与 SPA 导航，运行 `bun scripts/test-view-transitions.cjs`（`VT_BASE` 必须与 `APP_BASE_URL` 同源）。无头浏览器里导航成功不代表跨文档动画成功，后者需要在普通窗口中人工确认。
 
-改了全局样式或脚本，递增 `Dioxus.toml` 里的 `?v=N`。不要运行项目级 `dx fmt`。
+改了全局样式或脚本，递增 `src/app.rs` 里 `shell()` 的 `?v=N`。
 
 ## 8. 收尾
 

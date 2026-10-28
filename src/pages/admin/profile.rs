@@ -6,17 +6,21 @@
 //! 响应里的 `PublicUser` 刷新 `UserContext`，侧栏即时更新。密码强度条只在浏览器端
 //! 提示，不改变服务端校验。样式见 styles/pages/admin-profile.css。
 
-use crate::components::admin_layout::AdminPageHead;
-use dioxus::prelude::*;
+use std::sync::Arc;
 
+use leptos::prelude::*;
+use leptos::task::spawn_local;
+use leptos_router::{lazy_route, LazyRoute};
+
+use crate::components::admin_layout::{AdminActions, AdminPageHead};
 use crate::components::assets::{AssetPickerModal, AssetSelection};
 use crate::components::forms::FormInput;
 use crate::components::skeletons::profile_skeleton::ProfileSkeleton;
 use crate::components::ui::{
     button_class, use_toast, ButtonSize, ButtonVariant, Icon, IconName, LoadError,
 };
+use crate::context::UserContext;
 use crate::models::user::PublicUser;
-#[cfg(target_arch = "wasm32")]
 use crate::utils::error::failure_message;
 
 /// 新密码最短字符数，与服务端校验一致。
@@ -49,118 +53,178 @@ fn password_hint(pw: &str) -> String {
     }
 }
 
+/// 个人资料路由（无 SSR 数据，资料在客户端读取）。
+pub struct ProfileRoute;
+
+#[lazy_route]
+impl LazyRoute for ProfileRoute {
+    fn data() -> Self {
+        Self
+    }
+
+    fn view(_this: Self) -> AnyView {
+        view! { <Profile/> }.into_any()
+    }
+}
+
 /// 后台个人资料页面。
 #[component]
-#[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut, unused_variables))]
-pub fn Profile() -> Element {
-    let mut user = use_signal(|| None::<PublicUser>);
-    let mut env_admin = use_signal(|| false);
-    let mut error = use_signal(|| false);
-    let mut reload = use_signal(|| 0_u32);
-    let actions: Option<crate::components::admin_layout::AdminActions> = try_consume_context();
+fn Profile() -> impl IntoView {
+    let user = RwSignal::new(None::<PublicUser>);
+    let env_admin = RwSignal::new(false);
+    let error = RwSignal::new(false);
+    let reload = RwSignal::new(0_u32);
+    let generation = StoredValue::new(0_u64);
+    let actions = use_context::<AdminActions>();
 
-    use_effect(move || {
-        let _ = reload();
-        #[cfg(target_arch = "wasm32")]
-        spawn(async move {
-            match crate::api::profile::get_profile().await {
+    // 仅客户端读取（Effect 不在服务端运行）；世代号丢弃过期响应。
+    Effect::new(move |_| {
+        reload.track();
+        let mut id = 0;
+        generation.update_value(|g| {
+            *g += 1;
+            id = *g;
+        });
+        spawn_local(async move {
+            let result = crate::api::profile::get_profile().await;
+            if generation.try_get_value() != Some(id) {
+                return;
+            }
+            match result {
                 Ok(resp) => {
-                    env_admin.set(resp.admin_env_active);
-                    user.set(Some(resp.user));
-                    error.set(false);
+                    let _ = env_admin.try_set(resp.admin_env_active);
+                    let _ = user.try_set(Some(resp.user));
+                    let _ = error.try_set(false);
                 }
-                Err(_) => error.set(true),
+                Err(_) => {
+                    let _ = error.try_set(true);
+                }
             }
         });
     });
 
-    rsx! {
-        div { class: "admin-profile",
-            AdminPageHead { title: "个人资料", "当前登录账号的展示资料与登录密码。" }
-            if env_admin() {
-                p { class: "admin-profile-note", role: "note",
-                    Icon { name: IconName::TriangleAlert, size: 16 }
-                    "已启用 ADMIN_* 环境变量：每次服务重启后，邮箱与密码会以环境变量为准。"
-                }
-            }
-            if error() {
-                LoadError { title: "个人资料加载失败", on_retry: move |_| reload += 1 }
-            } else if let Some(current) = user() {
-                InfoSection {
-                    key: "{current.id}",
-                    user: current,
-                    on_saved: move |u: PublicUser| user.set(Some(u)),
-                }
-                PasswordSection {}
-                section { class: "admin-profile-logout", aria_labelledby: "profile-out-h",
-                    div {
-                        h2 { id: "profile-out-h", "退出登录" }
-                        p { "只退出当前设备。" }
+    // 按用户 id 重建分区：保存资料后 `user` 更新，但表单与密码输入保持原样。
+    let user_id = Memo::new(move |_| user.with(|u| u.as_ref().map(|u| u.id)));
+
+    view! {
+        <div class="admin-profile">
+            <AdminPageHead title="个人资料">"当前登录账号的展示资料与登录密码。"</AdminPageHead>
+            {move || {
+                env_admin
+                    .get()
+                    .then(|| {
+                        view! {
+                            <p class="admin-profile-note" role="note">
+                                <Icon name=IconName::TriangleAlert size=16/>
+                                "已启用 ADMIN_* 环境变量：每次服务重启后，邮箱与密码会以环境变量为准。"
+                            </p>
+                        }
+                    })
+            }}
+            {move || {
+                if error.get() {
+                    view! {
+                        <LoadError
+                            title="个人资料加载失败"
+                            on_retry=move |()| reload.update(|n| *n += 1)
+                        />
                     }
-                    button {
-                        class: button_class(ButtonVariant::Outline, ButtonSize::Md),
-                        "data-danger": "true",
-                        r#type: "button",
-                        onclick: move |_| {
-                            if let Some(actions) = actions {
-                                actions.logout.call(());
-                            }
-                        },
-                        Icon { name: IconName::LogOut, size: 15 }
-                        "退出登录"
+                        .into_any()
+                } else if user_id.get().is_some() {
+                    view! {
+                        <InfoSection user=user on_saved=move |u: PublicUser| user.set(Some(u))/>
+                        <PasswordSection/>
+                        <section class="admin-profile-logout" aria-labelledby="profile-out-h">
+                            <div>
+                                <h2 id="profile-out-h">"退出登录"</h2>
+                                <p>"只退出当前设备。"</p>
+                            </div>
+                            <button
+                                class=button_class(ButtonVariant::Outline, ButtonSize::Md)
+                                data-danger="true"
+                                type="button"
+                                on:click=move |_| {
+                                    if let Some(actions) = actions {
+                                        actions.logout.run(());
+                                    }
+                                }
+                            >
+                                <Icon name=IconName::LogOut size=15/>
+                                "退出登录"
+                            </button>
+                        </section>
                     }
+                        .into_any()
+                } else {
+                    view! { <ProfileSkeleton/> }.into_any()
                 }
-            } else {
-                ProfileSkeleton {}
-            }
-        }
+            }}
+        </div>
     }
 }
 
 /// 个人信息：头像、用户名、显示名称、邮箱。
 #[component]
-#[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut, unused_variables))]
-fn InfoSection(user: PublicUser, on_saved: EventHandler<PublicUser>) -> Element {
+fn InfoSection(
+    user: RwSignal<Option<PublicUser>>,
+    #[prop(into)] on_saved: Callback<PublicUser>,
+) -> impl IntoView {
     let toast = use_toast();
-    let base_display = user.display_name.clone().unwrap_or_default();
-    let base_email = user.email.clone();
-    let base_avatar = user.avatar_url.clone();
-    let mut display = use_signal(|| base_display.clone());
-    let mut email = use_signal(|| base_email.clone());
-    let mut avatar = use_signal(|| base_avatar.clone());
-    let mut saving = use_signal(|| false);
-    let mut picker = use_signal(|| false);
-    let mut uploading = use_signal(|| false);
-    let mut avatar_failed = use_signal(|| false);
-    #[cfg(target_arch = "wasm32")]
-    let mut ctx: crate::context::UserContext = use_context();
+    let ctx = expect_context::<UserContext>();
+    let base_display = Memo::new(move |_| {
+        user.with(|u| {
+            u.as_ref()
+                .and_then(|u| u.display_name.clone())
+                .unwrap_or_default()
+        })
+    });
+    let base_email =
+        Memo::new(move |_| user.with(|u| u.as_ref().map(|u| u.email.clone()).unwrap_or_default()));
+    let base_avatar =
+        Memo::new(move |_| user.with(|u| u.as_ref().and_then(|u| u.avatar_url.clone())));
+    let username = Memo::new(move |_| {
+        user.with(|u| u.as_ref().map(|u| u.username.clone()).unwrap_or_default())
+    });
+    let display = RwSignal::new(base_display.get_untracked());
+    let email = RwSignal::new(base_email.get_untracked());
+    let avatar = RwSignal::new(base_avatar.get_untracked());
+    let saving = RwSignal::new(false);
+    let picker = RwSignal::new(false);
+    let uploading = RwSignal::new(false);
+    let avatar_failed = RwSignal::new(false);
 
-    let dirty =
-        display().trim() != base_display || email().trim() != base_email || avatar() != base_avatar;
-    let label = if display().trim().is_empty() {
-        user.username.clone()
-    } else {
-        display().trim().to_string()
-    };
-    let initial = label
-        .chars()
-        .next()
-        .map(|c| c.to_uppercase().to_string())
-        .unwrap_or_default();
+    let dirty = Memo::new(move |_| {
+        display.with(|d| d.trim() != base_display.get())
+            || email.with(|e| e.trim() != base_email.get())
+            || avatar.get() != base_avatar.get()
+    });
+    let initial = Memo::new(move |_| {
+        let label = display.with(|d| {
+            if d.trim().is_empty() {
+                username.get()
+            } else {
+                d.trim().to_string()
+            }
+        });
+        label
+            .chars()
+            .next()
+            .map(|c| c.to_uppercase().to_string())
+            .unwrap_or_default()
+    });
 
-    let save = move |e: FormEvent| {
+    let save = move |e: leptos::ev::SubmitEvent| {
         e.prevent_default();
-        if saving() {
+        if saving.get_untracked() {
             return;
         }
         saving.set(true);
         let (mail, name, av) = (
-            email().trim().to_string(),
-            display().trim().to_string(),
-            avatar(),
+            email.get_untracked().trim().to_string(),
+            display.get_untracked().trim().to_string(),
+            avatar.get_untracked(),
         );
-        spawn(async move {
-            #[cfg(target_arch = "wasm32")]
+        spawn_local(async move {
             match crate::api::profile::update_profile(
                 mail,
                 Some(name).filter(|n| !n.is_empty()),
@@ -170,26 +234,23 @@ fn InfoSection(user: PublicUser, on_saved: EventHandler<PublicUser>) -> Element 
             {
                 Ok(resp) if resp.success => {
                     if let Some(u) = resp.user {
-                        ctx.user.set(Some(std::sync::Arc::new(u.clone())));
-                        on_saved.call(u);
+                        let _ = ctx.user.try_set(Some(Arc::new(u.clone())));
+                        on_saved.run(u);
                     }
                     toast.success("资料已保存");
                 }
                 Ok(resp) => toast.error(resp.message),
                 Err(e) => toast.error(failure_message("保存失败", &e)),
             }
-            saving.set(false);
+            let _ = saving.try_set(false);
         });
     };
-    let upload = move |evt: FormEvent| {
+    let upload = move |evt: leptos::ev::Event| {
         #[cfg(target_arch = "wasm32")]
         {
-            use dioxus::web::WebFileExt;
-            let Some(file) = evt
+            let Some(file) = event_target::<web_sys::HtmlInputElement>(&evt)
                 .files()
-                .into_iter()
-                .next()
-                .and_then(|f| f.get_web_file())
+                .and_then(|list| list.item(0))
             else {
                 return;
             };
@@ -201,221 +262,275 @@ fn InfoSection(user: PublicUser, on_saved: EventHandler<PublicUser>) -> Element 
                 return;
             }
             uploading.set(true);
-            spawn(async move {
+            spawn_local(async move {
                 match crate::bridges::tiptap::upload_image_file(file).await {
                     Ok(url) => {
-                        avatar.set(Some(url));
-                        avatar_failed.set(false);
+                        let _ = avatar.try_set(Some(url));
+                        let _ = avatar_failed.try_set(false);
                     }
                     Err(msg) => toast.error(format!("上传失败：{msg}")),
                 }
-                uploading.set(false);
+                let _ = uploading.try_set(false);
             });
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        let _ = (evt, toast);
+    };
+
+    // 带泛型的闭包参数类型放在 `view!` 外，避免宏把 `<` 当作标签。
+    let on_pick = move |picks: Vec<AssetSelection>| {
+        if let Some(first) = picks.into_iter().next() {
+            avatar.set(Some(first.url));
+            avatar_failed.set(false);
         }
     };
 
-    rsx! {
-        form { class: "admin-panel admin-profile-section", aria_labelledby: "profile-info-h", onsubmit: save,
-            div { class: "admin-profile-section-head",
-                h2 { id: "profile-info-h", "个人信息" }
-                p { "显示名称会出现在后台侧栏和文章署名；邮箱用于登录。" }
-            }
-            div { class: "admin-profile-rows",
-                div { class: "admin-profile-row",
-                    span { class: "admin-profile-label", "头像" }
-                    div { class: "admin-profile-avatar-row",
-                        span { class: "admin-profile-avatar", aria_hidden: "true",
-                            match avatar().filter(|_| !avatar_failed()) {
-                                Some(url) => rsx! {
-                                    img { src: "{url}", alt: "", onerror: move |_| avatar_failed.set(true) }
-                                },
-                                None => rsx! { "{initial}" },
-                            }
-                        }
-                        button {
-                            class: button_class(ButtonVariant::Secondary, ButtonSize::Sm),
-                            r#type: "button",
-                            onclick: move |_| picker.set(true),
+    view! {
+        <form
+            class="admin-panel admin-profile-section"
+            aria-labelledby="profile-info-h"
+            on:submit=save
+        >
+            <div class="admin-profile-section-head">
+                <h2 id="profile-info-h">"个人信息"</h2>
+                <p>"显示名称会出现在后台侧栏和文章署名；邮箱用于登录。"</p>
+            </div>
+            <div class="admin-profile-rows">
+                <div class="admin-profile-row">
+                    <span class="admin-profile-label">"头像"</span>
+                    <div class="admin-profile-avatar-row">
+                        <span class="admin-profile-avatar" aria-hidden="true">
+                            {move || match avatar.get().filter(|_| !avatar_failed.get()) {
+                                Some(url) => {
+                                    view! {
+                                        <img src=url alt="" on:error=move |_| avatar_failed.set(true)/>
+                                    }
+                                        .into_any()
+                                }
+                                None => initial.get().into_any(),
+                            }}
+                        </span>
+                        <button
+                            class=button_class(ButtonVariant::Secondary, ButtonSize::Sm)
+                            type="button"
+                            on:click=move |_| picker.set(true)
+                        >
                             "从素材库选择"
-                        }
-                        label {
-                            class: "{button_class(ButtonVariant::Secondary, ButtonSize::Sm)} admin-profile-upload",
-                            "aria-disabled": uploading().then_some("true"),
-                            if uploading() { "上传中…" } else { "上传" }
-                            input {
-                                r#type: "file",
-                                class: "sr-only",
-                                accept: "image/jpeg,image/png,image/gif,image/webp",
-                                disabled: uploading(),
-                                onchange: upload,
-                            }
-                        }
-                        if avatar().is_some() {
-                            button {
-                                class: button_class(ButtonVariant::Ghost, ButtonSize::Sm),
-                                r#type: "button",
-                                onclick: move |_| avatar.set(None),
-                                "移除"
-                            }
-                        }
-                    }
-                }
-                div { class: "admin-profile-row",
-                    span { class: "admin-profile-label", "用户名" }
-                    div {
-                        div { class: "admin-profile-readonly", "{user.username}" }
-                        p { class: "admin-profile-hint", "用户名是唯一的登录凭据，不能修改。" }
-                    }
-                }
-                div { class: "admin-profile-row",
-                    label { class: "admin-profile-label", r#for: "profile-display", "显示名称" }
-                    FormInput {
-                        id: "profile-display",
-                        placeholder: "留空则显示用户名",
-                        maxlength: 50,
-                        value: format!("{display}"),
-                        oninput: move |v: String| display.set(v),
-                    }
-                }
-                div { class: "admin-profile-row",
-                    label { class: "admin-profile-label", r#for: "profile-email", "邮箱" }
-                    FormInput {
-                        id: "profile-email",
-                        class: "field admin-profile-mono",
-                        r#type: "email",
-                        placeholder: "name@example.com",
-                        value: format!("{email}"),
-                        oninput: move |v: String| email.set(v),
-                    }
-                }
-            }
-            div { class: "admin-profile-foot",
-                button {
-                    class: button_class(ButtonVariant::Primary, ButtonSize::Md),
-                    r#type: "submit",
-                    disabled: !dirty || saving(),
-                    if saving() { "保存中…" } else { "保存" }
-                }
-            }
-        }
-        AssetPickerModal {
-            visible: picker,
-            cover_uploading: uploading,
-            title: "选择头像",
-            on_select: move |picks: Vec<AssetSelection>| {
-                if let Some(first) = picks.into_iter().next() {
-                    avatar.set(Some(first.url));
-                    avatar_failed.set(false);
-                }
-            },
-        }
+                        </button>
+                        <label
+                            class=format!(
+                                "{} admin-profile-upload",
+                                button_class(ButtonVariant::Secondary, ButtonSize::Sm),
+                            )
+                            aria-disabled=move || uploading.get().then_some("true")
+                        >
+                            {move || if uploading.get() { "上传中…" } else { "上传" }}
+                            <input
+                                type="file"
+                                class="sr-only"
+                                accept="image/jpeg,image/png,image/gif,image/webp"
+                                disabled=move || uploading.get()
+                                on:change=upload
+                            />
+                        </label>
+                        {move || {
+                            avatar
+                                .with(Option::is_some)
+                                .then(|| {
+                                    view! {
+                                        <button
+                                            class=button_class(ButtonVariant::Ghost, ButtonSize::Sm)
+                                            type="button"
+                                            on:click=move |_| avatar.set(None)
+                                        >
+                                            "移除"
+                                        </button>
+                                    }
+                                })
+                        }}
+                    </div>
+                </div>
+                <div class="admin-profile-row">
+                    <span class="admin-profile-label">"用户名"</span>
+                    <div>
+                        <div class="admin-profile-readonly">{move || username.get()}</div>
+                        <p class="admin-profile-hint">"用户名是唯一的登录凭据，不能修改。"</p>
+                    </div>
+                </div>
+                <div class="admin-profile-row">
+                    <label class="admin-profile-label" for="profile-display">
+                        "显示名称"
+                    </label>
+                    <FormInput
+                        id="profile-display"
+                        placeholder="留空则显示用户名"
+                        maxlength=50
+                        value=display
+                        oninput=move |v: String| display.set(v)
+                    />
+                </div>
+                <div class="admin-profile-row">
+                    <label class="admin-profile-label" for="profile-email">
+                        "邮箱"
+                    </label>
+                    <FormInput
+                        id="profile-email"
+                        class="field admin-profile-mono"
+                        r#type="email"
+                        placeholder="name@example.com"
+                        value=email
+                        oninput=move |v: String| email.set(v)
+                    />
+                </div>
+            </div>
+            <div class="admin-profile-foot">
+                <button
+                    class=button_class(ButtonVariant::Primary, ButtonSize::Md)
+                    type="submit"
+                    disabled=move || !dirty.get() || saving.get()
+                >
+                    {move || if saving.get() { "保存中…" } else { "保存" }}
+                </button>
+            </div>
+        </form>
+        <AssetPickerModal
+            visible=picker
+            cover_uploading=uploading
+            title="选择头像"
+            on_select=on_pick
+        />
     }
 }
 
 /// 修改密码：当前密码、新密码（强度条）、确认新密码。
 #[component]
-#[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut, unused_variables))]
-fn PasswordSection() -> Element {
+fn PasswordSection() -> impl IntoView {
     let toast = use_toast();
-    let mut current = use_signal(String::new);
-    let mut next = use_signal(String::new);
-    let mut confirm = use_signal(String::new);
-    let mut busy = use_signal(|| false);
+    let current = RwSignal::new(String::new());
+    let next = RwSignal::new(String::new());
+    let confirm = RwSignal::new(String::new());
+    let busy = RwSignal::new(false);
 
-    let level = password_level(&next());
-    let mismatch = !confirm().is_empty() && confirm() != next();
-    let can_submit = !busy()
-        && !current().is_empty()
-        && next().chars().count() >= MIN_PASSWORD
-        && confirm() == next();
+    let level = Memo::new(move |_| next.with(|n| password_level(n)));
+    let mismatch = Memo::new(move |_| confirm.with(|c| next.with(|n| !c.is_empty() && c != n)));
+    let can_submit = Memo::new(move |_| {
+        !busy.get()
+            && current.with(|c| !c.is_empty())
+            && next.with(|n| n.chars().count() >= MIN_PASSWORD)
+            && confirm.with(|c| next.with(|n| c == n))
+    });
 
-    let submit = move |e: FormEvent| {
+    let submit = move |e: leptos::ev::SubmitEvent| {
         e.prevent_default();
-        if !can_submit {
+        if !can_submit.get_untracked() {
             return;
         }
         busy.set(true);
-        let (old, new) = (current(), next());
-        spawn(async move {
-            #[cfg(target_arch = "wasm32")]
+        let (old, new) = (current.get_untracked(), next.get_untracked());
+        spawn_local(async move {
             match crate::api::profile::change_password(old, new).await {
                 Ok(resp) if resp.success => {
-                    current.set(String::new());
-                    next.set(String::new());
-                    confirm.set(String::new());
+                    let _ = current.try_set(String::new());
+                    let _ = next.try_set(String::new());
+                    let _ = confirm.try_set(String::new());
                     toast.success("密码已修改，其他设备上的登录已退出");
                 }
                 Ok(resp) => toast.error(resp.message),
                 Err(e) => toast.error(failure_message("修改失败", &e)),
             }
-            busy.set(false);
+            let _ = busy.try_set(false);
         });
     };
 
-    rsx! {
-        form { class: "admin-panel admin-profile-section", aria_labelledby: "profile-pw-h", onsubmit: submit,
-            div { class: "admin-profile-section-head",
-                h2 { id: "profile-pw-h", "修改密码" }
-                p { "修改成功后，其他设备上的登录会自动退出，当前设备保持登录。" }
-            }
-            div { class: "admin-profile-rows",
-                div { class: "admin-profile-row",
-                    label { class: "admin-profile-label", r#for: "profile-pw0", "当前密码" }
-                    FormInput {
-                        id: "profile-pw0",
-                        r#type: "password",
-                        autocomplete: "current-password",
-                        value: format!("{current}"),
-                        oninput: move |v: String| current.set(v),
-                    }
-                }
-                div { class: "admin-profile-row",
-                    label { class: "admin-profile-label", r#for: "profile-pw1", "新密码" }
-                    div {
-                        FormInput {
-                            id: "profile-pw1",
-                            r#type: "password",
-                            autocomplete: "new-password",
-                            aria_describedby: "profile-pw1-hint",
-                            value: format!("{next}"),
-                            oninput: move |v: String| next.set(v),
-                        }
-                        div { class: "admin-profile-meter", "data-level": "{level}", aria_hidden: "true",
-                            for i in 1..=4u8 {
-                                span { key: "{i}", "data-on": (i <= level).then_some("true") }
-                            }
-                        }
-                        p { id: "profile-pw1-hint", class: "admin-profile-hint", "{password_hint(&next())}" }
-                    }
-                }
-                div { class: "admin-profile-row",
-                    label { class: "admin-profile-label", r#for: "profile-pw2", "确认新密码" }
-                    div {
-                        FormInput {
-                            id: "profile-pw2",
-                            r#type: "password",
-                            autocomplete: "new-password",
-                            invalid: mismatch,
-                            value: format!("{confirm}"),
-                            oninput: move |v: String| confirm.set(v),
-                        }
-                        if mismatch {
-                            p { class: "admin-profile-hint", "data-error": "true", role: "alert",
-                                "两次输入的新密码不一致。"
-                            }
-                        }
-                    }
-                }
-            }
-            div { class: "admin-profile-foot",
-                button {
-                    class: button_class(ButtonVariant::Secondary, ButtonSize::Md),
-                    r#type: "submit",
-                    disabled: !can_submit,
-                    if busy() { "修改中…" } else { "修改密码" }
-                }
-            }
-        }
+    view! {
+        <form
+            class="admin-panel admin-profile-section"
+            aria-labelledby="profile-pw-h"
+            on:submit=submit
+        >
+            <div class="admin-profile-section-head">
+                <h2 id="profile-pw-h">"修改密码"</h2>
+                <p>"修改成功后，其他设备上的登录会自动退出，当前设备保持登录。"</p>
+            </div>
+            <div class="admin-profile-rows">
+                <div class="admin-profile-row">
+                    <label class="admin-profile-label" for="profile-pw0">
+                        "当前密码"
+                    </label>
+                    <FormInput
+                        id="profile-pw0"
+                        r#type="password"
+                        autocomplete="current-password"
+                        value=current
+                        oninput=move |v: String| current.set(v)
+                    />
+                </div>
+                <div class="admin-profile-row">
+                    <label class="admin-profile-label" for="profile-pw1">
+                        "新密码"
+                    </label>
+                    <div>
+                        <FormInput
+                            id="profile-pw1"
+                            r#type="password"
+                            autocomplete="new-password"
+                            aria_describedby="profile-pw1-hint"
+                            value=next
+                            oninput=move |v: String| next.set(v)
+                        />
+                        <div
+                            class="admin-profile-meter"
+                            data-level=move || level.get().to_string()
+                            aria-hidden="true"
+                        >
+                            {(1..=4u8)
+                                .map(|i| {
+                                    view! { <span data-on=move || (i <= level.get()).then_some("true")></span> }
+                                })
+                                .collect_view()}
+                        </div>
+                        <p id="profile-pw1-hint" class="admin-profile-hint">
+                            {move || next.with(|n| password_hint(n))}
+                        </p>
+                    </div>
+                </div>
+                <div class="admin-profile-row">
+                    <label class="admin-profile-label" for="profile-pw2">
+                        "确认新密码"
+                    </label>
+                    <div>
+                        <FormInput
+                            id="profile-pw2"
+                            r#type="password"
+                            autocomplete="new-password"
+                            invalid=mismatch
+                            value=confirm
+                            oninput=move |v: String| confirm.set(v)
+                        />
+                        {move || {
+                            mismatch
+                                .get()
+                                .then(|| {
+                                    view! {
+                                        <p class="admin-profile-hint" data-error="true" role="alert">
+                                            "两次输入的新密码不一致。"
+                                        </p>
+                                    }
+                                })
+                        }}
+                    </div>
+                </div>
+            </div>
+            <div class="admin-profile-foot">
+                <button
+                    class=button_class(ButtonVariant::Secondary, ButtonSize::Md)
+                    type="submit"
+                    disabled=move || !can_submit.get()
+                >
+                    {move || if busy.get() { "修改中…" } else { "修改密码" }}
+                </button>
+            </div>
+        </form>
     }
 }
 

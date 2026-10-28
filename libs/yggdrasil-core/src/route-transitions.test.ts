@@ -55,17 +55,28 @@ function render(html = destination): void {
   routes.rendered(routes.navigationId(), routes.currentRoute());
 }
 
-function click(route: string, options: { post?: string; returning?: boolean } = {}): void {
+/** 模拟站内链接点击：协调器在 document 冒泡阶段自己接管并发起 push。 */
+function click(
+  route: string,
+  options: {
+    post?: string;
+    returning?: boolean;
+    rel?: string;
+    target?: string;
+    prevented?: boolean;
+  } = {},
+): MouseEvent {
   const anchor = document.createElement('a');
   anchor.href = route;
   if (options.post) anchor.dataset.vtPostLink = options.post;
   if (options.returning) anchor.dataset.vtReturn = 'true';
-  anchor.addEventListener('click', (event) => {
-    event.preventDefault();
-    routes.push(route);
-  });
+  if (options.rel) anchor.rel = options.rel;
+  if (options.target) anchor.target = options.target;
+  if (options.prevented) anchor.addEventListener('click', (event) => event.preventDefault());
   document.body.append(anchor);
-  anchor.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }));
+  const event = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
+  anchor.dispatchEvent(event);
+  return event;
 }
 
 async function flush(): Promise<void> {
@@ -262,6 +273,8 @@ describe('route publication and rendering', () => {
     render();
     await update;
     expect(native[0].updated).toBe(true);
+    expect(native[0].skip).not.toHaveBeenCalled();
+    expect(document.documentElement.classList.contains('is-route-pending')).toBe(false);
   });
 
   it('counts the 300ms budget from navigation start, including snapshot scheduling', async () => {
@@ -275,6 +288,57 @@ describe('route publication and rendering', () => {
     await update;
     expect(native[0].updated).toBe(true);
     expect(performance.now()).toBe(300);
+  });
+
+  describe('destination chunk arrives after the budget', () => {
+    const pending = () => document.documentElement.classList.contains('is-route-pending');
+    const suspend = async (route = '/about'): Promise<void> => {
+      autoRender = false;
+      routes.push(route);
+      const update = native[native.length - 1].invoke();
+      await vi.advanceTimersByTimeAsync(300);
+      await update;
+    };
+
+    it('skips the empty transition and fades the old page until the late render', async () => {
+      await suspend();
+      expect(native[0].skip).toHaveBeenCalledOnce();
+      expect(native[0].updated).toBe(true);
+      expect(pending()).toBe(true);
+      await finish(0);
+      expect(document.documentElement.classList.contains('is-route-transitioning')).toBe(false);
+      expect(pending()).toBe(true);
+      render();
+      expect(pending()).toBe(false);
+      expect(document.querySelector('[data-vt-enter-handled]')).toBeNull();
+      expect(document.startViewTransition).toHaveBeenCalledOnce();
+    });
+
+    it('keeps fading across a newer navigation and clears before its snapshot', async () => {
+      await suspend();
+      await finish(0);
+      autoRender = false;
+      routes.push('/');
+      const update = native[1].invoke();
+      await flush();
+      expect(pending()).toBe(true);
+      render();
+      expect(pending()).toBe(false);
+      await update;
+      expect(native[1].skip).not.toHaveBeenCalled();
+    });
+
+    it('is cleared by pagehide', async () => {
+      await suspend();
+      window.dispatchEvent(new Event('pagehide'));
+      expect(pending()).toBe(false);
+    });
+
+    it('is cleared by disconnect', async () => {
+      await suspend();
+      routes.disconnect();
+      expect(pending()).toBe(false);
+    });
   });
 
   it('a late cancelled callback cannot commit or clean a newer navigation', async () => {
@@ -557,22 +621,36 @@ describe('section navigation', () => {
         expect(animate).not.toHaveBeenCalled();
       });
     });
+
+    it('slides from the old section when the destination renders late', async () => {
+      await withAnimate(async (animate) => {
+        await settleOnAbout();
+        autoRender = false;
+        routes.push('/');
+        const update = native[native.length - 1].invoke();
+        await vi.advanceTimersByTimeAsync(300);
+        await update;
+        expect(animate).not.toHaveBeenCalled();
+        paint(header('/'));
+        const pill = document.querySelector('.nav-indicator')!;
+        vi.spyOn(pill, 'getBoundingClientRect').mockReturnValue(new DOMRect(500, 12, 64, 30));
+        routes.rendered(routes.navigationId(), routes.currentRoute());
+        expect(animate).toHaveBeenCalledOnce();
+        expect(animate.mock.calls[0][0]).toEqual([
+          { left: '100px', right: '-100px' },
+          { left: '0px', right: '0px' },
+        ]);
+      });
+    });
   });
 });
 
 describe('shared article snapshots', () => {
-  it('capture intent survives a microtask before the delegated navigation handler', async () => {
+  it('intercepts a bubbling in-site link click, prevents the default and pushes', async () => {
     render(`<main data-vt-list>${post()}</main>`);
     destination = `<main data-vt-detail>${post()}</main>`;
-    const anchor = document.createElement('a');
-    anchor.href = '/post/article';
-    anchor.dataset.vtPostLink = '42';
-    anchor.addEventListener('click', (event) => {
-      event.preventDefault();
-      queueMicrotask(() => routes.push('/post/article'));
-    });
-    document.body.append(anchor);
-    anchor.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    const event = click('/post/article', { post: '42' });
+    expect(event.defaultPrevented).toBe(true);
     await flush();
     expect(native).toHaveLength(1);
     expect(
@@ -584,21 +662,77 @@ describe('shared article snapshots', () => {
     ).toBe('vt-post-title');
   });
 
-  it('unconsumed click intent expires before a later unrelated programmatic navigation', async () => {
-    render(`<main data-vt-list>${post()}</main>`);
-    destination = `<main data-vt-detail>${post()}</main>`;
-    const anchor = document.createElement('a');
-    anchor.href = '/post/article';
-    anchor.dataset.vtPostLink = '42';
-    anchor.addEventListener('click', (event) => event.preventDefault());
-    document.body.append(anchor);
-    anchor.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-    await vi.advanceTimersByTimeAsync(1);
-    routes.push('/post/article');
-    expect(
-      document.querySelector<HTMLElement>('[data-vt-role="title"]')!.style.viewTransitionName,
-    ).toBe('');
-    await native[0].invoke();
+  it('lets external, native-path, targeted and already-handled clicks through', async () => {
+    // window 上最后一个监听器：记录协调器是否已接管，并取消 happy-dom 的真实跳转。
+    const seen: boolean[] = [];
+    const record = (event: MouseEvent) => {
+      seen.push(event.defaultPrevented);
+      event.preventDefault();
+    };
+    window.addEventListener('click', record);
+    const cases = [
+      { route: '/about', rel: 'external' },
+      { route: '/feed.xml' },
+      { route: '/api/anything' },
+      { route: '/uploads/a.png' },
+      { route: '/about', target: '_blank' },
+      { route: '/about', prevented: true },
+    ];
+    for (const options of cases) click(options.route, options);
+    window.removeEventListener('click', record);
+    // 只有已被组件 preventDefault 的点击在到达 window 时仍是 defaultPrevented；其余未被协调器接管。
+    expect(seen).toEqual(cases.map((options) => options.prevented === true));
+    await flush();
+    expect(native).toHaveLength(0);
+  });
+
+  it('hands in-site link clicks to native navigation, away from window listeners, until connected', () => {
+    // Leptos 的链接拦截挂在 window 上且在水合时就生效；未连接时它若接管，路由器会在水合中途换页。
+    routes.disconnect();
+    const pending = new RouteTransitions();
+    // 注册晚于协调器的 document 监听：记录协调器是否已接管，并取消 happy-dom 的真实跳转。
+    const prevented: boolean[] = [];
+    const cancel = (event: MouseEvent) => {
+      prevented.push(event.defaultPrevented);
+      event.preventDefault();
+    };
+    const reachedWindow = vi.fn();
+    document.addEventListener('click', cancel);
+    window.addEventListener('click', reachedWindow);
+    click('/archives');
+    expect(prevented).toEqual([false]);
+    expect(reachedWindow).not.toHaveBeenCalled();
+    expect(notify).not.toHaveBeenCalled();
+    // 连接后照常接管。
+    pending.connect(notify, null);
+    click('/archives');
+    document.removeEventListener('click', cancel);
+    window.removeEventListener('click', reachedWindow);
+    expect(prevented).toEqual([false, true]);
+    pending.disconnect();
+  });
+
+  it('listens for popstate in the capture phase and stops it from reaching other listeners', () => {
+    const bubbling = vi.fn();
+    window.addEventListener('popstate', bubbling);
+    const event = new PopStateEvent('popstate', { cancelable: true });
+    const stop = vi.spyOn(event, 'stopImmediatePropagation');
+    window.dispatchEvent(event);
+    window.removeEventListener('popstate', bubbling);
+    expect(stop).toHaveBeenCalled();
+    expect(bubbling).not.toHaveBeenCalled();
+  });
+
+  it('intercepts popstate ahead of listeners that register after construction, and yields when disconnected', () => {
+    // Leptos 的 popstate 监听在脚本加载之后才注册；window 上按注册顺序触发，协调器必须更早。
+    const late = vi.fn();
+    window.addEventListener('popstate', late);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+    expect(late).not.toHaveBeenCalled();
+    routes.disconnect();
+    window.dispatchEvent(new PopStateEvent('popstate'));
+    expect(late).toHaveBeenCalledTimes(1);
+    window.removeEventListener('popstate', late);
   });
 
   it('matches title and loaded cover, then restores prior inline names', async () => {
@@ -857,5 +991,298 @@ describe('entry scroll and private state', () => {
     window.dispatchEvent(new PopStateEvent('popstate', { state: first }));
     await native[1].invoke();
     expect(routes.readState('search')).toBe('{"query":"public"}');
+  });
+});
+
+describe('link prefetch', () => {
+  let prefetch: Mock<(route: string, withData: boolean) => void>;
+
+  beforeEach(() => {
+    routes.disconnect();
+    prefetch = vi.fn();
+    routes.connect(notify, null, prefetch);
+    render('<main data-vt-list>Source</main>');
+  });
+
+  function link(href: string, options: { rel?: string } = {}): HTMLAnchorElement {
+    const anchor = document.createElement('a');
+    anchor.href = href;
+    if (options.rel) anchor.rel = options.rel;
+    anchor.innerHTML = '<span>title</span>';
+    document.body.append(anchor);
+    return anchor;
+  }
+
+  function pointer(type: string, target: Element, init: { pointerType?: string; to?: Node } = {}) {
+    const event = new MouseEvent(type, {
+      bubbles: true,
+      relatedTarget: init.to ?? null,
+    });
+    Object.defineProperty(event, 'pointerType', { value: init.pointerType ?? 'mouse' });
+    target.dispatchEvent(event);
+  }
+
+  function setConnection(value: { saveData?: boolean; effectiveType?: string } | undefined) {
+    Object.defineProperty(navigator, 'connection', { configurable: true, value });
+  }
+
+  afterEach(() => {
+    delete (navigator as unknown as { connection?: unknown }).connection;
+  });
+
+  it('prefetches after the hover intent delay with the route and data flag', () => {
+    pointer('pointerover', link('/post/a'));
+    vi.advanceTimersByTime(64);
+    expect(prefetch).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(prefetch).toHaveBeenCalledExactlyOnceWith('/post/a', true);
+  });
+
+  it('cancels when the pointer leaves the link but keeps going inside it', () => {
+    const left = link('/post/a');
+    pointer('pointerover', left);
+    pointer('pointerout', left, { to: document.body });
+    vi.advanceTimersByTime(100);
+    expect(prefetch).not.toHaveBeenCalled();
+
+    const inside = link('/post/b');
+    pointer('pointerover', inside);
+    pointer('pointerout', inside, { to: inside.querySelector('span')! });
+    vi.advanceTimersByTime(100);
+    expect(prefetch).toHaveBeenCalledExactlyOnceWith('/post/b', true);
+  });
+
+  it('does not prefetch when a click follows the hover', () => {
+    const anchor = link('/post/a');
+    pointer('pointerover', anchor);
+    anchor.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }));
+    vi.advanceTimersByTime(200);
+    expect(prefetch).not.toHaveBeenCalled();
+    expect(native).toHaveLength(1);
+  });
+
+  it('prefetches on touchstart immediately and ignores touch pointerover', () => {
+    pointer('pointerover', link('/post/a'), { pointerType: 'touch' });
+    vi.advanceTimersByTime(200);
+    expect(prefetch).not.toHaveBeenCalled();
+    link('/post/b').dispatchEvent(new Event('touchstart', { bubbles: true }));
+    expect(prefetch).toHaveBeenCalledExactlyOnceWith('/post/b', true);
+  });
+
+  it('prefetches on keyboard focus after the intent delay', () => {
+    link('/post/a').dispatchEvent(new Event('focusin', { bubbles: true }));
+    vi.advanceTimersByTime(65);
+    expect(prefetch).toHaveBeenCalledExactlyOnceWith('/post/a', true);
+  });
+
+  it('skips external, native, cross-origin and current-page links', () => {
+    for (const anchor of [
+      link('/post/a', { rel: 'external' }),
+      link('/api/x'),
+      link('https://example.org/post/a'),
+      link('/#h'),
+    ]) {
+      pointer('pointerover', anchor);
+      vi.advanceTimersByTime(100);
+      pointer('pointerout', anchor, { to: document.body });
+    }
+    expect(prefetch).not.toHaveBeenCalled();
+  });
+
+  it('throttles per page for two seconds regardless of the hash', () => {
+    const hover = (href: string) => {
+      const anchor = link(href);
+      pointer('pointerover', anchor);
+      vi.advanceTimersByTime(65);
+      pointer('pointerout', anchor, { to: document.body });
+    };
+    hover('/post/a');
+    hover('/post/a#x');
+    expect(prefetch).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(2000);
+    hover('/post/a');
+    expect(prefetch).toHaveBeenCalledTimes(2);
+    expect(prefetch).toHaveBeenLastCalledWith('/post/a', true);
+  });
+
+  it('is disabled by save-data and 2g connections', () => {
+    setConnection({ saveData: true });
+    link('/post/a').dispatchEvent(new Event('touchstart', { bubbles: true }));
+    setConnection({ effectiveType: '2g' });
+    link('/post/b').dispatchEvent(new Event('touchstart', { bubbles: true }));
+    expect(prefetch).not.toHaveBeenCalled();
+    setConnection({ effectiveType: '4g' });
+    link('/post/c').dispatchEvent(new Event('touchstart', { bubbles: true }));
+    expect(prefetch).toHaveBeenCalledExactlyOnceWith('/post/c', true);
+  });
+
+  it('swallows prefetch errors and still navigates', async () => {
+    prefetch.mockImplementation(() => {
+      throw new Error('boom');
+    });
+    const anchor = link('/post/a');
+    expect(() => anchor.dispatchEvent(new Event('touchstart', { bubbles: true }))).not.toThrow();
+    anchor.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }));
+    expect(native).toHaveLength(1);
+    await native[0].invoke();
+    await finish();
+    expect(routes.currentRoute()).toBe('/post/a');
+  });
+
+  it('stops prefetching after disconnect', () => {
+    const anchor = link('/post/a');
+    routes.disconnect();
+    pointer('pointerover', anchor);
+    anchor.dispatchEvent(new Event('touchstart', { bubbles: true }));
+    vi.advanceTimersByTime(200);
+    expect(prefetch).not.toHaveBeenCalled();
+  });
+});
+
+describe('viewport prefetch on touch devices', () => {
+  class FakeObserver {
+    static instances: FakeObserver[] = [];
+    observed = new Set<Element>();
+    disconnected = false;
+    constructor(
+      private callback: (entries: Partial<IntersectionObserverEntry>[]) => void,
+      readonly options?: IntersectionObserverInit,
+    ) {
+      FakeObserver.instances.push(this);
+    }
+    observe(element: Element) {
+      this.observed.add(element);
+    }
+    unobserve(element: Element) {
+      this.observed.delete(element);
+    }
+    disconnect() {
+      this.disconnected = true;
+    }
+    reveal(...elements: Element[]) {
+      this.callback(elements.map((target) => ({ target, isIntersecting: true })));
+    }
+  }
+
+  let prefetch: Mock<(route: string, withData: boolean) => void>;
+
+  function link(href: string): HTMLAnchorElement {
+    const anchor = document.createElement('a');
+    anchor.href = href;
+    document.body.append(anchor);
+    return anchor;
+  }
+
+  function connect(hoverNone: boolean) {
+    vi.mocked(window.matchMedia).mockImplementation(
+      (query) => ({ matches: hoverNone && query === '(hover: none)' }) as MediaQueryList,
+    );
+    routes.disconnect();
+    routes.connect(notify, null, prefetch);
+  }
+
+  const observer = () => FakeObserver.instances[FakeObserver.instances.length - 1];
+
+  beforeEach(() => {
+    FakeObserver.instances = [];
+    prefetch = vi.fn();
+    vi.stubGlobal('IntersectionObserver', FakeObserver);
+    // 空闲回调换成 setTimeout(0)，便于用假定时器推进。
+    vi.stubGlobal('requestIdleCallback', (callback: () => void) => setTimeout(callback, 0));
+    vi.stubGlobal('cancelIdleCallback', (handle: number) => clearTimeout(handle));
+  });
+
+  it('prefetches code only, once per page, when a link reaches the viewport', () => {
+    const anchor = link('/post/a');
+    const again = link('/post/a#x');
+    connect(true);
+    vi.advanceTimersByTime(300);
+    expect(observer().options).toEqual({ rootMargin: '200px' });
+    expect(observer().observed).toEqual(new Set([anchor, again]));
+
+    observer().reveal(anchor);
+    vi.advanceTimersByTime(0);
+    expect(prefetch).toHaveBeenCalledExactlyOnceWith('/post/a', false);
+
+    vi.advanceTimersByTime(2000);
+    observer().reveal(again);
+    vi.advanceTimersByTime(0);
+    expect(prefetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('handles at most four addresses per idle slot', () => {
+    const anchors = ['a', 'b', 'c', 'd', 'e'].map((slug) => link(`/post/${slug}`));
+    connect(true);
+    vi.advanceTimersByTime(300);
+    observer().reveal(...anchors);
+    vi.advanceTimersByTime(0);
+    expect(prefetch).toHaveBeenCalledTimes(4);
+    vi.advanceTimersByTime(1);
+    expect(prefetch).toHaveBeenCalledTimes(5);
+    expect(prefetch).toHaveBeenLastCalledWith('/post/e', false);
+  });
+
+  it('does not let a viewport prefetch suppress the data prefetch from a touch', () => {
+    const anchor = link('/post/a');
+    connect(true);
+    vi.advanceTimersByTime(300);
+    observer().reveal(anchor);
+    vi.advanceTimersByTime(0);
+    anchor.dispatchEvent(new Event('touchstart', { bubbles: true }));
+    expect(prefetch.mock.calls).toEqual([
+      ['/post/a', false],
+      ['/post/a', true],
+    ]);
+  });
+
+  it('skips the current page and respects save-data', () => {
+    const here = link('/#top');
+    const there = link('/post/a');
+    connect(true);
+    vi.advanceTimersByTime(300);
+    Object.defineProperty(navigator, 'connection', {
+      configurable: true,
+      value: { saveData: true },
+    });
+    try {
+      observer().reveal(here, there);
+      vi.advanceTimersByTime(0);
+    } finally {
+      delete (navigator as unknown as { connection?: unknown }).connection;
+    }
+    expect(prefetch).not.toHaveBeenCalled();
+    observer().reveal(here);
+    vi.advanceTimersByTime(0);
+    expect(prefetch).not.toHaveBeenCalled();
+  });
+
+  it('does not create an observer without hover: none', () => {
+    link('/post/a');
+    connect(false);
+    vi.advanceTimersByTime(300);
+    expect(FakeObserver.instances).toHaveLength(0);
+  });
+
+  it('picks up links inserted later after the scan debounce', async () => {
+    connect(true);
+    vi.advanceTimersByTime(300);
+    const late = link('/post/late');
+    await Promise.resolve();
+    vi.advanceTimersByTime(299);
+    expect(observer().observed.has(late)).toBe(false);
+    vi.advanceTimersByTime(1);
+    expect(observer().observed.has(late)).toBe(true);
+  });
+
+  it('disconnects both observers and drops queued work', () => {
+    const anchor = link('/post/a');
+    connect(true);
+    vi.advanceTimersByTime(300);
+    const current = observer();
+    current.reveal(anchor);
+    routes.disconnect();
+    vi.advanceTimersByTime(5000);
+    expect(current.disconnected).toBe(true);
+    expect(prefetch).not.toHaveBeenCalled();
   });
 });

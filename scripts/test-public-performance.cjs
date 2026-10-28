@@ -7,7 +7,9 @@ const path = require('node:path');
 const net = require('node:net');
 const { chromium } = require('../libs/node_modules/playwright');
 const root = path.resolve(__dirname, '..');
-const build = path.resolve(process.env.PUBLIC_TEST_BUILD || path.join(root, 'target/dx/yggdrasil/debug/web'));
+// 服务端可执行文件与站点根（cargo leptos build 产物）；hash.txt 与可执行文件同目录。
+const serverBin = path.resolve(process.env.PUBLIC_TEST_SERVER || path.join(root, 'target/debug/yggdrasil'));
+const siteRoot = path.resolve(process.env.PUBLIC_TEST_SITE || path.join(root, 'target/site'));
 const artifacts = path.join(root, 'target/regressions', `${Date.now()}-public-performance`);
 const runtime = fs.mkdtempSync(path.join(os.tmpdir(), 'ygg-public-perf-'));
 const container = `ygg-public-perf-${process.pid}-${Date.now()}`;
@@ -50,24 +52,23 @@ async function hit(base, route) {
   return result;
 }
 async function main() {
-  assert(fs.existsSync(path.join(build, 'server')), 'Run make regression-build first');
+  assert(fs.existsSync(serverBin), 'Run make regression-build first');
   await command(['docker', 'run', '-d', '--name', container, '-e', 'POSTGRES_PASSWORD=regression',
     '-e', 'POSTGRES_DB=ygg_mcp_test', '-p', '127.0.0.1::5432', 'postgres:16-alpine']);
   const port = (await command(['docker', 'port', container, '5432/tcp'])).split(':').at(-1);
   pg = { ...process.env, PGHOST: '127.0.0.1', PGPORT: port, PGUSER: 'postgres', PGPASSWORD: 'regression' };
   await until(async () => {
     try { await command(['pg_isready'], { env: pg }); return true; } catch { return false; }
-  }, 'Database not ready');
+  }, 'Database not ready', 120000);
   const bases = [];
   for (let i = 0; i < 2; i++) {
     const appPort = await freePort(); const base = `http://127.0.0.1:${appPort}`; bases.push(base);
     const cwd = path.join(runtime, `app-${i}`); fs.mkdirSync(cwd); fs.mkdirSync(path.join(cwd, 'uploads'));
-    fs.symlinkSync(path.join(build, 'public'), path.join(cwd, 'public'), 'dir');
     const env = { ...pg, DATABASE_URL: `postgresql://postgres:regression@127.0.0.1:${port}/ygg_mcp_test`,
       IP: '127.0.0.1', PORT: String(appPort), APP_BASE_URL: base, COOKIE_SECURE: 'false', SSR_CACHE_SECS: i === 0 ? '2' : '60',
-      DIOXUS_ASSET_DIR: path.join(build, 'public'), MCP_TOKEN_ENC_KEY: '42'.repeat(32),
+      LEPTOS_SITE_ROOT: siteRoot, MCP_TOKEN_ENC_KEY: '42'.repeat(32),
       ADMIN_USERNAME: '', ADMIN_PASSWORD: '', ADMIN_EMAIL: '', SYSINFO_SAMPLE_SECS: '5', RUST_LOG: 'info' };
-    const server = Bun.spawn([path.join(build, 'server')], { cwd, env,
+    const server = Bun.spawn([serverBin], { cwd, env,
       stdout: Bun.file(path.join(artifacts, `server-${i}.log`)), stderr: Bun.file(path.join(artifacts, `server-${i}-error.log`)) });
     servers.push(server);
     await until(async () => {
@@ -133,7 +134,7 @@ async function main() {
     page.on('request', request => { if (/\/api\/(start_exec|exec)/.test(request.url())) execRequests.push(request.url()); });
     page.on('pageerror', error => errors.push(error.message));
     await page.goto(bases[0] + route);
-    await page.waitForFunction(() => window.__routeTransitions?.entryId(), null, { timeout: 60000 });
+    await page.waitForFunction(() => document.documentElement.dataset.hydrated === 'true', {}, { timeout: 60000 });
     await page.waitForTimeout(500);
     assert.equal(editorRequests.length, 0, 'Offscreen comments must not download the editor');
     assert.equal(codemirrorRequests.length, 0, 'Below-fold runnable blocks must not download CodeMirror');
@@ -156,7 +157,7 @@ async function main() {
     await editor.fill('评论草稿懒加载成功'); assert.equal(editorRequests.length, 1);
     await page.screenshot({ path: path.join(artifacts, `${mobile ? 'mobile' : 'desktop'}-${theme}-comments.png`) });
     await page.goto(bases[0] + '/archives');
-    await page.waitForFunction(() => window.__routeTransitions?.entryId(), null, { timeout: 60000 });
+    await page.waitForFunction(() => document.documentElement.dataset.hydrated === 'true', {}, { timeout: 60000 });
     assert.equal(await page.locator('.archive-entry').count(), 100);
     await page.getByRole('button', { name: '加载更早的文章' }).click();
     await page.waitForFunction(() => document.querySelectorAll('.archive-entry').length === 151);

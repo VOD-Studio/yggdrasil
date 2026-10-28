@@ -1,8 +1,9 @@
-// 与 posts 模块一致：Dioxus `#[server]` 宏触发 deprecated/unit/too_many_arguments
+// 与 posts 模块一致：Leptos `#[server]` 宏触发 deprecated/unit/too_many_arguments
 // 提示，按项目惯例放行（限流/运行器等配置项天然参数多）。
 #![allow(clippy::unused_unit, deprecated, clippy::too_many_arguments)]
 
-use dioxus::prelude::*;
+use crate::api::error::ApiError;
+use leptos::prelude::*;
 
 #[cfg(feature = "server")]
 use crate::api::auth::get_current_admin_user;
@@ -41,8 +42,8 @@ pub(crate) async fn seed_upload_settings_from_env(
 /// 读取素材上传配置（上传弹窗并发数）。
 ///
 /// settings 表缺失键时回退到默认值，保证向后兼容。
-#[server(GetUploadSettings, "/api")]
-pub async fn get_upload_settings() -> Result<UploadSettings, ServerFnError> {
+#[server(GetUploadSettings, endpoint = "get_upload_settings", input = leptos::server_fn::codec::Json)]
+pub async fn get_upload_settings() -> Result<UploadSettings, ApiError> {
     let _user = get_current_admin_user().await?;
 
     #[cfg(feature = "server")]
@@ -69,8 +70,8 @@ pub async fn get_upload_settings() -> Result<UploadSettings, ServerFnError> {
 /// 更新素材上传配置。
 ///
 /// concurrency 会被 clamp 到合法范围后写入。
-#[server(UpdateUploadSettings, "/api")]
-pub async fn update_upload_settings(concurrency: i32) -> Result<UploadSettings, ServerFnError> {
+#[server(UpdateUploadSettings, endpoint = "update_upload_settings", input = leptos::server_fn::codec::Json)]
+pub async fn update_upload_settings(concurrency: i32) -> Result<UploadSettings, ApiError> {
     let _user = get_current_admin_user().await?;
 
     let concurrency = UploadSettings::clamp_concurrency(concurrency);

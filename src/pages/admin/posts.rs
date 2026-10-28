@@ -4,19 +4,21 @@
 //! `/admin/posts/trash`）、标题搜索与标签筛选 → 表格（勾选、标题与 slug、状态、标签、
 //! 字数、发布时间、「⋯」菜单）与底栏分页。勾选后底部浮起批量操作条。手机端表格行
 //! 改为卡片，主操作为右下角浮动按钮。筛选、页码与搜索框内容按历史记录保存，从预览
-//! 返回时恢复。数据仅在 WASM 前端通过 server function 加载。样式见
-//! styles/pages/admin-posts.css。
+//! 返回时恢复。数据仅在 WASM 前端通过 server function 加载（后台数据是私有的，
+//! SSR 不取数）。样式见 styles/pages/admin-posts.css。
 
 use std::collections::HashSet;
 
-use crate::components::admin_layout::AdminPageHead;
-use dioxus::prelude::*;
-use dioxus::router::components::Link;
+use leptos::ev::KeyboardEvent;
+use leptos::prelude::*;
+use leptos::task::spawn_local;
+use leptos_router::{lazy_route, LazyRoute};
 
 use crate::api::posts::{
-    batch_posts, delete_post, list_posts, rebuild_content_html, rebuild_post_content_html,
-    AdminPostQuery, BatchPostAction, PostListResponse,
+    batch_posts, delete_post, list_posts, list_tags, rebuild_content_html,
+    rebuild_post_content_html, AdminPostQuery, BatchPostAction, PostListResponse,
 };
+use crate::components::admin_layout::AdminPageHead;
 use crate::components::empty_state::{EmptyState, EmptyStateAction};
 use crate::components::forms::{FormSelect, FORM_SELECT_COMPACT_CLASS};
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
@@ -27,7 +29,7 @@ use crate::components::ui::{
 };
 use crate::hooks::query::use_paginated;
 use crate::models::post::{PostListItem, PostStats, PostStatus};
-use crate::router::Route;
+use crate::routes::Route;
 use crate::utils::error::failure_message;
 use crate::utils::time::to_local;
 
@@ -35,6 +37,20 @@ use crate::utils::time::to_local;
 const POSTS_PER_PAGE: i32 = 20;
 /// 输入停顿多久后自动搜索（毫秒）。
 const SEARCH_DEBOUNCE_MS: u32 = 300;
+
+/// `/admin/posts` 路由：纯客户端数据，`data()` 不取数。
+pub struct PostsRoute;
+
+#[lazy_route]
+impl LazyRoute for PostsRoute {
+    fn data() -> Self {
+        Self
+    }
+
+    fn view(_this: Self) -> AnyView {
+        view! { <Posts/> }.into_any()
+    }
+}
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 struct PostsHistoryState {
@@ -79,71 +95,101 @@ fn all_selected(rows: &[PostListItem], selected: &HashSet<i32>) -> bool {
     !rows.is_empty() && rows.iter().all(|p| selected.contains(&p.id))
 }
 
+/// 列表区域的四种互斥状态。
+#[derive(Clone, Copy, PartialEq)]
+enum ListState {
+    Error,
+    Loading,
+    Empty,
+    Table,
+}
+
+/// 空列表时的三种文案。
+#[derive(Clone, Copy, PartialEq)]
+enum EmptyKind {
+    Filtered,
+    Drafts,
+    NoPosts,
+}
+
 /// 文章列表页。
 #[component]
-pub fn Posts() -> Element {
-    let mut stats = use_signal(|| None::<PostStats>);
-    let mut stats_version = use_signal(|| 0_u32);
-    use_effect(move || {
-        let _ = stats_version();
-        #[cfg(target_arch = "wasm32")]
-        spawn(async move {
+fn Posts() -> impl IntoView {
+    let stats = RwSignal::new(None::<PostStats>);
+    let stats_version = RwSignal::new(0_u32);
+    // 请求世代号：连续刷新篇数时只有最后一次响应落地。
+    let stats_generation = StoredValue::new(0_u64);
+    Effect::new(move |_| {
+        stats_version.track();
+        let Some(id) = stats_generation.try_update_value(|g| {
+            *g = g.wrapping_add(1);
+            *g
+        }) else {
+            return;
+        };
+        spawn_local(async move {
             if let Ok(res) = crate::api::posts::get_post_stats().await {
-                stats.set(Some(res.stats));
+                if stats_generation.try_get_value() == Some(id) {
+                    stats.try_set(Some(res.stats));
+                }
             }
         });
     });
-    #[cfg(not(target_arch = "wasm32"))]
-    let _ = &mut stats;
-    let summary = stats().map(|s| {
-        let mut parts = vec![format!("{} 篇已发布", s.published)];
-        if s.drafts > 0 {
-            parts.push(format!("草稿 {}", s.drafts));
-        }
-        if s.trash > 0 {
-            parts.push(format!("回收站 {}", s.trash));
-        }
-        parts.join(" · ")
+    let summary = Memo::new(move |_| {
+        stats.get().map(|s| {
+            let mut parts = vec![format!("{} 篇已发布", s.published)];
+            if s.drafts > 0 {
+                parts.push(format!("草稿 {}", s.drafts));
+            }
+            if s.trash > 0 {
+                parts.push(format!("回收站 {}", s.trash));
+            }
+            parts.join(" · ")
+        })
     });
 
-    rsx! {
-        div { class: "admin-posts",
-            AdminPageHead {
-                title: "文章",
-                actions: rsx! {
-                    RebuildMenu {}
-                    Link {
-                        class: "{button_class(ButtonVariant::Primary, ButtonSize::Md)} admin-hide-mobile",
-                        to: Route::Write {},
-                        Icon { name: IconName::Plus, size: 16 }
-                        "新建文章"
+    view! {
+        <div class="admin-posts">
+            <AdminPageHead
+                title="文章"
+                actions=move || {
+                    view! {
+                        <RebuildMenu/>
+                        <a
+                            class=format!(
+                                "{} admin-hide-mobile",
+                                button_class(ButtonVariant::Primary, ButtonSize::Md),
+                            )
+                            href=Route::Write.to_string()
+                        >
+                            <Icon name=IconName::Plus size=16/>
+                            "新建文章"
+                        </a>
                     }
-                },
-                if let Some(summary) = summary {
-                    "{summary}"
                 }
-            }
-            PostsTable { on_changed: move |_| stats_version += 1 }
-            Link { class: "admin-fab", to: Route::Write {}, aria_label: "写文章",
-                Icon { name: IconName::Plus, size: 18 }
+            >
+                {move || summary.get()}
+            </AdminPageHead>
+            <PostsTable on_changed=move |_: ()| stats_version.update(|n| *n += 1)/>
+            <a class="admin-fab" href=Route::Write.to_string() aria-label="写文章">
+                <Icon name=IconName::Plus size=18/>
                 "写文章"
-            }
-        }
+            </a>
+        </div>
     }
 }
 
 /// 「重建渲染」菜单：只补空缺的渲染，或全部重建（渲染规则升级后用）。结果用提示条告知。
 #[component]
-#[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut, unused_variables))]
-fn RebuildMenu() -> Element {
+fn RebuildMenu() -> impl IntoView {
     let toast = use_toast();
-    let mut busy = use_signal(|| false);
-    let mut run = move |rebuild_all: bool| {
-        if busy() {
+    let busy = RwSignal::new(false);
+    let run = move |rebuild_all: bool| {
+        if busy.get_untracked() {
             return;
         }
         busy.set(true);
-        spawn(async move {
+        spawn_local(async move {
             // 服务端每批只处理一部分，按 next_after_id 游标续传直到处理完。
             let mut after_id = 0_i32;
             let mut rebuilt = 0_u64;
@@ -184,125 +230,131 @@ fn RebuildMenu() -> Element {
             } else {
                 toast.success(format!("已重建 {rebuilt} 篇文章的渲染"));
             }
-            busy.set(false);
+            busy.try_set(false);
         });
     };
-    rsx! {
-        Menu {
-            label: if busy() { "正在重建渲染…" } else { "更多操作" },
-            size: ButtonSize::Md,
-            items: vec![
-                MenuItem::new("missing", "补全缺失的渲染").icon(IconName::RefreshCw),
-                MenuItem::new("all", "重建全部渲染").icon(IconName::RotateCw),
-            ],
-            on_select: move |id: &'static str| run(id == "all"),
-        }
+    // Menu 的 label 不是响应式 prop：忙碌态变化时按新文案重建菜单。
+    view! {
+        {move || {
+            let label = if busy.get() { "正在重建渲染…" } else { "更多操作" };
+            view! {
+                <Menu
+                    label=label
+                    size=ButtonSize::Md
+                    items=vec![
+                        MenuItem::new("missing", "补全缺失的渲染").icon(IconName::RefreshCw),
+                        MenuItem::new("all", "重建全部渲染").icon(IconName::RotateCw),
+                    ]
+                    on_select=move |id: &'static str| run(id == "all")
+                />
+            }
+        }}
     }
 }
 
 /// 文章表格：筛选、勾选、批量操作与分页。`on_changed` 在增删改后通知页头刷新篇数。
 #[component]
-#[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut, unused_variables))]
-fn PostsTable(on_changed: EventHandler<()>) -> Element {
-    let entry_id = use_hook(crate::bridges::navigation::entry_id);
-    let saved = use_hook(|| {
-        crate::bridges::navigation::read_state::<PostsHistoryState>("admin-posts")
-            .unwrap_or_default()
-    });
-    let navigator = use_navigator();
+fn PostsTable(#[prop(into)] on_changed: Callback<()>) -> impl IntoView {
+    let entry_id = crate::bridges::navigation::entry_id();
+    let saved = crate::bridges::navigation::read_state::<PostsHistoryState>("admin-posts")
+        .unwrap_or_default();
     let toast = use_toast();
-    let mut current_page = use_signal(|| saved.page.max(1));
-    let mut status = use_signal(|| saved.status.clone());
-    let mut tag = use_signal(|| saved.tag.clone());
+    let current_page = RwSignal::new(saved.page.max(1));
+    let status = RwSignal::new(saved.status.clone());
+    let tag = RwSignal::new(saved.tag.clone());
     // 输入框内容与已提交的搜索词分开：停顿 300ms 或回车才提交。
-    let mut search_input = use_signal(|| saved.search_input.clone());
-    let mut search_query = use_signal(|| saved.search_query.clone());
-    let mut search_seq = use_signal(|| 0_u64);
-    let mut selected = use_signal(HashSet::<i32>::new);
-    let mut busy = use_signal(HashSet::<i32>::new);
-    let mut batch_busy = use_signal(|| false);
-    let mut tags = use_signal(Vec::<String>::new);
+    let search_input = RwSignal::new(saved.search_input.clone());
+    let search_query = RwSignal::new(saved.search_query.clone());
+    let search_seq = RwSignal::new(0_u64);
+    let selected = RwSignal::new(HashSet::<i32>::new());
+    let busy = RwSignal::new(HashSet::<i32>::new());
+    let batch_busy = RwSignal::new(false);
+    let tags = RwSignal::new(Vec::<String>::new());
     // 原地重新请求当前页（批量操作或重试后）。
-    let mut refresh = use_signal(|| 0_u32);
+    let refresh = RwSignal::new(0_u32);
 
-    use_effect(move || {
+    Effect::new(move |_| {
         crate::bridges::navigation::write_state(
             &entry_id,
             "admin-posts",
             &PostsHistoryState {
-                page: current_page(),
-                status: status(),
-                search_input: search_input(),
-                search_query: search_query(),
-                tag: tag(),
+                page: current_page.get(),
+                status: status.get(),
+                search_input: search_input.get(),
+                search_query: search_query.get(),
+                tag: tag.get(),
             },
         );
     });
-    use_effect(move || {
-        #[cfg(target_arch = "wasm32")]
-        spawn(async move {
-            if let Ok(res) = crate::api::posts::list_tags().await {
-                tags.set(res.tags.into_iter().map(|t| t.name).collect());
+    Effect::new(move |_| {
+        spawn_local(async move {
+            if let Ok(res) = list_tags().await {
+                tags.try_set(res.tags.into_iter().map(|t| t.name).collect());
             }
         });
     });
 
     let paginated = use_paginated(
         move || {
-            let _ = (search_query(), status(), tag(), refresh());
-            current_page.with(|p| *p)
+            search_query.track();
+            status.track();
+            tag.track();
+            refresh.track();
+            current_page.get()
         },
         POSTS_PER_PAGE,
         move |p, pp| {
             let query = AdminPostQuery {
-                search: Some(search_query()).filter(|q| !q.is_empty()),
-                status: status_filter(&status()),
-                tag: Some(tag()).filter(|t| !t.is_empty()),
+                search: Some(search_query.get()).filter(|q| !q.is_empty()),
+                status: status_filter(&status.get()),
+                tag: Some(tag.get()).filter(|t| !t.is_empty()),
             };
             async move {
                 list_posts(p, pp, query)
                     .await
                     .map(|PostListResponse { posts, total }| (posts, total))
-                    .map_err(|e| e.to_string())
+                    .map_err(|e| failure_message("文章列表加载失败", &e))
             }
         },
     );
-    let mut posts = paginated.items;
-    let mut total = paginated.total;
+    let posts = paginated.items;
+    let total = paginated.total;
     let loading = paginated.loading;
     let error = paginated.error;
-    let mut reload = move || refresh += 1;
+    let reload = move || {
+        refresh.try_update(|n| *n += 1);
+    };
 
     // 换筛选条件时清掉勾选，回到第 1 页。
-    let mut reset_view = move || {
-        selected.write().clear();
+    let reset_view = move || {
+        selected.update(|s| s.clear());
         current_page.set(1);
     };
-    let mut submit_search = move || {
-        let q = search_input.peek().trim().to_string();
-        if q != *search_query.peek() {
+    let submit_search = move || {
+        let q = search_input.get_untracked().trim().to_string();
+        if q != search_query.get_untracked() {
             search_query.set(q);
             reset_view();
         }
     };
-    let mut schedule_search = move || {
-        search_seq += 1;
-        let id = search_seq();
-        spawn(async move {
+    let schedule_search = move || {
+        search_seq.update(|s| *s += 1);
+        let id = search_seq.get_untracked();
+        spawn_local(async move {
             crate::utils::time::sleep_ms(SEARCH_DEBOUNCE_MS).await;
-            if search_seq() == id {
+            if search_seq.try_get_untracked() == Some(id) {
                 submit_search();
             }
         });
     };
 
-    let mut run_batch = move |action: BatchPostAction| {
-        let ids: Vec<i32> = selected().into_iter().collect();
-        if ids.is_empty() || batch_busy() {
+    let run_batch = move |action: BatchPostAction| {
+        let ids: Vec<i32> = selected.get_untracked().into_iter().collect();
+        if ids.is_empty() || batch_busy.get_untracked() {
             return;
         }
         batch_busy.set(true);
-        spawn(async move {
+        spawn_local(async move {
             match batch_posts(ids, action).await {
                 Ok(res) => {
                     let verb = match action {
@@ -315,270 +367,366 @@ fn PostsTable(on_changed: EventHandler<()>) -> Element {
                     } else {
                         toast.success(format!("已{verb} {} 篇", res.done));
                     }
-                    selected.write().clear();
+                    selected.try_update(|s| s.clear());
                     reload();
-                    on_changed.call(());
+                    on_changed.try_run(());
                 }
                 Err(e) => toast.error(failure_message("操作失败", &e)),
             }
-            batch_busy.set(false);
+            batch_busy.try_set(false);
         });
     };
 
-    let on_row_action = move |(post, action): (PostListItem, &'static str)| match action {
-        "edit" => {
-            navigator.push(Route::WriteEdit { id: post.id });
-        }
-        "preview" => {
-            navigator.push(Route::PostPreview { slug: post.slug });
-        }
-        "copy" => {
-            #[cfg(target_arch = "wasm32")]
-            spawn(async move {
-                let origin = web_sys::window()
-                    .and_then(|w| w.location().origin().ok())
-                    .unwrap_or_default();
-                if crate::utils::js::copy_text(&format!("{origin}/post/{}", post.slug)).await {
-                    toast.success("已复制文章链接");
-                } else {
-                    toast.error("复制失败，请手动复制地址栏中的链接");
+    let on_row_action =
+        Callback::new(
+            move |(post, action): (PostListItem, &'static str)| match action {
+                "edit" => {
+                    crate::navigation::push(&Route::WriteEdit { id: post.id }.to_string());
                 }
-            });
-        }
-        "rebuild" => {
-            busy.write().insert(post.id);
-            spawn(async move {
-                match rebuild_post_content_html(post.id).await {
-                    Ok(res) if res.success => {
-                        toast.success(format!("已重建《{}》的渲染", post.title))
-                    }
-                    Ok(res) => toast.error(res.message),
-                    Err(e) => toast.error(failure_message("重建失败", &e)),
+                "preview" => {
+                    crate::navigation::push(&Route::PostPreview { slug: post.slug }.to_string());
                 }
-                busy.write().remove(&post.id);
-            });
-        }
-        "trash" => {
-            busy.write().insert(post.id);
-            spawn(async move {
-                match delete_post(post.id).await {
-                    Ok(res) if res.success => {
-                        posts.with_mut(|list| list.retain(|p| p.id != post.id));
-                        total.with_mut(|t| *t = t.saturating_sub(1));
-                        selected.write().remove(&post.id);
-                        toast.success(format!("已把《{}》移到回收站", post.title));
-                        on_changed.call(());
-                    }
-                    Ok(res) => toast.error(res.message),
-                    Err(e) => toast.error(failure_message("移到回收站失败", &e)),
+                "copy" => {
+                    #[cfg(target_arch = "wasm32")]
+                    spawn_local(async move {
+                        let origin = web_sys::window()
+                            .and_then(|w| w.location().origin().ok())
+                            .unwrap_or_default();
+                        if crate::utils::js::copy_text(&format!("{origin}/post/{}", post.slug))
+                            .await
+                        {
+                            toast.success("已复制文章链接");
+                        } else {
+                            toast.error("复制失败，请手动复制地址栏中的链接");
+                        }
+                    });
                 }
-                busy.write().remove(&post.id);
-            });
-        }
-        _ => {}
-    };
+                "rebuild" => {
+                    busy.update(|b| _ = b.insert(post.id));
+                    spawn_local(async move {
+                        match rebuild_post_content_html(post.id).await {
+                            Ok(res) if res.success => {
+                                toast.success(format!("已重建《{}》的渲染", post.title))
+                            }
+                            Ok(res) => toast.error(res.message),
+                            Err(e) => toast.error(failure_message("重建失败", &e)),
+                        }
+                        busy.try_update(|b| _ = b.remove(&post.id));
+                    });
+                }
+                "trash" => {
+                    busy.update(|b| _ = b.insert(post.id));
+                    spawn_local(async move {
+                        match delete_post(post.id).await {
+                            Ok(res) if res.success => {
+                                posts.try_update(|list| list.retain(|p| p.id != post.id));
+                                total.try_update(|t| *t = t.saturating_sub(1));
+                                selected.try_update(|s| _ = s.remove(&post.id));
+                                toast.success(format!("已把《{}》移到回收站", post.title));
+                                on_changed.try_run(());
+                            }
+                            Ok(res) => toast.error(res.message),
+                            Err(e) => toast.error(failure_message("移到回收站失败", &e)),
+                        }
+                        busy.try_update(|b| _ = b.remove(&post.id));
+                    });
+                }
+                _ => {}
+            },
+        );
+    let on_row_select = Callback::new(move |(id, checked): (i32, bool)| {
+        selected.update(|s| {
+            if checked {
+                s.insert(id);
+            } else {
+                s.remove(&id);
+            }
+        });
+    });
 
-    let rows = posts();
-    let selection = selected();
-    let page_all = all_selected(&rows, &selection);
-    let filtering = !search_query().is_empty() || !tag().is_empty();
-    let mut tag_options: Vec<(String, String)> = vec![(String::new(), "全部标签".to_string())];
-    tag_options.extend(tags().into_iter().map(|t| (t.clone(), t)));
-
-    rsx! {
-        if !loading() || error().is_some() {
-            span { hidden: true, "data-vt-list": "true" }
+    let page_all = Memo::new(move |_| {
+        posts.with(|rows| selected.with(|selection| all_selected(rows, selection)))
+    });
+    let filtering =
+        Memo::new(move |_| !search_query.with(|q| q.is_empty()) || !tag.with(|t| t.is_empty()));
+    let list_state = Memo::new(move |_| {
+        if error.with(Option::is_some) {
+            ListState::Error
+        } else if posts.with(Vec::is_empty) {
+            if loading.get() {
+                ListState::Loading
+            } else {
+                ListState::Empty
+            }
+        } else {
+            ListState::Table
         }
-        div { class: "admin-toolbar",
-            SegmentedControl {
-                aria_label: "文章状态",
-                items: vec![
+    });
+    let empty_kind = Memo::new(move |_| {
+        if filtering.get() {
+            EmptyKind::Filtered
+        } else if status.with(|s| s == "draft") {
+            EmptyKind::Drafts
+        } else {
+            EmptyKind::NoPosts
+        }
+    });
+    let tag_options = Signal::derive(move || {
+        let mut options: Vec<(String, String)> = vec![(String::new(), "全部标签".to_string())];
+        options.extend(tags.get().into_iter().map(|t| (t.clone(), t)));
+        options
+    });
+    let selection_count = Memo::new(move |_| selected.with(HashSet::len));
+    let has_selection = Memo::new(move |_| selection_count.get() > 0);
+
+    view! {
+        {move || {
+            (!loading.get() || error.with(Option::is_some))
+                .then(|| view! { <span hidden data-vt-list="true"></span> })
+        }}
+        <div class="admin-toolbar">
+            <SegmentedControl
+                aria_label="文章状态"
+                items=vec![
                     SegmentedItem::new("all".to_string(), "全部"),
                     SegmentedItem::new("published".to_string(), "已发布"),
                     SegmentedItem::new("draft".to_string(), "草稿"),
                     SegmentedItem::new("trash".to_string(), "回收站"),
-                ],
-                value: status(),
-                on_change: move |value: String| {
+                ]
+                value=status
+                on_change=move |value: String| {
                     if value == "trash" {
-                        navigator.push(Route::PostsTrash {});
+                        crate::navigation::push(&Route::PostsTrash.to_string());
                     } else {
                         status.set(value);
                         reset_view();
                     }
-                },
-            }
-            div { class: "admin-toolbar-filters",
-                label { class: "field field-sm admin-filter-search",
-                    Icon { name: IconName::Search, size: 14 }
-                    span { class: "sr-only", "按标题搜索" }
-                    input {
-                        r#type: "search",
-                        placeholder: "按标题搜索",
-                        value: "{search_input}",
-                        oninput: move |e| {
-                            search_input.set(e.value());
+                }
+            />
+            <div class="admin-toolbar-filters">
+                <label class="field field-sm admin-filter-search">
+                    <Icon name=IconName::Search size=14/>
+                    <span class="sr-only">"按标题搜索"</span>
+                    <input
+                        type="search"
+                        placeholder="按标题搜索"
+                        prop:value=move || search_input.get()
+                        on:input=move |e| {
+                            search_input.set(event_target_value(&e));
                             schedule_search();
-                        },
-                        onkeydown: move |e| {
-                            if e.key() == Key::Enter && !e.data().is_composing() {
-                                search_seq += 1;
+                        }
+                        on:keydown=move |e: KeyboardEvent| {
+                            let key = e.key();
+                            if key == "Enter" && !e.is_composing() {
+                                search_seq.update(|s| *s += 1);
                                 submit_search();
-                            } else if e.key() == Key::Escape && !search_input().is_empty() {
+                            } else if key == "Escape"
+                                && search_input.with_untracked(|s| !s.is_empty())
+                            {
                                 e.prevent_default();
                                 search_input.set(String::new());
-                                search_seq += 1;
+                                search_seq.update(|s| *s += 1);
                                 submit_search();
                             }
-                        },
-                    }
-                }
-                FormSelect {
-                    id: "admin-posts-tag",
-                    value: tag(),
-                    options: tag_options,
-                    trigger_class: FORM_SELECT_COMPACT_CLASS,
-                    aria_label: "按标签筛选",
-                    onchange: move |value: String| {
+                        }
+                    />
+                </label>
+                <FormSelect
+                    id="admin-posts-tag"
+                    value=tag
+                    options=tag_options
+                    trigger_class=FORM_SELECT_COMPACT_CLASS
+                    aria_label="按标签筛选"
+                    onchange=move |value: String| {
                         tag.set(value);
                         reset_view();
-                    },
-                }
-            }
-        }
+                    }
+                />
+            </div>
+        </div>
 
-        if error().is_some() {
-            LoadError { title: "文章列表加载失败", on_retry: move |_| reload() }
-        } else if loading() && rows.is_empty() {
-            DelayedSkeleton { PostsTableSkeleton {} }
-        } else if rows.is_empty() {
-            div { class: "admin-panel",
-                if filtering {
-                    EmptyState {
-                        icon: IconName::SearchX,
-                        title: "没有符合条件的文章",
-                        description: "换个标题关键词，或清除标签筛选再试。",
-                        action: EmptyStateAction {
-                            label: "清除筛选".to_string(),
-                            onclick: Callback::new(move |_| {
-                                search_input.set(String::new());
-                                search_query.set(String::new());
-                                tag.set(String::new());
-                                reset_view();
-                            }),
-                        },
-                    }
-                } else if status() == "draft" {
-                    EmptyState { title: "没有草稿", description: "未发布的文章会出现在这里。" }
-                } else {
-                    EmptyState {
-                        title: "还没有文章",
-                        description: "写下第一篇，它会出现在这里。",
-                        action: EmptyStateAction {
-                            label: "写文章".to_string(),
-                            onclick: Callback::new(move |_| {
-                                navigator.push(Route::Write {});
-                            }),
-                        },
-                    }
-                }
+        {move || match list_state.get() {
+            ListState::Error => {
+                view! { <LoadError title="文章列表加载失败" on_retry=move |_: ()| reload()/> }
+                    .into_any()
             }
-        } else {
-            div { class: "admin-panel admin-table-wrap", "aria-busy": loading().then_some("true"),
-                table { class: "admin-table admin-posts-table",
-                    thead {
-                        tr {
-                            th { class: "admin-table-check",
-                                Checkbox {
-                                    checked: page_all,
-                                    label: "选择本页全部文章".to_string(),
-                                    onchange: {
-                                        let ids: Vec<i32> = rows.iter().map(|p| p.id).collect();
-                                        move |checked: bool| {
-                                            let mut set = selected.write();
-                                            for id in &ids {
-                                                if checked {
-                                                    set.insert(*id);
-                                                } else {
-                                                    set.remove(id);
-                                                }
+            ListState::Loading => {
+                view! {
+                    <DelayedSkeleton>
+                        <PostsTableSkeleton/>
+                    </DelayedSkeleton>
+                }
+                    .into_any()
+            }
+            ListState::Empty => {
+                view! {
+                    <div class="admin-panel">
+                        {move || match empty_kind.get() {
+                            EmptyKind::Filtered => {
+                                view! {
+                                    <EmptyState
+                                        icon=IconName::SearchX
+                                        title="没有符合条件的文章"
+                                        description="换个标题关键词，或清除标签筛选再试。"
+                                        action=EmptyStateAction::new(
+                                            "清除筛选",
+                                            move |_| {
+                                                search_input.set(String::new());
+                                                search_query.set(String::new());
+                                                tag.set(String::new());
+                                                reset_view();
+                                            },
+                                        )
+                                    />
+                                }
+                                    .into_any()
+                            }
+                            EmptyKind::Drafts => {
+                                view! {
+                                    <EmptyState
+                                        title="没有草稿"
+                                        description="未发布的文章会出现在这里。"
+                                    />
+                                }
+                                    .into_any()
+                            }
+                            EmptyKind::NoPosts => {
+                                view! {
+                                    <EmptyState
+                                        title="还没有文章"
+                                        description="写下第一篇，它会出现在这里。"
+                                        action=EmptyStateAction::new(
+                                            "写文章",
+                                            move |_| {
+                                                crate::navigation::push(&Route::Write.to_string());
+                                            },
+                                        )
+                                    />
+                                }
+                                    .into_any()
+                            }
+                        }}
+                    </div>
+                }
+                    .into_any()
+            }
+            ListState::Table => {
+                view! {
+                    <div
+                        class="admin-panel admin-table-wrap"
+                        aria-busy=move || loading.get().then_some("true")
+                    >
+                        <table class="admin-table admin-posts-table">
+                            <thead>
+                                <tr>
+                                    <th class="admin-table-check">
+                                        <Checkbox
+                                            checked=page_all
+                                            label="选择本页全部文章".to_string()
+                                            onchange=move |checked: bool| {
+                                                let ids: Vec<i32> = posts
+                                                    .with_untracked(|rows| rows.iter().map(|p| p.id).collect());
+                                                selected
+                                                    .update(|set| {
+                                                        for id in &ids {
+                                                            if checked {
+                                                                set.insert(*id);
+                                                            } else {
+                                                                set.remove(id);
+                                                            }
+                                                        }
+                                                    });
                                             }
-                                        }
-                                    },
+                                        />
+                                    </th>
+                                    <th>"标题"</th>
+                                    <th>"状态"</th>
+                                    <th class="admin-posts-tags">"标签"</th>
+                                    <th class="admin-table-num admin-posts-words">"字数"</th>
+                                    <th>"发布时间"</th>
+                                    <th class="admin-table-actions">
+                                        <span class="sr-only">"操作"</span>
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {move || {
+                                    posts
+                                        .get()
+                                        .into_iter()
+                                        .map(|post| {
+                                            let id = post.id;
+                                            view! {
+                                                <PostRow
+                                                    selected=Signal::derive(move || {
+                                                        selected.with(|s| s.contains(&id))
+                                                    })
+                                                    busy=Signal::derive(move || busy.with(|b| b.contains(&id)))
+                                                    on_select=on_row_select
+                                                    on_action=on_row_action
+                                                    post=post
+                                                />
+                                            }
+                                        })
+                                        .collect_view()
+                                }}
+                            </tbody>
+                        </table>
+                        <TablePager
+                            page=current_page
+                            total=total
+                            per_page=POSTS_PER_PAGE
+                            unit="篇"
+                            on_change=move |page: i32| {
+                                current_page.set(page);
+                                #[cfg(target_arch = "wasm32")]
+                                if let Some(scroller) = web_sys::window()
+                                    .and_then(|w| w.document())
+                                    .and_then(|d| d.query_selector("[data-vt-scroll]").ok().flatten())
+                                {
+                                    scroller.set_scroll_top(0);
                                 }
                             }
-                            th { "标题" }
-                            th { "状态" }
-                            th { class: "admin-posts-tags", "标签" }
-                            th { class: "admin-table-num admin-posts-words", "字数" }
-                            th { "发布时间" }
-                            th { class: "admin-table-actions", span { class: "sr-only", "操作" } }
-                        }
-                    }
-                    tbody {
-                        for post in rows.iter().cloned() {
-                            PostRow {
-                                key: "{post.id}",
-                                selected: selection.contains(&post.id),
-                                busy: busy().contains(&post.id),
-                                on_select: move |(id, checked): (i32, bool)| {
-                                    if checked {
-                                        selected.write().insert(id);
-                                    } else {
-                                        selected.write().remove(&id);
-                                    }
-                                },
-                                on_action: on_row_action,
-                                post,
-                            }
-                        }
-                    }
+                        />
+                    </div>
                 }
-                TablePager {
-                    page: current_page(),
-                    total: total(),
-                    per_page: POSTS_PER_PAGE,
-                    unit: "篇",
-                    on_change: move |page| {
-                        current_page.set(page);
-                        #[cfg(target_arch = "wasm32")]
-                        if let Some(scroller) = web_sys::window()
-                            .and_then(|w| w.document())
-                            .and_then(|d| d.query_selector("[data-vt-scroll]").ok().flatten())
-                        {
-                            scroller.set_scroll_top(0);
-                        }
-                    },
-                }
+                    .into_any()
             }
-        }
+        }}
 
-        if !selection.is_empty() {
-            div { class: "batch-bar", role: "toolbar", aria_label: "批量操作",
-                span { class: "batch-bar-count", "已选 {selection.len()} 篇" }
-                button {
-                    class: button_class(ButtonVariant::Ghost, ButtonSize::Sm),
-                    r#type: "button",
-                    disabled: batch_busy(),
-                    onclick: move |_| run_batch(BatchPostAction::Unpublish),
+        <Show when=move || has_selection.get()>
+            <div class="batch-bar" role="toolbar" aria-label="批量操作">
+                <span class="batch-bar-count">
+                    {move || format!("已选 {} 篇", selection_count.get())}
+                </span>
+                <button
+                    class=button_class(ButtonVariant::Ghost, ButtonSize::Sm)
+                    type="button"
+                    disabled=move || batch_busy.get()
+                    on:click=move |_| run_batch(BatchPostAction::Unpublish)
+                >
                     "转为草稿"
-                }
-                button {
-                    class: "{button_class(ButtonVariant::Ghost, ButtonSize::Sm)} batch-bar-danger",
-                    r#type: "button",
-                    disabled: batch_busy(),
-                    onclick: move |_| run_batch(BatchPostAction::Trash),
+                </button>
+                <button
+                    class=format!(
+                        "{} batch-bar-danger",
+                        button_class(ButtonVariant::Ghost, ButtonSize::Sm),
+                    )
+                    type="button"
+                    disabled=move || batch_busy.get()
+                    on:click=move |_| run_batch(BatchPostAction::Trash)
+                >
                     "移到回收站"
-                }
-                span { class: "batch-bar-sep", aria_hidden: "true" }
-                IconButton {
-                    icon: IconName::X,
-                    label: "取消选择",
-                    size: ButtonSize::Sm,
-                    onclick: move |_| selected.write().clear(),
-                }
-            }
-        }
+                </button>
+                <span class="batch-bar-sep" aria-hidden="true"></span>
+                <IconButton
+                    icon=IconName::X
+                    label="取消选择"
+                    size=ButtonSize::Sm
+                    onclick=move |_| selected.update(|s| s.clear())
+                />
+            </div>
+        </Show>
     }
 }
 
@@ -586,11 +734,11 @@ fn PostsTable(on_changed: EventHandler<()>) -> Element {
 #[component]
 fn PostRow(
     post: PostListItem,
-    selected: bool,
-    busy: bool,
-    on_select: EventHandler<(i32, bool)>,
-    on_action: EventHandler<(PostListItem, &'static str)>,
-) -> Element {
+    #[prop(into)] selected: Signal<bool>,
+    #[prop(into)] busy: Signal<bool>,
+    #[prop(into)] on_select: Callback<(i32, bool)>,
+    #[prop(into)] on_action: Callback<(PostListItem, &'static str)>,
+) -> impl IntoView {
     let published = post.status == PostStatus::Published;
     let date = post
         .published_at
@@ -610,55 +758,65 @@ fn PostRow(
             .danger()
             .separated(),
     ];
+    let id = post.id;
     let menu_post = post.clone();
-    rsx! {
-        tr { "data-selected": selected.then_some("true"), "aria-busy": busy.then_some("true"),
-            td { class: "admin-table-check",
-                Checkbox {
-                    checked: selected,
-                    label: format!("选择《{}》", post.title),
-                    onchange: move |checked| on_select.call((post.id, checked)),
-                }
-            }
-            td { class: "admin-posts-title",
-                Link {
-                    to: Route::PostPreview { slug: post.slug.clone() },
-                    "data-vt-post-link": "{post.id}",
-                    "data-vt-post-id": "{post.id}",
-                    "data-vt-role": "title",
-                    "{post.title}"
-                }
-                span { class: "admin-posts-slug", "/{post.slug}" }
-            }
-            td { class: "admin-posts-status",
-                StatusDot { label: post.status.label(), tone: post.status.tone() }
-            }
-            td { class: "admin-posts-tags",
-                if tags.is_empty() {
-                    span { class: "admin-table-muted", "—" }
-                } else {
-                    "{tags}"
-                    if let Some(more) = more {
-                        span { class: "admin-table-muted", " {more}" }
-                    }
-                }
-            }
-            td { class: "admin-table-num admin-posts-words", "{post.word_count}" }
-            td { class: "admin-posts-date",
-                if let Some(date) = date {
-                    time { "{date}" }
-                } else {
-                    span { class: "admin-table-muted", "未发布" }
-                }
-            }
-            td { class: "admin-table-actions",
-                Menu {
-                    label: "更多操作",
-                    items,
-                    on_select: move |id: &'static str| on_action.call((menu_post.clone(), id)),
-                }
-            }
+    let checkbox_label = format!("选择《{}》", post.title);
+    let preview_href = Route::PostPreview {
+        slug: post.slug.clone(),
+    }
+    .to_string();
+    let tags_cell = if tags.is_empty() {
+        view! { <span class="admin-table-muted">"—"</span> }.into_any()
+    } else {
+        view! {
+            {tags}
+            {more.map(|more| view! { <span class="admin-table-muted">{format!(" {more}")}</span> })}
         }
+        .into_any()
+    };
+    let date_cell = match date {
+        Some(date) => view! { <time>{date}</time> }.into_any(),
+        None => view! { <span class="admin-table-muted">"未发布"</span> }.into_any(),
+    };
+    view! {
+        <tr
+            data-selected=move || selected.get().then_some("true")
+            aria-busy=move || busy.get().then_some("true")
+        >
+            <td class="admin-table-check">
+                <Checkbox
+                    checked=selected
+                    label=checkbox_label
+                    onchange=move |checked: bool| on_select.run((id, checked))
+                />
+            </td>
+            <td class="admin-posts-title">
+                <a
+                    href=preview_href
+                    data-vt-post-link=id.to_string()
+                    data-vt-post-id=id.to_string()
+                    data-vt-role="title"
+                >
+                    {post.title}
+                </a>
+                <span class="admin-posts-slug">{format!("/{}", post.slug)}</span>
+            </td>
+            <td class="admin-posts-status">
+                <StatusDot label=post.status.label() tone=post.status.tone()/>
+            </td>
+            <td class="admin-posts-tags">{tags_cell}</td>
+            <td class="admin-table-num admin-posts-words">{post.word_count}</td>
+            <td class="admin-posts-date">{date_cell}</td>
+            <td class="admin-table-actions">
+                <Menu
+                    label="更多操作"
+                    items=items
+                    on_select=move |action: &'static str| {
+                        on_action.run((menu_post.clone(), action))
+                    }
+                />
+            </td>
+        </tr>
     }
 }
 
@@ -668,7 +826,7 @@ mod tests {
 
     #[test]
     fn tag_summary_folds_extra_tags() {
-        let tags: Vec<String> = ["Rust", "架构", "Dioxus"]
+        let tags: Vec<String> = ["Rust", "架构", "Leptos"]
             .iter()
             .map(|s| s.to_string())
             .collect();

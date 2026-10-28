@@ -7,6 +7,7 @@
       "devDependencies": {
         "@biomejs/biome": "^2.5.15",
         "happy-dom": "^20.14.5",
+        "harfbuzzjs": "1.6.4",
         "katex": "^0.19.0",
         "playwright": "1.64.0",
         "typescript": "^7.0.2",
@@ -561,6 +562,8 @@
     "hachure-fill": ["hachure-fill@0.5.2", "", {}, "sha512-3GKBOn+m2LX9iq+JC1064cSFprJY4jL1jCXTcpnfER5HYE2l/4EfWSGzkPa/ZDBmYI0ZOEj5VHV/eKnPGkHuOg=="],
 
     "happy-dom": ["happy-dom@20.14.5", "", { "dependencies": { "@types/node": "26.1.1", "@types/whatwg-mimetype": "3.0.2", "@types/ws": "8.18.1", "buffer-image-size": "0.6.4", "entities": "7.0.1", "whatwg-mimetype": "3.0.0", "ws": "8.21.0" } }, "sha512-x/RzkpWO40bTjIoT30iQtt64FLLmH/iRcUCN2X//bLx7H3ifkdfPXyqsro/OYtqzIAhiLMMA7mmiOR9C3NOKjQ=="],
+
+    "harfbuzzjs": ["harfbuzzjs@1.6.4", "", {}, "sha512-T/PyfhVt1gGR2Tkf5KJUj1DQFkVBXHw552lS1iLEEDhV1Lukb3eq1pk2ov85kgbT2YUiZtJBTak9w+M7YgzUEQ=="],
 
     "highlight.js": ["highlight.js@11.11.1", "", {}, "sha512-Xwwo44whKBVCYoliBQwaPvtd/2tYFkRQtXDWj1nackaV2JPXx3L0+Jvd8/qCJ2p+ML0/XVkJ2q+Mr+UVdpJK5w=="],
 

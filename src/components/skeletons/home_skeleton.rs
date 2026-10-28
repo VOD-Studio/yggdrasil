@@ -1,7 +1,7 @@
 //! 首页骨架屏：与「书桌」布局逐块对齐，数据到达后不跳动。
 //! 最新一篇面板的右栏固定 6 行目录占位。
 
-use dioxus::prelude::*;
+use leptos::prelude::*;
 
 use crate::components::skeletons::atoms::SkeletonBox;
 
@@ -24,76 +24,87 @@ const ROW_WIDTHS: [&str; 5] = [
 ];
 
 #[component]
-pub fn HomeSkeleton(#[props(default = 1)] current_page: i32) -> Element {
+pub fn HomeSkeleton(#[prop(default = 1)] current_page: i32) -> impl IntoView {
     if current_page > 1 {
-        return rsx! {
-            div { class: "home home-paged", role: "status", aria_label: "正在加载文章",
-                header { class: "home-paged-header",
-                    SkeletonBox { class: "h-4 w-20" }
-                    SkeletonBox { class: "home-skeleton-title w-40" }
-                    SkeletonBox { class: "h-4 w-16" }
-                }
-                HomePostsSkeleton { current_page }
-            }
-        };
-    }
-    rsx! {
-        div { class: "home", role: "status", aria_label: "正在加载首页",
-            div { class: "home-hero",
-                SkeletonBox { class: "h-3 w-56 max-w-full" }
-                SkeletonBox { class: "home-skeleton-title mt-6 w-[22rem] max-w-full" }
-                SkeletonBox { class: "home-skeleton-title mt-3 w-[17rem] max-w-full" }
-                SkeletonBox { class: "h-3.5 mt-6 w-[28rem] max-w-full" }
-                SkeletonBox { class: "home-skeleton-composer mt-9" }
-            }
-            div { class: "home-section",
-                SkeletonBox { class: "h-3 w-16 mb-4" }
-                div { class: "home-latest",
-                    div { class: "home-latest-main",
-                        SkeletonBox { class: "h-3 w-40" }
-                        SkeletonBox { class: "h-7 mt-4 w-4/5" }
-                        SkeletonBox { class: "h-3 mt-4 w-full" }
-                        SkeletonBox { class: "h-3 mt-2.5 w-3/4" }
-                    }
-                    div { class: "home-latest-outline",
-                        SkeletonBox { class: "h-3 w-16 mb-3" }
-                        div { class: "flex flex-col gap-3",
-                            for (i, width) in OUTLINE_WIDTHS.iter().enumerate() {
-                                SkeletonBox { key: "{i}", class: "h-3", style: *width }
-                            }
-                        }
-                    }
-                }
-            }
-            HomePostsSkeleton { current_page }
+        return view! {
+            <div class="home home-paged" role="status" aria-label="正在加载文章">
+                <header class="home-paged-header">
+                    <SkeletonBox class="h-4 w-20"/>
+                    <SkeletonBox class="home-skeleton-title w-40"/>
+                    <SkeletonBox class="h-4 w-16"/>
+                </header>
+                <HomePostsSkeleton current_page=current_page/>
+            </div>
         }
+        .into_any();
     }
+    view! {
+        <div class="home" role="status" aria-label="正在加载首页">
+            <div class="home-hero">
+                <SkeletonBox class="h-3 w-56 max-w-full"/>
+                <SkeletonBox class="home-skeleton-title mt-6 w-[22rem] max-w-full"/>
+                <SkeletonBox class="home-skeleton-title mt-3 w-[17rem] max-w-full"/>
+                <SkeletonBox class="h-3.5 mt-6 w-[28rem] max-w-full"/>
+                <SkeletonBox class="home-skeleton-composer mt-9"/>
+            </div>
+            <div class="home-section">
+                <SkeletonBox class="h-3 w-16 mb-4"/>
+                <div class="home-latest">
+                    <div class="home-latest-main">
+                        <SkeletonBox class="h-3 w-40"/>
+                        <SkeletonBox class="h-7 mt-4 w-4/5"/>
+                        <SkeletonBox class="h-3 mt-4 w-full"/>
+                        <SkeletonBox class="h-3 mt-2.5 w-3/4"/>
+                    </div>
+                    <div class="home-latest-outline">
+                        <SkeletonBox class="h-3 w-16 mb-3"/>
+                        <div class="flex flex-col gap-3">
+                            {OUTLINE_WIDTHS
+                                .iter()
+                                .map(|width| view! { <SkeletonBox class="h-3" style=*width/> })
+                                .collect_view()}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <HomePostsSkeleton current_page=current_page/>
+        </div>
+    }
+    .into_any()
 }
 
 /// 文章索引占位：月份分隔与五行条目。
 #[component]
-pub fn HomePostsSkeleton(current_page: i32) -> Element {
-    rsx! {
-        div { class: "home-index", aria_hidden: "true",
-            if current_page == 1 {
-                div { class: "home-index-heading",
-                    SkeletonBox { class: "h-5 w-28" }
-                    SkeletonBox { class: "h-4 w-12" }
-                }
-            }
-            div { class: "home-month",
-                SkeletonBox { class: "home-month-label h-3 w-16" }
-                for (i, width) in ROW_WIDTHS.iter().enumerate() {
-                    div { key: "{i}", class: "home-row home-row-skeleton",
-                        SkeletonBox { class: "h-3 w-10" }
-                        div {
-                            SkeletonBox { class: "h-4", style: *width }
-                            SkeletonBox { class: "h-3 mt-2 w-[90%]" }
-                        }
-                        SkeletonBox { class: "home-row-meta h-3 w-14" }
+pub fn HomePostsSkeleton(current_page: i32) -> impl IntoView {
+    view! {
+        <div class="home-index" aria-hidden="true">
+            {(current_page == 1)
+                .then(|| {
+                    view! {
+                        <div class="home-index-heading">
+                            <SkeletonBox class="h-5 w-28"/>
+                            <SkeletonBox class="h-4 w-12"/>
+                        </div>
                     }
-                }
-            }
-        }
+                })}
+            <div class="home-month">
+                <SkeletonBox class="home-month-label h-3 w-16"/>
+                {ROW_WIDTHS
+                    .iter()
+                    .map(|width| {
+                        view! {
+                            <div class="home-row home-row-skeleton">
+                                <SkeletonBox class="h-3 w-10"/>
+                                <div>
+                                    <SkeletonBox class="h-4" style=*width/>
+                                    <SkeletonBox class="h-3 mt-2 w-[90%]"/>
+                                </div>
+                                <SkeletonBox class="home-row-meta h-3 w-14"/>
+                            </div>
+                        }
+                    })
+                    .collect_view()}
+            </div>
+        </div>
     }
 }

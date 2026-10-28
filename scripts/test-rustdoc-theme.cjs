@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// Read-only browser regression for the rustdoc site theme (RUSTDOC_SITE_REDESIGN_PLAN.md §9).
+// rustdoc 站点主题的只读浏览器回归，覆盖 make doc 注入的导航、主题与布局。
 // Prerequisites: run `make doc` first and serve the site (default http://localhost:8080).
 // VT_BASE=http://localhost:8080 RUSTDOC_QA_DIR=/tmp/yggdrasil-rustdoc-qa \
 //   PLAYWRIGHT_MODULE=/path/to/playwright CHROMIUM_PATH=/usr/bin/chromium bun scripts/test-rustdoc-theme.cjs

@@ -25,7 +25,8 @@ mod trash_section;
 mod upload_section;
 
 use crate::components::admin_layout::AdminPageHead;
-use dioxus::prelude::*;
+use leptos::prelude::*;
+use leptos_router::{lazy_route, LazyRoute};
 
 use backup_section::BackupSection;
 use cache_section::CacheSection;
@@ -186,41 +187,33 @@ fn scroll_to_section(section: SettingsSection) {
 }
 
 /// 渲染单个分区组件。全部分区常驻挂载，各自读取与提交，经保存条统一保存。
-fn render_section(section: SettingsSection) -> Element {
+fn render_section(section: SettingsSection) -> AnyView {
     match section {
-        SettingsSection::Site => rsx! {
-            SiteSection {}
-        },
-        SettingsSection::Security => rsx! {
-            SecuritySection {}
-        },
-        SettingsSection::Upload => rsx! {
-            UploadSection {}
-        },
-        SettingsSection::Cache => rsx! {
-            CacheSection {}
-        },
-        SettingsSection::Image => rsx! {
-            ImageSection {}
-        },
-        SettingsSection::AssetPurge => rsx! {
-            AssetPurgeSection {}
-        },
-        SettingsSection::Trash => rsx! {
-            TrashSection {}
-        },
-        SettingsSection::Backup => rsx! {
-            BackupSection {}
-        },
-        SettingsSection::Runner => rsx! {
-            RunnerSection {}
-        },
-        SettingsSection::RateLimit => rsx! {
-            RateLimitSection {}
-        },
-        SettingsSection::System => rsx! {
-            SystemSection {}
-        },
+        SettingsSection::Site => view! { <SiteSection/> }.into_any(),
+        SettingsSection::Security => view! { <SecuritySection/> }.into_any(),
+        SettingsSection::Upload => view! { <UploadSection/> }.into_any(),
+        SettingsSection::Cache => view! { <CacheSection/> }.into_any(),
+        SettingsSection::Image => view! { <ImageSection/> }.into_any(),
+        SettingsSection::AssetPurge => view! { <AssetPurgeSection/> }.into_any(),
+        SettingsSection::Trash => view! { <TrashSection/> }.into_any(),
+        SettingsSection::Backup => view! { <BackupSection/> }.into_any(),
+        SettingsSection::Runner => view! { <RunnerSection/> }.into_any(),
+        SettingsSection::RateLimit => view! { <RateLimitSection/> }.into_any(),
+        SettingsSection::System => view! { <SystemSection/> }.into_any(),
+    }
+}
+
+/// `/admin/settings` 的懒加载路由。
+pub struct SettingsRoute;
+
+#[lazy_route]
+impl LazyRoute for SettingsRoute {
+    fn data() -> Self {
+        Self
+    }
+
+    fn view(_this: Self) -> AnyView {
+        view! { <SiteSettingsPage/> }.into_any()
     }
 }
 
@@ -229,29 +222,30 @@ fn render_section(section: SettingsSection) -> Element {
 /// 点目录平滑滚动到分区，手动滚动时 scroll-spy 同步目录高亮。各分区的改动由保存条
 /// 统一提交，只提交有改动的分区；需要重启的分区在目录与卡片上标出。
 #[component]
-pub fn SiteSettingsPage() -> Element {
-    let bus = use_context_provider(SettingsBus::new);
+pub fn SiteSettingsPage() -> impl IntoView {
+    let bus = SettingsBus::new();
+    provide_context(bus);
     let toast = use_toast();
-    let mut active = use_signal(|| SettingsSection::Site);
+    let active = RwSignal::new(SettingsSection::Site);
     // scroll-spy 锁定：点击目录后的平滑滚动期间不让 spy 改写高亮，避免途经分区依次闪过。
     // u32 为单调世代号，防止上一次点击的超时回调误清本次的锁。
     #[cfg(target_arch = "wasm32")]
-    let mut spy_lock: Signal<Option<(SettingsSection, u32)>> = use_signal(|| None);
+    let spy_lock: RwSignal<Option<(SettingsSection, u32)>> = RwSignal::new(None);
     #[cfg(target_arch = "wasm32")]
-    let mut lock_gen: Signal<u32> = use_signal(|| 0);
+    let lock_gen: RwSignal<u32> = RwSignal::new(0);
     // 一次保存涉及的分区：全部提交结束后据此报告结果。
-    let mut submitted = use_signal(|| None::<Vec<SettingsSection>>);
+    let submitted = RwSignal::new(None::<Vec<SettingsSection>>);
 
-    use_effect(move || {
-        let saving = (bus.saving)();
+    Effect::new(move |_| {
+        let saving = bus.saving.get();
         if !saving.is_empty() {
             return;
         }
-        let Some(done) = submitted() else {
+        let Some(done) = submitted.get() else {
             return;
         };
         submitted.set(None);
-        if bus.failed.peek().is_empty() {
+        if bus.failed.get_untracked().is_empty() {
             let restart = done.iter().any(SettingsSection::needs_restart);
             toast.success(if restart {
                 "设置已保存，带「需重启」的部分在重启服务后生效"
@@ -261,112 +255,133 @@ pub fn SiteSettingsPage() -> Element {
         }
     });
 
-    let dirty = (bus.dirty)();
-    let saving = !(bus.saving)().is_empty();
-    let failed = (bus.failed)();
+    let nav_links = SettingsSection::all()
+        .into_iter()
+        .map(|section| {
+            view! {
+                <a
+                    href=format!("#{}", section.dom_id())
+                    aria-current=move || (active.get() == section).then_some("true")
+                    data-dirty=move || {
+                        bus.dirty.with(|list| list.contains(&section)).then_some("true")
+                    }
+                    on:click=move |e| {
+                        e.prevent_default();
+                        active.set(section);
+                        #[cfg(target_arch = "wasm32")]
+                        {
+                            let g = lock_gen.get_untracked().wrapping_add(1);
+                            lock_gen.set(g);
+                            spy_lock.set(Some((section, g)));
+                            scroll_to_section(section);
+                            leptos::task::spawn_local(async move {
+                                crate::utils::time::sleep_ms(1200).await;
+                                // 计时期间页面可能已卸载（信号已释放）：maybe_update 此时静默跳过，
+                                // 只有世代号仍匹配才清锁，未改动时不通知订阅者。
+                                spy_lock.maybe_update(|lock| {
+                                    let expired = matches!(lock, Some((_, gg)) if *gg == g);
+                                    if expired {
+                                        *lock = None;
+                                    }
+                                    expired
+                                });
+                            });
+                        }
+                    }
+                >
+                    <span>{section.label()}</span>
+                    {section
+                        .needs_restart()
+                        .then(|| view! { <span class="settings-restart-dot" title="修改后需重启"></span> })}
+                </a>
+            }
+        })
+        .collect_view();
 
-    rsx! {
-        div {
-            id: "settings-scroll",
-            class: "settings-page",
-            "data-vt-scroll": "admin-settings",
-            onscroll: move |_| {
+    let slots = SettingsSection::all()
+        .into_iter()
+        .map(|section| view! { <div class="settings-slot">{render_section(section)}</div> })
+        .collect_view();
+
+    let savebar = move || {
+        let dirty = bus.dirty.get();
+        let saving = !bus.saving.with(|list| list.is_empty());
+        let failed = bus.failed.get();
+        (!dirty.is_empty() || saving).then(|| {
+            let text = if saving {
+                "正在保存…".to_string()
+            } else if !failed.is_empty() {
+                format!("{} 个分区没有保存成功", failed.len())
+            } else {
+                format!("有未保存的更改 · {} 个分区", dirty.len())
+            };
+            let retry = !failed.is_empty();
+            view! {
+                <div class="settings-savebar" role="status">
+                    <span class="settings-savebar-text">
+                        <span class="settings-savebar-dot" aria-hidden="true"></span>
+                        {text}
+                    </span>
+                    <button
+                        class=button_class(ButtonVariant::Ghost, ButtonSize::Sm)
+                        type="button"
+                        disabled=saving
+                        on:click=move |_| bus.reset_all()
+                    >
+                        "放弃"
+                    </button>
+                    <button
+                        class=button_class(ButtonVariant::Primary, ButtonSize::Sm)
+                        type="button"
+                        disabled=saving
+                        on:click=move |_| {
+                            submitted.set(Some(bus.dirty.get_untracked()));
+                            bus.save_all();
+                        }
+                    >
+                        {if retry { "重试" } else { "保存设置" }}
+                    </button>
+                </div>
+            }
+        })
+    };
+
+    view! {
+        <div
+            id="settings-scroll"
+            class="settings-page"
+            data-vt-scroll="admin-settings"
+            on:scroll=move |_| {
                 #[cfg(target_arch = "wasm32")]
                 {
                     let Some(current) = compute_visible_section() else {
                         return;
                     };
-                    if let Some((target, _)) = spy_lock() {
+                    if let Some((target, _)) = spy_lock.get_untracked() {
                         if current == target {
                             spy_lock.set(None);
                         }
                         return;
                     }
-                    if *active.peek() != current {
+                    if active.get_untracked() != current {
                         active.set(current);
                     }
                 }
-            },
-            div { class: "settings-layout",
-                // data-app-anchor：让全局 initAnchorClick 放行，下方 a 的 onclick 才能执行。
-                nav {
-                    class: "settings-nav",
-                    aria_label: "设置分区",
-                    "data-app-anchor": "true",
-                    for section in SettingsSection::all() {
-                        a {
-                            key: "{section.as_str()}",
-                            href: "#{section.dom_id()}",
-                            aria_current: (active() == section).then_some("true"),
-                            "data-dirty": dirty.contains(&section).then_some("true"),
-                            onclick: move |e| {
-                                e.prevent_default();
-                                active.set(section);
-                                #[cfg(target_arch = "wasm32")]
-                                {
-                                    let g = lock_gen().wrapping_add(1);
-                                    lock_gen.set(g);
-                                    spy_lock.set(Some((section, g)));
-                                    scroll_to_section(section);
-                                    spawn(async move {
-                                        crate::utils::time::sleep_ms(1200).await;
-                                        if matches!(spy_lock(), Some((_, gg)) if gg == g) {
-                                            spy_lock.set(None);
-                                        }
-                                    });
-                                }
-                            },
-                            span { "{section.label()}" }
-                            if section.needs_restart() {
-                                span { class: "settings-restart-dot", title: "修改后需重启" }
-                            }
-                        }
-                    }
-                }
-                div { class: "settings-main",
-                    AdminPageHead { title: "设置",
-                        "大部分设置保存后立即生效；带 "
-                        span { class: "settings-restart-dot", aria_label: "需重启标记" }
-                        " 的分区需要重启服务。"
-                    }
-                    for section in SettingsSection::all() {
-                        div { key: "{section.as_str()}", class: "settings-slot",
-                            {render_section(section)}
-                        }
-                    }
-                    if !dirty.is_empty() || saving {
-                        div { class: "settings-savebar", role: "status",
-                            span { class: "settings-savebar-text",
-                                span { class: "settings-savebar-dot", aria_hidden: "true" }
-                                if saving {
-                                    "正在保存…"
-                                } else if !failed.is_empty() {
-                                    "{failed.len()} 个分区没有保存成功"
-                                } else {
-                                    "有未保存的更改 · {dirty.len()} 个分区"
-                                }
-                            }
-                            button {
-                                class: button_class(ButtonVariant::Ghost, ButtonSize::Sm),
-                                r#type: "button",
-                                disabled: saving,
-                                onclick: move |_| bus.reset_all(),
-                                "放弃"
-                            }
-                            button {
-                                class: button_class(ButtonVariant::Primary, ButtonSize::Sm),
-                                r#type: "button",
-                                disabled: saving,
-                                onclick: move |_| {
-                                    submitted.set(Some((bus.dirty)()));
-                                    bus.save_all();
-                                },
-                                if failed.is_empty() { "保存设置" } else { "重试" }
-                            }
-                        }
-                    }
-                }
             }
-        }
+        >
+            <div class="settings-layout">
+                // data-app-anchor：让全局 initAnchorClick 放行，下方 a 的 click 才能执行。
+                <nav class="settings-nav" aria-label="设置分区" data-app-anchor="true">
+                    {nav_links}
+                </nav>
+                <div class="settings-main">
+                    <AdminPageHead title="设置">
+                        "大部分设置保存后立即生效；带 "
+                        <span class="settings-restart-dot" aria-label="需重启标记"></span>
+                        " 的分区需要重启服务。"
+                    </AdminPageHead> {slots} {savebar}
+                </div>
+            </div>
+        </div>
     }
 }

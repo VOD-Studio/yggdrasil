@@ -2,27 +2,30 @@
 //!
 //! 问候与常用操作 → 四格数字（已发布、草稿、评论、标签）→ 左栏「每月发布篇数」柱图
 //! 与近期文章，右栏最新评论与站点信息。各区块分别加载，失败的区块原位显示「加载失败 +
-//! 重试」，不回退成 0。数据仅在 WASM 前端通过 server function 加载。样式见
-//! styles/pages/admin-dashboard.css。
+//! 重试」，不回退成 0。数据仅在 WASM 前端通过 server function 加载（Effect + 世代号，
+//! 服务端不请求）。样式见 styles/pages/admin-dashboard.css。
 
-use crate::components::admin_layout::AdminPageHead;
-use dioxus::prelude::*;
-use dioxus::router::components::Link;
+use std::future::Future;
+
+use leptos::prelude::*;
+use leptos::task::spawn_local;
+use leptos_router::{lazy_route, LazyRoute};
 
 use crate::api::admin_stats::AdminNavCounts;
 use crate::api::database::backup::BackupInfo;
+use crate::components::admin_layout::AdminPageHead;
 use crate::components::skeletons::atoms::SkeletonBox;
 use crate::components::ui::{
     button_class, ButtonSize, ButtonVariant, Icon, IconName, LoadError, StatusDot, UserAvatar,
 };
+use crate::context::UserContext;
 use crate::models::comment::{AdminComment, CommentStatus};
 use crate::models::post::{MonthCount, PostListItem, PostStats, Tag};
-use crate::router::Route;
+use crate::routes::Route;
 use crate::utils::time::{local_now, to_local};
 
 /// 区块的加载状态。
 #[derive(Clone, PartialEq)]
-#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 enum Load<T> {
     Loading,
     Ready(T),
@@ -35,6 +38,55 @@ impl<T: Clone> Load<T> {
             Load::Ready(value) => Some(value.clone()),
             _ => None,
         }
+    }
+}
+
+/// 一个独立加载的区块：状态信号 + 世代号（丢弃过期响应）。
+struct Section<T: Send + Sync + 'static> {
+    state: RwSignal<Load<T>>,
+    generation: RwSignal<u64>,
+}
+
+// 信号句柄本身是 Copy，不要求 `T: Clone`，所以不用 derive。
+impl<T: Send + Sync + 'static> Clone for Section<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T: Send + Sync + 'static> Copy for Section<T> {}
+
+impl<T: Send + Sync + 'static> Section<T> {
+    fn new() -> Self {
+        Self {
+            state: RwSignal::new(Load::Loading),
+            generation: RwSignal::new(0),
+        }
+    }
+
+    /// 只重载尚未就绪的区块；`fetch` 失败（`None`）时置为失败态。
+    fn refresh<Fut>(self, fetch: impl FnOnce() -> Fut)
+    where
+        Fut: Future<Output = Option<T>> + 'static,
+    {
+        if self.state.with_untracked(|s| matches!(s, Load::Ready(_))) {
+            return;
+        }
+        if !self.state.with_untracked(|s| matches!(s, Load::Loading)) {
+            self.state.set(Load::Loading);
+        }
+        let id = self.generation.get_untracked() + 1;
+        self.generation.set(id);
+        let future = fetch();
+        spawn_local(async move {
+            let next = match future.await {
+                Some(value) => Load::Ready(value),
+                None => Load::Failed,
+            };
+            if self.generation.try_get_untracked() == Some(id) {
+                let _ = self.state.try_set(next);
+            }
+        });
     }
 }
 
@@ -103,466 +155,577 @@ fn comment_preview(md: &str) -> String {
     }
 }
 
-#[component]
-#[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut, unused_variables))]
-pub fn Admin() -> Element {
-    let ctx: crate::context::UserContext = use_context();
-    let mut stats = use_signal(|| Load::<PostStats>::Loading);
-    let mut recent = use_signal(|| Load::<Vec<PostListItem>>::Loading);
-    let mut counts = use_signal(|| Load::<AdminNavCounts>::Loading);
-    let mut comments = use_signal(|| Load::<Vec<AdminComment>>::Loading);
-    let mut tags = use_signal(|| Load::<Vec<Tag>>::Loading);
-    let mut backups = use_signal(|| Load::<Vec<BackupInfo>>::Loading);
-    let mut reload = use_signal(|| 0_u32);
+/// 仪表盘路由（无 SSR 数据，各区块在客户端独立加载）。
+pub struct DashboardRoute;
 
-    use_effect(move || {
-        let _ = reload();
-        #[cfg(target_arch = "wasm32")]
-        {
-            if !matches!(*stats.peek(), Load::Ready(_)) {
-                stats.set(Load::Loading);
-                spawn(async move {
-                    stats.set(match crate::api::posts::get_post_stats().await {
-                        Ok(res) => Load::Ready(res.stats),
-                        Err(_) => Load::Failed,
-                    });
-                });
-            }
-            if !matches!(*recent.peek(), Load::Ready(_)) {
-                recent.set(Load::Loading);
-                spawn(async move {
-                    recent.set(
-                        match crate::api::posts::list_posts(1, 5, Default::default()).await {
-                            Ok(res) => Load::Ready(res.posts),
-                            Err(_) => Load::Failed,
-                        },
-                    );
-                });
-            }
-            if !matches!(*counts.peek(), Load::Ready(_)) {
-                counts.set(Load::Loading);
-                spawn(async move {
-                    counts.set(
-                        match crate::api::admin_stats::get_admin_nav_counts().await {
-                            Ok(res) => Load::Ready(res),
-                            Err(_) => Load::Failed,
-                        },
-                    );
-                });
-            }
-            if !matches!(*comments.peek(), Load::Ready(_)) {
-                comments.set(Load::Loading);
-                spawn(async move {
-                    comments.set(
-                        match crate::api::comments::get_all_comments(1, None).await {
-                            Ok(res) => Load::Ready(res.comments.into_iter().take(4).collect()),
-                            Err(_) => Load::Failed,
-                        },
-                    );
-                });
-            }
-            if !matches!(*tags.peek(), Load::Ready(_)) {
-                tags.set(Load::Loading);
-                spawn(async move {
-                    tags.set(match crate::api::posts::list_tags().await {
-                        Ok(res) => Load::Ready(res.tags),
-                        Err(_) => Load::Failed,
-                    });
-                });
-            }
-            if !matches!(*backups.peek(), Load::Ready(_)) {
-                backups.set(Load::Loading);
-                spawn(async move {
-                    backups.set(match crate::api::database::backup::list_backups().await {
-                        Ok(res) => Load::Ready(res),
-                        Err(_) => Load::Failed,
-                    });
-                });
-            }
-        }
+#[lazy_route]
+impl LazyRoute for DashboardRoute {
+    fn data() -> Self {
+        Self
+    }
+
+    fn view(_this: Self) -> AnyView {
+        view! { <Admin/> }.into_any()
+    }
+}
+
+#[component]
+fn Admin() -> impl IntoView {
+    let ctx = expect_context::<UserContext>();
+    let stats = Section::<PostStats>::new();
+    let recent = Section::<Vec<PostListItem>>::new();
+    let counts = Section::<AdminNavCounts>::new();
+    let comments = Section::<Vec<AdminComment>>::new();
+    let tags = Section::<Vec<Tag>>::new();
+    let backups = Section::<Vec<BackupInfo>>::new();
+    let reload = RwSignal::new(0_u32);
+
+    // 首次进入与点击重试时加载；只重载尚未就绪的区块，已就绪的保留。
+    Effect::new(move |_| {
+        reload.track();
+        stats.refresh(|| async {
+            crate::api::posts::get_post_stats()
+                .await
+                .ok()
+                .map(|res| res.stats)
+        });
+        recent.refresh(|| async {
+            crate::api::posts::list_posts(1, 5, Default::default())
+                .await
+                .ok()
+                .map(|res| res.posts)
+        });
+        counts.refresh(|| async { crate::api::admin_stats::get_admin_nav_counts().await.ok() });
+        comments.refresh(|| async {
+            crate::api::comments::get_all_comments(1, None)
+                .await
+                .ok()
+                .map(|res| res.comments.into_iter().take(4).collect())
+        });
+        tags.refresh(|| async {
+            crate::api::posts::list_tags()
+                .await
+                .ok()
+                .map(|res| res.tags)
+        });
+        backups.refresh(|| async { crate::api::database::backup::list_backups().await.ok() });
     });
-    // 只重载失败的区块；已就绪的保留。
-    let retry = move |_| reload += 1;
+    let retry = Callback::new(move |()| reload.update(|n| *n += 1));
 
     let now = local_now();
-    let name = (ctx.user)()
-        .map(|user| user.display_label().to_string())
-        .unwrap_or_default();
-    let stats_now = stats();
-    let summary = match &stats_now {
-        Load::Ready(s) => format!(
-            "{} 月 {} 日 {} · 近 30 天新增 {} 篇",
-            now.format("%-m"),
-            now.format("%-d"),
-            weekday_label(chrono::Datelike::weekday(&now)),
-            s.recent_30d
-        ),
-        _ => format!(
-            "{} 月 {} 日 {}",
-            now.format("%-m"),
-            now.format("%-d"),
-            weekday_label(chrono::Datelike::weekday(&now))
-        ),
+    let hour = chrono::Timelike::hour(&now);
+    let date_label = format!(
+        "{} 月 {} 日 {}",
+        now.format("%-m"),
+        now.format("%-d"),
+        weekday_label(chrono::Datelike::weekday(&now))
+    );
+    let name = Memo::new(move |_| {
+        ctx.user
+            .read()
+            .as_ref()
+            .map(|user| user.display_label().to_string())
+            .unwrap_or_default()
+    });
+    let title = Signal::derive(move || format!("{}，{}", greeting(hour), name.get()));
+    let summary = move || match stats.state.get() {
+        Load::Ready(s) => format!("{date_label} · 近 30 天新增 {} 篇", s.recent_30d),
+        _ => date_label.clone(),
     };
 
-    rsx! {
-        div { class: "admin-dash",
-            AdminPageHead {
-                title: "{greeting(chrono::Timelike::hour(&now))}，{name}",
-                actions: rsx! {
-                    Link { class: button_class(ButtonVariant::Primary, ButtonSize::Md), to: Route::Write {},
-                        Icon { name: IconName::Plus, size: 16 }
-                        "写文章"
+    view! {
+        <div class="admin-dash">
+            <AdminPageHead
+                title=title
+                actions=|| {
+                    view! {
+                        <a
+                            class=button_class(ButtonVariant::Primary, ButtonSize::Md)
+                            href=Route::Write {}.to_string()
+                        >
+                            <Icon name=IconName::Plus size=16/>
+                            "写文章"
+                        </a>
+                        <a
+                            class=button_class(ButtonVariant::Secondary, ButtonSize::Md)
+                            href=Route::NewNote {}.to_string()
+                        >
+                            "快速记录"
+                        </a>
+                        <a
+                            class=button_class(ButtonVariant::Secondary, ButtonSize::Md)
+                            href=Route::Assets {}.to_string()
+                        >
+                            "上传素材"
+                        </a>
                     }
-                    Link { class: button_class(ButtonVariant::Secondary, ButtonSize::Md), to: Route::NewNote {}, "快速记录" }
-                    Link { class: button_class(ButtonVariant::Secondary, ButtonSize::Md), to: Route::Assets {}, "上传素材" }
-                },
-                "{summary}"
-            }
+                }
+            >
+                {summary}
+            </AdminPageHead>
 
-            StatTiles { stats: stats_now.clone(), counts: counts(), tags: tags(), on_retry: retry }
+            <StatTiles stats=stats.state counts=counts.state tags=tags.state on_retry=retry/>
 
-            div { class: "dash-cols",
-                div { class: "dash-col",
-                    section { class: "admin-panel dash-chart", aria_labelledby: "dash-chart-title",
-                        div { class: "dash-panel-head",
-                            h2 { id: "dash-chart-title", "每月发布篇数" }
-                            if let Load::Ready(s) = &stats_now {
-                                span {
-                                    "近 12 个月 · 共 {s.monthly_published.iter().map(|m| m.count).sum::<i64>()} 篇"
-                                }
+            <div class="dash-cols">
+                <div class="dash-col">
+                    <section class="admin-panel dash-chart" aria-labelledby="dash-chart-title">
+                        <div class="dash-panel-head">
+                            <h2 id="dash-chart-title">"每月发布篇数"</h2>
+                            {move || {
+                                stats
+                                    .state
+                                    .get()
+                                    .ready()
+                                    .map(|s| {
+                                        let total: i64 = s
+                                            .monthly_published
+                                            .iter()
+                                            .map(|m| m.count)
+                                            .sum();
+                                        view! { <span>{format!("近 12 个月 · 共 {total} 篇")}</span> }
+                                    })
+                            }}
+                        </div>
+                        {move || match stats.state.get() {
+                            Load::Ready(s) => {
+                                view! { <PublishRhythm months=s.monthly_published/> }.into_any()
                             }
-                        }
-                        match &stats_now {
-                            Load::Ready(s) => rsx! {
-                                PublishRhythm { months: s.monthly_published.clone() }
-                            },
-                            Load::Loading => rsx! {
-                                SkeletonBox { class: "dash-chart-skeleton" }
-                            },
-                            Load::Failed => rsx! {
-                                LoadError { title: "发布统计加载失败", on_retry: retry }
-                            },
-                        }
-                    }
-                    RecentPosts { posts: recent(), on_retry: retry }
+                            Load::Loading => {
+                                view! { <SkeletonBox class="dash-chart-skeleton"/> }.into_any()
+                            }
+                            Load::Failed => {
+                                view! { <LoadError title="发布统计加载失败" on_retry=retry/> }.into_any()
+                            }
+                        }}
+                    </section>
+                    <RecentPosts posts=recent.state on_retry=retry/>
+                </div>
+                <div class="dash-col">
+                    <LatestComments
+                        comments=comments.state
+                        counts=Signal::derive(move || counts.state.get().ready())
+                        on_retry=retry
+                    />
+                    <SiteInfo
+                        stats=Signal::derive(move || stats.state.get().ready())
+                        backups=backups.state
+                        on_retry=retry
+                    />
+                </div>
+            </div>
+        </div>
+    }
+}
+
+/// 一格数字：标签、数值（加载中为骨架）与可选附注；有目标路由时整格是链接。
+fn tile(
+    label: &'static str,
+    to: Option<String>,
+    value: Option<String>,
+    meta: Option<(String, bool)>,
+) -> AnyView {
+    let body = view! {
+        <span class="dash-tile-label">{label}</span>
+        {match value {
+            Some(value) => view! { <span class="dash-tile-value">{value}</span> }.into_any(),
+            None => view! { <SkeletonBox class="dash-tile-value-skeleton"/> }.into_any(),
+        }}
+        {meta
+            .map(|(meta, alert)| {
+                view! {
+                    <span class={
+                        if alert { "dash-tile-meta dash-tile-meta-alert" } else { "dash-tile-meta" }
+                    }>{meta}</span>
                 }
-                div { class: "dash-col",
-                    LatestComments { comments: comments(), counts: counts.read().ready(), on_retry: retry }
-                    SiteInfo { stats: stats_now.ready(), backups: backups(), on_retry: retry }
-                }
-            }
-        }
+            })}
+    };
+    match to {
+        Some(href) => view! { <a class="admin-panel dash-tile" href=href>{body}</a> }.into_any(),
+        None => view! { <div class="admin-panel dash-tile">{body}</div> }.into_any(),
     }
 }
 
 /// 四格数字。各格独立显示加载中与失败，失败时提供一次重试。
 #[component]
 fn StatTiles(
-    stats: Load<PostStats>,
-    counts: Load<AdminNavCounts>,
-    tags: Load<Vec<Tag>>,
-    on_retry: EventHandler<()>,
-) -> Element {
-    let failed = matches!(stats, Load::Failed)
-        || matches!(counts, Load::Failed)
-        || matches!(tags, Load::Failed);
-    let tile = |label: &'static str,
-                to: Option<Route>,
-                value: Option<String>,
-                meta: Option<(String, bool)>| {
-        let body = rsx! {
-            span { class: "dash-tile-label", "{label}" }
-            match value {
-                Some(value) => rsx! {
-                    span { class: "dash-tile-value", "{value}" }
-                },
-                None => rsx! {
-                    SkeletonBox { class: "dash-tile-value-skeleton" }
-                },
-            }
-            if let Some((meta, alert)) = meta {
-                span { class: if alert { "dash-tile-meta dash-tile-meta-alert" } else { "dash-tile-meta" }, "{meta}" }
-            }
-        };
-        match to {
-            Some(to) => rsx! {
-                Link { class: "admin-panel dash-tile", to, {body} }
-            },
-            None => rsx! {
-                div { class: "admin-panel dash-tile", {body} }
-            },
-        }
+    #[prop(into)] stats: Signal<Load<PostStats>>,
+    #[prop(into)] counts: Signal<Load<AdminNavCounts>>,
+    #[prop(into)] tags: Signal<Load<Vec<Tag>>>,
+    #[prop(into)] on_retry: Callback<()>,
+) -> impl IntoView {
+    let failed = move || {
+        stats.with(|s| matches!(s, Load::Failed))
+            || counts.with(|c| matches!(c, Load::Failed))
+            || tags.with(|t| matches!(t, Load::Failed))
     };
-    let s = stats.ready();
-    let c = counts.ready();
-    let t = tags.ready();
-    rsx! {
-        div { class: "dash-tiles",
-            {tile(
-                "已发布",
-                Some(Route::Posts {}),
-                s.as_ref().map(|s| s.published.to_string()),
-                s.as_ref().map(|s| (format!("近 30 天新增 {}", s.recent_30d), false)),
-            )}
-            {tile(
-                "草稿",
-                Some(Route::Posts {}),
-                s.as_ref().map(|s| s.drafts.to_string()),
-                s.as_ref().map(|s| {
-                    if s.drafts == 0 {
-                        ("没有未完成的草稿".to_string(), false)
-                    } else {
-                        ("等你写完".to_string(), false)
+    view! {
+        {move || {
+            let s = stats.get().ready();
+            let c = counts.get().ready();
+            let t = tags.get().ready();
+            view! {
+                <div class="dash-tiles">
+                    {tile(
+                        "已发布",
+                        Some(Route::Posts {}.to_string()),
+                        s.as_ref().map(|s| s.published.to_string()),
+                        s.as_ref().map(|s| (format!("近 30 天新增 {}", s.recent_30d), false)),
+                    )}
+                    {tile(
+                        "草稿",
+                        Some(Route::Posts {}.to_string()),
+                        s.as_ref().map(|s| s.drafts.to_string()),
+                        s.as_ref()
+                            .map(|s| {
+                                if s.drafts == 0 {
+                                    ("没有未完成的草稿".to_string(), false)
+                                } else {
+                                    ("等你写完".to_string(), false)
+                                }
+                            }),
+                    )}
+                    {tile(
+                        "评论",
+                        Some(Route::AdminComments {}.to_string()),
+                        c.map(|c| c.comments.to_string()),
+                        c.map(|c| (format!("待审 {}", c.pending_comments), c.pending_comments > 0)),
+                    )}
+                    {tile(
+                        "标签",
+                        None,
+                        t.as_ref().map(|t| t.iter().filter(|t| t.post_count > 0).count().to_string()),
+                        t.as_ref()
+                            .map(|t| {
+                                (
+                                    top_tag(t)
+                                        .map(|tag| format!("最常用：{}", tag.name))
+                                        .unwrap_or_else(|| "还没有标签".to_string()),
+                                    false,
+                                )
+                            }),
+                    )}
+                </div>
+            }
+        }}
+        {move || {
+            failed()
+                .then(|| {
+                    view! {
+                        <LoadError
+                            class="dash-tiles-error"
+                            title="部分统计加载失败"
+                            on_retry=on_retry
+                        />
                     }
-                }),
-            )}
-            {tile(
-                "评论",
-                Some(Route::AdminComments {}),
-                c.map(|c| c.comments.to_string()),
-                c.map(|c| (format!("待审 {}", c.pending_comments), c.pending_comments > 0)),
-            )}
-            {tile(
-                "标签",
-                None,
-                t.as_ref().map(|t| t.iter().filter(|t| t.post_count > 0).count().to_string()),
-                t.as_ref().map(|t| {
-                    (
-                        top_tag(t).map(|tag| format!("最常用：{}", tag.name)).unwrap_or_else(|| "还没有标签".to_string()),
-                        false,
-                    )
-                }),
-            )}
-        }
-        if failed {
-            LoadError { class: "dash-tiles-error", title: "部分统计加载失败", on_retry: move |_| on_retry.call(()) }
-        }
+                })
+        }}
     }
 }
 
 /// 每月发布篇数柱图：12 根柱，本月为陶土色；悬停或键盘聚焦显示提示，其余柱变淡。
 #[component]
-fn PublishRhythm(months: Vec<MonthCount>) -> Element {
-    let mut hover = use_signal(|| None::<usize>);
+fn PublishRhythm(months: Vec<MonthCount>) -> impl IntoView {
+    let hover = RwSignal::new(None::<usize>);
     let max = chart_max(&months);
     let last = months.len().saturating_sub(1);
-    let current = hover();
-    rsx! {
-        div { class: "dash-chart-plot", "data-hovering": current.is_some().then_some("true"),
-            div { class: "dash-chart-grid", aria_hidden: "true",
-                // 五条线（含底线）对应 max、¾、½、¼ 与 0。
-                for i in 0..=4 {
-                    span { key: "{i}", "data-value": "{max - max / 4 * i}" }
-                }
-            }
-            ol { class: "dash-chart-bars", aria_label: "近 12 个月每月发布篇数",
-                for (i , m) in months.iter().copied().enumerate() {
-                    {
-                        let pct = m.count as f64 / max as f64 * 100.0;
-                        let label = format!("{} 年 {} 月 · {} 篇", m.year, m.month, m.count);
-                        rsx! {
-                            li {
-                                key: "{m.year}-{m.month}",
-                                class: "dash-chart-col",
-                                tabindex: "0",
-                                aria_label: "{label}",
-                                "data-active": (current == Some(i)).then_some("true"),
-                                onmouseenter: move |_| hover.set(Some(i)),
-                                onmouseleave: move |_| hover.set(None),
-                                onfocus: move |_| hover.set(Some(i)),
-                                onblur: move |_| hover.set(None),
-                                span {
-                                    class: if m.count == 0 { "dash-chart-bar dash-chart-bar-zero" } else if i == last { "dash-chart-bar dash-chart-bar-current" } else { "dash-chart-bar" },
-                                    style: if m.count > 0 { format!("height: {pct:.1}%;") } else { String::new() },
+    let bars = months
+        .iter()
+        .copied()
+        .enumerate()
+        .map(|(i, m)| {
+            let pct = m.count as f64 / max as f64 * 100.0;
+            let label = format!("{} 年 {} 月 · {} 篇", m.year, m.month, m.count);
+            let bar_class = if m.count == 0 {
+                "dash-chart-bar dash-chart-bar-zero"
+            } else if i == last {
+                "dash-chart-bar dash-chart-bar-current"
+            } else {
+                "dash-chart-bar"
+            };
+            let bar_style = if m.count > 0 {
+                format!("height: {pct:.1}%;")
+            } else {
+                String::new()
+            };
+            let tip_label = label.clone();
+            view! {
+                <li
+                    class="dash-chart-col"
+                    tabindex="0"
+                    aria-label=label
+                    data-active=move || (hover.get() == Some(i)).then_some("true")
+                    on:mouseenter=move |_| hover.set(Some(i))
+                    on:mouseleave=move |_| hover.set(None)
+                    on:focus=move |_| hover.set(Some(i))
+                    on:blur=move |_| hover.set(None)
+                >
+                    <span class=bar_class style=bar_style></span>
+                    {move || {
+                        (hover.get() == Some(i))
+                            .then(|| {
+                                view! {
+                                    <span
+                                        class="dash-chart-tip"
+                                        role="tooltip"
+                                        style=format!("bottom: calc({pct:.1}% + 8px);")
+                                    >
+                                        {tip_label.clone()}
+                                    </span>
                                 }
-                                if current == Some(i) {
-                                    span {
-                                        class: "dash-chart-tip",
-                                        role: "tooltip",
-                                        style: "bottom: calc({pct:.1}% + 8px);",
-                                        "{label}"
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+                            })
+                    }}
+                </li>
             }
-            div { class: "dash-chart-labels", aria_hidden: "true",
-                for m in months.iter() {
-                    span { key: "{m.year}-{m.month}", "{m.month}月" }
-                }
-            }
-        }
+        })
+        .collect_view();
+    let grid = (0..=4)
+        .map(|i| view! { <span data-value=(max - max / 4 * i).to_string()></span> })
+        .collect_view();
+    let labels = months
+        .iter()
+        .map(|m| view! { <span>{format!("{}月", m.month)}</span> })
+        .collect_view();
+    view! {
+        <div
+            class="dash-chart-plot"
+            data-hovering=move || hover.get().is_some().then_some("true")
+        >
+            // 五条线（含底线）对应 max、¾、½、¼ 与 0。
+            <div class="dash-chart-grid" aria-hidden="true">
+                {grid}
+            </div>
+            <ol class="dash-chart-bars" aria-label="近 12 个月每月发布篇数">
+                {bars}
+            </ol>
+            <div class="dash-chart-labels" aria-hidden="true">
+                {labels}
+            </div>
+        </div>
     }
 }
 
 #[component]
-fn RecentPosts(posts: Load<Vec<PostListItem>>, on_retry: EventHandler<()>) -> Element {
-    rsx! {
-        section { class: "admin-panel dash-list", aria_labelledby: "dash-recent-title",
-            div { class: "dash-panel-head dash-panel-head-rule",
-                h2 { id: "dash-recent-title", "近期文章" }
-                Link { class: "dash-more", to: Route::Posts {}, "全部文章" Icon { name: IconName::ArrowRight, size: 13 } }
-            }
-            match posts {
-                Load::Loading => rsx! {
-                    div { class: "dash-list-body",
-                        for i in 0..5 {
-                            SkeletonBox { key: "{i}", class: "dash-row-skeleton" }
-                        }
+fn RecentPosts(
+    #[prop(into)] posts: Signal<Load<Vec<PostListItem>>>,
+    #[prop(into)] on_retry: Callback<()>,
+) -> impl IntoView {
+    view! {
+        <section class="admin-panel dash-list" aria-labelledby="dash-recent-title">
+            <div class="dash-panel-head dash-panel-head-rule">
+                <h2 id="dash-recent-title">"近期文章"</h2>
+                <a class="dash-more" href=Route::Posts {}.to_string()>
+                    "全部文章"
+                    <Icon name=IconName::ArrowRight size=13/>
+                </a>
+            </div>
+            {move || match posts.get() {
+                Load::Loading => {
+                    view! {
+                        <div class="dash-list-body">
+                            {(0..5)
+                                .map(|_| view! { <SkeletonBox class="dash-row-skeleton"/> })
+                                .collect_view()}
+                        </div>
                     }
-                },
-                Load::Failed => rsx! {
-                    LoadError { title: "近期文章加载失败", on_retry: move |_| on_retry.call(()) }
-                },
-                Load::Ready(posts) if posts.is_empty() => rsx! {
-                    p { class: "dash-empty",
-                        "还没有文章。"
-                        Link { to: Route::Write {}, "写第一篇" }
+                        .into_any()
+                }
+                Load::Failed => {
+                    view! { <LoadError title="近期文章加载失败" on_retry=on_retry/> }.into_any()
+                }
+                Load::Ready(posts) if posts.is_empty() => {
+                    view! {
+                        <p class="dash-empty">
+                            "还没有文章。" <a href=Route::Write {}.to_string()>"写第一篇"</a>
+                        </p>
                     }
-                },
-                Load::Ready(posts) => rsx! {
-                    ul { class: "dash-list-body",
-                        for post in posts {
-                            {
-                                let date = to_local(post.published_at.unwrap_or(post.created_at))
-                                    .format("%m-%d %H:%M")
-                                    .to_string();
-                                rsx! {
-                                    li { key: "{post.id}",
-                                        Link { class: "dash-post-row", to: Route::WriteEdit { id: post.id },
-                                            span { class: "dash-post-title", "{post.title}" }
-                                            StatusDot { label: post.status.label(), tone: post.status.tone() }
-                                            time { class: "dash-post-date", "{date}" }
-                                        }
+                        .into_any()
+                }
+                Load::Ready(posts) => {
+                    view! {
+                        <ul class="dash-list-body">
+                            {posts
+                                .into_iter()
+                                .map(|post| {
+                                    let date = to_local(post.published_at.unwrap_or(post.created_at))
+                                        .format("%m-%d %H:%M")
+                                        .to_string();
+                                    view! {
+                                        <li>
+                                            <a
+                                                class="dash-post-row"
+                                                href=Route::WriteEdit { id: post.id }.to_string()
+                                            >
+                                                <span class="dash-post-title">{post.title}</span>
+                                                <StatusDot
+                                                    label=post.status.label()
+                                                    tone=post.status.tone()
+                                                />
+                                                <time class="dash-post-date">{date}</time>
+                                            </a>
+                                        </li>
                                     }
-                                }
-                            }
-                        }
+                                })
+                                .collect_view()}
+                        </ul>
                     }
-                },
-            }
-        }
+                        .into_any()
+                }
+            }}
+        </section>
     }
 }
 
 #[component]
 fn LatestComments(
-    comments: Load<Vec<AdminComment>>,
-    counts: Option<AdminNavCounts>,
-    on_retry: EventHandler<()>,
-) -> Element {
-    let pending = counts.map(|c| c.pending_comments);
-    rsx! {
-        section { class: "admin-panel dash-list", aria_labelledby: "dash-comments-title",
-            div { class: "dash-panel-head dash-panel-head-rule",
-                h2 { id: "dash-comments-title", "最新评论" }
-                if let Some(pending) = pending {
-                    Link {
-                        class: if pending > 0 { "dash-chip dash-chip-alert" } else { "dash-chip" },
-                        to: Route::AdminComments {},
-                        "待审 {pending}"
-                    }
-                }
-            }
-            match comments {
-                Load::Loading => rsx! {
-                    div { class: "dash-list-body",
-                        for i in 0..4 {
-                            SkeletonBox { key: "{i}", class: "dash-comment-skeleton" }
-                        }
-                    }
-                },
-                Load::Failed => rsx! {
-                    LoadError { title: "最新评论加载失败", on_retry: move |_| on_retry.call(()) }
-                },
-                Load::Ready(list) if list.is_empty() => rsx! {
-                    p { class: "dash-empty", "还没有评论。" }
-                },
-                Load::Ready(list) => rsx! {
-                    ul { class: "dash-list-body",
-                        for comment in list {
-                            {
-                                let when = to_local(comment.created_at).format("%m-%d").to_string();
-                                let preview = comment_preview(&comment.content_md);
-                                let is_pending = comment.status == CommentStatus::Pending;
-                                rsx! {
-                                    li { key: "{comment.id}",
-                                        Link { class: "dash-comment-row", to: Route::AdminComments {},
-                                            UserAvatar {
-                                                name: comment.author_name.clone(),
-                                                avatar_url: Some(comment.avatar_url.clone()),
-                                                class: "w-[26px] h-[26px] rounded-full text-[11.5px] flex-shrink-0",
-                                            }
-                                            span { class: "dash-comment-body",
-                                                span { class: "dash-comment-meta",
-                                                    span { class: "dash-comment-author", "{comment.author_name}" }
-                                                    if is_pending {
-                                                        span { class: "dash-comment-pending", "待审" }
-                                                    }
-                                                    time { "{when}" }
-                                                }
-                                                span { class: "dash-comment-text", "{preview}" }
-                                                span { class: "dash-comment-post", "于《{comment.post_title}》" }
-                                            }
-                                        }
+    #[prop(into)] comments: Signal<Load<Vec<AdminComment>>>,
+    #[prop(into)] counts: Signal<Option<AdminNavCounts>>,
+    #[prop(into)] on_retry: Callback<()>,
+) -> impl IntoView {
+    view! {
+        <section class="admin-panel dash-list" aria-labelledby="dash-comments-title">
+            <div class="dash-panel-head dash-panel-head-rule">
+                <h2 id="dash-comments-title">"最新评论"</h2>
+                {move || {
+                    counts
+                        .get()
+                        .map(|c| c.pending_comments)
+                        .map(|pending| {
+                            view! {
+                                <a
+                                    class={
+                                        if pending > 0 { "dash-chip dash-chip-alert" } else { "dash-chip" }
                                     }
-                                }
+                                    href=Route::AdminComments {}.to_string()
+                                >
+                                    {format!("待审 {pending}")}
+                                </a>
                             }
-                        }
+                        })
+                }}
+            </div>
+            {move || match comments.get() {
+                Load::Loading => {
+                    view! {
+                        <div class="dash-list-body">
+                            {(0..4)
+                                .map(|_| view! { <SkeletonBox class="dash-comment-skeleton"/> })
+                                .collect_view()}
+                        </div>
                     }
-                },
-            }
-        }
+                        .into_any()
+                }
+                Load::Failed => {
+                    view! { <LoadError title="最新评论加载失败" on_retry=on_retry/> }.into_any()
+                }
+                Load::Ready(list) if list.is_empty() => {
+                    view! { <p class="dash-empty">"还没有评论。"</p> }.into_any()
+                }
+                Load::Ready(list) => {
+                    view! {
+                        <ul class="dash-list-body">
+                            {list
+                                .into_iter()
+                                .map(|comment| {
+                                    let when = to_local(comment.created_at).format("%m-%d").to_string();
+                                    let preview = comment_preview(&comment.content_md);
+                                    let is_pending = comment.status == CommentStatus::Pending;
+                                    view! {
+                                        <li>
+                                            <a
+                                                class="dash-comment-row"
+                                                href=Route::AdminComments {}.to_string()
+                                            >
+                                                <UserAvatar
+                                                    name=comment.author_name.clone()
+                                                    avatar_url=Some(comment.avatar_url.clone())
+                                                    class="w-[26px] h-[26px] rounded-full text-[11.5px] flex-shrink-0"
+                                                />
+                                                <span class="dash-comment-body">
+                                                    <span class="dash-comment-meta">
+                                                        <span class="dash-comment-author">
+                                                            {comment.author_name.clone()}
+                                                        </span>
+                                                        {is_pending
+                                                            .then(|| {
+                                                                view! { <span class="dash-comment-pending">"待审"</span> }
+                                                            })}
+                                                        <time>{when}</time>
+                                                    </span>
+                                                    <span class="dash-comment-text">{preview}</span>
+                                                    <span class="dash-comment-post">
+                                                        {format!("于《{}》", comment.post_title)}
+                                                    </span>
+                                                </span>
+                                            </a>
+                                        </li>
+                                    }
+                                })
+                                .collect_view()}
+                        </ul>
+                    }
+                        .into_any()
+                }
+            }}
+        </section>
     }
 }
 
 #[component]
 fn SiteInfo(
-    stats: Option<PostStats>,
-    backups: Load<Vec<BackupInfo>>,
-    on_retry: EventHandler<()>,
-) -> Element {
-    let last_backup = match &backups {
-        Load::Ready(list) => Some(
-            list.iter()
-                .filter_map(|b| b.created_at.clone())
-                .max()
-                .map(|iso| crate::utils::time::format_relative_time_iso(&iso))
-                .unwrap_or_else(|| "还没有备份".to_string()),
-        ),
-        _ => None,
-    };
-    rsx! {
-        section { class: "admin-panel dash-site", aria_labelledby: "dash-site-title",
-            h2 { id: "dash-site-title", "站点" }
-            dl {
-                dt { "版本" }
-                dd { class: "font-mono", "{env!(\"CARGO_PKG_VERSION\")}" }
-                dt { "回收站" }
-                dd {
-                    match stats {
-                        Some(s) => rsx! {
-                            Link { to: Route::PostsTrash {}, "{s.trash} 篇" }
-                        },
-                        None => rsx! { "—" },
-                    }
-                }
-                dt { "上次备份" }
-                dd {
-                    match (last_backup, &backups) {
-                        (Some(label), _) => rsx! { "{label}" },
-                        (None, Load::Failed) => rsx! {
-                            button { class: "dash-inline-retry", r#type: "button", onclick: move |_| on_retry.call(()), "读取失败，重试" }
-                        },
-                        _ => rsx! { "…" },
-                    }
-                }
-            }
-            Link { class: "dash-more", to: Route::System {}, "系统状态" Icon { name: IconName::ArrowRight, size: 13 } }
-        }
+    #[prop(into)] stats: Signal<Option<PostStats>>,
+    #[prop(into)] backups: Signal<Load<Vec<BackupInfo>>>,
+    #[prop(into)] on_retry: Callback<()>,
+) -> impl IntoView {
+    view! {
+        <section class="admin-panel dash-site" aria-labelledby="dash-site-title">
+            <h2 id="dash-site-title">"站点"</h2>
+            <dl>
+                <dt>"版本"</dt>
+                <dd class="font-mono">{env!("CARGO_PKG_VERSION")}</dd>
+                <dt>"回收站"</dt>
+                <dd>
+                    {move || match stats.get() {
+                        Some(s) => {
+                            view! {
+                                <a href=Route::PostsTrash {}.to_string()>{format!("{} 篇", s.trash)}</a>
+                            }
+                                .into_any()
+                        }
+                        None => "—".into_any(),
+                    }}
+                </dd>
+                <dt>"上次备份"</dt>
+                <dd>
+                    {move || match backups.get() {
+                        Load::Ready(list) => {
+                            list.iter()
+                                .filter_map(|b| b.created_at.clone())
+                                .max()
+                                .map(|iso| crate::utils::time::format_relative_time_iso(&iso))
+                                .unwrap_or_else(|| "还没有备份".to_string())
+                                .into_any()
+                        }
+                        Load::Failed => {
+                            view! {
+                                <button
+                                    class="dash-inline-retry"
+                                    type="button"
+                                    on:click=move |_| on_retry.run(())
+                                >
+                                    "读取失败，重试"
+                                </button>
+                            }
+                                .into_any()
+                        }
+                        Load::Loading => "…".into_any(),
+                    }}
+                </dd>
+            </dl>
+            <a class="dash-more" href=Route::System {}.to_string()>
+                "系统状态"
+                <Icon name=IconName::ArrowRight size=13/>
+            </a>
+        </section>
     }
 }
 
@@ -605,11 +768,11 @@ mod tests {
             },
             Tag {
                 id: 0,
-                name: "Dioxus".into(),
+                name: "Axum".into(),
                 post_count: 5,
             },
         ];
-        assert_eq!(top_tag(&tags).map(|t| t.name.as_str()), Some("Dioxus"));
+        assert_eq!(top_tag(&tags).map(|t| t.name.as_str()), Some("Axum"));
         assert!(top_tag(&[]).is_none());
     }
 

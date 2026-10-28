@@ -1,22 +1,20 @@
 #!/usr/bin/env bun
 /**
  * Native Chromium regression checks against a running, populated development site.
- * No content is written. Cover and slow-response cases use isolated browser fixtures.
+ * 不写入站点内容；慢响应和后台场景使用浏览器隔离的临时响应。
  *
  * PLAYWRIGHT_MODULE=/path/to/playwright CHROMIUM_PATH=/usr/bin/chromium \
  *   bun scripts/test-view-transitions.cjs
+ *   bun scripts/test-view-transitions.cjs share
  * Optional: VT_BASE, VT_SEARCH_QUERY, VT_TAG_PATH, VT_TOC_POST_PATH, VT_DEBUG=1.
  * Supply VT_ADMIN_USERNAME and VT_ADMIN_PASSWORD to include login/preview/logout.
  */
 const assert = require('node:assert/strict');
-const path = require('node:path');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const BASE = (process.env.VT_BASE || 'http://127.0.0.1:8080').replace(/\/$/, '');
 const SEARCH_QUERY = process.env.VT_SEARCH_QUERY || 'Rust';
 const TAG_PATH = process.env.VT_TAG_PATH || '/tags/Rust';
 const TOC_POST_PATH = process.env.VT_TOC_POST_PATH;
-const FIXTURE_IMAGE = '/images/samples/clay-circle.webp';
-const FIXTURE_FILE = path.join(__dirname, '../public', FIXTURE_IMAGE);
 
 async function launch(options = {}) {
   const browser = await chromium.launch({
@@ -144,7 +142,9 @@ async function titleRoundTrip(page, selector = 'a[data-vt-post-link]', returnVia
   const forward = await page.evaluate(i => __vtCalls[i], before.count);
   assert(forward?.oldNames.some(n => n.name === 'vt-post-title'), 'source title must be named');
   assert(forward?.newNames.some(n => n.name === 'vt-post-title'), 'destination title must be named');
-  assert(!forward.readyError, `forward transition rejected: ${forward.readyError}`);
+  // 首次进入文章页时分包冷加载会超出 300ms 预算：协调器跳过空过渡，由 chunk 场景覆盖。
+  const late = forward.readyError === 'AbortError' && forward.updateDoneAt - forward.started >= 250;
+  assert(late || !forward.readyError, `forward transition rejected: ${forward.readyError}`);
   if (returnViaHome) await page.getByRole('link', { name: '文章', exact: true }).click();
   else await page.goBack();
   await ready(page, new URL(before.url).pathname);
@@ -255,73 +255,38 @@ async function mobile() {
     assert.deepEqual(state.errors, []);
   } finally { await state.browser.close(); }
 }
-async function coverFixture(mode) {
+
+const SHARE_META = ['name="description"', 'property="og:description"', 'property="og:type"', 'property="og:url"', 'property="og:image"'];
+async function headMeta(page) {
+  return page.evaluate(selectors => Object.fromEntries(selectors.map(sel => [
+    sel, Array.from(document.head.querySelectorAll(`meta[${sel}]`), n => n.getAttribute('content')),
+  ])), SHARE_META);
+}
+async function shareMeta() {
   const state = await launch();
   const { page, browser } = state;
   try {
-    // 首页索引不显示封面；封面过渡在仍使用文章卡片的标签页上验证。
-    await page.route('**/api/get_posts_by_tag*', async route => {
-      const response = await route.fetch();
-      const data = await response.json();
-      if (data.posts?.[0]) data.posts[0].cover_image = FIXTURE_IMAGE;
-      await route.fulfill({ response, json: data });
-    });
-    await page.route('**/api/get_public_post_by_slug*', async route => {
-      const response = await route.fetch();
-      const data = await response.json();
-      assert(data.post, 'a published article is required for cover fixtures');
-      data.post.cover_image = FIXTURE_IMAGE;
-      data.post.content_html = '<p style="min-height:1000px">Browser-only lightweight article fixture.</p>';
-      data.post.toc_html = null;
-      await route.fulfill({ response, json: data });
-    });
-    await page.route(`**${FIXTURE_IMAGE}?**`, async route => {
-      if (new URL(route.request().url()).searchParams.get('w') === '1200') {
-        if (mode === 'failure') return route.fulfill({ status: 404, body: '' });
-        if (mode === 'slow') await new Promise(resolve => setTimeout(resolve, 800));
-      }
-      await route.fulfill({ status: 200, contentType: 'image/webp', path: FIXTURE_FILE });
-    });
     await fresh(state);
-    // Load the tag list on the client so the source cover comes from a client response,
-    // avoiding edits to SSR hydration data or Dioxus-managed DOM.
-    await push(page, TAG_PATH);
-    const cover = page.locator('[data-vt-role="cover"]').first();
-    // v1.0 的归档与标签行不再显示封面；列表页没有封面时跳过共享封面检查。
-    if ((await cover.count()) === 0) {
-      console.log(`SKIP cover-${mode}: ${TAG_PATH} 没有带封面的文章行`);
-      return;
-    }
-    await cover.scrollIntoViewIfNeeded();
-    await page.waitForFunction(() => {
-      const image = document.querySelector('[data-vt-role="cover"] .blur-img-full');
-      return image?.complete && image.naturalWidth > 0;
-    });
-    const id = await cover.getAttribute('data-vt-post-id');
-    const link = page.locator(`a[data-vt-post-link="${id}"]`);
+    const home = await headMeta(page);
+    for (const selector of SHARE_META) assert.equal(home[selector].length, 1, `home must have exactly one ${selector}`);
+    assert(home['property="og:image"'][0], 'site og:image must be non-empty');
+    const documentId = await page.evaluate(() => __vtDocument);
+    const link = page.locator('a[data-vt-post-link]').first();
     const href = await link.getAttribute('href');
-    const count = await page.evaluate(() => __vtCalls.length);
     await link.click();
     await ready(page, href);
-    const forward = await page.evaluate(index => __vtCalls[index], count);
-    assert(forward.oldNames.some(n => n.name === 'vt-post-cover'));
-    assert(forward.newNames.some(n => n.name === 'vt-post-title'));
-    assert.equal(forward.newNames.some(n => n.name === 'vt-post-cover'), mode === 'success');
-    assert(!forward.readyError, 'cover transition must not be rejected');
-    if (mode === 'slow') {
-      assert(forward.updateDoneAt - forward.started < 450, 'slow image exceeds wait budget');
-      await page.waitForTimeout(900);
-      assert.equal(await page.evaluate(() => __vtCalls.length), count + 1, 'late image must not replay');
-    }
-    if (mode === 'success') {
-      await page.goBack();
-      await ready(page, TAG_PATH);
-      const reverse = await page.evaluate(() => __vtCalls.at(-1));
-      assert(reverse.newNames.some(n => n.name === 'vt-post-cover'));
-      assert(!reverse.readyError);
-    }
+    await page.waitForSelector('[data-vt-detail]');
+    const postSpa = await headMeta(page);
+    await page.getByRole('link', { name: '文章', exact: true }).click();
+    await ready(page, '/');
+    assert.equal(await page.evaluate(() => __vtDocument), documentId, 'share metadata roundtrip must retain document');
+    assert.deepEqual(await headMeta(page), home, 'home head after SPA return must match direct load');
+    await page.goto(`${BASE}${href}`, { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('[data-vt-detail]');
+    for (const selector of SHARE_META) assert.equal(postSpa[selector].length, 1, `post must have exactly one ${selector}`);
+    assert.deepEqual(postSpa, await headMeta(page), 'post head after SPA navigation must match direct load');
     assert.deepEqual(state.errors, []);
-    console.log(`PASS cover-${mode}`);
+    console.log('PASS share-meta-spa', JSON.stringify({ href, ogUrl: postSpa['property="og:url"'] }));
   } finally { await browser.close(); }
 }
 
@@ -349,6 +314,226 @@ async function slowResponse() {
   } finally { await browser.close(); }
 }
 
+// 悬停即预取目标路由分包与页面数据：点击时命中缓存，赶上 300ms 等待窗口且不重复请求。
+async function prefetch() {
+  const state = await launch();
+  const { page, browser } = state;
+  try {
+    await fresh(state);
+    const apiRequests = [];
+    page.on('request', r => { if (r.url().includes('/api/get_public_post_by_slug')) apiRequests.push(r.url()); });
+    await page.route('**/api/get_public_post_by_slug*', async route => {
+      await new Promise(resolve => setTimeout(resolve, 800));
+      await route.continue();
+    });
+    const link = page.locator('a[data-vt-post-link]').first();
+    await link.evaluate(e => e.scrollIntoView({ block: 'center', behavior: 'instant' }));
+    const chunk = page.waitForResponse(r => /split___post_route_view_.*\.wasm/.test(r.url()));
+    const data = page.waitForResponse(r => r.url().includes('/api/get_public_post_by_slug'));
+    await link.hover();
+    await Promise.all([chunk, data]); // 悬停即拿到分包与数据
+    const before = await page.evaluate(() => __vtCalls.length);
+    await link.click();
+    await page.waitForFunction(i => __vtCalls[i]?.updateDoneAt, before);
+    const early = await page.evaluate(i => ({
+      trace: __vtCalls[i], detail: Boolean(document.querySelector('[data-vt-detail]')),
+    }), before);
+    assert(early.detail, '预取命中后应在等待窗口内渲染详情');
+    assert(early.trace.newNames.some(n => n.name === 'vt-post-title'), '共享标题过渡应保留');
+    assert.equal(apiRequests.length, 1, '点击后不应再次请求文章数据');
+    await page.waitForSelector('[data-vt-detail]');
+    assert.deepEqual(state.errors, []);
+    console.log('PASS hover-prefetch-chunk-and-data');
+  } finally { await browser.close(); }
+}
+
+// 目标页分包超出 300ms 预算：协调器跳过空过渡，旧正文淡出，新页进场且不重播。
+async function delayWasm(page, ms) {
+  await page.route('**/pkg/**', async route => {
+    if (!route.request().url().split('?')[0].endsWith('.wasm')) return route.continue();
+    await new Promise(resolve => setTimeout(resolve, ms));
+    await route.continue().catch(() => {});
+  });
+}
+async function chunkLate() {
+  const state = await launch();
+  const { page, browser } = state;
+  try {
+    await fresh(state);
+    await delayWasm(page, 1200);
+    await page.evaluate(() => {
+      const frames = window.__vtFrames = [];
+      const inView = el => {
+        if (el.getClientRects().length === 0) return false;
+        const rect = el.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.top < innerHeight;
+      };
+      const sample = () => {
+        const main = document.querySelector('main');
+        // 路由挂起时旧正文是 main 中非 .route-pending 的直接子元素，骨架槽位是 .route-pending。
+        const old = main ? Array.from(main.children).filter(el => !el.classList.contains('route-pending')) : [];
+        const slotEl = main?.querySelector(':scope > .route-pending');
+        const slotStyle = slotEl && getComputedStyle(slotEl);
+        frames.push({
+          pending: document.documentElement.classList.contains('is-route-pending'),
+          old: old.length ? Math.max(...old.map(el => Number(getComputedStyle(el).opacity))) : null,
+          events: old.length ? getComputedStyle(old[0]).pointerEvents : null,
+          slot: slotStyle ? { display: slotStyle.display !== 'none', opacity: Number(slotStyle.opacity) } : null,
+          skeletonInView: Array.from(document.querySelectorAll('main .skeleton')).some(inView),
+          detail: Boolean(document.querySelector('[data-vt-detail]')),
+        });
+        requestAnimationFrame(sample);
+      };
+      requestAnimationFrame(sample);
+    });
+    const calls = await page.evaluate(() => __vtCalls.length);
+    await page.locator('a[data-vt-post-link]').first().click();
+    await page.waitForSelector('[data-vt-detail]', { timeout: 30000 });
+    await settle(page);
+    const result = await page.evaluate(count => ({
+      calls: __vtCalls.slice(count), total: __vtCalls.length, frames: __vtFrames,
+      pending: document.documentElement.classList.contains('is-route-pending'),
+      opacity: Number(getComputedStyle(document.querySelector('main')).opacity),
+      slots: document.querySelectorAll('main > .route-pending').length,
+      bodyOpacity: Math.min(...Array.from(document.querySelectorAll('main > :not(.route-pending)'), el => Number(getComputedStyle(el).opacity))),
+      handled: Boolean(document.querySelector('[data-vt-enter-handled]')),
+    }), calls);
+    const [call] = result.calls;
+    assert.equal(result.calls.length, 1, 'late chunk must start exactly one transition');
+    assert(call.updateDoneAt - call.started < 450, 'wait budget exceeded');
+    assert.equal(call.readyError, 'AbortError', 'empty transition must be skipped');
+    const detail = result.frames.findIndex(frame => frame.detail);
+    assert(detail > 0, 'detail frame not sampled');
+    const shown = result.frames.findIndex(frame => frame.pending && frame.slot?.display && frame.slot.opacity === 1 && frame.skeletonInView);
+    assert(shown >= 0 && shown < detail, 'route skeleton must appear in the viewport before the new page');
+    assert(result.frames.slice(shown, detail).filter(frame => frame.pending && frame.slot?.display).every(frame => frame.old <= 0.05),
+      'old body must be gone while the route skeleton is shown');
+    assert(result.frames.some(frame => frame.pending && frame.events === 'none'), 'old body must stop taking pointer events while fading');
+    // 从骨架出现到新页面正文出现之间不能有空白帧：覆盖分包未到与分包已到、数据未到两段。
+    const blank = result.frames.slice(shown, detail).findIndex(frame => !frame.skeletonInView);
+    assert.equal(blank, -1, `blank frame ${blank} between the route skeleton and the page: ${JSON.stringify(result.frames.slice(shown + blank - 1, shown + blank + 2))}`);
+    assert.equal(result.pending, false, 'pending class must be cleared');
+    assert.equal(result.slots, 0, 'route skeleton slot must be removed after commit');
+    assert.equal(result.opacity, 1, 'new page must be visible');
+    assert.equal(result.bodyOpacity, 1, 'new page body must be visible');
+    assert.equal(result.total, calls + 1, 'entry must not replay');
+    assert.equal(result.handled, false, 'entry animation must stay enabled');
+    assert.deepEqual(state.errors, []);
+    console.log('PASS chunk-late-fade-out');
+  } finally { await browser.close(); }
+
+  await chunkLateScrolled();
+  await chunkInterrupted('back');
+  await chunkInterrupted('push');
+}
+
+// 旧页面已滚到页底时，路由骨架仍须在视口内（sticky 槽位贴在页头下方）。
+async function chunkLateScrolled() {
+  const state = await launch();
+  const { page, browser } = state;
+  try {
+    await fresh(state);
+    await delayWasm(page, 1200);
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    await page.evaluate(() => window.__routeTransitions.push('/changelog'));
+    await page.waitForFunction(() => document.documentElement.classList.contains('is-route-pending'));
+    await page.waitForTimeout(200);
+    const slot = await page.evaluate(() => {
+      const el = document.querySelector('main > .route-pending');
+      const inView = node => {
+        if (node.getClientRects().length === 0) return false;
+        const rect = node.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.top < innerHeight;
+      };
+      return {
+        top: el?.getBoundingClientRect().top,
+        innerHeight,
+        display: el && getComputedStyle(el).display,
+        skeletonInView: Array.from(document.querySelectorAll('main .skeleton')).some(inView),
+      };
+    });
+    assert.notEqual(slot.display, 'none', 'route skeleton slot must be displayed');
+    assert(slot.top >= 0 && slot.top <= slot.innerHeight / 2, `route skeleton slot must stay near the viewport top: ${slot.top}`);
+    assert(slot.skeletonInView, 'route skeleton must be visible after the old page was scrolled down');
+    await page.waitForFunction(() => document.querySelector('main h1')?.textContent === '更新日志', null, { timeout: 30000 });
+    await settle(page);
+    await page.waitForFunction(() => !document.documentElement.classList.contains('is-route-pending'));
+    assert.deepEqual(state.errors, []);
+    console.log('PASS chunk-late-skeleton-in-view');
+  } finally { await browser.close(); }
+}
+
+// 用请求屏障保证导航发生在目标视图分包尚未加载时，不能靠固定延迟碰运气。
+async function chunkInterrupted(kind) {
+  const state = await launch();
+  const { page, browser } = state;
+  let release;
+  const blocked = new Promise(resolve => { release = resolve; });
+  const chunk = /\/pkg\/split___changelog_route_view_.*\.wasm(?:\?|$)/;
+  try {
+    await fresh(state);
+    await page.waitForSelector('html[data-hydrated]');
+    const original = await page.evaluate(() => ({
+      document: __vtDocument,
+      heading: document.querySelector('main h1')?.textContent,
+    }));
+    await page.route(chunk, async route => {
+      await blocked;
+      await route.continue();
+    });
+    const requested = page.waitForRequest(chunk);
+    await page.evaluate(() => window.__routeTransitions.push('/changelog'));
+    await requested;
+    await page.waitForFunction(() => document.documentElement.classList.contains('is-route-pending'));
+    assert.equal(await page.locator('[data-vt-route]').getAttribute('data-vt-route'), '/', 'blocked destination must not replace the home DOM');
+
+    if (kind === 'back') await page.goBack();
+    else await page.locator('.site-nav a[href="/archives"]').click();
+    const recoveredRoute = kind === 'back' ? '/' : '/archives';
+    await ready(page, recoveredRoute);
+    await page.waitForFunction(() => !document.documentElement.classList.contains('is-route-pending'));
+    assert.equal(await page.locator('main > .route-pending').count(), 0, `${kind}: route skeleton slot must be removed after recovery`);
+
+    // 中断后才释放旧请求，迟到的分包不能覆盖当前页或破坏下一次导航。
+    const response = page.waitForResponse(chunk);
+    release();
+    const loaded = await response;
+    assert(loaded.ok(), 'blocked chunk must eventually load');
+    assert.equal(await loaded.finished(), null, 'blocked chunk response must complete');
+    await page.waitForLoadState('networkidle');
+    assert.deepEqual(state.errors, [], `${kind}: interrupted navigation must not panic`);
+    assert.deepEqual(state.consoleErrors, [], `${kind}: interrupted navigation must not log errors`);
+    assert.equal(await page.locator('[data-vt-route]').getAttribute('data-vt-route'), recoveredRoute, 'late chunk must not commit the cancelled route');
+    assert.equal(await page.locator('main h1').textContent(), kind === 'back' ? original.heading : '归档');
+    assert.equal(await page.locator('main').evaluate(main => Number(getComputedStyle(main).opacity)), 1, 'recovered page must be visible');
+
+    // 真实点击并检查正文与文档身份，防止 URL 改变或整页刷新掩盖 WASM 已失效。
+    if (kind === 'push') {
+      await page.locator('.site-nav a[href="/"]').click();
+      await ready(page, '/');
+      assert.equal(await page.locator('main h1').textContent(), original.heading);
+    }
+    await page.locator('.site-nav a[href="/archives"]').click();
+    await ready(page, '/archives');
+    await page.waitForFunction(() => !document.documentElement.classList.contains('is-route-pending'));
+    assert.equal(await page.locator('main h1').textContent(), '归档');
+    const end = await page.evaluate(() => ({
+      path: location.pathname,
+      route: window.__routeTransitions.currentRoute(),
+      opacity: Number(getComputedStyle(document.querySelector('main')).opacity),
+      document: __vtDocument,
+    }));
+    assert.deepEqual(end, { path: '/archives', route: '/archives', opacity: 1, document: original.document });
+    assert.deepEqual(state.errors, [], `${kind}: subsequent navigation must not panic`);
+    assert.deepEqual(state.consoleErrors, [], `${kind}: subsequent navigation must not log errors`);
+    console.log(`PASS chunk-late-${kind}-keeps-spa-alive`);
+  } finally {
+    release();
+    try { await page.unrouteAll({ behavior: 'wait' }); }
+    finally { await browser.close(); }
+  }
+}
+
 async function ensureLoggedOut(context, logoutEndpoint) {
   // Use the context cookie jar even when login succeeded but routing or rendering
   // failed. A DOM click cannot reliably clean up that case.
@@ -363,6 +548,43 @@ async function ensureLoggedOut(context, logoutEndpoint) {
   assert.equal((await response.json()).success, true, 'test-session cleanup was rejected');
   assert(!(await context.cookies(BASE)).some(cookie => cookie.name === 'session' && cookie.value),
     'test-session cleanup did not expire the session cookie');
+}
+
+// 后台子页面分包迟到：顶栏下方出现后台骨架，分包到达后撤销。
+async function adminChunkLate(page) {
+  // 登录后 URL 先于后台外壳提交：等外壳与仪表盘挂载，否则推送发生在登录页上。
+  await page.waitForSelector('.admin-shell main .admin-dash');
+  await settle(page);
+  const chunk = /\/pkg\/split___logs_route_view_.*\.wasm(?:\?|$)/;
+  await page.route(chunk, async route => {
+    await new Promise(resolve => setTimeout(resolve, 1200));
+    await route.continue().catch(() => {});
+  });
+  try {
+    await page.evaluate(() => window.__routeTransitions.push('/admin/logs'));
+    await page.waitForFunction(() => document.documentElement.classList.contains('is-route-pending'));
+    await page.waitForTimeout(200);
+    const slot = await page.evaluate(() => {
+      const el = document.querySelector('main > .admin-route-pending');
+      const inView = node => {
+        if (node.getClientRects().length === 0) return false;
+        const rect = node.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.top < innerHeight;
+      };
+      return {
+        display: el && getComputedStyle(el).display,
+        skeletonInView: Array.from(document.querySelectorAll('main .admin-route-pending .skeleton')).some(inView),
+      };
+    });
+    assert(slot.display && slot.display !== 'none', 'admin route skeleton slot must be displayed');
+    assert(slot.skeletonInView, 'admin route skeleton must be visible in the viewport');
+    await ready(page, '/admin/logs');
+    await page.waitForFunction(() => !document.documentElement.classList.contains('is-route-pending'));
+    assert.equal(await page.locator('main > .route-pending').count(), 0, 'admin route skeleton slot must be removed after commit');
+    console.log('PASS admin-chunk-late-skeleton');
+  } finally {
+    await page.unroute(chunk);
+  }
 }
 
 async function admin() {
@@ -401,24 +623,16 @@ async function admin() {
       }
       await route.fulfill({ response, json: data });
     });
-    // Read the generated path from the same WASM the browser loaded. Resolve it
-    // before login so a changed server-function hash cannot strand a test session.
-    let wasmResponse;
-    page.on('response', response => {
-      if (new URL(response.url()).pathname.endsWith('.wasm')) wasmResponse = response;
-    });
+    // server fn 地址不再带哈希后缀，退出登录端点固定。
+    logoutEndpoint = '/api/logout';
     await fresh(state);
-    assert(wasmResponse, 'could not inspect the served WASM before login');
-    // 开发构建的 WASM 很大，浏览器检查器会丢弃响应体；按同一地址重新请求。
-    const wasm = await context.request.get(wasmResponse.url());
-    logoutEndpoint = (await wasm.body()).toString('latin1').match(/\/api\/logout\d+/)?.[0];
-    assert(logoutEndpoint, 'could not resolve the served logout endpoint before login');
     await push(page, '/login');
     await page.locator('#login-username').fill(process.env.VT_ADMIN_USERNAME);
     await page.locator('#login-password').fill(process.env.VT_ADMIN_PASSWORD);
     await page.getByRole('button', { name: '登录', exact: true }).click();
     await page.waitForURL(/\/admin\/?$/);
     await settle(page);
+    await adminChunkLate(page);
     await push(page, '/admin/posts');
     await page.waitForSelector('a[data-vt-post-link]');
     const published = seed.find(post => post.status === 'Published');
@@ -429,7 +643,8 @@ async function admin() {
     await publishedLink.click();
     await ready(page, preview);
     await page.waitForSelector(`[data-vt-detail="${published.id}"]`);
-    await page.locator('a[data-vt-return]').filter({ hasText: '返回列表' }).click();
+    // 预览改版后没有「返回列表」链接：回列表走后退，恢复由历史条目完成。
+    await page.goBack();
     await ready(page, '/admin/posts');
     console.log('PASS published-admin-article-preview-return');
     paginationFixture = true;
@@ -455,7 +670,8 @@ async function admin() {
     await link.click();
     await ready(page, href);
     await page.waitForSelector('[data-vt-detail]');
-    await page.locator('a[data-vt-return]').filter({ hasText: '返回列表' }).click();
+    // 同上：改版后的预览页没有回列表链接，用后退触发列表状态恢复。
+    await page.goBack();
     await ready(page, '/admin/posts');
     await page.waitForSelector('a[data-vt-post-link]');
     const restored = await page.evaluate(() => JSON.parse(__routeTransitions.readState('admin-posts')));
@@ -483,13 +699,15 @@ async function admin() {
 module.exports = { launch, fresh, ensureLoggedOut };
 if (require.main === module) (async () => {
   const mode = process.argv[2] || 'all';
+  assert(['all', 'public', 'reduced', 'unsupported', 'mobile', 'share', 'slow', 'chunk', 'admin', 'prefetch'].includes(mode),
+    `未知场景：${mode}`);
   if (mode === 'all' || mode === 'public') await main();
   if (mode === 'all' || mode === 'reduced') await fallback({ name: 'reduced-motion', reducedMotion: 'reduce' });
   if (mode === 'all' || mode === 'unsupported') await fallback({ name: 'unsupported-browser', unsupported: true });
   if (mode === 'all' || mode === 'mobile') await mobile();
-  if (mode === 'all' || mode === 'cover') {
-    for (const outcome of ['success', 'failure', 'slow']) await coverFixture(outcome);
-  }
+  if (mode === 'all' || mode === 'share') await shareMeta();
   if (mode === 'all' || mode === 'slow') await slowResponse();
+  if (mode === 'all' || mode === 'chunk') await chunkLate();
   if (mode === 'all' || mode === 'admin') await admin();
+  if (mode === 'all' || mode === 'prefetch') await prefetch();
 })().catch(error => { console.error(error.message); process.exitCode = 1; });

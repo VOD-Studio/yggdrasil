@@ -15,7 +15,7 @@
 #   │   PostgreSQL = 全局 Docker 容器 global-postgres      │
 #   │     (global-databases_default 网络, 不由本 compose 管理) │
 #   │   IDE 编辑源码 ──compose watch sync──▶ /build        │
-#   │  浏览器 ◀── :8080 ────────── dx serve (:8080)       │
+#   │  浏览器 ◀── :8080 ────────── cargo leptos watch (:8080) │
 #   └─────────────────────────────────────────────────────┘
 #
 # 文件同步（2026 最佳实践, 替代 bind mount）：
@@ -47,7 +47,7 @@ services:
       dockerfile: Dockerfile.dev
       args:
         CN_MIRROR: "true"  # 本地开发在国内，启用镜像加速
-    # PID 1 信号/僵尸处理（make dev 作为入口, 否则 Ctrl+C 会残留 dx serve 子进程）
+    # PID 1 信号/僵尸处理（make dev 作为入口, 否则 Ctrl+C 会残留 cargo leptos 子进程）
     init: true
     networks:
       - default
@@ -74,6 +74,8 @@ services:
       - ./uploads:/build/uploads
     ports:
       - "8080:8080"
+      # cargo-leptos 热重载 websocket
+      - "3001:3001"
     env_file:
       - .env
     environment:
@@ -85,7 +87,7 @@ services:
       APP_BASE_URL: http://localhost:8080
       # Code runner（socket 已挂载）
       DOCKER_SOCKET_PATH: /var/run/docker.sock
-    # compose watch：源码增量 sync 进容器（dx serve inotify 热重载原生生效），
+    # compose watch：源码增量 sync 进容器（cargo leptos watch inotify 热重载原生生效），
     # 依赖/构建文件变化自动 rebuild 镜像。ignore 排除生成物与缓存。
     develop:
       watch:
@@ -111,11 +113,7 @@ services:
         - path: ./mk
           target: /build/mk
           action: sync
-        - path: ./Dioxus.toml
-          target: /build/Dioxus.toml
-          action: sync
-        # .cargo/config.toml: SERVER_FN_OVERRIDE_KEY + wasm cfg workaround,
-        # 容器内 dx 编译必需
+        # .cargo/config.toml: wasm getrandom cfg workaround，容器内 wasm 编译必需
         - path: ./.cargo
           target: /build/.cargo
           action: sync

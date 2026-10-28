@@ -14,15 +14,11 @@
 //! 下游消费者（CodeMirror、SVG 图标判定）应读 `ResolvedTheme`（实际生效明暗），
 //! 而非 `Theme`（用户意图），这样 System 模式下系统偏好变化能自动传播。
 
+use leptos::prelude::*;
+
 use crate::components::ui::{
     IconName, SegmentedControl, SegmentedItem, SegmentedKind, SegmentedSize,
 };
-use dioxus::prelude::*;
-// InteractionLocation 提供 client_coordinates(),用于读取鼠标点击的视口坐标。
-// 该 trait 不在 dioxus::prelude(后者只 re-export events::*),需单独从 dioxus::html 引入。
-// 仅 WASM 前端用到(ThemeToggle 的圆形展开动画取点击坐标),服务端构建剥离。
-#[cfg(target_arch = "wasm32")]
-use dioxus::html::InteractionLocation;
 
 /// localStorage 中存储主题值的键名。
 #[cfg(any(target_arch = "wasm32", test))]
@@ -107,10 +103,32 @@ fn detect_initial_theme() -> Theme {
     Theme::System
 }
 
-/// 提供主题上下文的 Hook。
+/// 调用 `window[name](...args)`；全局函数不存在时静默跳过。
+#[cfg(target_arch = "wasm32")]
+fn call_window_fn(name: &str, args: &[wasm_bindgen::JsValue]) {
+    use wasm_bindgen::JsCast;
+
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    let Ok(fn_val) = js_sys::Reflect::get(&window, &name.into()) else {
+        return;
+    };
+    if fn_val.is_undefined() || fn_val.is_null() {
+        return;
+    }
+    let fn_obj = fn_val.unchecked_into::<js_sys::Function>();
+    let array = js_sys::Array::new();
+    for arg in args {
+        array.push(arg);
+    }
+    let _ = fn_obj.apply(&window, &array);
+}
+
+/// 提供主题上下文（对应 Dioxus 版 `use_theme_provider`），在 `App` 根部调用一次。
 ///
 /// 同时提供两个上下文：
-/// - `Signal<Theme>`：用户选择的主题意图（Light/Dark/System）。
+/// - `RwSignal<Theme>`：用户选择的主题意图（Light/Dark/System）。
 /// - `Memo<ResolvedTheme>`：实际生效明暗（System 模式下会随系统偏好变化）。
 ///
 /// 持久化策略：`Light`/`Dark` 写入 localStorage；`System` **移除** localStorage，
@@ -123,32 +141,28 @@ fn detect_initial_theme() -> Theme {
 /// `<html>` 的 `dark` class 不在此处管理。WASM 端由 `ThemeToggle` 的 `on_change`
 /// 通过 `yggdrasil-core.js` 的圆形展开动画在 View Transition 回调里同步 toggle。
 /// 初始 class 由 `ThemePreload` 首屏脚本设置,避免闪烁。
-pub fn use_theme_provider() -> Signal<Theme> {
-    // hydration 不会修补首轮 VDOM 与 SSR 的差异，必须使用一致的初始模式。
-    #[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut))]
-    let mut theme = use_signal(|| Theme::System);
-    // system_dark 仅在 wasm32 监听闭包里 .set()；非 wasm 构建剥离该闭包，
-    // 此处统一标注 mut 以满足 wasm32 的借用检查（非 wasm 端会触发 unused_mut，
-    // 由下方 cfg_attr 抑制）。
-    #[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut))]
-    let mut system_dark = use_signal(read_system_dark);
+pub fn provide_theme() -> RwSignal<Theme> {
+    // hydration 必须与 SSR 输出一致，初始模式统一为 System。
+    let theme = RwSignal::new(Theme::System);
+    let system_dark = RwSignal::new(read_system_dark());
     // resolved 是 theme 与 system_dark 的派生态：任一变化都自动重算。
-    let resolved = use_memo(move || theme().resolve(system_dark()));
+    let resolved = Memo::new(move |_| theme.get().resolve(system_dark.get()));
 
     #[cfg(target_arch = "wasm32")]
     {
-        let mut initialized = use_signal(|| false);
-        use_effect(move || {
+        let initialized = RwSignal::new(false);
+        // Effect 只在浏览器 hydration 之后运行：恢复 localStorage 中的选择。
+        Effect::new(move |_| {
             theme.set(detect_initial_theme());
             initialized.set(true);
         });
 
         // 恢复选择后才允许持久化，避免初始 System 清掉已保存的 Light/Dark。
-        use_effect(move || {
-            if !initialized() {
+        Effect::new(move |_| {
+            if !initialized.get() {
                 return;
             }
-            let current = theme();
+            let current = theme.get();
             let mode = match current {
                 Theme::Light => "light",
                 Theme::Dark => "dark",
@@ -171,101 +185,84 @@ pub fn use_theme_provider() -> Signal<Theme> {
 
     // WASM 端：System 模式下系统颜色偏好变化时，把新明暗同步到 <html> 的 dark class。
     //
-    // 这是原始实现的关键缺口：系统偏好变化时 system_dark signal 与 resolved memo 都
-    // 会更新，下游（CodeMirror 等）能跟随，但 <html> 的 dark class 原本只有「首屏预
-    // 加载脚本」与「手动点击 ThemeToggle」两个写入点，自动场景下无人同步，页面配色
-    // 纹丝不动。
-    //
     // 仅在 System 模式（theme == System）且 resolved 实际翻转时触发：Light/Dark 显式
     // 模式下 resolved 由 theme 决定，DOM 已由 ThemeToggle 的 on_change 全权处理，effect
     // 不介入，避免与手动点击的 VT 动画重复触发。
     //
     // 采用无动画的瞬切（__applyResolvedTheme，设置语义）而非 VT 圆形展开：系统偏好
-    // 变化是后台事件，实测 View Transitions 在此上下文下动画不显示（VT 流程虽正常
-    // 完成、CSS 也正确挂上 tt-expand，但视觉上仅瞬切），故跟随系统走瞬切更可靠；
+    // 变化是后台事件，View Transitions 在此上下文下动画不显示，故跟随系统走瞬切；
     // 手动点击仍走 __startThemeTransition 保留圆形展开动画。
     //
     // 首次挂载也对齐 DOM：系统偏好可能在 ThemePreload 执行后、hydration 前变化。
     #[cfg(target_arch = "wasm32")]
     {
-        let mut prev_resolved: Signal<Option<ResolvedTheme>> = use_signal(|| None);
-        use_effect(move || {
-            // 仅 System 模式需要自动同步；Light/Dark 由 ThemeToggle::onclick 负责。
-            if theme() != Theme::System {
+        // 上次同步的明暗只作比较，不需要订阅，用 StoredValue。
+        let prev_resolved = StoredValue::new(None::<ResolvedTheme>);
+        Effect::new(move |_| {
+            // 仅 System 模式需要自动同步；Light/Dark 由 ThemeToggle 负责。
+            if theme.get() != Theme::System {
                 return;
             }
-            let current = resolved();
-            // 未翻转（如 signal 因无关读取重算）直接跳过。
-            if prev_resolved() == Some(current) {
+            let current = resolved.get();
+            // 未翻转直接跳过。
+            if prev_resolved.get_value() == Some(current) {
                 return;
             }
-            prev_resolved.set(Some(current));
+            prev_resolved.set_value(Some(current));
             // resolved 翻转 → 瞬切同步 dark class（设置语义，非翻转）。
-            let Some(window) = web_sys::window() else {
-                return;
-            };
-            let key = "__applyResolvedTheme".into();
-            if let Ok(fn_val) = js_sys::Reflect::get(&window, &key) {
-                if !fn_val.is_undefined() && !fn_val.is_null() {
-                    use wasm_bindgen::JsCast;
-                    let fn_obj = fn_val.unchecked_into::<js_sys::Function>();
-                    let is_dark = current == ResolvedTheme::Dark;
-                    let _ = fn_obj.call1(&window, &is_dark.into());
-                }
-            }
+            let is_dark = current == ResolvedTheme::Dark;
+            call_window_fn("__applyResolvedTheme", &[is_dark.into()]);
         });
     }
 
-    // WASM 端监听系统颜色偏好变化（仅 System 模式有意义，但无论何种模式都更新
-    // system_dark signal；resolved memo 会决定是否真正改变 ResolvedTheme）。
-    // 注册 / 卸载清理由 use_event_listener 统一负责，target 在其内部 use_effect
-    // 首次运行时通过 acquire 闭包获取（此时 DOM 一定可用）。
+    // WASM 端监听系统颜色偏好变化（无论何种模式都更新 system_dark；resolved memo
+    // 决定是否真正改变 ResolvedTheme）。主题上下文挂在 App 根部、与页面同寿，
+    // 监听器无需卸载，闭包直接 forget 交给浏览器持有。
     #[cfg(target_arch = "wasm32")]
     {
-        use crate::hooks::event_listener::use_event_listener;
+        Effect::new(move |_| {
+            use wasm_bindgen::JsCast;
 
-        use_event_listener(
-            move || {
-                let window = web_sys::window()?;
-                let media = window
-                    .match_media("(prefers-color-scheme: dark)")
-                    .ok()
-                    .flatten()?;
-                // 补齐首轮渲染到监听器挂载之间发生的系统配色变化。
-                system_dark.set(media.matches());
-                Some(media)
-            },
-            "change",
-            move || {
-                // handler 需要重新读取当前 matches 值（MediaQueryList 的事件回调
-                // 不带参，只能自行重新查询）。
+            let Some(window) = web_sys::window() else {
+                return;
+            };
+            let Ok(Some(media)) = window.match_media("(prefers-color-scheme: dark)") else {
+                return;
+            };
+            // 补齐首轮渲染到监听器挂载之间发生的系统配色变化。
+            system_dark.set(media.matches());
+            let handler = wasm_bindgen::closure::Closure::<dyn FnMut()>::new(move || {
+                // MediaQueryList 的 change 回调这里不取事件参数，重新查询当前 matches。
                 if let Some(window) = web_sys::window() {
                     if let Ok(Some(media)) = window.match_media("(prefers-color-scheme: dark)") {
                         system_dark.set(media.matches());
                     }
                 }
-            },
-        );
+            });
+            let _ =
+                media.add_event_listener_with_callback("change", handler.as_ref().unchecked_ref());
+            handler.forget();
+        });
     }
 
-    use_context_provider(|| theme);
-    use_context_provider(|| resolved);
+    provide_context(theme);
+    provide_context(resolved);
     theme
 }
 
-/// 读取当前主题意图 Signal 的 Hook。
+/// 读取当前主题意图 Signal。
 ///
-/// 需在 `use_theme_provider` 之后的组件树中使用。
-pub fn use_theme() -> Signal<Theme> {
-    use_context::<Signal<Theme>>()
+/// 需在 `provide_theme` 之后的组件树中使用。
+pub fn use_theme() -> RwSignal<Theme> {
+    expect_context::<RwSignal<Theme>>()
 }
 
-/// 读取实际生效明暗主题的 Hook。
+/// 读取实际生效明暗主题。
 ///
-/// 下游消费者（CodeMirror、图标判定）应优先用此 Hook：System 模式下系统
+/// 下游消费者（CodeMirror、图标判定）应优先用此函数：System 模式下系统
 /// 偏好变化时，返回值会自动更新。
 pub fn use_resolved_theme() -> Memo<ResolvedTheme> {
-    use_context::<Memo<ResolvedTheme>>()
+    expect_context::<Memo<ResolvedTheme>>()
 }
 
 const THEME_PRELOAD_SCRIPT: &str = r#"
@@ -305,42 +302,55 @@ html.dark:not([data-theme-mode]) .theme-seg .segmented:not([data-ready]) > butto
 }
 "#;
 
-/// 首屏主题预加载脚本组件。
+/// 首屏主题预加载脚本组件（放在外壳 `<head>` 里，只由 SSR 输出）。
 ///
 /// 在页面渲染前读取 localStorage / 系统偏好，设置 `dark` class 和控制分段
 /// 控件选中态的 `data-theme-mode`，防止配色和选中项在 hydration 前后错位。
 #[component]
-pub fn ThemePreload() -> Element {
-    rsx! {
-        style { dangerous_inner_html: "{THEME_SEGMENT_STYLE}" }
-        script { dangerous_inner_html: "{THEME_PRELOAD_SCRIPT}" }
+pub fn ThemePreload() -> impl IntoView {
+    view! {
+        <style inner_html=THEME_SEGMENT_STYLE></style>
+        <script inner_html=THEME_PRELOAD_SCRIPT></script>
     }
 }
 
+/// 视口中心：键盘切换外观时，圆形扩散以此为圆心。
+fn viewport_center() -> (f64, f64) {
+    #[cfg(target_arch = "wasm32")]
+    {
+        web_sys::window()
+            .map(|w| {
+                let width = w.inner_width().ok().and_then(|v| v.as_f64()).unwrap_or(0.0);
+                let height = w
+                    .inner_height()
+                    .ok()
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0);
+                (width / 2.0, height / 2.0)
+            })
+            .unwrap_or((0.0, 0.0))
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    (0.0, 0.0)
+}
+
 /// 切换到指定外观：只有**实际明暗**翻转时才以 `origin`（视口坐标）为圆心做圆形扩散。
-///
-/// 主题分段控件与搜索面板的「切换外观」命令共用。
 #[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))]
-pub fn choose_theme(mut theme: Signal<Theme>, mode: Theme, origin: (f64, f64)) {
-    if *theme.peek() == mode {
+pub fn choose_theme(theme: RwSignal<Theme>, mode: Theme, origin: (f64, f64)) {
+    let current = theme.get_untracked();
+    if current == mode {
         return;
     }
     #[cfg(target_arch = "wasm32")]
     {
-        let prev_resolved = theme.peek().resolve(read_system_dark());
+        let prev_resolved = current.resolve(read_system_dark());
         let new_resolved = mode.resolve(read_system_dark());
         if prev_resolved != new_resolved {
-            use wasm_bindgen::JsCast;
             // 实际明暗翻转 → 圆形扩散 VT。JS 从 DOM 现状推导目标主题。
-            if let Some(window) = web_sys::window() {
-                let key = "__startThemeTransition".into();
-                if let Ok(fn_val) = js_sys::Reflect::get(&window, &key) {
-                    if !fn_val.is_undefined() && !fn_val.is_null() {
-                        let fn_obj = fn_val.unchecked_into::<js_sys::Function>();
-                        let _ = fn_obj.call2(&window, &origin.0.into(), &origin.1.into());
-                    }
-                }
-            }
+            call_window_fn(
+                "__startThemeTransition",
+                &[origin.0.into(), origin.1.into()],
+            );
         }
     }
     theme.set(mode);
@@ -354,43 +364,39 @@ pub fn choose_theme(mut theme: Signal<Theme>, mode: Theme, origin: (f64, f64)) {
 ///
 /// Props：
 /// - `icon_only`：只显示图标（页头固定窄位）；缺省由容器宽度决定是否显示文字
-// 坐标仅在 wasm32 记录，服务端构建剥离，故允许非 wasm 的 unused_variables。
-#[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))]
 #[component]
-pub fn ThemeToggle(#[props(default)] icon_only: bool) -> Element {
+pub fn ThemeToggle(#[prop(optional)] icon_only: bool) -> impl IntoView {
     let theme = use_theme();
     // 指针按下的位置：点击切换时作为圆形扩散的圆心；键盘切换没有，退回视口中心。
-    #[allow(unused_mut)]
-    let mut pointer = use_signal(|| None::<(f64, f64)>);
+    // 只在回调里读写，不参与渲染，用 StoredValue。
+    let pointer = StoredValue::new(None::<(f64, f64)>);
     let items = vec![
         SegmentedItem::new(Theme::Light, mode_label(Theme::Light)).icon(IconName::Sun),
         SegmentedItem::new(Theme::Dark, mode_label(Theme::Dark)).icon(IconName::Moon),
         SegmentedItem::new(Theme::System, mode_label(Theme::System)).icon(IconName::Monitor),
     ];
-    rsx! {
-        div {
-            class: "theme-seg",
-            onpointerdown: move |_e| {
-                #[cfg(target_arch = "wasm32")]
-                {
-                    let coords = _e.client_coordinates();
-                    pointer.set(Some((coords.x, coords.y)));
-                }
-            },
-            SegmentedControl {
-                items,
-                value: theme(),
-                kind: SegmentedKind::Radio,
-                size: SegmentedSize::Sm,
-                aria_label: "外观",
-                icon_only,
-                on_change: move |mode: Theme| {
-                    let origin = pointer.peek().unwrap_or_else(crate::components::palette::viewport_center);
-                    choose_theme(theme, mode, origin);
-                    pointer.set(None);
-                },
+    let on_change = move |mode: Theme| {
+        let origin = pointer.get_value().unwrap_or_else(viewport_center);
+        choose_theme(theme, mode, origin);
+        pointer.set_value(None);
+    };
+    view! {
+        <div
+            class="theme-seg"
+            on:pointerdown=move |ev| {
+                pointer.set_value(Some((f64::from(ev.client_x()), f64::from(ev.client_y()))));
             }
-        }
+        >
+            <SegmentedControl
+                items=items
+                value=theme
+                kind=SegmentedKind::Radio
+                size=SegmentedSize::Sm
+                aria_label="外观"
+                icon_only=icon_only
+                on_change=on_change
+            />
+        </div>
     }
 }
 
@@ -449,12 +455,6 @@ mod tests {
     }
 
     #[test]
-    fn theme_preload_script_sets_dark_class() {
-        // 预加载脚本必须包含给 documentElement 设置 dark class 的逻辑。
-        assert!(THEME_PRELOAD_SCRIPT.contains("classList.toggle('dark',"));
-    }
-
-    #[test]
     fn theme_preload_script_reads_local_storage() {
         // 预加载脚本必须读取 yggdrasil-theme 键，与 THEME_KEY 保持一致。
         assert!(THEME_PRELOAD_SCRIPT.contains("localStorage.getItem('yggdrasil-theme')"));
@@ -462,15 +462,10 @@ mod tests {
     }
 
     #[test]
-    fn theme_preload_script_falls_back_to_prefers_color_scheme() {
-        // 当 localStorage 中无主题时，脚本应回退到系统颜色偏好。
-        // System 模式移除 localStorage 后首屏即走此分支，保证零闪烁跟随系统。
+    fn theme_preload_script_sets_dark_class_with_fallback() {
+        // 设置 dark class；无保存值时回退系统偏好；禁用 localStorage 时不抛错。
+        assert!(THEME_PRELOAD_SCRIPT.contains("classList.toggle('dark',"));
         assert!(THEME_PRELOAD_SCRIPT.contains("prefers-color-scheme: dark"));
-    }
-
-    #[test]
-    fn theme_preload_script_swallows_errors() {
-        // 预加载脚本必须包裹在 try/catch 中，避免禁用 localStorage 时抛错。
         assert!(THEME_PRELOAD_SCRIPT.contains("try"));
         assert!(THEME_PRELOAD_SCRIPT.contains("catch"));
     }

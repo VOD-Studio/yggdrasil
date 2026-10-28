@@ -2,7 +2,7 @@
 
 ![CI](https://github.com/DefectingCat/yggdrasil/actions/workflows/ci.yml/badge.svg)
 
-基于 Dioxus 0.7 的全栈博客与内容管理系统。一套 Rust 代码，同时编译为浏览器端 WASM 与原生 Axum 服务端。
+基于 Leptos 0.8 的全栈博客与内容管理系统。一套 Rust 代码，同时编译为浏览器端 WASM（路由级分包）与原生 Axum 服务端。
 
 在线实例：<https://rua.plus>
 
@@ -20,11 +20,11 @@
 
 ## 技术栈
 
-Dioxus 0.7 · Axum · PostgreSQL · Tailwind CSS v4 · Bun workspace（Tiptap / CodeMirror / xterm.js / Mermaid）· bollard
+Leptos 0.8 · cargo-leptos · Axum · PostgreSQL · Tailwind CSS v4 · Bun workspace（Tiptap / CodeMirror / xterm.js / Mermaid）· bollard
 
 ## 快速开始
 
-准备 Rust（含 `llvm-tools`）、Dioxus CLI 0.7.10、Tailwind CSS v4 CLI 与 Bun，复制 `.env.example` 为 `.env`，然后：
+准备 Rust、cargo-leptos 0.3.11（`cargo install cargo-leptos --version 0.3.11 --locked`）、Tailwind CSS v4 standalone CLI 与 Bun，复制 `.env.example` 为 `.env`，然后：
 
 ```sh
 make dev     # 增量构建前端资源并启动开发服务
@@ -34,6 +34,12 @@ make build   # 发布构建
 ```
 
 直接运行 `make` 可列出全部目标；缺少本地工具时可用 `make docker-dev`。
+
+发布前先运行 `make wasm-toolchain` 安装固定的 WASM nightly 工具链；`make -j4 build` 可并行准备资源与文档，完成后再构建前端、服务端并装配校验。发布时按 `libs/bun.lock` 冻结安装前端依赖，依赖变更需先更新锁文件。
+
+CI 的 release-split 阶段通过 `bun scripts/check-build.cjs` 执行完整 `make build`：构建退出失败，或标准输出/错误输出出现 warning、WARN、error、`(!)` 等诊断时均阻断发布，即使工具返回成功也不放行；检查前会去除 ANSI 颜色码。可在本地运行同一命令，完整原始日志写入 `target/build.log`，CI 无论成功失败都会上传。
+
+`make clean` 会删除编译产物、生成的浏览器资源和前端依赖，保留受版本控制的静态资源与上传原文件。
 
 ## 生产部署
 

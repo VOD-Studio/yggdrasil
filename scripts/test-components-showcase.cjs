@@ -103,7 +103,7 @@ async function goto(page, route) {
   const ready = route === '/about/components' ? '.showcase-gallery' :
     route.startsWith('/about/components/') ? '.showcase-detail' : 'main';
   await page.locator(ready).first().waitFor({ timeout: 90000 });
-  await page.waitForFunction(() => window.__routeTransitions?.entryId(), null, { timeout: 90000 });
+  await page.waitForFunction(() => window.__routeTransitions?.entryId() && document.documentElement.dataset.hydrated === 'true', null, { timeout: 90000 });
   await page.waitForTimeout(80);
 }
 async function push(page, route) {

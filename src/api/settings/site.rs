@@ -1,8 +1,9 @@
-// 与 posts 模块一致：Dioxus `#[server]` 宏触发 deprecated/unit/too_many_arguments
+// 与 posts 模块一致：Leptos `#[server]` 宏触发 deprecated/unit/too_many_arguments
 // 提示，按项目惯例放行（限流/运行器等配置项天然参数多）。
 #![allow(clippy::unused_unit, deprecated, clippy::too_many_arguments)]
 
-use dioxus::prelude::*;
+use crate::api::error::ApiError;
+use leptos::prelude::*;
 
 #[cfg(feature = "server")]
 use crate::api::auth::get_current_admin_user;
@@ -20,8 +21,8 @@ use crate::models::settings::SiteSettings;
 ///
 /// **公开接口**（无需登录）：供前台页脚与首页 SSR 读取 GitHub 链接和首页标语。
 /// 先查 moka 缓存，未命中查 settings 表，缺失键回退空串（不展示图标 / 使用默认标语）。
-#[server(GetSiteSettings, "/api")]
-pub async fn get_site_settings() -> Result<SiteSettings, ServerFnError> {
+#[server(GetSiteSettings, endpoint = "get_site_settings", input = leptos::server_fn::codec::Json)]
+pub async fn get_site_settings() -> Result<SiteSettings, ApiError> {
     #[cfg(feature = "server")]
     {
         if let Some(cached) = crate::cache::get_site_settings().await {
@@ -78,8 +79,8 @@ impl SiteCard {
 /// 读取友链交换信息：站名、站点地址与简介。**公开接口**。
 ///
 /// 地址只取「站点配置 → 安全」里的 APP_BASE_URL，不信任请求 Host。
-#[server(GetSiteCard, "/api")]
-pub async fn get_site_card() -> Result<SiteCard, ServerFnError> {
+#[server(GetSiteCard, endpoint = "get_site_card", input = leptos::server_fn::codec::Json)]
+pub async fn get_site_card() -> Result<SiteCard, ApiError> {
     let settings = get_site_settings().await?;
     #[cfg(feature = "server")]
     let url = crate::api::settings::runtime_security_settings()
@@ -122,8 +123,8 @@ fn site_values(settings: &SiteSettings) -> [&str; 5] {
 ///
 /// 仅 admin。写入前规范化（GitHub 链接 trim / 截断 / 补 https://，标语合并空白并截断）；
 /// 写后失效 moka 站点配置缓存与全部公开页 SSR 缓存（页脚出现在每个前台页面，无法定向失效）。
-#[server(UpdateSiteSettings, "/api")]
-pub async fn update_site_settings(settings: SiteSettings) -> Result<SiteSettings, ServerFnError> {
+#[server(UpdateSiteSettings, endpoint = "update_site_settings", input = leptos::server_fn::codec::Json)]
+pub async fn update_site_settings(settings: SiteSettings) -> Result<SiteSettings, ApiError> {
     let _user = get_current_admin_user().await?;
 
     let settings = settings.normalized();

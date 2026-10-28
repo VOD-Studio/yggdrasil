@@ -593,6 +593,16 @@
     padding: 0;
   }
 
+  /* 路由挂起骨架贴在顶栏下方，与 .admin-main 上内边距一致；
+     撑满可视高度，让写作页等 flex 填充型骨架有高度可分。 */
+  .admin-route-pending {
+    --route-pending-top: calc(var(--admin-topbar-h) + 0.5rem);
+  }
+
+  .admin-route-pending > * {
+    min-height: calc(100dvh - var(--admin-topbar-h) - 0.5rem);
+  }
+
   /* ---- 页面通用：标题行与面板 ---- */
   .admin-page-head {
     display: flex;

@@ -57,14 +57,10 @@ pub fn parse_session_token(cookie_header: &str) -> Option<&str> {
 }
 
 #[cfg(feature = "server")]
-/// 从 Dioxus `FullstackContext` 中读取 Cookie 并返回会话 token。
+/// 从请求上下文的请求头中读取 Cookie 并返回会话 token。
 pub fn get_session_from_ctx() -> Option<String> {
-    use dioxus::fullstack::FullstackContext;
-
-    FullstackContext::current().and_then(|ctx| {
-        let parts = ctx.parts_mut();
-        parts
-            .headers
+    crate::request_ctx::request_headers().and_then(|headers| {
+        headers
             .get("cookie")
             .and_then(|h| h.to_str().ok())
             .and_then(parse_session_token)

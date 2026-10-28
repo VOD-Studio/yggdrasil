@@ -1,9 +1,10 @@
 //! 后台文章的批量操作：发布、转为草稿、移到回收站。
 //!
 //! 逐篇走文章写入业务（各自事务与缓存失效），返回成功与失败篇数；某一篇失败不影响其余。
-//! Dioxus server function，注册在 `/api` 路径下。
+//! Leptos server function，注册在 `/api` 路径下。
 
-use dioxus::prelude::*;
+use crate::api::error::ApiError;
+use leptos::prelude::*;
 
 #[cfg(feature = "server")]
 use super::helpers::get_current_admin_user;
@@ -14,18 +15,18 @@ use super::types::{BatchPostAction, BatchPostResult};
 const MAX_BATCH: usize = 200;
 
 /// 对多篇文章执行同一操作。需要 admin 权限。
-#[server(BatchPosts, "/api")]
+#[server(BatchPosts, endpoint = "batch_posts", input = leptos::server_fn::codec::Json)]
 pub async fn batch_posts(
     post_ids: Vec<i32>,
     action: BatchPostAction,
-) -> Result<BatchPostResult, ServerFnError> {
+) -> Result<BatchPostResult, ApiError> {
     #[cfg(feature = "server")]
     {
         use super::service::{act, PostAction};
 
         let _user = get_current_admin_user().await?;
         if post_ids.len() > MAX_BATCH {
-            return Err(ServerFnError::new(format!("一次最多操作 {MAX_BATCH} 篇")));
+            return Err(ApiError::BadRequest(format!("一次最多操作 {MAX_BATCH} 篇")));
         }
         let mut ids = post_ids;
         ids.sort_unstable();
@@ -58,13 +59,13 @@ mod tests {
     use crate::db::pool::get_conn;
     use crate::models::post::PostStatus;
 
-    fn web_context() -> dioxus::fullstack::FullstackContext {
+    fn web_context() -> http::request::Parts {
         let (parts, _) = http::Request::builder()
             .header("cookie", "session=post-batch-regression")
             .body(())
             .unwrap()
             .into_parts();
-        dioxus::fullstack::FullstackContext::new(parts)
+        parts
     }
 
     #[test]
@@ -108,7 +109,9 @@ mod tests {
             .await
             .unwrap();
         let list = |query: AdminPostQuery| async move {
-            web_context().scope(list_posts(1, 20, query)).await.unwrap()
+            crate::request_ctx::scope_with_request(web_context(), list_posts(1, 20, query))
+                .await
+                .unwrap()
         };
         let ids = |res: &crate::api::posts::PostListResponse| {
             res.posts.iter().map(|p| p.id).collect::<Vec<_>>()
@@ -139,10 +142,12 @@ mod tests {
             .await
             .unwrap()
             .get(0);
-        let res = web_context()
-            .scope(batch_posts(vec![1, 1, 2, 99], BatchPostAction::Unpublish))
-            .await
-            .unwrap();
+        let res = crate::request_ctx::scope_with_request(
+            web_context(),
+            batch_posts(vec![1, 1, 2, 99], BatchPostAction::Unpublish),
+        )
+        .await
+        .unwrap();
         assert_eq!(res, BatchPostResult { done: 2, failed: 1 });
         let row = client
             .query_one("SELECT status, published_at FROM posts WHERE id=1", &[])
@@ -154,10 +159,12 @@ mod tests {
             Some(first_published)
         );
         // 发布草稿：补上首次发布时间。
-        let res = web_context()
-            .scope(batch_posts(vec![3], BatchPostAction::Publish))
-            .await
-            .unwrap();
+        let res = crate::request_ctx::scope_with_request(
+            web_context(),
+            batch_posts(vec![3], BatchPostAction::Publish),
+        )
+        .await
+        .unwrap();
         assert_eq!(res, BatchPostResult { done: 1, failed: 0 });
         let row = client
             .query_one("SELECT status, published_at FROM posts WHERE id=3", &[])
@@ -167,17 +174,21 @@ mod tests {
         assert!(row
             .get::<_, Option<chrono::DateTime<chrono::Utc>>>("published_at")
             .is_some());
-        let res = web_context()
-            .scope(batch_posts(vec![2, 3], BatchPostAction::Trash))
-            .await
-            .unwrap();
+        let res = crate::request_ctx::scope_with_request(
+            web_context(),
+            batch_posts(vec![2, 3], BatchPostAction::Trash),
+        )
+        .await
+        .unwrap();
         assert_eq!(res, BatchPostResult { done: 2, failed: 0 });
         assert_eq!(ids(&list(AdminPostQuery::default()).await), [1]);
         // 已在回收站的文章不能再转为草稿。
-        let res = web_context()
-            .scope(batch_posts(vec![2], BatchPostAction::Unpublish))
-            .await
-            .unwrap();
+        let res = crate::request_ctx::scope_with_request(
+            web_context(),
+            batch_posts(vec![2], BatchPostAction::Unpublish),
+        )
+        .await
+        .unwrap();
         assert_eq!(res, BatchPostResult { done: 0, failed: 1 });
     }
 }

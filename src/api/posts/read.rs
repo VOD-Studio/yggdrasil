@@ -2,10 +2,11 @@
 //!
 //! 提供按 id（管理员）与按 slug（公开）两种方式获取文章，
 //! 其中按 slug 查询包含上下篇导航并启用缓存。
-//! Dioxus server function，注册在 `/api` 路径下。
+//! Leptos server function，注册在 `/api` 路径下。
 //! 仅在 `feature = "server"` 启用的服务端构建中查询数据库。
 
-use dioxus::prelude::*;
+use crate::api::error::ApiError;
+use leptos::prelude::*;
 
 #[cfg(feature = "server")]
 use super::helpers::{get_current_admin_user, row_to_post_full};
@@ -18,8 +19,8 @@ use crate::db::pool::get_conn;
 /// 根据文章 id 获取详情。
 ///
 /// 需要 admin 权限；不缓存，用于管理后台编辑等场景。
-#[server(GetPostById, "/api")]
-pub async fn get_post_by_id(post_id: i32) -> Result<SinglePostResponse, ServerFnError> {
+#[server(GetPostById, endpoint = "get_post_by_id", input = leptos::server_fn::codec::Json)]
+pub async fn get_post_by_id(post_id: i32) -> Result<SinglePostResponse, ApiError> {
     let _user = get_current_admin_user().await?;
 
     #[cfg(feature = "server")]
@@ -60,8 +61,8 @@ pub async fn get_post_by_id(post_id: i32) -> Result<SinglePostResponse, ServerFn
 /// 根据 slug 获取公开文章详情。
 ///
 /// 优先命中缓存；未命中时查询数据库，并附带基于 published_at 的上一篇/下一篇导航。
-#[server(GetPostBySlug, "/api")]
-pub async fn get_post_by_slug(slug: String) -> Result<SinglePostResponse, ServerFnError> {
+#[server(GetPostBySlug, endpoint = "get_post_by_slug", input = leptos::server_fn::codec::Json)]
+pub async fn get_post_by_slug(slug: String) -> Result<SinglePostResponse, ApiError> {
     #[cfg(feature = "server")]
     {
         if let Some(cached) = crate::cache::get_post_by_slug(&slug).await {
@@ -124,8 +125,8 @@ pub async fn get_post_by_slug(slug: String) -> Result<SinglePostResponse, Server
 }
 
 /// 阅读页使用独立协议，避免新部署破坏已打开页面的旧客户端。
-#[server(GetPublicPostBySlug, "/api")]
-pub async fn get_public_post_by_slug(slug: String) -> Result<PublicPostResponse, ServerFnError> {
+#[server(GetPublicPostBySlug, endpoint = "get_public_post_by_slug", input = leptos::server_fn::codec::Json)]
+pub async fn get_public_post_by_slug(slug: String) -> Result<PublicPostResponse, ApiError> {
     let response = get_post_by_slug(slug).await?;
     Ok(PublicPostResponse {
         post: response.post.map(Into::into),
@@ -137,8 +138,8 @@ pub async fn get_public_post_by_slug(slug: String) -> Result<PublicPostResponse,
 /// 镜像 [`get_post_by_id`] 的查询，但按 slug 取、不做 `status = 'published'`
 /// 过滤，故草稿可被预览。回收站（软删除）文章返回 `None`。草稿绝不进公开缓存
 /// （`cache::get/set_post_by_slug`），因此预览路径只走一次直查。
-#[server(GetPostPreview, "/api")]
-pub async fn get_post_preview(slug: String) -> Result<SinglePostResponse, ServerFnError> {
+#[server(GetPostPreview, endpoint = "get_post_preview", input = leptos::server_fn::codec::Json)]
+pub async fn get_post_preview(slug: String) -> Result<SinglePostResponse, ApiError> {
     let _user = get_current_admin_user().await?;
 
     #[cfg(feature = "server")]

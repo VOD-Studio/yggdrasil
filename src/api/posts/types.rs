@@ -1,5 +1,7 @@
 //! 文章 API 的请求与响应数据结构。
 
+#[cfg(feature = "server")]
+use crate::api::error::ApiError;
 use crate::models::post::{Post, PostListItem, PostStats, PostStatus, Tag};
 
 /// 创建/更新/删除文章的统一响应结构。
@@ -186,7 +188,7 @@ pub struct RebuildResult {
 pub(super) fn write_response(
     result: Result<super::service::WriteOutcome, super::service::WriteError>,
     message: &str,
-) -> Result<CreatePostResponse, dioxus::prelude::ServerFnError> {
+) -> Result<CreatePostResponse, ApiError> {
     use super::service::WriteError;
     match result {
         Ok(value) => Ok(CreatePostResponse::ok(message, value.post_id, value.slug)),

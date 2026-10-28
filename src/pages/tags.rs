@@ -1,115 +1,194 @@
 //! 标签详情 `/tags/:tag`：与归档同一套版式，只列出该标签下的文章。
 //! 文章取自 `get_posts_by_tag`（最近 200 篇）；每个标签拥有独立的请求。
 
-use dioxus::prelude::*;
+use leptos::prelude::*;
+use leptos_meta::Title;
+use leptos_router::hooks::use_params_map;
+use leptos_router::{lazy_route, LazyRoute};
 
-use crate::api::posts::{get_posts_by_tag, list_tags, PostListResponse};
+use crate::api::posts::{get_posts_by_tag, PostListResponse, TagListResponse};
 use crate::components::empty_state::EmptyState;
 use crate::components::skeletons::archive_skeleton::ArchiveBodySkeleton;
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::ui::{Icon, IconName, LoadError};
+use crate::hooks::ssr_resource::{prefetch_route_data, route_data, unit, PageJson, RouteData};
 use crate::models::post::PostListItem;
-use crate::pages::archives::{tag_list, IndexRow, TagFilter, YearBlocks};
-use crate::router::Route;
+use crate::pages::archives::{fetch_tags, tag_list, IndexRow, TagFilter, YearBlocks};
+use crate::routes::Route;
 
-#[component]
-pub fn TagDetail(tag: String) -> Element {
-    rsx! {
-        document::Title { "{tag} · 标签 · Yggdrasil" }
-        div { class: "archive",
-            TagIntro { tag: tag.clone() }
-            // 单元素 keyed 列表使同路由变体切换时卸载旧请求；
-            // key 放在 Suspense 外面，旧结果不会在新标题下短暂出现。
-            for current_tag in std::iter::once(tag) {
-                SuspenseBoundary {
-                    key: "{current_tag}",
-                    fallback: move |_| rsx! { DelayedSkeleton { ArchiveBodySkeleton {} } },
-                    TagBody { tag: current_tag }
-                }
-            }
+/// 标签详情路由，对应 `/tags/:tag`（`SsrMode::Async`：`<Title>` 随标签而定，
+/// 且需要在流式输出前确定响应头）。
+pub struct TagRoute {
+    tag: Memo<String>,
+    posts: RouteData<PostListResponse>,
+    tags: RouteData<TagListResponse>,
+}
+
+#[leptos::lazy]
+async fn fetch_tag_posts(tag: String) -> PageJson<PostListResponse> {
+    PageJson::new(get_posts_by_tag(tag).await)
+}
+
+#[lazy_route]
+impl LazyRoute for TagRoute {
+    fn data() -> Self {
+        let params = use_params_map();
+        let tag = Memo::new(move |_| params.read().get("tag").unwrap_or_default());
+        Self {
+            tag,
+            posts: route_data(move || tag.get(), fetch_tag_posts),
+            tags: route_data(|| (), unit(fetch_tags)),
         }
+    }
+
+    fn view(this: Self) -> AnyView {
+        let TagRoute { tag, posts, tags } = this;
+        // 按标签重建整页（含 Suspense），旧结果不会在新标题下短暂出现。
+        (move || {
+            let current = tag.get();
+            view! {
+                <Title text=format!("{current} · 标签 · Yggdrasil")/>
+                <div class="archive">
+                    <TagIntro tag=current.clone()/>
+                    <Suspense fallback=|| {
+                        view! {
+                            <DelayedSkeleton>
+                                <ArchiveBodySkeleton/>
+                            </DelayedSkeleton>
+                        }
+                    }>
+                        {
+                            let current = current.clone();
+                            move || {
+                                let current = current.clone();
+                                Suspend::new(async move {
+                                    let listing = posts.await.ok();
+                                    let tags = tag_list(tags.await);
+                                    view! { <TagBody tag=current initial=listing tags=tags/> }
+                                })
+                            }
+                        }
+                    </Suspense>
+                </div>
+            }
+        })
+        .into_any()
+    }
+}
+
+impl TagRoute {
+    /// 悬停预取：与 `data()` 相同的取数函数与 source。
+    pub fn prefetch_data(tag: String) {
+        prefetch_route_data(tag, fetch_tag_posts);
+        prefetch_route_data((), unit(fetch_tags));
     }
 }
 
 /// 路由兜底和实际页面共用开场；标签名无需等待文章请求。
 #[component]
-pub(crate) fn TagIntro(tag: String) -> Element {
-    rsx! {
-        header { class: "archive-header page-enter",
-            Link { class: "archive-back", to: Route::Archives {},
-                Icon { name: IconName::ArrowLeft, size: 14 }
+pub fn TagIntro(#[prop(into)] tag: String) -> impl IntoView {
+    view! {
+        <header class="archive-header page-enter">
+            <a class="archive-back" href=Route::Archives.to_string()>
+                <Icon name=IconName::ArrowLeft size=14/>
                 "全部归档"
-            }
-            h1 { class: "archive-title",
-                span { class: "archive-title-hash", aria_hidden: "true", "# " }
-                "{tag}"
-            }
-        }
+            </a>
+            <h1 class="archive-title">
+                <span class="archive-title-hash" aria-hidden="true">
+                    "# "
+                </span>
+                {tag}
+            </h1>
+        </header>
     }
 }
 
+/// 标签详情主体。`initial` 为 `None` 表示文章加载失败；重试结果写进本地信号，
+/// 不重取外层 `Resource`（否则整段 DOM 会退回 `Suspense` 的骨架屏）。
 #[component]
-fn TagBody(tag: String) -> Element {
-    // 父组件按标签 remount，因此闭包中的 tag 在此作用域内不会过期。
+fn TagBody(
+    tag: String,
+    initial: Option<PostListResponse>,
+    tags: Vec<crate::models::post::Tag>,
+) -> impl IntoView {
+    let listing = RwSignal::new(initial);
+    let retrying = RwSignal::new(false);
+    let retry_failed = RwSignal::new(false);
+
     let request_tag = tag.clone();
-    // SSR 只轮询正在挂起的任务，提前发出的第二个请求会丢失唤醒；逐个等待。
-    let mut posts = use_server_future(move || get_posts_by_tag(request_tag.clone()))?;
-    let tags = use_server_future(list_tags)?;
-    let mut retrying = use_signal(|| false);
-    let mut retry_failed = use_signal(|| false);
+    let on_retry = Callback::new(move |()| {
+        retrying.set(true);
+        retry_failed.set(false);
+        let tag = request_tag.clone();
+        leptos::task::spawn_local(async move {
+            let result = get_posts_by_tag(tag).await;
+            let _ = retrying.try_set(false);
+            match result {
+                Ok(response) => {
+                    let _ = listing.try_set(Some(response));
+                }
+                Err(_) => {
+                    let _ = retry_failed.try_set(true);
+                }
+            }
+        });
+    });
 
-    let tags = tag_list(&tags.read());
-    let listing = posts.read().as_ref().map(|r| r.as_ref().ok().cloned());
-
-    match listing {
-        Some(Some(PostListResponse { posts: list, total })) => {
-            let rows: Vec<IndexRow> = list.iter().map(tag_row).collect();
-            let summary = tag_summary(&list, total);
-            let truncated = total > list.len() as i64;
-            rsx! {
-                p { class: "archive-summary tabular-nums page-enter", "{summary}" }
-                TagFilter { tags, current: Some(tag.clone()) }
-                if rows.is_empty() {
-                    span { hidden: true, "data-vt-list": "true" }
-                    EmptyState {
-                        title: "这个标签下还没有文章",
-                        description: "换一个标签，或者回到全部归档看看。",
-                        icon: IconName::Tag,
-                    }
-                } else {
-                    YearBlocks { rows, hide_tag: Some(tag.clone()) }
-                    if truncated {
-                        p { class: "archive-limit-note tabular-nums",
-                            "共 {total} 篇，这里列出最近的 {list.len()} 篇。"
+    let body_tag = tag.clone();
+    view! {
+        {move || {
+            listing
+                .with(|listing| {
+                    listing
+                        .as_ref()
+                        .map(|PostListResponse { posts, total }| tag_summary(posts, *total))
+                })
+                .map(|summary| {
+                    view! { <p class="archive-summary tabular-nums page-enter">{summary}</p> }
+                })
+        }}
+        <TagFilter tags=tags current=Some(tag.clone())/>
+        {move || {
+            let Some(PostListResponse { posts, total }) = listing.get() else {
+                return view! {
+                    <div class="archive-years" data-vt-list="true">
+                        <LoadError
+                            title="这个标签下的文章暂时没能加载"
+                            retrying=retrying
+                            retry_failed=retry_failed
+                            on_retry=on_retry
+                        />
+                    </div>
+                }
+                    .into_any();
+            };
+            let rows: Vec<IndexRow> = posts.iter().map(tag_row).collect();
+            let truncated = total > posts.len() as i64;
+            let listed = posts.len();
+            if rows.is_empty() {
+                return view! {
+                    <span hidden data-vt-list="true"></span>
+                    <EmptyState
+                        title="这个标签下还没有文章"
+                        description="换一个标签，或者回到全部归档看看。"
+                        icon=IconName::Tag
+                    />
+                }
+                    .into_any();
+            }
+            view! {
+                <YearBlocks rows=rows hide_tag=body_tag.clone()/>
+                {truncated
+                    .then(|| {
+                        view! {
+                            <p class="archive-limit-note tabular-nums">
+                                {format!("共 {total} 篇，这里列出最近的 {listed} 篇。")}
+                            </p>
                         }
-                    }
-                }
+                    })}
             }
-        }
-        Some(None) => rsx! {
-            TagFilter { tags, current: Some(tag.clone()) }
-            div { class: "archive-years", "data-vt-list": "true",
-                LoadError {
-                    title: "这个标签下的文章暂时没能加载",
-                    retrying: retrying(),
-                    retry_failed: retry_failed(),
-                    on_retry: move |_| {
-                        retrying.set(true);
-                        retry_failed.set(false);
-                        let tag = tag.clone();
-                        spawn(async move {
-                            let result = get_posts_by_tag(tag).await;
-                            retrying.set(false);
-                            match result {
-                                Ok(response) => posts.set(Some(Ok(response))),
-                                Err(_) => retry_failed.set(true),
-                            }
-                        });
-                    },
-                }
-            }
-        },
-        None => rsx! {},
+                .into_any()
+        }}
     }
 }
 

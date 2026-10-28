@@ -2,9 +2,10 @@
 //!
 //! 读取最新已发布文章已存储的 `toc_html`，在服务端解析一级小节，不重新渲染
 //! Markdown。结果随文章列表缓存一起失效。
-//! Dioxus server function，注册在 `/api` 路径下。
+//! Leptos server function，注册在 `/api` 路径下。
 
-use dioxus::prelude::*;
+use crate::api::error::ApiError;
+use leptos::prelude::*;
 
 use super::types::PostOutline;
 #[cfg(feature = "server")]
@@ -18,8 +19,8 @@ use crate::db::pool::get_conn;
 ///
 /// 排序与 `list_published_posts` 一致，前台再用 slug 核对首篇，防止两次读取之间
 /// 有新文章发布造成错配。
-#[server(LatestPostOutline, "/api")]
-pub async fn latest_post_outline() -> Result<Option<PostOutline>, ServerFnError> {
+#[server(LatestPostOutline, endpoint = "latest_post_outline", input = leptos::server_fn::codec::Json)]
+pub async fn latest_post_outline() -> Result<Option<PostOutline>, ApiError> {
     #[cfg(feature = "server")]
     {
         if let Some(cached) = crate::cache::get_latest_outline().await {

@@ -1,8 +1,9 @@
-// 与 posts 模块一致：Dioxus `#[server]` 宏触发 deprecated/unit/too_many_arguments
+// 与 posts 模块一致：Leptos `#[server]` 宏触发 deprecated/unit/too_many_arguments
 // 提示，按项目惯例放行（限流/运行器等配置项天然参数多）。
 #![allow(clippy::unused_unit, deprecated, clippy::too_many_arguments)]
 
-use dioxus::prelude::*;
+use crate::api::error::ApiError;
+use leptos::prelude::*;
 
 #[cfg(feature = "server")]
 use crate::api::auth::get_current_admin_user;
@@ -312,8 +313,8 @@ pub(crate) async fn load_rate_limit_settings(
 }
 
 /// 读取限流配置（面板用）。
-#[server(GetRateLimitSettings, "/api")]
-pub async fn get_rate_limit_settings() -> Result<RateLimitSettings, ServerFnError> {
+#[server(GetRateLimitSettings, endpoint = "get_rate_limit_settings", input = leptos::server_fn::codec::Json)]
+pub async fn get_rate_limit_settings() -> Result<RateLimitSettings, ApiError> {
     let _user = get_current_admin_user().await?;
 
     #[cfg(feature = "server")]
@@ -321,7 +322,7 @@ pub async fn get_rate_limit_settings() -> Result<RateLimitSettings, ServerFnErro
         let client = get_conn().await.map_err(AppError::db_conn)?;
         let s = load_rate_limit_settings(&client)
             .await
-            .map_err(ServerFnError::from)?;
+            .map_err(<ApiError>::from)?;
         Ok(s)
     }
 
@@ -335,7 +336,7 @@ pub async fn get_rate_limit_settings() -> Result<RateLimitSettings, ServerFnErro
 ///
 /// 所有字段会被 clamp 后写入 DB。由于限流器是 LazyLock 静态量（首次请求构造即
 /// 固化），修改后需**重启进程**生效——不做运行时缓存失效。
-#[server(UpdateRateLimitSettings, "/api")]
+#[server(UpdateRateLimitSettings, endpoint = "update_rate_limit_settings", input = leptos::server_fn::codec::Json)]
 pub async fn update_rate_limit_settings(
     strict_per_sec: u32,
     strict_burst: u32,
@@ -358,7 +359,7 @@ pub async fn update_rate_limit_settings(
     mcp_upload_per_sec: u32,
     mcp_upload_burst: u32,
     gc_interval_secs: u32,
-) -> Result<RateLimitSettings, ServerFnError> {
+) -> Result<RateLimitSettings, ApiError> {
     let _user = get_current_admin_user().await?;
 
     let strict_per_sec = RateLimitSettings::clamp_per_sec(strict_per_sec);

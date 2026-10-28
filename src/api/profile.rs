@@ -1,4 +1,4 @@
-//! 个人信息（当前登录账号的资料与密码）的 Dioxus server function。
+//! 个人信息（当前登录账号的资料与密码）的 Leptos server function。
 //!
 //! 支撑 `/admin/profile` 页面：
 //! - `get_profile`：读取当前用户公开信息 + `ADMIN_*` 环境变量是否激活
@@ -13,7 +13,8 @@
 
 #![allow(clippy::unused_unit, deprecated)]
 
-use dioxus::prelude::*;
+use crate::api::error::ApiError;
+use leptos::prelude::*;
 
 #[cfg(feature = "server")]
 use crate::api::auth::{
@@ -96,9 +97,9 @@ fn normalize_avatar_url(input: Option<String>) -> Result<Option<String>, String>
 
 /// 获取当前登录用户的资料。
 ///
-/// Dioxus server function，注册在 `/api` 路径下。
-#[server(GetProfile, "/api")]
-pub async fn get_profile() -> Result<GetProfileResponse, ServerFnError> {
+/// Leptos server function，注册在 `/api` 路径下。
+#[server(GetProfile, endpoint = "get_profile", input = leptos::server_fn::codec::Json)]
+pub async fn get_profile() -> Result<GetProfileResponse, ApiError> {
     #[cfg(feature = "server")]
     {
         let user = get_current_admin_user().await?;
@@ -115,13 +116,13 @@ pub async fn get_profile() -> Result<GetProfileResponse, ServerFnError> {
 ///
 /// 校验失败或邮箱被占用返回 `Ok(UpdateProfileResponse{success:false,...})`，
 /// 与注册/登录的「业务拒绝走 Ok」约定一致。
-/// Dioxus server function，注册在 `/api` 路径下。
-#[server(UpdateProfile, "/api")]
+/// Leptos server function，注册在 `/api` 路径下。
+#[server(UpdateProfile, endpoint = "update_profile", input = leptos::server_fn::codec::Json)]
 pub async fn update_profile(
     email: String,
     display_name: Option<String>,
     avatar_url: Option<String>,
-) -> Result<UpdateProfileResponse, ServerFnError> {
+) -> Result<UpdateProfileResponse, ApiError> {
     #[cfg(feature = "server")]
     {
         let fail = |message: String| UpdateProfileResponse {
@@ -198,17 +199,16 @@ pub async fn update_profile(
 /// 校验当前密码 → 更新哈希并 bump `session_generation`（其他设备会话全部
 /// 失效）→ 删除该用户除当前 token 外的所有会话 → 刷新当前 token 的会话缓存
 /// （写入新世代号），本端保持登录。Argon2 计算走 `spawn_blocking`。
-/// Dioxus server function，注册在 `/api` 路径下。
-#[server(ChangePassword, "/api")]
+/// Leptos server function，注册在 `/api` 路径下。
+#[server(ChangePassword, endpoint = "change_password", input = leptos::server_fn::codec::Json)]
 pub async fn change_password(
     current_password: String,
     new_password: String,
-) -> Result<ChangePasswordResponse, ServerFnError> {
+) -> Result<ChangePasswordResponse, ApiError> {
     #[cfg(feature = "server")]
     {
         // Argon2 校验是高价操作，与登录/注册同挂严格限流。
-        if let Some(ctx) = dioxus::fullstack::FullstackContext::current() {
-            let headers = ctx.parts_mut().headers.clone();
+        if let Some(headers) = crate::request_ctx::request_headers() {
             let ip = crate::api::rate_limit::get_client_ip(&headers).await;
             if let Err(msg) = crate::api::rate_limit::check_strict_limit(&ip) {
                 return Ok(ChangePasswordResponse {

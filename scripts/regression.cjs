@@ -69,19 +69,19 @@ async function main() {
     await run(['bash', 'scripts/test-databases.sh'], { env: pg });
     return;
   }
-  const build = path.join(ROOT, 'target/dx/yggdrasil/debug/web');
-  if (!fs.existsSync(path.join(build, 'server'))) throw new Error('Run make regression-build first');
+  const serverBin = path.join(ROOT, 'target/debug/yggdrasil');
+  const siteRoot = path.join(ROOT, 'target/site');
+  if (!fs.existsSync(serverBin) || !fs.existsSync(siteRoot)) throw new Error('Run make regression-build first');
   await run(['createdb', 'ygg_browser_test'], { env: pg });
   const appPort = await freePort();
   const base = `http://127.0.0.1:${appPort}`;
-  fs.symlinkSync(path.join(build, 'public'), path.join(runtime, 'public'), 'dir');
   fs.mkdirSync(path.join(runtime, 'uploads'));
   fs.copyFileSync(path.join(ROOT, 'public/images/samples/clay-circle.webp'), path.join(runtime, 'uploads/fixture.webp'));
   const env = { ...pg, DATABASE_URL: `postgresql://postgres:regression@127.0.0.1:${port}/ygg_browser_test`,
     IP: '127.0.0.1', PORT: String(appPort), APP_BASE_URL: base, COOKIE_SECURE: 'false', SSR_CACHE_SECS: '0',
-    DIOXUS_ASSET_DIR: path.join(build, 'public'), MCP_TOKEN_ENC_KEY: '42'.repeat(32),
+    LEPTOS_SITE_ROOT: siteRoot, MCP_TOKEN_ENC_KEY: '42'.repeat(32),
     ADMIN_USERNAME: '', ADMIN_PASSWORD: '', ADMIN_EMAIL: '', CODE_RUNNER_LANGUAGES: 'python' };
-  server = Bun.spawn([path.join(build, 'server')], { cwd: runtime, env,
+  server = Bun.spawn([serverBin], { cwd: runtime, env,
     stdout: Bun.file(path.join(artifacts, 'server.log')), stderr: Bun.file(path.join(artifacts, 'server-error.log')) });
   await waitFor(async () => {
     if (server.exitCode !== null) throw new Error(`Server exited; see ${artifacts}`);

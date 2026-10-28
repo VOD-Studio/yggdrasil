@@ -9,6 +9,11 @@
 //! 与 tiptap 一样，`CodeMirrorEditor` 是 IIFE 挂在 window 上的**对象字面量**
 //! （`{ create }`），不是函数——因此用 `js_sys::Reflect::get` 做属性访问拿到，
 //! 不能用 wasm-bindgen 的 extern fn（那会被编成函数调用，"not a function"）。
+//!
+//! 用法（Leptos）：挂载点是带稳定 `id` 的元素，先用 `use_browser_library("codemirror", ..)` 等库就绪，
+//! 再在 `Effect` 内构造 `EditorOptions` 并 `get_module().create(id, &opts)`；`EditorHandle` 含 JS 引用
+//! （非 `Send + Sync`），放进 `StoredValue::new_local`/`RwSignal::new_local`，`on_cleanup` 里 `take`
+//! 出来丢弃即触发 `Drop` → `destroy`。
 
 // ============================================================================
 // 以下全部仅在 WASM 前端编译：wasm-bindgen extern + EditorHandle + 闭包。

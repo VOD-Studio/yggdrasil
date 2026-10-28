@@ -3,9 +3,10 @@
 //! 与全文搜索不同：只匹配标题、摘要与标签名，最多返回 8 条，按「标题命中 >
 //! 摘要命中 > 标签命中」再按发布时间排序。面板逐字查询，所以另配一档宽松限流
 //! （见 `rate_limit::check_suggest_limit`），结果写入短 TTL 缓存，并随文章写操作失效。
-//! Dioxus server function，注册在 `/api` 路径下。
+//! Leptos server function，注册在 `/api` 路径下。
 
-use dioxus::prelude::*;
+use crate::api::error::ApiError;
+use leptos::prelude::*;
 
 use super::types::PostSuggestionResponse;
 #[cfg(feature = "server")]
@@ -71,14 +72,13 @@ pub(crate) async fn query_suggestions(
 /// 搜索面板的文章建议。
 ///
 /// 空查询或超长查询返回空结果；被限流时同样返回空，让面板保留上一次结果。
-#[server(SuggestPosts, "/api")]
-pub async fn suggest_posts(query: String) -> Result<PostSuggestionResponse, ServerFnError> {
+#[server(SuggestPosts, endpoint = "suggest_posts", input = leptos::server_fn::codec::Json)]
+pub async fn suggest_posts(query: String) -> Result<PostSuggestionResponse, ApiError> {
     #[cfg(feature = "server")]
     {
         use crate::api::rate_limit;
 
-        if let Some(ctx) = dioxus::fullstack::FullstackContext::current() {
-            let headers = ctx.parts_mut().headers.clone();
+        if let Some(headers) = crate::request_ctx::request_headers() {
             let ip = rate_limit::get_client_ip(&headers).await;
             if rate_limit::check_suggest_limit(&ip).is_err() {
                 return Ok(PostSuggestionResponse { posts: Vec::new() });
@@ -240,8 +240,8 @@ fn percent_decode(text: &str) -> String {
 
 /// 按地址里的词匹配已发布文章的标题与 slug，命中词多的排前，最多 3 篇。
 /// 地址里没有可用的词时不查询。公开接口，结果不缓存（只在 404 时调用）。
-#[server(RecommendForPath, "/api")]
-pub async fn recommend_for_path(path: String) -> Result<PathRecommendations, ServerFnError> {
+#[server(RecommendForPath, endpoint = "recommend_for_path", input = leptos::server_fn::codec::Json)]
+pub async fn recommend_for_path(path: String) -> Result<PathRecommendations, ApiError> {
     #[cfg(feature = "server")]
     {
         let words = path_words(&path);

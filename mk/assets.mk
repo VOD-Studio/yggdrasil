@@ -8,7 +8,7 @@
 .PHONY: build-assets build-libs highlight-css katex-css css css-watch
 .PHONY: dev-assets dev-libs dev-highlight-css dev-katex-css dev-assets-force
 
-# Tailwind follows the explicit styles/ imports for both builds and css-watch.
+# Tailwind 通过 input.css 中显式导入的 styles/ 文件生成样式。
 TAILWIND := tailwindcss -i input.css -o public/style.css
 
 # release 构建共用的资源流水线：libs 前端库、语法高亮 CSS、KaTeX CSS + 字体、
@@ -35,9 +35,9 @@ katex-css: ## 拷贝 KaTeX CSS 与 woff2 字体到 public/katex/
 	@echo "KaTeX CSS ready at public/katex/"
 
 # 并行构建全部 libs/ 子项目（bun --filter 按依赖拓扑排序，无相互依赖则并发）。
-# build-libs 会先安装依赖（bun install），无需调用方自行安装。
+# 按锁文件安装依赖；清单不一致时失败，不在发布构建中更新锁文件。
 build-libs: ## 全量构建 libs/ 前端库
-	@cd libs && bun install && bun run --filter '*' build
+	@cd libs && bun install --frozen-lockfile && bun run --filter '*' build
 
 css: ## 生成 Tailwind CSS（未压缩）
 	@$(TAILWIND)

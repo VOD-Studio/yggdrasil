@@ -2,7 +2,7 @@
 //!
 //! 展示文章发布日期、阅读时长与字数统计。
 
-use dioxus::prelude::*;
+use leptos::prelude::*;
 
 use crate::models::post::PostHeaderData;
 
@@ -14,18 +14,20 @@ use crate::models::post::PostHeaderData;
 /// 日期优先使用发布时间，否则回退到创建时间，用标题字体的旧式数字；阅读时长与字数
 /// 用等宽数字。窄屏下各项整体换行。
 #[component]
-pub fn PostMeta(post: PostHeaderData) -> Element {
+pub fn PostMeta(post: PostHeaderData) -> impl IntoView {
     let at = post.published_at.unwrap_or(post.created_at);
     let datetime = at.format("%Y-%m-%d").to_string();
     let date = at.format("%Y.%m.%d").to_string();
     let words = group_digits(post.word_count);
+    let reading = format!("{} 分钟", post.reading_time);
+    let words = format!("{words} 字");
 
-    rsx! {
-        p { class: "post-meta", aria_label: "文章元信息",
-            time { class: "post-meta-date", datetime: "{datetime}", "{date}" }
-            span { class: "tabular-nums", "{post.reading_time} 分钟" }
-            span { class: "tabular-nums", "{words} 字" }
-        }
+    view! {
+        <p class="post-meta" aria-label="文章元信息">
+            <time class="post-meta-date" datetime=datetime>{date}</time>
+            <span class="tabular-nums">{reading}</span>
+            <span class="tabular-nums">{words}</span>
+        </p>
     }
 }
 

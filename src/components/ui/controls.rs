@@ -1,7 +1,8 @@
 //! Buttons and native selection controls.
 use super::display::Tooltip;
 use super::icons::{Icon, IconName};
-use dioxus::prelude::*;
+use leptos::ev::MouseEvent;
+use leptos::prelude::*;
 
 /// 按钮样式，对应 styles/components/ui.css 的 `.btn-*`。
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -63,7 +64,7 @@ impl ButtonSize {
     }
 }
 
-/// 组合按钮类名，供 `Link` 等需要按钮外观的非按钮元素使用。
+/// 组合按钮类名，供 `<a>`、`label` 等需要按钮外观的非按钮元素使用。
 pub fn button_class(variant: ButtonVariant, size: ButtonSize) -> String {
     format!("btn {} {}", size.class(), variant.class())
 }
@@ -72,42 +73,44 @@ pub fn button_class(variant: ButtonVariant, size: ButtonSize) -> String {
 ///
 /// - `icon` 放在文字前；`loading` 时文字隐去、转圈居中，按钮宽度不变，并标 `aria-busy`。
 /// - `loading` 或 `disabled` 时不响应点击。
+/// - `variant`、`loading`、`disabled`、`class` 可传常量、信号或闭包，随状态更新；
+///   `icon` 是 `MaybeProp`：可传 `IconName`、`Some(..)` 或信号，随状态切换时用
+///   `Signal::derive(move || ..)`（闭包不能直接转换）。
 #[component]
 pub fn Button(
-    #[props(default)] variant: ButtonVariant,
-    #[props(default)] size: ButtonSize,
-    #[props(default)] icon: Option<IconName>,
-    #[props(default)] loading: bool,
-    #[props(default)] disabled: bool,
-    #[props(default = "button")] r#type: &'static str,
-    #[props(default)] class: String,
-    #[props(default)] onclick: Option<EventHandler<MouseEvent>>,
-    children: Element,
-) -> Element {
-    let base = button_class(variant, size);
-    rsx! {
-        button {
-            class: "{base} {class}",
-            r#type,
-            disabled: disabled || loading,
-            "aria-busy": loading.then_some("true"),
-            onclick: move |e| {
-                if let Some(handler) = &onclick {
-                    handler.call(e);
-                }
-            },
-            span { class: "btn-label inline-flex items-center gap-[inherit]",
-                if let Some(icon) = icon {
-                    Icon { name: icon, size: size.icon_px() }
-                }
-                {children}
-            }
-            if loading {
-                span { class: "btn-spinner",
-                    Icon { name: IconName::LoaderCircle, size: size.icon_px() }
+    #[prop(optional, into)] variant: Signal<ButtonVariant>,
+    #[prop(optional)] size: ButtonSize,
+    #[prop(optional, into)] icon: MaybeProp<IconName>,
+    #[prop(optional, into)] loading: Signal<bool>,
+    #[prop(optional, into)] disabled: Signal<bool>,
+    #[prop(default = "button")] r#type: &'static str,
+    #[prop(optional, into)] class: Signal<String>,
+    #[prop(optional, into)] onclick: Option<Callback<MouseEvent>>,
+    children: Children,
+) -> impl IntoView {
+    let px = size.icon_px();
+    view! {
+        <button
+            class=move || format!("{} {}", button_class(variant.get(), size), class.get())
+            type=r#type
+            disabled=move || disabled.get() || loading.get()
+            aria-busy=move || loading.get().then_some("true")
+            on:click=move |e| {
+                if let Some(handler) = onclick {
+                    handler.run(e);
                 }
             }
-        }
+        >
+            <span class="btn-label inline-flex items-center gap-[inherit]">
+                {move || icon.get().map(|icon| view! { <Icon name=icon size=px/> })}
+                {children()}
+            </span>
+            <Show when=move || loading.get()>
+                <span class="btn-spinner">
+                    <Icon name=IconName::LoaderCircle size=px/>
+                </span>
+            </Show>
+        </button>
     }
 }
 
@@ -115,35 +118,38 @@ pub fn Button(
 /// `shortcut` 会跟在提示文字后面。
 #[component]
 pub fn IconButton(
-    icon: IconName,
-    label: String,
-    #[props(default = ButtonVariant::Ghost)] variant: ButtonVariant,
-    #[props(default)] size: ButtonSize,
-    #[props(default)] disabled: bool,
-    #[props(default)] pressed: Option<bool>,
-    #[props(default)] shortcut: Option<&'static str>,
-    #[props(default = "top")] tooltip_placement: &'static str,
-    #[props(default = "center")] tooltip_align: &'static str,
-    #[props(default)] class: String,
-    #[props(default)] onclick: Option<EventHandler<MouseEvent>>,
-) -> Element {
-    let base = button_class(variant, size);
-    rsx! {
-        Tooltip { tip: label.clone(), shortcut, placement: tooltip_placement, align: tooltip_align,
-            button {
-                class: "{base} btn-icon {class}",
-                r#type: "button",
-                disabled,
-                "aria-label": "{label}",
-                "aria-pressed": pressed.map(|p| if p { "true" } else { "false" }),
-                onclick: move |e| {
-                    if let Some(handler) = &onclick {
-                        handler.call(e);
+    #[prop(into)] icon: Signal<IconName>,
+    #[prop(into)] label: Signal<String>,
+    #[prop(default = ButtonVariant::Ghost.into(), into)] variant: Signal<ButtonVariant>,
+    #[prop(optional)] size: ButtonSize,
+    #[prop(optional, into)] disabled: Signal<bool>,
+    #[prop(optional, into)] pressed: Signal<Option<bool>>,
+    #[prop(optional, into)] shortcut: MaybeProp<&'static str>,
+    #[prop(default = "top".into(), into)] tooltip_placement: Signal<String>,
+    #[prop(default = "center".into(), into)] tooltip_align: Signal<String>,
+    #[prop(optional, into)] class: Signal<String>,
+    #[prop(optional, into)] onclick: Option<Callback<MouseEvent>>,
+) -> impl IntoView {
+    let px = size.icon_px();
+    view! {
+        <Tooltip tip=label shortcut=shortcut placement=tooltip_placement align=tooltip_align>
+            <button
+                class=move || {
+                    format!("{} btn-icon {}", button_class(variant.get(), size), class.get())
+                }
+                type="button"
+                disabled=move || disabled.get()
+                aria-label=move || label.get()
+                aria-pressed=move || pressed.get().map(|p| if p { "true" } else { "false" })
+                on:click=move |e| {
+                    if let Some(handler) = onclick {
+                        handler.run(e);
                     }
-                },
-                Icon { name: icon, size: size.icon_px() }
-            }
-        }
+                }
+            >
+                {move || view! { <Icon name=icon.get() size=px/> }}
+            </button>
+        </Tooltip>
     }
 }
 
@@ -161,32 +167,28 @@ pub fn IconButton(
 /// - `checked`：受控勾选态
 /// - `onchange`：状态变化回调，返回新的 bool
 /// - `danger`：危险态（红色语义，SQL 控制台「我了解后果」），缺省 `false`
+/// - `label`：没有可见文字关联时的读屏名称，如表格行的「选择《标题》」
 #[component]
 pub fn Checkbox(
-    checked: bool,
-    onchange: EventHandler<bool>,
-    #[props(default)] danger: bool,
-    /// 没有可见文字关联时的读屏名称，如表格行的「选择《标题》」。
-    #[props(default)]
-    label: Option<String>,
-) -> Element {
-    let wrap = if danger {
-        "ygg-cb ygg-cb-danger"
-    } else {
-        "ygg-cb"
-    };
-    rsx! {
-        span { class: "{wrap}",
-            input {
-                r#type: "checkbox",
-                checked,
-                aria_label: label,
-                onchange: move |e: Event<FormData>| onchange.call(e.checked()),
-            }
-            svg { class: "ygg-cb-mark", view_box: "0 0 16 16",
-                path { class: "ygg-cb-check", d: "M3.5 8.5l3 3 6-6.5" }
-            }
-        }
+    #[prop(into)] checked: Signal<bool>,
+    #[prop(into)] onchange: Callback<bool>,
+    #[prop(optional, into)] danger: Signal<bool>,
+    #[prop(optional, into)] label: Option<String>,
+) -> impl IntoView {
+    view! {
+        <span class=move || {
+            if danger.get() { "ygg-cb ygg-cb-danger" } else { "ygg-cb" }
+        }>
+            <input
+                type="checkbox"
+                prop:checked=move || checked.get()
+                aria-label=label
+                on:change=move |e| onchange.run(event_target_checked(&e))
+            />
+            <svg class="ygg-cb-mark" viewBox="0 0 16 16">
+                <path class="ygg-cb-check" d="M3.5 8.5l3 3 6-6.5"></path>
+            </svg>
+        </span>
     }
 }
 
@@ -196,21 +198,22 @@ pub fn Checkbox(
 /// 保留原生 radio 的互斥、方向键和表单语义，`onchange` 返回选中项的值。
 #[component]
 pub fn Radio(
-    name: String,
-    value: String,
-    checked: bool,
-    onchange: EventHandler<String>,
-    #[props(default)] disabled: bool,
-) -> Element {
-    rsx! {
-        input {
-            class: "ygg-radio",
-            r#type: "radio",
-            name,
-            value,
-            checked,
-            disabled,
-            onchange: move |event: Event<FormData>| onchange.call(event.value()),
-        }
+    #[prop(into)] name: String,
+    #[prop(into)] value: String,
+    #[prop(into)] checked: Signal<bool>,
+    #[prop(into)] onchange: Callback<String>,
+    #[prop(optional, into)] disabled: Signal<bool>,
+) -> impl IntoView {
+    let current = value.clone();
+    view! {
+        <input
+            class="ygg-radio"
+            type="radio"
+            name=name
+            value=value
+            prop:checked=move || checked.get()
+            disabled=move || disabled.get()
+            on:change=move |_| onchange.run(current.clone())
+        />
     }
 }

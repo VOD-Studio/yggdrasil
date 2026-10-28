@@ -5,8 +5,9 @@
 //! 全部查询走 `pg_catalog` / `pg_stat_*` / `schema_migrations`，零写、零风险。
 //! [`get_db_status`][crate::api::database::status::get_db_status] 在一次 server function 调用里聚合多组数据返回。
 
+use crate::api::error::ApiError;
 use chrono::{DateTime, Utc};
-use dioxus::prelude::*;
+use leptos::prelude::*;
 use serde::{Deserialize, Serialize};
 
 // 仅 server 构建用到：admin 鉴权 + DB 查询。WASM 侧的 server-function 客户端桩
@@ -76,8 +77,8 @@ pub struct ConnInfo {
 }
 
 /// 获取数据库运行状态（只读，管理员）。
-#[server(GetDbStatus, "/api")]
-pub async fn get_db_status() -> Result<DbStatus, ServerFnError> {
+#[server(GetDbStatus, endpoint = "get_db_status", input = leptos::server_fn::codec::Json)]
+pub async fn get_db_status() -> Result<DbStatus, ApiError> {
     let _user = get_current_admin_user().await?;
 
     #[cfg(feature = "server")]

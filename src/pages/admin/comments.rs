@@ -4,14 +4,17 @@
 //! 头像首字、作者与网址、「回复 X」、时间、正文与图片、所属文章与按状态给出的操作
 //! （通过、回复、标为垃圾、不是垃圾、移到回收站、恢复）。回复在行内展开 Composer，
 //! 以管理员身份直接发表。勾选后底部浮起批量操作条。默认打开待审，没有待审时打开
-//! 已通过。数据仅在 WASM 前端读取。样式见 styles/pages/admin-comments.css。
+//! 已通过。数据仅在 WASM 前端读取（Effect + 世代号）。样式见 styles/pages/admin-comments.css。
 
-use crate::components::admin_layout::AdminPageHead;
 use std::collections::HashSet;
 
-use dioxus::prelude::*;
+use leptos::prelude::*;
+use leptos::task::spawn_local;
+use leptos_router::hooks::{use_params_map, use_query_map};
+use leptos_router::{lazy_route, LazyRoute};
 
 use crate::api::comments::{AllCommentsResponse, CommentCounts};
+use crate::components::admin_layout::AdminPageHead;
 use crate::components::empty_state::EmptyState;
 use crate::components::skeletons::admin_comments_skeleton::AdminCommentsListSkeleton;
 use crate::components::ui::{
@@ -65,86 +68,121 @@ fn count_of(counts: &CommentCounts, tab: &str) -> i64 {
     }
 }
 
-/// 评论管理入口，默认第 1 页。
-#[component]
-pub fn AdminComments() -> Element {
-    rsx! {
-        AdminCommentsPage { page: 1 }
+/// 评论管理路由：`comments` 与 `comments/:page`（缺省第 1 页）。
+pub struct AdminCommentsRoute {
+    page: Memo<i32>,
+}
+
+#[lazy_route]
+impl LazyRoute for AdminCommentsRoute {
+    fn data() -> Self {
+        let params = use_params_map();
+        let page = Memo::new(move |_| {
+            params
+                .read()
+                .get("page")
+                .and_then(|p| p.parse::<i32>().ok())
+                .unwrap_or(1)
+                .max(1)
+        });
+        Self { page }
+    }
+
+    fn view(this: Self) -> AnyView {
+        let page = this.page;
+        view! {
+            {move || {
+                let page = page.get();
+                view! { <AdminCommentsPage page=page/> }
+            }}
+        }
+        .into_any()
     }
 }
 
-/// 评论管理。`page` 来自 `/admin/comments/page/:page`，之后翻页只改本页状态。
-#[component]
-#[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut, unused_variables))]
-pub fn AdminCommentsPage(page: i32) -> Element {
-    let toast = use_toast();
-    // 空字符串表示还没决定：先读待审，没有待审时换到已通过。
-    let mut tab = use_signal(|| {
-        #[cfg(target_arch = "wasm32")]
-        {
-            web_sys::window()
-                .and_then(|w| w.location().search().ok())
-                .and_then(|s| {
-                    s.trim_start_matches('?')
-                        .split('&')
-                        .find_map(|pair| pair.strip_prefix("status=").map(str::to_string))
-                })
-                .filter(|s| matches!(s.as_str(), "pending" | "approved" | "spam" | "trash"))
-                .unwrap_or_default()
-        }
-        #[cfg(not(target_arch = "wasm32"))]
-        String::new()
-    });
-    let mut current_page = use_signal(|| page.max(1));
-    let mut data = use_signal(|| None::<AllCommentsResponse>);
-    let mut error = use_signal(|| false);
-    let mut loading = use_signal(|| true);
-    let mut reload = use_signal(|| 0_u32);
-    let mut selected = use_signal(HashSet::<i64>::new);
-    let mut busy = use_signal(|| false);
-    let mut replying = use_signal(|| None::<i64>);
+/// 列表区域的显示形态；只在形态变化时重建 DOM。
+#[derive(Clone, PartialEq)]
+enum Body {
+    Error,
+    Skeleton,
+    Empty(String),
+    List,
+}
 
-    use_effect(move || {
-        let requested = tab();
-        let p = current_page();
-        let _ = reload();
-        #[cfg(target_arch = "wasm32")]
-        spawn(async move {
-            loading.set(true);
+/// 评论管理。`page` 来自 `/admin/comments/:page`，之后翻页只改本页状态。
+#[component]
+fn AdminCommentsPage(page: i32) -> impl IntoView {
+    let toast = use_toast();
+    let query = use_query_map();
+    // 空字符串表示还没决定：先读待审，没有待审时换到已通过。
+    let tab = RwSignal::new(
+        query
+            .read_untracked()
+            .get("status")
+            .filter(|s| matches!(s.as_str(), "pending" | "approved" | "spam" | "trash"))
+            .unwrap_or_default(),
+    );
+    let current_page = RwSignal::new(page.max(1));
+    let data = RwSignal::new(None::<AllCommentsResponse>);
+    let error = RwSignal::new(false);
+    let loading = RwSignal::new(true);
+    let reload = RwSignal::new(0_u32);
+    let selected = RwSignal::new(HashSet::<i64>::new());
+    let busy = RwSignal::new(false);
+    let replying = RwSignal::new(None::<i64>);
+    let generation = StoredValue::new(0_u64);
+
+    Effect::new(move |_| {
+        let requested = tab.get();
+        let p = current_page.get();
+        reload.track();
+        let mut id = 0;
+        generation.update_value(|g| {
+            *g += 1;
+            id = *g;
+        });
+        loading.set(true);
+        spawn_local(async move {
             let status = if requested.is_empty() {
                 "pending".to_string()
             } else {
                 requested.clone()
             };
-            match crate::api::comments::get_all_comments(p, Some(status)).await {
+            let result = crate::api::comments::get_all_comments(p, Some(status)).await;
+            if generation.try_get_value() != Some(id) {
+                return;
+            }
+            match result {
                 Ok(resp) => {
                     if requested.is_empty() {
                         if resp.counts.pending == 0 {
-                            tab.set("approved".into());
+                            let _ = tab.try_set("approved".into());
                             return;
                         }
-                        tab.set("pending".into());
+                        let _ = tab.try_set("pending".into());
                     }
-                    data.set(Some(resp));
-                    error.set(false);
+                    let _ = data.try_set(Some(resp));
+                    let _ = error.try_set(false);
                 }
-                Err(_) => error.set(true),
+                Err(_) => {
+                    let _ = error.try_set(true);
+                }
             }
-            loading.set(false);
+            let _ = loading.try_set(false);
         });
     });
 
-    let mut refresh = move || {
-        selected.write().clear();
-        reload += 1;
+    let refresh = move || {
+        selected.update(|s| s.clear());
+        reload.update(|n| *n += 1);
     };
     // 单条与批量共用：status 为 approved / spam / trash，或 restore。
-    let mut apply = move |ids: Vec<i64>, action: &'static str| {
-        if ids.is_empty() || busy() {
+    let apply = Callback::new(move |(ids, action): (Vec<i64>, &'static str)| {
+        if ids.is_empty() || busy.get_untracked() {
             return;
         }
         busy.set(true);
-        spawn(async move {
+        spawn_local(async move {
             let result = if action == "restore" {
                 crate::api::comments::restore_comments(ids.clone()).await
             } else {
@@ -164,185 +202,307 @@ pub fn AdminCommentsPage(page: i32) -> Element {
                 Ok(res) => toast.error(res.message),
                 Err(e) => toast.error(failure_message("操作失败", &e)),
             }
-            busy.set(false);
+            let _ = busy.try_set(false);
         });
-    };
+    });
 
-    let resp = data();
-    let counts = resp.as_ref().map(|r| r.counts).unwrap_or_default();
-    let active = tab();
-    let rows = resp
-        .as_ref()
-        .map(|r| r.comments.clone())
-        .unwrap_or_default();
-    let total = resp.as_ref().map(|r| r.total).unwrap_or(0);
-    let selection = selected();
-    let all_count = counts.pending + counts.approved + counts.spam;
-    let page_ids: Vec<i64> = rows.iter().map(|c| c.id).collect();
-    let page_all = !page_ids.is_empty() && page_ids.iter().all(|id| selection.contains(id));
+    let counts =
+        Memo::new(move |_| data.with(|d| d.as_ref().map(|r| r.counts).unwrap_or_default()));
+    let loaded = Memo::new(move |_| data.with(Option::is_some));
+    let rows = Memo::new(move |_| {
+        data.with(|d| d.as_ref().map(|r| r.comments.clone()).unwrap_or_default())
+    });
+    let total = Signal::derive(move || data.with(|d| d.as_ref().map(|r| r.total).unwrap_or(0)));
+    let selection_empty = Memo::new(move |_| selected.with(|s| s.is_empty()));
+    let page_all = Memo::new(move |_| {
+        selected.with(|sel| {
+            rows.with(|rows| !rows.is_empty() && rows.iter().all(|c| sel.contains(&c.id)))
+        })
+    });
 
-    let status_items: Vec<SegmentedItem<String>> = [
-        ("pending", "待审", counts.pending),
-        ("approved", "已通过", counts.approved),
-        ("spam", "垃圾", counts.spam),
-        ("trash", "回收站", counts.trash),
-    ]
-    .into_iter()
-    .map(|(value, label, n)| {
-        let item = SegmentedItem::new(value.to_string(), label);
-        if resp.is_some() {
-            item.count(n)
-        } else {
-            item
-        }
-    })
-    .collect();
-
-    rsx! {
-        div { class: "admin-comments",
-            AdminPageHead { title: "评论",
-                if resp.is_some() {
-                    "{all_count} 条 · 待审 {counts.pending}"
-                }
+    let status_items = Signal::derive(move || {
+        let counts = counts.get();
+        let loaded = loaded.get();
+        [
+            ("pending", "待审", counts.pending),
+            ("approved", "已通过", counts.approved),
+            ("spam", "垃圾", counts.spam),
+            ("trash", "回收站", counts.trash),
+        ]
+        .into_iter()
+        .map(|(value, label, n)| {
+            let item = SegmentedItem::new(value.to_string(), label);
+            if loaded {
+                item.count(n)
+            } else {
+                item
             }
-            div { class: "admin-toolbar",
-                SegmentedControl {
-                    aria_label: "评论状态",
-                    items: status_items,
-                    value: active.clone(),
-                    on_change: move |value: String| {
-                        selected.write().clear();
+        })
+        .collect::<Vec<_>>()
+    });
+
+    let body = Memo::new(move |_| {
+        if error.get() {
+            Body::Error
+        } else if !loaded.get()
+            || (loading.get()
+                && rows.with(Vec::is_empty)
+                && tab.with(|t| count_of(&counts.get(), t)) > 0)
+        {
+            Body::Skeleton
+        } else if rows.with(Vec::is_empty) {
+            Body::Empty(tab.get())
+        } else {
+            Body::List
+        }
+    });
+
+    view! {
+        <div class="admin-comments">
+            <AdminPageHead title="评论">
+                {move || {
+                    loaded
+                        .get()
+                        .then(|| {
+                            let c = counts.get();
+                            format!("{} 条 · 待审 {}", c.pending + c.approved + c.spam, c.pending)
+                        })
+                }}
+            </AdminPageHead>
+            <div class="admin-toolbar">
+                <SegmentedControl
+                    aria_label="评论状态"
+                    items=status_items
+                    value=tab
+                    on_change=move |value: String| {
+                        selected.update(|s| s.clear());
                         replying.set(None);
                         current_page.set(1);
                         tab.set(value);
-                    },
-                }
-                if !rows.is_empty() {
-                    Checkbox {
-                        checked: page_all,
-                        label: "选择本页全部评论".to_string(),
-                        onchange: move |on: bool| {
-                            let mut set = selected.write();
-                            for id in &page_ids {
-                                if on {
-                                    set.insert(*id);
-                                } else {
-                                    set.remove(id);
-                                }
-                            }
-                        },
                     }
-                }
-            }
+                />
+                {move || {
+                    (!rows.with(Vec::is_empty))
+                        .then(|| {
+                            view! {
+                                <Checkbox
+                                    checked=page_all
+                                    label="选择本页全部评论".to_string()
+                                    onchange=move |on: bool| {
+                                        let ids: Vec<i64> = rows
+                                            .with_untracked(|r| r.iter().map(|c| c.id).collect());
+                                        selected
+                                            .update(|set| {
+                                                for id in ids {
+                                                    if on {
+                                                        set.insert(id);
+                                                    } else {
+                                                        set.remove(&id);
+                                                    }
+                                                }
+                                            });
+                                    }
+                                />
+                            }
+                        })
+                }}
+            </div>
 
-            if error() {
-                LoadError { title: "评论加载失败", on_retry: move |_| reload += 1 }
-            } else if resp.is_none() || (loading() && rows.is_empty() && count_of(&counts, &active) > 0) {
-                AdminCommentsListSkeleton {}
-            } else if rows.is_empty() {
-                div { class: "admin-panel",
-                    match active.as_str() {
-                        "pending" => rsx! {
-                            EmptyState { icon: IconName::Check, title: "没有待审评论", description: "新评论需要审核时会出现在这里。" }
-                        },
-                        "spam" => rsx! {
-                            EmptyState { icon: IconName::Shield, title: "没有垃圾评论", description: "被标为垃圾的评论会集中在这里。" }
-                        },
-                        "trash" => rsx! {
-                            EmptyState { icon: IconName::Trash, title: "回收站是空的", description: "移到回收站的评论可以在这里恢复。" }
-                        },
-                        _ => rsx! {
-                            EmptyState { icon: IconName::MessageSquare, title: "还没有评论", description: "读者的评论通过审核后会出现在这里。" }
-                        },
+            {move || match body.get() {
+                Body::Error => {
+                    view! {
+                        <LoadError
+                            title="评论加载失败"
+                            on_retry=move |()| reload.update(|n| *n += 1)
+                        />
                     }
+                        .into_any()
                 }
-            } else {
-                div { class: "admin-panel admin-comment-list", "aria-busy": loading().then_some("true"),
-                    for comment in rows.into_iter() {
-                        CommentItem {
-                            key: "{comment.id}",
-                            selected: selection.contains(&comment.id),
-                            replying: replying() == Some(comment.id),
-                            busy: busy(),
-                            on_select: move |(id, on): (i64, bool)| {
-                                if on {
-                                    selected.write().insert(id);
-                                } else {
-                                    selected.write().remove(&id);
+                Body::Skeleton => view! { <AdminCommentsListSkeleton/> }.into_any(),
+                Body::Empty(active) => {
+                    view! {
+                        <div class="admin-panel">
+                            {match active.as_str() {
+                                "pending" => {
+                                    view! {
+                                        <EmptyState
+                                            icon=IconName::Check
+                                            title="没有待审评论"
+                                            description="新评论需要审核时会出现在这里。"
+                                        />
+                                    }
+                                        .into_any()
                                 }
-                            },
-                            on_action: move |(id, action): (i64, &'static str)| {
-                                if action == "reply" {
-                                    replying.set(if replying() == Some(id) { None } else { Some(id) });
-                                } else {
-                                    apply(vec![id], action);
+                                "spam" => {
+                                    view! {
+                                        <EmptyState
+                                            icon=IconName::Shield
+                                            title="没有垃圾评论"
+                                            description="被标为垃圾的评论会集中在这里。"
+                                        />
+                                    }
+                                        .into_any()
                                 }
-                            },
-                            on_replied: move |_| {
-                                replying.set(None);
-                                refresh();
-                            },
-                            comment,
-                        }
+                                "trash" => {
+                                    view! {
+                                        <EmptyState
+                                            icon=IconName::Trash
+                                            title="回收站是空的"
+                                            description="移到回收站的评论可以在这里恢复。"
+                                        />
+                                    }
+                                        .into_any()
+                                }
+                                _ => {
+                                    view! {
+                                        <EmptyState
+                                            icon=IconName::MessageSquare
+                                            title="还没有评论"
+                                            description="读者的评论通过审核后会出现在这里。"
+                                        />
+                                    }
+                                        .into_any()
+                                }
+                            }}
+                        </div>
                     }
-                    TablePager {
-                        page: current_page(),
-                        total,
-                        per_page: COMMENTS_PER_PAGE,
-                        unit: "条",
-                        on_change: move |p| current_page.set(p),
-                    }
+                        .into_any()
                 }
-            }
+                Body::List => {
+                    view! {
+                        <div
+                            class="admin-panel admin-comment-list"
+                            aria-busy=move || loading.get().then_some("true")
+                        >
+                            <For
+                                each=move || rows.get()
+                                key=|c| format!("{}-{:?}", c.id, c.status)
+                                children=move |comment| {
+                                    let id = comment.id;
+                                    view! {
+                                        <CommentItem
+                                            comment=comment
+                                            selected=Signal::derive(move || {
+                                                selected.with(|s| s.contains(&id))
+                                            })
+                                            replying=Signal::derive(move || {
+                                                replying.get() == Some(id)
+                                            })
+                                            busy=busy
+                                            on_select=move |(id, on): (i64, bool)| {
+                                                selected
+                                                    .update(|s| {
+                                                        if on {
+                                                            s.insert(id);
+                                                        } else {
+                                                            s.remove(&id);
+                                                        }
+                                                    });
+                                            }
+                                            on_action=move |(id, action): (i64, &'static str)| {
+                                                if action == "reply" {
+                                                    replying
+                                                        .update(|r| {
+                                                            *r = if *r == Some(id) { None } else { Some(id) };
+                                                        });
+                                                } else {
+                                                    apply.run((vec![id], action));
+                                                }
+                                            }
+                                            on_replied=move |()| {
+                                                replying.set(None);
+                                                refresh();
+                                            }
+                                        />
+                                    }
+                                }
+                            />
+                            <TablePager
+                                page=current_page
+                                total=total
+                                per_page=COMMENTS_PER_PAGE
+                                unit="条"
+                                on_change=move |p| current_page.set(p)
+                            />
+                        </div>
+                    }
+                        .into_any()
+                }
+            }}
 
-            if !selection.is_empty() {
-                div { class: "batch-bar", role: "toolbar", aria_label: "批量操作",
-                    span { class: "batch-bar-count", "已选 {selection.len()} 条" }
-                    if active == "trash" {
-                        button {
-                            class: button_class(ButtonVariant::Ghost, ButtonSize::Sm),
-                            r#type: "button",
-                            disabled: busy(),
-                            onclick: move |_| apply(selected().into_iter().collect(), "restore"),
-                            "恢复"
-                        }
-                    } else {
-                        if active != "approved" {
-                            button {
-                                class: button_class(ButtonVariant::Ghost, ButtonSize::Sm),
-                                r#type: "button",
-                                disabled: busy(),
-                                onclick: move |_| apply(selected().into_iter().collect(), "approved"),
-                                "通过"
+            <Show when=move || !selection_empty.get()>
+                <div class="batch-bar" role="toolbar" aria-label="批量操作">
+                    <span class="batch-bar-count">
+                        {move || format!("已选 {} 条", selected.with(|s| s.len()))}
+                    </span>
+                    {move || {
+                        let active = tab.get();
+                        let take = move || selected.get_untracked().into_iter().collect::<Vec<_>>();
+                        if active == "trash" {
+                            view! {
+                                <button
+                                    class=button_class(ButtonVariant::Ghost, ButtonSize::Sm)
+                                    type="button"
+                                    disabled=move || busy.get()
+                                    on:click=move |_| apply.run((take(), "restore"))
+                                >
+                                    "恢复"
+                                </button>
                             }
-                        }
-                        if active != "spam" {
-                            button {
-                                class: button_class(ButtonVariant::Ghost, ButtonSize::Sm),
-                                r#type: "button",
-                                disabled: busy(),
-                                onclick: move |_| apply(selected().into_iter().collect(), "spam"),
-                                "标为垃圾"
+                                .into_any()
+                        } else {
+                            view! {
+                                {(active != "approved")
+                                    .then(|| {
+                                        view! {
+                                            <button
+                                                class=button_class(ButtonVariant::Ghost, ButtonSize::Sm)
+                                                type="button"
+                                                disabled=move || busy.get()
+                                                on:click=move |_| apply.run((take(), "approved"))
+                                            >
+                                                "通过"
+                                            </button>
+                                        }
+                                    })}
+                                {(active != "spam")
+                                    .then(|| {
+                                        view! {
+                                            <button
+                                                class=button_class(ButtonVariant::Ghost, ButtonSize::Sm)
+                                                type="button"
+                                                disabled=move || busy.get()
+                                                on:click=move |_| apply.run((take(), "spam"))
+                                            >
+                                                "标为垃圾"
+                                            </button>
+                                        }
+                                    })}
+                                <button
+                                    class=format!(
+                                        "{} batch-bar-danger",
+                                        button_class(ButtonVariant::Ghost, ButtonSize::Sm),
+                                    )
+                                    type="button"
+                                    disabled=move || busy.get()
+                                    on:click=move |_| apply.run((take(), "trash"))
+                                >
+                                    "移到回收站"
+                                </button>
                             }
+                                .into_any()
                         }
-                        button {
-                            class: "{button_class(ButtonVariant::Ghost, ButtonSize::Sm)} batch-bar-danger",
-                            r#type: "button",
-                            disabled: busy(),
-                            onclick: move |_| apply(selected().into_iter().collect(), "trash"),
-                            "移到回收站"
-                        }
-                    }
-                    span { class: "batch-bar-sep", aria_hidden: "true" }
-                    IconButton {
-                        icon: IconName::X,
-                        label: "取消选择",
-                        size: ButtonSize::Sm,
-                        onclick: move |_| selected.write().clear(),
-                    }
-                }
-            }
-        }
+                    }}
+                    <span class="batch-bar-sep" aria-hidden="true"></span>
+                    <IconButton
+                        icon=IconName::X
+                        label="取消选择"
+                        size=ButtonSize::Sm
+                        onclick=move |_| selected.update(|s| s.clear())
+                    />
+                </div>
+            </Show>
+        </div>
     }
 }
 
@@ -350,13 +510,13 @@ pub fn AdminCommentsPage(page: i32) -> Element {
 #[component]
 fn CommentItem(
     comment: AdminComment,
-    selected: bool,
-    replying: bool,
-    busy: bool,
-    on_select: EventHandler<(i64, bool)>,
-    on_action: EventHandler<(i64, &'static str)>,
-    on_replied: EventHandler<()>,
-) -> Element {
+    #[prop(into)] selected: Signal<bool>,
+    #[prop(into)] replying: Signal<bool>,
+    #[prop(into)] busy: Signal<bool>,
+    #[prop(into)] on_select: Callback<(i64, bool)>,
+    #[prop(into)] on_action: Callback<(i64, &'static str)>,
+    #[prop(into)] on_replied: Callback<()>,
+) -> impl IntoView {
     let id = comment.id;
     let (text, images) = split_images(&comment.content_md);
     let initial = comment
@@ -392,99 +552,120 @@ fn CommentItem(
         CommentStatus::Spam => &[("approved", "不是垃圾"), ("trash", "移到回收站")],
         CommentStatus::Trash => &[("restore", "恢复为待审")],
     };
-    rsx! {
-        article {
-            class: "admin-comment",
-            "data-selected": selected.then_some("true"),
-            "data-reply": comment.parent_id.is_some().then_some("true"),
-            Checkbox {
-                checked: selected,
-                label: format!("选择 {} 的评论", comment.author_name),
-                onchange: move |on| on_select.call((id, on)),
-            }
-            if comment.avatar_url.is_empty() {
-                span { class: "admin-comment-avatar", aria_hidden: "true", "{initial}" }
-            } else {
-                img { class: "admin-comment-avatar", src: "{comment.avatar_url}", alt: "", loading: "lazy" }
-            }
-            div { class: "admin-comment-body",
-                div { class: "admin-comment-head",
-                    span { class: "admin-comment-author", "{comment.author_name}" }
-                    if let Some(site) = site {
-                        span { class: "admin-comment-site", "{site}" }
-                    }
-                    if let Some(to) = &comment.reply_to {
-                        span { class: "admin-comment-to", "回复 {to}" }
-                    }
-                    time { "{when}" }
-                }
-                if !text.is_empty() {
-                    p { class: "admin-comment-text", "{text}" }
-                }
-                if !images.is_empty() {
-                    div { class: "admin-comment-images",
-                        for url in images {
-                            a { key: "{url}", href: "{url}", target: "_blank", rel: "noopener",
-                                img { src: "{url}?thumb=240x240", alt: "评论图片", loading: "lazy" }
-                            }
+    let is_reply = comment.parent_id.is_some();
+    let author_label = format!("选择 {} 的评论", comment.author_name);
+    let avatar = if comment.avatar_url.is_empty() {
+        view! { <span class="admin-comment-avatar" aria-hidden="true">{initial}</span> }.into_any()
+    } else {
+        view! { <img class="admin-comment-avatar" src=comment.avatar_url.clone() alt="" loading="lazy"/> }
+            .into_any()
+    };
+    let images_view = (!images.is_empty()).then(|| {
+        view! {
+            <div class="admin-comment-images">
+                {images
+                    .into_iter()
+                    .map(|url| {
+                        let thumb = format!("{url}?thumb=240x240");
+                        view! {
+                            <a href=url target="_blank" rel="noopener">
+                                <img src=thumb alt="评论图片" loading="lazy"/>
+                            </a>
                         }
-                    }
-                }
-                div { class: "admin-comment-foot",
-                    a {
-                        class: "admin-comment-post",
-                        href: "/post/{comment.post_slug}",
-                        target: "_blank",
-                        rel: "noopener",
-                        "于《{comment.post_title}》"
-                    }
-                    div { class: "admin-comment-actions",
-                        for (action, label) in actions.iter().copied() {
-                            button {
-                                key: "{action}",
-                                class: "{button_class(ButtonVariant::Ghost, ButtonSize::Xs)}",
-                                "data-danger": (action == "trash").then_some("true"),
-                                r#type: "button",
-                                disabled: busy,
-                                aria_expanded: (action == "reply").then(|| replying.to_string()),
-                                onclick: move |_| on_action.call((id, action)),
-                                "{label}"
-                            }
-                        }
-                    }
-                }
-                if replying {
-                    ReplyComposer {
-                        post_id: comment.post_id,
-                        parent_id: id,
-                        author: comment.author_name.clone(),
-                        on_done: move |_| on_replied.call(()),
-                    }
-                }
-            }
+                    })
+                    .collect_view()}
+            </div>
         }
+    });
+    let post_id = comment.post_id;
+    let author = comment.author_name.clone();
+    view! {
+        <article
+            class="admin-comment"
+            data-selected=move || selected.get().then_some("true")
+            data-reply=is_reply.then_some("true")
+        >
+            <Checkbox
+                checked=selected
+                label=author_label
+                onchange=move |on| on_select.run((id, on))
+            />
+            {avatar}
+            <div class="admin-comment-body">
+                <div class="admin-comment-head">
+                    <span class="admin-comment-author">{comment.author_name.clone()}</span>
+                    {site.map(|site| view! { <span class="admin-comment-site">{site}</span> })}
+                    {comment
+                        .reply_to
+                        .as_ref()
+                        .map(|to| view! { <span class="admin-comment-to">{format!("回复 {to}")}</span> })}
+                    <time>{when}</time>
+                </div>
+                {(!text.is_empty()).then(|| view! { <p class="admin-comment-text">{text}</p> })}
+                {images_view}
+                <div class="admin-comment-foot">
+                    <a
+                        class="admin-comment-post"
+                        href=format!("/post/{}", comment.post_slug)
+                        target="_blank"
+                        rel="noopener"
+                    >
+                        {format!("于《{}》", comment.post_title)}
+                    </a>
+                    <div class="admin-comment-actions">
+                        {actions
+                            .iter()
+                            .copied()
+                            .map(|(action, label)| {
+                                view! {
+                                    <button
+                                        class=button_class(ButtonVariant::Ghost, ButtonSize::Xs)
+                                        data-danger=(action == "trash").then_some("true")
+                                        type="button"
+                                        disabled=move || busy.get()
+                                        aria-expanded=move || {
+                                            (action == "reply").then(|| replying.get().to_string())
+                                        }
+                                        on:click=move |_| on_action.run((id, action))
+                                    >
+                                        {label}
+                                    </button>
+                                }
+                            })
+                            .collect_view()}
+                    </div>
+                </div>
+                <Show when=move || replying.get()>
+                    <ReplyComposer
+                        post_id=post_id
+                        parent_id=id
+                        author=author.clone()
+                        on_done=move |()| on_replied.run(())
+                    />
+                </Show>
+            </div>
+        </article>
     }
 }
 
 /// 行内回复：以当前管理员身份发表，直接通过。
 #[component]
-#[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut, unused_variables))]
 fn ReplyComposer(
     post_id: i32,
     parent_id: i64,
     author: String,
-    on_done: EventHandler<()>,
-) -> Element {
+    #[prop(into)] on_done: Callback<()>,
+) -> impl IntoView {
     let toast = use_toast();
-    let mut text = use_signal(String::new);
-    let mut sending = use_signal(|| false);
-    let mut send = move || {
-        let content = text.peek().trim().to_string();
-        if content.is_empty() || sending() {
+    let text = RwSignal::new(String::new());
+    let sending = RwSignal::new(false);
+    let send = move || {
+        let content = text.get_untracked().trim().to_string();
+        if content.is_empty() || sending.get_untracked() {
             return;
         }
         sending.set(true);
-        spawn(async move {
+        spawn_local(async move {
             match crate::api::comments::create_comment(
                 post_id,
                 Some(parent_id),
@@ -498,32 +679,36 @@ fn ReplyComposer(
             {
                 Ok(res) if res.success => {
                     toast.success("回复已发表");
-                    on_done.call(());
+                    on_done.run(());
                 }
                 Ok(res) => toast.error(res.message),
                 Err(e) => toast.error(failure_message("回复失败", &e)),
             }
-            sending.set(false);
+            let _ = sending.try_set(false);
         });
     };
-    rsx! {
-        Composer { size: ComposerSize::Sm, class: "admin-comment-reply",
-            ComposerInput {
-                multiline: true,
-                autofocus: true,
-                aria_label: format!("回复 {author}"),
-                placeholder: format!("回复 {author}…（⌘↵ 发送）"),
-                value: text(),
-                oninput: move |value: String| text.set(value),
-                on_submit: move |_| send(),
-            }
-            ComposerSend {
-                label: "发送回复",
-                icon: IconName::Send,
-                disabled: sending() || text().trim().is_empty(),
-                onclick: move |_| send(),
-            }
-        }
+    let aria = format!("回复 {author}");
+    let placeholder = format!("回复 {author}…（⌘↵ 发送）");
+    view! {
+        <Composer size=ComposerSize::Sm class="admin-comment-reply">
+            <ComposerInput
+                multiline=true
+                autofocus=true
+                aria_label=aria
+                placeholder=placeholder
+                value=text
+                oninput=move |value: String| text.set(value)
+                on_submit=move |()| send()
+            />
+            <ComposerSend
+                label="发送回复"
+                icon=IconName::Send
+                disabled=Signal::derive(move || {
+                    sending.get() || text.with(|t| t.trim().is_empty())
+                })
+                onclick=move |_| send()
+            />
+        </Composer>
     }
 }
 

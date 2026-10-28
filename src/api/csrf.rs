@@ -22,20 +22,19 @@ fn is_write_method(method: &Method) -> bool {
 
 /// 启动时检查 `APP_BASE_URL` 是否已设置，未设置则打一条 WARN。
 ///
-/// [`trusted_origin`] 在拿不到该变量时会回退到请求 `Host` 头推导本站 origin，
+/// 未配置时 [`trusted_source`] 回退为“来源主机等于请求 `Host` 头”，
 /// 反向代理后若 `Host` 头可被客户端影响，该回退路径可被 CSRF 绕过。
 /// 生产环境应显式设置该变量为站点完整 origin（如 `https://your-domain.example`）。
 ///
-/// 本地开发同样会触发（默认不设 `APP_BASE_URL`），代价仅是启动时一条 WARN，
-/// 远小于误判 localhost 的复杂度。与 `image.rs` 的启动告警同范式：一次性 WARN，
-/// 不污染每请求路径。
+/// 本地开发同样会触发（默认不设 `APP_BASE_URL`），代价仅是启动时一条 WARN。
+/// 与 `image.rs` 的启动告警同范式：一次性 WARN，不污染每请求路径。
 #[cfg(feature = "server")]
 pub fn warn_if_app_base_url_unset() {
     if app_base_url_is_set() {
         return;
     }
     tracing::warn!(
-        "APP_BASE_URL 未设置。CSRF 校验将回退到请求 Host 头推导本站 origin，\
+        "APP_BASE_URL 未设置。CSRF 校验将回退为比对请求来源与 Host 头的主机，\
          反向代理后若 Host 头可被客户端影响存在绕过风险。\
          生产环境应显式设置为站点完整 origin，如 https://your-domain.example。"
     );
@@ -62,17 +61,20 @@ fn normalize_origin(input: &str) -> String {
         Some(pair) => pair,
         None => return input.to_string(),
     };
-    // rest 形如 host[:port]/path?query，去掉首个 '/' 及之后内容。
-    let authority = match rest.split_once('/') {
+    format!("{}://{}", scheme, normalize_authority(rest))
+}
+
+/// 从 `host[:port][/path]` 取出 `host[:port]`，省略默认端口（80/443）。
+#[cfg(feature = "server")]
+fn normalize_authority(input: &str) -> &str {
+    // input 形如 host[:port]/path?query，去掉首个 '/' 及之后内容。
+    let authority = match input.split_once('/') {
         Some((auth, _)) => auth,
-        None => rest,
+        None => input,
     };
-    // 省略默认端口。
     match authority.rsplit_once(':') {
-        Some((host, port)) if port == "80" || port == "443" => {
-            format!("{}://{}", scheme, host)
-        }
-        _ => format!("{}://{}", scheme, authority),
+        Some((host, port)) if port == "80" || port == "443" => host,
+        _ => authority,
     }
 }
 
@@ -90,34 +92,48 @@ fn extract_origin(headers: &HeaderMap) -> Option<String> {
         .map(normalize_origin)
 }
 
-/// 计算本站可信 origin：优先「站点配置 → 安全」面板的 APP_BASE_URL（即时生效），
-/// 否则用请求 Host 头 + `X-Forwarded-Proto`（反代后）或 https 推导。
+/// 本站来源的判定依据。
+#[cfg(feature = "server")]
+enum TrustedSource {
+    /// 配置了 APP_BASE_URL：来源必须与它的 origin 完全相同（含协议）。
+    Origin(String),
+    /// 未配置：来源的 `host[:port]` 必须等于请求 `Host` 头，协议不限。
+    /// 本地 http 开发无需配置即可使用，localhost 与 127.0.0.1 各自成立；
+    /// 跨站请求的来源主机不同，照样被拒。
+    Host(String),
+}
+
+/// 计算本站来源：优先「站点配置 → 安全」面板的 APP_BASE_URL（即时生效），
+/// 否则取请求 Host 头。
 ///
-/// 返回 None 表示无法确定本站 origin；写请求在这种情况下会被拒绝，
+/// 返回 None 表示无法确定本站来源；写请求在这种情况下会被拒绝，
 /// 避免在来源头缺失时把 cookie-auth 请求当作可信请求。
 #[cfg(feature = "server")]
-async fn trusted_origin(headers: &HeaderMap) -> Option<String> {
+async fn trusted_source(headers: &HeaderMap) -> Option<TrustedSource> {
     let base = crate::api::settings::runtime_security_settings()
         .await
         .app_base_url;
     if !base.is_empty() {
-        return Some(normalize_origin(&base));
+        return Some(TrustedSource::Origin(normalize_origin(&base)));
     }
     let host = headers.get(axum::http::header::HOST)?.to_str().ok()?;
-    let proto = headers
-        .get("X-Forwarded-Proto")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("https");
-    Some(normalize_origin(&format!("{}://{}", proto, host)))
+    Some(TrustedSource::Host(normalize_authority(host).to_string()))
 }
 
 /// 判断写请求的来源是否可信。
 ///
-/// cookie-auth 写请求必须同时拥有可确定的本站 origin 与来源头；
+/// cookie-auth 写请求必须同时拥有可确定的本站来源与来源头；
 /// 任一缺失都拒绝，避免 `Origin`/`Referer` 被剥离时形成 CSRF fail-open。
 #[cfg(feature = "server")]
-fn origin_matches(trusted: Option<&str>, incoming: Option<&str>) -> bool {
-    matches!((trusted, incoming), (Some(t), Some(o)) if t == o)
+fn origin_matches(trusted: Option<&TrustedSource>, incoming: Option<&str>) -> bool {
+    match (trusted, incoming) {
+        (Some(TrustedSource::Origin(origin)), Some(incoming)) => origin == incoming,
+        (Some(TrustedSource::Host(host)), Some(incoming)) => incoming
+            .strip_prefix("http://")
+            .or_else(|| incoming.strip_prefix("https://"))
+            .is_some_and(|authority| !host.is_empty() && authority.eq_ignore_ascii_case(host)),
+        _ => false,
+    }
 }
 
 /// 从 Fetch Metadata 判断请求是否由本站页面发起。
@@ -152,9 +168,9 @@ pub async fn csrf_middleware(
 ) -> axum::response::Response {
     if is_write_method(req.method()) {
         let headers = req.headers().clone();
-        let trusted = trusted_origin(&headers).await;
+        let trusted = trusted_source(&headers).await;
         let incoming = extract_origin(&headers);
-        let ok = origin_matches(trusted.as_deref(), incoming.as_deref());
+        let ok = origin_matches(trusted.as_ref(), incoming.as_deref());
         if !ok {
             return forbidden();
         }
@@ -175,8 +191,8 @@ pub async fn same_origin_read_middleware(
         Some(same_origin) => same_origin,
         None => {
             let headers = req.headers().clone();
-            let trusted = trusted_origin(&headers).await;
-            origin_matches(trusted.as_deref(), extract_origin(&headers).as_deref())
+            let trusted = trusted_source(&headers).await;
+            origin_matches(trusted.as_ref(), extract_origin(&headers).as_deref())
         }
     };
     if !ok {
@@ -280,16 +296,35 @@ mod tests {
 
     #[test]
     fn origin_matches_requires_both_origins() {
-        assert!(origin_matches(
-            Some("https://example.com"),
-            Some("https://example.com")
-        ));
-        assert!(!origin_matches(Some("https://example.com"), None));
+        let site = TrustedSource::Origin("https://example.com".to_string());
+        assert!(origin_matches(Some(&site), Some("https://example.com")));
+        assert!(!origin_matches(Some(&site), None));
         assert!(!origin_matches(None, Some("https://example.com")));
+        assert!(!origin_matches(Some(&site), Some("https://evil.example")));
+        // 配置了站点地址时协议也要一致。
+        assert!(!origin_matches(Some(&site), Some("http://example.com")));
+    }
+
+    #[test]
+    fn origin_matches_host_fallback_ignores_scheme_only() {
+        let host = TrustedSource::Host(normalize_authority("localhost:8080").to_string());
+        assert!(origin_matches(Some(&host), Some("http://localhost:8080")));
+        assert!(origin_matches(Some(&host), Some("https://localhost:8080")));
+        assert!(!origin_matches(Some(&host), Some("http://localhost:3000")));
+        assert!(!origin_matches(Some(&host), Some("http://127.0.0.1:8080")));
         assert!(!origin_matches(
-            Some("https://example.com"),
-            Some("https://evil.example")
+            Some(&host),
+            Some("http://evil.localhost:8080")
         ));
+        // 沙箱 iframe、file:// 等来源为 "null"。
+        assert!(!origin_matches(Some(&host), Some("null")));
+        assert!(!origin_matches(Some(&host), None));
+
+        // 默认端口两侧都省略：Host 头 `example.com:443` 与 Origin `https://example.com` 一致。
+        let host = TrustedSource::Host(normalize_authority("example.com:443").to_string());
+        let incoming = normalize_origin("https://example.com:443");
+        assert!(origin_matches(Some(&host), Some(&incoming)));
+        assert!(origin_matches(Some(&host), Some("https://example.com")));
     }
 
     #[test]

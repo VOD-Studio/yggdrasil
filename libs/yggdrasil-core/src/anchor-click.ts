@@ -1,24 +1,16 @@
 /**
- * 拦截文章正文/目录里的 hash 锚点点击，阻止 Dioxus 接管导致整页刷新。
+ * 拦截文章正文/目录里的 hash 锚点点击，避免被 Leptos 路由器或视图过渡协调器当成站内导航。
  *
- * 背景：Dioxus 0.7 的 NativeInterpreter 通过事件委托在根节点上监听 click。
- * 只要 app 任意位置用了 onclick（本项目 post_nav_links.rs 有），Dioxus 就启用
- * 全局 click 委托。点击 dangerous_inner_html 注入的原生 <a href="#id"> 时：
- *   1. click 冒泡到根 → handleEvent 同步 POST /__events
- *   2. 目标 <a> 没有 Dioxus onclick → response 不含 preventDefault
- *   3. 兜底分支 handleClickNavigate: event.preventDefault() + browser_open IPC
- *   4. browser_open 走 History::external → window.location.set_href("#id") → 整页刷新
+ * 背景：Leptos 路由器在 window 上监听 click 拦截站内链接，视图过渡协调器
+ * （route-transitions.ts）在 document 冒泡阶段接管站内链接。点击 inner_html 注入的
+ * 原生 <a href="#id"> 时，两者都会把它当作一次路由请求，原生 fragment-scroll 被
+ * preventDefault 掉，表现为「点击锚点不滚动」或整页重绘。
  *
- * 结果：原生 fragment-scroll 被 preventDefault 拦掉，IPC 又把 hash 当外部 URL
- * 整页加载，表现为「点击锚点刷新文章页且不滚动」。WASM 未下载完时是纯 SSR HTML，
- * 走浏览器原生 fragment-scroll 正常——所以问题只在 hydration 后出现。
+ * 修复：在 capture 阶段（早于上述两个冒泡监听器）拦截指向同页 hash 的 <a> 点击，
+ * stopPropagation 阻止事件到达它们，自行滚动到标题（scrollToHeading 手动扣除 header
+ * 高度）并用 history.replaceState 更新 URL hash（不触发 popstate/hashchange，避免抖动）。
  *
- * 修复：在 capture 阶段（早于 Dioxus 的 bubble 委托监听器）拦截指向同页 hash 的
- * <a> 点击，stopPropagation 阻止事件到达 Dioxus 的委托监听器，自行滚动到标题
- * （scrollToHeading 手动扣除 header 高度）并用 history.replaceState 更新 URL hash
- * （不触发 popstate/hashchange，避免抖动）。
- *
- * 例外：带 data-app-anchor 祖先的链接不接管，由所在组件的 onclick 自行滚动。
+ * 例外：带 data-app-anchor 祖先的链接不接管，由所在组件的 on:click 自行滚动。
  */
 
 import { scrollToHeading } from './scroll-to-heading';
@@ -28,9 +20,8 @@ let installed = false;
 /**
  * 安装全局 hash 锚点点击拦截器。幂等：重复调用安全。
  *
- * 用 capture 阶段 + 在 window 上注册，保证在 Dioxus 的根监听器之前执行；
- * stopPropagation 阻止事件继续传播，Dioxus 的 handleEvent/handleClickNavigate
- * 不会收到这个事件，browser_open IPC 不触发，整页刷新被避免。
+ * 用 capture 阶段 + 在 window 上注册，保证在路由器与协调器的监听器之前执行；
+ * stopPropagation 阻止事件继续传播，路由器不会收到这个事件。
  */
 export function initAnchorClick(): void {
   if (installed) return;
@@ -51,13 +42,13 @@ export function initAnchorClick(): void {
       const anchor = target.closest('a');
       if (!anchor) return;
 
-      // 组件自行处理点击（Dioxus onclick + prevent_default）的锚点：完全放行，
+      // 组件自行处理点击（on:click + prevent_default）的锚点：完全放行，
       // 不 stopPropagation，否则组件的 handler 收不到事件。
       if (anchor.closest('[data-app-anchor]')) return;
 
       const href = anchor.getAttribute('href');
       // 只接管同页 hash 锚点：href 以 # 开头且非空（排除纯 "#" 和 "#top" 之外的真锚点）。
-      // 外链、路径链接、空 hash 都交给浏览器/Dioxus 原行为。
+      // 外链、路径链接、空 hash 都交给浏览器/路由器原行为。
       if (!href?.startsWith('#') || href === '#') return;
 
       const id = decodeURIComponent(href.slice(1));
@@ -79,7 +70,7 @@ export function initAnchorClick(): void {
       const el = document.getElementById(id);
       if (!el) return; // 目标不存在：放行，交还原生行为（不滚动但不刷新）
 
-      // 阻止事件继续传播到 Dioxus 的委托监听器 → 避免 handleClickNavigate。
+      // 阻止事件继续传播到路由器与协调器的监听器。
       event.stopPropagation();
       event.preventDefault();
 
@@ -93,6 +84,6 @@ export function initAnchorClick(): void {
         window.__routeTransitions?.syncHash();
       }
     },
-    true, // capture：在 Dioxus 的 bubble 监听器之前执行
+    true, // capture：在路由器的冒泡监听器之前执行
   );
 }

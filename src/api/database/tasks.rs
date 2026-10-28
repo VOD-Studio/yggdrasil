@@ -6,8 +6,9 @@
 //! `update` 更新进度，前端轮询 [`get_task_progress`][crate::api::database::tasks::get_task_progress]。
 //! 已完成超过 1 小时的任务惰性清理，避免内存累积。
 
+use crate::api::error::ApiError;
 use chrono::{DateTime, Utc};
-use dioxus::prelude::*;
+use leptos::prelude::*;
 use serde::{Deserialize, Serialize};
 
 // admin 鉴权仅 server 构建用到。
@@ -102,8 +103,8 @@ fn gc_old() {
 }
 
 /// 查询任务进度（轮询用）。
-#[server(GetTaskProgress, "/api")]
-pub async fn get_task_progress(task_id: String) -> Result<TaskProgress, ServerFnError> {
+#[server(GetTaskProgress, endpoint = "get_task_progress", input = leptos::server_fn::codec::Json)]
+pub async fn get_task_progress(task_id: String) -> Result<TaskProgress, ApiError> {
     let _user = get_current_admin_user().await?;
     #[cfg(feature = "server")]
     {

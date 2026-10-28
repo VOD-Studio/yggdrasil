@@ -1,8 +1,9 @@
-// 与 posts 模块一致：Dioxus `#[server]` 宏触发 deprecated/unit/too_many_arguments
+// 与 posts 模块一致：Leptos `#[server]` 宏触发 deprecated/unit/too_many_arguments
 // 提示，按项目惯例放行（限流/运行器等配置项天然参数多）。
 #![allow(clippy::unused_unit, deprecated, clippy::too_many_arguments)]
 
-use dioxus::prelude::*;
+use crate::api::error::ApiError;
+use leptos::prelude::*;
 
 #[cfg(feature = "server")]
 use crate::api::auth::get_current_admin_user;
@@ -69,8 +70,8 @@ pub(crate) async fn save_trash_settings(
 /// 读取回收站配置。
 ///
 /// settings 表缺失键时回退到默认值，保证向后兼容。
-#[server(GetTrashSettings, "/api")]
-pub async fn get_trash_settings() -> Result<TrashSettings, ServerFnError> {
+#[server(GetTrashSettings, endpoint = "get_trash_settings", input = leptos::server_fn::codec::Json)]
+pub async fn get_trash_settings() -> Result<TrashSettings, ApiError> {
     let _user = get_current_admin_user().await?;
 
     #[cfg(feature = "server")]
@@ -88,11 +89,11 @@ pub async fn get_trash_settings() -> Result<TrashSettings, ServerFnError> {
 /// 更新回收站配置。
 ///
 /// retention_days 会被 clamp 到合法范围后写入。
-#[server(UpdateTrashSettings, "/api")]
+#[server(UpdateTrashSettings, endpoint = "update_trash_settings", input = leptos::server_fn::codec::Json)]
 pub async fn update_trash_settings(
     auto_purge_enabled: bool,
     retention_days: i32,
-) -> Result<TrashSettings, ServerFnError> {
+) -> Result<TrashSettings, ApiError> {
     let _user = get_current_admin_user().await?;
 
     #[cfg(feature = "server")]

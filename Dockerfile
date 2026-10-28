@@ -1,9 +1,6 @@
 # -----------------------------------------------------------------------------
 # Builder stage: compile the static-linked musl server binary and frontend assets
 # -----------------------------------------------------------------------------
-# Trixie (Debian 13, glibc 2.41) — required because the prebuilt `dx` v0.7.10
-# binary (aarch64/x86_64-unknown-linux-gnu) needs GLIBC_2.39; Bookworm only
-# ships 2.36, so `dx --version` fails with "version `GLIBC_2.39' not found".
 FROM rust:1.99-trixie AS builder
 
 # Master switch for Chinese mirrors.
@@ -14,8 +11,7 @@ FROM rust:1.99-trixie AS builder
 #     gh-proxy for GitHub Releases). Pass via: --build-arg CN_MIRROR=true
 # Individual mirror URLs are still ARG-overridable for custom mirrors.
 ARG CN_MIRROR=false
-# Exported as ENV so `make esbuild-cache` / `make wasm-bindgen-cache` (called
-# from RUN below) can read it via $$CN_MIRROR in their shell recipes.
+# Exported as ENV so build recipes (make) can read $CN_MIRROR when needed.
 ENV CN_MIRROR=${CN_MIRROR}
 
 ARG DEBIAN_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/debian
@@ -38,12 +34,6 @@ RUN if [ "$CN_MIRROR" = "true" ]; then \
 #     CMake or Go requirement); musl-gcc supplies the native musl sysroot.
 #   - musl-tools: linker for x86_64-unknown-linux-musl
 #   - cmake/clang/nasm/libssl-dev: libwebp (zenwebp), ring, syntect
-#   - binaryen: provides `wasm-opt` on PATH so dx's release client build
-#     uses the local binary instead of fetching one from GitHub Releases.
-#     dx's internal wasm-opt download ignores GH_PROXY (only the explicit
-#     curl calls for dx/tailwindcss honor it), so without this the build
-#     hangs ~80 min then fails with "stream error received: unspecific
-#     protocol error detected" trying to fetch wasm-opt mid-build.
 #   - curl/gnupg/ca-certificates: download tooling
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -54,7 +44,6 @@ RUN apt-get update \
         pkg-config \
         libssl-dev \
         musl-tools \
-        binaryen \
         brotli \
         ca-certificates \
         curl \
@@ -64,8 +53,8 @@ RUN apt-get update \
 
 # --- Bun ---
 # 官方 npm 包 @oven/bun-linux-<arch> 的 tgz 内只有单文件二进制，无需 Node.js 和 unzip。
-# CN_MIRROR=true: 走 npmmirror；CN_MIRROR=false: 走 registry.npmjs.org（与 make esbuild-cache 同源）。
-ARG BUN_VERSION=1.4.2
+# CN_MIRROR=true: 走 npmmirror；CN_MIRROR=false: 走 registry.npmjs.org。
+ARG BUN_VERSION=1.4.4
 RUN ARCH="$(dpkg --print-architecture)" \
     && case "$ARCH" in \
         amd64)  BUN_ARCH=x64     ;; \
@@ -100,7 +89,7 @@ RUN if [ "$CN_MIRROR" = "true" ]; then \
 # see WASM_NIGHTLY in the Makefile). Keep this ARG in sync with that variable.
 ARG WASM_NIGHTLY=nightly-2026-10-19
 
-# Add the targets used by Dioxus fullstack builds. Both musl targets are
+# Add the musl targets used by the server build. Both are
 # installed; each buildx platform leg builds only its native one (see below).
 # The wasm32 target lives on the pinned nightly that builds the client.
 # RUSTUP_DIST_SERVER is exported inline (only rustup-download that needs it).
@@ -111,38 +100,6 @@ RUN if [ "$CN_MIRROR" = "true" ]; then \
     && rustup target add x86_64-unknown-linux-musl aarch64-unknown-linux-musl \
     && rustup toolchain install "$WASM_NIGHTLY" --profile minimal \
         --component rust-src --target wasm32-unknown-unknown
-
-# Install the Dioxus CLI from the official prebuilt binary (GitHub Releases),
-# NOT `cargo install` (which compiles dx-cli's huge dep tree from source — the
-# slowest single Docker step). The release tag v0.7.10 matches the crate version
-# we previously pinned. The prebuilt dx is a glibc (linux-gnu) binary requiring
-# GLIBC_2.39 — that's why the builder stage above uses Trixie (glibc 2.41), not
-# Bookworm (glibc 2.36). dx runs only in this builder stage (to emit the WASM
-# client bundle); it never enters the static-musl runtime image. Each buildx
-# platform leg downloads only its native arch; the sha256 pins the exact
-# artifact (supply-chain integrity, verified against the release's .sha256
-# sidecar).
-ARG DX_VERSION=0.7.10
-# The 32 MB dx tarball sits on github.com releases; from China it downloads at
-# ~300 KB/s and the connection is frequently reset mid-transfer with
-# "curl: (56) ... unexpected eof while reading" — the same flaky-upstream
-# problem the mirror rewrites above solve for apt/crates/npm. --retry with
-# --retry-all-errors (curl 7.71+, Trixie ships 8.x) covers SSL/EOF resets, and
-# --continue-at - resumes the partial file instead of restarting from zero on
-# each retry. The sha256 pin still catches a corrupted/partial download.
-RUN ARCH="$(dpkg --print-architecture)" \
-    && case "$ARCH" in \
-        amd64) DX_TRIPLET=x86_64-unknown-linux-gnu  DX_SHA256=4363e4ed2a3f1eb7f4d38d2d59aed59ce43271c44c16b425e92c89a64761fbe7 ;; \
-        arm64) DX_TRIPLET=aarch64-unknown-linux-gnu DX_SHA256=8f1a17d3218700ffbe15e6540d936a178b2556fc801121a31082e3ba4ab9ef55 ;; \
-        *) echo "unsupported arch: $ARCH" >&2; exit 1 ;; \
-    esac \
-    && if [ "$CN_MIRROR" = "true" ]; then GH_PX="${GH_PROXY}"; else GH_PX=""; fi \
-    && DX_URL="${GH_PX:+${GH_PX}/}https://github.com/DioxusLabs/dioxus/releases/download/v${DX_VERSION}/dx-${DX_TRIPLET}.tar.gz" \
-    && curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors --retry-connrefused --continue-at - "${DX_URL}" -o /tmp/dx.tar.gz \
-    && echo "${DX_SHA256}  /tmp/dx.tar.gz" | sha256sum -c - \
-    && tar -xzf /tmp/dx.tar.gz -C /usr/local/bin \
-    && rm /tmp/dx.tar.gz \
-    && dx --version
 
 # --- Tailwind CSS v4: the standalone binary is distributed via GitHub
 # Releases (~106 MB). ---
@@ -158,11 +115,14 @@ RUN ARCH="$(dpkg --print-architecture)" \
     && curl -fsSL -o /usr/local/bin/tailwindcss "${GH_URL}" \
     && chmod +x /usr/local/bin/tailwindcss
 
+# --- cargo-leptos: 前端构建（wasm-bindgen、分包、CSS）。独立层，便于缓存。 ---
+RUN cargo install cargo-leptos --version 0.3.11 --locked
+
 # --- cargo-chef: 用于把 Rust 依赖编译与源码编译分离成独立的 Docker 层。
 # 改一行 .rs 不再触发 576 个依赖的全量重编。CI 端用 GHA cache (type=gha)
 # 跨 run 持久化 cooker 层,依赖不变时该层 cache-hit(秒级),只编 app。
 # 用 GitHub Releases 预编译二进制(不 cargo install:后者编译 cargo-chef 自身
-# 依赖要 2-3min,且在 QEMU 下 SIGSEGV)。与 dx/tailwind 同模式:按架构选 tarball。
+# 依赖要 2-3min,且在 QEMU 下 SIGSEGV)。与 tailwind 同模式:按架构选 tarball。
 ARG CHEF_VERSION=0.1.77
 RUN ARCH="$(dpkg --print-architecture)" \
     && case "$ARCH" in \
@@ -226,14 +186,15 @@ ENV YGG_BUILD_GIT_COMMIT_DATE=${YGG_BUILD_GIT_COMMIT_DATE}
 #
 # cook 必须用与最终 cargo build 完全相同的 target/features/rustflags,
 # 否则产物目录不匹配、缓存形同虚设。这里镜像后端(server musl release),
-# WASM 前端走 dx 不经 cargo-chef(它另走 wasm32 target)。
+# WASM 前端走 cargo-leptos 不经 cargo-chef(它另走 wasm32 target)。
 COPY Cargo.toml Cargo.lock ./
 # cargo-chef prepare 运行 `cargo metadata`，后者校验所有 autobins/[[bin]] 源文件
 # 物理存在；此刻仅 COPY 了 manifest，需 dummy 入口让 metadata 解析通过。内容无关：
 # cook 阶段由 cargo-chef 自带 skeleton 接管编译依赖，下方 `COPY . .` 再以真实源码覆盖。
 RUN mkdir -p src/bin \
     && printf 'fn main() {}\n' > src/main.rs \
-    && printf 'fn main() {}\n' > src/bin/generate_highlight_css.rs
+    && printf 'fn main() {}\n' > src/bin/generate_highlight_css.rs \
+    && : > src/lib.rs
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
     ARCH="$(dpkg --print-architecture)" \
@@ -245,9 +206,8 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     && cargo chef prepare --recipe-path recipe.json \
     && export CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc \
     && export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc \
-    && export RUSTFLAGS="-C target-feature=+crt-static -C relocation-model=static" \
-    && cargo chef cook --release --target "$MUSL_TARGET" \
-        --no-default-features --features server --recipe-path recipe.json
+    && export RUSTFLAGS="-C target-feature=+crt-static -C relocation-model=static --cfg erase_components" \
+    && cargo chef cook --release --locked --target "$MUSL_TARGET" --recipe-path recipe.json
 # 不再 cook host(dev) target: 下方 cargo doc 用 --no-deps(不编依赖),host cook 无服务对象;
 # 且 cargo-chef 0.1.77 在 host cook 的 skeleton 模式下对 archmage-macros 等 proc-macro
 # 报 "target does not support these crate types"(0.8.2 CI 实证,amd64/arm64 runner 均挂此)。
@@ -265,65 +225,33 @@ COPY . .
 # rendering as bare spans without KaTeX fonts).
 RUN make build-assets
 
-# Pre-populate dx's esbuild tool cache from the Chinese npm mirror.
-# dx hardcodes registry.npmjs.org for esbuild (packages/cli/src/esbuild.rs:62) —
-# neither NPM_CONFIG_REGISTRY nor .npmrc affects it. Pre-caching from npmmirror
-# makes the path.exists() check at esbuild.rs:25 short-circuit the download.
-# ESBUILD_VERSION must match dx's pinned constant (0.27.3 in dx 0.7.10).
-ENV DX_HOME=/usr/local/dx
-RUN make esbuild-cache wasm-bindgen-cache
-# Build the client-side Dioxus WASM bundles. We use dx only for the client
-# assets; dx's linker wrapper is incompatible with a raw static linker, so the
-# server binary is built with plain cargo in the next step. Each flavor build
-# emits a ready-to-serve public/ directory under target/dx/yggdrasil/*/web/public;
-# make snapshot-flavor copies it aside so the two builds cannot clobber each
-# other, and scripts/build-release.cjs merges them into dist/public (full
-# index.html + flavors/reader/index.html + release-manifest.json, plan §6.4).
-# restore-webp overwrites dx's re-encoded VP8L .webp stills with the source
-# originals after every dx build — keep in sync with make build-linux.
-# --mount 缓存 wasm32 的 cargo registry/git/target：dx build 内部跑
-# `cargo build --target wasm32-unknown-unknown`（不经 cargo-chef），改一行 .rs
-# 也会全量重下重编 ~400 个 wasm 依赖；mount 让它们跨 build 持久化。target
-# 卷里的 dx 产物 (target/dx/yggdrasil/*/web/public) 在同一 RUN 内 cp 到 dist/
-# 仍可见（cache mount 在 RUN 期间是活的）。与 cook/cargo build 的 server musl
-# 产物互不干扰——后者在镜像层 /build/target，本 RUN 的 cache 卷覆盖该路径但
-# 只装 wasm32 子目录，server RUN 无 target mount 仍看镜像层。
+# 用 cargo-leptos 构建分包前端（wasm/js/css → target/site，hash.txt → target/release）。
+# make build-frontend 使用固定 nightly + build-std（见 Makefile 的 LEPTOS_WASM_ENV）。
+# 服务端由下方的 plain cargo 以 musl 目标构建。
+# --mount 缓存 wasm32 的 cargo registry/git/target：前端构建不经 cargo-chef，
+# 改一行 .rs 也会全量重下重编 ~400 个 wasm 依赖；mount 让它们跨 build 持久化。
+# cache mount 只在本 RUN 期间存在，因此 hash.txt 在同一 RUN 内先拷到 /build/hash.txt，
+# 再由 build-release.cjs 把 target/site 与 hash.txt 装配进 /build/dist。
+# 与 cook/cargo build 的 server musl 产物互不干扰——后者在镜像层 /build/target，
+# 本 RUN 的 cache 卷覆盖该路径但只装 wasm32 子目录与站点产物。
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
     --mount=type=cache,target=/build/target,sharing=locked \
-    make build-client && \
-    make restore-webp && \
-    make snapshot-flavor FLAVOR=full && \
-    make build-client-reader && \
-    make restore-webp && \
-    make snapshot-flavor FLAVOR=reader && \
-    bun scripts/build-release.cjs --out /build/dist
+    make build-frontend && \
+    cp target/release/hash.txt /build/hash.txt && \
+    bun scripts/build-release.cjs --out /build/dist --hash /build/hash.txt
 
-# Generate the project's rustdoc API docs and stage them under public/doc so
-# they are served at /doc on the live site. Runs `make doc` (site-themed
-# rustdoc, see rustdoc-theme/) with DOC_OUT pointing at dist/public/doc.
-# It uses --no-deps and --document-private-items (this is effectively a
-# single-crate binary — without it the pages would be nearly empty) and writes
-# the tiny index.html that redirects bare /doc to the real crate entry yggdrasil/.
-# NOTE: .dockerignore excludes host-side public/doc/, so this RUN is the ONLY
-# channel that puts the docs into the image — without it /doc is a 404 online.
+# 生成带站点主题的 lib crate 文档，包含私有项，并提供 /doc 入口重定向。
+# .dockerignore 排除了宿主 public/doc/；这里直接写入装配后的发布目录。
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
     make doc DOC_OUT=dist/public/doc
 
-# Pre-compress all static text assets with brotli (.br sidecars). dx's
-# pre_compress only covers its hashed wasm/js bundle under assets/; but
-# dioxus-server registers ServeFile::precompressed_br() for every public leaf
-# — tower_http serves <file>.br on Accept-Encoding: br, falls back to raw
-# (open_file_with_fallback). So .br sidecars in the same directory are all
-# that's needed: no runtime code change. Text formats only; fonts/images are
-# already compressed and would not shrink. assets/*.wasm|js are harmlessly
-# re-compressed (brotli is deterministic, same q-11 as dx).
-RUN find /build/dist/public -type f \
-        \( -name '*.js' -o -name '*.css' -o -name '*.wasm' \
-           -o -name '*.svg' -o -name '*.html' -o -name '*.json' -o -name '*.xml' \) \
-        -not -name '*.br' \
-        -print0 | xargs -0 -r brotli -q 11 -kf
+# 与本地发布共用预压缩规则；查找或压缩失败时立即终止构建。
+RUN make precompress RELEASE_OUT=/build/dist
+
+# 校验发布产物：清单摘要、hash.txt 指向的产物、分包清单闭包与 .br 旁车。
+RUN bun scripts/build-release.cjs --verify --out /build/dist
 
 # Build the server as a fully static musl binary, **natively for the buildx
 # platform leg**. Each leg builds only its own arch, so musl-gcc (which Debian
@@ -341,8 +269,8 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     esac \
     && export CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc \
     && export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc \
-    && export RUSTFLAGS="-C target-feature=+crt-static -C relocation-model=static" \
-    && cargo build --release --target "$MUSL_TARGET" --no-default-features --features server
+    && export RUSTFLAGS="-C target-feature=+crt-static -C relocation-model=static --cfg erase_components" \
+    && cargo build --release --locked --target "$MUSL_TARGET" --bin yggdrasil
 
 # Ensure the uploads/backups directories exist for runtime. backups/ holds DB
 # dump files written by the backup feature; without a nobody-owned dir here the
@@ -377,13 +305,15 @@ WORKDIR /app
 # Copy the static musl server binary and the bundled public assets.
 COPY --from=builder --chown=65534:65534 /build/server /app/server
 COPY --from=builder --chown=65534:65534 /build/dist/public /app/public
+# 服务端启动时从可执行文件同目录读取 hash.txt，校验前端产物与二进制配套。
+COPY --from=builder --chown=65534:65534 /build/dist/hash.txt /app/hash.txt
 COPY --from=builder --chown=65534:65534 /build/uploads /app/uploads
 COPY --from=builder --chown=65534:65534 /build/backups /app/backups
 
 # The app checks for DATABASE_URL on startup even though this image is intended
 # to run without a real database. A placeholder is enough to let the server boot.
 ENV DATABASE_URL=postgres://postgres:postgres@localhost:5432/yggdrasil
-ENV DIOXUS_PUBLIC_PATH=/app/public
+ENV LEPTOS_SITE_ROOT=/app/public
 ENV IP=0.0.0.0
 ENV PORT=3000
 ENV RUST_LOG=info

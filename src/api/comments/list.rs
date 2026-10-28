@@ -1,20 +1,21 @@
 //! 评论列表查询接口：后台管理用的评论列表与各状态条数。
 //!
-//! 所有接口均需管理员身份，Dioxus server function 注册在 `/api` 路径下。
+//! 所有接口均需管理员身份，Leptos server function 注册在 `/api` 路径下。
 //! 仅在 `feature = "server"` 启用的服务端构建中查询数据库。
 
 use crate::api::comments::types::*;
-use dioxus::prelude::*;
+use crate::api::error::ApiError;
+use leptos::prelude::*;
 
 /// 获取全部评论分页列表。
 ///
 /// 支持按状态筛选（`trash` 为软删除的评论）；未指定状态时返回所有未删除评论。
 /// 同时返回各状态条数。
-#[server(GetAllComments, "/api")]
+#[server(GetAllComments, endpoint = "get_all_comments", input = leptos::server_fn::codec::Json)]
 pub async fn get_all_comments(
     page: i32,
     status: Option<String>,
-) -> Result<AllCommentsResponse, ServerFnError> {
+) -> Result<AllCommentsResponse, ApiError> {
     #[cfg(feature = "server")]
     {
         use crate::api::auth::get_current_admin_user;

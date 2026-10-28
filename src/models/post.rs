@@ -42,6 +42,8 @@ impl PostStatus {
 
     /// 将字符串解析为 PostStatus，无法识别时返回 None。
     #[cfg(feature = "server")]
+    // 返回值不是 Result（未知值回退/None），不能实现 std::str::FromStr。
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
             "draft" => Some(PostStatus::Draft),

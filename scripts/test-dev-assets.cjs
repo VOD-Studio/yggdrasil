@@ -73,13 +73,15 @@ if (command === 'bun' && args[0] === 'install') {
   record('build ' + name);
   if (fs.existsSync(path.join(root, 'fail-' + name))) process.exit(1);
   for (const file of outputs[name] || []) write(file);
+} else if (command === 'cargo-leptos' || (command === 'cargo' && args[0] === 'leptos')) {
+  console.log('cargo-leptos 0.3.11');
 } else if (command === 'cargo') {
   record('highlight'); write('public/highlight.css');
 } else if (command === 'tailwindcss') {
   record('css'); write('public/style.css');
 } else if (command === 'rustup') console.log('llvm-tools-aarch64-apple-darwin');
 `;
-  for (const tool of ['bun', 'cargo', 'tailwindcss', 'rustup', 'dx']) {
+  for (const tool of ['bun', 'cargo', 'tailwindcss', 'rustup', 'cargo-leptos']) {
     write(`bin/${tool}`, mock);
     fs.chmodSync(path.join(root, `bin/${tool}`), 0o755);
   }

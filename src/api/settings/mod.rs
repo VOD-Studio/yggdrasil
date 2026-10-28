@@ -16,32 +16,19 @@
 //!   环境变量播种语义与 `BACKUP_*` 一致（仅键缺失时生效）。
 //! - 站点公开配置：页脚 GitHub 链接等，`get_site_settings` 公开读取（前台页脚 SSR），
 //!   `update_site_settings` 仅 admin。配置持久化到 settings 键值表。
-//! Dioxus server function，注册在 `/api` 路径下。
+//! Leptos server function，注册在 `/api` 路径下。
 
-// 以下子模块的客户端消费者是后台设置页（full 客户端专属，plan §6.1）；
-// reader 客户端不编译。server 侧消费方经 client-full（default features 恒含）
-// 保持完整。
-#[cfg(not(ygg_client_reader))]
 mod asset_purge;
-#[cfg(not(ygg_client_reader))]
 mod backup;
-#[cfg(not(ygg_client_reader))]
 mod image_cache;
-#[cfg(not(ygg_client_reader))]
 mod image_limit;
-#[cfg(not(ygg_client_reader))]
 mod rate_limit;
-#[cfg(not(ygg_client_reader))]
 mod runner;
-#[cfg(not(ygg_client_reader))]
 mod security;
 mod site;
 mod system;
-#[cfg(not(ygg_client_reader))]
 mod trash;
-#[cfg(not(ygg_client_reader))]
 mod upload;
-#[cfg(not(ygg_client_reader))]
 mod webp;
 
 #[cfg(feature = "server")]
@@ -196,28 +183,15 @@ pub(crate) async fn bootstrap_startup_settings(
     Ok(())
 }
 
-#[cfg(not(ygg_client_reader))]
 pub use asset_purge::*;
-#[cfg(not(ygg_client_reader))]
 pub use backup::*;
-#[cfg(not(ygg_client_reader))]
 pub use image_cache::*;
-#[cfg(not(ygg_client_reader))]
 pub use image_limit::*;
-#[cfg(not(ygg_client_reader))]
 pub use rate_limit::*;
-#[cfg(not(ygg_client_reader))]
 pub use runner::*;
-#[cfg(not(ygg_client_reader))]
 pub use security::*;
 pub use site::*;
-// system 的唯一调用方是 system_section.rs 的 #[cfg(target_arch = "wasm32")] 导入，
-// 原生构建下该 glob 无人消费；binary crate 里 pub 不豁免 unused_imports，故放行。
-#[allow(unused_imports)]
 pub use system::*;
-#[cfg(not(ygg_client_reader))]
 pub use trash::*;
-#[cfg(not(ygg_client_reader))]
 pub use upload::*;
-#[cfg(not(ygg_client_reader))]
 pub use webp::*;

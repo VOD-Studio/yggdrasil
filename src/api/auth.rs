@@ -1,4 +1,4 @@
-//! 认证相关的 Dioxus server function 与辅助函数。
+//! 认证相关的 Leptos server function 与辅助函数。
 //!
 //! 提供注册、登录、登出、获取当前用户等接口，
 //! 通过 HttpOnly Cookie 维护会话，首个注册用户自动成为 admin。
@@ -9,9 +9,10 @@
 
 #![allow(clippy::unused_unit, deprecated)]
 
-use dioxus::prelude::*;
+use crate::api::error::ApiError;
 #[cfg(feature = "server")]
 use http::header::{HeaderValue, SET_COOKIE};
+use leptos::prelude::*;
 
 #[cfg(feature = "server")]
 use crate::api::error::AppError;
@@ -76,18 +77,17 @@ pub struct AuthResponse {
 ///
 /// 校验用户名、邮箱、密码，首个注册用户自动设为 admin；
 /// 已有 admin 时返回 "Registration is closed"。
-/// Dioxus server function，注册在 `/api` 路径下。
-#[server(Register, "/api")]
+/// Leptos server function，注册在 `/api` 路径下。
+#[server(Register, endpoint = "register", input = leptos::server_fn::codec::Json)]
 pub async fn register(
     username: String,
     email: String,
     password: String,
-) -> Result<AuthResponse, ServerFnError> {
+) -> Result<AuthResponse, ApiError> {
     // 服务端构建时先进行严格限流检查。
     #[cfg(feature = "server")]
     {
-        if let Some(ctx) = dioxus::fullstack::FullstackContext::current() {
-            let headers = ctx.parts_mut().headers.clone();
+        if let Some(headers) = crate::request_ctx::request_headers() {
             let ip = crate::api::rate_limit::get_client_ip(&headers).await;
             if let Err(msg) = crate::api::rate_limit::check_strict_limit(&ip) {
                 return Ok(AuthResponse {
@@ -178,14 +178,13 @@ pub async fn register(
 ///
 /// 验证用户名/邮箱与密码，生成会话并写入 HttpOnly Cookie；
 /// 同一用户活跃会话数超过 `MAX_SESSIONS_PER_USER` 时删除最早会话。
-/// Dioxus server function，注册在 `/api` 路径下。
-#[server(Login, "/api")]
-pub async fn login(username: String, password: String) -> Result<AuthResponse, ServerFnError> {
+/// Leptos server function，注册在 `/api` 路径下。
+#[server(Login, endpoint = "login", input = leptos::server_fn::codec::Json)]
+pub async fn login(username: String, password: String) -> Result<AuthResponse, ApiError> {
     // 服务端构建时先进行严格限流检查。
     #[cfg(feature = "server")]
     {
-        if let Some(ctx) = dioxus::fullstack::FullstackContext::current() {
-            let headers = ctx.parts_mut().headers.clone();
+        if let Some(headers) = crate::request_ctx::request_headers() {
             let ip = crate::api::rate_limit::get_client_ip(&headers).await;
             if let Err(msg) = crate::api::rate_limit::check_strict_limit(&ip) {
                 return Ok(AuthResponse {
@@ -318,11 +317,9 @@ pub async fn login(username: String, password: String) -> Result<AuthResponse, S
             .await
             .cookie_secure,
     );
-    // 通过 Dioxus FullstackContext 设置 HttpOnly Cookie 响应头。
-    if let Some(ctx) = dioxus::fullstack::FullstackContext::current() {
-        if let Ok(value) = HeaderValue::try_from(cookie.as_str()) {
-            ctx.add_response_header(SET_COOKIE, value);
-        }
+    // 通过响应上下文设置 HttpOnly Cookie 响应头。
+    if let Ok(value) = HeaderValue::try_from(cookie.as_str()) {
+        crate::request_ctx::append_response_header(SET_COOKIE, value);
     }
 
     Ok(AuthResponse {
@@ -335,9 +332,9 @@ pub async fn login(username: String, password: String) -> Result<AuthResponse, S
 /// 用户登出。
 ///
 /// 清空客户端 session Cookie，并删除数据库中对应会话记录。
-/// Dioxus server function，注册在 `/api` 路径下。
-#[server(Logout, "/api")]
-pub async fn logout() -> Result<AuthResponse, ServerFnError> {
+/// Leptos server function，注册在 `/api` 路径下。
+#[server(Logout, endpoint = "logout", input = leptos::server_fn::codec::Json)]
+pub async fn logout() -> Result<AuthResponse, ApiError> {
     let token = get_session_from_ctx();
 
     let client = get_conn().await.map_err(AppError::db_conn)?;
@@ -350,10 +347,8 @@ pub async fn logout() -> Result<AuthResponse, ServerFnError> {
             .await
             .cookie_secure,
     );
-    if let Some(ctx) = dioxus::fullstack::FullstackContext::current() {
-        if let Ok(value) = HeaderValue::try_from(cookie.as_str()) {
-            ctx.add_response_header(SET_COOKIE, value);
-        }
+    if let Ok(value) = HeaderValue::try_from(cookie.as_str()) {
+        crate::request_ctx::append_response_header(SET_COOKIE, value);
     }
 
     if let Some(t) = token {
@@ -386,7 +381,7 @@ pub struct CurrentUserResponse {
 /// 缓存命中与未命中两条路径都校验 `sessions.expires_at`、用户角色，以及
 /// `sessions.generation`（签发快照）与 `users.session_generation`（当前值）是否一致，
 /// 确保过期、撤销、改密或被封禁的会话不会继续有效。
-pub async fn get_user_by_token(token: &str) -> Result<Option<SessionUser>, ServerFnError> {
+pub async fn get_user_by_token(token: &str) -> Result<Option<SessionUser>, ApiError> {
     let token_hash = session::hash_token(token);
 
     if let Some(cached) = crate::cache::get_session_user(&token_hash).await {
@@ -466,9 +461,9 @@ pub async fn get_user_by_token(token: &str) -> Result<Option<SessionUser>, Serve
 
 /// 获取当前登录用户的公开信息。
 ///
-/// Dioxus server function，注册在 `/api` 路径下。
-#[server(GetCurrentUser, "/api")]
-pub async fn get_current_user() -> Result<CurrentUserResponse, ServerFnError> {
+/// Leptos server function，注册在 `/api` 路径下。
+#[server(GetCurrentUser, endpoint = "get_current_user", input = leptos::server_fn::codec::Json)]
+pub async fn get_current_user() -> Result<CurrentUserResponse, ApiError> {
     let token = match get_session_from_ctx() {
         Some(t) => t,
         None => return Ok(CurrentUserResponse { user: None }),
@@ -483,16 +478,15 @@ pub async fn get_current_user() -> Result<CurrentUserResponse, ServerFnError> {
 /// 获取当前登录用户并要求其为 admin，否则返回 401/403。
 ///
 /// 供其它服务端接口内部调用。
-pub async fn get_current_admin_user() -> Result<SessionUser, AppError> {
-    let token = get_session_from_ctx().ok_or(AppError::Unauthorized("未登录"))?;
+pub async fn get_current_admin_user() -> Result<SessionUser, ApiError> {
+    let token = get_session_from_ctx().ok_or_else(|| ApiError::Unauthorized("未登录".into()))?;
 
     let session_user = get_user_by_token(&token)
-        .await
-        .map_err(AppError::query)?
-        .ok_or(AppError::Unauthorized("会话已过期"))?;
+        .await?
+        .ok_or_else(|| ApiError::Unauthorized("会话已过期".into()))?;
 
     if session_user.role != UserRole::Admin {
-        return Err(AppError::Forbidden("权限不足"));
+        return Err(ApiError::Forbidden("权限不足".into()));
     }
 
     Ok(session_user)

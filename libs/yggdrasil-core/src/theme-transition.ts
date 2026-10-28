@@ -100,7 +100,7 @@ function notifyThemeChange(isDark: boolean): Promise<void> {
  * 手动点击主题按钮仍走 startThemeTransition，保留圆形展开动画。
  *
  * 同步 dispatch 主题变更事件,让命令式换肤的编辑器跟随系统偏好瞬切
- * (与 Dioxus use_effect 幂等共存,后者作兜底)。
+ * (与 Rust 侧 Effect 幂等共存,后者作兜底)。
  */
 export function applyResolvedTheme(isDark: boolean): void {
   // System preference changes also supersede any pending manual theme callback.

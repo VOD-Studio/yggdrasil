@@ -1,8 +1,9 @@
-// 与 posts 模块一致：Dioxus `#[server]` 宏触发 deprecated/unit/too_many_arguments
+// 与 posts 模块一致：Leptos `#[server]` 宏触发 deprecated/unit/too_many_arguments
 // 提示，按项目惯例放行（限流/运行器等配置项天然参数多）。
 #![allow(clippy::unused_unit, deprecated, clippy::too_many_arguments)]
 
-use dioxus::prelude::*;
+use crate::api::error::ApiError;
+use leptos::prelude::*;
 
 #[cfg(feature = "server")]
 use crate::api::auth::get_current_admin_user;
@@ -99,8 +100,8 @@ pub(crate) async fn load_image_limit_settings(
 }
 
 /// 读取图片尺寸限制配置（面板用）。
-#[server(GetImageLimitSettings, "/api")]
-pub async fn get_image_limit_settings() -> Result<ImageLimitSettings, ServerFnError> {
+#[server(GetImageLimitSettings, endpoint = "get_image_limit_settings", input = leptos::server_fn::codec::Json)]
+pub async fn get_image_limit_settings() -> Result<ImageLimitSettings, ApiError> {
     let _user = get_current_admin_user().await?;
 
     #[cfg(feature = "server")]
@@ -108,7 +109,7 @@ pub async fn get_image_limit_settings() -> Result<ImageLimitSettings, ServerFnEr
         let client = get_conn().await.map_err(AppError::db_conn)?;
         let s = load_image_limit_settings(&client)
             .await
-            .map_err(ServerFnError::from)?;
+            .map_err(<ApiError>::from)?;
         Ok(s)
     }
 
@@ -121,12 +122,12 @@ pub async fn get_image_limit_settings() -> Result<ImageLimitSettings, ServerFnEr
 /// 更新图片尺寸限制配置。
 ///
 /// 字段会被 clamp 后写入 DB。配置烘焙进 LazyLock，修改后需**重启进程**生效。
-#[server(UpdateImageLimitSettings, "/api")]
+#[server(UpdateImageLimitSettings, endpoint = "update_image_limit_settings", input = leptos::server_fn::codec::Json)]
 pub async fn update_image_limit_settings(
     max_dimension: u32,
     max_pixels: u64,
     dimensions_cache_ttl_secs: u64,
-) -> Result<ImageLimitSettings, ServerFnError> {
+) -> Result<ImageLimitSettings, ApiError> {
     let _user = get_current_admin_user().await?;
 
     let max_dimension = ImageLimitSettings::clamp_max_dimension(max_dimension);

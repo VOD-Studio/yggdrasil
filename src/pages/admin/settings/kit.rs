@@ -7,9 +7,11 @@
 
 use std::future::Future;
 
-use dioxus::prelude::*;
+use leptos::prelude::*;
+use leptos::task::spawn_local;
 
 use super::SettingsSection;
+use crate::api::error::ApiError;
 use crate::components::ui::use_toast;
 use crate::utils::error::failure_message;
 
@@ -17,33 +19,33 @@ use crate::utils::error::failure_message;
 #[derive(Clone, Copy, PartialEq)]
 pub(super) struct SettingsBus {
     /// 有改动的分区。
-    pub dirty: Signal<Vec<SettingsSection>>,
+    pub dirty: RwSignal<Vec<SettingsSection>>,
     /// 正在提交的分区。
-    pub saving: Signal<Vec<SettingsSection>>,
+    pub saving: RwSignal<Vec<SettingsSection>>,
     /// 最近一次提交失败的分区（再次提交或放弃时清除）。
-    pub failed: Signal<Vec<SettingsSection>>,
+    pub failed: RwSignal<Vec<SettingsSection>>,
     /// 每点一次「保存设置」加一。
-    pub save_gen: Signal<u32>,
+    pub save_gen: RwSignal<u32>,
     /// 每点一次「放弃」加一。
-    pub reset_gen: Signal<u32>,
+    pub reset_gen: RwSignal<u32>,
 }
 
 impl SettingsBus {
     pub fn new() -> Self {
         Self {
-            dirty: Signal::new(Vec::new()),
-            saving: Signal::new(Vec::new()),
-            failed: Signal::new(Vec::new()),
-            save_gen: Signal::new(0),
-            reset_gen: Signal::new(0),
+            dirty: RwSignal::new(Vec::new()),
+            saving: RwSignal::new(Vec::new()),
+            failed: RwSignal::new(Vec::new()),
+            save_gen: RwSignal::new(0),
+            reset_gen: RwSignal::new(0),
         }
     }
 
     /// 分区提交结束：移出「提交中」，失败时记入失败列表。
-    pub fn finish(mut self, section: SettingsSection, ok: bool) {
-        self.saving.with_mut(|list| list.retain(|s| *s != section));
+    pub fn finish(self, section: SettingsSection, ok: bool) {
+        self.saving.update(|list| list.retain(|s| *s != section));
         if !ok {
-            self.failed.with_mut(|list| {
+            self.failed.update(|list| {
                 if !list.contains(&section) {
                     list.push(section);
                 }
@@ -52,27 +54,29 @@ impl SettingsBus {
     }
 
     /// 保存条：提交全部有改动的分区。
-    pub fn save_all(mut self) {
-        if !self.saving.peek().is_empty() {
+    pub fn save_all(self) {
+        if !self.saving.with_untracked(|list| list.is_empty()) {
             return;
         }
         self.failed.set(Vec::new());
-        self.save_gen += 1;
+        self.save_gen.update(|g| *g += 1);
     }
 
     /// 保存条：放弃全部改动。
-    pub fn reset_all(mut self) {
+    pub fn reset_all(self) {
         self.failed.set(Vec::new());
-        self.reset_gen += 1;
+        self.reset_gen.update(|g| *g += 1);
     }
 }
 
-fn set_member(mut list: Signal<Vec<SettingsSection>>, section: SettingsSection, on: bool) {
-    let present = list.peek().contains(&section);
+fn set_member(list: RwSignal<Vec<SettingsSection>>, section: SettingsSection, on: bool) {
+    let present = list
+        .try_with_untracked(|l| l.contains(&section))
+        .unwrap_or(on);
     if on && !present {
-        list.write().push(section);
+        list.update(|l| l.push(section));
     } else if !on && present {
-        list.write().retain(|s| *s != section);
+        list.update(|l| l.retain(|s| *s != section));
     }
 }
 
@@ -83,30 +87,30 @@ pub(super) fn use_settings_slot(
     save: Callback<()>,
     reset: Callback<()>,
 ) -> SettingsBus {
-    let bus: SettingsBus = use_context();
-    use_effect(move || set_member(bus.dirty, section, dirty()));
-    let mut seen_save = use_signal(|| *bus.save_gen.peek());
-    use_effect(move || {
-        let generation = (bus.save_gen)();
-        if generation == *seen_save.peek() {
+    let bus = expect_context::<SettingsBus>();
+    Effect::new(move |_| set_member(bus.dirty, section, dirty.get()));
+    let seen_save = StoredValue::new(bus.save_gen.get_untracked());
+    Effect::new(move |_| {
+        let generation = bus.save_gen.get();
+        if generation == seen_save.get_value() {
             return;
         }
-        seen_save.set(generation);
-        if *dirty.peek() {
+        seen_save.set_value(generation);
+        if dirty.get_untracked() {
             set_member(bus.saving, section, true);
-            save.call(());
+            save.run(());
         }
     });
-    let mut seen_reset = use_signal(|| *bus.reset_gen.peek());
-    use_effect(move || {
-        let generation = (bus.reset_gen)();
-        if generation == *seen_reset.peek() {
+    let seen_reset = StoredValue::new(bus.reset_gen.get_untracked());
+    Effect::new(move |_| {
+        let generation = bus.reset_gen.get();
+        if generation == seen_reset.get_value() {
             return;
         }
-        seen_reset.set(generation);
-        reset.call(());
+        seen_reset.set_value(generation);
+        reset.run(());
     });
-    use_drop(move || {
+    on_cleanup(move || {
         set_member(bus.dirty, section, false);
         set_member(bus.saving, section, false);
     });
@@ -114,49 +118,80 @@ pub(super) fn use_settings_slot(
 }
 
 /// 一个分区的草稿、已存值与读取状态。
-#[derive(Clone, Copy, PartialEq)]
-pub(super) struct SectionState<T: 'static> {
-    pub draft: Signal<T>,
-    pub saved: Signal<Option<T>>,
-    pub load_failed: Signal<bool>,
+pub(super) struct SectionState<T: Send + Sync + 'static> {
+    pub draft: RwSignal<T>,
+    pub saved: RwSignal<Option<T>>,
+    pub load_failed: RwSignal<bool>,
     pub bus: SettingsBus,
     pub section: SettingsSection,
 }
 
-impl<T: Clone + PartialEq + 'static> SectionState<T> {
+impl<T: Send + Sync + 'static> Clone for SectionState<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T: Send + Sync + 'static> Copy for SectionState<T> {}
+
+impl<T: Clone + PartialEq + Send + Sync + 'static> SectionState<T> {
     /// 已读到服务端的值，可以编辑。
-    pub fn ready(&self) -> bool {
-        self.saved.read().is_some()
+    pub fn ready(&self) -> Signal<bool> {
+        let saved = self.saved;
+        Signal::derive(move || saved.with(|s| s.is_some()))
+    }
+
+    /// 读取失败。
+    pub fn load_failed(&self) -> Signal<bool> {
+        self.load_failed.into()
     }
 
     /// 最近一次提交失败。
-    pub fn failed(&self) -> bool {
-        self.bus.failed.read().contains(&self.section)
+    pub fn failed(&self) -> Signal<bool> {
+        let (bus, section) = (self.bus, self.section);
+        Signal::derive(move || bus.failed.with(|list| list.contains(&section)))
+    }
+
+    /// 草稿中某个字段的响应式读取。
+    pub fn field<U: Send + Sync + 'static>(
+        &self,
+        read: impl Fn(&T) -> U + Send + Sync + 'static,
+    ) -> Signal<U> {
+        let draft = self.draft;
+        Signal::derive(move || draft.with(&read))
+    }
+
+    /// 修改草稿。
+    pub fn edit(&self, change: impl FnOnce(&mut T)) {
+        self.draft.update(change);
     }
 }
 
 /// 读取一次已存值并登记到保存条。`save` 提交草稿并返回服务端规范化后的值。
-#[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut, unused_variables))]
 pub(super) fn use_section<T, L, LF, S, SF>(
     section: SettingsSection,
     load: L,
     save: S,
 ) -> SectionState<T>
 where
-    T: Clone + PartialEq + Default + 'static,
+    T: Clone + PartialEq + Default + Send + Sync + 'static,
     L: FnOnce() -> LF + 'static,
-    LF: Future<Output = Result<T, ServerFnError>> + 'static,
-    S: Fn(T) -> SF + Copy + 'static,
-    SF: Future<Output = Result<T, ServerFnError>> + 'static,
+    LF: Future<Output = Result<T, ApiError>> + 'static,
+    S: Fn(T) -> SF + Copy + Send + Sync + 'static,
+    SF: Future<Output = Result<T, ApiError>> + 'static,
 {
     let toast = use_toast();
-    let bus: SettingsBus = use_context();
-    let mut draft = use_signal(T::default);
-    let mut saved = use_signal(|| None::<T>);
-    let mut load_failed = use_signal(|| false);
-    use_hook(move || {
-        #[cfg(target_arch = "wasm32")]
-        spawn(async move {
+    let bus = expect_context::<SettingsBus>();
+    let draft = RwSignal::new(T::default());
+    let saved = RwSignal::new(None::<T>);
+    let load_failed = RwSignal::new(false);
+    // Effect 只在浏览器里运行：服务端渲染不请求。
+    let mut load = Some(load);
+    Effect::new(move |_| {
+        let Some(load) = load.take() else {
+            return;
+        };
+        spawn_local(async move {
             match load().await {
                 Ok(value) => {
                     draft.set(value.clone());
@@ -166,10 +201,11 @@ where
             }
         });
     });
-    let dirty = use_memo(move || saved.read().as_ref().is_some_and(|s| *s != *draft.read()));
+    let dirty =
+        Memo::new(move |_| saved.with(|s| s.as_ref().is_some_and(|s| draft.with(|d| s != d))));
     let on_save = Callback::new(move |()| {
-        let value = draft();
-        spawn(async move {
+        let value = draft.get_untracked();
+        spawn_local(async move {
             match save(value).await {
                 Ok(next) => {
                     draft.set(next.clone());
@@ -187,7 +223,7 @@ where
         });
     });
     let on_reset = Callback::new(move |()| {
-        if let Some(value) = saved() {
+        if let Some(value) = saved.get_untracked() {
             draft.set(value);
         }
     });
@@ -205,84 +241,91 @@ where
 #[component]
 pub(super) fn SettingsCard(
     section: SettingsSection,
-    #[props(into)] description: String,
-    #[props(default)] failed: bool,
-    #[props(default = true)] ready: bool,
-    #[props(default)] load_failed: bool,
-    children: Element,
-) -> Element {
+    #[prop(into)] description: String,
+    #[prop(optional, into)] failed: Signal<bool>,
+    #[prop(into)] ready: Signal<bool>,
+    #[prop(into)] load_failed: Signal<bool>,
+    children: ChildrenFn,
+) -> impl IntoView {
     let heading = format!("{}-h", section.dom_id());
-    rsx! {
-        section {
-            id: "{section.dom_id()}",
-            class: "admin-panel settings-card",
-            "data-failed": failed.then_some("true"),
-            aria_labelledby: "{heading}",
-            div { class: "settings-card-head",
-                div {
-                    h2 { id: "{heading}", "{section.label()}" }
-                    p { "{description}" }
-                }
-                if section.needs_restart() {
-                    span { class: "settings-restart", "需重启" }
-                }
-            }
-            if load_failed {
-                p { class: "settings-load-error", role: "alert", "读取失败，请刷新页面重试。" }
-            } else if ready {
-                div { class: "settings-rows", {children} }
-            } else {
-                div { class: "settings-rows", aria_busy: "true",
-                    for i in 0..2 {
-                        div { key: "{i}", class: "settings-row",
-                            crate::components::skeletons::atoms::SkeletonBox { class: "h-3.5 w-20 rounded" }
-                            crate::components::skeletons::atoms::SkeletonBox { class: "h-9 w-full rounded-lg" }
-                        }
+    view! {
+        <section
+            id=section.dom_id()
+            class="admin-panel settings-card"
+            data-failed=move || failed.get().then_some("true")
+            aria-labelledby=heading.clone()
+        >
+            <div class="settings-card-head">
+                <div>
+                    <h2 id=heading.clone()>{section.label()}</h2>
+                    <p>{description}</p>
+                </div>
+                {section.needs_restart().then(|| view! { <span class="settings-restart">"需重启"</span> })}
+            </div>
+            {move || {
+                if load_failed.get() {
+                    view! {
+                        <p class="settings-load-error" role="alert">"读取失败，请刷新页面重试。"</p>
                     }
+                        .into_any()
+                } else if ready.get() {
+                    view! { <div class="settings-rows">{children()}</div> }.into_any()
+                } else {
+                    view! {
+                        <div class="settings-rows" aria-busy="true">
+                            {(0..2)
+                                .map(|_| {
+                                    view! {
+                                        <div class="settings-row">
+                                            <crate::components::skeletons::atoms::SkeletonBox class="h-3.5 w-20 rounded"/>
+                                            <crate::components::skeletons::atoms::SkeletonBox class="h-9 w-full rounded-lg"/>
+                                        </div>
+                                    }
+                                })
+                                .collect_view()}
+                        </div>
+                    }
+                        .into_any()
                 }
-            }
-        }
+            }}
+        </section>
     }
 }
 
 /// 标签在左、控件与说明在右的一行。
 #[component]
 pub(super) fn SettingRow(
-    #[props(into)] label: String,
-    #[props(default)] html_for: Option<String>,
-    #[props(default)] hint: Option<String>,
-    children: Element,
-) -> Element {
-    rsx! {
-        div { class: "settings-row",
-            if let Some(id) = html_for {
-                label { class: "settings-label", r#for: "{id}", "{label}" }
-            } else {
-                span { class: "settings-label", "{label}" }
-            }
-            div { class: "settings-control",
-                {children}
-                if let Some(hint) = hint {
-                    p { class: "settings-hint", "{hint}" }
-                }
-            }
-        }
+    #[prop(into)] label: String,
+    #[prop(optional, into)] html_for: Option<String>,
+    #[prop(optional, into)] hint: Option<String>,
+    children: Children,
+) -> impl IntoView {
+    let label_view = match html_for {
+        Some(id) => view! { <label class="settings-label" for=id>{label}</label> }.into_any(),
+        None => view! { <span class="settings-label">{label}</span> }.into_any(),
+    };
+    view! {
+        <div class="settings-row">
+            {label_view} <div class="settings-control">
+                {children()} {hint.map(|hint| view! { <p class="settings-hint">{hint}</p> })}
+            </div>
+        </div>
     }
 }
 
 /// 开关行：标签、说明与右侧开关。
 #[component]
 pub(super) fn SwitchRow(
-    #[props(into)] label: String,
-    #[props(into)] hint: String,
-    checked: bool,
-    ontoggle: Callback<()>,
-) -> Element {
-    rsx! {
-        div { class: "settings-row settings-switch-row",
-            span { class: "settings-label", "{label}" }
-            p { class: "settings-hint", "{hint}" }
-            crate::components::forms::ToggleSwitch { checked, aria_label: label.clone(), ontoggle }
-        }
+    #[prop(into)] label: String,
+    #[prop(into)] hint: String,
+    #[prop(into)] checked: Signal<bool>,
+    #[prop(into)] ontoggle: Callback<()>,
+) -> impl IntoView {
+    view! {
+        <div class="settings-row settings-switch-row">
+            <span class="settings-label">{label.clone()}</span>
+            <p class="settings-hint">{hint}</p>
+            <crate::components::forms::ToggleSwitch checked aria_label=label ontoggle/>
+        </div>
     }
 }

@@ -3,7 +3,7 @@ import { defineConfig } from 'vite';
 
 export default defineConfig({
   build: {
-    // 输出直写 public/codemirror/，Dioxus 直接托管，无需拷贝步骤。
+    // 输出直写 public/codemirror/，由 cargo-leptos 的 assets-dir 拷进站点根，无需拷贝步骤。
     outDir: resolve(import.meta.dirname, '../../public/codemirror'),
     emptyOutDir: true,
     lib: {

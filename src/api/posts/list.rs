@@ -2,10 +2,11 @@
 //!
 //! 提供已发布文章分页、管理员全量列表、以及按标签筛选三种查询能力，
 //! 均通过缓存层减少重复数据库访问。
-//! Dioxus server function，注册在 `/api` 路径下。
+//! Leptos server function，注册在 `/api` 路径下。
 //! 仅在 `feature = "server"` 启用的服务端构建中查询数据库。
 
-use dioxus::prelude::*;
+use crate::api::error::ApiError;
+use leptos::prelude::*;
 
 #[cfg(feature = "server")]
 use super::helpers::{get_current_admin_user, row_to_post_list_item};
@@ -41,11 +42,8 @@ fn clamp_pagination(page: i32, per_page: i32) -> (i32, i32) {
 /// 获取已发布文章分页列表。
 ///
 /// 优先命中缓存；未命中时查询总数与分页记录，并按 published_at 降序排列。
-#[server(ListPublishedPosts, "/api")]
-pub async fn list_published_posts(
-    page: i32,
-    per_page: i32,
-) -> Result<PostListResponse, ServerFnError> {
+#[server(ListPublishedPosts, endpoint = "list_published_posts", input = leptos::server_fn::codec::Json)]
+pub async fn list_published_posts(page: i32, per_page: i32) -> Result<PostListResponse, ApiError> {
     // 钳制分页参数，防止无认证调用方请求超大每页数量导致内存放大 / DoS。
     let (page, per_page) = clamp_pagination(page, per_page);
 
@@ -116,12 +114,12 @@ pub async fn list_published_posts(
 /// 获取后台文章列表（含草稿，不含回收站），按创建时间倒序。
 ///
 /// 需要 admin 权限；可按标题子串、发布状态与标签筛选，不走缓存。
-#[server(ListPosts, "/api")]
+#[server(ListPosts, endpoint = "list_posts", input = leptos::server_fn::codec::Json)]
 pub async fn list_posts(
     page: i32,
     per_page: i32,
     query: AdminPostQuery,
-) -> Result<PostListResponse, ServerFnError> {
+) -> Result<PostListResponse, ApiError> {
     // 与公开接口保持一致的分页钳制，避免单次请求拉取过多记录。
     let (page, per_page) = clamp_pagination(page, per_page);
     let _user = get_current_admin_user().await?;
@@ -206,11 +204,8 @@ pub async fn list_posts(
 /// 获取回收站中已软删除的文章列表。
 ///
 /// 需要 admin 权限；按删除时间降序，不走缓存。
-#[server(ListDeletedPosts, "/api")]
-pub async fn list_deleted_posts(
-    page: i32,
-    per_page: i32,
-) -> Result<PostListResponse, ServerFnError> {
+#[server(ListDeletedPosts, endpoint = "list_deleted_posts", input = leptos::server_fn::codec::Json)]
+pub async fn list_deleted_posts(page: i32, per_page: i32) -> Result<PostListResponse, ApiError> {
     // 与 list_posts 一致的分页钳制。
     let (page, per_page) = clamp_pagination(page, per_page);
     let _user = get_current_admin_user().await?;
@@ -265,8 +260,8 @@ pub async fn list_deleted_posts(
 
 /// 获取指定标签下的全部已发布文章（上限 200），用于无分页 UI 的标签详情页。
 /// 结果缓存于按标签的键空间。
-#[server(GetPostsByTag, "/api")]
-pub async fn get_posts_by_tag(tag_name: String) -> Result<PostListResponse, ServerFnError> {
+#[server(GetPostsByTag, endpoint = "get_posts_by_tag", input = leptos::server_fn::codec::Json)]
+pub async fn get_posts_by_tag(tag_name: String) -> Result<PostListResponse, ApiError> {
     #[cfg(feature = "server")]
     {
         let client = get_conn().await.map_err(AppError::db_conn)?;

@@ -2,7 +2,8 @@
 use super::controls::{button_class, ButtonSize, ButtonVariant};
 use super::display::Tooltip;
 use super::icons::{Icon, IconName};
-use dioxus::prelude::*;
+use leptos::ev::KeyboardEvent;
+use leptos::prelude::*;
 
 static MENU_ID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
@@ -137,162 +138,216 @@ fn measure_panel(
 /// - Enter/Space 选中并关闭，Esc 关闭，关闭后焦点回到触发按钮；Tab 关闭并自然流转；
 /// - 点菜单外部关闭；不可用项变淡、写明原因，键盘与点击都跳过。
 ///
+/// 触发器与菜单项的 `id`（`menu-N-trigger` 等）在挂载后由客户端计数分配：全局计数器在服务端是
+/// 进程级的，直接写进 SSR HTML 会与水合后的客户端计数不一致。
+///
 /// Props：
 /// - `label`：触发按钮的读屏名称与悬浮提示，如「更多操作」
 /// - `icon`：触发按钮图标，缺省 `Ellipsis`
-/// - `items`：菜单项
+/// - `items`：菜单项（`Vec<MenuItem>` 或返回它的闭包 / 信号）
 /// - `on_select`：选中某项时回传其 `id`
 /// - `placement`：`"bottom"`（默认）/ `"top"`；`align`：`"end"`（默认，右对齐）/ `"start"`
 #[component]
 pub fn Menu(
-    label: String,
-    items: Vec<MenuItem>,
-    on_select: EventHandler<&'static str>,
-    #[props(default = IconName::Ellipsis)] icon: IconName,
-    #[props(default = ButtonSize::Sm)] size: ButtonSize,
-    #[props(default = "bottom")] placement: &'static str,
-    #[props(default = "end")] align: &'static str,
-) -> Element {
-    let menu_id = use_hook(|| MENU_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst));
-    let trigger_id = format!("menu-{menu_id}-trigger");
-    let panel_id = format!("menu-{menu_id}");
-    let mut open = use_signal(|| false);
+    #[prop(into)] label: String,
+    #[prop(into)] items: Signal<Vec<MenuItem>>,
+    #[prop(into)] on_select: Callback<&'static str>,
+    #[prop(default = IconName::Ellipsis)] icon: IconName,
+    #[prop(default = ButtonSize::Sm)] size: ButtonSize,
+    #[prop(default = "bottom".to_string(), into)] placement: String,
+    #[prop(default = "end".to_string(), into)] align: String,
+) -> impl IntoView {
+    // 挂载后才分配序号，保证 SSR HTML 与水合一致（见组件文档）。
+    let menu_id = RwSignal::new(None::<usize>);
+    Effect::new(move |_| {
+        if menu_id.get_untracked().is_none() {
+            menu_id.set(Some(
+                MENU_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst),
+            ));
+        }
+    });
+    let trigger_id = move || menu_id.get().map(|n| format!("menu-{n}-trigger"));
+    let panel_id = move || menu_id.get().map(|n| format!("menu-{n}"));
+    let item_dom_id = move |i: usize| {
+        format!(
+            "menu-{}-item-{i}",
+            menu_id.get_untracked().unwrap_or_default()
+        )
+    };
+
+    let open = RwSignal::new(false);
     // 打开时测得的 fixed 定位与实际方向；SSR 与首帧回退到声明的 placement。
-    #[allow(unused_mut)]
-    let mut panel_pos = use_signal(|| None::<(String, &'static str)>);
-    let mut focused = use_signal(|| None::<usize>);
+    let panel_pos = RwSignal::new(None::<(String, &'static str)>);
+    let focused = RwSignal::new(None::<usize>);
 
     // 打开或键盘移动后，把焦点放到当前项上。
-    use_effect(move || {
-        if let (true, Some(_i)) = (open(), focused()) {
+    Effect::new(move |_| {
+        if let (true, Some(_i)) = (open.get(), focused.get()) {
             #[cfg(target_arch = "wasm32")]
-            focus_by_id(&format!("menu-{menu_id}-item-{_i}"));
+            focus_by_id(&item_dom_id(_i));
         }
     });
 
-    let mut close = move |return_focus: bool| {
+    let close = move |return_focus: bool| {
         open.set(false);
         focused.set(None);
         panel_pos.set(None);
         #[cfg(target_arch = "wasm32")]
         if return_focus {
-            focus_by_id(&format!("menu-{menu_id}-trigger"));
+            if let Some(id) = trigger_id() {
+                focus_by_id(&id);
+            }
         }
         #[cfg(not(target_arch = "wasm32"))]
         let _ = return_focus;
     };
 
-    let items_for_open = items.clone();
-    let items_for_keys = items.clone();
-    let placement = if placement == "top" { "top" } else { "bottom" };
-    let align = if align == "start" { "start" } else { "end" };
-    let item_count = items.len();
+    let placement: &'static str = if placement == "top" { "top" } else { "bottom" };
+    let align: &'static str = if align == "start" { "start" } else { "end" };
     // 展开前测量触发器矩形，得到 fixed 面板的定位（仅 wasm；SSR 无 DOM）。
-    let mut measure = move || {
+    let measure = move || {
         #[cfg(target_arch = "wasm32")]
-        panel_pos.set(measure_panel(
-            &format!("menu-{menu_id}-trigger"),
-            item_count,
-            placement,
-            align,
-        ));
-        #[cfg(not(target_arch = "wasm32"))]
-        let _ = (menu_id, item_count, &mut panel_pos);
+        if let Some(id) = trigger_id() {
+            let item_count = items.with_untracked(|items| items.len());
+            panel_pos.set(measure_panel(&id, item_count, placement, align));
+        }
     };
-    let (panel_style, placement) = match panel_pos() {
-        Some((style, actual)) => (style, actual),
-        None => (String::new(), placement),
+    let actual_placement = move || {
+        panel_pos
+            .with(|pos| pos.as_ref().map(|(_, actual)| *actual))
+            .unwrap_or(placement)
     };
+    let panel_style = move || panel_pos.with(|pos| pos.as_ref().map(|(style, _)| style.clone()));
     // 提示与菜单分处触发器两侧，互不遮挡。
-    let tooltip_placement = if placement == "top" { "bottom" } else { "top" };
+    let tooltip_placement = Signal::derive(move || {
+        if actual_placement() == "top" {
+            "bottom"
+        } else {
+            "top"
+        }
+        .to_string()
+    });
     let trigger_class = button_class(ButtonVariant::Ghost, size);
     let icon_px = if size == ButtonSize::Xs { 14 } else { 16 };
 
-    rsx! {
-        span { class: "menu-wrap",
-            Tooltip { tip: label.clone(), placement: tooltip_placement,
-                button {
-                    id: "{trigger_id}",
-                    class: "{trigger_class} btn-icon",
-                    r#type: "button",
-                    aria_label: "{label}",
-                    aria_haspopup: "menu",
-                    aria_expanded: "{open()}",
-                    aria_controls: open().then(|| panel_id.clone()),
-                    onclick: move |_| {
-                        if open() {
+    let open_with = move |delta: i32| {
+        measure();
+        open.set(true);
+        focused.set(items.with_untracked(|items| step_enabled(items, None, delta)));
+    };
+
+    view! {
+        <span class="menu-wrap">
+            <Tooltip tip=label.clone() placement=tooltip_placement>
+                <button
+                    id=trigger_id
+                    class=format!("{trigger_class} btn-icon")
+                    type="button"
+                    aria-label=label
+                    aria-haspopup="menu"
+                    aria-expanded=move || open.get().to_string()
+                    aria-controls=move || if open.get() { panel_id() } else { None }
+                    on:click=move |_| {
+                        if open.get_untracked() {
                             close(false);
                         } else {
-                            measure();
-                            open.set(true);
-                            focused.set(step_enabled(&items_for_open, None, 1));
-                        }
-                    },
-                    onkeydown: {
-                        let items = items.clone();
-                        move |e: KeyboardEvent| {
-                            if !open() && (e.key() == Key::ArrowDown || e.key() == Key::ArrowUp) {
-                                e.prevent_default();
-                                let delta = if e.key() == Key::ArrowUp { -1 } else { 1 };
-                                measure();
-                                open.set(true);
-                                focused.set(step_enabled(&items, None, delta));
-                            }
-                        }
-                    },
-                    Icon { name: icon, size: icon_px }
-                }
-            }
-            if open() {
-                div {
-                    class: "fixed inset-0 z-40",
-                    onclick: move |_| close(false),
-                    // fixed 面板不随页面滚动，滚轮一动就收起，避免与触发器脱节。
-                    onwheel: move |_| close(false),
-                }
-                div {
-                    id: "{panel_id}",
-                    class: "menu",
-                    role: "menu",
-                    aria_labelledby: "{trigger_id}",
-                    "data-placement": placement,
-                    "data-align": align,
-                    style: "{panel_style}",
-                    onkeydown: move |e: KeyboardEvent| {
-                        let key = e.key();
-                        if key == Key::ArrowDown || key == Key::ArrowUp {
-                            e.prevent_default();
-                            let delta = if key == Key::ArrowUp { -1 } else { 1 };
-                            focused.set(step_enabled(&items_for_keys, focused(), delta));
-                        } else if key == Key::Home {
-                            e.prevent_default();
-                            focused.set(step_enabled(&items_for_keys, None, 1));
-                        } else if key == Key::End {
-                            e.prevent_default();
-                            focused.set(step_enabled(&items_for_keys, None, -1));
-                        } else if key == Key::Escape {
-                            e.prevent_default();
-                            close(true);
-                        } else if key == Key::Tab {
-                            close(false);
-                        }
-                    },
-                    for (i, item) in items.into_iter().enumerate() {
-                        MenuRow {
-                            key: "{item.id}",
-                            id: format!("menu-{menu_id}-item-{i}"),
-                            item,
-                            focused: focused() == Some(i),
-                            on_hover: move |_| focused.set(Some(i)),
-                            on_pick: move |id| {
-                                close(true);
-                                on_select.call(id);
-                            },
+                            open_with(1);
                         }
                     }
-                }
-            }
-        }
+                    on:keydown=move |e: KeyboardEvent| {
+                        if open.get_untracked() {
+                            return;
+                        }
+                        match e.key().as_str() {
+                            "ArrowDown" => {
+                                e.prevent_default();
+                                open_with(1);
+                            }
+                            "ArrowUp" => {
+                                e.prevent_default();
+                                open_with(-1);
+                            }
+                            _ => {}
+                        }
+                    }
+                >
+                    <Icon name=icon size=icon_px/>
+                </button>
+            </Tooltip>
+            {move || {
+                open.get()
+                    .then(|| {
+                        view! {
+                            <div
+                                class="fixed inset-0 z-40"
+                                on:click=move |_| close(false)
+                                // fixed 面板不随页面滚动，滚轮一动就收起，避免与触发器脱节。
+                                on:wheel=move |_| close(false)
+                            ></div>
+                            <div
+                                id=panel_id
+                                class="menu"
+                                role="menu"
+                                aria-labelledby=trigger_id
+                                data-placement=actual_placement
+                                data-align=align
+                                style=panel_style
+                                on:keydown=move |e: KeyboardEvent| {
+                                    let step = |from: Option<usize>, delta: i32| {
+                                        items.with_untracked(|items| step_enabled(items, from, delta))
+                                    };
+                                    match e.key().as_str() {
+                                        "ArrowDown" => {
+                                            e.prevent_default();
+                                            focused.set(step(focused.get_untracked(), 1));
+                                        }
+                                        "ArrowUp" => {
+                                            e.prevent_default();
+                                            focused.set(step(focused.get_untracked(), -1));
+                                        }
+                                        "Home" => {
+                                            e.prevent_default();
+                                            focused.set(step(None, 1));
+                                        }
+                                        "End" => {
+                                            e.prevent_default();
+                                            focused.set(step(None, -1));
+                                        }
+                                        "Escape" => {
+                                            e.prevent_default();
+                                            close(true);
+                                        }
+                                        "Tab" => close(false),
+                                        _ => {}
+                                    }
+                                }
+                            >
+                                {move || {
+                                    items
+                                        .get()
+                                        .into_iter()
+                                        .enumerate()
+                                        .map(|(i, item)| {
+                                            view! {
+                                                <MenuRow
+                                                    id=item_dom_id(i)
+                                                    item=item
+                                                    focused=Signal::derive(move || focused.get() == Some(i))
+                                                    on_hover=Callback::new(move |()| focused.set(Some(i)))
+                                                    on_pick=Callback::new(move |id: &'static str| {
+                                                        close(true);
+                                                        on_select.run(id);
+                                                    })
+                                                />
+                                            }
+                                        })
+                                        .collect_view()
+                                }}
+                            </div>
+                        }
+                    })
+            }}
+        </span>
     }
 }
 
@@ -301,44 +356,39 @@ pub fn Menu(
 fn MenuRow(
     id: String,
     item: MenuItem,
-    focused: bool,
-    on_hover: EventHandler<()>,
-    on_pick: EventHandler<&'static str>,
-) -> Element {
+    #[prop(into)] focused: Signal<bool>,
+    #[prop(into)] on_hover: Callback<()>,
+    #[prop(into)] on_pick: Callback<&'static str>,
+) -> impl IntoView {
     let enabled = item.disabled.is_none();
     let reason = item.disabled.unwrap_or_default();
     let item_id = item.id;
-    rsx! {
-        if item.separated {
-            div { class: "menu-separator", role: "separator" }
-        }
-        button {
-            id,
-            class: "menu-item",
-            r#type: "button",
-            role: "menuitem",
-            tabindex: if focused { "0" } else { "-1" },
-            "data-tone": if item.danger { "danger" } else { "" },
-            aria_disabled: (!enabled).then_some("true"),
-            title: reason,
-            onmouseenter: move |_| {
+    view! {
+        {item.separated.then(|| view! { <div class="menu-separator" role="separator"></div> })}
+        <button
+            id=id
+            class="menu-item"
+            type="button"
+            role="menuitem"
+            tabindex=move || if focused.get() { "0" } else { "-1" }
+            data-tone=if item.danger { "danger" } else { "" }
+            aria-disabled=(!enabled).then_some("true")
+            title=reason
+            on:mouseenter=move |_| {
                 if enabled {
-                    on_hover.call(());
+                    on_hover.run(());
                 }
-            },
-            onclick: move |_| {
+            }
+            on:click=move |_| {
                 if enabled {
-                    on_pick.call(item_id);
+                    on_pick.run(item_id);
                 }
-            },
-            if let Some(icon) = item.icon {
-                Icon { name: icon, size: 15 }
             }
-            span { "{item.label}" }
-            if let Some(keys) = item.shortcut {
-                kbd { "{keys}" }
-            }
-        }
+        >
+            {item.icon.map(|icon| view! { <Icon name=icon size=15/> })}
+            <span>{item.label}</span>
+            {item.shortcut.map(|keys| view! { <kbd>{keys}</kbd> })}
+        </button>
     }
 }
 
@@ -373,17 +423,13 @@ mod tests {
     }
 
     #[component]
-    fn Harness() -> Element {
-        rsx! {
-            Menu { label: "更多操作", items: items(), on_select: |_| {} }
-        }
+    fn Harness() -> impl IntoView {
+        view! { <Menu label="更多操作" items=items() on_select=|_| {}/> }
     }
 
     #[test]
     fn closed_menu_renders_only_the_trigger() {
-        let html = dioxus::ssr::render_element(rsx! {
-            Harness {}
-        });
+        let html = Owner::new().with(|| view! { <Harness/> }.to_html());
         assert!(html.contains("aria-haspopup=\"menu\""), "{html}");
         assert!(html.contains("aria-expanded=\"false\""), "{html}");
         assert!(!html.contains("role=\"menu\""), "{html}");

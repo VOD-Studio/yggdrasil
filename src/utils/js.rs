@@ -11,7 +11,7 @@
 /// 的类型化 extern 风格一致。
 ///
 /// 用于调用各 IIFE 库暴露的 `window.__init*` 入口（lightbox / mermaid / 锚点拦截等），
-/// 这些库由 `Dioxus.toml` 全局 `<script src>` 注入，加载时机不保证早于调用点。
+/// 这些库由 `shell()` 里的全局 `<script src>` 注入，加载时机不保证早于调用点。
 ///
 /// P5 §8.2：增强函数（`__initPostContent` 等）拆入 `yggdrasil-enhance.js` 按需加载后，
 /// SPA 首次导航时脚本可能晚于 effect 执行。目标函数未定义且 core 已建

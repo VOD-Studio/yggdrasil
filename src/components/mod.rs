@@ -1,13 +1,13 @@
 //! 组件模块 —— 按「可复用层级」组织，从通用到特定。
 //!
-//! 【导航】写 `rsx!` 前先查这里，避免手搓重复的 Tailwind class：
+//! 【导航】写 `view!` 前先查这里，避免手搓重复的 Tailwind class：
 //! - 要 class 常量或通用原子（按钮 / 输入 / 徽章 / 空状态）？ → **原子层**
 //! - 要页面外壳或全局导航？                              → **布局层**
 //! - 要特定页面域（文章 / 评论 / 代码运行）的组件？       → **feature 层**
 //! - 数据加载占位？                                      → **骨架屏层**
 //!
 //! 层级越靠上越通用、对 app 其余部分依赖越少；feature 层组件绑定各自的
-//! `models` / `Route` / `api`，不应跨页面域复用。同一类样式或结构只允许
+//! `models` / `routes` / `api`，不应跨页面域复用。同一类样式或结构只允许
 //! 存在一个实现 —— 新增前先在本模块对应层查找，缺功能就扩展现有组件，
 //! 不要在旁边另起一套（散落的内联 class 是被禁止的反模式）。
 
@@ -16,7 +16,7 @@
 
 /// 空状态组件（无数据时的插画配图 + 文案）。
 pub mod empty_state;
-/// P5 §8.2 增强脚本/灯箱资源的按需注入（document::Script/Stylesheet，按 src 去重）。
+/// 增强脚本/灯箱资源的按需注入（leptos_meta 的 Script/Stylesheet；`Script` 不按 src 去重，脚本必须是幂等 IIFE）。
 /// `pub(crate)`：head 注入管线无可视预览，不进图鉴目录。
 pub(crate) mod enhance_assets;
 /// 表单控件（FormInput / FormSelect / AlertBox / …）与 INPUT class 常量。
@@ -34,11 +34,8 @@ pub mod skeletons;
 // ========= 布局层 (layouts) — 页面外壳与全局导航 =========
 
 /// 后台布局组件（侧栏 + 内容区 + admin 路由骨架屏切换）。
-/// full 客户端专属：被 Route 的 admin 嵌套块与图鉴预览引用，reader 不编译。
-#[cfg(not(ygg_client_reader))]
 pub mod admin_layout;
 /// 后台命令面板（⌘K）。
-#[cfg(not(ygg_client_reader))]
 pub mod admin_palette;
 /// 页脚与回到顶部按钮组件。
 pub mod footer;
@@ -59,7 +56,6 @@ pub mod share_meta;
 // 按页面域划分；跨域复用前先考虑原子层。
 
 /// 素材选择与上传 modal 组件。仅后台写作/素材/资料页与图鉴预览使用。
-#[cfg(not(ygg_client_reader))]
 pub mod assets;
 /// 代码运行器组件（可运行代码块 UI）。
 pub mod code_runner;
@@ -68,5 +64,4 @@ pub mod comments;
 /// 文章详情页组件（标题 / 正文 / 目录 / 面包屑 / 相邻导航）。
 pub mod post;
 /// SQL 查询结果表格组件（后台 SQL 控制台专用）。
-#[cfg(not(ygg_client_reader))]
 pub mod sql_result_table;

@@ -54,6 +54,29 @@
     padding-inline: 1.5rem;
   }
 
+  /* 路由挂起骨架贴在页头下方，与主区上内边距（py-6）一致。
+     main 的宽度跟随已显示的页面，目标页可能更宽（880px 页面切到 1152px 图鉴）：槽位按外壳宽度
+     （挂起期间外壳是尺寸查询容器）以 main 中心居中、由目标页的 max-w 类封顶，内边距与 main
+     相同，骨架内容区即目标页内容区。 */
+  .site-route-pending {
+    --route-pending-top: calc(var(--site-header-height) + 1.5rem);
+    width: 100cqw;
+    margin-left: 50%;
+    translate: -50% 0;
+    padding-inline: 1.5rem;
+  }
+
+  /* 骨架伸出 main 时不被 main 横向裁掉：main 挂起期间只裁纵向（不盖页脚），
+     横向裁剪上移到外壳，旧正文的横向溢出仍不会撑出页面横向滚动。 */
+  .site-shell {
+    --route-pending-overflow: visible clip;
+  }
+
+  html.is-route-pending .site-shell:has(> main > .route-pending) {
+    container-type: inline-size;
+    overflow-x: clip;
+  }
+
   .wordmark {
     display: inline-flex;
     align-items: center;
@@ -414,10 +437,59 @@
     box-shadow: var(--shadow-focus);
   }
 
+  /* ======== 路由切换进度条 ========
+     切换超过 300ms 才出现（RouteProgress 计时），页面顶端一段陶土色短线往复滑动；
+     新页面提交后立即消失。不拦截点击，前后台通用。 */
+  .route-progress {
+    position: fixed;
+    inset: 0 0 auto;
+    z-index: 70;
+    height: 2px;
+    overflow: hidden;
+    pointer-events: none;
+    opacity: 0;
+  }
+
+  .route-progress[data-active] {
+    opacity: 1;
+    transition: opacity 150ms ease;
+  }
+
+  .route-progress span {
+    display: block;
+    width: 40%;
+    height: 100%;
+    border-radius: 999px;
+    background-color: var(--color-clay);
+    transform: translateX(-100%);
+  }
+
+  .route-progress[data-active] span {
+    animation: route-progress-slide 1.1s ease-in-out infinite;
+  }
+
+  @keyframes route-progress-slide {
+    from {
+      transform: translateX(-100%);
+    }
+
+    to {
+      transform: translateX(250%);
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .sheet,
     .sheet[data-closing="true"] {
       animation: listbox-fade 150ms linear both;
+    }
+
+    /* 不滑动：整条细线静止显示。 */
+    .route-progress span,
+    .route-progress[data-active] span {
+      width: 100%;
+      animation: none;
+      transform: none;
     }
   }
 }

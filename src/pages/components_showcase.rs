@@ -6,37 +6,33 @@ use std::sync::LazyLock;
 #[cfg(not(feature = "server"))]
 use std::sync::OnceLock;
 
-use chrono::{DateTime, Utc};
-#[cfg(target_arch = "wasm32")]
-use dioxus::html::{InteractionElementOffset, InteractionLocation};
-use dioxus::prelude::*;
-#[cfg(target_arch = "wasm32")]
-use dioxus::web::WebEventExt;
+use leptos::ev::{KeyboardEvent, MouseEvent};
+use leptos::prelude::*;
+use leptos_meta::Title;
+use leptos_router::hooks::use_params_map;
+use leptos_router::{lazy_route, LazyRoute};
 use serde::{Deserialize, Serialize};
-#[cfg(target_arch = "wasm32")]
-use wasm_bindgen::JsCast;
 
+use crate::api::error::ApiError;
 use crate::components::forms::FormInput;
 use crate::components::ui::{
-    button_class, Button, ButtonSize, ButtonVariant, Composer, ComposerInput, ComposerSend,
-    ComposerSize, Icon, IconName, SegmentedControl, SegmentedItem, SegmentedKind, SegmentedSize,
+    button_class, Button, ButtonSize, ButtonVariant, Icon, IconName, SegmentedControl,
+    SegmentedItem,
 };
-use crate::models::post::{Post, PostListItem, PostStatus};
-use crate::router::Route;
+use crate::context::ShowcaseFilters;
+use crate::hooks::ssr_resource::{route_data, PageJson, RouteData};
+use crate::pages::not_found::PageLoadFailed;
+use crate::routes::Route;
 
 mod browser_previews;
 mod business_previews;
 mod comment_previews;
 mod layout_article_previews;
+mod live_previews;
 
-#[derive(Clone, Default, PartialEq)]
-pub struct ShowcaseFilters {
-    pub category: String,
-    pub search: String,
-    /// 宽屏详情栏当前展示的组件；`None` 时取筛选结果的第一项。
-    pub selected: Option<String>,
-    pub return_to: Option<String>,
-}
+// 供各预览子模块通过 `super::sample_post` 共享示例文章，主文件自身不使用。
+#[allow(unused_imports)]
+use live_previews::sample_post;
 
 #[derive(Clone, Serialize, Deserialize)]
 pub(crate) struct ShowcaseData {
@@ -101,50 +97,94 @@ fn showcase() -> &'static ShowcaseData {
         .expect("组件图鉴数据须先由 ShowcaseDataGate 加载")
 }
 
-#[server]
-pub(crate) async fn get_showcase_data() -> Result<ShowcaseData, ServerFnError> {
+#[server(endpoint = "get_showcase_data", input = leptos::server_fn::codec::Json)]
+pub(crate) async fn get_showcase_data() -> Result<ShowcaseData, ApiError> {
     Ok(SHOWCASE.clone())
 }
 
-/// 客户端会话内只请求一次；首屏直接复用 SSR 水合数据。
-async fn load_showcase() -> Result<ShowcaseData, ServerFnError> {
+/// 客户端会话内只请求一次；首屏直接复用 SSR 水合数据。取数函数随分包加载，
+/// 见 `hooks::ssr_resource`。
+#[leptos::lazy]
+async fn fetch_showcase() -> PageJson<ShowcaseData> {
     #[cfg(not(feature = "server"))]
     if let Some(data) = CLIENT_SHOWCASE.get() {
-        return Ok(data.clone());
+        return PageJson::new(Ok(data.clone()));
     }
-    get_showcase_data().await
+    PageJson::new(get_showcase_data().await)
 }
 
 /// 加载图鉴数据后再渲染子页面，使目录、详情与预览可同步读取 `showcase()`。
 #[component]
-fn ShowcaseDataGate(children: Element) -> Element {
-    let response = use_server_future(load_showcase)?;
-    match response.read().as_ref() {
-        Some(Ok(_data)) =>
-        {
-            #[cfg(not(feature = "server"))]
-            if CLIENT_SHOWCASE.get().is_none() {
-                let _ = CLIENT_SHOWCASE.set(_data.clone());
-            }
+fn ShowcaseDataGate(data: RouteData<ShowcaseData>, children: ChildrenFn) -> impl IntoView {
+    view! {
+        <Suspense fallback=|| ()>
+            {move || {
+                let children = children.clone();
+                Suspend::new(async move {
+                    match data.await {
+                        Ok(_data) => {
+                            #[cfg(not(feature = "server"))]
+                            if CLIENT_SHOWCASE.get().is_none() {
+                                let _ = CLIENT_SHOWCASE.set(_data);
+                            }
+                            children().into_any()
+                        }
+                        Err(_) => view! { <PageLoadFailed/> }.into_any(),
+                    }
+                })
+            }}
+        </Suspense>
+    }
+}
+
+/// 组件图鉴目录路由，对应 `/about/components`。
+pub struct ShowcaseRoute {
+    data: RouteData<ShowcaseData>,
+}
+
+#[lazy_route]
+impl LazyRoute for ShowcaseRoute {
+    fn data() -> Self {
+        Self {
+            data: route_data(|| (), |_| fetch_showcase()),
         }
-        Some(Err(error)) => return Err(error.clone().into()),
-        None => return rsx! {},
     }
-    children
+
+    fn view(this: Self) -> AnyView {
+        view! {
+            <ShowcaseDataGate data=this.data>
+                <ShowcaseGallery/>
+            </ShowcaseDataGate>
+        }
+        .into_any()
+    }
 }
 
-#[component]
-pub fn ComponentShowcase() -> Element {
-    rsx! {
-        ShowcaseDataGate { ShowcaseGallery {} }
-    }
+/// 单枚组件详情路由，对应 `/about/components/:component`。
+pub struct ShowcaseDetailRoute {
+    data: RouteData<ShowcaseData>,
 }
 
-#[component]
-pub fn ComponentDetail(component: String) -> Element {
-    rsx! {
-        // 按组件重建详情，切换相邻组件时预览状态、复制提示与目录高亮都回到初始值。
-        ShowcaseDataGate { ShowcaseDetail { key: "{component}", component } }
+#[lazy_route]
+impl LazyRoute for ShowcaseDetailRoute {
+    fn data() -> Self {
+        Self {
+            data: route_data(|| (), |_| fetch_showcase()),
+        }
+    }
+
+    fn view(this: Self) -> AnyView {
+        let params = use_params_map();
+        view! {
+            <ShowcaseDataGate data=this.data>
+                // 按组件重建详情，切换相邻组件时预览状态、复制提示与目录高亮都回到初始值。
+                {move || {
+                    let component = params.read().get("component").unwrap_or_default();
+                    view! { <ShowcaseDetail component=component/> }
+                }}
+            </ShowcaseDataGate>
+        }
+        .into_any()
     }
 }
 
@@ -266,8 +306,8 @@ fn highlight_snippet(code: &str) -> Vec<CodeToken<'_>> {
 
 fn checkbox_snippet(checked: bool, danger: bool) -> String {
     format!(
-        "let mut checked = use_signal(|| {checked});\n\nrsx! {{\n    label {{\n        Checkbox {{\n            checked: checked(),\n            onchange: move |value| checked.set(value),{}\n        }}\n        \"记住这个小小的选择\"\n    }}\n}}",
-        if danger { "\n            danger: true," } else { "" },
+        "let checked = RwSignal::new({checked});\n\nview! {{\n    <label>\n        <Checkbox\n            checked=checked\n            onchange=move |value: bool| checked.set(value){}\n        />\n        \"记住这个小小的选择\"\n    </label>\n}}",
+        if danger { "\n            danger=true" } else { "" },
     )
 }
 
@@ -290,65 +330,74 @@ fn alert_box_next_variant(variant: &str) -> &'static str {
 fn alert_box_snippet(variant: &str, message: &str) -> String {
     let escaped_message = message.replace('\\', "\\\\").replace('"', "\\\"");
     format!(
-        "rsx! {{\n    AlertBox {{\n        message: \"{escaped_message}\",\n        variant: \"{variant}\",\n    }}\n}}"
+        "view! {{\n    <AlertBox\n        message=\"{escaped_message}\"\n        variant=\"{variant}\"\n    />\n}}"
     )
+}
+
+/// 高亮后的用法片段。
+fn highlighted_view(code: &str) -> impl IntoView {
+    highlight_snippet(code)
+        .into_iter()
+        .map(
+            |token| view! { <span class=token.class.unwrap_or("")>{token.text.to_string()}</span> },
+        )
+        .collect_view()
 }
 
 #[component]
 fn AlertBoxDemo(
     detail: bool,
-    mut alert_variant: Signal<String>,
-    mut alert_message: Signal<String>,
-) -> Element {
-    let current_variant = alert_variant();
-    let variant_str: &'static str = match current_variant.as_str() {
+    alert_variant: RwSignal<String>,
+    alert_message: RwSignal<String>,
+) -> impl IntoView {
+    let variant_str = Signal::derive(move || match alert_variant.read().as_str() {
         "error" => "error",
         "default" => "default",
         _ => "success",
+    });
+    let cycle = move || {
+        let next = alert_box_next_variant(&alert_variant.read_untracked());
+        alert_variant.set(next.to_string());
+        alert_message.set(alert_box_preset_message(next).to_string());
     };
 
-    rsx! {
-        div { class: "showcase-alert-demo",
+    view! {
+        <div class="showcase-alert-demo">
             // 详情页由预览工具栏切换状态，这里只在目录卡片里给出切换控件。
-            if !detail {
-                SegmentedControl {
-                    items: vec![
-                        SegmentedItem::new("success".to_string(), "成功"),
-                        SegmentedItem::new("error".to_string(), "错误"),
-                        SegmentedItem::new("default".to_string(), "普通"),
-                    ],
-                    value: variant_str.to_string(),
-                    aria_label: "切换提示状态",
-                    on_change: move |v: String| {
-                        alert_message.set(alert_box_preset_message(&v).to_string());
-                        alert_variant.set(v);
-                    },
-                }
-            }
-            div {
-                class: "showcase-alert-box-target",
-                role: "button",
-                tabindex: 0,
-                title: "点击循环切换状态",
-                aria_label: "点击循环切换状态",
-                onclick: move |_| {
-                    let next_v = alert_box_next_variant(&alert_variant());
-                    alert_variant.set(next_v.to_string());
-                    alert_message.set(alert_box_preset_message(next_v).to_string());
-                },
-                onkeydown: move |evt: KeyboardEvent| {
-                    if evt.key() == Key::Enter {
-                        let next_v = alert_box_next_variant(&alert_variant());
-                        alert_variant.set(next_v.to_string());
-                        alert_message.set(alert_box_preset_message(next_v).to_string());
+            {(!detail)
+                .then(|| {
+                    view! {
+                        <SegmentedControl
+                            items=vec![
+                                SegmentedItem::new("success".to_string(), "成功"),
+                                SegmentedItem::new("error".to_string(), "错误"),
+                                SegmentedItem::new("default".to_string(), "普通"),
+                            ]
+                            value=Signal::derive(move || variant_str.get().to_string())
+                            aria_label="切换提示状态"
+                            on_change=move |v: String| {
+                                alert_message.set(alert_box_preset_message(&v).to_string());
+                                alert_variant.set(v);
+                            }
+                        />
                     }
-                },
-                crate::components::forms::AlertBox {
-                    message: alert_message(),
-                    variant: variant_str,
+                })}
+            <div
+                class="showcase-alert-box-target"
+                role="button"
+                tabindex="0"
+                title="点击循环切换状态"
+                aria-label="点击循环切换状态"
+                on:click=move |_| cycle()
+                on:keydown=move |event: KeyboardEvent| {
+                    if event.key() == "Enter" {
+                        cycle();
+                    }
                 }
-            }
-        }
+            >
+                <crate::components::forms::AlertBox message=alert_message variant=variant_str/>
+            </div>
+        </div>
     }
 }
 
@@ -364,41 +413,72 @@ fn inspector_visible() -> bool {
     false
 }
 
-#[component]
-fn ShowcaseGallery() -> Element {
-    let mut filters = use_context::<Signal<ShowcaseFilters>>();
-
+/// 点击是否落在卡片内的交互控件上（链接、按钮、编辑器等），这类点击不触发卡片选中。
+fn click_hits_interactive(event: &MouseEvent) -> bool {
     #[cfg(target_arch = "wasm32")]
-    use_effect(move || {
+    {
+        use wasm_bindgen::JsCast;
+        event
+            .target()
+            .and_then(|target| target.dyn_into::<web_sys::Element>().ok())
+            .and_then(|element| {
+                element
+                    .closest(
+                        "a, button, input, select, textarea, label, summary, [contenteditable], [role=button], [role=tab], .cm-editor, .xterm",
+                    )
+                    .ok()
+                    .flatten()
+            })
+            .is_some()
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = event;
+        false
+    }
+}
+
+#[component]
+fn ShowcaseGallery() -> impl IntoView {
+    let filters = expect_context::<RwSignal<ShowcaseFilters>>();
+
+    Effect::new(move |_| {
+        #[cfg(target_arch = "wasm32")]
         if let Some(window) = web_sys::window() {
             crate::utils::js::invoke_optional_global(&window, "__initShowcaseMasonry", &[]);
         }
     });
-    #[cfg(target_arch = "wasm32")]
-    use_drop(move || {
+    on_cleanup(|| {
+        #[cfg(target_arch = "wasm32")]
         if let Some(window) = web_sys::window() {
             crate::utils::js::invoke_optional_global(&window, "__disposeShowcaseMasonry", &[]);
         }
     });
 
-    let state = filters();
-    let active_group = if state.category.is_empty() {
-        "all"
-    } else {
-        state.category.as_str()
-    };
-    let query = state.search.trim().to_lowercase();
-    let shown: Vec<&ComponentSpec> = showcase()
-        .components
-        .iter()
-        .filter(|spec| {
-            (active_group == "all" || spec.group == active_group)
-                && (query.is_empty()
-                    || spec.name.to_lowercase().contains(&query)
-                    || spec.label.to_lowercase().contains(&query)
-                    || spec.summary.to_lowercase().contains(&query))
-        })
-        .collect();
+    let active_group = Memo::new(move |_| {
+        let category = filters.read().category.clone();
+        if category.is_empty() {
+            "all".to_string()
+        } else {
+            category
+        }
+    });
+    let shown = Memo::new(move |_| {
+        let group = active_group.get();
+        let query = filters.read().search.trim().to_lowercase();
+        showcase()
+            .components
+            .iter()
+            .filter(|spec| {
+                (group == "all" || spec.group == group)
+                    && (query.is_empty()
+                        || spec.name.to_lowercase().contains(&query)
+                        || spec.label.to_lowercase().contains(&query)
+                        || spec.summary.to_lowercase().contains(&query))
+            })
+            .map(|spec| spec.slug.clone())
+            .collect::<Vec<_>>()
+    });
     let total = showcase().components.len();
     let interactive_count = showcase()
         .components
@@ -406,203 +486,249 @@ fn ShowcaseGallery() -> Element {
         .filter(|spec| spec.preview_mode == PreviewMode::Interactive)
         .count();
     // 选中项被筛掉时，详情栏落到当前结果的第一项。
-    let selected = state
-        .selected
-        .as_deref()
-        .and_then(|slug| shown.iter().find(|spec| spec.slug == slug))
-        .or(shown.first())
-        .map(|spec| spec.slug.clone());
+    let selected = Memo::new(move |_| {
+        let shown = shown.get();
+        let wanted = filters.read().selected.clone();
+        wanted
+            .filter(|slug| shown.contains(slug))
+            .or_else(|| shown.first().cloned())
+    });
 
-    use_effect(move || {
+    Effect::new(move |_| {
         #[cfg(target_arch = "wasm32")]
-        let return_to = { filters.read().return_to.clone() };
-        #[cfg(target_arch = "wasm32")]
-        if let Some(slug) = return_to {
-            if let Some(target) = web_sys::window()
-                .and_then(|window| window.document())
-                .and_then(|document| document.get_element_by_id(&format!("showcase-{slug}")))
-            {
-                target.scroll_into_view();
-                filters.write().return_to = None;
+        {
+            let return_to = filters.read().return_to.clone();
+            if let Some(slug) = return_to {
+                if let Some(target) = web_sys::window()
+                    .and_then(|window| window.document())
+                    .and_then(|document| document.get_element_by_id(&format!("showcase-{slug}")))
+                {
+                    target.scroll_into_view();
+                    filters.update(|state| state.return_to = None);
+                }
             }
         }
     });
 
-    rsx! {
-        document::Title { "组件图鉴 · Yggdrasil" }
+    let categories = showcase()
+        .groups
+        .iter()
+        .map(|group| {
+            let id = group[0].clone();
+            let amount = if id == "all" {
+                total
+            } else {
+                showcase()
+                    .components
+                    .iter()
+                    .filter(|spec| spec.group == id)
+                    .count()
+            };
+            let label = if id == "all" {
+                "全部".to_string()
+            } else {
+                group[1].clone()
+            };
+            let pressed = {
+                let id = id.clone();
+                Memo::new(move |_| active_group.get() == id)
+            };
+            view! {
+                <button
+                    type="button"
+                    class=move || if pressed.get() { "chip is-active" } else { "chip" }
+                    aria-pressed=move || pressed.get().to_string()
+                    on:click=move |_| filters.update(|state| state.category = id.clone())
+                >
+                    {label}
+                    <span class="chip-count">{amount}</span>
+                </button>
+            }
+        })
+        .collect_view();
+
+    view! {
+        <Title text="组件图鉴 · Yggdrasil"/>
         // P5 §8.2：图鉴 masonry 增强与灯箱预览按需注入（SSR 直达带 defer，先于
         // hydration；SPA 首跳由增强调用队列兜底）。阅读器客户端不含图鉴路由。
-        crate::components::enhance_assets::EnhanceScript {}
-        crate::components::enhance_assets::LightboxAssets {}
-        article { class: "showcase showcase-gallery",
-            Link { class: "showcase-up", to: Route::About {},
-                Icon { name: IconName::ArrowLeft, size: 14 }
+        <crate::components::enhance_assets::EnhanceScript/>
+        <crate::components::enhance_assets::LightboxAssets/>
+        <article class="showcase showcase-gallery">
+            <a class="showcase-up" href=Route::About.to_string()>
+                <Icon name=IconName::ArrowLeft size=14/>
                 "关于"
-            }
-            header { class: "showcase-header page-enter",
-                div {
-                    h1 { class: "showcase-title", "组件图鉴" }
-                    p { class: "showcase-intro tabular-nums",
-                        "{total} 个组件，都来自正式页面，其中 {interactive_count} 个可以直接操作。"
-                    }
-                }
-                label { class: "showcase-search",
-                    Icon { name: IconName::Search, size: 15 }
-                    FormInput {
-                        class: Some("showcase-search-input"),
-                        r#type: "search",
-                        aria_label: Some("搜索组件"),
-                        placeholder: "组件名或用途",
-                        value: state.search,
-                        oninput: move |event: String| filters.write().search = event,
-                    }
-                }
-            }
-            nav { class: "showcase-categories page-enter", style: "--enter-index: 1", aria_label: "组件分类",
-                for group in showcase().groups.iter() {
-                    {
-                        let id = group[0].clone();
-                        let pressed = active_group == id;
-                        let amount = if id == "all" {
-                            total
-                        } else {
-                            showcase().components.iter().filter(|spec| spec.group == id).count()
-                        };
-                        let label = if id == "all" { "全部" } else { group[1].as_str() };
-                        rsx! {
-                            button {
-                                key: "{id}",
-                                r#type: "button",
-                                class: if pressed { "chip is-active" } else { "chip" },
-                                aria_pressed: "{pressed}",
-                                onclick: move |_| filters.write().category = id.clone(),
-                                "{label}"
-                                span { class: "chip-count", "{amount}" }
-                            }
-                        }
-                    }
-                }
-            }
-            div { class: "showcase-catalog page-enter", style: "--enter-index: 2",
-                div { class: "showcase-grid",
-                    for spec in shown.iter() {
-                        {
-                            let slug = spec.slug.clone();
+            </a>
+            <header class="showcase-header page-enter">
+                <div>
+                    <h1 class="showcase-title">"组件图鉴"</h1>
+                    <p class="showcase-intro tabular-nums">
+                        {format!("{total} 个组件，都来自正式页面，其中 {interactive_count} 个可以直接操作。")}
+                    </p>
+                </div>
+                <label class="showcase-search">
+                    <Icon name=IconName::Search size=15/>
+                    <FormInput
+                        class="showcase-search-input"
+                        r#type="search"
+                        aria_label="搜索组件"
+                        placeholder="组件名或用途"
+                        value=Signal::derive(move || filters.read().search.clone())
+                        oninput=move |value: String| filters.update(|state| state.search = value)
+                    />
+                </label>
+            </header>
+            <nav class="showcase-categories page-enter" style="--enter-index: 1" aria-label="组件分类">
+                {categories}
+            </nav>
+            <div class="showcase-catalog page-enter" style="--enter-index: 2">
+                <div class="showcase-grid">
+                    <For
+                        each=move || shown.get()
+                        key=|slug| slug.clone()
+                        children=move |slug| {
+                            let spec = showcase()
+                                .components
+                                .iter()
+                                .find(|item| item.slug == slug)
+                                .expect("目录卡片必须对应图鉴条目");
                             let card_slug = slug.clone();
-                            let is_selected = selected.as_deref() == Some(slug.as_str());
-                            rsx! {
-                                article {
-                                    class: if is_selected { "showcase-card is-selected" } else { "showcase-card" },
-                                    id: "showcase-{slug}",
-                                    key: "{slug}",
-                                    onclick: move |event: MouseEvent| {
-                                        #[cfg(not(target_arch = "wasm32"))]
-                                        let _ = event;
-                                        #[cfg(target_arch = "wasm32")]
-                                        {
-                                            let interactive = event.try_as_web_event()
-                                                .and_then(|event| event.target())
-                                                .and_then(|target| target.dyn_into::<web_sys::Element>().ok())
-                                                .and_then(|element| element.closest(
-                                                    "a, button, input, select, textarea, label, summary, [contenteditable], [role=button], [role=tab], .cm-editor, .xterm"
-                                                ).ok().flatten())
-                                                .is_some();
-                                            if interactive {
-                                                return;
-                                            }
+                            let is_selected = {
+                                let slug = slug.clone();
+                                move || selected.read().as_deref() == Some(slug.as_str())
+                            };
+                            view! {
+                                <article
+                                    class=move || {
+                                        if is_selected() {
+                                            "showcase-card is-selected"
+                                        } else {
+                                            "showcase-card"
+                                        }
+                                    }
+                                    id=format!("showcase-{slug}")
+                                    on:click=move |event: MouseEvent| {
+                                        if click_hits_interactive(&event) {
+                                            return;
                                         }
                                         if inspector_visible() {
-                                            filters.write().selected = Some(card_slug.clone());
+                                            filters
+                                                .update(|state| state.selected = Some(card_slug.clone()));
                                         } else {
-                                            navigator().push(Route::ComponentDetail { component: card_slug.clone() });
+                                            crate::navigation::push(
+                                                &Route::ComponentDetail {
+                                                        component: card_slug.clone(),
+                                                    }
+                                                    .to_string(),
+                                            );
                                         }
-                                    },
-                                    div { class: "showcase-card-preview showcase-card-preview--{slug}",
-                                        ComponentPreview { slug: slug.clone(), detail: false }
                                     }
-                                    div { class: "showcase-card-caption",
-                                        div { class: "showcase-card-title",
-                                            h3 {
-                                                Link { to: Route::ComponentDetail { component: slug.clone() }, "{spec.label}" }
-                                            }
-                                            code { "{spec.name}" }
-                                        }
-                                        p { "{spec.summary}" }
-                                    }
-                                }
+                                >
+                                    <div class=format!(
+                                        "showcase-card-preview showcase-card-preview--{slug}",
+                                    )>
+                                        <ComponentPreview slug=slug.clone() detail=false/>
+                                    </div>
+                                    <div class="showcase-card-caption">
+                                        <div class="showcase-card-title">
+                                            <h3>
+                                                <a href=Route::ComponentDetail {
+                                                    component: slug.clone(),
+                                                }
+                                                    .to_string()>{spec.label.clone()}</a>
+                                            </h3>
+                                            <code>{spec.name.clone()}</code>
+                                        </div>
+                                        <p>{spec.summary.clone()}</p>
+                                    </div>
+                                </article>
                             }
                         }
-                    }
-                    if shown.is_empty() {
-                        p { class: "showcase-no-results", "没有找到这个组件，换个名字或用途试试。" }
-                    }
-                }
-                if let Some(slug) = selected {
-                    ShowcaseInspector { key: "{slug}", slug }
-                }
-            }
-        }
+                    />
+                    {move || {
+                        shown
+                            .read()
+                            .is_empty()
+                            .then(|| {
+                                view! {
+                                    <p class="showcase-no-results">
+                                        "没有找到这个组件，换个名字或用途试试。"
+                                    </p>
+                                }
+                            })
+                    }}
+                </div>
+                {move || selected.get().map(|slug| view! { <ShowcaseInspector slug=slug/> })}
+            </div>
+        </article>
     }
 }
 
 /// 目录右侧的详情栏：说明、状态、属性与用法，并给出详情页入口。
 #[component]
-fn ShowcaseInspector(slug: String) -> Element {
+fn ShowcaseInspector(slug: String) -> impl IntoView {
     let spec = showcase()
         .components
         .iter()
         .find(|item| item.slug == slug)
         .expect("详情栏必须对应图鉴条目");
-    let tokens = highlight_snippet(&spec.code);
 
-    rsx! {
-        aside { class: "showcase-inspector", aria_label: "组件详情",
-            div { class: "showcase-inspector-head",
-                div { class: "showcase-inspector-title",
-                    h2 { "{spec.label}" }
-                    code { "{spec.name}" }
+    let props = (!spec.props.is_empty()).then(|| {
+        let rows = spec
+            .props
+            .iter()
+            .map(|prop| {
+                view! {
+                    <div>
+                        <dt>
+                            <code>{prop[0].clone()}</code>
+                            <span>{prop[1].clone()}</span>
+                        </dt>
+                        <dd>{prop[3].clone()}</dd>
+                    </div>
                 }
-                p { "{spec.description}" }
-                p { class: "showcase-inspector-states", "状态：{spec.states}" }
-            }
-            if !spec.props.is_empty() {
-                section { class: "showcase-inspector-section",
-                    h3 { "属性" }
-                    dl { class: "showcase-inspector-props",
-                        for (index, prop) in spec.props.iter().enumerate() {
-                            div { key: "{index}",
-                                dt {
-                                    code { "{prop[0]}" }
-                                    span { "{prop[1]}" }
-                                }
-                                dd { "{prop[3]}" }
-                            }
-                        }
-                    }
-                }
-            }
-            section { class: "showcase-inspector-section",
-                h3 { "用法" }
-                div { class: "showcase-code-panel",
-                    pre {
-                        code {
-                            for (index, token) in tokens.iter().enumerate() {
-                                span { key: "{index}", class: token.class.unwrap_or(""), "{token.text}" }
-                            }
-                        }
-                    }
-                }
-                p { class: "showcase-inspector-source", "{spec.source}" }
-            }
-            div { class: "showcase-inspector-foot",
-                Link {
-                    class: button_class(ButtonVariant::Secondary, ButtonSize::Sm),
-                    to: Route::ComponentDetail { component: spec.slug.clone() },
-                    "打开详情页"
-                    Icon { name: IconName::ArrowRight, size: 14 }
-                }
-            }
+            })
+            .collect_view();
+        view! {
+            <section class="showcase-inspector-section">
+                <h3>"属性"</h3>
+                <dl class="showcase-inspector-props">{rows}</dl>
+            </section>
         }
+    });
+
+    view! {
+        <aside class="showcase-inspector" aria-label="组件详情">
+            <div class="showcase-inspector-head">
+                <div class="showcase-inspector-title">
+                    <h2>{spec.label.clone()}</h2>
+                    <code>{spec.name.clone()}</code>
+                </div>
+                <p>{spec.description.clone()}</p>
+                <p class="showcase-inspector-states">{format!("状态：{}", spec.states)}</p>
+            </div>
+            {props}
+            <section class="showcase-inspector-section">
+                <h3>"用法"</h3>
+                <div class="showcase-code-panel">
+                    <pre>
+                        <code>{highlighted_view(&spec.code)}</code>
+                    </pre>
+                </div>
+                <p class="showcase-inspector-source">{spec.source.clone()}</p>
+            </section>
+            <div class="showcase-inspector-foot">
+                <a
+                    class=button_class(ButtonVariant::Secondary, ButtonSize::Sm)
+                    href=Route::ComponentDetail {
+                        component: spec.slug.clone(),
+                    }
+                        .to_string()
+                >
+                    "打开详情页"
+                    <Icon name=IconName::ArrowRight size=14/>
+                </a>
+            </div>
+        </aside>
     }
 }
 
@@ -624,63 +750,63 @@ fn checkbox_state(checked: bool, danger: bool) -> &'static str {
     }
 }
 
-#[component]
-fn ShowcaseDetail(component: String) -> Element {
-    let mut filters = use_context::<Signal<ShowcaseFilters>>();
-    let mut checked = use_signal(|| false);
-    let mut danger = use_signal(|| false);
-    let mut alert_variant = use_signal(|| "success".to_string());
-    let mut alert_message = use_signal(|| alert_box_preset_message("success").to_string());
-    let mut reset_generation = use_signal(|| 0_u32);
-    #[allow(unused_mut)]
-    let mut copied = use_signal(|| false);
-    #[allow(unused_mut)]
-    let mut active_section = use_signal(|| "preview");
-
-    // 目录高亮最后一个越过页头的章节；滚到底时高亮最后一节，短章节也能被选中。
-    #[cfg(target_arch = "wasm32")]
-    {
-        use crate::hooks::event_listener::use_event_listener;
-        use_event_listener(web_sys::window, "scroll", move || {
-            let Some(window) = web_sys::window() else {
-                return;
-            };
-            let Some(document) = window.document() else {
-                return;
-            };
-            let present: Vec<(&'static str, f64)> = DETAIL_SECTIONS
-                .iter()
-                .filter_map(|(id, _)| {
-                    document
-                        .get_element_by_id(id)
-                        .map(|element| (*id, element.get_bounding_client_rect().top()))
-                })
-                .collect();
-            let viewport = window
-                .inner_height()
-                .ok()
-                .and_then(|value| value.as_f64())
-                .unwrap_or(0.0);
-            let scrolled = window.scroll_y().unwrap_or(0.0);
-            let height = document
-                .document_element()
-                .map(|root| f64::from(root.scroll_height()))
-                .unwrap_or(0.0);
-            let current = if scrolled > 0.0 && viewport + scrolled >= height - 2.0 {
-                present.last().map(|(id, _)| *id)
-            } else {
-                present
-                    .iter()
-                    .rev()
-                    .find(|(_, top)| *top <= 120.0)
-                    .map(|(id, _)| *id)
-            }
-            .unwrap_or("preview");
-            if *active_section.peek() != current {
-                active_section.set(current);
-            }
-        });
+/// 目录高亮最后一个越过页头的章节；滚到底时高亮最后一节，短章节也能被选中。
+#[cfg(target_arch = "wasm32")]
+fn update_active_section(active_section: RwSignal<&'static str>) {
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    let Some(document) = window.document() else {
+        return;
+    };
+    let present: Vec<(&'static str, f64)> = DETAIL_SECTIONS
+        .iter()
+        .filter_map(|(id, _)| {
+            document
+                .get_element_by_id(id)
+                .map(|element| (*id, element.get_bounding_client_rect().top()))
+        })
+        .collect();
+    let viewport = window
+        .inner_height()
+        .ok()
+        .and_then(|value| value.as_f64())
+        .unwrap_or(0.0);
+    let scrolled = window.scroll_y().unwrap_or(0.0);
+    let height = document
+        .document_element()
+        .map(|root| f64::from(root.scroll_height()))
+        .unwrap_or(0.0);
+    let current = if scrolled > 0.0 && viewport + scrolled >= height - 2.0 {
+        present.last().map(|(id, _)| *id)
+    } else {
+        present
+            .iter()
+            .rev()
+            .find(|(_, top)| *top <= 120.0)
+            .map(|(id, _)| *id)
     }
+    .unwrap_or("preview");
+    if active_section.try_get_untracked() != Some(current) {
+        active_section.try_set(current);
+    }
+}
+
+#[component]
+fn ShowcaseDetail(component: String) -> impl IntoView {
+    let filters = expect_context::<RwSignal<ShowcaseFilters>>();
+    let checked = RwSignal::new(false);
+    let danger = RwSignal::new(false);
+    let alert_variant = RwSignal::new("success".to_string());
+    let alert_message = RwSignal::new(alert_box_preset_message("success").to_string());
+    let reset_generation = RwSignal::new(0_u32);
+    let copied = RwSignal::new(false);
+    let active_section = RwSignal::new("preview");
+
+    #[cfg(target_arch = "wasm32")]
+    crate::hooks::event_listener::use_event_listener(web_sys::window, "scroll", move || {
+        update_active_section(active_section)
+    });
 
     let Some((index, spec)) = showcase()
         .components
@@ -688,34 +814,36 @@ fn ShowcaseDetail(component: String) -> Element {
         .enumerate()
         .find(|(_, spec)| spec.slug == component)
     else {
-        #[cfg(feature = "server")]
-        dioxus::fullstack::FullstackContext::commit_http_status(
-            http::StatusCode::NOT_FOUND,
-            Some("Component Not Found".to_string()),
-        );
-        return rsx! {
-            document::Title { "组件未找到 · Yggdrasil" }
-            div { class: "showcase showcase-missing",
-                h1 { "图鉴里没有这个组件" }
-                p { "地址可能写错了，或者组件已经改名。" }
-                Link {
-                    class: button_class(ButtonVariant::Secondary, ButtonSize::Md),
-                    to: Route::ComponentShowcase {},
+        crate::request_ctx::set_status(404);
+        return view! {
+            <Title text="组件未找到 · Yggdrasil"/>
+            <div class="showcase showcase-missing">
+                <h1>"图鉴里没有这个组件"</h1>
+                <p>"地址可能写错了，或者组件已经改名。"</p>
+                <a
+                    class=button_class(ButtonVariant::Secondary, ButtonSize::Md)
+                    href=Route::ComponentShowcase.to_string()
+                >
                     "返回组件图鉴"
-                }
+                </a>
+            </div>
+        }
+        .into_any();
+    };
+    let is_checkbox = spec.name == "Checkbox";
+    let is_alert = spec.name == "AlertBox";
+    let snippet = {
+        let code = spec.code.clone();
+        move || {
+            if is_checkbox {
+                checkbox_snippet(checked.get(), danger.get())
+            } else if is_alert {
+                alert_box_snippet(&alert_variant.read(), &alert_message.read())
+            } else {
+                code.clone()
             }
-        };
+        }
     };
-    let snippet = if spec.name == "Checkbox" {
-        checkbox_snippet(checked(), danger())
-    } else if spec.name == "AlertBox" {
-        alert_box_snippet(&alert_variant(), &alert_message())
-    } else {
-        spec.code.clone()
-    };
-    #[cfg(target_arch = "wasm32")]
-    let snippet_for_copy = snippet.clone();
-    let highlighted_snippet = highlight_snippet(&snippet);
     let interactive = spec.preview_mode == PreviewMode::Interactive;
     let stage_class = match (interactive, is_wide_preview(&spec.slug)) {
         (false, true) => "showcase-live-preview is-static is-wide",
@@ -723,18 +851,27 @@ fn ShowcaseDetail(component: String) -> Element {
         (true, true) => "showcase-live-preview is-wide",
         (true, false) => "showcase-live-preview",
     };
-    let status = if spec.name == "Checkbox" {
-        Some(format!("checked: {} · danger: {}", checked(), danger()))
-    } else if spec.name == "AlertBox" {
-        Some(format!(
-            "variant: \"{}\" · message: \"{}\"",
-            alert_variant(),
-            alert_message()
-        ))
-    } else if is_local_demo(&spec.slug) {
-        Some("本地演示，内容不会保存".to_string())
-    } else {
-        None
+    let status = {
+        let local_demo = is_local_demo(&spec.slug);
+        move || {
+            if is_checkbox {
+                Some(format!(
+                    "checked: {} · danger: {}",
+                    checked.get(),
+                    danger.get()
+                ))
+            } else if is_alert {
+                Some(format!(
+                    "variant: \"{}\" · message: \"{}\"",
+                    alert_variant.get(),
+                    alert_message.get()
+                ))
+            } else if local_demo {
+                Some("本地演示，内容不会保存".to_string())
+            } else {
+                None
+            }
+        }
     };
     let sections: Vec<(&str, &str)> = DETAIL_SECTIONS
         .into_iter()
@@ -743,296 +880,389 @@ fn ShowcaseDetail(component: String) -> Element {
     let previous = index.checked_sub(1).map(|i| &showcase().components[i]);
     let next = showcase().components.get(index + 1);
     let gallery_slug = spec.slug.clone();
+    let slug = spec.slug.clone();
 
-    rsx! {
-        document::Title { "{spec.label} {spec.name} · 组件图鉴 · Yggdrasil" }
-        article { class: "showcase showcase-detail",
-            nav { class: "breadcrumb", aria_label: "面包屑",
-                Link { to: Route::About {}, "关于" }
-                span { aria_hidden: "true", "/" }
-                Link {
-                    to: Route::ComponentShowcase {},
-                    onclick: move |_| {
-                        let mut filters = filters.write();
-                        filters.return_to = Some(gallery_slug.clone());
-                        filters.selected = Some(gallery_slug.clone());
-                    },
-                    "组件图鉴"
-                }
-                span { aria_hidden: "true", "/" }
-                span { aria_current: "page", "{spec.label}" }
+    let state_control = if is_checkbox {
+        Some(
+            view! {
+                <SegmentedControl
+                    items=vec![
+                        SegmentedItem::new("default".to_string(), "默认"),
+                        SegmentedItem::new("checked".to_string(), "已选"),
+                        SegmentedItem::new("danger".to_string(), "危险态"),
+                    ]
+                    value=Signal::derive(move || {
+                        checkbox_state(checked.get(), danger.get()).to_string()
+                    })
+                    aria_label="预览状态"
+                    on_change=move |state: String| {
+                        checked.set(state != "default");
+                        danger.set(state == "danger");
+                    }
+                />
             }
-            div { class: "showcase-detail-layout",
-                div { class: "showcase-detail-main",
-                    header { class: "showcase-detail-header page-enter",
-                        div { class: "showcase-detail-title",
-                            h1 { "{spec.label}" }
-                            code { "{spec.name}" }
-                            span { class: "chip", "{group_label(&spec.group)}" }
-                        }
-                        p { class: "showcase-detail-lead", "{spec.description}" }
+            .into_any(),
+        )
+    } else if is_alert {
+        Some(
+            view! {
+                <SegmentedControl
+                    items=vec![
+                        SegmentedItem::new("success".to_string(), "成功"),
+                        SegmentedItem::new("error".to_string(), "错误"),
+                        SegmentedItem::new("default".to_string(), "普通"),
+                    ]
+                    value=alert_variant
+                    aria_label="预览状态"
+                    on_change=move |variant: String| {
+                        alert_message.set(alert_box_preset_message(&variant).to_string());
+                        alert_variant.set(variant);
                     }
-                    section {
-                        id: "preview",
-                        class: "showcase-live-panel page-enter",
-                        style: "--enter-index: 1",
-                        aria_labelledby: "showcase-preview-title",
-                        div { class: "showcase-live-toolbar",
-                            h2 { id: "showcase-preview-title", "预览" }
-                            div { class: "showcase-live-actions",
-                                if spec.name == "Checkbox" {
-                                    SegmentedControl {
-                                        items: vec![
-                                            SegmentedItem::new("default".to_string(), "默认"),
-                                            SegmentedItem::new("checked".to_string(), "已选"),
-                                            SegmentedItem::new("danger".to_string(), "危险态"),
-                                        ],
-                                        value: checkbox_state(checked(), danger()).to_string(),
-                                        aria_label: "预览状态",
-                                        on_change: move |state: String| {
-                                            checked.set(state != "default");
-                                            danger.set(state == "danger");
-                                        },
-                                    }
-                                } else if spec.name == "AlertBox" {
-                                    SegmentedControl {
-                                        items: vec![
-                                            SegmentedItem::new("success".to_string(), "成功"),
-                                            SegmentedItem::new("error".to_string(), "错误"),
-                                            SegmentedItem::new("default".to_string(), "普通"),
-                                        ],
-                                        value: alert_variant(),
-                                        aria_label: "预览状态",
-                                        on_change: move |variant: String| {
-                                            alert_message.set(alert_box_preset_message(&variant).to_string());
-                                            alert_variant.set(variant);
-                                        },
-                                    }
-                                }
-                                if interactive {
-                                    Button {
-                                        variant: ButtonVariant::Ghost,
-                                        size: ButtonSize::Sm,
-                                        icon: Some(IconName::RotateCcw),
-                                        class: "showcase-reset".to_string(),
-                                        onclick: move |_| {
-                                            checked.set(false);
-                                            danger.set(false);
-                                            alert_variant.set("success".to_string());
-                                            alert_message.set(alert_box_preset_message("success").to_string());
-                                            reset_generation.set(reset_generation().wrapping_add(1));
-                                        },
-                                        "恢复默认"
-                                    }
-                                }
-                            }
-                        }
-                        div { class: "{stage_class}",
-                            for generation in std::iter::once(reset_generation()) {
-                                div { key: "{spec.slug}-{generation}", class: "showcase-preview-instance",
-                                    ComponentPreview {
-                                        slug: spec.slug.clone(),
-                                        detail: true,
-                                        checked,
-                                        danger,
-                                        alert_variant,
-                                        alert_message,
-                                    }
-                                }
-                            }
-                        }
-                        if spec.name == "AlertBox" {
-                            label { class: "showcase-live-field",
-                                span { "message" }
-                                FormInput {
-                                    r#type: "text",
-                                    placeholder: "输入自定义提示文案…",
-                                    value: alert_message(),
-                                    oninput: move |value| alert_message.set(value),
-                                }
-                            }
-                        }
-                        if let Some(status) = status {
-                            div { class: "showcase-live-status", "{status}" }
-                        }
-                    }
-                    section { id: "props", class: "showcase-detail-section", aria_labelledby: "showcase-props-title",
-                        h2 { id: "showcase-props-title", "属性" }
-                        if spec.props.is_empty() {
-                            p { class: "showcase-detail-note", "这个组件不接收属性。" }
-                        } else {
-                            div { class: "showcase-props-wrap",
-                                table {
-                                    thead {
-                                        tr {
-                                            th { "名称" }
-                                            th { "类型" }
-                                            th { "默认值" }
-                                            th { "说明" }
-                                        }
-                                    }
-                                    tbody {
-                                        for (index, prop) in spec.props.iter().enumerate() {
-                                            tr { key: "{index}",
-                                                td { code { "{prop[0]}" } }
-                                                td { code { class: "showcase-prop-type", "{prop[1]}" } }
-                                                td {
-                                                    if prop[2] == "必填" {
-                                                        span { class: "showcase-prop-required", "必填" }
-                                                    } else {
-                                                        code { class: "showcase-prop-default", "{prop[2]}" }
-                                                    }
-                                                }
-                                                td { "{prop[3]}" }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    if !spec.keys.is_empty() {
-                        section { id: "keys", class: "showcase-detail-section", aria_labelledby: "showcase-keys-title",
-                            h2 { id: "showcase-keys-title", "键盘" }
-                            dl { class: "showcase-key-list",
-                                for (index, item) in spec.keys.iter().enumerate() {
-                                    div { key: "{index}",
-                                        dt { kbd { "{item[0]}" } }
-                                        dd { "{item[1]}" }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    section { id: "usage", class: "showcase-detail-section", aria_labelledby: "showcase-usage-title",
-                        div { class: "showcase-section-head",
-                            h2 { id: "showcase-usage-title", "用法" }
-                            code { class: "showcase-source", "{spec.source}" }
-                        }
-                        if spec.usage_kind == UsageKind::Api {
-                            p { class: "showcase-detail-note", "下方列出组件接口；正式调用由所在页面提供数据与回调。" }
-                        }
-                        figure { class: "showcase-code-panel",
-                            div { class: "showcase-code-toolbar",
-                                span {
-                                    match spec.usage_kind {
-                                        UsageKind::Rust => "Dioxus RSX",
-                                        UsageKind::Api => "Rust 接口",
-                                        UsageKind::Router => "路由配置",
-                                        UsageKind::Browser => "TypeScript",
-                                    }
-                                }
-                                Button {
-                                    variant: ButtonVariant::Ghost,
-                                    size: ButtonSize::Sm,
-                                    icon: Some(if copied() { IconName::Check } else { IconName::Copy }),
-                                    onclick: move |_| {
-                                        #[cfg(target_arch = "wasm32")]
-                                        {
-                                            let text = snippet_for_copy.clone();
-                                            spawn(async move {
-                                                if crate::utils::js::copy_text(&text).await {
-                                                    copied.set(true);
-                                                    crate::utils::time::sleep_ms(1600).await;
-                                                    copied.set(false);
-                                                }
-                                            });
-                                        }
-                                    },
-                                    if copied() { "已复制" } else { "复制" }
-                                }
-                            }
-                            pre {
-                                code {
-                                    for (token_index, token) in highlighted_snippet.iter().enumerate() {
-                                        span { key: "{token_index}", class: token.class.unwrap_or(""), "{token.text}" }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    nav { class: "showcase-neighbors", aria_label: "相邻组件",
-                        if let Some(item) = previous {
-                            Link { to: Route::ComponentDetail { component: item.slug.clone() },
-                                span { class: "showcase-neighbor-hint", "← 上一个" }
-                                span { class: "showcase-neighbor-name", "{item.label} " code { "{item.name}" } }
-                            }
-                        }
-                        if let Some(item) = next {
-                            Link { class: "is-next", to: Route::ComponentDetail { component: item.slug.clone() },
-                                span { class: "showcase-neighbor-hint", "下一个 →" }
-                                span { class: "showcase-neighbor-name", "{item.label} " code { "{item.name}" } }
-                            }
-                        }
-                    }
-                }
-                aside { class: "showcase-toc", aria_label: "本页目录",
-                    p { class: "showcase-toc-label", "本页" }
-                    ol {
-                        for (id, label) in sections {
-                            li { key: "{id}",
-                                a {
-                                    href: "#{id}",
-                                    class: if active_section() == id { "is-active" } else { "" },
-                                    aria_current: (active_section() == id).then_some("location"),
-                                    "{label}"
-                                }
-                            }
-                        }
-                    }
-                    p { class: "showcase-toc-states", "状态：{spec.states}" }
-                }
+                />
             }
+            .into_any(),
+        )
+    } else {
+        None
+    };
+    let reset_button = interactive.then(|| {
+        view! {
+            <Button
+                variant=ButtonVariant::Ghost
+                size=ButtonSize::Sm
+                icon=IconName::RotateCcw
+                class="showcase-reset"
+                onclick=move |_: MouseEvent| {
+                    checked.set(false);
+                    danger.set(false);
+                    alert_variant.set("success".to_string());
+                    alert_message.set(alert_box_preset_message("success").to_string());
+                    reset_generation.update(|generation| *generation = generation.wrapping_add(1));
+                }
+            >
+                "恢复默认"
+            </Button>
         }
+    });
+    let alert_field = is_alert.then(|| {
+        view! {
+            <label class="showcase-live-field">
+                <span>"message"</span>
+                <FormInput
+                    r#type="text"
+                    placeholder="输入自定义提示文案…"
+                    value=alert_message
+                    oninput=move |value: String| alert_message.set(value)
+                />
+            </label>
+        }
+    });
+
+    let props_section = if spec.props.is_empty() {
+        view! { <p class="showcase-detail-note">"这个组件不接收属性。"</p> }.into_any()
+    } else {
+        let rows = spec
+            .props
+            .iter()
+            .map(|prop| {
+                let default = if prop[2] == "必填" {
+                    view! { <span class="showcase-prop-required">"必填"</span> }.into_any()
+                } else {
+                    view! { <code class="showcase-prop-default">{prop[2].clone()}</code> }
+                        .into_any()
+                };
+                view! {
+                    <tr>
+                        <td>
+                            <code>{prop[0].clone()}</code>
+                        </td>
+                        <td>
+                            <code class="showcase-prop-type">{prop[1].clone()}</code>
+                        </td>
+                        <td>{default}</td>
+                        <td>{prop[3].clone()}</td>
+                    </tr>
+                }
+            })
+            .collect_view();
+        view! {
+            <div class="showcase-props-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>"名称"</th>
+                            <th>"类型"</th>
+                            <th>"默认值"</th>
+                            <th>"说明"</th>
+                        </tr>
+                    </thead>
+                    <tbody>{rows}</tbody>
+                </table>
+            </div>
+        }
+        .into_any()
+    };
+
+    let keys_section = (!spec.keys.is_empty()).then(|| {
+        let items = spec
+            .keys
+            .iter()
+            .map(|item| {
+                view! {
+                    <div>
+                        <dt>
+                            <kbd>{item[0].clone()}</kbd>
+                        </dt>
+                        <dd>{item[1].clone()}</dd>
+                    </div>
+                }
+            })
+            .collect_view();
+        view! {
+            <section id="keys" class="showcase-detail-section" aria-labelledby="showcase-keys-title">
+                <h2 id="showcase-keys-title">"键盘"</h2>
+                <dl class="showcase-key-list">{items}</dl>
+            </section>
+        }
+    });
+
+    let usage_label = match spec.usage_kind {
+        UsageKind::Rust => "Leptos view!",
+        UsageKind::Api => "Rust 接口",
+        UsageKind::Router => "路由配置",
+        UsageKind::Browser => "TypeScript",
+    };
+    let api_note = (spec.usage_kind == UsageKind::Api).then(|| {
+        view! {
+            <p class="showcase-detail-note">
+                "下方列出组件接口；正式调用由所在页面提供数据与回调。"
+            </p>
+        }
+    });
+    let copy_snippet = snippet.clone();
+    let on_copy = move |_: MouseEvent| {
+        #[cfg(target_arch = "wasm32")]
+        {
+            let text = copy_snippet();
+            leptos::task::spawn_local(async move {
+                if crate::utils::js::copy_text(&text).await {
+                    copied.try_set(true);
+                    crate::utils::time::sleep_ms(1600).await;
+                    copied.try_set(false);
+                }
+            });
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        let _ = &copy_snippet;
+    };
+
+    let neighbor = |item: &ComponentSpec, class: &'static str, hint: &'static str| {
+        view! {
+            <a
+                class=class
+                href=Route::ComponentDetail {
+                    component: item.slug.clone(),
+                }
+                    .to_string()
+            >
+                <span class="showcase-neighbor-hint">{hint}</span>
+                <span class="showcase-neighbor-name">
+                    {format!("{} ", item.label)} <code>{item.name.clone()}</code>
+                </span>
+            </a>
+        }
+    };
+    let previous_link = previous.map(|item| neighbor(item, "", "← 上一个"));
+    let next_link = next.map(|item| neighbor(item, "is-next", "下一个 →"));
+
+    let toc = sections
+        .into_iter()
+        .map(|(id, label)| {
+            view! {
+                <li>
+                    <a
+                        href=format!("#{id}")
+                        class=move || if active_section.get() == id { "is-active" } else { "" }
+                        aria-current=move || (active_section.get() == id).then_some("location")
+                    >
+                        {label}
+                    </a>
+                </li>
+            }
+        })
+        .collect_view();
+
+    view! {
+        <Title text=format!("{} {} · 组件图鉴 · Yggdrasil", spec.label, spec.name)/>
+        <article class="showcase showcase-detail">
+            <nav class="breadcrumb" aria-label="面包屑">
+                <a href=Route::About.to_string()>"关于"</a>
+                <span aria-hidden="true">"/"</span>
+                <a
+                    href=Route::ComponentShowcase.to_string()
+                    on:click=move |_| {
+                        filters
+                            .update(|state| {
+                                state.return_to = Some(gallery_slug.clone());
+                                state.selected = Some(gallery_slug.clone());
+                            });
+                    }
+                >
+                    "组件图鉴"
+                </a>
+                <span aria-hidden="true">"/"</span>
+                <span aria-current="page">{spec.label.clone()}</span>
+            </nav>
+            <div class="showcase-detail-layout">
+                <div class="showcase-detail-main">
+                    <header class="showcase-detail-header page-enter">
+                        <div class="showcase-detail-title">
+                            <h1>{spec.label.clone()}</h1>
+                            <code>{spec.name.clone()}</code>
+                            <span class="chip">{group_label(&spec.group)}</span>
+                        </div>
+                        <p class="showcase-detail-lead">{spec.description.clone()}</p>
+                    </header>
+                    <section
+                        id="preview"
+                        class="showcase-live-panel page-enter"
+                        style="--enter-index: 1"
+                        aria-labelledby="showcase-preview-title"
+                    >
+                        <div class="showcase-live-toolbar">
+                            <h2 id="showcase-preview-title">"预览"</h2>
+                            <div class="showcase-live-actions">{state_control} {reset_button}</div>
+                        </div>
+                        <div class=stage_class>
+                            {move || {
+                                reset_generation.track();
+                                view! {
+                                    <div class="showcase-preview-instance">
+                                        <ComponentPreview
+                                            slug=slug.clone()
+                                            detail=true
+                                            checked=checked
+                                            danger=danger
+                                            alert_variant=alert_variant
+                                            alert_message=alert_message
+                                        />
+                                    </div>
+                                }
+                            }}
+                        </div>
+                        {alert_field}
+                        {move || {
+                            status()
+                                .map(|status| view! { <div class="showcase-live-status">{status}</div> })
+                        }}
+                    </section>
+                    <section
+                        id="props"
+                        class="showcase-detail-section"
+                        aria-labelledby="showcase-props-title"
+                    >
+                        <h2 id="showcase-props-title">"属性"</h2>
+                        {props_section}
+                    </section>
+                    {keys_section}
+                    <section
+                        id="usage"
+                        class="showcase-detail-section"
+                        aria-labelledby="showcase-usage-title"
+                    >
+                        <div class="showcase-section-head">
+                            <h2 id="showcase-usage-title">"用法"</h2>
+                            <code class="showcase-source">{spec.source.clone()}</code>
+                        </div>
+                        {api_note}
+                        <figure class="showcase-code-panel">
+                            <div class="showcase-code-toolbar">
+                                <span>{usage_label}</span>
+                                <Button
+                                    variant=ButtonVariant::Ghost
+                                    size=ButtonSize::Sm
+                                    icon=Signal::derive(move || {
+                                        Some(if copied.get() { IconName::Check } else { IconName::Copy })
+                                    })
+                                    onclick=on_copy
+                                >
+                                    {move || if copied.get() { "已复制" } else { "复制" }}
+                                </Button>
+                            </div>
+                            <pre>
+                                <code>{move || highlighted_view(&snippet())}</code>
+                            </pre>
+                        </figure>
+                    </section>
+                    <nav class="showcase-neighbors" aria-label="相邻组件">
+                        {previous_link} {next_link}
+                    </nav>
+                </div>
+                <aside class="showcase-toc" aria-label="本页目录">
+                    <p class="showcase-toc-label">"本页"</p>
+                    <ol>{toc}</ol>
+                    <p class="showcase-toc-states">{format!("状态：{}", spec.states)}</p>
+                </aside>
+            </div>
+        </article>
     }
+    .into_any()
 }
 
 #[component]
 fn ComponentPreview(
     slug: String,
     detail: bool,
-    #[props(default)] checked: Option<Signal<bool>>,
-    #[props(default)] danger: Option<Signal<bool>>,
-    #[props(default)] alert_variant: Option<Signal<String>>,
-    #[props(default)] alert_message: Option<Signal<String>>,
-) -> Element {
+    #[prop(optional)] checked: Option<RwSignal<bool>>,
+    #[prop(optional)] danger: Option<RwSignal<bool>>,
+    #[prop(optional)] alert_variant: Option<RwSignal<String>>,
+    #[prop(optional)] alert_message: Option<RwSignal<String>>,
+) -> impl IntoView {
     let spec = showcase()
         .components
         .iter()
         .find(|item| item.slug == slug)
         .expect("预览必须对应图鉴条目");
+    let name = spec.name.clone();
     // P5 §8.2：预览分派的公共入口统一声明增强/灯箱资源——detail 详情页不渲染
     // ShowcaseGallery，全局注入移除后这里必须自带（按 src 去重，画廊页幂等）。
-    rsx! {
-        crate::components::enhance_assets::EnhanceScript {}
-        crate::components::enhance_assets::LightboxAssets {}
-        match preview_route(&slug).expect("图鉴条目必须有专属预览分派") {
-            PreviewRoute::Live => {
-                rsx! {
-                    LiveComponentPreview {
-                        name: spec.name.clone(),
-                        detail,
-                        checked,
-                        danger,
-                        alert_variant,
-                        alert_message,
-                    }
-                }
+    let preview = match preview_route(&slug).expect("图鉴条目必须有专属预览分派") {
+        PreviewRoute::Live => match (checked, danger, alert_variant, alert_message) {
+            (Some(checked), Some(danger), Some(alert_variant), Some(alert_message)) => view! {
+                <live_previews::LiveComponentPreview
+                    name=name
+                    detail=detail
+                    checked=checked
+                    danger=danger
+                    alert_variant=alert_variant
+                    alert_message=alert_message
+                />
             }
-            PreviewRoute::Scene => rsx! { SceneComponentPreview { name: spec.name.clone() } },
-            PreviewRoute::Business => {
-                business_previews::preview(&slug, detail).expect("业务预览必须实现")
+            .into_any(),
+            _ => {
+                view! { <live_previews::LiveComponentPreview name=name detail=detail/> }.into_any()
             }
-            PreviewRoute::LayoutArticle => {
-                layout_article_previews::preview(&slug, detail).expect("布局与文章预览必须实现")
-            }
-            PreviewRoute::Comment => {
-                comment_previews::preview(&slug, detail).expect("评论预览必须实现")
-            }
-            PreviewRoute::Browser => {
-                browser_previews::preview(&slug, detail).expect("浏览器预览必须实现")
-            }
+        },
+        PreviewRoute::Scene => {
+            view! { <live_previews::SceneComponentPreview name=name/> }.into_any()
         }
+        PreviewRoute::Business => {
+            business_previews::preview(&slug, detail).expect("业务预览必须实现")
+        }
+        PreviewRoute::LayoutArticle => {
+            layout_article_previews::preview(&slug, detail).expect("布局与文章预览必须实现")
+        }
+        PreviewRoute::Comment => {
+            comment_previews::preview(&slug, detail).expect("评论预览必须实现")
+        }
+        PreviewRoute::Browser => {
+            browser_previews::preview(&slug, detail).expect("浏览器预览必须实现")
+        }
+    };
+    view! {
+        <crate::components::enhance_assets::EnhanceScript/>
+        <crate::components::enhance_assets::LightboxAssets/>
+        {preview}
     }
 }
 
@@ -1093,736 +1323,6 @@ fn is_wide_preview(slug: &str) -> bool {
                 | PreviewRoute::Browser
         )
     )
-}
-
-/// 分段控件图鉴里的带图标示例项（浅色 / 深色 / 跟随系统），只改局部信号。
-fn segmented_mode_items() -> Vec<SegmentedItem<String>> {
-    vec![
-        SegmentedItem::new("light".to_string(), "浅色").icon(IconName::Sun),
-        SegmentedItem::new("dark".to_string(), "深色").icon(IconName::Moon),
-        SegmentedItem::new("system".to_string(), "跟随系统").icon(IconName::Monitor),
-    ]
-}
-
-#[component]
-fn LiveComponentPreview(
-    name: String,
-    detail: bool,
-    #[props(default)] checked: Option<Signal<bool>>,
-    #[props(default)] danger: Option<Signal<bool>>,
-    #[props(default)] alert_variant: Option<Signal<String>>,
-    #[props(default)] alert_message: Option<Signal<String>>,
-) -> Element {
-    let local_checked = use_signal(|| true);
-    let local_danger = use_signal(|| false);
-    let mut checked = checked.unwrap_or(local_checked);
-    let danger = danger.unwrap_or(local_danger);
-    let local_alert_variant = use_signal(|| "success".to_string());
-    let local_alert_message = use_signal(|| "已保存，新的想法正在生长。".to_string());
-    let alert_variant = alert_variant.unwrap_or(local_alert_variant);
-    let alert_message = alert_message.unwrap_or(local_alert_message);
-    let mut switch_on = use_signal(|| true);
-    let mut selected_radio = use_signal(|| "public".to_string());
-    let mut select_value = use_signal(|| "leaf".to_string());
-    let mut time_value = use_signal(|| "08:30".to_string());
-    let mut input_value = use_signal(String::new);
-    let mut textarea_value = use_signal(String::new);
-    let mut tab_value = use_signal(|| "all".to_string());
-    let mut seg_mode = use_signal(|| "light".to_string());
-    let mut page = use_signal(|| 1i32);
-    let mut number_value = use_signal(|| 14i64);
-    let mut clicked = use_signal(|| false);
-    let mut popover_open = use_signal(|| false);
-    #[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut))]
-    let mut popover_x = use_signal(|| 550i32);
-    #[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut))]
-    let mut popover_y = use_signal(|| 330i32);
-    let mut modal_open = use_signal(|| false);
-    let mut modal_closing = use_signal(|| false);
-    let mut confirm_open = use_signal(|| false);
-    let mut filter = use_signal(|| false);
-
-    match name.as_str() {
-        "Checkbox" => rsx! {
-            div { class: "showcase-preview-stack",
-                label { class: if danger() { "showcase-check-row danger" } else { "showcase-check-row" },
-                    crate::components::ui::Checkbox { checked: checked(), danger: danger(), onchange: move |value| checked.set(value) }
-                    if detail { "记住这个小小的选择" } else { "记住这个小小的选择" }
-                }
-                if !detail {
-                    label { class: "showcase-check-row",
-                        crate::components::ui::Checkbox { checked: filter(), onchange: move |value| filter.set(value) }
-                        "接收新的生长消息"
-                    }
-                    label { class: "showcase-check-row danger",
-                        crate::components::ui::Checkbox { checked: true, danger: true, onchange: move |_| {} }
-                        "确认移除这条记录"
-                    }
-                }
-            }
-        },
-        "Radio" => rsx! {
-            div { class: "showcase-preview-stack", role: "radiogroup", aria_label: "分享范围",
-                for (value, label) in [("public", "公开分享"), ("private", "仅自己可见")] {
-                    label { class: "showcase-check-row",
-                        crate::components::ui::Radio { name: "showcase-visibility".to_string(), value: value.to_string(), checked: selected_radio() == value, onchange: move |value| selected_radio.set(value) }
-                        "{label}"
-                    }
-                }
-                label { class: "showcase-check-row",
-                    crate::components::ui::Radio { name: "showcase-visibility".to_string(), value: "unavailable".to_string(), checked: false, disabled: true, onchange: move |_| {} }
-                    "暂不可用"
-                }
-            }
-        },
-        "ToggleSwitch" => rsx! {
-            div { class: "showcase-preview-stack",
-                div { class: "showcase-switch-row", span { "接收更新" }
-                    crate::components::forms::ToggleSwitch { checked: switch_on(), ontoggle: move |_| switch_on.toggle() }
-                }
-                div { class: "showcase-switch-row", span { "自动备份" }
-                    crate::components::forms::ToggleSwitch { checked: filter(), ontoggle: move |_| filter.toggle() }
-                }
-            }
-        },
-        "FormSelect" => rsx! {
-            div { class: "showcase-preview-stack",
-                div { class: "showcase-preview-field",
-                    crate::components::forms::FormLabel { label: "素材排序", html_for: Some("showcase-sort".to_string()) }
-                    crate::components::forms::FormSelect {
-                        id: Some("showcase-sort".to_string()),
-                        value: select_value(),
-                        options: vec![("leaf".to_string(), "最新上传"), ("design".to_string(), "体积最大"), ("daily".to_string(), "引用最多"), ("name".to_string(), "按文件名")],
-                        disabled_options: vec![("name".to_string(), "需要先重建索引")],
-                        onchange: move |value| select_value.set(value),
-                    }
-                }
-                div { class: "showcase-preview-field",
-                    crate::components::forms::FormLabel { label: "主题标签（多于 8 项时可筛选）", html_for: Some("showcase-tag".to_string()) }
-                    crate::components::forms::FormSelect {
-                        id: Some("showcase-tag".to_string()),
-                        value: tab_value(),
-                        options: vec![
-                            ("all".to_string(), "全部标签"), ("rust".to_string(), "Rust"), ("dioxus".to_string(), "Dioxus"),
-                            ("pg".to_string(), "PostgreSQL"), ("wasm".to_string(), "WebAssembly"), ("design".to_string(), "设计"),
-                            ("arch".to_string(), "架构"), ("note".to_string(), "读书笔记"), ("emu".to_string(), "模拟器"),
-                            ("mcp".to_string(), "MCP"),
-                        ],
-                        onchange: move |value| tab_value.set(value),
-                    }
-                }
-            }
-        },
-        "TimePicker" => rsx! {
-            crate::components::forms::TimePicker { value: time_value(), onchange: move |value| time_value.set(value) }
-        },
-        "FormInput" => rsx! {
-            crate::components::forms::FormInput {
-                r#type: "text",
-                placeholder: "一个新的开始…",
-                value: input_value(),
-                oninput: move |value| input_value.set(value),
-            }
-        },
-        "FormTextarea" => rsx! {
-            crate::components::forms::FormTextarea {
-                rows: 4,
-                placeholder: "写下这篇文章想说的事…",
-                value: textarea_value(),
-                oninput: move |value| textarea_value.set(value),
-            }
-        },
-        "FormLabel" => rsx! {
-            div { class: "showcase-preview-field",
-                crate::components::forms::FormLabel { label: "文章标题", html_for: Some("showcase-title".to_string()) }
-                crate::components::forms::FormInput {
-                    id: Some("showcase-title".to_string()), r#type: "text", placeholder: "点击标签也能聚焦这里",
-                    value: input_value(), oninput: move |value| input_value.set(value),
-                }
-            }
-        },
-        "Button" => rsx! {
-            div { class: "flex flex-col gap-4",
-                div { class: "showcase-preview-row flex-wrap",
-                    crate::components::ui::Button { onclick: move |_| clicked.set(true), if clicked() { "已发布" } else { "发布文章" } }
-                    crate::components::ui::Button { variant: crate::components::ui::ButtonVariant::Secondary, icon: crate::components::ui::IconName::Save, "保存草稿" }
-                    crate::components::ui::Button { variant: crate::components::ui::ButtonVariant::Outline, "预览" }
-                    crate::components::ui::Button { variant: crate::components::ui::ButtonVariant::Ghost, "取消" }
-                    crate::components::ui::Button { variant: crate::components::ui::ButtonVariant::Danger, "永久删除" }
-                    crate::components::ui::Button { variant: crate::components::ui::ButtonVariant::Secondary, loading: true, "处理中" }
-                }
-                div { class: "showcase-preview-row flex-wrap items-center",
-                    crate::components::ui::Button { size: crate::components::ui::ButtonSize::Xs, variant: crate::components::ui::ButtonVariant::Secondary, "XS" }
-                    crate::components::ui::Button { size: crate::components::ui::ButtonSize::Sm, variant: crate::components::ui::ButtonVariant::Secondary, "SM" }
-                    crate::components::ui::Button { variant: crate::components::ui::ButtonVariant::Secondary, "MD" }
-                    crate::components::ui::Button { size: crate::components::ui::ButtonSize::Lg, variant: crate::components::ui::ButtonVariant::Secondary, "LG" }
-                    crate::components::ui::Button { variant: crate::components::ui::ButtonVariant::DangerSoft, icon: crate::components::ui::IconName::Trash, "清空回收站" }
-                }
-            }
-        },
-        "IconButton" => rsx! {
-            div { class: "showcase-preview-row",
-                crate::components::ui::IconButton { icon: crate::components::ui::IconName::Copy, label: "复制链接" }
-                crate::components::ui::IconButton { icon: crate::components::ui::IconName::Search, label: "搜索", shortcut: "⌘K", variant: crate::components::ui::ButtonVariant::Secondary }
-                crate::components::ui::IconButton {
-                    icon: crate::components::ui::IconName::PanelLeft, label: "收起侧栏",
-                    pressed: Some(clicked()), onclick: move |_| clicked.set(!clicked()),
-                }
-                crate::components::ui::IconButton { icon: crate::components::ui::IconName::Trash, label: "删除", disabled: true }
-            }
-        },
-        "NumberInput" => rsx! {
-            div { class: "showcase-preview-field",
-                crate::components::forms::FormLabel { label: "日志保留", html_for: Some("showcase-retention".to_string()) }
-                crate::components::forms::NumberInput {
-                    id: Some("showcase-retention".to_string()),
-                    value: number_value(), min: 1, max: 90, unit: "天",
-                    hint: "超过保留期的日志由后台任务自动清理。".to_string(),
-                    onchange: move |v| number_value.set(v),
-                }
-            }
-        },
-        "Menu" => rsx! {
-            div { class: "flex flex-col items-center gap-3",
-                crate::components::ui::Menu {
-                    label: "更多操作",
-                    items: vec![
-                        crate::components::ui::MenuItem::new("edit", "编辑").icon(crate::components::ui::IconName::Pencil),
-                        crate::components::ui::MenuItem::new("copy", "复制链接").icon(crate::components::ui::IconName::Link).shortcut("⌘C"),
-                        crate::components::ui::MenuItem::new("archive", "归档").icon(crate::components::ui::IconName::Archive).disabled("已发布的文章不能归档"),
-                        crate::components::ui::MenuItem::new("trash", "移入回收站").icon(crate::components::ui::IconName::Trash).danger().separated(),
-                    ],
-                    on_select: move |id: &'static str| input_value.set(id.to_string()),
-                }
-                if !input_value().is_empty() {
-                    p { class: "text-xs text-fg-3 font-mono", "on_select: {input_value}" }
-                }
-            }
-        },
-        "ToastRegion" => rsx! {
-            ToastDemo {}
-        },
-        "BottomSheet" => rsx! {
-            BottomSheetDemo {}
-        },
-        "Breadcrumb" => rsx! {
-            crate::components::ui::Breadcrumb::<Route> {
-                items: vec![
-                    crate::components::ui::Crumb::link("关于", Route::About {}),
-                    crate::components::ui::Crumb::link("组件图鉴", Route::ComponentShowcase {}),
-                    crate::components::ui::Crumb::current("复选框"),
-                ],
-            }
-        },
-        "SearchPalette" => rsx! {
-            SearchPaletteDemo {}
-        },
-        "SideSheet" => rsx! {
-            SideSheetDemo {}
-        },
-        "Composer" => rsx! {
-            ComposerDemo {}
-        },
-        "ComposerInput" => rsx! {
-            ComposerInputDemo {}
-        },
-        "ComposerSend" => rsx! {
-            ComposerSendDemo {}
-        },
-        "AdminPalette" => rsx! {
-            AdminPaletteDemo {}
-        },
-        "SegmentedControl" => rsx! {
-            div { class: "showcase-preview-stack w-full",
-                SegmentedControl {
-                    items: vec![
-                        SegmentedItem::new("all".to_string(), "全部"),
-                        SegmentedItem::new("published".to_string(), "已发布"),
-                        SegmentedItem::new("draft".to_string(), "草稿"),
-                    ],
-                    value: tab_value(),
-                    aria_label: "文章状态示例",
-                    on_change: move |value| tab_value.set(value),
-                }
-                if detail {
-                    div { class: "w-full",
-                        SegmentedControl {
-                            items: segmented_mode_items(),
-                            value: seg_mode(),
-                            kind: SegmentedKind::Radio,
-                            size: SegmentedSize::Sm,
-                            aria_label: "外观示例（宽）",
-                            on_change: move |value| seg_mode.set(value),
-                        }
-                    }
-                    div { style: "width: 11rem",
-                        SegmentedControl {
-                            items: segmented_mode_items(),
-                            value: seg_mode(),
-                            kind: SegmentedKind::Radio,
-                            size: SegmentedSize::Sm,
-                            aria_label: "外观示例（窄）",
-                            on_change: move |value| seg_mode.set(value),
-                        }
-                    }
-                }
-            }
-        },
-        "Pagination" => rsx! {
-            div { class: "w-full max-w-md", inert: "true",
-                crate::components::ui::Pagination::<Route> {
-                    current_page: 2, total: 80, per_page: 10,
-                    prev_route: Route::Home {}, next_route: Route::HomePage { page: 3 },
-                }
-            }
-        },
-        "TablePager" => rsx! {
-            div { class: "admin-panel w-full max-w-md",
-                crate::components::ui::TablePager {
-                    page: page(), total: 57, per_page: 20, unit: "篇",
-                    on_change: move |p| page.set(p),
-                }
-            }
-        },
-        "Tooltip" => rsx! {
-            div { class: "showcase-preview-row",
-                crate::components::ui::Tooltip { tip: "复制链接",
-                    button { class: "btn btn-icon btn-secondary", aria_label: "复制链接",
-                        crate::components::ui::Icon { name: crate::components::ui::IconName::Copy }
-                    }
-                }
-                crate::components::ui::Tooltip { tip: "搜索", shortcut: "⌘K",
-                    button { class: "btn btn-icon btn-secondary", aria_label: "搜索",
-                        crate::components::ui::Icon { name: crate::components::ui::IconName::Search }
-                    }
-                }
-                crate::components::ui::Tooltip { tip: "向右旋转", shortcut: "R", placement: "bottom",
-                    button { class: "btn btn-icon btn-secondary", aria_label: "向右旋转",
-                        crate::components::ui::Icon { name: crate::components::ui::IconName::RotateCw }
-                    }
-                }
-            }
-        },
-        "Popover" => rsx! {
-            div { class: "showcase-popover-example",
-                button { class: "showcase-demo-button secondary", onclick: move |event: MouseEvent| {
-                    event.stop_propagation();
-                    #[cfg(target_arch = "wasm32")]
-                    {
-                        let coords = event.client_coordinates();
-                        let offset = event.element_coordinates();
-                        popover_x.set(coords.x as i32);
-                        popover_y.set((coords.y - offset.y) as i32);
-                    }
-                    #[cfg(not(target_arch = "wasm32"))]
-                    let _ = event;
-                    popover_open.toggle();
-                }, "试试浮层 ↗" }
-                crate::components::ui::Popover {
-                    open: popover_open(), anchor_x: popover_x(), anchor_y: popover_y(), placement: "top", align: "center",
-                    on_close: move |_| popover_open.set(false),
-                    div { class: "showcase-popover-content",
-                        p { "要保留这片小小的灵感吗？" }
-                        div { class: "showcase-popover-actions",
-                            button { class: "showcase-demo-button secondary", onclick: move |_| popover_open.set(false), "取消" }
-                            button { class: "showcase-demo-button", onclick: move |_| popover_open.set(false), "保留" }
-                        }
-                    }
-                }
-            }
-        },
-        "ModalShell" => rsx! {
-            div {
-                button { class: "showcase-demo-button secondary", onclick: move |_| modal_open.set(true), "打开一扇小窗 ↗" }
-                crate::components::ui::ModalShell {
-                    visible: modal_open, closing: modal_closing, title: "留住一片灵感",
-                    div { class: "showcase-demo-modal-content",
-                        h2 { "留住一片灵感。" }
-                        p { "让内容拥有一点专注的空间。" }
-                        button { class: "showcase-demo-button", onclick: move |_| { modal_closing.set(true); modal_open.set(false); }, "收好了" }
-                    }
-                }
-            }
-        },
-        "ConfirmDialog" => rsx! {
-            div {
-                button { class: "showcase-demo-button secondary", onclick: move |_| confirm_open.set(true), "清空回收站" }
-                crate::components::ui::ConfirmDialog {
-                    visible: confirm_open,
-                    title: "清空回收站？",
-                    description: "3 篇文章会被彻底删除，无法恢复。被这些文章引用的素材会变为未引用。",
-                    confirm_label: "彻底删除",
-                    on_confirm: move |_| {},
-                }
-            }
-        },
-        "AlertBox" => rsx! {
-            AlertBoxDemo {
-                detail,
-                alert_variant,
-                alert_message,
-            }
-        },
-        "StatusBadge" => rsx! {
-            div { class: "showcase-preview-row",
-                crate::components::ui::StatusBadge { color_class: "badge-success", label: "已发布" }
-                crate::components::ui::StatusBadge { color_class: "", label: "草稿" }
-                crate::components::ui::StatusBadge { color_class: "badge-warning", label: "待审核" }
-                crate::components::ui::StatusBadge { color_class: "badge-danger", label: "3 天后清除" }
-                crate::components::ui::StatusBadge { color_class: "badge-clay", label: "新" }
-            }
-        },
-        "StatusDot" => rsx! {
-            div { class: "showcase-preview-row",
-                crate::components::ui::StatusDot { label: "已发布", tone: "clay" }
-                crate::components::ui::StatusDot { label: "草稿" }
-                crate::components::ui::StatusDot { label: "Docker 沙箱", tone: "success" }
-                crate::components::ui::StatusDot { label: "即将过期", tone: "warning" }
-                crate::components::ui::StatusDot { label: "已吊销", tone: "danger" }
-            }
-        },
-        "TagChip" => rsx! {
-            div { class: "showcase-preview-row",
-                crate::components::ui::TagChip { label: "设计", to: Route::TagDetail { tag: "设计".to_string() }, variant: "outline", count: 12 }
-                crate::components::ui::TagChip { label: "灵感", to: Route::TagDetail { tag: "灵感".to_string() }, variant: "solid" }
-            }
-        },
-        "UserAvatar" => rsx! {
-            div { class: "showcase-preview-row",
-                crate::components::ui::UserAvatar { name: "叶子", avatar_url: None, class: "w-14 h-14 rounded-full text-xl" }
-                crate::components::ui::UserAvatar { name: "Yggdrasil", avatar_url: Some("/missing-avatar-for-showcase.png".to_string()), class: "w-10 h-10 rounded-full text-sm" }
-            }
-        },
-        "ImagePlaceholder" => rsx! {
-            crate::components::ui::ImagePlaceholder { class: "w-10 h-10 text-fg-3" }
-        },
-        "Icon" => rsx! {
-            div { class: "grid grid-cols-8 gap-3 text-fg-2",
-                for icon in crate::components::ui::IconName::ALL {
-                    span { class: "grid place-items-center", title: icon.slug(),
-                        crate::components::ui::Icon { name: icon, size: 18 }
-                    }
-                }
-            }
-        },
-        "EmptyState" => rsx! {
-            div { class: "showcase-empty-preview",
-                crate::components::empty_state::EmptyState { title: "这里，等待第一颗种子。", description: "写下一个新的开始。" }
-            }
-        },
-        "LoadError" => rsx! {
-            div { class: "w-full max-w-xl",
-                crate::components::ui::LoadError {
-                    title: "文章暂时没能加载",
-                    retrying: clicked(),
-                    on_retry: move |_| clicked.set(true),
-                }
-            }
-        },
-        _ => panic!("基础组件缺少预览: {name}"),
-    }
-}
-
-fn sample_post() -> Post {
-    let created_at = DateTime::parse_from_rfc3339("2026-09-23T08:00:00Z")
-        .expect("固定的图鉴示例日期必须有效")
-        .with_timezone(&Utc);
-    Post {
-        id: 0,
-        author_id: 0,
-        title: "让想法生根".to_string(),
-        slug: "showcase-example".to_string(),
-        summary: Some("在时间的缝隙里，种下一些文字。".to_string()),
-        content_md: "一片叶子。".to_string(),
-        content_html: Some("<p>一片叶子，也记得来时的风。</p>".to_string()),
-        status: PostStatus::Published,
-        published_at: Some(created_at),
-        created_at,
-        updated_at: created_at,
-        deleted_at: None,
-        tags: vec!["设计".to_string()],
-        cover_image: None,
-        reading_time: 3,
-        word_count: 620,
-        toc_html: None,
-        prev_post: None,
-        next_post: None,
-    }
-}
-
-/// 不请求服务、不修改数据的业务组件使用固定样例资料展示真实结构。
-#[component]
-fn SceneComponentPreview(name: String) -> Element {
-    let cover_preview = name == "PostCover";
-    #[cfg(target_arch = "wasm32")]
-    use_effect(move || {
-        if !cover_preview {
-            return;
-        }
-        if let Some(window) = web_sys::window() {
-            let selectors = js_sys::Array::new();
-            selectors.push(&".showcase-cover-window".into());
-            let selectors = js_sys::Object::from(selectors).into();
-            crate::utils::js::invoke_optional_global(&window, "__initLightbox", &[selectors]);
-        }
-    });
-    let inner = match name.as_str() {
-        "PostCover" => {
-            rsx! { crate::components::post::post_cover::PostCover { src: "/images/samples/clay-circle.webp".to_string() } }
-        }
-        "SearchIconLink" => rsx! { crate::components::header::SearchIconLink {} },
-        _ => panic!("场景组件缺少预览: {name}"),
-    };
-    rsx! {
-        div { class: if cover_preview { "showcase-scene-window showcase-cover-window" } else { "showcase-scene-window" }, aria_label: "{name} 的静态样例",
-            div { class: "showcase-skeleton-window-bar", span {} span {} span {} }
-            div { class: "showcase-scene-canvas", inert: "true", {inner} }
-        }
-    }
-}
-
-/// 搜索面板演示：自带句柄与面板实例，不注册全局快捷键，不影响页面上的正式面板。
-#[component]
-fn SearchPaletteDemo() -> Element {
-    let palette = crate::components::palette::use_search_palette_provider();
-    rsx! {
-        div { class: "showcase-preview-row",
-            crate::components::ui::Button {
-                variant: crate::components::ui::ButtonVariant::Secondary,
-                icon: crate::components::ui::IconName::Search,
-                onclick: move |_| palette.open(),
-                "打开搜索面板"
-            }
-        }
-        crate::components::search_palette::SearchPalette { shortcut: false }
-    }
-}
-
-/// 提示演示：三种语气各发一条，走正式的全站提示区。
-#[component]
-fn ToastDemo() -> Element {
-    let toast = crate::components::ui::use_toast();
-    rsx! {
-        div { class: "showcase-preview-row flex-wrap",
-            crate::components::ui::Button {
-                variant: crate::components::ui::ButtonVariant::Secondary,
-                onclick: move |_| toast.show(crate::components::ui::ToastTone::Info, "草稿已自动保存"),
-                "说明"
-            }
-            crate::components::ui::Button {
-                variant: crate::components::ui::ButtonVariant::Secondary,
-                onclick: move |_| toast.success("设置已保存"),
-                "成功"
-            }
-            crate::components::ui::Button {
-                variant: crate::components::ui::ButtonVariant::Secondary,
-                onclick: move |_| toast.error("保存失败：网络连接中断，请稍后重试"),
-                "错误"
-            }
-        }
-    }
-}
-
-/// 图鉴里的抽屉只放演示用的按钮，选中后关闭，不跳转。
-#[component]
-fn BottomSheetDemo() -> Element {
-    let mut open = use_signal(|| false);
-    rsx! {
-        button {
-            id: "showcase-sheet-trigger",
-            class: "btn btn-secondary",
-            r#type: "button",
-            aria_haspopup: "dialog",
-            aria_expanded: "{open}",
-            aria_controls: "showcase-bottom-sheet",
-            onclick: move |_| open.set(true),
-            "打开抽屉"
-        }
-        crate::components::ui::BottomSheet {
-            open,
-            id: "showcase-bottom-sheet",
-            trigger_id: "showcase-sheet-trigger",
-            label: "演示抽屉",
-            BottomSheetDemoBody {}
-        }
-    }
-}
-
-/// 左侧抽屉演示：内容与底部抽屉演示相同，选中后关闭。
-#[component]
-fn SideSheetDemo() -> Element {
-    let mut open = use_signal(|| false);
-    rsx! {
-        button {
-            id: "showcase-side-sheet-trigger",
-            class: "btn btn-secondary",
-            r#type: "button",
-            aria_haspopup: "dialog",
-            aria_expanded: "{open}",
-            aria_controls: "showcase-side-sheet",
-            onclick: move |_| open.set(true),
-            "打开左侧抽屉"
-        }
-        crate::components::ui::SideSheet {
-            open,
-            id: "showcase-side-sheet",
-            trigger_id: "showcase-side-sheet-trigger",
-            label: "演示抽屉",
-            div { class: "p-3", BottomSheetDemoBody {} }
-        }
-    }
-}
-
-/// 输入栏演示：单行搜索式，提交后只在下方回显，不请求、不跳转。
-#[component]
-fn ComposerDemo() -> Element {
-    let mut query = use_signal(String::new);
-    let mut submitted = use_signal(String::new);
-    rsx! {
-        div { class: "showcase-preview-stack w-full max-w-md",
-            form {
-                role: "search",
-                onsubmit: move |event: FormEvent| {
-                    event.prevent_default();
-                    submitted.set(query().trim().to_string());
-                },
-                Composer {
-                    Icon { name: IconName::Search, size: 18 }
-                    ComposerInput {
-                        search: true,
-                        aria_label: "输入栏示例".to_string(),
-                        placeholder: "搜索文章、标签…",
-                        value: query(),
-                        oninput: move |value: String| query.set(value),
-                    }
-                    ComposerSend { label: "搜索" }
-                }
-            }
-            if !submitted().is_empty() {
-                p { class: "text-sm text-fg-2", role: "status", "已提交：{submitted}" }
-            }
-        }
-    }
-}
-
-/// 输入栏输入框演示：多行输入，⌘/Ctrl+Enter 把内容追加到下方的本地列表。
-#[component]
-fn ComposerInputDemo() -> Element {
-    let mut text = use_signal(String::new);
-    let mut entries = use_signal(Vec::<String>::new);
-    rsx! {
-        div { class: "showcase-preview-stack w-full max-w-md",
-            Composer { size: ComposerSize::Sm,
-                ComposerInput {
-                    multiline: true,
-                    aria_label: "多行输入示例".to_string(),
-                    placeholder: "写点什么…（⌘↵ 提交）",
-                    value: text(),
-                    oninput: move |value: String| text.set(value),
-                    on_submit: move |_| {
-                        let entry = text().trim().to_string();
-                        if !entry.is_empty() {
-                            entries.write().push(entry);
-                            text.set(String::new());
-                        }
-                    },
-                }
-            }
-            ul { class: "flex flex-col gap-1 text-sm text-fg-2", aria_label: "已提交内容",
-                for (index, entry) in entries().into_iter().enumerate() {
-                    li { key: "{index}", "{entry}" }
-                }
-            }
-        }
-    }
-}
-
-/// 发送键演示：可用与不可用并排，点击只在本地计数。
-#[component]
-fn ComposerSendDemo() -> Element {
-    let mut sent = use_signal(|| 0u32);
-    rsx! {
-        div { class: "showcase-preview-stack",
-            div { class: "showcase-preview-row",
-                ComposerSend { label: "发送", onclick: move |_| sent += 1 }
-                ComposerSend { label: "发送（不可用）", disabled: true }
-            }
-            if sent() > 0 {
-                p { class: "text-sm text-fg-2", role: "status", "已点击 {sent} 次" }
-            }
-        }
-    }
-}
-
-/// 后台命令面板演示：固定文章在浏览器内过滤，选中项只在下方回显，不请求、不跳转。
-#[component]
-fn AdminPaletteDemo() -> Element {
-    let palette = crate::components::palette::use_search_palette_provider();
-    let mut picked = use_signal(String::new);
-    let posts = use_hook(|| {
-        let base = sample_post();
-        [
-            (1, "让想法生根", PostStatus::Published),
-            (2, "Dioxus 服务端渲染的水合细节", PostStatus::Draft),
-            (3, "用 Rust 写一个 6502 模拟器", PostStatus::Published),
-        ]
-        .into_iter()
-        .map(|(id, title, status)| PostListItem {
-            id,
-            author_id: 0,
-            title: title.to_string(),
-            slug: format!("showcase-{id}"),
-            summary: None,
-            published_at: (status == PostStatus::Published).then_some(base.created_at),
-            status,
-            created_at: base.created_at,
-            updated_at: base.created_at,
-            deleted_at: None,
-            tags: Vec::new(),
-            cover_image: None,
-            reading_time: 3,
-            word_count: 620,
-        })
-        .collect::<Vec<PostListItem>>()
-    });
-    rsx! {
-        div { class: "showcase-preview-row flex-wrap",
-            crate::components::ui::Button {
-                variant: crate::components::ui::ButtonVariant::Secondary,
-                icon: crate::components::ui::IconName::Search,
-                onclick: move |_| palette.open(),
-                "打开命令面板"
-            }
-            if !picked().is_empty() {
-                p { class: "text-xs text-fg-3 font-mono", "on_activate: {picked}" }
-            }
-        }
-        crate::components::admin_palette::AdminPaletteView {
-            search: move |q: String| -> crate::components::admin_palette::PostSearch {
-                let hits = posts
-                    .iter()
-                    .filter(|p| crate::components::palette::contains_ci(&p.title, &q))
-                    .cloned()
-                    .collect();
-                Box::pin(std::future::ready(Some(hits)))
-            },
-            on_activate: move |item: crate::components::admin_palette::Item| picked.set(item.title()),
-        }
-    }
-}
-
-#[component]
-fn BottomSheetDemoBody() -> Element {
-    let sheet = crate::components::ui::use_sheet_close();
-    rsx! {
-        ul { class: "flex flex-col gap-0.5",
-            for label in ["设计系统", "Dioxus 实践", "Rust 异步"] {
-                li { key: "{label}",
-                    button { class: "sheet-nav-item", r#type: "button", onclick: move |_| sheet.close(), "{label}" }
-                }
-            }
-        }
-    }
 }
 
 #[cfg(test)]

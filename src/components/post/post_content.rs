@@ -6,15 +6,16 @@
 //! `data-runnable` / `data-lang` / `data-overrides` / `data-source` 的 `<pre>`。
 //! 本组件在渲染前把 `content_html` 拆成片段序列：普通 HTML 文本片段 +
 //! [`crate::components::code_runner::CodeRunner`] 组件，使可运行块作为
-//! Dioxus vdom 内的一等元素渲染（而非手动篡改 DOM，避免 hydration 冲突）。
+//! Leptos 视图内的一等元素渲染（而非手动篡改 DOM，避免 hydration 冲突）。
 
 use std::collections::VecDeque;
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex, OnceLock};
 
-use dioxus::prelude::*;
+use leptos::prelude::*;
 
 use crate::components::code_runner::CodeRunner;
+use crate::components::enhance_assets::{EnhanceScript, LightboxAssets};
 use crate::infra::runner_config::ResourceLimits;
 #[cfg(target_arch = "wasm32")]
 use crate::utils::js::{invoke_optional_global, is_theme_transitioning};
@@ -22,7 +23,7 @@ use crate::utils::js::{invoke_optional_global, is_theme_transitioning};
 /// 内容片段：普通 HTML 文本，或一个可运行代码块。
 #[derive(Clone, PartialEq, Debug)]
 enum ContentFragment {
-    /// 原始 HTML 片段（含语法高亮等），直接以 `dangerous_inner_html` 渲染。
+    /// 原始 HTML 片段（含语法高亮等），直接以 `inner_html` 渲染。
     Html(String),
     /// 可运行代码块：语言、源码、可选资源覆盖，以及服务端高亮好的代码 HTML
     /// （编辑器挂载前原样显示，SSR 与 hydration 输出一致）。
@@ -98,16 +99,12 @@ fn code_inner_html(block: &str) -> &str {
 // ============================================================================
 // 片段解析缓存（P4.2）。
 //
-// 直接在 render 内调用 split_content_fragments 是纯函数、符合渲染纯净性，但
-// PostContent 会因主题切换（use_resolved_theme 订阅）等原因重渲染，每次都对
-// 整篇 content_html 重新扫描并分配全部片段字符串——长文 + 多运行块时是明显的
-// 主线程尖峰。这里按内容哈希做进程内有界缓存：
-// - 不用 use_memo：memo 只在闭包读取的 signal 变化时重算，content_html 是普通
-//   String prop，读取不建立订阅——memo 会永久缓存首次解析结果，上下篇切换时
-//   返回旧 fragments（见下方渲染处的历史注释）。
+// 组件函数体虽只运行一次，但同一进程内 SSR 会反复渲染同一批文章，浏览器切页也会重复
+// 解析同一篇长文——整篇 content_html 的重新扫描并分配全部片段字符串，长文 + 多运行块时
+// 是明显的主线程尖峰。这里按内容哈希做进程内有界缓存：
 // - 命中需通过全文相等核对（条目保留 Arc<str> 原文），哈希碰撞不会错渲染。
 // - 有界（8 篇，插入序淘汰）：服务端 SSR 渲染不同文章、浏览器切页都不会无界
-//   增长；keyed remount 语义不受影响（缓存只跳过解析，输出逐字节相同）。
+//   增长；缓存只跳过解析，输出逐字节相同。
 // ============================================================================
 const FRAGMENT_CACHE_CAP: usize = 8;
 
@@ -174,7 +171,8 @@ fn decode_html_entities(s: &str) -> String {
 ///
 /// Props：
 /// - `content_html`：服务端渲染的文章 HTML 字符串
-/// - `scope_id`：可选的局部正文 ID；图鉴只增强该实例，正式页面使用默认范围。
+/// - `scope_id`：可选的局部正文 ID（省略即不传，不要传 `Some(..)`）；图鉴只增强该实例，
+///   正式页面使用默认范围。
 ///
 /// 关键行为：
 /// - 把可运行代码块拆成 [`CodeRunner`] 组件穿插渲染，其余 HTML 片段照旧。
@@ -182,133 +180,121 @@ fn decode_html_entities(s: &str) -> String {
 ///   复制按钮；P5 §8.2 起正文增强在 `yggdrasil-enhance.js`、灯箱在 `lightbox.js`，
 ///   均由本组件按需声明注入（见 [`crate::components::enhance_assets`]），
 ///   这里仅设置初始化配置 `__lightboxSelectors` 并兜底调用。
+///
+/// 组件函数体只运行一次：同一实例内 `content_html` 不会更新，上下篇切换须由调用方按
+/// slug 重建本组件（片段解析按内容哈希缓存，重建不重复解析）。
 #[component]
 pub fn PostContent(
-    content_html: String,
-    #[props(default)] scope_id: Option<&'static str>,
-) -> Element {
-    // 直接在 render 内解析片段：split_content_fragments_cached 是纯函数，结果
-    // 按内容哈希缓存（见上方说明），重复渲染零解析开销，且随 content_html 变化
-    // 自动失效——上下篇切换、同路由内容更新都能拿到新片段（keyed remount 与
-    // dangerous_inner_html diff 不受影响）。
+    #[prop(into)] content_html: String,
+    #[prop(optional)] scope_id: Option<&'static str>,
+) -> impl IntoView {
     let fragments = split_content_fragments_cached(&content_html);
 
-    // mermaid 流程图主题需随当前生效主题（light/dark）切换。读 use_resolved_theme()
-    // 建立订阅：主题变化时下方 use_effect 重跑，重调 __initMermaid 传入新 theme；
-    // mermaid.ts 用 dataset.mermaidTheme 记住上次渲染主题，检测到主题变化时按缓存
-    // 源码重渲染（mermaid 颜色烤进 SVG 内联样式，无法靠 CSS 原地切主题）。
+    // mermaid 流程图主题需随当前生效主题（light/dark）切换。读 resolved_theme 建立订阅：
+    // 主题变化时下方 Effect 重跑，重调 __initMermaid 传入新 theme；mermaid.ts 用
+    // dataset.mermaidTheme 记住上次渲染主题，检测到主题变化时按缓存源码重渲染
+    // （mermaid 颜色烤进 SVG 内联样式，无法靠 CSS 原地切主题）。
     #[cfg(target_arch = "wasm32")]
-    let resolved_theme = crate::theme::use_resolved_theme();
+    {
+        let resolved_theme = crate::theme::use_resolved_theme();
+        // `prev` 为 None 即首次运行：scrollToHash 是首屏异步取数后的补救滚动，不应随主题切换
+        // 再次触发——否则切换主题会把页面跳回 URL hash 位置（即使 hash 已不在用户视野）。
+        Effect::new(move |prev: Option<()>| {
+            let Some(window) = web_sys::window() else {
+                return;
+            };
 
-    // scrollToHash 的一次性守卫：仅首次 effect 运行时调用。
-    // 下方 use_effect 因读取 resolved_theme() 建立订阅，主题切换时会重跑（为重跑
-    // mermaid 主题）。但 scrollToHash 是首屏异步取数后的补救滚动，不应随主题切换
-    // 再次触发——否则切换主题会把页面跳回 URL hash 位置（即使 hash 已不在用户视野）。
-    #[cfg(target_arch = "wasm32")]
-    let mut did_scroll = use_signal(|| false);
+            // 图鉴实例只增强自己的正文，正式页面仍按原选择器处理。
+            let selector =
+                scope_id.map_or_else(|| ".post-content".to_string(), |id| format!("#{id}"));
+            // 调用 window.__initPostContent：函数不存在时静默跳过。
+            invoke_optional_global(&window, "__initPostContent", &[selector.clone().into()]);
 
-    #[cfg(target_arch = "wasm32")]
-    use_effect(move || {
-        let window = web_sys::window()
-            .expect("post_content use_effect 仅在 WASM 浏览器上下文执行：无 window");
-
-        // 图鉴实例只增强自己的正文，正式页面仍按原选择器处理。
-        let selector = scope_id.map_or_else(|| ".post-content".to_string(), |id| format!("#{id}"));
-        // 调用 window.__initPostContent：函数不存在时静默跳过
-        // (与旧 eval 中的 if 守卫语义一致)。
-        invoke_optional_global(&window, "__initPostContent", &[selector.clone().into()]);
-
-        // mermaid 流程图懒加载渲染：扫描 .post-content 下的 language-mermaid 代码块,
-        // IntersectionObserver 视口可见时动态 import /mermaid/mermaid.js 渲染成 SVG。
-        // 读取 resolved_theme() 既是为了传主题,也建立订阅让主题切换重跑此 effect。
-        let theme_str: String = if resolved_theme() == crate::theme::ResolvedTheme::Dark {
-            "dark".into()
-        } else {
-            "light".into()
-        };
-        // VT 动画期间跳过:手动点击主题按钮时,__startThemeTransition 的 VT 回调内已通过
-        // onThemeChange registry 同步触发 mermaid 重渲染(被 VT 等待,出现在 NEW 快照里)。
-        // 但本 effect 在 theme.set(next) 后立即触发——早于 VT 回调的异步执行,会抢先改
-        // 实时 DOM。VT 动画播的是伪元素快照,实时 DOM 改动会穿透伪元素,表现为「圆形
-        // 还没展开到流程图,流程图就瞬切」。主题过渡期间跳过,让 VT 回调内的 registry
-        // 重渲染负责;动画结束后此 effect 因 resolved 信号变化重跑,做幂等兜底。
-        if !is_theme_transitioning() {
-            invoke_optional_global(
-                &window,
-                "__initMermaid",
-                &[selector.clone().into(), theme_str.into()],
-            );
-        }
-
-        // lightbox 改由 Dioxus.toml 全局 <script src> 加载（不再 include_str!）。
-        // 双保险契约：先设配置,若 lightbox.js 已加载则立即调用;
-        // 否则 lightbox.js 加载完后其 IIFE 尾部读到配置自启动。
-        let selectors = js_sys::Array::new();
-        selectors.push(&selector.into());
-        if scope_id.is_none() {
-            selectors.push(&".entry-cover".into());
-        }
-        let selectors_val = js_sys::Object::from(selectors).into();
-        if scope_id.is_none() {
-            let _ = js_sys::Reflect::set(&window, &"__lightboxSelectors".into(), &selectors_val);
-        }
-        invoke_optional_global(&window, "__initLightbox", &[selectors_val]);
-
-        // 安装 hash 锚点点击拦截器（幂等）。
-        // Dioxus hydration 后其事件委托会接管所有 <a> click（见 handleClickNavigate），
-        // 把 hash 锚点当外部 URL 整页刷新。拦截器在 capture 阶段阻止事件到达 Dioxus，
-        // 自行 scrollIntoView。initAnchorClick 内部幂等，PostContent 多次挂载也安全。
-        invoke_optional_global(&window, "__initAnchorClick", &[]);
-
-        // 内容挂载后若 URL 带 hash，滚动到对应标题。
-        // 解决骨架屏阶段标题 DOM 缺失导致浏览器原生 fragment-scroll 失效的问题：
-        // PostDetail 用 use_server_future 异步取数，首屏渲染骨架屏，此时标题 DOM
-        // 不存在；浏览器尝试滚动到 #hash 找不到目标留在顶部。此处标题已就绪，补一次。
-        //
-        // 仅首次运行：此 effect 因读取 resolved_theme() 而在主题切换时重跑，但
-        // hash 滚动是首屏补救措施，重跑会导致切主题时页面跳回 URL hash 位置。
-        if scope_id.is_none() && !did_scroll() {
-            did_scroll.set(true);
-            invoke_optional_global(&window, "__scrollToHash", &[]);
-        }
-    });
-
-    #[cfg(target_arch = "wasm32")]
-    use_drop(move || {
-        if let (Some(window), Some(owner)) = (web_sys::window(), scope_id) {
-            invoke_optional_global(&window, "__closeLightboxFor", &[owner.into()]);
-        }
-    });
-
-    rsx! {
-        // P5 §8.2：正文增强与灯箱按需注入。SSR 直达烤进 head 带 defer，先于
-        // hydration；SPA 首跳脚本晚于 effect 时由增强调用队列兜底，按 src 去重。
-        crate::components::enhance_assets::EnhanceScript {}
-        crate::components::enhance_assets::LightboxAssets {}
-        div { id: scope_id, "data-showcase-lightbox-owner": scope_id, class: "post-content md-content",
-            for (i, fragment) in fragments.iter().enumerate() {
-                {
-                    match fragment {
-                        ContentFragment::Html(html) => rsx! {
-                            div { key: "html-{i}", dangerous_inner_html: "{html}" }
-                        },
-                        ContentFragment::Runnable { lang, source, overrides, highlighted } => rsx! {
-                            CodeRunner {
-                                key: "runner-{i}",
-                                source: source.clone(),
-                                language: lang.clone(),
-                                overrides: overrides.clone(),
-                                highlighted: Some(highlighted.clone()).filter(|h| !h.is_empty()),
-                                // i 是片段序列中的确定性索引（来自纯函数 split_content_fragments
-                                // 对同一 content_html 的解析），SSR 与 hydration 一致，用作容器
-                                // id 后缀保证 hydration 时 CodeMirror 能找到 SSR 渲染的容器。
-                                instance_id: i,
-                            }
-                        },
-                    }
-                }
+            // mermaid 流程图懒加载渲染：扫描代码块，IntersectionObserver 视口可见时动态
+            // import /mermaid/mermaid.js 渲染成 SVG。读取主题既为传参也为建立订阅。
+            let theme_str: String = if resolved_theme.get() == crate::theme::ResolvedTheme::Dark {
+                "dark".into()
+            } else {
+                "light".into()
+            };
+            // VT 动画期间跳过：手动点击主题按钮时，__startThemeTransition 的 VT 回调内已通过
+            // onThemeChange registry 同步触发 mermaid 重渲染（被 VT 等待，出现在 NEW 快照里）。
+            // 本 Effect 在主题信号变化后立即触发——早于 VT 回调的异步执行，会抢先改实时 DOM，
+            // 表现为「圆形还没展开到流程图，流程图就瞬切」。主题过渡期间跳过，动画结束后
+            // 此 Effect 因 resolved 信号变化重跑，做幂等兜底。
+            if !is_theme_transitioning() {
+                invoke_optional_global(
+                    &window,
+                    "__initMermaid",
+                    &[selector.clone().into(), theme_str.into()],
+                );
             }
-        }
+
+            // 灯箱双保险契约：先设配置，若 lightbox.js 已加载则立即调用；
+            // 否则 lightbox.js 加载完后其 IIFE 尾部读到配置自启动。
+            let selectors = js_sys::Array::new();
+            selectors.push(&selector.into());
+            if scope_id.is_none() {
+                selectors.push(&".entry-cover".into());
+            }
+            let selectors_val = js_sys::Object::from(selectors).into();
+            if scope_id.is_none() {
+                let _ =
+                    js_sys::Reflect::set(&window, &"__lightboxSelectors".into(), &selectors_val);
+            }
+            invoke_optional_global(&window, "__initLightbox", &[selectors_val]);
+
+            // 安装 hash 锚点点击拦截器（幂等，PostContent 多次挂载也安全）。
+            invoke_optional_global(&window, "__initAnchorClick", &[]);
+
+            // 内容挂载后若 URL 带 hash，滚动到对应标题：首屏渲染骨架屏阶段标题 DOM 缺失，
+            // 浏览器原生 fragment-scroll 失效，此处标题已就绪，补一次。
+            if scope_id.is_none() && prev.is_none() {
+                invoke_optional_global(&window, "__scrollToHash", &[]);
+            }
+        });
+
+        on_cleanup(move || {
+            if let (Some(window), Some(owner)) = (web_sys::window(), scope_id) {
+                invoke_optional_global(&window, "__closeLightboxFor", &[owner.into()]);
+            }
+        });
+    }
+
+    let body = fragments
+        .iter()
+        .enumerate()
+        .map(|(i, fragment)| match fragment {
+            ContentFragment::Html(html) => view! { <div inner_html=html.clone()></div> }.into_any(),
+            ContentFragment::Runnable {
+                lang,
+                source,
+                overrides,
+                highlighted,
+            } => view! {
+                // i 是片段序列中的确定性索引（来自纯函数 split_content_fragments 对同一
+                // content_html 的解析），SSR 与 hydration 一致，用作容器 id 后缀保证
+                // hydration 时 CodeMirror 能找到 SSR 渲染的容器。
+                <CodeRunner
+                    source=source.clone()
+                    language=lang.clone()
+                    overrides=overrides.clone()
+                    highlighted=Some(highlighted.clone()).filter(|h| !h.is_empty())
+                    instance_id=i
+                />
+            }
+            .into_any(),
+        })
+        .collect_view();
+
+    view! {
+        // P5 §8.2：正文增强与灯箱按需注入。SSR 直达烤进 head 带 defer，先于
+        // hydration；SPA 首跳脚本晚于 Effect 时由增强调用队列兜底。
+        <EnhanceScript/>
+        <LightboxAssets/>
+        <div id=scope_id data-showcase-lightbox-owner=scope_id class="post-content md-content">
+            {body}
+        </div>
     }
 }
 

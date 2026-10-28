@@ -1,102 +1,180 @@
 //! 友链页：两列名片、空状态与加载失败，以及可一键复制的「交换友链」信息。
 
-use dioxus::prelude::*;
+use leptos::prelude::*;
+use leptos_meta::Title;
+use leptos_router::{lazy_route, LazyRoute};
 
 use crate::api::friends::list_friend_links;
 use crate::api::settings::{get_site_card, SiteCard};
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::skeletons::friends_skeleton::FriendsSkeleton;
 use crate::components::ui::{Icon, IconName, LoadError};
+use crate::hooks::ssr_resource::{prefetch_route_data, route_data, unit, PageJson, RouteData};
 use crate::models::friend_link::FriendLink;
 
-/// 友链页面组件，对应路由 `/friends`。
-#[component]
-pub fn Friends() -> Element {
-    rsx! {
-        document::Title { "友链 · Yggdrasil" }
-        div { class: "friends",
-            SuspenseBoundary {
-                fallback: |_| rsx! { DelayedSkeleton { FriendsSkeleton {} } },
-                FriendsBody {}
-            }
+/// 友链路由，对应 `/friends`（`SsrMode::InOrder`）。
+///
+/// 友链列表与站点名片都在 `data()` 里创建；列表失败只让列表区块显示重试卡片，
+/// 名片失败则直接不显示「交换友链」，页面其余部分照常。
+pub struct FriendsRoute {
+    links: RouteData<Vec<FriendLink>>,
+    card: RouteData<SiteCard>,
+}
+
+#[leptos::lazy]
+async fn fetch_links() -> PageJson<Vec<FriendLink>> {
+    PageJson::new(list_friend_links().await)
+}
+
+#[leptos::lazy]
+async fn fetch_card() -> PageJson<SiteCard> {
+    PageJson::new(get_site_card().await)
+}
+
+#[lazy_route]
+impl LazyRoute for FriendsRoute {
+    fn data() -> Self {
+        Self {
+            links: route_data(|| (), unit(fetch_links)),
+            card: route_data(|| (), unit(fetch_card)),
         }
+    }
+
+    fn view(this: Self) -> AnyView {
+        let FriendsRoute { links, card } = this;
+        view! {
+            <Title text="友链 · Yggdrasil"/>
+            <div class="friends">
+                <Suspense fallback=|| {
+                    view! {
+                        <DelayedSkeleton>
+                            <FriendsSkeleton/>
+                        </DelayedSkeleton>
+                    }
+                }>
+                    {move || Suspend::new(async move {
+                        // 逐个等待，保持 SSR 唤醒顺序确定。
+                        let links = links.await.ok();
+                        let card = card.await.ok();
+                        view! { <FriendsBody initial=links card=card/> }
+                    })}
+                </Suspense>
+            </div>
+        }
+        .into_any()
+    }
+}
+
+impl FriendsRoute {
+    /// 悬停预取：与 `data()` 相同的取数函数与 source。
+    pub fn prefetch_data() {
+        prefetch_route_data((), unit(fetch_links));
+        prefetch_route_data((), unit(fetch_card));
     }
 }
 
 /// 页头标题与说明；骨架屏复用，数据到达前后不跳动。
+///
+/// `count` 缺省时不渲染人数行（骨架屏）；可传值、`Option` 或信号。
 #[component]
-pub fn FriendsHeader(#[props(default)] count: Option<usize>) -> Element {
-    rsx! {
-        header { class: "friends-header page-enter",
-            div {
-                h1 { class: "friends-title", "友链" }
-                p { class: "friends-intro", "一些认真记录、持续创造的朋友。" }
-            }
-            if let Some(count) = count {
-                p { class: "friends-count tabular-nums", "{count} 位朋友 · 按添加顺序" }
-            }
-        }
+pub fn FriendsHeader(#[prop(optional, into)] count: MaybeProp<usize>) -> impl IntoView {
+    view! {
+        <header class="friends-header page-enter">
+            <div>
+                <h1 class="friends-title">"友链"</h1>
+                <p class="friends-intro">"一些认真记录、持续创造的朋友。"</p>
+            </div>
+            {move || {
+                count
+                    .get()
+                    .map(|count| {
+                        view! {
+                            <p class="friends-count tabular-nums">
+                                {format!("{count} 位朋友 · 按添加顺序")}
+                            </p>
+                        }
+                    })
+            }}
+        </header>
     }
 }
 
+/// 友链主体。`initial` 为 `None` 表示列表加载失败；重试结果写进本地信号，
+/// 不重取外层 `Resource`（否则整段 DOM 会退回 `Suspense` 的骨架屏）。
 #[component]
-fn FriendsBody() -> Element {
-    // SSR 只轮询正在挂起的任务，提前发出的第二个请求会丢失唤醒；逐个等待。
-    let mut links = use_server_future(list_friend_links)?;
-    let card = use_server_future(get_site_card)?;
-    let mut retrying = use_signal(|| false);
-    let mut retry_failed = use_signal(|| false);
+fn FriendsBody(initial: Option<Vec<FriendLink>>, card: Option<SiteCard>) -> impl IntoView {
+    let listing = RwSignal::new(initial);
+    let retrying = RwSignal::new(false);
+    let retry_failed = RwSignal::new(false);
 
-    let listing = links.read().as_ref().map(|r| r.as_ref().ok().cloned());
-    let card = card.read().as_ref().and_then(|r| r.as_ref().ok()).cloned();
-    let count = listing
-        .as_ref()
-        .and_then(|l| l.as_ref())
-        .filter(|l| !l.is_empty())
-        .map(Vec::len);
+    let count = move || {
+        listing.with(|listing| {
+            listing
+                .as_ref()
+                .filter(|links| !links.is_empty())
+                .map(Vec::len)
+        })
+    };
 
-    rsx! {
-        FriendsHeader { count }
-        match listing {
-            Some(Some(links)) if !links.is_empty() => rsx! {
-                ul { class: "friends-grid page-enter", style: "--enter-index: 1",
-                    for link in links {
-                        li { key: "{link.id}", FriendCard { link } }
-                    }
+    let on_retry = Callback::new(move |()| {
+        retrying.set(true);
+        retry_failed.set(false);
+        leptos::task::spawn_local(async move {
+            let result = list_friend_links().await;
+            let _ = retrying.try_set(false);
+            match result {
+                Ok(list) => {
+                    let _ = listing.try_set(Some(list));
                 }
-            },
-            Some(Some(_)) => rsx! {
-                div { class: "friends-empty page-enter",
-                    span { class: "friends-empty-icon", aria_hidden: "true", Icon { name: IconName::Users, size: 20 } }
-                    p { class: "friends-empty-title", "还没有友链" }
-                    p { class: "friends-empty-description", "想交换链接的话，可以先看看下面这里的信息。" }
+                Err(_) => {
+                    let _ = retry_failed.try_set(true);
                 }
-            },
-            Some(None) => rsx! {
-                LoadError {
-                    title: "友链暂时没能加载",
-                    class: "friends-error",
-                    retrying: retrying(),
-                    retry_failed: retry_failed(),
-                    on_retry: move |_| {
-                        retrying.set(true);
-                        retry_failed.set(false);
-                        spawn(async move {
-                            let result = list_friend_links().await;
-                            retrying.set(false);
-                            match result {
-                                Ok(list) => links.set(Some(Ok(list))),
-                                Err(_) => retry_failed.set(true),
-                            }
-                        });
-                    },
+            }
+        });
+    });
+
+    view! {
+        <FriendsHeader count=Signal::derive(count)/>
+        {move || match listing.get() {
+            Some(links) if !links.is_empty() => {
+                view! {
+                    <ul class="friends-grid page-enter" style="--enter-index: 1">
+                        {links
+                            .into_iter()
+                            .map(|link| view! { <li><FriendCard link=link/></li> })
+                            .collect_view()}
+                    </ul>
                 }
-            },
-            None => rsx! {},
-        }
-        if let Some(card) = card {
-            SwapInfo { card }
-        }
+                    .into_any()
+            }
+            Some(_) => {
+                view! {
+                    <div class="friends-empty page-enter">
+                        <span class="friends-empty-icon" aria-hidden="true">
+                            <Icon name=IconName::Users size=20/>
+                        </span>
+                        <p class="friends-empty-title">"还没有友链"</p>
+                        <p class="friends-empty-description">
+                            "想交换链接的话，可以先看看下面这里的信息。"
+                        </p>
+                    </div>
+                }
+                    .into_any()
+            }
+            None => {
+                view! {
+                    <LoadError
+                        title="友链暂时没能加载"
+                        class="friends-error"
+                        retrying=retrying
+                        retry_failed=retry_failed
+                        on_retry=on_retry
+                    />
+                }
+                    .into_any()
+            }
+        }}
+        {card.map(|card| view! { <SwapInfo card=card/> })}
     }
 }
 
@@ -109,8 +187,8 @@ fn display_host(url: &str) -> &str {
 
 /// 整张名片是原生链接，在新标签页打开；头像加载失败时显示站名首字。
 #[component]
-fn FriendCard(link: FriendLink) -> Element {
-    let mut img_loaded = use_signal(|| false);
+fn FriendCard(link: FriendLink) -> impl IntoView {
+    let img_loaded = RwSignal::new(false);
     let id = link.id;
     let initial = link
         .name
@@ -120,7 +198,7 @@ fn FriendCard(link: FriendLink) -> Element {
         .unwrap_or_else(|| "?".to_string());
 
     // SSR 图片可能在 hydration 前已完成加载，补查缓存状态；失败时始终显示首字。
-    use_effect(move || {
+    Effect::new(move |_| {
         #[cfg(target_arch = "wasm32")]
         {
             use wasm_bindgen::JsCast;
@@ -136,47 +214,64 @@ fn FriendCard(link: FriendLink) -> Element {
         }
     });
 
-    rsx! {
-        a {
-            class: "friend-card",
-            href: "{link.url}",
-            target: "_blank",
-            rel: "noopener noreferrer",
-            aria_label: "访问 {link.name}（在新标签页打开）",
-            span { class: "friend-avatar", aria_hidden: "true",
-                span { "{initial}" }
-                if let Some(avatar_url) = link.avatar_url.as_ref().filter(|url| !url.trim().is_empty()) {
-                    img {
-                        id: "friend-avatar-{id}",
-                        class: if img_loaded() { "friend-avatar-image is-loaded" } else { "friend-avatar-image" },
-                        src: "{avatar_url}",
-                        alt: "",
-                        width: "44",
-                        height: "44",
-                        loading: "lazy",
-                        decoding: "async",
-                        onload: move |_| img_loaded.set(true),
-                        onerror: move |_| img_loaded.set(false),
+    let avatar = link
+        .avatar_url
+        .as_ref()
+        .filter(|url| !url.trim().is_empty())
+        .map(|avatar_url| {
+            view! {
+                <img
+                    id=format!("friend-avatar-{id}")
+                    class=move || {
+                        if img_loaded.get() {
+                            "friend-avatar-image is-loaded"
+                        } else {
+                            "friend-avatar-image"
+                        }
                     }
-                }
+                    src=avatar_url.clone()
+                    alt=""
+                    width="44"
+                    height="44"
+                    loading="lazy"
+                    decoding="async"
+                    on:load=move |_| img_loaded.set(true)
+                    on:error=move |_| img_loaded.set(false)
+                />
             }
-            span { class: "friend-copy",
-                span { class: "friend-name-row",
-                    span { class: "friend-name", "{link.name}" }
-                    span { class: "friend-go", aria_hidden: "true", Icon { name: IconName::ArrowUpRight, size: 15 } }
-                }
-                span { class: "friend-host", {display_host(&link.url)} }
-                if !link.description.trim().is_empty() {
-                    span { class: "friend-description", "{link.description}" }
-                }
-            }
-        }
+        });
+    let description = (!link.description.trim().is_empty())
+        .then(|| view! { <span class="friend-description">{link.description.clone()}</span> });
+
+    view! {
+        <a
+            class="friend-card"
+            href=link.url.clone()
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label=format!("访问 {}（在新标签页打开）", link.name)
+        >
+            <span class="friend-avatar" aria-hidden="true">
+                <span>{initial}</span>
+                {avatar}
+            </span>
+            <span class="friend-copy">
+                <span class="friend-name-row">
+                    <span class="friend-name">{link.name.clone()}</span>
+                    <span class="friend-go" aria-hidden="true">
+                        <Icon name=IconName::ArrowUpRight size=15/>
+                    </span>
+                </span>
+                <span class="friend-host">{display_host(&link.url).to_string()}</span>
+                {description}
+            </span>
+        </a>
     }
 }
 
 /// 「交换友链」：本站名称、地址、简介与订阅，点击复制；复制失败时提示手动选择原文。
 #[component]
-fn SwapInfo(card: SiteCard) -> Element {
+fn SwapInfo(card: SiteCard) -> impl IntoView {
     let mut rows = vec![("名称", card.name.clone(), false)];
     if !card.url.is_empty() {
         rows.push(("地址", card.url.clone(), true));
@@ -185,16 +280,23 @@ fn SwapInfo(card: SiteCard) -> Element {
     if !card.url.is_empty() {
         rows.push(("订阅", card.feed_url(), true));
     }
-    rsx! {
-        section { class: "friends-swap page-enter", style: "--enter-index: 2", aria_labelledby: "friends-swap-title",
-            h2 { id: "friends-swap-title", class: "friends-swap-title", "交换友链" }
-            p { class: "friends-swap-intro", "欢迎持续写作的个人站点。这是本站的信息，点击即可复制。" }
-            dl { class: "friends-swap-grid",
-                for (label, value, mono) in rows {
-                    SwapRow { key: "{label}", label, value, mono }
-                }
-            }
-        }
+    view! {
+        <section
+            class="friends-swap page-enter"
+            style="--enter-index: 2"
+            aria-labelledby="friends-swap-title"
+        >
+            <h2 id="friends-swap-title" class="friends-swap-title">
+                "交换友链"
+            </h2>
+            <p class="friends-swap-intro">"欢迎持续写作的个人站点。这是本站的信息，点击即可复制。"</p>
+            <dl class="friends-swap-grid">
+                {rows
+                    .into_iter()
+                    .map(|(label, value, mono)| view! { <SwapRow label=label value=value mono=mono/> })
+                    .collect_view()}
+            </dl>
+        </section>
     }
 }
 
@@ -207,57 +309,66 @@ enum CopyState {
 }
 
 #[component]
-fn SwapRow(label: &'static str, value: String, mono: bool) -> Element {
-    #[allow(unused_mut)]
-    let mut state = use_signal(|| CopyState::Idle);
-    let button_label = match state() {
-        CopyState::Idle => "复制",
-        CopyState::Copied => "已复制",
-        CopyState::Failed => "手动复制",
-    };
-    rsx! {
-        div { class: "friends-swap-row",
-            dt { "{label}" }
-            // 复制失败时整段可一次选中，方便手动复制。
-            dd {
-                class: if mono { "is-mono" } else { "" },
-                "data-selectable": (state() == CopyState::Failed).then_some("true"),
-                "{value}"
-            }
-            button {
-                r#type: "button",
-                class: "friends-swap-copy",
-                "data-state": match state() { CopyState::Idle => "idle", CopyState::Copied => "copied", CopyState::Failed => "failed" },
-                aria_label: "复制{label}",
-                onclick: move |_| {
-                    let value = value.clone();
-                    async move {
-                        #[cfg(target_arch = "wasm32")]
-                        {
-                            if crate::utils::js::copy_text(&value).await {
-                                state.set(CopyState::Copied);
-                            } else {
-                                state.set(CopyState::Failed);
-                            }
-                            crate::utils::time::sleep_ms(1600).await;
-                            if state() == CopyState::Copied {
-                                state.set(CopyState::Idle);
-                            }
-                        }
-                        #[cfg(not(target_arch = "wasm32"))]
-                        let _ = value;
+fn SwapRow(label: &'static str, value: String, mono: bool) -> impl IntoView {
+    let state = RwSignal::new(CopyState::Idle);
+    let on_click = {
+        let value = value.clone();
+        move |_| {
+            #[cfg(target_arch = "wasm32")]
+            {
+                let value = value.clone();
+                leptos::task::spawn_local(async move {
+                    let next = if crate::utils::js::copy_text(&value).await {
+                        CopyState::Copied
+                    } else {
+                        CopyState::Failed
+                    };
+                    let _ = state.try_set(next);
+                    crate::utils::time::sleep_ms(1600).await;
+                    if state.try_get() == Some(CopyState::Copied) {
+                        let _ = state.try_set(CopyState::Idle);
                     }
-                },
-                "{button_label}"
+                });
             }
-            span { class: "sr-only", role: "status", aria_live: "polite",
-                match state() {
-                    CopyState::Copied => "已复制{label}",
-                    CopyState::Failed => "复制失败，请手动选择{label}复制",
-                    CopyState::Idle => "",
-                }
-            }
+            #[cfg(not(target_arch = "wasm32"))]
+            let _ = &value;
         }
+    };
+    view! {
+        <div class="friends-swap-row">
+            <dt>{label}</dt>
+            // 复制失败时整段可一次选中，方便手动复制。
+            <dd
+                class=if mono { "is-mono" } else { "" }
+                data-selectable=move || (state.get() == CopyState::Failed).then_some("true")
+            >
+                {value}
+            </dd>
+            <button
+                type="button"
+                class="friends-swap-copy"
+                data-state=move || match state.get() {
+                    CopyState::Idle => "idle",
+                    CopyState::Copied => "copied",
+                    CopyState::Failed => "failed",
+                }
+                aria-label=format!("复制{label}")
+                on:click=on_click
+            >
+                {move || match state.get() {
+                    CopyState::Idle => "复制",
+                    CopyState::Copied => "已复制",
+                    CopyState::Failed => "手动复制",
+                }}
+            </button>
+            <span class="sr-only" role="status" aria-live="polite">
+                {move || match state.get() {
+                    CopyState::Copied => format!("已复制{label}"),
+                    CopyState::Failed => format!("复制失败，请手动选择{label}复制"),
+                    CopyState::Idle => String::new(),
+                }}
+            </span>
+        </div>
     }
 }
 

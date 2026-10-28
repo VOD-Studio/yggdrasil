@@ -1,5 +1,5 @@
 //! Local examples for business components. The production controllers stay in components/.
-use dioxus::prelude::*;
+use leptos::prelude::*;
 
 use crate::api::database::sql_console::SqlResult;
 use crate::components::assets::asset_picker::{PickerAsset, PickerGallery, PickerSelectionFooter};
@@ -15,12 +15,12 @@ use crate::components::ui::{
     SegmentedItem, TablePager,
 };
 
-pub(super) fn preview(slug: &str, detail: bool) -> Option<Element> {
+pub(super) fn preview(slug: &str, detail: bool) -> Option<AnyView> {
     Some(match slug {
-        "asset-picker-modal" => rsx! { PickerDemo { detail } },
-        "asset-upload-modal" => rsx! { UploadDemo { detail } },
-        "code-runner" => rsx! { RunnerDemo { detail } },
-        "sql-result-table" => rsx! { SqlTableDemo { detail } },
+        "asset-picker-modal" => view! { <PickerDemo detail=detail/> }.into_any(),
+        "asset-upload-modal" => view! { <UploadDemo detail=detail/> }.into_any(),
+        "code-runner" => view! { <RunnerDemo detail=detail/> }.into_any(),
+        "sql-result-table" => view! { <SqlTableDemo detail=detail/> }.into_any(),
         _ => return None,
     })
 }
@@ -89,164 +89,314 @@ fn sample_selected() -> Vec<AssetSelection> {
 #[component]
 fn DemoModalHead(
     title: &'static str,
-    on_reset: EventHandler<()>,
-    on_close: EventHandler<()>,
-) -> Element {
-    rsx! {
-        div { class: "asset-modal-head",
-            h2 { "{title}" }
-            div { class: "flex items-center gap-1",
-                Button { variant: ButtonVariant::Ghost, size: ButtonSize::Sm, icon: IconName::RotateCcw,
-                    onclick: move |_| on_reset.call(()),
+    #[prop(into)] on_reset: Callback<()>,
+    #[prop(into)] on_close: Callback<()>,
+) -> impl IntoView {
+    view! {
+        <div class="asset-modal-head">
+            <h2>{title}</h2>
+            <div class="flex items-center gap-1">
+                <Button
+                    variant=ButtonVariant::Ghost
+                    size=ButtonSize::Sm
+                    icon=IconName::RotateCcw
+                    onclick=move |_| on_reset.run(())
+                >
                     "恢复默认"
-                }
-                IconButton { icon: IconName::X, label: "关闭", size: ButtonSize::Sm, onclick: move |_| on_close.call(()) }
-            }
-        }
+                </Button>
+                <IconButton
+                    icon=IconName::X
+                    label="关闭"
+                    size=ButtonSize::Sm
+                    onclick=move |_| on_close.run(())
+                />
+            </div>
+        </div>
     }
 }
 
 #[component]
-fn PickerDemo(detail: bool) -> Element {
-    let mut visible = use_signal(|| false);
-    let mut closing = use_signal(|| false);
-    let mut selected = use_signal(sample_selected);
-    let mut multi = use_signal(|| true);
-    let mut query = use_signal(String::new);
-    let mut page = use_signal(|| 1_i32);
-    let mut confirmed: Signal<Vec<AssetSelection>> = use_signal(Vec::new);
-    let result_label = confirmed
-        .read()
-        .iter()
-        .map(|item| item.url.clone())
-        .collect::<Vec<_>>()
-        .join("、");
-    rsx! {
-        div { class: if detail { "showcase-picker-demo showcase-picker-detail" } else { "showcase-picker-demo" },
-            if detail {
-                div { class: "showcase-demo-bar",
-                    Button { variant: ButtonVariant::Secondary, size: ButtonSize::Sm,
-                        onclick: move |_| { selected.set(Vec::new()); page.set(1); visible.set(true); },
-                        "打开素材选择弹窗"
+fn PickerDemo(detail: bool) -> impl IntoView {
+    let visible = RwSignal::new(false);
+    let closing = RwSignal::new(false);
+    let selected = RwSignal::new(sample_selected());
+    let multi = RwSignal::new(true);
+    let query = RwSignal::new(String::new());
+    let page = RwSignal::new(1_i32);
+    let confirmed: RwSignal<Vec<AssetSelection>> = RwSignal::new(Vec::new());
+    let result_label = move || {
+        confirmed.with(|items| {
+            items
+                .iter()
+                .map(|item| item.url.clone())
+                .collect::<Vec<_>>()
+                .join("、")
+        })
+    };
+    let root_class = if detail {
+        "showcase-picker-demo showcase-picker-detail"
+    } else {
+        "showcase-picker-demo"
+    };
+    view! {
+        <div class=root_class>
+            {detail
+                .then(|| {
+                    view! {
+                        <div class="showcase-demo-bar">
+                            <Button
+                                variant=ButtonVariant::Secondary
+                                size=ButtonSize::Sm
+                                onclick=move |_| {
+                                    selected.set(Vec::new());
+                                    page.set(1);
+                                    visible.set(true);
+                                }
+                            >
+                                "打开素材选择弹窗"
+                            </Button>
+                            <span>"本地演示，选择不会写入文章。"</span>
+                        </div>
                     }
-                    span { "本地演示，选择不会写入文章。" }
-                }
-            }
-            if !visible() {
-                div { class: "showcase-picker-panel",
-                    PickerDemoContent { detail, selected, multi, query, page, confirmed, visible }
-                }
-            }
-            if detail {
-                ModalShell { visible, closing, title: "选择图片", overlay_padding: "p-4 sm:p-6", panel_class: "asset-modal asset-picker",
-                    DemoModalHead { title: "选择图片",
-                        on_reset: move |_| {
-                            selected.set(sample_selected());
-                            multi.set(true);
-                            query.set(String::new());
-                            page.set(1);
-                            confirmed.set(Vec::new());
-                            closing.set(true);
-                            visible.set(false);
-                        },
-                        on_close: move |_| { closing.set(true); visible.set(false); },
+                })}
+            {move || {
+                (!visible.get())
+                    .then(|| {
+                        view! {
+                            <div class="showcase-picker-panel">
+                                <PickerDemoContent
+                                    detail=detail
+                                    selected=selected
+                                    multi=multi
+                                    query=query
+                                    page=page
+                                    confirmed=confirmed
+                                    visible=visible
+                                />
+                            </div>
+                        }
+                    })
+            }}
+            {detail
+                .then(|| {
+                    view! {
+                        <ModalShell
+                            visible=visible
+                            closing=closing
+                            title="选择图片"
+                            overlay_padding="p-4 sm:p-6"
+                            panel_class="asset-modal asset-picker"
+                        >
+                            <DemoModalHead
+                                title="选择图片"
+                                on_reset=move |_| {
+                                    selected.set(sample_selected());
+                                    multi.set(true);
+                                    query.set(String::new());
+                                    page.set(1);
+                                    confirmed.set(Vec::new());
+                                    closing.set(true);
+                                    visible.set(false);
+                                }
+                                on_close=move |_| {
+                                    closing.set(true);
+                                    visible.set(false);
+                                }
+                            />
+                            <PickerDemoContent
+                                detail=true
+                                selected=selected
+                                multi=multi
+                                query=query
+                                page=page
+                                confirmed=confirmed
+                                visible=visible
+                            />
+                        </ModalShell>
                     }
-                    PickerDemoContent { detail: true, selected, multi, query, page, confirmed, visible }
-                }
-            }
-            if detail && !confirmed.read().is_empty() {
-                p { class: "showcase-demo-result", "已确认：{result_label}" }
-            }
-        }
+                })}
+            {move || {
+                (detail && !confirmed.with(Vec::is_empty))
+                    .then(|| {
+                        view! {
+                            <p class="showcase-demo-result">
+                                {move || format!("已确认：{}", result_label())}
+                            </p>
+                        }
+                    })
+            }}
+        </div>
     }
 }
 
 #[component]
 fn PickerDemoContent(
     detail: bool,
-    mut selected: Signal<Vec<AssetSelection>>,
-    mut multi: Signal<bool>,
-    mut query: Signal<String>,
-    mut page: Signal<i32>,
-    mut confirmed: Signal<Vec<AssetSelection>>,
-    mut visible: Signal<bool>,
-) -> Element {
-    let (items, total) = picker_page(&query(), page());
-    let mode = if multi() { "multi" } else { "single" };
+    selected: RwSignal<Vec<AssetSelection>>,
+    multi: RwSignal<bool>,
+    query: RwSignal<String>,
+    page: RwSignal<i32>,
+    confirmed: RwSignal<Vec<AssetSelection>>,
+    visible: RwSignal<bool>,
+) -> impl IntoView {
+    let items = Signal::derive(move || picker_page(&query.get(), page.get()).0);
+    let total = Signal::derive(move || picker_page(&query.get(), page.get()).1);
+    let mode = Signal::derive(move || if multi.get() { "multi" } else { "single" }.to_string());
+    let on_pick = Callback::new(move |picks: Vec<AssetSelection>| {
+        confirmed.set(picks);
+        visible.set(false);
+    });
     // 不带外框：卡片预览外包 .showcase-picker-panel，弹窗里直接排进 .asset-modal。
-    rsx! {
-        div { class: "asset-modal-bar",
-            label { class: "field field-sm admin-filter-search asset-modal-search",
-                Icon { name: IconName::Search, size: 14 }
-                span { class: "sr-only", "搜索素材" }
-                input {
-                    r#type: "search",
-                    placeholder: "文件名或替代文本",
-                    value: "{query}",
-                    oninput: move |e| { query.set(e.value()); page.set(1); },
-                }
+    view! {
+        <div class="asset-modal-bar">
+            <label class="field field-sm admin-filter-search asset-modal-search">
+                <Icon name=IconName::Search size=14/>
+                <span class="sr-only">"搜索素材"</span>
+                <input
+                    type="search"
+                    placeholder="文件名或替代文本"
+                    prop:value=move || query.get()
+                    on:input=move |e| {
+                        query.set(event_target_value(&e));
+                        page.set(1);
+                    }
+                />
+            </label>
+            {detail
+                .then(|| {
+                    view! {
+                        <SegmentedControl
+                            items=vec![
+                                SegmentedItem::new("single".to_string(), "单选"),
+                                SegmentedItem::new("multi".to_string(), "多选"),
+                            ]
+                            value=mode
+                            on_change=move |value: String| {
+                                multi.set(value == "multi");
+                                selected.set(Vec::new());
+                            }
+                            aria_label="选择方式"
+                        />
+                    }
+                })}
+        </div>
+        {move || {
+            let multi = multi.get();
+            view! {
+                <PickerGallery
+                    items=items
+                    selected=selected
+                    multi=multi
+                    loading=false
+                    uploading=false
+                    error=Signal::stored(None::<String>)
+                    uploading_preview=Signal::stored(None::<String>)
+                    on_pick=on_pick
+                />
             }
-            if detail {
-                SegmentedControl {
-                    items: vec![
-                        SegmentedItem::new("single".to_string(), "单选"),
-                        SegmentedItem::new("multi".to_string(), "多选"),
-                    ],
-                    value: mode.to_string(),
-                    on_change: move |value: String| { multi.set(value == "multi"); selected.set(Vec::new()); },
-                    aria_label: "选择方式",
-                }
-            }
-        }
-        PickerGallery { items, selected, multi: multi(), loading: false, uploading: false, error: None,
-            uploading_preview: None,
-            on_pick: move |picks: Vec<AssetSelection>| { confirmed.set(picks); visible.set(false); }
-        }
-        if total > 3 {
-            div { class: "asset-modal-pager",
-                TablePager { page: page(), total, per_page: 3, unit: "张",
-                    on_change: move |next: i32| page.set(next.clamp(1, ((total + 2) / 3) as i32)),
-                }
-            }
-        }
-        if multi() {
-            PickerSelectionFooter { selected, on_pick: move |picks: Vec<AssetSelection>| { confirmed.set(picks); visible.set(false); } }
-        }
+        }}
+        {move || {
+            (total.get() > 3)
+                .then(|| {
+                    view! {
+                        <div class="asset-modal-pager">
+                            <TablePager
+                                page=page
+                                total=total
+                                per_page=3
+                                unit="张"
+                                on_change=move |next: i32| {
+                                    page.set(next.clamp(1, ((total.get_untracked() + 2) / 3) as i32))
+                                }
+                            />
+                        </div>
+                    }
+                })
+        }}
+        {move || {
+            multi.get().then(|| view! { <PickerSelectionFooter selected=selected on_pick=on_pick/> })
+        }}
     }
 }
 
 #[component]
-fn UploadDemo(detail: bool) -> Element {
-    let mut visible = use_signal(|| false);
-    let mut closing = use_signal(|| false);
-    let mut items = use_signal(sample_upload_items);
-    let mut generation = use_signal(|| 0_u64);
-    rsx! {
-        div { class: if detail { "showcase-upload-demo showcase-upload-detail" } else { "showcase-upload-demo" },
-            if detail {
-                div { class: "showcase-demo-bar",
-                    Button { variant: ButtonVariant::Secondary, size: ButtonSize::Sm, onclick: move |_| visible.set(true), "打开上传弹窗" }
-                    Button { variant: ButtonVariant::Ghost, size: ButtonSize::Sm, onclick: move |_| { generation += 1; items.set(Vec::new()); }, "空状态" }
-                    Button { variant: ButtonVariant::Ghost, size: ButtonSize::Sm, onclick: move |_| { generation += 1; items.set(sample_upload_items()); }, "代表状态" }
-                    span { "本地演示，示例文件不会上传。" }
-                }
-            }
-            if !visible() { UploadDemoPanel { items, generation } }
-            if detail {
-                ModalShell { visible, closing, title: "上传素材", panel_class: "asset-modal asset-uploader",
-                    DemoModalHead { title: "上传素材",
-                        on_reset: move |_| {
-                            generation += 1;
-                            items.set(sample_upload_items());
-                            closing.set(true);
-                            visible.set(false);
-                        },
-                        on_close: move |_| { closing.set(true); visible.set(false); },
+fn UploadDemo(detail: bool) -> impl IntoView {
+    let visible = RwSignal::new(false);
+    let closing = RwSignal::new(false);
+    let items = RwSignal::new(sample_upload_items());
+    let generation = RwSignal::new(0_u64);
+    let root_class = if detail {
+        "showcase-upload-demo showcase-upload-detail"
+    } else {
+        "showcase-upload-demo"
+    };
+    view! {
+        <div class=root_class>
+            {detail
+                .then(|| {
+                    view! {
+                        <div class="showcase-demo-bar">
+                            <Button
+                                variant=ButtonVariant::Secondary
+                                size=ButtonSize::Sm
+                                onclick=move |_| visible.set(true)
+                            >
+                                "打开上传弹窗"
+                            </Button>
+                            <Button
+                                variant=ButtonVariant::Ghost
+                                size=ButtonSize::Sm
+                                onclick=move |_| {
+                                    generation.update(|value| *value += 1);
+                                    items.set(Vec::new());
+                                }
+                            >
+                                "空状态"
+                            </Button>
+                            <Button
+                                variant=ButtonVariant::Ghost
+                                size=ButtonSize::Sm
+                                onclick=move |_| {
+                                    generation.update(|value| *value += 1);
+                                    items.set(sample_upload_items());
+                                }
+                            >
+                                "代表状态"
+                            </Button>
+                            <span>"本地演示，示例文件不会上传。"</span>
+                        </div>
                     }
-                    UploadDemoPanel { items, generation }
-                }
-            }
-        }
+                })}
+            {move || {
+                (!visible.get()).then(|| view! { <UploadDemoPanel items=items generation=generation/> })
+            }}
+            {detail
+                .then(|| {
+                    view! {
+                        <ModalShell
+                            visible=visible
+                            closing=closing
+                            title="上传素材"
+                            panel_class="asset-modal asset-uploader"
+                        >
+                            <DemoModalHead
+                                title="上传素材"
+                                on_reset=move |_| {
+                                    generation.update(|value| *value += 1);
+                                    items.set(sample_upload_items());
+                                    closing.set(true);
+                                    visible.set(false);
+                                }
+                                on_close=move |_| {
+                                    closing.set(true);
+                                    visible.set(false);
+                                }
+                            />
+                            <UploadDemoPanel items=items generation=generation/>
+                        </ModalShell>
+                    }
+                })}
+        </div>
     }
 }
 
@@ -274,135 +424,131 @@ fn sample_upload_items() -> Vec<UploadItem> {
 }
 
 #[component]
-fn UploadDemoPanel(mut items: Signal<Vec<UploadItem>>, generation: Signal<u64>) -> Element {
-    rsx! {
-        UploadPanel { items: items(),
-            on_retry: move |id: u64| {
-                let ticket = *generation.peek();
-                if let Some(item) = items.write().iter_mut().find(|item| item.id == id) {
-                    item.status = UploadStatus::Uploading;
-                }
-                spawn(async move {
-                    crate::utils::time::sleep_ms(350).await;
-                    if *generation.peek() != ticket { return; }
-                    if let Some(item) = items.write().iter_mut().find(|item| item.id == id) {
-                        item.status = UploadStatus::Done;
-                    }
-                });
-            },
-            on_remove: move |id: u64| items.write().retain(|item| item.id != id),
-            button { r#type: "button",
-                class: "asset-drop w-full border-0",
-                onclick: move |_| {
-                    let next = items.read().iter().map(|item| item.id).max().unwrap_or(0) + 1;
-                    items.write().push(UploadItem { id: next, name: format!("示例文件-{next}.webp"), size: "540 KB".to_string(), status: UploadStatus::Queued, removing: false });
-                },
-                UploadDropZoneContent { title: "加入示例文件", hint: "本地状态演示，不读取电脑文件或发起上传。" }
+fn UploadDemoPanel(items: RwSignal<Vec<UploadItem>>, generation: RwSignal<u64>) -> impl IntoView {
+    let on_retry = move |id: u64| {
+        let ticket = generation.get_untracked();
+        items.update(|list| {
+            if let Some(item) = list.iter_mut().find(|item| item.id == id) {
+                item.status = UploadStatus::Uploading;
             }
-        }
+        });
+        leptos::task::spawn_local(async move {
+            crate::utils::time::sleep_ms(350).await;
+            if generation.try_get_untracked() != Some(ticket) {
+                return;
+            }
+            let _ = items.try_update(|list| {
+                if let Some(item) = list.iter_mut().find(|item| item.id == id) {
+                    item.status = UploadStatus::Done;
+                }
+            });
+        });
+    };
+    let on_remove = move |id: u64| items.update(|list| list.retain(|item| item.id != id));
+    view! {
+        <UploadPanel items=items on_retry=on_retry on_remove=on_remove>
+            <button
+                type="button"
+                class="asset-drop w-full border-0"
+                on:click=move |_| {
+                    items
+                        .update(|list| {
+                            let next = list.iter().map(|item| item.id).max().unwrap_or(0) + 1;
+                            list.push(UploadItem {
+                                id: next,
+                                name: format!("示例文件-{next}.webp"),
+                                size: "540 KB".to_string(),
+                                status: UploadStatus::Queued,
+                                removing: false,
+                            });
+                        })
+                }
+            >
+                <UploadDropZoneContent
+                    title="加入示例文件"
+                    hint="本地状态演示，不读取电脑文件或发起上传。"
+                />
+            </button>
+        </UploadPanel>
     }
 }
 
 #[component]
-fn RunnerDemo(detail: bool) -> Element {
-    #[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut))]
-    let mut visible = use_signal(move || detail);
-    let mut failed = use_signal(|| false);
+fn RunnerDemo(detail: bool) -> impl IntoView {
+    let failed = RwSignal::new(false);
     let host_id = if detail {
         "showcase-runner-detail"
     } else {
         "showcase-runner-card"
     };
-
-    #[cfg(target_arch = "wasm32")]
-    {
-        use std::{cell::RefCell, rc::Rc};
-        use wasm_bindgen::{closure::Closure, JsCast};
-        type Watch = (
-            web_sys::IntersectionObserver,
-            Closure<dyn FnMut(js_sys::Array, web_sys::IntersectionObserver)>,
-        );
-        let watcher = use_hook(|| Rc::new(RefCell::new(None::<Watch>)));
-        let target_watcher = watcher.clone();
-        use_effect(move || {
-            if visible() {
-                return;
-            }
-            let Some(target) = web_sys::window()
-                .and_then(|window| window.document())
-                .and_then(|document| document.get_element_by_id(host_id))
-            else {
-                return;
-            };
-            let callback = Closure::new(
-                move |entries: js_sys::Array, observer: web_sys::IntersectionObserver| {
-                    if entries.iter().any(|value| {
-                        value
-                            .unchecked_into::<web_sys::IntersectionObserverEntry>()
-                            .is_intersecting()
-                    }) {
-                        observer.disconnect();
-                        visible.set(true);
-                    }
-                },
-            );
-            if let Ok(observer) =
-                web_sys::IntersectionObserver::new(callback.as_ref().unchecked_ref())
-            {
-                observer.observe(&target);
-                target_watcher.borrow_mut().replace((observer, callback));
-            } else {
-                visible.set(true);
-            }
-        });
-        use_drop(move || {
-            if let Some((observer, _callback)) = watcher.borrow_mut().take() {
-                observer.disconnect();
-            }
-        });
-    }
-
-    let sample = if failed() {
-        RunnerExample {
-            stdout: "开始整理 3 个条目…\n".to_string(),
-            stderr: "示例错误：第 2 个条目缺少标题\n".to_string(),
-            status: "退出码: 1 · 输出示例".to_string(),
-            error: "运行错误示例".to_string(),
-        }
+    // 详情页直接加载；卡片预览等运行器进入视野后再加载编辑器和终端。
+    let near_viewport = crate::hooks::use_near_viewport(host_id.to_string(), "0px");
+    let visible = move || detail || near_viewport.get();
+    let root_class = if detail {
+        "showcase-runner-demo showcase-runner-detail"
     } else {
-        RunnerExample {
-            stdout: "开始整理 3 个条目…\n✓ 已整理 3 个条目\n".to_string(),
-            stderr: "".to_string(),
-            status: "退出码: 0 · 输出示例".to_string(),
-            error: String::new(),
-        }
+        "showcase-runner-demo"
     };
-    let output_mode = if failed() { "error" } else { "ok" };
-    rsx! {
-        div { class: if detail { "showcase-runner-demo showcase-runner-detail" } else { "showcase-runner-demo" }, id: host_id,
-            if detail {
-                div { class: "showcase-demo-bar",
-                    SegmentedControl {
-                        items: vec![
-                            SegmentedItem::new("ok".to_string(), "正常输出"),
-                            SegmentedItem::new("error".to_string(), "错误输出"),
-                        ],
-                        value: output_mode.to_string(),
-                        on_change: move |value: String| failed.set(value == "error"),
-                        aria_label: "输出示例",
+    view! {
+        <div class=root_class id=host_id>
+            {detail
+                .then(|| {
+                    view! {
+                        <div class="showcase-demo-bar">
+                            <SegmentedControl
+                                items=vec![
+                                    SegmentedItem::new("ok".to_string(), "正常输出"),
+                                    SegmentedItem::new("error".to_string(), "错误输出"),
+                                ]
+                                value=Signal::derive(move || {
+                                    if failed.get() { "error" } else { "ok" }.to_string()
+                                })
+                                on_change=move |value: String| failed.set(value == "error")
+                                aria_label="输出示例"
+                            />
+                            <span>"固定输出示例，与编辑后的代码无关；不会执行程序。"</span>
+                        </div>
                     }
-                    span { "固定输出示例，与编辑后的代码无关；不会执行程序。" }
+                })}
+            {move || {
+                if visible() {
+                    let sample = if failed.get() {
+                        RunnerExample {
+                            stdout: "开始整理 3 个条目…\n".to_string(),
+                            stderr: "示例错误：第 2 个条目缺少标题\n".to_string(),
+                            status: "退出码: 1 · 输出示例".to_string(),
+                            error: "运行错误示例".to_string(),
+                        }
+                    } else {
+                        RunnerExample {
+                            stdout: "开始整理 3 个条目…\n✓ 已整理 3 个条目\n".to_string(),
+                            stderr: "".to_string(),
+                            status: "退出码: 0 · 输出示例".to_string(),
+                            error: String::new(),
+                        }
+                    };
+                    // 切换输出示例时整体重建运行器，让它按新的固定输出初始化。
+                    view! {
+                        <div>
+                            <CodeRunner
+                                source="print('让想法生根')\n".to_string()
+                                language="python".to_string()
+                                instance_id=if detail { 3101 } else { 3100 }
+                                example_output=sample
+                            />
+                        </div>
+                    }
+                        .into_any()
+                } else {
+                    view! {
+                        <div class="showcase-browser-placeholder">
+                            "运行器进入视野后加载编辑器和终端…"
+                        </div>
+                    }
+                        .into_any()
                 }
-            }
-            if visible() {
-                div { key: "runner-{failed()}",
-                    CodeRunner { source: "print('让想法生根')\n".to_string(), language: "python".to_string(), overrides: None,
-                        instance_id: if detail { 3101 } else { 3100 }, example_output: Some(sample) }
-                }
-            } else {
-                div { class: "showcase-browser-placeholder", "运行器进入视野后加载编辑器和终端…" }
-            }
-        }
+            }}
+        </div>
     }
 }
 
@@ -621,51 +767,69 @@ fn sample_sql_result(preset: SqlPreset, detail: bool) -> (SqlResult, &'static st
         }
     }
 }
-
 #[component]
-fn SqlTableDemo(detail: bool) -> Element {
-    let mut preset = use_signal(|| SqlPreset::Posts);
-    let (result, query_text, stats_text) = sample_sql_result(preset(), detail);
-    let active = match preset() {
-        SqlPreset::Posts => "posts",
-        SqlPreset::Comments => "comments",
-        SqlPreset::Metrics => "metrics",
+fn SqlTableDemo(detail: bool) -> impl IntoView {
+    let preset = RwSignal::new(SqlPreset::Posts);
+    let active = Signal::derive(move || {
+        match preset.get() {
+            SqlPreset::Posts => "posts",
+            SqlPreset::Comments => "comments",
+            SqlPreset::Metrics => "metrics",
+        }
+        .to_string()
+    });
+    let root_class = if detail {
+        "showcase-sql-demo showcase-sql-detail"
+    } else {
+        "showcase-sql-demo"
     };
 
-    rsx! {
-        div { class: if detail { "showcase-sql-demo showcase-sql-detail" } else { "showcase-sql-demo" },
-            if detail {
-                div { class: "showcase-demo-bar",
-                    SegmentedControl {
-                        items: vec![
-                            SegmentedItem::new("posts".to_string(), "文章"),
-                            SegmentedItem::new("comments".to_string(), "评论"),
-                            SegmentedItem::new("metrics".to_string(), "系统指标"),
-                        ],
-                        value: active.to_string(),
-                        on_change: move |value: String| preset.set(match value.as_str() {
-                            "comments" => SqlPreset::Comments,
-                            "metrics" => SqlPreset::Metrics,
-                            _ => SqlPreset::Posts,
-                        }),
-                        aria_label: "示例查询",
+    view! {
+        <div class=root_class>
+            {detail
+                .then(|| {
+                    view! {
+                        <div class="showcase-demo-bar">
+                            <SegmentedControl
+                                items=vec![
+                                    SegmentedItem::new("posts".to_string(), "文章"),
+                                    SegmentedItem::new("comments".to_string(), "评论"),
+                                    SegmentedItem::new("metrics".to_string(), "系统指标"),
+                                ]
+                                value=active
+                                on_change=move |value: String| {
+                                    preset
+                                        .set(
+                                            match value.as_str() {
+                                                "comments" => SqlPreset::Comments,
+                                                "metrics" => SqlPreset::Metrics,
+                                                _ => SqlPreset::Posts,
+                                            },
+                                        )
+                                }
+                                aria_label="示例查询"
+                            />
+                            <span>"点击任意行展开完整字段。"</span>
+                        </div>
                     }
-                    span { "点击任意行展开完整字段。" }
+                })}
+            // 与系统页 SQL 控制台的结果区同一结构；切换示例时整体重建，表格展开状态随之复位。
+            {move || {
+                let preset = preset.get();
+                let (result, query_text, stats_text) = sample_sql_result(preset, detail);
+                let initial_expanded = (detail && preset == SqlPreset::Posts).then_some(0_usize);
+                view! {
+                    <section class="admin-panel sys-section sys-result">
+                        <div class="sys-section-head">
+                            <code class="showcase-sql-query">{query_text}</code>
+                            <span>{stats_text}</span>
+                        </div>
+                        <div>
+                            <SqlResultTable result=result initial_expanded=initial_expanded/>
+                        </div>
+                    </section>
                 }
-            }
-            // 与系统页 SQL 控制台的结果区同一结构。
-            section { class: "admin-panel sys-section sys-result",
-                div { class: "sys-section-head",
-                    code { class: "showcase-sql-query", "{query_text}" }
-                    span { "{stats_text}" }
-                }
-                div { key: "{preset() as usize}-{detail}",
-                    SqlResultTable {
-                        result,
-                        initial_expanded: if detail && preset() == SqlPreset::Posts { Some(0) } else { None },
-                    }
-                }
-            }
-        }
+            }}
+        </div>
     }
 }

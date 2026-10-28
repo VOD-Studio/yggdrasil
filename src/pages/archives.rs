@@ -6,8 +6,11 @@
 //! 首屏请求轻量归档分页，按需加载更早的文章。标签接口失败时只隐藏标签区。
 
 use chrono::{DateTime, Datelike, Utc};
-use dioxus::prelude::*;
+use leptos::prelude::*;
+use leptos_meta::Title;
+use leptos_router::{lazy_route, LazyRoute};
 
+use crate::api::error::ApiError;
 use crate::api::posts::{
     list_archive_posts, list_tags, ArchiveResponse, TagListResponse, ARCHIVE_PAGE_SIZE,
 };
@@ -15,8 +18,9 @@ use crate::components::empty_state::EmptyState;
 use crate::components::skeletons::archive_skeleton::ArchiveBodySkeleton;
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::ui::{Button, ButtonVariant, LoadError};
+use crate::hooks::ssr_resource::{prefetch_route_data, route_data, unit, PageJson, RouteData};
 use crate::models::post::Tag;
-use crate::router::Route;
+use crate::routes::Route;
 
 /// 标签区默认显示的标签数，其余收进「全部 N 个」。
 const TAG_PREVIEW: usize = 16;
@@ -25,7 +29,7 @@ const ROW_TAGS: usize = 2;
 
 /// 年份分组里的一行。归档与标签详情的数据源不同，在这里统一形状。
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct IndexRow {
+pub struct IndexRow {
     pub id: i32,
     pub slug: String,
     pub title: String,
@@ -82,109 +86,198 @@ fn visible_tags<'a>(tags: &'a [Tag], current: Option<&str>, expanded: bool) -> V
     shown
 }
 
-#[component]
-pub fn Archives() -> Element {
-    rsx! {
-        document::Title { "归档 · Yggdrasil" }
-        div { class: "archive",
-            header { class: "archive-header page-enter",
-                h1 { class: "archive-title", "归档" }
-            }
-            SuspenseBoundary {
-                fallback: move |_| rsx! { DelayedSkeleton { ArchiveBodySkeleton {} } },
-                ArchivesBody {}
-            }
+/// 归档路由，对应 `/archives`（`SsrMode::InOrder`）。
+pub struct ArchivesRoute {
+    posts: RouteData<ArchiveResponse>,
+    tags: RouteData<TagListResponse>,
+}
+
+#[leptos::lazy]
+async fn fetch_archive() -> PageJson<ArchiveResponse> {
+    PageJson::new(list_archive_posts(1).await)
+}
+
+/// 全部标签；归档、标签详情与关于页共用（取数函数随分包加载，见 `hooks::ssr_resource`）。
+#[leptos::lazy]
+pub(crate) async fn fetch_tags() -> PageJson<TagListResponse> {
+    PageJson::new(list_tags().await)
+}
+
+#[lazy_route]
+impl LazyRoute for ArchivesRoute {
+    fn data() -> Self {
+        Self {
+            posts: route_data(|| (), unit(fetch_archive)),
+            tags: route_data(|| (), unit(fetch_tags)),
         }
+    }
+
+    fn view(this: Self) -> AnyView {
+        let ArchivesRoute { posts, tags } = this;
+        view! {
+            <Title text="归档 · Yggdrasil"/>
+            <div class="archive">
+                <header class="archive-header page-enter">
+                    <h1 class="archive-title">"归档"</h1>
+                </header>
+                <Suspense fallback=|| {
+                    view! {
+                        <DelayedSkeleton>
+                            <ArchiveBodySkeleton/>
+                        </DelayedSkeleton>
+                    }
+                }>
+                    {move || Suspend::new(async move {
+                        // 文章失败只让列表区换成错误卡片；标签失败只隐藏标签区。
+                        let first = posts.await.ok();
+                        let tags = tag_list(tags.await);
+                        view! { <ArchivesBody first=first tags=tags/> }
+                    })}
+                </Suspense>
+            </div>
+        }
+        .into_any()
     }
 }
 
+impl ArchivesRoute {
+    /// 悬停预取：与 `data()` 相同的取数函数与 source。
+    pub fn prefetch_data() {
+        prefetch_route_data((), unit(fetch_archive));
+        prefetch_route_data((), unit(fetch_tags));
+    }
+}
+
+/// 归档主体。`first` 为 `None` 表示首屏加载失败；重试与「加载更早」的结果都写进
+/// 本地信号，不重取外层 `Resource`（否则整段 DOM 会退回 `Suspense` 的骨架屏）。
 #[component]
-fn ArchivesBody() -> Element {
-    // SSR 只轮询正在挂起的任务，提前发出的第二个请求会丢失唤醒；逐个等待。
-    let mut posts = use_server_future(move || list_archive_posts(1))?;
-    let tags = use_server_future(list_tags)?;
+fn ArchivesBody(first: Option<ArchiveResponse>, tags: Vec<Tag>) -> impl IntoView {
+    let listing = RwSignal::new(first);
+    let older = RwSignal::new(Vec::<IndexRow>::new());
+    let next_page = RwSignal::new(2_i32);
+    let loading_more = RwSignal::new(false);
+    let load_more_failed = RwSignal::new(false);
+    let exhausted = RwSignal::new(false);
+    let retrying = RwSignal::new(false);
+    let retry_failed = RwSignal::new(false);
 
-    let mut older = use_signal(Vec::<IndexRow>::new);
-    let mut next_page = use_signal(|| 2_i32);
-    let mut loading_more = use_signal(|| false);
-    let mut load_more_failed = use_signal(|| false);
-    let mut exhausted = use_signal(|| false);
-    let mut retrying = use_signal(|| false);
-    let mut retry_failed = use_signal(|| false);
+    let loaded = Memo::new(move |_| listing.with(Option::is_some));
+    let total = move || listing.with(|l| l.as_ref().map_or(0, |r| r.total));
+    let rows = Signal::derive(move || {
+        let mut rows: Vec<IndexRow> = listing.with(|l| {
+            l.as_ref()
+                .map(|r| r.posts.iter().cloned().map(archive_row).collect())
+                .unwrap_or_default()
+        });
+        older.with(|older| rows.extend(older.iter().cloned()));
+        rows
+    });
+    let has_more = move || !exhausted.get() && (rows.with(Vec::len) as i64) < total();
 
-    let tags = tag_list(&tags.read());
-    let listing = posts.read().as_ref().map(|r| r.as_ref().ok().cloned());
+    let on_more = move |_| {
+        loading_more.set(true);
+        load_more_failed.set(false);
+        let page = next_page.get_untracked();
+        leptos::task::spawn_local(async move {
+            match list_archive_posts(page).await {
+                Ok(response) => {
+                    let _ = exhausted.try_set(response.posts.len() < ARCHIVE_PAGE_SIZE);
+                    let _ = older.try_update(|older| {
+                        older.extend(response.posts.into_iter().map(archive_row));
+                    });
+                    let _ = next_page.try_update(|page| *page += 1);
+                }
+                Err(_) => {
+                    let _ = load_more_failed.try_set(true);
+                }
+            }
+            let _ = loading_more.try_set(false);
+        });
+    };
 
-    match listing {
-        Some(Some(ArchiveResponse {
-            posts: first,
-            total,
-        })) => {
-            let mut rows: Vec<IndexRow> = first.into_iter().map(archive_row).collect();
-            rows.extend(older.read().iter().cloned());
-            let has_more = !exhausted() && (rows.len() as i64) < total;
-            let summary = archive_summary(&rows, total, has_more);
-            rsx! {
-                p { class: "archive-summary tabular-nums page-enter", "{summary}" }
-                TagFilter { tags, current: None }
-                if total == 0 {
-                    span { hidden: true, "data-vt-list": "true" }
-                    EmptyState { title: "还没有文章", description: "发布文章后，这里会按年份排好。" }
-                } else {
-                    YearBlocks { rows, hide_tag: None }
-                    if has_more {
-                        div { class: "archive-more",
-                            Button {
-                                variant: ButtonVariant::Secondary,
-                                loading: loading_more(),
-                                onclick: move |_| {
-                                    loading_more.set(true);
-                                    load_more_failed.set(false);
-                                    spawn(async move {
-                                        match list_archive_posts(next_page()).await {
-                                            Ok(response) => {
-                                                exhausted.set(response.posts.len() < ARCHIVE_PAGE_SIZE);
-                                                older.write().extend(response.posts.into_iter().map(archive_row));
-                                                next_page += 1;
-                                            }
-                                            Err(_) => load_more_failed.set(true),
-                                        }
-                                        loading_more.set(false);
-                                    });
-                                },
-                                "加载更早的文章"
-                            }
-                            if load_more_failed() {
-                                p { class: "archive-more-error", role: "alert", "没能加载更早的文章，再试一次。" }
-                            }
-                        }
+    let on_retry = Callback::new(move |()| {
+        retrying.set(true);
+        retry_failed.set(false);
+        leptos::task::spawn_local(async move {
+            let result = list_archive_posts(1).await;
+            let _ = retrying.try_set(false);
+            match result {
+                Ok(response) => {
+                    let _ = listing.try_set(Some(response));
+                }
+                Err(_) => {
+                    let _ = retry_failed.try_set(true);
+                }
+            }
+        });
+    });
+
+    view! {
+        {move || {
+            loaded
+                .get()
+                .then(|| {
+                    view! {
+                        <p class="archive-summary tabular-nums page-enter">
+                            {move || archive_summary(&rows.get(), total(), has_more())}
+                        </p>
                     }
+                })
+        }}
+        <TagFilter tags=tags current=None/>
+        {move || {
+            if !loaded.get() {
+                return view! {
+                    <div class="archive-years" data-vt-list="true">
+                        <LoadError
+                            title="归档暂时没能加载"
+                            retrying=retrying
+                            retry_failed=retry_failed
+                            on_retry=on_retry
+                        />
+                    </div>
                 }
+                    .into_any();
             }
-        }
-        Some(None) => rsx! {
-            TagFilter { tags, current: None }
-            div { class: "archive-years", "data-vt-list": "true",
-                LoadError {
-                    title: "归档暂时没能加载",
-                    retrying: retrying(),
-                    retry_failed: retry_failed(),
-                    on_retry: move |_| {
-                        retrying.set(true);
-                        retry_failed.set(false);
-                        spawn(async move {
-                            let result = list_archive_posts(1).await;
-                            retrying.set(false);
-                            match result {
-                                Ok(response) => posts.set(Some(Ok(response))),
-                                Err(_) => retry_failed.set(true),
+            if total() == 0 {
+                return view! {
+                    <span hidden data-vt-list="true"></span>
+                    <EmptyState title="还没有文章" description="发布文章后，这里会按年份排好。"/>
+                }
+                    .into_any();
+            }
+            view! {
+                <YearBlocks rows=rows/>
+                {move || {
+                    has_more()
+                        .then(|| {
+                            view! {
+                                <div class="archive-more">
+                                    <Button
+                                        variant=ButtonVariant::Secondary
+                                        loading=loading_more
+                                        onclick=on_more
+                                    >
+                                        "加载更早的文章"
+                                    </Button>
+                                    {move || {
+                                        load_more_failed
+                                            .get()
+                                            .then(|| {
+                                                view! {
+                                                    <p class="archive-more-error" role="alert">
+                                                        "没能加载更早的文章，再试一次。"
+                                                    </p>
+                                                }
+                                            })
+                                    }}
+                                </div>
                             }
-                        });
-                    },
-                }
+                        })
+                }}
             }
-        },
-        None => rsx! {},
+                .into_any()
+        }}
     }
 }
 
@@ -217,103 +310,182 @@ fn archive_summary(rows: &[IndexRow], total: i64, has_more: bool) -> String {
     }
 }
 
-/// 标签接口的结果：失败或未取到时为空，标签区随之隐藏。
-pub(crate) fn tag_list(data: &Option<Result<TagListResponse, ServerFnError>>) -> Vec<Tag> {
-    data.as_ref()
-        .and_then(|r| r.as_ref().ok())
-        .map(|r| ranked_tags(r.tags.clone()))
-        .unwrap_or_default()
+/// 标签接口的结果：失败时为空，标签区随之隐藏。
+pub(crate) fn tag_list(data: Result<TagListResponse, ApiError>) -> Vec<Tag> {
+    data.map(|r| ranked_tags(r.tags)).unwrap_or_default()
 }
 
 /// 标签筛选区。点当前标签回到全部归档；展开状态随历史记录恢复。
+///
+/// `current` 直接传 `Option<String>`（`None` 或 `Some(..)`）。
 #[component]
-pub(crate) fn TagFilter(tags: Vec<Tag>, current: Option<String>) -> Element {
-    let entry_id = use_hook(crate::bridges::navigation::entry_id);
-    let mut expanded =
-        use_signal(|| crate::bridges::navigation::read_state("archive-tags-open").unwrap_or(false));
-    use_effect(move || {
-        crate::bridges::navigation::write_state(&entry_id, "archive-tags-open", &expanded());
+pub(crate) fn TagFilter(tags: Vec<Tag>, current: Option<String>) -> impl IntoView {
+    let entry_id = crate::bridges::navigation::entry_id();
+    // 服务端没有历史状态，水合首帧必须与之一致；恢复在挂载后的 Effect 里完成。
+    let expanded = RwSignal::new(false);
+    Effect::new(move |previous: Option<()>| {
+        if previous.is_none() {
+            if let Some(saved) = crate::bridges::navigation::read_state::<bool>("archive-tags-open")
+            {
+                if saved != expanded.get_untracked() {
+                    expanded.set(saved);
+                }
+            }
+        }
+        crate::bridges::navigation::write_state(&entry_id, "archive-tags-open", &expanded.get());
     });
     if tags.is_empty() {
-        return rsx! {};
+        return ().into_any();
     }
-    let shown = visible_tags(&tags, current.as_deref(), expanded());
     let total = tags.len();
+    let shown_tags = tags.clone();
+    let list_current = current.clone();
 
-    rsx! {
-        section { class: "archive-tags page-enter", aria_labelledby: "archive-tags-title",
-            div { class: "archive-tags-head",
-                h2 { id: "archive-tags-title", class: "archive-tags-title",
-                    "标签 "
-                    span { class: "tabular-nums", "{total}" }
-                }
-                if total > TAG_PREVIEW {
-                    button {
-                        r#type: "button",
-                        class: "archive-tags-toggle",
-                        aria_expanded: "{expanded()}",
-                        onclick: move |_| expanded.toggle(),
-                        if expanded() { "收起" } else { "全部 {total} 个" }
-                    }
-                }
-            }
-            div { class: "archive-tags-list",
-                for tag in shown {
-                    if current.as_deref() == Some(tag.name.as_str()) {
-                        Link {
-                            key: "{tag.id}",
-                            class: "chip is-current",
-                            to: Route::Archives {},
-                            aria_current: "page",
-                            title: "回到全部归档",
-                            "{tag.name}"
-                            span { class: "chip-count", "{tag.post_count}" }
+    view! {
+        <section class="archive-tags page-enter" aria-labelledby="archive-tags-title">
+            <div class="archive-tags-head">
+                <h2 id="archive-tags-title" class="archive-tags-title">
+                    "标签 " <span class="tabular-nums">{total}</span>
+                </h2>
+                {(total > TAG_PREVIEW)
+                    .then(|| {
+                        view! {
+                            <button
+                                type="button"
+                                class="archive-tags-toggle"
+                                aria-expanded=move || expanded.get().to_string()
+                                on:click=move |_| expanded.update(|open| *open = !*open)
+                            >
+                                {move || {
+                                    if expanded.get() { "收起".to_string() } else { format!("全部 {total} 个") }
+                                }}
+                            </button>
                         }
-                    } else {
-                        Link {
-                            key: "{tag.id}",
-                            class: "chip",
-                            to: Route::TagDetail { tag: tag.name.clone() },
-                            "{tag.name}"
-                            span { class: "chip-count", "{tag.post_count}" }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-/// 按年份分组的文章行。`hide_tag` 为标签详情的当前标签，不在行尾重复列出。
-#[component]
-pub(crate) fn YearBlocks(rows: Vec<IndexRow>, hide_tag: Option<String>) -> Element {
-    let groups = group_by_year(&rows);
-    rsx! {
-        section { class: "archive-years", "data-vt-list": "true", aria_label: "按年份",
-            for (index, group) in groups.into_iter().enumerate() {
-                div {
-                    key: "{group.year}",
-                    class: "archive-year page-enter",
-                    style: "--enter-index: {index.min(5)}",
-                    div { class: "archive-year-label",
-                        h2 { id: "y{group.year}", class: "archive-year-number", "{group.year}" }
-                        p { class: "archive-year-count tabular-nums", "{group.rows.len()} 篇" }
-                    }
-                    ol { class: "archive-rows", aria_labelledby: "y{group.year}",
-                        for row in group.rows {
-                            li { key: "{row.id}",
-                                ArchiveRow { row: row.clone(), hide_tag: hide_tag.clone() }
+                    })}
+            </div>
+            <div class="archive-tags-list">
+                {move || {
+                    visible_tags(&shown_tags, list_current.as_deref(), expanded.get())
+                        .into_iter()
+                        .map(|tag| {
+                            if list_current.as_deref() == Some(tag.name.as_str()) {
+                                view! {
+                                    <a
+                                        class="chip is-current"
+                                        href=Route::Archives.to_string()
+                                        aria-current="page"
+                                        title="回到全部归档"
+                                    >
+                                        {tag.name.clone()}
+                                        <span class="chip-count">{tag.post_count}</span>
+                                    </a>
+                                }
+                                    .into_any()
+                            } else {
+                                view! {
+                                    <a
+                                        class="chip"
+                                        href=Route::TagDetail {
+                                            tag: tag.name.clone(),
+                                        }
+                                            .to_string()
+                                    >
+                                        {tag.name.clone()}
+                                        <span class="chip-count">{tag.post_count}</span>
+                                    </a>
+                                }
+                                    .into_any()
                             }
-                        }
-                    }
+                        })
+                        .collect_view()
+                }}
+            </div>
+        </section>
+    }
+    .into_any()
+}
+
+/// 按年份分组的文章行。`hide_tag` 为标签详情的当前标签，不在行尾重复列出（缺省则都列出）。
+///
+/// 年份组按年份做 key：加载更早的文章只追加新年份、更新已有年份的行，
+/// 已显示的年份组不重建（不重播入场动画）。
+#[component]
+pub(crate) fn YearBlocks(
+    #[prop(into)] rows: Signal<Vec<IndexRow>>,
+    #[prop(optional)] hide_tag: Option<String>,
+) -> impl IntoView {
+    // 年份只会向后追加，序号即首次出现的位置。
+    let years = Memo::new(move |_| {
+        rows.with(|rows| {
+            group_by_year(rows)
+                .into_iter()
+                .enumerate()
+                .map(|(index, group)| (group.year, index))
+                .collect::<Vec<_>>()
+        })
+    });
+
+    view! {
+        <section class="archive-years" data-vt-list="true" aria-label="按年份">
+            <For
+                each=move || years.get()
+                key=|(year, _)| *year
+                children=move |(year, index)| {
+                    view! { <YearBlock year=year index=index rows=rows hide_tag=hide_tag.clone()/> }
                 }
-            }
-        }
+            />
+        </section>
     }
 }
 
 #[component]
-fn ArchiveRow(row: IndexRow, hide_tag: Option<String>) -> Element {
+fn YearBlock(
+    year: i32,
+    index: usize,
+    rows: Signal<Vec<IndexRow>>,
+    hide_tag: Option<String>,
+) -> impl IntoView {
+    let group_rows = Memo::new(move |_| {
+        rows.with(|rows| {
+            rows.iter()
+                .filter(|row| row.date.year() == year)
+                .cloned()
+                .collect::<Vec<_>>()
+        })
+    });
+
+    view! {
+        <div
+            class="archive-year page-enter"
+            style=format!("--enter-index: {}", index.min(5))
+        >
+            <div class="archive-year-label">
+                <h2 id=format!("y{year}") class="archive-year-number">
+                    {year}
+                </h2>
+                <p class="archive-year-count tabular-nums">
+                    {move || format!("{} 篇", group_rows.with(Vec::len))}
+                </p>
+            </div>
+            <ol class="archive-rows" aria-labelledby=format!("y{year}")>
+                <For
+                    each=move || group_rows.get()
+                    key=|row| row.id
+                    children=move |row| {
+                        view! {
+                            <li>
+                                <ArchiveRow row=row hide_tag=hide_tag.clone()/>
+                            </li>
+                        }
+                    }
+                />
+            </ol>
+        </div>
+    }
+}
+
+#[component]
+fn ArchiveRow(row: IndexRow, hide_tag: Option<String>) -> impl IntoView {
     let tags = row
         .tags
         .iter()
@@ -323,19 +495,29 @@ fn ArchiveRow(row: IndexRow, hide_tag: Option<String>) -> Element {
         .collect::<Vec<_>>()
         .join(" · ");
     let datetime = row.date.format("%Y-%m-%d").to_string();
-    rsx! {
-        Link {
-            class: "archive-entry",
-            to: Route::PostDetail { slug: row.slug.clone() },
-            "data-vt-post-link": "{row.id}",
-            time { class: "archive-entry-date tabular-nums", datetime: "{datetime}",
-                {row.date.format("%m.%d").to_string()}
+    let date = row.date.format("%m.%d").to_string();
+    let tags = (!tags.is_empty()).then(|| view! { <span class="archive-entry-tags">{tags}</span> });
+    view! {
+        <a
+            class="archive-entry"
+            href=Route::PostDetail {
+                slug: row.slug.clone(),
             }
-            span { class: "archive-entry-title", "data-vt-post-id": "{row.id}", "data-vt-role": "title", "{row.title}" }
-            if !tags.is_empty() {
-                span { class: "archive-entry-tags", "{tags}" }
-            }
-        }
+                .to_string()
+            data-vt-post-link=row.id.to_string()
+        >
+            <time class="archive-entry-date tabular-nums" datetime=datetime>
+                {date}
+            </time>
+            <span
+                class="archive-entry-title"
+                data-vt-post-id=row.id.to_string()
+                data-vt-role="title"
+            >
+                {row.title}
+            </span>
+            {tags}
+        </a>
     }
 }
 
