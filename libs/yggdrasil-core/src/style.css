@@ -58,8 +58,12 @@ html[data-vt-section]::view-transition-old(vt-section-content) {
   animation: vt-section-out 140ms var(--ease-out-expo) both;
 }
 
+/* 透明度与位移分开：新旧正文用同一条 140ms 曲线互补淡入淡出，合计不透明度恒为 1，
+   中途不会露出底色闪一下；弹簧只管滑入。 */
 html[data-vt-section]::view-transition-new(vt-section-content) {
-  animation: vt-section-in var(--spring-snappy-duration) var(--ease-spring-snappy) both;
+  animation:
+    vt-fade-in 140ms var(--ease-out-expo) both,
+    vt-section-in var(--spring-snappy-duration) var(--ease-spring-snappy) both;
 }
 
 @keyframes vt-section-out {
@@ -74,7 +78,6 @@ html[data-vt-section]::view-transition-new(vt-section-content) {
 
 @keyframes vt-section-in {
   from {
-    opacity: 0;
     transform: translateX(var(--vt-section-offset));
   }
 }

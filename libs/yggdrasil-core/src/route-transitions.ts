@@ -63,14 +63,24 @@ interface Navigation {
   rendered: boolean;
   /** 等待到期时目标页仍未提交：已跳过 VT，旧正文淡出，等迟到的 rendered 收尾。 */
   late: boolean;
+  /** 接力导航：上一次过渡播放中发起，沿用它的原生过渡，在实时的新快照里直接换页。 */
+  relay: boolean;
+  /**
+   * 原生过渡所处阶段：capture 为截图前，update 为回调已提交、等目标页渲染（浏览器暂停绘制），
+   * animate 为 ready 之后的动画播放。结束、跳过或取消后为 undefined。
+   */
+  phase?: 'capture' | 'update' | 'animate';
   cancelled: boolean;
   owner: TransitionOwner;
   names: Map<HTMLElement, string>;
   oldRoles: Set<string>;
   shell: boolean;
   sectionTop?: number;
-  /** Section transitions only: the desktop pill before the update and its nav link. */
-  pill?: { from?: DOMRect; href?: string };
+  /**
+   * Section transitions only: the desktop pill before the update and its nav link. `source`
+   * marks a relay: the header may still show that pill, so sliding waits until it changes.
+   */
+  pill?: { from?: DOMRect; href?: string; source?: HTMLElement | null };
   attempt?: () => void;
   release?: () => void;
   vt?: ViewTransition;
@@ -170,6 +180,8 @@ export class RouteTransitions {
   private viewportCodePrefetched = new Set<string>();
   private scanTimer: number | undefined;
   private cancelIdle: (() => void) | undefined;
+  /** 原生过渡 update 阶段（浏览器暂停绘制）收到的站内跳转，等 ready 后接力，只留最新一次。 */
+  private queued: { route: string; kind: 'push' | 'replace'; intent?: LinkIntent } | undefined;
 
   constructor() {
     // 两个监听都必须早于 Leptos 生效：Leptos 的 BrowserUrl 在水合时就在 window 上挂了
@@ -226,6 +238,7 @@ export class RouteTransitions {
     this.prefetch = undefined;
     this.prefetched.clear();
     this.stopViewportPrefetch();
+    this.queued = undefined;
     this.clearPending();
     history.scrollRestoration = this.oldRestoration;
     this.notify = undefined;
@@ -295,7 +308,7 @@ export class RouteTransitions {
     nav.rendered = true;
     this.clearPending();
     this.correctScroll(nav);
-    if (nav.late) this.slidePill(nav);
+    if (nav.late || nav.relay) this.slidePill(nav);
     if (nav.cancelled) this.startScrollRestoration(nav);
     nav.attempt?.();
   };
@@ -347,7 +360,7 @@ export class RouteTransitions {
     if (event.defaultPrevented) return;
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey)
       return;
-    const routable = this.routableAnchor(event.target);
+    const routable = this.routableAnchor(this.clickTarget(event));
     if (!routable) return;
     const { anchor } = routable;
     if (!this.notify || !this.active) {
@@ -366,6 +379,24 @@ export class RouteTransitions {
     };
     this.request(url, 'push');
   };
+
+  /**
+   * 路由过渡期间，原生过渡把命中测试全部交给 `<html>`（截图后到 ready 之间，以及 root
+   * 过渡的整段动画），页头链接的点击会被吞掉。按坐标在外壳（页头、页脚、后台侧栏）里找回
+   * 被点的链接；外壳在过渡中保持原位，实时 DOM 的几何就是用户看到的位置。
+   */
+  private clickTarget(event: MouseEvent): EventTarget | null {
+    const root = document.documentElement;
+    if (event.target !== root || !root.classList.contains('is-route-transitioning'))
+      return event.target;
+    const { clientX: x, clientY: y } = event;
+    for (const anchor of document.querySelectorAll<HTMLAnchorElement>('[data-vt-shell] a[href]')) {
+      const box = anchor.getBoundingClientRect();
+      if (x >= box.left && x < box.right && y >= box.top && y < box.bottom && visible(anchor))
+        return anchor;
+    }
+    return event.target;
+  }
 
   /** 站内 SPA 链接 → 去掉前缀的“路径 + 查询 + 哈希”；不该由协调器接管的返回 undefined。 */
   private routableAnchor(
@@ -527,6 +558,7 @@ export class RouteTransitions {
   }
   private onPageHide = (): void => {
     if (this.active) this.active.scroll = captureScroll();
+    this.queued = undefined;
     this.clearPending();
     this.restoreCleanup?.();
     if (this.navigation) this.cancel(this.navigation);
@@ -572,6 +604,13 @@ export class RouteTransitions {
 
   private request(route: string, kind: 'push' | 'replace'): void {
     if (!this.notify || !this.active || this.rollingBack) return;
+    if (this.navigation?.phase === 'update') {
+      // 浏览器正暂停绘制、等上一页渲染：此时跳过只会让它截一张旧页面再冻住一次。
+      // 记下来，等 ready 后在播放中的过渡里接力。
+      this.queued = { route, kind, intent: this.intent };
+      this.intent = undefined;
+      return;
+    }
     let target: string;
     try {
       target = this.normalize(route);
@@ -636,7 +675,21 @@ export class RouteTransitions {
 
   private start(entry: Entry, kind: Navigation['kind'], restore?: ScrollSnapshot): void {
     if (!this.active || !this.notify) return;
+    // A newer navigation supersedes one waiting for the previous update callback.
+    this.queued = undefined;
     this.restoreCleanup?.();
+    // 上一次过渡还在播放：跳过它会让刚进来的页面跳回全亮、再被截成旧快照冻住，随后又淡出
+    // 一次。改为接力：保留它的原生动画（新快照是实时画面），在其中直接换页。
+    const running = this.navigation;
+    const relay =
+      running?.phase === 'animate' &&
+      !running.cancelled &&
+      running.vt !== undefined &&
+      page(entry.url) !== page(this.displayed)
+        ? running
+        : undefined;
+    // Hand the running animation over before the new owner would skip it.
+    relay?.owner.finish();
     // Commit interrupted theme changes before capturing geometry or starting the next route.
     const owner = beginTransition('route');
     const previous = this.active;
@@ -660,6 +713,7 @@ export class RouteTransitions {
       committed: false,
       rendered: false,
       late: false,
+      relay: relay !== undefined,
       cancelled: false,
       owner,
       names: new Map(),
@@ -677,6 +731,10 @@ export class RouteTransitions {
       this.cancel(nav);
     });
     window.dispatchEvent(new Event('yggdrasil:navigation-start'));
+    if (relay) {
+      this.relayFrom(nav, relay);
+      return;
+    }
     const animate =
       page(entry.url) !== page(this.displayed) &&
       typeof document.startViewTransition === 'function' &&
@@ -710,29 +768,87 @@ export class RouteTransitions {
       }
     }
     try {
+      nav.phase = 'capture';
       const vt = document.startViewTransition(async () => {
         if (!owner.isCurrent() || nav.cancelled) return;
+        nav.phase = 'update';
         this.commit(nav);
         await this.waitForDestination(nav);
       });
       nav.vt = vt;
       owner.attach(vt);
       void vt.ready.then(
-        () => this.slidePill(nav),
-        () => {},
+        () => {
+          if (!nav.cancelled && !nav.late) {
+            nav.phase = 'animate';
+            this.slidePill(nav);
+          }
+          this.flushQueued();
+        },
+        () => {
+          if (!nav.cancelled) nav.phase = undefined;
+          this.flushQueued();
+        },
       );
       void vt.updateCallbackDone?.catch(() => {});
-      void vt.finished.then(
-        () => this.finish(nav),
-        () => this.finish(nav),
-      );
+      const done = () => {
+        if (!nav.cancelled) nav.phase = undefined;
+        this.finish(nav);
+      };
+      void vt.finished.then(done, done);
     } catch {
+      nav.phase = undefined;
       this.cleanNames(nav);
       document.documentElement.classList.remove('is-route-transitioning');
       this.commit(nav);
       this.startScrollRestoration(nav);
       owner.finish();
     }
+  }
+
+  /** Continue `from`'s native transition: its new snapshot is live, so the page swaps inside it. */
+  private relayFrom(nav: Navigation, from: Navigation): void {
+    const vt = from.vt as ViewTransition;
+    from.cancelled = true;
+    from.phase = undefined;
+    for (const cleanup of from.imageCleanups.splice(0)) cleanup();
+    // Snapshot names must persist until the native animation ends; this navigation restores them.
+    nav.names = from.names;
+    from.names = new Map();
+    nav.vt = vt;
+    nav.phase = 'animate';
+    nav.owner.attach(vt);
+    const pill = document.querySelector<HTMLElement>(NAV_PILL);
+    nav.pill = {
+      from: pill?.getBoundingClientRect(),
+      href: pill?.closest('.nav-item')?.getAttribute('href') ?? undefined,
+      source: pill,
+    };
+    const done = () => {
+      if (!nav.cancelled) nav.phase = undefined;
+      this.finish(nav);
+    };
+    void vt.finished.then(done, done);
+    // 旧页面要一直显示到新路由渲染：保留进场抑制，否则它会重播进场、先闪空一下。
+    const handled = document.querySelector<HTMLElement>('[data-vt-enter-handled]');
+    this.commit(nav);
+    if (handled) markPageEntryHandled(handled);
+    // The header usually switches its pill before the next frame; rendered() retries otherwise.
+    requestAnimationFrame(() => this.slidePill(nav));
+    window.setTimeout(
+      () => {
+        if (!nav.cancelled && !nav.rendered && this.navigation === nav) this.defer(nav);
+      },
+      Math.max(0, nav.deadline - performance.now()),
+    );
+  }
+
+  private flushQueued(): void {
+    const queued = this.queued;
+    if (!queued || this.navigation?.phase === 'update') return;
+    this.queued = undefined;
+    this.intent = queued.intent;
+    this.request(queued.route, queued.kind);
   }
 
   private commit(nav: Navigation): void {
@@ -865,7 +981,11 @@ export class RouteTransitions {
 
   private defer(nav: Navigation): void {
     nav.late = true;
+    nav.phase = undefined;
     document.documentElement.classList.add(PENDING_CLASS);
+    // 接力时保留的进场抑制撤掉：旧正文淡出后，迟到的新页面照常进场。
+    if (nav.relay)
+      document.querySelector('[data-vt-enter-handled]')?.removeAttribute('data-vt-enter-handled');
     // 新快照只会是旧页面：跳过动画，恢复实时渲染，让旧正文按 CSS 淡出。
     nav.vt?.skipTransition();
   }
@@ -941,6 +1061,10 @@ export class RouteTransitions {
     const state = nav.pill;
     if (!state || nav.cancelled || this.navigation !== nav) return;
     const pill = document.querySelector<HTMLElement>(NAV_PILL);
+    // Relay: the header has not switched sections yet; retry on the next call.
+    if (state.source !== undefined && pill === state.source) return;
+    // One slide per navigation: late and relayed destinations may render repeatedly.
+    nav.pill = undefined;
     const motion = getComputedStyle(document.documentElement);
     // The destination has no pill (entering /search): fade out the old one.
     if (!pill) {
@@ -1040,6 +1164,7 @@ export class RouteTransitions {
   private cancel(nav: Navigation): void {
     if (nav.cancelled) return;
     nav.cancelled = true;
+    nav.phase = undefined;
     nav.vt?.skipTransition();
     nav.release?.();
     this.cleanNames(nav);

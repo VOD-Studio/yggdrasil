@@ -645,6 +645,111 @@ describe('section navigation', () => {
   });
 });
 
+describe('navigation while a transition is in flight', () => {
+  const pending = () => document.documentElement.classList.contains('is-route-pending');
+  const playArchives = async (): Promise<void> => {
+    routes.push('/archives');
+    await native[0].invoke();
+    await flush();
+    autoRender = false;
+  };
+
+  it('relays into the playing animation instead of skipping and recapturing it', async () => {
+    await playArchives();
+    routes.push('/friends');
+    expect(native).toHaveLength(1);
+    expect(native[0].skip).not.toHaveBeenCalled();
+    expect(routes.currentRoute()).toBe('/friends');
+    expect(location.pathname).toBe('/friends');
+    // The page still on screen must not replay its entrance (blank flash) before the swap.
+    expect(
+      document.querySelector('[data-vt-route="/archives"]')!.hasAttribute('data-vt-enter-handled'),
+    ).toBe(true);
+    render();
+    // The relayed animation keeps its section styling until it ends.
+    expect(document.documentElement.dataset.vtSection).toBe('forward');
+    await finish(0);
+    expect(document.documentElement.classList.contains('is-route-transitioning')).toBe(false);
+    expect(document.documentElement.dataset.vtSection).toBeUndefined();
+    expect(notify).toHaveBeenCalledTimes(2);
+  });
+
+  it('fades the old page when the relayed destination misses the budget', async () => {
+    await playArchives();
+    routes.push('/friends');
+    await vi.advanceTimersByTimeAsync(299);
+    expect(pending()).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(pending()).toBe(true);
+    expect(native[0].skip).toHaveBeenCalledOnce();
+    // The late destination enters normally after the fade.
+    expect(document.querySelector('[data-vt-enter-handled]')).toBeNull();
+    render();
+    expect(pending()).toBe(false);
+  });
+
+  it('holds navigation requested while the browser waits for the previous page, then relays it', async () => {
+    autoRender = false;
+    routes.push('/archives');
+    const update = native[0].invoke();
+    await flush();
+    routes.push('/about');
+    routes.push('/friends');
+    expect(native[0].skip).not.toHaveBeenCalled();
+    expect(routes.currentRoute()).toBe('/archives');
+    render();
+    await update;
+    await flush();
+    expect(native).toHaveLength(1);
+    expect(routes.currentRoute()).toBe('/friends');
+    expect(notify).toHaveBeenCalledTimes(2);
+  });
+
+  it('drops a held request when a newer history navigation starts', async () => {
+    const home = history.state;
+    autoRender = false;
+    routes.push('/archives');
+    const update = native[0].invoke();
+    await flush();
+    routes.push('/friends');
+    history.replaceState(home, '', '/');
+    window.dispatchEvent(new PopStateEvent('popstate', { state: home }));
+    render();
+    await update;
+    const back = native[1].invoke();
+    await flush();
+    render();
+    await back;
+    await flush();
+    expect(routes.currentRoute()).toBe('/');
+  });
+
+  it('recovers shell link clicks that the transition hit-tests to <html>', async () => {
+    autoRender = false;
+    routes.push('/archives');
+    const update = native[0].invoke();
+    await flush();
+    document.body.insertAdjacentHTML(
+      'afterbegin',
+      '<header data-vt-shell="frontend-header"><a href="/friends">友链</a></header>',
+    );
+    vi.spyOn(document.querySelector('header a')!, 'getBoundingClientRect').mockReturnValue(
+      new DOMRect(600, 12, 64, 30),
+    );
+    // dispatchEvent is false once the coordinator takes the click over.
+    const press = (clientX: number, clientY: number) =>
+      document.documentElement.dispatchEvent(
+        new MouseEvent('click', { bubbles: true, cancelable: true, button: 0, clientX, clientY }),
+      );
+    expect(press(10, 400)).toBe(true);
+    expect(press(620, 20)).toBe(false);
+    render();
+    await update;
+    await flush();
+    expect(routes.currentRoute()).toBe('/friends');
+  });
+});
+
 describe('shared article snapshots', () => {
   it('intercepts a bubbling in-site link click, prevents the default and pushes', async () => {
     render(`<main data-vt-list>${post()}</main>`);
