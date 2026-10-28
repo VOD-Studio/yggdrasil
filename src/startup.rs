@@ -368,7 +368,9 @@ fn leptos_options() -> LeptosOptions {
 /// 校验前端产物与服务端二进制配套：`hash.txt`（与可执行文件同目录）指向的
 /// 脚本、WASM 与分包清单必须在 `<site_root>/pkg/` 下真实存在，缺失即拒绝启动，
 /// 不静默拼出混合版本。debug 与 release 都执行。
-fn validate_site_assets(options: &LeptosOptions) {
+///
+/// 返回入口是否已按内容重命名（hash.txt 的 `entry: content-addressed`，由发布装配写入）。
+fn validate_site_assets(options: &LeptosOptions) -> bool {
     let hash_path = exe_dir().join("hash.txt");
     let hashes = std::fs::read_to_string(&hash_path).unwrap_or_else(|_| {
         panic!(
@@ -377,7 +379,7 @@ fn validate_site_assets(options: &LeptosOptions) {
         )
     });
 
-    let (mut js, mut wasm, mut manifest) = (None, None, None);
+    let (mut js, mut wasm, mut manifest, mut entry_content_addressed) = (None, None, None, false);
     for line in hashes.lines() {
         if let Some((key, value)) = line.trim().split_once(':') {
             let value = value.trim().to_string();
@@ -385,6 +387,7 @@ fn validate_site_assets(options: &LeptosOptions) {
                 "js" => js = Some(value),
                 "wasm" => wasm = Some(value),
                 "manifest" => manifest = Some(value),
+                "entry" => entry_content_addressed = value == "content-addressed",
                 _ => {}
             }
         }
@@ -420,6 +423,7 @@ fn validate_site_assets(options: &LeptosOptions) {
     if !missing.is_empty() {
         panic!("前端产物缺失：{missing:?}——前端产物与服务端二进制不配套，拒绝启动");
     }
+    entry_content_addressed
 }
 
 /// 未匹配任何路由的请求：先查站点目录里的静态文件（带 `.br` 预压缩协商），
@@ -464,7 +468,7 @@ fn build_router(options: ServerOptions) -> axum::Router {
     use tower_http::timeout::TimeoutLayer;
 
     let leptos_opts = leptos_options();
-    validate_site_assets(&leptos_opts);
+    let entry_content_addressed = validate_site_assets(&leptos_opts);
     init_cache_namespace("leptos");
 
     spawn_background_tasks_once();
@@ -591,7 +595,9 @@ fn build_router(options: ServerOptions) -> axum::Router {
             crate::middleware::ssr_generation_middleware,
         ))
         .layer(axum::middleware::from_fn(
-            crate::middleware::add_cache_control,
+            move |req: axum::extract::Request, next: axum::middleware::Next| {
+                crate::middleware::add_cache_control(entry_content_addressed, req, next)
+            },
         ))
         .layer(axum::middleware::from_fn(crate::api::csrf::csrf_middleware));
     let compression = crate::middleware::compression_layer_from_env();

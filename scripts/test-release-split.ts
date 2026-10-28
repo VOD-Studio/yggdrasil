@@ -16,6 +16,9 @@ const RELEASE_OUT = path.resolve(ROOT, process.env.RELEASE_OUT || 'target/releas
 const SITE = path.join(RELEASE_OUT, 'public');
 const SERVER_BIN = path.join(RELEASE_OUT, 'server');
 const SIZE_LIMIT = 594603;
+// 合并补丁版 wasm-split 下公开路由直开约 20–70 个 .wasm，原版 120–380 个；超出说明构建
+// 用了未打补丁的 cargo-leptos（见 Makefile 的 CARGO_LEPTOS_INSTALL）。
+const WASM_FILE_LIMIT = 150;
 const SIZE_ROUTES = [
   '/',
   '/post/split-a',
@@ -302,6 +305,33 @@ async function main() {
       '3 文章 SSR：200 且 <head> 含文章标题',
       first.status === 200 && /<title>[^<]*拆分验收 A/.test(head),
     );
+    // 分包 preload 会和 CSS 抢带宽（docs/首屏性能实测-2026-10-28.md）：只保留主包本身的
+    // preload 与加载器的 modulepreload。首页 SSR 期间调用了懒加载取数函数，以前会展开数百条。
+    const homeBody = await (await fetch(`${base}/`)).text();
+    for (const [route, routeHead] of [
+      ['/', homeBody.slice(0, homeBody.indexOf('</head>'))],
+      ['/post/split-a', head],
+    ]) {
+      const wasmPreloads = routeHead.match(/<link[^>]*type="application\/wasm"[^>]*>/g) ?? [];
+      check(
+        `3 ${route} 头部只 preload 主包 wasm，不展开分包`,
+        wasmPreloads.length === 1 && wasmPreloads[0].includes(mainWasm),
+        `${wasmPreloads.length} 条`,
+      );
+      check(
+        `3 ${route} 头部 modulepreload 分包加载器`,
+        routeHead.includes(`<link rel="modulepreload" href="/pkg/__wasm_split.${hashes.split}.js"`),
+      );
+    }
+    for (const entry of [mainWasm, `/pkg/yggdrasil.${hashes.js}.js`]) {
+      const r = await fetch(`${base}${entry}`);
+      await r.arrayBuffer();
+      check(
+        `3 内容寻址入口 ${entry} 为 immutable`,
+        r.status === 200 && (r.headers.get('cache-control') || '').includes('immutable'),
+        `status=${r.status} cache-control=${r.headers.get('cache-control')}`,
+      );
+    }
     const missing = await fetch(`${base}/post/no-such`);
     await missing.text();
     check('3 未知文章返回 404', missing.status === 404, `status=${missing.status}`);
@@ -402,6 +432,11 @@ async function main() {
         `6 体积 ${route} ≤ ${SIZE_LIMIT}`,
         info.brotli_bytes <= SIZE_LIMIT,
         `${info.brotli_bytes} B；${info.files.join(', ')}`,
+      );
+      check(
+        `6 分包数 ${route} ≤ ${WASM_FILE_LIMIT}`,
+        info.files.length <= WASM_FILE_LIMIT,
+        `${info.files.length} 个 .wasm`,
       );
     }
   }

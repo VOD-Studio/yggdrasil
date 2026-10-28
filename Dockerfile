@@ -115,8 +115,14 @@ RUN ARCH="$(dpkg --print-architecture)" \
     && curl -fsSL -o /usr/local/bin/tailwindcss "${GH_URL}" \
     && chmod +x /usr/local/bin/tailwindcss
 
-# --- cargo-leptos: 前端构建（wasm-bindgen、分包、CSS）。独立层，便于缓存。 ---
-RUN cargo install cargo-leptos --version 0.3.11 --locked
+# --- cargo-leptos: 前端构建（wasm-bindgen、分包、CSS）。独立层，便于缓存。
+# wasm_split_cli_support 换成分包合并补丁版（原因见 Makefile 的 CARGO_LEPTOS_INSTALL），
+# rev 与 Makefile 的 WASM_SPLIT_REV 保持一致。 ---
+ARG WASM_SPLIT_REV=8ca741dd3c1ca52231b6b8ec4bed23955e376cbd
+RUN if [ "$CN_MIRROR" = "true" ]; then GH_PX="${GH_PROXY}"; else GH_PX=""; fi \
+    && cargo install cargo-leptos --version 0.3.11 --locked \
+        --config "patch.crates-io.wasm_split_cli_support.git=\"${GH_PX:+${GH_PX}/}https://github.com/VOD-Studio/wasm-split-prototype\"" \
+        --config "patch.crates-io.wasm_split_cli_support.rev=\"${WASM_SPLIT_REV}\""
 
 # --- cargo-chef: 用于把 Rust 依赖编译与源码编译分离成独立的 Docker 层。
 # 改一行 .rs 不再触发 576 个依赖的全量重编。CI 端用 GHA cache (type=gha)

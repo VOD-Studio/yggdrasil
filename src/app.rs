@@ -72,13 +72,36 @@ pub fn shell(options: LeptosOptions) -> impl IntoView {
                 <script src="/yggdrasil-core/yggdrasil-core.js?v=9"></script>
                 <ThemePreload/>
                 <AutoReload options=options.clone()/>
-                <HydrationScripts options/>
+                <HydrationScriptsWithoutSplitPreload options/>
                 <MetaTags/>
             </head>
             <body>
                 <App/>
             </body>
         </html>
+    }
+}
+
+/// 水合脚本，不输出 WASM 分包 preload。
+///
+/// `HydrationScripts` 把分包清单放进上下文，`leptos_integration_utils` 据此为 SSR 期间调用过的
+/// 每个 lazy fn 展开清单里的全部分包 `<link rel="preload" as="fetch">`，且不去重（首页 360 余条）。
+/// 实测弱网下它们与 CSS 抢带宽，移动端 FCP 慢 0.5–2.5 s，水合并不更快（见
+/// `docs/首屏性能实测-2026-10-28.md`）。这里在 `HydrationScripts` 之后立即取走清单，分包改由
+/// 加载器按需请求；加载器 `__wasm_split.*.js` 在主入口的静态导入链上，单独 modulepreload。
+#[component]
+fn HydrationScriptsWithoutSplitPreload(options: LeptosOptions) -> impl IntoView {
+    let scripts = view! { <HydrationScripts options/> };
+    let loader =
+        leptos::reactive::owner::take_context::<leptos::WasmSplitManifest>().and_then(|manifest| {
+            manifest
+                .0
+                .try_read_value()
+                .map(|value| format!("{}/{}", value.0, value.2))
+        });
+    view! {
+        {scripts}
+        {loader.map(|href| view! { <link rel="modulepreload" href=href/> })}
     }
 }
 

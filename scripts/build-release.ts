@@ -21,6 +21,10 @@ import { execSync } from 'node:child_process';
  * cargo-leptos 0.3.11 随后改写分包加载器引用时对短于文件名的 .wasm 下标越界而崩溃。
  * 剥离是确定性的，cargo-leptos 给出的内容哈希文件名仍与内容一一对应。
  *
+ * 装配时还会按最终内容重命名入口三件套 `yggdrasil.<h>.js`、`yggdrasil.<h>.wasm` 与
+ * `__wasm_split.<h>.js`，并在 hash.txt 写入 `entry: content-addressed`，服务端据此给入口
+ * immutable 缓存头（原因见 contentAddressEntries）。
+ *
  * 用法：
  *   bun scripts/build-release.ts --out target/release-dist --server target/release/yggdrasil
  *   bun scripts/build-release.ts --verify --out target/release-dist
@@ -111,6 +115,103 @@ function stripCustomSections(buf: Buffer) {
   return Buffer.concat(kept);
 }
 
+/** 把 buf 中所有 from 原地替换为等长的 to，返回替换次数。 */
+function replaceEqualLength(buf: Buffer, from: string, to: string) {
+  const needle = Buffer.from(from);
+  const replacement = Buffer.from(to);
+  if (needle.length !== replacement.length) throw new Error(`替换前后长度不同：${from} → ${to}`);
+  let count = 0;
+  for (let at = buf.indexOf(needle); at >= 0; at = buf.indexOf(needle, at + needle.length)) {
+    replacement.copy(buf, at);
+    count++;
+  }
+  return count;
+}
+
+/** 入口三件套的哈希段（hash.txt 的 js / wasm / split 行）。 */
+type EntryHashes = { js: string; wasm: string; split: string };
+
+const entryFiles = (h: EntryHashes) => ({
+  js: `yggdrasil.${h.js}.js`,
+  wasm: `yggdrasil.${h.wasm}.wasm`,
+  split: `__wasm_split.${h.split}.js`,
+});
+
+/**
+ * 由入口三件套的内容推出新的哈希段；与文件当前叫什么无关，对已重命名的产物再算一次结果不变。
+ *
+ * 三者互相引用：入口 JS 与入口 wasm 引用加载器文件名，加载器静态导入入口 JS。先把这些引用
+ * 换成等长占位符再合并求摘要，三个新名字都由同一摘要派生，任一文件变化则三个名字一起变。
+ * 新哈希与 cargo-leptos 一样取 22 位 base64url，wasm 中的加载器名可以原地等长替换。
+ */
+function entryContentHashes(pkgDir: string, current: EntryHashes): EntryHashes {
+  const names = entryFiles(current);
+  const blank = (name: string) => '#'.repeat(name.length);
+  const js = readFileSync(join(pkgDir, names.js));
+  const wasm = readFileSync(join(pkgDir, names.wasm));
+  const split = readFileSync(join(pkgDir, names.split));
+  const refs = [
+    ['入口 JS 引用加载器', replaceEqualLength(js, names.split, blank(names.split))],
+    ['入口 wasm 引用加载器', replaceEqualLength(wasm, names.split, blank(names.split))],
+    ['加载器导入入口 JS', replaceEqualLength(split, names.js, blank(names.js))],
+  ] as const;
+  for (const [what, count] of refs) {
+    if (count === 0) throw new Error(`${what}的文件名没找到，cargo-leptos 产物结构变了`);
+  }
+  const digest = createHash('sha256');
+  for (const [label, buf] of [
+    ['js', js],
+    ['wasm', wasm],
+    ['split', split],
+  ] as const) {
+    digest.update(`${label}\0${buf.length}\0`).update(buf);
+  }
+  const root = digest.digest();
+  const derive = (label: string) =>
+    createHash('sha256').update(label).update(root).digest('base64url').slice(0, 22);
+  return { js: derive('js'), wasm: derive('wasm'), split: derive('split') };
+}
+
+/**
+ * 按最终内容重命名入口三件套并改写 hash.txt。
+ *
+ * cargo-leptos 先按内容给入口改名，之后才把加载器文件名写进入口；只改懒加载代码的发布
+ * 会出现「入口同名不同内容」，入口因此只能 no-cache。EdgeOne 不缓存 no-cache 资源，也不把
+ * 条件请求转给源站，回访每页都要整包重下主 wasm。内容寻址之后入口可以与分包一样 immutable。
+ */
+function contentAddressEntries(pkgDir: string, hashTxtPath: string) {
+  const text = readFileSync(hashTxtPath, 'utf8');
+  const parsed = parseHashTxt(text);
+  if (!parsed.js || !parsed.wasm || !parsed.split) {
+    throw new Error('hash.txt 缺少 js / wasm / split 行，无法给入口内容寻址');
+  }
+  const current: EntryHashes = { js: parsed.js, wasm: parsed.wasm, split: parsed.split };
+  const next = entryContentHashes(pkgDir, current);
+  const from = entryFiles(current);
+  const to = entryFiles(next);
+
+  const js = readFileSync(join(pkgDir, from.js));
+  const wasm = readFileSync(join(pkgDir, from.wasm));
+  const split = readFileSync(join(pkgDir, from.split));
+  replaceEqualLength(js, from.split, to.split);
+  replaceEqualLength(wasm, from.split, to.split);
+  replaceEqualLength(split, from.js, to.js);
+  for (const key of ['js', 'wasm', 'split'] as const) rmSync(join(pkgDir, from[key]));
+  writeFileSync(join(pkgDir, to.js), js);
+  writeFileSync(join(pkgDir, to.wasm), wasm);
+  writeFileSync(join(pkgDir, to.split), split);
+
+  const lines = text
+    .split('\n')
+    .filter((line) => line.trim() !== '' && !/^\s*entry\s*:/.test(line))
+    .map((line) => {
+      const key = line.slice(0, line.indexOf(':')).trim();
+      return key === 'js' || key === 'wasm' || key === 'split' ? `${key}: ${next[key]}` : line;
+    });
+  writeFileSync(hashTxtPath, [...lines, 'entry: content-addressed', ''].join('\n'));
+  return { from, to };
+}
+
 function walk(dir: string, base = dir, acc: string[] = []) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const p = join(dir, entry.name);
@@ -145,6 +246,7 @@ const hashFields = (h: Record<string, string>) => ({
   css: h.css ?? null,
   manifest: h.manifest ?? null,
   split: h.split ?? null,
+  entry: h.entry ?? null,
 });
 
 if (VERIFY) {
@@ -194,6 +296,19 @@ if (VERIFY) {
   else need(`yggdrasil.${hashes.wasm}.wasm`, 'hash.txt wasm 行指向的产物');
   if (hashes.css) need(`yggdrasil.${hashes.css}.css`, 'hash.txt css 行指向的产物');
   if (hashes.split) need(`__wasm_split.${hashes.split}.js`, 'hash.txt split 行指向的产物');
+  if (hashes.entry !== 'content-addressed') {
+    fail('hash.txt 缺少 entry: content-addressed（入口未按内容重命名）');
+  } else if (hashes.js && hashes.wasm && hashes.split) {
+    const current = { js: hashes.js, wasm: hashes.wasm, split: hashes.split };
+    try {
+      const expected = entryContentHashes(pkgDir, current);
+      if (JSON.stringify(expected) !== JSON.stringify(current)) {
+        fail(`入口文件名与内容不符：期望 ${JSON.stringify(expected)}`);
+      }
+    } catch (error) {
+      fail(`入口内容寻址校验失败：${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
   if (hashes.manifest) {
     const rel = `__wasm_split_manifest.${hashes.manifest}.json`;
     need(rel, 'hash.txt manifest 行指向的产物');
@@ -289,6 +404,7 @@ try {
       strippedBytes += buf.length - out.length;
     }
   }
+  const entries = contentAddressEntries(pkgDir, join(staging, 'hash.txt'));
   const assets = walk(pkgDir)
     .filter((rel) => !rel.endsWith('.br'))
     .map((rel) => {
@@ -297,7 +413,7 @@ try {
     })
     .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 
-  const hashFile = parseHashTxt(readFileSync(HASH, 'utf8'));
+  const hashFile = parseHashTxt(readFileSync(join(staging, 'hash.txt'), 'utf8'));
   const cargoLock = readFileSync(join(ROOT, 'Cargo.lock'));
   const manifestOut = {
     release_id: sh('git describe --tags --always --dirty') || 'unknown',
@@ -328,6 +444,7 @@ try {
   console.log(
     `发布装配完成：${assets.length} 个 pkg 资产 → ${relative(ROOT, join(OUT, 'public'))}` +
       `（剥离 wasm 自定义段 ${strippedBytes} B）\n` +
+      `  入口内容寻址：${entries.to.js}、${entries.to.wasm}、${entries.to.split}\n` +
       `  hash.txt${SERVER ? '、server' : ''} 已就位；清单 release-manifest.json (${manifestOut.release_id})`,
   );
 } finally {

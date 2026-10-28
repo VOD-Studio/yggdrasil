@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+首屏与回访加载优化：HTML 不再附带数百条 WASM 分包预载，入口按内容命名后可以长期缓存，分包数量减少 3–5 倍。实测与对照数据见 `docs/首屏性能实测-2026-10-28.md`。
+
+### Changed
+
+- **HTML 不再预载 WASM 分包**：Leptos 会为服务端渲染时调用过的每个懒加载取数函数展开全部分包 `<link rel="preload">`，且不去重，首页 `<head>` 里有 363 条。弱网下它们与 CSS 抢带宽，移动端首次绘制慢 0.5–2.5 秒，水合并不更快。现在只预载主包和分包加载器，其余分包由加载器按需请求。
+- **入口 JS / WASM 可长期缓存**：发布装配按入口 JS、主 WASM 与分包加载器三者的最终内容重新命名它们，并在 `hash.txt` 写入 `entry: content-addressed`；带该标记时，服务端对入口返回 `immutable`。此前入口只能 `no-cache`，而 EdgeOne 不缓存 `no-cache` 资源，也不把条件请求转给源站，回访每打开一页都要整包重下 317 KB 的主 WASM。未经发布装配的 dev 与回归构建，入口仍每次校验。
+- **WASM 分包数量减少 3–5 倍**：release 前端改用打了分包合并补丁的 cargo-leptos 0.3.11（`wasm_split_cli_support` 换成 `VOD-Studio/wasm-split-prototype` 的 `ygg/chunk-merge` 分支）。原版按「需要它的分包集合」逐一切出共享分包，59 个懒加载点切出 1121 个共享分包，半数不到 200 字节，打开一篇文章要请求 379 个 `.wasm`。补丁把合并后收益为正的小分包贪心合并，共享分包降到 262 个，文章页降到 70 个 `.wasm`，各路由首屏 WASM 总量基本不变（文章页少 31 KB）。在模拟移动网络（1.6 Mbps、150 ms、CPU 降速 4 倍）下，水合完成提前 0.3–2.2 秒。`make install-cargo-leptos` 安装补丁版；release 前端构建会检查，`test-release-split` 增加每条路由不超过 150 个 `.wasm` 的门槛。
+
 ## [1.1.1] - 2026-10-28
 
 生产环境改为 xun 主、rua 热备的双机主备部署：CI 按节点角色部署，补齐运维文档与线上脚本。v1.1.0 的发版流水线中途取消、未部署，本版本一并上线 v1.1.0 的全部改动。

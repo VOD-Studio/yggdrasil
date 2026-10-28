@@ -137,9 +137,13 @@ fn is_hashed_pkg_file(path: &str) -> bool {
 
 /// 根据请求路径和方法决定公开页面的 Cache-Control 头。
 /// 返回 None 表示不添加缓存头（保留现有行为或避免覆盖）。
+///
+/// `entry_content_addressed`：hash.txt 是否带 `entry: content-addressed`（见
+/// `scripts/build-release.ts` 的 contentAddressEntries），决定入口文件能否 immutable。
 pub(crate) fn cache_control_for_path(
     path: &str,
     method: &axum::http::Method,
+    entry_content_addressed: bool,
 ) -> Option<axum::http::HeaderValue> {
     use axum::http::{HeaderValue, Method};
 
@@ -170,12 +174,13 @@ pub(crate) fn cache_control_for_path(
     // /pkg/ 下 cargo-leptos 产物：文件名带内容哈希（`<name>.<22 位哈希>.<扩展名>`）的永不变化，
     // 可长期缓存；其余（固定文件名）随部署变化。
     //
-    // 例外是入口 `yggdrasil.<哈希>.{js,wasm}`：cargo-leptos 先按内容算哈希改名，之后才把
-    // 分包加载器 `__wasm_split.<哈希>.js` 的文件名写进这两个文件。只改了懒加载代码的发布
-    // 会换掉加载器文件名，入口文件名却不变；若入口 immutable，回访浏览器会一直用旧入口去
-    // 请求已删除的旧加载器，整页无法水合。入口每次校验（304），分包与加载器本身仍 immutable。
+    // 入口 `yggdrasil.<哈希>.{js,wasm}` 只有发布装配按最终内容重命名后才 immutable：cargo-leptos
+    // 先按内容算哈希改名，之后才把分包加载器 `__wasm_split.<哈希>.js` 的文件名写进入口。未经装配
+    // 的产物（dev、回归构建）里，只改懒加载代码会换掉加载器文件名而入口同名；入口若 immutable，
+    // 回访浏览器会一直用旧入口去请求已删除的旧加载器，整页无法水合，所以仍每次校验。
     if path.starts_with("/pkg/") {
-        let immutable = is_hashed_pkg_file(path) && !path.starts_with(PKG_ENTRY_PREFIX);
+        let immutable = is_hashed_pkg_file(path)
+            && (entry_content_addressed || !path.starts_with(PKG_ENTRY_PREFIX));
         return Some(HeaderValue::from_static(if immutable {
             "public, max-age=31536000, immutable"
         } else {
@@ -196,13 +201,14 @@ pub(crate) fn cache_control_for_path(
 
 /// Axum 中间件：为公开页面和静态资源附加 Cache-Control 头。
 pub(crate) async fn add_cache_control(
+    entry_content_addressed: bool,
     req: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> axum::response::Response {
     use axum::http::header;
 
     let path = req.uri().path().to_string();
-    let cache_value = cache_control_for_path(&path, req.method());
+    let cache_value = cache_control_for_path(&path, req.method(), entry_content_addressed);
 
     let mut response = next.run(req).await;
 
@@ -515,7 +521,7 @@ mod tests {
     }
 
     fn cache_value(path: &str, method: Method) -> Option<String> {
-        cache_control_for_path(path, &method).map(|v| v.to_str().unwrap().to_string())
+        cache_control_for_path(path, &method, false).map(|v| v.to_str().unwrap().to_string())
     }
 
     #[test]
@@ -591,8 +597,8 @@ mod tests {
                 );
             }
         }
-        // 入口文件名不随内嵌的加载器文件名变化，必须校验；哈希长度不对或缺少哈希段的
-        // /pkg/ 文件同样需要校验。
+        // 未经发布装配的入口文件名不随内嵌的加载器文件名变化，必须校验；哈希长度不对或缺少
+        // 哈希段的 /pkg/ 文件同样需要校验。
         for path in [
             "/pkg/yggdrasil.AbCdEfGhIjKlMnOpQrStUv.wasm",
             "/pkg/yggdrasil.AbCdEfGhIjKlMnOpQrStUv.js",
@@ -606,6 +612,28 @@ mod tests {
                 Some("public, no-cache"),
                 "{path}"
             );
+        }
+    }
+
+    #[test]
+    fn content_addressed_entries_are_immutable() {
+        let value = |path: &str| {
+            cache_control_for_path(path, &Method::GET, true).map(|v| v.to_str().unwrap().to_owned())
+        };
+        for path in [
+            "/pkg/yggdrasil.AbCdEfGhIjKlMnOpQrStUv.wasm",
+            "/pkg/yggdrasil.AbCdEfGhIjKlMnOpQrStUv.js",
+            "/pkg/chunk_12.AbCdEfGhIjKlMnOpQrStUv.wasm",
+        ] {
+            assert_eq!(
+                value(path).as_deref(),
+                Some("public, max-age=31536000, immutable"),
+                "{path}"
+            );
+        }
+        // 内容寻址只改变入口的判定，未带哈希的文件仍需校验。
+        for path in ["/pkg/yggdrasil.wasm", "/pkg/__wasm_split_manifest.json"] {
+            assert_eq!(value(path).as_deref(), Some("public, no-cache"), "{path}");
         }
     }
 

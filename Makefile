@@ -5,8 +5,8 @@
 #   mk/docker.mk    镜像构建、Docker 开发环境、lint/test/fmt 工具容器
 include mk/assets.mk mk/docker.mk
 
-.PHONY: help build build-linux build-frontend wasm-toolchain precompress
-.PHONY: check-dev-tools check-build-tools check-brotli check-wasm-toolchain
+.PHONY: help build build-linux build-frontend wasm-toolchain install-cargo-leptos precompress
+.PHONY: check-dev-tools check-build-tools check-brotli check-wasm-toolchain check-chunk-merge
 .PHONY: dev test lint fmt fix doc doc-open clean
 
 # ── 配置 ───────────────────────────────────────────────────────
@@ -24,6 +24,16 @@ WASM_NIGHTLY := nightly-2026-10-19
 RELEASE_OUT ?= target/release-dist
 LEPTOS_WASM_ENV := RUSTUP_TOOLCHAIN=$(WASM_NIGHTLY) CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS='--cfg getrandom_backend="wasm_js" -Zunstable-options -Cpanic=immediate-abort'
 LEPTOS_WASM_ARGS := --lib-cargo-args=-Zbuild-std=std,panic_abort --lib-cargo-args=-Zbuild-std-features=optimize_for_size
+
+# cargo-leptos 0.3.11，其中的 wasm_split_cli_support 换成 VOD-Studio/wasm-split-prototype 的
+# ygg/chunk-merge 分支：原版按「需要它的分包集合」逐一切出共享分包，59 个懒加载点切出上千个
+# 几百字节的分包，一页要请求几百个；补丁把收益为正的小分包合并，单页 WASM 请求减少 3–5 倍，
+# 移动端水合快 0.3–2 s。二进制里带 WASM_SPLIT_CHUNK_LOAD_COST 字样即为补丁版。
+# 两个 Dockerfile 与 CI 用同一 rev，升级时同步修改。
+WASM_SPLIT_REV := 8ca741dd3c1ca52231b6b8ec4bed23955e376cbd
+CARGO_LEPTOS_INSTALL := cargo install cargo-leptos --version 0.3.11 --locked \
+	--config 'patch.crates-io.wasm_split_cli_support.git="https://github.com/VOD-Studio/wasm-split-prototype"' \
+	--config 'patch.crates-io.wasm_split_cli_support.rev="$(WASM_SPLIT_REV)"'
 
 # 裸 `make` 只列出 target，不触发任何构建。
 .DEFAULT_GOAL := help
@@ -49,7 +59,7 @@ check-dev-tools: ## 检查开发所需的宿主工具
 	fi; \
 	if ! command -v cargo-leptos >/dev/null 2>&1 || ! cargo leptos --version 2>/dev/null | grep -q '0\.3\.11'; then \
 		echo "error: cargo-leptos 0.3.11 is required" >&2; \
-		echo "  Install: cargo install cargo-leptos --version 0.3.11 --locked" >&2; \
+		echo "  Install: make install-cargo-leptos" >&2; \
 		missing=1; \
 	fi; \
 	if ! command -v tailwindcss >/dev/null 2>&1; then \
@@ -91,16 +101,28 @@ check-wasm-toolchain:
 		exit 1; \
 	fi
 
+# release 前端必须用分包合并补丁版 cargo-leptos（见 CARGO_LEPTOS_INSTALL）。dev 与回归构建
+# 用原版也能跑，只是分包更碎，因此只在 release 前端构建前检查。
+check-chunk-merge:
+	@if ! grep -aq WASM_SPLIT_CHUNK_LOAD_COST "$$(command -v cargo-leptos)" 2>/dev/null; then \
+		echo "error: release builds need cargo-leptos with the wasm-split chunk-merge patch" >&2; \
+		echo "  Install: make install-cargo-leptos" >&2; \
+		exit 1; \
+	fi
+
 wasm-toolchain: ## 安装 release 构建所需的固定 nightly 工具链
 	@rustup toolchain install $(WASM_NIGHTLY) --profile minimal \
 		--component rust-src --target wasm32-unknown-unknown
+
+install-cargo-leptos: ## 安装带分包合并补丁的 cargo-leptos 0.3.11
+	$(CARGO_LEPTOS_INSTALL)
 
 # ── release 构建 ───────────────────────────────────────────────
 # 流水线：工具检查 → 共享资源与文档 → 分包前端 → 服务端 → 装配 → Brotli → 校验。
 # 资源与文档可并行；配方中的递归 make 等它们全部成功后才开始前端，兼容 make -j。
 # 前端用固定 nightly + build-std + immediate-abort；服务端用 stable。
 
-build-frontend: check-wasm-toolchain ## 构建分包前端（wasm/js/css → target/site）
+build-frontend: check-wasm-toolchain check-chunk-merge ## 构建分包前端（wasm/js/css → target/site）
 	@$(LEPTOS_WASM_ENV) cargo leptos build --release --split --frontend-only $(LEPTOS_WASM_ARGS)
 
 build: RELEASE_SERVER := target/release/yggdrasil
