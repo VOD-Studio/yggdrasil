@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **分享图字体工具统一到 Bun**：字体裁剪改用 `scripts/subset-og-fonts.cjs` 与 HarfBuzz WASM，不再依赖 Python/fontTools；保留 GB 2312 的 6763 个汉字、原有标点范围、字体名称与排版特性，并排除 GBK 解码器额外映射的五个空位。
 - **Bun 构建工具升级**：生产、交叉编译与开发 Docker 镜像统一升级到 Bun 1.4.4，工作区与 CI 同步使用该版本。
 - **前端框架迁移到 Leptos 0.8**：Dioxus 0.7 整体替换为 Leptos 0.8.22 + cargo-leptos（`--split` 路由级 WASM 分包），删除 reader / full 双 flavor：前台、后台、登录与组件图鉴全部是懒加载路由，每条公开路由首屏 Brotli WASM 不超过原 reader 产物体积。站内导航仍由 `yggdrasil-core` 持有 history 与视图过渡。
 - **接口地址不再带哈希后缀**：server function 由 `/api/<name><哈希>` 变为 `/api/<name>`，发布切换瞬间仍开着的旧标签页需要刷新。
