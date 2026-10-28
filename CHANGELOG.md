@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 首屏与回访加载优化：HTML 不再附带数百条 WASM 分包预载，入口按内容命名后可以长期缓存，分包数量减少 3–5 倍。实测与对照数据见 `docs/首屏性能实测-2026-10-28.md`。
 
+### Added
+
+- **本机部署脚本**：`fish scripts/deploy.fish` 在本机用国内镜像源（清华 Debian/Alpine、rsproxy、npmmirror、gh-proxy）构建 amd64 镜像，经 `docker save | ssh podman load` 直传 xun / rua，不经过 GHCR。流程与 CI 部署一致：按 `ROLE` 先部署 primary（重建 app，检查 `/readyz` 与 `x-yggdrasil-hash`，失败自动回滚），primary 成功后再给 standby 预置镜像。支持 `--skip-build`、`--with-runners`、`--only xun|rua`、`--allow-dirty`。
+
 ### Changed
 
 - **HTML 不再预载 WASM 分包**：Leptos 会为服务端渲染时调用过的每个懒加载取数函数展开全部分包 `<link rel="preload">`，且不去重，首页 `<head>` 里有 363 条。弱网下它们与 CSS 抢带宽，移动端首次绘制慢 0.5–2.5 秒，水合并不更快。现在只预载主包和分包加载器，其余分包由加载器按需请求。
