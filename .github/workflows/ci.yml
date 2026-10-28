@@ -1326,3 +1326,40 @@ jobs:
           done
           echo "::error::回滚到 $prev 后 /readyz 仍未就绪"; exit 1
           REMOTE
+
+  # ── prefetch-cdn：新版本接流量后，把线上首页引用的分包、入口与版本化静态资源预热到
+  # EdgeOne 中间层（scripts/edgeone-prefetch.ts）。内容寻址的文件名每次发版都换，不预热时第一批
+  # 访客要逐个回源。只在线上 x-yggdrasil-hash 已是本次 commit 时预热；未配置凭据时跳过。
+  # 所需：repo 变量 EDGEONE_ZONE_ID，secrets TENCENTCLOUD_SECRET_ID / TENCENTCLOUD_SECRET_KEY
+  # （子账号只需 teo:CreatePrefetchTask）。失败不影响已完成的部署。
+  prefetch-cdn:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [deploy-xun, deploy-rua]
+    if: >-
+      !cancelled()
+      && needs.deploy-xun.result == 'success'
+      && vars.EDGEONE_ZONE_ID != ''
+    environment:
+      name: production
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Install Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version-file: libs/package.json
+      - name: Prefetch EdgeOne
+        env:
+          EDGEONE_ZONE_ID: ${{ vars.EDGEONE_ZONE_ID }}
+          TENCENTCLOUD_SECRET_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
+          TENCENTCLOUD_SECRET_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
+          EXPECTED_HASH: ${{ github.sha }}
+        run: |
+          if [[ -z "$TENCENTCLOUD_SECRET_ID" || -z "$TENCENTCLOUD_SECRET_KEY" ]]; then
+            echo "::notice::未配置 TENCENTCLOUD_SECRET_ID/KEY，跳过 EdgeOne 预热"
+            exit 0
+          fi
+          bun scripts/edgeone-prefetch.ts --expect-hash "$EXPECTED_HASH" \
+            || echo "::warning::EdgeOne 预热失败，不影响部署"
