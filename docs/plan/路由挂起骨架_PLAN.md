@@ -4,7 +4,7 @@
 
 `docs/plan/切页挂起淡出_PLAN.md` 已落地：目标页分包超过 300ms 未就绪时，协调器跳过空过渡、给 `<html>` 加 `is-route-pending`，旧正文淡出（`libs/yggdrasil-core/src/style.css:157`）。该计划在「否决方案」末行把「到期时显示目标页骨架屏」留作后续评估，本计划实现它。
 
-现状（慢分包 + 慢数据，`scripts/test-view-transitions.cjs` 的 `delayWasm(page, 1200)` 即此场景）：
+现状（慢分包 + 慢数据，`scripts/test-view-transitions.ts` 的 `delayWasm(page, 1200)` 即此场景）：
 
 | 时间 | 画面 | 来源 |
 |---|---|---|
@@ -392,7 +392,7 @@ cd libs && bun run --sequential --filter '*' test
 
 （JS 未改，Vitest 应全部照旧通过；Biome 若覆盖 CSS，确保无告警。）
 
-### 浏览器回归（`scripts/test-view-transitions.cjs`）
+### 浏览器回归（`scripts/test-view-transitions.ts`）
 
 **必须先改断言**：`chunkLate` 现在采样的是 `main` 自身的 `opacity`（`:404-411,432`），改动后 `main` 不再淡出（子元素淡出），原断言 `frames[detail - 1].opacity <= 0.05` 会失效。
 
@@ -415,10 +415,10 @@ cd libs && bun run --sequential --filter '*' test
 
 ```sh
 make dev   # 另开终端
-VT_BASE=http://localhost:8080 bun scripts/test-view-transitions.cjs chunk
-VT_BASE=http://localhost:8080 bun scripts/test-view-transitions.cjs slow
-VT_BASE=http://localhost:8080 VT_ADMIN_USERNAME=… VT_ADMIN_PASSWORD=… bun scripts/test-view-transitions.cjs admin
-VT_BASE=http://localhost:8080 bun scripts/test-view-transitions.cjs all
+VT_BASE=http://localhost:8080 bun scripts/test-view-transitions.ts chunk
+VT_BASE=http://localhost:8080 bun scripts/test-view-transitions.ts slow
+VT_BASE=http://localhost:8080 VT_ADMIN_USERNAME=… VT_ADMIN_PASSWORD=… bun scripts/test-view-transitions.ts admin
+VT_BASE=http://localhost:8080 bun scripts/test-view-transitions.ts all
 ```
 
 `VT_BASE` 必须与 `APP_BASE_URL` 同源（本机设置为 `http://localhost:8080`；用 `127.0.0.1` 会 CSRF 403）。

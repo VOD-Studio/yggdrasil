@@ -1,26 +1,46 @@
 #!/usr/bin/env bun
 /** Homepage anchor regression against a running development site; no content is written. */
-const assert = require('node:assert/strict');
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
+import assert from 'node:assert/strict';
+import type * as Playwright from 'playwright';
+
+const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright') as typeof Playwright;
 const base = (process.env.VT_BASE || 'http://127.0.0.1:8080').replace(/\/$/, '');
 const output = process.env.HOME_READING_SCREENSHOTS || '/tmp';
 
-async function ready(page) {
-  await page.waitForFunction(() => window.__routeTransitions?.entryId()
-    && document.querySelector('[data-vt-list="true"]')
-    && document.querySelector('a[data-vt-post-link]')
-    && !document.documentElement.classList.contains('is-route-transitioning'));
+type ReadingWindow = Window & {
+  __routeTransitions: {
+    entryId(): string | undefined;
+    navigationId(): number;
+    currentRoute(): string;
+  };
+};
+declare global {
+  interface Window {
+    __homeReadingDocument: number;
+    __homeReadingScrollCalls: (ScrollToOptions | number | undefined)[];
+    __homeReadingSamples: number[];
+  }
+}
+
+async function ready(page: Playwright.Page) {
+  await page.waitForFunction(
+    () =>
+      (window as ReadingWindow).__routeTransitions?.entryId() &&
+      document.querySelector('[data-vt-list="true"]') &&
+      document.querySelector('a[data-vt-post-link]') &&
+      !document.documentElement.classList.contains('is-route-transitioning'),
+  );
   // Let images and the initial reveal finish before measuring the scroll animation.
   await page.waitForTimeout(2200);
 }
 
-async function startReading(page, reduced, keyboard = false) {
+async function startReading(page: Playwright.Page, reduced = false, keyboard = false) {
   await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
   const link = page.locator('.home-status-link');
   if (keyboard) await link.focus();
   const before = await page.evaluate(() => ({
-    entry: window.__routeTransitions.entryId(),
-    navigation: window.__routeTransitions.navigationId(),
+    entry: (window as ReadingWindow).__routeTransitions.entryId(),
+    navigation: (window as ReadingWindow).__routeTransitions.navigationId(),
     history: history.length,
     document: window.__homeReadingDocument,
   }));
@@ -38,15 +58,17 @@ async function startReading(page, reduced, keyboard = false) {
   else await link.click();
   await page.waitForTimeout(1100);
   const after = await page.evaluate(() => {
-    const header = document.querySelector('[data-vt-shell="frontend-header"]').getBoundingClientRect();
-    const posts = document.getElementById('home-posts').getBoundingClientRect();
+    const header = document
+      .querySelector('[data-vt-shell="frontend-header"]')!
+      .getBoundingClientRect();
+    const posts = document.getElementById('home-posts')!.getBoundingClientRect();
     return {
-      entry: window.__routeTransitions.entryId(),
-      navigation: window.__routeTransitions.navigationId(),
+      entry: (window as ReadingWindow).__routeTransitions.entryId(),
+      navigation: (window as ReadingWindow).__routeTransitions.navigationId(),
       history: history.length,
       document: window.__homeReadingDocument,
       hash: location.hash,
-      route: window.__routeTransitions.currentRoute(),
+      route: (window as ReadingWindow).__routeTransitions.currentRoute(),
       scroll: scrollY,
       gap: posts.top - header.bottom,
       calls: window.__homeReadingScrollCalls,
@@ -60,11 +82,15 @@ async function startReading(page, reduced, keyboard = false) {
   assert.equal(after.hash, '#home-posts');
   assert.equal(after.route, '/#home-posts', 'the route coordinator follows the replaced hash');
   assert(after.scroll > 100, 'the page scrolls to the article list');
-  assert(Math.abs(after.gap - 16) <= 2,
-    `the list clears the sticky header: ${JSON.stringify({ scroll: after.scroll, gap: after.gap, calls: after.calls })}`);
+  assert(
+    Math.abs(after.gap - 16) <= 2,
+    `the list clears the sticky header: ${JSON.stringify({ scroll: after.scroll, gap: after.gap, calls: after.calls })}`,
+  );
   assert.equal(after.calls.length, 1, 'no restoration interrupts the requested scroll');
-  assert.equal(after.calls[0].behavior, reduced ? 'instant' : 'smooth');
-  const intermediate = new Set(after.samples.filter(y => y > 2 && y < after.scroll - 2));
+  const scrollCall = after.calls[0];
+  assert(scrollCall && typeof scrollCall === 'object', 'anchor scroll must use scroll options');
+  assert.equal(scrollCall.behavior, reduced ? 'instant' : 'smooth');
+  const intermediate = new Set(after.samples.filter((y) => y > 2 && y < after.scroll - 2));
   if (!reduced) assert(intermediate.size > 3, 'scrolling visibly interpolates across frames');
   return { scroll: after.scroll, animatedFrames: intermediate.size };
 }
@@ -90,21 +116,26 @@ async function startReading(page, reduced, keyboard = false) {
       try {
         const page = await context.newPage();
         page.setDefaultTimeout(90000);
-        const errors = [];
-        page.on('pageerror', error => errors.push(error.message));
-        await page.addInitScript(dark => {
+        const errors: string[] = [];
+        page.on('pageerror', (error) => errors.push(error.message));
+        await page.addInitScript((dark) => {
           localStorage.setItem('yggdrasil-theme', dark ? 'dark' : 'light');
           window.__homeReadingDocument = Math.random();
           window.__homeReadingScrollCalls = [];
           const scroll = window.scrollTo.bind(window);
-          window.scrollTo = (...args) => {
+          window.scrollTo = (...args: [options?: ScrollToOptions] | [x: number, y: number]) => {
             window.__homeReadingScrollCalls.push(args[0]);
-            scroll(...args);
+            if (typeof args[0] === 'number') scroll(args[0], args[1]!);
+            else scroll(args[0]);
           };
         }, scenario.dark);
-        await page.route('https://fonts.googleapis.com/**', route => route.fulfill({
-          status: 200, contentType: 'text/css', body: '',
-        }));
+        await page.route('https://fonts.googleapis.com/**', (route) =>
+          route.fulfill({
+            status: 200,
+            contentType: 'text/css',
+            body: '',
+          }),
+        );
         await page.goto(`${base}/`);
         await ready(page);
         await page.screenshot({ path: `${output}/home-reading-${scenario.name}-before.png` });
@@ -115,8 +146,11 @@ async function startReading(page, reduced, keyboard = false) {
         // Return through the actual SPA links, without visiting an article to install anchors.
         await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
         await page.locator('.home-corner-link[href="/about"]').click();
-        await page.waitForFunction(() => document.querySelector('[data-vt-route="/about"]')
-          && !document.documentElement.classList.contains('is-route-transitioning'));
+        await page.waitForFunction(
+          () =>
+            document.querySelector('[data-vt-route="/about"]') &&
+            !document.documentElement.classList.contains('is-route-transitioning'),
+        );
         await page.locator('header a[href="/"]').first().click();
         await ready(page);
         const spa = await startReading(page, scenario.reduced);
@@ -125,12 +159,16 @@ async function startReading(page, reduced, keyboard = false) {
         await ready(page);
         const direct = await page.evaluate(() => ({
           scroll: scrollY,
-          top: document.getElementById('home-posts').getBoundingClientRect().top,
-          header: document.querySelector('[data-vt-shell="frontend-header"]').getBoundingClientRect().bottom,
+          top: document.getElementById('home-posts')!.getBoundingClientRect().top,
+          header: document
+            .querySelector('[data-vt-shell="frontend-header"]')!
+            .getBoundingClientRect().bottom,
           overflow: document.documentElement.scrollWidth > innerWidth,
         }));
-        assert(direct.scroll > 100 && direct.top >= direct.header - 2,
-          'direct fragment loading leaves the list visible below the header');
+        assert(
+          direct.scroll > 100 && direct.top >= direct.header - 2,
+          'direct fragment loading leaves the list visible below the header',
+        );
         assert(!direct.overflow, 'no horizontal overflow');
         assert.deepEqual(errors, [], 'no browser runtime errors');
         console.log(JSON.stringify({ scenario: scenario.name, first, repeat, spa, direct }));
@@ -141,4 +179,7 @@ async function startReading(page, reduced, keyboard = false) {
   } finally {
     await browser.close();
   }
-})().catch(error => { console.error(error); process.exitCode = 1; });
+})().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

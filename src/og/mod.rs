@@ -4,7 +4,7 @@
 //! 三行）、摘要（最多两行）与底部文字标，右侧一条陶土橙细边；站点图深底，文字标、
 //! 两行标语与「地址·篇数」。
 //!
-//! 字体随二进制嵌入（`scripts/subset-og-fonts.cjs` 裁剪的 Noto Serif / Sans SC），不读
+//! 字体随二进制嵌入（`scripts/subset-og-fonts.ts` 裁剪的 Noto Serif / Sans SC），不读
 //! 系统字体，渲染结果与部署环境无关。SVG 文字不会自动折行，这里按字体字宽量出每行；
 //! 字体缺字时返回 [`OgError::MissingGlyph`]，由调用方改用站点图。
 #![cfg(feature = "server")]

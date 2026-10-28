@@ -231,7 +231,7 @@ RUN make build-assets
 # --mount 缓存 wasm32 的 cargo registry/git/target：前端构建不经 cargo-chef，
 # 改一行 .rs 也会全量重下重编 ~400 个 wasm 依赖；mount 让它们跨 build 持久化。
 # cache mount 只在本 RUN 期间存在，因此 hash.txt 在同一 RUN 内先拷到 /build/hash.txt，
-# 再由 build-release.cjs 把 target/site 与 hash.txt 装配进 /build/dist。
+# 再由 build-release.ts 把 target/site 与 hash.txt 装配进 /build/dist。
 # 与 cook/cargo build 的 server musl 产物互不干扰——后者在镜像层 /build/target，
 # 本 RUN 的 cache 卷覆盖该路径但只装 wasm32 子目录与站点产物。
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
@@ -239,7 +239,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/build/target,sharing=locked \
     make build-frontend && \
     cp target/release/hash.txt /build/hash.txt && \
-    bun scripts/build-release.cjs --out /build/dist --hash /build/hash.txt
+    bun scripts/build-release.ts --out /build/dist --hash /build/hash.txt
 
 # 生成带站点主题的 lib crate 文档，包含私有项，并提供 /doc 入口重定向。
 # .dockerignore 排除了宿主 public/doc/；这里直接写入装配后的发布目录。
@@ -251,7 +251,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
 RUN make precompress RELEASE_OUT=/build/dist
 
 # 校验发布产物：清单摘要、hash.txt 指向的产物、分包清单闭包与 .br 旁车。
-RUN bun scripts/build-release.cjs --verify --out /build/dist
+RUN bun scripts/build-release.ts --verify --out /build/dist
 
 # Build the server as a fully static musl binary, **natively for the buildx
 # platform leg**. Each leg builds only its own arch, so musl-gcc (which Debian

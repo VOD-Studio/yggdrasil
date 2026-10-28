@@ -208,14 +208,14 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
 # 用 cargo-leptos 构建分包前端（wasm/js/css → target/site，hash.txt → target/release）。
 # make build-frontend 使用固定 nightly + build-std（见 Makefile 的 LEPTOS_WASM_ENV）。
 # 发布的 musl 服务端由 server stage 构建。cache mount（fe-target）只在本 RUN 期间存在，
-# 因此 hash.txt 在同一 RUN 内先拷到 /build/hash.txt，再由 build-release.cjs 把
+# 因此 hash.txt 在同一 RUN 内先拷到 /build/hash.txt，再由 build-release.ts 把
 # target/site 与 hash.txt 装配进 /build/dist。
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
     --mount=type=cache,id=fe-target,target=/build/target,sharing=locked \
     make build-frontend && \
     cp target/release/hash.txt /build/hash.txt && \
-    bun scripts/build-release.cjs --out /build/dist --hash /build/hash.txt
+    bun scripts/build-release.ts --out /build/dist --hash /build/hash.txt
 
 # 生成带站点主题的 lib crate 文档，包含私有项，并提供 /doc 入口重定向。
 # cargo doc 使用当前 stage 的宿主目标，与 server stage 的 musl 交叉构建独立。
@@ -229,7 +229,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
 RUN make precompress RELEASE_OUT=/build/dist
 
 # 校验发布产物：清单摘要、hash.txt 指向的产物、分包清单闭包与 .br 旁车。
-RUN bun scripts/build-release.cjs --verify --out /build/dist
+RUN bun scripts/build-release.ts --verify --out /build/dist
 
 
 # -----------------------------------------------------------------------------

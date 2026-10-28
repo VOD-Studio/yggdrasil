@@ -149,7 +149,7 @@ pub fn SegmentedControl<T: Clone + PartialEq + 'static>(
   ```
   另有一组 `html.dark[...]` 选择器，同样四条，只把 `background-color` 换成 `var(--color-surface-3)`。同步改 `ThemeToggle`/`ThemePreload` 的文档注释。
 - `styles/components/shell.css:186-223`：删除 `.theme-seg`、`.theme-seg-item*` 规则；保留 `@media (max-width: 767px)` 里的 `.site-actions > .theme-seg { display: none }`。在抽屉段（`.sheet-row` 附近，约 373 行）加 `.sheet-row > .theme-seg { flex: 1; min-width: 0; }` 和 `.sheet-row .segmented-wrap { display: flex; justify-content: flex-end; }`。
-- `scripts/test-view-transitions.cjs:215`：选择器改为 ``[data-vt-shell="frontend-header"] .theme-seg [aria-label="${target === 'dark' ? '深色' : '浅色'}"]``。
+- `scripts/test-view-transitions.ts:215`：选择器改为 ``[data-vt-shell="frontend-header"] .theme-seg [aria-label="${target === 'dark' ? '深色' : '浅色'}"]``。
 
 **3.5 手写的 `.segmented` radiogroup 改用原语**（全部 `kind: Radio, size: Sm`）：
 - `src/pages/admin/settings/image_section.rs:79`（0–6，`u32`）：`class: "settings-segmented-square"`、`aria_label: "编码方法"`，`on_change: move |n| draft.write().webp.method = n`。
@@ -300,7 +300,7 @@ pub(crate) fn ime_composing(composing: bool, e: &KeyboardEvent) -> bool
 前置：仓库根目录，本地工具链（`make check-dev-tools`），`.env` 可连开发库；浏览器检查需要 `libs/node_modules/playwright` 和 Chromium。
 
 1. 门禁（全部步骤完成后）：`make lint`；`make test`；`cargo clippy --locked --target wasm32-unknown-unknown --no-default-features --features web -- -D warnings`，以及同一命令换成 `--features web,client-reader`。全部通过。第 3 步后跑一次两个 WASM clippy（`ResizeObserver` 只在 wasm 编译）。
-2. 隔离浏览器回归：`make regression-build && make test-browser BROWSER_SUITE=showcase`、`BROWSER_SUITE=admin`、`BROWSER_SUITE=backup` 均通过（覆盖 `getByRole('tab')` 选中与图鉴预览不发请求）。另起 `make dev`，运行 `PLAYWRIGHT_MODULE=$PWD/libs/node_modules/playwright CHROMIUM_PATH=/usr/bin/chromium bun scripts/test-view-transitions.cjs` 和 `scripts/test-writing-guide.cjs`，均通过（主题选择器已改）。
+2. 隔离浏览器回归：`make regression-build && make test-browser BROWSER_SUITE=showcase`、`BROWSER_SUITE=admin`、`BROWSER_SUITE=backup` 均通过（覆盖 `getByRole('tab')` 选中与图鉴预览不发请求）。另起 `make dev`，运行 `PLAYWRIGHT_MODULE=$PWD/libs/node_modules/playwright CHROMIUM_PATH=/usr/bin/chromium bun scripts/test-view-transitions.ts` 和 `scripts/test-writing-guide.ts`，均通过（主题选择器已改）。
 3. 新行为冒烟（对 `make dev` 的 http://127.0.0.1:8080 跑一次性 Playwright 脚本，放在 `/tmp`，不入库）：
    - 发丝线：`deviceScaleFactor: 2` 打开 `/`，`getComputedStyle(document.documentElement).getPropertyValue('--hairline').trim()` 为 `0.5px`；`deviceScaleFactor: 1` 时为 `1px`。
    - 分段控件：打开 `/about/components/segmented-control`。宽示例里 `.segmented-label` 的 `getBoundingClientRect().width` 大于 1；11rem 示例里等于 1，且按钮 `textContent` 仍含「跟随系统」。点击「草稿」后 `[aria-selected="true"]` 移到该项，`.segmented-thumb` 的 `style.transform` 变化。聚焦后按 ArrowRight，选中与焦点一起右移。

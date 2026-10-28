@@ -13,7 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **分享图字体工具统一到 Bun**：字体裁剪改用 `scripts/subset-og-fonts.cjs` 与 HarfBuzz WASM，不再依赖 Python/fontTools；保留 GB 2312 的 6763 个汉字、原有标点范围、字体名称与排版特性，并排除 GBK 解码器额外映射的五个空位。
+- **脚本统一为 Bun TypeScript**：`scripts/` 的全部 22 个 `.cjs` 工具迁移为 `.ts`，补齐发布装配、字体／图标生成、测试编排与 Playwright 浏览器回归的严格类型；Makefile、Docker、CI 和文档同步切换调用路径，工作区类型检查与 CI 纳入脚本检查，Bash／Fish 运维脚本保持不变。
+- **分享图字体工具统一到 Bun**：字体裁剪改用 `scripts/subset-og-fonts.ts` 与 HarfBuzz WASM，不再依赖 Python/fontTools；保留 GB 2312 的 6763 个汉字、原有标点范围、字体名称与排版特性，并排除 GBK 解码器额外映射的五个空位。
 - **Bun 构建工具升级**：生产、交叉编译与开发 Docker 镜像统一升级到 Bun 1.4.4，工作区与 CI 同步使用该版本。
 - **前端框架迁移到 Leptos 0.8**：Dioxus 0.7 整体替换为 Leptos 0.8.22 + cargo-leptos（`--split` 路由级 WASM 分包），删除 reader / full 双 flavor：前台、后台、登录与组件图鉴全部是懒加载路由，每条公开路由首屏 Brotli WASM 不超过原 reader 产物体积。站内导航仍由 `yggdrasil-core` 持有 history 与视图过渡。
 - **接口地址不再带哈希后缀**：server function 由 `/api/<name><哈希>` 变为 `/api/<name>`，发布切换瞬间仍开着的旧标签页需要刷新。
@@ -128,7 +129,7 @@ v1.0 全站重设计：陶土橙单一品牌色、系统字体与衬线标题、
 
 - 消毒白名单预构建为静态实例；回收站批量恢复与彻底删除改为一次批量查询标签；`replacement()` 返回已校验字段，去掉依赖非局部不变量的 `expect()`。
 - 收敛重复实现：HTML 转义、settings 单键 upsert、原生路由 admin 前置校验、评论内容哈希、`group_digits`、主题过渡探测；删除未使用的常量、组件、CSS 规则、`codemirror` 依赖与过时的 `dead_code` 豁免。
-- 测试改为调用生产函数：健康检查、上传转码；删除源码字符串断言测试；两个 TEMP 表数据库回归改读 `DATABASE_URL` 并写入测试文档；`scripts/test-dev-assets.cjs` 从 `mk/assets.mk` 读取输出清单；清理 FreeBSD 残留忽略规则。
+- 测试改为调用生产函数：健康检查、上传转码；删除源码字符串断言测试；两个 TEMP 表数据库回归改读 `DATABASE_URL` 并写入测试文档；`scripts/test-dev-assets.ts` 从 `mk/assets.mk` 读取输出清单；清理 FreeBSD 残留忽略规则。
 - 代码运行器流式执行超时只推送一个 `done` 事件（此前 runner 与调用方各推一个）；`run_in_container_stream` 去掉恒为 `false` 的 `timed_out` 返回值，与非流式路径统一为 4 元组。
 - `public/` 下的 `libs/` 构建产物（codemirror、lightbox、tiptap、xterm、yggdrasil-core）移出 git 索引，与 `.gitignore` 一致；构建产物一律不入库，由 `make build-libs`/`make dev-assets` 生成。
 - 收拢组件：新增 `StatusDot`，后台 9 处手写 `.status-dot` 改用它；`StatusBadge` 增加 `class` 附加类，更新日志「最新」与文章标题「草稿」徽章改用它；友链、笔记本、代码运行器表单标签改用 `FormLabel` 并删除三份重复样式；删除仅展示页使用的旧接口 `LoadingButton` 与已无引用的骨架屏样式。
@@ -154,7 +155,7 @@ v1.0 全站重设计：陶土橙单一品牌色、系统字体与衬线标题、
 
 ### Fixed
 
-- **Docker 构建**:`.dockerignore` 放行 release 装配脚本 `build-release.cjs` 及其导入的 `release-bootstrap.cjs`,修复 P3b 把 flavor 装配移进容器执行后构建上下文缺文件报 Module not found 的问题;其余 `scripts/` 保持排除。
+- **Docker 构建**:`.dockerignore` 放行 release 装配脚本 `build-release.ts` 及其导入的 `release-bootstrap.cjs`,修复 P3b 把 flavor 装配移进容器执行后构建上下文缺文件报 Module not found 的问题;其余 `scripts/` 保持排除。
 - **构建入口**:补回 P3b 误删的 `make build-client` recipe。此前 `.PHONY` 保留了同名目标,make 会静默跳过无 recipe 的 phony 目标,导致 `build-linux` 与 Dockerfile / Dockerfile.cross 的首个客户端构建变成空操作,CI Docker 构建在 `snapshot-flavor` 处失败。
 
 ## [0.24.0] - 2026-10-21

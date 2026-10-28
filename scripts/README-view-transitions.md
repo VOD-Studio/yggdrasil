@@ -1,6 +1,6 @@
 # View Transitions 浏览器回归
 
-`test-view-transitions.cjs` 使用真实 Chromium 和已启动的开发站点，覆盖标题双向匹配、列表状态与滚动恢复、目录 hash、连续导航、主题竞争、减少动态效果、不支持 API、移动端，以及 300ms 等待后不重播动画。
+`test-view-transitions.ts` 使用真实 Chromium 和已启动的开发站点，覆盖标题双向匹配、列表状态与滚动恢复、目录 hash、连续导航、主题竞争、减少动态效果、不支持 API、移动端，以及 300ms 等待后不重播动画。
 
 栏目动效另在正常浏览器窗口检查：
 
@@ -11,7 +11,7 @@
 
 方向、路由范围、历史记录与中断清理的单元回归：`cd libs && bun run --filter '@yggdrasil/core' test`。
 
-首页“开始阅读”用 `scripts/test-home-reading.cjs` 检查：首次直接进入首页、同一 hash
+首页“开始阅读”用 `scripts/test-home-reading.ts` 检查：首次直接进入首页、同一 hash
 重复点击、键盘 Enter、SPA 返回、直接 hash 加载，以及桌面／390px 手机的明暗主题和
 减少动态效果。脚本采样实际滚动帧，确认平滑滚动没有被路由恢复打断，列表停在固定
 页头下方，点击不刷新文档或新增历史记录。截图默认写到 `/tmp/home-reading-*.png`，
@@ -21,22 +21,22 @@
 PLAYWRIGHT_MODULE=/path/to/playwright \
 CHROMIUM_PATH=/path/to/chromium \
 VT_BASE=http://localhost:8080 \
-bun scripts/test-home-reading.cjs
+bun scripts/test-home-reading.ts
 ```
 
-更新日志版本目录另用 `scripts/test-changelog-nav.cjs` 检查，覆盖桌面明暗主题、680px 高度窗口、390px 小屏和减少动态效果：目录高度、独立滚动及边缘渐隐、选中底色的实际动画、锚点遮挡、阅读位置跟随、直接 hash 加载和 SPA 卸载／重挂载。截图默认写到 `/tmp/changelog-*.png`，可通过 `CHANGELOG_SCREENSHOTS` 指定已有输出目录。
+更新日志版本目录另用 `scripts/test-changelog-nav.ts` 检查，覆盖桌面明暗主题、680px 高度窗口、390px 小屏和减少动态效果：目录高度、独立滚动及边缘渐隐、选中底色的实际动画、锚点遮挡、阅读位置跟随、直接 hash 加载和 SPA 卸载／重挂载。截图默认写到 `/tmp/changelog-*.png`，可通过 `CHANGELOG_SCREENSHOTS` 指定已有输出目录。
 
 ```bash
 PLAYWRIGHT_MODULE=/path/to/playwright \
 CHROMIUM_PATH=/path/to/chromium \
 CHANGELOG_BASE=http://localhost:8080 \
-bun scripts/test-changelog-nav.cjs
+bun scripts/test-changelog-nav.ts
 ```
 
 ```bash
 PLAYWRIGHT_MODULE=/path/to/playwright \
 CHROMIUM_PATH=/usr/bin/chromium \
-bun scripts/test-view-transitions.cjs
+bun scripts/test-view-transitions.ts
 ```
 
 如果项目外已经安装了可被 Bun 解析的 `playwright`，可以省略 `PLAYWRIGHT_MODULE`；使用 Playwright 自带 Chromium 时可省略 `CHROMIUM_PATH`。脚本不安装依赖，也不会启动或停止开发服务器。

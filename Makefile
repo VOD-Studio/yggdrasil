@@ -112,9 +112,9 @@ build build-linux: check-build-tools
 	@$(MAKE) build-assets doc
 	@$(MAKE) build-frontend
 	@cargo build --release --locked --bin yggdrasil $(RELEASE_SERVER_ARGS)
-	@bun scripts/build-release.cjs --out "$(RELEASE_OUT)" --server "$(RELEASE_SERVER)"
+	@bun scripts/build-release.ts --out "$(RELEASE_OUT)" --server "$(RELEASE_SERVER)"
 	@$(MAKE) precompress
-	@bun scripts/build-release.cjs --verify --out "$(RELEASE_OUT)"
+	@bun scripts/build-release.ts --verify --out "$(RELEASE_OUT)"
 	@echo "发布目录：$(RELEASE_OUT)；部署时请保留 server、hash.txt 与 public/ 的配套关系。"
 
 # 用 brotli 预压缩静态文本资源（生成 .br 旁路文件）。site_fallback 的 ServeDir
@@ -141,11 +141,11 @@ regression-build: dev-assets ## 构建隔离浏览器回归使用的应用
 	@cargo leptos build --split
 
 test-databases: ## 在临时 PostgreSQL 中验证文章、笔记和备份，结束后清理
-	@bun scripts/regression.cjs database
+	@bun scripts/regression.ts database
 
 BROWSER_SUITE ?= smoke
 test-browser: ## 隔离浏览器回归（先 regression-build；BROWSER_SUITE=smoke/admin/notes/backup/runner/slash/lightbox/showcase）
-	@bun scripts/regression.cjs $(BROWSER_SUITE)
+	@bun scripts/regression.ts $(BROWSER_SUITE)
 
 # ── 测试与代码质量 ─────────────────────────────────────────────
 test: ## 运行 Rust 与前端测试
@@ -154,7 +154,7 @@ test: ## 运行 Rust 与前端测试
 
 .PHONY: test-release-split
 test-release-split: build ## 对真实 release 产物做分包、水合、缓存与体积门槛验收
-	@bun scripts/test-release-split.cjs
+	@bun scripts/test-release-split.ts
 
 # JS + Rust 一次性检查（不改动文件）。
 lint: ## Biome、TypeScript、Clippy、rustfmt 检查（只读）
@@ -251,4 +251,4 @@ clean: ## 清理构建产物与前端依赖
 
 .PHONY: test-public-performance
 test-public-performance: regression-build ## 验证双机缓存、公开页精简数据、归档分页和评论延迟加载
-	@bun scripts/test-public-performance.cjs
+	@bun scripts/test-public-performance.ts

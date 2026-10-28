@@ -30,7 +30,7 @@ Phase 0 → Phase 1 → Phase 2A → 并行 {Phase 2B 三个切片, Phase 5 `rel
 
 ### 提交与停止条件
 - 每个阶段验收通过后提交一次，格式 `type(scope): 中文摘要`；不推送。
-- 以下情况**停下并向用户报告**，不要自行改方案：(1) Phase 2A 的视图过渡握手无法让 `bun scripts/test-view-transitions.cjs` 通过；(2) Phase 6 体积门槛任一路由超标；(3) 本方案“假设与预案”里写明“停止”的情形。
+- 以下情况**停下并向用户报告**，不要自行改方案：(1) Phase 2A 的视图过渡握手无法让 `bun scripts/test-view-transitions.ts` 通过；(2) Phase 6 体积门槛任一路由超标；(3) 本方案“假设与预案”里写明“停止”的情形。
 
 ## 迁移约定（所有执行者共享的契约）
 
@@ -322,7 +322,7 @@ impl LazyRoute for PostRoute {
     临时 `App`：`provide_meta_context()` + `<Title text="Yggdrasil Blog"/>` + `<Router>` 内一个 `<Routes fallback=|| "迁移中">`，只含一条 `<Route path=path!("__migration_stub") view=|| ()/>`；文件内加 `// MIGRATION_STUB` 注释。原 `Dioxus.toml` 的“`?v=N` 资源版本”规则从此改为维护 `shell()` 里的查询串。
 15. **开发与回归入口**（本阶段就要可用）：
     - `Makefile`：删除 `DX`、`DX_NIGHTLY` 变量；`check-dev-tools` 把 dx 检查换成 `cargo leptos --version` 必须为 `0.3.11`（提示 `cargo install cargo-leptos --version 0.3.11 --locked`）；`dev` 目标改为 `@SSR_CACHE_SECS=0 IP=0.0.0.0 cargo leptos watch`（依赖 `dev-assets`，去掉 `esbuild-cache wasm-bindgen-cache`）；`regression-build` 改为依赖 `dev-assets` 后执行 `cargo leptos build`（debug、不加 `--split`），删掉 `restore-webp` 调用；`lint` 改为 `cargo clippy --all-targets -- -D warnings`、`cargo clippy --target wasm32-unknown-unknown --no-default-features --features hydrate -- -D warnings`、`cargo fmt -- --check`，删除 `dx fmt` 说明注释块（277-283 行）。
-    - `scripts/regression.cjs`：`build` 改为服务端 `path.join(ROOT, 'target/debug/yggdrasil')`、站点根 `path.join(ROOT, 'target/site')`；缺失时报错 `Run make regression-build first`；删除 runtime 下 `public` 软链与 `DIOXUS_ASSET_DIR`，env 增加 `LEPTOS_SITE_ROOT: <site 绝对路径>`；server 仍以 runtime 目录为 cwd（`hash.txt` 从可执行文件目录 `target/debug/` 读取）。
+    - `scripts/regression.ts`：`build` 改为服务端 `path.join(ROOT, 'target/debug/yggdrasil')`、站点根 `path.join(ROOT, 'target/site')`；缺失时报错 `Run make regression-build first`；删除 runtime 下 `public` 软链与 `DIOXUS_ASSET_DIR`，env 增加 `LEPTOS_SITE_ROOT: <site 绝对路径>`；server 仍以 runtime 目录为 cwd（`hash.txt` 从可执行文件目录 `target/debug/` 读取）。
     - `scripts/test-databases.sh`：四条 `cargo test` 去掉 `--all-features`。
 16. **验收**
     - `cargo clippy --locked --all-targets -- -D warnings` 与 `cargo clippy --locked --target wasm32-unknown-unknown --no-default-features --features hydrate -- -D warnings` 通过；`cargo test --locked` 通过（此时不含 UI 模块测试）。
@@ -378,9 +378,9 @@ impl LazyRoute for PostRoute {
     - 提交：`refactor(ui): 建立 Leptos 前端骨架、路由表与视图过渡导航桥接`。
 
 ### Phase 2A 追加：测试脚本适配（与上面同一提交）
-- `scripts/test-public-performance.cjs`：`build` 常量改为服务端 `process.env.PUBLIC_TEST_SERVER || <root>/target/debug/yggdrasil`、站点根 `process.env.PUBLIC_TEST_SITE || <root>/target/site`；存在性断言改查服务端可执行文件；env 删除 `DIOXUS_ASSET_DIR`、新增 `LEPTOS_SITE_ROOT`；两处 `window.__dx_mainWasm` 等待（`:136`、`:159`）改为 `document.documentElement.dataset.hydrated === 'true'`。
-- `scripts/test-view-transitions.cjs:403-412`：删除从 wasm 正文里抠 `/api/logout\d+` 的逻辑，`logoutEndpoint = '/api/logout'`。
-- `scripts/test-components-showcase.cjs` 的 `SENSITIVE`/`NORMAL_FRONTEND_READS` 不用改（`apiName` 会去掉下划线并转小写，`/api/get_current_user` 仍映射为 `getcurrentuser`）。
+- `scripts/test-public-performance.ts`：`build` 常量改为服务端 `process.env.PUBLIC_TEST_SERVER || <root>/target/debug/yggdrasil`、站点根 `process.env.PUBLIC_TEST_SITE || <root>/target/site`；存在性断言改查服务端可执行文件；env 删除 `DIOXUS_ASSET_DIR`、新增 `LEPTOS_SITE_ROOT`；两处 `window.__dx_mainWasm` 等待（`:136`、`:159`）改为 `document.documentElement.dataset.hydrated === 'true'`。
+- `scripts/test-view-transitions.ts:403-412`：删除从 wasm 正文里抠 `/api/logout\d+` 的逻辑，`logoutEndpoint = '/api/logout'`。
+- `scripts/test-components-showcase.ts` 的 `SENSITIVE`/`NORMAL_FRONTEND_READS` 不用改（`apiName` 会去掉下划线并转小写，`/api/get_current_user` 仍映射为 `getcurrentuser`）。
 
 ## Phase 2B：共享业务组件（3 个并行切片，worktree）
 
@@ -390,9 +390,9 @@ impl LazyRoute for PostRoute {
 |---|---|---|
 | `admin-shell` | `src/components/admin_layout.rs`、`src/components/admin_palette.rs`、`src/pages/admin/mod.rs` | `AdminShellRoute::view` 渲染 `<AdminLayout/>`；`AdminLayout` 内部保留原登录态校验、侧栏、`SidebarControl`/`AdminActions` 上下文，`<Outlet/>` 外包 `<Suspense fallback=<按路径选 admin 骨架屏>>`（逻辑同 BASE 中按 `Route` 选骨架屏的 match，改为按路径字符串）；退出登录调用 `bridges::navigation::clear_admin_state()` 后 `navigation::push("/login")`；未登录跳转用 `navigation::replace("/login")`。 |
 | `assets-sql` | `src/components/assets/*`、`src/components/sql_result_table.rs` | 上传用 `utils::web_upload`；上传池/选择器的 JS 句柄与定时器在 `on_cleanup` 里释放。 |
-| `article` | `src/components/post/*`、`src/components/comments/*`、`src/components/code_runner/*` | 评论区按原型 `spike/leptos/src/components/comments/*` 起步，补齐 BASE 功能（图片上传走 `/api/comments/upload`、待审轮询、回复）；评论数据与登录态用 Effect + 镜像信号（数据加载规则 3）。代码运行器：静态代码块与 `use_near_viewport` 激活判断留在调用方所在包，激活后的编辑器 + 终端 + 执行逻辑抽成 `#[leptos::lazy] fn code_runner_body(<具体参数>) -> AnyView`，在 `<Suspense>` 内 `Suspend::new(async move { code_runner_body(..).await })` 加载；`.code-runner-static` 与 `.cm-editor` 的出现时机必须与 BASE 一致（`test-public-performance.cjs:141-152` 断言它们）。 |
+| `article` | `src/components/post/*`、`src/components/comments/*`、`src/components/code_runner/*` | 评论区按原型 `spike/leptos/src/components/comments/*` 起步，补齐 BASE 功能（图片上传走 `/api/comments/upload`、待审轮询、回复）；评论数据与登录态用 Effect + 镜像信号（数据加载规则 3）。代码运行器：静态代码块与 `use_near_viewport` 激活判断留在调用方所在包，激活后的编辑器 + 终端 + 执行逻辑抽成 `#[leptos::lazy] fn code_runner_body(<具体参数>) -> AnyView`，在 `<Suspense>` 内 `Suspend::new(async move { code_runner_body(..).await })` 加载；`.code-runner-static` 与 `.cm-editor` 的出现时机必须与 BASE 一致（`test-public-performance.ts:141-152` 断言它们）。 |
 
-合并后编排者验收：两条 clippy 与 `cargo test --locked` 通过；`make regression-build` 后在冒烟库上打开 `/admin`（先 `psql` 往 `sessions` 插入一条会话，token 的 SHA-256 写入 `token_hash`，与 `scripts/regression.cjs:90-92` 同法），从 `/admin` 点击侧栏进入 `/admin/posts`：先给侧栏根元素（带 `data-vt-shell` 的元素）挂 `el.__marker = 1`，跳转后同一元素仍带 `__marker`（验证懒加载父路由不重建）。提交：`refactor(ui): 移植后台外壳、素材与文章/评论/代码运行组件`。
+合并后编排者验收：两条 clippy 与 `cargo test --locked` 通过；`make regression-build` 后在冒烟库上打开 `/admin`（先 `psql` 往 `sessions` 插入一条会话，token 的 SHA-256 写入 `token_hash`，与 `scripts/regression.ts:90-92` 同法），从 `/admin` 点击侧栏进入 `/admin/posts`：先给侧栏根元素（带 `data-vt-shell` 的元素）挂 `el.__marker = 1`，跳转后同一元素仍带 `__marker`（验证懒加载父路由不重建）。提交：`refactor(ui): 移植后台外壳、素材与文章/评论/代码运行组件`。
 
 ## Phase 3：页面（6 个并行切片，worktree）
 
@@ -410,8 +410,8 @@ impl LazyRoute for PostRoute {
 合并后编排者验收：
 - `grep -rn MIGRATION_STUB src` 只剩 `src/pages/components_showcase.rs`；`grep -rnE 'dioxus::|use dioxus|rsx!' src` 只剩 `src/pages/components_showcase*`（`src/cache.rs` 测试里的搜索词字符串 `"dioxus fullstack"` 不算框架引用，保留）。
 - 两条 clippy、`cargo test --locked`、`bun run --sequential --filter '*' test`（在 `libs/`）通过。
-- `make regression-build`，然后 `make test-browser BROWSER_SUITE=<套件>` 依次跑 `smoke admin notes backup runner slash lightbox` 全过；`make test-databases` 通过；`bun scripts/test-public-performance.cjs` 通过。
-- 冒烟库上启动服务，`VT_BASE=http://127.0.0.1:18080 bun scripts/test-view-transitions.cjs` 通过（`APP_BASE_URL` 必须与 `VT_BASE` 同源，否则 CSRF 返回 403）。
+- `make regression-build`，然后 `make test-browser BROWSER_SUITE=<套件>` 依次跑 `smoke admin notes backup runner slash lightbox` 全过；`make test-databases` 通过；`bun scripts/test-public-performance.ts` 通过。
+- 冒烟库上启动服务，`VT_BASE=http://127.0.0.1:18080 bun scripts/test-view-transitions.ts` 通过（`APP_BASE_URL` 必须与 `VT_BASE` 同源，否则 CSRF 返回 403）。
 - `curl -s http://127.0.0.1:18080/post/<冒烟库中任一已发布 slug>` 的 HTML `<head>` 内含该文章标题的 `<title>` 与 `og:title`；`/post/does-not-exist` 返回 404；`/archives` 的 HTML 里直接包含文章条目（不是骨架屏，验证 `InOrder`）。
 - 提交：`refactor(pages): 前台与后台页面迁移到 Leptos`。
 
@@ -422,31 +422,31 @@ impl LazyRoute for PostRoute {
 2. 预览分派 `preview_route`/各 `previews` 模块返回 `Option<AnyView>`；所有预览继续复用生产组件 + 本地 fixture，不得发出鉴权/上传/评论/执行请求，卸载时清理浏览器实例（`on_cleanup`）。
 3. JSON：每个组件的 `code` 片段改写为 Leptos `view!` 用法；`props` 表中的类型名按对照表更新（`EventHandler<T>` → `Callback<T>`、`Element` → `Children`/`ViewFn`、`Signal<T>` → `RwSignal<T>`/`Signal<T>`）；slug、group、`preview_mode`、`usage_kind` 不变。
 4. 保留并通过 `#[cfg(test)]` 里 6 个目录测试（`components_showcase.rs:1828-2034`）；若迁移在 `src/components/` 下新增了 `pub fn` 大写组件，要么补目录条目，要么改为 `pub(crate)`。
-5. 验收：`grep -rnE 'dioxus::|use dioxus|rsx!|MIGRATION_STUB' src` 为空；两条 clippy、`cargo test --locked`；`make regression-build && make test-browser BROWSER_SUITE=showcase`；冒烟库上 `SHOWCASE_BASE=http://127.0.0.1:18080 bun scripts/test-components-showcase.cjs` 通过。提交：`refactor(showcase): 组件图鉴迁移到 Leptos`。
+5. 验收：`grep -rnE 'dioxus::|use dioxus|rsx!|MIGRATION_STUB' src` 为空；两条 clippy、`cargo test --locked`；`make regression-build && make test-browser BROWSER_SUITE=showcase`；冒烟库上 `SHOWCASE_BASE=http://127.0.0.1:18080 bun scripts/test-components-showcase.ts` 通过。提交：`refactor(showcase): 组件图鉴迁移到 Leptos`。
 
 ## Phase 5：构建、发布、Docker 与 CI（并行切片 `release`，worktree）
 
 Phase 2A 合入后开工（worktree 从当时的 `migrate/leptos` 拉出），与 Phase 2B/3/4 并行；文件与 UI 切片不重叠。按“阶段顺序”在 Phase 4 之后合入，完整验收放在 Phase 6。
 
-文件归属：`Makefile`、`mk/dx-cache.mk`（删除）、`mk/docker.mk`、`scripts/build-release.cjs`（重写）、`scripts/test-release-split.cjs`（新）、待删除脚本、`Dockerfile`、`Dockerfile.cross`、`Dockerfile.dev`、`docker-compose.dev.yml`、`docker-compose.tools.yml`、`.dockerignore`、`.github/workflows/ci.yml`、`.env.example`、`libs/{mermaid-renderer,codemirror-editor,xterm-terminal}/vite.config.ts` 与 `libs/tiptap-editor/src/math.ts`（只改注释）。
+文件归属：`Makefile`、`mk/dx-cache.mk`（删除）、`mk/docker.mk`、`scripts/build-release.ts`（重写）、`scripts/test-release-split.ts`（新）、待删除脚本、`Dockerfile`、`Dockerfile.cross`、`Dockerfile.dev`、`docker-compose.dev.yml`、`docker-compose.tools.yml`、`.dockerignore`、`.github/workflows/ci.yml`、`.env.example`、`libs/{mermaid-renderer,codemirror-editor,xterm-terminal}/vite.config.ts` 与 `libs/tiptap-editor/src/math.ts`（只改注释）。
 
 1. **Makefile**
    - 新变量：`RELEASE_OUT ?= target/release-dist`；`LEPTOS_WASM_ENV := RUSTUP_TOOLCHAIN=$(WASM_NIGHTLY) CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS='--cfg getrandom_backend="wasm_js" -Zunstable-options -Cpanic=immediate-abort'`；`LEPTOS_WASM_ARGS := --lib-cargo-args=-Zbuild-std=std,panic_abort --lib-cargo-args=-Zbuild-std-features=optimize_for_size`。删除 `WASM_CARGO_ARGS`、`CLIENT_SERVER_ARGS`、`RELEASE_SERVER_ARGS`、`RELEASE_ASSEMBLY`。
    - 新目标 `build-frontend`：`check-wasm-toolchain` 后执行 `$(LEPTOS_WASM_ENV) cargo leptos build --release --split --frontend-only $(LEPTOS_WASM_ARGS)`。
-   - `build`：`check-build-tools build-assets doc build-frontend` → `cargo build --release --locked --bin yggdrasil` → `bun scripts/build-release.cjs --out $(RELEASE_OUT) --server target/release/yggdrasil` → `$(MAKE) precompress` → `bun scripts/build-release.cjs --verify --out $(RELEASE_OUT)`。
+   - `build`：`check-build-tools build-assets doc build-frontend` → `cargo build --release --locked --bin yggdrasil` → `bun scripts/build-release.ts --out $(RELEASE_OUT) --server target/release/yggdrasil` → `$(MAKE) precompress` → `bun scripts/build-release.ts --verify --out $(RELEASE_OUT)`。
    - `build-linux`：同 `build`，服务端改为 `cargo build --release --locked --bin yggdrasil --target x86_64-unknown-linux-musl`，`--server target/x86_64-unknown-linux-musl/release/yggdrasil`；删除第 151 行 `DIOXUS_ASSET_DIR` 提示，改为“运行时 `hash.txt` 必须与 `server` 同目录，`public/` 由 `LEPTOS_SITE_ROOT` 指定或放在可执行文件旁”。
    - `precompress`：查找根改为 `$(RELEASE_OUT)/public`（扩展名列表不变）。
    - 删除目标：`build-client`、`build-full-and-server`、`build-client-reader`、`snapshot-flavor`、`restore-webp`、`test-release-bootstrap`、`test-wasm-preload`；`test` 目标去掉 `test-release-bootstrap` 依赖；删除 `include mk/dx-cache.mk` 与该文件。`check-dev-tools` 删除 llvm-tools 检查（只有 dx 用它）。
-   - 新目标 `test-release-split`：依赖 `build`，执行 `bun scripts/test-release-split.cjs`。
+   - 新目标 `test-release-split`：依赖 `build`，执行 `bun scripts/test-release-split.ts`。
    - `doc` 目标的 `cargo doc` 加 `--lib`；删除 313-324 行“docs 由 Dioxus 静态目录托管”的注释，改为“`/doc` 由 `site_fallback` 的 ServeDir 从站点根提供”。
-2. **`scripts/build-release.cjs` 重写**（保留 `#!/usr/bin/env bun`、原子替换与 `release-manifest.json` 结构思路）：
+2. **`scripts/build-release.ts` 重写**（保留 `#!/usr/bin/env bun`、原子替换与 `release-manifest.json` 结构思路）：
    - 参数：`--out`（默认 `target/release-dist`）、`--site`（默认 `target/site`）、`--hash`（默认 `target/release/hash.txt`）、`--server`（可选；给出时复制为 `<out>/server`）、`--verify`。
    - 组装：在 `<out>/.staging-<pid>` 里复制 `site` → `public/`、`hash` → `hash.txt`、可选 server；写 `public/release-manifest.json`：`{ release_id: git describe --tags --always --dirty, generated_at, source: { git_hash, dirty, cargo_lock_sha256, cargo_lock_bytes }, hash_txt: { js, wasm, manifest, split }, assets: [{ path: "/pkg/<file>", sha256, bytes }] }`（`assets` 覆盖 `public/pkg/` 下全部非 `.br` 文件，按路径排序，2 空格缩进 + 结尾换行）；然后按原脚本方式原子替换 `<out>` 下的 `public/`、`hash.txt`、`server`。`site` 中存在 `index.html` 时直接失败（防止混入旧 dx 产物）。
    - `--verify`：manifest 中每个资产存在且 sha256/字节数一致；`hash.txt` 的 `js`/`wasm` 指向的 `pkg/yggdrasil.<hash>.{js,wasm}` 存在；有 `manifest` 行时 `pkg/__wasm_split_manifest.<hash>.json` 存在，且其中引用的每个文件都在 `pkg/` 下；`pkg/` 里每个 `.js/.wasm/.json/.css` 都有 `.br` 旁车；任一失败 `process.exit(1)` 并列出原因。
 3. **删除脚本**：`scripts/release-bootstrap.cjs`、`scripts/release-bootstrap.test.cjs`、`scripts/test-wasm-preload.cjs`、`scripts/test-dual-flavor.cjs`、`scripts/measure-release.cjs`、`scripts/test-wasm-bindgen-metadata.cjs`（全部是 dx 产物/双 flavor 专用）。
-4. **`scripts/test-release-split.cjs`（新，Playwright + Bun）**，以 `spike/leptos/scripts/verify.cjs` 与 `measure.cjs` 为参考，基础设施抄 `scripts/regression.cjs`（临时 `postgres:18-alpine` 容器、`createdb`、空闲端口、`/readyz` 等待、退出清理）：
+4. **`scripts/test-release-split.ts`（新，Playwright + Bun）**，以 `spike/leptos/scripts/verify.cjs` 与 `measure.cjs` 为参考，基础设施抄 `scripts/regression.ts`（临时 `postgres:18-alpine` 容器、`createdb`、空闲端口、`/readyz` 等待、退出清理）：
    - 启动 `<RELEASE_OUT>/server`（cwd 为临时目录，env：`DATABASE_URL`、`IP=127.0.0.1`、`PORT`、`APP_BASE_URL`、`COOKIE_SECURE=false`、`SSR_CACHE_SECS=60`、`LEPTOS_SITE_ROOT=<RELEASE_OUT>/public`、`MCP_TOKEN_ENC_KEY='42'.repeat(32)`、`ADMIN_*=''`、`YGG_PREVIOUS_PUBLIC_DIR=<临时目录>/previous-public`）。`previous-public/pkg/legacy_chunk.AbCdEfGhIjKlMnOpQrStUv.wasm` 预先写入任意 16 字节。
-   - 种子数据（psql）：管理员用户 + 会话（同 `regression.cjs:90-92`）；3 篇已发布文章 `split-a`/`split-b`/`split-c`（带标签 `split`，正文含一个可运行代码块 ```` ```python ````）。
+   - 种子数据（psql）：管理员用户 + 会话（同 `regression.ts:90-92`）；3 篇已发布文章 `split-a`/`split-b`/`split-c`（带标签 `split`，正文含一个可运行代码块 ```` ```python ````）。
    - 断言（分包文件名由 `LazyRoute` 类型名的 snake_case 派生，原型实测 `HomeRoute` → `home_route_view.<hash>.wasm`、`PostDetailRoute` → `post_detail_route_view.<hash>.wasm`；主包 = `hash.txt` 的 `wasm` 行对应的 `yggdrasil.<hash>.wasm`。若实际文件名与下列子串不符，以 `pkg/__wasm_split_manifest.<hash>.json` 的键名为准改写子串，断言语义不变）：
      1. 直接打开 `/`：等待 `data-hydrated`；`.wasm` 请求含主包与文件名含 `home_route` 的分包，不含文件名含 `post_route`、`admin`、`login`、`showcase` 的分包；无 `pageerror`/console error；无 ≥400 响应。
      2. 在 `/` 设 `window.__marker = 1` 后点击 `split-a` 文章链接：URL 变为 `/post/split-a`，`__marker` 仍在，新增的 `.wasm` 请求含文件名含 `post_route` 的分包，且没有再次请求主包。
@@ -456,8 +456,8 @@ Phase 2A 合入后开工（worktree 从当时的 `migrate/leptos` 拉出），�
      6. **体积门槛**：对 `/`、`/post/split-a`、`/archives`、`/tags/split`、`/notes`、`/about`、`/friends`、`/changelog`、`/search` 各开一个全新 context 直接访问，等待 `data-hydrated` 与 network idle，收集所有 `/pkg/*.wasm` 请求，按 `<site>/pkg/<file>.br` 的字节数求和；每条 ≤ `594603`。结果写入 `target/regressions/<时间戳>-release-split/sizes.json`（`{ route: { files: [..], brotli_bytes } }`），超标时测试失败并打印各路由明细。
 5. **Dockerfile**
    - 删除 dx 安装段（`ARG DX_VERSION` 及 125-145 行）、`binaryen` apt 包与相关注释、`ENV DX_HOME` 与 `make esbuild-cache wasm-bindgen-cache`。在 tailwind 安装之后新增 `RUN cargo install cargo-leptos --version 0.3.11 --locked`（独立层，便于缓存）。
-   - 把 291-300 行的 dx 构建 RUN 改为（保留三个 cache mount）：`make build-frontend && cp target/release/hash.txt /build/hash.txt && bun scripts/build-release.cjs --out /build/dist --hash /build/hash.txt`（`--site` 用默认 `target/site`；hash 先拷出是因为 `/build/target` 是 cache mount）。
-   - 302-312 行 `make doc DOC_OUT=dist/public/doc` 保留；322-326 行 brotli 保留；其后新增 `RUN bun scripts/build-release.cjs --verify --out /build/dist`。
+   - 把 291-300 行的 dx 构建 RUN 改为（保留三个 cache mount）：`make build-frontend && cp target/release/hash.txt /build/hash.txt && bun scripts/build-release.ts --out /build/dist --hash /build/hash.txt`（`--site` 用默认 `target/site`；hash 先拷出是因为 `/build/target` 是 cache mount）。
+   - 302-312 行 `make doc DOC_OUT=dist/public/doc` 保留；322-326 行 brotli 保留；其后新增 `RUN bun scripts/build-release.ts --verify --out /build/dist`。
    - musl 服务端构建命令改为 `cargo build --release --locked --target "$MUSL_TARGET" --bin yggdrasil`（默认 feature 即 server）；cargo-chef `cook` 的 feature 参数同步去掉 `--no-default-features --features server`。
    - 运行阶段新增 `COPY --from=builder --chown=65534:65534 /build/dist/hash.txt /app/hash.txt`；`ENV DIOXUS_PUBLIC_PATH=/app/public` 改为 `ENV LEPTOS_SITE_ROOT=/app/public`。
 6. **Dockerfile.cross**：前端 stage 同上替换 dx 段；server stage 的 `cargo zigbuild` 改为 `--bin yggdrasil`、去掉 `--no-default-features --features server`；最终 stage 复制 `hash.txt` 到 `/app/hash.txt`、`ENV LEPTOS_SITE_ROOT=/app/public`；删除 359-362 行 `SERVER_FN_OVERRIDE_KEY` 说明。
@@ -467,10 +467,10 @@ Phase 2A 合入后开工（worktree 从当时的 `migrate/leptos` 拉出），�
    - `check-wasm` job：两条 clippy 合并为一条 `cargo clippy --locked --target wasm32-unknown-unknown --no-default-features --features hydrate -- -D warnings`，更新上方注释。
    - `lint-js` job：删除 `make test-release-bootstrap` 步骤。
    - `browser` job：`components` 去掉 `llvm-tools-preview`；“Install browser build tools”删掉 dx 三行，新增 `taiki-e/install-action`（沿用文件里已固定的 SHA）安装 `cargo-leptos@0.3.11`；其余不变。
-   - 新增 `release-split` job（`runs-on: ubuntu-latest`，`timeout-minutes: 60`，`needs: [select_runner]`，PR 也跑）：checkout、stable 工具链（targets wasm32）、`make wasm-toolchain`、rust-cache（`prefix-key: release-split`）、setup-bun、安装 tailwind/postgresql-client-18/brotli/cargo-leptos 与 `libs` 依赖及 Playwright chromium（同 browser job）、`make build`、`bun scripts/test-release-split.cjs`、上传 `target/regressions/`。
+   - 新增 `release-split` job（`runs-on: ubuntu-latest`，`timeout-minutes: 60`，`needs: [select_runner]`，PR 也跑）：checkout、stable 工具链（targets wasm32）、`make wasm-toolchain`、rust-cache（`prefix-key: release-split`）、setup-bun、安装 tailwind/postgresql-client-18/brotli/cargo-leptos 与 `libs` 依赖及 Playwright chromium（同 browser job）、`make build`、`bun scripts/test-release-split.ts`、上传 `target/regressions/`。
    - `build-amd64` 的 `needs` 加入 `release-split`。
 9. **.env.example**：`YGG_PREVIOUS_PUBLIC_DIR` 说明改为“上一发布的 `public/` 目录，滚动发布期间为旧标签页提供已删除的 `/pkg/` 分包”；新增 `LEPTOS_SITE_ROOT` 说明（默认可执行文件旁的 `public/`，`hash.txt` 必须与可执行文件同目录）。
-10. 切片自检：`bun scripts/build-release.cjs --help` 不报语法错误、`bash -n` 检查改动的 shell 片段、`actionlint`（若本机可用）通过；不在切片内跑 `make build`。提交：`build(release): 构建发布与 CI 切换到 cargo-leptos`。
+10. 切片自检：`bun scripts/build-release.ts --help` 不报语法错误、`bash -n` 检查改动的 shell 片段、`actionlint`（若本机可用）通过；不在切片内跑 `make build`。提交：`build(release): 构建发布与 CI 切换到 cargo-leptos`。
 
 ## Phase 6：收尾与总验收（编排者）
 
@@ -493,9 +493,9 @@ Phase 2A 合入后开工（worktree 从当时的 `migrate/leptos` 拉出），�
 1. 静态检查：`cargo fmt -- --check`；`cargo clippy --locked --all-targets -- -D warnings`；`cargo clippy --locked --target wasm32-unknown-unknown --no-default-features --features hydrate -- -D warnings`；`cd libs && bun run lint && bun run typecheck`。
 2. 单测：`cargo test --locked`（应包含新增的 `routes` 编码测试、改写后的 ui SSR 测试、`utils::error` 的 413 嗅探测试、`middleware` 的 `/pkg` 缓存与回退测试）；`cd libs && bun run --sequential --filter '*' test`。
 3. 数据库回归：`make test-databases`（11 个 `#[ignore]` 测试中脚本覆盖的 4 组，含改用 `scope_with_request` 的 `post_write_service_database`）。
-4. 浏览器回归：`make regression-build`，然后 `make test-browser BROWSER_SUITE=smoke`、`admin`、`notes`、`backup`、`runner`、`slash`、`showcase`、`lightbox` 逐个通过；`bun scripts/test-public-performance.cjs` 通过。
-5. 视图过渡：冒烟库上启动 `target/debug/yggdrasil`（`APP_BASE_URL` 与 `VT_BASE` 同为 `http://127.0.0.1:18080`），`VT_BASE=http://127.0.0.1:18080 bun scripts/test-view-transitions.cjs` 通过；按 `scripts/README-view-transitions.md` 手工检查直开、SPA 导航、明暗主题、390 px 移动端、减少动态效果。
-6. 发布与分割：`make test-release-split`（含 `make build` 与 `build-release.cjs --verify`）通过；`target/regressions/*-release-split/sizes.json` 中 9 条路由的 `brotli_bytes` 全部 ≤ 594,603。
+4. 浏览器回归：`make regression-build`，然后 `make test-browser BROWSER_SUITE=smoke`、`admin`、`notes`、`backup`、`runner`、`slash`、`showcase`、`lightbox` 逐个通过；`bun scripts/test-public-performance.ts` 通过。
+5. 视图过渡：冒烟库上启动 `target/debug/yggdrasil`（`APP_BASE_URL` 与 `VT_BASE` 同为 `http://127.0.0.1:18080`），`VT_BASE=http://127.0.0.1:18080 bun scripts/test-view-transitions.ts` 通过；按 `scripts/README-view-transitions.md` 手工检查直开、SPA 导航、明暗主题、390 px 移动端、减少动态效果。
+6. 发布与分割：`make test-release-split`（含 `make build` 与 `build-release.ts --verify`）通过；`target/regressions/*-release-split/sizes.json` 中 9 条路由的 `brotli_bytes` 全部 ≤ 594,603。
 7. 新行为抽查（release 产物，`LEPTOS_SITE_ROOT=target/release-dist/public target/release-dist/server`，冒烟库）：
    - `curl -sI http://127.0.0.1:18080/pkg/<hash.txt 中 wasm 行对应的文件>` → `cache-control: public, max-age=31536000, immutable`。
    - `curl -s -w '\n%{http_code}' -X POST -H 'content-type: application/json' -H 'Origin: http://127.0.0.1:18080' -d '{}' http://127.0.0.1:18080/api/get_db_schema`（需管理员、无参数，未带会话）→ 状态码非 2xx，响应体以 `ServerError|` 开头（server_fn 的错误编码），且不含 SQL、端口或连接串细节。
@@ -508,7 +508,7 @@ Phase 2A 合入后开工（worktree 从当时的 `migrate/leptos` 拉出），�
 - **懒加载父路由**：若 `<ParentRoute path=path!("admin") view={Lazy::<AdminShellRoute>::new()}>` 编译失败或 Phase 2B 的侧栏保留检查不通过，改为把每个后台子路由提升为顶层 `<Route path=path!("admin/…")>`，各自的 `view()` 外包 `<AdminLayout>`（`AdminLayout` 改为接收 `children` 而不是渲染 `<Outlet/>`），并在报告中注明“后台切换页面会重建侧栏”。
 - **`SsrMode::InOrder`**：若某条 `InOrder` 路由的 SSR HTML 里只有骨架屏而没有数据内容，把该路由改为 `SsrMode::Async`。
 - **nightly 前端构建**：若 `make build-frontend`（nightly + `-Zbuild-std` + `-Cpanic=immediate-abort` + `--split`）失败，去掉 `LEPTOS_WASM_ENV` 与 `LEPTOS_WASM_ARGS`，改用稳定工具链 `cargo leptos build --release --split --frontend-only`（与原型一致），Dockerfile/CI 同步，然后继续；体积门槛仍按 594,603 B 判定。
-- **体积门槛**：`test-release-split.cjs` 任一路由超标时**停止并报告** `sizes.json` 明细，不自行追加懒加载点或裁剪功能。
+- **体积门槛**：`test-release-split.ts` 任一路由超标时**停止并报告** `sizes.json` 明细，不自行追加懒加载点或裁剪功能。
 - **cargo-leptos 安装**：CI 中 `taiki-e/install-action` 装不上 `cargo-leptos@0.3.11` 时改为 `cargo install cargo-leptos --version 0.3.11 --locked`。Docker 构建中 cargo-leptos 下载 wasm-bindgen/wasm-opt 失败（例如 `CN_MIRROR=true` 无法访问 GitHub）时，在镜像里先 `cargo install wasm-bindgen-cli --version <Cargo.lock 中 wasm-bindgen 的版本> --locked` 并 apt 安装 `binaryen`，让 cargo-leptos 使用 PATH 上的工具。
 - **musl 下的 cdylib**：若 musl 静态构建因 `cdylib` crate type 报错（而不只是 “dropping unsupported crate type” 警告），停止并报告。
 - **server fn URL 变化**：所有 server fn 地址从 `/api/<name><哈希>` 变为 `/api/<name>`，发布切换瞬间仍开着的旧 Dioxus 标签页会调用失败、需要刷新；这是一次性切换的已知代价，不做兼容路由。

@@ -3,27 +3,48 @@
  * Browser acceptance for the public component atlas. Connects to an existing site only.
  *
  * SHOWCASE_BASE=http://127.0.0.1:8080 PLAYWRIGHT_MODULE=/path/to/playwright \
- *   CHROMIUM_PATH=/path/to/chromium bun scripts/test-components-showcase.cjs
+ *   CHROMIUM_PATH=/path/to/chromium bun scripts/test-components-showcase.ts
  * Optional SHOWCASE_ARTIFACT_DIR stores screenshots/report; default is a temporary directory.
  * SHOWCASE_ONLY=post-footer runs focused footer layout, theme, and sample-link checks.
  * SHOWCASE_ONLY=post-header checks full, unscaled headers and draft/summary variants.
  * SHOWCASE_ONLY=post-nav-links checks responsive navigation and missing-neighbor states.
  * Sensitive showcase requests are recorded, aborted, and fail the run.
  */
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import type * as Playwright from 'playwright';
+
+const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright') as typeof Playwright;
+
+type ScriptWindow = Window &
+  typeof globalThis & {
+    __routeTransitions: { push(route: string): void; entryId(): string };
+    TiptapEditor: { _instances: Map<string, unknown> };
+    CodeMirrorEditor: { _instances: Map<string, unknown> };
+    XtermTerminal: { _instances: Map<string, unknown> };
+  };
+interface Catalog {
+  components: { slug: string; name: string; group: string; preview_mode: string }[];
+  groups: [string, string][];
+}
+interface ApiRequest {
+  stage: string;
+  visitId: number;
+  method: string;
+  path: string;
+}
 
 const BASE = (process.env.SHOWCASE_BASE || 'http://127.0.0.1:8080').replace(/\/$/, '');
 const ORIGIN = new URL(BASE).origin;
-const ARTIFACTS = process.env.SHOWCASE_ARTIFACT_DIR ||
+const ARTIFACTS =
+  process.env.SHOWCASE_ARTIFACT_DIR ||
   fs.mkdtempSync(path.join(os.tmpdir(), 'yggdrasil-showcase-'));
 fs.mkdirSync(ARTIFACTS, { recursive: true });
 
 // These selectors describe actual shared UI, rather than the catalog metadata or title.
-const TARGETS = [
+const TARGETS: [string, string, string][] = [
   ['asset-picker-modal', 'AssetPickerModal', '.showcase-picker-panel img'],
   ['asset-upload-modal', 'AssetUploadModal', '.showcase-upload-demo :text("封面.webp")'],
   ['code-runner', 'CodeRunner', '.showcase-runner-demo .runner-editor .cm-editor'],
@@ -42,51 +63,98 @@ const TARGETS = [
   ['xterm-terminal', 'XtermTerminal', '.showcase-browser-host--xterm .xterm'],
   ['lightbox', 'Lightbox', '.showcase-browser-lightbox-grid img'],
 ];
-const CATALOG = JSON.parse(fs.readFileSync(
-  path.join(__dirname, '../src/pages/components_showcase_data.json'), 'utf8'));
-const MODES = new Map(CATALOG.components.map(component => [component.slug, component.preview_mode]));
+const CATALOG: Catalog = JSON.parse(
+  fs.readFileSync(path.join(__dirname, '../src/pages/components_showcase_data.json'), 'utf8'),
+);
+const MODES = new Map(
+  CATALOG.components.map((component) => [component.slug, component.preview_mode]),
+);
 const HEAVY = ['tiptap-editor', 'code-mirror-editor', 'xterm-terminal'];
 const BUNDLES = ['/tiptap/editor.js', '/codemirror/editor.js', '/xterm/terminal.js'];
 const SENSITIVE = new Set([
-  'getcurrentuser', 'logout', 'listassets', 'getuploadsettings', 'getcomments', 'createcomment',
-  'checkpendingstatus', 'startExec'.toLowerCase(), 'startexecstream', 'getexecresult',
-  'executesql', 'getdbschema',
+  'getcurrentuser',
+  'logout',
+  'listassets',
+  'getuploadsettings',
+  'getcomments',
+  'createcomment',
+  'checkpendingstatus',
+  'startExec'.toLowerCase(),
+  'startexecstream',
+  'getexecresult',
+  'executesql',
+  'getdbschema',
 ]);
 // 站内跳回 /about 时关于页自己的读取（直接访问时由 SSR 带下，不出现在基线里）。
-const NORMAL_FRONTEND_READS = new Set(['getsitesettings', 'getshowcasedata', 'postsperyear',
-  'listtags', 'latestrelease']);
-const report = { base: BASE, artifactDir: ARTIFACTS, passed: [], apiRequests: [],
-  blockedBusinessRequests: [], pageErrors: [], screenshots: [], limitations: [] };
+const NORMAL_FRONTEND_READS = new Set([
+  'getsitesettings',
+  'getshowcasedata',
+  'postsperyear',
+  'listtags',
+  'latestrelease',
+]);
+const report: {
+  base: string;
+  artifactDir: string;
+  passed: string[];
+  apiRequests: ApiRequest[];
+  blockedBusinessRequests: { stage: string; method: string; path: string }[];
+  pageErrors: { stage: string; message: string }[];
+  screenshots: string[];
+  limitations: string[];
+  baselineReads?: { endpoint: string; count: number }[];
+  catalogReturnScroll?: { before: number; after: number };
+  failure?: { stage: string; message: string };
+} = {
+  base: BASE,
+  artifactDir: ARTIFACTS,
+  passed: [],
+  apiRequests: [],
+  blockedBusinessRequests: [],
+  pageErrors: [],
+  screenshots: [],
+  limitations: [],
+};
 let stage = 'baseline';
-let baselineReads = new Map();
+let baselineReads = new Map<string, number>();
 let visitId = 0;
 
-function apiName(pathname) {
-  return pathname.split('/').pop().replace(/[^a-z]/gi, '').toLowerCase();
+function apiName(pathname: string) {
+  return pathname
+    .split('/')
+    .pop()!
+    .replace(/[^a-z]/gi, '')
+    .toLowerCase();
 }
-function isSensitive(pathname) {
-  return pathname.startsWith('/api/') &&
+function isSensitive(pathname: string) {
+  return (
+    pathname.startsWith('/api/') &&
     (SENSITIVE.has(apiName(pathname)) ||
-      /^\/api\/(?:upload|comments\/upload|notes\/upload|exec\/)/i.test(pathname));
+      /^\/api\/(?:upload|comments\/upload|notes\/upload|exec\/)/i.test(pathname))
+  );
 }
-function pass(name, extra) {
+function pass(name: string, extra?: unknown) {
   report.passed.push(name);
   console.log('PASS', name, extra || '');
 }
-async function attachMonitoring(page) {
-  page.on('pageerror', error => report.pageErrors.push({ stage, message: error.message }));
-  page.on('request', request => {
+async function attachMonitoring(page: Playwright.Page) {
+  page.on('pageerror', (error) => report.pageErrors.push({ stage, message: error.message }));
+  page.on('request', (request) => {
     const url = new URL(request.url());
     if (url.origin === ORIGIN && url.pathname.startsWith('/api/')) {
       report.apiRequests.push({ stage, visitId, method: request.method(), path: url.pathname });
     }
   });
-  await page.route('**/api/**', async route => {
+  await page.route('**/api/**', async (route) => {
     const request = route.request();
     const url = new URL(request.url());
     const endpoint = `${request.method()} ${url.pathname}`;
-    if (stage !== 'baseline' && url.origin === ORIGIN && isSensitive(url.pathname) &&
-      !baselineReads.has(endpoint)) {
+    if (
+      stage !== 'baseline' &&
+      url.origin === ORIGIN &&
+      isSensitive(url.pathname) &&
+      !baselineReads.has(endpoint)
+    ) {
       report.blockedBusinessRequests.push({ stage, method: request.method(), path: url.pathname });
       await route.abort();
       return;
@@ -94,190 +162,284 @@ async function attachMonitoring(page) {
     await route.continue();
   });
   // The dev toast may request Google Fonts; it is unrelated to component behavior.
-  await page.route('https://fonts.googleapis.com/**', route =>
-    route.fulfill({ status: 200, contentType: 'text/css', body: '' }));
+  await page.route('https://fonts.googleapis.com/**', (route) =>
+    route.fulfill({ status: 200, contentType: 'text/css', body: '' }),
+  );
 }
-async function goto(page, route) {
+async function goto(page: Playwright.Page, route: string) {
   if (stage !== 'baseline') visitId++;
   await page.goto(`${BASE}${route}`, { waitUntil: 'domcontentloaded', timeout: 90000 });
-  const ready = route === '/about/components' ? '.showcase-gallery' :
-    route.startsWith('/about/components/') ? '.showcase-detail' : 'main';
+  const ready =
+    route === '/about/components'
+      ? '.showcase-gallery'
+      : route.startsWith('/about/components/')
+        ? '.showcase-detail'
+        : 'main';
   await page.locator(ready).first().waitFor({ timeout: 90000 });
-  await page.waitForFunction(() => window.__routeTransitions?.entryId() && document.documentElement.dataset.hydrated === 'true', null, { timeout: 90000 });
+  await page.waitForFunction(
+    () =>
+      (window as ScriptWindow).__routeTransitions?.entryId() &&
+      document.documentElement.dataset.hydrated === 'true',
+    null,
+    { timeout: 90000 },
+  );
   await page.waitForTimeout(80);
 }
-async function push(page, route) {
+async function push(page: Playwright.Page, route: string) {
   visitId++;
-  await page.evaluate(next => window.__routeTransitions.push(next), route);
+  await page.evaluate((next) => (window as ScriptWindow).__routeTransitions.push(next), route);
   await page.waitForURL(`${BASE}${route}`);
 }
 function assertNetworkDelta() {
-  const after = report.apiRequests.filter(request => request.stage !== 'baseline');
-  const unexpected = after.filter(request => {
+  const after = report.apiRequests.filter((request) => request.stage !== 'baseline');
+  const unexpected = after.filter((request) => {
     const endpoint = `${request.method} ${request.path}`;
     return !baselineReads.has(endpoint) && !NORMAL_FRONTEND_READS.has(apiName(request.path));
   });
   assert.deepEqual(unexpected, [], 'showcase introduced API endpoints absent from /about baseline');
   for (const [endpoint, baselineCount] of baselineReads) {
     if (NORMAL_FRONTEND_READS.has(apiName(endpoint.split(' ')[1]))) continue;
-    const byVisit = new Map();
-    for (const request of after.filter(request => `${request.method} ${request.path}` === endpoint)) {
+    const byVisit = new Map<number, number>();
+    for (const request of after.filter(
+      (request) => `${request.method} ${request.path}` === endpoint,
+    )) {
       byVisit.set(request.visitId, (byVisit.get(request.visitId) || 0) + 1);
     }
     for (const [visit, observed] of byVisit) {
-      assert(observed <= baselineCount,
-        `${endpoint} occurred ${observed} times during showcase visit ${visit}; /about baseline was ${baselineCount}`);
+      assert(
+        observed <= baselineCount,
+        `${endpoint} occurred ${observed} times during showcase visit ${visit}; /about baseline was ${baselineCount}`,
+      );
     }
   }
   report.baselineReads = [...baselineReads].map(([endpoint, count]) => ({ endpoint, count }));
 }
-async function realPreview(page, slug, selector, card = false) {
-  const root = card ? page.locator(`#showcase-${slug} .showcase-card-preview`) :
-    page.locator('.showcase-detail .showcase-preview-instance');
+async function realPreview(page: Playwright.Page, slug: string, selector: string, card = false) {
+  const root = card
+    ? page.locator(`#showcase-${slug} .showcase-card-preview`)
+    : page.locator('.showcase-detail .showcase-preview-instance');
   await root.locator(selector).first().waitFor({ state: 'visible', timeout: 45000 });
-  assert.equal(await root.locator('.showcase-reference-art').count(), 0,
-    `${slug} fell back to the generic reference card`);
+  assert.equal(
+    await root.locator('.showcase-reference-art').count(),
+    0,
+    `${slug} fell back to the generic reference card`,
+  );
   if (HEAVY.includes(slug)) {
-    await root.locator('.showcase-browser-placeholder').first()
+    await root
+      .locator('.showcase-browser-placeholder')
+      .first()
       .waitFor({ state: 'hidden', timeout: 10000 });
   }
   if (slug === 'post-header') {
-    const layout = await root.evaluate(element => {
-      const preview = element.querySelector('[data-showcase-preview="post-header"]');
+    const layout = await root.evaluate((element) => {
+      const preview = element.querySelector<HTMLElement>('[data-showcase-preview="post-header"]')!;
       const outer = element.getBoundingClientRect();
       const box = preview.getBoundingClientRect();
-      const title = preview.querySelector('[data-showcase-sample="published"] .post-title');
+      const title = preview.querySelector<HTMLElement>(
+        '[data-showcase-sample="published"] .post-title',
+      )!;
       return {
         centered: Math.abs(box.left + box.width / 2 - outer.left - outer.width / 2) < 1,
         titleSize: Number.parseFloat(getComputedStyle(title).fontSize),
-        samples: [...preview.querySelectorAll('[data-showcase-sample]')].map(sample => {
-          const sheet = sample.getBoundingClientRect();
-          const header = sample.querySelector('.post-header');
-          return {
-            unscaled: Math.abs(header.getBoundingClientRect().width -
-              Number.parseFloat(getComputedStyle(header).width)) < 1,
-            noOverflow: sample.scrollWidth <= sample.clientWidth + 1 &&
-              sample.scrollHeight <= sample.clientHeight + 1,
-            visibleContent: [...header.children].every(child => {
-              const rect = child.getBoundingClientRect();
-              return rect.top >= sheet.top && rect.bottom <= Math.min(sheet.bottom, outer.bottom) + 1 &&
-                rect.left >= sheet.left && rect.right <= sheet.right + 1;
-            }),
-          };
-        }),
+        samples: [...preview.querySelectorAll<HTMLElement>('[data-showcase-sample]')].map(
+          (sample) => {
+            const sheet = sample.getBoundingClientRect();
+            const header = sample.querySelector<HTMLElement>('.post-header')!;
+            return {
+              unscaled:
+                Math.abs(
+                  header.getBoundingClientRect().width -
+                    Number.parseFloat(getComputedStyle(header).width),
+                ) < 1,
+              noOverflow:
+                sample.scrollWidth <= sample.clientWidth + 1 &&
+                sample.scrollHeight <= sample.clientHeight + 1,
+              visibleContent: [...header.children].every((child) => {
+                const rect = child.getBoundingClientRect();
+                return (
+                  rect.top >= sheet.top &&
+                  rect.bottom <= Math.min(sheet.bottom, outer.bottom) + 1 &&
+                  rect.left >= sheet.left &&
+                  rect.right <= sheet.right + 1
+                );
+              }),
+            };
+          },
+        ),
       };
     });
     assert(layout.centered, 'article header preview is centered in its workspace');
     assert(layout.titleSize >= (card ? 24 : 26), 'article title stays readable');
-    assert(layout.samples.every(sample => sample.unscaled && sample.noOverflow && sample.visibleContent),
-      'all header samples render at natural size with complete content and no inner scrollbars');
+    assert(
+      layout.samples.every(
+        (sample) => sample.unscaled && sample.noOverflow && sample.visibleContent,
+      ),
+      'all header samples render at natural size with complete content and no inner scrollbars',
+    );
   }
   if (slug === 'post-footer') {
-    const layout = await root.evaluate(element => {
-      const preview = element.querySelector('[data-showcase-preview="post-footer"]');
+    const layout = await root.evaluate((element) => {
+      const preview = element.querySelector<HTMLElement>('[data-showcase-preview="post-footer"]')!;
       const box = preview.getBoundingClientRect();
       const outer = element.getBoundingClientRect();
       return {
         scrollHeight: preview.scrollHeight,
         clientHeight: preview.clientHeight,
-        visibleTitles: [...preview.querySelectorAll('.post-nav-title')].every(title => {
-          const rect = title.getBoundingClientRect();
-          return rect.top >= box.top && rect.bottom <= Math.min(box.bottom, outer.bottom) + 1 &&
-            rect.left >= box.left && rect.right <= box.right + 1;
-        }),
+        visibleTitles: [...preview.querySelectorAll<HTMLElement>('.post-nav-title')].every(
+          (title) => {
+            const rect = title.getBoundingClientRect();
+            return (
+              rect.top >= box.top &&
+              rect.bottom <= Math.min(box.bottom, outer.bottom) + 1 &&
+              rect.left >= box.left &&
+              rect.right <= box.right + 1
+            );
+          },
+        ),
       };
     });
     assert(layout.scrollHeight <= layout.clientHeight + 1, 'footer preview has no inner scrollbar');
     assert(layout.visibleTitles, 'footer preview shows adjacent article titles in full');
   }
   if (slug === 'post-nav-links') {
-    const layout = await root.evaluate(element => {
-      const preview = element.querySelector('[data-showcase-preview="post-nav-links"]');
+    const layout = await root.evaluate((element) => {
+      const preview = element.querySelector<HTMLElement>(
+        '[data-showcase-preview="post-nav-links"]',
+      )!;
       const outer = element.getBoundingClientRect();
       const box = preview.getBoundingClientRect();
       return {
         centered: Math.abs(box.left + box.width / 2 - outer.left - outer.width / 2) < 1,
-        noOverflow: preview.scrollWidth <= preview.clientWidth + 1 &&
+        noOverflow:
+          preview.scrollWidth <= preview.clientWidth + 1 &&
           preview.scrollHeight <= preview.clientHeight + 1,
-        titleSize: Math.min(...[...preview.querySelectorAll('.post-nav-title')]
-          .map(title => Number.parseFloat(getComputedStyle(title).fontSize))),
-        naturalSize: [...preview.querySelectorAll('.post-nav')].every(nav =>
-          Math.abs(nav.getBoundingClientRect().width - Number.parseFloat(getComputedStyle(nav).width)) < 1),
-        visibleTitles: [...preview.querySelectorAll('.post-nav-title')].every(title => {
-          const rect = title.getBoundingClientRect();
-          return rect.left >= box.left && rect.right <= box.right + 1 &&
-            rect.top >= box.top && rect.bottom <= Math.min(box.bottom, outer.bottom) + 1;
-        }),
+        titleSize: Math.min(
+          ...[...preview.querySelectorAll<HTMLElement>('.post-nav-title')].map((title) =>
+            Number.parseFloat(getComputedStyle(title).fontSize),
+          ),
+        ),
+        naturalSize: [...preview.querySelectorAll<HTMLElement>('.post-nav')].every(
+          (nav) =>
+            Math.abs(
+              nav.getBoundingClientRect().width - Number.parseFloat(getComputedStyle(nav).width),
+            ) < 1,
+        ),
+        visibleTitles: [...preview.querySelectorAll<HTMLElement>('.post-nav-title')].every(
+          (title) => {
+            const rect = title.getBoundingClientRect();
+            return (
+              rect.left >= box.left &&
+              rect.right <= box.right + 1 &&
+              rect.top >= box.top &&
+              rect.bottom <= Math.min(box.bottom, outer.bottom) + 1
+            );
+          },
+        ),
       };
     });
     assert(layout.centered && layout.naturalSize, 'navigation preview stays centered and unscaled');
-    assert(layout.noOverflow && layout.visibleTitles, 'navigation titles are complete without inner scrolling');
+    assert(
+      layout.noOverflow && layout.visibleTitles,
+      'navigation titles are complete without inner scrolling',
+    );
     assert(layout.titleSize >= (card ? 14 : 15), 'article titles remain readable');
   }
 }
-async function screenshot(page, name) {
+async function screenshot(page: Playwright.Page, name: string) {
   const file = path.join(ARTIFACTS, `${name}.png`);
   await page.screenshot({ path: file, animations: 'disabled' });
   report.screenshots.push(file);
 }
-async function elementScreenshot(locator, name) {
+async function elementScreenshot(locator: Playwright.Locator, name: string) {
   const file = path.join(ARTIFACTS, `${name}.png`);
   await locator.screenshot({ path: file, animations: 'disabled' });
   report.screenshots.push(file);
 }
-async function assertNoDocumentOverflow(page, slug) {
-  const width = await page.evaluate(() => ({ view: innerWidth,
-    document: document.documentElement.scrollWidth }));
-  assert(width.document <= width.view + 2,
-    `${slug} overflows the ${width.view}px viewport by ${width.document - width.view}px`);
+async function assertNoDocumentOverflow(page: Playwright.Page, slug: string) {
+  const width = await page.evaluate(() => ({
+    view: innerWidth,
+    document: document.documentElement.scrollWidth,
+  }));
+  assert(
+    width.document <= width.view + 2,
+    `${slug} overflows the ${width.view}px viewport by ${width.document - width.view}px`,
+  );
 }
-async function commentStorage(page) {
-  return page.evaluate(() => Object.fromEntries(
-    Object.entries(localStorage).filter(([key]) => /comment|pending|author/i.test(key))));
+async function commentStorage(page: Playwright.Page) {
+  return page.evaluate(() =>
+    Object.fromEntries(
+      Object.entries(localStorage).filter(([key]) => /comment|pending|author/i.test(key)),
+    ),
+  );
 }
-async function catalog(page) {
+async function catalog(page: Playwright.Page) {
   stage = 'catalog';
   await goto(page, '/about/components');
   await page.locator('.showcase-card').first().waitFor();
   await page.waitForTimeout(700);
-  const early = await page.evaluate(() => performance.getEntriesByType('resource')
-    .map(entry => new URL(entry.name).pathname));
+  const early = await page.evaluate(() =>
+    performance.getEntriesByType('resource').map((entry) => new URL(entry.name).pathname),
+  );
   for (const bundle of BUNDLES) {
     assert(!early.includes(bundle), `${bundle} loaded before its card was visible`);
   }
   pass('cold catalog keeps browser libraries deferred');
 
   assert.equal(await page.locator('.showcase-card').count(), CATALOG.components.length);
-  assert.equal(await page.locator('.showcase-categories button').filter({ hasText: '页面布局' }).count(), 0);
+  assert.equal(
+    await page.locator('.showcase-categories button').filter({ hasText: '页面布局' }).count(),
+    0,
+  );
   for (const slug of ['admin-layout', 'frontend-layout', 'header', 'footer', 'search-icon-link']) {
-    assert.equal(await page.locator(`#showcase-${slug}`).count(), 0,
-      `${slug} should not appear in the catalog`);
-    assert.equal(await page.locator(`a[href="/about/components/${slug}"]`).count(), 0,
-      `${slug} should not have a detail link`);
+    assert.equal(
+      await page.locator(`#showcase-${slug}`).count(),
+      0,
+      `${slug} should not appear in the catalog`,
+    );
+    assert.equal(
+      await page.locator(`a[href="/about/components/${slug}"]`).count(),
+      0,
+      `${slug} should not have a detail link`,
+    );
   }
   pass('page layout category and its five previews are absent');
   for (const component of CATALOG.components) {
-    assert(['interactive', 'static'].includes(component.preview_mode),
-      `${component.slug} has invalid preview mode`);
+    assert(
+      ['interactive', 'static'].includes(component.preview_mode),
+      `${component.slug} has invalid preview mode`,
+    );
     const preview = page.locator(`#showcase-${component.slug} .showcase-card-preview`);
-    assert.equal(await preview.locator('.showcase-reference-art').count(), 0,
-      `${component.slug} fell back to reference art`);
-    assert(await preview.evaluate(element => [...element.children].some(child =>
-      !child.classList.contains('showcase-card-index'))),
-    `${component.slug} has an empty preview subtree`);
+    assert.equal(
+      await preview.locator('.showcase-reference-art').count(),
+      0,
+      `${component.slug} fell back to reference art`,
+    );
+    assert(
+      await preview.evaluate((element) =>
+        [...element.children].some((child) => !child.classList.contains('showcase-card-index')),
+      ),
+      `${component.slug} has an empty preview subtree`,
+    );
   }
   pass(`${CATALOG.components.length} catalog cards have preview structure and valid modes`);
 
-  await page.waitForFunction(() => document.querySelector('.showcase-grid')?.classList.contains('is-masonry'));
+  await page.waitForFunction(() =>
+    document.querySelector<HTMLElement>('.showcase-grid')?.classList.contains('is-masonry'),
+  );
   const layout = await page.evaluate(() => {
-    const cards = [...document.querySelectorAll('.showcase-grid > .showcase-card')]
-      .map(card => card.getBoundingClientRect());
-    const preview = document.querySelector('#showcase-asset-picker-modal .showcase-card-preview');
-    const panel = document.querySelector('#showcase-asset-picker-modal .showcase-picker-panel');
+    const cards = [
+      ...document.querySelectorAll<HTMLElement>('.showcase-grid > .showcase-card'),
+    ].map((card) => card.getBoundingClientRect());
+    const preview = document.querySelector<HTMLElement>(
+      '#showcase-asset-picker-modal .showcase-card-preview',
+    )!;
+    const panel = document.querySelector<HTMLElement>(
+      '#showcase-asset-picker-modal .showcase-picker-panel',
+    )!;
     return {
       ordered: cards.every((box, index) => index === 0 || box.top >= cards[index - 1].top - 1),
-      columns: new Set(cards.map(box => Math.round(box.left))).size,
-      heights: new Set(cards.map(box => Math.round(box.height))).size,
+      columns: new Set(cards.map((box) => Math.round(box.left))).size,
+      heights: new Set(cards.map((box) => Math.round(box.height))).size,
       panelBottom: panel.getBoundingClientRect().bottom,
       previewBottom: preview.getBoundingClientRect().bottom,
     };
@@ -290,7 +452,9 @@ async function catalog(page) {
 
   await page.setViewportSize({ width: 901, height: 900 });
   await page.waitForFunction(() => {
-    const preview = document.querySelector('#showcase-asset-picker-modal .showcase-card-preview');
+    const preview = document.querySelector<HTMLElement>(
+      '#showcase-asset-picker-modal .showcase-card-preview',
+    )!;
     const panel = preview?.querySelector('.showcase-picker-panel');
     return panel && panel.getBoundingClientRect().bottom <= preview.getBoundingClientRect().bottom;
   });
@@ -298,24 +462,44 @@ async function catalog(page) {
 
   for (const width of [768, 390]) {
     await page.setViewportSize({ width, height: 900 });
-    await page.waitForFunction(() => !document.querySelector('.showcase-grid')?.classList.contains('is-masonry'));
-    assert.equal(await page.locator('.showcase-card').first().evaluate(element => element.style.gridRowEnd), '');
+    await page.waitForFunction(
+      () =>
+        !document.querySelector<HTMLElement>('.showcase-grid')?.classList.contains('is-masonry'),
+    );
+    assert.equal(
+      await page
+        .locator('.showcase-card')
+        .first()
+        .evaluate((element) => element.style.gridRowEnd),
+      '',
+    );
     await assertNoDocumentOverflow(page, 'catalog');
   }
   await page.setViewportSize({ width: 1440, height: 1000 });
-  await page.waitForFunction(() => document.querySelector('.showcase-grid')?.classList.contains('is-masonry'));
+  await page.waitForFunction(() =>
+    document.querySelector<HTMLElement>('.showcase-grid')?.classList.contains('is-masonry'),
+  );
   pass('catalog switches to one column on narrow viewports');
 
   for (const [index, [group]] of CATALOG.groups.entries()) {
     const button = page.locator('.showcase-categories button').nth(index);
     await button.click();
-    await page.waitForFunction(position =>
-      document.querySelectorAll('.showcase-categories button')[position]?.getAttribute('aria-pressed') === 'true',
-    index);
-    const expected = group === 'all' ? CATALOG.components.length :
-      CATALOG.components.filter(component => component.group === group).length;
-    assert.equal(await page.locator('.showcase-card').count(), expected,
-      `${group} catalog category count`);
+    await page.waitForFunction(
+      (position) =>
+        document
+          .querySelectorAll<HTMLElement>('.showcase-categories button')
+          [position]?.getAttribute('aria-pressed') === 'true',
+      index,
+    );
+    const expected =
+      group === 'all'
+        ? CATALOG.components.length
+        : CATALOG.components.filter((component) => component.group === group).length;
+    assert.equal(
+      await page.locator('.showcase-card').count(),
+      expected,
+      `${group} catalog category count`,
+    );
   }
   await page.locator('.showcase-categories button').first().click();
   pass('all catalog category filters match the catalog data');
@@ -326,8 +510,16 @@ async function catalog(page) {
     await card.waitFor();
     await card.scrollIntoViewIfNeeded();
     await realPreview(page, slug, selector, true);
-    if (['asset-picker-modal', 'asset-upload-modal', 'code-runner',
-      'tiptap-editor', 'lightbox'].includes(slug)) await screenshot(page, `card-${slug}`);
+    if (
+      [
+        'asset-picker-modal',
+        'asset-upload-modal',
+        'code-runner',
+        'tiptap-editor',
+        'lightbox',
+      ].includes(slug)
+    )
+      await screenshot(page, `card-${slug}`);
     if (['asset-picker-modal', 'asset-upload-modal', 'code-runner'].includes(slug)) {
       await elementScreenshot(card, `card-element-${slug}`);
     }
@@ -336,10 +528,16 @@ async function catalog(page) {
 
   await page.locator('.showcase-search input').fill('Checkbox');
   const checkboxCard = page.locator('#showcase-checkbox');
-  assert.equal(await checkboxCard.evaluate(element => getComputedStyle(element).cursor), 'pointer');
+  assert.equal(
+    await checkboxCard.evaluate((element) => getComputedStyle(element).cursor),
+    'pointer',
+  );
   await checkboxCard.locator('label').first().click();
-  assert.equal(new URL(page.url()).pathname, '/about/components',
-    'using a card preview should not open its detail page');
+  assert.equal(
+    new URL(page.url()).pathname,
+    '/about/components',
+    'using a card preview should not open its detail page',
+  );
   pass('cards show a pointer without hijacking preview controls');
 
   await page.locator('.showcase-search input').fill('');
@@ -348,14 +546,23 @@ async function catalog(page) {
   const secondCard = page.locator('.showcase-card').nth(1);
   const secondName = await secondCard.locator('.showcase-card-title code').textContent();
   await secondCard.locator('.showcase-card-caption p').click();
-  assert.equal(new URL(page.url()).pathname, '/about/components',
-    'clicking a card on wide screens selects it instead of leaving the catalog');
-  await page.waitForFunction(name =>
-    document.querySelector('.showcase-inspector-title code')?.textContent === name, secondName);
-  assert.equal(await secondCard.evaluate(element => element.classList.contains('is-selected')), true);
+  assert.equal(
+    new URL(page.url()).pathname,
+    '/about/components',
+    'clicking a card on wide screens selects it instead of leaving the catalog',
+  );
+  await page.waitForFunction(
+    (name) =>
+      document.querySelector<HTMLElement>('.showcase-inspector-title code')?.textContent === name,
+    secondName,
+  );
+  assert.equal(
+    await secondCard.evaluate((element) => element.classList.contains('is-selected')),
+    true,
+  );
   visitId++;
   await page.locator('.showcase-inspector').getByRole('link', { name: '打开详情页' }).click();
-  const secondSlug = CATALOG.components.find(component => component.name === secondName).slug;
+  const secondSlug = CATALOG.components.find((component) => component.name === secondName)!.slug;
   await page.waitForURL(`${BASE}/about/components/${secondSlug}`);
   visitId++;
   await page.goBack();
@@ -371,16 +578,21 @@ async function catalog(page) {
   await card.locator('.showcase-card-title a').click();
   await page.waitForURL(`${BASE}/about/components/tiptap-editor`);
   pass('clicking a card title opens its detail page');
-  await realPreview(page, 'tiptap-editor', TARGETS.find(item => item[0] === 'tiptap-editor')[2]);
+  await realPreview(page, 'tiptap-editor', TARGETS.find((item) => item[0] === 'tiptap-editor')![2]);
   visitId++;
-  await page.locator('.showcase-detail .breadcrumb').getByRole('link', { name: '组件图鉴' }).click();
+  await page
+    .locator('.showcase-detail .breadcrumb')
+    .getByRole('link', { name: '组件图鉴' })
+    .click();
   await page.waitForURL(`${BASE}/about/components`);
   await page.waitForTimeout(350);
   assert.equal(await page.locator('.showcase-search input').inputValue(), 'TiptapEditor');
   const returnedY = await page.evaluate(() => scrollY);
   report.catalogReturnScroll = { before: y, after: returnedY };
-  assert(Math.abs(returnedY - y) < 200,
-    `return to catalog should restore the prior card position (${y} → ${returnedY})`);
+  assert(
+    Math.abs(returnedY - y) < 200,
+    `return to catalog should restore the prior card position (${y} → ${returnedY})`,
+  );
   visitId++;
   await page.goBack();
   await page.waitForURL(`${BASE}/about/components/tiptap-editor`);
@@ -389,14 +601,15 @@ async function catalog(page) {
   await page.waitForURL(`${BASE}/about/components`);
   pass('catalog search, scroll, back and forward state');
 }
-async function removedLayoutDetails(page) {
+async function removedLayoutDetails(page: Playwright.Page) {
   stage = 'removed-layout-details';
   for (const slug of ['admin-layout', 'frontend-layout', 'header', 'footer', 'search-icon-link']) {
     visitId++;
     const response = await page.goto(`${BASE}/about/components/${slug}`, {
-      waitUntil: 'domcontentloaded', timeout: 90000,
+      waitUntil: 'domcontentloaded',
+      timeout: 90000,
     });
-    assert.equal(response.status(), 404, `${slug} direct load should return 404`);
+    assert.equal(response!.status(), 404, `${slug} direct load should return 404`);
     await page.locator('.showcase-missing').waitFor();
     assert.equal(await page.locator('.showcase-detail').count(), 0);
     await page.getByRole('link', { name: '返回组件图鉴' }).click();
@@ -405,7 +618,13 @@ async function removedLayoutDetails(page) {
   pass('removed layout details return 404 and link back to the catalog');
 }
 
-async function details(page, viewport, colorScheme, reducedMotion, label) {
+async function details(
+  page: Playwright.Page,
+  viewport: Playwright.ViewportSize,
+  colorScheme: Playwright.BrowserContextOptions['colorScheme'],
+  reducedMotion: Playwright.BrowserContextOptions['reducedMotion'],
+  label: string,
+) {
   stage = `details-${label}`;
   await page.setViewportSize(viewport);
   await page.emulateMedia({ colorScheme, reducedMotion });
@@ -413,21 +632,27 @@ async function details(page, viewport, colorScheme, reducedMotion, label) {
     await goto(page, `/about/components/${slug}`);
     await realPreview(page, slug, selector);
     const expectedReset = MODES.get(slug) === 'interactive' ? 1 : 0;
-    assert.equal(await page.locator('.showcase-live-toolbar .showcase-reset').count(), expectedReset,
-      `${slug} reset control disagrees with its preview mode`);
+    assert.equal(
+      await page.locator('.showcase-live-toolbar .showcase-reset').count(),
+      expectedReset,
+      `${slug} reset control disagrees with its preview mode`,
+    );
     await assertNoDocumentOverflow(page, slug);
     await screenshot(page, `${slug}-${label}`);
   }
   pass(`${TARGETS.length} direct details at ${viewport.width}px ${colorScheme} ${reducedMotion}`);
 }
 
-async function postHeader(page) {
+async function postHeader(page: Playwright.Page) {
   const selector = '[data-showcase-preview="post-header"] .post-header';
   for (const width of [1440, 390, 320]) {
-    for (const colorScheme of ['light', 'dark']) {
+    for (const colorScheme of ['light', 'dark'] as const) {
       stage = `post-header-${width}-${colorScheme}`;
       await page.setViewportSize({ width, height: 1000 });
-      await page.emulateMedia({ colorScheme, reducedMotion: width < 640 ? 'reduce' : 'no-preference' });
+      await page.emulateMedia({
+        colorScheme,
+        reducedMotion: width < 640 ? 'reduce' : 'no-preference',
+      });
       await goto(page, '/about/components');
       await page.locator('.showcase-search input').fill('PostHeader');
       const card = page.locator('#showcase-post-header');
@@ -443,19 +668,31 @@ async function postHeader(page) {
       const preview = page.locator('[data-showcase-preview="post-header"]');
       assert.equal(await preview.locator('.post-header').count(), 3);
       assert.equal(await preview.locator('[data-showcase-sample="draft"] .post-draft').count(), 1);
-      assert.equal(await preview.locator('[data-showcase-sample="published"] .post-draft').count(), 0);
-      assert.equal(await preview.locator('[data-showcase-sample="no-summary"] .post-lede').count(), 0);
-      const longTitle = await preview.locator('[data-showcase-sample="no-summary"] .post-title')
-        .evaluate(element => element.getBoundingClientRect().height >
-          Number.parseFloat(getComputedStyle(element).lineHeight) + 1);
+      assert.equal(
+        await preview.locator('[data-showcase-sample="published"] .post-draft').count(),
+        0,
+      );
+      assert.equal(
+        await preview.locator('[data-showcase-sample="no-summary"] .post-lede').count(),
+        0,
+      );
+      const longTitle = await preview
+        .locator('[data-showcase-sample="no-summary"] .post-title')
+        .evaluate(
+          (element) =>
+            element.getBoundingClientRect().height >
+            Number.parseFloat(getComputedStyle(element).lineHeight) + 1,
+        );
       assert(longTitle, 'long article titles wrap onto multiple lines');
       await assertNoDocumentOverflow(page, 'post-header-detail');
       await elementScreenshot(page.locator('.showcase-live-panel'), `${stage}-detail`);
 
       // Stress natural wrapping without creating or modifying an article.
-      await preview.locator('[data-showcase-sample="published"]').evaluate(element => {
-        element.querySelector('.post-title').textContent = 'LongTitleWithoutSpaces'.repeat(16);
-        element.querySelector('.post-lede').textContent = '一段较长的摘要，用来观察窄屏下的自然换行。'.repeat(6);
+      await preview.locator('[data-showcase-sample="published"]').evaluate((element) => {
+        element.querySelector<HTMLElement>('.post-title')!.textContent =
+          'LongTitleWithoutSpaces'.repeat(16);
+        element.querySelector<HTMLElement>('.post-lede')!.textContent =
+          '一段较长的摘要，用来观察窄屏下的自然换行。'.repeat(6);
       });
       await realPreview(page, 'post-header', selector);
       await assertNoDocumentOverflow(page, 'post-header-long-content');
@@ -466,13 +703,16 @@ async function postHeader(page) {
   }
 }
 
-async function postFooter(page) {
+async function postFooter(page: Playwright.Page) {
   const selector = '[data-showcase-preview="post-footer"] .post-footer';
   for (const width of [1440, 390]) {
-    for (const colorScheme of ['light', 'dark']) {
+    for (const colorScheme of ['light', 'dark'] as const) {
       stage = `post-footer-${width}-${colorScheme}`;
       await page.setViewportSize({ width, height: 1000 });
-      await page.emulateMedia({ colorScheme, reducedMotion: width === 390 ? 'reduce' : 'no-preference' });
+      await page.emulateMedia({
+        colorScheme,
+        reducedMotion: width === 390 ? 'reduce' : 'no-preference',
+      });
       await goto(page, '/about/components');
       await page.locator('.showcase-search input').fill('PostFooter');
       const card = page.locator('#showcase-post-footer');
@@ -490,30 +730,42 @@ async function postFooter(page) {
       await elementScreenshot(page.locator('.showcase-live-panel'), `${stage}-detail`);
       for (const link of await footer.locator('a').all()) {
         await link.click();
-        assert.equal(new URL(page.url()).pathname + new URL(page.url()).hash,
-          '/about/components/post-footer', 'sample links stay on the footer preview');
+        assert.equal(
+          new URL(page.url()).pathname + new URL(page.url()).hash,
+          '/about/components/post-footer',
+          'sample links stay on the footer preview',
+        );
       }
       await page.keyboard.press('Tab');
       await footer.locator('a.prev').focus();
-      const focus = await footer.locator('a.prev').evaluate(element => getComputedStyle(element).boxShadow);
+      const focus = await footer
+        .locator('a.prev')
+        .evaluate((element) => getComputedStyle(element).boxShadow);
       assert.notEqual(focus, 'none', 'adjacent article links have a visible keyboard focus');
 
       // Temporary content stresses wrapping without writing articles or changing fixture data.
-      await footer.evaluate(element => {
-        for (const title of element.querySelectorAll('.post-nav-title')) {
+      await footer.evaluate((element) => {
+        for (const title of element.querySelectorAll<HTMLElement>('.post-nav-title')) {
           title.textContent = '一篇很长的文章标题，保留完整的文字与阅读方向。'.repeat(5);
         }
       });
       await realPreview(page, 'post-footer', selector);
       await assertNoDocumentOverflow(page, 'post-footer-long-content');
-      await footer.locator('a.prev').evaluate(element => element.remove());
-      const position = await footer.locator('a.next').evaluate(element => {
-        const parent = element.parentElement.getBoundingClientRect();
+      await footer.locator('a.prev').evaluate((element) => element.remove());
+      const position = await footer.locator('a.next').evaluate((element) => {
+        const parent = element.parentElement!.getBoundingClientRect();
         const box = element.getBoundingClientRect();
-        return { fullWidth: Math.abs(box.width - parent.width) < 1, right: box.right, parentRight: parent.right };
+        return {
+          fullWidth: Math.abs(box.width - parent.width) < 1,
+          right: box.right,
+          parentRight: parent.right,
+        };
       });
       assert.equal(position.fullWidth, width === 390, 'a lone next article fills the mobile row');
-      assert(Math.abs(position.right - position.parentRight) < 1, 'a lone next article keeps its alignment');
+      assert(
+        Math.abs(position.right - position.parentRight) < 1,
+        'a lone next article keeps its alignment',
+      );
       pass(`${stage}: full card/detail, sample links, focus, long content and lone next article`);
 
       await goto(page, '/about/components/post-footer');
@@ -522,16 +774,21 @@ async function postFooter(page) {
   }
 }
 
-async function postNavLinks(page) {
+async function postNavLinks(page: Playwright.Page) {
   const selector = '[data-showcase-preview="post-nav-links"] .post-nav';
   for (const width of [1440, 760, 390, 320]) {
-    for (const colorScheme of ['light', 'dark']) {
+    for (const colorScheme of ['light', 'dark'] as const) {
       stage = `post-nav-links-${width}-${colorScheme}`;
       await page.setViewportSize({ width, height: 1000 });
-      await page.emulateMedia({ colorScheme, reducedMotion: width < 640 ? 'reduce' : 'no-preference' });
+      await page.emulateMedia({
+        colorScheme,
+        reducedMotion: width < 640 ? 'reduce' : 'no-preference',
+      });
       await goto(page, '/about/components');
-      await page.waitForFunction(dark => document.documentElement.classList.contains('dark') === dark,
-        colorScheme === 'dark');
+      await page.waitForFunction(
+        (dark) => document.documentElement.classList.contains('dark') === dark,
+        colorScheme === 'dark',
+      );
       await page.locator('.showcase-search input').fill('PostNavLinks');
       const card = page.locator('#showcase-post-nav-links');
       await card.scrollIntoViewIfNeeded();
@@ -552,17 +809,26 @@ async function postNavLinks(page) {
       assert.equal(await preview.locator('[data-showcase-sample="next-only"] a.next').count(), 1);
       assert.equal(await preview.locator('[data-showcase-sample="prev-only"] a.prev').count(), 1);
       assert.equal(await preview.locator('[data-showcase-sample="prev-only"] a.next').count(), 0);
-      assert.equal(await preview.locator('[data-showcase-sample="empty"] nav').count(), 0,
-        'no neighbors means no empty navigation landmark');
+      assert.equal(
+        await preview.locator('[data-showcase-sample="empty"] nav').count(),
+        0,
+        'no neighbors means no empty navigation landmark',
+      );
 
-      const grids = await preview.locator('.post-nav').evaluateAll(navs => navs.map(nav => {
-        const box = nav.getBoundingClientRect();
-        const links = [...nav.querySelectorAll('a')].map(link => link.getBoundingClientRect());
-        return { narrow: box.width <= 480 || innerWidth <= 600,
-          fullWidth: links.every(link => Math.abs(link.width - box.width) < 1),
-          stacked: links.length < 2 || links[1].top >= links[0].bottom,
-          alignedRight: Math.abs(links.at(-1).right - box.right) < 1 };
-      }));
+      const grids = await preview.locator('.post-nav').evaluateAll((navs) =>
+        navs.map((nav) => {
+          const box = nav.getBoundingClientRect();
+          const links = [...nav.querySelectorAll<HTMLElement>('a')].map((link) =>
+            link.getBoundingClientRect(),
+          );
+          return {
+            narrow: box.width <= 480 || innerWidth <= 600,
+            fullWidth: links.every((link) => Math.abs(link.width - box.width) < 1),
+            stacked: links.length < 2 || links[1].top >= links[0].bottom,
+            alignedRight: Math.abs(links.at(-1)!.right - box.right) < 1,
+          };
+        }),
+      );
       for (const [index, grid] of grids.entries()) {
         assert.equal(grid.fullWidth, grid.narrow, 'card layout follows its container width');
         assert.equal(grid.stacked, grid.narrow || index > 0);
@@ -570,23 +836,35 @@ async function postNavLinks(page) {
       }
       for (const link of await preview.locator('.post-nav a').all()) {
         await link.click();
-        assert.equal(new URL(page.url()).pathname + new URL(page.url()).hash,
-          '/about/components/post-nav-links', 'sample links stay on the preview');
+        assert.equal(
+          new URL(page.url()).pathname + new URL(page.url()).hash,
+          '/about/components/post-nav-links',
+          'sample links stay on the preview',
+        );
       }
       await page.keyboard.press('Tab');
       const first = both.locator('a.prev');
       await first.focus();
-      assert.notEqual(await first.evaluate(element => getComputedStyle(element).boxShadow), 'none');
+      assert.notEqual(
+        await first.evaluate((element) => getComputedStyle(element).boxShadow),
+        'none',
+      );
       await page.keyboard.press('Enter');
-      assert.equal(new URL(page.url()).pathname + new URL(page.url()).hash,
-        '/about/components/post-nav-links', 'keyboard activation keeps samples local');
+      assert.equal(
+        new URL(page.url()).pathname + new URL(page.url()).hash,
+        '/about/components/post-nav-links',
+        'keyboard activation keeps samples local',
+      );
       if (width < 640) {
-        assert.equal(await first.evaluate(element => getComputedStyle(element).transitionDuration), '0s');
+        assert.equal(
+          await first.evaluate((element) => getComputedStyle(element).transitionDuration),
+          '0s',
+        );
       }
       await assertNoDocumentOverflow(page, 'post-nav-links-detail');
       await elementScreenshot(page.locator('.showcase-live-panel'), `${stage}-detail`);
 
-      await both.locator('.post-nav-title').evaluateAll(titles => {
+      await both.locator('.post-nav-title').evaluateAll((titles) => {
         for (const title of titles) title.textContent = 'LongTitleWithoutSpaces'.repeat(15);
       });
       await realPreview(page, 'post-nav-links', selector);
@@ -598,14 +876,16 @@ async function postNavLinks(page) {
   }
 }
 
-async function interactions(page, onlyModalResets = false) {
+async function interactions(page: Playwright.Page, onlyModalResets = false) {
   stage = 'interactions';
   await goto(page, '/about/components/asset-picker-modal');
   const pickerTrigger = page.getByRole('button', { name: '打开素材选择弹窗' });
   await pickerTrigger.click();
   const dialog = page.getByRole('dialog');
   await dialog.waitFor();
-  await page.waitForFunction(() => document.activeElement?.matches('[data-ygg-modal-panel][data-ygg-modal-open="true"]'));
+  await page.waitForFunction(() =>
+    document.activeElement?.matches('[data-ygg-modal-panel][data-ygg-modal-open="true"]'),
+  );
   await dialog.getByRole('checkbox', { name: '纸面与陶土.webp' }).click();
   await dialog.getByRole('button', { name: '下一页' }).click();
   await dialog.getByRole('checkbox', { name: '叠放的卡片.webp' }).click();
@@ -616,7 +896,9 @@ async function interactions(page, onlyModalResets = false) {
   await page.locator('.showcase-demo-result').waitFor({ state: 'hidden' });
   await pickerTrigger.click();
   await page.getByRole('dialog').waitFor();
-  await page.waitForFunction(() => document.activeElement?.matches('[data-ygg-modal-panel][data-ygg-modal-open="true"]'));
+  await page.waitForFunction(() =>
+    document.activeElement?.matches('[data-ygg-modal-panel][data-ygg-modal-open="true"]'),
+  );
   await dialog.getByPlaceholder('文件名或替代文本').fill('网格');
   await dialog.getByRole('tab', { name: '单选' }).click();
   await dialog.getByRole('button', { name: '恢复默认' }).click();
@@ -630,7 +912,9 @@ async function interactions(page, onlyModalResets = false) {
   await dialog.getByText('可以多选，插入顺序与勾选顺序一致').waitFor();
   await page.keyboard.press('Escape');
   await page.getByRole('dialog').waitFor({ state: 'hidden' });
-  await page.waitForFunction(() => document.activeElement?.textContent?.includes('打开素材选择弹窗'));
+  await page.waitForFunction(() =>
+    document.activeElement?.textContent?.includes('打开素材选择弹窗'),
+  );
   pass('asset picker ordered selection, in-dialog reset, and Escape');
 
   await goto(page, '/about/components/asset-upload-modal');
@@ -649,7 +933,9 @@ async function interactions(page, onlyModalResets = false) {
   await uploadTrigger.click();
   const uploadDialog = page.getByRole('dialog');
   await uploadDialog.waitFor();
-  await page.waitForFunction(() => document.activeElement?.matches('[data-ygg-modal-panel][data-ygg-modal-open="true"]'));
+  await page.waitForFunction(() =>
+    document.activeElement?.matches('[data-ygg-modal-panel][data-ygg-modal-open="true"]'),
+  );
   await uploadDialog.getByRole('button', { name: /加入示例文件/ }).click();
   await uploadDialog.getByText('示例文件-5.webp').waitFor();
   await uploadDialog.getByRole('button', { name: '恢复默认' }).click();
@@ -715,19 +1001,29 @@ async function interactions(page, onlyModalResets = false) {
   pass('comment reply draft survives cancel and submits locally');
 
   await goto(page, '/about/components/post-content');
-  const original = await page.locator('[data-showcase-preview="post-content"] .post-content').innerText();
+  const original = await page
+    .locator('[data-showcase-preview="post-content"] .post-content')
+    .innerText();
   await page.getByRole('button', { name: '切换文章样例' }).click();
-  const next = await page.locator('[data-showcase-preview="post-content"] .post-content').innerText();
+  const next = await page
+    .locator('[data-showcase-preview="post-content"] .post-content')
+    .innerText();
   assert.notEqual(next, original);
   pass('article content switches inside preview');
 
   await goto(page, '/about/components/post-toc');
   const tocScroll = page.locator('#showcase-post-toc-scroll-detail');
-  await tocScroll.evaluate(element => { element.style.height = '180px'; });
+  await tocScroll.evaluate((element) => {
+    element.style.height = '180px';
+  });
   await page.locator('[data-showcase-preview="post-toc"] .toc-sidebar a').last().click();
   assert.equal(await page.evaluate(() => location.hash), '', 'preview TOC changed the page hash');
-  await page.waitForFunction(() => document.querySelector('#showcase-post-toc-scroll-detail')?.scrollTop > 0,
-    null, { timeout: 5000 });
+  await page.waitForFunction(
+    () =>
+      (document.querySelector<HTMLElement>('#showcase-post-toc-scroll-detail')?.scrollTop ?? 0) > 0,
+    null,
+    { timeout: 5000 },
+  );
   pass('post TOC navigates inside its own scroll area');
 
   await goto(page, '/about/components/lightbox');
@@ -771,20 +1067,26 @@ async function interactions(page, onlyModalResets = false) {
   await page.getByText('已清屏').waitFor();
   pass('xterm replay, pause and clear');
 }
-async function lifecycle(page) {
+async function lifecycle(page: Playwright.Page) {
   stage = 'lifecycle';
   for (const [slug, global] of [
     ['tiptap-editor', 'TiptapEditor'],
     ['code-mirror-editor', 'CodeMirrorEditor'],
     ['xterm-terminal', 'XtermTerminal'],
-  ]) {
+  ] as const) {
     for (let cycle = 0; cycle < 5; cycle++) {
       await push(page, `/about/components/${slug}`);
-      await realPreview(page, slug, TARGETS.find(item => item[0] === slug)[2]);
-      assert.equal(await page.evaluate(name => window[name]._instances.size, global), 1,
-        `${slug} should own one instance`);
+      await realPreview(page, slug, TARGETS.find((item) => item[0] === slug)![2]);
+      assert.equal(
+        await page.evaluate((name) => (window as ScriptWindow)[name]._instances.size, global),
+        1,
+        `${slug} should own one instance`,
+      );
       await push(page, '/about');
-      await page.waitForFunction(name => window[name]?._instances.size === 0, global);
+      await page.waitForFunction(
+        (name) => (window as ScriptWindow)[name]?._instances.size === 0,
+        global,
+      );
     }
   }
   pass('browser instances return to zero after five SPA round trips each');
@@ -795,34 +1097,41 @@ async function lifecycle(page) {
   await page.locator('.lightbox-overlay').waitFor({ state: 'hidden' });
   pass('leaving lightbox preview closes only its overlay');
 }
-async function failureAndLateLoad(browser) {
+async function failureAndLateLoad(browser: Playwright.Browser) {
   stage = 'library-retry';
   const context = await browser.newContext();
   const page = await context.newPage();
   page.setDefaultTimeout(30000);
   await attachMonitoring(page);
   let first = true;
-  await page.route('**/codemirror/editor.js*', async route => {
-    if (first) { first = false; await route.abort(); }
-    else await route.continue();
+  await page.route('**/codemirror/editor.js*', async (route) => {
+    if (first) {
+      first = false;
+      await route.abort();
+    } else await route.continue();
   });
   try {
     await goto(page, '/about/components/code-mirror-editor');
     await page.getByRole('button', { name: '重新加载' }).click();
-    await realPreview(page, 'code-mirror-editor', TARGETS.find(item => item[0] === 'code-mirror-editor')[2]);
+    await realPreview(
+      page,
+      'code-mirror-editor',
+      TARGETS.find((item) => item[0] === 'code-mirror-editor')![2],
+    );
     pass('browser library failure can retry');
-  } finally { await context.close(); }
+  } finally {
+    await context.close();
+  }
 
   stage = 'late-library';
   const lateContext = await browser.newContext();
   const latePage = await lateContext.newPage();
   latePage.setDefaultTimeout(30000);
   await attachMonitoring(latePage);
-  let requested;
-  const started = new Promise(resolve => { requested = resolve; });
-  await latePage.route('**/xterm/terminal.js*', async route => {
+  const { promise: started, resolve: requested } = Promise.withResolvers<void>();
+  await latePage.route('**/xterm/terminal.js*', async (route) => {
     requested();
-    await new Promise(resolve => setTimeout(resolve, 1200));
+    await new Promise((resolve) => setTimeout(resolve, 1200));
     await route.continue().catch(() => {});
   });
   try {
@@ -830,16 +1139,26 @@ async function failureAndLateLoad(browser) {
     await started;
     await push(latePage, '/about');
     await latePage.waitForTimeout(1500);
-    assert.equal(await latePage.evaluate(() => window.XtermTerminal?._instances.size || 0), 0);
+    assert.equal(
+      await latePage.evaluate(() => (window as ScriptWindow).XtermTerminal?._instances.size || 0),
+      0,
+    );
     pass('late library result cannot revive an unmounted preview');
-  } finally { await lateContext.close(); }
+  } finally {
+    await lateContext.close();
+  }
 }
 async function main() {
-  const browser = await chromium.launch({ headless: true,
+  const browser = await chromium.launch({
+    headless: true,
     ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}),
-    args: ['--no-sandbox'] });
-  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 },
-    colorScheme: 'light', reducedMotion: 'no-preference' });
+    args: ['--no-sandbox'],
+  });
+  const context = await browser.newContext({
+    viewport: { width: 1440, height: 1000 },
+    colorScheme: 'light',
+    reducedMotion: 'no-preference',
+  });
   const page = await context.newPage();
   page.setDefaultTimeout(30000);
   await attachMonitoring(page);
@@ -847,7 +1166,7 @@ async function main() {
     await goto(page, '/about');
     await page.waitForTimeout(400);
     baselineReads = new Map();
-    for (const request of report.apiRequests.filter(request => request.stage === 'baseline')) {
+    for (const request of report.apiRequests.filter((request) => request.stage === 'baseline')) {
       const endpoint = `${request.method} ${request.path}`;
       baselineReads.set(endpoint, (baselineReads.get(endpoint) || 0) + 1);
     }
@@ -858,7 +1177,9 @@ async function main() {
       assert.deepEqual(await commentStorage(page), storageBefore);
       assert.deepEqual(report.blockedBusinessRequests, []);
       assert.deepEqual(report.pageErrors, []);
-      pass('focused navigation checks have no business requests, storage changes or browser errors');
+      pass(
+        'focused navigation checks have no business requests, storage changes or browser errors',
+      );
       return;
     }
     if (process.env.SHOWCASE_ONLY === 'post-header') {
@@ -904,8 +1225,9 @@ async function main() {
     assert.deepEqual(report.pageErrors, [], 'browser reported uncaught JS errors');
     pass('no new business requests, comment storage changes, or page errors');
   } catch (error) {
-    report.failure = { stage, message: error.message };
-    console.error('FAIL', stage, error.message);
+    const message = error instanceof Error ? error.message : String(error);
+    report.failure = { stage, message };
+    console.error('FAIL', stage, message);
     throw error;
   } finally {
     fs.writeFileSync(path.join(ARTIFACTS, 'report.json'), JSON.stringify(report, null, 2));
@@ -913,4 +1235,7 @@ async function main() {
     await browser.close();
   }
 }
-main().catch(error => { console.error('FAIL', error); process.exitCode = 1; });
+main().catch((error) => {
+  console.error('FAIL', error);
+  process.exitCode = 1;
+});

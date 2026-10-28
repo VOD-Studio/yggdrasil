@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { execSync } from 'node:child_process';
 /**
  * cargo-leptos 发布产物装配与校验。
  *
@@ -21,18 +22,26 @@
  * 剥离是确定性的，cargo-leptos 给出的内容哈希文件名仍与内容一一对应。
  *
  * 用法：
- *   bun scripts/build-release.cjs --out target/release-dist --server target/release/yggdrasil
- *   bun scripts/build-release.cjs --verify --out target/release-dist
+ *   bun scripts/build-release.ts --out target/release-dist --server target/release/yggdrasil
+ *   bun scripts/build-release.ts --verify --out target/release-dist
  *     （precompress 之后跑：校验清单摘要、hash.txt 指向的产物、分包清单闭包与 .br 旁车）
  *
  * 选项：--out（默认 target/release-dist）、--site（默认 target/site）、
  *       --hash（默认 target/release/hash.txt）、--server、--verify、--help。
  */
 import { createHash } from 'node:crypto';
-import { execSync } from 'node:child_process';
 import {
-  chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync,
-  renameSync, rmSync, statSync, writeFileSync,
+  chmodSync,
+  copyFileSync,
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
 } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 
@@ -41,14 +50,14 @@ const args = process.argv.slice(2);
 
 if (args.includes('--help') || args.includes('-h')) {
   console.log(
-    '用法：bun scripts/build-release.cjs [--out DIR] [--site DIR] [--hash FILE] [--server FILE] [--verify]\n' +
+    '用法：bun scripts/build-release.ts [--out DIR] [--site DIR] [--hash FILE] [--server FILE] [--verify]\n' +
       '  装配：<site> → <out>/public，<hash> → <out>/hash.txt，可选 <server> → <out>/server，并写 release-manifest.json\n' +
       '  --verify：校验已装配（并已 precompress）的 <out>',
   );
   process.exit(0);
 }
 
-const flag = (name, fallback) => {
+const flag = <T extends string | null>(name: string, fallback: T): string | T => {
   const i = args.indexOf(name);
   return i >= 0 && args[i + 1] && !args[i + 1].startsWith('--') ? args[i + 1] : fallback;
 };
@@ -62,14 +71,14 @@ const VERIFY = args.includes('--verify');
 // 与 Makefile precompress 对 pkg/ 的覆盖保持一致：只有这四种带 .br 旁车（.d.ts 等不压）。
 const BR_EXT = new Set(['.js', '.wasm', '.json', '.css']);
 
-const sha256 = (buf) => createHash('sha256').update(buf).digest('hex');
-const extOf = (name) => name.slice(name.lastIndexOf('.'));
+const sha256 = (buf: Buffer) => createHash('sha256').update(buf).digest('hex');
+const extOf = (name: string) => name.slice(name.lastIndexOf('.'));
 
 /** 运行时不需要、却会随每个分包重复下载的 wasm 自定义段。 */
 const STRIP_CUSTOM_SECTIONS = new Set(['producers', 'target_features']);
 
 /** 读 LEB128 无符号整数，返回 [值, 下一个偏移]。 */
-function readUleb(buf, offset) {
+function readUleb(buf: Buffer, offset: number): [number, number] {
   let value = 0;
   let shift = 0;
   for (;;) {
@@ -81,7 +90,7 @@ function readUleb(buf, offset) {
 }
 
 /** 去掉 STRIP_CUSTOM_SECTIONS 中的自定义段；其余段原样保留、顺序不变。 */
-function stripCustomSections(buf) {
+function stripCustomSections(buf: Buffer) {
   if (buf.length < 8 || buf.readUInt32LE(0) !== 0x6d736100) throw new Error('不是 wasm 模块');
   const kept = [buf.subarray(0, 8)];
   let offset = 8;
@@ -102,7 +111,7 @@ function stripCustomSections(buf) {
   return Buffer.concat(kept);
 }
 
-function walk(dir, base = dir, acc = []) {
+function walk(dir: string, base = dir, acc: string[] = []) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const p = join(dir, entry.name);
     if (entry.isDirectory()) walk(p, base, acc);
@@ -111,7 +120,7 @@ function walk(dir, base = dir, acc = []) {
   return acc;
 }
 
-function sh(cmd) {
+function sh(cmd: string) {
   try {
     return execSync(cmd, { cwd: ROOT, encoding: 'utf8' }).trim();
   } catch {
@@ -120,8 +129,8 @@ function sh(cmd) {
 }
 
 /** 解析 hash.txt：`key: value` 逐行，未知键忽略。 */
-function parseHashTxt(text) {
-  const out = {};
+function parseHashTxt(text: string) {
+  const out: Record<string, string> = {};
   for (const line of text.split('\n')) {
     const i = line.indexOf(':');
     if (i < 0) continue;
@@ -130,7 +139,7 @@ function parseHashTxt(text) {
   return out;
 }
 
-const hashFields = (h) => ({
+const hashFields = (h: Record<string, string>) => ({
   js: h.js ?? null,
   wasm: h.wasm ?? null,
   css: h.css ?? null,
@@ -140,15 +149,17 @@ const hashFields = (h) => ({
 
 if (VERIFY) {
   const publicDir = join(OUT, 'public');
-  const problems = [];
-  const fail = (msg) => problems.push(msg);
+  const problems: string[] = [];
+  const fail = (msg: string) => problems.push(msg);
   const pkgDir = join(publicDir, 'pkg');
 
-  let manifest = null;
+  let manifest: { assets?: { path: string; bytes: number; sha256: string }[] } | null = null;
   try {
     manifest = JSON.parse(readFileSync(join(publicDir, 'release-manifest.json'), 'utf8'));
   } catch (error) {
-    fail(`无法读取 ${join(publicDir, 'release-manifest.json')}：${error.message}`);
+    fail(
+      `无法读取 ${join(publicDir, 'release-manifest.json')}：${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 
   if (manifest) {
@@ -166,13 +177,15 @@ if (VERIFY) {
   }
 
   // hash.txt（以 <out>/hash.txt 为准）指向的产物。
-  let hashes = {};
+  let hashes: Record<string, string> = {};
   try {
     hashes = parseHashTxt(readFileSync(join(OUT, 'hash.txt'), 'utf8'));
   } catch (error) {
-    fail(`无法读取 ${join(OUT, 'hash.txt')}：${error.message}`);
+    fail(
+      `无法读取 ${join(OUT, 'hash.txt')}：${error instanceof Error ? error.message : String(error)}`,
+    );
   }
-  const need = (rel, why) => {
+  const need = (rel: string, why: string) => {
     if (!existsSync(join(pkgDir, rel))) fail(`${why}缺失：pkg/${rel}`);
   };
   if (!hashes.js) fail('hash.txt 缺少 js 行');
@@ -186,7 +199,7 @@ if (VERIFY) {
     need(rel, 'hash.txt manifest 行指向的产物');
     try {
       // 值是不含扩展名的分包文件名，实际文件为 `<name>.wasm`。
-      const split = JSON.parse(readFileSync(join(pkgDir, rel), 'utf8'));
+      const split: Record<string, string[]> = JSON.parse(readFileSync(join(pkgDir, rel), 'utf8'));
       for (const [module, chunks] of Object.entries(split)) {
         for (const chunk of chunks) {
           if (!existsSync(join(pkgDir, `${chunk}.wasm`))) {
@@ -195,7 +208,10 @@ if (VERIFY) {
         }
       }
     } catch (error) {
-      if (existsSync(join(pkgDir, rel))) fail(`分包清单无法解析：pkg/${rel}：${error.message}`);
+      if (existsSync(join(pkgDir, rel)))
+        fail(
+          `分包清单无法解析：pkg/${rel}：${error instanceof Error ? error.message : String(error)}`,
+        );
     }
   }
 
@@ -220,8 +236,8 @@ if (VERIFY) {
 }
 
 // ── 装配模式 ─────────────────────────────────────────────────────
-const isDir = (p) => statSync(p, { throwIfNoEntry: false })?.isDirectory();
-const isFile = (p) => statSync(p, { throwIfNoEntry: false })?.isFile();
+const isDir = (p: string) => statSync(p, { throwIfNoEntry: false })?.isDirectory();
+const isFile = (p: string) => statSync(p, { throwIfNoEntry: false })?.isFile();
 
 if (!isDir(SITE)) {
   console.error(`缺少站点目录：${SITE}\n先运行 make build-frontend`);
@@ -232,7 +248,9 @@ if (!isDir(join(SITE, 'pkg'))) {
   process.exit(1);
 }
 if (existsSync(join(SITE, 'index.html'))) {
-  console.error(`${join(SITE, 'index.html')} 存在：疑似混入旧 dx 产物，拒绝发布（清理 ${SITE} 后重新构建）`);
+  console.error(
+    `${join(SITE, 'index.html')} 存在：疑似混入旧 dx 产物，拒绝发布（清理 ${SITE} 后重新构建）`,
+  );
   process.exit(1);
 }
 if (!isFile(HASH)) {
@@ -293,7 +311,10 @@ try {
     hash_txt: hashFields(hashFile),
     assets,
   };
-  writeFileSync(join(stagingPublic, 'release-manifest.json'), JSON.stringify(manifestOut, null, 2) + '\n');
+  writeFileSync(
+    join(stagingPublic, 'release-manifest.json'),
+    JSON.stringify(manifestOut, null, 2) + '\n',
+  );
 
   // 逐项原子换入：旧项先移入 trash，新项 rename 就位，最后清理。
   mkdirSync(trash, { recursive: true });

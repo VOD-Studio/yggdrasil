@@ -5,12 +5,14 @@
   "scripts": {
     "build": "bun run --filter '*' build",
     "test": "bun run --filter '*' test",
-    "typecheck": "bun run --filter '*' typecheck",
+    "typecheck": "bun run --filter '*' typecheck && bun run typecheck:scripts",
+    "typecheck:scripts": "tsc --project ../scripts/tsconfig.json",
     "lint": "biome check .",
     "format": "biome format --write ."
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",
+    "@types/bun": "^1.4.4",
     "happy-dom": "^20.14.5",
     "harfbuzzjs": "1.6.4",
     "katex": "^0.19.0",

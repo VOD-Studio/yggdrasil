@@ -2,7 +2,7 @@
 
 ## Context
 
-站内跳转由 `libs/yggdrasil-core/src/route-transitions.ts` 拦截点击后开启视图过渡，在 update 回调里通知 Rust，Leptos 路由器再执行 `Lazy::<T>::preload()`：先 `T::data()` 建资源（资源立即调用 `#[leptos::lazy]` 取数函数：先下载取数分包，再 `POST /api/<server fn>`），再下载并实例化视图分包。协调器最多等 300ms（`WAIT_MS`，`route-transitions.ts:15`），超时就用当时的 DOM 结束过渡，文章标题/封面的共享元素过渡随之丢失（`scripts/test-view-transitions.cjs` 的 `slowResponse` 用例验证的就是这个超时行为）。
+站内跳转由 `libs/yggdrasil-core/src/route-transitions.ts` 拦截点击后开启视图过渡，在 update 回调里通知 Rust，Leptos 路由器再执行 `Lazy::<T>::preload()`：先 `T::data()` 建资源（资源立即调用 `#[leptos::lazy]` 取数函数：先下载取数分包，再 `POST /api/<server fn>`），再下载并实例化视图分包。协调器最多等 300ms（`WAIT_MS`，`route-transitions.ts:15`），超时就用当时的 DOM 结束过渡，文章标题/封面的共享元素过渡随之丢失（`scripts/test-view-transitions.ts` 的 `slowResponse` 用例验证的就是这个超时行为）。
 
 冷缓存时一次跳转要下载的量（`target/release-dist/public/pkg` + `__wasm_split_manifest`，brotli 字节；依赖 chunk 在路由间共享）：
 
@@ -234,7 +234,7 @@ sequenceDiagram
 ### 1.7 验证
 
 - 跑「执行须知」里的全部检查。
-- `scripts/test-view-transitions.cjs` 新增模式 `prefetch`（加到文件末尾的模式分发里，`all` 也包含它）：
+- `scripts/test-view-transitions.ts` 新增模式 `prefetch`（加到文件末尾的模式分发里，`all` 也包含它）：
   ```js
   async function prefetch() {
     const state = await launch();
@@ -254,7 +254,7 @@ sequenceDiagram
     } finally { await browser.close(); }
   }
   ```
-  另起一个 shell 跑 `make dev`（`APP_BASE_URL` 必须与 `VT_BASE` 同源），然后 `VT_BASE=http://127.0.0.1:<端口> bun scripts/test-view-transitions.cjs prefetch`，再跑一遍 `public`、`slow`、`mobile`，确认原有用例不受影响（`slow` 依赖“点击时不触发预取”）。
+  另起一个 shell 跑 `make dev`（`APP_BASE_URL` 必须与 `VT_BASE` 同源），然后 `VT_BASE=http://127.0.0.1:<端口> bun scripts/test-view-transitions.ts prefetch`，再跑一遍 `public`、`slow`、`mobile`，确认原有用例不受影响（`slow` 依赖“点击时不触发预取”）。
 - 手动冒烟：Chromium DevTools Network 勾 Disable cache + Fast 4G，在首页悬停文章卡片，确认点击前已出现 `split___post_route_view_*.wasm` 和它的 `chunk_*.wasm`；勾 DevTools 的 Save-Data 模拟（或 `navigator.connection` 不可用时跳过）时不出现。
 
 ---

@@ -7,20 +7,23 @@
 // - apple-touch-icon.png：180px 满底色，由系统裁圆角；
 // - icon-192.png / icon-512.png：满底色并留 10% 安全边距，供安装为应用时裁切。
 //
-// 用法：bun scripts/generate-favicons.cjs（需要 libs/ 里已安装的 Playwright，
+// 用法：bun scripts/generate-favicons.ts（需要 libs/ 里已安装的 Playwright，
 // 或用 PLAYWRIGHT_MODULE 指定）。
-const fs = require('node:fs');
-const path = require('node:path');
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import type * as Playwright from 'playwright';
 
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE || path.join(__dirname, '../libs/node_modules/playwright'));
+const { chromium } = require(
+  process.env.PLAYWRIGHT_MODULE || path.join(import.meta.dir, '../libs/node_modules/playwright'),
+) as typeof Playwright;
 
-const PUBLIC = path.join(__dirname, '../public');
+const PUBLIC = path.join(import.meta.dir, '../public');
 const LIGHT = { bg: '#f5f5f3', fg: '#151515', ring: 'rgba(0,0,0,0.12)' };
 const DARK = { bg: '#0f0f0e', fg: '#f2f1ee', ring: null };
 const CLAY = '#d97757';
 
 /** 64 网格里的衬线 Y：左臂粗、右臂细、竖笔，加三处衬线；bold 供 16 / 32px 使用。 */
-function letterPath(bold) {
+function letterPath(bold: boolean) {
   const [stemL, stemR] = bold ? [24.8, 31.6] : [25.4, 30.8];
   const arm = bold ? 11 : 9.6;
   const thin = bold ? 4.2 : 3;
@@ -28,7 +31,7 @@ function letterPath(bold) {
   const top = 13;
   const base = 51;
   const joint = 33.5;
-  const f = (n) => Number(n.toFixed(1));
+  const f = (n: number) => Number(n.toFixed(1));
   return [
     `M14.2 ${top} L${f(14.2 + arm)} ${top} L${stemR} ${joint} L${stemL} ${f(joint + 1.8)} Z`,
     `M${f(39.6 - thin)} ${top} L39.6 ${top} L${stemR} ${f(joint + 1.2)} L${f(stemR - thin - 0.6)} ${joint} Z`,
@@ -42,7 +45,19 @@ function letterPath(bold) {
 const DOT = `<rect x="45" y="41" width="10" height="10" rx="2.5" fill="${CLAY}"/>`;
 
 /** 单一配色的图标；full 为满底色（应用图标），safe 为安全边距比例。 */
-function iconSvg({ colors, bold = false, full = false, safe = 0, size = 64 }) {
+function iconSvg({
+  colors,
+  bold = false,
+  full = false,
+  safe = 0,
+  size = 64,
+}: {
+  colors: { bg: string; fg: string; ring: string | null };
+  bold?: boolean;
+  full?: boolean;
+  safe?: number;
+  size?: number;
+}) {
   const glyph = `<path fill="${colors.fg}" d="${letterPath(bold)}"/>${DOT}`;
   const scale = 1 - 2 * safe;
   const body = safe
@@ -74,7 +89,7 @@ ${DOT}
 }
 
 /** 把若干 PNG 打包成 ICO（PNG 条目，Vista 起支持）。 */
-function ico(entries) {
+function ico(entries: { size: number; png: Buffer }[]) {
   const header = Buffer.alloc(6);
   header.writeUInt16LE(0, 0);
   header.writeUInt16LE(1, 2);
@@ -99,10 +114,15 @@ function ico(entries) {
 async function main() {
   const browser = await chromium.launch();
   const page = await browser.newPage();
-  const render = async (svg, size) => {
+  const render = async (svg: string, size: number) => {
     await page.setViewportSize({ width: size, height: size });
-    await page.setContent(`<html><body style="margin:0;background:transparent">${svg}</body></html>`);
-    return page.screenshot({ omitBackground: true, clip: { x: 0, y: 0, width: size, height: size } });
+    await page.setContent(
+      `<html><body style="margin:0;background:transparent">${svg}</body></html>`,
+    );
+    return page.screenshot({
+      omitBackground: true,
+      clip: { x: 0, y: 0, width: size, height: size },
+    });
   };
   try {
     fs.writeFileSync(path.join(PUBLIC, 'favicon.svg'), faviconSvg());

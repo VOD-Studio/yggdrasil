@@ -24,7 +24,7 @@
 
 | 情况 | 路由器表现 | 到期时 DOM | 现状 | 本计划 |
 |---|---|---|---|---|
-| 分包已加载、接口慢 | 立即挂新页，页面 `Suspense` 显示骨架屏 | 新页（骨架屏） | VT 旧→骨架屏，正常（`scripts/test-view-transitions.cjs` 的 `slowResponse` 已覆盖） | 不动 |
+| 分包已加载、接口慢 | 立即挂新页，页面 `Suspense` 显示骨架屏 | 新页（骨架屏） | VT 旧→骨架屏，正常（`scripts/test-view-transitions.ts` 的 `slowResponse` 已覆盖） | 不动 |
 | 分包未加载 | 挂起换页，旧页面留在出口 | 旧页面 | 旧→旧空过渡，事后硬切 | 新增“挂起”分支 |
 
 终态：到期时目标页仍未提交，就跳过这次 VT，旧正文按 CSS 淡出（与 `RouteProgress` 进度条同在 300ms 出现）；新页挂载时撤销淡出，由页面自身 `.page-enter` 进场。只改 `libs/yggdrasil-core` 的 JS/CSS，Rust 不改。
@@ -181,7 +181,7 @@ cd libs && bun run --filter '@yggdrasil/core' test
 cd libs && bun run --sequential --filter '*' test   # 含 Biome / typecheck 时按包脚本执行
 ```
 
-### 浏览器回归（`scripts/test-view-transitions.cjs`）
+### 浏览器回归（`scripts/test-view-transitions.ts`）
 
 新增场景参数 `chunk`（并入 `all`）：
 
@@ -198,8 +198,8 @@ cd libs && bun run --sequential --filter '*' test   # 含 Biome / typecheck 时�
 现有 `titleRoundTrip` / `coverFixture` 已要求目标标题在预算内命名，即目标页按时渲染，不受迟到分支影响（迟到时 `readyError` 才会变为 `AbortError`）。
 
 ```sh
-VT_BASE=http://127.0.0.1:8080 bun scripts/test-view-transitions.cjs chunk
-VT_BASE=http://127.0.0.1:8080 bun scripts/test-view-transitions.cjs slow
+VT_BASE=http://127.0.0.1:8080 bun scripts/test-view-transitions.ts chunk
+VT_BASE=http://127.0.0.1:8080 bun scripts/test-view-transitions.ts slow
 ```
 
 ### 人工

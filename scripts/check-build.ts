@@ -5,11 +5,14 @@ import { closeSync, mkdirSync, openSync, writeSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
 
-export function buildDiagnostics(log) {
-  return stripVTControlCharacters(log).split(/\r?\n/).filter(line =>
-    /(?:^|[\s[(:])(?:warn(?:ing)?s?|errors?)(?=$|[\s\]:[(])/i.test(line) ||
-    /(?:^|\s)\(!\)/.test(line),
-  );
+export function buildDiagnostics(log: string) {
+  return stripVTControlCharacters(log)
+    .split(/\r?\n/)
+    .filter(
+      (line) =>
+        /(?:^|[\s[(:])(?:warn(?:ing)?s?|errors?)(?=$|[\s\]:[(])/i.test(line) ||
+        /(?:^|\s)\(!\)/.test(line),
+    );
 }
 
 if (import.meta.main) {
@@ -21,18 +24,23 @@ if (import.meta.main) {
     cwd: root,
     stdio: ['inherit', 'pipe', 'pipe'],
   });
-  const diagnostics = [];
-  for (const [source, destination] of [[child.stdout, process.stdout], [child.stderr, process.stderr]]) {
+  const diagnostics: string[] = [];
+  for (const [source, destination] of [
+    [child.stdout, process.stdout],
+    [child.stderr, process.stderr],
+  ] as const) {
     // 分别识别两条流，避免交错写入把跨 chunk 的诊断词拆散。
-    const chunks = [];
-    source.on('data', chunk => {
+    const chunks: Buffer[] = [];
+    source.on('data', (chunk: Buffer) => {
       chunks.push(chunk);
       writeSync(log, chunk);
       destination.write(chunk);
     });
-    source.on('end', () => diagnostics.push(...buildDiagnostics(Buffer.concat(chunks).toString('utf8'))));
+    source.on('end', () =>
+      diagnostics.push(...buildDiagnostics(Buffer.concat(chunks).toString('utf8'))),
+    );
   }
-  child.on('error', error => console.error(`无法启动 make build：${error.message}`));
+  child.on('error', (error) => console.error(`无法启动 make build：${error.message}`));
   child.on('close', (code, signal) => {
     closeSync(log);
     if (diagnostics.length) {

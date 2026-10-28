@@ -1,0 +1,14 @@
+{
+  "extends": "../libs/tsconfig.base.json",
+  "compilerOptions": {
+    "target": "ESNext",
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "types": ["bun"],
+    "typeRoots": ["../libs/node_modules/@types"],
+    "paths": {
+      "playwright": ["../libs/node_modules/playwright"]
+    },
+    "allowImportingTsExtensions": true
+  },
+  "include": ["*.ts"]
+}

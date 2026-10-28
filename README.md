@@ -37,7 +37,9 @@ make build   # 发布构建
 
 发布前先运行 `make wasm-toolchain` 安装固定的 WASM nightly 工具链；`make -j4 build` 可并行准备资源与文档，完成后再构建前端、服务端并装配校验。发布时按 `libs/bun.lock` 冻结安装前端依赖，依赖变更需先更新锁文件。
 
-CI 的 release-split 阶段通过 `bun scripts/check-build.cjs` 执行完整 `make build`：构建退出失败，或标准输出/错误输出出现 warning、WARN、error、`(!)` 等诊断时均阻断发布，即使工具返回成功也不放行；检查前会去除 ANSI 颜色码。可在本地运行同一命令，完整原始日志写入 `target/build.log`，CI 无论成功失败都会上传。
+CI 的 release-split 阶段通过 `bun scripts/check-build.ts` 执行完整 `make build`：构建退出失败，或标准输出/错误输出出现 warning、WARN、error、`(!)` 等诊断时均阻断发布，即使工具返回成功也不放行；检查前会去除 ANSI 颜色码。可在本地运行同一命令，完整原始日志写入 `target/build.log`，CI 无论成功失败都会上传。
+
+`scripts/` 中的 JavaScript 工具已统一为 Bun TypeScript，直接运行 `bun scripts/<name>.ts`；测试文件使用 `bun test scripts/check-build.test.ts`。先在 `libs/` 执行 `bun install --frozen-lockfile`，然后可用 `cd libs && bun run typecheck:scripts` 单独做严格类型检查；`bun run typecheck`、`make lint` 与 CI 也包含此检查。现有 Bash／Fish 运维脚本保持原运行方式。
 
 `make clean` 会删除编译产物、生成的浏览器资源和前端依赖，保留受版本控制的静态资源与上传原文件。
 

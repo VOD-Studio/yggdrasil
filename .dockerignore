@@ -46,8 +46,8 @@ others/
 docker/
 docs/
 scripts/
-# 发布装配与校验在容器内跑 build-release.cjs，从 scripts/ 例外放行；其余 scripts 仍排除。
-!scripts/build-release.cjs
+# 发布装配与校验在容器内跑 build-release.ts，从 scripts/ 例外放行；其余 scripts 仍排除。
+!scripts/build-release.ts
 
 # ---------------------------------------------------------------------------
 # Agent / IDE / CI tooling — never needed by the build.

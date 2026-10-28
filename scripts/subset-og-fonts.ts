@@ -1,16 +1,48 @@
 #!/usr/bin/env bun
 // 裁剪分享图字体；源字体来自 notofonts/noto-cjk 的 Serif/SubsetOTF/SC 与 Sans/SubsetOTF/SC。
-// 先在 libs/ 执行 bun install，再运行：bun scripts/subset-og-fonts.cjs <源字体目录>
+// 先在 libs/ 执行 bun install，再运行：bun scripts/subset-og-fonts.ts <源字体目录>
 // 输出到 src/og/fonts/：常用汉字、英文与标点；Bold 仅保留 ASCII。
-const path = require('node:path');
+import * as path from 'node:path';
 
-const OUT = path.join(__dirname, '../src/og/fonts');
+const OUT = path.join(import.meta.dir, '../src/og/fonts');
 const HB_MEMORY_MODE_WRITABLE = 2;
 const HB_SUBSET_SETS_NAME_ID = 4;
 const HB_SUBSET_SETS_LAYOUT_FEATURE_TAG = 6;
 const HB_SUBSET_FLAGS_NOTDEF_OUTLINE = 0x40;
 
-function ranges(...spans) {
+// 锁定的 harfbuzzjs 裁剪 WASM 暴露的 C ABI（数值均为指针、长度或标志位）。
+interface HarfBuzzSubset {
+  memory: WebAssembly.Memory;
+  _initialize(): void;
+  malloc(size: number): number;
+  free(pointer: number): void;
+  hb_subset_input_create_or_fail(): number;
+  hb_subset_input_destroy(input: number): void;
+  hb_blob_create(
+    pointer: number,
+    size: number,
+    mode: number,
+    userData: number,
+    destroy: number,
+  ): number;
+  hb_blob_destroy(blob: number): void;
+  hb_face_create(blob: number, index: number): number;
+  hb_face_get_empty(): number;
+  hb_face_destroy(face: number): void;
+  hb_subset_input_set_flags(input: number, flags: number): void;
+  hb_subset_input_get_flags(input: number): number;
+  hb_subset_input_set(input: number, set: number): number;
+  hb_set_clear(set: number): void;
+  hb_set_invert(set: number): void;
+  hb_set_add(set: number, value: number): void;
+  hb_subset_input_unicode_set(input: number): number;
+  hb_subset_or_fail(face: number, input: number): number;
+  hb_face_reference_blob(face: number): number;
+  hb_blob_get_length(blob: number): number;
+  hb_blob_get_data(blob: number, length: number): number;
+}
+
+function ranges(...spans: [number, number][]) {
   let text = '';
   for (const [lo, hi] of spans) {
     for (let code = lo; code <= hi; code++) text += String.fromCodePoint(code);
@@ -35,7 +67,7 @@ function gb2312Hanzi() {
 }
 
 // 直接调用 HarfBuzz 的裁剪 WASM，保留 .notdef 轮廓、全部名称 ID 与 CFF 子程序。
-function subsetFont(hb, data, text) {
+function subsetFont(hb: HarfBuzzSubset, data: Uint8Array, text: string) {
   const input = hb.hb_subset_input_create_or_fail();
   if (!input) throw new Error('无法创建字体裁剪参数');
   let pointer = 0;
@@ -51,8 +83,10 @@ function subsetFont(hb, data, text) {
     face = hb.hb_face_create(blob, 0);
     if (face === hb.hb_face_get_empty()) throw new Error('源文件不是有效字体');
 
-    hb.hb_subset_input_set_flags(input,
-      hb.hb_subset_input_get_flags(input) | HB_SUBSET_FLAGS_NOTDEF_OUTLINE);
+    hb.hb_subset_input_set_flags(
+      input,
+      hb.hb_subset_input_get_flags(input) | HB_SUBSET_FLAGS_NOTDEF_OUTLINE,
+    );
     const names = hb.hb_subset_input_set(input, HB_SUBSET_SETS_NAME_ID);
     hb.hb_set_clear(names);
     hb.hb_set_invert(names);
@@ -63,7 +97,7 @@ function subsetFont(hb, data, text) {
       hb.hb_set_add(features, value);
     }
     const unicodes = hb.hb_subset_input_unicode_set(input);
-    for (const char of text) hb.hb_set_add(unicodes, char.codePointAt(0));
+    for (const char of text) hb.hb_set_add(unicodes, char.codePointAt(0)!);
 
     subset = hb.hb_subset_or_fail(face, input);
     if (!subset) throw new Error('字体裁剪失败');
@@ -85,23 +119,27 @@ function subsetFont(hb, data, text) {
 
 async function main() {
   if (process.argv.length !== 3) {
-    throw new Error('用法：bun scripts/subset-og-fonts.cjs <源字体目录>');
+    throw new Error('用法：bun scripts/subset-og-fonts.ts <源字体目录>');
   }
   const source = path.resolve(process.argv[2]);
   const wasm = require.resolve('../libs/node_modules/harfbuzzjs/dist/harfbuzz-subset.wasm');
-  const { instance: { exports: hb } } = await WebAssembly.instantiate(await Bun.file(wasm).arrayBuffer());
+  const { instance } = await WebAssembly.instantiate(await Bun.file(wasm).arrayBuffer());
+  const hb = instance.exports as unknown as HarfBuzzSubset;
   hb._initialize();
 
   const ascii = ranges([0x20, 0x7e]);
-  const common = ascii + ranges(
-    [0xa0, 0xff], // 拉丁补充。
-    [0x2010, 0x2027], // 连字符、引号、省略号、间隔号。
-    [0x2030, 0x203a],
-    [0x2190, 0x2193], // 箭头。
-    [0x2212, 0x2212],
-    [0x3000, 0x301f], // 中文标点。
-    [0xff01, 0xff5e], // 全角。
-  ) + '·×÷°№℃';
+  const common =
+    ascii +
+    ranges(
+      [0xa0, 0xff], // 拉丁补充。
+      [0x2010, 0x2027], // 连字符、引号、省略号、间隔号。
+      [0x2030, 0x203a],
+      [0x2190, 0x2193], // 箭头。
+      [0x2212, 0x2212],
+      [0x3000, 0x301f], // 中文标点。
+      [0xff01, 0xff5e], // 全角。
+    ) +
+    '·×÷°№℃';
   const full = common + gb2312Hanzi();
   for (const [name, text] of [
     ['NotoSerifSC-Medium.otf', full],
@@ -115,7 +153,7 @@ async function main() {
   }
 }
 
-main().catch(error => {
+main().catch((error) => {
   console.error(error.message);
   process.exitCode = 1;
 });

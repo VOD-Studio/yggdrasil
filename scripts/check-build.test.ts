@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import { buildDiagnostics } from './check-build.cjs';
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { stripVTControlCharacters } from 'node:util';
+import { buildDiagnostics } from './check-build.ts';
 
 describe('发布构建诊断门禁', () => {
   test.each([
@@ -18,29 +19,39 @@ describe('发布构建诊断门禁', () => {
     'Error: asset missing',
     'make: *** [Makefile:114: build] Error 2',
     '1 warning generated.',
-  ])('拒绝诊断：%s', line => {
-    expect(buildDiagnostics(`正常输出\n${line}\n构建结束`)).toEqual([line.replaceAll(/\x1b\[[0-9;]*m/g, '')]);
+  ])('拒绝诊断：%s', (line) => {
+    expect(buildDiagnostics(`正常输出\n${line}\n构建结束`)).toEqual([
+      stripVTControlCharacters(line),
+    ]);
   });
 
   test('正常输出中的文件路径、类型名和命令不是诊断', () => {
-    expect(buildDiagnostics([
-      'Compiling yggdrasil v1.0.1',
-      'Generated target/doc/yggdrasil/api/error/index.html',
-      'Bundled src/error.ts → public/error.js',
-      'ApiError ServerFnError error_reason warnings.rs',
-      'Finished release profile [optimized]',
-    ].join('\r\n'))).toEqual([]);
+    expect(
+      buildDiagnostics(
+        [
+          'Compiling yggdrasil v1.0.1',
+          'Generated target/doc/yggdrasil/api/error/index.html',
+          'Bundled src/error.ts → public/error.js',
+          'ApiError ServerFnError error_reason warnings.rs',
+          'Finished release profile [optimized]',
+        ].join('\r\n'),
+      ),
+    ).toEqual([]);
   });
 });
 
 test.each([
-  ['双流交错且诊断跨 chunk', `
+  [
+    '双流交错且诊断跨 chunk',
+    `
     process.stderr.write('war');
     setTimeout(() => {
       console.log('normal output');
       setTimeout(() => process.stderr.write('ning: split diagnostic\\n'), 30);
     }, 30);
-  `, 1],
+  `,
+    1,
+  ],
   ['无诊断但构建失败', "console.log('compile stopped'); process.exit(23);", 1],
   ['正常构建', "console.log('Finished release profile');", 0],
 ])('命令退出状态：%s', (name, source, exitCode) => {
@@ -48,9 +59,9 @@ test.each([
   try {
     mkdirSync(join(root, 'scripts'));
     mkdirSync(join(root, 'bin'));
-    copyFileSync(join(import.meta.dir, 'check-build.cjs'), join(root, 'scripts/check-build.cjs'));
+    copyFileSync(join(import.meta.dir, 'check-build.ts'), join(root, 'scripts/check-build.ts'));
     writeFileSync(join(root, 'bin/make'), `#!${Bun.which('bun')}\n${source}`, { mode: 0o755 });
-    const result = Bun.spawnSync(['bun', join(root, 'scripts/check-build.cjs')], {
+    const result = Bun.spawnSync(['bun', join(root, 'scripts/check-build.ts')], {
       env: { ...process.env, PATH: `${join(root, 'bin')}:${process.env.PATH}` },
       stdout: 'pipe',
       stderr: 'pipe',

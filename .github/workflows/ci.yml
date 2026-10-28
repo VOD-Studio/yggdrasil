@@ -226,7 +226,7 @@ jobs:
       - name: Biome lint (libs)
         run: cd libs && bun run lint
 
-      - name: Frontend type check
+      - name: Frontend and Bun script type check
         run: cd libs && bun run typecheck
 
       - name: Frontend tests
@@ -333,7 +333,7 @@ jobs:
           make test-browser BROWSER_SUITE=slash
           make test-browser BROWSER_SUITE=showcase
           make test-browser BROWSER_SUITE=lightbox
-          bun scripts/test-public-performance.cjs
+          bun scripts/test-public-performance.ts
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
@@ -342,7 +342,7 @@ jobs:
 
   # ── release-split：真实 release 产物验收（分包、水合、SSR 缓存、滚动发布兜底、体积门槛）──
   # make build 走与 Docker 相同的流水线（固定 nightly + build-std + cargo-leptos --split），
-  # test-release-split.cjs 再起临时 PostgreSQL 与 release 服务端做 Playwright 断言。
+  # test-release-split.ts 再起临时 PostgreSQL 与 release 服务端做 Playwright 断言。
   # PR 也跑：体积门槛与分包粒度只有真实 release 构建才能验证。
   release-split:
     needs: [select_runner]
@@ -379,11 +379,11 @@ jobs:
           bun install --frozen-lockfile
           bun run playwright install --with-deps chromium
       - name: Build diagnostic gate regressions
-        run: bun test scripts/check-build.test.cjs
+        run: bun test scripts/check-build.test.ts
       - name: Release build (no warnings or errors)
-        run: bun scripts/check-build.cjs
+        run: bun scripts/check-build.ts
       - name: Release split acceptance
-        run: bun scripts/test-release-split.cjs
+        run: bun scripts/test-release-split.ts
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
