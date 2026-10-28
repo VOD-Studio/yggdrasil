@@ -427,8 +427,9 @@
 
   /* ---- 图片 ----
      排除 CodeMirror 编辑器内的 <img class="cm-widgetBuffer">（折叠 widget 的基线占位），
-     否则 margin 会把折叠行撑高。 */
-  .md-content img:where(:not(.cm-widgetBuffer)) {
+     否则 margin 会把折叠行撑高。也排除 .blur-img 内绝对定位的两层图：本规则特异性高于
+     images.css 的重置，margin 会把图层推下、底部被外框裁掉，间距由外框 .blur-img 负责。 */
+  .md-content img:where(:not(.cm-widgetBuffer, .blur-img-placeholder, .blur-img-full)) {
     max-width: 100%;
     height: auto;
     margin: 1.6em 0;
