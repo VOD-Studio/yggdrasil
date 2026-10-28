@@ -5581,7 +5581,7 @@ dependencies = [
 
 [[package]]
 name = "yggdrasil"
-version = "1.1.1"
+version = "1.2.0"
 dependencies = [
  "aes-gcm",
  "argon2",

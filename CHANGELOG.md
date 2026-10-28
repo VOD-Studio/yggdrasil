@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-首屏与回访加载优化：HTML 不再附带数百条 WASM 分包预载，入口按内容命名后可以长期缓存，分包数量减少 3–5 倍。实测与对照数据见 `docs/首屏性能实测-2026-10-28.md`。
+## [1.2.0] - 2026-10-28
+
+首屏与回访加载优化：HTML 不再附带数百条 WASM 分包预载，入口按内容命名后可以长期缓存，分包数量减少 3–5 倍。线上实测移动端（1.6 Mbps、CPU 降速 4 倍）首次绘制由 2.1–4.9 秒降到 1.1–1.4 秒，每页请求由 300–700 个降到 95–180 个；回访不再重新下载主 WASM，水合约 1–1.5 秒。实测与对照数据见 `docs/首屏性能实测-2026-10-28.md`。release 前端需要用 `make install-cargo-leptos` 安装分包合并补丁版 cargo-leptos。
 
 ### Added
 
