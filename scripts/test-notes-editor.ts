@@ -1,5 +1,13 @@
 #!/usr/bin/env bun
-// Real database saves, with delays/failures injected only where named in the report.
+/**
+ * 运行：make regression-build && make test-browser BROWSER_SUITE=notes
+ * 由 scripts/regression.ts 启动隔离 PostgreSQL、应用和管理员 session，准备 Bun、
+ * Playwright Chromium 与 psql；不连接生产数据库。直接运行时必须提供同样的
+ * ADMIN_BASE / ADMIN_SESSION / PLAYWRIGHT_MODULE / REGRESSION_ARTIFACT_DIR，
+ * 以及指向一次性 ygg_browser_test 的 PG* 环境，应用 APP_BASE_URL 必须与 ADMIN_BASE 同源。
+ * 批量回归只选择本次创建的两条笔记，并在 finally 中按准确 ID 清理。
+ * Real database saves, with delays/failures injected only where named in the report.
+ */
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -47,6 +55,141 @@ const pass = (name: string) => {
 // 页头保存状态：已保存且没有新的修改。
 async function saved(page: Playwright.Page) {
   await page.locator('.write-status[data-state="saved"]').waitFor();
+}
+
+async function batchNotes(page: Playwright.Page) {
+  const fixtures: Note[] = [];
+  const prefix = `批量回归-${crypto.randomUUID()}`;
+  const titles = [`${prefix}-甲`, `${prefix}-乙`];
+  const api = async (name: string, body: unknown) => {
+    const response = await page.request.post(`${base}/api/${name}`, {
+      headers: { Origin: base },
+      data: body,
+    });
+    assert(response.ok(), `${name}: ${response.status()} ${await response.text()}`);
+    return response.json();
+  };
+  const read = async (id: number): Promise<Note> => api('get_owned_note', { id, version: null });
+  const selection = (index: number) =>
+    page.getByRole('checkbox', { name: `选择笔记「${titles[index]}」`, exact: true });
+  const toolbar = page.getByRole('toolbar', { name: '笔记批量操作' });
+  const search = page.getByPlaceholder('搜索标题、正文或标签');
+  const selectAll = page.getByRole('checkbox', { name: '全选本页笔记', exact: true });
+  const selectFixtures = async () => {
+    await selection(0).waitFor();
+    await selection(1).waitFor();
+    await selectAll.check();
+    assert(await selection(0).isChecked());
+    assert(await selection(1).isChecked());
+  };
+  const act = async (label: string, confirm?: string) => {
+    const response = page.waitForResponse((r) => endpoint(r.url()) === 'batchactonnotes');
+    const refreshed = page.waitForResponse((r) => endpoint(r.url()) === 'listownednotes' && r.ok());
+    await toolbar.getByRole('button', { name: label, exact: true }).click();
+    if (confirm) {
+      const dialog = page.getByRole('alertdialog');
+      await dialog.waitFor();
+      assert.match(await dialog.innerText(), /当前工作稿/);
+      // 打开 ConfirmDialog 不得提前发送批量写入。
+      assert.equal(
+        report.requests.filter((r) => r.name === 'batchactonnotes').length,
+        writesBefore,
+      );
+      await dialog.getByRole('button', { name: confirm, exact: true }).click();
+    }
+    assert((await response).ok(), `批量操作失败：${label}`);
+    await refreshed;
+    await toolbar.waitFor({ state: 'hidden' });
+    assert.equal(await selection(0).isChecked(), false);
+    assert.equal(await selection(1).isChecked(), false);
+  };
+  let writesBefore = 0;
+  try {
+    for (const fixtureTitle of titles) {
+      fixtures.push(
+        await api('save_note', {
+          draft: {
+            id: null,
+            expected_version: null,
+            kind: 'topic',
+            title: fixtureTitle,
+            content_md: `隔离笔记正文 ${prefix}`,
+            tags: [],
+            notebook_ids: [],
+          },
+        }),
+      );
+    }
+    await page.goto(`${base}/admin/notes`);
+    const filtered = page.waitForResponse(
+      (r) =>
+        endpoint(r.url()) === 'listownednotes' &&
+        r.ok() &&
+        r.request().postDataJSON().filter.query === prefix,
+    );
+    await search.fill(prefix);
+    await filtered;
+    await selection(0).waitFor();
+    await selection(1).waitFor();
+    // 精确限定本次 fixture，避免全选影响其他笔记。
+    assert.equal(await page.getByRole('checkbox', { name: /^选择笔记「/ }).count(), 2);
+    await selection(0).check();
+    await toolbar.getByRole('button', { name: '取消选择', exact: true }).click();
+    assert.equal(await selection(0).isChecked(), false);
+    await toolbar.waitFor({ state: 'hidden' });
+    pass('batch cancel selection clears checked notes');
+
+    await selection(0).check();
+    await search.fill(titles[1]!);
+    await selection(0).waitFor({ state: 'hidden' });
+    assert.equal(await selection(1).isChecked(), false);
+    await toolbar.waitFor({ state: 'hidden' });
+    await search.fill(prefix);
+    await selectFixtures();
+    writesBefore = report.requests.filter((r) => r.name === 'batchactonnotes').length;
+    await act('设为公开', '确认公开');
+    for (const fixture of fixtures) {
+      const current = await read(fixture.id);
+      assert.equal(current.published_version, current.version);
+      assert.equal(current.knowledge_version, null);
+    }
+    pass('batch publish confirms current drafts and resets selection');
+
+    await selectFixtures();
+    writesBefore = report.requests.filter((r) => r.name === 'batchactonnotes').length;
+    await act('收录到 AI 知识库', '确认收录');
+    for (const fixture of fixtures) {
+      const current = await read(fixture.id);
+      assert.equal(current.knowledge_version, current.version);
+      assert.equal(current.published_version, current.version);
+    }
+    await selectFixtures();
+    await act('设为私密');
+    for (const fixture of fixtures) {
+      const current = await read(fixture.id);
+      assert.equal(current.published_version, null);
+      assert.equal(current.knowledge_version, current.version);
+    }
+    pass('batch private leaves knowledge snapshots intact');
+
+    // 再公开后移出知识库，以非空公开版本证明两个状态互不影响。
+    await selectFixtures();
+    writesBefore = report.requests.filter((r) => r.name === 'batchactonnotes').length;
+    await act('设为公开', '确认公开');
+    await selectFixtures();
+    await act('移出 AI 知识库');
+    for (const fixture of fixtures) {
+      const current = await read(fixture.id);
+      assert.equal(current.knowledge_version, null);
+      assert.equal(current.published_version, current.version);
+    }
+    pass('batch exclusion leaves public snapshots intact');
+    pass('search filter clears page-local batch selection');
+  } finally {
+    if (fixtures.length) {
+      sql(`DELETE FROM notes WHERE id IN (${fixtures.map((fixture) => fixture.id).join(',')})`);
+    }
+  }
 }
 async function main() {
   const browser = await chromium.launch({ headless: true });
@@ -198,6 +341,8 @@ async function main() {
     assert.equal(await page.getByLabel('笔记标题').inputValue(), '');
     assert.equal(await page.locator('#note-tiptap .ProseMirror').textContent(), '');
     pass('leaving during save cannot populate the next editor with an old response');
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await batchNotes(page);
     assert.deepEqual(report.errors, []);
   } finally {
     fs.writeFileSync(path.join(artifacts, 'notes.json'), JSON.stringify(report, null, 2));

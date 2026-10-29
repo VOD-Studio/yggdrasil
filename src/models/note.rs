@@ -245,6 +245,12 @@ pub struct NoteRevision {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct NoteBatchTarget {
+    pub id: i32,
+    pub expected_version: i32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum NoteAction {
     Publish,

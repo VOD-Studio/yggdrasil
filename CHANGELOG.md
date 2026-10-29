@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **笔记批量管理**：后台笔记列表支持逐条勾选、全选当前页和取消选择，可批量设为公开或私密、收录到 AI 知识库或移出。公开与收录前确认使用当前工作稿，两个状态互不影响；整批校验所有权、版本和内容后在同一事务中提交，任一条冲突都不会部分生效。切换筛选、翻页或刷新会清空选择，筛选末页被批量移空时自动返回有效页；移动端操作栏自动换行。
+
 ### Removed
 
 - **发版后不再预热 EdgeOne**：删除 `scripts/edgeone-prefetch.ts`、`deploy.fish` 中的调用和 CI 的 `prefetch-cdn` 作业。EdgeOne 预热不理会请求里的 `Accept-Encoding: br`，回源时用 Range 请求拿未压缩文件；节点缓存的是未压缩版本时，浏览器请求 br 拿到的是 EdgeOne 自己压缩的结果，比源站预压缩的 `.br` 大 15–25%（主 WASM 316 KB → 396 KB），文件按 immutable 缓存一年都是这个大小。部署后预热回源期间，主 WASM 还出现过 16 秒无数据、页面一直不水合。不预热时由浏览器请求触发回源，节点缓存的是源站的 `.br`。

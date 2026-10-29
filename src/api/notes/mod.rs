@@ -68,6 +68,15 @@ pub async fn act_on_note(
     Ok(store::act(user.id, id, expected_version, action).await?)
 }
 
+#[server(BatchActOnNotes, endpoint = "batch_act_on_notes", input = leptos::server_fn::codec::Json)]
+pub async fn batch_act_on_notes(
+    targets: Vec<NoteBatchTarget>,
+    action: NoteAction,
+) -> Result<(), ApiError> {
+    let user = crate::api::auth::get_current_admin_user().await?;
+    Ok(store::batch_act(user.id, targets, action).await?)
+}
+
 #[server(NoteHistory, endpoint = "note_history", input = leptos::server_fn::codec::Json)]
 pub async fn note_history(id: i32) -> Result<Vec<NoteRevision>, ApiError> {
     let user = crate::api::auth::get_current_admin_user().await?;

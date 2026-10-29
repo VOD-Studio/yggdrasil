@@ -422,6 +422,51 @@ pub async fn act(
 ) -> Result<Note, AppError> {
     let mut client = get_conn().await.map_err(AppError::db_conn)?;
     let tx = client.transaction().await.map_err(AppError::tx)?;
+    act_in_transaction(&tx, owner_id, id, expected, action).await?;
+    tx.commit().await.map_err(AppError::tx)?;
+    invalidate();
+    get(Access::Owner(owner_id), Some(id), None, None).await
+}
+
+pub async fn batch_act(
+    owner_id: i32,
+    mut targets: Vec<NoteBatchTarget>,
+    action: NoteAction,
+) -> Result<(), AppError> {
+    if !matches!(
+        action,
+        NoteAction::Publish
+            | NoteAction::Unpublish
+            | NoteAction::IncludeKnowledge
+            | NoteAction::ExcludeKnowledge
+    ) {
+        return Err(AppError::BadRequest("不支持此批量操作".into()));
+    }
+    if targets.is_empty() || targets.len() > 100 {
+        return Err(AppError::BadRequest("每次请选择 1 至 100 篇笔记".into()));
+    }
+    targets.sort_unstable_by_key(|target| target.id);
+    if targets.windows(2).any(|pair| pair[0].id == pair[1].id) {
+        return Err(AppError::BadRequest("不能重复选择同一篇笔记".into()));
+    }
+    let mut client = get_conn().await.map_err(AppError::db_conn)?;
+    let tx = client.transaction().await.map_err(AppError::tx)?;
+    // 所有批量请求按 ID 递增锁行；校验或更新失败时由事务整体回滚。
+    for target in targets {
+        act_in_transaction(&tx, owner_id, target.id, target.expected_version, action).await?;
+    }
+    tx.commit().await.map_err(AppError::tx)?;
+    invalidate();
+    Ok(())
+}
+
+async fn act_in_transaction(
+    tx: &deadpool_postgres::Transaction<'_>,
+    owner_id: i32,
+    id: i32,
+    expected: i32,
+    action: NoteAction,
+) -> Result<(), AppError> {
     let row = tx.query_opt("SELECT n.version, n.deleted_at, r.kind, r.title, r.content_md FROM notes n JOIN note_revisions r ON r.note_id=n.id AND r.version=n.version WHERE n.id=$1 AND n.owner_id=$2 FOR UPDATE OF n", &[&id, &owner_id]).await.map_err(AppError::query)?.ok_or(AppError::NotFound("笔记不存在"))?;
     if row.get::<_, i32>("version") != expected {
         return Err(AppError::BadRequest("笔记版本已变化，请重新加载".into()));
@@ -460,9 +505,7 @@ pub async fn act(
     )
     .await
     .map_err(AppError::tx)?;
-    tx.commit().await.map_err(AppError::tx)?;
-    invalidate();
-    get(Access::Owner(owner_id), Some(id), None, None).await
+    Ok(())
 }
 
 pub async fn history(owner_id: i32, id: i32) -> Result<Vec<NoteRevision>, AppError> {
@@ -596,6 +639,239 @@ fn invalidate() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[ignore = "requires disposable DATABASE_URL database ygg_notes_test"]
+    fn notes_database_batch_actions_are_atomic_and_revision_specific() {
+        crate::db::TEST_DATABASE_RUNTIME.block_on(async {
+            let _guard = crate::db::TEST_DATABASE_LOCK.lock().await;
+            let mut client = get_conn().await.unwrap();
+            let database: String = client
+                .query_one("SELECT current_database()", &[])
+                .await
+                .unwrap()
+                .get(0);
+            assert_eq!(
+                database, "ygg_notes_test",
+                "requires isolated test database"
+            );
+            crate::db::migrate::run_on_conn(&mut client).await.unwrap();
+            client
+                .batch_execute(
+                    "TRUNCATE users CASCADE;
+                     INSERT INTO users(id,username,email,password_hash,role) VALUES
+                     (1,'batch-owner','batch@test.invalid','unused','admin'),
+                     (2,'batch-other','batch-other@test.invalid','unused','blocked');",
+                )
+                .await
+                .unwrap();
+            drop(client);
+            let mut notes = Vec::new();
+            for title in ["批量甲", "批量乙"] {
+                notes.push(
+                    save(
+                        1,
+                        NoteDraft {
+                            title: title.into(),
+                            kind: NoteKind::Topic,
+                            content_md: "初始工作稿".into(),
+                            ..Default::default()
+                        },
+                        None,
+                    )
+                    .await
+                    .unwrap(),
+                );
+            }
+            // 反序传入，存储层仍按 ID 递增锁行。
+            let targets: Vec<_> = notes
+                .iter()
+                .rev()
+                .map(|note| NoteBatchTarget {
+                    id: note.id,
+                    expected_version: note.version,
+                })
+                .collect();
+            batch_act(1, targets.clone(), NoteAction::IncludeKnowledge)
+                .await
+                .unwrap();
+            for note in &notes {
+                let current = get(Access::Owner(1), Some(note.id), None, None)
+                    .await
+                    .unwrap();
+                assert_eq!(current.published_version, None);
+                assert_eq!(current.knowledge_version, Some(1));
+            }
+            // 发布必须指向当前工作稿，且不能顺带推进知识库版本。
+            for note in &mut notes {
+                let mut draft = note.draft();
+                draft.content_md = format!("{} 的最新工作稿", note.title);
+                *note = save(1, draft, None).await.unwrap();
+            }
+            let targets: Vec<_> = notes
+                .iter()
+                .rev()
+                .map(|note| NoteBatchTarget {
+                    id: note.id,
+                    expected_version: note.version,
+                })
+                .collect();
+            batch_act(1, targets.clone(), NoteAction::Publish)
+                .await
+                .unwrap();
+            for note in &notes {
+                let current = get(Access::Owner(1), Some(note.id), None, None)
+                    .await
+                    .unwrap();
+                assert_eq!(current.published_version, Some(2));
+                assert_eq!(current.knowledge_version, Some(1));
+                let public = get(Access::Public, Some(note.id), None, None)
+                    .await
+                    .unwrap();
+                assert_eq!(public.version, 2);
+                assert_eq!(public.content_md, note.content_md);
+            }
+            batch_act(1, targets.clone(), NoteAction::ExcludeKnowledge)
+                .await
+                .unwrap();
+            for note in &notes {
+                let current = get(Access::Owner(1), Some(note.id), None, None)
+                    .await
+                    .unwrap();
+                assert_eq!(current.published_version, Some(2));
+                assert_eq!(current.knowledge_version, None);
+            }
+            batch_act(1, targets.clone(), NoteAction::IncludeKnowledge)
+                .await
+                .unwrap();
+            batch_act(1, targets.clone(), NoteAction::Unpublish)
+                .await
+                .unwrap();
+            for note in &notes {
+                let current = get(Access::Owner(1), Some(note.id), None, None)
+                    .await
+                    .unwrap();
+                assert_eq!(current.published_version, None);
+                assert_eq!(current.published_at, None);
+                assert_eq!(current.knowledge_version, Some(2));
+            }
+
+            // 失败目标 ID 更大，确保此前已更新的第一条也会回滚（含时间戳）。
+            let foreign = save(
+                2,
+                NoteDraft {
+                    content_md: "他人的笔记".into(),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+            let trashed = save(
+                1,
+                NoteDraft {
+                    content_md: "回收站笔记".into(),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+            act(1, trashed.id, 1, NoteAction::Trash).await.unwrap();
+            let empty = save(1, NoteDraft::default(), None).await.unwrap();
+            let untitled = save(
+                1,
+                NoteDraft {
+                    kind: NoteKind::Topic,
+                    content_md: "没有标题的主题".into(),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await
+            .unwrap();
+            let invalid = [
+                NoteBatchTarget {
+                    id: notes[1].id,
+                    expected_version: 1,
+                },
+                NoteBatchTarget {
+                    id: foreign.id,
+                    expected_version: 1,
+                },
+                NoteBatchTarget {
+                    id: trashed.id,
+                    expected_version: 1,
+                },
+                NoteBatchTarget {
+                    id: empty.id,
+                    expected_version: 1,
+                },
+                NoteBatchTarget {
+                    id: untitled.id,
+                    expected_version: 1,
+                },
+                NoteBatchTarget {
+                    id: i32::MAX,
+                    expected_version: 1,
+                },
+            ];
+            for action in [NoteAction::Publish, NoteAction::IncludeKnowledge] {
+                for target in invalid {
+                    let before = get(Access::Owner(1), Some(notes[0].id), None, None)
+                        .await
+                        .unwrap();
+                    assert!(
+                        batch_act(1, vec![targets[1], target], action)
+                            .await
+                            .is_err(),
+                        "invalid target must abort the entire batch: {target:?}, {action:?}"
+                    );
+                    assert_eq!(
+                        get(Access::Owner(1), Some(notes[0].id), None, None)
+                            .await
+                            .unwrap(),
+                        before,
+                        "no partial state or timestamp writes"
+                    );
+                }
+            }
+            // 撤销公开/收录也必须遵守版本、所有权及回收站约束。
+            for action in [NoteAction::Unpublish, NoteAction::ExcludeKnowledge] {
+                for target in &invalid[..3] {
+                    let before = get(Access::Owner(1), Some(notes[0].id), None, None)
+                        .await
+                        .unwrap();
+                    assert!(batch_act(1, vec![targets[1], *target], action)
+                        .await
+                        .is_err());
+                    assert_eq!(
+                        get(Access::Owner(1), Some(notes[0].id), None, None)
+                            .await
+                            .unwrap(),
+                        before
+                    );
+                }
+            }
+            for action in [NoteAction::Trash, NoteAction::Restore] {
+                assert!(batch_act(1, targets.clone(), action).await.is_err());
+            }
+            assert!(batch_act(1, Vec::new(), NoteAction::Publish).await.is_err());
+            assert!(batch_act(1, vec![targets[0]; 101], NoteAction::Publish)
+                .await
+                .is_err());
+            assert!(batch_act(1, vec![targets[0]; 2], NoteAction::Publish)
+                .await
+                .is_err());
+            for note in &notes {
+                assert!(get(Access::Owner(1), Some(note.id), None, None)
+                    .await
+                    .unwrap()
+                    .deleted_at
+                    .is_none());
+            }
+        });
+    }
 
     #[test]
     #[ignore = "requires disposable DATABASE_URL database ygg_notes_test"]

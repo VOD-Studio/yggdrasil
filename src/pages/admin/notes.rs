@@ -1,10 +1,12 @@
 //! 笔记管理（`/admin/notes`）。
 //!
 //! 标题行（管理笔记本、写笔记）→ 快速记录 Composer（正文与标签，存为私密随记）→
-//! 类型选项卡、搜索、公开状态 / 知识库 / 笔记本筛选与回收站开关 → 笔记行（类型字、
-//! 标题、公开版本、未发布修改、知识库版本、笔记本与标签、最近修改时间）与底栏分页。
+//! 类型选项卡、搜索、公开状态 / 知识库 / 笔记本筛选与回收站开关 → 笔记行与底栏分页。
+//! 当前页可多选，批量公开、设为私密、收录或移出知识库；筛选、翻页和刷新后清空选择。
 //! 回收站里的行改为「恢复为草稿」。筛选条件按历史记录保存。私人数据只在浏览器
 //! 鉴权后读取（Effect 内请求，SSR 不执行）。样式见 styles/pages/admin-notes.css。
+use std::collections::BTreeSet;
+
 use chrono::{DateTime, Datelike, FixedOffset};
 use leptos::ev::{KeyboardEvent, SubmitEvent};
 use leptos::prelude::*;
@@ -18,8 +20,9 @@ use crate::components::empty_state::{EmptyState, EmptyStateAction};
 use crate::components::forms::{FormSelect, FORM_SELECT_COMPACT_CLASS};
 use crate::components::skeletons::notes_admin_skeleton::NoteRowsSkeleton;
 use crate::components::ui::{
-    button_class, use_toast, ButtonSize, ButtonVariant, Composer, ComposerInput, Icon, IconName,
-    LoadError, SegmentedControl, SegmentedItem, StatusDot, TablePager,
+    button_class, use_toast, ButtonSize, ButtonVariant, Checkbox, Composer, ComposerInput,
+    ConfirmDialog, Icon, IconName, LoadError, SegmentedControl, SegmentedItem, StatusDot,
+    TablePager,
 };
 use crate::models::note::*;
 use crate::routes::Route;
@@ -97,10 +100,19 @@ fn AdminNotes() -> impl IntoView {
     let books = RwSignal::new(None::<Result<Vec<Notebook>, ()>>);
     let reload = RwSignal::new(0_u32);
     let generation = StoredValue::new(0_u64);
+    let selected = RwSignal::new(BTreeSet::<i32>::new());
+    let loading = RwSignal::new(true);
+    let batch_busy = RwSignal::new(false);
+    let confirm_publish = RwSignal::new(false);
+    let confirm_knowledge = RwSignal::new(false);
 
     Effect::new(move |_| {
         reload.track();
         let current = filter.get();
+        selected.update(BTreeSet::clear);
+        confirm_publish.set(false);
+        confirm_knowledge.set(false);
+        loading.set(true);
         let Some(id) = generation.try_update_value(|g| {
             *g += 1;
             *g
@@ -108,9 +120,19 @@ fn AdminNotes() -> impl IntoView {
             return;
         };
         spawn_local(async move {
+            let requested_page = current.page;
             let result = list_owned_notes(current).await.map_err(|_| ());
             if generation.try_get_value() == Some(id) {
+                if let Ok(page) = &result {
+                    if page.notes.is_empty() && requested_page > 1 {
+                        let last_page =
+                            ((page.total.max(1) - 1) / i64::from(NOTES_PER_PAGE) + 1) as i32;
+                        let _ = filter.try_update(|f| f.page = last_page);
+                        return;
+                    }
+                }
                 let _ = response.try_set(Some(result));
+                let _ = loading.try_set(false);
             }
         });
     });
@@ -162,6 +184,85 @@ fn AdminNotes() -> impl IntoView {
                 Err(e) => toast.error(failure_message("恢复失败", &e)),
             }
             let _ = restoring.try_set(None);
+        });
+    });
+
+    let select_note = Callback::new(move |(id, checked): (i32, bool)| {
+        if loading.get_untracked() || batch_busy.get_untracked() {
+            return;
+        }
+        selected.update(|ids| {
+            if checked {
+                ids.insert(id);
+            } else {
+                ids.remove(&id);
+            }
+        });
+    });
+    let all_selected = Memo::new(move |_| {
+        response.with(|result| match result {
+            Some(Ok(page)) => {
+                !page.notes.is_empty()
+                    && selected.with(|ids| page.notes.iter().all(|note| ids.contains(&note.id)))
+            }
+            _ => false,
+        })
+    });
+    let select_page = Callback::new(move |checked: bool| {
+        if loading.get_untracked() || batch_busy.get_untracked() {
+            return;
+        }
+        selected.set(if checked {
+            response.with_untracked(|result| match result {
+                Some(Ok(page)) => page.notes.iter().map(|note| note.id).collect(),
+                _ => BTreeSet::new(),
+            })
+        } else {
+            BTreeSet::new()
+        });
+    });
+    let run_batch = Callback::new(move |action: NoteAction| {
+        if loading.get_untracked() || batch_busy.get_untracked() {
+            return;
+        }
+        let targets = response.with_untracked(|result| match result {
+            Some(Ok(page)) => selected.with_untracked(|ids| {
+                page.notes
+                    .iter()
+                    .filter(|note| ids.contains(&note.id))
+                    .map(|note| NoteBatchTarget {
+                        id: note.id,
+                        expected_version: note.version,
+                    })
+                    .collect::<Vec<_>>()
+            }),
+            _ => Vec::new(),
+        });
+        if targets.is_empty() {
+            return;
+        }
+        let count = targets.len();
+        batch_busy.set(true);
+        spawn_local(async move {
+            match batch_act_on_notes(targets, action).await {
+                Ok(()) => {
+                    let verb = match action {
+                        NoteAction::Publish => "设为公开",
+                        NoteAction::Unpublish => "设为私密",
+                        NoteAction::IncludeKnowledge => "收录到 AI 知识库",
+                        NoteAction::ExcludeKnowledge => "移出 AI 知识库",
+                        _ => unreachable!(),
+                    };
+                    toast.success(format!("已将 {count} 条笔记{verb}"));
+                }
+                Err(error) => {
+                    toast.error(failure_message("批量操作失败，请核对刷新后的状态", &error))
+                }
+            }
+            // 成败都重读版本，不能拿过期选择再次提交。
+            let _ = selected.try_update(BTreeSet::clear);
+            let _ = reload.try_update(|n| *n = n.wrapping_add(1));
+            let _ = batch_busy.try_set(false);
         });
     });
 
@@ -463,12 +564,24 @@ fn AdminNotes() -> impl IntoView {
                                     books=names
                                     restoring=Signal::derive(move || restoring.get() == Some(id))
                                     on_restore=restore
+                                    selected=Signal::derive(move || selected.with(|ids| ids.contains(&id)))
+                                    selection_disabled=Signal::derive(move || loading.get() || batch_busy.get())
+                                    on_select=select_note
                                 />
                             }
                         })
                         .collect_view();
                     view! {
                         <div class="admin-panel admin-notes-list">
+                            <Show when=move || !trash.get()>
+                                <fieldset class="admin-notes-select-page" disabled=move || loading.get() || batch_busy.get()>
+                                    <label>
+                                        <Checkbox checked=all_selected label="全选本页笔记" onchange=select_page/>
+                                        "全选本页"
+                                    </label>
+                                    <span>"仅选择当前页，切换筛选或翻页后清空"</span>
+                                </fieldset>
+                            </Show>
                             <ul>{rows}</ul>
                             <TablePager
                                 page=Signal::derive(move || filter.with(|f| f.page.max(1)))
@@ -484,6 +597,66 @@ fn AdminNotes() -> impl IntoView {
                         .into_any()
                 }
             }}
+
+            <Show when=move || selected.with(|ids| !ids.is_empty())>
+                <div class="batch-bar admin-notes-batch" role="toolbar" aria-label="笔记批量操作" aria-busy=move || batch_busy.get().to_string()>
+                    <span class="batch-bar-count" role="status">
+                        {move || if batch_busy.get() { "处理中…".to_string() } else { format!("已选 {} 条", selected.with(BTreeSet::len)) }}
+                    </span>
+                    <button
+                        class=button_class(ButtonVariant::Ghost, ButtonSize::Sm)
+                        type="button"
+                        disabled=move || batch_busy.get()
+                        on:click=move |_| confirm_publish.set(true)
+                    >"设为公开"</button>
+                    <button
+                        class=button_class(ButtonVariant::Ghost, ButtonSize::Sm)
+                        type="button"
+                        disabled=move || batch_busy.get()
+                        on:click=move |_| run_batch.run(NoteAction::Unpublish)
+                    >"设为私密"</button>
+                    <button
+                        class=button_class(ButtonVariant::Ghost, ButtonSize::Sm)
+                        type="button"
+                        disabled=move || batch_busy.get()
+                        on:click=move |_| confirm_knowledge.set(true)
+                    >"收录到 AI 知识库"</button>
+                    <button
+                        class=button_class(ButtonVariant::Ghost, ButtonSize::Sm)
+                        type="button"
+                        disabled=move || batch_busy.get()
+                        on:click=move |_| run_batch.run(NoteAction::ExcludeKnowledge)
+                    >"移出 AI 知识库"</button>
+                    <button
+                        class=button_class(ButtonVariant::Ghost, ButtonSize::Sm)
+                        type="button"
+                        disabled=move || batch_busy.get()
+                        on:click=move |_| selected.update(BTreeSet::clear)
+                    >"取消选择"</button>
+                </div>
+            </Show>
+            <ConfirmDialog
+                visible=confirm_publish
+                title="批量公开笔记？"
+                description=Signal::derive(move || format!(
+                    "将公开所选 {} 条笔记的当前工作稿，包括尚未发布的修改。AI 知识库收录状态不变。",
+                    selected.with(BTreeSet::len),
+                ))
+                confirm_label="确认公开"
+                icon=IconName::Eye
+                on_confirm=move |()| run_batch.run(NoteAction::Publish)
+            />
+            <ConfirmDialog
+                visible=confirm_knowledge
+                title="批量收录到 AI 知识库？"
+                description=Signal::derive(move || format!(
+                    "将所选 {} 条笔记的当前工作稿收录到 AI 知识库，包括尚未发布的修改。公开状态不变；私密笔记仍需知识库授权才能读取。",
+                    selected.with(BTreeSet::len),
+                ))
+                confirm_label="确认收录"
+                icon=IconName::BookOpen
+                on_confirm=move |()| run_batch.run(NoteAction::IncludeKnowledge)
+            />
 
             <a class="admin-fab" href=Route::NewNote.to_string() aria-label="写笔记">
                 <Icon name=IconName::Plus size=18/>
@@ -643,12 +816,17 @@ fn NoteRow(
     books: Vec<String>,
     restoring: Signal<bool>,
     on_restore: Callback<Note>,
+    selected: Signal<bool>,
+    selection_disabled: Signal<bool>,
+    on_select: Callback<(i32, bool)>,
 ) -> impl IntoView {
     let glyph = match note.kind {
         NoteKind::Topic => "题",
         NoteKind::Moment => "记",
     };
     let title = note.display_title();
+    let checkbox_label = format!("选择笔记「{title}」");
+    let id = note.id;
     let ahead = note.published_version.is_some_and(|v| note.version > v);
     let tags = note
         .tags
@@ -700,8 +878,15 @@ fn NoteRow(
         .into_any();
     }
     view! {
-        <li>
-            <a class="admin-notes-row" href=Route::EditNote { id: note.id }.to_string()>
+        <li class="admin-notes-selectable" class:is-selected=move || selected.get()>
+            <fieldset class="admin-notes-select" disabled=move || selection_disabled.get()>
+                <Checkbox
+                    checked=selected
+                    label=checkbox_label
+                    onchange=move |checked| on_select.run((id, checked))
+                />
+            </fieldset>
+            <a class="admin-notes-row" href=Route::EditNote { id }.to_string()>
                 <span class="admin-notes-glyph" aria-hidden="true">
                     {glyph}
                 </span>
