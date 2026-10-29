@@ -350,11 +350,26 @@
     }
   }
 
+  /* 带筛选框的下拉面板：筛选框在滚动区之外，滚动条（经典滚动条会占位）只贴着选项列表，
+     筛选框始终通到面板右缘，不会在滚动条一侧留出空白。 */
+  .listbox-split {
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  .listbox-scroll {
+    min-height: 0;
+    margin: 0;
+    padding: 4px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    list-style: none;
+  }
+
   .listbox-filter {
-    position: sticky;
-    top: -4px;
-    z-index: 1;
-    margin: -4px -4px 4px;
+    flex: none;
     padding: 4px;
     background-color: var(--color-popover);
     box-shadow: inset 0 calc(-1 * var(--hairline)) 0 var(--color-hairline);

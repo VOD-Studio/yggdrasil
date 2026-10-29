@@ -385,18 +385,16 @@ where
                         view! {
                             // 透明遮罩：拦截外部点击（点遮罩即关），z-40 < 面板 z-50。
                             <div class="fixed inset-0 z-40" on:click=move |_| open.set(false)></div>
-                            <ul
-                                class="listbox listbox-centered"
+                            <div
+                                class="listbox listbox-centered listbox-split"
                                 data-placement=move || if flip_up.get() { "top" } else { "bottom" }
-                                role="listbox"
-                                aria-labelledby=move || trigger_id.get()
                             >
                                 {move || {
                                     filterable
                                         .get()
                                         .then(|| {
                                             view! {
-                                                <li class="listbox-filter" role="presentation">
+                                                <div class="listbox-filter">
                                                     <input
                                                         id=filter_id
                                                         class="field field-sm w-full"
@@ -426,52 +424,58 @@ where
                                                         }
                                                         on:keydown=move |e: KeyboardEvent| handle_open_key(&e)
                                                     />
-                                                </li>
+                                                </div>
                                             }
                                         })
                                 }}
-                                {move || {
-                                    visible
-                                        .with(Vec::is_empty)
-                                        .then(|| {
-                                            view! {
-                                                <li class="listbox-empty" role="presentation">
-                                                    "没有匹配的选项"
-                                                </li>
-                                            }
-                                        })
-                                }}
-                                {move || {
-                                    visible
-                                        .get()
-                                        .into_iter()
-                                        .map(|i| {
-                                            let label = options
-                                                .with(|o| {
-                                                    o.get(i)
-                                                        .map(|(_, l)| l.as_ref().to_string())
-                                                        .unwrap_or_default()
-                                                });
-                                            let reason = reasons.with(|r| r.get(i).copied().flatten());
-                                            view! {
-                                                <SelectOption
-                                                    id=option_id(i)
-                                                    label=label
-                                                    reason=reason
-                                                    selected=Signal::derive(move || selected.get() == i)
-                                                    active=Signal::derive(move || active.get() == i)
-                                                    on_hover=move |_| {
-                                                        if reason.is_none() {
-                                                            active.set(i);
+                                <ul
+                                    class="listbox-scroll"
+                                    role="listbox"
+                                    aria-labelledby=move || trigger_id.get()
+                                >
+                                    {move || {
+                                        visible
+                                            .with(Vec::is_empty)
+                                            .then(|| {
+                                                view! {
+                                                    <li class="listbox-empty" role="presentation">
+                                                        "没有匹配的选项"
+                                                    </li>
+                                                }
+                                            })
+                                    }}
+                                    {move || {
+                                        visible
+                                            .get()
+                                            .into_iter()
+                                            .map(|i| {
+                                                let label = options
+                                                    .with(|o| {
+                                                        o.get(i)
+                                                            .map(|(_, l)| l.as_ref().to_string())
+                                                            .unwrap_or_default()
+                                                    });
+                                                let reason = reasons.with(|r| r.get(i).copied().flatten());
+                                                view! {
+                                                    <SelectOption
+                                                        id=option_id(i)
+                                                        label=label
+                                                        reason=reason
+                                                        selected=Signal::derive(move || selected.get() == i)
+                                                        active=Signal::derive(move || active.get() == i)
+                                                        on_hover=move |_| {
+                                                            if reason.is_none() {
+                                                                active.set(i);
+                                                            }
                                                         }
-                                                    }
-                                                    on_pick=move |_| pick(i)
-                                                />
-                                            }
-                                        })
-                                        .collect_view()
-                                }}
-                            </ul>
+                                                        on_pick=move |_| pick(i)
+                                                    />
+                                                }
+                                            })
+                                            .collect_view()
+                                    }}
+                                </ul>
+                            </div>
                         }
                     })
             }}
