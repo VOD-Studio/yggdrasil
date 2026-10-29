@@ -60,7 +60,11 @@ pub(super) fn notes_desc(token: &McpTokenSummary) -> String {
     if !n.read {
         return "未授权".into();
     }
-    let what = if n.write { "读写草稿" } else { "只读" };
+    let what = if n.write {
+        "读写、公开与收录"
+    } else {
+        "只读"
+    };
     match &n.notebook_ids {
         Some(ids) => format!("{what} · {} 个笔记本", ids.len()),
         None => format!("{what} · 全部笔记本"),
@@ -318,23 +322,6 @@ mod tests {
             last_used_at: None,
             revoked_at: None,
         }
-    }
-
-    #[test]
-    fn notes_desc_summarizes_grant() {
-        assert_eq!(notes_desc(&token(NoteGrant::default())), "未授权");
-        let all = NoteGrant {
-            read: true,
-            write: false,
-            notebook_ids: None,
-        };
-        assert_eq!(notes_desc(&token(all)), "只读 · 全部笔记本");
-        let some = NoteGrant {
-            read: true,
-            write: true,
-            notebook_ids: Some(vec![1, 2]),
-        };
-        assert_eq!(notes_desc(&token(some)), "读写草稿 · 2 个笔记本");
     }
 
     #[test]

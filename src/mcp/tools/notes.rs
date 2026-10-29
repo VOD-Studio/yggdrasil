@@ -1,4 +1,4 @@
-//! 笔记知识库。新增授权与旧文章作用域正交；写工具只更新工作稿。
+//! 笔记知识库。笔记授权与文章作用域正交；保存工作稿与公开、收录为独立工具。
 use super::common::{ok_json, require_scope};
 use crate::api::error::ApiError;
 use crate::api::notes::store::{self, Access};
@@ -103,6 +103,38 @@ pub struct ReadNotebook {
     pub page: i32,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ChangeNoteState {
+    pub note_id: i32,
+    /// 先用 get_note(draft=true) 读取当前工作稿版本；过期版本拒绝操作。
+    pub expected_version: i32,
+}
+
+async fn change_note_state(
+    parts: &http::request::Parts,
+    params: ChangeNoteState,
+    action: NoteAction,
+) -> Result<CallToolResult, McpError> {
+    let (owner, grant) = authorization(parts, true).await?;
+    let note = store::act(
+        owner,
+        params.note_id,
+        params.expected_version,
+        action,
+        grant.notebook_ids.as_deref(),
+    )
+    .await
+    .map_err(failure)?;
+    ok_json(serde_json::json!({
+        "note_id": note.id,
+        "version": note.version,
+        "published_version": note.published_version,
+        "knowledge_version": note.knowledge_version,
+        "url": source(&note, true),
+        "public_url": note.published_version.map(|_| source(&note, false)),
+    }))
+}
+
 #[tool_router(router=notes_router,vis="pub")]
 impl crate::mcp::server::YggMcpServer {
     #[tool(
@@ -205,9 +237,12 @@ impl crate::mcp::server::YggMcpServer {
             })
             .copied()
             .collect();
-        ok_json(
-            serde_json::json!({"note_id":note.id,"title":note.title,"display_title":note.display_title(),"kind":note.kind,"version":note.version,"updated_at":note.updated_at,"tags":note.tags,"notebook_ids":notebook_ids,"url":source(&note,grant.read || grant.write),"content_md":lines[start..end].join("\n"),"start_line":start,"next_line":if end<lines.len(){Some(end)}else{None}}),
-        )
+        let mut result = serde_json::json!({"note_id":note.id,"title":note.title,"display_title":note.display_title(),"kind":note.kind,"version":note.version,"updated_at":note.updated_at,"tags":note.tags,"notebook_ids":notebook_ids,"url":source(&note,grant.read || grant.write),"content_md":lines[start..end].join("\n"),"start_line":start,"next_line":if end<lines.len(){Some(end)}else{None}});
+        if params.draft {
+            result["published_version"] = serde_json::json!(note.published_version);
+            result["knowledge_version"] = serde_json::json!(note.knowledge_version);
+        }
+        ok_json(result)
     }
 
     #[tool(
@@ -263,7 +298,7 @@ impl crate::mcp::server::YggMcpServer {
             destructive_hint = false,
             open_world_hint = false
         ),
-        description = "创建随记或主题笔记草稿，需要独立 notes_write 授权。id 和 expected_version 留空。此工具不会公开发布或收录知识库，由用户在后台确认。受笔记本限制的令牌必须传入获授权的 notebook_ids。"
+        description = "创建随记或主题笔记草稿，需要独立 notes_write 授权。id 和 expected_version 留空。此工具不会自动公开或收录；用户明确要求后，另用 publish_note 或 include_note_in_knowledge。受笔记本限制的令牌必须传入获授权的 notebook_ids。"
     )]
     async fn create_note(
         &self,
@@ -306,6 +341,70 @@ impl crate::mcp::server::YggMcpServer {
             serde_json::json!({"note_id":note.id,"version":note.version,"status":"draft","url":source(&note,true)}),
         )
     }
+
+    #[tool(
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            open_world_hint = false
+        ),
+        description = "公开笔记的当前工作稿，或更新已有公开版。仅在用户明确要求公开时调用，需要独立 notes_write 授权并受令牌笔记本范围限制。先用 get_note(draft=true) 读取，传入 note_id 和 expected_version；会公开尚未发布的修改，不改变 AI 知识库收录版本。返回公开版与收录版版本号。"
+    )]
+    async fn publish_note(
+        &self,
+        Parameters(params): Parameters<ChangeNoteState>,
+        Extension(parts): Extension<http::request::Parts>,
+    ) -> Result<CallToolResult, McpError> {
+        change_note_state(&parts, params, NoteAction::Publish).await
+    }
+
+    #[tool(
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            open_world_hint = false
+        ),
+        description = "撤回笔记的公开版，设为私密；保留工作稿与 AI 知识库收录版本。需要独立 notes_write 授权并受令牌笔记本范围限制。先用 get_note(draft=true) 读取，传入 note_id 和 expected_version。"
+    )]
+    async fn unpublish_note(
+        &self,
+        Parameters(params): Parameters<ChangeNoteState>,
+        Extension(parts): Extension<http::request::Parts>,
+    ) -> Result<CallToolResult, McpError> {
+        change_note_state(&parts, params, NoteAction::Unpublish).await
+    }
+
+    #[tool(
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            open_world_hint = false
+        ),
+        description = "将笔记当前工作稿收录到 AI 知识库，或更新已有收录版本。仅在用户明确要求收录时调用，需要独立 notes_write 授权并受令牌笔记本范围限制。先用 get_note(draft=true) 读取，传入 note_id 和 expected_version；包含尚未发布的修改，但不会公开笔记，私密内容仍需知识库授权才能读取。"
+    )]
+    async fn include_note_in_knowledge(
+        &self,
+        Parameters(params): Parameters<ChangeNoteState>,
+        Extension(parts): Extension<http::request::Parts>,
+    ) -> Result<CallToolResult, McpError> {
+        change_note_state(&parts, params, NoteAction::IncludeKnowledge).await
+    }
+
+    #[tool(
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            open_world_hint = false
+        ),
+        description = "将笔记移出 AI 知识库；不删除工作稿，不改变公开状态。需要独立 notes_write 授权并受令牌笔记本范围限制。先用 get_note(draft=true) 读取，传入 note_id 和 expected_version。"
+    )]
+    async fn exclude_note_from_knowledge(
+        &self,
+        Parameters(params): Parameters<ChangeNoteState>,
+        Extension(parts): Extension<http::request::Parts>,
+    ) -> Result<CallToolResult, McpError> {
+        change_note_state(&parts, params, NoteAction::ExcludeKnowledge).await
+    }
 }
 
 #[cfg(test)]
@@ -317,6 +416,34 @@ mod tests {
             panic!("expected text")
         };
         serde_json::from_str(&text.text).unwrap()
+    }
+
+    async fn transition(
+        action: NoteAction,
+        note_id: i32,
+        expected_version: i32,
+        parts: http::request::Parts,
+    ) -> Result<CallToolResult, McpError> {
+        let server = crate::mcp::server::YggMcpServer;
+        let params = Parameters(ChangeNoteState {
+            note_id,
+            expected_version,
+        });
+        match action {
+            NoteAction::Publish => server.publish_note(params, Extension(parts)).await,
+            NoteAction::Unpublish => server.unpublish_note(params, Extension(parts)).await,
+            NoteAction::IncludeKnowledge => {
+                server
+                    .include_note_in_knowledge(params, Extension(parts))
+                    .await
+            }
+            NoteAction::ExcludeKnowledge => {
+                server
+                    .exclude_note_from_knowledge(params, Extension(parts))
+                    .await
+            }
+            _ => unreachable!(),
+        }
     }
 
     #[test]
@@ -341,21 +468,35 @@ mod tests {
             let server=crate::mcp::server::YggMcpServer;
             let read=|id,draft|Parameters(ReadNote {note_id:id,draft,start_line:0,max_lines:None});
             let note=store::save(1,NoteDraft {title:"知识库测试".into(),content_md:"已确认的知识".into(),notebook_ids:vec![book.id],..Default::default()},None).await.unwrap();
+            let actions = [
+                NoteAction::Publish, NoteAction::Unpublish,
+                NoteAction::IncludeKnowledge, NoteAction::ExcludeKnowledge,
+            ];
+            for action in actions {
+                assert!(transition(action, note.id, 1, parts()).await.is_err(),
+                    "文章 admin 权限不能代替独立笔记写入授权");
+            }
             assert!(server.get_note(read(note.id,false),Extension(parts())).await.is_err(),"old admin token must not gain private access");
             assert!(server.create_note(Parameters(NoteDraft {content_md:"AI 草稿".into(),..Default::default()}),Extension(parts())).await.is_err());
-            store::act(1,note.id,1,NoteAction::Publish).await.unwrap();
+            store::act(1, note.id, 1, NoteAction::Publish, None).await.unwrap();
             assert_eq!(value(server.get_note(read(note.id,false),Extension(parts())).await.unwrap())["content_md"],"已确认的知识");
-            store::act(1,note.id,1,NoteAction::Unpublish).await.unwrap();
+            let public = value(server.get_note(read(note.id,false),Extension(parts())).await.unwrap());
+            assert!(public.get("knowledge_version").is_none(), "公开读取不能泄露内部收录状态");
+            store::act(1, note.id, 1, NoteAction::Unpublish, None).await.unwrap();
             client.execute("UPDATE mcp_tokens SET notes_read=true,notebook_ids=$2 WHERE id=$1",&[&token,&vec![book.id]]).await.unwrap();
             assert!(server.get_note(read(note.id,false),Extension(parts())).await.is_err(),"unenrolled drafts remain inaccessible");
-            store::act(1,note.id,1,NoteAction::IncludeKnowledge).await.unwrap();
+            store::act(1, note.id, 1, NoteAction::IncludeKnowledge, None).await.unwrap();
             assert!(server.get_note(read(note.id,true),Extension(parts())).await.is_err(),"read grant cannot read working drafts");
             assert_eq!(value(server.get_note(read(note.id,false),Extension(parts())).await.unwrap())["version"],1);
             let outside=store::save(1,NoteDraft {content_md:"范围外的私密知识".into(),..Default::default()},None).await.unwrap();
-            store::act(1,outside.id,1,NoteAction::IncludeKnowledge).await.unwrap();
+            store::act(1, outside.id, 1, NoteAction::IncludeKnowledge, None).await.unwrap();
             assert!(server.get_note(read(outside.id,false),Extension(parts())).await.is_err());
             let search=value(server.search_knowledge(Parameters(SearchKnowledge {query:"知识".into(),notebook_id:None,kind:None,page:1,include_articles:Some(false)}),Extension(parts())).await.unwrap());
             assert_eq!(search["note_total"],1);
+            for action in actions {
+                assert!(transition(action, note.id, 1, parts()).await.is_err(),
+                    "只读知识库令牌不能改变状态");
+            }
             client.execute("UPDATE mcp_tokens SET notes_write=true WHERE id=$1",&[&token]).await.unwrap();
             assert!(server.get_note(read(outside.id,true),Extension(parts())).await.is_err());
             let mut illegal=outside.draft();illegal.notebook_ids=vec![book.id];
@@ -369,9 +510,68 @@ mod tests {
             let new=value(server.create_note(Parameters(NoteDraft {content_md:"AI 新草稿".into(),notebook_ids:vec![book.id],..Default::default()}),Extension(parts())).await.unwrap());
             let new_id=new["note_id"].as_i64().unwrap() as i32;
             assert!(store::get(Access::Public,Some(new_id),None,None).await.is_err());
-            assert!(server.get_note(read(new_id,false),Extension(parts())).await.is_err(),"MCP cannot enroll its own writes");
+            assert!(server.get_note(read(new_id,false),Extension(parts())).await.is_err(),"saving a draft does not enroll it automatically");
+            for action in actions {
+                let before = store::get(Access::Owner(1), Some(outside.id), None, None).await.unwrap();
+                assert!(transition(action, outside.id, 1, parts()).await.is_err());
+                assert_eq!(store::get(Access::Owner(1), Some(outside.id), None, None).await.unwrap(), before);
+                let before = store::get(Access::Owner(1), Some(note.id), None, None).await.unwrap();
+                assert!(transition(action, note.id, 1, parts()).await.is_err(), "过期版本必须拒绝操作");
+                assert_eq!(store::get(Access::Owner(1), Some(note.id), None, None).await.unwrap(), before);
+            }
+            let state = value(server.get_note(read(note.id,true),Extension(parts())).await.unwrap());
+            assert_eq!(state["published_version"], serde_json::Value::Null);
+            assert_eq!(state["knowledge_version"], 1);
+            let published = value(transition(NoteAction::Publish, note.id, 2, parts()).await.unwrap());
+            assert_eq!(published["published_version"], 2);
+            assert_eq!(published["knowledge_version"], 1);
+            assert_eq!(store::get(Access::Public,Some(note.id),None,None).await.unwrap().content_md, "AI 尚未确认的修改");
+            let included = value(transition(NoteAction::IncludeKnowledge, note.id, 2, parts()).await.unwrap());
+            assert_eq!(included["published_version"], 2);
+            assert_eq!(included["knowledge_version"], 2);
+            let private = value(transition(NoteAction::Unpublish, note.id, 2, parts()).await.unwrap());
+            assert_eq!(private["published_version"], serde_json::Value::Null);
+            assert_eq!(private["public_url"], serde_json::Value::Null);
+            assert_eq!(private["knowledge_version"], 2);
+            assert!(store::get(Access::Public,Some(note.id),None,None).await.is_err());
+            assert_eq!(value(server.get_note(read(note.id,false),Extension(parts())).await.unwrap())["content_md"], "AI 尚未确认的修改");
+            transition(NoteAction::Publish, note.id, 2, parts()).await.unwrap();
+            let excluded = value(transition(NoteAction::ExcludeKnowledge, note.id, 2, parts()).await.unwrap());
+            assert_eq!(excluded["published_version"], 2);
+            assert_eq!(excluded["knowledge_version"], serde_json::Value::Null);
+            assert!(server.get_note(read(note.id,false),Extension(parts())).await.is_err());
+            assert!(store::get(Access::Public,Some(note.id),None,None).await.is_ok());
+
+            // 授权范围为空与无限制不同；每次工具调用都重新读取授权。
+            client.execute("UPDATE mcp_tokens SET notebook_ids='{}' WHERE id=$1", &[&token]).await.unwrap();
+            for action in actions {
+                assert!(transition(action, note.id, 2, parts()).await.is_err());
+            }
+            client.execute("UPDATE mcp_tokens SET notebook_ids=NULL WHERE id=$1", &[&token]).await.unwrap();
+            assert_eq!(value(transition(NoteAction::Publish, outside.id, 1, parts()).await.unwrap())["published_version"], 1);
+            let empty = store::save(1, NoteDraft::default(), None).await.unwrap();
+            for action in [NoteAction::Publish, NoteAction::IncludeKnowledge] {
+                assert!(transition(action, empty.id, 1, parts()).await.is_err(), "空工作稿不能公开或收录");
+            }
+            store::act(1, new_id, 1, NoteAction::Trash, None).await.unwrap();
+            for action in actions {
+                assert!(transition(action, new_id, 1, parts()).await.is_err(), "回收站笔记不能改变公开或收录状态");
+            }
+            client.execute("INSERT INTO users(id,username,email,password_hash,role) VALUES(2,'other','other@test.invalid','unused','blocked')", &[]).await.unwrap();
+            let foreign = store::save(2, NoteDraft { content_md: "他人笔记".into(), ..Default::default() }, None).await.unwrap();
+            for action in actions {
+                assert!(transition(action, foreign.id, 1, parts()).await.is_err(), "无限制令牌也不能操作他人的笔记");
+            }
+            client.execute("UPDATE mcp_tokens SET expires_at=NOW()-INTERVAL '1 second' WHERE id=$1", &[&token]).await.unwrap();
+            for action in actions {
+                assert!(transition(action, note.id, 2, parts()).await.is_err());
+            }
+            client.execute("UPDATE mcp_tokens SET expires_at=NULL WHERE id=$1", &[&token]).await.unwrap();
             client.execute("UPDATE mcp_tokens SET revoked_at=NOW() WHERE id=$1",&[&token]).await.unwrap();
             assert!(server.get_note(read(note.id,true),Extension(parts())).await.is_err(),"revocation checked on every tool call");
+            for action in actions {
+                assert!(transition(action, note.id, 2, parts()).await.is_err());
+            }
         });
     }
     #[test]

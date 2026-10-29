@@ -98,7 +98,7 @@ fn ScopeCards(scope: RwSignal<TokenScope>) -> impl IntoView {
     }
 }
 
-/// 笔记授权：读取、写入草稿，可限定笔记本。
+/// 笔记授权：知识库读取与笔记管理，可限定笔记本。
 #[component]
 fn GrantFields(draft: GrantDraft, #[prop(into)] submitted: Signal<bool>) -> impl IntoView {
     let GrantDraft {
@@ -120,7 +120,7 @@ fn GrantFields(draft: GrantDraft, #[prop(into)] submitted: Signal<bool>) -> impl
     view! {
         <fieldset class="mcp-fieldset">
             <legend>"笔记授权"</legend>
-            <p class="mcp-muted">"与文章权限独立。写入只生成工作稿，不会自动发布。"</p>
+            <p class="mcp-muted">"与文章权限独立。笔记写入授权也允许公开、撤回及管理 AI 知识库收录；创建和编辑不会自动公开或收录。"</p>
             <label class="mcp-check">
                 <Checkbox
                     checked=read
@@ -143,7 +143,7 @@ fn GrantFields(draft: GrantDraft, #[prop(into)] submitted: Signal<bool>) -> impl
                         }
                     }
                 />
-                "允许创建和修改笔记草稿"
+                "允许编辑、公开和收录笔记"
             </label>
             {move || {
                 read.get()

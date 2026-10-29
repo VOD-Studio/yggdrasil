@@ -419,10 +419,11 @@ pub async fn act(
     id: i32,
     expected: i32,
     action: NoteAction,
+    allowed_books: Option<&[i32]>,
 ) -> Result<Note, AppError> {
     let mut client = get_conn().await.map_err(AppError::db_conn)?;
     let tx = client.transaction().await.map_err(AppError::tx)?;
-    act_in_transaction(&tx, owner_id, id, expected, action).await?;
+    act_in_transaction(&tx, owner_id, id, expected, action, allowed_books).await?;
     tx.commit().await.map_err(AppError::tx)?;
     invalidate();
     get(Access::Owner(owner_id), Some(id), None, None).await
@@ -453,7 +454,15 @@ pub async fn batch_act(
     let tx = client.transaction().await.map_err(AppError::tx)?;
     // 所有批量请求按 ID 递增锁行；校验或更新失败时由事务整体回滚。
     for target in targets {
-        act_in_transaction(&tx, owner_id, target.id, target.expected_version, action).await?;
+        act_in_transaction(
+            &tx,
+            owner_id,
+            target.id,
+            target.expected_version,
+            action,
+            None,
+        )
+        .await?;
     }
     tx.commit().await.map_err(AppError::tx)?;
     invalidate();
@@ -466,8 +475,23 @@ async fn act_in_transaction(
     id: i32,
     expected: i32,
     action: NoteAction,
+    allowed_books: Option<&[i32]>,
 ) -> Result<(), AppError> {
     let row = tx.query_opt("SELECT n.version, n.deleted_at, r.kind, r.title, r.content_md FROM notes n JOIN note_revisions r ON r.note_id=n.id AND r.version=n.version WHERE n.id=$1 AND n.owner_id=$2 FOR UPDATE OF n", &[&id, &owner_id]).await.map_err(AppError::query)?.ok_or(AppError::NotFound("笔记不存在"))?;
+    // 与保存入口一样，先锁住笔记再检查归属，避免并发移动笔记绕过令牌范围。
+    if let Some(allowed) = allowed_books {
+        let found: bool = tx
+            .query_one(
+                "SELECT EXISTS(SELECT 1 FROM notebook_notes WHERE note_id=$1 AND notebook_id=ANY($2))",
+                &[&id, &allowed],
+            )
+            .await
+            .map_err(AppError::query)?
+            .get(0);
+        if !found {
+            return Err(AppError::Forbidden("笔记不在令牌授权范围内"));
+        }
+    }
     if row.get::<_, i32>("version") != expected {
         return Err(AppError::BadRequest("笔记版本已变化，请重新加载".into()));
     }
@@ -777,7 +801,9 @@ mod tests {
             )
             .await
             .unwrap();
-            act(1, trashed.id, 1, NoteAction::Trash).await.unwrap();
+            act(1, trashed.id, 1, NoteAction::Trash, None)
+                .await
+                .unwrap();
             let empty = save(1, NoteDraft::default(), None).await.unwrap();
             let untitled = save(
                 1,
@@ -947,8 +973,8 @@ mod tests {
                 0
             );
             assert_eq!(notebooks(Access::Public).await.unwrap()[0].note_count, 0);
-            act(1, note.id, 1, NoteAction::Publish).await.unwrap();
-            act(1, note.id, 1, NoteAction::IncludeKnowledge)
+            act(1, note.id, 1, NoteAction::Publish, None).await.unwrap();
+            act(1, note.id, 1, NoteAction::IncludeKnowledge, None)
                 .await
                 .unwrap();
             let mut draft = note.draft();
@@ -1040,7 +1066,7 @@ mod tests {
                 .total,
                 0
             );
-            act(1, note.id, 2, NoteAction::Unpublish).await.unwrap();
+            act(1, note.id, 2, NoteAction::Unpublish, None).await.unwrap();
             assert!(get(Access::Public, Some(note.id), None, None)
                 .await
                 .is_err());
@@ -1049,7 +1075,7 @@ mod tests {
             assert!(get(knowledge.clone(), Some(note.id), None, None)
                 .await
                 .is_ok());
-            act(1, note.id, 2, NoteAction::Trash).await.unwrap();
+            act(1, note.id, 2, NoteAction::Trash, None).await.unwrap();
             assert!(get(knowledge, Some(note.id), None, None).await.is_err());
             assert_eq!(
                 list(
@@ -1064,7 +1090,7 @@ mod tests {
                 .total,
                 1
             );
-            act(1, note.id, 2, NoteAction::Restore).await.unwrap();
+            act(1, note.id, 2, NoteAction::Restore, None).await.unwrap();
             assert!(
                 get(Access::Public, Some(note.id), None, None)
                     .await
@@ -1082,7 +1108,7 @@ mod tests {
                 3,
                 "restoration creates a new version"
             );
-            assert!(act(2, note.id, 3, NoteAction::Publish).await.is_err());
+            assert!(act(2, note.id, 3, NoteAction::Publish, None).await.is_err());
             reorder(1, public, vec![note.id]).await.unwrap();
             assert!(reorder(2, public, vec![note.id]).await.is_err());
 
@@ -1092,21 +1118,21 @@ mod tests {
             let media_status=|| super::super::attachments::read(axum::http::HeaderMap::new(),axum::extract::Path(image_id.to_string()));
             assert_eq!(media_status().await.status(),axum::http::StatusCode::NOT_FOUND);
             let reference_only=save(1,NoteDraft {content_md:format!("`/note-media/{image_id}`\n\n![外站](https://example.invalid/note-media/{image_id})"),..Default::default()},None).await.unwrap();
-            act(1,reference_only.id,1,NoteAction::Publish).await.unwrap();
+            act(1, reference_only.id, 1, NoteAction::Publish, None).await.unwrap();
             assert_eq!(media_status().await.status(),axum::http::StatusCode::NOT_FOUND,"code examples and remote URLs cannot publish local media");
             let draft=NoteDraft {content_md:format!("![私密图片](/note-media/{image_id})"),..Default::default()};
             assert!(save(2,draft.clone(),None).await.is_err(),"cannot reuse someone else's private attachment");
             let image_note=save(1,draft,None).await.unwrap();
-            act(1,image_note.id,1,NoteAction::IncludeKnowledge).await.unwrap();
+            act(1, image_note.id, 1, NoteAction::IncludeKnowledge, None).await.unwrap();
             assert_eq!(media_status().await.status(),axum::http::StatusCode::NOT_FOUND,"knowledge enrollment is not public access");
-            act(1,image_note.id,1,NoteAction::Publish).await.unwrap();
+            act(1, image_note.id, 1, NoteAction::Publish, None).await.unwrap();
             let response=media_status().await;
             assert_eq!(response.status(),axum::http::StatusCode::OK);
             assert_eq!(response.headers()["cache-control"],"private, no-store");
             let mut draft=image_note.draft();draft.content_md="草稿移除了图片，公开版仍保留".into();
             save(1,draft,None).await.unwrap();
             assert_eq!(media_status().await.status(),axum::http::StatusCode::OK);
-            act(1,image_note.id,2,NoteAction::Unpublish).await.unwrap();
+            act(1, image_note.id, 2, NoteAction::Unpublish, None).await.unwrap();
             assert_eq!(media_status().await.status(),axum::http::StatusCode::NOT_FOUND);
 
             // 公开素材即使只被笔记历史版引用，也不能变成可清理孤儿。
@@ -1116,7 +1142,7 @@ mod tests {
             let asset_note=save(1,NoteDraft {content_md:format!("![素材](/uploads/{path})"),..Default::default()},None).await.unwrap();
             let mut draft=asset_note.draft();draft.content_md="新草稿不再使用图片".into();
             save(1,draft,None).await.unwrap();
-            act(1,asset_note.id,2,NoteAction::Trash).await.unwrap();
+            act(1, asset_note.id, 2, NoteAction::Trash, None).await.unwrap();
             let assets=crate::api::assets::list::list_assets_impl(crate::models::asset::AssetFilter::Used,asset_id.to_string(),crate::models::asset::AssetSort::CreatedDesc,1).await.unwrap();
             assert_eq!(assets.total,1);
             assert_eq!(assets.assets[0].ref_count,1);
@@ -1127,9 +1153,9 @@ mod tests {
             let count=|scope,published,knowledge|list(scope,NoteFilter {query:"状态筛选验收".into(),published,knowledge,..Default::default()});
             assert_eq!(count(Access::Owner(1),Some(false),Some(false)).await.unwrap().total,1);
             assert_eq!(count(Access::Owner(1),Some(true),None).await.unwrap().total,0);
-            act(1,filtered.id,1,NoteAction::Publish).await.unwrap();
+            act(1, filtered.id, 1, NoteAction::Publish, None).await.unwrap();
             assert_eq!(count(Access::Owner(1),Some(true),Some(false)).await.unwrap().total,1);
-            act(1,filtered.id,1,NoteAction::IncludeKnowledge).await.unwrap();
+            act(1, filtered.id, 1, NoteAction::IncludeKnowledge, None).await.unwrap();
             assert_eq!(count(Access::Owner(1),Some(true),Some(true)).await.unwrap().total,1);
             assert_eq!(count(Access::Owner(1),None,Some(false)).await.unwrap().total,0);
             assert_eq!(count(Access::Public,Some(false),Some(false)).await.unwrap().total,1,"public endpoint ignores private state probes");
@@ -1201,7 +1227,7 @@ mod tests {
                 };
                 let note = save(1, draft, None).await.unwrap();
                 if publish {
-                    act(1, note.id, 1, NoteAction::Publish).await.unwrap();
+                    act(1, note.id, 1, NoteAction::Publish, None).await.unwrap();
                 }
                 ids.push(note);
             }

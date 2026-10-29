@@ -43,6 +43,21 @@ CI 的 release-split 阶段通过 `bun scripts/check-build.ts` 执行完整 `mak
 
 `make clean` 会删除编译产物、生成的浏览器资源和前端依赖，保留受版本控制的静态资源与上传原文件。
 
+## MCP 笔记管理
+
+笔记权限独立于文章的 `read` / `write` / `admin` 作用域。创建、编辑及以下状态操作均要求 `notes_write`，并受令牌的笔记本范围限制；文章 `admin` 权限不能代替笔记授权。已有笔记写入令牌也可调用这些状态工具，不需要重新签发。
+
+| 工具 | 操作 |
+| --- | --- |
+| `publish_note` | 公开当前工作稿，或将公开版更新到当前工作稿 |
+| `unpublish_note` | 撤回公开版，设为私密，保留知识库收录版 |
+| `include_note_in_knowledge` | 将当前工作稿收录到 AI 知识库，或更新已有收录版，不改变公开状态 |
+| `exclude_note_from_knowledge` | 移出 AI 知识库，不改变公开状态或删除工作稿 |
+
+四个工具均传入 `note_id` 和 `expected_version`。操作前用 `get_note({"note_id": 123, "draft": true})` 读取当前工作稿版本及 `published_version`、`knowledge_version`；版本不一致时操作被拒绝，需重新读取。公开、收录会包含当前工作稿尚未发布的修改，应仅在用户明确要求时调用。创建和编辑仍只保存工作稿，不自动公开或收录。
+
+状态工具返回当前工作稿、公开版、收录版的版本号，以及后台地址与可选公开地址。私密收录内容仍需知识库读取授权，收录不等于公开；回收站、他人或令牌笔记本范围外的笔记不能操作。
+
 ## 生产部署
 
 必须前置反向代理（nginx / Caddy）终结 TLS，并配置：

@@ -65,7 +65,7 @@ pub async fn act_on_note(
     action: NoteAction,
 ) -> Result<Note, ApiError> {
     let user = crate::api::auth::get_current_admin_user().await?;
-    Ok(store::act(user.id, id, expected_version, action).await?)
+    Ok(store::act(user.id, id, expected_version, action, None).await?)
 }
 
 #[server(BatchActOnNotes, endpoint = "batch_act_on_notes", input = leptos::server_fn::codec::Json)]

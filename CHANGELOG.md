@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **笔记批量管理**：后台笔记列表支持逐条勾选、全选当前页和取消选择，可批量设为公开或私密、收录到 AI 知识库或移出。公开与收录前确认使用当前工作稿，两个状态互不影响；整批校验所有权、版本和内容后在同一事务中提交，任一条冲突都不会部分生效。切换筛选、翻页或刷新会清空选择，筛选末页被批量移空时自动返回有效页；移动端操作栏自动换行。
+- **MCP 笔记公开与收录管理**：新增 `publish_note`、`unpublish_note`、`include_note_in_knowledge`、`exclude_note_from_knowledge`，分别公开当前工作稿、撤回公开、收录当前工作稿或移出 AI 知识库。复用独立 `notes_write` 授权，已有笔记写入令牌即可使用；在笔记行锁与同一事务内检查笔记本范围和工作稿版本，不能操作他人、范围外或回收站笔记。`get_note(draft=true)` 返回公开与收录版本号；创建和编辑仍不自动公开或收录。后台令牌授权说明同步明确新增能力。
 
 ### Removed
 
