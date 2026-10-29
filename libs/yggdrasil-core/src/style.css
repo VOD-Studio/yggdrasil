@@ -21,13 +21,15 @@ html:not(.is-theme-transitioning)::view-transition-new(root) {
   mix-blend-mode: normal;
 }
 
-/* 正文单独捕获，页头保留点击能力，允许中途切换栏目或主题。 */
+/* 前台没有共享元素的导航只捕获正文，页头保持实时、可点击，允许中途切换栏目或主题。
+   栏目之间按方向（forward/backward）横向滑动，其余（fade）原地淡入淡出。 */
 html[data-vt-section] {
   --vt-section-offset: 16px;
   view-transition-name: none;
 }
 
-html[data-vt-section] main {
+/* 只命名最外层 main（与 is-route-pending 一致）：嵌套的 main 重名会让浏览器放弃整个过渡。 */
+html[data-vt-section] main:not(main main) {
   view-transition-name: vt-section-content;
 }
 
@@ -43,9 +45,10 @@ html[data-vt-section] [data-vt-shell='frontend-header'] a {
   transition: none;
 }
 
+/* 只裁掉页头区域。旧正文可能比新 main 宽（文章 1240px → 归档 880px）或长，左右与底部不裁。 */
 html[data-vt-section]::view-transition-group(vt-section-content) {
   animation: none;
-  clip-path: inset(var(--vt-section-clip-top, 0px) 0 0);
+  clip-path: inset(var(--vt-section-clip-top, 0px) -100vw -100vh);
 }
 
 html[data-vt-section]::view-transition-old(vt-section-content),
@@ -54,7 +57,9 @@ html[data-vt-section]::view-transition-new(vt-section-content) {
   mix-blend-mode: normal;
 }
 
+/* 旧快照保持自身尺寸：默认宽度 100% 会把更宽的旧正文按新 main 宽度等比缩小。 */
 html[data-vt-section]::view-transition-old(vt-section-content) {
+  width: auto;
   animation: vt-section-out 140ms var(--ease-out-expo) both;
 }
 
@@ -68,11 +73,14 @@ html[data-vt-section]::view-transition-new(vt-section-content) {
 
 @keyframes vt-section-out {
   from {
-    transform: translateY(var(--vt-section-old-y, 0px));
+    transform: translate(var(--vt-section-old-x, 0px), var(--vt-section-old-y, 0px));
   }
   to {
     opacity: 0;
-    transform: translate(calc(var(--vt-section-offset) * -0.5), var(--vt-section-old-y, 0px));
+    transform: translate(
+      calc(var(--vt-section-old-x, 0px) + var(--vt-section-offset) * -0.5),
+      var(--vt-section-old-y, 0px)
+    );
   }
 }
 
@@ -90,6 +98,10 @@ html[data-vt-section]::view-transition-new(vt-section-content) {
   html[data-vt-section='backward'] {
     --vt-section-offset: -8px;
   }
+}
+
+html[data-vt-section='fade'] {
+  --vt-section-offset: 0px;
 }
 
 /* 未匹配到目标的旧元素与 root 同步淡出，不延长降级过渡。 */

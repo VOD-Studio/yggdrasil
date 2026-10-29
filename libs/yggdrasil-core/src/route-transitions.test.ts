@@ -439,35 +439,48 @@ describe('route publication and rendering', () => {
 
 describe('section navigation', () => {
   it.each([
-    [-535, 65, '-600px', '0px'],
-    [65, -535, '600px', '600px'],
+    ['/', -535, 65, '0px', '-600px', '0px'],
+    ['/', 65, -535, '0px', '600px', '600px'],
+    // 滚动后的文章页回到栏目：页头不单独捕获；旧正文比新 main 宽，按原位置留在页头下方。
+    ['/post/article', -2335, 65, '-180px', '-2400px', '0px'],
   ])(
-    'keeps a scrolled source aligned and the live header clear (%s → %s)',
-    async (from, to, offset, clip) => {
+    'keeps a scrolled source aligned and the live header clear (%s: %s → %s)',
+    async (source, from, to, x, y, clip) => {
+      if (source !== '/') {
+        routes.push(source);
+        await native[0].invoke();
+        await finish();
+      }
+      const wide = source.startsWith('/post/');
       const content = '<header data-vt-shell="frontend-header"></header><main>Section</main>';
       render(content);
       const header = document.querySelector<HTMLElement>('header')!;
       vi.spyOn(document.querySelector('main')!, 'getBoundingClientRect').mockReturnValue(
-        new DOMRect(20, Number(from), 800, 2000),
+        wide
+          ? new DOMRect(100, Number(from), 1240, 9000)
+          : new DOMRect(280, Number(from), 880, 2000),
       );
       autoRender = false;
       routes.push('/archives');
       expect(header.style.viewTransitionName).toBe('');
-      const update = native[0].invoke();
+      const update = native[native.length - 1].invoke();
       paint(content);
       vi.spyOn(document.querySelector('main')!, 'getBoundingClientRect').mockReturnValue(
-        new DOMRect(20, Number(to), 800, 2000),
+        new DOMRect(280, Number(to), 880, 2000),
       );
       vi.spyOn(document.querySelector('header')!, 'getBoundingClientRect').mockReturnValue(
         new DOMRect(0, 0, 1280, 65),
       );
       routes.rendered(routes.navigationId(), routes.currentRoute());
       await update;
-      expect(document.documentElement.style.getPropertyValue('--vt-section-old-y')).toBe(offset);
-      expect(document.documentElement.style.getPropertyValue('--vt-section-clip-top')).toBe(clip);
+      const style = document.documentElement.style;
+      expect(style.getPropertyValue('--vt-section-old-x')).toBe(x);
+      expect(style.getPropertyValue('--vt-section-old-y')).toBe(y);
+      expect(style.getPropertyValue('--vt-section-clip-top')).toBe(clip);
       await finish();
-      expect(document.documentElement.style.getPropertyValue('--vt-section-old-y')).toBe('');
-      expect(document.documentElement.style.getPropertyValue('--vt-section-clip-top')).toBe('');
+      expect(style.getPropertyValue('--vt-section-old-x')).toBe('');
+      expect(style.getPropertyValue('--vt-section-old-y')).toBe('');
+      expect(style.getPropertyValue('--vt-section-clip-top')).toBe('');
     },
   );
 
@@ -476,8 +489,8 @@ describe('section navigation', () => {
     ['/', '/notes', 'forward'],
     ['/notes', '/archives', 'forward'],
     ['/notes/example', '/', 'backward'],
-    ['/notes', '/notes/example', undefined],
-    ['/notes/book/1', '/notes/example', undefined],
+    ['/notes', '/notes/example', 'fade'],
+    ['/notes/book/1', '/notes/example', 'fade'],
     ['/archives', '/friends', 'forward'],
     ['/friends', '/about', 'forward'],
     ['/about', '/search', 'forward'],
@@ -485,27 +498,27 @@ describe('section navigation', () => {
     ['/about', '/friends', 'backward'],
     ['/page/2', '/archives', 'forward'],
     ['/tags/Rust', '/', 'backward'],
-    ['/archives', '/tags/Rust', undefined],
-    ['/', '/page/2', undefined],
-    ['/', '/post/article', undefined],
+    ['/archives', '/tags/Rust', 'fade'],
+    ['/', '/page/2', 'fade'],
+    ['/', '/post/article', 'fade'],
+    ['/post/article', '/archives', 'fade'],
+    ['/post/article', '/post/other', 'fade'],
+    ['/about', '/changelog', 'fade'],
     ['/about', '/admin', undefined],
-    ['/about', '/changelog', undefined],
-  ])(
-    '%s → %s follows section order without affecting other routes',
-    async (from, to, direction) => {
-      if (from !== '/') {
-        routes.push(from!);
-        await native[native.length - 1].invoke();
-        await finish();
-      }
-      routes.push(to!);
-      expect(document.documentElement.dataset.vtSection).toBe(direction);
+    ['/about', '/login', undefined],
+  ])('%s → %s captures only the content, sliding between sections', async (from, to, direction) => {
+    if (from !== '/') {
+      routes.push(from!);
       await native[native.length - 1].invoke();
-      expect(document.documentElement.dataset.vtSection).toBe(direction);
       await finish();
-      expect(document.documentElement.dataset.vtSection).toBeUndefined();
-    },
-  );
+    }
+    routes.push(to!);
+    expect(document.documentElement.dataset.vtSection).toBe(direction);
+    await native[native.length - 1].invoke();
+    expect(document.documentElement.dataset.vtSection).toBe(direction);
+    await finish();
+    expect(document.documentElement.dataset.vtSection).toBeUndefined();
+  });
 
   it('history navigation uses the displayed section, even when the URL has already changed', async () => {
     const home = history.state;
@@ -602,17 +615,20 @@ describe('section navigation', () => {
       });
     });
 
-    it('fades in on the new link when leaving /search', async () => {
-      await withAnimate(async (animate) => {
-        routes.push('/search');
-        await native[native.length - 1].invoke();
-        await finish();
-        await navigateTo('/', header('/'));
-        expect(animate).toHaveBeenCalledOnce();
-        expect(animate.mock.calls[0][0]).toEqual([{ opacity: 0 }, { opacity: 1 }]);
-        expect(animate.mock.contexts[0]).toBe(document.querySelector('.nav-indicator'));
-      });
-    });
+    it.each(['/search', '/post/article'])(
+      'fades in on the new link when leaving %s',
+      async (source) => {
+        await withAnimate(async (animate) => {
+          routes.push(source);
+          await native[native.length - 1].invoke();
+          await finish();
+          await navigateTo('/', header('/'));
+          expect(animate).toHaveBeenCalledOnce();
+          expect(animate.mock.calls[0][0]).toEqual([{ opacity: 0 }, { opacity: 1 }]);
+          expect(animate.mock.contexts[0]).toBe(document.querySelector('.nav-indicator'));
+        });
+      },
+    );
 
     it('leaves the pill alone for navigation outside the sections', async () => {
       await withAnimate(async (animate) => {
@@ -847,6 +863,8 @@ describe('shared article snapshots', () => {
     destination = `<main data-vt-detail>${post('42', true)}</main>`;
     click('/post/article', { post: '42' });
     expect(source.style.viewTransitionName).toBe('vt-post-title');
+    // 标题需要在整页快照里飞行，不能只捕获正文。
+    expect(document.documentElement.dataset.vtSection).toBeUndefined();
     await native[0].invoke();
     expect(
       document.querySelector<HTMLElement>('[data-vt-role="title"]')!.style.viewTransitionName,

@@ -75,9 +75,10 @@ interface Navigation {
   names: Map<HTMLElement, string>;
   oldRoles: Set<string>;
   shell: boolean;
-  sectionTop?: number;
+  /** 正文过渡（`data-vt-section`）专用：截图前 `main` 的视口位置，旧正文快照据此留在原处。 */
+  sectionFrom?: DOMRect;
   /**
-   * Section transitions only: the desktop pill before the update and its nav link. `source`
+   * Content transitions only: the desktop pill before the update and its nav link. `source`
    * marks a relay: the header may still show that pill, so sliding waits until it changes.
    */
   pill?: { from?: DOMRect; href?: string; source?: HTMLElement | null };
@@ -746,18 +747,6 @@ export class RouteTransitions {
       return;
     }
     document.documentElement.classList.add('is-route-transitioning');
-    const fromSection = sectionIndex(previous.url);
-    const toSection = sectionIndex(entry.url);
-    if (fromSection >= 0 && toSection >= 0 && fromSection !== toSection) {
-      document.documentElement.dataset.vtSection = toSection > fromSection ? 'forward' : 'backward';
-      nav.sectionTop = document.querySelector('main')?.getBoundingClientRect().top;
-      const pill = document.querySelector<HTMLElement>(NAV_PILL);
-      nav.pill = {
-        from: pill?.getBoundingClientRect(),
-        href: pill?.closest('.nav-item')?.getAttribute('href') ?? undefined,
-      };
-    }
-    this.assignShell(nav);
     if (nav.post) {
       for (const role of ['title', 'cover']) {
         const element = this.sharedElement(nav.post, role);
@@ -767,6 +756,27 @@ export class RouteTransitions {
         }
       }
     }
+    // 前台外壳内没有共享元素的导航只捕获正文，页头保持实时。整页（root）过渡里页头只显示新快照：
+    // 新页在顶部时页头透明，旧页滚动后原本被页头遮住的正文会在导航文字下方露出来。
+    const main = document.querySelector('main');
+    if (main && nav.shell && shell(entry.url) === 'frontend' && nav.oldRoles.size === 0) {
+      const fromSection = sectionIndex(previous.url);
+      const toSection = sectionIndex(entry.url);
+      // 两个不同栏目之间按栏目顺序横向滑动，其余（文章、同栏目内、栏目外页面）原地淡入淡出。
+      document.documentElement.dataset.vtSection =
+        fromSection < 0 || toSection < 0 || fromSection === toSection
+          ? 'fade'
+          : toSection > fromSection
+            ? 'forward'
+            : 'backward';
+      nav.sectionFrom = main.getBoundingClientRect();
+      const pill = document.querySelector<HTMLElement>(NAV_PILL);
+      nav.pill = {
+        from: pill?.getBoundingClientRect(),
+        href: pill?.closest('.nav-item')?.getAttribute('href') ?? undefined,
+      };
+    }
+    this.assignShell(nav);
     try {
       nav.phase = 'capture';
       const vt = document.startViewTransition(async () => {
@@ -887,12 +897,15 @@ export class RouteTransitions {
         const wrapper = this.wrapper(nav);
         if (nav.rendered && wrapper) markPageEntryHandled(wrapper);
         this.correctScroll(nav);
-        if (nav.sectionTop !== undefined) {
-          // Preserve the outgoing scroll position without moving snapshots over the live header.
-          const top = document.querySelector('main')?.getBoundingClientRect().top ?? 0;
+        if (nav.sectionFrom !== undefined) {
+          // Keep the outgoing snapshot where it was (scroll position, column width and offset)
+          // without moving it over the live header.
+          const to = document.querySelector('main')?.getBoundingClientRect();
+          const top = to?.top ?? 0;
           const header = document.querySelector('[data-vt-shell="frontend-header"]');
           const style = document.documentElement.style;
-          style.setProperty('--vt-section-old-y', `${nav.sectionTop - top}px`);
+          style.setProperty('--vt-section-old-x', `${nav.sectionFrom.left - (to?.left ?? 0)}px`);
+          style.setProperty('--vt-section-old-y', `${nav.sectionFrom.top - top}px`);
           style.setProperty(
             '--vt-section-clip-top',
             `${Math.max(0, (header?.getBoundingClientRect().bottom ?? 0) - top)}px`,
@@ -1119,7 +1132,7 @@ export class RouteTransitions {
     for (const element of document.querySelectorAll<HTMLElement>('[data-vt-shell]')) {
       const key = element.dataset.vtShell;
       // Keep the section header live so another click can interrupt the animation.
-      if (nav.sectionTop !== undefined && key === 'frontend-header') continue;
+      if (nav.sectionFrom !== undefined && key === 'frontend-header') continue;
       if (key === 'frontend-header' || key === 'frontend-footer' || key === 'admin-sidebar')
         this.name(nav, element, `vt-${key}`);
     }
@@ -1157,6 +1170,7 @@ export class RouteTransitions {
     if (this.navigation === nav) {
       document.documentElement.classList.remove('vt-shared-title', 'vt-shared-cover');
       delete document.documentElement.dataset.vtSection;
+      document.documentElement.style.removeProperty('--vt-section-old-x');
       document.documentElement.style.removeProperty('--vt-section-old-y');
       document.documentElement.style.removeProperty('--vt-section-clip-top');
     }
