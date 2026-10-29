@@ -13,8 +13,7 @@
 #            x-yggdrasil-hash；失败自动回滚到部署前镜像（不回退数据库迁移）
 #   standby  只上传并打 tag，不启动 app；仅在 primary 部署成功后进行，
 #            保证故障切换时启动的版本与主节点一致
-# primary 先部署、standby 后部署（平时即先 xun 再 rua，同 CI）。primary 成功后用
-# scripts/edgeone-prefetch.ts 预热 EdgeOne（读本机 tccli 凭据）。
+# primary 先部署、standby 后部署（平时即先 xun 再 rua，同 CI）。
 #
 # 用法：
 #   fish scripts/deploy.fish                  构建并部署到 xun、rua
@@ -217,13 +216,6 @@ for host in $primaries $standbys
     else
         set -a failed $host
     end
-end
-
-# 新版本接流量后把分包与静态资源预热到 EdgeOne 中间层（本机 tccli 凭据），失败只警告。
-if test $primary_ok = true
-    set -q EDGEONE_ZONE_ID; or set -lx EDGEONE_ZONE_ID zone-3whynintait8
-    bun scripts/edgeone-prefetch.ts --expect-hash $commit
-    or echo "  警告：EdgeOne 预热失败，不影响部署" >&2
 end
 
 if test (count $failed) -gt 0

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- **发版后不再预热 EdgeOne**：删除 `scripts/edgeone-prefetch.ts`、`deploy.fish` 中的调用和 CI 的 `prefetch-cdn` 作业。EdgeOne 预热不理会请求里的 `Accept-Encoding: br`，回源时用 Range 请求拿未压缩文件；节点缓存的是未压缩版本时，浏览器请求 br 拿到的是 EdgeOne 自己压缩的结果，比源站预压缩的 `.br` 大 15–25%（主 WASM 316 KB → 396 KB），文件按 immutable 缓存一年都是这个大小。部署后预热回源期间，主 WASM 还出现过 16 秒无数据、页面一直不水合。不预热时由浏览器请求触发回源，节点缓存的是源站的 `.br`。
+
 ## [1.2.1] - 2026-10-29
 
 第二轮首屏优化：分包数量再减半，当前路由的分包随主包一起预载，固定路径样式与脚本按内容版本长期缓存，发版后自动预热 EdgeOne 中间层。本地模拟 EdgeOne 的对照中，回访水合快 30–40%，移动端冷加载水合再提前 150–250 ms。另修复源站复用连接每响应慢 40 ms、快速切换栏目闪烁与点击无响应、正文图片间距错位。
