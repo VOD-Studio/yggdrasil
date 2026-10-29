@@ -1036,6 +1036,9 @@ async function interactions(page: Playwright.Page, onlyModalResets = false) {
   await page.getByRole('button', { name: '放大' }).click();
   await page.getByRole('button', { name: '向右旋转' }).click();
   await page.getByRole('button', { name: '向左旋转' }).click();
+  // 灯箱工具栏压在页头导航上：关闭后指针若留在友链等站内链接上，Chromium 补发的 pointerover
+  // 会触发悬停预取，读取该页数据（如 /friends 的 list_friend_links）。先把指针移到页边空白处。
+  await page.mouse.move(1, 500);
   await page.keyboard.press('Escape');
   await page.locator('.lightbox-overlay').waitFor({ state: 'hidden' });
   pass('lightbox open, zoom, rotate and Escape');
