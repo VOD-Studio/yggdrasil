@@ -174,6 +174,7 @@
     color: var(--color-fg-3);
     font: inherit;
     font-size: 0.8125rem;
+    line-height: 1;
     text-decoration: none;
     cursor: pointer;
     transition:
@@ -191,13 +192,24 @@
     box-shadow: var(--shadow-focus);
   }
 
+  .search-trigger > span {
+    /* 中文笔画的视觉中心略高于行盒，单独下移，不改变图标与键帽的位置。 */
+    transform: translateY(0.5px);
+  }
+
   .search-trigger > kbd {
-    padding: 1px 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 1.25rem;
+    /* 补偿等宽字体的大写字母与符号在行盒内偏上的视觉重心。 */
+    padding: 1px 6px 0;
     border-radius: 5px;
     background-color: var(--color-surface-2);
     box-shadow: 0 0 0 var(--hairline) var(--color-hairline);
     font-family: var(--font-mono);
     font-size: 0.6875rem;
+    line-height: 1;
     color: var(--color-fg-3);
   }
 
