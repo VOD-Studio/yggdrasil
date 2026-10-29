@@ -36,6 +36,7 @@ interface Entry {
 }
 interface LinkIntent {
   url: string;
+  anchor: HTMLAnchorElement;
   post?: string;
   returning: boolean;
 }
@@ -77,6 +78,12 @@ interface Navigation {
   shell: boolean;
   /** 正文过渡（`data-vt-section`）专用：截图前 `main` 的视口位置，旧正文快照据此留在原处。 */
   sectionFrom?: DOMRect;
+  /**
+   * 被点击的链接。截图起到 ready 后浏览器重新命中测试前，悬停都落在 `<html>` 上；
+   * 截图那一帧会把它画成未悬停色并冻结到 ready。`data-vt-pressed` 维持悬停外观，
+   * 过渡结束或取消时撤掉。
+   */
+  pressed?: HTMLAnchorElement;
   /**
    * Content transitions only: the desktop pill before the update and its nav link. `source`
    * marks a relay: the header may still show that pill, so sliding waits until it changes.
@@ -375,6 +382,7 @@ export class RouteTransitions {
     const url = routable.url;
     this.intent = {
       url,
+      anchor,
       post: anchor.dataset.vtPostLink,
       returning: anchor.dataset.vtReturn === 'true',
     };
@@ -644,7 +652,7 @@ export class RouteTransitions {
       entry.origin = this.active.origin;
     }
     if (intent?.post) entry.origin = { id: this.active.id, url: this.displayed, post: intent.post };
-    this.start(entry, kind, source?.scroll);
+    this.start(entry, kind, source?.scroll, intent?.anchor);
   }
 
   private canLeave(target: string): boolean {
@@ -674,7 +682,12 @@ export class RouteTransitions {
     }
   }
 
-  private start(entry: Entry, kind: Navigation['kind'], restore?: ScrollSnapshot): void {
+  private start(
+    entry: Entry,
+    kind: Navigation['kind'],
+    restore?: ScrollSnapshot,
+    pressed?: HTMLAnchorElement,
+  ): void {
     if (!this.active || !this.notify) return;
     // A newer navigation supersedes one waiting for the previous update callback.
     this.queued = undefined;
@@ -747,6 +760,10 @@ export class RouteTransitions {
       return;
     }
     document.documentElement.classList.add('is-route-transitioning');
+    if (pressed) {
+      pressed.dataset.vtPressed = '';
+      nav.pressed = pressed;
+    }
     if (nav.post) {
       for (const role of ['title', 'cover']) {
         const element = this.sharedElement(nav.post, role);
@@ -822,6 +839,8 @@ export class RouteTransitions {
     from.cancelled = true;
     from.phase = undefined;
     for (const cleanup of from.imageCleanups.splice(0)) cleanup();
+    // ready 之后栏目过渡的页头已恢复真实命中测试，root 过渡的页头只显示快照，不再需要保持。
+    from.pressed?.removeAttribute('data-vt-pressed');
     // Snapshot names must persist until the native animation ends; this navigation restores them.
     nav.names = from.names;
     from.names = new Map();
@@ -1167,6 +1186,8 @@ export class RouteTransitions {
     for (const [element, original] of nav.names) element.style.viewTransitionName = original;
     nav.names.clear();
     for (const cleanup of nav.imageCleanups.splice(0)) cleanup();
+    nav.pressed?.removeAttribute('data-vt-pressed');
+    nav.pressed = undefined;
     if (this.navigation === nav) {
       document.documentElement.classList.remove('vt-shared-title', 'vt-shared-cover');
       delete document.documentElement.dataset.vtSection;

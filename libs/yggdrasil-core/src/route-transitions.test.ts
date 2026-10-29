@@ -690,6 +690,32 @@ describe('navigation while a transition is in flight', () => {
     expect(notify).toHaveBeenCalledTimes(2);
   });
 
+  it('holds the clicked link pressed only while the snapshot hides its hover', async () => {
+    const press = (href: string) => {
+      click(href);
+      return document.querySelector<HTMLAnchorElement>(`a[href="${href}"]`)!;
+    };
+    const pressed = (link: HTMLAnchorElement) => link.hasAttribute('data-vt-pressed');
+    const about = press('/about');
+    expect(pressed(about)).toBe(true);
+    // A newer click before the snapshot supersedes the first one.
+    const archives = press('/archives');
+    expect(pressed(about)).toBe(false);
+    expect(pressed(archives)).toBe(true);
+    await native[1].invoke();
+    await flush();
+    expect(pressed(archives)).toBe(true);
+    // Relaying reuses the playing animation: no new snapshot, so nothing to hold.
+    autoRender = false;
+    const friends = press('/friends');
+    expect(pressed(archives)).toBe(false);
+    expect(pressed(friends)).toBe(false);
+    render();
+    await finish(1);
+    expect(document.querySelector('[data-vt-pressed]')).toBeNull();
+    expect(routes.currentRoute()).toBe('/friends');
+  });
+
   it('fades the old page when the relayed destination misses the budget', async () => {
     await playArchives();
     routes.push('/friends');

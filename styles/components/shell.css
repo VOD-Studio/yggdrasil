@@ -128,7 +128,10 @@
       background-color 150ms var(--ease-out-expo);
   }
 
-  .nav-item:hover {
+  /* 点击后路由过渡截图期间命中测试落到 <html>，悬停态会丢一下；
+     协调器给被点链接挂 data-vt-pressed 维持悬停外观，避免文字暗闪。 */
+  .nav-item:hover,
+  .nav-item[data-vt-pressed] {
     color: var(--color-fg);
   }
 
