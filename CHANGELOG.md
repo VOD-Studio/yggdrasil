@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.3] - 2026-10-29
+
+修复下拉面板的水平对齐与筛选框右侧留白，以及页头胶囊滑动时遮住导航文字。
+
 ### Fixed
 
 - **下拉面板对齐**：紧凑下拉（如系统监控的自动刷新间隔）展开的选项面板比触发器宽时，不再向右偏出，而是相对触发器水平居中。
