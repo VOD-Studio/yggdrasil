@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **后台笔记列表悬停底色统一**：移除编辑链接重复叠加的半透明悬停背景，复选框区域与笔记内容由整行统一高亮，勾选后再悬停也不再出现深浅分区。
+
 ## [1.2.3] - 2026-10-29
 
 修复下拉面板的水平对齐与筛选框右侧留白，以及页头胶囊滑动时遮住导航文字。
