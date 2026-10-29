@@ -323,6 +323,20 @@
     transform-origin: top left;
   }
 
+  /* 下拉选项面板：比紧凑触发器宽时相对触发器水平居中（translate 与入场动画的 transform 互不干扰）。 */
+  .listbox-centered {
+    left: 50%;
+    translate: -50% 0;
+  }
+
+  .listbox-centered[data-placement="top"] {
+    transform-origin: bottom center;
+  }
+
+  .listbox-centered[data-placement="bottom"] {
+    transform-origin: top center;
+  }
+
   @keyframes listbox-enter {
     from {
       opacity: 0;

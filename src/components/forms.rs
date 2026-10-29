@@ -386,7 +386,7 @@ where
                             // 透明遮罩：拦截外部点击（点遮罩即关），z-40 < 面板 z-50。
                             <div class="fixed inset-0 z-40" on:click=move |_| open.set(false)></div>
                             <ul
-                                class="listbox"
+                                class="listbox listbox-centered"
                                 data-placement=move || if flip_up.get() { "top" } else { "bottom" }
                                 role="listbox"
                                 aria-labelledby=move || trigger_id.get()
