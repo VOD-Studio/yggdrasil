@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.5] - 2026-10-30
+
+代码高亮统一为 Clay 配色，缩减公开页首屏 WASM 与阻塞渲染样式；服务端请求 panic 改为隔离并返回不可缓存的 500，常驻后台任务仍在 panic 后交由容器重启恢复。
+
 ### Changed
 
 - **代码高亮改用 Clay 配色**：文章代码块、Tiptap 与 CodeMirror 编辑器、运行器终端和 rustdoc 文档的亮色、暗色代码配色改为移植自 clay.nvim 的 Clay 设计规范：层级靠亮度而不是色相，变量最醒目，关键字与函数调用退后，标点和注释最淡；只有字符串带一点暖灰，函数定义用陶土色标出。Diff 的新增、删除改为亮、暗两档灰，终端 ANSI 色同样映射回灰阶。所有语法色在代码块底色上的对比度仍不低于 4.5:1。函数调用不再把整个参数列表染成函数色，JSON、TOML 的键名按成员着色；TypeScript、TSX、JSX 语法区分函数定义与调用，此前 TypeScript 把所有 `name(` 都当作定义，TSX、JSX 则把 `function name` 当作调用。
