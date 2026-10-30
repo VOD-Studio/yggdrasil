@@ -236,6 +236,41 @@ pub(crate) async fn add_cache_control(
     response
 }
 
+/// 请求处理 panic 时返回给客户端的固定文案；panic 内容只写日志。
+const PANIC_RESPONSE_BODY: &str = "服务器内部错误";
+
+/// 把 handler 及其内层中间件在响应头发出前的 panic 转成 500。
+pub(crate) fn catch_panic_layer() -> tower_http::catch_panic::CatchPanicLayer<
+    fn(Box<dyn std::any::Any + Send + 'static>) -> axum::response::Response,
+> {
+    tower_http::catch_panic::CatchPanicLayer::custom(panic_response)
+}
+
+fn panic_response(err: Box<dyn std::any::Any + Send + 'static>) -> axum::response::Response {
+    use axum::response::IntoResponse;
+
+    let message = err
+        .downcast_ref::<String>()
+        .map(String::as_str)
+        .or_else(|| err.downcast_ref::<&str>().copied())
+        .unwrap_or("未知 panic 负载");
+    tracing::error!(panic = message, "请求处理 panic，返回 500");
+    // 显式 no-store：panic 越过 add_cache_control 展开，响应不会带任何 Cache-Control，
+    // CDN 可能按默认规则缓存这个 500。
+    (
+        axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+        [
+            (axum::http::header::CACHE_CONTROL, "no-store"),
+            (
+                axum::http::header::CONTENT_TYPE,
+                "text/plain; charset=utf-8",
+            ),
+        ],
+        PANIC_RESPONSE_BODY,
+    )
+        .into_response()
+}
+
 /// Axum 中间件：`/admin*` 的 SSR 层认证守卫。
 ///
 /// 未登录访问后台时，服务端**直接 302 跳转 `/login`**，根本不进入 Dioxus
@@ -834,5 +869,40 @@ mod tests {
     async fn all_compression_prefers_zstd_for_chrome() {
         let encoding = response_encoding("all", "gzip, deflate, br, zstd").await;
         assert_eq!(encoding.as_deref(), Some("zstd"));
+    }
+
+    #[tokio::test]
+    async fn panic_in_public_page_returns_uncached_500() {
+        async fn boom() -> &'static str {
+            panic!("内部细节 secret")
+        }
+
+        let app = axum::Router::new()
+            .route("/post/x", axum::routing::get(boom))
+            .layer(axum::middleware::from_fn(|req, next| {
+                super::add_cache_control(false, req, next)
+            }))
+            .layer(super::catch_panic_layer());
+
+        let response = app
+            .oneshot(
+                Request::get("/post/x")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            response.status(),
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR
+        );
+        assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let body = std::str::from_utf8(&body).unwrap();
+        assert_eq!(body, "服务器内部错误");
+        assert!(!body.contains("secret"));
     }
 }

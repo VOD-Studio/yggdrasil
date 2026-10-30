@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **服务端改回 panic=unwind**：`panic = "abort"` 从 `[profile.release]` 移到 WASM 专用的 `[profile.wasm-release]`，前端产物不变。此前服务端任何一个请求里的 panic 都会让整个进程退出，在线请求一起中断，直到容器重启；现在只中断出错的那个连接，mhchem 化学公式转译里的 `catch_unwind` 在 release 下也真正生效，坏公式只退回原文。常驻后台任务（清理、备份、跨实例缓存同步、日志落库、限流器回收、系统采样）改由 `tasks::spawn_supervised` 派生：panic 时记录错误并终止进程，保持原先「崩溃后由容器重启」的恢复方式，避免任务静默停摆。
 
+### Fixed
+
+- **请求 panic 返回 500，不再断开连接**：改为 unwind 后，请求处理中的 panic 只结束那一个请求，但客户端看到的是连接被直接断开，经 nginx/EdgeOne 后变成 502。现在整个路由最外层挂了 `CatchPanicLayer`：响应头发出前发生的 panic 一律返回 `500`，正文固定为「服务器内部错误」，不含 panic 内容，并带 `Cache-Control: no-store` 防止 CDN 缓存；panic 消息写入错误日志。前端调用服务端函数遇到这个响应时显示「服务暂时不可用，请稍后再试」。响应体已开始输出后（流式 SSR、SSE）的 panic 仍只能中断连接。
+
 ## [1.2.4] - 2026-10-30
 
 修复后台笔记列表的垂直对齐与悬停底色、页头搜索入口的视觉对齐，以及点击页头导航时的文字暗闪。

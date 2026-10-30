@@ -43,7 +43,7 @@ rand = { version = "0.10", optional = true }
 http = { version = "1", optional = true }
 axum = { version = "0.8", optional = true, features = ["multipart"] }
 # fs：上一发布资源保留窗口（YGG_PREVIOUS_PUBLIC_DIR）的 ServeFile .br 协商（plan §6.7）。
-tower-http = { version = "0.7", optional = true, features = ["compression-full", "timeout", "trace", "fs"] }
+tower-http = { version = "0.7", optional = true, features = ["compression-full", "timeout", "trace", "fs", "catch-panic"] }
 # 保留窗口中间件用 ServiceExt::oneshot 调用 ServeFile（仅 server）。
 tower = { version = "0.5", features = ["util"], optional = true }
 

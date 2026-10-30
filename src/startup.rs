@@ -673,6 +673,9 @@ fn build_router(options: ServerOptions) -> axum::Router {
         .merge(feed_routes)
         .merge(crate::mcp::router::mcp_route());
 
+    // 最外层兜底：任何路由或中间件在响应头发出前 panic 都返回 500，而不是断开连接。
+    let router = router.layer(crate::middleware::catch_panic_layer());
+
     if options.expose_version_headers {
         router.layer(axum::middleware::from_fn(
             crate::middleware::version_headers_middleware,
