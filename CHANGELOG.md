@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **代码高亮改用 Clay 配色**：文章代码块、Tiptap 与 CodeMirror 编辑器、运行器终端和 rustdoc 文档的亮色、暗色代码配色改为移植自 clay.nvim 的 Clay 设计规范：层级靠亮度而不是色相，变量最醒目，关键字与函数调用退后，标点和注释最淡；只有字符串带一点暖灰，函数定义用陶土色标出。Diff 的新增、删除改为亮、暗两档灰，终端 ANSI 色同样映射回灰阶。所有语法色在代码块底色上的对比度仍不低于 4.5:1。函数调用不再把整个参数列表染成函数色，JSON、TOML 的键名按成员着色；TypeScript、TSX、JSX 语法区分函数定义与调用，此前 TypeScript 把所有 `name(` 都当作定义，TSX、JSX 则把 `function name` 当作调用。
 - **服务端改回 panic=unwind**：`panic = "abort"` 从 `[profile.release]` 移到 WASM 专用的 `[profile.wasm-release]`，前端产物不变。此前服务端任何一个请求里的 panic 都会让整个进程退出，在线请求一起中断，直到容器重启；现在只中断出错的那个连接，mhchem 化学公式转译里的 `catch_unwind` 在 release 下也真正生效，坏公式只退回原文。常驻后台任务（清理、备份、跨实例缓存同步、日志落库、限流器回收、系统采样）改由 `tasks::spawn_supervised` 派生：panic 时记录错误并终止进程，保持原先「崩溃后由容器重启」的恢复方式，避免任务静默停摆。
+- **前端首屏体积再减一轮**：路由数据资源改为类型擦除，所有路由共用一份资源代码，页脚也改走同一路径。客户端日期改用自带的格式化函数和严格 RFC 3339 解析，不再带入 chrono 的 strftime 和宽松解析器。release 前端开启 `-Zfmt-debug=none -Zlocation-detail=none`，因此浏览器端的 `{:?}` 输出为空，原先依赖它的评论列表 key 和图鉴错误文案已改掉。主包 Brotli 从 310,782 B 降到 287,544 B，各公开路由首屏 WASM 少 17–44 KB。后台与组件图鉴的样式拆成单独的 `admin.css`，只在 `/admin…` 和 `/about/components…` 加载，公开页阻塞渲染的样式从 40,260 B 降到 24,896 B（Brotli）。后台登录守卫改为按路径段匹配 `/admin`，同前缀的 `/admin.css` 不受守卫拦截。
 
 ### Fixed
 

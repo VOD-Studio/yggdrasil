@@ -48,7 +48,7 @@ Run bare `make` to list annotated targets. Prefer Makefile targets: they set `SS
 make check-dev-tools          # verify cargo-leptos 0.3.11 / tailwindcss / bun
 make dev                      # incremental assets + cargo leptos watch
 make dev-assets               # refresh changed assets for a running server
-make build-libs | make css    # libs IIFE bundles | Tailwind → public/style.css
+make build-libs | make css    # libs IIFE bundles | Tailwind → public/style.css + public/admin.css
 make build                    # full release: assets, docs, split WASM frontend, server, assemble target/release-dist, brotli, verify
 make wasm-toolchain           # install pinned nightly + rust-src + wasm32
 make test | make lint | make fmt | make fix
@@ -75,6 +75,8 @@ Docker fallbacks only when local tools are missing: `make docker-dev` (port 8080
 - Components showcase: every `pub fn PascalCase` component under `src/components` (except layouts/header/footer) must have an entry in `src/pages/components_showcase_data.json` (unique slug, known group, non-empty `code`, `preview_route`; enforced by tests in `src/pages/components_showcase.rs`). Previews reuse production display code with fixtures and local callbacks, must not send auth/upload/comment/exec requests, and must clean up browser instances on unmount.
 - `CHANGELOG.md` is embedded via `include_str!` (`api/changelog.rs`) and rendered at `/changelog`.
 - Fixed-path styles/scripts under `public/` (`style.css`, `yggdrasil-core.*`, lightbox, editor/terminal/mermaid bundles) are referenced through `static_assets::url` (Rust) or `assetUrl` from `@yggdrasil/shared` (libs), which append `?v=<content hash>` from a version table the shell ships in `<script id="ygg-asset-versions">`; only the current hash is served `immutable`. Add new such files to `static_assets::ALL`; never hand-write `?v=`.
+- Two Tailwind entries: `input.css` → `public/style.css` (every page) and `input-admin.css` → `public/admin.css` (admin `/admin…` and the components showcase `/about/components…` only: SSR writes the `<link>` via `static_assets::needs_admin_css`, client navigation inserts it from those routes' `LazyRoute::data()` via `static_assets::ensure_admin_css`). Admin/showcase-only styles go into `input-admin.css`; public styles must not reference admin classes. `routes::is_admin_path` is segment-aware so `/admin.css` stays public (not behind `admin_guard`).
+- Release WASM is built with `-Zfmt-debug=none -Zlocation-detail=none`: `{:?}`/`derive(Debug)` print nothing in the browser, so never use Debug output as data (keys, UI text, serialization). Client date formatting uses `utils::time::{ymd, md, hm, hms_millis}` (no chrono strftime); `DateTime<Utc>` fields of client-deserialized DTOs carry `#[cfg_attr(target_arch = "wasm32", serde(deserialize_with = "crate::models::rfc3339::…"))]`.
 - Typography: `text-autospace`, no CJK italics, `tabular-nums` for dynamic numbers.
 
 ## Important Files
@@ -90,7 +92,7 @@ Docker fallbacks only when local tools are missing: `make docker-dev` (port 8080
 - Pins: cargo-leptos 0.3.11 (chunk-merge patched, see above), Leptos 0.8.22, Tailwind 4.3.3 **standalone** binary (the npm CLI can't resolve `tailwindcss` without a root `node_modules`), Bun 1.4.2 (`packageManager`), WASM nightly `nightly-2026-10-19` (release frontend uses `-Zbuild-std`), Rust. There is no `rust-toolchain.toml`.
 - Bun only. No Node.js or pnpm; `scripts/*.ts` use Bun directly (`bun scripts/<name>.ts`); run `cd libs && bun run typecheck:scripts` for strict type checking. Standalone CLI scripts have a `#!/usr/bin/env bun` shebang.
 - Changing frontend deps: `cd libs && BUN_CONFIG_REGISTRY=https://registry.npmjs.org/ bun install`; keep per-package registry URLs out of `bun.lock`. `bunfig.toml` enforces a 1-day `minimumReleaseAge`.
-- Generated output is never committed: `public/style.css`, `public/highlight.css`, `public/katex/`, `public/doc/`, every `public/<lib>/` bundle dir, `target/site`, `target/release-dist`, `release-manifest.json`, `*.br`. Tracked: `public/icons/`, `public/images/`, `public/skills/`, favicons, `manifest.webmanifest`.
+- Generated output is never committed: `public/style.css`, `public/admin.css`, `public/highlight.css`, `public/katex/`, `public/doc/`, every `public/<lib>/` bundle dir, `target/site`, `target/release-dist`, `release-manifest.json`, `*.br`. Tracked: `public/icons/`, `public/images/`, `public/skills/`, favicons, `manifest.webmanifest`.
 - Env: `DATABASE_URL` (required), `MCP_TOKEN_ENC_KEY` (64 hex, required for `/mcp`), `ADMIN_{USERNAME,EMAIL,PASSWORD}` (re-synced on every boot), `SSR_CACHE_SECS` (default 60), `COMPRESSION_ALGORITHMS` (default `off`), `DB_POOL_SIZE`, `STATEMENT_TIMEOUT_SECS`, `LEPTOS_SITE_ROOT`, `IP`/`PORT`, `YGG_PREVIOUS_PUBLIC_DIR` (previous release `public/` kept during rolling deploys so stale tabs can load dropped `/pkg/` chunks).
 - Production: TLS reverse proxy, correct `APP_BASE_URL`, `COOKIE_SECURE=true`, and an accurate `TRUSTED_PROXY_COUNT` (set in the panel after first boot). Dev compose expects external PostgreSQL on `global-databases_default`. Code runner images: `yggdrasil-runner-{base,python,node,go,rust,bun}`, run with read-only rootfs, no network, and dropped capabilities.
 
