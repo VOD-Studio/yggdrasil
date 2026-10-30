@@ -1,29 +1,46 @@
 /**
- * 代码配色的单一来源：文章高亮（经 tmTheme 生成 highlight.css）、CodeMirror
- * 与 xterm 都从这里取色。Mermaid 图表用界面 token 配色，见 index.ts 的 mermaidThemeVarsFor。
+ * 代码配色的单一来源：文章高亮（经 tmTheme 生成 highlight.css）、Tiptap 代码块、
+ * CodeMirror 与 xterm 都从这里取色。Mermaid 图表用界面 token 配色，见 index.ts 的
+ * mermaidThemeVarsFor。
  *
- * 暖调、低饱和，与陶土橙品牌色同一温度。所有语法色在代码块底色（浅色
- * surface-0/1、深色 surface-1/3）上的对比度不低于 4.5:1，见 code-palette.test.ts。
- * 注释不用斜体：注释里常有中文，中文没有真斜体。
+ * 配色移植自 clay.nvim 的 Clay 设计规范（restrained 点缀模式）：层级靠亮度，不靠色相。
+ * 除字符串的暖灰和函数定义的陶土色外，语法色都是 R = G = B 的中性灰；越是作者写的东西
+ * （变量、定义）对比越强，语言结构（关键字、标点）退后，注释最弱。新增、删除同样只用
+ * 亮度区分。
+ *
+ * 与 clay.nvim 的差异：
+ * - 底色、正文、强调字、行号沿用站点 token（surface-1、fg-body、fg、fg-3），不另起一套；
+ * - 站点要求所有语法色在代码块底色（浅色 surface-0/1、深色 surface-1/3）上不低于
+ *   4.5:1，Clay 的注释（4.4）与标点（3.4）达不到，于是把 fg-body 到标点之间的阶梯
+ *   按 Clay 的对数对比度比例压缩到 5.15:1 为止，两个变体在代码块底色上对比度一致；
+ * - 函数定义用 clay-text 而不是品牌色：品牌色在浅色底上只有 3:1，不承载文字；
+ * - 注释不用斜体：注释里常有中文，中文没有真斜体。
+ *
+ * 校验见 code-palette.test.ts。
  */
 
 import type { ThemeName } from './index';
 
+/** 语法角色按 Clay 色板命名：键名是层级，不是语言元素。 */
 export interface SyntaxPalette {
   /** 代码块底色，等于 --color-surface-1。 */
   background: string;
-  /** 普通文字，等于 --color-fg-body。 */
+  /** 变量、模块等普通标识符，等于 --color-fg-body。 */
   foreground: string;
-  comment: string;
-  keyword: string;
+  /** 最强强调：标题、新增行、无效代码，等于 --color-fg。 */
+  bright: string;
+  /** 类型、常量、数字、布尔、成员、标签名、转义、修改行。 */
+  secondary: string;
+  /** 字符串；唯一带色相的文字灰，色相取自 Clay。 */
   string: string;
-  number: string;
-  function: string;
-  type: string;
-  punctuation: string;
-  regex: string;
-  inserted: string;
-  deleted: string;
+  /** 关键字、函数调用、参数、内置变量、注解、宏、删除行。 */
+  muted: string;
+  /** 注释、文档注释、引用。 */
+  comment: string;
+  /** 标点、运算符、内置函数。 */
+  subtle: string;
+  /** 函数定义，等于 --color-clay-text。 */
+  clay: string;
   /** 行号、折叠图标，等于 --color-fg-3。 */
   gutter: string;
   /** 当前行、悬停，等于 --color-ink-1。 */
@@ -56,110 +73,121 @@ export interface CodePalette {
   ansi: AnsiPalette;
 }
 
+const LIGHT_SYNTAX: SyntaxPalette = {
+  background: '#fafaf8',
+  foreground: '#2b2b29',
+  bright: '#151515',
+  secondary: '#3e3e3e',
+  string: '#56433c',
+  muted: '#4f4f4f',
+  comment: '#5c5c5c',
+  subtle: '#6a6a6a',
+  clay: '#b4532f',
+  gutter: '#6b6b69',
+  lineHighlight: 'rgba(0, 0, 0, 0.045)',
+  selection: 'rgba(217, 119, 87, 0.22)',
+  cursor: '#d97757',
+};
+
+const DARK_SYNTAX: SyntaxPalette = {
+  background: '#161615',
+  foreground: '#dad8d2',
+  bright: '#f2f1ee',
+  secondary: '#bebebe',
+  string: '#c2afa8',
+  muted: '#a7a7a7',
+  comment: '#989898',
+  subtle: '#898989',
+  clay: '#e08264',
+  gutter: '#8b8984',
+  lineHighlight: 'rgba(255, 255, 255, 0.05)',
+  selection: 'rgba(217, 119, 87, 0.3)',
+  cursor: '#d97757',
+};
+
+/**
+ * Clay 的 ANSI 16 色表：彩色槽位映射回灰阶，红色是 Clay。颜色名是绝对的，两个变体中
+ * black 都比 white 深：深色里 white 是正文、black 取页面底 surface-0；浅色里 black 是
+ * 正文，white 取标点灰，bright white 取 Clay 浅色的行号灰。
+ */
+function clayAnsi(s: SyntaxPalette, ends: { black: string; white: string; brightWhite: string }) {
+  return {
+    black: ends.black,
+    red: s.clay,
+    green: s.bright,
+    yellow: s.secondary,
+    blue: s.secondary,
+    magenta: s.muted,
+    cyan: s.secondary,
+    white: ends.white,
+    brightBlack: s.comment,
+    brightRed: s.clay,
+    brightGreen: s.bright,
+    brightYellow: s.foreground,
+    brightBlue: s.foreground,
+    brightMagenta: s.secondary,
+    brightCyan: s.foreground,
+    brightWhite: ends.brightWhite,
+  } satisfies AnsiPalette;
+}
+
 export const CODE_PALETTES: Record<ThemeName, CodePalette> = {
   light: {
-    syntax: {
-      background: '#fafaf8',
-      foreground: '#2b2b29',
-      comment: '#6b6b69',
-      keyword: '#a3471c',
-      string: '#7d6214',
-      number: '#8c3f7d',
-      function: '#2d5b86',
-      type: '#356660',
-      punctuation: '#5f5e5b',
-      regex: '#9a4520',
-      inserted: '#2f6f4f',
-      deleted: '#b42318',
-      gutter: '#6b6b69',
-      lineHighlight: 'rgba(0, 0, 0, 0.045)',
-      selection: 'rgba(217, 119, 87, 0.22)',
-      cursor: '#d97757',
-    },
-    ansi: {
-      black: '#2b2b29',
-      red: '#b42318',
-      green: '#2f6f4f',
-      yellow: '#7d6214',
-      blue: '#2d5b86',
-      magenta: '#8c3f7d',
-      cyan: '#356660',
-      white: '#6b6b69',
-      brightBlack: '#525252',
-      brightRed: '#c93a3a',
-      brightGreen: '#3d7d5c',
-      brightYellow: '#8a6a10',
-      brightBlue: '#3a6a96',
-      brightMagenta: '#9c4a8c',
-      brightCyan: '#3f7670',
-      brightWhite: '#8b8984',
-    },
+    syntax: LIGHT_SYNTAX,
+    ansi: clayAnsi(LIGHT_SYNTAX, {
+      black: LIGHT_SYNTAX.foreground,
+      white: LIGHT_SYNTAX.subtle,
+      brightWhite: '#9d9d9d',
+    }),
   },
   dark: {
-    syntax: {
-      background: '#161615',
-      foreground: '#dad8d2',
-      comment: '#8b8984',
-      keyword: '#ec9a78',
-      string: '#dcbc78',
-      number: '#d6a2cb',
-      function: '#94b8dc',
-      type: '#8fc5bd',
-      punctuation: '#a9a7a1',
-      regex: '#e8a87c',
-      inserted: '#8fcfae',
-      deleted: '#f0a59c',
-      gutter: '#8b8984',
-      lineHighlight: 'rgba(255, 255, 255, 0.05)',
-      selection: 'rgba(217, 119, 87, 0.3)',
-      cursor: '#d97757',
-    },
-    ansi: {
-      black: '#3a3936',
-      red: '#f0a59c',
-      green: '#8fcfae',
-      yellow: '#dcbc78',
-      blue: '#94b8dc',
-      magenta: '#d6a2cb',
-      cyan: '#8fc5bd',
-      white: '#dad8d2',
-      brightBlack: '#6b6a66',
-      brightRed: '#f6bdb6',
-      brightGreen: '#aedfc4',
-      brightYellow: '#e8cf98',
-      brightBlue: '#b2cde6',
-      brightMagenta: '#e3bddb',
-      brightCyan: '#addad3',
-      brightWhite: '#f2f1ee',
-    },
+    syntax: DARK_SYNTAX,
+    ansi: clayAnsi(DARK_SYNTAX, {
+      black: '#0f0f0e',
+      white: DARK_SYNTAX.foreground,
+      brightWhite: DARK_SYNTAX.bright,
+    }),
   },
 };
 
-/** 每个语法角色在 tmTheme 中对应的 TextMate scope。 */
+/**
+ * 每个语法角色在 tmTheme 中对应的 TextMate scope。syntect 以类名输出 scope 的每一段，
+ * 生成的 CSS 按类数决定优先级，所以更长的 scope（keyword.operator.word）会压过更短的
+ * （keyword.operator）。不要映射 meta.function-call 这类外壳 scope：它包着整个调用，
+ * 参数里的变量会跟着变色。
+ */
 const TM_SCOPES: [keyof SyntaxPalette, string, string?][] = [
-  ['comment', 'comment, punctuation.definition.comment'],
-  ['keyword', 'keyword, storage.type, storage.modifier, keyword.control, keyword.operator.word'],
-  ['string', 'string, string.quoted, punctuation.definition.string'],
+  ['comment', 'comment, punctuation.definition.comment, markup.quote'],
   [
-    'number',
-    'constant.numeric, constant.language, constant.character, variable.language, support.constant',
+    'muted',
+    'keyword, storage, variable.parameter, variable.language, support.variable, variable.annotation, punctuation.definition.annotation',
+  ],
+  ['subtle', 'punctuation, keyword.operator, meta.brace'],
+  ['muted', 'keyword.operator.word'],
+  ['string', 'string, punctuation.definition.string, markup.raw'],
+  [
+    'secondary',
+    'constant, support.constant, variable.other.constant, entity.name.constant, variable.other.member, variable.other.property, entity.name.label, entity.name.tag, entity.other.attribute-name',
   ],
   [
-    'function',
-    'entity.name.function, support.function, meta.function-call, variable.function, support.macro, entity.name.macro',
+    'secondary',
+    'entity.name.type, entity.name.class, entity.name.struct, entity.name.enum, entity.name.trait, entity.name.impl, entity.name.interface, entity.name.union, entity.other.inherited-class, support.type, support.class, storage.type.primitive',
   ],
+  // JSON、TOML 的键是成员，不是字符串。
   [
-    'type',
-    'entity.name.type, entity.name.class, entity.name.struct, entity.name.enum, entity.name.trait, support.type, support.class, storage.type.primitive, entity.other.inherited-class, entity.other.attribute-name',
+    'secondary',
+    'meta.structure.dictionary.key string, meta.structure.dictionary.key punctuation.definition.string, meta.mapping.key string, meta.mapping.key punctuation.definition.string',
   ],
-  ['punctuation', 'punctuation, keyword.operator, meta.brace'],
-  ['regex', 'string.regexp, constant.character.escape'],
-  ['keyword', 'entity.name.tag'],
-  ['inserted', 'markup.inserted'],
-  ['deleted', 'markup.deleted, invalid'],
-  ['keyword', 'markup.heading, entity.name.section', 'bold'],
-  ['function', 'markup.underline.link, string.other.link'],
-  ['type', 'variable.parameter'],
+  ['clay', 'entity.name.function'],
+  ['muted', 'variable.function, support.function, support.macro, entity.name.macro'],
+  ['subtle', 'support.function.builtin'],
+  ['bright', 'markup.heading, entity.name.section', 'bold'],
+  ['foreground', 'markup.bold', 'bold'],
+  ['foreground', 'meta.link.inline.description, string.other.link', 'underline'],
+  ['secondary', 'markup.underline.link', 'underline'],
+  ['bright', 'markup.inserted, invalid'],
+  ['muted', 'markup.deleted, meta.diff.range'],
+  ['secondary', 'markup.changed, meta.diff.header'],
 ];
 
 function escapeXml(value: string): string {
@@ -218,32 +246,51 @@ export function tmThemeFiles(): { file: string; content: string }[] {
 
 /**
  * highlight.js（Tiptap 编辑器代码块经 lowlight 输出）的类名与语法角色对照，
- * 与上面 TM_SCOPES 的归类一致：标签名算关键字、属性名与参数算类型、内建函数算函数。
- * 未列出的类（变量、属性访问、meta 外壳）沿用代码块正文色。
+ * 与上面 TM_SCOPES 的归类一致。highlight.js 的 built_in 混有内置类型、常量和函数，
+ * 归入内置变量（muted），不按内置函数退到标点灰。
+ * 未列出的类（变量、属性访问、doctag）沿用外层颜色。
  */
 const HLJS_CLASSES: [keyof SyntaxPalette, string[]][] = [
   ['comment', ['comment', 'quote']],
-  ['keyword', ['keyword', 'selector-tag', 'name', 'section', 'meta .hljs-keyword']],
-  ['string', ['string', 'meta .hljs-string']],
-  ['number', ['number', 'literal', 'symbol', 'variable.language_']],
-  ['function', ['title', 'title.function_', 'built_in', 'link']],
   [
-    'type',
+    'muted',
     [
+      'keyword',
+      'meta',
+      'meta .hljs-keyword',
+      'params',
+      'variable.language_',
+      'built_in',
+      'title.function_.invoke__',
+      'deletion',
+    ],
+  ],
+  ['string', ['string', 'regexp', 'code', 'meta .hljs-string']],
+  [
+    'secondary',
+    [
+      'number',
+      'literal',
+      'symbol',
+      'variable.constant_',
+      'char.escape_',
       'type',
       'title.class_',
       'title.class_.inherited__',
-      'attr',
-      'attribute',
-      'params',
+      'name',
+      'selector-tag',
       'selector-class',
       'selector-id',
+      'attr',
+      'attribute',
+      'property',
+      'link',
     ],
   ],
-  ['punctuation', ['punctuation', 'operator']],
-  ['regex', ['regexp', 'char.escape_']],
-  ['inserted', ['addition']],
-  ['deleted', ['deletion']],
+  ['clay', ['title', 'title.function_']],
+  ['subtle', ['punctuation', 'operator', 'tag', 'bullet']],
+  ['foreground', ['subst']],
+  ['bright', ['section', 'addition']],
 ];
 
 /** 由 CODE_PALETTES 生成 Tiptap 代码块的 highlight.js 配色（浅色在前，深色挂 .dark）。 */
@@ -259,6 +306,9 @@ ${block('.dark ', CODE_PALETTES.dark.syntax)}
 ${scope} .hljs-section,
 ${scope} .hljs-strong {
   font-weight: 600;
+}
+${scope} .hljs-link {
+  text-decoration: underline;
 }
 `;
 }

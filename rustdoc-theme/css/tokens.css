@@ -69,50 +69,51 @@
   --sidebar-resizer-active: var(--color-clay-hover);
 }
 
-/* 语法与条目链接色：取自 libs/shared/src/code-palette.ts（CODE_PALETTES.light.syntax），改色时同步。 */
+/* 语法与条目链接色：取自 libs/shared/src/code-palette.ts（CODE_PALETTES.light.syntax），改色时同步。
+   归类同 Clay：函数（定义）用 clay，类型与常量用 secondary，关键字、宏、注解、生命周期用 muted。 */
 :root:is([data-theme="light"], :not([data-theme])) {
-  --type-link-color: #356660;
-  --trait-link-color: #8c3f7d;
-  --assoc-item-link-color: #2d5b86;
-  --function-link-color: #2d5b86;
-  --macro-link-color: #a3471c;
-  --code-highlight-kw-color: #a3471c;
-  --code-highlight-kw-2-color: #a3471c;
-  --code-highlight-self-color: #a3471c;
-  --code-highlight-question-mark-color: #a3471c;
-  --code-highlight-lifetime-color: #8c3f7d;
-  --code-highlight-number-color: #8c3f7d;
-  --code-highlight-literal-color: #8c3f7d;
-  --code-highlight-string-color: #7d6214;
-  --code-highlight-prelude-color: #356660;
-  --code-highlight-prelude-val-color: #356660;
-  --code-highlight-macro-color: #2d5b86;
-  --code-highlight-attribute-color: #5f5e5b;
-  --code-highlight-comment-color: #6b6b69;
-  --code-highlight-doc-comment-color: #6b6b69;
+  --type-link-color: #3e3e3e;
+  --trait-link-color: #3e3e3e;
+  --assoc-item-link-color: #b4532f;
+  --function-link-color: #b4532f;
+  --macro-link-color: #4f4f4f;
+  --code-highlight-kw-color: #4f4f4f;
+  --code-highlight-kw-2-color: #4f4f4f;
+  --code-highlight-self-color: #4f4f4f;
+  --code-highlight-question-mark-color: #6a6a6a;
+  --code-highlight-lifetime-color: #4f4f4f;
+  --code-highlight-number-color: #3e3e3e;
+  --code-highlight-literal-color: #3e3e3e;
+  --code-highlight-string-color: #56433c;
+  --code-highlight-prelude-color: #3e3e3e;
+  --code-highlight-prelude-val-color: #3e3e3e;
+  --code-highlight-macro-color: #4f4f4f;
+  --code-highlight-attribute-color: #4f4f4f;
+  --code-highlight-comment-color: #5c5c5c;
+  --code-highlight-doc-comment-color: #5c5c5c;
 }
 
 /* 同上，取自 CODE_PALETTES.dark.syntax。 */
 :root[data-theme="dark"] {
-  --type-link-color: #8fc5bd;
-  --trait-link-color: #d6a2cb;
-  --assoc-item-link-color: #94b8dc;
-  --function-link-color: #94b8dc;
-  --macro-link-color: #ec9a78;
-  --code-highlight-kw-color: #ec9a78;
-  --code-highlight-kw-2-color: #ec9a78;
-  --code-highlight-self-color: #ec9a78;
-  --code-highlight-question-mark-color: #ec9a78;
-  --code-highlight-lifetime-color: #d6a2cb;
-  --code-highlight-number-color: #d6a2cb;
-  --code-highlight-literal-color: #d6a2cb;
-  --code-highlight-string-color: #dcbc78;
-  --code-highlight-prelude-color: #8fc5bd;
-  --code-highlight-prelude-val-color: #8fc5bd;
-  --code-highlight-macro-color: #94b8dc;
-  --code-highlight-attribute-color: #a9a7a1;
-  --code-highlight-comment-color: #8b8984;
-  --code-highlight-doc-comment-color: #8b8984;
+  --type-link-color: #bebebe;
+  --trait-link-color: #bebebe;
+  --assoc-item-link-color: #e08264;
+  --function-link-color: #e08264;
+  --macro-link-color: #a7a7a7;
+  --code-highlight-kw-color: #a7a7a7;
+  --code-highlight-kw-2-color: #a7a7a7;
+  --code-highlight-self-color: #a7a7a7;
+  --code-highlight-question-mark-color: #898989;
+  --code-highlight-lifetime-color: #a7a7a7;
+  --code-highlight-number-color: #bebebe;
+  --code-highlight-literal-color: #bebebe;
+  --code-highlight-string-color: #c2afa8;
+  --code-highlight-prelude-color: #bebebe;
+  --code-highlight-prelude-val-color: #bebebe;
+  --code-highlight-macro-color: #a7a7a7;
+  --code-highlight-attribute-color: #a7a7a7;
+  --code-highlight-comment-color: #989898;
+  --code-highlight-doc-comment-color: #989898;
 }
 
 :root:is([data-theme="light"], [data-theme="dark"], :not([data-theme]))

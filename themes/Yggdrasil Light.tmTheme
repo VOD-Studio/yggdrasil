@@ -26,24 +26,50 @@
 			<key>name</key>
 			<string>comment</string>
 			<key>scope</key>
-			<string>comment, punctuation.definition.comment</string>
+			<string>comment, punctuation.definition.comment, markup.quote</string>
 			<key>settings</key>
 			<dict>
 				<key>foreground</key>
-				<string>#6b6b69</string>
+				<string>#5c5c5c</string>
 				<key>fontStyle</key>
 				<string></string>
 			</dict>
 		</dict>
 		<dict>
 			<key>name</key>
-			<string>keyword</string>
+			<string>muted</string>
 			<key>scope</key>
-			<string>keyword, storage.type, storage.modifier, keyword.control, keyword.operator.word</string>
+			<string>keyword, storage, variable.parameter, variable.language, support.variable, variable.annotation, punctuation.definition.annotation</string>
 			<key>settings</key>
 			<dict>
 				<key>foreground</key>
-				<string>#a3471c</string>
+				<string>#4f4f4f</string>
+				<key>fontStyle</key>
+				<string></string>
+			</dict>
+		</dict>
+		<dict>
+			<key>name</key>
+			<string>subtle</string>
+			<key>scope</key>
+			<string>punctuation, keyword.operator, meta.brace</string>
+			<key>settings</key>
+			<dict>
+				<key>foreground</key>
+				<string>#6a6a6a</string>
+				<key>fontStyle</key>
+				<string></string>
+			</dict>
+		</dict>
+		<dict>
+			<key>name</key>
+			<string>muted</string>
+			<key>scope</key>
+			<string>keyword.operator.word</string>
+			<key>settings</key>
+			<dict>
+				<key>foreground</key>
+				<string>#4f4f4f</string>
 				<key>fontStyle</key>
 				<string></string>
 			</dict>
@@ -52,154 +78,180 @@
 			<key>name</key>
 			<string>string</string>
 			<key>scope</key>
-			<string>string, string.quoted, punctuation.definition.string</string>
+			<string>string, punctuation.definition.string, markup.raw</string>
 			<key>settings</key>
 			<dict>
 				<key>foreground</key>
-				<string>#7d6214</string>
+				<string>#56433c</string>
 				<key>fontStyle</key>
 				<string></string>
 			</dict>
 		</dict>
 		<dict>
 			<key>name</key>
-			<string>number</string>
+			<string>secondary</string>
 			<key>scope</key>
-			<string>constant.numeric, constant.language, constant.character, variable.language, support.constant</string>
+			<string>constant, support.constant, variable.other.constant, entity.name.constant, variable.other.member, variable.other.property, entity.name.label, entity.name.tag, entity.other.attribute-name</string>
 			<key>settings</key>
 			<dict>
 				<key>foreground</key>
-				<string>#8c3f7d</string>
+				<string>#3e3e3e</string>
 				<key>fontStyle</key>
 				<string></string>
 			</dict>
 		</dict>
 		<dict>
 			<key>name</key>
-			<string>function</string>
+			<string>secondary</string>
 			<key>scope</key>
-			<string>entity.name.function, support.function, meta.function-call, variable.function, support.macro, entity.name.macro</string>
+			<string>entity.name.type, entity.name.class, entity.name.struct, entity.name.enum, entity.name.trait, entity.name.impl, entity.name.interface, entity.name.union, entity.other.inherited-class, support.type, support.class, storage.type.primitive</string>
 			<key>settings</key>
 			<dict>
 				<key>foreground</key>
-				<string>#2d5b86</string>
+				<string>#3e3e3e</string>
 				<key>fontStyle</key>
 				<string></string>
 			</dict>
 		</dict>
 		<dict>
 			<key>name</key>
-			<string>type</string>
+			<string>secondary</string>
 			<key>scope</key>
-			<string>entity.name.type, entity.name.class, entity.name.struct, entity.name.enum, entity.name.trait, support.type, support.class, storage.type.primitive, entity.other.inherited-class, entity.other.attribute-name</string>
+			<string>meta.structure.dictionary.key string, meta.structure.dictionary.key punctuation.definition.string, meta.mapping.key string, meta.mapping.key punctuation.definition.string</string>
 			<key>settings</key>
 			<dict>
 				<key>foreground</key>
-				<string>#356660</string>
+				<string>#3e3e3e</string>
 				<key>fontStyle</key>
 				<string></string>
 			</dict>
 		</dict>
 		<dict>
 			<key>name</key>
-			<string>punctuation</string>
+			<string>clay</string>
 			<key>scope</key>
-			<string>punctuation, keyword.operator, meta.brace</string>
+			<string>entity.name.function</string>
 			<key>settings</key>
 			<dict>
 				<key>foreground</key>
-				<string>#5f5e5b</string>
+				<string>#b4532f</string>
 				<key>fontStyle</key>
 				<string></string>
 			</dict>
 		</dict>
 		<dict>
 			<key>name</key>
-			<string>regex</string>
+			<string>muted</string>
 			<key>scope</key>
-			<string>string.regexp, constant.character.escape</string>
+			<string>variable.function, support.function, support.macro, entity.name.macro</string>
 			<key>settings</key>
 			<dict>
 				<key>foreground</key>
-				<string>#9a4520</string>
+				<string>#4f4f4f</string>
 				<key>fontStyle</key>
 				<string></string>
 			</dict>
 		</dict>
 		<dict>
 			<key>name</key>
-			<string>keyword</string>
+			<string>subtle</string>
 			<key>scope</key>
-			<string>entity.name.tag</string>
+			<string>support.function.builtin</string>
 			<key>settings</key>
 			<dict>
 				<key>foreground</key>
-				<string>#a3471c</string>
+				<string>#6a6a6a</string>
 				<key>fontStyle</key>
 				<string></string>
 			</dict>
 		</dict>
 		<dict>
 			<key>name</key>
-			<string>inserted</string>
-			<key>scope</key>
-			<string>markup.inserted</string>
-			<key>settings</key>
-			<dict>
-				<key>foreground</key>
-				<string>#2f6f4f</string>
-				<key>fontStyle</key>
-				<string></string>
-			</dict>
-		</dict>
-		<dict>
-			<key>name</key>
-			<string>deleted</string>
-			<key>scope</key>
-			<string>markup.deleted, invalid</string>
-			<key>settings</key>
-			<dict>
-				<key>foreground</key>
-				<string>#b42318</string>
-				<key>fontStyle</key>
-				<string></string>
-			</dict>
-		</dict>
-		<dict>
-			<key>name</key>
-			<string>keyword</string>
+			<string>bright</string>
 			<key>scope</key>
 			<string>markup.heading, entity.name.section</string>
 			<key>settings</key>
 			<dict>
 				<key>foreground</key>
-				<string>#a3471c</string>
+				<string>#151515</string>
 				<key>fontStyle</key>
 				<string>bold</string>
 			</dict>
 		</dict>
 		<dict>
 			<key>name</key>
-			<string>function</string>
+			<string>foreground</string>
 			<key>scope</key>
-			<string>markup.underline.link, string.other.link</string>
+			<string>markup.bold</string>
 			<key>settings</key>
 			<dict>
 				<key>foreground</key>
-				<string>#2d5b86</string>
+				<string>#2b2b29</string>
+				<key>fontStyle</key>
+				<string>bold</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>name</key>
+			<string>foreground</string>
+			<key>scope</key>
+			<string>meta.link.inline.description, string.other.link</string>
+			<key>settings</key>
+			<dict>
+				<key>foreground</key>
+				<string>#2b2b29</string>
+				<key>fontStyle</key>
+				<string>underline</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>name</key>
+			<string>secondary</string>
+			<key>scope</key>
+			<string>markup.underline.link</string>
+			<key>settings</key>
+			<dict>
+				<key>foreground</key>
+				<string>#3e3e3e</string>
+				<key>fontStyle</key>
+				<string>underline</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>name</key>
+			<string>bright</string>
+			<key>scope</key>
+			<string>markup.inserted, invalid</string>
+			<key>settings</key>
+			<dict>
+				<key>foreground</key>
+				<string>#151515</string>
 				<key>fontStyle</key>
 				<string></string>
 			</dict>
 		</dict>
 		<dict>
 			<key>name</key>
-			<string>type</string>
+			<string>muted</string>
 			<key>scope</key>
-			<string>variable.parameter</string>
+			<string>markup.deleted, meta.diff.range</string>
 			<key>settings</key>
 			<dict>
 				<key>foreground</key>
-				<string>#356660</string>
+				<string>#4f4f4f</string>
+				<key>fontStyle</key>
+				<string></string>
+			</dict>
+		</dict>
+		<dict>
+			<key>name</key>
+			<string>secondary</string>
+			<key>scope</key>
+			<string>markup.changed, meta.diff.header</string>
+			<key>settings</key>
+			<dict>
+				<key>foreground</key>
+				<string>#3e3e3e</string>
 				<key>fontStyle</key>
 				<string></string>
 			</dict>

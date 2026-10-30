@@ -69,10 +69,15 @@ function editorTheme(p: SyntaxPalette, dark: boolean): Extension {
   );
 }
 
+// 归类与 code-palette.ts 的 TM_SCOPES 一致：函数定义用 clay，调用与关键字同为 muted；
+// 带 definition 修饰的标签比不带的更具体，会压过调用的颜色。
 function highlightStyle(p: SyntaxPalette): Extension {
   return syntaxHighlighting(
     HighlightStyle.define([
-      { tag: [t.comment, t.lineComment, t.blockComment, t.docComment], color: p.comment },
+      {
+        tag: [t.comment, t.lineComment, t.blockComment, t.docComment, t.docString, t.quote],
+        color: p.comment,
+      },
       {
         tag: [
           t.keyword,
@@ -81,10 +86,22 @@ function highlightStyle(p: SyntaxPalette): Extension {
           t.operatorKeyword,
           t.definitionKeyword,
           t.moduleKeyword,
+          t.self,
+          t.standard(t.name),
+          t.annotation,
+          t.meta,
+          t.macroName,
+          t.labelName,
+          t.function(t.variableName),
+          t.function(t.propertyName),
         ],
-        color: p.keyword,
+        color: p.muted,
       },
-      { tag: [t.string, t.special(t.string), t.character, t.docString], color: p.string },
+      {
+        tag: [t.function(t.definition(t.variableName)), t.function(t.definition(t.propertyName))],
+        color: p.clay,
+      },
+      { tag: [t.string, t.special(t.string), t.character, t.regexp, t.monospace], color: p.string },
       {
         tag: [
           t.number,
@@ -92,39 +109,34 @@ function highlightStyle(p: SyntaxPalette): Extension {
           t.null,
           t.atom,
           t.constant(t.name),
-          t.self,
-          t.standard(t.name),
           t.unit,
+          t.escape,
+          t.typeName,
+          t.className,
+          t.tagName,
+          t.attributeName,
+          t.propertyName,
+          t.changed,
         ],
-        color: p.number,
-      },
-      {
-        tag: [t.function(t.variableName), t.function(t.propertyName), t.macroName, t.labelName],
-        color: p.function,
+        color: p.secondary,
       },
       {
         tag: [
-          t.typeName,
-          t.className,
-          t.namespace,
-          t.annotation,
-          t.attributeName,
-          t.definition(t.typeName),
+          t.operator,
+          t.punctuation,
+          t.separator,
+          t.bracket,
+          t.derefOperator,
+          t.processingInstruction,
         ],
-        color: p.type,
+        color: p.subtle,
       },
-      {
-        tag: [t.operator, t.punctuation, t.separator, t.bracket, t.derefOperator],
-        color: p.punctuation,
-      },
-      { tag: [t.regexp, t.escape, t.special(t.regexp)], color: p.regex },
-      { tag: [t.tagName, t.processingInstruction, t.meta], color: p.keyword },
-      { tag: [t.propertyName, t.variableName, t.name], color: p.foreground },
-      { tag: [t.inserted], color: p.inserted },
-      { tag: [t.deleted, t.invalid], color: p.deleted },
-      { tag: t.changed, color: p.number },
-      { tag: t.heading, color: p.keyword, fontWeight: '600' },
-      { tag: [t.link, t.url], color: p.function, textDecoration: 'underline' },
+      { tag: [t.variableName, t.name, t.namespace], color: p.foreground },
+      { tag: [t.inserted, t.invalid], color: p.bright },
+      { tag: t.deleted, color: p.muted },
+      { tag: t.heading, color: p.bright, fontWeight: '600' },
+      { tag: t.link, color: p.foreground, textDecoration: 'underline' },
+      { tag: t.url, color: p.secondary, textDecoration: 'underline' },
       { tag: t.strong, fontWeight: '600' },
       { tag: t.emphasis, fontStyle: 'normal', textDecoration: 'underline dotted' },
       { tag: t.strikethrough, textDecoration: 'line-through' },
