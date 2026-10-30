@@ -1,6 +1,6 @@
 # Docker：镜像构建、Docker 开发环境、lint/test/fmt 工具容器。
 
-.PHONY: docker docker-amd64 docker-multiarch docker-dev docker-dev-down docker-dev-shell
+.PHONY: docker docker-amd64 docker-arm64 docker-multiarch docker-dev docker-dev-down docker-dev-shell
 .PHONY: docker-run docker-lint docker-clippy docker-check docker-fmt docker-fix docker-test
 .PHONY: docker-tools-build docker-tools-clean
 
@@ -12,6 +12,7 @@
 #
 #   make docker              只构建本机架构，加载到本地 daemon（用于测试）
 #   make docker-amd64        x86_64 镜像；按宿主架构自动选 Dockerfile
+#   make docker-arm64        arm64 镜像；异架构宿主需要 QEMU/binfmt 支持
 #   make docker-multiarch    构建 amd64+arm64 并推送到 registry
 #                            （多架构 manifest 无法 --load 到本地）
 #
@@ -35,6 +36,7 @@ GIT_DATE = $(shell git log -1 --format=%cd --date=iso-strict 2>/dev/null)
 VERSION ?= $(shell git describe --tags --abbrev=0 2>/dev/null)
 VERSION_TAG = $(if $(VERSION),-t yggdrasil:$(VERSION))
 VERSION_TAG_AMD64 = $(if $(VERSION),-t yggdrasil:$(VERSION)-amd64)
+VERSION_TAG_ARM64 = $(if $(VERSION),-t yggdrasil:$(VERSION)-arm64)
 # build-arg 复用块:每个 docker target 展开一次。空值也传(让 Dockerfile 默认接管)。
 GIT_BUILD_ARGS = --build-arg YGG_BUILD_GIT_DESCRIBE="$(GIT_DESCRIBE)" \
                  --build-arg YGG_BUILD_GIT_HASH="$(GIT_HASH)" \
@@ -52,6 +54,10 @@ DOCKERFILE_AMD64 = $(if $(filter x86_64,$(shell uname -m)),,-f Dockerfile.cross)
 docker-amd64: ## 构建 amd64 镜像并加载到本地 daemon
 	@docker buildx build --platform linux/amd64 --load $(DOCKERFILE_AMD64) $(GIT_BUILD_ARGS) $(CN_BUILD_ARGS) \
 		-t yggdrasil:amd64 $(VERSION_TAG_AMD64) .
+
+docker-arm64: ## 构建 arm64 镜像并加载到本地 daemon（异架构需要 QEMU/binfmt）
+	@docker buildx build --platform linux/arm64 --load $(GIT_BUILD_ARGS) $(CN_BUILD_ARGS) \
+		-t yggdrasil:arm64 $(VERSION_TAG_ARM64) .
 
 docker-multiarch: ## 构建多架构镜像并推送（IMAGE=... PLATFORMS=...）
 	@docker buildx build --platform $(PLATFORMS) $(GIT_BUILD_ARGS) $(CN_BUILD_ARGS) -t $(IMAGE) --push .

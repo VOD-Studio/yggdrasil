@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **本地双架构镜像构建脚本**：新增 `fish scripts/build-docker.fish`，开启 `CN_MIRROR=true`，使用本机 Docker 分别构建并加载 `yggdrasil:amd64`、`yggdrasil:arm64`，不推送、不部署。复用 Makefile 的 Git 构建信息和版本标签，新增 `make docker-arm64`；构建前检查平台支持，构建后核对镜像架构。
+
 ## [1.2.5] - 2026-10-30
 
 代码高亮统一为 Clay 配色，缩减公开页首屏 WASM 与阻塞渲染样式；服务端请求 panic 改为隔离并返回不可缓存的 500，常驻后台任务仍在 panic 后交由容器重启恢复。
