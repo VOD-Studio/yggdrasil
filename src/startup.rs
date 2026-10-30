@@ -268,16 +268,20 @@ fn spawn_background_tasks_once() {
         return;
     }
 
-    tokio::spawn(crate::tasks::ip_purge::run_purge());
-    tokio::spawn(crate::tasks::session_cleanup::run_cleanup());
-    tokio::spawn(crate::tasks::post_purge::run_purge());
-    tokio::spawn(crate::tasks::backup::run_scheduler());
-    tokio::spawn(crate::tasks::cache_sync::run());
-    tokio::spawn(crate::tasks::image_cache_cleanup::run_cleanup());
-    tokio::spawn(crate::tasks::orphan_asset_purge::run_purge());
-    tokio::spawn(crate::tasks::log_writer::run_writer());
-    tokio::spawn(crate::tasks::log_purge::run_purge());
-    crate::tasks::sysinfo_sampler::spawn_sampler();
+    use crate::tasks::{self, spawn_supervised};
+    spawn_supervised("ip_purge", tasks::ip_purge::run_purge());
+    spawn_supervised("session_cleanup", tasks::session_cleanup::run_cleanup());
+    spawn_supervised("post_purge", tasks::post_purge::run_purge());
+    spawn_supervised("backup", tasks::backup::run_scheduler());
+    spawn_supervised("cache_sync", tasks::cache_sync::run());
+    spawn_supervised(
+        "image_cache_cleanup",
+        tasks::image_cache_cleanup::run_cleanup(),
+    );
+    spawn_supervised("orphan_asset_purge", tasks::orphan_asset_purge::run_purge());
+    spawn_supervised("log_writer", tasks::log_writer::run_writer());
+    spawn_supervised("log_purge", tasks::log_purge::run_purge());
+    tasks::sysinfo_sampler::spawn_sampler();
     tokio::spawn(crate::api::code_runner::readiness::log_runner_readiness());
 }
 

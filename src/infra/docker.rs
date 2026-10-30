@@ -43,7 +43,7 @@ fn wait_exit_code(item: Result<ContainerWaitResponse, bollard::errors::Error>) -
 /// `connect_with_unix` 会立即探测 socket 是否存在：缺失（未安装 / 未运行 Docker，
 /// 或 `DOCKER_SOCKET_PATH` 指错）时返回 `SocketNotFoundError`。
 ///
-/// 连接失败不 panic：release profile 是 `panic = "abort"`，会让整个服务进程一起挂掉，
+/// 连接失败不 panic：`LazyLock` 初始化 panic 后会中毒，之后每次访问都再 panic，
 /// 而博客本身并不依赖 Docker。改为记 error 日志后返回 `None`，代码运行器把
 /// `None` 转成普通 bollard 错误向上冒泡，最终在 execute.rs 的错误脱敏层统一映射为
 /// 「系统暂时不可用」，其余功能不受影响。

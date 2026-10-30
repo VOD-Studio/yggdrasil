@@ -192,8 +192,8 @@ fn build_transitions(raw: &[RawEntry]) -> HashMap<String, Vec<Transition>> {
 
 /// 编译正则，失败时记日志并返回 `None`（绝不 panic）。
 ///
-/// `re!` 宏的 `.unwrap()` 在 `panic = "abort"` 下会直接杀进程——任何未来的
-/// 正则转录错误都会让整篇含化学公式的文章渲染崩溃。改为降级返回 `None`
+/// `re!` 宏原先的 `.unwrap()` 会在正则转录错误时 panic，让整篇含化学公式的
+/// 文章渲染失败。改为降级返回 `None`
 /// 后，坏正则只让该模式匹配失败（状态机退到 "else" 兜底分支产出原样字符），
 /// 不影响整体渲染。`all_match_patterns_compile` 测试仍会在测试期捕获回归。
 fn compile_or_log(pat: &str) -> Option<Regex> {
@@ -345,8 +345,8 @@ struct Span {
 ///
 /// 必须按**字符**而非字节步进：化学公式可含多字节 UTF-8 字符（如中文说明
 /// 文字「浓」占 3 字节）。逐字节 `i+=1` 会让 `&input[i..]` 落在字符内部，
-/// 触发 `byte index N is not a char boundary` panic（在 panic=abort 下直接
-/// 杀进程），且 `bytes[i] as char` 会把多字节字符的首字节误判为花括号，
+/// 触发 `byte index N is not a char boundary` panic，且 `bytes[i] as char`
+/// 会把多字节字符的首字节误判为花括号，
 /// 导致输出损坏。`char_indices` 保证每步都在字符边界上。
 fn find_observe_end(input: &str, start: usize, end_chars: &Pat) -> Option<Span> {
     let mut braces = 0i32;
@@ -1229,10 +1229,10 @@ fn get_operator(a: &str) -> String {
 
 /// 把 `\ce{...}` 内容转译为 LaTeX。
 ///
-/// 容错设计（不依赖 `catch_unwind`，因 release 的 `panic = "abort"` 下它无效）：
+/// 容错设计：
 /// - 正则编译走 [`compile_or_log`]，失败降级为不匹配（状态机退到 "else" 兜底）。
 /// - 状态机有 watchdog 防死循环。
-/// - `to_tex` 仍包 `catch_unwind`，仅作 dev/test 护栏。
+/// - `to_tex` 用 `catch_unwind` 兜底，残余 panic 时原样返回输入。
 ///
 /// 坏公式可能产出退化输出，但不应 panic。`all_match_patterns_compile` 测试
 /// 在测试期捕获正则转录回归。
@@ -1246,8 +1246,8 @@ pub fn pu(input: &str) -> String {
 }
 
 fn to_tex(input: &str, kind: &str) -> String {
-    // 仅在 panic=unwind（dev/test）时有效；release 的 panic=abort 下此处的
-    // catch_unwind 无法阻止进程终止。保留它是为了本地开发时坏公式不炸测试。
+    // 最后一道防线：服务端 panic=unwind，残余 panic 在这里截住，
+    // 只让这条公式退回原文，不影响整篇文章渲染。
     let result = std::panic::catch_unwind(|| {
         let parsed = go(input, kind);
         // D5：TEX 状态机已删除（to_tex 仅以 ce/pu 调用，kind != "tex" 恒真）。
@@ -1360,9 +1360,9 @@ mod tests {
     }
 
     /// 回归测试：`compile_or_log` 是 re! 宏硬化的核心——对坏正则必须降级
-    /// 返回 `None` 而非 panic。`re!` 宏原先用 `.unwrap()`，在 panic=abort 下
-    /// 任何未来的正则转录错误（如曾经的 `". __* "` InvalidClass）都会直接
-    /// 杀进程。降级后坏正则只让该模式匹配失败，状态机退到 "else" 兜底分支，
+    /// 返回 `None` 而非 panic。`re!` 宏原先用 `.unwrap()`，任何未来的正则
+    /// 转录错误（如曾经的 `". __* "` InvalidClass）都会 panic。
+    /// 降级后坏正则只让该模式匹配失败，状态机退到 "else" 兜底分支，
     /// 不影响整体渲染。
     #[test]
     fn compile_or_log_degrades_bad_regex_without_panic() {
@@ -1377,8 +1377,8 @@ mod tests {
 
     /// 回归测试：`find_observe_end` 曾用逐字节 `i += 1` 步进，遇多字节
     /// UTF-8 字符（如中文「浓」占 3 字节）会让 `&input[i..]` 落在字符内部，
-    /// 触发 `byte index N is not a char boundary` panic。在 panic=abort 下
-    /// 直接杀进程（曾导致 rebuild_content_html 重建含中文化学式的文章时崩溃）。
+    /// 触发 `byte index N is not a char boundary` panic（曾在服务端仍为
+    /// panic=abort 时让 rebuild_content_html 重建含中文化学式的文章时崩溃进程）。
     /// 修复改为按 `char_indices` 字符边界步进。这些输入必须不 panic。
     #[test]
     fn ce_multibyte_char_in_braces_does_not_panic() {
@@ -1390,7 +1390,7 @@ mod tests {
             "\\frac{浓}{稀}",
             "[浓]",
         ] {
-            // catch_unwind 仅 dev/test 护栏；release panic=abort 下由本修复保证。
+            // ce 内部的 to_tex 已 catch_unwind，外层只是防御性保留。
             let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| ce(s)));
             assert!(r.is_ok(), "ce({s:?}) PANICKED (char boundary)");
         }
@@ -1431,7 +1431,7 @@ mod tests {
 
     /// 保护性：强制 `match_pattern` 的每个分支至少运行一次，让每个 `re!`
     /// 定义的 regex 都被编译。任一转录错误都会在此暴露，而非等到生产环境
-    /// 被特定输入触发后 panic=abort 整个进程。
+    /// 被特定输入触发。
     #[test]
     fn all_match_patterns_compile() {
         for name in [

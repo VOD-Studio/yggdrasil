@@ -28,7 +28,7 @@ fn sample_interval() -> Duration {
 ///
 /// CPU% 需两次采样 delta，故循环里先 refresh 再 sleep 再 refresh 才有有效值。
 pub fn spawn_sampler() {
-    tokio::spawn(async move {
+    crate::tasks::spawn_supervised("sysinfo_sampler", async move {
         use sysinfo::{Disks, System};
 
         let mut sys = System::new();

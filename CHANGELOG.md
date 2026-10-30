@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **服务端改回 panic=unwind**：`panic = "abort"` 从 `[profile.release]` 移到 WASM 专用的 `[profile.wasm-release]`，前端产物不变。此前服务端任何一个请求里的 panic 都会让整个进程退出，在线请求一起中断，直到容器重启；现在只中断出错的那个连接，mhchem 化学公式转译里的 `catch_unwind` 在 release 下也真正生效，坏公式只退回原文。常驻后台任务（清理、备份、跨实例缓存同步、日志落库、限流器回收、系统采样）改由 `tasks::spawn_supervised` 派生：panic 时记录错误并终止进程，保持原先「崩溃后由容器重启」的恢复方式，避免任务静默停摆。
+
 ## [1.2.4] - 2026-10-30
 
 修复后台笔记列表的垂直对齐与悬停底色、页头搜索入口的视觉对齐，以及点击页头导航时的文字暗闪。

@@ -160,7 +160,7 @@ fn ensure_limiter_gc() {
             return;
         }
         let interval = limiter_gc_interval();
-        tokio::spawn(async move {
+        crate::tasks::spawn_supervised("rate_limit_gc", async move {
             loop {
                 tokio::time::sleep(interval).await;
                 STRICT_LIMITER.retain_recent();

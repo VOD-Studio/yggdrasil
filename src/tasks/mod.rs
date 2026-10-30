@@ -2,6 +2,27 @@
 //!
 //! 所有任务仅在 `server` feature 启用时编译，运行在服务端独立的 tokio 任务中。
 
+#[cfg(feature = "server")]
+use std::future::Future;
+
+/// 派生常驻后台任务；任务 panic 时记录日志并终止进程。
+///
+/// 服务端是 panic=unwind，panic 只会结束所在的 tokio 任务。请求任务这样正合适，
+/// 但常驻任务（清理、备份、跨实例缓存同步等）静默退出后没有任何信号，
+/// 所以让进程退出，由容器重启恢复。任务正常返回（如配置缺失时提前退出）不受影响。
+#[cfg(feature = "server")]
+pub fn spawn_supervised(name: &'static str, task: impl Future<Output = ()> + Send + 'static) {
+    let handle = tokio::spawn(task);
+    tokio::spawn(async move {
+        if let Err(error) = handle.await {
+            if error.is_panic() {
+                tracing::error!(task = name, "后台任务 panic，终止进程以便重启");
+                std::process::abort();
+            }
+        }
+    });
+}
+
 /// 每天定时自动备份数据库与 uploads 素材，含自动轮转。
 #[cfg(feature = "server")]
 pub mod backup;

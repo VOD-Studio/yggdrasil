@@ -129,15 +129,15 @@ opt-level = 3
 lto = "thin"
 codegen-units = 1
 strip = "symbols"
-# panic 直接终止：WASM 去掉 unwind 元数据以减小体积；server 端错误处理走
-# Result + ?（见 src/api/error.rs），不依赖 panic unwind，进程级崩溃由
-# systemd/k8s 拉起。这是 Dioxus 官方 optimizing 指南推荐的 WASM 瘦身项。
-panic = "abort"
+# 服务端保持默认 panic=unwind：请求处理中的 panic 只结束该连接的 tokio 任务，
+# 不会带走整个进程；常驻后台任务 panic 时由 `tasks::spawn_supervised` 终止进程。
 
 # WASM 前端专用 release profile：cargo-leptos 的 `lib-profile-release` 使用它
 # （见 [package.metadata.leptos]）。
 # - opt-level="z"：体积优先，博客前端对极致运行时性能不敏感。
-# - 其余项（lto/codegen-units/panic=abort）继承 release。
+# - lto 改为 fat，其余项（codegen-units）继承 release。
+# - panic=abort：去掉 unwind 元数据。release 前端另由 Makefile 传入
+#   -Cpanic=immediate-abort 与 build-std。
 # strip=false：提前剥离（--strip-all）会删除 wasm-bindgen 元数据，
 # 最终体积优化交给 wasm-bindgen 之后的 wasm-opt -Oz。
 [profile.wasm-release]
@@ -145,6 +145,7 @@ inherits = "release"
 opt-level = "z"
 lto = "fat"
 strip = false
+panic = "abort"
 
 [features]
 # 默认即服务端；浏览器 WASM 由 cargo-leptos 以 `--no-default-features --features hydrate` 构建。
