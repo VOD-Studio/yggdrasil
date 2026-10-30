@@ -14,6 +14,9 @@ include mk/assets.mk mk/docker.mk
 # 以下两组参数只作用于 wasm 前端：-Zbuild-std 以 optimize_for_size 重编 std，
 # -Cpanic=immediate-abort 减少 panic 处理代码；代价是 wasm 内 panic 直接 trap，
 # 不再打印诊断信息。
+# - -Zlocation-detail=none 去掉 panic 与 #[track_caller] 的文件、行号；-Zfmt-debug=none
+#   让 {:?} 与 derive(Debug) 输出空串，所以 wasm 端代码不能拿 Debug 输出当数据（key、
+#   文案、序列化），只能用于日志。
 # - rustflags 经 wasm32 专属的 CARGO_TARGET_*_RUSTFLAGS 传入（服务端仍 panic=unwind）。
 #   它会覆盖 .cargo/config.toml 的同名配置，因此需要重复 getrandom cfg。
 # - RUSTUP_TOOLCHAIN 让 cargo-leptos 及其调用的 cargo 都走 nightly；
@@ -22,7 +25,7 @@ include mk/assets.mk mk/docker.mk
 # ARG WASM_NIGHTLY。
 WASM_NIGHTLY := nightly-2026-10-19
 RELEASE_OUT ?= target/release-dist
-LEPTOS_WASM_ENV := RUSTUP_TOOLCHAIN=$(WASM_NIGHTLY) CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS='--cfg getrandom_backend="wasm_js" -Zunstable-options -Cpanic=immediate-abort'
+LEPTOS_WASM_ENV := RUSTUP_TOOLCHAIN=$(WASM_NIGHTLY) CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS='--cfg getrandom_backend="wasm_js" -Zunstable-options -Cpanic=immediate-abort -Zlocation-detail=none -Zfmt-debug=none'
 LEPTOS_WASM_ARGS := --lib-cargo-args=-Zbuild-std=std,panic_abort --lib-cargo-args=-Zbuild-std-features=optimize_for_size
 
 # cargo-leptos 0.3.11，其中的 wasm_split_cli_support 换成 VOD-Studio/wasm-split-prototype 的

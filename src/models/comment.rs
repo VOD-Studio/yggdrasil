@@ -35,7 +35,6 @@ impl CommentStatus {
     }
 
     /// 将 CommentStatus 序列化为小写字符串。
-    #[cfg(test)]
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Pending => "pending",

@@ -227,7 +227,7 @@ fn TiptapPreview(detail: bool) -> impl IntoView {
                     error.set(None);
                 }
                 Ok(None) => error.set(Some("编辑器宿主未就绪".to_string())),
-                Err(reason) => error.set(Some(format!("编辑器初始化失败：{reason:?}"))),
+                Err(_) => error.set(Some("编辑器初始化失败".to_string())),
             }
         });
         on_cleanup(move || {
@@ -313,7 +313,7 @@ fn CodeMirrorPreview(detail: bool) -> impl IntoView {
                     error.set(None);
                 }
                 Ok(None) => error.set(Some("代码编辑器宿主未就绪".to_string())),
-                Err(reason) => error.set(Some(format!("代码编辑器初始化失败：{reason:?}"))),
+                Err(_) => error.set(Some("代码编辑器初始化失败".to_string())),
             }
         });
         Effect::new(move |_| {
@@ -443,7 +443,7 @@ fn XtermPreview(detail: bool) -> impl IntoView {
                     error.set(None);
                 }
                 Ok(None) => error.set(Some("终端宿主未就绪".to_string())),
-                Err(reason) => error.set(Some(format!("终端初始化失败：{reason:?}"))),
+                Err(_) => error.set(Some("终端初始化失败".to_string())),
             }
         });
         Effect::new(move |_| {

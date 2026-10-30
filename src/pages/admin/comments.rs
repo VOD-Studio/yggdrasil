@@ -376,7 +376,7 @@ fn AdminCommentsPage(page: i32) -> impl IntoView {
                         >
                             <For
                                 each=move || rows.get()
-                                key=|c| format!("{}-{:?}", c.id, c.status)
+                                key=|c| format!("{}-{}", c.id, c.status.as_str())
                                 children=move |comment| {
                                     let id = comment.id;
                                     view! {
