@@ -113,6 +113,37 @@ describe('initAnchorClick', () => {
     expect(routerInterceptorCalled).toBe(false);
   });
 
+  it('后台预览在 data-vt-scroll 容器内滚动，并让出顶栏与预览条', () => {
+    document.body.innerHTML = `
+      <div data-vt-scroll="admin-main" style="overflow-y: auto">
+        <header class="admin-topbar" style="top: 0px"></header>
+        <div class="preview-bar-slot" style="top: 68px"></div>
+        <nav><a href="#wei-shen-me">为什么</a></nav>
+        <h2 id="wei-shen-me">为什么</h2>
+      </div>`;
+    const container = document.querySelector<HTMLElement>('[data-vt-scroll]')!;
+    const rect =
+      (top: number, height = 0) =>
+      () =>
+        ({ top, height }) as DOMRect;
+    container.getBoundingClientRect = rect(0);
+    container.querySelector<HTMLElement>('.admin-topbar')!.getBoundingClientRect = rect(0, 56);
+    container.querySelector<HTMLElement>('.preview-bar-slot')!.getBoundingClientRect = rect(68, 44);
+    container.querySelector<HTMLElement>('h2')!.getBoundingClientRect = rect(900);
+    container.scrollTop = 300;
+    const scroll = vi.fn();
+    container.scrollTo = scroll;
+    const windowScroll = vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
+
+    container.querySelector('a')!.click();
+
+    // 300 + 900 − (68 + 44) − 16
+    expect(scroll).toHaveBeenCalledExactlyOnceWith({ top: 1072, behavior: 'smooth' });
+    expect(windowScroll).not.toHaveBeenCalled();
+    expect(window.location.hash).toBe('#wei-shen-me');
+    expect(routerInterceptorCalled).toBe(false);
+  });
+
   it('data-app-anchor 内的锚点完全放行给组件自己的 click 处理', () => {
     document.body.innerHTML = `
       <nav data-app-anchor="true"><a href="#settings-sec-ratelimit">接口限流</a></nav>
