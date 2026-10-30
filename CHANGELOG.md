@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **镜像推送脚本支持开发与正式标签**：`scripts/push-dev-image.fish` 重命名为 `scripts/push-docker.fish`，支持 `[dev|release]` 参数；默认推送 `hub.rua.plus/yggdrasil:<版本>-dev`，`release` 推送 `<版本>`，不更新 `latest`。修复 `version` 与 Fish 只读变量同名导致镜像误用 Fish 版本号的问题；远端架构检查跟随 `PLATFORMS`，仅选择 amd64 时不再安装 arm64 模拟支持。
+- **动态压缩质量 6 → 7**：`COMPRESSION_ALGORITHMS` 压缩层的 brotli 再小 1.9–2.9%（`feed.xml` 232,472 → 227,470 B），耗时增加几毫秒；`make precompress` 补上 `manifest.webmanifest` 的 `.br`。
 
 ## [1.2.5] - 2026-10-30
 

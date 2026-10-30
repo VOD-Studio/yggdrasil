@@ -99,9 +99,9 @@ pub(crate) fn compression_layer_from_env() -> Option<tower_http::compression::Co
 }
 
 /// 动态压缩统一质量。tower-http 默认 brotli 4，只比 gzip-6 小 2–4%；
-/// 统一取 6 后 gzip 与反代 `gzip_comp_level 6` 相同，brotli 比 gzip-6 小
-/// 10–17%，2.5MB 的 feed 单次压缩仍在十几毫秒内。
-const COMPRESSION_QUALITY: i32 = 6;
+/// 取 7 时 brotli 比 6 再小 1.9–2.9%，每次只多几毫秒；q9 起 feed 压缩耗时成倍
+/// 增加，q11 只适合构建期预压缩。
+const COMPRESSION_QUALITY: i32 = 7;
 
 fn compression_layer(
     algorithms: CompressionAlgorithms,

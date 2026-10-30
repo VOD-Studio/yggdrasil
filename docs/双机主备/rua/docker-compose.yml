@@ -21,7 +21,7 @@ services:
       KITE_PLAYER_PLAYLISTS: ${KITE_PLAYER_PLAYLISTS:-}
       COOKIE_SECURE: "true"
       TRUSTED_PROXY_COUNT: "1"
-      # 动态响应 brotli/gzip（质量 6）；预压缩 .br 静态资源不受影响
+      # 动态响应 brotli/gzip（质量 7）；预压缩 .br 静态资源不受影响
       COMPRESSION_ALGORITHMS: "br, gzip"
       RUST_LOG: info
       MCP_TOKEN_ENC_KEY: ${MCP_TOKEN_ENC_KEY}

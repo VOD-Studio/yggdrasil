@@ -154,7 +154,8 @@ build build-linux: check-build-tools
 precompress: check-brotli
 	@find "$(RELEASE_OUT)/public" -type f \
 		\( -name '*.js' -o -name '*.css' -o -name '*.wasm' \
-		   -o -name '*.svg' -o -name '*.html' -o -name '*.json' -o -name '*.xml' \) \
+		   -o -name '*.svg' -o -name '*.html' -o -name '*.json' -o -name '*.xml' \
+		   -o -name '*.webmanifest' \) \
 		-exec brotli -q 11 -kf {} +
 
 # ── 开发 ───────────────────────────────────────────────────────
