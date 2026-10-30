@@ -369,6 +369,31 @@ mod tests {
     }
 
     #[test]
+    fn highlight_code_script_function_definitions_differ_from_calls() {
+        // 函数定义与调用配色不同（定义用 clay，调用退为灰），scope 必须分开。
+        let code = "function setup() {}\nconst run = () => setup();\nclass A { load(): void { if (ok(x)) {} } }";
+        for lang in &["ts", "tsx", "jsx"] {
+            let result = highlight_code(code, Some(lang));
+            for name in ["setup", "run", "load"] {
+                assert!(
+                    result.contains(&format!(r#"entity name function {lang}">{name}</span>"#)),
+                    "{lang} 函数定义 {name} 未识别: {result}"
+                );
+            }
+            for name in ["setup", "ok"] {
+                assert!(
+                    result.contains(&format!(r#"variable function {lang}">{name}</span>"#)),
+                    "{lang} 函数调用 {name} 未识别: {result}"
+                );
+            }
+            assert!(
+                result.contains(&format!(r#"keyword control {lang}">if</span>"#)),
+                "{lang} 控制语句被识别为方法定义: {result}"
+            );
+        }
+    }
+
+    #[test]
     fn highlight_code_jsx_tags_and_attributes() {
         // JSX 标签名与属性名都应被识别。
         let code = "const el = <Button title=\"save\" onClick={fn}>OK</Button>;";

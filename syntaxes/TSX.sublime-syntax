@@ -21,13 +21,14 @@ contexts:
     - include: jsx
     - include: strings
     - include: numbers
+    - include: function-declaration
     - include: declaration-keywords
     - include: control-keywords
     - include: modifiers
     - include: type-declaration
-    - include: function-declaration
     - include: types
     - include: constants
+    - include: method-declaration
     - include: function-calls
     - include: property-access
     - include: punctuation
@@ -138,12 +139,6 @@ contexts:
         1: keyword.declaration.tsx
         2: entity.name.type.tsx
 
-  function-declaration:
-    - match: '\b(function)\s+\*?\s*({{identifier}})'
-      captures:
-        1: keyword.declaration.tsx
-        2: entity.name.function.tsx
-
   types:
     - match: '\b(?:string|number|boolean|void|object|symbol|bigint|never|unknown|any)\b'
       scope: support.type.primitive.tsx
@@ -155,6 +150,24 @@ contexts:
       scope: support.class.tsx
     - match: '\b[A-Z][A-Z0-9_]+\b'
       scope: variable.other.constant.tsx
+
+  # 函数定义名：function name、const name = (...) => / async (...) =>。
+  # 必须排在 declaration-keywords 之前，否则 function / const 先被吃掉，名字落到函数调用。
+  function-declaration:
+    - match: '\b(function)(?:\s*\*\s*|\s+)({{identifier}})'
+      captures:
+        1: keyword.declaration.tsx
+        2: entity.name.function.tsx
+    - match: '\b({{identifier}})(?=\s*=\s*(?:async\s+)?(?:\([^()]*\)|{{identifier}})\s*(?::[^=]+)?=>)'
+      captures:
+        1: entity.name.function.tsx
+
+  # 方法定义：name(...) { 或 name(...): T {。参数后紧跟函数体才算定义，否则是调用。
+  # 排在 control-keywords 之后，避免把 if (...) { 认成方法。
+  method-declaration:
+    - match: '\b({{identifier}})(?=\s*(?:<[^<>]*>)?\s*\([^()]*(?:\([^()]*\)[^()]*)*\)\s*(?::\s*[^{};=]+)?\{)'
+      captures:
+        1: entity.name.function.tsx
 
   function-calls:
     - match: '\b({{identifier}})\s*(?=\()'

@@ -22,13 +22,14 @@ contexts:
     - include: decorator
     - include: strings
     - include: numbers
+    - include: function-declaration
     - include: declaration-keywords
     - include: control-keywords
     - include: modifiers
     - include: type-declaration
-    - include: function-declaration
     - include: types
     - include: constants
+    - include: method-declaration
     - include: function-calls
     - include: property-access
     - include: punctuation
@@ -164,16 +165,6 @@ contexts:
         1: keyword.declaration.ts
         2: entity.name.type.ts
 
-  # 函数声明：function name( / 方法名(
-  function-declaration:
-    - match: '\b(function)\s+\*?\s*({{identifier}})'
-      captures:
-        1: keyword.declaration.ts
-        2: entity.name.function.ts
-    - match: '\b({{identifier}})\s*(?=\(|\<)'
-      captures:
-        1: entity.name.function.ts
-
   # 内置/常用类型
   types:
     - match: '\b(?:string|number|boolean|void|object|symbol|bigint|never|unknown|any)\b'
@@ -187,6 +178,24 @@ contexts:
       scope: support.class.ts
     - match: '\b[A-Z][A-Z0-9_]+\b'
       scope: variable.other.constant.ts
+
+  # 函数定义名：function name、const name = (...) => / async (...) =>。
+  # 必须排在 declaration-keywords 之前，否则 function / const 先被吃掉，名字落到函数调用。
+  function-declaration:
+    - match: '\b(function)(?:\s*\*\s*|\s+)({{identifier}})'
+      captures:
+        1: keyword.declaration.ts
+        2: entity.name.function.ts
+    - match: '\b({{identifier}})(?=\s*=\s*(?:async\s+)?(?:\([^()]*\)|{{identifier}})\s*(?::[^=]+)?=>)'
+      captures:
+        1: entity.name.function.ts
+
+  # 方法定义：name(...) { 或 name(...): T {。参数后紧跟函数体才算定义，否则是调用。
+  # 排在 control-keywords 之后，避免把 if (...) { 认成方法。
+  method-declaration:
+    - match: '\b({{identifier}})(?=\s*(?:<[^<>]*>)?\s*\([^()]*(?:\([^()]*\)[^()]*)*\)\s*(?::\s*[^{};=]+)?\{)'
+      captures:
+        1: entity.name.function.ts
 
   # 函数调用
   function-calls:

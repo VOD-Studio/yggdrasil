@@ -21,9 +21,11 @@ contexts:
     - include: jsx
     - include: strings
     - include: numbers
+    - include: function-declaration
     - include: declaration-keywords
     - include: control-keywords
     - include: constants
+    - include: method-declaration
     - include: function-calls
     - include: property-access
     - include: punctuation
@@ -119,6 +121,24 @@ contexts:
       scope: support.class.jsx
     - match: '\b[A-Z][A-Z0-9_]+\b'
       scope: variable.other.constant.jsx
+
+  # 函数定义名：function name、const name = (...) => / async (...) =>。
+  # 必须排在 declaration-keywords 之前，否则 function / const 先被吃掉，名字落到函数调用。
+  function-declaration:
+    - match: '\b(function)(?:\s*\*\s*|\s+)({{identifier}})'
+      captures:
+        1: keyword.declaration.jsx
+        2: entity.name.function.jsx
+    - match: '\b({{identifier}})(?=\s*=\s*(?:async\s+)?(?:\([^()]*\)|{{identifier}})\s*(?::[^=]+)?=>)'
+      captures:
+        1: entity.name.function.jsx
+
+  # 方法定义：name(...) { 或 name(...): T {。参数后紧跟函数体才算定义，否则是调用。
+  # 排在 control-keywords 之后，避免把 if (...) { 认成方法。
+  method-declaration:
+    - match: '\b({{identifier}})(?=\s*(?:<[^<>]*>)?\s*\([^()]*(?:\([^()]*\)[^()]*)*\)\s*(?::\s*[^{};=]+)?\{)'
+      captures:
+        1: entity.name.function.jsx
 
   function-calls:
     - match: '\b({{identifier}})\s*(?=\()'
