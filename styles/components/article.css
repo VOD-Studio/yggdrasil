@@ -620,14 +620,14 @@
       line-height: 1.85;
     }
 
-    /* 代码块在手机上贴边，横向滚动不被正文内边距截断。 */
-    .post-content pre {
+    /* 代码块在手机上贴边，横向滚动不被正文内边距截断。折叠块自带内边距和圆角外框，不适用。 */
+    .post-content pre:not(details > pre) {
       margin-inline: -1.5rem;
       border-radius: 0;
       box-shadow: inset 0 var(--hairline) 0 var(--color-hairline), inset 0 calc(-1 * var(--hairline)) 0 var(--color-hairline);
     }
 
-    .post-content pre code {
+    .post-content pre:not(details > pre) code {
       padding-inline: 1.5rem;
     }
   }
