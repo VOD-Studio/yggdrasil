@@ -142,12 +142,50 @@ pub struct NoteGrant {
 }
 
 /// 签发令牌的响应：摘要 + 一次性明文（明文仅在签发/重查时返回，不持久明文）。
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+///
+/// 线格式把摘要字段平铺在顶层（序列化用 `flatten`）；反序列化手写，避免
+/// `flatten` 派生在 WASM 里引入 `Content` 缓冲。
+#[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct CreateTokenResponse {
     #[serde(flatten)]
     pub summary: McpTokenSummary,
     /// 完整 bearer 明文，形如 `ygg_<opaque>`；客户端写入 Authorization 头。
     pub plaintext: String,
+}
+
+impl<'de> Deserialize<'de> for CreateTokenResponse {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        use chrono::{DateTime, Utc};
+
+        #[derive(Deserialize)]
+        struct Wire {
+            id: String,
+            name: String,
+            scope: TokenScope,
+            #[serde(default)]
+            notes: NoteGrant,
+            created_at: DateTime<Utc>,
+            expires_at: Option<DateTime<Utc>>,
+            last_used_at: Option<DateTime<Utc>>,
+            revoked_at: Option<DateTime<Utc>>,
+            plaintext: String,
+        }
+
+        let w = Wire::deserialize(d)?;
+        Ok(CreateTokenResponse {
+            summary: McpTokenSummary {
+                id: w.id,
+                name: w.name,
+                scope: w.scope,
+                notes: w.notes,
+                created_at: w.created_at,
+                expires_at: w.expires_at,
+                last_used_at: w.last_used_at,
+                revoked_at: w.revoked_at,
+            },
+            plaintext: w.plaintext,
+        })
+    }
 }
 
 #[cfg(test)]
@@ -208,5 +246,33 @@ mod tests {
         assert_eq!(s, "\"admin\"");
         let v: TokenScope = serde_json::from_str("\"read\"").unwrap();
         assert_eq!(v, TokenScope::Read);
+    }
+
+    #[test]
+    fn create_token_response_round_trips_flat_json() {
+        let response = CreateTokenResponse {
+            summary: McpTokenSummary {
+                id: "00000000-0000-0000-0000-000000000001".into(),
+                name: "claude-code".into(),
+                scope: TokenScope::Write,
+                notes: NoteGrant {
+                    read: true,
+                    write: false,
+                    notebook_ids: Some(vec![3]),
+                },
+                created_at: chrono::DateTime::from_timestamp(1_700_000_000, 0).unwrap(),
+                expires_at: None,
+                last_used_at: None,
+                revoked_at: None,
+            },
+            plaintext: "ygg_secret".into(),
+        };
+        let json = serde_json::to_value(&response).unwrap();
+        assert_eq!(json["plaintext"], "ygg_secret");
+        assert_eq!(json["id"], "00000000-0000-0000-0000-000000000001");
+        assert_eq!(
+            serde_json::from_value::<CreateTokenResponse>(json).unwrap(),
+            response
+        );
     }
 }
