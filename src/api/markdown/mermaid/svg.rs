@@ -122,12 +122,89 @@ fn lift_labels_in_group(group: &str, out: &mut String) {
     out.push_str("</g>");
 }
 
+/// 时序图自调用消息标签的上移量（px）。
+const SELF_LABEL_LIFT: f64 = 8.0;
+
+/// 时序图自调用消息的标签上移 [`SELF_LABEL_LIFT`]。
+///
+/// Mermaid 把自调用标签居中放在生命线上、紧贴自环起点，开了 `autonumber` 时序号圆点压住
+/// 标签下沿。标签的 `<text>`（多行时为连续多个）紧挨在自环 `<path data-from=X data-to=X>`
+/// 之前；只改它们的 `y`，横向不动，图的边界不变。
+fn lift_self_message_labels(svg: &str) -> String {
+    const PATH: &str = "<path ";
+    const TEXT: &str = "<text ";
+    const TEXT_END: &str = "</text>";
+    // 需要改写的 y 属性值区间 (start, end)，按位置升序。
+    let mut edits: Vec<(usize, usize)> = Vec::new();
+    let mut from = 0;
+    while let Some(rel) = svg[from..].find(PATH) {
+        let at = from + rel;
+        from = at + PATH.len();
+        let Some(tag_len) = svg[at..].find('>') else {
+            break;
+        };
+        let tag = &svg[at..at + tag_len];
+        let source = attr_value(tag, "data-from");
+        if source.is_none() || source != attr_value(tag, "data-to") {
+            continue;
+        }
+        let mut cursor = at;
+        let mut found = Vec::new();
+        while svg[..cursor].ends_with(TEXT_END) {
+            let Some(start) = svg[..cursor].rfind(TEXT) else {
+                break;
+            };
+            let Some(open_len) = svg[start..cursor].find('>') else {
+                break;
+            };
+            let open = &svg[start..start + open_len];
+            if !open.contains(r#"class="messageText""#) {
+                break;
+            }
+            let Some(value_at) = open.find(r#" y=""#).map(|i| start + i + r#" y=""#.len()) else {
+                break;
+            };
+            let Some(value_len) = svg[value_at..].find('"') else {
+                break;
+            };
+            found.push((value_at, value_at + value_len));
+            cursor = start;
+        }
+        found.reverse();
+        edits.extend(found);
+    }
+    if edits.is_empty() {
+        return svg.to_string();
+    }
+    edits.sort_unstable();
+    let mut out = String::with_capacity(svg.len());
+    let mut last = 0;
+    for (start, end) in edits {
+        let Ok(y) = svg[start..end].parse::<f64>() else {
+            continue;
+        };
+        out.push_str(&svg[last..start]);
+        out.push_str(&(y - SELF_LABEL_LIFT).to_string());
+        last = end;
+    }
+    out.push_str(&svg[last..]);
+    out
+}
+
+/// 取开标签里 `name="…"` 的值（属性名前须为空格）。
+fn attr_value<'a>(tag: &'a str, name: &str) -> Option<&'a str> {
+    let key = format!(" {name}=\"");
+    let start = tag.find(&key)? + key.len();
+    let len = tag[start..].find('"')?;
+    Some(&tag[start..start + len])
+}
+
 /// 最终修正：去掉末尾换行（`strip_dark_variants` 依赖 `</svg></div></figure>` 紧邻）；
-/// 子图标题置顶；HTML 标签的 foreignObject 允许溢出可见
+/// 子图标题置顶；时序图自调用标签让开序号；HTML 标签的 foreignObject 允许溢出可见
 /// （字体实际宽度略超测量值时不裁掉文字，与 Mermaid 前端渲染时的修正一致）；
 /// `extra_css` 追加到 SVG 自带的第一个 `<style>` 末尾。
 pub(super) fn finish(svg: &str, extra_css: &str) -> String {
-    lift_cluster_labels(svg.trim_end())
+    lift_self_message_labels(&lift_cluster_labels(svg.trim_end()))
         .replacen("</style>", &format!("{extra_css}</style>"), 1)
         .replace("<foreignObject ", r#"<foreignObject overflow="visible" "#)
 }

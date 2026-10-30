@@ -329,13 +329,16 @@ fn is_radar(source: &str) -> bool {
 /// - 甘特图网格线是 d3 坐标轴的 `<line stroke="currentColor">`，会继承正文文字色（浅色下是黑线），
 ///   改为继承所在 `.tick` 的 `gridColor`；
 /// - ER 图「零」基数的圆圈写死 `fill="white"`，深色下成了实心白点，改成背景色（空心）；
+/// - 时序图消息标签描一圈背景色：自调用标签居中压在生命线上，跨参与者的长标签也会穿过
+///   中间的生命线，描边让线在文字处断开；
 /// - 桑基图连线用 `mix-blend-mode: multiply`（行内样式），深色背景上乘出来接近黑色，
 ///   深色改用对称的 `screen`。
 pub(super) fn fixup_css(svg_id: &str, dark: bool) -> String {
     let background = tones(dark).background;
     let mut css = format!(
         "#{svg_id} .grid .tick line{{stroke:inherit;}}\
-         #{svg_id} .marker.er circle{{fill:{background};}}"
+         #{svg_id} .marker.er circle{{fill:{background};}}\
+         #{svg_id} .messageText{{paint-order:stroke;stroke:{background};stroke-width:4px;stroke-linejoin:round;}}"
     );
     if dark {
         css.push_str(&format!(

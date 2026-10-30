@@ -272,6 +272,42 @@ mod tests {
         }
     }
 
+    /// 时序图各消息标签的 (文字, y)。
+    fn message_labels(svg: &str) -> Vec<(&str, f64)> {
+        svg.match_indices("<text ")
+            .filter_map(|(at, _)| {
+                let open_end = at + svg[at..].find('>')?;
+                let open = &svg[at..open_end];
+                if !open.contains(r#"class="messageText""#) {
+                    return None;
+                }
+                let y = &open[open.find(r#" y=""#)? + r#" y=""#.len()..];
+                let y = y[..y.find('"')?].parse().ok()?;
+                let text = &svg[open_end + 1..open_end + svg[open_end..].find("</text>")?];
+                Some((text, y))
+            })
+            .collect()
+    }
+
+    #[test]
+    fn self_message_labels_move_up_others_stay() {
+        const SEQ: &str =
+            "sequenceDiagram\n  autonumber\n  A->>B: 普通消息\n  B->>B: 自调用<br/>第二行\n  B->>A: 返回\n";
+        let raw = render_one(false, None, SEQ, "t").unwrap();
+        let before = message_labels(&raw);
+        let fixed = svg::finish(&raw, "");
+        let after = message_labels(&fixed);
+        assert_eq!(before.len(), 4, "{before:?}");
+        for ((text, y0), (_, y1)) in before.iter().zip(&after) {
+            let lift = if matches!(*text, "自调用" | "第二行") {
+                8.0
+            } else {
+                0.0
+            };
+            assert_eq!(y0 - y1, lift, "{text}");
+        }
+    }
+
     #[test]
     fn strip_dark_variants_keeps_light_svg() {
         let html = render_markdown_enhanced(SIMPLE).html;
