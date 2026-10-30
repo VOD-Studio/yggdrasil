@@ -14,6 +14,10 @@
 
 /// 站点样式（Tailwind 产物）。
 pub const STYLE_CSS: &str = "/style.css";
+/// 后台与组件图鉴样式（Tailwind 产物，入口 input-admin.css）。
+pub const ADMIN_CSS: &str = "/admin.css";
+/// 后台样式 `<link>` 的 id：SSR 写入与客户端补插共用，避免重复插入。
+pub const ADMIN_CSS_ELEMENT_ID: &str = "ygg-admin-css";
 /// 代码高亮样式。
 pub const HIGHLIGHT_CSS: &str = "/highlight.css";
 /// KaTeX 样式。
@@ -36,6 +40,7 @@ pub const VERSIONS_ELEMENT_ID: &str = "ygg-asset-versions";
 /// `libs/yggdrasil-core/src/browser-library.ts` 与 `libs/shared/src/index.ts`。
 pub const ALL: &[&str] = &[
     STYLE_CSS,
+    ADMIN_CSS,
     HIGHLIGHT_CSS,
     KATEX_CSS,
     CORE_CSS,
@@ -56,6 +61,36 @@ pub fn url(path: &'static str) -> String {
     match version(path) {
         Some(version) => format!("{path}?v={version}"),
         None => path.to_string(),
+    }
+}
+
+/// 该路径是否需要后台样式：后台 `/admin…` 与组件图鉴 `/about/components…`。
+#[cfg(feature = "server")]
+pub fn needs_admin_css(path: &str) -> bool {
+    crate::routes::is_admin_path(path) || crate::routes::is_showcase_path(path)
+}
+
+/// 客户端导航进入需要后台样式的路由时补插 `<link>`：已存在（SSR 写入或之前插过）就不动，
+/// 离开后也不移除。由这些路由的 `LazyRoute::data()` 调用，样式与视图分包并行下载。
+pub fn ensure_admin_css() {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let Some(document) = web_sys::window().and_then(|w| w.document()) else {
+            return;
+        };
+        if document.get_element_by_id(ADMIN_CSS_ELEMENT_ID).is_some() {
+            return;
+        }
+        let (Ok(link), Ok(Some(head))) = (
+            document.create_element("link"),
+            document.query_selector("head"),
+        ) else {
+            return;
+        };
+        let _ = link.set_attribute("id", ADMIN_CSS_ELEMENT_ID);
+        let _ = link.set_attribute("rel", "stylesheet");
+        let _ = link.set_attribute("href", &url(ADMIN_CSS));
+        let _ = head.append_child(&link);
     }
 }
 
@@ -198,5 +233,20 @@ mod tests {
             None => std::env::remove_var("LEPTOS_SITE_ROOT"),
         }
         std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn admin_css_only_for_admin_and_showcase_paths() {
+        for path in [
+            "/admin",
+            "/admin/posts",
+            "/about/components",
+            "/about/components/button",
+        ] {
+            assert!(needs_admin_css(path), "{path}");
+        }
+        for path in ["/administrator", "/about", "/about/componentsx", "/"] {
+            assert!(!needs_admin_css(path), "{path}");
+        }
     }
 }

@@ -274,7 +274,7 @@ doc-open: doc ## 生成 rustdoc 并用浏览器打开
 # 只删除已知生成目录；public/ 下的图标、图片等受版本控制的资源必须保留。
 clean: ## 清理构建产物与前端依赖
 	@cargo clean
-	@rm -f public/style.css public/highlight.css
+	@rm -f public/style.css public/admin.css public/highlight.css
 	@rm -rf public/katex public/doc public/codemirror public/lightbox public/mermaid \
 		public/tiptap public/xterm public/yggdrasil-core
 	@rm -rf uploads/.cache

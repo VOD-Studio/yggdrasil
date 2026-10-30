@@ -398,6 +398,46 @@ async function main() {
       scriptErrors(log).join(' | '),
     );
     await ctx.close();
+
+    // 后台样式只随后台与组件图鉴加载：公开页不带，SPA 进入图鉴时补插。
+    const anonymousAdminCss = await fetch(`${base}/admin.css`, { redirect: 'manual' });
+    await anonymousAdminCss.arrayBuffer();
+    check(
+      '3 未登录可取后台样式（图鉴公开）',
+      anonymousAdminCss.status === 200 &&
+        (anonymousAdminCss.headers.get('content-type') || '').includes('text/css'),
+      `status=${anonymousAdminCss.status} content-type=${anonymousAdminCss.headers.get('content-type')}`,
+    );
+    const aboutCtx = await browser.newContext();
+    const aboutPage = await aboutCtx.newPage();
+    const aboutLog = instrument(aboutPage);
+    await aboutPage.goto(`${base}/about`);
+    await hydrated(aboutPage);
+    check(
+      '3 公开页不带后台样式',
+      (await aboutPage.evaluate(() => document.getElementById('ygg-admin-css'))) === null,
+    );
+    await aboutPage.click('a[href="/about/components"]');
+    await aboutPage.waitForURL(`${base}/about/components`);
+    const showcaseStyled = await aboutPage
+      .waitForFunction(
+        () =>
+          (document.getElementById('ygg-admin-css') as HTMLLinkElement | null)?.sheet?.cssRules
+            .length,
+        undefined,
+        { timeout: 15_000 },
+      )
+      .then(
+        () => true,
+        () => false,
+      );
+    check('3 SPA 进入组件图鉴补载后台样式', showcaseStyled);
+    check(
+      '3 SPA 进入组件图鉴无脚本错误',
+      scriptErrors(aboutLog).length === 0,
+      scriptErrors(aboutLog).join(' | '),
+    );
+    await aboutCtx.close();
   }
 
   // 4. 后台：登录态加载后台分包，未登录 302 到 /login。
@@ -415,6 +455,12 @@ async function main() {
       log.wasm.some((p) => p.includes('admin')),
       names(log.wasm),
     );
+    const adminRules = await page.evaluate(
+      () =>
+        (document.getElementById('ygg-admin-css') as HTMLLinkElement | null)?.sheet?.cssRules
+          .length ?? 0,
+    );
+    check('4 后台直开带后台样式', adminRules > 0, `cssRules=${adminRules}`);
     check('4 后台无脚本错误', scriptErrors(log).length === 0, scriptErrors(log).join(' | '));
     await ctx.close();
     const anonymous = await fetch(`${base}/admin`, { redirect: 'manual' });

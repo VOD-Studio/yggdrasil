@@ -16,9 +16,7 @@
 @import "./styles/components/controls.css";
 @import "./styles/components/ui.css";
 @import "./styles/components/shell.css";
-@import "./styles/components/admin.css";
 @import "./styles/components/palette.css";
-@import "./styles/components/asset-modals.css";
 @import "./styles/pages/reading-responsive.css";
 @import "./styles/pages/friends.css";
 @import "./styles/pages/archives.css";
@@ -29,21 +27,5 @@
 @import "./styles/pages/page-entry.css";
 @import "./styles/pages/writing-guide.css";
 @import "./styles/pages/notes-public.css";
-@import "./styles/pages/showcase.css";
-@import "./styles/pages/admin-dashboard.css";
-@import "./styles/pages/admin-posts.css";
-@import "./styles/pages/admin-trash.css";
-@import "./styles/pages/admin-write.css";
-@import "./styles/pages/admin-notes.css";
-@import "./styles/pages/admin-preview.css";
-@import "./styles/pages/admin-assets.css";
-@import "./styles/pages/admin-comments.css";
-@import "./styles/pages/admin-friends.css";
-@import "./styles/pages/admin-profile.css";
-@import "./styles/pages/admin-settings.css";
-@import "./styles/pages/admin-mcp.css";
-@import "./styles/pages/admin-system.css";
-@import "./styles/pages/admin-logs.css";
-@import "./styles/pages/admin-runner.css";
 
 @source "./src/**/*.{rs,html}";

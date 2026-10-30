@@ -54,9 +54,15 @@ use crate::theme::provide_theme;
 /// 服务端渲染的 HTML 文档外壳。
 #[cfg(feature = "server")]
 pub fn shell(options: LeptosOptions) -> impl IntoView {
-    use crate::static_assets::{self, CORE_CSS, CORE_JS, HIGHLIGHT_CSS, KATEX_CSS, STYLE_CSS};
+    use crate::static_assets::{
+        self, ADMIN_CSS, CORE_CSS, CORE_JS, HIGHLIGHT_CSS, KATEX_CSS, STYLE_CSS,
+    };
     use crate::theme::ThemePreload;
     use leptos_meta::MetaTags;
+
+    // 后台与组件图鉴直开时由 SSR 写入后台样式；客户端导航进入时由路由 data() 补插。
+    let admin_css = crate::request_ctx::request_parts()
+        .is_some_and(|p| static_assets::needs_admin_css(p.uri.path()));
 
     view! {
         <!DOCTYPE html>
@@ -71,6 +77,16 @@ pub fn shell(options: LeptosOptions) -> impl IntoView {
                 <link rel="apple-touch-icon" href="/apple-touch-icon.png"/>
                 <link rel="manifest" href="/manifest.webmanifest"/>
                 <link rel="stylesheet" href=static_assets::url(STYLE_CSS)/>
+                {admin_css
+                    .then(|| {
+                        view! {
+                            <link
+                                rel="stylesheet"
+                                id=static_assets::ADMIN_CSS_ELEMENT_ID
+                                href=static_assets::url(ADMIN_CSS)
+                            />
+                        }
+                    })}
                 <link rel="stylesheet" href=static_assets::url(HIGHLIGHT_CSS)/>
                 <link rel="stylesheet" href=static_assets::url(KATEX_CSS)/>
                 <link rel="stylesheet" href=static_assets::url(CORE_CSS)/>

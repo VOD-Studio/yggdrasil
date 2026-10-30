@@ -1,0 +1,20 @@
+/* 后台与组件图鉴样式：只在 /admin… 与 /about/components… 加载（见 src/static_assets.rs 的 ADMIN_CSS）；在 style.css 之后加载，依赖它的主题变量与关键帧。导入顺序即层叠顺序。 */
+@layer theme, base, components, utilities;
+@import "./styles/components/admin.css";
+@import "./styles/components/asset-modals.css";
+@import "./styles/pages/showcase.css";
+@import "./styles/pages/admin-dashboard.css";
+@import "./styles/pages/admin-posts.css";
+@import "./styles/pages/admin-trash.css";
+@import "./styles/pages/admin-write.css";
+@import "./styles/pages/admin-notes.css";
+@import "./styles/pages/admin-preview.css";
+@import "./styles/pages/admin-assets.css";
+@import "./styles/pages/admin-comments.css";
+@import "./styles/pages/admin-friends.css";
+@import "./styles/pages/admin-profile.css";
+@import "./styles/pages/admin-settings.css";
+@import "./styles/pages/admin-mcp.css";
+@import "./styles/pages/admin-system.css";
+@import "./styles/pages/admin-logs.css";
+@import "./styles/pages/admin-runner.css";

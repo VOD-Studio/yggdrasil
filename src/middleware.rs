@@ -168,7 +168,7 @@ pub(crate) fn cache_control_for_path(
     }
 
     // 管理后台和认证页面：不缓存
-    if path.starts_with("/admin") || path == "/login" || path == "/register" {
+    if crate::routes::is_admin_path(path) || path == "/login" || path == "/register" {
         return None;
     }
 
@@ -294,7 +294,7 @@ pub(crate) async fn admin_guard(
     use axum::response::Response;
 
     let path = req.uri().path().to_string();
-    if !path.starts_with("/admin") {
+    if !crate::routes::is_admin_path(&path) {
         return next.run(req).await;
     }
 
@@ -727,6 +727,11 @@ mod tests {
         assert_eq!(cache_value("/admin/posts", Method::GET), None);
         assert_eq!(cache_value("/login", Method::GET), None);
         assert_eq!(cache_value("/register", Method::GET), None);
+        // 后台样式是公开静态文件，与后台页面同前缀但走版本化缓存。
+        assert_eq!(
+            cache_value("/admin.css", Method::GET).as_deref(),
+            Some("public, no-cache")
+        );
     }
 
     #[test]

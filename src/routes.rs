@@ -176,6 +176,12 @@ pub fn is_showcase_path(path: &str) -> bool {
     path == "/about/components" || path.starts_with("/about/components/")
 }
 
+/// 是否为后台路径（`/admin` 或其子路径）。按路径段判断：同前缀的静态文件 `/admin.css`
+/// 是公开资源（组件图鉴也加载它），不能被后台登录守卫拦截。
+pub fn is_admin_path(path: &str) -> bool {
+    path == "/admin" || path.starts_with("/admin/")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -241,6 +247,10 @@ mod tests {
     fn path_classifiers() {
         assert!(is_post_path("/post/hello"));
         assert!(!is_post_path("/posts"));
+        assert!(is_admin_path("/admin"));
+        assert!(is_admin_path("/admin/posts"));
+        assert!(!is_admin_path("/admin.css"));
+        assert!(!is_admin_path("/administrator"));
         assert!(is_showcase_path("/about/components"));
         assert!(is_showcase_path("/about/components/button"));
         assert!(!is_showcase_path("/about/componentsx"));

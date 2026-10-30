@@ -47,7 +47,10 @@ function step(expected: string[]) {
     result.stdout,
   );
   assert.equal(commands.filter((line) => line === 'install').length, 1);
-  assert.equal(commands.filter((line) => line === 'css').length, 1);
+  assert.deepEqual(commands.filter((line) => line.startsWith('css ')).sort(), [
+    'css public/admin.css',
+    'css public/style.css',
+  ]);
   return commands;
 }
 async function edit(file: string, content = 'changed') {
@@ -64,6 +67,7 @@ async function main() {
     'build.rs',
     'src/bin/generate_highlight_css.rs',
     'input.css',
+    'input-admin.css',
     'libs/package.json',
     'libs/bun.lock',
     'libs/bunfig.toml',
@@ -107,7 +111,7 @@ if (command === 'bun' && args[0] === 'install') {
 } else if (command === 'cargo') {
   record('highlight'); write('public/highlight.css');
 } else if (command === 'tailwindcss') {
-  record('css'); write('public/style.css');
+  const out = args[args.indexOf('-o') + 1]; record('css ' + out); write(out);
 } else if (command === 'rustup') console.log('llvm-tools-aarch64-apple-darwin');
 `;
   for (const tool of ['bun', 'cargo', 'tailwindcss', 'rustup', 'cargo-leptos']) {

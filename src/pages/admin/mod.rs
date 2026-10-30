@@ -31,6 +31,7 @@ pub struct AdminShellRoute;
 #[lazy_route]
 impl LazyRoute for AdminShellRoute {
     fn data() -> Self {
+        crate::static_assets::ensure_admin_css();
         Self
     }
 

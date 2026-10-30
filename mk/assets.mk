@@ -8,8 +8,10 @@
 .PHONY: build-assets build-libs highlight-css katex-css css css-watch
 .PHONY: dev-assets dev-libs dev-highlight-css dev-katex-css dev-assets-force
 
-# Tailwind 通过 input.css 中显式导入的 styles/ 文件生成样式。
+# Tailwind 两个入口：input.css → public/style.css（全站），input-admin.css → public/admin.css
+# （后台与组件图鉴，按路由加载）。各自只编译显式导入的 styles/ 文件。
 TAILWIND := tailwindcss -i input.css -o public/style.css
+TAILWIND_ADMIN := tailwindcss -i input-admin.css -o public/admin.css
 
 # release 构建共用的资源流水线：libs 前端库、语法高亮 CSS、KaTeX CSS + 字体、
 # Tailwind（压缩）。build / build-linux / 两个 Dockerfile 都调用它，不要在别处
@@ -19,6 +21,7 @@ build-assets: ## 构建 public/ 下的全部生成资源（libs、高亮/KaTeX C
 	@$(MAKE) highlight-css
 	@$(MAKE) katex-css
 	@$(TAILWIND) --minify
+	@$(TAILWIND_ADMIN) --minify
 
 highlight-css: ## 生成语法高亮 CSS
 	@cargo run --bin generate_highlight_css
@@ -41,9 +44,10 @@ build-libs: ## 全量构建 libs/ 前端库
 
 css: ## 生成 Tailwind CSS（未压缩）
 	@$(TAILWIND)
+	@$(TAILWIND_ADMIN)
 
 css-watch: ## 监听并持续生成 Tailwind CSS
-	@$(TAILWIND) --watch
+	@trap 'kill 0' INT TERM; $(TAILWIND) --watch & $(TAILWIND_ADMIN) --watch & wait
 
 # ── dev 增量构建 ───────────────────────────────────────────────
 # 开发启动只重建变化的资源；发布和显式 build-libs 仍执行完整构建。

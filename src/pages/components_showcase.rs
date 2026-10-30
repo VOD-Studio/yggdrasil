@@ -145,6 +145,7 @@ pub struct ShowcaseRoute {
 #[lazy_route]
 impl LazyRoute for ShowcaseRoute {
     fn data() -> Self {
+        crate::static_assets::ensure_admin_css();
         Self {
             data: route_data(|| (), |_| fetch_showcase()),
         }
@@ -168,6 +169,7 @@ pub struct ShowcaseDetailRoute {
 #[lazy_route]
 impl LazyRoute for ShowcaseDetailRoute {
     fn data() -> Self {
+        crate::static_assets::ensure_admin_css();
         Self {
             data: route_data(|| (), |_| fetch_showcase()),
         }

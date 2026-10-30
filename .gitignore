@@ -10,6 +10,7 @@
 /package-lock.json
 others/
 public/style.css
+public/admin.css
 public/highlight.css
 public/katex
 public/tiptap
