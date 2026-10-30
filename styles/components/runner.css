@@ -299,12 +299,14 @@
     }
   }
 
+  /* 高度固定：表头右侧的等宽中文回退字体可能撑高行盒，导致输出区在出结果时整体下移。 */
   .runner-output-head {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 0.75rem;
-    padding: 0.4375rem 0.875rem;
+    height: 2.075rem;
+    padding: 0 0.875rem;
     color: var(--color-fg-3);
     font-size: 0.75rem;
   }
@@ -328,15 +330,18 @@
     overflow: hidden;
   }
 
+  /* 骨架与 xterm 首行对齐：左缘同为 0.5rem，自顶部起每行占一个终端行高（xterm 行高约 1.4rem），
+     占位条在行内垂直居中，真实输出替换时文字落在原位。 */
   .runner-terminal-skeleton {
+    --runner-row: 1.4rem;
     position: absolute;
     inset: 0;
     z-index: 1;
     display: flex;
     flex-direction: column;
-    justify-content: center;
-    gap: 0.625rem;
-    padding-inline: 0.875rem;
+    justify-content: flex-start;
+    gap: calc(var(--runner-row) - 0.625rem);
+    padding: calc((var(--runner-row) - 0.625rem) / 2) 0.5rem 0;
     background-color: var(--color-surface-1);
     pointer-events: none;
   }
