@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **本地双架构镜像构建脚本**：新增 `fish scripts/build-docker.fish`，开启 `CN_MIRROR=true`，使用本机 Docker 分别构建并加载 `yggdrasil:amd64`、`yggdrasil:arm64`，不推送、不部署。复用 Makefile 的 Git 构建信息和版本标签，新增 `make docker-arm64`；构建前检查平台支持，构建后核对镜像架构。
 
+### Changed
+
+- **镜像推送脚本支持开发与正式标签**：`scripts/push-dev-image.fish` 重命名为 `scripts/push-docker.fish`，支持 `[dev|release]` 参数；默认推送 `hub.rua.plus/yggdrasil:<版本>-dev`，`release` 推送 `<版本>`，不更新 `latest`。修复 `version` 与 Fish 只读变量同名导致镜像误用 Fish 版本号的问题；远端架构检查跟随 `PLATFORMS`，仅选择 amd64 时不再安装 arm64 模拟支持。
+
 ## [1.2.5] - 2026-10-30
 
 代码高亮统一为 Clay 配色，缩减公开页首屏 WASM 与阻塞渲染样式；服务端请求 panic 改为隔离并返回不可缓存的 500，常驻后台任务仍在 panic 后交由容器重启恢复。

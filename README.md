@@ -68,6 +68,16 @@ CI 的 release-split 阶段通过 `bun scripts/check-build.ts` 执行完整 `mak
 
 容器监听 `127.0.0.1:3000`，探针为 `/healthz`（存活）与 `/readyz`（就绪）。
 
+构建并推送镜像到 `hub.rua.plus`：
+
+```fish
+docker login hub.rua.plus
+fish scripts/push-docker.fish          # 默认 dev：yggdrasil:<版本>-dev
+fish scripts/push-docker.fish release  # 正式镜像：yggdrasil:<版本>
+```
+
+两个模式都构建当前源码，不会自动检出 Git tag，也不会更新 `latest`。版本默认取最近 Git tag，可用 `YGG_VERSION` 覆盖；默认推送 `linux/amd64,linux/arm64`，可用 `PLATFORMS` 覆盖。国内依赖镜像默认开启，`CN_MIRROR=false` 可关闭；包含 arm64 时会通过特权容器安装 arm64 模拟支持。更多用法见 `fish scripts/push-docker.fish --help`。
+
 生产环境 xun / rua 双机主备（流复制热备、单向文件同步、EdgeOne 回源鉴权、故障切换与回切）见 [docs/双机主备](docs/双机主备/README.md)。
 
 ## 目录
