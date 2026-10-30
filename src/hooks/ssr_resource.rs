@@ -31,14 +31,16 @@
 //! - **出错不缓存**：错误结果只交给已经在等的消费者，之后的导航重新请求。
 //! - 只用于不依赖会话的公开数据；服务端不保留任何跨请求状态（非 wasm 为空操作）。
 //!
-//! # 主包内的数据：[`ssr_resource`][crate::hooks::ssr_resource::ssr_resource]
-//! 页脚等主包组件自己的数据仍是普通资源；[`JsonSliceCodec`][crate::hooks::ssr_resource::JsonSliceCodec] 让水合解码与 server fn 共用
-//! `serde_json::from_slice` 的实例化（默认 `JsonSerdeCodec` 用 `from_str`，同一类型会多出
-//! 一份 `StrRead` 反序列化代码）。
+//! # 主包内的数据
+//! 主包组件自己的数据（页脚）同样走 [`route_data`][crate::hooks::ssr_resource::route_data]。
+//! [`JsonSliceCodec`][crate::hooks::ssr_resource::JsonSliceCodec] 给 `share_meta` 的
+//! `SharedValue` 用：水合解码与 server fn 共用 `serde_json::from_slice` 的实例化（默认
+//! `JsonSerdeCodec` 用 `from_str`，同一类型会多出一份 `StrRead` 反序列化代码）。
 
 use std::future::{Future, IntoFuture};
 use std::marker::PhantomData;
 use std::pin::Pin;
+use std::sync::Arc;
 
 #[cfg(target_arch = "wasm32")]
 use std::any::TypeId;
@@ -68,23 +70,6 @@ impl<T: DeserializeOwned> Decoder<T> for JsonSliceCodec {
     fn decode(val: &Self::Encoded) -> Result<T, Self::Error> {
         serde_json::from_slice(val.as_bytes())
     }
-}
-
-/// 使用 [`JsonSliceCodec`] 的 SSR 资源。
-pub type SsrResource<T> = Resource<T, JsonSliceCodec>;
-
-/// 创建主包组件自己的 SSR 资源（语义同 `Resource::new`）。路由数据用 [`route_data`]。
-#[track_caller]
-pub fn ssr_resource<S, T, Fut>(
-    source: impl Fn() -> S + Send + Sync + 'static,
-    fetcher: impl Fn(S) -> Fut + Send + Sync + 'static,
-) -> SsrResource<T>
-where
-    S: PartialEq + Clone + Send + Sync + 'static,
-    T: Serialize + DeserializeOwned + Send + Sync + 'static,
-    Fut: Future<Output = T> + Send + 'static,
-{
-    Resource::new_with_options(source, fetcher, false)
 }
 
 /// `Result<T, ApiError>` 的 JSON 文本：路由数据资源的统一值类型。
@@ -191,34 +176,83 @@ where
     F: Fn(S) -> Fut + Send + Sync + 'static,
     Fut: Future<Output = PageJson<T>> + Send + 'static,
 {
-    let raw = Resource::new_with_options(
-        source,
-        move |source| {
-            #[cfg(target_arch = "wasm32")]
-            {
-                let pending = match PREFETCH.take(TypeId::of::<F>(), &source, now_ms()) {
-                    Some(hit) => Ok(hit),
-                    None => Err(fetcher(source)),
-                };
-                async move {
-                    match pending {
-                        Ok(hit) => hit.await,
-                        Err(fut) => fut.await.raw,
-                    }
+    let source: ErasedSource = Arc::new(move || ErasedKey(Arc::new(source())));
+    let fetch: ErasedFetch = Arc::new(move |key: ErasedKey| {
+        let source: S = key.downcast::<S>();
+        #[cfg(target_arch = "wasm32")]
+        {
+            let pending = match PREFETCH.take(TypeId::of::<F>(), &source, now_ms()) {
+                Some(hit) => Ok(hit),
+                None => Err(fetcher(source)),
+            };
+            Box::pin(async move {
+                match pending {
+                    Ok(hit) => hit.await,
+                    Err(fut) => fut.await.raw,
                 }
-            }
-            #[cfg(not(target_arch = "wasm32"))]
-            {
-                let fut = fetcher(source);
-                async move { fut.await.raw }
-            }
-        },
-        false,
-    );
+            }) as RawFuture
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let fut = fetcher(source);
+            Box::pin(async move { fut.await.raw }) as RawFuture
+        }
+    });
     RouteData {
-        raw,
+        raw: erased_route_resource(source, fetch),
         _type: PhantomData,
     }
+}
+
+/// 路由数据键：擦除 `source` 的具体类型，所有路由共用一份 `Resource` 实例化。
+trait DynKey: Send + Sync {
+    fn as_any(&self) -> &dyn std::any::Any;
+    fn eq_dyn(&self, other: &dyn DynKey) -> bool;
+}
+
+impl<S: PartialEq + Send + Sync + 'static> DynKey for S {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn eq_dyn(&self, other: &dyn DynKey) -> bool {
+        other.as_any().downcast_ref::<S>() == Some(self)
+    }
+}
+
+#[derive(Clone)]
+struct ErasedKey(Arc<dyn DynKey>);
+
+impl ErasedKey {
+    /// 还原 `source` 的值：键只由同一次 [`route_data`] 的 `source` 产生、交给同一个取数闭包，
+    /// 类型必然一致。
+    fn downcast<S: Clone + 'static>(&self) -> S {
+        self.0
+            .as_any()
+            .downcast_ref::<S>()
+            .expect("路由数据键类型一致")
+            .clone()
+    }
+}
+
+impl PartialEq for ErasedKey {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.eq_dyn(&*other.0)
+    }
+}
+
+type RawFuture = Pin<Box<dyn Future<Output = RawJson> + Send>>;
+type ErasedSource = Arc<dyn Fn() -> ErasedKey + Send + Sync>;
+type ErasedFetch = Arc<dyn Fn(ErasedKey) -> RawFuture + Send + Sync>;
+
+/// 唯一一处 `Resource<RawJson, _>` 实例化：`source`、`fetch` 都是 trait 对象。
+#[track_caller]
+#[inline(never)]
+fn erased_route_resource(
+    source: ErasedSource,
+    fetch: ErasedFetch,
+) -> Resource<RawJson, RawJsonCodec> {
+    Resource::new_with_options(move || source(), move |key| fetch(key), false)
 }
 
 /// 悬停预取一份路由数据：键与 [`route_data`] 相同（`fetcher` 的类型 + `source`）。

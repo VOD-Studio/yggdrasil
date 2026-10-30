@@ -22,7 +22,7 @@ pub mod near_viewport;
 /// 客户端数据加载 Hook（use_paginated）。
 pub mod query;
 
-/// 页面 SSR 数据资源（ssr_resource，统一 JSON 解码器）。
+/// 页面 SSR 数据资源（route_data：值类型擦除为 JSON 文本，取数函数随分包加载）。
 pub mod ssr_resource;
 
 pub use near_viewport::use_near_viewport;
