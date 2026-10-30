@@ -414,15 +414,21 @@
     box-shadow: var(--shadow-focus);
   }
 
+  /* 缩进用 margin-inline 而非 padding：代码块、表格、引用等自带外框的子元素，
+     用 padding 会把框撑满整行、只把内容往里挤。底部留白放在 details 上，
+     否则末尾子元素的 padding-bottom 会让代码块框多出一截。 */
   .md-content details > :not(summary) {
-    padding-inline: 2.45em 1em;
+    margin-inline: 2.45em 1em;
     color: var(--color-fg-2);
     font-size: 0.91em;
   }
 
+  .md-content details[open] {
+    padding-bottom: 0.9em;
+  }
+
   .md-content details > :not(summary):last-child {
     margin-bottom: 0;
-    padding-bottom: 0.9em;
   }
 
   /* ---- 图片 ----
