@@ -454,7 +454,7 @@ fn open_log_stream(
     // log 事件 → 追加（实时行 id 恒 0：到达即追加，不去重、不作游标）
     let on_log = Closure::<dyn FnMut(MessageEvent)>::new(move |e: MessageEvent| {
         if let Some(s) = e.data().as_string() {
-            if let Ok(entry) = serde_json::from_str::<LogEntry>(&s) {
+            if let Ok(entry) = serde_json::from_slice::<LogEntry>(s.as_bytes()) {
                 rows.try_update(|list| {
                     list.push(LogRow {
                         key: next_row_key(row_key),

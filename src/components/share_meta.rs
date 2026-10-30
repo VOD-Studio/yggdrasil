@@ -11,13 +11,17 @@ use leptos::prelude::*;
 use leptos::text_prop::TextProp;
 use leptos_meta::Meta;
 
+use crate::hooks::ssr_resource::JsonSliceCodec;
 use crate::models::post::Post;
 use crate::models::share::{PostShareCard, ShareContext};
 
 /// 应用根组件调用一次：服务端从请求扩展读取分享上下文并序列化进页面，浏览器水合时读回同一份值。
 /// 必须在水合期间创建（App 根部）：水合结束后才创建的 `SharedValue` 会在浏览器端重新求值，只能得到空值。
 pub(crate) fn provide_share_context() {
-    provide_context(SharedValue::new(share_context_from_request).into_inner());
+    provide_context(
+        SharedValue::<ShareContext, JsonSliceCodec>::new_with_encoding(share_context_from_request)
+            .into_inner(),
+    );
 }
 
 fn share_context_from_request() -> ShareContext {

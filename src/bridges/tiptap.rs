@@ -497,7 +497,7 @@ pub mod wasm {
                 let overrides = if overrides_json.trim().is_empty() {
                     None
                 } else {
-                    serde_json::from_str::<ResourceLimits>(&overrides_json).ok()
+                    serde_json::from_slice::<ResourceLimits>(overrides_json.as_bytes()).ok()
                 };
 
                 let req = ExecRequest {

@@ -227,7 +227,7 @@ fn read_recents() -> Option<Vec<String>> {
         let raw = storage.get_item(RECENT_KEY).ok()?;
         match raw {
             None => Some(Vec::new()),
-            Some(raw) => serde_json::from_str::<Vec<String>>(&raw).ok(),
+            Some(raw) => serde_json::from_slice::<Vec<String>>(raw.as_bytes()).ok(),
         }
     }
     #[cfg(not(target_arch = "wasm32"))]

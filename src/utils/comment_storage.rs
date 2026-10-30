@@ -105,7 +105,7 @@ pub fn save_author(info: &AuthorInfo) {
 /// 从 localStorage 读取评论作者信息。
 pub fn load_author() -> Option<AuthorInfo> {
     let json = read_storage(AUTHOR_KEY)?;
-    serde_json::from_str(&json).ok()
+    serde_json::from_slice(json.as_bytes()).ok()
 }
 
 /// 将一条待发布评论草稿保存到指定文章的草稿列表中。
@@ -213,7 +213,7 @@ fn load_all_pending() -> PendingMap {
         Some(j) => j,
         None => return PendingMap::new(),
     };
-    serde_json::from_str(&json).unwrap_or_default()
+    serde_json::from_slice(json.as_bytes()).unwrap_or_default()
 }
 
 /// 将待发布评论的 Markdown 内容渲染为安全的 HTML（纯文本 + 换行转 `<br>`）。

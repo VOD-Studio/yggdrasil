@@ -43,7 +43,7 @@ fn default_source(lang: &str) -> String {
 
 /// 解析「临时覆盖」JSON：空串视为无覆盖，格式不对时忽略并给出提示。
 fn parse_overrides(raw: &str) -> (Option<ResourceLimits>, String) {
-    match serde_json::from_str::<ResourceLimits>(raw.trim()) {
+    match serde_json::from_slice::<ResourceLimits>(raw.trim().as_bytes()) {
         Ok(o) => (Some(o), String::new()),
         Err(_) if raw.trim().is_empty() => (None, String::new()),
         Err(_) => (None, "JSON 格式不对，已忽略".to_string()),

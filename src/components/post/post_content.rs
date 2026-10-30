@@ -64,7 +64,7 @@ fn split_content_fragments(html: &str) -> Vec<ContentFragment> {
         let lang = extract_attr(pre_block, "data-lang").unwrap_or_default();
         let overrides = extract_attr(pre_block, "data-overrides")
             .filter(|s| !s.is_empty())
-            .and_then(|s| serde_json::from_str::<ResourceLimits>(&s).ok());
+            .and_then(|s| serde_json::from_slice::<ResourceLimits>(s.as_bytes()).ok());
         let source = extract_attr(pre_block, "data-source").unwrap_or_default();
         let highlighted = code_inner_html(pre_block).to_string();
 

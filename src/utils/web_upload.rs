@@ -48,7 +48,8 @@ pub async fn post_multipart_file(
         .await
         .map_err(|_| "没有收到完整的服务器响应".to_string())?;
     let text = text_val.as_string().unwrap_or_default();
-    let data: serde_json::Value = serde_json::from_str(&text).unwrap_or(serde_json::Value::Null);
+    let data: serde_json::Value =
+        serde_json::from_slice(text.as_bytes()).unwrap_or(serde_json::Value::Null);
 
     if data["success"].as_bool() == Some(true) {
         Ok(data)

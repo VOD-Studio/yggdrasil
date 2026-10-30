@@ -90,7 +90,7 @@ pub fn read_state<T: DeserializeOwned>(key: &str) -> Option<T> {
     #[cfg(target_arch = "wasm32")]
     {
         let value = wasm::get_module()?.read_state(key)?;
-        serde_json::from_str(&value).ok()
+        serde_json::from_slice(value.as_bytes()).ok()
     }
     #[cfg(not(target_arch = "wasm32"))]
     {

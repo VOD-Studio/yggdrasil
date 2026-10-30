@@ -110,7 +110,7 @@ pub(super) fn start(
         let outcome = event
             .dyn_ref::<MessageEvent>()
             .and_then(|e| e.data().as_string())
-            .and_then(|data| serde_json::from_str::<DonePayload>(&data).ok())
+            .and_then(|data| serde_json::from_slice::<DonePayload>(data.as_bytes()).ok())
             .map(DonePayload::outcome)
             .unwrap_or_else(|| {
                 RunState::Finished(Outcome::SystemFailed("运行结果格式异常，请重试".into()))

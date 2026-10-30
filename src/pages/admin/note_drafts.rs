@@ -66,7 +66,7 @@ pub(super) fn use_draft_protection<
                 let draft = (|| {
                     let storage = session_storage()?;
                     let raw = storage.get_item(&key.get_value()).ok()??;
-                    let draft: T = serde_json::from_str(&raw).ok()?;
+                    let draft: T = serde_json::from_slice(raw.as_bytes()).ok()?;
                     current.with_untracked(|c| draft != *c).then_some(draft)
                 })();
                 if draft.is_some() {
