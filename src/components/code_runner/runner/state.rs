@@ -133,11 +133,18 @@ impl RunState {
         }
     }
 
-    /// 输出区底部的说明；没有时不渲染。
+    /// 进行中阶段的提示，显示在终端骨架上，不占输出区高度；没有时不渲染。
+    pub fn busy_hint(&self) -> Option<&'static str> {
+        match self {
+            Self::Busy(Phase::Queued) => Some("并发已满，空出槽位后自动开始"),
+            Self::Busy(Phase::Preparing) => Some("正在启动容器…"),
+            _ => None,
+        }
+    }
+
+    /// 结束后输出区底部的说明；没有时不渲染。
     pub fn note(&self) -> Option<String> {
         let text = match self {
-            Self::Busy(Phase::Queued) => "并发已满，空出槽位后自动开始",
-            Self::Busy(Phase::Preparing) => "正在启动容器…",
             Self::Finished(Outcome::Timeout { .. }) => "超过时间上限被终止；输出到终止前为止",
             Self::Finished(Outcome::OutOfMemory { .. }) => "内存超过上限，进程被系统终止",
             Self::Finished(Outcome::RateLimited(message)) => return Some(message.clone()),
@@ -301,6 +308,19 @@ mod tests {
         let oversized = RunState::rejected(&ApiError::BadRequest("源代码过大".into()));
         assert_eq!(oversized.label(), "系统失败");
         assert_eq!(oversized.note().as_deref(), Some("源代码过大"));
+    }
+
+    #[test]
+    fn busy_phases_never_add_a_note_row() {
+        for phase in [Phase::Queued, Phase::Preparing, Phase::Running] {
+            assert_eq!(RunState::Busy(phase).note(), None, "{phase:?} 不应占输出区");
+        }
+        assert!(RunState::Busy(Phase::Queued).busy_hint().is_some());
+        assert!(RunState::Busy(Phase::Preparing).busy_hint().is_some());
+        assert!(RunState::Busy(Phase::Running).busy_hint().is_none());
+        assert!(RunState::Finished(Outcome::Disconnected)
+            .busy_hint()
+            .is_none());
     }
 
     #[test]

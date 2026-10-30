@@ -389,7 +389,12 @@ pub fn CodeRunner(
                         loading=Signal::derive(move || running.get() || awaiting_editor())
                         onclick=Callback::new(move |_| run.run(()))
                     >
-                        {run_label}
+                        <span class="runner-run-label">
+                            <span>{run_label}</span>
+                            <span class="runner-run-reserve" aria-hidden="true">
+                                "再次运行"
+                            </span>
+                        </span>
                     </Button>
                 </div>
             </div>
@@ -515,6 +520,13 @@ pub fn CodeRunner(
                                                     <div class="runner-terminal-skeleton">
                                                         <SkeletonBox class="h-2.5" style="width: 40%"/>
                                                         <SkeletonBox class="h-2.5" style="width: 64%"/>
+                                                        {move || {
+                                                            state
+                                                                .with(|state| state.busy_hint())
+                                                                .map(|hint| {
+                                                                    view! { <span class="runner-terminal-hint">{hint}</span> }
+                                                                })
+                                                        }}
                                                     </div>
                                                 }
                                             })

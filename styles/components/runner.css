@@ -138,6 +138,20 @@
     box-shadow: var(--shadow-focus);
   }
 
+  /* 「运行 / 再次运行 / 播放示例」共用最长文案的宽度，切换时标题栏不挪动。 */
+  .runner-run-label {
+    display: inline-grid;
+    justify-items: center;
+  }
+
+  .runner-run-label > span {
+    grid-area: 1 / 1;
+  }
+
+  .runner-run-reserve {
+    visibility: hidden;
+  }
+
   /* ---- 状态：圆点 + 文字 ---- */
   .runner-status {
     display: inline-flex;
@@ -316,11 +330,28 @@
 
   .runner-terminal-skeleton {
     position: absolute;
-    inset: 0 0.875rem;
+    inset: 0;
+    z-index: 1;
     display: flex;
     flex-direction: column;
     justify-content: center;
     gap: 0.625rem;
+    padding-inline: 0.875rem;
+    background-color: var(--color-surface-1);
+    pointer-events: none;
+  }
+
+  /* xterm 的内部层带 z-index（最高到 10），这里让它自成层叠上下文，骨架才能盖住它。 */
+  .runner-terminal > .xterm {
+    z-index: 0;
+  }
+
+  .runner-terminal-hint {
+    position: absolute;
+    bottom: 0.5rem;
+    left: 0.875rem;
+    color: var(--color-fg-3);
+    font-size: 0.75rem;
   }
 
   .runner-note {
