@@ -24,6 +24,10 @@ pub struct Asset {
     pub width: i32,
     pub height: i32,
     pub alt: Option<String>,
+    #[cfg_attr(
+        target_arch = "wasm32",
+        serde(deserialize_with = "crate::models::rfc3339::deserialize")
+    )]
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
@@ -192,6 +196,10 @@ impl<'de> Deserialize<'de> for AssetDto {
             width: i32,
             height: i32,
             alt: Option<String>,
+            #[cfg_attr(
+                target_arch = "wasm32",
+                serde(deserialize_with = "crate::models::rfc3339::deserialize")
+            )]
             created_at: chrono::DateTime<chrono::Utc>,
             ref_count: i64,
             refs: Vec<AssetRef>,

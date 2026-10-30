@@ -562,11 +562,7 @@ fn Marked(text: String, query: String) -> impl IntoView {
 
 #[component]
 fn SearchResultItem(post: PostListItem, index: usize, query: String) -> impl IntoView {
-    let date = post
-        .published_at
-        .unwrap_or(post.created_at)
-        .format("%Y.%m.%d")
-        .to_string();
+    let date = crate::utils::time::ymd(&post.published_at.unwrap_or(post.created_at), '.');
     let reading_time = post.reading_time.max(1);
     let summary = post
         .summary

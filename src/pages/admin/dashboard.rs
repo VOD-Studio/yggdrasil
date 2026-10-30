@@ -22,7 +22,7 @@ use crate::context::UserContext;
 use crate::models::comment::{AdminComment, CommentStatus};
 use crate::models::post::{MonthCount, PostListItem, PostStats, Tag};
 use crate::routes::Route;
-use crate::utils::time::{local_now, to_local};
+use crate::utils::time::{hm, local_now, md, to_local};
 
 /// 区块的加载状态。
 #[derive(Clone, PartialEq)]
@@ -216,8 +216,8 @@ fn Admin() -> impl IntoView {
     let hour = chrono::Timelike::hour(&now);
     let date_label = format!(
         "{} 月 {} 日 {}",
-        now.format("%-m"),
-        now.format("%-d"),
+        chrono::Datelike::month(&now),
+        chrono::Datelike::day(&now),
         weekday_label(chrono::Datelike::weekday(&now))
     );
     let name = Memo::new(move |_| {
@@ -546,9 +546,8 @@ fn RecentPosts(
                             {posts
                                 .into_iter()
                                 .map(|post| {
-                                    let date = to_local(post.published_at.unwrap_or(post.created_at))
-                                        .format("%m-%d %H:%M")
-                                        .to_string();
+                                    let t = to_local(post.published_at.unwrap_or(post.created_at));
+                                    let date = format!("{} {}", md(&t, '-'), hm(&t));
                                     view! {
                                         <li>
                                             <a
@@ -626,7 +625,7 @@ fn LatestComments(
                             {list
                                 .into_iter()
                                 .map(|comment| {
-                                    let when = to_local(comment.created_at).format("%m-%d").to_string();
+                                    let when = md(&to_local(comment.created_at), '-');
                                     let preview = comment_preview(&comment.content_md);
                                     let is_pending = comment.status == CommentStatus::Pending;
                                     view! {

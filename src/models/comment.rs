@@ -102,6 +102,10 @@ pub struct AdminComment {
     /// 当前审核状态。
     pub status: CommentStatus,
     /// 评论创建时间。
+    #[cfg_attr(
+        target_arch = "wasm32",
+        serde(deserialize_with = "crate::models::rfc3339::deserialize")
+    )]
     pub created_at: DateTime<Utc>,
 }
 

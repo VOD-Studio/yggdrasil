@@ -31,7 +31,7 @@ pub struct PostShareCard {
 impl PostShareCard {
     pub fn from_post(post: &Post) -> Self {
         let at = post.published_at.unwrap_or(post.created_at);
-        let mut meta = vec![at.format("%Y.%m.%d").to_string()];
+        let mut meta = vec![crate::utils::time::ymd(&at, '.')];
         if post.reading_time > 0 {
             meta.push(format!("{} 分钟", post.reading_time));
         }

@@ -27,7 +27,7 @@ use crate::components::ui::{
 use crate::models::note::*;
 use crate::routes::Route;
 use crate::utils::error::failure_message;
-use crate::utils::time::to_local;
+use crate::utils::time::{hm, md, to_local, ymd};
 
 pub mod notebooks;
 
@@ -69,11 +69,11 @@ pub(super) fn parse_tags(input: &str) -> Vec<String> {
 /// 列表里的修改时间：当天只写时刻，今年写月日，更早写完整日期。
 fn short_when(at: DateTime<FixedOffset>, now: DateTime<FixedOffset>) -> String {
     if at.date_naive() == now.date_naive() {
-        at.format("%H:%M").to_string()
+        hm(&at)
     } else if at.year() == now.year() {
-        at.format("%m-%d").to_string()
+        md(&at, '-')
     } else {
-        at.format("%Y-%m-%d").to_string()
+        ymd(&at, '-')
     }
 }
 
@@ -852,7 +852,7 @@ fn NoteRow(
         </span>
     };
     if let Some(deleted_at) = note.deleted_at {
-        let deleted = to_local(deleted_at).format("%Y-%m-%d").to_string();
+        let deleted = ymd(&to_local(deleted_at), '-');
         return view! {
             <li class="admin-notes-row" aria-busy=move || restoring.get().then_some("true")>
                 <span class="admin-notes-glyph" aria-hidden="true">

@@ -126,7 +126,7 @@ fn Recommendations(#[prop(into)] path: Signal<String>) -> impl IntoView {
                                 .map(|at| {
                                     view! {
                                         <time class="tabular-nums">
-                                            {at.format("%Y.%m.%d").to_string()}
+                                            {crate::utils::time::ymd(&at, '.')}
                                         </time>
                                     }
                                 });

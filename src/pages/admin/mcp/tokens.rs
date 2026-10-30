@@ -8,15 +8,12 @@ use crate::components::ui::{
 };
 use crate::models::mcp_token::McpTokenSummary;
 use crate::utils::error::failure_message;
-use crate::utils::time::to_local;
+use crate::utils::time::{to_local, ymd};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
 fn date(at: Option<chrono::DateTime<chrono::Utc>>, none: &str) -> String {
-    at.map_or_else(
-        || none.to_string(),
-        |d| to_local(d).format("%Y-%m-%d").to_string(),
-    )
+    at.map_or_else(|| none.to_string(), |d| ymd(&to_local(d), '-'))
 }
 
 #[component]

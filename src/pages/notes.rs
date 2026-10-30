@@ -34,7 +34,7 @@ use crate::models::public_note::PublicNote;
 use crate::pages::not_found::{NotFound, PageLoadFailed};
 use crate::routes::Route;
 use crate::utils::error::is_not_found;
-use crate::utils::time::sleep_ms;
+use crate::utils::time::{hm, md, sleep_ms, ymd};
 
 /// 列表一页的条数，与服务端 `store::list` 一致。
 const PAGE_SIZE: i64 = 20;
@@ -736,7 +736,7 @@ fn DaySection(
         <section class="notes-day" aria-label=date.to_string()>
             <div class="notes-day-head">
                 <time class="notes-day-date tabular-nums" datetime=date.to_string()>
-                    {date.format("%m.%d").to_string()}
+                    {md(&date, '.')}
                 </time>
                 {move || {
                     today
@@ -758,7 +758,7 @@ fn MomentEntry(
     #[prop(into)] active_tag: Signal<String>,
     #[prop(into)] on_tag: Callback<String>,
 ) -> impl IntoView {
-    let time = note_time(&note).format("%H:%M").to_string();
+    let time = hm(&note_time(&note));
     let book = note.notebook_ids.first().copied();
     let href = note_route(&note.slug, book).to_string();
     let body = if note.content_html.is_empty() {
@@ -818,7 +818,7 @@ fn MomentEntry(
 /// 主题笔记：浮起卡片，衬线标题、两行摘要与「N 节 · 更新于」。
 #[component]
 fn TopicCard(note: Note, book: Option<(i32, String)>) -> impl IntoView {
-    let updated = note_time(&note).format("%m.%d").to_string();
+    let updated = md(&note_time(&note), '.');
     let meta = if note.sections > 0 {
         format!("{} 节 · 更新于 {updated}", note.sections)
     } else {
@@ -1116,7 +1116,7 @@ fn NotebookContent(
             <p class="notebook-meta tabular-nums">
                 <span>{format!("{} 篇", book.note_count)}</span>
                 <span>"按阅读顺序编排"</span>
-                <span>{format!("更新于 {}", book.updated_at.format("%m.%d"))}</span>
+                <span>{format!("更新于 {}", md(&book.updated_at, '.'))}</span>
             </p>
             {move || {
                 first_note()
@@ -1203,7 +1203,7 @@ fn NotebookBack() -> impl IntoView {
 
 #[component]
 fn NotebookEntry(note: Note, number: usize, book: i32) -> impl IntoView {
-    let updated = note_time(&note).format("%m.%d").to_string();
+    let updated = md(&note_time(&note), '.');
     let meta = match note.kind {
         NoteKind::Topic if note.sections > 0 => {
             format!("主题笔记 · {} 节 · 更新于 {updated}", note.sections)
@@ -1447,8 +1447,8 @@ pub fn NoteDocument(
 ) -> impl IntoView {
     let context = context.get_untracked();
     let title = note.display_title();
-    let created = note.created_at.format("%Y.%m.%d").to_string();
-    let updated = note.updated_at.format("%m.%d").to_string();
+    let created = ymd(&note.created_at, '.');
+    let updated = md(&note.updated_at, '.');
     let book = context.as_ref().map(|c| c.notebook.id);
     let sheet_open = RwSignal::new(false);
 

@@ -13,8 +13,23 @@ pub struct PublicPost {
     pub slug: String,
     pub summary: Option<String>,
     pub content_html: Option<String>,
+    #[cfg_attr(
+        target_arch = "wasm32",
+        serde(
+            default,
+            deserialize_with = "crate::models::rfc3339::deserialize_option"
+        )
+    )]
     pub published_at: Option<DateTime<Utc>>,
+    #[cfg_attr(
+        target_arch = "wasm32",
+        serde(deserialize_with = "crate::models::rfc3339::deserialize")
+    )]
     pub created_at: DateTime<Utc>,
+    #[cfg_attr(
+        target_arch = "wasm32",
+        serde(deserialize_with = "crate::models::rfc3339::deserialize")
+    )]
     pub updated_at: DateTime<Utc>,
     pub tags: Vec<String>,
     pub cover_image: Option<String>,

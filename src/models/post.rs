@@ -73,12 +73,34 @@ pub struct Post {
     /// 文章发布状态。
     pub status: PostStatus,
     /// 正式发布时间，None 表示尚未发布。
+    #[cfg_attr(
+        target_arch = "wasm32",
+        serde(
+            default,
+            deserialize_with = "crate::models::rfc3339::deserialize_option"
+        )
+    )]
     pub published_at: Option<DateTime<Utc>>,
     /// 创建时间。
+    #[cfg_attr(
+        target_arch = "wasm32",
+        serde(deserialize_with = "crate::models::rfc3339::deserialize")
+    )]
     pub created_at: DateTime<Utc>,
     /// 最后更新时间。
+    #[cfg_attr(
+        target_arch = "wasm32",
+        serde(deserialize_with = "crate::models::rfc3339::deserialize")
+    )]
     pub updated_at: DateTime<Utc>,
     /// 软删除时间，None 表示未删除。仅回收站查询填充。
+    #[cfg_attr(
+        target_arch = "wasm32",
+        serde(
+            default,
+            deserialize_with = "crate::models::rfc3339::deserialize_option"
+        )
+    )]
     pub deleted_at: Option<DateTime<Utc>>,
     /// 关联标签列表。
     pub tags: Vec<String>,
@@ -165,12 +187,34 @@ pub struct PostListItem {
     /// 文章发布状态。
     pub status: PostStatus,
     /// 正式发布时间，None 表示尚未发布。
+    #[cfg_attr(
+        target_arch = "wasm32",
+        serde(
+            default,
+            deserialize_with = "crate::models::rfc3339::deserialize_option"
+        )
+    )]
     pub published_at: Option<DateTime<Utc>>,
     /// 创建时间。
+    #[cfg_attr(
+        target_arch = "wasm32",
+        serde(deserialize_with = "crate::models::rfc3339::deserialize")
+    )]
     pub created_at: DateTime<Utc>,
     /// 最后更新时间。
+    #[cfg_attr(
+        target_arch = "wasm32",
+        serde(deserialize_with = "crate::models::rfc3339::deserialize")
+    )]
     pub updated_at: DateTime<Utc>,
     /// 软删除时间，None 表示未删除。仅回收站查询填充。
+    #[cfg_attr(
+        target_arch = "wasm32",
+        serde(
+            default,
+            deserialize_with = "crate::models::rfc3339::deserialize_option"
+        )
+    )]
     pub deleted_at: Option<DateTime<Utc>>,
     /// 关联标签列表。
     pub tags: Vec<String>,
@@ -198,8 +242,16 @@ pub struct FeedItem {
     /// 渲染后的 HTML 内容，可选（历史文章可能为空）。
     pub content_html: Option<String>,
     /// 正式发布时间（已发布文章必有值，行映射时回退 updated_at）。
+    #[cfg_attr(
+        target_arch = "wasm32",
+        serde(deserialize_with = "crate::models::rfc3339::deserialize")
+    )]
     pub published_at: DateTime<Utc>,
     /// 最后更新时间。
+    #[cfg_attr(
+        target_arch = "wasm32",
+        serde(deserialize_with = "crate::models::rfc3339::deserialize")
+    )]
     pub updated_at: DateTime<Utc>,
     /// 关联标签列表。
     pub tags: Vec<String>,

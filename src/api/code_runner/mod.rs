@@ -69,6 +69,10 @@ pub struct ExecTask {
     pub status: ExecStatus,
     /// 人类可读的当前阶段描述（如「启动容器」「执行完毕」）。
     pub stage: String,
+    #[cfg_attr(
+        target_arch = "wasm32",
+        serde(deserialize_with = "crate::models::rfc3339::deserialize")
+    )]
     pub created_at: DateTime<Utc>,
     /// 终态时填充。
     pub result: Option<ExecResult>,

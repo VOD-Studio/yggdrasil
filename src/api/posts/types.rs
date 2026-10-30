@@ -117,6 +117,13 @@ pub struct PostSuggestion {
     /// 摘要，可选。
     pub summary: Option<String>,
     /// 发布时间。
+    #[cfg_attr(
+        target_arch = "wasm32",
+        serde(
+            default,
+            deserialize_with = "crate::models::rfc3339::deserialize_option"
+        )
+    )]
     pub published_at: Option<chrono::DateTime<chrono::Utc>>,
     /// 标签名（按名称排序）。
     pub tags: Vec<String>,

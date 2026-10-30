@@ -236,11 +236,7 @@ fn WriteEditor(
             .published_at
             .get()
             .filter(|_| published.get())
-            .map(|at| {
-                crate::utils::time::to_local(at)
-                    .format("%Y.%m.%d")
-                    .to_string()
-            })
+            .map(|at| crate::utils::time::ymd(&crate::utils::time::to_local(at), '.'))
     };
     let saved_slug = move || state.saved.with(|s| s.slug.clone());
 

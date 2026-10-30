@@ -29,6 +29,10 @@ pub struct LogEntry {
     /// 数据库主键（按 id 游标分页）。SSE 实时事件尚未落库，恒为 0。
     pub id: i64,
     /// 事件捕获时刻（UTC）。
+    #[cfg_attr(
+        target_arch = "wasm32",
+        serde(deserialize_with = "crate::models::rfc3339::deserialize")
+    )]
     pub ts: DateTime<Utc>,
     /// 级别大写：ERROR / WARN / INFO / DEBUG / TRACE。
     pub level: String,

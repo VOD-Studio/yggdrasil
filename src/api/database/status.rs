@@ -31,6 +31,13 @@ pub struct DbStatus {
     /// 已应用的最新迁移版本（`schema_migrations.version`）。
     pub migration_version: Option<String>,
     /// 最新迁移的应用时间。
+    #[cfg_attr(
+        target_arch = "wasm32",
+        serde(
+            default,
+            deserialize_with = "crate::models::rfc3339::deserialize_option"
+        )
+    )]
     pub migration_applied_at: Option<DateTime<Utc>>,
     /// 用户表清单（按总大小降序）。
     pub tables: Vec<TableInfo>,
@@ -51,7 +58,21 @@ pub struct TableInfo {
     pub table_size_bytes: i64,
     pub index_size_bytes: i64,
     pub total_size_bytes: i64,
+    #[cfg_attr(
+        target_arch = "wasm32",
+        serde(
+            default,
+            deserialize_with = "crate::models::rfc3339::deserialize_option"
+        )
+    )]
     pub last_vacuum: Option<DateTime<Utc>>,
+    #[cfg_attr(
+        target_arch = "wasm32",
+        serde(
+            default,
+            deserialize_with = "crate::models::rfc3339::deserialize_option"
+        )
+    )]
     pub last_analyze: Option<DateTime<Utc>>,
     pub dead_tuples: i64,
     pub live_tuples: i64,

@@ -24,7 +24,7 @@ use crate::components::ui::{
 };
 use crate::models::comment::{AdminComment, CommentStatus};
 use crate::utils::error::failure_message;
-use crate::utils::time::to_local;
+use crate::utils::time::{hm, to_local, ymd};
 
 /// 每页评论数，与服务端列表接口一致。
 const COMMENTS_PER_PAGE: i32 = 20;
@@ -535,9 +535,10 @@ fn CommentItem(
                 .trim_end_matches('/')
                 .to_string()
         });
-    let when = to_local(comment.created_at)
-        .format("%Y-%m-%d %H:%M")
-        .to_string();
+    let when = {
+        let t = to_local(comment.created_at);
+        format!("{} {}", ymd(&t, '-'), hm(&t))
+    };
     let actions: &[(&'static str, &'static str)] = match comment.status {
         CommentStatus::Pending => &[
             ("approved", "通过"),

@@ -89,9 +89,10 @@ pub(super) fn TokenDialog(token: OpenToken, #[prop(into)] on_close: Callback<()>
 
     let summary = &token.summary;
     let expiry = summary.expires_at.map_or("永不过期".to_string(), |e| {
-        crate::utils::time::to_local(e)
-            .format("%Y-%m-%d 到期")
-            .to_string()
+        format!(
+            "{} 到期",
+            crate::utils::time::ymd(&crate::utils::time::to_local(e), '-')
+        )
     });
     let line = format!(
         "{} · {} · 笔记{} · {expiry}",

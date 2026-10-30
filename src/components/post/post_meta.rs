@@ -5,6 +5,7 @@
 use leptos::prelude::*;
 
 use crate::models::post::PostHeaderData;
+use crate::utils::time::ymd;
 
 /// 文章元信息组件。
 ///
@@ -16,8 +17,8 @@ use crate::models::post::PostHeaderData;
 #[component]
 pub fn PostMeta(post: PostHeaderData) -> impl IntoView {
     let at = post.published_at.unwrap_or(post.created_at);
-    let datetime = at.format("%Y-%m-%d").to_string();
-    let date = at.format("%Y.%m.%d").to_string();
+    let datetime = ymd(&at, '-');
+    let date = ymd(&at, '.');
     let words = group_digits(post.word_count);
     let reading = format!("{} 分钟", post.reading_time);
     let words = format!("{words} 字");

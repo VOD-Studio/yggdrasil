@@ -269,7 +269,7 @@ fn entry(item: &Item, query: &str) -> PaletteEntry {
                 .map(|s| snippet(s, query, 18)),
             meta: post
                 .published_at
-                .map(|d| d.format("%Y.%m.%d").to_string())
+                .map(|d| crate::utils::time::ymd(&d, '.'))
                 .unwrap_or_default(),
             mono_meta: true,
             highlight_hits: true,

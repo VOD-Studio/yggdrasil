@@ -211,7 +211,7 @@ fn tag_summary(posts: &[PostListItem], total: i64) -> String {
     {
         Some(latest) => format!(
             "{total} 篇文章，最近一篇写于 {}。",
-            latest.format("%Y.%m.%d")
+            crate::utils::time::ymd(&latest, '.')
         ),
         None => "还没有文章。".to_string(),
     }

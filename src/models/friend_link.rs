@@ -13,6 +13,14 @@ pub struct FriendLink {
     pub description: String,
     pub sort_order: i32,
     pub is_active: bool,
+    #[cfg_attr(
+        target_arch = "wasm32",
+        serde(deserialize_with = "crate::models::rfc3339::deserialize")
+    )]
     pub created_at: DateTime<Utc>,
+    #[cfg_attr(
+        target_arch = "wasm32",
+        serde(deserialize_with = "crate::models::rfc3339::deserialize")
+    )]
     pub updated_at: DateTime<Utc>,
 }

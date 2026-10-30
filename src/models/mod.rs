@@ -26,6 +26,9 @@ pub mod post;
 pub mod public_note;
 /// 公开阅读页的精简传输模型。
 pub mod public_post;
+/// 浏览器端 `DateTime<Utc>` 的严格 RFC 3339 反序列化（不带 chrono 通用解析器）。
+#[cfg(any(target_arch = "wasm32", test))]
+pub mod rfc3339;
 /// 回收站与站点配置模型。
 pub mod settings;
 /// 分享图的展示内容与图片地址版本号。

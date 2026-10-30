@@ -45,6 +45,10 @@ pub struct SessionUser {
     /// 用户角色。
     pub role: UserRole,
     /// 账户创建时间。
+    #[cfg_attr(
+        target_arch = "wasm32",
+        serde(deserialize_with = "crate::models::rfc3339::deserialize")
+    )]
     pub created_at: DateTime<Utc>,
     /// 会话世代号，签发 session 时记录；与 users 表当前值不一致则 session 失效。
     pub session_generation: i32,
@@ -66,6 +70,10 @@ pub struct PublicUser {
     /// 用户角色。
     pub role: UserRole,
     /// 账户创建时间。
+    #[cfg_attr(
+        target_arch = "wasm32",
+        serde(deserialize_with = "crate::models::rfc3339::deserialize")
+    )]
     pub created_at: DateTime<Utc>,
 }
 

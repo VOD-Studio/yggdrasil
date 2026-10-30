@@ -31,7 +31,7 @@ use crate::hooks::query::use_paginated;
 use crate::models::post::{PostListItem, PostStats, PostStatus};
 use crate::routes::Route;
 use crate::utils::error::failure_message;
-use crate::utils::time::to_local;
+use crate::utils::time::{hm, to_local, ymd};
 
 /// 每页展示的文章数量。
 const POSTS_PER_PAGE: i32 = 20;
@@ -740,9 +740,10 @@ fn PostRow(
     #[prop(into)] on_action: Callback<(PostListItem, &'static str)>,
 ) -> impl IntoView {
     let published = post.status == PostStatus::Published;
-    let date = post
-        .published_at
-        .map(|d| to_local(d).format("%Y-%m-%d %H:%M").to_string());
+    let date = post.published_at.map(|d| {
+        let t = to_local(d);
+        format!("{} {}", ymd(&t, '-'), hm(&t))
+    });
     let (tags, more) = tag_summary(&post.tags);
     let mut copy = MenuItem::new("copy", "复制链接").icon(IconName::Link);
     if !published {

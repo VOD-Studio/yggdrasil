@@ -64,8 +64,23 @@ pub struct Note {
     pub toc_html: String,
     pub summary: String,
     pub tags: Vec<String>,
+    #[cfg_attr(
+        target_arch = "wasm32",
+        serde(deserialize_with = "crate::models::rfc3339::deserialize")
+    )]
     pub created_at: DateTime<Utc>,
+    #[cfg_attr(
+        target_arch = "wasm32",
+        serde(deserialize_with = "crate::models::rfc3339::deserialize")
+    )]
     pub updated_at: DateTime<Utc>,
+    #[cfg_attr(
+        target_arch = "wasm32",
+        serde(
+            default,
+            deserialize_with = "crate::models::rfc3339::deserialize_option"
+        )
+    )]
     pub published_at: Option<DateTime<Utc>>,
     /// 仅管理接口填充。公开接口不暴露工作稿或知识库版本。
     #[serde(default)]
@@ -73,6 +88,10 @@ pub struct Note {
     #[serde(default)]
     pub knowledge_version: Option<i32>,
     #[serde(default)]
+    #[cfg_attr(
+        target_arch = "wasm32",
+        serde(deserialize_with = "crate::models::rfc3339::deserialize_option")
+    )]
     pub deleted_at: Option<DateTime<Utc>>,
     #[serde(default)]
     pub notebook_ids: Vec<i32>,
@@ -141,8 +160,19 @@ pub struct Notebook {
     pub title: String,
     pub description: String,
     pub is_public: bool,
+    #[cfg_attr(
+        target_arch = "wasm32",
+        serde(
+            default,
+            deserialize_with = "crate::models::rfc3339::deserialize_option"
+        )
+    )]
     pub archived_at: Option<DateTime<Utc>>,
     pub note_count: i64,
+    #[cfg_attr(
+        target_arch = "wasm32",
+        serde(deserialize_with = "crate::models::rfc3339::deserialize")
+    )]
     pub updated_at: DateTime<Utc>,
 }
 
@@ -241,6 +271,10 @@ pub struct NotebookInput {
 pub struct NoteRevision {
     pub version: i32,
     pub title: String,
+    #[cfg_attr(
+        target_arch = "wasm32",
+        serde(deserialize_with = "crate::models::rfc3339::deserialize")
+    )]
     pub created_at: DateTime<Utc>,
 }
 

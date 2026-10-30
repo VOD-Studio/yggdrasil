@@ -98,9 +98,34 @@ pub struct McpToken {
     /// 明文 SHA-256 hex。仅服务端查找用，不向前端暴露。
     #[serde(skip)]
     pub token_hash: String,
+    #[cfg_attr(
+        target_arch = "wasm32",
+        serde(deserialize_with = "crate::models::rfc3339::deserialize")
+    )]
     pub created_at: chrono::DateTime<chrono::Utc>,
+    #[cfg_attr(
+        target_arch = "wasm32",
+        serde(
+            default,
+            deserialize_with = "crate::models::rfc3339::deserialize_option"
+        )
+    )]
     pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
+    #[cfg_attr(
+        target_arch = "wasm32",
+        serde(
+            default,
+            deserialize_with = "crate::models::rfc3339::deserialize_option"
+        )
+    )]
     pub last_used_at: Option<chrono::DateTime<chrono::Utc>>,
+    #[cfg_attr(
+        target_arch = "wasm32",
+        serde(
+            default,
+            deserialize_with = "crate::models::rfc3339::deserialize_option"
+        )
+    )]
     pub revoked_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
@@ -112,9 +137,34 @@ pub struct McpTokenSummary {
     pub scope: TokenScope,
     #[serde(default)]
     pub notes: NoteGrant,
+    #[cfg_attr(
+        target_arch = "wasm32",
+        serde(deserialize_with = "crate::models::rfc3339::deserialize")
+    )]
     pub created_at: chrono::DateTime<chrono::Utc>,
+    #[cfg_attr(
+        target_arch = "wasm32",
+        serde(
+            default,
+            deserialize_with = "crate::models::rfc3339::deserialize_option"
+        )
+    )]
     pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
+    #[cfg_attr(
+        target_arch = "wasm32",
+        serde(
+            default,
+            deserialize_with = "crate::models::rfc3339::deserialize_option"
+        )
+    )]
     pub last_used_at: Option<chrono::DateTime<chrono::Utc>>,
+    #[cfg_attr(
+        target_arch = "wasm32",
+        serde(
+            default,
+            deserialize_with = "crate::models::rfc3339::deserialize_option"
+        )
+    )]
     pub revoked_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
@@ -164,9 +214,34 @@ impl<'de> Deserialize<'de> for CreateTokenResponse {
             scope: TokenScope,
             #[serde(default)]
             notes: NoteGrant,
+            #[cfg_attr(
+                target_arch = "wasm32",
+                serde(deserialize_with = "crate::models::rfc3339::deserialize")
+            )]
             created_at: DateTime<Utc>,
+            #[cfg_attr(
+                target_arch = "wasm32",
+                serde(
+                    default,
+                    deserialize_with = "crate::models::rfc3339::deserialize_option"
+                )
+            )]
             expires_at: Option<DateTime<Utc>>,
+            #[cfg_attr(
+                target_arch = "wasm32",
+                serde(
+                    default,
+                    deserialize_with = "crate::models::rfc3339::deserialize_option"
+                )
+            )]
             last_used_at: Option<DateTime<Utc>>,
+            #[cfg_attr(
+                target_arch = "wasm32",
+                serde(
+                    default,
+                    deserialize_with = "crate::models::rfc3339::deserialize_option"
+                )
+            )]
             revoked_at: Option<DateTime<Utc>>,
             plaintext: String,
         }

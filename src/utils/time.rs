@@ -8,7 +8,7 @@
 //! 适配预渲染，前端通过 `format_relative_time_iso` 适配待审核评论，二者都复用
 //! `relative_label_inner`，保证分档口径一致。
 
-use chrono::DateTime;
+use chrono::{DateTime, Datelike, Timelike};
 
 /// 异步睡眠指定毫秒数。
 ///
@@ -184,9 +184,7 @@ fn relative_label_inner(
     };
 
     // 绝对日期：优先解析 ISO；解析失败时退化为空串，避免组件报错。
-    let absolute = dt
-        .map(|d| d.format("%Y-%m-%d").to_string())
-        .unwrap_or_default();
+    let absolute = dt.map(|d| ymd(d, '-')).unwrap_or_default();
 
     let label = if label.is_empty() {
         absolute.clone()
@@ -194,6 +192,47 @@ fn relative_label_inner(
         label
     };
     (label, absolute)
+}
+
+/// `2026.10.30` / `2026-10-30`：代替 `format("%Y{sep}%m{sep}%d")`（客户端不带 strftime 解析器）。
+pub fn ymd(d: &impl Datelike, sep: char) -> String {
+    ymd_parts(d.year(), d.month(), d.day(), sep)
+}
+
+fn ymd_parts(y: i32, m: u32, d: u32, sep: char) -> String {
+    format!("{y:04}{sep}{m:02}{sep}{d:02}")
+}
+
+/// `10.30` / `10-30`：代替 `format("%m{sep}%d")`。
+pub fn md(d: &impl Datelike, sep: char) -> String {
+    md_parts(d.month(), d.day(), sep)
+}
+
+fn md_parts(m: u32, d: u32, sep: char) -> String {
+    format!("{m:02}{sep}{d:02}")
+}
+
+/// `08:05`：代替 `format("%H:%M")`。
+pub fn hm(t: &impl Timelike) -> String {
+    hm_parts(t.hour(), t.minute())
+}
+
+fn hm_parts(h: u32, m: u32) -> String {
+    format!("{h:02}:{m:02}")
+}
+
+/// `08:05:09.123`：代替 `format("%H:%M:%S%.3f")`（闰秒的纳秒值按 chrono 取模）。
+pub fn hms_millis(t: &impl Timelike) -> String {
+    hms_millis_parts(
+        t.hour(),
+        t.minute(),
+        t.second(),
+        t.nanosecond() % 1_000_000_000 / 1_000_000,
+    )
+}
+
+fn hms_millis_parts(h: u32, m: u32, s: u32, ms: u32) -> String {
+    format!("{h:02}:{m:02}:{s:02}.{ms:03}")
 }
 
 /// 前端友好的相对时间格式化：返回相对文本，用于展示待审核评论的创建时间。
@@ -278,5 +317,37 @@ mod tests {
     fn format_relative_time_iso_invalid_iso_falls_back() {
         // 解析失败退化为"刚刚"，不 panic。
         assert_eq!(format_relative_time_iso("not-a-date"), "刚刚");
+    }
+
+    #[test]
+    fn date_helpers_match_chrono_strftime() {
+        use chrono::{FixedOffset, NaiveDate, TimeZone, Utc};
+        let utc = Utc.with_ymd_and_hms(2026, 1, 5, 8, 3, 9).unwrap()
+            + chrono::Duration::nanoseconds(123_456_789);
+        let east8 = FixedOffset::east_opt(8 * 3600)
+            .unwrap()
+            .with_ymd_and_hms(2026, 12, 31, 23, 59, 59)
+            .unwrap();
+        for (helper, chrono) in [
+            (ymd(&utc, '.'), utc.format("%Y.%m.%d").to_string()),
+            (ymd(&utc, '-'), utc.format("%Y-%m-%d").to_string()),
+            (md(&utc, '.'), utc.format("%m.%d").to_string()),
+            (md(&utc, '-'), utc.format("%m-%d").to_string()),
+            (hm(&utc), utc.format("%H:%M").to_string()),
+            (hms_millis(&utc), utc.format("%H:%M:%S%.3f").to_string()),
+            (ymd(&east8, '.'), east8.format("%Y.%m.%d").to_string()),
+            (ymd(&east8, '-'), east8.format("%Y-%m-%d").to_string()),
+            (md(&east8, '.'), east8.format("%m.%d").to_string()),
+            (md(&east8, '-'), east8.format("%m-%d").to_string()),
+            (hm(&east8), east8.format("%H:%M").to_string()),
+            (hms_millis(&east8), east8.format("%H:%M:%S%.3f").to_string()),
+        ] {
+            assert_eq!(helper, chrono);
+        }
+        let day = NaiveDate::from_ymd_opt(2026, 10, 30).unwrap();
+        assert_eq!(ymd(&day, '.'), day.format("%Y.%m.%d").to_string());
+        assert_eq!(ymd(&day, '-'), day.format("%Y-%m-%d").to_string());
+        assert_eq!(md(&day, '.'), day.format("%m.%d").to_string());
+        assert_eq!(md(&day, '-'), day.format("%m-%d").to_string());
     }
 }

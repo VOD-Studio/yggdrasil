@@ -664,11 +664,7 @@ fn HomeIndex(current_page: i32, posts: Vec<PostListItem>, total: i64) -> impl In
 
 #[component]
 fn HomeRow(post: PostListItem) -> impl IntoView {
-    let date = post
-        .published_at
-        .unwrap_or(post.created_at)
-        .format("%m.%d")
-        .to_string();
+    let date = crate::utils::time::md(&post.published_at.unwrap_or(post.created_at), '.');
     let summary = post
         .summary
         .as_ref()
@@ -718,11 +714,8 @@ fn HomeCorners(notes: Vec<Note>, tags: Vec<Tag>) -> impl IntoView {
                     book: String::new(),
                 }
                 .to_string();
-                let date = note
-                    .published_at
-                    .unwrap_or(note.updated_at)
-                    .format("%m.%d")
-                    .to_string();
+                let date =
+                    crate::utils::time::md(&note.published_at.unwrap_or(note.updated_at), '.');
                 view! {
                     <li>
                         <a href=href>
@@ -851,7 +844,7 @@ fn post_time(post: &PostListItem) -> DateTime<Utc> {
 }
 
 fn post_date(post: &PostListItem) -> String {
-    post_time(post).format("%Y.%m.%d").to_string()
+    crate::utils::time::ymd(&post_time(post), '.')
 }
 
 #[derive(Debug, PartialEq)]

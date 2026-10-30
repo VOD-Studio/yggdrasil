@@ -22,8 +22,16 @@ pub struct PublicNote {
     pub content_html: String,
     pub toc_html: String,
     pub tags: Vec<String>,
+    #[cfg_attr(
+        target_arch = "wasm32",
+        serde(deserialize_with = "crate::models::rfc3339::deserialize")
+    )]
     pub created_at: DateTime<Utc>,
     /// 已发布修订版本的创建时间（列表与详情的「更新于」语义）。
+    #[cfg_attr(
+        target_arch = "wasm32",
+        serde(deserialize_with = "crate::models::rfc3339::deserialize")
+    )]
     pub updated_at: DateTime<Utc>,
     /// 目录的一级小节数（服务端从 `toc_html` 解析），详情 meta 显示「N 节」。
     #[serde(default)]

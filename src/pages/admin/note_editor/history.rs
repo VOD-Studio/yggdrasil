@@ -2,7 +2,7 @@ use super::{save::restore_revision, state::EditorState};
 use crate::api::notes::note_history;
 use crate::models::note::NoteRevision;
 use crate::utils::error::failure_message;
-use crate::utils::time::to_local;
+use crate::utils::time::{hm, md, to_local};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
@@ -76,9 +76,8 @@ pub(super) fn HistoryPanel(
                                 .into_iter()
                                 .map(|revision| {
                                     let version = revision.version;
-                                    let when = to_local(revision.created_at)
-                                        .format("%m-%d %H:%M")
-                                        .to_string();
+                                    let t = to_local(revision.created_at);
+                                    let when = format!("{} {}", md(&t, '-'), hm(&t));
                                     let title = (!revision.title.is_empty())
                                         .then(|| format!(" · {}", revision.title));
                                     view! {

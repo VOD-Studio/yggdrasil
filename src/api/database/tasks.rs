@@ -42,6 +42,10 @@ pub struct TaskProgress {
     pub detail: Option<String>,
     pub status: TaskStatus,
     pub error: Option<String>,
+    #[cfg_attr(
+        target_arch = "wasm32",
+        serde(deserialize_with = "crate::models::rfc3339::deserialize")
+    )]
     pub created_at: DateTime<Utc>,
     /// 完成后的备份文件名（下载/恢复用）。
     pub result_filename: Option<String>,

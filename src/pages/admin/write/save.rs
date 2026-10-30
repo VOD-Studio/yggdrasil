@@ -167,9 +167,9 @@ pub(super) fn submit(state: WriteEditorState, toast: Toaster, status: &'static s
                     if status == "published" && state.published_at.get_untracked().is_none() {
                         state.published_at.set(Some(chrono::Utc::now()));
                     }
-                    state.saved_at.set(Some(
-                        crate::utils::time::local_now().format("%H:%M").to_string(),
-                    ));
+                    state.saved_at.set(Some(crate::utils::time::hm(
+                        &crate::utils::time::local_now(),
+                    )));
                     save.set(SaveState::Idle);
                     match (was_published, status == "published") {
                         (false, true) => toast.success("已发布"),

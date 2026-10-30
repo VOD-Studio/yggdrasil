@@ -3,7 +3,7 @@ use crate::api::logs::get_logs;
 use crate::components::skeletons::{atoms::SkeletonBox, delayed_skeleton::DelayedSkeleton};
 use crate::components::ui::{button_class, ButtonSize, ButtonVariant};
 use crate::models::log::LogEntry;
-use crate::utils::time::to_local;
+use crate::utils::time::{hms_millis, to_local};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
@@ -359,7 +359,7 @@ fn render_row(row: LogRow, on_pick_target: Callback<String>) -> AnyView {
             view! { <div class="logs-gap">{gap_text}</div> }.into_any()
         }
         LogRowKind::Entry(entry) => {
-            let time_hms = to_local(entry.ts).format("%H:%M:%S%.3f").to_string();
+            let time_hms = hms_millis(&to_local(entry.ts));
             let time_full = to_local(entry.ts).to_rfc3339();
             let LogEntry {
                 level,

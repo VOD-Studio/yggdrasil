@@ -304,7 +304,7 @@ fn archive_summary(rows: &[IndexRow], total: i64, has_more: bool) -> String {
         }
         (Some(newest), _) => format!(
             "{total} 篇文章，最近一篇写于 {}。",
-            newest.date.format("%Y.%m.%d")
+            crate::utils::time::ymd(&newest.date, '.')
         ),
         _ => "还没有文章。".to_string(),
     }
@@ -494,8 +494,8 @@ fn ArchiveRow(row: IndexRow, hide_tag: Option<String>) -> impl IntoView {
         .cloned()
         .collect::<Vec<_>>()
         .join(" · ");
-    let datetime = row.date.format("%Y-%m-%d").to_string();
-    let date = row.date.format("%m.%d").to_string();
+    let datetime = crate::utils::time::ymd(&row.date, '-');
+    let date = crate::utils::time::md(&row.date, '.');
     let tags = (!tags.is_empty()).then(|| view! { <span class="archive-entry-tags">{tags}</span> });
     view! {
         <a

@@ -211,7 +211,7 @@ fn entry(item: &Item) -> PaletteEntry {
                 PostStatus::Draft => "草稿".to_string(),
                 PostStatus::Published => post
                     .published_at
-                    .map(|d| d.format("%Y.%m.%d").to_string())
+                    .map(|d| crate::utils::time::ymd(&d, '.'))
                     .unwrap_or_default(),
             },
         ),

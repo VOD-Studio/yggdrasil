@@ -30,7 +30,7 @@ use crate::models::post::PostListItem;
 use crate::models::settings::TrashSettings;
 use crate::routes::Route;
 use crate::utils::error::failure_message;
-use crate::utils::time::{now_millis, to_local};
+use crate::utils::time::{now_millis, to_local, ymd};
 
 /// 每页展示的回收站文章数量。
 const TRASH_PER_PAGE: i32 = 20;
@@ -590,9 +590,7 @@ fn TrashRow(
     #[prop(into)] on_restore: Callback<i32>,
     #[prop(into)] on_purge: Callback<(i32, String)>,
 ) -> impl IntoView {
-    let deleted = post
-        .deleted_at
-        .map(|d| to_local(d).format("%Y-%m-%d").to_string());
+    let deleted = post.deleted_at.map(|d| ymd(&to_local(d), '-'));
     let id = post.id;
     let title = post.title.clone();
     let checkbox_label = format!("选择《{}》", post.title);
