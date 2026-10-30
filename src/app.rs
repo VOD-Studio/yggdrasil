@@ -195,6 +195,7 @@ pub fn App() -> impl IntoView {
     provide_context(UserContext::new());
     provide_context(RwSignal::new(ShowcaseFilters::default()));
     provide_toaster();
+    crate::hooks::ssr_resource::provide_route_data_registry();
     // 路由器是否正在切换：RouteMarker 据此避开切换中的无效通知，RouteProgress 据此显示进度条。
     let (is_routing, set_is_routing) = signal(false);
 

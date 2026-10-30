@@ -42,7 +42,6 @@ use std::marker::PhantomData;
 use std::pin::Pin;
 use std::sync::Arc;
 
-#[cfg(target_arch = "wasm32")]
 use std::any::TypeId;
 
 use leptos::prelude::*;
@@ -166,6 +165,8 @@ where
 ///
 /// 悬停预取按 `fetcher` 的类型加 `source` 的值查缓存：公开页面传具名函数项，
 /// 无参函数用 [`unit()`] 包装；闭包字面量不会命中预取（见模块文档）。
+///
+/// SSR 时同一请求内 (fetcher 类型, source) 相同的调用复用同一个资源（见 `RouteDataRegistry`）。
 #[track_caller]
 pub fn route_data<S, T, F, Fut>(
     source: impl Fn() -> S + Send + Sync + 'static,
@@ -198,10 +199,55 @@ where
             Box::pin(async move { fut.await.raw }) as RawFuture
         }
     });
+    #[cfg(not(target_arch = "wasm32"))]
+    if let Some(registry) = use_context::<RouteDataRegistry>() {
+        let key = untrack(|| source());
+        let mut entries = registry.0.lock().unwrap_or_else(|e| e.into_inner());
+        let slot = entries
+            .iter()
+            .position(|(tid, k, _)| *tid == TypeId::of::<F>() && *k == key);
+        let raw = match slot {
+            Some(i) if !entries[i].2.is_disposed() => entries[i].2,
+            // 资源建在已丢弃的 owner 下：换一份新的。
+            Some(i) => {
+                let raw = erased_route_resource(source, fetch);
+                entries[i].2 = raw;
+                raw
+            }
+            None => {
+                let raw = erased_route_resource(source, fetch);
+                entries.push((TypeId::of::<F>(), key, raw));
+                raw
+            }
+        };
+        return RouteData {
+            raw,
+            _type: PhantomData,
+        };
+    }
     RouteData {
         raw: erased_route_resource(source, fetch),
         _type: PhantomData,
     }
+}
+
+/// SSR：本次请求已创建的路由数据资源，键为（取数函数类型, source 值）。
+///
+/// Suspense 在 SSR 时会遍历子树三次（两次 dry_resolve、一次 resolve），`<Outlet/>` 每次都会重新选择视图；
+/// `Lazy::choose` 只能取走一次预载数据，之后每次都重新调用 `LazyRoute::data()`。
+/// 不复用的话，同一份数据会被取三次、写进 HTML 三次，而客户端水合只会创建并读取第一份。
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone, Default)]
+struct RouteDataRegistry(Arc<std::sync::Mutex<Vec<RegistryEntry>>>);
+
+/// 登记表条目：（取数函数类型, source 值, 资源）。
+#[cfg(not(target_arch = "wasm32"))]
+type RegistryEntry = (TypeId, ErasedKey, Resource<RawJson, RawJsonCodec>);
+
+/// 在应用根部调用：SSR 时为本次请求建立路由数据登记表（见 [`route_data`]）。浏览器端不做任何事。
+pub fn provide_route_data_registry() {
+    #[cfg(not(target_arch = "wasm32"))]
+    provide_context(RouteDataRegistry::default());
 }
 
 /// 路由数据键：擦除 `source` 的具体类型，所有路由共用一份 `Resource` 实例化。

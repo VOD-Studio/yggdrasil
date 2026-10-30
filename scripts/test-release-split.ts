@@ -305,6 +305,14 @@ async function main() {
       '3 文章 SSR：200 且 <head> 含文章标题',
       first.status === 200 && /<title>[^<]*拆分验收 A/.test(head),
     );
+    const resolved = [...body.matchAll(/__RESOLVED_RESOURCES\[\d+\] = ("(?:[^"\\]|\\.)*")/g)].map(
+      (m) => m[1],
+    );
+    check(
+      '3 文章 SSR：每份路由数据只序列化一次',
+      resolved.length > 0 && new Set(resolved).size === resolved.length,
+      `${resolved.length} 份，去重后 ${new Set(resolved).size}`,
+    );
     // 只为当前路由预载视图分包（app::HydrationScriptsWithPreload）：不展开 SSR 期间调用过的
     // 取数函数分包（以前首页会展开数百条，与 CSS 抢带宽，见 docs/首屏性能实测-2026-10-28.md）。
     const homeBody = await (await fetch(`${base}/`)).text();
