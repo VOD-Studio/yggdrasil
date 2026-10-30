@@ -1,6 +1,6 @@
 /**
  * 主题切换时以点击位置为圆心，让新主题从小圆展开覆盖旧主题。
- * CSS 变量控制圆心与半径，异步换肤组件在新快照之前完成更新。
+ * CSS 变量控制圆心与半径，命令式换肤组件在新快照之前同步完成更新。
  * 与页面导航共享所有权，避免被打断的回调改变后续快照或主题。
  */
 
@@ -48,47 +48,14 @@ function applyDarkClass(isDark: boolean): void {
 }
 
 /**
- * 主题切换 registry:命令式 / 异步换肤组件注册的回调。
+ * 通知命令式换肤的组件(CodeMirror / xterm)切换主题。
  *
- * 与 THEME_CHANGE_EVENT 事件并存:
- * - 事件(CustomEvent):同步 dispatch,供 CodeMirror / xterm 等同步换肤组件用
- *   (它们在 listener 里同步 setTheme,被同一 reflow 捕获进 NEW 快照)。事件拿不到
- *   listener 返回值,fire-and-forget。
- * - registry:回调**可返回 Promise**,调用方(如 VT callback)能 await 它,等异步换肤
- *   组件(如 mermaid 的 render())完成。这是让异步渲染内容参与 VT 动画的关键——
- *   mermaid.render 是异步的,必须在 VT 拍 NEW 快照前完成,否则快照里仍是旧图。
+ * 同步 dispatch THEME_CHANGE_EVENT,它们在 listener 内同步 setTheme,被同一 reflow
+ * 捕获进 NEW 快照。Mermaid 图表由服务端渲染浅/深两份 SVG,靠 CSS 随 .dark 切换,
+ * 无需通知。
  */
-const themeChangeCallbacks = new Set<(isDark: boolean) => Promise<void> | void>();
-
-/** 注册主题切换回调,返回取消注册函数。回调可返回 Promise,调用方会等待它。 */
-export function onThemeChange(cb: (isDark: boolean) => Promise<void> | void): () => void {
-  themeChangeCallbacks.add(cb);
-  return () => themeChangeCallbacks.delete(cb);
-}
-
-/**
- * 通知命令式换肤的组件(CodeMirror / xterm / mermaid)切换主题。
- *
- * 双通道:
- * 1. 同步 dispatch THEME_CHANGE_EVENT(给 CodeMirror / xterm,它们在 listener 内
- *    同步 setTheme,被同一 reflow 捕获进 NEW 快照)。
- * 2. 遍历 registry 调每个 cb,收集返回的 Promise,返回聚合 Promise(VT callback
- *    await 它以等 mermaid 等异步换肤完成)。同步组件不返回值,聚合自动忽略。
- *
- * 返回聚合 Promise,调用方可选 await(走 VT 的路径必须 await,瞬切路径可不 await)。
- */
-function notifyThemeChange(isDark: boolean): Promise<void> {
+function notifyThemeChange(isDark: boolean): void {
   window.dispatchEvent(new CustomEvent(THEME_CHANGE_EVENT, { detail: { isDark } }));
-  const promises: Promise<void>[] = [];
-  themeChangeCallbacks.forEach((cb) => {
-    try {
-      const ret = cb(isDark);
-      if (ret) promises.push(ret.catch(() => {})); // 单个失败不中断聚合
-    } catch {
-      // 同步抛错的 cb 忽略,不中断其他回调
-    }
-  });
-  return Promise.all(promises).then(() => {});
 }
 
 /**
@@ -105,7 +72,7 @@ function notifyThemeChange(isDark: boolean): Promise<void> {
 export function applyResolvedTheme(isDark: boolean): void {
   // System preference changes also supersede any pending manual theme callback.
   const owner = beginTransition('theme');
-  void notifyThemeChange(isDark);
+  notifyThemeChange(isDark);
   applyDarkClass(isDark);
   owner.finish();
 }
@@ -117,13 +84,12 @@ export function startThemeTransition(x: number, y: number): void {
   const html = document.documentElement;
   const isDark = !html.classList.contains('dark');
   let committed = false;
-  const commit = (): Promise<void> => {
-    if (committed) return Promise.resolve();
+  const commit = (): void => {
+    if (committed) return;
     committed = true;
-    // Notify editors synchronously before flipping the class, then await Mermaid.
-    const asyncWork = notifyThemeChange(isDark);
+    // Notify editors synchronously before flipping the class.
+    notifyThemeChange(isDark);
     applyDarkClass(isDark);
-    return asyncWork;
   };
   const cleanup = () => {
     html.classList.remove('is-theme-transitioning');
@@ -134,12 +100,12 @@ export function startThemeTransition(x: number, y: number): void {
   owner.onCancel(() => {
     // skipTransition() still schedules the callback. Settle the requested color
     // now, so that callback can safely no-op after a newer route/theme takes over.
-    void commit();
+    commit();
     cleanup();
   });
 
   if (typeof document.startViewTransition !== 'function' || prefersReducedMotion()) {
-    void commit();
+    commit();
     owner.finish();
     return;
   }
@@ -150,12 +116,11 @@ export function startThemeTransition(x: number, y: number): void {
   html.classList.add('is-theme-transitioning');
 
   try {
-    const vt = document.startViewTransition(async () => {
+    const vt = document.startViewTransition(() => {
       if (!owner.isCurrent()) return;
-      const asyncWork = commit();
+      commit();
       // Capture both CSS-based and imperative editor colors in the same reflow.
       getComputedStyle(document.body).backgroundColor;
-      await asyncWork;
     });
     owner.attach(vt);
     const finish = () => {
@@ -166,7 +131,7 @@ export function startThemeTransition(x: number, y: number): void {
     void vt.finished.then(finish, finish);
   } catch {
     // Native snapshot setup can fail; changing the theme must still succeed.
-    void commit();
+    commit();
     cleanup();
     owner.finish();
   }

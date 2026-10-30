@@ -610,23 +610,3 @@ fn render_markdown_bad_math_does_not_break() {
         result.html
     );
 }
-
-#[test]
-fn render_markdown_mermaid_block_not_highlighted() {
-    // mermaid 块跳过 syntect 高亮：源码应是转义纯文本，不被 <span> 包裹。
-    // 前端 mermaid.ts 用 textContent 无损提取渲染成 SVG。
-    let result = render_markdown_enhanced("```mermaid\ngraph LR\n    A --> B\n```");
-    assert!(
-        result.html.contains(r#"class="language-mermaid""#),
-        "应保留 language-mermaid class, got: {}",
-        result.html
-    );
-    // 不应被 syntect 高亮（无 text plain span）。
-    assert!(
-        !result.html.contains("text plain"),
-        "mermaid 源码不应被 syntect 高亮, got: {}",
-        result.html
-    );
-    // 源码内容保留（HTML 转义后）。
-    assert!(result.html.contains("graph LR"));
-}

@@ -4,7 +4,7 @@ import type { EnhanceCall } from './enhance-queue';
 import { scrollToHash } from './hash-scroll';
 import { initPageReveal } from './page-entry';
 import { routeTransitions } from './route-transitions';
-import { applyResolvedTheme, onThemeChange, startThemeTransition } from './theme-transition';
+import { applyResolvedTheme, startThemeTransition } from './theme-transition';
 import { skipActiveAnimation } from './view-transition-lifecycle';
 import './style.css';
 
@@ -24,9 +24,6 @@ declare global {
     __routeTransitions: typeof routeTransitions;
     /** 打开弹窗前调用：过渡快照画在顶层之上，会盖住模态面板。 */
     __skipViewTransition: typeof skipActiveAnimation;
-    /** enhance 入口订阅 core 主题 registry 的桥接：两个 IIFE 各持一份 registry 会让
-     * mermaid 收不到通知，必须共用 core 这份。 */
-    __subscribeThemeChange: typeof onThemeChange;
     /** 增强调用队列：目标函数未定义时由 invoke_optional_global 入队，flush 丢弃已可
      * 执行的项。core 无条件建队，队列存在不代表本页会加载 enhance。 */
     __pendingEnhanceCalls: EnhanceCall[];
@@ -40,7 +37,6 @@ window.__scrollToHash = scrollToHash;
 window.__startThemeTransition = startThemeTransition;
 window.__applyResolvedTheme = applyResolvedTheme;
 window.__routeTransitions = routeTransitions;
-window.__subscribeThemeChange = onThemeChange;
 window.__skipViewTransition = skipActiveAnimation;
 
 // dev HTML 可能内联两次 IIFE：队列与 flush 都要求幂等（保留已入队项）。

@@ -18,7 +18,7 @@ use crate::components::code_runner::CodeRunner;
 use crate::components::enhance_assets::{EnhanceScript, LightboxAssets};
 use crate::infra::runner_config::ResourceLimits;
 #[cfg(target_arch = "wasm32")]
-use crate::utils::js::{invoke_optional_global, is_theme_transitioning};
+use crate::utils::js::invoke_optional_global;
 
 /// 内容片段：普通 HTML 文本，或一个可运行代码块。
 #[derive(Clone, PartialEq, Debug)]
@@ -190,16 +190,10 @@ pub fn PostContent(
 ) -> impl IntoView {
     let fragments = split_content_fragments_cached(&content_html);
 
-    // mermaid 流程图主题需随当前生效主题（light/dark）切换。读 resolved_theme 建立订阅：
-    // 主题变化时下方 Effect 重跑，重调 __initMermaid 传入新 theme；mermaid.ts 用
-    // dataset.mermaidTheme 记住上次渲染主题，检测到主题变化时按缓存源码重渲染
-    // （mermaid 颜色烤进 SVG 内联样式，无法靠 CSS 原地切主题）。
+    // 正文挂载后初始化交互脚本：不读取任何信号，只运行一次。
     #[cfg(target_arch = "wasm32")]
     {
-        let resolved_theme = crate::theme::use_resolved_theme();
-        // `prev` 为 None 即首次运行：scrollToHash 是首屏异步取数后的补救滚动，不应随主题切换
-        // 再次触发——否则切换主题会把页面跳回 URL hash 位置（即使 hash 已不在用户视野）。
-        Effect::new(move |prev: Option<()>| {
+        Effect::new(move || {
             let Some(window) = web_sys::window() else {
                 return;
             };
@@ -210,25 +204,8 @@ pub fn PostContent(
             // 调用 window.__initPostContent：函数不存在时静默跳过。
             invoke_optional_global(&window, "__initPostContent", &[selector.clone().into()]);
 
-            // mermaid 流程图懒加载渲染：扫描代码块，IntersectionObserver 视口可见时动态
-            // import /mermaid/mermaid.js 渲染成 SVG。读取主题既为传参也为建立订阅。
-            let theme_str: String = if resolved_theme.get() == crate::theme::ResolvedTheme::Dark {
-                "dark".into()
-            } else {
-                "light".into()
-            };
-            // VT 动画期间跳过：手动点击主题按钮时，__startThemeTransition 的 VT 回调内已通过
-            // onThemeChange registry 同步触发 mermaid 重渲染（被 VT 等待，出现在 NEW 快照里）。
-            // 本 Effect 在主题信号变化后立即触发——早于 VT 回调的异步执行，会抢先改实时 DOM，
-            // 表现为「圆形还没展开到流程图，流程图就瞬切」。主题过渡期间跳过，动画结束后
-            // 此 Effect 因 resolved 信号变化重跑，做幂等兜底。
-            if !is_theme_transitioning() {
-                invoke_optional_global(
-                    &window,
-                    "__initMermaid",
-                    &[selector.clone().into(), theme_str.into()],
-                );
-            }
+            // Mermaid 图表已由服务端渲染成浅/深两份 SVG（CSS 按主题切换），这里只绑定点击放大。
+            invoke_optional_global(&window, "__initMermaid", &[selector.clone().into()]);
 
             // 灯箱双保险契约：先设配置，若 lightbox.js 已加载则立即调用；
             // 否则 lightbox.js 加载完后其 IIFE 尾部读到配置自启动。
@@ -249,7 +226,7 @@ pub fn PostContent(
 
             // 内容挂载后若 URL 带 hash，滚动到对应标题：首屏渲染骨架屏阶段标题 DOM 缺失，
             // 浏览器原生 fragment-scroll 失效，此处标题已就绪，补一次。
-            if scope_id.is_none() && prev.is_none() {
+            if scope_id.is_none() {
                 invoke_optional_global(&window, "__scrollToHash", &[]);
             }
         });

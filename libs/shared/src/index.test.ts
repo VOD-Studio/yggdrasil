@@ -38,8 +38,8 @@ describe('assetUrl', () => {
   });
 
   it('按服务端下发的版本表给地址加版本号', () => {
-    versions('{"/mermaid/mermaid.js":"0123abcd"}');
-    expect(assetUrl('/mermaid/mermaid.js')).toBe('/mermaid/mermaid.js?v=0123abcd');
+    versions('{"/xterm/terminal.js":"0123abcd"}');
+    expect(assetUrl('/xterm/terminal.js')).toBe('/xterm/terminal.js?v=0123abcd');
   });
 
   it.each([
@@ -48,6 +48,6 @@ describe('assetUrl', () => {
     ['版本表损坏', '{'],
   ])('%s时原样返回地址', (_, text) => {
     if (text !== null) versions(text);
-    expect(assetUrl('/mermaid/mermaid.js')).toBe('/mermaid/mermaid.js');
+    expect(assetUrl('/xterm/terminal.js')).toBe('/xterm/terminal.js');
   });
 });

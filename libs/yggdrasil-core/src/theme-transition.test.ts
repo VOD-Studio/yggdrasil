@@ -11,7 +11,7 @@
  * 且事件在 applyDarkClass 之前触发(编辑器换肤先于 class 翻转,同一 reflow 捕获)。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { onThemeChange, THEME_CHANGE_EVENT } from './theme-transition';
+import { THEME_CHANGE_EVENT } from './theme-transition';
 import './index';
 import { beginTransition } from './view-transition-lifecycle';
 
@@ -198,66 +198,6 @@ describe('startThemeTransition', () => {
     expect(document.documentElement.classList.contains('dark')).toBe(false);
 
     window.removeEventListener(THEME_CHANGE_EVENT, listener);
-  });
-
-  it('onThemeChange:VT callback 等待 registry 注册的异步回调 Promise', async () => {
-    const cbRef: { cb: (() => Promise<void>) | null } = { cb: null };
-    Object.defineProperty(document, 'startViewTransition', {
-      value: (cb: () => Promise<void>) => {
-        cbRef.cb = cb;
-        return { ready: Promise.resolve(), finished: Promise.resolve(), skipTransition: () => {} };
-      },
-      configurable: true,
-      writable: true,
-    });
-
-    // registry 回调返回一个可控的 Promise,记录它是否在 callback resolve 前完成。
-    // resolveAsync 用 mutable 容器包裹,绕过 TS 跨闭包的控制流收窄(否则在 ?.() 处
-    // 被判定为 null → never)。
-    const resolveAsync: { fn: (() => void) | null } = { fn: null };
-    const asyncDone = { value: false };
-    const off = onThemeChange((isDark) => {
-      void isDark;
-      return new Promise<void>((resolve) => {
-        resolveAsync.fn = () => {
-          asyncDone.value = true;
-          resolve();
-        };
-      });
-    });
-
-    window.__startThemeTransition(0, 0);
-
-    // callback 尚未 resolve(async 任务未完成)——VT callback 的 Promise 仍 pending
-    const callbackPromise = cbRef.cb?.();
-    expect(asyncDone.value).toBe(false);
-
-    // 触发异步任务完成
-    resolveAsync.fn?.();
-    await callbackPromise;
-    expect(asyncDone.value).toBe(true);
-
-    off();
-    delete (document as unknown as { startViewTransition?: unknown }).startViewTransition;
-  });
-
-  it('onThemeChange:降级路径(无 VT)不等 registry 异步回调', async () => {
-    // 降级路径不 await notifyThemeChange,applyDarkClass 同步完成,registry 后台跑
-    let registryCalled = false;
-    const off = onThemeChange(() => {
-      registryCalled = true;
-      return new Promise<void>(() => {}); // 永不 resolve
-    });
-
-    // 无 startViewTransition → 降级路径
-    window.__startThemeTransition(0, 0);
-
-    // dark class 应已同步翻转(不等 registry)
-    expect(document.documentElement.classList.contains('dark')).toBe(true);
-    // registry 回调被调用(同步触发),但 Promise 未被 await
-    expect(registryCalled).toBe(true);
-
-    off();
   });
 });
 

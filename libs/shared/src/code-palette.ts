@@ -1,7 +1,7 @@
 /**
  * 代码配色的单一来源：文章高亮（经 tmTheme 生成 highlight.css）、Tiptap 代码块、
- * CodeMirror 与 xterm 都从这里取色。Mermaid 图表用界面 token 配色，见 index.ts 的
- * mermaidThemeVarsFor。
+ * CodeMirror 与 xterm 都从这里取色。Mermaid 图表用界面 token 配色，见
+ * src/api/markdown/mermaid/config.rs。
  *
  * 配色移植自 clay.nvim 的 Clay 设计规范（restrained 点缀模式）：层级靠亮度，不靠色相。
  * 除字符串的暖灰和函数定义的陶土色外，语法色都是 R = G = B 的中性灰；越是作者写的东西

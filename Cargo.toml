@@ -80,6 +80,9 @@ mimalloc = { version = "0.1", optional = true }
 # 默认 features 为空即原生服务端编译；wasm feature 仅前端构建才需，这里不开。
 # 配套前端需引入 katex.min.css + 字体（见 public/katex/、Makefile katex-css）。
 katex-rs = { version = "0.3", optional = true }
+# Mermaid 服务端渲染（src/api/markdown/mermaid/）：Mermaid 12.1 的纯 Rust 实现。
+# 不开 ELK（EPL 许可）与 math；版本锁死，升级须重跑溢出与重叠验证。
+merman = { version = "=0.9.3", optional = true, default-features = false, features = ["all-diagrams", "svg", "layout-cytoscape"] }
 # MCP（Model Context Protocol）服务器：官方 Rust SDK rmcp。
 # 稳定版 3.5 保留 Origin/Host 校验、请求体上限与无状态传输，并修复协议生命周期。
 # 使用兼容版本范围，实际构建版本由 Cargo.lock 固定；HTTP server feature 已包含 worker。
@@ -199,6 +202,7 @@ server = [
     "dep:resvg",
     "dep:skrifa",
     "dep:aes-gcm",
+    "dep:merman",
 ]
 
 # cargo-leptos 配置：服务端二进制用 server feature，浏览器 WASM 用 hydrate feature。

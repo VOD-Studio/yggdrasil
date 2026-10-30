@@ -196,6 +196,7 @@ fn create_editor(
         }
     });
     let run = tiptap::make_run_code_closure();
+    let render_mermaid = tiptap::make_render_mermaid_closure();
     let picker = Closure::new(move || {
         let _ = pick.try_set(true);
     });
@@ -207,18 +208,14 @@ fn create_editor(
     opts.set_on_upload_event(&upload_event);
     opts.set_on_run_code(&run);
     opts.set_on_pick_from_library(&picker);
+    opts.set_on_render_mermaid(&render_mermaid);
     match tiptap::get_module().create("note-tiptap", &opts) {
         Ok(Some(inst)) => {
             let _ = inst.set_markdown(&initial);
-            let _ = editor.try_set_value(Some(Handle::new(
-                inst,
-                update,
-                upload,
-                on_ready,
-                upload_event,
-                run,
-                picker,
-            )));
+            let _ = editor.try_set_value(Some(
+                Handle::new(inst, update, upload, on_ready, upload_event, run, picker)
+                    .with_render_mermaid(render_mermaid),
+            ));
         }
         _ => {
             let _ = error.try_set("编辑器初始化失败，请刷新后重试".into());

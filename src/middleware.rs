@@ -616,7 +616,6 @@ mod tests {
             "/codemirror/editor.js",
             "/yggdrasil-core/yggdrasil-core.js",
             "/yggdrasil-core/yggdrasil-enhance.js",
-            "/mermaid/mermaid.js",
             "/pkg/yggdrasil.wasm",
             "/pkg/yggdrasil.js",
         ] {

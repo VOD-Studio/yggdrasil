@@ -12,6 +12,8 @@
 
 #![cfg(feature = "server")]
 
+use std::borrow::Cow;
+
 use axum::{
     http::{header, HeaderMap, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
@@ -20,6 +22,7 @@ use chrono::{DateTime, Utc};
 use serde_json::{json, Map, Value};
 
 use crate::api::error::AppError;
+use crate::api::markdown::mermaid::strip_dark_variants;
 use crate::db::pool::get_conn;
 use crate::models::post::FeedItem;
 use crate::utils::html::escape_html;
@@ -166,7 +169,13 @@ fn row_to_feed_item(row: &tokio_postgres::Row) -> FeedItem {
         title: row.get("title"),
         slug: row.get("slug"),
         summary: row.get("summary"),
-        content_html: row.get("content_html"),
+        // 阅读器没有站点 CSS，图表只留浅色一份。
+        content_html: row.get::<_, Option<String>>("content_html").map(|html| {
+            match strip_dark_variants(&html) {
+                Cow::Owned(stripped) => stripped,
+                Cow::Borrowed(_) => html,
+            }
+        }),
         published_at: row
             .get::<_, Option<DateTime<Utc>>>("published_at")
             .unwrap_or(updated_at),

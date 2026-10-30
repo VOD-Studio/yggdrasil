@@ -18,7 +18,6 @@ public/codemirror
 public/lightbox
 public/yggdrasil-core
 public/xterm
-public/mermaid
 public/doc
 /static
 .env

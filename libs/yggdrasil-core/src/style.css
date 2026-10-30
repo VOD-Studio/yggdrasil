@@ -265,11 +265,6 @@ html.is-theme-transitioning .animate-page-enter {
 
 /* ========== Mermaid 流程图放大浮层 ========== */
 
-/* 已渲染的流程图可点击放大，给出与图片一致的 zoom-in 光标提示 */
-pre[data-mermaid-rendered] {
-  cursor: zoom-in;
-}
-
 .mermaid-overlay {
   position: fixed;
   inset: 0;
@@ -311,6 +306,9 @@ pre[data-mermaid-rendered] {
   transform-origin: 0 0;
   touch-action: none;
   cursor: grab;
+  /* 服务端按不含中西文间距的字宽排版，这里不能再加间距，否则标签溢出 */
+  text-autospace: no-autospace;
+  text-spacing-trim: space-all;
 }
 
 .mermaid-overlay-content:active {

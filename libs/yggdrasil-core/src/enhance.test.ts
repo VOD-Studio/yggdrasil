@@ -35,7 +35,7 @@ describe('enhance entry registrations', () => {
     const initToc = vi.spyOn(window, '__initTocSidebar').mockImplementation(() => {});
     window.__pendingEnhanceCalls.push(
       { name: '__initTocSidebar', args: [] },
-      { name: '__initMermaid', args: ['.post-content', 'dark'] },
+      { name: '__initMermaid', args: ['.post-content'] },
       { name: '__initPostContent', args: ['.post-content'] },
     );
     // 卸掉一个实现，模拟对应脚本尚未加载。
@@ -59,18 +59,5 @@ describe('enhance entry registrations', () => {
     window.__flushEnhanceCalls();
     window.__flushEnhanceCalls();
     expect(masonry).toHaveBeenCalledTimes(1);
-  });
-
-  it('core 的主题桥接接通同一 registry：经桥接订阅的回调能收到主题通知', () => {
-    // mermaid.ts 顶层即这样订阅；applyResolvedTheme 走 core registry 通知全部回调。
-    const seen: boolean[] = [];
-    const unsubscribe = window.__subscribeThemeChange((isDark) => {
-      seen.push(isDark);
-    });
-    window.__applyResolvedTheme(true);
-    window.__applyResolvedTheme(false);
-    unsubscribe();
-    window.__applyResolvedTheme(true);
-    expect(seen).toEqual([true, false]);
   });
 });

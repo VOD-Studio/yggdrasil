@@ -12,7 +12,8 @@
     "test:watch": "vitest",
     "motion-css": "bun scripts/generate-motion-css.ts",
     "code-themes": "bun scripts/generate-code-themes.ts",
-    "icons": "bun scripts/generate-icons.ts"
+    "icons": "bun scripts/generate-icons.ts",
+    "mermaid-font-metrics": "bun scripts/generate-mermaid-font-metrics.ts"
   },
   "devDependencies": {
     "lucide-static": "1.57.0"

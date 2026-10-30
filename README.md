@@ -20,7 +20,7 @@
 
 ## 技术栈
 
-Leptos 0.8 · cargo-leptos · Axum · PostgreSQL · Tailwind CSS v4 · Bun workspace（Tiptap / CodeMirror / xterm.js / Mermaid）· bollard
+Leptos 0.8 · cargo-leptos · Axum · PostgreSQL · Tailwind CSS v4 · Bun workspace（Tiptap / CodeMirror / xterm.js）· merman（服务端 Mermaid）· bollard
 
 ## 快速开始
 

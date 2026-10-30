@@ -175,6 +175,14 @@ pub mod wasm {
             this: &EditorOptions,
             cb: &Closure<dyn Fn(String, String) -> js_sys::Promise>,
         );
+
+        /// JS 侧 onRenderMermaid: (source) => Promise<string>，resolve 为浅/深两份 SVG 的 HTML。
+        /// 由后台编辑器注入；未注入时代码块不显示图表预览（组件图鉴、评论）。
+        #[wasm_bindgen(method, setter, js_name = onRenderMermaid)]
+        pub fn set_on_render_mermaid(
+            this: &EditorOptions,
+            cb: &Closure<dyn Fn(String) -> js_sys::Promise>,
+        );
     }
 
     // —— 上传事件（JS UploadEvent 的 Rust 映射）——
@@ -258,6 +266,7 @@ pub mod wasm {
         _on_run_code: Closure<dyn Fn(RunCodeOptsJs) -> js_sys::Promise>,
         _on_pick_from_library: Closure<dyn FnMut()>,
         _on_check_roundtrip: Option<Closure<dyn Fn(String, String) -> js_sys::Promise>>,
+        _on_render_mermaid: Option<Closure<dyn Fn(String) -> js_sys::Promise>>,
     }
 
     impl EditorHandle {
@@ -284,6 +293,7 @@ pub mod wasm {
                 _on_run_code: on_run_code,
                 _on_pick_from_library: on_pick_from_library,
                 _on_check_roundtrip: None,
+                _on_render_mermaid: None,
             }
         }
 
@@ -298,6 +308,15 @@ pub mod wasm {
             cb: Closure<dyn Fn(String, String) -> js_sys::Promise>,
         ) -> Self {
             self._on_check_roundtrip = Some(cb);
+            self
+        }
+
+        /// 注入 Mermaid 预览 closure，使其与编辑器实例同生共死。
+        pub fn with_render_mermaid(
+            mut self,
+            cb: Closure<dyn Fn(String) -> js_sys::Promise>,
+        ) -> Self {
+            self._on_render_mermaid = Some(cb);
             self
         }
 
@@ -560,6 +579,26 @@ pub mod wasm {
             },
         )
     }
+
+    /// 创建 Mermaid 预览 closure：把代码块源码交给服务端渲染。
+    ///
+    /// 签名 `String -> Promise<string>` 对应 JS `onRenderMermaid`；失败时 reject 为带中文消息的 Error。
+    pub fn make_render_mermaid_closure() -> Closure<dyn Fn(String) -> js_sys::Promise> {
+        Closure::new(move |source: String| -> js_sys::Promise {
+            wasm_bindgen_futures::future_to_promise(async move {
+                crate::api::posts::render_mermaid_preview(source)
+                    .await
+                    .map(|html| js_sys::JsString::from(html).into())
+                    .map_err(|e| {
+                        js_sys::Error::new(&crate::utils::error::failure_message(
+                            "图表渲染失败",
+                            &e,
+                        ))
+                        .into()
+                    })
+            })
+        })
+    }
 }
 
 /// 将 WASM 子模块中的桥接类型与函数重导出到 crate 根，供写作页等调用方直接引用。
@@ -573,7 +612,7 @@ pub mod wasm {
 /// `tiptap::wasm::xxx` 引用。新增 `pub fn`/`pub type` 供外部按名调用时记得同步加进这里。
 #[cfg(target_arch = "wasm32")]
 pub use wasm::{
-    consume_upload_event, get_module, make_comment_upload_closure, make_roundtrip_check_closure,
-    make_run_code_closure, make_upload_closure, upload_image_file, EditorHandle, EditorOptions,
-    UploadEventJs,
+    consume_upload_event, get_module, make_comment_upload_closure, make_render_mermaid_closure,
+    make_roundtrip_check_closure, make_run_code_closure, make_upload_closure, upload_image_file,
+    EditorHandle, EditorOptions, UploadEventJs,
 };

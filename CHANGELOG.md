@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **镜像推送脚本支持开发与正式标签**：`scripts/push-dev-image.fish` 重命名为 `scripts/push-docker.fish`，支持 `[dev|release]` 参数；默认推送 `hub.rua.plus/yggdrasil:<版本>-dev`，`release` 推送 `<版本>`，不更新 `latest`。修复 `version` 与 Fish 只读变量同名导致镜像误用 Fish 版本号的问题；远端架构检查跟随 `PLATFORMS`，仅选择 amd64 时不再安装 arm64 模拟支持。
 - **动态压缩质量 6 → 7**：`COMPRESSION_ALGORITHMS` 压缩层的 brotli 再小 1.9–2.9%（`feed.xml` 232,472 → 227,470 B），耗时增加几毫秒；`make precompress` 补上 `manifest.webmanifest` 的 `.br`。
+- **Mermaid 改为服务端渲染**：文章保存时用 merman（Mermaid 12.1 的 Rust 实现）把每个 ```` ```mermaid ```` 块渲染成浅色、深色两份内联 SVG，随主题由 CSS 切换，读者不再下载 1.33 MB 的 `mermaid.js`，也不再在主线程上每张图花 160–370 ms 排版。标签字宽取 SF Pro Text、Selawik、Roboto、Liberation Sans、Noto Sans 五款字体实测宽度的最大值（`libs/shared` 的 `mermaid-font-metrics` 生成字宽表），线上 31 张图在这几款字体下标签都不溢出；子图框重叠时自动加大节点间距重排，子图标题绘制在所有子图之上。渲染失败的图显示源码，文章照常保存。后台编辑器预览改为调用同一套服务端渲染；RSS/JSON Feed 只输出浅色图。删除 `libs/mermaid-renderer` 及前台主题切换时的异步重渲染。**部署后需在后台文章列表执行一次「重建全部渲染」**，旧文章才会从代码块变成图表。
 
 ## [1.2.5] - 2026-10-30
 

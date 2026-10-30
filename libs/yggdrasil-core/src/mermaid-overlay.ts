@@ -6,7 +6,7 @@
  * 支持拖拽平移、双击/工具栏/双指捏合/Ctrl+滚轮缩放。
  *
  * 交互与图片灯箱（libs/lightbox）统一：
- * - 打开：FLIP 飞行动画——从 <pre> 里 SVG 的屏幕位置 250ms ease-out 连续缩放到
+ * - 打开：FLIP 飞行动画——从图表里可见 SVG 的屏幕位置 250ms ease-out 连续缩放到
  *   居中适配位（double-rAF + 强制 reflow 提交首帧）。SVG 矢量，放大无损。
  * - 关闭：飞回 SVG 实时位置（打开期间页面可能滚动过）。
  * - 滚动驱动关闭：body 滚动不锁定，任何滚动按 |scrollY − openScrollY| / 120 插值
@@ -35,8 +35,20 @@ let overlay: HTMLDivElement | null = null;
 let content: HTMLDivElement | null = null;
 let svgClone: SVGSVGElement | null = null;
 
-/** 打开浮层的 <pre>：关闭时飞回其内部 SVG 的实时位置，并归还焦点。 */
+/** 打开浮层的图表容器：关闭时飞回其内部 SVG 的实时位置，并归还焦点。 */
 let originPre: HTMLElement | null = null;
+
+/**
+ * 当前主题下可见的 SVG：服务端输出浅/深两份，CSS 隐藏其一（display:none 没有
+ * client rect）。都不可见（如测试环境无布局）时回退到第一份。
+ */
+function visibleSvg(root: HTMLElement): SVGSVGElement | null {
+  const candidates = root.querySelectorAll<SVGSVGElement>(':scope > div > svg');
+  for (const svg of candidates) {
+    if (svg.getClientRects().length > 0) return svg;
+  }
+  return root.querySelector('svg');
+}
 
 /** 内容原始尺寸（viewBox 像素），用于 fit-to-screen 与飞行 scale 计算。 */
 let naturalW = 0;
@@ -386,7 +398,7 @@ function bindInteractions(closeBtn: HTMLButtonElement): void {
       return;
     }
     if (!originPre) return;
-    const liveSvg = originPre.querySelector('svg');
+    const liveSvg = visibleSvg(originPre);
     const originRect = liveSvg ? rectOf(liveSvg) : rectOf(originPre);
     const fly = flyStateFor(originRect, originX, originY, naturalW);
     const dy = Math.abs(window.scrollY - openScrollY);
@@ -565,7 +577,7 @@ function closeOverlay(): void {
   clearTimeout(zoomAnimTimer);
   zoomAnimTimer = undefined;
 
-  const liveSvg = originPre?.querySelector('svg');
+  const liveSvg = originPre ? visibleSvg(originPre) : null;
   if (reduced || !originPre || !originPre.isConnected) {
     // reduced-motion 或原始节点已离开 DOM：直接移除
     destroyOverlay();
@@ -603,18 +615,17 @@ function closeOverlay(): void {
 // ── 对外接口 ──
 
 /**
- * 为已渲染的 mermaid `<pre>` 绑定点击放大。
+ * 为服务端渲染的 mermaid 图表容器绑定点击放大。
  *
- * 在 renderBlock 成功后调用。仅绑定一次（dataset 守卫），主题切换重渲染
- * 不需重新绑定——click handler 在 `<pre>` 上，重渲染只替换 innerHTML。
+ * 仅绑定一次（dataset 守卫）；主题切换由 CSS 切换两份 SVG，无需重新绑定。
  */
-export function attachOverlayTrigger(pre: HTMLPreElement): void {
+export function attachOverlayTrigger(pre: HTMLElement): void {
   if (pre.dataset.mermaidOverlayReady) return;
   pre.dataset.mermaidOverlayReady = 'true';
 
   pre.addEventListener('click', () => {
     if (overlay) return; // 已有浮层打开，忽略
-    const svg = pre.querySelector('svg');
+    const svg = visibleSvg(pre);
     if (!svg) return;
     buildOverlay(svg, pre);
   });

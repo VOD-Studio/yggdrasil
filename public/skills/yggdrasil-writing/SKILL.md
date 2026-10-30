@@ -122,7 +122,7 @@ sequenceDiagram
 ```
 ````
 
-站点在浏览器中渲染图表，自动适配明暗主题，并支持点击放大、缩放和平移。节点 ID 使用简短写法，中文或含标点的标签放在引号中。窄屏下 `TD` 布局显示更紧凑。
+站点在服务端把图表渲染成浅色与深色两份 SVG，随主题切换，并支持点击放大、缩放和平移。节点 ID 使用简短写法，中文或含标点的标签放在引号中。窄屏下 `TD` 布局显示更紧凑。
 
 采用 Mermaid 内置图表语法。站点使用 strict 安全模式，不依赖点击回调、自定义脚本或外部插件。通常不写主题初始化指令和固定颜色，让站点统一处理主题。服务端保存成功不代表 Mermaid 已在浏览器渲染成功。
 
@@ -246,7 +246,7 @@ Markdown 源码中保留单个反斜杠；如果手写 JSON 参数，要按 JSON
 - `src/api/code_runner/languages.rs`、`src/infra/runner_config.rs`：运行语言、围栏参数和资源限制。
 - `src/components/code_runner/runner.rs`：阅读器运行交互。
 - `src/api/katex.rs`、`src/api/mhchem.rs`：公式与扩展宏。
-- `libs/shared/src/index.ts`、`libs/yggdrasil-core/src/mermaid.ts`、`libs/yggdrasil-core/src/post-content.ts`：图表配置、阅读页渲染与代码块复制按钮。
+- `src/api/markdown/mermaid/`、`libs/yggdrasil-core/src/mermaid.ts`、`libs/yggdrasil-core/src/post-content.ts`：服务端图表渲染与配色、阅读页点击放大与代码块复制按钮。
 - `libs/lightbox/src/images.ts`：blur-up 懒加载与灯箱绑定条件。
 - `libs/tiptap-editor/src/editor-extensions.ts`：后台编辑器支持范围。
 - `src/mcp/tools/{posts,read,media,runner}.rs`：文章、素材与代码执行工具契约。

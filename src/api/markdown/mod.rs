@@ -2,7 +2,8 @@
 //!
 //! 使用 pulldown-cmark 解析 Markdown，两遍遍历事件：第一遍收集标题与脚注引用，
 //! 第二遍分派输出。标题/TOC 见 `heading`，脚注见 `footnote`，围栏代码块见
-//! `code_block`，图片与表格后处理见 `post_process`；最终经 sanitizer 清理 HTML。
+//! `code_block`（Mermaid 图表见 `mermaid`），图片与表格后处理见 `post_process`；
+//! 最终经 sanitizer 清理 HTML，再把图表占位符换成服务端渲染的 SVG。
 //! 仅在 `feature = "server"` 时执行实际渲染。
 
 #![allow(clippy::unused_unit, deprecated)]
@@ -13,6 +14,8 @@ mod code_block;
 mod footnote;
 #[cfg(feature = "server")]
 mod heading;
+#[cfg(feature = "server")]
+pub(crate) mod mermaid;
 #[cfg(feature = "server")]
 mod post_process;
 #[cfg(all(test, feature = "server"))]
@@ -130,6 +133,7 @@ pub fn render_markdown_enhanced(md: &str) -> RenderedContent {
     // 3. 第二遍：生成 HTML，用 into_iter() 消费 events（非标题事件需 move 进 push_html）。
     // HTML 输出通常比 md 长（标签包裹），按 md 长度 + 256 预分配，避免 String::new 的多次 realloc。
     let mut html = String::with_capacity(md.len() + 256);
+    let mut diagrams = mermaid::Diagrams::new();
     let mut heading_idx = 0;
     let mut in_heading = false;
     let mut in_codeblock = false;
@@ -199,6 +203,7 @@ pub fn render_markdown_enhanced(md: &str) -> RenderedContent {
                     code_lang.as_deref(),
                     code_runnable.take(),
                     &code_buffer,
+                    &mut diagrams,
                 );
                 in_codeblock = false;
             }
@@ -297,8 +302,9 @@ pub fn render_markdown_enhanced(md: &str) -> RenderedContent {
     // 表格外层套可滚动容器，移动端窄屏可横向滚动而不被外层 overflow-hidden 裁切。
     // sanitizer 不放行 table 的 class/style，但 div 在白名单、class 属全局属性，故包裹 div。
     let html = post_process::wrap_tables(&html);
+    // 图表 SVG 含 sanitizer 不放行的 <style>/foreignObject，清理之后再把占位符换成 SVG。
     RenderedContent {
-        html: clean_html(&html),
+        html: diagrams.substitute(clean_html(&html)),
         toc_html,
     }
 }

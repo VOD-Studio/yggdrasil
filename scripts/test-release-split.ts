@@ -359,7 +359,7 @@ async function main() {
     check(
       '3 版本表含按需加载的浏览器库',
       !!versions &&
-        '/mermaid/mermaid.js' in JSON.parse(versions) &&
+        '/xterm/terminal.js' in JSON.parse(versions) &&
         '/tiptap/editor.js' in JSON.parse(versions),
       versions ?? '缺少版本表',
     );

@@ -1,4 +1,4 @@
-//! 围栏代码块：runnable 标记解析与 `<pre><code>` 输出（mermaid / syntect 高亮 / 可运行）。
+//! 围栏代码块：runnable 标记解析与 `<pre><code>` 输出（syntect 高亮 / 可运行；mermaid 交给 [`super::mermaid`]）。
 
 use std::fmt::Write as _;
 
@@ -28,18 +28,15 @@ pub(super) fn push_code_block(
     info: Option<&str>,
     runnable: Option<(String, String)>,
     source: &str,
+    diagrams: &mut super::mermaid::Diagrams,
 ) {
-    // mermaid 代码块：前端 yggdrasil-core 扫描 language-mermaid 渲染成 SVG，
-    // 源码不应被 syntect 高亮（无语法定义，且会包 <span> 污染 textContent 提取）。
-    // 直接输出转义后的纯源码，前端 textContent 无损拿到原始 mermaid 文本。
+    // mermaid 代码块：服务端渲染成浅色、深色两份 SVG（先写占位符，sanitize 后替换）；
+    // 渲染失败时降级为转义后的源码。
     let is_mermaid = info
         .map(|l| l.split_whitespace().next() == Some("mermaid"))
         .unwrap_or(false);
     if is_mermaid {
-        let escaped = crate::utils::html::escape_html(source);
-        html.push_str(r#"<pre><code class="language-mermaid">"#);
-        html.push_str(&escaped);
-        html.push_str("</code></pre>");
+        diagrams.push(html, source);
         return;
     }
     // 使用 syntect 对代码块进行服务端语法高亮。围栏信息可能带修饰

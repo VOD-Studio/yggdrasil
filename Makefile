@@ -276,7 +276,7 @@ doc-open: doc ## 生成 rustdoc 并用浏览器打开
 clean: ## 清理构建产物与前端依赖
 	@cargo clean
 	@rm -f public/style.css public/admin.css public/highlight.css
-	@rm -rf public/katex public/doc public/codemirror public/lightbox public/mermaid \
+	@rm -rf public/katex public/doc public/codemirror public/lightbox \
 		public/tiptap public/xterm public/yggdrasil-core
 	@rm -rf uploads/.cache
 	@rm -rf libs/node_modules libs/*/node_modules

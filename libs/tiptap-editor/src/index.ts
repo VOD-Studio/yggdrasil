@@ -1,5 +1,5 @@
 import { Editor } from '@tiptap/core';
-import { ON_RUN_CODE_STORAGE_KEY } from './code-block-view';
+import { ON_RENDER_MERMAID_STORAGE_KEY, ON_RUN_CODE_STORAGE_KEY } from './code-block-view';
 import { buildExtensions, type EditorVariant } from './editor-extensions';
 import {
   UPLOAD_COORDINATOR_STORAGE_KEY,
@@ -49,6 +49,9 @@ class EditorOptions {
     source: string;
     overridesJson: string;
   }) => Promise<string>;
+  // Mermaid 预览：Rust 注入，调服务端渲染，resolve 为浅/深两份 SVG 的 HTML，
+  // 失败时以 Error 拒绝（消息形如「图表渲染失败：…」）。未注入时代码块不显示预览。
+  onRenderMermaid?: (source: string) => Promise<string>;
   // 往返守卫：由宿主注入，载入正文/源码切回富文本时比较原文与富文本往返后的 Markdown，
   // `true` 表示服务端渲染一致。未注入时不做守卫（评论、笔记、组件图鉴保持现有行为）。
   checkRoundtrip?: (original: string, roundtrip: string) => Promise<boolean>;
@@ -201,6 +204,12 @@ class TiptapEditorInstance {
     if (this.options.onRunCode) {
       (this.editor.storage as unknown as Record<string, unknown>)[ON_RUN_CODE_STORAGE_KEY] =
         this.options.onRunCode;
+    }
+
+    // 同样挂 onRenderMermaid，供 mermaid 代码块的预览区读取。
+    if (this.options.onRenderMermaid) {
+      (this.editor.storage as unknown as Record<string, unknown>)[ON_RENDER_MERMAID_STORAGE_KEY] =
+        this.options.onRenderMermaid;
     }
 
     // 通知宿主编辑器已就绪（替代 window.__tiptap_ready 轮询）

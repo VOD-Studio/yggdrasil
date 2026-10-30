@@ -11,6 +11,7 @@ mod create;
 mod delete;
 pub(crate) mod helpers;
 mod list;
+mod mermaid_preview;
 mod outline;
 mod read;
 mod rebuild;
@@ -42,6 +43,8 @@ pub use list::list_deleted_posts;
 pub use list::list_posts;
 /// 获取已发布文章分页列表。
 pub use list::{get_posts_by_tag, list_published_posts};
+/// 后台编辑器的 Mermaid 预览（服务端渲染）。
+pub use mermaid_preview::render_mermaid_preview;
 /// 首页最新一篇的目录预览。
 pub use outline::latest_post_outline;
 /// 根据 id 获取文章详情。

@@ -69,7 +69,7 @@ mod tests {
         assert!(rendered.html.contains("<table"));
         assert!(rendered.html.contains("language-markdown"));
         assert!(!rendered.html.contains("data-runnable=\"true\""));
-        assert!(!rendered.html.contains("class=\"language-mermaid\""));
+        assert!(!rendered.html.contains("mermaid-diagram"));
         assert!(rendered.toc_html.contains("可运行代码块"));
         assert!(SKILL_SOURCE.starts_with("---\nname: yggdrasil-writing\n"));
     }

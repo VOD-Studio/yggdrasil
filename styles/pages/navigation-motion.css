@@ -17,10 +17,6 @@
     animation: none;
   }
 
-  .md-content pre .mermaid-loading::before {
-    animation: none;
-  }
-
   .archive-tags,
   .archive-tags *,
   .archives-page .archive-entry,

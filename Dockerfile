@@ -161,7 +161,6 @@ COPY libs/tiptap-editor/package.json      libs/tiptap-editor/
 COPY libs/codemirror-editor/package.json  libs/codemirror-editor/
 COPY libs/lightbox/package.json           libs/lightbox/
 COPY libs/xterm-terminal/package.json     libs/xterm-terminal/
-COPY libs/mermaid-renderer/package.json   libs/mermaid-renderer/
 COPY libs/yggdrasil-core/package.json     libs/yggdrasil-core/
 RUN cd libs && bun install --frozen-lockfile
 

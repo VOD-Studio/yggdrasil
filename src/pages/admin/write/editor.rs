@@ -83,6 +83,7 @@ fn install_editor(state: WriteEditorState) {
                     consume_upload_event(&event, state.uploads_in_flight, state.upload_errors);
                 });
             let on_run_code = crate::bridges::tiptap::make_run_code_closure();
+            let on_render_mermaid = crate::bridges::tiptap::make_render_mermaid_closure();
             let on_pick_from_library: Closure<dyn FnMut()> = Closure::new(move || {
                 let _ = state.body_picker_visible.try_set(true);
             });
@@ -94,6 +95,7 @@ fn install_editor(state: WriteEditorState) {
             options.set_on_run_code(&on_run_code);
             options.set_on_pick_from_library(&on_pick_from_library);
             options.set_check_roundtrip(&on_check_roundtrip);
+            options.set_on_render_mermaid(&on_render_mermaid);
             match crate::bridges::tiptap::get_module().create("tiptap-editor", &options) {
                 Ok(Some(instance)) => {
                     let settled = (!markdown.is_empty()).then(|| instance.set_markdown(&markdown));
@@ -108,7 +110,8 @@ fn install_editor(state: WriteEditorState) {
                             on_run_code,
                             on_pick_from_library,
                         )
-                        .with_roundtrip_check(on_check_roundtrip),
+                        .with_roundtrip_check(on_check_roundtrip)
+                        .with_render_mermaid(on_render_mermaid),
                     ));
                     // 往返检查结束、视图模式确定后才就绪：此前骨架屏遮挡，保存不可用。
                     leptos::task::spawn_local(async move {
