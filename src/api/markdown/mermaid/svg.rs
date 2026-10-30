@@ -124,8 +124,10 @@ fn lift_labels_in_group(group: &str, out: &mut String) {
 
 /// 最终修正：去掉末尾换行（`strip_dark_variants` 依赖 `</svg></div></figure>` 紧邻）；
 /// 子图标题置顶；HTML 标签的 foreignObject 允许溢出可见
-/// （字体实际宽度略超测量值时不裁掉文字，与 Mermaid 前端渲染时的修正一致）。
-pub(super) fn finish(svg: &str) -> String {
+/// （字体实际宽度略超测量值时不裁掉文字，与 Mermaid 前端渲染时的修正一致）；
+/// `extra_css` 追加到 SVG 自带的第一个 `<style>` 末尾。
+pub(super) fn finish(svg: &str, extra_css: &str) -> String {
     lift_cluster_labels(svg.trim_end())
+        .replacen("</style>", &format!("{extra_css}</style>"), 1)
         .replace("<foreignObject ", r#"<foreignObject overflow="visible" "#)
 }

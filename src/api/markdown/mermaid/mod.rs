@@ -45,11 +45,12 @@ pub(crate) fn render_diagram(source: &str, ordinal: usize) -> Result<String, Str
         node_spacing = Some(spacing);
     }
     // 深色沿用浅色最终的间距，两份几何一致。
-    let dark = render_one(true, node_spacing, source, &svg_id("d"))?;
+    let dark_id = svg_id("d");
+    let dark = render_one(true, node_spacing, source, &dark_id)?;
     Ok(format!(
         r#"<div class="mermaid-light">{}</div><div class="mermaid-dark">{}</div>"#,
-        svg::finish(&light),
-        svg::finish(&dark)
+        svg::finish(&light, &config::fixup_css(&light_id, false)),
+        svg::finish(&dark, &config::fixup_css(&dark_id, true))
     ))
 }
 
@@ -59,7 +60,7 @@ fn render_one(
     source: &str,
     id: &str,
 ) -> Result<String, String> {
-    let config = MermaidConfig::from_value(config::site_config(dark, node_spacing));
+    let config = MermaidConfig::from_value(config::site_config(dark, node_spacing, source));
     let request = SvgRequest {
         environment: metrics::environment(),
         options: SvgRenderOptions {
