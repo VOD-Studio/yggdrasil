@@ -89,12 +89,8 @@ export interface SqlSchema {
   tables: { name: string; columns: string[] }[];
 }
 
-/**
- * 传给 CodeMirrorEditor.create 的配置。
- * 必须是 class（非 interface），以便 TS 擦除后存活，
- * wasm 侧能用 `new EditorOptions()` 构造，并通过 setter 填充字段。
- */
-export class EditorOptions {
+/** 传给 CodeMirrorEditor.create 的配置：Rust 端用空对象加 setter 填充。字段全部可选。 */
+export interface EditorOptions {
   language?: string;
   theme?: ThemeName;
   vim?: boolean;
@@ -296,12 +292,3 @@ function schemaToCompletions(schema: SqlSchema) {
     columns: t.columns.map((c) => ({ label: c, type: 'column' })),
   }));
 }
-
-// 暴露 EditorOptions 到 window，供 wasm-bindgen 用 new EditorOptions()。
-// IIFE 的 name 只能挂一个全局（CodeMirrorEditor），故手动 hoist EditorOptions。
-declare global {
-  interface Window {
-    EditorOptions: typeof EditorOptions;
-  }
-}
-window.EditorOptions = EditorOptions;

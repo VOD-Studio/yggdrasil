@@ -1,5 +1,5 @@
 import { THEME_CHANGE_EVENT } from '@yggdrasil/shared';
-import { TerminalInstance, XtermOptions } from './terminal';
+import { TerminalInstance, type XtermOptions } from './terminal';
 import type { ThemeName } from './themes';
 
 /**
@@ -19,7 +19,7 @@ import type { ThemeName } from './themes';
 const XtermTerminal = {
   _instances: new Map<string, TerminalInstance>(),
 
-  create(containerId: string, options: XtermOptions = new XtermOptions()): TerminalInstance | null {
+  create(containerId: string, options: XtermOptions = {}): TerminalInstance | null {
     const container = document.getElementById(containerId);
     if (!container) return null;
 

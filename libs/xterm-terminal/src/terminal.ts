@@ -5,19 +5,16 @@
 // - convertEol: true —— 容器输出的 \n 自动转 \r\n（终端换行语义）。
 // - stderr 用 ANSI 红色前缀包裹，与 stdout 视觉区分。
 //
-// 镜像 codemirror-editor/src/editor.ts 的范式：Options 用 class（非 interface）
-// 以便 TS 擦除后存活，wasm 侧能用 new XtermOptions() 构造。
+// 镜像 codemirror-editor/src/editor.ts 的范式：Options 是普通对象的 interface，
+// Rust 端用空对象加 setter 填充。
 
 import { FitAddon } from '@xterm/addon-fit';
 import { Terminal } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
 import { DARK_THEME, LIGHT_THEME, type ThemeName } from './themes';
 
-/** 传给 XtermTerminal.create 的配置。
- *  必须是 class（非 interface），以便 TS 擦除后存活，
- *  wasm 侧能用 `new XtermOptions()` 构造，并通过 setter 填充字段。
- */
-export class XtermOptions {
+/** 传给 XtermTerminal.create 的配置：Rust 端用空对象加 setter 填充。字段全部可选。 */
+export interface XtermOptions {
   theme?: ThemeName;
   fontFamily?: string;
   fontSize?: number;
@@ -119,12 +116,3 @@ export class TerminalInstance {
     this.onDestroy?.();
   }
 }
-
-// 暴露 XtermOptions 到 window，供 wasm-bindgen 用 new XtermOptions()。
-// IIFE 的 name 只能挂一个全局（XtermTerminal），故手动 hoist XtermOptions。
-declare global {
-  interface Window {
-    XtermOptions: typeof XtermOptions;
-  }
-}
-window.XtermOptions = XtermOptions;

@@ -87,7 +87,7 @@ fn install_editor(state: WriteEditorState) {
             let on_pick_from_library: Closure<dyn FnMut()> = Closure::new(move || {
                 let _ = state.body_picker_visible.try_set(true);
             });
-            let options = EditorOptions::new();
+            let options = EditorOptions::default();
             options.set_placeholder(PLACEHOLDER);
             options.set_on_update(&on_update);
             options.set_on_image_upload(&on_image_upload);

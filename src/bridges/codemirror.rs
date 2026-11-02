@@ -109,12 +109,8 @@ pub mod wasm {
     #[wasm_bindgen]
     extern "C" {
         /// 传给 `CodeMirrorEditor.create` 的配置对象，对应 JS 侧的 EditorOptions。
-        /// 用 `new()` 创建空对象后通过 setter 链式设置字段。
+        /// 用 `default()` 创建空对象后通过 setter 设置字段。
         pub type EditorOptions;
-
-        /// 构造一个空的 EditorOptions，随后用各 setter 填充。
-        #[wasm_bindgen(constructor)]
-        pub fn new() -> EditorOptions;
 
         /// 语言（默认 'sql'）。
         #[wasm_bindgen(method, setter, js_name = language)]
@@ -151,6 +147,13 @@ pub mod wasm {
         /// Vim 模式变化回调（normal / insert / visual / replace）。
         #[wasm_bindgen(method, setter, js_name = onVimModeChange)]
         pub fn set_on_vim_mode_change(this: &EditorOptions, cb: &Closure<dyn FnMut(String)>);
+    }
+
+    impl Default for EditorOptions {
+        /// 空 JS 对象；字段只经上面的 setter 写入，JS 端按同名 interface 读取。
+        fn default() -> Self {
+            js_sys::Object::new().unchecked_into()
+        }
     }
 
     /// 编辑器实例句柄：持有 instance + 所有 Closure，Drop 时销毁实例并释放闭包。

@@ -49,7 +49,7 @@ pub(super) fn use_terminal(
             "light"
         };
 
-        let opts = xterm::XtermOptions::new();
+        let opts = xterm::XtermOptions::default();
         opts.set_theme(theme_name);
         opts.set_font_size(13);
         opts.set_on_ready(&on_ready);

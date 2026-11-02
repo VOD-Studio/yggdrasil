@@ -1,7 +1,7 @@
 import { ensureSyntaxTree } from '@codemirror/language';
 import type { EditorState } from '@codemirror/state';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { CodeMirrorInstance, EditorOptions } from './editor';
+import { CodeMirrorInstance, type EditorOptions } from './editor';
 import CodeMirrorEditor from './index';
 
 type CodeMirrorInternals = {
@@ -19,7 +19,7 @@ describe('CodeMirrorInstance', () => {
 
   it('开启 Vim 时报告模式，热切换后仍能收到模式变化', () => {
     const modes: string[] = [];
-    const opts = new EditorOptions();
+    const opts: EditorOptions = {};
     opts.vim = true;
     opts.onVimModeChange = (mode) => modes.push(mode);
     const inst = new CodeMirrorInstance(container, opts);
@@ -33,7 +33,7 @@ describe('CodeMirrorInstance', () => {
   });
 
   it('getValue/setValue 往返', () => {
-    const inst = new CodeMirrorInstance(container, new EditorOptions());
+    const inst = new CodeMirrorInstance(container, {});
     inst.setValue('SELECT 1');
     expect(inst.getValue()).toBe('SELECT 1');
     inst.destroy();
@@ -49,7 +49,7 @@ describe('CodeMirrorInstance', () => {
   });
 
   it('初始 value 正确', () => {
-    const opts = new EditorOptions();
+    const opts: EditorOptions = {};
     opts.value = 'SELECT * FROM posts';
     const inst = new CodeMirrorInstance(container, opts);
     expect(inst.getValue()).toBe('SELECT * FROM posts');
@@ -58,7 +58,7 @@ describe('CodeMirrorInstance', () => {
 
   it('go 语言将 // 注释解析为完整注释节点', () => {
     const source = '// MaxMessages: 超过上限时丢弃最旧消息\npackage main\nfunc main() {}';
-    const opts = new EditorOptions();
+    const opts: EditorOptions = {};
     opts.language = 'go';
     opts.value = source;
     const inst = new CodeMirrorInstance(container, opts);
@@ -86,7 +86,7 @@ describe('CodeMirrorInstance', () => {
 
   it('rust 语言将 // 注释、fn 函数与 println! 宏解析为对应节点', () => {
     const source = 'fn main() {\n    // test\n    println!("Hello world");\n}';
-    const opts = new EditorOptions();
+    const opts: EditorOptions = {};
     opts.language = 'rust';
     opts.value = source;
     const inst = new CodeMirrorInstance(container, opts);
@@ -135,7 +135,7 @@ describe('CodeMirrorInstance', () => {
       expected: ['InterfaceDeclaration', 'TypeAnnotation', 'LineComment'],
     },
   ])('$lang 语言解析出预期语法节点', ({ lang, source, expected }) => {
-    const opts = new EditorOptions();
+    const opts: EditorOptions = {};
     opts.language = lang;
     opts.value = source;
     const inst = new CodeMirrorInstance(container, opts);
@@ -155,14 +155,14 @@ describe('CodeMirrorInstance', () => {
   });
 
   it('setTheme 不抛错（走 Compartment reconfigure）', () => {
-    const inst = new CodeMirrorInstance(container, new EditorOptions());
+    const inst = new CodeMirrorInstance(container, {});
     expect(() => inst.setTheme('dark')).not.toThrow();
     expect(() => inst.setTheme('light')).not.toThrow();
     inst.destroy();
   });
 
   it('setSchema 更新 lang-sql 配置', () => {
-    const inst = new CodeMirrorInstance(container, new EditorOptions());
+    const inst = new CodeMirrorInstance(container, {});
     expect(() =>
       inst.setSchema({ tables: [{ name: 'posts', columns: ['id', 'title'] }] }),
     ).not.toThrow();
@@ -170,12 +170,12 @@ describe('CodeMirrorInstance', () => {
   });
 
   it('vim 开关：vim:true 注入，false 不注入', () => {
-    const optsOn = new EditorOptions();
+    const optsOn: EditorOptions = {};
     optsOn.vim = true;
     const instOn = new CodeMirrorInstance(container, optsOn);
     instOn.destroy();
 
-    const optsOff = new EditorOptions();
+    const optsOff: EditorOptions = {};
     optsOff.vim = false;
     const instOff = new CodeMirrorInstance(container, optsOff);
     instOff.destroy();
@@ -184,7 +184,7 @@ describe('CodeMirrorInstance', () => {
 
   it('onChange 在内容变更时触发', () => {
     let captured = '';
-    const opts = new EditorOptions();
+    const opts: EditorOptions = {};
     opts.onChange = (v) => {
       captured = v;
     };
@@ -195,7 +195,7 @@ describe('CodeMirrorInstance', () => {
   });
 
   it('onRunShortcut 注入则构造不抛错', () => {
-    const opts = new EditorOptions();
+    const opts: EditorOptions = {};
     opts.onRunShortcut = () => {};
     const inst = new CodeMirrorInstance(container, opts);
     inst.destroy();

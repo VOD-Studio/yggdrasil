@@ -234,7 +234,7 @@ pub fn CommentForm(
                         );
                     });
 
-                let opts = crate::bridges::tiptap::EditorOptions::new();
+                let opts = crate::bridges::tiptap::EditorOptions::default();
                 opts.set_variant("comment");
                 opts.set_placeholder(if is_reply {
                     "写下你的回复…"

@@ -1,5 +1,5 @@
 import { THEME_CHANGE_EVENT } from '@yggdrasil/shared';
-import { CodeMirrorInstance, EditorOptions } from './editor';
+import { CodeMirrorInstance, type EditorOptions } from './editor';
 import type { ThemeName } from './themes';
 
 /**
@@ -19,10 +19,7 @@ import type { ThemeName } from './themes';
 const CodeMirrorEditor = {
   _instances: new Map<string, CodeMirrorInstance>(),
 
-  create(
-    containerId: string,
-    options: EditorOptions = new EditorOptions(),
-  ): CodeMirrorInstance | null {
+  create(containerId: string, options: EditorOptions = {}): CodeMirrorInstance | null {
     const container = document.getElementById(containerId);
     if (!container) return null;
 

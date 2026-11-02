@@ -1,7 +1,7 @@
 import { FitAddon } from '@xterm/addon-fit';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import XtermTerminal from './index';
-import { TerminalInstance, XtermOptions } from './terminal';
+import { TerminalInstance, type XtermOptions } from './terminal';
 
 // --- ResizeObserver mock：happy-dom 不实现，手动提供回调钩子
 //     （同 @yggdrasil/core hash-scroll.test.ts 惯例） ---
@@ -20,24 +20,6 @@ vi.stubGlobal(
   },
 );
 
-describe('XtermOptions', () => {
-  it('可无参构造，字段全部 undefined', () => {
-    const opts = new XtermOptions();
-    expect(opts.theme).toBeUndefined();
-    expect(opts.fontFamily).toBeUndefined();
-    expect(opts.fontSize).toBeUndefined();
-    expect(opts.onReady).toBeUndefined();
-  });
-
-  it('可设置字段', () => {
-    const opts = new XtermOptions();
-    opts.theme = 'dark';
-    opts.fontSize = 14;
-    expect(opts.theme).toBe('dark');
-    expect(opts.fontSize).toBe(14);
-  });
-});
-
 describe('TerminalInstance', () => {
   beforeEach(() => {
     resizeCallback = null;
@@ -47,7 +29,7 @@ describe('TerminalInstance', () => {
   it('挂载到容器并触发 onReady', () => {
     const container = document.createElement('div');
     let ready = false;
-    const opts = new XtermOptions();
+    const opts: XtermOptions = {};
     opts.onReady = () => {
       ready = true;
     };
@@ -76,7 +58,7 @@ describe('TerminalInstance', () => {
 
   it('writeAll 清屏后重写 stdout + stderr', () => {
     const container = document.createElement('div');
-    const inst = new TerminalInstance(container, new XtermOptions());
+    const inst = new TerminalInstance(container, {});
 
     // 不报错即通过（xterm.js 在 happy-dom 下 write 是 no-op 渲染）
     inst.writeAll('hello\n', 'error\n');
@@ -88,7 +70,7 @@ describe('TerminalInstance', () => {
   it('容器 resize 时通过 ResizeObserver 自动重新 fit', () => {
     const container = document.createElement('div');
     const fitSpy = vi.spyOn(FitAddon.prototype, 'fit');
-    const inst = new TerminalInstance(container, new XtermOptions());
+    const inst = new TerminalInstance(container, {});
 
     expect(fitSpy).toHaveBeenCalledTimes(1); // 构造时的初始 fit
     expect(resizeCallback).not.toBeNull();
@@ -102,7 +84,7 @@ describe('TerminalInstance', () => {
 
   it('destroy 时断开 ResizeObserver，避免销毁后继续 fit', () => {
     const container = document.createElement('div');
-    const inst = new TerminalInstance(container, new XtermOptions());
+    const inst = new TerminalInstance(container, {});
 
     inst.destroy();
     expect(roDisconnect).toHaveBeenCalledTimes(1);

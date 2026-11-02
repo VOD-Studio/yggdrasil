@@ -11,16 +11,8 @@ import './style.css';
 import './code-highlight.css';
 import { icon } from './icons';
 
-/**
- * 编辑器选项。用 class 而非 interface，使其编译后保留运行时构造函数——
- * Rust 侧 wasm-bindgen 的 `#[wasm_bindgen(constructor)]` 会生成 `new EditorOptions()`，
- * 需要一个全局可访问的构造函数（interface 会被 TS 擦除）。
- * 字段全部可选，Rust 通过 setter（set_placeholder/set_on_update/...）逐个赋值。
- *
- * 不用 export（避免 IIFE 的 named export 与 default 冲突），而是挂到 globalThis，
- * 让 wasm-bindgen glue 里的裸标识符 `EditorOptions` 能解析到。
- */
-class EditorOptions {
+/** 编辑器选项：Rust 端用空对象加 setter 填充。字段全部可选。 */
+export interface EditorOptions {
   content?: string;
   placeholder?: string;
   /**
@@ -56,9 +48,6 @@ class EditorOptions {
   // `true` 表示服务端渲染一致。未注入时不做守卫（评论、笔记、组件图鉴保持现有行为）。
   checkRoundtrip?: (original: string, roundtrip: string) => Promise<boolean>;
 }
-// wasm-bindgen 生成的 glue 用裸标识符 `new EditorOptions()` 从全局解析，
-// IIFE 的 name 只能挂一个全局（TiptapEditor），这里手动把 EditorOptions 也挂到 window 上。
-(window as unknown as Record<string, unknown>).EditorOptions = EditorOptions;
 
 /**
  * 源码模式切换按钮图标（Lucide，stroke: currentColor 跟随主题）。
@@ -84,11 +73,7 @@ class TiptapEditorInstance {
   private loadSeq = 0;
   private lockNotice: HTMLParagraphElement | null = null;
 
-  constructor(
-    container: HTMLElement,
-    options: EditorOptions = new EditorOptions(),
-    onDestroy?: () => void,
-  ) {
+  constructor(container: HTMLElement, options: EditorOptions = {}, onDestroy?: () => void) {
     this.container = container;
     this.options = options;
     this.onDestroy = onDestroy;
@@ -429,10 +414,7 @@ class TiptapEditorInstance {
 const TiptapEditor = {
   _instances: new Map<string, TiptapEditorInstance>(),
 
-  create(
-    containerId: string,
-    options: EditorOptions = new EditorOptions(),
-  ): TiptapEditorInstance | null {
+  create(containerId: string, options: EditorOptions = {}): TiptapEditorInstance | null {
     const container = document.getElementById(containerId);
     if (!container) {
       console.error(`[TiptapEditor] Container not found: #${containerId}`);

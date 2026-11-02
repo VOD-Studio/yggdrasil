@@ -206,7 +206,7 @@ fn TiptapPreview(detail: bool) -> impl IntoView {
                 js_sys::Promise::resolve(&JsValue::from_str("输出示例：图鉴不会执行代码。"))
             });
             let on_pick = Closure::new(|| {});
-            let opts = tiptap::EditorOptions::new();
+            let opts = tiptap::EditorOptions::default();
             opts.set_placeholder("在这里写一小段内容…");
             opts.set_on_update(&on_update);
             opts.set_on_ready(&on_ready);
@@ -290,7 +290,7 @@ fn CodeMirrorPreview(detail: bool) -> impl IntoView {
                 let _ = shortcut_note.try_set(true);
             });
             let current_language = language.get_untracked();
-            let opts = codemirror::EditorOptions::new();
+            let opts = codemirror::EditorOptions::default();
             opts.set_language(&current_language);
             opts.set_theme(if resolved.get_untracked() == ResolvedTheme::Dark {
                 "dark"
@@ -427,7 +427,7 @@ fn XtermPreview(detail: bool) -> impl IntoView {
                 return;
             }
             let on_ready = Closure::new(|| {});
-            let opts = xterm::XtermOptions::new();
+            let opts = xterm::XtermOptions::default();
             opts.set_theme(if resolved.get_untracked() == ResolvedTheme::Dark {
                 "dark"
             } else {

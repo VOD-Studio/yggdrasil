@@ -118,12 +118,8 @@ pub mod wasm {
     #[wasm_bindgen]
     extern "C" {
         /// 传给 `TiptapEditor.create` 的配置对象，对应 JS 侧的 EditorOptions。
-        /// 用 `new()` 创建空对象后通过 setter 链式设置字段。
+        /// 用 `default()` 创建空对象后通过 setter 设置字段。
         pub type EditorOptions;
-
-        /// 构造一个空的 EditorOptions，随后用各 setter 填充回调与占位文案。
-        #[wasm_bindgen(constructor)]
-        pub fn new() -> EditorOptions;
 
         /// 编辑器无内容时的占位文案。
         #[wasm_bindgen(method, setter, js_name = placeholder)]
@@ -183,6 +179,13 @@ pub mod wasm {
             this: &EditorOptions,
             cb: &Closure<dyn Fn(String) -> js_sys::Promise>,
         );
+    }
+
+    impl Default for EditorOptions {
+        /// 空 JS 对象；字段只经上面的 setter 写入，JS 端按同名 interface 读取。
+        fn default() -> Self {
+            js_sys::Object::new().unchecked_into()
+        }
     }
 
     // —— 上传事件（JS UploadEvent 的 Rust 映射）——

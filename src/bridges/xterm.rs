@@ -3,7 +3,7 @@
 //! 镜像 `codemirror.rs` 范式：
 //! - `window.XtermTerminal` 是 IIFE 产物挂在 window 上的对象字面量（含 create 方法），
 //!   不是函数。用 `js_sys::Reflect::get` 做属性访问拿到模块对象，再 `unchecked_into`。
-//! - `XtermOptions` 是 class（非 interface），TS 擦除后存活，wasm 侧能 `new`。
+//! - `XtermOptions` 是普通 JS 对象（TS 侧为 interface）：`XtermOptions::default()` 得到空对象，再用 setter 填充。
 //! - `TerminalHandle` 持有实例 + onReady 闭包，Drop → destroy()。
 //!
 //! WASM-only：所有 extern 与 handle 都在 `#[cfg(target_arch = "wasm32")] mod wasm` 内，
@@ -98,12 +98,8 @@ pub mod wasm {
     #[wasm_bindgen]
     extern "C" {
         /// 传给 `XtermTerminal.create` 的配置对象，对应 JS 侧的 XtermOptions。
-        /// 用 `new()` 创建空对象后通过 setter 链式设置字段。
+        /// 用 `default()` 创建空对象后通过 setter 设置字段。
         pub type XtermOptions;
-
-        /// 构造一个空的 XtermOptions，随后用各 setter 填充。
-        #[wasm_bindgen(constructor)]
-        pub fn new() -> XtermOptions;
 
         /// 主题：'light' 或 'dark'（配色取自 `CODE_PALETTES`）。
         #[wasm_bindgen(method, setter, js_name = theme)]
@@ -116,6 +112,13 @@ pub mod wasm {
         /// 终端就绪回调（构造末尾同步触发一次）。
         #[wasm_bindgen(method, setter, js_name = onReady)]
         pub fn set_on_ready(this: &XtermOptions, cb: &Closure<dyn FnMut()>);
+    }
+
+    impl Default for XtermOptions {
+        /// 空 JS 对象；字段只经上面的 setter 写入，JS 端按同名 interface 读取。
+        fn default() -> Self {
+            js_sys::Object::new().unchecked_into()
+        }
     }
 
     /// 终端实例句柄：持有 instance + onReady 闭包，Drop 时销毁实例并释放闭包。

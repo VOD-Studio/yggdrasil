@@ -200,7 +200,7 @@ fn create_editor(
     let picker = Closure::new(move || {
         let _ = pick.try_set(true);
     });
-    let opts = EditorOptions::new();
+    let opts = EditorOptions::default();
     opts.set_placeholder("从一个想法开始。输入 / 插入代码、图片、公式或引用…");
     opts.set_on_update(&update);
     opts.set_on_ready(&on_ready);

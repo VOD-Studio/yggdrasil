@@ -64,7 +64,7 @@ pub(super) fn use_editor(
             "light"
         };
 
-        let opts = codemirror::EditorOptions::new();
+        let opts = codemirror::EditorOptions::default();
         opts.set_language(&language);
         opts.set_theme(theme_name);
         opts.set_vim(vim_enabled.get_untracked());

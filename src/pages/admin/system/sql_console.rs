@@ -129,7 +129,7 @@ pub(super) fn SqlConsoleTab() -> impl IntoView {
             } else {
                 "light"
             };
-            let opts = codemirror::EditorOptions::new();
+            let opts = codemirror::EditorOptions::default();
             opts.set_language("sql");
             opts.set_theme(theme_name);
             opts.set_vim(true);
