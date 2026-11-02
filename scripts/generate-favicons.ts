@@ -11,11 +11,9 @@
 // 或用 PLAYWRIGHT_MODULE 指定）。
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type * as Playwright from 'playwright';
+import { loadPlaywright } from './libs-modules.ts';
 
-const { chromium } = require(
-  process.env.PLAYWRIGHT_MODULE || path.join(import.meta.dir, '../libs/node_modules/playwright'),
-) as typeof Playwright;
+const { chromium } = loadPlaywright();
 
 const PUBLIC = path.join(import.meta.dir, '../public');
 const LIGHT = { bg: '#f5f5f3', fg: '#151515', ring: 'rgba(0,0,0,0.12)' };

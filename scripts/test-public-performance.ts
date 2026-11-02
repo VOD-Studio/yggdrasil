@@ -5,7 +5,10 @@ import * as fs from 'node:fs';
 import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { type Browser, chromium } from 'playwright';
+import type { Browser } from 'playwright';
+import { loadPlaywright } from './libs-modules.ts';
+
+const { chromium } = loadPlaywright();
 
 type CodeMirrorWindow = typeof window & {
   CodeMirrorEditor: { _instances: ReadonlyMap<unknown, unknown> };

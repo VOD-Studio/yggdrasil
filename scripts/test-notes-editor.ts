@@ -13,8 +13,9 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import type * as Playwright from 'playwright';
+import { loadPlaywright } from './libs-modules.ts';
 
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE!) as typeof Playwright;
+const { chromium } = loadPlaywright();
 type ScriptWindow = Window &
   typeof globalThis & { __routeTransitions: { push(route: string): void } };
 interface Note {

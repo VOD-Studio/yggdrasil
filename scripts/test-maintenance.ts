@@ -2,10 +2,10 @@
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type * as Playwright from 'playwright';
 import type { BrowserContextOptions } from 'playwright';
+import { loadPlaywright } from './libs-modules.ts';
 
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE!) as typeof Playwright;
+const { chromium } = loadPlaywright();
 const base = process.env.ADMIN_BASE!;
 const artifacts = process.env.REGRESSION_ARTIFACT_DIR!;
 async function main() {

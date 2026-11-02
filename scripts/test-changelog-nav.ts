@@ -1,9 +1,9 @@
 #!/usr/bin/env bun
 // Run against make dev; no content or account changes are made.
 import assert from 'node:assert/strict';
-import type * as Playwright from 'playwright';
+import { loadPlaywright } from './libs-modules.ts';
 
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright') as typeof Playwright;
+const { chromium } = loadPlaywright();
 const base = process.env.CHANGELOG_BASE || 'http://localhost:8080';
 const output = process.env.CHANGELOG_SCREENSHOTS || '/tmp';
 

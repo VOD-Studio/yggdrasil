@@ -2,9 +2,9 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import type * as Playwright from 'playwright';
+import { loadPlaywright } from './libs-modules.ts';
 
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE!) as typeof Playwright;
+const { chromium } = loadPlaywright();
 type StreamListener =
   | EventListenerOrEventListenerObject
   | ((this: EventSource, event: MessageEvent<unknown>) => unknown)

@@ -3,6 +3,7 @@
 // 先在 libs/ 执行 bun install，再运行：bun scripts/subset-og-fonts.ts <源字体目录>
 // 输出到 src/og/fonts/：常用汉字、英文与标点；Bold 仅保留 ASCII。
 import * as path from 'node:path';
+import { libsModule } from './libs-modules.ts';
 
 const OUT = path.join(import.meta.dir, '../src/og/fonts');
 const HB_MEMORY_MODE_WRITABLE = 2;
@@ -122,7 +123,7 @@ async function main() {
     throw new Error('用法：bun scripts/subset-og-fonts.ts <源字体目录>');
   }
   const source = path.resolve(process.argv[2]);
-  const wasm = require.resolve('../libs/node_modules/harfbuzzjs/dist/harfbuzz-subset.wasm');
+  const wasm = libsModule('harfbuzzjs/dist/harfbuzz-subset.wasm');
   const { instance } = await WebAssembly.instantiate(await Bun.file(wasm).arrayBuffer());
   const hb = instance.exports as unknown as HarfBuzzSubset;
   hb._initialize();

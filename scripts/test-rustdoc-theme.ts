@@ -9,8 +9,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type * as Playwright from 'playwright';
+import { loadPlaywright } from './libs-modules.ts';
 
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright') as typeof Playwright;
+const { chromium } = loadPlaywright();
 const base = (process.env.VT_BASE || 'http://localhost:8080').replace(/\/$/, '');
 const output = process.env.RUSTDOC_QA_DIR || '/tmp/yggdrasil-rustdoc-qa';
 

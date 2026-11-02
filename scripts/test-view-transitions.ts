@@ -11,8 +11,9 @@
  */
 import assert from 'node:assert/strict';
 import type * as Playwright from 'playwright';
+import { loadPlaywright } from './libs-modules.ts';
 
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright') as typeof Playwright;
+const { chromium } = loadPlaywright();
 const BASE = (process.env.VT_BASE || 'http://127.0.0.1:8080').replace(/\/$/, '');
 const SEARCH_QUERY = process.env.VT_SEARCH_QUERY || 'Rust';
 const TAG_PATH = process.env.VT_TAG_PATH || '/tags/Rust';

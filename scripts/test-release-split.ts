@@ -10,6 +10,7 @@ import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import type * as Playwright from 'playwright';
+import { loadPlaywright } from './libs-modules.ts';
 
 const ROOT = path.resolve(__dirname, '..');
 const RELEASE_OUT = path.resolve(ROOT, process.env.RELEASE_OUT || 'target/release-dist');
@@ -30,9 +31,7 @@ const SIZE_ROUTES = [
   '/changelog',
   '/search',
 ];
-const { chromium } = require(
-  process.env.PLAYWRIGHT_MODULE || path.join(ROOT, 'libs/node_modules/playwright'),
-) as typeof Playwright;
+const { chromium } = loadPlaywright();
 
 const artifacts = path.resolve(
   process.env.REGRESSION_ARTIFACT_DIR ||

@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import type * as Playwright from 'playwright';
+import { loadPlaywright } from './libs-modules.ts';
 
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE!) as typeof Playwright;
+const { chromium } = loadPlaywright();
 const base = process.env.ADMIN_BASE!;
 const artifacts = process.env.REGRESSION_ARTIFACT_DIR!;
 const endpoint = (url: string) =>

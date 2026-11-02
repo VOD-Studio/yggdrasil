@@ -170,7 +170,6 @@ async function main() {
   await run(['bun', path.join(ROOT, 'scripts', suites[mode])], {
     env: {
       ...env,
-      PLAYWRIGHT_MODULE: path.join(ROOT, 'libs/node_modules/playwright'),
       ADMIN_BASE: base,
       VT_BASE: base,
       SHOWCASE_BASE: base,

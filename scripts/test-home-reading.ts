@@ -2,8 +2,9 @@
 /** Homepage anchor regression against a running development site; no content is written. */
 import assert from 'node:assert/strict';
 import type * as Playwright from 'playwright';
+import { loadPlaywright } from './libs-modules.ts';
 
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright') as typeof Playwright;
+const { chromium } = loadPlaywright();
 const base = (process.env.VT_BASE || 'http://127.0.0.1:8080').replace(/\/$/, '');
 const output = process.env.HOME_READING_SCREENSHOTS || '/tmp';
 
