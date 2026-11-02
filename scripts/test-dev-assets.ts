@@ -71,6 +71,7 @@ async function main() {
     'libs/bun.lock',
     'libs/bunfig.toml',
     'libs/tsconfig.base.json',
+    'libs/vite-iife.ts',
     'libs/patches/example.patch',
     'themes/Yggdrasil Light.tmTheme',
     'themes/Yggdrasil Dark.tmTheme',
@@ -137,6 +138,8 @@ if (command === 'bun' && args[0] === 'install') {
   await new Promise((resolve) => setTimeout(resolve, 1100));
   fs.unlinkSync(path.join(root, 'libs/lightbox/vite.config.ts'));
   step(['lightbox']);
+  await edit('libs/vite-iife.ts');
+  step(packages);
   fs.unlinkSync(path.join(root, 'public/katex/fonts/example.woff2'));
   step([]);
   assert.ok(fs.existsSync(path.join(root, 'public/katex/fonts/example.woff2')));

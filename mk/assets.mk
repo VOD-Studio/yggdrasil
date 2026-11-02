@@ -55,7 +55,7 @@ css-watch: ## 监听并持续生成 Tailwind CSS
 DEV_ASSET_DIR := target/dev-assets
 DEV_ASSET_JOBS ?= 4
 DEV_LIBS := shared codemirror-editor lightbox tiptap-editor xterm-terminal yggdrasil-core
-DEV_COMMON_INPUTS := mk/assets.mk libs/package.json libs/bun.lock libs/bunfig.toml libs/tsconfig.base.json $(wildcard libs/patches/*) libs/patches $(wildcard libs/node_modules/.bun)
+DEV_COMMON_INPUTS := mk/assets.mk libs/package.json libs/bun.lock libs/bunfig.toml libs/tsconfig.base.json $(wildcard libs/patches/*) libs/patches $(wildcard libs/*.ts) $(wildcard libs/node_modules/.bun)
 dev_lib_inputs = libs/$(1) $(shell find libs/$(1)/src -type f -o -type d) $(wildcard libs/$(1)/*config*.ts) libs/$(1)/tsconfig.json libs/$(1)/package.json
 
 DEV_OUTPUTS_codemirror-editor := public/codemirror/editor.js public/codemirror/editor.js.map

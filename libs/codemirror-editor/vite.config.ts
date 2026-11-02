@@ -1,27 +1,11 @@
-import { resolve } from 'node:path';
-import { defineConfig } from 'vite';
+import { iifeLib } from '../vite-iife.ts';
 
-export default defineConfig({
-  build: {
-    // 输出直写 public/codemirror/，由 cargo-leptos 的 assets-dir 拷进站点根，无需拷贝步骤。
-    outDir: resolve(import.meta.dirname, '../../public/codemirror'),
-    emptyOutDir: true,
-    lib: {
-      entry: resolve(import.meta.dirname, 'src/index.ts'),
-      // IIFE 产物挂在 window.CodeMirrorEditor 上，Rust 侧用 Reflect::get 取。
-      name: 'CodeMirrorEditor',
-      fileName: () => 'editor.js',
-      formats: ['iife'],
-    },
-    rolldownOptions: {
-      output: {
-        // 默认导出（对象字面量 { create() }）成为 window.CodeMirrorEditor。
-        exports: 'default',
-        assetFileNames: 'editor.[ext]',
-      },
-    },
-    cssCodeSplit: false,
-    minify: true,
-    sourcemap: true,
-  },
+// 输出直写 public/codemirror/，由 cargo-leptos 的 assets-dir 拷进站点根，无需拷贝步骤。
+// IIFE 产物挂在 window.CodeMirrorEditor 上；默认导出（对象字面量 { create() }）即该全局。
+export default iifeLib({
+  dir: import.meta.dirname,
+  out: 'codemirror',
+  name: 'CodeMirrorEditor',
+  file: 'editor',
+  defaultExport: true,
 });
