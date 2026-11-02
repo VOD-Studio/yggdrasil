@@ -17,7 +17,7 @@ name = "generate_highlight_css"
 required-features = ["server"]
 
 [dependencies]
-leptos = { version = "=0.8.22" }
+leptos = { version = "=0.8.23" }
 leptos_router = { version = "=0.8.17" }
 leptos_meta = { version = "=0.8.7" }
 leptos_axum = { version = "=0.8.10", optional = true }
@@ -33,7 +33,7 @@ regex = { version = "1.13", optional = true }
 # mhchem 化学公式转译器（src/api/mhchem.rs）需要 lookahead 正则，
 # Rust `regex` crate 不支持 `(?=...)`/`(?!...)`，故用 `fancy-regex`。
 # syntect 仍使用 0.16；直接依赖单独升级，以使用新版匹配修复。
-fancy-regex = { version = "0.19", optional = true }
+fancy-regex = { version = "0.20", optional = true }
 pulldown-cmark = { version = "0.13", optional = true }
 dotenvy = { version = "0.15", optional = true }
 tracing = { version = "0.1", optional = true, features = ["release_max_level_info"] }
@@ -59,7 +59,7 @@ image = { version = "0.25", optional = true, default-features = false, features 
 zenwebp = { version = "0.4", optional = true }
 moka = { version = "0.12", features = ["future", "sync"], optional = true }
 governor = { version = "0.10", optional = true }
-sysinfo = { version = "0.39", optional = true }
+sysinfo = { version = "0.40", optional = true }
 sqlparser = { version = "0.63", optional = true }
 dashmap = { version = "6.2", optional = true }
 # 中文标题 → 拼音 slug（纯 Rust、零依赖，安全交叉编译到 musl）。
@@ -100,7 +100,7 @@ tar = { version = "0.4", optional = true }
 flate2 = { version = "1", optional = true }
 # 分享图（og:image）：服务端把 SVG 渲染为 1200×630 PNG。只开 text，字体随二进制
 # 嵌入（src/og/fonts），不读系统字体，渲染结果与部署环境无关。
-resvg = { version = "0.48", optional = true, default-features = false, features = ["text"] }
+resvg = { version = "0.49", optional = true, default-features = false, features = ["text"] }
 # 分享图折行：按字体实际字宽量取每行能放下的字符，与 usvg 内部用的是同一字体库。
 skrifa = { version = "0.44", optional = true }
 

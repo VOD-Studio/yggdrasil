@@ -31,22 +31,28 @@ pub fn spawn_sampler() {
     crate::tasks::spawn_supervised("sysinfo_sampler", async move {
         use sysinfo::{Disks, System};
 
-        let mut sys = System::new();
+        let mut sys = match System::new() {
+            Ok(sys) => sys,
+            Err(error) => {
+                tracing::warn!("sysinfo 不支持当前系统，主机指标保持默认值: {error}");
+                return;
+            }
+        };
         let interval = sample_interval();
         // 首次 refresh 建立基线，CPU% 在下一轮才有意义。
         sys.refresh_cpu_usage();
-        let disks = Disks::new_with_refreshed_list();
+        let disks = Disks::new_with_refreshed_list().ok();
 
         loop {
             tokio::time::sleep(interval).await;
             sys.refresh_cpu_usage();
             sys.refresh_memory();
-            let load = System::load_average();
+            let load = System::load_average().unwrap_or_default();
 
             // 主磁盘：取空间最大的盘（通常是数据盘）。
             let (disk_total, disk_available) = disks
-                .list()
                 .iter()
+                .flat_map(|disks| disks.iter())
                 .max_by_key(|d| d.total_space())
                 .map(|d| (d.total_space(), d.available_space()))
                 .unwrap_or((0, 0));
@@ -60,7 +66,7 @@ pub fn spawn_sampler() {
                 disk_available,
                 os_name: System::long_os_version().unwrap_or_default(),
                 kernel_version: System::kernel_version().unwrap_or_default(),
-                uptime_secs: System::uptime(),
+                uptime_secs: System::uptime().unwrap_or_default(),
             };
             *SNAPSHOT.write().await = snap;
         }

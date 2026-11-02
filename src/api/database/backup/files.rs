@@ -98,7 +98,7 @@ pub(super) fn is_valid_backup_filename(filename: &str) -> bool {
 /// 预检用途：探测失败返回 None，降级为跳过预检（写入失败仍会清理并报错）。
 pub(super) fn backup_partition_free_space() -> Option<u64> {
     let dir = std::fs::canonicalize(BACKUP_DIR).ok()?;
-    let disks = sysinfo::Disks::new_with_refreshed_list();
+    let disks = sysinfo::Disks::new_with_refreshed_list().ok()?;
     disks
         .iter()
         .filter(|d| dir.starts_with(d.mount_point()))

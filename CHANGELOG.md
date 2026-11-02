@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **组件图鉴「文章」分组精简**：面包屑 `Breadcrumbs`、文章元信息 `PostMeta`、相邻文章导航 `PostNavLinks` 只是页眉、页脚的组成部分，改为 `components::post` 模块内可见，并从图鉴中移除（分组 8 → 5 项，「面包屑」不再与通用 `Breadcrumb` 重名）。「文章页头」新增无标签样例（面包屑只剩「文章」），说明并入面包屑与元信息规则；「文章页脚」接收单侧、无相邻文章样例与键盘说明，不再与相邻文章导航显示两份相同的卡片。`/about/components/{breadcrumbs,post-meta,post-nav-links}` 返回 404。
+- **依赖升级**：`leptos` 0.8.22 → 0.8.23，`resvg` 0.48 → 0.49，`sysinfo` 0.39 → 0.40，`fancy-regex` 0.19 → 0.20，另有 `rmcp` 3.8、`uuid` 1.29、`zenwebp` 0.4.6、`wasm-bindgen` 0.2.130 等兼容更新。`sysinfo` 0.40 的系统指标改返回 `Result`：不支持的系统上采样任务记录警告后退出，磁盘空间预检按探测失败降级。`skrifa` 仍保持 0.44，与 `usvg` 0.49 内部使用的版本一致。
 
 ### Fixed
 
