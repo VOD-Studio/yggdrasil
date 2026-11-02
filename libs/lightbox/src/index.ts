@@ -6,7 +6,6 @@ declare global {
   interface Window {
     __initLightbox: (selectors: string | string[]) => void;
     __closeLightboxFor: (owner: string) => void;
-    __lightboxSelectors?: string[];
     /** P5 §8.2：core 建立的增强调用队列 flush（yggdrasil-core 类型，此处可选）。 */
     __flushEnhanceCalls?: () => void;
   }
@@ -78,17 +77,6 @@ if (!window.__initLightbox) {
   };
 }
 
-// ============ 自启动 ============
-// The Rust bridge may configure selectors before or after this IIFE loads.
-// 1) Rust 内联 eval 先跑（常态）：设 __lightboxSelectors，此时 __initLightbox 可能未定义 → 只设配置；
-//    lightbox.js 后加载完 → 读到配置 → 这里自启动。
-// 2) lightbox.js 先加载完：__initLightbox 就绪但无配置 → 不自启动；
-//    Rust eval 后跑 → 设配置 + 兜底 if(__initLightbox) 显式调用 → 初始化。
-if (Array.isArray(window.__lightboxSelectors)) {
-  window.__initLightbox(window.__lightboxSelectors);
-}
-
-// P5 §8.2：本 IIFE 就绪后补执行队列里等待 __initLightbox 的迟到调用
-// （SPA 首次按需注入时 effect 先于脚本执行）。与上方自启动双保险并存，
-// data-lb-bound 守卫保证重复初始化幂等。
+// P5 §8.2：本 IIFE 就绪后补执行队列中等待 `__initLightbox` 的调用
+// （脚本晚于 effect 加载时，Rust 端的调用已入队）。data-lb-bound 守卫保证重复初始化幂等。
 window.__flushEnhanceCalls?.();

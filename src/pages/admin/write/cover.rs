@@ -75,11 +75,6 @@ pub(super) fn CoverUploader(
         cover_img_loaded.set(false);
         #[cfg(target_arch = "wasm32")]
         {
-            let window = web_sys::window()
-                .expect("CoverUploader Effect 仅在 WASM 浏览器上下文执行：无 window");
-            let selectors = js_sys::Array::of1(&".cover-preview".into());
-            let selectors_val = js_sys::Object::from(selectors).into();
-            let _ = js_sys::Reflect::set(&window, &"__lightboxSelectors".into(), &selectors_val);
             crate::bridges::globals::init_lightbox(&[".cover-preview"]);
         }
     });

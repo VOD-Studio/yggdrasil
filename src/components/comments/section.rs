@@ -285,25 +285,7 @@ pub fn CommentSection(post_id: i32) -> impl IntoView {
             return;
         }
         request_animation_frame(|| {
-            let Some(window) = web_sys::window() else {
-                return;
-            };
-            let sel: wasm_bindgen::JsValue = ".comment-list".into();
-            // 合并而非覆盖 __lightboxSelectors：正文已把 .post-content / .entry-cover
-            // 写入同一全局；覆盖会让 lightbox.js 晚加载时的自启动丢掉正文图绑定。
-            let existing =
-                js_sys::Reflect::get(&window, &"__lightboxSelectors".into()).unwrap_or_default();
-            let arr = if existing.is_array() {
-                js_sys::Array::from(&existing)
-            } else {
-                js_sys::Array::new()
-            };
-            if !arr.includes(&sel, 0) {
-                arr.push(&sel);
-            }
-            let selectors_val: wasm_bindgen::JsValue = arr.into();
-            let _ = js_sys::Reflect::set(&window, &"__lightboxSelectors".into(), &selectors_val);
-            // 显式绑定评论区（重复调用由 TS 端守卫幂等）；脚本未加载时入队/no-op。
+            // 脚本未加载时入队，lightbox.js 尾部补执行。
             crate::bridges::globals::init_lightbox(&[".comment-list"]);
         });
     });

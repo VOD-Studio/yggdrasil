@@ -35,7 +35,7 @@ pub(crate) fn EnhanceScript() -> impl IntoView {
 }
 
 /// 声明本页需要灯箱脚本与样式。点击放大在增强脚本就绪后仍可用
-/// （配置自启动 + 显式调用双保险），卸载清理由 `__closeLightboxFor` 承担。
+/// （未加载时调用入队，脚本尾部补执行），卸载清理由 `__closeLightboxFor` 承担。
 #[component]
 pub(crate) fn LightboxAssets() -> impl IntoView {
     view! {

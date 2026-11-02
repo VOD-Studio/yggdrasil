@@ -200,12 +200,7 @@ pub fn Assets() -> impl IntoView {
         if has_active {
             leptos::task::spawn_local(async move {
                 crate::utils::time::sleep_ms(30).await;
-                if let Some(window) = web_sys::window() {
-                    let selectors = js_sys::Array::of1(&".assets-lightbox".into());
-                    let value: wasm_bindgen::JsValue = js_sys::Object::from(selectors).into();
-                    let _ = js_sys::Reflect::set(&window, &"__lightboxSelectors".into(), &value);
-                    crate::bridges::globals::init_lightbox(&[".assets-lightbox"]);
-                }
+                crate::bridges::globals::init_lightbox(&[".assets-lightbox"]);
             });
         }
         #[cfg(not(target_arch = "wasm32"))]

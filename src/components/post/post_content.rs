@@ -179,7 +179,7 @@ fn decode_html_entities(s: &str) -> String {
 /// - 在 `target_arch = "wasm32"` 环境下调用 `window.__initPostContent` 初始化代码块
 ///   复制按钮；P5 §8.2 起正文增强在 `yggdrasil-enhance.js`、灯箱在 `lightbox.js`，
 ///   均由本组件按需声明注入（见 [`crate::components::enhance_assets`]），
-///   这里仅设置初始化配置 `__lightboxSelectors` 并兜底调用。
+///   这里只经 `bridges::globals` 调用；脚本未就绪时调用入队，脚本尾部补执行。
 ///
 /// 组件函数体只运行一次：同一实例内 `content_html` 不会更新，上下篇切换须由调用方按
 /// slug 重建本组件（片段解析按内容哈希缓存，重建不重复解析）。
@@ -194,33 +194,18 @@ pub fn PostContent(
     #[cfg(target_arch = "wasm32")]
     {
         Effect::new(move || {
-            let Some(window) = web_sys::window() else {
-                return;
-            };
-
             // 图鉴实例只增强自己的正文，正式页面仍按原选择器处理。
             let selector =
                 scope_id.map_or_else(|| ".post-content".to_string(), |id| format!("#{id}"));
-            // 调用 window.__initPostContent：函数不存在时静默跳过。
             globals::init_post_content(&selector);
 
             // Mermaid 图表已由服务端渲染成浅/深两份 SVG（CSS 按主题切换），这里只绑定点击放大。
             globals::init_mermaid(&selector);
 
-            // 灯箱双保险契约：先设配置，若 lightbox.js 已加载则立即调用；
-            // 否则 lightbox.js 加载完后其 IIFE 尾部读到配置自启动。
+            // lightbox.js 未加载时调用入队，其 IIFE 尾部补执行。
             let mut lightbox = vec![selector.as_str()];
             if scope_id.is_none() {
                 lightbox.push(".entry-cover");
-            }
-            let selectors_val: wasm_bindgen::JsValue = lightbox
-                .iter()
-                .map(|s| wasm_bindgen::JsValue::from(*s))
-                .collect::<js_sys::Array>()
-                .into();
-            if scope_id.is_none() {
-                let _ =
-                    js_sys::Reflect::set(&window, &"__lightboxSelectors".into(), &selectors_val);
             }
             globals::init_lightbox(&lightbox);
 
