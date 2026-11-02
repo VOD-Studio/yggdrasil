@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "target": "ESNext",
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "types": ["bun"],
+    "allowImportingTsExtensions": true
+  },
+  "include": ["*.ts", "*/vite*.config.ts", "shared/scripts/*.ts", "*/src/**/*.node.test.ts"]
+}

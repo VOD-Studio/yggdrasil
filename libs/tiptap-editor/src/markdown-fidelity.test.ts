@@ -2,7 +2,7 @@
 
 import { Editor, type JSONContent } from '@tiptap/core';
 import { afterEach, describe, expect, it } from 'vitest';
-import { buildExtensions } from '../editor-extensions';
+import { buildExtensions } from './editor-extensions';
 
 /**
  * 文章编辑器（full 变体）Markdown 往返保真回归：

@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import TiptapEditor from '../index';
+import TiptapEditor from './index';
 
 /**
  * 往返守卫：宿主注入 checkRoundtrip 后，载入正文/源码切回富文本时有损内容必须

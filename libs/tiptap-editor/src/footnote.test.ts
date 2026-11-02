@@ -5,7 +5,7 @@ import { Markdown } from '@tiptap/markdown';
 import StarterKit from '@tiptap/starter-kit';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { FootnoteDef, FootnoteNumbering, FootnoteRef } from '../footnote';
+import { FootnoteDef, FootnoteNumbering, FootnoteRef } from './footnote';
 
 /**
  * 脚注节点回归测试。

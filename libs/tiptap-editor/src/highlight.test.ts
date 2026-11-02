@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { extractLang, extractOverridesJson, lowlight } from '../highlight';
+import { extractLang, extractOverridesJson, lowlight } from './highlight';
 
 /**
  * extractLang 测试：从完整 fence info string 提取语言名（首个 token）。

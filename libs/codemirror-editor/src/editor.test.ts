@@ -1,8 +1,8 @@
 import { ensureSyntaxTree } from '@codemirror/language';
 import type { EditorState } from '@codemirror/state';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { CodeMirrorInstance, EditorOptions } from '../editor';
-import CodeMirrorEditor from '../index';
+import { CodeMirrorInstance, EditorOptions } from './editor';
+import CodeMirrorEditor from './index';
 
 type CodeMirrorInternals = {
   view: { state: EditorState };

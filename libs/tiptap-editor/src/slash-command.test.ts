@@ -7,7 +7,7 @@ import {
   createPopup,
   isValidUrl,
   matchCommand,
-} from '../slash-command';
+} from './slash-command';
 
 /**
  * isValidUrl 纯函数测试。

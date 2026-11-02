@@ -1,7 +1,7 @@
 import { Editor } from '@tiptap/core';
 import { describe, expect, it } from 'vitest';
-import { buildExtensions } from '../editor-extensions';
-import TiptapEditor from '../index';
+import { buildExtensions } from './editor-extensions';
+import TiptapEditor from './index';
 
 /**
  * buildExtensions 工厂测试：comment 是 full 的真子集（装配级断言 + schema 冒烟）。

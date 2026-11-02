@@ -1,7 +1,7 @@
 import { FitAddon } from '@xterm/addon-fit';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import XtermTerminal from '../index';
-import { TerminalInstance, XtermOptions } from '../terminal';
+import XtermTerminal from './index';
+import { TerminalInstance, XtermOptions } from './terminal';
 
 // --- ResizeObserver mock：happy-dom 不实现，手动提供回调钩子
 //     （同 @yggdrasil/core hash-scroll.test.ts 惯例） ---

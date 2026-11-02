@@ -42,7 +42,7 @@ describe('SSR theme preload before hydration', () => {
   ])('stored=%s, systemDark=%s', (stored, systemDark, mode, dark) => {
     if (stored === null) localStorage.removeItem('yggdrasil-theme');
     else localStorage.setItem('yggdrasil-theme', stored);
-    vi.spyOn(window, 'matchMedia').mockReturnValue({ matches: systemDark });
+    vi.spyOn(window, 'matchMedia').mockReturnValue({ matches: systemDark } as MediaQueryList);
 
     preload();
 
@@ -59,7 +59,7 @@ describe('SSR theme preload before hydration', () => {
     vi.spyOn(window, 'localStorage', 'get').mockImplementation(() => {
       throw new Error('Storage disabled');
     });
-    vi.spyOn(window, 'matchMedia').mockReturnValue({ matches: true });
+    vi.spyOn(window, 'matchMedia').mockReturnValue({ matches: true } as MediaQueryList);
 
     preload();
 

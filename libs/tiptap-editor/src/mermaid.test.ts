@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CodeBlockNodeView } from '../code-block-view';
+import { CodeBlockNodeView } from './code-block-view';
 
 /**
  * mermaid 代码块预览测试。

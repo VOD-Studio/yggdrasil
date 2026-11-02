@@ -182,7 +182,7 @@ test-browser: ## 隔离浏览器回归（先 regression-build；BROWSER_SUITE=sm
 # ── 测试与代码质量 ─────────────────────────────────────────────
 test: ## 运行 Rust 与前端测试
 	@cargo test
-	@cd libs && bun run --filter '*' test
+	@cd libs && bun run test
 
 .PHONY: test-release-split
 test-release-split: build ## 对真实 release 产物做分包、水合、缓存与体积门槛验收

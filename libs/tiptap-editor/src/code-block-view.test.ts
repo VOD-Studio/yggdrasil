@@ -1,6 +1,6 @@
 import type { ViewMutationRecord } from '@tiptap/pm/view';
 import { describe, expect, it, vi } from 'vitest';
-import { CodeBlockNodeView } from '../code-block-view';
+import { CodeBlockNodeView } from './code-block-view';
 
 /**
  * 模块级共享 sentinel：对齐 upload-image.test.ts 范式。

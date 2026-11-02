@@ -2,7 +2,7 @@
 
 import { Editor } from '@tiptap/core';
 import { afterEach, describe, expect, it } from 'vitest';
-import { buildExtensions } from '../editor-extensions';
+import { buildExtensions } from './editor-extensions';
 
 /** 定义列表：解析、往返，以及不误伤相邻块的边界。 */
 

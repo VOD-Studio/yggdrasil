@@ -5,6 +5,6 @@ export default defineConfig({
     // Bound workers on shared CI runners; local development retains Vitest defaults.
     maxWorkers: process.env.CI ? 2 : undefined,
     environment: 'happy-dom',
-    include: ['src/**/*.test.{ts,js}'],
+    include: ['src/**/*.test.ts'],
   },
 });

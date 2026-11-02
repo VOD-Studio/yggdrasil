@@ -2,7 +2,7 @@
 
 import { Editor } from '@tiptap/core';
 import { afterEach, describe, expect, it } from 'vitest';
-import { buildExtensions } from '../editor-extensions';
+import { buildExtensions } from './editor-extensions';
 
 /** GFM 提示块：解析、往返、HTML 结构与普通引用块的区分。 */
 

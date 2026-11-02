@@ -3,7 +3,7 @@ import {
   parseLibraryInsertItems,
   UploadImageNodeView,
   type UploadNodeViewCallbacks,
-} from '../upload-image';
+} from './upload-image';
 
 /**
  * UploadImageNodeView 单元测试（happy-dom 真实 DOM）。

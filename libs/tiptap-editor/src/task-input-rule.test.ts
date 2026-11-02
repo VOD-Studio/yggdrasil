@@ -4,7 +4,7 @@ import { Editor } from '@tiptap/core';
 import { TaskItem, TaskList } from '@tiptap/extension-list';
 import StarterKit from '@tiptap/starter-kit';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { TaskInputRule } from '../task-input-rule';
+import { TaskInputRule } from './task-input-rule';
 
 /**
  * TaskInputRule 单元测试(happy-dom 真实 DOM + 真实 Editor)。

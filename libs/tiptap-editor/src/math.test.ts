@@ -4,7 +4,7 @@ import { Editor } from '@tiptap/core';
 import { Markdown } from '@tiptap/markdown';
 import StarterKit from '@tiptap/starter-kit';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { DisplayMath, InlineMath } from '../math';
+import { DisplayMath, InlineMath } from './math';
 
 /**
  * 数学公式节点单测(happy-dom 真实 DOM + 真实 Editor)。

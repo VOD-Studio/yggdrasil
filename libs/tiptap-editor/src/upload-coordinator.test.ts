@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { UploadCoordinator, type UploadEvent } from '../upload-coordinator';
+import { UploadCoordinator, type UploadEvent } from './upload-coordinator';
 
 /**
  * Coordinator 单元测试。

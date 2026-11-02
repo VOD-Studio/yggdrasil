@@ -230,7 +230,7 @@ jobs:
         run: cd libs && bun run typecheck
 
       - name: Frontend tests
-        run: cd libs && bun run --sequential --filter '*' test
+        run: cd libs && bun run test
 
   check-wasm:
     needs: select_runner

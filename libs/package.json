@@ -4,8 +4,9 @@
   "type": "module",
   "scripts": {
     "build": "bun run --filter '*' build",
-    "test": "bun run --filter '*' test",
-    "typecheck": "bun run --filter '*' typecheck && bun run typecheck:scripts",
+    "test": "bun run --sequential --filter '*' test",
+    "typecheck": "bun run --filter '*' typecheck && bun run typecheck:tooling && bun run typecheck:scripts",
+    "typecheck:tooling": "tsc --project tsconfig.tooling.json",
     "typecheck:scripts": "tsc --project ../scripts/tsconfig.json",
     "lint": "biome check .",
     "format": "biome format --write ."
