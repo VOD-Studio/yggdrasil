@@ -64,7 +64,7 @@ describe('滚动缩回页面原图', () => {
 
   afterEach(() => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
-    vi.advanceTimersByTime(300);
+    vi.advanceTimersByTime(400);
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
     scrollTo(0);
@@ -92,13 +92,13 @@ describe('滚动缩回页面原图', () => {
     expect(img.style.transform).toBe(before);
   });
 
-  it('滚动进度插值到实时原图位置，有连续过渡且反向滚动可退回', () => {
+  it('滚动进度插值到实时原图位置，逐帧直写且反向滚动可退回', () => {
     const { img, overlay, backdrop } = openImage();
     const start = img.style.transform;
     scrollTo(530); // 1/4 行程；目标原图现在位于 (200, 320)。
     // 图的视觉 rect = (125, 155, 700, 525)，通过外层变换映射原来的 rect。
     expect(img.style.transform).toBe(`translate(37.5px, 67.5px) scale(0.875, 0.875) ${start}`);
-    expect(img.style.transition).toContain('transform 100ms');
+    expect(img.style.transition).toBe('none');
     expect(backdrop.style.opacity).toBe('0.75');
 
     scrollTo(560); // 1/2 行程；目标继续上移到 (200, 290)。
@@ -116,9 +116,13 @@ describe('滚动缩回页面原图', () => {
     const focus = vi.spyOn(origin, 'focus');
     scrollTo(500 + dy);
     expect(overlay.isConnected).toBe(true);
-    expect(img.style.transition).toContain('transform 300ms');
-    expect(backdrop.style.opacity).toBe('0');
-    vi.advanceTimersByTime(300);
+    expect(img.style.transition).toBe('none');
+    vi.advanceTimersByTime(150);
+    const opacity = Number(backdrop.style.opacity);
+    expect(opacity).toBeGreaterThan(0);
+    expect(opacity).toBeLessThan(1);
+    expect(overlay.isConnected).toBe(true);
+    vi.advanceTimersByTime(200);
     expect(overlay.isConnected).toBe(false);
     expect(focus).toHaveBeenCalledWith({ preventScroll: true });
     expect(window.scrollY).toBe(500 + dy);
@@ -128,9 +132,12 @@ describe('滚动缩回页面原图', () => {
     const { img, overlay } = openImage();
     const start = img.style.transform;
     scrollTo(530);
+    const tracked = img.style.transform;
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    expect(img.style.transform).toBe(tracked);
+    vi.advanceTimersByTime(320);
     expect(img.style.transform).toBe(`translate(150px, 270px) scale(0.5, 0.5) ${start}`);
-    vi.advanceTimersByTime(300);
+    expect(overlay.isConnected).toBe(false);
     const closed = img.style.transform;
     scrollTo(600);
     expect(img.style.transform).toBe(closed);
@@ -142,11 +149,11 @@ describe('滚动缩回页面原图', () => {
     const start = img.style.transform;
     scrollTo(620);
     scrollTo(680); // 滚轮惯性仍在移动页面，原图现在位于 (200, 170)。
+    vi.advanceTimersByTime(320);
     expect(img.style.transform).toBe(`translate(150px, 120px) scale(0.5, 0.5) ${start}`);
-    vi.advanceTimersByTime(300);
-    const closed = img.style.transform;
+    expect(overlay.isConnected).toBe(false);
     scrollTo(740);
-    expect(img.style.transform).toBe(closed);
+    expect(img.style.transform).toBe(`translate(150px, 120px) scale(0.5, 0.5) ${start}`);
     expect(overlay.isConnected).toBe(false);
   });
 
@@ -171,7 +178,7 @@ describe('滚动缩回页面原图', () => {
     expect(img.style.transform).toBe(`translate(37.5px, 67.5px) scale(0.875, 0.875) ${start}`);
     scrollTo(620);
     expect(img.style.transform.endsWith(start)).toBe(true);
-    vi.advanceTimersByTime(300);
+    vi.advanceTimersByTime(320);
     expect(overlay.isConnected).toBe(false);
   });
 
@@ -190,8 +197,39 @@ describe('滚动缩回页面原图', () => {
     expect(backdrop.style.opacity).toBe('1');
     scrollTo(590);
     expect(backdrop.style.opacity).toBe('0.75');
+    const before = img.style.transform;
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    expect(img.style.transform).toBe(before);
+    vi.advanceTimersByTime(320);
     expect(img.style.transform).toBe(`translate(550px, 360px) scale(0.5, 0.5) ${start}`);
+  });
+
+  it('停手时进度不足阈值回弹到完全打开，继续滚动推迟收尾，回弹后从当前位置重新起算', () => {
+    const { img, overlay, backdrop } = openImage();
+    const start = img.style.transform;
+    scrollTo(530);
+    vi.advanceTimersByTime(100);
+    scrollTo(535);
+    vi.advanceTimersByTime(100);
+    expect(backdrop.style.opacity).not.toBe('1'); // 计时器已重置，尚未收尾
+    vi.advanceTimersByTime(60);
+    expect(backdrop.style.opacity).toBe('1');
+    expect(img.style.transform).toBe(start);
+    expect(img.style.transition).toContain('transform 180ms');
+    expect(overlay.isConnected).toBe(true);
+    scrollTo(565); // 以 535 为新起点，1/4 行程
+    expect(backdrop.style.opacity).toBe('0.75');
+  });
+
+  it('停手时进度超过阈值继续飞回关闭，落在原图实时位置', () => {
+    const { img, overlay } = openImage();
+    const start = img.style.transform;
+    scrollTo(560); // 进度 0.5
+    vi.advanceTimersByTime(150);
+    expect(overlay.isConnected).toBe(true);
+    vi.advanceTimersByTime(320);
+    expect(overlay.isConnected).toBe(false);
+    expect(img.style.transform).toBe(`translate(150px, 240px) scale(0.5, 0.5) ${start}`);
   });
 
   it('图片还在加载时也能滚动关闭，迟到的 load 不会重新播放打开动画', () => {

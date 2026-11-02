@@ -9,11 +9,12 @@ import {
   type Rect,
   SCALE_MAX,
   SCALE_MIN,
+  scrollFlightTransform,
   stepZoomLevel,
   viewTransformCss,
   zoomAround,
 } from './geometry';
-import type { LightboxState } from './types';
+import type { LightboxState, ScrollCloseState } from './types';
 
 export function rectOf(el: Element): Rect {
   const r = el.getBoundingClientRect();
@@ -52,9 +53,30 @@ export function setOriginHidden(s: Pick<LightboxState, 'originNode'>, hidden: bo
 export function resetScrollClose(s: LightboxState): void {
   s.openScrollY = window.scrollY;
   if (!s.scrollClose) return;
+  s.scope.clearTimeout(s.scrollClose.settleTimer);
   s.scrollClose = null;
   s.img.style.opacity = '1';
   setFade(s, 1, 'opacity 180ms ease-out');
+}
+
+// 按进度把图写到「快照 rect → 页面原图实时 rect」之间，无 CSS 过渡、逐次直写。
+export function writeScrollFlight(
+  s: LightboxState,
+  flight: ScrollCloseState,
+  progress: number,
+): void {
+  flight.progress = progress;
+  s.img.style.transition = 'none';
+  s.img.style.transform = scrollFlightTransform(
+    flight.rect,
+    rectOf(s.originNode),
+    progress,
+    flight.transform,
+  );
+  s.img.style.opacity = String(
+    s.solidFlight ? flight.imgOpacity : flight.imgOpacity * (1 - progress),
+  );
+  setFade(s, flight.fadeOpacity * (1 - progress), 'none');
 }
 
 export function isErrorShown(s: LightboxState): boolean {

@@ -6,7 +6,8 @@ import {
   matchesAspect,
   matIdentity,
   panBy,
-  scrollFlightTransform,
+  SCROLL_FLIGHT_MIN_MS,
+  scrollFlightEase,
   transformFor,
   viewTransformCss,
 } from './geometry';
@@ -30,6 +31,7 @@ import {
   stepZoom,
   syncZoomControls,
   updateDownloadLink,
+  writeScrollFlight,
   zoomBy,
 } from './view';
 
@@ -232,24 +234,24 @@ export function openLightbox(
       return;
     }
 
-    let followScroll: (() => void) | null = null;
     if (s.scrollClose) {
-      // 与滚动中的外层变换同构，Esc/大步滚轮都从当前动画帧继续飞回。
+      // 逐帧插值到页面原图的实时 rect：滚轮惯性仍在移动页面时，终点每帧跟随；
+      // 最后一帧落在原图上后同帧移除，原图显形时没有跳变。
       const flight = s.scrollClose;
-      s.img.style.transition = FLIGHT_TRANSITION;
-      followScroll = (): void => {
-        if (s.scope.disposed) return;
-        s.img.style.transform = scrollFlightTransform(
-          flight.rect,
-          rectOf(s.originNode),
-          1,
-          flight.transform,
-        );
+      s.scope.clearTimeout(flight.settleTimer);
+      const from = flight.progress;
+      const duration = Math.max(SCROLL_FLIGHT_MIN_MS, FLIGHT_MS * (1 - from));
+      const t0 = performance.now();
+      const step = (): void => {
+        const t = Math.min((performance.now() - t0) / duration, 1);
+        writeScrollFlight(s, flight, from + (1 - from) * scrollFlightEase(t));
+        if (t < 1) s.scope.frame(step);
+        else removeOverlay();
       };
-      followScroll();
-      // 收尾的飞行期间滚轮惯性仍可能移动页面，终点继续跟随，结束后解除。
-      s.scope.listen(window, 'scroll', followScroll, { passive: true });
-    } else if (s.normalized) {
+      step();
+      return;
+    }
+    if (s.normalized) {
       // 操控态（缩放/旋转/平移过）：当前 transform 是定长 6 函数列表，或
       // dragclose 的 matrix() 串。飞回目标必须写成同构 6 函数列表
       // （closeFlightTransform）：rotate/k 槽两端相等恒不动，只有外层
@@ -283,7 +285,6 @@ export function openLightbox(
     s.img.style.opacity = s.solidFlight ? '1' : '0';
 
     const done = (): void => {
-      if (followScroll) window.removeEventListener('scroll', followScroll);
       removeOverlay();
     };
     // FLIGHT_MS 兜底，避免 transitionend 不触发

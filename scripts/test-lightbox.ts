@@ -253,6 +253,47 @@ async function assertMousePan(page: Playwright.Page) {
   await close(page);
 }
 
+// Scrolling at 6px/frame must keep the flight glued to the live thumbnail: on the last
+// painted frame before removal the image rect equals the thumbnail rect.
+async function assertScrollCloseTracksOrigin(page: Playwright.Page) {
+  await open(page);
+  const last = await page.evaluate(
+    () =>
+      new Promise<{ dx: number; dy: number; dw: number }>((resolve) => {
+        let frame = 0;
+        let last = { dx: NaN, dy: NaN, dw: NaN };
+        const tick = (): void => {
+          requestAnimationFrame(() => {
+            // After paint, before the next frame: reads the state just painted.
+            setTimeout(() => {
+              const img = document.querySelector('.lightbox-img')?.getBoundingClientRect();
+              const origin = document.querySelector('.post-content img')?.getBoundingClientRect();
+              if (img && origin) {
+                last = {
+                  dx: img.left - origin.left,
+                  dy: img.top - origin.top,
+                  dw: img.width - origin.width,
+                };
+              }
+              if (!document.querySelector('.lightbox-overlay')) {
+                resolve(last);
+                return;
+              }
+              if (frame++ < 50) scrollBy(0, 6);
+              tick();
+            }, 0);
+          });
+        };
+        tick();
+      }),
+  );
+  assert.ok(
+    Math.abs(last.dx) < 2 && Math.abs(last.dy) < 2 && Math.abs(last.dw) < 2,
+    `scroll-close must land on the live thumbnail: ${JSON.stringify(last)}`,
+  );
+  await page.evaluate(() => scrollTo(0, 0));
+}
+
 (async () => {
   const browser = await chromium.launch({
     headless: true,
@@ -304,19 +345,44 @@ async function assertMousePan(page: Playwright.Page) {
         });
       }
       await assertGallery(page);
-      // Scrolling halfway shrinks towards the live thumbnail; another step closes it.
-      await page.evaluate(() => scrollTo(0, 60));
-      if (!reduced) {
-        await page.waitForTimeout(120);
+      // A short scroll that stops springs back; scrolling past the threshold and stopping closes.
+      if (reduced) {
+        await page.evaluate(() => scrollTo(0, 60));
+        await page.waitForFunction(
+          () => !document.querySelector<HTMLElement>('.lightbox-overlay')!,
+        );
+      } else {
+        const fit = await page.locator('.lightbox-img').boundingBox();
+        assert.ok(fit, 'lightbox image should have a box');
+        await page.evaluate(() => scrollTo(0, 30));
+        await page.waitForTimeout(50);
         const opacity = await page
           .locator('.lightbox-backdrop')
           .evaluate((el) => Number(getComputedStyle(el).opacity));
         assert.ok(opacity > 0 && opacity < 1, 'scroll should interpolate backdrop opacity');
-        await page.evaluate(() => scrollTo(0, 200));
+        await page.waitForTimeout(450);
+        const settled = await page.locator('.lightbox-img').boundingBox();
+        const settledOpacity = await page
+          .locator('.lightbox-backdrop')
+          .evaluate((el) => Number(getComputedStyle(el).opacity));
+        assert.ok(
+          (await page.locator('.lightbox-overlay').count()) === 1 &&
+            settledOpacity === 1 &&
+            settled &&
+            Math.abs(settled.x - fit.x) < 1 &&
+            Math.abs(settled.y - fit.y) < 1 &&
+            Math.abs(settled.width - fit.width) < 1 &&
+            Math.abs(settled.height - fit.height) < 1,
+          'a short scroll that stops should spring back open',
+        );
+        await page.evaluate(() => scrollTo(0, 90));
+        await page.waitForFunction(() => !document.querySelector('.lightbox-overlay'), null, {
+          timeout: 1000,
+        });
       }
-      await page.waitForFunction(() => !document.querySelector<HTMLElement>('.lightbox-overlay')!);
       assert.deepEqual(await originVisibility(page), ['visible', 'visible']);
       await page.evaluate(() => scrollTo(0, 0));
+      if (!reduced) await assertScrollCloseTracksOrigin(page);
       await assertSpaRefresh(page);
       if (options.hasTouch) await assertPinchAndDrag(page);
       else await assertMousePan(page);
@@ -331,7 +397,7 @@ async function assertMousePan(page: Playwright.Page) {
       assert.equal(await page.locator('.lightbox-overlay').count(), 0);
       assert.deepEqual(errors, []);
       console.log(
-        `${name}: rotation, gallery, scroll, SPA lifecycle${options.hasTouch ? ', pinch and drag' : ', mouse pan'} passed`,
+        `${name}: rotation, gallery, scroll settle, scroll tracking, SPA lifecycle${options.hasTouch ? ', pinch and drag' : ', mouse pan'} passed`,
       );
       await context.close();
     }

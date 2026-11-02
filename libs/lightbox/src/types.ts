@@ -40,13 +40,24 @@ export type GestureState =
     }
   | { mode: 'dragclose'; pointerId: number; startY: number; dy: number };
 
+export interface ScrollCloseState {
+  rect: Rect;
+  transform: string;
+  imgOpacity: number;
+  fadeOpacity: number;
+  // 最近一次写入的缩回进度（0 = 打开态，1 = 页面原图位置）；收尾飞行从这里接着走。
+  progress: number;
+  // 停止滚动后的收尾计时器（回弹或关闭），id 来自 s.scope.timeout。
+  settleTimer: number | undefined;
+}
+
 export interface LightboxState extends LightboxElements {
   originNode: HTMLElement;
   gallery: HTMLElement[];
   index: number | null;
   isSingle: boolean;
   openScrollY: number;
-  scrollClose: { rect: Rect; transform: string; imgOpacity: number; fadeOpacity: number } | null;
+  scrollClose: ScrollCloseState | null;
   origSrc: string;
   altText: string;
   closing: boolean;

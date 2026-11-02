@@ -10,6 +10,8 @@ import {
   matTranslate,
   panBy,
   SCROLL_CLOSE_PX,
+  SCROLL_SETTLE_CLOSE,
+  SCROLL_SETTLE_MS,
   scrollFlightTransform,
   transformFor,
   wheelZoomFactor,
@@ -24,10 +26,12 @@ import {
   measureInset,
   pokeToolbar,
   rectOf,
+  resetScrollClose,
   resetView,
   rotate,
   setFade,
   stepZoom,
+  writeScrollFlight,
   zoomBy,
 } from './view';
 
@@ -53,6 +57,27 @@ function trapFocus(overlay: HTMLElement, ev: KeyboardEvent): void {
 
 const CHROME_SELECTOR = '.lightbox-topbar, .lightbox-bottom, .lightbox-nav';
 
+const SNAP_BACK_TRANSITION = 'transform 180ms ease-out, opacity 180ms ease-out';
+
+// 停止滚动后收尾：进度够了继续飞回关闭，否则回弹到完全打开并以当前滚动位置重新起算。
+function settleScrollClose(s: LightboxState, actions: LightboxActions): void {
+  const flight = s.scrollClose;
+  if (s.closing || !flight) return;
+  if (flight.progress >= SCROLL_SETTLE_CLOSE) {
+    actions.close(false);
+    return;
+  }
+  resetScrollClose(s); // 清空 scrollClose、openScrollY = scrollY、恢复图与背景不透明
+  if (s.normalized) {
+    applyView(s, true);
+  } else {
+    const target = s.target;
+    if (!target) return; // 快照建立的前提是已有 target，此处只为收窄类型
+    s.img.style.transform = transformFor(target, s.baseW ?? target.w, s.baseH ?? target.h);
+  }
+  s.img.style.transition = SNAP_BACK_TRANSITION; // 在写 transform 之后设置，覆盖 applyView 只含 transform 的过渡
+}
+
 function onScrollClose(s: LightboxState, actions: LightboxActions): void {
   if (s.closing) return;
   const progress = Math.min(Math.abs(window.scrollY - s.openScrollY) / SCROLL_CLOSE_PX, 1);
@@ -68,6 +93,8 @@ function onScrollClose(s: LightboxState, actions: LightboxActions): void {
       transform: style.transform,
       imgOpacity: Number(style.opacity),
       fadeOpacity: Number(getComputedStyle(s.backdrop).opacity),
+      progress: 0,
+      settleTimer: undefined,
     };
     // 先提交同构首帧；快照包含实际绘制中的缩放/旋转，不依赖动画目标值。
     s.img.style.transition = 'none';
@@ -83,18 +110,11 @@ function onScrollClose(s: LightboxState, actions: LightboxActions): void {
     actions.close(false);
     return;
   }
-  // 短过渡平滑离散的鼠标滚轮步进；连续滚动持续更新原图实时位置。
-  s.img.style.transition = 'transform 100ms ease-out, opacity 100ms ease-out';
-  s.img.style.transform = scrollFlightTransform(
-    s.scrollClose.rect,
-    rectOf(s.originNode),
-    progress,
-    s.scrollClose.transform,
-  );
-  s.img.style.opacity = String(
-    s.solidFlight ? s.scrollClose.imgOpacity : s.scrollClose.imgOpacity * (1 - progress),
-  );
-  setFade(s, s.scrollClose.fadeOpacity * (1 - progress), 'opacity 100ms ease-out');
+  // 逐次直写、不加 CSS 过渡：过渡每次重设目标都会从头起步，图就落后于原图。
+  const flight = s.scrollClose;
+  writeScrollFlight(s, flight, progress);
+  s.scope.clearTimeout(flight.settleTimer);
+  flight.settleTimer = s.scope.timeout(() => settleScrollClose(s, actions), SCROLL_SETTLE_MS);
 }
 
 export function bindInteractions(s: LightboxState, actions: LightboxActions): () => void {

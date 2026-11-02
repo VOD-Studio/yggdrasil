@@ -159,6 +159,13 @@ export const SCALE_MAX = ZOOM_LEVELS[ZOOM_LEVELS.length - 1]; // 相对 fit 的�
 export const DOUBLE_CLICK_SCALE = 2.5; // 双击/双敲击放大的目标倍率
 export const SCROLL_CLOSE_PX = 120; // 页面滚动缩回原图的行程
 export const DRAG_CLOSE_PX = SCROLL_CLOSE_PX;
+export const SCROLL_SETTLE_MS = 150; // 停止滚动多久后收尾
+export const SCROLL_SETTLE_CLOSE = 0.35; // 停手时进度达到它则关闭，否则回弹
+export const SCROLL_FLIGHT_MIN_MS = 120; // 滚动收尾飞行的最短时长
+// 滚动收尾飞行的缓动：ease-out cubic，起步即有速度，接住滚动中的运动，不再慢起。
+export function scrollFlightEase(t: number): number {
+  return 1 - (1 - t) ** 3;
+}
 
 export function clampScale(s: number): number {
   return Math.min(SCALE_MAX, Math.max(SCALE_MIN, s));
