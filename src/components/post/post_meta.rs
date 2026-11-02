@@ -15,7 +15,7 @@ use crate::utils::time::ymd;
 /// 日期优先使用发布时间，否则回退到创建时间，用标题字体的旧式数字；阅读时长与字数
 /// 用等宽数字。窄屏下各项整体换行。
 #[component]
-pub fn PostMeta(post: PostHeaderData) -> impl IntoView {
+pub(super) fn PostMeta(post: PostHeaderData) -> impl IntoView {
     let at = post.published_at.unwrap_or(post.created_at);
     let datetime = ymd(&at, '-');
     let date = ymd(&at, '.');

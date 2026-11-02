@@ -14,7 +14,7 @@ use crate::routes::Route;
 ///   `Option<String>` 或省略
 /// - `sample`：图鉴展示非跳转的样例链接；正式文章默认 false。
 #[component]
-pub fn Breadcrumbs(
+pub(super) fn Breadcrumbs(
     #[prop(optional, into)] tag: MaybeProp<String>,
     #[prop(optional)] sample: bool,
 ) -> impl IntoView {

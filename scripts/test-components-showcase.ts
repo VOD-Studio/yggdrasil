@@ -5,9 +5,8 @@
  * SHOWCASE_BASE=http://127.0.0.1:8080 PLAYWRIGHT_MODULE=/path/to/playwright \
  *   CHROMIUM_PATH=/path/to/chromium bun scripts/test-components-showcase.ts
  * Optional SHOWCASE_ARTIFACT_DIR stores screenshots/report; default is a temporary directory.
- * SHOWCASE_ONLY=post-footer runs focused footer layout, theme, and sample-link checks.
- * SHOWCASE_ONLY=post-header checks full, unscaled headers and draft/summary variants.
- * SHOWCASE_ONLY=post-nav-links checks responsive navigation and missing-neighbor states.
+ * SHOWCASE_ONLY=post-footer checks responsive footer navigation, single/empty neighbors.
+ * SHOWCASE_ONLY=post-header checks unscaled headers, breadcrumbs, draft/summary/tag variants.
  * Sensitive showcase requests are recorded, aborted, and fail the run.
  */
 import assert from 'node:assert/strict';
@@ -57,7 +56,6 @@ const TARGETS: [string, string, string][] = [
   ['post-content', 'PostContent', '[data-showcase-preview="post-content"] .post-content'],
   ['post-footer', 'PostFooter', '[data-showcase-preview="post-footer"] .post-footer'],
   ['post-header', 'PostHeader', '[data-showcase-preview="post-header"] .post-header'],
-  ['post-nav-links', 'PostNavLinks', '[data-showcase-preview="post-nav-links"] .post-nav'],
   ['post-toc', 'PostToc', '[data-showcase-preview="post-toc"] .toc-sidebar'],
   ['tiptap-editor', 'TiptapEditor', '.showcase-browser-host--tiptap .ProseMirror'],
   ['code-mirror-editor', 'CodeMirrorEditor', '.showcase-browser-host--code .cm-editor'],
@@ -297,53 +295,17 @@ async function realPreview(page: Playwright.Page, slug: string, selector: string
             );
           },
         ),
-      };
-    });
-    assert(layout.scrollHeight <= layout.clientHeight + 1, 'footer preview has no inner scrollbar');
-    assert(layout.visibleTitles, 'footer preview shows adjacent article titles in full');
-  }
-  if (slug === 'post-nav-links') {
-    const layout = await root.evaluate((element) => {
-      const preview = element.querySelector<HTMLElement>(
-        '[data-showcase-preview="post-nav-links"]',
-      )!;
-      const outer = element.getBoundingClientRect();
-      const box = preview.getBoundingClientRect();
-      return {
-        centered: Math.abs(box.left + box.width / 2 - outer.left - outer.width / 2) < 1,
-        noOverflow:
-          preview.scrollWidth <= preview.clientWidth + 1 &&
-          preview.scrollHeight <= preview.clientHeight + 1,
-        titleSize: Math.min(
-          ...[...preview.querySelectorAll<HTMLElement>('.post-nav-title')].map((title) =>
-            Number.parseFloat(getComputedStyle(title).fontSize),
-          ),
-        ),
         naturalSize: [...preview.querySelectorAll<HTMLElement>('.post-nav')].every(
           (nav) =>
             Math.abs(
               nav.getBoundingClientRect().width - Number.parseFloat(getComputedStyle(nav).width),
             ) < 1,
         ),
-        visibleTitles: [...preview.querySelectorAll<HTMLElement>('.post-nav-title')].every(
-          (title) => {
-            const rect = title.getBoundingClientRect();
-            return (
-              rect.left >= box.left &&
-              rect.right <= box.right + 1 &&
-              rect.top >= box.top &&
-              rect.bottom <= Math.min(box.bottom, outer.bottom) + 1
-            );
-          },
-        ),
       };
     });
-    assert(layout.centered && layout.naturalSize, 'navigation preview stays centered and unscaled');
-    assert(
-      layout.noOverflow && layout.visibleTitles,
-      'navigation titles are complete without inner scrolling',
-    );
-    assert(layout.titleSize >= (card ? 14 : 15), 'article titles remain readable');
+    assert(layout.scrollHeight <= layout.clientHeight + 1, 'footer preview has no inner scrollbar');
+    assert(layout.visibleTitles, 'footer preview shows adjacent article titles in full');
+    assert(layout.naturalSize, 'footer navigation stays unscaled');
   }
 }
 async function screenshot(page: Playwright.Page, name: string) {
@@ -604,7 +566,18 @@ async function catalog(page: Playwright.Page) {
 }
 async function removedLayoutDetails(page: Playwright.Page) {
   stage = 'removed-layout-details';
-  for (const slug of ['admin-layout', 'frontend-layout', 'header', 'footer', 'search-icon-link']) {
+  const removed = [
+    'admin-layout',
+    'frontend-layout',
+    'header',
+    'footer',
+    'search-icon-link',
+    // Rendered only inside PostHeader / PostFooter, so they have no detail page of their own.
+    'breadcrumbs',
+    'post-meta',
+    'post-nav-links',
+  ];
+  for (const slug of removed) {
     visitId++;
     const response = await page.goto(`${BASE}/about/components/${slug}`, {
       waitUntil: 'domcontentloaded',
@@ -616,7 +589,7 @@ async function removedLayoutDetails(page: Playwright.Page) {
     await page.getByRole('link', { name: '返回组件图鉴' }).click();
     await page.locator('.showcase-gallery').waitFor();
   }
-  pass('removed layout details return 404 and link back to the catalog');
+  pass('removed details return 404 and link back to the catalog');
 }
 
 async function details(
@@ -673,10 +646,14 @@ async function postHeader(page: Playwright.Page) {
         await preview.locator('[data-showcase-sample="published"] .post-draft').count(),
         0,
       );
-      assert.equal(
-        await preview.locator('[data-showcase-sample="no-summary"] .post-lede').count(),
-        0,
-      );
+      const published = preview.locator('[data-showcase-sample="published"]');
+      assert.equal(await published.locator('.post-crumbs a').count(), 2, 'crumbs link home + tag');
+      assert.equal(await published.locator('.post-meta time').count(), 1);
+      const bare = preview.locator('[data-showcase-sample="no-summary"]');
+      assert.equal(await bare.locator('.post-lede').count(), 0);
+      assert.equal(await bare.locator('.post-tags').count(), 0);
+      assert.equal(await bare.locator('.post-crumbs a').count(), 1, 'untagged crumbs keep 文章');
+      assert.equal(await bare.locator('.post-crumbs-sep').count(), 0);
       const longTitle = await preview
         .locator('[data-showcase-sample="no-summary"] .post-title')
         .evaluate(
@@ -699,87 +676,16 @@ async function postHeader(page: Playwright.Page) {
       await assertNoDocumentOverflow(page, 'post-header-long-content');
       await goto(page, '/about/components/post-header');
       await realPreview(page, 'post-header', selector);
-      pass(`${stage}: complete card, SPA/direct detail, draft mark, no summary and long content`);
+      pass(`${stage}: card, SPA/direct detail, crumbs, draft mark, no summary/tags, long content`);
     }
   }
 }
 
 async function postFooter(page: Playwright.Page) {
   const selector = '[data-showcase-preview="post-footer"] .post-footer';
-  for (const width of [1440, 390]) {
-    for (const colorScheme of ['light', 'dark'] as const) {
-      stage = `post-footer-${width}-${colorScheme}`;
-      await page.setViewportSize({ width, height: 1000 });
-      await page.emulateMedia({
-        colorScheme,
-        reducedMotion: width === 390 ? 'reduce' : 'no-preference',
-      });
-      await goto(page, '/about/components');
-      await page.locator('.showcase-search input').fill('PostFooter');
-      const card = page.locator('#showcase-post-footer');
-      await card.scrollIntoViewIfNeeded();
-      await realPreview(page, 'post-footer', selector, true);
-      await assertNoDocumentOverflow(page, 'post-footer-card');
-      await elementScreenshot(card, `${stage}-card`);
-
-      visitId++;
-      await card.locator('.showcase-card-title a').click();
-      await page.waitForURL(`${BASE}/about/components/post-footer`);
-      await realPreview(page, 'post-footer', selector);
-      const footer = page.locator(selector);
-      assert.equal(await footer.locator('a').count(), 2);
-      await elementScreenshot(page.locator('.showcase-live-panel'), `${stage}-detail`);
-      for (const link of await footer.locator('a').all()) {
-        await link.click();
-        assert.equal(
-          new URL(page.url()).pathname + new URL(page.url()).hash,
-          '/about/components/post-footer',
-          'sample links stay on the footer preview',
-        );
-      }
-      await page.keyboard.press('Tab');
-      await footer.locator('a.prev').focus();
-      const focus = await footer
-        .locator('a.prev')
-        .evaluate((element) => getComputedStyle(element).boxShadow);
-      assert.notEqual(focus, 'none', 'adjacent article links have a visible keyboard focus');
-
-      // Temporary content stresses wrapping without writing articles or changing fixture data.
-      await footer.evaluate((element) => {
-        for (const title of element.querySelectorAll<HTMLElement>('.post-nav-title')) {
-          title.textContent = '一篇很长的文章标题，保留完整的文字与阅读方向。'.repeat(5);
-        }
-      });
-      await realPreview(page, 'post-footer', selector);
-      await assertNoDocumentOverflow(page, 'post-footer-long-content');
-      await footer.locator('a.prev').evaluate((element) => element.remove());
-      const position = await footer.locator('a.next').evaluate((element) => {
-        const parent = element.parentElement!.getBoundingClientRect();
-        const box = element.getBoundingClientRect();
-        return {
-          fullWidth: Math.abs(box.width - parent.width) < 1,
-          right: box.right,
-          parentRight: parent.right,
-        };
-      });
-      assert.equal(position.fullWidth, width === 390, 'a lone next article fills the mobile row');
-      assert(
-        Math.abs(position.right - position.parentRight) < 1,
-        'a lone next article keeps its alignment',
-      );
-      pass(`${stage}: full card/detail, sample links, focus, long content and lone next article`);
-
-      await goto(page, '/about/components/post-footer');
-      await realPreview(page, 'post-footer', selector);
-    }
-  }
-}
-
-async function postNavLinks(page: Playwright.Page) {
-  const selector = '[data-showcase-preview="post-nav-links"] .post-nav';
   for (const width of [1440, 760, 390, 320]) {
     for (const colorScheme of ['light', 'dark'] as const) {
-      stage = `post-nav-links-${width}-${colorScheme}`;
+      stage = `post-footer-${width}-${colorScheme}`;
       await page.setViewportSize({ width, height: 1000 });
       await page.emulateMedia({
         colorScheme,
@@ -790,20 +696,20 @@ async function postNavLinks(page: Playwright.Page) {
         (dark) => document.documentElement.classList.contains('dark') === dark,
         colorScheme === 'dark',
       );
-      await page.locator('.showcase-search input').fill('PostNavLinks');
-      const card = page.locator('#showcase-post-nav-links');
+      await page.locator('.showcase-search input').fill('PostFooter');
+      const card = page.locator('#showcase-post-footer');
       await card.scrollIntoViewIfNeeded();
-      await realPreview(page, 'post-nav-links', selector, true);
-      await assertNoDocumentOverflow(page, 'post-nav-links-card');
+      await realPreview(page, 'post-footer', selector, true);
+      await assertNoDocumentOverflow(page, 'post-footer-card');
       await card.locator('.post-nav a').first().click();
       assert.equal(new URL(page.url()).pathname + new URL(page.url()).hash, '/about/components');
       await elementScreenshot(card, `${stage}-card`);
 
       visitId++;
       await card.locator('.showcase-card-title a').click();
-      await page.waitForURL(`${BASE}/about/components/post-nav-links`);
-      await realPreview(page, 'post-nav-links', selector);
-      const preview = page.locator('[data-showcase-preview="post-nav-links"]');
+      await page.waitForURL(`${BASE}/about/components/post-footer`);
+      await realPreview(page, 'post-footer', selector);
+      const preview = page.locator('[data-showcase-preview="post-footer"]');
       const both = preview.locator('[data-showcase-sample="both"]');
       assert.equal(await both.locator('.post-nav a').count(), 2);
       assert.equal(await preview.locator('[data-showcase-sample="next-only"] a.prev').count(), 0);
@@ -811,35 +717,43 @@ async function postNavLinks(page: Playwright.Page) {
       assert.equal(await preview.locator('[data-showcase-sample="prev-only"] a.prev').count(), 1);
       assert.equal(await preview.locator('[data-showcase-sample="prev-only"] a.next').count(), 0);
       assert.equal(
-        await preview.locator('[data-showcase-sample="empty"] nav').count(),
+        await preview.locator('[data-showcase-sample="empty"] :is(footer, nav)').count(),
         0,
-        'no neighbors means no empty navigation landmark',
+        'no neighbors means no empty footer or navigation landmark',
       );
 
+      // post.css stacks the cards below 768px; wider, a lone card keeps its column and the
+      // mascot fills the empty one.
       const grids = await preview.locator('.post-nav').evaluateAll((navs) =>
         navs.map((nav) => {
           const box = nav.getBoundingClientRect();
           const links = [...nav.querySelectorAll<HTMLElement>('a')].map((link) =>
             link.getBoundingClientRect(),
           );
+          const next = nav.querySelector<HTMLElement>('a.next')?.getBoundingClientRect();
+          const mascot = nav.querySelector<HTMLElement>('.post-nav-mascot');
           return {
-            narrow: box.width <= 480 || innerWidth <= 600,
+            narrow: innerWidth < 768,
+            lone: links.length === 1,
             fullWidth: links.every((link) => Math.abs(link.width - box.width) < 1),
             stacked: links.length < 2 || links[1].top >= links[0].bottom,
-            alignedRight: Math.abs(links.at(-1)!.right - box.right) < 1,
+            nextRight: !next || Math.abs(next.right - box.right) < 1,
+            mascot: !!mascot && getComputedStyle(mascot).display !== 'none',
           };
         }),
       );
-      for (const [index, grid] of grids.entries()) {
-        assert.equal(grid.fullWidth, grid.narrow, 'card layout follows its container width');
-        assert.equal(grid.stacked, grid.narrow || index > 0);
-        if (grid.narrow || index === 0) assert(grid.alignedRight);
+      assert.equal(grids.length, 3, 'both, next-only and prev-only footers render navigation');
+      for (const grid of grids) {
+        assert.equal(grid.fullWidth, grid.narrow, 'cards fill the row only on narrow screens');
+        assert.equal(grid.stacked, grid.narrow || grid.lone);
+        assert(grid.nextRight, 'the next article stays in the right column');
+        assert.equal(grid.mascot, grid.lone && !grid.narrow, 'mascot fills a lone wide row');
       }
       for (const link of await preview.locator('.post-nav a').all()) {
         await link.click();
         assert.equal(
           new URL(page.url()).pathname + new URL(page.url()).hash,
-          '/about/components/post-nav-links',
+          '/about/components/post-footer',
           'sample links stay on the preview',
         );
       }
@@ -849,11 +763,12 @@ async function postNavLinks(page: Playwright.Page) {
       assert.notEqual(
         await first.evaluate((element) => getComputedStyle(element).boxShadow),
         'none',
+        'adjacent article links have a visible keyboard focus',
       );
       await page.keyboard.press('Enter');
       assert.equal(
         new URL(page.url()).pathname + new URL(page.url()).hash,
-        '/about/components/post-nav-links',
+        '/about/components/post-footer',
         'keyboard activation keeps samples local',
       );
       if (width < 640) {
@@ -862,17 +777,18 @@ async function postNavLinks(page: Playwright.Page) {
           '0s',
         );
       }
-      await assertNoDocumentOverflow(page, 'post-nav-links-detail');
+      await assertNoDocumentOverflow(page, 'post-footer-detail');
       await elementScreenshot(page.locator('.showcase-live-panel'), `${stage}-detail`);
 
+      // Temporary content stresses wrapping without writing articles or changing fixture data.
       await both.locator('.post-nav-title').evaluateAll((titles) => {
         for (const title of titles) title.textContent = 'LongTitleWithoutSpaces'.repeat(15);
       });
-      await realPreview(page, 'post-nav-links', selector);
-      await assertNoDocumentOverflow(page, 'post-nav-links-long-titles');
-      await goto(page, '/about/components/post-nav-links');
-      await realPreview(page, 'post-nav-links', selector);
-      pass(`${stage}: natural card/detail, single/empty states, focus and long titles`);
+      await realPreview(page, 'post-footer', selector);
+      await assertNoDocumentOverflow(page, 'post-footer-long-titles');
+      await goto(page, '/about/components/post-footer');
+      await realPreview(page, 'post-footer', selector);
+      pass(`${stage}: card/detail, single/empty neighbors, sample links, focus and long titles`);
     }
   }
 }
@@ -1217,17 +1133,6 @@ async function main() {
       baselineReads.set(endpoint, (baselineReads.get(endpoint) || 0) + 1);
     }
     const storageBefore = await commentStorage(page);
-    if (process.env.SHOWCASE_ONLY === 'post-nav-links') {
-      await postNavLinks(page);
-      assertNetworkDelta();
-      assert.deepEqual(await commentStorage(page), storageBefore);
-      assert.deepEqual(report.blockedBusinessRequests, []);
-      assert.deepEqual(report.pageErrors, []);
-      pass(
-        'focused navigation checks have no business requests, storage changes or browser errors',
-      );
-      return;
-    }
     if (process.env.SHOWCASE_ONLY === 'post-header') {
       await postHeader(page);
       assertNetworkDelta();

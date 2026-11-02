@@ -1329,8 +1329,7 @@ fn preview_route(slug: &str) -> Option<PreviewRoute> {
         "asset-picker-modal" | "asset-upload-modal" | "code-runner" | "sql-result-table" => {
             PreviewRoute::Business
         }
-        "breadcrumbs" | "post-header" | "post-meta" | "post-content" | "post-footer"
-        | "post-nav-links" | "post-toc" => PreviewRoute::LayoutArticle,
+        "post-header" | "post-content" | "post-footer" | "post-toc" => PreviewRoute::LayoutArticle,
         "comment-card-shell"
         | "comment-form"
         | "comment-item"

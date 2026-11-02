@@ -20,7 +20,7 @@ use crate::routes::Route;
 /// 两张并排卡片，下一篇右对齐；窄容器中纵向排列。
 /// 无相邻文章时不渲染对应链接，两侧都缺失时不渲染导航。
 #[component]
-pub fn PostNavLinks(
+pub(super) fn PostNavLinks(
     #[prop(into)] prev: Option<PostNav>,
     #[prop(into)] next: Option<PostNav>,
     #[prop(optional)] sample: bool,

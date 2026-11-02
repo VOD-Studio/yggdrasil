@@ -2,41 +2,19 @@
 
 use leptos::prelude::*;
 
-use crate::components::post::breadcrumbs::Breadcrumbs;
 use crate::components::post::post_content::PostContent;
 use crate::components::post::post_footer::PostFooter;
 use crate::components::post::post_header::PostHeader;
-use crate::components::post::post_meta::PostMeta;
-use crate::components::post::post_nav_links::PostNavLinks;
 use crate::components::post::post_toc::PostToc;
 use crate::models::post::{PostFooterData, PostHeaderData, PostNav, PostStatus};
 
 pub(super) fn preview(slug: &str, detail: bool) -> Option<AnyView> {
     match slug {
-        "breadcrumbs" => Some(view! { <BreadcrumbsPreview detail/> }.into_any()),
         "post-header" => Some(view! { <PostHeaderPreview detail/> }.into_any()),
-        "post-meta" => Some(view! { <PostMetaPreview/> }.into_any()),
         "post-content" => Some(view! { <PostContentPreview detail/> }.into_any()),
         "post-footer" => Some(view! { <PostFooterPreview detail/> }.into_any()),
-        "post-nav-links" => Some(view! { <PostNavLinksPreview detail/> }.into_any()),
         "post-toc" => Some(view! { <PostTocPreview detail/> }.into_any()),
         _ => None,
-    }
-}
-
-#[component]
-fn PostMetaPreview() -> impl IntoView {
-    let post = super::sample_post();
-    let title = post.title.clone();
-    let summary = post.summary.clone().unwrap_or_default();
-
-    view! {
-        <article class="showcase-post-meta-demo" data-showcase-preview="post-meta">
-            <p class="showcase-post-meta-kicker">"设计手记"</p>
-            <h3 class="post-title">{title}</h3>
-            <p class="post-description">{summary}</p>
-            <PostMeta post=PostHeaderData::from(&post)/>
-        </article>
     }
 }
 
@@ -55,6 +33,7 @@ fn PostHeaderPreview(detail: bool) -> impl IntoView {
     let mut without_summary = post.clone();
     without_summary.title = "在时间的缝隙里种下一些文字：从零开始构建自己的数字花园".to_string();
     without_summary.summary = None;
+    without_summary.tags = Vec::new();
 
     let examples = detail.then(|| {
         view! {
@@ -70,7 +49,7 @@ fn PostHeaderPreview(detail: bool) -> impl IntoView {
                     </article>
                 </section>
                 <section class="showcase-post-header-example">
-                    <h3>"长标题 · 无摘要" <span>"自然换行"</span></h3>
+                    <h3>"长标题 · 无摘要 · 无标签" <span>"面包屑只剩「文章」"</span></h3>
                     <article
                         class="showcase-post-header-sheet"
                         data-showcase-sample="no-summary"
@@ -93,40 +72,6 @@ fn PostHeaderPreview(detail: bool) -> impl IntoView {
                 <PostHeader post=PostHeaderData::from(&post)/>
             </article>
             {examples}
-        </div>
-    }
-}
-
-#[component]
-fn BreadcrumbsPreview(detail: bool) -> impl IntoView {
-    let extra = detail.then(|| {
-        view! {
-            <div class="showcase-breadcrumb-examples">
-                <section class="showcase-breadcrumb-example">
-                    <h3>"没有标签" <span>"只显示「文章」"</span></h3>
-                    <div class="showcase-breadcrumb-path">
-                        <Breadcrumbs sample=true/>
-                    </div>
-                </section>
-            </div>
-            <p class="showcase-breadcrumb-note">"样例链接停留在本页。"</p>
-        }
-    });
-
-    view! {
-        <div class="showcase-breadcrumb-demo" data-showcase-preview="breadcrumbs">
-            <article class="showcase-breadcrumb-context">
-                <div class="showcase-breadcrumb-path">
-                    <Breadcrumbs tag="源码剖析" sample=true/>
-                </div>
-                <div class="showcase-breadcrumb-copy">
-                    <h3>"让时间成为电路的一部分"</h3>
-                    <p class="showcase-breadcrumb-summary">
-                        "「文章」回到首页，栏目取文章的第一个标签。"
-                    </p>
-                </div>
-            </article>
-            {extra}
         </div>
     }
 }
@@ -198,65 +143,43 @@ fn PostContentPreview(detail: bool) -> impl IntoView {
 
 #[component]
 fn PostFooterPreview(detail: bool) -> impl IntoView {
-    let mut post = super::sample_post();
-    post.tags = vec!["设计".to_string(), "阅读".to_string(), "Rust".to_string()];
-    post.prev_post = Some(PostNav {
-        title: "沿着风的方向".to_string(),
-        slug: "sample-previous".to_string(),
-    });
-    post.next_post = Some(PostNav {
-        title: "下一圈年轮".to_string(),
-        slug: "sample-next".to_string(),
-    });
-    let note = detail.then(|| {
-        view! { <p class="showcase-post-footer-note">"样例标签和相邻文章不跳转。"</p> }
-    });
-
-    view! {
-        <div class="showcase-article-window" data-showcase-preview="post-footer">
-            <PostFooter post=PostFooterData::from(&post) sample=true/>
-            {note}
-        </div>
-    }
-}
-
-#[component]
-fn PostNavLinksPreview(detail: bool) -> impl IntoView {
     let prev = PostNav {
-        title: "一片叶子，落在代码之间".to_string(),
+        title: "沿着风的方向".to_string(),
         slug: "sample-previous".to_string(),
     };
     let next = PostNav {
-        title: "下一圈年轮：让想法慢慢长成一座数字花园".to_string(),
+        title: "下一圈年轮".to_string(),
         slug: "sample-next".to_string(),
     };
-
+    let footer = |prev_post: Option<PostNav>, next_post: Option<PostNav>| PostFooterData {
+        prev_post,
+        next_post,
+    };
     let examples = detail.then(|| {
         view! {
             <div class="showcase-post-nav-examples">
                 <section class="showcase-post-nav-example" data-showcase-sample="next-only">
                     <h3>"第一篇文章" <span>"只有下一篇"</span></h3>
-                    <PostNavLinks prev=None next=Some(next.clone()) sample=true/>
+                    <PostFooter post=footer(None, Some(next.clone())) sample=true/>
                 </section>
                 <section class="showcase-post-nav-example" data-showcase-sample="prev-only">
                     <h3>"最后一篇文章" <span>"只有上一篇"</span></h3>
-                    <PostNavLinks prev=Some(prev.clone()) next=None sample=true/>
+                    <PostFooter post=footer(Some(prev.clone()), None) sample=true/>
                 </section>
                 <section class="showcase-post-nav-empty" data-showcase-sample="empty">
-                    <PostNavLinks prev=None next=None sample=true/>
-                    <p>"没有相邻文章时，不展示导航入口。"</p>
+                    <PostFooter post=footer(None, None) sample=true/>
+                    <p>"没有相邻文章时，整个页脚不渲染。"</p>
                 </section>
             </div>
-            <p class="showcase-post-nav-note">"试试悬停或用 Tab 聚焦卡片。样例链接停留在本页。"</p>
+            <p class="showcase-post-footer-note">"试试悬停或用 Tab 聚焦卡片。样例链接停留在本页。"</p>
         }
     });
 
     view! {
-        <div class="showcase-post-nav-demo" data-showcase-preview="post-nav-links">
-            <section class="showcase-post-nav-sheet" data-showcase-sample="both">
-                <h3 class="showcase-post-nav-heading">"继续阅读" <span>"沿着文字，走向下一页"</span></h3>
-                <PostNavLinks prev=Some(prev.clone()) next=Some(next.clone()) sample=true/>
-            </section>
+        <div class="showcase-article-window" data-showcase-preview="post-footer">
+            <div data-showcase-sample="both">
+                <PostFooter post=footer(Some(prev.clone()), Some(next.clone())) sample=true/>
+            </div>
             {examples}
         </div>
     }

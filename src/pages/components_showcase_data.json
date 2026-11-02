@@ -1994,34 +1994,6 @@
       "usage_kind": "rust"
     },
     {
-      "name": "Breadcrumbs",
-      "slug": "breadcrumbs",
-      "label": "面包屑",
-      "group": "post",
-      "summary": "文章标题上方的「文章 / 所在栏目」。",
-      "states": "文章入口 · 栏目 · 无标签",
-      "description": "「文章」回到首页，栏目取文章的第一个标签并链接到标签页；文章没有标签时只显示「文章」。",
-      "props": [
-        [
-          "tag",
-          "MaybeProp<String>",
-          "None",
-          "所在栏目，通常是文章的第一个标签。"
-        ],
-        [
-          "sample",
-          "bool",
-          "false",
-          "图鉴中的非跳转样例链接；正式文章使用默认值。"
-        ]
-      ],
-      "keys": [],
-      "source": "src/components/post/breadcrumbs.rs",
-      "code": "use crate::components::post::breadcrumbs::Breadcrumbs;\n\nview! {\n    <Breadcrumbs tag=post.tags.first().cloned()/>\n}",
-      "preview_mode": "static",
-      "usage_kind": "rust"
-    },
-    {
       "name": "PostContent",
       "slug": "post-content",
       "label": "文章正文",
@@ -2083,8 +2055,8 @@
       "label": "文章页脚",
       "group": "post",
       "summary": "正文后的上一篇与下一篇。",
-      "states": "相邻文章 · 静态样例",
-      "description": "标签已移到文章页眉，页脚只放相邻文章；两侧都没有时不渲染。图鉴样例链接留在本页。",
+      "states": "双侧 · 单侧 · 无相邻文章 · 键盘聚焦",
+      "description": "标签已移到文章页眉，页脚只放上一篇与下一篇：卡片随可用宽度并排或纵向排列，长标题自然换行；只有一侧时空着的那格换成吉祥物，两侧都没有时整个页脚不渲染。图鉴样例链接停留在本页。",
       "props": [
         [
           "post",
@@ -2099,7 +2071,10 @@
           "图鉴中的非跳转样例链接；正式文章使用默认值。"
         ]
       ],
-      "keys": [],
+      "keys": [
+        ["Tab / Shift + Tab", "依次聚焦可用的文章入口。"],
+        ["Enter", "打开聚焦的文章；本页样例不跳转。"]
+      ],
       "source": "src/components/post/post_footer.rs",
       "code": "let footer = PostFooterData::from(&post);\n\nview! {\n    <PostFooter post=footer/>\n}",
       "preview_mode": "static",
@@ -2111,8 +2086,8 @@
       "label": "文章页头",
       "group": "post",
       "summary": "用面包屑、衬线标题、导语、阅读信息与标签，开启一篇文章。",
-      "states": "已发布 · 草稿 · 无摘要",
-      "description": "复用真实 PostHeader，以自然宽度展示文章的开场。下方同时呈现草稿标记、长标题换行与无摘要的布局，所有内容均为本地样例。",
+      "states": "已发布 · 草稿 · 长标题 · 无摘要 · 无标签",
+      "description": "复用真实 PostHeader，以自然宽度展示文章的开场。面包屑「文章 / 所在栏目」中「文章」回到首页，栏目取第一个标签，没有标签时只显示「文章」；元信息行的日期优先取发布时间、未发布时回退到创建时间，用标题字体的旧式数字，阅读时长与字数用等宽数字，字数带千位分隔，窄屏下整体换行。下方呈现草稿标记，以及长标题、无摘要、无标签的布局；所有内容均为本地样例。",
       "props": [
         [
           "post",
@@ -2130,65 +2105,6 @@
       "keys": [],
       "source": "src/components/post/post_header.rs",
       "code": "let header = PostHeaderData::from(&post);\n\nview! {\n    <PostHeader post=header/>\n}",
-      "preview_mode": "static",
-      "usage_kind": "rust"
-    },
-    {
-      "name": "PostMeta",
-      "slug": "post-meta",
-      "label": "文章元信息",
-      "group": "post",
-      "summary": "发布日期、阅读时长与字数，清晰呈现文章的阅读信息。",
-      "states": "真实组件 · 本地样例",
-      "description": "一行展示文章日期、预计阅读时长与字数。日期用标题字体的旧式数字，优先使用发布时间，未发布时回退到创建时间；时长与字数用等宽数字，字数带千位分隔。窄屏下各项整体换行。",
-      "props": [
-        [
-          "post",
-          "PostHeaderData",
-          "由调用方提供",
-          "读取发布时间（缺省时回退到创建时间）、reading_time 与 word_count。"
-        ]
-      ],
-      "keys": [],
-      "source": "src/components/post/post_meta.rs",
-      "code": "view! {\n    <PostMeta post=PostHeaderData::from(&post)/>\n}",
-      "preview_mode": "static",
-      "usage_kind": "rust"
-    },
-    {
-      "name": "PostNavLinks",
-      "slug": "post-nav-links",
-      "label": "相邻文章导航",
-      "group": "post",
-      "summary": "用方向与标题，串联相邻两篇文章。",
-      "states": "双侧 / 单侧 · 长标题 · 键盘聚焦",
-      "description": "在文章底部继续阅读上一篇或下一篇。卡片随可用宽度并排或纵向排列，长标题自然换行；缺少相邻文章时，只显示可用的入口。下方展示双侧、单侧与空状态，样例链接停留在本页。",
-      "props": [
-        [
-          "prev",
-          "Option<PostNav>",
-          "必填（可传 None）",
-          "上一篇文章的标题与 slug；None 时不显示该入口。"
-        ],
-        [
-          "next",
-          "Option<PostNav>",
-          "必填（可传 None）",
-          "下一篇文章的标题与 slug；None 时不显示该入口。"
-        ],
-        [
-          "sample",
-          "bool",
-          "false",
-          "图鉴样例链接保持在当前页，保留悬停与键盘聚焦。"
-        ]
-      ],
-      "keys": [
-        ["Tab / Shift + Tab", "依次聚焦可用的文章入口。"],
-        ["Enter", "打开聚焦的文章；本页样例不跳转。"]
-      ],
-      "source": "src/components/post/post_nav_links.rs",
-      "code": "let prev = Some(PostNav {\n    title: \"\\u4E00\\u7247\\u53F6\\u5B50\".to_string(),\n    slug: \"a-leaf\".to_string(),\n});\nlet next = Some(PostNav {\n    title: \"\\u4E0B\\u4E00\\u5708\\u5E74\\u8F6E\".to_string(),\n    slug: \"next-ring\".to_string(),\n});\n\nview! {\n    <PostNavLinks prev=prev next=next/>\n}",
       "preview_mode": "static",
       "usage_kind": "rust"
     },
