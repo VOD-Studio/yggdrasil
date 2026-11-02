@@ -246,7 +246,8 @@
       text-align: left;
     }
 
-    .post-nav-mascot {
+    /* ui.css 的 .mascot { display: block } 排在本文件之后，需更高优先级才能隐藏。 */
+    .post-nav .post-nav-mascot {
       display: none;
     }
 
