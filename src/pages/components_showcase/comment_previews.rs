@@ -595,7 +595,7 @@ fn CommentItemPreview(detail: bool) -> impl IntoView {
             ..base_comment(102, Some(101), 1, "阿木", "<p>我也喜欢这句话。</p>")
         };
         return view! {
-            <div class="comment-list w-full min-w-0 divide-y divide-ink-3/40 px-1">
+            <div class="comment-list w-full min-w-0 px-1">
                 <CommentItem comment=parent post_id=0/>
                 <CommentItem comment=reply post_id=0/>
             </div>
@@ -635,7 +635,7 @@ fn CommentItemPreview(detail: bool) -> impl IntoView {
                 }}
             </p>
             <div class=PANEL_CLASS>
-                <div class="comment-list space-y-0 divide-y divide-ink-3/40">
+                <div class="comment-list space-y-0">
                     {move || item_mode_rows(mode.get())}
                 </div>
             </div>
@@ -842,20 +842,12 @@ fn ShellReplyButton(
 ) -> impl IntoView {
     let is_active = move || active_id.get() == Some(comment_id);
     view! {
-        <div class="mt-2">
+        <div class="comment-actions">
             <button
                 type="button"
-                class=move || {
-                    format!(
-                        "inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-md transition-colors cursor-pointer {}",
-                        if is_active() {
-                            "text-clay-text bg-clay-text/10"
-                        } else {
-                            "text-fg-3 hover:text-clay-text hover:bg-surface-2"
-                        },
-                    )
-                }
-                aria-label=format!("回复 {author_name}")
+                class="comment-reply"
+                aria-expanded=move || is_active().to_string()
+                aria-label=format!("回复 {author_name} 的评论")
                 on:click=move |_| {
                     if active_id.get_untracked() == Some(comment_id) {
                         active_id.set(None);
@@ -864,20 +856,7 @@ fn ShellReplyButton(
                     }
                 }
             >
-                <svg
-                    class="w-3.5 h-3.5"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    viewBox="0 0 24 24"
-                >
-                    <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        d="M3 10h10a5 5 0 015 5v2m-15-7l4-4m-4 4l4 4"
-                    ></path>
-                </svg>
-                {move || if is_active() { "取消回复" } else { "回复" }}
+                {move || if is_active() { "收起回复" } else { "回复" }}
             </button>
             {move || {
                 is_active()
@@ -937,26 +916,15 @@ impl ShellSample {
 
 fn render_shell_comment(replying_to: RwSignal<Option<i32>>, sample: ShellSample) -> AnyView {
     let author = sample.author;
-    let author_element = view! { <span class="font-medium text-fg">{author}</span> }.into_any();
+    let author_element = view! { <span class="comment-author">{author}</span> }.into_any();
     let author_badge = if sample.is_author {
-        view! {
-            <span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-clay-text/10 text-clay-text">
-                "作者"
-            </span>
-        }
-        .into_any()
+        view! { <span class="comment-badge">"作者"</span> }.into_any()
     } else {
         ().into_any()
     };
-    let timestamp = view! { <span class="text-fg-3">{sample.time}</span> }.into_any();
+    let timestamp = view! { <time class="comment-time">{sample.time}</time> }.into_any();
     let status_badge = if sample.is_pending {
-        view! {
-            <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
-                <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
-                "审核中"
-            </span>
-        }
-        .into_any()
+        view! { <span class="comment-badge is-pending">"审核中"</span> }.into_any()
     } else {
         ().into_any()
     };
@@ -1094,7 +1062,7 @@ fn CommentCardShellPreview(detail: bool) -> impl IntoView {
             ),
         ];
         return view! {
-            <div class="w-full min-w-0 divide-y divide-ink-3/40 px-1">
+            <div class="comment-list w-full min-w-0 px-1">
                 {render_shell_samples(replying_to, &samples)}
             </div>
         }
@@ -1123,12 +1091,12 @@ fn CommentCardShellPreview(detail: bool) -> impl IntoView {
                 {move || match mode.get() {
                     CardShellMode::All => "完整树形展示：包含顶层评论、一级嵌套引导线、二级阶梯缩进与待审核半透明状态。",
                     CardShellMode::TopLevel => "顶层评论（depth = 0）：无左侧边框与缩进，包含头像、作者徽章、绝对时间与回复操作。",
-                    CardShellMode::NestedReply => "一级嵌套（depth = 1）：启用左侧引导线 border-l-2，区分父子回复关系。",
+                    CardShellMode::NestedReply => "一级嵌套（depth = 1）：启用左侧引导线，区分父子回复关系。",
                     CardShellMode::DeepIndent => "深层嵌套（depth = 2）：在左侧引导线基础上叠加 margin-left 阶梯缩进。",
-                    CardShellMode::Pending => "待审核状态（muted = true）：整卡 opacity-75 淡化，配合'审核中'徽章与呼吸指示灯。",
+                    CardShellMode::Pending => "待审核状态（muted = true）：整卡淡化，配合“审核中”徽章与状态点。",
                 }}
             </p>
-            <div class="rounded-2xl border border-ink-3/70 bg-surface-2/30 p-4 sm:p-5 divide-y divide-ink-3/40 shadow-xs">
+            <div class="comment-list rounded-2xl border border-ink-3/70 bg-surface-2/30 p-4 sm:p-5 shadow-xs">
                 {move || shell_mode_rows(mode.get(), replying_to)}
             </div>
         </div>

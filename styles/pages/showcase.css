@@ -400,10 +400,12 @@
 .showcase-card-preview--code-runner { align-items: flex-start; }
 .showcase-card-preview--code-runner .showcase-runner-demo { max-height: 230px; overflow: hidden; }
 .showcase-card-preview--code-runner .runner-editor,
-.showcase-card-preview--code-runner .runner-editor .cm-editor { height: 76px; min-height: 76px; max-height: 76px; }
+.showcase-card-preview--code-runner .runner-editor .cm-editor { height: 56px; min-height: 56px; max-height: 56px; }
+/* 卡片宽度放不下复制键，头部右侧会把「播放示例」挤出边缘。 */
+.showcase-card-preview--code-runner .runner-head span.runner-wide { display: none; }
 .showcase-card-preview--code-runner .showcase-runner-demo [id^="code-runner-output-"] { min-height: 68px; max-height: 68px; }
 .showcase-runner-detail .runner-editor, .showcase-runner-detail .runner-editor .cm-editor { min-height: 220px; max-height: 350px; }
-.showcase-runner-demo > div > div { margin-top: 0; margin-bottom: 0; }
+.showcase-runner-demo .runner { margin-top: 0; margin-bottom: 0; }
 
 .showcase-sql-demo { width: 100%; min-width: 0; }
 .showcase-card-preview--sql-result-table { align-items: flex-start; }
@@ -464,7 +466,7 @@
 
 .showcase-card-preview:is(.showcase-card-preview--comment-card-shell, .showcase-card-preview--comment-form, .showcase-card-preview--comment-item, .showcase-card-preview--comment-list, .showcase-card-preview--pending-comment-item, .showcase-card-preview--comment-section) > div { width: 100%; max-height: 220px; overflow-y: auto; }
 .showcase-card-preview:is(.showcase-card-preview--comment-card-shell, .showcase-card-preview--comment-item, .showcase-card-preview--comment-list) > div { overflow-y: hidden; }
-.showcase-card-preview:is(.showcase-card-preview--comment-card-shell, .showcase-card-preview--comment-item, .showcase-card-preview--comment-list) :is(.comment-list, .divide-y) > div { padding-top: 0.35rem; padding-bottom: 0.35rem; }
+.showcase-card-preview:is(.showcase-card-preview--comment-card-shell, .showcase-card-preview--comment-item, .showcase-card-preview--comment-list) .comment-list > div { padding-top: 0.35rem; padding-bottom: 0.35rem; }
 .showcase-browser-preview { width: 100%; min-width: 0; overflow: hidden; border: var(--hairline) solid var(--sc-line); border-radius: 14px; background: var(--color-surface-0); }
 .showcase-browser-toolbar { display: flex; justify-content: space-between; align-items: center; gap: .5rem; padding: .5rem .7rem; border-bottom: var(--hairline) solid var(--sc-line); font: .68rem var(--sc-mono); }
 .showcase-browser-toolbar :is(button, select) { border: var(--hairline) solid var(--sc-line); border-radius: 6px; padding: .25rem .4rem; cursor: pointer; }
