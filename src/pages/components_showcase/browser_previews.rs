@@ -7,7 +7,7 @@
 use leptos::prelude::*;
 
 use crate::bridges::library::{
-    library_ready, use_browser_library, LibraryLoadError, LibraryResource,
+    library_ready, use_browser_library, BrowserLibrary, LibraryLoadError, LibraryResource,
 };
 
 #[cfg(target_arch = "wasm32")]
@@ -179,7 +179,7 @@ fn TiptapPreview(detail: bool) -> impl IntoView {
     let ready = RwSignal::new(false);
     let changed = RwSignal::new(false);
     let retry = RwSignal::new(0_u32);
-    let library = use_browser_library("tiptap", || true);
+    let library = use_browser_library(BrowserLibrary::Tiptap, || true);
 
     #[cfg(target_arch = "wasm32")]
     {
@@ -267,7 +267,7 @@ fn CodeMirrorPreview(detail: bool) -> impl IntoView {
     let ready = RwSignal::new(false);
     let shortcut_note = RwSignal::new(false);
     let retry = RwSignal::new(0_u32);
-    let library = use_browser_library("codemirror", || true);
+    let library = use_browser_library(BrowserLibrary::CodeMirror, || true);
 
     #[cfg(target_arch = "wasm32")]
     let handle: StoredValue<Option<crate::bridges::codemirror::EditorHandle>, LocalStorage> =
@@ -408,7 +408,7 @@ fn XtermPreview(detail: bool) -> impl IntoView {
     let ready = RwSignal::new(false);
     let status = RwSignal::new("输出示例已就绪".to_string());
     let retry = RwSignal::new(0_u32);
-    let library = use_browser_library("xterm", || true);
+    let library = use_browser_library(BrowserLibrary::Xterm, || true);
 
     #[cfg(target_arch = "wasm32")]
     let handle: StoredValue<Option<crate::bridges::xterm::TerminalHandle>, LocalStorage> =
@@ -591,23 +591,11 @@ fn LightboxPreview(detail: bool) -> impl IntoView {
             if !detail {
                 return;
             }
-            if let Some(window) = web_sys::window() {
-                crate::utils::js::invoke_optional_global(
-                    &window,
-                    "__initLightbox",
-                    &[format!("#{init_owner}").into()],
-                );
-            }
+            crate::bridges::globals::init_lightbox(&[&format!("#{init_owner}")]);
         });
         let cleanup_owner = owner.clone();
         on_cleanup(move || {
-            if let Some(window) = web_sys::window() {
-                crate::utils::js::invoke_optional_global(
-                    &window,
-                    "__closeLightboxFor",
-                    &[cleanup_owner.into()],
-                );
-            }
+            crate::bridges::globals::close_lightbox_for(&cleanup_owner);
         });
     }
 

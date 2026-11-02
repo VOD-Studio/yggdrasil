@@ -13,10 +13,10 @@
 use leptos::ev::{KeyboardEvent, PointerEvent};
 use leptos::prelude::*;
 
+#[cfg(target_arch = "wasm32")]
+use crate::bridges::globals;
 use crate::components::enhance_assets::EnhanceScript;
 use crate::components::ui::{Icon, IconName};
-#[cfg(target_arch = "wasm32")]
-use crate::utils::js::invoke_optional_global;
 
 /// 正式页面目录的默认 id；图鉴预览传入各自的局部 id。
 const DEFAULT_NAV_ID: &str = "post-toc";
@@ -46,21 +46,14 @@ pub fn PostToc(
     // 挂载后初始化 scroll-spy（yggdrasil-core.js 由 shell 全局注入）。
     #[cfg(target_arch = "wasm32")]
     Effect::new(move |_| {
-        let Some(window) = web_sys::window() else {
-            return;
-        };
         if let (Some(nav_id), Some(content_id), Some(scroll_id)) = (nav_id, content_id, scroll_id) {
-            invoke_optional_global(
-                &window,
-                "__initTocSidebar",
-                &[
-                    format!("#{nav_id}").into(),
-                    format!("#{content_id}").into(),
-                    format!("#{scroll_id}").into(),
-                ],
+            globals::init_toc_sidebar(
+                Some(&format!("#{nav_id}")),
+                Some(&format!("#{content_id}")),
+                Some(&format!("#{scroll_id}")),
             );
         } else {
-            invoke_optional_global(&window, "__initTocSidebar", &[]);
+            globals::init_toc_sidebar(None, None, None);
         }
     });
     #[cfg(not(target_arch = "wasm32"))]
@@ -68,17 +61,7 @@ pub fn PostToc(
 
     #[cfg(target_arch = "wasm32")]
     on_cleanup(move || {
-        if let Some(window) = web_sys::window() {
-            if let Some(nav_id) = nav_id {
-                invoke_optional_global(
-                    &window,
-                    "__disposeTocSidebar",
-                    &[format!("#{nav_id}").into()],
-                );
-            } else {
-                invoke_optional_global(&window, "__disposeTocSidebar", &[]);
-            }
-        }
+        globals::dispose_toc_sidebar(nav_id.map(|nav_id| format!("#{nav_id}")).as_deref());
     });
 
     // 浮层渲染出来后把焦点移进目录（等一帧：class 变更落到 DOM 后再聚焦）。

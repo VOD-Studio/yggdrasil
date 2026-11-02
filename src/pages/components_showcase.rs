@@ -481,15 +481,11 @@ fn ShowcaseGallery() -> impl IntoView {
 
     Effect::new(move |_| {
         #[cfg(target_arch = "wasm32")]
-        if let Some(window) = web_sys::window() {
-            crate::utils::js::invoke_optional_global(&window, "__initShowcaseMasonry", &[]);
-        }
+        crate::bridges::globals::init_showcase_masonry();
     });
     on_cleanup(|| {
         #[cfg(target_arch = "wasm32")]
-        if let Some(window) = web_sys::window() {
-            crate::utils::js::invoke_optional_global(&window, "__disposeShowcaseMasonry", &[]);
-        }
+        crate::bridges::globals::dispose_showcase_masonry();
     });
 
     let active_group = Memo::new(move |_| {

@@ -637,14 +637,7 @@ pub(super) fn SceneComponentPreview(name: String) -> impl IntoView {
     Effect::new(move |_| {
         #[cfg(target_arch = "wasm32")]
         if cover_preview {
-            if let Some(window) = web_sys::window() {
-                let selectors = js_sys::Array::of1(&".showcase-cover-window".into());
-                crate::utils::js::invoke_optional_global(
-                    &window,
-                    "__initLightbox",
-                    &[selectors.into()],
-                );
-            }
+            crate::bridges::globals::init_lightbox(&[".showcase-cover-window"]);
         }
     });
     let inner = match name.as_str() {

@@ -27,9 +27,7 @@ impl SearchPaletteHandle {
     /// 面板会被新正文盖住；跳过只结束动画，导航与换色照常完成。
     pub fn open(self) {
         #[cfg(target_arch = "wasm32")]
-        if let Some(window) = web_sys::window() {
-            crate::utils::js::invoke_optional_global(&window, "__skipViewTransition", &[]);
-        }
+        crate::bridges::globals::skip_view_transition();
         self.open.set(true);
     }
 }

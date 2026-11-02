@@ -1409,21 +1409,17 @@ fn NoteSections(toc_html: String, spy: bool) -> impl IntoView {
     #[cfg(target_arch = "wasm32")]
     {
         Effect::new(move |_| {
-            if let (true, Some(window)) = (spy, web_sys::window()) {
-                crate::utils::js::invoke_optional_global(
-                    &window,
-                    "__initTocSidebar",
-                    &["#note-rail-toc".into(), "#note-content".into()],
+            if spy {
+                crate::bridges::globals::init_toc_sidebar(
+                    Some("#note-rail-toc"),
+                    Some("#note-content"),
+                    None,
                 );
             }
         });
         on_cleanup(move || {
-            if let (true, Some(window)) = (spy, web_sys::window()) {
-                crate::utils::js::invoke_optional_global(
-                    &window,
-                    "__disposeTocSidebar",
-                    &["#note-rail-toc".into()],
-                );
+            if spy {
+                crate::bridges::globals::dispose_toc_sidebar(Some("#note-rail-toc"));
             }
         });
     }

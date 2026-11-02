@@ -14,11 +14,11 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use leptos::prelude::*;
 
+#[cfg(target_arch = "wasm32")]
+use crate::bridges::globals;
 use crate::components::code_runner::CodeRunner;
 use crate::components::enhance_assets::{EnhanceScript, LightboxAssets};
 use crate::infra::runner_config::ResourceLimits;
-#[cfg(target_arch = "wasm32")]
-use crate::utils::js::invoke_optional_global;
 
 /// 内容片段：普通 HTML 文本，或一个可运行代码块。
 #[derive(Clone, PartialEq, Debug)]
@@ -202,38 +202,41 @@ pub fn PostContent(
             let selector =
                 scope_id.map_or_else(|| ".post-content".to_string(), |id| format!("#{id}"));
             // 调用 window.__initPostContent：函数不存在时静默跳过。
-            invoke_optional_global(&window, "__initPostContent", &[selector.clone().into()]);
+            globals::init_post_content(&selector);
 
             // Mermaid 图表已由服务端渲染成浅/深两份 SVG（CSS 按主题切换），这里只绑定点击放大。
-            invoke_optional_global(&window, "__initMermaid", &[selector.clone().into()]);
+            globals::init_mermaid(&selector);
 
             // 灯箱双保险契约：先设配置，若 lightbox.js 已加载则立即调用；
             // 否则 lightbox.js 加载完后其 IIFE 尾部读到配置自启动。
-            let selectors = js_sys::Array::new();
-            selectors.push(&selector.into());
+            let mut lightbox = vec![selector.as_str()];
             if scope_id.is_none() {
-                selectors.push(&".entry-cover".into());
+                lightbox.push(".entry-cover");
             }
-            let selectors_val = js_sys::Object::from(selectors).into();
+            let selectors_val: wasm_bindgen::JsValue = lightbox
+                .iter()
+                .map(|s| wasm_bindgen::JsValue::from(*s))
+                .collect::<js_sys::Array>()
+                .into();
             if scope_id.is_none() {
                 let _ =
                     js_sys::Reflect::set(&window, &"__lightboxSelectors".into(), &selectors_val);
             }
-            invoke_optional_global(&window, "__initLightbox", &[selectors_val]);
+            globals::init_lightbox(&lightbox);
 
             // 安装 hash 锚点点击拦截器（幂等，PostContent 多次挂载也安全）。
-            invoke_optional_global(&window, "__initAnchorClick", &[]);
+            globals::init_anchor_click();
 
             // 内容挂载后若 URL 带 hash，滚动到对应标题：首屏渲染骨架屏阶段标题 DOM 缺失，
             // 浏览器原生 fragment-scroll 失效，此处标题已就绪，补一次。
             if scope_id.is_none() {
-                invoke_optional_global(&window, "__scrollToHash", &[]);
+                globals::scroll_to_hash();
             }
         });
 
         on_cleanup(move || {
-            if let (Some(window), Some(owner)) = (web_sys::window(), scope_id) {
-                invoke_optional_global(&window, "__closeLightboxFor", &[owner.into()]);
+            if let Some(owner) = scope_id {
+                globals::close_lightbox_for(owner);
             }
         });
     }

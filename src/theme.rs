@@ -103,29 +103,7 @@ fn detect_initial_theme() -> Theme {
     Theme::System
 }
 
-/// 调用 `window[name](...args)`；全局函数不存在时静默跳过。
-#[cfg(target_arch = "wasm32")]
-fn call_window_fn(name: &str, args: &[wasm_bindgen::JsValue]) {
-    use wasm_bindgen::JsCast;
-
-    let Some(window) = web_sys::window() else {
-        return;
-    };
-    let Ok(fn_val) = js_sys::Reflect::get(&window, &name.into()) else {
-        return;
-    };
-    if fn_val.is_undefined() || fn_val.is_null() {
-        return;
-    }
-    let fn_obj = fn_val.unchecked_into::<js_sys::Function>();
-    let array = js_sys::Array::new();
-    for arg in args {
-        array.push(arg);
-    }
-    let _ = fn_obj.apply(&window, &array);
-}
-
-/// 提供主题上下文（对应 Dioxus 版 `use_theme_provider`），在 `App` 根部调用一次。
+/// 提供主题上下文，在 `App` 根部调用一次。
 ///
 /// 同时提供两个上下文：
 /// - `RwSignal<Theme>`：用户选择的主题意图（Light/Dark/System）。
@@ -211,7 +189,7 @@ pub fn provide_theme() -> RwSignal<Theme> {
             prev_resolved.set_value(Some(current));
             // resolved 翻转 → 瞬切同步 dark class（设置语义，非翻转）。
             let is_dark = current == ResolvedTheme::Dark;
-            call_window_fn("__applyResolvedTheme", &[is_dark.into()]);
+            crate::bridges::globals::apply_resolved_theme(is_dark);
         });
     }
 
@@ -347,10 +325,7 @@ pub fn choose_theme(theme: RwSignal<Theme>, mode: Theme, origin: (f64, f64)) {
         let new_resolved = mode.resolve(read_system_dark());
         if prev_resolved != new_resolved {
             // 实际明暗翻转 → 圆形扩散 VT。JS 从 DOM 现状推导目标主题。
-            call_window_fn(
-                "__startThemeTransition",
-                &[origin.0.into(), origin.1.into()],
-            );
+            crate::bridges::globals::start_theme_transition(origin.0, origin.1);
         }
     }
     theme.set(mode);

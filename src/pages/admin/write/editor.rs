@@ -1,7 +1,7 @@
 //! 文章编辑器的初始化与清理。文章在本模块运行前已取回，表单以服务端内容起步，
 //! 本地恢复副本才能与之比较。
 use super::state::{EditorPhase, PostDraft, SaveState, WriteEditorState};
-use crate::bridges::library::use_browser_library;
+use crate::bridges::library::{use_browser_library, BrowserLibrary};
 use crate::bridges::tiptap::UploadsInFlight;
 use chrono::{DateTime, Utc};
 use leptos::prelude::*;
@@ -27,7 +27,7 @@ pub(super) fn use_write_editor(
         published_at: RwSignal::new(published_at),
         phase: RwSignal::new(EditorPhase::Initializing),
         save: RwSignal::new(SaveState::default()),
-        library: use_browser_library("tiptap", || true),
+        library: use_browser_library(BrowserLibrary::Tiptap, || true),
         uploads_in_flight: RwSignal::new(UploadsInFlight::default()),
         upload_errors: RwSignal::new(Vec::new()),
         cover_uploading: RwSignal::new(false),

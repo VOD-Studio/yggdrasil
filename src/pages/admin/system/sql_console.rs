@@ -9,7 +9,9 @@ use crate::api::database::sql_console::SqlResult;
 use crate::api::database::sql_console::{execute_sql, ExecuteSqlOpts};
 #[cfg(target_arch = "wasm32")]
 use crate::bridges::codemirror;
-use crate::bridges::library::{library_ready, use_browser_library, LibraryLoadError};
+use crate::bridges::library::{
+    library_ready, use_browser_library, BrowserLibrary, LibraryLoadError,
+};
 // SQL 报错本身就是原因（如解析失败），不再加「执行失败」前缀。
 use crate::components::sql_result_table::SqlResultTable;
 use crate::components::ui::{button_class, ButtonSize, ButtonVariant, Checkbox};
@@ -37,7 +39,7 @@ const WRITE_KEYWORDS: [&str; 7] = [
 #[component]
 #[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))]
 pub(super) fn SqlConsoleTab() -> impl IntoView {
-    let editor_library = use_browser_library("codemirror", || true);
+    let editor_library = use_browser_library(BrowserLibrary::CodeMirror, || true);
     let editor_mount = NodeRef::<leptos::html::Div>::new();
     let resolved = use_resolved_theme();
     let sql_text = RwSignal::new(String::new());

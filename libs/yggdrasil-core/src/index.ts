@@ -24,7 +24,7 @@ declare global {
     __routeTransitions: typeof routeTransitions;
     /** 打开弹窗前调用：过渡快照画在顶层之上，会盖住模态面板。 */
     __skipViewTransition: typeof skipActiveAnimation;
-    /** 增强调用队列：目标函数未定义时由 invoke_optional_global 入队，flush 丢弃已可
+    /** 增强调用队列：目标函数未定义时由 bridges::globals 入队，flush 丢弃已可
      * 执行的项。core 无条件建队，队列存在不代表本页会加载 enhance。 */
     __pendingEnhanceCalls: EnhanceCall[];
     __flushEnhanceCalls: () => void;

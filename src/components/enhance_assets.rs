@@ -5,7 +5,7 @@
 //! （`yggdrasil-enhance.js`）与灯箱（`lightbox.js/css`）改由需要的组件各自声明：
 //!
 //! - SSR 直达：`leptos_meta` 把标签烤进 head 且带 `defer`，先于 WASM hydration 执行，
-//!   `invoke_optional_global` 直接命中；
+//!   `bridges::globals` 的调用直接命中；
 //! - SPA 首次导航：客户端注入为 async，effect 可能先于脚本执行——迟到的调用由
 //!   core 建立的 `__pendingEnhanceCalls` 队列兜底，脚本尾部 flush 补上。
 //!

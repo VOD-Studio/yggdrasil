@@ -47,10 +47,29 @@ impl LibraryResource {
     }
 }
 
+/// 可按需加载的浏览器库，与 `libs/yggdrasil-core/src/browser-library.ts` 的 `BrowserLibrary` 对应。
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum BrowserLibrary {
+    Tiptap,
+    CodeMirror,
+    Xterm,
+}
+
+impl BrowserLibrary {
+    /// 传给 `__loadBrowserLibrary` 的库名。
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Tiptap => "tiptap",
+            Self::CodeMirror => "codemirror",
+            Self::Xterm => "xterm",
+        }
+    }
+}
+
 /// enabled 可订阅组件状态（Effect 内读取，变化时重新加载）；
 /// 组件卸载后 `try_set` 失败即丢弃迟到的加载结果，不会挂载旧组件。
 pub fn use_browser_library(
-    name: &'static str,
+    library: BrowserLibrary,
     enabled: impl Fn() -> bool + Send + Sync + 'static,
 ) -> LibraryResource {
     let reload = RwSignal::new(0u32);
@@ -74,7 +93,7 @@ pub fn use_browser_library(
             }
             state.set(None);
             leptos::task::spawn_local(async move {
-                let result = load_browser_library(name)
+                let result = load_browser_library(library.name())
                     .await
                     .map(|_| true)
                     .map_err(|error| {
@@ -87,7 +106,7 @@ pub fn use_browser_library(
             });
         }
         #[cfg(not(target_arch = "wasm32"))]
-        let _ = (name, enabled, current);
+        let _ = (library, enabled, current);
     });
     LibraryResource { reload, state }
 }
@@ -125,7 +144,7 @@ mod tests {
     #[test]
     fn server_side_state_stays_loading_and_not_ready() {
         Owner::new().with(|| {
-            let library = use_browser_library("tiptap", || true);
+            let library = use_browser_library(BrowserLibrary::Tiptap, || true);
             assert!(library.read_state().is_none());
             assert!(!library.ready_untracked());
             assert!(!library_ready(library));
@@ -135,7 +154,7 @@ mod tests {
     #[test]
     fn load_error_renders_alert_with_retry_button() {
         Owner::new().with(|| {
-            let library = use_browser_library("tiptap", || true);
+            let library = use_browser_library(BrowserLibrary::Tiptap, || true);
             library
                 .state
                 .set(Some(Err("加载失败，请检查网络后重试。".to_string())));
@@ -149,7 +168,7 @@ mod tests {
     #[test]
     fn ready_library_renders_nothing() {
         Owner::new().with(|| {
-            let library = use_browser_library("tiptap", || true);
+            let library = use_browser_library(BrowserLibrary::Tiptap, || true);
             library.state.set(Some(Ok(true)));
             assert!(library_ready(library));
             let html = view! { <LibraryLoadError library/> }.to_html();

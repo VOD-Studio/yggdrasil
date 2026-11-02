@@ -1,4 +1,6 @@
-use crate::bridges::library::{library_ready, use_browser_library, LibraryLoadError};
+use crate::bridges::library::{
+    library_ready, use_browser_library, BrowserLibrary, LibraryLoadError,
+};
 use crate::bridges::tiptap::{UploadErrorEntry, UploadsInFlight};
 use crate::components::assets::{AssetPickerModal, AssetSelection};
 use leptos::prelude::*;
@@ -38,7 +40,7 @@ pub(super) fn NoteComposer(
     on_change: Callback<String>,
     uploading: RwSignal<bool>,
 ) -> impl IntoView {
-    let library = use_browser_library("tiptap", || true);
+    let library = use_browser_library(BrowserLibrary::Tiptap, || true);
     let editor = StoredValue::new_local(None::<Handle>);
     let ready = RwSignal::new(false);
     let error = RwSignal::new(String::new());

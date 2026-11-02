@@ -204,7 +204,7 @@ pub fn Assets() -> impl IntoView {
                     let selectors = js_sys::Array::of1(&".assets-lightbox".into());
                     let value: wasm_bindgen::JsValue = js_sys::Object::from(selectors).into();
                     let _ = js_sys::Reflect::set(&window, &"__lightboxSelectors".into(), &value);
-                    crate::utils::js::invoke_optional_global(&window, "__initLightbox", &[value]);
+                    crate::bridges::globals::init_lightbox(&[".assets-lightbox"]);
                 }
             });
         }

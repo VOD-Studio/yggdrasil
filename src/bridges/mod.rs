@@ -16,6 +16,9 @@
 /// SQL 补全 schema DTO（SqlSchema/SqlTable）是 server function 返回值，
 /// 定义在 `crate::models::sql_schema`，不在本模块。
 pub mod codemirror;
+/// `window.__*` 页面函数的类型化入口：名字与参数只在此处出现。
+#[cfg(target_arch = "wasm32")]
+pub mod globals;
 /// 浏览器库的按需加载与错误重试。
 pub mod library;
 /// 页面过渡与按历史记录保存的客户端状态。

@@ -32,7 +32,7 @@ mod stream;
 mod terminal;
 
 use crate::api::code_runner::ExecRequest;
-use crate::bridges::library::{use_browser_library, LibraryLoadError};
+use crate::bridges::library::{use_browser_library, BrowserLibrary, LibraryLoadError};
 use crate::components::skeletons::atoms::SkeletonBox;
 use crate::components::ui::{
     Button, ButtonSize, ButtonVariant, Icon, IconName, Menu, MenuItem, Tooltip,
@@ -88,7 +88,7 @@ pub fn CodeRunner(
     let has_output = execution.has_output;
     let state = execution.state;
     let running = Memo::new(move |_| state.with(|state| state.is_running()));
-    let terminal_library = use_browser_library("xterm", move || show_output.get());
+    let terminal_library = use_browser_library(BrowserLibrary::Xterm, move || show_output.get());
     // 编辑器内容的唯一真源；初始化为 prop 值。
     let source_signal = RwSignal::new(source.clone());
     let dirty = {
@@ -120,7 +120,7 @@ pub fn CodeRunner(
     });
 
     // CodeMirror 库只在激活后加载；多实例共享 JS 侧 pending-map 去重，仍只发一次脚本请求。
-    let editor_library = use_browser_library("codemirror", move || activated.get());
+    let editor_library = use_browser_library(BrowserLibrary::CodeMirror, move || activated.get());
 
     // 用户在编辑器就绪前的运行意图；编辑器就绪后由下方 pending Effect 自动执行一次。
     let pending_run = RwSignal::new(false);

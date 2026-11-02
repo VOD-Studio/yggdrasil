@@ -154,14 +154,10 @@ fn VersionNav(versions: Vec<VersionEntry>) -> impl IntoView {
     #[cfg(target_arch = "wasm32")]
     {
         Effect::new(move |_| {
-            if let Some(window) = web_sys::window() {
-                crate::utils::js::invoke_optional_global(&window, "__initChangelogNav", &[]);
-            }
+            crate::bridges::globals::init_changelog_nav();
         });
         on_cleanup(move || {
-            if let Some(window) = web_sys::window() {
-                crate::utils::js::invoke_optional_global(&window, "__disposeChangelogNav", &[]);
-            }
+            crate::bridges::globals::dispose_changelog_nav();
         });
     }
 

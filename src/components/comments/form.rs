@@ -9,7 +9,9 @@
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
-use crate::bridges::library::{library_ready, use_browser_library, LibraryLoadError};
+use crate::bridges::library::{
+    library_ready, use_browser_library, BrowserLibrary, LibraryLoadError,
+};
 use crate::bridges::tiptap::{UploadErrorEntry, UploadsInFlight};
 use crate::components::comments::section::{CommentContext, CommentSubmission};
 use crate::components::forms::{AlertBox, FormInput};
@@ -73,7 +75,7 @@ pub fn CommentForm(
         Some(pid) => active_reply.get() == Some(pid),
         None => true,
     });
-    let editor_library = use_browser_library("tiptap", move || match parent_id {
+    let editor_library = use_browser_library(BrowserLibrary::Tiptap, move || match parent_id {
         Some(pid) => active_reply.get() == Some(pid),
         None => editor_visible.get(),
     });

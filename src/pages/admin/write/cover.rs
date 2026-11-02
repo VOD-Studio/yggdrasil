@@ -80,7 +80,7 @@ pub(super) fn CoverUploader(
             let selectors = js_sys::Array::of1(&".cover-preview".into());
             let selectors_val = js_sys::Object::from(selectors).into();
             let _ = js_sys::Reflect::set(&window, &"__lightboxSelectors".into(), &selectors_val);
-            crate::utils::js::invoke_optional_global(&window, "__initLightbox", &[selectors_val]);
+            crate::bridges::globals::init_lightbox(&[".cover-preview"]);
         }
     });
 
