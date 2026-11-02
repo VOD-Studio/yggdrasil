@@ -387,11 +387,13 @@
 .showcase-picker-panel .asset-modal-search { flex: 1; min-width: 0; }
 .showcase-picker-detail { max-width: 680px; margin-inline: auto; }
 .showcase-upload-demo { display: flex; flex-direction: column; max-height: 100%; overflow: auto; }
-.showcase-upload-demo > .flex-1 { min-height: 0; }
-.showcase-card-preview .showcase-upload-demo .flex-1 { padding: .6rem; gap: .4rem; }
-.showcase-card-preview .showcase-upload-demo .flex-1 > button { padding: .4rem; }
-.showcase-card-preview .showcase-upload-demo .flex-1 > button svg { width: 1.25rem; height: 1.25rem; }
-.showcase-card-preview .showcase-upload-demo .flex-1 > button p:last-child { display: none; }
+.showcase-card-preview .showcase-upload-demo { overflow: hidden; }
+.showcase-card-preview .showcase-upload-demo .asset-modal-body { padding: 0; gap: .5rem; }
+.showcase-card-preview .showcase-upload-demo .asset-drop { min-height: 0; padding: .6rem; }
+.showcase-card-preview .showcase-upload-demo .asset-drop svg { width: 1.25rem; height: 1.25rem; }
+.showcase-card-preview .showcase-upload-demo .asset-drop-hint { display: none; }
+.showcase-card-preview .showcase-upload-demo .asset-upload-row { padding: .4rem .6rem; }
+.showcase-card-preview .showcase-upload-demo .asset-upload-row:nth-child(n+4) { display: none; }
 .showcase-runner-demo { min-height: 185px; }
 .showcase-runner-demo .runner-editor { min-height: 105px; max-height: 115px; overflow: hidden; }
 .showcase-runner-demo .runner-editor .cm-editor { min-height: 105px; }
