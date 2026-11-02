@@ -581,7 +581,7 @@ fn WriteEditor(
                             inert=move || recovering().then_some("true")
                             data-empty=move || show_starters().then_some("true")
                         >
-                            <div id="tiptap-editor" class="write-editor"></div>
+                            <div id="tiptap-editor" class="write-editor" node_ref=state.container></div>
                         </div>
 
                         {move || {

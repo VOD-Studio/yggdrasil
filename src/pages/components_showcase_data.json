@@ -2194,7 +2194,7 @@
       ],
       "keys": [],
       "source": "libs/tiptap-editor/src/index.ts",
-      "code": "const editor = window.TiptapEditor.create('article-editor');\neditor?.setMarkdown('# 一页正在生长的笔记');\n// 宿主卸载时销毁实例，释放监听与编辑器资源。\neditor?.destroy();",
+      "code": "// host：宿主组件经 NodeRef 拿到的容器元素。\nconst editor = window.TiptapEditor.create(host);\neditor.setMarkdown('# 一页正在生长的笔记');\n// 宿主卸载时销毁实例，释放监听与编辑器资源。\neditor.destroy();",
       "preview_mode": "interactive",
       "usage_kind": "browser"
     },
@@ -2222,7 +2222,7 @@
       ],
       "keys": [],
       "source": "libs/codemirror-editor/src/index.ts",
-      "code": "const editor = window.CodeMirrorEditor.create('code-host');\neditor?.setValue(\"print('Hello, Yggdrasil')\");\neditor?.setLanguage('python');\n// 宿主卸载时销毁实例。\neditor?.destroy();",
+      "code": "// host：宿主组件经 NodeRef 拿到的容器元素。\nconst editor = window.CodeMirrorEditor.create(host);\neditor.setValue(\"print('Hello, Yggdrasil')\");\neditor.setLanguage('python');\n// 宿主卸载时销毁实例。\neditor.destroy();",
       "preview_mode": "interactive",
       "usage_kind": "browser"
     },
@@ -2250,7 +2250,7 @@
       ],
       "keys": [],
       "source": "libs/xterm-terminal/src/index.ts",
-      "code": "const terminal = window.XtermTerminal.create('output-host');\nterminal?.writeAll('stdout 示例\\n', 'stderr 示例\\n');\nterminal?.clear();\n// 宿主卸载时销毁实例。\nterminal?.destroy();",
+      "code": "// host：宿主组件经 NodeRef 拿到的容器元素。\nconst terminal = window.XtermTerminal.create(host);\nterminal.writeAll('stdout 示例\\n', 'stderr 示例\\n');\nterminal.clear();\n// 宿主卸载时销毁实例。\nterminal.destroy();",
       "preview_mode": "interactive",
       "usage_kind": "browser"
     },

@@ -108,10 +108,9 @@ pub fn CommentForm(
         _ => None,
     };
 
-    // tiptap 编辑器挂载容器 id（顶层表单与多个回复表单并存，按 id_suffix 隔离）。
-    let editor_dom_id = format!("comment-editor-{id_suffix}");
-
     let form_ref = NodeRef::<leptos::html::Div>::new();
+    // tiptap 编辑器挂载容器（顶层表单与多个回复表单并存，各自持有自己的元素）。
+    let editor_mount = NodeRef::<leptos::html::Div>::new();
 
     // 编辑器实例句柄（WASM 端）：持有 JS 实例与全部 closure，drop（含组件卸载时
     // StoredValue 释放）时销毁。
@@ -171,7 +170,6 @@ pub fn CommentForm(
     // 挂载推迟到下一帧：保证激活后的表单 DOM 已提交，容器可被找到。
     #[cfg(target_arch = "wasm32")]
     {
-        let editor_dom_id = editor_dom_id.clone();
         Effect::new(move |_| {
             if !is_active.get() {
                 // 隐藏：销毁已挂载的编辑器（handle drop → JS destroy + closure 释放）。
@@ -187,7 +185,6 @@ pub fn CommentForm(
             if !library_ready(editor_library) {
                 return;
             }
-            let editor_dom_id = editor_dom_id.clone();
             request_animation_frame(move || {
                 // 组件已卸载、已取消回复或已挂载：放弃本次挂载。
                 if is_active.try_get_untracked() != Some(true) {
@@ -196,6 +193,10 @@ pub fn CommentForm(
                 if editor_handle.try_with_value(|h| h.is_some()) != Some(false) {
                     return;
                 }
+                let Some(container) = editor_mount.get_untracked() else {
+                    web_sys::console::warn_1(&"评论编辑器容器未挂载".into());
+                    return;
+                };
 
                 let on_update: Closure<dyn FnMut(String)> =
                     Closure::new(move |md: String| content_md.set(md));
@@ -248,9 +249,9 @@ pub fn CommentForm(
                 }
                 opts.set_on_upload_event(&on_upload_event);
 
-                // create 同步返回；找不到容器返回 None。
-                match crate::bridges::tiptap::get_module().create(&editor_dom_id, &opts) {
-                    Ok(Some(inst)) => {
+                // create 同步返回。
+                match crate::bridges::tiptap::create(&container, &opts) {
+                    Ok(inst) => {
                         // 草稿回填：回复表单取消再激活时恢复 content_md。
                         let draft = content_md.get_untracked();
                         if !draft.is_empty() {
@@ -264,11 +265,6 @@ pub fn CommentForm(
                             on_upload_event,
                         );
                         editor_handle.set_value(Some(handle));
-                    }
-                    Ok(None) => {
-                        web_sys::console::warn_1(
-                            &format!("评论编辑器容器未找到: #{editor_dom_id}").into(),
-                        );
                     }
                     Err(e) => {
                         web_sys::console::error_1(&e);
@@ -406,7 +402,6 @@ pub fn CommentForm(
             return ().into_any();
         }
         let negative_margin = negative_margin.clone();
-        let editor_dom_id = editor_dom_id.clone();
         let fields_suffix = id_suffix.clone();
         let image_input_dom_id = image_input_dom_id.clone();
 
@@ -473,7 +468,7 @@ pub fn CommentForm(
                     // hydration 后由编辑器接管；min-height 与编辑器对齐避免 CLS。
                     <div class="comment-editor">
                         <div
-                            id=editor_dom_id
+                            node_ref=editor_mount
                             class=mount_class
                         ></div>
                         {move || {

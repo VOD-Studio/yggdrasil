@@ -100,12 +100,11 @@ describe('TiptapEditor.create 全路径挂载', () => {
       container.id = `editor-mount-${variant}`;
       document.body.appendChild(container);
       const opts: EditorOptions = { variant };
-      const inst = TiptapEditor.create(container.id, opts);
-      expect(inst).not.toBeNull();
+      const inst = TiptapEditor.create(container, opts);
       // ProseMirror DOM 已挂进容器（createView 成功）。
       expect(container.querySelector('.ProseMirror')).not.toBeNull();
-      inst?.destroy();
-      expect(TiptapEditor._instances.has(container.id)).toBe(false);
+      inst.destroy();
+      expect(TiptapEditor._instances.has(container)).toBe(false);
       container.remove();
     });
   }
@@ -114,13 +113,13 @@ describe('TiptapEditor.create 全路径挂载', () => {
     const container = document.createElement('div');
     container.id = 'editor-replacement';
     document.body.appendChild(container);
-    const old = TiptapEditor.create(container.id);
-    const current = TiptapEditor.create(container.id);
-    old?.destroy();
-    expect(TiptapEditor._instances.get(container.id)).toBe(current);
+    const old = TiptapEditor.create(container);
+    const current = TiptapEditor.create(container);
+    old.destroy();
+    expect(TiptapEditor._instances.get(container)).toBe(current);
     expect(container.querySelector('.ProseMirror')).not.toBeNull();
-    current?.destroy();
-    expect(TiptapEditor._instances.has(container.id)).toBe(false);
+    current.destroy();
+    expect(TiptapEditor._instances.has(container)).toBe(false);
     container.remove();
   });
 });

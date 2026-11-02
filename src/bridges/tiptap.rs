@@ -7,8 +7,9 @@
 //! （服务端构建无 `window`）；共享的纯数据类型 `UploadsInFlight`/`UploadErrorEntry`
 //! 在两端都编译，供 `write.rs` 在视图中渲染上传状态。
 //!
-//! 用法（Leptos）：挂载点是带稳定 `id` 的元素，`get_module().create(id, &opts)`
-//! 按 id 查找容器；`EditorHandle` 含 JS 引用（非 `Send + Sync`），须放进
+//! 用法（Leptos）：挂载点用 `NodeRef` 取元素，`create(&element, &opts)` 在其上创建实例。
+//! `create` 以 js_namespace 绑定为成员调用，调用时才解析全局；脚本未加载时返回 Err。
+//! `EditorHandle` 含 JS 引用（非 `Send + Sync`），须放进
 //! `StoredValue::new_local`/`RwSignal::new_local`，`on_cleanup` 里 `take` 出来
 //! 丢弃即触发 `Drop` → `destroy`。上传状态用 `RwSignal<UploadsInFlight>` /
 //! `RwSignal<Vec<UploadErrorEntry>>` 传给 wasm 模块的 `consume_upload_event`。
@@ -39,42 +40,19 @@ pub mod wasm {
     use wasm_bindgen::prelude::*;
     use wasm_bindgen::JsCast;
 
-    // —— window.TiptapEditor 模块对象 ——
+    // —— window.TiptapEditor.create ——
     //
-    // TiptapEditor 是 IIFE 产物挂在 window 上的模块对象（含 create 等方法），
-    // 不是函数。wasm-bindgen 对 `fn get_module() -> T` 形式的 extern 会生成
-    // `window.TiptapEditor()`（函数调用），会因"not a function"失败。
-    // 因此用 js_sys::Reflect::get 做属性访问拿到模块对象，再 dyn_into。
+    // `js_namespace` 把 `create` 绑成 `TiptapEditor.create(...)` 的成员调用，
+    // 全局在调用时才解析：脚本未加载时返回 Err（TypeError），而不是在绑定阶段 panic。
     #[wasm_bindgen]
     extern "C" {
-        /// `window.TiptapEditor` 模块对象的 Rust 映射（IIFE 产物挂在 window 上的对象字面量）。
-        /// 不是函数——通过 [`get_module`] 用 Reflect::get 取属性而非 extern fn 调用拿到。
-        pub type TiptapEditorModule;
-
-        /// 调用 `TiptapEditor.create(containerId, options)`。
-        /// 找不到容器返回 null（被 Option 捕获）；构造失败抛异常（被 catch 捕获）。
-        #[wasm_bindgen(method, catch)]
+        /// `TiptapEditor.create(container, options)`：在元素上创建实例，替换该元素上的旧实例。
+        /// 构造失败抛异常（被 catch 捕获）。
+        #[wasm_bindgen(js_namespace = TiptapEditor, js_name = create, catch)]
         pub fn create(
-            this: &TiptapEditorModule,
-            container_id: &str,
-            opts: &EditorOptions,
-        ) -> Result<Option<EditorInstance>, JsValue>;
-    }
-
-    /// 读取 `window.TiptapEditor`（IIFE 默认导出，顶层 var 即 window 属性）。
-    /// 用 Reflect::get 做属性访问——extern fn 形式会被 wasm-bindgen 编成函数调用。
-    ///
-    /// 用 unchecked_into 而非 dyn_into：TiptapEditor 是 JS 对象字面量，
-    /// 不是 wasm-bindgen 注册的构造函数实例，dyn_into 的 instanceof 检查必然失败。
-    /// unchecked_into 只做编译期类型标注，不做运行时校验（Reflect.get 已保证拿到的是目标对象）。
-    pub fn get_module() -> TiptapEditorModule {
-        // 缺 window：本函数只应在浏览器环境的 wasm32 前端调用，不应在其它上下文触发。
-        let window = web_sys::window().expect("no window: get_module 只能在浏览器 wasm32 前端调用");
-        // 调用方先等待 use_browser_library 就绪，再构造 Options 并调用 create。
-        let val = js_sys::Reflect::get(&window, &"TiptapEditor".into()).expect(
-            "window.TiptapEditor missing: /tiptap/editor.js 未加载，检查该静态资源是否随构建产物部署",
-        );
-        val.unchecked_into::<TiptapEditorModule>()
+            container: &web_sys::HtmlElement,
+            options: &EditorOptions,
+        ) -> Result<EditorInstance, JsValue>;
     }
 
     // —— 编辑器实例（TiptapEditorInstance）——
@@ -609,13 +587,13 @@ pub mod wasm {
 ///
 /// 故意手工列名单，而非像 `codemirror`/`xterm` 那样 `pub use wasm::*;`：只导出调用方
 /// 需要按名字写出来的项（如 `on_upload_event` 闭包签名里的 `UploadEventJs`）。
-/// `TiptapEditorModule`/`EditorInstance`/`UploadCountsJs`/`RunCodeOptsJs`/
+/// `EditorInstance`/`UploadCountsJs`/`RunCodeOptsJs`/
 /// `upload_comment_image_file`/`upload_note_image_file` 不在此导出——它们要么只经方法链
-/// （`get_module().create(...)`、`handle.instance().xxx()`）使用，要么经完整路径
+/// （`handle.instance().xxx()`）使用，要么经完整路径
 /// `tiptap::wasm::xxx` 引用。新增 `pub fn`/`pub type` 供外部按名调用时记得同步加进这里。
 #[cfg(target_arch = "wasm32")]
 pub use wasm::{
-    consume_upload_event, get_module, make_comment_upload_closure, make_render_mermaid_closure,
+    consume_upload_event, create, make_comment_upload_closure, make_render_mermaid_closure,
     make_roundtrip_check_closure, make_run_code_closure, make_upload_closure, upload_image_file,
     EditorHandle, EditorOptions, UploadEventJs,
 };

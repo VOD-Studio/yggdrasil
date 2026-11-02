@@ -21,8 +21,8 @@ type ScriptWindow = Window &
     __runnerFailSSE: boolean;
     __runnerPollOutput: string;
     __routeTransitions: { push(route: string): void };
-    CodeMirrorEditor: { _instances: Map<string, { setValue(source: string): void }> };
-    XtermTerminal: { _instances: Map<string, { writeAll(stdout: string, stderr: string): void }> };
+    CodeMirrorEditor: { _instances: Map<HTMLElement, { setValue(source: string): void }> };
+    XtermTerminal: { _instances: Map<HTMLElement, { writeAll(stdout: string, stderr: string): void }> };
   };
 const base = process.env.ADMIN_BASE!;
 const artifacts = process.env.REGRESSION_ARTIFACT_DIR!;

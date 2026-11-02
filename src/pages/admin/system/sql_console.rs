@@ -38,6 +38,7 @@ const WRITE_KEYWORDS: [&str; 7] = [
 #[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))]
 pub(super) fn SqlConsoleTab() -> impl IntoView {
     let editor_library = use_browser_library("codemirror", || true);
+    let editor_mount = NodeRef::<leptos::html::Div>::new();
     let resolved = use_resolved_theme();
     let sql_text = RwSignal::new(String::new());
     let result = RwSignal::new(None::<SqlResult>);
@@ -117,6 +118,10 @@ pub(super) fn SqlConsoleTab() -> impl IntoView {
             if !ready || editor_handle.with_value(Option::is_some) {
                 return;
             }
+            // 跟踪读取：容器挂载后本 Effect 会重跑。
+            let Some(container) = editor_mount.get() else {
+                return;
+            };
             let on_change = Closure::new(move |v: String| {
                 let _ = sql_text.try_set(v);
             });
@@ -137,7 +142,7 @@ pub(super) fn SqlConsoleTab() -> impl IntoView {
             opts.set_on_ready(&on_ready);
             opts.set_on_run_shortcut(&on_run_shortcut);
 
-            if let Ok(Some(inst)) = codemirror::get_module().create("sql-editor", &opts) {
+            if let Ok(inst) = codemirror::create(&container, &opts) {
                 let handle =
                     codemirror::EditorHandle::new(inst, on_change, on_ready, on_run_shortcut);
                 editor_handle.set_value(Some(handle));
@@ -187,7 +192,7 @@ pub(super) fn SqlConsoleTab() -> impl IntoView {
         <section class="admin-panel sys-sql" aria-label="SQL 编辑器">
             <LibraryLoadError library=editor_library/>
             // CodeMirror 容器：flex 让 .cm-editor(flex:1) 填满高度，避免底部透出背景。
-            <div id="sql-editor" class="sys-sql-editor"></div>
+            <div class="sys-sql-editor" node_ref=editor_mount></div>
             <div class="sys-sql-bar">
                 <label class="sys-sql-option">
                     <Checkbox

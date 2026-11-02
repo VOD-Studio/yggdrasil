@@ -8,7 +8,7 @@ const { chromium } = loadPlaywright();
 type ScriptWindow = Window &
   typeof globalThis & {
     __routeTransitions: { push(route: string): void };
-    TiptapEditor: { _instances: Map<string, { getMarkdown(): string }> };
+    TiptapEditor: { _instances: Map<HTMLElement, { getMarkdown(): string }> };
   };
 const base = process.env.ADMIN_BASE!;
 const artifacts = process.env.REGRESSION_ARTIFACT_DIR!;
@@ -42,7 +42,7 @@ async function main() {
     await modal.getByRole('button', { name: '插入', exact: true }).click();
     await modal.waitFor({ state: 'detached' });
     let markdown = await page.evaluate(() =>
-      (window as ScriptWindow).TiptapEditor._instances.get('tiptap-editor')!.getMarkdown(),
+      (window as ScriptWindow).TiptapEditor._instances.get(document.getElementById('tiptap-editor')!)!.getMarkdown(),
     );
     assert(markdown.includes('python runnable {"timeout_secs":7'));
     pass('inserting a runnable block serializes the configured timeout');
@@ -53,7 +53,7 @@ async function main() {
     await page.locator('#runnable-timeout').fill('9');
     await modal.getByRole('button', { name: '保存', exact: true }).click();
     markdown = await page.evaluate(() =>
-      (window as ScriptWindow).TiptapEditor._instances.get('tiptap-editor')!.getMarkdown(),
+      (window as ScriptWindow).TiptapEditor._instances.get(document.getElementById('tiptap-editor')!)!.getMarkdown(),
     );
     assert(markdown.includes('"timeout_secs":9'));
     pass('editing the block changes its existing runnable configuration');

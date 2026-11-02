@@ -47,12 +47,12 @@ describe('TerminalInstance', () => {
     const container = document.createElement('div');
     container.id = 'terminal-replacement';
     document.body.appendChild(container);
-    const old = XtermTerminal.create(container.id);
-    const current = XtermTerminal.create(container.id);
-    old?.destroy();
-    expect(XtermTerminal._instances.get(container.id)).toBe(current);
-    current?.destroy();
-    expect(XtermTerminal._instances.has(container.id)).toBe(false);
+    const old = XtermTerminal.create(container);
+    const current = XtermTerminal.create(container);
+    old.destroy();
+    expect(XtermTerminal._instances.get(container)).toBe(current);
+    current.destroy();
+    expect(XtermTerminal._instances.has(container)).toBe(false);
     container.remove();
   });
 

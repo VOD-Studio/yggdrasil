@@ -25,8 +25,8 @@ interface EditorInstance {
   destroy(...args: unknown[]): unknown;
 }
 interface EditorModule {
-  _instances: Map<string, EditorInstance>;
-  create(...args: unknown[]): EditorInstance | null;
+  _instances: Map<HTMLElement, EditorInstance>;
+  create(...args: unknown[]): EditorInstance;
   __adminInstrumented?: boolean;
 }
 interface StreamRecord {
@@ -358,7 +358,7 @@ async function main() {
     assert.equal(await page.locator('#write-slug').inputValue(), fixture.slug);
     assert.equal(await page.locator('#write-summary').inputValue(), fixture.summary || '');
     const markdown = await page.evaluate(() =>
-      (window as ScriptWindow).TiptapEditor._instances.get('tiptap-editor')!.getMarkdown(),
+      (window as ScriptWindow).TiptapEditor._instances.get(document.getElementById('tiptap-editor')!)!.getMarkdown(),
     );
     assert.equal(
       markdown.trim(),
@@ -369,7 +369,7 @@ async function main() {
     await page.evaluate(() => {
       (window as ScriptWindow).__originalEditor = (
         window as ScriptWindow
-      ).TiptapEditor._instances.get('tiptap-editor')!;
+      ).TiptapEditor._instances.get(document.getElementById('tiptap-editor')!)!;
     });
     pass('edit route backfills real article metadata and Markdown once');
     await page.waitForFunction(() => {
@@ -396,7 +396,7 @@ async function main() {
     await page.waitForFunction(
       (body) =>
         (window as ScriptWindow).TiptapEditor._instances
-          .get('tiptap-editor')!
+          .get(document.getElementById('tiptap-editor')!)!
           .getMarkdown()
           .includes(body),
       BODY,
@@ -405,7 +405,7 @@ async function main() {
       await page.evaluate(
         () =>
           (window as ScriptWindow).__originalEditor ===
-          (window as ScriptWindow).TiptapEditor._instances.get('tiptap-editor')!,
+          (window as ScriptWindow).TiptapEditor._instances.get(document.getElementById('tiptap-editor')!)!,
       ),
       'metadata/cover/body input must retain the existing editor handle',
     );
@@ -448,7 +448,7 @@ async function main() {
       await page.evaluate(
         (body) =>
           (window as ScriptWindow).TiptapEditor._instances
-            .get('tiptap-editor')!
+            .get(document.getElementById('tiptap-editor')!)!
             .getMarkdown()
             .includes(body),
         BODY,

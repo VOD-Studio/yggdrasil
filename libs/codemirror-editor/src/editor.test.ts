@@ -40,12 +40,12 @@ describe('CodeMirrorInstance', () => {
   });
 
   it('注册表随销毁清理，旧句柄不会误删同 ID 新实例', () => {
-    const old = CodeMirrorEditor.create(container.id);
-    const current = CodeMirrorEditor.create(container.id);
-    old?.destroy();
-    expect(CodeMirrorEditor._instances.get(container.id)).toBe(current);
-    current?.destroy();
-    expect(CodeMirrorEditor._instances.has(container.id)).toBe(false);
+    const old = CodeMirrorEditor.create(container);
+    const current = CodeMirrorEditor.create(container);
+    old.destroy();
+    expect(CodeMirrorEditor._instances.get(container)).toBe(current);
+    current.destroy();
+    expect(CodeMirrorEditor._instances.has(container)).toBe(false);
   });
 
   it('初始 value 正确', () => {

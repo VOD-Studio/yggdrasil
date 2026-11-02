@@ -17,7 +17,7 @@
 //! 编辑器就绪前点击「运行」时保留意图（pending_run），就绪后自动执行一次。
 //! xterm 输出终端保持「输出出现后才加载」的既有门控，激活绝不触发代码执行。
 //!
-//! 输出渲染：分包按 `output_container_id` 调用 `xterm::get_module().create(...)`
+//! 输出渲染：分包在输出区的 `NodeRef` 元素上调用 `xterm::create(...)`
 //! 挂载 xterm.js 终端（输出专用，无 stdin），SSE stdout/stderr 事件实时写入。
 //! SSE 不可用时降级到轮询 get_exec_result，整段写入终端（writeAll）。
 
@@ -100,10 +100,12 @@ pub fn CodeRunner(
     // 复制结果：Some(true) 已复制，Some(false) 失败（如非安全上下文），None 默认。
     let copied = RwSignal::new(None::<bool>);
 
-    // CodeMirror 与 xterm 容器 id：由确定性 prop 派生，SSR 与 hydration 一致，
-    // hydration 时 create() 能找到 SSR 渲染的容器。
+    // 编辑器与终端容器：id 由确定性 prop 派生（SSR 与 hydration 一致；视口观察、
+    // 样式选择器和脚本按 id 查找），挂载点经 NodeRef 把元素交给 `create`。
     let container_id = format!("code-runner-{instance_id}");
     let output_container_id = format!("code-runner-output-{instance_id}");
+    let editor_mount = NodeRef::<leptos::html::Div>::new();
+    let output_mount = NodeRef::<leptos::html::Div>::new();
 
     // 激活门控：容器接近视口（底部提前约一屏）或用户主动点击占位代码 / 运行按钮
     // 时置 true。单向激活，滚出视口不销毁已建实例；IntersectionObserver 不可用时
@@ -286,8 +288,8 @@ pub fn CodeRunner(
 
     let body_args = RunnerBody {
         language,
-        container_id: container_id.clone(),
-        output_container_id: output_container_id.clone(),
+        editor_mount,
+        output_mount,
         example_output: example_output.clone(),
         source_signal,
         vim_enabled,
@@ -423,9 +425,9 @@ pub fn CodeRunner(
                         }
                     })
             }}
-            <div id=container_id class="runner-editor">
+            <div id=container_id node_ref=editor_mount class="runner-editor">
                 // 挂载前显示服务端高亮好的代码，行号与编辑器对齐，挂载时不跳动。
-                // 用绝对定位覆盖在（始终存在的）容器上方，不影响 CodeMirror 的 getElementById 挂载。
+                // 用绝对定位覆盖在（始终存在的）容器上方，不影响 CodeMirror 在该元素上的挂载。
                 // 点击占位提前激活编辑器，也是 IntersectionObserver 不可用时的交互兜底。
                 {move || {
                     (!editor_ready.get())
@@ -512,7 +514,7 @@ pub fn CodeRunner(
                                             })}
                                     </div>
                                 </div>
-                                <div id=output_container_id class="runner-terminal">
+                                <div id=output_container_id node_ref=output_mount class="runner-terminal">
                                     {move || {
                                         (running.get() && !has_output.get())
                                             .then(|| {

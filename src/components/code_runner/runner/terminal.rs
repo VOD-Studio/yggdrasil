@@ -12,7 +12,7 @@ use leptos::prelude::*;
 /// 供执行 Effect 等待（终端句柄本身不是响应式的）。
 #[allow(clippy::too_many_arguments)]
 pub(super) fn use_terminal(
-    output_container_id: String,
+    output_mount: NodeRef<leptos::html::Div>,
     example_output: Option<RunnerExample>,
     execution: Execution,
     terminal_library: LibraryResource,
@@ -41,6 +41,10 @@ pub(super) fn use_terminal(
         if !library_ready(terminal_library) {
             return;
         }
+        // 跟踪读取：输出区挂载（节点提交进文档）后本 Effect 会重跑。
+        let Some(container) = output_mount.get() else {
+            return;
+        };
 
         let on_ready = Closure::new(|| {});
         let theme_name = if resolved_theme.get_untracked() == ResolvedTheme::Dark {
@@ -54,8 +58,8 @@ pub(super) fn use_terminal(
         opts.set_font_size(13);
         opts.set_on_ready(&on_ready);
 
-        match xterm::get_module().create(&output_container_id, &opts) {
-            Ok(Some(inst)) => {
+        match xterm::create(&container, &opts) {
+            Ok(inst) => {
                 if let Some(example) = &example_output {
                     inst.write_all(&example.stdout, &example.stderr);
                 }
@@ -64,7 +68,6 @@ pub(super) fn use_terminal(
                 terminal_ready.set(true);
                 terminal_failed.set(false);
             }
-            Ok(None) => terminal_failed.set(true),
             Err(error) => {
                 web_sys::console::error_1(&error);
                 terminal_failed.set(true);

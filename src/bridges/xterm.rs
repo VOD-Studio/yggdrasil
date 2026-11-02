@@ -1,16 +1,16 @@
 //! xterm.js 终端桥接：输出专用（无 stdin），配合 SSE 流式渲染容器 stdout/stderr。
 //!
 //! 镜像 `codemirror.rs` 范式：
-//! - `window.XtermTerminal` 是 IIFE 产物挂在 window 上的对象字面量（含 create 方法），
-//!   不是函数。用 `js_sys::Reflect::get` 做属性访问拿到模块对象，再 `unchecked_into`。
+//! - `window.XtermTerminal` 是 IIFE 产物挂在 window 上的对象字面量（含 create 方法）；
+//!   `create` 以 js_namespace 绑定为成员调用，调用时才解析全局，脚本未加载时返回 Err。
 //! - `XtermOptions` 是普通 JS 对象（TS 侧为 interface）：`XtermOptions::default()` 得到空对象，再用 setter 填充。
 //! - `TerminalHandle` 持有实例 + onReady 闭包，Drop → destroy()。
 //!
 //! WASM-only：所有 extern 与 handle 都在 `#[cfg(target_arch = "wasm32")] mod wasm` 内，
 //! server 构建整体剥离。无跨目标共享数据（纯渲染层）。
 //!
-//! 用法（Leptos）：挂载点是带稳定 `id` 的元素，先用 `use_browser_library("xterm", ..)` 等库就绪，
-//! 再在 `Effect` 内构造 `XtermOptions` 并 `get_module().create(id, &opts)`；`TerminalHandle` 含 JS 引用
+//! 用法（Leptos）：挂载点用 `NodeRef` 取元素，先用 `use_browser_library(BrowserLibrary::Xterm, ..)` 等库就绪，
+//! 再在 `Effect` 内构造 `XtermOptions` 并 `create(&element, &opts)`；`TerminalHandle` 含 JS 引用
 //! （非 `Send + Sync`），放进 `StoredValue::new_local`/`RwSignal::new_local`，`on_cleanup` 里 `take`
 //! 出来丢弃即触发 `Drop` → `destroy`。
 
@@ -19,43 +19,19 @@ pub mod wasm {
     use wasm_bindgen::prelude::*;
     use wasm_bindgen::JsCast;
 
-    // —— window.XtermTerminal 模块对象 ——
+    // —— window.XtermTerminal.create ——
     //
-    // XtermTerminal 是 IIFE 产物挂在 window 上的对象字面量（含 create 方法），
-    // 不是函数。wasm-bindgen 对 `fn get_module() -> T` 形式的 extern 会生成
-    // `window.XtermTerminal()`（函数调用），会因 "not a function" 失败。
-    // 因此用 js_sys::Reflect::get 做属性访问拿到模块对象，再 unchecked_into。
+    // `js_namespace` 把 `create` 绑成 `XtermTerminal.create(...)` 的成员调用，
+    // 全局在调用时才解析：脚本未加载时返回 Err（TypeError），而不是在绑定阶段 panic。
     #[wasm_bindgen]
     extern "C" {
-        /// `window.XtermTerminal` 模块对象的 Rust 映射（IIFE 产物挂在 window 上的对象字面量）。
-        /// 不是函数——通过 [`get_module`] 用 Reflect::get 取属性而非 extern fn 调用拿到。
-        pub type XtermTerminalModule;
-
-        /// 调用 `XtermTerminal.create(containerId, opts)`。
-        /// 找不到容器返回 null（被 Option 捕获）；构造失败抛异常（被 catch 捕获）。
-        #[wasm_bindgen(method, catch)]
+        /// `XtermTerminal.create(container, options)`：在元素上创建终端，替换该元素上的旧实例。
+        /// 构造失败抛异常（被 catch 捕获）。
+        #[wasm_bindgen(js_namespace = XtermTerminal, js_name = create, catch)]
         pub fn create(
-            this: &XtermTerminalModule,
-            container_id: &str,
-            opts: &XtermOptions,
-        ) -> Result<Option<TerminalInstance>, JsValue>;
-    }
-
-    /// 读取 `window.XtermTerminal`（IIFE 默认导出，顶层 var 即 window 属性）。
-    /// 用 Reflect::get 做属性访问——extern fn 形式会被 wasm-bindgen 编成函数调用。
-    ///
-    /// 用 unchecked_into 而非 dyn_into：XtermTerminal 是 JS 对象字面量，
-    /// 不是 wasm-bindgen 注册的构造函数实例，dyn_into 的 instanceof 检查必然失败。
-    /// unchecked_into 只做编译期类型标注，不做运行时校验
-    /// （Reflect.get 已保证拿到的是目标对象）。
-    pub fn get_module() -> XtermTerminalModule {
-        // 缺 window：本函数只应在浏览器环境的 wasm32 前端调用，不应在其它上下文触发。
-        let window = web_sys::window().expect("no window: get_module 只能在浏览器 wasm32 前端调用");
-        // 调用方先等待 use_browser_library 就绪，再构造 Options 并调用 create。
-        let val = js_sys::Reflect::get(&window, &"XtermTerminal".into()).expect(
-            "window.XtermTerminal missing: /xterm/terminal.js 未加载，检查该静态资源是否随构建产物部署",
-        );
-        val.unchecked_into::<XtermTerminalModule>()
+            container: &web_sys::HtmlElement,
+            options: &XtermOptions,
+        ) -> Result<TerminalInstance, JsValue>;
     }
 
     // —— 终端实例（TerminalInstance）——

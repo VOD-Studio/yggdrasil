@@ -34,6 +34,7 @@ pub(super) fn use_write_editor(
         body_picker_visible: RwSignal::new(false),
         body_picker_uploading: RwSignal::new(false),
         reload: RwSignal::new(0),
+        container: NodeRef::new(),
         #[cfg(target_arch = "wasm32")]
         editor: StoredValue::new_local(None),
     };
@@ -57,6 +58,10 @@ fn install_editor(state: WriteEditorState) {
         if !library_ready(state.library) {
             return;
         }
+        // 跟踪读取：容器挂载（节点提交进文档）后本 Effect 会重跑。
+        if state.container.get().is_none() {
+            return;
+        }
         let Some(current) = generation.try_update_value(|g| {
             *g += 1;
             *g
@@ -68,11 +73,17 @@ fn install_editor(state: WriteEditorState) {
         state.phase.set(EditorPhase::Initializing);
         // 重试时保留失败前已输入的内容。
         let markdown = state.form.with_untracked(|form| form.content.clone());
-        // 推迟一帧：保证容器 div 已挂入文档，按 id 能找到。
+        // 推迟一帧：等容器提交进文档。
         request_animation_frame(move || {
             if generation.try_get_value() != Some(current) {
                 return;
             }
+            let Some(container) = state.container.get_untracked() else {
+                state
+                    .phase
+                    .set(EditorPhase::Failed("编辑器容器未就绪".into()));
+                return;
+            };
             let on_update: Closure<dyn FnMut(String)> = Closure::new(move |md: String| {
                 let _ = state.form.try_update(|form| form.content = md);
             });
@@ -96,8 +107,8 @@ fn install_editor(state: WriteEditorState) {
             options.set_on_pick_from_library(&on_pick_from_library);
             options.set_check_roundtrip(&on_check_roundtrip);
             options.set_on_render_mermaid(&on_render_mermaid);
-            match crate::bridges::tiptap::get_module().create("tiptap-editor", &options) {
-                Ok(Some(instance)) => {
+            match crate::bridges::tiptap::create(&container, &options) {
+                Ok(instance) => {
                     let settled = (!markdown.is_empty()).then(|| instance.set_markdown(&markdown));
                     state.editor.set_value(Some(
                         EditorHandle::new(
@@ -123,9 +134,6 @@ fn install_editor(state: WriteEditorState) {
                         }
                     });
                 }
-                Ok(None) => state
-                    .phase
-                    .set(EditorPhase::Failed("编辑器容器未就绪".into())),
                 Err(error) => {
                     web_sys::console::error_1(&error);
                     state

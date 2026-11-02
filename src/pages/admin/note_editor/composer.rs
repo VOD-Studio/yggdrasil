@@ -63,9 +63,11 @@ pub(super) fn NoteComposer(
         let initial = initial.clone();
         request_animation_frame(move || {
             #[cfg(target_arch = "wasm32")]
-            create_editor(
-                editor, initial, on_change, ready, error, counts, errors, pick,
-            );
+            if let Some(element) = container.get_untracked() {
+                create_editor(
+                    &element, editor, initial, on_change, ready, error, counts, errors, pick,
+                );
+            }
             #[cfg(not(target_arch = "wasm32"))]
             let _ = (initial, on_change);
         });
@@ -160,6 +162,7 @@ pub(super) fn NoteComposer(
 #[cfg(target_arch = "wasm32")]
 #[allow(clippy::too_many_arguments)]
 fn create_editor(
+    container: &web_sys::HtmlElement,
     editor: StoredValue<Option<Handle>, leptos::reactive::owner::LocalStorage>,
     initial: String,
     on_change: Callback<String>,
@@ -209,15 +212,15 @@ fn create_editor(
     opts.set_on_run_code(&run);
     opts.set_on_pick_from_library(&picker);
     opts.set_on_render_mermaid(&render_mermaid);
-    match tiptap::get_module().create("note-tiptap", &opts) {
-        Ok(Some(inst)) => {
+    match tiptap::create(container, &opts) {
+        Ok(inst) => {
             let _ = inst.set_markdown(&initial);
             let _ = editor.try_set_value(Some(
                 Handle::new(inst, update, upload, on_ready, upload_event, run, picker)
                     .with_render_mermaid(render_mermaid),
             ));
         }
-        _ => {
+        Err(_) => {
             let _ = error.try_set("编辑器初始化失败，请刷新后重试".into());
         }
     }

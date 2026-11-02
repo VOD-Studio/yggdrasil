@@ -6,12 +6,11 @@
 //! `SqlSchema`/`SqlTable` 是 server function 返回值 DTO，定义在
 //! [`crate::models::sql_schema`]（不属于本文件——避免 API 层反向依赖桥接层）。
 //!
-//! 与 tiptap 一样，`CodeMirrorEditor` 是 IIFE 挂在 window 上的**对象字面量**
-//! （`{ create }`），不是函数——因此用 `js_sys::Reflect::get` 做属性访问拿到，
-//! 不能用 wasm-bindgen 的 extern fn（那会被编成函数调用，"not a function"）。
+//! 与 tiptap 一样，`create` 以 js_namespace 绑定为成员调用，调用时才解析全局；
+//! 脚本未加载时返回 Err。
 //!
-//! 用法（Leptos）：挂载点是带稳定 `id` 的元素，先用 `use_browser_library("codemirror", ..)` 等库就绪，
-//! 再在 `Effect` 内构造 `EditorOptions` 并 `get_module().create(id, &opts)`；`EditorHandle` 含 JS 引用
+//! 用法（Leptos）：挂载点用 `NodeRef` 取元素，先用 `use_browser_library(BrowserLibrary::CodeMirror, ..)` 等库就绪，
+//! 再在 `Effect` 内构造 `EditorOptions` 并 `create(&element, &opts)`；`EditorHandle` 含 JS 引用
 //! （非 `Send + Sync`），放进 `StoredValue::new_local`/`RwSignal::new_local`，`on_cleanup` 里 `take`
 //! 出来丢弃即触发 `Drop` → `destroy`。
 
@@ -24,43 +23,19 @@ pub mod wasm {
     use wasm_bindgen::prelude::*;
     use wasm_bindgen::JsCast;
 
-    // —— window.CodeMirrorEditor 模块对象 ——
+    // —— window.CodeMirrorEditor.create ——
     //
-    // CodeMirrorEditor 是 IIFE 产物挂在 window 上的对象字面量（含 create 方法），
-    // 不是函数。wasm-bindgen 对 `fn get_module() -> T` 形式的 extern 会生成
-    // `window.CodeMirrorEditor()`（函数调用），会因 "not a function" 失败。
-    // 因此用 js_sys::Reflect::get 做属性访问拿到模块对象，再 unchecked_into。
+    // `js_namespace` 把 `create` 绑成 `CodeMirrorEditor.create(...)` 的成员调用，
+    // 全局在调用时才解析：脚本未加载时返回 Err（TypeError），而不是在绑定阶段 panic。
     #[wasm_bindgen]
     extern "C" {
-        /// `window.CodeMirrorEditor` 模块对象的 Rust 映射（IIFE 产物挂在 window 上的对象字面量）。
-        /// 不是函数——通过 [`get_module`] 用 Reflect::get 取属性而非 extern fn 调用拿到。
-        pub type CodeMirrorEditorModule;
-
-        /// 调用 `CodeMirrorEditor.create(containerId, opts)`。
-        /// 找不到容器返回 null（被 Option 捕获）；构造失败抛异常（被 catch 捕获）。
-        #[wasm_bindgen(method, catch)]
+        /// `CodeMirrorEditor.create(container, options)`：在元素上创建实例，替换该元素上的旧实例。
+        /// 构造失败抛异常（被 catch 捕获）。
+        #[wasm_bindgen(js_namespace = CodeMirrorEditor, js_name = create, catch)]
         pub fn create(
-            this: &CodeMirrorEditorModule,
-            container_id: &str,
-            opts: &EditorOptions,
-        ) -> Result<Option<EditorInstance>, JsValue>;
-    }
-
-    /// 读取 `window.CodeMirrorEditor`（IIFE 默认导出，顶层 var 即 window 属性）。
-    /// 用 Reflect::get 做属性访问——extern fn 形式会被 wasm-bindgen 编成函数调用。
-    ///
-    /// 用 unchecked_into 而非 dyn_into：CodeMirrorEditor 是 JS 对象字面量，
-    /// 不是 wasm-bindgen 注册的构造函数实例，dyn_into 的 instanceof 检查必然失败。
-    /// unchecked_into 只做编译期类型标注，不做运行时校验
-    /// （Reflect.get 已保证拿到的是目标对象）。
-    pub fn get_module() -> CodeMirrorEditorModule {
-        // 缺 window：本函数只应在浏览器环境的 wasm32 前端调用，不应在其它上下文触发。
-        let window = web_sys::window().expect("no window: get_module 只能在浏览器 wasm32 前端调用");
-        // 调用方先等待 use_browser_library 就绪，再构造 Options 并调用 create。
-        let val = js_sys::Reflect::get(&window, &"CodeMirrorEditor".into()).expect(
-            "window.CodeMirrorEditor missing: /codemirror/editor.js 未加载，检查该静态资源是否随构建产物部署",
-        );
-        val.unchecked_into::<CodeMirrorEditorModule>()
+            container: &web_sys::HtmlElement,
+            options: &EditorOptions,
+        ) -> Result<EditorInstance, JsValue>;
     }
 
     // —— 编辑器实例（CodeMirrorInstance）——

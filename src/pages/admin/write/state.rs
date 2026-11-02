@@ -201,6 +201,8 @@ pub(super) struct WriteEditorState {
     pub body_picker_visible: RwSignal<bool>,
     pub body_picker_uploading: RwSignal<bool>,
     pub(super) reload: RwSignal<u32>,
+    /// 编辑器挂载容器；`create` 在此元素上创建实例。
+    pub container: NodeRef<leptos::html::Div>,
     /// 编辑器句柄持有 JS 实例与回调，不是 `Send + Sync`，只能放本地存储；
     /// 随页面所有者销毁时 drop，触发 JS 端 destroy。
     #[cfg(target_arch = "wasm32")]

@@ -363,7 +363,7 @@ class TiptapEditorInstance {
     return this.editor?.isEmpty ?? true;
   }
 
-  /** Rust 侧"×关闭"提示时调用（通过 eval）。返回是否成功删除。 */
+  /** Rust 侧"×关闭"提示时调用（Rust 端经 bridges::tiptap 调用）。返回是否成功删除。 */
   removeUploadByUploadId(uploadId: string): boolean {
     return this.coordinator?.removeUpload(uploadId) ?? false;
   }
@@ -411,26 +411,20 @@ class TiptapEditorInstance {
   }
 }
 
+/** 容器元素 → 其上的编辑器实例；同一元素再次 create 会先销毁旧实例。 */
+const instances = new Map<HTMLElement, TiptapEditorInstance>();
+
 const TiptapEditor = {
-  _instances: new Map<string, TiptapEditorInstance>(),
+  _instances: instances,
 
-  create(containerId: string, options: EditorOptions = {}): TiptapEditorInstance | null {
-    const container = document.getElementById(containerId);
-    if (!container) {
-      console.error(`[TiptapEditor] Container not found: #${containerId}`);
-      return null;
-    }
-
-    const existing = this._instances.get(containerId);
-    if (existing) {
-      existing.destroy();
-    }
+  create(container: HTMLElement, options: EditorOptions = {}): TiptapEditorInstance {
+    instances.get(container)?.destroy();
 
     let instance!: TiptapEditorInstance;
     instance = new TiptapEditorInstance(container, options, () => {
-      if (this._instances.get(containerId) === instance) this._instances.delete(containerId);
+      if (instances.get(container) === instance) instances.delete(container);
     });
-    this._instances.set(containerId, instance);
+    instances.set(container, instance);
     return instance;
   },
 };

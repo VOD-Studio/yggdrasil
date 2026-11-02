@@ -16,8 +16,8 @@ use leptos::prelude::*;
 #[derive(Clone)]
 pub(super) struct RunnerBody {
     pub language: String,
-    pub container_id: String,
-    pub output_container_id: String,
+    pub editor_mount: NodeRef<leptos::html::Div>,
+    pub output_mount: NodeRef<leptos::html::Div>,
     pub example_output: Option<RunnerExample>,
     pub source_signal: RwSignal<String>,
     pub vim_enabled: RwSignal<bool>,
@@ -55,8 +55,8 @@ fn mount(args: RunnerBody) {
 
     let RunnerBody {
         language,
-        container_id,
-        output_container_id,
+        editor_mount,
+        output_mount,
         example_output,
         source_signal,
         vim_enabled,
@@ -76,7 +76,7 @@ fn mount(args: RunnerBody) {
 
     editor::use_editor(
         language,
-        container_id,
+        editor_mount,
         source_signal,
         vim_enabled,
         vim_mode,
@@ -93,7 +93,7 @@ fn mount(args: RunnerBody) {
     let term_handle: TerminalSlot = StoredValue::new_local(None);
     let terminal_ready = RwSignal::new(false);
     terminal::use_terminal(
-        output_container_id,
+        output_mount,
         example_output,
         execution,
         terminal_library,

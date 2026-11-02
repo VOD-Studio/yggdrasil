@@ -15,7 +15,7 @@ pub(super) type EditorSlot = StoredValue<Option<EditorHandle>, LocalStorage>;
 #[allow(clippy::too_many_arguments)]
 pub(super) fn use_editor(
     language: String,
-    container_id: String,
+    editor_mount: NodeRef<leptos::html::Div>,
     source_signal: RwSignal<String>,
     vim_enabled: RwSignal<bool>,
     vim_mode: RwSignal<Option<String>>,
@@ -47,6 +47,10 @@ pub(super) fn use_editor(
         if !library_ready(editor_library) {
             return;
         }
+        // 跟踪读取：容器挂载（节点提交进文档）后本 Effect 会重跑。
+        let Some(container) = editor_mount.get() else {
+            return;
+        };
 
         // onChange 回写到 source_signal（编辑器内容 = 唯一真源）。
         let on_change = Closure::new(move |v: String| {
@@ -74,15 +78,14 @@ pub(super) fn use_editor(
         opts.set_on_run_shortcut(&on_run_shortcut);
         opts.set_on_vim_mode_change(&on_vim_mode_change);
 
-        match codemirror::get_module().create(&container_id, &opts) {
-            Ok(Some(inst)) => {
+        match codemirror::create(&container, &opts) {
+            Ok(inst) => {
                 let handle = EditorHandle::new(inst, on_change, on_ready, on_run_shortcut)
                     .with_vim_mode(on_vim_mode_change);
                 editor_handle.set_value(Some(handle));
                 editor_ready.set(true);
                 editor_failed.set(false);
             }
-            Ok(None) => editor_failed.set(true),
             Err(error) => {
                 web_sys::console::error_1(&error);
                 editor_failed.set(true);

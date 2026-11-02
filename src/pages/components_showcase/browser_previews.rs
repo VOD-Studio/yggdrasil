@@ -174,7 +174,7 @@ fn BrowserPreview(slug: String, detail: bool) -> impl IntoView {
 
 #[component]
 fn TiptapPreview(detail: bool) -> impl IntoView {
-    let container_id = host_id("tiptap-host", detail);
+    let host = NodeRef::<leptos::html::Div>::new();
     let error = RwSignal::new(None::<String>);
     let ready = RwSignal::new(false);
     let changed = RwSignal::new(false);
@@ -187,12 +187,15 @@ fn TiptapPreview(detail: bool) -> impl IntoView {
         use wasm_bindgen::{closure::Closure, JsValue};
 
         let handle: StoredValue<Option<EditorHandle>, LocalStorage> = StoredValue::new_local(None);
-        let mount_id = container_id.clone();
         Effect::new(move |_| {
             retry.track();
             if handle.with_value(|handle| handle.is_some()) || !library_ready(library) {
                 return;
             }
+            // 跟踪读取：宿主挂载后本 Effect 会重跑。
+            let Some(container) = host.get() else {
+                return;
+            };
             let on_update = Closure::new(move |_markdown: String| {
                 let _ = changed.try_set(true);
             });
@@ -211,8 +214,8 @@ fn TiptapPreview(detail: bool) -> impl IntoView {
             opts.set_on_update(&on_update);
             opts.set_on_ready(&on_ready);
             opts.set_on_run_code(&on_run);
-            match tiptap::get_module().create(&mount_id, &opts) {
-                Ok(Some(instance)) => {
+            match tiptap::create(&container, &opts) {
+                Ok(instance) => {
                     let _ = instance.set_markdown(TIPTAP_SAMPLE);
                     handle.set_value(Some(EditorHandle::new(
                         instance,
@@ -226,7 +229,6 @@ fn TiptapPreview(detail: bool) -> impl IntoView {
                     ready.set(true);
                     error.set(None);
                 }
-                Ok(None) => error.set(Some("编辑器宿主未就绪".to_string())),
                 Err(_) => error.set(Some("编辑器初始化失败".to_string())),
             }
         });
@@ -240,7 +242,7 @@ fn TiptapPreview(detail: bool) -> impl IntoView {
             <span>"Tiptap · Markdown"</span>
             {detail.then(|| view! { <small>"本地演示，内容不会保存"</small> })}
         </div>
-        <div class="showcase-browser-host showcase-browser-host--tiptap" id=container_id></div>
+        <div class="showcase-browser-host showcase-browser-host--tiptap" node_ref=host></div>
         {loading_placeholders(library, ready, error, "编辑器正在初始化…", "编辑器库加载中…")}
         <LibraryLoadError library/>
         {error_alert(error, retry)}
@@ -259,7 +261,7 @@ fn TiptapPreview(detail: bool) -> impl IntoView {
 
 #[component]
 fn CodeMirrorPreview(detail: bool) -> impl IntoView {
-    let container_id = host_id("code-mirror-host", detail);
+    let host = NodeRef::<leptos::html::Div>::new();
     let language = RwSignal::new("python".to_string());
     let error = RwSignal::new(None::<String>);
     let ready = RwSignal::new(false);
@@ -278,12 +280,15 @@ fn CodeMirrorPreview(detail: bool) -> impl IntoView {
         use wasm_bindgen::closure::Closure;
 
         let resolved = use_resolved_theme();
-        let mount_id = container_id.clone();
         Effect::new(move |_| {
             retry.track();
             if handle.with_value(|handle| handle.is_some()) || !library_ready(library) {
                 return;
             }
+            // 跟踪读取：宿主挂载后本 Effect 会重跑。
+            let Some(container) = host.get() else {
+                return;
+            };
             let on_change = Closure::new(|_value: String| {});
             let on_ready = Closure::new(|| {});
             let on_shortcut = Closure::new(move || {
@@ -301,8 +306,8 @@ fn CodeMirrorPreview(detail: bool) -> impl IntoView {
             opts.set_on_change(&on_change);
             opts.set_on_ready(&on_ready);
             opts.set_on_run_shortcut(&on_shortcut);
-            match codemirror::get_module().create(&mount_id, &opts) {
-                Ok(Some(instance)) => {
+            match codemirror::create(&container, &opts) {
+                Ok(instance) => {
                     handle.set_value(Some(EditorHandle::new(
                         instance,
                         on_change,
@@ -312,7 +317,6 @@ fn CodeMirrorPreview(detail: bool) -> impl IntoView {
                     ready.set(true);
                     error.set(None);
                 }
-                Ok(None) => error.set(Some("代码编辑器宿主未就绪".to_string())),
                 Err(_) => error.set(Some("代码编辑器初始化失败".to_string())),
             }
         });
@@ -365,7 +369,7 @@ fn CodeMirrorPreview(detail: bool) -> impl IntoView {
                     }
                 })}
         </div>
-        <div class="showcase-browser-host showcase-browser-host--code" id=container_id></div>
+        <div class="showcase-browser-host showcase-browser-host--code" node_ref=host></div>
         {loading_placeholders(
             library,
             ready,
@@ -399,7 +403,7 @@ fn CodeMirrorPreview(detail: bool) -> impl IntoView {
 
 #[component]
 fn XtermPreview(detail: bool) -> impl IntoView {
-    let container_id = host_id("xterm-host", detail);
+    let host = NodeRef::<leptos::html::Div>::new();
     let error = RwSignal::new(None::<String>);
     let ready = RwSignal::new(false);
     let status = RwSignal::new("输出示例已就绪".to_string());
@@ -420,12 +424,15 @@ fn XtermPreview(detail: bool) -> impl IntoView {
         use wasm_bindgen::closure::Closure;
 
         let resolved = use_resolved_theme();
-        let mount_id = container_id.clone();
         Effect::new(move |_| {
             retry.track();
             if handle.with_value(|handle| handle.is_some()) || !library_ready(library) {
                 return;
             }
+            // 跟踪读取：宿主挂载后本 Effect 会重跑。
+            let Some(container) = host.get() else {
+                return;
+            };
             let on_ready = Closure::new(|| {});
             let opts = xterm::XtermOptions::default();
             opts.set_theme(if resolved.get_untracked() == ResolvedTheme::Dark {
@@ -435,14 +442,13 @@ fn XtermPreview(detail: bool) -> impl IntoView {
             });
             opts.set_font_size(if detail { 13 } else { 11 });
             opts.set_on_ready(&on_ready);
-            match xterm::get_module().create(&mount_id, &opts) {
-                Ok(Some(instance)) => {
+            match xterm::create(&container, &opts) {
+                Ok(instance) => {
                     instance.write_all(TERMINAL_STDOUT, TERMINAL_STDERR);
                     handle.set_value(Some(TerminalHandle::new(instance, on_ready)));
                     ready.set(true);
                     error.set(None);
                 }
-                Ok(None) => error.set(Some("终端宿主未就绪".to_string())),
                 Err(_) => error.set(Some("终端初始化失败".to_string())),
             }
         });
@@ -559,7 +565,7 @@ fn XtermPreview(detail: bool) -> impl IntoView {
                     }
                 })}
         </div>
-        <div class="showcase-browser-host showcase-browser-host--xterm" id=container_id></div>
+        <div class="showcase-browser-host showcase-browser-host--xterm" node_ref=host></div>
         {loading_placeholders(library, ready, error, "终端正在初始化…", "终端库加载中…")}
         <LibraryLoadError library/>
         {error_alert(error, retry)}

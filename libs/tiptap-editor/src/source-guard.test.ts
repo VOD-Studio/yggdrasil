@@ -8,8 +8,7 @@ import TiptapEditor from './index';
  * 锁定在源码模式，且保存拿到的始终是原文。
  */
 
-type Options = NonNullable<Parameters<typeof TiptapEditor.create>[1]>;
-type Instance = NonNullable<ReturnType<typeof TiptapEditor.create>>;
+type Instance = ReturnType<typeof TiptapEditor.create>;
 
 const LOSSY = '<div>块级 HTML</div>';
 let inst: Instance | null = null;
@@ -18,8 +17,7 @@ function mount(checkRoundtrip?: (a: string, b: string) => Promise<boolean>): Ins
   const el = document.createElement('div');
   el.id = 'guard-host';
   document.body.appendChild(el);
-  const created = TiptapEditor.create('guard-host', { checkRoundtrip } as unknown as Options);
-  if (!created) throw new Error('编辑器未挂载');
+  const created = TiptapEditor.create(el, { checkRoundtrip });
   inst = created;
   return created;
 }

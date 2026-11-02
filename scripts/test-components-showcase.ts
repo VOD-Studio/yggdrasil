@@ -21,9 +21,9 @@ const { chromium } = loadPlaywright();
 type ScriptWindow = Window &
   typeof globalThis & {
     __routeTransitions: { push(route: string): void; entryId(): string };
-    TiptapEditor: { _instances: Map<string, unknown> };
-    CodeMirrorEditor: { _instances: Map<string, unknown> };
-    XtermTerminal: { _instances: Map<string, unknown> };
+    TiptapEditor: { _instances: Map<HTMLElement, unknown> };
+    CodeMirrorEditor: { _instances: Map<HTMLElement, unknown> };
+    XtermTerminal: { _instances: Map<HTMLElement, unknown> };
     __catalogMoves: string[];
   };
 interface Catalog {

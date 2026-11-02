@@ -13,27 +13,23 @@ import type { ThemeName } from './themes';
 
 /**
  * 模块入口：暴露对象字面量 { create } 作为默认导出。
- * IIFE 产物挂在 window.XtermTerminal 上，由 Rust 侧用 Reflect::get 取
- * （对象字面量，不能用 wasm-bindgen 的 extern fn——那会被编成函数调用而失败）。
+ * IIFE 产物挂在 window.XtermTerminal 上，Rust 侧经 js_namespace 绑定成员调用
+ * `XtermTerminal.create(container, options)`。
  */
+const instances = new Map<HTMLElement, TerminalInstance>();
+
 const XtermTerminal = {
-  _instances: new Map<string, TerminalInstance>(),
+  _instances: instances,
 
-  create(containerId: string, options: XtermOptions = {}): TerminalInstance | null {
-    const container = document.getElementById(containerId);
-    if (!container) return null;
-
-    // 销毁同 id 的旧实例
-    const existing = this._instances.get(containerId);
-    if (existing) {
-      existing.destroy();
-    }
+  create(container: HTMLElement, options: XtermOptions = {}): TerminalInstance {
+    // 销毁同一元素上的旧实例
+    instances.get(container)?.destroy();
 
     let instance!: TerminalInstance;
     instance = new TerminalInstance(container, options, () => {
-      if (this._instances.get(containerId) === instance) this._instances.delete(containerId);
+      if (instances.get(container) === instance) instances.delete(container);
     });
-    this._instances.set(containerId, instance);
+    instances.set(container, instance);
     return instance;
   },
 };
@@ -50,7 +46,7 @@ if (typeof window !== 'undefined') {
     const detail = (event as CustomEvent).detail as { isDark: boolean } | undefined;
     if (!detail) return;
     const theme: ThemeName = detail.isDark ? 'dark' : 'light';
-    XtermTerminal._instances.forEach((instance) => {
+    instances.forEach((instance) => {
       try {
         instance.setTheme(theme);
       } catch (e) {
