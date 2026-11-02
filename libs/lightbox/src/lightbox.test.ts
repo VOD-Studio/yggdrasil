@@ -395,7 +395,7 @@ describe('lightbox 黑盒行为', () => {
       const img = makeGalleryImage('/a.webp', 'A');
       mountRoot([img]);
       window.__initLightbox('.post-content');
-      // 模拟 /admin/assets 刷新后 Dioxus 复用 DOM 节点导致的重复初始化
+      // 模拟 /admin/assets 刷新后 Leptos 复用 DOM 节点导致的重复初始化
       window.__initLightbox('.post-content');
 
       const appendSpy = vi.spyOn(document.body, 'appendChild');

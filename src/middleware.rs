@@ -273,7 +273,7 @@ fn panic_response(err: Box<dyn std::any::Any + Send + 'static>) -> axum::respons
 
 /// Axum 中间件：`/admin*` 的 SSR 层认证守卫。
 ///
-/// 未登录访问后台时，服务端**直接 302 跳转 `/login`**，根本不进入 Dioxus
+/// 未登录访问后台时，服务端**直接 302 跳转 `/login`**，根本不进入前端应用
 /// SSR 渲染器。此前后台鉴权完全在客户端 WASM 完成（SSR 渲染骨架屏 → WASM
 /// 下载/编译 → hydrate → 异步 `get_current_user()` → 客户端 `navigator.push`），
 /// 整条链串行，未登录用户首屏要"空白好久"才跳登录。

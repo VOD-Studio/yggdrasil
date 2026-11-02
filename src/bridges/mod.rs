@@ -5,8 +5,11 @@
 //! 仅在 `#[cfg(target_arch = "wasm32")]` 子模块里编译（服务端构建无 window）。
 //!
 //! 使用约定（Leptos）：
-//! - 挂载点是带稳定 `id` 的 DOM 元素，`create(container_id, opts)` 按 id 查找；
-//! - 先用 [`library::use_browser_library`] 等待库脚本就绪，再在 `Effect` 内构造 Options 并 `create`；
+//! - 挂载点用 `NodeRef` 取元素，`create(&element, &opts)` 在该元素上创建实例；
+//! - 先用 [`library::use_browser_library`]（库名用 [`library::BrowserLibrary`]）等待库脚本就绪，
+//!   再在 `Effect` 内构造 Options 并 `create`；
+//! - Options 是普通 JS 对象：`Options::default()` 得到空对象，再用 setter 填充；
+//! - `window.__*` 页面函数只经 `globals` 调用（仅 wasm32），不手写字符串名；
 //! - 句柄（`EditorHandle`/`TerminalHandle`）含 JS 引用，不是 `Send + Sync`，
 //!   必须放进 `StoredValue::new_local`/`RwSignal::new_local`；句柄 `Drop` 时销毁 JS 实例，
 //!   组件卸载时在 `on_cleanup` 里 `take` 出来丢弃即可；

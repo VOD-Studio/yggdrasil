@@ -62,7 +62,6 @@ pub(crate) fn ime_composing(composing: bool, e: &KeyboardEvent) -> bool {
 /// - `onkeydown`：调用方的其余按键（Escape、↓ 等）；输入法组合期间不转发
 /// - `oncomposition`：组合输入开始（true）/ 结束（false）
 /// - `input_ref` / `textarea_ref`：单行 input / 多行 textarea 的 `NodeRef`，供调用方聚焦
-///   （替代 Dioxus 的 `onmounted`）
 #[component]
 pub fn ComposerInput(
     #[prop(into)] value: Signal<String>,

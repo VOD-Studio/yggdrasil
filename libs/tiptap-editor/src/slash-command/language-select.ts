@@ -1,6 +1,6 @@
 export const SVG_NS = 'http://www.w3.org/2000/svg';
 
-/** 描边图标（与 Dioxus 侧 FormSelect 的 chevron / 选中对勾同源）。 */
+/** 描边图标（与 Rust 侧 FormSelect 的 chevron / 选中对勾同源）。 */
 function makeSvgIcon(pathD: string, className: string): SVGSVGElement {
   const svg = document.createElementNS(SVG_NS, 'svg');
   svg.setAttribute('class', className);
@@ -27,7 +27,7 @@ interface LangSelectWidget {
 }
 
 /**
- * 自定义语言下拉：对齐 Dioxus 侧 FormSelect（src/components/forms.rs）的视觉与
+ * 自定义语言下拉：对齐 Rust 侧 FormSelect（src/components/forms.rs）的视觉与
  * 交互契约——原生 <select> 的弹出列表由 OS 渲染、无法跟随主题，故重写为
  * `button[aria-haspopup=listbox]` + 绝对定位面板：
  * - 打开时透明遮罩拦截外部点击关闭；选项 mousedown 阻止默认行为，焦点始终留在触发器；

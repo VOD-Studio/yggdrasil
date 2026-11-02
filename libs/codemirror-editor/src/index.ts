@@ -39,7 +39,7 @@ const CodeMirrorEditor = {
  *
  * 必须在模块加载时注册一次(IIFE 顶层),确保任何时刻 dispatch 都能命中。
  * 单实例异常用 try/catch 隔离,避免一个实例失败中断其他实例换肤。
- * 与 Dioxus use_effect 驱动的 set_theme 幂等共存(reconfigure 相同主题是 no-op)。
+ * 与 Rust 端 Effect 驱动的 setTheme 幂等共存(reconfigure 相同主题是 no-op)。
  */
 if (typeof window !== 'undefined') {
   window.addEventListener(THEME_CHANGE_EVENT, (event) => {
