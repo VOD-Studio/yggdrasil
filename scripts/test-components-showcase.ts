@@ -24,6 +24,7 @@ type ScriptWindow = Window &
     TiptapEditor: { _instances: Map<string, unknown> };
     CodeMirrorEditor: { _instances: Map<string, unknown> };
     XtermTerminal: { _instances: Map<string, unknown> };
+    __catalogMoves: string[];
   };
 interface Catalog {
   components: { slug: string; name: string; group: string; preview_mode: string }[];
@@ -1100,6 +1101,48 @@ async function lifecycle(page: Playwright.Page) {
   await page.locator('.lightbox-overlay').waitFor({ state: 'hidden' });
   pass('leaving lightbox preview closes only its overlay');
 }
+async function streamingCatalog(browser: Playwright.Browser) {
+  stage = 'streaming-catalog';
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+  const page = await context.newPage();
+  page.setDefaultTimeout(30000);
+  await attachMonitoring(page);
+  // 每帧记录卡片相对网格的位置与宽度：边下载边绘制时，已经画出来的卡片不应再移动，
+  // 水合后瀑布流脚本接管也不应再挪。
+  await page.addInitScript(() => {
+    const seen = new Map<Element, string>();
+    const moves: string[] = [];
+    (window as ScriptWindow).__catalogMoves = moves;
+    const sample = () => {
+      const grid = document.querySelector('.showcase-grid');
+      if (grid) {
+        const origin = grid.getBoundingClientRect();
+        for (const card of grid.querySelectorAll(':scope > .showcase-card')) {
+          const box = card.getBoundingClientRect();
+          const place = `${Math.round(box.left - origin.left)},${Math.round(box.top - origin.top)},${Math.round(box.width)}`;
+          const before = seen.get(card);
+          if (before !== undefined && before !== place)
+            moves.push(`${card.id} ${before} → ${place}`);
+          seen.set(card, place);
+        }
+      }
+      requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
+  });
+  // 放慢 CPU，让解析跨过多次绘制，复现首屏只画出部分卡片的状态。
+  const cdp = await context.newCDPSession(page);
+  await cdp.send('Emulation.setCPUThrottlingRate', { rate: 6 });
+  try {
+    await goto(page, '/about/components');
+    await page.waitForTimeout(1000);
+    const moves = await page.evaluate(() => (window as ScriptWindow).__catalogMoves);
+    assert.deepEqual(moves.slice(0, 5), [], 'catalog cards move while the page streams in');
+    pass('catalog cards keep their place while the document streams in');
+  } finally {
+    await context.close();
+  }
+}
 async function failureAndLateLoad(browser: Playwright.Browser) {
   stage = 'library-retry';
   const context = await browser.newContext();
@@ -1213,6 +1256,7 @@ async function main() {
       return;
     }
     await catalog(page);
+    await streamingCatalog(browser);
     await removedLayoutDetails(page);
     await details(page, { width: 1440, height: 1000 }, 'light', 'no-preference', 'desktop-light');
     await details(page, { width: 390, height: 844 }, 'dark', 'reduce', 'mobile-dark');

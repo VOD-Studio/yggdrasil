@@ -94,15 +94,16 @@
 .showcase-categories .chip.is-active .chip-count { font-weight: 400; }
 
 /* ---- 卡片网格：宽屏按自然高度瀑布排列（showcase-masonry.ts），保持目录顺序 ---- */
+/* 详情栏在 HTML 里排在全部卡片之后，边下载边绘制时会晚到；先留出它的列，卡片宽度从第一帧起就不变。 */
 .showcase-catalog {
-  display: flex;
-  align-items: flex-start;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 20rem;
+  align-items: start;
   gap: 1.5rem;
   margin-top: 1.5rem;
 }
 .showcase-grid {
   display: grid;
-  flex: 1;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.75rem;
   min-width: 0;
@@ -178,8 +179,6 @@
 .showcase-inspector {
   position: sticky;
   top: 4.75rem;
-  flex-shrink: 0;
-  width: 20rem;
   max-height: calc(100vh - 6rem);
   overflow-y: auto;
   border-radius: 12px;
@@ -281,6 +280,8 @@
 .showcase-switch-row { display: flex; align-items: center; justify-content: space-between; gap: 2rem; font-size: .75rem; }
 .showcase-preview-row { display: flex; align-items: center; justify-content: center; gap: .8rem; flex-wrap: wrap; }
 .showcase-preview-field { width: 100%; max-width: 13rem; }
+.showcase-preview-field:has(.number-field) { text-align: center; }
+.showcase-preview-stack > .segmented-wrap:first-child { display: flex; justify-content: center; }
 .showcase-alert-demo { display: flex; flex-direction: column; align-items: center; gap: .85rem; width: 100%; max-width: 22rem; }
 .showcase-alert-box-target { width: 100%; cursor: pointer; transition: transform .15s ease; user-select: none; }
 .showcase-alert-box-target:hover { transform: translateY(-1px); }
@@ -798,6 +799,7 @@ figure.showcase-code-panel pre {
 .showcase-missing p { margin: 0.75rem 0 1.5rem; color: var(--color-fg-2); }
 
 @media (max-width: 1100px) {
+  .showcase-catalog { grid-template-columns: minmax(0, 1fr); }
   .showcase-inspector { display: none; }
 }
 @media (max-width: 1000px) {

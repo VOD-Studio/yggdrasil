@@ -440,6 +440,41 @@ fn click_hits_interactive(event: &MouseEvent) -> bool {
     }
 }
 
+/// 首屏边解析边排瀑布流：卡片一闭合就按自然高度写好 `grid-row-end`，浏览器每次中途绘制
+/// 看到的都是最终位置；之后由 `showcase-masonry.ts` 接管（公式、断点与它一致，算出的跨度
+/// 相同，不再挪动）。卡片的位置只取决于它前面卡片的跨度，所以还在解析的最后一张不用等。
+/// 客户端导航时脚本在目录挂上文档时执行，此时卡片已齐，一次排完。
+const MASONRY_PRELOAD_SCRIPT: &str = r#"
+(function() {
+    var script = document.currentScript;
+    var catalog = script && script.parentNode;
+    if (!catalog || !window.MutationObserver) return;
+    var laid = 0;
+    function layout() {
+        var grid = script.nextElementSibling;
+        if (!grid || !window.matchMedia('(min-width: 901px)').matches) return;
+        grid.classList.add('is-masonry');
+        var parsed = document.readyState !== 'loading';
+        var row = parseFloat(getComputedStyle(grid).gridAutoRows);
+        var cards = grid.children;
+        for (; laid < cards.length; laid++) {
+            var card = cards[laid];
+            if (!parsed && !card.nextElementSibling) break;
+            if (!card.classList.contains('showcase-card')) continue;
+            var height = card.getBoundingClientRect().height + parseFloat(getComputedStyle(card).marginBottom);
+            card.style.gridRowEnd = 'span ' + Math.ceil(height / row);
+        }
+    }
+    if (document.readyState !== 'loading') return layout();
+    var observer = new MutationObserver(layout);
+    observer.observe(catalog, { childList: true, subtree: true });
+    document.addEventListener('DOMContentLoaded', function() {
+        observer.disconnect();
+        layout();
+    }, { once: true });
+})();
+"#;
+
 #[component]
 fn ShowcaseGallery() -> impl IntoView {
     let filters = expect_context::<RwSignal<ShowcaseFilters>>();
@@ -583,6 +618,7 @@ fn ShowcaseGallery() -> impl IntoView {
                 {categories}
             </nav>
             <div class="showcase-catalog page-enter" style="--enter-index: 2">
+                <script inner_html=MASONRY_PRELOAD_SCRIPT></script>
                 <div class="showcase-grid">
                     <For
                         each=move || shown.get()

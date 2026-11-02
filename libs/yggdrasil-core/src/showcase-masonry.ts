@@ -1,6 +1,10 @@
 let disposeActive: (() => void) | undefined;
 
-/** Keep catalog order while packing cards to their natural heights. */
+/**
+ * Keep catalog order while packing cards to their natural heights.
+ * `MASONRY_PRELOAD_SCRIPT` in `src/pages/components_showcase.rs` applies the same breakpoint and
+ * span formula while the document streams in; keep them in sync so the takeover moves nothing.
+ */
 export function initShowcaseMasonry(): void {
   disposeActive?.();
   const element = document.querySelector<HTMLElement>('.showcase-grid');
