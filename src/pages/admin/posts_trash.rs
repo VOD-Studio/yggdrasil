@@ -19,6 +19,7 @@ use crate::api::posts::{
 };
 use crate::components::admin_layout::AdminPageHead;
 use crate::components::empty_state::{EmptyState, EmptyStateAction};
+use crate::components::mascot::Mascot;
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::skeletons::posts_trash_skeleton::PostsTrashTableSkeleton;
 use crate::components::ui::{
@@ -345,7 +346,7 @@ fn PostsTrash() -> impl IntoView {
                                 };
                                 view! {
                                     <EmptyState
-                                        icon=IconName::Trash
+                                        mascot=Mascot::Blissful
                                         title="回收站是空的"
                                         description=description
                                         action=EmptyStateAction::new(

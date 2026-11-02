@@ -19,6 +19,7 @@ use crate::api::posts::{
 };
 use crate::api::settings::get_site_settings;
 use crate::components::empty_state::EmptyState;
+use crate::components::mascot::Mascot;
 use crate::components::post::post_meta::group_digits;
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::skeletons::home_skeleton::HomeSkeleton;
@@ -279,6 +280,7 @@ fn HomeDesk(
         <div class="home">
             <section class="home-hero home-enter" aria-labelledby="home-title">
                 <HomeStatus updated=updated total=total tag_count=tag_count/>
+                {Mascot::Wave.img("mascot home-hero-mascot")}
                 <h1 id="home-title" class="home-title">
                     {tagline.title.clone()} {subtitle}
                 </h1>
@@ -593,6 +595,7 @@ fn HomeIndex(current_page: i32, posts: Vec<PostListItem>, total: i64) -> impl In
         view! {
             <div class="home-index-end">
                 <EmptyState
+                    mascot=Mascot::Sleepy
                     title="已经翻到最后了"
                     description="这一页没有文章，回到首页看看最近写下的吧。"
                 />

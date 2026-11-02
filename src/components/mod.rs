@@ -21,6 +21,8 @@ pub mod empty_state;
 pub(crate) mod enhance_assets;
 /// 表单控件（FormInput / FormSelect / AlertBox / …）与 INPUT class 常量。
 pub mod forms;
+/// 吉祥物像素贴图（装饰图，表情与文件一一对应）。
+pub mod mascot;
 /// 通用 UI 原子与全部 class 常量（卡片 / 按钮 / 徽章 / 分页 / spinner / checkbox）。
 /// 任何 inline Tailwind class 字符串上线前，先在此查是否已有常量。
 pub mod ui;

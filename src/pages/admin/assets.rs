@@ -21,6 +21,7 @@ use crate::components::assets::AssetUploadModal;
 use crate::components::empty_state::{EmptyState, EmptyStateAction};
 use crate::components::enhance_assets::LightboxAssets;
 use crate::components::forms::{FormSelect, FORM_SELECT_COMPACT_CLASS};
+use crate::components::mascot::Mascot;
 use crate::components::skeletons::assets_skeleton::AssetsGridSkeleton;
 use crate::components::ui::{
     button_class, use_toast, ButtonSize, ButtonVariant, ConfirmDialog, Icon, IconButton, IconName,
@@ -494,7 +495,7 @@ pub fn Assets() -> impl IntoView {
                         view! {
                             <div class="admin-panel">
                                 <EmptyState
-                                    icon=IconName::Image
+                                    mascot=Mascot::Sit
                                     title="还没有素材"
                                     description="在编辑器里插入的图片，或在这里上传的图片，都会出现在这里。"
                                     action=EmptyStateAction::new(

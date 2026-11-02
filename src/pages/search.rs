@@ -19,6 +19,7 @@ use leptos_router::{lazy_route, LazyRoute};
 
 use crate::api::error::ApiError;
 use crate::api::posts::{list_tags, search_posts, PostListResponse};
+use crate::components::mascot::Mascot;
 use crate::components::palette::{contains_ci, highlight, snippet};
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::skeletons::search_skeleton::SearchSkeleton;
@@ -408,9 +409,7 @@ fn results_view(
     if res.posts.is_empty() {
         return view! {
             <div class="search-empty page-enter">
-                <span class="search-empty-icon" aria-hidden="true">
-                    <Icon name=IconName::SearchX size=20/>
-                </span>
+                {Mascot::Panic.img("mascot search-empty-mascot")}
                 <p class="search-empty-title">{format!("没有找到「{submitted}」")}</p>
                 <p class="search-empty-description">"换个更短的关键词，或者从归档里按标签找找。"</p>
                 <a class="btn btn-secondary btn-sm" href=Route::Archives.to_string()>

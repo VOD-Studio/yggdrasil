@@ -298,6 +298,11 @@
     text-align: center;
   }
 
+  .palette-empty-mascot {
+    width: 5rem;
+    height: 5rem;
+  }
+
   .palette-empty-title {
     margin-top: 0.875rem;
     font-size: 0.90625rem;

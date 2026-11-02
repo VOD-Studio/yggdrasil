@@ -6,6 +6,7 @@ use std::future::Future;
 
 use leptos::prelude::*;
 
+use crate::components::mascot::Mascot;
 use crate::components::ui::{Icon, IconName};
 
 /// 输入防抖与进度点出现的延迟（毫秒）。
@@ -690,9 +691,7 @@ pub(crate) fn PaletteShell(
                         .then(|| {
                             view! {
                                 <div class="palette-empty">
-                                    <span class="empty-state-icon">
-                                        <Icon name=IconName::SearchX size=18/>
-                                    </span>
+                                    {Mascot::Panic.img("mascot palette-empty-mascot")}
                                     <p class="palette-empty-title">
                                         {move || format!("没有找到「{}」", query.read().trim())}
                                     </p>

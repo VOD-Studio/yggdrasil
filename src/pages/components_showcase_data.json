@@ -1266,7 +1266,7 @@
       "label": "空状态",
       "group": "display",
       "summary": "还没有内容，也是故事的开始。",
-      "states": "图标 · 标题 · 说明 · 行动",
+      "states": "图标或吉祥物 · 标题 · 说明 · 行动",
       "description": "用一个线条图标、标题和说明呈现空列表或无结果，可提供一个明确的下一步操作。",
       "props": [
         [
@@ -1292,6 +1292,12 @@
           "Option<EmptyStateAction>",
           "None",
           "可选操作按钮的文案与回调。"
+        ],
+        [
+          "mascot",
+          "Option<Mascot>",
+          "None",
+          "像素吉祥物贴图；传入时替换线条图标。"
         ]
       ],
       "keys": [],

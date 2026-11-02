@@ -536,10 +536,39 @@
     width: 100%;
     max-width: 26rem;
     margin-top: 3rem;
+    position: relative;
     padding: 2rem;
     border-radius: var(--radius-dialog);
     background-color: var(--color-popover);
     box-shadow: var(--shadow-popover);
+  }
+
+  .auth-mascot {
+    position: absolute;
+    top: -5rem;
+    right: 1.25rem;
+    display: grid;
+    width: 5.5rem;
+    height: 5.5rem;
+  }
+
+  .auth-mascot-img {
+    grid-area: 1 / 1;
+    width: 100%;
+    height: 100%;
+    transition: opacity 150ms var(--ease-out-expo);
+  }
+
+  .auth-mascot-upset {
+    opacity: 0;
+  }
+
+  .auth-mascot.is-upset .auth-mascot-upset {
+    opacity: 1;
+  }
+
+  .auth-mascot.is-upset .auth-mascot-img:not(.auth-mascot-upset) {
+    opacity: 0;
   }
 
   .auth-title {
@@ -684,6 +713,13 @@
     .auth-panel {
       margin-top: 2rem;
       padding: 1.5rem;
+    }
+
+    .auth-mascot {
+      top: -4rem;
+      right: 0.75rem;
+      width: 4.5rem;
+      height: 4.5rem;
     }
   }
 }

@@ -35,6 +35,17 @@
     font-size: 0.875rem;
   }
 
+  .comment-empty.has-mascot {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .comment-empty-mascot {
+    width: 4.5rem;
+    height: 4.5rem;
+  }
+
   .comment-empty.is-error {
     color: var(--color-danger);
   }

@@ -16,6 +16,7 @@ use crate::api::error::ApiError;
 use crate::components::comments::form::CommentForm;
 use crate::components::comments::list::CommentList;
 use crate::components::enhance_assets::LightboxAssets;
+use crate::components::mascot::Mascot;
 use crate::components::skeletons::comment_skeleton::CommentListSkeleton;
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 
@@ -395,7 +396,13 @@ pub(crate) fn CommentSectionContent(
             // 根据数据状态渲染列表区、错误提示或骨架屏
             {move || match list_state.get() {
                 ListState::Empty => {
-                    view! { <p class="comment-empty">"还没有评论，来写下第一条吧。"</p> }.into_any()
+                    view! {
+                        <p class="comment-empty has-mascot">
+                            {Mascot::Hearts.img("mascot comment-empty-mascot")}
+                            "还没有评论，来写下第一条吧。"
+                        </p>
+                    }
+                        .into_any()
                 }
                 ListState::List => {
                     view! { <CommentList comments=approved pending=pending post_id=post_id/> }

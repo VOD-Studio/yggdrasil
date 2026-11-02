@@ -8,6 +8,7 @@ use leptos_router::{lazy_route, LazyRoute};
 
 use crate::api::posts::{get_posts_by_tag, PostListResponse, TagListResponse};
 use crate::components::empty_state::EmptyState;
+use crate::components::mascot::Mascot;
 use crate::components::skeletons::archive_skeleton::ArchiveBodySkeleton;
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::ui::{Icon, IconName, LoadError};
@@ -171,7 +172,7 @@ fn TagBody(
                     <EmptyState
                         title="这个标签下还没有文章"
                         description="换一个标签，或者回到全部归档看看。"
-                        icon=IconName::Tag
+                        mascot=Mascot::Doze
                     />
                 }
                     .into_any();

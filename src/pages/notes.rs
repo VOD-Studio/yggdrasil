@@ -20,6 +20,7 @@ use leptos_router::{lazy_route, LazyRoute};
 use crate::api::error::ApiError;
 use crate::api::notes::{get_note, get_note_context, list_notebooks, list_notes, note_stats};
 use crate::components::empty_state::{EmptyState, EmptyStateAction};
+use crate::components::mascot::Mascot;
 use crate::components::post::post_content::PostContent;
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::skeletons::notes_route_skeleton::{
@@ -631,7 +632,7 @@ fn NoteStream(
                         } else {
                             view! {
                                 <EmptyState
-                                    icon=IconName::NotebookPen
+                                    mascot=Mascot::Doze
                                     title="还没有公开的笔记"
                                     description="随手记下的发现会按天出现在这里。"
                                 />
@@ -1169,7 +1170,7 @@ fn NotebookContent(
             2 => {
                 view! {
                     <EmptyState
-                        icon=IconName::NotebookPen
+                        mascot=Mascot::Doze
                         title="这个笔记本还是空的"
                         description="发布的笔记加入后会按顺序列在这里。"
                     />

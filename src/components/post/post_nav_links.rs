@@ -5,6 +5,7 @@
 use leptos::ev::MouseEvent;
 use leptos::prelude::*;
 
+use crate::components::mascot::Mascot;
 use crate::components::ui::{Icon, IconName};
 use crate::models::post::PostNav;
 use crate::routes::Route;
@@ -53,10 +54,12 @@ pub fn PostNavLinks(
             </a>
         }
     };
+    let lone = prev.is_some() != next.is_some();
     view! {
         <nav class="post-nav" aria-label="上一篇与下一篇">
             {prev.map(|post| card(post, true))}
             {next.map(|post| card(post, false))}
+            {lone.then(|| Mascot::Sit.img("mascot post-nav-mascot"))}
         </nav>
     }
     .into_any()
@@ -114,5 +117,18 @@ mod tests {
         assert!(!sample.contains("/post/a"), "{sample}");
         let empty = Owner::new().with(|| view! { <PostNavLinks prev=None next=None/> }.to_html());
         assert!(!empty.contains("post-nav"), "{empty}");
+    }
+
+    #[test]
+    fn mascot_fills_only_a_lone_neighbour_gap() {
+        let render = |prev: Option<PostNav>, next: Option<PostNav>| {
+            Owner::new().with(|| view! { <PostNavLinks prev=prev next=next/> }.to_html())
+        };
+        let only_prev = render(Some(nav("上", "a")), None);
+        assert!(only_prev.contains("post-nav-mascot"), "{only_prev}");
+        let only_next = render(None, Some(nav("下", "b")));
+        assert!(only_next.contains("post-nav-mascot"), "{only_next}");
+        let both = render(Some(nav("上", "a")), Some(nav("下", "b")));
+        assert!(!both.contains("post-nav-mascot"), "{both}");
     }
 }

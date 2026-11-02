@@ -11,6 +11,7 @@ use leptos_router::hooks::use_location;
 
 use crate::api::posts::{recommend_for_path, PathRecommendations};
 use crate::components::empty_state::{EmptyState, EmptyStateAction};
+use crate::components::mascot::Mascot;
 use crate::components::ui::{Icon, IconName};
 
 /// 404 页面组件。
@@ -37,6 +38,7 @@ pub fn NotFound() -> impl IntoView {
     view! {
         <Title text="页面不存在 · Yggdrasil"/>
         <div class="not-found page-enter">
+            {Mascot::Panic.img("mascot not-found-mascot")}
             <p class="not-found-code tabular-nums">"404"</p>
             <h1 class="not-found-title">"这个页面不存在"</h1>
             <p class="not-found-description">"地址可能写错了，或者页面已经移走。"</p>
@@ -70,7 +72,7 @@ pub fn PageLoadFailed() -> impl IntoView {
     view! {
         <div class="flex min-h-[50vh] items-center justify-center px-6 md:min-h-[55vh] animate-page-enter">
             <EmptyState
-                icon=IconName::CircleAlert
+                mascot=Mascot::Cry
                 title="页面加载失败"
                 description="网络或服务出了点问题，稍后再试一次。"
                 action=EmptyStateAction::new("返回首页", move |_| crate::navigation::push("/"))

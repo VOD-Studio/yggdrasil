@@ -160,6 +160,23 @@
     text-align: right;
   }
 
+  .post-nav-mascot {
+    grid-row: 1;
+    align-self: end;
+    width: 5rem;
+    height: 5rem;
+  }
+
+  .post-nav-card.prev ~ .post-nav-mascot {
+    grid-column: 2;
+    justify-self: end;
+  }
+
+  .post-nav-card.next ~ .post-nav-mascot {
+    grid-column: 1;
+    justify-self: start;
+  }
+
   .post-nav-label {
     display: inline-flex;
     align-items: center;
@@ -227,6 +244,10 @@
       grid-column: auto;
       align-items: flex-start;
       text-align: left;
+    }
+
+    .post-nav-mascot {
+      display: none;
     }
 
     /* 留出底部目录悬浮条的位置。 */

@@ -8,7 +8,7 @@
 }
 
 /* ---- 开场 ---- */
-.home-hero { padding-block: 1.5rem 3.5rem; }
+.home-hero { position: relative; padding-block: 1.5rem 3.5rem; }
 .home-status {
   display: flex;
   flex-wrap: wrap;
@@ -49,8 +49,10 @@
   font-weight: 500;
   line-height: 1.28;
   letter-spacing: 0;
+  padding-right: 10rem;
 }
 .home-title-muted { color: var(--color-fg-3); }
+.home-hero-mascot { position: absolute; top: 2.75rem; right: 0; width: 9rem; height: 9rem; }
 .home-intro {
   max-width: 32.5rem;
   margin: 1.125rem 0 0;
@@ -401,6 +403,8 @@ a.home-row:is(:hover, :focus-visible) .home-row-arrow { opacity: 1; transform: n
 @media (max-width: 767px) {
   .home-hero { padding-block: 0.5rem 2.5rem; }
   .home-title { font-size: 2.125rem; }
+  .home-hero-mascot { display: none; }
+  .home-title { padding-right: 0; }
   .home-search-kbd { display: none; }
   .home-top-tags { flex-wrap: nowrap; overflow-x: auto; margin-inline: -1.5rem; padding-inline: 1.5rem; scrollbar-width: none; }
   .home-top-tags > * { flex-shrink: 0; }

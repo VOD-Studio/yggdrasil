@@ -9,6 +9,7 @@ use leptos_meta::Title;
 use leptos_router::{lazy_route, LazyRoute};
 
 use crate::api::auth::{login, AuthResponse};
+use crate::components::mascot::Mascot;
 use crate::components::ui::{Button, ButtonSize, ButtonVariant, Icon, IconName};
 use crate::context::UserContext;
 use crate::routes::Route;
@@ -235,6 +236,10 @@ fn Login() -> impl IntoView {
                 }
             }
         >
+            <span class="auth-mascot" class:is-upset=move || error.with(Option::is_some) aria-hidden="true">
+                {Mascot::Curious.img("mascot auth-mascot-img")}
+                {Mascot::Pout.img("mascot auth-mascot-img auth-mascot-upset")}
+            </span>
             <form class="auth-form" on:submit=on_submit>
                 <AuthField
                     id="login-username"

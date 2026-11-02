@@ -16,6 +16,7 @@ use leptos_router::{lazy_route, LazyRoute};
 use crate::api::comments::{AllCommentsResponse, CommentCounts};
 use crate::components::admin_layout::AdminPageHead;
 use crate::components::empty_state::EmptyState;
+use crate::components::mascot::Mascot;
 use crate::components::skeletons::admin_comments_skeleton::AdminCommentsListSkeleton;
 use crate::components::ui::{
     button_class, use_toast, ButtonSize, ButtonVariant, Checkbox, Composer, ComposerInput,
@@ -326,7 +327,7 @@ fn AdminCommentsPage(page: i32) -> impl IntoView {
                                 "pending" => {
                                     view! {
                                         <EmptyState
-                                            icon=IconName::Check
+                                            mascot=Mascot::Peace
                                             title="没有待审评论"
                                             description="新评论需要审核时会出现在这里。"
                                         />
