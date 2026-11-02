@@ -54,7 +54,7 @@ css-watch: ## 监听并持续生成 Tailwind CSS
 # stamp 写在成功构建之后。src 目录也参与依赖，文件新增/删除同样会使缓存失效。
 DEV_ASSET_DIR := target/dev-assets
 DEV_ASSET_JOBS ?= 4
-DEV_LIBS := shared codemirror-editor lightbox tiptap-editor xterm-terminal yggdrasil-core
+DEV_LIBS := $(patsubst libs/%/package.json,%,$(wildcard libs/*/package.json))
 DEV_COMMON_INPUTS := mk/assets.mk libs/package.json libs/bun.lock libs/bunfig.toml libs/tsconfig.base.json $(wildcard libs/patches/*) libs/patches $(wildcard libs/*.ts) $(wildcard libs/node_modules/.bun)
 dev_lib_inputs = libs/$(1) $(shell find libs/$(1)/src -type f -o -type d) $(wildcard libs/$(1)/*config*.ts) libs/$(1)/tsconfig.json libs/$(1)/package.json
 
