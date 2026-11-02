@@ -26,6 +26,7 @@ import {
   rectOf,
   resetView,
   rotate,
+  setFade,
   stepZoom,
   zoomBy,
 } from './view';
@@ -65,7 +66,7 @@ function onScrollClose(s: LightboxState, actions: LightboxActions): void {
       rect: rectOf(s.img),
       transform: style.transform,
       imgOpacity: Number(style.opacity),
-      overlayOpacity: Number(getComputedStyle(s.overlay).opacity),
+      fadeOpacity: Number(getComputedStyle(s.backdrop).opacity),
     };
     // 先提交同构首帧；快照包含实际绘制中的缩放/旋转，不依赖动画目标值。
     s.img.style.transition = 'none';
@@ -89,9 +90,10 @@ function onScrollClose(s: LightboxState, actions: LightboxActions): void {
     progress,
     s.scrollClose.transform,
   );
-  s.img.style.opacity = String(s.scrollClose.imgOpacity * (1 - progress));
-  s.overlay.style.transition = 'opacity 100ms ease-out';
-  s.overlay.style.opacity = String(s.scrollClose.overlayOpacity * (1 - progress));
+  s.img.style.opacity = String(
+    s.solidFlight ? s.scrollClose.imgOpacity : s.scrollClose.imgOpacity * (1 - progress),
+  );
+  setFade(s, s.scrollClose.fadeOpacity * (1 - progress), 'opacity 100ms ease-out');
 }
 
 export function bindInteractions(s: LightboxState, actions: LightboxActions): () => void {
@@ -351,7 +353,7 @@ function onPointerMove(s: LightboxState, ev: PointerEvent): void {
   s.img.style.transition = 'none';
   s.img.style.transform = matToCss(matMultiply(matTranslate(0, dy), m0));
   const progress = Math.min(Math.abs(dy) / DRAG_CLOSE_PX, 1);
-  s.overlay.style.opacity = String(1 - progress);
+  setFade(s, 1 - progress);
 }
 
 function onPointerUp(s: LightboxState, actions: LightboxActions, ev: PointerEvent): void {
@@ -384,8 +386,7 @@ function onPointerUp(s: LightboxState, actions: LightboxActions, ev: PointerEven
     } else {
       // 未到位 → 回弹：图归位、遮罩恢复不透明
       applyView(s, true);
-      s.overlay.style.transition = 'opacity 180ms ease-out';
-      s.overlay.style.opacity = '1';
+      setFade(s, 1, 'opacity 180ms ease-out');
     }
     return;
   }

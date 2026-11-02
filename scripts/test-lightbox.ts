@@ -42,6 +42,12 @@ async function waitForImage(page: Playwright.Page) {
   });
 }
 
+async function originVisibility(page: Playwright.Page) {
+  return page
+    .locator('.post-content img')
+    .evaluateAll((els) => els.map((el) => getComputedStyle(el).visibility));
+}
+
 async function open(page: Playwright.Page, index = 0) {
   await page.locator('.post-content img').nth(index).click();
   await waitForImage(page);
@@ -149,6 +155,11 @@ async function assertGallery(page: Playwright.Page) {
   assert.equal(
     await page.getByRole('link', { name: '下载原图' }).getAttribute('download'),
     'portrait.svg',
+  );
+  assert.deepEqual(
+    await originVisibility(page),
+    ['visible', 'visible'],
+    'switching reveals the previous origin; mismatched thumbnail stays visible',
   );
 }
 
@@ -280,6 +291,11 @@ async function assertMousePan(page: Playwright.Page) {
         await page.evaluate(() => document.documentElement.classList.add('dark'));
       const reduced = options.reducedMotion === 'reduce';
       await open(page);
+      assert.deepEqual(
+        await originVisibility(page),
+        reduced ? ['visible', 'visible'] : ['hidden', 'visible'],
+        'matching thumbnail hides its origin while open',
+      );
       await assertCenteredRotation(page, reduced);
       if (process.env.LIGHTBOX_ARTIFACT_DIR) {
         fs.mkdirSync(process.env.LIGHTBOX_ARTIFACT_DIR, { recursive: true });
@@ -293,12 +309,13 @@ async function assertMousePan(page: Playwright.Page) {
       if (!reduced) {
         await page.waitForTimeout(120);
         const opacity = await page
-          .locator('.lightbox-overlay')
+          .locator('.lightbox-backdrop')
           .evaluate((el) => Number(getComputedStyle(el).opacity));
-        assert.ok(opacity > 0 && opacity < 1, 'scroll should interpolate overlay opacity');
+        assert.ok(opacity > 0 && opacity < 1, 'scroll should interpolate backdrop opacity');
         await page.evaluate(() => scrollTo(0, 200));
       }
       await page.waitForFunction(() => !document.querySelector<HTMLElement>('.lightbox-overlay')!);
+      assert.deepEqual(await originVisibility(page), ['visible', 'visible']);
       await page.evaluate(() => scrollTo(0, 0));
       await assertSpaRefresh(page);
       if (options.hasTouch) await assertPinchAndDrag(page);

@@ -3,6 +3,10 @@ import type { ResourceScope } from './resources';
 
 export interface LightboxElements {
   overlay: HTMLDivElement;
+  // 毛玻璃背景，承载打开/关闭的淡入淡出。
+  backdrop: HTMLDivElement;
+  // 顶栏、底栏、箭头、错误态的容器，与背景同步淡入淡出。
+  ui: HTMLDivElement;
   img: HTMLImageElement;
   caption: HTMLElement;
   counter: HTMLSpanElement;
@@ -42,10 +46,12 @@ export interface LightboxState extends LightboxElements {
   index: number | null;
   isSingle: boolean;
   openScrollY: number;
-  scrollClose: { rect: Rect; transform: string; imgOpacity: number; overlayOpacity: number } | null;
+  scrollClose: { rect: Rect; transform: string; imgOpacity: number; fadeOpacity: number } | null;
   origSrc: string;
   altText: string;
   closing: boolean;
+  // 当前原图与灯箱图宽高比一致时为 true，此时飞行全程不透明、原图隐藏；否则走透明度过渡。
+  solidFlight: boolean;
   scope: ResourceScope;
   reduced: boolean;
   // 查看器操控：deg 累计顺时针角（0/90/180/…不取模，CSS 插值方向正确；

@@ -25,13 +25,36 @@ export function rectOf(el: Element): Rect {
   };
 }
 
+// 打开/关闭飞行：300ms，与 medium-zoom 同曲线（慢起、中段快、无回弹）。
+export const FLIGHT_MS = 300;
+const FLIGHT = `${FLIGHT_MS}ms cubic-bezier(0.2, 0, 0.2, 1)`;
+export const FLIGHT_TRANSITION = `transform ${FLIGHT}, opacity ${FLIGHT}`;
+export const FADE_TRANSITION = `opacity ${FLIGHT}`;
+
+// 背景层与界面层一起淡入淡出；图片不在其中，可全程保持不透明。
+// transition 省略时只改 opacity（拖拽关闭逐帧跟手）。
+export function setFade(
+  s: Pick<LightboxState, 'backdrop' | 'ui'>,
+  opacity: number,
+  transition?: string,
+): void {
+  for (const el of [s.backdrop, s.ui]) {
+    if (transition !== undefined) el.style.transition = transition;
+    el.style.opacity = String(opacity);
+  }
+}
+
+const ORIGIN_HIDDEN = 'lightbox-origin-hidden';
+export function setOriginHidden(s: Pick<LightboxState, 'originNode'>, hidden: boolean): void {
+  s.originNode.classList.toggle(ORIGIN_HIDDEN, hidden);
+}
+
 export function resetScrollClose(s: LightboxState): void {
   s.openScrollY = window.scrollY;
   if (!s.scrollClose) return;
   s.scrollClose = null;
   s.img.style.opacity = '1';
-  s.overlay.style.transition = 'opacity 180ms ease-out';
-  s.overlay.style.opacity = '1';
+  setFade(s, 1, 'opacity 180ms ease-out');
 }
 
 export function isErrorShown(s: LightboxState): boolean {

@@ -8,6 +8,7 @@ import {
   effectiveDims,
   fitCentered,
   matApply,
+  matchesAspect,
   matIdentity,
   matMultiply,
   matRotateDeg,
@@ -101,6 +102,26 @@ describe('transformFor', () => {
     expect(t).toMatch(
       /^translate\(\d+(\.\d+)?px,\d+(\.\d+)?px\) scale\(\d+(\.\d+)?,\d+(\.\d+)?\)$/,
     );
+  });
+});
+
+describe('matchesAspect', () => {
+  it('布局盒与原图同比例：true', () => {
+    expect(matchesAspect({ x: 0, y: 0, w: 400, h: 300 }, 800, 600)).toBe(true);
+  });
+
+  it('宽高比差恰为 2%：true；超出：false', () => {
+    expect(matchesAspect({ x: 0, y: 0, w: 408, h: 300 }, 800, 600)).toBe(true);
+    expect(matchesAspect({ x: 0, y: 0, w: 409, h: 300 }, 800, 600)).toBe(false);
+  });
+
+  it('正方形裁切的缩略图对 4:3 原图：false', () => {
+    expect(matchesAspect({ x: 0, y: 0, w: 300, h: 300 }, 800, 600)).toBe(false);
+  });
+
+  it('布局盒或原图尺寸为 0：false', () => {
+    expect(matchesAspect({ x: 0, y: 0, w: 400, h: 0 }, 800, 600)).toBe(false);
+    expect(matchesAspect({ x: 0, y: 0, w: 400, h: 300 }, 0, 0)).toBe(false);
   });
 });
 

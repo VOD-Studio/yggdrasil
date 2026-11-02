@@ -3,6 +3,7 @@ import { createLightboxElements } from './dom';
 import {
   closeFlightTransform,
   fitCentered,
+  matchesAspect,
   matIdentity,
   panBy,
   scrollFlightTransform,
@@ -15,12 +16,17 @@ import { ResourceScope } from './resources';
 import type { LightboxActions, LightboxState } from './types';
 import {
   baseGeometry,
+  FADE_TRANSITION,
+  FLIGHT_MS,
+  FLIGHT_TRANSITION,
   measureInset,
   pokeToolbar,
   rectOf,
   resetScrollClose,
   resetView,
   rotate,
+  setFade,
+  setOriginHidden,
   stepZoom,
   syncZoomControls,
   updateDownloadLink,
@@ -65,6 +71,7 @@ export function openLightbox(
     origSrc,
     altText,
     closing: false,
+    solidFlight: false,
     reduced: prefersReducedMotion(),
     view: { deg: 0, scale: 1, user: null },
     normalized: false,
@@ -92,13 +99,12 @@ export function openLightbox(
       onReady();
     }
   }
-  // 遮罩淡入（一次，单调 0→1）：reflow 提交首帧 opacity:0，rAF 起过渡。
-  // 之后 start()/加载流程不再触碰遮罩 opacity，避免任何可见回退。
+  // 背景与界面层淡入（一次，单调 0→1）：reflow 提交首帧 opacity:0，rAF 起过渡。
+  // 之后 start()/加载流程不再触碰这两层的 opacity，避免任何可见回退。
   void overlay.offsetHeight;
   s.scope.frame((): void => {
     if (s.closing || s.scrollClose) return;
-    overlay.style.transition = 'opacity 250ms ease-out';
-    overlay.style.opacity = '1';
+    setFade(s, 1, FADE_TRANSITION);
   });
 
   s.scope.listen(img, 'error', () => {
@@ -152,23 +158,26 @@ export function openLightbox(
       return;
     }
 
-    // 首帧：文章位置 + 原尺寸（scale=1），透明，且关闭 transition
+    // 首帧：文章位置 + 原尺寸（scale=1）并关闭 transition。比例一致时灯箱图不透明地盖在
+    // 原位、原图同帧隐藏；比例不一致（object-fit 裁切的缩略图）时首帧透明，靠透明度过渡遮住。
+    s.solidFlight = matchesAspect(originRect, naturalW, naturalH);
     img.style.transition = 'none';
     img.style.left = '0';
     img.style.top = '0';
     img.style.transform = transformFor(originRect, baseW, baseH);
-    img.style.opacity = '0';
+    img.style.opacity = s.solidFlight ? '1' : '0';
+    setOriginHidden(s, s.solidFlight);
     // 强制 reflow，确保首帧的 transform 已提交到渲染层。
     // 否则单层 rAF 里浏览器可能合并首帧与目标帧，动画从错误位置起跳。
     void img.offsetHeight;
 
     // double-rAF：第一帧绘制首帧（无动画），第二帧才启动 transition 到居中。
-    // 遮罩淡入已在创建时启动并独立进行，这里不再触碰 overlay opacity。
+    // 背景与界面层的淡入已在创建时启动并独立进行，这里不再触碰它们的 opacity。
     imageScope.frame((): void => {
       if (s.closing || s.scope.disposed || s.scrollClose) return;
       imageScope.frame((): void => {
         if (s.closing || s.scope.disposed || s.scrollClose) return;
-        img.style.transition = 'transform 250ms ease-out, opacity 250ms ease-out';
+        img.style.transition = FLIGHT_TRANSITION;
         img.style.transform = transformFor(target, baseW, baseH);
         img.style.opacity = '1';
       });
@@ -224,7 +233,7 @@ export function openLightbox(
     if (s.scrollClose) {
       // 与滚动中的外层变换同构，Esc/大步滚轮都从当前动画帧继续飞回。
       const flight = s.scrollClose;
-      s.img.style.transition = 'transform 250ms ease-out, opacity 250ms ease-out';
+      s.img.style.transition = FLIGHT_TRANSITION;
       followScroll = (): void => {
         if (s.scope.disposed) return;
         s.img.style.transform = scrollFlightTransform(
@@ -235,7 +244,7 @@ export function openLightbox(
         );
       };
       followScroll();
-      // 收尾的 250ms 内滚轮惯性仍可能移动页面，终点继续跟随，结束后解除。
+      // 收尾的飞行期间滚轮惯性仍可能移动页面，终点继续跟随，结束后解除。
       s.scope.listen(window, 'scroll', followScroll, { passive: true });
     } else if (s.normalized) {
       // 操控态（缩放/旋转/平移过）：当前 transform 是定长 6 函数列表，或
@@ -257,26 +266,25 @@ export function openLightbox(
         window.innerHeight,
       );
       void s.img.offsetHeight;
-      s.img.style.transition = 'transform 250ms ease-out, opacity 250ms ease-out';
+      s.img.style.transition = FLIGHT_TRANSITION;
       s.img.style.transform = closeFlightTransform(originRect, layoutW, layoutH, s.view.deg, k);
     } else {
       // 未操控：当前是 transformFor 的 translate+scale，同构插值直接飞回。
       // 基准 = originRect 尺寸（与打开时一致），scale 相对它缩放。
       const baseW = s.baseW || (s.target ? s.target.w : 1);
       const baseH = s.baseH || (s.target ? s.target.h : 1);
-      s.img.style.transition = 'transform 250ms ease-out, opacity 250ms ease-out';
+      s.img.style.transition = FLIGHT_TRANSITION;
       s.img.style.transform = transformFor(originRect, baseW, baseH);
     }
-    s.overlay.style.transition = 'opacity 250ms ease-out';
-    s.img.style.opacity = '0';
-    s.overlay.style.opacity = '0';
+    setFade(s, 0, FADE_TRANSITION);
+    s.img.style.opacity = s.solidFlight ? '1' : '0';
 
     const done = (): void => {
       if (followScroll) window.removeEventListener('scroll', followScroll);
       removeOverlay();
     };
-    // 250ms 兜底，避免 transitionend 不触发
-    const timer = s.scope.timeout(done, 280);
+    // FLIGHT_MS 兜底，避免 transitionend 不触发
+    const timer = s.scope.timeout(done, FLIGHT_MS);
     s.scope.listen(
       s.img,
       'transitionend',
@@ -294,6 +302,8 @@ export function openLightbox(
     unbindInteractions();
     imageScope.dispose();
     s.scope.dispose();
+    // 先恢复原图可见：随后的 focus() 落在 visibility:hidden 的元素上会失败。
+    setOriginHidden(s, false);
     const prev = s.originNode;
     if (s.overlay?.parentNode) {
       s.overlay.parentNode.removeChild(s.overlay);
@@ -367,6 +377,10 @@ export function openLightbox(
       };
       const onReady = (): void => {
         applyGeometry();
+        if (s.scope.disposed || s.closing || s.scrollClose) return;
+        s.solidFlight =
+          !s.reduced && matchesAspect(rectOf(newNode), s.img.naturalWidth, s.img.naturalHeight);
+        setOriginHidden(s, s.solidFlight);
         fade();
       };
       s.origSrc = origSrc;
@@ -376,6 +390,8 @@ export function openLightbox(
       s.caption.style.display = altText ? '' : 'none';
       s.counter.textContent = `${newIndex + 1} / ${s.gallery.length}`;
       // 更新 originNode 为新图，使后续关闭/拖拽关闭飞回新图位置
+      setOriginHidden(s, false);
+      s.solidFlight = false;
       s.originNode = newNode;
       s.index = newIndex;
       s.openScrollY = window.scrollY;

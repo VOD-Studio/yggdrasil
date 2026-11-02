@@ -1,12 +1,15 @@
 /* ========== 图片查看器 ==========
-   不随站点明暗切换：查看器恒为暖调深底，文字与发丝线取深色 token 的同值。
+   跟随站点明暗：背景是半透明毛玻璃（.lightbox-backdrop），文字、发丝线、焦点环取站点 token，
+   缺省时回退到同值（浅色块回退浅色值，.dark 块回退深色值）。
    clay 与字体读站点 token，缺省时回退到同值，图鉴之外的页面同样可用。 */
 .lightbox-overlay {
-  --lb-bg: rgb(14 13 12 / 0.94);
-  --lb-fg: #f2f1ee;
-  --lb-fg-2: #a9a7a1;
-  --lb-ink: rgb(255 255 255 / 0.08);
-  --lb-ink-2: rgb(255 255 255 / 0.14);
+  --lb-bg: rgb(245 245 243 / 0.5);
+  --lb-backdrop: blur(2.5rem) brightness(1.1);
+  --lb-fg: var(--color-fg, #151515);
+  --lb-fg-2: var(--color-fg-2, #525252);
+  --lb-ink: var(--color-ink-2, rgb(0 0 0 / 0.08));
+  --lb-ink-2: var(--color-ink-3, rgb(0 0 0 / 0.12));
+  --lb-focus-inset: var(--color-surface-1, #fafaf8);
   --lb-clay: var(--color-clay, #d97757);
   --lb-chrome-pad: 16px;
   position: fixed;
@@ -15,7 +18,6 @@
   /* overflow:hidden 裁剪超大的 absolute img，防止原图（可能数千 px）
      撑大文档可滚动区，否则会触发非预期的 scroll 事件。 */
   overflow: hidden;
-  background: var(--lb-bg);
   color: var(--lb-fg);
   font-family: var(
     --font-sans,
@@ -29,7 +31,15 @@
     sans-serif
   );
   font-size: 14px;
-  opacity: 1;
+}
+.dark .lightbox-overlay {
+  --lb-bg: rgb(15 15 14 / 0.5);
+  --lb-backdrop: blur(2.5rem) brightness(0.85);
+  --lb-fg: var(--color-fg, #f2f1ee);
+  --lb-fg-2: var(--color-fg-2, #a9a7a1);
+  --lb-ink: var(--color-ink-2, rgb(255 255 255 / 0.09));
+  --lb-ink-2: var(--color-ink-3, rgb(255 255 255 / 0.14));
+  --lb-focus-inset: var(--color-surface-1, #161615);
 }
 .lightbox-overlay:focus {
   outline: none;
@@ -37,9 +47,32 @@
 .lightbox-overlay :focus-visible {
   outline: none;
   box-shadow:
-    inset 0 0 0 1px #151514,
+    inset 0 0 0 1px var(--lb-focus-inset),
     0 0 0 1.5px var(--lb-clay),
     0 0 8px 2px rgb(217 119 87 / 0.35);
+}
+
+/* 毛玻璃背景：独立一层承载淡入淡出，图片飞行时保持不透明。
+   pointer-events:none 让背景点击落到 overlay，照常关闭。 */
+.lightbox-backdrop {
+  position: absolute;
+  inset: 0;
+  background: var(--lb-bg);
+  -webkit-backdrop-filter: var(--lb-backdrop);
+  backdrop-filter: var(--lb-backdrop);
+  pointer-events: none;
+}
+/* 界面层：叠在图片之上，与背景同步淡入淡出。自身不接收指针，按钮各自开启。 */
+.lightbox-ui {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+/* 灯箱会话期间隐藏页面原图（不透明飞行时，由灯箱图替身占位）。 */
+.lightbox-origin-hidden {
+  visibility: hidden;
 }
 
 /* 灯箱图片：绝对定位，尺寸/位置由 JS 的 transform 控制。
@@ -191,6 +224,7 @@
   margin-top: -20px;
   z-index: 3;
   background: var(--lb-ink);
+  pointer-events: auto;
 }
 .lightbox-prev {
   left: var(--lb-chrome-pad);
@@ -256,9 +290,9 @@
   border: 0;
   border-radius: 6px;
   overflow: hidden;
-  background: #2a2926
-    repeating-linear-gradient(135deg, transparent 0 6px, rgb(255 255 255 / 0.05) 6px 7px);
-  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.1);
+  background: var(--lb-ink)
+    repeating-linear-gradient(135deg, transparent 0 6px, var(--lb-ink) 6px 7px);
+  box-shadow: 0 0 0 1px var(--lb-ink-2);
   opacity: 0.55;
   cursor: pointer;
   transition:

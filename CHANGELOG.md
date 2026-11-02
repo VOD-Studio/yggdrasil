@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **组件图鉴「文章」分组精简**：面包屑 `Breadcrumbs`、文章元信息 `PostMeta`、相邻文章导航 `PostNavLinks` 只是页眉、页脚的组成部分，改为 `components::post` 模块内可见，并从图鉴中移除（分组 8 → 5 项，「面包屑」不再与通用 `Breadcrumb` 重名）。「文章页头」新增无标签样例（面包屑只剩「文章」），说明并入面包屑与元信息规则；「文章页脚」接收单侧、无相邻文章样例与键盘说明，不再与相邻文章导航显示两份相同的卡片。`/about/components/{breadcrumbs,post-meta,post-nav-links}` 返回 404。
 - **依赖升级**：`leptos` 0.8.22 → 0.8.23，`resvg` 0.48 → 0.49，`sysinfo` 0.39 → 0.40，`fancy-regex` 0.19 → 0.20，另有 `rmcp` 3.8、`uuid` 1.29、`zenwebp` 0.4.6、`wasm-bindgen` 0.2.130 等兼容更新。`sysinfo` 0.40 的系统指标改返回 `Result`：不支持的系统上采样任务记录警告后退出，磁盘空间预检按探测失败降级。`skrifa` 仍保持 0.44，与 `usvg` 0.49 内部使用的版本一致。
+- **灯箱打开/关闭动画改为 medium-zoom 风格**：图片从页面原位置不透明地飞到视口中央，关闭时原路飞回，原图在灯箱期间隐藏；时长 300 ms，曲线 `cubic-bezier(0.2, 0, 0.2, 1)`，背景与界面层与图片同曲线同步淡入淡出。背景改为跟随站点明暗的毛玻璃（浅色 `blur(2.5rem) brightness(1.1)`，深色 `brightness(0.85)`），顶栏、工具条、缩略条与提示文字的配色随主题切换。缩略图布局盒与原图宽高比相差超过 2%（`object-fit` 裁切过的缩略图）时，仍走透明度淡入淡出。
 
 ### Fixed
 

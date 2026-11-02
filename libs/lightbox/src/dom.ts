@@ -93,11 +93,15 @@ export function createLightboxElements(
   overlay.setAttribute('aria-modal', 'true');
   overlay.setAttribute('aria-label', '图片查看器');
   overlay.setAttribute('tabindex', '-1');
-  // 遮罩从 0 淡入：创建即隐藏，append 后立即启动淡入（见下方 rAF），
-  // 与原图加载解耦。若加载期就保持 opacity:1，start() 为首帧硬切回 0 再
-  // 淡入，用户会看到遮罩在打开瞬间闪一下；原图慢/失败时遮罩照常淡入可见，
-  // 不留 opacity:0 的全屏层拦截页面交互。
-  overlay.style.opacity = '0';
+  // 背景层与界面层从 0 淡入，与原图加载解耦：创建即隐藏，append 后立即启动淡入。
+  // 若加载期就保持 opacity:1，start() 为首帧硬切回 0 再淡入，用户会看到背景在打开
+  // 瞬间闪一下；原图慢/失败时背景照常淡入可见。图片不在这两层里，飞行时可以保持不透明。
+  const backdrop = document.createElement('div');
+  backdrop.className = 'lightbox-backdrop';
+  backdrop.style.opacity = '0';
+  const ui = document.createElement('div');
+  ui.className = 'lightbox-ui';
+  ui.style.opacity = '0';
 
   const img = document.createElement('img');
   img.className = 'lightbox-img';
@@ -252,13 +256,16 @@ export function createLightboxElements(
   hint.append(...hintItems.map(hintItem));
   bottom.appendChild(hint);
 
-  overlay.append(img, errorBox, topbar, bottom);
-  if (prevBtn) overlay.appendChild(prevBtn);
-  if (nextBtn) overlay.appendChild(nextBtn);
+  ui.append(errorBox, topbar, bottom);
+  if (prevBtn) ui.appendChild(prevBtn);
+  if (nextBtn) ui.appendChild(nextBtn);
+  overlay.append(backdrop, img, ui);
   document.body.appendChild(overlay);
 
   return {
     overlay,
+    backdrop,
+    ui,
     img,
     caption,
     counter,

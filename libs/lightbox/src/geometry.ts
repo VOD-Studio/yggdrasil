@@ -45,6 +45,15 @@ export function transformFor(rect: Rect, baseW: number, baseH: number): string {
   return 'translate(' + rect.x + 'px,' + rect.y + 'px) scale(' + sx + ',' + sy + ')';
 }
 
+// 缩略图布局盒与原图宽高比相差不超过 2% 时，transformFor 近似等比缩放，飞行全程不透明；
+// 超出时（object-fit 裁切/留白的缩略图）非等比 scale 会把首帧压扁，改用透明度过渡遮住。
+export const ASPECT_TOLERANCE = 0.02;
+export function matchesAspect(rect: Rect, naturalW: number, naturalH: number): boolean {
+  if (rect.w <= 0 || rect.h <= 0 || naturalW <= 0 || naturalH <= 0) return false;
+  // 整数交叉相乘再相除：避免 (w/h)*(nh/nw) 的浮点误差把恰为 2% 的边界判成超出。
+  return Math.abs(rect.w * naturalH - rect.h * naturalW) / (rect.h * naturalW) <= ASPECT_TOLERANCE;
+}
+
 // 原图 URL = data-src 去 query。data-src 形如 "/uploads/x.webp?w=800"。
 // 外链 URL（如 https://... 或 http://...）完整保留 query 参数，防止剥离签名/Token 导致 403/404。
 export function originalUrl(dataSrc: string | null): string {

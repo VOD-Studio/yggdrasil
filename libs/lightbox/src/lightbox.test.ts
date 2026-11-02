@@ -193,11 +193,11 @@ describe('lightbox 黑盒行为', () => {
 
       clickEl(img);
 
-      // 遮罩 DOM 立即出现（不等原图），opacity 从 0 起淡入，动画结束到 1
+      // 背景 DOM 立即出现（不等原图），opacity 从 0 起淡入，动画结束到 1
       const overlay = getOverlay();
       expect(overlay).not.toBeNull();
       vi.advanceTimersByTime(64);
-      expect(overlay?.style.opacity).toBe('1');
+      expect(document.querySelector<HTMLElement>('.lightbox-backdrop')!.style.opacity).toBe('1');
     });
     it('素材原图加载失败时显示错误态而非闪退，Esc 仍可关闭', () => {
       const img = makeGalleryImage('/uploads/missing.webp?thumb=300x300', '损坏素材');
@@ -233,10 +233,10 @@ describe('lightbox 黑盒行为', () => {
     });
   });
 
-  describe('打开动画遮罩不闪烁（opacity 单调）', () => {
+  describe('打开动画背景不闪烁（opacity 单调）', () => {
     /**
-     * 记录点击 → 原图 load → rAF 推进全过程中 overlay 的 inline opacity 序列。
-     * 遮罩一旦对用户可见就不得再变透明：创建时 opacity=1（加载期实黑）→
+     * 记录点击 → 原图 load → rAF 推进全过程中背景层 inline opacity 序列。
+     * 背景一旦对用户可见就不得再变透明：创建时 opacity=1（加载期实色）→
      * start() 硬切 0（无 transition）→ rAF 再淡入，就是用户看到的「打开时闪一下」。
      */
     const expectMonotonic = (seq: number[]): void => {
@@ -244,40 +244,40 @@ describe('lightbox 黑盒行为', () => {
         expect(seq[i]).toBeGreaterThanOrEqual(seq[i - 1]);
       }
     };
+    const backdropOpacity = (): number =>
+      Number(document.querySelector<HTMLElement>('.lightbox-backdrop')!.style.opacity || '0');
 
-    it('慢原图路径：遮罩从点击到动画结束 opacity 不回退，且最终为 1', () => {
+    it('慢原图路径：背景从点击到动画结束 opacity 不回退，且最终为 1', () => {
       const img = makeGalleryImage('/uploads/x.webp?w=800', '图');
       mountRoot([img]);
       window.__initLightbox('.post-content');
 
       clickEl(img);
-      const overlay = getOverlay()!;
-      const seq: number[] = [Number(overlay.style.opacity || '0')];
+      const seq: number[] = [backdropOpacity()];
 
       // 原图未缓存（complete=false）：走 load 监听路径，模拟真实慢加载
       const lbImg = getLightboxImg()!;
       stubNatural(lbImg, 1200, 800);
       lbImg.dispatchEvent(new Event('load'));
-      seq.push(Number(overlay.style.opacity || '0'));
+      seq.push(backdropOpacity());
 
       vi.advanceTimersByTime(64); // 推进 double-rAF（淡入动画启动）
-      seq.push(Number(overlay.style.opacity || '0'));
+      seq.push(backdropOpacity());
 
       expectMonotonic(seq);
-      expect(seq[seq.length - 1]).toBe(1); // 动画结束遮罩必须可见
+      expect(seq[seq.length - 1]).toBe(1); // 动画结束背景必须可见
     });
 
-    it('缓存命中路径：遮罩 opacity 同样不回退', () => {
+    it('缓存命中路径：背景 opacity 同样不回退', () => {
       const img = makeGalleryImage('/uploads/x.webp?w=800', '图');
       mountRoot([img]);
       window.__initLightbox('.post-content');
 
       clickEl(img);
-      const overlay = getOverlay()!;
-      const seq: number[] = [Number(overlay.style.opacity || '0')];
+      const seq: number[] = [backdropOpacity()];
 
       vi.advanceTimersByTime(64);
-      seq.push(Number(overlay.style.opacity || '0'));
+      seq.push(backdropOpacity());
 
       expectMonotonic(seq);
       expect(seq[seq.length - 1]).toBe(1);
@@ -677,7 +677,9 @@ describe('lightbox 黑盒行为', () => {
 
       pressKey('Escape');
 
-      expect(lbImg.style.transition).toBe('transform 250ms ease-out, opacity 250ms ease-out');
+      expect(lbImg.style.transition).toBe(
+        'transform 300ms cubic-bezier(0.2, 0, 0.2, 1), opacity 300ms cubic-bezier(0.2, 0, 0.2, 1)',
+      );
       // 目标仍是 6 函数同构列表，rotate 槽保持 450deg —— 逐函数插值时旋转恒不动
       expect(lbImg.style.transform).toMatch(
         /^translate\([^)]*\) scale\([^)]*\) translate\([^)]*\) rotate\(450deg\) scale\([^)]*\) translate\([^)]*\)$/,
@@ -688,6 +690,43 @@ describe('lightbox 黑盒行为', () => {
       const lbImg = openAndSettle(makeGalleryImage('/uploads/s.webp?w=800', '图'));
       pressKey('Escape');
       expect(lbImg.style.transform).toMatch(/^translate\([^)]*\) scale\([^)]*\)$/);
+    });
+  });
+
+  describe('不透明飞行（缩略图与原图同比例）', () => {
+    const openWithOriginRect = (w: number, h: number) => {
+      const img = makeExternalImage('/uploads/p.webp', '图');
+      vi.spyOn(img, 'getBoundingClientRect').mockReturnValue(new DOMRect(100, 200, w, h));
+      mountRoot([img]);
+      window.__initLightbox('.post-content');
+      clickEl(img);
+      const lbImg = getLightboxImg()!;
+      stubNatural(lbImg, 800, 600);
+      lbImg.dispatchEvent(new Event('load'));
+      return { img, lbImg };
+    };
+    it('比例一致：灯箱图全程不透明、原图隐藏，关闭后恢复可见', () => {
+      const { img, lbImg } = openWithOriginRect(400, 300);
+      expect(lbImg.style.opacity).toBe('1');
+      expect(img.classList.contains('lightbox-origin-hidden')).toBe(true);
+
+      vi.advanceTimersByTime(64);
+      pressKey('Escape');
+      expect(lbImg.style.opacity).toBe('1');
+      expect(document.querySelector<HTMLElement>('.lightbox-backdrop')!.style.opacity).toBe('0');
+
+      vi.advanceTimersByTime(300);
+      expect(getOverlay()).toBeNull();
+      expect(img.classList.contains('lightbox-origin-hidden')).toBe(false);
+    });
+
+    it('比例不一致：回退到透明度过渡，原图保持可见', () => {
+      const { img, lbImg } = openWithOriginRect(300, 300);
+      expect(lbImg.style.opacity).toBe('0');
+      expect(img.classList.contains('lightbox-origin-hidden')).toBe(false);
+
+      pressKey('Escape');
+      expect(lbImg.style.opacity).toBe('0');
     });
   });
 

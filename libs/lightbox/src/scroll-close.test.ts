@@ -10,6 +10,7 @@ function openImage(load = true): {
   origin: HTMLImageElement;
   img: HTMLImageElement;
   overlay: HTMLElement;
+  backdrop: HTMLElement;
 } {
   document.body.innerHTML =
     '<div class="post-content"><img src="/photo.webp"><img src="/next.webp"></div>';
@@ -22,6 +23,7 @@ function openImage(load = true): {
   origin.click();
   const img = document.querySelector<HTMLImageElement>('.lightbox-img')!;
   const overlay = document.querySelector<HTMLElement>('.lightbox-overlay')!;
+  const backdrop = document.querySelector<HTMLElement>('.lightbox-backdrop')!;
   if (load) {
     Object.defineProperty(img, 'naturalWidth', { value: 800 });
     Object.defineProperty(img, 'naturalHeight', { value: 600 });
@@ -29,7 +31,7 @@ function openImage(load = true): {
     vi.advanceTimersByTime(300);
     vi.spyOn(img, 'getBoundingClientRect').mockReturnValue(new DOMRect(100, 100, 800, 600));
   }
-  return { origin, img, overlay };
+  return { origin, img, overlay, backdrop };
 }
 
 function wheel(el: Element, options: WheelEventInit = {}): WheelEvent {
@@ -91,31 +93,31 @@ describe('滚动缩回页面原图', () => {
   });
 
   it('滚动进度插值到实时原图位置，有连续过渡且反向滚动可退回', () => {
-    const { img, overlay } = openImage();
+    const { img, overlay, backdrop } = openImage();
     const start = img.style.transform;
     scrollTo(530); // 1/4 行程；目标原图现在位于 (200, 320)。
     // 图的视觉 rect = (125, 155, 700, 525)，通过外层变换映射原来的 rect。
     expect(img.style.transform).toBe(`translate(37.5px, 67.5px) scale(0.875, 0.875) ${start}`);
     expect(img.style.transition).toContain('transform 100ms');
-    expect(overlay.style.opacity).toBe('0.75');
+    expect(backdrop.style.opacity).toBe('0.75');
 
     scrollTo(560); // 1/2 行程；目标继续上移到 (200, 290)。
     expect(img.style.transform).toBe(`translate(75px, 120px) scale(0.75, 0.75) ${start}`);
-    expect(overlay.style.opacity).toBe('0.5');
+    expect(backdrop.style.opacity).toBe('0.5');
 
     scrollTo(500);
     expect(img.style.transform).toBe(`translate(0px, 0px) scale(1, 1) ${start}`);
-    expect(overlay.style.opacity).toBe('1');
+    expect(backdrop.style.opacity).toBe('1');
     expect(overlay.isConnected).toBe(true);
   });
 
   it.each([120, -120])('滚动 %i px 后动画飞回再移除，焦点恢复不改变滚动位置', (dy) => {
-    const { origin, img, overlay } = openImage();
+    const { origin, img, overlay, backdrop } = openImage();
     const focus = vi.spyOn(origin, 'focus');
     scrollTo(500 + dy);
     expect(overlay.isConnected).toBe(true);
-    expect(img.style.transition).toContain('transform 250ms');
-    expect(overlay.style.opacity).toBe('0');
+    expect(img.style.transition).toContain('transform 300ms');
+    expect(backdrop.style.opacity).toBe('0');
     vi.advanceTimersByTime(300);
     expect(overlay.isConnected).toBe(false);
     expect(focus).toHaveBeenCalledWith({ preventScroll: true });
@@ -149,12 +151,12 @@ describe('滚动缩回页面原图', () => {
   });
 
   it('滚动到一半后可用工具栏重新缩放，下一次滚动重新起算', () => {
-    const { overlay } = openImage();
+    const { overlay, backdrop } = openImage();
     scrollTo(560);
     overlay.querySelector<HTMLButtonElement>('[aria-label="放大"]')!.click();
-    expect(overlay.style.opacity).toBe('1');
+    expect(backdrop.style.opacity).toBe('1');
     scrollTo(590);
-    expect(overlay.style.opacity).toBe('0.75');
+    expect(backdrop.style.opacity).toBe('0.75');
     expect(overlay.isConnected).toBe(true);
   });
 
@@ -174,7 +176,7 @@ describe('滚动缩回页面原图', () => {
   });
 
   it('中途切换图集后重新计算滚动行程，并飞回新图位置', () => {
-    const { img, overlay } = openImage();
+    const { img, overlay, backdrop } = openImage();
     const next = document.querySelector<HTMLImageElement>('.post-content img:nth-child(2)')!;
     vi.spyOn(next, 'getBoundingClientRect').mockImplementation(
       () => new DOMRect(600, 1000 - window.scrollY, 400, 300),
@@ -185,21 +187,21 @@ describe('滚动缩回页面原图', () => {
     vi.advanceTimersByTime(300);
     const start = img.style.transform;
     expect(overlay.querySelector('.lightbox-counter')?.textContent).toBe('2 / 2');
-    expect(overlay.style.opacity).toBe('1');
+    expect(backdrop.style.opacity).toBe('1');
     scrollTo(590);
-    expect(overlay.style.opacity).toBe('0.75');
+    expect(backdrop.style.opacity).toBe('0.75');
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
     expect(img.style.transform).toBe(`translate(550px, 360px) scale(0.5, 0.5) ${start}`);
   });
 
   it('图片还在加载时也能滚动关闭，迟到的 load 不会重新播放打开动画', () => {
-    const { img, overlay } = openImage(false);
+    const { img, overlay, backdrop } = openImage(false);
     scrollTo(530);
     const closing = img.style.transform;
     img.dispatchEvent(new Event('load'));
     vi.advanceTimersByTime(64);
     expect(img.style.transform).toBe(closing);
-    expect(overlay.style.opacity).toBe('0');
+    expect(backdrop.style.opacity).toBe('0');
     vi.advanceTimersByTime(300);
     expect(overlay.isConnected).toBe(false);
   });
