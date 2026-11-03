@@ -56,6 +56,7 @@ export function openLightbox(
     resetView: (animate) => resetView(s, animate),
     close,
     gotoIndex,
+    stepIndex: (delta) => gotoIndex((pendingIndex ?? s.index ?? 0) + delta),
   };
   const elements = createLightboxElements(altText, gallery, index, isSingle, actions);
   const { overlay, img } = elements;
@@ -83,6 +84,8 @@ export function openLightbox(
   };
   let imageScope = new ResourceScope();
   let galleryTimer: number | undefined;
+  // 换图淡出期间（150ms）已接受、尚未落地的目标；连按方向键以它为基准，不会丢步。
+  let pendingIndex: number | null = null;
   function loadImage(src: string, onReady: () => void): void {
     imageScope.dispose();
     imageScope = new ResourceScope();
@@ -328,7 +331,7 @@ export function openLightbox(
     let newIndex = rawIndex;
     if (newIndex < 0) newIndex = s.gallery.length - 1;
     if (newIndex >= s.gallery.length) newIndex = 0;
-    if (newIndex === s.index) return;
+    if (newIndex === s.index && pendingIndex === null) return;
 
     const newNode = s.gallery[newIndex];
     const details = getImageDetails(newNode);
@@ -343,7 +346,9 @@ export function openLightbox(
     s.img.style.opacity = '0';
 
     // 150ms 后换图淡入
+    pendingIndex = newIndex;
     const swap = (): void => {
+      pendingIndex = null;
       if (s.scope.disposed || s.closing || s.scrollClose) return;
       // 换图后必须按新图真实尺寸重算几何，否则新图沿用第一张的
       // target/scale，宽高比不同的图会被压扁/拉伸。

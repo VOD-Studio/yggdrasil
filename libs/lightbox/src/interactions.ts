@@ -175,12 +175,12 @@ export function bindInteractions(s: LightboxState, actions: LightboxActions): ()
     if (!s.isSingle && s.gallery.length > 1) {
       if (ev.key === 'ArrowLeft') {
         ev.preventDefault();
-        actions.gotoIndex((s.index ?? 0) - 1);
+        actions.stepIndex(-1);
         return;
       }
       if (ev.key === 'ArrowRight') {
         ev.preventDefault();
-        actions.gotoIndex((s.index ?? 0) + 1);
+        actions.stepIndex(1);
         return;
       }
     }
@@ -240,12 +240,12 @@ export function bindInteractions(s: LightboxState, actions: LightboxActions): ()
   if (s.prevBtn)
     scope.listen(s.prevBtn, 'click', (ev: MouseEvent): void => {
       ev.stopPropagation();
-      actions.gotoIndex((s.index ?? 0) - 1);
+      actions.stepIndex(-1);
     });
   if (s.nextBtn)
     scope.listen(s.nextBtn, 'click', (ev: MouseEvent): void => {
       ev.stopPropagation();
-      actions.gotoIndex((s.index ?? 0) + 1);
+      actions.stepIndex(1);
     });
   // 指针停在栏上时不淡出。顶栏、底栏本身不接收指针，只看可交互的子元素。
   for (const el of [

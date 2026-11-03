@@ -347,7 +347,9 @@ export class CodeBlockNodeView {
   }
 
   private async runCode(): Promise<void> {
-    if (!this.runBtn) return;
+    // await 期间 update() 可能移除按钮并把 this.runBtn 置空，finally 只能用本地引用。
+    const btn = this.runBtn;
+    if (!btn) return;
     const storage = this.editor.storage as unknown as Record<string, unknown>;
     const onRunCode = storage[ON_RUN_CODE_STORAGE_KEY] as
       | ((opts: RunCodeOpts) => Promise<string>)
@@ -355,8 +357,8 @@ export class CodeBlockNodeView {
     if (!onRunCode) return; // 优雅降级：无回调时不操作
 
     // 防重复点击
-    this.runBtn.disabled = true;
-    setRunLabel(this.runBtn, true);
+    btn.disabled = true;
+    setRunLabel(btn, true);
     this.ensureResultArea('运行中…');
 
     try {
@@ -370,8 +372,8 @@ export class CodeBlockNodeView {
     } catch (e) {
       this.renderResult(`运行失败：${e instanceof Error ? e.message : String(e)}`);
     } finally {
-      this.runBtn.disabled = false;
-      setRunLabel(this.runBtn, false);
+      btn.disabled = false;
+      setRunLabel(btn, false);
     }
   }
 

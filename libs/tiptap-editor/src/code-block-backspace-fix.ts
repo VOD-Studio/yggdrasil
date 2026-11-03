@@ -19,6 +19,34 @@ import { Plugin, PluginKey } from '@tiptap/pm/state';
  */
 const pluginKey = new PluginKey('codeBlockBackspaceFix');
 
+// tsconfig 的 lib 不含 Intl.Segmenter 类型，按最小形状声明；运行时缺失则走码点回退。
+interface GraphemeSegmenter {
+  segment(text: string): Iterable<{ segment: string }>;
+}
+interface SegmenterIntl {
+  Segmenter?: new (locale?: string, opts?: { granularity: 'grapheme' }) => GraphemeSegmenter;
+}
+const intl: SegmenterIntl = Intl as unknown as SegmenterIntl;
+const graphemes = intl.Segmenter
+  ? new intl.Segmenter(undefined, { granularity: 'grapheme' })
+  : null;
+
+/** 文本末尾最后一个字形簇的 UTF-16 长度；无 Segmenter 时退化为按码点（代理对算一个）。 */
+function lastGraphemeLength(text: string): number {
+  if (graphemes) {
+    let last = 0;
+    for (const { segment } of graphemes.segment(text)) last = segment.length;
+    return last || 1;
+  }
+  const n = text.length;
+  if (n >= 2) {
+    const lo = text.charCodeAt(n - 1);
+    const hi = text.charCodeAt(n - 2);
+    if (lo >= 0xdc00 && lo <= 0xdfff && hi >= 0xd800 && hi <= 0xdbff) return 2;
+  }
+  return 1;
+}
+
 export const CodeBlockBackspaceFix = Extension.create({
   name: 'codeBlockBackspaceFix',
 
@@ -48,9 +76,11 @@ export const CodeBlockBackspaceFix = Extension.create({
               }
               return false; // 块非空但在起始，不处理（让光标留在块内）
             }
-            // 删除前一个字符（基于文档 pos，不依赖 DOM selection）
+            // 删除光标前一个字符（基于文档 pos，不依赖 DOM selection）。
+            // 按 UTF-16 码元 -1 会把 emoji 等代理对切成孤立代理，须按字形簇回退。
+            const before = $anchor.parent.textBetween(0, $anchor.parentOffset);
             const tr = view.state.tr;
-            tr.delete($anchor.pos - 1, $anchor.pos);
+            tr.delete($anchor.pos - lastGraphemeLength(before), $anchor.pos);
             view.dispatch(tr);
             return true;
           },

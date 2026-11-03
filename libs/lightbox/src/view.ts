@@ -149,13 +149,16 @@ export function ensureNormalized(s: LightboxState): void {
 }
 
 // 顶栏、底栏与箭头空闲淡出：fit 态它们在图片之外，常驻；放大后图会铺到它们
-// 下面，2.5s 无指针活动且不在栏上、不在手势中时淡出，任何指针活动唤醒。
+// 下面，2.5s 无指针活动且不在栏上、不在手势中、键盘焦点不在栏内控件上时淡出，
+// 任何指针/键盘活动唤醒。
 export function pokeToolbar(s: LightboxState): void {
   if (s.closing) return;
   s.overlay.classList.remove('is-idle');
   s.scope.clearTimeout(s.idleTimer);
   s.idleTimer = s.scope.timeout((): void => {
     if (s.scope.disposed || s.chromeHover || s.gesture || s.view.scale <= 1) return;
+    // Tab 停在栏内按钮上时不能淡出，否则焦点落在看不见的控件上。
+    if (s.overlay.querySelector(':focus-visible')) return;
     s.overlay.classList.add('is-idle');
   }, 2500);
 }

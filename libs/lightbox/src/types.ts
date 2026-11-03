@@ -78,4 +78,6 @@ export interface LightboxActions {
   resetView: (animate: boolean) => void;
   close: (immediate: boolean) => void;
   gotoIndex: (index: number) => void;
+  // 相对当前（含换图淡出期间尚未落地的目标）前进/后退，连按不丢步。
+  stepIndex: (delta: number) => void;
 }

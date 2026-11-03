@@ -91,6 +91,21 @@ describe('lightbox session and SPA lifecycle', () => {
     expect(download.hasAttribute('target')).toBe(false);
   });
 
+  it('连按方向键在换图淡出期间不丢步', () => {
+    document.body.innerHTML =
+      '<main class="post-content" data-showcase-lightbox-owner="lifecycle">' +
+      '<img src="/uploads/a.webp" alt="A"><img src="/uploads/b.webp" alt="B">' +
+      '<img src="/uploads/c.webp" alt="C"></main>';
+    window.__initLightbox('.post-content');
+    document.querySelector<HTMLImageElement>('.post-content img')!.click();
+    key('ArrowRight');
+    vi.advanceTimersByTime(50);
+    key('ArrowRight');
+    vi.advanceTimersByTime(150);
+    expect(currentImage().alt).toBe('C');
+    expect(document.querySelector('.lightbox-counter')?.textContent).toBe('3 / 3');
+  });
+
   it('does not replay the pending first-image opening animation after a new image loads', () => {
     const [first, second] = mount();
     vi.spyOn(first, 'getBoundingClientRect').mockReturnValue(new DOMRect(100, 200, 300, 200));
