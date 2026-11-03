@@ -401,11 +401,13 @@ pub(crate) async fn process_image_upload(
     //    放在安全性校验之后、转码之前。命中时刷新 created_at/updated_at：
     //    重传代表使用意图，重启 7 天清理保护窗（PURGE_GRACE_DAYS 保护的是
     //    「刚上传还没被文章引用」的素材）。
+    //    命中的记录若磁盘文件已丢失（幽灵记录），复用只会返回永久 404 的 URL：
+    //    继续走完整流程，用本次字节把文件补回原路径（见第 6、7 步）。
     let content_hash = {
         use sha2::Digest;
         hex::encode(sha2::Sha256::digest(&data))
     };
-    {
+    let missing_path = {
         let client = crate::db::pool::get_conn()
             .await
             .map_err(|e| UploadError::internal(e, "dedup conn"))?;
@@ -418,16 +420,32 @@ pub(crate) async fn process_image_upload(
             )
             .await
             .map_err(|e| UploadError::internal(e, "dedup check"))?;
-        if let Some(row) = reused {
-            let path: String = row.get("path");
-            tracing::info!(
-                "Image deduped: reuse {} (hash {})",
-                path,
-                &content_hash[..12]
-            );
-            return Ok(upload_outcome(&row, true));
+        match reused {
+            Some(row) => {
+                let path: String = row.get("path");
+                // 只有确认不存在才补写；stat 出错（如权限）按存在处理，维持原复用行为。
+                if matches!(
+                    tokio::fs::try_exists(format!("uploads/{path}")).await,
+                    Ok(false)
+                ) {
+                    tracing::warn!(
+                        "Asset file missing, restoring from upload: {} (hash {})",
+                        path,
+                        &content_hash[..12]
+                    );
+                    Some(path)
+                } else {
+                    tracing::info!(
+                        "Image deduped: reuse {} (hash {})",
+                        path,
+                        &content_hash[..12]
+                    );
+                    return Ok(upload_outcome(&row, true));
+                }
+            }
+            None => None,
         }
-    }
+    };
 
     // 4. GIF/WebP 解码校验（不经过重编码的格式必须验真，防伪造扩展名的恶意文件）。
     //    GIF 走 image::load_from_memory 会完整解码，移到阻塞线程池避免拖住 async 运行时。
@@ -448,27 +466,49 @@ pub(crate) async fn process_image_upload(
     //    Bytes clone 廉价（引用计数 +1），move 进阻塞闭包无需全文件深拷贝。
     let (final_data, final_ext) = transcode(data, mime_type, is_gif, is_webp).await;
 
-    // 6. 按上传时间组织目录：uploads/YYYY/MM/DD。
-    //    chrono 的 DelayedFormat 实现 Display，可直接进 format!，省掉中间 String。
-    let now = chrono::Utc::now();
-    let date = now.format("%Y/%m/%d");
-
-    let dir_path = format!("uploads/{}", date);
-    let file_name = upload_file_name(now, uuid::Uuid::new_v4(), &final_ext);
-    let file_path = format!("{}/{}", dir_path, file_name);
-    let rel_path = format!("{}/{}", date, file_name);
+    // 6. 落盘路径：补写幽灵记录且扩展名不变时沿用原路径，文章里已有的 URL 随之恢复；
+    //    否则按上传时间组织目录：uploads/YYYY/MM/DD。
     let final_mime = mime_for_ext(&final_ext);
+    let restore_in_place = missing_path
+        .as_deref()
+        .filter(|path| path.ends_with(&format!(".{final_ext}")));
+    let (rel_path, file_name) = match restore_in_place {
+        Some(path) => (
+            path.to_string(),
+            path.rsplit('/').next().unwrap_or(path).to_string(),
+        ),
+        None => {
+            let now = chrono::Utc::now();
+            let file_name = upload_file_name(now, uuid::Uuid::new_v4(), &final_ext);
+            // chrono 的 DelayedFormat 实现 Display，可直接进 format!，省掉中间 String。
+            (
+                format!("{}/{}", now.format("%Y/%m/%d"), file_name),
+                file_name,
+            )
+        }
+    };
+    let file_path = format!("uploads/{rel_path}");
 
-    if let Err(e) = tokio::fs::create_dir_all(&dir_path).await {
-        return Err(UploadError::internal(e, "create dir"));
+    if let Some(dir) = std::path::Path::new(&file_path).parent() {
+        if let Err(e) = tokio::fs::create_dir_all(dir).await {
+            return Err(UploadError::internal(e, "create dir"));
+        }
     }
-    if let Err(e) = tokio::fs::write(&file_path, &final_data).await {
+    // 先写临时文件再改名：并发补写同一路径时，读者看不到写了一半的文件。
+    let tmp_path = format!("{file_path}.{}.tmp", uuid::Uuid::new_v4());
+    if let Err(e) = tokio::fs::write(&tmp_path, &final_data).await {
+        let _ = tokio::fs::remove_file(&tmp_path).await;
+        return Err(UploadError::internal(e, "write file"));
+    }
+    if let Err(e) = tokio::fs::rename(&tmp_path, &file_path).await {
+        let _ = tokio::fs::remove_file(&tmp_path).await;
         return Err(UploadError::internal(e, "write file"));
     }
 
     tracing::info!("Image uploaded: {} ({} bytes)", file_path, final_data.len());
 
     // 7. 注册或复用同内容素材，原子返回最终元数据；并发落败者删除自己落盘的文件。
+    //    幽灵记录（$10 为其原路径）改指向本次文件：扩展名变了无法原地补写时也能恢复可用。
     let registered: Result<tokio_postgres::Row, UploadError> = async {
         let client = crate::db::pool::get_conn()
             .await
@@ -478,12 +518,18 @@ pub(crate) async fn process_image_upload(
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULLIF($9, ''))
              ON CONFLICT (content_hash) DO UPDATE SET
                  created_at = NOW(), updated_at = NOW(),
-                 alt = CASE WHEN $9::text IS NULL THEN assets.alt ELSE NULLIF($9, '') END
+                 alt = CASE WHEN $9::text IS NULL THEN assets.alt ELSE NULLIF($9, '') END,
+                 path = CASE WHEN assets.path = $10::text THEN EXCLUDED.path ELSE assets.path END,
+                 mime = CASE WHEN assets.path = $10::text THEN EXCLUDED.mime ELSE assets.mime END,
+                 size_bytes = CASE WHEN assets.path = $10::text
+                     THEN EXCLUDED.size_bytes ELSE assets.size_bytes END,
+                 width = CASE WHEN assets.path = $10::text THEN EXCLUDED.width ELSE assets.width END,
+                 height = CASE WHEN assets.path = $10::text THEN EXCLUDED.height ELSE assets.height END
              RETURNING id, path, mime, width, height, alt",
             &[&uuid::Uuid::new_v4(), &rel_path,
               &original_filename.unwrap_or_else(|| file_name.clone()), &final_mime,
               &(final_data.len() as i64), &(img_width as i32), &(img_height as i32),
-              &content_hash, &alt],
+              &content_hash, &alt, &missing_path],
         ).await.map_err(|e| UploadError::internal(e, "register asset"))
     }.await;
 
@@ -496,8 +542,10 @@ pub(crate) async fn process_image_upload(
             Ok(upload_outcome(&row, reused))
         }
         Err(e) => {
-            // 登记失败：补偿删除已落盘文件。
-            let _ = tokio::fs::remove_file(&file_path).await;
+            // 登记失败：补偿删除已落盘文件。原地补写的文件就是该记录本该有的内容，保留。
+            if restore_in_place.is_none() {
+                let _ = tokio::fs::remove_file(&file_path).await;
+            }
             Err(e)
         }
     }
@@ -721,6 +769,49 @@ mod tests {
             .unwrap();
         assert_eq!(stored.get::<_, Option<String>>(0), a.alt);
         assert_eq!(stored.get::<_, String>(1), a.mime);
+
+        // 幽灵记录：DB 有行、磁盘缺文件时，重传用本次字节按原路径补回文件，URL 不变。
+        let disk_path = a.url.trim_start_matches('/').to_string();
+        tokio::fs::remove_file(&disk_path).await.unwrap();
+        let restored = process_image_upload(data.clone(), None, None)
+            .await
+            .unwrap();
+        assert_eq!(restored.asset_id, a.asset_id);
+        assert_eq!(restored.url, a.url);
+        assert!(!restored.reused);
+        assert!(tokio::fs::try_exists(&disk_path).await.unwrap());
+        assert!(
+            process_image_upload(data.clone(), None, None)
+                .await
+                .unwrap()
+                .reused
+        );
+
+        // 原路径扩展名与本次转码结果不同，无法原地补写：记录改指向新文件。
+        let ghost = "2000/01/01/000000.ghost.bin";
+        let original_path = a.url.trim_start_matches("/uploads/").to_string();
+        client
+            .execute("UPDATE assets SET path = $2 WHERE id = $1", &[&id, &ghost])
+            .await
+            .unwrap();
+        tokio::fs::remove_file(&disk_path).await.unwrap();
+        let moved = process_image_upload(data.clone(), None, None)
+            .await
+            .unwrap();
+        assert_eq!(moved.asset_id, a.asset_id);
+        assert!(!moved.reused);
+        assert_ne!(moved.url, format!("/uploads/{ghost}"));
+        let moved_path = moved.url.trim_start_matches('/');
+        assert!(tokio::fs::try_exists(moved_path).await.unwrap());
+        // 挪回原路径，后续断言与清理沿用 a.url。
+        tokio::fs::rename(moved_path, &disk_path).await.unwrap();
+        client
+            .execute(
+                "UPDATE assets SET path = $2 WHERE id = $1",
+                &[&id, &original_path],
+            )
+            .await
+            .unwrap();
 
         // Exercise actual multipart parsing, authentication and serialized response.
         let token = format!("ygg_{nonce}");
