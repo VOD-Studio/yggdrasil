@@ -277,28 +277,19 @@ pub async fn login(username: String, password: String) -> Result<AuthResponse, A
         });
     }
 
-    let session_count: i64 = tx
-        .query_one(
-            "SELECT COUNT(*) FROM sessions WHERE user_id = $1 AND expires_at > NOW()",
-            &[&user_id],
-        )
-        .await
-        .map_err(AppError::query)?
-        .get(0);
-
-    if session_count >= max_sessions {
-        tx.execute(
-            "DELETE FROM sessions WHERE id IN (
-                SELECT id FROM sessions
-                WHERE user_id = $1 AND expires_at > NOW()
-                ORDER BY created_at ASC
-                LIMIT 1
-            )",
-            &[&user_id],
-        )
-        .await
-        .map_err(AppError::query)?;
-    }
+    // 只保留最新的 max_sessions - 1 个有效会话，为本次登录腾出一个名额。
+    // 一次删掉所有超额会话，上限下调后下次登录即收敛到新上限，而不是每次只淘汰一条。
+    tx.execute(
+        "DELETE FROM sessions WHERE id IN (
+            SELECT id FROM sessions
+            WHERE user_id = $1 AND expires_at > NOW()
+            ORDER BY created_at DESC, id DESC
+            OFFSET $2
+        )",
+        &[&user_id, &(max_sessions - 1)],
+    )
+    .await
+    .map_err(AppError::query)?;
 
     // 签发时快照当前世代号（users 行已被 FOR UPDATE 锁定，读到的即提交时的值）。
     tx.execute(
