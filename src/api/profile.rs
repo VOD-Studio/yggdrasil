@@ -5,7 +5,8 @@
 //!   （激活时邮箱/密码会在重启后被 env 覆盖，页面据此显示提示横幅）；
 //! - `update_profile`：修改邮箱 / 显示名称 / 头像（username 为登录凭据，只读）；
 //! - `change_password`：校验当前密码后改密，bump `session_generation` 使
-//!   其他设备会话全部失效，同时刷新当前 token 的会话缓存保留本端登录。
+//!   其他设备会话全部失效，同时刷新当前 token 的会话缓存保留本端登录；
+//!   可选同时吊销本人全部 MCP 令牌（令牌是独立凭据，默认不随改密失效）。
 //!
 //! 资料字段（display_name/avatar_url/email）缓存在 SESSION_CACHE 的
 //! SessionUser 里，故写操作成功后必须同步刷新当前 token 的缓存项，
@@ -221,11 +222,16 @@ pub async fn update_profile(
 /// 校验当前密码 → 更新哈希并 bump `session_generation`（其他设备会话全部
 /// 失效）→ 删除该用户除当前 token 外的所有会话 → 刷新当前 token 的会话缓存
 /// （写入新世代号），本端保持登录。Argon2 计算走 `spawn_blocking`。
+///
+/// MCP 令牌与会话不同：它是有独立过期与吊销的长期凭据，默认不随改密失效，
+/// 避免每次改密都打断 AI 客户端。`revoke_mcp_tokens` 为真时在同一事务内
+/// 吊销本人全部未吊销令牌，用于怀疑凭据泄露（泄露期间可能被签出令牌）的场景。
 /// Leptos server function，注册在 `/api` 路径下。
 #[server(ChangePassword, endpoint = "change_password", input = leptos::server_fn::codec::Json)]
 pub async fn change_password(
     current_password: String,
     new_password: String,
+    revoke_mcp_tokens: bool,
 ) -> Result<ChangePasswordResponse, ApiError> {
     #[cfg(feature = "server")]
     {
@@ -318,6 +324,18 @@ pub async fn change_password(
         )
         .await
         .map_err(AppError::query)?;
+        // MCP 鉴权每次请求都查库（resolve_principal 无缓存），提交即生效。
+        let revoked = if revoke_mcp_tokens {
+            tx.execute(
+                "UPDATE mcp_tokens SET revoked_at = NOW() \
+                 WHERE user_id = $1 AND revoked_at IS NULL",
+                &[&user.id],
+            )
+            .await
+            .map_err(AppError::query)?
+        } else {
+            0
+        };
         tx.commit().await.map_err(AppError::query)?;
 
         // get_user_by_token 每次命中缓存都会回查 users.session_generation，
@@ -328,9 +346,14 @@ pub async fn change_password(
         };
         crate::cache::set_session_user(&token_hash, refreshed).await;
 
+        let message = if revoke_mcp_tokens {
+            format!("密码已修改，其他设备已退出登录，已吊销 {revoked} 个 MCP 令牌")
+        } else {
+            "密码已修改，其他设备已退出登录".to_string()
+        };
         Ok(ChangePasswordResponse {
             success: true,
-            message: "密码已修改，其他设备已退出登录".to_string(),
+            message,
         })
     }
     #[cfg(not(feature = "server"))]

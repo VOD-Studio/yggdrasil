@@ -17,7 +17,7 @@ use crate::components::assets::{AssetPickerModal, AssetSelection};
 use crate::components::forms::FormInput;
 use crate::components::skeletons::profile_skeleton::ProfileSkeleton;
 use crate::components::ui::{
-    button_class, use_toast, ButtonSize, ButtonVariant, Icon, IconName, LoadError,
+    button_class, use_toast, ButtonSize, ButtonVariant, Checkbox, Icon, IconName, LoadError,
 };
 use crate::context::UserContext;
 use crate::models::user::PublicUser;
@@ -410,6 +410,7 @@ fn PasswordSection() -> impl IntoView {
     let next = RwSignal::new(String::new());
     let confirm = RwSignal::new(String::new());
     let busy = RwSignal::new(false);
+    let revoke_mcp = RwSignal::new(false);
 
     let level = Memo::new(move |_| next.with(|n| password_level(n)));
     let mismatch = Memo::new(move |_| confirm.with(|c| next.with(|n| !c.is_empty() && c != n)));
@@ -427,13 +428,15 @@ fn PasswordSection() -> impl IntoView {
         }
         busy.set(true);
         let (old, new) = (current.get_untracked(), next.get_untracked());
+        let revoke = revoke_mcp.get_untracked();
         spawn_local(async move {
-            match crate::api::profile::change_password(old, new).await {
+            match crate::api::profile::change_password(old, new, revoke).await {
                 Ok(resp) if resp.success => {
                     let _ = current.try_set(String::new());
                     let _ = next.try_set(String::new());
                     let _ = confirm.try_set(String::new());
-                    toast.success("密码已修改，其他设备上的登录已退出");
+                    let _ = revoke_mcp.try_set(false);
+                    toast.success(resp.message);
                 }
                 Ok(resp) => toast.error(resp.message),
                 Err(e) => toast.error(failure_message("修改失败", &e)),
@@ -518,6 +521,21 @@ fn PasswordSection() -> impl IntoView {
                                     }
                                 })
                         }}
+                    </div>
+                </div>
+                <div class="admin-profile-row">
+                    <span class="admin-profile-label">"MCP 令牌"</span>
+                    <div>
+                        <label class="admin-profile-check">
+                            <Checkbox
+                                checked=revoke_mcp
+                                onchange=move |v: bool| revoke_mcp.set(v)
+                            />
+                            "同时吊销我的全部 MCP 令牌"
+                        </label>
+                        <p class="admin-profile-hint">
+                            "令牌默认不随改密失效。怀疑密码泄露时勾选，AI 客户端需重新配置令牌。"
+                        </p>
                     </div>
                 </div>
             </div>
