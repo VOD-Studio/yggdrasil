@@ -271,10 +271,23 @@ pub async fn login(username: String, password: String) -> Result<AuthResponse, A
     // 用事务 + 对 users 行加 FOR UPDATE 锁，串行化同一用户的并发登录，
     // 避免 COUNT→DELETE→INSERT 之间的竞态导致超出上限（M1）。
     let tx = client.transaction().await.map_err(AppError::query)?;
-    // 锁住该用户行，并发登录在此排队。
-    tx.execute("SELECT 1 FROM users WHERE id = $1 FOR UPDATE", &[&user_id])
+    // 锁住该用户行，并发登录在此排队；同时复核凭据：校验密码到加锁之间若有
+    // 改密/降级提交，已验证的旧哈希不得换取新世代会话。
+    let still_valid = tx
+        .query_opt(
+            "SELECT 1 FROM users WHERE id = $1 AND password_hash = $2 AND role = 'admin' FOR UPDATE",
+            &[&user_id, &password_hash],
+        )
         .await
-        .map_err(AppError::query)?;
+        .map_err(AppError::query)?
+        .is_some();
+    if !still_valid {
+        return Ok(AuthResponse {
+            success: false,
+            message: "Invalid credentials".to_string(),
+            token: None,
+        });
+    }
 
     let session_count: i64 = tx
         .query_one(

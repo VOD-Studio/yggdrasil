@@ -263,24 +263,33 @@ pub async fn change_password(
         let token_hash = session::hash_token(&token);
 
         // 事务内：更新哈希 + bump 世代号 + 删除其他会话。当前会话行保留，
-        // 靠下方缓存刷新写入新世代号维持有效。
+        // 靠下方缓存刷新写入新世代号维持有效。WHERE 复核已验证的旧哈希：
+        // 校验到提交之间若有并发改密，旧密码不得覆盖新凭据。
         let tx = client.transaction().await.map_err(AppError::query)?;
-        let new_generation: i32 = tx
-            .query_one(
+        let Some(row) = tx
+            .query_opt(
                 "UPDATE users SET password_hash = $2, session_generation = session_generation + 1 \
-                 WHERE id = $1 RETURNING session_generation",
-                &[&user.id, &new_hash],
+                 WHERE id = $1 AND password_hash = $3 RETURNING session_generation",
+                &[&user.id, &new_hash, &password_hash],
             )
             .await
             .map_err(AppError::query)?
-            .get(0);
-        // 当前会话的世代快照同步到新值，其余会话直接删除。
-        tx.execute(
-            "UPDATE sessions SET generation = $3 WHERE user_id = $1 AND token_hash = $2",
-            &[&user.id, &token_hash, &new_generation],
-        )
-        .await
-        .map_err(AppError::query)?;
+        else {
+            return Ok(fail("当前密码不正确"));
+        };
+        let new_generation: i32 = row.get(0);
+        // 当前会话的世代快照同步到新值，其余会话直接删除。会话行已被并发
+        // 改密删除时整体回滚，避免下方缓存刷新复活已吊销的 token。
+        let kept = tx
+            .execute(
+                "UPDATE sessions SET generation = $3 WHERE user_id = $1 AND token_hash = $2",
+                &[&user.id, &token_hash, &new_generation],
+            )
+            .await
+            .map_err(AppError::query)?;
+        if kept == 0 {
+            return Err(AppError::Unauthorized("未登录").into());
+        }
         tx.execute(
             "DELETE FROM sessions WHERE user_id = $1 AND token_hash <> $2",
             &[&user.id, &token_hash],
