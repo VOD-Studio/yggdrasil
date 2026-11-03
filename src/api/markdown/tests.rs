@@ -112,6 +112,19 @@ fn render_markdown_with_heading_generates_toc() {
 }
 
 #[test]
+fn render_markdown_duplicate_headings_get_distinct_anchors() {
+    let result = render_markdown_enhanced("## 用法\n\n## 用法\n\n## FAQ?\n\n## FAQ!");
+    for id in ["yong-fa", "yong-fa-1", "faq", "faq-1"] {
+        assert_eq!(
+            result.html.matches(&format!("id=\"{id}\"")).count(),
+            1,
+            "{id}"
+        );
+        assert!(result.toc_html.contains(&format!("href=\"#{id}\"")), "{id}");
+    }
+}
+
+#[test]
 fn render_markdown_empty() {
     let result = render_markdown_enhanced("");
     assert_eq!(result.html, "");
