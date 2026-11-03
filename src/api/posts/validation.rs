@@ -62,6 +62,16 @@ pub(super) fn slug(value: &str) -> Result<(), WriteError> {
     Ok(())
 }
 
+/// 状态只认 `draft` / `published`：拼写不对必须报错，不能当作草稿把已发布文章悄悄下线。
+pub(super) fn status(value: &str) -> Result<(), WriteError> {
+    if crate::models::post::PostStatus::from_str(value).is_none() {
+        return Err(WriteError::Invalid(
+            "status 无效，只能是 draft 或 published".into(),
+        ));
+    }
+    Ok(())
+}
+
 pub(super) fn base_slug(title_value: &str, supplied: Option<&str>) -> Result<String, WriteError> {
     match supplied.map(str::trim).filter(|s| !s.is_empty()) {
         Some(s) => {
@@ -115,5 +125,14 @@ mod tests {
         let mut dup: Vec<String> = (0..15).map(|i| format!("t{i}")).collect();
         dup.extend([" a ".to_owned(), "A".to_owned()]);
         assert!(tags(&dup).is_ok());
+    }
+
+    #[test]
+    fn status_rejects_unknown_values_instead_of_defaulting_to_draft() {
+        assert!(status("draft").is_ok());
+        assert!(status("published").is_ok());
+        for bad in ["Published", "PUBLISHED", " published", "public", ""] {
+            assert!(status(bad).is_err(), "{bad:?}");
+        }
     }
 }

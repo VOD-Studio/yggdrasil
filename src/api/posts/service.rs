@@ -90,6 +90,7 @@ pub(crate) async fn create(
         validation::cover(c)?;
     }
     validation::tags(&draft.tags)?;
+    validation::status(&draft.status)?;
     let fields = helpers::render_post_fields(
         &draft.content_md,
         &draft.status,
@@ -156,6 +157,7 @@ async fn replacement(draft: PostDraft) -> Result<(PostPatch, helpers::RenderedFi
         validation::cover(c)?;
     }
     validation::tags(&draft.tags)?;
+    validation::status(&draft.status)?;
     let cover = normalize_cover(draft.cover_image.as_deref());
     let fields =
         helpers::render_post_fields(&draft.content_md, &draft.status, cover.as_deref()).await?;
@@ -201,6 +203,9 @@ fn validate_patch(p: &PostPatch) -> Result<(), WriteError> {
     }
     if let Some(t) = &p.tags {
         validation::tags(t)?;
+    }
+    if let Some(s) = &p.status {
+        validation::status(s)?;
     }
     Ok(())
 }
@@ -274,10 +279,11 @@ pub(crate) async fn update(
         Some(base) => crate::api::slug::ensure_unique_slug(&tx, base, Some(post_id)).await?,
         None => old_slug.clone(),
     };
-    let status = p
-        .status
-        .as_deref()
-        .map(|s| PostStatus::from_str(s).unwrap_or(PostStatus::Draft));
+    // 已由 validate_patch / replacement 校验，非法值走不到这里。
+    let status = p.status.as_deref().and_then(PostStatus::from_str);
+    // created_at 只跟随调用方显式给出的发布时间（与 create 一致）；
+    // 仅改状态时推导出的 published_at 不能改写创建时间。
+    let align_created_at = align_created_at && matches!(p.published_at, FieldChange::Set(_));
     let published_at = match p.published_at {
         FieldChange::Set(value) => Some(Some(value)),
         FieldChange::Clear => Some(None),

@@ -223,6 +223,54 @@ async fn post_write_service_database_impl() {
         .unwrap();
     assert!(dates.get::<_, bool>(0));
 
+    // 只带 status 的 PATCH 不能把 created_at 改写成 published_at。
+    let published_before: chrono::DateTime<chrono::Utc> = client
+        .query_one(
+            "UPDATE posts SET created_at='2019-05-06T00:00:00Z' WHERE id=$1 RETURNING published_at",
+            &[&mcp_id],
+        )
+        .await
+        .unwrap()
+        .get(0);
+    let republish: UpdatePostParams = serde_json::from_value(
+        serde_json::json!({"post_id":mcp_id,"status":"published","title":"MCP 重新发布"}),
+    )
+    .unwrap();
+    YggMcpServer
+        .update_post(
+            Parameters(republish),
+            Extension(parts(Some(TokenScope::Write))),
+        )
+        .await
+        .unwrap();
+    let kept = client
+        .query_one(
+            "SELECT created_at='2019-05-06T00:00:00Z'::timestamptz, published_at FROM posts WHERE id=$1",
+            &[&mcp_id],
+        )
+        .await
+        .unwrap();
+    assert!(kept.get::<_, bool>(0), "created_at 被改写");
+    assert_eq!(
+        kept.get::<_, chrono::DateTime<chrono::Utc>>(1),
+        published_before
+    );
+    // 拼错的状态报错，不能把已发布文章当草稿悄悄下线。
+    let typo: UpdatePostParams =
+        serde_json::from_value(serde_json::json!({"post_id":mcp_id,"status":"Published"})).unwrap();
+    assert!(YggMcpServer
+        .update_post(Parameters(typo), Extension(parts(Some(TokenScope::Write))))
+        .await
+        .is_err());
+    assert_eq!(
+        client
+            .query_one("SELECT status FROM posts WHERE id=$1", &[&mcp_id])
+            .await
+            .unwrap()
+            .get::<_, String>(0),
+        "published"
+    );
+
     // Updating正文 with omitted cover preserves it; explicit dates/tags can be cleared.
     let set_cover: UpdatePostParams =
         serde_json::from_value(serde_json::json!({"post_id":mcp_id,"cover_image":cover})).unwrap();
