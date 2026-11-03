@@ -31,23 +31,24 @@ import {
   zoomBy,
 } from './view';
 
-// 模态对话框：Tab 在灯箱内可见、可用的控件间循环，不落回背后的页面。
+// 模态对话框：Tab 在灯箱内可用的控件间循环，不落回背后的页面。
+// 栏位空闲淡出（is-idle，opacity 0）时控件仍在：调用方先唤醒栏位，这里不按透明度过滤；
+// 仍无可聚焦控件时焦点留在灯箱本身，绝不放行默认 Tab。
 function trapFocus(overlay: HTMLElement, ev: KeyboardEvent): void {
+  ev.preventDefault();
   const items = [...overlay.querySelectorAll<HTMLElement>('button:not(:disabled), a[href]')].filter(
-    (el) => el.checkVisibility?.({ checkOpacity: true, checkVisibilityCSS: true }) ?? true,
+    (el) => el.checkVisibility?.({ checkVisibilityCSS: true }) ?? true,
   );
-  if (items.length === 0) return;
-  const first = items[0];
-  const last = items[items.length - 1];
-  const current = document.activeElement;
-  const inside = current instanceof HTMLElement && items.includes(current);
-  if (ev.shiftKey && (!inside || current === first)) {
-    ev.preventDefault();
-    last.focus();
-  } else if (!ev.shiftKey && (!inside || current === last)) {
-    ev.preventDefault();
-    first.focus();
+  if (items.length === 0) {
+    overlay.focus({ preventScroll: true });
+    return;
   }
+  const current = document.activeElement;
+  const at = current instanceof HTMLElement ? items.indexOf(current) : -1;
+  const next = ev.shiftKey
+    ? items[(at <= 0 ? items.length : at) - 1]
+    : items[(at + 1) % items.length];
+  next.focus();
 }
 
 const CHROME_SELECTOR = '.lightbox-topbar, .lightbox-bottom, .lightbox-nav';
@@ -165,6 +166,8 @@ export function bindInteractions(s: LightboxState, actions: LightboxActions): ()
       return;
     }
     if (ev.key === 'Tab') {
+      // 键盘导航与指针活动一样唤醒栏位，焦点不会落在看不见的按钮上。
+      pokeToolbar(s);
       trapFocus(s.overlay, ev);
       return;
     }

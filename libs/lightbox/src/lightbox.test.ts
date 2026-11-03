@@ -893,6 +893,28 @@ describe('lightbox 黑盒行为', () => {
       expect(document.activeElement).toBe(items[items.length - 1]);
     });
 
+    it('栏位空闲淡出后 Shift+Tab 仍困在灯箱内并唤醒栏位', () => {
+      // 复刻 style.css 的淡出规则，让 checkVisibility 看到 opacity:0。
+      const style = document.createElement('style');
+      style.textContent =
+        '.lightbox-overlay.is-idle .lightbox-topbar, .lightbox-overlay.is-idle .lightbox-bottom, .lightbox-overlay.is-idle .lightbox-nav { opacity: 0; }';
+      document.head.append(style);
+      openSettled([
+        makeGalleryImage('/uploads/g1.webp', '一'),
+        makeGalleryImage('/uploads/g2.webp', '二'),
+      ]);
+      const overlay = getOverlay()!;
+      clickEl(button('放大'));
+      vi.advanceTimersByTime(3000);
+      expect(overlay.classList.contains('is-idle')).toBe(true);
+      overlay.focus();
+      expect(keydown({ key: 'Tab', shiftKey: true }).defaultPrevented).toBe(true);
+      expect(overlay.contains(document.activeElement)).toBe(true);
+      expect(document.activeElement).not.toBe(overlay);
+      expect(overlay.classList.contains('is-idle')).toBe(false);
+      style.remove();
+    });
+
     it('fit 态栏位常驻，放大后空闲 2.5s 才淡出，指针活动唤醒', () => {
       openSettled([
         makeGalleryImage('/uploads/i1.webp', '一'),
