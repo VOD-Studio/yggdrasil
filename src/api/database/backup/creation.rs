@@ -2,18 +2,49 @@
 
 use super::commands::pg_dump_command;
 use super::files::{
-    backup_path, rotate_auto_backups, uploads_archive_name, BACKUP_DIR, BACKUP_SIGNATURE,
+    backup_path, backup_stamp, create_new_backup_file, rotate_auto_backups, uploads_archive_name,
+    BACKUP_DIR, BACKUP_SIGNATURE,
 };
 use super::{BackupOrigin, BackupRunOutcome};
 use crate::api::database::tasks::{self, TaskKind, TaskStatus};
 use chrono::Utc;
+use std::io::Write;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// 已有备份在跑时拒绝新备份的提示（手动与自动共用）。
+pub(super) const BACKUP_BUSY: &str = "已有备份正在进行，请等待完成后再试";
+
+/// 进程内备份单飞标记：同一时刻只允许一个备份任务写 backups/。
+static BACKUP_RUNNING: AtomicBool = AtomicBool::new(false);
+
+/// 持有期间占住备份单飞标记；drop（含任务 panic 展开）时释放。
+/// [`run_backup`] 按值接收，保证每个备份任务都先拿到它。
+pub(super) struct BackupGuard(());
+
+impl BackupGuard {
+    /// 已有备份在跑时返回 None。
+    pub(super) fn try_acquire() -> Option<Self> {
+        BACKUP_RUNNING
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .ok()
+            .map(|_| Self(()))
+    }
+}
+
+impl Drop for BackupGuard {
+    fn drop(&mut self) {
+        BACKUP_RUNNING.store(false, Ordering::Release);
+    }
+}
 
 /// 定时任务入口：注册任务后执行自动备份，返回结果供调度器落库 last_run。
+/// 手动备份仍在跑时跳过本次，不注册任务。
 pub(crate) async fn run_auto_backup() -> Result<BackupRunOutcome, String> {
+    let guard = BackupGuard::try_acquire().ok_or_else(|| BACKUP_BUSY.to_string())?;
     let task_id = uuid::Uuid::new_v4().to_string();
     tasks::insert(task_id.clone(), TaskKind::Backup);
-    run_backup(&task_id, BackupOrigin::Auto).await
+    run_backup(&task_id, BackupOrigin::Auto, guard).await
 }
 
 /// 后台执行备份：pg_dump 优先，不可用回退纯 SQL；成功后按设置打包 uploads，
@@ -22,9 +53,10 @@ pub(crate) async fn run_auto_backup() -> Result<BackupRunOutcome, String> {
 pub(super) async fn run_backup(
     task_id: &str,
     origin: BackupOrigin,
+    _guard: BackupGuard,
 ) -> Result<BackupRunOutcome, String> {
     let _ = std::fs::create_dir_all(BACKUP_DIR);
-    let timestamp = Utc::now().format("%Y%m%d_%H%M%S").to_string();
+    let stamp = backup_stamp(Utc::now());
     let prefix = origin.file_prefix();
 
     // 读取备份设置（include_uploads / retention_count）；读取失败用默认值——
@@ -47,9 +79,9 @@ pub(super) async fn run_backup(
     .unwrap_or(false);
 
     let sql_result = if pg_dump_ok {
-        run_pg_dump_backup(task_id, prefix, &timestamp).await
+        run_pg_dump_backup(task_id, prefix, &stamp).await
     } else {
-        run_sql_fallback_backup(task_id, prefix, &timestamp).await
+        run_sql_fallback_backup(task_id, prefix, &stamp).await
     };
     let sql_filename = match sql_result {
         Ok(f) => f,
@@ -110,7 +142,7 @@ pub(super) async fn run_backup(
 /// 阻塞 IO + CPU（gzip），调用方须放 spawn_blocking。
 /// uploads_dir 显式传入（而非写死相对路径）便于测试注入临时目录。
 fn create_uploads_tarball(uploads_dir: &Path, out_path: &Path) -> std::io::Result<()> {
-    let file = std::fs::File::create(out_path)?;
+    let file = create_new_backup_file(out_path)?;
     let gz = flate2::write::GzEncoder::new(file, flate2::Compression::default());
     let mut builder = tar::Builder::new(gz);
     if uploads_dir.is_dir() {
@@ -132,11 +164,7 @@ fn create_uploads_tarball(uploads_dir: &Path, out_path: &Path) -> std::io::Resul
     gz.finish()?;
     Ok(())
 }
-async fn run_pg_dump_backup(
-    task_id: &str,
-    prefix: &str,
-    timestamp: &str,
-) -> Result<String, String> {
+async fn run_pg_dump_backup(task_id: &str, prefix: &str, stamp: &str) -> Result<String, String> {
     tasks::update(
         task_id,
         "正在用 pg_dump 导出",
@@ -146,7 +174,7 @@ async fn run_pg_dump_backup(
         None,
         None,
     );
-    let filename = format!("{prefix}_{timestamp}.sql");
+    let filename = format!("{prefix}_{stamp}.sql");
     let path = backup_path(&filename);
     let db_url = match std::env::var("DATABASE_URL") {
         Ok(u) if !u.is_empty() => u,
@@ -170,8 +198,25 @@ async fn run_pg_dump_backup(
     header.push_str(&format!("-- created_at: {}\n", Utc::now()));
     header.push_str("-- mode: pg_dump\n");
 
-    // 先写签名头，再追加 pg_dump 输出。
-    if let Err(e) = std::fs::write(&path, &header) {
+    // 独占新建后先写签名头，再把同一文件句柄交给 pg_dump 续写：
+    // 子进程继承的文件偏移就在签名头之后。
+    let mut stdout_file = match create_new_backup_file(&path) {
+        Ok(f) => f,
+        Err(e) => {
+            let msg = format!("无法写入备份目录: {e}");
+            tasks::update(
+                task_id,
+                "写入备份文件失败",
+                100,
+                TaskStatus::Failed,
+                None,
+                Some(msg.clone()),
+                None,
+            );
+            return Err(msg);
+        }
+    };
+    if let Err(e) = stdout_file.write_all(header.as_bytes()) {
         let msg = format!("无法写入备份目录: {e}");
         tasks::update(
             task_id,
@@ -184,23 +229,6 @@ async fn run_pg_dump_backup(
         );
         return Err(msg);
     }
-
-    let stdout_file = match std::fs::OpenOptions::new().append(true).open(&path) {
-        Ok(f) => f,
-        Err(e) => {
-            let msg = e.to_string();
-            tasks::update(
-                task_id,
-                "pg_dump 启动失败",
-                100,
-                TaskStatus::Failed,
-                None,
-                Some(msg.clone()),
-                None,
-            );
-            return Err(msg);
-        }
-    };
     // pg_dump 导出可持续数十秒到数分钟，整个子进程生命周期（spawn + wait_with_output）
     // 移入 spawn_blocking，避免阻塞 tokio worker 线程。注意 stdout 重定向到备份文件，
     // 故不能用 .output()（它会用 piped 覆盖 stdout 配置）；保留 spawn() + wait_with_output()
@@ -275,7 +303,7 @@ async fn run_pg_dump_backup(
 async fn run_sql_fallback_backup(
     task_id: &str,
     prefix: &str,
-    timestamp: &str,
+    stamp: &str,
 ) -> Result<String, String> {
     tasks::update(
         task_id,
@@ -286,7 +314,7 @@ async fn run_sql_fallback_backup(
         None,
         None,
     );
-    let filename = format!("{prefix}_{timestamp}_sqlfallback.sql");
+    let filename = format!("{prefix}_{stamp}_sqlfallback.sql");
     let path = backup_path(&filename);
 
     let client = match crate::db::pool::get_conn().await {
@@ -366,7 +394,7 @@ async fn run_sql_fallback_backup(
         );
     }
 
-    if let Err(e) = std::fs::write(&path, out) {
+    if let Err(e) = create_new_backup_file(&path).and_then(|mut f| f.write_all(out.as_bytes())) {
         let msg = format!("无法写入备份目录: {e}");
         tasks::update(
             task_id,
@@ -385,6 +413,20 @@ async fn run_sql_fallback_backup(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn backup_guard_is_single_flight_until_dropped() {
+        let guard = BackupGuard::try_acquire().expect("空闲时应能拿到备份标记");
+        assert!(
+            BackupGuard::try_acquire().is_none(),
+            "已有备份在跑时必须拒绝第二个"
+        );
+        drop(guard);
+        assert!(
+            BackupGuard::try_acquire().is_some(),
+            "上一个备份结束后应能再次发起"
+        );
+    }
 
     #[test]
     fn tarball_excludes_cache_and_gitkeep() {

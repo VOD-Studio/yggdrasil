@@ -2,7 +2,8 @@
 
 use super::BackupInfo;
 use crate::api::error::AppError;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
+use std::fs::File;
 use std::path::{Component, Path, PathBuf};
 
 /// 与 uploads/ 同级且被 Git 忽略的备份目录。
@@ -16,6 +17,23 @@ pub(super) const BACKUP_SIGNATURE: &str = "-- YGGDRASIL BACKUP v1";
 pub(super) fn uploads_archive_name(sql_filename: &str) -> String {
     format!("{}_uploads.tar.gz", sql_filename.trim_end_matches(".sql"))
 }
+
+/// 备份文件名戳：`YYYYmmdd_HHMMSS_mmm_<6 位十六进制随机>`。
+/// 毫秒 + 随机后缀让同一时刻（含多实例共享 backups/）的两次备份不会撞名；
+/// 各段定宽，字典序仍即时间序（自动轮转依赖这一点）。
+pub(super) fn backup_stamp(now: DateTime<Utc>) -> String {
+    let random = uuid::Uuid::new_v4().simple().to_string();
+    format!("{}_{}", now.format("%Y%m%d_%H%M%S_%3f"), &random[..6])
+}
+
+/// 独占新建备份产物：目标已存在时报错而不是截断，杜绝两个任务写同一文件。
+pub(super) fn create_new_backup_file(path: &Path) -> std::io::Result<File> {
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+}
+
 /// 从自动备份 SQL 文件名列表挑出超出保留份数、应删除的最旧者。
 /// 文件名内嵌定宽时间戳，字典序即时间序。纯函数便于单测。
 fn select_expired_auto_backups(names: &[String], keep: usize) -> Vec<String> {
@@ -381,6 +399,48 @@ mod tests {
             uploads_archive_name("auto_20260810_040000_sqlfallback.sql"),
             "auto_20260810_040000_sqlfallback_uploads.tar.gz"
         );
+    }
+
+    #[test]
+    fn backup_stamp_is_unique_within_same_instant_and_sorts_by_time() {
+        use chrono::TimeZone;
+        let t0 = Utc
+            .with_ymd_and_hms(2026, 11, 3, 4, 0, 0)
+            .single()
+            .expect("合法时间");
+        let first = backup_stamp(t0);
+        let second = backup_stamp(t0);
+        assert_ne!(first, second, "同一时刻的两次备份不得撞名");
+        assert!(first.starts_with("20261103_040000_000_"), "{first}");
+
+        // 晚 1 毫秒的备份必须排在后面，否则自动轮转会删错文件。
+        let later = backup_stamp(t0 + chrono::Duration::milliseconds(1));
+        let names = vec![format!("auto_{later}.sql"), format!("auto_{first}.sql")];
+        assert_eq!(
+            select_expired_auto_backups(&names, 1),
+            vec![format!("auto_{first}.sql")]
+        );
+    }
+
+    #[test]
+    fn create_new_backup_file_refuses_existing_file() {
+        let dir = std::env::temp_dir().join(format!(
+            "yggdrasil_backup_create_new_{}_{}",
+            std::process::id(),
+            uuid::Uuid::new_v4().simple()
+        ));
+        std::fs::create_dir_all(&dir).expect("创建测试目录");
+        let path = dir.join("backup.sql");
+        std::fs::write(&path, b"existing").expect("写测试文件");
+
+        let err = create_new_backup_file(&path).expect_err("已存在的备份不得被重新打开");
+        assert_eq!(err.kind(), std::io::ErrorKind::AlreadyExists);
+        assert_eq!(
+            std::fs::read(&path).expect("读回"),
+            b"existing",
+            "原内容不得被截断"
+        );
+        std::fs::remove_dir_all(&dir).expect("清理测试目录");
     }
 
     #[test]

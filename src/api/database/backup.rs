@@ -107,19 +107,21 @@ pub(crate) struct BackupRunOutcome {
     pub warning: Option<String>,
 }
 
-/// 发起备份，立即返回 task_id，后台任务执行。
+/// 发起备份，立即返回 task_id，后台任务执行。已有备份在跑时拒绝。
 #[server(CreateBackup, endpoint = "create_backup", input = leptos::server_fn::codec::Json)]
 pub async fn create_backup() -> Result<String, ApiError> {
     let _user = get_current_admin_user().await?;
 
     #[cfg(feature = "server")]
     {
+        let guard = creation::BackupGuard::try_acquire()
+            .ok_or_else(|| AppError::BadRequest(creation::BACKUP_BUSY.to_string()))?;
         let task_id = uuid::Uuid::new_v4().to_string();
         tasks::insert(task_id.clone(), TaskKind::Backup);
         let tid = task_id.clone();
         tokio::spawn(async move {
             // 手动触发：进度经任务表轮询展示，返回值无人消费。
-            let _ = creation::run_backup(&tid, BackupOrigin::Manual).await;
+            let _ = creation::run_backup(&tid, BackupOrigin::Manual, guard).await;
         });
         Ok(task_id)
     }
