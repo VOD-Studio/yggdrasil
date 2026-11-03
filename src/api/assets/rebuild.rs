@@ -33,16 +33,17 @@ struct ScannedFile {
 /// 递归收集 dir 下的图片文件（跳过以 `.` 开头的目录/文件）。
 /// `out` 收集可读文件；`unreadable` 收集磁盘存在但尺寸读取失败的路径
 /// （保护其 DB 行不被删除步骤误删——见 issue #30）。
+/// 任一目录或目录项读取失败即返回出错路径：扫描不完整时后续删除步骤
+/// 会把未扫到的素材当成已消失，不能把读取失败当作空目录。
 fn walk_images(
     dir: &std::path::Path,
     base: &std::path::Path,
     out: &mut Vec<ScannedFile>,
     unreadable: &mut Vec<String>,
-) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
+) -> Result<(), (std::path::PathBuf, std::io::Error)> {
+    let entries = std::fs::read_dir(dir).map_err(|e| (dir.to_path_buf(), e))?;
+    for entry in entries {
+        let entry = entry.map_err(|e| (dir.to_path_buf(), e))?;
         let name = entry.file_name();
         let Some(name_str) = name.to_str() else {
             continue;
@@ -52,7 +53,7 @@ fn walk_images(
         }
         let path = entry.path();
         if path.is_dir() {
-            walk_images(&path, base, out, unreadable);
+            walk_images(&path, base, out, unreadable)?;
             continue;
         }
         let ext = name_str.rsplit('.').next().unwrap_or("");
@@ -86,6 +87,7 @@ fn walk_images(
             height: h as i32,
         });
     }
+    Ok(())
 }
 
 /// 全量重建素材索引。
@@ -102,15 +104,18 @@ pub(crate) async fn rebuild_assets_index_impl() -> Result<RebuildAssetsResponse,
     use crate::db::pool::get_conn;
 
     // 磁盘扫描 + header 尺寸读取是 IO 密集同步操作，移到阻塞线程池。
-    let (scanned, unreadable) = tokio::task::spawn_blocking(|| {
+    let scan = tokio::task::spawn_blocking(|| {
         let base = std::path::Path::new("uploads");
         let mut files = Vec::new();
         let mut unreadable = Vec::new();
-        walk_images(base, base, &mut files, &mut unreadable);
-        (files, unreadable)
+        walk_images(base, base, &mut files, &mut unreadable).map(|()| (files, unreadable))
     })
     .await
     .map_err(|_| AppError::Internal("素材扫描任务失败"))?;
+    let (scanned, unreadable) = scan.map_err(|(path, e)| {
+        tracing::error!("Rebuild: scan {} failed: {}", path.display(), e);
+        AppError::Internal("素材目录读取失败，已中止重建")
+    })?;
 
     let mut client = get_conn().await.map_err(AppError::db_conn)?;
     let tx = client.transaction().await.map_err(AppError::tx)?;
@@ -245,4 +250,21 @@ pub(crate) async fn rebuild_assets_index_impl() -> Result<RebuildAssetsResponse,
         ref_count,
         skipped: skipped_count,
     })
+}
+
+#[cfg(all(test, feature = "server"))]
+mod tests {
+    use super::walk_images;
+
+    /// 目录不可读（未挂载）必须报错，不能当成空扫描进而删除整张素材表。
+    #[test]
+    fn walk_images_fails_on_missing_directory() {
+        let base =
+            std::env::temp_dir().join(format!("ygg-rebuild-missing-{}", uuid::Uuid::new_v4()));
+        let mut files = Vec::new();
+        let mut unreadable = Vec::new();
+        let (path, err) = walk_images(&base, &base, &mut files, &mut unreadable).unwrap_err();
+        assert_eq!(path, base);
+        assert_eq!(err.kind(), std::io::ErrorKind::NotFound);
+    }
 }
