@@ -114,6 +114,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "032",
         include_str!("../../migrations/032_comment_avatar_asset_refs.sql"),
     ),
+    (
+        "033",
+        include_str!("../../migrations/033_mcp_token_generation.sql"),
+    ),
     // 新增迁移在此追加，同时在 migrations/ 下创建对应 .sql 文件。
 ];
 

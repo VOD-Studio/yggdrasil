@@ -100,8 +100,9 @@ pub async fn create_mcp_token(
         let row = client
             .query_one(
                 "INSERT INTO mcp_tokens \
-                    (id, user_id, name, scope, token_enc, token_hash, expires_at, notes_read, notes_write, notebook_ids) \
-                 VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10) \
+                    (id, user_id, name, scope, token_enc, token_hash, expires_at, notes_read, notes_write, notebook_ids, generation) \
+                 SELECT $1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, session_generation \
+                 FROM users WHERE id = $2 \
                  RETURNING id::text, user_id, name, scope, created_at, expires_at, \
                            last_used_at, revoked_at, notes_read, notes_write, notebook_ids",
                 &[&id, &admin.id, &name, &scope_str, &enc, &hash, &expires_at, &notes.read, &notes.write, &notes.notebook_ids],
