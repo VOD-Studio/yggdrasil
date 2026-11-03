@@ -389,10 +389,14 @@ async fn execute_one(
 ) -> Result<SqlResult, ApiError> {
     let statement_type = statement_type_name(stmt);
     let read_only = is_read_only(stmt);
+    // 只有查询（SELECT/VALUES/WITH…）是表表达式，能加 EXPLAIN 前缀或包成子查询；
+    // SHOW / EXPLAIN 只能原样执行，`EXPLAIN EXPLAIN …`、`FROM (SHOW …)` 都是语法错误。
+    let is_query = matches!(stmt, sqlparser::ast::Statement::Query(_));
+    let stmt_sql = stmt_sql.trim_end_matches(';');
 
-    if with_explain && read_only {
+    if with_explain && read_only && is_query {
         // EXPLAIN 模式：包裹单条语句取执行计划，取首列文本拼接
-        let explain_sql = format!("EXPLAIN {}", stmt_sql.trim_end_matches(';'));
+        let explain_sql = format!("EXPLAIN {stmt_sql}");
         let rows = match client.query(&explain_sql, &[]).await {
             Ok(rows) => rows,
             Err(error) => {
@@ -419,15 +423,16 @@ async fn execute_one(
 
     if read_only {
         // 只读：取结果集。列名从第一行取（空结果集时无列名，前端容错）。
-        // 包成子查询并追加 LIMIT MAX_ROWS+1，让 DB 只回传这么多行——避免
+        // 查询包成子查询并追加 LIMIT MAX_ROWS+1，让 DB 只回传这么多行——避免
         // `SELECT * FROM big_table` 把整张表物化进内存（仅 statement_timeout 兜底，M11）。
         // +1 行供客户端检测截断：实际行数 > MAX_ROWS 时 truncated=true。
         // 内层 SQL 已带 LIMIT 时外层 LIMIT 取更小值，结果正确；列名随子查询透传。
-        let limited_sql = format!(
-            "SELECT * FROM ({}) AS q LIMIT {}",
-            stmt_sql.trim_end_matches(';'),
-            MAX_ROWS + 1
-        );
+        // SHOW / EXPLAIN 输出由服务端生成、行数有界，原样执行后同样按 MAX_ROWS 截断。
+        let limited_sql = if is_query {
+            format!("SELECT * FROM ({stmt_sql}) AS q LIMIT {}", MAX_ROWS + 1)
+        } else {
+            stmt_sql.to_string()
+        };
         let rows = match client.query(&limited_sql, &[]).await {
             Ok(rows) => rows,
             Err(error) => {
@@ -853,5 +858,58 @@ mod tests {
     fn format_sql_error_truncates_long_messages() {
         let message = format_sql_error("x".repeat(2_500));
         assert_eq!(message.chars().count(), 2_000);
+    }
+
+    #[test]
+    #[ignore = "requires DATABASE_URL"]
+    fn sql_console_database_runs_show_and_explain_statements() {
+        crate::db::TEST_DATABASE_RUNTIME.block_on(show_and_explain_impl());
+    }
+
+    /// SHOW / EXPLAIN 原样执行出结果；查询在两种模式下仍各自走 EXPLAIN 前缀与 LIMIT 包裹。
+    async fn show_and_explain_impl() {
+        let client = get_conn().await.unwrap();
+        let run = |sql: &'static str, with_explain: bool| {
+            let client = &client;
+            async move {
+                let stmt = parse(sql).remove(0);
+                execute_one(
+                    client,
+                    &stmt,
+                    &stmt.to_string(),
+                    with_explain,
+                    std::time::Instant::now,
+                )
+                .await
+                .unwrap()
+            }
+        };
+
+        for with_explain in [false, true] {
+            let show = run("SHOW search_path", with_explain).await;
+            assert_eq!(show.error, None);
+            assert_eq!(show.columns, ["search_path"]);
+            assert_eq!(show.rows.len(), 1);
+
+            let all = run("SHOW ALL;", with_explain).await;
+            assert_eq!(all.error, None);
+            assert_eq!(all.columns, ["name", "setting", "description"]);
+            assert!(all.rows.len() > 1);
+
+            let plan = run("EXPLAIN SELECT 1", with_explain).await;
+            assert_eq!(plan.error, None);
+            assert_eq!(plan.columns, ["QUERY PLAN"]);
+            assert_eq!(plan.explain, None);
+        }
+
+        let explained = run("SELECT 1 AS one", true).await;
+        assert_eq!(explained.error, None);
+        assert!(explained.explain.unwrap().contains("Result"));
+
+        let selected = run("SELECT generate_series(1, 600) AS n", false).await;
+        assert_eq!(selected.error, None);
+        assert_eq!(selected.columns, ["n"]);
+        assert_eq!(selected.rows.len(), MAX_ROWS);
+        assert!(selected.truncated);
     }
 }
