@@ -11,6 +11,7 @@ done
 export DATABASE_URL="postgresql://${PGUSER}:${PGPASSWORD}@${PGHOST}:${PGPORT}/ygg_mcp_test"
 cargo test --locked private_post_workflow_database -- --ignored
 cargo test --locked post_write_service_database -- --ignored
+cargo test --locked export_sql_database_ -- --ignored
 cargo test --locked asset_refs_database_ -- --ignored
 export DATABASE_URL="postgresql://${PGUSER}:${PGPASSWORD}@${PGHOST}:${PGPORT}/ygg_notes_test"
 cargo test --locked notes_database_ -- --ignored
