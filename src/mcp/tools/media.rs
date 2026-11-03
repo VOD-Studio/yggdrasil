@@ -108,7 +108,7 @@ impl crate::mcp::server::YggMcpServer {
     }
 
     #[tool(
-        description = "永久删除一张无引用素材（文件、记录及缓存）。文章（含草稿与回收站）、存活评论或头像引用中的素材拒绝删除。需要 admin 作用域。"
+        description = "永久删除一张无引用素材（文件、记录及缓存）。文章（含草稿与回收站）、评论（含回收站）或头像引用中的素材拒绝删除。需要 admin 作用域。"
     )]
     async fn delete_asset(
         &self,

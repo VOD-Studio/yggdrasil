@@ -1,6 +1,6 @@
 //! 素材删除与孤儿清理接口。
 //!
-//! 删除保护：被任何文章（含回收站文章）或存活评论引用的素材禁删；
+//! 删除保护：被任何文章（含回收站文章）、笔记、评论（含回收站评论）或头像引用的素材禁删；
 //! 孤儿素材硬删除（文件 + DB 行 + 派生缓存）。一键清理仅作用于
 //! 无引用且超过 7 天保护窗的素材（保护未保存草稿的引用）。
 //! Leptos server function，注册在 `/api` 路径下，仅 admin 可用。
@@ -67,7 +67,7 @@ pub(crate) async fn delete_asset_impl(id: String) -> Result<AssetOpResponse, Api
     use crate::models::asset::{AssetRef, AssetRefPostStatus};
 
     let mut client = get_conn().await.map_err(AppError::db_conn)?;
-    // 锁住素材行，令并发文章保存的 asset_refs 外键检查在删除提交前排队，
+    // 锁住素材行，令并发文章保存或评论/头像写入在删除提交前排队，
     // 避免引用检查后插入新引用再被 ON DELETE CASCADE 静默移除。
     let tx = client.transaction().await.map_err(AppError::tx)?;
 
@@ -226,7 +226,7 @@ pub(crate) async fn batch_delete_assets_impl(
 
     let locked = tx
         .query(
-            "SELECT id FROM assets WHERE id = ANY($1) FOR UPDATE",
+            "SELECT id FROM assets WHERE id = ANY($1) ORDER BY id FOR UPDATE",
             &[&uuids],
         )
         .await
@@ -332,6 +332,7 @@ pub(crate) async fn purge_orphan_assets_impl(
                 "SELECT a.id FROM assets a \
                  WHERE NOT {asset_ref} \
                    AND a.created_at < NOW() - make_interval(days => $1) \
+                 ORDER BY a.id \
                  FOR UPDATE",
                 asset_ref = super::ASSET_REF_CLAUSE
             ),

@@ -186,6 +186,7 @@ pub async fn create_comment(
         })
         .await
         .map_err(|_| AppError::Internal("Markdown 渲染任务失败"))?;
+        let asset_paths = crate::api::posts::helpers::extract_asset_paths(&content_html, None);
         let author_name_safe = crate::utils::html::escape_html(final_name.trim());
         let author_url_safe = final_url
             .as_ref()
@@ -234,6 +235,16 @@ pub async fn create_comment(
             ));
         }
 
+        // 锁定正文引用的素材；任一缺失则拒绝，避免写入指向已删素材的评论。
+        let locked = crate::api::assets::refs::lock_assets_by_path(&tx, &asset_paths).await?;
+        if locked.missing {
+            tx.rollback().await.ok();
+            return Ok(CommentResponse::error(
+                "missing_asset",
+                crate::api::assets::refs::MISSING_COMMENT_ASSET.to_string(),
+            ));
+        }
+
         // 登录用户直发 approved（记录 approved_at）；匿名进入 pending 等待审核。
         let initial_status: &str = if session_user.is_some() {
             "approved"
@@ -271,9 +282,10 @@ pub async fn create_comment(
             .await
             .map_err(AppError::query)?;
 
-        tx.commit().await.map_err(AppError::query)?;
-
         let comment_id: i64 = row.get(0);
+        crate::api::assets::refs::insert_comment_refs(&tx, comment_id, &locked.ids).await?;
+
+        tx.commit().await.map_err(AppError::query)?;
 
         // 响应头像：登录用户用账号头像（未设置回退邮箱 Gravatar），匿名用邮箱 Gravatar。
         let avatar_url = match &session_user {

@@ -181,17 +181,16 @@ pub(crate) async fn list_assets_impl(
             });
         }
 
-        // 2. 存活评论（content_html 子串匹配；所属文章信息供链接与展示）。
+        // 2. 评论（comment_asset_refs，含回收站评论；所属文章信息供链接与展示）。
         let comment_rows = client
             .query(
-                "SELECT a.id AS asset_id, c.id AS comment_id, c.author_name, \
+                "SELECT r.asset_id AS asset_id, c.id AS comment_id, c.author_name, \
                         p.id AS post_id, p.title AS post_title, p.slug AS post_slug, \
                         p.status AS post_status, p.deleted_at AS post_deleted_at \
-                 FROM assets a \
-                 JOIN comments c ON c.deleted_at IS NULL \
-                     AND c.content_html LIKE '%' || a.path || '%' \
+                 FROM comment_asset_refs r \
+                 JOIN comments c ON c.id = r.comment_id \
                  JOIN posts p ON p.id = c.post_id \
-                 WHERE a.id = ANY($1) \
+                 WHERE r.asset_id = ANY($1) \
                  ORDER BY c.id",
                 &[&ids],
             )
@@ -219,10 +218,10 @@ pub(crate) async fn list_assets_impl(
         // 3. 用户头像（label = display_name 回退 username）。
         let user_rows = client
             .query(
-                "SELECT a.id AS asset_id, u.id AS user_id, u.username, u.display_name \
-                 FROM assets a \
-                 JOIN users u ON u.avatar_url = '/uploads/' || a.path \
-                 WHERE a.id = ANY($1) \
+                "SELECT r.asset_id AS asset_id, u.id AS user_id, u.username, u.display_name \
+                 FROM user_avatar_asset_refs r \
+                 JOIN users u ON u.id = r.user_id \
+                 WHERE r.asset_id = ANY($1) \
                  ORDER BY u.id",
                 &[&ids],
             )
@@ -247,10 +246,10 @@ pub(crate) async fn list_assets_impl(
         // 4. 友链头像。
         let friend_rows = client
             .query(
-                "SELECT a.id AS asset_id, f.id AS friend_id, f.name \
-                 FROM assets a \
-                 JOIN friend_links f ON f.avatar_url = '/uploads/' || a.path \
-                 WHERE a.id = ANY($1) \
+                "SELECT r.asset_id AS asset_id, f.id AS friend_id, f.name \
+                 FROM friend_avatar_asset_refs r \
+                 JOIN friend_links f ON f.id = r.friend_id \
+                 WHERE r.asset_id = ANY($1) \
                  ORDER BY f.id",
                 &[&ids],
             )

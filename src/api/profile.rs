@@ -146,7 +146,7 @@ pub async fn update_profile(
             Err(e) => return Ok(fail(e)),
         };
 
-        let client = get_conn().await.map_err(AppError::db_conn)?;
+        let mut client = get_conn().await.map_err(AppError::db_conn)?;
 
         // 邮箱唯一性预检（DB 唯一索引仍是最终兜底）。
         let email_taken: bool = client
@@ -161,13 +161,35 @@ pub async fn update_profile(
             return Ok(fail("邮箱已被占用".to_string()));
         }
 
-        client
-            .execute(
-                "UPDATE users SET email = $2, display_name = $3, avatar_url = $4 WHERE id = $1",
-                &[&user.id, &email, &display_name, &avatar_url],
+        // 资料与头像引用在同一事务写入；头像素材先加锁核对，防止与素材删除竞态。
+        let tx = client.transaction().await.map_err(AppError::tx)?;
+        let current: Option<String> = tx
+            .query_one(
+                "SELECT avatar_url FROM users WHERE id = $1 FOR UPDATE",
+                &[&user.id],
             )
             .await
-            .map_err(AppError::query)?;
+            .map_err(AppError::query)?
+            .get(0);
+        let paths: Vec<String> = crate::api::assets::refs::avatar_asset_path(avatar_url.as_deref())
+            .into_iter()
+            .collect();
+        let locked = crate::api::assets::refs::lock_assets_by_path(&tx, &paths).await?;
+        // 未改动的旧头像即使已失效也照常保存其余资料，只是不建引用行。
+        if locked.missing && avatar_url != current {
+            return Ok(fail(
+                crate::api::assets::refs::MISSING_AVATAR_ASSET.to_string(),
+            ));
+        }
+        tx.execute(
+            "UPDATE users SET email = $2, display_name = $3, avatar_url = $4 WHERE id = $1",
+            &[&user.id, &email, &display_name, &avatar_url],
+        )
+        .await
+        .map_err(AppError::tx)?;
+        crate::api::assets::refs::sync_user_avatar_ref(&tx, user.id, locked.ids.first().copied())
+            .await?;
+        tx.commit().await.map_err(AppError::tx)?;
 
         // 资料字段缓存在 SESSION_CACHE 的 SessionUser 里，同步刷新当前 token
         // 的缓存项，避免 get_current_user 在缓存 TTL 内返回旧值。同用户的其他

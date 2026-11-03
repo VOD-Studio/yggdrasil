@@ -39,7 +39,8 @@ pub struct Asset {
 /// `api::assets::ASSET_REF_CLAUSE` 一一对应：
 /// 文章引用来自 asset_refs 表（正文 HTML + 封面，含草稿与回收站文章）；
 /// 笔记引用来自 note_asset_refs（包含所有历史版本）；
-/// 评论/头像引用在查询时按素材路径直接匹配（存活评论、用户头像、友链头像）。
+/// 评论引用来自 comment_asset_refs（含回收站评论），头像引用来自
+/// user_avatar_asset_refs / friend_avatar_asset_refs。
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum AssetRef {
@@ -52,7 +53,7 @@ pub enum AssetRef {
         slug: String,
         status: AssetRefPostStatus,
     },
-    /// 存活评论引用（content_html 子串匹配；评论无深链，展示作者 + 所属文章）。
+    /// 评论引用（comment_asset_refs，含回收站评论；评论无深链，展示作者 + 所属文章）。
     Comment {
         comment_id: i64,
         author_name: String,

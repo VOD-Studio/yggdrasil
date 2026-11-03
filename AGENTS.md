@@ -34,7 +34,7 @@ Yggdrasil is a self-hosted blog + CMS + notes/knowledge base: Rust 2021, Leptos 
 - `src/pages/`, `src/components/` (`ui/` primitives), `src/hooks/`, `src/bridges/` (JS interop), `src/context.rs` (`UserContext`), `src/theme.rs`, `src/navigation.rs` (programmatic navigation + view-transition handshake with `window.__routeTransitions`), `src/request_ctx.rs` (request headers/extensions/status in server fns and SSR).
 - `src/tasks/`: background jobs (purges, backups, cache sync, sysinfo); `src/infra/`: Docker runner, WebP.
 - `libs/`: Bun workspace — `@yggdrasil/{shared, core, tiptap-editor, codemirror-editor, lightbox, xterm-terminal}`. `shared` is inlined at compile time; packages never import each other at runtime. Package builds call `libs/vite-iife.ts`; tests use `libs/vitest-base.ts`; scripts resolve libs deps via `scripts/libs-modules.ts`.
-- `migrations/`: `NNN_description.sql` (latest `031_session_generation_snapshot.sql`).
+- `migrations/`: `NNN_description.sql` (latest `032_comment_avatar_asset_refs.sql`).
 - `styles/` + `input.css`: Tailwind v4 CSS-first (no tailwind config file); import order matters.
 - `scripts/`: Bun TypeScript browser regressions, release assembly (`build-release.ts`, `test-release-split.ts`), `test-databases.sh`, asset generators, `deploy.fish` (build the amd64 image here with CN mirrors and ship it over ssh to xun/rua, same role-aware flow and rollback as the CI deploy jobs). No EdgeOne prefetch: `CreatePrefetchTask` pulls identity via Range requests and EdgeOne then serves its own, 15–25% larger brotli for a year.
 - `docker/`: deployment compose files and code-runner images (`docker/build-runners.sh`).

@@ -92,6 +92,7 @@ pub async fn create_friend_link(
 ) -> Result<FriendLink, ApiError> {
     #[cfg(feature = "server")]
     {
+        use crate::api::assets::refs;
         use crate::api::auth::get_current_admin_user;
         use crate::api::error::AppError;
         use crate::db::pool::get_conn;
@@ -100,8 +101,16 @@ pub async fn create_friend_link(
         let avatar_url = validate_link(&name, &url, avatar_url.as_deref(), &description)?;
         let (name, url, description) = trim_fields(name, url, description);
 
-        let client = get_conn().await.map_err(AppError::db_conn)?;
-        let row = client
+        let mut client = get_conn().await.map_err(AppError::db_conn)?;
+        let tx = client.transaction().await.map_err(AppError::tx)?;
+        let paths: Vec<String> = refs::avatar_asset_path(avatar_url.as_deref())
+            .into_iter()
+            .collect();
+        let locked = refs::lock_assets_by_path(&tx, &paths).await?;
+        if locked.missing {
+            return Err(AppError::BadRequest(refs::MISSING_AVATAR_ASSET.to_string()).into());
+        }
+        let row = tx
             .query_one(
                 "INSERT INTO friend_links \
                     (name, url, avatar_url, description, sort_order) \
@@ -111,7 +120,10 @@ pub async fn create_friend_link(
                 &[&name, &url, &avatar_url, &description, &sort_order],
             )
             .await
-            .map_err(AppError::query)?;
+            .map_err(AppError::tx)?;
+        let id: i32 = row.get("id");
+        refs::sync_friend_avatar_ref(&tx, id, locked.ids.first().copied()).await?;
+        tx.commit().await.map_err(AppError::tx)?;
         invalidate_friend_links_views();
         Ok(row_to_friend_link(&row))
     }
@@ -134,6 +146,7 @@ pub async fn update_friend_link(
 ) -> Result<FriendLink, ApiError> {
     #[cfg(feature = "server")]
     {
+        use crate::api::assets::refs;
         use crate::api::auth::get_current_admin_user;
         use crate::api::error::AppError;
         use crate::db::pool::get_conn;
@@ -142,9 +155,29 @@ pub async fn update_friend_link(
         let avatar_url = validate_link(&name, &url, avatar_url.as_deref(), &description)?;
         let (name, url, description) = trim_fields(name, url, description);
 
-        let client = get_conn().await.map_err(AppError::db_conn)?;
-        let row = client
+        let mut client = get_conn().await.map_err(AppError::db_conn)?;
+        let tx = client.transaction().await.map_err(AppError::tx)?;
+        let Some(current) = tx
             .query_opt(
+                "SELECT avatar_url FROM friend_links WHERE id = $1 FOR UPDATE",
+                &[&id],
+            )
+            .await
+            .map_err(AppError::query)?
+        else {
+            return Err(AppError::NotFound("友链不存在").into());
+        };
+        let current: Option<String> = current.get(0);
+        let paths: Vec<String> = refs::avatar_asset_path(avatar_url.as_deref())
+            .into_iter()
+            .collect();
+        let locked = refs::lock_assets_by_path(&tx, &paths).await?;
+        // 后台排序会对每条友链重发原头像：未改动的失效头像不阻止保存，只是不建引用行。
+        if locked.missing && avatar_url != current {
+            return Err(AppError::BadRequest(refs::MISSING_AVATAR_ASSET.to_string()).into());
+        }
+        let row = tx
+            .query_one(
                 "UPDATE friend_links \
                  SET name = $2, url = $3, avatar_url = $4, description = $5, \
                      sort_order = $6, is_active = $7, updated_at = NOW() \
@@ -162,10 +195,9 @@ pub async fn update_friend_link(
                 ],
             )
             .await
-            .map_err(AppError::query)?;
-        let Some(row) = row else {
-            return Err(AppError::NotFound("友链不存在").into());
-        };
+            .map_err(AppError::tx)?;
+        refs::sync_friend_avatar_ref(&tx, id, locked.ids.first().copied()).await?;
+        tx.commit().await.map_err(AppError::tx)?;
         invalidate_friend_links_views();
         Ok(row_to_friend_link(&row))
     }

@@ -8,27 +8,26 @@
 
 /// 素材引用判定 SQL 片段（表别名固定为 `a`，即 assets）。
 ///
-/// 引用来源包括文章关联（`asset_refs`）、存活评论 HTML、用户头像和友链头像。
-/// 文章关联由索引重建维护；后三者保存的是直接 URL，因此在查询时按素材路径判断。
+/// 五类引用都是外键引用表：文章（`asset_refs`）、笔记（`note_asset_refs`）、
+/// 评论（`comment_asset_refs`，含回收站评论）、用户头像与友链头像。
 #[cfg(feature = "server")]
 pub(crate) const ASSET_REF_CLAUSE: &str =
     "(EXISTS (SELECT 1 FROM asset_refs r WHERE r.asset_id = a.id) \
      OR EXISTS (SELECT 1 FROM note_asset_refs r WHERE r.asset_id = a.id) \
-     OR EXISTS (SELECT 1 FROM comments c \
-               WHERE c.deleted_at IS NULL AND c.content_html LIKE '%' || a.path || '%') \
-     OR EXISTS (SELECT 1 FROM users u WHERE u.avatar_url = '/uploads/' || a.path) \
-     OR EXISTS (SELECT 1 FROM friend_links f WHERE f.avatar_url = '/uploads/' || a.path))";
+     OR EXISTS (SELECT 1 FROM comment_asset_refs r WHERE r.asset_id = a.id) \
+     OR EXISTS (SELECT 1 FROM user_avatar_asset_refs r WHERE r.asset_id = a.id) \
+     OR EXISTS (SELECT 1 FROM friend_avatar_asset_refs r WHERE r.asset_id = a.id))";
 
-/// 存活评论引用判定，供单删接口返回更具体的业务提示。
+/// 评论引用判定（含回收站评论），供单删接口返回更具体的业务提示。
 #[cfg(feature = "server")]
-pub(crate) const COMMENT_REF_CLAUSE: &str = "EXISTS (SELECT 1 FROM comments c \
-     WHERE c.deleted_at IS NULL AND c.content_html LIKE '%' || a.path || '%')";
+pub(crate) const COMMENT_REF_CLAUSE: &str =
+    "EXISTS (SELECT 1 FROM comment_asset_refs r WHERE r.asset_id = a.id)";
 
-/// 直接头像引用判定，供单删接口区分评论引用。
+/// 用户头像与友链头像引用判定，供单删接口区分评论引用。
 #[cfg(feature = "server")]
 pub(crate) const AVATAR_REF_CLAUSE: &str =
-    "(EXISTS (SELECT 1 FROM users u WHERE u.avatar_url = '/uploads/' || a.path) \
-     OR EXISTS (SELECT 1 FROM friend_links f WHERE f.avatar_url = '/uploads/' || a.path))";
+    "(EXISTS (SELECT 1 FROM user_avatar_asset_refs r WHERE r.asset_id = a.id) \
+     OR EXISTS (SELECT 1 FROM friend_avatar_asset_refs r WHERE r.asset_id = a.id))";
 
 /// 素材删除与孤儿清理。
 pub mod delete;
@@ -36,6 +35,9 @@ pub mod delete;
 pub mod list;
 /// 素材索引全量重建。
 pub mod rebuild;
+/// 评论与头像的素材引用登记（写入时锁定并核对素材）。
+#[cfg(feature = "server")]
+pub(crate) mod refs;
 /// 请求与响应数据结构。
 pub mod types;
 
@@ -46,17 +48,3 @@ pub use types::{
     AssetListResponse, AssetOpResponse, BatchDeleteAssetsResponse, PurgeOrphansResponse,
     RebuildAssetsResponse,
 };
-
-#[cfg(all(test, feature = "server"))]
-mod tests {
-    use super::ASSET_REF_CLAUSE;
-
-    #[test]
-    fn asset_reference_clause_protects_profile_avatar() {
-        assert!(
-            ASSET_REF_CLAUSE.contains("users u")
-                && ASSET_REF_CLAUSE.contains("u.avatar_url = '/uploads/' || a.path"),
-            "素材引用判定必须包含用户头像路径"
-        );
-    }
-}

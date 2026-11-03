@@ -3,7 +3,7 @@
 //! 以磁盘为准自愈 DB 与文件系统的不一致：
 //! 1. 扫 `uploads/`（跳过 `.cache` 等点目录）→ upsert assets（技术字段变化才更新，保留 alt 与原始文件名）；
 //! 2. 删除文件已消失的 DB 行（refs 级联）；
-//! 3. 全表扫 posts（含回收站）重建 asset_refs。
+//! 3. 全表扫 posts（含回收站）、笔记快照、评论（含回收站）与头像，重建文章、笔记、评论、头像引用。
 //!
 //! 幂等：重跑结果相同（技术字段无变化时 updated 为 0，alt 与 filename 不被覆盖）。
 //! 幂等性由「手动触发」语义承载，非常态路径。Leptos server function，仅 admin 可用。
@@ -225,6 +225,59 @@ pub(crate) async fn rebuild_assets_index_impl() -> Result<RebuildAssetsResponse,
             ref_count+=tx.execute("INSERT INTO note_asset_refs(note_id,version,asset_id) SELECT $1,$2,id FROM assets WHERE path=ANY($3) ON CONFLICT DO NOTHING",&[&row.get::<_,i32>("note_id"),&row.get::<_,i32>("version"),&paths]).await.map_err(AppError::tx)? as i64;
         }
     }
+
+    // 评论（含回收站评论）同样保护素材；缺失素材静默跳过，与文章一致。
+    let comment_rows = tx
+        .query(
+            "SELECT id, content_html FROM comments WHERE content_html IS NOT NULL",
+            &[],
+        )
+        .await
+        .map_err(AppError::query)?;
+    tx.execute("DELETE FROM comment_asset_refs", &[])
+        .await
+        .map_err(AppError::tx)?;
+    for row in comment_rows {
+        let paths = crate::api::posts::helpers::extract_asset_paths(row.get("content_html"), None);
+        if paths.is_empty() {
+            continue;
+        }
+        let n = tx
+            .execute(
+                "INSERT INTO comment_asset_refs (comment_id, asset_id) \
+                 SELECT $1, id FROM assets WHERE path = ANY($2) \
+                 ON CONFLICT DO NOTHING",
+                &[&row.get::<_, i64>("id"), &paths],
+            )
+            .await
+            .map_err(AppError::tx)?;
+        ref_count += n as i64;
+    }
+
+    // 用户与友链头像：URL 与素材路径完全相等才登记。
+    tx.execute("DELETE FROM user_avatar_asset_refs", &[])
+        .await
+        .map_err(AppError::tx)?;
+    ref_count += tx
+        .execute(
+            "INSERT INTO user_avatar_asset_refs (user_id, asset_id) \
+             SELECT u.id, a.id FROM users u JOIN assets a ON u.avatar_url = '/uploads/' || a.path",
+            &[],
+        )
+        .await
+        .map_err(AppError::tx)? as i64;
+    tx.execute("DELETE FROM friend_avatar_asset_refs", &[])
+        .await
+        .map_err(AppError::tx)?;
+    ref_count += tx
+        .execute(
+            "INSERT INTO friend_avatar_asset_refs (friend_id, asset_id) \
+             SELECT f.id, a.id FROM friend_links f \
+             JOIN assets a ON f.avatar_url = '/uploads/' || a.path",
+            &[],
+        )
+        .await
+        .map_err(AppError::tx)? as i64;
     tx.commit().await.map_err(AppError::tx)?;
 
     let scanned_count = scanned.len() as i64;
