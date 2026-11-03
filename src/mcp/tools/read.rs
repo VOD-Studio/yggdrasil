@@ -13,10 +13,11 @@
 
 use rmcp::handler::server::tool::Extension;
 use rmcp::handler::server::wrapper::Parameters;
-use rmcp::model::{CallToolResult, ContentBlock, TextContent};
+use rmcp::model::CallToolResult;
 use rmcp::{schemars, tool, tool_router, ErrorData as McpError};
 use serde::Deserialize;
 
+use super::common::{internal, ok_json};
 use crate::db::pool::get_conn;
 use crate::mcp::auth::McpPrincipal;
 use crate::models::mcp_token::TokenScope;
@@ -32,17 +33,12 @@ impl crate::mcp::server::YggMcpServer {
         Parameters(SearchPostsParams { query, limit }): Parameters<SearchPostsParams>,
         Extension(parts): Extension<http::request::Parts>,
     ) -> Result<CallToolResult, McpError> {
-        let principal = require_read(&parts, "search_posts")?;
+        require_read(&parts, "search_posts")?;
 
         let hits = search_published(&query, limit.unwrap_or(50))
             .await
-            .map_err(|e| mcp_internal("search_posts", &principal, &e))?;
-
-        let text = serde_json::to_string_pretty(&hits)
-            .map_err(|e| McpError::internal_error(format!("encode failed: {e}"), None))?;
-        Ok(CallToolResult::success(vec![ContentBlock::Text(
-            TextContent::new(text),
-        )]))
+            .map_err(|e| internal(e, "search_posts failed"))?;
+        ok_json(hits)
     }
 
     /// 按 slug 取单篇已发布文章（草稿对 read 不可见）。
@@ -54,17 +50,12 @@ impl crate::mcp::server::YggMcpServer {
         Parameters(GetPostParams { slug }): Parameters<GetPostParams>,
         Extension(parts): Extension<http::request::Parts>,
     ) -> Result<CallToolResult, McpError> {
-        let principal = require_read(&parts, "get_post")?;
+        require_read(&parts, "get_post")?;
 
         let post = get_published_by_slug(&slug)
             .await
-            .map_err(|e| mcp_internal("get_post", &principal, &e))?;
-
-        let text = serde_json::to_string_pretty(&post)
-            .map_err(|e| McpError::internal_error(format!("encode failed: {e}"), None))?;
-        Ok(CallToolResult::success(vec![ContentBlock::Text(
-            TextContent::new(text),
-        )]))
+            .map_err(|e| internal(e, "get_post failed"))?;
+        ok_json(post)
     }
 
     /// 列出全部标签 + 各自关联的已发布文章数。
@@ -73,24 +64,19 @@ impl crate::mcp::server::YggMcpServer {
         &self,
         Extension(parts): Extension<http::request::Parts>,
     ) -> Result<CallToolResult, McpError> {
-        let principal = require_read(&parts, "list_tags")?;
+        require_read(&parts, "list_tags")?;
 
         let tags = list_all_tags()
             .await
-            .map_err(|e| mcp_internal("list_tags", &principal, &e))?;
-
-        let text = serde_json::to_string_pretty(&tags)
-            .map_err(|e| McpError::internal_error(format!("encode failed: {e}"), None))?;
-        Ok(CallToolResult::success(vec![ContentBlock::Text(
-            TextContent::new(text),
-        )]))
+            .map_err(|e| internal(e, "list_tags failed"))?;
+        ok_json(tags)
     }
 }
 
 // ── 鉴权辅助 ───────────────────────────────────────────────────────────────
 
 /// 从 request extensions 取 principal 并校验 read 作用域；不足返回 insufficient_scope。
-fn require_read(parts: &http::request::Parts, tool: &str) -> Result<McpPrincipal, McpError> {
+fn require_read(parts: &http::request::Parts, tool: &str) -> Result<(), McpError> {
     let principal = parts
         .extensions
         .get::<McpPrincipal>()
@@ -101,15 +87,7 @@ fn require_read(parts: &http::request::Parts, tool: &str) -> Result<McpPrincipal
             None,
         ));
     }
-    Ok(principal.clone())
-}
-
-/// 把内部错误统一包装成 MCP internal_error（带工具名便于排查）。
-fn mcp_internal(tool: &str, principal: &McpPrincipal, e: &str) -> McpError {
-    tracing::warn!(
-        tool, user_id = principal.user_id, error = %e, "MCP read tool failed"
-    );
-    McpError::internal_error(format!("{tool} failed: {e}"), None)
+    Ok(())
 }
 
 // ── 参数 DTO ───────────────────────────────────────────────────────────────
