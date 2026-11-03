@@ -105,12 +105,14 @@ pub async fn update_asset_purge_settings(
     {
         let client = get_conn().await.map_err(AppError::db_conn)?;
 
-        for (key, value) in [
-            ("asset_orphan_purge_enabled", auto_purge_enabled.to_string()),
-            ("asset_orphan_retention_days", retention_days.to_string()),
-        ] {
-            super::upsert_setting(&**client, key, &value).await?;
-        }
+        super::upsert_settings(
+            &**client,
+            &[
+                ("asset_orphan_purge_enabled", auto_purge_enabled.to_string()),
+                ("asset_orphan_retention_days", retention_days.to_string()),
+            ],
+        )
+        .await?;
 
         tracing::info!(
             "Asset purge settings updated: auto_purge={}, retention_days={}",

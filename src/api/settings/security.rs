@@ -202,20 +202,22 @@ pub async fn update_security_settings(
     {
         let client = get_conn().await.map_err(AppError::db_conn)?;
 
-        for (key, value) in [
-            ("security_app_base_url", app_base_url.clone()),
-            ("security_cookie_secure", cookie_secure.to_string()),
-            (
-                "security_trusted_proxy_count",
-                trusted_proxy_count.to_string(),
-            ),
-            (
-                "security_max_sessions_per_user",
-                max_sessions_per_user.to_string(),
-            ),
-        ] {
-            super::upsert_setting(&**client, key, &value).await?;
-        }
+        super::upsert_settings(
+            &**client,
+            &[
+                ("security_app_base_url", app_base_url.clone()),
+                ("security_cookie_secure", cookie_secure.to_string()),
+                (
+                    "security_trusted_proxy_count",
+                    trusted_proxy_count.to_string(),
+                ),
+                (
+                    "security_max_sessions_per_user",
+                    max_sessions_per_user.to_string(),
+                ),
+            ],
+        )
+        .await?;
 
         invalidate_security_settings();
         // 公开页的分享元信息含站点地址。

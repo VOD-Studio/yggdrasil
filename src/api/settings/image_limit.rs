@@ -139,16 +139,18 @@ pub async fn update_image_limit_settings(
     {
         let client = get_conn().await.map_err(AppError::db_conn)?;
 
-        for (key, value) in [
-            ("image_max_dimension", max_dimension.to_string()),
-            ("image_max_pixels", max_pixels.to_string()),
-            (
-                "image_dimensions_cache_ttl_secs",
-                dimensions_cache_ttl_secs.to_string(),
-            ),
-        ] {
-            super::upsert_setting(&**client, key, &value).await?;
-        }
+        super::upsert_settings(
+            &**client,
+            &[
+                ("image_max_dimension", max_dimension.to_string()),
+                ("image_max_pixels", max_pixels.to_string()),
+                (
+                    "image_dimensions_cache_ttl_secs",
+                    dimensions_cache_ttl_secs.to_string(),
+                ),
+            ],
+        )
+        .await?;
 
         tracing::info!(
             "Image limit settings updated (需重启生效): max_dimension={}, max_pixels={}, ttl={}s",

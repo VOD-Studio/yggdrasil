@@ -148,15 +148,17 @@ pub async fn update_image_cache_settings(
     {
         let client = get_conn().await.map_err(AppError::db_conn)?;
 
-        for (key, value) in [
-            ("image_disk_cache_max_mb", disk_cache_max_mb.to_string()),
-            (
-                "image_disk_cache_max_age_hours",
-                disk_cache_max_age_hours.to_string(),
-            ),
-        ] {
-            super::upsert_setting(&**client, key, &value).await?;
-        }
+        super::upsert_settings(
+            &**client,
+            &[
+                ("image_disk_cache_max_mb", disk_cache_max_mb.to_string()),
+                (
+                    "image_disk_cache_max_age_hours",
+                    disk_cache_max_age_hours.to_string(),
+                ),
+            ],
+        )
+        .await?;
 
         invalidate_image_cache_settings();
         tracing::info!(

@@ -388,43 +388,45 @@ pub async fn update_rate_limit_settings(
     {
         let client = get_conn().await.map_err(AppError::db_conn)?;
 
-        for (key, value) in [
-            ("ratelimit_strict_per_sec", strict_per_sec.to_string()),
-            ("ratelimit_strict_burst", strict_burst.to_string()),
-            ("ratelimit_upload_per_sec", upload_per_sec.to_string()),
-            ("ratelimit_upload_burst", upload_burst.to_string()),
-            ("ratelimit_image_per_sec", image_per_sec.to_string()),
-            ("ratelimit_image_burst", image_burst.to_string()),
-            ("ratelimit_comment_per_sec", comment_per_sec.to_string()),
-            ("ratelimit_comment_burst", comment_burst.to_string()),
-            (
-                "ratelimit_comment_upload_per_sec",
-                comment_upload_per_sec.to_string(),
-            ),
-            (
-                "ratelimit_comment_upload_burst",
-                comment_upload_burst.to_string(),
-            ),
-            (
-                "ratelimit_comment_upload_daily",
-                comment_upload_daily.to_string(),
-            ),
-            ("ratelimit_code_exec_per_sec", code_exec_per_sec.to_string()),
-            ("ratelimit_code_exec_burst", code_exec_burst.to_string()),
-            ("ratelimit_code_exec_daily", code_exec_daily.to_string()),
-            ("ratelimit_unknown_per_sec", unknown_per_sec.to_string()),
-            ("ratelimit_unknown_burst", unknown_burst.to_string()),
-            ("ratelimit_mcp_per_sec", mcp_per_sec.to_string()),
-            ("ratelimit_mcp_burst", mcp_burst.to_string()),
-            (
-                "ratelimit_mcp_upload_per_sec",
-                mcp_upload_per_sec.to_string(),
-            ),
-            ("ratelimit_mcp_upload_burst", mcp_upload_burst.to_string()),
-            ("ratelimit_gc_interval_secs", gc_interval_secs.to_string()),
-        ] {
-            super::upsert_setting(&**client, key, &value).await?;
-        }
+        super::upsert_settings(
+            &**client,
+            &[
+                ("ratelimit_strict_per_sec", strict_per_sec.to_string()),
+                ("ratelimit_strict_burst", strict_burst.to_string()),
+                ("ratelimit_upload_per_sec", upload_per_sec.to_string()),
+                ("ratelimit_upload_burst", upload_burst.to_string()),
+                ("ratelimit_image_per_sec", image_per_sec.to_string()),
+                ("ratelimit_image_burst", image_burst.to_string()),
+                ("ratelimit_comment_per_sec", comment_per_sec.to_string()),
+                ("ratelimit_comment_burst", comment_burst.to_string()),
+                (
+                    "ratelimit_comment_upload_per_sec",
+                    comment_upload_per_sec.to_string(),
+                ),
+                (
+                    "ratelimit_comment_upload_burst",
+                    comment_upload_burst.to_string(),
+                ),
+                (
+                    "ratelimit_comment_upload_daily",
+                    comment_upload_daily.to_string(),
+                ),
+                ("ratelimit_code_exec_per_sec", code_exec_per_sec.to_string()),
+                ("ratelimit_code_exec_burst", code_exec_burst.to_string()),
+                ("ratelimit_code_exec_daily", code_exec_daily.to_string()),
+                ("ratelimit_unknown_per_sec", unknown_per_sec.to_string()),
+                ("ratelimit_unknown_burst", unknown_burst.to_string()),
+                ("ratelimit_mcp_per_sec", mcp_per_sec.to_string()),
+                ("ratelimit_mcp_burst", mcp_burst.to_string()),
+                (
+                    "ratelimit_mcp_upload_per_sec",
+                    mcp_upload_per_sec.to_string(),
+                ),
+                ("ratelimit_mcp_upload_burst", mcp_upload_burst.to_string()),
+                ("ratelimit_gc_interval_secs", gc_interval_secs.to_string()),
+            ],
+        )
+        .await?;
 
         tracing::info!(
             "Rate limit settings updated (需重启生效): strict={}/{}, upload={}/{}, \

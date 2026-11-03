@@ -53,13 +53,14 @@ pub(crate) async fn save_trash_settings(
 ) -> Result<TrashSettings, AppError> {
     let retention_days = TrashSettings::clamp_retention(retention_days);
 
-    super::upsert_setting(
+    super::upsert_settings(
         client,
-        "trash_auto_purge_enabled",
-        &auto_purge_enabled.to_string(),
+        &[
+            ("trash_auto_purge_enabled", auto_purge_enabled.to_string()),
+            ("trash_retention_days", retention_days.to_string()),
+        ],
     )
     .await?;
-    super::upsert_setting(client, "trash_retention_days", &retention_days.to_string()).await?;
 
     Ok(TrashSettings {
         auto_purge_enabled,

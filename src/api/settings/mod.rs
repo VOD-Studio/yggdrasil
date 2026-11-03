@@ -89,6 +89,30 @@ pub(crate) async fn upsert_setting(
     Ok(())
 }
 
+/// 一条语句写入（或覆盖）多个 settings 键，同时刷新 `updated_at`。
+///
+/// 单条 SQL 在 PostgreSQL 中天然原子：要么全部生效、要么全部不生效，
+/// 避免逐键 upsert 中途失败导致「报错但部分配置已落库」，也不必开事务。
+/// 同一组配置的多个键必须走这里，而不是循环调用 [`upsert_setting`]。
+#[cfg(feature = "server")]
+pub(crate) async fn upsert_settings(
+    client: &(impl tokio_postgres::GenericClient + Sync),
+    pairs: &[(&str, String)],
+) -> Result<(), AppError> {
+    let keys: Vec<&str> = pairs.iter().map(|(key, _)| *key).collect();
+    let values: Vec<&str> = pairs.iter().map(|(_, value)| value.as_str()).collect();
+    client
+        .execute(
+            "INSERT INTO settings (key, value, updated_at)
+             SELECT k, v, NOW() FROM UNNEST($1::text[], $2::text[]) AS t(k, v)
+             ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()",
+            &[&keys, &values],
+        )
+        .await
+        .map_err(AppError::query)?;
+    Ok(())
+}
+
 /// Load a settings group with one indexed query.
 #[cfg(feature = "server")]
 pub(crate) async fn load_setting_values(

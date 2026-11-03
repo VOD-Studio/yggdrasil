@@ -254,20 +254,22 @@ pub async fn update_runner_settings(
         let client = get_conn().await.map_err(AppError::db_conn)?;
 
         let lang_str = languages.clone().unwrap_or_default();
-        for (key, value) in [
-            ("runner_allow_network", allow_network.to_string()),
-            ("runner_max_concurrent", max_concurrent.to_string()),
-            ("runner_max_cpu_cores", max_cpu_cores.to_string()),
-            ("runner_max_memory_mb", max_memory_mb.to_string()),
-            ("runner_max_timeout_secs", max_timeout_secs.to_string()),
-            ("runner_max_output_bytes", max_output_bytes.to_string()),
-            ("runner_max_source_bytes", max_source_bytes.to_string()),
-            ("runner_queue_timeout_secs", queue_timeout_secs.to_string()),
-            ("runner_task_ttl_secs", task_ttl_secs.to_string()),
-            ("runner_languages", lang_str),
-        ] {
-            super::upsert_setting(&**client, key, &value).await?;
-        }
+        super::upsert_settings(
+            &**client,
+            &[
+                ("runner_allow_network", allow_network.to_string()),
+                ("runner_max_concurrent", max_concurrent.to_string()),
+                ("runner_max_cpu_cores", max_cpu_cores.to_string()),
+                ("runner_max_memory_mb", max_memory_mb.to_string()),
+                ("runner_max_timeout_secs", max_timeout_secs.to_string()),
+                ("runner_max_output_bytes", max_output_bytes.to_string()),
+                ("runner_max_source_bytes", max_source_bytes.to_string()),
+                ("runner_queue_timeout_secs", queue_timeout_secs.to_string()),
+                ("runner_task_ttl_secs", task_ttl_secs.to_string()),
+                ("runner_languages", lang_str),
+            ],
+        )
+        .await?;
 
         tracing::info!(
             "Runner settings updated (需重启生效): allow_network={}, max_concurrent={}, \

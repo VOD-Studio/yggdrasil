@@ -109,12 +109,14 @@ pub async fn update_webp_settings(quality: f32, method: u32) -> Result<WebpSetti
     {
         let client = get_conn().await.map_err(AppError::db_conn)?;
 
-        for (key, value) in [
-            ("webp_quality", quality.to_string()),
-            ("webp_method", method.to_string()),
-        ] {
-            super::upsert_setting(&**client, key, &value).await?;
-        }
+        super::upsert_settings(
+            &**client,
+            &[
+                ("webp_quality", quality.to_string()),
+                ("webp_method", method.to_string()),
+            ],
+        )
+        .await?;
 
         tracing::info!(
             "WebP settings updated (需重启生效): quality={}, method={}",
