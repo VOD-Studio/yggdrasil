@@ -109,7 +109,12 @@ pub async fn mcp_auth_middleware(
         None => return Err(StatusCode::UNAUTHORIZED),
     };
     // 解析令牌要查库：先按 IP 限流，伪造令牌洪泛不再无节制占用连接池。
-    let ip = crate::api::rate_limit::get_client_ip(req.headers()).await;
+    // 未配置可信代理时按 TCP 对端（startup 注入的 ConnectInfo）计数，不能落到共享的 "unknown" 桶。
+    let peer = req
+        .extensions()
+        .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+        .map(|axum::extract::ConnectInfo(addr)| *addr);
+    let ip = crate::api::rate_limit::get_client_ip_with_peer(req.headers(), peer).await;
     if crate::api::rate_limit::check_mcp_preauth_limit(&ip).is_err() {
         return Err(StatusCode::TOO_MANY_REQUESTS);
     }

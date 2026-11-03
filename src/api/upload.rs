@@ -221,9 +221,14 @@ fn mcp_upload_error<T: serde::Serialize>(status: StatusCode, msg: T) -> Response
 /// 二进制不经 JSON-RPC，绕开 rmcp 4MiB 请求体上限。返回可直接嵌入 Markdown 的
 /// `/uploads/...` URL。
 #[cfg(feature = "server")]
-pub async fn mcp_upload_image(headers: HeaderMap, mut multipart: Multipart) -> Response {
+pub async fn mcp_upload_image(
+    connect_info: Option<Extension<ConnectInfo<SocketAddr>>>,
+    headers: HeaderMap,
+    mut multipart: Multipart,
+) -> Response {
     // 0. 解析 bearer 要查库：先按 IP 限流，伪造令牌洪泛在此拦下。
-    let ip = crate::api::rate_limit::get_client_ip(&headers).await;
+    let peer = connect_info.map(|Extension(ConnectInfo(addr))| addr);
+    let ip = crate::api::rate_limit::get_client_ip_with_peer(&headers, peer).await;
     if let Err(msg) = crate::api::rate_limit::check_mcp_preauth_limit(&ip) {
         return mcp_upload_error(StatusCode::TOO_MANY_REQUESTS, msg);
     }
