@@ -124,24 +124,19 @@ export class UploadCoordinator {
     this.notifyRust({ kind: 'removed', uploadId, fileName: entry.fileName });
   }
 
-  /** 核心上传逻辑：成功更新 src + 清上传属性，失败转 error 态。 */
+  /**
+   * 核心上传逻辑：成功更新 src + 清上传属性，失败转 error 态。
+   * 上传期间占位图可能已被移除（按钮、×关闭或退格），此时 entry 已出 pending、计数已减，
+   * 结果直接丢弃，不再改计数或 emit。
+   */
   private async runUpload(uploadId: string): Promise<void> {
     const entry = this.pending.get(uploadId);
     if (!entry) return;
+    let url: string;
     try {
-      const url = await this.onImageUpload(entry.file);
-      // 成功：替换 src，清除上传状态属性
-      this.updateNodeAttrs(uploadId, {
-        src: url,
-        'data-upload-state': null,
-        'data-upload-id': null,
-        'data-error-msg': null,
-      });
-      URL.revokeObjectURL(entry.blobUrl);
-      this.pending.delete(uploadId);
-      this.uploadingCount--;
-      this.notifyRust({ kind: 'success', uploadId, fileName: entry.fileName });
+      url = await this.onImageUpload(entry.file);
     } catch (err) {
+      if (this.pending.get(uploadId) !== entry) return;
       const msg = this.extractErrorMessage(err);
       this.updateNodeAttrs(uploadId, {
         'data-upload-state': 'error',
@@ -152,14 +147,27 @@ export class UploadCoordinator {
       this.uploadingCount--;
       this.errorCount++;
       this.notifyRust({ kind: 'error', uploadId, fileName: entry.fileName, errorMsg: msg });
+      return;
     }
+    if (this.pending.get(uploadId) !== entry) return;
+    // 成功：替换 src，清除上传状态属性
+    this.updateNodeAttrs(uploadId, {
+      src: url,
+      'data-upload-state': null,
+      'data-upload-id': null,
+      'data-error-msg': null,
+    });
+    URL.revokeObjectURL(entry.blobUrl);
+    this.pending.delete(uploadId);
+    this.uploadingCount--;
+    this.notifyRust({ kind: 'success', uploadId, fileName: entry.fileName });
   }
 
-  /** 重试：从 pending 取回原 File，节点转回 uploading，重跑上传。 */
+  /** 重试：从 pending 取回原 File，节点转回 uploading，重跑上传。仅 error 态可重试。 */
   retryUpload(uploadId: string): void {
     const entry = this.pending.get(uploadId);
-    if (!entry) return;
-    // 重试前节点处于 error 态，转回 uploading
+    if (entry?.state !== 'error') return;
+    entry.state = 'uploading';
     this.errorCount--;
     this.uploadingCount++;
     this.updateNodeAttrs(uploadId, {

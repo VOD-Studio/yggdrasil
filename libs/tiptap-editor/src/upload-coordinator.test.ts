@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { UploadCoordinator, type UploadEvent } from './upload-coordinator';
 
 /**
@@ -276,6 +276,111 @@ describe('UploadCoordinator', () => {
     const callsBefore = emit.mock.calls.length;
     coord.handleNodeDestroyed(uploadId); // pending 已删，no-op
     expect(emit.mock.calls.length).toBe(callsBefore);
+  });
+
+  describe('上传期间占位图被移除', () => {
+    /** 可手动结算的上传。库目标低于 ES2024，没有 Promise.withResolvers。 */
+    function deferredUpload() {
+      let resolve!: (url: string) => void;
+      let reject!: (err: Error) => void;
+      const promise = new Promise<string>((res, rej) => {
+        resolve = res;
+        reject = rej;
+      });
+      return { promise, resolve, reject };
+    }
+
+    function startUploading(upload: Mock) {
+      const editor = makeMockEditor();
+      const emit = vi.fn();
+      const coord = new UploadCoordinator(editor as never, upload, emit);
+      coord.insertUploading(makeFile());
+      const uploadId = (editor as never as { _nodes: FakeNode[] })._nodes[0].attrs[
+        'data-upload-id'
+      ] as string;
+      return { coord, emit, uploadId };
+    }
+
+    const lastEvent = (emit: Mock) => emit.mock.calls[emit.mock.calls.length - 1][0] as UploadEvent;
+
+    for (const [label, remove] of [
+      ['removeUpload', (c: UploadCoordinator, id: string) => c.removeUpload(id)],
+      ['handleNodeDestroyed', (c: UploadCoordinator, id: string) => c.handleNodeDestroyed(id)],
+    ] as const) {
+      it(`${label} 后上传成功：结果丢弃，计数不变为负`, async () => {
+        const pending = deferredUpload();
+        const { coord, emit, uploadId } = startUploading(vi.fn().mockReturnValue(pending.promise));
+
+        remove(coord, uploadId);
+        expect(lastEvent(emit).counts).toEqual({ uploading: 0, error: 0 });
+        const calls = emit.mock.calls.length;
+
+        pending.resolve('https://cdn.example.com/late.png');
+        await pending.promise;
+        await Promise.resolve();
+
+        expect(emit.mock.calls.length).toBe(calls);
+        expect(coord.hasPending(uploadId)).toBe(false);
+      });
+
+      it(`${label} 后上传失败：不记 error，保存不被永久阻塞`, async () => {
+        const pending = deferredUpload();
+        const { coord, emit, uploadId } = startUploading(vi.fn().mockReturnValue(pending.promise));
+
+        remove(coord, uploadId);
+        const calls = emit.mock.calls.length;
+
+        pending.reject(new Error('网络错误'));
+        await pending.promise.catch(() => {});
+        await Promise.resolve();
+
+        expect(emit.mock.calls.length).toBe(calls);
+        expect(coord.hasPending(uploadId)).toBe(false);
+      });
+    }
+
+    it('重试中移除：按 uploading 减计数，迟到的结果被丢弃', async () => {
+      const retry = deferredUpload();
+      const upload = vi
+        .fn()
+        .mockRejectedValueOnce(new Error('fail'))
+        .mockReturnValueOnce(retry.promise);
+      const { coord, emit, uploadId } = startUploading(upload);
+      await Promise.resolve(); // 第一次失败，error=1
+      expect(lastEvent(emit).counts).toEqual({ uploading: 0, error: 1 });
+
+      coord.retryUpload(uploadId);
+      coord.removeUpload(uploadId);
+      expect(lastEvent(emit).counts).toEqual({ uploading: 0, error: 0 });
+      const calls = emit.mock.calls.length;
+
+      retry.reject(new Error('fail again'));
+      await retry.promise.catch(() => {});
+      await Promise.resolve();
+      expect(emit.mock.calls.length).toBe(calls);
+    });
+
+    it('上传中重复重试是 no-op，不重复计数也不重复上传', async () => {
+      const retry = deferredUpload();
+      const upload = vi
+        .fn()
+        .mockRejectedValueOnce(new Error('fail'))
+        .mockReturnValueOnce(retry.promise);
+      const { coord, emit, uploadId } = startUploading(upload);
+      await Promise.resolve();
+
+      coord.retryUpload(uploadId);
+      coord.retryUpload(uploadId);
+      expect(upload).toHaveBeenCalledTimes(2);
+
+      retry.resolve('https://cdn.example.com/ok.png');
+      await retry.promise;
+      await Promise.resolve();
+      expect(lastEvent(emit)).toMatchObject({
+        kind: 'success',
+        counts: { uploading: 0, error: 0 },
+      });
+    });
   });
 
   it('多图并发：计数随每张的状态独立维护', async () => {
