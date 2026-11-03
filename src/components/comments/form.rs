@@ -119,6 +119,13 @@ pub fn CommentForm(
     #[cfg(target_arch = "wasm32")]
     let editor_handle: StoredValue<Option<crate::bridges::tiptap::EditorHandle>, LocalStorage> =
         StoredValue::new_local(None);
+    // 卸载时提前销毁编辑器：Owner 先跑 cleanup 再释放信号，destroy 触发的
+    // 上传 removed 回调仍能读 message；若等 StoredValue 随 arena 析构才 drop，
+    // 回调读已释放的信号会 panic。take 出锁外再 drop，回调不在锁内执行。
+    #[cfg(target_arch = "wasm32")]
+    on_cleanup(move || {
+        let _ = editor_handle.try_update_value(Option::take);
+    });
 
     // 顶层表单：表单节点挂载后用 IntersectionObserver 等其接近视口再加载编辑器。
     #[cfg(target_arch = "wasm32")]
