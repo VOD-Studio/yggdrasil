@@ -198,9 +198,14 @@ fn serve_application(options: ServerOptions) -> ! {
         // 路由装配会启动后台任务（tokio::spawn），必须在 runtime 内执行。
         let router = build_router(options);
         tracing::info!("server listening on {addr}");
-        let server = axum::serve(listener, router.into_make_service())
-            .with_graceful_shutdown(shutdown_signal())
-            .into_future();
+        // 注入 ConnectInfo：上传等手写路由在未配置可信代理时按 TCP 对端地址限流，
+        // 否则全站共享 "unknown" 限流桶。
+        let server = axum::serve(
+            listener,
+            router.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        )
+        .with_graceful_shutdown(shutdown_signal())
+        .into_future();
         let drain_deadline = async {
             crate::shutdown::requested().await;
             tokio::time::sleep(SHUTDOWN_DRAIN_TIMEOUT).await;

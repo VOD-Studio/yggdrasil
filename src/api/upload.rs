@@ -56,10 +56,9 @@ pub(crate) fn upload_error<T: serde::Serialize>(
 /// 流程：限流 → 解析 session → 校验 admin → 读取 multipart → 早拒非法声明类型 →
 /// 读取字节 → 交给共享流水线 `process_image_upload`。
 ///
-/// `ConnectInfo` 以可选扩展注入：服务端以 `router.into_make_service()` 启动，
-/// 没有调用 `into_make_service_with_connect_info::<SocketAddr>()`，所以这里
-/// 与 `serve_image` 保持一致的优雅降级——扩展缺失时退回 `"unknown"` 限流桶。
-/// 生产环境应在反向代理后部署并配置 `TRUSTED_PROXY_COUNT`，让限流拿到真实 IP。
+/// `ConnectInfo` 由 `startup` 的 `into_make_service_with_connect_info` 注入；未配置
+/// `TRUSTED_PROXY_COUNT` 时按 TCP 对端地址限流。参数保持可选，以便单元测试直接调用。
+/// 生产环境应在反向代理后部署并配置 `TRUSTED_PROXY_COUNT`，否则对端是代理地址。
 #[cfg(feature = "server")]
 pub async fn upload_image(
     connect_info: Option<Extension<ConnectInfo<SocketAddr>>>,
