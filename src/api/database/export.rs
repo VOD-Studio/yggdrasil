@@ -585,7 +585,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
+    #[ignore = "requires DATABASE_URL; uses a connection-local temporary table"]
     fn export_sql_database_round_trips_typed_values() {
         crate::db::TEST_DATABASE_RUNTIME.block_on(export_sql_round_trip_impl());
     }

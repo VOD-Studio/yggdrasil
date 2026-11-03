@@ -101,7 +101,7 @@ Docker fallbacks only when local tools are missing: `make docker-dev` (port 8080
 - Rust: inline `#[cfg(test)] mod tests` (server-only: `#[cfg(all(test, feature = "server"))]`), `#[tokio::test]`, `serial_test::serial` for env/global state. No `tests/` dir, no coverage threshold.
   - One test: `cargo test --locked api::database::backup`.
 - DB regressions are `#[ignore]` and destructive (they truncate fixtures). They run `*_impl` async fns on `db::TEST_DATABASE_RUNTIME` under `TEST_DATABASE_LOCK` and assert `current_database()`. Use disposable DBs: `ygg_mcp_test` (posts/uploads/MCP), `ygg_notes_test` (notes), `ygg_backup_test` via `YGG_BACKUP_TEST_DATABASE_URL` (needs `pg_dump`/`psql`).
-  - `make test-databases`, or `bash scripts/test-databases.sh` with `PG*` env.
+  - `make test-databases`, or `bash scripts/test-databases.sh` with `PG*` env. The script runs every `#[ignore]` lib test (from `--list --ignored`, no hand-kept names): `*::notes_database_*` on `ygg_notes_test`, the `backup` module on `ygg_backup_test`, everything else on `ygg_mcp_test`. Name new tests accordingly.
   - Single: `DATABASE_URL=postgres://…/ygg_notes_test cargo test --locked <name> -- --ignored --exact --test-threads=1`.
 - Frontend: Vitest + happy-dom, co-located `src/**/*.test.ts`; tests importing `node:*` are named `*.node.test.ts` and type-checked by `libs/tsconfig.tooling.json`; `// @vitest-environment node` for pure tests; stub missing observers with `vi.stubGlobal`.
   - All: `cd libs && bun run test`.
