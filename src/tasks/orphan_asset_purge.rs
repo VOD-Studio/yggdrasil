@@ -13,6 +13,9 @@ use std::time::Duration;
 
 use tokio::time::interval;
 
+use crate::api::assets::delete::purge_orphan_assets_impl;
+use crate::api::assets::types::PurgeOrphansResponse;
+use crate::api::error::{ApiError, AppError};
 use crate::db::pool::get_conn;
 use crate::models::settings::AssetPurgeSettings;
 
@@ -24,95 +27,55 @@ use crate::models::settings::AssetPurgeSettings;
 pub async fn run_purge() {
     let mut ticker = interval(Duration::from_secs(86400));
     loop {
-        match get_conn().await {
-            Ok(client) => match purge_orphans(&client).await {
-                Ok((n, bytes)) => {
-                    if n > 0 {
-                        tracing::info!(
-                            "Orphan asset purge: removed {} assets, freed {} bytes",
-                            n,
-                            bytes
-                        );
-                    }
-                }
-                Err(e) => tracing::error!("Orphan asset purge error: {:?}", e),
-            },
-            Err(e) => tracing::error!(
-                "Failed to get DB connection for orphan asset purge: {:?}",
-                e
+        match purge_orphans().await {
+            Ok(Some(res)) if res.deleted_count > 0 || res.failures > 0 => tracing::info!(
+                "Orphan asset purge: removed {} assets, freed {} bytes, {} file failures",
+                res.deleted_count,
+                res.freed_bytes,
+                res.failures
             ),
+            Ok(_) => {}
+            Err(e) => tracing::error!("Orphan asset purge error: {}", e),
         }
         ticker.tick().await;
     }
 }
 
-/// 读取配置并删除过期孤儿素材，返回（删除行数, 释放字节数）。
+/// 读取配置并删除过期孤儿素材；自动清理关闭时返回 `None`。
 ///
-/// 逐项删文件（容忍单项失败：NotFound 静默，其他错误仅告警，DB 行照删——
-/// 残留文件由重建索引的反向语义兜底），最后批量删 DB 行并失效派生缓存。
-async fn purge_orphans(
-    client: &tokio_postgres::Client,
-) -> Result<(u64, i64), tokio_postgres::Error> {
-    // 读取配置，缺键时回退默认值（默认启用、7 天）。
-    let enabled: bool = client
-        .query_opt(
-            "SELECT value FROM settings WHERE key = 'asset_orphan_purge_enabled'",
-            &[],
-        )
-        .await?
-        .and_then(|r| r.get::<_, String>("value").parse().ok())
-        .unwrap_or(crate::models::settings::DEFAULT_ASSET_ORPHAN_PURGE_ENABLED);
-
-    if !enabled {
-        return Ok((0, 0));
-    }
-
-    let days: i32 = client
-        .query_opt(
-            "SELECT value FROM settings WHERE key = 'asset_orphan_retention_days'",
-            &[],
-        )
-        .await?
-        .and_then(|r| r.get::<_, String>("value").parse().ok())
-        .unwrap_or(crate::models::settings::DEFAULT_ASSET_ORPHAN_RETENTION_DAYS);
-
-    let days = AssetPurgeSettings::clamp_retention(days);
-
-    // 与管理页面共用完整引用判定，包含笔记历史版本和头像。
-    let rows = client
-        .query(
-            &format!(
-                "SELECT a.id AS id, a.path, a.size_bytes FROM assets a \
-                 WHERE NOT {asset_ref} \
-                   AND a.created_at < NOW() - make_interval(days => $1)",
-                asset_ref = crate::api::assets::ASSET_REF_CLAUSE
-            ),
-            &[&days],
-        )
-        .await?;
-
-    if rows.is_empty() {
-        return Ok((0, 0));
-    }
-
-    let mut ids: Vec<uuid::Uuid> = Vec::with_capacity(rows.len());
-    let mut freed_bytes: i64 = 0;
-    for row in &rows {
-        let id: uuid::Uuid = row.get("id");
-        let path: String = row.get("path");
-        freed_bytes += row.get::<_, i64>("size_bytes");
-        let file_path = format!("uploads/{}", path);
-        if let Err(e) = tokio::fs::remove_file(&file_path).await {
-            if e.kind() != std::io::ErrorKind::NotFound {
-                tracing::warn!("Orphan purge: remove file failed ({}): {}", file_path, e);
-            }
+/// 删除复用管理端 [`purge_orphan_assets_impl`] 的流程：事务内锁候选行、
+/// 删除语句复核引用、提交后再删文件，避免并发保存刚建立的引用被级联删除。
+///
+/// [`purge_orphan_assets_impl`]: crate::api::assets::delete::purge_orphan_assets_impl
+async fn purge_orphans() -> Result<Option<PurgeOrphansResponse>, ApiError> {
+    let client = get_conn().await.map_err(AppError::db_conn)?;
+    let setting = |key: &'static str| {
+        let client = &client;
+        async move {
+            client
+                .query_opt("SELECT value FROM settings WHERE key = $1", &[&key])
+                .await
+                .map(|row| row.map(|r| r.get::<_, String>("value")))
+                .map_err(AppError::query)
         }
-        crate::api::image::invalidate_asset_caches(&path).await;
-        ids.push(id);
-    }
+    };
 
-    let n = client
-        .execute("DELETE FROM assets WHERE id = ANY($1)", &[&ids])
-        .await?;
-    Ok((n, freed_bytes))
+    // 缺键时回退默认值（默认启用、7 天）。
+    let enabled = setting("asset_orphan_purge_enabled")
+        .await?
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(crate::models::settings::DEFAULT_ASSET_ORPHAN_PURGE_ENABLED);
+    if !enabled {
+        return Ok(None);
+    }
+    let days = setting("asset_orphan_retention_days")
+        .await?
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(crate::models::settings::DEFAULT_ASSET_ORPHAN_RETENTION_DAYS);
+    // 先归还读配置的连接，清理流程自行取连接开事务。
+    drop(client);
+
+    purge_orphan_assets_impl(AssetPurgeSettings::clamp_retention(days))
+        .await
+        .map(Some)
 }

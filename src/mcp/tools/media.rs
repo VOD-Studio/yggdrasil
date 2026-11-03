@@ -153,9 +153,11 @@ impl crate::mcp::server::YggMcpServer {
         Extension(parts): Extension<http::request::Parts>,
     ) -> Result<CallToolResult, McpError> {
         require_admin(&parts, "purge_orphan_assets")?;
-        let result = crate::api::assets::delete::purge_orphan_assets_impl()
-            .await
-            .map_err(|e| internal(e, "purge_orphan_assets"))?;
+        let result = crate::api::assets::delete::purge_orphan_assets_impl(
+            crate::api::assets::list::PURGE_GRACE_DAYS,
+        )
+        .await
+        .map_err(|e| internal(e, "purge_orphan_assets"))?;
         ok_json(result)
     }
 

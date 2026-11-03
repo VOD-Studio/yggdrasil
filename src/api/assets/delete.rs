@@ -224,107 +224,126 @@ pub(crate) async fn batch_delete_assets_impl(
     let mut client = get_conn().await.map_err(AppError::db_conn)?;
     let tx = client.transaction().await.map_err(AppError::tx)?;
 
-    // 锁住候选素材行，保护引用检查与删除之间的窗口。
-    let rows = tx
+    let locked = tx
         .query(
-            &format!(
-                "SELECT a.id AS id, a.path, a.size_bytes, \
-                        {asset_ref} AS referenced \
-                 FROM assets a WHERE a.id = ANY($1) FOR UPDATE",
-                asset_ref = super::ASSET_REF_CLAUSE
-            ),
+            "SELECT id FROM assets WHERE id = ANY($1) FOR UPDATE",
             &[&uuids],
         )
         .await
         .map_err(AppError::query)?;
-
-    let mut delete_ids: Vec<uuid::Uuid> = Vec::with_capacity(rows.len());
-    let mut files_to_remove: Vec<String> = Vec::with_capacity(rows.len());
-    let mut freed_bytes: i64 = 0;
-    let mut skipped: i64 = 0;
-    for row in &rows {
-        let id: uuid::Uuid = row.get("id");
-        if row.get::<_, bool>("referenced") {
-            skipped += 1;
-            continue;
-        }
-        let path: String = row.get("path");
-        freed_bytes += row.get::<_, i64>("size_bytes");
-        files_to_remove.push(path);
-        delete_ids.push(id);
-    }
-
-    let deleted = if delete_ids.is_empty() {
-        0
-    } else {
-        tx.execute("DELETE FROM assets WHERE id = ANY($1)", &[&delete_ids])
-            .await
-            .map_err(AppError::tx)?
-    };
+    let locked: Vec<uuid::Uuid> = locked.iter().map(|r| r.get(0)).collect();
+    let deleted = delete_unreferenced_locked(&tx, &locked).await?;
     tx.commit().await.map_err(AppError::tx)?;
 
-    // DB 删除成功后再清理文件；失败文件由重建索引兜底。
-    for path in files_to_remove {
-        let file_path = format!("uploads/{}", path);
-        if let Err(e) = tokio::fs::remove_file(&file_path).await {
-            if e.kind() != std::io::ErrorKind::NotFound {
-                tracing::warn!("Batch delete: remove file failed ({}): {}", file_path, e);
-                failures += 1;
-            }
-        }
-        crate::api::image::invalidate_asset_caches(&path).await;
-    }
+    let skipped = (locked.len() - deleted.len()) as i64;
+    let freed_bytes = deleted.iter().map(|(_, size)| size).sum();
+    let deleted_count = deleted.len();
+    failures += remove_asset_files(deleted).await;
 
-    let mut message = format!("已删除 {} 张素材", deleted);
+    let mut message = format!("已删除 {} 张素材", deleted_count);
     if skipped > 0 {
         message.push_str(&format!("，跳过 {} 张被引用", skipped));
     }
     Ok(BatchDeleteAssetsResponse {
         success: true,
         message,
-        deleted_count: deleted as i64,
+        deleted_count: deleted_count as i64,
         skipped_referenced: skipped,
         freed_bytes,
         failures,
     })
 }
 
+/// 删除已被本事务 `FOR UPDATE` 锁住、且此刻仍无引用的素材，返回 (path, size_bytes)。
+///
+/// 必须与加锁分成两条语句：READ COMMITTED 下，若加锁语句等待的是并发文章保存
+/// 插入 asset_refs 时持有的外键锁，拿到锁后 Postgres 不会重新求值 WHERE，
+/// 加锁语句里的 `NOT {ASSET_REF_CLAUSE}` 仍基于旧快照，会把刚提交的引用随
+/// ON DELETE CASCADE 一起删掉。本语句取新快照复核；锁已持有，之后的新引用
+/// 只能在删除提交后因外键失败而报错，不会被静默删除。
+#[cfg(feature = "server")]
+async fn delete_unreferenced_locked(
+    tx: &deadpool_postgres::Transaction<'_>,
+    locked_ids: &[uuid::Uuid],
+) -> Result<Vec<(String, i64)>, crate::api::error::AppError> {
+    use crate::api::error::AppError;
+
+    if locked_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let rows = tx
+        .query(
+            &format!(
+                "DELETE FROM assets a WHERE a.id = ANY($1) AND NOT {asset_ref} \
+                 RETURNING a.path, a.size_bytes",
+                asset_ref = super::ASSET_REF_CLAUSE
+            ),
+            &[&locked_ids],
+        )
+        .await
+        .map_err(AppError::tx)?;
+    Ok(rows.iter().map(|r| (r.get(0), r.get(1))).collect())
+}
+
+/// DB 删除提交后清理文件与派生缓存，返回非 NotFound 的文件删除失败数；
+/// 残留文件由重建索引兜底。
+#[cfg(feature = "server")]
+async fn remove_asset_files(deleted: Vec<(String, i64)>) -> i64 {
+    let mut failures = 0;
+    for (path, _) in deleted {
+        let file_path = format!("uploads/{}", path);
+        if let Err(e) = tokio::fs::remove_file(&file_path).await {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                tracing::warn!("Remove asset file failed ({}): {}", file_path, e);
+                failures += 1;
+            }
+        }
+        crate::api::image::invalidate_asset_caches(&path).await;
+    }
+    failures
+}
+
 /// 一键清理孤儿素材：无引用且 created_at 早于 7 天保护窗。
 ///
-/// 逐项删文件（容忍单项失败），最后批量删 DB 行。
+/// 先提交 DB 删除，再逐项删文件（容忍单项失败）。
 /// 返回清理数量、释放字节数与文件删除失败数。
 #[server(PurgeOrphanAssets, endpoint = "purge_orphan_assets", input = leptos::server_fn::codec::Json)]
 pub async fn purge_orphan_assets() -> Result<PurgeOrphansResponse, ApiError> {
     crate::api::auth::get_current_admin_user().await?;
-    purge_orphan_assets_impl().await
+    purge_orphan_assets_impl(super::list::PURGE_GRACE_DAYS).await
 }
 
-/// 共享素材操作；调用方须先完成管理员鉴权。
+/// 删除超过 `retention_days` 的孤儿素材；管理端与定时任务共用。
+/// 调用方须先完成管理员鉴权（定时任务除外）。
 #[cfg(feature = "server")]
-pub(crate) async fn purge_orphan_assets_impl() -> Result<PurgeOrphansResponse, ApiError> {
+pub(crate) async fn purge_orphan_assets_impl(
+    retention_days: i32,
+) -> Result<PurgeOrphansResponse, ApiError> {
     use crate::api::error::AppError;
     use crate::db::pool::get_conn;
 
     let mut client = get_conn().await.map_err(AppError::db_conn)?;
     let tx = client.transaction().await.map_err(AppError::tx)?;
 
-    // 锁住候选素材行，令并发文章保存的外键引用在删除提交前排队。
+    // 锁住候选行，令并发文章保存的外键检查在删除提交前排队；引用在删除语句里复核。
     let rows = tx
         .query(
             &format!(
-                "SELECT a.id AS id, a.path, a.size_bytes FROM assets a \
+                "SELECT a.id FROM assets a \
                  WHERE NOT {asset_ref} \
                    AND a.created_at < NOW() - make_interval(days => $1) \
                  FOR UPDATE",
                 asset_ref = super::ASSET_REF_CLAUSE
             ),
-            &[&super::list::PURGE_GRACE_DAYS],
+            &[&retention_days],
         )
         .await
         .map_err(AppError::query)?;
+    let ids: Vec<uuid::Uuid> = rows.iter().map(|r| r.get(0)).collect();
+    let deleted = delete_unreferenced_locked(&tx, &ids).await?;
+    tx.commit().await.map_err(AppError::tx)?;
 
-    if rows.is_empty() {
-        tx.commit().await.map_err(AppError::tx)?;
+    if deleted.is_empty() {
         return Ok(PurgeOrphansResponse {
             success: true,
             message: "没有可清理的未引用素材".to_string(),
@@ -334,38 +353,101 @@ pub(crate) async fn purge_orphan_assets_impl() -> Result<PurgeOrphansResponse, A
         });
     }
 
-    let mut ids: Vec<uuid::Uuid> = Vec::with_capacity(rows.len());
-    let mut paths: Vec<String> = Vec::with_capacity(rows.len());
-    let mut freed_bytes: i64 = 0;
-    for row in &rows {
-        ids.push(row.get("id"));
-        paths.push(row.get("path"));
-        freed_bytes += row.get::<_, i64>("size_bytes");
-    }
-
-    let deleted = tx
-        .execute("DELETE FROM assets WHERE id = ANY($1)", &[&ids])
-        .await
-        .map_err(AppError::tx)?;
-    tx.commit().await.map_err(AppError::tx)?;
-
-    let mut failures: i64 = 0;
-    for path in paths {
-        let file_path = format!("uploads/{}", path);
-        if let Err(e) = tokio::fs::remove_file(&file_path).await {
-            if e.kind() != std::io::ErrorKind::NotFound {
-                tracing::warn!("Purge: remove file failed ({}): {}", file_path, e);
-                failures += 1;
-            }
-        }
-        crate::api::image::invalidate_asset_caches(&path).await;
-    }
+    let freed_bytes = deleted.iter().map(|(_, size)| size).sum();
+    let deleted_count = deleted.len() as i64;
+    let failures = remove_asset_files(deleted).await;
 
     Ok(PurgeOrphansResponse {
         success: true,
-        message: format!("已清理 {} 张未引用素材", deleted),
-        deleted_count: deleted as i64,
+        message: format!("已清理 {} 张未引用素材", deleted_count),
+        deleted_count,
         freed_bytes,
         failures,
     })
+}
+
+#[cfg(all(test, feature = "server"))]
+mod tests {
+    use super::purge_orphan_assets_impl;
+    use crate::db::pool::get_conn;
+
+    #[test]
+    #[ignore = "requires disposable DATABASE_URL database ygg_mcp_test"]
+    fn purge_keeps_reference_committed_while_waiting_for_lock() {
+        crate::db::TEST_DATABASE_RUNTIME.block_on(purge_keeps_reference_impl());
+    }
+
+    /// 文章保存先插入引用（持有外键锁未提交），清理随后锁同一行等待；
+    /// 保存提交后，清理不得把刚提交的引用随素材级联删除。
+    async fn purge_keeps_reference_impl() {
+        let _guard = crate::db::TEST_DATABASE_LOCK.lock().await;
+        let mut client = get_conn().await.unwrap();
+        let database: String = client
+            .query_one("SELECT current_database()", &[])
+            .await
+            .unwrap()
+            .get(0);
+        assert_eq!(database, "ygg_mcp_test", "requires isolated test database");
+        crate::db::migrate::run_on_conn(&mut client).await.unwrap();
+        client
+            .batch_execute(
+                "TRUNCATE users RESTART IDENTITY CASCADE;
+                 TRUNCATE assets CASCADE;
+                 INSERT INTO users(id,username,email,password_hash,role)
+                   VALUES (1,'purge-owner','purge@test.invalid','unused','admin');
+                 INSERT INTO posts(id,author_id,title,slug,content_md,status)
+                   VALUES (1,1,'引用','purge-race','正文','draft');
+                 INSERT INTO assets(id,path,filename,mime,size_bytes,width,height,content_hash,created_at)
+                 VALUES
+                   (gen_random_uuid(),'purge-race-kept.webp','kept.webp','image/webp',3,1,1,'kept',NOW()-INTERVAL '30 days'),
+                   (gen_random_uuid(),'purge-race-orphan.webp','orphan.webp','image/webp',5,1,1,'orphan',NOW()-INTERVAL '30 days');",
+            )
+            .await
+            .unwrap();
+
+        let mut saver = get_conn().await.unwrap();
+        let save = saver.transaction().await.unwrap();
+        save.execute(
+            "INSERT INTO asset_refs(asset_id,post_id) \
+             SELECT id, 1 FROM assets WHERE path = 'purge-race-kept.webp'",
+            &[],
+        )
+        .await
+        .unwrap();
+
+        let purge = tokio::spawn(purge_orphan_assets_impl(7));
+        let mut waited = false;
+        for _ in 0..200 {
+            let blocked: i64 = client
+                .query_one(
+                    "SELECT count(*) FROM pg_stat_activity \
+                     WHERE datname = current_database() AND wait_event_type = 'Lock'",
+                    &[],
+                )
+                .await
+                .unwrap()
+                .get(0);
+            if blocked > 0 {
+                waited = true;
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        assert!(waited, "清理应在被引用素材的行锁上等待");
+        save.commit().await.unwrap();
+
+        let res = purge.await.unwrap().unwrap();
+        assert_eq!((res.deleted_count, res.freed_bytes), (1, 5));
+        let remaining: Vec<String> = client
+            .query(
+                "SELECT a.path FROM assets a JOIN asset_refs r ON r.asset_id = a.id",
+                &[],
+            )
+            .await
+            .unwrap()
+            .iter()
+            .map(|r| r.get(0))
+            .collect();
+        assert_eq!(remaining, ["purge-race-kept.webp"]);
+    }
 }
