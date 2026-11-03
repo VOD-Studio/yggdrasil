@@ -75,8 +75,9 @@ pub struct AuthResponse {
 
 /// 用户注册。
 ///
-/// 校验用户名、邮箱、密码，首个注册用户自动设为 admin；
-/// 已有 admin 时返回 "Registration is closed"。
+/// 校验用户名、邮箱、密码；仅在 `users` 表为空（站点未初始化）时允许注册，
+/// 首个用户成为 admin。之后一律返回 "Registration is closed"，
+/// 不随管理员角色变化（如被降级为 blocked）重新开放。
 /// Leptos server function，注册在 `/api` 路径下。
 #[server(Register, endpoint = "register", input = leptos::server_fn::codec::Json)]
 pub async fn register(
@@ -130,12 +131,14 @@ pub async fn register(
         .map_err(|_| AppError::Internal("密码处理任务失败"))?
         .map_err(|_| AppError::Internal("密码处理失败"))?;
 
-    // 使用 INSERT ON CONFLICT 原子性地完成“首个用户成为 admin”的竞争。
-    // 若已有 admin 或用户名/邮箱冲突，RETURNING 将返回空。
+    // 初始化完成的判据是「已有任何用户」，而非「存在 admin」：admin 被降级/封禁后
+    // 部分唯一索引 `idx_one_admin` 不再生效，若只靠它判定，注册会重新开放并产生新 admin。
+    // 并发首注册时两者都可能通过 NOT EXISTS，`idx_one_admin` 让后到者 DO NOTHING。
     let result = client
         .query_opt(
             "INSERT INTO users (username, email, password_hash, role)
-             VALUES ($1, $2, $3, 'admin')
+             SELECT $1, $2, $3, 'admin'
+             WHERE NOT EXISTS (SELECT 1 FROM users)
              ON CONFLICT DO NOTHING
              RETURNING id",
             &[&username, &email, &password_hash],
@@ -143,34 +146,19 @@ pub async fn register(
         .await
         .map_err(AppError::query)?;
 
-    if result.is_some() {
-        return Ok(AuthResponse {
+    // 插入失败只可能因为已有用户（含并发首注册的胜者），统一视为注册关闭。
+    Ok(if result.is_some() {
+        AuthResponse {
             success: true,
             message: "注册成功".to_string(),
             token: None,
-        });
-    }
-
-    // 插入失败：区分是已有 admin 还是用户名/邮箱冲突。
-    let admin_exists: bool = client
-        .query_one(
-            "SELECT EXISTS (SELECT 1 FROM users WHERE role = 'admin')",
-            &[],
-        )
-        .await
-        .map_err(AppError::query)?
-        .get(0);
-
-    let message = if admin_exists {
-        "Registration is closed".to_string()
+        }
     } else {
-        "用户名或邮箱已存在".to_string()
-    };
-
-    Ok(AuthResponse {
-        success: false,
-        message,
-        token: None,
+        AuthResponse {
+            success: false,
+            message: "Registration is closed".to_string(),
+            token: None,
+        }
     })
 }
 
