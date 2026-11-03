@@ -124,6 +124,18 @@ pub async fn register(
 
     let client = get_conn().await.map_err(AppError::db_conn)?;
 
+    // 先判注册是否已关闭再算哈希：站点初始化后每个公开注册 POST 都会走到这里，
+    // 若无条件执行 Argon2（每次约 19 MiB 内存）就会白白占满内存与阻塞线程池。
+    // 这里只是快速拒绝，并发首注册的竞争仍由下方 INSERT 的 NOT EXISTS 兜底。
+    let has_users: bool = client
+        .query_one("SELECT EXISTS (SELECT 1 FROM users)", &[])
+        .await
+        .map_err(AppError::query)?
+        .get(0);
+    if has_users {
+        return Ok(registration_closed());
+    }
+
     // Argon2 是 memory-hard 计算，必须在 spawn_blocking 中执行，避免阻塞 Tokio worker。
     let pw_for_hash = password.clone();
     let password_hash = tokio::task::spawn_blocking(move || password::hash_password(&pw_for_hash))
@@ -154,12 +166,17 @@ pub async fn register(
             token: None,
         }
     } else {
-        AuthResponse {
-            success: false,
-            message: "Registration is closed".to_string(),
-            token: None,
-        }
+        registration_closed()
     })
+}
+
+#[cfg(feature = "server")]
+fn registration_closed() -> AuthResponse {
+    AuthResponse {
+        success: false,
+        message: "Registration is closed".to_string(),
+        token: None,
+    }
 }
 
 /// 用户登录。
