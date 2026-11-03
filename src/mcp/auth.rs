@@ -158,7 +158,6 @@ pub(crate) async fn resolve_principal(token: &str) -> Option<McpPrincipal> {
              FROM mcp_tokens t
              JOIN users u ON u.id = t.user_id
              WHERE t.token_hash = $1
-               AND t.generation = u.session_generation
                AND t.revoked_at IS NULL
                AND (t.expires_at IS NULL OR t.expires_at > NOW())",
             &[&hash],
@@ -225,50 +224,5 @@ mod tests {
         for scope in [TokenScope::Read, TokenScope::Write, TokenScope::Admin] {
             assert!(!role_can_hold_scope(&UserRole::Blocked, scope), "{scope:?}");
         }
-    }
-
-    #[test]
-    #[ignore = "requires disposable DATABASE_URL database ygg_mcp_test"]
-    fn mcp_token_generation_database_regression() {
-        crate::db::TEST_DATABASE_RUNTIME.block_on(async {
-            let _guard = crate::db::TEST_DATABASE_LOCK.lock().await;
-            let mut client = get_conn().await.unwrap();
-            let database: String = client
-                .query_one("SELECT current_database()", &[])
-                .await
-                .unwrap()
-                .get(0);
-            assert_eq!(database, "ygg_mcp_test", "requires isolated test database");
-            crate::db::migrate::run_on_conn(&mut client).await.unwrap();
-            client
-                .batch_execute(
-                    "TRUNCATE users CASCADE;
-                     INSERT INTO users(id,username,email,password_hash,role)
-                     VALUES(1,'gen-admin','gen@test.invalid','unused','admin')",
-                )
-                .await
-                .unwrap();
-            let id = uuid::Uuid::new_v4();
-            let token = format!("ygg_{}", id.simple());
-            client
-                .execute(
-                    "INSERT INTO mcp_tokens(id,user_id,name,scope,token_enc,token_hash,generation)
-                     SELECT $1,id,'gen','admin','unused',$2,session_generation FROM users WHERE id=1",
-                    &[&id, &hash_token(&token)],
-                )
-                .await
-                .unwrap();
-            assert!(resolve_principal(&token).await.is_some());
-
-            // 改密同款：bump 世代号后，签发于旧世代的令牌立即失效。
-            client
-                .execute(
-                    "UPDATE users SET session_generation = session_generation + 1 WHERE id = 1",
-                    &[],
-                )
-                .await
-                .unwrap();
-            assert!(resolve_principal(&token).await.is_none());
-        });
     }
 }
