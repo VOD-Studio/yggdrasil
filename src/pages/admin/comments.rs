@@ -681,7 +681,7 @@ fn ReplyComposer(
             {
                 Ok(res) if res.success => {
                     toast.success("回复已发表");
-                    on_done.run(());
+                    on_done.try_run(());
                 }
                 Ok(res) => toast.error(res.message),
                 Err(e) => toast.error(failure_message("回复失败", &e)),

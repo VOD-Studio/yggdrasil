@@ -235,7 +235,7 @@ fn InfoSection(
                 Ok(resp) if resp.success => {
                     if let Some(u) = resp.user {
                         let _ = ctx.user.try_set(Some(Arc::new(u.clone())));
-                        on_saved.run(u);
+                        on_saved.try_run(u);
                     }
                     toast.success("资料已保存");
                 }

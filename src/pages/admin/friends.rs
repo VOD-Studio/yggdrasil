@@ -506,7 +506,7 @@ fn FriendForm(
                     } else {
                         "友链已添加"
                     });
-                    on_saved.run(());
+                    on_saved.try_run(());
                 }
                 Err(e) => toast.error(failure_message("保存失败", &e)),
             }
@@ -522,7 +522,7 @@ fn FriendForm(
             match crate::api::friends::delete_friend_link(id).await {
                 Ok(()) => {
                     toast.success("友链已删除");
-                    on_saved.run(());
+                    on_saved.try_run(());
                 }
                 Err(e) => toast.error(failure_message("删除失败", &e)),
             }
