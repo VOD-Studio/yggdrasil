@@ -4,14 +4,24 @@
 //! 类型安全的变体拼地址（`<a href=Route::PostDetail { slug }.to_string()>`、
 //! `crate::navigation::push(&route.to_string())`），避免散落的字符串拼接。
 //!
-//! 编码规则沿用 dioxus-router 0.7.10：动态路径段与查询值分别使用 [`PATH_ASCII_SET`]、
-//! [`QUERY_ASCII_SET`] 做百分号编码，查询参数值为空时整个 `?key=` 省略。
+//! 动态路径段与查询值分别使用 [`PATH_ASCII_SET`]、[`QUERY_ASCII_SET`] 做百分号编码，
+//! 查询参数值为空时整个 `?key=` 省略。
 
 use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
 use std::fmt;
 
-/// 查询值需要编码的字符。
-const QUERY_ASCII_SET: &AsciiSet = &CONTROLS.add(b' ').add(b'"').add(b'#').add(b'<').add(b'>');
+/// 查询值需要编码的字符。`%` 与 `&`/`=`/`+` 是 `application/x-www-form-urlencoded`
+/// 的转义符、分隔符和空格写法，不编码时 `C++`、`R&D`、`100%` 会被解析成别的值。
+const QUERY_ASCII_SET: &AsciiSet = &CONTROLS
+    .add(b' ')
+    .add(b'"')
+    .add(b'#')
+    .add(b'%')
+    .add(b'&')
+    .add(b'+')
+    .add(b'<')
+    .add(b'=')
+    .add(b'>');
 
 /// 路径段需要编码的字符（在查询集合上追加 `? ^ ` { }`）。
 const PATH_ASCII_SET: &AsciiSet = &QUERY_ASCII_SET
@@ -230,6 +240,21 @@ mod tests {
             .to_string(),
             "/notes/x"
         );
+    }
+
+    #[test]
+    fn query_values_survive_router_query_parsing() {
+        for q in ["C++", "R&D", "a=b", "100%", "a b"] {
+            let href = Route::Search { q: q.to_owned() }.to_string();
+            let url = leptos_router::location::RequestUrl::new(&href)
+                .parse()
+                .unwrap();
+            assert_eq!(
+                url.search_params().get_all("q"),
+                Some(vec![q.to_owned()]),
+                "{href}"
+            );
+        }
     }
 
     #[test]

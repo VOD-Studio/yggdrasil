@@ -34,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **MCP 改状态会改写创建时间、拼错状态会下线文章**：`update_post` 只要带 `status`，就把推导出的 `published_at` 同时写进 `created_at`，已发布文章再传一次 `published` 也会把创建时间改成发布时间；状态值不是 `draft`/`published`（如 `Published`）时静默当成草稿，已发布文章被悄悄下线。现在只有显式传 `published_at` 时才同步 `created_at`（与 `create_post` 一致）；创建与更新文章时状态拼写不对直接报「status 无效，只能是 draft 或 published」。
 - **未配置可信代理时上传限流全站共享**：服务启动未注入连接信息，图片上传、评论图片上传与备份导入在 `TRUSTED_PROXY_COUNT=0`（默认）时取不到 TCP 对端地址，所有人共用 `unknown` 限流桶，匿名评论上传的每日 30 张变成全站共享额度。现在启动时注入 `ConnectInfo`，这些接口按对端地址限流。
 - **注册关闭后仍为每次请求计算密码哈希**：注册先无条件算 Argon2（每次约 19 MiB 内存、占一个阻塞线程），再由 `INSERT … WHERE NOT EXISTS` 判断站点是否已有用户；站点初始化后每个匿名注册请求都白算一次哈希，限流额度内即可占满内存与阻塞线程池。现在先查 `users` 是否为空，非空直接返回注册已关闭，不再计算哈希；并发首次注册仍由插入条件兜底。
+- **搜索 `C++`、`R&D` 的链接丢字**：站内地址拼查询参数时不编码 `+`、`&`、`=`、`%`，搜索 `C++` 的链接被解析成 `C` 加两个空格，`R&D` 被截成 `R`。现在这四个字符都按百分号编码。
 
 ## [1.3.0] - 2026-10-31
 
