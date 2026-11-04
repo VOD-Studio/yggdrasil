@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **文章表格窄列里的中文被逐字折行**：表格宽于正文列而横向滚动时，列缩到最小内容宽度，`th` 为 `nowrap` 且字号小于 `td`，导致首列「首页」之类短词被挤成一字一行。`.md-content td` 现在设 `min-width: 6em`，至少容纳 4 个字。
+- **发布 CI 被 rustdoc 断链阻断**：`PostMeta` 改为文章模块内部组件后，`PostHeaderData` 的文档仍尝试链接该符号，触发发布构建的零告警门禁。现在只链接公开的 `PostHeader`，内部元信息组件改用文字说明；门禁保持不变。
 
 ## [1.3.1] - 2026-11-02
 

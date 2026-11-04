@@ -120,9 +120,8 @@ pub struct Post {
 
 /// 页眉展示所需的最小字段集（P4.2）。
 ///
-/// [`crate::components::post::post_header::PostHeader`] 与
-/// [`crate::components::post::post_meta::PostMeta`] 只读取这些字段；以小型
-/// props 传递可避免为页眉复制/深比较完整正文（content_html 可能达数百 KB）。
+/// [`crate::components::post::post_header::PostHeader`] 及其内部元信息组件只读取这些字段；
+/// 以小型 props 传递可避免为页眉复制/深比较完整正文（content_html 可能达数百 KB）。
 #[derive(Debug, Clone, PartialEq)]
 pub struct PostHeaderData {
     pub id: i32,
