@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **性能基准**：`make bench-markdown` 用 criterion 测 `render_markdown_enhanced`（语料为 4 篇线上文章，位于 `benches/fixtures/`，`BENCH_ARGS='--save-baseline base'` / `'--baseline base'` 做前后对比）；`make bench-http`（`scripts/bench-http.ts`）用一次性 PostgreSQL 拉起 release 产物，oha 以固定到达率压首页、归档与文章页，SSR 缓存命中与未命中分开测，支持 `BENCH_TARGETS=A,B` 同机 ABBA 交替对比（每轮重启服务端）并给出精确置换检验的显著性判定。渲染后超过 1 MiB 的文章页不进 SSR 缓存，只测未命中场景。
 
+### Changed
+
+- **SSR 缓存命中不再每次现压**：压缩层在 HTML 缓存外侧，缓存命中的页面原先每个请求都要做一遍 brotli 7，服务端 CPU 有 98% 花在这里。现在页面写入缓存后，在阻塞线程池按 `COMPRESSION_ALGORITHMS` 启用的算法高档压缩一次（brotli 11、gzip 9），命中时按 `Accept-Encoding` 直接返回压缩结果并带 `Vary: Accept-Encoding`；压缩完成前的命中仍走现压。协商规则（q 值、`*`、`identity;q=0` 回 406）与压缩层一致，抽到新的 `compression` 模块。并发未命中写入相同内容时只压缩一次；页面失效或被替换后，在途的压缩结果丢弃。同机 A/B（`make bench-http`，固定到达率）：命中 p50 从 1.1–4.3 ms 降到 0.06 ms，闭环容量从 680–3,400 rps 升到约 16–17 万 rps（压测客户端已成为瓶颈），brotli 响应小 7–13%。
+
 ### Fixed
 
 - **文章表格窄列里的中文被逐字折行**：表格宽于正文列而横向滚动时，列缩到最小内容宽度，`th` 为 `nowrap` 且字号小于 `td`，导致首列「首页」之类短词被挤成一字一行。`.md-content td` 现在设 `min-width: 6em`，至少容纳 4 个字。

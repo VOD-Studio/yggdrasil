@@ -2,10 +2,12 @@
 //!
 //! 不依赖框架的磁盘 ISR：生产非 root 容器无须写 /app，写操作能真正失效内存。
 //! 透传响应流，在完整成功读完后保存；取消、超大响应和跨失效世代的响应不会回填。
+//! 写入后在阻塞线程池按已启用的算法高档压缩一次（`Effort::Cached`），命中时按
+//! `Accept-Encoding` 直接返回预压缩变体，不再每次现压。
 #![cfg(feature = "server")]
 
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{LazyLock, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
 use axum::body::{Body, BodyDataStream};
@@ -14,6 +16,8 @@ use axum::response::Response;
 use bytes::Bytes;
 use futures::StreamExt;
 use sha2::{Digest, Sha256};
+
+use crate::compression::{self, CompressionAlgorithms, Effort, Encoding};
 
 const MAX_PAGE_BYTES: usize = 1024 * 1024;
 const MAX_CACHE_BYTES: u64 = 32 * 1024 * 1024;
@@ -24,6 +28,8 @@ pub struct SsrGeneration(pub u64);
 #[derive(Clone)]
 struct CachedPage {
     body: Bytes,
+    /// 写入后补齐的预压缩变体；补齐前为空，命中交给外层压缩层现压。
+    encoded: Arc<[(Encoding, Bytes)]>,
     headers: HeaderMap,
     created: Instant,
     etag: HeaderValue,
@@ -45,7 +51,8 @@ impl HtmlCache {
             pages: moka::sync::Cache::builder()
                 .max_capacity(capacity)
                 .weigher(|key: &String, page: &CachedPage| {
-                    (key.len() + page.body.len() + 1024) as u32
+                    let encoded: usize = page.encoded.iter().map(|(_, bytes)| bytes.len()).sum();
+                    (key.len() + page.body.len() + encoded + 1024) as u32
                 })
                 .time_to_live(ttl)
                 .build(),
@@ -96,27 +103,138 @@ impl HtmlCache {
             .filter(|page| page.generation == self.generation())
     }
 
-    fn insert(&self, path: String, headers: HeaderMap, body: Vec<u8>, generation: u64) {
+    /// 新写入时返回 ETag 与正文，供调用方预压缩；同世代已有相同内容（并发未命中的
+    /// 先到者已写入）时不覆盖，返回 None，避免重复预压缩并保留已补齐的变体。
+    fn insert(
+        &self,
+        path: String,
+        headers: HeaderMap,
+        body: Vec<u8>,
+        generation: u64,
+    ) -> Option<(HeaderValue, Bytes)> {
         if !self.enabled || body.len() > MAX_PAGE_BYTES {
-            return;
+            return None;
         }
         let etag = HeaderValue::from_str(&format!("\"{}\"", hex::encode(Sha256::digest(&body))))
             .expect("SHA256 is an ASCII entity tag");
         let _guard = self.gate.lock().unwrap_or_else(|e| e.into_inner());
-        if generation != self.generation() {
-            return;
+        if generation != self.generation()
+            || self
+                .pages
+                .get(&path)
+                .is_some_and(|page| page.generation == generation && page.etag == etag)
+        {
+            return None;
         }
+        let body = Bytes::from(body);
         self.pages.insert(
             path,
             CachedPage {
-                body: body.into(),
+                body: body.clone(),
+                encoded: Arc::new([]),
                 headers,
-                etag,
+                etag: etag.clone(),
                 generation,
                 created: Instant::now(),
             },
         );
+        Some((etag, body))
     }
+
+    /// 补上预压缩变体；页面已失效、过期或被不同内容替换时丢弃。
+    fn attach_encoded(
+        &self,
+        path: &str,
+        etag: &HeaderValue,
+        generation: u64,
+        encoded: Vec<(Encoding, Bytes)>,
+    ) {
+        let _guard = self.gate.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(page) = self
+            .get(path)
+            .filter(|page| page.generation == generation && page.etag == *etag)
+        else {
+            return;
+        };
+        self.pages.insert(
+            path.to_owned(),
+            CachedPage {
+                encoded: encoded.into(),
+                ..page
+            },
+        );
+    }
+}
+
+/// 在阻塞线程池按已启用的全部算法压缩一次再写回缓存。brotli 11 每 100 KB 约 0.1 s，
+/// 不占请求路径；补齐前的命中照旧由外层压缩层现压。
+fn precompress(path: String, etag: HeaderValue, generation: u64, body: Bytes) {
+    let Some(algorithms) = compression::algorithms() else {
+        return;
+    };
+    tokio::task::spawn_blocking(move || {
+        let mut encoded = Vec::new();
+        for encoding in algorithms.encodings() {
+            match compression::encode(encoding, Effort::Cached, &body) {
+                Some(Ok(bytes)) => encoded.push((encoding, Bytes::from(bytes))),
+                Some(Err(error)) => {
+                    tracing::warn!(%error, %path, "SSR 缓存预压缩失败，命中继续现压");
+                    return;
+                }
+                None => {}
+            }
+        }
+        HTML_CACHE.attach_encoded(&path, &etag, generation, encoded);
+    });
+}
+
+/// 命中响应。协商出的编码有预压缩变体时直接返回；否则给出原始 HTML，由外层压缩层
+/// 现压或回 406。启用压缩时一律带 `Vary: Accept-Encoding`（含 304）。
+fn hit_response(
+    page: CachedPage,
+    request: &HeaderMap,
+    algorithms: Option<CompressionAlgorithms>,
+) -> Response {
+    let unchanged = request
+        .get(header::IF_NONE_MATCH)
+        .and_then(|h| h.to_str().ok())
+        .is_some_and(|value| {
+            value.split(',').any(|tag| {
+                let tag = tag.trim().strip_prefix("W/").unwrap_or(tag.trim());
+                tag == "*" || tag == page.etag.to_str().unwrap_or("")
+            })
+        });
+    let variant = algorithms
+        .and_then(|algorithms| compression::negotiate(request, algorithms))
+        .and_then(|encoding| page.encoded.iter().find(|(e, _)| *e == encoding).cloned())
+        .filter(|_| !unchanged);
+    let mut response = Response::new(match (&variant, unchanged) {
+        (_, true) => Body::empty(),
+        (Some((_, bytes)), false) => Body::from(bytes.clone()),
+        (None, false) => Body::from(page.body),
+    });
+    *response.headers_mut() = page.headers;
+    if unchanged {
+        *response.status_mut() = StatusCode::NOT_MODIFIED;
+    }
+    let headers = response.headers_mut();
+    if let Some((encoding, _)) = variant {
+        headers.insert(header::CONTENT_ENCODING, encoding.header_value());
+    }
+    if algorithms.is_some() {
+        headers.insert(header::VARY, HeaderValue::from_static("accept-encoding"));
+    }
+    headers.insert(header::ETAG, page.etag);
+    headers.insert(
+        header::AGE,
+        HeaderValue::from(page.created.elapsed().as_secs()),
+    );
+    headers.insert("x-ssr-cache", HeaderValue::from_static("HIT"));
+    headers.insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("public, no-cache"),
+    );
+    response
 }
 
 static HTML_CACHE: LazyLock<HtmlCache> = LazyLock::new(|| {
@@ -201,37 +319,7 @@ pub async fn cache_public_html(
     }
     let path = req.uri().path().to_owned();
     if let Some(page) = HTML_CACHE.get(&path) {
-        let unchanged = req
-            .headers()
-            .get(header::IF_NONE_MATCH)
-            .and_then(|h| h.to_str().ok())
-            .is_some_and(|value| {
-                value.split(',').any(|tag| {
-                    let tag = tag.trim().strip_prefix("W/").unwrap_or(tag.trim());
-                    tag == "*" || tag == page.etag.to_str().unwrap_or("")
-                })
-            });
-        let mut response = Response::new(if unchanged {
-            Body::empty()
-        } else {
-            Body::from(page.body)
-        });
-        *response.headers_mut() = page.headers;
-        if unchanged {
-            *response.status_mut() = StatusCode::NOT_MODIFIED;
-        }
-        let headers = response.headers_mut();
-        headers.insert(header::ETAG, page.etag);
-        headers.insert(
-            header::AGE,
-            HeaderValue::from(page.created.elapsed().as_secs()),
-        );
-        headers.insert("x-ssr-cache", HeaderValue::from_static("HIT"));
-        headers.insert(
-            header::CACHE_CONTROL,
-            HeaderValue::from_static("public, no-cache"),
-        );
-        return response;
+        return hit_response(page, req.headers(), compression::algorithms());
     }
     let generation = HTML_CACHE.generation();
     let mut response = next.run(req).await;
@@ -279,7 +367,14 @@ pub async fn cache_public_html(
             }
             None => {
                 if let Some(buffer) = state.buffer.take() {
-                    HTML_CACHE.insert(state.path, state.headers, buffer, state.generation);
+                    if let Some((etag, body)) = HTML_CACHE.insert(
+                        state.path.clone(),
+                        state.headers,
+                        buffer,
+                        state.generation,
+                    ) {
+                        precompress(state.path, etag, state.generation, body);
+                    }
                 }
                 None
             }
@@ -450,5 +545,111 @@ mod tests {
         response.headers_mut().remove(header::SET_COOKIE);
         *response.status_mut() = StatusCode::NOT_FOUND;
         assert!(!cacheable_response(&response));
+    }
+
+    fn request(accept_encoding: &str) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::ACCEPT_ENCODING,
+            HeaderValue::from_str(accept_encoding).unwrap(),
+        );
+        headers
+    }
+
+    async fn served(response: Response) -> (Option<Encoding>, Vec<u8>) {
+        let encoding = response
+            .headers()
+            .get(header::CONTENT_ENCODING)
+            .map(|value| match value.to_str().unwrap() {
+                "br" => Encoding::Brotli,
+                "gzip" => Encoding::Gzip,
+                other => panic!("unexpected encoding {other}"),
+            });
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let html = compression::decode(encoding.unwrap_or(Encoding::Identity), &body);
+        (encoding, html)
+    }
+
+    #[tokio::test]
+    async fn hits_serve_negotiated_precompressed_variants() {
+        let algorithms = compression::parse_compression_algorithms("br, gzip");
+        let cache = HtmlCache::new(Duration::from_secs(60), MAX_CACHE_BYTES);
+        let html = "<article><p>预压缩命中 precompressed hit.</p></article>".repeat(500);
+        let (etag, body) = cache
+            .insert("/".into(), HeaderMap::new(), html.clone().into_bytes(), 0)
+            .unwrap();
+
+        // 变体补齐前：交给外层压缩层现压。
+        let response = hit_response(cache.get("/").unwrap(), &request("br"), algorithms);
+        assert_eq!(response.headers()[header::VARY], "accept-encoding");
+        assert_eq!(served(response).await, (None, html.clone().into_bytes()));
+
+        let encoded = algorithms
+            .unwrap()
+            .encodings()
+            .map(|encoding| {
+                let bytes = compression::encode(encoding, Effort::Cached, &body);
+                (encoding, Bytes::from(bytes.unwrap().unwrap()))
+            })
+            .collect();
+        cache.attach_encoded("/", &etag, 0, encoded);
+        for (accept, expected) in [
+            ("gzip, deflate, br, zstd", Some(Encoding::Brotli)),
+            ("gzip", Some(Encoding::Gzip)),
+            ("zstd", None),
+        ] {
+            let response = hit_response(cache.get("/").unwrap(), &request(accept), algorithms);
+            assert_eq!(response.headers()[header::ETAG], etag, "{accept}");
+            assert_eq!(
+                served(response).await,
+                (expected, html.clone().into_bytes()),
+                "{accept}"
+            );
+        }
+
+        let mut revalidate = request("br");
+        revalidate.insert(header::IF_NONE_MATCH, etag);
+        let response = hit_response(cache.get("/").unwrap(), &revalidate, algorithms);
+        assert_eq!(response.status(), StatusCode::NOT_MODIFIED);
+        assert!(!response.headers().contains_key(header::CONTENT_ENCODING));
+        assert_eq!(served(response).await, (None, Vec::new()));
+
+        // 关闭压缩时只回原文，也不声明 Vary。
+        let response = hit_response(cache.get("/").unwrap(), &request("br"), None);
+        assert!(!response.headers().contains_key(header::VARY));
+        assert_eq!(served(response).await, (None, html.into_bytes()));
+    }
+
+    #[test]
+    fn variants_only_attach_to_the_page_they_were_encoded_from() {
+        let cache = HtmlCache::new(Duration::from_secs(60), MAX_CACHE_BYTES);
+        let variant = || vec![(Encoding::Brotli, Bytes::from_static(b"br"))];
+        let (old_etag, _) = cache
+            .insert("/".into(), HeaderMap::new(), b"old".to_vec(), 0)
+            .unwrap();
+        // 并发未命中的后到者内容相同：不覆盖、不重复预压缩。
+        cache.attach_encoded("/", &old_etag, 0, variant());
+        assert!(cache
+            .insert("/".into(), HeaderMap::new(), b"old".to_vec(), 0)
+            .is_none());
+        assert_eq!(cache.get("/").unwrap().encoded.len(), 1);
+
+        // 内容变了：新页面替换旧页面，旧页面的变体不能挂到新正文上。
+        assert!(cache
+            .insert("/".into(), HeaderMap::new(), b"new".to_vec(), 0)
+            .is_some());
+        cache.attach_encoded("/", &old_etag, 0, variant());
+        assert!(cache.get("/").unwrap().encoded.is_empty());
+
+        // 失效后在途的预压缩结果同样丢弃。
+        let generation = cache.invalidate();
+        let (etag, _) = cache
+            .insert("/".into(), HeaderMap::new(), b"new".to_vec(), generation)
+            .unwrap();
+        cache.invalidate();
+        cache.attach_encoded("/", &etag, generation, variant());
+        assert!(cache.get("/").is_none());
     }
 }

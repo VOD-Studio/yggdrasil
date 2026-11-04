@@ -8,76 +8,7 @@
 
 #![cfg(feature = "server")]
 
-/// 压缩算法配置。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct CompressionAlgorithms {
-    gzip: bool,
-    brotli: bool,
-    deflate: bool,
-    zstd: bool,
-}
-
-impl CompressionAlgorithms {
-    fn all_enabled() -> Self {
-        Self {
-            gzip: true,
-            brotli: true,
-            deflate: true,
-            zstd: true,
-        }
-    }
-
-    fn is_empty(&self) -> bool {
-        !self.gzip && !self.brotli && !self.deflate && !self.zstd
-    }
-}
-
-/// 解析 COMPRESSION_ALGORITHMS 环境变量值。
-/// ""、"none"、"off" 返回 None；"all" 或未识别到任何算法时启用全部。
-pub(crate) fn parse_compression_algorithms(env: &str) -> Option<CompressionAlgorithms> {
-    let env = env.trim();
-    if env.is_empty() || env.eq_ignore_ascii_case("none") || env.eq_ignore_ascii_case("off") {
-        return None;
-    }
-
-    let mut all = false;
-    let mut gzip = false;
-    let mut brotli = false;
-    let mut deflate = false;
-    let mut zstd = false;
-
-    for part in env.split(',') {
-        match part.trim().to_lowercase().as_str() {
-            "all" => all = true,
-            "gzip" => gzip = true,
-            "brotli" | "br" => brotli = true,
-            "deflate" => deflate = true,
-            "zstd" => zstd = true,
-            other => tracing::warn!(
-                "Unknown compression algorithm in COMPRESSION_ALGORITHMS: '{}'",
-                other
-            ),
-        }
-    }
-
-    if all {
-        return Some(CompressionAlgorithms::all_enabled());
-    }
-
-    let algorithms = CompressionAlgorithms {
-        gzip,
-        brotli,
-        deflate,
-        zstd,
-    };
-    if algorithms.is_empty() {
-        return None;
-    }
-
-    Some(algorithms)
-}
-
-/// 根据 COMPRESSION_ALGORITHMS 环境变量构造 CompressionLayer。
+/// 根据 COMPRESSION_ALGORITHMS 环境变量构造 CompressionLayer（解析见 `crate::compression`）。
 /// 默认（未设置时）关闭压缩；显式设为 "all" 启用全部算法，设为 "gzip,brotli,..."
 /// 按需选择；设为 ""、"none" 或 "off" 等价于不启用。
 ///
@@ -90,21 +21,15 @@ pub(crate) fn parse_compression_algorithms(env: &str) -> Option<CompressionAlgor
 /// 因此无需在此处对图片响应做额外的 content-type 过滤。另：图片实际挂在
 /// `static_routes`（无中间件），根本不经此层，详见 startup.rs 路由 merge 处。
 ///
-/// 已带 `Content-Encoding` 的响应（public 下预压缩的 `.br`）原样透传。
-/// 生产推荐 "br, gzip"：同等 q 值时 tower-http 按 zstd > br > gzip 选择，
+/// 已带 `Content-Encoding` 的响应（public 下预压缩的 `.br`、SSR 缓存的预压缩变体）原样透传。
+/// 生产推荐 "br, gzip"：同等 q 值时按 zstd > br > gzip 选择，
 /// Chrome 会拿到 zstd，而 zstd-6 仍比 brotli-6 大 6–9%。
 pub(crate) fn compression_layer_from_env() -> Option<tower_http::compression::CompressionLayer> {
-    let env = std::env::var("COMPRESSION_ALGORITHMS").unwrap_or_else(|_| "off".to_string());
-    parse_compression_algorithms(&env).map(compression_layer)
+    crate::compression::algorithms().map(compression_layer)
 }
 
-/// 动态压缩统一质量。tower-http 默认 brotli 4，只比 gzip-6 小 2–4%；
-/// 取 7 时 brotli 比 6 再小 1.9–2.9%，每次只多几毫秒；q9 起 feed 压缩耗时成倍
-/// 增加，q11 只适合构建期预压缩。
-const COMPRESSION_QUALITY: i32 = 7;
-
 fn compression_layer(
-    algorithms: CompressionAlgorithms,
+    algorithms: crate::compression::CompressionAlgorithms,
 ) -> tower_http::compression::CompressionLayer {
     use tower_http::compression::{CompressionLayer, CompressionLevel};
 
@@ -113,7 +38,9 @@ fn compression_layer(
         .br(algorithms.brotli)
         .deflate(algorithms.deflate)
         .zstd(algorithms.zstd)
-        .quality(CompressionLevel::Precise(COMPRESSION_QUALITY))
+        .quality(CompressionLevel::Precise(
+            crate::compression::DYNAMIC_QUALITY,
+        ))
 }
 
 /// 前端入口文件前缀（`[package.metadata.leptos] output-name = "yggdrasil"`）。
@@ -512,10 +439,8 @@ pub(crate) async fn previous_release_assets(
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        cache_control_for_path, compression_layer, parse_compression_algorithms,
-        previous_asset_file, CompressionAlgorithms,
-    };
+    use super::{cache_control_for_path, compression_layer, previous_asset_file};
+    use crate::compression::parse_compression_algorithms;
     use axum::http::{header, Method, Request};
     use tower::ServiceExt;
 
@@ -745,89 +670,6 @@ mod tests {
         assert_eq!(
             cache_value("/", Method::HEAD),
             Some("public, max-age=300, stale-while-revalidate=3600".to_string())
-        );
-    }
-
-    #[test]
-    fn compression_all_enables_everything() {
-        assert_eq!(
-            parse_compression_algorithms("all"),
-            Some(CompressionAlgorithms::all_enabled())
-        );
-    }
-
-    #[test]
-    fn compression_default_env_is_off() {
-        // 模拟未设置环境变量时的默认值
-        assert_eq!(parse_compression_algorithms("off"), None);
-    }
-
-    #[test]
-    fn compression_empty_none_off_disable() {
-        assert_eq!(parse_compression_algorithms(""), None);
-        assert_eq!(parse_compression_algorithms("none"), None);
-        assert_eq!(parse_compression_algorithms("NONE"), None);
-        assert_eq!(parse_compression_algorithms("off"), None);
-        assert_eq!(parse_compression_algorithms("OFF"), None);
-    }
-
-    #[test]
-    fn compression_single_algorithm() {
-        assert_eq!(
-            parse_compression_algorithms("gzip"),
-            Some(CompressionAlgorithms {
-                gzip: true,
-                brotli: false,
-                deflate: false,
-                zstd: false,
-            })
-        );
-        assert_eq!(
-            parse_compression_algorithms("br"),
-            Some(CompressionAlgorithms {
-                gzip: false,
-                brotli: true,
-                deflate: false,
-                zstd: false,
-            })
-        );
-    }
-
-    #[test]
-    fn compression_multiple_algorithms() {
-        assert_eq!(
-            parse_compression_algorithms("gzip, zstd"),
-            Some(CompressionAlgorithms {
-                gzip: true,
-                brotli: false,
-                deflate: false,
-                zstd: true,
-            })
-        );
-    }
-
-    #[test]
-    fn compression_case_insensitive_and_whitespace_tolerant() {
-        assert_eq!(
-            parse_compression_algorithms("GZIP, Brotli, Deflate, Zstd"),
-            Some(CompressionAlgorithms::all_enabled())
-        );
-        assert_eq!(
-            parse_compression_algorithms(" gzip , br , deflate , zstd "),
-            Some(CompressionAlgorithms::all_enabled())
-        );
-    }
-
-    #[test]
-    fn compression_unknown_algorithms_are_ignored() {
-        assert_eq!(
-            parse_compression_algorithms("gzip, unknown, lz4"),
-            Some(CompressionAlgorithms {
-                gzip: true,
-                brotli: false,
-                deflate: false,
-                zstd: false,
-            })
         );
     }
 

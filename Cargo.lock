@@ -6180,6 +6180,7 @@ dependencies = [
  "bollard",
  "bytes",
  "chrono",
+ "compression-codecs",
  "criterion",
  "dashmap",
  "deadpool-postgres",

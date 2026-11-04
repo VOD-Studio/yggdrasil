@@ -16,6 +16,9 @@ pub mod bridges;
 pub mod build_info;
 pub mod cache;
 pub mod components;
+// compression：响应压缩配置、Accept-Encoding 协商与编码器，server-only。
+#[cfg(feature = "server")]
+pub mod compression;
 pub mod config;
 pub mod context;
 pub mod db;
