@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **SSR 缓存命中不再每次现压**：压缩层在 HTML 缓存外侧，缓存命中的页面原先每个请求都要做一遍 brotli 7，服务端 CPU 有 98% 花在这里。现在页面写入缓存后，在阻塞线程池按 `COMPRESSION_ALGORITHMS` 启用的算法高档压缩一次（brotli 11、gzip 9），命中时按 `Accept-Encoding` 直接返回压缩结果并带 `Vary: Accept-Encoding`；压缩完成前的命中仍走现压。协商规则（q 值、`*`、`identity;q=0` 回 406）与压缩层一致，抽到新的 `compression` 模块。并发未命中写入相同内容时只压缩一次；页面失效或被替换后，在途的压缩结果丢弃。同机 A/B（`make bench-http`，固定到达率）：命中 p50 从 1.1–4.3 ms 降到 0.06 ms，闭环容量从 680–3,400 rps 升到约 16–17 万 rps（压测客户端已成为瓶颈），brotli 响应小 7–13%。
+- **动态压缩按正文长度选 brotli 窗口**：tower-http 的压缩层只能设质量，brotli 固定用 4 MiB 窗口，超过约 64 KB 的页面每个请求都要分配并清零 4 MiB 环形缓冲区。现在由 `compression::compress` 中间件接管动态压缩：协商与跳过规则（图片除 SVG、gRPC、SSE、32 字节以下、已带 `Content-Encoding`/`Content-Range`，拒绝 identity 时回 406）与原压缩层一致；长度未知的正文先缓冲，上游一口气给完且不超过 1 MiB 时取刚好容纳全文的窗口（下限 lgwin 18：q7 在 16 时换用另一种哈希，反而慢 4 倍）。上游中途暂停（流式 SSR）时与原来一样先 flush 已收到的部分，之后按 4 MiB 窗口流式压缩。`tower-http` 去掉 `compression-full`，不再依赖 `async-compression`。同机 A/B（缓存未命中）：110–220 KB 的文章页 p50 −12%～−16%、p99 −14%～−20%，首页、归档（流式）与超过 1 MiB 的长文无显著变化，响应大小不变。q7 每次还要清零约 8 MiB 的匹配哈希表，这部分与窗口无关，只能靠降低质量减少。
 
 ### Fixed
 

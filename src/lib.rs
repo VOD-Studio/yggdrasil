@@ -31,7 +31,7 @@ pub mod infra;
 // 仅 server feature 编译；WASM 前端不引用任何 mcp 符号。
 #[cfg(feature = "server")]
 pub mod mcp;
-// middleware：Axum 中间件与启动期纯函数（cache-control / admin 守卫 / 压缩层），
+// middleware：Axum 中间件与启动期纯函数（cache-control / admin 守卫 / 上一发布资源），
 // server-only。从 startup.rs 抽出以便独立测试，路由组装处以 crate::middleware::xxx 调用。
 #[cfg(feature = "server")]
 pub mod middleware;

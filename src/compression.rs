@@ -1,20 +1,24 @@
-//! HTTP 响应压缩：`COMPRESSION_ALGORITHMS` 配置、`Accept-Encoding` 协商与编码器。
+//! HTTP 响应压缩：`COMPRESSION_ALGORITHMS` 配置、`Accept-Encoding` 协商、编码器与动态压缩中间件。
 //!
-//! 协商规则与 tower-http 0.7 的 `CompressionLayer` 一致，SSR HTML 缓存命中时据此挑选
-//! 预压缩变体（`ssr_cache`），动态响应仍由压缩层现压。
+//! 协商与跳过规则沿用 tower-http 0.7 的 `CompressionLayer`。动态响应由 [`compress`] 现压；
+//! SSR HTML 缓存命中时按同一协商挑选预压缩变体（`ssr_cache`）。
 
 #![cfg(feature = "server")]
 
 use std::io;
 use std::sync::LazyLock;
 
-use axum::http::{header, HeaderMap, HeaderValue};
+use axum::body::{Body, BodyDataStream, HttpBody};
+use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
+use axum::response::Response;
+use bytes::Bytes;
 use compression_codecs::core::util::{PartialBuffer, WriteBuffer};
 use compression_codecs::core::Level;
 use compression_codecs::{
     brotli::params::EncoderParams as BrotliParams, flate::params::FlateEncoderParams,
     zstd::params::CParameter, BrotliEncoder, EncodeV2, GzipEncoder, ZlibEncoder, ZstdEncoder,
 };
+use futures::StreamExt;
 
 /// 压缩算法配置。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -239,17 +243,17 @@ pub(crate) fn negotiate(
 /// 压缩力度。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Effort {
+    /// 每个请求现压：统一质量 7。brotli 4 只比 gzip-6 小 2–4%；取 7 时 brotli 比 6 再小
+    /// 1.9–2.9%，每次只多几毫秒；q9 起 feed 压缩耗时成倍增加。
+    Dynamic,
     /// 一次压缩、多次复用（SSR HTML 缓存）：取各算法高档，brotli 11 比 7 再小约 8%。
     Cached,
 }
 
-/// 现压质量（tower-http 压缩层）。tower-http 默认 brotli 4，只比 gzip-6 小 2–4%；
-/// 取 7 时 brotli 比 6 再小 1.9–2.9%，每次只多几毫秒；q9 起 feed 压缩耗时成倍增加。
-pub(crate) const DYNAMIC_QUALITY: i32 = 7;
-
 impl Effort {
     fn level(self, encoding: Encoding) -> Level {
         Level::Precise(match (self, encoding) {
+            (Effort::Dynamic, _) => 7,
             (Effort::Cached, Encoding::Brotli) => 11,
             (Effort::Cached, Encoding::Zstd) => 19,
             (Effort::Cached, _) => 9,
@@ -259,8 +263,9 @@ impl Effort {
 
 /// brotli 默认窗口 4 MiB（lgwin 22）。流式编码不知道总长时环形缓冲区按窗口整块分配并清零，
 /// 超过约 64 KiB 的页面每次都要清 4 MiB；长度已知时取刚好容纳整段输入的窗口，压缩结果不变。
+/// 下限 18：q7 在 lgwin 16 时换用另一种哈希，33 KB 的首页反而慢 4 倍（0.54 → 2.2 ms）。
 fn brotli_window(len: Option<usize>) -> i32 {
-    const MIN: i32 = 16;
+    const MIN: i32 = 18;
     const MAX: i32 = 22;
     // 窗口实际容量为 2^lgwin - 16 字节。
     len.map_or(MAX, |len| {
@@ -306,6 +311,18 @@ impl Encoder {
         Ok(())
     }
 
+    /// 把已写入的输入全部压出，输出可被客户端立即解码（流式响应的前段）。
+    pub(crate) fn flush(&mut self, out: &mut Vec<u8>) -> io::Result<()> {
+        loop {
+            let mut output = WriteBuffer::new_initialized(&mut self.scratch);
+            let done = self.codec.flush(&mut output)?;
+            out.extend_from_slice(output.written());
+            if done {
+                return Ok(());
+            }
+        }
+    }
+
     pub(crate) fn finish(mut self, out: &mut Vec<u8>) -> io::Result<()> {
         loop {
             let mut output = WriteBuffer::new_initialized(&mut self.scratch);
@@ -332,6 +349,225 @@ pub(crate) fn encode(
             .and_then(|()| encoder.finish(&mut out))
             .map(|()| out),
     )
+}
+
+/// 动态压缩的缓冲上限：长度未知的正文在此之内结束时按总长收窄 brotli 窗口，超过后转流式。
+const BUFFER_LIMIT: usize = 1024 * 1024;
+
+/// 动态响应压缩中间件（`axum::middleware::from_fn`）。跳过规则同 tower-http 的 `DefaultPredicate`：
+/// - 已带 `Content-Encoding`（public 下预压缩的 `.br`、SSR 缓存的预压缩变体）或 `Content-Range` 的原样透传；
+/// - 跳过 `image/*`（`image/svg+xml` 除外）、gRPC、`text/event-stream` 与小于 32 字节的响应；
+/// - 客户端连 identity 都拒绝时回 406。
+///
+/// 与 tower-http 不同的一步：长度未知的正文先缓冲，若上游一口气给完且不超过 [`BUFFER_LIMIT`]，
+/// 就按总长选 brotli 窗口（[`brotli_window`]），省掉默认 4 MiB 环形缓冲区的分配与清零。
+/// 上游暂时没有数据（流式 SSR 等后续分块）时与 tower-http 一样先 flush 已收到的部分，
+/// 此后按 4 MiB 窗口流式压缩，前段照旧尽早到达浏览器。
+pub(crate) async fn compress(
+    algorithms: CompressionAlgorithms,
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Response {
+    let encoding = negotiate(req.headers(), algorithms);
+    let mut response = next.run(req).await;
+    let Some(encoding) = encoding else {
+        *response.status_mut() = StatusCode::NOT_ACCEPTABLE;
+        add_vary(response.headers_mut());
+        return response;
+    };
+    if !should_compress(&response) {
+        return response;
+    }
+    add_vary(response.headers_mut());
+    if encoding == Encoding::Identity {
+        return response;
+    }
+    let known_len = response
+        .body()
+        .size_hint()
+        .exact()
+        .and_then(|len| usize::try_from(len).ok());
+    let (mut parts, body) = response.into_parts();
+    parts.headers.remove(header::ACCEPT_RANGES);
+    parts.headers.remove(header::CONTENT_LENGTH);
+    parts
+        .headers
+        .insert(header::CONTENT_ENCODING, encoding.header_value());
+    let stream = CompressStream {
+        input: body.into_data_stream(),
+        encoding,
+        stage: match known_len {
+            Some(len) => Stage::Streaming {
+                encoder: dynamic_encoder(encoding, Some(len)),
+                pending: false,
+            },
+            None => Stage::Buffering(Vec::new()),
+        },
+    };
+    let stream = futures::stream::unfold(stream, |mut stream| async move {
+        stream.next_chunk().await.map(|chunk| (chunk, stream))
+    })
+    // 下游在流结束后可能再次 poll；unfold 对此会 panic。
+    .fuse();
+    Response::from_parts(parts, Body::from_stream(stream))
+}
+
+fn add_vary(headers: &mut HeaderMap) {
+    let listed = headers
+        .get_all(header::VARY)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .flat_map(|value| value.split(','))
+        .any(|name| name.trim().eq_ignore_ascii_case("accept-encoding"));
+    if !listed {
+        headers.append(header::VARY, HeaderValue::from_static("accept-encoding"));
+    }
+}
+
+fn should_compress(response: &Response) -> bool {
+    let headers = response.headers();
+    if headers.contains_key(header::CONTENT_ENCODING) || headers.contains_key(header::CONTENT_RANGE)
+    {
+        return false;
+    }
+    let size = response.body().size_hint().exact().or_else(|| {
+        headers
+            .get(header::CONTENT_LENGTH)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.parse().ok())
+    });
+    if size.is_some_and(|size| size < 32) {
+        return false;
+    }
+    let content_type = headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default();
+    let excluded = |prefix: &str, exception: Option<&str>| {
+        content_type.starts_with(prefix)
+            && !exception.is_some_and(|exception| content_type.starts_with(exception))
+    };
+    !(excluded("application/grpc", Some("application/grpc-web"))
+        || excluded("image/", Some("image/svg+xml"))
+        || excluded("text/event-stream", None))
+}
+
+fn dynamic_encoder(encoding: Encoding, len: Option<usize>) -> Encoder {
+    Encoder::new(encoding, Effort::Dynamic, len).expect("identity 不进入压缩流")
+}
+
+enum Stage {
+    /// 长度未知：攒到 [`BUFFER_LIMIT`]、上游暂停或正文结束。
+    Buffering(Vec<u8>),
+    /// `pending`：上次 flush 之后又写入过数据。
+    Streaming {
+        encoder: Encoder,
+        pending: bool,
+    },
+    Done,
+}
+
+struct CompressStream {
+    input: BodyDataStream,
+    encoding: Encoding,
+    stage: Stage,
+}
+
+impl CompressStream {
+    /// 下一段非空压缩输出；None 表示结束。上游或编码出错后结束。
+    async fn next_chunk(&mut self) -> Option<Result<Bytes, axum::Error>> {
+        use futures::FutureExt;
+
+        while !matches!(self.stage, Stage::Done) {
+            let mut out = Vec::new();
+            let next = match self.input.next().now_or_never() {
+                Some(next) => next,
+                None => {
+                    // 上游暂停：先送出已收到的部分，再等后续分块。
+                    if let Err(error) = self.flush(&mut out) {
+                        self.stage = Stage::Done;
+                        return Some(Err(axum::Error::new(error)));
+                    }
+                    if !out.is_empty() {
+                        return Some(Ok(Bytes::from(out)));
+                    }
+                    self.input.next().await
+                }
+            };
+            let result = match next {
+                Some(Ok(chunk)) => self.push(&chunk, &mut out),
+                Some(Err(error)) => {
+                    self.stage = Stage::Done;
+                    return Some(Err(error));
+                }
+                None => self.finish(&mut out),
+            };
+            if let Err(error) = result {
+                self.stage = Stage::Done;
+                return Some(Err(axum::Error::new(error)));
+            }
+            if !out.is_empty() {
+                return Some(Ok(Bytes::from(out)));
+            }
+        }
+        None
+    }
+
+    /// 转入流式压缩：总长未知，按默认窗口。
+    fn start_streaming(&mut self, buffered: &[u8], out: &mut Vec<u8>) -> io::Result<()> {
+        let mut encoder = dynamic_encoder(self.encoding, None);
+        let result = encoder.write(buffered, out);
+        self.stage = Stage::Streaming {
+            encoder,
+            pending: !buffered.is_empty(),
+        };
+        result
+    }
+
+    fn push(&mut self, chunk: &[u8], out: &mut Vec<u8>) -> io::Result<()> {
+        match &mut self.stage {
+            Stage::Buffering(buffered) => {
+                buffered.extend_from_slice(chunk);
+                if buffered.len() <= BUFFER_LIMIT {
+                    return Ok(());
+                }
+                let buffered = std::mem::take(buffered);
+                self.start_streaming(&buffered, out)
+            }
+            Stage::Streaming { encoder, pending } => {
+                *pending |= !chunk.is_empty();
+                encoder.write(chunk, out)
+            }
+            Stage::Done => Ok(()),
+        }
+    }
+
+    fn flush(&mut self, out: &mut Vec<u8>) -> io::Result<()> {
+        match &mut self.stage {
+            Stage::Buffering(buffered) if !buffered.is_empty() => {
+                let buffered = std::mem::take(buffered);
+                self.start_streaming(&buffered, out)?;
+                self.flush(out)
+            }
+            Stage::Streaming { encoder, pending } if *pending => {
+                *pending = false;
+                encoder.flush(out)
+            }
+            _ => Ok(()),
+        }
+    }
+
+    fn finish(&mut self, out: &mut Vec<u8>) -> io::Result<()> {
+        match std::mem::replace(&mut self.stage, Stage::Done) {
+            Stage::Buffering(buffered) => {
+                let mut encoder = dynamic_encoder(self.encoding, Some(buffered.len()));
+                encoder.write(&buffered, out)?;
+                encoder.finish(out)
+            }
+            Stage::Streaming { encoder, .. } => encoder.finish(out),
+            Stage::Done => Ok(()),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -507,10 +743,232 @@ mod tests {
     #[test]
     fn brotli_window_covers_whole_known_input() {
         assert_eq!(brotli_window(None), 22);
-        assert_eq!(brotli_window(Some(0)), 16);
-        assert_eq!(brotli_window(Some((1 << 16) - 16)), 16);
-        assert_eq!(brotli_window(Some((1 << 16) - 15)), 17);
-        assert_eq!(brotli_window(Some(110_593)), 17);
+        assert_eq!(brotli_window(Some(0)), 18);
+        assert_eq!(brotli_window(Some((1 << 18) - 16)), 18);
+        assert_eq!(brotli_window(Some((1 << 18) - 15)), 19);
+        assert_eq!(brotli_window(Some((1 << 21) - 15)), 22);
         assert_eq!(brotli_window(Some(1 << 30)), 22);
+    }
+
+    /// 测试响应工厂：每次调用产出一份新响应（`Response` 不能克隆）。
+    type Respond = fn() -> Response;
+
+    /// 经 [`compress`] 请求一个由 `respond` 产出的响应。
+    async fn through_middleware(config: &str, accept: &str, respond: Respond) -> Response {
+        use tower::ServiceExt;
+        let algorithms = parse_compression_algorithms(config).unwrap();
+        axum::Router::new()
+            .route("/", axum::routing::get(move || async move { respond() }))
+            .layer(axum::middleware::from_fn(
+                move |req: axum::extract::Request, next: axum::middleware::Next| {
+                    compress(algorithms, req, next)
+                },
+            ))
+            .oneshot(
+                axum::http::Request::get("/")
+                    .header(header::ACCEPT_ENCODING, accept)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+    }
+
+    fn page(paragraphs: usize) -> String {
+        (0..paragraphs)
+            .map(|i| {
+                format!(
+                    "<p>第 {i} 段 dynamic compression regression {}</p>",
+                    i * 7919
+                )
+            })
+            .collect()
+    }
+
+    fn html(body: Body) -> Response {
+        Response::builder()
+            .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
+            .body(body)
+            .unwrap()
+    }
+
+    /// 小页面：长度已知 / 未知（分块）；大页面：超过缓冲上限，转流式。
+    const BODIES: [(&str, Respond); 3] = [
+        ("known", || html(Body::from(page(200)))),
+        ("chunked", || {
+            let chunks = page(200)
+                .into_bytes()
+                .chunks(700)
+                .map(<[u8]>::to_vec)
+                .collect::<Vec<_>>();
+            html(Body::from_stream(futures::stream::iter(
+                chunks.into_iter().map(Ok::<_, io::Error>),
+            )))
+        }),
+        ("over-limit", || {
+            let chunks = page(30_000)
+                .into_bytes()
+                .chunks(64 * 1024)
+                .map(<[u8]>::to_vec)
+                .collect::<Vec<_>>();
+            html(Body::from_stream(futures::stream::iter(
+                chunks.into_iter().map(Ok::<_, io::Error>),
+            )))
+        }),
+    ];
+
+    #[tokio::test]
+    async fn dynamic_compression_round_trips_buffered_and_streamed_bodies() {
+        assert!(page(30_000).len() > BUFFER_LIMIT);
+        for (config, accept, expected) in [
+            ("br, gzip", "gzip, deflate, br, zstd", Encoding::Brotli),
+            ("br, gzip", "gzip", Encoding::Gzip),
+            ("all", "gzip, deflate, br, zstd", Encoding::Zstd),
+        ] {
+            for (name, respond) in BODIES {
+                let expected_body = axum::body::to_bytes(respond().into_body(), usize::MAX)
+                    .await
+                    .unwrap();
+                let response = through_middleware(config, accept, respond).await;
+                let headers = response.headers();
+                assert_eq!(
+                    headers[header::CONTENT_ENCODING],
+                    expected.header_value(),
+                    "{name} {accept}"
+                );
+                assert_eq!(headers[header::VARY], "accept-encoding", "{name}");
+                assert!(!headers.contains_key(header::CONTENT_LENGTH), "{name}");
+                let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+                    .await
+                    .unwrap();
+                assert_eq!(decode(expected, &body), expected_body, "{name} {accept}");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn dynamic_compression_skips_ineligible_responses() {
+        fn typed(content_type: &'static str) -> Response {
+            Response::builder()
+                .header(header::CONTENT_TYPE, content_type)
+                .body(Body::from(page(50)))
+                .unwrap()
+        }
+        let cases: [(&str, Respond, bool); 6] = [
+            ("png", || typed("image/png"), false),
+            ("svg", || typed("image/svg+xml"), true),
+            ("sse", || typed("text/event-stream"), false),
+            ("tiny", || html(Body::from("<p>短</p>")), false),
+            (
+                "precompressed",
+                || {
+                    let mut response = typed("text/css");
+                    response
+                        .headers_mut()
+                        .insert(header::CONTENT_ENCODING, HeaderValue::from_static("br"));
+                    response
+                },
+                false,
+            ),
+            (
+                "range",
+                || {
+                    let mut response = typed("text/plain");
+                    response.headers_mut().insert(
+                        header::CONTENT_RANGE,
+                        HeaderValue::from_static("bytes 0-9/100"),
+                    );
+                    response
+                },
+                false,
+            ),
+        ];
+        for (name, respond, compressed) in cases {
+            let original = respond();
+            let original_encoding = original.headers().get(header::CONTENT_ENCODING).cloned();
+            let original_body = axum::body::to_bytes(original.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            let response = through_middleware("br, gzip", "br", respond).await;
+            let encoding = response.headers().get(header::CONTENT_ENCODING).cloned();
+            let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            if compressed {
+                assert_eq!(encoding, Some(Encoding::Brotli.header_value()), "{name}");
+                assert_eq!(decode(Encoding::Brotli, &body), original_body, "{name}");
+            } else {
+                assert_eq!(encoding, original_encoding, "{name}");
+                assert_eq!(body, original_body, "{name}");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn dynamic_compression_answers_406_when_identity_is_refused() {
+        let response = through_middleware("br, gzip", "zstd, identity;q=0", || {
+            html(Body::from(page(50)))
+        })
+        .await;
+        assert_eq!(response.status(), StatusCode::NOT_ACCEPTABLE);
+        assert_eq!(response.headers()[header::VARY], "accept-encoding");
+        assert!(!response.headers().contains_key(header::CONTENT_ENCODING));
+    }
+
+    /// 流式响应（如流式 SSR）上游暂停时先送出已收到部分，不等正文结束。
+    #[tokio::test]
+    async fn dynamic_compression_flushes_when_upstream_pauses() {
+        use std::sync::{Arc, Mutex};
+        use tower::ServiceExt;
+
+        let (tx, rx) = tokio::sync::mpsc::channel::<Result<Bytes, io::Error>>(4);
+        let rx = Arc::new(Mutex::new(Some(rx)));
+        let algorithms = parse_compression_algorithms("br, gzip").unwrap();
+        let app = axum::Router::new()
+            .route(
+                "/",
+                axum::routing::get(move || {
+                    let rx = rx.lock().unwrap().take().unwrap();
+                    async move {
+                        html(Body::from_stream(
+                            tokio_stream::wrappers::ReceiverStream::new(rx),
+                        ))
+                    }
+                }),
+            )
+            .layer(axum::middleware::from_fn(
+                move |req: axum::extract::Request, next: axum::middleware::Next| {
+                    compress(algorithms, req, next)
+                },
+            ));
+        let (head, tail) = (page(100), page(300));
+        tx.send(Ok(Bytes::from(head.clone()))).await.unwrap();
+        let response = app
+            .oneshot(
+                axum::http::Request::get("/")
+                    .header(header::ACCEPT_ENCODING, "br")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let mut body = response.into_body().into_data_stream();
+        let first = tokio::time::timeout(std::time::Duration::from_secs(5), body.next())
+            .await
+            .expect("上游暂停时应先送出前段")
+            .unwrap()
+            .unwrap();
+        assert!(!first.is_empty());
+
+        tx.send(Ok(Bytes::from(tail.clone()))).await.unwrap();
+        drop(tx);
+        let mut encoded = first.to_vec();
+        while let Some(chunk) = body.next().await {
+            encoded.extend_from_slice(&chunk.unwrap());
+        }
+        assert_eq!(
+            decode(Encoding::Brotli, &encoded),
+            format!("{head}{tail}").into_bytes()
+        );
     }
 }

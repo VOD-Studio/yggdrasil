@@ -1,47 +1,12 @@
 //! Axum 中间件与启动期纯函数。
 //!
 //! 从 `main.rs` 抽出的、可独立测试的服务端 HTTP 中间件（cache-control、admin
-//! 守卫）与压缩层构造逻辑。整体 server-only——WASM 构建不会编译本模块。
+//! 守卫、上一发布资源保留窗口）。响应压缩在 `crate::compression`。整体 server-only。
 //!
 //! 这些函数此前散落在 `main.rs`，既无法单独测试也使入口职责过载。迁移后
 //! `startup.rs` 的路由组装以全路径 `crate::middleware::xxx` 引用，语义不变。
 
 #![cfg(feature = "server")]
-
-/// 根据 COMPRESSION_ALGORITHMS 环境变量构造 CompressionLayer（解析见 `crate::compression`）。
-/// 默认（未设置时）关闭压缩；显式设为 "all" 启用全部算法，设为 "gzip,brotli,..."
-/// 按需选择；设为 ""、"none" 或 "off" 等价于不启用。
-///
-/// CompressionLayer 使用 tower-http 的 `DefaultPredicate`，开箱即用即：
-/// - 跳过 `image/*` content-type（WebP/PNG/JPEG/GIF 等已是压缩格式，再压浪费 CPU，
-///   唯一例外是 `image/svg+xml`，作为 XML 文本可被压缩）；
-/// - 跳过 gRPC 与 `text/event-stream`（SSE）；
-/// - 跳过小于 32 字节的响应。
-///
-/// 因此无需在此处对图片响应做额外的 content-type 过滤。另：图片实际挂在
-/// `static_routes`（无中间件），根本不经此层，详见 startup.rs 路由 merge 处。
-///
-/// 已带 `Content-Encoding` 的响应（public 下预压缩的 `.br`、SSR 缓存的预压缩变体）原样透传。
-/// 生产推荐 "br, gzip"：同等 q 值时按 zstd > br > gzip 选择，
-/// Chrome 会拿到 zstd，而 zstd-6 仍比 brotli-6 大 6–9%。
-pub(crate) fn compression_layer_from_env() -> Option<tower_http::compression::CompressionLayer> {
-    crate::compression::algorithms().map(compression_layer)
-}
-
-fn compression_layer(
-    algorithms: crate::compression::CompressionAlgorithms,
-) -> tower_http::compression::CompressionLayer {
-    use tower_http::compression::{CompressionLayer, CompressionLevel};
-
-    CompressionLayer::new()
-        .gzip(algorithms.gzip)
-        .br(algorithms.brotli)
-        .deflate(algorithms.deflate)
-        .zstd(algorithms.zstd)
-        .quality(CompressionLevel::Precise(
-            crate::compression::DYNAMIC_QUALITY,
-        ))
-}
 
 /// 前端入口文件前缀（`[package.metadata.leptos] output-name = "yggdrasil"`）。
 const PKG_ENTRY_PREFIX: &str = "/pkg/yggdrasil.";
@@ -439,8 +404,7 @@ pub(crate) async fn previous_release_assets(
 
 #[cfg(test)]
 mod tests {
-    use super::{cache_control_for_path, compression_layer, previous_asset_file};
-    use crate::compression::parse_compression_algorithms;
+    use super::{cache_control_for_path, previous_asset_file};
     use axum::http::{header, Method, Request};
     use tower::ServiceExt;
 
@@ -671,50 +635,6 @@ mod tests {
             cache_value("/", Method::HEAD),
             Some("public, max-age=300, stale-while-revalidate=3600".to_string())
         );
-    }
-
-    /// 用给定 Accept-Encoding 请求挂了压缩层的 HTML 路由，返回响应编码。
-    async fn response_encoding(env: &str, accept_encoding: &str) -> Option<String> {
-        let html = "<article><p>压缩回归测试段落 compression regression.</p></article>".repeat(400);
-        let app = axum::Router::new()
-            .route(
-                "/",
-                axum::routing::get(move || async move { axum::response::Html(html) }),
-            )
-            .layer(compression_layer(
-                parse_compression_algorithms(env).unwrap(),
-            ));
-        let response = app
-            .oneshot(
-                Request::get("/")
-                    .header(header::ACCEPT_ENCODING, accept_encoding)
-                    .body(axum::body::Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        response
-            .headers()
-            .get(header::CONTENT_ENCODING)
-            .map(|v| v.to_str().unwrap().to_string())
-    }
-
-    #[tokio::test]
-    async fn recommended_compression_serves_brotli_to_chrome() {
-        let encoding = response_encoding("br, gzip", "gzip, deflate, br, zstd").await;
-        assert_eq!(encoding.as_deref(), Some("br"));
-    }
-
-    #[tokio::test]
-    async fn recommended_compression_falls_back_to_gzip() {
-        let encoding = response_encoding("br, gzip", "gzip").await;
-        assert_eq!(encoding.as_deref(), Some("gzip"));
-    }
-
-    #[tokio::test]
-    async fn all_compression_prefers_zstd_for_chrome() {
-        let encoding = response_encoding("all", "gzip, deflate, br, zstd").await;
-        assert_eq!(encoding.as_deref(), Some("zstd"));
     }
 
     #[tokio::test]

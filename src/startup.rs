@@ -617,7 +617,13 @@ fn build_router(options: ServerOptions) -> axum::Router {
             },
         ))
         .layer(axum::middleware::from_fn(crate::api::csrf::csrf_middleware));
-    let compression = crate::middleware::compression_layer_from_env();
+    let compression = crate::compression::algorithms().map(|algorithms| {
+        axum::middleware::from_fn(
+            move |req: axum::extract::Request, next: axum::middleware::Next| {
+                crate::compression::compress(algorithms, req, next)
+            },
+        )
+    });
     if let Some(layer) = compression.clone() {
         app_routes = app_routes.layer(layer);
     }
