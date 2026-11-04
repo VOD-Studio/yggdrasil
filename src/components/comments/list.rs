@@ -127,7 +127,7 @@ pub fn CommentList(
     let merged = Memo::new(move |_| merge_and_treeify(comments.get(), pending.get()));
 
     view! {
-        // comment-list：评论区灯箱（__initLightbox）的根选择器，绑定在 section.rs。
+        // 评论区灯箱（__initLightbox）的根选择器是 .comment-list .comment-body，绑定在 section.rs。
         <div class="comment-list">
             <For
                 each=move || merged.get()

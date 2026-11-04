@@ -276,6 +276,7 @@ pub fn CommentSection(post_id: i32) -> impl IntoView {
     });
 
     // 灯箱绑定：评论图片（审核后渲染的 <img>）点击放大，与正文图一致。
+    // 根选择器只取正文 .comment-body，头像等评论外壳里的图片不进图集。
     // 评论列表随加载/刷新重建节点后重跑此 effect 重新绑定，TS 端 data-lb-bound
     // 守卫保证重复绑定幂等。下一帧执行，确保列表 DOM 已提交。
     #[cfg(target_arch = "wasm32")]
@@ -286,7 +287,7 @@ pub fn CommentSection(post_id: i32) -> impl IntoView {
         }
         request_animation_frame(|| {
             // 脚本未加载时入队，lightbox.js 尾部补执行。
-            crate::bridges::globals::init_lightbox(&[".comment-list"]);
+            crate::bridges::globals::init_lightbox(&[".comment-list .comment-body"]);
         });
     });
 
