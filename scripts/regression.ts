@@ -95,7 +95,7 @@ async function main() {
     'POSTGRES_PASSWORD=regression',
     '-p',
     '127.0.0.1::5432',
-    'postgres:18-alpine',
+    'postgres:16-alpine',
   ]);
   const port = (await capture(['docker', 'port', container, '5432/tcp'])).split(':').at(-1);
   const pg = {

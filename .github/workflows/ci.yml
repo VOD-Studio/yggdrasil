@@ -168,7 +168,7 @@ jobs:
     timeout-minutes: 30
     services:
       postgres:
-        image: postgres:18-alpine
+        image: postgres:16-alpine
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -196,8 +196,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y postgresql-common
           sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
-          sudo apt-get install -y postgresql-client-18
-          echo /usr/lib/postgresql/18/bin >> "$GITHUB_PATH"
+          sudo apt-get install -y postgresql-client-16
+          echo /usr/lib/postgresql/16/bin >> "$GITHUB_PATH"
 
       - name: Article, notes and backup database regressions
         env:
@@ -312,8 +312,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y postgresql-common
           sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
-          sudo apt-get install -y postgresql-client-18
-          echo /usr/lib/postgresql/18/bin >> "$GITHUB_PATH"
+          sudo apt-get install -y postgresql-client-16
+          echo /usr/lib/postgresql/16/bin >> "$GITHUB_PATH"
           cd libs
           bun install --frozen-lockfile
           bun run playwright install --with-deps chromium
@@ -384,8 +384,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y postgresql-common brotli
           sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
-          sudo apt-get install -y postgresql-client-18
-          echo /usr/lib/postgresql/18/bin >> "$GITHUB_PATH"
+          sudo apt-get install -y postgresql-client-16
+          echo /usr/lib/postgresql/16/bin >> "$GITHUB_PATH"
           cd libs
           bun install --frozen-lockfile
           bun run playwright install --with-deps chromium
