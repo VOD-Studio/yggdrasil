@@ -10,9 +10,11 @@ name: CI
 # - pull_request 和非 master 的手动触发始终使用 GitHub-hosted runner：本仓库公开，避免不受信任代码污染持久 runner。
 # - release/publish/deploy 保持 GitHub-hosted：这些 job 使用写权限或部署密钥，不把 secrets 带到持久 runner。
 # - arm64 构建保持 ubuntu-24.04-arm（组织 runner-1 是 X64，不能替代）。
-# - tag 推送：检查 → build-amd64 → publish-amd64-ghcr + publish-runners → deploy-gate → deploy-xun/deploy-rua；
-#   同时 build-arm64 → release + publish-ghcr。
-# - master 上的 dispatch：检查 → build-amd64 → publish-amd64-ghcr + publish-runners → deploy
+# - tag 推送：快速检查 → build-amd64（与 browser、release-split 并行）→ checks 全部通过后
+#   publish-amd64-ghcr + publish-runners → deploy-gate → deploy-xun/deploy-rua；
+#   同时 build-arm64 → release + publish-ghcr（同样需 checks）。
+# - master 上的 dispatch：快速检查 → build-amd64（与 browser、release-split 并行）→ checks 通过后
+#   publish-amd64-ghcr + publish-runners → deploy
 #   （不发 Release，不更新 latest 多架构清单）。
 # - 非 master 的 dispatch：只跑检查和 build-amd64。
 # - PR：只跑检查，不构建镜像。
@@ -350,8 +352,8 @@ jobs:
   # make build 走与 Docker 相同的流水线（固定 nightly + build-std + cargo-leptos --split），
   # test-release-split.ts 再起临时 PostgreSQL 与 release 服务端做 Playwright 断言。
   # PR 也跑：体积门槛与分包粒度只有真实 release 构建才能验证。
+  # 与镜像构建并行；发布前由 checks 汇总把关。
   release-split:
-    needs: [select_runner]
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -412,17 +414,39 @@ jobs:
           name: release-build-log
           path: target/build.log
 
+  # ── checks：汇总全部检查，所有发布类 job 只经它放行 ──
+  # 镜像构建只等 5 分钟内的快速检查，与 browser/release-split 并行。
+  # !cancelled()：有检查失败时本 job 仍然运行并明确失败，而不是被跳过；
+  # 被跳过的 job 在分支保护里会被视为通过。
+  checks:
+    if: ${{ !cancelled() }}
+    needs: [test, test-db, lint-js, check-wasm, audit, lint-workflows, browser, release-split]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every check to succeed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          failed="$(jq -r 'to_entries[] | select(.value.result != "success") | "\(.key)=\(.value.result)"' <<<"$NEEDS")"
+          if [[ -n "$failed" ]]; then
+            echo "::error::检查未通过：$(tr '\n' ' ' <<<"$failed")"
+            exit 1
+          fi
+          echo "全部检查通过"
+
   # ── build-amd64：Docker in-container 全量构建（libs/WASM/rustdoc/静态 musl server）──
   # GitHub x86_64 runner，原生 Dockerfile（非 Dockerfile.cross），宿主仅需 Docker。
-  # PR 之外的每次运行都跑（= 编译验证）。用 cargo-chef + GHA 层缓存：依赖不变时
-  # cooker 层 cache-hit(秒级),cargo build 只编 app(~2min)。
+  # PR 之外的每次运行都跑（= 编译验证）。只等快速检查，与 browser/release-split 并行；
+  # 它不是发布门禁，门禁是 checks。用 cargo-chef + GHA 层缓存（只由 master 写入）：
+  # 依赖不变时 cooker 层 cache-hit(秒级),cargo build 只编 app(~2min)。
   build-amd64:
     runs-on: ${{ fromJSON(needs.select_runner.outputs.runner) }}
-    needs: [select_runner, test, test-db, lint-js, check-wasm, browser, release-split, audit, lint-workflows]
+    needs: [select_runner, test, test-db, lint-js, check-wasm, audit, lint-workflows]
     timeout-minutes: 60
     # PR 不构建完整镜像，仅靠检查 job 做门槛，省下 CI 分钟与 GHA 缓存配额。
     # master push、tag、任意分支手动触发都构建（= 编译验证）；
-    # tag/master 手动触发时此 job 是 release/publish/deploy 的必需前置，一定运行。
+    # tag/master 手动触发时此 job 是 release/publish/deploy 的必需前置（与 checks 一起），一定运行。
     if: github.event_name != 'pull_request'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -537,7 +561,7 @@ jobs:
   publish-amd64-ghcr:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: [build-amd64]
+    needs: [build-amd64, checks]
     if: >-
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
       || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master')
@@ -591,7 +615,7 @@ jobs:
   # 比 QEMU 交叉编译快 4-8 倍。仅 tag 推送时运行（省 CI 分钟）。
   build-arm64:
     runs-on: ubuntu-24.04-arm
-    needs: [test, test-db, lint-js, check-wasm, browser, audit, lint-workflows]
+    needs: [test, test-db, lint-js, check-wasm, audit, lint-workflows]
     timeout-minutes: 60
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     steps:
@@ -659,7 +683,7 @@ jobs:
   release:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: [build-amd64, build-arm64]
+    needs: [build-amd64, build-arm64, checks]
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write
@@ -732,7 +756,7 @@ jobs:
   publish-ghcr:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    needs: [build-amd64, build-arm64]
+    needs: [build-amd64, build-arm64, checks]
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     permissions:
       packages: write
@@ -807,7 +831,7 @@ jobs:
   publish-runners:
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    needs: [test, test-db, lint-js, check-wasm, browser, audit, lint-workflows]
+    needs: [checks]
     if: >-
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
       || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master')
