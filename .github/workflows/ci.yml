@@ -753,6 +753,7 @@ jobs:
   # sha-xxxxxxx(可追溯某次构建)。部署不等待本 job，而使用 publish-amd64-ghcr
   # 已发布的 commit 专属 amd64 tag；本 job 仅负责多架构镜像归档。
   # buildx imagetools create 合并(从 registry 引用，同时打全部 tag) 并附加来源证明。
+  # latest 只在本 tag 是最新 v* tag 时更新；运行期间新推了更新的 tag 也能识别。
   publish-ghcr:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -806,13 +807,21 @@ jobs:
           docker tag yggdrasil:arm64 "${IMAGE}:sha-${SHA}-arm64"
           docker push "${IMAGE}:sha-${SHA}-amd64"
           docker push "${IMAGE}:sha-${SHA}-arm64"
-          docker buildx imagetools create \
-            -t "${IMAGE}:latest" -t "${IMAGE}:sha-${SHA}" -t "${IMAGE}:${GITHUB_REF_NAME}" \
+          tags=(-t "${IMAGE}:sha-${SHA}" -t "${IMAGE}:${GITHUB_REF_NAME}")
+          newest="$(git ls-remote --tags --refs "https://github.com/${GITHUB_REPOSITORY}.git" 'refs/tags/v*' \
+            | sed 's#.*refs/tags/##' | sort -V | tail -n1)"
+          [[ -n "$newest" ]] || { echo "::error::无法列出远端 v* tag"; exit 1; }
+          if [[ "$newest" == "$GITHUB_REF_NAME" ]]; then
+            tags+=(-t "${IMAGE}:latest")
+          else
+            echo "::warning::${GITHUB_REF_NAME} 不是最新 tag（${newest}），不更新 latest"
+          fi
+          docker buildx imagetools create "${tags[@]}" \
             "${IMAGE}:sha-${SHA}-amd64" "${IMAGE}:sha-${SHA}-arm64"
           digest="$(docker buildx imagetools inspect "${IMAGE}:${GITHUB_REF_NAME}" --format '{{json .Manifest}}' | jq -r .digest)"
           echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
           echo "digest=${digest}" >> "$GITHUB_OUTPUT"
-          echo "==> pushed ${IMAGE}:{latest,sha-${SHA},${GITHUB_REF_NAME}} (${digest})"
+          echo "==> pushed ${tags[*]} (${digest})"
 
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
