@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **文章表格窄列里的中文被逐字折行**：表格宽于正文列而横向滚动时，列缩到最小内容宽度，`th` 为 `nowrap` 且字号小于 `td`，导致首列「首页」之类短词被挤成一字一行。`.md-content td` 现在设 `min-width: 6em`，至少容纳 4 个字。
+
 ## [1.3.1] - 2026-11-02
 
 站点空白处加入吉祥物像素贴图；灯箱打开/关闭动画改为 medium-zoom 风格，滚动关闭逐帧跟手；组件图鉴首屏不再抖动；Rust 依赖升级（leptos 0.8.23 等）。

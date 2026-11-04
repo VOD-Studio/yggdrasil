@@ -337,6 +337,12 @@
     vertical-align: top;
   }
 
+  /* 表格溢出滚动时，列会缩到最小内容宽度；表头 nowrap 比正文字号小，
+     较窄的列里 CJK 短词（如「首页」）会被逐字折行。给单元格留 4 个字的下限。 */
+  .md-content td {
+    min-width: 6em;
+  }
+
   .md-content td:first-child {
     color: var(--color-fg);
   }
