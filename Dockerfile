@@ -1,7 +1,7 @@
 # -----------------------------------------------------------------------------
 # Builder stage: compile the static-linked musl server binary and frontend assets
 # -----------------------------------------------------------------------------
-FROM rust:1.99-trixie AS builder
+FROM rust:1.99-trixie AS toolchain
 
 # Master switch for Chinese mirrors.
 #   CN_MIRROR=false (default): use all upstream/official sources (fast on CI
@@ -164,44 +164,35 @@ COPY libs/xterm-terminal/package.json     libs/xterm-terminal/
 COPY libs/yggdrasil-core/package.json     libs/yggdrasil-core/
 RUN cd libs && bun install --frozen-lockfile
 
-# Build-time git info, injected by the caller via --build-arg. `.dockerignore`
-# excludes `.git/`, so build.rs can't run `git` inside the container — these
-# ARGs are the only channel for git metadata to reach build.rs (it reads them
-# via std::env::var, its first-precedence source). Defaults are empty so a
-# bare `docker build` without args degrades to "unknown" gracefully (build.rs
-# falls back to the git command, then "unknown").
-#
-# Each ARG → ENV pair is needed: ARG is only visible in Dockerfile RUN
-# commands (and build.rs is invoked by cargo, not a RUN), so we export it as
-# ENV for the cargo build step to inherit. Both default to empty; Makefile's
-# docker/docker-amd64/docker-multiarch targets override them on the host.
-ARG YGG_BUILD_GIT_DESCRIBE=""
-ARG YGG_BUILD_GIT_HASH=""
-ARG YGG_BUILD_GIT_COMMIT_DATE=""
-ENV YGG_BUILD_GIT_DESCRIBE=${YGG_BUILD_GIT_DESCRIBE}
-ENV YGG_BUILD_GIT_HASH=${YGG_BUILD_GIT_HASH}
-ENV YGG_BUILD_GIT_COMMIT_DATE=${YGG_BUILD_GIT_COMMIT_DATE}
-
-# ──────────────────────────────────────────────────────────────────────────
-# cargo-chef 依赖分层:把 576 个 Rust 依赖的编译与 app 源码分离。
-# planner 只需 Cargo.toml + Cargo.lock 生成 recipe.json(无源码),所以只要
-# 依赖清单不变,recipe.json 不变,cooker 层就 cache-hit。CI 用 GHA cache
-# (type=gha, mode=max) 跨 run 持久化 cooker 层——改一行 .rs 时,依赖编译
-# 从 ~10min 降到 ~0s,只编 app(~2min)。
-#
-# cook 必须用与最终 cargo build 完全相同的 target/features/rustflags,
-# 否则产物目录不匹配、缓存形同虚设。这里镜像后端(server musl release),
-# WASM 前端走 cargo-leptos 不经 cargo-chef(它另走 wasm32 target)。
+# ── planner：只从 Cargo.toml/Cargo.lock 生成 recipe.json ──
+# cargo-chef 会把本地 crate 的版本号统一替换成固定值，发版只改版本号时 recipe.json
+# 不变，下面 builder 的 COPY --from=planner 与 cook 层照样命中缓存。
+FROM toolchain AS planner
 COPY Cargo.toml Cargo.lock ./
 # cargo-chef prepare 运行 `cargo metadata`，后者校验 autobins/[[bin]] 源文件物理存在（缺 bin 即报错；
 # cargo 1.99 实测缺 [[bench]] 文件只会让该 target 被忽略，仍补上占位以免依赖该行为）；
 # 此刻仅 COPY 了 manifest，需 dummy 入口让 metadata 解析通过。内容无关：
-# cook 阶段由 cargo-chef 自带 skeleton 接管编译依赖，下方 `COPY . .` 再以真实源码覆盖。
+# cook 阶段由 cargo-chef 自带 skeleton 接管编译依赖，builder 里的 `COPY . .` 再以真实源码覆盖。
 RUN mkdir -p src/bin benches \
     && printf 'fn main() {}\n' > src/main.rs \
     && printf 'fn main() {}\n' > src/bin/generate_highlight_css.rs \
     && printf 'fn main() {}\n' > benches/markdown.rs \
     && : > src/lib.rs
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
+    cargo chef prepare --recipe-path recipe.json
+
+# ──────────────────────────────────────────────────────────────────────────
+# cargo-chef 依赖分层:把 576 个 Rust 依赖的编译与 app 源码分离。
+# planner 只生成 recipe.json,builder 按 recipe cook 依赖;只要依赖清单不变,
+# recipe.json 不变,cooker 层就 cache-hit。CI 用 GHA cache (type=gha, mode=max)
+# 跨 run 持久化 cooker 层——改一行 .rs 时,依赖编译从 ~10min 降到 ~0s,只编 app(~2min)。
+#
+# cook 必须用与最终 cargo build 完全相同的 target/features/rustflags,
+# 否则产物目录不匹配、缓存形同虚设。这里镜像后端(server musl release),
+# WASM 前端走 cargo-leptos 不经 cargo-chef(它另走 wasm32 target)。
+FROM toolchain AS builder
+COPY --from=planner /build/recipe.json recipe.json
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
     ARCH="$(dpkg --print-architecture)" \
@@ -210,7 +201,6 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
         arm64) MUSL_TARGET=aarch64-unknown-linux-musl ;; \
         *) echo "unsupported arch: $ARCH" >&2; exit 1; \
     esac \
-    && cargo chef prepare --recipe-path recipe.json \
     && export CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc \
     && export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc \
     && export RUSTFLAGS="-C target-feature=+crt-static -C relocation-model=static --cfg erase_components" \
@@ -224,6 +214,26 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
 # Copy the rest of the source tree and build everything. 依赖已由 cooker 编好,
 # 此后的 cargo build/doc 只增量编译 app 代码。
 COPY . .
+
+# Build-time git info, injected by the caller via --build-arg. `.dockerignore`
+# excludes `.git/`, so build.rs can't run `git` inside the container — these
+# ARGs are the only channel for git metadata to reach build.rs (it reads them
+# via std::env::var, its first-precedence source). Defaults are empty so a
+# bare `docker build` without args degrades to "unknown" gracefully (build.rs
+# falls back to the git command, then "unknown").
+#
+# Each ARG → ENV pair is needed: ARG is only visible in Dockerfile RUN
+# commands (and build.rs is invoked by cargo, not a RUN), so we export it as
+# ENV for the cargo build step to inherit. Both default to empty; Makefile's
+# docker/docker-amd64/docker-multiarch targets override them on the host.
+# 放在 `COPY . .` 之后：ENV 变化会让其后的 RUN 缓存失效，而 git hash 每次提交都变，
+# 若放在 cook 之前，依赖编译层永远命不中缓存。
+ARG YGG_BUILD_GIT_DESCRIBE=""
+ARG YGG_BUILD_GIT_HASH=""
+ARG YGG_BUILD_GIT_COMMIT_DATE=""
+ENV YGG_BUILD_GIT_DESCRIBE=${YGG_BUILD_GIT_DESCRIBE}
+ENV YGG_BUILD_GIT_HASH=${YGG_BUILD_GIT_HASH}
+ENV YGG_BUILD_GIT_COMMIT_DATE=${YGG_BUILD_GIT_COMMIT_DATE}
 
 # Build the JS libs, syntax-highlight CSS, KaTeX CSS + fonts and Tailwind
 # stylesheet. These steps produce the contents of the public/ directory.

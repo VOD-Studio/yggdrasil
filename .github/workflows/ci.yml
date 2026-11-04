@@ -147,9 +147,11 @@ jobs:
       # Swatinem/rust-cache：cache key 自动含 rustc 版本 + Cargo.lock hash，
       # 防止 toolchain 升级后命中过期缓存（旧手动方案会命中 → 全量重编）。
       # prefix 区分 test（host target）与 check-wasm（wasm32 target），避免缓存互踩。仅 master 写缓存，PR/tag 只读。
+      # test 与 test-db 共享 host-debug 缓存（同为 dev profile、默认 features、host target），只由本 job 写入。
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           prefix-key: rust
+          shared-key: host-debug
           save-if: ${{ github.ref == 'refs/heads/master' }}
 
       - name: Check formatting
@@ -188,10 +190,12 @@ jobs:
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
 
+      # 复用 test job 写入的 host-debug 缓存（依赖集合覆盖 test-db），本 job 不写，避免再占 ~1 GB 配额。
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
-          prefix-key: rust-db
-          save-if: ${{ github.ref == 'refs/heads/master' }}
+          prefix-key: rust
+          shared-key: host-debug
+          save-if: false
 
       - name: Install matching PostgreSQL client
         run: |
@@ -426,22 +430,39 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
 
-      # 直调 docker buildx（不走 make docker-amd64）以加 GHA 层缓存。
-      # cache-to/from type=gha：BuildKit 层经 GitHub Actions cache 服务跨 run 持久化。
-      # mode=max：缓存所有中间层（含 cargo-chef cooker 层），不只是最终镜像层。
-      # scope=amd64：与 arm64 的 GHA cache 隔离（同仓 10GB 上限内各自一份）。
-      - name: Build amd64 image
+      - name: Collect git build metadata
+        id: git
         run: |
-          GIT_DESCRIBE="$(git describe --tags --always --dirty 2>/dev/null || echo '')"
-          GIT_HASH="$(git rev-parse HEAD 2>/dev/null || echo '')"
-          GIT_DATE="$(git log -1 --format=%cd --date=iso-strict 2>/dev/null || echo '')"
-          docker buildx build --platform linux/amd64 --load \
-            --build-arg YGG_BUILD_GIT_DESCRIBE="$GIT_DESCRIBE" \
-            --build-arg YGG_BUILD_GIT_HASH="$GIT_HASH" \
-            --build-arg YGG_BUILD_GIT_COMMIT_DATE="$GIT_DATE" \
-            --cache-from type=gha,scope=amd64 \
-            --cache-to type=gha,scope=amd64,mode=max \
-            -t yggdrasil:amd64 .
+          {
+            echo "describe=$(git describe --tags --always --dirty 2>/dev/null || echo '')"
+            echo "hash=$(git rev-parse HEAD 2>/dev/null || echo '')"
+            echo "date=$(git log -1 --format=%cd --date=iso-strict 2>/dev/null || echo '')"
+          } >> "$GITHUB_OUTPUT"
+
+      # build-push-action 会把 ACTIONS_RUNTIME_TOKEN / ACTIONS_RESULTS_URL 交给 BuildKit，
+      # type=gha 层缓存才生效；在 run: 里直调 buildx 拿不到这两个变量，缓存参数会被静默忽略。
+      # 只在 master 写缓存：tag 和其他分支写入的缓存，别的 ref 读不到，只会占用 10 GB 配额。
+      # ignore-error：缓存服务限流时不让镜像构建失败。
+      # provenance/sbom 关闭：--load 进 docker 镜像库需要单架构镜像，来源证明由
+      # publish 阶段的 attest-build-provenance 生成。不上传构建记录 artifact（release
+      # job 会下载全部 artifact）。
+      - name: Build amd64 image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: false
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          provenance: false
+          sbom: false
+          tags: yggdrasil:amd64
+          build-args: |
+            YGG_BUILD_GIT_DESCRIBE=${{ steps.git.outputs.describe }}
+            YGG_BUILD_GIT_HASH=${{ steps.git.outputs.hash }}
+            YGG_BUILD_GIT_COMMIT_DATE=${{ steps.git.outputs.date }}
+          cache-from: type=gha,scope=amd64
+          cache-to: ${{ github.ref == 'refs/heads/master' && 'type=gha,scope=amd64,mode=max,ignore-error=true' || '' }}
 
       - name: Verify image architecture
         run: |
@@ -581,7 +602,8 @@ jobs:
 
       # 直接调 docker buildx（无 make docker-arm64 target），原生 Dockerfile 原生编译。
       # git 信息透传与 Makefile 的 GIT_BUILD_ARGS 一致。
-      # GHA 层缓存(scope=arm64 与 amd64 隔离)：cargo-chef cooker 层跨 run 复用。
+      # 不用 GHA 层缓存：它只在 tag 上跑、不在部署关键路径上，而它的几 GB 缓存
+      # 会把 amd64 和 Rust 缓存挤出 10 GB 配额。
       - name: Build arm64 image
         run: |
           GIT_DESCRIBE="$(git describe --tags --always --dirty 2>/dev/null || echo '')"
@@ -591,8 +613,6 @@ jobs:
             --build-arg YGG_BUILD_GIT_DESCRIBE="$GIT_DESCRIBE" \
             --build-arg YGG_BUILD_GIT_HASH="$GIT_HASH" \
             --build-arg YGG_BUILD_GIT_COMMIT_DATE="$GIT_DATE" \
-            --cache-from type=gha,scope=arm64 \
-            --cache-to type=gha,scope=arm64,mode=max \
             -t yggdrasil:arm64 .
 
       - name: Verify image architecture
