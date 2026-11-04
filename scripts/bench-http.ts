@@ -37,9 +37,10 @@ const FIXTURES = ['plain-prose', 'tables-prose', 'math-heavy', 'all-features'];
 const FILLER_COUNT = 56;
 const ADMIN_TOKEN = 'bench-http-admin';
 const ROUTES = ['/', '/archives', ...FIXTURES.map((name) => `/post/bench-${name}`)];
-// 渲染后 HTML 超过 ssr_cache.rs 的 MAX_PAGE_BYTES（1 MiB）的页面永远不进 SSR 缓存（math-heavy 约
-// 1.26 MB，all-features 约 2.4 MB），生产里就是每次都完整 SSR，所以只测 ssr 场景，不存在 cached 场景。
-const UNCACHEABLE_ROUTES = ['/post/bench-math-heavy', '/post/bench-all-features'];
+// 渲染后 HTML 超过 ssr_cache.rs 的 MAX_PAGE_BYTES（1 MiB）的页面永远不进 SSR 缓存（all-features 约
+// 1.16 MB；水合数据去掉正文后 math-heavy 约 0.72 MB，已可缓存），生产里就是每次都完整 SSR，所以只测
+// ssr 场景，不存在 cached 场景。
+const UNCACHEABLE_ROUTES = ['/post/bench-all-features'];
 const CALIBRATION_MIN_RATE = 1;
 const SIZE_TOLERANCE = 0.05;
 const METRICS = ['p50', 'p90', 'p99', 'p999', 'rps'] as const;

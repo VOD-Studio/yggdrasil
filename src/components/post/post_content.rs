@@ -35,52 +35,74 @@ enum ContentFragment {
     },
 }
 
-/// 把服务端渲染的文章 HTML 拆成 `Html` / `Runnable` 片段序列。
-///
-/// 仅识别带 `data-runnable="true"` 的 `<pre>`；其余内容原样作为 Html 片段返回。
-/// HTML 实体（`&quot;` `&#x27;` `&amp;` `&lt;` `&gt;`）会被解码还原为原始字符。
-fn split_content_fragments(html: &str) -> Vec<ContentFragment> {
-    let mut fragments = Vec::new();
+/// 正文按可运行代码块切开后的原文段：`Html` 是两个可运行块之间的原文（只含空白的段跳过），
+/// `Runnable` 是整个 `<pre data-runnable="true" …>…</pre>`。
+enum Segment<'a> {
+    Html(&'a str),
+    Runnable(&'a str),
+}
+
+/// 仅识别带 `data-runnable="true"` 的 `<pre>`；缺少 `</pre>` 时剩余内容整体作为 Html 段。
+fn segments(html: &str) -> Vec<Segment<'_>> {
+    let mut segments = Vec::new();
     let mut rest = html;
 
     while let Some(start) = rest.find(r#"<pre data-runnable="true""#) {
-        // start 之前的内容作为 Html 片段（非空才推入）。
         let (head, tail) = rest.split_at(start);
         if !head.trim().is_empty() {
-            fragments.push(ContentFragment::Html(head.to_string()));
+            segments.push(Segment::Html(head));
         }
-
-        // 找到对应 </pre> 闭合。
         let Some(end_offset) = tail.find("</pre>") else {
-            // 缺失闭合：剩余整体作为 Html 片段兜底，避免丢内容。
-            fragments.push(ContentFragment::Html(tail.to_string()));
-            rest = "";
-            break;
+            // 缺失闭合：剩余整体作为 Html 段兜底，避免丢内容。
+            segments.push(Segment::Html(tail));
+            return segments;
         };
-        let pre_block = &tail[..end_offset + "</pre>".len()];
-        rest = &tail[end_offset + "</pre>".len()..];
-
-        // 从 pre_block 提取属性。
-        let lang = extract_attr(pre_block, "data-lang").unwrap_or_default();
-        let overrides = extract_attr(pre_block, "data-overrides")
-            .filter(|s| !s.is_empty())
-            .and_then(|s| serde_json::from_slice::<ResourceLimits>(s.as_bytes()).ok());
-        let source = extract_attr(pre_block, "data-source").unwrap_or_default();
-        let highlighted = code_inner_html(pre_block).to_string();
-
-        fragments.push(ContentFragment::Runnable {
-            lang,
-            source,
-            overrides,
-            highlighted,
-        });
+        let end = end_offset + "</pre>".len();
+        segments.push(Segment::Runnable(&tail[..end]));
+        rest = &tail[end..];
     }
 
     if !rest.trim().is_empty() {
-        fragments.push(ContentFragment::Html(rest.to_string()));
+        segments.push(Segment::Html(rest));
     }
+    segments
+}
 
-    fragments
+/// 把服务端渲染的文章 HTML 拆成 `Html` / `Runnable` 片段序列。
+///
+/// HTML 实体（`&quot;` `&#x27;` `&amp;` `&lt;` `&gt;`）会被解码还原为原始字符。
+fn split_content_fragments(html: &str) -> Vec<ContentFragment> {
+    segments(html)
+        .into_iter()
+        .map(|segment| match segment {
+            Segment::Html(html) => ContentFragment::Html(html.to_string()),
+            Segment::Runnable(pre_block) => ContentFragment::Runnable {
+                lang: extract_attr(pre_block, "data-lang").unwrap_or_default(),
+                source: extract_attr(pre_block, "data-source").unwrap_or_default(),
+                overrides: extract_attr(pre_block, "data-overrides")
+                    .filter(|s| !s.is_empty())
+                    .and_then(|s| serde_json::from_slice::<ResourceLimits>(s.as_bytes()).ok()),
+                highlighted: code_inner_html(pre_block).to_string(),
+            },
+        })
+        .collect()
+}
+
+/// 水合数据里替代已渲染 HTML 的占位：非空白，切片时仍占一个 `Html` 片段；`inner_html`
+/// 水合时不改写服务端 DOM，只记下这个值。
+pub const HYDRATION_PLACEHOLDER: &str = "<!---->";
+
+/// 正文的水合骨架：每个 `Html` 段换成 [`HYDRATION_PLACEHOLDER`]，可运行块原样保留。
+/// 骨架切出的片段序列与原文一一对应（种类、顺序、可运行块的字段都相同），水合时
+/// [`PostContent`] 据此建出与 SSR 相同的组件树，而正文不必再随水合数据下发一遍。
+pub fn hydration_skeleton(content_html: &str) -> String {
+    segments(content_html)
+        .into_iter()
+        .map(|segment| match segment {
+            Segment::Html(_) => HYDRATION_PLACEHOLDER,
+            Segment::Runnable(pre_block) => pre_block,
+        })
+        .collect()
 }
 
 /// `<pre ...><code ...>内容</code></pre>` 中 `<code>` 的内部 HTML；结构不符时为空。
@@ -351,5 +373,42 @@ mod tests {
         }
         let a3 = split_content_fragments_cached("<p>alpha</p>");
         assert_eq!(a3, a, "淘汰后重新解析输出应与首次一致");
+    }
+
+    /// 水合骨架切出的片段与原文一一对应：Html 换成占位，可运行块字段不变。
+    #[test]
+    fn hydration_skeleton_keeps_fragment_structure() {
+        let runnable = |lang: &str| {
+            format!(
+                r#"<pre data-runnable="true" data-lang="{lang}" data-overrides="" data-source="print(&#x27;{lang}&#x27;)"><code>{lang}</code></pre>"#
+            )
+        };
+        for html in [
+            "<h2 id=\"a\">标题</h2><p>只有正文</p>".to_string(),
+            format!(
+                "{}\n\n{}<p>中间</p>  \n{}",
+                runnable("py"),
+                runnable("go"),
+                runnable("rs")
+            ),
+            format!("<p>开头</p>{}<p>结尾</p>", runnable("node")),
+            format!(
+                "<p>未闭合</p>{}<pre data-runnable=\"true\" data-lang=\"x\"",
+                runnable("bun")
+            ),
+            String::new(),
+        ] {
+            let expected: Vec<_> = split_content_fragments(&html)
+                .into_iter()
+                .map(|fragment| match fragment {
+                    ContentFragment::Html(_) => {
+                        ContentFragment::Html(HYDRATION_PLACEHOLDER.to_string())
+                    }
+                    runnable => runnable,
+                })
+                .collect();
+            let skeleton = hydration_skeleton(&html);
+            assert_eq!(split_content_fragments(&skeleton), expected, "{html}");
+        }
     }
 }

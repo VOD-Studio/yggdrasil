@@ -8,7 +8,10 @@
 //! [`route_data`][crate::hooks::ssr_resource::route_data] 把资源的值类型擦除成 JSON 文本（[`RawJson`][crate::hooks::ssr_resource::RawJson]，所有路由共用同一份
 //! `Resource` 实例化），取数函数由调用方写成 `#[leptos::lazy]` 函数、返回 [`PageJson<T>`][crate::hooks::ssr_resource::PageJson]：
 //! 服务端直接调用并编码，客户端首次取数时才加载它所在的分包。`view()` 里
-//! `data.await` 得到 `Result<T, ApiError>`，解码代码随视图分包加载。
+//! `data.await` 得到 `Result<T, ApiError>`，解码代码随视图分包加载。SSR 的视图直接
+//! 克隆服务端的取数结果，JSON 文本只用于水合；正文这类 SSR 已渲染进 HTML 的大字段可用
+//! [`PageJson::with_hydration`][crate::hooks::ssr_resource::PageJson::with_hydration]
+//! 在水合数据里换成占位。
 //!
 //! ```ignore
 //! #[leptos::lazy]
@@ -71,11 +74,38 @@ impl<T: DeserializeOwned> Decoder<T> for JsonSliceCodec {
     }
 }
 
-/// `Result<T, ApiError>` 的 JSON 文本：路由数据资源的统一值类型。
-#[derive(Clone, Debug, PartialEq)]
-pub struct RawJson(String);
+/// 路由数据资源的统一值类型：`Result<T, ApiError>` 的 JSON 文本，也就是写进水合数据的内容。
+/// SSR 时还带着取数结果本身，视图直接克隆它，不再把刚编码的文本解析回来。
+#[derive(Clone)]
+pub struct RawJson {
+    text: String,
+    #[cfg(not(target_arch = "wasm32"))]
+    value: Option<Arc<dyn std::any::Any + Send + Sync>>,
+}
 
-/// [`RawJson`] 原样作为资源的序列化形式，不再二次编码。
+impl RawJson {
+    fn from_text(text: String) -> Self {
+        Self {
+            text,
+            #[cfg(not(target_arch = "wasm32"))]
+            value: None,
+        }
+    }
+}
+
+impl PartialEq for RawJson {
+    fn eq(&self, other: &Self) -> bool {
+        self.text == other.text
+    }
+}
+
+impl std::fmt::Debug for RawJson {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("RawJson").field(&self.text).finish()
+    }
+}
+
+/// [`RawJson`] 的文本原样作为资源的序列化形式，不再二次编码。
 pub struct RawJsonCodec;
 
 impl Encoder<RawJson> for RawJsonCodec {
@@ -83,7 +113,7 @@ impl Encoder<RawJson> for RawJsonCodec {
     type Encoded = String;
 
     fn encode(val: &RawJson) -> Result<Self::Encoded, Self::Error> {
-        Ok(val.0.clone())
+        Ok(val.text.clone())
     }
 }
 
@@ -92,7 +122,7 @@ impl Decoder<RawJson> for RawJsonCodec {
     type Encoded = str;
 
     fn decode(val: &Self::Encoded) -> Result<RawJson, Self::Error> {
-        Ok(RawJson(val.to_owned()))
+        Ok(RawJson::from_text(val.to_owned()))
     }
 }
 
@@ -102,17 +132,49 @@ pub struct PageJson<T> {
     _type: PhantomData<fn() -> T>,
 }
 
-impl<T: Serialize> PageJson<T> {
+fn encode_page_json<T: Serialize>(result: &Result<T, ApiError>) -> String {
+    serde_json::to_string(result).unwrap_or_else(|err| {
+        let failed: Result<(), ApiError> = Err(ApiError::Framework(ServerFnError::Serialization(
+            err.to_string(),
+        )));
+        serde_json::to_string(&failed).expect("ApiError 可序列化")
+    })
+}
+
+impl<T: Serialize + Send + Sync + 'static> PageJson<T> {
     /// 编码取数结果。
     pub fn new(result: Result<T, ApiError>) -> Self {
-        let text = serde_json::to_string(&result).unwrap_or_else(|err| {
-            let failed: Result<(), ApiError> = Err(ApiError::Framework(
-                ServerFnError::Serialization(err.to_string()),
-            ));
-            serde_json::to_string(&failed).expect("ApiError 可序列化")
-        });
+        let text = encode_page_json(&result);
+        Self::with_text(text, result)
+    }
+
+    /// 同 [`PageJson::new`]，但水合数据写入 `hydration(&值)`：SSR 已渲染进 HTML 的大字段可以
+    /// 换成占位。客户端水合时用这份值构建视图，必须与 SSR 得到同样的组件树与 DOM 结构
+    /// （`inner_html` 水合时不改写服务端 DOM）。SSR 视图仍用完整值；客户端取数（SPA 导航）
+    /// 不经水合，照旧编码完整结果。
+    pub fn with_hydration(result: Result<T, ApiError>, hydration: impl FnOnce(&T) -> T) -> Self {
+        #[cfg(not(target_arch = "wasm32"))]
+        let text = match &result {
+            Ok(value) => encode_page_json(&Ok::<T, ApiError>(hydration(value))),
+            Err(_) => encode_page_json(&result),
+        };
+        #[cfg(target_arch = "wasm32")]
+        let text = {
+            let _ = hydration;
+            encode_page_json(&result)
+        };
+        Self::with_text(text, result)
+    }
+
+    fn with_text(text: String, result: Result<T, ApiError>) -> Self {
+        #[cfg(target_arch = "wasm32")]
+        let _ = result;
         Self {
-            raw: RawJson(text),
+            raw: RawJson {
+                text,
+                #[cfg(not(target_arch = "wasm32"))]
+                value: Some(Arc::new(result)),
+            },
             _type: PhantomData,
         }
     }
@@ -132,18 +194,27 @@ impl<T> Clone for RouteData<T> {
 
 impl<T> Copy for RouteData<T> {}
 
-impl<T: DeserializeOwned + Send + 'static> IntoFuture for RouteData<T> {
+impl<T: DeserializeOwned + Clone + Send + Sync + 'static> IntoFuture for RouteData<T> {
     type Output = Result<T, ApiError>;
     type IntoFuture = Pin<Box<dyn Future<Output = Self::Output> + Send>>;
 
     fn into_future(self) -> Self::IntoFuture {
         let raw = self.raw;
-        Box::pin(async move { decode_page_json(&raw.await) })
+        Box::pin(async move { resolve_page_json(&raw.await) })
     }
 }
 
-fn decode_page_json<T: DeserializeOwned>(raw: &RawJson) -> Result<T, ApiError> {
-    serde_json::from_slice::<Result<T, ApiError>>(raw.0.as_bytes()).unwrap_or_else(|err| {
+/// SSR 直接克隆取数结果；水合与客户端取数解析 JSON 文本。
+fn resolve_page_json<T: DeserializeOwned + Clone + 'static>(raw: &RawJson) -> Result<T, ApiError> {
+    #[cfg(not(target_arch = "wasm32"))]
+    if let Some(result) = raw
+        .value
+        .as_deref()
+        .and_then(|value| value.downcast_ref::<Result<T, ApiError>>())
+    {
+        return result.clone();
+    }
+    serde_json::from_slice::<Result<T, ApiError>>(raw.text.as_bytes()).unwrap_or_else(|err| {
         Err(ApiError::Framework(ServerFnError::Deserialization(
             err.to_string(),
         )))
@@ -505,7 +576,7 @@ mod prefetch {
     /// 错误结果的判定不反序列化具体类型，用编码格式：`PageJson::new` 编码的是
     /// `Result<T, ApiError>`，外部标签格式，错误一定以 `{"Err"` 开头。
     pub(super) fn is_err_json(raw: &RawJson) -> bool {
-        raw.0.starts_with("{\"Err\"")
+        raw.text.starts_with("{\"Err\"")
     }
 }
 
@@ -514,7 +585,7 @@ mod tests {
     use super::*;
     use crate::utils::error::is_not_found;
 
-    #[derive(Debug, PartialEq, Serialize, serde::Deserialize)]
+    #[derive(Debug, Clone, PartialEq, Serialize, serde::Deserialize)]
     struct Sample {
         id: i32,
         title: String,
@@ -544,7 +615,7 @@ mod tests {
             title: "标题".into(),
         })));
         assert_eq!(
-            decode_page_json::<Sample>(&ok).unwrap(),
+            resolve_page_json::<Sample>(&ok).unwrap(),
             Sample {
                 id: 1,
                 title: "标题".into()
@@ -552,7 +623,7 @@ mod tests {
         );
 
         let missing = through_resource(PageJson::new(Err(ApiError::NotFound("文章不存在".into()))));
-        let error = decode_page_json::<Sample>(&missing).unwrap_err();
+        let error = resolve_page_json::<Sample>(&missing).unwrap_err();
         assert!(matches!(&error, ApiError::NotFound(message) if message == "文章不存在"));
         assert!(is_not_found(&error));
     }
@@ -562,8 +633,33 @@ mod tests {
     fn mismatched_page_json_is_a_deserialization_error() {
         let page = PageJson::new(Ok("not a sample".to_string()));
         assert!(matches!(
-            decode_page_json::<Sample>(&page.raw),
+            resolve_page_json::<Sample>(&page.raw),
             Err(ApiError::Framework(ServerFnError::Deserialization(_)))
+        ));
+    }
+
+    /// 水合形态只进水合数据：SSR 视图拿到完整值，经资源序列化往返后得到瘦身值；错误原样。
+    #[test]
+    fn hydration_form_only_reaches_the_wire() {
+        let full = Sample {
+            id: 2,
+            title: "很长的正文".repeat(100),
+        };
+        let slim = |sample: &Sample| Sample {
+            id: sample.id,
+            title: String::new(),
+        };
+        let page = PageJson::with_hydration(Ok(full.clone()), slim);
+        assert_eq!(resolve_page_json::<Sample>(&page.raw).unwrap(), full);
+        let wire = <RawJsonCodec as Encoder<RawJson>>::encode(&page.raw).unwrap();
+        let hydrated = <RawJsonCodec as Decoder<RawJson>>::decode(&wire).unwrap();
+        assert_eq!(resolve_page_json::<Sample>(&hydrated).unwrap(), slim(&full));
+
+        let missing = PageJson::with_hydration(Err(ApiError::NotFound("没有".into())), slim);
+        let wire = <RawJsonCodec as Encoder<RawJson>>::encode(&missing.raw).unwrap();
+        let hydrated = <RawJsonCodec as Decoder<RawJson>>::decode(&wire).unwrap();
+        assert!(is_not_found(
+            &resolve_page_json::<Sample>(&hydrated).unwrap_err()
         ));
     }
 

@@ -24,7 +24,9 @@ use leptos_router::{lazy_route, LazyRoute};
 
 use crate::api::posts::{get_public_post_by_slug, PublicPostResponse};
 use crate::components::comments::section::CommentSection;
-use crate::components::post::post_content::PostContent;
+use crate::components::post::post_content::{
+    hydration_skeleton, PostContent, HYDRATION_PLACEHOLDER,
+};
 use crate::components::post::post_cover::PostCover;
 use crate::components::post::post_footer::PostFooter;
 use crate::components::post::post_header::PostHeader;
@@ -34,6 +36,7 @@ use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::skeletons::post_detail_skeleton::PostDetailSkeleton;
 use crate::hooks::ssr_resource::{prefetch_route_data, route_data, PageJson, RouteData};
 use crate::models::post::{Post, PostFooterData, PostHeaderData, PostStatus};
+use crate::models::public_post::PublicPost;
 use crate::pages::not_found::{NotFound, PageLoadFailed};
 use crate::utils::error::is_not_found;
 
@@ -45,7 +48,38 @@ pub struct PostRoute {
 /// 取数函数随分包加载，见 `hooks::ssr_resource`。
 #[leptos::lazy]
 async fn fetch_post(slug: String) -> PageJson<PublicPostResponse> {
-    PageJson::new(get_public_post_by_slug(slug).await)
+    PageJson::with_hydration(get_public_post_by_slug(slug).await, hydration_form)
+}
+
+/// 水合数据里的文章：正文与目录已在 SSR HTML 里（`inner_html` 水合不改写 DOM），
+/// 正文只留可运行块骨架，目录换成占位；其余字段照旧。长文的水合数据因此不再重复一遍正文。
+fn hydration_form(response: &PublicPostResponse) -> PublicPostResponse {
+    PublicPostResponse {
+        post: response.post.as_ref().map(|post| PublicPost {
+            id: post.id,
+            author_id: post.author_id,
+            title: post.title.clone(),
+            slug: post.slug.clone(),
+            summary: post.summary.clone(),
+            content_html: post.content_html.as_deref().map(hydration_skeleton),
+            published_at: post.published_at,
+            created_at: post.created_at,
+            updated_at: post.updated_at,
+            tags: post.tags.clone(),
+            cover_image: post.cover_image.clone(),
+            reading_time: post.reading_time,
+            word_count: post.word_count,
+            toc_html: post.toc_html.as_ref().map(|toc| {
+                if toc.is_empty() {
+                    String::new()
+                } else {
+                    HYDRATION_PLACEHOLDER.to_owned()
+                }
+            }),
+            prev_post: post.prev_post.clone(),
+            next_post: post.next_post.clone(),
+        }),
+    }
 }
 
 #[lazy_route]
