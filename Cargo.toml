@@ -16,6 +16,12 @@ doctest = false
 name = "generate_highlight_css"
 required-features = ["server"]
 
+# Markdown 渲染微基准（criterion）。语料见 benches/fixtures/；用法见 Makefile bench-markdown。
+[[bench]]
+name = "markdown"
+harness = false
+required-features = ["server"]
+
 [dependencies]
 leptos = { version = "=0.8.23" }
 leptos_router = { version = "=0.8.17" }
@@ -113,6 +119,8 @@ js-sys = "0.3"
 serde-wasm-bindgen = "0.6"
 
 [dev-dependencies]
+# 微基准：只要命令行输出与 baseline 对比，不要 plotters / html_reports。
+criterion = { version = "0.8", default-features = false, features = ["cargo_bench_support", "rayon"] }
 tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "fs", "time", "sync"] }
 serial_test = "4"
 # 中间件测试：直接驱动 axum Router。

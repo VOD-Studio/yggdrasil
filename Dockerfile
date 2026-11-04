@@ -193,12 +193,14 @@ ENV YGG_BUILD_GIT_COMMIT_DATE=${YGG_BUILD_GIT_COMMIT_DATE}
 # 否则产物目录不匹配、缓存形同虚设。这里镜像后端(server musl release),
 # WASM 前端走 cargo-leptos 不经 cargo-chef(它另走 wasm32 target)。
 COPY Cargo.toml Cargo.lock ./
-# cargo-chef prepare 运行 `cargo metadata`，后者校验所有 autobins/[[bin]] 源文件
-# 物理存在；此刻仅 COPY 了 manifest，需 dummy 入口让 metadata 解析通过。内容无关：
+# cargo-chef prepare 运行 `cargo metadata`，后者校验 autobins/[[bin]] 源文件物理存在（缺 bin 即报错；
+# cargo 1.99 实测缺 [[bench]] 文件只会让该 target 被忽略，仍补上占位以免依赖该行为）；
+# 此刻仅 COPY 了 manifest，需 dummy 入口让 metadata 解析通过。内容无关：
 # cook 阶段由 cargo-chef 自带 skeleton 接管编译依赖，下方 `COPY . .` 再以真实源码覆盖。
-RUN mkdir -p src/bin \
+RUN mkdir -p src/bin benches \
     && printf 'fn main() {}\n' > src/main.rs \
     && printf 'fn main() {}\n' > src/bin/generate_highlight_css.rs \
+    && printf 'fn main() {}\n' > benches/markdown.rs \
     && : > src/lib.rs
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \

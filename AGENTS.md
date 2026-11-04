@@ -109,6 +109,7 @@ Docker fallbacks only when local tools are missing: `make docker-dev` (port 8080
 - Browser (Playwright via Bun): `make regression-build`, then `make test-browser BROWSER_SUITE=smoke|admin|notes|backup|runner|slash|lightbox|showcase`. Standalone scripts include `bun scripts/test-components-showcase.ts` (`SHOWCASE_BASE`, `SHOWCASE_ONLY`) and `bun scripts/test-view-transitions.ts` (`VT_BASE`, which must be same-origin with `APP_BASE_URL`, otherwise CSRF returns 403).
 - Navigation changes: follow `scripts/README-view-transitions.md`; verify direct load, SPA navigation, themes, 390 px mobile, and reduced motion.
 - Release: `make test-release-split` (builds, then asserts split chunks, SSR cache, previous-release fallback and per-route Brotli WASM ≤ 594,603 B), `bun scripts/test-public-performance.ts`.
+- Benchmarks (not in CI, shared-runner noise): `make bench-markdown` (criterion, `benches/markdown.rs`, corpus `benches/fixtures/`; A/B via `BENCH_ARGS='--save-baseline base'` then `'--baseline base'`) and `make bench-http` (`scripts/bench-http.ts`, needs `oha`, a prior `make build`; `BENCH_TARGETS=dirA,dirB` for same-machine A/B; env vars listed in the script header). Posts whose rendered HTML exceeds `MAX_PAGE_BYTES` (1 MiB) never enter the SSR cache, so only `ssr` scenarios exist for them.
 - CI (`ci.yml`) runs fmt, clippy `--all-targets -D warnings`, `cargo test`, Biome/typecheck/Vitest, hydrate WASM clippy, `test-databases.sh`, all browser suites, `release-split`, then an amd64 image boot smoke test.
 
 ## Commits
