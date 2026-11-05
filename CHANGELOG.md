@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.2] - 2026-11-05
+
+服务端首屏性能：SSR 缓存页面写入后预压缩一次，动态压缩按正文长度选 brotli 窗口，文章页水合数据不再重复正文；新增 Markdown 渲染与 HTTP 基准；修复评论灯箱收录头像、表格窄列中文逐字折行；CI 与发布流程调整。
+
 ### Added
 
 - **性能基准**：`make bench-markdown` 用 criterion 测 `render_markdown_enhanced`（语料为 4 篇线上文章，位于 `benches/fixtures/`，`BENCH_ARGS='--save-baseline base'` / `'--baseline base'` 做前后对比）；`make bench-http`（`scripts/bench-http.ts`）用一次性 PostgreSQL 拉起 release 产物，oha 以固定到达率压首页、归档与文章页，SSR 缓存命中与未命中分开测，支持 `BENCH_TARGETS=A,B` 同机 ABBA 交替对比（每轮重启服务端）并给出精确置换检验的显著性判定。渲染后超过 1 MiB 的文章页不进 SSR 缓存，只测未命中场景。
@@ -19,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **评论图片灯箱收录头像**：评论区的灯箱把评论者头像也当作可放大的图片收进图集。现在只收录评论正文里的图片。
 - **文章表格窄列里的中文被逐字折行**：表格宽于正文列而横向滚动时，列缩到最小内容宽度，`th` 为 `nowrap` 且字号小于 `td`，导致首列「首页」之类短词被挤成一字一行。`.md-content td` 现在设 `min-width: 6em`，至少容纳 4 个字。
 - **发布 CI 被 rustdoc 断链阻断**：`PostMeta` 改为文章模块内部组件后，`PostHeaderData` 的文档仍尝试链接该符号，触发发布构建的零告警门禁。现在只链接公开的 `PostHeader`，内部元信息组件改用文字说明；门禁保持不变。
 
