@@ -2,12 +2,12 @@
 //!
 //! 白名单匿名页带 `s-maxage`（`SsrCacheSettings::edge_ttl_secs`）时，CDN 节点会缓存 HTML；
 //! 源站 HTML 缓存每次失效（文章、标签、设置写入，跨实例通知，发版启动）都经
-//! [`request_purge`] 发信号，本任务：
+//! `request_purge` 发信号，本任务：
 //!
-//! 1. 防抖 [`DEBOUNCE`]：一次写入会连续触发多次失效，批量操作更多，合并成一次；
-//! 2. 立刻清一次，[`SECOND_PASS_DELAY`] 后再清一次：写入前已开始渲染的请求可能在第一次清除
+//! 1. 防抖 `DEBOUNCE`：一次写入会连续触发多次失效，批量操作更多，合并成一次；
+//! 2. 立刻清一次，`SECOND_PASS_DELAY` 后再清一次：写入前已开始渲染的请求可能在第一次清除
 //!    之后才返回旧页面，EdgeOne 会把它按 `s-maxage` 缓存下来（源站缓存有世代号挡住，边缘没有）；
-//! 3. 失败按 [`RETRY_DELAYS`] 重试，最终失败记 error，陈旧上限退回到 `s-maxage`。
+//! 3. 失败按 `RETRY_DELAYS` 重试，最终失败记 error，陈旧上限退回到 `s-maxage`。
 //!
 //! 清除范围是 `ssr_cache` 的白名单：前缀按目录清除，固定页面按 URL 清除。不用 Hostname 或
 //! 全站清除，否则会连带 `/pkg/` 与静态资源，节点重新回源时可能缓存 EdgeOne 自己压缩的
