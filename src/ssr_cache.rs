@@ -19,7 +19,9 @@ use sha2::{Digest, Sha256};
 
 use crate::compression::{self, CompressionAlgorithms, Effort, Encoding};
 
-const MAX_PAGE_BYTES: usize = 1024 * 1024;
+/// 单页上限。图表多的长文渲染后超过 1 MiB（线上最长一篇 1.14 MB：Mermaid 明暗两份 SVG 加高亮
+/// 代码），放不进缓存就每次请求完整 SSR 再现压。取 2 MiB；总量仍受 [`MAX_CACHE_BYTES`] 约束。
+const MAX_PAGE_BYTES: usize = 2 * 1024 * 1024;
 const MAX_CACHE_BYTES: u64 = 32 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -37,10 +37,9 @@ const FIXTURES = ['plain-prose', 'tables-prose', 'math-heavy', 'all-features'];
 const FILLER_COUNT = 56;
 const ADMIN_TOKEN = 'bench-http-admin';
 const ROUTES = ['/', '/archives', ...FIXTURES.map((name) => `/post/bench-${name}`)];
-// 渲染后 HTML 超过 ssr_cache.rs 的 MAX_PAGE_BYTES（1 MiB）的页面永远不进 SSR 缓存（all-features 约
-// 1.16 MB；水合数据去掉正文后 math-heavy 约 0.72 MB，已可缓存），生产里就是每次都完整 SSR，所以只测
-// ssr 场景，不存在 cached 场景。
-const UNCACHEABLE_ROUTES = ['/post/bench-all-features'];
+// 渲染后 HTML 超过 ssr_cache.rs 的 MAX_PAGE_BYTES（2 MiB）的页面永远不进 SSR 缓存，生产里就是每次
+// 都完整 SSR，只测 ssr 场景，不存在 cached 场景。现有语料最大的 all-features 约 1.16 MB，都可缓存。
+const UNCACHEABLE_ROUTES: string[] = [];
 const CALIBRATION_MIN_RATE = 1;
 const SIZE_TOLERANCE = 0.05;
 const METRICS = ['p50', 'p90', 'p99', 'p999', 'rps'] as const;
@@ -608,7 +607,7 @@ async function main() {
     if (result.cache !== expected) {
       const html = await (await fetch(url, { headers: { 'accept-encoding': 'br' } })).text();
       fail(
-        `x-ssr-cache 应为 ${expected}；未压缩 HTML ${html.length} 字符（超过 1 MiB 的页面不进 SSR 缓存，见 ssr_cache.rs MAX_PAGE_BYTES）`,
+        `x-ssr-cache 应为 ${expected}；未压缩 HTML ${html.length} 字符（超过 2 MiB 的页面不进 SSR 缓存，见 ssr_cache.rs MAX_PAGE_BYTES）`,
       );
     }
     if (!(result.bytes > 0)) fail('响应体为空');
