@@ -29,6 +29,9 @@ pub mod backup;
 /// 跨节点内容缓存失效通知与断线补偿。
 #[cfg(feature = "server")]
 pub mod cache_sync;
+/// 内容变更与启动后清除 EdgeOne 节点上缓存的公开页 HTML。
+#[cfg(feature = "server")]
+pub mod edge_purge;
 /// 定时清理图片磁盘缓存，避免缓存目录无限增长。
 #[cfg(feature = "server")]
 pub mod image_cache_cleanup;

@@ -59,6 +59,16 @@ pub fn run() {
         max_page_bytes = crate::config::ssr_cache().max_page_bytes,
         "匿名公开页 HTML 缓存：32 MiB 上限、写入通知失效、TTL 兜底"
     );
+    let edge_ttl_secs = crate::config::ssr_cache().edge_ttl_secs;
+    let edge_purge = crate::tasks::edge_purge::is_configured();
+    if edge_ttl_secs > 0 && !edge_purge {
+        tracing::warn!(
+            edge_ttl_secs,
+            "公开页 HTML 允许 CDN 缓存，但未配置 EdgeOne 清缓存凭据：内容变更要等 s-maxage 到期才在边缘生效"
+        );
+    } else {
+        tracing::info!(edge_ttl_secs, edge_purge, "公开页 HTML 边缘缓存");
+    }
     tracing::info!(
         expose_version_headers = options.expose_version_headers,
         "版本响应头开关(Server / X-Yggdrasil-Version / X-Yggdrasil-Git / X-Yggdrasil-Hash)"
@@ -280,6 +290,7 @@ fn spawn_background_tasks_once() {
     spawn_supervised("post_purge", tasks::post_purge::run_purge());
     spawn_supervised("backup", tasks::backup::run_scheduler());
     spawn_supervised("cache_sync", tasks::cache_sync::run());
+    spawn_supervised("edge_purge", tasks::edge_purge::run());
     spawn_supervised(
         "image_cache_cleanup",
         tasks::image_cache_cleanup::run_cleanup(),

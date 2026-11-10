@@ -235,10 +235,7 @@ fn hit_response(
         HeaderValue::from(page.created.elapsed().as_secs()),
     );
     headers.insert("x-ssr-cache", HeaderValue::from_static("HIT"));
-    headers.insert(
-        header::CACHE_CONTROL,
-        HeaderValue::from_static("public, no-cache"),
-    );
+    headers.insert(header::CACHE_CONTROL, public_page_cache_control());
     response
 }
 
@@ -262,13 +259,35 @@ fn cacheable_request(method: &Method, uri: &Uri, headers: &HeaderMap) -> bool {
         return false;
     }
     let path = uri.path();
-    matches!(
-        path,
-        "/" | "/archives" | "/friends" | "/about" | "/changelog"
-    ) || ["/post/", "/page/", "/tags/"].iter().any(|prefix| {
-        path.strip_prefix(prefix)
-            .is_some_and(|tail| !tail.is_empty() && !tail.contains('/'))
-    })
+    CACHEABLE_PAGES.contains(&path)
+        || CACHEABLE_PREFIXES.iter().any(|prefix| {
+            path.strip_prefix(prefix)
+                .is_some_and(|tail| !tail.is_empty() && !tail.contains('/'))
+        })
+}
+
+/// 白名单内的固定页面。源站缓存与边缘缓存共用这份名单：`tasks::edge_purge` 按它清 EdgeOne，
+/// 新增公开路由要同时出现在两处，否则边缘缓存清不掉。
+pub(crate) const CACHEABLE_PAGES: [&str; 5] =
+    ["/", "/archives", "/friends", "/about", "/changelog"];
+/// 白名单内的前缀：只匹配其下一级路径（`/post/<slug>`）。
+pub(crate) const CACHEABLE_PREFIXES: [&str; 3] = ["/post/", "/page/", "/tags/"];
+
+/// 白名单匿名页的 `Cache-Control`。浏览器缓存清不掉，所以浏览器一律每次校验（`max-age=0`）；
+/// 边缘缓存时长（`SsrCacheSettings::edge_ttl_secs`）大于 0 时用 `s-maxage` 让 CDN 缓存，
+/// 内容变更后由 `tasks::edge_purge` 清除。为 0 时 `no-cache`，EdgeOne 不缓存、每次回源。
+fn public_page_cache_control() -> HeaderValue {
+    static VALUE: LazyLock<HeaderValue> =
+        LazyLock::new(|| edge_cache_control(crate::config::ssr_cache().edge_ttl_secs));
+    VALUE.clone()
+}
+
+fn edge_cache_control(edge_ttl_secs: u64) -> HeaderValue {
+    if edge_ttl_secs == 0 {
+        return HeaderValue::from_static("public, no-cache");
+    }
+    HeaderValue::from_str(&format!("public, max-age=0, s-maxage={edge_ttl_secs}"))
+        .expect("数字组成的 Cache-Control 是合法头部值")
 }
 
 fn cacheable_response(response: &Response) -> bool {
@@ -305,11 +324,18 @@ pub async fn cache_public_html(
 ) -> Response {
     let authenticated = req.headers().contains_key(header::COOKIE)
         || req.headers().contains_key(header::AUTHORIZATION);
-    if !HTML_CACHE.enabled || !cacheable_request(req.method(), req.uri(), req.headers()) {
+    let cacheable = cacheable_request(req.method(), req.uri(), req.headers());
+    if !HTML_CACHE.enabled || !cacheable {
         let mut response = next.run(req).await;
         response
             .headers_mut()
             .insert("x-ssr-cache", HeaderValue::from_static("BYPASS"));
+        // 源站缓存关闭（`SSR_CACHE_SECS=0`）时白名单页照样按边缘策略发头：边缘失效不依赖源站缓存。
+        if cacheable && cacheable_response(&response) {
+            response
+                .headers_mut()
+                .insert(header::CACHE_CONTROL, public_page_cache_control());
+        }
         if authenticated
             && response
                 .headers()
@@ -336,10 +362,9 @@ pub async fn cache_public_html(
     response
         .headers_mut()
         .insert("x-ssr-cache", HeaderValue::from_static("MISS"));
-    response.headers_mut().insert(
-        header::CACHE_CONTROL,
-        HeaderValue::from_static("public, no-cache"),
-    );
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, public_page_cache_control());
     let (parts, body) = response.into_parts();
     let mut headers = parts.headers.clone();
     for name in [
@@ -393,23 +418,29 @@ pub async fn cache_public_html(
 }
 
 // 内容写入通常同时影响详情、列表、归档与相邻导航；小型缓存统一失效避免遗漏。
+// 每次源站失效都同步请求清边缘缓存：`tasks::edge_purge` 防抖合并，未配置凭据时只是空信号。
 pub fn invalidate_ssr_route(_route: &str) {
     HTML_CACHE.invalidate();
+    crate::tasks::edge_purge::request_purge();
 }
 pub fn invalidate_post_preview(_slug: &str) { /* 管理预览从不缓存。 */
 }
 pub fn invalidate_ssr_all_public() {
     HTML_CACHE.invalidate();
+    crate::tasks::edge_purge::request_purge();
 }
 /// 设置发布×flavor 命名空间（plan §6.7），变化即整表失效。启动期与开发热重载
 /// 重组路由时调用；同一进程内 release/flavor 不变时是零成本空操作。
 pub fn set_release_namespace(namespace: &str) {
     if HTML_CACHE.swap_namespace(namespace) {
         tracing::info!(%namespace, "SSR 缓存命名空间切换，旧 release/flavor 页面已失效");
+        crate::tasks::edge_purge::request_purge();
     }
 }
 pub fn bump_global_generation() -> u64 {
-    HTML_CACHE.invalidate()
+    let generation = HTML_CACHE.invalidate();
+    crate::tasks::edge_purge::request_purge();
+    generation
 }
 pub fn current_global_generation() -> u64 {
     HTML_CACHE.generation()
@@ -458,6 +489,16 @@ mod tests {
             &"/".parse().unwrap(),
             &headers
         ));
+    }
+
+    #[test]
+    fn edge_ttl_controls_shared_cache_only() {
+        assert_eq!(edge_cache_control(0), "public, no-cache");
+        // 浏览器每次校验（缓存清不掉），只有 CDN 按 s-maxage 缓存；不能带 no-cache，
+        // 否则共享缓存也不存。
+        assert_eq!(edge_cache_control(3600), "public, max-age=0, s-maxage=3600");
+        // 配置未加载（测试与 dev 默认）时不让 CDN 缓存。
+        assert_eq!(public_page_cache_control(), "public, no-cache");
     }
 
     #[test]

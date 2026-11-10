@@ -7,8 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **公开页 HTML 可由 CDN 缓存，内容变更后自动清除**：经 EdgeOne 访问时 HTML 每次回源，TTFB 约 80–130 ms，而节点命中只要约 17 ms。后台「页面缓存」新增「边缘缓存时长」（环境变量 `SSR_CACHE_EDGE_TTL_SECS` 首次播种，默认 0 不启用，需重启）：大于 0 时首页、归档、友链、关于、更新日志与文章、分页、标签页的匿名响应改为 `public, max-age=0, s-maxage=<秒>`，浏览器仍每次校验，CDN 按该时长缓存。配置 `EDGEONE_ZONE_ID`、`TENCENTCLOUD_SECRET_ID`、`TENCENTCLOUD_SECRET_KEY` 后，源站 HTML 缓存每次失效（文章、标签、设置写入，跨实例通知，发版启动）都会清除 EdgeOne 上的这些目录与页面：防抖 2 秒合并突发写入，10 秒后再清一次，挡住写入前已开始渲染、清除后才返回的旧页面；失败重试 3 次。
+
 ### Changed
 
+- **其它 HTML 不再进 CDN 缓存**：带查询串的页面（如带 `?utm_source=` 的分享链接）、搜索结果和 404 页原先返回 `public, max-age=300, stale-while-revalidate=3600`，EdgeOne 会缓存 5 分钟，文章修改或删除后这些地址仍显示旧内容，源站也无从清除。现在服务端渲染的 HTML 只有上述白名单匿名页可被共享缓存，其余一律 `public, no-cache`；`/doc/` 下的静态 rustdoc 页面不变。
 - **rustdoc 哈希文件长期缓存**：`/doc/static.files/<名字>-<8 位哈希>.*`（样式、脚本、字体）与 `/doc/search.index/<列>/<哈希>.js` 文件名带内容哈希，却按固定路径处理：样式和脚本是 `no-cache`，每次都经 CDN 回源校验（70–650 ms），字体只缓存 5 分钟，而 `/doc/` 占了 CDN 出流量的大头。现在这些文件返回 `public, max-age=31536000, immutable`；`search.index/root.js`、`doc-shell.js`、`theme.css` 等固定文件名不变。同时 immutable 只发给成功响应：哈希文件名的 404（含 `/pkg/` 分包）改为 `no-cache`，不再让浏览器和 CDN 把「不存在」记一年。
 - **Feed 缓存成品并去掉代码高亮标记**：`/feed.xml`、`/feed.json` 原先每个请求都把 20 篇全文重新渲染一遍再现压，线上未压缩 6.2 MB，源站每次 225–270 ms。现在缓存的是两种格式的成品连同各启用算法的压缩结果，命中按 `Accept-Encoding` 直接返回（数十微秒）；带 `ETag` 并支持 `If-None-Match`，`lastBuildDate` 改取最近一篇的更新时间，内容没变时阅读器拿到 304。`<pre>` 里的高亮 `<span>` 在阅读器中没有样式，一并去掉，RSS 未压缩体积少约三成，brotli 后 422 → 367 KB。
 - **SSR 缓存单页上限提到 2 MiB，并可配置**：图表多的长文渲染后超过 1 MiB（线上最长一篇 1.14 MB），进不了缓存，每个请求都完整 SSR 再现压（约 37 ms）。上限改为 2 MiB，总量仍受 32 MiB 约束。上限不再写死：后台设置新增「页面缓存」分区（64 KB–32 MiB），环境变量 `SSR_CACHE_MAX_PAGE_BYTES` 只在首次部署时播种，之后以面板值为准；修改后需重启生效。

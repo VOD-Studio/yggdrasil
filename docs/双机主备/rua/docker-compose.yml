@@ -25,6 +25,10 @@ services:
       COMPRESSION_ALGORITHMS: "br, gzip"
       RUST_LOG: info
       MCP_TOKEN_ENC_KEY: ${MCP_TOKEN_ENC_KEY}
+      # 内容变更与发版后清 EdgeOne 上的公开页 HTML（.env 留空则不清；CAM 子账号只授权 teo:CreatePurgeTask）
+      EDGEONE_ZONE_ID: ${EDGEONE_ZONE_ID:-}
+      TENCENTCLOUD_SECRET_ID: ${TENCENTCLOUD_SECRET_ID:-}
+      TENCENTCLOUD_SECRET_KEY: ${TENCENTCLOUD_SECRET_KEY:-}
       DOCKER_SOCKET_PATH: /var/run/docker.sock
       CODE_RUNNER_ALLOW_NETWORK: "false"
       CODE_RUNNER_MAX_CONCURRENT: "1"

@@ -849,6 +849,9 @@ pub const MIN_SSR_CACHE_MAX_PAGE_BYTES: u64 = 64 * 1024;
 #[cfg(feature = "server")]
 pub const MAX_SSR_CACHE_MAX_PAGE_BYTES: u64 = 32 * 1024 * 1024;
 
+/// 边缘缓存时长上限 7 天。清缓存失败时这就是陈旧上限，再长不划算。
+pub const MAX_SSR_CACHE_EDGE_TTL_SECS: u64 = 7 * 24 * 3600;
+
 /// 匿名公开页 HTML 缓存配置。
 ///
 /// 需重启生效层：值在 HTML 缓存首次使用时读取，改 DB 值后需重启才生效。
@@ -856,12 +859,17 @@ pub const MAX_SSR_CACHE_MAX_PAGE_BYTES: u64 = 32 * 1024 * 1024;
 pub struct SsrCacheSettings {
     /// 单页上限（字节）。渲染结果超过此大小的页面不进缓存，每次请求完整 SSR 再现压。
     pub max_page_bytes: u64,
+    /// 白名单匿名页在 CDN 节点的缓存时长（秒，`s-maxage`）。0 = 不让 CDN 缓存 HTML（默认）。
+    /// 大于 0 时内容变更与启动都会请求清 EdgeOne（`tasks::edge_purge`，需配置凭据）；
+    /// 未配置凭据时只能等它自然过期。
+    pub edge_ttl_secs: u64,
 }
 
 impl Default for SsrCacheSettings {
     fn default() -> Self {
         Self {
             max_page_bytes: DEFAULT_SSR_CACHE_MAX_PAGE_BYTES,
+            edge_ttl_secs: 0,
         }
     }
 }
@@ -871,6 +879,12 @@ impl SsrCacheSettings {
     #[cfg(feature = "server")]
     pub fn clamp_max_page_bytes(n: u64) -> u64 {
         n.clamp(MIN_SSR_CACHE_MAX_PAGE_BYTES, MAX_SSR_CACHE_MAX_PAGE_BYTES)
+    }
+
+    /// 将边缘缓存时长钳制到 [0, 7 天]。
+    #[cfg(feature = "server")]
+    pub fn clamp_edge_ttl_secs(n: u64) -> u64 {
+        n.min(MAX_SSR_CACHE_EDGE_TTL_SECS)
     }
 }
 
@@ -1608,6 +1622,12 @@ mod tests {
             MAX_SSR_CACHE_MAX_PAGE_BYTES
         );
         assert_eq!(SsrCacheSettings::clamp_max_page_bytes(1 << 20), 1 << 20);
+        assert_eq!(SsrCacheSettings::clamp_edge_ttl_secs(0), 0);
+        assert_eq!(SsrCacheSettings::clamp_edge_ttl_secs(3600), 3600);
+        assert_eq!(
+            SsrCacheSettings::clamp_edge_ttl_secs(u64::MAX),
+            MAX_SSR_CACHE_EDGE_TTL_SECS
+        );
     }
 
     // ── RunnerSettings ───────────────────────────────────────────

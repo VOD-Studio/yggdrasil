@@ -54,6 +54,8 @@ fn is_hashed_doc_file(path: &str) -> bool {
 }
 
 const IMMUTABLE: &str = "public, max-age=31536000, immutable";
+/// 其余公开 GET 的默认值：5 分钟新鲜期，过期后 1 小时内可先给旧内容再后台校验。
+const PUBLIC_DEFAULT: &str = "public, max-age=300, stale-while-revalidate=3600";
 
 /// 根据请求路径、查询串和方法决定公开页面的 Cache-Control 头。
 /// 返回 None 表示不添加缓存头（保留现有行为或避免覆盖）。
@@ -127,10 +129,22 @@ pub(crate) fn cache_control_for_path(
         ));
     }
 
-    // 公开页面：5 分钟新鲜期，过期后 1 小时内可提供过期内容并后台重新验证
-    Some(HeaderValue::from_static(
-        "public, max-age=300, stale-while-revalidate=3600",
-    ))
+    // 其余公开资源：5 分钟新鲜期，过期后 1 小时内可提供过期内容并后台重新验证。
+    // 服务端渲染的 HTML 在 `add_cache_control` 里按响应类型另行改成 `no-cache`。
+    Some(HeaderValue::from_static(PUBLIC_DEFAULT))
+}
+
+/// 服务端渲染的 HTML 只在源站能主动失效时才允许共享缓存：白名单匿名页由
+/// `ssr_cache::cache_public_html` 自行设置（边缘缓存 + 写入后清 EdgeOne），其余页面
+/// （查询串变体、搜索、404 等）一律 `no-cache`，否则 CDN 会把改过或删掉的内容再给 5 分钟。
+/// `/doc/` 下是随发版更新的静态 rustdoc 页面，不在此列。
+fn is_dynamic_html(path: &str, response: &axum::response::Response) -> bool {
+    !path.starts_with("/doc/")
+        && response
+            .headers()
+            .get(axum::http::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|v| v.starts_with("text/html"))
 }
 
 /// Axum 中间件：为公开页面和静态资源附加 Cache-Control 头。
@@ -156,7 +170,9 @@ pub(crate) async fn add_cache_control(
     let cacheable_status =
         response.status().is_success() || response.status() == axum::http::StatusCode::NOT_MODIFIED;
     let cache_value = cache_value.map(|value| {
-        if !cacheable_status && value == IMMUTABLE {
+        if (!cacheable_status && value == IMMUTABLE)
+            || (value == PUBLIC_DEFAULT && is_dynamic_html(&path, &response))
+        {
             axum::http::HeaderValue::from_static("public, no-cache")
         } else {
             value
@@ -753,6 +769,65 @@ mod tests {
             assert_eq!(missing.status(), axum::http::StatusCode::NOT_FOUND);
             assert_eq!(missing.headers()[header::CACHE_CONTROL], "public, no-cache");
         }
+    }
+
+    #[tokio::test]
+    async fn dynamic_html_is_never_shared_cached_by_default() {
+        fn html() -> axum::response::Response {
+            use axum::response::IntoResponse;
+            axum::response::Html("<p>page</p>").into_response()
+        }
+        let app = axum::Router::new()
+            .route("/", axum::routing::get(|| async { html() }))
+            .route("/search", axum::routing::get(|| async { html() }))
+            .route(
+                "/preset",
+                axum::routing::get(|| async {
+                    (
+                        [(header::CACHE_CONTROL, "public, max-age=0, s-maxage=60")],
+                        html(),
+                    )
+                }),
+            )
+            .route(
+                "/doc/yggdrasil/index.html",
+                axum::routing::get(|| async { html() }),
+            )
+            .route("/favicon.svg", axum::routing::get(|| async { "<svg/>" }))
+            .layer(axum::middleware::from_fn(|req, next| {
+                super::add_cache_control(false, req, next)
+            }));
+        let cache_control = |uri: &'static str| {
+            let app = app.clone();
+            async move {
+                let response = app
+                    .oneshot(Request::get(uri).body(axum::body::Body::empty()).unwrap())
+                    .await
+                    .unwrap();
+                response.headers()[header::CACHE_CONTROL]
+                    .to_str()
+                    .unwrap()
+                    .to_owned()
+            }
+        };
+
+        // 查询串变体与非白名单页面：CDN 不缓存。
+        assert_eq!(cache_control("/?utm_source=x").await, "public, no-cache");
+        assert_eq!(cache_control("/search?q=rust").await, "public, no-cache");
+        // 白名单页由内层 HTML 缓存设置，不被覆盖。
+        assert_eq!(
+            cache_control("/preset").await,
+            "public, max-age=0, s-maxage=60"
+        );
+        // 静态 rustdoc 页面与非 HTML 资源保持原默认值。
+        assert_eq!(
+            cache_control("/doc/yggdrasil/index.html").await,
+            "public, max-age=300, stale-while-revalidate=3600"
+        );
+        assert_eq!(
+            cache_control("/favicon.svg").await,
+            "public, max-age=300, stale-while-revalidate=3600"
+        );
     }
 
     #[tokio::test]

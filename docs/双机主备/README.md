@@ -35,6 +35,7 @@ flowchart LR
 - **文件**：xun 的 `ygg-standby-sync.timer` 每分钟推送一次。uploads 镜像同步（`--delete`，排除 `.cache/` 与 rsync 临时文件），backups 只增不删；rua 的 `ygg-backup-prune.timer` 每天删除 30 天前的备份，所以 rua 保留的备份历史比 xun（只留最近 2 份）更长。
 - **SSH**：两台之间没有 shell 互信。rua 的 key 在 xun 的 `authorized_keys` 中限定为 `restrict,port-forwarding,permitopen="127.0.0.1:5432",command="/bin/false"`，只能建隧道；xun 的两把同步 key（`id_ygg_sync_uploads`、`id_ygg_sync_backups`）在 rua 上用 `rrsync -wo` 限定为对应目录只写。
 - **EdgeOne**：源站组按权重分流，没有健康检查，xun 宕机不会自动切到 rua。回源协议 HTTPS:443，不校验源站证书。
+- **HTML 边缘缓存**：后台「页面缓存 → 边缘缓存时长」大于 0 时，白名单匿名页（`/`、`/archives`、`/friends`、`/about`、`/changelog`、`/post/*`、`/page/*`、`/tags/*`）返回 `public, max-age=0, s-maxage=<秒>`，由 EdgeOne 节点缓存。app 在内容写入和每次启动（发版）后调用 `CreatePurgeTask` 清这些目录与页面，凭据在两台 `.env` 的 `EDGEONE_ZONE_ID`、`TENCENTCLOUD_SECRET_ID`、`TENCENTCLOUD_SECRET_KEY`（CAM 子账号，只授权该站点 `teo:CreatePurgeTask`）。故障切换到 rua 时它的 `.env` 也要有这三项，否则写入后边缘要等 `s-maxage` 到期。启用前规则引擎的「静态文本-非br请求不缓存」须覆盖这些 HTML 路径，否则节点可能缓存 EdgeOne 自己压的更大的 br。
 - **源站证书**：两台 nginx-proxy 证书目录里 `rua.plus.crt/.key/.chain.pem` 是 10 年期自签证书（普通文件，不是指向 Let's Encrypt 目录的链接）。compose 不设 `LETSENCRYPT_*`，acme-companion 不管 `rua.plus`。
 - **回源鉴权**：两台的 80/443 还承载其它不走 EdgeOne 的站点，不能按 IP 封端口。EdgeOne「修改 HTTP 回源请求头」给 `rua.plus` 加 `X-Ygg-Origin-Auth: <密钥>`，nginx `vhost.d/rua.plus` 中的 `ygg-origin-auth` 块校验，缺失或错误返回 403，`/readyz`、`/healthz` 放行。密钥存在两台的 `/root/.ygg-origin-auth`（权限 600，每行一个，任一匹配即放行）。
 

@@ -1,4 +1,4 @@
-//! 页面缓存分区：匿名公开页 HTML 缓存的单页上限。
+//! 页面缓存分区：匿名公开页 HTML 缓存的单页上限与 CDN 边缘缓存时长。
 //!
 //! 写入数据库，下次启动生效（HTML 缓存在首次使用时读取）。
 
@@ -9,10 +9,10 @@ use super::SettingsSection;
 use crate::api::error::ApiError;
 use crate::api::settings::{get_ssr_cache_settings, update_ssr_cache_settings};
 use crate::components::forms::NumberInput;
-use crate::models::settings::SsrCacheSettings;
+use crate::models::settings::{SsrCacheSettings, MAX_SSR_CACHE_EDGE_TTL_SECS};
 
 async fn save(d: SsrCacheSettings) -> Result<SsrCacheSettings, ApiError> {
-    update_ssr_cache_settings(d.max_page_bytes).await
+    update_ssr_cache_settings(d.max_page_bytes, d.edge_ttl_secs).await
 }
 
 /// 页面缓存分区组件。
@@ -22,7 +22,7 @@ pub fn PageCacheSection() -> impl IntoView {
     view! {
         <SettingsCard
             section=SettingsSection::PageCache
-            description="匿名访客的公开页 HTML 缓存在内存里，总量 32 MiB。"
+            description="匿名访客的公开页 HTML 缓存在内存里，总量 32 MiB；可选让 CDN 节点一并缓存。"
             ready=st.ready()
             load_failed=st.load_failed()
             failed=st.failed()
@@ -37,6 +37,18 @@ pub fn PageCacheSection() -> impl IntoView {
                     unit="KB"
                     hint="渲染后更大的页面不缓存，每次请求重新渲染。默认 2048 KB。"
                     onchange=move |v: i64| st.edit(|d| d.max_page_bytes = v as u64 * 1024)
+                />
+            </SettingRow>
+            <SettingRow label="边缘缓存时长" html_for="ssr-cache-edge-ttl">
+                <NumberInput
+                    id="ssr-cache-edge-ttl"
+                    value=st.field(|d| d.edge_ttl_secs as i64)
+                    min=0
+                    max=MAX_SSR_CACHE_EDGE_TTL_SECS as i64
+                    step=60
+                    unit="秒"
+                    hint="同一批页面在 CDN 节点缓存多久（s-maxage），浏览器仍每次校验。0 表示不让 CDN 缓存。内容变更后清 EdgeOne 缓存需要服务器配置腾讯云凭据，否则只能等过期。"
+                    onchange=move |v: i64| st.edit(|d| d.edge_ttl_secs = v.max(0) as u64)
                 />
             </SettingRow>
         </SettingsCard>

@@ -16,7 +16,7 @@ use crate::models::settings::SsrCacheSettings;
 // SSR 页面缓存配置（需重启生效）
 // ============================================================================
 
-/// 启动时用 `SSR_CACHE_MAX_PAGE_BYTES` 环境变量播种 SSR 页面缓存配置。
+/// 启动时用 `SSR_CACHE_MAX_PAGE_BYTES`、`SSR_CACHE_EDGE_TTL_SECS` 环境变量播种 SSR 页面缓存配置。
 #[cfg(feature = "server")]
 pub(crate) async fn seed_ssr_cache_settings_from_env(
     client: &tokio_postgres::Client,
@@ -32,6 +32,15 @@ pub(crate) async fn seed_ssr_cache_settings_from_env(
             Err(_) => tracing::warn!("SSR_CACHE_MAX_PAGE_BYTES={v:?} 非法（期望正整数），跳过"),
         }
     }
+    if let Ok(v) = std::env::var("SSR_CACHE_EDGE_TTL_SECS") {
+        match v.trim().parse::<u64>() {
+            Ok(n) => seeds.push((
+                "ssr_cache_edge_ttl_secs",
+                SsrCacheSettings::clamp_edge_ttl_secs(n).to_string(),
+            )),
+            Err(_) => tracing::warn!("SSR_CACHE_EDGE_TTL_SECS={v:?} 非法（期望非负整数），跳过"),
+        }
+    }
 
     super::insert_env_seeds(client, seeds).await
 }
@@ -41,14 +50,26 @@ pub(crate) async fn seed_ssr_cache_settings_from_env(
 pub(crate) async fn load_ssr_cache_settings(
     client: &tokio_postgres::Client,
 ) -> Result<SsrCacheSettings, AppError> {
-    let values = super::load_setting_values(client, &["ssr_cache_max_page_bytes"]).await?;
+    let values = super::load_setting_values(
+        client,
+        &["ssr_cache_max_page_bytes", "ssr_cache_edge_ttl_secs"],
+    )
+    .await?;
     let max_page_bytes = values
         .get("ssr_cache_max_page_bytes")
         .and_then(|v| v.parse().ok())
         .map(SsrCacheSettings::clamp_max_page_bytes)
         .unwrap_or(crate::models::settings::DEFAULT_SSR_CACHE_MAX_PAGE_BYTES);
+    let edge_ttl_secs = values
+        .get("ssr_cache_edge_ttl_secs")
+        .and_then(|v| v.parse().ok())
+        .map(SsrCacheSettings::clamp_edge_ttl_secs)
+        .unwrap_or(0);
 
-    Ok(SsrCacheSettings { max_page_bytes })
+    Ok(SsrCacheSettings {
+        max_page_bytes,
+        edge_ttl_secs,
+    })
 }
 
 /// 读取 SSR 页面缓存配置（面板用）。
@@ -75,12 +96,16 @@ pub async fn get_ssr_cache_settings() -> Result<SsrCacheSettings, ApiError> {
 ///
 /// 字段会被 clamp 后写入 DB。HTML 缓存首次使用时读取，修改后需**重启进程**生效。
 #[server(UpdateSsrCacheSettings, endpoint = "update_ssr_cache_settings", input = leptos::server_fn::codec::Json)]
-pub async fn update_ssr_cache_settings(max_page_bytes: u64) -> Result<SsrCacheSettings, ApiError> {
+pub async fn update_ssr_cache_settings(
+    max_page_bytes: u64,
+    edge_ttl_secs: u64,
+) -> Result<SsrCacheSettings, ApiError> {
     let _user = get_current_admin_user().await?;
 
     #[cfg(feature = "server")]
     {
         let max_page_bytes = SsrCacheSettings::clamp_max_page_bytes(max_page_bytes);
+        let edge_ttl_secs = SsrCacheSettings::clamp_edge_ttl_secs(edge_ttl_secs);
         let client = get_conn().await.map_err(AppError::db_conn)?;
         super::upsert_setting(
             &**client,
@@ -88,13 +113,27 @@ pub async fn update_ssr_cache_settings(max_page_bytes: u64) -> Result<SsrCacheSe
             &max_page_bytes.to_string(),
         )
         .await?;
+        super::upsert_setting(
+            &**client,
+            "ssr_cache_edge_ttl_secs",
+            &edge_ttl_secs.to_string(),
+        )
+        .await?;
 
-        tracing::info!("SSR cache settings updated (需重启生效): max_page_bytes={max_page_bytes}");
-        Ok(SsrCacheSettings { max_page_bytes })
+        tracing::info!(
+            "SSR cache settings updated (需重启生效): max_page_bytes={max_page_bytes}, edge_ttl_secs={edge_ttl_secs}"
+        );
+        Ok(SsrCacheSettings {
+            max_page_bytes,
+            edge_ttl_secs,
+        })
     }
 
     #[cfg(not(feature = "server"))]
     {
-        Ok(SsrCacheSettings { max_page_bytes })
+        Ok(SsrCacheSettings {
+            max_page_bytes,
+            edge_ttl_secs,
+        })
     }
 }
