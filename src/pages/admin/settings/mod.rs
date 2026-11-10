@@ -1,6 +1,6 @@
 //! 后台「设置」页面（`/admin/settings`）。
 //!
-//! 左侧分区目录 + 右侧纵向堆叠的全部分区，按「站点、安全、上传、图片缓存、图片处理、
+//! 左侧分区目录 + 右侧纵向堆叠的全部分区，按「站点、安全、上传、图片缓存、页面缓存、图片处理、
 //! 素材清理、回收站、自动备份、代码运行器、接口限流、启动配置」排列。全部分区常驻
 //! 挂载在同一个滚动容器里：
 //! - 点目录 → `scrollIntoView` 平滑滚动到分区，期间用「世代锁」抑制 scroll-spy，
@@ -15,6 +15,7 @@ mod backup_section;
 mod cache_section;
 mod image_section;
 mod kit;
+mod page_cache_section;
 mod purge_section;
 mod ratelimit_section;
 mod runner_section;
@@ -32,6 +33,7 @@ use backup_section::BackupSection;
 use cache_section::CacheSection;
 use image_section::ImageSection;
 use kit::SettingsBus;
+use page_cache_section::PageCacheSection;
 use purge_section::AssetPurgeSection;
 use ratelimit_section::RateLimitSection;
 use runner_section::RunnerSection;
@@ -54,6 +56,8 @@ pub enum SettingsSection {
     Upload,
     /// 图片磁盘缓存。
     Cache,
+    /// 匿名公开页 HTML 缓存，重启生效。
+    PageCache,
     /// 图片处理（WebP 编码 / 尺寸上限），重启生效。
     Image,
     /// 无引用素材自动清理。
@@ -77,6 +81,7 @@ impl SettingsSection {
             SettingsSection::Security => "security",
             SettingsSection::Upload => "upload",
             SettingsSection::Cache => "cache",
+            SettingsSection::PageCache => "pagecache",
             SettingsSection::Image => "image",
             SettingsSection::AssetPurge => "assetpurge",
             SettingsSection::Trash => "trash",
@@ -94,6 +99,7 @@ impl SettingsSection {
             SettingsSection::Security => "安全",
             SettingsSection::Upload => "上传",
             SettingsSection::Cache => "图片缓存",
+            SettingsSection::PageCache => "页面缓存",
             SettingsSection::Image => "图片处理",
             SettingsSection::AssetPurge => "素材清理",
             SettingsSection::Trash => "回收站",
@@ -108,7 +114,8 @@ impl SettingsSection {
     fn needs_restart(&self) -> bool {
         matches!(
             self,
-            SettingsSection::Image
+            SettingsSection::PageCache
+                | SettingsSection::Image
                 | SettingsSection::Runner
                 | SettingsSection::RateLimit
                 | SettingsSection::System
@@ -116,12 +123,13 @@ impl SettingsSection {
     }
 
     /// 所有分区，按导航顺序。
-    fn all() -> [SettingsSection; 11] {
+    fn all() -> [SettingsSection; 12] {
         [
             SettingsSection::Site,
             SettingsSection::Security,
             SettingsSection::Upload,
             SettingsSection::Cache,
+            SettingsSection::PageCache,
             SettingsSection::Image,
             SettingsSection::AssetPurge,
             SettingsSection::Trash,
@@ -193,6 +201,7 @@ fn render_section(section: SettingsSection) -> AnyView {
         SettingsSection::Security => view! { <SecuritySection/> }.into_any(),
         SettingsSection::Upload => view! { <UploadSection/> }.into_any(),
         SettingsSection::Cache => view! { <CacheSection/> }.into_any(),
+        SettingsSection::PageCache => view! { <PageCacheSection/> }.into_any(),
         SettingsSection::Image => view! { <ImageSection/> }.into_any(),
         SettingsSection::AssetPurge => view! { <AssetPurgeSection/> }.into_any(),
         SettingsSection::Trash => view! { <TrashSection/> }.into_any(),

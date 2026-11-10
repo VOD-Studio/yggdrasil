@@ -56,6 +56,7 @@ pub fn run() {
     };
     tracing::info!(
         ssr_cache_secs = options.ssr_cache_secs,
+        max_page_bytes = crate::config::ssr_cache().max_page_bytes,
         "匿名公开页 HTML 缓存：32 MiB 上限、写入通知失效、TTL 兜底"
     );
     tracing::info!(

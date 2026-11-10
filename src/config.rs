@@ -11,7 +11,7 @@
 #![cfg(any(feature = "server", test))]
 
 use crate::models::settings::{
-    ImageLimitSettings, RateLimitSettings, RunnerSettings, WebpSettings,
+    ImageLimitSettings, RateLimitSettings, RunnerSettings, SsrCacheSettings, WebpSettings,
 };
 use std::sync::OnceLock;
 
@@ -103,6 +103,26 @@ pub static MAX_IMAGE_PIXELS: std::sync::LazyLock<u32> = std::sync::LazyLock::new
     tracing::info!("Image pixel limit loaded from DB: {}", val);
     val
 });
+
+// ============================================================================
+// SSR 页面缓存配置
+// ============================================================================
+
+/// SSR 页面缓存配置（启动时从 DB 加载一次）。
+static SSR_CACHE_CFG: OnceLock<SsrCacheSettings> = OnceLock::new();
+
+/// 在启动时写入 SSR 页面缓存配置（仅调用一次）。
+#[cfg(feature = "server")]
+pub fn set_ssr_cache(cfg: SsrCacheSettings) {
+    if SSR_CACHE_CFG.set(cfg).is_err() {
+        tracing::warn!("ssr_cache config already initialized, ignoring subsequent set");
+    }
+}
+
+/// 读取 SSR 页面缓存配置。未设置时回退到 [`SsrCacheSettings::default`]。
+pub fn ssr_cache() -> SsrCacheSettings {
+    SSR_CACHE_CFG.get().cloned().unwrap_or_default()
+}
 
 // ============================================================================
 // 代码运行器配置

@@ -4,7 +4,7 @@
 //! （安全）、`image_cache`（图片磁盘缓存）、`asset_purge`（孤儿素材清理）、
 //! `rate_limit`（限流）、`upload`（素材上传）、`site`（站点公开配置）、
 //! `system`（系统启动信息）、`webp`（WebP 编码）、`image_limit`（图片尺寸限制）、
-//! `runner`（代码运行器）。全部公开项经本模块 `pub use` 聚合，
+//! `runner`（代码运行器）、`ssr_cache`（SSR 页面缓存）。全部公开项经本模块 `pub use` 聚合，
 //! `crate::api::settings::xxx` 路径保持不变，外部调用零改动。
 //!
 //! - 回收站配置：读取与更新自动清理设置，需要 admin 权限。
@@ -26,6 +26,7 @@ mod rate_limit;
 mod runner;
 mod security;
 mod site;
+mod ssr_cache;
 mod system;
 mod trash;
 mod upload;
@@ -148,7 +149,18 @@ pub(crate) async fn load_setting_values(
 pub(crate) async fn bootstrap_startup_settings(
     client: &tokio_postgres::Client,
 ) -> Result<(), AppError> {
-    let (backup, upload, security, image_cache, asset_purge, rate_limit, webp, image_limit, runner) = tokio::join!(
+    let (
+        backup,
+        upload,
+        security,
+        image_cache,
+        asset_purge,
+        rate_limit,
+        webp,
+        image_limit,
+        runner,
+        ssr_cache,
+    ) = tokio::join!(
         seed_backup_settings_from_env(client),
         seed_upload_settings_from_env(client),
         seed_security_settings_from_env(client),
@@ -158,6 +170,7 @@ pub(crate) async fn bootstrap_startup_settings(
         seed_webp_settings_from_env(client),
         seed_image_limit_settings_from_env(client),
         seed_runner_settings_from_env(client),
+        seed_ssr_cache_settings_from_env(client),
     );
 
     for (name, result) in [
@@ -170,17 +183,19 @@ pub(crate) async fn bootstrap_startup_settings(
         ("webp", webp),
         ("image_limit", image_limit),
         ("runner", runner),
+        ("ssr_cache", ssr_cache),
     ] {
         if let Err(error) = result {
             tracing::warn!(setting_group = name, error = ?error, "启动设置环境变量播种失败");
         }
     }
 
-    let (rate_limit, webp, image_limit, runner) = tokio::join!(
+    let (rate_limit, webp, image_limit, runner, ssr_cache) = tokio::join!(
         load_rate_limit_settings(client),
         load_webp_settings(client),
         load_image_limit_settings(client),
         load_runner_settings(client),
+        load_ssr_cache_settings(client),
     );
 
     let rate_limit = rate_limit.map_err(|error| {
@@ -199,11 +214,16 @@ pub(crate) async fn bootstrap_startup_settings(
         tracing::error!(error = ?error, "代码运行器启动配置加载失败，拒绝使用默认值");
         error
     })?;
+    let ssr_cache = ssr_cache.map_err(|error| {
+        tracing::error!(error = ?error, "SSR 缓存启动配置加载失败，拒绝使用默认值");
+        error
+    })?;
 
     crate::config::set_rate_limit(rate_limit);
     crate::config::set_webp(webp);
     crate::config::set_image_limit(image_limit);
     crate::config::set_runner(runner);
+    crate::config::set_ssr_cache(ssr_cache);
     Ok(())
 }
 
@@ -215,6 +235,7 @@ pub use rate_limit::*;
 pub use runner::*;
 pub use security::*;
 pub use site::*;
+pub use ssr_cache::*;
 pub use system::*;
 pub use trash::*;
 pub use upload::*;

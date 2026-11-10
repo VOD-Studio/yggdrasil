@@ -833,6 +833,48 @@ impl ImageLimitSettings {
 }
 
 // ============================================================================
+// SSR 页面缓存配置（需重启生效）
+// ============================================================================
+//
+// 原本是 src/ssr_cache.rs 的编译期常量。env（SSR_CACHE_MAX_PAGE_BYTES）首启播种 DB，
+// 之后面板值优先；值在 HTML 缓存首次使用时读取，需重启生效。
+
+/// 默认单页上限 2 MiB：线上最长一篇（Mermaid 明暗两份 SVG 加高亮代码）渲染后 1.14 MB。
+pub const DEFAULT_SSR_CACHE_MAX_PAGE_BYTES: u64 = 2 * 1024 * 1024;
+/// 单页上限下限 64 KiB，防误填过小值让文章页全部进不了缓存。
+#[cfg(feature = "server")]
+pub const MIN_SSR_CACHE_MAX_PAGE_BYTES: u64 = 64 * 1024;
+/// 单页上限的上限 32 MiB，等于 HTML 缓存总量（`ssr_cache::MAX_CACHE_BYTES`），
+/// 与设置页输入框上限一致。
+#[cfg(feature = "server")]
+pub const MAX_SSR_CACHE_MAX_PAGE_BYTES: u64 = 32 * 1024 * 1024;
+
+/// 匿名公开页 HTML 缓存配置。
+///
+/// 需重启生效层：值在 HTML 缓存首次使用时读取，改 DB 值后需重启才生效。
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct SsrCacheSettings {
+    /// 单页上限（字节）。渲染结果超过此大小的页面不进缓存，每次请求完整 SSR 再现压。
+    pub max_page_bytes: u64,
+}
+
+impl Default for SsrCacheSettings {
+    fn default() -> Self {
+        Self {
+            max_page_bytes: DEFAULT_SSR_CACHE_MAX_PAGE_BYTES,
+        }
+    }
+}
+
+impl SsrCacheSettings {
+    /// 将单页上限钳制到合法范围 [MIN, MAX]。
+    #[cfg(feature = "server")]
+    pub fn clamp_max_page_bytes(n: u64) -> u64 {
+        n.clamp(MIN_SSR_CACHE_MAX_PAGE_BYTES, MAX_SSR_CACHE_MAX_PAGE_BYTES)
+    }
+}
+
+// ============================================================================
 // 代码运行器配置（需重启生效）
 // ============================================================================
 //
@@ -1552,6 +1594,20 @@ mod tests {
             ImageLimitSettings::clamp_dimensions_cache_ttl_secs(7200),
             7200
         );
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn ssr_cache_clamp_max_page_bytes() {
+        assert_eq!(
+            SsrCacheSettings::clamp_max_page_bytes(0),
+            MIN_SSR_CACHE_MAX_PAGE_BYTES
+        );
+        assert_eq!(
+            SsrCacheSettings::clamp_max_page_bytes(u64::MAX),
+            MAX_SSR_CACHE_MAX_PAGE_BYTES
+        );
+        assert_eq!(SsrCacheSettings::clamp_max_page_bytes(1 << 20), 1 << 20);
     }
 
     // ── RunnerSettings ───────────────────────────────────────────

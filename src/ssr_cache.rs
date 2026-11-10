@@ -19,10 +19,10 @@ use sha2::{Digest, Sha256};
 
 use crate::compression::{self, CompressionAlgorithms, Effort, Encoding};
 
-/// 单页上限。图表多的长文渲染后超过 1 MiB（线上最长一篇 1.14 MB：Mermaid 明暗两份 SVG 加高亮
-/// 代码），放不进缓存就每次请求完整 SSR 再现压。取 2 MiB；总量仍受 [`MAX_CACHE_BYTES`] 约束。
-const MAX_PAGE_BYTES: usize = 2 * 1024 * 1024;
+/// 缓存总量。单页上限（`SsrCacheSettings::max_page_bytes`，后台「页面缓存」可调，默认 2 MiB）
+/// 不超过它，否则一页就会挤掉整个缓存。
 const MAX_CACHE_BYTES: u64 = 32 * 1024 * 1024;
+const _: () = assert!(crate::models::settings::MAX_SSR_CACHE_MAX_PAGE_BYTES <= MAX_CACHE_BYTES);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SsrGeneration(pub u64);
@@ -43,12 +43,14 @@ struct HtmlCache {
     generation: AtomicU64,
     gate: Mutex<()>,
     enabled: bool,
+    /// 单页上限：渲染结果更大的页面不缓存，每次请求完整 SSR 再现压。
+    max_page_bytes: usize,
     /// 当前缓存命名空间（release×flavor，plan §6.7）。空串 = 尚未初始化。
     namespace: Mutex<String>,
 }
 
 impl HtmlCache {
-    fn new(ttl: Duration, capacity: u64) -> Self {
+    fn new(ttl: Duration, capacity: u64, max_page_bytes: usize) -> Self {
         Self {
             pages: moka::sync::Cache::builder()
                 .max_capacity(capacity)
@@ -61,6 +63,7 @@ impl HtmlCache {
             generation: AtomicU64::new(0),
             gate: Mutex::new(()),
             enabled: !ttl.is_zero(),
+            max_page_bytes,
             namespace: Mutex::new(String::new()),
         }
     }
@@ -114,7 +117,7 @@ impl HtmlCache {
         body: Vec<u8>,
         generation: u64,
     ) -> Option<(HeaderValue, Bytes)> {
-        if !self.enabled || body.len() > MAX_PAGE_BYTES {
+        if !self.enabled || body.len() > self.max_page_bytes {
             return None;
         }
         let etag = HeaderValue::from_str(&format!("\"{}\"", hex::encode(Sha256::digest(&body))))
@@ -240,9 +243,11 @@ fn hit_response(
 }
 
 static HTML_CACHE: LazyLock<HtmlCache> = LazyLock::new(|| {
+    // 启动设置在路由装配前已写入 config；值随进程固定，改面板后重启生效。
     HtmlCache::new(
         Duration::from_secs(crate::utils::server::parse_ssr_cache_secs()),
         MAX_CACHE_BYTES,
+        crate::config::ssr_cache().max_page_bytes as usize,
     )
 });
 
@@ -355,7 +360,7 @@ pub async fn cache_public_html(
         match state.input.next().await {
             Some(Ok(chunk)) => {
                 if let Some(buffer) = state.buffer.as_mut() {
-                    if buffer.len() + chunk.len() <= MAX_PAGE_BYTES {
+                    if buffer.len() + chunk.len() <= HTML_CACHE.max_page_bytes {
                         buffer.extend_from_slice(&chunk);
                     } else {
                         state.buffer = None;
@@ -457,7 +462,7 @@ mod tests {
 
     #[test]
     fn invalidation_rejects_inflight_old_responses() {
-        let cache = HtmlCache::new(Duration::from_secs(60), MAX_CACHE_BYTES);
+        let cache = HtmlCache::new(Duration::from_secs(60), MAX_CACHE_BYTES, 1024);
         let generation = cache.generation();
         cache.insert("/".into(), HeaderMap::new(), b"old".to_vec(), generation);
         assert!(cache.get("/").is_some());
@@ -480,7 +485,7 @@ mod tests {
 
     #[test]
     fn namespace_swap_isolates_release_and_flavor_variants() {
-        let cache = HtmlCache::new(Duration::from_secs(60), MAX_CACHE_BYTES);
+        let cache = HtmlCache::new(Duration::from_secs(60), MAX_CACHE_BYTES, 1024);
         let generation = cache.generation();
         cache.insert(
             "/post/a".into(),
@@ -518,17 +523,14 @@ mod tests {
 
     #[test]
     fn cached_pages_expire_and_oversize_pages_are_not_stored() {
-        let cache = HtmlCache::new(Duration::from_millis(20), MAX_CACHE_BYTES);
+        let cache = HtmlCache::new(Duration::from_millis(20), MAX_CACHE_BYTES, 1024);
         cache.insert("/".into(), HeaderMap::new(), b"html".to_vec(), 0);
         assert!(cache.get("/").is_some());
         std::thread::sleep(Duration::from_millis(40));
         assert!(cache.get("/").is_none());
-        cache.insert(
-            "/large".into(),
-            HeaderMap::new(),
-            vec![0; MAX_PAGE_BYTES + 1],
-            0,
-        );
+        cache.insert("/limit".into(), HeaderMap::new(), vec![0; 1024], 0);
+        assert!(cache.get("/limit").is_some());
+        cache.insert("/large".into(), HeaderMap::new(), vec![0; 1025], 0);
         assert!(cache.get("/large").is_none());
     }
 
@@ -577,7 +579,7 @@ mod tests {
     #[tokio::test]
     async fn hits_serve_negotiated_precompressed_variants() {
         let algorithms = compression::parse_compression_algorithms("br, gzip");
-        let cache = HtmlCache::new(Duration::from_secs(60), MAX_CACHE_BYTES);
+        let cache = HtmlCache::new(Duration::from_secs(60), MAX_CACHE_BYTES, 1 << 20);
         let html = "<article><p>预压缩命中 precompressed hit.</p></article>".repeat(500);
         let (etag, body) = cache
             .insert("/".into(), HeaderMap::new(), html.clone().into_bytes(), 0)
@@ -626,7 +628,7 @@ mod tests {
 
     #[test]
     fn variants_only_attach_to_the_page_they_were_encoded_from() {
-        let cache = HtmlCache::new(Duration::from_secs(60), MAX_CACHE_BYTES);
+        let cache = HtmlCache::new(Duration::from_secs(60), MAX_CACHE_BYTES, 1024);
         let variant = || vec![(Encoding::Brotli, Bytes::from_static(b"br"))];
         let (old_etag, _) = cache
             .insert("/".into(), HeaderMap::new(), b"old".to_vec(), 0)
