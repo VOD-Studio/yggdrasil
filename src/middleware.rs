@@ -27,6 +27,34 @@ fn is_hashed_pkg_file(path: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
 }
 
+/// rustdoc 产物里文件名带内容哈希、内容永不变化的文件：
+/// - `/doc/static.files/<名字>-<8 位十六进制>.<扩展名>`（样式、脚本、字体，如
+///   `rustdoc-0c87338a.css`、`SourceSerif4-Regular-6b053e98.ttf.woff2`）；
+/// - `/doc/search.index/<列>/<十六进制>.js`（搜索索引分片，按内容哈希命名）。
+///
+/// `/doc/search.index/root.js`、`doc-shell.js`、`theme.css` 等固定文件名不在此列。
+fn is_hashed_doc_file(path: &str) -> bool {
+    let is_hex = |s: &str, len: std::ops::RangeInclusive<usize>| {
+        len.contains(&s.len()) && s.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+    };
+    if let Some(file) = path.strip_prefix("/doc/static.files/") {
+        return !file.contains('/')
+            && file
+                .split_once('.')
+                .and_then(|(stem, _)| stem.rsplit_once('-'))
+                .is_some_and(|(name, hash)| !name.is_empty() && is_hex(hash, 8..=8));
+    }
+    if let Some(rest) = path.strip_prefix("/doc/search.index/") {
+        return rest
+            .split_once('/')
+            .and_then(|(column, file)| Some((column, file.strip_suffix(".js")?)))
+            .is_some_and(|(column, hash)| !column.is_empty() && is_hex(hash, 8..=64));
+    }
+    false
+}
+
+const IMMUTABLE: &str = "public, max-age=31536000, immutable";
+
 /// 根据请求路径、查询串和方法决定公开页面的 Cache-Control 头。
 /// 返回 None 表示不添加缓存头（保留现有行为或避免覆盖）。
 ///
@@ -75,10 +103,16 @@ pub(crate) fn cache_control_for_path(
         let immutable = is_hashed_pkg_file(path)
             && (entry_content_addressed || !path.starts_with(PKG_ENTRY_PREFIX));
         return Some(HeaderValue::from_static(if immutable {
-            "public, max-age=31536000, immutable"
+            IMMUTABLE
         } else {
             "public, no-cache"
         }));
+    }
+
+    // rustdoc 的哈希命名文件（含字体）同样永不变化；此前样式/脚本每次回源校验、字体只缓存 5 分钟，
+    // 而 `/doc/` 占了 CDN 出流量的大头。
+    if is_hashed_doc_file(path) {
+        return Some(HeaderValue::from_static(IMMUTABLE));
     }
 
     // 固定路径的脚本、样式和 WASM 会随部署变化。`?v=` 等于当前内容版本号的地址
@@ -86,7 +120,7 @@ pub(crate) fn cache_control_for_path(
     if path.ends_with(".wasm") || path.ends_with(".js") || path.ends_with(".css") {
         return Some(HeaderValue::from_static(
             if crate::static_assets::is_current(path, query) {
-                "public, max-age=31536000, immutable"
+                IMMUTABLE
             } else {
                 "public, no-cache"
             },
@@ -116,6 +150,18 @@ pub(crate) async fn add_cache_control(
     );
 
     let mut response = next.run(req).await;
+
+    // 长期缓存只给成功响应：哈希文件名的 404（旧页面请求已下线的分包、新页面先于文件到达）
+    // 若带 immutable，浏览器与 CDN 会把「不存在」记一年。
+    let cacheable_status =
+        response.status().is_success() || response.status() == axum::http::StatusCode::NOT_MODIFIED;
+    let cache_value = cache_value.map(|value| {
+        if !cacheable_status && value == IMMUTABLE {
+            axum::http::HeaderValue::from_static("public, no-cache")
+        } else {
+            value
+        }
+    });
 
     if let Some(value) = cache_value {
         // 仅当响应尚未设置 Cache-Control 时才添加，避免覆盖已有策略
@@ -388,7 +434,7 @@ pub(crate) async fn previous_release_assets(
             let headers = asset.headers_mut();
             headers.insert(
                 axum::http::header::CACHE_CONTROL,
-                axum::http::HeaderValue::from_static("public, max-age=31536000, immutable"),
+                axum::http::HeaderValue::from_static(IMMUTABLE),
             );
             headers.insert(
                 axum::http::HeaderName::from_static("x-previous-release"),
@@ -635,6 +681,78 @@ mod tests {
             cache_value("/", Method::HEAD),
             Some("public, max-age=300, stale-while-revalidate=3600".to_string())
         );
+    }
+
+    #[test]
+    fn hashed_rustdoc_files_are_immutable() {
+        for path in [
+            "/doc/static.files/rustdoc-0c87338a.css",
+            "/doc/static.files/main-417ebf0a.js",
+            "/doc/static.files/FiraSans-Regular-0fe48ade.woff2",
+            "/doc/static.files/SourceSerif4-Regular-6b053e98.ttf.woff2",
+            "/doc/search.index/type/c76a8883ca.js",
+            "/doc/search.index/crateNames/69ed7a0c47.js",
+        ] {
+            assert_eq!(
+                cache_value(path, Method::GET).as_deref(),
+                Some("public, max-age=31536000, immutable"),
+                "{path}"
+            );
+        }
+        // 固定文件名随部署变化，仍每次校验。
+        for path in [
+            "/doc/search.index/root.js",
+            "/doc/doc-shell.js",
+            "/doc/theme.css",
+            "/doc/static.files/rustdoc.css",
+            "/doc/static.files/rustdoc-0C87338A.css",
+            "/doc/static.files/sub/rustdoc-0c87338a.css",
+            "/doc/search.index/type/latest.js",
+        ] {
+            assert_eq!(
+                cache_value(path, Method::GET).as_deref(),
+                Some("public, no-cache"),
+                "{path}"
+            );
+        }
+        assert_eq!(
+            cache_value("/doc/yggdrasil/index.html", Method::GET).as_deref(),
+            Some("public, max-age=300, stale-while-revalidate=3600")
+        );
+    }
+
+    #[tokio::test]
+    async fn missing_hashed_file_is_not_cached_as_immutable() {
+        let app = axum::Router::new()
+            .route(
+                "/doc/static.files/rustdoc-0c87338a.css",
+                axum::routing::get(|| async { "css" }),
+            )
+            .layer(axum::middleware::from_fn(|req, next| {
+                super::add_cache_control(false, req, next)
+            }));
+        let get = |path: &'static str| {
+            let app = app.clone();
+            async move {
+                app.oneshot(Request::get(path).body(axum::body::Body::empty()).unwrap())
+                    .await
+                    .unwrap()
+            }
+        };
+
+        let found = get("/doc/static.files/rustdoc-0c87338a.css").await;
+        assert_eq!(
+            found.headers()[header::CACHE_CONTROL],
+            "public, max-age=31536000, immutable"
+        );
+        for path in [
+            "/doc/static.files/rustdoc-deadbeef.css",
+            "/pkg/chunk_1.AbCdEfGhIjKlMnOpQrStUv.wasm",
+        ] {
+            let missing = get(path).await;
+            assert_eq!(missing.status(), axum::http::StatusCode::NOT_FOUND);
+            assert_eq!(missing.headers()[header::CACHE_CONTROL], "public, no-cache");
+        }
     }
 
     #[tokio::test]

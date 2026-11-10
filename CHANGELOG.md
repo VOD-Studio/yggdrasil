@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **rustdoc 哈希文件长期缓存**：`/doc/static.files/<名字>-<8 位哈希>.*`（样式、脚本、字体）与 `/doc/search.index/<列>/<哈希>.js` 文件名带内容哈希，却按固定路径处理：样式和脚本是 `no-cache`，每次都经 CDN 回源校验（70–650 ms），字体只缓存 5 分钟，而 `/doc/` 占了 CDN 出流量的大头。现在这些文件返回 `public, max-age=31536000, immutable`；`search.index/root.js`、`doc-shell.js`、`theme.css` 等固定文件名不变。同时 immutable 只发给成功响应：哈希文件名的 404（含 `/pkg/` 分包）改为 `no-cache`，不再让浏览器和 CDN 把「不存在」记一年。
+
 ## [1.3.2] - 2026-11-05
 
 服务端首屏性能：SSR 缓存页面写入后预压缩一次，动态压缩按正文长度选 brotli 窗口，文章页水合数据不再重复正文；新增 Markdown 渲染与 HTTP 基准；修复评论灯箱收录头像、表格窄列中文逐字折行；CI 与发布流程调整。
