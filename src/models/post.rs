@@ -229,7 +229,7 @@ pub struct PostListItem {
 /// Feed 条目 DTO（RSS 2.0 / JSON Feed 共享）。
 ///
 /// 与 `PostListItem` 不同，这里携带已渲染的 `content_html` 全文，
-/// 供订阅端点直接输出；缓存单键 `CacheKey::Feed` 存 `Vec<FeedItem>`。
+/// 供订阅端点渲染；缓存里存的是渲染后的成品（`api::feed::RenderedFeed`）。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FeedItem {
     /// 文章标题。

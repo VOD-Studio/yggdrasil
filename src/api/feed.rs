@@ -4,8 +4,10 @@
 //! - `GET /feed.xml` — RSS 2.0（`application/rss+xml`）
 //! - `GET /feed.json` — JSON Feed 1.1（`application/feed+json`）
 //!
-//! 输出最近 `FEED_ITEM_LIMIT` 篇已发布文章（含保存时已渲染的全文 `content_html`），
-//! 数据经 moka 单键缓存（`CacheKey::Feed`，TTL 600s），文章写路径统一失效。
+//! 输出最近 `FEED_ITEM_LIMIT` 篇已发布文章（含保存时已渲染的全文 `content_html`，去掉深色图表与
+//! 代码高亮标记）。20 篇全文有数 MB，渲染加压缩要两百多毫秒，所以缓存的是成品：两种格式的正文
+//! 连同各启用算法的压缩结果（`CacheKey::Feed`，TTL 600s，文章写路径统一失效），命中时按
+//! `Accept-Encoding` 直接返回，并支持 `If-None-Match`。
 //! 渲染函数均为纯函数并接受 `now`/`base` 参数注入，便于单元测试固定输出。
 //!
 //! 仅在 `server` feature 启用时编译。
@@ -13,16 +15,21 @@
 #![cfg(feature = "server")]
 
 use std::borrow::Cow;
+use std::sync::Arc;
 
 use axum::{
+    body::Body,
     http::{header, HeaderMap, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
 };
+use bytes::Bytes;
 use chrono::{DateTime, Utc};
 use serde_json::{json, Map, Value};
+use sha2::{Digest, Sha256};
 
 use crate::api::error::AppError;
 use crate::api::markdown::mermaid::strip_dark_variants;
+use crate::compression::{self, CompressionAlgorithms, Effort, Encoding};
 use crate::db::pool::get_conn;
 use crate::models::post::FeedItem;
 use crate::utils::html::escape_html;
@@ -169,9 +176,13 @@ fn row_to_feed_item(row: &tokio_postgres::Row) -> FeedItem {
         title: row.get("title"),
         slug: row.get("slug"),
         summary: row.get("summary"),
-        // 阅读器没有站点 CSS，图表只留浅色一份。
+        // 阅读器没有站点 CSS：图表只留浅色一份，代码去掉高亮标记。
         content_html: row.get::<_, Option<String>>("content_html").map(|html| {
-            match strip_dark_variants(&html) {
+            let html = match strip_dark_variants(&html) {
+                Cow::Owned(stripped) => stripped,
+                Cow::Borrowed(_) => html,
+            };
+            match strip_code_highlight(&html) {
                 Cow::Owned(stripped) => stripped,
                 Cow::Borrowed(_) => html,
             }
@@ -184,10 +195,177 @@ fn row_to_feed_item(row: &tokio_postgres::Row) -> FeedItem {
     }
 }
 
-/// 加载 Feed 条目：缓存命中直接返回，miss 则查询 DB 并回填缓存。
-async fn load_feed_items() -> Result<Vec<FeedItem>, AppError> {
-    if let Some(items) = crate::cache::get_feed().await {
-        return Ok(items);
+/// 删掉 `<pre>` 里的 `<span …>` / `</span>`，只留代码文本。高亮靠站点的 highlight.css 着色，
+/// 阅读器里这些标记不起作用，却占了 Feed 约三成体积（单个代码块可达数百 KB）。
+fn strip_code_highlight(html: &str) -> Cow<'_, str> {
+    const CLOSE: &str = "</pre>";
+    let is_tag = |rest: &str, name: &str| {
+        rest.strip_prefix(name)
+            .and_then(|after| after.bytes().next())
+            .is_some_and(|b| b == b'>' || b.is_ascii_whitespace())
+    };
+    let mut out = String::new();
+    let mut rest = html;
+    let mut changed = false;
+    while let Some(start) = rest.find("<pre") {
+        if !is_tag(&rest[start..], "<pre") {
+            out.push_str(&rest[..start + 4]);
+            rest = &rest[start + 4..];
+            continue;
+        }
+        let Some(len) = rest[start..].find(CLOSE) else {
+            break;
+        };
+        out.push_str(&rest[..start]);
+        let mut block = &rest[start..start + len];
+        while let Some(at) = block.find('<') {
+            out.push_str(&block[..at]);
+            let tag = &block[at..];
+            let skip = if tag.starts_with("</span>") {
+                Some("</span>".len())
+            } else if is_tag(tag, "<span") {
+                tag.find('>').map(|end| end + 1)
+            } else {
+                None
+            };
+            match skip {
+                Some(skip) => {
+                    changed = true;
+                    block = &tag[skip..];
+                }
+                None => {
+                    out.push('<');
+                    block = &tag[1..];
+                }
+            }
+        }
+        out.push_str(block);
+        rest = &rest[start + len..];
+    }
+    if !changed {
+        return Cow::Borrowed(html);
+    }
+    out.push_str(rest);
+    Cow::Owned(out)
+}
+
+/// 一种格式的成品：正文、各启用算法的压缩结果与 ETag。
+struct FeedDocument {
+    body: Bytes,
+    encoded: Vec<(Encoding, Bytes)>,
+    etag: HeaderValue,
+}
+
+impl FeedDocument {
+    /// 压缩取动态档（brotli 7）：成品每 10 分钟或每次文章写入后重建一次，brotli 11 压数 MB
+    /// 要好几秒，只小约 8%，不值。
+    fn new(body: String, algorithms: Option<CompressionAlgorithms>) -> Self {
+        let encoded = algorithms
+            .into_iter()
+            .flat_map(CompressionAlgorithms::encodings)
+            .filter_map(|encoding| {
+                match compression::encode(encoding, Effort::Dynamic, body.as_bytes())? {
+                    Ok(bytes) => Some((encoding, Bytes::from(bytes))),
+                    Err(error) => {
+                        tracing::warn!(%error, "feed 预压缩失败，该编码改由压缩层现压");
+                        None
+                    }
+                }
+            })
+            .collect();
+        let etag = HeaderValue::from_str(&format!("\"{}\"", hex::encode(Sha256::digest(&body))))
+            .expect("SHA256 is an ASCII entity tag");
+        Self {
+            body: Bytes::from(body),
+            encoded,
+            etag,
+        }
+    }
+
+    /// 协商出的编码有预压缩结果时直接返回；否则给出原文，由外层压缩层现压或回 406。
+    /// 启用压缩时一律带 `Vary: Accept-Encoding`（含 304）。
+    fn response(
+        &self,
+        content_type: &'static str,
+        request: &HeaderMap,
+        algorithms: Option<CompressionAlgorithms>,
+    ) -> Response {
+        let unchanged = request
+            .get(header::IF_NONE_MATCH)
+            .and_then(|h| h.to_str().ok())
+            .is_some_and(|value| {
+                value.split(',').any(|tag| {
+                    let tag = tag.trim().strip_prefix("W/").unwrap_or(tag.trim());
+                    tag == "*" || tag == self.etag.to_str().unwrap_or("")
+                })
+            });
+        let variant = algorithms
+            .and_then(|algorithms| compression::negotiate(request, algorithms))
+            .and_then(|encoding| self.encoded.iter().find(|(e, _)| *e == encoding))
+            .filter(|_| !unchanged);
+        let mut response = Response::new(match (variant, unchanged) {
+            (_, true) => Body::empty(),
+            (Some((_, bytes)), false) => Body::from(bytes.clone()),
+            (None, false) => Body::from(self.body.clone()),
+        });
+        if unchanged {
+            *response.status_mut() = StatusCode::NOT_MODIFIED;
+        }
+        let headers = response.headers_mut();
+        headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(content_type));
+        headers.insert(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static(FEED_CACHE_CONTROL),
+        );
+        headers.insert(header::ETAG, self.etag.clone());
+        if let Some((encoding, _)) = variant {
+            headers.insert(header::CONTENT_ENCODING, encoding.header_value());
+        }
+        if algorithms.is_some() {
+            headers.insert(header::VARY, HeaderValue::from_static("accept-encoding"));
+        }
+        response
+    }
+}
+
+/// 渲染好的两份 Feed 文档，整体放进 `CacheKey::Feed`。
+pub struct RenderedFeed {
+    /// 渲染时用的站点基址；面板改了 APP_BASE_URL 后据此判定成品过期。
+    base: String,
+    rss: FeedDocument,
+    json: FeedDocument,
+}
+
+/// 渲染并压缩两种格式。`lastBuildDate` 取最近一篇的更新时间而不是当前时间：内容没变时
+/// 重建出的正文与 ETag 也不变，阅读器的条件请求能拿到 304。
+fn build_feed(
+    base: String,
+    items: &[FeedItem],
+    algorithms: Option<CompressionAlgorithms>,
+) -> Result<RenderedFeed, serde_json::Error> {
+    let built = items
+        .iter()
+        .map(|item| item.updated_at)
+        .max()
+        .unwrap_or_else(Utc::now);
+    let rss = FeedDocument::new(render_rss(&base, built, items), algorithms);
+    let json = FeedDocument::new(render_json(&base, items)?, algorithms);
+    Ok(RenderedFeed { base, rss, json })
+}
+
+/// 同一时刻只重建一份成品：缓存失效后并发到达的请求排队等第一个建完。
+static BUILD_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+/// 取 Feed 成品：缓存命中直接返回，未命中则查库、在阻塞线程池渲染压缩并回填缓存。
+async fn load_feed(headers: &HeaderMap) -> Result<Arc<RenderedFeed>, AppError> {
+    let base = site_base_url(headers).await;
+    let cached = |feed: Option<Arc<RenderedFeed>>| feed.filter(|feed| feed.base == base);
+    if let Some(feed) = cached(crate::cache::get_feed().await) {
+        return Ok(feed);
+    }
+    let _guard = BUILD_LOCK.lock().await;
+    if let Some(feed) = cached(crate::cache::get_feed().await) {
+        return Ok(feed);
     }
     let client = get_conn().await.map_err(AppError::db_conn)?;
     let rows = client
@@ -205,73 +383,53 @@ async fn load_feed_items() -> Result<Vec<FeedItem>, AppError> {
         )
         .await
         .map_err(AppError::query)?;
-    let items: Vec<FeedItem> = rows.iter().map(row_to_feed_item).collect();
-    crate::cache::set_feed(items.clone()).await;
-    Ok(items)
+    drop(client);
+    let algorithms = compression::algorithms();
+    let feed = tokio::task::spawn_blocking(move || {
+        let items: Vec<FeedItem> = rows.iter().map(row_to_feed_item).collect();
+        build_feed(base, &items, algorithms)
+    })
+    .await
+    .map_err(|error| {
+        tracing::error!(%error, "feed 渲染任务异常退出");
+        AppError::Internal("feed 生成失败")
+    })?
+    .map_err(|error| {
+        // serde_json 序列化失败属于代码 bug（结构固定），记录具体原因。
+        tracing::error!(%error, "feed JSON 序列化失败");
+        AppError::Internal("feed 生成失败")
+    })?;
+    let feed = Arc::new(feed);
+    crate::cache::set_feed(feed.clone()).await;
+    Ok(feed)
+}
+
+async fn serve(headers: HeaderMap, json: bool) -> Response {
+    match load_feed(&headers).await {
+        Ok(feed) => {
+            let (document, content_type) = if json {
+                (&feed.json, JSON_CONTENT_TYPE)
+            } else {
+                (&feed.rss, RSS_CONTENT_TYPE)
+            };
+            document.response(content_type, &headers, compression::algorithms())
+        }
+        Err(_) => {
+            // 失败细节已由 AppError 构造器或上面的日志记录完整链条。
+            tracing::error!("feed 生成失败");
+            (StatusCode::INTERNAL_SERVER_ERROR, "feed unavailable").into_response()
+        }
+    }
 }
 
 /// `GET /feed.xml` — RSS 2.0 订阅源。
 pub async fn rss_feed(headers: HeaderMap) -> Response {
-    match load_feed_items().await {
-        Ok(items) => {
-            let base = site_base_url(&headers).await;
-            let body = render_rss(&base, Utc::now(), &items);
-            (
-                [
-                    (
-                        header::CONTENT_TYPE,
-                        HeaderValue::from_static(RSS_CONTENT_TYPE),
-                    ),
-                    (
-                        header::CACHE_CONTROL,
-                        HeaderValue::from_static(FEED_CACHE_CONTROL),
-                    ),
-                ],
-                body,
-            )
-                .into_response()
-        }
-        Err(_) => {
-            // DB 失败细节已由 AppError::db_conn/query 构造器记录完整链条。
-            tracing::error!("feed 生成失败");
-            (StatusCode::INTERNAL_SERVER_ERROR, "feed unavailable").into_response()
-        }
-    }
+    serve(headers, false).await
 }
 
 /// `GET /feed.json` — JSON Feed 1.1 订阅源。
 pub async fn json_feed(headers: HeaderMap) -> Response {
-    match load_feed_items().await {
-        Ok(items) => {
-            let base = site_base_url(&headers).await;
-            match render_json(&base, &items) {
-                Ok(body) => (
-                    [
-                        (
-                            header::CONTENT_TYPE,
-                            HeaderValue::from_static(JSON_CONTENT_TYPE),
-                        ),
-                        (
-                            header::CACHE_CONTROL,
-                            HeaderValue::from_static(FEED_CACHE_CONTROL),
-                        ),
-                    ],
-                    body,
-                )
-                    .into_response(),
-                Err(e) => {
-                    // serde_json 序列化失败属于代码 bug（结构固定），记录具体原因。
-                    tracing::error!("feed JSON 序列化失败: {e}");
-                    (StatusCode::INTERNAL_SERVER_ERROR, "feed unavailable").into_response()
-                }
-            }
-        }
-        Err(_) => {
-            // DB 失败细节已由 AppError::db_conn/query 构造器记录完整链条。
-            tracing::error!("feed 生成失败");
-            (StatusCode::INTERNAL_SERVER_ERROR, "feed unavailable").into_response()
-        }
-    }
+    serve(headers, true).await
 }
 
 #[cfg(test)]
@@ -353,6 +511,106 @@ mod tests {
         assert_eq!(v["items"][0]["tags"][0], "Rust");
         assert_eq!(v["items"][0]["date_published"], "2026-01-02T03:04:05+00:00");
         assert!(v["items"][0].get("summary").is_none());
+    }
+
+    #[test]
+    fn strip_code_highlight_keeps_code_text_and_other_markup() {
+        let html = concat!(
+            r#"<p>前文 <span class="katex">x</span></p>"#,
+            r#"<pre><code class="language-rust"><span class="source rust">"#,
+            r#"<span class="storage type">fn</span> a&lt;T&gt;() {}"#,
+            "\n</span></code></pre>",
+            r#"<p><span>后文</span></p><pre>plain</pre>"#,
+        );
+        assert_eq!(
+            strip_code_highlight(html),
+            concat!(
+                r#"<p>前文 <span class="katex">x</span></p>"#,
+                r#"<pre><code class="language-rust">fn a&lt;T&gt;() {}"#,
+                "\n</code></pre>",
+                r#"<p><span>后文</span></p><pre>plain</pre>"#,
+            )
+        );
+        // 没有可删的标记时不重新分配；`<prefix>` 之类不是代码块。
+        for untouched in [
+            "<p><span>无代码</span></p>",
+            "<pre>plain</pre>",
+            "<prefix><span>x</span></prefix>",
+            "<pre><span>未闭合",
+        ] {
+            assert!(
+                matches!(strip_code_highlight(untouched), Cow::Borrowed(_)),
+                "{untouched}"
+            );
+        }
+    }
+
+    fn accept(encoding: &'static str) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(header::ACCEPT_ENCODING, HeaderValue::from_static(encoding));
+        headers
+    }
+
+    #[tokio::test]
+    async fn built_feed_serves_precompressed_variants_and_304() {
+        let mut item = fixture_item();
+        item.content_html = Some("<p>正文</p>".repeat(200));
+        let algorithms = compression::parse_compression_algorithms("br, gzip");
+        assert!(algorithms.is_some());
+        let feed = build_feed("https://example.com".into(), &[item.clone()], algorithms).unwrap();
+        assert!(std::str::from_utf8(&feed.rss.body)
+            .unwrap()
+            .contains("<lastBuildDate>Fri, 2 Jan 2026 03:04:05 +0000</lastBuildDate>"));
+
+        for (document, content_type) in [
+            (&feed.rss, RSS_CONTENT_TYPE),
+            (&feed.json, JSON_CONTENT_TYPE),
+        ] {
+            for (name, encoding) in [("br", Encoding::Brotli), ("gzip", Encoding::Gzip)] {
+                let response = document.response(content_type, &accept(name), algorithms);
+                assert_eq!(response.status(), StatusCode::OK);
+                assert_eq!(response.headers()[header::CONTENT_TYPE], content_type);
+                assert_eq!(response.headers()[header::CONTENT_ENCODING], name);
+                assert_eq!(response.headers()[header::VARY], "accept-encoding");
+                assert_eq!(
+                    response.headers()[header::CACHE_CONTROL],
+                    FEED_CACHE_CONTROL
+                );
+                let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+                    .await
+                    .unwrap();
+                assert!(body.len() < document.body.len());
+                assert_eq!(compression::decode(encoding, &body), document.body);
+            }
+            // 没有可用变体（identity、未启用压缩）时原文交给外层。
+            let identity = document.response(content_type, &accept("identity"), algorithms);
+            assert!(!identity.headers().contains_key(header::CONTENT_ENCODING));
+            assert_eq!(identity.headers()[header::VARY], "accept-encoding");
+            let off = document.response(content_type, &accept("br"), None);
+            assert!(!off.headers().contains_key(header::CONTENT_ENCODING));
+            assert!(!off.headers().contains_key(header::VARY));
+
+            let mut conditional = accept("br");
+            conditional.insert(header::IF_NONE_MATCH, document.etag.clone());
+            let response = document.response(content_type, &conditional, algorithms);
+            assert_eq!(response.status(), StatusCode::NOT_MODIFIED);
+            assert!(!response.headers().contains_key(header::CONTENT_ENCODING));
+            assert_eq!(response.headers()[header::ETAG], document.etag);
+            let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            assert!(body.is_empty());
+        }
+
+        // 内容不变则重建后的 ETag 不变；内容变了 ETag 跟着变。
+        let again = build_feed("https://example.com".into(), &[item.clone()], None).unwrap();
+        assert_eq!(again.rss.etag, feed.rss.etag);
+        assert_eq!(again.json.etag, feed.json.etag);
+        assert!(again.rss.encoded.is_empty());
+        item.title = "改了标题".into();
+        let changed = build_feed("https://example.com".into(), &[item], None).unwrap();
+        assert_ne!(changed.rss.etag, feed.rss.etag);
+        assert_ne!(changed.json.etag, feed.json.etag);
     }
 
     #[tokio::test]

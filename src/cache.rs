@@ -16,7 +16,7 @@ use crate::models::comment::PublicComment;
 #[cfg(feature = "server")]
 use crate::models::friend_link::FriendLink;
 #[cfg(feature = "server")]
-use crate::models::post::{FeedItem, Post, PostListItem, PostStats, Tag};
+use crate::models::post::{Post, PostListItem, PostStats, Tag};
 #[cfg(feature = "server")]
 use crate::models::settings::{ImageCacheSettings, SecuritySettings, SiteSettings};
 #[cfg(feature = "server")]
@@ -140,9 +140,9 @@ pub type SinglePostCache = Cache<CacheKey, Option<Post>>;
 #[cfg(feature = "server")]
 pub type PostStatsCache = Cache<CacheKey, PostStats>;
 
-/// Feed 条目列表缓存类型（RSS / JSON Feed 共用）。
+/// Feed 成品缓存类型：RSS / JSON Feed 两份渲染好的文档连同预压缩变体。
 #[cfg(feature = "server")]
-pub type FeedCache = Cache<CacheKey, Vec<FeedItem>>;
+pub type FeedCache = Cache<CacheKey, std::sync::Arc<crate::api::feed::RenderedFeed>>;
 
 /// 全局文章列表缓存实例，最大容量 100。
 #[cfg(feature = "server")]
@@ -685,16 +685,16 @@ pub async fn set_post_stats(stats: PostStats) {
     let _ = POST_STATS_CACHE.insert(CacheKey::PostStats, stats).await;
 }
 
-/// 读取 Feed 条目列表缓存。
+/// 读取 Feed 成品缓存。
 #[cfg(feature = "server")]
-pub async fn get_feed() -> Option<Vec<FeedItem>> {
+pub async fn get_feed() -> Option<std::sync::Arc<crate::api::feed::RenderedFeed>> {
     record_hit_miss!(FEED_CACHE.get(&CacheKey::Feed).await, FEED_STATS)
 }
 
-/// 写入 Feed 条目列表缓存。
+/// 写入 Feed 成品缓存。
 #[cfg(feature = "server")]
-pub async fn set_feed(items: Vec<FeedItem>) {
-    let _ = FEED_CACHE.insert(CacheKey::Feed, items).await;
+pub async fn set_feed(feed: std::sync::Arc<crate::api::feed::RenderedFeed>) {
+    let _ = FEED_CACHE.insert(CacheKey::Feed, feed).await;
 }
 
 // ============================================================================

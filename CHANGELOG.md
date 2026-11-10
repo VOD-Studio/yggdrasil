@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **rustdoc 哈希文件长期缓存**：`/doc/static.files/<名字>-<8 位哈希>.*`（样式、脚本、字体）与 `/doc/search.index/<列>/<哈希>.js` 文件名带内容哈希，却按固定路径处理：样式和脚本是 `no-cache`，每次都经 CDN 回源校验（70–650 ms），字体只缓存 5 分钟，而 `/doc/` 占了 CDN 出流量的大头。现在这些文件返回 `public, max-age=31536000, immutable`；`search.index/root.js`、`doc-shell.js`、`theme.css` 等固定文件名不变。同时 immutable 只发给成功响应：哈希文件名的 404（含 `/pkg/` 分包）改为 `no-cache`，不再让浏览器和 CDN 把「不存在」记一年。
+- **Feed 缓存成品并去掉代码高亮标记**：`/feed.xml`、`/feed.json` 原先每个请求都把 20 篇全文重新渲染一遍再现压，线上未压缩 6.2 MB，源站每次 225–270 ms。现在缓存的是两种格式的成品连同各启用算法的压缩结果，命中按 `Accept-Encoding` 直接返回（数十微秒）；带 `ETag` 并支持 `If-None-Match`，`lastBuildDate` 改取最近一篇的更新时间，内容没变时阅读器拿到 304。`<pre>` 里的高亮 `<span>` 在阅读器中没有样式，一并去掉，RSS 未压缩体积少约三成，brotli 后 422 → 367 KB。
 
 ## [1.3.2] - 2026-11-05
 
