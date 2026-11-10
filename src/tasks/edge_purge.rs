@@ -33,7 +33,9 @@ const API_ACTION: &str = "CreatePurgeTask";
 const CONTENT_TYPE: &str = "application/json";
 
 const DEBOUNCE: Duration = Duration::from_secs(2);
-const SECOND_PASS_DELAY: Duration = Duration::from_secs(10);
+/// 实测 EdgeOne 完成一次目录或 URL 清除要 9–20 秒（2026-11-10）。第二轮要落在第一轮完成之后，
+/// 才能清掉第一轮进行期间节点从源站拉回的旧页面。
+const SECOND_PASS_DELAY: Duration = Duration::from_secs(30);
 const RETRY_DELAYS: [Duration; 3] = [
     Duration::from_secs(2),
     Duration::from_secs(10),
