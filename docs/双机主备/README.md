@@ -38,6 +38,7 @@ flowchart LR
 - **HTML 边缘缓存**：后台「页面缓存 → 边缘缓存时长」大于 0 时，白名单匿名页（`/`、`/archives`、`/friends`、`/about`、`/changelog`、`/post/*`、`/page/*`、`/tags/*`）返回 `public, max-age=0, s-maxage=<秒>`，由 EdgeOne 节点缓存。app 在内容写入和每次启动（发版）后调用 `CreatePurgeTask` 清这些目录与页面，凭据在两台 `.env` 的 `EDGEONE_ZONE_ID`、`TENCENTCLOUD_SECRET_ID`、`TENCENTCLOUD_SECRET_KEY`（CAM 子账号，只授权该站点 `teo:CreatePurgeTask`）。故障切换到 rua 时它的 `.env` 也要有这三项，否则写入后边缘要等 `s-maxage` 到期。规则引擎的「静态文本-非br请求不缓存」（`rule-3wtak3mhfdrt`）已于 2026-11-10 扩展到这些路径（表达式不支持括号，按两个 OR 分支写：5 个固定页面用 `in`，`/post/`、`/page/`、`/tags/` 用 `matches '^/(post|page|tags)/[^/]+$'`），非 br 请求照常回源但不入缓存，节点只缓存源站的 br；否则节点可能缓存 EdgeOne 自己压的更大的 br。改前备份在工作站 `~/.local/share/ygg-ha/edgeone-backup-20261110-1709/`（`revert-rule.json` 可直接 `tccli teo ModifyL7AccRule --cli-input-json file://…` 回滚）。新增白名单路由时这条规则也要同步。
 - **源站证书**：两台 nginx-proxy 证书目录里 `rua.plus.crt/.key/.chain.pem` 是 10 年期自签证书（普通文件，不是指向 Let's Encrypt 目录的链接）。compose 不设 `LETSENCRYPT_*`，acme-companion 不管 `rua.plus`。
 - **回源鉴权**：两台的 80/443 还承载其它不走 EdgeOne 的站点，不能按 IP 封端口。EdgeOne「修改 HTTP 回源请求头」给 `rua.plus` 加 `X-Ygg-Origin-Auth: <密钥>`，nginx `vhost.d/rua.plus` 中的 `ygg-origin-auth` 块校验，缺失或错误返回 403，`/readyz`、`/healthz` 放行。密钥存在两台的 `/root/.ygg-origin-auth`（权限 600，每行一个，任一匹配即放行）。
+- **响应头**：同一条规则「修改 HTTP 节点响应头」删除 `x-ssr-cache`。EdgeOne 会连同响应头缓存首次回源的结果，边缘命中时这个头永远停在 `MISS`，没有参考价值；看边缘用 `eo-cache-status` 和 `age`，看源站要直连源站。
 
 ## 文件清单
 
