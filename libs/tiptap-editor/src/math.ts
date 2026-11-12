@@ -31,7 +31,8 @@ const PHYSICS_MACROS: Record<string, string> = {
   '\\NN': '\\mathbb{N}',
   '\\QQ': '\\mathbb{Q}',
   '\\CC': '\\mathbb{C}',
-  '\\dd': '\\mathrm{d}#1',
+  // 不带参数：`\frac{\dd}{\dd{t}}` 的裸 `\dd` 不能吞掉 `}`，`\dd{x}` 照样渲染成 dx。
+  '\\dd': '\\mathrm{d}',
   '\\dv': '\\frac{\\mathrm{d}#1}{\\mathrm{d}#2}',
   '\\pdv': '\\frac{\\partial #1}{\\partial #2}',
   '\\grad': '\\nabla',

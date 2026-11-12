@@ -42,8 +42,10 @@ fn physics_macros() -> &'static [(&'static str, MacroDefinition)] {
         (r"\NN", MacroDefinition::StaticStr(r"\mathbb{N}")),
         (r"\QQ", MacroDefinition::StaticStr(r"\mathbb{Q}")),
         (r"\CC", MacroDefinition::StaticStr(r"\mathbb{C}")),
-        // 微积分：微分与偏导
-        (r"\dd", MacroDefinition::StaticStr(r"\mathrm{d}#1")),
+        // 微积分：微分与偏导。`\dd` 不带参数：physics 的花括号参数是可选的，
+        // `\frac{\dd}{\dd{t}}` 里的裸 `\dd` 若声明 `#1` 会吞掉 `}` 让整个公式报错；
+        // `\dd{x}` 照样展开成 `\mathrm{d}{x}`。
+        (r"\dd", MacroDefinition::StaticStr(r"\mathrm{d}")),
         (
             r"\dv",
             MacroDefinition::StaticStr(r"\frac{\mathrm{d}#1}{\mathrm{d}#2}"),
@@ -383,6 +385,27 @@ mod tests {
                 "{tex} 应正确渲染而非红字, got: {html}"
             );
         }
+    }
+
+    #[test]
+    fn physics_macro_bare_dd_renders() {
+        // 文章 48 的麦克斯韦方程组（积分形式）与欧拉-拉格朗日方程：`\frac{\dd}{\dd{t}}`
+        // 里的裸 `\dd` 曾吞掉 `}`，整块公式退化成红色原文。
+        for tex in [
+            r"\frac{\dd}{\dd{t}}",
+            r"\begin{aligned} \oint_{\partial S} \vec{E} \cdot \dd{\vec{l}} &= -\frac{\dd}{\dd{t}} \int_S \vec{B} \cdot \dd{\vec{A}} \end{aligned}",
+            r"\frac{\dd}{\dd{t}} \pdv{\mathcal{L}}{\dot{q}_i} - \pdv{\mathcal{L}}{q_i} = 0",
+            r"\int f(x) \dd x",
+        ] {
+            let html = render_display(tex);
+            assert!(
+                !html.contains("#cc0000"),
+                "{tex} 应正确渲染而非红字, got: {html}"
+            );
+        }
+        // 带参数时与原先的 `\mathrm{d}#1` 等价：直立 d 后紧跟参数。
+        let html = render_inline(r"\dd{x}");
+        assert!(html.contains(">d<") && html.contains(">x<"), "got: {html}");
     }
 
     #[test]

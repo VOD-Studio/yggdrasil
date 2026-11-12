@@ -212,4 +212,12 @@ describe('数学公式节点 - 边界情况', () => {
     expect(editor.view.dom.querySelectorAll('.katex').length).toBeGreaterThan(0);
     expect(editor.view.dom.querySelectorAll('.katex-error').length).toBe(0);
   });
+
+  it('裸 \\dd 不吞掉后面的 }', () => {
+    editor.commands.setContent('$\\frac{\\dd}{\\dd{t}}$ $\\int f \\dd x$', {
+      contentType: 'markdown',
+    });
+    expect(editor.view.dom.querySelectorAll('.katex').length).toBe(2);
+    expect(editor.view.dom.querySelectorAll('.katex-error').length).toBe(0);
+  });
 });
