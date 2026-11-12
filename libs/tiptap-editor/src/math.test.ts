@@ -4,7 +4,7 @@ import { Editor } from '@tiptap/core';
 import { Markdown } from '@tiptap/markdown';
 import StarterKit from '@tiptap/starter-kit';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { DisplayMath, InlineMath } from './math';
+import { DisplayMath, expandQtyDelimiters, InlineMath } from './math';
 
 /**
  * 数学公式节点单测(happy-dom 真实 DOM + 真实 Editor)。
@@ -220,4 +220,35 @@ describe('数学公式节点 - 边界情况', () => {
     expect(editor.view.dom.querySelectorAll('.katex').length).toBe(2);
     expect(editor.view.dom.querySelectorAll('.katex-error').length).toBe(0);
   });
+  it('\\qty(...) 与手写 \\left(...\\right) 渲染一致', () => {
+    editor.commands.setContent('$\\qty(\\dfrac{a}{b})$ $\\left(\\dfrac{a}{b}\\right)$', {
+      contentType: 'markdown',
+    });
+    const [qty, manual] = editor.view.dom.querySelectorAll('.katex');
+    expect(qty?.innerHTML).toBe(manual?.innerHTML);
+  });
+});
+
+/** 与服务端 `src/api/katex.rs` 的 `expand_qty` 测试用同一组用例。 */
+describe('expandQtyDelimiters', () => {
+  it.each([
+    ['\\qty(\\dfrac{a}{b})', '\\left(\\dfrac{a}{b}\\right)'],
+    ['\\qty[a, b]', '\\left[a, b\\right]'],
+    ['\\qty (x)', '\\left(x\\right)'],
+    ['\\qty(f(x) + g(x))^2', '\\left(f(x) + g(x)\\right)^2'],
+    ['\\qty(f\\qty(x))', '\\left(f\\left(x\\right)\\right)'],
+    ['\\qty(\\text{)} x)', '\\left(\\text{)} x\\right)'],
+    ['\\qty(\\{x\\} \\))', '\\left(\\{x\\} \\)\\right)'],
+    ['\\qty(\\text{浓度})', '\\left(\\text{浓度}\\right)'],
+    ['a \\qty(b) c \\qty[d]', 'a \\left(b\\right) c \\left[d\\right]'],
+  ])('%s', (input, expected) => {
+    expect(expandQtyDelimiters(input)).toBe(expected);
+  });
+
+  it.each(['\\qty{a + b}', '\\qtyx(a)', 'a \\\\qty(b)', '\\qty(a', '{\\qty(a} )', 'x^2'])(
+    '%s 原样保留',
+    (input) => {
+      expect(expandQtyDelimiters(input)).toBe(input);
+    },
+  );
 });

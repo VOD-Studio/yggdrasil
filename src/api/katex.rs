@@ -15,6 +15,8 @@
 
 #![cfg(feature = "server")]
 
+use std::borrow::Cow;
+
 use katex::macros::MacroDefinition;
 use katex::{KatexContext, OutputFormat, Settings};
 
@@ -31,9 +33,8 @@ use katex::{KatexContext, OutputFormat, Settings};
 /// （`\langle{#1}\rangle`），物理语义需 2 个参数（`\langle #1 | #2 \rangle`），
 /// 故覆写为物理版本。
 ///
-/// `\qty(...)` 的圆括号定界符匹配无法用纯字符串宏表达（TeX 无参定界符宏需
-/// `MacroExpansion.delimiters`），由 [`render_inline`]/[`render_display` 渲染前的
-/// 预处理兜底；这里注册的是花括号形式 `\qty{...}`。
+/// `\qty(...)` / `\qty[...]` 的定界符配对无法用纯字符串宏表达，由渲染前的
+/// [`expand_qty`] 预转译；这里注册的是花括号形式 `\qty{...}`。
 fn physics_macros() -> &'static [(&'static str, MacroDefinition)] {
     &[
         // 数集
@@ -74,7 +75,7 @@ fn physics_macros() -> &'static [(&'static str, MacroDefinition)] {
         (r"\norm", MacroDefinition::StaticStr(r"\left\| #1 \right\|")),
         // 单位向量：带帽子
         (r"\vu", MacroDefinition::StaticStr(r"\hat{\vec{#1}}")),
-        // 自动缩放圆括号（花括号形式；`\qty(...)` 由预处理兜底）
+        // 自动缩放圆括号（花括号形式；`\qty(...)` 由 `expand_qty` 预转译）
         (r"\qty", MacroDefinition::StaticStr(r"\left( #1 \right)")),
     ]
 }
@@ -199,6 +200,107 @@ fn expand_chem(tex: &str) -> String {
     }
 }
 
+/// 把 physics 宏包的定界符形式 `\qty(...)` / `\qty[...]` 预转译为
+/// `\left(...\right)` / `\left[...\right]`。
+///
+/// 宏表里的 `\qty` 只能吃花括号参数：`\qty(\dfrac{a}{b})` 会把 `(` 当成 `#1`，
+/// 渲染成「(()a/b)」且不报红字。这里按 TeX 记号扫描：控制序列整体跳过（`\\qty`
+/// 不算、`\(` 不计数），只在同一花括号层级内配对同种括号，嵌套的 `\qty(` 各自替换。
+/// 括号不闭合的保留原文（与 katex 报错容错一致）。`\qty{...}` 仍走宏表。
+fn expand_qty(tex: &str) -> Cow<'_, str> {
+    if !tex.contains(r"\qty") {
+        return Cow::Borrowed(tex);
+    }
+    let bytes = tex.as_bytes();
+    // (起, 止, 替换文本)：开头替换 `\qty(`（含中间空白），结尾替换配对的 `)`。
+    let mut edits: Vec<(usize, usize, &'static str)> = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] != b'\\' {
+            i += 1;
+            continue;
+        }
+        let name_start = i + 1;
+        let name_end = control_sequence_end(bytes, name_start);
+        if &bytes[name_start..name_end] == b"qty" {
+            let mut open = name_end;
+            while open < bytes.len() && bytes[open].is_ascii_whitespace() {
+                open += 1;
+            }
+            let pair = match bytes.get(open) {
+                Some(b'(') => Some((b'(', b')', r"\left(", r"\right)")),
+                Some(b'[') => Some((b'[', b']', r"\left[", r"\right]")),
+                _ => None,
+            };
+            if let Some((open_ch, close_ch, left, right)) = pair {
+                if let Some(close) = find_matching_delimiter(bytes, open, open_ch, close_ch) {
+                    edits.push((i, open + 1, left));
+                    edits.push((close, close + 1, right));
+                }
+            }
+        }
+        // 从控制序列之后继续扫描，括号内容里的嵌套 `\qty(` 也会被找到。
+        i = name_end;
+    }
+    if edits.is_empty() {
+        return Cow::Borrowed(tex);
+    }
+    edits.sort_unstable_by_key(|&(start, _, _)| start);
+    let mut out = String::with_capacity(tex.len() + edits.len() * 4);
+    let mut copied = 0;
+    for (start, end, replacement) in edits {
+        // 替换边界都落在 ASCII 字节上，切片不会截断多字节 UTF-8。
+        out.push_str(&tex[copied..start]);
+        out.push_str(replacement);
+        copied = end;
+    }
+    out.push_str(&tex[copied..]);
+    Cow::Owned(out)
+}
+
+/// 控制序列名的结束位置：`start` 指向 `\` 之后。字母串是控制词，否则是单字符控制符。
+fn control_sequence_end(bytes: &[u8], start: usize) -> usize {
+    match bytes.get(start) {
+        Some(b) if b.is_ascii_alphabetic() => {
+            let mut end = start;
+            while end < bytes.len() && bytes[end].is_ascii_alphabetic() {
+                end += 1;
+            }
+            end
+        }
+        // 非 ASCII 控制符只跳过首字节；续字节 ≥ 0x80，不会被当成定界符。
+        Some(_) => start + 1,
+        None => start,
+    }
+}
+
+/// 从 `open`（指向开括号）找同一花括号层级内配对的闭括号位置；先遇到外层 `}` 或到结尾返回 `None`。
+fn find_matching_delimiter(bytes: &[u8], open: usize, open_ch: u8, close_ch: u8) -> Option<usize> {
+    let mut depth = 0usize;
+    let mut braces = 0usize;
+    let mut i = open;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\\' => {
+                i = control_sequence_end(bytes, i + 1);
+                continue;
+            }
+            b'{' => braces += 1,
+            b'}' => braces = braces.checked_sub(1)?,
+            c if braces == 0 && c == open_ch => depth += 1,
+            c if braces == 0 && c == close_ch => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(i);
+                }
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    None
+}
+
 /// 从 `open`（指向 `{`）读取配对花括号内容，返回 `(内容, 闭括号后位置)`。
 /// 不闭合返回 `None`。嵌套 `{}` 正确计数。
 fn read_braced(s: &str, open: usize) -> Option<(&str, usize)> {
@@ -226,7 +328,7 @@ fn read_braced(s: &str, open: usize) -> Option<(&str, usize)> {
 ///
 /// 渲染失败（坏 TeX）时回退到 HTML 转义后的原文，保证文章不因一个坏公式全篇崩。
 pub fn render_inline(tex: &str) -> String {
-    let tex = expand_chem(tex);
+    let tex = expand_chem(&expand_qty(tex));
     KATEX_CTX.with(|ctx| {
         INLINE_SETTINGS.with(|settings| {
             katex::render_to_string(ctx, &tex, settings)
@@ -241,7 +343,7 @@ pub fn render_inline(tex: &str) -> String {
 /// 与 [`render_inline`] 同样在失败时回退到转义原文。调用方负责块级包裹
 /// （如 `<p class="math-display">`），这里只产出 KaTeX 的 span 串。
 pub fn render_display(tex: &str) -> String {
-    let tex = expand_chem(tex);
+    let tex = expand_chem(&expand_qty(tex));
     KATEX_CTX.with(|ctx| {
         DISPLAY_SETTINGS.with(|settings| {
             katex::render_to_string(ctx, &tex, settings)
@@ -433,6 +535,56 @@ mod tests {
                 "{tex} 应正确渲染而非红字, got: {html}"
             );
         }
+    }
+
+    #[test]
+    fn expand_qty_rewrites_delimiter_forms() {
+        for (input, expected) in [
+            (r"\qty(\dfrac{a}{b})", r"\left(\dfrac{a}{b}\right)"),
+            (r"\qty[a, b]", r"\left[a, b\right]"),
+            (r"\qty (x)", r"\left(x\right)"),
+            // 内层普通括号参与配对，不会提前收尾。
+            (r"\qty(f(x) + g(x))^2", r"\left(f(x) + g(x)\right)^2"),
+            (r"\qty(f\qty(x))", r"\left(f\left(x\right)\right)"),
+            // 花括号内的括号、`\{` `\)` 这类控制符都不计数。
+            (r"\qty(\text{)} x)", r"\left(\text{)} x\right)"),
+            (r"\qty(\{x\} \))", r"\left(\{x\} \)\right)"),
+            (r"\qty(\text{浓度})", r"\left(\text{浓度}\right)"),
+            (r"a \qty(b) c \qty[d]", r"a \left(b\right) c \left[d\right]"),
+        ] {
+            assert_eq!(expand_qty(input), expected, "input: {input}");
+        }
+    }
+
+    #[test]
+    fn expand_qty_leaves_other_forms_untouched() {
+        for input in [
+            r"\qty{a + b}",
+            r"\qtyx(a)",
+            r"a \\qty(b)",
+            // 不闭合，或外层花括号先关闭：保留原文。
+            r"\qty(a",
+            r"{\qty(a} )",
+            r"x^2",
+        ] {
+            assert!(
+                matches!(expand_qty(input), Cow::Borrowed(s) if s == input),
+                "{input} 应原样保留"
+            );
+        }
+    }
+
+    #[test]
+    fn physics_macro_qty_parentheses_render_as_left_right() {
+        // 文章 48 的 `$\qty(\dfrac{a}{b})$` 曾渲染成「(()a/b)」：宏表把 `(` 当成参数。
+        assert_eq!(
+            render_inline(r"\qty(\dfrac{a}{b})"),
+            render_inline(r"\left(\dfrac{a}{b}\right)")
+        );
+        assert_eq!(
+            render_display(r"\qty[\frac{1}{2}]"),
+            render_display(r"\left[\frac{1}{2}\right]")
+        );
     }
 
     // ── mhchem 化学公式（Fix 3b） ──────────────────────────────────────

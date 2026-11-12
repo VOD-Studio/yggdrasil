@@ -23,7 +23,7 @@ import 'katex/contrib/mhchem';
 
 /**
  * 物理宏表，逐条对应服务端 `src/api/katex.rs::physics_macros`（修改时两边保持同步）。
- * `\qty(...)` 圆括号形式服务端靠预处理兜底，这里与服务端一样只注册花括号形式。
+ * `\qty(...)` / `\qty[...]` 定界符形式由 {@link expandQtyDelimiters} 预转译，宏表只管花括号形式。
  */
 const PHYSICS_MACROS: Record<string, string> = {
   '\\RR': '\\mathbb{R}',
@@ -47,6 +47,89 @@ const PHYSICS_MACROS: Record<string, string> = {
   '\\vu': '\\hat{\\vec{#1}}',
   '\\qty': '\\left( #1 \\right)',
 };
+
+const QTY_DELIMITERS: Record<string, [close: string, left: string, right: string]> = {
+  '(': [')', '\\left(', '\\right)'],
+  '[': [']', '\\left[', '\\right]'],
+};
+
+/** 控制序列名的结束位置：`start` 指向 `\` 之后。字母串是控制词，否则是单字符控制符。 */
+function controlSequenceEnd(tex: string, start: number): number {
+  if (start >= tex.length) return start;
+  if (!/[A-Za-z]/.test(tex[start] ?? '')) return start + 1;
+  let end = start;
+  while (end < tex.length && /[A-Za-z]/.test(tex[end] ?? '')) end++;
+  return end;
+}
+
+/** 同一花括号层级内配对的闭括号位置；先遇到外层 `}` 或到结尾返回 -1。 */
+function findMatchingDelimiter(tex: string, open: number, close: string): number {
+  const openCh = tex[open];
+  let depth = 0;
+  let braces = 0;
+  let i = open;
+  while (i < tex.length) {
+    const c = tex[i];
+    if (c === '\\') {
+      i = controlSequenceEnd(tex, i + 1);
+      continue;
+    }
+    if (c === '{') braces++;
+    else if (c === '}') {
+      if (braces === 0) return -1;
+      braces--;
+    } else if (braces === 0 && c === openCh) depth++;
+    else if (braces === 0 && c === close) {
+      depth--;
+      if (depth === 0) return i;
+    }
+    i++;
+  }
+  return -1;
+}
+
+/**
+ * 把 physics 定界符形式 `\qty(...)` / `\qty[...]` 预转译为 `\left(...\right)` / `\left[...\right]`，
+ * 逐行对应服务端 `src/api/katex.rs::expand_qty`（修改时两边保持同步）。宏表的 `\qty` 只吃花括号参数，
+ * 否则 `\qty(\dfrac{a}{b})` 会把 `(` 当参数渲染成「(()a/b)」。控制序列整体跳过，只在同一花括号
+ * 层级内配对同种括号；括号不闭合的保留原文。
+ */
+export function expandQtyDelimiters(tex: string): string {
+  if (!tex.includes('\\qty')) return tex;
+  const edits: Array<[start: number, end: number, text: string]> = [];
+  let i = 0;
+  while (i < tex.length) {
+    if (tex[i] !== '\\') {
+      i++;
+      continue;
+    }
+    const nameEnd = controlSequenceEnd(tex, i + 1);
+    if (tex.slice(i + 1, nameEnd) === 'qty') {
+      let open = nameEnd;
+      // 与服务端 `is_ascii_whitespace` 同一字符集。
+      while (open < tex.length && /[ \t\n\f\r]/.test(tex[open] ?? '')) open++;
+      const pair = QTY_DELIMITERS[tex[open] ?? ''];
+      if (pair) {
+        const [close, left, right] = pair;
+        const closeAt = findMatchingDelimiter(tex, open, close);
+        if (closeAt >= 0) {
+          edits.push([i, open + 1, left], [closeAt, closeAt + 1, right]);
+        }
+      }
+    }
+    // 从控制序列之后继续扫描，括号内容里的嵌套 `\qty(` 也会被找到。
+    i = nameEnd;
+  }
+  if (edits.length === 0) return tex;
+  edits.sort((a, b) => a[0] - b[0]);
+  let out = '';
+  let copied = 0;
+  for (const [start, end, text] of edits) {
+    out += tex.slice(copied, start) + text;
+    copied = end;
+  }
+  return out + tex.slice(copied);
+}
 
 // ---- tokenizer 正则 ----
 // inline `$...$`:单行、非贪婪、内部不含 $ 与换行。
@@ -140,7 +223,7 @@ class MathNodeView {
   private render(): void {
     const latex = (this.node.attrs.latex as string) ?? '';
     try {
-      const html = katex.renderToString(latex, {
+      const html = katex.renderToString(expandQtyDelimiters(latex), {
         displayMode: this.displayMode,
         throwOnError: false,
         output: 'html',
