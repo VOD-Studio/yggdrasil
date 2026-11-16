@@ -6,7 +6,7 @@
 //!
 //! 输出最近 `FEED_ITEM_LIMIT` 篇已发布文章（含保存时已渲染的全文 `content_html`，去掉深色图表与
 //! 代码高亮标记）。20 篇全文有数 MB，渲染加压缩要两百多毫秒，所以缓存的是成品：两种格式的正文
-//! 连同各启用算法的压缩结果（`CacheKey::Feed`，TTL 600s，文章写路径统一失效），命中时按
+//! 连同各启用算法的压缩结果（按内容世代失效，无周期 TTL），命中时按
 //! `Accept-Encoding` 直接返回，并支持 `If-None-Match`。
 //! 渲染函数均为纯函数并接受 `now`/`base` 参数注入，便于单元测试固定输出。
 //!
@@ -52,7 +52,7 @@ const RSS_CONTENT_TYPE: &str = "application/rss+xml; charset=utf-8";
 /// JSON Feed Content-Type。
 const JSON_CONTENT_TYPE: &str = "application/feed+json; charset=utf-8";
 
-/// Feed 响应缓存头，与缓存层 TTL（600s）对齐。
+/// 阅读器与 HTTP 中间缓存仍可缓存 600 秒，服务端成品仅按内容世代失效。
 const FEED_CACHE_CONTROL: &str = "public, max-age=600";
 
 /// 推导站点绝对 URL 基址（无尾部斜杠）。
@@ -257,7 +257,7 @@ struct FeedDocument {
 }
 
 impl FeedDocument {
-    /// 压缩取动态档（brotli 7）：成品每 10 分钟或每次文章写入后重建一次，brotli 11 压数 MB
+    /// 压缩取动态档（brotli 7）：仅在内容失效后重建，brotli 11 压数 MB
     /// 要好几秒，只小约 8%，不值。
     fn new(body: String, algorithms: Option<CompressionAlgorithms>) -> Self {
         let encoded = algorithms
@@ -328,12 +328,69 @@ impl FeedDocument {
     }
 }
 
-/// 渲染好的两份 Feed 文档，整体放进 `CacheKey::Feed`。
+/// 渲染好的两份 Feed 文档，整体放进内容世代缓存。
 pub struct RenderedFeed {
     /// 渲染时用的站点基址；面板改了 APP_BASE_URL 后据此判定成品过期。
     base: String,
     rss: FeedDocument,
     json: FeedDocument,
+}
+
+#[derive(Default)]
+struct FeedCacheState {
+    generation: u64,
+    feed: Option<Arc<RenderedFeed>>,
+}
+
+/// 失效与条件发布共用短时同步锁；锁内只操作世代和 Arc。
+#[derive(Default)]
+pub(crate) struct FeedCache {
+    state: std::sync::Mutex<FeedCacheState>,
+}
+
+impl FeedCache {
+    pub(crate) fn snapshot(&self) -> (u64, Option<Arc<RenderedFeed>>) {
+        let state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        (state.generation, state.feed.clone())
+    }
+
+    pub(crate) fn generation(&self) -> u64 {
+        self.state
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .generation
+    }
+
+    pub(crate) fn publish(&self, expected: u64, feed: Arc<RenderedFeed>) -> bool {
+        let old = {
+            let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+            if state.generation != expected {
+                return false;
+            }
+            state.feed.replace(feed)
+        };
+        drop(old);
+        true
+    }
+
+    pub(crate) fn invalidate(&self) {
+        let old = {
+            let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+            state.generation = state.generation.wrapping_add(1);
+            state.feed.take()
+        };
+        drop(old);
+    }
+
+    pub(crate) fn entry_count(&self) -> u64 {
+        u64::from(
+            self.state
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .feed
+                .is_some(),
+        )
+    }
 }
 
 /// 渲染并压缩两种格式。`lastBuildDate` 取最近一篇的更新时间而不是当前时间：内容没变时
@@ -359,49 +416,56 @@ static BUILD_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 /// 取 Feed 成品：缓存命中直接返回，未命中则查库、在阻塞线程池渲染压缩并回填缓存。
 async fn load_feed(headers: &HeaderMap) -> Result<Arc<RenderedFeed>, AppError> {
     let base = site_base_url(headers).await;
-    let cached = |feed: Option<Arc<RenderedFeed>>| feed.filter(|feed| feed.base == base);
-    if let Some(feed) = cached(crate::cache::get_feed().await) {
+    if let Some(feed) = crate::cache::get_feed().1.filter(|feed| feed.base == base) {
         return Ok(feed);
     }
     let _guard = BUILD_LOCK.lock().await;
-    if let Some(feed) = cached(crate::cache::get_feed().await) {
-        return Ok(feed);
-    }
-    let client = get_conn().await.map_err(AppError::db_conn)?;
-    let rows = client
-        .query(
-            "SELECT p.title, p.slug, p.summary, p.content_html, p.published_at, p.updated_at,
-                    COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{}') AS tags
-             FROM posts p
-             LEFT JOIN post_tags pt ON p.id = pt.post_id
-             LEFT JOIN tags t ON pt.tag_id = t.id
-             WHERE p.status = 'published' AND p.deleted_at IS NULL
-             GROUP BY p.id
-             ORDER BY p.published_at DESC
-             LIMIT $1",
-            &[&FEED_ITEM_LIMIT],
-        )
+    loop {
+        let (generation, cached) = crate::cache::get_feed();
+        let base = site_base_url(headers).await;
+        if crate::cache::feed_generation() != generation {
+            continue;
+        }
+        if let Some(feed) = cached.filter(|feed| feed.base == base) {
+            return Ok(feed);
+        }
+        let client = get_conn().await.map_err(AppError::db_conn)?;
+        let rows = client
+            .query(
+                "SELECT p.title, p.slug, p.summary, p.content_html, p.published_at, p.updated_at,
+                        COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{}') AS tags
+                 FROM posts p
+                 LEFT JOIN post_tags pt ON p.id = pt.post_id
+                 LEFT JOIN tags t ON pt.tag_id = t.id
+                 WHERE p.status = 'published' AND p.deleted_at IS NULL
+                 GROUP BY p.id
+                 ORDER BY p.published_at DESC
+                 LIMIT $1",
+                &[&FEED_ITEM_LIMIT],
+            )
+            .await
+            .map_err(AppError::query)?;
+        drop(client);
+        let algorithms = compression::algorithms();
+        let feed = tokio::task::spawn_blocking(move || {
+            let items: Vec<FeedItem> = rows.iter().map(row_to_feed_item).collect();
+            build_feed(base, &items, algorithms)
+        })
         .await
-        .map_err(AppError::query)?;
-    drop(client);
-    let algorithms = compression::algorithms();
-    let feed = tokio::task::spawn_blocking(move || {
-        let items: Vec<FeedItem> = rows.iter().map(row_to_feed_item).collect();
-        build_feed(base, &items, algorithms)
-    })
-    .await
-    .map_err(|error| {
-        tracing::error!(%error, "feed 渲染任务异常退出");
-        AppError::Internal("feed 生成失败")
-    })?
-    .map_err(|error| {
-        // serde_json 序列化失败属于代码 bug（结构固定），记录具体原因。
-        tracing::error!(%error, "feed JSON 序列化失败");
-        AppError::Internal("feed 生成失败")
-    })?;
-    let feed = Arc::new(feed);
-    crate::cache::set_feed(feed.clone()).await;
-    Ok(feed)
+        .map_err(|error| {
+            tracing::error!(%error, "feed 渲染任务异常退出");
+            AppError::Internal("feed 生成失败")
+        })?
+        .map_err(|error| {
+            // serde_json 序列化失败属于代码 bug（结构固定），记录具体原因。
+            tracing::error!(%error, "feed JSON 序列化失败");
+            AppError::Internal("feed 生成失败")
+        })?;
+        let feed = Arc::new(feed);
+        if crate::cache::set_feed(generation, Arc::clone(&feed)) {
+            return Ok(feed);
+        }
+    }
 }
 
 async fn serve(headers: HeaderMap, json: bool) -> Response {
@@ -454,6 +518,212 @@ mod tests {
             updated_at: ts,
             tags: vec!["Rust".to_string()],
         }
+    }
+
+    fn cached_fixture(title: &str) -> Arc<RenderedFeed> {
+        let mut item = fixture_item();
+        item.title = title.into();
+        Arc::new(build_feed("https://example.com".into(), &[item], None).unwrap())
+    }
+
+    #[test]
+    fn feed_cache_rejects_stale_publication() {
+        let cache = Arc::new(FeedCache::default());
+        let barrier = Arc::new(std::sync::Barrier::new(2));
+        let old_generation = cache.generation();
+        let old = cached_fixture("旧内容");
+        let old_etag = old.json.etag.clone();
+        let worker = {
+            let cache = Arc::clone(&cache);
+            let barrier = Arc::clone(&barrier);
+            std::thread::spawn(move || {
+                barrier.wait();
+                barrier.wait();
+                cache.publish(old_generation, old)
+            })
+        };
+        barrier.wait();
+        cache.invalidate();
+        let new = cached_fixture("新内容");
+        let new_etag = new.json.etag.clone();
+        assert!(cache.publish(cache.generation(), new));
+        barrier.wait();
+        assert!(!worker.join().unwrap());
+        let current = cache.snapshot().1.unwrap();
+        let document: Value = serde_json::from_slice(&current.json.body).unwrap();
+        assert_eq!(document["items"][0]["title"], "新内容");
+        assert_eq!(current.json.etag, new_etag);
+        assert_ne!(current.json.etag, old_etag);
+    }
+
+    #[test]
+    fn feed_cache_invalidation_drops_snapshot() {
+        let cache = FeedCache::default();
+        let (generation, empty) = cache.snapshot();
+        assert!(empty.is_none());
+        assert_eq!(cache.entry_count(), 0);
+        let old = cached_fixture("旧内容");
+        assert!(cache.publish(generation, Arc::clone(&old)));
+        assert_eq!(cache.entry_count(), 1);
+        for _ in 0..2 {
+            assert!(Arc::ptr_eq(&cache.snapshot().1.unwrap(), &old));
+        }
+        cache.invalidate();
+        let (next, empty) = cache.snapshot();
+        assert_ne!(next, generation);
+        assert!(empty.is_none());
+        assert_eq!(cache.entry_count(), 0);
+        assert!(!cache.publish(generation, Arc::clone(&old)));
+        let new = cached_fixture("新内容");
+        assert!(cache.publish(next, Arc::clone(&new)));
+        assert_eq!(cache.entry_count(), 1);
+        assert!(Arc::ptr_eq(&cache.snapshot().1.unwrap(), &new));
+        assert_ne!(new.json.etag, old.json.etag);
+    }
+
+    async fn seed_feed_fixture() {
+        let mut client = get_conn().await.unwrap();
+        let database: String = client
+            .query_one("SELECT current_database()", &[])
+            .await
+            .unwrap()
+            .get(0);
+        assert_eq!(database, "ygg_mcp_test", "requires isolated test database");
+        crate::db::migrate::run_on_conn(&mut client).await.unwrap();
+        client
+            .batch_execute(
+                "TRUNCATE users RESTART IDENTITY CASCADE;
+                 TRUNCATE tags RESTART IDENTITY CASCADE;
+                 INSERT INTO users(id,username,email,password_hash,role)
+                   VALUES (1,'feed-owner','feed@test.invalid','unused','admin');
+                 INSERT INTO posts(id,author_id,title,slug,content_md,content_html,status,published_at)
+                   VALUES (1,1,'公开文章','feed-public','正文','<p>公开正文</p>','published',NOW()),
+                          (2,1,'秘密草稿','feed-draft','草稿','<p>秘密正文</p>','draft',NULL);
+                 SELECT setval('posts_id_seq', 2);
+                 INSERT INTO tags(name) VALUES ('Rust');
+                 INSERT INTO post_tags(post_id,tag_id) SELECT 1,id FROM tags WHERE name='Rust';",
+            )
+            .await
+            .unwrap();
+        crate::api::settings::upsert_setting(
+            &**client,
+            "security_app_base_url",
+            "https://feed-a.test",
+        )
+        .await
+        .unwrap();
+        crate::cache::invalidate_all_post_caches();
+        crate::cache::invalidate_security_settings();
+    }
+
+    async fn read_json_feed(headers: HeaderMap) -> (HeaderMap, Value) {
+        let response = json_feed(headers).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()[header::CONTENT_TYPE], JSON_CONTENT_TYPE);
+        assert!(!response.headers().contains_key(header::CONTENT_ENCODING));
+        let headers = response.headers().clone();
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        (headers, serde_json::from_slice(&body).unwrap())
+    }
+
+    #[test]
+    #[ignore = "requires disposable DATABASE_URL database ygg_mcp_test"]
+    fn feed_cache_database_invalidation() {
+        crate::db::TEST_DATABASE_RUNTIME.block_on(feed_cache_database_invalidation_impl());
+    }
+
+    async fn feed_cache_database_invalidation_impl() {
+        let _guard = crate::db::TEST_DATABASE_LOCK.lock().await;
+        seed_feed_fixture().await;
+        let client = get_conn().await.unwrap();
+        let rss = rss_feed(accept("br")).await;
+        assert_eq!(rss.status(), StatusCode::OK);
+        assert_eq!(rss.headers()[header::CONTENT_TYPE], RSS_CONTENT_TYPE);
+        assert_eq!(rss.headers()[header::CONTENT_ENCODING], "br");
+        assert_eq!(rss.headers()[header::CACHE_CONTROL], FEED_CACHE_CONTROL);
+        let rss_body = axum::body::to_bytes(rss.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let rss_body = String::from_utf8(compression::decode(Encoding::Brotli, &rss_body)).unwrap();
+        assert!(rss_body.contains("<title>公开文章</title>"));
+        assert!(rss_body.contains("&lt;p&gt;公开正文&lt;/p&gt;"));
+        assert!(rss_body.contains("<category>Rust</category>"));
+        assert!(!rss_body.contains("feed-draft"));
+        assert!(!rss_body.contains("秘密正文"));
+        let first = crate::cache::get_feed().1.unwrap();
+        let (headers, json) = read_json_feed(accept("identity")).await;
+        assert_eq!(json["items"].as_array().unwrap().len(), 1);
+        assert_eq!(json["items"][0]["title"], "公开文章");
+        assert_eq!(json["items"][0]["content_html"], "<p>公开正文</p>");
+        assert_eq!(json["items"][0]["tags"][0], "Rust");
+        assert_eq!(
+            json["items"][0]["url"],
+            "https://feed-a.test/post/feed-public"
+        );
+        assert!(Arc::ptr_eq(&first, &crate::cache::get_feed().1.unwrap()));
+        let old_etag = headers[header::ETAG].clone();
+        let mut conditional = accept("identity");
+        conditional.insert(header::IF_NONE_MATCH, old_etag.clone());
+        let unchanged = json_feed(conditional.clone()).await;
+        assert_eq!(unchanged.status(), StatusCode::NOT_MODIFIED);
+        assert_eq!(unchanged.headers()[header::ETAG], old_etag);
+        assert!(axum::body::to_bytes(unchanged.into_body(), usize::MAX)
+            .await
+            .unwrap()
+            .is_empty());
+
+        client
+            .execute(
+                "UPDATE posts SET title='更新标题',updated_at=NOW() WHERE id=1",
+                &[],
+            )
+            .await
+            .unwrap();
+        crate::cache::invalidate_for_post_write(&["feed-public".into()], &["Rust".into()]).await;
+        let (headers, json) = read_json_feed(conditional).await;
+        assert_ne!(headers[header::ETAG], old_etag);
+        assert_eq!(json["items"][0]["title"], "更新标题");
+
+        client
+            .execute("UPDATE tags SET name='Rust 新标签' WHERE name='Rust'", &[])
+            .await
+            .unwrap();
+        crate::cache::invalidate_for_tag_write();
+        let (_, json) = read_json_feed(accept("identity")).await;
+        assert_eq!(json["items"][0]["tags"][0], "Rust 新标签");
+
+        client
+            .execute("UPDATE posts SET status='draft' WHERE id=1", &[])
+            .await
+            .unwrap();
+        crate::cache::invalidate_for_post_write(&["feed-public".into()], &["Rust 新标签".into()])
+            .await;
+        let (_, json) = read_json_feed(accept("identity")).await;
+        assert!(json["items"].as_array().unwrap().is_empty());
+        assert!(!json.to_string().contains("feed-public"));
+
+        crate::api::settings::upsert_setting(
+            &**client,
+            "security_app_base_url",
+            "https://feed-b.test",
+        )
+        .await
+        .unwrap();
+        crate::cache::invalidate_security_settings();
+        let (_, json) = read_json_feed(accept("identity")).await;
+        assert_eq!(json["home_page_url"], "https://feed-b.test");
+        assert_eq!(json["feed_url"], "https://feed-b.test/feed.json");
+        let rss = rss_feed(accept("identity")).await;
+        assert_eq!(rss.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(rss.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert!(std::str::from_utf8(&body)
+            .unwrap()
+            .contains("<link>https://feed-b.test</link>"));
+        crate::cache::invalidate_shared_content();
     }
 
     #[test]

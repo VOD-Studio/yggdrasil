@@ -12,6 +12,8 @@ use std::sync::LazyLock;
 use std::time::Duration;
 
 #[cfg(feature = "server")]
+use crate::api::feed::FeedCache;
+#[cfg(feature = "server")]
 use crate::models::comment::PublicComment;
 #[cfg(feature = "server")]
 use crate::models::friend_link::FriendLink;
@@ -106,8 +108,6 @@ pub enum CacheKey {
     CommentsByPost { post_id: i32 },
     /// 待审核评论总数。
     PendingCommentCount,
-    /// Feed 条目列表（RSS / JSON Feed 共用单键）。
-    Feed,
     /// 全部友链（前台可见集）。
     FriendLinks,
     /// 站点公开配置（页脚 GitHub 链接等，单键）。
@@ -139,10 +139,6 @@ pub type SinglePostCache = Cache<CacheKey, Option<Post>>;
 /// 文章统计缓存类型。
 #[cfg(feature = "server")]
 pub type PostStatsCache = Cache<CacheKey, PostStats>;
-
-/// Feed 成品缓存类型：RSS / JSON Feed 两份渲染好的文档连同预压缩变体。
-#[cfg(feature = "server")]
-pub type FeedCache = Cache<CacheKey, std::sync::Arc<crate::api::feed::RenderedFeed>>;
 
 /// 全局文章列表缓存实例，最大容量 100。
 #[cfg(feature = "server")]
@@ -212,14 +208,9 @@ static POST_STATS_CACHE: LazyLock<PostStatsCache> = LazyLock::new(|| {
         .build()
 });
 
-/// 全局 Feed 条目缓存实例，最大容量 10（单键，20 篇全文条目）。
+/// 全局 Feed 成品单槽，按内容世代失效，不设置周期 TTL。
 #[cfg(feature = "server")]
-static FEED_CACHE: LazyLock<FeedCache> = LazyLock::new(|| {
-    Cache::builder()
-        .max_capacity(10)
-        .time_to_live(TTL_SINGLE_POST)
-        .build()
-});
+static FEED_CACHE: LazyLock<FeedCache> = LazyLock::new(FeedCache::default);
 
 /// 全局标签文章列表缓存实例，最大容量 100。
 #[cfg(feature = "server")]
@@ -588,6 +579,7 @@ pub async fn set_security_settings(settings: SecuritySettings) {
 #[cfg(feature = "server")]
 pub fn invalidate_security_settings() {
     SECURITY_SETTINGS_CACHE.invalidate_all();
+    invalidate_feed();
 }
 
 /// 读取图片磁盘缓存配置缓存。
@@ -687,14 +679,24 @@ pub async fn set_post_stats(stats: PostStats) {
 
 /// 读取 Feed 成品缓存。
 #[cfg(feature = "server")]
-pub async fn get_feed() -> Option<std::sync::Arc<crate::api::feed::RenderedFeed>> {
-    record_hit_miss!(FEED_CACHE.get(&CacheKey::Feed).await, FEED_STATS)
+pub fn get_feed() -> (u64, Option<std::sync::Arc<crate::api::feed::RenderedFeed>>) {
+    let (generation, feed) = FEED_CACHE.snapshot();
+    (generation, record_hit_miss!(feed, FEED_STATS))
 }
 
-/// 写入 Feed 成品缓存。
+/// 读取 Feed 世代，不计缓存访问统计。
 #[cfg(feature = "server")]
-pub async fn set_feed(feed: std::sync::Arc<crate::api::feed::RenderedFeed>) {
-    let _ = FEED_CACHE.insert(CacheKey::Feed, feed).await;
+pub fn feed_generation() -> u64 {
+    FEED_CACHE.generation()
+}
+
+/// 仅在内容世代未变化时发布 Feed 成品。
+#[cfg(feature = "server")]
+pub fn set_feed(
+    expected_generation: u64,
+    feed: std::sync::Arc<crate::api::feed::RenderedFeed>,
+) -> bool {
+    FEED_CACHE.publish(expected_generation, feed)
 }
 
 // ============================================================================
@@ -779,13 +781,10 @@ pub fn invalidate_shared_content() {
     crate::ssr_cache::invalidate_ssr_all_public();
 }
 
-/// 清空 Feed 条目缓存。
-///
-/// 使用同步签名是因为 `moka::Cache::invalidate_all` 为同步操作，
-/// 与 `invalidate_post_stats` 等元数据失效保持一致。
+/// 清空 Feed 成品并推进世代，阻止在途旧构建重新发布。
 #[cfg(feature = "server")]
 pub fn invalidate_feed() {
-    FEED_CACHE.invalidate_all();
+    FEED_CACHE.invalidate();
 }
 
 /// 失效文章「元数据」类缓存：列表、标签、统计、搜索结果、Feed。
