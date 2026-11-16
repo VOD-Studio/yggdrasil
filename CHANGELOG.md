@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **爬虫抓取规则**：新增 `/robots.txt`，通过 `User-agent: *` 与 `Disallow: /doc/` 禁止遵守 robots 协议的爬虫抓取 rustdoc 文档目录，减少文档抓取流量与回源；其余公开内容不受影响。
+
 ### Fixed
 
 - **直开笔记列表时水合崩溃**：`/notes` 原先使用 `InOrder` 流式 SSR，公开随记正文在异步取数后才声明的灯箱样式和增强脚本赶不上已发送的 `<head>`，客户端水合找不到对应 `<link>` 而 panic。现在改为 `Async`，等正文及头部资源收集完成后再发送；回归数据加入公开随记，覆盖直开水合、筛选和进入阅读页。
