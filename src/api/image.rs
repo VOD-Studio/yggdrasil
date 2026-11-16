@@ -107,6 +107,16 @@ impl ImageParams {
             && self.quality.is_none()
     }
 
+    fn is_resize_noop(&self, width: u32, height: u32) -> bool {
+        (self.w.is_some() || self.h.is_some())
+            && self.w.is_none_or(|w| width <= w)
+            && self.h.is_none_or(|h| height <= h)
+            && self.thumb.is_none()
+            && self.rotate.is_none()
+            && self.format.is_none()
+            && self.quality.is_none()
+    }
+
     fn cache_key(&self, path: &str) -> String {
         use std::fmt::Write as _;
         // 旧实现 vec![path.to_string()] + 最多 6 个 format! + join，最坏 9 次堆分配。
@@ -452,7 +462,6 @@ fn process_image(
     params: &ImageParams,
     original_format: image::ImageFormat,
 ) -> Result<(Vec<u8>, HeaderValue), StatusCode> {
-    check_image_dimensions(img.width(), img.height())?;
     let mut img = img;
 
     // Rotate first, then resize
@@ -539,10 +548,7 @@ fn process_image_blocking(
     }
     let img = if original_format == image::ImageFormat::WebP {
         match crate::infra::webp::decode(&data) {
-            Ok(img) => {
-                check_image_dimensions(img.width(), img.height())?;
-                img
-            }
+            Ok(img) => img,
             Err(e) => {
                 // decode 失败不再降级返回原始字节（可能是构造的畸形文件，配合 nosniff
                 // 构成内容混淆面），直接报错让上层返回 422（M3）。
@@ -562,6 +568,10 @@ fn process_image_blocking(
             }
         }
     };
+    check_image_dimensions(img.width(), img.height())?;
+    if params.is_resize_noop(img.width(), img.height()) {
+        return Ok((data, content_type(original_format)));
+    }
 
     process_image(img, &params, original_format)
 }
@@ -689,13 +699,51 @@ async fn write_disk_cache(cache_key: &str, cached: &CachedImage) {
 }
 
 #[cfg(feature = "server")]
+async fn load_processed_image(
+    cache: &Cache<String, CachedImage>,
+    cache_key: &str,
+    path: String,
+    params: ImageParams,
+) -> Result<CachedImage, StatusCode> {
+    cache
+        .try_get_with_by_ref(cache_key, async {
+            let semaphore: &'static tokio::sync::Semaphore = &IMAGE_PROCESSING_PERMITS;
+            let permit = semaphore
+                .acquire()
+                .await
+                .expect("图片处理信号量从不 close，acquire 不会失败");
+            let data = tokio::fs::read(format!("uploads/{path}"))
+                .await
+                .map_err(|_| StatusCode::NOT_FOUND)?;
+            // 许可随阻塞任务存活；取消请求不能提前释放仍在处理 CPU 工作的额度。
+            let (processed, content_type) = tokio::task::spawn_blocking(move || {
+                let _permit = permit;
+                process_image_blocking(data, params, path)
+            })
+            .await
+            .map_err(|_| {
+                tracing::error!("Image processing task panicked");
+                StatusCode::INTERNAL_SERVER_ERROR
+            })??;
+            let cached = CachedImage {
+                data: Bytes::from(processed),
+                content_type,
+            };
+            write_disk_cache(cache_key, &cached).await;
+            Ok(cached)
+        })
+        .await
+        .map_err(|status| *status)
+}
+
+#[cfg(feature = "server")]
 /// 图片访问与动态处理的 Axum handler。
 ///
 /// 依次执行：路径安全校验 → 参数校验 → 分支：
 /// - 无参数原图直返：限流（每次真实读盘，防带宽滥用）→ 读盘返回；
 /// - 处理路径：内存缓存 → 磁盘缓存（命中即返回，本质是静态文件服务，
 ///   不计费）→ 限流（只有穿透到「读盘 + 解码处理」的 miss 才扣令牌）→
-///   处理并发排队 → 读取并解码 → 处理 → 写入两级缓存 → 返回。
+///   同 key 合并 → 处理并发排队 → 读取并解码 → 处理 → 写入两级缓存 → 返回。
 ///
 /// 按 miss 计费的原因：素材页/长文首刷单页可产生上百个缩略图请求，
 /// 若缓存命中也扣令牌，burst 配额会被正常浏览耗尽，批量 429 误杀。
@@ -763,51 +811,20 @@ pub async fn serve_image(
         return image_response(data, content_type, "public, max-age=86400", &headers);
     }
 
-    // 两层缓存均未命中：此处起的请求才真实消耗「读盘 + 解码处理」工作量，
-    // 计入限流。
+    // 两层缓存均未命中的每个请求按各自 IP 计费；只合并后续生成，不共享限流错误。
     if let Err(resp) = crate::api::rate_limit::check_image_limit(&ip) {
         return *resp;
     }
 
-    // 处理并发上限：限流控速率不控并发，冷缓存突发可在令牌允许内向阻塞池
-    // 瞬间提交几十个重处理任务（单图最坏约 200MB 瞬时内存）。超出许可的
-    // 请求在此排队，把尖峰摊平成有序处理。
-    let _permit = IMAGE_PROCESSING_PERMITS
-        .acquire()
-        .await
-        .expect("图片处理信号量从不 close，acquire 不会失败");
-
-    let data = match tokio::fs::read(&file_path).await {
-        Ok(d) => d,
-        Err(_) => return StatusCode::NOT_FOUND.into_response(),
-    };
-    // Offload decode + resize + encode to the blocking pool so the async
-    // runtime stays responsive to other requests.
-    let (processed, content_type) =
-        match tokio::task::spawn_blocking(move || process_image_blocking(data, params, path)).await
-        {
-            Ok(Ok(r)) => r,
-            Ok(Err(status)) => return status.into_response(),
-            Err(_) => {
-                tracing::error!("Image processing task panicked");
-                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-            }
-        };
-
-    let processed = Bytes::from(processed);
-    let cached = CachedImage {
-        data: processed,
-        content_type,
-    };
-    let _ = IMAGE_CACHE.insert(cache_key.clone(), cached.clone()).await;
-    write_disk_cache(&cache_key, &cached).await;
-
-    image_response(
-        cached.data,
-        cached.content_type,
-        "public, max-age=86400",
-        &headers,
-    )
+    match load_processed_image(&IMAGE_CACHE, &cache_key, path, params).await {
+        Ok(cached) => image_response(
+            cached.data,
+            cached.content_type,
+            "public, max-age=86400",
+            &headers,
+        ),
+        Err(status) => status.into_response(),
+    }
 }
 
 /// 图片尺寸缓存（moka sync）。key = 相对路径如 "2026/06/22/x.webp"。
@@ -999,6 +1016,162 @@ mod tests {
         let mut buf = std::io::Cursor::new(Vec::new());
         img.write_to(&mut buf, image::ImageFormat::Png).unwrap();
         buf.into_inner()
+    }
+
+    fn patterned_image() -> image::DynamicImage {
+        image::DynamicImage::ImageRgb8(image::RgbImage::from_fn(64, 32, |x, y| {
+            image::Rgb([(x * 3) as u8, (y * 7) as u8, (x * y) as u8])
+        }))
+    }
+
+    fn patterned_bytes(format: image::ImageFormat) -> Vec<u8> {
+        let img = patterned_image();
+        if format == image::ImageFormat::WebP {
+            return crate::infra::webp::encode(&img, 95.0, 2).unwrap();
+        }
+        let mut buf = std::io::Cursor::new(Vec::new());
+        if format == image::ImageFormat::Jpeg {
+            img.write_with_encoder(image::codecs::jpeg::JpegEncoder::new_with_quality(
+                &mut buf, 95,
+            ))
+            .unwrap();
+        } else {
+            img.write_to(&mut buf, format).unwrap();
+        }
+        buf.into_inner()
+    }
+
+    #[test]
+    fn process_image_blocking_preserves_size_only_noop() {
+        for (format, extension) in [
+            (image::ImageFormat::Png, "png"),
+            (image::ImageFormat::Jpeg, "jpeg"),
+            (image::ImageFormat::WebP, "webp"),
+        ] {
+            let data = patterned_bytes(format);
+            for (w, h) in [
+                (Some(64), None),
+                (Some(128), None),
+                (None, Some(32)),
+                (None, Some(64)),
+                (Some(64), Some(32)),
+                (Some(128), Some(64)),
+            ] {
+                let params = ImageParams {
+                    w,
+                    h,
+                    ..Default::default()
+                };
+                let (output, ct) =
+                    process_image_blocking(data.clone(), params, format!("test.{extension}"))
+                        .unwrap();
+                assert_eq!(output, data, "{extension}, w={w:?}, h={h:?}");
+                assert_eq!(ct, content_type(format));
+            }
+        }
+    }
+
+    #[test]
+    fn process_image_blocking_honors_requested_transforms() {
+        let data = patterned_bytes(image::ImageFormat::Png);
+        for params in [
+            ImageParams {
+                w: Some(32),
+                ..Default::default()
+            },
+            ImageParams {
+                h: Some(16),
+                ..Default::default()
+            },
+        ] {
+            let (output, ct) =
+                process_image_blocking(data.clone(), params, "test.png".into()).unwrap();
+            assert_eq!(
+                read_image_dimensions(&output, image::ImageFormat::Png),
+                Some((32, 16))
+            );
+            assert_eq!(ct, content_type(image::ImageFormat::Png));
+        }
+        let (output, ct) = process_image_blocking(
+            data.clone(),
+            ImageParams {
+                w: Some(64),
+                format: Some("jpeg".into()),
+                ..Default::default()
+            },
+            "test.png".into(),
+        )
+        .unwrap();
+        assert_eq!(ct, content_type(image::ImageFormat::Jpeg));
+        assert_eq!(
+            read_image_dimensions(&output, image::ImageFormat::Jpeg),
+            Some((64, 32))
+        );
+        let (output, _) = process_image_blocking(
+            data,
+            ImageParams {
+                w: Some(64),
+                rotate: Some(90),
+                ..Default::default()
+            },
+            "test.png".into(),
+        )
+        .unwrap();
+        assert_eq!(
+            read_image_dimensions(&output, image::ImageFormat::Png),
+            Some((32, 64))
+        );
+        let jpeg = patterned_bytes(image::ImageFormat::Jpeg);
+        let (output, ct) = process_image_blocking(
+            jpeg.clone(),
+            ImageParams {
+                w: Some(64),
+                quality: Some(10),
+                ..Default::default()
+            },
+            "test.jpeg".into(),
+        )
+        .unwrap();
+        assert_ne!(output, jpeg);
+        assert_eq!(ct, content_type(image::ImageFormat::Jpeg));
+
+        for params in [
+            ImageParams {
+                w: Some(64),
+                rotate: Some(0),
+                ..Default::default()
+            },
+            ImageParams {
+                w: Some(64),
+                format: Some("png".into()),
+                ..Default::default()
+            },
+            ImageParams {
+                w: Some(64),
+                thumb: Some("64x32".into()),
+                ..Default::default()
+            },
+        ] {
+            assert!(!params.is_resize_noop(64, 32));
+        }
+    }
+
+    #[test]
+    fn process_image_blocking_rejects_truncated_noop() {
+        let mut data = patterned_bytes(image::ImageFormat::WebP);
+        data.truncate(30);
+        assert_eq!(read_webp_dimensions(&data), Some((64, 32)));
+        assert_eq!(
+            process_image_blocking(
+                data,
+                ImageParams {
+                    w: Some(64),
+                    ..Default::default()
+                },
+                "test.webp".into(),
+            ),
+            Err(StatusCode::UNPROCESSABLE_ENTITY)
+        );
     }
 
     #[test]
@@ -1473,6 +1646,192 @@ mod tests {
         }
         assert!(not_found > 0, "burst 内的 miss 应正常处理（404）");
         assert!(too_many > 0, "超出 burst 的 miss 应被 429 限流");
+    }
+
+    struct TestImage {
+        directory: std::path::PathBuf,
+        path: String,
+        params: ImageParams,
+        key: String,
+    }
+
+    impl TestImage {
+        fn new(data: &[u8]) -> Self {
+            let directory =
+                std::path::PathBuf::from("uploads/test").join(uuid::Uuid::new_v4().to_string());
+            std::fs::create_dir_all(&directory).unwrap();
+            std::fs::write(directory.join("image.png"), data).unwrap();
+            let path = format!(
+                "test/{}/image.png",
+                directory.file_name().unwrap().to_str().unwrap()
+            );
+            let params = ImageParams {
+                w: Some(32),
+                ..Default::default()
+            };
+            let key = params.cache_key(&path);
+            Self {
+                directory,
+                path,
+                params,
+                key,
+            }
+        }
+
+        fn replace(&self, data: &[u8]) {
+            std::fs::write(self.directory.join("image.png"), data).unwrap();
+        }
+    }
+
+    impl Drop for TestImage {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.directory);
+            let base = disk_cache_base(&self.key);
+            for suffix in [".dat", ".ct", ".dat.tmp", ".ct.tmp"] {
+                let _ = std::fs::remove_file(format!("{base}{suffix}"));
+            }
+        }
+    }
+
+    async fn hold_image_permits() -> tokio::sync::SemaphorePermit<'static> {
+        let cores = std::thread::available_parallelism()
+            .map(std::num::NonZeroUsize::get)
+            .unwrap_or(2);
+        IMAGE_PROCESSING_PERMITS
+            .acquire_many(cores.clamp(2, 8) as u32)
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn processed_image_concurrent_requests_share_bytes() {
+        let file = TestImage::new(&patterned_bytes(image::ImageFormat::Png));
+        let cache = Cache::new(1);
+        let permits = hold_image_permits().await;
+        let mut requests: Vec<_> = (0..16)
+            .map(|_| {
+                Box::pin(load_processed_image(
+                    &cache,
+                    &file.key,
+                    file.path.clone(),
+                    file.params.clone(),
+                ))
+            })
+            .collect();
+        for request in &mut requests {
+            assert!(futures::poll!(request.as_mut()).is_pending());
+        }
+        drop(permits);
+        let results = futures::future::join_all(requests).await;
+        let first = results[0].as_ref().unwrap();
+        assert_eq!(
+            read_image_dimensions(&first.data, image::ImageFormat::Png),
+            Some((32, 16))
+        );
+        let first_ptr = first.data.as_ptr();
+        for result in results {
+            let image = result.unwrap();
+            assert_eq!(image.content_type, content_type(image::ImageFormat::Png));
+            assert_eq!(image.data.as_ptr(), first_ptr);
+        }
+    }
+
+    #[tokio::test]
+    async fn processed_image_failed_build_can_recover() {
+        let file = TestImage::new(b"broken");
+        let cache = Cache::new(1);
+        let permits = hold_image_permits().await;
+        let mut requests: Vec<_> = (0..16)
+            .map(|_| {
+                Box::pin(load_processed_image(
+                    &cache,
+                    &file.key,
+                    file.path.clone(),
+                    file.params.clone(),
+                ))
+            })
+            .collect();
+        for request in &mut requests {
+            assert!(futures::poll!(request.as_mut()).is_pending());
+        }
+        drop(permits);
+        for result in futures::future::join_all(requests).await {
+            assert_eq!(result.unwrap_err(), StatusCode::UNPROCESSABLE_ENTITY);
+        }
+        file.replace(&patterned_bytes(image::ImageFormat::Png));
+        let image = load_processed_image(&cache, &file.key, file.path.clone(), file.params.clone())
+            .await
+            .unwrap();
+        assert_eq!(
+            read_image_dimensions(&image.data, image::ImageFormat::Png),
+            Some((32, 16))
+        );
+    }
+
+    #[tokio::test]
+    async fn processed_image_cancelled_initializer_releases_waiter() {
+        let file = TestImage::new(&patterned_bytes(image::ImageFormat::Png));
+        let cache = Cache::new(1);
+        let permits = hold_image_permits().await;
+        let mut leader = Box::pin(load_processed_image(
+            &cache,
+            &file.key,
+            file.path.clone(),
+            file.params.clone(),
+        ));
+        let mut waiter = Box::pin(load_processed_image(
+            &cache,
+            &file.key,
+            file.path.clone(),
+            file.params.clone(),
+        ));
+        assert!(futures::poll!(leader.as_mut()).is_pending());
+        assert!(futures::poll!(waiter.as_mut()).is_pending());
+        drop(leader);
+        drop(permits);
+        let image = tokio::time::timeout(std::time::Duration::from_secs(5), waiter)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            read_image_dimensions(&image.data, image::ImageFormat::Png),
+            Some((32, 16))
+        );
+    }
+
+    #[tokio::test]
+    async fn serve_image_rate_limit_isolated_between_peers() {
+        let file = TestImage::new(&patterned_bytes(image::ImageFormat::Png));
+        let peer = unique_peer(3);
+        let ip =
+            crate::api::rate_limit::get_client_ip_with_peer(&HeaderMap::new(), Some(peer)).await;
+        while crate::api::rate_limit::check_image_limit(&ip).is_ok() {}
+        let limited = serve_image(
+            Some(Extension(ConnectInfo(peer))),
+            Path(file.path.clone()),
+            Query(file.params.clone()),
+            HeaderMap::new(),
+        )
+        .await;
+        assert_eq!(limited.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert!(limited.headers().contains_key(header::RETRY_AFTER));
+        let response = serve_image(
+            Some(Extension(ConnectInfo(unique_peer(4)))),
+            Path(file.path.clone()),
+            Query(file.params.clone()),
+            HeaderMap::new(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()[header::CONTENT_TYPE], "image/png");
+        let data = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert_eq!(
+            read_image_dimensions(&data, image::ImageFormat::Png),
+            Some((32, 16))
+        );
+        IMAGE_CACHE.invalidate(&file.key).await;
     }
 
     // —— is_animated_image / 动图保留回归测试（issue #29）——
