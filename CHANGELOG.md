@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.5] - 2026-11-16
+
+新增 `/robots.txt` 禁止爬虫抓取文档目录；首屏正文改为纯位移动画避免推迟 LCP；修复图片冷请求重复解码与并发重建、Feed 周期性重建与旧内容回填，以及直开 `/notes` 时的水合崩溃。
+
 ### Added
 
 - **爬虫抓取规则**：新增 `/robots.txt`，通过 `User-agent: *` 与 `Disallow: /doc/` 禁止遵守 robots 协议的爬虫抓取 rustdoc 文档目录，减少文档抓取流量与回源；其余公开内容不受影响。
