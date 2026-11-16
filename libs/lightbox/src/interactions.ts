@@ -12,7 +12,6 @@ import {
   SCROLL_CLOSE_PX,
   SCROLL_SETTLE_CLOSE,
   SCROLL_SETTLE_MS,
-  scrollFlightTransform,
   transformFor,
   wheelZoomFactor,
 } from './geometry';
@@ -21,11 +20,11 @@ import type { LightboxActions, LightboxState } from './types';
 import {
   applyView,
   baseGeometry,
+  captureCloseFlight,
   ensureNormalized,
   isErrorShown,
   measureInset,
   pokeToolbar,
-  rectOf,
   resetScrollClose,
   resetView,
   rotate,
@@ -87,23 +86,14 @@ function onScrollClose(s: LightboxState, actions: LightboxActions): void {
     return;
   }
   if (!s.scrollClose) {
-    const style = getComputedStyle(s.media);
-    s.scrollClose = {
-      rect: rectOf(s.media),
-      transform: style.transform,
-      mediaOpacity: Number(style.opacity),
-      fadeOpacity: Number(getComputedStyle(s.backdrop).opacity),
-      progress: 0,
-      settleTimer: undefined,
-    };
+    const snapshot = captureCloseFlight(s);
+    if (!snapshot) {
+      actions.close(false);
+      return;
+    }
+    s.scrollClose = { ...snapshot, progress: 0, settleTimer: undefined };
     // 先提交同构首帧；快照包含实际绘制中的缩放/旋转，不依赖动画目标值。
-    s.media.style.transition = 'none';
-    s.media.style.transform = scrollFlightTransform(
-      s.scrollClose.rect,
-      s.scrollClose.rect,
-      0,
-      s.scrollClose.transform,
-    );
+    writeScrollFlight(s, s.scrollClose, 0);
     void s.media.getBoundingClientRect();
   }
   if (progress >= 1) {

@@ -1,8 +1,8 @@
 // @vitest-environment node
 /**
- * 旋转中心回归测试 + 现状复现。
+ * 旋转中心与关闭飞行的连续性回归测试。
  *
- * 用户症状：灯箱里旋转照片时，照片不是绕自身中心原地旋转，而是甩出去转。
+ * 旋转时锁定布局盒中心，关闭时从眼前姿态沿最短角度转正并缩回正文。
  *
  * happy-dom/jsdom 不实现 CSS transition 插值，因此本文件内置一个
  * CSS Transforms Level 1 §9 的插值模拟器（浏览器算法）：
@@ -11,12 +11,15 @@
  * 2. 否则（matrix()、长度/类型不匹配）→ 各自分解为 translate/rotate/scale
  *    线性插值后重组（transform-origin 为 top left，见 style.css .lightbox-img）。
  *
- * 用模拟器计算过渡中点的「布局盒中心的视觉位置」，断言它恒等于视口中心。
+ * 用模拟器检查中心轨迹、对应角点和方向，避免只看包围盒而漏掉末帧翻转。
  */
 import { describe, expect, it } from 'vitest';
 import {
   baseViewGeometry,
   clampPanToViewport,
+  closeFlightTransform,
+  type FlightPose,
+  flightPoseFromMatrix,
   type Mat,
   matApply,
   matIdentity,
@@ -26,6 +29,7 @@ import {
   nextRotationDeg,
   normDeg,
   panBy,
+  type Rect,
   viewTransformCss,
   zoomAround,
 } from './geometry';
@@ -241,5 +245,208 @@ describe('回归锁：定长函数列表 + 布局盒旋转不变 ⇒ 绕中心�
       expect(to[slot].args).toEqual(from[slot].args);
     }
     expect(to[3].args[0] - from[3].args[0]).toBe(90);
+  });
+});
+
+// ============ 关闭飞行：捕获眼前姿态，同时转正并缩回正文 ============
+
+describe('关闭飞行：实际姿态与最短归位路径', () => {
+  const layoutW = 920;
+  const layoutH = 517.5;
+  const target: Rect = { x: 114.25, y: 453.125, w: 368, h: 207 };
+  const corners = [
+    [0, 0],
+    [layoutW, 0],
+    [0, layoutH],
+    [layoutW, layoutH],
+  ];
+  const targetCorners = [
+    { x: target.x, y: target.y },
+    { x: target.x + target.w, y: target.y },
+    { x: target.x, y: target.y + target.h },
+    { x: target.x + target.w, y: target.y + target.h },
+  ];
+  const rotations = [
+    [90, 0],
+    [270, 360],
+    [450, 360],
+    [900, 1080],
+    [-90, 0],
+    [-450, -360],
+    [37, 0],
+    [180, 360],
+    [-180, 0],
+  ];
+
+  function capture(deg: number): { matrix: Mat; pose: FlightPose } {
+    // 非正方形布局，叠加非零平移和 1.5 倍缩放；37° 覆盖旋转尚未结束的帧。
+    const user = { a: 1.5, b: 0, c: 0, d: 1.5, e: 73, f: -41 };
+    const matrix = fnsToMat(
+      parseTransformList(viewTransformCss(user, deg, 1, layoutW, layoutH, VW, VH)),
+    );
+    const pose = flightPoseFromMatrix(matrix, layoutW, layoutH, deg);
+    expect(pose).not.toBeNull();
+    return { matrix, pose: pose! };
+  }
+
+  function expectPoint(actual: { x: number; y: number }, expected: { x: number; y: number }) {
+    expect(Math.hypot(actual.x - expected.x, actual.y - expected.y)).toBeLessThan(0.1);
+  }
+
+  it.each(rotations)('%s° 起点等价且终点对应四角归位到 %s°', (deg, endDeg) => {
+    const { matrix, pose } = capture(deg);
+    expect(pose.deg).toBeCloseTo(deg, 8);
+    expect(pose.scaleX).toBeCloseTo(1.5, 8);
+    expect(pose.scaleY).toBeCloseTo(1.5, 8);
+    const startCss = closeFlightTransform(pose, target, 0);
+    const endCss = closeFlightTransform(pose, target, 1);
+    const start = fnsToMat(parseTransformList(startCss));
+    const end = fnsToMat(parseTransformList(endCss));
+    expect(parseTransformList(endCss).find((f) => f.fn === 'rotate')!.args[0]).toBe(endDeg);
+    corners.forEach(([x, y], i) => {
+      expectPoint(matApply(start, x, y), matApply(matrix, x, y));
+      expectPoint(matApply(end, x, y), targetCorners[i]);
+    });
+  });
+
+  it.each(rotations)('%s° 到 %s° 全程最短转正、中心直行且不压扁', (deg, endDeg) => {
+    const { pose } = capture(deg);
+    const startCss = closeFlightTransform(pose, target, 0);
+    const endCss = closeFlightTransform(pose, target, 1);
+    const startFns = parseTransformList(startCss);
+    const endFns = parseTransformList(endCss);
+    // 必须走同构逐函数插值，不能因 scale 参数个数不同退回矩阵分解。
+    expect(startFns.map((f) => [f.fn, f.args.length])).toEqual([
+      ['translate', 2],
+      ['scale', 1],
+      ['translate', 2],
+      ['rotate', 1],
+      ['scale', 2],
+      ['translate', 2],
+    ]);
+    expect(endFns.map((f) => [f.fn, f.args.length])).toEqual(
+      startFns.map((f) => [f.fn, f.args.length]),
+    );
+    let previousDistance = Math.abs(endDeg - deg);
+    let previousAngle = deg;
+    let totalAngle = 0;
+    for (const progress of T_STEPS) {
+      const css = closeFlightTransform(pose, target, progress);
+      const fns = parseTransformList(css);
+      const angle = fns.find((f) => f.fn === 'rotate')!.args[0];
+      const distance = Math.abs(endDeg - angle);
+      expect(distance).toBeLessThanOrEqual(previousDistance + 1e-8);
+      expect(angle).toBeCloseTo(lerp(deg, endDeg, progress), 4);
+      totalAngle += Math.abs(angle - previousAngle);
+      previousAngle = angle;
+      previousDistance = distance;
+
+      const direct = fnsToMat(fns);
+      const interpolated = interpolateTransform(startCss, endCss, progress);
+      for (const [x, y] of corners) {
+        expectPoint(matApply(direct, x, y), matApply(interpolated, x, y));
+      }
+      expectPoint(matApply(interpolated, layoutW / 2, layoutH / 2), {
+        x: lerp(pose.centerX, target.x + target.w / 2, progress),
+        y: lerp(pose.centerY, target.y + target.h / 2, progress),
+      });
+      // 两轴始终正向等比；对应边长度比不变，既不压扁也不镜像。
+      const sx = Math.hypot(interpolated.a, interpolated.b);
+      const sy = Math.hypot(interpolated.c, interpolated.d);
+      expect(sx).toBeGreaterThan(0);
+      expect(sy).toBeGreaterThan(0);
+      expect(sx / sy).toBeCloseTo(1, 8);
+      expect((layoutW * sx) / (layoutH * sy)).toBeCloseTo(layoutW / layoutH, 8);
+      expect(interpolated.a * interpolated.d - interpolated.b * interpolated.c).toBeGreaterThan(0);
+      expect(interpolated.a * interpolated.c + interpolated.b * interpolated.d).toBeCloseTo(0, 8);
+      const drawnAngle = (Math.atan2(interpolated.b, interpolated.a) * 180) / Math.PI;
+      const unwrappedAngle = drawnAngle + 360 * Math.round((angle - drawnAngle) / 360);
+      expect(unwrappedAngle).toBeCloseTo(angle, 6);
+    }
+    expect(previousDistance).toBe(0);
+    expect(totalAngle).toBeLessThanOrEqual(180);
+  });
+
+  it('未操控的非均匀缩放保持实际首帧，允许裁切缩略图的非等比路径', () => {
+    const matrix = { a: 0.625, b: 0, c: 0, d: 0.875, e: 29.25, f: -17.5 };
+    const pose = flightPoseFromMatrix(matrix, layoutW, layoutH, 0)!;
+    expect(pose).not.toBeNull();
+    expect(pose.scaleX).toBe(0.625);
+    expect(pose.scaleY).toBe(0.875);
+    const crop: Rect = { x: 81, y: 207, w: 320, h: 240 };
+    const startCss = closeFlightTransform(pose, crop, 0);
+    const endCss = closeFlightTransform(pose, crop, 1);
+    const start = fnsToMat(parseTransformList(startCss));
+    corners.forEach(([x, y]) => {
+      expectPoint(matApply(start, x, y), matApply(matrix, x, y));
+    });
+    for (const progress of T_STEPS) {
+      const interpolated = interpolateTransform(startCss, endCss, progress);
+      expectPoint(matApply(interpolated, 0, 0), {
+        x: lerp(matrix.e, crop.x, progress),
+        y: lerp(matrix.f, crop.y, progress),
+      });
+      expectPoint(matApply(interpolated, layoutW, layoutH), {
+        x: lerp(matrix.e + matrix.a * layoutW, crop.x + crop.w, progress),
+        y: lerp(matrix.f + matrix.d * layoutH, crop.y + crop.h, progress),
+      });
+      expect(interpolated.a).toBeGreaterThan(0);
+      expect(interpolated.d).toBeGreaterThan(0);
+    }
+    const end = fnsToMat(parseTransformList(endCss));
+    const expected = [
+      { x: crop.x, y: crop.y },
+      { x: crop.x + crop.w, y: crop.y },
+      { x: crop.x, y: crop.y + crop.h },
+      { x: crop.x + crop.w, y: crop.y + crop.h },
+    ];
+    corners.forEach(([x, y], i) => {
+      expectPoint(matApply(end, x, y), expected[i]);
+    });
+  });
+
+  it('进度钳在首尾，不越过正文目标', () => {
+    const { pose } = capture(450);
+    for (const progress of [-Infinity, -2]) {
+      expect(closeFlightTransform(pose, target, progress)).toBe(
+        closeFlightTransform(pose, target, 0),
+      );
+    }
+    for (const progress of [2, Infinity]) {
+      expect(closeFlightTransform(pose, target, progress)).toBe(
+        closeFlightTransform(pose, target, 1),
+      );
+    }
+  });
+
+  it.each([0, -1, NaN, Infinity, -Infinity])('拒绝无效布局尺寸 %s', (size) => {
+    expect(flightPoseFromMatrix(matIdentity(), size, layoutH, 0)).toBeNull();
+    expect(flightPoseFromMatrix(matIdentity(), layoutW, size, 0)).toBeNull();
+  });
+
+  it.each([NaN, Infinity, -Infinity])('拒绝无效矩阵分量与参考角 %s', (value) => {
+    for (const key of ['a', 'b', 'c', 'd', 'e', 'f'] as const) {
+      expect(
+        flightPoseFromMatrix({ ...matIdentity(), [key]: value }, layoutW, layoutH, 0),
+      ).toBeNull();
+    }
+    expect(flightPoseFromMatrix(matIdentity(), layoutW, layoutH, value)).toBeNull();
+  });
+
+  it('拒绝零缩放、镜像与计算后溢出的几何，不制造假布局', () => {
+    const invalid: Mat[] = [
+      { a: 0, b: 0, c: 0, d: 1, e: 0, f: 0 },
+      { a: 1, b: 0, c: 0, d: 0, e: 0, f: 0 },
+      { a: 1, b: 0, c: 0, d: -1, e: 0, f: 0 },
+      { a: 1, b: 1, c: 1, d: 1, e: 0, f: 0 },
+      { a: Number.MAX_VALUE, b: Number.MAX_VALUE, c: 0, d: 1, e: 0, f: 0 },
+      { a: Number.MAX_VALUE, b: 0, c: 0, d: Number.MAX_VALUE, e: 0, f: 0 },
+    ];
+    for (const matrix of invalid) {
+      expect(flightPoseFromMatrix(matrix, layoutW, layoutH, 0)).toBeNull();
+    }
+    expect(
+      flightPoseFromMatrix({ ...matIdentity(), e: Number.MAX_VALUE }, Number.MAX_VALUE, layoutH, 0),
+    ).toBeNull();
   });
 });

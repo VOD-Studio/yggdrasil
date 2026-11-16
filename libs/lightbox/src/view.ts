@@ -4,18 +4,19 @@ import {
   baseViewGeometry,
   clampPanToViewport,
   clampScale,
+  closeFlightTransform,
+  flightPoseFromMatrix,
   type Inset,
   matIdentity,
   nextRotationDeg,
   type Rect,
   SCALE_MAX,
   SCALE_MIN,
-  scrollFlightTransform,
   stepZoomLevel,
   viewTransformCss,
   zoomAround,
 } from './geometry';
-import type { LightboxState, ScrollCloseState } from './types';
+import type { CloseFlightSnapshot, LightboxState, ScrollCloseState } from './types';
 
 export function rectOf(el: Element): Rect {
   const r = el.getBoundingClientRect();
@@ -55,6 +56,28 @@ export function setOriginHidden(s: Pick<LightboxState, 'originNode'>, hidden: bo
   s.originNode.classList.toggle(ORIGIN_HIDDEN, hidden);
 }
 
+// 捕获眼前帧而不是尚在过渡中的 view 目标；布局尺寸不受旋转后的包围盒影响。
+export function captureCloseFlight(s: LightboxState): CloseFlightSnapshot | null {
+  if (!s.target || isErrorShown(s)) return null;
+  const style = getComputedStyle(s.media);
+  const matrix = new DOMMatrixReadOnly(
+    style.transform && style.transform !== 'none' ? style.transform : undefined,
+  );
+  const pose = flightPoseFromMatrix(
+    matrix,
+    Number.parseFloat(s.media.style.width),
+    Number.parseFloat(s.media.style.height),
+    s.view.deg,
+  );
+  return pose
+    ? {
+        pose,
+        mediaOpacity: Number(style.opacity),
+        fadeOpacity: Number(getComputedStyle(s.backdrop).opacity),
+      }
+    : null;
+}
+
 export function resetScrollClose(s: LightboxState): void {
   s.openScrollY = window.scrollY;
   if (!s.scrollClose) return;
@@ -64,7 +87,7 @@ export function resetScrollClose(s: LightboxState): void {
   setFade(s, 1, 'opacity 180ms ease-out');
 }
 
-// 按进度把图写到「快照 rect → 页面原图实时 rect」之间，无 CSS 过渡、逐次直写。
+// 从不可变的绘制姿态同步转正、缩回原图实时位置，无 CSS 过渡、逐次直写。
 export function writeScrollFlight(
   s: LightboxState,
   flight: ScrollCloseState,
@@ -72,12 +95,7 @@ export function writeScrollFlight(
 ): void {
   flight.progress = progress;
   s.media.style.transition = 'none';
-  s.media.style.transform = scrollFlightTransform(
-    flight.rect,
-    originRectOf(s.originNode),
-    progress,
-    flight.transform,
-  );
+  s.media.style.transform = closeFlightTransform(flight.pose, originRectOf(s.originNode), progress);
   s.media.style.opacity = String(
     s.solidFlight ? flight.mediaOpacity : flight.mediaOpacity * (1 - progress),
   );

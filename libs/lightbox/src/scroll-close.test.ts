@@ -34,6 +34,53 @@ function openImage(load = true): {
   return { origin, img, overlay, backdrop };
 }
 
+function corners(img: HTMLImageElement): { x: number; y: number }[] {
+  const matrix = new DOMMatrixReadOnly(img.style.transform);
+  const w = Number.parseFloat(img.style.width);
+  const h = Number.parseFloat(img.style.height);
+  return [
+    [0, 0],
+    [w, 0],
+    [0, h],
+    [w, h],
+  ].map(([x, y]) => ({
+    x: matrix.a * x + matrix.c * y + matrix.e,
+    y: matrix.b * x + matrix.d * y + matrix.f,
+  }));
+}
+
+function expectCorners(img: HTMLImageElement, expected: { x: number; y: number }[]): void {
+  corners(img).forEach((point, index) => {
+    expect(point.x).toBeCloseTo(expected[index].x, 1);
+    expect(point.y).toBeCloseTo(expected[index].y, 1);
+  });
+}
+
+function rectCorners(rect: DOMRect): { x: number; y: number }[] {
+  return [
+    { x: rect.left, y: rect.top },
+    { x: rect.right, y: rect.top },
+    { x: rect.left, y: rect.bottom },
+    { x: rect.right, y: rect.bottom },
+  ];
+}
+
+function expectProgress(
+  img: HTMLImageElement,
+  start: { x: number; y: number }[],
+  origin: HTMLImageElement,
+  progress: number,
+): void {
+  const end = rectCorners(origin.getBoundingClientRect());
+  expectCorners(
+    img,
+    start.map((point, index) => ({
+      x: point.x + (end[index].x - point.x) * progress,
+      y: point.y + (end[index].y - point.y) * progress,
+    })),
+  );
+}
+
 function wheel(el: Element, options: WheelEventInit = {}): WheelEvent {
   const event = new WheelEvent('wheel', {
     deltaY: -100,
@@ -93,20 +140,19 @@ describe('滚动缩回页面原图', () => {
   });
 
   it('滚动进度插值到实时原图位置，逐帧直写且反向滚动可退回', () => {
-    const { img, overlay, backdrop } = openImage();
-    const start = img.style.transform;
+    const { origin, img, overlay, backdrop } = openImage();
+    const start = corners(img);
     scrollTo(530); // 1/4 行程；目标原图现在位于 (200, 320)。
-    // 图的视觉 rect = (125, 155, 700, 525)，通过外层变换映射原来的 rect。
-    expect(img.style.transform).toBe(`translate(37.5px, 67.5px) scale(0.875, 0.875) ${start}`);
+    expectProgress(img, start, origin, 0.25);
     expect(img.style.transition).toBe('none');
     expect(backdrop.style.opacity).toBe('0.75');
 
     scrollTo(560); // 1/2 行程；目标继续上移到 (200, 290)。
-    expect(img.style.transform).toBe(`translate(75px, 120px) scale(0.75, 0.75) ${start}`);
+    expectProgress(img, start, origin, 0.5);
     expect(backdrop.style.opacity).toBe('0.5');
 
     scrollTo(500);
-    expect(img.style.transform).toBe(`translate(0px, 0px) scale(1, 1) ${start}`);
+    expectCorners(img, start);
     expect(backdrop.style.opacity).toBe('1');
     expect(overlay.isConnected).toBe(true);
   });
@@ -129,14 +175,13 @@ describe('滚动缩回页面原图', () => {
   });
 
   it('滚动途中按 Esc 从当前动画继续飞回，关闭后解除滚动监听', () => {
-    const { img, overlay } = openImage();
-    const start = img.style.transform;
+    const { origin, img, overlay } = openImage();
     scrollTo(530);
-    const tracked = img.style.transform;
+    const tracked = corners(img);
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
-    expect(img.style.transform).toBe(tracked);
+    expectCorners(img, tracked);
     vi.advanceTimersByTime(320);
-    expect(img.style.transform).toBe(`translate(150px, 270px) scale(0.5, 0.5) ${start}`);
+    expectCorners(img, rectCorners(origin.getBoundingClientRect()));
     expect(overlay.isConnected).toBe(false);
     const closed = img.style.transform;
     scrollTo(600);
@@ -145,15 +190,17 @@ describe('滚动缩回页面原图', () => {
   });
 
   it('收尾动画期间继续滚动，飞回终点仍跟随原图', () => {
-    const { img, overlay } = openImage();
-    const start = img.style.transform;
+    const { origin, img, overlay } = openImage();
     scrollTo(620);
     scrollTo(680); // 滚轮惯性仍在移动页面，原图现在位于 (200, 170)。
     vi.advanceTimersByTime(320);
-    expect(img.style.transform).toBe(`translate(150px, 120px) scale(0.5, 0.5) ${start}`);
+    const end = rectCorners(origin.getBoundingClientRect());
+    expectCorners(img, end);
+    expect(overlay.isConnected).toBe(true); // 终点先绘制一帧，不能提前恢复原图。
+    vi.advanceTimersByTime(40);
     expect(overlay.isConnected).toBe(false);
     scrollTo(740);
-    expect(img.style.transform).toBe(`translate(150px, 120px) scale(0.5, 0.5) ${start}`);
+    expectCorners(img, end);
     expect(overlay.isConnected).toBe(false);
   });
 
@@ -167,18 +214,24 @@ describe('滚动缩回页面原图', () => {
     expect(overlay.isConnected).toBe(true);
   });
 
-  it('放大并旋转多圈后从当前视图缩回，旋转角不变', () => {
-    const { img, overlay } = openImage();
+  it('450° 从当前姿态连续归位到 360°，反向归零和回弹保留旋转状态', () => {
+    const { origin, img, overlay } = openImage();
     overlay.querySelector<HTMLButtonElement>('[aria-label="放大"]')!.click();
     const rotate = overlay.querySelector<HTMLButtonElement>('[aria-label="向右旋转"]')!;
     for (let i = 0; i < 5; i++) rotate.click();
-    const start = img.style.transform;
-    expect(start).toContain('rotate(450deg)');
+    const start = corners(img);
     scrollTo(530);
-    expect(img.style.transform).toBe(`translate(37.5px, 67.5px) scale(0.875, 0.875) ${start}`);
-    scrollTo(620);
-    expect(img.style.transform.endsWith(start)).toBe(true);
+    const matrix = new DOMMatrixReadOnly(img.style.transform);
+    expect((Math.atan2(matrix.b, matrix.a) * 180) / Math.PI).toBeCloseTo(67.5, 3);
+    scrollTo(500);
+    expectCorners(img, start);
+    scrollTo(530);
+    vi.advanceTimersByTime(160); // 短滚动回弹，不能提前清零 view.deg。
+    expectCorners(img, start);
+    scrollTo(560); // 回弹后重新以 530 为起点。
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
     vi.advanceTimersByTime(320);
+    expectCorners(img, rectCorners(origin.getBoundingClientRect()));
     expect(overlay.isConnected).toBe(false);
   });
 
@@ -192,21 +245,22 @@ describe('滚动缩回页面原图', () => {
     scrollTo(560);
     overlay.querySelector<HTMLButtonElement>('.lightbox-next')!.click();
     vi.advanceTimersByTime(300);
-    const start = img.style.transform;
+    const start = corners(img);
     expect(overlay.querySelector('.lightbox-counter')?.textContent).toBe('2 / 2');
     expect(backdrop.style.opacity).toBe('1');
     scrollTo(590);
     expect(backdrop.style.opacity).toBe('0.75');
-    const before = img.style.transform;
+    expectProgress(img, start, next, 0.25);
+    const before = corners(img);
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
-    expect(img.style.transform).toBe(before);
+    expectCorners(img, before);
     vi.advanceTimersByTime(320);
-    expect(img.style.transform).toBe(`translate(550px, 360px) scale(0.5, 0.5) ${start}`);
+    expectCorners(img, rectCorners(next.getBoundingClientRect()));
   });
 
   it('停手时进度不足阈值回弹到完全打开，继续滚动推迟收尾，回弹后从当前位置重新起算', () => {
     const { img, overlay, backdrop } = openImage();
-    const start = img.style.transform;
+    const start = corners(img);
     scrollTo(530);
     vi.advanceTimersByTime(100);
     scrollTo(535);
@@ -214,7 +268,7 @@ describe('滚动缩回页面原图', () => {
     expect(backdrop.style.opacity).not.toBe('1'); // 计时器已重置，尚未收尾
     vi.advanceTimersByTime(60);
     expect(backdrop.style.opacity).toBe('1');
-    expect(img.style.transform).toBe(start);
+    expectCorners(img, start);
     expect(img.style.transition).toContain('transform 180ms');
     expect(overlay.isConnected).toBe(true);
     scrollTo(565); // 以 535 为新起点，1/4 行程
@@ -222,14 +276,13 @@ describe('滚动缩回页面原图', () => {
   });
 
   it('停手时进度超过阈值继续飞回关闭，落在原图实时位置', () => {
-    const { img, overlay } = openImage();
-    const start = img.style.transform;
+    const { origin, img, overlay } = openImage();
     scrollTo(560); // 进度 0.5
     vi.advanceTimersByTime(150);
     expect(overlay.isConnected).toBe(true);
     vi.advanceTimersByTime(320);
     expect(overlay.isConnected).toBe(false);
-    expect(img.style.transform).toBe(`translate(150px, 240px) scale(0.5, 0.5) ${start}`);
+    expectCorners(img, rectCorners(origin.getBoundingClientRect()));
   });
 
   it('图片还在加载时也能滚动关闭，迟到的 load 不会重新播放打开动画', () => {

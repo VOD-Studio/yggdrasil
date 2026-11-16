@@ -293,9 +293,82 @@ describe('lightbox 黑盒行为', () => {
       clickEl(img);
       expect(getOverlay()).not.toBeNull();
       pressKey('Escape');
-      // closeLightbox 走 transitionend（happy-dom 不触发）+ 280ms 兜底
+      // happy-dom 不播放 CSS 过渡，使用既有 300ms 兜底。
       vi.advanceTimersByTime(300);
       expect(getOverlay()).toBeNull();
+    });
+
+    it.each([
+      ['image', 'transform'],
+      ['image', 'timeout'],
+      ['svg', 'transform'],
+      ['svg', 'timeout'],
+    ])('旋转后的 %s 只在自身 transform 完成或 %s 兜底后恢复原图', (kind, ending) => {
+      let origin: HTMLElement;
+      if (kind === 'svg') {
+        origin = document.createElement('figure');
+        origin.className = 'mermaid-diagram';
+        const variant = document.createElement('div');
+        variant.className = 'mermaid-light';
+        const svg = new DOMParser().parseFromString(
+          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 160"><path d="M0 0L480 160"/></svg>',
+          'image/svg+xml',
+        ).documentElement;
+        variant.append(document.importNode(svg, true));
+        origin.append(variant);
+      } else {
+        origin = makeExternalImage('/rotated.webp', '旋转');
+      }
+      mountRoot([origin]);
+      const originMedia = origin.querySelector('svg') ?? origin;
+      vi.spyOn(originMedia, 'getBoundingClientRect').mockReturnValue(
+        new DOMRect(120, 140, 480, 160),
+      );
+      window.__initLightbox('.post-content');
+      clickEl(origin);
+      const media = document.querySelector<HTMLElement | SVGSVGElement>('.lightbox-img')!;
+      if (media instanceof HTMLImageElement) {
+        stubNatural(media, 1440, 480);
+        media.dispatchEvent(new Event('load'));
+      }
+      vi.advanceTimersByTime(400);
+      pressKey('r');
+      vi.advanceTimersByTime(200);
+      pressKey('Escape');
+
+      // happy-dom 将 TransitionEvent 别名为 Event，补齐浏览器原生提供的属性。
+      const transitionEnd = (target: Element, propertyName: string): void => {
+        const event = new TransitionEvent('transitionend', { propertyName, bubbles: true });
+        Object.defineProperty(event, 'propertyName', { value: propertyName });
+        target.dispatchEvent(event);
+      };
+      transitionEnd(media, 'opacity');
+      const child = media.querySelector('path');
+      if (child) transitionEnd(child, 'transform');
+      expect(getOverlay()).not.toBeNull();
+      expect(origin.classList.contains('lightbox-origin-hidden')).toBe(true);
+      vi.advanceTimersByTime(299);
+      expect(getOverlay()).not.toBeNull();
+      if (ending === 'transform') {
+        transitionEnd(media, 'transform');
+      } else {
+        vi.advanceTimersByTime(1);
+      }
+      expect(getOverlay()).not.toBeNull();
+      expect(origin.classList.contains('lightbox-origin-hidden')).toBe(true);
+      vi.advanceTimersByTime(40); // 精确终点绘制一帧后才恢复原图。
+      expect(getOverlay()).toBeNull();
+      expect(origin.classList.contains('lightbox-origin-hidden')).toBe(false);
+      const matrix = new DOMMatrixReadOnly(media.style.transform);
+      const w = Number.parseFloat(media.style.width);
+      const h = Number.parseFloat(media.style.height);
+      expect(matrix.e).toBeCloseTo(120, 1);
+      expect(matrix.f).toBeCloseTo(140, 1);
+      expect(matrix.a * w + matrix.e).toBeCloseTo(600, 1);
+      expect(matrix.b * w + matrix.f).toBeCloseTo(140, 1);
+      expect(matrix.c * h + matrix.e).toBeCloseTo(120, 1);
+      expect(matrix.d * h + matrix.f).toBeCloseTo(300, 1);
+      vi.restoreAllMocks();
     });
 
     it('点 overlay 背景关闭（点图片本身不关）', () => {
@@ -592,37 +665,6 @@ describe('lightbox 黑盒行为', () => {
         /^translate\([^)]*\) scale\([^)]*\) translate\([^)]*\) rotate\([^)]*\) scale\([^)]*\) translate\([^)]*\)$/,
       );
     });
-
-    /**
-     * 回归：旋转多圈后关闭，飞回目标必须保留累计 rotate 槽（两端相等恒不动）。
-     * 旧实现目标是 transformFor 的 translate+scale 两函数串，与操控态 6 函数
-     * 列表结构不匹配 → 浏览器回退矩阵插值（450° ≡ 90°），关闭全程可见回 spin。
-     */
-    it('旋转多圈后关闭：飞回目标是同构列表且 rotate 槽不动（不回 spin）', () => {
-      const lbImg = openAndSettle(makeGalleryImage('/uploads/t.webp?w=800', '图'));
-      clickEl(rotateBtn());
-      clickEl(rotateBtn());
-      clickEl(rotateBtn());
-      clickEl(rotateBtn());
-      clickEl(rotateBtn());
-      expect(lbImg.style.transform).toContain('rotate(450deg)');
-
-      pressKey('Escape');
-
-      expect(lbImg.style.transition).toBe(
-        'transform 300ms cubic-bezier(0.2, 0, 0.2, 1), opacity 300ms cubic-bezier(0.2, 0, 0.2, 1)',
-      );
-      // 目标仍是 6 函数同构列表，rotate 槽保持 450deg —— 逐函数插值时旋转恒不动
-      expect(lbImg.style.transform).toMatch(
-        /^translate\([^)]*\) scale\([^)]*\) translate\([^)]*\) rotate\(450deg\) scale\([^)]*\) translate\([^)]*\)$/,
-      );
-    });
-
-    it('未操控直接关闭：飞回目标仍是 transformFor 的 translate+scale（原路径）', () => {
-      const lbImg = openAndSettle(makeGalleryImage('/uploads/s.webp?w=800', '图'));
-      pressKey('Escape');
-      expect(lbImg.style.transform).toMatch(/^translate\([^)]*\) scale\([^)]*\)$/);
-    });
   });
 
   describe('不透明飞行（缩略图与原图同比例）', () => {
@@ -648,6 +690,10 @@ describe('lightbox 黑盒行为', () => {
       expect(document.querySelector<HTMLElement>('.lightbox-backdrop')!.style.opacity).toBe('0');
 
       vi.advanceTimersByTime(300);
+      expect(getOverlay()).not.toBeNull();
+      expect(lbImg.style.opacity).toBe('1');
+      expect(img.classList.contains('lightbox-origin-hidden')).toBe(true);
+      vi.advanceTimersByTime(40);
       expect(getOverlay()).toBeNull();
       expect(img.classList.contains('lightbox-origin-hidden')).toBe(false);
     });

@@ -1,4 +1,4 @@
-import type { Inset, Mat, Rect } from './geometry';
+import type { FlightPose, Inset, Mat, Rect } from './geometry';
 import type { ResourceScope } from './resources';
 
 export type LightboxMedia = HTMLImageElement | SVGSVGElement;
@@ -42,11 +42,13 @@ export type GestureState =
     }
   | { mode: 'dragclose'; pointerId: number; startY: number; dy: number };
 
-export interface ScrollCloseState {
-  rect: Rect;
-  transform: string;
+export interface CloseFlightSnapshot {
+  pose: FlightPose;
   mediaOpacity: number;
   fadeOpacity: number;
+}
+
+export interface ScrollCloseState extends CloseFlightSnapshot {
   // 最近一次写入的缩回进度（0 = 打开态，1 = 页面原图位置）；收尾飞行从这里接着走。
   progress: number;
   // 停止滚动后的收尾计时器（回弹或关闭），id 来自 s.scope.timeout。

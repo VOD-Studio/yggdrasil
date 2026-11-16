@@ -5,19 +5,16 @@ import {
   closeFlightTransform,
   fitCentered,
   matchesAspect,
-  matIdentity,
-  panBy,
   SCROLL_FLIGHT_MIN_MS,
   scrollFlightEase,
   transformFor,
-  viewTransformCss,
 } from './geometry';
 import { errorTextOf, getImageDetails } from './images';
 import { bindInteractions } from './interactions';
 import { ResourceScope } from './resources';
 import type { LightboxActions, LightboxState } from './types';
 import {
-  baseGeometry,
+  captureCloseFlight,
   FADE_TRANSITION,
   FLIGHT_MS,
   FLIGHT_TRANSITION,
@@ -243,9 +240,6 @@ export function openLightbox(
       return;
     }
     if (s.closing) return;
-    // Keep the drag offset before releasing the gesture so closing starts at its painted position.
-    // 让下面重写的规范首帧与当前视觉逐像素一致（飞行从拖拽位置起算）。
-    const dragDy = s.gesture?.mode === 'dragclose' ? s.gesture.dy : 0;
     s.closing = true;
     unbindInteractions();
     imageScope.dispose();
@@ -258,9 +252,20 @@ export function openLightbox(
       return;
     }
 
+    // 先让精确终点完成一次绘制，再恢复原图；300ms 兜底不再抢在最后一帧前删除副本。
+    const finishFlight = (): void => {
+      s.scope.frame(() => {
+        if (s.scrollClose) writeScrollFlight(s, s.scrollClose, 1);
+        s.scope.timeout(() => {
+          if (s.scrollClose) writeScrollFlight(s, s.scrollClose, 1);
+          removeOverlay();
+        }, 0);
+      });
+    };
+
     if (s.scrollClose) {
       // 逐帧插值到页面原图的实时 rect：滚轮惯性仍在移动页面时，终点每帧跟随；
-      // 最后一帧落在原图上后同帧移除，原图显形时没有跳变。
+      // 终点至少绘制一帧，再删除副本；最后一次绘制与清理仍跟随原图实时位置。
       const flight = s.scrollClose;
       s.scope.clearTimeout(flight.settleTimer);
       const from = flight.progress;
@@ -270,58 +275,44 @@ export function openLightbox(
         const t = Math.min((performance.now() - t0) / duration, 1);
         writeScrollFlight(s, flight, from + (1 - from) * scrollFlightEase(t));
         if (t < 1) s.scope.frame(step);
-        else removeOverlay();
+        else finishFlight();
       };
       step();
       return;
     }
-    if (s.normalized) {
-      // 操控态（缩放/旋转/平移过）：当前 transform 是定长 6 函数列表，或
-      // dragclose 的 matrix() 串。飞回目标必须写成同构 6 函数列表
-      // （closeFlightTransform）：rotate/k 槽两端相等恒不动，只有外层
-      // translate/scale 插值 —— 累计旋转角再大，关闭时也不会反向空转。
-      const { k, layoutW, layoutH } = baseGeometry(s);
-      const user = panBy(s.view.user ?? matIdentity(), 0, dragDy);
-      // 先无过渡写回规范首帧并强制 reflow 提交（起算值必须是 6 函数列表，
-      // 否则 dragclose 的 matrix 起算值与目标列表不匹配，仍走矩阵插值）。
+    const snapshot = captureCloseFlight(s);
+    if (snapshot) {
+      // 冻结实际绘制帧，再用同构函数列表同步转正、收回；拖拽位移已在矩阵内。
       s.media.style.transition = 'none';
-      s.media.style.transform = viewTransformCss(
-        user,
-        s.view.deg,
-        k,
-        layoutW,
-        layoutH,
-        window.innerWidth,
-        window.innerHeight,
-      );
+      s.media.style.opacity = String(snapshot.mediaOpacity);
+      setFade(s, snapshot.fadeOpacity, 'none');
+      s.media.style.transform = closeFlightTransform(snapshot.pose, originRect, 0);
       void s.media.getBoundingClientRect();
       s.media.style.transition = FLIGHT_TRANSITION;
-      s.media.style.transform = closeFlightTransform(originRect, layoutW, layoutH, s.view.deg, k);
+      s.media.style.transform = closeFlightTransform(snapshot.pose, originRect, 1);
     } else {
-      // 未操控：当前是 transformFor 的 translate+scale，同构插值直接飞回。
-      // 基准 = originRect 尺寸（与打开时一致），scale 相对它缩放。
-      const baseW = s.baseW || (s.target ? s.target.w : 1);
-      const baseH = s.baseH || (s.target ? s.target.h : 1);
+      // 未加载或错误态只淡出背景，不伪造布局尺寸或飞行路径。
       s.media.style.transition = FLIGHT_TRANSITION;
-      s.media.style.transform = transformFor(originRect, baseW, baseH);
     }
     setFade(s, 0, FADE_TRANSITION);
     s.media.style.opacity = s.solidFlight ? '1' : '0';
 
     const done = (): void => {
-      removeOverlay();
+      if (snapshot) {
+        s.media.style.transition = 'none';
+        s.media.style.transform = closeFlightTransform(snapshot.pose, originRect, 1);
+        finishFlight();
+      } else {
+        removeOverlay();
+      }
     };
     // FLIGHT_MS 兜底，避免 transitionend 不触发
     const timer = s.scope.timeout(done, FLIGHT_MS);
-    s.scope.listen(
-      s.media,
-      'transitionend',
-      (): void => {
-        s.scope.clearTimeout(timer);
-        done();
-      },
-      { once: true },
-    );
+    s.scope.listen(s.media, 'transitionend', (event: TransitionEvent): void => {
+      if (event.target !== s.media || event.propertyName !== 'transform') return;
+      s.scope.clearTimeout(timer);
+      done();
+    });
   }
 
   function removeOverlay(): void {

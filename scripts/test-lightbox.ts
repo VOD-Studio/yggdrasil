@@ -14,7 +14,21 @@ type ScriptWindow = Window &
     __closeLightboxFor(owner: string): void;
   };
 
+interface CloseFlightFrame {
+  time: number;
+  transform: string;
+  layoutW: number;
+  layoutH: number;
+  opacity: number;
+  originHidden: boolean;
+  origin: { x: number; y: number; w: number; h: number };
+  points: { x: number; y: number }[];
+  angle: number;
+  scrollY: number;
+}
+
 const root = path.resolve(__dirname, '..');
+const continuityArtifactDir = process.env.LIGHTBOX_ARTIFACT_DIR;
 const script = fs.readFileSync(path.join(root, 'public/lightbox/lightbox.js'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'public/lightbox/lightbox.css'), 'utf8');
 const articleCss = fs.readFileSync(path.join(root, 'public/style.css'), 'utf8');
@@ -308,6 +322,262 @@ async function openDiagram(page: Playwright.Page) {
   await page.waitForTimeout(340);
 }
 
+// 用布局角点而非包围盒辨别方向：180° 的错误姿态也可能具有完全相同的包围盒。
+async function assertCloseContinuity(
+  page: Playwright.Page,
+  openMedia: (page: Playwright.Page) => Promise<void>,
+  originSelector: string,
+  deg: number,
+  mode: 'escape' | 'scroll' | 'mid-rotation',
+  artifactName: string,
+): Promise<void> {
+  await page.evaluate(() => scrollTo({ top: 0, behavior: 'instant' }));
+  await openMedia(page);
+  const reduced = await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches);
+  if (mode !== 'mid-rotation') {
+    for (let step = 0; step < deg / 90; step += 1) {
+      await page.getByRole('button', { name: '向右旋转', exact: true }).click();
+      // 等实际 CSS 旋转结束，而不是只等目标 style 已经写入。
+      await page.waitForFunction(() => {
+        const media = document.querySelector<HTMLElement>('.lightbox-img')!;
+        return !media.getAnimations().some((animation) => animation.playState === 'running');
+      });
+    }
+  }
+  const result = await page.evaluate(
+    async ({ originSelector, mode, reduced }) => {
+      const media = document.querySelector<HTMLElement>('.lightbox-img')!;
+      const origin = document.querySelector<HTMLElement | SVGSVGElement>(originSelector)!;
+      const nextFrame = () => {
+        const { promise, resolve } = Promise.withResolvers<number>();
+        requestAnimationFrame(resolve);
+        return promise;
+      };
+      const pause = (milliseconds: number) => {
+        const { promise, resolve } = Promise.withResolvers<void>();
+        setTimeout(resolve, milliseconds);
+        return promise;
+      };
+      const paintChannel = new MessageChannel();
+      const paintedFrame = async () => {
+        await nextFrame();
+        // 在整轮 rAF 写入并绘制后采样；MessageChannel 避免嵌套 timer 钳制造成漏帧。
+        const { promise, resolve } = Promise.withResolvers<void>();
+        paintChannel.port1.onmessage = () => resolve();
+        paintChannel.port2.postMessage(null);
+        await promise;
+      };
+      const capture = (): CloseFlightFrame => {
+        const style = getComputedStyle(media);
+        const matrix = new DOMMatrixReadOnly(
+          style.transform === 'none' ? undefined : style.transform,
+        );
+        const layoutW = Number.parseFloat(media.style.width);
+        const layoutH = Number.parseFloat(media.style.height);
+        const points = [
+          [0, 0],
+          [layoutW, 0],
+          [0, layoutH],
+        ].map(([x, y]) => {
+          const p = matrix.transformPoint(new DOMPoint(x, y));
+          return { x: p.x, y: p.y };
+        });
+        const rect = origin.getBoundingClientRect();
+        let originHidden = false;
+        for (let node: Element | null = origin; node; node = node.parentElement) {
+          const computed = getComputedStyle(node);
+          originHidden ||= computed.visibility === 'hidden' || Number(computed.opacity) === 0;
+        }
+        return {
+          time: performance.now(),
+          transform: style.transform,
+          layoutW,
+          layoutH,
+          opacity: Number(style.opacity),
+          originHidden,
+          origin: { x: rect.x, y: rect.y, w: rect.width, h: rect.height },
+          points,
+          angle: (Math.atan2(matrix.b, matrix.a) * 180) / Math.PI,
+          scrollY,
+        };
+      };
+      const frames: CloseFlightFrame[] = [];
+      const recovery: { phase: string; sample: CloseFlightFrame }[] = [];
+      if (mode === 'scroll' && !reduced) {
+        // 同一不可变快照应支持反向归零；短滚动停手回弹后还要再次收回。
+        const startY = scrollY;
+        recovery.push({ phase: 'start', sample: capture() });
+        scrollTo({ top: startY + 24, behavior: 'instant' });
+        await paintedFrame();
+        await paintedFrame();
+        recovery.push({ phase: 'outward', sample: capture() });
+        scrollTo({ top: startY, behavior: 'instant' });
+        await paintedFrame();
+        await paintedFrame();
+        recovery.push({ phase: 'reversed', sample: capture() });
+        await pause(400);
+        scrollTo({ top: startY + 24, behavior: 'instant' });
+        await paintedFrame();
+        await paintedFrame();
+        recovery.push({ phase: 'short-scroll', sample: capture() });
+        await pause(450);
+        recovery.push({ phase: 'rebounded', sample: capture() });
+      }
+      if (mode === 'mid-rotation' && !reduced) {
+        // 此模式只能从首次 0→90° 开始，不能用动画目标值冒充眼前姿态。
+        document.querySelector<HTMLElement>('[aria-label="向右旋转"]')!.click();
+        const deadline = performance.now() + 1000;
+        while (true) {
+          await nextFrame();
+          const angle = capture().angle;
+          if (angle >= 15 && angle <= 75) break;
+          if (performance.now() > deadline) throw new Error('未捕获到首次旋转的 15°–75° 中间帧');
+        }
+      }
+      const overlay = document.querySelector('.lightbox-overlay')!;
+      const removeChild = Node.prototype.removeChild;
+      let terminal: CloseFlightFrame | null = null;
+      // 精确终点和删除同任务执行：只观察当前 overlay 的移除前同步状态，不读取脱离 DOM 的样式。
+      Node.prototype.removeChild = function <T extends Node>(this: Node, child: T): T {
+        if ((child as Node) === overlay) terminal = capture();
+        return removeChild.call(this, child) as T;
+      };
+      try {
+        const before = capture();
+        if (mode === 'scroll') {
+          scrollBy({ top: 6, behavior: 'instant' });
+          // scroll 事件在浏览器下一渲染步骤派发，不把它误称为同步关闭首帧。
+        } else
+          document.dispatchEvent(
+            new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }),
+          );
+        const immediate = document.querySelector('.lightbox-overlay') ? capture() : null;
+        const started = performance.now();
+        let ticks = 0;
+        while (document.querySelector('.lightbox-overlay')) {
+          // 普通过渡在 rAF 读取的计算姿态就是本帧绘制值；不能延后到 timer 清理之后漏掉末帧。
+          if (mode === 'scroll') await paintedFrame();
+          else await nextFrame();
+          if (document.querySelector('.lightbox-overlay')) frames.push(capture());
+          if (performance.now() - started > 2500) throw new Error('连续收回超过 2500ms 未清理');
+          if (mode === 'scroll' && document.querySelector('.lightbox-overlay') && ticks++ < 50) {
+            scrollBy({ top: 6, behavior: 'instant' });
+          }
+        }
+        return {
+          before,
+          immediate,
+          frames,
+          recovery,
+          terminal: terminal as CloseFlightFrame | null,
+          originRestored:
+            !origin.closest('.lightbox-origin-hidden') &&
+            getComputedStyle(origin).visibility !== 'hidden',
+          overlays: document.querySelectorAll('.lightbox-overlay').length,
+          copies: document.querySelectorAll('.lightbox-img').length,
+        };
+      } finally {
+        Node.prototype.removeChild = removeChild;
+        paintChannel.port1.close();
+        paintChannel.port2.close();
+      }
+    },
+    { originSelector, mode, reduced },
+  );
+  const visibleSamples = [
+    result.before,
+    ...(result.immediate ? [result.immediate] : []),
+    ...result.frames,
+  ];
+  const samples = [...visibleSamples, ...(result.terminal ? [result.terminal] : [])];
+  const angularDelta = (a: number, b: number) => ((b - a + 540) % 360) - 180;
+  let angle = samples[0].angle;
+  let totalAngle = 0;
+  const unwrappedAngles = [angle];
+  for (let i = 1; i < samples.length; i += 1) {
+    const delta = angularDelta(samples[i - 1].angle, samples[i].angle);
+    angle += delta;
+    totalAngle += Math.abs(delta);
+    unwrappedAngles.push(angle);
+  }
+  if (continuityArtifactDir) {
+    fs.mkdirSync(continuityArtifactDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(continuityArtifactDir, `${artifactName}.json`),
+      JSON.stringify(
+        { artifactName, deg, mode, reduced, ...result, unwrappedAngles, totalAngle },
+        null,
+        2,
+      ),
+    );
+  }
+  assert.equal(result.overlays, 0, `${artifactName}: 灯箱应已清理`);
+  assert.equal(result.copies, 0, `${artifactName}: 关闭后只保留正文原图`);
+  assert.ok(result.originRestored, `${artifactName}: 正文原图应恢复`);
+  if (reduced) {
+    if (mode !== 'scroll') assert.equal(result.immediate, null, '减少动态效果应同任务立即关闭');
+    assert.equal(result.frames.length, 0, '减少动态效果不得播放收回动画');
+    await page.evaluate(() => scrollTo({ top: 0, behavior: 'instant' }));
+    return;
+  }
+  const pointError = (a: typeof result.before.points, b: typeof result.before.points) =>
+    Math.max(...a.map((point, index) => Math.hypot(point.x - b[index].x, point.y - b[index].y)));
+  assert.ok(result.immediate, `${artifactName}: 应保留收回副本`);
+  if (mode !== 'scroll') {
+    assert.ok(
+      pointError(result.before.points, result.immediate.points) < 1,
+      `${artifactName}: 关闭同任务首帧三个角点不可跳动`,
+    );
+  }
+  if (mode === 'mid-rotation') {
+    assert.ok(result.before.angle >= 15 && result.before.angle <= 75, '应从实际旋转中间帧关闭');
+  }
+  const start = result.recovery.find((entry) => entry.phase === 'start')?.sample;
+  if (start) {
+    for (const phase of ['reversed', 'rebounded']) {
+      const sample = result.recovery.find((entry) => entry.phase === phase)!.sample;
+      assert.ok(
+        pointError(start.points, sample.points) < 1,
+        `${artifactName}: ${phase} 应恢复起始姿态`,
+      );
+      assert.ok(Math.abs(angularDelta(start.angle, sample.angle)) < 0.1, '回弹不可永久改写旋转角');
+    }
+    const outward = result.recovery.find((entry) => entry.phase === 'outward')!.sample;
+    assert.ok(Math.abs(angularDelta(start.angle, outward.angle)) > 1, '短滚动应真实开始转正');
+  }
+  assert.ok(totalAngle <= 182, `${artifactName}: 总角程须 ≤180°+2°，实际 ${totalAngle}`);
+  assert.ok(result.frames.length > 1, `${artifactName}: 应记录实际动画帧`);
+  for (const sample of [...visibleSamples, ...result.recovery.map((entry) => entry.sample)]) {
+    assert.ok(sample.layoutW > 0 && sample.layoutH > 0, '布局尺寸必须真实有效');
+    assert.equal(sample.opacity, 1, `${artifactName}: 同宽高比副本不可用淡出掩盖旋转`);
+    assert.ok(sample.originHidden, `${artifactName}: 飞行结束前正文原图应隐藏`);
+  }
+  const last = result.frames.at(-1)!;
+  const target = [
+    { x: last.origin.x, y: last.origin.y },
+    { x: last.origin.x + last.origin.w, y: last.origin.y },
+    { x: last.origin.x, y: last.origin.y + last.origin.h },
+  ];
+  const error = pointError(last.points, target);
+  assert.ok(error < 2, `${artifactName}: 最后可见帧三个角点须贴合实时原图，误差 ${error}px`);
+  assert.ok(Math.abs(angularDelta(last.angle, 0)) < 1, `${artifactName}: 最后可见帧方向须转正`);
+  assert.ok(result.terminal, `${artifactName}: 必须捕获删除前的同步终点`);
+  const terminalTarget = [
+    { x: result.terminal.origin.x, y: result.terminal.origin.y },
+    { x: result.terminal.origin.x + result.terminal.origin.w, y: result.terminal.origin.y },
+    { x: result.terminal.origin.x, y: result.terminal.origin.y + result.terminal.origin.h },
+  ];
+  assert.ok(pointError(result.terminal.points, terminalTarget) < 0.1, '删除前必须提交精确角点终点');
+  assert.ok(Math.abs(angularDelta(result.terminal.angle, 0)) < 0.01, '删除前必须精确转正');
+  if (mode === 'scroll') {
+    assert.ok(
+      Math.abs(last.origin.y - result.before.origin.y) > 30,
+      '滚动收尾必须跟随移动中的原图',
+    );
+  }
+  await page.evaluate(() => scrollTo({ top: 0, behavior: 'instant' }));
+}
+
 async function assertDiagram(
   page: Playwright.Page,
   name: string,
@@ -427,6 +697,36 @@ async function assertDiagram(
   assert.equal(await page.locator('figure').innerHTML(), source);
   if (options.hasTouch) await assertPinchAndDrag(page, openDiagram);
   else await assertMousePan(page, openDiagram);
+  const diagramOrigin = dark ? '.mermaid-dark svg' : '.mermaid-light svg';
+  const angles = name === 'desktop-light' ? [90, 270, 450, 900] : [90];
+  for (const angle of angles) {
+    await assertCloseContinuity(
+      page,
+      openDiagram,
+      diagramOrigin,
+      angle,
+      'escape',
+      `${name}-svg-${angle}-escape`,
+    );
+  }
+  if (name === 'desktop-light') {
+    await assertCloseContinuity(
+      page,
+      openDiagram,
+      diagramOrigin,
+      90,
+      'mid-rotation',
+      `${name}-svg-90-mid-rotation`,
+    );
+    await assertCloseContinuity(
+      page,
+      openDiagram,
+      diagramOrigin,
+      90,
+      'scroll',
+      `${name}-svg-90-scroll`,
+    );
+  }
   await openDiagram(page);
   await page.evaluate(() => scrollTo(0, 90));
   await page.waitForFunction(() => !document.querySelector('.lightbox-overlay'));
@@ -461,7 +761,17 @@ async function assertDiagram(
       ],
       ['reduced-motion', { viewport: { width: 1000, height: 800 }, reducedMotion: 'reduce' }],
     ] as [string, Playwright.BrowserContextOptions][]) {
-      const context = await browser.newContext(options);
+      const context = await browser.newContext({
+        ...options,
+        ...(continuityArtifactDir
+          ? {
+              recordVideo: {
+                dir: path.join(continuityArtifactDir, name),
+                size: options.viewport ?? undefined,
+              },
+            }
+          : {}),
+      });
       const page = await context.newPage();
       const errors: string[] = [];
       page.on('pageerror', (error) => errors.push(error.message));
@@ -532,6 +842,30 @@ async function assertDiagram(
       assert.deepEqual(await originVisibility(page), ['visible', 'visible']);
       await page.evaluate(() => scrollTo(0, 0));
       if (!reduced) await assertScrollCloseTracksOrigin(page);
+      if (name === 'desktop-light' || reduced) {
+        for (const angle of reduced ? [90] : [90, 270, 450, 900]) {
+          await assertCloseContinuity(
+            page,
+            open,
+            '.post-content img:first-child',
+            angle,
+            'escape',
+            `${name}-image-${angle}-escape`,
+          );
+        }
+        if (!reduced) {
+          for (const mode of ['mid-rotation', 'scroll'] as const) {
+            await assertCloseContinuity(
+              page,
+              open,
+              '.post-content img:first-child',
+              90,
+              mode,
+              `${name}-image-90-${mode}`,
+            );
+          }
+        }
+      }
       await assertSpaRefresh(page);
       if (options.hasTouch) await assertPinchAndDrag(page);
       else await assertMousePan(page);
@@ -550,6 +884,9 @@ async function assertDiagram(
         `${name}: rotation, gallery, scroll settle, scroll tracking, SPA lifecycle${options.hasTouch ? ', pinch and drag' : ', mouse pan'} passed`,
       );
       await context.close();
+      if (continuityArtifactDir) {
+        await page.video()!.saveAs(path.join(continuityArtifactDir, `${name}.webm`));
+      }
     }
   } finally {
     await browser.close();

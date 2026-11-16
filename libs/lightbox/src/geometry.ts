@@ -66,12 +66,12 @@ export function originalUrl(dataSrc: string | null): string {
 
 // ============ 查看器操控：2D 矩阵与手势数学 ============
 //
-// 灯箱打开/关闭的飞行动画仍走 transformFor（translate+scale 字符串，支持非均匀
-// 缩放）；用户一旦缩放/旋转/平移，静止态变换统一由 viewTransformCss 的
-// 「定长同构函数列表」表达：
+// 打开飞行用 transformFor（translate+scale，支持非均匀缩放）；
+// 用户缩放/旋转/平移时，变换统一由 viewTransformCss 的定长同构函数列表表达：
 //   translate(u.e,u.f) scale(u.s) translate(C) rotate(deg) scale(k) translate(−c)
 // 其中 C=视口中心、c=布局盒中心（布局盒恒为未旋转 fit 尺寸，不随旋转交换），
 // k=rotationFitScale（90°/270° 时把旋转后的视觉尺寸收回 fitCentered）。
+// 关闭从实际绘制矩阵捕获姿态，另用同构列表将中心、缩放和最短归位角同时插值。
 //
 // 为什么不用 matrix()：CSS Transitions 对 matrix()↔matrix() 走「分解为
 // translate/rotate/scale 各自线性插值再重组」，绕中心旋转所需的 pivot 补偿
@@ -263,43 +263,74 @@ export function viewTransformCss(
   );
 }
 
-// 关闭飞回目标：与 viewTransformCss 同构的定长 6 函数列表。
-// 外层 translate/scale 把布局盒映射到缩略图 rect（支持非均匀，对齐 transformFor）；
-// 内层 rotate(deg)/scale(k) 两端取值与当前操控态完全相等 —— 逐函数插值时
-// 旋转槽恒不动，累计角（如 900°）不会在关闭动画里反向空转。
-// 若目标仍用 transformFor 的 translate+scale 两函数串，函数列表结构不匹配，
-// 浏览器回退矩阵插值：rotate(900°) 在矩阵上 ≡ 180°，关闭全程可见回 spin。
-// 第 3 槽 translate 从「视口中心」插值到「布局盒中心」，旋转轴随图平滑滑向缩略图。
-export function closeFlightTransform(
-  rect: Rect,
-  layoutW: number,
-  layoutH: number,
-  deg: number,
-  k: number,
-): string {
-  const r = (v: number): number => Math.round(v * 1e4) / 1e4;
-  const sx = layoutW > 0 ? rect.w / layoutW : 1;
-  const sy = layoutH > 0 ? rect.h / layoutH : 1;
-  return (
-    `translate(${r(rect.x)}px, ${r(rect.y)}px) scale(${r(sx)}, ${r(sy)}) ` +
-    `translate(${r(layoutW / 2)}px, ${r(layoutH / 2)}px) rotate(${r(deg)}deg) scale(${r(k)}) ` +
-    `translate(${r(-layoutW / 2)}px, ${r(-layoutH / 2)}px)`
-  );
+// 关闭飞行的实际绘制姿态：布局尺寸不受旋转影响，中心位于视口坐标系。
+export interface FlightPose {
+  layoutW: number;
+  layoutH: number;
+  centerX: number;
+  centerY: number;
+  scaleX: number;
+  scaleY: number;
+  deg: number;
 }
 
-// 在当前绘制结果外层插值到页面原图的实时 rect。保留快照 transform，
-// 缩放、旋转甚至尚未结束的打开动画都从眼前位置起算，不重置视图或反向旋转。
-export function scrollFlightTransform(
-  from: Rect,
-  to: Rect,
-  progress: number,
-  transform: string,
-): string {
-  const sx = 1 + (from.w > 0 ? to.w / from.w - 1 : 0) * progress;
-  const sy = 1 + (from.h > 0 ? to.h / from.h - 1 : 0) * progress;
-  const x = from.x + (to.x - from.x) * progress - from.x * sx;
-  const y = from.y + (to.y - from.y) * progress - from.y * sy;
-  return `translate(${x}px, ${y}px) scale(${sx}, ${sy}) ${transform === 'none' ? '' : transform}`;
+// 现有绘制变换只有正向缩放、旋转和平移，没有斜切。
+// 按累计角就近展开矩阵中的等效角，避免进行中的旋转关闭或回弹时绕整圈。
+export function flightPoseFromMatrix(
+  matrix: Mat,
+  layoutW: number,
+  layoutH: number,
+  referenceDeg: number,
+): FlightPose | null {
+  if (
+    !Number.isFinite(layoutW) ||
+    layoutW <= 0 ||
+    !Number.isFinite(layoutH) ||
+    layoutH <= 0 ||
+    !Number.isFinite(referenceDeg) ||
+    !Number.isFinite(matrix.a) ||
+    !Number.isFinite(matrix.b) ||
+    !Number.isFinite(matrix.c) ||
+    !Number.isFinite(matrix.d) ||
+    !Number.isFinite(matrix.e) ||
+    !Number.isFinite(matrix.f)
+  )
+    return null;
+
+  const center = matApply(matrix, layoutW / 2, layoutH / 2);
+  const scaleX = Math.hypot(matrix.a, matrix.b);
+  const scaleY = (matrix.a * matrix.d - matrix.b * matrix.c) / scaleX;
+  const angle = (Math.atan2(matrix.b, matrix.a) * 180) / Math.PI;
+  const deg = angle + 360 * Math.round((referenceDeg - angle) / 360);
+  if (
+    !Number.isFinite(center.x) ||
+    !Number.isFinite(center.y) ||
+    !Number.isFinite(scaleX) ||
+    scaleX <= 0 ||
+    !Number.isFinite(scaleY) ||
+    scaleY <= 0 ||
+    !Number.isFinite(deg)
+  )
+    return null;
+
+  return { layoutW, layoutH, centerX: center.x, centerY: center.y, scaleX, scaleY, deg };
+}
+
+// 普通关闭与滚动关闭共用六函数列表，起终点参数个数一致，保持 CSS 逐函数插值。
+// 旋转回最近整圈（180° 平局遵循 Math.round），同时把中心和两个缩放值收回原图。
+export function closeFlightTransform(from: FlightPose, to: Rect, progress: number): string {
+  const t = Math.min(1, Math.max(0, progress));
+  const r = (v: number): number => Math.round(v * 1e4) / 1e4;
+  const cx = from.centerX + (to.x + to.w / 2 - from.centerX) * t;
+  const cy = from.centerY + (to.y + to.h / 2 - from.centerY) * t;
+  const sx = from.scaleX + (to.w / from.layoutW - from.scaleX) * t;
+  const sy = from.scaleY + (to.h / from.layoutH - from.scaleY) * t;
+  const deg = from.deg + (Math.round(from.deg / 360) * 360 - from.deg) * t;
+  return (
+    `translate(0px, 0px) scale(1) translate(${r(cx)}px, ${r(cy)}px) ` +
+    `rotate(${r(deg)}deg) scale(${r(sx)}, ${r(sy)}) ` +
+    `translate(${r(-from.layoutW / 2)}px, ${r(-from.layoutH / 2)}px)`
+  );
 }
 
 // 旋转后的有效视觉尺寸：90°/270° 时宽高互换（fit 计算用）。

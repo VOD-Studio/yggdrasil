@@ -171,13 +171,15 @@ describe('流程图复用单张灯箱', () => {
     vi.mocked(svg.getBoundingClientRect).mockReturnValue(new DOMRect(120, 140, 480, 160));
     const focus = vi.spyOn(figure, 'focus');
     key('Escape');
-    expect(media().style.transform).toBe(
-      transformFor(
-        { x: 120, y: 140, w: 480, h: 160 },
-        Number.parseFloat(media().style.width),
-        Number.parseFloat(media().style.height),
-      ),
-    );
+    const matrix = new DOMMatrixReadOnly(media().style.transform);
+    const w = Number.parseFloat(media().style.width);
+    const h = Number.parseFloat(media().style.height);
+    expect(matrix.e).toBeCloseTo(120, 2);
+    expect(matrix.f).toBeCloseTo(140, 2);
+    expect(matrix.a * w + matrix.e).toBeCloseTo(600, 1);
+    expect(matrix.b * w + matrix.f).toBeCloseTo(140, 1);
+    expect(matrix.c * h + matrix.e).toBeCloseTo(120, 1);
+    expect(matrix.d * h + matrix.f).toBeCloseTo(300, 1);
     settle();
     expect(figure.classList.contains('lightbox-origin-hidden')).toBe(false);
     expect(focus).toHaveBeenCalledWith({ preventScroll: true });
