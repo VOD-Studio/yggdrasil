@@ -218,7 +218,7 @@ async function main() {
       .catch(() => false);
   }, 'release server');
 
-  // 种子数据：管理员 + 会话，三篇已发布文章（标签 split，含可运行 python 代码块）。
+  // 种子数据：管理员 + 会话，三篇已发布文章，以及触发正文增强资源的两条公开随记。
   const sessionToken = 'release-split-admin';
   const tokenHash = createHash('sha256').update(sessionToken).digest('hex');
   const code = '```python\nprint(1)\n```';
@@ -242,6 +242,14 @@ async function main() {
     INSERT INTO sessions(user_id,token_hash,expires_at) VALUES(1,'${tokenHash}',NOW()+INTERVAL '1 hour');
     INSERT INTO tags(id,name) VALUES(1,'split');
     ${posts}
+    BEGIN;
+    INSERT INTO notes(id,owner_id,slug,version,published_version,published_at)
+      SELECT n,1,'split-moment-' || n,1,1,NOW() FROM generate_series(1,2) n;
+    INSERT INTO note_revisions(note_id,version,kind,title,content_md,content_html,summary)
+      SELECT n,1,'moment','水合随记 ' || n,'随记水合正文 ' || n,
+        '<p>随记水合正文 ' || n || '</p>','随记水合正文 ' || n FROM generate_series(1,2) n;
+    SELECT setval('notes_id_seq',2);
+    COMMIT;
     SELECT setval('users_id_seq',1); SELECT setval('posts_id_seq',3); SELECT setval('tags_id_seq',1);`;
   const fixture = path.join(runtime, 'fixture.sql');
   fs.writeFileSync(fixture, sql);
@@ -405,6 +413,44 @@ async function main() {
       scriptErrors(log).join(' | '),
     );
     await ctx.close();
+
+    // 随记正文会按需声明 head 资源；空列表无法覆盖 InOrder 提前发送 head 的水合错误。
+    const notesBody = await (await fetch(`${base}/notes`)).text();
+    const notesHead = notesBody.slice(0, notesBody.indexOf('</head>'));
+    check(
+      '3 笔记 SSR：head 含正文增强脚本与灯箱资源',
+      [
+        '/yggdrasil-core/yggdrasil-enhance.js',
+        '/lightbox/lightbox.js',
+        '/lightbox/lightbox.css',
+      ].every((asset) => notesHead.includes(asset)),
+    );
+    const notesCtx = await browser.newContext();
+    const notesPage = await notesCtx.newPage();
+    const notesLog = instrument(notesPage);
+    await notesPage.goto(`${base}/notes`);
+    await hydrated(notesPage);
+    check(
+      '3 公开随记直开保留正文',
+      (await notesPage.locator('.note-moment .post-content').allTextContents()).sort().join('|') ===
+        '随记水合正文 1|随记水合正文 2',
+    );
+    await notesPage.getByRole('button', { name: '主题笔记 0', exact: true }).click();
+    await notesPage.getByText('没有找到相关笔记', { exact: true }).waitFor();
+    await notesPage.getByRole('button', { name: '全部 2', exact: true }).click();
+    await notesPage.locator('.note-moment').first().waitFor();
+    await notesPage.locator('.note-moment-link').first().click();
+    await notesPage.locator('.note-document').waitFor();
+    check(
+      '3 随记链接打开对应正文',
+      (await notesPage.locator('#note-content').textContent())?.includes('随记水合正文') === true,
+    );
+    check(
+      '3 公开随记水合后筛选与阅读可用，无脚本错误',
+      scriptErrors(notesLog).length === 0,
+      scriptErrors(notesLog).join(' | '),
+    );
+    await notesCtx.close();
 
     // 后台样式只随后台与组件图鉴加载：公开页不带，SPA 进入图鉴时补插。
     const anonymousAdminCss = await fetch(`${base}/admin.css`, { redirect: 'manual' });

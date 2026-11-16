@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **直开笔记列表时水合崩溃**：`/notes` 原先使用 `InOrder` 流式 SSR，公开随记正文在异步取数后才声明的灯箱样式和增强脚本赶不上已发送的 `<head>`，客户端水合找不到对应 `<link>` 而 panic。现在改为 `Async`，等正文及头部资源收集完成后再发送；回归数据加入公开随记，覆盖直开水合、筛选和进入阅读页。
+
 ## [1.3.4] - 2026-11-12
 
 修复 physics 宏包的两处公式渲染错误：裸 `\dd` 不再让整块公式变成红色原文，`\qty(...)` / `\qty[...]` 的定界符形式按自动缩放括号渲染。

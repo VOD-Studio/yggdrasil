@@ -225,10 +225,11 @@ pub fn App() -> impl IntoView {
                             view={Lazy::<HomeRoute>::new()}
                             ssr=SsrMode::Async
                         />
+                        // 随记正文在异步取数后声明增强脚本与灯箱样式，必须等 head 收集完再发送。
                         <Route
                             path=path!("notes")
                             view={Lazy::<NotesRoute>::new()}
-                            ssr=SsrMode::InOrder
+                            ssr=SsrMode::Async
                         />
                         <Route
                             path=path!("notes/book/:id")
