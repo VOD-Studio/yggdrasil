@@ -1,5 +1,5 @@
 import { type LightboxController, openLightbox } from './controller';
-import { collectImages, initLazyLoad } from './images';
+import { collectMedia, initLazyLoad } from './images';
 import './style.css';
 
 declare global {
@@ -35,10 +35,10 @@ if (!window.__initLightbox) {
       for (const el of found) roots.push(el);
     }
 
-    // 先对所有图片做懒加载（图集与单张都做）
-    const collected = collectImages(roots);
+    // 图片做懒加载；流程图已由服务端输出，无需请求图片。
+    const collected = collectMedia(roots);
     for (const node of collected.gallery.concat(collected.singles)) {
-      initLazyLoad(node);
+      if (!node.matches('figure.mermaid-diagram')) initLazyLoad(node);
     }
 
     // Replace a reused SPA node's handler with its current gallery membership.
@@ -59,7 +59,7 @@ if (!window.__initLightbox) {
         open(node, gallery, idx);
       });
     });
-    // 单张图（封面）：index = null，gallery 传空数组表示单张
+    // 单张图片与流程图：index = null，gallery 传空数组表示单张。
     for (const node of collected.singles) {
       bindClick(node, (e: MouseEvent) => {
         e.preventDefault();

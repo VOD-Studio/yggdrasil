@@ -1,13 +1,15 @@
 import type { Inset, Mat, Rect } from './geometry';
 import type { ResourceScope } from './resources';
 
+export type LightboxMedia = HTMLImageElement | SVGSVGElement;
+
 export interface LightboxElements {
   overlay: HTMLDivElement;
   // 毛玻璃背景，承载打开/关闭的淡入淡出。
   backdrop: HTMLDivElement;
   // 顶栏、底栏、箭头、错误态的容器，与背景同步淡入淡出。
   ui: HTMLDivElement;
-  img: HTMLImageElement;
+  media: LightboxMedia;
   caption: HTMLElement;
   counter: HTMLSpanElement;
   errorBox: HTMLDivElement;
@@ -43,7 +45,7 @@ export type GestureState =
 export interface ScrollCloseState {
   rect: Rect;
   transform: string;
-  imgOpacity: number;
+  mediaOpacity: number;
   fadeOpacity: number;
   // 最近一次写入的缩回进度（0 = 打开态，1 = 页面原图位置）；收尾飞行从这里接着走。
   progress: number;
@@ -60,6 +62,9 @@ export interface LightboxState extends LightboxElements {
   scrollClose: ScrollCloseState | null;
   origSrc: string;
   altText: string;
+  naturalWidth: number;
+  naturalHeight: number;
+  downloadName: string | null;
   closing: boolean;
   // 当前原图与灯箱图宽高比一致时为 true，此时飞行全程不透明、原图隐藏；否则走透明度过渡。
   solidFlight: boolean;

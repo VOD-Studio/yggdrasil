@@ -74,6 +74,13 @@
 .lightbox-origin-hidden {
   visibility: hidden;
 }
+/* SVG 的本地引用可能命中正文里同 ID 的 defs；visibility 会继承到 marker/use，
+   连带隐藏灯箱里的箭头。透明隐藏 figure，不改变其后代定义的可见性。 */
+figure.mermaid-diagram.lightbox-origin-hidden {
+  visibility: visible;
+  opacity: 0;
+  pointer-events: none;
+}
 
 /* 灯箱图片：绝对定位，尺寸/位置由 JS 的 transform 控制。
    transform-origin 为 top left，配合 translate+scale 实现原地缩放。
@@ -103,6 +110,14 @@
 }
 .lightbox-img:active {
   cursor: grabbing;
+}
+
+.lightbox-diagram {
+  display: block;
+  text-autospace: no-autospace;
+  text-spacing-trim: space-all;
+  overflow-wrap: normal;
+  line-height: 1.5;
 }
 
 /* ---- 顶栏、底栏与箭头 ----

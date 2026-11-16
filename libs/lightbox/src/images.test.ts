@@ -6,7 +6,7 @@
  * 「src 已存在就接管、不重新赋值」的语义。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { initLazyLoad } from './images';
+import { collectMedia, initLazyLoad } from './images';
 
 let ioCallback: IntersectionObserverCallback = () => {};
 
@@ -89,5 +89,34 @@ describe('initLazyLoad 既有 src 的协调', () => {
     Object.defineProperty(full, 'naturalHeight', { value: 600, configurable: true });
     full.dispatchEvent(new Event('load'));
     expect(container.classList.contains('is-loaded')).toBe(true);
+  });
+});
+
+describe('collectMedia 媒体边界', () => {
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('流程图独立打开，标签内图片不进入正文图集，重叠根不重复收集', () => {
+    document.body.innerHTML = `
+      <article>
+        <section>
+          <span id="photo" class="blur-img"><img src="/photo.webp"></span>
+          <img id="external" src="https://example.com/photo.webp">
+          <img id="cover" class="lightbox-single" src="/cover.webp">
+          <figure id="diagram" class="mermaid-diagram">
+            <svg><foreignObject><div xmlns="http://www.w3.org/1999/xhtml">
+              <img src="/label.webp">
+              <span class="blur-img"><img src="/nested.webp"></span>
+            </div></foreignObject></svg>
+          </figure>
+        </section>
+      </article>`;
+    const { gallery, singles } = collectMedia([
+      document.querySelector('article')!,
+      document.querySelector('section')!,
+    ]);
+    expect(gallery.map((node) => node.id)).toEqual(['photo', 'external']);
+    expect(singles.map((node) => node.id)).toEqual(['cover', 'diagram']);
   });
 });

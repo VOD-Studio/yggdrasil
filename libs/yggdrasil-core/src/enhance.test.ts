@@ -10,7 +10,6 @@ import './enhance';
 
 const ENHANCE_GLOBALS = [
   '__initPostContent',
-  '__initMermaid',
   '__initTocSidebar',
   '__disposeTocSidebar',
   '__initChangelogNav',
@@ -35,20 +34,20 @@ describe('enhance entry registrations', () => {
     const initToc = vi.spyOn(window, '__initTocSidebar').mockImplementation(() => {});
     window.__pendingEnhanceCalls.push(
       { name: '__initTocSidebar', args: [] },
-      { name: '__initMermaid', args: ['.post-content'] },
+      { name: '__initChangelogNav', args: [] },
       { name: '__initPostContent', args: ['.post-content'] },
     );
     // 卸掉一个实现，模拟对应脚本尚未加载。
-    const mermaid = window.__initMermaid;
-    delete (window as unknown as Record<string, unknown>).__initMermaid;
+    const changelog = window.__initChangelogNav;
+    delete (window as unknown as Record<string, unknown>).__initChangelogNav;
 
     window.__flushEnhanceCalls();
 
     expect(initToc).toHaveBeenCalledTimes(1);
-    expect(window.__pendingEnhanceCalls.map((call) => call.name)).toEqual(['__initMermaid']);
+    expect(window.__pendingEnhanceCalls.map((call) => call.name)).toEqual(['__initChangelogNav']);
 
     // 对应脚本随后加载完成：注册回来再 flush，滞留项补执行。
-    window.__initMermaid = mermaid;
+    window.__initChangelogNav = changelog;
     window.__flushEnhanceCalls();
     expect(window.__pendingEnhanceCalls).toHaveLength(0);
   });

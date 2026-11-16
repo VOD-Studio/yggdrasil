@@ -1,5 +1,5 @@
 import { thumbnailSrc } from './images';
-import type { LightboxActions, LightboxElements } from './types';
+import type { LightboxActions, LightboxElements, LightboxMedia } from './types';
 
 // ---- 图标（Lucide，ISC；24 视口、1.6 线宽描边，与站点 Icon 组件同源）----
 const lucide = (body: string, size = 18): string =>
@@ -77,6 +77,7 @@ function hintItem(parts: HintPart[]): HTMLSpanElement {
 }
 
 export function createLightboxElements(
+  media: LightboxMedia,
   altText: string,
   gallery: HTMLElement[],
   index: number | null,
@@ -85,13 +86,14 @@ export function createLightboxElements(
 ): LightboxElements {
   const galleryLength = gallery.length;
   const isGallery = !isSingle && galleryLength > 1;
+  const isDiagram = media instanceof SVGSVGElement;
 
   // 建 DOM
   const overlay = document.createElement('div');
   overlay.className = 'lightbox-overlay';
   overlay.setAttribute('role', 'dialog');
   overlay.setAttribute('aria-modal', 'true');
-  overlay.setAttribute('aria-label', '图片查看器');
+  overlay.setAttribute('aria-label', isDiagram ? '流程图查看器' : '图片查看器');
   overlay.setAttribute('tabindex', '-1');
   // 背景层与界面层从 0 淡入，与原图加载解耦：创建即隐藏，append 后立即启动淡入。
   // 若加载期就保持 opacity:1，start() 为首帧硬切回 0 再淡入，用户会看到背景在打开
@@ -103,13 +105,11 @@ export function createLightboxElements(
   ui.className = 'lightbox-ui';
   ui.style.opacity = '0';
 
-  const img = document.createElement('img');
-  img.className = 'lightbox-img';
-  img.setAttribute('alt', altText);
-  // 加载前先占 0 尺寸，避免原图（可能数千 px）在加载期间撑大文档
-  // 可滚动区、触发非预期的 scroll 事件。start() 拿到 natural 尺寸后再设真实值。
-  img.style.width = '0px';
-  img.style.height = '0px';
+  media.classList.add('lightbox-img');
+  if (isDiagram) media.classList.add('lightbox-diagram');
+  // 加载/飞行开始前不撑大文档；SVG 的天然尺寸已独立存入会话。
+  media.style.width = '0px';
+  media.style.height = '0px';
 
   // 错误态容器：原图加载失败或点击已知坏图（is-error）时显示原因，
   // 替代过去的立即 removeOverlay。pointer-events:none（CSS）让点击穿透到
@@ -135,7 +135,7 @@ export function createLightboxElements(
   const toolbar = document.createElement('div');
   toolbar.className = 'lightbox-toolbar';
   toolbar.setAttribute('role', 'toolbar');
-  toolbar.setAttribute('aria-label', '图片操作');
+  toolbar.setAttribute('aria-label', isDiagram ? '流程图操作' : '图片操作');
 
   const zoomOutBtn = makeButton(
     'lightbox-tool',
@@ -162,7 +162,7 @@ export function createLightboxElements(
 
   const downloadLink = document.createElement('a');
   downloadLink.className = 'lightbox-tool';
-  downloadLink.setAttribute('aria-label', '下载原图');
+  downloadLink.setAttribute('aria-label', isDiagram ? '下载 SVG' : '下载原图');
   downloadLink.innerHTML = DOWNLOAD_ICON_SVG;
   // 不 preventDefault：保留 download/新标签打开的默认行为；仅阻止冒泡关闭
   downloadLink.addEventListener('click', (ev: MouseEvent): void => {
@@ -259,14 +259,14 @@ export function createLightboxElements(
   ui.append(errorBox, topbar, bottom);
   if (prevBtn) ui.appendChild(prevBtn);
   if (nextBtn) ui.appendChild(nextBtn);
-  overlay.append(backdrop, img, ui);
+  overlay.append(backdrop, media, ui);
   document.body.appendChild(overlay);
 
   return {
     overlay,
     backdrop,
     ui,
-    img,
+    media,
     caption,
     counter,
     errorBox,

@@ -81,11 +81,6 @@ pub fn init_post_content(selector: &str) {
     call("__initPostContent", &[selector.into()]);
 }
 
-/// 绑定选择器范围内服务端渲染 Mermaid 图表的点击放大。
-pub fn init_mermaid(selector: &str) {
-    call("__initMermaid", &[selector.into()]);
-}
-
 /// 初始化目录 scroll-spy；三个选择器为 `None` 时用 JS 端默认值。
 pub fn init_toc_sidebar(nav: Option<&str>, content: Option<&str>, scroll: Option<&str>) {
     call("__initTocSidebar", &[opt(nav), opt(content), opt(scroll)]);

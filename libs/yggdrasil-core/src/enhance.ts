@@ -1,5 +1,4 @@
 import { disposeChangelogNav, initChangelogNav } from './changelog-nav';
-import { initMermaid } from './mermaid';
 import { initPostContent } from './post-content';
 import { disposeShowcaseMasonry, initShowcaseMasonry } from './showcase-masonry';
 import { disposeTocSidebar, initTocSidebar } from './toc-sidebar';
@@ -16,7 +15,6 @@ import { disposeTocSidebar, initTocSidebar } from './toc-sidebar';
 declare global {
   interface Window {
     __initPostContent: typeof initPostContent;
-    __initMermaid: typeof initMermaid;
     __initTocSidebar: typeof initTocSidebar;
     __disposeTocSidebar: typeof disposeTocSidebar;
     __initChangelogNav: typeof initChangelogNav;
@@ -31,7 +29,6 @@ declare global {
 // 模块状态里，被新实例替换后旧实例的监听就再也清理不掉。
 if (!window.__initPostContent) {
   window.__initPostContent = initPostContent;
-  window.__initMermaid = initMermaid;
   window.__initTocSidebar = initTocSidebar;
   window.__disposeTocSidebar = disposeTocSidebar;
   window.__initChangelogNav = initChangelogNav;

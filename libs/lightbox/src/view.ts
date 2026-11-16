@@ -1,3 +1,4 @@
+import { visibleDiagramSvg } from './diagrams';
 import {
   type BaseViewGeometry,
   baseViewGeometry,
@@ -24,6 +25,10 @@ export function rectOf(el: Element): Rect {
     w: r.width,
     h: r.height,
   };
+}
+
+export function originRectOf(originNode: HTMLElement): Rect {
+  return rectOf(visibleDiagramSvg(originNode) ?? originNode);
 }
 
 // 打开/关闭飞行：300ms，与 medium-zoom 同曲线（慢起、中段快、无回弹）。
@@ -55,7 +60,7 @@ export function resetScrollClose(s: LightboxState): void {
   if (!s.scrollClose) return;
   s.scope.clearTimeout(s.scrollClose.settleTimer);
   s.scrollClose = null;
-  s.img.style.opacity = '1';
+  s.media.style.opacity = '1';
   setFade(s, 1, 'opacity 180ms ease-out');
 }
 
@@ -66,15 +71,15 @@ export function writeScrollFlight(
   progress: number,
 ): void {
   flight.progress = progress;
-  s.img.style.transition = 'none';
-  s.img.style.transform = scrollFlightTransform(
+  s.media.style.transition = 'none';
+  s.media.style.transform = scrollFlightTransform(
     flight.rect,
-    rectOf(s.originNode),
+    originRectOf(s.originNode),
     progress,
     flight.transform,
   );
-  s.img.style.opacity = String(
-    s.solidFlight ? flight.imgOpacity : flight.imgOpacity * (1 - progress),
+  s.media.style.opacity = String(
+    s.solidFlight ? flight.mediaOpacity : flight.mediaOpacity * (1 - progress),
   );
   setFade(s, flight.fadeOpacity * (1 - progress), 'none');
 }
@@ -87,8 +92,8 @@ export function isErrorShown(s: LightboxState): boolean {
 // 布局盒恒为未旋转 fit（旋转不变），90°/270° 的适配折进 k，消灭 width/height
 // 瞬时交换带来的跳变。
 export function baseGeometry(s: LightboxState): BaseViewGeometry {
-  const natW = s.img.naturalWidth || 1;
-  const natH = s.img.naturalHeight || 1;
+  const natW = s.naturalWidth || 1;
+  const natH = s.naturalHeight || 1;
   return baseViewGeometry(natW, natH, s.view.deg, window.innerWidth, window.innerHeight, s.inset);
 }
 
@@ -117,8 +122,8 @@ export function applyView(s: LightboxState, animate: boolean): void {
   const { k, layoutW, layoutH, fit, m0 } = baseGeometry(s);
   const wPx = `${layoutW}px`;
   const hPx = `${layoutH}px`;
-  if (s.img.style.width !== wPx) s.img.style.width = wPx;
-  if (s.img.style.height !== hPx) s.img.style.height = hPx;
+  if (s.media.style.width !== wPx) s.media.style.width = wPx;
+  if (s.media.style.height !== hPx) s.media.style.height = hPx;
   const user = clampPanToViewport(
     s.view.user ?? matIdentity(),
     m0,
@@ -128,8 +133,8 @@ export function applyView(s: LightboxState, animate: boolean): void {
     window.innerHeight,
   );
   s.view.user = user;
-  s.img.style.transition = animate && !s.reduced ? 'transform 180ms ease-out' : 'none';
-  s.img.style.transform = viewTransformCss(
+  s.media.style.transition = animate && !s.reduced ? 'transform 180ms ease-out' : 'none';
+  s.media.style.transform = viewTransformCss(
     user,
     s.view.deg,
     k,
@@ -142,7 +147,7 @@ export function applyView(s: LightboxState, animate: boolean): void {
   s.target = fit;
   s.baseW = layoutW;
   s.baseH = layoutH;
-  s.img.classList.toggle('is-zoomed', s.view.scale > 1);
+  s.media.classList.toggle('is-zoomed', s.view.scale > 1);
   syncZoomControls(s);
 }
 
@@ -167,7 +172,7 @@ export function ensureNormalized(s: LightboxState): void {
   // 否则它与随后的 applyView(true) 合并在同一帧，180ms 过渡的起算值仍是飞行
   // 动画遗留的 translate+scale 字符串 —— 首个缩放/旋转动画出现非均匀 scale
   // 回弹与起始帧跳变（素材页正方形缩略图打开竖图时最明显）。
-  void s.img.offsetHeight;
+  void s.media.getBoundingClientRect();
 }
 
 // 顶栏、底栏与箭头空闲淡出：fit 态它们在图片之外，常驻；放大后图会铺到它们
@@ -236,6 +241,12 @@ export function resetView(s: LightboxState, animate: boolean): void {
 // 外链 download 跨域无效，改新标签页打开。
 export function updateDownloadLink(s: LightboxState): void {
   s.downloadLink.setAttribute('href', s.origSrc);
+  if (s.downloadName !== null) {
+    s.downloadLink.setAttribute('download', s.downloadName);
+    s.downloadLink.removeAttribute('target');
+    s.downloadLink.removeAttribute('rel');
+    return;
+  }
   if (s.origSrc.startsWith('/')) {
     s.downloadLink.setAttribute('download', s.origSrc.split('/').pop() ?? '');
     s.downloadLink.removeAttribute('target');

@@ -73,9 +73,9 @@ function settleScrollClose(s: LightboxState, actions: LightboxActions): void {
   } else {
     const target = s.target;
     if (!target) return; // 快照建立的前提是已有 target，此处只为收窄类型
-    s.img.style.transform = transformFor(target, s.baseW ?? target.w, s.baseH ?? target.h);
+    s.media.style.transform = transformFor(target, s.baseW ?? target.w, s.baseH ?? target.h);
   }
-  s.img.style.transition = SNAP_BACK_TRANSITION; // 在写 transform 之后设置，覆盖 applyView 只含 transform 的过渡
+  s.media.style.transition = SNAP_BACK_TRANSITION; // 在写 transform 之后设置，覆盖 applyView 只含 transform 的过渡
 }
 
 function onScrollClose(s: LightboxState, actions: LightboxActions): void {
@@ -87,24 +87,24 @@ function onScrollClose(s: LightboxState, actions: LightboxActions): void {
     return;
   }
   if (!s.scrollClose) {
-    const style = getComputedStyle(s.img);
+    const style = getComputedStyle(s.media);
     s.scrollClose = {
-      rect: rectOf(s.img),
+      rect: rectOf(s.media),
       transform: style.transform,
-      imgOpacity: Number(style.opacity),
+      mediaOpacity: Number(style.opacity),
       fadeOpacity: Number(getComputedStyle(s.backdrop).opacity),
       progress: 0,
       settleTimer: undefined,
     };
     // 先提交同构首帧；快照包含实际绘制中的缩放/旋转，不依赖动画目标值。
-    s.img.style.transition = 'none';
-    s.img.style.transform = scrollFlightTransform(
+    s.media.style.transition = 'none';
+    s.media.style.transform = scrollFlightTransform(
       s.scrollClose.rect,
       s.scrollClose.rect,
       0,
       s.scrollClose.transform,
     );
-    void s.img.offsetHeight;
+    void s.media.getBoundingClientRect();
   }
   if (progress >= 1) {
     actions.close(false);
@@ -165,7 +165,7 @@ export function bindInteractions(s: LightboxState, actions: LightboxActions): ()
 
   // 双击：fit ↔ 2.5× 切换（缩小态先回 fit）。放大锚定点击点；回 fit 时平移清零
   // 回到居中（平移钳制只防移出视口，不再自动居中）。
-  scope.listen(s.img, 'dblclick', (ev: MouseEvent): void => {
+  scope.listen(s.media, 'dblclick', (ev: MouseEvent): void => {
     if (!s?.target || isErrorShown(s)) return;
     ev.preventDefault();
     if (Math.abs(s.view.scale - 1) > 1e-3) {
@@ -230,23 +230,23 @@ export function bindInteractions(s: LightboxState, actions: LightboxActions): ()
       applyView(s, false);
       return;
     }
-    const natW = st.img.naturalWidth || 1;
-    const natH = st.img.naturalHeight || 1;
+    const natW = st.naturalWidth || 1;
+    const natH = st.naturalHeight || 1;
     const target = fitCentered(natW, natH, window.innerWidth, window.innerHeight, st.inset);
     st.target = target;
-    st.img.style.transition = 'none';
-    st.img.style.transform = transformFor(target, st.baseW ?? target.w, st.baseH ?? target.h);
+    st.media.style.transition = 'none';
+    st.media.style.transform = transformFor(target, st.baseW ?? target.w, st.baseH ?? target.h);
   };
   scope.listen(window, 'resize', resizeHandler);
 
   // ---- 指针手势（鼠标/触控统一 Pointer Events；img CSS 为 touch-action:none）----
-  scope.listen(s.img, 'dragstart', (ev: Event): void => {
+  scope.listen(s.media, 'dragstart', (ev: Event): void => {
     ev.preventDefault();
   });
-  scope.listen(s.img, 'pointerdown', (ev: PointerEvent) => onPointerDown(s, ev));
-  scope.listen(s.img, 'pointermove', (ev: PointerEvent) => onPointerMove(s, ev));
-  scope.listen(s.img, 'pointerup', (ev: PointerEvent) => onPointerUp(s, actions, ev));
-  scope.listen(s.img, 'pointercancel', (ev: PointerEvent) => onPointerUp(s, actions, ev));
+  scope.listen(s.media, 'pointerdown', (ev: PointerEvent) => onPointerDown(s, ev));
+  scope.listen(s.media, 'pointermove', (ev: PointerEvent) => onPointerMove(s, ev));
+  scope.listen(s.media, 'pointerup', (ev: PointerEvent) => onPointerUp(s, actions, ev));
+  scope.listen(s.media, 'pointercancel', (ev: PointerEvent) => onPointerUp(s, actions, ev));
 
   // 工具栏空闲自动隐藏：overlay 上任何指针活动唤醒
   scope.listen(s.overlay, 'pointermove', (): void => {
@@ -298,7 +298,7 @@ export function bindInteractions(s: LightboxState, actions: LightboxActions): ()
 function onPointerDown(s: LightboxState, ev: PointerEvent): void {
   if (!s?.target || s.closing || isErrorShown(s)) return;
   if (ev.pointerType === 'mouse' && ev.button !== 0) return; // 仅主键
-  s.img.setPointerCapture(ev.pointerId);
+  s.media.setPointerCapture(ev.pointerId);
   s.pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
   pokeToolbar(s);
 
@@ -373,8 +373,8 @@ function onPointerMove(s: LightboxState, ev: PointerEvent): void {
   const dy = ev.clientY - g.startY;
   g.dy = dy;
   const { m0 } = baseGeometry(s);
-  s.img.style.transition = 'none';
-  s.img.style.transform = matToCss(matMultiply(matTranslate(0, dy), m0));
+  s.media.style.transition = 'none';
+  s.media.style.transform = matToCss(matMultiply(matTranslate(0, dy), m0));
   const progress = Math.min(Math.abs(dy) / DRAG_CLOSE_PX, 1);
   setFade(s, 1 - progress);
 }

@@ -17,6 +17,14 @@ type ScriptWindow = Window &
 const root = path.resolve(__dirname, '..');
 const script = fs.readFileSync(path.join(root, 'public/lightbox/lightbox.js'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'public/lightbox/lightbox.css'), 'utf8');
+const articleCss = fs.readFileSync(path.join(root, 'public/style.css'), 'utf8');
+const coreCss = fs.readFileSync(
+  path.join(root, 'public/yggdrasil-core/yggdrasil-core.css'),
+  'utf8',
+);
+const diagramSvg = (dark: boolean) =>
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="10 20 480 160" width="480" height="160" style="color:${dark ? '#e5e7eb' : '#172554'}" overflow="visible"><title>${dark ? '深色' : '浅色'}流程图</title><style>p{margin:0}foreignObject{font:16px sans-serif}</style><defs><marker id="fixture-arrow-${dark}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs><rect x="20" y="30" width="450" height="130" rx="8" fill="${dark ? '#1e293b' : '#dbeafe'}"/><foreignObject x="35" y="50" width="420" height="90"><div xmlns="http://www.w3.org/1999/xhtml" style="color:inherit"><p>开始 → 完成</p><p>LongEnglishLabelWithoutUnexpectedWrapping</p></div></foreignObject><path data-edge="" d="M35 145H440" stroke="currentColor" stroke-width="2" marker-end="url(#fixture-arrow-${dark})"/></svg>`;
+const diagramFixture = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${articleCss}\n${coreCss}\n${css}\nbody{min-height:2200px}.post-content{padding:80px 24px}.mermaid-diagram{padding:24px;border:2px solid gray}.mermaid-diagram svg{max-width:100%;height:auto}</style></head><body><main class="post-content md-content" data-showcase-lightbox-owner="diagram-browser"><figure class="mermaid-diagram"><div class="mermaid-light">${diagramSvg(false)}</div><div class="mermaid-dark">${diagramSvg(true)}</div></figure></main><script>${script}</script><script>window.__initLightbox('.post-content');</script></body></html>`;
 const fixture = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>
   body { margin: 0; min-height: 2000px; background: #fafafa; color: #111; }
   html.dark body { background: #111; color: #fafafa; }
@@ -186,8 +194,8 @@ async function assertSpaRefresh(page: Playwright.Page) {
   await close(page);
 }
 
-async function assertPinchAndDrag(page: Playwright.Page) {
-  await open(page);
+async function assertPinchAndDrag(page: Playwright.Page, openMedia = open) {
+  await openMedia(page);
   const session = await page.context().newCDPSession(page);
   const { width, height } = page.viewportSize()!;
   const touch = (x: number, y: number, id: number) => ({ x, y, id });
@@ -220,8 +228,8 @@ async function assertPinchAndDrag(page: Playwright.Page) {
 
 // Mouse drags pan at every scale, including axes where the image is still smaller than the
 // viewport (fit, or 150% of a landscape image vertically); the image stays where it was dropped.
-async function assertMousePan(page: Playwright.Page) {
-  await open(page);
+async function assertMousePan(page: Playwright.Page, openMedia = open) {
+  await openMedia(page);
   const imgBox = async () => (await page.locator('.lightbox-img').boundingBox())!;
   const drag = async (dx: number, dy: number) => {
     const b = await imgBox();
@@ -294,6 +302,145 @@ async function assertScrollCloseTracksOrigin(page: Playwright.Page) {
   await page.evaluate(() => scrollTo(0, 0));
 }
 
+async function openDiagram(page: Playwright.Page) {
+  await page.locator('figure.mermaid-diagram').click();
+  await page.waitForSelector('.lightbox-overlay svg.lightbox-diagram');
+  await page.waitForTimeout(340);
+}
+
+async function assertDiagram(
+  page: Playwright.Page,
+  name: string,
+  options: Playwright.BrowserContextOptions,
+) {
+  await page.goto('https://fixture.test/diagrams');
+  const dark = options.colorScheme === 'dark';
+  await page.evaluate((dark) => document.documentElement.classList.toggle('dark', dark), dark);
+  const source = await page.locator('figure').innerHTML();
+  if (options.reducedMotion !== 'reduce') {
+    const firstFrame = await page.evaluate(() => {
+      const figure = document.querySelector<HTMLElement>('figure')!;
+      const source = [...figure.querySelectorAll('svg')].find(
+        (svg) => svg.getBoundingClientRect().width > 0,
+      )!;
+      const origin = source.getBoundingClientRect();
+      figure.click();
+      const media = document.querySelector<SVGSVGElement>('.lightbox-diagram')!;
+      const r = media.getBoundingClientRect();
+      return {
+        dx: r.x - origin.x,
+        dy: r.y - origin.y,
+        dw: r.width - origin.width,
+        opacity: getComputedStyle(media).opacity,
+      };
+    });
+    assert.ok(
+      Math.abs(firstFrame.dx) < 1 && Math.abs(firstFrame.dy) < 1 && Math.abs(firstFrame.dw) < 1,
+      '流程图首帧应覆盖内部 SVG',
+    );
+    assert.equal(firstFrame.opacity, '1');
+    await page.waitForTimeout(340);
+    await close(page);
+  }
+  await openDiagram(page);
+  assert.equal(
+    await page
+      .locator('.lightbox-counter:visible, .lightbox-prev, .lightbox-next, .lightbox-thumb')
+      .count(),
+    0,
+  );
+  assert.match(
+    (await page.locator('.lightbox-diagram').textContent()) ?? '',
+    dark ? /深色/ : /浅色/,
+  );
+  // 同 ID 的原图 defs 仍在文档里：必须验证标记实际绘制，而不只检查引用属性。
+  const rendered = await page.locator('.lightbox-diagram').screenshot();
+  const edge = page.locator('.lightbox-diagram [data-edge]');
+  await edge.evaluate((path) => (path.style.markerEnd = 'none'));
+  const withoutMarker = await page.locator('.lightbox-diagram').screenshot();
+  await edge.evaluate((path) => path.style.removeProperty('marker-end'));
+  assert.notDeepEqual(rendered, withoutMarker, '隐藏原图后，SVG 箭头仍须实际绘制');
+  const selectedTitle = await page.locator('.lightbox-diagram title').textContent();
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowLeft');
+  assert.equal(await page.locator('.lightbox-diagram title').textContent(), selectedTitle);
+  await assertCenteredRotation(page, options.reducedMotion === 'reduce');
+  const artifactDir =
+    process.env.LIGHTBOX_ARTIFACT_DIR ?? path.join(root, 'target/regressions/mermaid-lightbox');
+  fs.mkdirSync(artifactDir, { recursive: true });
+  await page.screenshot({ path: path.join(artifactDir, `${name}-diagram.png`) });
+  const downloadEvent = page.waitForEvent('download');
+  await page.getByRole('link', { name: '下载 SVG', exact: true }).click();
+  const download = await downloadEvent;
+  assert.equal(download.suggestedFilename(), 'diagram.svg');
+  const downloadPath = path.join(artifactDir, `${name}-diagram.svg`);
+  await download.saveAs(downloadPath);
+  // 用独立 SVG 文档打开实际下载文件，避免正文 CSS 替导出文件补齐排版。
+  const exported = await page.context().newPage();
+  await exported.route('https://fixture.test/download.svg', (route) =>
+    route.fulfill({ contentType: 'image/svg+xml', body: fs.readFileSync(downloadPath) }),
+  );
+  await exported.goto('https://fixture.test/download.svg');
+  const content = await exported.evaluate(() => {
+    const svg = document.documentElement as unknown as SVGSVGElement;
+    const foreign = document.querySelector('foreignObject')!;
+    const box = foreign.getBoundingClientRect();
+    const paragraphs = [...document.querySelectorAll('foreignObject p')];
+    return {
+      ns: svg.namespaceURI,
+      viewBox: svg.getAttribute('viewBox'),
+      width: svg.getAttribute('width'),
+      height: svg.getAttribute('height'),
+      transform: svg.style.transform,
+      color: getComputedStyle(svg).color,
+      labels: paragraphs.map((p) => {
+        const r = p.getBoundingClientRect();
+        const range = document.createRange();
+        range.selectNodeContents(p);
+        const text = range.getBoundingClientRect();
+        return {
+          text: p.textContent,
+          visible: r.width > 0 && r.height > 0,
+          fits:
+            text.left >= box.left - 1 &&
+            text.right <= box.right + 1 &&
+            text.bottom <= box.bottom + 1,
+        };
+      }),
+    };
+  });
+  assert.equal(content.ns, 'http://www.w3.org/2000/svg');
+  assert.equal(content.viewBox, '10 20 480 160');
+  assert.equal(content.width, '480');
+  assert.equal(content.height, '160');
+  assert.equal(content.transform, '');
+  assert.equal(content.color, dark ? 'rgb(229, 231, 235)' : 'rgb(23, 37, 84)');
+  assert.ok(content.labels.some((label) => label.text?.includes('开始')));
+  assert.ok(content.labels.some((label) => label.text?.includes('LongEnglish')));
+  assert.ok(
+    content.labels.every((label) => label.visible && label.fits),
+    '下载标签必须可见且不溢出',
+  );
+  await exported.screenshot({ path: path.join(artifactDir, `${name}-download.png`) });
+  await exported.close();
+  await close(page);
+  assert.equal(await page.locator('figure').innerHTML(), source);
+  if (options.hasTouch) await assertPinchAndDrag(page, openDiagram);
+  else await assertMousePan(page, openDiagram);
+  await openDiagram(page);
+  await page.evaluate(() => scrollTo(0, 90));
+  await page.waitForFunction(() => !document.querySelector('.lightbox-overlay'));
+  await page.evaluate(() => scrollTo(0, 0));
+  await openDiagram(page);
+  await page.evaluate(() => (window as ScriptWindow).__closeLightboxFor('diagram-browser'));
+  assert.equal(await page.locator('.lightbox-overlay').count(), 0);
+  assert.notEqual(
+    await page.locator('figure').evaluate((el) => getComputedStyle(el).visibility),
+    'hidden',
+  );
+  await page.screenshot({ path: path.join(artifactDir, `${name}-diagram-owner-cleanup.png`) });
+}
+
 (async () => {
   const browser = await chromium.launch({
     headless: true,
@@ -321,6 +468,8 @@ async function assertScrollCloseTracksOrigin(page: Playwright.Page) {
       await page.route('https://fixture.test/**', async (route) => {
         const url = new URL(route.request().url());
         if (url.pathname === '/') return route.fulfill({ contentType: 'text/html', body: fixture });
+        if (url.pathname === '/diagrams')
+          return route.fulfill({ contentType: 'text/html', body: diagramFixture });
         const portrait = url.pathname.includes('portrait');
         return route.fulfill({
           contentType: 'image/svg+xml',
@@ -394,6 +543,7 @@ async function assertScrollCloseTracksOrigin(page: Playwright.Page) {
       await page.waitForTimeout(320);
       assert.equal(await page.locator('.lightbox-overlay').count(), 1);
       await page.evaluate(() => (window as ScriptWindow).__closeLightboxFor('browser-fixture'));
+      await assertDiagram(page, name, options);
       assert.equal(await page.locator('.lightbox-overlay').count(), 0);
       assert.deepEqual(errors, []);
       console.log(

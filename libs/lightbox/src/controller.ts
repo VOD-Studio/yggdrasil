@@ -1,4 +1,5 @@
 import { prefersReducedMotion } from '@yggdrasil/shared';
+import { prepareDiagram } from './diagrams';
 import { createLightboxElements } from './dom';
 import {
   closeFlightTransform,
@@ -21,8 +22,8 @@ import {
   FLIGHT_MS,
   FLIGHT_TRANSITION,
   measureInset,
+  originRectOf,
   pokeToolbar,
-  rectOf,
   resetScrollClose,
   resetView,
   rotate,
@@ -47,9 +48,19 @@ export function openLightbox(
   index: number | null,
   onRemoved: () => void,
 ): LightboxController | null {
-  const details = getImageDetails(originNode);
+  const isDiagram = originNode.matches('figure.mermaid-diagram');
+  const diagram = isDiagram ? prepareDiagram(originNode) : null;
+  const details = isDiagram
+    ? diagram && { origSrc: diagram.downloadUrl, altText: diagram.altText }
+    : getImageDetails(originNode);
   if (!details) return null;
   const { origSrc, altText } = details;
+  if (isDiagram) {
+    gallery = [];
+    index = null;
+  }
+  const media = diagram?.element ?? document.createElement('img');
+  if (media instanceof HTMLImageElement) media.alt = altText;
   const isSingle = originNode.classList.contains('lightbox-single') || gallery.length === 0;
   const actions: LightboxActions = {
     zoomBy: (factor, x, y, animate) => zoomBy(s, factor, x, y, animate),
@@ -60,8 +71,8 @@ export function openLightbox(
     gotoIndex,
     stepIndex: (delta) => gotoIndex((pendingIndex ?? s.index ?? 0) + delta),
   };
-  const elements = createLightboxElements(altText, gallery, index, isSingle, actions);
-  const { overlay, img } = elements;
+  const elements = createLightboxElements(media, altText, gallery, index, isSingle, actions);
+  const { overlay } = elements;
   const s: LightboxState = {
     ...elements,
     scope: new ResourceScope(),
@@ -73,6 +84,9 @@ export function openLightbox(
     scrollClose: null,
     origSrc,
     altText,
+    naturalWidth: diagram?.naturalWidth ?? 0,
+    naturalHeight: diagram?.naturalHeight ?? 0,
+    downloadName: diagram ? 'diagram.svg' : null,
     closing: false,
     solidFlight: false,
     reduced: prefersReducedMotion(),
@@ -89,11 +103,15 @@ export function openLightbox(
   // 换图淡出期间（150ms）已接受、尚未落地的目标；连按方向键以它为基准，不会丢步。
   let pendingIndex: number | null = null;
   function loadImage(src: string, onReady: () => void): void {
+    if (!(s.media instanceof HTMLImageElement)) return;
+    const img = s.media;
     imageScope.dispose();
     imageScope = new ResourceScope();
     const request = imageScope;
     const ready = (): void => {
       if (request.disposed || s.closing || s.scope.disposed) return;
+      s.naturalWidth = img.naturalWidth || img.clientWidth || 1;
+      s.naturalHeight = img.naturalHeight || img.clientHeight || 1;
       onReady();
     };
     request.listen(img, 'load', ready, { once: true });
@@ -101,6 +119,8 @@ export function openLightbox(
     if (img.complete && img.naturalWidth) {
       request.dispose();
       imageScope = new ResourceScope();
+      s.naturalWidth = img.naturalWidth;
+      s.naturalHeight = img.naturalHeight || img.clientHeight || 1;
       onReady();
     }
   }
@@ -112,9 +132,11 @@ export function openLightbox(
     setFade(s, 1, FADE_TRANSITION);
   });
 
-  s.scope.listen(img, 'error', () => {
-    if (!s.closing) showErrorState(errorTextOf(s.originNode));
-  });
+  if (media instanceof HTMLImageElement) {
+    s.scope.listen(media, 'error', () => {
+      if (!s.closing) showErrorState(errorTextOf(s.originNode));
+    });
+  }
   updateDownloadLink(s);
   syncZoomControls(s);
   syncThumbs();
@@ -128,9 +150,9 @@ export function openLightbox(
   // 图片加载后再做动画（naturalW/H 要等加载）
   const start = (): void => {
     if (s.closing || s.scope.disposed || s.scrollClose) return;
-    const naturalW = img.naturalWidth || img.clientWidth || 1;
-    const naturalH = img.naturalHeight || img.clientHeight || 1;
-    const originRect = rectOf(originNode);
+    const naturalW = s.naturalWidth;
+    const naturalH = s.naturalHeight;
+    const originRect = originRectOf(originNode);
     s.inset = measureInset(s);
 
     // 基准 = originRect（文章里图片的实际尺寸）。
@@ -145,20 +167,20 @@ export function openLightbox(
     s.target = target;
     s.baseW = baseW;
     s.baseH = baseH;
-    img.style.width = `${baseW}px`;
-    img.style.height = `${baseH}px`;
+    media.style.width = `${baseW}px`;
+    media.style.height = `${baseH}px`;
 
     // reduced-motion：直接淡入居中（遮罩淡入已在创建时启动，这里只动图）
     if (s.reduced) {
-      img.style.opacity = '0';
-      img.style.transform = transformFor(target, baseW, baseH);
-      img.style.left = '0';
-      img.style.top = '0';
+      media.style.opacity = '0';
+      media.style.transform = transformFor(target, baseW, baseH);
+      media.style.left = '0';
+      media.style.top = '0';
       // 下一帧淡入
       imageScope.frame((): void => {
         if (s.closing || s.scope.disposed || s.scrollClose) return;
-        img.style.transition = 'opacity 200ms ease-out';
-        img.style.opacity = '1';
+        media.style.transition = 'opacity 200ms ease-out';
+        media.style.opacity = '1';
       });
       return;
     }
@@ -166,15 +188,15 @@ export function openLightbox(
     // 首帧：文章位置 + 原尺寸（scale=1）并关闭 transition。比例一致时灯箱图不透明地盖在
     // 原位、原图同帧隐藏；比例不一致（object-fit 裁切的缩略图）时首帧透明，靠透明度过渡遮住。
     s.solidFlight = matchesAspect(originRect, naturalW, naturalH);
-    img.style.transition = 'none';
-    img.style.left = '0';
-    img.style.top = '0';
-    img.style.transform = transformFor(originRect, baseW, baseH);
-    img.style.opacity = s.solidFlight ? '1' : '0';
+    media.style.transition = 'none';
+    media.style.left = '0';
+    media.style.top = '0';
+    media.style.transform = transformFor(originRect, baseW, baseH);
+    media.style.opacity = s.solidFlight ? '1' : '0';
     setOriginHidden(s, s.solidFlight);
     // 强制 reflow，确保首帧的 transform 已提交到渲染层。
     // 否则单层 rAF 里浏览器可能合并首帧与目标帧，动画从错误位置起跳。
-    void img.offsetHeight;
+    void media.getBoundingClientRect();
 
     // double-rAF：第一帧绘制首帧（无动画），第二帧才启动 transition 到居中。
     // 背景与界面层的淡入已在创建时启动并独立进行，这里不再触碰它们的 opacity。
@@ -182,14 +204,16 @@ export function openLightbox(
       if (s.closing || s.scope.disposed || s.scrollClose) return;
       imageScope.frame((): void => {
         if (s.closing || s.scope.disposed || s.scrollClose) return;
-        img.style.transition = FLIGHT_TRANSITION;
-        img.style.transform = transformFor(target, baseW, baseH);
-        img.style.opacity = '1';
+        media.style.transition = FLIGHT_TRANSITION;
+        media.style.transform = transformFor(target, baseW, baseH);
+        media.style.opacity = '1';
       });
     });
   };
 
-  if (originNode.classList.contains('is-error')) {
+  if (diagram) {
+    start();
+  } else if (originNode.classList.contains('is-error')) {
     // 缩略图阶段已确认损坏（重试耗尽）：不再请求原图，直接错误态。
     // overlay 可 Esc/点击背景关闭，图集模式仍可左右切换离开。
     showErrorState(errorTextOf(originNode));
@@ -197,7 +221,7 @@ export function openLightbox(
     loadImage(origSrc, start);
   }
   function showErrorState(message: string): void {
-    s.img.style.display = 'none';
+    s.media.style.display = 'none';
     const text = s.errorBox.querySelector('.lightbox-error-text');
     if (text) text.textContent = message;
     s.errorBox.style.display = '';
@@ -208,7 +232,7 @@ export function openLightbox(
   // 从错误态恢复（图集切回可加载的图）：显示图、隐藏错误提示。
   function hideErrorState(): void {
     s.errorBox.style.display = 'none';
-    s.img.style.display = '';
+    s.media.style.display = '';
     s.toolbar.style.display = '';
   }
 
@@ -227,7 +251,7 @@ export function openLightbox(
     imageScope.dispose();
     s.scope.clearTimeout(galleryTimer);
 
-    const originRect = rectOf(s.originNode); // 实时读，处理期间滚动过的情况
+    const originRect = originRectOf(s.originNode); // 实时读，处理期间滚动过的情况
 
     if (s.reduced) {
       removeOverlay();
@@ -260,8 +284,8 @@ export function openLightbox(
       const user = panBy(s.view.user ?? matIdentity(), 0, dragDy);
       // 先无过渡写回规范首帧并强制 reflow 提交（起算值必须是 6 函数列表，
       // 否则 dragclose 的 matrix 起算值与目标列表不匹配，仍走矩阵插值）。
-      s.img.style.transition = 'none';
-      s.img.style.transform = viewTransformCss(
+      s.media.style.transition = 'none';
+      s.media.style.transform = viewTransformCss(
         user,
         s.view.deg,
         k,
@@ -270,19 +294,19 @@ export function openLightbox(
         window.innerWidth,
         window.innerHeight,
       );
-      void s.img.offsetHeight;
-      s.img.style.transition = FLIGHT_TRANSITION;
-      s.img.style.transform = closeFlightTransform(originRect, layoutW, layoutH, s.view.deg, k);
+      void s.media.getBoundingClientRect();
+      s.media.style.transition = FLIGHT_TRANSITION;
+      s.media.style.transform = closeFlightTransform(originRect, layoutW, layoutH, s.view.deg, k);
     } else {
       // 未操控：当前是 transformFor 的 translate+scale，同构插值直接飞回。
       // 基准 = originRect 尺寸（与打开时一致），scale 相对它缩放。
       const baseW = s.baseW || (s.target ? s.target.w : 1);
       const baseH = s.baseH || (s.target ? s.target.h : 1);
-      s.img.style.transition = FLIGHT_TRANSITION;
-      s.img.style.transform = transformFor(originRect, baseW, baseH);
+      s.media.style.transition = FLIGHT_TRANSITION;
+      s.media.style.transform = transformFor(originRect, baseW, baseH);
     }
     setFade(s, 0, FADE_TRANSITION);
-    s.img.style.opacity = s.solidFlight ? '1' : '0';
+    s.media.style.opacity = s.solidFlight ? '1' : '0';
 
     const done = (): void => {
       removeOverlay();
@@ -290,7 +314,7 @@ export function openLightbox(
     // FLIGHT_MS 兜底，避免 transitionend 不触发
     const timer = s.scope.timeout(done, FLIGHT_MS);
     s.scope.listen(
-      s.img,
+      s.media,
       'transitionend',
       (): void => {
         s.scope.clearTimeout(timer);
@@ -306,6 +330,7 @@ export function openLightbox(
     unbindInteractions();
     imageScope.dispose();
     s.scope.dispose();
+    if (diagram) URL.revokeObjectURL(diagram.downloadUrl);
     // 先恢复原图可见：随后的 focus() 落在 visibility:hidden 的元素上会失败。
     setOriginHidden(s, false);
     const prev = s.originNode;
@@ -318,8 +343,10 @@ export function openLightbox(
     // 页面会自动滚动把原图完整纳入视口（用户只点了一半露出的图时尤其明显）。
     if (prev) {
       const targetEl =
-        prev instanceof HTMLImageElement ? prev : prev.querySelector('.blur-img-full');
-      if (targetEl instanceof HTMLImageElement) {
+        prev.matches('figure.mermaid-diagram') || prev instanceof HTMLImageElement
+          ? prev
+          : prev.querySelector('.blur-img-full');
+      if (targetEl instanceof HTMLElement) {
         targetEl.setAttribute('tabindex', '-1');
         targetEl.focus({ preventScroll: true });
       }
@@ -327,7 +354,9 @@ export function openLightbox(
   }
 
   function gotoIndex(rawIndex: number): void {
-    if (s.scope.disposed || s.closing || s.isSingle) return;
+    if (s.scope.disposed || s.closing || s.isSingle || !(s.media instanceof HTMLImageElement))
+      return;
+    const img = s.media;
     if (!s.gallery || s.gallery.length === 0) return;
     let newIndex = rawIndex;
     if (newIndex < 0) newIndex = s.gallery.length - 1;
@@ -343,8 +372,8 @@ export function openLightbox(
     resetScrollClose(s);
 
     // 淡出当前图
-    s.img.style.transition = 'opacity 150ms ease-out';
-    s.img.style.opacity = '0';
+    s.media.style.transition = 'opacity 150ms ease-out';
+    s.media.style.opacity = '0';
 
     // 150ms 后换图淡入
     pendingIndex = newIndex;
@@ -357,8 +386,8 @@ export function openLightbox(
       // baseW/H 同步为 target 尺寸，关闭/滚动关闭的飞回动画以它为 scale 基准。
       const applyGeometry = (): void => {
         if (s.scope.disposed || s.closing || s.scrollClose) return;
-        const naturalW = s.img.naturalWidth || 1;
-        const naturalH = s.img.naturalHeight || 1;
+        const naturalW = s.naturalWidth;
+        const naturalH = s.naturalHeight;
         s.inset = measureInset(s);
         const target = fitCentered(
           naturalW,
@@ -371,27 +400,30 @@ export function openLightbox(
         s.baseW = target.w;
         s.baseH = target.h;
         // 几何跳变不播动画（transition 只作用于随后的 opacity 淡入）。
-        s.img.style.transition = 'none';
-        s.img.style.width = `${target.w}px`;
-        s.img.style.height = `${target.h}px`;
-        s.img.style.transform = transformFor(target, target.w, target.h);
+        s.media.style.transition = 'none';
+        s.media.style.width = `${target.w}px`;
+        s.media.style.height = `${target.h}px`;
+        s.media.style.transform = transformFor(target, target.w, target.h);
       };
       const fade = (): void => {
         if (s.scope.disposed || s.closing || s.scrollClose) return;
-        s.img.style.transition = 'opacity 150ms ease-out';
-        s.img.style.opacity = '1';
+        s.media.style.transition = 'opacity 150ms ease-out';
+        s.media.style.opacity = '1';
       };
       const onReady = (): void => {
         applyGeometry();
         if (s.scope.disposed || s.closing || s.scrollClose) return;
         s.solidFlight =
-          !s.reduced && matchesAspect(rectOf(newNode), s.img.naturalWidth, s.img.naturalHeight);
+          !s.reduced && matchesAspect(originRectOf(newNode), s.naturalWidth, s.naturalHeight);
         setOriginHidden(s, s.solidFlight);
         fade();
       };
       s.origSrc = origSrc;
       s.altText = altText;
-      s.img.alt = altText;
+      s.downloadName = null;
+      s.naturalWidth = 0;
+      s.naturalHeight = 0;
+      img.alt = altText;
       s.caption.textContent = altText;
       s.caption.style.display = altText ? '' : 'none';
       s.counter.textContent = `${newIndex + 1} / ${s.gallery.length}`;
@@ -405,7 +437,7 @@ export function openLightbox(
       // 布局盒设为新 target 尺寸，normalized 回退到 transformFor 路径。
       s.view = { deg: 0, scale: 1, user: null };
       s.normalized = false;
-      s.img.classList.remove('is-zoomed');
+      s.media.classList.remove('is-zoomed');
       syncZoomControls(s);
       syncThumbs();
       updateDownloadLink(s);

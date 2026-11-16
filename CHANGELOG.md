@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **流程图统一使用图片灯箱**：文章中的 Mermaid 图表以独立单张 SVG 打开，复用图片的明暗主题、原位飞行动画、缩放、拖动、旋转、键盘和触屏交互，不混入正文图片图集；支持下载打开时主题的矢量 SVG，关闭或正文卸载时释放会话资源。移除旧图表专用浮层。
+
 ## [1.3.5] - 2026-11-16
 
 新增 `/robots.txt` 禁止爬虫抓取文档目录；首屏正文改为纯位移动画避免推迟 LCP；修复图片冷请求重复解码与并发重建、Feed 周期性重建与旧内容回填，以及直开 `/notes` 时的水合崩溃。

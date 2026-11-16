@@ -7,6 +7,7 @@
  * Optional SHOWCASE_ARTIFACT_DIR stores screenshots/report; default is a temporary directory.
  * SHOWCASE_ONLY=post-footer checks responsive footer navigation, single/empty neighbors.
  * SHOWCASE_ONLY=post-header checks unscaled headers, breadcrumbs, draft/summary/tag variants.
+ * SHOWCASE_ONLY=mermaid-lightbox checks real PostContent SVG lightbox lifecycle and SPA entry.
  * Sensitive showcase requests are recorded, aborted, and fail the run.
  */
 import assert from 'node:assert/strict';
@@ -988,6 +989,104 @@ async function interactions(page: Playwright.Page, onlyModalResets = false) {
   await page.getByText('已清屏').waitFor();
   pass('xterm replay, pause and clear');
 }
+async function mermaidLightbox(page: Playwright.Page): Promise<void> {
+  const cases = [
+    { name: 'desktop-light', width: 1440, height: 1000, theme: 'light', motion: 'no-preference' },
+    { name: 'mobile-dark', width: 390, height: 844, theme: 'dark', motion: 'no-preference' },
+    { name: 'desktop-reduced', width: 1440, height: 1000, theme: 'light', motion: 'reduce' },
+  ] as const;
+  const content = '[data-showcase-preview="post-content"] .post-content';
+  const diagram = `${content} figure.mermaid-diagram`;
+  const overlay = page.locator('.lightbox-overlay');
+  const media = overlay.locator('svg.lightbox-diagram');
+  const close = async () => {
+    // 避免关闭后的指针落在页头链接上触发无关预取。
+    await page.mouse.move(1, 500);
+    await page.keyboard.press('Escape');
+    await overlay.waitFor({ state: 'detached' });
+  };
+  const openDiagram = async (theme: 'light' | 'dark') => {
+    await page.locator(diagram).click();
+    await media.waitFor();
+    await page.waitForTimeout(400);
+    assert.equal(await media.getAttribute('viewBox'), '0 0 480 160');
+    assert.match((await media.getAttribute('id')) || '', new RegExp(`-${theme}-diagram$`));
+    assert.equal(await media.locator('foreignObject').count(), 3);
+    assert.equal(await overlay.getByRole('button', { name: '下一张', exact: true }).count(), 0);
+    assert.equal(await overlay.getByRole('button', { name: '上一张', exact: true }).count(), 0);
+    assert.equal(await overlay.locator('.lightbox-thumbs').count(), 0);
+    assert.equal(await overlay.locator('.lightbox-counter:visible').count(), 0);
+    await overlay.getByRole('link', { name: '下载 SVG', exact: true }).waitFor();
+    await overlay.getByRole('button', { name: '向右旋转', exact: true }).waitFor();
+  };
+  for (const item of cases) {
+    stage = `mermaid-lightbox-${item.name}`;
+    try {
+      await page.setViewportSize({ width: item.width, height: item.height });
+      await page.emulateMedia({ colorScheme: item.theme, reducedMotion: item.motion });
+      // 同源写入实际主题偏好，再整页加载；不能仅依赖系统配色。
+      await page.evaluate((theme) => localStorage.setItem('yggdrasil-theme', theme), item.theme);
+      await goto(page, '/about/components/post-content');
+      assert.equal(
+        await page.locator('html').evaluate((html) => html.classList.contains('dark')),
+        item.theme === 'dark',
+      );
+      await openDiagram(item.theme);
+      const initial = await media.evaluate((svg) => svg.style.transform);
+      await page.keyboard.press('+');
+      await page.waitForTimeout(250);
+      assert.notEqual(await media.evaluate((svg) => svg.style.transform), initial);
+      await overlay.getByRole('button', { name: '向右旋转', exact: true }).click();
+      await page.waitForTimeout(250);
+      assert.match(await media.evaluate((svg) => svg.style.transform), /rotate\(90deg\)/);
+      await screenshot(page, `mermaid-lightbox-${item.name}-rotated`);
+      await close();
+      assert.notEqual(
+        await page.locator(diagram).evaluate((node) => node.style.visibility),
+        'hidden',
+      );
+      await openDiagram(item.theme);
+      // 仅为触发真实 owner 卸载而越过模态遮挡，不模拟清理函数。
+      await page
+        .getByRole('button', { name: '切换文章样例', exact: true })
+        .evaluate((button) => (button as HTMLButtonElement).click());
+      await overlay.waitFor({ state: 'detached' });
+      await page.locator(content).filter({ hasText: '雨停之后' }).waitFor();
+      await openDiagram(item.theme);
+      await close();
+      assert.equal(await page.locator(`${content} img`).count(), 1, '正文图集仅含原有本地图片');
+      await page.locator(`${content} img`).click();
+      await overlay.locator('img.lightbox-img').waitFor();
+      await page.waitForTimeout(400);
+      assert.equal(await overlay.locator('.lightbox-counter:visible').count(), 0);
+      assert.equal(await overlay.locator('.lightbox-thumbs').count(), 0);
+      assert.equal(await overlay.getByRole('button', { name: '下一张', exact: true }).count(), 0);
+      assert.equal(await overlay.locator('svg.lightbox-diagram').count(), 0);
+      await close();
+      // 整页加载清掉正文入口，再验证首次 SPA 进入及导航后的重新绑定。
+      await goto(page, '/about');
+      await push(page, '/about/components/post-content');
+      await page.locator(diagram).waitFor();
+      await openDiagram(item.theme);
+      await screenshot(page, `mermaid-lightbox-${item.name}-spa`);
+      await close();
+      await push(page, '/about');
+      await page.locator('.showcase-detail').waitFor({ state: 'detached' });
+      await push(page, '/about/components/post-content');
+      await page.locator(diagram).waitFor();
+      await openDiagram(item.theme);
+      await close();
+      assertNetworkDelta();
+      assert.deepEqual(report.blockedBusinessRequests, []);
+      assert.deepEqual(report.pageErrors, []);
+      pass(`流程图统一灯箱：${item.name}，直开、交互、owner 清理与 SPA 重入`);
+    } catch (error) {
+      await screenshot(page, `mermaid-lightbox-${item.name}-failure`).catch(() => {});
+      throw error;
+    }
+  }
+}
+
 async function lifecycle(page: Playwright.Page) {
   stage = 'lifecycle';
   for (const [slug, global] of [
@@ -1134,6 +1233,15 @@ async function main() {
       baselineReads.set(endpoint, (baselineReads.get(endpoint) || 0) + 1);
     }
     const storageBefore = await commentStorage(page);
+    if (process.env.SHOWCASE_ONLY === 'mermaid-lightbox') {
+      await mermaidLightbox(page);
+      assertNetworkDelta();
+      assert.deepEqual(await commentStorage(page), storageBefore);
+      assert.deepEqual(report.blockedBusinessRequests, []);
+      assert.deepEqual(report.pageErrors, []);
+      pass('流程图聚焦回归无业务请求、评论存储变化或浏览器错误');
+      return;
+    }
     if (process.env.SHOWCASE_ONLY === 'post-header') {
       await postHeader(page);
       assertNetworkDelta();
@@ -1170,6 +1278,7 @@ async function main() {
     await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'no-preference' });
     await interactions(page);
     await lifecycle(page);
+    await mermaidLightbox(page);
     await failureAndLateLoad(browser);
     const storageAfter = await commentStorage(page);
     assert.deepEqual(storageAfter, storageBefore, 'showcase changed comment localStorage');

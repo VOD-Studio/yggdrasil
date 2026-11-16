@@ -221,9 +221,6 @@ pub fn PostContent(
                 scope_id.map_or_else(|| ".post-content".to_string(), |id| format!("#{id}"));
             globals::init_post_content(&selector);
 
-            // Mermaid 图表已由服务端渲染成浅/深两份 SVG（CSS 按主题切换），这里只绑定点击放大。
-            globals::init_mermaid(&selector);
-
             // lightbox.js 未加载时调用入队，其 IIFE 尾部补执行。
             let mut lightbox = vec![selector.as_str()];
             if scope_id.is_none() {

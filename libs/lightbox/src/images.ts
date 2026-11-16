@@ -173,9 +173,9 @@ export function getImageDetails(
   return null;
 }
 
-// 收集所有 selectors 命中的 .blur-img 节点与原生外链 <img> 节点。
-// gallery: 正文图（组成图集）；singles: 带 lightbox-single class 的单张图（如封面）。
-export function collectImages(roots: Element[]): {
+// 收集正文图片与服务端 SVG 流程图；流程图始终独立打开。
+// gallery: 正文图片图集；singles: 流程图与带 lightbox-single 的图片（如封面）。
+export function collectMedia(roots: Element[]): {
   gallery: HTMLElement[];
   singles: HTMLElement[];
 } {
@@ -183,13 +183,15 @@ export function collectImages(roots: Element[]): {
   const singles: HTMLElement[] = [];
   const seen = new Set<HTMLElement>();
   for (const root of roots) {
-    const nodes = root.querySelectorAll('.blur-img, img');
+    const nodes = root.querySelectorAll('.blur-img, img, figure.mermaid-diagram');
     for (const n of nodes) {
       if (!(n instanceof HTMLElement)) continue;
+      const isDiagram = n.matches('figure.mermaid-diagram');
+      if (!isDiagram && n.closest('figure.mermaid-diagram')) continue;
       if (n instanceof HTMLImageElement && n.closest('.blur-img')) continue;
       if (seen.has(n)) continue;
       seen.add(n);
-      if (n.classList.contains('lightbox-single')) {
+      if (isDiagram || n.classList.contains('lightbox-single')) {
         singles.push(n);
       } else {
         gallery.push(n);

@@ -82,6 +82,26 @@ fn article_html(prefix: &str, alternate: bool) -> String {
     } else {
         "一片叶子，也记得来时的风。"
     };
+    let diagrams = [
+        ("light", "#fffaf5", "#ead7c4", "#40352d", "#a65f3f"),
+        ("dark", "#24211e", "#514236", "#f2e6da", "#dfab84"),
+    ]
+    .map(|(theme, background, node, text, arrow)| {
+        format!(
+            r##"<div class="mermaid-{theme}"><svg id="{prefix}-{theme}-diagram" xmlns="http://www.w3.org/2000/svg" width="480" height="160" viewBox="0 0 480 160" role="img" aria-label="本地流程图样例" style="color:{text};background:{background}">
+<title>从开始到完成</title>
+<defs><marker id="{prefix}-{theme}-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="{arrow}"/></marker></defs>
+<style>#{prefix}-{theme}-diagram p{{margin:0}} #{prefix}-{theme}-diagram foreignObject{{overflow:visible}}</style>
+<rect x="16" y="44" width="128" height="72" rx="12" fill="{node}" stroke="{arrow}"/>
+<rect x="336" y="44" width="128" height="72" rx="12" fill="{node}" stroke="{arrow}"/>
+<path d="M144 80 H330" fill="none" stroke="{arrow}" stroke-width="2" marker-end="url(#{prefix}-{theme}-arrow)"/>
+<foreignObject x="24" y="65" width="112" height="30"><div xmlns="http://www.w3.org/1999/xhtml" style="font:18px/1.5 sans-serif;text-align:center;color:{text}"><p>开始</p></div></foreignObject>
+<foreignObject x="344" y="65" width="112" height="30"><div xmlns="http://www.w3.org/1999/xhtml" style="font:18px/1.5 sans-serif;text-align:center;color:{text}"><p>完成</p></div></foreignObject>
+<foreignObject x="144" y="12" width="192" height="54"><div xmlns="http://www.w3.org/1999/xhtml" style="font:12px/1.5 sans-serif;text-align:center;color:{text}"><p>Deterministic workflow<br/>without external dependencies</p></div></foreignObject>
+</svg></div>"##
+        )
+    })
+    .join("");
     format!(
         r#"<h2 id="{prefix}-opening">从一片叶子开始</h2>
 <p>{opening} 这段固定文章展示正文排版和图片，不连接任何服务。</p>
@@ -91,7 +111,8 @@ fn article_html(prefix: &str, alternate: bool) -> String {
 <pre><code class="language-rust">let leaf = "Yggdrasil";
 println!("{{leaf}}");</code></pre>
 <h2 id="{prefix}-image">留下一张照片</h2>
-<p><img src="/images/samples/clay-circle.webp" alt="暖白纸面上的一轮陶土色圆" loading="lazy"></p>"#
+<p><img src="/images/samples/clay-circle.webp" alt="暖白纸面上的一轮陶土色圆" loading="lazy"></p>
+<figure class="mermaid-diagram">{diagrams}</figure>"#
     )
 }
 
