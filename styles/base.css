@@ -37,19 +37,18 @@
     background-color: var(--color-selection);
   }
 
+  /* 首屏正文只做位移，不以透明度隐藏，避免推迟 LCP。 */
   @keyframes page-enter {
     0% {
-      opacity: 0;
       transform: translateY(8px);
     }
     100% {
-      opacity: 1;
       transform: none;
     }
   }
 
   .animate-page-enter {
-    /* fill 用 backwards 而非 both：终态（opacity 1 / transform none）本就是元素自然值，
+    /* fill 用 backwards 而非 both：终态 transform none 本就是元素自然值，
        无需 forwards 保持；且 forwards 会让动画合成的 transform 以 identity matrix 残留，
        使本元素成为 fixed 后代的 containing block（toc-sidebar 曾被锚定到 article 中部）。 */
     animation: page-enter var(--spring-snappy-duration) var(--ease-spring-snappy) backwards;

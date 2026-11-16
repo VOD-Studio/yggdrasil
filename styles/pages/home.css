@@ -1,10 +1,10 @@
 /* 首页「书桌」：状态行、标语、搜索、最新一篇、按月索引与尾部三格。
-   第 2 页起只有页标题与索引。动效只改合成属性，不影响阅读布局。 */
+   第 2 页起只有页标题与索引。正文进场只做位移，不以透明度隐藏，避免推迟 LCP。 */
 .home-enter {
   animation: home-reveal 600ms var(--ease-out-expo) var(--home-delay, 0ms) backwards;
 }
 @keyframes home-reveal {
-  from { opacity: 0; transform: translateY(12px); }
+  from { transform: translateY(12px); }
 }
 
 /* ---- 开场 ---- */
