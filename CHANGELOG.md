@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **CI Feed 数据库回归**：RSS 断言按实际启用的 Brotli 配置检查编码头并读取正文，修复默认关闭压缩时因缺少 `Content-Encoding` 导致的失败；保留压缩启用时的严格编码断言及既有 Brotli/gzip、ETag/304 覆盖，不改变生产压缩行为。
+
 ## [1.3.6] - 2026-11-17
 
 Mermaid 流程图复用图片灯箱，支持缩放、旋转和 SVG 下载；修复旋转后关闭时的动画不连续。

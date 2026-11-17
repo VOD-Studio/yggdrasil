@@ -638,15 +638,26 @@ mod tests {
         let _guard = crate::db::TEST_DATABASE_LOCK.lock().await;
         seed_feed_fixture().await;
         let client = get_conn().await.unwrap();
+        let brotli_enabled = compression::algorithms().is_some_and(|algorithms| algorithms.brotli);
         let rss = rss_feed(accept("br")).await;
         assert_eq!(rss.status(), StatusCode::OK);
         assert_eq!(rss.headers()[header::CONTENT_TYPE], RSS_CONTENT_TYPE);
-        assert_eq!(rss.headers()[header::CONTENT_ENCODING], "br");
+        // 压缩可由部署配置关闭；关闭时即使请求 br，也必须返回未编码正文。
+        if brotli_enabled {
+            assert_eq!(rss.headers()[header::CONTENT_ENCODING], "br");
+        } else {
+            assert!(!rss.headers().contains_key(header::CONTENT_ENCODING));
+        }
         assert_eq!(rss.headers()[header::CACHE_CONTROL], FEED_CACHE_CONTROL);
         let rss_body = axum::body::to_bytes(rss.into_body(), usize::MAX)
             .await
             .unwrap();
-        let rss_body = String::from_utf8(compression::decode(Encoding::Brotli, &rss_body)).unwrap();
+        let rss_body = if brotli_enabled {
+            Bytes::from(compression::decode(Encoding::Brotli, &rss_body))
+        } else {
+            rss_body
+        };
+        let rss_body = std::str::from_utf8(&rss_body).unwrap();
         assert!(rss_body.contains("<title>公开文章</title>"));
         assert!(rss_body.contains("&lt;p&gt;公开正文&lt;/p&gt;"));
         assert!(rss_body.contains("<category>Rust</category>"));
