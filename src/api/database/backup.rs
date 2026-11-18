@@ -2,15 +2,16 @@
 
 //! 备份与恢复（读写，最高风险）。
 //!
-//! 备份：探测 pg_dump 可用性——可用则子进程生成完整、角色无关的 .sql
-//! （`--clean --if-exists --no-owner --no-privileges`），不可用则回退纯 SQL（仅数据）。
-//! 备份文件含签名头。每次备份按设置附带 uploads 素材打包（`_uploads.tar.gz`，
+//! 备份：pg_dump 成功后才发布带签名的完整、角色无关的 .sql
+//! （`--clean --if-exists --no-owner --no-privileges`），失败不发布文件。
+//! 每次备份按设置附带 uploads 素材打包（`_uploads.tar.gz`，
 //! 排除可重建的 `.cache/`），与 .sql 成对展示/下载/删除。
 //!
 //! 来源标记：手动备份文件名前缀 `backup_`，定时任务自动备份前缀 `auto_`；
-//! 自动备份按 `backup_retention_count` 轮转（只删自动，手动永不自动删）。
+//! 只有通过完整导出检查的自动备份才按 `backup_retention_count` 轮转。
 //!
 //! 恢复：仅接受本系统生成的备份（签名校验）+ 二次确认 + 路径穿越防护；
+//! 旧 CSV 导出仅供下载抢救，不可直接恢复。
 //! 旧备份的 pg_dump 属主语句会在 COPY 感知的预处理阶段移除，再由
 //! `psql --single-transaction -v ON_ERROR_STOP=1` 原子重放，失败时完整回滚；
 //! 仅恢复数据库——uploads 需从配对 tar.gz 手动还原；成功后全量失效缓存。
@@ -50,7 +51,9 @@ use crate::api::error::AppError;
 #[cfg(feature = "server")]
 pub(crate) use creation::run_auto_backup;
 #[cfg(feature = "server")]
-use files::{backup_path, has_valid_signature, is_valid_backup_filename, read_first_line};
+use files::{backup_path, is_valid_backup_filename, read_backup_header};
+#[cfg(feature = "server")]
+use std::{fs::File, io::Seek};
 #[cfg(feature = "server")]
 pub(crate) use transfer::import_max_bytes;
 #[cfg(feature = "server")]
@@ -73,6 +76,24 @@ pub struct BackupInfo {
     /// 配对的 uploads 打包文件名与大小（无则 None——老备份或禁用了素材打包）。
     pub uploads_filename: Option<String>,
     pub uploads_size_bytes: Option<u64>,
+}
+
+/// 旧 CSV 导出仅供数据抢救；已知的模式优先于文件名。
+pub(crate) fn is_salvage_only(filename: &str, mode: &str) -> bool {
+    mode == "sql-fallback" || (mode == "unknown" && filename.ends_with("_sqlfallback.sql"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_salvage_only;
+
+    #[test]
+    fn salvage_classification_prefers_explicit_mode() {
+        assert!(is_salvage_only("renamed.sql", "sql-fallback"));
+        assert!(is_salvage_only("backup_sqlfallback.sql", "unknown"));
+        assert!(!is_salvage_only("backup_sqlfallback.sql", "pg_dump"));
+        assert!(!is_salvage_only("old.sql", "unknown"));
+    }
 }
 
 /// 备份来源：决定文件名前缀与是否参与自动轮转。
@@ -147,25 +168,36 @@ pub async fn restore_backup(filename: String, confirm: bool) -> Result<String, A
         if !is_valid_backup_filename(&filename) {
             return Err(AppError::BadRequest("无效的文件名".to_string()).into());
         }
-        let path = backup_path(&filename);
-        if !path.exists() {
-            return Err(AppError::NotFound("备份文件不存在").into());
-        }
-
-        // 签名校验：仅读取首行（备份文件可达数十 MB，无需整文件读入内存）。
-        let first_line = read_first_line(&path).unwrap_or_default();
-        if !has_valid_signature(&first_line) {
+        let mut source = File::open(backup_path(&filename)).map_err(|error| {
+            if error.kind() == std::io::ErrorKind::NotFound {
+                AppError::NotFound("备份文件不存在")
+            } else {
+                AppError::Internal("无法打开备份文件")
+            }
+        })?;
+        let (valid_signature, mode) = read_backup_header(&mut source)
+            .map_err(|_| AppError::Internal("读取备份文件头失败"))?;
+        if !valid_signature {
             return Err(
                 AppError::BadRequest("非本系统生成的备份文件，拒绝恢复".to_string()).into(),
             );
         }
+        if is_salvage_only(&filename, &mode) {
+            return Err(AppError::BadRequest(
+                "这是仅供数据抢救的旧导出，不能直接恢复数据库".to_string(),
+            )
+            .into());
+        }
+        source
+            .rewind()
+            .map_err(|_| AppError::Internal("重新定位备份文件失败"))?;
 
         let task_id = uuid::Uuid::new_v4().to_string();
         tasks::insert(task_id.clone(), TaskKind::Restore);
         let tid = task_id.clone();
-        let f = filename;
+        // 复用已查验的文件句柄，避免恢复时按文件名重新打开别的文件。
         tokio::spawn(async move {
-            restore::run_restore(&tid, &f).await;
+            restore::run_restore(&tid, source).await;
         });
         Ok(task_id)
     }

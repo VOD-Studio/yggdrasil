@@ -1,4 +1,4 @@
-use crate::api::database::backup::BackupInfo;
+use crate::api::database::backup::{is_salvage_only, BackupInfo};
 use crate::components::ui::{
     button_class, ButtonSize, ButtonVariant, ConfirmDialog, IconName, StatusDot,
 };
@@ -19,6 +19,7 @@ pub(super) fn BackupRow(
     let fname_for_delete = info.filename.clone();
 
     // 展示用派生值（纯计算）。
+    let salvage_only = is_salvage_only(&info.filename, &info.mode);
     let dl_url = format!(
         "/api/database/backups/{}",
         super::super::urlencode(&info.filename)
@@ -52,7 +53,10 @@ pub(super) fn BackupRow(
             <td>
                 <StatusDot label=origin_label tone=origin_tone/>
             </td>
-            <td class="admin-table-muted">{info.mode.clone()}</td>
+            <td class="admin-table-muted">
+                {info.mode}
+                {salvage_only.then(|| view! { <div class="sys-sub">"仅供数据抢救"</div> })}
+            </td>
             <td class="admin-table-num">
                 {size_str}
                 {up_size.map(|up_size| view! { <div class="sys-sub">{format!("素材 {up_size}")}</div> })}
@@ -82,7 +86,7 @@ pub(super) fn BackupRow(
                 <button
                     class=button_class(ButtonVariant::Ghost, ButtonSize::Xs)
                     type="button"
-                    disabled=move || busy.get()
+                    disabled=move || salvage_only || busy.get()
                     on:click=move |_| confirm_restore.set(true)
                 >
                     "恢复"

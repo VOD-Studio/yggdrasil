@@ -66,7 +66,7 @@ pub fn BackupSection() -> impl IntoView {
                     min=1
                     max=365
                     unit="份"
-                    hint="超出后最旧的自动备份连同 uploads 包一起删除；手动备份不会自动删除。"
+                    hint="仅通过完整导出检查的自动备份计入份数；超出时从最旧的备份及配对素材包开始删除。"
                     onchange=move |v: i64| st.edit(|d| d.retention_count = v as i32)
                 />
             </SettingRow>

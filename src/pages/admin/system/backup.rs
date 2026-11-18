@@ -36,7 +36,7 @@ pub(super) fn BackupTab() -> impl IntoView {
     view! {
         <div class="sys-backup-head">
             <p>
-                "优先用 pg_dump 生成含表结构的完整备份；包含素材时另打包配对的 tar.gz。定时备份在 "
+                "数据库备份需要 pg_dump；包含素材时另打包配对的 tar.gz。定时备份在 "
                 <a href=Route::SiteSettingsPage.to_string()>"设置 › 自动备份"</a>
                 " 里调整。"
             </p>
@@ -152,7 +152,7 @@ pub(super) fn BackupTab() -> impl IntoView {
             }
         }}
         <p class="sys-footnote">
-            "恢复只接受本系统生成的备份，且只恢复数据库；素材需要从配对的 tar.gz 手动还原。导入只接受本系统生成的 .sql 备份（签名校验，单个文件默认不超过 512 MB），以 auto_ 开头的文件会参与自动轮转。"
+            "恢复只接受本系统生成的备份，且只恢复数据库；素材需要从配对的 tar.gz 手动还原。导入只接受本系统生成的 .sql 备份（签名校验，单个文件默认不超过 512 MB）。仅供数据抢救的旧导出可以下载，但不能直接恢复。只有通过完整导出检查的 auto_ 文件才参与自动轮转。"
         </p>
     }
 }

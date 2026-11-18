@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **CI Feed 数据库回归**：RSS 断言按实际启用的 Brotli 配置检查编码头并读取正文，修复默认关闭压缩时因缺少 `Content-Encoding` 导致的失败；保留压缩启用时的严格编码断言及既有 Brotli/gzip、ETag/304 覆盖，不改变生产压缩行为。
+- **数据库备份失败不再发布半成品**：创建备份要求 `pg_dump` 成功退出，SQL 和可选素材包分别在写完后发布；只有通过完整导出检查的自动备份参与轮转。旧降级导出仍可下载和删除，但不能直接恢复。导入会等待临时文件写完再校验签名，避免小文件被误拒。
 
 ## [1.3.6] - 2026-11-17
 

@@ -4,6 +4,7 @@ use super::BackupInfo;
 use crate::api::error::AppError;
 use chrono::{DateTime, Utc};
 use std::fs::File;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Component, Path, PathBuf};
 
 /// 与 uploads/ 同级且被 Git 忽略的备份目录。
@@ -12,6 +13,8 @@ pub(super) const BACKUP_DIR: &str = "backups";
 const FILENAME_RE: &str = r"^[a-zA-Z0-9_.\-]+$";
 /// 导入与恢复共同要求的备份签名。
 pub(super) const BACKUP_SIGNATURE: &str = "-- YGGDRASIL BACKUP v1";
+const BACKUP_METADATA_WINDOW: usize = 4 * 1024;
+const PG_DUMP_COMPLETE: &[u8] = b"-- PostgreSQL database dump complete";
 
 /// SQL 文件名 → 配对 uploads 打包文件名（`X.sql` → `X_uploads.tar.gz`）。
 pub(super) fn uploads_archive_name(sql_filename: &str) -> String {
@@ -34,19 +37,14 @@ pub(super) fn create_new_backup_file(path: &Path) -> std::io::Result<File> {
         .open(path)
 }
 
-/// 从自动备份 SQL 文件名列表挑出超出保留份数、应删除的最旧者。
-/// 文件名内嵌定宽时间戳，字典序即时间序。纯函数便于单测。
-fn select_expired_auto_backups(names: &[String], keep: usize) -> Vec<String> {
-    let mut autos: Vec<&String> = names
-        .iter()
-        .filter(|n| n.starts_with("auto_") && n.ends_with(".sql"))
-        .collect();
-    autos.sort();
-    let excess = autos.len().saturating_sub(keep);
-    autos.into_iter().take(excess).cloned().collect()
+/// 从已通过完整性检查的自动备份中挑出超出保留份数的最旧者。
+fn select_expired_auto_backups(mut names: Vec<String>, keep: usize) -> Vec<String> {
+    names.sort_unstable();
+    names.truncate(names.len().saturating_sub(keep));
+    names
 }
 
-/// 执行自动备份轮转：删除超龄自动备份的 .sql 与配对 tar.gz。
+/// 执行自动备份轮转：只删除通过完整导出检查的最旧 .sql 与配对 tar.gz。
 /// 单个删除失败只记日志，不中断其余。
 pub(super) fn rotate_auto_backups(keep: i32) {
     rotate_auto_backups_in(Path::new(BACKUP_DIR), keep);
@@ -56,14 +54,24 @@ fn rotate_auto_backups_in(directory: &Path, keep: i32) {
     let names: Vec<String> = match std::fs::read_dir(directory) {
         Ok(entries) => entries
             .flatten()
-            .map(|e| e.file_name().to_string_lossy().to_string())
+            .filter_map(|entry| {
+                let name = entry.file_name().into_string().ok()?;
+                if !name.starts_with("auto_")
+                    || !name.ends_with(".sql")
+                    || !entry.file_type().ok()?.is_file()
+                {
+                    return None;
+                }
+                let mut file = File::open(entry.path()).ok()?;
+                is_complete_pg_dump(&mut file).ok()?.then_some(name)
+            })
             .collect(),
         Err(e) => {
             tracing::warn!("backup rotation: cannot read {}: {e}", directory.display());
             return;
         }
     };
-    for sql_name in select_expired_auto_backups(&names, keep.max(0) as usize) {
+    for sql_name in select_expired_auto_backups(names, keep.max(0) as usize) {
         for path in [
             directory.join(&sql_name),
             directory.join(uploads_archive_name(&sql_name)),
@@ -155,12 +163,45 @@ pub(super) fn read_first_line(path: impl AsRef<Path>) -> std::io::Result<String>
     Ok(line)
 }
 
-/// 读取文件前 `n` 行（用于解析 `-- mode:` 等头部元信息，避免整文件读入内存）。
-/// 不足 `n` 行时返回实际读到的行；任一行读取失败则整体返回该错误。
-pub(super) fn read_first_lines(path: impl AsRef<Path>, n: usize) -> std::io::Result<Vec<String>> {
-    use std::io::BufRead;
-    let reader = std::io::BufReader::new(std::fs::File::open(path)?);
-    reader.lines().take(n).collect()
+/// 从文件开头解析最多 4 KiB 内的前三行（签名、created_at、mode）。
+pub(super) fn read_backup_header(file: &mut File) -> std::io::Result<(bool, String)> {
+    file.rewind()?;
+    let mut buffer = [0; BACKUP_METADATA_WINDOW];
+    let mut length = 0;
+    while length < buffer.len() {
+        let read = file.read(&mut buffer[length..])?;
+        if read == 0 {
+            break;
+        }
+        length += read;
+    }
+    let header_len = buffer[..length]
+        .split_inclusive(|&byte| byte == b'\n')
+        .take(3)
+        // 不解析被窗口截断的元信息行。
+        .take_while(|line| length < buffer.len() || line.ends_with(b"\n"))
+        .map(<[u8]>::len)
+        .sum();
+    let header = String::from_utf8_lossy(&buffer[..header_len]);
+    Ok((has_valid_signature(&header), parse_backup_mode(&header)))
+}
+
+fn is_complete_pg_dump(file: &mut File) -> std::io::Result<bool> {
+    let (valid_signature, mode) = read_backup_header(file)?;
+    if !valid_signature || mode != "pg_dump" {
+        return Ok(false);
+    }
+    let end = file.seek(SeekFrom::End(0))?;
+    let start = end.saturating_sub(BACKUP_METADATA_WINDOW as u64);
+    file.seek(SeekFrom::Start(start))?;
+    let mut buffer = [0; BACKUP_METADATA_WINDOW];
+    let tail = &mut buffer[..(end - start) as usize];
+    file.read_exact(tail)?;
+    // 跳过窗口开头可能被截断的行。结束标记只用来排除半成品，不证明可以恢复。
+    Ok(tail
+        .split(|&byte| byte == b'\n')
+        .skip(usize::from(start != 0))
+        .any(|line| line.strip_suffix(b"\r").unwrap_or(line) == PG_DUMP_COMPLETE))
 }
 
 pub(super) fn list_backup_files() -> Vec<BackupInfo> {
@@ -187,10 +228,9 @@ pub(super) fn list_backup_files() -> Vec<BackupInfo> {
                 Ok(m) => m,
                 Err(_) => continue,
             };
-            // 仅读取前 3 行（签名/created_at/mode），避免把每个（可能数十 MB
-            // 的）备份文件整文件读入内存只为取 `-- mode:` 行。
-            let mode = read_first_lines(entry.path(), 3)
-                .map(|lines| parse_backup_mode(&lines.join("\n")))
+            let mode = File::open(entry.path())
+                .and_then(|mut file| read_backup_header(&mut file))
+                .map(|(_, mode)| mode)
                 .unwrap_or_else(|_| "unknown".to_string());
             let created_at = meta
                 .modified()
@@ -417,7 +457,7 @@ mod tests {
         let later = backup_stamp(t0 + chrono::Duration::milliseconds(1));
         let names = vec![format!("auto_{later}.sql"), format!("auto_{first}.sql")];
         assert_eq!(
-            select_expired_auto_backups(&names, 1),
+            select_expired_auto_backups(names, 1),
             vec![format!("auto_{first}.sql")]
         );
     }
@@ -455,39 +495,21 @@ mod tests {
         .collect();
         // 文件名时间戳定宽，乱序输入也应按时间排序。
         assert_eq!(
-            select_expired_auto_backups(&names, 2),
-            vec!["auto_20260808_040000.sql".to_string()]
-        );
-    }
-
-    #[test]
-    fn rotation_ignores_manual_backups_and_tarballs() {
-        let names: Vec<String> = [
-            "backup_20260101_000000.sql",          // 手动：永不轮转
-            "auto_20260808_040000_uploads.tar.gz", // tar.gz：随配对 sql 删除，不单独计数
-            "auto_20260808_040000.sql",
-            "auto_20260809_040000.sql",
-        ]
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
-        assert!(select_expired_auto_backups(&names, 2).is_empty());
-        assert_eq!(
-            select_expired_auto_backups(&names, 1),
+            select_expired_auto_backups(names, 2),
             vec!["auto_20260808_040000.sql".to_string()]
         );
     }
 
     #[test]
     fn rotation_empty_and_exact_keep() {
-        assert!(select_expired_auto_backups(&[], 5).is_empty());
+        assert!(select_expired_auto_backups(Vec::new(), 5).is_empty());
         let names: Vec<String> = ["auto_20260808_040000.sql"]
             .iter()
             .map(|s| s.to_string())
             .collect();
-        assert!(select_expired_auto_backups(&names, 1).is_empty());
+        assert!(select_expired_auto_backups(names.clone(), 1).is_empty());
         // keep=0 全删
-        assert_eq!(select_expired_auto_backups(&names, 0).len(), 1);
+        assert_eq!(select_expired_auto_backups(names, 0).len(), 1);
     }
     #[test]
     fn rotation_removes_expired_sql_and_pair_but_preserves_manual_backups() {
@@ -496,21 +518,38 @@ mod tests {
             uuid::Uuid::new_v4()
         ));
         std::fs::create_dir(&dir).expect("create rotation fixture directory");
+        let complete = "\n-- mode: pg_dump\nSELECT 1;\n-- PostgreSQL database dump complete\n";
+        let complete_crlf = "\r\n-- created_at: 2026-08-10\r\n-- mode: pg_dump\r\n\
+                             SELECT 1;\r\n-- PostgreSQL database dump complete\r\n\
+                             \r\n\\unrestrict token\r\n";
         let names = [
-            "backup_20260101_000000.sql",
-            "auto_20260808_040000.sql",
-            "auto_20260809_040000.sql",
-            "auto_20260810_040000.sql",
+            ("backup_20260101_000000.sql", complete),
+            ("auto_20260808_040000.sql", complete),
+            ("auto_20260809_040000.sql", complete),
+            ("auto_20260810_040000.sql", complete_crlf),
+            (
+                "auto_20260811_040000_sqlfallback.sql",
+                "\n-- mode: sql-fallback\n1,旧数据\n",
+            ),
+            (
+                "auto_20260812_040000.sql",
+                "\n-- created_at: 2026-08-12\n-- mode: sql-fallback\n-- PostgreSQL database dump complete\n",
+            ),
+            (
+                "auto_20260813_040000.sql",
+                "\n-- mode: pg_dump\nSELECT 1;\n-- PostgreSQL database dump complete [截断]\n",
+            ),
         ];
-        for name in names {
-            std::fs::write(dir.join(name), b"backup").expect("write SQL fixture");
+        for (name, body) in names {
+            std::fs::write(dir.join(name), format!("{BACKUP_SIGNATURE}{body}"))
+                .expect("write SQL fixture");
             std::fs::write(dir.join(uploads_archive_name(name)), b"uploads")
                 .expect("write paired uploads fixture");
         }
         let incomplete = dir.join(".import-test.tmp");
         std::fs::write(&incomplete, b"partial").expect("write temporary import fixture");
         rotate_auto_backups_in(&dir, 2);
-        for name in names {
+        for (name, _) in names {
             let should_remain = name != "auto_20260808_040000.sql";
             assert_eq!(dir.join(name).exists(), should_remain, "{name}");
             assert_eq!(

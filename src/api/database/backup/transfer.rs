@@ -160,7 +160,16 @@ pub async fn import_backup(
                     ));
                 }
             }
-            Ok(None) => break Ok(()),
+            Ok(None) => {
+                // 等待最后一批写入结束，再用另一个文件句柄读取签名。
+                break out.flush().await.map_err(|e| {
+                    tracing::error!("backup import: flush failed: {e}");
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "写入失败（磁盘可能已满）",
+                    )
+                });
+            }
             Err(e) => {
                 tracing::error!("backup import: chunk error: {e:?}");
                 break Err((StatusCode::BAD_REQUEST, "文件读取失败"));

@@ -8,6 +8,7 @@ import { loadPlaywright } from './libs-modules.ts';
 const { chromium } = loadPlaywright();
 const base = process.env.ADMIN_BASE!;
 const artifacts = process.env.REGRESSION_ARTIFACT_DIR!;
+const runtime = process.env.REGRESSION_RUNTIME!;
 const endpoint = (url: string) =>
   new URL(url).pathname
     .split('/')
@@ -67,6 +68,25 @@ async function main() {
         (b) => b.textContent!.trim() === '创建备份' && !b.disabled,
       ),
     );
+  const expectBackupFailure = async (reason: RegExp) => {
+    const failed = page.waitForResponse(
+      async (r) =>
+        endpoint(r.url()) === 'gettaskprogress' && r.ok() && (await r.json()).status === 'Failed',
+    );
+    await create.click();
+    const progress = await (await failed).json();
+    assert.equal(progress.result_filename, null);
+    assert.match(progress.error, reason);
+    const panel = page.getByRole('status').filter({ hasText: '数据库备份失败' });
+    await panel.getByText(reason).waitFor();
+    await finished();
+    assert.equal(await page.locator('tbody tr').count(), 0);
+    const files = fs
+      .readdirSync(path.join(runtime, 'backups'), { withFileTypes: true, recursive: true })
+      .filter((entry) => !entry.isDirectory())
+      .map((entry) => entry.name);
+    assert.deepEqual(files, [], '失败的任务不得留下 SQL、素材包或暂存文件');
+  };
   try {
     await page.goto(base + '/admin/system');
     await page.getByRole('tab', { name: '备份', exact: true }).click();
@@ -77,6 +97,21 @@ async function main() {
     await finished();
     pass('creation failure is visible and releases the operation lock');
 
+    await expectBackupFailure(/数据库备份需要 pg_dump，请安装 PostgreSQL 客户端/);
+    pass('missing pg_dump fails the real task without publishing SQL or uploads');
+
+    const pgDump = Bun.which('pg_dump');
+    assert(pgDump, 'backup regression requires a real pg_dump on the host PATH');
+    const appPgDump = path.join(runtime, 'pg-bin', 'pg_dump');
+    fs.writeFileSync(appPgDump, '#!/bin/sh\nprintf "%s" "partial dump"\nexit 7\n', {
+      mode: 0o755,
+    });
+    await expectBackupFailure(/pg_dump 导出失败:.*\b7\b/);
+    pass('nonzero pg_dump exit discards partial stdout and reports its status with empty stderr');
+
+    fs.unlinkSync(appPgDump);
+    fs.symlinkSync(pgDump, appPgDump);
+
     await create.click();
     await page.locator('tbody tr').first().waitFor();
     await finished();
@@ -84,6 +119,7 @@ async function main() {
     const filename = (await row.locator('td').first().textContent())!.trim();
     assert.match(filename, /\.sql$/);
     assert.equal(await row.locator('td').nth(2).textContent(), 'pg_dump');
+    await row.getByRole('link', { name: '素材', exact: true }).waitFor();
     assert(polls > 0);
     pass('real pg_dump backup completes through progress polling and appears in the list');
     const download = await context.request.get(`${base}/api/database/backups/${filename}`);
@@ -114,6 +150,44 @@ async function main() {
     await page.getByRole('button', { name: '确认删除', exact: true }).click();
     await imported.waitFor({ state: 'detached' });
     pass('confirmed deletion removes the imported backup');
+
+    const salvageFilename = 'renamed_legacy_export.sql';
+    const salvage = Buffer.from(
+      '-- YGGDRASIL BACKUP v1\n-- created_at: 2026-08-10\n-- mode: sql-fallback\n\n-- table: posts\n1,旧数据\n',
+    );
+    const importing = page.waitForResponse(
+      (r) => endpoint(r.url()) === 'import' && r.request().method() === 'POST',
+    );
+    await page.locator('input[type=file]').setInputFiles({
+      name: salvageFilename,
+      mimeType: 'application/sql',
+      buffer: salvage,
+    });
+    const importResponse = await importing;
+    assert(importResponse.ok(), await importResponse.text());
+    const salvageRow = page.locator('tbody tr').filter({ hasText: salvageFilename });
+    await salvageRow.getByText('仅供数据抢救', { exact: true }).waitFor();
+    await finished();
+    assert(await salvageRow.getByRole('button', { name: '恢复', exact: true }).isDisabled());
+    const save = page.waitForEvent('download');
+    await salvageRow.getByRole('link', { name: '下载', exact: true }).click();
+    const saved = await (await save).path();
+    assert(saved);
+    assert.deepEqual(fs.readFileSync(saved), salvage);
+    await page.screenshot({ path: path.join(artifacts, 'backup-salvage.png'), fullPage: true });
+
+    const refused = await page.request.post(`${base}/api/restore_backup`, {
+      headers: { Origin: base },
+      data: { filename: salvageFilename, confirm: true },
+    });
+    assert(!refused.ok(), '恢复接口必须拒绝抢救文件，不得返回任务 ID');
+    assert.match(await refused.text(), /这是仅供数据抢救的旧导出，不能直接恢复数据库/);
+    assert.equal(sql('SELECT title FROM posts WHERE id=1'), '回归测试文章');
+    pass('renamed legacy export is downloadable byte for byte but cannot be restored');
+    await salvageRow.getByRole('button', { name: '删除', exact: true }).click();
+    await page.getByRole('button', { name: '确认删除', exact: true }).click();
+    await salvageRow.waitFor({ state: 'detached' });
+    pass('confirmed deletion still removes a salvage-only export');
 
     failPoll = true;
     await create.click();

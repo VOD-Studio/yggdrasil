@@ -1,9 +1,9 @@
 //! COPY 感知的 SQL 预处理、原子恢复、临时文件清理与缓存失效。
 
 use super::commands::psql_restore_command;
-use super::files::backup_path;
 use crate::api::database::tasks::{self, TaskStatus};
-use std::path::{Path, PathBuf};
+use std::fs::File;
+use std::path::PathBuf;
 
 fn sql_line_without_eol(mut line: &[u8]) -> &[u8] {
     if let Some(stripped) = line.strip_suffix(b"\n") {
@@ -106,8 +106,8 @@ struct PreparedRestoreSql {
 }
 
 impl PreparedRestoreSql {
-    fn prepare(source: &Path) -> std::io::Result<Self> {
-        let input = std::io::BufReader::new(std::fs::File::open(source)?);
+    fn prepare(source: File) -> std::io::Result<Self> {
+        let input = std::io::BufReader::new(source);
         let path =
             std::env::temp_dir().join(format!("yggdrasil-restore-{}.sql", uuid::Uuid::new_v4()));
         let mut options = std::fs::OpenOptions::new();
@@ -158,8 +158,7 @@ impl Drop for PreparedRestoreSql {
 /// **恢复成功后失效全量缓存**：恢复会用备份时刻的数据重建 posts 等表，
 /// 现有 moka 缓存（列表/标签/单篇/统计/搜索）与 SSR 世代号必须一并冲刷，
 /// 否则前端仍读旧数据。
-pub(super) async fn run_restore(task_id: &str, filename: &str) {
-    let path = backup_path(filename);
+pub(super) async fn run_restore(task_id: &str, source: File) {
     let db_url = match std::env::var("DATABASE_URL") {
         Ok(u) if !u.is_empty() => u,
         _ => {
@@ -207,7 +206,7 @@ pub(super) async fn run_restore(task_id: &str, filename: &str) {
     // 预处理备份与 psql 恢复均为阻塞文件/子进程操作，整体移出 tokio worker。
     // 临时 SQL 由 RAII 守卫在成功、失败和启动错误路径统一删除。
     let restore_result = tokio::task::spawn_blocking(move || {
-        let prepared = PreparedRestoreSql::prepare(&path)?;
+        let prepared = PreparedRestoreSql::prepare(source)?;
         if prepared.removed_owner_statements > 0 {
             tracing::info!(
                 removed = prepared.removed_owner_statements,
@@ -401,7 +400,9 @@ mod tests {
             )
             .await
             .expect("change fixture before restoring");
-        let prepared = PreparedRestoreSql::prepare(&source).expect("prepare real dump");
+        let prepared =
+            PreparedRestoreSql::prepare(File::open(&source).expect("open signed backup"))
+                .expect("prepare real dump");
         assert_eq!(prepared.removed_owner_statements, 1);
         let prepared_path = prepared.path.clone();
         #[cfg(unix)]
@@ -448,7 +449,8 @@ mod tests {
             .expect("change live fixture");
         sql.extend_from_slice(b"SELECT * FROM public.ygg_backup_missing_table;\n");
         std::fs::write(&source, &sql).expect("write failing restore fixture");
-        let prepared = PreparedRestoreSql::prepare(&source).expect("prepare failing SQL");
+        let prepared = PreparedRestoreSql::prepare(File::open(&source).expect("open failing SQL"))
+            .expect("prepare failing SQL");
         let prepared_path = prepared.path.clone();
         let failed = psql_restore_command(&db_url, &prepared_path)
             .expect("build failing restore command")

@@ -3,13 +3,14 @@
 use super::commands::pg_dump_command;
 use super::files::{
     backup_path, backup_stamp, create_new_backup_file, rotate_auto_backups, uploads_archive_name,
-    BACKUP_DIR, BACKUP_SIGNATURE,
+    BACKUP_SIGNATURE,
 };
 use super::{BackupOrigin, BackupRunOutcome};
 use crate::api::database::tasks::{self, TaskKind, TaskStatus};
 use chrono::Utc;
+use std::fs::File;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// 已有备份在跑时拒绝新备份的提示（手动与自动共用）。
@@ -47,15 +48,13 @@ pub(crate) async fn run_auto_backup() -> Result<BackupRunOutcome, String> {
     run_backup(&task_id, BackupOrigin::Auto, guard).await
 }
 
-/// 后台执行备份：pg_dump 优先，不可用回退纯 SQL；成功后按设置打包 uploads，
-/// 自动备份再做轮转。Ok/Err 均已同步进任务进度表（供前端轮询），返回值供
-/// 调度器落库 last_run。
+/// 后台执行备份：pg_dump 成功后按设置打包 uploads，自动备份再做轮转。
+/// Ok/Err 均已同步进任务进度表（供前端轮询），返回值供调度器落库 last_run。
 pub(super) async fn run_backup(
     task_id: &str,
     origin: BackupOrigin,
     _guard: BackupGuard,
 ) -> Result<BackupRunOutcome, String> {
-    let _ = std::fs::create_dir_all(BACKUP_DIR);
     let stamp = backup_stamp(Utc::now());
     let prefix = origin.file_prefix();
 
@@ -68,25 +67,20 @@ pub(super) async fn run_backup(
         Err(_) => crate::models::settings::BackupSettings::default(),
     };
 
-    // 探测 pg_dump（fork+exec+wait 仍是阻塞系统调用，移出 tokio worker 线程）
-    let pg_dump_ok = tokio::task::spawn_blocking(|| {
-        std::process::Command::new("pg_dump")
-            .arg("--version")
-            .output()
-            .is_ok()
-    })
-    .await
-    .unwrap_or(false);
-
-    let sql_result = if pg_dump_ok {
-        run_pg_dump_backup(task_id, prefix, &stamp).await
-    } else {
-        run_sql_fallback_backup(task_id, prefix, &stamp).await
-    };
-    let sql_filename = match sql_result {
-        Ok(f) => f,
-        // 子流程已把具体错误写进任务进度表，这里仅透传给调度器。
-        Err(e) => return Err(e),
+    let sql_filename = match run_pg_dump_backup(task_id, prefix, &stamp).await {
+        Ok(filename) => filename,
+        Err(msg) => {
+            tasks::update(
+                task_id,
+                "数据库备份失败",
+                100,
+                TaskStatus::Failed,
+                None,
+                Some(msg.clone()),
+                None,
+            );
+            return Err(msg);
+        }
     };
 
     // uploads 素材打包：失败不拖垮已成功的 DB 备份，降级为告警。
@@ -111,7 +105,7 @@ pub(super) async fn run_backup(
         {
             Ok(Ok(())) => uploads_filename = Some(tar_name),
             Ok(Err(e)) => warning = Some(format!("uploads 打包失败: {e}")),
-            Err(e) => warning = Some(format!("uploads 打包任务panic: {e}")),
+            Err(e) => warning = Some(format!("uploads 打包任务失败: {e}")),
         }
         if warning.is_some() {
             tracing::warn!("backup uploads tarball failed: {:?}", warning);
@@ -138,11 +132,41 @@ pub(super) async fn run_backup(
         warning,
     })
 }
+
+/// 文件写完整后用硬链接独占发布；暂存目录不对备份列表和下载接口可见。
+fn publish_backup_file(
+    path: &Path,
+    write: impl FnOnce(File) -> Result<(), String>,
+) -> Result<(), String> {
+    struct StagedBackup(PathBuf);
+
+    impl Drop for StagedBackup {
+        fn drop(&mut self) {
+            if let Err(error) = std::fs::remove_file(&self.0) {
+                tracing::warn!(path = %self.0.display(), "清理暂存备份文件失败: {error}");
+            }
+        }
+    }
+
+    let staging = path.with_file_name(".staging");
+    std::fs::create_dir_all(&staging).map_err(|e| format!("创建备份暂存目录失败: {e}"))?;
+    let temp = staging.join(format!("{}.tmp", uuid::Uuid::new_v4()));
+    let file = create_new_backup_file(&temp).map_err(|e| format!("创建暂存备份文件失败: {e}"))?;
+    let staged = StagedBackup(temp);
+    write(file)?;
+    std::fs::hard_link(&staged.0, path).map_err(|e| format!("发布备份文件失败: {e}"))
+}
+
 /// 把 uploads 目录打成 tar.gz（排除可重建的 .cache/ 与 VCS 占位 .gitkeep）。
 /// 阻塞 IO + CPU（gzip），调用方须放 spawn_blocking。
 /// uploads_dir 显式传入（而非写死相对路径）便于测试注入临时目录。
-fn create_uploads_tarball(uploads_dir: &Path, out_path: &Path) -> std::io::Result<()> {
-    let file = create_new_backup_file(out_path)?;
+fn create_uploads_tarball(uploads_dir: &Path, out_path: &Path) -> Result<(), String> {
+    publish_backup_file(out_path, |file| {
+        write_uploads_tarball(uploads_dir, file).map_err(|e| e.to_string())
+    })
+}
+
+fn write_uploads_tarball(uploads_dir: &Path, file: File) -> std::io::Result<()> {
     let gz = flate2::write::GzEncoder::new(file, flate2::Compression::default());
     let mut builder = tar::Builder::new(gz);
     if uploads_dir.is_dir() {
@@ -176,237 +200,51 @@ async fn run_pg_dump_backup(task_id: &str, prefix: &str, stamp: &str) -> Result<
     );
     let filename = format!("{prefix}_{stamp}.sql");
     let path = backup_path(&filename);
-    let db_url = match std::env::var("DATABASE_URL") {
-        Ok(u) if !u.is_empty() => u,
-        _ => {
-            let msg = "pg_dump 备份需要 DATABASE_URL".to_string();
-            tasks::update(
-                task_id,
-                "DATABASE_URL 未配置",
-                100,
-                TaskStatus::Failed,
-                None,
-                Some(msg.clone()),
-                None,
-            );
-            return Err(msg);
-        }
-    };
+    let db_url = std::env::var("DATABASE_URL")
+        .ok()
+        .filter(|url| !url.is_empty())
+        .ok_or_else(|| "pg_dump 备份需要 DATABASE_URL".to_string())?;
 
-    let mut header = String::new();
-    header.push_str(&format!("{}\n", BACKUP_SIGNATURE));
-    header.push_str(&format!("-- created_at: {}\n", Utc::now()));
-    header.push_str("-- mode: pg_dump\n");
+    tokio::task::spawn_blocking(move || {
+        let mut command =
+            pg_dump_command(&db_url).map_err(|e| format!("构造 pg_dump 命令失败: {e}"))?;
+        publish_backup_file(&path, |mut file| {
+            writeln!(
+                file,
+                "{BACKUP_SIGNATURE}\n-- created_at: {}\n-- mode: pg_dump",
+                Utc::now()
+            )
+            .map_err(|e| format!("写入备份文件头失败: {e}"))?;
 
-    // 独占新建后先写签名头，再把同一文件句柄交给 pg_dump 续写：
-    // 子进程继承的文件偏移就在签名头之后。
-    let mut stdout_file = match create_new_backup_file(&path) {
-        Ok(f) => f,
-        Err(e) => {
-            let msg = format!("无法写入备份目录: {e}");
-            tasks::update(
-                task_id,
-                "写入备份文件失败",
-                100,
-                TaskStatus::Failed,
-                None,
-                Some(msg.clone()),
-                None,
-            );
-            return Err(msg);
-        }
-    };
-    if let Err(e) = stdout_file.write_all(header.as_bytes()) {
-        let msg = format!("无法写入备份目录: {e}");
-        tasks::update(
-            task_id,
-            "写入备份文件失败",
-            100,
-            TaskStatus::Failed,
-            None,
-            Some(msg.clone()),
-            None,
-        );
-        return Err(msg);
-    }
-    // pg_dump 导出可持续数十秒到数分钟，整个子进程生命周期（spawn + wait_with_output）
-    // 移入 spawn_blocking，避免阻塞 tokio worker 线程。注意 stdout 重定向到备份文件，
-    // 故不能用 .output()（它会用 piped 覆盖 stdout 配置）；保留 spawn() + wait_with_output()
-    // 两段式。闭包返回 Result<Output, (bool, io::Error)>：true=启动(spawn)阶段失败，
-    // false=等待(wait)阶段失败，分别对应原有「启动失败」「执行失败」两条上报路径；
-    // 闭包 panic（JoinError）按「执行失败」处理。
-    let dump_result = tokio::task::spawn_blocking(
-        move || -> Result<std::process::Output, (bool, std::io::Error)> {
-            let mut command = pg_dump_command(&db_url).map_err(|error| (true, error))?;
-            command
-                .stdout(std::process::Stdio::from(stdout_file))
+            // 子进程从文件头之后续写；仅捕获 stderr，不将 SQL 读入内存。
+            let output = command
+                .stdout(file)
                 .stderr(std::process::Stdio::piped())
                 .spawn()
-                .map_err(|e| (true, e))?
-                .wait_with_output()
-                .map_err(|e| (false, e))
-        },
-    )
-    .await
-    .unwrap_or_else(|join_e| Err((false, std::io::Error::other(join_e.to_string()))));
-    match dump_result {
-        Ok(o) if o.status.success() => Ok(filename),
-        Ok(o) => {
-            let msg = String::from_utf8_lossy(&o.stderr).to_string();
-            tasks::update(
-                task_id,
-                "pg_dump 失败",
-                100,
-                TaskStatus::Failed,
-                None,
-                Some(msg.clone()),
-                None,
-            );
-            Err(msg)
-        }
-        Err((true, e)) => {
-            let msg = e.to_string();
-            tasks::update(
-                task_id,
-                "pg_dump 启动失败",
-                100,
-                TaskStatus::Failed,
-                None,
-                Some(msg.clone()),
-                None,
-            );
-            Err(msg)
-        }
-        Err((false, e)) => {
-            let msg = e.to_string();
-            tasks::update(
-                task_id,
-                "pg_dump 执行失败",
-                100,
-                TaskStatus::Failed,
-                None,
-                Some(msg.clone()),
-                None,
-            );
-            Err(msg)
-        }
-    }
-}
-
-/// 纯 SQL 回退：仅备份数据（不含 schema），按表计数精确进度。
-///
-/// 注意：该产物不是合法 SQL 脚本（COPY TO STDOUT 的 CSV 原文拼接），
-/// 不能经 psql 恢复——仅供极端环境下抢救数据。生产镜像自带 pg_dump，
-/// 正常不会走到这里。
-///
-/// 成功返回 SQL 文件名（最终「完成」进度由调用方统一上报）。
-async fn run_sql_fallback_backup(
-    task_id: &str,
-    prefix: &str,
-    stamp: &str,
-) -> Result<String, String> {
-    tasks::update(
-        task_id,
-        "pg_dump 不可用，使用纯 SQL 回退（仅数据）",
-        10,
-        TaskStatus::Running,
-        Some("仅备份数据，不含 schema/索引/触发器，且不可经 psql 恢复".to_string()),
-        None,
-        None,
-    );
-    let filename = format!("{prefix}_{stamp}_sqlfallback.sql");
-    let path = backup_path(&filename);
-
-    let client = match crate::db::pool::get_conn().await {
-        Ok(c) => c,
-        Err(e) => {
-            let msg = e.to_string();
-            tasks::update(
-                task_id,
-                "数据库连接失败",
-                100,
-                TaskStatus::Failed,
-                None,
-                Some(msg.clone()),
-                None,
-            );
-            return Err(msg);
-        }
-    };
-
-    // 取 public schema 下所有表名
-    let tables: Vec<String> = match client
-        .query(
-            "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename",
-            &[],
-        )
-        .await
-    {
-        Ok(rows) => rows.into_iter().map(|r| r.get(0)).collect(),
-        Err(e) => {
-            let msg = e.to_string();
-            tasks::update(
-                task_id,
-                "读取表清单失败",
-                100,
-                TaskStatus::Failed,
-                None,
-                Some(msg.clone()),
-                None,
-            );
-            return Err(msg);
-        }
-    };
-    let total = tables.len().max(1);
-
-    let mut out = String::new();
-    out.push_str(&format!("{}\n", BACKUP_SIGNATURE));
-    out.push_str(&format!("-- created_at: {}\n", Utc::now()));
-    out.push_str("-- mode: sql-fallback\n\n");
-
-    for (i, table) in tables.iter().enumerate() {
-        out.push_str(&format!("\n-- table: {}\n", table));
-        let copy_stmt = format!("COPY \"{}\" TO STDOUT WITH CSV", table);
-        match client.copy_out(&copy_stmt).await {
-            Ok(stream) => {
-                use futures::StreamExt;
-                // CopyOutStream 是 !Unpin，必须 pin 才能调 next。
-                tokio::pin!(stream);
-                while let Some(chunk) = stream.next().await {
-                    if let Ok(bytes) = chunk {
-                        out.push_str(&String::from_utf8_lossy(&bytes));
+                .map_err(|e| {
+                    if e.kind() == std::io::ErrorKind::NotFound {
+                        "数据库备份需要 pg_dump，请安装 PostgreSQL 客户端".to_string()
+                    } else {
+                        format!("启动 pg_dump 失败: {e}")
                     }
+                })?
+                .wait_with_output()
+                .map_err(|e| format!("等待 pg_dump 失败: {e}"))?;
+            if output.status.success() {
+                Ok(())
+            } else {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                let stderr = stderr.trim();
+                if stderr.is_empty() {
+                    Err(format!("pg_dump 导出失败: {}", output.status))
+                } else {
+                    Err(format!("pg_dump 导出失败: {}: {stderr}", output.status))
                 }
             }
-            Err(e) => {
-                out.push_str(&format!("-- 导出失败: {}\n", e));
-            }
-        }
-        // 按表更新进度（用 u32 避免大 schema 下的截断/溢出）
-        tasks::update(
-            task_id,
-            &format!("导出表 {}/{}", i + 1, total),
-            (10 + (i + 1) as u32 * 90 / total as u32).min(99) as u8,
-            TaskStatus::Running,
-            None,
-            None,
-            None,
-        );
-    }
-
-    if let Err(e) = create_new_backup_file(&path).and_then(|mut f| f.write_all(out.as_bytes())) {
-        let msg = format!("无法写入备份目录: {e}");
-        tasks::update(
-            task_id,
-            "写入备份文件失败",
-            100,
-            TaskStatus::Failed,
-            None,
-            Some(msg.clone()),
-            None,
-        );
-        return Err(msg);
-    }
+        })
+    })
+    .await
+    .map_err(|e| format!("备份 SQL 后台任务失败: {e}"))??;
     Ok(filename)
 }
 
@@ -426,6 +264,37 @@ mod tests {
             BackupGuard::try_acquire().is_some(),
             "上一个备份结束后应能再次发起"
         );
+    }
+
+    #[test]
+    fn publication_hides_partial_writes_and_preserves_existing_file() {
+        let dir =
+            std::env::temp_dir().join(format!("yggdrasil-backup-publish-{}", uuid::Uuid::new_v4()));
+        let path = dir.join("backup.sql");
+        let staging = dir.join(".staging");
+
+        let error = publish_backup_file(&path, |mut file| {
+            file.write_all(b"partial").expect("写入部分备份");
+            assert!(!path.exists(), "写入过程中不得暴露最终文件");
+            Err("模拟写入失败".to_string())
+        })
+        .expect_err("失败的写入不得发布");
+        assert_eq!(error, "模拟写入失败");
+        assert!(!path.exists());
+        assert!(std::fs::read_dir(&staging).unwrap().next().is_none());
+
+        publish_backup_file(&path, |mut file| {
+            file.write_all(b"complete").map_err(|e| e.to_string())
+        })
+        .expect("完整备份应发布");
+        let error = publish_backup_file(&path, |mut file| {
+            file.write_all(b"replacement").map_err(|e| e.to_string())
+        })
+        .expect_err("发布时不得覆盖已有文件");
+        assert!(error.starts_with("发布备份文件失败"), "{error}");
+        assert_eq!(std::fs::read(&path).unwrap(), b"complete");
+        assert!(std::fs::read_dir(&staging).unwrap().next().is_none());
+        std::fs::remove_dir_all(&dir).expect("清理测试目录");
     }
 
     #[test]

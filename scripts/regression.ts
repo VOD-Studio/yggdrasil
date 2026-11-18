@@ -140,9 +140,18 @@ async function main() {
     ADMIN_EMAIL: '',
     CODE_RUNNER_LANGUAGES: 'python',
   };
+  let appEnv: NodeJS.ProcessEnv = env;
+  if (mode === 'backup') {
+    const psql = Bun.which('psql');
+    if (!psql) throw new Error('Backup regression requires psql');
+    const pgBin = path.join(runtime, 'pg-bin');
+    fs.mkdirSync(pgBin);
+    fs.symlinkSync(psql, path.join(pgBin, 'psql'));
+    appEnv = { ...env, PATH: pgBin };
+  }
   const appServer = Bun.spawn([serverBin], {
     cwd: runtime,
-    env,
+    env: appEnv,
     stdout: Bun.file(path.join(artifacts, 'server.log')),
     stderr: Bun.file(path.join(artifacts, 'server-error.log')),
   });
