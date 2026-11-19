@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import { expect, it } from 'vitest';
 import { ICONS, iconBody, iconNode, iconsRust, variantName } from './icons';
 
-const require = createRequire(import.meta.url);
+const require = createRequire(resolve(import.meta.dirname, '../scripts/package.json'));
 const nodes = require('lucide-static/icon-nodes.json');
 const { version } = require('lucide-static/package.json');
 

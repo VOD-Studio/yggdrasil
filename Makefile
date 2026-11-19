@@ -240,7 +240,7 @@ clean: ## 清理构建产物与前端依赖
 	@rm -rf public/katex public/doc public/codemirror public/lightbox \
 		public/tiptap public/xterm public/yggdrasil-core
 	@rm -rf uploads/.cache
-	@rm -rf libs/node_modules libs/*/node_modules
+	@rm -rf libs/node_modules libs/*/node_modules libs/shared/scripts/node_modules
 
 .PHONY: test-public-performance
 test-public-performance: regression-build ## 验证双机缓存、公开页精简数据、归档分页和评论延迟加载

@@ -1,0 +1,15 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "yggdrasil-icon-tool",
+      "dependencies": {
+        "lucide-static": "1.75.0",
+      },
+    },
+  },
+  "packages": {
+    "lucide-static": ["lucide-static@1.75.0", "", {}, "sha512-vtAnJzxoH8jp0++Ydf22CPAAL3WfQQjmDG+OuRlG+CXouLCrlfTz7zWuDvHkTtj61czkhJAISChHDXkxLLqKRw=="],
+  }
+}

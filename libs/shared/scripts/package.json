@@ -1,0 +1,8 @@
+{
+  "name": "yggdrasil-icon-tool",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "lucide-static": "1.75.0"
+  }
+}

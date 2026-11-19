@@ -16,6 +16,7 @@ static/
 node_modules/
 libs/node_modules/
 libs/*/node_modules/
+libs/shared/scripts/node_modules/
 
 # Generated assets under public/ are rebuilt by the Dockerfile
 # (build-libs → highlight-css → site CSS → cargo leptos build). Keep the source

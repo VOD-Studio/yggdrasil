@@ -8,14 +8,12 @@
   "scripts": {
     "build": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "test": "bun run icons:deps && vitest run",
+    "test:watch": "bun run icons:deps && vitest",
     "motion-css": "bun scripts/generate-motion-css.ts",
     "code-themes": "bun scripts/generate-code-themes.ts",
-    "icons": "bun scripts/generate-icons.ts",
+    "icons": "bun run icons:deps && bun scripts/generate-icons.ts",
+    "icons:deps": "bun install --cwd scripts --frozen-lockfile",
     "mermaid-font-metrics": "bun scripts/generate-mermaid-font-metrics.ts"
-  },
-  "devDependencies": {
-    "lucide-static": "1.75.0"
   }
 }
