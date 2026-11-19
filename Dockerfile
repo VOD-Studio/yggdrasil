@@ -1,7 +1,7 @@
 # -----------------------------------------------------------------------------
 # Builder stage: compile the static-linked musl server binary and frontend assets
 # -----------------------------------------------------------------------------
-FROM rust:1.99-trixie AS toolchain
+FROM rust:1.100-trixie AS toolchain
 
 # Master switch for Chinese mirrors.
 #   CN_MIRROR=false (default): use all upstream/official sources (fast on CI
@@ -103,7 +103,7 @@ RUN if [ "$CN_MIRROR" = "true" ]; then \
 
 # --- Tailwind CSS v4: the standalone binary is distributed via GitHub
 # Releases (~106 MB). ---
-ARG TAILWIND_VERSION=4.3.3
+ARG TAILWIND_VERSION=4.3.5
 RUN ARCH="$(dpkg --print-architecture)" \
     && case "$ARCH" in \
         amd64)  TW_ARCH=x64   ;; \
@@ -123,7 +123,7 @@ RUN cargo install cargo-leptos --version 0.3.12 --locked
 # 跨 run 持久化 cooker 层,依赖不变时该层 cache-hit(秒级),只编 app。
 # 用 GitHub Releases 预编译二进制(不 cargo install:后者编译 cargo-chef 自身
 # 依赖要 2-3min,且在 QEMU 下 SIGSEGV)。与 tailwind 同模式:按架构选 tarball。
-ARG CHEF_VERSION=0.1.77
+ARG CHEF_VERSION=0.1.78
 RUN ARCH="$(dpkg --print-architecture)" \
     && case "$ARCH" in \
         amd64) CHEF_TRIPLET=x86_64-unknown-linux-musl   ;; \
@@ -308,7 +308,7 @@ RUN ARCH="$(dpkg --print-architecture)" \
 # 静态 musl server 二进制在 alpine 上原生运行；reqwest 的 Rustls/AWS-LC
 # 使用 rustls-platform-verifier 读取系统 CA，运行时须安装 ca-certificates。
 # -----------------------------------------------------------------------------
-FROM alpine:3.22
+FROM alpine:3.24
 
 RUN apk add --no-cache ca-certificates postgresql16-client
 

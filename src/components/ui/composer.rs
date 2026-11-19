@@ -36,16 +36,9 @@ pub fn Composer(
 /// 输入法组合中：composition 状态、isComposing、Process 键，或 keyCode 229
 /// （Safari 确认候选的回车）。全仓输入法守卫只有这一种写法。
 pub(crate) fn ime_composing(composing: bool, e: &KeyboardEvent) -> bool {
-    if composing || e.is_composing() || e.key() == "Process" {
-        return true;
-    }
     #[cfg(target_arch = "wasm32")]
-    {
-        if e.key_code() == 229 {
-            return true;
-        }
-    }
-    false
+    let composing = composing || e.key_code() == 229;
+    composing || e.is_composing() || e.key() == "Process"
 }
 
 /// 输入栏里的输入框：单行 input 或多行 textarea（`field-sizing: content`），

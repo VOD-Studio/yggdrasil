@@ -30,8 +30,8 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  # 与 Dockerfile / Dockerfile.cross 的 FROM rust:1.99-* 保持一致；升级 Rust 时三处一起改。
-  RUST_TOOLCHAIN: '1.99'
+  # 与 Dockerfile、Dockerfile.cross、Dockerfile.dev 的稳定版 Rust 镜像保持一致。
+  RUST_TOOLCHAIN: '1.100'
 
 # tag 和 dispatch 的运行永不被取消；dispatch 与 master push 分到不同组，互不取消。
 concurrency:
@@ -141,7 +141,7 @@ jobs:
     steps:
       # dtolnay/rust-toolchain：走 GitHub CDN，比 curl|sh 快 ~10-15s，含 clippy+rustfmt 组件。
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
           components: clippy, rustfmt
@@ -188,7 +188,7 @@ jobs:
           --health-retries 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
 
@@ -249,7 +249,7 @@ jobs:
 
       # dtolnay/rust-toolchain：走 GitHub CDN，比 curl|sh 快 ~10-15s。
       # CI runner 在美国/欧洲，不配 rsproxy（国内镜像从国外访问反而更慢）。
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
           targets: wasm32-unknown-unknown
@@ -272,9 +272,9 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2
+      - uses: taiki-e/install-action@75a7c0f87bd666af3cdb75c5b9e9d03ab6044e6f # v2.90.6
         with:
-          tool: cargo-deny@0.20.2
+          tool: cargo-deny@0.21.0
       - name: cargo deny (advisories, sources)
         run: cargo deny check advisories sources
 
@@ -299,7 +299,7 @@ jobs:
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
           targets: wasm32-unknown-unknown
@@ -321,7 +321,7 @@ jobs:
         run: make install-cargo-leptos
       - name: Install browser build tools
         run: |
-          sudo curl -fsSL --retry 3 https://github.com/tailwindlabs/tailwindcss/releases/download/v4.3.3/tailwindcss-linux-x64 -o /usr/local/bin/tailwindcss
+          sudo curl -fsSL --retry 3 https://github.com/tailwindlabs/tailwindcss/releases/download/v4.3.5/tailwindcss-linux-x64 -o /usr/local/bin/tailwindcss
           sudo chmod +x /usr/local/bin/tailwindcss
           sudo apt-get update
           sudo apt-get install -y postgresql-common
@@ -364,7 +364,7 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
           targets: wasm32-unknown-unknown
@@ -388,7 +388,7 @@ jobs:
         run: make install-cargo-leptos
       - name: Install release build tools
         run: |
-          sudo curl -fsSL --retry 3 https://github.com/tailwindlabs/tailwindcss/releases/download/v4.3.3/tailwindcss-linux-x64 -o /usr/local/bin/tailwindcss
+          sudo curl -fsSL --retry 3 https://github.com/tailwindlabs/tailwindcss/releases/download/v4.3.5/tailwindcss-linux-x64 -o /usr/local/bin/tailwindcss
           sudo chmod +x /usr/local/bin/tailwindcss
           sudo apt-get update
           sudo apt-get install -y postgresql-common brotli
@@ -581,7 +581,7 @@ jobs:
         run: docker load --input /tmp/img/yggdrasil-amd64.tar.gz
 
       - name: Login to GHCR
-        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -788,7 +788,7 @@ jobs:
           docker image inspect yggdrasil:arm64 --format 'yggdrasil:arm64 -> {{.Architecture}}'
 
       - name: Login to GHCR
-        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -856,7 +856,7 @@ jobs:
 
       # 变更检测前先登录 GHCR：即使 docker/ 未变，也要验证 runner manifest 是否仍存在。
       - name: Login to GHCR
-        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}

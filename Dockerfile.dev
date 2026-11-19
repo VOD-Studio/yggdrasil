@@ -13,7 +13,7 @@
 #   target/        ← named volume（cargo 编译产物，跨重启缓存）
 #   libs/node_modules ← named volume（bun 依赖，跨重启缓存）
 
-FROM rust:1.99-trixie
+FROM rust:1.100-trixie
 
 # Master switch for Chinese mirrors.
 #   CN_MIRROR=false (default): use all upstream/official sources (fast on CI
@@ -114,7 +114,7 @@ RUN if [ "$CN_MIRROR" = "true" ]; then \
 RUN cargo install cargo-leptos --version 0.3.12 --locked
 
 # ── Tailwind CSS v4 standalone ──────────────────────────────────
-ARG TAILWIND_VERSION=4.3.3
+ARG TAILWIND_VERSION=4.3.5
 RUN ARCH="$(dpkg --print-architecture)" \
     && case "$ARCH" in \
         amd64)  TW_ARCH=x64   ;; \

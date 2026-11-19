@@ -9,10 +9,10 @@
 # The build is split into TWO native-arm64 builder stages because the two
 # toolchains it needs cannot live in one base image:
 #
-#   Stage A (frontend, rust:1.99-trixie / glibc)  — cargo-leptos + nightly wasm32.
+#   Stage A (frontend, rust:1.100-trixie / glibc)  — cargo-leptos + nightly wasm32.
 #     Builds the WASM client + JS libs + syntax/katex/tailwind CSS.
 #
-#   Stage B (server, rust:1.99-alpine3.22 / musl) — the ONLY reliable zig
+#   Stage B (server, rust:1.100-alpine3.24 / musl) — the ONLY reliable zig
 #     source in China is Alpine's apk (TUNA mirror). ziglang.org is unreachable,
 #     GitHub Releases carries NO zig binaries, and every Chinese "ziglang"
 #     mirror returns an HTML error page. Alpine's zig is dynamically linked to
@@ -30,7 +30,7 @@
 # Stage A: frontend assets (glibc Trixie, native arm64)
 # -----------------------------------------------------------------------------
 # Trixie (Debian 13, glibc 2.41).
-FROM --platform=$BUILDPLATFORM rust:1.99-trixie AS frontend
+FROM --platform=$BUILDPLATFORM rust:1.100-trixie AS frontend
 
 # Master switch for Chinese mirrors.
 #   CN_MIRROR=false (default): use all upstream/official sources (fast on CI
@@ -139,7 +139,7 @@ RUN cargo install cargo-leptos --version 0.3.12 --locked
 
 # --- Tailwind CSS v4: the standalone binary is distributed via GitHub
 # Releases (~106 MB). ---
-ARG TAILWIND_VERSION=4.3.3
+ARG TAILWIND_VERSION=4.3.5
 RUN ARCH="$(dpkg --print-architecture)" \
     && case "$ARCH" in \
         amd64)  TW_ARCH=x64   ;; \
@@ -243,7 +243,7 @@ RUN bun scripts/build-release.ts --verify --out /build/dist
 # system cross-toolchain. The output is a fully static ELF dropped into a
 # linux/amd64 alpine image by Stage C.
 # -----------------------------------------------------------------------------
-FROM --platform=$BUILDPLATFORM rust:1.99-alpine3.22 AS server
+FROM --platform=$BUILDPLATFORM rust:1.100-alpine3.24 AS server
 
 # ARGs don't carry across stages, so CN_MIRROR must be re-declared here.
 ARG CN_MIRROR=false
@@ -272,7 +272,7 @@ RUN if [ "$CN_MIRROR" = "true" ]; then \
     fi
 
 # The cross-compile target (the host target, aarch64-unknown-linux-musl, is
-# already installed by the rust:1.99-alpine3.22 base image for build-scripts
+# already installed by the rust:1.100-alpine3.24 base image for build-scripts
 # and proc-macros that run on the builder).
 # RUSTUP_DIST_SERVER is exported inline (only rustup-download that needs it).
 RUN if [ "$CN_MIRROR" = "true" ]; then \
@@ -284,7 +284,7 @@ RUN if [ "$CN_MIRROR" = "true" ]; then \
 # cargo-zigbuild generates zig-cc wrapper scripts and points cargo's linker
 # env at them, overriding the project .cargo/config.toml's `x86_64-linux-musl-gcc`
 # linker (which does not exist here). Pure-Rust crate; builds cleanly on musl.
-RUN cargo install cargo-zigbuild --version 0.23.0 --locked
+RUN cargo install cargo-zigbuild --version 0.24.1 --locked
 
 # Same git build-args as Stage A (build.rs reads them via env).
 ARG YGG_BUILD_GIT_DESCRIBE=""
@@ -322,7 +322,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
 # reqwest 的 Rustls/AWS-LC 使用 rustls-platform-verifier 读取系统 CA，
 # 因此运行时显式安装 ca-certificates（不再使用内嵌 webpki-roots）。
 # -----------------------------------------------------------------------------
-FROM alpine:3.22
+FROM alpine:3.24
 
 RUN apk add --no-cache ca-certificates postgresql16-client
 
