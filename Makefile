@@ -30,7 +30,7 @@ ifeq ($(CI),)
 endif
 WASM_FRONTEND_JOBS ?= 2
 RELEASE_OUT ?= target/release-dist
-LEPTOS_WASM_ENV := RUSTUP_TOOLCHAIN=$(WASM_NIGHTLY) CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS='--cfg getrandom_backend="wasm_js" -Zunstable-options --jobs-frontend=$(WASM_FRONTEND_JOBS) -Cpanic=immediate-abort -Zlocation-detail=none -Zfmt-debug=none'
+LEPTOS_WASM_ENV := RUSTUP_TOOLCHAIN=$(WASM_NIGHTLY) CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS='--cfg getrandom_backend="wasm_js" -Zunstable-options --jobs-frontend=$(WASM_FRONTEND_JOBS) -Zmir-opt-level=3 -Cpanic=immediate-abort -Zlocation-detail=none -Zfmt-debug=none'
 LEPTOS_WASM_ARGS := --lib-cargo-args=-Zbuild-std=std,panic_abort --lib-cargo-args=-Zbuild-std-features=optimize_for_size
 
 # cargo-leptos 通过 wasm_split_cli_support 0.2.5 为 Web 构建默认合并共享分包。
