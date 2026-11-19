@@ -122,13 +122,13 @@ pub fn ChangelogHeader(
     #[prop(optional, into)] since: MaybeProp<String>,
 ) -> impl IntoView {
     view! {
-        <a class="changelog-back" href=Route::About.to_string()>
+        <a class="changelog-back page-back" href=Route::About.to_string()>
             <Icon name=IconName::ArrowLeft size=14/>
             "关于"
         </a>
         <header class="changelog-header page-enter">
             <div>
-                <h1 class="changelog-title">"更新日志"</h1>
+                <h1 class="changelog-title page-title">"更新日志"</h1>
                 <p class="changelog-intro">"每个版本新增、改进和修复了什么。"</p>
             </div>
             {move || {

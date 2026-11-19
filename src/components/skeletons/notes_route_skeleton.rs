@@ -39,7 +39,7 @@ pub fn NotesPageSkeleton() -> impl IntoView {
         <div class="notes" role="status" aria-label="正在加载笔记">
             <div class="notes-header" aria-hidden="true">
                 <div>
-                    <h1 class="notes-title">"笔记"</h1>
+                    <h1 class="notes-title page-title">"笔记"</h1>
                     <SkeletonBox height="1rem" width="18rem" style="--skeleton-margin-top: 0.75rem; --skeleton-max-width: 100%"/>
                 </div>
             </div>

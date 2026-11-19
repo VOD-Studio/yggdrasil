@@ -587,13 +587,13 @@ fn ShowcaseGallery() -> impl IntoView {
         <crate::components::enhance_assets::EnhanceScript/>
         <crate::components::enhance_assets::LightboxAssets/>
         <article class="showcase showcase-gallery">
-            <a class="showcase-up" href=Route::About.to_string()>
+            <a class="showcase-up page-back" href=Route::About.to_string()>
                 <Icon name=IconName::ArrowLeft size=14/>
                 "关于"
             </a>
             <header class="showcase-header page-enter">
                 <div>
-                    <h1 class="showcase-title">"组件图鉴"</h1>
+                    <h1 class="showcase-title page-title">"组件图鉴"</h1>
                     <p class="showcase-intro tabular-nums">
                         {format!("{total} 个组件，都来自正式页面，其中 {interactive_count} 个可以直接操作。")}
                     </p>

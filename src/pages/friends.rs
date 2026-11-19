@@ -81,7 +81,7 @@ pub fn FriendsHeader(#[prop(optional, into)] count: MaybeProp<usize>) -> impl In
     view! {
         <header class="friends-header page-enter">
             <div>
-                <h1 class="friends-title">"友链"</h1>
+                <h1 class="friends-title page-title">"友链"</h1>
                 <p class="friends-intro">"一些认真记录、持续创造的朋友。"</p>
             </div>
             {move || {

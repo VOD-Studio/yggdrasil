@@ -5,8 +5,10 @@
 @import "./styles/reset.css";
 @import "./styles/base.css";
 @import "./styles/utilities.css";
+@import "./styles/components/page-heading.css" layer(components);
 @import "./styles/components/pagination.css";
 @import "./styles/components/toc.css";
+@import "./styles/components/prose.css" layer(components);
 @import "./styles/components/article.css";
 @import "./styles/components/mermaid.css";
 @import "./styles/components/post-footer.css";
@@ -16,6 +18,7 @@
 @import "./styles/components/images.css";
 @import "./styles/components/changelog.css";
 @import "./styles/components/controls.css";
+@import "./styles/components/segmented.css" layer(components);
 @import "./styles/components/ui.css";
 @import "./styles/components/shell.css";
 @import "./styles/components/palette.css";

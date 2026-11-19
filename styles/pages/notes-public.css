@@ -11,14 +11,6 @@
   justify-content: space-between;
   gap: 1rem 1.5rem;
 }
-.notes-title {
-  margin: 0;
-  color: var(--color-fg);
-  font-family: var(--font-serif);
-  font-size: 2.25rem;
-  font-weight: 500;
-  line-height: 1.3;
-}
 .notes-intro {
   margin: 0.625rem 0 0;
   color: var(--color-fg-2);
@@ -357,17 +349,6 @@
 }
 
 /* ---- 返回链接 ---- */
-.notes-back {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-  border-radius: 4px;
-  color: var(--color-fg-3);
-  font-size: 0.8125rem;
-  text-decoration: none;
-  transition: color 150ms var(--ease-out-expo);
-}
-.notes-back:hover { color: var(--color-fg); }
 .notes-back:focus-visible {
   outline: none;
   box-shadow: var(--shadow-focus);

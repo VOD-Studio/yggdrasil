@@ -616,7 +616,7 @@ fn PostsTable(#[prop(into)] on_changed: Callback<()>) -> impl IntoView {
                         class="admin-panel admin-table-wrap"
                         aria-busy=move || loading.get().then_some("true")
                     >
-                        <table class="admin-table admin-posts-table">
+                        <table class="admin-table admin-post-table admin-posts-table">
                             <thead>
                                 <tr>
                                     <th class="admin-table-check">

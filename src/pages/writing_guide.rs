@@ -158,12 +158,12 @@ fn WritingGuide(data: WritingGuideData) -> impl IntoView {
 #[component]
 pub fn WritingHeader() -> impl IntoView {
     view! {
-        <a class="writing-back" href=Route::About.to_string()>
+        <a class="writing-back page-back" href=Route::About.to_string()>
             <Icon name=IconName::ArrowLeft size=14/>
             "关于"
         </a>
         <header class="writing-header page-enter">
-            <h1 class="writing-title">"写作指南"</h1>
+            <h1 class="writing-title page-title">"写作指南"</h1>
             <p class="writing-lead">
                 "把这里的写作方式交给你的 AI：一份技能文件告诉它怎么排版，一条 MCP 连接让它能直接保存草稿。"
             </p>

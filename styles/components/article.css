@@ -35,63 +35,12 @@
     margin-top: 0;
   }
 
-  /* ---- 标题：h1–h3 衬线，h4 以下黑体 ---- */
-  .md-content :is(h1, h2, h3, h4, h5, h6) {
-    color: var(--color-fg);
-    letter-spacing: 0;
-    text-wrap: balance;
-  }
-
-  .md-content :is(h1, h2, h3) {
-    font-family: var(--font-serif);
-    font-weight: 500;
-    line-height: 1.4;
-  }
-
-  .md-content h1 {
-    margin: 2.2em 0 0.8em;
-    font-size: 1.7em;
-  }
-
-  .md-content h2 {
-    margin: 2.2em 0 0.8em;
-    font-size: 1.5em;
-  }
-
-  .md-content h3 {
-    margin: 1.9em 0 0.6em;
-    font-size: 1.2em;
-  }
-
-  .md-content :is(h4, h5, h6) {
-    margin: 1.8em 0 0.5em;
-    font-weight: 600;
-    line-height: 1.5;
-  }
-
-  .md-content h4 {
-    font-size: 1em;
-  }
-
-  .md-content :is(h5, h6) {
-    color: var(--color-fg-2);
-    font-size: 0.9em;
-  }
-
   /* 锚点落点避开吸顶页头。 */
   .md-content :is(h1, h2, h3, h4, h5, h6)[id] {
     scroll-margin-top: calc(var(--site-header-height) + 1.5rem);
   }
 
-  /* ---- 段落与行内元素 ---- */
-  .md-content p {
-    margin: 0 0 1.2em;
-  }
-
-  .md-content p:last-child {
-    margin-bottom: 0;
-  }
-
+  /* 正文链接保留锚点和脚注自己的样式。 */
   .md-content a:not(.anchor, .fn-ref-link, .fn-backref) {
     color: var(--color-clay-text);
     text-decoration: underline;
@@ -103,107 +52,6 @@
 
   .md-content a:not(.anchor, .fn-ref-link, .fn-backref):hover {
     text-decoration-color: currentColor;
-  }
-
-  .md-content strong {
-    color: var(--color-fg);
-    font-weight: 600;
-  }
-
-  /* 不用中文斜体：强调改为字下着重号。 */
-  .md-content em {
-    font-style: normal;
-    text-emphasis: filled dot;
-    text-emphasis-position: under right;
-    text-emphasis-color: var(--color-clay);
-  }
-
-  .md-content :not(pre) > code {
-    padding: 0.14em 0.42em;
-    border-radius: 5px;
-    background-color: var(--color-ink-1);
-    color: var(--color-fg);
-    font-family: var(--font-mono);
-    font-size: 0.84em;
-  }
-
-  .md-content a > code {
-    color: inherit;
-  }
-
-  /* ---- 引用：衬线 18px、次要色、左侧陶土细线 ---- */
-  .md-content blockquote {
-    margin: 0 0 1.4em;
-    padding: 0.1em 0 0.1em 1.1em;
-    box-shadow: inset 2px 0 0 var(--color-clay);
-    color: var(--color-fg-2);
-    font-family: var(--font-serif);
-    font-size: 1.09em;
-    line-height: 1.8;
-  }
-
-  .md-content blockquote p {
-    margin-bottom: 0.6em;
-  }
-
-  .md-content blockquote p:last-child {
-    margin-bottom: 0;
-  }
-
-  /* ---- 提示块：> [!NOTE] 等 GFM 告示 ---- */
-  .md-content blockquote[class^="markdown-alert-"] {
-    padding: 0.75em 1em;
-    border-radius: 10px;
-    background-color: var(--color-ink-1);
-    box-shadow: none;
-    color: var(--color-fg);
-    font-family: var(--font-sans);
-    font-size: 0.91em;
-    line-height: 1.75;
-  }
-
-  .md-content blockquote[class^="markdown-alert-"]::before {
-    content: "说明";
-    display: block;
-    margin-bottom: 0.15em;
-    color: var(--color-fg-2);
-    font-weight: 600;
-  }
-
-  .md-content blockquote.markdown-alert-tip {
-    background-color: var(--color-success-soft);
-  }
-
-  .md-content blockquote.markdown-alert-tip::before {
-    content: "提示";
-    color: var(--color-success);
-  }
-
-  .md-content blockquote.markdown-alert-important {
-    background-color: var(--color-clay-soft);
-  }
-
-  .md-content blockquote.markdown-alert-important::before {
-    content: "重要";
-    color: var(--color-clay-text);
-  }
-
-  .md-content blockquote.markdown-alert-warning {
-    background-color: var(--color-warning-soft);
-  }
-
-  .md-content blockquote.markdown-alert-warning::before {
-    content: "注意";
-    color: var(--color-warning);
-  }
-
-  .md-content blockquote.markdown-alert-caution {
-    background-color: var(--color-danger-soft);
-  }
-
-  .md-content blockquote.markdown-alert-caution::before {
-    content: "警告";
-    color: var(--color-danger);
   }
 
   /* ---- 列表 ---- */
@@ -335,11 +183,7 @@
     border-bottom: var(--hairline) solid var(--color-hairline);
     color: var(--color-fg-2);
     vertical-align: top;
-  }
-
-  /* 表格溢出滚动时，列会缩到最小内容宽度；表头 nowrap 比正文字号小，
-     较窄的列里 CJK 短词（如「首页」）会被逐字折行。给单元格留 4 个字的下限。 */
-  .md-content td {
+    /* 表格溢出时给单元格宽度下限，避免 CJK 短词被逐字折行。 */
     min-width: 6em;
   }
 

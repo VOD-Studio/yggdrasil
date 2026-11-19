@@ -14,17 +14,6 @@
 }
 
 /* ---- 目录页头 ---- */
-.showcase-up {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-  border-radius: 4px;
-  color: var(--color-fg-3);
-  font-size: 0.8125rem;
-  text-decoration: none;
-  transition: color 150ms var(--ease-out-expo);
-}
-.showcase-up:hover { color: var(--color-fg); }
 .showcase-header {
   display: flex;
   flex-wrap: wrap;
@@ -32,14 +21,6 @@
   justify-content: space-between;
   gap: 1rem 1.5rem;
   margin-top: 0.875rem;
-}
-.showcase-title {
-  margin: 0;
-  color: var(--color-fg);
-  font-family: var(--font-serif);
-  font-size: 2.25rem;
-  font-weight: 500;
-  line-height: 1.3;
 }
 .showcase-intro {
   margin: 0.625rem 0 0;

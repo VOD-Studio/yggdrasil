@@ -1,0 +1,193 @@
+/* 文章正文与编辑器共用的排版，由全站样式统一加载。 */
+
+/* 标题 */
+
+.md-content :is(h1, h2, h3, h4, h5, h6),
+.tiptap-editor :is(h1, h2, h3, h4, h5, h6) {
+  color: var(--color-fg);
+  letter-spacing: 0;
+  text-wrap: balance;
+}
+
+.md-content :is(h1, h2, h3),
+.tiptap-editor :is(h1, h2, h3) {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.md-content h1,
+.tiptap-editor h1 {
+  margin: 2.2em 0 0.8em;
+  font-size: 1.7em;
+}
+
+.md-content h2,
+.tiptap-editor h2 {
+  margin: 2.2em 0 0.8em;
+  font-size: 1.5em;
+}
+
+.md-content h3,
+.tiptap-editor h3 {
+  margin: 1.9em 0 0.6em;
+  font-size: 1.2em;
+}
+
+.md-content :is(h4, h5, h6),
+.tiptap-editor :is(h4, h5, h6) {
+  margin: 1.8em 0 0.5em;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.md-content h4,
+.tiptap-editor h4 {
+  font-size: 1em;
+}
+
+.md-content :is(h5, h6),
+.tiptap-editor :is(h5, h6) {
+  color: var(--color-fg-2);
+  font-size: 0.9em;
+}
+
+/* 段落与行内元素 */
+
+.md-content p,
+.tiptap-editor p {
+  margin: 0 0 1.2em;
+}
+
+.md-content p:last-child,
+.tiptap-editor p:last-child {
+  margin-bottom: 0;
+}
+
+.md-content strong,
+.tiptap-editor strong {
+  color: var(--color-fg);
+  font-weight: 600;
+}
+
+/* 中文着重号。 */
+.md-content em,
+.tiptap-editor em {
+  font-style: normal;
+  text-emphasis: filled dot;
+  text-emphasis-position: under right;
+  text-emphasis-color: var(--color-clay);
+}
+
+.md-content :not(pre) > code,
+.tiptap-editor :not(pre) > code {
+  padding: 0.14em 0.42em;
+  border-radius: 5px;
+  background-color: var(--color-ink-1);
+  color: var(--color-fg);
+  font-family: var(--font-mono);
+  font-size: 0.84em;
+}
+
+.md-content a > code,
+.tiptap-editor a > code {
+  color: inherit;
+}
+
+/* 引用与 Markdown 提示块 */
+
+.md-content blockquote,
+.tiptap-editor blockquote {
+  margin: 0 0 1.4em;
+  padding: 0.1em 0 0.1em 1.1em;
+  box-shadow: inset 2px 0 0 var(--color-clay);
+  color: var(--color-fg-2);
+  font-family: var(--font-serif);
+  font-size: 1.09em;
+  line-height: 1.8;
+}
+
+.md-content blockquote p,
+.tiptap-editor blockquote p {
+  margin-bottom: 0.6em;
+}
+
+.md-content blockquote p:last-child,
+.tiptap-editor blockquote p:last-child {
+  margin-bottom: 0;
+}
+
+.md-content blockquote[class^="markdown-alert-"],
+.tiptap-editor blockquote[class^="markdown-alert-"] {
+  padding: 0.75em 1em;
+  border-radius: 10px;
+  background-color: var(--color-ink-1);
+  box-shadow: none;
+  color: var(--color-fg);
+  font-family: var(--font-sans);
+  font-size: 0.91em;
+  line-height: 1.75;
+}
+
+.md-content blockquote[class^="markdown-alert-"]::before,
+.tiptap-editor blockquote[class^="markdown-alert-"]::before {
+  content: "说明";
+  display: block;
+  margin-bottom: 0.15em;
+  color: var(--color-fg-2);
+  font-weight: 600;
+}
+
+.md-content blockquote.markdown-alert-tip,
+.tiptap-editor blockquote.markdown-alert-tip {
+  background-color: var(--color-success-soft);
+}
+
+.md-content blockquote.markdown-alert-tip::before,
+.tiptap-editor blockquote.markdown-alert-tip::before {
+  content: "提示";
+  color: var(--color-success);
+}
+
+.md-content blockquote.markdown-alert-important,
+.tiptap-editor blockquote.markdown-alert-important {
+  background-color: var(--color-clay-soft);
+}
+
+.md-content blockquote.markdown-alert-important::before,
+.tiptap-editor blockquote.markdown-alert-important::before {
+  content: "重要";
+  color: var(--color-clay-text);
+}
+
+.md-content blockquote.markdown-alert-warning,
+.tiptap-editor blockquote.markdown-alert-warning {
+  background-color: var(--color-warning-soft);
+}
+
+.md-content blockquote.markdown-alert-warning::before,
+.tiptap-editor blockquote.markdown-alert-warning::before {
+  content: "注意";
+  color: var(--color-warning);
+}
+
+.md-content blockquote.markdown-alert-caution,
+.tiptap-editor blockquote.markdown-alert-caution {
+  background-color: var(--color-danger-soft);
+}
+
+.md-content blockquote.markdown-alert-caution::before,
+.tiptap-editor blockquote.markdown-alert-caution::before {
+  content: "警告";
+  color: var(--color-danger);
+}
+
+/* 评论里段落和引用间距更紧。提示块仍保留自己的字号。 */
+.tiptap-editor--comment p {
+  margin: 0 0 0.5em;
+}
+
+.tiptap-editor--comment blockquote {
+  margin: 0.6em 0;
+  font-size: 1em;
+}

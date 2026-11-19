@@ -1,5 +1,5 @@
-/* Tiptap 编辑器：正文排版对齐文章页 .md-content（styles/components/article.css），
-   写的样子即读者看到的样子；浮层、弹窗与表单对齐站点的 listbox / dialog / field / btn
+/* Tiptap 编辑器：站点 style.css 提供正文共用排版（styles/components/prose.css）。
+   浮层、弹窗与表单对齐站点的 listbox / dialog / field / btn
    （styles/components/ui.css）。配色全部走 v1.0 token，明暗随 .dark 自动切换。
    代码块语法色由 CODE_PALETTES 生成，见 code-highlight.css。
    本表不分层：页面上的覆盖（admin-write.css、comments.css）靠更高的特异性。 */
@@ -43,80 +43,11 @@
   margin-top: 0;
 }
 
-/* ---- 标题：h1–h3 衬线，h4 以下黑体 ---- */
-.tiptap-editor :is(h1, h2, h3, h4, h5, h6) {
-  color: var(--color-fg);
-  letter-spacing: 0;
-  text-wrap: balance;
-}
-
-.tiptap-editor :is(h1, h2, h3) {
-  font-family: var(--font-serif);
-  font-weight: 500;
-  line-height: 1.4;
-}
-
-.tiptap-editor h1 {
-  margin: 2.2em 0 0.8em;
-  font-size: 1.7em;
-}
-
-.tiptap-editor h2 {
-  margin: 2.2em 0 0.8em;
-  font-size: 1.5em;
-}
-
-.tiptap-editor h3 {
-  margin: 1.9em 0 0.6em;
-  font-size: 1.2em;
-}
-
-.tiptap-editor :is(h4, h5, h6) {
-  margin: 1.8em 0 0.5em;
-  font-size: 1em;
-  font-weight: 600;
-  line-height: 1.5;
-}
-
-.tiptap-editor :is(h5, h6) {
-  color: var(--color-fg-2);
-  font-size: 0.9em;
-}
-
-/* ---- 段落与行内元素 ---- */
-.tiptap-editor p {
-  margin: 0 0 1.2em;
-}
-
-.tiptap-editor p:last-child {
-  margin-bottom: 0;
-}
-
-.tiptap-editor strong {
-  color: var(--color-fg);
-  font-weight: 600;
-}
-
-/* 不用中文斜体：强调改为字下着重号（与正文一致）。 */
-.tiptap-editor em {
-  font-style: normal;
-  text-emphasis: filled dot;
-  text-emphasis-position: under right;
-  text-emphasis-color: var(--color-clay);
-}
+/* ---- 编辑器独有的行内样式 ---- */
 
 .tiptap-editor s {
   color: var(--color-fg-3);
   text-decoration: line-through;
-}
-
-.tiptap-editor :not(pre) > code {
-  padding: 0.14em 0.42em;
-  border-radius: 5px;
-  background-color: var(--color-ink-1);
-  color: var(--color-fg);
-  font-family: var(--font-mono);
-  font-size: 0.84em;
 }
 
 .tiptap-editor a {
@@ -130,85 +61,6 @@
 
 .tiptap-editor a:hover {
   text-decoration-color: currentColor;
-}
-
-.tiptap-editor a > code {
-  color: inherit;
-}
-
-/* ---- 引用：衬线、次要色、左侧陶土细线 ---- */
-.tiptap-editor blockquote {
-  margin: 0 0 1.4em;
-  padding: 0.1em 0 0.1em 1.1em;
-  box-shadow: inset 2px 0 0 var(--color-clay);
-  color: var(--color-fg-2);
-  font-family: var(--font-serif);
-  font-size: 1.09em;
-  line-height: 1.8;
-}
-
-.tiptap-editor blockquote p {
-  margin-bottom: 0.6em;
-}
-
-.tiptap-editor blockquote p:last-child {
-  margin-bottom: 0;
-}
-
-/* ---- 提示块：> [!NOTE] 等 GFM 告示（与前台 article.css 一致） ---- */
-.tiptap-editor blockquote[class^='markdown-alert-'] {
-  padding: 0.75em 1em;
-  border-radius: 10px;
-  background-color: var(--color-ink-1);
-  box-shadow: none;
-  color: var(--color-fg);
-  font-family: var(--font-sans);
-  font-size: 0.91em;
-  line-height: 1.75;
-}
-
-.tiptap-editor blockquote[class^='markdown-alert-']::before {
-  content: '说明';
-  display: block;
-  margin-bottom: 0.15em;
-  color: var(--color-fg-2);
-  font-weight: 600;
-}
-
-.tiptap-editor blockquote.markdown-alert-tip {
-  background-color: var(--color-success-soft);
-}
-
-.tiptap-editor blockquote.markdown-alert-tip::before {
-  content: '提示';
-  color: var(--color-success);
-}
-
-.tiptap-editor blockquote.markdown-alert-important {
-  background-color: var(--color-clay-soft);
-}
-
-.tiptap-editor blockquote.markdown-alert-important::before {
-  content: '重要';
-  color: var(--color-clay-text);
-}
-
-.tiptap-editor blockquote.markdown-alert-warning {
-  background-color: var(--color-warning-soft);
-}
-
-.tiptap-editor blockquote.markdown-alert-warning::before {
-  content: '注意';
-  color: var(--color-warning);
-}
-
-.tiptap-editor blockquote.markdown-alert-caution {
-  background-color: var(--color-danger-soft);
-}
-
-.tiptap-editor blockquote.markdown-alert-caution::before {
-  content: '警告';
-  color: var(--color-danger);
 }
 
 /* ---- 折叠块：<details>（编辑器内常显正文；与前台 article.css 的折叠块同款外观） ---- */
@@ -1497,22 +1349,12 @@
   pointer-events: none;
 }
 
-/* 评论里段落间距收紧（长文排版参数对短评论太松）。 */
-.tiptap-editor--comment p {
-  margin: 0 0 0.5em;
-}
-
 .tiptap-editor--comment pre {
   margin: 0.6em 0;
 }
 
 .tiptap-editor--comment pre code {
   padding: 0.75em 0.9em;
-}
-
-.tiptap-editor--comment blockquote {
-  margin: 0.6em 0;
-  font-size: 1em;
 }
 
 /* ---- 选中浮出的格式条：与悬浮提示同色的反色小条 ---- */

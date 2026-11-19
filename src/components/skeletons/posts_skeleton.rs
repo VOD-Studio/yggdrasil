@@ -11,7 +11,7 @@ use crate::components::skeletons::atoms::{AdminPageHeadSkeleton, SkeletonBox};
 pub fn PostsTableSkeleton() -> impl IntoView {
     view! {
         <div class="admin-panel admin-table-wrap" aria-hidden="true">
-            <table class="admin-table admin-posts-table">
+            <table class="admin-table admin-post-table admin-posts-table">
                 <thead>
                     <tr>
                         <th class="admin-table-check">

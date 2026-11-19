@@ -52,54 +52,6 @@
 }
 
 @layer doc {
-  /* 分段控件：移植自 styles/components/ui.css 的 .segmented（不含 .segmented-thumb 滑块）。 */
-  .segmented {
-    position: relative;
-    display: inline-flex;
-    padding: 2px;
-    border-radius: 999px;
-    background-color: var(--color-ink-1);
-  }
-
-  .segmented-item {
-    position: relative;
-    z-index: 1;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    height: 1.875rem;
-    padding: 0 0.875rem;
-    border: 0;
-    border-radius: 999px;
-    background: transparent;
-    color: var(--color-fg-2);
-    font: inherit;
-    font-size: 0.8125rem;
-    white-space: nowrap;
-    cursor: pointer;
-    transition: color 150ms var(--ease-out-expo);
-  }
-
-  .segmented-item:hover {
-    color: var(--color-fg);
-  }
-
-  .segmented-item:focus-visible {
-    outline: none;
-    box-shadow: var(--shadow-focus);
-  }
-
-  .segmented-sm .segmented-item {
-    height: 1.75rem;
-    padding: 0 0.75rem;
-    font-size: 0.78125rem;
-  }
-
-  .segmented-icon-only .segmented-item {
-    justify-content: center;
-    min-width: 1.75rem;
-    padding: 0 0.4375rem;
-  }
 
   /* 选中态：由 html[data-theme-mode] 驱动（doc-boot.js 写入），首屏即正确。 */
   html[data-theme-mode="light"] .theme-seg .segmented-item[data-theme-choice="light"],

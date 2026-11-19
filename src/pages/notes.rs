@@ -326,7 +326,7 @@ fn NotesBody(
     view! {
         <header class="notes-header page-enter">
             <div>
-                <h1 class="notes-title">"笔记"</h1>
+                <h1 class="notes-title page-title">"笔记"</h1>
                 <p class="notes-intro">"随手记下的发现，和反复琢磨后成形的主题。"</p>
             </div>
             {total_text.map(|text| view! { <p class="notes-count tabular-nums">{text}</p> })}
@@ -1195,7 +1195,7 @@ fn NotebookContent(
 #[component]
 fn NotebookBack() -> impl IntoView {
     view! {
-        <a class="notes-back" href=Route::Notes.to_string()>
+        <a class="notes-back page-back" href=Route::Notes.to_string()>
             <Icon name=IconName::ArrowLeft size=14/>
             "全部笔记"
         </a>

@@ -206,15 +206,12 @@
     max-height: 25rem;
   }
 
+  /* 与 CodeMirror 对齐：行高 1.75、上下 0.75rem；行号栏 = 行号（至少 20px，左右 5px / 3px）
+     + 折叠栏（约 10px）；代码左缩进 6px。 */
   .runner-placeholder {
     font-family: var(--font-mono);
     font-size: 0.84375rem;
     line-height: 1.75;
-  }
-
-  /* 与 CodeMirror 对齐：行高 1.75、上下 0.75rem；行号栏 = 行号（至少 20px，左右 5px / 3px）
-     + 折叠栏（约 10px）；代码左缩进 6px。 */
-  .runner-placeholder {
     display: flex;
     height: calc(var(--runner-lines, 1) * 1.75em + 1.5rem);
     overflow: hidden;

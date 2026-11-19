@@ -5,6 +5,7 @@
 @import "../styles/components/shell.css";
 @import "../styles/components/toc.css";
 @import "./css/tokens.css";
+@import "../styles/components/segmented.css" layer(doc);
 @import "./css/shell.css";
 @import "./css/layout.css";
 @import "./css/sidebar.css";
