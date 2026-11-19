@@ -202,9 +202,12 @@ async function main() {
   const legacy = 'legacy_chunk.AbCdEfGhIjKlMnOpQrStUv.wasm';
   fs.writeFileSync(path.join(previous, 'pkg', legacy), Buffer.alloc(16, 7));
   const oldParser = '/codemirror/chunks/python.oldChunk1234.js';
+  const oldCoreStyle = '/yggdrasil-core/yggdrasil-core.css';
   fs.mkdirSync(path.join(previous, 'codemirror/chunks'), { recursive: true });
   fs.writeFileSync(path.join(previous, oldParser.slice(1)), 'export {};');
   fs.writeFileSync(path.join(previous, 'codemirror/editor.js'), 'var CodeMirrorEditor = {};');
+  fs.mkdirSync(path.join(previous, 'yggdrasil-core'), { recursive: true });
+  fs.writeFileSync(path.join(previous, oldCoreStyle.slice(1)), '.legacy-style{}');
   fs.mkdirSync(path.join(runtime, 'uploads'));
 
   const env = {
@@ -401,12 +404,19 @@ async function main() {
       /<link rel="stylesheet" href="(\/style\.css\?v=[0-9a-f]{16})"/,
     )?.[1];
     const styleCurrent = style ? await fetch(`${base}${style}`) : undefined;
-    await styleCurrent?.arrayBuffer();
+    const css = await styleCurrent?.text();
     check(
       '3 版本化样式为 immutable',
       styleCurrent?.status === 200 &&
         (styleCurrent.headers.get('cache-control') || '').includes('immutable'),
       `${style ?? '首页没有带版本号的 /style.css'} cache-control=${styleCurrent?.headers.get('cache-control')}`,
+    );
+    check(
+      '3 导航和主题过渡合入站点样式',
+      !homeBody.includes(oldCoreStyle) &&
+        !fs.existsSync(path.join(SITE, oldCoreStyle.slice(1))) &&
+        css?.includes('::view-transition-new(vt-section-content)') === true &&
+        css.includes('@keyframes tt-expand'),
     );
     const styleStale = await fetch(`${base}/style.css?v=0000000000000000`);
     await styleStale.arrayBuffer();
@@ -701,6 +711,7 @@ async function main() {
     for (const [asset, cacheControl] of [
       [oldParser, 'public, max-age=31536000, immutable'],
       ['/codemirror/editor.js', 'public, no-cache'],
+      [oldCoreStyle, 'public, no-cache'],
     ]) {
       const previousResponse = await fetch(`${base}${asset}`);
       await previousResponse.text();

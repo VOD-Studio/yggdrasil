@@ -76,7 +76,7 @@ DEV_OUTPUTS_codemirror-editor += $(CODEMIRROR_JS) $(addsuffix .map,$(CODEMIRROR_
 DEV_OUTPUTS_lightbox := public/lightbox/lightbox.js public/lightbox/lightbox.js.map public/lightbox/lightbox.css
 DEV_OUTPUTS_tiptap-editor := public/tiptap/editor.js public/tiptap/editor.js.map public/tiptap/editor.css public/tiptap/comment.js public/tiptap/comment.js.map public/tiptap/comment.css public/tiptap/math-renderer.js public/tiptap/math-renderer.js.map public/tiptap/code-highlighter.js public/tiptap/code-highlighter.js.map
 DEV_OUTPUTS_xterm-terminal := public/xterm/terminal.js public/xterm/terminal.js.map public/xterm/terminal.css
-DEV_OUTPUTS_yggdrasil-core := public/yggdrasil-core/yggdrasil-core.js public/yggdrasil-core/yggdrasil-core.js.map public/yggdrasil-core/yggdrasil-core.css public/yggdrasil-core/yggdrasil-enhance.js public/yggdrasil-core/yggdrasil-enhance.js.map
+DEV_OUTPUTS_yggdrasil-core := public/yggdrasil-core/yggdrasil-core.js public/yggdrasil-core/yggdrasil-core.js.map public/yggdrasil-core/yggdrasil-enhance.js public/yggdrasil-core/yggdrasil-enhance.js.map
 
 define dev_lib_rule
 $(DEV_ASSET_DIR)/$(1).stamp: $(call dev_lib_inputs,$(1)) $(DEV_COMMON_INPUTS)

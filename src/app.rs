@@ -54,7 +54,7 @@ use crate::theme::provide_theme;
 /// 服务端渲染的 HTML 文档外壳。
 #[cfg(feature = "server")]
 pub fn shell(options: LeptosOptions) -> impl IntoView {
-    use crate::static_assets::{self, ADMIN_CSS, CORE_CSS, CORE_JS, STYLE_CSS};
+    use crate::static_assets::{self, ADMIN_CSS, CORE_JS, STYLE_CSS};
     use crate::theme::ThemePreload;
     use leptos_meta::MetaTags;
 
@@ -85,7 +85,6 @@ pub fn shell(options: LeptosOptions) -> impl IntoView {
                             />
                         }
                     })}
-                <link rel="stylesheet" href=static_assets::url(CORE_CSS)/>
                 <script
                     type="application/json"
                     id=static_assets::VERSIONS_ELEMENT_ID

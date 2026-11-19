@@ -6,7 +6,6 @@ import { initPageReveal } from './page-entry';
 import { routeTransitions } from './route-transitions';
 import { applyResolvedTheme, startThemeTransition } from './theme-transition';
 import { skipActiveAnimation } from './view-transition-lifecycle';
-import './style.css';
 
 /**
  * P5 §8.2 拆分边界：本入口只保留启动必需代码（导航、主题、锚点、pagereveal），

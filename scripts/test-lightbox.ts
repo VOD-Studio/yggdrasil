@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// Standalone browser regression: rebuild with make build-libs before running.
+// Standalone browser regression: rebuild with make dev-assets before running.
 // PLAYWRIGHT_MODULE=/path/to/playwright CHROMIUM_PATH=/path/to/chromium bun scripts/test-lightbox.ts
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -32,13 +32,9 @@ const continuityArtifactDir = process.env.LIGHTBOX_ARTIFACT_DIR;
 const script = fs.readFileSync(path.join(root, 'public/lightbox/lightbox.js'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'public/lightbox/lightbox.css'), 'utf8');
 const articleCss = fs.readFileSync(path.join(root, 'public/style.css'), 'utf8');
-const coreCss = fs.readFileSync(
-  path.join(root, 'public/yggdrasil-core/yggdrasil-core.css'),
-  'utf8',
-);
 const diagramSvg = (dark: boolean) =>
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="10 20 480 160" width="480" height="160" style="color:${dark ? '#e5e7eb' : '#172554'}" overflow="visible"><title>${dark ? '深色' : '浅色'}流程图</title><style>p{margin:0}foreignObject{font:16px sans-serif}</style><defs><marker id="fixture-arrow-${dark}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs><rect x="20" y="30" width="450" height="130" rx="8" fill="${dark ? '#1e293b' : '#dbeafe'}"/><foreignObject x="35" y="50" width="420" height="90"><div xmlns="http://www.w3.org/1999/xhtml" style="color:inherit"><p>开始 → 完成</p><p>LongEnglishLabelWithoutUnexpectedWrapping</p></div></foreignObject><path data-edge="" d="M35 145H440" stroke="currentColor" stroke-width="2" marker-end="url(#fixture-arrow-${dark})"/></svg>`;
-const diagramFixture = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${articleCss}\n${coreCss}\n${css}\nbody{min-height:2200px}.post-content{padding:80px 24px}.mermaid-diagram{padding:24px;border:2px solid gray}.mermaid-diagram svg{max-width:100%;height:auto}</style></head><body><main class="post-content md-content" data-showcase-lightbox-owner="diagram-browser"><figure class="mermaid-diagram"><div class="mermaid-light">${diagramSvg(false)}</div><div class="mermaid-dark">${diagramSvg(true)}</div></figure></main><script>${script}</script><script>window.__initLightbox('.post-content');</script></body></html>`;
+const diagramFixture = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${articleCss}\n${css}\nbody{min-height:2200px}.post-content{padding:80px 24px}.mermaid-diagram{padding:24px;border:2px solid gray}.mermaid-diagram svg{max-width:100%;height:auto}</style></head><body><main class="post-content md-content" data-showcase-lightbox-owner="diagram-browser"><figure class="mermaid-diagram"><div class="mermaid-light">${diagramSvg(false)}</div><div class="mermaid-dark">${diagramSvg(true)}</div></figure></main><script>${script}</script><script>window.__initLightbox('.post-content');</script></body></html>`;
 const fixture = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>
   body { margin: 0; min-height: 2000px; background: #fafafa; color: #111; }
   html.dark body { background: #111; color: #fafafa; }

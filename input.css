@@ -32,3 +32,4 @@
 @import "./styles/pages/page-entry.css";
 @import "./styles/pages/writing-guide.css";
 @import "./styles/pages/notes-public.css";
+@import "./libs/yggdrasil-core/src/style.css";

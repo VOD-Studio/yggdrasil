@@ -22,8 +22,6 @@ pub const ADMIN_CSS_ELEMENT_ID: &str = "ygg-admin-css";
 pub const HIGHLIGHT_CSS: &str = "/highlight.css";
 /// KaTeX 样式。
 pub const KATEX_CSS: &str = "/katex/katex.min.css";
-/// yggdrasil-core 样式。
-pub const CORE_CSS: &str = "/yggdrasil-core/yggdrasil-core.css";
 /// yggdrasil-core 启动脚本（导航协调器、主题、浏览器库加载器）。
 pub const CORE_JS: &str = "/yggdrasil-core/yggdrasil-core.js";
 /// 正文增强脚本（mermaid、目录、changelog、瀑布流）。
@@ -43,7 +41,6 @@ pub const ALL: &[&str] = &[
     ADMIN_CSS,
     HIGHLIGHT_CSS,
     KATEX_CSS,
-    CORE_CSS,
     CORE_JS,
     ENHANCE_JS,
     LIGHTBOX_JS,

@@ -43,7 +43,12 @@ fn is_hashed_codemirror_file(path: &str) -> bool {
     !name.is_empty() && valid(name) && hash.len() == 12 && valid(hash)
 }
 
-const LEGACY_CODEMIRROR: &str = "/codemirror/editor.js";
+pub(crate) fn is_legacy_browser_asset(path: &str) -> bool {
+    matches!(
+        path,
+        "/codemirror/editor.js" | "/yggdrasil-core/yggdrasil-core.css"
+    )
+}
 
 /// rustdoc 产物里文件名带内容哈希、内容永不变化的文件：
 /// - `/doc/static.files/<名字>-<8 位十六进制>.<扩展名>`（样式、脚本、字体，如
@@ -389,8 +394,8 @@ pub(crate) async fn version_headers_middleware(
     response
 }
 
-/// 解析旧发布目录中可能命中的带 hash 资源。只放行 /pkg/（cargo-leptos 内容
-/// 寻址产物目录）；URI path 保持百分号编码原样映射，任何非常规组件（`..`、
+/// 解析旧发布目录中可能命中的分包和已移除的固定路径资源。URI path 保持百分号编码原样映射，
+/// 任何非常规组件（`..`、
 /// 根/父目录引用）都不是 Normal 分量，直接拒绝；文件不存在返回 None。
 fn previous_asset_file(previous_root: &std::path::Path, path: &str) -> Option<std::path::PathBuf> {
     use std::path::Component;
@@ -398,7 +403,7 @@ fn previous_asset_file(previous_root: &std::path::Path, path: &str) -> Option<st
 
     let rel = path.strip_prefix('/')?;
     let top = rel.split('/').next()?;
-    if top != "pkg" && path != LEGACY_CODEMIRROR && !is_hashed_codemirror_file(path) {
+    if top != "pkg" && !is_legacy_browser_asset(path) && !is_hashed_codemirror_file(path) {
         return None;
     }
     let rel_path = Path::new(rel);
@@ -417,12 +422,10 @@ fn previous_asset_file(previous_root: &std::path::Path, path: &str) -> Option<st
 /// 滚动更新后，已打开标签页与反代/浏览器缓存的旧 HTML 仍引用上一发布的带
 /// hash 资源（含按路由懒加载的 WASM 分包）；新发布未收录这些文件时（404），
 /// 回退到 `YGG_PREVIOUS_PUBLIC_DIR` 同路径文件。语义：
-/// - 只拦截 /pkg/ 与 CodeMirror 的 hash 分包及旧入口的 GET 404，未命中保留原 404，不遮蔽当前发布
-///   的真实缺失；
+/// - 只拦截 /pkg/、CodeMirror 的 hash 分包和已移除的固定路径资源的 GET 404；
 /// - 复用 ServeFile 的内容类型推断与 `.br` 旁车协商（release public 自带旁车，
 ///   与静态资源服务的预压缩行为一致）；
-/// - 命中即 immutable（内容寻址）并带 `x-previous-release` 标记，外层
-///   add_cache_control 的 or_insert 不会覆盖。
+/// - 内容寻址资源使用 immutable，旧固定路径每次校验；均带 `x-previous-release` 标记。
 pub(crate) async fn previous_release_assets(
     previous_root: std::path::PathBuf,
     req: axum::extract::Request,
@@ -468,11 +471,13 @@ pub(crate) async fn previous_release_assets(
             let headers = asset.headers_mut();
             headers.insert(
                 axum::http::header::CACHE_CONTROL,
-                axum::http::HeaderValue::from_static(if parts.uri.path() == LEGACY_CODEMIRROR {
-                    "public, no-cache"
-                } else {
-                    IMMUTABLE
-                }),
+                axum::http::HeaderValue::from_static(
+                    if is_legacy_browser_asset(parts.uri.path()) {
+                        "public, no-cache"
+                    } else {
+                        IMMUTABLE
+                    },
+                ),
             );
             headers.insert(
                 axum::http::HeaderName::from_static("x-previous-release"),
