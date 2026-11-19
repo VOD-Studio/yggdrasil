@@ -1,12 +1,5 @@
 /* ========== 原生页面与文章共享元素过渡 ========== */
 
-/* 独立文档只启用基础过渡；共享名称由客户端导航按次分配。 */
-@media (prefers-reduced-motion: no-preference) {
-  @view-transition {
-    navigation: auto;
-  }
-}
-
 html:not(.is-theme-transitioning)::view-transition-group(root) {
   animation-duration: 200ms;
 }

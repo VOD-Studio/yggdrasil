@@ -412,8 +412,9 @@ async function main() {
       `${style ?? '首页没有带版本号的 /style.css'} cache-control=${styleCurrent?.headers.get('cache-control')}`,
     );
     check(
-      '3 导航和主题过渡合入站点样式',
+      '3 站点样式包含导航和主题动画，页面声明跨文档过渡',
       !homeBody.includes(oldCoreStyle) &&
+        homeBody.includes('@view-transition{navigation:auto}') &&
         !fs.existsSync(path.join(SITE, oldCoreStyle.slice(1))) &&
         css?.includes('::view-transition-new(vt-section-content)') === true &&
         css.includes('@keyframes tt-expand'),

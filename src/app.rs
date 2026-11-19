@@ -85,6 +85,8 @@ pub fn shell(options: LeptosOptions) -> impl IntoView {
                             />
                         }
                     })}
+                // 原生跨文档过渡须由页面声明。Bun 1.4 的 CSS 打包器尚不识别此规则。
+                <style inner_html="@media (prefers-reduced-motion:no-preference){@view-transition{navigation:auto}}"></style>
                 <script
                     type="application/json"
                     id=static_assets::VERSIONS_ELEMENT_ID
