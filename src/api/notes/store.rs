@@ -224,10 +224,10 @@ pub async fn context(slug: &str, requested: Option<i32>) -> Result<Option<NoteCo
             }
         })
         .collect();
-    let Some(notebook) = notebooks(Access::Public)
+    let Some(notebook) = query_notebooks(&client, Access::Public, Some(book))
         .await?
         .into_iter()
-        .find(|b| b.id == book)
+        .next()
     else {
         return Ok(None);
     };
@@ -241,6 +241,16 @@ pub async fn get(
     version: Option<i32>,
 ) -> Result<Note, AppError> {
     let client = get_conn().await.map_err(AppError::db_conn)?;
+    query_note(&client, access, id, slug, version).await
+}
+
+async fn query_note(
+    client: &tokio_postgres::Client,
+    access: Access,
+    id: Option<i32>,
+    slug: Option<String>,
+    version: Option<i32>,
+) -> Result<Note, AppError> {
     let owner = access.owner();
     let books = access.books();
     let requested = if matches!(access, Access::Owner(_)) {
@@ -411,7 +421,7 @@ pub async fn save(
     tx.commit().await.map_err(AppError::tx)?;
     // 笔记本归属可影响公开目录，即使正文仍是工作稿也应失效目录缓存。
     invalidate();
-    get(Access::Owner(owner_id), Some(id), None, None).await
+    query_note(&client, Access::Owner(owner_id), Some(id), None, None).await
 }
 
 pub async fn act(
@@ -426,7 +436,7 @@ pub async fn act(
     act_in_transaction(&tx, owner_id, id, expected, action, allowed_books).await?;
     tx.commit().await.map_err(AppError::tx)?;
     invalidate();
-    get(Access::Owner(owner_id), Some(id), None, None).await
+    query_note(&client, Access::Owner(owner_id), Some(id), None, None).await
 }
 
 pub async fn batch_act(
@@ -547,15 +557,24 @@ pub async fn history(owner_id: i32, id: i32) -> Result<Vec<NoteRevision>, AppErr
 
 pub async fn notebooks(access: Access) -> Result<Vec<Notebook>, AppError> {
     let client = get_conn().await.map_err(AppError::db_conn)?;
+    query_notebooks(&client, access, None).await
+}
+
+async fn query_notebooks(
+    client: &tokio_postgres::Client,
+    access: Access,
+    id: Option<i32>,
+) -> Result<Vec<Notebook>, AppError> {
     let owner = access.owner();
     let books = access.books();
     let include_archived = matches!(access, Access::Owner(_));
     let sql = format!("SELECT b.*, (SELECT COUNT(*) FROM notebook_notes bn JOIN notes n ON n.id=bn.note_id WHERE bn.notebook_id=b.id AND n.deleted_at IS NULL AND n.{} IS NOT NULL) AS note_count
         FROM notebooks b WHERE ($1::int IS NULL AND b.is_public OR b.owner_id=$1)
         AND ($2::int[] IS NULL OR b.id=ANY($2)) AND ($3 OR b.archived_at IS NULL)
+        AND ($4::int IS NULL OR b.id=$4)
         ORDER BY b.updated_at DESC,b.id DESC", access.revision());
     let rows = client
-        .query(&sql, &[&owner, &books, &include_archived])
+        .query(&sql, &[&owner, &books, &include_archived, &id])
         .await
         .map_err(AppError::query)?;
     Ok(rows
