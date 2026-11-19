@@ -13,7 +13,7 @@ Yggdrasil is a self-hosted blog + CMS + notes/knowledge base: Rust 2021, Leptos 
   - Admin, login, showcase and every public page are `Lazy::<T>` routes (`LazyRoute`), each split into its own WASM chunk. There is no reader/full flavor.
   - Both sides compile with `--cfg erase_components` (server: `.cargo/config.toml` `[build] rustflags`, re-added wherever `RUSTFLAGS` is exported, e.g. Dockerfiles; WASM: `always-erase-components` in `[package.metadata.leptos]`). A mismatch leaves pages silently unhydrated.
   - `SPLIT_DATA_SLACK` in `src/lib.rs` lets wasm-split move route-only `.rodata` out of the main bundle; `build-release.ts` strips `producers`/`target_features` from every `.wasm`. Both are needed for the per-route size gate.
-  - Release frontends need cargo-leptos 0.3.11 built against the chunk-merge fork of `wasm_split_cli_support` (`make install-cargo-leptos`, rev `WASM_SPLIT_REV` in Makefile, duplicated in both Dockerfiles and `ci.yml`); stock wasm-split emits ~4× more tiny chunks. `make build-frontend` refuses a stock binary and passes `WASM_SPLIT_CHUNK_LOAD_COST` (Makefile, 8192: EdgeOne serves one client's requests roughly one at a time, so fewer, larger chunks win); `test-release-split` caps `.wasm` files per route.
+  - Official cargo-leptos 0.3.12 uses `wasm_split_cli_support` 0.2.5, which merges shared Web chunks by default (`make install-cargo-leptos`). Keep the version in sync across the Makefile, Dockerfiles and CI cache keys. `test-release-split` checks both WASM request counts and Brotli size per route.
   - `build-release.ts` renames the entry trio (`yggdrasil.<h>.{js,wasm}`, `__wasm_split.<h>.js`) by their combined final content and writes `entry: content-addressed` to `hash.txt`; only then does `middleware::cache_control_for_path` serve the entries `immutable`.
   - `app::HydrationScriptsWithPreload` drops Leptos's per-lazy-fn `<link rel="preload">` flood and instead preloads only the current route's view modules (`route_prefetch::route_view_names`, keep in sync with the route table) plus the main wasm and the split loader.
 - **Bootstrap** (`src/main.rs` → `src/startup.rs::run`): dotenvy → tracing (+ `api::logs::capture::CaptureLayer`) → validate `DATABASE_URL`/`DB_POOL_SIZE` → `db::pool::ensure_database` → `db::migrate::run_on_conn` → `api::settings::bootstrap_startup_settings` → `api::auth::sync_admin_from_env` → `axum::serve` with graceful shutdown. Site assets come from `LEPTOS_SITE_ROOT` (default `<exe dir>/public`); `hash.txt` must sit next to the executable and every file it names must exist under `pkg/`, otherwise startup panics.
@@ -46,7 +46,7 @@ Yggdrasil is a self-hosted blog + CMS + notes/knowledge base: Rust 2021, Leptos 
 Run bare `make` to list annotated targets. Prefer Makefile targets: they set `SSR_CACHE_SECS=0` in dev and wire cargo-leptos with the pinned WASM toolchain.
 
 ```sh
-make check-dev-tools          # verify cargo-leptos 0.3.11 / tailwindcss / bun
+make check-dev-tools          # verify cargo-leptos 0.3.12 / tailwindcss / bun
 make dev                      # incremental assets + cargo leptos watch
 make dev-assets               # refresh changed assets for a running server
 make build-libs | make css    # libs IIFE bundles | Tailwind → public/style.css + public/admin.css
@@ -90,7 +90,7 @@ Docker fallbacks only when local tools are missing: `make docker-dev` (port 8080
 
 ## Runtime/Tooling Preferences
 
-- Pins: cargo-leptos 0.3.11 (chunk-merge patched, see above), Leptos 0.8.23, Tailwind 4.3.3 **standalone** binary (the npm CLI can't resolve `tailwindcss` without a root `node_modules`), Bun 1.4.4 (`packageManager`), WASM nightly `nightly-2026-11-19` (release frontend uses `-Zbuild-std`), Rust. There is no `rust-toolchain.toml`.
+- Pins: cargo-leptos 0.3.12, Leptos 0.8.23, Tailwind 4.3.3 **standalone** binary (the npm CLI can't resolve `tailwindcss` without a root `node_modules`), Bun 1.4.4 (`packageManager`), WASM nightly `nightly-2026-11-19` (release frontend uses `-Zbuild-std`), Rust. There is no `rust-toolchain.toml`.
 - Bun only. No Node.js or pnpm; `scripts/*.ts` use Bun directly (`bun scripts/<name>.ts`); run `cd libs && bun run typecheck` for strict type checking (it already includes the tooling configs and `scripts/`). Standalone CLI scripts have a `#!/usr/bin/env bun` shebang.
 - Changing frontend deps: `cd libs && BUN_CONFIG_REGISTRY=https://registry.npmjs.org/ bun install`; keep per-package registry URLs out of `bun.lock`. `bunfig.toml` enforces a 1-day `minimumReleaseAge`. `@tiptap/markdown` is patched (`patchedDependencies` in `libs/package.json`, `libs/patches/`): bumping it means regenerating the patch.
 - Generated output is never committed: `public/style.css`, `public/admin.css`, `public/highlight.css`, `public/katex/`, `public/doc/`, every `public/<lib>/` bundle dir, `target/site`, `target/release-dist`, `release-manifest.json`, `*.br`. Tracked: `public/icons/`, `public/images/`, `public/skills/`, favicons, `manifest.webmanifest`.

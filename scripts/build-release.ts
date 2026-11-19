@@ -16,9 +16,7 @@ import { execSync } from 'node:child_process';
  * 不会破坏既有发布目录。<site> 顶层若存在 index.html，说明混入了旧 dx 产物，直接失败。
  *
  * 装配时剥掉 pkg/ 下每个 .wasm 的 `producers` / `target_features` 自定义段（运行时不读）。
- * --split 产出上千个小分包，每个都带这两段约 180 B，一条路由要拉几百个分包，首屏 Brotli
- * 因此多出约 40 KB。不能交给 wasm-opt 的 --strip-* 做：只含这两段的空分包会被剥成 8 字节，
- * cargo-leptos 0.3.11 随后改写分包加载器引用时对短于文件名的 .wasm 下标越界而崩溃。
+ * 两段会随分包重复写入，由装配统一移除，避免增加首屏 Brotli 体积。
  * 剥离是确定性的，cargo-leptos 给出的内容哈希文件名仍与内容一一对应。
  *
  * 装配时还会按最终内容重命名入口三件套 `yggdrasil.<h>.js`、`yggdrasil.<h>.wasm` 与
@@ -175,9 +173,8 @@ function entryContentHashes(pkgDir: string, current: EntryHashes): EntryHashes {
 /**
  * 按最终内容重命名入口三件套并改写 hash.txt。
  *
- * cargo-leptos 先按内容给入口改名，之后才把加载器文件名写进入口；只改懒加载代码的发布
- * 会出现「入口同名不同内容」，入口因此只能 no-cache。EdgeOne 不缓存 no-cache 资源，也不把
- * 条件请求转给源站，回访每页都要整包重下主 wasm。内容寻址之后入口可以与分包一样 immutable。
+ * 以装配剥离 WASM 自定义段后的内容为准重算三件套哈希。三者互相引用，任一内容变化都
+ * 会换一套文件名，服务端因此可以给入口使用 immutable 缓存。
  */
 function contentAddressEntries(pkgDir: string, hashTxtPath: string) {
   const text = readFileSync(hashTxtPath, 'utf8');

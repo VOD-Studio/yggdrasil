@@ -107,7 +107,7 @@ if (command === 'bun' && args[0] === 'install') {
   if (fs.existsSync(path.join(root, 'fail-' + name))) process.exit(1);
   for (const file of outputs[name] || []) write(file);
 } else if (command === 'cargo-leptos' || (command === 'cargo' && args[0] === 'leptos')) {
-  console.log('cargo-leptos 0.3.11');
+  console.log('cargo-leptos 0.3.12');
 } else if (command === 'cargo') {
   record('highlight'); write('public/highlight.css');
 } else if (command === 'tailwindcss') {

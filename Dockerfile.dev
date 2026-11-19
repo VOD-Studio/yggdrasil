@@ -111,7 +111,7 @@ RUN if [ "$CN_MIRROR" = "true" ]; then \
     && rustup component add clippy rustfmt
 
 # ── cargo-leptos（与生产 Dockerfile 一致）──────────────────────
-RUN cargo install cargo-leptos --version 0.3.11 --locked
+RUN cargo install cargo-leptos --version 0.3.12 --locked
 
 # ── Tailwind CSS v4 standalone ──────────────────────────────────
 ARG TAILWIND_VERSION=4.3.3

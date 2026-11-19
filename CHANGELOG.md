@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **WASM 分包切换到上游合并**：开发、CI 和 Docker 统一使用官方 cargo-leptos 0.3.12，Web 构建默认合并共享分包，移除分包补丁及其配置。
+
 ### Fixed
 
 - **CI Feed 数据库回归**：RSS 断言按实际启用的 Brotli 配置检查编码头并读取正文，修复默认关闭压缩时因缺少 `Content-Encoding` 导致的失败；保留压缩启用时的严格编码断言及既有 Brotli/gzip、ETag/304 覆盖，不改变生产压缩行为。

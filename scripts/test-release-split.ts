@@ -17,8 +17,7 @@ const RELEASE_OUT = path.resolve(ROOT, process.env.RELEASE_OUT || 'target/releas
 const SITE = path.join(RELEASE_OUT, 'public');
 const SERVER_BIN = path.join(RELEASE_OUT, 'server');
 const SIZE_LIMIT = 594603;
-// 公开路由直开约 10–26 个 .wasm（WASM_SPLIT_CHUNK_LOAD_COST=8192）；合并代价退回补丁默认的
-// 1024 时 20–70 个，未打补丁的 cargo-leptos 120–380 个（见 Makefile）。
+// 每条公开路由检查首次水合请求的 WASM 文件数，防止共享分包碎片化。
 const WASM_FILE_LIMIT = 40;
 const SIZE_ROUTES = [
   '/',
