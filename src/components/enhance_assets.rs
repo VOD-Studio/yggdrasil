@@ -21,7 +21,48 @@
 use leptos::prelude::*;
 use leptos_meta::{Script, Stylesheet};
 
-use crate::static_assets::{self, ENHANCE_JS, LIGHTBOX_CSS, LIGHTBOX_JS};
+use crate::static_assets::{self, ENHANCE_JS, HIGHLIGHT_CSS, KATEX_CSS, LIGHTBOX_CSS, LIGHTBOX_JS};
+
+const HIGHLIGHT_MARKER: &str = "<!--ygg-highlight-->";
+const KATEX_MARKER: &str = "<!--ygg-katex-->";
+
+#[derive(Clone, Copy, Default)]
+pub(crate) struct MarkdownStyles {
+    pub(crate) highlight: bool,
+    pub(crate) katex: bool,
+}
+
+impl MarkdownStyles {
+    pub(crate) fn for_html(html: &str) -> Self {
+        Self {
+            highlight: html.contains("<pre>")
+                || html.contains("<pre ")
+                || html.contains(HIGHLIGHT_MARKER),
+            katex: html.contains(r#"class="katex"#) || html.contains(KATEX_MARKER),
+        }
+    }
+
+    /// 正文 HTML 已由 SSR 输出，水合数据只记录它需要的样式。
+    pub(crate) fn append_markers(self, html: &mut String) {
+        if self.highlight {
+            html.push_str(HIGHLIGHT_MARKER);
+        }
+        if self.katex {
+            html.push_str(KATEX_MARKER);
+        }
+    }
+
+    pub(crate) fn links(self) -> impl IntoView {
+        view! {
+            {self.highlight.then(highlight_styles)}
+            {self.katex.then(|| view! { <Stylesheet href=static_assets::url(KATEX_CSS)/> })}
+        }
+    }
+}
+
+pub(crate) fn highlight_styles() -> impl IntoView {
+    view! { <Stylesheet href=static_assets::url(HIGHLIGHT_CSS)/> }
+}
 
 /// 声明本页需要增强脚本。挂载 PostContent / 目录 / changelog / 图鉴等增强组件的
 /// 页面调用；重复声明无害（脚本是幂等 IIFE，见模块文档）。

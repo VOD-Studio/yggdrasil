@@ -241,6 +241,7 @@ pub(super) fn TokenDialog(token: OpenToken, #[prop(into)] on_close: Callback<()>
                                             let text = s.content.clone();
                                             let html = s.content_html.clone();
                                             view! {
+                                                {crate::components::enhance_assets::highlight_styles()}
                                                 <figure class="mcp-snippet" role="tabpanel">
                                                     <figcaption>
                                                         <span>{split_title(&s.title).1}</span>

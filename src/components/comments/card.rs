@@ -7,6 +7,7 @@
 
 use leptos::prelude::*;
 
+use crate::components::enhance_assets::MarkdownStyles;
 use crate::components::ui::UserAvatar;
 
 /// 评论卡片外壳组件。
@@ -51,8 +52,10 @@ pub fn CommentCardShell(
     }
     // 回复按层级缩进，五层后不再加深，深层回复不至于被挤到最右。
     let style = (depth > 1).then(|| format!("--comment-indent: {};", depth.min(5) - 1));
+    let styles = MarkdownStyles::for_html(&content_html).links();
 
     view! {
+        {styles}
         <div class=class style=style>
             <UserAvatar name=author_name avatar_url=Some(avatar_url) class="comment-avatar"/>
             <div class="comment-main">

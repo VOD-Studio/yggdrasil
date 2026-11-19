@@ -743,6 +743,7 @@ fn ShowcaseInspector(slug: String) -> impl IntoView {
             {props}
             <section class="showcase-inspector-section">
                 <h3>"用法"</h3>
+                {crate::components::enhance_assets::highlight_styles()}
                 <div class="showcase-code-panel">
                     <pre>
                         <code>{highlighted_view(&spec.code)}</code>
@@ -1209,6 +1210,7 @@ fn ShowcaseDetail(component: String) -> impl IntoView {
                             <code class="showcase-source">{spec.source.clone()}</code>
                         </div>
                         {api_note}
+                        {crate::components::enhance_assets::highlight_styles()}
                         <figure class="showcase-code-panel">
                             <div class="showcase-code-toolbar">
                                 <span>{usage_label}</span>

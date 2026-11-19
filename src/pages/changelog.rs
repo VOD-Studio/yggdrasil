@@ -78,6 +78,21 @@ impl ChangelogRoute {
 
 #[component]
 fn Changelog(versions: Vec<VersionEntry>) -> impl IntoView {
+    use crate::components::enhance_assets::MarkdownStyles;
+
+    let styles = versions
+        .iter()
+        .flat_map(|version| {
+            std::iter::once(&version.intro_html)
+                .chain(version.groups.iter().map(|group| &group.items_html))
+        })
+        .fold(MarkdownStyles::default(), |mut styles, html| {
+            let needed = MarkdownStyles::for_html(html);
+            styles.highlight |= needed.highlight;
+            styles.katex |= needed.katex;
+            styles
+        })
+        .links();
     let total = versions.len();
     // 最早一个有日期的版本：「2026.06 起」。
     let since = versions
@@ -94,6 +109,7 @@ fn Changelog(versions: Vec<VersionEntry>) -> impl IntoView {
 
     view! {
         <Title text="更新日志 · Yggdrasil"/>
+        {styles}
         <div class="changelog">
             <ChangelogHeader total=total since=since/>
             <div class="changelog-layout">

@@ -285,7 +285,9 @@ fn ConnectStep(data: WritingGuideData) -> impl IntoView {
 #[component]
 fn SkillDocument(data: WritingGuideData) -> impl IntoView {
     let expanded = RwSignal::new(false);
+    let styles = crate::components::enhance_assets::MarkdownStyles::for_html(&data.html).links();
     view! {
+        {styles}
         <section id="skill" class="writing-skill" aria-labelledby="skill-title">
             <div class="writing-skill-head">
                 <h2 id="skill-title" class="writing-section-title">

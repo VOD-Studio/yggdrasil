@@ -234,7 +234,9 @@ async function main() {
   const sessionToken = 'release-split-admin';
   const tokenHash = createHash('sha256').update(sessionToken).digest('hex');
   const code = '```python\nprint(1)\n```';
-  const html = '<p>拆分验收正文</p><pre><code class="language-python">print(1)\n</code></pre>';
+  const plain = '<p>拆分验收正文</p>';
+  const highlighted = '<pre><code class="language-python">print(1)\n</code></pre>';
+  const math = '<p><span class="katex"><span class="katex-html">x²</span></span></p>';
   const posts = [
     ['split-a', '拆分验收 A', 3],
     ['split-b', '拆分验收 B', 2],
@@ -246,7 +248,7 @@ async function main() {
         title,
         id,
       ]) => `INSERT INTO posts(id,author_id,title,slug,summary,content_md,content_html,status,published_at)
-      VALUES(${id},1,'${title}','${slug}','拆分验收摘要','拆分验收正文\n\n${code}','${html}','published',NOW() - INTERVAL '${id} hour');
+      VALUES(${id},1,'${title}','${slug}','拆分验收摘要','拆分验收正文\n\n${code}','${plain}${id === 2 ? '' : highlighted}${id === 3 ? math : ''}','published',NOW() - INTERVAL '${id} hour');
       INSERT INTO post_tags(post_id,tag_id) VALUES(${id},1);`,
     )
     .join('\n');
@@ -292,6 +294,10 @@ async function main() {
     );
     check('1 首页无脚本错误', scriptErrors(log).length === 0, scriptErrors(log).join(' | '));
     check('1 首页无 ≥400 响应', log.failed.length === 0, log.failed.join(', '));
+    const markdownStyles = page.locator(
+      'head link[href^="/highlight.css"], head link[href^="/katex/katex.min.css"]',
+    );
+    check('1 首页不加载正文高亮与公式样式', (await markdownStyles.count()) === 0);
 
     // 2. SPA 导航：页面不重载、主包不再请求，只增量拉文章分包。
     await page.evaluate(() => {
@@ -312,6 +318,12 @@ async function main() {
       names(log.wasm),
     );
     check('2 SPA 导航无脚本错误', scriptErrors(log).length === 0, scriptErrors(log).join(' | '));
+    check(
+      '2 导航到带代码和公式的文章加载两份样式',
+      (await markdownStyles.evaluateAll(
+        (links) => links.filter((link) => (link as HTMLLinkElement).sheet).length,
+      )) === 2,
+    );
     await ctx.close();
   }
 
@@ -320,6 +332,23 @@ async function main() {
     const first = await fetch(`${base}/post/split-a`);
     const body = await first.text();
     const head = body.slice(0, body.indexOf('</head>'));
+    check(
+      '3 文章 SSR 在 head 声明两份正文样式',
+      head.includes('href="/highlight.css?v=') && head.includes('href="/katex/katex.min.css?v='),
+    );
+    for (const [route, codeStyle] of [
+      ['/post/split-b', false],
+      ['/post/split-c', true],
+      ['/login', false],
+    ] as const) {
+      const html = await (await fetch(`${base}${route}`)).text();
+      const pageHead = html.split('</head>', 1)[0];
+      check(
+        `3 ${route} 只声明正文所需的样式`,
+        pageHead.includes('href="/highlight.css?v=') === codeStyle &&
+          !pageHead.includes('href="/katex/katex.min.css?v='),
+      );
+    }
     check(
       '3 文章 SSR：200 且 <head> 含文章标题',
       first.status === 200 && /<title>[^<]*拆分验收 A/.test(head),

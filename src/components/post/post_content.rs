@@ -17,7 +17,7 @@ use leptos::prelude::*;
 #[cfg(target_arch = "wasm32")]
 use crate::bridges::globals;
 use crate::components::code_runner::CodeRunner;
-use crate::components::enhance_assets::{EnhanceScript, LightboxAssets};
+use crate::components::enhance_assets::{EnhanceScript, LightboxAssets, MarkdownStyles};
 use crate::infra::runner_config::ResourceLimits;
 
 /// 内容片段：普通 HTML 文本，或一个可运行代码块。
@@ -92,17 +92,21 @@ fn split_content_fragments(html: &str) -> Vec<ContentFragment> {
 /// 水合时不改写服务端 DOM，只记下这个值。
 pub const HYDRATION_PLACEHOLDER: &str = "<!---->";
 
-/// 正文的水合骨架：每个 `Html` 段换成 [`HYDRATION_PLACEHOLDER`]，可运行块原样保留。
+/// 正文的水合骨架：每个 `Html` 段换成占位和所需样式的标记，可运行块原样保留。
 /// 骨架切出的片段序列与原文一一对应（种类、顺序、可运行块的字段都相同），水合时
 /// [`PostContent`] 据此建出与 SSR 相同的组件树，而正文不必再随水合数据下发一遍。
 pub fn hydration_skeleton(content_html: &str) -> String {
-    segments(content_html)
-        .into_iter()
-        .map(|segment| match segment {
-            Segment::Html(_) => HYDRATION_PLACEHOLDER,
-            Segment::Runnable(pre_block) => pre_block,
-        })
-        .collect()
+    let mut html = String::new();
+    for segment in segments(content_html) {
+        match segment {
+            Segment::Html(content) => {
+                html.push_str(HYDRATION_PLACEHOLDER);
+                MarkdownStyles::for_html(content).append_markers(&mut html);
+            }
+            Segment::Runnable(pre_block) => html.push_str(pre_block),
+        }
+    }
+    html
 }
 
 /// `<pre ...><code ...>内容</code></pre>` 中 `<code>` 的内部 HTML；结构不符时为空。
@@ -210,6 +214,7 @@ pub fn PostContent(
     #[prop(into)] content_html: String,
     #[prop(optional)] scope_id: Option<&'static str>,
 ) -> impl IntoView {
+    let styles = MarkdownStyles::for_html(&content_html).links();
     let fragments = split_content_fragments_cached(&content_html);
 
     // 正文挂载后初始化交互脚本：不读取任何信号，只运行一次。
@@ -276,6 +281,7 @@ pub fn PostContent(
         // hydration；SPA 首跳脚本晚于 Effect 时由增强调用队列兜底。
         <EnhanceScript/>
         <LightboxAssets/>
+        {styles}
         <div id=scope_id data-showcase-lightbox-owner=scope_id class="post-content md-content">
             {body}
         </div>
@@ -405,7 +411,27 @@ mod tests {
                 })
                 .collect();
             let skeleton = hydration_skeleton(&html);
-            assert_eq!(split_content_fragments(&skeleton), expected, "{html}");
+            let actual: Vec<_> = split_content_fragments(&skeleton)
+                .into_iter()
+                .map(|fragment| match fragment {
+                    ContentFragment::Html(html) => {
+                        assert!(html.starts_with(HYDRATION_PLACEHOLDER));
+                        ContentFragment::Html(HYDRATION_PLACEHOLDER.to_string())
+                    }
+                    runnable => runnable,
+                })
+                .collect();
+            assert_eq!(actual, expected, "{html}");
         }
+    }
+
+    #[test]
+    fn hydration_skeleton_preserves_markdown_styles() {
+        let html = r#"<pre><code>hi</code></pre><p><span class="katex">x</span></p>"#;
+        let skeleton = hydration_skeleton(html);
+        let styles = MarkdownStyles::for_html(&skeleton);
+        assert!(styles.highlight && styles.katex);
+        assert_eq!(split_content_fragments(&skeleton).len(), 1);
+        assert!(!skeleton.contains("<pre>"));
     }
 }
