@@ -14,6 +14,12 @@
 use std::process::Command;
 
 fn main() {
+    println!("cargo:rerun-if-changed=build.rs");
+    // 构建信息只由服务端读取，WASM 构建不跟踪 Git 状态。
+    if std::env::var_os("CARGO_FEATURE_SERVER").is_none() {
+        return;
+    }
+
     // 切换提交 / 分支后重新采集(读取 .git/HEAD 指向的新 ref)。
     println!("cargo:rerun-if-changed=.git/HEAD");
     // 工作区脏状态变化时 describe 的 --dirty 后缀也会变,重跑一次。
