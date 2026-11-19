@@ -1,4 +1,4 @@
-// 由 libs/shared/scripts/generate-icons.ts 从 lucide-static 1.74.0（ISC）生成，勿手改。
+// 由 libs/shared/scripts/generate-icons.ts 从 lucide-static 1.75.0（ISC）生成，勿手改。
 // 新增图标：在 libs/shared/src/icons.ts 的 ICONS 中添加后运行 `bun run icons`。
 
 /// Lucide 图标名。渲染见 [`super::Icon`]。

@@ -16,6 +16,6 @@
     "mermaid-font-metrics": "bun scripts/generate-mermaid-font-metrics.ts"
   },
   "devDependencies": {
-    "lucide-static": "1.74.0"
+    "lucide-static": "1.75.0"
   }
 }
