@@ -3,8 +3,8 @@
 #   image: yggdrasil-runner-bun:latest
 #   run_cmd: bun run /code/main.ts
 #
-# bun 在 Alpine 3.18 的官方仓库里没有，用 bun.sh 官方安装脚本（多架构、
-# 自动检测 /etc/alpine-release 选 musl 变体）。bun 的 musl 二进制是 C++ 写的，
+# 通过 bun.sh 官方安装脚本安装 Bun（多架构，自动检测 /etc/alpine-release 选 musl 变体）。
+# Bun 的 musl 二进制是 C++ 写的，
 # 运行时依赖 libstdc++ + libgcc（musl 只带 libc，不带 C++ 运行时），必须保留。
 # 安装期另需 unzip + bash + curl；安装后卸载 unzip/curl 减小镜像。
 FROM yggdrasil-runner-base:latest
