@@ -1,8 +1,7 @@
 import type { Editor } from '@tiptap/core';
 import { mergeAttributes, Node, nodeInputRule } from '@tiptap/core';
 import type { Node as PMNode } from '@tiptap/pm/model';
-import katex from 'katex';
-import 'katex/contrib/mhchem';
+import { mathRenderer } from './render-assets';
 
 /**
  * 数学公式节点(inline `$...$` 与 block `$$...$$`)。
@@ -18,7 +17,7 @@ import 'katex/contrib/mhchem';
  * (源码 MarkdownManager.ts:1116-1182:有 handler 的节点不走 escape 路径)。
  *
  * NodeView 内用客户端 katex.renderToString 渲染预览(类 Notion/Typora)。
- * 浏览器库加载器等待 KaTeX CSS 后挂载编辑器。
+ * 首个公式出现时才加载渲染器与 KaTeX 样式，等待期间显示 TeX 源码。
  */
 
 /**
@@ -160,6 +159,7 @@ class MathNodeView {
   private container: HTMLSpanElement;
   private readonly renderEl: HTMLSpanElement;
   private editEl: HTMLTextAreaElement | null = null;
+  private destroyed = false;
 
   constructor(opts: MathNodeViewOptions) {
     this.node = opts.node;
@@ -215,6 +215,7 @@ class MathNodeView {
   }
 
   destroy(): void {
+    this.destroyed = true;
     this.renderEl.innerHTML = '';
     this.editEl = null;
   }
@@ -222,8 +223,22 @@ class MathNodeView {
   /** 用 katex.renderToString 渲染预览。坏 TeX 显示红色错误,不抛异常(对齐服务端 throw_on_error=false)。 */
   private render(): void {
     const latex = (this.node.attrs.latex as string) ?? '';
+    const renderer = mathRenderer.current;
+    if (!renderer) {
+      this.renderEl.textContent = latex;
+      const isCurrent = () => !this.destroyed && (this.node.attrs.latex ?? '') === latex;
+      void mathRenderer.load().then(
+        () => {
+          if (isCurrent()) this.render();
+        },
+        () => {
+          if (isCurrent()) this.container.classList.add('math-node-error');
+        },
+      );
+      return;
+    }
     try {
-      const html = katex.renderToString(expandQtyDelimiters(latex), {
+      const html = renderer.renderToString(expandQtyDelimiters(latex), {
         displayMode: this.displayMode,
         throwOnError: false,
         output: 'html',

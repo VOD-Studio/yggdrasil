@@ -1,5 +1,5 @@
 import type { AnyExtension } from '@tiptap/core';
-import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
+import { CodeBlock } from '@tiptap/extension-code-block';
 import { TaskItem, TaskList } from '@tiptap/extension-list';
 import { TableKit } from '@tiptap/extension-table';
 import { Markdown } from '@tiptap/markdown';
@@ -11,7 +11,7 @@ import { Details, DetailsSummary } from './details';
 import { imageFileHandler, LINK_OPTIONS } from './editor-shared-extensions';
 import { FootnoteDef, FootnoteNumbering, FootnoteRef } from './footnote';
 import { GfmAlert } from './gfm-alert';
-import { lowlight } from './highlight';
+import { CodeBlockHighlight } from './highlighted-code-block';
 import { HtmlEntity } from './html-entity';
 import { Abbr, HtmlMark, Kbd, RawInlineHtml, Subscript, Superscript } from './inline-html';
 import { LinkDefinition, ReferenceLink } from './link-reference';
@@ -65,11 +65,12 @@ export function buildExtensions(params: BuildExtensionsParams): AnyExtension[] {
     LooseBulletList,
     LooseOrderedList,
     LooseListItem,
-    CodeBlockLowlight.configure({ lowlight }).extend({
+    CodeBlock.extend({
       addNodeView() {
         return ({ node, editor, getPos }) => new CodeBlockNodeView({ node, editor, getPos });
       },
     }),
+    CodeBlockHighlight,
     CodeBlockBackspaceFix,
     TableKit,
     UploadImage,

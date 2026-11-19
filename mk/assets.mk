@@ -74,7 +74,7 @@ CODEMIRROR_JS := $(addprefix public/codemirror/,$(shell if [ -f $(CODEMIRROR_MAN
 DEV_OUTPUTS_codemirror-editor := public/codemirror/.vite/manifest.json public/codemirror/editor-module.js public/codemirror/editor-module.js.map
 DEV_OUTPUTS_codemirror-editor += $(CODEMIRROR_JS) $(addsuffix .map,$(CODEMIRROR_JS))
 DEV_OUTPUTS_lightbox := public/lightbox/lightbox.js public/lightbox/lightbox.js.map public/lightbox/lightbox.css
-DEV_OUTPUTS_tiptap-editor := public/tiptap/editor.js public/tiptap/editor.js.map public/tiptap/editor.css public/tiptap/comment.js public/tiptap/comment.js.map public/tiptap/comment.css
+DEV_OUTPUTS_tiptap-editor := public/tiptap/editor.js public/tiptap/editor.js.map public/tiptap/editor.css public/tiptap/comment.js public/tiptap/comment.js.map public/tiptap/comment.css public/tiptap/math-renderer.js public/tiptap/math-renderer.js.map public/tiptap/code-highlighter.js public/tiptap/code-highlighter.js.map
 DEV_OUTPUTS_xterm-terminal := public/xterm/terminal.js public/xterm/terminal.js.map public/xterm/terminal.css
 DEV_OUTPUTS_yggdrasil-core := public/yggdrasil-core/yggdrasil-core.js public/yggdrasil-core/yggdrasil-core.js.map public/yggdrasil-core/yggdrasil-core.css public/yggdrasil-core/yggdrasil-enhance.js public/yggdrasil-core/yggdrasil-enhance.js.map
 
@@ -88,7 +88,7 @@ endef
 $(foreach lib,$(DEV_LIBS),$(eval $(call dev_lib_rule,$(lib))))
 
 # 引用 shared 的库在其源码变化后重建。
-$(addprefix $(DEV_ASSET_DIR)/,$(addsuffix .stamp,$(filter-out shared tiptap-editor,$(DEV_LIBS)))): $(DEV_ASSET_DIR)/shared.stamp
+$(addprefix $(DEV_ASSET_DIR)/,$(addsuffix .stamp,$(filter-out shared,$(DEV_LIBS)))): $(DEV_ASSET_DIR)/shared.stamp
 dev-libs: $(addprefix $(DEV_ASSET_DIR)/,$(addsuffix .stamp,$(DEV_LIBS)))
 dev-assets-force:
 

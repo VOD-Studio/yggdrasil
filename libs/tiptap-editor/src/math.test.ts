@@ -3,7 +3,7 @@
 import { Editor } from '@tiptap/core';
 import { Markdown } from '@tiptap/markdown';
 import StarterKit from '@tiptap/starter-kit';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DisplayMath, expandQtyDelimiters, InlineMath } from './math';
 
 /**
@@ -207,23 +207,26 @@ describe('数学公式节点 - 边界情况', () => {
     expect(editor.getMarkdown()).toContain('用 `$$...$$`，独占');
   });
 
-  it('编辑器预览支持 mhchem 与服务端物理宏表', () => {
+  it('编辑器预览支持 mhchem 与服务端物理宏表', async () => {
     editor.commands.setContent('$\\ce{H2O}$ $\\RR$ $\\dv{f}{x}$', { contentType: 'markdown' });
+    await vi.dynamicImportSettled();
     expect(editor.view.dom.querySelectorAll('.katex').length).toBeGreaterThan(0);
     expect(editor.view.dom.querySelectorAll('.katex-error').length).toBe(0);
   });
 
-  it('裸 \\dd 不吞掉后面的 }', () => {
+  it('裸 \\dd 不吞掉后面的 }', async () => {
     editor.commands.setContent('$\\frac{\\dd}{\\dd{t}}$ $\\int f \\dd x$', {
       contentType: 'markdown',
     });
+    await vi.dynamicImportSettled();
     expect(editor.view.dom.querySelectorAll('.katex').length).toBe(2);
     expect(editor.view.dom.querySelectorAll('.katex-error').length).toBe(0);
   });
-  it('\\qty(...) 与手写 \\left(...\\right) 渲染一致', () => {
+  it('\\qty(...) 与手写 \\left(...\\right) 渲染一致', async () => {
     editor.commands.setContent('$\\qty(\\dfrac{a}{b})$ $\\left(\\dfrac{a}{b}\\right)$', {
       contentType: 'markdown',
     });
+    await vi.dynamicImportSettled();
     const [qty, manual] = editor.view.dom.querySelectorAll('.katex');
     expect(qty?.innerHTML).toBe(manual?.innerHTML);
   });

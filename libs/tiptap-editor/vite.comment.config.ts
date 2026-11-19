@@ -8,4 +8,5 @@ export default iifeLib({
   entry: 'src/comment.ts',
   defaultExport: true,
   emptyOutDir: false,
+  define: { __YGG_TIPTAP_ASSETS__: 'true' },
 });

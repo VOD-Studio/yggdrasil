@@ -6,4 +6,5 @@ export default iifeLib({
   name: 'TiptapEditor',
   file: 'editor',
   defaultExport: true,
+  define: { __YGG_TIPTAP_ASSETS__: 'true' },
 });

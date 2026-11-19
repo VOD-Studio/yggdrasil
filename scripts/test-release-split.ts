@@ -461,15 +461,59 @@ async function main() {
       (await resp!.allHeaders())['x-ssr-cache'] === 'HIT' && scriptErrors(log).length === 0,
       scriptErrors(log).join(' | '),
     );
+    await page.goto(`${base}/post/split-b`);
+    await hydrated(page);
     const comment = page.getByRole('form', { name: '发表评论', exact: true });
     await comment.scrollIntoViewIfNeeded();
     const textbox = comment.getByRole('textbox', { name: '评论内容' });
     await textbox.waitFor();
     await textbox.fill('发布验收评论草稿');
     check(
-      '3 文章评论只下载独立编辑器且可以输入',
+      '3 纯文本评论只下载独立编辑器且可以输入',
       log.tiptap.toSorted().join(',') === '/tiptap/comment.css,/tiptap/comment.js' &&
+        (await page.locator('link[href^="/katex/katex.min.css"]').count()) === 0 &&
         (await textbox.textContent()) === '发布验收评论草稿' &&
+        scriptErrors(log).length === 0,
+      log.tiptap.join(', '),
+    );
+    const renderMarkdown = '$\\ce{H2O}$\n\n```python\ndef greet():\n    pass\n```';
+    await page.evaluate((markdown) => {
+      const { TiptapCommentEditor } = window as typeof window & {
+        TiptapCommentEditor: {
+          _instances: Map<HTMLElement, { setMarkdown(markdown: string): void }>;
+        };
+      };
+      TiptapCommentEditor._instances.values().next().value?.setMarkdown(markdown);
+    }, renderMarkdown);
+    await comment.locator('.math-node .katex').waitFor();
+    await comment.locator('pre .hljs-keyword').first().waitFor();
+    const rendererPaths = ['/tiptap/code-highlighter.js', '/tiptap/math-renderer.js'];
+    check(
+      '3 评论出现公式和代码块后才下载两份渲染模块',
+      log.tiptap.filter((asset) => rendererPaths.includes(asset)).toSorted().join(',') ===
+        rendererPaths.join(','),
+      log.tiptap.join(', '),
+    );
+    await page.evaluate(async (markdown) => {
+      const browser = window as typeof window & {
+        __loadBrowserLibrary(name: 'tiptap'): Promise<void>;
+        TiptapEditor: {
+          create(host: HTMLElement): { setMarkdown(markdown: string): void };
+        };
+      };
+      await browser.__loadBrowserLibrary('tiptap');
+      const host = document.createElement('div');
+      host.id = 'test-writer-renderers';
+      document.body.appendChild(host);
+      browser.TiptapEditor.create(host).setMarkdown(markdown);
+    }, renderMarkdown);
+    const writer = page.locator('#test-writer-renderers');
+    await writer.locator('.math-node .katex').waitFor();
+    await writer.locator('pre .hljs-keyword').first().waitFor();
+    check(
+      '3 同一页面的评论与写作编辑器复用渲染模块和样式',
+      log.tiptap.filter((asset) => rendererPaths.includes(asset)).length === 2 &&
+        (await page.locator('link[href^="/katex/katex.min.css"]').count()) === 1 &&
         scriptErrors(log).length === 0,
       log.tiptap.join(', '),
     );
@@ -607,6 +651,7 @@ async function main() {
     check(
       '4 后台只下载写作编辑器且可切换源码',
       log.tiptap.toSorted().join(',') === '/tiptap/editor.css,/tiptap/editor.js' &&
+        (await page.locator('link[href^="/katex/katex.min.css"]').count()) === 0 &&
         (await page.locator('#tiptap-editor .tiptap-source-textarea').isVisible()) &&
         scriptErrors(log).length === 0,
       log.tiptap.join(', '),

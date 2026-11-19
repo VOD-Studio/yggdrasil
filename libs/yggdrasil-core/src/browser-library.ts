@@ -9,13 +9,11 @@ const libraries = {
     global: 'TiptapEditor',
     script: '/tiptap/editor.js',
     style: '/tiptap/editor.css',
-    math: true,
   },
   'tiptap-comment': {
     global: 'TiptapCommentEditor',
     script: '/tiptap/comment.js',
     style: '/tiptap/comment.css',
-    math: true,
   },
   codemirror: { global: 'CodeMirrorEditor', script: '/codemirror/editor-module.js', module: true },
   xterm: {
@@ -27,49 +25,13 @@ const libraries = {
 
 export type BrowserLibrary = keyof typeof libraries;
 const pending = new Map<BrowserLibrary, Promise<void>>();
-let katexStyle: Promise<void> | undefined;
 let codeMirrorRetry = 0;
-
-function katexLink(href = assetUrl('/katex/katex.min.css')): HTMLLinkElement | null {
-  return document.querySelector<HTMLLinkElement>(`link[rel="stylesheet"][href="${href}"]`);
-}
-
-function loadKatexStyle(): Promise<void> {
-  if (katexStyle) return katexStyle;
-  const href = assetUrl('/katex/katex.min.css');
-  if (katexLink(href)?.sheet) return Promise.resolve();
-
-  const link = document.createElement('link');
-  link.rel = 'stylesheet';
-  link.href = href;
-  katexStyle = new Promise<void>((resolve, reject) => {
-    link.onload = () => resolve();
-    link.onerror = () => {
-      link.remove();
-      katexStyle = undefined;
-      reject(new Error(`Failed to load ${href}`));
-    };
-    document.head.appendChild(link);
-  });
-  return katexStyle;
-}
 
 export function loadBrowserLibrary(name: BrowserLibrary): Promise<void> {
   const library = libraries[name];
   if (!library) return Promise.reject(new Error(`Unknown browser library: ${name}`));
   const existing = pending.get(name);
-  if (existing) {
-    // 正文声明的 KaTeX 样式随路由卸载，之前已加载的编辑器也要重新确认样式。
-    if (!('math' in library) || katexStyle || katexLink()?.sheet) return existing;
-    const work = Promise.all([existing, loadKatexStyle()])
-      .then(() => {})
-      .catch((error) => {
-        pending.delete(name);
-        throw error;
-      });
-    pending.set(name, work);
-    return work;
-  }
+  if (existing) return existing;
 
   const elements: HTMLElement[] = [];
   const script = new Promise<void>((resolve, reject) => {
@@ -111,7 +73,7 @@ export function loadBrowserLibrary(name: BrowserLibrary): Promise<void> {
     elements.push(element);
     document.head.appendChild(element);
   });
-  const work = Promise.all([script, style, 'math' in library ? loadKatexStyle() : undefined])
+  const work = Promise.all([script, style])
     .then(() => {})
     .catch((error) => {
       elements.forEach((element) => {

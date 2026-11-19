@@ -31,7 +31,7 @@ describe('浏览器库按需加载', () => {
     const first = load('tiptap');
     expect(load('tiptap')).toBe(first);
     expect(document.querySelectorAll('script')).toHaveLength(1);
-    expect(document.querySelectorAll('link')).toHaveLength(2);
+    expect(document.querySelectorAll('link')).toHaveLength(1);
     let finished = false;
     void first.then(() => {
       finished = true;
@@ -44,37 +44,6 @@ describe('浏览器库按需加载', () => {
     await first;
     expect(finished).toBe(true);
     expect(load('tiptap')).toBe(first);
-  });
-
-  it('评论和写作编辑器共用一次 KaTeX 样式加载', async () => {
-    const writer = load('tiptap');
-    const comment = load('tiptap-comment');
-    expect(document.querySelectorAll('link[href="/katex/katex.min.css"]')).toHaveLength(1);
-    Reflect.set(window, 'TiptapEditor', {});
-    Reflect.set(window, 'TiptapCommentEditor', {});
-    for (const node of document.head.children) node.dispatchEvent(new Event('load'));
-    await Promise.all([writer, comment]);
-  });
-
-  it('借用正文样式后，路由卸载样式时仍可再次打开编辑器', async () => {
-    document.head.insertAdjacentHTML(
-      'beforeend',
-      '<link rel="stylesheet" href="/katex/katex.min.css" id="markdown-style">',
-    );
-    const ssrStyle = document.getElementById('markdown-style')!;
-    Object.defineProperty(ssrStyle, 'sheet', { value: {} });
-    vi.spyOn(document, 'querySelector').mockReturnValueOnce(ssrStyle);
-    Reflect.set(window, 'TiptapCommentEditor', {});
-    const first = load('tiptap-comment');
-    expect(document.querySelectorAll('link[href="/katex/katex.min.css"]')).toHaveLength(1);
-    document.querySelector('link[href="/tiptap/comment.css"]')!.dispatchEvent(new Event('load'));
-    await first;
-
-    ssrStyle.remove();
-    const again = load('tiptap-comment');
-    expect(again).not.toBe(first);
-    document.querySelector('link[href="/katex/katex.min.css"]')!.dispatchEvent(new Event('load'));
-    await again;
   });
 
   it('CodeMirror 不依赖独立 CSS，也不会带入 Tiptap 或终端', async () => {

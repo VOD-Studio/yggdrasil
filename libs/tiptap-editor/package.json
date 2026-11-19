@@ -9,12 +9,12 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "bundle": "vite build && vite build --config vite.comment.config.ts"
+    "bundle": "vite build && vite build --config vite.comment.config.ts && vite build --config vite.renderers.config.ts"
   },
   "dependencies": {
     "@tiptap/core": "^3.34.0",
     "@tiptap/extension-bubble-menu": "^3.34.0",
-    "@tiptap/extension-code-block-lowlight": "^3.34.0",
+    "@tiptap/extension-code-block": "^3.34.0",
     "@tiptap/extension-file-handler": "^3.34.0",
     "@tiptap/extension-image": "^3.34.0",
     "@tiptap/extension-link": "^3.34.0",
@@ -25,6 +25,7 @@
     "@tiptap/pm": "^3.34.0",
     "@tiptap/starter-kit": "^3.34.0",
     "@tiptap/suggestion": "^3.34.0",
+    "@yggdrasil/shared": "workspace:*",
     "katex": "^0.19.1",
     "lowlight": "^3.3.0",
     "marked": "17.0.6"

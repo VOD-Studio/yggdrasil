@@ -4,7 +4,7 @@ import { Plugin, PluginKey } from '@tiptap/pm/state';
 /**
  * 修复 CodeBlock 内 Backspace 在 lowlight decoration 重建后失效的问题。
  *
- * 背景：CodeBlockLowlight 的 lowlight 插件在 codeBlock 内容变化后重新高亮，重建
+ * 背景：代码高亮插件在 codeBlock 内容变化后重新高亮，重建
  * `<code>` 内的 text node（包成 `<span class="hljs-...">`）。重建过程中 DOM selection
  * 会错位到 `<pre>`（contentDOM 的父元素）而非 `<code>` 内文本节点，导致后续 Backspace
  * 无效——删不掉剩余字符，块删空后也无法删除整个 codeBlock。
@@ -14,7 +14,7 @@ import { Plugin, PluginKey } from '@tiptap/pm/state';
  * 当光标在 codeBlock 内（文档层判断）时，直接基于文档 pos 删除前一个字符，或在块空时
  * clearNodes 转段落，绕过 DOM selection 错位。
  *
- * 必须用独立 Extension + addProseMirrorPlugins（而非在 CodeBlockLowlight.extend 里
+ * 必须用独立 Extension + addProseMirrorPlugins（而非在 CodeBlock.extend 里
  * addKeyboardShortcuts）：后者无法覆盖父类已注册的同名 keymap（Tiptap 优先级限制）。
  */
 const pluginKey = new PluginKey('codeBlockBackspaceFix');

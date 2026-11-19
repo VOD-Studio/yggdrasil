@@ -133,11 +133,13 @@ if (command === 'bun' && args[0] === 'install') {
   await edit('libs/tiptap-editor/src/index.ts');
   step(['tiptap-editor']);
   await edit('libs/shared/src/index.ts');
-  step(packages.filter((name) => name !== 'tiptap-editor'));
+  step(packages);
   fs.unlinkSync(path.join(root, 'public/codemirror/editor-module.js'));
   step(['codemirror-editor']);
   fs.unlinkSync(path.join(root, 'public/codemirror/chunks/python.Bchx529C_GzG.js.map'));
   step(['codemirror-editor']);
+  fs.unlinkSync(path.join(root, 'public/tiptap/math-renderer.js.map'));
+  step(['tiptap-editor']);
   await edit('libs/lightbox/src/removed.ts');
   step(['lightbox']);
   await new Promise((resolve) => setTimeout(resolve, 1100));
@@ -156,7 +158,7 @@ if (command === 'bun' && args[0] === 'install') {
   await edit('libs/bun.lock');
   assert.ok(!step(packages).includes('highlight'));
   await edit('libs/shared/src/code-palette.ts');
-  assert.ok(step(packages.filter((name) => name !== 'tiptap-editor')).includes('highlight'));
+  assert.ok(step(packages).includes('highlight'));
   await edit('Cargo.lock');
   assert.ok(!step([]).includes('highlight'));
   fs.rmSync(path.join(root, 'libs/node_modules'), { recursive: true });

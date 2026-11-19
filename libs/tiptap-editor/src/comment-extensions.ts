@@ -1,12 +1,12 @@
 import type { AnyExtension, EditorOptions } from '@tiptap/core';
-import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
+import { CodeBlock } from '@tiptap/extension-code-block';
 import { Placeholder } from '@tiptap/extension-placeholder';
 import { Markdown } from '@tiptap/markdown';
 import StarterKit from '@tiptap/starter-kit';
 import { CodeBlockBackspaceFix } from './code-block-backspace-fix';
 import { CommentBubbleMenu } from './comment-bubble-menu';
 import { imageFileHandler, LINK_OPTIONS } from './editor-shared-extensions';
-import { lowlight } from './highlight';
+import { CodeBlockHighlight } from './highlighted-code-block';
 import { DisplayMath, InlineMath } from './math';
 import type { UploadCoordinator } from './upload-coordinator';
 import { UploadImage } from './upload-image';
@@ -25,7 +25,8 @@ export function buildCommentExtensions(
     Markdown,
     InlineMath,
     DisplayMath,
-    CodeBlockLowlight.configure({ lowlight }),
+    CodeBlock,
+    CodeBlockHighlight,
     CodeBlockBackspaceFix,
     UploadImage,
     imageFileHandler(getCoordinator),

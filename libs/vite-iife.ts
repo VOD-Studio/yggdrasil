@@ -16,11 +16,14 @@ export interface IifeLib {
   defaultExport?: boolean;
   /** 构建前是否清空输出目录，默认 true。 */
   emptyOutDir?: boolean;
+  /** 构建时使用的常量。 */
+  define?: UserConfig['define'];
 }
 
 /** 各包共用的 Vite IIFE 库构建：输出直写 public/<out>/，由 cargo-leptos 的 assets-dir 拷进站点根。 */
 export function iifeLib(o: IifeLib): UserConfig {
   return defineConfig({
+    define: o.define,
     build: {
       outDir: resolve(o.dir, '../../public', o.out),
       emptyOutDir: o.emptyOutDir ?? true,
