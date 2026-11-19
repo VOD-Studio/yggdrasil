@@ -100,6 +100,9 @@ describe('浏览器库按需加载', () => {
       await failed;
       expect(document.head.childElementCount).toBe(0);
       const retry = load('codemirror');
+      expect(document.querySelector('script')?.getAttribute('src')).toBe(
+        '/codemirror/editor-module.js?retry=1',
+      );
       Reflect.set(window, 'CodeMirrorEditor', {});
       document.querySelector('script')!.dispatchEvent(new Event('load'));
       await retry;

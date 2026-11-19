@@ -277,6 +277,7 @@ async function main() {
       const context = await browser.newContext({
         viewport: mobile ? { width: 390, height: 844 } : { width: 1440, height: 900 },
         colorScheme: theme,
+        hasTouch: mobile,
       });
       const page = await context.newPage();
       const editorRequests: string[] = [];
@@ -333,7 +334,17 @@ async function main() {
         async () => codemirrorChunks.some((file) => file.includes('/python.')),
         'Python parser must load when activating a Python snippet',
       );
-      assert.ok(!codemirrorChunks.some((file) => /\/(go|rust|javascript|sql|vim)\./.test(file)));
+      if (!mobile) {
+        await until(
+          async () => codemirrorChunks.some((file) => file.includes('/vim.')),
+          'Vim bindings must load when enabled',
+        );
+      }
+      assert.equal(
+        codemirrorChunks.some((file) => file.includes('/vim.')),
+        !mobile,
+      );
+      assert.ok(!codemirrorChunks.some((file) => /\/(go|rust|javascript|sql)\./.test(file)));
       assert.equal(
         await page.evaluate(() => (window as CodeMirrorWindow).CodeMirrorEditor._instances.size),
         1,

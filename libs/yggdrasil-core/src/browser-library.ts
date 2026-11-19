@@ -28,6 +28,7 @@ const libraries = {
 export type BrowserLibrary = keyof typeof libraries;
 const pending = new Map<BrowserLibrary, Promise<void>>();
 let katexStyle: Promise<void> | undefined;
+let codeMirrorRetry = 0;
 
 function katexLink(href = assetUrl('/katex/katex.min.css')): HTMLLinkElement | null {
   return document.querySelector<HTMLLinkElement>(`link[rel="stylesheet"][href="${href}"]`);
@@ -77,13 +78,23 @@ export function loadBrowserLibrary(name: BrowserLibrary): Promise<void> {
       return;
     }
     const element = document.createElement('script');
-    if ('module' in library) element.type = 'module';
-    element.src = assetUrl(library.script);
+    const href = assetUrl(library.script);
+    const isModule = 'module' in library;
+    if (isModule) element.type = 'module';
+    // 浏览器会在文档的模块表中缓存加载失败，用新地址重试入口。
+    element.src =
+      isModule && codeMirrorRetry > 0
+        ? `${href}${href.includes('?') ? '&' : '?'}retry=${codeMirrorRetry}`
+        : href;
+    const fail = (error: Error) => {
+      if (isModule) codeMirrorRetry++;
+      reject(error);
+    };
     element.onload = () => {
       if (Reflect.get(window, library.global)) resolve();
-      else reject(new Error(`${library.global} unavailable after loading`));
+      else fail(new Error(`${library.global} unavailable after loading`));
     };
-    element.onerror = () => reject(new Error(`Failed to load ${library.script}`));
+    element.onerror = () => fail(new Error(`Failed to load ${library.script}`));
     elements.push(element);
     document.head.appendChild(element);
   });
