@@ -4,11 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc --noEmit && vite build && vite build --config vite.enhance.config.ts",
+    "build": "tsc --noEmit && bun run bundle",
     "dev": "vite",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "bundle": "vite build && vite build --config vite.enhance.config.ts"
   },
   "dependencies": {
     "@yggdrasil/shared": "workspace:*"

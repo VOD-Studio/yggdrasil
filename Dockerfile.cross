@@ -30,7 +30,7 @@
 # Stage A: frontend assets (glibc Trixie, native arm64)
 # -----------------------------------------------------------------------------
 # Trixie (Debian 13, glibc 2.41).
-FROM --platform=$BUILDPLATFORM rust:1.100-trixie AS frontend
+FROM --platform=$BUILDPLATFORM rust:1.100-trixie AS frontend-toolchain
 
 # Master switch for Chinese mirrors.
 #   CN_MIRROR=false (default): use all upstream/official sources (fast on CI
@@ -136,12 +136,9 @@ RUN cargo install cargo-leptos --version 0.3.12 --locked
 
 WORKDIR /build
 
-# Cache the bun workspace node_modules by copying only package manifests first.
-# package.json declares `workspaces: ["*"]`, so every sub-package manifest is
-# copied before `bun install --frozen-lockfile`, keeping this layer reusable until
-# a manifest or the lockfile changes. The patches/ tree must be present too
-# (@tiptap/markdown patchedDependencies entry → missing patch otherwise).
-# bunfig.toml carries the release-age policy and `[run] bun = true`.
+FROM frontend-toolchain AS frontend
+
+# 只复制发布安装需要的清单与补丁，依赖层可跨源码改动复用。
 COPY libs/package.json libs/bunfig.toml libs/bun.lock libs/
 COPY libs/patches/                         libs/patches/
 COPY libs/shared/package.json             libs/shared/
@@ -150,7 +147,7 @@ COPY libs/codemirror-editor/package.json  libs/codemirror-editor/
 COPY libs/lightbox/package.json           libs/lightbox/
 COPY libs/xterm-terminal/package.json     libs/xterm-terminal/
 COPY libs/yggdrasil-core/package.json     libs/yggdrasil-core/
-RUN cd libs && bun install --frozen-lockfile
+RUN cd libs && bun install --frozen-lockfile --omit=dev
 
 # Build-time git info, injected by the caller via --build-arg. `.dockerignore`
 # excludes `.git/`, so build.rs can't run `git` inside the container — these
@@ -178,7 +175,7 @@ COPY . .
 # Shared with make build / build-linux via the build-assets target, so the
 # pipeline cannot drift (katex-css was once missing here, which left math
 # rendering as bare spans without KaTeX fonts).
-RUN make build-assets
+RUN make build-assets RELEASE_LIBS_READY=1
 
 # 用 cargo-leptos 构建分包前端（wasm/js/css → target/site，hash.txt → target/release）。
 # make build-frontend 使用固定 nightly + build-std（见 Makefile 的 LEPTOS_WASM_ENV）。
@@ -193,20 +190,24 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     cp target/release/hash.txt /build/hash.txt && \
     bun scripts/build-release.ts --out /build/dist --hash /build/hash.txt
 
-# 生成带站点主题的 lib crate 文档，包含私有项，并提供 /doc 入口重定向。
-# cargo doc 使用当前 stage 的宿主目标，与 server stage 的 musl 交叉构建独立。
-# .dockerignore 排除了宿主 public/doc/；这里直接写入装配后的发布目录。
-RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
-    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
-    --mount=type=cache,id=fe-target,target=/build/target,sharing=locked \
-    make doc DOC_OUT=dist/public/doc
-
 # 与本地发布共用预压缩规则；查找或压缩失败时立即终止构建。
 RUN make precompress RELEASE_OUT=/build/dist
 
 # 校验发布产物：清单摘要、hash.txt 指向的产物、分包清单闭包与 .br 旁车。
 RUN bun scripts/build-release.ts --verify --out /build/dist
 
+
+# 独立生成站点文档，编译缓存留在构建器，出口只保留 /doc 文件树。
+FROM frontend-toolchain AS doc-builder
+ARG BUILDARCH
+COPY . .
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
+    --mount=type=cache,id=rustdoc-target-${BUILDARCH},target=/build/doc-target,sharing=locked \
+    make doc-release DOC_TARGET_DIR=doc-target DOC_OUT=dist-doc/doc
+
+FROM scratch AS rustdoc
+COPY --from=doc-builder /build/dist-doc/doc /doc
 
 # -----------------------------------------------------------------------------
 # Stage B: server binary (Alpine musl, native arm64)
@@ -298,7 +299,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
 # reqwest 的 Rustls/AWS-LC 使用 rustls-platform-verifier 读取系统 CA，
 # 因此运行时显式安装 ca-certificates（不再使用内嵌 webpki-roots）。
 # -----------------------------------------------------------------------------
-FROM alpine:3.24
+FROM alpine:3.24 AS app
 
 RUN apk add --no-cache ca-certificates postgresql16-client
 
@@ -325,3 +326,7 @@ USER 65534:65534
 EXPOSE 3000
 
 ENTRYPOINT ["/app/server"]
+
+# 默认镜像同时提供博客与 /doc。
+FROM app AS release
+COPY --from=rustdoc --chown=65534:65534 /doc /app/public/doc

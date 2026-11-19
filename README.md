@@ -35,7 +35,16 @@ make build   # 发布构建
 
 直接运行 `make` 可列出全部目标；缺少本地工具时可用 `make docker-dev`。
 
-发布前先运行 `make wasm-toolchain` 安装固定的 WASM nightly 工具链；`make -j4 build` 可并行准备资源与文档，完成后再构建前端、服务端并装配校验。发布时按 `libs/bun.lock` 冻结安装前端依赖，依赖变更需先更新锁文件。
+发布前先运行 `make wasm-toolchain` 安装固定的 WASM nightly 工具链。发布按 `libs/bun.lock` 冻结安装打包与类型检查所需依赖，开发和 CI 则安装完整工作区依赖。
+
+默认发布包含 `/doc/`。如果要把文档和应用分开发布，本地用 `make build RELEASE_DOCS=0` 构建应用，用 `make doc-release` 把文档和 Brotli 旁车装配到 `target/doc-dist/doc/`。使用 Docker 时，`app` 目标构建应用镜像，`rustdoc` 目标导出文档。
+
+```sh
+docker buildx build --target app --load -t yggdrasil .
+docker buildx build --target rustdoc --output type=local,dest=target/doc-dist .
+```
+
+独立部署时，让站点的同源 `/doc/` 路径指向导出的文档目录，关于页和文档内的站点链接即可继续使用。
 
 CI 的 release-split 阶段通过 `bun scripts/check-build.ts` 执行完整 `make build`：构建退出失败，或标准输出/错误输出出现 warning、WARN、error、`(!)` 等诊断时均阻断发布，即使工具返回成功也不放行；检查前会去除 ANSI 颜色码。可在本地运行同一命令，完整原始日志写入 `target/build.log`，CI 无论成功失败都会上传。
 

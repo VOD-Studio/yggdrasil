@@ -125,24 +125,6 @@ RUN ARCH="$(dpkg --print-architecture)" \
 
 WORKDIR /build
 
-# Cache the bun workspace node_modules by copying only package manifests first.
-# package.json declares `workspaces: ["*"]`, so every sub-package manifest is
-# copied before `bun install --frozen-lockfile`, keeping this layer reusable until
-# a manifest or the lockfile changes (and matching the workspaces recorded in bun.lock).
-# `patchedDependencies` in package.json points at
-# `patches/@tiptap__markdown@3.31.4.patch`, so the patches/ tree must be present
-# before the install or it fails on the missing patch. bunfig.toml carries the
-# release-age policy and `[run] bun = true`.
-COPY libs/package.json libs/bunfig.toml libs/bun.lock libs/
-COPY libs/patches/                         libs/patches/
-COPY libs/shared/package.json             libs/shared/
-COPY libs/tiptap-editor/package.json      libs/tiptap-editor/
-COPY libs/codemirror-editor/package.json  libs/codemirror-editor/
-COPY libs/lightbox/package.json           libs/lightbox/
-COPY libs/xterm-terminal/package.json     libs/xterm-terminal/
-COPY libs/yggdrasil-core/package.json     libs/yggdrasil-core/
-RUN cd libs && bun install --frozen-lockfile
-
 # ── planner：只从 Cargo.toml/Cargo.lock 生成 recipe.json ──
 # cargo-chef 会把本地 crate 的版本号统一替换成固定值，发版只改版本号时 recipe.json
 # 不变，下面 builder 的 COPY --from=planner 与 cook 层照样命中缓存。
@@ -189,6 +171,17 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
 # server 依赖已由上方 musl release cook 完整预热;cargo doc 走正常 cargo 流程按需自编
 # proc-macro(host),不触发 cargo-chef 该 bug。
 
+# 只复制发布安装需要的清单与补丁，依赖层可跨源码改动复用。
+COPY libs/package.json libs/bunfig.toml libs/bun.lock libs/
+COPY libs/patches/                         libs/patches/
+COPY libs/shared/package.json             libs/shared/
+COPY libs/tiptap-editor/package.json      libs/tiptap-editor/
+COPY libs/codemirror-editor/package.json  libs/codemirror-editor/
+COPY libs/lightbox/package.json           libs/lightbox/
+COPY libs/xterm-terminal/package.json     libs/xterm-terminal/
+COPY libs/yggdrasil-core/package.json     libs/yggdrasil-core/
+RUN cd libs && bun install --frozen-lockfile --omit=dev
+
 # Copy the rest of the source tree and build everything. 依赖已由 cooker 编好,
 # 此后的 cargo build/doc 只增量编译 app 代码。
 COPY . .
@@ -218,7 +211,7 @@ ENV YGG_BUILD_GIT_COMMIT_DATE=${YGG_BUILD_GIT_COMMIT_DATE}
 # Shared with make build / build-linux via the build-assets target, so the
 # pipeline cannot drift (katex-css was once missing here, which left math
 # rendering as bare spans without KaTeX fonts).
-RUN make build-assets
+RUN make build-assets RELEASE_LIBS_READY=1
 
 # 用 cargo-leptos 构建分包前端（wasm/js/css → target/site，hash.txt → target/release）。
 # make build-frontend 使用固定 nightly + build-std（见 Makefile 的 LEPTOS_WASM_ENV）。
@@ -236,12 +229,6 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     make build-frontend && \
     cp target/release/hash.txt /build/hash.txt && \
     bun scripts/build-release.ts --out /build/dist --hash /build/hash.txt
-
-# 生成带站点主题的 lib crate 文档，包含私有项，并提供 /doc 入口重定向。
-# .dockerignore 排除了宿主 public/doc/；这里直接写入装配后的发布目录。
-RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
-    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
-    make doc DOC_OUT=dist/public/doc
 
 # 与本地发布共用预压缩规则；查找或压缩失败时立即终止构建。
 RUN make precompress RELEASE_OUT=/build/dist
@@ -283,6 +270,18 @@ RUN ARCH="$(dpkg --print-architecture)" \
     esac \
     && cp "/build/target/${MUSL_TARGET}/release/yggdrasil" /build/server
 
+# 独立生成站点文档，编译缓存留在构建器，出口只保留 /doc 文件树。
+FROM toolchain AS doc-builder
+ARG TARGETARCH
+COPY . .
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
+    --mount=type=cache,id=rustdoc-target-${TARGETARCH},target=/build/doc-target,sharing=locked \
+    make doc-release DOC_TARGET_DIR=doc-target DOC_OUT=dist-doc/doc
+
+FROM scratch AS rustdoc
+COPY --from=doc-builder /build/dist-doc/doc /doc
+
 # -----------------------------------------------------------------------------
 # Runtime stage: alpine + PostgreSQL client tools
 #
@@ -292,7 +291,7 @@ RUN ARCH="$(dpkg --print-architecture)" \
 # 静态 musl server 二进制在 alpine 上原生运行；reqwest 的 Rustls/AWS-LC
 # 使用 rustls-platform-verifier 读取系统 CA，运行时须安装 ca-certificates。
 # -----------------------------------------------------------------------------
-FROM alpine:3.24
+FROM alpine:3.24 AS app
 
 RUN apk add --no-cache ca-certificates postgresql16-client
 
@@ -319,3 +318,7 @@ USER 65534:65534
 EXPOSE 3000
 
 ENTRYPOINT ["/app/server"]
+
+# 默认镜像同时提供博客与 /doc。
+FROM app AS release
+COPY --from=rustdoc --chown=65534:65534 /doc /app/public/doc

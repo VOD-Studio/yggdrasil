@@ -4,15 +4,17 @@
   "workspaces": {
     "": {
       "name": "yggdrasil-workspace",
+      "dependencies": {
+        "katex": "^0.19.1",
+        "typescript": "^7.0.2",
+        "vite": "^8.3.8",
+      },
       "devDependencies": {
         "@biomejs/biome": "^2.6.8",
         "@types/bun": "^1.4.4",
         "happy-dom": "^21.0.4",
         "harfbuzzjs": "1.6.4",
-        "katex": "^0.19.1",
         "playwright": "1.65.1",
-        "typescript": "^7.0.2",
-        "vite": "^8.3.8",
         "vitest": "^5.1.0",
       },
     },

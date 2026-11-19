@@ -41,22 +41,22 @@ describe('enhance entry registrations', () => {
     const changelog = window.__initChangelogNav;
     delete (window as unknown as Record<string, unknown>).__initChangelogNav;
 
-    window.__flushEnhanceCalls();
+    window.__flushEnhanceCalls?.();
 
     expect(initToc).toHaveBeenCalledTimes(1);
     expect(window.__pendingEnhanceCalls.map((call) => call.name)).toEqual(['__initChangelogNav']);
 
     // 对应脚本随后加载完成：注册回来再 flush，滞留项补执行。
     window.__initChangelogNav = changelog;
-    window.__flushEnhanceCalls();
+    window.__flushEnhanceCalls?.();
     expect(window.__pendingEnhanceCalls).toHaveLength(0);
   });
 
   it('flush 幂等：重复调用不会重复执行已消费的调用', () => {
     const masonry = vi.spyOn(window, '__initShowcaseMasonry').mockImplementation(() => {});
     window.__pendingEnhanceCalls.push({ name: '__initShowcaseMasonry', args: [] });
-    window.__flushEnhanceCalls();
-    window.__flushEnhanceCalls();
+    window.__flushEnhanceCalls?.();
+    window.__flushEnhanceCalls?.();
     expect(masonry).toHaveBeenCalledTimes(1);
   });
 });

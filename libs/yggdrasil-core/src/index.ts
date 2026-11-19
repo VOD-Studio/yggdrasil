@@ -27,7 +27,7 @@ declare global {
     /** 增强调用队列：目标函数未定义时由 bridges::globals 入队，flush 丢弃已可
      * 执行的项。core 无条件建队，队列存在不代表本页会加载 enhance。 */
     __pendingEnhanceCalls: EnhanceCall[];
-    __flushEnhanceCalls: () => void;
+    __flushEnhanceCalls?: () => void;
   }
 }
 

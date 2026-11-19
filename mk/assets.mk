@@ -5,7 +5,7 @@
 # dev 的 stamp 规则依赖本文件本身（DEV_COMMON_INPUTS 等），所以改动本文件会让
 # 所有 stamp 失效、触发一次完整重建；改别的 Makefile / mk/*.mk 不会。
 
-.PHONY: build-assets build-libs highlight-css katex-css css css-watch
+.PHONY: build-assets build-libs install-release-libs highlight-css katex-css css css-watch
 .PHONY: dev-assets dev-libs dev-highlight-css dev-katex-css dev-assets-force
 
 # 两个 CSS 入口：input.css → public/style.css（全站），input-admin.css → public/admin.css
@@ -17,8 +17,11 @@ CSS_ADMIN := $(CSS_BUILD) input-admin.css --outfile=public/admin.css
 # release 构建共用的资源流水线：libs 前端库、语法高亮 CSS、KaTeX CSS + 字体、
 # CSS 打包（压缩）。build / build-linux / 两个 Dockerfile 都调用它，不要在别处
 # 再手写这几步——KaTeX 曾因 Dockerfile 里漏掉 katex-css 而退化成裸 span。
+ifneq ($(RELEASE_LIBS_READY),1)
+build-assets: install-release-libs
+endif
 build-assets: ## 构建 public/ 下的全部生成资源（libs、高亮/KaTeX CSS、CSS 打包）
-	@YGG_RELEASE_ASSETS=1 $(MAKE) build-libs
+	@cd libs && YGG_RELEASE_ASSETS=1 bun run build:release
 	@$(MAKE) highlight-css
 	@$(MAKE) katex-css
 	@$(CSS_SITE) --minify
@@ -30,7 +33,7 @@ highlight-css: ## 生成语法高亮 CSS
 # 把 npm 包 katex 的 dist/ 拷贝到 public/katex/（服务端 katex-rs 不打包 CSS）。
 # KaTeX 的 katex.min.css 用相对 URL 引 fonts/，故 fonts/ 必须与 CSS 同级。
 # 只拷 woff2（现代浏览器全支持，省去 woff/ttf ~70% 字体体积）。
-# katex 作为 libs/ workspace 根 devDependency，bun install 后在 libs/node_modules/katex/。
+# katex 由 libs/ 工作区根声明，bun install 后在 libs/node_modules/katex/。
 katex-css: ## 拷贝 KaTeX CSS 与 woff2 字体到 public/katex/
 	@echo "Copying KaTeX CSS + woff2 fonts to public/katex/..."
 	@mkdir -p public/katex/fonts
@@ -40,6 +43,9 @@ katex-css: ## 拷贝 KaTeX CSS 与 woff2 字体到 public/katex/
 
 # 并行构建全部 libs/ 子项目（bun --filter 按依赖拓扑排序，无相互依赖则并发）。
 # 按锁文件安装依赖；清单不一致时失败，不在发布构建中更新锁文件。
+install-release-libs:
+	@cd libs && bun install --frozen-lockfile --omit=dev
+
 build-libs: ## 全量构建 libs/ 前端库
 	@cd libs && bun install --frozen-lockfile && bun run --filter '*' build
 

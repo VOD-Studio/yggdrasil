@@ -7,7 +7,7 @@ include mk/assets.mk mk/docker.mk
 
 .PHONY: help build build-linux build-frontend wasm-toolchain install-cargo-leptos precompress
 .PHONY: check-dev-tools check-build-tools check-wasm-toolchain
-.PHONY: dev test lint fmt fix doc doc-open clean
+.PHONY: dev test lint fmt fix doc doc-open doc-release clean
 
 # ── 配置 ───────────────────────────────────────────────────────
 # release 构建用固定日期的 nightly（前端 WASM 构建）。
@@ -30,6 +30,7 @@ ifeq ($(CI),)
 endif
 WASM_FRONTEND_JOBS ?= 2
 RELEASE_OUT ?= target/release-dist
+RELEASE_DOCS ?= 1
 LEPTOS_WASM_ENV := RUSTUP_TOOLCHAIN=$(WASM_NIGHTLY) CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS='--cfg getrandom_backend="wasm_js" -Zunstable-options --jobs-frontend=$(WASM_FRONTEND_JOBS) -Zmir-opt-level=3 -Cpanic=immediate-abort -Zlocation-detail=none -Zfmt-debug=none'
 LEPTOS_WASM_ARGS := --lib-cargo-args=-Zbuild-std=std,panic_abort --lib-cargo-args=-Zbuild-std-features=optimize_for_size
 
@@ -110,7 +111,9 @@ build build-linux: check-build-tools
 	@$(MAKE) build-frontend
 	@cargo build --release --locked --bin yggdrasil $(RELEASE_SERVER_ARGS)
 	@bun scripts/build-release.ts --out "$(RELEASE_OUT)" --server "$(RELEASE_SERVER)"
+ifeq ($(RELEASE_DOCS),1)
 	@$(MAKE) doc DOC_OUT="$(RELEASE_OUT)/public/doc"
+endif
 	@$(MAKE) precompress
 	@bun scripts/build-release.ts --verify --out "$(RELEASE_OUT)"
 	@echo "发布目录：$(RELEASE_OUT)；部署时请保留 server、hash.txt 与 public/ 的配套关系。"
@@ -199,6 +202,7 @@ fix: ## cargo fix + Biome format + cargo fmt（写入文件）
 # index.html。用 meta refresh + JS 跳转到真正的文档入口 yggdrasil/index.html，
 # 这样裸路径 /doc 也能直达文档。
 DOC_OUT ?= public/doc
+DOC_TARGET_DIR ?= $(or $(CARGO_TARGET_DIR),target)
 DOC_THEME_CSS := target/rustdoc-theme.css
 DOC_SHELL_JS := target/rustdoc-doc-shell.js
 DOC_FRAGMENTS := rustdoc-theme/in-header.html rustdoc-theme/before-content.html rustdoc-theme/after-content.html
@@ -217,18 +221,23 @@ doc: ## 生成 rustdoc（站点同款主题）到 public/doc/
 	@cp $(DOC_FRAGMENTS) $(DOC_FRAGMENT_DIR)/
 	@$(CSS_BUILD) rustdoc-theme/theme.css --outfile="$(DOC_THEME_CSS)" --minify
 	@bun build rustdoc-theme/js/index.js --outfile $(DOC_SHELL_JS) --format=iife --target=browser --minify
-	@RUSTDOCFLAGS="$(DOC_RUSTDOCFLAGS)" cargo doc --lib --no-deps --document-private-items
-	@cp $(DOC_THEME_CSS) target/doc/theme.css
-	@cp rustdoc-theme/doc-boot.js target/doc/doc-boot.js
-	@cp $(DOC_SHELL_JS) target/doc/doc-shell.js
+	@RUSTDOCFLAGS="$(DOC_RUSTDOCFLAGS)" cargo doc --locked --target-dir "$(DOC_TARGET_DIR)" --lib --no-deps --document-private-items
+	@cp $(DOC_THEME_CSS) "$(DOC_TARGET_DIR)/doc/theme.css"
+	@cp rustdoc-theme/doc-boot.js "$(DOC_TARGET_DIR)/doc/doc-boot.js"
+	@cp $(DOC_SHELL_JS) "$(DOC_TARGET_DIR)/doc/doc-shell.js"
+	@mkdir -p "$$(dirname "$(DOC_OUT)")"
 	@rm -rf "$(DOC_OUT)"
-	@cp -r target/doc "$(DOC_OUT)"
+	@cp -r "$(DOC_TARGET_DIR)/doc" "$(DOC_OUT)"
 	@printf '<!DOCTYPE html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=yggdrasil/index.html"><title>Redirecting…</title></head><body><script>location.replace("yggdrasil/index.html")</script></body></html>' > "$(DOC_OUT)/index.html"
+
+doc-release: DOC_OUT = target/doc-dist/doc
+doc-release: doc ## 单独装配 /doc 文档与 Brotli 旁车
+	@bun scripts/precompress.ts "$(DOC_OUT)"
 
 # 同 doc，生成完自动用浏览器打开。flags 与 doc 相同，缓存是新的，只会打开
 # 页面，不会重新生成，也不会覆盖已复制的 theme.css。
 doc-open: doc ## 生成 rustdoc 并用浏览器打开
-	@RUSTDOCFLAGS="$(DOC_RUSTDOCFLAGS)" cargo doc --lib --no-deps --document-private-items --open
+	@RUSTDOCFLAGS="$(DOC_RUSTDOCFLAGS)" cargo doc --locked --target-dir "$(DOC_TARGET_DIR)" --lib --no-deps --document-private-items --open
 
 # ── 清理 ───────────────────────────────────────────────────────
 # 只删除已知生成目录；public/ 下的图标、图片等受版本控制的资源必须保留。
