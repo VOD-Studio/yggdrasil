@@ -64,7 +64,6 @@ async function main() {
     'Cargo.toml',
     'Cargo.lock',
     'build.rs',
-    'src/bin/generate_highlight_css.rs',
     'input.css',
     'input-admin.css',
     'libs/package.json',
@@ -72,9 +71,9 @@ async function main() {
     'libs/bunfig.toml',
     'libs/tsconfig.base.json',
     'libs/vite-iife.ts',
+    'libs/shared/scripts/generate-code-themes.ts',
+    'libs/shared/src/code-palette.ts',
     'libs/patches/example.patch',
-    'themes/Yggdrasil Light.tmTheme',
-    'themes/Yggdrasil Dark.tmTheme',
   ])
     write(file);
   for (const name of packages) {
@@ -104,6 +103,9 @@ if (command === 'bun' && args[0] === 'install') {
 } else if (command === 'bun' && args[0] === 'build') {
   const out = args.find((arg) => arg.startsWith('--outfile=')).slice('--outfile='.length);
   record('css ' + out); write(out);
+} else if (command === 'bun' && args[0] === 'libs/shared/scripts/generate-code-themes.ts') {
+  if (args[1] !== '--site-only') process.exit(1);
+  record('highlight'); write('public/highlight.css');
 } else if (command === 'bun') {
   const name = path.basename(process.cwd());
   record('build ' + name);
@@ -111,8 +113,6 @@ if (command === 'bun' && args[0] === 'install') {
   for (const file of outputs[name] || []) write(file);
 } else if (command === 'cargo-leptos' || (command === 'cargo' && args[0] === 'leptos')) {
   console.log('cargo-leptos 0.3.12');
-} else if (command === 'cargo') {
-  record('highlight'); write('public/highlight.css');
 } else if (command === 'rustup') console.log('llvm-tools-aarch64-apple-darwin');
 `;
   for (const tool of ['bun', 'cargo', 'rustup', 'cargo-leptos']) {
@@ -146,8 +146,10 @@ if (command === 'bun' && args[0] === 'install') {
   assert.ok(fs.existsSync(path.join(root, 'public/katex/fonts/example.woff2')));
   await edit('libs/bun.lock');
   assert.ok(!step(packages).includes('highlight'));
-  await edit('themes/Yggdrasil Light.tmTheme');
-  assert.ok(step([]).includes('highlight'));
+  await edit('libs/shared/src/code-palette.ts');
+  assert.ok(step(packages.filter((name) => name !== 'tiptap-editor')).includes('highlight'));
+  await edit('Cargo.lock');
+  assert.ok(!step([]).includes('highlight'));
   fs.rmSync(path.join(root, 'libs/node_modules'), { recursive: true });
   step(packages);
   await edit('libs/tiptap-editor/src/index.ts');

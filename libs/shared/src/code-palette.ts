@@ -1,5 +1,5 @@
 /**
- * 代码配色的单一来源：文章高亮（经 tmTheme 生成 highlight.css）、Tiptap 代码块、
+ * 代码配色的单一来源：文章高亮、Tiptap 代码块、
  * CodeMirror 与 xterm 都从这里取色。Mermaid 图表用界面 token 配色，见
  * src/api/markdown/mermaid/config.rs。
  *
@@ -151,12 +151,12 @@ export const CODE_PALETTES: Record<ThemeName, CodePalette> = {
 };
 
 /**
- * 每个语法角色在 tmTheme 中对应的 TextMate scope。syntect 以类名输出 scope 的每一段，
+ * 每个语法角色对应的 TextMate scope。syntect 以类名输出 scope 的每一段，
  * 生成的 CSS 按类数决定优先级，所以更长的 scope（keyword.operator.word）会压过更短的
  * （keyword.operator）。不要映射 meta.function-call 这类外壳 scope：它包着整个调用，
  * 参数里的变量会跟着变色。
  */
-const TM_SCOPES: [keyof SyntaxPalette, string, string?][] = [
+const TM_SCOPES: [keyof SyntaxPalette, string, ('bold' | 'underline')?][] = [
   ['comment', 'comment, punctuation.definition.comment, markup.quote'],
   [
     'muted',
@@ -190,58 +190,36 @@ const TM_SCOPES: [keyof SyntaxPalette, string, string?][] = [
   ['secondary', 'markup.changed, meta.diff.header'],
 ];
 
-function escapeXml(value: string): string {
-  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
+const scopeFontStyles = {
+  bold: ';font-weight:bold',
+  underline: ';text-decoration:underline',
+};
 
-/** 生成供 syntect 读取的 .tmTheme（Sublime Text plist）。 */
-export function tmTheme(name: string, palette: SyntaxPalette): string {
-  const setting = (entries: [string, string][]) =>
-    entries
-      .map(([k, v]) => `\t\t\t\t<key>${k}</key>\n\t\t\t\t<string>${escapeXml(v)}</string>`)
-      .join('\n');
-  const items = [
-    `\t\t<dict>\n\t\t\t<key>settings</key>\n\t\t\t<dict>\n${setting([
-      ['background', palette.background],
-      ['foreground', palette.foreground],
-      ['caret', palette.cursor],
-      ['lineHighlight', palette.background],
-      ['selection', palette.background],
-    ])}\n\t\t\t</dict>\n\t\t</dict>`,
-    ...TM_SCOPES.map(([role, scope, fontStyle]) => {
-      const entries: [string, string][] = [['foreground', palette[role]]];
-      entries.push(['fontStyle', fontStyle ?? '']);
-      return `\t\t<dict>\n\t\t\t<key>name</key>\n\t\t\t<string>${role}</string>\n\t\t\t<key>scope</key>\n\t\t\t<string>${escapeXml(scope)}</string>\n\t\t\t<key>settings</key>\n\t\t\t<dict>\n${setting(entries)}\n\t\t\t</dict>\n\t\t</dict>`;
-    }),
-  ];
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<!-- 由 libs/shared/scripts/generate-code-themes.ts 生成，勿手改；取色见 libs/shared/src/code-palette.ts。 -->
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-\t<key>name</key>
-\t<string>${escapeXml(name)}</string>
-\t<key>settings</key>
-\t<array>
-${items.join('\n')}
-\t</array>
-</dict>
-</plist>
-`;
-}
-
-/** 浅色 / 深色 tmTheme 的文件名与内容。 */
-export function tmThemeFiles(): { file: string; content: string }[] {
-  return [
-    {
-      file: 'Yggdrasil Light.tmTheme',
-      content: tmTheme('Yggdrasil Light', CODE_PALETTES.light.syntax),
-    },
-    {
-      file: 'Yggdrasil Dark.tmTheme',
-      content: tmTheme('Yggdrasil Dark', CODE_PALETTES.dark.syntax),
-    },
-  ];
+/** 生成与 syntect 的 ClassStyle::Spaced 输出匹配的明暗配色。 */
+export function highlightCss(): string {
+  return (['light', 'dark'] as const)
+    .map((theme) => {
+      const palette = CODE_PALETTES[theme].syntax;
+      const prefix = theme === 'dark' ? '.dark ' : '';
+      const code = `${prefix}:is(.md-content,.showcase-code-panel) pre code`;
+      const rules = TM_SCOPES.map(([role, scopes, fontStyle]) => {
+        const selectors = scopes
+          .split(',')
+          .map((scope) => {
+            const classes = scope
+              .trim()
+              .split(/\s+/)
+              .map((part) => `.${part}`)
+              .join(' ');
+            return `${code} ${classes}`;
+          })
+          .join(',');
+        const style = fontStyle ? scopeFontStyles[fontStyle] : '';
+        return `${selectors}{color:${palette[role]}${style}}`;
+      });
+      return `${code}{color:${palette.foreground}}${rules.join('')}`;
+    })
+    .join('');
 }
 
 /**

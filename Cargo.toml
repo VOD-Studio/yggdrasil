@@ -9,13 +9,6 @@ edition = "2021"
 crate-type = ["cdylib", "rlib"]
 doctest = false
 
-# 构建时工具二进制：用 syntect（server-only 依赖）生成 highlight.css。
-# 仅在启用 server feature 时编译——WASM 前端构建（--no-default-features --features hydrate）
-# 不会拉入 syntect，此二进制若也参与编译会因找不到 syntect 报错。
-[[bin]]
-name = "generate_highlight_css"
-required-features = ["server"]
-
 # Markdown 渲染微基准（criterion）。语料见 benches/fixtures/；用法见 Makefile bench-markdown。
 [[bench]]
 name = "markdown"
@@ -49,7 +42,7 @@ rand = { version = "0.10", optional = true }
 http = { version = "1", optional = true }
 axum = { version = "0.8", optional = true, features = ["multipart"] }
 # fs：上一发布资源保留窗口（YGG_PREVIOUS_PUBLIC_DIR）的 ServeFile .br 协商（plan §6.7）。
-tower-http = { version = "0.7", optional = true, features = ["timeout", "trace", "fs", "catch-panic"] }
+tower-http = { version = "0.7", optional = true, features = ["timeout", "fs", "catch-panic"] }
 # 响应压缩编码器（同步 API）：动态压缩中间件与 SSR HTML 缓存预压缩共用（src/compression.rs）。
 compression-codecs = { version = "0.4.46", optional = true, features = ["brotli", "gzip", "zlib", "zstd"] }
 # 保留窗口中间件用 ServiceExt::oneshot 调用 ServeFile（仅 server）。
@@ -59,7 +52,7 @@ serde_json = "1.0"
 sha2 = { version = "0.11", optional = true }
 hex = { version = "0.4", optional = true }
 lol_html = { version = "3", optional = true }
-syntect = { version = "5", default-features = false, features = ["default-syntaxes", "default-themes", "default-fancy", "html", "parsing", "dump-load", "yaml-load"], optional = true }
+syntect = { version = "5", default-features = false, features = ["default-syntaxes", "html", "regex-fancy", "yaml-load"], optional = true }
 # NOTE: WebP decoder is intentionally excluded from the image crate.
 # We use zenwebp for both encoding and decoding to ensure consistency.
 # Do NOT add "webp" to the features list without updating src/webp.rs.

@@ -499,7 +499,7 @@ fn row_to_mcp_token_meta(row: &tokio_postgres::Row) -> McpToken {
 ///
 /// 高亮 HTML 由 `crate::highlight::server::highlight_code` 生成（spaced CSS class 风格，
 /// 配合 `public/highlight.css`）；前端需将其置于 `.md-content pre code` 作用域下，
-/// 否则高亮 CSS 选择器不匹配（见 `src/bin/generate_highlight_css.rs` 的 base 重写）。
+/// 对应文章高亮 CSS 对正文和组件图鉴的选择器作用域。
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct McpConfigSnippet {
     /// 显示标题（含客户端名与目标文件路径）。

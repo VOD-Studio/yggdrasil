@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CODE_PALETTES, type SyntaxPalette, tmTheme } from './code-palette';
+import { CODE_PALETTES, highlightCss, type SyntaxPalette } from './code-palette';
 
 function luminance(hex: string): number {
   const [r, g, b] = [1, 3, 5].map((i) => {
@@ -86,16 +86,21 @@ describe('CODE_PALETTES', () => {
   });
 });
 
-describe('tmTheme', () => {
-  it('marks function definitions with clay and never uses italic', () => {
-    const palette = CODE_PALETTES.light.syntax;
-    const xml = tmTheme('Test', palette);
-    expect(xml).toContain('<string>Test</string>');
-    expect(xml).toMatch(
-      new RegExp(
-        `<string>entity\\.name\\.function</string>\\s*<key>settings</key>\\s*<dict>\\s*<key>foreground</key>\\s*<string>${palette.clay}</string>`,
-      ),
-    );
-    expect(xml).not.toContain('italic');
+describe('文章语法高亮 CSS', () => {
+  it('为正文和图鉴生成按 scope 排序的明暗配色', () => {
+    const css = highlightCss();
+    const code = ':is(.md-content,.showcase-code-panel) pre code';
+    expect(css.startsWith(`${code}{color:${CODE_PALETTES.light.syntax.foreground}}`)).toBe(true);
+    expect(css).toContain(`}.dark ${code}{color:${CODE_PALETTES.dark.syntax.foreground}}`);
+    for (const theme of ['light', 'dark'] as const) {
+      const palette = CODE_PALETTES[theme].syntax;
+      const selector = theme === 'dark' ? `.dark ${code}` : code;
+      expect(css).toContain(`${selector} .entity.name.function{color:${palette.clay}}`);
+      expect(css).toContain(`${selector} .meta.structure.dictionary.key .string,`);
+      expect(css).toContain(`{color:${palette.bright};font-weight:bold}`);
+      expect(css).toContain(`{color:${palette.foreground};text-decoration:underline}`);
+    }
+    expect(css).not.toContain('italic');
+    expect(css).not.toContain('background');
   });
 });

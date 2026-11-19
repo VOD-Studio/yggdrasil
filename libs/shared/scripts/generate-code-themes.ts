@@ -1,17 +1,18 @@
-// 生成代码配色产物：themes/*.tmTheme（文章代码高亮，syntect → public/highlight.css 的配色来源）
-// 与 Tiptap 编辑器代码块的 highlight.js 配色。
-import { writeFileSync } from 'node:fs';
+// 生成文章和编辑器的代码高亮配色。
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { hljsThemeCss, tmThemeFiles } from '../src/code-palette';
+import { highlightCss, hljsThemeCss } from '../src/code-palette';
 
-for (const { file, content } of tmThemeFiles()) {
-  const target = fileURLToPath(new URL(`../../../themes/${file}`, import.meta.url));
-  writeFileSync(target, content);
-  console.log(`wrote ${target}`);
+const siteTarget = fileURLToPath(new URL('../../../public/highlight.css', import.meta.url));
+mkdirSync(dirname(siteTarget), { recursive: true });
+writeFileSync(siteTarget, highlightCss());
+console.log(`生成 ${siteTarget}`);
+
+if (!process.argv.includes('--site-only')) {
+  const editorTarget = fileURLToPath(
+    new URL('../../tiptap-editor/src/code-highlight.css', import.meta.url),
+  );
+  writeFileSync(editorTarget, hljsThemeCss());
+  console.log(`生成 ${editorTarget}`);
 }
-
-const hljsTarget = fileURLToPath(
-  new URL('../../tiptap-editor/src/code-highlight.css', import.meta.url),
-);
-writeFileSync(hljsTarget, hljsThemeCss());
-console.log(`wrote ${hljsTarget}`);

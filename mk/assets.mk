@@ -25,7 +25,7 @@ build-assets: ## 构建 public/ 下的全部生成资源（libs、高亮/KaTeX C
 	@$(CSS_ADMIN) --minify
 
 highlight-css: ## 生成语法高亮 CSS
-	@cargo run --bin generate_highlight_css
+	@bun libs/shared/scripts/generate-code-themes.ts --site-only
 
 # 把 npm 包 katex 的 dist/ 拷贝到 public/katex/（服务端 katex-rs 不打包 CSS）。
 # KaTeX 的 katex.min.css 用相对 URL 引 fonts/，故 fonts/ 必须与 CSS 同级。
@@ -83,7 +83,7 @@ $(addprefix $(DEV_ASSET_DIR)/,$(addsuffix .stamp,$(filter-out shared tiptap-edit
 dev-libs: $(addprefix $(DEV_ASSET_DIR)/,$(addsuffix .stamp,$(DEV_LIBS)))
 dev-assets-force:
 
-$(DEV_ASSET_DIR)/highlight.stamp: mk/assets.mk Cargo.toml Cargo.lock build.rs src/bin/generate_highlight_css.rs themes/Yggdrasil\ Light.tmTheme themes/Yggdrasil\ Dark.tmTheme
+$(DEV_ASSET_DIR)/highlight.stamp: mk/assets.mk libs/shared/scripts/generate-code-themes.ts libs/shared/src/code-palette.ts
 	@$(MAKE) --no-print-directory highlight-css
 	@mkdir -p $(DEV_ASSET_DIR)
 	@touch $@
