@@ -39,6 +39,24 @@ fn clamp_pagination(page: i32, per_page: i32) -> (i32, i32) {
     (page.clamp(1, MAX_PAGE), per_page.clamp(1, MAX_PER_PAGE))
 }
 
+/// 首页与归档共用已发布文章总数，随文章列表缓存一起失效。
+#[cfg(feature = "server")]
+pub(super) async fn published_post_count(client: &tokio_postgres::Client) -> Result<i64, AppError> {
+    if let Some(total) = crate::cache::get_total_published_posts().await {
+        return Ok(total);
+    }
+    let total = client
+        .query_one(
+            "SELECT COUNT(*) FROM posts WHERE status = 'published' AND deleted_at IS NULL",
+            &[],
+        )
+        .await
+        .map_err(AppError::query)?
+        .get(0);
+    crate::cache::set_total_published_posts(total).await;
+    Ok(total)
+}
+
 /// 获取已发布文章分页列表。
 ///
 /// 优先命中缓存；未命中时查询总数与分页记录，并按 published_at 降序排列。
@@ -58,22 +76,7 @@ pub async fn list_published_posts(page: i32, per_page: i32) -> Result<PostListRe
         }
 
         let client = get_conn().await.map_err(AppError::db_conn)?;
-
-        // 优先读取缓存中的已发布文章总数，否则查询数据库并回填缓存。
-        let total = if let Some(cached_total) = crate::cache::get_total_published_posts().await {
-            cached_total
-        } else {
-            let count_row = client
-                .query_one(
-                    "SELECT COUNT(*) FROM posts WHERE status = 'published' AND deleted_at IS NULL",
-                    &[],
-                )
-                .await
-                .map_err(AppError::query)?;
-            let total: i64 = count_row.get(0);
-            crate::cache::set_total_published_posts(total).await;
-            total
-        };
+        let total = published_post_count(&client).await?;
 
         let offset = ((page - 1).max(0) as i64) * (per_page as i64);
         let limit = per_page as i64;
@@ -264,8 +267,6 @@ pub async fn list_deleted_posts(page: i32, per_page: i32) -> Result<PostListResp
 pub async fn get_posts_by_tag(tag_name: String) -> Result<PostListResponse, ApiError> {
     #[cfg(feature = "server")]
     {
-        let client = get_conn().await.map_err(AppError::db_conn)?;
-
         if let Some((cached_posts, cached_total)) = crate::cache::get_posts_by_tag(&tag_name).await
         {
             return Ok(PostListResponse {
@@ -274,6 +275,7 @@ pub async fn get_posts_by_tag(tag_name: String) -> Result<PostListResponse, ApiE
             });
         }
 
+        let client = get_conn().await.map_err(AppError::db_conn)?;
         // 真实总数（即使被 LIMIT 截断也返回完整计数）。
         let total: i64 = client
             .query_one(

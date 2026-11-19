@@ -24,14 +24,7 @@ pub async fn list_archive_posts(page: i32) -> Result<ArchiveResponse, ApiError> 
         let client = crate::db::pool::get_conn()
             .await
             .map_err(AppError::db_conn)?;
-        let total: i64 = client
-            .query_one(
-                "SELECT COUNT(*) FROM posts WHERE status = 'published' AND deleted_at IS NULL",
-                &[],
-            )
-            .await
-            .map_err(AppError::query)?
-            .get(0);
+        let total = super::list::published_post_count(&client).await?;
         let rows = client.query(
             "SELECT p.id, p.title, p.slug, COALESCE(p.published_at, p.created_at) AS published_at,
                     p.reading_time, COALESCE(array_agg(t.name ORDER BY t.name) FILTER (WHERE t.name IS NOT NULL), '{}') AS tags

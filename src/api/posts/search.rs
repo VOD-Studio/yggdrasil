@@ -41,8 +41,6 @@ pub async fn search_posts(query: String) -> Result<PostListResponse, ApiError> {
             }
         }
 
-        let client = get_conn().await.map_err(AppError::db_conn)?;
-
         let q = query.trim();
         if q.is_empty() || q.chars().count() > 200 {
             return Ok(PostListResponse {
@@ -52,10 +50,11 @@ pub async fn search_posts(query: String) -> Result<PostListResponse, ApiError> {
         }
 
         // 先检查短 TTL 的搜索结果缓存。
-        let cache_key = cache::normalize_search_key(q);
-        if let Some((posts, total)) = cache::get_search_results(&cache_key).await {
+        if let Some((posts, total)) = cache::get_search_results(q).await {
             return Ok(PostListResponse { posts, total });
         }
+
+        let client = get_conn().await.map_err(AppError::db_conn)?;
 
         // 转义 SQL LIKE 通配符，避免用户输入 % / _ 导致全表扫描。
         let escaped = crate::utils::server::escape_like_pattern(q);
@@ -86,7 +85,7 @@ pub async fn search_posts(query: String) -> Result<PostListResponse, ApiError> {
         let posts: Vec<_> = rows.iter().map(row_to_post_list_item).collect();
 
         let total = posts.len() as i64;
-        cache::set_search_results(&cache_key, posts.clone(), total).await;
+        cache::set_search_results(q, posts.clone(), total).await;
         Ok(PostListResponse { posts, total })
     }
 
