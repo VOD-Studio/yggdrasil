@@ -93,15 +93,18 @@ FROM doc-toolchain AS toolchain
 # see WASM_NIGHTLY in the Makefile). Keep this ARG in sync with that variable.
 ARG WASM_NIGHTLY=nightly-2026-11-19
 
-# Add the musl targets used by the server build. Both are
-# installed; each buildx platform leg builds only its native one (see below).
-# The wasm32 target lives on the pinned nightly that builds the client.
-# RUSTUP_DIST_SERVER is exported inline (only rustup-download that needs it).
-RUN if [ "$CN_MIRROR" = "true" ]; then \
+# 服务端按构建器架构使用对应的 musl 标准库，WASM 使用固定 nightly。
+RUN ARCH="$(dpkg --print-architecture)" \
+    && case "$ARCH" in \
+        amd64) MUSL_TARGET=x86_64-unknown-linux-musl  ;; \
+        arm64) MUSL_TARGET=aarch64-unknown-linux-musl ;; \
+        *) echo "unsupported arch: $ARCH" >&2; exit 1 ;; \
+    esac \
+    && if [ "$CN_MIRROR" = "true" ]; then \
         export RUSTUP_DIST_SERVER="${RS_PROXY}" \
         && export RUSTUP_UPDATE_ROOT="${RS_PROXY}/rustup"; \
     fi \
-    && rustup target add x86_64-unknown-linux-musl aarch64-unknown-linux-musl \
+    && rustup target add "$MUSL_TARGET" \
     && rustup toolchain install "$WASM_NIGHTLY" --profile minimal \
         --component rust-src --target wasm32-unknown-unknown
 
@@ -234,7 +237,8 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     bun scripts/build-release.ts --out /build/dist --hash /build/hash.txt
 
 # 与本地发布共用预压缩规则；查找或压缩失败时立即终止构建。
-RUN make precompress RELEASE_OUT=/build/dist
+RUN --mount=type=cache,id=ygg-precompress,target=/build/target/precompress-cache \
+    make precompress RELEASE_OUT=/build/dist
 
 # 校验发布产物：清单摘要、hash.txt 指向的产物、分包清单闭包与 .br 旁车。
 RUN bun scripts/build-release.ts --verify --out /build/dist
@@ -280,6 +284,7 @@ COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
     --mount=type=cache,id=rustdoc-target-${TARGETARCH},target=/build/doc-target,sharing=locked \
+    --mount=type=cache,id=ygg-precompress,target=/build/target/precompress-cache \
     make doc-release DOC_TARGET_DIR=doc-target DOC_OUT=dist-doc/doc
 
 FROM scratch AS rustdoc

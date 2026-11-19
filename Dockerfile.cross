@@ -194,7 +194,8 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     bun scripts/build-release.ts --out /build/dist --hash /build/hash.txt
 
 # 与本地发布共用预压缩规则；查找或压缩失败时立即终止构建。
-RUN make precompress RELEASE_OUT=/build/dist
+RUN --mount=type=cache,id=ygg-precompress,target=/build/target/precompress-cache \
+    make precompress RELEASE_OUT=/build/dist
 
 # 校验发布产物：清单摘要、hash.txt 指向的产物、分包清单闭包与 .br 旁车。
 RUN bun scripts/build-release.ts --verify --out /build/dist
@@ -207,6 +208,7 @@ COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
     --mount=type=cache,id=rustdoc-target-${BUILDARCH},target=/build/doc-target,sharing=locked \
+    --mount=type=cache,id=ygg-precompress,target=/build/target/precompress-cache \
     make doc-release DOC_TARGET_DIR=doc-target DOC_OUT=dist-doc/doc
 
 FROM scratch AS rustdoc

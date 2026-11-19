@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
-import { readdir, readFile, rename, rm, stat, utimes, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { mkdir, readdir, readFile, rename, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import { availableParallelism } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -25,6 +26,48 @@ for (const dir of directories) {
   }
 }
 const compress = promisify(brotliCompress);
+const quality = 11;
+// 编码器版本和质量参与缓存寻址。大小提示从哈希所覆盖的原件字节得到。
+const cacheDir = join(
+  process.env.YGG_PRECOMPRESS_CACHE_DIR ?? 'target/precompress-cache',
+  `brotli-${quality}-${Bun.revision}`,
+);
+await mkdir(cacheDir, { recursive: true });
+const inFlight = new Map<string, Promise<Buffer>>();
+let compressed = 0;
+
+async function readOrCompress(cacheFile: string, data: Buffer): Promise<Buffer> {
+  try {
+    return await readFile(cacheFile);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
+  const encoded = await compress(data, {
+    params: {
+      [constants.BROTLI_PARAM_QUALITY]: quality,
+      [constants.BROTLI_PARAM_SIZE_HINT]: data.length,
+    },
+  });
+  const temporary = `${cacheFile}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(temporary, encoded);
+    await rename(temporary, cacheFile);
+  } finally {
+    await rm(temporary, { force: true });
+  }
+  compressed++;
+  return encoded;
+}
+
+function cachedCompression(data: Buffer): Promise<Buffer> {
+  const hash = new Bun.CryptoHasher('sha256').update(data).digest('hex');
+  const active = inFlight.get(hash);
+  if (active) return active;
+  const work = readOrCompress(join(cacheDir, `${hash}.br`), data).finally(() => inFlight.delete(hash));
+  inFlight.set(hash, work);
+  return work;
+}
+
 const pending = files.values();
 let failed = false;
 
@@ -38,12 +81,7 @@ const results = await Promise.allSettled(
       try {
         const data = await readFile(path);
         const { atimeMs, mtimeMs } = await stat(path);
-        const encoded = await compress(data, {
-          params: {
-            [constants.BROTLI_PARAM_QUALITY]: 11,
-            [constants.BROTLI_PARAM_SIZE_HINT]: data.length,
-          },
-        });
+        const encoded = await cachedCompression(data);
         await writeFile(temporary, encoded);
         // 与原文件使用相同的修改时间，供 ServeDir 生成 Last-Modified。
         await utimes(temporary, atimeMs / 1000, mtimeMs / 1000);
@@ -59,4 +97,6 @@ const results = await Promise.allSettled(
 const failure = results.find((result) => result.status === 'rejected');
 if (failure) throw failure.reason;
 
-console.log(`已生成 ${files.length} 个 Brotli 旁车（${root}）`);
+console.log(
+  `已生成 ${files.length} 个 Brotli 旁车（${root}），新压缩 ${compressed} 个，复用 ${files.length - compressed} 个`,
+);

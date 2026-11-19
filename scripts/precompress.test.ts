@@ -15,6 +15,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { brotliDecompressSync } from 'node:zlib';
 
+function precompress(site: string, cache: string) {
+  return Bun.spawnSync([process.execPath, join(import.meta.dir, 'precompress.ts'), site], {
+    env: { ...process.env, PATH: '', YGG_PRECOMPRESS_CACHE_DIR: cache },
+    stdout: 'pipe',
+    stderr: 'pipe',
+  });
+}
+
 test('发布预压缩覆盖静态资源，保留原件与修改时间', () => {
   const root = mkdtempSync(join(tmpdir(), 'ygg-precompress-'));
   try {
@@ -44,11 +52,7 @@ test('发布预压缩覆盖静态资源，保留原件与修改时间', () => {
     symlinkSync(join(site, 'empty.css'), join(site, 'link.css'));
     writeFileSync(join(site, 'index.html.br'), '旧旁车');
 
-    const run = () =>
-      Bun.spawnSync([process.execPath, join(import.meta.dir, 'precompress.ts'), site], {
-        env: { ...process.env, PATH: '' },
-        stderr: 'pipe',
-      });
+    const run = () => precompress(site, join(root, 'cache'));
     const result = run();
     expect(result.stderr.toString()).toBe('');
     expect(result.exitCode).toBe(0);
@@ -70,6 +74,41 @@ test('发布预压缩覆盖静态资源，保留原件与修改时间', () => {
     expect(failed.stderr.toString()).toMatch(/预压缩失败.*index\.html/);
     const files = readdirSync(site, { recursive: true, encoding: 'utf8' });
     expect(files.some((file) => file.endsWith('.tmp'))).toBe(false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('跨发布目录复用旁车，文件内容变化时重新压缩', () => {
+  const root = mkdtempSync(join(tmpdir(), 'ygg-precompress-cache-'));
+  try {
+    const first = join(root, 'first');
+    const second = join(root, 'second');
+    const cache = join(root, 'cache');
+    mkdirSync(first);
+    mkdirSync(second);
+    writeFileSync(join(first, 'a.js'), 'aaa');
+    writeFileSync(join(first, 'b.js'), 'aaa');
+    const cold = precompress(first, cache);
+    expect(cold.exitCode).toBe(0);
+    expect(cold.stdout.toString()).toContain('新压缩 1 个，复用 1 个');
+
+    const file = join(second, 'c.js');
+    writeFileSync(file, 'aaa');
+    const mtime = new Date('2026-02-01T00:00:00Z');
+    utimesSync(file, mtime, mtime);
+    const warm = precompress(second, cache);
+    expect(warm.exitCode).toBe(0);
+    expect(warm.stdout.toString()).toContain('新压缩 0 个，复用 1 个');
+    expect(readFileSync(`${file}.br`)).toEqual(readFileSync(join(first, 'a.js.br')));
+    expect(statSync(`${file}.br`).mtimeMs).toBe(mtime.getTime());
+
+    writeFileSync(file, 'bbb');
+    utimesSync(file, mtime, mtime);
+    const changed = precompress(second, cache);
+    expect(changed.exitCode).toBe(0);
+    expect(changed.stdout.toString()).toContain('新压缩 1 个，复用 0 个');
+    expect(brotliDecompressSync(readFileSync(`${file}.br`)).toString()).toBe('bbb');
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
