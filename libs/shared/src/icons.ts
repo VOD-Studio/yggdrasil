@@ -110,7 +110,7 @@ export const ICONS: readonly string[] = [
  * lucide-static 已移除品牌图标；这里补上 Lucide 早期版本的线条版（同为 ISC），
  * 与站点其余图标同一笔触。
  */
-export const CUSTOM_ICONS: Record<string, IconNode> = {
+const CUSTOM_ICONS: Record<string, IconNode> = {
   github: [
     [
       'path',
@@ -121,6 +121,16 @@ export const CUSTOM_ICONS: Record<string, IconNode> = {
     ['path', { d: 'M9 18c-4.51 2-5-2-7-2' }],
   ],
 };
+
+// 上游更名后继续使用已有的站点图标名与 Rust 枚举。
+const LUCIDE_NAMES: Record<string, string> = {
+  'circle-alert': 'circle-exclamation-point',
+  'triangle-alert': 'triangle-exclamation-point',
+};
+
+export function iconNode(lucide: Record<string, IconNode>, slug: string): IconNode {
+  return CUSTOM_ICONS[slug] ?? lucide[LUCIDE_NAMES[slug] ?? slug];
+}
 
 /** `arrow-up-right` → `ArrowUpRight`。 */
 export function variantName(slug: string): string {
@@ -153,8 +163,7 @@ function rustString(value: string): string {
 
 /** 生成 `src/components/ui/icons_data.rs` 的完整内容。 */
 export function iconsRust(lucide: Record<string, IconNode>, version: string): string {
-  const nodes = { ...lucide, ...CUSTOM_ICONS };
-  const missing = ICONS.filter((slug) => !nodes[slug]);
+  const missing = ICONS.filter((slug) => !iconNode(lucide, slug));
   if (missing.length > 0)
     throw new Error(`lucide-static ${version} 缺少图标：${missing.join(', ')}`);
   const lines = [
@@ -187,7 +196,7 @@ export function iconsRust(lucide: Record<string, IconNode>, version: string): st
     '        match self {',
     ...ICONS.map(
       (slug) =>
-        `            IconName::${variantName(slug)} => ${rustString(iconBody(nodes[slug]))},`,
+        `            IconName::${variantName(slug)} => ${rustString(iconBody(iconNode(lucide, slug)))},`,
     ),
     '        }',
     '    }',

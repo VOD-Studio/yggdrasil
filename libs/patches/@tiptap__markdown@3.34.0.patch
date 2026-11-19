@@ -1,8 +1,5 @@
-diff --git a/node_modules/@tiptap/markdown/.bun-tag-daa83b4545edf27b b/.bun-tag-daa83b4545edf27b
-new file mode 100644
-index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
 diff --git a/dist/index.cjs b/dist/index.cjs
-index 44992129b32a6b330e006c4c12acb83aa8ad1e19..0fd38a41aee17deaa9b2872d8dd961b07d9096c0 100644
+index 6f3600b..734f8b0 100644
 --- a/dist/index.cjs
 +++ b/dist/index.cjs
 @@ -361,6 +361,9 @@ function htmlContainsUnrecognizedTag(html, schemaTags) {
@@ -15,7 +12,7 @@ index 44992129b32a6b330e006c4c12acb83aa8ad1e19..0fd38a41aee17deaa9b2872d8dd961b0
  var MarkdownManager = class {
  	/**
  	* Create a MarkdownManager.
-@@ -1060,19 +1063,46 @@ var MarkdownManager = class {
+@@ -1086,19 +1089,46 @@ var MarkdownManager = class {
  	*/
  	encodeTextForMarkdown(text, node, parentNode) {
  		if ((parentNode === null || parentNode === void 0 ? void 0 : parentNode.type) != null && this.codeTypes.has(parentNode.type) || (node.marks || []).some((m) => this.codeTypes.has(typeof m === "string" ? m : m.type))) return text;
@@ -66,7 +63,7 @@ index 44992129b32a6b330e006c4c12acb83aa8ad1e19..0fd38a41aee17deaa9b2872d8dd961b0
  	renderNodeToMarkdown(node, parentNode, index = 0, level = 0, meta = {}) {
  		var _handler$renderMarkdo;
 diff --git a/dist/index.js b/dist/index.js
-index 03c1371a63c35d4b8dfb5903511cd7189c6284c6..d89f76c99924ea5acae39aed1466a1a236a700f1 100644
+index 8ba62a7..bfb061d 100644
 --- a/dist/index.js
 +++ b/dist/index.js
 @@ -1,4 +1,4 @@
@@ -85,7 +82,7 @@ index 03c1371a63c35d4b8dfb5903511cd7189c6284c6..d89f76c99924ea5acae39aed1466a1a2
  var MarkdownManager = class {
  	/**
  	* Create a MarkdownManager.
-@@ -1059,19 +1062,46 @@ var MarkdownManager = class {
+@@ -1085,19 +1088,46 @@ var MarkdownManager = class {
  	*/
  	encodeTextForMarkdown(text, node, parentNode) {
  		if ((parentNode === null || parentNode === void 0 ? void 0 : parentNode.type) != null && this.codeTypes.has(parentNode.type) || (node.marks || []).some((m) => this.codeTypes.has(typeof m === "string" ? m : m.type))) return text;
@@ -136,7 +133,7 @@ index 03c1371a63c35d4b8dfb5903511cd7189c6284c6..d89f76c99924ea5acae39aed1466a1a2
  	renderNodeToMarkdown(node, parentNode, index = 0, level = 0, meta = {}) {
  		var _handler$renderMarkdo;
 diff --git a/src/MarkdownManager.ts b/src/MarkdownManager.ts
-index 21d28735c0c3be453c8494faccb8d477db3e0246..ac48928979919135fd2d816aeefdeb9109cad16a 100644
+index 1cdc8fe..c6284ae 100644
 --- a/src/MarkdownManager.ts
 +++ b/src/MarkdownManager.ts
 @@ -13,7 +13,6 @@ import {
@@ -167,7 +164,7 @@ index 21d28735c0c3be453c8494faccb8d477db3e0246..ac48928979919135fd2d816aeefdeb91
  export class MarkdownManager {
    private markedInstance: typeof marked
    private activeParseLexer: Lexer | null = null
-@@ -1147,6 +1159,12 @@ export class MarkdownManager {
+@@ -1186,6 +1198,12 @@ export class MarkdownManager {
     * (code mark or code-block parent) where literal characters should be preserved.
     * Also backslash-escape markdown-significant characters in non-code text to
     * prevent them from being misinterpreted as formatting delimiters.
@@ -180,7 +177,7 @@ index 21d28735c0c3be453c8494faccb8d477db3e0246..ac48928979919135fd2d816aeefdeb91
     */
    private encodeTextForMarkdown(text: string, node: JSONContent, parentNode?: JSONContent): string {
      const isInsideCode =
-@@ -1157,7 +1175,7 @@ export class MarkdownManager {
+@@ -1196,7 +1214,7 @@ export class MarkdownManager {
        return text
      }
  
@@ -189,7 +186,7 @@ index 21d28735c0c3be453c8494faccb8d477db3e0246..ac48928979919135fd2d816aeefdeb91
    }
  
    /**
-@@ -1165,12 +1183,43 @@ export class MarkdownManager {
+@@ -1204,12 +1222,43 @@ export class MarkdownManager {
     * syntax. This prevents literal characters in text nodes from being
     * misinterpreted as formatting delimiters when the output is parsed again.
     *
