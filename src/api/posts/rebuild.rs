@@ -119,10 +119,8 @@ pub async fn rebuild_content_html(
         // 标签文章及单篇缓存；这里使用全量失效作为务实的回退策略。
         if rebuilt > 0 {
             crate::cache::invalidate_all_post_caches();
-            crate::cache::invalidate_search_results();
-            // 批量重建影响所有公开页（列表/标签/归档/各文章），全量失效 SSR 磁盘缓存。
+            // 批量重建影响所有公开页（列表/标签/归档/各文章），全量失效 SSR 缓存。
             crate::ssr_cache::invalidate_ssr_all_public();
-            crate::ssr_cache::bump_global_generation();
         }
 
         Ok(RebuildResult {
@@ -201,10 +199,7 @@ pub async fn rebuild_post_content_html(post_id: i32) -> Result<CreatePostRespons
         crate::cache::invalidate_search_results();
         crate::cache::invalidate_post_by_slug(&slug).await;
         // SSR：单篇详情页 + 列表页（首页/分页/归档/标签都含列表项摘要）。
-        crate::ssr_cache::invalidate_ssr_route(&format!("/post/{slug}"));
-        crate::ssr_cache::invalidate_post_preview(&slug);
         crate::ssr_cache::invalidate_ssr_all_public();
-        crate::ssr_cache::bump_global_generation();
 
         Ok(CreatePostResponse::ok(
             "重建成功".to_string(),

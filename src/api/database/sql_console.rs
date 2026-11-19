@@ -355,10 +355,8 @@ pub async fn execute_sql(sql: String, opts: ExecuteSqlOpts) -> Result<SqlResult,
         // 避免最长 10 分钟（TTL_SINGLE_POST=600s）内继续吐出陈旧数据（含已删除文章）。
         if has_write {
             crate::cache::invalidate_all_post_caches();
-            crate::cache::invalidate_search_results();
             crate::cache::invalidate_all_comments();
             crate::ssr_cache::invalidate_ssr_all_public();
-            crate::ssr_cache::bump_global_generation();
         }
         Ok(last_result)
     }

@@ -419,12 +419,6 @@ pub async fn cache_public_html(
 
 // 内容写入通常同时影响详情、列表、归档与相邻导航；小型缓存统一失效避免遗漏。
 // 每次源站失效都同步请求清边缘缓存：`tasks::edge_purge` 防抖合并，未配置凭据时只是空信号。
-pub fn invalidate_ssr_route(_route: &str) {
-    HTML_CACHE.invalidate();
-    crate::tasks::edge_purge::request_purge();
-}
-pub fn invalidate_post_preview(_slug: &str) { /* 管理预览从不缓存。 */
-}
 pub fn invalidate_ssr_all_public() {
     HTML_CACHE.invalidate();
     crate::tasks::edge_purge::request_purge();
@@ -436,11 +430,6 @@ pub fn set_release_namespace(namespace: &str) {
         tracing::info!(%namespace, "SSR 缓存命名空间切换，旧 release/flavor 页面已失效");
         crate::tasks::edge_purge::request_purge();
     }
-}
-pub fn bump_global_generation() -> u64 {
-    let generation = HTML_CACHE.invalidate();
-    crate::tasks::edge_purge::request_purge();
-    generation
 }
 pub fn current_global_generation() -> u64 {
     HTML_CACHE.generation()

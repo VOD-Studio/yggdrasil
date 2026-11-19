@@ -804,17 +804,8 @@ pub fn invalidate_post_metadata() {
 
 /// 文章写操作（创建/更新/删除/恢复/清空回收站）后的统一缓存失效序列。
 ///
-/// 按影响范围精准失效：先失效文章「元数据」类缓存（列表/标签云/统计/搜索），
-/// 再按 slug 定向失效单篇正文与 SSR 详情页，按标签失效标签下文章列表，
-/// 最后全量刷新公开页 SSR 缓存并递增全局世代号。
-///
-/// - `slugs`：受影响的文章 slug（旧/新均可，用于单篇缓存与 SSR 详情页定向失效）。
-/// - `tags`：受影响的标签名（用于标签下文章列表失效）。
-///
-/// 对于 slug 变更等需要分别处理旧/新 slug 的复杂场景，调用方将涉及的 slug 一并传入即可——
-/// 本函数对 `slugs` 中的每个元素一视同仁。注意：`invalidate_ssr_all_public` 会删除全部
-/// 公开页 SSR 缓存，因此批量场景下逐 slug 的 `invalidate_ssr_route` 仅是先行的定向清理，
-/// 不会改变最终失效结果。
+/// 清除文章元数据与受影响的单篇文章、标签缓存，再统一失效公开页 SSR 缓存。
+/// 修改 slug 时，调用方传入旧值和新值。
 #[cfg(feature = "server")]
 pub async fn invalidate_for_post_write(slugs: &[String], tags: &[String]) {
     invalidate_post_metadata();
@@ -822,12 +813,7 @@ pub async fn invalidate_for_post_write(slugs: &[String], tags: &[String]) {
         invalidate_post_by_slug(slug).await;
     }
     invalidate_tag_posts_for(tags).await;
-    for slug in slugs {
-        crate::ssr_cache::invalidate_ssr_route(&format!("/post/{slug}"));
-        crate::ssr_cache::invalidate_post_preview(slug);
-    }
     crate::ssr_cache::invalidate_ssr_all_public();
-    crate::ssr_cache::bump_global_generation();
 }
 
 /// 标签写操作（创建/重命名）后的统一缓存失效序列。
@@ -839,7 +825,6 @@ pub async fn invalidate_for_post_write(slugs: &[String], tags: &[String]) {
 pub fn invalidate_for_tag_write() {
     invalidate_all_post_caches();
     crate::ssr_cache::invalidate_ssr_all_public();
-    crate::ssr_cache::bump_global_generation();
 }
 
 /// 按文章主键读取评论列表缓存。
@@ -1316,7 +1301,10 @@ mod tests {
         assert!(get_post_list(&key).await.is_none());
         assert!(get_posts_by_tag("renamed-tag").await.is_none());
         assert!(get_tag_list().await.is_none());
-        assert!(crate::ssr_cache::current_global_generation() > generation);
+        assert_eq!(
+            crate::ssr_cache::current_global_generation(),
+            generation + 1
+        );
     }
 
     #[tokio::test]

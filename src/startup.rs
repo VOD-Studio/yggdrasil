@@ -45,7 +45,6 @@ pub fn run() {
 
     // 启动与开发热重载时清除进程内 HTML 快照，避免保留旧版本渲染结果。
     crate::ssr_cache::invalidate_ssr_all_public();
-    crate::ssr_cache::invalidate_ssr_route("/admin/preview");
 
     let options = ServerOptions {
         ssr_cache_secs: crate::utils::server::parse_ssr_cache_secs(),

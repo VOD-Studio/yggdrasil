@@ -314,8 +314,7 @@ fn trim_fields(name: String, url: String, description: String) -> (String, Strin
 #[cfg(feature = "server")]
 fn invalidate_friend_links_views() {
     crate::cache::invalidate_friend_links();
-    crate::ssr_cache::invalidate_ssr_route("/friends");
-    crate::ssr_cache::bump_global_generation();
+    crate::ssr_cache::invalidate_ssr_all_public();
 }
 
 /// 把 `friend_links` 行解析为 [`FriendLink`]。

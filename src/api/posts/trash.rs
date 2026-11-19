@@ -173,9 +173,7 @@ pub async fn batch_restore_posts(post_ids: Vec<i32>) -> Result<CreatePostRespons
         } else {
             // 影响集过大时回退到全量失效，避免大量串行缓存操作。
             crate::cache::invalidate_all_post_caches();
-            crate::cache::invalidate_search_results();
             crate::ssr_cache::invalidate_ssr_all_public();
-            crate::ssr_cache::bump_global_generation();
         }
 
         Ok(CreatePostResponse::ok_msg(format!("已恢复 {restored} 篇")))
@@ -247,10 +245,7 @@ pub async fn batch_purge_posts(post_ids: Vec<i32>) -> Result<CreatePostResponse,
         } else {
             // 影响集过大时回退到全量失效，避免大量串行缓存操作。
             crate::cache::invalidate_all_post_caches();
-            crate::cache::invalidate_search_results();
-            // M5 修复：回退路径同样须物理失效 SSR。
             crate::ssr_cache::invalidate_ssr_all_public();
-            crate::ssr_cache::bump_global_generation();
         }
 
         Ok(CreatePostResponse::ok_msg(format!(
@@ -310,10 +305,7 @@ pub async fn empty_trash() -> Result<CreatePostResponse, ApiError> {
         } else {
             // 影响集过大时回退到全量失效，避免大量串行缓存操作。
             crate::cache::invalidate_all_post_caches();
-            crate::cache::invalidate_search_results();
-            // M5 修复：回退路径同样须物理失效 SSR。
             crate::ssr_cache::invalidate_ssr_all_public();
-            crate::ssr_cache::bump_global_generation();
         }
 
         Ok(CreatePostResponse::ok_msg(format!(

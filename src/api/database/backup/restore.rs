@@ -224,7 +224,6 @@ pub(super) async fn run_restore(task_id: &str, source: File) {
             // 恢复会覆盖文章、评论、用户、设置与素材元数据；所有内存/磁盘缓存
             // 必须一起冲刷。generation 仅用于观测，不能替代物理 SSR 删除。
             crate::cache::invalidate_all_post_caches();
-            crate::cache::invalidate_search_results();
             crate::cache::invalidate_all_comments();
             crate::cache::invalidate_friend_links();
             crate::cache::invalidate_site_settings();
@@ -234,7 +233,6 @@ pub(super) async fn run_restore(task_id: &str, source: File) {
             crate::cache::SESSION_CACHE.invalidate_all();
             crate::api::image::invalidate_all_caches().await;
             crate::ssr_cache::invalidate_ssr_all_public();
-            crate::ssr_cache::bump_global_generation();
             tasks::update(task_id, "恢复完成", 100, TaskStatus::Done, None, None, None);
         }
         Ok(o) => {

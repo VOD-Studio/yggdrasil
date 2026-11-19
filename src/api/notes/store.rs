@@ -657,7 +657,7 @@ pub async fn reorder(owner_id: i32, book: i32, ids: Vec<i32>) -> Result<(), AppE
 }
 
 fn invalidate() {
-    crate::ssr_cache::bump_global_generation();
+    crate::ssr_cache::invalidate_ssr_all_public();
 }
 
 #[cfg(test)]
