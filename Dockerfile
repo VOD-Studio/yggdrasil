@@ -251,6 +251,7 @@ RUN make build-assets
 # 再由 build-release.ts 把 target/site 与 hash.txt 装配进 /build/dist。
 # 与 cook/cargo build 的 server musl 产物互不干扰——后者在镜像层 /build/target，
 # 本 RUN 的 cache 卷覆盖该路径但只装 wasm32 子目录与站点产物。
+ARG WASM_FRONTEND_JOBS=2
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
     --mount=type=cache,target=/build/target,sharing=locked \

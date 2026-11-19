@@ -24,8 +24,13 @@ include mk/assets.mk mk/docker.mk
 # dev、test、lint 与 CI 仍用 stable。升级 nightly 时同步两个 Dockerfile 的
 # ARG WASM_NIGHTLY。
 WASM_NIGHTLY := nightly-2026-11-19
+# CI 与发布镜像默认用 2 个 rustc 前端线程，本机可通过 Makefile.local 覆盖。
+ifeq ($(CI),)
+-include Makefile.local
+endif
+WASM_FRONTEND_JOBS ?= 2
 RELEASE_OUT ?= target/release-dist
-LEPTOS_WASM_ENV := RUSTUP_TOOLCHAIN=$(WASM_NIGHTLY) CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS='--cfg getrandom_backend="wasm_js" -Zunstable-options -Cpanic=immediate-abort -Zlocation-detail=none -Zfmt-debug=none'
+LEPTOS_WASM_ENV := RUSTUP_TOOLCHAIN=$(WASM_NIGHTLY) CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS='--cfg getrandom_backend="wasm_js" -Zunstable-options --jobs-frontend=$(WASM_FRONTEND_JOBS) -Cpanic=immediate-abort -Zlocation-detail=none -Zfmt-debug=none'
 LEPTOS_WASM_ARGS := --lib-cargo-args=-Zbuild-std=std,panic_abort --lib-cargo-args=-Zbuild-std-features=optimize_for_size
 
 # cargo-leptos 0.3.11，其中的 wasm_split_cli_support 换成 VOD-Studio/wasm-split-prototype 的

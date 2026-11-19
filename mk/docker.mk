@@ -44,23 +44,24 @@ GIT_BUILD_ARGS = --build-arg YGG_BUILD_GIT_DESCRIBE="$(GIT_DESCRIBE)" \
 # CN_MIRROR build-arg：传 CN_MIRROR=true 时透传 --build-arg CN_MIRROR=true，
 # 否则不传（Dockerfile 内 ARG CN_MIRROR=false 默认关闭国内镜像）。
 CN_BUILD_ARGS = $(if $(filter true,$(CN_MIRROR)),--build-arg CN_MIRROR=true)
+DOCKER_BUILD_ARGS = $(GIT_BUILD_ARGS) $(CN_BUILD_ARGS) --build-arg WASM_FRONTEND_JOBS="$(WASM_FRONTEND_JOBS)"
 docker: ## 构建本机架构镜像并加载到本地 daemon
-	@docker buildx build --load $(GIT_BUILD_ARGS) $(CN_BUILD_ARGS) \
+	@docker buildx build --load $(DOCKER_BUILD_ARGS) \
 		-t yggdrasil:latest $(VERSION_TAG) .
 
 # x86_64 宿主用普通 Dockerfile，其他宿主（如 Apple Silicon）用 Dockerfile.cross。
 # 产物可直接 docker run / docker save 导出。
 DOCKERFILE_AMD64 = $(if $(filter x86_64,$(shell uname -m)),,-f Dockerfile.cross)
 docker-amd64: ## 构建 amd64 镜像并加载到本地 daemon
-	@docker buildx build --platform linux/amd64 --load $(DOCKERFILE_AMD64) $(GIT_BUILD_ARGS) $(CN_BUILD_ARGS) \
+	@docker buildx build --platform linux/amd64 --load $(DOCKERFILE_AMD64) $(DOCKER_BUILD_ARGS) \
 		-t yggdrasil:amd64 $(VERSION_TAG_AMD64) .
 
 docker-arm64: ## 构建 arm64 镜像并加载到本地 daemon（异架构需要 QEMU/binfmt）
-	@docker buildx build --platform linux/arm64 --load $(GIT_BUILD_ARGS) $(CN_BUILD_ARGS) \
+	@docker buildx build --platform linux/arm64 --load $(DOCKER_BUILD_ARGS) \
 		-t yggdrasil:arm64 $(VERSION_TAG_ARM64) .
 
 docker-multiarch: ## 构建多架构镜像并推送（IMAGE=... PLATFORMS=...）
-	@docker buildx build --platform $(PLATFORMS) $(GIT_BUILD_ARGS) $(CN_BUILD_ARGS) -t $(IMAGE) --push .
+	@docker buildx build --platform $(PLATFORMS) $(DOCKER_BUILD_ARGS) -t $(IMAGE) --push .
 
 # ── Docker 开发环境 ────────────────────────────────────────────
 # 使用 Dockerfile.dev + docker-compose.dev.yml 在容器内运行 cargo leptos watch；源码同步、

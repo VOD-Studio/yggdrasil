@@ -215,6 +215,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
 # 发布的 musl 服务端由 server stage 构建。cache mount（fe-target）只在本 RUN 期间存在，
 # 因此 hash.txt 在同一 RUN 内先拷到 /build/hash.txt，再由 build-release.ts 把
 # target/site 与 hash.txt 装配进 /build/dist。
+ARG WASM_FRONTEND_JOBS=2
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
     --mount=type=cache,id=fe-target,target=/build/target,sharing=locked \

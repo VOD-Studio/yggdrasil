@@ -21,6 +21,7 @@ public/xterm
 public/doc
 /static
 .env
+/Makefile.local
 docs/superpowers/
 
 # Uploaded images

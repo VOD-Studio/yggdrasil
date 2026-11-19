@@ -5,6 +5,7 @@
 # ---------------------------------------------------------------------------
 .env
 .env.*
+Makefile.local
 
 # ---------------------------------------------------------------------------
 # Build outputs & dependency caches — regenerated inside the container.
