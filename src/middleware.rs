@@ -27,6 +27,24 @@ fn is_hashed_pkg_file(path: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
 }
 
+/// CodeMirror 的 ES 模块分包使用 Rolldown 的 12 位内容哈希。
+fn is_hashed_codemirror_file(path: &str) -> bool {
+    let Some((name, hash)) = path
+        .strip_prefix("/codemirror/chunks/")
+        .and_then(|file| file.strip_suffix(".js"))
+        .and_then(|file| file.rsplit_once('.'))
+    else {
+        return false;
+    };
+    let valid = |text: &str| {
+        text.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+    };
+    !name.is_empty() && valid(name) && hash.len() == 12 && valid(hash)
+}
+
+const LEGACY_CODEMIRROR: &str = "/codemirror/editor.js";
+
 /// rustdoc 产物里文件名带内容哈希、内容永不变化的文件：
 /// - `/doc/static.files/<名字>-<8 位十六进制>.<扩展名>`（样式、脚本、字体，如
 ///   `rustdoc-0c87338a.css`、`SourceSerif4-Regular-6b053e98.ttf.woff2`）；
@@ -113,7 +131,7 @@ pub(crate) fn cache_control_for_path(
 
     // rustdoc 的哈希命名文件（含字体）同样永不变化；此前样式/脚本每次回源校验、字体只缓存 5 分钟，
     // 而 `/doc/` 占了 CDN 出流量的大头。
-    if is_hashed_doc_file(path) {
+    if is_hashed_doc_file(path) || is_hashed_codemirror_file(path) {
         return Some(HeaderValue::from_static(IMMUTABLE));
     }
 
@@ -380,7 +398,7 @@ fn previous_asset_file(previous_root: &std::path::Path, path: &str) -> Option<st
 
     let rel = path.strip_prefix('/')?;
     let top = rel.split('/').next()?;
-    if top != "pkg" {
+    if top != "pkg" && path != LEGACY_CODEMIRROR && !is_hashed_codemirror_file(path) {
         return None;
     }
     let rel_path = Path::new(rel);
@@ -399,7 +417,7 @@ fn previous_asset_file(previous_root: &std::path::Path, path: &str) -> Option<st
 /// 滚动更新后，已打开标签页与反代/浏览器缓存的旧 HTML 仍引用上一发布的带
 /// hash 资源（含按路由懒加载的 WASM 分包）；新发布未收录这些文件时（404），
 /// 回退到 `YGG_PREVIOUS_PUBLIC_DIR` 同路径文件。语义：
-/// - 只拦截 /pkg/ 的 GET 404，未命中保留原 404，不遮蔽当前发布
+/// - 只拦截 /pkg/ 与 CodeMirror 的 hash 分包及旧入口的 GET 404，未命中保留原 404，不遮蔽当前发布
 ///   的真实缺失；
 /// - 复用 ServeFile 的内容类型推断与 `.br` 旁车协商（release public 自带旁车，
 ///   与静态资源服务的预压缩行为一致）；
@@ -450,7 +468,11 @@ pub(crate) async fn previous_release_assets(
             let headers = asset.headers_mut();
             headers.insert(
                 axum::http::header::CACHE_CONTROL,
-                axum::http::HeaderValue::from_static(IMMUTABLE),
+                axum::http::HeaderValue::from_static(if parts.uri.path() == LEGACY_CODEMIRROR {
+                    "public, no-cache"
+                } else {
+                    IMMUTABLE
+                }),
             );
             headers.insert(
                 axum::http::HeaderName::from_static("x-previous-release"),
@@ -567,6 +589,7 @@ mod tests {
             "/tiptap/editor.js",
             "/tiptap/comment.js",
             "/codemirror/editor.js",
+            "/codemirror/editor-module.js",
             "/yggdrasil-core/yggdrasil-core.js",
             "/yggdrasil-core/yggdrasil-enhance.js",
             "/pkg/yggdrasil.wasm",

@@ -113,9 +113,10 @@ interface PageLog {
   failed: string[];
   wasm: string[];
   tiptap: string[];
+  codemirror: string[];
 }
 function instrument(page: Playwright.Page) {
-  const log: PageLog = { errors: [], failed: [], wasm: [], tiptap: [] };
+  const log: PageLog = { errors: [], failed: [], wasm: [], tiptap: [], codemirror: [] };
   page.on('pageerror', (e) => log.errors.push(`pageerror: ${e.message}`));
   page.on('console', (m) => {
     if (m.type() === 'error') log.errors.push(`console: ${m.text()}`);
@@ -124,6 +125,7 @@ function instrument(page: Playwright.Page) {
     const p = new URL(r.url()).pathname;
     if (p.endsWith('.wasm')) log.wasm.push(p);
     if (p.startsWith('/tiptap/')) log.tiptap.push(p);
+    if (p.startsWith('/codemirror/')) log.codemirror.push(p);
   });
   page.on('response', (r) => {
     if (r.status() >= 400) log.failed.push(`${r.status()} ${new URL(r.url()).pathname}`);
@@ -199,6 +201,10 @@ async function main() {
   fs.mkdirSync(path.join(previous, 'pkg'), { recursive: true });
   const legacy = 'legacy_chunk.AbCdEfGhIjKlMnOpQrStUv.wasm';
   fs.writeFileSync(path.join(previous, 'pkg', legacy), Buffer.alloc(16, 7));
+  const oldParser = '/codemirror/chunks/python.oldChunk1234.js';
+  fs.mkdirSync(path.join(previous, 'codemirror/chunks'), { recursive: true });
+  fs.writeFileSync(path.join(previous, oldParser.slice(1)), 'export {};');
+  fs.writeFileSync(path.join(previous, 'codemirror/editor.js'), 'var CodeMirrorEditor = {};');
   fs.mkdirSync(path.join(runtime, 'uploads'));
 
   const env = {
@@ -605,6 +611,25 @@ async function main() {
         scriptErrors(log).length === 0,
       log.tiptap.join(', '),
     );
+    await page.goto(`${base}/admin/system`);
+    await hydrated(page);
+    await Promise.all([
+      page.waitForResponse(
+        (response) => /\/codemirror\/chunks\/sql\./.test(response.url()) && response.ok(),
+      ),
+      page.waitForResponse(
+        (response) => /\/codemirror\/chunks\/vim\./.test(response.url()) && response.ok(),
+      ),
+      page.getByText('SQL 控制台', { exact: true }).first().click(),
+    ]);
+    await page.locator('.cm-editor').waitFor();
+    check(
+      '4 SQL 控制台加载 SQL 与 Vim 分包，跳过其他语言',
+      log.codemirror.includes('/codemirror/editor-module.js') &&
+        !log.codemirror.some((file) => /\/(go|rust|javascript|python)\./.test(file)) &&
+        scriptErrors(log).length === 0,
+      log.codemirror.join(', '),
+    );
     await ctx.close();
     const anonymous = await fetch(`${base}/admin`, { redirect: 'manual' });
     check(
@@ -625,6 +650,19 @@ async function main() {
         (r.headers.get('cache-control') || '').includes('immutable'),
       `status=${r.status} x-previous-release=${r.headers.get('x-previous-release')} cache-control=${r.headers.get('cache-control')}`,
     );
+    for (const [asset, cacheControl] of [
+      [oldParser, 'public, max-age=31536000, immutable'],
+      ['/codemirror/editor.js', 'public, no-cache'],
+    ]) {
+      const previousResponse = await fetch(`${base}${asset}`);
+      await previousResponse.text();
+      check(
+        `5 早先页面可加载 ${asset}`,
+        previousResponse.ok &&
+          previousResponse.headers.get('x-previous-release') === '1' &&
+          previousResponse.headers.get('cache-control') === cacheControl,
+      );
+    }
   }
 
   // 6. 体积门槛：每条路由直开所需 .wasm 的 Brotli 字节数之和。

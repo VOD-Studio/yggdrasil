@@ -281,6 +281,7 @@ async function main() {
       const page = await context.newPage();
       const editorRequests: string[] = [];
       const codemirrorRequests: string[] = [];
+      const codemirrorChunks: string[] = [];
       const execRequests: string[] = [];
       const errors: string[] = [];
       page.on('request', (request) => {
@@ -289,7 +290,10 @@ async function main() {
         }
       });
       page.on('request', (request) => {
-        if (request.url().includes('/codemirror/editor.js')) codemirrorRequests.push(request.url());
+        if (request.url().includes('/codemirror/editor-module.js'))
+          codemirrorRequests.push(request.url());
+        const pathname = new URL(request.url()).pathname;
+        if (pathname.startsWith('/codemirror/chunks/')) codemirrorChunks.push(pathname);
       });
       // 执行端点是 start_exec / start_exec_stream（SSE 只是其下游流阶段，单独
       // 过滤 /api/exec 会漏掉真正的执行 POST）。
@@ -325,6 +329,11 @@ async function main() {
       await page.locator('#code-runner-1').scrollIntoViewIfNeeded();
       await page.locator('#code-runner-1 .cm-editor').waitFor({ state: 'visible', timeout: 30000 });
       assert.equal(codemirrorRequests.length, 1, 'CodeMirror must load exactly once on activation');
+      await until(
+        async () => codemirrorChunks.some((file) => file.includes('/python.')),
+        'Python parser must load when activating a Python snippet',
+      );
+      assert.ok(!codemirrorChunks.some((file) => /\/(go|rust|javascript|sql|vim)\./.test(file)));
       assert.equal(
         await page.evaluate(() => (window as CodeMirrorWindow).CodeMirrorEditor._instances.size),
         1,

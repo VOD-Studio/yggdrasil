@@ -13,7 +13,7 @@ import type { ThemeName } from './themes';
 
 /**
  * 模块入口：暴露对象字面量 { create } 作为默认导出。
- * IIFE 产物挂在 window.CodeMirrorEditor 上，Rust 侧经 js_namespace 绑定成员调用
+ * 入口将 CodeMirrorEditor 挂到 window，Rust 侧经 js_namespace 绑定成员调用
  * `CodeMirrorEditor.create(container, options)`。
  */
 const instances = new Map<HTMLElement, CodeMirrorInstance>();
@@ -37,7 +37,7 @@ const CodeMirrorEditor = {
 /**
  * 订阅主题切换事件:VT 回调内同步 dispatch 时,遍历所有存活实例调 setTheme。
  *
- * 必须在模块加载时注册一次(IIFE 顶层),确保任何时刻 dispatch 都能命中。
+ * 在模块加载时注册一次，主题事件同步更新已挂载实例。
  * 单实例异常用 try/catch 隔离,避免一个实例失败中断其他实例换肤。
  * 与 Rust 端 Effect 驱动的 setTheme 幂等共存(reconfigure 相同主题是 no-op)。
  */
@@ -54,6 +54,10 @@ if (typeof window !== 'undefined') {
       }
     });
   });
+}
+
+if (typeof window !== 'undefined') {
+  Reflect.set(window, 'CodeMirrorEditor', CodeMirrorEditor);
 }
 
 export default CodeMirrorEditor;

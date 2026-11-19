@@ -71,7 +71,7 @@ const MODES = new Map(
   CATALOG.components.map((component) => [component.slug, component.preview_mode]),
 );
 const HEAVY = ['tiptap-editor', 'code-mirror-editor', 'xterm-terminal'];
-const BUNDLES = ['/tiptap/editor.js', '/codemirror/editor.js', '/xterm/terminal.js'];
+const BUNDLES = ['/tiptap/editor.js', '/codemirror/editor-module.js', '/xterm/terminal.js'];
 const SENSITIVE = new Set([
   'getcurrentuser',
   'logout',
@@ -1166,7 +1166,7 @@ async function failureAndLateLoad(browser: Playwright.Browser) {
   page.setDefaultTimeout(30000);
   await attachMonitoring(page);
   let first = true;
-  await page.route('**/codemirror/editor.js*', async (route) => {
+  await page.route('**/codemirror/editor-module.js*', async (route) => {
     if (first) {
       first = false;
       await route.abort();

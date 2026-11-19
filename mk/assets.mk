@@ -63,7 +63,10 @@ DEV_LIBS := $(patsubst libs/%/package.json,%,$(wildcard libs/*/package.json))
 DEV_COMMON_INPUTS := mk/assets.mk libs/package.json libs/bun.lock libs/bunfig.toml libs/tsconfig.base.json $(wildcard libs/patches/*) libs/patches $(wildcard libs/*.ts) $(wildcard libs/node_modules/.bun)
 dev_lib_inputs = libs/$(1) $(shell find libs/$(1)/src -type f -o -type d) $(wildcard libs/$(1)/*config*.ts) libs/$(1)/tsconfig.json libs/$(1)/package.json
 
-DEV_OUTPUTS_codemirror-editor := public/codemirror/editor.js public/codemirror/editor.js.map
+CODEMIRROR_MANIFEST := public/codemirror/.vite/manifest.json
+CODEMIRROR_JS := $(addprefix public/codemirror/,$(shell if [ -f $(CODEMIRROR_MANIFEST) ]; then sed -n 's/.*"file": "\(.*\.js\)",\{0,1\}$$/\1/p' $(CODEMIRROR_MANIFEST); fi))
+DEV_OUTPUTS_codemirror-editor := public/codemirror/.vite/manifest.json public/codemirror/editor-module.js public/codemirror/editor-module.js.map
+DEV_OUTPUTS_codemirror-editor += $(CODEMIRROR_JS) $(addsuffix .map,$(CODEMIRROR_JS))
 DEV_OUTPUTS_lightbox := public/lightbox/lightbox.js public/lightbox/lightbox.js.map public/lightbox/lightbox.css
 DEV_OUTPUTS_tiptap-editor := public/tiptap/editor.js public/tiptap/editor.js.map public/tiptap/editor.css public/tiptap/comment.js public/tiptap/comment.js.map public/tiptap/comment.css
 DEV_OUTPUTS_xterm-terminal := public/xterm/terminal.js public/xterm/terminal.js.map public/xterm/terminal.css

@@ -52,7 +52,7 @@ pub const ALL: &[&str] = &[
     "/tiptap/editor.css",
     "/tiptap/comment.js",
     "/tiptap/comment.css",
-    "/codemirror/editor.js",
+    "/codemirror/editor-module.js",
     "/xterm/terminal.js",
     "/xterm/terminal.css",
 ];

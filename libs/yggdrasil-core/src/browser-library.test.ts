@@ -80,11 +80,11 @@ describe('浏览器库按需加载', () => {
   it('CodeMirror 不依赖独立 CSS，也不会带入 Tiptap 或终端', async () => {
     document.head.insertAdjacentHTML(
       'beforeend',
-      '<script type="application/json" id="ygg-asset-versions">{"/codemirror/editor.js":"c0de"}</script>',
+      '<script type="application/json" id="ygg-asset-versions">{"/codemirror/editor-module.js":"c0de"}</script>',
     );
     const work = load('codemirror');
     expect(document.querySelector('script[src]')?.getAttribute('src')).toBe(
-      '/codemirror/editor.js?v=c0de',
+      '/codemirror/editor-module.js?v=c0de',
     );
     expect(document.querySelector('link')).toBeNull();
     Reflect.set(window, 'CodeMirrorEditor', {});

@@ -1,6 +1,6 @@
 //! CodeMirror 编辑器的 wasm-bindgen 绑定层。
 //!
-//! 封装与 `window.CodeMirrorEditor`（IIFE 暴露的全局对象字面量）的全部交互，
+//! 封装与 `window.CodeMirrorEditor`（模块暴露的全局对象）的交互，
 //! 严格镜像 [`crate::bridges::tiptap`] 的结构：wasm-bindgen extern +
 //! `EditorHandle` 仅在 WASM 前端编译（server 构建无 window）。SQL 补全用的
 //! `SqlSchema`/`SqlTable` 是 server function 返回值 DTO，定义在

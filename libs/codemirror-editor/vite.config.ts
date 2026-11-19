@@ -1,11 +1,23 @@
-import { iifeLib } from '../vite-iife.ts';
+import { resolve } from 'node:path';
+import { defineConfig } from 'vite';
 
-// 输出直写 public/codemirror/，由 cargo-leptos 的 assets-dir 拷进站点根，无需拷贝步骤。
-// IIFE 产物挂在 window.CodeMirrorEditor 上；默认导出（对象字面量 { create() }）即该全局。
-export default iifeLib({
-  dir: import.meta.dirname,
-  out: 'codemirror',
-  name: 'CodeMirrorEditor',
-  file: 'editor',
-  defaultExport: true,
+const release = process.env.YGG_RELEASE_ASSETS === '1';
+
+// 语言与 Vim 共享编辑器核心中的 CodeMirror 模块实例，确保扩展与 Compartment 兼容。
+export default defineConfig({
+  base: './',
+  build: {
+    outDir: resolve(import.meta.dirname, '../../public/codemirror'),
+    emptyOutDir: true,
+    sourcemap: !release,
+    manifest: !release,
+    lib: {
+      entry: resolve(import.meta.dirname, 'src/index.ts'),
+      formats: ['es'],
+      fileName: 'editor-module',
+    },
+    rolldownOptions: {
+      output: { chunkFileNames: 'chunks/[name].[hash:12].js' },
+    },
+  },
 });

@@ -17,7 +17,7 @@ const libraries = {
     style: '/tiptap/comment.css',
     math: true,
   },
-  codemirror: { global: 'CodeMirrorEditor', script: '/codemirror/editor.js' },
+  codemirror: { global: 'CodeMirrorEditor', script: '/codemirror/editor-module.js', module: true },
   xterm: {
     global: 'XtermTerminal',
     script: '/xterm/terminal.js',
@@ -77,6 +77,7 @@ export function loadBrowserLibrary(name: BrowserLibrary): Promise<void> {
       return;
     }
     const element = document.createElement('script');
+    if ('module' in library) element.type = 'module';
     element.src = assetUrl(library.script);
     element.onload = () => {
       if (Reflect.get(window, library.global)) resolve();

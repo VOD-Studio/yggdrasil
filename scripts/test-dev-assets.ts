@@ -111,6 +111,13 @@ if (command === 'bun' && args[0] === 'install') {
   record('build ' + name);
   if (fs.existsSync(path.join(root, 'fail-' + name))) process.exit(1);
   for (const file of outputs[name] || []) write(file);
+  if (name === 'codemirror-editor') {
+    const chunk = 'chunks/python.Bchx529C_GzG.js';
+    write('public/codemirror/' + chunk);
+    write('public/codemirror/' + chunk + '.map');
+    fs.writeFileSync(path.join(root, 'public/codemirror/.vite/manifest.json'),
+      JSON.stringify({ python: { file: chunk } }, null, 2));
+  }
 } else if (command === 'cargo-leptos' || (command === 'cargo' && args[0] === 'leptos')) {
   console.log('cargo-leptos 0.3.12');
 } else if (command === 'rustup') console.log('llvm-tools-aarch64-apple-darwin');
@@ -127,7 +134,9 @@ if (command === 'bun' && args[0] === 'install') {
   step(['tiptap-editor']);
   await edit('libs/shared/src/index.ts');
   step(packages.filter((name) => name !== 'tiptap-editor'));
-  fs.unlinkSync(path.join(root, 'public/codemirror/editor.js'));
+  fs.unlinkSync(path.join(root, 'public/codemirror/editor-module.js'));
+  step(['codemirror-editor']);
+  fs.unlinkSync(path.join(root, 'public/codemirror/chunks/python.Bchx529C_GzG.js.map'));
   step(['codemirror-editor']);
   await edit('libs/lightbox/src/removed.ts');
   step(['lightbox']);

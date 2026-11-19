@@ -17,17 +17,18 @@ describe('CodeMirrorInstance', () => {
     document.body.appendChild(container);
   });
 
-  it('开启 Vim 时报告模式，热切换后仍能收到模式变化', () => {
+  it('开启 Vim 时报告模式，热切换后仍能收到模式变化', async () => {
     const modes: string[] = [];
     const opts: EditorOptions = {};
     opts.vim = true;
     opts.onVimModeChange = (mode) => modes.push(mode);
     const inst = new CodeMirrorInstance(container, opts);
+    await inst.ready;
     expect(modes).toEqual(['normal']);
-    inst.setVim(true);
+    await inst.setVim(true);
     expect(modes).toEqual(['normal']);
-    inst.setVim(false);
-    inst.setVim(true);
+    await inst.setVim(false);
+    await inst.setVim(true);
     expect(modes).toEqual(['normal', 'normal']);
     inst.destroy();
   });
@@ -56,13 +57,14 @@ describe('CodeMirrorInstance', () => {
     inst.destroy();
   });
 
-  it('go 语言将 // 注释解析为完整注释节点', () => {
+  it('go 语言将 // 注释解析为完整注释节点', async () => {
     const source = '// MaxMessages: 超过上限时丢弃最旧消息\npackage main\nfunc main() {}';
     const opts: EditorOptions = {};
     opts.language = 'go';
     opts.value = source;
     const inst = new CodeMirrorInstance(container, opts);
-    // Test-only private view access verifies the real parser tree.
+    await inst.ready;
+    // 读取真实语法树以验证独立语法包已生效。
     const internals = inst as unknown as CodeMirrorInternals;
     const state = internals.view.state;
     const nodes: string[] = [];
@@ -84,13 +86,14 @@ describe('CodeMirrorInstance', () => {
     inst.destroy();
   });
 
-  it('rust 语言将 // 注释、fn 函数与 println! 宏解析为对应节点', () => {
+  it('rust 语言将 // 注释、fn 函数与 println! 宏解析为对应节点', async () => {
     const source = 'fn main() {\n    // test\n    println!("Hello world");\n}';
     const opts: EditorOptions = {};
     opts.language = 'rust';
     opts.value = source;
     const inst = new CodeMirrorInstance(container, opts);
-    // Test-only private view access verifies the real parser tree.
+    await inst.ready;
+    // 读取真实语法树以验证独立语法包已生效。
     const internals = inst as unknown as CodeMirrorInternals;
     const state = internals.view.state;
     const nodes: string[] = [];
@@ -134,12 +137,13 @@ describe('CodeMirrorInstance', () => {
       source: 'interface User { name: string }\n// test\nconst u: User = { name: "x" };\n',
       expected: ['InterfaceDeclaration', 'TypeAnnotation', 'LineComment'],
     },
-  ])('$lang 语言解析出预期语法节点', ({ lang, source, expected }) => {
+  ])('$lang 语言解析出预期语法节点', async ({ lang, source, expected }) => {
     const opts: EditorOptions = {};
     opts.language = lang;
     opts.value = source;
     const inst = new CodeMirrorInstance(container, opts);
-    // Test-only private view access verifies the real parser tree.
+    await inst.ready;
+    // 读取真实语法树以验证独立语法包已生效。
     const internals = inst as unknown as CodeMirrorInternals;
     const names: string[] = [];
     const state = internals.view.state;
@@ -169,17 +173,29 @@ describe('CodeMirrorInstance', () => {
     inst.destroy();
   });
 
-  it('vim 开关：vim:true 注入，false 不注入', () => {
-    const optsOn: EditorOptions = {};
-    optsOn.vim = true;
-    const instOn = new CodeMirrorInstance(container, optsOn);
-    instOn.destroy();
+  it('迅速切换语言时只应用最后一次选择并保留文档', async () => {
+    const value = 'def main():\n    pass';
+    const inst = new CodeMirrorInstance(container, { language: 'sql', value });
+    await Promise.all([inst.setLanguage('rust'), inst.setLanguage('python'), inst.ready]);
+    const state = (inst as unknown as CodeMirrorInternals).view.state;
+    expect(ensureSyntaxTree(state, state.doc.length, 5000)?.toString()).toContain(
+      'FunctionDefinition',
+    );
+    expect(inst.getValue()).toBe(value);
+    inst.destroy();
+  });
 
-    const optsOff: EditorOptions = {};
-    optsOff.vim = false;
-    const instOff = new CodeMirrorInstance(container, optsOff);
-    instOff.destroy();
-    // happy-dom 无法验证 keymap 行为，仅验证配置加载不抛错
+  it('Vim 加载过程中关闭或销毁时忽略迟到的模块', async () => {
+    const modes: string[] = [];
+    const inst = new CodeMirrorInstance(container, { onVimModeChange: (mode) => modes.push(mode) });
+    const loading = inst.setVim(true);
+    await inst.setVim(false);
+    await loading;
+    expect(modes).toEqual([]);
+    const loadingAgain = inst.setVim(true);
+    inst.destroy();
+    await loadingAgain;
+    expect(modes).toEqual([]);
   });
 
   it('onChange 在内容变更时触发', () => {

@@ -5,11 +5,6 @@ import {
   completionKeymap,
 } from '@codemirror/autocomplete';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
-import { go } from '@codemirror/lang-go';
-import { javascript } from '@codemirror/lang-javascript';
-import { python } from '@codemirror/lang-python';
-import { rust } from '@codemirror/lang-rust';
-import { PostgreSQL, sql } from '@codemirror/lang-sql';
 import {
   bracketMatching,
   codeFolding,
@@ -34,7 +29,6 @@ import {
   lineNumbers,
   rectangularSelection,
 } from '@codemirror/view';
-import { getCM, vim } from '@replit/codemirror-vim';
 import { type ThemeName, themeExtension } from './themes';
 
 /**
@@ -104,60 +98,62 @@ export interface EditorOptions {
   onVimModeChange?: (mode: string) => void;
 }
 
-/**
- * 把语言标识映射成 CodeMirror 语言 Extension。
- * - `python` → @codemirror/lang-python
- * - `go` / `golang` → @codemirror/lang-go
- * - `rust` → @codemirror/lang-rust
- * - `node` / `javascript` / `js` → @codemirror/lang-javascript（JS 模式）
- * - `bun` / `typescript` / `ts` → @codemirror/lang-javascript（TypeScript 模式）
- * - `sql` / 缺省 → @codemirror/lang-sql（PostgreSQL 方言 + schema 补全）
- *
- * 归一化后（src/api/code_runner/languages.rs::normalize_lang）CodeRunner 会传来
- * canonical key（node/bun/python/go/rust），但这里仍保留别名分支作防御——
- * CodeMirror 也用在 SQL 控制台等场景，调用方可能直接传别名。
- *
- * SQL 分支使用 schema 补全；非 SQL 语言忽略 schema（补全仅对 SQL 有意义）。
- */
-function buildLanguageExtension(lang: string, schema: SqlSchema): Extension {
-  const normalized = (lang ?? '').toLowerCase();
-  if (normalized === 'go' || normalized === 'golang') {
-    return go();
+type Language = 'go' | 'python' | 'rust' | 'javascript' | 'typescript' | 'sql';
+type LanguageExtension = (schema: SqlSchema) => Extension;
+
+function normalizeLanguage(lang: string): Language {
+  switch (lang.toLowerCase()) {
+    case 'go':
+    case 'golang':
+      return 'go';
+    case 'python':
+      return 'python';
+    case 'rust':
+      return 'rust';
+    case 'node':
+    case 'javascript':
+    case 'js':
+      return 'javascript';
+    case 'bun':
+    case 'typescript':
+    case 'ts':
+      return 'typescript';
+    default:
+      return 'sql';
   }
-  if (normalized === 'python') {
-    return python();
-  }
-  if (normalized === 'rust') {
-    return rust();
-  }
-  if (normalized === 'node' || normalized === 'javascript' || normalized === 'js') {
-    return javascript();
-  }
-  if (normalized === 'bun' || normalized === 'typescript' || normalized === 'ts') {
-    // bun 跑 TypeScript，编辑器用 TS 模式获得类型感知高亮（接口/类型注解等）。
-    return javascript({ typescript: true });
-  }
-  // sql / 缺省：保留原有 PostgreSQL + schema 补全行为
-  return sql({
-    dialect: PostgreSQL,
-    schema: schemaToCompletions(schema),
-    upperCaseKeywords: true,
-  });
 }
 
-/**
- * CodeMirror 实例封装。
- * create() 时用四个 Compartment 注入 theme/language/schema/vim，
- * 支持后续热切换（reconfigure）而不重建实例——保留 Vim 状态、光标、撤销栈。
- */
+async function loadLanguage(language: Language): Promise<LanguageExtension> {
+  switch (language) {
+    case 'go':
+      return (await import('./languages/go')).go;
+    case 'python':
+      return (await import('./languages/python')).python;
+    case 'rust':
+      return (await import('./languages/rust')).rust;
+    case 'javascript':
+    case 'typescript': {
+      const { javascript } = await import('./languages/javascript');
+      return () => javascript({ typescript: language === 'typescript' });
+    }
+    case 'sql':
+      return (await import('./languages/sql')).sqlExtension;
+  }
+}
+
+/** 通过 Compartment 热切换扩展，异步加载期间保留编辑状态。 */
 export class CodeMirrorInstance {
   private destroyed = false;
   private view: EditorView;
   private themeCompartment = new Compartment();
   private languageCompartment = new Compartment();
   private vimCompartment = new Compartment();
-  private vimEnabled: boolean;
-  private language: string;
+  private vimEnabled = false;
+  private vimRequest = 0;
+  private languageRequest = 0;
+  private language: Language = 'sql';
+  private sqlExtension?: LanguageExtension;
+  readonly ready: Promise<void>;
   private schema: SqlSchema;
 
   constructor(
@@ -166,10 +162,7 @@ export class CodeMirrorInstance {
     private readonly onDestroy?: () => void,
   ) {
     const theme: ThemeName = options.theme ?? 'light';
-    const schema = options.schema ?? { tables: [] };
-    this.schema = schema;
-    this.language = options.language ?? 'sql';
-    this.vimEnabled = options.vim ?? false;
+    this.schema = options.schema ?? { tables: [] };
 
     this.view = new EditorView({
       state: EditorState.create({
@@ -195,9 +188,9 @@ export class CodeMirrorInstance {
               ]
             : []),
           // vim 必须在 keymap 最前（@replit/codemirror-vim 仓库要求）
-          this.vimCompartment.of(options.vim ? [vim()] : []),
+          this.vimCompartment.of([]),
           this.themeCompartment.of(themeExtension(theme)),
-          this.languageCompartment.of(buildLanguageExtension(this.language, schema)),
+          this.languageCompartment.of([]),
           EditorView.updateListener.of((v) => {
             if (v.docChanged) {
               options.onChange?.(this.view.state.doc.toString());
@@ -209,19 +202,15 @@ export class CodeMirrorInstance {
     });
 
     this.onVimModeChange = options.onVimModeChange;
-    if (options.vim) this.watchVimMode();
-    options.onReady?.();
+    this.ready = Promise.all([
+      this.setLanguage(options.language ?? 'sql'),
+      this.setVim(options.vim ?? false),
+    ]).then(() => {
+      if (!this.destroyed) options.onReady?.();
+    });
   }
 
   private onVimModeChange?: (mode: string) => void;
-
-  /** 每次启用 Vim 都会新建插件实例，需要重新订阅模式事件。 */
-  private watchVimMode(): void {
-    const notify = this.onVimModeChange;
-    if (!notify) return;
-    getCM(this.view)?.on('vim-mode-change', (event: { mode: string }) => notify(event.mode));
-    notify('normal');
-  }
 
   getValue(): string {
     return this.view.state.doc.toString();
@@ -240,33 +229,55 @@ export class CodeMirrorInstance {
     });
   }
 
-  /** 热切换 Vim 键位，不重建编辑器（Compartment.reconfigure）。 */
-  setVim(v: boolean): void {
-    // 状态不变时跳过：重新配置会换一个 Vim 插件实例，丢掉当前模式与寄存器。
-    if (v === this.vimEnabled) return;
-    this.vimEnabled = v;
-    this.view.dispatch({
-      effects: this.vimCompartment.reconfigure(v ? [vim()] : []),
-    });
-    if (v) this.watchVimMode();
+  /** 热切换 Vim 键位，跳过已经生效或正在加载的相同设置。 */
+  async setVim(enabled: boolean): Promise<void> {
+    if (enabled === this.vimEnabled) return;
+    this.vimEnabled = enabled;
+    const request = ++this.vimRequest;
+    if (!enabled) {
+      this.view.dispatch({ effects: this.vimCompartment.reconfigure([]) });
+      return;
+    }
+
+    try {
+      const { getCM, vim } = await import('./vim');
+      if (this.destroyed || request !== this.vimRequest) return;
+      this.view.dispatch({ effects: this.vimCompartment.reconfigure(vim()) });
+      const notify = this.onVimModeChange;
+      if (notify) {
+        getCM(this.view)?.on('vim-mode-change', (event: { mode: string }) => notify(event.mode));
+        notify('normal');
+      }
+    } catch (error) {
+      if (this.destroyed || request !== this.vimRequest) return;
+      this.vimEnabled = false;
+      console.error('CodeMirror Vim 加载失败', error);
+    }
   }
 
-  /** 热切换语言（go/python/node/javascript/sql），不重建实例（Compartment.reconfigure）。 */
-  setLanguage(lang: string): void {
-    this.language = lang;
-    this.view.dispatch({
-      effects: this.languageCompartment.reconfigure(buildLanguageExtension(lang, this.schema)),
-    });
+  /** 保留最新一次语言选择，忽略因切换或卸载而过期的加载结果。 */
+  async setLanguage(lang: string): Promise<void> {
+    this.language = normalizeLanguage(lang);
+    const language = this.language;
+    const request = ++this.languageRequest;
+    try {
+      const extension = await loadLanguage(language);
+      if (this.destroyed || request !== this.languageRequest) return;
+      this.view.dispatch({ effects: this.languageCompartment.reconfigure(extension(this.schema)) });
+      if (language === 'sql') this.sqlExtension = extension;
+    } catch (error) {
+      if (!this.destroyed && request === this.languageRequest) {
+        console.error('CodeMirror 语法加载失败', error);
+      }
+    }
   }
 
-  /** 更新 SQL 补全 schema（Compartment.reconfigure）。
-   *  当前语言为 SQL 时立即生效；非 SQL 语言会缓存 schema，切回 SQL 时生效。 */
+  /** schema 可能早于 SQL 分包返回，语言加载时使用最新值。 */
   setSchema(schema: SqlSchema): void {
     this.schema = schema;
-    // 仅当当前是 SQL 语言时才重配 extension（其它语言不消费 schema）。
-    if ((this.language ?? '').toLowerCase() === 'sql' || !this.language) {
+    if (this.language === 'sql' && this.sqlExtension) {
       this.view.dispatch({
-        effects: this.languageCompartment.reconfigure(buildLanguageExtension('sql', schema)),
+        effects: this.languageCompartment.reconfigure(this.sqlExtension(schema)),
       });
     }
   }
@@ -281,14 +292,4 @@ export class CodeMirrorInstance {
     this.view.destroy();
     this.onDestroy?.();
   }
-}
-
-/** 把 SqlSchema 转成 @codemirror/lang-sql 期望的补全结构。 */
-function schemaToCompletions(schema: SqlSchema) {
-  return schema.tables.map((t) => ({
-    label: t.name,
-    type: 'table',
-    detail: 'table',
-    columns: t.columns.map((c) => ({ label: c, type: 'column' })),
-  }));
 }

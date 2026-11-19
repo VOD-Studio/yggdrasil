@@ -485,7 +485,7 @@ async fn site_fallback(State(options): State<LeptosOptions>, req: Request) -> Re
         }
     }
 
-    if req.uri().path().starts_with("/pkg/") {
+    if req.uri().path().starts_with("/pkg/") || req.uri().path().starts_with("/codemirror/") {
         return StatusCode::NOT_FOUND.into_response();
     }
 
@@ -520,7 +520,7 @@ fn build_router(options: ServerOptions) -> axum::Router {
         Some(previous_root) => {
             tracing::info!(
                 dir = %previous_root.display(),
-                "旧发布资源保留窗口已启用（/pkg 缺失时回退）"
+                "旧发布资源保留窗口已启用（WASM 与 CodeMirror 分包缺失时回退）"
             );
             leptos_app.layer(axum::middleware::from_fn(
                 move |req: axum::extract::Request, next: axum::middleware::Next| {
