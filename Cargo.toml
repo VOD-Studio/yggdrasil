@@ -33,7 +33,7 @@ regex = { version = "1.13", optional = true }
 # Rust `regex` crate 不支持 `(?=...)`/`(?!...)`，故用 `fancy-regex`。
 # syntect 仍使用 0.16；直接依赖单独升级，以使用新版匹配修复。
 fancy-regex = { version = "0.20", optional = true }
-pulldown-cmark = { version = "0.13", optional = true }
+pulldown-cmark = { version = "0.13", optional = true, default-features = false, features = ["html"] }
 dotenvy = { version = "0.15", optional = true }
 tracing = { version = "0.1", optional = true, features = ["release_max_level_info"] }
 tracing-subscriber = { version = "0.3", optional = true, features = ["env-filter"] }
@@ -60,7 +60,7 @@ image = { version = "0.25", optional = true, default-features = false, features 
 zenwebp = { version = "0.4", optional = true }
 moka = { version = "0.12", features = ["future", "sync"], optional = true }
 governor = { version = "0.10", optional = true }
-sysinfo = { version = "0.40", optional = true }
+sysinfo = { version = "0.40", optional = true, default-features = false, features = ["disk", "system"] }
 sqlparser = { version = "0.64", optional = true }
 dashmap = { version = "6.2", optional = true }
 # 中文标题 → 拼音 slug（纯 Rust、零依赖，安全交叉编译到 musl）。
