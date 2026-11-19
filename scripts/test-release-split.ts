@@ -452,15 +452,18 @@ async function main() {
       `x-ssr-cache=${second.headers.get('x-ssr-cache')}`,
     );
     const ctx = await browser.newContext();
-    const page = await ctx.newPage();
-    const log = instrument(page);
-    const resp = await page.goto(`${base}/post/split-a`);
-    await hydrated(page);
+    const cachedPage = await ctx.newPage();
+    const cachedLog = instrument(cachedPage);
+    const resp = await cachedPage.goto(`${base}/post/split-a`);
+    await hydrated(cachedPage);
     check(
       '3 缓存命中页正常水合',
-      (await resp!.allHeaders())['x-ssr-cache'] === 'HIT' && scriptErrors(log).length === 0,
-      scriptErrors(log).join(' | '),
+      (await resp!.allHeaders())['x-ssr-cache'] === 'HIT' && scriptErrors(cachedLog).length === 0,
+      scriptErrors(cachedLog).join(' | '),
     );
+    await cachedPage.close();
+    const page = await ctx.newPage();
+    const log = instrument(page);
     await page.goto(`${base}/post/split-b`);
     await hydrated(page);
     const comment = page.getByRole('form', { name: '发表评论', exact: true });
