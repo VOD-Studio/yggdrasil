@@ -94,12 +94,11 @@ install-cargo-leptos: ## 安装项目固定版本的 cargo-leptos
 	cargo install cargo-leptos --version $(CARGO_LEPTOS_VERSION) --locked
 
 # ── release 构建 ───────────────────────────────────────────────
-# 流水线：工具检查 → 共享资源与文档 → 分包前端 → 服务端 → 装配 → Brotli → 校验。
-# 资源与文档可并行；配方中的递归 make 等它们全部成功后才开始前端，兼容 make -j。
+# 流水线：工具检查 → 共享资源 → 分包前端 → 服务端 → 装配 → 文档 → Brotli → 校验。
 # 前端用固定 nightly + build-std + immediate-abort；服务端用 stable。
 
 build-frontend: check-wasm-toolchain ## 构建分包前端（wasm/js/css → target/site）
-	@$(LEPTOS_WASM_ENV) cargo leptos build --release --split --frontend-only $(LEPTOS_WASM_ARGS)
+	@$(LEPTOS_WASM_ENV) bun scripts/build-frontend.ts --release --split --frontend-only $(LEPTOS_WASM_ARGS)
 
 build: RELEASE_SERVER := target/release/yggdrasil
 build-linux: RELEASE_SERVER := target/x86_64-unknown-linux-musl/release/yggdrasil
@@ -107,10 +106,11 @@ build-linux: RELEASE_SERVER_ARGS := --target x86_64-unknown-linux-musl
 build: ## 完整 release 构建（资源 + 文档 + 分包前端 + 服务端 + 装配 + 压缩）
 build-linux: ## 构建 Linux x86_64 musl 服务端 + 分包前端
 build build-linux: check-build-tools
-	@$(MAKE) build-assets doc
+	@$(MAKE) build-assets
 	@$(MAKE) build-frontend
 	@cargo build --release --locked --bin yggdrasil $(RELEASE_SERVER_ARGS)
 	@bun scripts/build-release.ts --out "$(RELEASE_OUT)" --server "$(RELEASE_SERVER)"
+	@$(MAKE) doc DOC_OUT="$(RELEASE_OUT)/public/doc"
 	@$(MAKE) precompress
 	@bun scripts/build-release.ts --verify --out "$(RELEASE_OUT)"
 	@echo "发布目录：$(RELEASE_OUT)；部署时请保留 server、hash.txt 与 public/ 的配套关系。"
@@ -190,12 +190,10 @@ fix: ## cargo fix + Biome format + cargo fmt（写入文件）
 # cargo 会重新生成 HTML。而 cargo 不跟踪 -e 指向文件的内容，所以生成后再把
 # theme.css 和两个 JS 复制一次到 target/doc。不设默认主题：主题只由站点顶栏
 # 三档（浅色/深色/跟随系统）切换，由 doc-boot.js 写入 rustdoc 的存储键，不再提供 ayu。
-# DOC_OUT 供 Dockerfile 指定输出目录。用绝对路径，避免依赖 rustdoc 运行时的 cwd。
+# DOC_OUT 让本地及容器发布直接写入装配后的站点目录。
 #
-# `/doc` 由 `site_fallback` 的 ServeDir 从站点根（`public/` 经 cargo-leptos 拷入
-# target/site）提供；生成后拷贝到 public/doc/，先清空旧目录再整体拷贝，避免删除
-# 模块后残留旧文件。rustdoc 内部用相对路径引用资源（如 ../../static.files/），
-# 原样挂载不会断链。
+# 独立执行 make doc 时写入 public/doc，供开发站点使用。发布前端跳过开发文档，
+# 装配后再生成 /doc，先清空旧输出以免残留已删除的模块。
 #
 # 额外生成 public/doc/index.html 重定向页：ServeDir 访问目录根时默认返回
 # index.html。用 meta refresh + JS 跳转到真正的文档入口 yggdrasil/index.html，

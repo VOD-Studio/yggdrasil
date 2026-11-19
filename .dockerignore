@@ -24,6 +24,7 @@ libs/shared/scripts/node_modules/
 public/style.css
 public/admin.css
 public/highlight.css
+public/katex/
 public/tiptap/
 public/codemirror/
 public/lightbox/
@@ -49,7 +50,8 @@ others/
 docker/
 docs/
 scripts/
-# 容器内的发布流程需要装配、校验和静态预压缩脚本。
+# 容器内的发布流程需要前端构建、装配、校验和静态预压缩脚本。
+!scripts/build-frontend.ts
 !scripts/build-release.ts
 !scripts/precompress.ts
 
