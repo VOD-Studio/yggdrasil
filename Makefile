@@ -6,7 +6,7 @@
 include mk/assets.mk mk/docker.mk
 
 .PHONY: help build build-linux build-frontend wasm-toolchain install-cargo-leptos precompress
-.PHONY: check-dev-tools check-build-tools check-brotli check-wasm-toolchain
+.PHONY: check-dev-tools check-build-tools check-wasm-toolchain
 .PHONY: dev test lint fmt fix doc doc-open clean
 
 # ── 配置 ───────────────────────────────────────────────────────
@@ -45,7 +45,7 @@ help: ## 列出常用 target
 	@awk 'BEGIN { FS = ":.*## " } /^[a-zA-Z0-9_-]+:.*## / { printf "  %-20s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 
 # ── 宿主工具检查 ───────────────────────────────────────────────
-# 检查开发所需的宿主 CLI 是否已安装；release 构建（check-build-tools）另需 brotli。
+# 检查开发所需的宿主 CLI 是否已安装；release 构建另外检查 WASM 工具链。
 # 在耗时 target 开跑之前尽早失败，并给出可执行的安装提示。
 check-dev-tools: ## 检查开发所需的宿主工具
 	@missing=0; \
@@ -74,18 +74,7 @@ check-dev-tools: ## 检查开发所需的宿主工具
 		exit 1; \
 	fi
 
-check-build-tools: check-dev-tools check-brotli check-wasm-toolchain ## 检查 release 构建所需的宿主工具
-
-# 本地 release 构建在前端构建后要用宿主的 brotli CLI。
-# 在耗时构建之前先检查，缺包时直接给出安装提示。
-check-brotli:
-	@if command -v brotli >/dev/null 2>&1; then \
-		:; \
-	else \
-		echo "error: brotli CLI is required for release builds" >&2; \
-		echo "  Install: sudo dnf install brotli | sudo apt-get install brotli | brew install brotli" >&2; \
-		exit 1; \
-	fi
+check-build-tools: check-dev-tools check-wasm-toolchain ## 检查 release 构建所需的宿主工具
 
 # release 构建需要固定 nightly 及其 rust-src（build-std）、wasm32 target。
 check-wasm-toolchain:
@@ -126,15 +115,9 @@ build build-linux: check-build-tools
 	@bun scripts/build-release.ts --verify --out "$(RELEASE_OUT)"
 	@echo "发布目录：$(RELEASE_OUT)；部署时请保留 server、hash.txt 与 public/ 的配套关系。"
 
-# 用 brotli 预压缩静态文本资源（生成 .br 旁路文件）。site_fallback 的 ServeDir
-# 开启了 precompressed_br，请求带 Accept-Encoding: br 时自动命中 .br。只压文本
-# 格式；字体/图片本身已压缩，pkg 下的 .d.ts 不被浏览器请求也不压。
-precompress: check-brotli
-	@find "$(RELEASE_OUT)/public" -type f \
-		\( -name '*.js' -o -name '*.css' -o -name '*.wasm' \
-		   -o -name '*.svg' -o -name '*.html' -o -name '*.json' -o -name '*.xml' \
-		   -o -name '*.webmanifest' \) \
-		-exec brotli -q 11 -kf {} +
+# 生成 site_fallback 按 Accept-Encoding 协商的 .br 旁车。
+precompress:
+	@bun scripts/precompress.ts "$(RELEASE_OUT)/public"
 
 # ── 开发 ───────────────────────────────────────────────────────
 # cargo-leptos watch：服务端（server feature）与浏览器 WASM（hydrate feature）

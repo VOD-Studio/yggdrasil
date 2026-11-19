@@ -387,15 +387,15 @@ jobs:
       - name: Install release build tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y postgresql-common brotli
+          sudo apt-get install -y postgresql-common
           sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
           sudo apt-get install -y postgresql-client-16
           echo /usr/lib/postgresql/16/bin >> "$GITHUB_PATH"
           cd libs
           bun install --frozen-lockfile
           bun run playwright install --with-deps chromium
-      - name: Build diagnostic gate regressions
-        run: bun test scripts/check-build.test.ts
+      - name: Release tooling regressions
+        run: bun test scripts/check-build.test.ts scripts/precompress.test.ts
       - name: Release build (no warnings or errors)
         run: bun scripts/check-build.ts
       - name: Release split acceptance

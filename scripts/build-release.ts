@@ -70,7 +70,7 @@ const HASH = resolve(ROOT, flag('--hash', 'target/release/hash.txt'));
 const SERVER = flag('--server', null);
 const VERIFY = args.includes('--verify');
 
-// 与 Makefile precompress 对 pkg/ 的覆盖保持一致：只有这四种带 .br 旁车（.d.ts 等不压）。
+// pkg/ 中由 scripts/precompress.ts 提供 .br 旁车的类型（.d.ts 等不压）。
 const BR_EXT = new Set(['.js', '.wasm', '.json', '.css']);
 
 const sha256 = (buf: Buffer) => createHash('sha256').update(buf).digest('hex');

@@ -44,7 +44,6 @@ RUN apt-get update \
         pkg-config \
         libssl-dev \
         musl-tools \
-        brotli \
         ca-certificates \
         curl \
         gnupg \

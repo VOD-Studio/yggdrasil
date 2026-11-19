@@ -77,7 +77,6 @@ RUN apt-get update \
         nasm \
         pkg-config \
         libssl-dev \
-        brotli \
         ca-certificates \
         curl \
         gnupg \
