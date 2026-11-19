@@ -64,7 +64,7 @@ sysinfo = { version = "0.40", optional = true, default-features = false, feature
 sqlparser = { version = "0.64", optional = true }
 dashmap = { version = "6.2", optional = true }
 # 中文标题 → 拼音 slug（纯 Rust、零依赖，安全交叉编译到 musl）。
-pinyin = { version = "0.11", optional = true }
+pinyin = { version = "0.11", optional = true, default-features = false, features = ["plain"] }
 md-5 = { version = "0.11", optional = true }
 futures = { version = "0.3", optional = true }
 bytes = { version = "1", optional = true }
