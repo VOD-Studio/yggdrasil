@@ -122,7 +122,7 @@ RUN if [ "$CN_MIRROR" = "true" ]; then \
 
 # Release WASM is compiled with a pinned nightly (-Zbuild-std, panic=immediate-abort;
 # see WASM_NIGHTLY in the Makefile). Keep this ARG in sync with that variable.
-ARG WASM_NIGHTLY=nightly-2026-10-19
+ARG WASM_NIGHTLY=nightly-2026-11-19
 
 # The frontend stage only builds the WASM client bundle — it needs just the
 # wasm32 target on the pinned nightly. (Server musl targets moved to Stage B.)

@@ -23,7 +23,7 @@ include mk/assets.mk mk/docker.mk
 #   --lib-cargo-args 只把 build-std 传给 wasm 的 lib 构建。
 # dev、test、lint 与 CI 仍用 stable。升级 nightly 时同步两个 Dockerfile 的
 # ARG WASM_NIGHTLY。
-WASM_NIGHTLY := nightly-2026-10-19
+WASM_NIGHTLY := nightly-2026-11-19
 RELEASE_OUT ?= target/release-dist
 LEPTOS_WASM_ENV := RUSTUP_TOOLCHAIN=$(WASM_NIGHTLY) CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS='--cfg getrandom_backend="wasm_js" -Zunstable-options -Cpanic=immediate-abort -Zlocation-detail=none -Zfmt-debug=none'
 LEPTOS_WASM_ARGS := --lib-cargo-args=-Zbuild-std=std,panic_abort --lib-cargo-args=-Zbuild-std-features=optimize_for_size

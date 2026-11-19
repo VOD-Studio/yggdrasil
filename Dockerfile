@@ -87,7 +87,7 @@ RUN if [ "$CN_MIRROR" = "true" ]; then \
 
 # Release WASM is compiled with a pinned nightly (-Zbuild-std, panic=immediate-abort;
 # see WASM_NIGHTLY in the Makefile). Keep this ARG in sync with that variable.
-ARG WASM_NIGHTLY=nightly-2026-10-19
+ARG WASM_NIGHTLY=nightly-2026-11-19
 
 # Add the musl targets used by the server build. Both are
 # installed; each buildx platform leg builds only its native one (see below).

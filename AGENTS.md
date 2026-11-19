@@ -90,7 +90,7 @@ Docker fallbacks only when local tools are missing: `make docker-dev` (port 8080
 
 ## Runtime/Tooling Preferences
 
-- Pins: cargo-leptos 0.3.11 (chunk-merge patched, see above), Leptos 0.8.23, Tailwind 4.3.3 **standalone** binary (the npm CLI can't resolve `tailwindcss` without a root `node_modules`), Bun 1.4.4 (`packageManager`), WASM nightly `nightly-2026-10-19` (release frontend uses `-Zbuild-std`), Rust. There is no `rust-toolchain.toml`.
+- Pins: cargo-leptos 0.3.11 (chunk-merge patched, see above), Leptos 0.8.23, Tailwind 4.3.3 **standalone** binary (the npm CLI can't resolve `tailwindcss` without a root `node_modules`), Bun 1.4.4 (`packageManager`), WASM nightly `nightly-2026-11-19` (release frontend uses `-Zbuild-std`), Rust. There is no `rust-toolchain.toml`.
 - Bun only. No Node.js or pnpm; `scripts/*.ts` use Bun directly (`bun scripts/<name>.ts`); run `cd libs && bun run typecheck` for strict type checking (it already includes the tooling configs and `scripts/`). Standalone CLI scripts have a `#!/usr/bin/env bun` shebang.
 - Changing frontend deps: `cd libs && BUN_CONFIG_REGISTRY=https://registry.npmjs.org/ bun install`; keep per-package registry URLs out of `bun.lock`. `bunfig.toml` enforces a 1-day `minimumReleaseAge`. `@tiptap/markdown` is patched (`patchedDependencies` in `libs/package.json`, `libs/patches/`): bumping it means regenerating the patch.
 - Generated output is never committed: `public/style.css`, `public/admin.css`, `public/highlight.css`, `public/katex/`, `public/doc/`, every `public/<lib>/` bundle dir, `target/site`, `target/release-dist`, `release-manifest.json`, `*.br`. Tracked: `public/icons/`, `public/images/`, `public/skills/`, favicons, `manifest.webmanifest`.
