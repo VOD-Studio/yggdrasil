@@ -68,7 +68,7 @@ zenwebp = { version = "0.4", optional = true }
 moka = { version = "0.12", features = ["future", "sync"], optional = true }
 governor = { version = "0.10", optional = true }
 sysinfo = { version = "0.40", optional = true }
-sqlparser = { version = "0.63", optional = true }
+sqlparser = { version = "0.64", optional = true }
 dashmap = { version = "6.2", optional = true }
 # 中文标题 → 拼音 slug（纯 Rust、零依赖，安全交叉编译到 musl）。
 pinyin = { version = "0.11", optional = true }
@@ -90,9 +90,9 @@ mimalloc = { version = "0.1", optional = true }
 katex-rs = { version = "0.3", optional = true }
 # Mermaid 服务端渲染（src/api/markdown/mermaid/）：Mermaid 12.1 的纯 Rust 实现。
 # 不开 ELK（EPL 许可）与 math；版本锁死，升级须重跑溢出与重叠验证。
-merman = { version = "=0.9.3", optional = true, default-features = false, features = ["all-diagrams", "svg", "layout-cytoscape"] }
+merman = { version = "=0.9.4", optional = true, default-features = false, features = ["all-diagrams", "svg", "layout-cytoscape"] }
 # MCP（Model Context Protocol）服务器：官方 Rust SDK rmcp。
-# 稳定版 3.5 保留 Origin/Host 校验、请求体上限与无状态传输，并修复协议生命周期。
+# 稳定版 3.x 提供 Origin/Host 校验、请求体上限与无状态传输。
 # 使用兼容版本范围，实际构建版本由 Cargo.lock 固定；HTTP server feature 已包含 worker。
 rmcp = { version = "3.5", optional = true, features = ["server", "macros", "transport-streamable-http-server"] }
 # MCP token 静态加密（AES-GCM）：管理员可在后台重查明文，DB 不裸存。
@@ -108,9 +108,9 @@ tar = { version = "0.4", optional = true }
 flate2 = { version = "1", optional = true }
 # 分享图（og:image）：服务端把 SVG 渲染为 1200×630 PNG。只开 text，字体随二进制
 # 嵌入（src/og/fonts），不读系统字体，渲染结果与部署环境无关。
-resvg = { version = "0.49", optional = true, default-features = false, features = ["text"] }
+resvg = { version = "0.50", optional = true, default-features = false, features = ["text"] }
 # 分享图折行：按字体实际字宽量取每行能放下的字符，与 usvg 内部用的是同一字体库。
-skrifa = { version = "0.44", optional = true }
+skrifa = { version = "0.49", optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 web-sys = { version = "0.3", features = ["Document", "Window", "Storage", "Element", "HtmlElement", "DomTokenList", "MediaQueryList", "HtmlImageElement", "MouseEvent", "KeyboardEvent", "Node", "NodeList", "DomRect", "EventTarget", "Navigator", "Clipboard", "File", "FileList", "FormData", "Request", "RequestInit", "Response", "Headers", "ClipboardEvent", "DataTransfer", "HtmlInputElement", "EventSource", "MessageEvent", "Blob", "BlobPropertyBag", "Url", "HtmlAnchorElement", "IntersectionObserver", "IntersectionObserverEntry", "IntersectionObserverInit", "ResizeObserver", "HtmlTextAreaElement", "ScrollToOptions", "ScrollBehavior", "Location", "History", "console", "RequestCredentials", "ScrollIntoViewOptions", "ScrollLogicalPosition", "DragEvent"] }

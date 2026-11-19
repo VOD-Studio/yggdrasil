@@ -7,8 +7,8 @@ all-features = true
 ignore = [
   { id = "RUSTSEC-2024-0320", reason = "yaml-rust 由 syntect 5.3.0（最新版）的 yaml-load 引入；src/highlight.rs 用 SyntaxDefinition::load_from_str 加载自定义语法，必须保留" },
   { id = "RUSTSEC-2025-0141", reason = "bincode 1.x 由 syntect 5.3.0（最新版）的 dump-load 引入，内置语法集依赖它，待 syntect 替换" },
-  { id = "RUSTSEC-2024-0436", reason = "paste 由 zenwebp 0.4.4 → garb 引入；zenwebp 0.4.5 已被作者 yank，待上游发布新版" },
-  { id = "RUSTSEC-2026-0543", reason = "chrono 所有版本均被标记为无人维护；项目与 PostgreSQL 时间戳映射依赖它，rmcp 3.9.0 也引入它，待项目迁移且上游移除依赖后撤销" },
+  { id = "RUSTSEC-2024-0436", reason = "Leptos 的 either_of 和 zenwebp 的 garb 等传递依赖仍使用 paste，待上游移除后撤销" },
+  { id = "RUSTSEC-2026-0543", reason = "chrono 所有版本均被标记为无人维护；项目与 PostgreSQL 时间戳映射依赖它，rmcp 也引入它，待项目迁移且上游移除依赖后撤销" },
 ]
 
 [sources]
