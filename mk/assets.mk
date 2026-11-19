@@ -78,8 +78,8 @@ $(if $(filter-out $(wildcard $(DEV_OUTPUTS_$(1))),$(DEV_OUTPUTS_$(1))),$(DEV_ASS
 endef
 $(foreach lib,$(DEV_LIBS),$(eval $(call dev_lib_rule,$(lib))))
 
-# shared 内联进其余库。
-$(addprefix $(DEV_ASSET_DIR)/,$(addsuffix .stamp,$(filter-out shared,$(DEV_LIBS)))): $(DEV_ASSET_DIR)/shared.stamp
+# 引用 shared 的库在其源码变化后重建。
+$(addprefix $(DEV_ASSET_DIR)/,$(addsuffix .stamp,$(filter-out shared tiptap-editor,$(DEV_LIBS)))): $(DEV_ASSET_DIR)/shared.stamp
 dev-libs: $(addprefix $(DEV_ASSET_DIR)/,$(addsuffix .stamp,$(DEV_LIBS)))
 dev-assets-force:
 

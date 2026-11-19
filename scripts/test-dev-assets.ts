@@ -126,7 +126,7 @@ if (command === 'bun' && args[0] === 'install') {
   await edit('libs/tiptap-editor/src/index.ts');
   step(['tiptap-editor']);
   await edit('libs/shared/src/index.ts');
-  step(packages);
+  step(packages.filter((name) => name !== 'tiptap-editor'));
   fs.unlinkSync(path.join(root, 'public/codemirror/editor.js'));
   step(['codemirror-editor']);
   await edit('libs/lightbox/src/removed.ts');
