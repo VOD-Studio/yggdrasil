@@ -1,5 +1,7 @@
 import { Editor } from '@tiptap/core';
 import { describe, expect, it } from 'vitest';
+import TiptapCommentEditor from './comment';
+import { buildCommentExtensions } from './comment-extensions';
 import { buildExtensions } from './editor-extensions';
 import TiptapEditor, { type EditorOptions } from './index';
 
@@ -20,7 +22,7 @@ function names(extensions: ReadonlyArray<{ name: string }>): string[] {
 
 describe('buildExtensions 装配', () => {
   it('comment 变体裁掉 full-only 扩展，保留上传/代码块/评论专属', () => {
-    const ns = names(buildExtensions({ ...base, variant: 'comment' }));
+    const ns = names(buildCommentExtensions(base.getCoordinator));
     expect(ns).toContain('image');
     expect(ns).toContain('codeBlock');
     expect(ns).toContain('placeholder');
@@ -32,7 +34,7 @@ describe('buildExtensions 装配', () => {
   });
 
   it('full 变体保留完整扩展且无评论专属', () => {
-    const ns = names(buildExtensions({ ...base, variant: 'full' }));
+    const ns = names(buildExtensions(base));
     expect(ns).toContain('tableKit');
     expect(ns).toContain('taskList');
     expect(ns).toContain('slashCommand');
@@ -49,7 +51,7 @@ describe('comment 变体 schema 冒烟', () => {
     document.body.appendChild(el);
     return new Editor({
       element: el,
-      extensions: buildExtensions({ ...base, variant: 'comment' }),
+      extensions: buildCommentExtensions(base.getCoordinator),
     });
   }
 
@@ -94,17 +96,23 @@ describe('TiptapEditor.create 全路径挂载', () => {
   // 回归：init 曾给 full 路径传 `editorProps: undefined`，浅合并冲掉 tiptap
   // 默认的 `editorProps: {}`，createView 读 `editorProps.dispatchTransaction`
   // 抛 TypeError——后台编辑器一挂载就崩。此用例走真实入口覆盖两个变体。
-  for (const variant of ['full', 'comment'] as const) {
-    it(`${variant} 变体经 TiptapEditor.create 成功挂载并销毁`, () => {
+  const entries = [
+    ['后台', TiptapEditor, { variant: 'full' }],
+    ['旧页面评论', TiptapEditor, { variant: 'comment' }],
+    ['独立评论', TiptapCommentEditor, { placeholder: '写下回复' }],
+  ] as const;
+  for (const [name, library, opts] of entries) {
+    it(`${name}编辑器成功挂载并销毁`, async () => {
       const container = document.createElement('div');
-      container.id = `editor-mount-${variant}`;
       document.body.appendChild(container);
-      const opts: EditorOptions = { variant };
-      const inst = TiptapEditor.create(container, opts);
+      const options: EditorOptions = opts;
+      const inst = library.create(container, options);
       // ProseMirror DOM 已挂进容器（createView 成功）。
       expect(container.querySelector('.ProseMirror')).not.toBeNull();
+      await inst.setMarkdown('**粗体** $x^2$');
+      expect(inst.getMarkdown()).toBe('**粗体** $x^2$');
       inst.destroy();
-      expect(TiptapEditor._instances.has(container)).toBe(false);
+      expect(library._instances.has(container)).toBe(false);
       container.remove();
     });
   }
@@ -130,7 +138,7 @@ describe('full 变体标题层级', () => {
     document.body.appendChild(el);
     const editor = new Editor({
       element: el,
-      extensions: buildExtensions({ ...base, variant: 'full' }),
+      extensions: buildExtensions(base),
     });
     editor.commands.setContent('#### 四\n\n##### 五\n\n###### 六', { contentType: 'markdown' });
     const html = editor.getHTML();

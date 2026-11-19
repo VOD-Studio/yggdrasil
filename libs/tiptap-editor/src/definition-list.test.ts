@@ -11,7 +11,7 @@ let editor: Editor | null = null;
 function load(md: string): Editor {
   editor = new Editor({
     element: document.body,
-    extensions: buildExtensions({ variant: 'full', getCoordinator: () => null }),
+    extensions: buildExtensions({ getCoordinator: () => null }),
   });
   editor.commands.setContent(md, { contentType: 'markdown', emitUpdate: false });
   return editor;

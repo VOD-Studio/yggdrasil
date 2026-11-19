@@ -65,7 +65,7 @@ dev_lib_inputs = libs/$(1) $(shell find libs/$(1)/src -type f -o -type d) $(wild
 
 DEV_OUTPUTS_codemirror-editor := public/codemirror/editor.js public/codemirror/editor.js.map
 DEV_OUTPUTS_lightbox := public/lightbox/lightbox.js public/lightbox/lightbox.js.map public/lightbox/lightbox.css
-DEV_OUTPUTS_tiptap-editor := public/tiptap/editor.js public/tiptap/editor.js.map public/tiptap/editor.css
+DEV_OUTPUTS_tiptap-editor := public/tiptap/editor.js public/tiptap/editor.js.map public/tiptap/editor.css public/tiptap/comment.js public/tiptap/comment.js.map public/tiptap/comment.css
 DEV_OUTPUTS_xterm-terminal := public/xterm/terminal.js public/xterm/terminal.js.map public/xterm/terminal.css
 DEV_OUTPUTS_yggdrasil-core := public/yggdrasil-core/yggdrasil-core.js public/yggdrasil-core/yggdrasil-core.js.map public/yggdrasil-core/yggdrasil-core.css public/yggdrasil-core/yggdrasil-enhance.js public/yggdrasil-core/yggdrasil-enhance.js.map
 

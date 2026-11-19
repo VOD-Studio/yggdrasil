@@ -1,0 +1,978 @@
+/* 后台编辑器的扩展节点和写作控件。 */
+
+/* ---- 折叠块：<details>（编辑器内常显正文；与前台 article.css 的折叠块同款外观） ---- */
+.tiptap-editor .tiptap-details {
+  margin: 1.4em 0;
+  border-radius: 10px;
+  background-color: var(--color-surface-2);
+  box-shadow: 0 0 0 var(--hairline) var(--color-hairline);
+}
+
+.tiptap-editor .tiptap-details-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.7em;
+  padding: 0.75em 1em;
+  color: var(--color-fg);
+  font-size: 0.91em;
+  font-weight: 500;
+}
+
+.tiptap-editor .tiptap-details-summary::before {
+  content: '';
+  flex-shrink: 0;
+  width: 0.42em;
+  height: 0.42em;
+  margin-inline: 0.15em 0.1em;
+  border-right: 1.5px solid var(--color-fg-3);
+  border-bottom: 1.5px solid var(--color-fg-3);
+  transform: rotate(45deg);
+}
+
+.tiptap-editor .tiptap-details > :not(.tiptap-details-summary) {
+  padding-inline: 2.45em 1em;
+  color: var(--color-fg-2);
+  font-size: 0.91em;
+}
+
+.tiptap-editor .tiptap-details > :last-child {
+  margin-bottom: 0;
+  padding-bottom: 0.9em;
+}
+
+/* ---- 原始 HTML / 链接定义 / 实体：源码逐字保留的原子节点 ---- */
+.tiptap-editor .tiptap-raw-html {
+  padding: 0.05em 0.35em;
+  border-radius: 5px;
+  box-shadow: inset 0 0 0 var(--hairline) var(--color-hairline);
+  color: var(--color-fg-3);
+  font-family: var(--font-mono);
+  font-size: 0.8em;
+}
+
+.tiptap-editor .tiptap-link-def {
+  margin: 0.4em 0;
+  color: var(--color-fg-3);
+  font-family: var(--font-mono);
+  font-size: 0.84em;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.tiptap-editor .ProseMirror-selectednode.tiptap-raw-html,
+.tiptap-editor .ProseMirror-selectednode.tiptap-link-def,
+.tiptap-editor .ProseMirror-selectednode.tiptap-entity {
+  background-color: var(--color-clay-soft);
+}
+
+/* ---- 表格：发丝线网格，表头弱色小字；选中格陶土浅底 ---- */
+.tiptap-editor .tableWrapper {
+  margin: 1.4em -1px;
+  padding: 1px;
+  overflow-x: auto;
+}
+
+.tiptap-editor table {
+  width: 100%;
+  overflow: hidden;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+  border-radius: 10px;
+  box-shadow: 0 0 0 var(--hairline) var(--color-hairline);
+  font-size: 0.85em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+}
+
+.tiptap-editor table :is(td, th) {
+  position: relative;
+  box-sizing: border-box;
+  min-width: 80px;
+  padding: 0.7em 1em;
+  border-right: var(--hairline) solid var(--color-hairline);
+  border-bottom: var(--hairline) solid var(--color-hairline);
+  vertical-align: top;
+}
+
+.tiptap-editor table :is(td, th):last-child {
+  border-right: 0;
+}
+
+.tiptap-editor table tr:last-child td {
+  border-bottom: 0;
+}
+
+.tiptap-editor table th {
+  background-color: var(--color-surface-1);
+  color: var(--color-fg-3);
+  font-size: 0.93em;
+  font-weight: 500;
+  text-align: left;
+}
+
+.tiptap-editor table td {
+  color: var(--color-fg-2);
+}
+
+.tiptap-editor table :is(td, th) > p {
+  margin: 0;
+}
+
+.tiptap-editor table .selectedCell {
+  background-color: var(--color-clay-soft);
+}
+
+.tiptap-editor table .selectedCell::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-clay) 45%, transparent);
+  pointer-events: none;
+}
+
+.tiptap-editor table .column-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -2px;
+  bottom: -2px;
+  width: 3px;
+  background-color: var(--color-clay);
+  pointer-events: none;
+}
+
+.tiptap-editor .resize-cursor {
+  cursor: ew-resize;
+  cursor: col-resize;
+}
+
+/* ---- 斜杠命令：与下拉 listbox 同一浮层 ---- */
+.slash-command {
+  position: fixed;
+  z-index: 9999;
+  min-width: 260px;
+  max-height: 320px;
+  padding: 4px;
+  overflow-y: auto;
+  border-radius: 10px;
+  background-color: var(--color-popover);
+  box-shadow: var(--shadow-popover);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
+  animation: tiptap-popover-enter var(--spring-snappy-duration) var(--ease-spring-snappy) both;
+}
+
+@keyframes tiptap-popover-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+}
+
+.slash-command-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.slash-command-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 7px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.slash-command-item:hover,
+.slash-command-item.is-selected {
+  background-color: var(--color-ink-1);
+}
+
+.slash-command-item-icon {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background-color: var(--color-surface-1);
+  box-shadow: 0 0 0 var(--hairline) var(--color-hairline);
+  color: var(--color-fg-2);
+}
+
+.slash-command-item.is-selected .slash-command-item-icon {
+  color: var(--color-clay-text);
+}
+
+.slash-command-item-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.slash-command-item-title {
+  color: var(--color-fg);
+  font-size: 13.5px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.slash-command-item-desc {
+  color: var(--color-fg-3);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.slash-command-empty {
+  padding: 12px 16px;
+  color: var(--color-fg-3);
+  font-size: 13px;
+  text-align: center;
+}
+
+/* ---- 任务列表：陶土勾选框，与正文同款 ---- */
+.tiptap-editor ul[data-type='taskList'] {
+  padding-left: 0;
+  list-style: none;
+}
+
+.tiptap-editor ul[data-type='taskList'] li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.55em;
+}
+
+.tiptap-editor ul[data-type='taskList'] li > label {
+  flex-shrink: 0;
+  cursor: pointer;
+  user-select: none;
+}
+
+.tiptap-editor ul[data-type='taskList'] li > label input[type='checkbox'] {
+  display: block;
+  flex-shrink: 0;
+  width: 1em;
+  height: 1em;
+  margin: 0;
+  transform: translateY(0.14em);
+  border: 1.5px solid var(--color-ink-4);
+  border-radius: 4px;
+  background-color: transparent;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 0;
+  cursor: pointer;
+  appearance: none;
+  transition:
+    background-color 150ms var(--ease-out-expo),
+    border-color 150ms var(--ease-out-expo),
+    background-size var(--spring-bouncy-duration) var(--ease-spring-bouncy);
+}
+
+.tiptap-editor ul[data-type='taskList'] li > label input[type='checkbox']:hover {
+  border-color: var(--color-clay);
+}
+
+.tiptap-editor ul[data-type='taskList'] li > label input[type='checkbox']:checked {
+  border-color: var(--color-clay-fill);
+  background-color: var(--color-clay-fill);
+  background-size: 0.72em;
+  /* 亮色：陶土底 + 白对勾 */
+  background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2016%2016'%20fill='none'%20stroke='%23ffffff'%20stroke-width='2.2'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d='M3.5%208.5l3%203%206-6.5'/%3E%3C/svg%3E");
+}
+
+/* 暗色：浅陶土底上白对勾对比不足，改深色对勾（on-clay #1a0f0a） */
+.dark .tiptap-editor ul[data-type='taskList'] li > label input[type='checkbox']:checked {
+  background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2016%2016'%20fill='none'%20stroke='%231a0f0a'%20stroke-width='2.2'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d='M3.5%208.5l3%203%206-6.5'/%3E%3C/svg%3E");
+}
+
+.tiptap-editor ul[data-type='taskList'] li > label input[type='checkbox']:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
+.tiptap-editor ul[data-type='taskList'] li > div {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 任务项内的段落去掉上下外边距，勾选框与首行文字对齐、项间距不被撑大。 */
+.tiptap-editor ul[data-type='taskList'] li > div > p {
+  margin: 0;
+}
+
+/* ---- 源码切换按钮：幽灵图标按钮 ---- */
+.tiptap-toggle-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background-color: transparent;
+  color: var(--color-fg-3);
+  cursor: pointer;
+  transition:
+    background-color 150ms var(--ease-out-expo),
+    color 150ms var(--ease-out-expo);
+}
+
+.tiptap-toggle-btn svg {
+  display: block;
+}
+
+.tiptap-toggle-btn:hover {
+  background-color: var(--color-ink-1);
+  color: var(--color-fg);
+}
+
+.tiptap-toggle-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
+/* 源码锁定提示：富文本往返会改动原文时显示 */
+.tiptap-source-lock {
+  position: relative;
+  z-index: 6;
+  margin: 0 0 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  background-color: var(--color-warning-soft);
+  color: var(--color-fg-2);
+  font-size: 0.8125rem;
+  line-height: 1.6;
+}
+
+/* ---- 源码模式文本框 ---- */
+.tiptap-source-textarea {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  padding: 24px 32px;
+  border: 0;
+  background: transparent;
+  color: var(--color-fg-body);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1.75;
+  resize: none;
+  outline: none;
+  overflow-y: auto;
+  tab-size: 2;
+}
+
+.tiptap-source-textarea::placeholder {
+  color: var(--color-fg-3);
+}
+
+/* ---- 可运行代码块设置弹窗：与站点对话框同一套 ----
+   遮罩、面板、输入框、下拉与按钮分别对齐 ui.css 的 dialog-overlay / dialog-panel /
+   field / select-trigger + listbox / btn；复选框直接复用 .ygg-cb（controls.css）；
+   进出场复用 animate-modal-overlay-enter / animate-modal-panel-enter（base.css）。 */
+.tiptap-runnable-modal-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background-color: rgb(15 15 14 / 0.38);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+
+.dark .tiptap-runnable-modal-mask {
+  background-color: rgb(0 0 0 / 0.6);
+}
+
+.tiptap-runnable-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  width: 100%;
+  max-width: 28rem;
+  max-height: 85dvh;
+  padding: 20px 22px 18px;
+  overflow-y: auto;
+  border-radius: var(--radius-dialog);
+  background-color: var(--color-surface-2);
+  box-shadow:
+    0 0 0 var(--hairline) var(--color-hairline),
+    var(--shadow-lg);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
+}
+
+.tiptap-runnable-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.tiptap-runnable-modal-title {
+  color: var(--color-fg);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.tiptap-runnable-modal-close {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  margin: -4px -6px -4px 0;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background-color: transparent;
+  color: var(--color-fg-3);
+  cursor: pointer;
+  transition:
+    background-color 150ms var(--ease-out-expo),
+    color 150ms var(--ease-out-expo);
+}
+
+.tiptap-runnable-modal-close:hover {
+  background-color: var(--color-ink-1);
+  color: var(--color-fg);
+}
+
+.tiptap-runnable-modal-close:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
+.tiptap-runnable-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tiptap-runnable-label {
+  color: var(--color-fg-2);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.tiptap-runnable-input {
+  box-sizing: border-box;
+  width: 100%;
+  height: 36px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  background-color: var(--color-surface-1);
+  box-shadow: 0 0 0 var(--hairline) var(--color-hairline);
+  color: var(--color-fg);
+  font: inherit;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  outline: none;
+  transition: box-shadow 200ms var(--ease-out-expo);
+}
+
+.tiptap-runnable-input::placeholder {
+  color: var(--color-fg-3);
+}
+
+.tiptap-runnable-input:hover:not(:focus) {
+  box-shadow: 0 0 0 1px var(--color-ink-3);
+}
+
+.tiptap-runnable-input:focus {
+  box-shadow: var(--shadow-focus);
+}
+
+/* 自定义下拉：触发器同 field + select-trigger，面板同 listbox。
+   面板进出场复用全站 animate-select-enter（关键帧烘了 translateX(-50%)，故此处
+   水平居中同样用 transform: translateX(-50%)，不得叠加其他位移）。 */
+.tiptap-select {
+  position: relative;
+}
+
+.tiptap-select-trigger {
+  position: relative;
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  height: 36px;
+  padding: 0 36px 0 12px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 8px;
+  background-color: var(--color-surface-1);
+  box-shadow: 0 0 0 var(--hairline) var(--color-hairline);
+  color: var(--color-fg);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  outline: none;
+  transition: box-shadow 200ms var(--ease-out-expo);
+}
+
+.tiptap-select-trigger:hover {
+  box-shadow: 0 0 0 1px var(--color-ink-3);
+}
+
+.tiptap-select-trigger:focus-visible,
+.tiptap-select.open .tiptap-select-trigger {
+  box-shadow: var(--shadow-focus);
+}
+
+.tiptap-select-chevron {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  width: 16px;
+  height: 16px;
+  transform: translateY(-50%);
+  color: var(--color-fg-3);
+  pointer-events: none;
+  transition: transform var(--spring-bouncy-duration) var(--ease-spring-bouncy);
+}
+
+.tiptap-select.open .tiptap-select-chevron {
+  transform: translateY(-50%) rotate(180deg);
+}
+
+/* 打开时的透明遮罩：拦截外部点击关闭（z 40 < 面板 50） */
+.tiptap-select-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+
+.tiptap-select-panel {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  z-index: 50;
+  width: max-content;
+  min-width: 100%;
+  max-width: calc(100vw - 2rem);
+  max-height: 240px;
+  margin: 6px 0 0;
+  padding: 4px;
+  overflow-y: auto;
+  transform: translateX(-50%);
+  border-radius: 10px;
+  background-color: var(--color-popover);
+  box-shadow: var(--shadow-popover);
+  list-style: none;
+}
+
+/* 视口下方空间不足时向上展开 */
+.tiptap-select-panel.flip {
+  top: auto;
+  bottom: 100%;
+  margin: 0 0 6px;
+  transform-origin: bottom;
+}
+
+.tiptap-select-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 7px;
+  color: var(--color-fg);
+  font-size: 13.5px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.tiptap-select-option:hover,
+.tiptap-select-option.active {
+  background-color: var(--color-ink-1);
+}
+
+.tiptap-select-check {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  color: var(--color-clay-text);
+  visibility: hidden;
+}
+
+.tiptap-select-option.selected .tiptap-select-check {
+  visibility: visible;
+}
+
+/* 复选框行：盒子本体是全站 .ygg-cb，这里只排行内布局 */
+.tiptap-runnable-check-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  color: var(--color-fg);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+/* info string 预览：等宽、可整段选中复制 */
+.tiptap-runnable-preview {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background-color: var(--color-surface-1);
+  box-shadow: inset 0 0 0 var(--hairline) var(--color-hairline);
+  color: var(--color-fg-2);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  word-break: break-all;
+  user-select: all;
+}
+
+.tiptap-runnable-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+.tiptap-runnable-actions :is(.cancel, .insert) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 34px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background-color 150ms var(--ease-out-expo),
+    color 150ms var(--ease-out-expo),
+    box-shadow 200ms var(--ease-out-expo),
+    transform var(--spring-bouncy-duration) var(--ease-spring-bouncy);
+}
+
+.tiptap-runnable-actions :is(.cancel, .insert):focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
+.tiptap-runnable-actions :is(.cancel, .insert):active:not(:disabled) {
+  transform: scale(0.98);
+  transition-duration: 80ms;
+  transition-timing-function: var(--ease-press);
+}
+
+/* 取消：同 btn-ghost */
+.tiptap-runnable-actions .cancel {
+  background-color: transparent;
+  color: var(--color-fg-2);
+}
+
+.tiptap-runnable-actions .cancel:hover {
+  background-color: var(--color-ink-1);
+  color: var(--color-fg);
+}
+
+/* 插入 / 保存：同 btn-primary */
+.tiptap-runnable-actions .insert {
+  background-color: var(--color-clay-fill);
+  color: var(--color-on-clay);
+}
+
+.tiptap-runnable-actions .insert:hover:not(:disabled) {
+  background-color: color-mix(in oklab, var(--color-clay-fill) 90%, var(--color-fg));
+}
+
+.tiptap-runnable-actions .insert:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.tiptap-codeblock {
+  position: relative;
+  margin: 1.6em 0;
+  overflow: hidden;
+  border-radius: var(--radius-code);
+  background-color: var(--color-surface-1);
+  box-shadow: inset 0 0 0 var(--hairline) var(--color-hairline);
+}
+
+.tiptap-codeblock > pre {
+  margin: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* 可运行代码块：左侧陶土细线标示（与引用同一语言），叠在外框之内。
+   code 的 class 只带语言名，按运行按钮是否存在来识别。 */
+.tiptap-codeblock:has(> .tiptap-codeblock-toolbar .tiptap-codeblock-run) {
+  box-shadow:
+    inset 2px 0 0 var(--color-clay),
+    inset 0 0 0 var(--hairline) var(--color-hairline);
+}
+
+.tiptap-codeblock-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 36px;
+  padding: 4px 6px 4px 12px;
+  box-shadow: inset 0 calc(-1 * var(--hairline)) 0 var(--color-hairline);
+  font-family: var(--font-sans);
+  font-size: 12px;
+}
+
+.tiptap-codeblock-lang {
+  color: var(--color-fg-3);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-transform: lowercase;
+}
+
+/* 可运行块的语言标签可点，打开设置弹窗 */
+.tiptap-codeblock-lang-editable {
+  margin-left: -6px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition:
+    background-color 150ms var(--ease-out-expo),
+    color 150ms var(--ease-out-expo);
+}
+
+.tiptap-codeblock-lang-editable:hover {
+  background-color: var(--color-ink-1);
+  color: var(--color-clay-text);
+}
+
+/* 运行：同 btn-primary 的 xs 尺寸 */
+.tiptap-codeblock-run {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background-color: var(--color-clay-fill);
+  color: var(--color-on-clay);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 150ms var(--ease-out-expo);
+}
+
+.tiptap-codeblock-run:hover:not(:disabled) {
+  background-color: color-mix(in oklab, var(--color-clay-fill) 90%, var(--color-fg));
+}
+
+.tiptap-codeblock-run:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
+.tiptap-codeblock-run:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.tiptap-codeblock-run svg {
+  display: block;
+}
+
+.tiptap-codeblock-run.is-running svg {
+  animation: upload-spin 0.8s linear infinite;
+}
+
+.tiptap-codeblock-result {
+  max-height: 300px;
+  padding: 10px 1.15em 12px;
+  overflow-y: auto;
+  box-shadow: inset 0 var(--hairline) 0 var(--color-hairline);
+  color: var(--color-fg-2);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* ---- Mermaid 预览：挂在源码之后，源码仍可编辑 ---- */
+.tiptap-editor .tiptap-codeblock-mermaid-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 24px 16px;
+  overflow-x: auto;
+  background-color: var(--color-surface-2);
+  box-shadow: inset 0 var(--hairline) 0 var(--color-hairline);
+  /* 服务端按不含中西文间距、整词不折断的字宽排版，这里不能再加间距或拆词，否则标签溢出 */
+  text-autospace: no-autospace;
+  text-spacing-trim: space-all;
+  overflow-wrap: normal;
+}
+
+/* 服务端输出浅/深两份 SVG，按主题显示其一 */
+.tiptap-editor .tiptap-codeblock-mermaid-preview > div {
+  width: 100%;
+}
+
+.tiptap-editor .tiptap-codeblock-mermaid-preview > .mermaid-dark {
+  display: none;
+}
+
+.dark .tiptap-editor .tiptap-codeblock-mermaid-preview > .mermaid-light {
+  display: none;
+}
+
+.dark .tiptap-editor .tiptap-codeblock-mermaid-preview > .mermaid-dark {
+  display: block;
+}
+
+.tiptap-editor .tiptap-codeblock-mermaid-preview svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin-inline: auto;
+}
+
+.tiptap-editor .tiptap-codeblock-mermaid-preview.mermaid-loading {
+  color: var(--color-fg-3);
+  font-size: 0.85em;
+}
+
+.tiptap-editor .tiptap-codeblock-mermaid-preview.mermaid-error {
+  justify-content: flex-start;
+  background-color: var(--color-danger-soft);
+  color: var(--color-danger);
+  font-size: 0.85em;
+  line-height: 1.5;
+  text-align: left;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ---- 脚注：引用为陶土等宽上标；定义与正文文末同款，悬停提示可编辑 ---- */
+.tiptap-editor .fn-ref-node {
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.tiptap-editor .fn-ref-link {
+  padding: 0 0.15em;
+  color: var(--color-clay-text);
+  font-family: var(--font-mono);
+  font-size: 0.75em;
+  line-height: 0;
+  text-decoration: none;
+  vertical-align: super;
+  cursor: pointer;
+}
+
+.tiptap-editor .fn-ref-link:hover {
+  color: var(--color-clay-hover);
+}
+
+.tiptap-editor .ProseMirror-selectednode .fn-ref-node {
+  border-radius: 4px;
+  background-color: var(--color-clay-soft);
+}
+
+/* 双击预览浮层 */
+.tiptap-editor .fn-ref-preview {
+  position: absolute;
+  z-index: 10;
+  max-width: 280px;
+  margin-top: 0.5em;
+  padding: 0.55em 0.75em;
+  border-radius: 10px;
+  background-color: var(--color-popover);
+  box-shadow: var(--shadow-popover);
+  color: var(--color-fg-2);
+  font-family: var(--font-sans);
+  font-size: 0.82em;
+  line-height: 1.6;
+  white-space: normal;
+}
+
+.tiptap-editor .footnote-definition {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6em;
+  margin: 0.4em -0.6em 0;
+  padding: 0.35em 0.6em;
+  border-radius: 8px;
+  color: var(--color-fg-2);
+  font-size: 0.82em;
+  line-height: 1.75;
+  cursor: pointer;
+  transition: background-color 150ms var(--ease-out-expo);
+}
+
+/* 第一条定义前加发丝线，与正文文末脚注区一致（绝对定位，不参与 flex 排布） */
+.tiptap-editor :not(.footnote-definition) + .footnote-definition {
+  position: relative;
+  margin-top: 2.4em;
+}
+
+.tiptap-editor :not(.footnote-definition) + .footnote-definition::before {
+  content: '';
+  position: absolute;
+  top: -1em;
+  right: 0.6em;
+  left: 0.6em;
+  height: var(--hairline);
+  background-color: var(--color-hairline);
+}
+
+.tiptap-editor .footnote-definition:hover {
+  background-color: var(--color-ink-1);
+}
+
+.tiptap-editor .footnote-definition-label {
+  flex-shrink: 0;
+  min-width: 1.4em;
+  color: var(--color-fg-3);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.tiptap-editor .footnote-definition-content {
+  flex: 1;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.tiptap-editor .footnote-definition-content-hidden {
+  display: none;
+}
+
+.tiptap-editor .footnote-definition-edit {
+  flex: 1;
+}
+
+.tiptap-editor .ProseMirror-selectednode .footnote-definition,
+.tiptap-editor .footnote-definition.ProseMirror-selectednode {
+  background-color: var(--color-clay-soft);
+}

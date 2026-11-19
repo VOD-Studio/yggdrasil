@@ -10,6 +10,11 @@ const libraries = {
     script: '/tiptap/editor.js',
     style: '/tiptap/editor.css',
   },
+  'tiptap-comment': {
+    global: 'TiptapCommentEditor',
+    script: '/tiptap/comment.js',
+    style: '/tiptap/comment.css',
+  },
   codemirror: { global: 'CodeMirrorEditor', script: '/codemirror/editor.js' },
   xterm: {
     global: 'XtermTerminal',

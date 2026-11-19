@@ -112,9 +112,10 @@ interface PageLog {
   errors: string[];
   failed: string[];
   wasm: string[];
+  tiptap: string[];
 }
 function instrument(page: Playwright.Page) {
-  const log: PageLog = { errors: [], failed: [], wasm: [] };
+  const log: PageLog = { errors: [], failed: [], wasm: [], tiptap: [] };
   page.on('pageerror', (e) => log.errors.push(`pageerror: ${e.message}`));
   page.on('console', (m) => {
     if (m.type() === 'error') log.errors.push(`console: ${m.text()}`);
@@ -122,6 +123,7 @@ function instrument(page: Playwright.Page) {
   page.on('request', (r) => {
     const p = new URL(r.url()).pathname;
     if (p.endsWith('.wasm')) log.wasm.push(p);
+    if (p.startsWith('/tiptap/')) log.tiptap.push(p);
   });
   page.on('response', (r) => {
     if (r.status() >= 400) log.failed.push(`${r.status()} ${new URL(r.url()).pathname}`);
@@ -157,6 +159,13 @@ async function main() {
     .readdirSync(SITE, { recursive: true, encoding: 'utf8' })
     .filter((file) => /\.(?:js|css)\.map$/.test(file));
   check('0 发布浏览器资产不包含 source map', sourceMaps.length === 0, sourceMaps.join(', '));
+  const commentBytes = fs.statSync(path.join(SITE, 'tiptap/comment.js.br')).size;
+  const editorBytes = fs.statSync(path.join(SITE, 'tiptap/editor.js.br')).size;
+  check(
+    '0 评论编辑器 JS 比后台编辑器小',
+    commentBytes < editorBytes,
+    `${commentBytes} / ${editorBytes} B`,
+  );
 
   await capture([
     'docker',
@@ -378,7 +387,9 @@ async function main() {
       '3 版本表含按需加载的浏览器库',
       !!versions &&
         '/xterm/terminal.js' in JSON.parse(versions) &&
-        '/tiptap/editor.js' in JSON.parse(versions),
+        '/tiptap/editor.js' in JSON.parse(versions) &&
+        '/tiptap/comment.js' in JSON.parse(versions) &&
+        '/tiptap/comment.css' in JSON.parse(versions),
       versions ?? '缺少版本表',
     );
     const missing = await fetch(`${base}/post/no-such`);
@@ -414,6 +425,18 @@ async function main() {
       '3 缓存命中页正常水合',
       (await resp!.allHeaders())['x-ssr-cache'] === 'HIT' && scriptErrors(log).length === 0,
       scriptErrors(log).join(' | '),
+    );
+    const comment = page.getByRole('form', { name: '发表评论', exact: true });
+    await comment.scrollIntoViewIfNeeded();
+    const textbox = comment.getByRole('textbox', { name: '评论内容' });
+    await textbox.waitFor();
+    await textbox.fill('发布验收评论草稿');
+    check(
+      '3 文章评论只下载独立编辑器且可以输入',
+      log.tiptap.toSorted().join(',') === '/tiptap/comment.css,/tiptap/comment.js' &&
+        (await textbox.textContent()) === '发布验收评论草稿' &&
+        scriptErrors(log).length === 0,
+      log.tiptap.join(', '),
     );
     await ctx.close();
 
@@ -542,6 +565,17 @@ async function main() {
     );
     check('4 后台直开带后台样式', adminRules > 0, `cssRules=${adminRules}`);
     check('4 后台无脚本错误', scriptErrors(log).length === 0, scriptErrors(log).join(' | '));
+    await page.goto(`${base}/admin/write`);
+    await hydrated(page);
+    await page.locator('#tiptap-editor .ProseMirror').waitFor();
+    await page.locator('#tiptap-editor .tiptap-toggle-btn').click();
+    check(
+      '4 后台只下载写作编辑器且可切换源码',
+      log.tiptap.toSorted().join(',') === '/tiptap/editor.css,/tiptap/editor.js' &&
+        (await page.locator('#tiptap-editor .tiptap-source-textarea').isVisible()) &&
+        scriptErrors(log).length === 0,
+      log.tiptap.join(', '),
+    );
     await ctx.close();
     const anonymous = await fetch(`${base}/admin`, { redirect: 'manual' });
     check(

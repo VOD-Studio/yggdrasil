@@ -1,8 +1,7 @@
 //! 评论表单组件
 //!
 //! 提供发表评论与回复评论的表单，包含昵称、邮箱、网站、内容与反垃圾蜜罐字段。
-//! 内容编辑用 tiptap 所见即所得编辑器（comment variant——后台文章编辑器的
-//! 精简子集）：选中浮出气泡菜单（B/I/S/code/link）、StarterKit 输入规则
+//! 评论专用的 Tiptap 编辑器提供选中文字的气泡菜单（B/I/S/code/link）、StarterKit 输入规则
 //! （`> `、`- `、``` 等）、数学公式、图片上传（点击按钮/粘贴/拖放均走
 //! coordinator 占位符上传，loading/error 态与后台完全一致）。
 
@@ -75,10 +74,11 @@ pub fn CommentForm(
         Some(pid) => active_reply.get() == Some(pid),
         None => true,
     });
-    let editor_library = use_browser_library(BrowserLibrary::Tiptap, move || match parent_id {
-        Some(pid) => active_reply.get() == Some(pid),
-        None => editor_visible.get(),
-    });
+    let editor_library =
+        use_browser_library(BrowserLibrary::TiptapComment, move || match parent_id {
+            Some(pid) => active_reply.get() == Some(pid),
+            None => editor_visible.get(),
+        });
     // 图片上传状态（tiptap coordinator 事件驱动）：
     // 进行中计数用于提交门控；失败条目由编辑器内错误态兜底（重试/移除）。
     let uploads_in_flight = RwSignal::new(UploadsInFlight::default());
@@ -245,7 +245,6 @@ pub fn CommentForm(
                     });
 
                 let opts = crate::bridges::tiptap::EditorOptions::default();
-                opts.set_variant("comment");
                 opts.set_placeholder(if is_reply {
                     "写下你的回复…"
                 } else {
@@ -259,7 +258,7 @@ pub fn CommentForm(
                 opts.set_on_upload_event(&on_upload_event);
 
                 // create 同步返回。
-                match crate::bridges::tiptap::create(&container, &opts) {
+                match crate::bridges::tiptap::create_comment(&container, &opts) {
                     Ok(inst) => {
                         // 草稿回填：回复表单取消再激活时恢复 content_md。
                         let draft = content_md.get_untracked();
@@ -473,7 +472,7 @@ pub fn CommentForm(
                             })
                     }}
 
-                    // 编辑区（WYSIWYG：tiptap comment variant）。SSR 输出空容器，
+                    // 评论富文本编辑区。SSR 输出空容器，
                     // hydration 后由编辑器接管；min-height 与编辑器对齐避免 CLS。
                     <div class="comment-editor">
                         <div

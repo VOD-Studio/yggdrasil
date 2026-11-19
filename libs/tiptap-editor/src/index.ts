@@ -1,207 +1,109 @@
-import { Editor } from '@tiptap/core';
-import { ON_RENDER_MERMAID_STORAGE_KEY, ON_RUN_CODE_STORAGE_KEY } from './code-block-view';
-import { buildExtensions, type EditorVariant } from './editor-extensions';
 import {
-  UPLOAD_COORDINATOR_STORAGE_KEY,
-  UploadCoordinator,
-  type UploadEvent,
-} from './upload-coordinator';
-import { parseLibraryInsertItems } from './upload-image';
-import './style.css';
-import './code-highlight.css';
+  ON_RENDER_MERMAID_STORAGE_KEY,
+  ON_RUN_CODE_STORAGE_KEY,
+  type RunCodeOpts,
+} from './code-block-view';
+import { buildCommentExtensions, commentEditorProps } from './comment-extensions';
+import { buildExtensions } from './editor-extensions';
+import { type CommonEditorOptions, EditorInstance, editorLibrary } from './editor-instance';
 import { icon } from './icons';
+import './style.css';
+import './author-style.css';
+import './code-highlight.css';
 
-/** 编辑器选项：Rust 端用空对象加 setter 填充。字段全部可选。 */
-export interface EditorOptions {
-  content?: string;
-  placeholder?: string;
-  /**
-   * 编辑器变体：'full'（后台文章编辑器，默认）| 'comment'（评论区精简子集）。
-   * comment 砍掉标题/表格/任务列表/脚注/斜杠命令/源码切换/代码块 NodeView，
-   * 获得气泡菜单与 Placeholder；图片上传占位符 UX 两变体完全一致。
-   */
-  variant?: EditorVariant;
-  onUpdate?: (markdown: string) => void;
-  onFocus?: () => void;
-  onBlur?: () => void;
-  editable?: boolean;
-  // 图片上传回调
-  onImageUpload?: (file: File) => Promise<string>;
-  // 素材库选择回调：Rust 注入，slash 命令「素材库」触发，宿主打开 AssetPickerModal；
-  // 宿主确认选择后回调 insertImagesFromLibrary 完成插入。
+/** 后台编辑器的配置，由 Rust 端创建配置对象后设置。 */
+export interface EditorOptions extends CommonEditorOptions {
+  /** 兼容发布前已经打开的页面，新评论表单使用 TiptapCommentEditor。 */
+  variant?: 'full' | 'comment';
   onPickFromLibrary?: () => void;
-  // 编辑器实例创建完成（含 coordinator）后同步触发一次，替代 window.__tiptap_ready 轮询
-  onReady?: () => void;
-  // 上传状态事件（error/success/removed + counts），替代 window.__tiptap_uploads 轮询
-  onUploadEvent?: (event: UploadEvent) => void;
-  // 编辑器内运行代码回调：Rust 注入，NodeView 点击「运行」时经 editor.storage 转发。
-  // opts: { language(纯语言名), source, overridesJson }；返回格式化结果字符串（Rust 拼好 stdout/stderr/状态）。
-  onRunCode?: (opts: {
-    language: string;
-    source: string;
-    overridesJson: string;
-  }) => Promise<string>;
-  // Mermaid 预览：Rust 注入，调服务端渲染，resolve 为浅/深两份 SVG 的 HTML，
-  // 失败时以 Error 拒绝（消息形如「图表渲染失败：…」）。未注入时代码块不显示预览。
+  onRunCode?: (opts: RunCodeOpts) => Promise<string>;
   onRenderMermaid?: (source: string) => Promise<string>;
-  // 往返守卫：由宿主注入，载入正文/源码切回富文本时比较原文与富文本往返后的 Markdown，
-  // `true` 表示服务端渲染一致。未注入时不做守卫（评论、笔记、组件图鉴保持现有行为）。
+  /** 载入与切回富文本时，检查往返后的 Markdown 是否保留渲染结果。 */
   checkRoundtrip?: (original: string, roundtrip: string) => Promise<boolean>;
 }
 
-/**
- * 源码模式切换按钮图标（Lucide，stroke: currentColor 跟随主题）。
- * - file-code：富文本态下显示，提示切换到源码。
- * - file-text：源码态下显示，提示切换回富文本。
- */
 const CODE_ICON_SVG = icon('file-code', 18);
 const ARTICLE_ICON_SVG = icon('file-text', 18);
 const SOURCE_LOCK_MESSAGE =
   '这篇内容里有富文本模式无法原样保留的写法，已切换到 Markdown 源码编辑。';
 
-class TiptapEditorInstance {
-  private editor: Editor | null = null;
-  private container: HTMLElement;
-  private options: EditorOptions;
-
+class TiptapEditorInstance extends EditorInstance<EditorOptions> {
   private isSourceMode = false;
   private sourceTextarea: HTMLTextAreaElement | null = null;
   private toggleButton: HTMLButtonElement | null = null;
-  private coordinator: UploadCoordinator | null = null;
-  private onDestroy?: () => void;
   private pendingOriginal: string | null = null;
   private loadSeq = 0;
   private lockNotice: HTMLParagraphElement | null = null;
 
   constructor(container: HTMLElement, options: EditorOptions = {}, onDestroy?: () => void) {
-    this.container = container;
-    this.options = options;
-    this.onDestroy = onDestroy;
+    super(container, options, onDestroy);
     this.init();
   }
 
   private init() {
-    const variant: EditorVariant = this.options.variant ?? 'full';
-    const isComment = variant === 'comment';
-
     const el = document.createElement('div');
-    el.className = isComment ? 'tiptap-editor tiptap-editor--comment' : 'tiptap-editor';
     this.container.appendChild(el);
 
-    // 源码模式切换按钮：悬浮于编辑器右上角（仅 full——评论框高度有限，
-    // 浮动按钮会遮挡首行文字；评论的格式面由输入规则/气泡菜单/粘贴承载）。
-    if (!isComment) {
-      this.toggleButton = document.createElement('button');
-      this.toggleButton.className = 'tiptap-toggle-btn';
-      this.toggleButton.type = 'button';
-      this.toggleButton.title = '切换 Markdown 源码';
-      this.toggleButton.innerHTML = CODE_ICON_SVG;
-      this.toggleButton.addEventListener('click', () => this.toggleSource());
-      el.appendChild(this.toggleButton);
-
-      // 源码锁定提示：往返检查判定有损时显示（hidden 属性控制，样式里不写 display）
-      this.lockNotice = document.createElement('p');
-      this.lockNotice.className = 'tiptap-source-lock';
-      this.lockNotice.setAttribute('role', 'status');
-      this.lockNotice.hidden = true;
-      this.lockNotice.textContent = SOURCE_LOCK_MESSAGE;
-      el.appendChild(this.lockNotice);
-
-      // 源码模式 textarea：初始隐藏，与 ProseMirror 共用同一区域
-      this.sourceTextarea = document.createElement('textarea');
-      this.sourceTextarea.className = 'tiptap-source-textarea';
-      this.sourceTextarea.hidden = true;
-      this.sourceTextarea.placeholder = '在此输入 Markdown 源码...';
-      this.sourceTextarea.spellcheck = false;
-      this.sourceTextarea.addEventListener('input', () => {
-        // 源码模式下通过 onUpdate 回调同步内容（替代旧版 window.__tiptap_content 缓存）
-        if (this.options.onUpdate) {
-          this.options.onUpdate(this.sourceTextarea!.value);
-        }
+    if (this.options.variant === 'comment') {
+      el.className = 'tiptap-editor tiptap-editor--comment';
+      this.mountEditor(el, {
+        extensions: buildCommentExtensions(this.getCoordinator, this.options.placeholder),
+        editorProps: commentEditorProps,
       });
-      el.appendChild(this.sourceTextarea);
+      this.options.onReady?.();
+      return;
     }
 
-    this.editor = new Editor({
-      element: el,
+    el.className = 'tiptap-editor';
+    this.toggleButton = document.createElement('button');
+    this.toggleButton.className = 'tiptap-toggle-btn';
+    this.toggleButton.type = 'button';
+    this.toggleButton.title = '切换 Markdown 源码';
+    this.toggleButton.innerHTML = CODE_ICON_SVG;
+    this.toggleButton.addEventListener('click', () => this.toggleSource());
+    el.appendChild(this.toggleButton);
+
+    // 源码锁定提示：往返检查判定有损时显示（hidden 属性控制，样式里不写 display）
+    this.lockNotice = document.createElement('p');
+    this.lockNotice.className = 'tiptap-source-lock';
+    this.lockNotice.setAttribute('role', 'status');
+    this.lockNotice.hidden = true;
+    this.lockNotice.textContent = SOURCE_LOCK_MESSAGE;
+    el.appendChild(this.lockNotice);
+
+    // 源码模式 textarea：初始隐藏，与 ProseMirror 共用同一区域
+    this.sourceTextarea = document.createElement('textarea');
+    this.sourceTextarea.className = 'tiptap-source-textarea';
+    this.sourceTextarea.hidden = true;
+    this.sourceTextarea.placeholder = '在此输入 Markdown 源码...';
+    this.sourceTextarea.spellcheck = false;
+    this.sourceTextarea.addEventListener('input', () => {
+      // 源码模式下通过 onUpdate 回调同步内容（替代旧版 window.__tiptap_content 缓存）
+      if (this.options.onUpdate) {
+        this.options.onUpdate(this.sourceTextarea!.value);
+      }
+    });
+    el.appendChild(this.sourceTextarea);
+
+    const editor = this.mountEditor(el, {
       extensions: buildExtensions({
-        variant,
-        placeholder: this.options.placeholder,
         onImageUpload: this.options.onImageUpload,
         onInsertUploading: this.options.onImageUpload
-          ? (file) => this.coordinator?.insertUploading(file)
+          ? (file) => this.insertUploading(file)
           : undefined,
         onPickFromLibrary: this.options.onPickFromLibrary,
-        getCoordinator: () => this.coordinator,
+        getCoordinator: this.getCoordinator,
       }),
-      content: this.options.content || '',
-      editable: this.options.editable !== false,
-      autofocus: false,
-      // 评论模式给 ProseMirror DOM 补无障碍语义（full 由后台页面结构兜底）。
-      // 注意：tiptap Editor 用浅合并覆盖默认 options（editorProps 默认为 {}），
-      // 传 `editorProps: undefined` 会把默认值冲掉，createView 读
-      // `editorProps.dispatchTransaction` 直接抛 TypeError——所以这里用条件
-      // 展开，full 路径绝不出现 editorProps 键。
-      ...(isComment
-        ? {
-            editorProps: {
-              attributes: {
-                role: 'textbox',
-                'aria-label': '评论内容',
-                'aria-multiline': 'true' as const,
-              },
-            },
-          }
-        : {}),
-      onUpdate: ({ editor }) => {
-        if (this.options.onUpdate) {
-          // 脚注 [^id] 现由 atom 节点(footnoteRef/footnoteDef)承载,序列化走
-          // renderMarkdown 直接拼字面量,不再经 escapeMarkdownSyntax,无需 unescape。
-          this.options.onUpdate(editor.getMarkdown());
-        }
-      },
-      onFocus: () => {
-        if (this.options.onFocus) {
-          this.options.onFocus();
-        }
-      },
-      onBlur: () => {
-        if (this.options.onBlur) {
-          this.options.onBlur();
-        }
-      },
     });
-
-    // 创建上传协调器，挂到 editor.storage 供 NodeView 按实例读取（支持多编辑器实例）。
-    // onUploadEvent 透传给 coordinator.emit，未提供时空操作兜底。
-    if (this.options.onImageUpload) {
-      this.coordinator = new UploadCoordinator(
-        this.editor,
-        this.options.onImageUpload,
-        this.options.onUploadEvent ?? (() => {}),
-      );
-      // editor.storage 是开放式索引签名；自定义 key 需绕过严格检查（Tiptap 官方扩展 storage 模式）。
-      (this.editor.storage as unknown as Record<string, unknown>)[UPLOAD_COORDINATOR_STORAGE_KEY] =
-        this.coordinator;
-    }
-
-    // 把 onRunCode 回调挂到 editor.storage，供 CodeBlockNodeView 读取（仿 upload-coordinator 范式）。
-    if (this.options.onRunCode) {
-      (this.editor.storage as unknown as Record<string, unknown>)[ON_RUN_CODE_STORAGE_KEY] =
-        this.options.onRunCode;
-    }
-
-    // 同样挂 onRenderMermaid，供 mermaid 代码块的预览区读取。
+    const storage = editor.storage as unknown as Record<string, unknown>;
+    if (this.options.onRunCode) storage[ON_RUN_CODE_STORAGE_KEY] = this.options.onRunCode;
     if (this.options.onRenderMermaid) {
-      (this.editor.storage as unknown as Record<string, unknown>)[ON_RENDER_MERMAID_STORAGE_KEY] =
-        this.options.onRenderMermaid;
+      storage[ON_RENDER_MERMAID_STORAGE_KEY] = this.options.onRenderMermaid;
     }
-
-    // 通知宿主编辑器已就绪（替代 window.__tiptap_ready 轮询）
     this.options.onReady?.();
   }
 
-  getMarkdown(): string {
+  override getMarkdown(): string {
     // 源码模式下直接返回 textarea 内容，确保提交逻辑无需感知视图模式
     if (this.isSourceMode && this.sourceTextarea) {
       return this.sourceTextarea.value;
@@ -210,7 +112,7 @@ class TiptapEditorInstance {
     if (this.pendingOriginal !== null) {
       return this.pendingOriginal;
     }
-    return this.editor?.getMarkdown() || '';
+    return super.getMarkdown();
   }
 
   /**
@@ -326,7 +228,7 @@ class TiptapEditorInstance {
    * 载入 Markdown 正文。注入 `checkRoundtrip` 时，Promise 在视图模式确定（往返检查结束）后
    * resolve：有损则切到源码模式并锁定，原文不被改写；未注入时同步完成。
    */
-  async setMarkdown(content: string): Promise<void> {
+  override async setMarkdown(content: string): Promise<void> {
     if (!this.editor) return;
     const seq = ++this.loadSeq;
     this.pendingOriginal = null;
@@ -347,86 +249,14 @@ class TiptapEditorInstance {
     }
   }
 
-  getHTML(): string {
-    return this.editor?.getHTML() || '';
-  }
-
-  focus(): void {
-    this.editor?.commands.focus();
-  }
-
-  blur(): void {
-    this.editor?.commands.blur();
-  }
-
-  isEmpty(): boolean {
-    return this.editor?.isEmpty ?? true;
-  }
-
-  /** Rust 侧"×关闭"提示时调用（Rust 端经 bridges::tiptap 调用）。返回是否成功删除。 */
-  removeUploadByUploadId(uploadId: string): boolean {
-    return this.coordinator?.removeUpload(uploadId) ?? false;
-  }
-
-  /**
-   * 工具栏图片按钮入口：把文件交给 coordinator 走占位符上传
-   * （与粘贴/拖放/slash 命令完全同一条路径）。无 coordinator（未注入
-   * onImageUpload）时 no-op。
-   */
-  insertUploading(file: File): void {
-    this.coordinator?.insertUploading(file);
-  }
-
-  /**
-   * 从素材库批量插入图片（Rust 侧 AssetPickerModal 确认后调用）。
-   *
-   * `json` 为 `[{ "src": string, "alt"?: string }]` 串（JSON-over-bridge，
-   * 与 overridesJson 同一惯例）。slash 命令触发时已删掉 /素材 文本、光标停在
-   * 删除位置；ProseMirror selection 不随弹窗焦点变化，focus() 即恢复原光标，
-   * 全部图片块在一次事务内按勾选顺序插入。非法/空载荷为 no-op。
-   */
-  insertImagesFromLibrary(json: string): void {
-    if (!this.editor) return;
-    const items = parseLibraryInsertItems(json);
-    if (!items) return;
-    const content = items.map((item) => ({ type: 'image', attrs: item }));
-    this.editor.chain().focus().insertContent(content).run();
-  }
-
-  destroy(): void {
-    if (!this.onDestroy && !this.editor) return;
-    this.editor?.destroy();
-    this.editor = null;
-    // coordinator 通过 editor.storage 访问，随 editor 实例一同回收，无需显式清除引用。
-    this.coordinator = null;
-    // 清理源码模式相关引用（容器 innerHTML 已清空，DOM 会随之移除）
+  override destroy(): void {
+    super.destroy();
     this.sourceTextarea = null;
     this.toggleButton = null;
     this.isSourceMode = false;
     this.lockNotice = null;
     this.pendingOriginal = null;
-    this.container.innerHTML = '';
-    this.onDestroy?.();
-    this.onDestroy = undefined;
   }
 }
 
-/** 容器元素 → 其上的编辑器实例；同一元素再次 create 会先销毁旧实例。 */
-const instances = new Map<HTMLElement, TiptapEditorInstance>();
-
-const TiptapEditor = {
-  _instances: instances,
-
-  create(container: HTMLElement, options: EditorOptions = {}): TiptapEditorInstance {
-    instances.get(container)?.destroy();
-
-    let instance!: TiptapEditorInstance;
-    instance = new TiptapEditorInstance(container, options, () => {
-      if (instances.get(container) === instance) instances.delete(container);
-    });
-    instances.set(container, instance);
-    return instance;
-  },
-};
-
-export default TiptapEditor;
+export default editorLibrary(TiptapEditorInstance);

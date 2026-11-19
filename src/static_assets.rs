@@ -36,7 +36,7 @@ pub const LIGHTBOX_CSS: &str = "/lightbox/lightbox.css";
 /// 下发版本表的 `<script type="application/json">` 元素 id，libs 里同名常量须保持一致。
 pub const VERSIONS_ELEMENT_ID: &str = "ygg-asset-versions";
 
-/// 参与版本化的全部资源。后五项由 libs 按需加载，地址写在
+/// 参与版本化的全部资源。编辑器和终端由 libs 按需加载，地址写在
 /// `libs/yggdrasil-core/src/browser-library.ts`。
 pub const ALL: &[&str] = &[
     STYLE_CSS,
@@ -50,6 +50,8 @@ pub const ALL: &[&str] = &[
     LIGHTBOX_CSS,
     "/tiptap/editor.js",
     "/tiptap/editor.css",
+    "/tiptap/comment.js",
+    "/tiptap/comment.css",
     "/codemirror/editor.js",
     "/xterm/terminal.js",
     "/xterm/terminal.css",

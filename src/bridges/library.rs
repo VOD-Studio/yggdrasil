@@ -51,6 +51,7 @@ impl LibraryResource {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum BrowserLibrary {
     Tiptap,
+    TiptapComment,
     CodeMirror,
     Xterm,
 }
@@ -60,6 +61,7 @@ impl BrowserLibrary {
     pub const fn name(self) -> &'static str {
         match self {
             Self::Tiptap => "tiptap",
+            Self::TiptapComment => "tiptap-comment",
             Self::CodeMirror => "codemirror",
             Self::Xterm => "xterm",
         }

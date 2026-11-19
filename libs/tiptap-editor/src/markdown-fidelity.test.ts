@@ -16,7 +16,7 @@ function load(md: string): Editor {
   editor?.destroy();
   editor = new Editor({
     element: document.createElement('div'),
-    extensions: buildExtensions({ variant: 'full', getCoordinator: () => null }),
+    extensions: buildExtensions({ getCoordinator: () => null }),
     content: '',
   });
   editor.commands.setContent(md, { contentType: 'markdown', emitUpdate: false });

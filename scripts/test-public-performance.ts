@@ -284,7 +284,9 @@ async function main() {
       const execRequests: string[] = [];
       const errors: string[] = [];
       page.on('request', (request) => {
-        if (request.url().includes('/tiptap/editor.js')) editorRequests.push(request.url());
+        if (/\/tiptap\/(?:comment|editor)\.js$/.test(new URL(request.url()).pathname)) {
+          editorRequests.push(request.url());
+        }
       });
       page.on('request', (request) => {
         if (request.url().includes('/codemirror/editor.js')) codemirrorRequests.push(request.url());
@@ -348,7 +350,10 @@ async function main() {
       const editor = page.locator('.comment-editor-mount .ProseMirror');
       await editor.waitFor({ state: 'visible', timeout: 30000 });
       await editor.fill('评论草稿懒加载成功');
-      assert.equal(editorRequests.length, 1);
+      assert.deepEqual(
+        editorRequests.map((url) => new URL(url).pathname),
+        ['/tiptap/comment.js'],
+      );
       await page.screenshot({
         path: path.join(artifacts, `${mobile ? 'mobile' : 'desktop'}-${theme}-comments.png`),
       });

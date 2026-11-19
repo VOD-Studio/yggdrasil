@@ -1,14 +1,14 @@
 //! Tiptap 编辑器的 wasm-bindgen 绑定层。
 //!
-//! 封装与 `window.TiptapEditor`（IIFE 暴露的全局对象）的全部交互，
+//! 封装与 `window.TiptapEditor`、`window.TiptapCommentEditor` 的交互，
 //! 替代旧版 `js_sys::eval` 字符串拼贴 + window 全局变量通信。
 //!
 //! wasm-bindgen extern 与 `EditorHandle`、上传 closure 等**仅在 WASM 前端**编译
 //! （服务端构建无 `window`）；共享的纯数据类型 `UploadsInFlight`/`UploadErrorEntry`
 //! 在两端都编译，供 `write.rs` 在视图中渲染上传状态。
 //!
-//! 用法（Leptos）：挂载点用 `NodeRef` 取元素，`create(&element, &opts)` 在其上创建实例。
-//! `create` 以 js_namespace 绑定为成员调用，调用时才解析全局；脚本未加载时返回 Err。
+//! 用法（Leptos）：用 `NodeRef` 取挂载点，由 `create` 或 `create_comment` 创建对应实例。
+//! wasm-bindgen 通过 js_namespace 在调用时解析全局库；脚本未加载时返回 Err。
 //! `EditorHandle` 含 JS 引用（非 `Send + Sync`），须放进
 //! `StoredValue::new_local`/`RwSignal::new_local`，`on_cleanup` 里 `take` 出来
 //! 丢弃即触发 `Drop` → `destroy`。上传状态用 `RwSignal<UploadsInFlight>` /
@@ -50,6 +50,13 @@ pub mod wasm {
         /// 构造失败抛异常（被 catch 捕获）。
         #[wasm_bindgen(js_namespace = TiptapEditor, js_name = create, catch)]
         pub fn create(
+            container: &web_sys::HtmlElement,
+            options: &EditorOptions,
+        ) -> Result<EditorInstance, JsValue>;
+
+        /// 从评论专用资源创建编辑器。
+        #[wasm_bindgen(js_namespace = TiptapCommentEditor, js_name = create, catch)]
+        pub fn create_comment(
             container: &web_sys::HtmlElement,
             options: &EditorOptions,
         ) -> Result<EditorInstance, JsValue>;
@@ -102,11 +109,6 @@ pub mod wasm {
         /// 编辑器无内容时的占位文案。
         #[wasm_bindgen(method, setter, js_name = placeholder)]
         pub fn set_placeholder(this: &EditorOptions, v: &str);
-
-        /// 编辑器变体：`"full"`（默认，后台文章编辑器）或 `"comment"`
-        /// （评论区精简子集：气泡菜单 + Placeholder，无标题/表格/斜杠命令等）。
-        #[wasm_bindgen(method, setter, js_name = variant)]
-        pub fn set_variant(this: &EditorOptions, v: &str);
 
         /// 文档变更回调（ProseMirror transaction 提交时触发，参数为最新 Markdown）。
         #[wasm_bindgen(method, setter, js_name = onUpdate)]
@@ -593,7 +595,7 @@ pub mod wasm {
 /// `tiptap::wasm::xxx` 引用。新增 `pub fn`/`pub type` 供外部按名调用时记得同步加进这里。
 #[cfg(target_arch = "wasm32")]
 pub use wasm::{
-    consume_upload_event, create, make_comment_upload_closure, make_render_mermaid_closure,
-    make_roundtrip_check_closure, make_run_code_closure, make_upload_closure, upload_image_file,
-    EditorHandle, EditorOptions, UploadEventJs,
+    consume_upload_event, create, create_comment, make_comment_upload_closure,
+    make_render_mermaid_closure, make_roundtrip_check_closure, make_run_code_closure,
+    make_upload_closure, upload_image_file, EditorHandle, EditorOptions, UploadEventJs,
 };
