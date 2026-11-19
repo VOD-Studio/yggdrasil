@@ -221,9 +221,9 @@ doc: ## 生成 rustdoc（站点同款主题）到 public/doc/
 	@cp $(DOC_THEME_CSS) target/doc/theme.css
 	@cp rustdoc-theme/doc-boot.js target/doc/doc-boot.js
 	@cp $(DOC_SHELL_JS) target/doc/doc-shell.js
-	@rm -rf $(DOC_OUT)
-	@cp -r target/doc $(DOC_OUT)
-	@printf '<!DOCTYPE html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=yggdrasil/index.html"><title>Redirecting…</title></head><body><script>location.replace("yggdrasil/index.html")</script></body></html>' > $(DOC_OUT)/index.html
+	@rm -rf "$(DOC_OUT)"
+	@cp -r target/doc "$(DOC_OUT)"
+	@printf '<!DOCTYPE html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=yggdrasil/index.html"><title>Redirecting…</title></head><body><script>location.replace("yggdrasil/index.html")</script></body></html>' > "$(DOC_OUT)/index.html"
 
 # 同 doc，生成完自动用浏览器打开。flags 与 doc 相同，缓存是新的，只会打开
 # 页面，不会重新生成，也不会覆盖已复制的 theme.css。
