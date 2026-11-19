@@ -2,7 +2,7 @@
 #
 # Dockerfile.dev — 开发镜像（cargo leptos watch 热重载）
 #
-# 与生产 Dockerfile 共享相同的镜像源（TUNA/rsproxy/npmmirror/gh-proxy）和工具链
+# 与生产 Dockerfile 共享相同的镜像源（TUNA/rsproxy/npmmirror）和工具链
 # 安装逻辑。源码通过 COPY 快照 + compose watch 增量 sync 进容器（见
 # docker-compose.dev.yml 的 develop.watch 与文件头注释）。
 #
@@ -19,8 +19,8 @@ FROM rust:1.100-trixie
 #   CN_MIRROR=false (default): use all upstream/official sources (fast on CI
 #     runners outside China).
 #   CN_MIRROR=true: route all downloads through Chinese mirrors (TUNA for
-#     Debian apt, rsproxy for Rust/crates.io, npmmirror for Bun/npm,
-#     gh-proxy for GitHub Releases). Pass via: --build-arg CN_MIRROR=true
+#     Debian apt, rsproxy for Rust/crates.io, npmmirror for Bun/npm).
+#     Pass via: --build-arg CN_MIRROR=true
 # Individual mirror URLs are still ARG-overridable for custom mirrors.
 ARG CN_MIRROR=false
 # Exported as ENV so build recipes (make) can read $CN_MIRROR when needed.
@@ -31,7 +31,6 @@ ARG DEBIAN_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/debian
 ARG DEBIAN_SECURITY_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/debian-security
 ARG NPM_REGISTRY=https://registry.npmmirror.com
 ARG RS_PROXY=https://rsproxy.cn
-ARG GH_PROXY=https://gh-proxy.com
 
 # --- Debian apt: rewrite sources to the TUNA mirror (CN_MIRROR only). ---
 RUN if [ "$CN_MIRROR" = "true" ]; then \
@@ -113,19 +112,6 @@ RUN if [ "$CN_MIRROR" = "true" ]; then \
 # ── cargo-leptos（与生产 Dockerfile 一致）──────────────────────
 RUN cargo install cargo-leptos --version 0.3.12 --locked
 
-# ── Tailwind CSS v4 standalone ──────────────────────────────────
-ARG TAILWIND_VERSION=4.3.5
-RUN ARCH="$(dpkg --print-architecture)" \
-    && case "$ARCH" in \
-        amd64)  TW_ARCH=x64   ;; \
-        arm64)  TW_ARCH=arm64 ;; \
-        *) echo "unsupported arch: $ARCH" >&2; exit 1; \
-    esac \
-    && if [ "$CN_MIRROR" = "true" ]; then GH_PX="${GH_PROXY}"; else GH_PX=""; fi \
-    && GH_URL="${GH_PX:+${GH_PX}/}https://github.com/tailwindlabs/tailwindcss/releases/download/v${TAILWIND_VERSION}/tailwindcss-linux-${TW_ARCH}" \
-    && curl -fsSL -o /usr/local/bin/tailwindcss "${GH_URL}" \
-    && chmod +x /usr/local/bin/tailwindcss
-
 WORKDIR /build
 
 # ── 源码快照 ────────────────────────────────────────────────────
@@ -136,6 +122,6 @@ WORKDIR /build
 COPY . /build
 
 # 启动开发服务器：make dev 内含 bun install → 增量构建变化的库/高亮/字体
-# → tailwindcss → cargo leptos watch --split；构建记录放在 target/ volume 中。
+# → Bun 生成 CSS → cargo leptos watch --split；构建记录放在 target/ volume 中。
 # bun install 和 CSS 生成每次都执行（幂等，bun 有缓存秒完）。
 CMD ["make", "dev"]

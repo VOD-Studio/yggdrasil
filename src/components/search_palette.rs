@@ -520,7 +520,7 @@ fn search_palette_body(
             empty_action=move || {
                 view! {
                     <button
-                        class="btn btn-sm btn-secondary mt-4"
+                        class="btn btn-sm btn-secondary palette-search-retry"
                         type="button"
                         on:click=move |_| full_text_search()
                     >

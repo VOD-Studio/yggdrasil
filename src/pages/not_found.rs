@@ -70,7 +70,7 @@ pub fn NotFound() -> impl IntoView {
 pub fn PageLoadFailed() -> impl IntoView {
     crate::request_ctx::set_status(500);
     view! {
-        <div class="flex min-h-[50vh] items-center justify-center px-6 md:min-h-[55vh] animate-page-enter">
+        <div class="page-load-failure animate-page-enter">
             <EmptyState
                 mascot=Mascot::Cry
                 title="页面加载失败"

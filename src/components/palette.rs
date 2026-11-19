@@ -391,7 +391,7 @@ fn PaletteRow(
         String::new()
     };
     let meta_class = if entry.mono_meta {
-        "palette-option-meta font-mono"
+        "palette-option-meta palette-option-key"
     } else {
         "palette-option-meta"
     };

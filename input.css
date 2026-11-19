@@ -1,8 +1,10 @@
-/* Import order is the cascade order. Keep layer declarations in the source modules. */
-@import "tailwindcss";
+/* 导入顺序即层叠顺序。 */
+@layer theme, base, components, utilities;
 @import "./styles/theme.css";
 @import "./styles/motion.css";
+@import "./styles/reset.css";
 @import "./styles/base.css";
+@import "./styles/utilities.css";
 @import "./styles/components/pagination.css";
 @import "./styles/components/toc.css";
 @import "./styles/components/article.css";
@@ -27,5 +29,3 @@
 @import "./styles/pages/page-entry.css";
 @import "./styles/pages/writing-guide.css";
 @import "./styles/pages/notes-public.css";
-
-@source "./src/**/*.{rs,html}";

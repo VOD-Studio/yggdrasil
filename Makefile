@@ -1,7 +1,7 @@
 # Yggdrasil 构建入口。不带参数的 `make` 只列出常用 target（见 help）。
 #
 # 模块：
-#   mk/assets.mk    生成资源：libs、高亮/KaTeX CSS、Tailwind；release 全量 + dev 增量
+#   mk/assets.mk    生成资源：libs、高亮/KaTeX CSS、站点样式；release 全量 + dev 增量
 #   mk/docker.mk    镜像构建、Docker 开发环境、lint/test/fmt 工具容器
 include mk/assets.mk mk/docker.mk
 
@@ -62,12 +62,6 @@ check-dev-tools: ## 检查开发所需的宿主工具
 	if ! command -v cargo-leptos >/dev/null 2>&1 || ! cargo leptos --version 2>/dev/null | grep -Fxq 'cargo-leptos $(CARGO_LEPTOS_VERSION)'; then \
 		echo "error: cargo-leptos $(CARGO_LEPTOS_VERSION) is required" >&2; \
 		echo "  Install: make install-cargo-leptos" >&2; \
-		missing=1; \
-	fi; \
-	if ! command -v tailwindcss >/dev/null 2>&1; then \
-		echo "error: tailwindcss CLI (Tailwind CSS v4) is required" >&2; \
-		echo "  Install: brew install tailwindcss" >&2; \
-		echo "  Standalone binary: https://github.com/tailwindlabs/tailwindcss/releases" >&2; \
 		missing=1; \
 	fi; \
 	if ! command -v bun >/dev/null 2>&1; then \
@@ -202,7 +196,7 @@ fix: ## cargo fix + Biome format + cargo fmt（写入文件）
 # 只生成当前 lib crate 的文档（--no-deps），并包含内部模块与私有项。
 #
 # 站点化主题：源文件在 rustdoc-theme/。
-#   - theme.css（只放 import，模块在 css/）经 Tailwind 编译后用 rustdoc -e 注入
+#   - theme.css（只放 import，模块在 css/）经 Bun 打包后用 rustdoc -e 注入
 #     （落到文档根 theme.css）。
 #   - 三个 HTML 片段：in-header.html（<head> 末尾，加载 doc-boot.js 同步主题）、
 #     before-content.html（站点顶栏）、after-content.html（页脚、手机抽屉、
@@ -240,7 +234,7 @@ DOC_RUSTDOCFLAGS = -e $(CURDIR)/$(DOC_THEME_CSS) \
 doc: ## 生成 rustdoc（站点同款主题）到 public/doc/
 	@mkdir -p target $(DOC_FRAGMENT_DIR)
 	@cp $(DOC_FRAGMENTS) $(DOC_FRAGMENT_DIR)/
-	@tailwindcss -i rustdoc-theme/theme.css -o $(DOC_THEME_CSS) --minify
+	@$(CSS_BUILD) rustdoc-theme/theme.css --outfile="$(DOC_THEME_CSS)" --minify
 	@bun build rustdoc-theme/js/index.js --outfile $(DOC_SHELL_JS) --format=iife --target=browser --minify
 	@RUSTDOCFLAGS="$(DOC_RUSTDOCFLAGS)" cargo doc --lib --no-deps --document-private-items
 	@cp $(DOC_THEME_CSS) target/doc/theme.css

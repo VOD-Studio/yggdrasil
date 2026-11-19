@@ -538,7 +538,7 @@
   }
 
   /* ---- 脚注：文末发丝线分隔，等宽编号 ---- */
-  /* Tailwind preflight 已用相对定位抬高 sup，这里不再叠加 vertical-align。 */
+  /* 基础样式已用相对定位抬高 sup，这里不再叠加 vertical-align。 */
   .md-content .fn-ref {
     margin-inline-start: 0.1em;
     font-size: 0.75em;

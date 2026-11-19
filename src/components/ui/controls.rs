@@ -101,7 +101,7 @@ pub fn Button(
                 }
             }
         >
-            <span class="btn-label inline-flex items-center gap-[inherit]">
+            <span class="btn-label">
                 {move || icon.get().map(|icon| view! { <Icon name=icon size=px/> })}
                 {children()}
             </span>

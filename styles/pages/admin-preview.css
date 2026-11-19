@@ -154,3 +154,5 @@
     animation: listbox-fade 150ms linear both;
   }
 }
+
+.post-preview-skeleton { width: 100%; }

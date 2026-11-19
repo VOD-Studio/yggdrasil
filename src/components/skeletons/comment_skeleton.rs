@@ -12,25 +12,25 @@ pub fn CommentListSkeleton() -> impl IntoView {
         <div class="comment-list" aria-hidden="true">
             <div class="comment">
                 <SkeletonBox class="comment-avatar"/>
-                <div class="comment-main flex flex-col gap-2">
-                    <SkeletonBox class="h-3.5 w-24"/>
-                    <SkeletonBox class="h-3 w-full"/>
-                    <SkeletonBox class="h-3 w-2/3"/>
+                <div class="comment-main comment-skeleton-lines">
+                    <SkeletonBox height="0.875rem" width="6rem"/>
+                    <SkeletonBox height="0.75rem" width="100%"/>
+                    <SkeletonBox height="0.75rem" width="calc(2 / 3 * 100%)"/>
                 </div>
             </div>
             <div class="comment is-child">
                 <SkeletonBox class="comment-avatar"/>
-                <div class="comment-main flex flex-col gap-2">
-                    <SkeletonBox class="h-3.5 w-20"/>
-                    <SkeletonBox class="h-3 w-3/4"/>
+                <div class="comment-main comment-skeleton-lines">
+                    <SkeletonBox height="0.875rem" width="5rem"/>
+                    <SkeletonBox height="0.75rem" width="calc(3 / 4 * 100%)"/>
                 </div>
             </div>
             <div class="comment">
                 <SkeletonBox class="comment-avatar"/>
-                <div class="comment-main flex flex-col gap-2">
-                    <SkeletonBox class="h-3.5 w-28"/>
-                    <SkeletonBox class="h-3 w-full"/>
-                    <SkeletonBox class="h-3 w-1/2"/>
+                <div class="comment-main comment-skeleton-lines">
+                    <SkeletonBox height="0.875rem" width="7rem"/>
+                    <SkeletonBox height="0.75rem" width="100%"/>
+                    <SkeletonBox height="0.75rem" width="calc(1 / 2 * 100%)"/>
                 </div>
             </div>
         </div>

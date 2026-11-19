@@ -13,11 +13,10 @@ use crate::components::comments::section::{
 use crate::models::comment::PublicComment;
 use crate::utils::comment_storage::PendingComment;
 
-const MODE_ACTIVE_CLASS: &str = "px-3 py-1.5 rounded-full border border-clay-text text-xs font-medium text-clay-text bg-clay-text/10 transition-colors cursor-pointer";
-const MODE_IDLE_CLASS: &str = "px-3 py-1.5 rounded-full border border-ink-3 text-xs text-fg-2 hover:text-fg hover:border-ink-3/80 transition-colors cursor-pointer";
-const ACTION_CLASS: &str =
-    "px-3 py-1.5 rounded-full border border-ink-3 text-xs text-fg-2 hover:text-fg";
-const PANEL_CLASS: &str = "rounded-2xl border border-ink-3/70 bg-surface-2/30 p-4 sm:p-5 shadow-xs";
+const MODE_ACTIVE_CLASS: &str = "showcase-comment-control showcase-comment-mode is-active";
+const MODE_IDLE_CLASS: &str = "showcase-comment-control showcase-comment-mode";
+const ACTION_CLASS: &str = "showcase-comment-control";
+const PANEL_CLASS: &str = "showcase-comment-panel";
 
 #[cfg(target_arch = "wasm32")]
 struct VisibleObserver {
@@ -311,14 +310,14 @@ fn CommentPreview(slug: String, detail: bool) -> impl IntoView {
             return view! {
                 <div
                     node_ref=placeholder
-                    class="min-h-[190px] w-full rounded-xl border border-ink-3 bg-surface-2/40 p-4"
+                    class="showcase-comment-loading"
                 >
-                    <div class="flex items-center gap-2 text-xs text-fg-3">
-                        <span class="size-2 rounded-full bg-clay-text/50"></span>
+                    <div class="showcase-comment-loading-label">
+                        <span class="showcase-comment-loading-dot"></span>
                         "评论编辑器将在卡片出现时加载"
                     </div>
-                    <div class="mt-4 h-9 rounded-lg bg-surface-0/70"></div>
-                    <div class="mt-3 h-20 rounded-lg bg-surface-0/70"></div>
+                    <div class="showcase-comment-loading-head"></div>
+                    <div class="showcase-comment-loading-body"></div>
                 </div>
             }
             .into_any();
@@ -362,7 +361,7 @@ fn CommentPreview(slug: String, detail: bool) -> impl IntoView {
         };
         let actions = (detail && slug == "comment-section").then(|| {
             view! {
-                <div class="flex flex-wrap gap-2 mb-4">
+                <div class="showcase-comment-options">
                     <button
                         type="button"
                         class=ACTION_CLASS
@@ -398,10 +397,10 @@ fn CommentPreview(slug: String, detail: bool) -> impl IntoView {
         });
         let note = detail
             .then(|| {
-                view! { <p class="mb-4 text-xs text-fg-3">"本地演示，评论不会保存，也不会上传图片。"</p> }
+                view! { <p class="showcase-comment-guide">"本地演示，评论不会保存，也不会上传图片。"</p> }
             });
         view! {
-            <div class="w-full min-w-0">
+            <div class="showcase-comment-demo">
                 {note}
                 {actions}
                 {body}
@@ -595,7 +594,7 @@ fn CommentItemPreview(detail: bool) -> impl IntoView {
             ..base_comment(102, Some(101), 1, "阿木", "<p>我也喜欢这句话。</p>")
         };
         return view! {
-            <div class="comment-list w-full min-w-0 px-1">
+            <div class="comment-list showcase-comment-list">
                 <CommentItem comment=parent post_id=0/>
                 <CommentItem comment=reply post_id=0/>
             </div>
@@ -621,12 +620,12 @@ fn CommentItemPreview(detail: bool) -> impl IntoView {
     );
 
     view! {
-        <div class="w-full min-w-0">
-            <p class="mb-3 text-xs text-fg-3">
+        <div class="showcase-comment-demo">
+            <p class="showcase-comment-selection">
                 "本地演示，可切换不同形态体验 CommentItem 的回复表单联动、草稿保留与身份样式。"
             </p>
-            <div class="flex flex-wrap items-center gap-2 mb-3">{buttons}</div>
-            <p class="text-xs text-fg-2 mb-4 leading-relaxed">
+            <div class="showcase-comment-actions">{buttons}</div>
+            <p class="showcase-comment-explanation">
                 {move || match mode.get() {
                     CommentItemMode::Standard => "标准嵌套链：展示博主顶层评论与嵌套子回复，点击“回复”可展开内嵌表单并输入草稿。",
                     CommentItemMode::ReplyDraft => "回复展开与草稿保留：展开内嵌 CommentForm 表单，表单自动通过负 margin 抵消嵌套缩进；取消回复再重新打开时保留草稿。",
@@ -766,7 +765,7 @@ fn CommentListPreview(detail: bool) -> impl IntoView {
             stored_at: "2026-09-22T10:30:00Z".to_string(),
         }];
         return view! {
-            <div class="w-full min-w-0 px-1">
+            <div class="showcase-comment-list">
                 <CommentList comments=Signal::stored(comments) pending=Signal::stored(pending) post_id=0/>
             </div>
         }
@@ -785,12 +784,12 @@ fn CommentListPreview(detail: bool) -> impl IntoView {
     );
 
     view! {
-        <div class="w-full min-w-0">
-            <p class="mb-3 text-xs text-fg-3">
+        <div class="showcase-comment-demo">
+            <p class="showcase-comment-selection">
                 "本地演示，可切换不同形态体验 CommentList 的树形合并、排序与孤儿容错。"
             </p>
-            <div class="flex flex-wrap items-center gap-2 mb-3">{buttons}</div>
-            <p class="text-xs text-fg-2 mb-4 leading-relaxed">
+            <div class="showcase-comment-actions">{buttons}</div>
+            <p class="showcase-comment-explanation">
                 {move || match mode.get() {
                     CommentListMode::Merged => "评论与待审核：服务端已审核评论与本地待审核评论统一合并为树形结构；待审核评论展示为带呼吸指示灯的半透明卡片，按时间升序插入对应层级。",
                     CommentListMode::ApprovedOnly => "仅已审核：纯已审核评论树，展现多级回复的深度缩进、左侧引导线与完整回复交互。",
@@ -803,7 +802,7 @@ fn CommentListPreview(detail: bool) -> impl IntoView {
                     let (comments, pending) = list_mode_data(mode.get());
                     if comments.is_empty() && pending.is_empty() {
                         view! {
-                            <div class="text-center py-8 px-4 rounded-2xl border border-dashed border-ink-3 text-fg-2">
+                            <div class="showcase-comment-empty">
                                 "暂无评论"
                             </div>
                         }
@@ -862,8 +861,8 @@ fn ShellReplyButton(
                 is_active()
                     .then(|| {
                         view! {
-                            <div class="mt-2.5 flex items-center gap-2 p-2.5 rounded-xl border border-ink-3 bg-surface-2/60 text-xs text-fg-2 animate-in fade-in duration-200">
-                                <span class="size-1.5 rounded-full bg-clay-text shrink-0"></span>
+                            <div class="showcase-comment-target">
+                                <span class="showcase-comment-target-dot"></span>
                                 <span>"children 插槽生效中：可挂载回复表单或快捷操作栏。"</span>
                             </div>
                         }
@@ -1062,7 +1061,7 @@ fn CommentCardShellPreview(detail: bool) -> impl IntoView {
             ),
         ];
         return view! {
-            <div class="comment-list w-full min-w-0 px-1">
+            <div class="comment-list showcase-comment-list">
                 {render_shell_samples(replying_to, &samples)}
             </div>
         }
@@ -1082,12 +1081,12 @@ fn CommentCardShellPreview(detail: bool) -> impl IntoView {
     );
 
     view! {
-        <div class="w-full min-w-0">
-            <p class="mb-3 text-xs text-fg-3">
+        <div class="showcase-comment-demo">
+            <p class="showcase-comment-selection">
                 "本地演示，切换下方的形态标签可预览卡片骨架的不同状态与缩进效果。"
             </p>
-            <div class="flex flex-wrap items-center gap-2 mb-3">{buttons}</div>
-            <p class="text-xs text-fg-2 mb-4 leading-relaxed">
+            <div class="showcase-comment-actions">{buttons}</div>
+            <p class="showcase-comment-explanation">
                 {move || match mode.get() {
                     CardShellMode::All => "完整树形展示：包含顶层评论、一级嵌套引导线、二级阶梯缩进与待审核半透明状态。",
                     CardShellMode::TopLevel => "顶层评论（depth = 0）：无左侧边框与缩进，包含头像、作者徽章、绝对时间与回复操作。",
@@ -1096,7 +1095,7 @@ fn CommentCardShellPreview(detail: bool) -> impl IntoView {
                     CardShellMode::Pending => "待审核状态（muted = true）：整卡淡化，配合“审核中”徽章与状态点。",
                 }}
             </p>
-            <div class="comment-list rounded-2xl border border-ink-3/70 bg-surface-2/30 p-4 sm:p-5 shadow-xs">
+            <div class="comment-list showcase-comment-panel">
                 {move || shell_mode_rows(mode.get(), replying_to)}
             </div>
         </div>

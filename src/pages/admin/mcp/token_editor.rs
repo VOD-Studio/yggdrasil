@@ -287,7 +287,7 @@ pub(super) fn CreateTokenDialog(
             visible=visible
             closing=closing
             title="新建令牌"
-            overlay_padding="p-4"
+            overlay_padding="dialog-overlay-compact"
             panel_class="mcp-dialog"
         >
             <form class="mcp-form" on:submit=submit>
@@ -405,7 +405,7 @@ pub(super) fn EditPermissionsDialog(
             visible=visible
             closing=closing
             title="编辑令牌权限"
-            overlay_padding="p-4"
+            overlay_padding="dialog-overlay-compact"
             panel_class="mcp-dialog"
         >
             <form class="mcp-form" on:submit=save>

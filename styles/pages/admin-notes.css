@@ -946,3 +946,5 @@ a.admin-notes-row:focus-visible .admin-notes-edit {
     animation: none;
   }
 }
+
+.note-row-skeleton-copy { padding: 0.625rem 1rem; }

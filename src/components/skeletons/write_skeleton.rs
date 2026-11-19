@@ -13,44 +13,44 @@ pub fn WriteSkeleton() -> impl IntoView {
         <div class="write-page" aria-hidden="true">
             <div class="write-head">
                 <div class="write-head-left">
-                    <SkeletonBox class="h-[34px] w-[34px] rounded-lg"/>
-                    <SkeletonBox class="h-3.5 w-40 rounded"/>
+                    <SkeletonBox height="34px" width="34px" radius="0.5rem"/>
+                    <SkeletonBox height="0.875rem" width="10rem" radius="0.25rem"/>
                 </div>
                 <div class="write-head-actions">
-                    <SkeletonBox class="h-3.5 w-24 rounded mr-2"/>
-                    <SkeletonBox class="h-[34px] w-16 rounded-lg"/>
-                    <SkeletonBox class="h-[34px] w-16 rounded-lg"/>
+                    <SkeletonBox height="0.875rem" width="6rem" radius="0.25rem" style="--skeleton-margin-right: 0.5rem"/>
+                    <SkeletonBox height="34px" width="4rem" radius="0.5rem"/>
+                    <SkeletonBox height="34px" width="4rem" radius="0.5rem"/>
                 </div>
             </div>
             <div class="write-body">
                 <div class="write-main">
                     <div class="write-doc">
-                        <SkeletonBox class="h-10 w-4/5 rounded-md"/>
-                        <SkeletonBox class="h-3.5 w-64 rounded mt-4"/>
+                        <SkeletonBox height="2.5rem" width="calc(4 / 5 * 100%)" radius="0.375rem"/>
+                        <SkeletonBox height="0.875rem" width="16rem" radius="0.25rem" style="--skeleton-margin-top: 1rem"/>
                         <div class="write-rule"></div>
                         <div class="space-y-3">
-                            <SkeletonBox class="h-4 w-full rounded"/>
-                            <SkeletonBox class="h-4 w-11/12 rounded"/>
-                            <SkeletonBox class="h-4 w-4/5 rounded"/>
-                            <SkeletonBox class="h-4 w-full rounded mt-6"/>
-                            <SkeletonBox class="h-4 w-3/4 rounded"/>
+                            <SkeletonBox height="1rem" width="100%" radius="0.25rem"/>
+                            <SkeletonBox height="1rem" width="calc(11 / 12 * 100%)" radius="0.25rem"/>
+                            <SkeletonBox height="1rem" width="calc(4 / 5 * 100%)" radius="0.25rem"/>
+                            <SkeletonBox height="1rem" width="100%" radius="0.25rem" style="--skeleton-margin-top: 1.5rem"/>
+                            <SkeletonBox height="1rem" width="calc(3 / 4 * 100%)" radius="0.25rem"/>
                         </div>
                     </div>
                 </div>
                 <div class="write-drawer-slot write-skeleton-drawer">
                     <div class="write-drawer">
-                        <SkeletonBox class="h-4 w-20 rounded"/>
+                        <SkeletonBox height="1rem" width="5rem" radius="0.25rem"/>
                         {(0..3)
                             .map(|_| {
                                 view! {
                                     <div>
-                                        <SkeletonBox class="h-3 w-16 rounded mb-2"/>
-                                        <SkeletonBox class="h-9 w-full rounded-lg"/>
+                                        <SkeletonBox height="0.75rem" width="4rem" radius="0.25rem" style="--skeleton-margin-bottom: 0.5rem"/>
+                                        <SkeletonBox height="2.25rem" width="100%" radius="0.5rem"/>
                                     </div>
                                 }
                             })
                             .collect_view()}
-                        <SkeletonBox class="w-full aspect-[21/9] rounded-[10px]"/>
+                        <SkeletonBox width="100%" radius="10px" style="--skeleton-aspect-ratio: 21/9"/>
                     </div>
                 </div>
             </div>

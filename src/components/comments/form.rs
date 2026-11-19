@@ -438,7 +438,7 @@ pub fn CommentForm(
                         .get()
                         .map(|(msg, variant)| {
                             view! {
-                                <div class="mb-3" aria-live="polite">
+                                <div class="comment-form-message" aria-live="polite">
                                     <AlertBox message=msg variant=variant/>
                                 </div>
                             }
@@ -499,7 +499,7 @@ pub fn CommentForm(
                             .then(move || {
                                 view! {
                                     <textarea
-                                        class="hidden"
+                                        hidden
                                         aria-hidden="true"
                                         tabindex="-1"
                                         prop:value=move || honeypot.get()
@@ -558,7 +558,7 @@ pub fn CommentForm(
                                         </label>
                                         <input
                                             id=image_input_dom_id
-                                            class="hidden"
+                                            hidden
                                             type="file"
                                             accept="image/jpeg,image/png,image/gif,image/webp"
                                             multiple=true
@@ -596,7 +596,7 @@ pub fn CommentForm(
                                 if uploads_in_flight.with(|u| u.uploading > 0) {
                                     view! {
                                         <span class="comment-hint">
-                                            <span class="inline-block" inner_html=SPINNER_SVG></span>
+                                            <span class="comment-upload-spinner" inner_html=SPINNER_SVG></span>
                                             "图片上传中…"
                                         </span>
                                     }

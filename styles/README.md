@@ -1,17 +1,10 @@
 # 样式源文件
 
-`input.css` 是唯一 Tailwind 入口，导入顺序就是原有层叠顺序。
+`input.css` 是全站入口，`input-admin.css` 只为后台和组件图鉴生成附加样式。Bun 合并导入文件，入口中的导入顺序即层叠顺序。
 
-- `theme.css`：Tailwind 语义 token 和 dark variant。
-- `base.css`：原有 base 层规则，包括主题变量覆盖与 MCP 接入卡片。
-- `components/`：保留 `@layer components` 的分页、文章卡片、目录、正文、图表、图片、更新日志和控件。
-- `pages/`：原有未分层规则，按页面及导航/阅读交互分组。
+- `theme.css` 和 `motion.css` 提供站点与 rustdoc 共用的主题和动效变量。
+- `reset.css` 和 `base.css` 提供站点元素默认值及全局规则。
+- `components/` 收录跨页面组件样式，`pages/` 收录页面和路由交互样式。
+- `utilities.css` 提供读屏标签和等宽数字两个通用类。
 
-迁移只调整文件归属。不要为了排序文件名而重排入口，不要随意把未分层规则放进 components 层。
-`@source` 留在根入口，避免相对路径变成 `styles/src`。新增规则放进所属模块；跨页面基础规则需检查层级和覆盖顺序。
-
-`make css`、`make css-watch`、`make dev-assets` 和 `make build-assets` 都使用同一入口。
-Docker 的完整源码 COPY 包含此目录，Compose watch 对它采用与 `input.css` 相同的 rebuild 策略。
-`public/style.css` 仍为忽略的生成产物，不提交。
-
-本次拆分的压缩 CSS 与拆分前逐字节相同；后续功能改动不要求维持该历史字节值。
+`make css` 生成开发产物，`make css-watch` 持续监听两个入口及其导入文件，`make build-assets` 生成压缩产物。两份输出都在 `public/`，属于忽略的生成文件。

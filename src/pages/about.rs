@@ -359,11 +359,11 @@ fn AboutStatsSkeleton() -> impl IntoView {
     view! {
         <div role="status" aria-label="正在加载统计">
             <div aria-hidden="true">
-                <SkeletonBox class="h-4 mt-4 w-64"/>
+                <SkeletonBox height="1rem" width="16rem" style="--skeleton-margin-top: 1rem"/>
                 <div class="about-chart">
-                    <SkeletonBox class="h-3 w-20 mb-4"/>
+                    <SkeletonBox height="0.75rem" width="5rem" style="--skeleton-margin-bottom: 1rem"/>
                     {(0..6)
-                        .map(|_| view! { <SkeletonBox class="h-2 mt-4 w-full"/> })
+                        .map(|_| view! { <SkeletonBox height="0.5rem" width="100%" style="--skeleton-margin-top: 1rem"/> })
                         .collect_view()}
                 </div>
             </div>

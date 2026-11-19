@@ -36,7 +36,7 @@ Yggdrasil is a self-hosted blog + CMS + notes/knowledge base: Rust 2021, Leptos 
 - `src/tasks/`: background jobs (purges, backups, cache sync, sysinfo); `src/infra/`: Docker runner, WebP.
 - `libs/`: Bun workspace — `@yggdrasil/{shared, core, tiptap-editor, codemirror-editor, lightbox, xterm-terminal}`. `shared` is inlined at compile time; packages never import each other at runtime. Package builds call `libs/vite-iife.ts`; tests use `libs/vitest-base.ts`; scripts resolve libs deps via `scripts/libs-modules.ts`.
 - `migrations/`: `NNN_description.sql` (latest `032_comment_avatar_asset_refs.sql`).
-- `styles/` + `input.css`: Tailwind v4 CSS-first (no tailwind config file); import order matters.
+- `styles/` + `input.css`: native CSS bundled by Bun; import order matters.
 - `scripts/`: Bun TypeScript browser regressions, release assembly (`build-release.ts`, `test-release-split.ts`), `test-databases.sh`, asset generators, `deploy.fish` (build the amd64 image here with CN mirrors and ship it over ssh to xun/rua, same role-aware flow and rollback as the CI deploy jobs). No EdgeOne prefetch: `CreatePrefetchTask` pulls identity via Range requests and EdgeOne then serves its own, 15–25% larger brotli for a year.
 - `docker/`: deployment compose files and code-runner images (`docker/build-runners.sh`).
 - `docs/`: design notes (`v1.0-重设计方案.md`; `界面设计规范.md` describes the implemented UI and pairs with the `docs/skills/yggdrasil-ui-design` skill; `10-设计风格与动效体系总结.md` is external reference, not this repo), `首屏性能实测-2026-10-28.md` (pre-optimization baseline), `markdown-features-test.md` (rendering test post); `docs/双机主备/` is the production xun/rua primary–standby runbook plus the exact compose files, systemd units and scripts installed on the hosts (edit there first, then copy to the servers).
@@ -46,10 +46,10 @@ Yggdrasil is a self-hosted blog + CMS + notes/knowledge base: Rust 2021, Leptos 
 Run bare `make` to list annotated targets. Prefer Makefile targets: they set `SSR_CACHE_SECS=0` in dev and wire cargo-leptos with the pinned WASM toolchain.
 
 ```sh
-make check-dev-tools          # verify cargo-leptos 0.3.12 / tailwindcss / bun
+make check-dev-tools          # verify cargo-leptos 0.3.12 / bun
 make dev                      # incremental assets + cargo leptos watch
 make dev-assets               # refresh changed assets for a running server
-make build-libs | make css    # libs IIFE bundles | Tailwind → public/style.css + public/admin.css
+make build-libs | make css    # libs IIFE bundles | Bun CSS bundling → public/style.css + public/admin.css
 make build                    # full release: assets, docs, split WASM frontend, server, assemble target/release-dist, brotli, verify
 make wasm-toolchain           # install pinned nightly + rust-src + wasm32
 make test | make lint | make fmt | make fix
@@ -76,7 +76,7 @@ Docker fallbacks only when local tools are missing: `make docker-dev` (port 8080
 - Components showcase: every `pub fn PascalCase` component under `src/components` (except layouts/header/footer) must have an entry in `src/pages/components_showcase_data.json` (unique slug, known group, non-empty `code`, `preview_route`; enforced by tests in `src/pages/components_showcase.rs`). Previews reuse production display code with fixtures and local callbacks, must not send auth/upload/comment/exec requests, and must clean up browser instances on unmount.
 - `CHANGELOG.md` is embedded via `include_str!` (`api/changelog.rs`) and rendered at `/changelog`.
 - Fixed-path styles/scripts under `public/` (`style.css`, `yggdrasil-core.*`, lightbox, editor/terminal bundles) are referenced through `static_assets::url` (Rust) or `assetUrl` from `@yggdrasil/shared` (libs), which append `?v=<content hash>` from a version table the shell ships in `<script id="ygg-asset-versions">`; only the current hash is served `immutable`. Add new such files to `static_assets::ALL`; never hand-write `?v=`.
-- Two Tailwind entries: `input.css` → `public/style.css` (every page) and `input-admin.css` → `public/admin.css` (admin `/admin…` and the components showcase `/about/components…` only: SSR writes the `<link>` via `static_assets::needs_admin_css`, client navigation inserts it from those routes' `LazyRoute::data()` via `static_assets::ensure_admin_css`). Admin/showcase-only styles go into `input-admin.css`; public styles must not reference admin classes. `routes::is_admin_path` is segment-aware so `/admin.css` stays public (not behind `admin_guard`).
+- Two site CSS entries: `input.css` → `public/style.css` (every page) and `input-admin.css` → `public/admin.css` (admin `/admin…` and the components showcase `/about/components…` only: SSR writes the `<link>` via `static_assets::needs_admin_css`, client navigation inserts it from those routes' `LazyRoute::data()` via `static_assets::ensure_admin_css`). Admin/showcase-only styles go into `input-admin.css`; public styles must not reference admin classes. `routes::is_admin_path` is segment-aware so `/admin.css` stays public (not behind `admin_guard`).
 - Release WASM is built with `-Zfmt-debug=none -Zlocation-detail=none`: `{:?}`/`derive(Debug)` print nothing in the browser, so never use Debug output as data (keys, UI text, serialization). Client date formatting uses `utils::time::{ymd, md, hm, hms_millis}` (no chrono strftime); `DateTime<Utc>` fields of client-deserialized DTOs carry `#[cfg_attr(target_arch = "wasm32", serde(deserialize_with = "crate::models::rfc3339::…"))]`.
 - Typography: `text-autospace`, no CJK italics, `tabular-nums` for dynamic numbers.
 
@@ -90,7 +90,7 @@ Docker fallbacks only when local tools are missing: `make docker-dev` (port 8080
 
 ## Runtime/Tooling Preferences
 
-- Pins: cargo-leptos 0.3.12, Leptos 0.8.23, Tailwind 4.3.5 **standalone** binary (the npm CLI can't resolve `tailwindcss` without a root `node_modules`), Bun 1.4.4 (`packageManager`), WASM nightly `nightly-2026-11-19` (release frontend uses `-Zbuild-std`), Rust. There is no `rust-toolchain.toml`.
+- Pins: cargo-leptos 0.3.12, Leptos 0.8.23, Bun 1.4.4 (`packageManager`), WASM nightly `nightly-2026-11-19` (release frontend uses `-Zbuild-std`), Rust. There is no `rust-toolchain.toml`.
 - Bun only. No Node.js or pnpm; `scripts/*.ts` use Bun directly (`bun scripts/<name>.ts`); run `cd libs && bun run typecheck` for strict type checking (it already includes the tooling configs and `scripts/`). Standalone CLI scripts have a `#!/usr/bin/env bun` shebang.
 - Changing frontend deps: `cd libs && BUN_CONFIG_REGISTRY=https://registry.npmjs.org/ bun install`; keep per-package registry URLs out of `bun.lock`. `bunfig.toml` enforces a 1-day `minimumReleaseAge`. `@tiptap/markdown` is patched (`patchedDependencies` in `libs/package.json`, `libs/patches/`): bumping it means regenerating the patch.
 - Generated output is never committed: `public/style.css`, `public/admin.css`, `public/highlight.css`, `public/katex/`, `public/doc/`, every `public/<lib>/` bundle dir, `target/site`, `target/release-dist`, `release-manifest.json`, `*.br`. Tracked: `public/icons/`, `public/images/`, `public/skills/`, favicons, `manifest.webmanifest`.

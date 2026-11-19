@@ -101,6 +101,9 @@ if (command === 'bun' && args[0] === 'install') {
     'libs/node_modules/katex/dist/fonts/example.woff2']) {
     if (!fs.existsSync(path.join(root, file))) write(file);
   }
+} else if (command === 'bun' && args[0] === 'build') {
+  const out = args.find((arg) => arg.startsWith('--outfile=')).slice('--outfile='.length);
+  record('css ' + out); write(out);
 } else if (command === 'bun') {
   const name = path.basename(process.cwd());
   record('build ' + name);
@@ -110,11 +113,9 @@ if (command === 'bun' && args[0] === 'install') {
   console.log('cargo-leptos 0.3.12');
 } else if (command === 'cargo') {
   record('highlight'); write('public/highlight.css');
-} else if (command === 'tailwindcss') {
-  const out = args[args.indexOf('-o') + 1]; record('css ' + out); write(out);
 } else if (command === 'rustup') console.log('llvm-tools-aarch64-apple-darwin');
 `;
-  for (const tool of ['bun', 'cargo', 'tailwindcss', 'rustup', 'cargo-leptos']) {
+  for (const tool of ['bun', 'cargo', 'rustup', 'cargo-leptos']) {
     write(`bin/${tool}`, mock);
     fs.chmodSync(path.join(root, `bin/${tool}`), 0o755);
   }

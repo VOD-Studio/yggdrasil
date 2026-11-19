@@ -16,10 +16,10 @@ pub fn AssetsGridSkeleton() -> impl IntoView {
                     view! {
                         <li class="asset-tile">
                             <span class="asset-tile-open">
-                                <SkeletonBox class="aspect-[4/3] w-full rounded-none"/>
+                                <SkeletonBox width="100%" radius="0" style="--skeleton-aspect-ratio: 4/3"/>
                                 <span class="asset-tile-text">
-                                    <SkeletonBox class="h-3.5 w-3/4 rounded"/>
-                                    <SkeletonBox class="h-3 w-1/2 rounded mt-1.5"/>
+                                    <SkeletonBox height="0.875rem" width="calc(3 / 4 * 100%)" radius="0.25rem"/>
+                                    <SkeletonBox height="0.75rem" width="calc(1 / 2 * 100%)" radius="0.25rem" style="--skeleton-margin-top: 0.375rem"/>
                                 </span>
                             </span>
                         </li>
@@ -37,20 +37,20 @@ pub fn AssetsSkeleton() -> impl IntoView {
         <div class="admin-assets" aria-hidden="true">
             <div class="admin-assets-main">
                 <AdminPageHeadSkeleton
-                    title_width="w-20"
-                    subtitle_width="w-64"
+                    title_width="5rem"
+                    subtitle_width="16rem"
                     actions=|| {
                         view! {
-                            <SkeletonBox class="h-[34px] w-[34px] rounded-lg"/>
-                            <SkeletonBox class="h-[34px] w-20 rounded-lg"/>
+                            <SkeletonBox height="34px" width="34px" radius="0.5rem"/>
+                            <SkeletonBox height="34px" width="5rem" radius="0.5rem"/>
                         }
                     }
                 />
                 <div class="admin-toolbar">
-                    <SkeletonBox class="h-8 w-64 rounded-full"/>
+                    <SkeletonBox height="2rem" width="16rem" radius="9999px"/>
                     <div class="admin-toolbar-filters">
-                        <SkeletonBox class="h-[30px] w-60 rounded-lg"/>
-                        <SkeletonBox class="h-[30px] w-24 rounded-lg"/>
+                        <SkeletonBox height="30px" width="15rem" radius="0.5rem"/>
+                        <SkeletonBox height="30px" width="6rem" radius="0.5rem"/>
                     </div>
                 </div>
                 <AssetsGridSkeleton/>

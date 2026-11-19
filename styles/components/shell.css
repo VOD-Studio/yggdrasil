@@ -54,9 +54,9 @@
     padding-inline: 1.5rem;
   }
 
-  /* 路由挂起骨架贴在页头下方，与主区上内边距（py-6）一致。
+  /* 路由挂起骨架贴在页头下方，与主区的移动端上内边距一致。
      main 的宽度跟随已显示的页面，目标页可能更宽（880px 页面切到 1152px 图鉴）：槽位按外壳宽度
-     （挂起期间外壳是尺寸查询容器）以 main 中心居中、由目标页的 max-w 类封顶，内边距与 main
+     （挂起期间外壳是尺寸查询容器）以 main 中心居中、由目标页的宽度类封顶，内边距与 main
      相同，骨架内容区即目标页内容区。 */
   .site-route-pending {
     --route-pending-top: calc(var(--site-header-height) + 1.5rem);
@@ -70,6 +70,30 @@
      横向裁剪上移到外壳，旧正文的横向溢出仍不会撑出页面横向滚动。 */
   .site-shell {
     --route-pending-overflow: visible clip;
+    display: flex;
+    flex-direction: column;
+    background-color: var(--color-surface-0);
+  }
+
+  .site-shell-viewport { min-height: 100vh; }
+  .site-shell-embedded { min-height: 0; }
+
+  .site-main {
+    flex: 1;
+    width: 100%;
+    margin-inline: auto;
+    padding: 1.5rem;
+    overflow-x: clip;
+  }
+
+  .site-width-compact { max-width: 48rem; }
+  .site-width-default { max-width: 880px; }
+  .site-width-article { max-width: 1240px; }
+  .site-width-showcase { max-width: 72rem; }
+  .showcase-loading { padding-block: 5rem; }
+
+  @media (min-width: 48rem) {
+    .site-main { padding-block: 3rem; }
   }
 
   html.is-route-pending .site-shell:has(> main > .route-pending) {
@@ -721,5 +745,19 @@
       width: 4.5rem;
       height: 4.5rem;
     }
+  }
+}
+
+@layer components {
+  .mobile-nav-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+  }
+
+  .mobile-nav-divider {
+    height: var(--hairline);
+    margin: 0.75rem 0.25rem;
+    background-color: var(--color-hairline);
   }
 }

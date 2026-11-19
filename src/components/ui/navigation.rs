@@ -42,7 +42,7 @@ pub fn Pagination(
                     })
             }}
             <span
-                class="col-start-2 row-start-1 text-xs text-fg-3 whitespace-nowrap tabular-nums"
+                class="frontend-pagination-count tabular-nums"
                 aria-label=move || format!("第 {} 页，共 {} 页", current_page.get(), total_pages.get())
                 aria-current="page"
             >
@@ -53,7 +53,7 @@ pub fn Pagination(
                     .then(|| {
                         view! {
                             <a
-                                class="btn btn-sm btn-outline col-start-3 row-start-1 justify-self-end"
+                                class="btn btn-sm btn-outline frontend-pagination-next"
                                 href=next_route.get()
                             >
                                 "下一页"
@@ -215,7 +215,7 @@ pub fn TagChip(
 ) -> impl IntoView {
     let class = match variant.as_str() {
         "solid" => "chip chip-clay",
-        "text" => "inline-flex items-center py-1 text-fg-2 hover:text-fg underline decoration-hairline underline-offset-4 hover:decoration-clay transition-colors focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-clay",
+        "text" => "chip-link",
         _ => "chip",
     };
     view! {

@@ -367,3 +367,12 @@
     .changelog-nav[data-ready] .changelog-nav-indicator { transition: none; }
   }
 }
+
+@layer components {
+  .changelog-card-skeleton-lines {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-top: 1rem;
+  }
+}

@@ -11,16 +11,16 @@ use crate::components::skeletons::atoms::{AdminPageHeadSkeleton, SkeletonBox};
 pub fn RunnerSkeleton() -> impl IntoView {
     view! {
         <div class="admin-runner" aria-hidden="true">
-            <AdminPageHeadSkeleton title_width="w-28" subtitle_width="w-72"/>
+            <AdminPageHeadSkeleton title_width="7rem" subtitle_width="18rem"/>
             <div class="runner-admin-grid">
                 <div>
-                    <SkeletonBox class="h-8 w-80 rounded-full mb-3"/>
-                    <SkeletonBox class="h-72 w-full rounded-xl"/>
+                    <SkeletonBox height="2rem" width="20rem" radius="9999px" style="--skeleton-margin-bottom: 0.75rem"/>
+                    <SkeletonBox height="18rem" width="100%" radius="0.75rem"/>
                 </div>
                 <div class="admin-panel runner-admin-side">
-                    <SkeletonBox class="h-4 w-20 rounded"/>
-                    <SkeletonBox class="h-20 w-full rounded"/>
-                    <SkeletonBox class="h-24 w-full rounded-lg"/>
+                    <SkeletonBox height="1rem" width="5rem" radius="0.25rem"/>
+                    <SkeletonBox height="5rem" width="100%" radius="0.25rem"/>
+                    <SkeletonBox height="6rem" width="100%" radius="0.5rem"/>
                 </div>
             </div>
         </div>

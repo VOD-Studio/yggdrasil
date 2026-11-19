@@ -15,12 +15,12 @@ pub fn AdminCommentsListSkeleton() -> impl IntoView {
                 .map(|_| {
                     view! {
                         <div class="admin-comment">
-                            <SkeletonBox class="h-4 w-4 rounded"/>
-                            <SkeletonBox class="h-[30px] w-[30px] rounded-full"/>
+                            <SkeletonBox height="1rem" width="1rem" radius="0.25rem"/>
+                            <SkeletonBox height="30px" width="30px" radius="9999px"/>
                             <div class="admin-comment-body">
-                                <SkeletonBox class="h-3.5 w-40 rounded"/>
-                                <SkeletonBox class="h-4 w-4/5 rounded mt-2.5"/>
-                                <SkeletonBox class="h-3 w-48 rounded mt-3"/>
+                                <SkeletonBox height="0.875rem" width="10rem" radius="0.25rem"/>
+                                <SkeletonBox height="1rem" width="calc(4 / 5 * 100%)" radius="0.25rem" style="--skeleton-margin-top: 0.625rem"/>
+                                <SkeletonBox height="0.75rem" width="12rem" radius="0.25rem" style="--skeleton-margin-top: 0.75rem"/>
                             </div>
                         </div>
                     }
@@ -35,9 +35,9 @@ pub fn AdminCommentsListSkeleton() -> impl IntoView {
 pub fn AdminCommentsSkeleton() -> impl IntoView {
     view! {
         <div class="admin-comments" aria-hidden="true">
-            <AdminPageHeadSkeleton title_width="w-20" subtitle_width="w-28"/>
+            <AdminPageHeadSkeleton title_width="5rem" subtitle_width="7rem"/>
             <div class="admin-toolbar">
-                <SkeletonBox class="h-8 w-80 rounded-full"/>
+                <SkeletonBox height="2rem" width="20rem" radius="9999px"/>
             </div>
             <AdminCommentsListSkeleton/>
         </div>

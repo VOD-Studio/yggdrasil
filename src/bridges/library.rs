@@ -125,9 +125,9 @@ pub fn LibraryLoadError(library: LibraryResource) -> impl IntoView {
             .and_then(|result| result.err())
             .map(|message| {
                 view! {
-                    <div role="alert" class="flex items-center gap-3 p-3 text-sm text-red-500 dark:text-red-400">
+                    <div role="alert" class="library-load-failure">
                         <span>{message}</span>
-                        <button type="button" class="underline underline-offset-4" on:click=move |_| library.restart()>
+                        <button type="button" on:click=move |_| library.restart()>
                             "重新加载"
                         </button>
                     </div>

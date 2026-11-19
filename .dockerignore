@@ -18,9 +18,10 @@ libs/node_modules/
 libs/*/node_modules/
 
 # Generated assets under public/ are rebuilt by the Dockerfile
-# (build-libs → highlight-css → tailwindcss → cargo leptos build). Keep the source
+# (build-libs → highlight-css → site CSS → cargo leptos build). Keep the source
 # runtime assets (favicon.ico, icons/, images/) but drop generated ones.
 public/style.css
+public/admin.css
 public/highlight.css
 public/tiptap/
 public/codemirror/

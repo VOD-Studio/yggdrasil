@@ -13,21 +13,21 @@ use crate::components::skeletons::atoms::SkeletonBox;
 pub fn NotesStreamSkeleton() -> impl IntoView {
     view! {
         <div class="notes-stream-skeleton" aria-hidden="true">
-            <SkeletonBox class="h-3 w-24"/>
+            <SkeletonBox height="0.75rem" width="6rem"/>
             {(0..2)
                 .map(|_| {
                     view! {
                         <div class="note-moment">
-                            <SkeletonBox class="h-3 w-10"/>
+                            <SkeletonBox height="0.75rem" width="2.5rem"/>
                             <div>
-                                <SkeletonBox class="h-4 w-full"/>
-                                <SkeletonBox class="h-4 mt-2 w-3/4"/>
+                                <SkeletonBox height="1rem" width="100%"/>
+                                <SkeletonBox height="1rem" width="calc(3 / 4 * 100%)" style="--skeleton-margin-top: 0.5rem"/>
                             </div>
                         </div>
                     }
                 })
                 .collect_view()}
-            <SkeletonBox class="h-36 w-full rounded-[10px] mt-3"/>
+            <SkeletonBox height="9rem" width="100%" radius="10px" style="--skeleton-margin-top: 0.75rem"/>
         </div>
     }
 }
@@ -40,15 +40,15 @@ pub fn NotesPageSkeleton() -> impl IntoView {
             <div class="notes-header" aria-hidden="true">
                 <div>
                     <h1 class="notes-title">"笔记"</h1>
-                    <SkeletonBox class="h-4 mt-3 w-72 max-w-full"/>
+                    <SkeletonBox height="1rem" width="18rem" style="--skeleton-margin-top: 0.75rem; --skeleton-max-width: 100%"/>
                 </div>
             </div>
             <div class="notes-layout" aria-hidden="true">
                 <div class="notes-side">
-                    <SkeletonBox class="h-[34px] w-full rounded-lg"/>
+                    <SkeletonBox height="34px" width="100%" radius="0.5rem"/>
                     <div class="notes-side-group">
                         {(0..3)
-                            .map(|_| view! { <SkeletonBox class="h-8 w-full rounded-lg mt-1"/> })
+                            .map(|_| view! { <SkeletonBox height="2rem" width="100%" radius="0.5rem" style="--skeleton-margin-top: var(--spacing)"/> })
                             .collect_view()}
                     </div>
                 </div>
@@ -66,19 +66,19 @@ pub fn NotebookSkeleton() -> impl IntoView {
     view! {
         <div role="status" aria-label="正在加载笔记本">
             <div aria-hidden="true">
-                <SkeletonBox class="h-3 w-20"/>
-                <SkeletonBox class="h-9 mt-8 w-56"/>
-                <SkeletonBox class="h-4 mt-4 w-full"/>
-                <SkeletonBox class="h-10 mt-6 w-36 rounded-[10px]"/>
+                <SkeletonBox height="0.75rem" width="5rem"/>
+                <SkeletonBox height="2.25rem" width="14rem" style="--skeleton-margin-top: 2rem"/>
+                <SkeletonBox height="1rem" width="100%" style="--skeleton-margin-top: 1rem"/>
+                <SkeletonBox height="2.5rem" width="9rem" radius="10px" style="--skeleton-margin-top: 1.5rem"/>
                 <div class="notebook-entries">
                     {(0..4)
                         .map(|_| {
                             view! {
                                 <div class="notebook-entry">
-                                    <SkeletonBox class="h-5 w-7"/>
+                                    <SkeletonBox height="1.25rem" width="1.75rem"/>
                                     <div>
-                                        <SkeletonBox class="h-5 w-3/5"/>
-                                        <SkeletonBox class="h-3 mt-3 w-full"/>
+                                        <SkeletonBox height="1.25rem" width="calc(3 / 5 * 100%)"/>
+                                        <SkeletonBox height="0.75rem" width="100%" style="--skeleton-margin-top: 0.75rem"/>
                                     </div>
                                 </div>
                             }
@@ -96,18 +96,18 @@ pub fn NoteReaderSkeleton() -> impl IntoView {
     view! {
         <div class="notes-layout note-reader" role="status" aria-label="正在加载笔记">
             <div class="notes-side note-rail" aria-hidden="true">
-                <SkeletonBox class="h-3 w-20"/>
+                <SkeletonBox height="0.75rem" width="5rem"/>
                 {(0..4)
-                    .map(|_| view! { <SkeletonBox class="h-7 w-full rounded-lg mt-2"/> })
+                    .map(|_| view! { <SkeletonBox height="1.75rem" width="100%" radius="0.5rem" style="--skeleton-margin-top: 0.5rem"/> })
                     .collect_view()}
             </div>
             <div class="note-document" aria-hidden="true">
-                <SkeletonBox class="h-5 w-24 rounded-full"/>
-                <SkeletonBox class="h-9 mt-4 w-4/5"/>
-                <SkeletonBox class="h-3 mt-4 w-48"/>
-                <div class="flex flex-col gap-3 mt-10">
+                <SkeletonBox height="1.25rem" width="6rem" radius="9999px"/>
+                <SkeletonBox height="2.25rem" width="calc(4 / 5 * 100%)" style="--skeleton-margin-top: 1rem"/>
+                <SkeletonBox height="0.75rem" width="12rem" style="--skeleton-margin-top: 1rem"/>
+                <div class="note-body-skeleton-lines">
                     {(0..6)
-                        .map(|_| view! { <SkeletonBox class="h-3.5 w-full"/> })
+                        .map(|_| view! { <SkeletonBox height="0.875rem" width="100%"/> })
                         .collect_view()}
                 </div>
             </div>

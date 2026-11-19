@@ -3,7 +3,7 @@ use leptos::ev;
 use leptos::prelude::*;
 
 /// Popover 遮罩与面板的层级(z-40 遮罩 < z-50 面板),与 Tooltip/lightbox 同 z-50。
-const POPOVER_OVERLAY_CLASS: &str = "fixed inset-0 z-40";
+const POPOVER_OVERLAY_CLASS: &str = "floating-scrim";
 
 /// 受控式通用 Popover(浮层)组件。
 ///
@@ -239,8 +239,8 @@ fn focus_modal_panel(document: &web_sys::Document, title: &str) {
 /// - `visible` / `closing`：与调用方共享的显隐 / 关闭动画信号。
 /// - `title`：面板的 `aria-label`（不渲染可见标题——各调用方的标题栏自行渲染）。
 /// - `role`：面板角色，默认 `dialog`；危险确认传 `alertdialog`。
-/// - `overlay_padding`：遮罩内边距（响应式内边距因弹窗尺寸而异，默认 `"p-6"`）。
-/// - `panel_class`：在共享面板底座上追加的宽度等布局类（默认 `"w-full max-w-lg"`）。
+/// - `overlay_padding`：遮罩内边距（响应式内边距因弹窗尺寸而异，默认 1.5rem）。
+/// - `panel_class`：在共享面板底座上追加的宽度等布局类（默认 `"dialog-panel-default"`）。
 /// - `children`：面板内容（含调用方自己的标题栏、× 按钮等）；显示期间渲染，每次打开重新创建。
 #[component]
 pub fn ModalShell(
@@ -248,8 +248,8 @@ pub fn ModalShell(
     closing: RwSignal<bool>,
     #[prop(into)] title: String,
     #[prop(default = "dialog".to_string(), into)] role: String,
-    #[prop(default = "p-6".to_string(), into)] overlay_padding: String,
-    #[prop(default = "w-full max-w-lg".to_string(), into)] panel_class: String,
+    #[prop(optional, into)] overlay_padding: String,
+    #[prop(default = "dialog-panel-default".to_string(), into)] panel_class: String,
     children: ChildrenFn,
 ) -> impl IntoView {
     // 公共弹窗在打开时接管焦点，Escape 关闭后还给触发器；监听随显隐同步清理。
@@ -396,7 +396,7 @@ pub fn ConfirmDialog(
             closing=closing
             title=modal_title
             role="alertdialog"
-            overlay_padding="p-4"
+            overlay_padding="dialog-overlay-compact"
             panel_class="confirm-dialog"
         >
             <div class="confirm-dialog-body">

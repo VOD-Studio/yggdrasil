@@ -184,9 +184,9 @@ pub(super) fn TokenTable(
                                     .map(|_| {
                                         view! {
                                             <div class="mcp-skeleton-row">
-                                                <SkeletonBox class="h-4 w-40 rounded"/>
-                                                <SkeletonBox class="h-4 w-16 rounded"/>
-                                                <SkeletonBox class="h-4 w-24 rounded"/>
+                                                <SkeletonBox height="1rem" width="10rem" radius="0.25rem"/>
+                                                <SkeletonBox height="1rem" width="4rem" radius="0.25rem"/>
+                                                <SkeletonBox height="1rem" width="6rem" radius="0.25rem"/>
                                             </div>
                                         }
                                     })

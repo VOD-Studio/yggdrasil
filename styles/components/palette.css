@@ -420,3 +420,8 @@
     }
   }
 }
+
+@layer components {
+  .palette-option-key { font-family: var(--font-mono); }
+  .palette-search-retry { margin-top: 1rem; }
+}

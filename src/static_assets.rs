@@ -12,9 +12,9 @@
 //! `@yggdrasil/shared` 的 `assetUrl` 读取。文件不存在时（未构建 libs 的测试或开发环境）
 //! 返回不带版本号的地址，缓存策略也退回 no-cache。
 
-/// 站点样式（Tailwind 产物）。
+/// 站点样式（Bun 构建产物）。
 pub const STYLE_CSS: &str = "/style.css";
-/// 后台与组件图鉴样式（Tailwind 产物，入口 input-admin.css）。
+/// 后台与组件图鉴样式（Bun 构建产物，入口 input-admin.css）。
 pub const ADMIN_CSS: &str = "/admin.css";
 /// 后台样式 `<link>` 的 id：SSR 写入与客户端补插共用，避免重复插入。
 pub const ADMIN_CSS_ELEMENT_ID: &str = "ygg-admin-css";

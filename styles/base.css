@@ -94,11 +94,8 @@
     animation: popover-enter-edge var(--spring-snappy-duration) var(--ease-spring-snappy) both;
   }
 
-  /* 下拉选择面板入场。面板的水平居中用 [transform:translateX(-50%)]（不用
-     -translate-x-1/2 utility：Tailwind v4 的 translate utility 走独立 translate
-     属性，会与此处 transform 关键帧叠加成双倍位移），关键帧 fill 值须与面板
-     静态 transform 完全一致，否则动画结束时水平位置跳变；垂直仅微移，展开
-     方向由 transform-origin 控制。 */
+  /* 下拉面板的静态定位与入场关键帧共用 transform 的水平居中，避免独立的
+     translate 再叠加一次位移。垂直仅微移，展开方向由 transform-origin 控制。 */
   @keyframes select-enter {
     0% {
       opacity: 0;

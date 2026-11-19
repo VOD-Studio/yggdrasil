@@ -123,6 +123,7 @@ services:
           action: rebuild
           ignore:
             - style.css
+            - admin.css
             - highlight.css
             - katex/
             - tiptap/
@@ -135,6 +136,9 @@ services:
           action: rebuild
         - path: ./input.css
           target: /build/input.css
+          action: rebuild
+        - path: ./input-admin.css
+          target: /build/input-admin.css
           action: rebuild
         - path: ./Cargo.toml
           action: rebuild

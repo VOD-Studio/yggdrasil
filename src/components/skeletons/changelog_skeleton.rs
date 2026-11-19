@@ -14,7 +14,7 @@ pub fn ChangelogSkeleton() -> impl IntoView {
                 <div class="changelog-nav" aria-hidden="true">
                     <div class="changelog-nav-panel">
                         <div class="changelog-nav-head">
-                            <SkeletonBox class="h-3 w-8"/>
+                            <SkeletonBox height="0.75rem" width="2rem"/>
                         </div>
                         <div class="changelog-nav-scroll">
                             <div class="changelog-nav-items">
@@ -22,8 +22,8 @@ pub fn ChangelogSkeleton() -> impl IntoView {
                                     .map(|_| {
                                         view! {
                                             <div class="changelog-nav-link">
-                                                <SkeletonBox class="h-3 w-12"/>
-                                                <SkeletonBox class="h-3 w-8"/>
+                                                <SkeletonBox height="0.75rem" width="3rem"/>
+                                                <SkeletonBox height="0.75rem" width="2rem"/>
                                             </div>
                                         }
                                     })
@@ -37,16 +37,16 @@ pub fn ChangelogSkeleton() -> impl IntoView {
                         .map(|_| {
                             view! {
                                 <div class="changelog-version">
-                                    <SkeletonBox class="h-6 w-24"/>
+                                    <SkeletonBox height="1.5rem" width="6rem"/>
                                     {(0..2)
                                         .map(|_| {
                                             view! {
                                                 <div class="changelog-group">
-                                                    <SkeletonBox class="h-5 w-12 rounded-full"/>
-                                                    <div class="flex flex-col gap-3 mt-4">
-                                                        <SkeletonBox class="h-3.5 w-full"/>
-                                                        <SkeletonBox class="h-3.5 w-5/6"/>
-                                                        <SkeletonBox class="h-3.5 w-3/4"/>
+                                                    <SkeletonBox height="1.25rem" width="3rem" radius="9999px"/>
+                                                    <div class="changelog-card-skeleton-lines">
+                                                        <SkeletonBox height="0.875rem" width="100%"/>
+                                                        <SkeletonBox height="0.875rem" width="calc(5 / 6 * 100%)"/>
+                                                        <SkeletonBox height="0.875rem" width="calc(3 / 4 * 100%)"/>
                                                     </div>
                                                 </div>
                                             }

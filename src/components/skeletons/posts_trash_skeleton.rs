@@ -15,19 +15,19 @@ pub fn PostsTrashTableSkeleton() -> impl IntoView {
                 <thead>
                     <tr>
                         <th class="admin-table-check">
-                            <SkeletonBox class="h-4 w-4 rounded"/>
+                            <SkeletonBox height="1rem" width="1rem" radius="0.25rem"/>
                         </th>
                         <th>
-                            <SkeletonBox class="h-3 w-10 rounded"/>
+                            <SkeletonBox height="0.75rem" width="2.5rem" radius="0.25rem"/>
                         </th>
                         <th>
-                            <SkeletonBox class="h-3 w-12 rounded"/>
+                            <SkeletonBox height="0.75rem" width="3rem" radius="0.25rem"/>
                         </th>
                         <th class="admin-trash-deleted">
-                            <SkeletonBox class="h-3 w-12 rounded"/>
+                            <SkeletonBox height="0.75rem" width="3rem" radius="0.25rem"/>
                         </th>
                         <th class="admin-trash-left">
-                            <SkeletonBox class="h-3 w-14 rounded"/>
+                            <SkeletonBox height="0.75rem" width="3.5rem" radius="0.25rem"/>
                         </th>
                         <th class="admin-trash-actions"></th>
                     </tr>
@@ -38,23 +38,23 @@ pub fn PostsTrashTableSkeleton() -> impl IntoView {
                             view! {
                                 <tr>
                                     <td class="admin-table-check">
-                                        <SkeletonBox class="h-4 w-4 rounded"/>
+                                        <SkeletonBox height="1rem" width="1rem" radius="0.25rem"/>
                                     </td>
                                     <td class="admin-trash-title">
-                                        <SkeletonBox class="h-4 w-3/4 rounded"/>
-                                        <SkeletonBox class="h-3 w-1/3 rounded mt-1.5"/>
+                                        <SkeletonBox height="1rem" width="calc(3 / 4 * 100%)" radius="0.25rem"/>
+                                        <SkeletonBox height="0.75rem" width="calc(1 / 3 * 100%)" radius="0.25rem" style="--skeleton-margin-top: 0.375rem"/>
                                     </td>
                                     <td class="admin-trash-status">
-                                        <SkeletonBox class="h-3.5 w-14 rounded"/>
+                                        <SkeletonBox height="0.875rem" width="3.5rem" radius="0.25rem"/>
                                     </td>
                                     <td class="admin-trash-deleted">
-                                        <SkeletonBox class="h-3.5 w-20 rounded"/>
+                                        <SkeletonBox height="0.875rem" width="5rem" radius="0.25rem"/>
                                     </td>
                                     <td class="admin-trash-left">
-                                        <SkeletonBox class="h-1 w-full rounded-full"/>
+                                        <SkeletonBox height="var(--spacing)" width="100%" radius="9999px"/>
                                     </td>
                                     <td class="admin-trash-actions">
-                                        <SkeletonBox class="h-[30px] w-20 rounded-md ml-auto"/>
+                                        <SkeletonBox height="30px" width="5rem" radius="0.375rem" style="--skeleton-margin-left: auto"/>
                                     </td>
                                 </tr>
                             }
@@ -72,9 +72,9 @@ pub fn PostsTrashSkeleton() -> impl IntoView {
     view! {
         <div class="admin-trash" aria-hidden="true">
             <AdminPageHeadSkeleton
-                title_width="w-20"
-                subtitle_width="w-80 max-w-full"
-                actions=|| view! { <SkeletonBox class="h-[34px] w-24 rounded-lg"/> }
+                title_width="5rem"
+                subtitle_width="20rem"
+                actions=|| view! { <SkeletonBox height="34px" width="6rem" radius="0.5rem"/> }
             />
             <PostsTrashTableSkeleton/>
         </div>

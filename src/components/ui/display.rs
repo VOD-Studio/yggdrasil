@@ -95,11 +95,11 @@ pub fn UserAvatar(
         match current_url() {
             Some(url) if failed_url.read().as_ref() == Some(&url) => view! {
                 <span
-                    class=format!("{class} flex items-center justify-center bg-ink-1 text-fg-3")
+                    class=format!("{class} avatar-placeholder")
                     role="img"
                     aria-label=format!("{name} 的头像")
                 >
-                    <ImagePlaceholder class="w-1/2 h-1/2"/>
+                    <ImagePlaceholder class="avatar-placeholder-icon"/>
                 </span>
             }
             .into_any(),
@@ -108,7 +108,7 @@ pub fn UserAvatar(
                 view! {
                     <img
                         node_ref=img_ref
-                        class=format!("{class} object-cover")
+                        class=format!("{class} avatar-image")
                         src=url
                         alt=format!("{name} 的头像")
                         loading="lazy"
@@ -126,7 +126,7 @@ pub fn UserAvatar(
                     .unwrap_or_else(|| "?".to_string());
                 view! {
                     <span class=format!(
-                        "{class} flex items-center justify-center bg-clay-soft text-clay-text font-semibold select-none",
+                        "{class} avatar-initial",
                     )>{initial}</span>
                 }
                 .into_any()

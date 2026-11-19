@@ -297,11 +297,11 @@ pub(super) fn LogsStreamPane(
                         view! {
                             <DelayedSkeleton>
                                 <div class="logs-skeleton">
-                                    <SkeletonBox class="h-4 w-[88%] rounded"/>
-                                    <SkeletonBox class="h-4 w-[72%] rounded"/>
-                                    <SkeletonBox class="h-4 w-[81%] rounded"/>
-                                    <SkeletonBox class="h-4 w-[64%] rounded"/>
-                                    <SkeletonBox class="h-4 w-[77%] rounded"/>
+                                    <SkeletonBox height="1rem" width="88%" radius="0.25rem"/>
+                                    <SkeletonBox height="1rem" width="72%" radius="0.25rem"/>
+                                    <SkeletonBox height="1rem" width="81%" radius="0.25rem"/>
+                                    <SkeletonBox height="1rem" width="64%" radius="0.25rem"/>
+                                    <SkeletonBox height="1rem" width="77%" radius="0.25rem"/>
                                 </div>
                             </DelayedSkeleton>
                         }

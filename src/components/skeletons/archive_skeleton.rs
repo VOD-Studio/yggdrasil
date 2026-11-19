@@ -57,15 +57,15 @@ pub fn ArchiveBodySkeleton() -> impl IntoView {
     view! {
         <div role="status" aria-label="正在加载文章">
             <div aria-hidden="true">
-                <SkeletonBox class="archive-summary h-4 w-60 max-w-full"/>
+                <SkeletonBox height="1rem" width="15rem" class="archive-summary" style="--skeleton-max-width: 100%"/>
                 <div class="archive-tags">
                     <div class="archive-tags-head">
-                        <SkeletonBox class="h-3 w-14"/>
+                        <SkeletonBox height="0.75rem" width="3.5rem"/>
                     </div>
                     <div class="archive-tags-list">
                         {CHIP_WIDTHS
                             .iter()
-                            .map(|width| view! { <SkeletonBox class="h-7 rounded-full" style=*width/> })
+                            .map(|width| view! { <SkeletonBox height="1.75rem" radius="9999px" style=*width/> })
                             .collect_view()}
                     </div>
                 </div>
@@ -75,8 +75,8 @@ pub fn ArchiveBodySkeleton() -> impl IntoView {
                             view! {
                                 <div class="archive-year">
                                     <div class="archive-year-label">
-                                        <SkeletonBox class="h-8 w-20"/>
-                                        <SkeletonBox class="h-3 w-10 mt-2"/>
+                                        <SkeletonBox height="2rem" width="5rem"/>
+                                        <SkeletonBox height="0.75rem" width="2.5rem" style="--skeleton-margin-top: 0.5rem"/>
                                     </div>
                                     <div class="archive-rows">
                                         {ROW_WIDTHS
@@ -84,8 +84,8 @@ pub fn ArchiveBodySkeleton() -> impl IntoView {
                                             .map(|width| {
                                                 view! {
                                                     <div class="archive-entry archive-entry-skeleton">
-                                                        <SkeletonBox class="h-3 w-10"/>
-                                                        <SkeletonBox class="h-4" style=*width/>
+                                                        <SkeletonBox height="0.75rem" width="2.5rem"/>
+                                                        <SkeletonBox height="1rem" style=*width/>
                                                     </div>
                                                 }
                                             })

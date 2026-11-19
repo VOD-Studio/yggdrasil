@@ -18,7 +18,7 @@ use crate::models::comment::PublicComment;
 /// 关键行为：
 /// - 点击"回复"按钮切换该评论下方的回复表单
 /// - 最大递归深度限制为 20，超过后隐藏回复按钮
-/// - 回复表单始终挂载（仅用 `hidden` 类切换可见性），不随 `is_replying` 结构性
+/// - 回复表单始终挂载（通过 `hidden` 属性切换可见性），不随 `is_replying` 结构性
 ///   卸载——否则 `CommentForm` 内的草稿信号（`content_md` 等）会随组件
 ///   卸载被销毁，取消回复或切换回复目标时静默丢失草稿
 #[component]
@@ -114,7 +114,7 @@ pub fn CommentItem(comment: PublicComment, post_id: i32) -> impl IntoView {
                     }
                 })}
 
-            <div class=move || if is_replying.get() { "comment-reply-form" } else { "hidden" }>
+            <div class=move || is_replying.get().then_some("comment-reply-form") hidden=move || !is_replying.get()>
                 <CommentForm
                     post_id=post_id
                     parent_id=Some(comment_id)

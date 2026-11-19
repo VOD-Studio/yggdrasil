@@ -43,7 +43,7 @@ pub fn DelayedSkeleton(children: ChildrenFn, #[prop(optional)] pulse: bool) -> i
 
     view! {
         <Show when=move || visible.get()>
-            <div class=if pulse { "animate-pulse" } else { "" }>{children()}</div>
+            <div class=if pulse { "skeleton-pulse" } else { "" }>{children()}</div>
         </Show>
     }
 }

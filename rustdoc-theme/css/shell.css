@@ -11,7 +11,7 @@
   all: revert-layer;
 }
 
-/* 迷你 preflight：博客有 Tailwind preflight，rustdoc 页面没有。 */
+/* 文档站点外壳单独设置元素默认值。 */
 @layer base {
   :is(.site-header, .site-footer, .sheet, .sheet-scrim, .post-toc),
   :is(.site-header, .site-footer, .sheet, .sheet-scrim, .post-toc) * {

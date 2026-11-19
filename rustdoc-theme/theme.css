@@ -1,8 +1,5 @@
-/* rustdoc 文档的站点化主题入口。Makefile 的 doc target 用 Tailwind 编译后经
-   rustdoc -e 注入（落到文档根 theme.css）。本文件只放 import，模块在 css/。
-   第一行 import 不能删：它让 token 落进 @layer theme，深色块（@layer base）才能覆盖浅色。
-   layer 顺序由 import 顺序决定：theme → base → components → doc。不要加 @layer 顺序声明。 */
-@import "tailwindcss/theme.css" layer(theme) theme(reference);
+/* 站点化文档主题，由 make doc 构建并注入 rustdoc。 */
+@layer theme, base, components, doc;
 @import "../styles/theme.css";
 @import "../styles/motion.css";
 @import "../styles/components/shell.css";

@@ -101,20 +101,6 @@ RUN if [ "$CN_MIRROR" = "true" ]; then \
     && rustup toolchain install "$WASM_NIGHTLY" --profile minimal \
         --component rust-src --target wasm32-unknown-unknown
 
-# --- Tailwind CSS v4: the standalone binary is distributed via GitHub
-# Releases (~106 MB). ---
-ARG TAILWIND_VERSION=4.3.5
-RUN ARCH="$(dpkg --print-architecture)" \
-    && case "$ARCH" in \
-        amd64)  TW_ARCH=x64   ;; \
-        arm64)  TW_ARCH=arm64 ;; \
-        *) echo "unsupported arch: $ARCH" >&2; exit 1 ;; \
-    esac \
-    && if [ "$CN_MIRROR" = "true" ]; then GH_PX="${GH_PROXY}"; else GH_PX=""; fi \
-    && GH_URL="${GH_PX:+${GH_PX}/}https://github.com/tailwindlabs/tailwindcss/releases/download/v${TAILWIND_VERSION}/tailwindcss-linux-${TW_ARCH}" \
-    && curl -fsSL -o /usr/local/bin/tailwindcss "${GH_URL}" \
-    && chmod +x /usr/local/bin/tailwindcss
-
 # --- cargo-leptos: 前端构建（wasm-bindgen、分包、CSS）。版本与 Makefile 同步。 ---
 RUN cargo install cargo-leptos --version 0.3.12 --locked
 
@@ -122,7 +108,7 @@ RUN cargo install cargo-leptos --version 0.3.12 --locked
 # 改一行 .rs 不再触发 576 个依赖的全量重编。CI 端用 GHA cache (type=gha)
 # 跨 run 持久化 cooker 层,依赖不变时该层 cache-hit(秒级),只编 app。
 # 用 GitHub Releases 预编译二进制(不 cargo install:后者编译 cargo-chef 自身
-# 依赖要 2-3min,且在 QEMU 下 SIGSEGV)。与 tailwind 同模式:按架构选 tarball。
+# 依赖要 2-3min,且在 QEMU 下 SIGSEGV)。按架构选 tarball。
 ARG CHEF_VERSION=0.1.78
 RUN ARCH="$(dpkg --print-architecture)" \
     && case "$ARCH" in \
@@ -229,7 +215,7 @@ ENV YGG_BUILD_GIT_DESCRIBE=${YGG_BUILD_GIT_DESCRIBE}
 ENV YGG_BUILD_GIT_HASH=${YGG_BUILD_GIT_HASH}
 ENV YGG_BUILD_GIT_COMMIT_DATE=${YGG_BUILD_GIT_COMMIT_DATE}
 
-# Build the JS libs, syntax-highlight CSS, KaTeX CSS + fonts and Tailwind
+# Build the JS libs, syntax-highlight CSS, KaTeX CSS + fonts and site CSS
 # stylesheet. These steps produce the contents of the public/ directory.
 # Shared with make build / build-linux via the build-assets target, so the
 # pipeline cannot drift (katex-css was once missing here, which left math

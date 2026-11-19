@@ -321,8 +321,6 @@ jobs:
         run: make install-cargo-leptos
       - name: Install browser build tools
         run: |
-          sudo curl -fsSL --retry 3 https://github.com/tailwindlabs/tailwindcss/releases/download/v4.3.5/tailwindcss-linux-x64 -o /usr/local/bin/tailwindcss
-          sudo chmod +x /usr/local/bin/tailwindcss
           sudo apt-get update
           sudo apt-get install -y postgresql-common
           sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
@@ -388,8 +386,6 @@ jobs:
         run: make install-cargo-leptos
       - name: Install release build tools
         run: |
-          sudo curl -fsSL --retry 3 https://github.com/tailwindlabs/tailwindcss/releases/download/v4.3.5/tailwindcss-linux-x64 -o /usr/local/bin/tailwindcss
-          sudo chmod +x /usr/local/bin/tailwindcss
           sudo apt-get update
           sudo apt-get install -y postgresql-common brotli
           sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y

@@ -253,7 +253,7 @@ pub fn AssetPickerModal(
             visible=visible
             closing=closing
             title=title.clone()
-            overlay_padding="p-4 sm:p-6"
+            overlay_padding="dialog-overlay-responsive"
             panel_class="asset-modal asset-picker"
         >
             <div class="asset-modal-head">

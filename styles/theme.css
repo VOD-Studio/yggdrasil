@@ -1,81 +1,77 @@
-@custom-variant dark (&:where(.dark, .dark *));
-
-/* v1.0 设计 token。浅色值写在 @theme，生成对应工具类（bg-surface-0、text-fg-2、
-   rounded-panel……）；深色值在下方 .dark 中覆盖同名变量。.dark 挂在 <html> 上，
+/* v1.0 设计 token。浅色值定义在 :root，深色覆盖同名变量。.dark 挂在 <html> 上，
    与 :root 是同一元素，所以引用其他 token 的变量也会随主题切换。
-   用 static：未被工具类引用的 token 也要输出，供 .dark 覆盖与手写 CSS 使用。
    取值与对比度调整见 docs/v1.0-重设计方案.md「Token」。 */
-@theme static {
-  /* 覆盖 Tailwind v4 默认 --font-sans(ui-sans-serif, system-ui, sans-serif, ...):
-     默认栈不含 CJK sans,font-sans 类一旦生效,body 的中文字体栈会被绕过,
-     中文 fallback 到系统衬线体。这里对齐 body 的 CJK sans 栈,根治全项目。 */
-  --font-sans:
-    -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "PingFang SC",
-    "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", sans-serif;
-  /* 仅系统衬线。Windows 没有中文衬线体，接微软雅黑，避免落到中易宋体。 */
-  --font-serif:
-    "Iowan Old Style", Georgia, "Songti SC", "Noto Serif SC",
-    "Source Han Serif SC", STSong, "Microsoft YaHei", serif;
-  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+@layer theme {
+  :root {
+    /* 系统无衬线字体包含中文回退，避免中文落到系统衬线体。 */
+    --font-sans:
+      -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "PingFang SC",
+      "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+    /* 仅系统衬线。Windows 没有中文衬线体，接微软雅黑，避免落到中易宋体。 */
+    --font-serif:
+      "Iowan Old Style", Georgia, "Songti SC", "Noto Serif SC",
+      "Source Han Serif SC", STSong, "Microsoft YaHei", serif;
+    --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
 
-  /* 表面：层级靠微亮度差，不靠粗边框。 */
-  --color-surface-0: #f5f5f3; /* 页面底 */
-  --color-surface-1: #fafaf8; /* 侧栏、代码块 */
-  --color-surface-2: #ffffff; /* 卡片、面板 */
-  --color-surface-3: #ffffff; /* 浮起的卡片 */
-  --color-popover: #ffffff;
+    /* 表面：层级靠微亮度差，不靠粗边框。 */
+    --color-surface-0: #f5f5f3; /* 页面底 */
+    --color-surface-1: #fafaf8; /* 侧栏、代码块 */
+    --color-surface-2: #ffffff; /* 卡片、面板 */
+    --color-surface-3: #ffffff; /* 浮起的卡片 */
+    --color-popover: #ffffff;
 
-  /* 文本。fg-body 用于长文正文。 */
-  --color-fg: #151515;
-  --color-fg-body: #2b2b29;
-  --color-fg-2: #525252;
-  --color-fg-3: #6b6b69;
+    /* 文本。fg-body 用于长文正文。 */
+    --color-fg: #151515;
+    --color-fg-body: #2b2b29;
+    --color-fg-2: #525252;
+    --color-fg-3: #6b6b69;
 
-  /* 透明度阶梯：ghost 悬停、标准边框、强边框、重分割。 */
-  --color-ink-1: rgb(0 0 0 / 0.045);
-  --color-ink-2: rgb(0 0 0 / 0.08);
-  --color-ink-3: rgb(0 0 0 / 0.12);
-  --color-ink-4: rgb(0 0 0 / 0.18);
-  --color-hairline: rgb(0 0 0 / 0.09);
+    /* 透明度阶梯：ghost 悬停、标准边框、强边框、重分割。 */
+    --color-ink-1: rgb(0 0 0 / 0.045);
+    --color-ink-2: rgb(0 0 0 / 0.08);
+    --color-ink-3: rgb(0 0 0 / 0.12);
+    --color-ink-4: rgb(0 0 0 / 0.18);
+    --color-hairline: rgb(0 0 0 / 0.09);
 
-  /* 品牌。clay 只做装饰（圆点、焦点环、进度），不承载文字；
-     文字用 clay-text，主按钮底用 clay-fill 配 on-clay。 */
-  --color-clay: #d97757;
-  --color-clay-hover: #c4633f;
-  --color-clay-fill: #b9573a;
-  --color-clay-text: #b4532f;
-  --color-clay-soft: #f7e8e1;
-  --color-on-clay: #ffffff;
-  --color-danger: #c93a3a;
-  --color-danger-soft: #fbeaea;
-  --color-on-danger: #ffffff;
-  --color-success: #2f6f4f;
-  --color-success-soft: #e7f1ea;
-  --color-warning: #8a5a0b;
-  --color-warning-soft: #f6ecd8;
+    /* 品牌。clay 只做装饰（圆点、焦点环、进度），不承载文字；
+       文字用 clay-text，主按钮底用 clay-fill 配 on-clay。 */
+    --color-clay: #d97757;
+    --color-clay-hover: #c4633f;
+    --color-clay-fill: #b9573a;
+    --color-clay-text: #b4532f;
+    --color-clay-soft: #f7e8e1;
+    --color-on-clay: #ffffff;
+    --color-danger: #c93a3a;
+    --color-danger-soft: #fbeaea;
+    --color-on-danger: #ffffff;
+    --color-success: #2f6f4f;
+    --color-success-soft: #e7f1ea;
+    --color-warning: #8a5a0b;
+    --color-warning-soft: #f6ecd8;
 
-  /* 阴影：发丝线环 + 极淡投影。 */
-  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.04);
-  --shadow-md: 0 2px 8px rgb(0 0 0 / 0.05), 0 1px 2px rgb(0 0 0 / 0.04);
-  --shadow-lg: 0 12px 32px rgb(0 0 0 / 0.08), 0 2px 6px rgb(0 0 0 / 0.04);
-  --shadow-composer: 0 4px 20px rgb(0 0 0 / 0.035);
-  --shadow-popover: 0 0 0 var(--hairline) var(--color-hairline), 0 12px 32px rgb(0 0 0 / 0.1), 0 2px 6px rgb(0 0 0 / 0.04);
-  --shadow-focus:
-    inset 0 0 0 1px var(--color-surface-1), 0 0 0 1.5px var(--color-clay),
-    0 0 6px 1px rgb(217 119 87 / 0.25);
+    /* 阴影：发丝线环 + 极淡投影。 */
+    --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.04);
+    --shadow-md: 0 2px 8px rgb(0 0 0 / 0.05), 0 1px 2px rgb(0 0 0 / 0.04);
+    --shadow-lg: 0 12px 32px rgb(0 0 0 / 0.08), 0 2px 6px rgb(0 0 0 / 0.04);
+    --shadow-composer: 0 4px 20px rgb(0 0 0 / 0.035);
+    --shadow-popover: 0 0 0 var(--hairline) var(--color-hairline), 0 12px 32px rgb(0 0 0 / 0.1), 0 2px 6px rgb(0 0 0 / 0.04);
+    --shadow-focus:
+      inset 0 0 0 1px var(--color-surface-1), 0 0 0 1.5px var(--color-clay),
+      0 0 6px 1px rgb(217 119 87 / 0.25);
 
-  /* 圆角：4 / 6 / 8 用 Tailwind 的 sm / md / lg；以下为语义档。胶囊用 rounded-full。 */
-  --radius-panel: 10px;
-  --radius-code: 12px;
-  --radius-dialog: 16px;
-  --radius-composer: 20px;
+    /* 组件的语义圆角。 */
+    --radius-panel: 10px;
+    --radius-code: 12px;
+    --radius-dialog: 16px;
+    --radius-composer: 20px;
 
-  /* 曲线。弹簧曲线由 libs/shared 生成，见 styles/motion.css。 */
-  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-press: cubic-bezier(0.2, 0, 0, 1);
+    /* 曲线。弹簧曲线由 libs/shared 生成，见 styles/motion.css。 */
+    --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-press: cubic-bezier(0.2, 0, 0, 1);
 
-  /* 文本选区：品牌色半透明底。 */
-  --color-selection: rgb(217 119 87 / 0.22);
+    /* 文本选区：品牌色半透明底。 */
+    --color-selection: rgb(217 119 87 / 0.22);
+  }
 }
 
 /* 发丝线宽度：普通屏 1px，2 倍及以上高分屏 0.5px（一个物理像素）。颜色用 --color-hairline。 */

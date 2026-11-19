@@ -262,3 +262,5 @@ a.friend-card:focus-visible .friend-go {
 @media (prefers-reduced-motion: reduce) {
   .friend-go { transition: opacity 150ms linear; }
 }
+
+.friend-skeleton-copy { flex: 1; }

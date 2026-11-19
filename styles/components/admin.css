@@ -1027,3 +1027,33 @@
     }
   }
 }
+
+@layer components {
+  .admin-head-skeleton-subtitle {
+    max-width: 100%;
+    margin-top: 0.5rem;
+  }
+}
+
+@layer components {
+  .admin-pending-body {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    flex-direction: column;
+  }
+
+  .admin-user-avatar {
+    width: 1.75rem;
+    height: 1.75rem;
+    flex-shrink: 0;
+    border-radius: 50%;
+    font-size: 0.75rem;
+    line-height: 1rem;
+  }
+
+  .admin-user-placeholder,
+  .admin-user-name-placeholder { background-color: var(--color-ink-2); }
+
+  .admin-user-name-placeholder { width: 4rem; height: 0.75rem; border-radius: 0.25rem; }
+}

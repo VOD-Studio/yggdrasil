@@ -13,25 +13,25 @@ pub fn LogsSkeleton() -> impl IntoView {
     view! {
         <div class="logs-page" aria-hidden="true">
             <AdminPageHeadSkeleton
-                title_width="w-28"
-                subtitle_width="w-64"
+                title_width="7rem"
+                subtitle_width="16rem"
                 class="logs-head"
                 actions=|| {
                     view! {
-                        <SkeletonBox class="h-[34px] w-24 rounded-lg"/>
-                        <SkeletonBox class="h-[34px] w-24 rounded-lg"/>
+                        <SkeletonBox height="34px" width="6rem" radius="0.5rem"/>
+                        <SkeletonBox height="34px" width="6rem" radius="0.5rem"/>
                     }
                 }
             />
             <div class="logs-filters">
-                <SkeletonBox class="h-[30px] w-72 rounded-lg"/>
-                <SkeletonBox class="h-[30px] w-32 rounded-lg"/>
-                <SkeletonBox class="h-[30px] w-56 rounded-lg"/>
+                <SkeletonBox height="30px" width="18rem" radius="0.5rem"/>
+                <SkeletonBox height="30px" width="8rem" radius="0.5rem"/>
+                <SkeletonBox height="30px" width="14rem" radius="0.5rem"/>
             </div>
             <div class="admin-panel logs-pane">
                 <div class="logs-skeleton">
                     {(0..12)
-                        .map(|_| view! { <SkeletonBox class="h-3.5 w-full rounded"/> })
+                        .map(|_| view! { <SkeletonBox height="0.875rem" width="100%" radius="0.25rem"/> })
                         .collect_view()}
                 </div>
             </div>

@@ -24,15 +24,15 @@ const PARAGRAPH_WIDTHS: [&str; 8] = [
 pub fn PostDetailBody() -> impl IntoView {
     view! {
         <div class="post-header">
-            <SkeletonBox class="h-3 w-28"/>
-            <SkeletonBox class="post-skeleton-title mt-5"/>
-            <SkeletonBox class="post-skeleton-title mt-2.5 w-3/5"/>
-            <SkeletonBox class="h-3 mt-6 w-72 max-w-full"/>
+            <SkeletonBox height="0.75rem" width="7rem"/>
+            <SkeletonBox class="post-skeleton-title" style="--skeleton-margin-top: 1.25rem"/>
+            <SkeletonBox width="calc(3 / 5 * 100%)" class="post-skeleton-title" style="--skeleton-margin-top: 0.625rem"/>
+            <SkeletonBox height="0.75rem" width="18rem" style="--skeleton-margin-top: 1.5rem; --skeleton-max-width: 100%"/>
         </div>
         <div class="post-skeleton-body">
             {PARAGRAPH_WIDTHS
                 .iter()
-                .map(|width| view! { <SkeletonBox class="h-3.5" style=*width/> })
+                .map(|width| view! { <SkeletonBox height="0.875rem" style=*width/> })
                 .collect_view()}
             <SkeletonBox class="post-skeleton-block"/>
         </div>

@@ -15,13 +15,13 @@ pub fn FriendsAdminListSkeleton() -> impl IntoView {
                 .map(|_| {
                     view! {
                         <li class="admin-friend">
-                            <SkeletonBox class="h-4 w-3 rounded"/>
-                            <SkeletonBox class="h-[34px] w-[34px] rounded-[10px]"/>
+                            <SkeletonBox height="1rem" width="0.75rem" radius="0.25rem"/>
+                            <SkeletonBox height="34px" width="34px" radius="10px"/>
                             <div class="admin-friend-text">
-                                <SkeletonBox class="h-4 w-32 rounded"/>
-                                <SkeletonBox class="h-3 w-40 rounded mt-1.5"/>
+                                <SkeletonBox height="1rem" width="8rem" radius="0.25rem"/>
+                                <SkeletonBox height="0.75rem" width="10rem" radius="0.25rem" style="--skeleton-margin-top: 0.375rem"/>
                             </div>
-                            <SkeletonBox class="h-3 w-6 rounded"/>
+                            <SkeletonBox height="0.75rem" width="1.5rem" radius="0.25rem"/>
                         </li>
                     }
                 })
@@ -36,19 +36,19 @@ pub fn FriendsAdminSkeleton() -> impl IntoView {
     view! {
         <div class="admin-friends" aria-hidden="true">
             <AdminPageHeadSkeleton
-                title_width="w-16"
-                subtitle_width="w-80"
-                actions=|| view! { <SkeletonBox class="h-[34px] w-28 rounded-lg"/> }
+                title_width="4rem"
+                subtitle_width="20rem"
+                actions=|| view! { <SkeletonBox height="34px" width="7rem" radius="0.5rem"/> }
             />
             <div class="admin-friends-grid">
                 <div class="admin-friends-list-col">
                     <FriendsAdminListSkeleton/>
                 </div>
                 <div class="admin-friend-form">
-                    <SkeletonBox class="h-5 w-20 rounded"/>
-                    <SkeletonBox class="h-9 w-full rounded-lg"/>
-                    <SkeletonBox class="h-9 w-full rounded-lg"/>
-                    <SkeletonBox class="h-20 w-full rounded-lg"/>
+                    <SkeletonBox height="1.25rem" width="5rem" radius="0.25rem"/>
+                    <SkeletonBox height="2.25rem" width="100%" radius="0.5rem"/>
+                    <SkeletonBox height="2.25rem" width="100%" radius="0.5rem"/>
+                    <SkeletonBox height="5rem" width="100%" radius="0.5rem"/>
                 </div>
             </div>
         </div>

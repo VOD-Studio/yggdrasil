@@ -154,7 +154,7 @@ pub fn ToastRegion() -> impl IntoView {
                             <span class="toast-icon">
                                 <Icon name=entry.tone.icon() size=16/>
                             </span>
-                            <span class="min-w-0 flex-1">{entry.message}</span>
+                            <span class="toast-message">{entry.message}</span>
                             <IconButton
                                 icon=IconName::X
                                 label="关闭提示"

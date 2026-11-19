@@ -95,7 +95,7 @@ fn DemoModalHead(
     view! {
         <div class="asset-modal-head">
             <h2>{title}</h2>
-            <div class="flex items-center gap-1">
+            <div class="showcase-modal-actions">
                 <Button
                     variant=ButtonVariant::Ghost
                     size=ButtonSize::Sm
@@ -184,7 +184,7 @@ fn PickerDemo(detail: bool) -> impl IntoView {
                             visible=visible
                             closing=closing
                             title="选择图片"
-                            overlay_padding="p-4 sm:p-6"
+                            overlay_padding="dialog-overlay-responsive"
                             panel_class="asset-modal asset-picker"
                         >
                             <DemoModalHead
@@ -449,7 +449,7 @@ fn UploadDemoPanel(items: RwSignal<Vec<UploadItem>>, generation: RwSignal<u64>) 
         <UploadPanel items=items on_retry=on_retry on_remove=on_remove>
             <button
                 type="button"
-                class="asset-drop w-full border-0"
+                class="asset-drop showcase-asset-drop"
                 on:click=move |_| {
                     items
                         .update(|list| {

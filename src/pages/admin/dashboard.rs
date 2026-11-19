@@ -637,7 +637,7 @@ fn LatestComments(
                                                 <UserAvatar
                                                     name=comment.author_name.clone()
                                                     avatar_url=Some(comment.avatar_url.clone())
-                                                    class="w-[26px] h-[26px] rounded-full text-[11.5px] flex-shrink-0"
+                                                    class="dash-comment-avatar"
                                                 />
                                                 <span class="dash-comment-body">
                                                     <span class="dash-comment-meta">
@@ -680,7 +680,7 @@ fn SiteInfo(
             <h2 id="dash-site-title">"站点"</h2>
             <dl>
                 <dt>"版本"</dt>
-                <dd class="font-mono">{env!("CARGO_PKG_VERSION")}</dd>
+                <dd class="dash-version">{env!("CARGO_PKG_VERSION")}</dd>
                 <dt>"回收站"</dt>
                 <dd>
                     {move || match stats.get() {

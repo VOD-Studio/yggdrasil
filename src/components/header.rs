@@ -59,7 +59,7 @@ fn item_active(nav_items: Signal<Vec<NavItemConfig>>, label: &'static str) -> Si
 pub fn Header(
     #[prop(into)] nav_items: Signal<Vec<NavItemConfig>>,
     #[prop(into)] right_content: ViewFn,
-    #[prop(default = "max-w-3xl")] max_width: &'static str,
+    #[prop(default = "site-width-compact")] max_width: &'static str,
 ) -> impl IntoView {
     let sheet_open = RwSignal::new(false);
     let menu_button_id = format!("{MENU_ID}-trigger");
@@ -174,7 +174,7 @@ fn NavSheetBody(nav_items: Signal<Vec<NavItemConfig>>) -> impl IntoView {
     let sheet = use_sheet_close();
     view! {
         <nav aria-label="栏目">
-            <ul class="flex flex-col gap-0.5">
+            <ul class="mobile-nav-list">
                 <For
                     each=move || nav_items.get()
                     key=|item| item.label
@@ -194,7 +194,7 @@ fn NavSheetBody(nav_items: Signal<Vec<NavItemConfig>>) -> impl IntoView {
                 />
             </ul>
         </nav>
-        <div class="my-3 mx-1 h-(--hairline) bg-hairline"></div>
+        <div class="mobile-nav-divider"></div>
         <div class="sheet-row">
             <span>"外观"</span>
             <ThemeToggle/>
@@ -289,7 +289,7 @@ mod tests {
                 <Header
                     nav_items=items
                     right_content=|| view! { <span id="right-slot"></span> }
-                    max_width="max-w-[880px]"
+                    max_width="site-width-default"
                 />
             }
             .to_html()
@@ -300,7 +300,7 @@ mod tests {
     fn header_marks_only_active_item_with_indicator() {
         let html = render_header("/archives");
         assert!(html.contains("data-vt-shell=\"frontend-header\""));
-        assert!(html.contains("site-header-inner max-w-[880px]"));
+        assert!(html.contains("site-header-inner site-width-default"));
         assert!(html.contains("aria-label=\"主导航\""));
         // 只有「归档」带 aria-current 与胶囊。
         assert_eq!(html.matches("aria-current=\"page\"").count(), 1);

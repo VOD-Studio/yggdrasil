@@ -139,7 +139,7 @@ pub(super) fn TokenDialog(token: OpenToken, #[prop(into)] on_close: Callback<()>
             visible=visible
             closing=closing
             title=title
-            overlay_padding="p-4"
+            overlay_padding="dialog-overlay-compact"
             panel_class="mcp-dialog mcp-token-dialog"
         >
             <div class="mcp-dialog-head">

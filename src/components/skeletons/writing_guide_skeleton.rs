@@ -17,12 +17,12 @@ pub fn WritingGuideSkeleton() -> impl IntoView {
                             view! {
                                 <div class="writing-step">
                                     <div class="writing-step-rail">
-                                        <SkeletonBox class="h-7 w-7 rounded-full"/>
+                                        <SkeletonBox height="1.75rem" width="1.75rem" radius="9999px"/>
                                     </div>
                                     <div class="writing-step-body">
-                                        <SkeletonBox class="h-4 w-28"/>
-                                        <SkeletonBox class="h-3 mt-3 w-full"/>
-                                        <SkeletonBox class="h-28 mt-4 w-full rounded-[14px]"/>
+                                        <SkeletonBox height="1rem" width="7rem"/>
+                                        <SkeletonBox height="0.75rem" width="100%" style="--skeleton-margin-top: 0.75rem"/>
+                                        <SkeletonBox height="7rem" width="100%" radius="14px" style="--skeleton-margin-top: 1rem"/>
                                     </div>
                                 </div>
                             }

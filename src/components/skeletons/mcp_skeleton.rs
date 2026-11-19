@@ -12,25 +12,25 @@ pub fn McpSkeleton() -> impl IntoView {
     view! {
         <div class="admin-mcp" aria-hidden="true">
             <AdminPageHeadSkeleton
-                title_width="w-28"
-                subtitle_width="w-96 max-w-full"
-                actions=|| view! { <SkeletonBox class="h-[34px] w-28 rounded-lg"/> }
+                title_width="7rem"
+                subtitle_width="24rem"
+                actions=|| view! { <SkeletonBox height="34px" width="7rem" radius="0.5rem"/> }
             />
             <div class="admin-panel mcp-oneline">
-                <SkeletonBox class="h-4 w-24 rounded"/>
-                <SkeletonBox class="h-12 w-full rounded-lg mt-3"/>
-                <SkeletonBox class="h-8 w-48 rounded-lg mt-3"/>
+                <SkeletonBox height="1rem" width="6rem" radius="0.25rem"/>
+                <SkeletonBox height="3rem" width="100%" radius="0.5rem" style="--skeleton-margin-top: 0.75rem"/>
+                <SkeletonBox height="2rem" width="12rem" radius="0.5rem" style="--skeleton-margin-top: 0.75rem"/>
             </div>
             <div class="mcp-tokens">
-                <SkeletonBox class="h-4 w-28 rounded mb-3"/>
+                <SkeletonBox height="1rem" width="7rem" radius="0.25rem" style="--skeleton-margin-bottom: 0.75rem"/>
                 <div class="admin-panel">
                     {(0..3)
                         .map(|_| {
                             view! {
                                 <div class="mcp-skeleton-row">
-                                    <SkeletonBox class="h-4 w-40 rounded"/>
-                                    <SkeletonBox class="h-4 w-16 rounded"/>
-                                    <SkeletonBox class="h-4 w-24 rounded"/>
+                                    <SkeletonBox height="1rem" width="10rem" radius="0.25rem"/>
+                                    <SkeletonBox height="1rem" width="4rem" radius="0.25rem"/>
+                                    <SkeletonBox height="1rem" width="6rem" radius="0.25rem"/>
                                 </div>
                             }
                         })

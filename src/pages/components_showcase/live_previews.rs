@@ -222,8 +222,8 @@ pub(super) fn LiveComponentPreview(
         }
         .into_any(),
         "Button" => view! {
-            <div class="flex flex-col gap-4">
-                <div class="showcase-preview-row flex-wrap">
+            <div class="showcase-button-groups">
+                <div class="showcase-preview-row">
                     <Button onclick=move |_: MouseEvent| clicked.set(true)>
                         {move || if clicked.get() { "已发布" } else { "发布文章" }}
                     </Button>
@@ -237,7 +237,7 @@ pub(super) fn LiveComponentPreview(
                         "处理中"
                     </Button>
                 </div>
-                <div class="showcase-preview-row flex-wrap items-center">
+                <div class="showcase-preview-row">
                     <Button size=ButtonSize::Xs variant=ButtonVariant::Secondary>
                         "XS"
                     </Button>
@@ -290,7 +290,7 @@ pub(super) fn LiveComponentPreview(
         }
         .into_any(),
         "Menu" => view! {
-            <div class="flex flex-col items-center gap-3">
+            <div class="showcase-centered-demo">
                 <Menu
                     label="更多操作"
                     items=vec![
@@ -310,7 +310,7 @@ pub(super) fn LiveComponentPreview(
                     (!input_value.get().is_empty())
                         .then(|| {
                             view! {
-                                <p class="text-xs text-fg-3 font-mono">
+                                <p class="showcase-demo-readout">
                                     {move || format!("on_select: {}", input_value.get())}
                                 </p>
                             }
@@ -336,7 +336,7 @@ pub(super) fn LiveComponentPreview(
         "ComposerSend" => view! { <ComposerSendDemo/> }.into_any(),
         "AdminPalette" => view! { <AdminPaletteDemo/> }.into_any(),
         "SegmentedControl" => view! {
-            <div class="showcase-preview-stack w-full">
+            <div class="showcase-preview-stack showcase-preview-fill">
                 <SegmentedControl
                     items=vec![
                         SegmentedItem::new("all".to_string(), "全部"),
@@ -350,7 +350,7 @@ pub(super) fn LiveComponentPreview(
                 {detail
                     .then(|| {
                         view! {
-                            <div class="w-full">
+                            <div class="showcase-preview-fill">
                                 <SegmentedControl
                                     items=segmented_mode_items()
                                     value=seg_mode
@@ -376,7 +376,7 @@ pub(super) fn LiveComponentPreview(
         }
         .into_any(),
         "Pagination" => view! {
-            <div class="w-full max-w-md" inert="true">
+            <div class="showcase-form-demo" inert="true">
                 <Pagination
                     current_page=2
                     total=80_i64
@@ -388,7 +388,7 @@ pub(super) fn LiveComponentPreview(
         }
         .into_any(),
         "TablePager" => view! {
-            <div class="admin-panel w-full max-w-md">
+            <div class="admin-panel showcase-form-demo">
                 <TablePager
                     page=page
                     total=57_i64
@@ -552,25 +552,27 @@ pub(super) fn LiveComponentPreview(
                 <UserAvatar
                     name="叶子"
                     avatar_url=no_avatar
-                    class="w-14 h-14 rounded-full text-xl"
+                    class="showcase-avatar-large"
                 />
                 <UserAvatar
                     name="Yggdrasil"
                     avatar_url=Some("/missing-avatar-for-showcase.png".to_string())
-                    class="w-10 h-10 rounded-full text-sm"
+                    class="showcase-avatar-small"
                 />
             </div>
             }
             .into_any()
         }
-        "ImagePlaceholder" => view! { <ImagePlaceholder class="w-10 h-10 text-fg-3"/> }.into_any(),
+        "ImagePlaceholder" => {
+            view! { <ImagePlaceholder class="showcase-image-placeholder"/> }.into_any()
+        }
         "Icon" => view! {
-            <div class="grid grid-cols-8 gap-3 text-fg-2">
+            <div class="showcase-icon-grid">
                 {IconName::ALL
                     .into_iter()
                     .map(|icon| {
                         view! {
-                            <span class="grid place-items-center" title=icon.slug()>
+                            <span class="showcase-icon-cell" title=icon.slug()>
                                 <Icon name=icon size=18/>
                             </span>
                         }
@@ -589,7 +591,7 @@ pub(super) fn LiveComponentPreview(
         }
         .into_any(),
         "LoadError" => view! {
-            <div class="w-full max-w-xl">
+            <div class="showcase-load-preview">
                 <LoadError
                     title="文章暂时没能加载"
                     retrying=clicked
@@ -692,7 +694,7 @@ fn SearchPaletteDemo() -> impl IntoView {
 fn ToastDemo() -> impl IntoView {
     let toast = use_toast();
     view! {
-        <div class="showcase-preview-row flex-wrap">
+        <div class="showcase-preview-row">
             <Button
                 variant=ButtonVariant::Secondary
                 onclick=move |_: MouseEvent| toast.show(ToastTone::Info, "草稿已自动保存")
@@ -764,7 +766,7 @@ fn SideSheetDemo() -> impl IntoView {
             trigger_id="showcase-side-sheet-trigger"
             label="演示抽屉"
         >
-            <div class="p-3">
+            <div class="showcase-sheet-content">
                 <BottomSheetDemoBody/>
             </div>
         </SideSheet>
@@ -777,7 +779,7 @@ fn ComposerDemo() -> impl IntoView {
     let query = RwSignal::new(String::new());
     let submitted = RwSignal::new(String::new());
     view! {
-        <div class="showcase-preview-stack w-full max-w-md">
+        <div class="showcase-preview-stack showcase-form-demo">
             <form
                 role="search"
                 on:submit=move |event: SubmitEvent| {
@@ -801,7 +803,7 @@ fn ComposerDemo() -> impl IntoView {
                 (!submitted.get().is_empty())
                     .then(|| {
                         view! {
-                            <p class="text-sm text-fg-2" role="status">
+                            <p class="showcase-preview-copy" role="status">
                                 {move || format!("已提交：{}", submitted.get())}
                             </p>
                         }
@@ -817,7 +819,7 @@ fn ComposerInputDemo() -> impl IntoView {
     let text = RwSignal::new(String::new());
     let entries = RwSignal::new(Vec::<String>::new());
     view! {
-        <div class="showcase-preview-stack w-full max-w-md">
+        <div class="showcase-preview-stack showcase-form-demo">
             <Composer size=ComposerSize::Sm>
                 <ComposerInput
                     multiline=true
@@ -834,7 +836,7 @@ fn ComposerInputDemo() -> impl IntoView {
                     }
                 />
             </Composer>
-            <ul class="flex flex-col gap-1 text-sm text-fg-2" aria-label="已提交内容">
+            <ul class="showcase-entry-list" aria-label="已提交内容">
                 {move || {
                     entries
                         .get()
@@ -864,7 +866,7 @@ fn ComposerSendDemo() -> impl IntoView {
                 (sent.get() > 0)
                     .then(|| {
                         view! {
-                            <p class="text-sm text-fg-2" role="status">
+                            <p class="showcase-preview-copy" role="status">
                                 {move || format!("已点击 {} 次", sent.get())}
                             </p>
                         }
@@ -912,7 +914,7 @@ fn AdminPaletteDemo() -> impl IntoView {
         Box::pin(std::future::ready(Some(hits)))
     };
     view! {
-        <div class="showcase-preview-row flex-wrap">
+        <div class="showcase-preview-row">
             <Button
                 variant=ButtonVariant::Secondary
                 icon=IconName::Search
@@ -924,7 +926,7 @@ fn AdminPaletteDemo() -> impl IntoView {
                 (!picked.get().is_empty())
                     .then(|| {
                         view! {
-                            <p class="text-xs text-fg-3 font-mono">
+                            <p class="showcase-demo-readout">
                                 {move || format!("on_activate: {}", picked.get())}
                             </p>
                         }
@@ -942,7 +944,7 @@ fn AdminPaletteDemo() -> impl IntoView {
 fn BottomSheetDemoBody() -> impl IntoView {
     let sheet = use_sheet_close();
     view! {
-        <ul class="flex flex-col gap-0.5">
+        <ul class="showcase-sheet-list">
             {["设计系统", "Dioxus 实践", "Rust 异步"]
                 .into_iter()
                 .map(|label| {

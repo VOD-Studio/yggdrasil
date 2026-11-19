@@ -106,18 +106,19 @@ export function motionCss(presets: readonly SpringPreset[] = SPRING_PRESETS): st
   const lines = [
     '/* 由 libs/shared/scripts/generate-motion-css.ts 生成，勿手改。',
     '   改参数请编辑 libs/shared/src/spring.ts 后运行 `bun run motion-css`（libs/shared 下）。 */',
-    '@theme static {',
+    '@layer theme {',
+    '  :root {',
   ];
   for (const preset of presets) {
     const { easing, durationMs } = sampleSpring(preset);
     const zeta = dampingRatio(preset);
     const over = (overshoot(preset) * 100).toFixed(1);
     lines.push(
-      `  /* ${preset.use}：k ${preset.stiffness} · c ${preset.damping} · m ${preset.mass}，ζ ${zeta.toFixed(3)}，过冲 ${over}% */`,
-      `  --ease-spring-${preset.name}: ${easing};`,
-      `  --spring-${preset.name}-duration: ${durationMs}ms;`,
+      `    /* ${preset.use}：k ${preset.stiffness} · c ${preset.damping} · m ${preset.mass}，ζ ${zeta.toFixed(3)}，过冲 ${over}% */`,
+      `    --ease-spring-${preset.name}: ${easing};`,
+      `    --spring-${preset.name}-duration: ${durationMs}ms;`,
     );
   }
-  lines.push('}', '');
+  lines.push('  }', '}', '');
   return lines.join('\n');
 }

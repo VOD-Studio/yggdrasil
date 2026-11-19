@@ -277,8 +277,8 @@ pub(super) fn SettingsCard(
                                 .map(|_| {
                                     view! {
                                         <div class="settings-row">
-                                            <crate::components::skeletons::atoms::SkeletonBox class="h-3.5 w-20 rounded"/>
-                                            <crate::components::skeletons::atoms::SkeletonBox class="h-9 w-full rounded-lg"/>
+                                            <crate::components::skeletons::atoms::SkeletonBox width="5rem" height="0.875rem" radius="0.25rem"/>
+                                            <crate::components::skeletons::atoms::SkeletonBox width="100%" height="2.25rem" radius="0.5rem"/>
                                         </div>
                                     }
                                 })

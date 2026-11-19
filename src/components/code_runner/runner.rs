@@ -408,12 +408,12 @@ pub fn CodeRunner(
                         view! {
                             <div
                                 role="alert"
-                                class="flex items-center gap-3 p-3 text-sm text-red-500 dark:text-red-400"
+                                class="library-load-failure"
                             >
                                 <span>"编辑器初始化失败。"</span>
                                 <button
                                     type="button"
-                                    class="underline underline-offset-4"
+
                                     on:click=move |_| {
                                         editor_failed.set(false);
                                         mount_retry.update(|n| *n += 1);
@@ -478,12 +478,12 @@ pub fn CodeRunner(
                                             view! {
                                                 <div
                                                     role="alert"
-                                                    class="flex items-center gap-3 p-3 text-sm text-red-500 dark:text-red-400"
+                                                    class="library-load-failure"
                                                 >
                                                     <span>"终端初始化失败。"</span>
                                                     <button
                                                         type="button"
-                                                        class="underline underline-offset-4"
+
                                                         on:click=move |_| {
                                                             terminal_failed.set(false);
                                                             mount_retry.update(|n| *n += 1);
@@ -520,8 +520,8 @@ pub fn CodeRunner(
                                             .then(|| {
                                                 view! {
                                                     <div class="runner-terminal-skeleton">
-                                                        <SkeletonBox class="h-2.5" style="width: 40%"/>
-                                                        <SkeletonBox class="h-2.5" style="width: 64%"/>
+                                                        <SkeletonBox height="0.625rem" style="width: 40%"/>
+                                                        <SkeletonBox height="0.625rem" style="width: 64%"/>
                                                         {move || {
                                                             state
                                                                 .with(|state| state.busy_hint())

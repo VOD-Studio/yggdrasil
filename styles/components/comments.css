@@ -333,3 +333,9 @@
   color: var(--color-fg-3);
   pointer-events: none;
 }
+
+@layer components {
+  .comment-form-message { margin-bottom: 0.75rem; }
+  .comment-upload-spinner { display: inline-block; }
+  .comment-skeleton-lines { display: flex; flex-direction: column; gap: 0.5rem; }
+}

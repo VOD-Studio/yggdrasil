@@ -570,7 +570,7 @@ pub fn AdminLayout() -> impl IntoView {
     // 登录态校验期与分包挂起槽位共用的页面骨架。
     let skeleton = move || {
         view! {
-            <div class="flex-1 min-h-0 flex flex-col animate-pulse">
+            <div class="admin-pending-body skeleton-pulse">
                 {move || admin_route_skeleton(target_page.get())}
             </div>
         }
@@ -1055,7 +1055,7 @@ pub(crate) fn AdminSidebar(
                                     <UserAvatar
                                         name=name.clone()
                                         avatar_url=avatar_url
-                                        class="w-7 h-7 rounded-full text-xs flex-shrink-0"
+                                        class="admin-user-avatar"
                                     />
                                     <span class="admin-user-text">
                                         <span class="admin-user-name">{name}</span>
@@ -1068,9 +1068,9 @@ pub(crate) fn AdminSidebar(
                         None => {
                             view! {
                                 <div class="admin-user-link" aria-hidden="true">
-                                    <span class="w-7 h-7 rounded-full bg-ink-2 animate-pulse flex-shrink-0"></span>
+                                    <span class="admin-user-avatar admin-user-placeholder skeleton-pulse"></span>
                                     <span class="admin-user-text">
-                                        <span class="h-3 w-16 rounded bg-ink-2 animate-pulse"></span>
+                                        <span class="admin-user-name-placeholder skeleton-pulse"></span>
                                     </span>
                                 </div>
                             }

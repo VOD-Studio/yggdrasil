@@ -13,7 +13,7 @@
 /** 呼吸空间：标题顶部与 header 下沿之间留出的空白。 */
 const HEADING_OFFSET_PX = 16;
 
-/** 吸顶页头：前台为 `.site-header`，后台布局仍用 Tailwind 的 `sticky`。 */
+/** 吸顶页头：前台为 `.site-header`，后台通过 `.admin-topbar` 吸顶。 */
 export const STICKY_HEADER_SELECTOR = 'header.site-header, header.sticky';
 
 /**

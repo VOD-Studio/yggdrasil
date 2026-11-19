@@ -121,7 +121,8 @@ fn skeleton_view(path: &str) -> AnyView {
         SkeletonKind::Changelog => view! { <ChangelogSkeleton/> }.into_any(),
         SkeletonKind::WritingGuide => view! { <WritingGuideSkeleton/> }.into_any(),
         SkeletonKind::Showcase => {
-            view! { <div class="py-20" role="status">"正在翻开组件图鉴…"</div> }.into_any()
+            view! { <div class="showcase-loading" role="status">"正在翻开组件图鉴…"</div> }
+                .into_any()
         }
         SkeletonKind::Fallback => view! { <HomeSkeleton/> }.into_any(),
     }
@@ -156,11 +157,11 @@ fn pending_target(target: &str, rendered: &str) -> Option<String> {
 /// 路径对应的主区宽度类：文章页 1240px（680px 正文 + 右侧目录），图鉴 1152px，其余与页头同宽。
 fn main_width_class(path: &str) -> &'static str {
     if is_post_path(path) {
-        "max-w-[1240px]"
+        "site-width-article"
     } else if is_showcase_path(path) {
-        "max-w-6xl"
+        "site-width-showcase"
     } else {
-        "max-w-[880px]"
+        "site-width-default"
     }
 }
 
@@ -201,7 +202,7 @@ pub fn FrontendLayout(#[prop(optional)] children: Option<ChildrenFn>) -> impl In
     let palette = use_search_palette_provider();
     // 页头与页脚在所有前台页面统一为 880px 索引宽度，栏目切换时外壳不跳动。
     // 主区按页面放宽：文章页 1240px（680px 正文 + 右侧目录），图鉴 1152px，其余与页头同宽。
-    let max_width = "max-w-[880px]";
+    let max_width = "site-width-default";
     // 文章页由 PostDetail 写自己的分享元信息，其余页面用站点的。
     let is_post = Memo::new(move |_| is_post_path(&pathname.read()));
     let main_width = Signal::derive(move || pathname.with(|path| main_width_class(path)));
@@ -281,15 +282,15 @@ pub(crate) fn FrontendShell(
     #[prop(into)] header: ViewFn,
     #[prop(into)] main_content: ViewFn,
     #[prop(into)] footer: ViewFn,
-    #[prop(into, default = "max-w-[880px]".into())] max_width: Signal<&'static str>,
-    #[prop(default = "min-h-screen")] min_height: &'static str,
+    #[prop(into, default = "site-width-default".into())] max_width: Signal<&'static str>,
+    #[prop(default = "site-shell-viewport")] min_height: &'static str,
 ) -> impl IntoView {
     view! {
-        <div class=format!("site-shell {min_height} flex flex-col bg-surface-0")>
+        <div class=format!("site-shell {min_height}")>
             {header.run()}
             <main class=move || {
                 format!(
-                    "flex-1 w-full {} mx-auto px-6 py-6 md:py-12 overflow-x-clip",
+                    "site-main {}",
                     max_width.get(),
                 )
             }>{main_content.run()}</main>
@@ -367,10 +368,13 @@ mod tests {
 
     #[test]
     fn main_width_follows_page_kind() {
-        assert_eq!(main_width_class("/post/hello"), "max-w-[1240px]");
-        assert_eq!(main_width_class("/about/components/button"), "max-w-6xl");
-        assert_eq!(main_width_class("/"), "max-w-[880px]");
-        assert_eq!(main_width_class("/archives"), "max-w-[880px]");
+        assert_eq!(main_width_class("/post/hello"), "site-width-article");
+        assert_eq!(
+            main_width_class("/about/components/button"),
+            "site-width-showcase"
+        );
+        assert_eq!(main_width_class("/"), "site-width-default");
+        assert_eq!(main_width_class("/archives"), "site-width-default");
     }
 
     #[test]
@@ -399,15 +403,13 @@ mod tests {
                     header=|| view! { <header id="h"></header> }
                     main_content=|| view! { <p id="m"></p> }
                     footer=|| view! { <footer id="f"></footer> }
-                    max_width="max-w-6xl"
-                    min_height="min-h-0"
+                    max_width="site-width-showcase"
+                    min_height="site-shell-embedded"
                 />
             }
             .to_html()
         });
-        assert!(html.contains(
-            "class=\"flex-1 w-full max-w-6xl mx-auto px-6 py-6 md:py-12 overflow-x-clip\""
-        ));
+        assert!(html.contains("class=\"site-main site-width-showcase\""));
         let h = html.find("id=\"h\"").unwrap();
         let main = html.find("<main").unwrap();
         let m = html.find("id=\"m\"").unwrap();
@@ -427,6 +429,6 @@ mod tests {
             }
             .to_html()
         });
-        assert!(html.contains("flex-1 w-full max-w-[880px] mx-auto"));
+        assert!(html.contains("site-main site-width-default"));
     }
 }

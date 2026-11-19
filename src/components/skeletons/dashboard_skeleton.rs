@@ -12,15 +12,15 @@ use crate::components::skeletons::atoms::{AdminPageHeadSkeleton, SkeletonBox};
 pub fn AdminDashboardSkeleton() -> impl IntoView {
     view! {
         <div class="admin-dash" aria-hidden="true">
-            <AdminPageHeadSkeleton title_width="w-44" subtitle_width="w-56"/>
+            <AdminPageHeadSkeleton title_width="11rem" subtitle_width="14rem"/>
             <div class="dash-tiles">
                 {(0..4)
                     .map(|_| {
                         view! {
                             <div class="admin-panel dash-tile">
-                                <SkeletonBox class="h-3.5 w-12 rounded"/>
+                                <SkeletonBox height="0.875rem" width="3rem" radius="0.25rem"/>
                                 <SkeletonBox class="dash-tile-value-skeleton"/>
-                                <SkeletonBox class="h-3 w-24 rounded mt-2"/>
+                                <SkeletonBox height="0.75rem" width="6rem" radius="0.25rem" style="--skeleton-margin-top: 0.5rem"/>
                             </div>
                         }
                     })
@@ -29,12 +29,12 @@ pub fn AdminDashboardSkeleton() -> impl IntoView {
             <div class="dash-cols">
                 <div class="dash-col">
                     <div class="admin-panel dash-chart">
-                        <SkeletonBox class="h-4 w-28 rounded"/>
+                        <SkeletonBox height="1rem" width="7rem" radius="0.25rem"/>
                         <SkeletonBox class="dash-chart-skeleton"/>
                     </div>
                     <div class="admin-panel dash-list">
                         <div class="dash-panel-head dash-panel-head-rule">
-                            <SkeletonBox class="h-4 w-20 rounded"/>
+                            <SkeletonBox height="1rem" width="5rem" radius="0.25rem"/>
                         </div>
                         <div class="dash-list-body">
                             {(0..5)
@@ -46,7 +46,7 @@ pub fn AdminDashboardSkeleton() -> impl IntoView {
                 <div class="dash-col">
                     <div class="admin-panel dash-list">
                         <div class="dash-panel-head dash-panel-head-rule">
-                            <SkeletonBox class="h-4 w-20 rounded"/>
+                            <SkeletonBox height="1rem" width="5rem" radius="0.25rem"/>
                         </div>
                         <div class="dash-list-body">
                             {(0..4)

@@ -29,9 +29,9 @@ pub fn HomeSkeleton(#[prop(default = 1)] current_page: i32) -> impl IntoView {
         return view! {
             <div class="home home-paged" role="status" aria-label="正在加载文章">
                 <header class="home-paged-header">
-                    <SkeletonBox class="h-4 w-20"/>
-                    <SkeletonBox class="home-skeleton-title w-40"/>
-                    <SkeletonBox class="h-4 w-16"/>
+                    <SkeletonBox height="1rem" width="5rem"/>
+                    <SkeletonBox width="10rem" class="home-skeleton-title"/>
+                    <SkeletonBox height="1rem" width="4rem"/>
                 </header>
                 <HomePostsSkeleton current_page=current_page/>
             </div>
@@ -41,27 +41,27 @@ pub fn HomeSkeleton(#[prop(default = 1)] current_page: i32) -> impl IntoView {
     view! {
         <div class="home" role="status" aria-label="正在加载首页">
             <div class="home-hero">
-                <SkeletonBox class="h-3 w-56 max-w-full"/>
-                <SkeletonBox class="home-skeleton-title mt-6 w-[22rem] max-w-full"/>
-                <SkeletonBox class="home-skeleton-title mt-3 w-[17rem] max-w-full"/>
-                <SkeletonBox class="h-3.5 mt-6 w-[28rem] max-w-full"/>
-                <SkeletonBox class="home-skeleton-composer mt-9"/>
+                <SkeletonBox height="0.75rem" width="14rem" style="--skeleton-max-width: 100%"/>
+                <SkeletonBox width="22rem" class="home-skeleton-title" style="--skeleton-margin-top: 1.5rem; --skeleton-max-width: 100%"/>
+                <SkeletonBox width="17rem" class="home-skeleton-title" style="--skeleton-margin-top: 0.75rem; --skeleton-max-width: 100%"/>
+                <SkeletonBox height="0.875rem" width="28rem" style="--skeleton-margin-top: 1.5rem; --skeleton-max-width: 100%"/>
+                <SkeletonBox class="home-skeleton-composer" style="--skeleton-margin-top: 2.25rem"/>
             </div>
             <div class="home-section">
-                <SkeletonBox class="h-3 w-16 mb-4"/>
+                <SkeletonBox height="0.75rem" width="4rem" style="--skeleton-margin-bottom: 1rem"/>
                 <div class="home-latest">
                     <div class="home-latest-main">
-                        <SkeletonBox class="h-3 w-40"/>
-                        <SkeletonBox class="h-7 mt-4 w-4/5"/>
-                        <SkeletonBox class="h-3 mt-4 w-full"/>
-                        <SkeletonBox class="h-3 mt-2.5 w-3/4"/>
+                        <SkeletonBox height="0.75rem" width="10rem"/>
+                        <SkeletonBox height="1.75rem" width="calc(4 / 5 * 100%)" style="--skeleton-margin-top: 1rem"/>
+                        <SkeletonBox height="0.75rem" width="100%" style="--skeleton-margin-top: 1rem"/>
+                        <SkeletonBox height="0.75rem" width="calc(3 / 4 * 100%)" style="--skeleton-margin-top: 0.625rem"/>
                     </div>
                     <div class="home-latest-outline">
-                        <SkeletonBox class="h-3 w-16 mb-3"/>
-                        <div class="flex flex-col gap-3">
+                        <SkeletonBox height="0.75rem" width="4rem" style="--skeleton-margin-bottom: 0.75rem"/>
+                        <div class="home-skeleton-lines">
                             {OUTLINE_WIDTHS
                                 .iter()
-                                .map(|width| view! { <SkeletonBox class="h-3" style=*width/> })
+                                .map(|width| view! { <SkeletonBox height="0.75rem" style=*width/> })
                                 .collect_view()}
                         </div>
                     </div>
@@ -82,24 +82,24 @@ pub fn HomePostsSkeleton(current_page: i32) -> impl IntoView {
                 .then(|| {
                     view! {
                         <div class="home-index-heading">
-                            <SkeletonBox class="h-5 w-28"/>
-                            <SkeletonBox class="h-4 w-12"/>
+                            <SkeletonBox height="1.25rem" width="7rem"/>
+                            <SkeletonBox height="1rem" width="3rem"/>
                         </div>
                     }
                 })}
             <div class="home-month">
-                <SkeletonBox class="home-month-label h-3 w-16"/>
+                <SkeletonBox height="0.75rem" width="4rem" class="home-month-label"/>
                 {ROW_WIDTHS
                     .iter()
                     .map(|width| {
                         view! {
                             <div class="home-row home-row-skeleton">
-                                <SkeletonBox class="h-3 w-10"/>
+                                <SkeletonBox height="0.75rem" width="2.5rem"/>
                                 <div>
-                                    <SkeletonBox class="h-4" style=*width/>
-                                    <SkeletonBox class="h-3 mt-2 w-[90%]"/>
+                                    <SkeletonBox height="1rem" style=*width/>
+                                    <SkeletonBox height="0.75rem" width="90%" style="--skeleton-margin-top: 0.5rem"/>
                                 </div>
-                                <SkeletonBox class="home-row-meta h-3 w-14"/>
+                                <SkeletonBox height="0.75rem" width="3.5rem" class="home-row-meta"/>
                             </div>
                         }
                     })

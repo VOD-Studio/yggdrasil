@@ -1,4 +1,4 @@
-# 生成资源：libs 前端库、语法高亮 CSS、KaTeX CSS + 字体、Tailwind。
+# 生成资源：libs 前端库、语法高亮 CSS、KaTeX CSS + 字体、CSS 打包。
 # 两条流水线共用这里的 target：
 #   - release：build-assets 全量构建（build / build-linux / Dockerfile 共用）
 #   - dev：    dev-assets 基于 stamp 增量构建，只重建变化的部分
@@ -8,20 +8,21 @@
 .PHONY: build-assets build-libs highlight-css katex-css css css-watch
 .PHONY: dev-assets dev-libs dev-highlight-css dev-katex-css dev-assets-force
 
-# Tailwind 两个入口：input.css → public/style.css（全站），input-admin.css → public/admin.css
+# 两个 CSS 入口：input.css → public/style.css（全站），input-admin.css → public/admin.css
 # （后台与组件图鉴，按路由加载）。各自只编译显式导入的 styles/ 文件。
-TAILWIND := tailwindcss -i input.css -o public/style.css
-TAILWIND_ADMIN := tailwindcss -i input-admin.css -o public/admin.css
+CSS_BUILD := bun build --target=browser
+CSS_SITE := $(CSS_BUILD) input.css --outfile=public/style.css
+CSS_ADMIN := $(CSS_BUILD) input-admin.css --outfile=public/admin.css
 
 # release 构建共用的资源流水线：libs 前端库、语法高亮 CSS、KaTeX CSS + 字体、
-# Tailwind（压缩）。build / build-linux / 两个 Dockerfile 都调用它，不要在别处
+# CSS 打包（压缩）。build / build-linux / 两个 Dockerfile 都调用它，不要在别处
 # 再手写这几步——KaTeX 曾因 Dockerfile 里漏掉 katex-css 而退化成裸 span。
-build-assets: ## 构建 public/ 下的全部生成资源（libs、高亮/KaTeX CSS、Tailwind）
+build-assets: ## 构建 public/ 下的全部生成资源（libs、高亮/KaTeX CSS、CSS 打包）
 	@$(MAKE) build-libs
 	@$(MAKE) highlight-css
 	@$(MAKE) katex-css
-	@$(TAILWIND) --minify
-	@$(TAILWIND_ADMIN) --minify
+	@$(CSS_SITE) --minify
+	@$(CSS_ADMIN) --minify
 
 highlight-css: ## 生成语法高亮 CSS
 	@cargo run --bin generate_highlight_css
@@ -42,12 +43,16 @@ katex-css: ## 拷贝 KaTeX CSS 与 woff2 字体到 public/katex/
 build-libs: ## 全量构建 libs/ 前端库
 	@cd libs && bun install --frozen-lockfile && bun run --filter '*' build
 
-css: ## 生成 Tailwind CSS（未压缩）
-	@$(TAILWIND)
-	@$(TAILWIND_ADMIN)
+css: ## 生成站点 CSS（未压缩）
+	@$(CSS_SITE)
+	@$(CSS_ADMIN)
 
-css-watch: ## 监听并持续生成 Tailwind CSS
-	@trap 'kill 0' INT TERM; $(TAILWIND) --watch & $(TAILWIND_ADMIN) --watch & wait
+css-watch: ## 监听并持续生成站点 CSS
+	@$(CSS_SITE) --watch --no-clear-screen & site_pid=$$!; \
+	$(CSS_ADMIN) --watch --no-clear-screen & admin_pid=$$!; \
+	trap 'kill $$site_pid $$admin_pid 2>/dev/null || true' EXIT; \
+	trap 'exit 130' INT; trap 'exit 143' TERM; \
+	wait $$site_pid $$admin_pid
 
 # ── dev 增量构建 ───────────────────────────────────────────────
 # 开发启动只重建变化的资源；发布和显式 build-libs 仍执行完整构建。
@@ -98,7 +103,7 @@ $(DEV_ASSET_DIR)/katex.stamp: dev-assets-force
 endif
 dev-katex-css: $(DEV_ASSET_DIR)/katex.stamp
 
-# 先安装依赖，再由子 make 读取新依赖和输出清单。Tailwind 扫描所有模板，继续实时生成。
+# 先安装依赖，再由子 make 读取新依赖和输出清单。两份站点 CSS 直接由入口生成。
 dev-assets: check-dev-tools ## 只刷新变化的前端/CSS 资源，不启动服务
 	@cd libs && bun install
 	@$(MAKE) --no-print-directory -j$(DEV_ASSET_JOBS) dev-libs dev-highlight-css dev-katex-css css

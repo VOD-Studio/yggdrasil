@@ -12,16 +12,16 @@ pub fn SearchSkeleton() -> impl IntoView {
     view! {
         <div class="search-skeleton" role="status" aria-label="正在搜索">
             <div aria-hidden="true">
-                <SkeletonBox class="h-4 w-36 mb-4"/>
+                <SkeletonBox height="1rem" width="9rem" style="--skeleton-margin-bottom: 1rem"/>
                 {TITLE_WIDTHS
                     .iter()
                     .map(|width| {
                         view! {
                             <div class="search-result search-result-skeleton">
-                                <SkeletonBox class="h-4" style=*width/>
-                                <SkeletonBox class="h-3 mt-3 w-full"/>
-                                <SkeletonBox class="h-3 mt-2 w-4/5"/>
-                                <SkeletonBox class="h-3 mt-3 w-40"/>
+                                <SkeletonBox height="1rem" style=*width/>
+                                <SkeletonBox height="0.75rem" width="100%" style="--skeleton-margin-top: 0.75rem"/>
+                                <SkeletonBox height="0.75rem" width="calc(4 / 5 * 100%)" style="--skeleton-margin-top: 0.5rem"/>
+                                <SkeletonBox height="0.75rem" width="10rem" style="--skeleton-margin-top: 0.75rem"/>
                             </div>
                         }
                     })

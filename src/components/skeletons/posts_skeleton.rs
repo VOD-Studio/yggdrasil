@@ -15,22 +15,22 @@ pub fn PostsTableSkeleton() -> impl IntoView {
                 <thead>
                     <tr>
                         <th class="admin-table-check">
-                            <SkeletonBox class="h-4 w-4 rounded"/>
+                            <SkeletonBox height="1rem" width="1rem" radius="0.25rem"/>
                         </th>
                         <th>
-                            <SkeletonBox class="h-3 w-10 rounded"/>
+                            <SkeletonBox height="0.75rem" width="2.5rem" radius="0.25rem"/>
                         </th>
                         <th>
-                            <SkeletonBox class="h-3 w-10 rounded"/>
+                            <SkeletonBox height="0.75rem" width="2.5rem" radius="0.25rem"/>
                         </th>
                         <th class="admin-posts-tags">
-                            <SkeletonBox class="h-3 w-10 rounded"/>
+                            <SkeletonBox height="0.75rem" width="2.5rem" radius="0.25rem"/>
                         </th>
                         <th class="admin-posts-words">
-                            <SkeletonBox class="h-3 w-8 rounded ml-auto"/>
+                            <SkeletonBox height="0.75rem" width="2rem" radius="0.25rem" style="--skeleton-margin-left: auto"/>
                         </th>
                         <th>
-                            <SkeletonBox class="h-3 w-14 rounded"/>
+                            <SkeletonBox height="0.75rem" width="3.5rem" radius="0.25rem"/>
                         </th>
                         <th class="admin-table-actions"></th>
                     </tr>
@@ -41,26 +41,26 @@ pub fn PostsTableSkeleton() -> impl IntoView {
                             view! {
                                 <tr>
                                     <td class="admin-table-check">
-                                        <SkeletonBox class="h-4 w-4 rounded"/>
+                                        <SkeletonBox height="1rem" width="1rem" radius="0.25rem"/>
                                     </td>
                                     <td class="admin-posts-title">
-                                        <SkeletonBox class="h-4 w-3/4 rounded"/>
-                                        <SkeletonBox class="h-3 w-1/3 rounded mt-1.5"/>
+                                        <SkeletonBox height="1rem" width="calc(3 / 4 * 100%)" radius="0.25rem"/>
+                                        <SkeletonBox height="0.75rem" width="calc(1 / 3 * 100%)" radius="0.25rem" style="--skeleton-margin-top: 0.375rem"/>
                                     </td>
                                     <td class="admin-posts-status">
-                                        <SkeletonBox class="h-3.5 w-14 rounded"/>
+                                        <SkeletonBox height="0.875rem" width="3.5rem" radius="0.25rem"/>
                                     </td>
                                     <td class="admin-posts-tags">
-                                        <SkeletonBox class="h-3.5 w-20 rounded"/>
+                                        <SkeletonBox height="0.875rem" width="5rem" radius="0.25rem"/>
                                     </td>
                                     <td class="admin-posts-words">
-                                        <SkeletonBox class="h-3.5 w-10 rounded ml-auto"/>
+                                        <SkeletonBox height="0.875rem" width="2.5rem" radius="0.25rem" style="--skeleton-margin-left: auto"/>
                                     </td>
                                     <td class="admin-posts-date">
-                                        <SkeletonBox class="h-3.5 w-28 rounded"/>
+                                        <SkeletonBox height="0.875rem" width="7rem" radius="0.25rem"/>
                                     </td>
                                     <td class="admin-table-actions">
-                                        <SkeletonBox class="h-6 w-6 rounded-md ml-auto"/>
+                                        <SkeletonBox height="1.5rem" width="1.5rem" radius="0.375rem" style="--skeleton-margin-left: auto"/>
                                     </td>
                                 </tr>
                             }
@@ -78,20 +78,20 @@ pub fn PostsSkeleton() -> impl IntoView {
     view! {
         <div class="admin-posts" aria-hidden="true">
             <AdminPageHeadSkeleton
-                title_width="w-20"
-                subtitle_width="w-44"
+                title_width="5rem"
+                subtitle_width="11rem"
                 actions=|| {
                     view! {
-                        <SkeletonBox class="h-[34px] w-[34px] rounded-lg"/>
-                        <SkeletonBox class="h-[34px] w-28 rounded-lg"/>
+                        <SkeletonBox height="34px" width="34px" radius="0.5rem"/>
+                        <SkeletonBox height="34px" width="7rem" radius="0.5rem"/>
                     }
                 }
             />
             <div class="admin-toolbar">
-                <SkeletonBox class="h-8 w-72 rounded-full"/>
+                <SkeletonBox height="2rem" width="18rem" radius="9999px"/>
                 <div class="admin-toolbar-filters">
-                    <SkeletonBox class="h-[30px] w-60 rounded-lg"/>
-                    <SkeletonBox class="h-[30px] w-28 rounded-lg"/>
+                    <SkeletonBox height="30px" width="15rem" radius="0.5rem"/>
+                    <SkeletonBox height="30px" width="7rem" radius="0.5rem"/>
                 </div>
             </div>
             <PostsTableSkeleton/>

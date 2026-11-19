@@ -17,12 +17,12 @@ pub fn NoteRowsSkeleton() -> impl IntoView {
                     .map(|_| {
                         view! {
                             <li class="admin-notes-row">
-                                <SkeletonBox class="h-[30px] w-[30px] rounded-lg"/>
+                                <SkeletonBox height="30px" width="30px" radius="0.5rem"/>
                                 <span class="admin-notes-main">
-                                    <SkeletonBox class="h-4 w-3/5 rounded"/>
-                                    <SkeletonBox class="h-3 w-2/5 rounded mt-2"/>
+                                    <SkeletonBox height="1rem" width="calc(3 / 5 * 100%)" radius="0.25rem"/>
+                                    <SkeletonBox height="0.75rem" width="calc(2 / 5 * 100%)" radius="0.25rem" style="--skeleton-margin-top: 0.5rem"/>
                                 </span>
-                                <SkeletonBox class="h-3 w-10 rounded"/>
+                                <SkeletonBox height="0.75rem" width="2.5rem" radius="0.25rem"/>
                             </li>
                         }
                     })
@@ -38,21 +38,21 @@ pub fn AdminNotesSkeleton() -> impl IntoView {
     view! {
         <div class="admin-notes" aria-hidden="true">
             <AdminPageHeadSkeleton
-                title_width="w-20"
-                subtitle_width="w-64"
+                title_width="5rem"
+                subtitle_width="16rem"
                 actions=|| {
                     view! {
-                        <SkeletonBox class="h-[34px] w-24 rounded-lg"/>
-                        <SkeletonBox class="h-[34px] w-24 rounded-lg"/>
+                        <SkeletonBox height="34px" width="6rem" radius="0.5rem"/>
+                        <SkeletonBox height="34px" width="6rem" radius="0.5rem"/>
                     }
                 }
             />
-            <SkeletonBox class="h-[120px] w-full rounded-[20px]"/>
+            <SkeletonBox height="120px" width="100%" radius="20px"/>
             <div class="admin-toolbar admin-notes-toolbar">
-                <SkeletonBox class="h-8 w-56 rounded-full"/>
+                <SkeletonBox height="2rem" width="14rem" radius="9999px"/>
                 <div class="admin-toolbar-filters">
-                    <SkeletonBox class="h-[30px] w-60 rounded-lg"/>
-                    <SkeletonBox class="h-[30px] w-24 rounded-lg"/>
+                    <SkeletonBox height="30px" width="15rem" radius="0.5rem"/>
+                    <SkeletonBox height="30px" width="6rem" radius="0.5rem"/>
                 </div>
             </div>
             <NoteRowsSkeleton/>
@@ -67,14 +67,14 @@ pub fn NotebooksSkeleton() -> impl IntoView {
         <div class="admin-notebooks-grid" aria-hidden="true">
             <div class="admin-panel admin-notebooks-list">
                 <div class="admin-notebooks-tabs">
-                    <SkeletonBox class="h-[30px] w-full rounded-lg"/>
+                    <SkeletonBox height="30px" width="100%" radius="0.5rem"/>
                 </div>
                 {(0..4)
                     .map(|_| {
                         view! {
-                            <div class="px-4 py-2.5">
-                                <SkeletonBox class="h-4 w-3/4 rounded"/>
-                                <SkeletonBox class="h-3 w-1/3 rounded mt-1.5"/>
+                            <div class="note-row-skeleton-copy">
+                                <SkeletonBox height="1rem" width="calc(3 / 4 * 100%)" radius="0.25rem"/>
+                                <SkeletonBox height="0.75rem" width="calc(1 / 3 * 100%)" radius="0.25rem" style="--skeleton-margin-top: 0.375rem"/>
                             </div>
                         }
                     })
@@ -82,9 +82,9 @@ pub fn NotebooksSkeleton() -> impl IntoView {
             </div>
             <div class="admin-panel admin-notebook-editor">
                 <div class="admin-notebook-fields">
-                    <SkeletonBox class="h-5 w-24 rounded"/>
-                    <SkeletonBox class="h-9 w-full rounded-lg"/>
-                    <SkeletonBox class="h-16 w-full rounded-lg"/>
+                    <SkeletonBox height="1.25rem" width="6rem" radius="0.25rem"/>
+                    <SkeletonBox height="2.25rem" width="100%" radius="0.5rem"/>
+                    <SkeletonBox height="4rem" width="100%" radius="0.5rem"/>
                 </div>
             </div>
         </div>
@@ -97,9 +97,9 @@ pub fn AdminNotebooksSkeleton() -> impl IntoView {
     view! {
         <div class="admin-notebooks" aria-hidden="true">
             <AdminPageHeadSkeleton
-                title_width="w-24"
-                subtitle_width="w-64"
-                actions=|| view! { <SkeletonBox class="h-[34px] w-28 rounded-lg"/> }
+                title_width="6rem"
+                subtitle_width="16rem"
+                actions=|| view! { <SkeletonBox height="34px" width="7rem" radius="0.5rem"/> }
             />
             <NotebooksSkeleton/>
         </div>

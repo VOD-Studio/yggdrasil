@@ -11,15 +11,15 @@ use crate::components::skeletons::atoms::{AdminPageHeadSkeleton, SkeletonBox};
 pub fn SystemSkeleton() -> impl IntoView {
     view! {
         <div class="admin-system" aria-hidden="true">
-            <AdminPageHeadSkeleton title_width="w-16" subtitle_width="w-80"/>
-            <SkeletonBox class="h-8 w-96 max-w-full rounded-full sys-tabs"/>
+            <AdminPageHeadSkeleton title_width="4rem" subtitle_width="20rem"/>
+            <SkeletonBox height="2rem" width="24rem" radius="9999px" class="sys-tabs" style="--skeleton-max-width: 100%"/>
             <div class="sys-metrics">
                 {(0..8)
                     .map(|_| {
                         view! {
                             <div class="admin-panel sys-metric">
-                                <SkeletonBox class="h-3 w-16 rounded"/>
-                                <SkeletonBox class="h-6 w-24 rounded mt-2"/>
+                                <SkeletonBox height="0.75rem" width="4rem" radius="0.25rem"/>
+                                <SkeletonBox height="1.5rem" width="6rem" radius="0.25rem" style="--skeleton-margin-top: 0.5rem"/>
                             </div>
                         }
                     })

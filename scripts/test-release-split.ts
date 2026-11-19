@@ -465,6 +465,24 @@ async function main() {
     const aboutLog = instrument(aboutPage);
     await aboutPage.goto(`${base}/about`);
     await hydrated(aboutPage);
+    for (const [width, padding] of [
+      [390, '24px'],
+      [767, '24px'],
+      [768, '48px'],
+      [1440, '48px'],
+    ] as const) {
+      await aboutPage.setViewportSize({ width, height: 900 });
+      const layout = await aboutPage.locator('.site-shell > main').evaluate((main) => ({
+        maxWidth: getComputedStyle(main).maxWidth,
+        padding: getComputedStyle(main).paddingBlockStart,
+        pageWidth: document.documentElement.scrollWidth,
+      }));
+      check(
+        `3 前台主区在 ${width}px 的宽度和间距`,
+        layout.maxWidth === '880px' && layout.padding === padding && layout.pageWidth <= width,
+        JSON.stringify(layout),
+      );
+    }
     check(
       '3 公开页不带后台样式',
       (await aboutPage.evaluate(() => document.getElementById('ygg-admin-css'))) === null,
@@ -484,6 +502,12 @@ async function main() {
         () => false,
       );
     check('3 SPA 进入组件图鉴补载后台样式', showcaseStyled);
+    check(
+      '3 组件图鉴主区使用宽版布局',
+      (await aboutPage
+        .locator('.site-shell > main')
+        .evaluate((main) => getComputedStyle(main).maxWidth)) === '1152px',
+    );
     check(
       '3 SPA 进入组件图鉴无脚本错误',
       scriptErrors(aboutLog).length === 0,

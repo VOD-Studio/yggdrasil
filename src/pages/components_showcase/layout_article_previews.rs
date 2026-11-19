@@ -136,7 +136,7 @@ fn PostContentPreview(detail: bool) -> impl IntoView {
     let toggle = detail.then(|| {
         view! {
             <button
-                class="mb-4 text-sm text-clay-text"
+                class="showcase-article-warning"
                 type="button"
                 on:click=move |_| alternate.update(|value| *value = !*value)
             >

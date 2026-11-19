@@ -20,11 +20,11 @@
 
 ## 技术栈
 
-Leptos 0.8 · cargo-leptos · Axum · PostgreSQL · Tailwind CSS v4 · Bun workspace（Tiptap / CodeMirror / xterm.js）· merman（服务端 Mermaid）· bollard
+Leptos 0.8 · cargo-leptos · Axum · PostgreSQL · Bun workspace（Tiptap / CodeMirror / xterm.js）· merman（服务端 Mermaid）· bollard
 
 ## 快速开始
 
-准备 Rust、cargo-leptos 0.3.12（`make install-cargo-leptos`）、Tailwind CSS v4 standalone CLI 与 Bun，复制 `.env.example` 为 `.env`，然后：
+准备 Rust、cargo-leptos 0.3.12（`make install-cargo-leptos`）与 Bun，复制 `.env.example` 为 `.env`，然后：
 
 ```sh
 make dev     # 增量构建前端资源并启动开发服务

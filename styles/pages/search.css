@@ -231,3 +231,15 @@ a.search-result:hover { background-color: var(--color-ink-1); }
   .not-found-title { font-size: 1.875rem; }
   .not-found-mascot { position: static; width: 6rem; height: 6rem; margin-bottom: 1rem; }
 }
+
+.page-load-failure {
+  display: flex;
+  min-height: 50vh;
+  align-items: center;
+  justify-content: center;
+  padding-inline: 1.5rem;
+}
+
+@media (min-width: 48rem) {
+  .page-load-failure { min-height: 55vh; }
+}

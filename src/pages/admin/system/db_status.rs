@@ -41,8 +41,8 @@ pub(super) fn DbStatusTab() -> impl IntoView {
                             .map(|_| {
                                 view! {
                                     <div class="admin-panel sys-metric">
-                                        <SkeletonBox class="h-3 w-16 rounded"/>
-                                        <SkeletonBox class="h-6 w-24 rounded mt-2"/>
+                                        <SkeletonBox height="0.75rem" width="4rem" radius="0.25rem"/>
+                                        <SkeletonBox height="1.5rem" width="6rem" radius="0.25rem" style="--skeleton-margin-top: 0.5rem"/>
                                     </div>
                                 }
                             })

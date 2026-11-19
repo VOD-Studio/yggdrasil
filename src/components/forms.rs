@@ -12,7 +12,7 @@ use leptos::ev::{FocusEvent, KeyboardEvent, MouseEvent};
 use leptos::prelude::*;
 
 /// 输入框基础类：浅底、发丝线环，聚焦陶土双环，`aria-invalid` 时红环。
-pub const INPUT_CLASS: &str = "field w-full";
+pub const INPUT_CLASS: &str = "field field-block";
 
 /// 多行输入框基础类：随内容长高（`.field-textarea`）。
 pub const TEXTAREA_CLASS: &str = "field field-textarea";
@@ -21,7 +21,7 @@ pub const TEXTAREA_CLASS: &str = "field field-textarea";
 static FORM_SELECT_ID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 /// FormSelect 紧凑触发器：工具栏内联小下拉（自动刷新、导出格式等）。
-pub const FORM_SELECT_COMPACT_CLASS: &str = "field field-sm w-auto";
+pub const FORM_SELECT_COMPACT_CLASS: &str = "field field-sm field-inline";
 
 /// 选项多于该数量时，下拉面板顶部出现筛选框。
 const FILTER_THRESHOLD: usize = 8;
@@ -338,7 +338,7 @@ where
     };
 
     view! {
-        <div class="relative">
+        <div class="form-select">
             <button
                 id=move || trigger_id.get()
                 type="button"
@@ -384,7 +384,7 @@ where
                     .then(|| {
                         view! {
                             // 透明遮罩：拦截外部点击（点遮罩即关），z-40 < 面板 z-50。
-                            <div class="fixed inset-0 z-40" on:click=move |_| open.set(false)></div>
+                            <div class="floating-scrim" on:click=move |_| open.set(false)></div>
                             <div
                                 class="listbox listbox-centered listbox-split"
                                 data-placement=move || if flip_up.get() { "top" } else { "bottom" }
@@ -397,7 +397,7 @@ where
                                                 <div class="listbox-filter">
                                                     <input
                                                         id=filter_id
-                                                        class="field field-sm w-full"
+                                                        class="field field-sm field-block"
                                                         type="text"
                                                         placeholder="筛选"
                                                         autocomplete="off"
@@ -511,8 +511,8 @@ fn SelectOption(
                 }
             }
         >
-            <span class="min-w-0 flex-1">
-                <span class="block truncate">{label}</span>
+            <span class="listbox-option-text">
+                <span class="listbox-option-label">{label}</span>
                 {reason.map(|reason| view! { <span class="listbox-option-hint">{reason}</span> })}
             </span>
             {move || {
@@ -603,23 +603,23 @@ pub fn TimePicker(
     };
 
     view! {
-        <div class="relative inline-block">
+        <div class="time-picker">
             <button
                 id=move || trigger_id.get()
                 type="button"
-                class="select-trigger field w-40"
+                class="select-trigger field time-picker-trigger"
                 aria-haspopup="dialog"
                 aria-expanded=move || open.get().to_string()
                 on:click=move |_| open.set(true)
             >
-                <span class="font-mono tabular-nums">{text}</span>
-                <span class="text-xs text-fg-3">"本地时间"</span>
+                <span class="time-picker-value tabular-nums">{text}</span>
+                <span class="time-picker-zone">"本地时间"</span>
             </button>
             {move || {
                 open.get()
                     .then(|| {
                         view! {
-                            <div class="fixed inset-0 z-40" on:click=move |_| open.set(false)></div>
+                            <div class="floating-scrim" on:click=move |_| open.set(false)></div>
                             <div
                                 class="listbox time-panel"
                                 data-placement="bottom"
@@ -771,15 +771,8 @@ pub fn FormInput(
     #[prop(optional)] aria_label: Option<&'static str>,
 ) -> impl IntoView {
     let base = class.unwrap_or(INPUT_CLASS);
-    let mono_class = if mono { " font-mono" } else { "" };
-    let class = move || {
-        let disabled_class = if disabled.get() {
-            " opacity-60 cursor-not-allowed"
-        } else {
-            ""
-        };
-        format!("{base}{mono_class}{disabled_class}")
-    };
+    let mono_class = if mono { " field-mono" } else { "" };
+    let class = format!("{base}{mono_class} field-input");
     view! {
         <input
             id=move || id.get()
@@ -1034,7 +1027,7 @@ pub fn AlertBox(
         _ => IconName::Info,
     };
     view! {
-        <div class="alert mb-4" data-tone=tone role=role>
+        <div class="alert form-alert" data-tone=tone role=role>
             {move || view! { <Icon name=icon() size=16/> }}
             <span>{move || message.get()}</span>
         </div>
@@ -1181,7 +1174,7 @@ mod tests {
         assert!(html.contains("aria-invalid=\"true\""), "{html}");
         assert!(html.contains("maxlength=\"64\""), "{html}");
         assert!(
-            html.contains("field w-full font-mono opacity-60 cursor-not-allowed"),
+            html.contains("field field-block field-mono field-input"),
             "{html}"
         );
         assert!(html.contains("disabled"), "{html}");
@@ -1197,7 +1190,10 @@ mod tests {
         assert!(!html.contains("aria-invalid"), "{html}");
         assert!(!html.contains("inputmode"), "{html}");
         assert!(!html.contains("title"), "{html}");
-        assert!(html.contains("class=\"field w-full\""), "{html}");
+        assert!(
+            html.contains("class=\"field field-block field-input\""),
+            "{html}"
+        );
     }
 
     #[test]
@@ -1271,7 +1267,7 @@ mod tests {
         assert!(html.contains("aria-expanded=\"false\""), "{html}");
         assert!(html.contains("aria-label=\"排序\""), "{html}");
         assert!(
-            html.contains("select-trigger field field-sm w-auto"),
+            html.contains("select-trigger field field-sm field-inline"),
             "{html}"
         );
         assert!(html.contains("文件最大"), "{html}");

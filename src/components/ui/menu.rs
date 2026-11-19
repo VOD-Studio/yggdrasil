@@ -279,7 +279,7 @@ pub fn Menu(
                     .then(|| {
                         view! {
                             <div
-                                class="fixed inset-0 z-40"
+                                class="floating-scrim"
                                 on:click=move |_| close(false)
                                 // fixed 面板不随页面滚动，滚轮一动就收起，避免与触发器脱节。
                                 on:wheel=move |_| close(false)

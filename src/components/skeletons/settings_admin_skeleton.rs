@@ -15,11 +15,11 @@ pub fn SettingsAdminSkeleton() -> impl IntoView {
             <div class="settings-layout">
                 <div class="settings-nav">
                     {(0..9)
-                        .map(|_| view! { <SkeletonBox class="h-[30px] w-full rounded-[7px]"/> })
+                        .map(|_| view! { <SkeletonBox height="30px" width="100%" radius="7px"/> })
                         .collect_view()}
                 </div>
                 <div class="settings-main">
-                    <AdminPageHeadSkeleton title_width="w-16" subtitle_width="w-80"/>
+                    <AdminPageHeadSkeleton title_width="4rem" subtitle_width="20rem"/>
                     {(0..3)
                         .map(|_| {
                             view! {
@@ -27,8 +27,8 @@ pub fn SettingsAdminSkeleton() -> impl IntoView {
                                     <div class="admin-panel settings-card">
                                         <div class="settings-card-head">
                                             <div>
-                                                <SkeletonBox class="h-4 w-20 rounded"/>
-                                                <SkeletonBox class="h-3 w-64 rounded mt-2"/>
+                                                <SkeletonBox height="1rem" width="5rem" radius="0.25rem"/>
+                                                <SkeletonBox height="0.75rem" width="16rem" radius="0.25rem" style="--skeleton-margin-top: 0.5rem"/>
                                             </div>
                                         </div>
                                         <div class="settings-rows">
@@ -36,8 +36,8 @@ pub fn SettingsAdminSkeleton() -> impl IntoView {
                                                 .map(|_| {
                                                     view! {
                                                         <div class="settings-row">
-                                                            <SkeletonBox class="h-3.5 w-20 rounded"/>
-                                                            <SkeletonBox class="h-9 w-full rounded-lg"/>
+                                                            <SkeletonBox height="0.875rem" width="5rem" radius="0.25rem"/>
+                                                            <SkeletonBox height="2.25rem" width="100%" radius="0.5rem"/>
                                                         </div>
                                                     }
                                                 })

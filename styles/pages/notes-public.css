@@ -803,3 +803,5 @@ a.notebook-entry:hover .notebook-entry-arrow {
   .note-topic-arrow,
   .notebook-entry-arrow { transition: opacity 150ms linear; }
 }
+
+.note-body-skeleton-lines { display: flex; flex-direction: column; gap: 0.75rem; margin-top: 2.5rem; }

@@ -10,7 +10,7 @@
 # toolchains it needs cannot live in one base image:
 #
 #   Stage A (frontend, rust:1.100-trixie / glibc)  — cargo-leptos + nightly wasm32.
-#     Builds the WASM client + JS libs + syntax/katex/tailwind CSS.
+#     Builds the WASM client + JS libs + syntax highlighting, KaTeX and site CSS.
 #
 #   Stage B (server, rust:1.100-alpine3.24 / musl) — the ONLY reliable zig
 #     source in China is Alpine's apk (TUNA mirror). ziglang.org is unreachable,
@@ -36,8 +36,8 @@ FROM --platform=$BUILDPLATFORM rust:1.100-trixie AS frontend
 #   CN_MIRROR=false (default): use all upstream/official sources (fast on CI
 #     runners outside China — GitHub runners are in the US/EU).
 #   CN_MIRROR=true: route all downloads through Chinese mirrors (TUNA for
-#     Debian/Alpine apt, rsproxy for Rust/crates.io, npmmirror for Node/npm,
-#     gh-proxy for GitHub Releases). Pass via: --build-arg CN_MIRROR=true
+#     Debian/Alpine apt, rsproxy for Rust/crates.io, npmmirror for Bun/npm).
+#     Pass via: --build-arg CN_MIRROR=true
 # Individual mirror URLs are still ARG-overridable for custom mirrors.
 ARG CN_MIRROR=false
 # Exported as ENV so build recipes (make) can read $CN_MIRROR when needed.
@@ -48,12 +48,10 @@ ENV CN_MIRROR=${CN_MIRROR}
 #   - Debian apt          -> TUNA (Tsinghua)
 #   - Rust + crates.io    -> rsproxy (ByteDance)
 #   - Bun + npm packages   -> npmmirror (Alibaba)
-#   - GitHub Releases     -> gh-proxy (tailwindcss)
 ARG DEBIAN_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/debian
 ARG DEBIAN_SECURITY_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/debian-security
 ARG NPM_REGISTRY=https://registry.npmmirror.com
 ARG RS_PROXY=https://rsproxy.cn
-ARG GH_PROXY=https://gh-proxy.com
 
 # --- Debian apt: rewrite sources to the TUNA mirror (CN_MIRROR only). ---
 RUN if [ "$CN_MIRROR" = "true" ]; then \
@@ -137,20 +135,6 @@ RUN if [ "$CN_MIRROR" = "true" ]; then \
 # --- cargo-leptos: 前端构建（wasm-bindgen、分包、CSS）。版本与 Makefile 同步。 ---
 RUN cargo install cargo-leptos --version 0.3.12 --locked
 
-# --- Tailwind CSS v4: the standalone binary is distributed via GitHub
-# Releases (~106 MB). ---
-ARG TAILWIND_VERSION=4.3.5
-RUN ARCH="$(dpkg --print-architecture)" \
-    && case "$ARCH" in \
-        amd64)  TW_ARCH=x64   ;; \
-        arm64)  TW_ARCH=arm64 ;; \
-        *) echo "unsupported arch: $ARCH" >&2; exit 1 ;; \
-    esac \
-    && if [ "$CN_MIRROR" = "true" ]; then GH_PX="${GH_PROXY}"; else GH_PX=""; fi \
-    && GH_URL="${GH_PX:+${GH_PX}/}https://github.com/tailwindlabs/tailwindcss/releases/download/v${TAILWIND_VERSION}/tailwindcss-linux-${TW_ARCH}" \
-    && curl -fsSL -o /usr/local/bin/tailwindcss "${GH_URL}" \
-    && chmod +x /usr/local/bin/tailwindcss
-
 WORKDIR /build
 
 # Cache the bun workspace node_modules by copying only package manifests first.
@@ -190,7 +174,7 @@ ENV YGG_BUILD_GIT_COMMIT_DATE=${YGG_BUILD_GIT_COMMIT_DATE}
 # Copy the rest of the source tree and build everything.
 COPY . .
 
-# Build the JS libs, syntax-highlight CSS, KaTeX CSS + fonts and Tailwind
+# Build the JS libs, syntax-highlight CSS, KaTeX CSS + fonts and site CSS
 # stylesheet. These steps produce the contents of the public/ directory.
 # Shared with make build / build-linux via the build-assets target, so the
 # pipeline cannot drift (katex-css was once missing here, which left math

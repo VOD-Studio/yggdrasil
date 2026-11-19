@@ -323,15 +323,12 @@ async function runVariant(
     },
   );
   // 8b. crate index pub marker
-  await check('crate: only infra is pub (::after "pub"), api is none', async () => {
-    assert.equal(await page.locator('a.mod[href="infra/index.html"]').count(), 1);
-    const after = (href: string) =>
-      page.evaluate(
-        (h) => getComputedStyle(document.querySelector(`a.mod[href="${h}"]`)!, '::after').content,
-        href,
-      );
-    assert.equal(await after('infra/index.html'), '"pub"');
-    assert.equal(await after('api/index.html'), 'none');
+  await check('crate: public module links carry a pub marker', async () => {
+    for (const module of ['infra', 'api']) {
+      const link = page.locator(`a.mod[href="${module}/index.html"]`);
+      assert.equal(await link.count(), 1);
+      assert.equal(await link.evaluate((el) => getComputedStyle(el, '::after').content), '"pub"');
+    }
   });
   await shot('crate');
 

@@ -15,11 +15,11 @@ pub fn FriendsSkeleton() -> impl IntoView {
                     .map(|_| {
                         view! {
                             <div class="friend-card friend-card-skeleton">
-                                <SkeletonBox class="h-11 w-11 shrink-0 rounded-xl"/>
-                                <div class="flex-1">
-                                    <SkeletonBox class="h-4 w-28"/>
-                                    <SkeletonBox class="h-3 mt-2 w-24"/>
-                                    <SkeletonBox class="h-3 mt-3 w-full"/>
+                                <SkeletonBox height="2.75rem" width="2.75rem" radius="0.75rem" style="--skeleton-flex-shrink: 0"/>
+                                <div class="friend-skeleton-copy">
+                                    <SkeletonBox height="1rem" width="7rem"/>
+                                    <SkeletonBox height="0.75rem" width="6rem" style="--skeleton-margin-top: 0.5rem"/>
+                                    <SkeletonBox height="0.75rem" width="100%" style="--skeleton-margin-top: 0.75rem"/>
                                 </div>
                             </div>
                         }

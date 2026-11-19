@@ -22,7 +22,7 @@ pub fn Icon(
 ) -> impl IntoView {
     let body = name.body();
     let slug = name.slug();
-    let class = format!("lucide lucide-{slug} shrink-0 {class}");
+    let class = format!("lucide lucide-{slug} {class}");
     let size = size.to_string();
     match label {
         Some(label) => view! {

@@ -3,7 +3,7 @@
 # 在本机构建镜像并部署到生产 xun / rua（与 CI 的 deploy-xun / deploy-rua 同一流程）。
 #
 # 构建走国内镜像源：`make docker-amd64 CN_MIRROR=true`，Debian 用清华源，rustup/crates 用
-# rsproxy，npm 用 npmmirror，GitHub 下载（如 Tailwind）走 gh-proxy；
+# rsproxy，npm 用 npmmirror，GitHub 下载走 gh-proxy；
 # 代码运行器沙箱镜像用 docker/build-runners.sh --cn-mirror（Alpine 清华源）。
 # Docker Hub 基础镜像由本机 Docker daemon 的 registry-mirrors 决定。
 #

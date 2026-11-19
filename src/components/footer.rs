@@ -22,7 +22,7 @@ async fn fetch_footer_settings() -> PageJson<SiteSettings> {
 /// Props：
 /// - `max_width`：内部内容的宽度类，需与页头、正文一致以保证左右边缘对齐
 #[component]
-pub fn Footer(#[prop(default = "max-w-[880px]")] max_width: &'static str) -> impl IntoView {
+pub fn Footer(#[prop(default = "site-width-default")] max_width: &'static str) -> impl IntoView {
     // 读取站点公开配置（页脚 GitHub 链接）。公开接口，SSR 时解析并随页面序列化，
     // 水合直接复用；服务端有 moka 缓存兜底，解析极快。route_data 只在 `<Suspense>` 内读取，
     // 且 Suspense 只包住 GitHub 图标，页脚其余部分不等待数据。
