@@ -4,6 +4,23 @@ use serde::{Deserialize, Serialize};
 
 use crate::models::asset::AssetDto;
 
+/// 每页素材数（网格 6 列 x 10 行）。
+pub(crate) const ASSETS_PER_PAGE: i32 = 60;
+
+/// 选择器展示及回填所需的素材字段。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AssetPickerItem {
+    pub path: String,
+    pub filename: String,
+    pub alt: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AssetPickerResponse {
+    pub assets: Vec<AssetPickerItem>,
+    pub total: i64,
+}
+
 /// 素材分页列表响应。
 ///
 /// 附带各筛选维度的计数（tabs 展示）与可清理孤儿的统计（清理按钮展示），

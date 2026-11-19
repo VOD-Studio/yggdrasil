@@ -12,15 +12,15 @@ use std::time::Duration;
 
 use leptos::prelude::*;
 
-use crate::api::assets::list_assets;
+use crate::api::assets::{
+    list_picker_assets,
+    types::{AssetPickerItem, ASSETS_PER_PAGE},
+};
 use crate::components::ui::{
     button_class, ButtonSize, ButtonVariant, Icon, IconButton, IconName, ModalShell, TablePager,
 };
-use crate::models::asset::{AssetDto, AssetFilter, AssetSort};
 use crate::utils::error::failure_message;
 
-/// 每页素材数，与素材管理页及服务端列表接口保持一致。
-const ASSETS_PER_PAGE: i32 = 60;
 /// 搜索输入防抖窗口，复用素材管理页的请求节流约定。
 const SEARCH_DEBOUNCE_MS: u64 = 300;
 
@@ -38,7 +38,7 @@ pub struct AssetSelection {
     pub alt: Option<String>,
 }
 
-/// Grid data shared by the authenticated picker and the local showcase.
+/// 素材选择器与组件图鉴共用的网格数据。
 #[derive(Clone, PartialEq)]
 pub struct PickerAsset {
     pub(crate) url: String,
@@ -48,14 +48,14 @@ pub struct PickerAsset {
     pub(crate) fresh: bool,
 }
 
-impl From<&AssetDto> for PickerAsset {
-    fn from(dto: &AssetDto) -> Self {
-        let url = format!("/uploads/{}", dto.asset.path);
+impl From<&AssetPickerItem> for PickerAsset {
+    fn from(item: &AssetPickerItem) -> Self {
+        let url = format!("/uploads/{}", item.path);
         Self {
             thumbnail: format!("{url}?thumb=300x300"),
             url,
-            filename: dto.asset.filename.clone(),
-            alt: dto.asset.alt.clone(),
+            filename: item.filename.clone(),
+            alt: item.alt.clone(),
             fresh: false,
         }
     }
@@ -106,7 +106,7 @@ pub fn AssetPickerModal(
     #[prop(default = "选择封面图".to_string(), into)] title: String,
     #[prop(optional)] multi: bool,
 ) -> impl IntoView {
-    let assets = RwSignal::new(Vec::<AssetDto>::new());
+    let assets = RwSignal::new(Vec::<AssetPickerItem>::new());
     let loading = RwSignal::new(false);
     let query = RwSignal::new(String::new());
     let debounced_query = RwSignal::new(String::new());
@@ -152,8 +152,11 @@ pub fn AssetPickerModal(
 
     // 搜索防抖：保留输入框原值，停顿 300ms 后才提交查询并回到第 1 页。
     // 每次新输入都会递增请求代际，立即丢弃尚未返回的旧查询结果。
-    Effect::new(move |_| {
+    Effect::new(move |previous: Option<()>| {
         let q = query.get();
+        if previous.is_none() {
+            return;
+        }
         bump_generation();
         if let Some(Some(old)) = debounce_timer.try_update_value(Option::take) {
             old.clear();
@@ -189,8 +192,7 @@ pub fn AssetPickerModal(
             }
             let _ = loading.try_set(true);
             let _ = error.try_set(None);
-            let result =
-                list_assets(AssetFilter::All, q, AssetSort::CreatedDesc, requested_page).await;
+            let result = list_picker_assets(q, requested_page).await;
             if current_generation() != request_id {
                 return;
             }

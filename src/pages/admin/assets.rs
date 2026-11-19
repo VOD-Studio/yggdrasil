@@ -16,7 +16,7 @@ use leptos::prelude::*;
 use leptos_router::{lazy_route, LazyRoute};
 use std::collections::HashSet;
 
-use crate::api::assets::AssetListResponse;
+use crate::api::assets::{types::ASSETS_PER_PAGE, AssetListResponse};
 use crate::components::assets::AssetUploadModal;
 use crate::components::empty_state::{EmptyState, EmptyStateAction};
 use crate::components::enhance_assets::LightboxAssets;
@@ -37,8 +37,6 @@ mod references;
 use card::AssetTile;
 use references::AssetDetail;
 
-/// 每页素材数，与服务端 list.rs 的 PER_PAGE 对齐。
-const ASSETS_PER_PAGE: i32 = 60;
 /// 搜索输入停顿多久后提交（毫秒）。
 const SEARCH_DEBOUNCE_MS: u32 = 300;
 

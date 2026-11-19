@@ -419,7 +419,16 @@ async function main() {
     pass('metadata, cover and body input retain editor and loaded cover');
 
     stage = 'cover-picker';
+    const pickerResponse = page.waitForResponse((response) => isApi(response, 'listpickerassets'));
     await actions.getByRole('button', { name: '素材库', exact: true }).click();
+    const pickerList = await pickerResponse;
+    assert(pickerList.ok());
+    const selection = (await pickerList.json()) as { assets: { path: string }[] };
+    const choice = selection.assets.find(
+      (asset) => `/uploads/${asset.path}` === fixture.cover_image,
+    );
+    assert(choice, 'picker returns the fixture');
+    assert.deepEqual(Object.keys(choice).sort(), ['alt', 'filename', 'path']);
     const picker = page.getByRole('dialog', { name: '选择封面图' });
     await picker.waitFor();
     await picker.locator(`button:has(img[src^="${fixture.cover_image}"])`).click();

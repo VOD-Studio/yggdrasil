@@ -7,12 +7,14 @@
 use crate::api::error::ApiError;
 use leptos::prelude::*;
 
-use super::types::AssetListResponse;
-use crate::models::asset::{AssetFilter, AssetSort};
-
-/// 每页素材数（网格 6 列 x 10 行）。
+use super::types::{AssetListResponse, AssetPickerResponse};
 #[cfg(feature = "server")]
-const PER_PAGE: i64 = 60;
+use super::types::{AssetPickerItem, ASSETS_PER_PAGE};
+#[cfg(feature = "server")]
+use crate::api::error::AppError;
+#[cfg(feature = "server")]
+use crate::db::pool::get_conn;
+use crate::models::asset::{AssetFilter, AssetSort};
 
 /// 孤儿清理保护窗：上传不满 7 天的无引用素材不可一键清理
 /// （保护尚未首次保存的草稿引用）。
@@ -31,26 +33,45 @@ pub async fn list_assets(
     list_assets_impl(filter, query, sort, page).await
 }
 
-/// 共享素材操作；调用方须先完成管理员鉴权。
+/// 获取素材选择器使用的列表与分页总数。
+#[server(ListPickerAssets, endpoint = "list_picker_assets", input = leptos::server_fn::codec::Json)]
+pub async fn list_picker_assets(query: String, page: i32) -> Result<AssetPickerResponse, ApiError> {
+    crate::api::auth::get_current_admin_user().await?;
+    let client = get_conn().await.map_err(AppError::db_conn)?;
+    let (rows, total) = query_asset_page(
+        &client,
+        AssetFilter::All,
+        &query,
+        AssetSort::CreatedDesc,
+        page,
+        "a.path, a.filename, a.alt",
+    )
+    .await?;
+    let assets = rows
+        .iter()
+        .map(|row| AssetPickerItem {
+            path: row.get("path"),
+            filename: row.get("filename"),
+            alt: row.get("alt"),
+        })
+        .collect();
+    Ok(AssetPickerResponse { assets, total })
+}
+
 #[cfg(feature = "server")]
-pub(crate) async fn list_assets_impl(
+async fn query_asset_page(
+    client: &tokio_postgres::Client,
     filter: AssetFilter,
-    query: String,
+    query: &str,
     sort: AssetSort,
     page: i32,
-) -> Result<AssetListResponse, ApiError> {
-    use crate::api::error::AppError;
-    use crate::db::pool::get_conn;
-    use crate::models::asset::{Asset, AssetDto, AssetRef, AssetRefPostStatus};
-
-    let client = get_conn().await.map_err(AppError::db_conn)?;
-
-    let page = page.max(1);
-    let offset: i64 = (page as i64 - 1) * PER_PAGE;
-    let query = query.trim().to_string();
+    columns: &str,
+) -> Result<(Vec<tokio_postgres::Row>, i64), AppError> {
+    let per_page = i64::from(ASSETS_PER_PAGE);
+    let offset = (i64::from(page.max(1)) - 1) * per_page;
+    let query = query.trim();
 
     // 筛选/搜索条件统一拼进 WHERE；参数按出现顺序编号。
-    // 引用状态用 EXISTS 子查询，搜索用 ILIKE 转义通配符。
     let mut conditions: Vec<String> = Vec::new();
     let mut params: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = Vec::new();
     match filter {
@@ -81,9 +102,6 @@ pub(crate) async fn list_assets_impl(
         AssetSort::SizeDesc => "a.size_bytes DESC, a.id",
     };
 
-    // 列表查询：ref_count 由下方本页引用明细在 Rust 侧派生，不在每行重复跑子查询。
-    // const 不能取引用（内联后借临时值会垂悬），绑定到局部变量再进参数列表。
-    let per_page = PER_PAGE;
     params.push(&per_page);
     let limit_idx = params.len();
     params.push(&offset);
@@ -91,9 +109,7 @@ pub(crate) async fn list_assets_impl(
     let rows = client
         .query(
             &format!(
-                "SELECT a.id AS id, a.path, a.filename, a.mime, a.size_bytes, \
-                        a.width, a.height, a.alt, a.created_at \
-                 FROM assets a {where_clause} \
+                "SELECT {columns} FROM assets a {where_clause} \
                  ORDER BY {order_clause} LIMIT ${limit_idx} OFFSET ${offset_idx}"
             ),
             &params,
@@ -101,7 +117,7 @@ pub(crate) async fn list_assets_impl(
         .await
         .map_err(AppError::query)?;
 
-    let total: i64 = client
+    let total = client
         .query_one(
             &format!("SELECT COUNT(*) FROM assets a {where_clause}"),
             &params[..params.len() - 2],
@@ -109,6 +125,29 @@ pub(crate) async fn list_assets_impl(
         .await
         .map_err(AppError::query)?
         .get(0);
+    Ok((rows, total))
+}
+
+/// 共享素材操作；调用方须先完成管理员鉴权。
+#[cfg(feature = "server")]
+pub(crate) async fn list_assets_impl(
+    filter: AssetFilter,
+    query: String,
+    sort: AssetSort,
+    page: i32,
+) -> Result<AssetListResponse, ApiError> {
+    use crate::models::asset::{Asset, AssetDto, AssetRef, AssetRefPostStatus};
+
+    let client = get_conn().await.map_err(AppError::db_conn)?;
+    let (rows, total) = query_asset_page(
+        &client,
+        filter,
+        &query,
+        sort,
+        page,
+        "a.id, a.path, a.filename, a.mime, a.size_bytes, a.width, a.height, a.alt, a.created_at",
+    )
+    .await?;
 
     // 汇总计数：tabs 与「清理孤儿」按钮徽标。不受筛选/搜索影响，始终全局。
     // 孤儿 = 不存在任何文章、评论或头像引用（与 AssetFilter::Orphan 同语义）。
@@ -134,9 +173,7 @@ pub(crate) async fn list_assets_impl(
         .await
         .map_err(AppError::query)?;
 
-    // 本页素材的引用明细（第二组查询，避免 JOIN fan-out 与分页错位）。
-    // 四个来源与 ASSET_REF_CLAUSE 一一对应；按 文章→评论→用户头像→友链头像
-    // 的顺序插入，前端即按此分组顺序渲染。
+    // 分页后查询引用明细，按笔记、文章、评论、用户头像、友链头像的顺序插入。
     let ids: Vec<uuid::Uuid> = rows.iter().map(|r| r.get::<_, uuid::Uuid>("id")).collect();
     let mut refs_map: std::collections::HashMap<String, Vec<AssetRef>> =
         std::collections::HashMap::new();

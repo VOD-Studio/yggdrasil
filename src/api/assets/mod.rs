@@ -42,7 +42,7 @@ pub(crate) mod refs;
 pub mod types;
 
 pub use delete::{batch_delete_assets, delete_asset, purge_orphan_assets, update_asset_alt};
-pub use list::list_assets;
+pub use list::{list_assets, list_picker_assets};
 pub use rebuild::rebuild_assets_index;
 pub use types::{
     AssetListResponse, AssetOpResponse, BatchDeleteAssetsResponse, PurgeOrphansResponse,
