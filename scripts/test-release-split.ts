@@ -153,6 +153,10 @@ async function main() {
   );
   const mainWasm = `/pkg/yggdrasil.${hashes.wasm}.wasm`;
   if (!fs.existsSync(path.join(SITE, mainWasm))) throw new Error(`主包缺失：${mainWasm}`);
+  const sourceMaps = fs
+    .readdirSync(SITE, { recursive: true, encoding: 'utf8' })
+    .filter((file) => /\.(?:js|css)\.map$/.test(file));
+  check('0 发布浏览器资产不包含 source map', sourceMaps.length === 0, sourceMaps.join(', '));
 
   await capture([
     'docker',

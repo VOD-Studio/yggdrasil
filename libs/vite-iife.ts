@@ -38,7 +38,7 @@ export function iifeLib(o: IifeLib): UserConfig {
       },
       cssCodeSplit: false,
       minify: true,
-      sourcemap: true,
+      sourcemap: process.env.YGG_RELEASE_ASSETS !== '1',
     },
   });
 }

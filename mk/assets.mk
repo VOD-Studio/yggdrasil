@@ -18,7 +18,7 @@ CSS_ADMIN := $(CSS_BUILD) input-admin.css --outfile=public/admin.css
 # CSS 打包（压缩）。build / build-linux / 两个 Dockerfile 都调用它，不要在别处
 # 再手写这几步——KaTeX 曾因 Dockerfile 里漏掉 katex-css 而退化成裸 span。
 build-assets: ## 构建 public/ 下的全部生成资源（libs、高亮/KaTeX CSS、CSS 打包）
-	@$(MAKE) build-libs
+	@YGG_RELEASE_ASSETS=1 $(MAKE) build-libs
 	@$(MAKE) highlight-css
 	@$(MAKE) katex-css
 	@$(CSS_SITE) --minify
