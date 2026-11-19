@@ -40,18 +40,20 @@ export function initTocSidebar(
     scrollRoot,
   );
 
-  // 按文档序收集 (目录链接 → 标题元素) 对；href 是 #id，id 可能含 CJK，
-  // getAttribute 返回原始字符，location.hash 才是百分号编码——这里 decodeURIComponent
-  // 兜底两种形态（与 hash-scroll.ts 的双 fallback 同款）。
-  const items: Array<{ id: string; el: HTMLElement; link: HTMLAnchorElement }> = [];
+  // 局部目录只在指定正文中匹配标题，重复 ID 取文档序中的第一个。
+  const headings = new Map<string, HTMLElement>();
+  for (const heading of content?.querySelectorAll<HTMLElement>('[id]') ?? []) {
+    if (!headings.has(heading.id)) headings.set(heading.id, heading);
+  }
+  const items: Array<{ el: HTMLElement; link: HTMLAnchorElement }> = [];
   for (const link of body.querySelectorAll<HTMLAnchorElement>('a[href^="#"]')) {
     const raw = link.getAttribute('href')!.slice(1);
     if (!raw) continue;
     const id = decodeURIComponent(raw);
     const el = content
-      ? Array.from(content.querySelectorAll<HTMLElement>('[id]')).find((node) => node.id === id)
+      ? headings.get(id)
       : (document.getElementById(id) ?? document.getElementById(raw));
-    if (el) items.push({ id: raw, el, link });
+    if (el) items.push({ el, link });
   }
   if (items.length === 0) {
     disposers.set(navSelector, stopProgress);
