@@ -68,7 +68,7 @@ pinyin = { version = "0.11", optional = true }
 md-5 = { version = "0.11", optional = true }
 futures = { version = "0.3", optional = true }
 bytes = { version = "1", optional = true }
-bollard = { version = "0.21", optional = true }
+bollard = { version = "0.21", optional = true, default-features = false, features = ["pipe"] }
 # 把 mpsc::Receiver 包成 Stream,供 axum SSE handler 使用。
 # axum::response::sse::{Sse,KeepAlive,Event} 随 axum 0.8 自带,无需额外 dep。
 tokio-stream = { version = "0.1", features = ["sync"], optional = true }
