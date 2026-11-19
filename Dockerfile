@@ -1,7 +1,7 @@
 # -----------------------------------------------------------------------------
 # Builder stage: compile the static-linked musl server binary and frontend assets
 # -----------------------------------------------------------------------------
-FROM rust:1.100-trixie AS toolchain
+FROM rust:1.100-trixie AS doc-toolchain
 
 # Master switch for Chinese mirrors.
 #   CN_MIRROR=false (default): use all upstream/official sources (fast on CI
@@ -84,6 +84,11 @@ RUN if [ "$CN_MIRROR" = "true" ]; then \
             > /usr/local/cargo/config.toml; \
     fi
 
+WORKDIR /build
+
+# 独立文档出口共用 Bun 与宿主 Rust，WASM 工具只装到应用构建阶段。
+FROM doc-toolchain AS toolchain
+
 # Release WASM is compiled with a pinned nightly (-Zbuild-std, panic=immediate-abort;
 # see WASM_NIGHTLY in the Makefile). Keep this ARG in sync with that variable.
 ARG WASM_NIGHTLY=nightly-2026-11-19
@@ -122,8 +127,6 @@ RUN ARCH="$(dpkg --print-architecture)" \
     && rm /tmp/chef.tar.xz \
     && cargo-chef --version
 
-
-WORKDIR /build
 
 # ── planner：只从 Cargo.toml/Cargo.lock 生成 recipe.json ──
 # cargo-chef 会把本地 crate 的版本号统一替换成固定值，发版只改版本号时 recipe.json
@@ -271,7 +274,7 @@ RUN ARCH="$(dpkg --print-architecture)" \
     && cp "/build/target/${MUSL_TARGET}/release/yggdrasil" /build/server
 
 # 独立生成站点文档，编译缓存留在构建器，出口只保留 /doc 文件树。
-FROM toolchain AS doc-builder
+FROM doc-toolchain AS doc-builder
 ARG TARGETARCH
 COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \

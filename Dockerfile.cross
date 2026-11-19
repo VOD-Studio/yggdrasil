@@ -30,7 +30,7 @@
 # Stage A: frontend assets (glibc Trixie, native arm64)
 # -----------------------------------------------------------------------------
 # Trixie (Debian 13, glibc 2.41).
-FROM --platform=$BUILDPLATFORM rust:1.100-trixie AS frontend-toolchain
+FROM --platform=$BUILDPLATFORM rust:1.100-trixie AS doc-toolchain
 
 # Master switch for Chinese mirrors.
 #   CN_MIRROR=false (default): use all upstream/official sources (fast on CI
@@ -117,6 +117,11 @@ RUN if [ "$CN_MIRROR" = "true" ]; then \
             > /usr/local/cargo/config.toml; \
     fi
 
+WORKDIR /build
+
+# 独立文档出口共用 Bun 与宿主 Rust，WASM 工具只装到应用构建阶段。
+FROM doc-toolchain AS frontend-toolchain
+
 # Release WASM is compiled with a pinned nightly (-Zbuild-std, panic=immediate-abort;
 # see WASM_NIGHTLY in the Makefile). Keep this ARG in sync with that variable.
 ARG WASM_NIGHTLY=nightly-2026-11-19
@@ -133,8 +138,6 @@ RUN if [ "$CN_MIRROR" = "true" ]; then \
 
 # --- cargo-leptos: 前端构建（wasm-bindgen、分包、CSS）。版本与 Makefile 同步。 ---
 RUN cargo install cargo-leptos --version 0.3.12 --locked
-
-WORKDIR /build
 
 FROM frontend-toolchain AS frontend
 
@@ -198,7 +201,7 @@ RUN bun scripts/build-release.ts --verify --out /build/dist
 
 
 # 独立生成站点文档，编译缓存留在构建器，出口只保留 /doc 文件树。
-FROM frontend-toolchain AS doc-builder
+FROM doc-toolchain AS doc-builder
 ARG BUILDARCH
 COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
