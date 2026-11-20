@@ -89,6 +89,22 @@ fish scripts/push-docker.fish release  # 正式镜像：yggdrasil:<版本>
 
 生产环境 xun / rua 双机主备（流复制热备、单向文件同步、EdgeOne 回源鉴权、故障切换与回切）见 [docs/双机主备](docs/双机主备/README.md)。
 
+## 性能基准
+
+- `make bench-markdown` 使用四篇真实语料测量 Markdown 热态渲染。用 `BENCH_ARGS='--save-baseline base'` 保存基线，然后用 `BENCH_ARGS='--baseline base'` 对比。
+- `make bench-http` 测量 HTML 热缓存、绕过缓存的 SSR、笔记及笔记本分页、检索、标签保存和失效后的并发回填。笔记、检索和写入场景同时记录响应体积和相关 SQL 调用次数。
+- `make bench-browser` 在 390 px 移动 Chromium 上模拟 150 ms 延迟、1.6 Mbit/s 下行和 4 倍 CPU 降速，采集首页、文章、笔记流和笔记本的 TTFB、FCP、LCP、水合耗时及传输量。每轮先使用新浏览器上下文，再在同一上下文用新页面复测 HTTP 缓存。
+
+HTTP 和浏览器基准使用 `make build` 的发布产物、临时 PostgreSQL 和合成数据。固定到达率场景使用 oha 1.16.0，浏览器可在 `libs/` 下运行 `bun run playwright install chromium` 安装。两者都支持同机 A/B，原始样本和汇总会写入 `target/bench/`。
+
+```sh
+BENCH_TARGETS=target/bench-base,target/release-dist make bench-http
+BENCH_TARGETS=target/bench-base,target/release-dist BENCH_ONLY='^/notes' make bench-browser
+BENCH_ROUNDS=1 BENCH_ONLY='^(notes|search|write|cold) ' make bench-http
+```
+
+默认 12 轮。单轮适合冒烟验证，A/B 至少需要 6 个有效配对才会计算显著性。HTTP 可用 `BENCH_RATES_FROM` 复用速率，独立复测时沿用相同的场景筛选、夹具和 CPU 分组。CPU 分组和其余参数见 [脚本头部](scripts/bench-http.ts)。
+
 ## 目录
 
 ```

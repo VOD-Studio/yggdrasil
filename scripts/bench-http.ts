@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// release 产物 HTTP 宏基准：一次性 PostgreSQL + 真实 release 服务端，oha 以固定到达率压公开路由。
+// release HTTP 与浏览器基准共用临时 PostgreSQL、独立站点和测试夹具。
 // SSR 缓存命中（cached）与未命中（ssr，带 ?bench=ssr 绕过 HTML 缓存）分开测；支持同机 A/B
 // 每轮随机决定 A/B 的执行顺序，按轮配对做精确置换检验并校正多重比较。
 // 文章语料与 Markdown 微基准共用。笔记、搜索、标签写入与冷缓存回填使用额外的数据库夹具。
@@ -8,6 +8,7 @@
 //   make build && make bench-http                         # 单 target
 //   make build RELEASE_OUT=target/bench-base               # 另一份产物（基准版本）
 //   BENCH_TARGETS=target/bench-base,target/release-dist make bench-http   # A/B（A=前者，B=后者）
+//   make bench-browser                                    # 移动 Chromium，浏览器冷/热缓存
 //
 // 环境变量（默认值）：
 //   BENCH_TARGETS            逗号分隔 1–2 个产物目录（target/release-dist），依次标为 A、B；
@@ -18,7 +19,7 @@
 //   BENCH_CALIBRATION_SECS   A 的闭环容量校准秒数（10）
 //   BENCH_LOAD_FACTOR        固定到达率 = 容量 × 该系数，0<f<1（0.5）
 //   BENCH_CONNECTIONS        oha 并发连接数（32）
-//   BENCH_ONLY               按场景名过滤的正则（空）
+//   BENCH_ONLY               按 HTTP 场景名或浏览器路由过滤的正则（空）
 //   BENCH_RATES_FROM         上一次的 results.json；按场景名复用 rate，跳过校准（空）
 //   BENCH_SERVER_CPUS / BENCH_DB_CPUS / BENCH_CLIENT_CPUS
 //                            taskset / --cpuset-cpus 的 CPU 组（0-3 / 4,5 / 6,7,14,15）。默认值按
@@ -30,15 +31,25 @@ import * as fs from 'node:fs';
 import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import type { Browser } from 'playwright';
+import {
+  BROWSER_PROFILE,
+  BROWSER_ROUTES,
+  type BrowserRun,
+  compareBrowser,
+  measureBrowser,
+  summarizeBrowser,
+} from './bench-browser';
 import { adjustComparisons, comparePaired, MIN_REQUESTS, summarize } from './bench-statistics';
 import {
   FIXTURE_SCALE,
   measureWorkload,
   summarizeWorkload,
-  type WorkloadRun,
   WORKLOADS,
+  type WorkloadRun,
   workloadFixtures,
 } from './bench-workloads';
+import { loadPlaywright } from './libs-modules';
 
 const ROOT = path.resolve(__dirname, '..');
 const PG_IMAGE = 'postgres:16-alpine';
@@ -156,6 +167,7 @@ function loadConfig(): Config {
 const runtime = fs.mkdtempSync(path.join(os.tmpdir(), 'ygg-bench-http-'));
 const container = `ygg-bench-http-${process.pid}-${Date.now()}`;
 const liveServers = new Set<Bun.Subprocess>();
+let browser: Browser | null = null;
 let child: Bun.Subprocess | null = null;
 let containerStarted = false;
 let cleaned = false;
@@ -184,6 +196,7 @@ async function cleanup() {
     child.kill();
     await child.exited;
   }
+  await browser?.close().catch(() => {});
   for (const server of liveServers) {
     server.kill();
     await server.exited;
@@ -275,11 +288,16 @@ function cpuList(spec: string): number[] {
 // ---------- 主流程 ----------
 
 async function main() {
+  const startedAt = new Date().toISOString();
   const config = loadConfig();
+  const browserMode = process.argv.includes('--browser');
   const only = config.only ? new RegExp(config.only) : null;
   const selected = ({ name }: { name: string }) => !only || only.test(name);
-  const workloads = WORKLOADS.filter(selected);
-  const scenarios: Scenario[] = (['cached', 'ssr'] as const)
+  const browserRoutes = browserMode
+    ? BROWSER_ROUTES.filter((route) => selected({ name: route }))
+    : [];
+  const workloads = browserMode ? [] : WORKLOADS.filter(selected);
+  const scenarios: Scenario[] = (browserMode ? [] : (['cached', 'ssr'] as const))
     .flatMap((mode) =>
       ROUTES.map((route) => ({
         name: `${mode} ${route}`,
@@ -290,7 +308,7 @@ async function main() {
     )
     .filter((s) => s.mode === 'ssr' || !UNCACHEABLE_ROUTES.includes(s.route))
     .filter(selected);
-  if (!scenarios.length && !workloads.length) {
+  if (!scenarios.length && !workloads.length && !browserRoutes.length) {
     throw new Error(`BENCH_ONLY=${config.only} 没有匹配任何场景`);
   }
   for (const tool of [
@@ -299,7 +317,8 @@ async function main() {
     'pg_isready',
     'createdb',
     'docker',
-    ...(scenarios.length ? ['oha', 'curl'] : []),
+    ...(scenarios.length ? ['oha'] : []),
+    ...(scenarios.length || browserRoutes.length ? ['curl'] : []),
   ]) {
     if (Bun.which(tool)) continue;
     throw new Error(
@@ -372,8 +391,8 @@ async function main() {
   const ohaVersion = scenarios.length ? await capture(['oha', '--version']) : null;
 
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  artifacts = path.join(ROOT, 'target/bench', `${stamp}-http`);
-  fs.mkdirSync(path.join(artifacts, 'oha'), { recursive: true });
+  artifacts = path.join(ROOT, 'target/bench', `${stamp}-${browserMode ? 'browser' : 'http'}`);
+  fs.mkdirSync(scenarios.length ? path.join(artifacts, 'oha') : artifacts, { recursive: true });
 
   // 数据库：一个容器，每个 target 一个独立库（各自用自己的渲染器生成 content_html）。
   containerStarted = true;
@@ -393,6 +412,7 @@ async function main() {
     ...(workloads.length ? ['-c', 'shared_preload_libraries=pg_stat_statements'] : []),
   ]);
   const pgPort = (await capture(['docker', 'port', container, '5432/tcp'])).split(':').at(-1);
+  const pgImageId = await capture(['docker', 'inspect', '-f', '{{.Image}}', container]);
   const pg = {
     ...process.env,
     PGHOST: '127.0.0.1',
@@ -485,7 +505,7 @@ async function main() {
       VALUES(${k + 1},1,${quote(`基准：${name}`)},'bench-${name}',${quote('基准语料')},${quote(bodies[k])},NULL,'published',NOW() - INTERVAL '${k + 1} minutes');`,
   ).join('\n');
   const total = FIXTURES.length + FILLER_COUNT;
-  const extraFixtures = workloadFixtures(workloads, false);
+  const extraFixtures = workloadFixtures(workloads, browserMode);
   const sql = `BEGIN;
     INSERT INTO users(id,username,email,password_hash,role) VALUES(1,'benchadmin','bench@test.invalid','unused','admin');
     INSERT INTO sessions(user_id,token_hash,expires_at) VALUES(1,'${tokenHash}',NOW()+INTERVAL '1 day');
@@ -501,6 +521,7 @@ async function main() {
     SELECT setval('tags_id_seq',(SELECT max(id) FROM tags));
     COMMIT;
     ${workloads.length ? 'CREATE EXTENSION pg_stat_statements; ANALYZE;' : ''}`;
+  const seedSha256 = createHash('sha256').update(sql).digest('hex');
   const seedFile = path.join(runtime, 'seed.sql');
   fs.writeFileSync(seedFile, sql);
   for (const t of targets) {
@@ -712,15 +733,27 @@ async function main() {
   // 每轮重启服务端，避免进程的内存布局和分配器状态持续偏向同一版本。
   const runs: Record<string, Record<string, RunResult[]>> = {};
   const workloadRuns: Record<string, Record<string, WorkloadRun[]>> = {};
+  const browserRuns: Record<string, Record<string, BrowserRun[]>> = {};
+  if (browserRoutes.length) {
+    // 允许回环地址访问样站，同时避免外部 CDN 和服务影响测量。
+    browser = await loadPlaywright().chromium.launch({
+      args: ['--no-proxy-server', '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1'],
+    });
+  }
+  const chromiumVersion = browser?.version() ?? null;
   const orders: Record<string, Target['label'][][]> = {};
   const roundOrder = (name: string) => {
     const order = targets.length === 2 && randomInt(2) ? [...targets].reverse() : targets;
-    (orders[name] ??= []).push(order.map((t) => t.label));
+    orders[name] ??= [];
+    orders[name].push(order.map((t) => t.label));
     return order;
   };
   for (const s of scenarios) runs[s.name] = Object.fromEntries(targets.map((t) => [t.label, []]));
   for (const w of workloads) {
     workloadRuns[w.name] = Object.fromEntries(targets.map((t) => [t.label, []]));
+  }
+  for (const route of browserRoutes) {
+    browserRuns[route] = Object.fromEntries(targets.map((t) => [t.label, []]));
   }
   for (let round = 0; round < config.rounds; round++) {
     for (const t of targets) await stopServer(t);
@@ -770,6 +803,23 @@ async function main() {
           round + 1,
         );
         workloadRuns[workload.name][t.label].push(result);
+      }
+    }
+    if (browser) {
+      for (const route of browserRoutes) {
+        for (const t of roundOrder(route)) {
+          if (ROUTES.includes(route)) {
+            await probe(t, { name: route, route, url: route, mode: 'cached' });
+          } else {
+            const response = await fetch(t.base + route, { signal: AbortSignal.timeout(30_000) });
+            await response.arrayBuffer();
+            if (!response.ok)
+              throw new Error(`浏览器预热失败 ${t.label} ${route}：${response.status}`);
+          }
+          browserRuns[route][t.label].push(
+            await measureBrowser(browser, t.base + route, round + 1),
+          );
+        }
       }
     }
     console.log(`第 ${round + 1}/${config.rounds} 轮完成`);
@@ -825,14 +875,34 @@ async function main() {
       comparison: samples.B && comparePaired(samples.A, samples.B, (r) => r.medianMs),
     };
   });
+  const browserResults = browserRoutes.map((route) => {
+    const samples = browserRuns[route];
+    return {
+      route,
+      orders: orders[route],
+      runs: samples,
+      summary: Object.fromEntries(
+        targets.map((t) => [
+          t.label,
+          {
+            cold: summarizeBrowser(samples[t.label], 'cold'),
+            warm: summarizeBrowser(samples[t.label], 'warm'),
+          },
+        ]),
+      ),
+      comparison: samples.B && compareBrowser(samples.A, samples.B),
+    };
+  });
   adjustComparisons([
     ...scenarioResults.flatMap((r) => (r.comparison ? Object.values(r.comparison) : [])),
     ...workloadResults.flatMap((r) => (r.comparison ? [r.comparison] : [])),
+    ...browserResults.flatMap((r) => r.comparison?.map((c) => c.result) ?? []),
   ]);
 
   const results = {
     meta: {
-      startedAt: new Date(Date.now()).toISOString(),
+      startedAt,
+      finishedAt: new Date().toISOString(),
       machine: {
         cpu: os.cpus()[0].model,
         kernel: os.release(),
@@ -841,9 +911,11 @@ async function main() {
         loadavg,
       },
       cpus: config.cpus,
-      tools: { bun: Bun.version, oha: ohaVersion },
+      tools: { bun: Bun.version, oha: ohaVersion, chromium: chromiumVersion },
+      browserProfile: browserMode ? BROWSER_PROFILE : null,
       pgImage: PG_IMAGE,
-      fixtures: { markdown: FIXTURES, fillerPosts: FILLER_COUNT, ...FIXTURE_SCALE },
+      pgImageId,
+      fixtures: { seedSha256, markdown: FIXTURES, fillerPosts: FILLER_COUNT, ...FIXTURE_SCALE },
       config: {
         rounds: config.rounds,
         durationSecs: config.durationSecs,
@@ -864,6 +936,7 @@ async function main() {
     })),
     scenarios: scenarioResults,
     workloads: workloadResults,
+    browser: browserResults,
   };
   fs.writeFileSync(path.join(artifacts, 'results.json'), `${JSON.stringify(results, null, 2)}\n`);
 
@@ -916,6 +989,29 @@ async function main() {
       if (r.comparison) {
         const c = r.comparison;
         console.log(`${r.name} 配对耗时变化 ${c.deltaPct ?? '—'}%（${c.pairs} 对，${c.verdict}）`);
+      }
+    }
+  }
+  if (browserResults.length) {
+    lines.push(
+      '| 页面 | 产物 | 浏览器缓存 | TTFB (ms) | FCP (ms) | LCP (ms) | 水合 (ms) | 传输字节 | WASM 传输字节 |',
+      '|---|---|---|---:|---:|---:|---:|---:|---:|',
+    );
+    for (const r of browserResults) {
+      for (const t of targets) {
+        for (const mode of ['cold', 'warm'] as const) {
+          const s = r.summary[t.label][mode];
+          lines.push(
+            `| ${r.route} | ${t.label} | ${mode} | ${ms(s.ttfbMs.median)} | ${ms(s.fcpMs.median)} | ${ms(s.lcpMs.median)} | ${ms(s.hydrationMs.median)} | ${s.transferBytes.median} | ${s.wasmTransferBytes.median} |`,
+          );
+        }
+      }
+    }
+    for (const r of browserResults) {
+      for (const { mode, metric, result } of r.comparison ?? []) {
+        console.log(
+          `${r.route} ${mode} ${metric} 配对变化 ${result.deltaPct ?? '—'}%（${result.pairs} 对，${result.verdict}）`,
+        );
       }
     }
   }

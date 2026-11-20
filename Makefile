@@ -253,10 +253,13 @@ clean: ## 清理构建产物与前端依赖
 test-public-performance: regression-build ## 验证双机缓存、公开页精简数据、归档分页和评论延迟加载
 	@bun scripts/test-public-performance.ts
 
-.PHONY: bench-markdown bench-http
+.PHONY: bench-markdown bench-http bench-browser
 BENCH_ARGS ?=
 bench-markdown: ## Markdown 渲染微基准（criterion；BENCH_ARGS='--save-baseline base' 存基线，'--baseline base' 对比）
 	@cargo bench --locked --bench markdown -- $(BENCH_ARGS)
 
 bench-http: ## release 产物 HTTP 宏基准（先 make build；BENCH_TARGETS=目录A,目录B 做 A/B，变量见脚本头注释）
 	@bun scripts/bench-http.ts
+
+bench-browser: ## release 产物移动浏览器基准（可用 BENCH_TARGETS 指定单产物或两个 A/B 产物）
+	@taskset -c "$${BENCH_CLIENT_CPUS:-6,7,14,15}" bun scripts/bench-http.ts --browser
