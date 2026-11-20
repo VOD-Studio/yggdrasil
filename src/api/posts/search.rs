@@ -65,16 +65,18 @@ pub async fn search_posts(query: String) -> Result<PostListResponse, ApiError> {
                 p.id, p.author_id, p.title, p.slug, p.summary, p.status,
                 p.published_at, p.created_at, p.updated_at, p.cover_image,
                 p.word_count, p.reading_time,
-                COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{}') as tags,
-                word_similarity(p.search_text, $2) AS sml
-             FROM posts p
-             LEFT JOIN post_tags pt ON p.id = pt.post_id
-             LEFT JOIN tags t ON pt.tag_id = t.id
-             WHERE p.status = 'published' AND p.deleted_at IS NULL
-               AND p.search_text ILIKE '%' || $1 || '%' ESCAPE '\\'
-             GROUP BY p.id, p.search_text
-             ORDER BY sml DESC, p.published_at DESC
-             LIMIT 50",
+                ARRAY(SELECT t.name FROM post_tags pt JOIN tags t ON pt.tag_id = t.id
+                      WHERE pt.post_id = p.id ORDER BY pt.tag_id) AS tags
+             FROM (
+                 SELECT id, author_id, title, slug, summary, status, published_at, created_at,
+                        updated_at, cover_image, word_count, reading_time,
+                        word_similarity(search_text, $2) AS sml
+                 FROM posts
+                 WHERE status = 'published' AND deleted_at IS NULL
+                   AND search_text ILIKE '%' || $1 || '%' ESCAPE '\\'
+                 ORDER BY sml DESC, published_at DESC LIMIT 50
+             ) p
+             ORDER BY p.sml DESC, p.published_at DESC",
             &[&escaped, &q],
         )
         .await
