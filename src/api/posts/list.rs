@@ -65,53 +65,41 @@ pub async fn list_published_posts(page: i32, per_page: i32) -> Result<PostListRe
     // 钳制分页参数，防止无认证调用方请求超大每页数量导致内存放大 / DoS。
     let (page, per_page) = clamp_pagination(page, per_page);
 
-    #[cfg(feature = "server")]
-    {
-        let cache_key = crate::cache::CacheKey::PublishedPosts { page, per_page };
-        if let Some((cached_posts, cached_total)) = crate::cache::get_post_list(&cache_key).await {
-            return Ok(PostListResponse {
-                posts: cached_posts,
-                total: cached_total,
-            });
-        }
-
-        let client = get_conn().await.map_err(AppError::db_conn)?;
-        let total = published_post_count(&client).await?;
-
-        let offset = ((page - 1).max(0) as i64) * (per_page as i64);
-        let limit = per_page as i64;
-        let rows = client
-            .query(
-                "SELECT
-                    p.id, p.author_id, p.title, p.slug, p.summary, p.status,
-                    p.published_at, p.created_at, p.updated_at, p.cover_image,
-                    p.word_count, p.reading_time,
-                    COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{}') as tags
-                 FROM posts p
-                 LEFT JOIN post_tags pt ON p.id = pt.post_id
-                 LEFT JOIN tags t ON pt.tag_id = t.id
-                 WHERE p.status = 'published' AND p.deleted_at IS NULL
-                 GROUP BY p.id
-                 ORDER BY p.published_at DESC
-                 LIMIT $1 OFFSET $2",
-                &[&limit, &offset],
-            )
-            .await
-            .map_err(AppError::query)?;
-
-        let posts: Vec<_> = rows.iter().map(row_to_post_list_item).collect();
-
-        crate::cache::set_post_list(&cache_key, posts.clone(), total).await;
-        Ok(PostListResponse { posts, total })
+    let cache_key = crate::cache::CacheKey::PublishedPosts { page, per_page };
+    if let Some((cached_posts, cached_total)) = crate::cache::get_post_list(&cache_key).await {
+        return Ok(PostListResponse {
+            posts: cached_posts,
+            total: cached_total,
+        });
     }
 
-    #[cfg(not(feature = "server"))]
-    {
-        Ok(PostListResponse {
-            posts: Vec::new(),
-            total: 0,
-        })
-    }
+    let client = get_conn().await.map_err(AppError::db_conn)?;
+    let total = published_post_count(&client).await?;
+
+    let limit = i64::from(per_page);
+    let offset = i64::from(page - 1) * limit;
+    let rows = client
+        .query(
+            "SELECT
+                p.id, p.author_id, p.title, p.slug, p.summary, p.status,
+                p.published_at, p.created_at, p.updated_at, p.cover_image,
+                p.word_count, p.reading_time,
+                ARRAY(SELECT t.name FROM post_tags pt JOIN tags t ON t.id = pt.tag_id
+                      WHERE pt.post_id = p.id ORDER BY pt.tag_id) AS tags
+             FROM (
+                 SELECT * FROM posts WHERE status = 'published' AND deleted_at IS NULL
+                 ORDER BY published_at DESC, id DESC LIMIT $1 OFFSET $2
+             ) p
+             ORDER BY p.published_at DESC, p.id DESC",
+            &[&limit, &offset],
+        )
+        .await
+        .map_err(AppError::query)?;
+
+    let posts: Vec<_> = rows.iter().map(row_to_post_list_item).collect();
+
+    crate::cache::set_post_list(&cache_key, posts.clone(), total).await;
+    Ok(PostListResponse { posts, total })
 }
 
 /// 获取后台文章列表（含草稿，不含回收站），按创建时间倒序。
@@ -127,81 +115,69 @@ pub async fn list_posts(
     let (page, per_page) = clamp_pagination(page, per_page);
     let _user = get_current_admin_user().await?;
 
-    #[cfg(feature = "server")]
-    {
-        let client = get_conn().await.map_err(AppError::db_conn)?;
+    let client = get_conn().await.map_err(AppError::db_conn)?;
 
-        // 标题搜索词：trim 后为空视为不搜索；限长 200 字符并转义 LIKE 通配符
-        // （% / _ / \），避免用户输入导致模式错配或全表误匹配。
-        let title_pattern: Option<String> = query
-            .search
-            .as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(|s| {
-                let truncated: String = s.chars().take(200).collect();
-                format!(
-                    "%{}%",
-                    crate::utils::server::escape_like_pattern(&truncated)
-                )
-            });
-        let status: Option<&str> = query.status.as_ref().map(|s| s.as_str());
-        let tag: Option<&str> = query.tag.as_deref().filter(|t| !t.is_empty());
-
-        // 条件统一写成「参数为空则不筛选」，参数位置固定，免去拼接 SQL。
-        // posts 表对管理后台属低频访问、行数有限，ILIKE 全表扫可接受，靠 LIMIT 兜底。
-        const FILTER: &str = "p.deleted_at IS NULL
-            AND ($1::text IS NULL OR p.title ILIKE $1 ESCAPE '\\')
-            AND ($2::text IS NULL OR p.status = $2)
-            AND ($3::text IS NULL OR EXISTS (
-                SELECT 1 FROM post_tags fpt JOIN tags ft ON ft.id = fpt.tag_id
-                WHERE fpt.post_id = p.id AND ft.name = $3))";
-
-        let total: i64 = client
-            .query_one(
-                &format!("SELECT COUNT(*) FROM posts p WHERE {FILTER}"),
-                &[&title_pattern, &status, &tag],
+    // 标题搜索词：trim 后为空视为不搜索；限长 200 字符并转义 LIKE 通配符
+    // （% / _ / \），避免用户输入导致模式错配或全表误匹配。
+    let title_pattern: Option<String> = query
+        .search
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| {
+            let truncated: String = s.chars().take(200).collect();
+            format!(
+                "%{}%",
+                crate::utils::server::escape_like_pattern(&truncated)
             )
-            .await
-            .map_err(AppError::query)?
-            .get(0);
+        });
+    let status: Option<&str> = query.status.as_ref().map(|s| s.as_str());
+    let tag: Option<&str> = query.tag.as_deref().filter(|t| !t.is_empty());
 
-        let offset = ((page - 1).max(0) as i64) * (per_page as i64);
-        let limit = per_page as i64;
-        let rows = client
-            .query(
-                &format!(
-                    "SELECT
-                        p.id, p.author_id, p.title, p.slug, p.summary, p.status,
-                        p.published_at, p.created_at, p.updated_at, p.cover_image,
-                        p.word_count, p.reading_time,
-                        COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{{}}') as tags
-                     FROM posts p
-                     LEFT JOIN post_tags pt ON p.id = pt.post_id
-                     LEFT JOIN tags t ON pt.tag_id = t.id
-                     WHERE {FILTER}
-                     GROUP BY p.id
-                     ORDER BY p.created_at DESC
-                     LIMIT $4 OFFSET $5"
-                ),
-                &[&title_pattern, &status, &tag, &limit, &offset],
-            )
-            .await
-            .map_err(AppError::query)?;
+    // 条件统一写成「参数为空则不筛选」，参数位置固定，免去拼接 SQL。
+    // posts 表对管理后台属低频访问、行数有限，ILIKE 全表扫可接受，靠 LIMIT 兜底。
+    const FILTER: &str = "p.deleted_at IS NULL
+        AND ($1::text IS NULL OR p.title ILIKE $1 ESCAPE '\\')
+        AND ($2::text IS NULL OR p.status = $2)
+        AND ($3::text IS NULL OR EXISTS (
+            SELECT 1 FROM post_tags fpt JOIN tags ft ON ft.id = fpt.tag_id
+            WHERE fpt.post_id = p.id AND ft.name = $3))";
 
-        let posts: Vec<_> = rows.iter().map(row_to_post_list_item).collect();
+    let total: i64 = client
+        .query_one(
+            &format!("SELECT COUNT(*) FROM posts p WHERE {FILTER}"),
+            &[&title_pattern, &status, &tag],
+        )
+        .await
+        .map_err(AppError::query)?
+        .get(0);
 
-        Ok(PostListResponse { posts, total })
-    }
+    let offset = ((page - 1).max(0) as i64) * (per_page as i64);
+    let limit = per_page as i64;
+    let rows = client
+        .query(
+            &format!(
+                "SELECT
+                    p.id, p.author_id, p.title, p.slug, p.summary, p.status,
+                    p.published_at, p.created_at, p.updated_at, p.cover_image,
+                    p.word_count, p.reading_time,
+                    COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{{}}') as tags
+                 FROM posts p
+                 LEFT JOIN post_tags pt ON p.id = pt.post_id
+                 LEFT JOIN tags t ON pt.tag_id = t.id
+                 WHERE {FILTER}
+                 GROUP BY p.id
+                 ORDER BY p.created_at DESC
+                 LIMIT $4 OFFSET $5"
+            ),
+            &[&title_pattern, &status, &tag, &limit, &offset],
+        )
+        .await
+        .map_err(AppError::query)?;
 
-    #[cfg(not(feature = "server"))]
-    {
-        let _ = query;
-        Ok(PostListResponse {
-            posts: Vec::new(),
-            total: 0,
-        })
-    }
+    let posts: Vec<_> = rows.iter().map(row_to_post_list_item).collect();
+
+    Ok(PostListResponse { posts, total })
 }
 
 /// 获取回收站中已软删除的文章列表。
@@ -213,117 +189,94 @@ pub async fn list_deleted_posts(page: i32, per_page: i32) -> Result<PostListResp
     let (page, per_page) = clamp_pagination(page, per_page);
     let _user = get_current_admin_user().await?;
 
-    #[cfg(feature = "server")]
-    {
-        let client = get_conn().await.map_err(AppError::db_conn)?;
+    let client = get_conn().await.map_err(AppError::db_conn)?;
 
-        let count_row = client
-            .query_one(
-                "SELECT COUNT(*) FROM posts WHERE deleted_at IS NOT NULL",
-                &[],
-            )
-            .await
-            .map_err(AppError::query)?;
-        let total: i64 = count_row.get(0);
+    let count_row = client
+        .query_one(
+            "SELECT COUNT(*) FROM posts WHERE deleted_at IS NOT NULL",
+            &[],
+        )
+        .await
+        .map_err(AppError::query)?;
+    let total: i64 = count_row.get(0);
 
-        let offset = ((page - 1).max(0) as i64) * (per_page as i64);
-        let limit = per_page as i64;
-        let rows = client
-            .query(
-                "SELECT
-                    p.id, p.author_id, p.title, p.slug, p.summary, p.status,
-                    p.published_at, p.created_at, p.updated_at, p.cover_image, p.deleted_at,
-                    p.word_count, p.reading_time,
-                    COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{}') as tags
-                 FROM posts p
-                 LEFT JOIN post_tags pt ON p.id = pt.post_id
-                 LEFT JOIN tags t ON pt.tag_id = t.id
-                 WHERE p.deleted_at IS NOT NULL
-                 GROUP BY p.id
-                 ORDER BY p.deleted_at DESC
-                 LIMIT $1 OFFSET $2",
-                &[&limit, &offset],
-            )
-            .await
-            .map_err(AppError::query)?;
+    let offset = ((page - 1).max(0) as i64) * (per_page as i64);
+    let limit = per_page as i64;
+    let rows = client
+        .query(
+            "SELECT
+                p.id, p.author_id, p.title, p.slug, p.summary, p.status,
+                p.published_at, p.created_at, p.updated_at, p.cover_image, p.deleted_at,
+                p.word_count, p.reading_time,
+                COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{}') as tags
+             FROM posts p
+             LEFT JOIN post_tags pt ON p.id = pt.post_id
+             LEFT JOIN tags t ON pt.tag_id = t.id
+             WHERE p.deleted_at IS NOT NULL
+             GROUP BY p.id
+             ORDER BY p.deleted_at DESC
+             LIMIT $1 OFFSET $2",
+            &[&limit, &offset],
+        )
+        .await
+        .map_err(AppError::query)?;
 
-        let posts: Vec<_> = rows.iter().map(row_to_post_list_item).collect();
+    let posts: Vec<_> = rows.iter().map(row_to_post_list_item).collect();
 
-        Ok(PostListResponse { posts, total })
-    }
-
-    #[cfg(not(feature = "server"))]
-    {
-        Ok(PostListResponse {
-            posts: Vec::new(),
-            total: 0,
-        })
-    }
+    Ok(PostListResponse { posts, total })
 }
 
 /// 获取指定标签下的全部已发布文章（上限 200），用于无分页 UI 的标签详情页。
 /// 结果缓存于按标签的键空间。
 #[server(GetPostsByTag, endpoint = "get_posts_by_tag", input = leptos::server_fn::codec::Json)]
 pub async fn get_posts_by_tag(tag_name: String) -> Result<PostListResponse, ApiError> {
-    #[cfg(feature = "server")]
-    {
-        if let Some((cached_posts, cached_total)) = crate::cache::get_posts_by_tag(&tag_name).await
-        {
-            return Ok(PostListResponse {
-                posts: cached_posts,
-                total: cached_total,
-            });
-        }
-
-        let client = get_conn().await.map_err(AppError::db_conn)?;
-        // 真实总数（即使被 LIMIT 截断也返回完整计数）。
-        let total: i64 = client
-            .query_one(
-                "SELECT COUNT(*) FROM posts p
-                 JOIN post_tags pt ON p.id = pt.post_id
-                 JOIN tags t ON pt.tag_id = t.id
-                 WHERE t.name = $1 AND p.status = 'published' AND p.deleted_at IS NULL",
-                &[&tag_name],
-            )
-            .await
-            .map_err(AppError::query)?
-            .get(0);
-
-        let rows = client
-            .query(
-                "SELECT
-                    p.id, p.author_id, p.title, p.slug, p.summary, p.status,
-                    p.published_at, p.created_at, p.updated_at, p.cover_image,
-                    p.word_count, p.reading_time,
-                    COALESCE(array_agg(t2.name) FILTER (WHERE t2.name IS NOT NULL), '{}') as tags
-                 FROM posts p
-                 JOIN post_tags pt ON p.id = pt.post_id
-                 JOIN tags t ON pt.tag_id = t.id
-                 LEFT JOIN post_tags pt2 ON p.id = pt2.post_id
-                 LEFT JOIN tags t2 ON pt2.tag_id = t2.id
-                 WHERE t.name = $1 AND p.status = 'published' AND p.deleted_at IS NULL
-                 GROUP BY p.id
-                 ORDER BY p.published_at DESC
-                 LIMIT 200",
-                &[&tag_name],
-            )
-            .await
-            .map_err(AppError::query)?;
-
-        let posts: Vec<_> = rows.iter().map(row_to_post_list_item).collect();
-
-        // total 为真实 COUNT(*)，不再用 posts.len()。
-        crate::cache::set_posts_by_tag(&tag_name, posts.clone(), total).await;
-        Ok(PostListResponse { posts, total })
+    if let Some((cached_posts, cached_total)) = crate::cache::get_posts_by_tag(&tag_name).await {
+        return Ok(PostListResponse {
+            posts: cached_posts,
+            total: cached_total,
+        });
     }
 
-    #[cfg(not(feature = "server"))]
-    {
-        Ok(PostListResponse {
-            posts: Vec::new(),
-            total: 0,
-        })
-    }
+    let client = get_conn().await.map_err(AppError::db_conn)?;
+    // 真实总数（即使被 LIMIT 截断也返回完整计数）。
+    let total: i64 = client
+        .query_one(
+            "SELECT COUNT(*) FROM posts p
+             JOIN post_tags pt ON p.id = pt.post_id
+             JOIN tags t ON pt.tag_id = t.id
+             WHERE t.name = $1 AND p.status = 'published' AND p.deleted_at IS NULL",
+            &[&tag_name],
+        )
+        .await
+        .map_err(AppError::query)?
+        .get(0);
+
+    let rows = client
+        .query(
+            "SELECT
+                p.id, p.author_id, p.title, p.slug, p.summary, p.status,
+                p.published_at, p.created_at, p.updated_at, p.cover_image,
+                p.word_count, p.reading_time,
+                COALESCE(array_agg(t2.name) FILTER (WHERE t2.name IS NOT NULL), '{}') as tags
+             FROM posts p
+             JOIN post_tags pt ON p.id = pt.post_id
+             JOIN tags t ON pt.tag_id = t.id
+             LEFT JOIN post_tags pt2 ON p.id = pt2.post_id
+             LEFT JOIN tags t2 ON pt2.tag_id = t2.id
+             WHERE t.name = $1 AND p.status = 'published' AND p.deleted_at IS NULL
+             GROUP BY p.id
+             ORDER BY p.published_at DESC
+             LIMIT 200",
+            &[&tag_name],
+        )
+        .await
+        .map_err(AppError::query)?;
+
+    let posts: Vec<_> = rows.iter().map(row_to_post_list_item).collect();
+
+    // total 为真实 COUNT(*)，不再用 posts.len()。
+    crate::cache::set_posts_by_tag(&tag_name, posts.clone(), total).await;
+    Ok(PostListResponse { posts, total })
 }
 
 #[cfg(test)]

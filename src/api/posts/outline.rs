@@ -21,34 +21,26 @@ use crate::db::pool::get_conn;
 /// 有新文章发布造成错配。
 #[server(LatestPostOutline, endpoint = "latest_post_outline", input = leptos::server_fn::codec::Json)]
 pub async fn latest_post_outline() -> Result<Option<PostOutline>, ApiError> {
-    #[cfg(feature = "server")]
-    {
-        if let Some(cached) = crate::cache::get_latest_outline().await {
-            return Ok(cached);
-        }
-        let client = get_conn().await.map_err(AppError::db_conn)?;
-        let row = client
-            .query_opt(
-                "SELECT slug, toc_html FROM posts
-                 WHERE status = 'published' AND deleted_at IS NULL
-                 ORDER BY published_at DESC
-                 LIMIT 1",
-                &[],
-            )
-            .await
-            .map_err(AppError::query)?;
-        let outline = row.and_then(|row| {
-            let toc: Option<String> = row.get("toc_html");
-            outline_from_toc(row.get("slug"), toc.as_deref().unwrap_or_default())
-        });
-        crate::cache::set_latest_outline(outline.clone()).await;
-        Ok(outline)
+    if let Some(cached) = crate::cache::get_latest_outline().await {
+        return Ok(cached);
     }
-
-    #[cfg(not(feature = "server"))]
-    {
-        Ok(None)
-    }
+    let client = get_conn().await.map_err(AppError::db_conn)?;
+    let row = client
+        .query_opt(
+            "SELECT slug, toc_html FROM posts
+             WHERE status = 'published' AND deleted_at IS NULL
+             ORDER BY published_at DESC, id DESC
+             LIMIT 1",
+            &[],
+        )
+        .await
+        .map_err(AppError::query)?;
+    let outline = row.and_then(|row| {
+        let toc: Option<String> = row.get("toc_html");
+        outline_from_toc(row.get("slug"), toc.as_deref().unwrap_or_default())
+    });
+    crate::cache::set_latest_outline(outline.clone()).await;
+    Ok(outline)
 }
 
 #[cfg(feature = "server")]
