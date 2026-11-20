@@ -148,6 +148,112 @@ async function verifyHome(page: Page, base: string) {
   }
 }
 
+async function verifyNoteHydration(page: Page, base: string, mobile: boolean) {
+  const route = '/notes/recent-test-01';
+  const marker = 'HOME_NOTE_BODY_FIXTURE';
+  const response = await page.goto(base + route);
+  assert(response);
+  assert(response.ok());
+  const source = await response.text();
+  assert.equal(source.split(marker).length - 1, 1, 'The note body belongs in the document once');
+  await hydrated(page);
+  const body = page.locator('#note-content');
+  assert.match((await body.textContent()) ?? '', new RegExp(marker));
+  await body.locator('#code-runner-1').scrollIntoViewIfNeeded();
+  assert.equal((await body.locator('.cm-content').textContent())?.trim(), "print('note-runner')");
+  if (mobile) {
+    await page.locator('#note-directory-trigger').click();
+    await page.locator('#note-directory-sheet a[href="#note-fixture-section"]').waitFor();
+  }
+
+  await page.goto(base + '/');
+  await hydrated(page);
+  await page.locator(`.home-corner-notes a[href="${route}"]`).click();
+  await page.waitForURL(base + route);
+  await body.getByText(marker).waitFor();
+}
+
+async function verifyRecentNoteCache(bases: string[]) {
+  const otherRoutes = ['/archives', '/post/perf-001'];
+  const before = await Promise.all(
+    bases.map((base) => Promise.all(['/', ...otherRoutes].map((route) => hit(base, route)))),
+  );
+  const post = async (endpoint: string, payload: object) => {
+    const result = await read(bases[0], '/api/' + endpoint, {
+      method: 'POST',
+      headers: {
+        Cookie: `session=${adminSession}`,
+        Origin: bases[0],
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+    assert.equal(result.status, 200, result.body);
+    return JSON.parse(result.body);
+  };
+  const title = '笔记发布缓存回归';
+  const draft = await post('save_note', {
+    draft: {
+      id: 23,
+      expected_version: 1,
+      kind: 'moment',
+      title,
+      content_md: '工作稿正文',
+    },
+  });
+  assert.equal(draft.version, 2);
+  assert.equal(draft.published_version, null);
+  for (let i = 0; i < bases.length; i++) {
+    const home = await read(bases[i], '/');
+    assert.equal(home.headers['x-ssr-cache'], 'HIT');
+    assert.equal(home.headers['x-ssr-generation'], before[i][0].headers['x-ssr-generation']);
+    assert(!home.body.includes(title));
+  }
+
+  for (const [index, action] of ['publish', 'unpublish'].entries()) {
+    await post('act_on_note', { id: 23, expected_version: 2, action });
+    await until(async () => {
+      const pages = await Promise.all(bases.map((base) => read(base, '/')));
+      return pages.every(
+        (home, i) =>
+          home.body.includes(title) === (action === 'publish') &&
+          Number(home.headers['x-ssr-generation']) ===
+            Number(before[i][0].headers['x-ssr-generation']) + index + 1,
+      );
+    }, `Both home pages must reflect ${action}`);
+    for (let i = 0; i < bases.length; i++) {
+      for (const [j, route] of otherRoutes.entries()) {
+        const response = await read(bases[i], route);
+        assert.equal(
+          response.headers['x-ssr-generation'],
+          before[i][j + 1].headers['x-ssr-generation'],
+        );
+        if (i === 1) assert.equal(response.headers['x-ssr-cache'], 'HIT');
+      }
+    }
+  }
+}
+
+async function verifyPostProtocols(base: string) {
+  const slug = 'perf-151';
+  const post = async (endpoint: string) => {
+    const response = await read(base, '/api/' + endpoint, {
+      method: 'POST',
+      headers: { Origin: base, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ slug }),
+    });
+    assert.equal(response.status, 200, response.body);
+    return JSON.parse(response.body).post;
+  };
+  const reading = await post('get_public_post_by_slug');
+  assert.match(reading.content_html, /NOT_FOR_PUBLIC_PAYLOAD/);
+  assert(reading.word_count > 0 && reading.reading_time > 0);
+  assert(!Object.hasOwn(reading, 'content_md'));
+  const legacy = await post('get_post_by_slug');
+  assert.match(legacy.content_md, /NOT_FOR_PUBLIC_PAYLOAD/);
+  assert.equal(legacy.content_html, reading.content_html);
+}
+
 async function verifyLocalCacheWrite(browser: Browser, bases: string[]) {
   const route = '/post/perf-002';
   const before = await Promise.all(bases.map(async (base) => (await hit(base, route)).headers));
@@ -293,22 +399,44 @@ async function main() {
       repeat('NOT_FOR_PUBLIC_PAYLOAD ',2000),
       CASE WHEN g=1 THEN repeat('<p>阅读页与评论懒加载回归正文。</p>',350)
         || '<pre data-runnable="true" data-lang="python" data-source="print(&#x27;runner-lazy&#x27;)"><code class="language-python">print(&#x27;runner-lazy&#x27;)</code></pre>'
-      ELSE '<p>文章正文</p>' END,
-      'published',NOW()-g*INTERVAL '1 minute',300,2 FROM generate_series(1,151) g;
+      WHEN g=150 THEN repeat('<p>同路由并发测试正文</p>',15000)
+      WHEN g=151 THEN NULL ELSE '<p>文章正文</p>' END,
+      'published',NOW()-g*INTERVAL '1 minute',
+      CASE WHEN g=151 THEN 0 ELSE 300 END,CASE WHEN g=151 THEN 0 ELSE 2 END
+      FROM generate_series(1,151) g;
     INSERT INTO comments(post_id,author_name,author_email,content_md,content_html,status)
       VALUES (2,'读者','comment@test.invalid','公开评论','<p>公开评论</p>','approved');
     INSERT INTO notes(id,owner_id,slug,version,published_version,published_at)
-      SELECT g,1,'recent-test-'||lpad(g::text,2,'0'),1,1,NOW()-g*INTERVAL '1 minute' FROM generate_series(1,22) g;
-    INSERT INTO note_revisions(note_id,version,kind,title,content_md,content_html,created_at)
-      SELECT g,1,'moment','最近笔记 '||g,'正文','<p>HOME_NOTE_BODY_FIXTURE</p>',NOW()-g*INTERVAL '1 minute'
-      FROM generate_series(1,22) g;
+      SELECT g,1,'recent-test-'||lpad(g::text,2,'0'),1,
+        CASE WHEN g<23 THEN 1 END,CASE WHEN g<23 THEN NOW()-g*INTERVAL '1 minute' END
+      FROM generate_series(1,23) g;
+    INSERT INTO note_revisions(note_id,version,kind,title,content_md,content_html,toc_html,created_at)
+      SELECT g,1,CASE WHEN g=1 THEN 'topic' ELSE 'moment' END,'最近笔记 '||g,'正文',
+        CASE WHEN g=1 THEN '<h2 id="note-fixture-section">笔记小节</h2><p>HOME_NOTE_BODY_FIXTURE</p>'
+          || '<pre data-runnable="true" data-lang="python" data-source="print(&#x27;note-runner&#x27;)"><code class="language-python">print(&#x27;note-runner&#x27;)</code></pre>'
+          ELSE '<p>HOME_NOTE_BODY_FIXTURE</p>' END,
+        CASE WHEN g=1 THEN '<ul><li><a href="#note-fixture-section">笔记小节</a></li></ul>' ELSE '' END,
+        NOW()-g*INTERVAL '1 minute' FROM generate_series(1,23) g;
     COMMIT;`);
+  assert.equal(
+    await sql(
+      "SELECT to_regclass('idx_sessions_token_hash') IS NULL AND to_regclass('sessions_token_hash_key') IS NOT NULL;",
+    ),
+    't',
+  );
+  await verifyPostProtocols(bases[0]);
   const route = '/post/perf-001';
   await until(
     async () => (await read(bases[0], route)).body.includes('归档文章 1'),
     'Seed not visible',
   );
   const warm = await Promise.all(bases.map((base) => hit(base, route)));
+  const cold = await Promise.all(
+    Array.from({ length: 16 }, () => read(bases[0], '/post/perf-150')),
+  );
+  assert(cold.every((response) => response.status === 200));
+  assert.equal(cold.filter((response) => response.headers['x-ssr-cache'] === 'MISS').length, 1);
+  assert.equal(cold.filter((response) => response.headers['x-ssr-cache'] === 'HIT').length, 15);
   for (let i = 0; i < bases.length; i++) {
     const cached = warm[i];
     assert(cached.headers.etag);
@@ -516,7 +644,10 @@ async function main() {
       await page.waitForFunction(() =>
         document.querySelector('h1.post-title')?.textContent?.includes('断线后更新'),
       );
-      if (theme === 'light') await verifyHome(page, bases[0]);
+      if (theme === 'light') {
+        await verifyHome(page, bases[0]);
+        await verifyNoteHydration(page, bases[0], mobile);
+      }
       assert.deepEqual(errors, []);
       browserResults.push({
         mobile,
@@ -528,11 +659,13 @@ async function main() {
       console.log(JSON.stringify(browserResults.at(-1)));
       await context.close();
     }
+  await verifyRecentNoteCache(bases);
   await verifyLocalCacheWrite(browser, bases);
   const report = {
     invalidationMs,
-    cache: 'HIT / MISS / BYPASS / 304 / TTL / rollback / reconnect passed',
+    cache: 'HIT / MISS / BYPASS / 304 / TTL / coalescing / rollback / reconnect passed',
     homeAndLocalCacheWrite: 'passed',
+    noteHydrationAndInvalidation: 'passed',
     browserResults,
   };
   fs.writeFileSync(path.join(artifacts, 'results.json'), JSON.stringify(report, null, 2));
