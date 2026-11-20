@@ -6,6 +6,7 @@
 //! `Accept-Encoding` 直接返回预压缩变体，不再每次现压。
 #![cfg(feature = "server")]
 
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
@@ -16,6 +17,7 @@ use axum::response::Response;
 use bytes::Bytes;
 use futures::StreamExt;
 use sha2::{Digest, Sha256};
+use tokio::sync::watch;
 
 use crate::compression::{self, CompressionAlgorithms, Effort, Encoding};
 
@@ -24,8 +26,9 @@ use crate::compression::{self, CompressionAlgorithms, Effort, Encoding};
 const MAX_CACHE_BYTES: u64 = 32 * 1024 * 1024;
 const _: () = assert!(crate::models::settings::MAX_SSR_CACHE_MAX_PAGE_BYTES <= MAX_CACHE_BYTES);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SsrGeneration(pub u64);
+pub(crate) const HOME_PATH: &str = "/";
+/// 同路由的首个客户端可能很慢。其他客户端最多等这么久，之后各自完成渲染。
+const FILL_WAIT: Duration = Duration::from_secs(1);
 
 #[derive(Clone)]
 struct CachedPage {
@@ -41,12 +44,55 @@ struct CachedPage {
 struct HtmlCache {
     pages: moka::sync::Cache<String, CachedPage>,
     generation: AtomicU64,
-    gate: Mutex<()>,
+    home_generation: AtomicU64,
+    gate: Mutex<HashMap<String, Arc<FillSignal>>>,
     enabled: bool,
     /// 单页上限：渲染结果更大的页面不缓存，每次请求完整 SSR 再现压。
     max_page_bytes: usize,
-    /// 当前缓存命名空间（release×flavor，plan §6.7）。空串 = 尚未初始化。
-    namespace: Mutex<String>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FillOutcome {
+    /// 已回填、被失效或被取消。等待者重新检查缓存，再决定是否渲染。
+    Retry,
+    /// 响应不能缓存。已等待的请求各自渲染，避免逐个排队。
+    Bypass,
+}
+
+type FillSignal = watch::Sender<Option<FillOutcome>>;
+
+enum CacheAccess<'a> {
+    Hit(CachedPage),
+    Fill(Fill<'a>),
+    Wait(watch::Receiver<Option<FillOutcome>>),
+}
+
+struct Fill<'a> {
+    cache: &'a HtmlCache,
+    path: String,
+    generation: u64,
+    signal: Arc<FillSignal>,
+    outcome: FillOutcome,
+}
+
+impl Fill<'_> {
+    fn bypass(mut self) {
+        self.outcome = FillOutcome::Bypass;
+    }
+}
+
+impl Drop for Fill<'_> {
+    fn drop(&mut self) {
+        let mut fills = self.cache.gate.lock().unwrap_or_else(|e| e.into_inner());
+        // 失效可能已唤醒旧等待者并允许同路径建立新回填。
+        if fills
+            .get(&self.path)
+            .is_some_and(|active| Arc::ptr_eq(active, &self.signal))
+        {
+            fills.remove(&self.path);
+            self.signal.send_replace(Some(self.outcome));
+        }
+    }
 }
 
 impl HtmlCache {
@@ -61,51 +107,67 @@ impl HtmlCache {
                 .time_to_live(ttl)
                 .build(),
             generation: AtomicU64::new(0),
-            gate: Mutex::new(()),
+            home_generation: AtomicU64::new(0),
+            gate: Mutex::new(HashMap::new()),
             enabled: !ttl.is_zero(),
             max_page_bytes,
-            namespace: Mutex::new(String::new()),
         }
     }
 
-    fn generation(&self) -> u64 {
-        self.generation.load(Ordering::Acquire)
-    }
-
-    fn invalidate(&self) -> u64 {
-        let _guard = self.gate.lock().unwrap_or_else(|e| e.into_inner());
-        let generation = self
-            .generation
-            .fetch_add(1, Ordering::AcqRel)
-            .wrapping_add(1);
-        self.pages.invalidate_all();
-        generation
-    }
-
-    /// 切换命名空间：内容不同则整表失效并推进世代，保证旧命名空间下的已缓存
-    /// 页面与在途回填都绝不返回给新命名空间（plan §6.7「release/flavor 纳入隔离」）。
-    /// 同一进程内一个缓存实例只服务一个 release×flavor 组合，切换只发生在
-    /// 启动/开发热重载重新组装路由时。返回是否真的发生了切换。
-    fn swap_namespace(&self, namespace: &str) -> bool {
-        let _guard = self.gate.lock().unwrap_or_else(|e| e.into_inner());
-        let mut current = self.namespace.lock().unwrap_or_else(|e| e.into_inner());
-        if *current == namespace {
-            return false;
+    fn generation(&self, path: &str) -> u64 {
+        let global = self.generation.load(Ordering::Acquire);
+        if path == HOME_PATH {
+            global.wrapping_add(self.home_generation.load(Ordering::Acquire))
+        } else {
+            global
         }
-        *current = namespace.to_owned();
-        // 世代号与 invalidate() 同步推进；新值无需使用。
-        let _ = self
-            .generation
-            .fetch_add(1, Ordering::AcqRel)
-            .wrapping_add(1);
+    }
+
+    fn invalidate_all(&self) {
+        let mut fills = self.gate.lock().unwrap_or_else(|e| e.into_inner());
+        self.generation.fetch_add(1, Ordering::AcqRel);
         self.pages.invalidate_all();
-        true
+        for (_, signal) in fills.drain() {
+            signal.send_replace(Some(FillOutcome::Retry));
+        }
+    }
+
+    fn invalidate_home(&self) {
+        let mut fills = self.gate.lock().unwrap_or_else(|e| e.into_inner());
+        self.home_generation.fetch_add(1, Ordering::AcqRel);
+        self.pages.invalidate(HOME_PATH);
+        if let Some(signal) = fills.remove(HOME_PATH) {
+            signal.send_replace(Some(FillOutcome::Retry));
+        }
     }
 
     fn get(&self, path: &str) -> Option<CachedPage> {
         self.pages
             .get(path)
-            .filter(|page| page.generation == self.generation())
+            .filter(|page| page.generation == self.generation(path))
+    }
+
+    fn access(&self, path: &str) -> CacheAccess<'_> {
+        if let Some(page) = self.get(path) {
+            return CacheAccess::Hit(page);
+        }
+        let mut fills = self.gate.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(page) = self.get(path) {
+            return CacheAccess::Hit(page);
+        }
+        if let Some(signal) = fills.get(path) {
+            return CacheAccess::Wait(signal.subscribe());
+        }
+        let signal = Arc::new(watch::Sender::new(None));
+        let generation = self.generation(path);
+        fills.insert(path.to_owned(), signal.clone());
+        CacheAccess::Fill(Fill {
+            cache: self,
+            path: path.to_owned(),
+            generation,
+            signal,
+            outcome: FillOutcome::Retry,
+        })
     }
 
     /// 新写入时返回 ETag 与正文，供调用方预压缩；同世代已有相同内容（并发未命中的
@@ -123,7 +185,7 @@ impl HtmlCache {
         let etag = HeaderValue::from_str(&format!("\"{}\"", hex::encode(Sha256::digest(&body))))
             .expect("SHA256 is an ASCII entity tag");
         let _guard = self.gate.lock().unwrap_or_else(|e| e.into_inner());
-        if generation != self.generation()
+        if generation != self.generation(&path)
             || self
                 .pages
                 .get(&path)
@@ -269,7 +331,7 @@ fn cacheable_request(method: &Method, uri: &Uri, headers: &HeaderMap) -> bool {
 /// 白名单内的固定页面。源站缓存与边缘缓存共用这份名单：`tasks::edge_purge` 按它清 EdgeOne，
 /// 新增公开路由要同时出现在两处，否则边缘缓存清不掉。
 pub(crate) const CACHEABLE_PAGES: [&str; 5] =
-    ["/", "/archives", "/friends", "/about", "/changelog"];
+    [HOME_PATH, "/archives", "/friends", "/about", "/changelog"];
 /// 白名单内的前缀：只匹配其下一级路径（`/post/<slug>`）。
 pub(crate) const CACHEABLE_PREFIXES: [&str; 3] = ["/post/", "/page/", "/tags/"];
 
@@ -312,9 +374,8 @@ fn cacheable_response(response: &Response) -> bool {
 struct CaptureBody {
     input: BodyDataStream,
     buffer: Option<Vec<u8>>,
-    path: String,
     headers: HeaderMap,
-    generation: u64,
+    fill: Option<Fill<'static>>,
 }
 
 /// 在压缩层内侧缓存原始 HTML，保持 SSR 流式响应和现有静态资源预压缩行为。
@@ -350,13 +411,29 @@ pub async fn cache_public_html(
         }
         return response;
     }
-    let path = req.uri().path().to_owned();
-    if let Some(page) = HTML_CACHE.get(&path) {
-        return hit_response(page, req.headers(), compression::algorithms());
-    }
-    let generation = HTML_CACHE.generation();
+    let mut deadline = None;
+    let fill = loop {
+        match HTML_CACHE.access(req.uri().path()) {
+            CacheAccess::Hit(page) => {
+                return hit_response(page, req.headers(), compression::algorithms());
+            }
+            CacheAccess::Fill(fill) => break Some(fill),
+            CacheAccess::Wait(mut signal) => {
+                let deadline =
+                    *deadline.get_or_insert_with(|| tokio::time::Instant::now() + FILL_WAIT);
+                let outcome =
+                    tokio::time::timeout_at(deadline, signal.wait_for(Option::is_some)).await;
+                if !matches!(outcome, Ok(Ok(ref value)) if **value == Some(FillOutcome::Retry)) {
+                    break None;
+                }
+            }
+        }
+    };
     let mut response = next.run(req).await;
     if !cacheable_response(&response) {
+        if let Some(fill) = fill {
+            fill.bypass();
+        }
         return response;
     }
     response
@@ -365,6 +442,9 @@ pub async fn cache_public_html(
     response
         .headers_mut()
         .insert(header::CACHE_CONTROL, public_page_cache_control());
+    let Some(fill) = fill else {
+        return response;
+    };
     let (parts, body) = response.into_parts();
     let mut headers = parts.headers.clone();
     for name in [
@@ -377,9 +457,8 @@ pub async fn cache_public_html(
     let state = CaptureBody {
         input: body.into_data_stream(),
         buffer: Some(Vec::new()),
-        path,
         headers,
-        generation,
+        fill: Some(fill),
     };
     let stream = futures::stream::unfold(state, |mut state| async move {
         match state.input.next().await {
@@ -389,23 +468,24 @@ pub async fn cache_public_html(
                         buffer.extend_from_slice(&chunk);
                     } else {
                         state.buffer = None;
+                        if let Some(fill) = state.fill.take() {
+                            fill.bypass();
+                        }
                     }
                 }
                 Some((Ok::<_, axum::Error>(chunk), state))
             }
             Some(Err(error)) => {
                 state.buffer = None;
+                state.fill.take();
                 Some((Err(error), state))
             }
             None => {
-                if let Some(buffer) = state.buffer.take() {
-                    if let Some((etag, body)) = HTML_CACHE.insert(
-                        state.path.clone(),
-                        state.headers,
-                        buffer,
-                        state.generation,
-                    ) {
-                        precompress(state.path, etag, state.generation, body);
+                if let (Some(buffer), Some(fill)) = (state.buffer.take(), state.fill.take()) {
+                    if let Some((etag, body)) =
+                        HTML_CACHE.insert(fill.path.clone(), state.headers, buffer, fill.generation)
+                    {
+                        precompress(fill.path.clone(), etag, fill.generation, body);
                     }
                 }
                 None
@@ -420,19 +500,17 @@ pub async fn cache_public_html(
 // 内容写入通常同时影响详情、列表、归档与相邻导航；小型缓存统一失效避免遗漏。
 // 每次源站失效都同步请求清边缘缓存：`tasks::edge_purge` 防抖合并，未配置凭据时只是空信号。
 pub fn invalidate_ssr_all_public() {
-    HTML_CACHE.invalidate();
+    HTML_CACHE.invalidate_all();
     crate::tasks::edge_purge::request_purge();
 }
-/// 设置发布×flavor 命名空间（plan §6.7），变化即整表失效。启动期与开发热重载
-/// 重组路由时调用；同一进程内 release/flavor 不变时是零成本空操作。
-pub fn set_release_namespace(namespace: &str) {
-    if HTML_CACHE.swap_namespace(namespace) {
-        tracing::info!(%namespace, "SSR 缓存命名空间切换，旧 release/flavor 页面已失效");
-        crate::tasks::edge_purge::request_purge();
-    }
+
+pub(crate) fn invalidate_home() {
+    HTML_CACHE.invalidate_home();
+    crate::tasks::edge_purge::request_home_purge();
 }
-pub fn current_global_generation() -> u64 {
-    HTML_CACHE.generation()
+
+pub(crate) fn current_generation(path: &str) -> u64 {
+    HTML_CACHE.generation(path)
 }
 
 #[cfg(test)]
@@ -493,10 +571,10 @@ mod tests {
     #[test]
     fn invalidation_rejects_inflight_old_responses() {
         let cache = HtmlCache::new(Duration::from_secs(60), MAX_CACHE_BYTES, 1024);
-        let generation = cache.generation();
+        let generation = cache.generation("/");
         cache.insert("/".into(), HeaderMap::new(), b"old".to_vec(), generation);
         assert!(cache.get("/").is_some());
-        cache.invalidate();
+        cache.invalidate_all();
         cache.insert(
             "/".into(),
             HeaderMap::new(),
@@ -508,47 +586,64 @@ mod tests {
             "/".into(),
             HeaderMap::new(),
             b"new".to_vec(),
-            cache.generation(),
+            cache.generation("/"),
         );
         assert_eq!(cache.get("/").unwrap().body.as_ref(), b"new");
     }
 
     #[test]
-    fn namespace_swap_isolates_release_and_flavor_variants() {
+    fn home_invalidation_preserves_other_pages_and_discards_its_old_fill() {
         let cache = HtmlCache::new(Duration::from_secs(60), MAX_CACHE_BYTES, 1024);
-        let generation = cache.generation();
-        cache.insert(
-            "/post/a".into(),
-            HeaderMap::new(),
-            b"dual page".to_vec(),
-            generation,
-        );
-        assert!(cache.get("/post/a").is_some());
+        cache.insert("/post/a".into(), HeaderMap::new(), b"post".to_vec(), 0);
+        let CacheAccess::Fill(old_fill) = cache.access("/") else {
+            panic!("首页尚未回填");
+        };
+        let CacheAccess::Wait(waiting) = cache.access("/") else {
+            panic!("同路径已有回填");
+        };
 
-        // 切换命名空间（dual → 完整应用回退）：旧页面不可见。
-        assert!(cache.swap_namespace("full/rel-2"));
-        assert!(cache.get("/post/a").is_none());
-        // 旧命名空间的在途回填同样被世代号拒绝。
+        cache.invalidate_home();
+        assert!(*waiting.borrow() == Some(FillOutcome::Retry));
+        assert_eq!(cache.get("/post/a").unwrap().body.as_ref(), b"post");
+        assert!(cache
+            .insert(
+                "/".into(),
+                HeaderMap::new(),
+                b"old".to_vec(),
+                old_fill.generation,
+            )
+            .is_none());
+        let CacheAccess::Fill(new_fill) = cache.access("/") else {
+            panic!("首页可立即按新世代回填");
+        };
+        drop(old_fill);
+        assert!(matches!(cache.access("/"), CacheAccess::Wait(_)));
         cache.insert(
-            "/post/a".into(),
+            "/".into(),
             HeaderMap::new(),
-            b"stale dual page".to_vec(),
-            generation,
+            b"home".to_vec(),
+            new_fill.generation,
         );
-        assert!(cache.get("/post/a").is_none());
+        drop(new_fill);
+        assert!(matches!(cache.access("/"), CacheAccess::Hit(_)));
+    }
 
-        // 新命名空间正常写入读取。
-        cache.insert(
-            "/post/a".into(),
-            HeaderMap::new(),
-            b"full page".to_vec(),
-            cache.generation(),
-        );
-        assert_eq!(cache.get("/post/a").unwrap().body.as_ref(), b"full page");
-
-        // 相同命名空间重复设置不失效（开发热重载零成本路径）。
-        assert!(!cache.swap_namespace("full/rel-2"));
-        assert_eq!(cache.get("/post/a").unwrap().body.as_ref(), b"full page");
+    #[test]
+    fn cancelled_and_uncacheable_fills_release_waiters() {
+        let cache = HtmlCache::new(Duration::from_secs(60), MAX_CACHE_BYTES, 1024);
+        for outcome in [FillOutcome::Retry, FillOutcome::Bypass] {
+            let CacheAccess::Fill(fill) = cache.access("/post/a") else {
+                panic!("取消或绕过后应允许新请求回填");
+            };
+            let CacheAccess::Wait(waiting) = cache.access("/post/a") else {
+                panic!("同路径已有回填");
+            };
+            match outcome {
+                FillOutcome::Retry => drop(fill),
+                FillOutcome::Bypass => fill.bypass(),
+            }
+            assert!(*waiting.borrow() == Some(outcome));
+        }
     }
 
     #[test]
@@ -678,11 +773,12 @@ mod tests {
         assert!(cache.get("/").unwrap().encoded.is_empty());
 
         // 失效后在途的预压缩结果同样丢弃。
-        let generation = cache.invalidate();
+        cache.invalidate_all();
+        let generation = cache.generation("/");
         let (etag, _) = cache
             .insert("/".into(), HeaderMap::new(), b"new".to_vec(), generation)
             .unwrap();
-        cache.invalidate();
+        cache.invalidate_all();
         cache.attach_encoded("/", &etag, generation, variant());
         assert!(cache.get("/").is_none());
     }

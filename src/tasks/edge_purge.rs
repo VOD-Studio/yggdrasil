@@ -13,15 +13,15 @@
 //! 全站清除，否则会连带 `/pkg/` 与静态资源，节点重新回源时可能缓存 EdgeOne 自己压缩的
 //! 更大的 br（见 `docs/首屏性能实测-2026-10-28.md`）。
 //!
-//! 启动时路由装配会使源站缓存失效，所以每次发版或重启都会清一次：边缘不会留下引用已删除
+//! 每次发版或重启都会请求清除：边缘不会留下引用已删除
 //! `/pkg/` 分包的旧 HTML（`YGG_PREVIOUS_PUBLIC_DIR` 只保留上一版）。
 //!
 //! 凭据只读环境变量（`EDGEONE_ZONE_ID`、`TENCENTCLOUD_SECRET_ID`、`TENCENTCLOUD_SECRET_KEY`），
 //! 缺任一项时任务不启动，信号只是空操作。建议用只授权该站点 `teo:CreatePurgeTask` 的 CAM 子账号。
 
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::Duration;
 
-use futures::FutureExt;
 use sha2::{Digest, Sha256};
 use tokio::sync::Notify;
 
@@ -43,9 +43,27 @@ const RETRY_DELAYS: [Duration; 3] = [
 ];
 
 static SIGNAL: Notify = Notify::const_new();
+static PENDING: AtomicU8 = AtomicU8::new(0);
+
+#[repr(u8)]
+#[derive(Clone, Copy)]
+enum PurgeScope {
+    Home = 1,
+    All = 2,
+}
 
 /// 请求清除边缘 HTML 缓存。只发信号，立即返回；未配置凭据时没有任务在等，信号被忽略。
 pub fn request_purge() {
+    queue_purge(PurgeScope::All);
+}
+
+pub(crate) fn request_home_purge() {
+    queue_purge(PurgeScope::Home);
+}
+
+fn queue_purge(scope: PurgeScope) {
+    // 防抖期间的全量清除覆盖首页清除。
+    PENDING.fetch_max(scope as u8, Ordering::AcqRel);
     SIGNAL.notify_one();
 }
 
@@ -114,15 +132,20 @@ pub async fn run() {
     tracing::info!(zone_id = %credentials.zone_id, "EdgeOne HTML 缓存清理已启用");
 
     loop {
-        SIGNAL.notified().await;
+        while PENDING.load(Ordering::Acquire) == 0 {
+            SIGNAL.notified().await;
+        }
         tokio::time::sleep(DEBOUNCE).await;
-        // 防抖窗口内的后续信号由这一轮覆盖。
-        let _ = SIGNAL.notified().now_or_never();
+        let scope = if PENDING.swap(0, Ordering::AcqRel) == PurgeScope::All as u8 {
+            PurgeScope::All
+        } else {
+            PurgeScope::Home
+        };
 
         let base = crate::api::settings::runtime_security_settings()
             .await
             .app_base_url;
-        let Some(targets) = PurgeTargets::for_base(&base) else {
+        let Some(targets) = PurgeTargets::for_base(&base, scope) else {
             tracing::warn!("APP_BASE_URL 未设置或不是 http(s) 地址，无法清边缘缓存");
             continue;
         };
@@ -141,7 +164,7 @@ struct PurgeTargets {
 }
 
 impl PurgeTargets {
-    fn for_base(base: &str) -> Option<Self> {
+    fn for_base(base: &str, scope: PurgeScope) -> Option<Self> {
         let base = base.trim().trim_end_matches('/');
         let host = base
             .strip_prefix("https://")
@@ -150,15 +173,21 @@ impl PurgeTargets {
             return None;
         }
         let join = |path: &str| format!("{base}{path}");
-        Some(Self {
-            prefixes: crate::ssr_cache::CACHEABLE_PREFIXES
-                .iter()
-                .map(|p| join(p))
-                .collect(),
-            pages: crate::ssr_cache::CACHEABLE_PAGES
-                .iter()
-                .map(|p| join(p))
-                .collect(),
+        Some(match scope {
+            PurgeScope::Home => Self {
+                prefixes: Vec::new(),
+                pages: vec![join(crate::ssr_cache::HOME_PATH)],
+            },
+            PurgeScope::All => Self {
+                prefixes: crate::ssr_cache::CACHEABLE_PREFIXES
+                    .iter()
+                    .map(|p| join(p))
+                    .collect(),
+                pages: crate::ssr_cache::CACHEABLE_PAGES
+                    .iter()
+                    .map(|p| join(p))
+                    .collect(),
+            },
         })
     }
 }
@@ -169,27 +198,22 @@ async fn purge_with_retry(
     targets: &PurgeTargets,
     pass: &'static str,
 ) {
-    let tasks = [
-        (
-            "purge_prefix",
-            serde_json::json!({
-                "ZoneId": credentials.zone_id,
-                "Type": "purge_prefix",
-                // delete：不论源站内容是否变化都删除节点缓存，行为确定。
-                "Method": "delete",
-                "Targets": targets.prefixes,
-            }),
-        ),
-        (
-            "purge_url",
-            serde_json::json!({
-                "ZoneId": credentials.zone_id,
-                "Type": "purge_url",
-                "Targets": targets.pages,
-            }),
-        ),
-    ];
-    for (kind, body) in tasks {
+    for (kind, urls) in [
+        ("purge_prefix", &targets.prefixes),
+        ("purge_url", &targets.pages),
+    ] {
+        if urls.is_empty() {
+            continue;
+        }
+        let mut body = serde_json::json!({
+            "ZoneId": credentials.zone_id,
+            "Type": kind,
+            "Targets": urls,
+        });
+        if kind == "purge_prefix" {
+            // 不论源站内容是否变化，都删除节点缓存。
+            body["Method"] = serde_json::json!("delete");
+        }
         let payload = body.to_string();
         let mut attempt = 0;
         loop {
@@ -358,7 +382,7 @@ mod tests {
 
     #[test]
     fn targets_cover_the_ssr_cache_whitelist() {
-        let targets = PurgeTargets::for_base(" https://rua.plus/ ").unwrap();
+        let targets = PurgeTargets::for_base(" https://rua.plus/ ", PurgeScope::All).unwrap();
         assert_eq!(
             targets.prefixes,
             [
@@ -384,8 +408,15 @@ mod tests {
             "https://",
             "https://rua.plus/blog",
         ] {
-            assert_eq!(PurgeTargets::for_base(base), None, "{base}");
+            assert_eq!(
+                PurgeTargets::for_base(base, PurgeScope::All),
+                None,
+                "{base}"
+            );
         }
+        let home = PurgeTargets::for_base("https://rua.plus", PurgeScope::Home).unwrap();
+        assert!(home.prefixes.is_empty());
+        assert_eq!(home.pages, ["https://rua.plus/"]);
     }
 
     #[test]

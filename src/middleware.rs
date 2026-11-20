@@ -320,26 +320,20 @@ fn admin_guard_allows<E>(
     }
 }
 
-/// Axum 中间件：把当前 SSR 全局世代号注入请求扩展，并对 GET 请求的响应附加
-/// `X-SSR-Generation` 头。世代号同时保护应用 HTML 缓存，阻止失效前的在途响应回填。
+/// 给 GET 响应附加请求开始时的 SSR 世代号，便于观察各页面的缓存失效。
 pub(crate) async fn ssr_generation_middleware(
     req: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> axum::response::Response {
-    let generation = crate::ssr_cache::current_global_generation();
-    let is_get = req.method() == axum::http::Method::GET;
-    let (mut parts, body) = req.into_parts();
-    parts
-        .extensions
-        .insert(crate::ssr_cache::SsrGeneration(generation));
-    let mut response = next.run(axum::http::Request::from_parts(parts, body)).await;
-    if is_get {
-        response.headers_mut().insert(
-            axum::http::header::HeaderName::from_static("x-ssr-generation"),
-            axum::http::HeaderValue::from_str(&generation.to_string())
-                .unwrap_or_else(|_| axum::http::HeaderValue::from_static("0")),
-        );
+    if req.method() != axum::http::Method::GET {
+        return next.run(req).await;
     }
+    let generation = crate::ssr_cache::current_generation(req.uri().path());
+    let mut response = next.run(req).await;
+    response.headers_mut().insert(
+        "x-ssr-generation",
+        axum::http::HeaderValue::from(generation),
+    );
     response
 }
 

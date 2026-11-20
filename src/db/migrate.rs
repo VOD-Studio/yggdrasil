@@ -118,6 +118,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "033",
         include_str!("../../migrations/033_content_cache_domains.sql"),
     ),
+    (
+        "034",
+        include_str!("../../migrations/034_public_notes_cache_revision.sql"),
+    ),
     // 新增迁移在此追加，同时在 migrations/ 下创建对应 .sql 文件。
 ];
 
