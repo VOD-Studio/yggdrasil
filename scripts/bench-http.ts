@@ -580,18 +580,24 @@ async function main() {
       '-H',
       'accept-encoding: br',
       '-w',
-      '%{http_code}|%{size_download}|%header{content-encoding}|%header{x-ssr-cache}',
+      '%{http_code}|%{size_download}|%header{content-encoding}|%header{x-ssr-cache}|%header{content-length}',
       url,
     ]);
-    const [status, bytes, encoding, cache] = out.split('|');
-    return { status, bytes: Number(bytes), encoding, cache };
+    const [status, bytes, encoding, cache, contentLength] = out.split('|');
+    return { status, bytes: Number(bytes), encoding, cache, contentLength: Number(contentLength) };
   };
   async function probe(t: Target, s: Scenario): Promise<Probe> {
     const url = `${t.base}${s.url}`;
     let result = await curlProbe(url);
+    // 命中原始 HTML 后仍可能由外层流式现压。预压缩变体是定长响应，现压会移除 Content-Length。
+    const precompressed = () =>
+      result.cache === 'HIT' &&
+      result.encoding === 'br' &&
+      result.bytes > 0 &&
+      result.contentLength === result.bytes;
     if (s.mode === 'cached') {
-      const deadline = Date.now() + 20_000;
-      while (result.cache !== 'HIT' && Date.now() < deadline) {
+      const deadline = performance.now() + 30_000;
+      while (result.status === '200' && !precompressed() && performance.now() < deadline) {
         await Bun.sleep(200);
         result = await curlProbe(url);
       }
@@ -610,6 +616,7 @@ async function main() {
         `x-ssr-cache 应为 ${expected}；未压缩 HTML ${html.length} 字符（超过 2 MiB 的页面不进 SSR 缓存，见 ssr_cache.rs MAX_PAGE_BYTES）`,
       );
     }
+    if (s.mode === 'cached' && !precompressed()) fail('预压缩 br 变体未就绪');
     if (!(result.bytes > 0)) fail('响应体为空');
     const title = await titleOf(url);
     if (!title) fail('页面没有 <title>');
