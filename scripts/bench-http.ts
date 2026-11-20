@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 // release 产物 HTTP 宏基准：一次性 PostgreSQL + 真实 release 服务端，oha 以固定到达率压公开路由。
 // SSR 缓存命中（cached）与未命中（ssr，带 ?bench=ssr 绕过 HTML 缓存）分开测；支持同机 A/B
-// ABBA 交替对比，并用精确置换检验（Mann–Whitney U）判定差异是否显著。
+// 每轮随机决定 A/B 的执行顺序，按轮配对做精确置换检验并校正多重比较。
 // 语料与 benches/markdown.rs 共用：benches/fixtures/*.md（4 篇线上文章）+ 56 篇填充。
 //
 // 用法：
@@ -12,7 +12,7 @@
 // 环境变量（默认值）：
 //   BENCH_TARGETS            逗号分隔 1–2 个产物目录（target/release-dist），依次标为 A、B；
 //                            每个目录需有 server、hash.txt、public/release-manifest.json
-//   BENCH_ROUNDS             测量轮数 5..10（5）；5 是精确检验能做到 p<0.05 的最小轮数
+//   BENCH_ROUNDS             测量轮数 1..16（默认 12）；少于 6 个有效配对只报告观测值
 //   BENCH_DURATION_SECS      每次测量秒数（10）
 //   BENCH_WARMUP_SECS        每轮重启后，每个 target 每个场景的预热秒数（3）
 //   BENCH_CALIBRATION_SECS   A 的闭环容量校准秒数（10）
@@ -25,11 +25,12 @@
 //                            Ryzen 7 5800（CPU n 与 n+8 为 SMT 兄弟线程）分配；三组必须两两不相交。
 // 依赖：oha（cargo install --locked oha@1.16.0）、taskset、curl、psql、docker。
 // 基准前请关闭 make dev / 浏览器等后台负载，并把被钉住的 CPU 调成 performance governor。
-import { createHash } from 'node:crypto';
+import { createHash, randomInt } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { adjustComparisons, comparePaired, MIN_REQUESTS, summarize } from './bench-statistics';
 
 const ROOT = path.resolve(__dirname, '..');
 const PG_IMAGE = 'postgres:16-alpine';
@@ -42,8 +43,8 @@ const ROUTES = ['/', '/archives', ...FIXTURES.map((name) => `/post/bench-${name}
 const UNCACHEABLE_ROUTES: string[] = [];
 const CALIBRATION_MIN_RATE = 1;
 const SIZE_TOLERANCE = 0.05;
-const METRICS = ['p50', 'p90', 'p99', 'p999', 'rps'] as const;
-type Metric = (typeof METRICS)[number];
+const PERCENTILES = { p50: 'p50', p90: 'p90', p99: 'p99', p999: 'p99.9' } as const;
+type Percentile = keyof typeof PERCENTILES;
 
 // ---------- 配置 ----------
 
@@ -129,7 +130,7 @@ function loadConfig(): Config {
   }
   return {
     targets,
-    rounds: intEnv('BENCH_ROUNDS', 5, 5, 10),
+    rounds: intEnv('BENCH_ROUNDS', 12, 1, 16),
     durationSecs: intEnv('BENCH_DURATION_SECS', 10, 1),
     warmupSecs: intEnv('BENCH_WARMUP_SECS', 3, 1),
     calibrationSecs: intEnv('BENCH_CALIBRATION_SECS', 10, 1),
@@ -207,49 +208,6 @@ async function waitFor(check: () => Promise<boolean>, description: string, attem
   throw new Error(`Timed out waiting for ${description}; see ${artifacts}`);
 }
 
-// ---------- 统计 ----------
-
-const median = (values: number[]) => {
-  const sorted = [...values].sort((a, b) => a - b);
-  const mid = sorted.length >> 1;
-  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
-};
-const round3 = (n: number) => Math.round(n * 1000) / 1000;
-
-/** 精确置换检验（双侧 Mann–Whitney U）：枚举 C(n+m, n) 种划分。 */
-function mannWhitneyP(a: number[], b: number[]): number {
-  const n = a.length;
-  const total = n + b.length;
-  const pooled = [...a, ...b];
-  const score = pooled.map((x) => pooled.map((y) => (x < y ? 1 : x === y ? 0.5 : 0)));
-  const center = (n * b.length) / 2;
-  const observed = Math.abs(
-    a.reduce((s, _, i) => s + b.reduce((t, _, j) => t + score[i][n + j], 0), 0) - center,
-  );
-  let count = 0;
-  let all = 0;
-  const inA: boolean[] = new Array(total).fill(false);
-  const visit = (start: number, chosen: number) => {
-    if (chosen === n) {
-      let u = 0;
-      for (let i = 0; i < total; i++) {
-        if (!inA[i]) continue;
-        for (let j = 0; j < total; j++) if (!inA[j]) u += score[i][j];
-      }
-      all++;
-      if (Math.abs(u - center) >= observed - 1e-9) count++;
-      return;
-    }
-    for (let i = start; i <= total - (n - chosen); i++) {
-      inA[i] = true;
-      visit(i + 1, chosen + 1);
-      inA[i] = false;
-    }
-  };
-  visit(0, 0);
-  return count / all;
-}
-
 // ---------- 类型 ----------
 
 interface Target {
@@ -271,10 +229,11 @@ interface Scenario {
 }
 interface RunResult {
   round: number;
-  p50: number;
-  p90: number;
-  p99: number;
-  p999: number;
+  p50: number | null;
+  p90: number | null;
+  p99: number | null;
+  p999: number | null;
+  requestCount: number;
   rps: number;
   bytesPerRequest: number;
   saturated: boolean;
@@ -367,7 +326,9 @@ async function main() {
       const found = (previous.scenarios as { name: string; rate: number }[]).find(
         (p) => p.name === s.name,
       );
-      if (!found) throw new Error(`BENCH_RATES_FROM 缺少场景 ${s.name}`);
+      if (!found || !Number.isSafeInteger(found.rate) || found.rate < 1) {
+        throw new Error(`BENCH_RATES_FROM 缺少场景 ${s.name} 的有效 rate`);
+      }
       rates[s.name] = found.rate;
     }
   }
@@ -717,34 +678,31 @@ async function main() {
     }
   }
 
-  // 测量：每轮重启服务端并预热，再 ABBA 交替。
-  // 不重启的话，同一进程实例的内存布局/分配器状态会带来固定的几个百分点偏差，各轮并不独立，
-  // 置换检验会把它判成显著差异（同一产物 A/A 实测出现过 +4.5% 的“B 更慢”）。
+  // 每轮重启服务端，避免进程的内存布局和分配器状态持续偏向同一版本。
   const runs: Record<string, Record<string, RunResult[]>> = {};
+  const orders: Record<string, Target['label'][][]> = {};
   for (const s of scenarios) runs[s.name] = Object.fromEntries(targets.map((t) => [t.label, []]));
   for (let round = 0; round < config.rounds; round++) {
     for (const t of targets) await stopServer(t);
     for (const t of targets) await startServer(t, `r${round + 1}`);
-    for (const t of targets) {
-      for (const s of scenarios) {
+    for (const s of scenarios) {
+      const rate = rateOf[s.name];
+      const order = targets.length === 2 && randomInt(2) ? [...targets].reverse() : targets;
+      (orders[s.name] ??= []).push(order.map((t) => t.label));
+      for (const t of order) {
         const probed = await probe(t, s);
         probeBytes[s.name] ??= {};
         probeBytes[s.name][t.label] = probed.bytes;
-        await oha(t, s, `warmup${round + 1}`, config.warmupSecs, rateOf[s.name], probed);
-      }
-    }
-    const order = round % 2 === 0 ? targets : [...targets].reverse();
-    for (const s of scenarios) {
-      const rate = rateOf[s.name];
-      for (const t of order) {
-        const probed = await probe(t, s);
-        probeBytes[s.name][t.label] = probed.bytes;
+        await oha(t, s, `warmup${round + 1}`, config.warmupSecs, rate, probed);
         const json = await oha(t, s, `round${round + 1}`, config.durationSecs, rate, probed);
-        const ms = (key: string) => {
+        const requestCount = json.statusCodeDistribution['200'];
+        const ms = (metric: Percentile) => {
+          if (requestCount < MIN_REQUESTS[metric]) return null;
+          const key = PERCENTILES[metric];
           const value = json.latencyPercentiles[key];
-          if (typeof value !== 'number')
+          if (!Number.isFinite(value))
             throw new Error(`${t.label} ${s.name}：oha 缺少 latencyPercentiles.${key}`);
-          return round3(value * 1000);
+          return value * 1000;
         };
         const rps = json.summary.requestsPerSec;
         const result: RunResult = {
@@ -752,8 +710,9 @@ async function main() {
           p50: ms('p50'),
           p90: ms('p90'),
           p99: ms('p99'),
-          p999: ms('p99.9'),
-          rps: round3(rps),
+          p999: ms('p999'),
+          requestCount,
+          rps,
           bytesPerRequest: json.summary.sizePerRequest,
           saturated: rps < 0.95 * rate,
         };
@@ -770,35 +729,28 @@ async function main() {
 
   // ---------- 汇总 ----------
 
-  const summarize = (list: RunResult[]) =>
-    Object.fromEntries(
-      METRICS.map((m) => {
-        const values = list.map((r) => r[m]);
-        return [
-          m,
-          { median: round3(median(values)), min: Math.min(...values), max: Math.max(...values) },
-        ];
-      }),
-    ) as Record<Metric, { median: number; min: number; max: number }>;
+  const summarizeRuns = (list: RunResult[]) => {
+    const valid = list.filter((r) => !r.saturated);
+    return {
+      p50: summarize(valid.map((r) => r.p50)),
+      p90: summarize(valid.map((r) => r.p90)),
+      p99: summarize(valid.map((r) => r.p99)),
+      p999: summarize(valid.map((r) => r.p999)),
+      rps: summarize(list.map((r) => r.rps)),
+      bytesPerRequest: summarize(valid.map((r) => r.bytesPerRequest)),
+      saturatedRounds: list.length - valid.length,
+    };
+  };
 
   const scenarioResults = scenarios.map((s) => {
     const summary = Object.fromEntries(
-      targets.map((t) => [t.label, summarize(runs[s.name][t.label])]),
+      targets.map((t) => [t.label, summarizeRuns(runs[s.name][t.label])]),
     );
-    let comparison: Record<string, { deltaPct: number; p: number; verdict: string }> | undefined;
-    if (targets.length === 2) {
-      comparison = {};
-      for (const metric of ['p50', 'p99'] as const) {
-        const a = runs[s.name].A.map((r) => r[metric]);
-        const b = runs[s.name].B.map((r) => r[metric]);
-        const medianA = median(a);
-        const deltaPct = ((median(b) - medianA) / medianA) * 100;
-        const p = mannWhitneyP(a, b);
-        const verdict =
-          p < 0.05 && Math.abs(deltaPct) >= 3 ? (deltaPct < 0 ? 'B 更快' : 'B 更慢') : '无显著差异';
-        comparison[metric] = { deltaPct: round3(deltaPct), p: round3(p), verdict };
-      }
-    }
+    const { A, B } = runs[s.name];
+    const comparison = B && {
+      p50: comparePaired(A, B, (r) => r.p50),
+      p99: comparePaired(A, B, (r) => r.p99),
+    };
     return {
       name: s.name,
       url: s.url,
@@ -807,11 +759,15 @@ async function main() {
       rate: rateOf[s.name],
       capacityRps: capacity[s.name],
       probeBytes: probeBytes[s.name],
+      orders: orders[s.name],
       runs: runs[s.name],
       summary,
       comparison,
     };
   });
+  adjustComparisons(
+    scenarioResults.flatMap((r) => (r.comparison ? Object.values(r.comparison) : [])),
+  );
 
   const results = {
     meta: {
@@ -848,17 +804,17 @@ async function main() {
   };
   fs.writeFileSync(path.join(artifacts, 'results.json'), `${JSON.stringify(results, null, 2)}\n`);
 
-  const ms = (n: number) => n.toFixed(3);
+  const ms = (n: number | null) => (n === null ? '—' : n.toFixed(3));
   const lines: string[] = [];
   if (targets.length === 1) {
     lines.push(
-      '| 场景 | rate | p50 (ms) | p99 (ms) | p99.9 (ms) | rps |',
-      '|---|---:|---:|---:|---:|---:|',
+      '| 场景 | rate | p50 (ms) | p99 (ms) | p99.9 (ms) | rps | 负载未达标轮次 |',
+      '|---|---:|---:|---:|---:|---:|---:|',
     );
     for (const r of scenarioResults) {
       const a = r.summary.A;
       lines.push(
-        `| ${r.name} | ${r.rate} | ${ms(a.p50.median)} | ${ms(a.p99.median)} | ${ms(a.p999.median)} | ${a.rps.median.toFixed(1)} |`,
+        `| ${r.name} | ${r.rate} | ${ms(a.p50.median)} | ${ms(a.p99.median)} | ${ms(a.p999.median)} | ${a.rps.median?.toFixed(1)} | ${a.saturatedRounds} |`,
       );
     }
   } else {
@@ -868,7 +824,7 @@ async function main() {
     );
     for (const r of scenarioResults) {
       const c = r.comparison as NonNullable<typeof r.comparison>;
-      const sign = (n: number) => `${n > 0 ? '+' : ''}${n.toFixed(1)}%`;
+      const sign = (n: number | null) => (n === null ? '—' : `${n > 0 ? '+' : ''}${n.toFixed(1)}%`);
       const verdict =
         c.p50.verdict === c.p99.verdict
           ? c.p50.verdict
@@ -878,6 +834,7 @@ async function main() {
       );
     }
   }
+  console.log('p50 / p90 / p99 / p99.9 每轮分别至少需要 20 / 100 / 1000 / 10000 个成功请求');
   console.log(`\n${lines.join('\n')}\n\n产物目录：${artifacts}`);
 }
 

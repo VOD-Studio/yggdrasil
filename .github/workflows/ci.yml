@@ -395,7 +395,7 @@ jobs:
           bun install --frozen-lockfile
           bun run playwright install --with-deps chromium
       - name: Release tooling regressions
-        run: bun test scripts/check-build.test.ts scripts/precompress.test.ts
+        run: bun test scripts/check-build.test.ts scripts/precompress.test.ts scripts/bench-statistics.test.ts
       - name: Release build (no warnings or errors)
         run: bun scripts/check-build.ts
       - name: Release split acceptance
