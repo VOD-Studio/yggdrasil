@@ -1,11 +1,12 @@
 #!/usr/bin/env bun
 // Owns a disposable database and two local application processes. Never uses a production URL.
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import type { Browser } from 'playwright';
+import type { Browser, Page } from 'playwright';
 import { loadPlaywright } from './libs-modules.ts';
 
 const { chromium } = loadPlaywright();
@@ -23,6 +24,8 @@ const artifacts = path.join(root, 'target/regressions', `${Date.now()}-public-pe
 const runtime = fs.mkdtempSync(path.join(os.tmpdir(), 'ygg-public-perf-'));
 const container = `ygg-public-perf-${process.pid}-${Date.now()}`;
 const servers: Bun.Subprocess[] = [];
+const adminSession = '530c6daf-55ef-406f-8434-e8a779a41de0';
+const githubFixture = 'https://github.com/reader-test/fixture';
 let browser: Browser | undefined;
 let pg: NodeJS.ProcessEnv | undefined;
 fs.mkdirSync(artifacts, { recursive: true });
@@ -92,6 +95,115 @@ async function hit(base: string, route: string) {
   }, 'HTML never entered cache');
   return result!;
 }
+
+async function hydrated(page: Page) {
+  await page.waitForFunction(() => document.documentElement.dataset.hydrated === 'true');
+}
+
+async function verifyHome(page: Page, base: string) {
+  const response = await page.goto(base + '/');
+  assert(response);
+  assert(response.ok());
+  const source = await response.text();
+  const scripts = source.match(/<script\b[^>]*>[\s\S]*?<\/script>/g)?.join('\n') ?? '';
+  const slugs = ['recent-test-01', 'recent-test-02', 'recent-test-03', 'recent-test-04'];
+  assert.deepEqual([...new Set(scripts.match(/recent-test-\d\d/g))], slugs);
+  assert(!source.includes('HOME_NOTE_BODY_FIXTURE'));
+  assert.equal(scripts.split(githubFixture).length - 1, 1);
+
+  await hydrated(page);
+  const recentLinks = page.locator('.home-corner-notes a');
+  assert.deepEqual(
+    await recentLinks.evaluateAll((links) => links.map((link) => link.getAttribute('href'))),
+    slugs.map((slug) => '/notes/' + slug),
+  );
+  const settingsRequests: string[] = [];
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname === '/api/get_site_settings') {
+      settingsRequests.push(request.url());
+    }
+  });
+  const transitions = [
+    { from: '/archives', selector: 'header a[href="/"]', settingsRequests: 0 },
+    { from: '/login', selector: 'a.auth-home', settingsRequests: 1 },
+  ];
+  for (const transition of transitions) {
+    await page.goto(base + transition.from);
+    await hydrated(page);
+    settingsRequests.length = 0;
+    const recentResponse = page.waitForResponse(
+      (response) => new URL(response.url()).pathname === '/api/recent_public_notes',
+    );
+    await page.locator(transition.selector).first().click();
+    await page.waitForURL(base + '/');
+    const notes = await (await recentResponse).json();
+    assert.deepEqual(
+      notes.map((note: { slug: string }) => note.slug),
+      slugs,
+    );
+    assert.deepEqual(Object.keys(notes[0]).sort(), ['date', 'slug', 'title']);
+    await recentLinks.first().waitFor();
+    await page.locator('footer a[aria-label="GitHub"]').waitFor();
+    assert.equal(settingsRequests.length, transition.settingsRequests);
+  }
+}
+
+async function verifyLocalCacheWrite(browser: Browser, bases: string[]) {
+  const route = '/post/perf-002';
+  const before = await Promise.all(bases.map(async (base) => (await hit(base, route)).headers));
+  const context = await browser.newContext();
+  try {
+    const base = bases[0];
+    await context.addCookies([{ name: 'session', value: adminSession, url: base }]);
+    const page = await context.newPage();
+    await page.goto(base + '/login');
+    const edit = async (status: 'published' | 'draft') =>
+      page.evaluate(async (status) => {
+        const response = await fetch('/api/update_post', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            post_id: 2,
+            slug: 'perf-002',
+            title: '浏览器更新文章',
+            summary: '摘要',
+            content_md: '更新后的正文',
+            status,
+            tags: ['标签甲'],
+            cover_image: null,
+          }),
+        });
+        return { status: response.status, result: await response.json() };
+      }, status);
+    const commentCount = async () =>
+      page.evaluate(async () => {
+        const response = await fetch('/api/get_comments', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ post_id: 2 }),
+        });
+        return (await response.json()).count;
+      });
+    assert.equal(await commentCount(), 1);
+    const update = await edit('published');
+    assert.equal(update.status, 200);
+    assert.equal(update.result.success, true);
+    await until(async () => {
+      const replies = await Promise.all(bases.map((base) => read(base, route)));
+      return replies.every((reply) => reply.body.includes('浏览器更新文章'));
+    }, 'Local update was not visible on both instances');
+    const after = await Promise.all(bases.map(async (base) => (await hit(base, route)).headers));
+    for (let i = 0; i < bases.length; i++) {
+      assert.equal(Number(after[i]['x-ssr-generation']), Number(before[i]['x-ssr-generation']) + 1);
+    }
+    assert.equal(await commentCount(), 1);
+    assert.equal((await edit('draft')).result.success, true);
+    assert.equal(await commentCount(), 0, 'Unpublished post must lose cached public comments');
+  } finally {
+    await context.close();
+  }
+}
+
 async function main() {
   assert(fs.existsSync(serverBin), 'Run make regression-build first');
   await command([
@@ -170,14 +282,27 @@ async function main() {
       60000,
     );
   }
-  await sql(`INSERT INTO users(id,username,email,password_hash,role) VALUES(1,'reader-test','reader@test.invalid','unused','admin');
+  const sessionHash = createHash('sha256').update(adminSession).digest('hex');
+  await sql(`BEGIN;
+    INSERT INTO users(id,username,email,password_hash,role) VALUES(1,'reader-test','reader@test.invalid','unused','admin');
+    INSERT INTO sessions(user_id,token_hash,expires_at) VALUES(1,'${sessionHash}',NOW()+INTERVAL '1 hour');
+    INSERT INTO settings(key,value) VALUES ('site_github_url','${githubFixture}')
+      ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value;
     INSERT INTO posts(author_id,title,slug,summary,content_md,content_html,status,published_at,word_count,reading_time)
     SELECT 1,'归档文章 '||g,'perf-'||lpad(g::text,3,'0'),'无需发送到归档的摘要',
       repeat('NOT_FOR_PUBLIC_PAYLOAD ',2000),
       CASE WHEN g=1 THEN repeat('<p>阅读页与评论懒加载回归正文。</p>',350)
         || '<pre data-runnable="true" data-lang="python" data-source="print(&#x27;runner-lazy&#x27;)"><code class="language-python">print(&#x27;runner-lazy&#x27;)</code></pre>'
       ELSE '<p>文章正文</p>' END,
-      'published',NOW()-g*INTERVAL '1 minute',300,2 FROM generate_series(1,151) g;`);
+      'published',NOW()-g*INTERVAL '1 minute',300,2 FROM generate_series(1,151) g;
+    INSERT INTO comments(post_id,author_name,author_email,content_md,content_html,status)
+      VALUES (2,'读者','comment@test.invalid','公开评论','<p>公开评论</p>','approved');
+    INSERT INTO notes(id,owner_id,slug,version,published_version,published_at)
+      SELECT g,1,'recent-test-'||lpad(g::text,2,'0'),1,1,NOW()-g*INTERVAL '1 minute' FROM generate_series(1,22) g;
+    INSERT INTO note_revisions(note_id,version,kind,title,content_md,content_html,created_at)
+      SELECT g,1,'moment','最近笔记 '||g,'正文','<p>HOME_NOTE_BODY_FIXTURE</p>',NOW()-g*INTERVAL '1 minute'
+      FROM generate_series(1,22) g;
+    COMMIT;`);
   const route = '/post/perf-001';
   await until(
     async () => (await read(bases[0], route)).body.includes('归档文章 1'),
@@ -391,6 +516,7 @@ async function main() {
       await page.waitForFunction(() =>
         document.querySelector('h1.post-title')?.textContent?.includes('断线后更新'),
       );
+      if (theme === 'light') await verifyHome(page, bases[0]);
       assert.deepEqual(errors, []);
       browserResults.push({
         mobile,
@@ -402,9 +528,11 @@ async function main() {
       console.log(JSON.stringify(browserResults.at(-1)));
       await context.close();
     }
+  await verifyLocalCacheWrite(browser, bases);
   const report = {
     invalidationMs,
     cache: 'HIT / MISS / BYPASS / 304 / TTL / rollback / reconnect passed',
+    homeAndLocalCacheWrite: 'passed',
     browserResults,
   };
   fs.writeFileSync(path.join(artifacts, 'results.json'), JSON.stringify(report, null, 2));
