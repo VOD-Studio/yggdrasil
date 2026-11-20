@@ -2,7 +2,7 @@
 // release 产物 HTTP 宏基准：一次性 PostgreSQL + 真实 release 服务端，oha 以固定到达率压公开路由。
 // SSR 缓存命中（cached）与未命中（ssr，带 ?bench=ssr 绕过 HTML 缓存）分开测；支持同机 A/B
 // 每轮随机决定 A/B 的执行顺序，按轮配对做精确置换检验并校正多重比较。
-// 语料与 benches/markdown.rs 共用：benches/fixtures/*.md（4 篇线上文章）+ 56 篇填充。
+// 文章语料与 Markdown 微基准共用。笔记、搜索、标签写入与冷缓存回填使用额外的数据库夹具。
 //
 // 用法：
 //   make build && make bench-http                         # 单 target
@@ -23,7 +23,7 @@
 //   BENCH_SERVER_CPUS / BENCH_DB_CPUS / BENCH_CLIENT_CPUS
 //                            taskset / --cpuset-cpus 的 CPU 组（0-3 / 4,5 / 6,7,14,15）。默认值按
 //                            Ryzen 7 5800（CPU n 与 n+8 为 SMT 兄弟线程）分配；三组必须两两不相交。
-// 依赖：oha（cargo install --locked oha@1.16.0）、taskset、curl、psql、docker。
+// 依赖：taskset、PostgreSQL 客户端、Docker。固定到达率场景另需 curl 与 oha 1.16.0。
 // 基准前请关闭 make dev / 浏览器等后台负载，并把被钉住的 CPU 调成 performance governor。
 import { createHash, randomInt } from 'node:crypto';
 import * as fs from 'node:fs';
@@ -31,6 +31,14 @@ import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { adjustComparisons, comparePaired, MIN_REQUESTS, summarize } from './bench-statistics';
+import {
+  FIXTURE_SCALE,
+  measureWorkload,
+  summarizeWorkload,
+  type WorkloadRun,
+  WORKLOADS,
+  workloadFixtures,
+} from './bench-workloads';
 
 const ROOT = path.resolve(__dirname, '..');
 const PG_IMAGE = 'postgres:16-alpine';
@@ -268,7 +276,31 @@ function cpuList(spec: string): number[] {
 
 async function main() {
   const config = loadConfig();
-  for (const tool of ['oha', 'taskset', 'curl', 'psql', 'docker']) {
+  const only = config.only ? new RegExp(config.only) : null;
+  const selected = ({ name }: { name: string }) => !only || only.test(name);
+  const workloads = WORKLOADS.filter(selected);
+  const scenarios: Scenario[] = (['cached', 'ssr'] as const)
+    .flatMap((mode) =>
+      ROUTES.map((route) => ({
+        name: `${mode} ${route}`,
+        url: mode === 'cached' ? route : `${route}?bench=ssr`,
+        mode,
+        route,
+      })),
+    )
+    .filter((s) => s.mode === 'ssr' || !UNCACHEABLE_ROUTES.includes(s.route))
+    .filter(selected);
+  if (!scenarios.length && !workloads.length) {
+    throw new Error(`BENCH_ONLY=${config.only} 没有匹配任何场景`);
+  }
+  for (const tool of [
+    'taskset',
+    'psql',
+    'pg_isready',
+    'createdb',
+    'docker',
+    ...(scenarios.length ? ['oha', 'curl'] : []),
+  ]) {
     if (Bun.which(tool)) continue;
     throw new Error(
       tool === 'oha'
@@ -276,8 +308,6 @@ async function main() {
         : `缺少 ${tool}`,
     );
   }
-  const only = config.only ? new RegExp(config.only) : null;
-
   const targets: Target[] = config.targets.map((dir, i) => {
     const abs = path.resolve(ROOT, dir);
     for (const required of [
@@ -304,22 +334,8 @@ async function main() {
     };
   });
 
-  const scenarios: Scenario[] = [
-    ...(['cached', 'ssr'] as const).flatMap((mode) =>
-      ROUTES.map((route) => ({
-        name: `${mode} ${route}`,
-        url: mode === 'cached' ? route : `${route}?bench=ssr`,
-        mode,
-        route,
-      })),
-    ),
-  ]
-    .filter((s) => s.mode === 'ssr' || !UNCACHEABLE_ROUTES.includes(s.route))
-    .filter((s) => !only || only.test(s.name));
-  if (scenarios.length === 0) throw new Error(`BENCH_ONLY=${config.only} 没有匹配任何场景`);
-
   let rates: Record<string, number> | null = null;
-  if (config.ratesFrom) {
+  if (config.ratesFrom && scenarios.length) {
     const previous = JSON.parse(fs.readFileSync(path.resolve(ROOT, config.ratesFrom), 'utf8'));
     rates = {};
     for (const s of scenarios) {
@@ -353,7 +369,7 @@ async function main() {
   if (loadavg > 1.0) {
     console.warn(`警告：系统负载 ${loadavg}，请关闭 make dev/浏览器等后台负载`);
   }
-  const ohaVersion = await capture(['oha', '--version']).catch(() => 'unknown');
+  const ohaVersion = scenarios.length ? await capture(['oha', '--version']) : null;
 
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   artifacts = path.join(ROOT, 'target/bench', `${stamp}-http`);
@@ -374,6 +390,7 @@ async function main() {
     '-p',
     '127.0.0.1::5432',
     PG_IMAGE,
+    ...(workloads.length ? ['-c', 'shared_preload_libraries=pg_stat_statements'] : []),
   ]);
   const pgPort = (await capture(['docker', 'port', container, '5432/tcp'])).split(':').at(-1);
   const pg = {
@@ -389,6 +406,8 @@ async function main() {
     return (await p.exited) === 0;
   }, 'PostgreSQL');
   for (const t of targets) await run(['createdb', t.database], pg);
+  const sqlFor = (t: Target, source: string) =>
+    capture(['psql', '-XAtq', '-v', 'ON_ERROR_STOP=1', '-d', t.database, '-c', source], pg);
 
   // 服务端：每个 target 一个进程，A/B 同时常驻（空闲的几乎不占 CPU）；每轮会重启，见测量段。
   const startServer = async (t: Target, tag: string) => {
@@ -414,6 +433,11 @@ async function main() {
       ADMIN_EMAIL: '',
       RUST_LOG: 'info',
       YGG_PREVIOUS_PUBLIC_DIR: undefined,
+      EDGEONE_ZONE_ID: undefined,
+      TENCENTCLOUD_SECRET_ID: undefined,
+      TENCENTCLOUD_SECRET_KEY: undefined,
+      RATE_LIMIT_STRICT_PER_SEC: '1000',
+      RATE_LIMIT_STRICT_BURST: '1000',
     };
     const proc = Bun.spawn(['taskset', '-c', config.cpus.server, path.join(t.dir, 'server')], {
       cwd,
@@ -461,20 +485,27 @@ async function main() {
       VALUES(${k + 1},1,${quote(`基准：${name}`)},'bench-${name}',${quote('基准语料')},${quote(bodies[k])},NULL,'published',NOW() - INTERVAL '${k + 1} minutes');`,
   ).join('\n');
   const total = FIXTURES.length + FILLER_COUNT;
-  const sql = `INSERT INTO users(id,username,email,password_hash,role) VALUES(1,'benchadmin','bench@test.invalid','unused','admin');
-    INSERT INTO sessions(user_id,token_hash,expires_at) VALUES(1,'${tokenHash}',NOW()+INTERVAL '1 hour');
+  const extraFixtures = workloadFixtures(workloads, false);
+  const sql = `BEGIN;
+    INSERT INTO users(id,username,email,password_hash,role) VALUES(1,'benchadmin','bench@test.invalid','unused','admin');
+    INSERT INTO sessions(user_id,token_hash,expires_at) VALUES(1,'${tokenHash}',NOW()+INTERVAL '1 day');
     INSERT INTO tags(id,name) VALUES(1,'bench');
     ${fixturePosts}
     INSERT INTO posts(id,author_id,title,slug,summary,content_md,content_html,status,published_at)
       SELECT ${FIXTURES.length}+g,1,'基准填充 '||lpad(g::text,2,'0'),'bench-filler-'||lpad(g::text,2,'0'),${quote('基准语料')},${quote(bodies[0])},NULL,'published',NOW() - (g||' days')::interval
       FROM generate_series(1,${FILLER_COUNT}) g;
     INSERT INTO post_tags(post_id,tag_id) SELECT id,1 FROM posts;
-    SELECT setval('users_id_seq',1); SELECT setval('posts_id_seq',${total}); SELECT setval('tags_id_seq',1);`;
+    ${extraFixtures}
+    SELECT setval('users_id_seq',1);
+    SELECT setval('posts_id_seq',(SELECT max(id) FROM posts));
+    SELECT setval('tags_id_seq',(SELECT max(id) FROM tags));
+    COMMIT;
+    ${workloads.length ? 'CREATE EXTENSION pg_stat_statements; ANALYZE;' : ''}`;
   const seedFile = path.join(runtime, 'seed.sql');
   fs.writeFileSync(seedFile, sql);
   for (const t of targets) {
     await run(
-      ['psql', '-q', '-o', '/dev/null', '-v', 'ON_ERROR_STOP=1', '-d', t.database, '-f', seedFile],
+      ['psql', '-Xq', '-o', '/dev/null', '-v', 'ON_ERROR_STOP=1', '-d', t.database, '-f', seedFile],
       pg,
     );
     let cursor: number | null = 0;
@@ -680,16 +711,23 @@ async function main() {
 
   // 每轮重启服务端，避免进程的内存布局和分配器状态持续偏向同一版本。
   const runs: Record<string, Record<string, RunResult[]>> = {};
+  const workloadRuns: Record<string, Record<string, WorkloadRun[]>> = {};
   const orders: Record<string, Target['label'][][]> = {};
+  const roundOrder = (name: string) => {
+    const order = targets.length === 2 && randomInt(2) ? [...targets].reverse() : targets;
+    (orders[name] ??= []).push(order.map((t) => t.label));
+    return order;
+  };
   for (const s of scenarios) runs[s.name] = Object.fromEntries(targets.map((t) => [t.label, []]));
+  for (const w of workloads) {
+    workloadRuns[w.name] = Object.fromEntries(targets.map((t) => [t.label, []]));
+  }
   for (let round = 0; round < config.rounds; round++) {
     for (const t of targets) await stopServer(t);
     for (const t of targets) await startServer(t, `r${round + 1}`);
     for (const s of scenarios) {
       const rate = rateOf[s.name];
-      const order = targets.length === 2 && randomInt(2) ? [...targets].reverse() : targets;
-      (orders[s.name] ??= []).push(order.map((t) => t.label));
-      for (const t of order) {
+      for (const t of roundOrder(s.name)) {
         const probed = await probe(t, s);
         probeBytes[s.name] ??= {};
         probeBytes[s.name][t.label] = probed.bytes;
@@ -722,6 +760,16 @@ async function main() {
           );
         }
         runs[s.name][t.label].push(result);
+      }
+    }
+    for (const workload of workloads) {
+      for (const t of roundOrder(workload.name)) {
+        const result = await measureWorkload(
+          { base: t.base, token: ADMIN_TOKEN, sql: (source) => sqlFor(t, source) },
+          workload,
+          round + 1,
+        );
+        workloadRuns[workload.name][t.label].push(result);
       }
     }
     console.log(`第 ${round + 1}/${config.rounds} 轮完成`);
@@ -765,9 +813,22 @@ async function main() {
       comparison,
     };
   });
-  adjustComparisons(
-    scenarioResults.flatMap((r) => (r.comparison ? Object.values(r.comparison) : [])),
-  );
+  const workloadResults = workloads.map((w) => {
+    const samples = workloadRuns[w.name];
+    return {
+      ...w,
+      orders: orders[w.name],
+      runs: samples,
+      summary: Object.fromEntries(
+        targets.map((t) => [t.label, summarizeWorkload(samples[t.label])]),
+      ),
+      comparison: samples.B && comparePaired(samples.A, samples.B, (r) => r.medianMs),
+    };
+  });
+  adjustComparisons([
+    ...scenarioResults.flatMap((r) => (r.comparison ? Object.values(r.comparison) : [])),
+    ...workloadResults.flatMap((r) => (r.comparison ? [r.comparison] : [])),
+  ]);
 
   const results = {
     meta: {
@@ -782,6 +843,7 @@ async function main() {
       cpus: config.cpus,
       tools: { bun: Bun.version, oha: ohaVersion },
       pgImage: PG_IMAGE,
+      fixtures: { markdown: FIXTURES, fillerPosts: FILLER_COUNT, ...FIXTURE_SCALE },
       config: {
         rounds: config.rounds,
         durationSecs: config.durationSecs,
@@ -801,12 +863,13 @@ async function main() {
       dirty: t.dirty,
     })),
     scenarios: scenarioResults,
+    workloads: workloadResults,
   };
   fs.writeFileSync(path.join(artifacts, 'results.json'), `${JSON.stringify(results, null, 2)}\n`);
 
   const ms = (n: number | null) => (n === null ? '—' : n.toFixed(3));
   const lines: string[] = [];
-  if (targets.length === 1) {
+  if (scenarioResults.length && targets.length === 1) {
     lines.push(
       '| 场景 | rate | p50 (ms) | p99 (ms) | p99.9 (ms) | rps | 负载未达标轮次 |',
       '|---|---:|---:|---:|---:|---:|---:|',
@@ -817,7 +880,7 @@ async function main() {
         `| ${r.name} | ${r.rate} | ${ms(a.p50.median)} | ${ms(a.p99.median)} | ${ms(a.p999.median)} | ${a.rps.median?.toFixed(1)} | ${a.saturatedRounds} |`,
       );
     }
-  } else {
+  } else if (scenarioResults.length) {
     lines.push(
       '| 场景 | rate | A p50 | B p50 | Δp50 | A p99 | B p99 | Δp99 | 判定 |',
       '|---|---:|---:|---:|---:|---:|---:|---:|---|',
@@ -834,7 +897,28 @@ async function main() {
       );
     }
   }
-  console.log('p50 / p90 / p99 / p99.9 每轮分别至少需要 20 / 100 / 1000 / 10000 个成功请求');
+  if (scenarioResults.length) {
+    console.log('p50 / p90 / p99 / p99.9 每轮分别至少需要 20 / 100 / 1000 / 10000 个成功请求');
+  }
+  if (workloadResults.length) {
+    lines.push(
+      '',
+      '| 场景 | 产物 | 耗时 p50 (ms) | TTFB p50 (ms) | 解码后字节 | SQL 次数/请求 | 每批 MISS | 整批 (ms) |',
+      '|---|---|---:|---:|---:|---:|---:|---:|',
+    );
+    for (const r of workloadResults) {
+      for (const t of targets) {
+        const s = r.summary[t.label];
+        lines.push(
+          `| ${r.name} | ${t.label} | ${ms(s.elapsedMs.median)} | ${ms(s.ttfbMs.median)} | ${s.decodedBytes.median ?? '—'} | ${s.sqlCallsPerRequest.median} | ${s.cacheMisses.median ?? '—'} | ${ms(s.burstMs.median)} |`,
+        );
+      }
+      if (r.comparison) {
+        const c = r.comparison;
+        console.log(`${r.name} 配对耗时变化 ${c.deltaPct ?? '—'}%（${c.pairs} 对，${c.verdict}）`);
+      }
+    }
+  }
   console.log(`\n${lines.join('\n')}\n\n产物目录：${artifacts}`);
 }
 
