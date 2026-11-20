@@ -13,8 +13,6 @@ use crate::api::error::AppError;
 use crate::db::pool::get_conn;
 use crate::models::settings::ImageCacheSettings;
 // 仅 server 构建的函数体引用（WASM 端 server fn 体被宏剥离）。
-#[cfg(feature = "server")]
-use crate::cache::invalidate_image_cache_settings;
 
 // ============================================================================
 // 图片磁盘缓存配置（即时生效）
@@ -160,7 +158,7 @@ pub async fn update_image_cache_settings(
         )
         .await?;
 
-        invalidate_image_cache_settings();
+        crate::tasks::cache_sync::sync_after_write(&client).await;
         tracing::info!(
             "Image cache settings updated: max_mb={}, max_age_hours={}",
             disk_cache_max_mb,

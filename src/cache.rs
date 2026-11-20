@@ -725,18 +725,10 @@ pub fn invalidate_friend_links() {
 }
 
 /// 按 slug 失效单篇文章缓存。
-#[cfg(feature = "server")]
-pub async fn invalidate_post_by_slug(slug: &str) {
+#[cfg(all(feature = "server", test))]
+async fn invalidate_post_by_slug(slug: &str) {
     SINGLE_POST_CACHE
         .invalidate(&CacheKey::PostBySlug(slug.to_string()))
-        .await;
-}
-
-/// 按标签失效文章列表缓存。
-#[cfg(feature = "server")]
-pub async fn invalidate_posts_by_tag(tag: &str) {
-    TAG_POSTS_CACHE
-        .invalidate(&CacheKey::PostsByTag(tag.to_string()))
         .await;
 }
 
@@ -746,25 +738,15 @@ pub fn invalidate_post_stats() {
     POST_STATS_CACHE.invalidate_all();
 }
 
-/// 按标签批量失效文章列表缓存。
-#[cfg(feature = "server")]
-pub async fn invalidate_tag_posts_for(tags: &[String]) {
-    let futures: Vec<_> = tags
-        .iter()
-        .map(|tag| invalidate_posts_by_tag(tag))
-        .collect();
-    let _ = futures::future::join_all(futures).await;
-}
-
-/// 清空所有文章相关缓存（列表、标签、单篇、统计、标签文章）。
-///
-/// 这是一个“紧急”使用的全量失效开关，会一次性冲刷所有文章缓存；
-/// 正常写路径应当使用更细粒度的 `invalidate_post_lists` / `invalidate_all_tags` /
-/// `invalidate_post_by_slug` / `invalidate_posts_by_tag` / `invalidate_post_stats` /
-/// `invalidate_tag_posts_for` 等函数，避免不必要的缓存击穿。
+/// 清空文章相关缓存，供文章域变更和全库变更复用。
 #[cfg(feature = "server")]
 pub fn invalidate_all_post_caches() {
-    invalidate_post_metadata();
+    invalidate_post_lists();
+    invalidate_all_tags();
+    invalidate_post_stats();
+    invalidate_search_results();
+    invalidate_suggestions();
+    invalidate_feed();
     SINGLE_POST_CACHE.invalidate_all();
     TAG_POSTS_CACHE.invalidate_all();
 }
@@ -775,56 +757,22 @@ pub fn invalidate_shared_content() {
     invalidate_all_post_caches();
     invalidate_all_comments();
     invalidate_friend_links();
+    invalidate_shared_settings();
+    crate::ssr_cache::invalidate_ssr_all_public();
+}
+
+/// 清除由共享设置表派生的运行时缓存。
+#[cfg(feature = "server")]
+pub fn invalidate_shared_settings() {
     invalidate_site_settings();
     invalidate_security_settings();
     invalidate_image_cache_settings();
-    crate::ssr_cache::invalidate_ssr_all_public();
 }
 
 /// 清空 Feed 成品并推进世代，阻止在途旧构建重新发布。
 #[cfg(feature = "server")]
 pub fn invalidate_feed() {
     FEED_CACHE.invalidate();
-}
-
-/// 失效文章「元数据」类缓存：列表、标签、统计、搜索结果、Feed。
-///
-/// 这些在每次文章写操作（创建/更新/删除/恢复/清空回收站）后都需要一起失效。
-/// 单篇正文与标签下文章列表是定向失效（按 slug / tag），不在此处处理，由调用方
-/// 根据实际涉及的 slug/tags 额外调用 `invalidate_post_by_slug` / `invalidate_tag_posts_for`。
-#[cfg(feature = "server")]
-pub fn invalidate_post_metadata() {
-    invalidate_post_lists();
-    invalidate_all_tags();
-    invalidate_post_stats();
-    invalidate_search_results();
-    invalidate_suggestions();
-    invalidate_feed();
-}
-
-/// 文章写操作（创建/更新/删除/恢复/清空回收站）后的统一缓存失效序列。
-///
-/// 清除文章元数据与受影响的单篇文章、标签缓存，再统一失效公开页 SSR 缓存。
-/// 修改 slug 时，调用方传入旧值和新值。
-#[cfg(feature = "server")]
-pub async fn invalidate_for_post_write(slugs: &[String], tags: &[String]) {
-    invalidate_post_metadata();
-    for slug in slugs {
-        invalidate_post_by_slug(slug).await;
-    }
-    invalidate_tag_posts_for(tags).await;
-    crate::ssr_cache::invalidate_ssr_all_public();
-}
-
-/// 标签写操作（创建/重命名）后的统一缓存失效序列。
-///
-/// 标签名会嵌在列表、单篇、标签下文章列表、搜索与 Feed 中，且重命名会让旧名
-/// 下的缓存键失效但新名键缺席，无法按 slug/标签精准定位，因此全量冲刷文章类缓存，
-/// 并刷新公开页 SSR 缓存、递增全局世代号。
-#[cfg(feature = "server")]
-pub fn invalidate_for_tag_write() {
-    invalidate_all_post_caches();
-    crate::ssr_cache::invalidate_ssr_all_public();
 }
 
 /// 按文章主键读取评论列表缓存。
@@ -951,25 +899,22 @@ pub async fn set_latest_outline(outline: Option<crate::api::posts::PostOutline>)
 }
 
 /// 按文章主键失效评论列表缓存。
-#[cfg(feature = "server")]
-pub async fn invalidate_comments_by_post(post_id: i32) {
+#[cfg(all(feature = "server", test))]
+async fn invalidate_comments_by_post(post_id: i32) {
     COMMENT_CACHE
         .invalidate(&CacheKey::CommentsByPost { post_id })
         .await;
 }
 
 /// 失效待审核评论总数缓存。
-#[cfg(feature = "server")]
-pub async fn invalidate_pending_count() {
+#[cfg(all(feature = "server", test))]
+async fn invalidate_pending_count() {
     PENDING_COUNT_CACHE
         .invalidate(&CacheKey::PendingCommentCount)
         .await;
 }
 
-/// 全量失效评论缓存（SQL 控制台兜底用：管理员直接改 comments 表时无法定向）。
-///
-/// 正常评论写路径用 [`invalidate_comments_by_post`]（按文章定向）+ [`invalidate_pending_count`]；
-/// 这里全量清空是 SQL 控制台直改 DB 的兜底——无法从任意 SQL 精确解析受影响的 post_id。
+/// 清空公开评论和待审核计数缓存。
 #[cfg(feature = "server")]
 pub fn invalidate_all_comments() {
     COMMENT_CACHE.invalidate_all();
@@ -1286,7 +1231,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn tag_write_invalidation_clears_lists_and_tag_posts() {
+    async fn post_invalidation_clears_lists_and_tag_posts() {
         let key = CacheKey::PublishedPosts {
             page: 998,
             per_page: 98,
@@ -1294,17 +1239,12 @@ mod tests {
         set_post_list(&key, vec![], 0).await;
         set_posts_by_tag("renamed-tag", vec![], 0).await;
         set_tag_list(vec![]).await;
-        let generation = crate::ssr_cache::current_global_generation();
 
-        invalidate_for_tag_write();
+        invalidate_all_post_caches();
 
         assert!(get_post_list(&key).await.is_none());
         assert!(get_posts_by_tag("renamed-tag").await.is_none());
         assert!(get_tag_list().await.is_none());
-        assert_eq!(
-            crate::ssr_cache::current_global_generation(),
-            generation + 1
-        );
     }
 
     #[tokio::test]

@@ -13,8 +13,6 @@ use crate::api::error::AppError;
 use crate::db::pool::get_conn;
 use crate::models::settings::SecuritySettings;
 // 仅 server 构建的函数体引用（WASM 端 server fn 体被宏剥离）。
-#[cfg(feature = "server")]
-use crate::cache::invalidate_security_settings;
 
 // ============================================================================
 // 安全配置（即时生效）
@@ -219,9 +217,8 @@ pub async fn update_security_settings(
         )
         .await?;
 
-        invalidate_security_settings();
         // 公开页的分享元信息含站点地址。
-        crate::ssr_cache::invalidate_ssr_all_public();
+        crate::tasks::cache_sync::sync_after_write(&client).await;
         tracing::info!(
             "Security settings updated: app_base_url={:?}, cookie_secure={}, proxy_count={}, max_sessions={}",
             app_base_url,

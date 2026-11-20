@@ -692,7 +692,7 @@ mod tests {
             )
             .await
             .unwrap();
-        crate::cache::invalidate_for_post_write(&["feed-public".into()], &["Rust".into()]).await;
+        crate::tasks::cache_sync::sync_after_write(&client).await;
         let (headers, json) = read_json_feed(conditional).await;
         assert_ne!(headers[header::ETAG], old_etag);
         assert_eq!(json["items"][0]["title"], "更新标题");
@@ -701,7 +701,7 @@ mod tests {
             .execute("UPDATE tags SET name='Rust 新标签' WHERE name='Rust'", &[])
             .await
             .unwrap();
-        crate::cache::invalidate_for_tag_write();
+        crate::tasks::cache_sync::sync_after_write(&client).await;
         let (_, json) = read_json_feed(accept("identity")).await;
         assert_eq!(json["items"][0]["tags"][0], "Rust 新标签");
 
@@ -709,8 +709,7 @@ mod tests {
             .execute("UPDATE posts SET status='draft' WHERE id=1", &[])
             .await
             .unwrap();
-        crate::cache::invalidate_for_post_write(&["feed-public".into()], &["Rust 新标签".into()])
-            .await;
+        crate::tasks::cache_sync::sync_after_write(&client).await;
         let (_, json) = read_json_feed(accept("identity")).await;
         assert!(json["items"].as_array().unwrap().is_empty());
         assert!(!json.to_string().contains("feed-public"));

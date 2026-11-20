@@ -9,6 +9,7 @@ use super::{helpers, validation};
 use crate::api::error::AppError;
 use crate::db::pool::get_conn;
 use crate::models::post::PostStatus;
+use crate::tasks::cache_sync::sync_after_write;
 
 #[derive(Debug)]
 pub(crate) enum WriteError {
@@ -130,7 +131,7 @@ pub(crate) async fn create(
     )
     .await?;
     tx.commit().await.map_err(AppError::tx)?;
-    crate::cache::invalidate_for_post_write(std::slice::from_ref(&slug), &tags).await;
+    sync_after_write(&client).await;
     Ok(WriteOutcome {
         post_id,
         slug,
@@ -260,7 +261,6 @@ pub(crate) async fn update(
     let old_status: String = old.get("status");
     let old_published_at: Option<DateTime<Utc>> = old.get("published_at");
     let old_cover: Option<String> = old.get("cover_image");
-    let old_tags = helpers::fetch_post_tags(&tx, post_id).await?;
     let cover_changed = !matches!(p.cover_image, FieldChange::Keep);
     let effective_cover = match &p.cover_image {
         FieldChange::Keep => old_cover,
@@ -355,16 +355,13 @@ pub(crate) async fn update(
         .await
         .map_err(AppError::tx)?;
     let updated_at = row.get("updated_at");
-    let tags = if let Some(tags) = p.tags {
+    if let Some(tags) = p.tags {
         let tags = helpers::clean_tags(&tags);
         tx.execute("DELETE FROM post_tags WHERE post_id=$1", &[&post_id])
             .await
             .map_err(AppError::tx)?;
         helpers::sync_tags(&tx, post_id, &tags).await?;
-        tags
-    } else {
-        old_tags.clone()
-    };
+    }
     if rendered.is_some() || cover_changed {
         let html = rendered.map(|f| f.content_html).unwrap_or_else(|| {
             old.get::<_, Option<String>>("content_html")
@@ -373,13 +370,7 @@ pub(crate) async fn update(
         helpers::sync_asset_refs(&tx, post_id, &html, effective_cover.as_deref()).await?;
     }
     tx.commit().await.map_err(AppError::tx)?;
-    let all_tags: Vec<String> = old_tags
-        .into_iter()
-        .chain(tags)
-        .collect::<std::collections::HashSet<_>>()
-        .into_iter()
-        .collect();
-    crate::cache::invalidate_for_post_write(&[old_slug, slug.clone()], &all_tags).await;
+    sync_after_write(&client).await;
     Ok(WriteOutcome {
         post_id,
         slug,
@@ -412,7 +403,6 @@ pub(crate) async fn act(
     let row = tx.query_opt(&format!("SELECT slug, updated_at FROM posts WHERE id=$1 AND ($2::int IS NULL OR author_id=$2) {condition} FOR UPDATE"), &[&post_id, &author_id])
         .await.map_err(AppError::query)?.ok_or_else(|| WriteError::Invalid("文章不存在或无权限".into()))?;
     let slug = row.get("slug");
-    let tags = helpers::fetch_post_tags(&tx, post_id).await?;
     let sql = match action {
         PostAction::Publish => "UPDATE posts SET status='published', published_at=COALESCE(published_at, NOW()), updated_at=GREATEST(clock_timestamp(), updated_at + INTERVAL '1 microsecond') WHERE id=$1 RETURNING updated_at",
         PostAction::Unpublish => "UPDATE posts SET status='draft', updated_at=GREATEST(clock_timestamp(), updated_at + INTERVAL '1 microsecond') WHERE id=$1 RETURNING updated_at",
@@ -422,7 +412,7 @@ pub(crate) async fn act(
     let updated = tx.query_one(sql, &[&post_id]).await.map_err(AppError::tx)?;
     let updated_at = updated.get("updated_at");
     tx.commit().await.map_err(AppError::tx)?;
-    crate::cache::invalidate_for_post_write(std::slice::from_ref(&slug), &tags).await;
+    sync_after_write(&client).await;
     Ok(WriteOutcome {
         post_id,
         slug,

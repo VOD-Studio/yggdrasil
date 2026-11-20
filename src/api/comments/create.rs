@@ -35,7 +35,6 @@ pub async fn create_comment(
         };
         use crate::api::error::AppError;
         use crate::auth::session::get_session_from_ctx;
-        use crate::cache;
         use crate::db::pool::get_conn;
 
         // 从请求上下文获取客户端 IP，并进行评论频率限流。
@@ -296,11 +295,7 @@ pub async fn create_comment(
             None => crate::api::comments::helpers::gravatar_url(&final_email),
         };
 
-        // 新评论影响文章评论列表缓存；仅匿名 pending 评论才影响待审核计数。
-        cache::invalidate_comments_by_post(post_id).await;
-        if session_user.is_none() {
-            cache::invalidate_pending_count().await;
-        }
+        crate::tasks::cache_sync::sync_after_write(&client).await;
 
         let message = if session_user.is_some() {
             "评论已发布"

@@ -5,6 +5,8 @@ use tokio_postgres::{AsyncMessage, Client, NoTls};
 
 const CHANNEL: &str = "ygg_content_changed";
 const RECHECK_INTERVAL: Duration = Duration::from_secs(5);
+// 串行读取并应用版本，本机写路径和通知监听器只需应用同一个已提交版本一次。
+static OBSERVED: tokio::sync::Mutex<Option<ContentRevision>> = tokio::sync::Mutex::const_new(None);
 
 struct ConnectionTask(tokio::task::JoinHandle<()>);
 impl Drop for ConnectionTask {
@@ -17,24 +19,67 @@ impl Drop for ConnectionTask {
 struct ContentRevision {
     relation_oid: u32,
     revision: i64,
+    posts: i64,
+    comments: i64,
+    friends: i64,
+    settings: i64,
+}
+
+/// 提交后等待本机应用已提交的版本。监听器也可能先完成这一步。
+pub(crate) async fn sync_after_write(client: &Client) {
+    let mut observed = OBSERVED.lock().await;
+    if let Err(error) = refresh_revision(client, &mut observed).await {
+        tracing::warn!(%error, "提交后读取内容缓存版本失败，已清除本机缓存");
+        *observed = None;
+        crate::cache::invalidate_shared_content();
+    }
 }
 
 async fn refresh_revision(
     client: &Client,
     observed: &mut Option<ContentRevision>,
 ) -> Result<(), tokio_postgres::Error> {
+    // 恢复早期备份后只有全局版本，各内容域随全局版本一起失效，直到重启补齐迁移。
     let row = client
         .query_one(
-            "SELECT tableoid AS relation_oid, revision FROM content_cache_revision WHERE singleton",
+            "SELECT tableoid AS relation_oid, revision,
+                    COALESCE((to_jsonb(r)->>'posts_revision')::bigint, revision) AS posts_revision,
+                    COALESCE((to_jsonb(r)->>'comments_revision')::bigint, revision) AS comments_revision,
+                    COALESCE((to_jsonb(r)->>'friends_revision')::bigint, revision) AS friends_revision,
+                    COALESCE((to_jsonb(r)->>'settings_revision')::bigint, revision) AS settings_revision
+             FROM content_cache_revision r WHERE singleton",
             &[],
         )
         .await?;
     let revision = ContentRevision {
         relation_oid: row.get("relation_oid"),
         revision: row.get("revision"),
+        posts: row.get("posts_revision"),
+        comments: row.get("comments_revision"),
+        friends: row.get("friends_revision"),
+        settings: row.get("settings_revision"),
     };
     if *observed != Some(revision) {
-        crate::cache::invalidate_shared_content();
+        if let Some(previous) = observed.filter(|previous| {
+            previous.relation_oid == revision.relation_oid && previous.revision < revision.revision
+        }) {
+            if previous.posts != revision.posts {
+                crate::cache::invalidate_all_post_caches();
+            }
+            if previous.comments != revision.comments {
+                crate::cache::invalidate_all_comments();
+            }
+            if previous.friends != revision.friends {
+                crate::cache::invalidate_friend_links();
+            }
+            if previous.settings != revision.settings {
+                crate::cache::invalidate_shared_settings();
+            }
+            // 笔记改动只有公开页 HTML 派生缓存（首页的最近笔记）。
+            crate::ssr_cache::invalidate_ssr_all_public();
+        } else {
+            crate::cache::invalidate_shared_content();
+        }
         *observed = Some(revision);
         tracing::debug!(
             revision = revision.revision,
@@ -66,8 +111,7 @@ async fn listen(
     }));
     // 先监听再读取版本，避免读取版本和 LISTEN 之间漏掉提交。
     client.batch_execute("LISTEN ygg_content_changed").await?;
-    let mut observed = None;
-    refresh_revision(&client, &mut observed).await?;
+    refresh_revision(&client, &mut *OBSERVED.lock().await).await?;
     tracing::info!("双机内容缓存通知已连接");
     let mut interval = tokio::time::interval(RECHECK_INTERVAL);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -78,7 +122,7 @@ async fn listen(
             }
             _ = interval.tick() => {}
         }
-        refresh_revision(&client, &mut observed).await?;
+        refresh_revision(&client, &mut *OBSERVED.lock().await).await?;
     }
 }
 
@@ -93,6 +137,8 @@ pub async fn run() {
     loop {
         if let Err(error) = listen(&config).await {
             tracing::warn!(%error, "内容缓存通知断开，5 秒后重连；HTML TTL 继续兜底");
+            let mut observed = OBSERVED.lock().await;
+            *observed = None;
             crate::cache::invalidate_shared_content();
         }
         tokio::time::sleep(RECHECK_INTERVAL).await;
@@ -130,9 +176,13 @@ mod tests {
         client
             .batch_execute(
                 "CREATE TEMP TABLE content_cache_revision (
-                    singleton BOOLEAN PRIMARY KEY, revision BIGINT NOT NULL
+                    singleton BOOLEAN PRIMARY KEY, revision BIGINT NOT NULL,
+                    posts_revision BIGINT NOT NULL DEFAULT 0,
+                    comments_revision BIGINT NOT NULL DEFAULT 0,
+                    friends_revision BIGINT NOT NULL DEFAULT 0,
+                    settings_revision BIGINT NOT NULL DEFAULT 0
                  );
-                 INSERT INTO content_cache_revision VALUES (TRUE, 7);",
+                 INSERT INTO content_cache_revision (singleton, revision, posts_revision) VALUES (TRUE, 7, 7);",
             )
             .await
             .unwrap();
@@ -145,8 +195,14 @@ mod tests {
         refresh_revision(&client, &mut observed).await.unwrap();
         assert_eq!(crate::cache::feed_generation(), generation);
 
+        let site = crate::models::settings::SiteSettings {
+            home_title: "缓存域测试".into(),
+            ..Default::default()
+        };
+        crate::cache::set_site_settings(site.clone()).await;
+        crate::cache::set_comments_by_post(42, Vec::new()).await;
         client
-            .batch_execute("UPDATE content_cache_revision SET revision=8")
+            .batch_execute("UPDATE content_cache_revision SET revision=8, posts_revision=8")
             .await
             .unwrap();
         refresh_revision(&client, &mut observed).await.unwrap();
@@ -155,7 +211,10 @@ mod tests {
         assert_eq!(incremented.revision, 8);
         let next = crate::cache::feed_generation();
         assert_ne!(next, generation);
+        assert_eq!(crate::cache::get_site_settings().await, Some(site));
+        assert!(crate::cache::get_comments_by_post(42).await.is_some());
 
+        // 从早期备份恢复时，同一数值版本也会因表 OID 改变触发全量失效。
         client
             .batch_execute(
                 "DROP TABLE pg_temp.content_cache_revision;
@@ -172,6 +231,8 @@ mod tests {
         assert_ne!(recreated.relation_oid, incremented.relation_oid);
         let recreated_generation = crate::cache::feed_generation();
         assert_ne!(recreated_generation, next);
+        assert!(crate::cache::get_site_settings().await.is_none());
+        assert!(crate::cache::get_comments_by_post(42).await.is_none());
         refresh_revision(&client, &mut observed).await.unwrap();
         assert_eq!(crate::cache::feed_generation(), recreated_generation);
         client

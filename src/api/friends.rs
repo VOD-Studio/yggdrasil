@@ -124,7 +124,7 @@ pub async fn create_friend_link(
         let id: i32 = row.get("id");
         refs::sync_friend_avatar_ref(&tx, id, locked.ids.first().copied()).await?;
         tx.commit().await.map_err(AppError::tx)?;
-        invalidate_friend_links_views();
+        crate::tasks::cache_sync::sync_after_write(&client).await;
         Ok(row_to_friend_link(&row))
     }
     #[cfg(not(feature = "server"))]
@@ -198,7 +198,7 @@ pub async fn update_friend_link(
             .map_err(AppError::tx)?;
         refs::sync_friend_avatar_ref(&tx, id, locked.ids.first().copied()).await?;
         tx.commit().await.map_err(AppError::tx)?;
-        invalidate_friend_links_views();
+        crate::tasks::cache_sync::sync_after_write(&client).await;
         Ok(row_to_friend_link(&row))
     }
     #[cfg(not(feature = "server"))]
@@ -222,7 +222,7 @@ pub async fn delete_friend_link(id: i32) -> Result<(), ApiError> {
             .execute("DELETE FROM friend_links WHERE id = $1", &[&id])
             .await
             .map_err(AppError::query)?;
-        invalidate_friend_links_views();
+        crate::tasks::cache_sync::sync_after_write(&client).await;
         Ok(())
     }
     #[cfg(not(feature = "server"))]
@@ -308,13 +308,6 @@ fn trim_fields(name: String, url: String, description: String) -> (String, Strin
         url.trim().to_string(),
         description.trim().to_string(),
     )
-}
-
-/// 写操作后的统一视图失效：友链 moka 缓存 + `/friends` SSR 缓存 + 全局世代号。
-#[cfg(feature = "server")]
-fn invalidate_friend_links_views() {
-    crate::cache::invalidate_friend_links();
-    crate::ssr_cache::invalidate_ssr_all_public();
 }
 
 /// 把 `friend_links` 行解析为 [`FriendLink`]。

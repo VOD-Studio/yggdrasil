@@ -206,8 +206,8 @@ pub(crate) fn clean_tags(tags: &[String]) -> Vec<String> {
         .filter(|t| seen.insert(t.to_lowercase()))
         .collect()
 }
-#[cfg(feature = "server")]
-/// 取指定文章的全部标签名（按 post_tags 关联）。此前 9+ 处重复同一条 SQL。
+#[cfg(all(feature = "server", test))]
+/// 读取文章标签，用于验证写入结果。
 pub(crate) async fn fetch_post_tags(
     client: &impl deadpool_postgres::GenericClient,
     post_id: i32,
@@ -221,22 +221,6 @@ pub(crate) async fn fetch_post_tags(
         .map_err(AppError::query)?;
     Ok(rows.iter().map(|r| r.get(0)).collect())
 }
-#[cfg(feature = "server")]
-/// 批量取多篇文章的标签名并集（去重）。用于批量删除/清空回收站的缓存失效。
-pub(crate) async fn fetch_post_tags_batch(
-    client: &impl deadpool_postgres::GenericClient,
-    post_ids: &[i32],
-) -> Result<Vec<String>, AppError> {
-    let rows = client
-        .query(
-            "SELECT DISTINCT t.name FROM tags t JOIN post_tags pt ON t.id = pt.tag_id WHERE pt.post_id = ANY($1)",
-            &[&post_ids],
-        )
-        .await
-        .map_err(AppError::query)?;
-    Ok(rows.iter().map(|r| r.get(0)).collect())
-}
-
 /// 匹配 HTML/Markdown 中出现的本地上传图片路径，捕获组为相对路径
 /// （如 `2026/07/24/153000.<uuid>.webp`，不含 /uploads/ 前缀与 query）。
 /// 覆盖 blur-img 双层结构的 src 与 data-src。

@@ -444,7 +444,7 @@ pub async fn save(
     super::attachments::sync_refs(&tx, owner_id, id, version, &fields.content_html).await?;
     tx.commit().await.map_err(AppError::tx)?;
     // 笔记本归属可影响公开目录，即使正文仍是工作稿也应失效目录缓存。
-    invalidate();
+    crate::tasks::cache_sync::sync_after_write(&client).await;
     query_note(&client, Access::Owner(owner_id), Some(id), None, None).await
 }
 
@@ -459,7 +459,7 @@ pub async fn act(
     let tx = client.transaction().await.map_err(AppError::tx)?;
     act_in_transaction(&tx, owner_id, id, expected, action, allowed_books).await?;
     tx.commit().await.map_err(AppError::tx)?;
-    invalidate();
+    crate::tasks::cache_sync::sync_after_write(&client).await;
     query_note(&client, Access::Owner(owner_id), Some(id), None, None).await
 }
 
@@ -499,7 +499,7 @@ pub async fn batch_act(
         .await?;
     }
     tx.commit().await.map_err(AppError::tx)?;
-    invalidate();
+    crate::tasks::cache_sync::sync_after_write(&client).await;
     Ok(())
 }
 
@@ -639,7 +639,7 @@ pub async fn save_notebook(owner_id: i32, input: NotebookInput) -> Result<(), Ap
             .await
             .map_err(AppError::query)?;
     }
-    invalidate();
+    crate::tasks::cache_sync::sync_after_write(&client).await;
     Ok(())
 }
 
@@ -653,7 +653,7 @@ pub async fn archive_notebook(owner_id: i32, id: i32, archived: bool) -> Result<
     if changed == 0 {
         return Err(AppError::NotFound("笔记本不存在"));
     }
-    invalidate();
+    crate::tasks::cache_sync::sync_after_write(&client).await;
     Ok(())
 }
 
@@ -695,12 +695,8 @@ pub async fn reorder(owner_id: i32, book: i32, ids: Vec<i32>) -> Result<(), AppE
         .map_err(AppError::tx)?;
     }
     tx.commit().await.map_err(AppError::tx)?;
-    invalidate();
+    crate::tasks::cache_sync::sync_after_write(&client).await;
     Ok(())
-}
-
-fn invalidate() {
-    crate::ssr_cache::invalidate_ssr_all_public();
 }
 
 #[cfg(test)]

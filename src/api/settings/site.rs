@@ -23,41 +23,33 @@ use crate::models::settings::SiteSettings;
 /// 先查 moka 缓存，未命中查 settings 表，缺失键回退空串（不展示图标 / 使用默认标语）。
 #[server(GetSiteSettings, endpoint = "get_site_settings", input = leptos::server_fn::codec::Json)]
 pub async fn get_site_settings() -> Result<SiteSettings, ApiError> {
-    #[cfg(feature = "server")]
-    {
-        if let Some(cached) = crate::cache::get_site_settings().await {
-            return Ok(cached);
-        }
-
-        let client = get_conn().await.map_err(AppError::db_conn)?;
-
-        let rows = client
-            .query(
-                "SELECT key, value FROM settings WHERE key = ANY($1)",
-                &[&SITE_KEYS.as_slice()],
-            )
-            .await
-            .map_err(AppError::query)?;
-        let mut settings = SiteSettings::default();
-        for row in rows {
-            let value: String = row.get("value");
-            match row.get::<_, &str>("key") {
-                "site_github_url" => settings.github_url = value,
-                "site_home_title" => settings.home_title = value,
-                "site_home_subtitle" => settings.home_subtitle = value,
-                "site_home_intro" => settings.home_intro = value,
-                "site_description" => settings.site_description = value,
-                _ => {}
-            }
-        }
-        crate::cache::set_site_settings(settings.clone()).await;
-        Ok(settings)
+    if let Some(cached) = crate::cache::get_site_settings().await {
+        return Ok(cached);
     }
 
-    #[cfg(not(feature = "server"))]
-    {
-        Ok(SiteSettings::default())
+    let client = get_conn().await.map_err(AppError::db_conn)?;
+
+    let rows = client
+        .query(
+            "SELECT key, value FROM settings WHERE key = ANY($1)",
+            &[&SITE_KEYS.as_slice()],
+        )
+        .await
+        .map_err(AppError::query)?;
+    let mut settings = SiteSettings::default();
+    for row in rows {
+        let value: String = row.get("value");
+        match row.get::<_, &str>("key") {
+            "site_github_url" => settings.github_url = value,
+            "site_home_title" => settings.home_title = value,
+            "site_home_subtitle" => settings.home_subtitle = value,
+            "site_home_intro" => settings.home_intro = value,
+            "site_description" => settings.site_description = value,
+            _ => {}
+        }
     }
+    crate::cache::set_site_settings(settings.clone()).await;
+    Ok(settings)
 }
 
 /// 友链页「交换友链」展示的本站信息。
@@ -82,15 +74,12 @@ impl SiteCard {
 #[server(GetSiteCard, endpoint = "get_site_card", input = leptos::server_fn::codec::Json)]
 pub async fn get_site_card() -> Result<SiteCard, ApiError> {
     let settings = get_site_settings().await?;
-    #[cfg(feature = "server")]
     let url = crate::api::settings::runtime_security_settings()
         .await
         .app_base_url
         .trim()
         .trim_end_matches('/')
         .to_string();
-    #[cfg(not(feature = "server"))]
-    let url = String::new();
     Ok(SiteCard {
         name: "Yggdrasil".to_string(),
         url,
@@ -129,19 +118,15 @@ pub async fn update_site_settings(settings: SiteSettings) -> Result<SiteSettings
 
     let settings = settings.normalized();
 
-    #[cfg(feature = "server")]
-    {
-        let mut client = get_conn().await.map_err(AppError::db_conn)?;
-        let tx = client.transaction().await.map_err(AppError::tx)?;
-        for (key, value) in SITE_KEYS.iter().zip(site_values(&settings)) {
-            super::upsert_setting(&*tx, key, value).await?;
-        }
-        tx.commit().await.map_err(AppError::tx)?;
-
-        crate::cache::invalidate_site_settings();
-        crate::ssr_cache::invalidate_ssr_all_public();
-        tracing::info!("Site settings updated: github_url={}", settings.github_url);
+    let mut client = get_conn().await.map_err(AppError::db_conn)?;
+    let tx = client.transaction().await.map_err(AppError::tx)?;
+    for (key, value) in SITE_KEYS.iter().zip(site_values(&settings)) {
+        super::upsert_setting(&*tx, key, value).await?;
     }
+    tx.commit().await.map_err(AppError::tx)?;
+
+    crate::tasks::cache_sync::sync_after_write(&client).await;
+    tracing::info!("Site settings updated: github_url={}", settings.github_url);
 
     Ok(settings)
 }
