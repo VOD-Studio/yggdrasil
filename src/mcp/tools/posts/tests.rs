@@ -412,7 +412,14 @@ async fn post_write_service_database_impl() {
         )
         .await
         .unwrap();
-    crate::cache::set_post_by_slug("web-shared", None).await;
+    assert!(
+        crate::api::posts::get_public_post_by_slug("web-shared".into())
+            .await
+            .unwrap()
+            .post
+            .is_some()
+    );
+    assert!(crate::cache::get_post_by_slug("web-shared").await.is_some());
     crate::cache::set_posts_by_tag("tag", vec![], 0).await;
     let replaced = crate::request_ctx::scope_with_request(
         web_context(),

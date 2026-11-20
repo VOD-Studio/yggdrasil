@@ -92,7 +92,9 @@ pub(crate) async fn row_to_post_full(row: &tokio_postgres::Row) -> Result<Post, 
     };
 
     // 读取正文与已持久化的字数/阅读时长；若列尚未回填（旧数据为 0），则现场计算。
-    let content_md: String = row.get("content_md");
+    let content_md = row
+        .get::<_, Option<String>>("content_md")
+        .unwrap_or_default();
     let stored_word_count: i32 = row.get("word_count");
     let stored_reading_time: i32 = row.get("reading_time");
     let (word_count, reading_time) = if stored_word_count > 0 && stored_reading_time > 0 {

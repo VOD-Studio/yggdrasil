@@ -1,7 +1,7 @@
 //! 文章详情查询接口。
 //!
 //! 提供按 id（管理员）与按 slug（公开）两种方式获取文章，
-//! 其中按 slug 查询包含上下篇导航并启用缓存。
+//! 其中按 slug 查询包含上下篇导航，阅读页缓存公开字段。
 //! Leptos server function，注册在 `/api` 路径下。
 //! 仅在 `feature = "server"` 启用的服务端构建中查询数据库。
 
@@ -15,6 +15,8 @@ use super::types::{PublicPostResponse, SinglePostResponse};
 use crate::api::error::AppError;
 #[cfg(feature = "server")]
 use crate::db::pool::get_conn;
+#[cfg(feature = "server")]
+use crate::models::{post::Post, public_post::PublicPost};
 
 /// 根据文章 id 获取详情。
 ///
@@ -50,22 +52,41 @@ pub async fn get_post_by_id(post_id: i32) -> Result<SinglePostResponse, ApiError
     Ok(SinglePostResponse { post })
 }
 
-/// 根据 slug 获取公开文章详情。
-///
-/// 优先命中缓存；未命中时查询数据库，并附带基于 published_at 的上一篇/下一篇导航。
+/// 旧客户端的公开文章详情接口，返回包含 Markdown 的完整响应。
 #[server(GetPostBySlug, endpoint = "get_post_by_slug", input = leptos::server_fn::codec::Json)]
 pub async fn get_post_by_slug(slug: String) -> Result<SinglePostResponse, ApiError> {
-    if let Some(cached) = crate::cache::get_post_by_slug(&slug).await {
-        return Ok(SinglePostResponse { post: cached });
-    }
+    Ok(SinglePostResponse {
+        post: read_published_post(&slug, true).await?,
+    })
+}
 
+/// 阅读页使用独立协议，避免新部署破坏已打开页面的旧客户端。
+#[server(GetPublicPostBySlug, endpoint = "get_public_post_by_slug", input = leptos::server_fn::codec::Json)]
+pub async fn get_public_post_by_slug(slug: String) -> Result<PublicPostResponse, ApiError> {
+    if let Some(post) = crate::cache::get_post_by_slug(&slug).await {
+        return Ok(PublicPostResponse { post: Some(post) });
+    }
+    let post = read_published_post(&slug, false)
+        .await?
+        .map(PublicPost::from);
+    if let Some(post) = &post {
+        crate::cache::set_post_by_slug(&slug, post.clone()).await;
+    }
+    Ok(PublicPostResponse { post })
+}
+
+#[cfg(feature = "server")]
+async fn read_published_post(slug: &str, include_markdown: bool) -> Result<Option<Post>, AppError> {
     let client = get_conn().await.map_err(AppError::db_conn)?;
 
-    // 使用 LATERAL JOIN 查询按 published_at 排序的相邻文章。
+    // 阅读页只在旧数据缺少渲染结果或阅读统计时读取 Markdown。
     let row = client
         .query_opt(
             "SELECT
-                p.id, p.author_id, p.title, p.slug, p.summary, p.content_md, p.content_html, p.toc_html,
+                p.id, p.author_id, p.title, p.slug, p.summary,
+                CASE WHEN $2 OR p.content_html IS NULL OR p.word_count <= 0 OR p.reading_time <= 0
+                     THEN p.content_md END AS content_md,
+                p.content_html, p.toc_html,
                 p.status, p.published_at, p.created_at, p.updated_at, p.cover_image,
                 p.word_count, p.reading_time,
                 COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{}') as tags,
@@ -92,36 +113,21 @@ pub async fn get_post_by_slug(slug: String) -> Result<SinglePostResponse, ApiErr
              ) next ON true
              WHERE p.slug = $1 AND p.status = 'published' AND p.deleted_at IS NULL
              GROUP BY p.id, prev.title, prev.slug, next.title, next.slug",
-            &[&slug],
+            &[&slug, &include_markdown],
         )
         .await
         .map_err(AppError::query)?;
 
-    let post = match row {
-        Some(row) => Some(row_to_post_full(&row).await?),
-        None => None,
-    };
-
-    if post.is_some() {
-        crate::cache::set_post_by_slug(&slug, post.clone()).await;
+    match row {
+        Some(row) => Ok(Some(row_to_post_full(&row).await?)),
+        None => Ok(None),
     }
-    Ok(SinglePostResponse { post })
-}
-
-/// 阅读页使用独立协议，避免新部署破坏已打开页面的旧客户端。
-#[server(GetPublicPostBySlug, endpoint = "get_public_post_by_slug", input = leptos::server_fn::codec::Json)]
-pub async fn get_public_post_by_slug(slug: String) -> Result<PublicPostResponse, ApiError> {
-    let response = get_post_by_slug(slug).await?;
-    Ok(PublicPostResponse {
-        post: response.post.map(Into::into),
-    })
 }
 
 /// 管理员按 slug 预览文章（含草稿），不缓存、不带上下篇导航。
 ///
 /// 镜像 [`get_post_by_id`] 的查询，但按 slug 取、不做 `status = 'published'`
-/// 过滤，故草稿可被预览。回收站（软删除）文章返回 `None`。草稿绝不进公开缓存
-/// （`cache::get/set_post_by_slug`），因此预览路径只走一次直查。
+/// 过滤，故草稿可被预览。回收站（软删除）文章返回 `None`。
 #[server(GetPostPreview, endpoint = "get_post_preview", input = leptos::server_fn::codec::Json)]
 pub async fn get_post_preview(slug: String) -> Result<SinglePostResponse, ApiError> {
     let _user = get_current_admin_user().await?;

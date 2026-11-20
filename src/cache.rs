@@ -18,7 +18,9 @@ use crate::models::comment::PublicComment;
 #[cfg(feature = "server")]
 use crate::models::friend_link::FriendLink;
 #[cfg(feature = "server")]
-use crate::models::post::{Post, PostListItem, PostStats, Tag};
+use crate::models::post::{PostListItem, PostStats, Tag};
+#[cfg(feature = "server")]
+use crate::models::public_post::PublicPost;
 #[cfg(feature = "server")]
 use crate::models::settings::{ImageCacheSettings, SecuritySettings, SiteSettings};
 #[cfg(feature = "server")]
@@ -134,7 +136,7 @@ pub type TagListCache = Cache<CacheKey, Vec<Tag>>;
 
 /// 单篇文章缓存类型。
 #[cfg(feature = "server")]
-pub type SinglePostCache = Cache<CacheKey, Option<Post>>;
+pub type SinglePostCache = Cache<CacheKey, PublicPost>;
 
 /// 文章统计缓存类型。
 #[cfg(feature = "server")]
@@ -626,7 +628,7 @@ pub fn invalidate_log_targets() {
 
 /// 按 slug 读取单篇文章缓存。
 #[cfg(feature = "server")]
-pub async fn get_post_by_slug(slug: &str) -> Option<Option<Post>> {
+pub async fn get_post_by_slug(slug: &str) -> Option<PublicPost> {
     record_hit_miss!(
         SINGLE_POST_CACHE
             .get(&CacheKey::PostBySlug(slug.to_string()))
@@ -635,9 +637,9 @@ pub async fn get_post_by_slug(slug: &str) -> Option<Option<Post>> {
     )
 }
 
-/// 按 slug 写入单篇文章缓存，None 表示文章不存在。
+/// 按 slug 缓存公开文章的阅读数据。
 #[cfg(feature = "server")]
-pub async fn set_post_by_slug(slug: &str, post: Option<Post>) {
+pub async fn set_post_by_slug(slug: &str, post: PublicPost) {
     let _ = SINGLE_POST_CACHE
         .insert(CacheKey::PostBySlug(slug.to_string()), post)
         .await;
@@ -1001,19 +1003,16 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn single_post_cache_roundtrip() {
-        let post = Some(Post {
+        let post = PublicPost {
             id: 1,
             author_id: 1,
             title: "Test".to_string(),
             slug: "test".to_string(),
             summary: None,
-            content_md: "content".to_string(),
             content_html: None,
-            status: PostStatus::Published,
             published_at: None,
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
-            deleted_at: None,
             tags: vec![],
             cover_image: None,
             reading_time: 1,
@@ -1021,13 +1020,13 @@ mod tests {
             toc_html: None,
             prev_post: None,
             next_post: None,
-        });
+        };
 
-        set_post_by_slug("test", post.clone()).await;
+        set_post_by_slug("test", post).await;
         let cached = get_post_by_slug("test").await;
 
         assert!(cached.is_some());
-        assert_eq!(cached.unwrap().unwrap().title, "Test");
+        assert_eq!(cached.unwrap().title, "Test");
     }
 
     #[tokio::test]
@@ -1052,19 +1051,16 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn cache_invalidation_works() {
-        let post = Some(Post {
+        let post = PublicPost {
             id: 42,
             author_id: 1,
             title: "Invalidation Test".to_string(),
             slug: "invalidation-test".to_string(),
             summary: None,
-            content_md: "test".to_string(),
             content_html: None,
-            status: PostStatus::Published,
             published_at: None,
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
-            deleted_at: None,
             tags: vec![],
             cover_image: None,
             reading_time: 1,
@@ -1072,9 +1068,9 @@ mod tests {
             toc_html: None,
             prev_post: None,
             next_post: None,
-        });
+        };
 
-        set_post_by_slug("invalidation-test", post.clone()).await;
+        set_post_by_slug("invalidation-test", post).await;
         let cached_before = get_post_by_slug("invalidation-test").await;
         assert!(cached_before.is_some());
 
