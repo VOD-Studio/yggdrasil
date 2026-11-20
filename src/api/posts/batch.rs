@@ -20,36 +20,28 @@ pub async fn batch_posts(
     post_ids: Vec<i32>,
     action: BatchPostAction,
 ) -> Result<BatchPostResult, ApiError> {
-    #[cfg(feature = "server")]
-    {
-        use super::service::{act, PostAction};
+    use super::service::{act, PostAction};
 
-        let _user = get_current_admin_user().await?;
-        if post_ids.len() > MAX_BATCH {
-            return Err(ApiError::BadRequest(format!("一次最多操作 {MAX_BATCH} 篇")));
-        }
-        let mut ids = post_ids;
-        ids.sort_unstable();
-        ids.dedup();
-        let mut result = BatchPostResult { done: 0, failed: 0 };
-        for id in ids {
-            let action = match action {
-                BatchPostAction::Publish => PostAction::Publish,
-                BatchPostAction::Unpublish => PostAction::Unpublish,
-                BatchPostAction::Trash => PostAction::Trash,
-            };
-            match act(id, None, action).await {
-                Ok(_) => result.done += 1,
-                Err(_) => result.failed += 1,
-            }
-        }
-        Ok(result)
+    let _user = get_current_admin_user().await?;
+    if post_ids.len() > MAX_BATCH {
+        return Err(ApiError::BadRequest(format!("一次最多操作 {MAX_BATCH} 篇")));
     }
-    #[cfg(not(feature = "server"))]
-    {
-        let _ = (post_ids, action);
-        unreachable!()
+    let mut ids = post_ids;
+    ids.sort_unstable();
+    ids.dedup();
+    let mut result = BatchPostResult { done: 0, failed: 0 };
+    for id in ids {
+        let action = match action {
+            BatchPostAction::Publish => PostAction::Publish,
+            BatchPostAction::Unpublish => PostAction::Unpublish,
+            BatchPostAction::Trash => PostAction::Trash,
+        };
+        match act(id, None, action).await {
+            Ok(_) => result.done += 1,
+            Err(_) => result.failed += 1,
+        }
     }
+    Ok(result)
 }
 
 #[cfg(all(test, feature = "server"))]

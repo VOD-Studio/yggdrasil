@@ -25,25 +25,8 @@ use crate::models::post::{MonthCount, PostStats};
 pub async fn get_post_stats() -> Result<PostStatsResponse, ApiError> {
     let _user = get_current_admin_user().await?;
 
-    #[cfg(feature = "server")]
-    {
-        let stats = load_post_stats().await?;
-        Ok(PostStatsResponse { stats })
-    }
-
-    #[cfg(not(feature = "server"))]
-    {
-        Ok(PostStatsResponse {
-            stats: PostStats {
-                total: 0,
-                drafts: 0,
-                published: 0,
-                trash: 0,
-                recent_30d: 0,
-                monthly_published: Vec::new(),
-            },
-        })
-    }
+    let stats = load_post_stats().await?;
+    Ok(PostStatsResponse { stats })
 }
 
 /// 读取文章统计：优先命中缓存，未命中时查询并写回。侧栏数量与仪表盘共用。

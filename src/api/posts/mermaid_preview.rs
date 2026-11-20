@@ -16,20 +16,13 @@ const MAX_SOURCE_LEN: usize = 20_000;
 #[server(RenderMermaidPreview, endpoint = "render_mermaid_preview", input = leptos::server_fn::codec::Json)]
 pub async fn render_mermaid_preview(source: String) -> Result<String, ApiError> {
     let _user = get_current_admin_user().await?;
-    #[cfg(feature = "server")]
-    {
-        if source.len() > MAX_SOURCE_LEN {
-            return Err(AppError::BadRequest("图表源码过长".into()).into());
-        }
-        let rendered = tokio::task::spawn_blocking(move || {
-            crate::api::markdown::mermaid::render_diagram(&source, 0)
-        })
-        .await
-        .map_err(|_| AppError::Internal("图表渲染任务失败"))?;
-        rendered.map_err(|e| AppError::BadRequest(e).into())
+    if source.len() > MAX_SOURCE_LEN {
+        return Err(AppError::BadRequest("图表源码过长".into()).into());
     }
-    #[cfg(not(feature = "server"))]
-    {
-        Ok(String::new())
-    }
+    let rendered = tokio::task::spawn_blocking(move || {
+        crate::api::markdown::mermaid::render_diagram(&source, 0)
+    })
+    .await
+    .map_err(|_| AppError::Internal("图表渲染任务失败"))?;
+    rendered.map_err(|e| AppError::BadRequest(e).into())
 }

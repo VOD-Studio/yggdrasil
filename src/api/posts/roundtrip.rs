@@ -15,17 +15,10 @@ pub async fn check_markdown_roundtrip(
     roundtrip: String,
 ) -> Result<bool, ApiError> {
     let _user = get_current_admin_user().await?;
-    #[cfg(feature = "server")]
-    {
-        let same = tokio::task::spawn_blocking(move || renders_identically(&original, &roundtrip))
-            .await
-            .map_err(|_| AppError::Internal("Markdown 渲染任务失败"))?;
-        Ok(same)
-    }
-    #[cfg(not(feature = "server"))]
-    {
-        Ok(false)
-    }
+    let same = tokio::task::spawn_blocking(move || renders_identically(&original, &roundtrip))
+        .await
+        .map_err(|_| AppError::Internal("Markdown 渲染任务失败"))?;
+    Ok(same)
 }
 
 #[cfg(feature = "server")]

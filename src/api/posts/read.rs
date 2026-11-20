@@ -23,39 +23,31 @@ use crate::db::pool::get_conn;
 pub async fn get_post_by_id(post_id: i32) -> Result<SinglePostResponse, ApiError> {
     let _user = get_current_admin_user().await?;
 
-    #[cfg(feature = "server")]
-    {
-        let client = get_conn().await.map_err(AppError::db_conn)?;
+    let client = get_conn().await.map_err(AppError::db_conn)?;
 
-        let row = client
-            .query_opt(
-                "SELECT
-                    p.id, p.author_id, p.title, p.slug, p.summary, p.content_md, p.content_html, p.toc_html,
-                    p.status, p.published_at, p.created_at, p.updated_at, p.cover_image,
-                    p.word_count, p.reading_time,
-                    COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{}') as tags
-                 FROM posts p
-                 LEFT JOIN post_tags pt ON p.id = pt.post_id
-                 LEFT JOIN tags t ON pt.tag_id = t.id
-                 WHERE p.id = $1 AND p.deleted_at IS NULL
-                 GROUP BY p.id",
-                &[&post_id],
-            )
-            .await
-            .map_err(AppError::query)?;
+    let row = client
+        .query_opt(
+            "SELECT
+                p.id, p.author_id, p.title, p.slug, p.summary, p.content_md, p.content_html, p.toc_html,
+                p.status, p.published_at, p.created_at, p.updated_at, p.cover_image,
+                p.word_count, p.reading_time,
+                COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{}') as tags
+             FROM posts p
+             LEFT JOIN post_tags pt ON p.id = pt.post_id
+             LEFT JOIN tags t ON pt.tag_id = t.id
+             WHERE p.id = $1 AND p.deleted_at IS NULL
+             GROUP BY p.id",
+            &[&post_id],
+        )
+        .await
+        .map_err(AppError::query)?;
 
-        let post = match row {
-            Some(row) => Some(row_to_post_full(&row).await?),
-            None => None,
-        };
+    let post = match row {
+        Some(row) => Some(row_to_post_full(&row).await?),
+        None => None,
+    };
 
-        Ok(SinglePostResponse { post })
-    }
-
-    #[cfg(not(feature = "server"))]
-    {
-        Ok(SinglePostResponse { post: None })
-    }
+    Ok(SinglePostResponse { post })
 }
 
 /// 根据 slug 获取公开文章详情。
@@ -63,65 +55,57 @@ pub async fn get_post_by_id(post_id: i32) -> Result<SinglePostResponse, ApiError
 /// 优先命中缓存；未命中时查询数据库，并附带基于 published_at 的上一篇/下一篇导航。
 #[server(GetPostBySlug, endpoint = "get_post_by_slug", input = leptos::server_fn::codec::Json)]
 pub async fn get_post_by_slug(slug: String) -> Result<SinglePostResponse, ApiError> {
-    #[cfg(feature = "server")]
-    {
-        if let Some(cached) = crate::cache::get_post_by_slug(&slug).await {
-            return Ok(SinglePostResponse { post: cached });
-        }
-
-        let client = get_conn().await.map_err(AppError::db_conn)?;
-
-        // 使用 LATERAL JOIN 查询按 published_at 排序的相邻文章。
-        let row = client
-            .query_opt(
-                "SELECT
-                    p.id, p.author_id, p.title, p.slug, p.summary, p.content_md, p.content_html, p.toc_html,
-                    p.status, p.published_at, p.created_at, p.updated_at, p.cover_image,
-                    p.word_count, p.reading_time,
-                    COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{}') as tags,
-                    prev.title as prev_title, prev.slug as prev_slug,
-                    next.title as next_title, next.slug as next_slug
-                 FROM posts p
-                 LEFT JOIN post_tags pt ON p.id = pt.post_id
-                 LEFT JOIN tags t ON pt.tag_id = t.id
-                 LEFT JOIN LATERAL (
-                     SELECT title, slug FROM posts 
-                     WHERE published_at < p.published_at 
-                       AND status = 'published' 
-                       AND deleted_at IS NULL
-                     ORDER BY published_at DESC
-                     LIMIT 1
-                 ) prev ON true
-                 LEFT JOIN LATERAL (
-                     SELECT title, slug FROM posts 
-                     WHERE published_at > p.published_at 
-                       AND status = 'published' 
-                       AND deleted_at IS NULL
-                     ORDER BY published_at ASC
-                     LIMIT 1
-                 ) next ON true
-                 WHERE p.slug = $1 AND p.status = 'published' AND p.deleted_at IS NULL
-                 GROUP BY p.id, prev.title, prev.slug, next.title, next.slug",
-                &[&slug],
-            )
-            .await
-            .map_err(AppError::query)?;
-
-        let post = match row {
-            Some(row) => Some(row_to_post_full(&row).await?),
-            None => None,
-        };
-
-        if post.is_some() {
-            crate::cache::set_post_by_slug(&slug, post.clone()).await;
-        }
-        Ok(SinglePostResponse { post })
+    if let Some(cached) = crate::cache::get_post_by_slug(&slug).await {
+        return Ok(SinglePostResponse { post: cached });
     }
 
-    #[cfg(not(feature = "server"))]
-    {
-        Ok(SinglePostResponse { post: None })
+    let client = get_conn().await.map_err(AppError::db_conn)?;
+
+    // 使用 LATERAL JOIN 查询按 published_at 排序的相邻文章。
+    let row = client
+        .query_opt(
+            "SELECT
+                p.id, p.author_id, p.title, p.slug, p.summary, p.content_md, p.content_html, p.toc_html,
+                p.status, p.published_at, p.created_at, p.updated_at, p.cover_image,
+                p.word_count, p.reading_time,
+                COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{}') as tags,
+                prev.title as prev_title, prev.slug as prev_slug,
+                next.title as next_title, next.slug as next_slug
+             FROM posts p
+             LEFT JOIN post_tags pt ON p.id = pt.post_id
+             LEFT JOIN tags t ON pt.tag_id = t.id
+             LEFT JOIN LATERAL (
+                 SELECT title, slug FROM posts
+                 WHERE published_at < p.published_at
+                   AND status = 'published'
+                   AND deleted_at IS NULL
+                 ORDER BY published_at DESC
+                 LIMIT 1
+             ) prev ON true
+             LEFT JOIN LATERAL (
+                 SELECT title, slug FROM posts
+                 WHERE published_at > p.published_at
+                   AND status = 'published'
+                   AND deleted_at IS NULL
+                 ORDER BY published_at ASC
+                 LIMIT 1
+             ) next ON true
+             WHERE p.slug = $1 AND p.status = 'published' AND p.deleted_at IS NULL
+             GROUP BY p.id, prev.title, prev.slug, next.title, next.slug",
+            &[&slug],
+        )
+        .await
+        .map_err(AppError::query)?;
+
+    let post = match row {
+        Some(row) => Some(row_to_post_full(&row).await?),
+        None => None,
+    };
+
+    if post.is_some() {
+        crate::cache::set_post_by_slug(&slug, post.clone()).await;
     }
+    Ok(SinglePostResponse { post })
 }
 
 /// 阅读页使用独立协议，避免新部署破坏已打开页面的旧客户端。
@@ -142,37 +126,29 @@ pub async fn get_public_post_by_slug(slug: String) -> Result<PublicPostResponse,
 pub async fn get_post_preview(slug: String) -> Result<SinglePostResponse, ApiError> {
     let _user = get_current_admin_user().await?;
 
-    #[cfg(feature = "server")]
-    {
-        let client = get_conn().await.map_err(AppError::db_conn)?;
+    let client = get_conn().await.map_err(AppError::db_conn)?;
 
-        let row = client
-            .query_opt(
-                "SELECT
-                    p.id, p.author_id, p.title, p.slug, p.summary, p.content_md, p.content_html, p.toc_html,
-                    p.status, p.published_at, p.created_at, p.updated_at, p.cover_image,
-                    p.word_count, p.reading_time,
-                    COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{}') as tags
-                 FROM posts p
-                 LEFT JOIN post_tags pt ON p.id = pt.post_id
-                 LEFT JOIN tags t ON pt.tag_id = t.id
-                 WHERE p.slug = $1 AND p.deleted_at IS NULL
-                 GROUP BY p.id",
-                &[&slug],
-            )
-            .await
-            .map_err(AppError::query)?;
+    let row = client
+        .query_opt(
+            "SELECT
+                p.id, p.author_id, p.title, p.slug, p.summary, p.content_md, p.content_html, p.toc_html,
+                p.status, p.published_at, p.created_at, p.updated_at, p.cover_image,
+                p.word_count, p.reading_time,
+                COALESCE(array_agg(t.name) FILTER (WHERE t.name IS NOT NULL), '{}') as tags
+             FROM posts p
+             LEFT JOIN post_tags pt ON p.id = pt.post_id
+             LEFT JOIN tags t ON pt.tag_id = t.id
+             WHERE p.slug = $1 AND p.deleted_at IS NULL
+             GROUP BY p.id",
+            &[&slug],
+        )
+        .await
+        .map_err(AppError::query)?;
 
-        let post = match row {
-            Some(row) => Some(row_to_post_full(&row).await?),
-            None => None,
-        };
+    let post = match row {
+        Some(row) => Some(row_to_post_full(&row).await?),
+        None => None,
+    };
 
-        Ok(SinglePostResponse { post })
-    }
-
-    #[cfg(not(feature = "server"))]
-    {
-        Ok(SinglePostResponse { post: None })
-    }
+    Ok(SinglePostResponse { post })
 }

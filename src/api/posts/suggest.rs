@@ -74,35 +74,26 @@ pub(crate) async fn query_suggestions(
 /// 空查询或超长查询返回空结果；被限流时同样返回空，让面板保留上一次结果。
 #[server(SuggestPosts, endpoint = "suggest_posts", input = leptos::server_fn::codec::Json)]
 pub async fn suggest_posts(query: String) -> Result<PostSuggestionResponse, ApiError> {
-    #[cfg(feature = "server")]
-    {
-        use crate::api::rate_limit;
+    use crate::api::rate_limit;
 
-        if let Some(headers) = crate::request_ctx::request_headers() {
-            let ip = rate_limit::get_client_ip(&headers).await;
-            if rate_limit::check_suggest_limit(&ip).is_err() {
-                return Ok(PostSuggestionResponse { posts: Vec::new() });
-            }
-        }
-
-        let q = query.trim();
-        if q.is_empty() || q.chars().count() > MAX_QUERY_CHARS {
+    if let Some(headers) = crate::request_ctx::request_headers() {
+        let ip = rate_limit::get_client_ip(&headers).await;
+        if rate_limit::check_suggest_limit(&ip).is_err() {
             return Ok(PostSuggestionResponse { posts: Vec::new() });
         }
-        if let Some(posts) = crate::cache::get_suggestions(q).await {
-            return Ok(PostSuggestionResponse { posts });
-        }
-        let client = get_conn().await.map_err(AppError::db_conn)?;
-        let posts = query_suggestions(&client, q).await?;
-        crate::cache::set_suggestions(q, posts.clone()).await;
-        Ok(PostSuggestionResponse { posts })
     }
 
-    #[cfg(not(feature = "server"))]
-    {
-        let _ = query;
-        Ok(PostSuggestionResponse { posts: Vec::new() })
+    let q = query.trim();
+    if q.is_empty() || q.chars().count() > MAX_QUERY_CHARS {
+        return Ok(PostSuggestionResponse { posts: Vec::new() });
     }
+    if let Some(posts) = crate::cache::get_suggestions(q).await {
+        return Ok(PostSuggestionResponse { posts });
+    }
+    let client = get_conn().await.map_err(AppError::db_conn)?;
+    let posts = query_suggestions(&client, q).await?;
+    crate::cache::set_suggestions(q, posts.clone()).await;
+    Ok(PostSuggestionResponse { posts })
 }
 
 #[cfg(all(test, feature = "server"))]
@@ -242,58 +233,47 @@ fn percent_decode(text: &str) -> String {
 /// 地址里没有可用的词时不查询。公开接口，结果不缓存（只在 404 时调用）。
 #[server(RecommendForPath, endpoint = "recommend_for_path", input = leptos::server_fn::codec::Json)]
 pub async fn recommend_for_path(path: String) -> Result<PathRecommendations, ApiError> {
-    #[cfg(feature = "server")]
-    {
-        let words = path_words(&path);
-        if words.is_empty() {
-            return Ok(PathRecommendations {
-                words,
-                posts: Vec::new(),
-            });
-        }
-        let patterns: Vec<String> = words
-            .iter()
-            .map(|w| format!("%{}%", crate::utils::server::escape_like_pattern(w)))
-            .collect();
-        let client = get_conn().await.map_err(AppError::db_conn)?;
-        let rows = client
-            .query(
-                "SELECT p.slug, p.title, p.summary, p.published_at,
-                        COALESCE(array_agg(t.name ORDER BY t.name) FILTER (WHERE t.name IS NOT NULL), '{}') AS tags,
-                        (SELECT COUNT(*) FROM unnest($1::text[]) w
-                         WHERE p.title ILIKE w ESCAPE '\\' OR p.slug ILIKE w ESCAPE '\\') AS hits
-                 FROM posts p
-                 LEFT JOIN post_tags pt ON p.id = pt.post_id
-                 LEFT JOIN tags t ON pt.tag_id = t.id
-                 WHERE p.status = 'published' AND p.deleted_at IS NULL
-                   AND (p.title ILIKE ANY($1) OR p.slug ILIKE ANY($1))
-                 GROUP BY p.id
-                 ORDER BY hits DESC, p.published_at DESC NULLS LAST
-                 LIMIT $2",
-                &[&patterns, &PATH_RECOMMEND_LIMIT],
-            )
-            .await
-            .map_err(AppError::query)?;
-        let posts = rows
-            .iter()
-            .map(|r| PostSuggestion {
-                slug: r.get("slug"),
-                title: r.get("title"),
-                summary: r.get("summary"),
-                published_at: r.get("published_at"),
-                tags: r.get("tags"),
-            })
-            .collect();
-        Ok(PathRecommendations { words, posts })
-    }
-    #[cfg(not(feature = "server"))]
-    {
-        let _ = path;
-        Ok(PathRecommendations {
-            words: Vec::new(),
+    let words = path_words(&path);
+    if words.is_empty() {
+        return Ok(PathRecommendations {
+            words,
             posts: Vec::new(),
-        })
+        });
     }
+    let patterns: Vec<String> = words
+        .iter()
+        .map(|w| format!("%{}%", crate::utils::server::escape_like_pattern(w)))
+        .collect();
+    let client = get_conn().await.map_err(AppError::db_conn)?;
+    let rows = client
+        .query(
+            "SELECT p.slug, p.title, p.summary, p.published_at,
+                    COALESCE(array_agg(t.name ORDER BY t.name) FILTER (WHERE t.name IS NOT NULL), '{}') AS tags,
+                    (SELECT COUNT(*) FROM unnest($1::text[]) w
+                     WHERE p.title ILIKE w ESCAPE '\\' OR p.slug ILIKE w ESCAPE '\\') AS hits
+             FROM posts p
+             LEFT JOIN post_tags pt ON p.id = pt.post_id
+             LEFT JOIN tags t ON pt.tag_id = t.id
+             WHERE p.status = 'published' AND p.deleted_at IS NULL
+               AND (p.title ILIKE ANY($1) OR p.slug ILIKE ANY($1))
+             GROUP BY p.id
+             ORDER BY hits DESC, p.published_at DESC NULLS LAST
+             LIMIT $2",
+            &[&patterns, &PATH_RECOMMEND_LIMIT],
+        )
+        .await
+        .map_err(AppError::query)?;
+    let posts = rows
+        .iter()
+        .map(|r| PostSuggestion {
+            slug: r.get("slug"),
+            title: r.get("title"),
+            summary: r.get("summary"),
+            published_at: r.get("published_at"),
+            tags: r.get("tags"),
+        })
+        .collect();
+    Ok(PathRecommendations { words, posts })
 }
 
 #[cfg(test)]
