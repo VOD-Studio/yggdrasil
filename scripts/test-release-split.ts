@@ -622,12 +622,12 @@ async function main() {
         () => false,
       );
     check('3 SPA 进入组件图鉴补载后台样式', showcaseStyled);
-    check(
-      '3 组件图鉴主区使用宽版布局',
-      (await aboutPage
-        .locator('.site-shell > main')
-        .evaluate((main) => getComputedStyle(main).maxWidth)) === '1152px',
-    );
+    // 地址和样式可能先于懒加载视图就绪，此时主区仍沿用旧页面的宽度。
+    await aboutPage.locator('.site-shell > main > .showcase-gallery').waitFor();
+    const showcaseMaxWidth = await aboutPage
+      .locator('.site-shell > main')
+      .evaluate((main) => getComputedStyle(main).maxWidth);
+    check('3 组件图鉴主区使用宽版布局', showcaseMaxWidth === '1152px', showcaseMaxWidth);
     check(
       '3 SPA 进入组件图鉴无脚本错误',
       scriptErrors(aboutLog).length === 0,
