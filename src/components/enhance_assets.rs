@@ -26,13 +26,18 @@ use crate::static_assets::{self, ENHANCE_JS, HIGHLIGHT_CSS, KATEX_CSS, LIGHTBOX_
 const HIGHLIGHT_MARKER: &str = "<!--ygg-highlight-->";
 const KATEX_MARKER: &str = "<!--ygg-katex-->";
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct MarkdownStyles {
     pub(crate) highlight: bool,
     pub(crate) katex: bool,
 }
 
 impl MarkdownStyles {
+    pub(crate) fn include(&mut self, other: Self) {
+        self.highlight |= other.highlight;
+        self.katex |= other.katex;
+    }
+
     pub(crate) fn for_html(html: &str) -> Self {
         Self {
             highlight: html.contains("<pre>")

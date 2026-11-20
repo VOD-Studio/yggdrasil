@@ -45,10 +45,15 @@ fn note_kind(row: &tokio_postgres::Row) -> NoteKind {
     }
 }
 
+fn note_sections(toc_html: &str) -> u32 {
+    let total = crate::utils::toc::toc_sections(toc_html, 0).total;
+    u32::try_from(total).unwrap_or(u32::MAX)
+}
+
 fn map_note(row: &tokio_postgres::Row, access: &Access) -> Note {
     let admin = matches!(access, Access::Owner(_));
     let toc_html: String = row.get("toc_html");
-    let sections = crate::utils::toc::toc_sections(&toc_html, 0).total;
+    let sections = note_sections(&toc_html);
     Note {
         id: row.get("id"),
         slug: row.get("slug"),
@@ -75,7 +80,7 @@ fn map_note(row: &tokio_postgres::Row, access: &Access) -> Note {
         },
         deleted_at: if admin { row.get("deleted_at") } else { None },
         notebook_ids: row.get("notebook_ids"),
-        sections: u32::try_from(sections).unwrap_or(u32::MAX),
+        sections,
     }
 }
 
@@ -151,6 +156,44 @@ pub async fn list(access: Access, filter: NoteFilter) -> Result<NotePage, AppErr
     Ok(NotePage { notes, total })
 }
 
+pub async fn list_notebook_entries(id: i32, page: i32) -> Result<NotebookPageEntries, AppError> {
+    const FROM: &str = "FROM notebook_notes bn
+        JOIN notebooks b ON b.id=bn.notebook_id
+        JOIN notes n ON n.id=bn.note_id
+        JOIN note_revisions r ON r.note_id=n.id AND r.version=n.published_version
+        WHERE b.id=$1 AND b.is_public AND b.archived_at IS NULL AND n.deleted_at IS NULL";
+    let client = get_conn().await.map_err(AppError::db_conn)?;
+    let total = client
+        .query_one(&format!("SELECT COUNT(*) {FROM}"), &[&id])
+        .await
+        .map_err(AppError::query)?
+        .get(0);
+    let offset = i64::from(page.clamp(1, 100_000) - 1) * 20;
+    let notes = client
+        .query(
+            &format!(
+                "SELECT n.id, n.slug, r.kind, r.title, r.summary, r.created_at,
+                        CASE WHEN r.kind='topic' THEN r.toc_html ELSE '' END AS toc_html
+                 {FROM} ORDER BY bn.position, r.created_at DESC, n.id DESC LIMIT 20 OFFSET $2"
+            ),
+            &[&id, &offset],
+        )
+        .await
+        .map_err(AppError::query)?
+        .iter()
+        .map(|row| NotebookNote {
+            id: row.get("id"),
+            slug: row.get("slug"),
+            kind: note_kind(row),
+            title: row.get("title"),
+            summary: row.get("summary"),
+            sections: note_sections(row.get("toc_html")),
+            updated_at: row.get("created_at"),
+        })
+        .collect();
+    Ok(NotebookPageEntries { notes, total })
+}
+
 /// 首页沿用公开列表的版本和排序，只读取前四条所需的字段。
 pub async fn recent_public() -> Result<Vec<RecentNote>, AppError> {
     let client = get_conn().await.map_err(AppError::db_conn)?;
@@ -178,32 +221,37 @@ pub async fn recent_public() -> Result<Vec<RecentNote>, AppError> {
 /// 公开笔记的类型计数与常用标签（只看已发布的版本）。
 pub async fn stats(tag_limit: i64) -> Result<NoteStats, AppError> {
     let client = get_conn().await.map_err(AppError::db_conn)?;
-    let counts = client
-        .query_one(
-            "SELECT COUNT(*) FILTER (WHERE r.kind='moment'), COUNT(*) FILTER (WHERE r.kind='topic')
-             FROM notes n JOIN note_revisions r ON r.note_id=n.id AND r.version=n.published_version
-             WHERE n.deleted_at IS NULL",
-            &[],
-        )
-        .await
-        .map_err(AppError::query)?;
-    let tags = client
+    let rows = client
         .query(
-            "SELECT tag, COUNT(*) FROM notes n
-             JOIN note_revisions r ON r.note_id=n.id AND r.version=n.published_version,
-             unnest(r.tags) tag
-             WHERE n.deleted_at IS NULL GROUP BY tag ORDER BY COUNT(*) DESC, tag LIMIT $1",
+            "WITH published AS MATERIALIZED (
+                 SELECT r.kind, r.tags FROM notes n
+                 JOIN note_revisions r ON r.note_id=n.id AND r.version=n.published_version
+                 WHERE n.deleted_at IS NULL
+             ), kinds AS (
+                 SELECT COUNT(*) FILTER (WHERE kind='moment') AS moments,
+                        COUNT(*) FILTER (WHERE kind='topic') AS topics
+                 FROM published
+             ), popular AS (
+                 SELECT tag, COUNT(*) AS note_count FROM published, unnest(tags) tag
+                 GROUP BY tag ORDER BY note_count DESC, tag LIMIT $1
+             )
+             SELECT kinds.moments, kinds.topics, popular.tag, popular.note_count
+             FROM kinds LEFT JOIN popular ON TRUE
+             ORDER BY popular.note_count DESC, popular.tag",
             &[&tag_limit],
         )
         .await
-        .map_err(AppError::query)?
-        .iter()
-        .map(|r| (r.get(0), r.get(1)))
-        .collect();
+        .map_err(AppError::query)?;
     Ok(NoteStats {
-        moments: counts.get(0),
-        topics: counts.get(1),
-        tags,
+        moments: rows[0].get("moments"),
+        topics: rows[0].get("topics"),
+        tags: rows
+            .iter()
+            .filter_map(|r| {
+                r.get::<_, Option<String>>("tag")
+                    .map(|tag| (tag, r.get("note_count")))
+            })
+            .collect(),
     })
 }
 
@@ -333,7 +381,7 @@ pub async fn get_public(slug: &str) -> Result<PublicNote, AppError> {
         .map_err(AppError::query)?
         .ok_or(AppError::NotFound("笔记不存在或未公开"))?;
     let toc_html: String = row.get("toc_html");
-    let sections = crate::utils::toc::toc_sections(&toc_html, 0).total;
+    let sections = note_sections(&toc_html);
     Ok(PublicNote {
         id: row.get("id"),
         slug: row.get("slug"),
@@ -346,7 +394,7 @@ pub async fn get_public(slug: &str) -> Result<PublicNote, AppError> {
         tags: row.get("tags"),
         created_at: row.get("created_at"),
         updated_at: row.get("revision_at"),
-        sections: u32::try_from(sections).unwrap_or(u32::MAX),
+        sections,
     })
 }
 
@@ -637,6 +685,7 @@ pub async fn save_notebook(owner_id: i32, input: NotebookInput) -> Result<(), Ap
             .await
             .map_err(AppError::query)?;
     }
+    crate::tasks::cache_sync::sync_after_write(&client).await;
     Ok(())
 }
 
@@ -650,6 +699,7 @@ pub async fn archive_notebook(owner_id: i32, id: i32, archived: bool) -> Result<
     if changed == 0 {
         return Err(AppError::NotFound("笔记本不存在"));
     }
+    crate::tasks::cache_sync::sync_after_write(&client).await;
     Ok(())
 }
 

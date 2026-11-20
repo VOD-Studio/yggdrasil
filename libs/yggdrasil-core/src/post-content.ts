@@ -58,7 +58,5 @@ function initCopyButtons(root: Element): void {
 }
 
 export function initPostContent(selector: string): void {
-  const root = document.querySelector(selector);
-  if (!root) return;
-  initCopyButtons(root);
+  document.querySelectorAll(selector).forEach(initCopyButtons);
 }

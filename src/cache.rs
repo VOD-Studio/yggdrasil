@@ -7,6 +7,8 @@
 #[cfg(feature = "server")]
 use moka::future::Cache;
 #[cfg(feature = "server")]
+use std::sync::atomic::{AtomicU64, Ordering};
+#[cfg(feature = "server")]
 use std::sync::LazyLock;
 #[cfg(feature = "server")]
 use std::time::Duration;
@@ -17,6 +19,8 @@ use crate::api::feed::FeedCache;
 use crate::models::comment::PublicComment;
 #[cfg(feature = "server")]
 use crate::models::friend_link::FriendLink;
+#[cfg(feature = "server")]
+use crate::models::note::{NoteStats, Notebook};
 #[cfg(feature = "server")]
 use crate::models::post::{PostListItem, PostStats, Tag};
 #[cfg(feature = "server")]
@@ -85,6 +89,71 @@ const TTL_IMAGE_CACHE_SETTINGS: Duration = Duration::from_secs(60);
 /// 日志 target 去重列表缓存 TTL：60 秒。DISTINCT 全表扫不值得每开页面跑一次。
 #[cfg(feature = "server")]
 const TTL_LOG_TARGETS: Duration = Duration::from_secs(60);
+
+/// 按本机世代填充，跨实例失效时，正在执行的旧查询不会回填到新世代。
+#[cfg(feature = "server")]
+struct PublicNoteCache<T> {
+    generation: AtomicU64,
+    entries: Cache<u64, T>,
+}
+
+#[cfg(feature = "server")]
+impl<T: Clone + Send + Sync + 'static> PublicNoteCache<T> {
+    fn new() -> Self {
+        Self {
+            generation: AtomicU64::new(0),
+            entries: Cache::builder()
+                .max_capacity(2)
+                .time_to_live(Duration::from_secs(60))
+                .build(),
+        }
+    }
+
+    async fn get(
+        &self,
+        load: impl std::future::Future<Output = Result<T, crate::api::error::AppError>>,
+    ) -> Result<T, crate::api::error::ApiError> {
+        self.entries
+            .try_get_with(self.generation.load(Ordering::Acquire), async {
+                load.await.map_err(crate::api::error::ApiError::from)
+            })
+            .await
+            .map_err(|error| (*error).clone())
+    }
+
+    fn invalidate(&self) {
+        self.generation.fetch_add(1, Ordering::AcqRel);
+    }
+}
+
+#[cfg(feature = "server")]
+static NOTE_STATS_CACHE: LazyLock<PublicNoteCache<NoteStats>> = LazyLock::new(PublicNoteCache::new);
+#[cfg(feature = "server")]
+static PUBLIC_NOTEBOOKS_CACHE: LazyLock<PublicNoteCache<Vec<Notebook>>> =
+    LazyLock::new(PublicNoteCache::new);
+
+#[cfg(feature = "server")]
+pub(crate) async fn note_stats() -> Result<NoteStats, crate::api::error::ApiError> {
+    NOTE_STATS_CACHE
+        .get(crate::api::notes::store::stats(8))
+        .await
+}
+
+#[cfg(feature = "server")]
+pub(crate) async fn public_notebooks() -> Result<Vec<Notebook>, crate::api::error::ApiError> {
+    use crate::api::notes::store::{notebooks, Access};
+    PUBLIC_NOTEBOOKS_CACHE.get(notebooks(Access::Public)).await
+}
+
+#[cfg(feature = "server")]
+pub(crate) fn invalidate_note_stats() {
+    NOTE_STATS_CACHE.invalidate();
+}
+
+#[cfg(feature = "server")]
+pub(crate) fn invalidate_public_notebooks() {
+    PUBLIC_NOTEBOOKS_CACHE.invalidate();
+}
 
 // ============================================================================
 // 缓存 Key 类型
@@ -760,6 +829,8 @@ pub fn invalidate_shared_content() {
     invalidate_all_comments();
     invalidate_friend_links();
     invalidate_shared_settings();
+    invalidate_note_stats();
+    invalidate_public_notebooks();
     crate::ssr_cache::invalidate_ssr_all_public();
 }
 

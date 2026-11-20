@@ -24,6 +24,7 @@ struct ContentRevision {
     friends: i64,
     settings: i64,
     public_notes: Option<i64>,
+    notebooks: Option<i64>,
 }
 
 /// 提交后等待本机应用已提交的版本。监听器也可能先完成这一步。
@@ -48,7 +49,8 @@ async fn refresh_revision(
                     COALESCE((to_jsonb(r)->>'comments_revision')::bigint, revision) AS comments_revision,
                     COALESCE((to_jsonb(r)->>'friends_revision')::bigint, revision) AS friends_revision,
                     COALESCE((to_jsonb(r)->>'settings_revision')::bigint, revision) AS settings_revision,
-                    (to_jsonb(r)->>'public_notes_revision')::bigint AS public_notes_revision
+                    (to_jsonb(r)->>'public_notes_revision')::bigint AS public_notes_revision,
+                    (to_jsonb(r)->>'notebooks_revision')::bigint AS notebooks_revision
              FROM content_cache_revision r WHERE singleton",
             &[],
         )
@@ -61,6 +63,7 @@ async fn refresh_revision(
         friends: row.get("friends_revision"),
         settings: row.get("settings_revision"),
         public_notes: row.get("public_notes_revision"),
+        notebooks: row.get("notebooks_revision"),
     };
     if *observed != Some(revision) {
         if let Some(previous) = observed.filter(|previous| {
@@ -70,6 +73,17 @@ async fn refresh_revision(
             let comments_changed = previous.comments != revision.comments;
             let friends_changed = previous.friends != revision.friends;
             let settings_changed = previous.settings != revision.settings;
+            let public_notes_changed =
+                revision.public_notes.is_none() || previous.public_notes != revision.public_notes;
+            if public_notes_changed {
+                crate::cache::invalidate_note_stats();
+            }
+            if public_notes_changed
+                || revision.notebooks.is_none()
+                || previous.notebooks != revision.notebooks
+            {
+                crate::cache::invalidate_public_notebooks();
+            }
             if posts_changed {
                 crate::cache::invalidate_all_post_caches();
             }
@@ -89,7 +103,7 @@ async fn refresh_revision(
                 || revision.public_notes.is_none()
             {
                 crate::ssr_cache::invalidate_ssr_all_public();
-            } else if previous.public_notes != revision.public_notes {
+            } else if public_notes_changed {
                 crate::ssr_cache::invalidate_home();
             }
         } else {

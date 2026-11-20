@@ -18,10 +18,15 @@ use leptos_router::hooks::{use_params_map, use_query_map};
 use leptos_router::{lazy_route, LazyRoute};
 
 use crate::api::error::ApiError;
-use crate::api::notes::{get_note, get_note_context, list_notebooks, list_notes, note_stats};
+use crate::api::notes::{
+    get_note, get_note_context, list_notebook_entries, list_notebooks, list_notes, note_stats,
+};
 use crate::components::empty_state::{EmptyState, EmptyStateAction};
+use crate::components::enhance_assets::{EnhanceScript, LightboxAssets, MarkdownStyles};
 use crate::components::mascot::Mascot;
-use crate::components::post::post_content::{hydration_skeleton, PostContent};
+use crate::components::post::post_content::{
+    hydration_skeleton, PostContent, HYDRATION_PLACEHOLDER,
+};
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::skeletons::notes_route_skeleton::{
     NoteReaderSkeleton, NotebookSkeleton, NotesPageSkeleton,
@@ -71,12 +76,9 @@ struct DayGroup {
 }
 
 impl DayGroup {
-    /// 分组的渲染键：日期加上每条笔记的 `(id, version)`，内容变化时才重建该组。
-    fn key(&self) -> (NaiveDate, Vec<(i32, i32)>) {
-        (
-            self.date,
-            self.notes.iter().map(|n| (n.id, n.version)).collect(),
-        )
+    /// 按日期和组首笔记区分分组。分页追加同日笔记时保留首屏已水合的正文节点。
+    fn key(&self) -> (NaiveDate, i32) {
+        (self.date, self.notes[0].id)
     }
 }
 
@@ -156,7 +158,27 @@ async fn fetch_note_stats() -> PageJson<NoteStats> {
 
 #[leptos::lazy]
 async fn fetch_note_page(filter: NoteFilter) -> PageJson<NotePage> {
-    PageJson::new(list_notes(filter).await)
+    PageJson::with_hydration(load_note_page(filter).await, |page| {
+        let mut page = page.clone();
+        for note in &mut page.notes {
+            if !note.content_html.is_empty() {
+                let skeleton = hydration_skeleton(&note.content_html);
+                // 旧数据可能只含空白，保留正文分支所需的非空值。
+                note.content_html = if skeleton.is_empty() {
+                    " ".into()
+                } else {
+                    skeleton
+                };
+            }
+        }
+        page
+    })
+}
+
+/// 筛选和分页共用的请求，首次水合不用加载接口客户端。
+#[leptos::lazy]
+async fn load_note_page(filter: NoteFilter) -> Result<NotePage, ApiError> {
+    list_notes(filter).await
 }
 
 /// 列表页首屏数据；无参，便于 `unit` 包成可作预取键的取数函数。
@@ -222,7 +244,7 @@ struct ShownNotes {
 
 /// 首屏随 SSR 预取挂载；之后的筛选切换在后台请求，结果返回前继续显示当前列表。
 /// 不能重新触发 `Resource`：外层 `Suspense` 会再次挂起回骨架屏，页面高度坍缩并带动
-/// 滚动位置跳动。回到首屏筛选直接复用预取结果。
+/// 滚动位置跳动。回到默认筛选时复用完整预取结果，只有水合骨架时重新取数。
 ///
 /// 返回当前显示的列表、重试回调与「重试中」标志。
 fn use_note_page(
@@ -230,10 +252,17 @@ fn use_note_page(
     first: Result<NotePage, ApiError>,
 ) -> (RwSignal<ShownNotes>, Callback<()>, RwSignal<bool>) {
     let first_filter = first_filter();
+    let first_complete = first.as_ref().is_ok_and(|page| {
+        !page
+            .notes
+            .iter()
+            .any(|note| note.content_html.contains(HYDRATION_PLACEHOLDER))
+    });
     let shown = RwSignal::new(ShownNotes {
         filter: first_filter.clone(),
         result: first.clone(),
     });
+    let default_page = StoredValue::new(first.ok().filter(|_| first_complete));
     let retry = RwSignal::new(0_u32);
     let retrying = RwSignal::new(false);
     // 世代号：任何一次筛选变化或重试都会作废更早发出的请求。
@@ -254,22 +283,28 @@ fn use_note_page(
                 return nonce;
             }
             // 回到挂载时的筛选：预取结果可用就直接复用。
-            if wanted == first_filter && first.is_ok() {
-                shown.set(ShownNotes {
-                    filter: first_filter.clone(),
-                    result: first.clone(),
-                });
-                return nonce;
+            if wanted == first_filter {
+                if let Some(page) = default_page.get_value() {
+                    shown.set(ShownNotes {
+                        filter: wanted,
+                        result: Ok(page),
+                    });
+                    return nonce;
+                }
             }
         }
         if retried {
             retrying.set(true);
         }
+        let is_default = wanted == first_filter;
         spawn_local(async move {
-            let result = list_notes(wanted.clone()).await;
+            let result = load_note_page(wanted.clone()).await;
             // 之后又有新的筛选或重试：这份结果作废。
             if generation.try_get_value() != Some(id) {
                 return;
+            }
+            if is_default {
+                default_page.set_value(result.as_ref().ok().cloned());
             }
             let _ = shown.try_set(ShownNotes {
                 filter: wanted,
@@ -530,6 +565,28 @@ fn NoteStream(
     let more_failed = RwSignal::new(false);
     let loading = move || shown.with(|s| s.filter != filter.get());
     let books = std::sync::Arc::new(books);
+    // 资源首次需要时加载，保留到离开笔记流。分页和筛选使用同一组资源。
+    let assets = Memo::new(move |previous: Option<&(bool, MarkdownStyles)>| {
+        let (mut has_body, mut styles) = previous.copied().unwrap_or_default();
+        shown.with(|shown| {
+            if let Ok(page) = &shown.result {
+                older.with(|extra| {
+                    let more = if extra.filter == shown.filter {
+                        extra.notes.as_slice()
+                    } else {
+                        &[]
+                    };
+                    for note in page.notes.iter().chain(more) {
+                        if !note.content_html.is_empty() {
+                            has_body = true;
+                            styles.include(MarkdownStyles::for_html(&note.content_html));
+                        }
+                    }
+                });
+            }
+        });
+        (has_body, styles)
+    });
 
     let body = move || {
         let ShownNotes {
@@ -557,6 +614,21 @@ fn NoteStream(
                 });
                 let empty = Memo::new(move |_| all.with(|all| all.is_empty()));
                 let groups = Memo::new(move |_| all.with(|all| group_by_day(all)));
+                #[cfg(target_arch = "wasm32")]
+                Effect::new(move |_| {
+                    if all.with(|notes| notes.iter().any(|note| !note.content_html.is_empty())) {
+                        request_animation_frame(move || {
+                            // 列表更新后再扫描已提交的 DOM；切走路由或筛选已作废则跳过。
+                            if all.try_with_untracked(|_| ()).is_some() {
+                                use crate::bridges::globals;
+                                let selector = ".notes-stream .post-content";
+                                globals::init_post_content(selector);
+                                globals::init_lightbox(&[selector]);
+                                globals::scroll_to_hash();
+                            }
+                        });
+                    }
+                });
                 let loaded_pages = {
                     let shown_filter = shown_filter.clone();
                     move || {
@@ -586,7 +658,7 @@ fn NoteStream(
                         loading_more.set(true);
                         more_failed.set(false);
                         spawn_local(async move {
-                            let result = list_notes(NoteFilter {
+                            let result = load_note_page(NoteFilter {
                                 page,
                                 ..base.clone()
                             })
@@ -645,12 +717,17 @@ fn NoteStream(
                         let has_more = has_more.clone();
                         view! {
                             <For
-                                each=move || groups.get()
-                                key=|group| group.key()
-                                children=move |group| {
+                                each=move || groups.with(|groups| groups.iter().map(DayGroup::key).enumerate().collect::<Vec<_>>())
+                                key=|(_, key)| *key
+                                children=move |(index, key)| {
+                                    let notes = Signal::derive(move || {
+                                        groups.with(|groups| groups.get(index).filter(|group| group.key() == key)
+                                            .map(|group| group.notes.clone()).unwrap_or_default())
+                                    });
                                     view! {
                                         <DaySection
-                                            group
+                                            date=key.0
+                                            notes
                                             books=books.clone()
                                             today
                                             active_tag
@@ -693,6 +770,11 @@ fn NoteStream(
     };
 
     view! {
+        <Show when=move || assets.get().0>
+            <EnhanceScript/>
+            <LightboxAssets/>
+        </Show>
+        {move || assets.get().1.links()}
         <section
             class="notes-stream page-enter"
             style="--enter-index: 2"
@@ -707,32 +789,13 @@ fn NoteStream(
 /// 一天的笔记：日期标题（浏览器端再补相对日期）加该天的随记与主题卡片。
 #[component]
 fn DaySection(
-    group: DayGroup,
+    date: NaiveDate,
+    notes: Signal<Vec<Note>>,
     books: std::sync::Arc<Vec<Notebook>>,
     today: RwSignal<Option<NaiveDate>>,
     #[prop(into)] active_tag: Signal<String>,
     filter: RwSignal<NoteFilter>,
 ) -> impl IntoView {
-    let date = group.date;
-    let items = group
-        .notes
-        .into_iter()
-        .map(|note| {
-            if note.kind == NoteKind::Topic {
-                let book = notebook_title(&books, &note);
-                view! { <TopicCard note book/> }.into_any()
-            } else {
-                view! {
-                    <MomentEntry
-                        note
-                        active_tag
-                        on_tag=move |tag: String| filter.update(|f| f.tag = tag)
-                    />
-                }
-                .into_any()
-            }
-        })
-        .collect_view();
     view! {
         <section class="notes-day" aria-label=date.to_string()>
             <div class="notes-day-head">
@@ -747,7 +810,24 @@ fn DaySection(
                         })
                 }}
             </div>
-            {items}
+            <For
+                each=move || notes.get()
+                key=|note| (note.id, note.version)
+                children=move |note| {
+                    if note.kind == NoteKind::Topic {
+                        let book = notebook_title(&books, &note);
+                        view! { <TopicCard note book/> }.into_any()
+                    } else {
+                        view! {
+                            <MomentEntry
+                                note
+                                active_tag
+                                on_tag=move |tag: String| filter.update(|f| f.tag = tag)
+                            />
+                        }.into_any()
+                    }
+                }
+            />
         </section>
     }
 }
@@ -773,7 +853,7 @@ fn MomentEntry(
     } else {
         view! {
             <div class="note-moment-body">
-                <PostContent content_html=note.content_html.clone()/>
+                <PostContent content_html=note.content_html.clone() managed=true/>
             </div>
         }
         .into_any()
@@ -863,7 +943,7 @@ fn TopicCard(note: Note, book: Option<(i32, String)>) -> impl IntoView {
 pub struct NotebookRoute {
     id: Memo<Option<i32>>,
     books: RouteData<Vec<Notebook>>,
-    notes: RouteData<NotePage>,
+    notes: RouteData<NotebookPageEntries>,
 }
 
 /// 笔记本 id 参数：非数字为 `None`（渲染 404）。`data()` 与悬停预取共用。
@@ -878,13 +958,18 @@ fn notebook_books(
     fetch_notebooks()
 }
 
-/// 笔记本目录页的第一页笔记。
-fn notebook_notes(id: Option<i32>) -> impl Future<Output = PageJson<NotePage>> + Send + 'static {
-    fetch_note_page(NoteFilter {
-        notebook_id: id,
-        page: 1,
-        ..Default::default()
+/// 笔记本目录页的第一页条目。
+#[leptos::lazy]
+async fn notebook_notes(id: Option<i32>) -> PageJson<NotebookPageEntries> {
+    PageJson::new(match id {
+        Some(id) => load_notebook_entries(id, 1).await,
+        None => Ok(NotebookPageEntries::default()),
     })
+}
+
+#[leptos::lazy]
+async fn load_notebook_entries(id: i32, page: i32) -> Result<NotebookPageEntries, ApiError> {
+    list_notebook_entries(id, page).await
 }
 
 #[lazy_route]
@@ -947,7 +1032,7 @@ impl NotebookRoute {
 fn NotebookPage(
     id: i32,
     books: Result<Vec<Notebook>, ApiError>,
-    notes: Result<NotePage, ApiError>,
+    notes: Result<NotebookPageEntries, ApiError>,
 ) -> impl IntoView {
     let books = RwSignal::new(books);
     let notes = RwSignal::new(notes);
@@ -996,9 +1081,9 @@ fn NotebookContent(
     id: i32,
     book: Notebook,
     others: Vec<Notebook>,
-    notes: RwSignal<Result<NotePage, ApiError>>,
+    notes: RwSignal<Result<NotebookPageEntries, ApiError>>,
 ) -> impl IntoView {
-    let older = RwSignal::new(Vec::<Note>::new());
+    let older = RwSignal::new(Vec::<NotebookNote>::new());
     let next_page = RwSignal::new(2_i32);
     let loading_more = RwSignal::new(false);
     let more_failed = RwSignal::new(false);
@@ -1017,12 +1102,7 @@ fn NotebookContent(
         loading_more.set(true);
         more_failed.set(false);
         spawn_local(async move {
-            let filter = NoteFilter {
-                notebook_id: Some(id),
-                page: next_page.get_untracked(),
-                ..Default::default()
-            };
-            match list_notes(filter).await {
+            match load_notebook_entries(id, next_page.get_untracked()).await {
                 Ok(next) => {
                     let _ = older.try_update(|o| o.extend(next.notes));
                     let _ = next_page.try_update(|p| *p += 1);
@@ -1037,12 +1117,7 @@ fn NotebookContent(
     let retry_notes = move |_| {
         notes_retrying.set(true);
         spawn_local(async move {
-            let filter = NoteFilter {
-                notebook_id: Some(id),
-                page: 1,
-                ..Default::default()
-            };
-            let result = list_notes(filter).await;
+            let result = load_notebook_entries(id, 1).await;
             let _ = notes.try_set(result);
             let _ = notes_retrying.try_set(false);
         });
@@ -1203,8 +1278,8 @@ fn NotebookBack() -> impl IntoView {
 }
 
 #[component]
-fn NotebookEntry(note: Note, number: usize, book: i32) -> impl IntoView {
-    let updated = md(&note_time(&note), '.');
+fn NotebookEntry(note: NotebookNote, number: usize, book: i32) -> impl IntoView {
+    let updated = md(&note.updated_at, '.');
     let meta = match note.kind {
         NoteKind::Topic if note.sections > 0 => {
             format!("主题笔记 · {} 节 · 更新于 {updated}", note.sections)
@@ -1214,13 +1289,14 @@ fn NotebookEntry(note: Note, number: usize, book: i32) -> impl IntoView {
     };
     let summary = (!note.summary.trim().is_empty() && !note.title.trim().is_empty())
         .then(|| view! { <span class="notebook-entry-summary">{note.summary.clone()}</span> });
+    let title = display_title(note.kind, &note.title, &note.summary);
     view! {
         <a class="notebook-entry" href=note_route(&note.slug, Some(book)).to_string()>
             <span class="notebook-entry-number tabular-nums" aria-hidden="true">
                 {format!("{number:02}")}
             </span>
             <span class="notebook-entry-main">
-                <span class="notebook-entry-title">{note.display_title()}</span>
+                <span class="notebook-entry-title">{title}</span>
                 {summary} <span class="notebook-entry-meta tabular-nums">{meta}</span>
             </span>
             <span class="notebook-entry-arrow" aria-hidden="true">
@@ -1694,11 +1770,11 @@ mod tests {
     }
 
     #[test]
-    fn day_group_key_changes_when_notes_change() {
+    fn appending_to_a_day_preserves_the_group_key() {
         let one = group_by_day(&[note(1, 15, 16)]);
         let two = group_by_day(&[note(1, 15, 16), note(2, 15, 9)]);
-        assert_ne!(one[0].key(), two[0].key());
-        assert_eq!(one[0].key(), group_by_day(&[note(1, 15, 16)])[0].key());
+        assert_eq!(one[0].key(), two[0].key());
+        assert_ne!(one[0].key(), group_by_day(&[note(2, 15, 9)])[0].key());
     }
 
     #[test]
@@ -1744,9 +1820,15 @@ mod tests {
 
     #[test]
     fn notebook_entry_numbers_and_describes_each_kind() {
-        let mut moment = note(5, 15, 9);
-        moment.title = "标题".to_string();
-        moment.summary = "摘要".to_string();
+        let moment = NotebookNote {
+            id: 5,
+            slug: "n5".into(),
+            kind: NoteKind::Moment,
+            title: "标题".into(),
+            summary: "摘要".into(),
+            sections: 0,
+            updated_at: note(5, 15, 9).updated_at,
+        };
         let html =
             Owner::new().with(|| view! { <NotebookEntry note=moment number=3 book=9/> }.to_html());
         assert!(html.contains(r#"href="/notes/n5?book=9""#));

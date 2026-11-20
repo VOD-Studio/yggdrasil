@@ -126,6 +126,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "035",
         include_str!("../../migrations/035_drop_duplicate_session_token_index.sql"),
     ),
+    (
+        "036",
+        include_str!("../../migrations/036_public_notebook_cache_revision.sql"),
+    ),
     // 新增迁移在此追加，同时在 migrations/ 下创建对应 .sql 文件。
 ];
 

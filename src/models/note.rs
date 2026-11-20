@@ -136,6 +136,28 @@ pub struct NotePage {
     pub total: i64,
 }
 
+/// 笔记本目录只显示标题、摘要和更新时间。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NotebookNote {
+    pub id: i32,
+    pub slug: String,
+    pub kind: NoteKind,
+    pub title: String,
+    pub summary: String,
+    pub sections: u32,
+    #[cfg_attr(
+        target_arch = "wasm32",
+        serde(deserialize_with = "crate::models::rfc3339::deserialize")
+    )]
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct NotebookPageEntries {
+    pub notes: Vec<NotebookNote>,
+    pub total: i64,
+}
+
 /// 首页最近笔记的标题、链接和显示日期。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RecentNote {

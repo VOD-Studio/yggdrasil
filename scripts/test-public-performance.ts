@@ -173,6 +173,78 @@ async function verifyNoteHydration(page: Page, base: string, mobile: boolean) {
   await body.getByText(marker).waitFor();
 }
 
+async function verifyNoteStream(page: Page, base: string) {
+  const marker = 'SHORT_MOMENT_BODY_FIXTURE';
+  const response = await page.goto(base + '/notes');
+  assert(response);
+  assert(response.ok());
+  const source = await response.text();
+  assert.equal(source.split(marker).length - 1, 19);
+  assert.equal(source.match(/<script[^>]+src="[^"]*yggdrasil-enhance\.js/g)?.length, 1);
+  assert.equal(source.match(/<script[^>]+src="[^"]*\/lightbox\/lightbox\.js/g)?.length, 1);
+  assert.equal(source.match(/<link[^>]+href="[^"]*\/lightbox\/lightbox\.css/g)?.length, 1);
+  await hydrated(page);
+  const moments = page.locator('.notes-stream .note-moment-body');
+  await page.waitForFunction(
+    () => document.querySelectorAll('.notes-stream .note-moment-body .copy-code').length === 19,
+  );
+  await page.getByRole('button', { name: '更早的记录' }).click();
+  await page.waitForFunction(
+    () => document.querySelectorAll('.notes-stream .note-moment-body .copy-code').length === 21,
+  );
+  assert.equal(
+    (await moments.allTextContents()).filter((body) => body.includes(marker)).length,
+    21,
+  );
+  const kinds = page.locator('.notes-kinds');
+  await kinds.getByRole('button', { name: /^主题笔记/ }).click();
+  await moments.first().waitFor({ state: 'detached' });
+  await kinds.getByRole('button', { name: /^全部/ }).click();
+  await moments.first().getByText(marker).waitFor();
+
+  const book = await page.goto(base + '/notes/book/1');
+  assert(book);
+  assert(book.ok());
+  assert(!(await book.text()).includes(marker));
+  await hydrated(page);
+  assert.equal(await page.locator('.notebook-entry').count(), 20);
+  const nextEntries = page.waitForResponse((result) =>
+    new URL(result.url()).pathname.endsWith('/api/list_notebook_entries'),
+  );
+  await page.getByRole('button', { name: '加载更多' }).click();
+  const next = await nextEntries;
+  assert(next.ok());
+  assert(!(await next.text()).includes('content_html'));
+  await page.waitForFunction(() => document.querySelectorAll('.notebook-entry').length === 22);
+}
+
+async function verifyNotebookCache(bases: string[]) {
+  const route = '/notes';
+  const name = '公开笔记本回归';
+  for (const base of bases) assert((await read(base, route)).body.includes(name));
+  const archived = await read(bases[0], '/api/archive_notebook', {
+    method: 'POST',
+    headers: {
+      Cookie: `session=${adminSession}`,
+      Origin: bases[0],
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ id: 1, archived: true }),
+  });
+  assert.equal(archived.status, 200, archived.body);
+  assert(!(await read(bases[0], route)).body.includes(name));
+  await until(
+    async () => !(await read(bases[1], route)).body.includes(name),
+    '远端笔记本缓存未失效',
+  );
+  for (const base of bases) {
+    const page = await read(base, '/notes/book/1');
+    assert(page.body.includes('笔记本不存在'));
+    assert(!page.body.includes(name));
+    assert(!page.body.includes('SHORT_MOMENT_BODY_FIXTURE'));
+  }
+}
+
 async function verifyRecentNoteCache(bases: string[]) {
   const otherRoutes = ['/archives', '/post/perf-001'];
   const before = await Promise.all(
@@ -221,6 +293,14 @@ async function verifyRecentNoteCache(bases: string[]) {
             Number(before[i][0].headers['x-ssr-generation']) + index + 1,
       );
     }, `Both home pages must reflect ${action}`);
+    await until(async () => {
+      const pages = await Promise.all(bases.map((base) => read(base, '/notes')));
+      return pages.every(
+        (stats) =>
+          stats.status === 200 &&
+          stats.body.includes(`${action === 'publish' ? 23 : 22} 条 · 1 个笔记本`),
+      );
+    }, `Both note statistics must reflect ${action}`);
     for (let i = 0; i < bases.length; i++) {
       for (const [j, route] of otherRoutes.entries()) {
         const response = await read(bases[i], route);
@@ -414,9 +494,12 @@ async function main() {
       SELECT g,1,CASE WHEN g=1 THEN 'topic' ELSE 'moment' END,'最近笔记 '||g,'正文',
         CASE WHEN g=1 THEN '<h2 id="note-fixture-section">笔记小节</h2><p>HOME_NOTE_BODY_FIXTURE</p>'
           || '<pre data-runnable="true" data-lang="python" data-source="print(&#x27;note-runner&#x27;)"><code class="language-python">print(&#x27;note-runner&#x27;)</code></pre>'
-          ELSE '<p>HOME_NOTE_BODY_FIXTURE</p>' END,
+          ELSE '<p>SHORT_MOMENT_BODY_FIXTURE</p><pre><code class="language-text">示例</code></pre>' END,
         CASE WHEN g=1 THEN '<ul><li><a href="#note-fixture-section">笔记小节</a></li></ul>' ELSE '' END,
-        NOW()-g*INTERVAL '1 minute' FROM generate_series(1,23) g;
+        NOW()-g*INTERVAL '1 millisecond' FROM generate_series(1,23) g;
+    INSERT INTO notebooks(id,owner_id,title,is_public) VALUES(1,1,'公开笔记本回归',TRUE);
+    INSERT INTO notebook_notes(notebook_id,note_id,position)
+      SELECT 1,g,g FROM generate_series(1,23) g;
     COMMIT;`);
   assert.equal(
     await sql(
@@ -660,6 +743,10 @@ async function main() {
       await context.close();
     }
   await verifyRecentNoteCache(bases);
+  const notesPage = await browser.newPage();
+  await verifyNoteStream(notesPage, bases[0]);
+  await notesPage.close();
+  await verifyNotebookCache(bases);
   await verifyLocalCacheWrite(browser, bases);
   const report = {
     invalidationMs,

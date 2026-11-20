@@ -199,6 +199,7 @@ fn decode_html_entities(s: &str) -> String {
 /// - `content_html`：服务端渲染的文章 HTML 字符串
 /// - `scope_id`：可选的局部正文 ID（省略即不传，不要传 `Some(..)`）；图鉴只增强该实例，
 ///   正式页面使用默认范围。
+/// - `managed`：笔记流统一声明资源并按批初始化正文。
 ///
 /// 关键行为：
 /// - 把可运行代码块拆成 [`CodeRunner`] 组件穿插渲染，其余 HTML 片段照旧。
@@ -213,13 +214,13 @@ fn decode_html_entities(s: &str) -> String {
 pub fn PostContent(
     #[prop(into)] content_html: String,
     #[prop(optional)] scope_id: Option<&'static str>,
+    #[prop(optional)] managed: bool,
 ) -> impl IntoView {
-    let styles = MarkdownStyles::for_html(&content_html).links();
     let fragments = split_content_fragments_cached(&content_html);
 
     // 正文挂载后初始化交互脚本：不读取任何信号，只运行一次。
     #[cfg(target_arch = "wasm32")]
-    {
+    if !managed {
         Effect::new(move || {
             // 图鉴实例只增强自己的正文，正式页面仍按原选择器处理。
             let selector =
@@ -277,11 +278,11 @@ pub fn PostContent(
         .collect_view();
 
     view! {
-        // P5 §8.2：正文增强与灯箱按需注入。SSR 直达烤进 head 带 defer，先于
-        // hydration；SPA 首跳脚本晚于 Effect 时由增强调用队列兜底。
-        <EnhanceScript/>
-        <LightboxAssets/>
-        {styles}
+        {(!managed).then(|| view! {
+            <EnhanceScript/>
+            <LightboxAssets/>
+            {MarkdownStyles::for_html(&content_html).links()}
+        })}
         <div id=scope_id data-showcase-lightbox-owner=scope_id class="post-content md-content">
             {body}
         </div>

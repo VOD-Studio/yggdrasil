@@ -14,6 +14,11 @@ pub async fn list_notes(filter: NoteFilter) -> Result<NotePage, ApiError> {
     Ok(store::list(store::Access::Public, filter).await?)
 }
 
+#[server(ListNotebookEntries, endpoint = "list_notebook_entries", input = leptos::server_fn::codec::Json)]
+pub async fn list_notebook_entries(id: i32, page: i32) -> Result<NotebookPageEntries, ApiError> {
+    Ok(store::list_notebook_entries(id, page).await?)
+}
+
 #[server(RecentPublicNotes, endpoint = "recent_public_notes", input = leptos::server_fn::codec::Json)]
 pub async fn recent_public_notes() -> Result<Vec<RecentNote>, ApiError> {
     Ok(store::recent_public().await?)
@@ -28,7 +33,7 @@ pub async fn get_note(slug: String) -> Result<PublicNote, ApiError> {
 
 #[server(NoteStatsSummary, endpoint = "note_stats", input = leptos::server_fn::codec::Json)]
 pub async fn note_stats() -> Result<NoteStats, ApiError> {
-    Ok(store::stats(8).await?)
+    crate::cache::note_stats().await
 }
 
 /// 阅读页的笔记本上下文；`book` 来自 `?book=`，无效时忽略。
@@ -42,7 +47,7 @@ pub async fn get_note_context(
 
 #[server(ListNotebooks, endpoint = "list_notebooks", input = leptos::server_fn::codec::Json)]
 pub async fn list_notebooks() -> Result<Vec<Notebook>, ApiError> {
-    Ok(store::notebooks(store::Access::Public).await?)
+    crate::cache::public_notebooks().await
 }
 
 #[server(ListOwnedNotes, endpoint = "list_owned_notes", input = leptos::server_fn::codec::Json)]
