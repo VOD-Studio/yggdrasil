@@ -5,17 +5,10 @@
 
 use leptos::prelude::*;
 
-use crate::api::settings::get_site_settings;
 use crate::components::ui::{Icon, IconName};
-use crate::hooks::ssr_resource::{route_data, unit, PageJson};
+use crate::hooks::ssr_resource::RouteData;
 use crate::models::settings::SiteSettings;
 use crate::routes::Route;
-
-/// 页脚的站点设置：懒加载分包，主包只留与类型无关的资源代码。
-#[leptos::lazy]
-async fn fetch_footer_settings() -> PageJson<SiteSettings> {
-    PageJson::new(get_site_settings().await)
-}
 
 /// 页脚组件：读取站点设置中的 GitHub 链接。
 ///
@@ -23,10 +16,7 @@ async fn fetch_footer_settings() -> PageJson<SiteSettings> {
 /// - `max_width`：内部内容的宽度类，需与页头、正文一致以保证左右边缘对齐
 #[component]
 pub fn Footer(#[prop(default = "site-width-default")] max_width: &'static str) -> impl IntoView {
-    // 读取站点公开配置（页脚 GitHub 链接）。公开接口，SSR 时解析并随页面序列化，
-    // 水合直接复用；服务端有 moka 缓存兜底，解析极快。route_data 只在 `<Suspense>` 内读取，
-    // 且 Suspense 只包住 GitHub 图标，页脚其余部分不等待数据。
-    let settings_res = route_data(|| (), unit(fetch_footer_settings));
+    let settings = expect_context::<RouteData<SiteSettings>>();
 
     view! {
         <footer data-vt-shell="frontend-footer" class="site-footer">
@@ -42,7 +32,7 @@ pub fn Footer(#[prop(default = "site-width-default")] max_width: &'static str) -
                     <span>"由 Rust 与 Leptos 构建"</span>
                     <Suspense>
                         {move || Suspend::new(async move {
-                            let github_url = settings_res
+                            let github_url = settings
                                 .await
                                 .ok()
                                 .map(|s| s.github_url)

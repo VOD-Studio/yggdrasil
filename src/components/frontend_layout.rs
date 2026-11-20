@@ -14,6 +14,7 @@ use leptos_router::components::Outlet;
 use leptos_router::hooks::use_location;
 
 use crate::api::error::ApiError;
+use crate::api::settings::get_site_settings;
 use crate::components::footer::Footer;
 use crate::components::header::{Header, SearchIconLink};
 use crate::components::nav::build_nav_items;
@@ -29,6 +30,8 @@ use crate::components::skeletons::notes_route_skeleton::NotesRouteSkeleton;
 use crate::components::skeletons::post_detail_skeleton::PostDetailSkeleton;
 use crate::components::skeletons::search_skeleton::SearchSkeleton;
 use crate::components::skeletons::writing_guide_skeleton::WritingGuideSkeleton;
+use crate::hooks::ssr_resource::{route_data, unit, PageJson};
+use crate::models::settings::SiteSettings;
 use crate::navigation::use_rendered_route;
 use crate::pages::not_found::{NotFound, PageLoadFailed};
 use crate::route_prefetch::{match_route, RouteTarget};
@@ -181,6 +184,11 @@ fn route_error_fallback(errors: ArcRwSignal<Errors>) -> impl IntoView {
     }
 }
 
+#[leptos::lazy]
+async fn fetch_site_settings() -> PageJson<SiteSettings> {
+    PageJson::new(get_site_settings().await)
+}
+
 /// 前台整体布局组件。
 ///
 /// 负责渲染 Header（含前台导航与主题切换）、主内容区与 Footer。
@@ -192,6 +200,7 @@ fn route_error_fallback(errors: ArcRwSignal<Errors>) -> impl IntoView {
 /// - `children`：显式传入的页面内容（未匹配路由的 404 兜底用）；缺省渲染嵌套路由的 `<Outlet/>`
 #[component]
 pub fn FrontendLayout(#[prop(optional)] children: Option<ChildrenFn>) -> impl IntoView {
+    provide_context(route_data(|| (), unit(fetch_site_settings)));
     // 骨架屏占位的是正在加载的目标页，按地址栏选。
     let target_path = use_location().pathname;
     // 其余随路由变化的部分跟随已显示的页面：懒加载路由切换期间旧页面仍在，

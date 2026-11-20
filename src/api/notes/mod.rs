@@ -14,6 +14,11 @@ pub async fn list_notes(filter: NoteFilter) -> Result<NotePage, ApiError> {
     Ok(store::list(store::Access::Public, filter).await?)
 }
 
+#[server(RecentPublicNotes, endpoint = "recent_public_notes", input = leptos::server_fn::codec::Json)]
+pub async fn recent_public_notes() -> Result<Vec<RecentNote>, ApiError> {
+    Ok(store::recent_public().await?)
+}
+
 #[server(GetNote, endpoint = "get_note", input = leptos::server_fn::codec::Json)]
 pub async fn get_note(slug: String) -> Result<PublicNote, ApiError> {
     // 公开详情只返回阅读所需字段（P4.1）；编辑 Markdown 与内部版本号不出接口。

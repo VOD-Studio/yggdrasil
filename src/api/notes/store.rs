@@ -37,6 +37,14 @@ impl Access {
     }
 }
 
+fn note_kind(row: &tokio_postgres::Row) -> NoteKind {
+    if row.get::<_, &str>("kind") == "topic" {
+        NoteKind::Topic
+    } else {
+        NoteKind::Moment
+    }
+}
+
 fn map_note(row: &tokio_postgres::Row, access: &Access) -> Note {
     let admin = matches!(access, Access::Owner(_));
     let toc_html: String = row.get("toc_html");
@@ -45,11 +53,7 @@ fn map_note(row: &tokio_postgres::Row, access: &Access) -> Note {
         id: row.get("id"),
         slug: row.get("slug"),
         version: row.get("revision"),
-        kind: if row.get::<_, String>("kind") == "topic" {
-            NoteKind::Topic
-        } else {
-            NoteKind::Moment
-        },
+        kind: note_kind(row),
         title: row.get("title"),
         content_md: row.get("content_md"),
         content_html: row.get("content_html"),
@@ -145,6 +149,30 @@ pub async fn list(access: Access, filter: NoteFilter) -> Result<NotePage, AppErr
         })
         .collect();
     Ok(NotePage { notes, total })
+}
+
+/// 首页沿用公开列表的版本和排序，只读取前四条所需的字段。
+pub async fn recent_public() -> Result<Vec<RecentNote>, AppError> {
+    let client = get_conn().await.map_err(AppError::db_conn)?;
+    let rows = client
+        .query(
+            "SELECT n.slug, r.kind, r.title, r.summary,
+                    COALESCE(n.published_at, r.created_at) AS date
+             FROM notes n JOIN note_revisions r ON r.note_id=n.id AND r.version=n.published_version
+             WHERE n.deleted_at IS NULL
+             ORDER BY r.created_at DESC, n.id DESC LIMIT 4",
+            &[],
+        )
+        .await
+        .map_err(AppError::query)?;
+    Ok(rows
+        .iter()
+        .map(|row| RecentNote {
+            slug: row.get("slug"),
+            title: display_title(note_kind(row), row.get("title"), row.get("summary")),
+            date: row.get("date"),
+        })
+        .collect())
 }
 
 /// 公开笔记的类型计数与常用标签（只看已发布的版本）。
@@ -310,11 +338,7 @@ pub async fn get_public(slug: &str) -> Result<PublicNote, AppError> {
         id: row.get("id"),
         slug: row.get("slug"),
         version: row.get("revision"),
-        kind: if row.get::<_, String>("kind") == "topic" {
-            NoteKind::Topic
-        } else {
-            NoteKind::Moment
-        },
+        kind: note_kind(&row),
         title: row.get("title"),
         summary: row.get("summary"),
         content_html: row.get("content_html"),

@@ -136,6 +136,18 @@ pub struct NotePage {
     pub total: i64,
 }
 
+/// 首页最近笔记的标题、链接和显示日期。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RecentNote {
+    pub slug: String,
+    pub title: String,
+    #[cfg_attr(
+        target_arch = "wasm32",
+        serde(deserialize_with = "crate::models::rfc3339::deserialize")
+    )]
+    pub date: DateTime<Utc>,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "server", derive(rmcp::schemars::JsonSchema))]
 pub struct NoteFilter {

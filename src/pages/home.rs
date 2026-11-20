@@ -1,8 +1,7 @@
 //! 首页「书桌」与分页首页。
 //!
 //! 第 1 页：状态行、站点标语、搜索与常读标签、最新一篇（右侧目录预览）、按「年 · 月」
-//! 分组的文章索引、尾部三格。第 2 页起只有页标题与索引。数据都来自已缓存的公开接口，
-//! 在 `LazyRoute::data` 里一次建好，SSR 一次取齐。
+//! 分组的文章索引、尾部三格。第 2 页起只有页标题与索引。页面数据由 `LazyRoute::data` 创建，站点配置复用前台布局的资源。
 //!
 //! [`HomeRoute`] 同时服务 `/`（第 1 页）与 `/page/:page`。
 
@@ -12,12 +11,11 @@ use leptos_meta::Title;
 use leptos_router::hooks::use_params_map;
 use leptos_router::{lazy_route, LazyRoute};
 
-use crate::api::notes::list_notes;
+use crate::api::notes::recent_public_notes;
 use crate::api::posts::{
     latest_post_outline, list_published_posts, list_tags, PostListResponse, PostOutline,
     TagListResponse,
 };
-use crate::api::settings::get_site_settings;
 use crate::components::empty_state::EmptyState;
 use crate::components::mascot::Mascot;
 use crate::components::post::post_meta::group_digits;
@@ -27,7 +25,7 @@ use crate::components::ui::{
     Composer, ComposerInput, ComposerSend, Icon, IconName, LoadError, Pagination,
 };
 use crate::hooks::ssr_resource::{prefetch_route_data, route_data, PageJson, RouteData};
-use crate::models::note::{Note, NoteFilter, NotePage};
+use crate::models::note::RecentNote;
 use crate::models::post::{PostListItem, Tag};
 use crate::models::settings::{HomeTagline, SiteSettings};
 use crate::pages::archives::ranked_tags;
@@ -39,22 +37,19 @@ const POSTS_PER_PAGE: i32 = 10;
 const TOP_TAGS: usize = 6;
 /// 尾部「常去标签」数。
 const TAG_CLOUD: usize = 10;
-/// 尾部「最近笔记」数。
-const RECENT_NOTES: usize = 4;
 
 /// 首页路由，对应 `/`（`SsrMode::InOrder`）与 `/page/:page`（`SsrMode::Async`，无 `page` 参数视为
 /// 第 1 页）。非法页码渲染 NotFound，状态码为 404；此时文章 source 为 None，不取数据。
 ///
-/// 文章列表随页码重取；其余四个数据源只有第 1 页用到，翻到后面的页码时 source 为
+/// 文章列表随页码重取；其余页面数据源只有第 1 页用到，翻到后面的页码时 source 为
 /// `false`，fetcher 直接返回 `None`，不再发请求。
 pub struct HomeRoute {
     /// 页码（至少为 1）；`page` 参数不是整数时为 `None`，渲染 404。
     page: Memo<Option<i32>>,
     posts: RouteData<Option<PostListResponse>>,
     tags: RouteData<Option<TagListResponse>>,
-    settings: RouteData<Option<SiteSettings>>,
     outline: RouteData<Option<PostOutline>>,
-    notes: RouteData<Option<NotePage>>,
+    notes: RouteData<Vec<RecentNote>>,
 }
 
 // 取数函数随分包加载，见 `hooks::ssr_resource`。`first` 为 false（第 2 页起）时直接返回 None。
@@ -77,15 +72,6 @@ async fn fetch_home_tags(first: bool) -> PageJson<Option<TagListResponse>> {
 }
 
 #[leptos::lazy]
-async fn fetch_settings(first: bool) -> PageJson<Option<SiteSettings>> {
-    PageJson::new(if first {
-        get_site_settings().await.map(Some)
-    } else {
-        Ok(None)
-    })
-}
-
-#[leptos::lazy]
 async fn fetch_outline(first: bool) -> PageJson<Option<PostOutline>> {
     PageJson::new(if first {
         latest_post_outline().await
@@ -95,11 +81,11 @@ async fn fetch_outline(first: bool) -> PageJson<Option<PostOutline>> {
 }
 
 #[leptos::lazy]
-async fn fetch_notes(first: bool) -> PageJson<Option<NotePage>> {
+async fn fetch_notes(first: bool) -> PageJson<Vec<RecentNote>> {
     PageJson::new(if first {
-        list_notes(NoteFilter::default()).await.map(Some)
+        recent_public_notes().await
     } else {
-        Ok(None)
+        Ok(Vec::new())
     })
 }
 
@@ -122,18 +108,17 @@ impl LazyRoute for HomeRoute {
             page,
             posts: route_data(move || page.get(), fetch_posts),
             tags: route_data(move || is_first.get(), fetch_home_tags),
-            settings: route_data(move || is_first.get(), fetch_settings),
             outline: route_data(move || is_first.get(), fetch_outline),
             notes: route_data(move || is_first.get(), fetch_notes),
         }
     }
 
     fn view(this: Self) -> AnyView {
+        let settings = expect_context::<RouteData<SiteSettings>>();
         let HomeRoute {
             page,
             posts,
             tags,
-            settings,
             outline,
             notes,
         } = this;
@@ -170,19 +155,10 @@ impl LazyRoute for HomeRoute {
                                 );
                                 let tagline = settings
                                     .await
-                                    .ok()
-                                    .flatten()
                                     .unwrap_or_default()
                                     .home_tagline();
                                 let outline = outline.await.ok().flatten();
-                                let notes: Vec<Note> = notes
-                                    .await
-                                    .ok()
-                                    .flatten()
-                                    .map(|page| {
-                                        page.notes.into_iter().take(RECENT_NOTES).collect()
-                                    })
-                                    .unwrap_or_default();
+                                let notes = notes.await.unwrap_or_default();
                                 view! {
                                     <HomeDesk
                                         posts=posts
@@ -215,7 +191,6 @@ impl HomeRoute {
         let first = page == Some(1);
         prefetch_route_data(page, fetch_posts);
         prefetch_route_data(first, fetch_home_tags);
-        prefetch_route_data(first, fetch_settings);
         prefetch_route_data(first, fetch_outline);
         prefetch_route_data(first, fetch_notes);
     }
@@ -231,7 +206,7 @@ fn HomeDesk(
     tags: Vec<Tag>,
     tagline: HomeTagline,
     outline: Option<PostOutline>,
-    notes: Vec<Note>,
+    notes: Vec<RecentNote>,
 ) -> impl IntoView {
     let listing = RwSignal::new(posts);
     let latest = move || listing.with(|l| l.as_ref().and_then(|r| r.posts.first().cloned()));
@@ -705,7 +680,7 @@ fn HomeRow(post: PostListItem) -> impl IntoView {
 
 /// 尾部三格：最近笔记、常去标签、去别处走走。
 #[component]
-fn HomeCorners(notes: Vec<Note>, tags: Vec<Tag>) -> impl IntoView {
+fn HomeCorners(notes: Vec<RecentNote>, tags: Vec<Tag>) -> impl IntoView {
     let notes_body = if notes.is_empty() {
         view! { <p class="home-corner-empty">"还没有公开的笔记。"</p> }.into_any()
     } else {
@@ -713,16 +688,15 @@ fn HomeCorners(notes: Vec<Note>, tags: Vec<Tag>) -> impl IntoView {
             .into_iter()
             .map(|note| {
                 let href = Route::NoteDetail {
-                    slug: note.slug.clone(),
+                    slug: note.slug,
                     book: String::new(),
                 }
                 .to_string();
-                let date =
-                    crate::utils::time::md(&note.published_at.unwrap_or(note.updated_at), '.');
+                let date = crate::utils::time::md(&note.date, '.');
                 view! {
                     <li>
                         <a href=href>
-                            <span class="home-corner-note-title">{note.display_title()}</span>
+                            <span class="home-corner-note-title">{note.title}</span>
                             <time class="tabular-nums">{date}</time>
                         </a>
                     </li>
