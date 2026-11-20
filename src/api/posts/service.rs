@@ -122,7 +122,7 @@ pub(crate) async fn create(
     let post_id = row.get("id");
     let updated_at = row.get("updated_at");
     let tags = helpers::clean_tags(&draft.tags);
-    helpers::sync_tags(&tx, post_id, &tags).await?;
+    helpers::sync_tags(&tx, post_id, &tags, &[]).await?;
     helpers::sync_asset_refs(
         &tx,
         post_id,
@@ -343,6 +343,12 @@ pub(crate) async fn update(
         .iter()
         .map(|p| p.as_ref() as &(dyn ToSql + Sync))
         .collect();
+    // 重命名先锁标签再更新共享缓存版本，完整保存沿用相同的加锁顺序。
+    let previous_tags = if p.tags.is_some() {
+        helpers::lock_post_tags(&tx, post_id).await?
+    } else {
+        Vec::new()
+    };
     let row = tx
         .query_one(
             &format!(
@@ -357,10 +363,7 @@ pub(crate) async fn update(
     let updated_at = row.get("updated_at");
     if let Some(tags) = p.tags {
         let tags = helpers::clean_tags(&tags);
-        tx.execute("DELETE FROM post_tags WHERE post_id=$1", &[&post_id])
-            .await
-            .map_err(AppError::tx)?;
-        helpers::sync_tags(&tx, post_id, &tags).await?;
+        helpers::sync_tags(&tx, post_id, &tags, &previous_tags).await?;
     }
     if rendered.is_some() || cover_changed {
         let html = rendered.map(|f| f.content_html).unwrap_or_else(|| {

@@ -152,47 +152,53 @@ pub(crate) async fn row_to_post_full(row: &tokio_postgres::Row) -> Result<Post, 
     })
 }
 
-/// 在事务中同步文章的标签关联。
-///
-/// 对传入的每个标签：若不存在则插入 tags 表，否则查询已有 id，
-/// 然后在 post_tags 表中建立关联。不会删除旧关联，调用方需先清理。
+/// 在事务中批量同步新旧标签的差集。更新时调用方已锁定文章行。
 #[cfg(feature = "server")]
 pub(crate) async fn sync_tags(
     tx: &deadpool_postgres::Transaction<'_>,
     post_id: i32,
     tags: &[String],
+    previous: &[(i32, String)],
 ) -> Result<(), AppError> {
-    for tag_name in tags {
-        let tag_id: i32 = {
-            // 先尝试插入，若已存在则返回空。
-            let row = tx
-                .query_opt(
-                    "INSERT INTO tags (name) VALUES ($1) ON CONFLICT (name) DO NOTHING RETURNING id",
-                    &[&tag_name.as_str()],
-                )
-                .await
-                .map_err(AppError::tx)?;
-
-            match row {
-                Some(r) => r.get(0),
-                None => {
-                    // 插入冲突时回查标签 id。
-                    let row = tx
-                        .query_opt("SELECT id FROM tags WHERE name = $1", &[&tag_name.as_str()])
-                        .await
-                        .map_err(AppError::query)?;
-                    row.map(|r| r.get(0))
-                        .ok_or(AppError::NotFound("标签不存在"))?
-                }
-            }
-        };
-
+    let removed: Vec<_> = previous
+        .iter()
+        .filter_map(|(id, name)| (!tags.contains(name)).then_some(*id))
+        .collect();
+    if !removed.is_empty() {
         tx.execute(
-            "INSERT INTO post_tags (post_id, tag_id) VALUES ($1, $2)",
-            &[&post_id, &tag_id],
+            "DELETE FROM post_tags WHERE post_id = $1 AND tag_id = ANY($2)",
+            &[&post_id, &removed],
         )
         .await
         .map_err(AppError::tx)?;
+    }
+
+    let added: Vec<_> = tags
+        .iter()
+        .filter(|name| !previous.iter().any(|(_, old)| old == *name))
+        .collect();
+    if !added.is_empty() {
+        tx.execute(
+            "INSERT INTO tags (name)
+             SELECT name FROM unnest($1::text[]) WITH ORDINALITY AS names(name, position)
+             ORDER BY position
+             ON CONFLICT (name) DO NOTHING",
+            &[&added],
+        )
+        .await
+        .map_err(AppError::tx)?;
+        // 单独一条语句读取已存在的标签，包括并发事务刚提交的同名标签。
+        let inserted = tx
+            .execute(
+                "INSERT INTO post_tags (post_id, tag_id)
+                 SELECT $1, id FROM tags WHERE name::text = ANY($2::text[])",
+                &[&post_id, &added],
+            )
+            .await
+            .map_err(AppError::tx)?;
+        if inserted != added.len() as u64 {
+            return Err(AppError::NotFound("标签不存在"));
+        }
     }
 
     Ok(())
@@ -208,20 +214,33 @@ pub(crate) fn clean_tags(tags: &[String]) -> Vec<String> {
         .filter(|t| seen.insert(t.to_lowercase()))
         .collect()
 }
-#[cfg(all(feature = "server", test))]
-/// 读取文章标签，用于验证写入结果。
-pub(crate) async fn fetch_post_tags(
+#[cfg(feature = "server")]
+/// 稳定事务中的标签名称，避免比较差集后被并发重命名。
+pub(crate) async fn lock_post_tags(
     client: &impl deadpool_postgres::GenericClient,
     post_id: i32,
-) -> Result<Vec<String>, AppError> {
+) -> Result<Vec<(i32, String)>, AppError> {
     let rows = client
         .query(
-            "SELECT t.name FROM tags t JOIN post_tags pt ON t.id = pt.tag_id WHERE pt.post_id = $1",
+            "SELECT t.name, t.id FROM tags t JOIN post_tags pt ON t.id = pt.tag_id
+             WHERE pt.post_id = $1 ORDER BY t.id FOR SHARE OF t",
             &[&post_id],
         )
         .await
         .map_err(AppError::query)?;
-    Ok(rows.iter().map(|r| r.get(0)).collect())
+    Ok(rows.iter().map(|r| (r.get(1), r.get(0))).collect())
+}
+
+#[cfg(all(feature = "server", test))]
+pub(crate) async fn fetch_post_tags(
+    client: &impl deadpool_postgres::GenericClient,
+    post_id: i32,
+) -> Result<Vec<String>, AppError> {
+    Ok(lock_post_tags(client, post_id)
+        .await?
+        .into_iter()
+        .map(|(_, name)| name)
+        .collect())
 }
 /// 匹配 HTML/Markdown 中出现的本地上传图片路径，捕获组为相对路径
 /// （如 `2026/07/24/153000.<uuid>.webp`，不含 /uploads/ 前缀与 query）。
@@ -259,8 +278,7 @@ pub(crate) fn extract_asset_paths(content_html: &str, cover_image: Option<&str>)
 
 /// 在事务中同步文章的素材引用关联（asset_refs）。
 ///
-/// 语义镜像 [`sync_tags`]：调用方需在事务内先删除旧关联（本函数自带 DELETE），
-/// 再按 content_html + cover_image 中出现的 /uploads/ 路径重建。
+/// 删除旧关联，再按 content_html + cover_image 中出现的 /uploads/ 路径重建。
 /// 未登记到 assets 表的路径（如回填前的旧图）静默跳过，由重建索引兜底。
 #[cfg(feature = "server")]
 pub(crate) async fn sync_asset_refs(
