@@ -21,7 +21,7 @@ use crate::api::error::ApiError;
 use crate::api::notes::{get_note, get_note_context, list_notebooks, list_notes, note_stats};
 use crate::components::empty_state::{EmptyState, EmptyStateAction};
 use crate::components::mascot::Mascot;
-use crate::components::post::post_content::PostContent;
+use crate::components::post::post_content::{hydration_skeleton, PostContent};
 use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::skeletons::notes_route_skeleton::{
     NoteReaderSkeleton, NotebookSkeleton, NotesPageSkeleton,
@@ -1241,7 +1241,21 @@ pub struct NoteRoute {
 
 #[leptos::lazy]
 async fn fetch_note(slug: String) -> PageJson<PublicNote> {
-    PageJson::new(get_note(slug).await)
+    PageJson::with_hydration(get_note(slug).await, |note| PublicNote {
+        id: note.id,
+        slug: note.slug.clone(),
+        version: note.version,
+        kind: note.kind,
+        title: note.title.clone(),
+        summary: note.summary.clone(),
+        content_html: hydration_skeleton(&note.content_html),
+        // 移动端目录在水合后打开抽屉时才渲染，需要完整目录。
+        toc_html: note.toc_html.clone(),
+        tags: note.tags.clone(),
+        created_at: note.created_at,
+        updated_at: note.updated_at,
+        sections: note.sections,
+    })
 }
 
 #[leptos::lazy]
@@ -1295,7 +1309,7 @@ impl LazyRoute for NoteRoute {
                             view! {
                                 <div class="notes">
                                     <div class="notes-layout note-reader">
-                                        <NoteRail note=note.clone() context=context.clone()/>
+                                        <NoteRail slug=note.slug.clone() toc_html=note.toc_html.clone() context=context.clone()/>
                                         <NoteDocument note context/>
                                     </div>
                                 </div>
@@ -1323,7 +1337,7 @@ impl NoteRoute {
 /// 阅读页左栏：所在笔记本的目录，当前篇浮起并展开本篇小节；不在公开笔记本中时
 /// 只有返回链接与本篇小节。小节的当前位置由 yggdrasil-core 的目录 scroll-spy 标出。
 #[component]
-fn NoteRail(note: PublicNote, context: Option<NoteContext>) -> impl IntoView {
+fn NoteRail(slug: String, toc_html: String, context: Option<NoteContext>) -> impl IntoView {
     let body = if let Some(context) = context {
         let description = (!context.notebook.description.trim().is_empty()).then(|| {
             view! { <p class="note-rail-book-description">{context.notebook.description.clone()}</p> }
@@ -1341,18 +1355,18 @@ fn NoteRail(note: PublicNote, context: Option<NoteContext>) -> impl IntoView {
             </div>
             <NotebookDirectory
                 context
-                current=note.slug.clone()
-                toc_html=note.toc_html.clone()
+                current=slug
+                toc_html
                 spy=true
             />
         }
         .into_any()
-    } else if !note.toc_html.is_empty() {
+    } else if !toc_html.is_empty() {
         view! {
             <div class="note-rail-book">
                 <p class="notes-side-label">"本篇"</p>
             </div>
-            <NoteSections toc_html=note.toc_html.clone() spy=true/>
+            <NoteSections toc_html spy=true/>
         }
         .into_any()
     } else {
@@ -1601,7 +1615,7 @@ pub fn NoteDocument(
                 {sections_meta}
             </p> {tags}
             <div id="note-content" class="note-document-body">
-                <PostContent content_html=note.content_html.clone()/>
+                <PostContent content_html=note.content_html/>
             </div> {continue_nav}
         </article>
         {sheet}
