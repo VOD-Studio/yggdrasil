@@ -9,9 +9,8 @@
 //! - **Host**：仅 host 部分，加入 rmcp 的 DNS-rebinding 防护默认表（localhost/127.0.0.1/::1）。
 //!   生产反代 `proxy_set_header Host $host` 会把真实域名转发进来，必须加入否则 rmcp 一律 403。
 //!
-//! 未设置 `APP_BASE_URL` 则两者均空（rmcp 对缺 Origin 放行；Host 回退默认表仅本地可用）。
-//! 开发期额外放行 `0.0.0.0`（dx 代理改写 Host 的容错），生产域名态保持严格。
-//! 生产部署 MUST 设置 `APP_BASE_URL`（见 docs/DEPLOYMENT.md）。
+//! 未设置 `APP_BASE_URL` 时，rmcp 允许省略 Origin，Host 白名单仅包含本地地址。
+//! 生产部署需要设置 `APP_BASE_URL`，见 README 的生产部署说明。
 //! 协议版本头、体积上限（4MiB 默认）由 rmcp 内置，无需此处重复。
 
 use axum::middleware::from_fn;
@@ -50,20 +49,6 @@ pub fn mcp_route() -> Router {
                 }
             }
         }
-    }
-
-    // 开发期容错：APP_BASE_URL 未设或仍是 localhost 系（开发态）时，额外放行 0.0.0.0。
-    // 原因：开发时服务以 `IP=0.0.0.0` 监听，浏览器或容器可能直接用 `0.0.0.0:<端口>` 访问，
-    // 此时 Host 头是 0.0.0.0，rmcp 据此判 rebinding 攻击一律 403，MCP 在开发态完全不可用。
-    // 0.0.0.0 仅在本地开发无攻击价值，故仅在未配置生产域名时放行；生产域名态保持严格。
-    let is_dev = base_url
-        .as_deref()
-        .and_then(|b| http::Uri::try_from(b).ok())
-        .and_then(|u| u.authority().map(|a| a.host().to_lowercase()))
-        .map(|h| matches!(h.as_str(), "localhost" | "127.0.0.1" | "::1"))
-        .unwrap_or(true); // 未设 APP_BASE_URL 视为开发态
-    if is_dev && !allowed_hosts.iter().any(|h| h == "0.0.0.0") {
-        allowed_hosts.push("0.0.0.0".into());
     }
 
     let mut config = StreamableHttpServerConfig::default()

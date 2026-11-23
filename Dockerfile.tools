@@ -1,17 +1,7 @@
 # syntax=docker/dockerfile:1
 #
-# Dockerfile.dev — 开发镜像（cargo leptos watch 热重载）
-#
-# 与生产 Dockerfile 共享相同的镜像源（TUNA/rsproxy/npmmirror）和工具链
-# 安装逻辑。源码通过 COPY 快照 + compose watch 增量 sync 进容器（见
-# docker-compose.dev.yml 的 develop.watch 与文件头注释）。
-#
-# 用法：docker compose -f docker-compose.dev.yml up --build
-#
-# 容器内布局：
-#   /build         ← 镜像内源码快照, 运行时被 compose watch sync 增量覆盖
-#   target/        ← named volume（cargo 编译产物，跨重启缓存）
-#   libs/node_modules ← named volume（bun 依赖，跨重启缓存）
+# Dockerfile.tools — 一次性检查、测试和格式化使用的工具链镜像。
+# docker-compose.tools.yml 将工作区挂载到 /build，并为依赖和编译产物提供独立的卷。
 
 FROM rust:1.100-trixie
 
@@ -42,8 +32,7 @@ RUN if [ "$CN_MIRROR" = "true" ]; then \
     fi
 
 # ── 系统构建依赖 ─────────────────────────────────────────────────
-# 与生产 Dockerfile 相同，但去掉 musl-tools（dev 构建是原生 glibc 目标，
-# 不需要 musl 交叉链接）。postgresql-client 方便容器内 psql 调试。
+# 工具容器编译原生 glibc 目标。postgresql-client 提供 psql 和 pg_dump。
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         build-essential \
@@ -101,7 +90,7 @@ RUN if [ "$CN_MIRROR" = "true" ]; then \
             > /usr/local/cargo/config.toml; \
     fi
 
-# 开发只需 wasm32 target（cargo-leptos 原生编译 server + 交叉编译 wasm 前端，稳定工具链）
+# 稳定工具链为 Clippy 和 cargo-leptos 提供 wasm32 目标。
 RUN if [ "$CN_MIRROR" = "true" ]; then \
         export RUSTUP_DIST_SERVER="${RS_PROXY}" \
         && export RUSTUP_UPDATE_ROOT="${RS_PROXY}/rustup"; \
@@ -113,15 +102,3 @@ RUN if [ "$CN_MIRROR" = "true" ]; then \
 RUN cargo install cargo-leptos --version 0.3.12 --locked
 
 WORKDIR /build
-
-# ── 源码快照 ────────────────────────────────────────────────────
-# compose watch 模式：镜像内含构建时的源码快照（容器启动即有完整源码,
-# 无 bind mount 竞态），运行时由 `docker compose watch` 增量 sync 覆盖。
-# .dockerignore 排除 .git → 容器内 build.rs 的 git describe 回退 "unknown",
-# 以及 docs/tests/scripts/（容器内无集成测试源码, cargo test 会跳过）。
-COPY . /build
-
-# 启动开发服务器：make dev 内含 bun install → 增量构建变化的库/高亮/字体
-# → Bun 生成 CSS → cargo leptos watch --split；构建记录放在 target/ volume 中。
-# bun install 和 CSS 生成每次都执行（幂等，bun 有缓存秒完）。
-CMD ["make", "dev"]

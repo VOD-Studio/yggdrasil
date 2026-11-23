@@ -1,6 +1,6 @@
-# Docker：镜像构建、Docker 开发环境、lint/test/fmt 工具容器。
+# Docker：镜像构建和 lint/test/fmt 工具容器。
 
-.PHONY: docker docker-amd64 docker-arm64 docker-multiarch docker-dev docker-dev-down docker-dev-shell
+.PHONY: docker docker-amd64 docker-arm64 docker-multiarch
 .PHONY: docker-run docker-lint docker-clippy docker-check docker-fmt docker-fix docker-test
 .PHONY: docker-tools-build docker-tools-clean
 
@@ -63,23 +63,6 @@ docker-arm64: ## 构建 arm64 镜像并加载到本地 daemon（异架构需要 
 docker-multiarch: ## 构建多架构镜像并推送（IMAGE=... PLATFORMS=...）
 	@docker buildx build --platform $(PLATFORMS) $(DOCKER_BUILD_ARGS) -t $(IMAGE) --push .
 
-# ── Docker 开发环境 ────────────────────────────────────────────
-# 使用 Dockerfile.dev + docker-compose.dev.yml 在容器内运行 cargo leptos watch；源码同步、
-# 网络和数据库见 docker-compose.dev.yml 头部。
-# 首次启动需编译 Rust 依赖（~10 分钟），后续启动约 10 秒（cargo target 缓存）。
-# up --build 后前台跑 compose watch；Ctrl+C 只停 watch，容器继续后台跑。
-docker-dev: ## 启动 Docker 开发环境并 watch 同步源码
-	@docker compose -f docker-compose.dev.yml up --build -d
-	@docker compose -f docker-compose.dev.yml watch
-
-# 停止并移除 dev 容器（volume 数据保留）。
-docker-dev-down: ## 停止并移除开发容器
-	@docker compose -f docker-compose.dev.yml down
-
-# 进入 dev 容器的交互式 shell（容器需已在运行）。
-docker-dev-shell: ## 进入开发容器的 shell
-	@docker compose -f docker-compose.dev.yml exec dev bash
-
 # ── Docker 工具容器（lint / test / fix / check）──────────────────
 # 工具容器提供隔离的 lint/fmt/fix/test/check 环境；bind mount 将修改写回宿主。
 # 依赖与编译缓存使用独立命名卷，避免混用宿主产物，见 docker-compose.tools.yml。
@@ -115,7 +98,7 @@ docker-fix: ## 容器内运行 make fix（写回宿主）
 docker-test: ## 容器内运行 make test
 	@$(call tools_make,test)
 
-# 重建工具镜像（Dockerfile.dev 变更后用；正常情况下 run 会按需自动构建）。
+# 重建工具镜像（Dockerfile.tools 变更后可用）。
 docker-tools-build: ## 重建工具镜像
 	@$(TOOLS_COMPOSE) build
 

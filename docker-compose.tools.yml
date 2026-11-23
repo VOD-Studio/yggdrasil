@@ -1,12 +1,6 @@
 # docker-compose.tools.yml — 一次性 lint / test / fix / check 容器
 #
-# 为什么需要这个文件（而不复用 docker-compose.dev.yml）：
-#   dev compose 用 compose-watch sync（host→container 单向），容器内 fmt/fix 写
-#   的文件不会回流宿主。本文件用 bind mount（双向），让 cargo fmt / biome format
-#   的改动直接落回宿主工作区。
-#
-#   另：本地（xfy 的 Mac）AliEDR 会 SIGKILL 本地构建链中的二进制（wasm-bindgen
-#   exit 137 等），所以 lint/fix/test/check 一律在容器内跑，避开 EDR。
+# 双向挂载工作区，cargo fmt 和 Biome 的改动直接写回宿主机。
 #
 # 用法（一般通过 Makefile docker-* target 调用，无需手敲）：
 #   make docker-lint      # make lint（clippy + fmt --check + biome + typecheck）
@@ -35,13 +29,13 @@
 # clippy/test 秒级启动。
 #
 # 不挂 docker.sock：clippy/fmt/test 不需要 Docker（需要 daemon 的 code-runner 测试
-# 自动 skip）。如需跑 runner 集成测试，用 make docker-dev。
+# 自动跳过）。运行器集成测试可在能访问 Docker daemon 的宿主机上运行。
 
 services:
   tools:
     build:
       context: .
-      dockerfile: Dockerfile.dev
+      dockerfile: Dockerfile.tools
       args:
         CN_MIRROR: "true"  # 本地工具容器在国内，启用镜像加速
     init: true

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- 移除 `make docker-dev`。本地开发通过 `make dev` 启动，默认监听 `127.0.0.1:8080` 并使用 `.env` 配置的开发数据库。
+
 ## [1.3.7] - 2026-11-20
 
 减少公开页面的取数与传输开销，按需加载编辑器资源，修复数据库备份失败后留下不完整文件的问题。

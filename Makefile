@@ -2,7 +2,7 @@
 #
 # 模块：
 #   mk/assets.mk    生成资源：libs、高亮/KaTeX CSS、站点样式；release 全量 + dev 增量
-#   mk/docker.mk    镜像构建、Docker 开发环境、lint/test/fmt 工具容器
+#   mk/docker.mk    镜像构建和 lint/test/fmt 工具容器
 include mk/assets.mk mk/docker.mk
 
 .PHONY: help build build-linux build-frontend wasm-toolchain install-cargo-leptos precompress
@@ -35,7 +35,7 @@ LEPTOS_WASM_ENV := RUSTUP_TOOLCHAIN=$(WASM_NIGHTLY) CARGO_TARGET_WASM32_UNKNOWN_
 LEPTOS_WASM_ARGS := --lib-cargo-args=-Zbuild-std=std,panic_abort --lib-cargo-args=-Zbuild-std-features=optimize_for_size
 
 # cargo-leptos 通过 wasm_split_cli_support 0.2.5 为 Web 构建默认合并共享分包。
-# 升级时同步 Dockerfile、Dockerfile.cross、Dockerfile.dev 和 CI 的二进制缓存键。
+# 升级时同步 Dockerfile、Dockerfile.cross、Dockerfile.tools 和 CI 的二进制缓存键。
 CARGO_LEPTOS_VERSION := 0.3.12
 
 # 裸 `make` 只列出 target，不触发任何构建。
@@ -129,7 +129,7 @@ precompress:
 # `__wasm_split_placeholder__`，只有分包后处理才会解析它，不分包的 WASM 无法加载。
 dev: dev-assets ## 启动开发服务器（增量构建资源 + cargo leptos watch --split）
 	@echo "Starting cargo leptos watch..."
-	@SSR_CACHE_SECS=0 IP=0.0.0.0 cargo leptos watch --split
+	@SSR_CACHE_SECS=0 cargo leptos watch --split
 
 .PHONY: regression-build test-databases test-browser
 # debug 构建、分包（原因见 dev 目标）：产物在 target/debug/yggdrasil（服务端 + hash.txt）与 target/site（站点资源 + pkg）。

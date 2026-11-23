@@ -26,8 +26,8 @@ pub async fn log_runner_readiness() {
         Some(d) => d,
         None => {
             tracing::warn!(
-                "代码运行器已禁用：Docker daemon 未连接。本地开发需运行 Docker 并挂载 socket\
-                 （dev 容器见 docker-compose.dev.yml），或设置 DOCKER_SOCKET_PATH"
+                "代码运行器已禁用：Docker daemon 未连接。请启动 Docker 并检查 socket 的访问权限，\
+                 自定义路径可通过 DOCKER_SOCKET_PATH 设置"
             );
             return;
         }

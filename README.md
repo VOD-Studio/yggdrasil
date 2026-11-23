@@ -24,7 +24,7 @@ Leptos 0.8 · cargo-leptos · Axum · PostgreSQL · Bun workspace（Tiptap / Cod
 
 ## 快速开始
 
-准备 Rust、cargo-leptos 0.3.12（`make install-cargo-leptos`）与 Bun，复制 `.env.example` 为 `.env`，然后：
+准备 Rust、`wasm32-unknown-unknown` 目标、cargo-leptos 0.3.12（`make install-cargo-leptos`）和 Bun。复制 `.env.example` 为 `.env`，将 `DATABASE_URL` 指向开发用 PostgreSQL，再运行以下命令。
 
 ```sh
 make dev     # 增量构建前端资源并启动开发服务
@@ -33,7 +33,7 @@ make lint    # Biome / TypeScript / Clippy / rustfmt
 make build   # 发布构建
 ```
 
-直接运行 `make` 可列出全部目标；缺少本地工具时可用 `make docker-dev`。
+`make dev` 默认监听 `http://127.0.0.1:8080`。直接运行 `make` 可列出全部目标，包括 `make docker-test` 和 `make docker-lint` 等一次性工具命令。
 
 发布前先运行 `make wasm-toolchain` 安装固定的 WASM nightly 工具链。发布按 `libs/bun.lock` 冻结安装打包与类型检查所需依赖，开发和 CI 则安装完整工作区依赖。
 

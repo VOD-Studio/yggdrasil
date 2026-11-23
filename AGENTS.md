@@ -61,7 +61,7 @@ WASM checks (native Clippy does not see wasm-gated code):
 cargo clippy --locked --target wasm32-unknown-unknown --no-default-features --features hydrate -- -D warnings
 ```
 
-Docker fallbacks only when local tools are missing: `make docker-dev` (port 8080), `make docker-test`, `make docker-lint`, `make docker-fmt`, `make docker-run CMD='<cmd>'`, `make docker-dev-down`.
+`make dev` runs on the host and defaults to `127.0.0.1:8080`. One-off Docker tool commands include `make docker-test`, `make docker-lint`, `make docker-fmt`, and `make docker-run CMD='<cmd>'`.
 
 ## Code Conventions & Common Patterns
 
@@ -86,7 +86,7 @@ Docker fallbacks only when local tools are missing: `make docker-dev` (port 8080
 - `Cargo.toml` (features; `[package.metadata.leptos]`; `[profile.wasm-release]`: `opt-level="z"`, fat LTO, `strip=false` because stripping removes wasm-bindgen metadata), `.cargo/config.toml` (wasm `getrandom` backend).
 - `Makefile`, `mk/assets.mk`, `mk/docker.mk`; `.github/workflows/ci.yml`.
 - `libs/package.json`, `libs/bunfig.toml`, `libs/biome.json`, `libs/tsconfig.base.json`.
-- `.env.example`; `Dockerfile`, `Dockerfile.cross`.
+- `.env.example`; `Dockerfile`, `Dockerfile.cross`, `Dockerfile.tools`.
 
 ## Runtime/Tooling Preferences
 
@@ -95,7 +95,7 @@ Docker fallbacks only when local tools are missing: `make docker-dev` (port 8080
 - Changing frontend deps: `cd libs && BUN_CONFIG_REGISTRY=https://registry.npmjs.org/ bun install`; keep per-package registry URLs out of `bun.lock`. `bunfig.toml` enforces a 1-day `minimumReleaseAge`. `@tiptap/markdown` is patched (`patchedDependencies` in `libs/package.json`, `libs/patches/`): bumping it means regenerating the patch.
 - Generated output is never committed: `public/style.css`, `public/admin.css`, `public/highlight.css`, `public/katex/`, `public/doc/`, every `public/<lib>/` bundle dir, `target/site`, `target/release-dist`, `release-manifest.json`, `*.br`. Tracked: `public/icons/`, `public/images/`, `public/skills/`, favicons, `manifest.webmanifest`.
 - Env: `DATABASE_URL` (required), `MCP_TOKEN_ENC_KEY` (64 hex, required for `/mcp`), `ADMIN_{USERNAME,EMAIL,PASSWORD}` (re-synced on every boot), `SSR_CACHE_SECS` (default 60), `COMPRESSION_ALGORITHMS` (default `off`), `DB_POOL_SIZE`, `STATEMENT_TIMEOUT_SECS`, `LEPTOS_SITE_ROOT`, `IP`/`PORT`, `YGG_PREVIOUS_PUBLIC_DIR` (previous release `public/` kept during rolling deploys so stale tabs can load dropped `/pkg/` and CodeMirror chunks).
-- Production: TLS reverse proxy, correct `APP_BASE_URL`, `COOKIE_SECURE=true`, and an accurate `TRUSTED_PROXY_COUNT` (set in the panel after first boot). Dev compose expects external PostgreSQL on `global-databases_default`. Code runner images: `yggdrasil-runner-{base,python,node,go,rust,bun}`, run with read-only rootfs, no network, and dropped capabilities.
+- Production: TLS reverse proxy, correct `APP_BASE_URL`, `COOKIE_SECURE=true`, and an accurate `TRUSTED_PROXY_COUNT` (set in the panel after first boot). Code runner images: `yggdrasil-runner-{base,python,node,go,rust,bun}`, run with read-only rootfs, no network, and dropped capabilities.
 
 ## Testing & QA
 

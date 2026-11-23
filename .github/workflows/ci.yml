@@ -30,7 +30,7 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  # 与 Dockerfile、Dockerfile.cross、Dockerfile.dev 的稳定版 Rust 镜像保持一致。
+  # 与 Dockerfile、Dockerfile.cross、Dockerfile.tools 的稳定版 Rust 镜像保持一致。
   RUST_TOOLCHAIN: '1.100'
 
 # tag 和 dispatch 的运行永不被取消；dispatch 与 master push 分到不同组，互不取消。
