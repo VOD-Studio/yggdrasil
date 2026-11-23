@@ -109,16 +109,20 @@ pub async fn list(access: Access, filter: NoteFilter) -> Result<NotePage, AppErr
     };
     let query = crate::utils::server::escape_like_pattern(filter.query.trim());
     let kind = filter.kind.map(|k| k.as_str());
+    // 标签的表达式索引先筛候选，再按单个标签复核，排除跨标签边界的匹配。
     let predicate = format!("FROM notes n JOIN note_revisions r ON r.note_id=n.id AND r.version=n.{}
         WHERE ($1::int IS NULL OR n.owner_id=$1)
         AND ($2::int[] IS NULL OR EXISTS (SELECT 1 FROM notebook_notes bn WHERE bn.note_id=n.id AND bn.notebook_id=ANY($2)))
         AND (n.deleted_at IS NOT NULL)=$3
-        AND ($4='' OR r.search_text ILIKE '%' || $4 || '%' ESCAPE '\\' OR EXISTS (SELECT 1 FROM unnest(r.tags) tag WHERE tag ILIKE '%' || $4 || '%' ESCAPE '\\'))
+        AND ($4='' OR r.search_text ILIKE '%' || $4 || '%' ESCAPE '\\'
+            OR (note_tags_search_text(r.tags) ILIKE '%' || $4 || '%' ESCAPE '\\'
+                AND EXISTS (SELECT 1 FROM unnest(r.tags) tag WHERE tag ILIKE '%' || $4 || '%' ESCAPE '\\')))
         AND ($5::text IS NULL OR r.kind=$5)
         AND ($6::int IS NULL OR EXISTS (SELECT 1 FROM notebook_notes bn JOIN notebooks b ON b.id=bn.notebook_id WHERE bn.note_id=n.id AND b.id=$6 AND ($1::int IS NOT NULL OR (b.is_public AND b.archived_at IS NULL))))
         AND ($7='' OR $7=ANY(r.tags))
         AND ($8::bool IS NULL OR (n.published_version IS NOT NULL)=$8)
         AND ($9::bool IS NULL OR (n.knowledge_version IS NOT NULL)=$9)", access.revision());
+    let offset = i64::from(filter.page.clamp(1, 100_000) - 1) * 20;
     let params: &[&(dyn tokio_postgres::types::ToSql + Sync)] = &[
         &owner,
         &books,
@@ -129,25 +133,32 @@ pub async fn list(access: Access, filter: NoteFilter) -> Result<NotePage, AppErr
         &filter.tag,
         &published,
         &knowledge,
+        &offset,
     ];
-    let total = client
-        .query_one(&format!("SELECT COUNT(*) {predicate}"), params)
-        .await
-        .map_err(AppError::query)?
-        .get(0);
-    let page = filter.page.clamp(1, 100_000);
     // 列表仅短随记携带 HTML；长文按需读取，避免每页传输完整知识库。
     // 主题笔记读出目录只为数出「N 节」，下发前清空。
     let columns = COLUMNS.replace("r.content_md, r.content_html, r.toc_html", "''::text AS content_md, CASE WHEN r.kind='moment' AND length(r.content_md)<=2000 THEN r.content_html ELSE '' END AS content_html, CASE WHEN r.kind='topic' THEN r.toc_html ELSE '' END AS toc_html");
-    let sql = format!("SELECT {columns}, {BOOK_IDS} {predicate}
-        ORDER BY CASE WHEN $6::int IS NOT NULL THEN (SELECT position FROM notebook_notes WHERE notebook_id=$6 AND note_id=n.id) END,
-        CASE WHEN $4<>'' THEN word_similarity($4, r.search_text) END DESC,
-        r.created_at DESC, n.id DESC LIMIT 20 OFFSET {}", (page-1)*20);
-    let notes = client
-        .query(&sql, params)
-        .await
-        .map_err(AppError::query)?
+    // 计数和分页共用一次过滤，只保留键和排序字段，最后读取当前页的正文与目录。
+    // 空页也保留计数行，给超出末页的请求返回准确总数。
+    let sql = format!("WITH matching AS MATERIALIZED (
+        SELECT n.id, r.version, r.created_at,
+            CASE WHEN $6::int IS NOT NULL THEN (SELECT position FROM notebook_notes WHERE notebook_id=$6 AND note_id=n.id) END AS position,
+            CASE WHEN $4<>'' THEN word_similarity($4, r.search_text) END AS similarity
+        {predicate}
+    ), result_page AS (
+        SELECT * FROM matching ORDER BY position, similarity DESC, created_at DESC, id DESC LIMIT 20 OFFSET $10
+    )
+    SELECT {columns}, {BOOK_IDS}, totals.note_count
+    FROM (SELECT COUNT(*) AS note_count FROM matching) totals
+    LEFT JOIN result_page p ON true
+    LEFT JOIN notes n ON n.id=p.id
+    LEFT JOIN note_revisions r ON r.note_id=p.id AND r.version=p.version
+    ORDER BY p.position, p.similarity DESC, p.created_at DESC, p.id DESC");
+    let rows = client.query(&sql, params).await.map_err(AppError::query)?;
+    let total = rows.first().map_or(0, |row| row.get("note_count"));
+    let notes = rows
         .iter()
+        .filter(|r| r.get::<_, Option<i32>>("id").is_some())
         .map(|r| Note {
             toc_html: String::new(),
             ..map_note(r, &access)
@@ -1036,6 +1047,7 @@ mod tests {
                     title: "所有权".into(),
                     kind: NoteKind::Topic,
                     content_md: "第一版 Rust 100%_".into(),
+                    tags: vec![r"数据_100%\rust".into(), "跨界甲".into(), "跨界乙".into()],
                     notebook_ids: vec![public, private],
                     ..Default::default()
                 },
@@ -1063,6 +1075,7 @@ mod tests {
                 .unwrap();
             let mut draft = note.draft();
             draft.content_md = "第二版，尚未发布".into();
+            draft.tags = vec!["工作稿标签".into()];
             let updated = save(1, draft.clone(), None).await.unwrap();
             assert_eq!(updated.version, 2);
             assert!(
@@ -1124,6 +1137,25 @@ mod tests {
                 .total,
                 1
             );
+            for (access, query, expected) in [
+                (Access::Public, r"_100%\RUST", 1),
+                (knowledge.clone(), r"_100%\RUST", 1),
+                (Access::Owner(1), r"_100%\RUST", 0),
+                (Access::Owner(1), "工作稿标签", 1),
+                (Access::Public, "跨界甲\n跨界乙", 0),
+            ] {
+                let results = list(
+                    access,
+                    NoteFilter {
+                        query: query.into(),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap();
+                assert_eq!(results.total, expected, "{query}");
+                assert_eq!(results.notes.len() as i64, expected, "{query}");
+            }
             assert_eq!(
                 list(
                     Access::Public,
