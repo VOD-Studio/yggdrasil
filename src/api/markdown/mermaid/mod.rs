@@ -126,16 +126,44 @@ impl Diagrams {
     }
 
     /// 把已 sanitize 的 HTML 中的占位符换成 SVG。
-    pub(super) fn substitute(self, mut html: String) -> String {
-        for (index, inner) in self.rendered.iter().enumerate() {
-            let marker = self.marker(index);
-            if let Some(at) = html.find(&marker) {
-                html.replace_range(at..at + marker.len(), inner);
-            } else {
+    pub(super) fn substitute(self, html: String) -> String {
+        if self.rendered.is_empty() {
+            return html;
+        }
+
+        let prefix = format!("ygg-mermaid-{}-", self.nonce);
+        let svg_bytes: usize = self.rendered.iter().map(String::len).sum();
+        let mut output = String::with_capacity(html.len() + svg_bytes);
+        let mut pending: Vec<_> = self.rendered.into_iter().map(Some).collect();
+        let mut copied = 0;
+        // 只扫描清理后的 HTML，按索引拼接图表。已输出的 SVG 不再参与查找。
+        for (start, _) in html.match_indices(&prefix) {
+            let after_prefix = start + prefix.len();
+            let suffix = &html[after_prefix..];
+            let (digits, tail) =
+                suffix.split_at(suffix.bytes().take_while(u8::is_ascii_digit).count());
+            if !tail.starts_with("-end") || (digits.len() > 1 && digits.starts_with('0')) {
+                continue;
+            }
+            let Some(svg) = digits
+                .parse::<usize>()
+                .ok()
+                .and_then(|index| pending.get_mut(index))
+                .and_then(Option::take)
+            else {
+                continue;
+            };
+            output.push_str(&html[copied..start]);
+            output.push_str(&svg);
+            copied = after_prefix + digits.len() + "-end".len();
+        }
+        output.push_str(&html[copied..]);
+        for (index, svg) in pending.iter().enumerate() {
+            if svg.is_some() {
                 tracing::error!(index, "Mermaid 占位符在清理后丢失");
             }
         }
-        html
+        output
     }
 }
 
@@ -218,6 +246,22 @@ mod tests {
     fn view_box(svg: &str) -> &str {
         let at = svg.find("viewBox=\"").unwrap() + "viewBox=\"".len();
         svg[at..].split('"').next().unwrap()
+    }
+
+    #[test]
+    fn substitute_follows_marker_indices_and_only_replaces_the_first_match() {
+        let diagrams = Diagrams {
+            rendered: vec!["<svg>甲</svg>".into(), "<svg>乙</svg>".into()],
+            ..Diagrams::new()
+        };
+        let first = diagrams.marker(0);
+        let second = diagrams.marker(1);
+        let malformed = format!("ygg-mermaid-{}-00-end", diagrams.nonce);
+        let html = format!("前{second}中{malformed}{first}后{first}");
+        assert_eq!(
+            diagrams.substitute(html),
+            format!("前<svg>乙</svg>中{malformed}<svg>甲</svg>后{first}")
+        );
     }
 
     #[test]

@@ -1,5 +1,7 @@
 //! 标题：层级映射、锚点 slug 与目录（TOC）HTML。
 
+use std::collections::{HashMap, HashSet};
+
 /// 将标题纯文本转义，用于安全地拼进 TOC 的 `aria-label="..."` 与 `<a>` 正文。
 ///
 /// 复用 `utils::html::escape_html`（转义 `& < > " '`），避免在仓库内
@@ -134,22 +136,31 @@ pub(super) fn slugify_heading(text: &str) -> String {
     slug
 }
 
-/// 在同一篇文档内为标题分配唯一锚点：首次出现保留 `slugify_heading` 的结果，
-/// 重复时依次追加 `-1`、`-2`…（与 GitHub 一致）；候选已被其他标题占用
-/// （如另有标题恰为 `Foo 1`）时继续递增，保证 TOC 链接一一对应。
-pub(super) fn unique_heading_slug(
-    text: &str,
-    used: &mut std::collections::HashSet<String>,
-) -> String {
-    let base = slugify_heading(text);
-    if !used.contains(&base) {
-        used.insert(base.clone());
-        return base;
+/// 为一篇文档内的标题分配唯一锚点。
+#[derive(Default)]
+pub(super) struct HeadingIds {
+    used: HashSet<String>,
+    next_suffix: HashMap<String, usize>,
+}
+
+impl HeadingIds {
+    /// 重复时依次追加 `-1`、`-2`…，继续跳过其他标题已占用的锚点。
+    pub(super) fn assign(&mut self, text: &str) -> String {
+        let base = slugify_heading(text);
+        if self.used.insert(base.clone()) {
+            return base;
+        }
+
+        // 已试过的后缀都在 used 中，之后只需从下一个后缀开始查找。
+        let next = self.next_suffix.entry(base.clone()).or_insert(1);
+        loop {
+            let candidate = format!("{base}-{next}");
+            *next += 1;
+            if self.used.insert(candidate.clone()) {
+                return candidate;
+            }
+        }
     }
-    (1..)
-        .map(|n| format!("{base}-{n}"))
-        .find(|candidate| used.insert(candidate.clone()))
-        .expect("无限序列总能找到未占用的锚点")
 }
 
 #[cfg(test)]
@@ -195,13 +206,21 @@ mod tests {
 
     #[test]
     fn unique_heading_slug_suffixes_collisions() {
-        let mut used = std::collections::HashSet::new();
-        let ids: Vec<String> = ["Intro", "Intro", "Intro!", "Intro 1", "Intro"]
-            .iter()
-            .map(|t| unique_heading_slug(t, &mut used))
-            .collect();
+        let mut anchors = HeadingIds::default();
+        let ids = ["Intro", "Intro", "Intro!", "Intro 1", "Intro 3", "Intro"]
+            .map(|title| anchors.assign(title));
         // 重复标题、仅标点不同的标题、恰好撞上后缀的标题都得到不同锚点。
-        assert_eq!(ids, ["intro", "intro-1", "intro-2", "intro-1-1", "intro-3"]);
+        assert_eq!(
+            ids,
+            [
+                "intro",
+                "intro-1",
+                "intro-2",
+                "intro-1-1",
+                "intro-3",
+                "intro-4"
+            ]
+        );
     }
 
     #[test]

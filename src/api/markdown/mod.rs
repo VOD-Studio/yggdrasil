@@ -80,11 +80,11 @@ pub fn render_markdown_enhanced(md: &str) -> RenderedContent {
     // 每个唯一 label 的 FootnoteDefinition 只出现一次、FootnoteReference 每次引用触发一次。
     // 所以 back-link 必须按 label 关联，display_num 按 label 首次出现顺序分配。
     // fn_order 记录 label 首次出现顺序，用于分配稳定的显示编号（1, 2, 3…）。
-    use std::collections::{HashMap, HashSet};
+    use std::collections::HashMap;
     let mut fn_refs: HashMap<String, usize> = HashMap::new();
     let mut fn_order: Vec<String> = Vec::new();
     // 已分配的标题锚点，重复 slug 追加序号，避免多个标题共用同一 id。
-    let mut heading_ids: HashSet<String> = HashSet::new();
+    let mut heading_ids = heading::HeadingIds::default();
 
     for event in &events {
         match event {
@@ -103,7 +103,7 @@ pub fn render_markdown_enhanced(md: &str) -> RenderedContent {
             }
             Event::End(TagEnd::Heading(_)) => {
                 if let Some((lvl, text)) = current_heading.take() {
-                    let id = heading::unique_heading_slug(&text, &mut heading_ids);
+                    let id = heading_ids.assign(&text);
                     headings.push((lvl, text, id));
                 }
             }
