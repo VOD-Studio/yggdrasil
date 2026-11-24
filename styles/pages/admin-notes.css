@@ -779,15 +779,6 @@ a.admin-notes-row:focus-visible .admin-notes-edit {
   min-height: 3.75rem;
 }
 
-.admin-notebook-batch .admin-notebook-fields {
-  overflow-y: auto;
-}
-
-.admin-notebook-batch textarea {
-  field-sizing: fixed;
-  min-height: 8rem;
-}
-
 .admin-notebook-switch {
   display: flex;
   align-items: flex-start;
@@ -813,7 +804,7 @@ a.admin-notes-row:focus-visible .admin-notes-edit {
 .admin-notebook-order-head {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 0.25rem 0.75rem;
   margin-bottom: 0.625rem;
@@ -825,9 +816,101 @@ a.admin-notes-row:focus-visible .admin-notes-edit {
   font-weight: 600;
 }
 
-.admin-notebook-order-head span {
+.admin-notebook-order-head > div > span {
   color: var(--color-fg-3);
   font-size: 0.75rem;
+}
+
+.notebook-picker {
+  max-width: 39rem;
+}
+
+.notebook-picker .asset-modal-head > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.notebook-picker-filter {
+  width: min(13rem, 100%);
+}
+
+.notebook-picker-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.notebook-picker-list li + li {
+  box-shadow: inset 0 var(--hairline) 0 var(--color-hairline);
+}
+
+.notebook-picker-row {
+  display: grid;
+  grid-template-columns: 1rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 44px;
+  padding: 0.5rem 0.625rem;
+  border-radius: 8px;
+}
+
+.notebook-picker-row:has(input:enabled) {
+  cursor: pointer;
+}
+
+.notebook-picker-row:not(.is-selected):has(input:enabled):hover {
+  background-color: var(--color-ink-1);
+}
+
+.notebook-picker-row.is-selected {
+  background-color: color-mix(in srgb, var(--color-clay) 7%, transparent);
+}
+
+.notebook-picker-row-copy {
+  display: grid;
+  grid-column: 2;
+  min-width: 0;
+}
+
+.notebook-picker-row-title {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.notebook-picker-pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  padding-inline: 1.125rem;
+}
+
+.notebook-picker-pager > label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 44px;
+  color: var(--color-fg-2);
+  font-size: 0.78125rem;
+}
+
+.notebook-picker-pager .table-pager {
+  padding-inline: 0;
+}
+
+.notebook-picker-error {
+  margin: 0;
+  padding: 0.5rem 1.125rem;
+  color: var(--color-danger);
+  font-size: 0.8125rem;
+}
+
+.notebook-picker-selection p {
+  margin: 0;
 }
 
 /* 不裁切：上移下移按钮的提示要能浮出列表。 */
@@ -949,8 +1032,19 @@ a.admin-notes-row:focus-visible .admin-notes-edit {
 
 @media (max-width: 767px) {
   .admin-notebooks .admin-page-actions button,
-  .admin-notebook-batch .confirm-dialog-actions button {
+  .admin-notebook-order-head button,
+  .notebook-picker button,
+  .notebook-picker .asset-modal-search,
+  .notebook-picker input[type="search"] {
     min-height: 44px;
+  }
+
+  .notebook-picker .btn-icon {
+    min-width: 44px;
+  }
+
+  .notebook-picker-tools .asset-modal-search {
+    order: -1;
   }
 }
 

@@ -136,6 +136,19 @@ pub struct NotePage {
     pub total: i64,
 }
 
+pub(crate) const NOTES_PER_PAGE: i32 = 20;
+#[cfg(feature = "server")]
+pub(crate) const MAX_NOTEBOOKS_PER_NOTE: usize = 30;
+pub(crate) const MAX_NOTE_BATCH_SIZE: usize = 100;
+
+/// 将界面明确勾选或取消的归属合并到当前已保存的归属。
+pub(crate) fn merge_notebook_ids(current: &mut Vec<i32>, before: &[i32], after: &[i32]) {
+    current.retain(|id| !before.contains(id) || after.contains(id));
+    current.extend(after.iter().filter(|id| !before.contains(id)).copied());
+    current.sort_unstable();
+    current.dedup();
+}
+
 /// 笔记本目录只显示标题、摘要和更新时间。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NotebookNote {
@@ -294,7 +307,6 @@ impl NotebookEntry {
 }
 
 pub(crate) const MAX_NOTEBOOK_TITLE_LENGTH: usize = 100;
-pub(crate) const MAX_NOTEBOOK_BATCH_SIZE: usize = 100;
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct NotebookInput {
@@ -305,9 +317,25 @@ pub struct NotebookInput {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct NotebookBatchResult {
-    pub created: u64,
-    pub skipped: u64,
+pub struct NotebookCandidate {
+    pub id: i32,
+    pub title: String,
+    pub kind: NoteKind,
+    pub published: bool,
+    pub joined: bool,
+    pub at_limit: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NotebookCandidates {
+    pub notes: Vec<NotebookCandidate>,
+    pub total: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NotebookAddResult {
+    pub added: u64,
+    pub entries: Vec<NotebookEntry>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

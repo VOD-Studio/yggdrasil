@@ -1,5 +1,5 @@
 use crate::components::ui::Toaster;
-use crate::models::note::{Note, NoteDraft};
+use crate::models::note::{merge_notebook_ids, Note, NoteDraft};
 use leptos::prelude::*;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -37,13 +37,20 @@ pub(super) fn use_editor_state(initial: Option<Note>, toast: Toaster) -> EditorS
     }
 }
 
-/// Advance only server identity/version when the user edited after submission.
+/// 保留保存期间的新编辑，将服务器返回的笔记归属合并进当前草稿。
 pub(super) fn reconcile_save(current: &mut NoteDraft, submitted: &NoteDraft, saved: NoteDraft) {
     if current == submitted {
         *current = saved;
     } else {
         current.id = saved.id;
         current.expected_version = saved.expected_version;
+        let mut notebooks = saved.notebook_ids;
+        merge_notebook_ids(
+            &mut notebooks,
+            &submitted.notebook_ids,
+            &current.notebook_ids,
+        );
+        current.notebook_ids = notebooks;
     }
 }
 
@@ -205,6 +212,7 @@ mod tests {
     fn delayed_save_keeps_new_text_tags_and_notebooks_but_advances_version() {
         let submitted = NoteDraft {
             content_md: "first".into(),
+            notebook_ids: vec![1],
             ..Default::default()
         };
         let mut current = NoteDraft {
@@ -219,12 +227,13 @@ mod tests {
             NoteDraft {
                 id: Some(4),
                 expected_version: Some(2),
+                notebook_ids: vec![1, 9],
                 ..submitted.clone()
             },
         );
         assert_eq!(current.content_md, "new text");
         assert_eq!(current.tags, ["new"]);
-        assert_eq!(current.notebook_ids, [3]);
+        assert_eq!(current.notebook_ids, [3, 9]);
         assert_eq!((current.id, current.expected_version), (Some(4), Some(2)));
     }
     #[test]

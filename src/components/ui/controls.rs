@@ -168,12 +168,15 @@ pub fn IconButton(
 /// - `onchange`：状态变化回调，返回新的 bool
 /// - `danger`：危险态（红色语义，SQL 控制台「我了解后果」），缺省 `false`
 /// - `label`：没有可见文字关联时的读屏名称，如表格行的「选择《标题》」
+/// - `indeterminate`：分组选项部分选中时的混合状态
 #[component]
 pub fn Checkbox(
     #[prop(into)] checked: Signal<bool>,
     #[prop(into)] onchange: Callback<bool>,
     #[prop(optional, into)] danger: Signal<bool>,
     #[prop(optional, into)] label: Option<String>,
+    #[prop(optional, into)] disabled: Signal<bool>,
+    #[prop(optional, into)] indeterminate: Signal<bool>,
 ) -> impl IntoView {
     view! {
         <span class=move || {
@@ -182,6 +185,8 @@ pub fn Checkbox(
             <input
                 type="checkbox"
                 prop:checked=move || checked.get()
+                prop:indeterminate=move || indeterminate.get()
+                disabled=move || disabled.get()
                 aria-label=label
                 on:change=move |e| onchange.run(event_target_checked(&e))
             />

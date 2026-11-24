@@ -112,6 +112,22 @@
     stroke-dashoffset: 0;
   }
 
+  .ygg-cb:has(input:indeterminate) {
+    background-color: var(--color-clay-fill);
+  }
+
+  .ygg-cb:has(input:indeterminate)::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    width: 0.5rem;
+    height: 2px;
+    margin: auto;
+    border-radius: 1px;
+    background-color: var(--color-on-clay);
+    pointer-events: none;
+  }
+
   .ygg-cb:has(input:not(:checked):hover) {
     box-shadow: inset 0 0 0 1.5px var(--color-ink-4);
   }

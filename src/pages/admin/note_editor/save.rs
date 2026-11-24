@@ -19,9 +19,10 @@ async fn save_snapshot(state: EditorState) -> Result<Note, ApiError> {
     let snapshot = state.draft_now().ok_or_else(closed)?;
     let saved = state.saved_now().ok_or_else(closed)?;
     let dirty = state.dirty_now().ok_or_else(closed)?;
+    let before_notebooks = saved.as_ref().map(|note| note.notebook_ids.clone());
     let note = match saved {
         Some(note) if !dirty => note,
-        _ => save_note(snapshot.clone()).await?,
+        _ => save_note(snapshot.clone(), before_notebooks).await?,
     };
     state
         .draft
@@ -66,7 +67,14 @@ pub(super) async fn persist(state: EditorState, action: Option<NoteAction>) -> b
     let result = async {
         let note = save_snapshot(state).await?;
         match action {
-            Some(action) => act_on_note(note.id, note.version, action).await,
+            Some(action) => {
+                let updated = act_on_note(note.id, note.version, action).await?;
+                state
+                    .draft
+                    .try_update(|current| reconcile_save(current, &note.draft(), updated.draft()))
+                    .ok_or_else(closed)?;
+                Ok(updated)
+            }
             None => Ok(note),
         }
     }

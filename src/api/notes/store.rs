@@ -95,6 +95,65 @@ const BOOK_IDS: &str =
       AND ($2::int[] IS NULL OR b.id=ANY($2)) ORDER BY b.id) AS notebook_ids";
 
 pub async fn list(access: Access, filter: NoteFilter) -> Result<NotePage, AppError> {
+    // 列表仅短随记携带 HTML；长文按需读取。主题笔记的目录只用于计算小节数。
+    let columns = COLUMNS.replace("r.content_md, r.content_html, r.toc_html", "''::text AS content_md, CASE WHEN r.kind='moment' AND length(r.content_md)<=2000 THEN r.content_html ELSE '' END AS content_html, CASE WHEN r.kind='topic' THEN r.toc_html ELSE '' END AS toc_html");
+    let rows = list_rows(&access, filter, &columns, None).await?;
+    let total = rows.first().map_or(0, |row| row.get("note_count"));
+    let notes = rows
+        .iter()
+        .filter(|r| r.get::<_, Option<i32>>("id").is_some())
+        .map(|r| Note {
+            toc_html: String::new(),
+            ..map_note(r, &access)
+        })
+        .collect();
+    Ok(NotePage { notes, total })
+}
+
+pub async fn notebook_candidates(
+    owner_id: i32,
+    book: i32,
+    query: String,
+    page: i32,
+    only_missing: bool,
+) -> Result<NotebookCandidates, AppError> {
+    let rows = list_rows(
+        &Access::Owner(owner_id),
+        NoteFilter {
+            query,
+            page,
+            ..Default::default()
+        },
+        "n.id, r.kind, r.title, r.summary, n.published_version IS NOT NULL AS published",
+        only_missing.then_some(book),
+    )
+    .await?;
+    let total = rows.first().map_or(0, |row| row.get("note_count"));
+    let notes = rows
+        .iter()
+        .filter_map(|row| {
+            let id = row.get::<_, Option<i32>>("id")?;
+            let kind = note_kind(row);
+            let books: Vec<i32> = row.get("notebook_ids");
+            Some(NotebookCandidate {
+                id,
+                title: display_title(kind, row.get("title"), row.get("summary")),
+                kind,
+                published: row.get("published"),
+                joined: books.contains(&book),
+                at_limit: books.len() >= MAX_NOTEBOOKS_PER_NOTE,
+            })
+        })
+        .collect();
+    Ok(NotebookCandidates { notes, total })
+}
+
+async fn list_rows(
+    access: &Access,
+    filter: NoteFilter,
+    columns: &str,
+    exclude_book: Option<i32>,
+) -> Result<Vec<tokio_postgres::Row>, AppError> {
     if filter.query.chars().count() > 200 {
         return Err(AppError::BadRequest("搜索内容不能超过 200 字".into()));
     }
@@ -121,8 +180,9 @@ pub async fn list(access: Access, filter: NoteFilter) -> Result<NotePage, AppErr
         AND ($6::int IS NULL OR EXISTS (SELECT 1 FROM notebook_notes bn JOIN notebooks b ON b.id=bn.notebook_id WHERE bn.note_id=n.id AND b.id=$6 AND ($1::int IS NOT NULL OR (b.is_public AND b.archived_at IS NULL))))
         AND ($7='' OR $7=ANY(r.tags))
         AND ($8::bool IS NULL OR (n.published_version IS NOT NULL)=$8)
-        AND ($9::bool IS NULL OR (n.knowledge_version IS NOT NULL)=$9)", access.revision());
-    let offset = i64::from(filter.page.clamp(1, 100_000) - 1) * 20;
+        AND ($9::bool IS NULL OR (n.knowledge_version IS NOT NULL)=$9)
+        AND ($11::int IS NULL OR NOT EXISTS (SELECT 1 FROM notebook_notes bn WHERE bn.note_id=n.id AND bn.notebook_id=$11))", access.revision());
+    let offset = i64::from(filter.page.clamp(1, 100_000) - 1) * i64::from(NOTES_PER_PAGE);
     let params: &[&(dyn tokio_postgres::types::ToSql + Sync)] = &[
         &owner,
         &books,
@@ -134,10 +194,8 @@ pub async fn list(access: Access, filter: NoteFilter) -> Result<NotePage, AppErr
         &published,
         &knowledge,
         &offset,
+        &exclude_book,
     ];
-    // 列表仅短随记携带 HTML；长文按需读取，避免每页传输完整知识库。
-    // 主题笔记读出目录只为数出「N 节」，下发前清空。
-    let columns = COLUMNS.replace("r.content_md, r.content_html, r.toc_html", "''::text AS content_md, CASE WHEN r.kind='moment' AND length(r.content_md)<=2000 THEN r.content_html ELSE '' END AS content_html, CASE WHEN r.kind='topic' THEN r.toc_html ELSE '' END AS toc_html");
     // 计数和分页共用一次过滤，只保留键和排序字段，最后读取当前页的正文与目录。
     // 空页也保留计数行，给超出末页的请求返回准确总数。
     let sql = format!("WITH matching AS MATERIALIZED (
@@ -146,7 +204,7 @@ pub async fn list(access: Access, filter: NoteFilter) -> Result<NotePage, AppErr
             CASE WHEN $4<>'' THEN word_similarity($4, r.search_text) END AS similarity
         {predicate}
     ), result_page AS (
-        SELECT * FROM matching ORDER BY position, similarity DESC, created_at DESC, id DESC LIMIT 20 OFFSET $10
+        SELECT * FROM matching ORDER BY position, similarity DESC, created_at DESC, id DESC LIMIT {NOTES_PER_PAGE} OFFSET $10
     )
     SELECT {columns}, {BOOK_IDS}, totals.note_count
     FROM (SELECT COUNT(*) AS note_count FROM matching) totals
@@ -154,17 +212,7 @@ pub async fn list(access: Access, filter: NoteFilter) -> Result<NotePage, AppErr
     LEFT JOIN notes n ON n.id=p.id
     LEFT JOIN note_revisions r ON r.note_id=p.id AND r.version=p.version
     ORDER BY p.position, p.similarity DESC, p.created_at DESC, p.id DESC");
-    let rows = client.query(&sql, params).await.map_err(AppError::query)?;
-    let total = rows.first().map_or(0, |row| row.get("note_count"));
-    let notes = rows
-        .iter()
-        .filter(|r| r.get::<_, Option<i32>>("id").is_some())
-        .map(|r| Note {
-            toc_html: String::new(),
-            ..map_note(r, &access)
-        })
-        .collect();
-    Ok(NotePage { notes, total })
+    client.query(&sql, params).await.map_err(AppError::query)
 }
 
 pub async fn list_notebook_entries(id: i32, page: i32) -> Result<NotebookPageEntries, AppError> {
@@ -424,7 +472,7 @@ fn validate(draft: &mut NoteDraft) -> Result<(), AppError> {
     }
     draft.notebook_ids.sort_unstable();
     draft.notebook_ids.dedup();
-    if draft.notebook_ids.len() > 30 {
+    if draft.notebook_ids.len() > MAX_NOTEBOOKS_PER_NOTE {
         return Err(AppError::BadRequest("最多收录到 30 个笔记本".into()));
     }
     if draft.id.is_some() && draft.expected_version.is_none() {
@@ -435,8 +483,17 @@ fn validate(draft: &mut NoteDraft) -> Result<(), AppError> {
 
 pub async fn save(
     owner_id: i32,
+    draft: NoteDraft,
+    allowed_books: Option<&[i32]>,
+) -> Result<Note, AppError> {
+    save_with_notebooks(owner_id, draft, allowed_books, None).await
+}
+
+pub(super) async fn save_with_notebooks(
+    owner_id: i32,
     mut draft: NoteDraft,
     allowed_books: Option<&[i32]>,
+    before_notebooks: Option<Vec<i32>>,
 ) -> Result<Note, AppError> {
     validate(&mut draft)?;
     if let Some(allowed) = allowed_books {
@@ -449,17 +506,6 @@ pub async fn save(
         crate::api::posts::helpers::render_post_fields(&draft.content_md, "draft", None).await?;
     let mut client = get_conn().await.map_err(AppError::db_conn)?;
     let tx = client.transaction().await.map_err(AppError::tx)?;
-    let count: i64 = tx
-        .query_one(
-            "SELECT COUNT(*) FROM notebooks WHERE owner_id=$1 AND id=ANY($2)",
-            &[&owner_id, &draft.notebook_ids],
-        )
-        .await
-        .map_err(AppError::query)?
-        .get(0);
-    if count != draft.notebook_ids.len() as i64 {
-        return Err(AppError::Forbidden("笔记本不存在或无权访问"));
-    }
     let (id, version) = if let Some(id) = draft.id {
         let row = tx.query_opt("SELECT version FROM notes WHERE id=$1 AND owner_id=$2 AND deleted_at IS NULL FOR UPDATE", &[&id, &owner_id]).await.map_err(AppError::query)?.ok_or(AppError::NotFound("笔记不存在或已移入回收站"))?;
         let current: i32 = row.get(0);
@@ -487,6 +533,37 @@ pub async fn save(
             .get(0);
         (id, 1)
     };
+    if let Some(before) = before_notebooks.filter(|_| draft.id.is_some()) {
+        if before.len() > MAX_NOTEBOOKS_PER_NOTE {
+            return Err(AppError::BadRequest("最多收录到 30 个笔记本".into()));
+        }
+        let mut current: Vec<i32> = tx
+            .query(
+                "SELECT notebook_id FROM notebook_notes WHERE note_id=$1",
+                &[&id],
+            )
+            .await
+            .map_err(AppError::query)?
+            .iter()
+            .map(|r| r.get(0))
+            .collect();
+        merge_notebook_ids(&mut current, &before, &draft.notebook_ids);
+        if current.len() > MAX_NOTEBOOKS_PER_NOTE {
+            return Err(AppError::BadRequest("最多收录到 30 个笔记本".into()));
+        }
+        draft.notebook_ids = current;
+    }
+    // 先锁笔记，再锁笔记本，和批量加入共用目录末尾的位置分配顺序。
+    let books = tx
+        .query(
+            "SELECT id FROM notebooks WHERE owner_id=$1 AND id=ANY($2) ORDER BY id FOR NO KEY UPDATE",
+            &[&owner_id, &draft.notebook_ids],
+        )
+        .await
+        .map_err(AppError::query)?;
+    if books.len() != draft.notebook_ids.len() {
+        return Err(AppError::Forbidden("笔记本不存在或无权访问"));
+    }
     tx.execute("INSERT INTO note_revisions(note_id, version, kind, title, content_md, content_html, toc_html, summary, tags) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
         &[&id, &version, &draft.kind.as_str(), &draft.title, &draft.content_md, &fields.content_html, &fields.toc_html.unwrap_or_default(), &fields.auto_summary, &draft.tags]).await.map_err(AppError::tx)?;
     tx.execute(
@@ -534,7 +611,7 @@ pub async fn batch_act(
     ) {
         return Err(AppError::BadRequest("不支持此批量操作".into()));
     }
-    if targets.is_empty() || targets.len() > 100 {
+    if targets.is_empty() || targets.len() > MAX_NOTE_BATCH_SIZE {
         return Err(AppError::BadRequest("每次请选择 1 至 100 篇笔记".into()));
     }
     targets.sort_unstable_by_key(|target| target.id);
@@ -703,63 +780,102 @@ pub async fn save_notebook(owner_id: i32, input: NotebookInput) -> Result<(), Ap
     Ok(())
 }
 
-pub async fn batch_create_notebooks(
+pub async fn add_notebook_notes(
     owner_id: i32,
-    names: &str,
-) -> Result<NotebookBatchResult, AppError> {
-    let mut titles = Vec::new();
-    for (index, line) in names.lines().enumerate() {
-        let title = line.trim();
-        if title.is_empty() {
-            continue;
-        }
-        if titles.len() == MAX_NOTEBOOK_BATCH_SIZE {
-            return Err(AppError::BadRequest(format!(
-                "每次最多添加 {MAX_NOTEBOOK_BATCH_SIZE} 本笔记本"
-            )));
-        }
-        if title.chars().count() > MAX_NOTEBOOK_TITLE_LENGTH || title.contains('\0') {
-            return Err(AppError::BadRequest(format!(
-                "第 {} 行名称须为 1–{MAX_NOTEBOOK_TITLE_LENGTH} 字，且不能包含空字符",
-                index + 1
-            )));
-        }
-        titles.push(title);
+    book: i32,
+    ids: Vec<i32>,
+) -> Result<NotebookAddResult, AppError> {
+    if ids.is_empty() || ids.len() > MAX_NOTE_BATCH_SIZE {
+        return Err(AppError::BadRequest(format!(
+            "每次请选择 1 至 {MAX_NOTE_BATCH_SIZE} 篇笔记"
+        )));
     }
-    if titles.is_empty() {
-        return Err(AppError::BadRequest("请输入笔记本名称".into()));
-    }
-
     let mut client = get_conn().await.map_err(AppError::db_conn)?;
     let tx = client.transaction().await.map_err(AppError::tx)?;
-    // 同一用户的批量请求串行检查同名项，超时重试也会跳过已创建的笔记本。
-    tx.query_opt(
-        "SELECT id FROM users WHERE id=$1 FOR NO KEY UPDATE",
-        &[&owner_id],
-    )
-    .await
-    .map_err(AppError::query)?
-    .ok_or(AppError::NotFound("用户不存在"))?;
-    // 列表按 ID 倒序呈现同批记录，逆序插入使显示顺序与输入一致。
-    let created = tx
-        .execute(
-            "INSERT INTO notebooks(owner_id, title, is_public)
-             SELECT $1, input.title, FALSE
-             FROM unnest($2::text[]) WITH ORDINALITY AS input(title, line)
-             WHERE NOT EXISTS (
-                 SELECT 1 FROM notebooks b WHERE b.owner_id=$1 AND b.title=input.title
-             )
-             GROUP BY input.title ORDER BY min(input.line) DESC",
-            &[&owner_id, &titles],
+    let mut locked_ids = ids.clone();
+    locked_ids.sort_unstable();
+    locked_ids.dedup();
+    let notes = tx
+        .query(
+            "SELECT id FROM notes WHERE owner_id=$1 AND id=ANY($2) AND deleted_at IS NULL
+             ORDER BY id FOR NO KEY UPDATE",
+            &[&owner_id, &locked_ids],
         )
         .await
         .map_err(AppError::query)?;
+    if notes.len() != locked_ids.len() {
+        return Err(AppError::BadRequest(
+            "所选笔记中有笔记已移入回收站或不可访问".into(),
+        ));
+    }
+    tx.query_opt(
+        "SELECT id FROM notebooks WHERE id=$1 AND owner_id=$2 AND archived_at IS NULL FOR NO KEY UPDATE",
+        &[&book, &owner_id],
+    )
+    .await
+    .map_err(AppError::query)?
+    .ok_or(AppError::NotFound("笔记本不存在或已归档"))?;
+    let exceeds_limit: bool = tx.query_one(
+        "SELECT EXISTS(
+             SELECT 1 FROM unnest($1::int[]) AS selected(id)
+             WHERE NOT EXISTS (SELECT 1 FROM notebook_notes WHERE note_id=selected.id AND notebook_id=$2)
+             AND (SELECT COUNT(*) FROM notebook_notes WHERE note_id=selected.id) >= $3
+         )",
+        &[&locked_ids, &book, &(MAX_NOTEBOOKS_PER_NOTE as i64)],
+    ).await.map_err(AppError::query)?.get(0);
+    if exceeds_limit {
+        return Err(AppError::BadRequest(
+            "所选笔记中有笔记已达到 30 个笔记本的收录上限".into(),
+        ));
+    }
+    let added = tx.execute(
+        "WITH picks AS (
+             SELECT id, min(ord) AS ord FROM unnest($2::int[]) WITH ORDINALITY AS selected(id, ord)
+             WHERE NOT EXISTS (SELECT 1 FROM notebook_notes WHERE notebook_id=$1 AND note_id=selected.id)
+             GROUP BY id
+         ), tail AS (
+             SELECT COALESCE(MAX(position), -1) AS position FROM notebook_notes WHERE notebook_id=$1
+         )
+         INSERT INTO notebook_notes(notebook_id, note_id, position)
+         SELECT $1, picks.id, tail.position + row_number() OVER (ORDER BY picks.ord)
+         FROM picks CROSS JOIN tail",
+        &[&book, &ids],
+    ).await.map_err(AppError::query)?;
+    let entries = query_notebook_order(&tx, owner_id, book).await?;
     tx.commit().await.map_err(AppError::tx)?;
     crate::tasks::cache_sync::sync_after_write(&client).await;
-    Ok(NotebookBatchResult {
-        created,
-        skipped: titles.len() as u64 - created,
-    })
+    Ok(NotebookAddResult { added, entries })
+}
+
+pub async fn notebook_order(owner_id: i32, book: i32) -> Result<Vec<NotebookEntry>, AppError> {
+    let client = get_conn().await.map_err(AppError::db_conn)?;
+    query_notebook_order(&client, owner_id, book).await
+}
+
+async fn query_notebook_order(
+    client: &impl deadpool_postgres::GenericClient,
+    owner_id: i32,
+    book: i32,
+) -> Result<Vec<NotebookEntry>, AppError> {
+    let rows = client.query(
+        "SELECT n.id, CASE WHEN r.title='' THEN r.summary ELSE r.title END,
+         n.published_version IS NOT NULL, n.version > COALESCE(n.published_version, n.version), n.deleted_at IS NOT NULL
+         FROM notebook_notes bn
+         JOIN notebooks b ON b.id=bn.notebook_id JOIN notes n ON n.id=bn.note_id
+         JOIN note_revisions r ON r.note_id=n.id AND r.version=n.version
+         WHERE b.id=$1 AND b.owner_id=$2 ORDER BY bn.position,n.id",
+        &[&book, &owner_id],
+    ).await.map_err(AppError::query)?;
+    Ok(rows
+        .iter()
+        .map(|r| NotebookEntry {
+            id: r.get(0),
+            title: r.get(1),
+            published: r.get(2),
+            ahead: r.get(3),
+            trashed: r.get(4),
+        })
+        .collect())
 }
 
 pub async fn archive_notebook(owner_id: i32, id: i32, archived: bool) -> Result<(), AppError> {
@@ -780,7 +896,7 @@ pub async fn reorder(owner_id: i32, book: i32, ids: Vec<i32>) -> Result<(), AppE
     let mut client = get_conn().await.map_err(AppError::db_conn)?;
     let tx = client.transaction().await.map_err(AppError::tx)?;
     tx.query_opt(
-        "SELECT id FROM notebooks WHERE id=$1 AND owner_id=$2 FOR UPDATE",
+        "SELECT id FROM notebooks WHERE id=$1 AND owner_id=$2 FOR NO KEY UPDATE",
         &[&book, &owner_id],
     )
     .await

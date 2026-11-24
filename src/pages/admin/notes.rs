@@ -31,8 +31,6 @@ use crate::utils::time::{hm, md, to_local, ymd};
 
 pub mod notebooks;
 
-/// 列表接口每页固定 20 条。
-const NOTES_PER_PAGE: i32 = 20;
 /// 输入停顿多久后自动搜索（毫秒）。
 const SEARCH_DEBOUNCE_MS: u32 = 300;
 
@@ -688,11 +686,14 @@ fn QuickNote(on_saved: Callback<()>) -> impl IntoView {
         let content_md = quick.get_untracked();
         let tag_list = parse_tags(&tags.get_untracked());
         spawn_local(async move {
-            let result = save_note(NoteDraft {
-                content_md: content_md.clone(),
-                tags: tag_list,
-                ..Default::default()
-            })
+            let result = save_note(
+                NoteDraft {
+                    content_md: content_md.clone(),
+                    tags: tag_list,
+                    ..Default::default()
+                },
+                None,
+            )
             .await;
             if busy.try_set(false).is_some() {
                 // 组件已卸载，丢弃迟到的结果。

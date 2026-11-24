@@ -241,6 +241,7 @@ fn focus_modal_panel(document: &web_sys::Document, title: &str) {
 /// - `role`：面板角色，默认 `dialog`；危险确认传 `alertdialog`。
 /// - `overlay_padding`：遮罩内边距（响应式内边距因弹窗尺寸而异，默认 1.5rem）。
 /// - `panel_class`：在共享面板底座上追加的宽度等布局类（默认 `"dialog-panel-default"`）。
+/// - `dismiss_disabled`：提交期间拦截遮罩和 Escape 关闭。
 /// - `children`：面板内容（含调用方自己的标题栏、× 按钮等）；显示期间渲染，每次打开重新创建。
 #[component]
 pub fn ModalShell(
@@ -250,6 +251,7 @@ pub fn ModalShell(
     #[prop(default = "dialog".to_string(), into)] role: String,
     #[prop(optional, into)] overlay_padding: String,
     #[prop(default = "dialog-panel-default".to_string(), into)] panel_class: String,
+    #[prop(optional, into)] dismiss_disabled: Signal<bool>,
     children: ChildrenFn,
 ) -> impl IntoView {
     // 公共弹窗在打开时接管焦点，Escape 关闭后还给触发器；监听随显隐同步清理。
@@ -274,7 +276,10 @@ pub fn ModalShell(
                 let title = title.clone();
                 let handle = window_event_listener(ev::keydown, move |event| {
                     let key = event.key();
-                    if key == "Escape" {
+                    if key == "Escape"
+                        && !dismiss_disabled.get_untracked()
+                        && !super::composer::ime_composing(false, &event)
+                    {
                         closing.set(true);
                         visible.set(false);
                     } else if key == "Tab" {
@@ -345,8 +350,10 @@ pub fn ModalShell(
                 <div
                     class=overlay_class
                     on:click=move |_| {
-                        closing.set(true);
-                        visible.set(false);
+                        if !dismiss_disabled.get_untracked() {
+                            closing.set(true);
+                            visible.set(false);
+                        }
                     }
                 >
                     // 面板：阻止点击穿透到遮罩。

@@ -1,8 +1,11 @@
 //! 笔记本管理（`/admin/notebooks`）。
 //!
 //! 左栏：使用中 / 已归档选项卡与笔记本列表；右栏：选中笔记本的名称、简介、公开开关、
-//! 目录顺序（上移下移）与归档，或新建笔记本的表单。名称、简介、公开与顺序一起保存，
+//! 目录顺序、添加笔记与归档，或新建笔记本的表单。名称、简介、公开与顺序一起保存，
 //! 只提交改动过的部分。数据只在浏览器鉴权后读取。样式见 styles/pages/admin-notes.css。
+mod picker;
+
+use self::picker::NotebookNotePicker;
 use crate::api::error::ApiError;
 use crate::api::notes::*;
 use crate::components::admin_layout::AdminPageHead;
@@ -11,13 +14,14 @@ use crate::components::forms::{FormInput, FormLabel, FormTextarea, ToggleSwitch}
 use crate::components::skeletons::notes_admin_skeleton::NotebooksSkeleton;
 use crate::components::ui::{
     button_class, use_toast, Button, ButtonSize, ButtonVariant, ConfirmDialog, Icon, IconButton,
-    IconName, LoadError, ModalShell,
+    IconName, LoadError,
 };
 use crate::models::note::*;
 use crate::utils::error::failure_message;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use leptos_router::{lazy_route, LazyRoute};
+use std::collections::HashMap;
 
 /// `/admin/notebooks`。数据全部在浏览器鉴权后读取，没有 SSR 数据。
 pub struct NotebooksRoute;
@@ -62,8 +66,6 @@ fn AdminNotebooks() -> impl IntoView {
     let generation = StoredValue::new(0_u64);
     let archived = RwSignal::new(false);
     let selection = RwSignal::new(None::<Selection>);
-    let batch_open = RwSignal::new(false);
-    let batch_busy = RwSignal::new(false);
     // 新建时记下已有的笔记本；列表刷新出新的那本后选中它。
     let known = RwSignal::new(None::<Vec<i32>>);
 
@@ -83,6 +85,17 @@ fn AdminNotebooks() -> impl IntoView {
         });
     });
     let restart = Callback::new(move |()| reload.update(|n| *n = n.wrapping_add(1)));
+    let update_count = Callback::new(move |(id, count): (i32, i64)| {
+        books.update(|value| {
+            if let Some(book) = value
+                .as_mut()
+                .and_then(|result| result.as_mut().ok())
+                .and_then(|items| items.iter_mut().find(|book| book.id == id))
+            {
+                book.note_count = count;
+            }
+        });
+    });
 
     // 首次加载、切换选项卡或选中项消失时，选中当前选项卡的第一本。
     Effect::new(move |_| {
@@ -148,13 +161,6 @@ fn AdminNotebooks() -> impl IntoView {
                 title="笔记本"
                 actions=move || {
                     view! {
-                        <Button
-                            variant=ButtonVariant::Outline
-                            disabled=batch_busy
-                            onclick=move |_| batch_open.set(true)
-                        >
-                            "批量新建"
-                        </Button>
                         <button
                             class=button_class(ButtonVariant::Primary, ButtonSize::Md)
                             type="button"
@@ -168,7 +174,6 @@ fn AdminNotebooks() -> impl IntoView {
             >
                 "把相关的记录放在一起，按你的思路排列。"
             </AdminPageHead>
-            <NotebookBatchDialog visible=batch_open busy=batch_busy on_saved=restart/>
             {move || match phase.get() {
                 Phase::Failed => {
                     view! { <LoadError title="笔记本加载失败" on_retry=restart/> }.into_any()
@@ -180,7 +185,7 @@ fn AdminNotebooks() -> impl IntoView {
                             <EmptyState
                                 icon=IconName::BookOpen
                                 title="还没有笔记本"
-                                description="把一组主题笔记放进笔记本，按你的顺序排列；公开后访客可以从第一篇读起。"
+                                description="把相关笔记放进笔记本，按你的顺序排列。"
                                 action=EmptyStateAction::new(
                                     "新建笔记本",
                                     move |_| selection.set(Some(Selection::New)),
@@ -286,6 +291,7 @@ fn AdminNotebooks() -> impl IntoView {
                                     view! {
                                         <NotebookEditor
                                             book=Signal::stored(None)
+                                            on_count_changed=update_count
                                             on_saved=Callback::new(move |()| {
                                                 let ids = books
                                                     .with_untracked(|b| match b {
@@ -315,6 +321,7 @@ fn AdminNotebooks() -> impl IntoView {
                                                 view! {
                                                     <NotebookEditor
                                                         book=Signal::from(book)
+                                                        on_count_changed=update_count
                                                         on_saved=restart
                                                         on_cancel=Callback::new(|()| {})
                                                     />
@@ -338,96 +345,6 @@ fn AdminNotebooks() -> impl IntoView {
     }
 }
 
-#[component]
-fn NotebookBatchDialog(
-    visible: RwSignal<bool>,
-    busy: RwSignal<bool>,
-    on_saved: Callback<()>,
-) -> impl IntoView {
-    let toast = use_toast();
-    let names = RwSignal::new(String::new());
-    let closing = RwSignal::new(false);
-    let empty = Memo::new(move |_| names.with(|s| s.trim().is_empty()));
-    let submit = move |_| {
-        if busy.get_untracked() || empty.get_untracked() {
-            return;
-        }
-        busy.set(true);
-        let input = names.get_untracked();
-        spawn_local(async move {
-            match batch_create_notebooks(input).await {
-                Ok(NotebookBatchResult { created, skipped }) => {
-                    let message = match (created, skipped) {
-                        (0, _) => format!("已跳过 {skipped} 行同名项"),
-                        (_, 0) => format!("已新建 {created} 本笔记本"),
-                        _ => format!("已新建 {created} 本笔记本，跳过 {skipped} 行同名项"),
-                    };
-                    toast.success(message);
-                    let _ = names.try_set(String::new());
-                    if visible.try_get_untracked() == Some(true) {
-                        let _ = closing.try_set(true);
-                        let _ = visible.try_set(false);
-                    }
-                    on_saved.try_run(());
-                }
-                Err(e) => toast.error(failure_message("批量新建失败", &e)),
-            }
-            let _ = busy.try_set(false);
-        });
-    };
-
-    view! {
-        <ModalShell
-            visible
-            closing
-            title="批量新建笔记本"
-            overlay_padding="dialog-overlay-compact"
-            panel_class="dialog-panel-default admin-notebook-batch"
-        >
-            <div class="admin-notebook-fields">
-                <h2>"批量新建笔记本"</h2>
-                <p id="notebook-batch-hint" class="admin-notebook-hint">
-                    {format!(
-                        "每行填写一个名称，每次最多 {MAX_NOTEBOOK_BATCH_SIZE} 本。新建的笔记本默认私密，空行和同名项会跳过。",
-                    )}
-                </p>
-                <div>
-                    <FormLabel label="笔记本名称" html_for="notebook-batch-names"/>
-                    <FormTextarea
-                        id="notebook-batch-names"
-                        rows=6
-                        value=names
-                        oninput=move |value: String| names.set(value)
-                        attr:aria-describedby="notebook-batch-hint"
-                        attr:disabled=move || busy.get()
-                    />
-                </div>
-            </div>
-            <div class="confirm-dialog-actions">
-                <Button
-                    variant=ButtonVariant::Ghost
-                    disabled=busy
-                    onclick=move |_| {
-                        names.set(String::new());
-                        closing.set(true);
-                        visible.set(false);
-                    }
-                >
-                    "取消"
-                </Button>
-                <Button
-                    variant=ButtonVariant::Primary
-                    loading=busy
-                    disabled=Signal::from(empty)
-                    onclick=submit
-                >
-                    "创建笔记本"
-                </Button>
-            </div>
-        </ModalShell>
-    }
-}
-
 fn blank_editor() -> impl IntoView {
     view! {
         <div class="admin-panel admin-notebook-editor admin-notebook-blank">
@@ -443,6 +360,7 @@ fn NotebookEditor(
     book: Signal<Option<Notebook>>,
     on_saved: Callback<()>,
     on_cancel: Callback<()>,
+    on_count_changed: Callback<(i32, i64)>,
 ) -> impl IntoView {
     let toast = use_toast();
     let id = book.with_untracked(|b| b.as_ref().map(|b| b.id));
@@ -463,6 +381,7 @@ fn NotebookEditor(
     let public = RwSignal::new(base_public.get_untracked());
     let busy = RwSignal::new(false);
     let confirm_archive = RwSignal::new(false);
+    let picker_open = RwSignal::new(false);
 
     // 目录：服务端顺序与当前编排。刷新时保留上一份数据直到新结果到达。
     let order = RwSignal::new(None::<Result<(), ()>>);
@@ -507,6 +426,40 @@ fn NotebookEditor(
     });
     let order_dirty = Memo::new(move |_| {
         rows.with(|r| baseline.with(|b| r.iter().map(|r| r.id).ne(b.iter().map(|r| r.id))))
+    });
+    let on_added = Callback::new(move |NotebookAddResult { added, entries }| {
+        let Some(book_id) = id else { return };
+        // 覆盖较早的目录读取；本地已调整的相对顺序和新加入的笔记一起保留。
+        if order_generation.try_update_value(|g| *g += 1).is_none() {
+            return;
+        }
+        let next = if order_dirty.get_untracked() {
+            let mut by_id: HashMap<_, _> = entries.iter().map(|entry| (entry.id, entry)).collect();
+            let mut merged: Vec<_> = rows.with_untracked(|draft| {
+                draft
+                    .iter()
+                    .filter_map(|entry| by_id.remove(&entry.id).cloned())
+                    .collect()
+            });
+            merged.extend(
+                entries
+                    .iter()
+                    .filter_map(|entry| by_id.remove(&entry.id).cloned()),
+            );
+            merged
+        } else {
+            entries.clone()
+        };
+        let count = entries.iter().filter(|entry| !entry.trashed).count() as i64;
+        baseline.set(entries);
+        rows.set(next);
+        order.set(Some(Ok(())));
+        on_count_changed.try_run((book_id, count));
+        if added == 0 {
+            toast.success("所选笔记已在目录中");
+        } else {
+            toast.success(format!("已加入 {added} 篇笔记"));
+        }
     });
     let dirty = Memo::new(move |_| meta_dirty.get() || order_dirty.get());
     let can_save = Memo::new(move |_| {
@@ -638,14 +591,33 @@ fn NotebookEditor(
                 </div>
             </div>
 
-            {id
-                .is_some()
-                .then(|| {
+            {id.map(|book_id| {
                     view! {
+                        <NotebookNotePicker
+                            book_id=book_id
+                            book_title=Signal::from(base_title)
+                            is_public=Signal::from(base_public)
+                            visible=picker_open
+                            busy=busy
+                            on_added=on_added
+                        />
                         <div class="admin-notebook-order">
                             <div class="admin-notebook-order-head">
-                                <h3>"目录顺序"</h3>
-                                <span>"上移或下移调整阅读顺序，保存后生效"</span>
+                                <div>
+                                    <h3>"目录顺序"</h3>
+                                    <span>"上移或下移调整阅读顺序，保存后生效"</span>
+                                </div>
+                                <Show when=move || !is_archived.get()>
+                                    <Button
+                                        variant=ButtonVariant::Outline
+                                        size=ButtonSize::Sm
+                                        icon=IconName::Plus
+                                        disabled=busy
+                                        onclick=move |_| picker_open.set(true)
+                                    >
+                                        "添加笔记"
+                                    </Button>
+                                </Show>
                             </div>
                             {move || match order.get() {
                                 None => {
@@ -663,7 +635,7 @@ fn NotebookEditor(
                                 Some(Ok(())) if count.get() == 0 => {
                                     view! {
                                         <p class="admin-notebook-hint">
-                                            "这个笔记本还没有笔记。在笔记编辑器的「设置」里把笔记收进来。"
+                                            "这个笔记本还没有笔记。"
                                         </p>
                                     }
                                         .into_any()

@@ -194,61 +194,163 @@ async function batchNotes(page: Playwright.Page) {
 }
 
 async function batchNotebooks(page: Playwright.Page) {
-  const prefix = `笔记本批量回归-${crypto.randomUUID()}`;
-  const first = `${prefix}-甲`;
-  const second = `${prefix}-乙`;
-  const input = ` ${first} \n\n${second}\n${first}`;
-  const open = page.getByRole('button', { name: '批量新建', exact: true });
-  const dialog = page.getByRole('dialog', { name: '批量新建笔记本' });
-  const names = dialog.getByLabel('笔记本名称');
-  const create = dialog.getByRole('button', { name: '创建笔记本' });
-  const response = () => page.waitForResponse((r) => endpoint(r.url()) === 'batchcreatenotebooks');
-  const books = page.locator('.admin-notebook-item').filter({ hasText: prefix });
+  const prefix = `目录回归-${crypto.randomUUID()}`;
+  const bookTitle = `${prefix} 笔记本`;
+  const title = (index: number) => `${prefix} ${String(index).padStart(2, '0')}`;
+  const open = page.getByRole('button', { name: '添加笔记', exact: true });
+  const dialog = page.getByRole('dialog', { name: '添加笔记' });
+  const search = dialog.getByRole('searchbox', { name: '搜索标题、正文或标签' });
+  const noteRow = (index: number) => dialog.getByText(title(index), { exact: true });
+  const pick = (index: number) =>
+    dialog.getByRole('checkbox', { name: `选择笔记「${title(index)}」` });
+  const add = dialog.getByRole('button', { name: '加入', exact: true });
+  const response = () => page.waitForResponse((r) => endpoint(r.url()) === 'addnotebooknotes');
+  const api = async (name: string, body: unknown) => {
+    const res = await page.request.post(`${base}/api/${name}`, {
+      data: body,
+      headers: { Origin: base },
+    });
+    assert(res.ok(), `${name}: ${res.status()} ${await res.text()}`);
+    return res.json();
+  };
+
   try {
+    sql(`WITH fixture AS (
+      INSERT INTO notes(owner_id,slug,version)
+      SELECT 1, '${prefix}-' || lpad(i::text,2,'0'), 1 FROM generate_series(1,24) AS g(i)
+      ORDER BY i RETURNING id,slug
+    )
+    INSERT INTO note_revisions(note_id,version,kind,title,content_md,content_html)
+    SELECT id,1,CASE WHEN right(slug,2)='01' THEN 'moment' ELSE 'topic' END,
+      '${prefix} ' || right(slug,2), '正文', '<p>正文</p>' FROM fixture`);
+    const ids: number[] = JSON.parse(
+      sql(`SELECT json_agg(id ORDER BY slug) FROM notes WHERE slug LIKE '${prefix}-%'`),
+    );
+    const idsFor = (...indices: number[]) => indices.map((index) => ids[index - 1]!);
     await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'no-preference' });
     await page.goto(`${base}/admin/notebooks`);
     await page.getByRole('heading', { name: '还没有笔记本' }).waitFor();
-    await open.click();
-    assert(await create.isDisabled());
-    const invalid = `${first}\n\n${'长'.repeat(101)}`;
-    await names.fill(invalid);
-    const failed = response();
-    await create.click();
-    assert.equal((await failed).ok(), false);
-    await page.getByText(/第 3 行名称须为/).waitFor();
-    assert.equal(await names.inputValue(), invalid);
-    assert.equal(sql(`SELECT count(*) FROM notebooks WHERE title='${first}'`), '0');
+    await page.locator('.admin-page-actions').getByRole('button', { name: '新建笔记本' }).click();
+    await page.getByLabel('名称', { exact: true }).fill(bookTitle);
+    await page.getByRole('button', { name: '创建笔记本' }).click();
+    await page.getByText('这个笔记本还没有笔记。').waitFor();
+    await page.getByRole('switch', { name: '公开展示这个笔记本' }).click();
+    await page.getByRole('button', { name: '保存', exact: true }).click();
+    await page.getByRole('button', { name: '已保存', exact: true }).waitFor();
+    const bookId = Number(sql(`SELECT id FROM notebooks WHERE title='${bookTitle}'`));
+    const storedOrder = () =>
+      sql(
+        `SELECT string_agg(note_id::text, ',' ORDER BY position) FROM notebook_notes WHERE notebook_id=${bookId}`,
+      );
+    const directory = page.locator('.admin-notebook-row-title');
 
-    await names.fill(input);
-    await page.screenshot({ path: path.join(artifacts, 'notebooks-batch-desktop.png') });
-    const created = response();
-    await create.click();
-    assert.deepEqual(await (await created).json(), { created: 2, skipped: 1 });
+    await open.click();
+    await search.fill(prefix);
+    await pick(24).waitFor();
+    await dialog.getByText('访客可在目录中看到已发布的笔记。').waitFor();
+    assert(await add.isDisabled());
+    await noteRow(24).click();
+    assert(await pick(24).isChecked());
+    const selectPage = dialog.getByRole('checkbox', { name: '全选本页可加入的笔记' });
+    assert(await selectPage.evaluate((input: HTMLInputElement) => input.indeterminate));
+    await selectPage.check();
+    await dialog.getByText('已选 20 篇', { exact: true }).waitFor();
+    await selectPage.uncheck();
+    await pick(24).check();
+    await pick(23).check();
+    await page.screenshot({
+      path: path.join(artifacts, 'notebook-picker-desktop.png'),
+      animations: 'disabled',
+    });
+    const initial = response();
+    await add.click();
+    assert.equal((await (await initial).json()).added, 2);
     await dialog.waitFor({ state: 'hidden' });
-    await books.last().waitFor();
-    assert.deepEqual(await books.locator('.admin-notebook-item-title').allTextContents(), [
-      first,
-      second,
+    assert.deepEqual(await directory.allTextContents(), [title(24), title(23)]);
+    assert(await open.evaluate((button) => button === document.activeElement));
+    await page.getByRole('button', { name: `上移「${title(23)}」` }).click();
+
+    await open.click();
+    await search.fill(prefix);
+    await noteRow(24).waitFor();
+    const joined = dialog.locator('li').filter({ hasText: title(24) });
+    assert.match((await joined.textContent()) ?? '', /已加入/);
+    await dialog.getByRole('radio', { name: '未加入', exact: true }).click();
+    await pick(22).check();
+    assert.equal(await joined.count(), 0);
+    await dialog.getByRole('button', { name: '下一页', exact: true }).click();
+    await pick(1).focus();
+    await page.keyboard.press('Space');
+    assert(await pick(1).isChecked());
+    await search.fill(title(3));
+    await pick(3).waitFor();
+    await dialog.getByRole('radio', { name: '已选', exact: true }).click();
+    assert.deepEqual(await dialog.locator('.notebook-picker-row-title').allTextContents(), [
+      title(22),
+      title(1),
     ]);
-    assert.equal(await books.filter({ hasText: '私密' }).count(), 2);
+
+    // 选择后被另一页面移入回收站的笔记让整批失败，恢复后可用原勾选重试。
+    const [last, staleEditor] = idsFor(1, 22);
+    const trashed: Note = await api('act_on_note', {
+      id: last,
+      expected_version: 1,
+      action: 'trash',
+    });
+    const failed = response();
+    await add.click();
+    assert.equal((await failed).ok(), false);
+    await dialog
+      .getByRole('alert')
+      .getByText(/已移入回收站/)
+      .waitFor();
+    assert.equal(storedOrder(), idsFor(24, 23).join(','));
+    assert(await pick(22).isChecked());
+    assert(await pick(1).isChecked());
+    await api('act_on_note', { id: last, expected_version: trashed.version, action: 'restore' });
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
-    await open.click();
-    assert.equal(await names.inputValue(), '');
-    await names.fill(input);
-    await page.screenshot({ path: path.join(artifacts, 'notebooks-batch-mobile.png') });
+    await page.screenshot({
+      path: path.join(artifacts, 'notebook-picker-mobile.png'),
+      animations: 'disabled',
+    });
     const retried = response();
-    await create.click();
-    assert.deepEqual(await (await retried).json(), { created: 0, skipped: 3 });
+    await add.click();
+    assert.equal((await (await retried).json()).added, 2);
     await dialog.waitFor({ state: 'hidden' });
-    assert.equal(
-      sql(`SELECT count(*) FROM notebooks WHERE title IN ('${first}', '${second}')`),
-      '2',
-    );
-    pass('batch notebook creation validates all names and skips duplicates on retry');
+    assert.deepEqual(await directory.allTextContents(), [
+      title(23),
+      title(24),
+      title(22),
+      title(1),
+    ]);
+    await page.locator('.admin-notebook-item-meta').filter({ hasText: /4 篇/ }).waitFor();
+    assert.equal(storedOrder(), idsFor(24, 23, 22, 1).join(','));
+    await page.getByRole('button', { name: '保存', exact: true }).click();
+    await page.getByRole('button', { name: '已保存', exact: true }).waitFor();
+    assert.equal(storedOrder(), idsFor(23, 24, 22, 1).join(','));
+
+    const savedNote = await api('save_note', {
+      before_notebooks: [],
+      draft: {
+        id: staleEditor,
+        expected_version: 1,
+        kind: 'topic',
+        title: title(22),
+        content_md: '从较早打开的编辑器保存正文',
+        notebook_ids: [],
+      },
+    });
+    assert.deepEqual(savedNote.notebook_ids, [bookId]);
+    const duplicate = await api('add_notebook_notes', { id: bookId, note_ids: idsFor(22, 1) });
+    assert.equal(duplicate.added, 0);
+    assert.equal(storedOrder(), idsFor(23, 24, 22, 1).join(','));
+    pass('notebook picker preserves cross-page selection and directory edits on batch add');
   } finally {
-    sql(`DELETE FROM notebooks WHERE title IN ('${first}', '${second}')`);
+    sql(
+      `DELETE FROM notebooks WHERE title='${bookTitle}'; DELETE FROM notes WHERE slug LIKE '${prefix}-%'`,
+    );
   }
 }
 

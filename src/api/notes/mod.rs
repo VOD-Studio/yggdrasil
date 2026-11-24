@@ -63,9 +63,12 @@ pub async fn get_owned_note(id: i32, version: Option<i32>) -> Result<Note, ApiEr
 }
 
 #[server(SaveNote, endpoint = "save_note", input = leptos::server_fn::codec::Json)]
-pub async fn save_note(draft: NoteDraft) -> Result<Note, ApiError> {
+pub async fn save_note(
+    draft: NoteDraft,
+    before_notebooks: Option<Vec<i32>>,
+) -> Result<Note, ApiError> {
     let user = crate::api::auth::get_current_admin_user().await?;
-    Ok(store::save(user.id, draft, None).await?)
+    Ok(store::save_with_notebooks(user.id, draft, None, before_notebooks).await?)
 }
 
 #[server(ActOnNote, endpoint = "act_on_note", input = leptos::server_fn::codec::Json)]
@@ -105,10 +108,24 @@ pub async fn save_notebook(input: NotebookInput) -> Result<(), ApiError> {
     Ok(store::save_notebook(user.id, input).await?)
 }
 
-#[server(BatchCreateNotebooks, endpoint = "batch_create_notebooks", input = leptos::server_fn::codec::Json)]
-pub async fn batch_create_notebooks(names: String) -> Result<NotebookBatchResult, ApiError> {
+#[server(NotebookCandidatesList, endpoint = "notebook_candidates", input = leptos::server_fn::codec::Json)]
+pub async fn notebook_candidates(
+    id: i32,
+    query: String,
+    page: i32,
+    only_missing: bool,
+) -> Result<NotebookCandidates, ApiError> {
     let user = crate::api::auth::get_current_admin_user().await?;
-    Ok(store::batch_create_notebooks(user.id, &names).await?)
+    Ok(store::notebook_candidates(user.id, id, query, page, only_missing).await?)
+}
+
+#[server(AddNotebookNotes, endpoint = "add_notebook_notes", input = leptos::server_fn::codec::Json)]
+pub async fn add_notebook_notes(
+    id: i32,
+    note_ids: Vec<i32>,
+) -> Result<NotebookAddResult, ApiError> {
+    let user = crate::api::auth::get_current_admin_user().await?;
+    Ok(store::add_notebook_notes(user.id, id, note_ids).await?)
 }
 
 #[server(ReorderNotebook, endpoint = "reorder_notebook", input = leptos::server_fn::codec::Json)]
@@ -126,23 +143,5 @@ pub async fn archive_notebook(id: i32, archived: bool) -> Result<(), ApiError> {
 #[server(NotebookOrder, endpoint = "notebook_order", input = leptos::server_fn::codec::Json)]
 pub async fn notebook_order(id: i32) -> Result<Vec<NotebookEntry>, ApiError> {
     let user = crate::api::auth::get_current_admin_user().await?;
-    let client = crate::db::pool::get_conn()
-        .await
-        .map_err(crate::api::error::AppError::db_conn)?;
-    let rows=client.query("SELECT n.id, CASE WHEN r.title='' THEN r.summary ELSE r.title END,
-        n.published_version IS NOT NULL, n.version > COALESCE(n.published_version, n.version), n.deleted_at IS NOT NULL
-        FROM notebook_notes bn
-        JOIN notebooks b ON b.id=bn.notebook_id JOIN notes n ON n.id=bn.note_id
-        JOIN note_revisions r ON r.note_id=n.id AND r.version=n.version
-        WHERE b.id=$1 AND b.owner_id=$2 ORDER BY bn.position,n.id", &[&id,&user.id]).await.map_err(crate::api::error::AppError::query)?;
-    Ok(rows
-        .iter()
-        .map(|r| NotebookEntry {
-            id: r.get(0),
-            title: r.get(1),
-            published: r.get(2),
-            ahead: r.get(3),
-            trashed: r.get(4),
-        })
-        .collect())
+    Ok(store::notebook_order(user.id, id).await?)
 }
