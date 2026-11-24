@@ -779,6 +779,15 @@ a.admin-notes-row:focus-visible .admin-notes-edit {
   min-height: 3.75rem;
 }
 
+.admin-notebook-batch .admin-notebook-fields {
+  overflow-y: auto;
+}
+
+.admin-notebook-batch textarea {
+  field-sizing: fixed;
+  min-height: 8rem;
+}
+
 .admin-notebook-switch {
   display: flex;
   align-items: flex-start;
@@ -935,6 +944,13 @@ a.admin-notes-row:focus-visible .admin-notes-edit {
 @media (max-width: 860px) {
   .admin-notebooks-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 767px) {
+  .admin-notebooks .admin-page-actions button,
+  .admin-notebook-batch .confirm-dialog-actions button {
+    min-height: 44px;
   }
 }
 

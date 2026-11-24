@@ -10,8 +10,8 @@ use crate::components::empty_state::{EmptyState, EmptyStateAction};
 use crate::components::forms::{FormInput, FormLabel, FormTextarea, ToggleSwitch};
 use crate::components::skeletons::notes_admin_skeleton::NotebooksSkeleton;
 use crate::components::ui::{
-    button_class, use_toast, ButtonSize, ButtonVariant, ConfirmDialog, Icon, IconButton, IconName,
-    LoadError,
+    button_class, use_toast, Button, ButtonSize, ButtonVariant, ConfirmDialog, Icon, IconButton,
+    IconName, LoadError, ModalShell,
 };
 use crate::models::note::*;
 use crate::utils::error::failure_message;
@@ -62,6 +62,8 @@ fn AdminNotebooks() -> impl IntoView {
     let generation = StoredValue::new(0_u64);
     let archived = RwSignal::new(false);
     let selection = RwSignal::new(None::<Selection>);
+    let batch_open = RwSignal::new(false);
+    let batch_busy = RwSignal::new(false);
     // 新建时记下已有的笔记本；列表刷新出新的那本后选中它。
     let known = RwSignal::new(None::<Vec<i32>>);
 
@@ -146,6 +148,13 @@ fn AdminNotebooks() -> impl IntoView {
                 title="笔记本"
                 actions=move || {
                     view! {
+                        <Button
+                            variant=ButtonVariant::Outline
+                            disabled=batch_busy
+                            onclick=move |_| batch_open.set(true)
+                        >
+                            "批量新建"
+                        </Button>
                         <button
                             class=button_class(ButtonVariant::Primary, ButtonSize::Md)
                             type="button"
@@ -159,6 +168,7 @@ fn AdminNotebooks() -> impl IntoView {
             >
                 "把相关的记录放在一起，按你的思路排列。"
             </AdminPageHead>
+            <NotebookBatchDialog visible=batch_open busy=batch_busy on_saved=restart/>
             {move || match phase.get() {
                 Phase::Failed => {
                     view! { <LoadError title="笔记本加载失败" on_retry=restart/> }.into_any()
@@ -325,6 +335,96 @@ fn AdminNotebooks() -> impl IntoView {
                 }
             }}
         </div>
+    }
+}
+
+#[component]
+fn NotebookBatchDialog(
+    visible: RwSignal<bool>,
+    busy: RwSignal<bool>,
+    on_saved: Callback<()>,
+) -> impl IntoView {
+    let toast = use_toast();
+    let names = RwSignal::new(String::new());
+    let closing = RwSignal::new(false);
+    let empty = Memo::new(move |_| names.with(|s| s.trim().is_empty()));
+    let submit = move |_| {
+        if busy.get_untracked() || empty.get_untracked() {
+            return;
+        }
+        busy.set(true);
+        let input = names.get_untracked();
+        spawn_local(async move {
+            match batch_create_notebooks(input).await {
+                Ok(NotebookBatchResult { created, skipped }) => {
+                    let message = match (created, skipped) {
+                        (0, _) => format!("已跳过 {skipped} 行同名项"),
+                        (_, 0) => format!("已新建 {created} 本笔记本"),
+                        _ => format!("已新建 {created} 本笔记本，跳过 {skipped} 行同名项"),
+                    };
+                    toast.success(message);
+                    let _ = names.try_set(String::new());
+                    if visible.try_get_untracked() == Some(true) {
+                        let _ = closing.try_set(true);
+                        let _ = visible.try_set(false);
+                    }
+                    on_saved.try_run(());
+                }
+                Err(e) => toast.error(failure_message("批量新建失败", &e)),
+            }
+            let _ = busy.try_set(false);
+        });
+    };
+
+    view! {
+        <ModalShell
+            visible
+            closing
+            title="批量新建笔记本"
+            overlay_padding="dialog-overlay-compact"
+            panel_class="dialog-panel-default admin-notebook-batch"
+        >
+            <div class="admin-notebook-fields">
+                <h2>"批量新建笔记本"</h2>
+                <p id="notebook-batch-hint" class="admin-notebook-hint">
+                    {format!(
+                        "每行填写一个名称，每次最多 {MAX_NOTEBOOK_BATCH_SIZE} 本。新建的笔记本默认私密，空行和同名项会跳过。",
+                    )}
+                </p>
+                <div>
+                    <FormLabel label="笔记本名称" html_for="notebook-batch-names"/>
+                    <FormTextarea
+                        id="notebook-batch-names"
+                        rows=6
+                        value=names
+                        oninput=move |value: String| names.set(value)
+                        attr:aria-describedby="notebook-batch-hint"
+                        attr:disabled=move || busy.get()
+                    />
+                </div>
+            </div>
+            <div class="confirm-dialog-actions">
+                <Button
+                    variant=ButtonVariant::Ghost
+                    disabled=busy
+                    onclick=move |_| {
+                        names.set(String::new());
+                        closing.set(true);
+                        visible.set(false);
+                    }
+                >
+                    "取消"
+                </Button>
+                <Button
+                    variant=ButtonVariant::Primary
+                    loading=busy
+                    disabled=Signal::from(empty)
+                    onclick=submit
+                >
+                    "创建笔记本"
+                </Button>
+            </div>
+        </ModalShell>
     }
 }
 
@@ -499,7 +599,7 @@ fn NotebookEditor(
                     <FormLabel label="名称" html_for="notebook-title"/>
                     <FormInput
                         id="notebook-title"
-                        maxlength=100
+                        maxlength=MAX_NOTEBOOK_TITLE_LENGTH as i32
                         required=true
                         value=title
                         oninput=Callback::new(move |v: String| title.set(v))

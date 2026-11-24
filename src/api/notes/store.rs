@@ -674,10 +674,13 @@ async fn query_notebooks(
 
 pub async fn save_notebook(owner_id: i32, input: NotebookInput) -> Result<(), AppError> {
     let title = input.title.trim();
-    if title.is_empty() || title.chars().count() > 100 || input.description.chars().count() > 1000 {
-        return Err(AppError::BadRequest(
-            "笔记本标题为 1–100 字，介绍最多 1000 字".into(),
-        ));
+    if title.is_empty()
+        || title.chars().count() > MAX_NOTEBOOK_TITLE_LENGTH
+        || input.description.chars().count() > 1000
+    {
+        return Err(AppError::BadRequest(format!(
+            "笔记本标题为 1–{MAX_NOTEBOOK_TITLE_LENGTH} 字，介绍最多 1000 字"
+        )));
     }
     let client = get_conn().await.map_err(AppError::db_conn)?;
     if let Some(id) = input.id {
@@ -698,6 +701,65 @@ pub async fn save_notebook(owner_id: i32, input: NotebookInput) -> Result<(), Ap
     }
     crate::tasks::cache_sync::sync_after_write(&client).await;
     Ok(())
+}
+
+pub async fn batch_create_notebooks(
+    owner_id: i32,
+    names: &str,
+) -> Result<NotebookBatchResult, AppError> {
+    let mut titles = Vec::new();
+    for (index, line) in names.lines().enumerate() {
+        let title = line.trim();
+        if title.is_empty() {
+            continue;
+        }
+        if titles.len() == MAX_NOTEBOOK_BATCH_SIZE {
+            return Err(AppError::BadRequest(format!(
+                "每次最多添加 {MAX_NOTEBOOK_BATCH_SIZE} 本笔记本"
+            )));
+        }
+        if title.chars().count() > MAX_NOTEBOOK_TITLE_LENGTH || title.contains('\0') {
+            return Err(AppError::BadRequest(format!(
+                "第 {} 行名称须为 1–{MAX_NOTEBOOK_TITLE_LENGTH} 字，且不能包含空字符",
+                index + 1
+            )));
+        }
+        titles.push(title);
+    }
+    if titles.is_empty() {
+        return Err(AppError::BadRequest("请输入笔记本名称".into()));
+    }
+
+    let mut client = get_conn().await.map_err(AppError::db_conn)?;
+    let tx = client.transaction().await.map_err(AppError::tx)?;
+    // 同一用户的批量请求串行检查同名项，超时重试也会跳过已创建的笔记本。
+    tx.query_opt(
+        "SELECT id FROM users WHERE id=$1 FOR NO KEY UPDATE",
+        &[&owner_id],
+    )
+    .await
+    .map_err(AppError::query)?
+    .ok_or(AppError::NotFound("用户不存在"))?;
+    // 列表按 ID 倒序呈现同批记录，逆序插入使显示顺序与输入一致。
+    let created = tx
+        .execute(
+            "INSERT INTO notebooks(owner_id, title, is_public)
+             SELECT $1, input.title, FALSE
+             FROM unnest($2::text[]) WITH ORDINALITY AS input(title, line)
+             WHERE NOT EXISTS (
+                 SELECT 1 FROM notebooks b WHERE b.owner_id=$1 AND b.title=input.title
+             )
+             GROUP BY input.title ORDER BY min(input.line) DESC",
+            &[&owner_id, &titles],
+        )
+        .await
+        .map_err(AppError::query)?;
+    tx.commit().await.map_err(AppError::tx)?;
+    crate::tasks::cache_sync::sync_after_write(&client).await;
+    Ok(NotebookBatchResult {
+        created,
+        skipped: titles.len() as u64 - created,
+    })
 }
 
 pub async fn archive_notebook(owner_id: i32, id: i32, archived: bool) -> Result<(), AppError> {

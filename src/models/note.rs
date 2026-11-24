@@ -293,12 +293,21 @@ impl NotebookEntry {
     }
 }
 
+pub(crate) const MAX_NOTEBOOK_TITLE_LENGTH: usize = 100;
+pub(crate) const MAX_NOTEBOOK_BATCH_SIZE: usize = 100;
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct NotebookInput {
     pub id: Option<i32>,
     pub title: String,
     pub description: String,
     pub is_public: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NotebookBatchResult {
+    pub created: u64,
+    pub skipped: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

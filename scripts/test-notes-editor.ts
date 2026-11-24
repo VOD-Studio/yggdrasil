@@ -192,6 +192,66 @@ async function batchNotes(page: Playwright.Page) {
     }
   }
 }
+
+async function batchNotebooks(page: Playwright.Page) {
+  const prefix = `笔记本批量回归-${crypto.randomUUID()}`;
+  const first = `${prefix}-甲`;
+  const second = `${prefix}-乙`;
+  const input = ` ${first} \n\n${second}\n${first}`;
+  const open = page.getByRole('button', { name: '批量新建', exact: true });
+  const dialog = page.getByRole('dialog', { name: '批量新建笔记本' });
+  const names = dialog.getByLabel('笔记本名称');
+  const create = dialog.getByRole('button', { name: '创建笔记本' });
+  const response = () => page.waitForResponse((r) => endpoint(r.url()) === 'batchcreatenotebooks');
+  const books = page.locator('.admin-notebook-item').filter({ hasText: prefix });
+  try {
+    await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'no-preference' });
+    await page.goto(`${base}/admin/notebooks`);
+    await page.getByRole('heading', { name: '还没有笔记本' }).waitFor();
+    await open.click();
+    assert(await create.isDisabled());
+    const invalid = `${first}\n\n${'长'.repeat(101)}`;
+    await names.fill(invalid);
+    const failed = response();
+    await create.click();
+    assert.equal((await failed).ok(), false);
+    await page.getByText(/第 3 行名称须为/).waitFor();
+    assert.equal(await names.inputValue(), invalid);
+    assert.equal(sql(`SELECT count(*) FROM notebooks WHERE title='${first}'`), '0');
+
+    await names.fill(input);
+    await page.screenshot({ path: path.join(artifacts, 'notebooks-batch-desktop.png') });
+    const created = response();
+    await create.click();
+    assert.deepEqual(await (await created).json(), { created: 2, skipped: 1 });
+    await dialog.waitFor({ state: 'hidden' });
+    await books.last().waitFor();
+    assert.deepEqual(await books.locator('.admin-notebook-item-title').allTextContents(), [
+      first,
+      second,
+    ]);
+    assert.equal(await books.filter({ hasText: '私密' }).count(), 2);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
+    await open.click();
+    assert.equal(await names.inputValue(), '');
+    await names.fill(input);
+    await page.screenshot({ path: path.join(artifacts, 'notebooks-batch-mobile.png') });
+    const retried = response();
+    await create.click();
+    assert.deepEqual(await (await retried).json(), { created: 0, skipped: 3 });
+    await dialog.waitFor({ state: 'hidden' });
+    assert.equal(
+      sql(`SELECT count(*) FROM notebooks WHERE title IN ('${first}', '${second}')`),
+      '2',
+    );
+    pass('batch notebook creation validates all names and skips duplicates on retry');
+  } finally {
+    sql(`DELETE FROM notebooks WHERE title IN ('${first}', '${second}')`);
+  }
+}
+
 async function main() {
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
@@ -344,6 +404,7 @@ async function main() {
     pass('leaving during save cannot populate the next editor with an old response');
     await page.setViewportSize({ width: 1440, height: 1000 });
     await batchNotes(page);
+    await batchNotebooks(page);
     assert.deepEqual(report.errors, []);
   } finally {
     fs.writeFileSync(path.join(artifacts, 'notes.json'), JSON.stringify(report, null, 2));

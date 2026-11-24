@@ -105,6 +105,12 @@ pub async fn save_notebook(input: NotebookInput) -> Result<(), ApiError> {
     Ok(store::save_notebook(user.id, input).await?)
 }
 
+#[server(BatchCreateNotebooks, endpoint = "batch_create_notebooks", input = leptos::server_fn::codec::Json)]
+pub async fn batch_create_notebooks(names: String) -> Result<NotebookBatchResult, ApiError> {
+    let user = crate::api::auth::get_current_admin_user().await?;
+    Ok(store::batch_create_notebooks(user.id, &names).await?)
+}
+
 #[server(ReorderNotebook, endpoint = "reorder_notebook", input = leptos::server_fn::codec::Json)]
 pub async fn reorder_notebook(id: i32, note_ids: Vec<i32>) -> Result<(), ApiError> {
     let user = crate::api::auth::get_current_admin_user().await?;
