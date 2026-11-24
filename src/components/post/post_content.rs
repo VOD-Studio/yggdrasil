@@ -217,15 +217,21 @@ pub fn PostContent(
     #[prop(optional)] managed: bool,
 ) -> impl IntoView {
     let fragments = split_content_fragments_cached(&content_html);
+    let content_ref = NodeRef::<leptos::html::Div>::new();
 
-    // 正文挂载后初始化交互脚本：不读取任何信号，只运行一次。
     #[cfg(target_arch = "wasm32")]
     if !managed {
+        // Suspend 重建正文前就可能运行 effect，等到自己的正文节点就绪再扫描代码块。
+        Effect::new(move || {
+            if let Some(content) = content_ref.get() {
+                globals::init_post_content_element(content.into());
+            }
+        });
+
         Effect::new(move || {
             // 图鉴实例只增强自己的正文，正式页面仍按原选择器处理。
             let selector =
                 scope_id.map_or_else(|| ".post-content".to_string(), |id| format!("#{id}"));
-            globals::init_post_content(&selector);
 
             // lightbox.js 未加载时调用入队，其 IIFE 尾部补执行。
             let mut lightbox = vec![selector.as_str()];
@@ -283,7 +289,12 @@ pub fn PostContent(
             <LightboxAssets/>
             {MarkdownStyles::for_html(&content_html).links()}
         })}
-        <div id=scope_id data-showcase-lightbox-owner=scope_id class="post-content md-content">
+        <div
+            node_ref=content_ref
+            id=scope_id
+            data-showcase-lightbox-owner=scope_id
+            class="post-content md-content"
+        >
             {body}
         </div>
     }

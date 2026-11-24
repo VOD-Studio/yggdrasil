@@ -76,9 +76,14 @@ pub fn start_theme_transition(x: f64, y: f64) {
     call("__startThemeTransition", &[x.into(), y.into()]);
 }
 
-/// 增强选择器范围内的文章正文（代码块复制按钮等）。
+/// 按选择器批量初始化正文的代码块复制按钮。
 pub fn init_post_content(selector: &str) {
     call("__initPostContent", &[selector.into()]);
+}
+
+/// 初始化指定正文节点的代码块复制按钮。
+pub fn init_post_content_element(root: web_sys::Element) {
+    call("__initPostContent", &[root.into()]);
 }
 
 /// 初始化目录 scroll-spy；三个选择器为 `None` 时用 JS 端默认值。

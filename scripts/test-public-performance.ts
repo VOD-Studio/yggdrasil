@@ -173,6 +173,40 @@ async function verifyNoteHydration(page: Page, base: string, mobile: boolean) {
   await body.getByText(marker).waitFor();
 }
 
+async function verifyCopyNavigation(page: Page, base: string, mobile: boolean) {
+  const verifyButton = async (title: string) => {
+    const article = page.locator('article').filter({
+      has: page.getByRole('heading', { name: title, exact: true }),
+    });
+    const buttons = article.locator('.post-content pre > .copy-code');
+    await buttons.first().waitFor({ state: 'attached' });
+    assert.equal(await buttons.count(), 1);
+  };
+  const documentUrl = () =>
+    page.evaluate(() => performance.getEntriesByType('navigation')[0]?.name);
+
+  const post = base + '/post/perf-002';
+  await page.goto(post);
+  await hydrated(page);
+  await verifyButton('归档文章 2');
+  await page.locator('.post-nav a[href="/post/perf-003"]').click();
+  await page.waitForURL(base + '/post/perf-003');
+  await verifyButton('归档文章 3');
+  assert.equal(await documentUrl(), post);
+
+  const note = base + '/notes/recent-test-02?book=1';
+  const nextNote = '/notes/recent-test-03?book=1';
+  await page.goto(note);
+  await hydrated(page);
+  await verifyButton('最近笔记 2');
+  if (mobile) await page.locator('#note-directory-trigger').click();
+  const directory = page.locator(mobile ? '#note-directory-sheet' : '.note-rail');
+  await directory.locator(`.note-directory-item[href="${nextNote}"]`).click();
+  await page.waitForURL(base + nextNote);
+  await verifyButton('最近笔记 3');
+  assert.equal(await documentUrl(), note);
+}
+
 async function verifyNoteStream(page: Page, base: string) {
   const marker = 'SHORT_MOMENT_BODY_FIXTURE';
   const response = await page.goto(base + '/notes');
@@ -479,6 +513,7 @@ async function main() {
       repeat('NOT_FOR_PUBLIC_PAYLOAD ',2000),
       CASE WHEN g=1 THEN repeat('<p>阅读页与评论懒加载回归正文。</p>',350)
         || '<pre data-runnable="true" data-lang="python" data-source="print(&#x27;runner-lazy&#x27;)"><code class="language-python">print(&#x27;runner-lazy&#x27;)</code></pre>'
+      WHEN g IN (2,3) THEN '<pre><code class="language-text">文章代码 '||g||'</code></pre>'
       WHEN g=150 THEN repeat('<p>同路由并发测试正文</p>',15000)
       WHEN g=151 THEN NULL ELSE '<p>文章正文</p>' END,
       'published',NOW()-g*INTERVAL '1 minute',
@@ -730,6 +765,7 @@ async function main() {
       if (theme === 'light') {
         await verifyHome(page, bases[0]);
         await verifyNoteHydration(page, bases[0], mobile);
+        await verifyCopyNavigation(page, bases[0], mobile);
       }
       assert.deepEqual(errors, []);
       browserResults.push({

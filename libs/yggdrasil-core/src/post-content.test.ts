@@ -16,13 +16,11 @@ describe('initPostContent', () => {
     document.body.innerHTML = '';
   });
 
-  it('为 pre>code 注入 .copy-code 按钮', () => {
+  it('为尚未插入文档的正文注入 .copy-code 按钮', () => {
     const root = document.createElement('div');
-    root.className = 'post-content';
     root.innerHTML = '<pre><code>console.log(1)</code></pre>';
-    document.body.appendChild(root);
 
-    window.__initPostContent('.post-content');
+    window.__initPostContent(root);
 
     const btn = root.querySelector('pre .copy-code');
     expect(btn).not.toBeNull();

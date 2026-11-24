@@ -57,6 +57,10 @@ function initCopyButtons(root: Element): void {
   });
 }
 
-export function initPostContent(selector: string): void {
-  document.querySelectorAll(selector).forEach(initCopyButtons);
+export function initPostContent(target: string | Element): void {
+  if (typeof target === 'string') {
+    document.querySelectorAll(target).forEach(initCopyButtons);
+  } else {
+    initCopyButtons(target);
+  }
 }
