@@ -136,7 +136,7 @@ fn PostDetail(post: Post, body: AnyView) -> impl IntoView {
     let cover = post
         .cover_image
         .clone()
-        .map(|cover| view! { <PostCover src=cover post_id=post.id/> });
+        .map(|cover| view! { <PostCover src=cover post_id=post.id eager=true/> });
     // 仅对已发布文章展示评论区域；评论区自带加载骨架屏。
     let comments = (post.status == PostStatus::Published).then(|| {
         let post_id = post.id;

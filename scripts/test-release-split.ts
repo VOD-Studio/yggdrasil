@@ -242,6 +242,11 @@ async function main() {
   // 种子数据：管理员 + 会话，三篇已发布文章，以及触发正文增强资源的两条公开随记。
   const sessionToken = 'release-split-admin';
   const tokenHash = createHash('sha256').update(sessionToken).digest('hex');
+  const uploadName = 'reading-cover.webp';
+  fs.copyFileSync(
+    path.join(SITE, 'images/samples/clay-circle.webp'),
+    path.join(runtime, 'uploads', uploadName),
+  );
   const code = '```python\nprint(1)\n```';
   const plain = '<p>拆分验收正文</p>';
   const highlighted = '<pre><code class="language-python">print(1)\n</code></pre>';
@@ -266,6 +271,7 @@ async function main() {
     INSERT INTO sessions(user_id,token_hash,expires_at) VALUES(1,'${tokenHash}',NOW()+INTERVAL '1 hour');
     INSERT INTO tags(id,name) VALUES(1,'split');
     ${posts}
+    UPDATE posts SET cover_image='/uploads/${uploadName}?v=demo&w=900' WHERE slug='split-c';
     BEGIN;
     INSERT INTO notes(id,owner_id,slug,version,published_version,published_at)
       SELECT n,1,'split-moment-' || n,1,1,NOW() FROM generate_series(1,2) n;
@@ -285,7 +291,11 @@ async function main() {
 
   // 慢连接：core 迟到时正文可见，WASM 迟到时复制与灯箱可用。
   {
-    const ctx = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] });
+    const ctx = await browser.newContext({
+      permissions: ['clipboard-read', 'clipboard-write'],
+      viewport: { width: 390, height: 844 },
+      deviceScaleFactor: 1,
+    });
     const page = await ctx.newPage();
     const core = Promise.withResolvers<void>();
     const wasm = Promise.withResolvers<void>();
@@ -304,6 +314,28 @@ async function main() {
         () => performance.getEntriesByName('first-contentful-paint').length > 0,
       );
       check('导航脚本下载前已绘制正文', true);
+      const cover = page.locator('.entry-cover .blur-img-full');
+      await cover.evaluate((node) => (node as HTMLImageElement).decode());
+      const selected = new URL(
+        await cover.evaluate((node) => (node as HTMLImageElement).currentSrc),
+      );
+      check(
+        'SSR 封面按手机宽度加载并保留版本，核心脚本前已显示',
+        selected.search === '?w=480&v=demo' &&
+          (await cover.evaluate((node) => getComputedStyle(node).opacity === '1')),
+        selected.pathname + selected.search,
+      );
+      check(
+        '没有重复下载封面展示图',
+        await page.evaluate(
+          (name) =>
+            performance.getEntriesByType('resource').filter((entry) => {
+              const url = new URL(entry.name);
+              return url.pathname.endsWith(name) && url.searchParams.get('w') !== '20';
+            }).length === 1,
+          uploadName,
+        ),
+      );
       core.resolve();
       const copy = page.locator('.post-content .copy-code');
       await copy.click();
@@ -311,6 +343,15 @@ async function main() {
         '水合前首次点击可复制正文代码',
         (await page.evaluate(() => navigator.clipboard.readText())).trim() === 'print(1)',
       );
+      await cover.click();
+      await page.locator('.lightbox-overlay').waitFor({ state: 'visible' });
+      check(
+        '封面灯箱打开原图',
+        (await page.locator('[aria-label="下载原图"]').getAttribute('href')) ===
+          `/uploads/${uploadName}`,
+      );
+      await page.keyboard.press('Escape');
+      await page.locator('.lightbox-overlay').waitFor({ state: 'detached' });
       await page.getByAltText('正文插图').click();
       await page.locator('.lightbox-overlay').waitFor({ state: 'visible' });
       await page.keyboard.press('Escape');

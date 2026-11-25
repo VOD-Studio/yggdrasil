@@ -2045,7 +2045,7 @@
       ],
       "keys": [],
       "source": "src/components/post/post_cover.rs",
-      "code": "pub fn PostCover(#[prop(into)] src: String, #[prop(optional, into)] post_id: MaybeProp<i32>) -> impl IntoView",
+      "code": "pub fn PostCover(#[prop(into)] src: String, #[prop(optional, into)] post_id: MaybeProp<i32>, #[prop(optional)] eager: bool) -> impl IntoView",
       "preview_mode": "static",
       "usage_kind": "api"
     },

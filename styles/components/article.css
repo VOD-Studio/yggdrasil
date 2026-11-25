@@ -458,6 +458,11 @@
     border-radius: var(--radius-code);
   }
 
+  /* 清晰图解码后直接覆盖模糊层，首屏绘制无需等待灯箱脚本。 */
+  .entry-cover .blur-img-full[fetchpriority="high"] {
+    opacity: 1;
+  }
+
   .entry-cover img {
     width: 100%;
     height: 100%;
