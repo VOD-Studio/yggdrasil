@@ -138,6 +138,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "038",
         include_str!("../../migrations/038_post_archive_sort_index.sql"),
     ),
+    (
+        "039",
+        include_str!("../../migrations/039_public_posts_cache_revision.sql"),
+    ),
     // 新增迁移在此追加，同时在 migrations/ 下创建对应 .sql 文件。
 ];
 

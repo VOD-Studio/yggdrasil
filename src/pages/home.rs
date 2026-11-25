@@ -13,8 +13,7 @@ use leptos_router::{lazy_route, LazyRoute};
 
 use crate::api::notes::recent_public_notes;
 use crate::api::posts::{
-    latest_post_outline, list_published_posts, list_tags, PostListResponse, PostOutline,
-    TagListResponse,
+    latest_post_outline, list_published_posts, PostListResponse, PostOutline, TagListResponse,
 };
 use crate::components::empty_state::EmptyState;
 use crate::components::mascot::Mascot;
@@ -28,7 +27,7 @@ use crate::hooks::ssr_resource::{prefetch_route_data, route_data, PageJson, Rout
 use crate::models::note::RecentNote;
 use crate::models::post::{PostListItem, Tag};
 use crate::models::settings::{HomeTagline, SiteSettings};
-use crate::pages::archives::ranked_tags;
+use crate::pages::archives::list_public_tags;
 use crate::pages::not_found::NotFound;
 use crate::routes::Route;
 
@@ -65,7 +64,7 @@ async fn fetch_posts(page: Option<i32>) -> PageJson<Option<PostListResponse>> {
 #[leptos::lazy]
 async fn fetch_home_tags(first: bool) -> PageJson<Option<TagListResponse>> {
     PageJson::new(if first {
-        list_tags().await.map(Some)
+        list_public_tags().await.map(Some)
     } else {
         Ok(None)
     })
@@ -150,9 +149,7 @@ impl LazyRoute for HomeRoute {
                             Some(1) => {
                                 // 文章列表失败只把文章区换成错误卡片；其余数据失败退回空值。
                                 let posts = posts.await.ok().flatten();
-                                let tags = ranked_tags(
-                                    tags.await.ok().flatten().map(|r| r.tags).unwrap_or_default(),
-                                );
+                                let tags = tags.await.ok().flatten().map(|r| r.tags).unwrap_or_default();
                                 let tagline = settings
                                     .await
                                     .unwrap_or_default()

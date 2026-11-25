@@ -97,10 +97,18 @@ async fn fetch_archive() -> PageJson<ArchiveResponse> {
     PageJson::new(list_archive_posts(1).await)
 }
 
-/// 全部标签；归档、标签详情与关于页共用（取数函数随分包加载，见 `hooks::ssr_resource`）。
+/// 在序列化公开页面数据前筛选标签，草稿的新标签只进入完整标签目录。
+pub(crate) async fn list_public_tags() -> Result<TagListResponse, ApiError> {
+    let response = list_tags().await?;
+    Ok(TagListResponse {
+        tags: ranked_tags(response.tags),
+    })
+}
+
+/// 归档、标签详情与关于页共用的公开标签。
 #[leptos::lazy]
 pub(crate) async fn fetch_tags() -> PageJson<TagListResponse> {
-    PageJson::new(list_tags().await)
+    PageJson::new(list_public_tags().await)
 }
 
 #[lazy_route]
@@ -312,7 +320,7 @@ fn archive_summary(rows: &[IndexRow], total: i64, has_more: bool) -> String {
 
 /// 标签接口的结果：失败时为空，标签区随之隐藏。
 pub(crate) fn tag_list(data: Result<TagListResponse, ApiError>) -> Vec<Tag> {
-    data.map(|r| ranked_tags(r.tags)).unwrap_or_default()
+    data.map(|r| r.tags).unwrap_or_default()
 }
 
 /// 标签筛选区。点当前标签回到全部归档；展开状态随历史记录恢复。

@@ -20,6 +20,7 @@ struct ContentRevision {
     relation_oid: u32,
     revision: i64,
     posts: i64,
+    public_posts: i64,
     comments: i64,
     friends: i64,
     settings: i64,
@@ -46,6 +47,7 @@ async fn refresh_revision(
         .query_one(
             "SELECT tableoid AS relation_oid, revision,
                     COALESCE((to_jsonb(r)->>'posts_revision')::bigint, revision) AS posts_revision,
+                    (to_jsonb(r)->>'public_posts_revision')::bigint AS public_posts_revision,
                     COALESCE((to_jsonb(r)->>'comments_revision')::bigint, revision) AS comments_revision,
                     COALESCE((to_jsonb(r)->>'friends_revision')::bigint, revision) AS friends_revision,
                     COALESCE((to_jsonb(r)->>'settings_revision')::bigint, revision) AS settings_revision,
@@ -55,10 +57,14 @@ async fn refresh_revision(
             &[],
         )
         .await?;
+    let posts = row.get("posts_revision");
     let revision = ContentRevision {
         relation_oid: row.get("relation_oid"),
         revision: row.get("revision"),
-        posts: row.get("posts_revision"),
+        posts,
+        public_posts: row
+            .get::<_, Option<i64>>("public_posts_revision")
+            .unwrap_or(posts),
         comments: row.get("comments_revision"),
         friends: row.get("friends_revision"),
         settings: row.get("settings_revision"),
@@ -70,6 +76,7 @@ async fn refresh_revision(
             previous.relation_oid == revision.relation_oid && previous.revision < revision.revision
         }) {
             let posts_changed = previous.posts != revision.posts;
+            let public_posts_changed = previous.public_posts != revision.public_posts;
             let comments_changed = previous.comments != revision.comments;
             let friends_changed = previous.friends != revision.friends;
             let settings_changed = previous.settings != revision.settings;
@@ -84,8 +91,11 @@ async fn refresh_revision(
             {
                 crate::cache::invalidate_public_notebooks();
             }
-            if posts_changed {
+            if public_posts_changed {
                 crate::cache::invalidate_all_post_caches();
+            } else if posts_changed {
+                crate::cache::invalidate_post_stats();
+                crate::cache::invalidate_all_tags();
             }
             if comments_changed {
                 crate::cache::invalidate_all_comments();
@@ -96,7 +106,7 @@ async fn refresh_revision(
             if settings_changed {
                 crate::cache::invalidate_shared_settings();
             }
-            if posts_changed
+            if public_posts_changed
                 || comments_changed
                 || friends_changed
                 || settings_changed
@@ -177,6 +187,130 @@ pub async fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[ignore = "requires disposable DATABASE_URL database ygg_mcp_test"]
+    fn draft_posts_database_preserves_public_caches() {
+        crate::db::TEST_DATABASE_RUNTIME
+            .block_on(draft_posts_database_preserves_public_caches_impl());
+    }
+
+    async fn draft_posts_database_preserves_public_caches_impl() {
+        let _guard = crate::db::TEST_DATABASE_LOCK.lock().await;
+        let mut writer = crate::db::pool::get_conn().await.unwrap();
+        let database: String = writer
+            .query_one("SELECT current_database()", &[])
+            .await
+            .unwrap()
+            .get(0);
+        assert_eq!(database, "ygg_mcp_test", "requires isolated test database");
+        crate::db::migrate::run_on_conn(&mut writer).await.unwrap();
+        writer
+            .batch_execute(
+                "TRUNCATE users, tags RESTART IDENTITY CASCADE;
+             INSERT INTO users(id, username, email, password_hash, role)
+             VALUES (1, 'draft-owner', 'draft@test.invalid', 'unused', 'admin');",
+            )
+            .await
+            .unwrap();
+
+        // 从第二条连接读取已提交版本，覆盖对端合并通知或断线后核对版本的路径。
+        let reader = crate::db::pool::get_conn().await.unwrap();
+        let mut observed = None;
+        refresh_revision(&reader, &mut observed).await.unwrap();
+        let generations = || {
+            (
+                crate::ssr_cache::current_generation("/"),
+                crate::ssr_cache::current_generation("/post/test"),
+                crate::cache::feed_generation(),
+            )
+        };
+        let initial = generations();
+        assert_eq!(
+            crate::api::posts::load_post_stats().await.unwrap().drafts,
+            0
+        );
+        assert!(crate::api::posts::list_tags()
+            .await
+            .unwrap()
+            .tags
+            .is_empty());
+
+        writer
+            .batch_execute(
+                "INSERT INTO posts(id, author_id, title, slug, content_md) VALUES
+                (1, 1, '草稿', 'test', '草稿正文'), (2, 1, '草稿二', 'test-2', '');
+             INSERT INTO tags(name) VALUES ('草稿标签');
+             INSERT INTO post_tags VALUES (1, 1);
+             UPDATE posts SET title='修改草稿' WHERE id=1;",
+            )
+            .await
+            .unwrap();
+        refresh_revision(&reader, &mut observed).await.unwrap();
+        assert_eq!(generations(), initial);
+        assert_eq!(
+            crate::api::posts::load_post_stats().await.unwrap().drafts,
+            2
+        );
+        assert_eq!(
+            crate::api::posts::list_tags().await.unwrap().tags[0].post_count,
+            0
+        );
+        assert!(crate::pages::archives::list_public_tags()
+            .await
+            .unwrap()
+            .tags
+            .is_empty());
+
+        for (sql, public_changed) in [
+            ("DELETE FROM post_tags WHERE post_id=1", false),
+            (
+                "INSERT INTO tags(name) VALUES ('草稿标签') ON CONFLICT (name) DO NOTHING;
+              INSERT INTO post_tags VALUES (1, 1)",
+                false,
+            ),
+            (
+                "BEGIN; UPDATE posts SET status='published' WHERE id=1; ROLLBACK",
+                false,
+            ),
+            (
+                "UPDATE posts SET status='published' WHERE id=1;
+              UPDATE posts SET title='独立的草稿' WHERE id=2",
+                true,
+            ),
+            (
+                "UPDATE posts SET content_md='新正文' WHERE id IN (1, 2)",
+                true,
+            ),
+            ("DELETE FROM post_tags WHERE post_id=1", true),
+            ("INSERT INTO post_tags VALUES (1, 1)", true),
+            ("UPDATE tags SET name='公开标签' WHERE id=1", true),
+            ("UPDATE posts SET deleted_at=NOW() WHERE id=1", true),
+            ("UPDATE posts SET deleted_at=NULL WHERE id=1", true),
+            ("UPDATE posts SET status='draft' WHERE id=1", true),
+            ("DELETE FROM posts WHERE id=1", false),
+            (
+                "INSERT INTO posts(id, author_id, title, slug, content_md, status)
+              VALUES (3, 1, '直接发布', 'published', '正文', 'published')",
+                true,
+            ),
+            ("DELETE FROM posts WHERE id=3", true),
+        ] {
+            let before = generations();
+            writer.batch_execute(sql).await.unwrap();
+            refresh_revision(&reader, &mut observed).await.unwrap();
+            let after = generations();
+            assert_eq!(
+                (
+                    after.0 != before.0,
+                    after.1 != before.1,
+                    after.2 != before.2
+                ),
+                (public_changed, public_changed, public_changed),
+                "{sql}"
+            );
+        }
+    }
 
     #[test]
     #[ignore = "requires disposable DATABASE_URL database ygg_mcp_test"]

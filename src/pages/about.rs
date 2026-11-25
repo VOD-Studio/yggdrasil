@@ -13,7 +13,7 @@ use crate::components::skeletons::delayed_skeleton::DelayedSkeleton;
 use crate::components::ui::{Icon, IconName};
 use crate::hooks::ssr_resource::{prefetch_route_data, route_data, unit, PageJson, RouteData};
 use crate::models::post::Tag;
-use crate::pages::archives::{fetch_tags, ranked_tags};
+use crate::pages::archives::{fetch_tags, tag_list};
 use crate::routes::Route;
 
 /// 条形图列出的标签数。
@@ -100,10 +100,7 @@ impl LazyRoute for AboutRoute {
                     {move || Suspend::new(async move {
                         // 统计失败只是不显示对应图表，页面其余部分照常。
                         let years = years.await.unwrap_or_default();
-                        let tags = tags
-                            .await
-                            .map(|r| ranked_tags(r.tags))
-                            .unwrap_or_default();
+                        let tags = tag_list(tags.await);
                         let release = release.await.ok().flatten();
                         view! { <AboutStats years=years tags=tags release=release/> }
                     })}
