@@ -98,8 +98,8 @@ pub fn shell(options: LeptosOptions) -> impl IntoView {
                 // defer 与后置的水合 module 按文档顺序执行。
                 <script defer=true src=static_assets::url(CORE_JS)></script>
                 <AutoReload options=options.clone()/>
-                <HydrationScriptsWithPreload options/>
                 <MetaTags/>
+                <HydrationScriptsWithPreload options/>
             </head>
             <body>
                 <App/>
@@ -121,11 +121,11 @@ pub fn shell(options: LeptosOptions) -> impl IntoView {
 #[cfg(feature = "server")]
 #[component]
 fn HydrationScriptsWithPreload(options: LeptosOptions) -> impl IntoView {
+    use crate::route_prefetch::{match_route, route_view_names, RouteTarget};
+
     let scripts = view! { <HydrationScripts options/> };
-    let names = crate::request_ctx::request_parts()
-        .and_then(|parts| crate::route_prefetch::match_route(parts.uri.path()))
-        .map(|target| crate::route_prefetch::route_view_names(&target))
-        .unwrap_or_default();
+    let route = crate::request_ctx::request_parts().and_then(|parts| match_route(parts.uri.path()));
+    let names = route.as_ref().map(route_view_names).unwrap_or_default();
     let (loader, modules) = leptos::reactive::owner::take_context::<leptos::WasmSplitManifest>()
         .and_then(|manifest| {
             manifest.0.try_read_value().map(|value| {
@@ -140,7 +140,7 @@ fn HydrationScriptsWithPreload(options: LeptosOptions) -> impl IntoView {
             })
         })
         .unzip();
-    view! {
+    let resources = view! {
         {scripts}
         {loader.map(|href| view! { <link rel="modulepreload" href=href/> })}
         {modules
@@ -159,6 +159,24 @@ fn HydrationScriptsWithPreload(options: LeptosOptions) -> impl IntoView {
                 }
             })
             .collect_view()}
+    };
+    if matches!(
+        route,
+        Some(RouteTarget::Home { .. } | RouteTarget::Post { .. })
+    ) {
+        // 阅读页先把带宽留给样式。经典内联脚本等前面的样式表就绪后才执行，
+        // 此时一次发出所有预载；水合入口仍在 defer 导航脚本及正文解析完成后启动。
+        view! {
+            <template id="ygg-reading-hydration">{resources}</template>
+            <script nonce=leptos::nonce::use_nonce() inner_html=r#"(() => {
+const template = document.getElementById('ygg-reading-hydration');
+for (const link of template.content.querySelectorAll('link')) document.head.append(link);
+document.addEventListener('DOMContentLoaded', () => template.replaceWith(template.content), { once: true });
+})();"#></script>
+        }
+        .into_any()
+    } else {
+        resources.into_any()
     }
 }
 

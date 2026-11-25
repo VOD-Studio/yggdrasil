@@ -301,9 +301,15 @@ async function main() {
       deviceScaleFactor: 1,
     });
     const page = await ctx.newPage();
+    const log = instrument(page);
+    const css = Promise.withResolvers<void>();
     const core = Promise.withResolvers<void>();
     const wasm = Promise.withResolvers<void>();
     try {
+      await page.route('**/style.css*', async (route) => {
+        await css.promise;
+        await route.continue();
+      });
       await page.route('**/yggdrasil-core.js*', async (route) => {
         await core.promise;
         await route.continue();
@@ -313,6 +319,9 @@ async function main() {
         await route.continue();
       });
       await page.goto(`${base}/post/split-c`, { waitUntil: 'commit' });
+      await page.locator('template#ygg-reading-hydration').waitFor({ state: 'attached' });
+      check('阅读页样式就绪前不启动 WASM 请求', log.wasm.length === 0);
+      css.resolve();
       await page.locator('.post-content pre').waitFor({ state: 'visible' });
       await page.waitForFunction(
         () => performance.getEntriesByName('first-contentful-paint').length > 0,
@@ -372,6 +381,7 @@ async function main() {
         ),
       );
     } finally {
+      css.resolve();
       core.resolve();
       wasm.resolve();
       await ctx.close();
