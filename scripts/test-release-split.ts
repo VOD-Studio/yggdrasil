@@ -245,6 +245,7 @@ async function main() {
   const code = '```python\nprint(1)\n```';
   const plain = '<p>拆分验收正文</p>';
   const highlighted = '<pre><code class="language-python">print(1)\n</code></pre>';
+  const image = '<img src="/images/samples/clay-circle.webp" alt="正文插图">';
   const math = '<p><span class="katex"><span class="katex-html">x²</span></span></p>';
   const posts = [
     ['split-a', '拆分验收 A', 3],
@@ -257,7 +258,7 @@ async function main() {
         title,
         id,
       ]) => `INSERT INTO posts(id,author_id,title,slug,summary,content_md,content_html,status,published_at)
-      VALUES(${id},1,'${title}','${slug}','拆分验收摘要','拆分验收正文\n\n${code}','${plain}${id === 2 ? '' : highlighted}${id === 3 ? math : ''}','published',NOW() - INTERVAL '${id} hour');
+      VALUES(${id},1,'${title}','${slug}','拆分验收摘要','拆分验收正文\n\n${code}','${plain}${id === 2 ? '' : highlighted}${id === 3 ? math : ''}${id === 1 ? image : ''}','published',NOW() - INTERVAL '${id} hour');
       INSERT INTO post_tags(post_id,tag_id) VALUES(${id},1);`,
     )
     .join('\n');
@@ -281,6 +282,56 @@ async function main() {
   });
 
   browser = await chromium.launch();
+
+  // 慢连接：core 迟到时正文可见，WASM 迟到时复制与灯箱可用。
+  {
+    const ctx = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] });
+    const page = await ctx.newPage();
+    const core = Promise.withResolvers<void>();
+    const wasm = Promise.withResolvers<void>();
+    try {
+      await page.route('**/yggdrasil-core.js*', async (route) => {
+        await core.promise;
+        await route.continue();
+      });
+      await page.route('**/*.wasm', async (route) => {
+        await wasm.promise;
+        await route.continue();
+      });
+      await page.goto(`${base}/post/split-c`, { waitUntil: 'commit' });
+      await page.locator('.post-content pre').waitFor({ state: 'visible' });
+      await page.waitForFunction(
+        () => performance.getEntriesByName('first-contentful-paint').length > 0,
+      );
+      check('导航脚本下载前已绘制正文', true);
+      core.resolve();
+      const copy = page.locator('.post-content .copy-code');
+      await copy.click();
+      check(
+        '水合前首次点击可复制正文代码',
+        (await page.evaluate(() => navigator.clipboard.readText())).trim() === 'print(1)',
+      );
+      await page.getByAltText('正文插图').click();
+      await page.locator('.lightbox-overlay').waitFor({ state: 'visible' });
+      await page.keyboard.press('Escape');
+      check('水合前可打开正文灯箱', !(await page.locator('html[data-hydrated]').count()));
+      wasm.resolve();
+      await hydrated(page);
+      check('水合后复制按钮唯一', (await copy.count()) === 1);
+      check(
+        '普通文章不下载运行器正文分包',
+        await page.evaluate(() =>
+          performance
+            .getEntriesByType('resource')
+            .every((entry) => !entry.name.includes('runnable_article_body')),
+        ),
+      );
+    } finally {
+      core.resolve();
+      wasm.resolve();
+      await ctx.close();
+    }
+  }
 
   // 1. 直开 /：主包 + 首页分包，不含文章/后台/登录/图鉴分包。
   {
@@ -504,8 +555,10 @@ async function main() {
     const rendererPaths = ['/tiptap/code-highlighter.js', '/tiptap/math-renderer.js'];
     check(
       '3 评论出现公式和代码块后才下载两份渲染模块',
-      log.tiptap.filter((asset) => rendererPaths.includes(asset)).toSorted().join(',') ===
-        rendererPaths.join(','),
+      log.tiptap
+        .filter((asset) => rendererPaths.includes(asset))
+        .toSorted()
+        .join(',') === rendererPaths.join(','),
       log.tiptap.join(', '),
     );
     await page.evaluate(async (markdown) => {

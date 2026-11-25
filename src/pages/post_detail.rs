@@ -25,7 +25,7 @@ use leptos_router::{lazy_route, LazyRoute};
 use crate::api::posts::{get_public_post_by_slug, PublicPostResponse};
 use crate::components::comments::section::CommentSection;
 use crate::components::post::post_content::{
-    hydration_skeleton, PostContent, HYDRATION_PLACEHOLDER,
+    article_content, hydration_skeleton, HYDRATION_PLACEHOLDER,
 };
 use crate::components::post::post_cover::PostCover;
 use crate::components::post::post_footer::PostFooter;
@@ -106,8 +106,9 @@ impl LazyRoute for PostRoute {
             }>
                 {move || Suspend::new(async move {
                     match post.await {
-                        Ok(PublicPostResponse { post: Some(post) }) => {
-                            view! { <PostDetail post=post.into_display_post()/> }.into_any()
+                        Ok(PublicPostResponse { post: Some(mut post) }) => {
+                            let body = article_content(post.content_html.take().unwrap_or_default()).await;
+                            view! { <PostDetail post=post.into_display_post() body/> }.into_any()
                         }
                         Ok(PublicPostResponse { post: None }) => view! { <NotFound/> }.into_any(),
                         Err(err) if is_not_found(&err) => view! { <NotFound/> }.into_any(),
@@ -129,7 +130,7 @@ impl PostRoute {
 
 /// 文章详情主体：文章头部、封面、正文、页脚、评论区与目录。
 #[component]
-fn PostDetail(post: Post) -> impl IntoView {
+fn PostDetail(post: Post, body: AnyView) -> impl IntoView {
     let header = PostHeaderData::from(&post);
     let footer = PostFooterData::from(&post);
     let cover = post
@@ -150,7 +151,6 @@ fn PostDetail(post: Post) -> impl IntoView {
         .clone()
         .filter(|t| !t.is_empty())
         .map(|toc| view! { <PostToc toc_html=toc/> });
-    let content_html = post.content_html.clone().unwrap_or_default();
     let title = format!("{} · Yggdrasil", post.title);
     let vt_detail = post.id.to_string();
 
@@ -160,7 +160,7 @@ fn PostDetail(post: Post) -> impl IntoView {
                 // P4.2：页眉/页脚只取小型字段集，避免复制完整正文。
                 <PostHeader post=header/>
                 {cover}
-                <PostContent content_html=content_html/>
+                {body}
                 <PostFooter post=footer/>
                 {comments}
             </article>

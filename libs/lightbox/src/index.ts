@@ -68,6 +68,9 @@ if (!window.__initLightbox) {
     }
   };
 
+  // 直开文章时正文已由 SSR 输出，图片增强无需等待 WASM。
+  window.__initLightbox(['article.post-single .post-content', 'article.post-single .entry-cover']);
+
   // 图鉴预览卸载时只关闭自己打开的灯箱，不影响文章或素材页的浮层。
   window.__closeLightboxFor = (owner: string): void => {
     const activeOwner = active?.originNode

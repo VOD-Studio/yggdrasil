@@ -29,6 +29,7 @@ declare global {
 // 模块状态里，被新实例替换后旧实例的监听就再也清理不掉。
 if (!window.__initPostContent) {
   window.__initPostContent = initPostContent;
+  initPostContent('article.post-single .post-content');
   window.__initTocSidebar = initTocSidebar;
   window.__disposeTocSidebar = disposeTocSidebar;
   window.__initChangelogNav = initChangelogNav;

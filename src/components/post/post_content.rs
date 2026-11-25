@@ -35,6 +35,8 @@ enum ContentFragment {
     },
 }
 
+const RUNNABLE_START: &str = r#"<pre data-runnable="true""#;
+
 /// 正文按可运行代码块切开后的原文段：`Html` 是两个可运行块之间的原文（只含空白的段跳过），
 /// `Runnable` 是整个 `<pre data-runnable="true" …>…</pre>`。
 enum Segment<'a> {
@@ -47,7 +49,7 @@ fn segments(html: &str) -> Vec<Segment<'_>> {
     let mut segments = Vec::new();
     let mut rest = html;
 
-    while let Some(start) = rest.find(r#"<pre data-runnable="true""#) {
+    while let Some(start) = rest.find(RUNNABLE_START) {
         let (head, tail) = rest.split_at(start);
         if !head.trim().is_empty() {
             segments.push(Segment::Html(head));
@@ -216,7 +218,63 @@ pub fn PostContent(
     #[prop(optional)] scope_id: Option<&'static str>,
     #[prop(optional)] managed: bool,
 ) -> impl IntoView {
-    let fragments = split_content_fragments_cached(&content_html);
+    let styles = MarkdownStyles::for_html(&content_html);
+    post_content_view(styles, fragment_views(&content_html), scope_id, managed)
+}
+
+/// 文章路由已有 Suspense；只在正文包含运行器时等待相应视图分包。
+pub(crate) async fn article_content(content_html: String) -> AnyView {
+    let styles = MarkdownStyles::for_html(&content_html);
+    let body = if content_html.contains(RUNNABLE_START) {
+        runnable_article_body(content_html).await
+    } else if content_html.trim().is_empty() {
+        Vec::new()
+    } else {
+        vec![view! { <div inner_html=content_html></div> }.into_any()]
+    };
+    post_content_view(styles, body, None, false).into_any()
+}
+
+#[leptos::lazy]
+fn runnable_article_body(content_html: String) -> Vec<AnyView> {
+    fragment_views(&content_html)
+}
+
+fn fragment_views(content_html: &str) -> Vec<AnyView> {
+    let fragments = split_content_fragments_cached(content_html);
+    fragments
+        .iter()
+        .enumerate()
+        .map(|(i, fragment)| match fragment {
+            ContentFragment::Html(html) => view! { <div inner_html=html.clone()></div> }.into_any(),
+            ContentFragment::Runnable {
+                lang,
+                source,
+                overrides,
+                highlighted,
+            } => view! {
+                // i 是片段序列中的确定性索引（来自纯函数 split_content_fragments 对同一
+                // content_html 的解析），SSR 与 hydration 一致，用作容器 id 后缀保证
+                // hydration 时 CodeMirror 能找到 SSR 渲染的容器。
+                <CodeRunner
+                    source=source.clone()
+                    language=lang.clone()
+                    overrides=overrides.clone()
+                    highlighted=Some(highlighted.clone()).filter(|h| !h.is_empty())
+                    instance_id=i
+                />
+            }
+            .into_any(),
+        })
+        .collect_view()
+}
+
+fn post_content_view(
+    styles: MarkdownStyles,
+    body: Vec<AnyView>,
+    scope_id: Option<&'static str>,
+    managed: bool,
+) -> impl IntoView {
     let content_ref = NodeRef::<leptos::html::Div>::new();
 
     #[cfg(target_arch = "wasm32")]
@@ -257,37 +315,11 @@ pub fn PostContent(
         });
     }
 
-    let body = fragments
-        .iter()
-        .enumerate()
-        .map(|(i, fragment)| match fragment {
-            ContentFragment::Html(html) => view! { <div inner_html=html.clone()></div> }.into_any(),
-            ContentFragment::Runnable {
-                lang,
-                source,
-                overrides,
-                highlighted,
-            } => view! {
-                // i 是片段序列中的确定性索引（来自纯函数 split_content_fragments 对同一
-                // content_html 的解析），SSR 与 hydration 一致，用作容器 id 后缀保证
-                // hydration 时 CodeMirror 能找到 SSR 渲染的容器。
-                <CodeRunner
-                    source=source.clone()
-                    language=lang.clone()
-                    overrides=overrides.clone()
-                    highlighted=Some(highlighted.clone()).filter(|h| !h.is_empty())
-                    instance_id=i
-                />
-            }
-            .into_any(),
-        })
-        .collect_view();
-
     view! {
         {(!managed).then(|| view! {
             <EnhanceScript/>
             <LightboxAssets/>
-            {MarkdownStyles::for_html(&content_html).links()}
+            {styles.links()}
         })}
         <div
             node_ref=content_ref
