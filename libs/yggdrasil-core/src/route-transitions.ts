@@ -161,6 +161,17 @@ function visible(element: HTMLElement): boolean {
   return rect.bottom > top && rect.top < bottom && rect.right > left && rect.left < right;
 }
 
+interface NavigationEvents {
+  pop?: (event: PopStateEvent) => void;
+  click?: (event: MouseEvent) => void;
+}
+
+declare global {
+  interface Window {
+    __yggNavigationEvents?: NavigationEvents;
+  }
+}
+
 export class RouteTransitions {
   private notify: (() => void) | undefined;
   private prefix = '';
@@ -191,15 +202,15 @@ export class RouteTransitions {
   /** 原生过渡 update 阶段（浏览器暂停绘制）收到的站内跳转，等 ready 后接力，只留最新一次。 */
   private queued: { route: string; kind: 'push' | 'replace'; intent?: LinkIntent } | undefined;
 
-  constructor() {
-    // 两个监听都必须早于 Leptos 生效：Leptos 的 BrowserUrl 在水合时就在 window 上挂了
-    // popstate 与链接点击监听，而 Rust 要等整棵树水合完毕才 connect。
-    // popstate：window 上的监听按注册顺序触发（捕获/冒泡不分先后），只能在脚本加载时注册；
-    // 未连接时 onPop 直接放行，由 Leptos 自己处理。
-    window.addEventListener('popstate', this.onPop, true);
-    // click：document 冒泡阶段晚于元素自身的 Leptos 处理器（可 preventDefault），早于 window；
-    // 未连接时 onClick 截住冒泡、交给浏览器整页跳转，避免路由器在水合中途换页。
-    document.addEventListener('click', this.onClick);
+  constructor(events?: NavigationEvents) {
+    // SSR 已在 head 注册原生监听，接管时保留监听顺序。独立挂载时自行注册。
+    if (events) {
+      events.pop = this.onPop;
+      events.click = this.onClick;
+    } else {
+      window.addEventListener('popstate', this.onPop, true);
+      document.addEventListener('click', this.onClick);
+    }
   }
 
   connect(
@@ -1215,4 +1226,4 @@ export class RouteTransitions {
   }
 }
 
-export const routeTransitions = new RouteTransitions();
+export const routeTransitions = new RouteTransitions(window.__yggNavigationEvents);

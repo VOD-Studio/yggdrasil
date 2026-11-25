@@ -1,6 +1,6 @@
 //! P5 §8.2 资源边界：增强脚本/样式的按需注入。
 //!
-//! `shell()` 的 `<head>` 全局只保留启动必需的 `yggdrasil-core.js`（阻塞，先于 hydration，
+//! `shell()` 的 `<head>` 全局只保留启动必需的 `yggdrasil-core.js`（defer，先于水合模块，
 //! 导航协调器契约不变）与首屏样式；文章、图鉴、changelog 的增强代码
 //! （`yggdrasil-enhance.js`）与灯箱（`lightbox.js/css`）改由需要的组件各自声明：
 //!

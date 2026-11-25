@@ -74,6 +74,9 @@ pub fn shell(options: LeptosOptions) -> impl IntoView {
                 <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48"/>
                 <link rel="apple-touch-icon" href="/apple-touch-icon.png"/>
                 <link rel="manifest" href="/manifest.webmanifest"/>
+                // 首次主题和原生过渡监听先于外部样式；正文解析不等待导航脚本下载。
+                <ThemePreload/>
+                <script inner_html=include_str!("../libs/yggdrasil-core/src/early-navigation.js")></script>
                 <link rel="stylesheet" href=static_assets::url(STYLE_CSS)/>
                 {admin_css
                     .then(|| {
@@ -92,8 +95,8 @@ pub fn shell(options: LeptosOptions) -> impl IntoView {
                     id=static_assets::VERSIONS_ELEMENT_ID
                     inner_html=static_assets::versions_json()
                 ></script>
-                <script src=static_assets::url(CORE_JS)></script>
-                <ThemePreload/>
+                // defer 与后置的水合 module 按文档顺序执行。
+                <script defer=true src=static_assets::url(CORE_JS)></script>
                 <AutoReload options=options.clone()/>
                 <HydrationScriptsWithPreload options/>
                 <MetaTags/>

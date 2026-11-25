@@ -2,16 +2,13 @@ import { initAnchorClick } from './anchor-click';
 import { loadBrowserLibrary } from './browser-library';
 import type { EnhanceCall } from './enhance-queue';
 import { scrollToHash } from './hash-scroll';
-import { initPageReveal } from './page-entry';
 import { routeTransitions } from './route-transitions';
 import { applyResolvedTheme, startThemeTransition } from './theme-transition';
 import { skipActiveAnimation } from './view-transition-lifecycle';
 
 /**
- * P5 §8.2 拆分边界：本入口只保留启动必需代码（导航、主题、锚点、pagereveal），
- * 阻塞执行、不加 async。文章/图鉴/changelog 的增强函数在 `enhance.ts` 入口，
- * 由页面组件按需以 `defer` 注入（SSR 直直接烤进 head，先于 hydration；
- * SPA 首次注入为 async，由下方队列兜底到增强脚本加载完成）。
+ * 导航与主题能力在 HTML 解析后安装；外壳已内联首次主题和原生事件监听。
+ * 正文增强、灯箱由页面各自加载，迟到的初始化调用经队列补执行。
  */
 declare global {
   interface Window {
@@ -54,6 +51,3 @@ window.__flushEnhanceCalls ??= () => {
 
 // Same-page links also appear on the homepage, before any article is mounted.
 initAnchorClick();
-
-// Cross-document transitions can reveal before the WASM router connects.
-initPageReveal();
