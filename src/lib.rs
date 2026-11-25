@@ -62,7 +62,10 @@ pub mod utils;
 #[cfg(feature = "hydrate")]
 #[wasm_bindgen::prelude::wasm_bindgen]
 pub fn hydrate() {
-    leptos::mount::hydrate_lazy(crate::app::App);
+    wasm_bindgen_futures::spawn_local(async {
+        crate::components::post::post_content::preload_ssr_article_runner().await;
+        leptos::mount::hydrate_lazy(crate::app::App);
+    });
 }
 
 /// `--split` 的数据段腾挪余量。

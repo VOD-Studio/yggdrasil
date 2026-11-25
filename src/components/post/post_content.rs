@@ -240,6 +240,20 @@ fn runnable_article_body(content_html: String) -> Vec<AnyView> {
     fragment_views(&content_html)
 }
 
+/// SSR 已经输出运行器时，Suspend 的首次轮询必须直接得到相同的视图。
+/// 先实例化对应分包，再开始水合；站内导航仍可在原来的 Suspense 中等待。
+#[cfg(feature = "hydrate")]
+pub(crate) async fn preload_ssr_article_runner() {
+    if document()
+        .query_selector("article[data-vt-detail] .post-content .runner")
+        .ok()
+        .flatten()
+        .is_some()
+    {
+        __preload_runnable_article_body().await;
+    }
+}
+
 fn fragment_views(content_html: &str) -> Vec<AnyView> {
     let fragments = split_content_fragments_cached(content_html);
     fragments

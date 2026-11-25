@@ -239,7 +239,7 @@ async function main() {
       .catch(() => false);
   }, 'release server');
 
-  // 种子数据：管理员 + 会话，三篇已发布文章，以及触发正文增强资源的两条公开随记。
+  // 种子数据：管理员、已发布文章及触发正文增强资源的两条公开随记。
   const sessionToken = 'release-split-admin';
   const tokenHash = createHash('sha256').update(sessionToken).digest('hex');
   const uploadName = 'reading-cover.webp';
@@ -272,6 +272,10 @@ async function main() {
     INSERT INTO tags(id,name) VALUES(1,'split');
     ${posts}
     UPDATE posts SET cover_image='/uploads/${uploadName}?v=demo&w=900' WHERE slug='split-c';
+    INSERT INTO posts(id,author_id,title,slug,content_md,content_html,status,published_at)
+      VALUES(4,1,'运行器验收','split-runner','${code}',
+        '<pre data-runnable="true" data-lang="python" data-source="print(1)"><code>print(1)</code></pre>',
+        'published',NOW() - INTERVAL '4 hours');
     BEGIN;
     INSERT INTO notes(id,owner_id,slug,version,published_version,published_at)
       SELECT n,1,'split-moment-' || n,1,1,NOW() FROM generate_series(1,2) n;
@@ -280,7 +284,7 @@ async function main() {
         '<p>随记水合正文 ' || n || '</p>','随记水合正文 ' || n FROM generate_series(1,2) n;
     SELECT setval('notes_id_seq',2);
     COMMIT;
-    SELECT setval('users_id_seq',1); SELECT setval('posts_id_seq',3); SELECT setval('tags_id_seq',1);`;
+    SELECT setval('users_id_seq',1); SELECT setval('posts_id_seq',4); SELECT setval('tags_id_seq',1);`;
   const fixture = path.join(runtime, 'fixture.sql');
   fs.writeFileSync(fixture, sql);
   await run(['psql', '-v', 'ON_ERROR_STOP=1', '-d', 'ygg_release_split', '-f', fixture], {
@@ -370,6 +374,33 @@ async function main() {
     } finally {
       core.resolve();
       wasm.resolve();
+      await ctx.close();
+    }
+  }
+
+  // 直开含运行器的文章，分包迟到时也要保留 SSR 源码并完成水合。
+  {
+    const ctx = await browser.newContext();
+    const page = await ctx.newPage();
+    const log = instrument(page);
+    const runner = Promise.withResolvers<void>();
+    try {
+      await page.route('**/split_runnable_article_body_*.wasm', async (route) => {
+        await runner.promise;
+        await route.continue();
+      });
+      await page.goto(`${base}/post/split-runner`, { waitUntil: 'commit' });
+      const code = page.locator('.runner .runner-placeholder-code code');
+      check('运行器分包下载前已显示源码', (await code.textContent()) === 'print(1)');
+      runner.resolve();
+      await hydrated(page);
+      check(
+        '含运行器的文章加载分包并正常水合',
+        log.wasm.some((p) => p.includes('runnable_article_body')) && scriptErrors(log).length === 0,
+        scriptErrors(log).join(' | '),
+      );
+    } finally {
+      runner.resolve();
       await ctx.close();
     }
   }
